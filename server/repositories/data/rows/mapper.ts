@@ -3,19 +3,26 @@
  * query modules.
  *
  *   DataRowRow              — the raw row shape produced by the user-ref joins
- *   selectHydratedDataRows  — runs the canonical "row + four user-ref joins"
- *                             SELECT (the only place that column list lives)
- *                             and maps each row through `mapRow`
+ *   selectHydratedDataRows  — runs the canonical "row + table + four user-ref
+ *                             joins" SELECT (the only place that column list
+ *                             lives) and maps each row through `mapRow`
  *   mapRow                  — DataRowRow → DataRow domain shape
  *   isOwnedByUser           — effective-owner predicate for visibility filters
  *   placeholder             — re-exported from db/client (the single home) for
  *                             the `db.unsafe()` paths (filter + hydrated select)
  *
+ * Every id that leaves this module is LOGICAL (see `@core/branches`): the
+ * hydrated select projects `data_rows.logical_id` as the row id and derives
+ * `tableId` from the physical table key. Physical primary keys never reach
+ * callers.
+ *
  * Nothing here is part of the repository's public surface — the barrel
  * (`./index`) does not re-export this module. Sibling query modules import
  * these helpers directly.
  */
+import { logicalIdOf } from '@core/branches'
 import { placeholder, type DbClient } from '../../../db/client'
+import type { BranchScope } from '../../../branches/scope'
 import type { DataRow, DataRowCells, DataRowStatus } from '@core/data/schemas'
 import { userRefAt, userRefColumns, userRefJoin, type UserJoinColumns } from '../shared'
 import { isoDate, isoDateOrNull } from '@core/utils/isoDate'
@@ -30,7 +37,9 @@ export { placeholder }
 // ---------------------------------------------------------------------------
 
 export interface InsertDataRowInput {
+  /** Logical row id; generated when omitted. */
   id?: string
+  /** Logical table id. */
   tableId: string
   cells: DataRowCells
   /**
@@ -51,7 +60,7 @@ export interface UpdateDataRowDraftInput {
 // ---------------------------------------------------------------------------
 
 interface DataRowRow extends UserJoinColumns {
-  id: string
+  logical_id: string
   table_id: string
   cells_json: Record<string, unknown>
   slug: string
@@ -72,10 +81,15 @@ interface DataRowRow extends UserJoinColumns {
 // Mapper
 // ---------------------------------------------------------------------------
 
-function mapRow(row: DataRowRow): DataRow {
+/**
+ * `logical_id` is a generated column (derived from the physical key and
+ * the branch), so it is always populated. The table's logical id is derived
+ * the same way in code: a row's table lives on the row's own branch.
+ */
+function mapRow(row: DataRowRow, scope: BranchScope): DataRow {
   return {
-    id: row.id,
-    tableId: row.table_id,
+    id: row.logical_id,
+    tableId: logicalIdOf(scope.branchId, row.table_id),
     cells: row.cells_json,
     slug: row.slug,
     status: row.status,
@@ -107,11 +121,11 @@ export function isOwnedByUser(row: DataRow, ownerUserId: string): boolean {
 // ---------------------------------------------------------------------------
 
 /**
- * The full hydrated column list, including the four user-ref joins. The
- * `<prefix>_*` alias groups are built from the shared `userRefColumns` fragment
- * (the single source for the user-ref alias set, also spliced by `publish.ts`).
+ * The full hydrated column list, including the four user-ref joins. The `<prefix>_*` alias groups are built from the
+ * shared `userRefColumns` fragment (the single source for the user-ref alias
+ * set, also spliced by `publish.ts`).
  */
-const DATA_ROW_COLUMNS = `data_rows.id,
+const DATA_ROW_COLUMNS = `data_rows.logical_id,
        data_rows.table_id,
        data_rows.cells_json,
        data_rows.slug,
@@ -144,6 +158,10 @@ const DATA_ROW_JOINS = `from data_rows
  * only and bind values through positional placeholders (see `placeholder`),
  * with the matching values supplied in `params`. The SQL stays dialect-naive
  * (ANSI joins + CTE, no Postgres-isms).
+ *
+ * Callers bind PHYSICAL ids (row or table) in their clauses; the select
+ * additionally pins `data_rows.branch_id` to the scope, so an id shaped like
+ * another branch's physical key can never resolve from the wrong scope.
  */
 interface HydratedDataRowsQuery {
   /**
@@ -153,7 +171,7 @@ interface HydratedDataRowsQuery {
    */
   cte?: string
   /**
-   * Optional extra JOIN appended after the canonical user-ref joins — e.g.
+   * Optional extra JOIN appended after the canonical joins — e.g.
    * `join filtered_ids on filtered_ids.id = data_rows.id` to restrict the
    * hydrated rows to a CTE's id set.
    */
@@ -171,16 +189,20 @@ interface HydratedDataRowsQuery {
  */
 export async function selectHydratedDataRows(
   db: DbClient,
+  scope: BranchScope,
   query: HydratedDataRowsQuery,
 ): Promise<DataRow[]> {
+  // The branch predicate is appended LAST so its placeholder follows every
+  // caller-supplied one (SQLite binds `?` by position in the text).
+  const branchPredicate = `data_rows.branch_id = ${placeholder(db.dialect, query.params.length + 1)}`
   const sql = `
     ${query.cte ? `with ${query.cte}` : ''}
     select ${DATA_ROW_COLUMNS}
     ${DATA_ROW_JOINS}
     ${query.join ?? ''}
-    ${query.where ? `where ${query.where}` : ''}
+    where ${query.where ? `${query.where} and ` : ''}${branchPredicate}
     ${query.tail ?? ''}
   `
-  const { rows } = await db.unsafe<DataRowRow>(sql, query.params)
-  return rows.map(mapRow)
+  const { rows } = await db.unsafe<DataRowRow>(sql, [...query.params, scope.branchId])
+  return rows.map((row) => mapRow(row, scope))
 }

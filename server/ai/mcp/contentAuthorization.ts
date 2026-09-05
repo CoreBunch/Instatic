@@ -10,6 +10,7 @@
 import type { CoreCapability } from '@core/capabilities'
 import type { DbClient } from '../../db/client'
 import { getDataRow } from '../../repositories/data'
+import { MAIN_SCOPE } from '../../branches/scope'
 
 const DOCUMENT_EDIT_TOOLS = new Set([
   'content_delete_document',
@@ -52,7 +53,7 @@ export async function authorizeMcpContentTool(
   if (!checksEditOwnership && !checksPublishOwnership) return
 
   const documentId = inputDocumentId(input)
-  const row = await getDataRow(db, documentId)
+  const row = await getDataRow(db, MAIN_SCOPE, documentId)
   if (!row) throw new Error(`Document ${documentId} not found.`)
 
   if (checksEditOwnership) {

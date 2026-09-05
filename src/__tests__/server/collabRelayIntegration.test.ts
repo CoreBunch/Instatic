@@ -168,7 +168,7 @@ function insertChildNode(doc: Y.Doc, nodeId: string, moduleId: string): void {
 describe('collab relay integration (real server, real sockets)', () => {
   it('two clients edit concurrently, converge, and the relay persists blob + derived JSON', async () => {
     const stack = await startStack()
-    const docId = `page:${stack.homeId}`
+    const docId = `page:main:${stack.homeId}`
 
     const clientA = connectClient(stack)
     const clientB = connectClient(stack)
@@ -200,16 +200,48 @@ describe('collab relay integration (real server, real sockets)', () => {
       return nodeLabel(restored, rootId) === 'Renamed by A'
     })
     await waitFor(async () => {
-      const row = await getDataRow(stack.harness.db, stack.homeId)
+      const row = await getDataRow(stack.harness.db, MAIN_SCOPE, stack.homeId)
       if (!row) return false
       const page = pageFromRow(row)
       return page.nodes[rootId]?.label === 'Renamed by A' && page.nodes['node-from-b'] !== undefined
     })
   })
 
+  it('keeps the cells the doc does not own when it persists the derived row', async () => {
+    const stack = await startStack()
+    const docId = `page:main:${stack.homeId}`
+    // SEO lives on the row, never in the doc. Seeded as a collab-internal
+    // write so the roster's already-loaded doc is not reset under the client;
+    // what is under test is what the relay's own persist keeps on the row.
+    const seeded = (await getDataRow(stack.harness.db, MAIN_SCOPE, stack.homeId))!
+    await saveDataRowDraft(
+      stack.harness.db,
+      MAIN_SCOPE,
+      stack.homeId,
+      { cells: { ...seeded.cells, seoTitle: 'Kept title', seoDescription: 'Kept description' }, slug: seeded.slug },
+      null,
+      null,
+      { collabInternal: true },
+    )
+
+    const client = connectClient(stack)
+    const bound = client.bind(docId)
+    await bound.whenSynced
+    const rootId = treeMap(bound.doc).get('rootNodeId') as string
+    setNodeLabel(bound.doc, rootId, 'Edited in the doc')
+
+    await waitFor(async () => {
+      const row = await getDataRow(stack.harness.db, MAIN_SCOPE, stack.homeId)
+      return row !== null && pageFromRow(row).nodes[rootId]?.label === 'Edited in the doc'
+    })
+    const row = (await getDataRow(stack.harness.db, MAIN_SCOPE, stack.homeId))!
+    expect(row.cells.seoTitle).toBe('Kept title')
+    expect(row.cells.seoDescription).toBe('Kept description')
+  })
+
   it('refuses a read-only edit AND resets the viewer so its own screen reverts', async () => {
     const stack = await startStack()
-    const docId = `page:${stack.homeId}`
+    const docId = `page:main:${stack.homeId}`
 
     const viewer = await stack.harness.createRoleUser({
       name: 'Read Only',
@@ -259,7 +291,7 @@ describe('collab relay integration (real server, real sockets)', () => {
 
   it('enforces per-category capabilities on partial writers and relays read-only presence', async () => {
     const stack = await startStack()
-    const docId = `page:${stack.homeId}`
+    const docId = `page:main:${stack.homeId}`
 
     const contentUser = await stack.harness.createRoleUser({
       name: 'Copy Editor',
@@ -342,7 +374,7 @@ describe('collab relay integration (real server, real sockets)', () => {
 
   it('resets a doc when the row is written outside the relay', async () => {
     const stack = await startStack()
-    const docId = `page:${stack.homeId}`
+    const docId = `page:main:${stack.homeId}`
 
     const client = connectClient(stack)
     const bound = client.bind(docId)
@@ -354,8 +386,8 @@ describe('collab relay integration (real server, real sockets)', () => {
     // Out-of-relay write (imports, plugins, HTTP save): mutate the stored
     // JSON directly — the repository notifies, the relay drops the doc and
     // broadcasts FRAME_RESET.
-    const row = await getDataRow(stack.harness.db, stack.homeId)
-    await saveDataRowDraft(stack.harness.db, stack.homeId, {
+    const row = await getDataRow(stack.harness.db, MAIN_SCOPE, stack.homeId)
+    await saveDataRowDraft(stack.harness.db, MAIN_SCOPE, stack.homeId, {
       cells: { ...row!.cells, title: 'Rewritten outside the relay' },
       slug: row!.slug,
     })
@@ -371,7 +403,7 @@ describe('collab relay integration (real server, real sockets)', () => {
 
   it('a reconnecting client catches up on edits it missed while offline', async () => {
     const stack = await startStack()
-    const docId = `page:${stack.homeId}`
+    const docId = `page:main:${stack.homeId}`
 
     const clientA = connectClient(stack)
     const clientB = connectClient(stack)
@@ -392,7 +424,7 @@ describe('collab relay integration (real server, real sockets)', () => {
 
   it('a peer cannot erase another peer\'s presence for everyone', async () => {
     const stack = await startStack()
-    const docId = `page:${stack.homeId}`
+    const docId = `page:main:${stack.homeId}`
 
     const identityOf = async (email: string) => {
       const user = (await findUserByEmail(stack.harness.db, email))!
@@ -504,7 +536,7 @@ describe('collab relay integration (real server, real sockets)', () => {
     }
 
     const client = connectClient(stack)
-    const bound = client.bind(`page:${homeId}`)
+    const bound = client.bind(`page:main:${homeId}`)
     await bound.whenSynced
     const rootId = treeMap(bound.doc).get('rootNodeId') as string
 
@@ -512,14 +544,14 @@ describe('collab relay integration (real server, real sockets)', () => {
     // edit reaches this peer, the relay has definitely applied it. Asserting on
     // the editing client's own doc would pass before the frame ever left it.
     const observer = connectClient(stack)
-    const boundObserver = observer.bind(`page:${homeId}`)
+    const boundObserver = observer.bind(`page:main:${homeId}`)
     await boundObserver.whenSynced
 
     setNodeLabel(bound.doc, rootId, 'Edited seconds before publish')
     await waitFor(() => nodeLabel(boundObserver.doc, rootId) === 'Edited seconds before publish')
 
     const labelInRow = async (): Promise<unknown> => {
-      const row = await getDataRow(harness.db, homeId)
+      const row = await getDataRow(harness.db, MAIN_SCOPE, homeId)
       return pageFromRow(row!).nodes[rootId]?.label
     }
 
@@ -537,7 +569,7 @@ describe('collab relay integration (real server, real sockets)', () => {
 
   it('refuses a stale lineage instead of merging a dead generation', async () => {
     const stack = await startStack()
-    const docId = `page:${stack.homeId}`
+    const docId = `page:main:${stack.homeId}`
 
     const client = connectClient(stack)
     const bound = client.bind(docId)
@@ -545,7 +577,7 @@ describe('collab relay integration (real server, real sockets)', () => {
     const rootId = treeMap(bound.doc).get('rootNodeId') as string
     setNodeLabel(bound.doc, rootId, 'Before the reset')
     await waitFor(async () => {
-      const row = await getDataRow(stack.harness.db, stack.homeId)
+      const row = await getDataRow(stack.harness.db, MAIN_SCOPE, stack.homeId)
       return Boolean(row && pageFromRow(row).nodes[rootId]?.label === 'Before the reset')
     })
 
@@ -570,7 +602,7 @@ describe('collab relay integration (real server, real sockets)', () => {
 
   it('a frame stamped with a dead generation is answered with a reset, not applied', async () => {
     const stack = await startStack()
-    const docId = `page:${stack.homeId}`
+    const docId = `page:main:${stack.homeId}`
     const client = connectClient(stack)
     const bound = client.bind(docId)
     await bound.whenSynced
@@ -622,7 +654,7 @@ describe('collab relay integration (real server, real sockets)', () => {
   // direction that was silently dropping work.
   it('recovers edits authored while the socket was down, on reconnect', async () => {
     const stack = await startStack()
-    const docId = `page:${stack.homeId}`
+    const docId = `page:main:${stack.homeId}`
 
     const client = connectClient(stack)
     const bound = client.bind(docId)
@@ -649,8 +681,10 @@ describe('collab relay integration (real server, real sockets)', () => {
 
     // And it reaches storage, not just memory.
     await waitFor(async () => {
-      const row = await getDataRow(stack.harness.db, stack.homeId)
+      const row = await getDataRow(stack.harness.db, MAIN_SCOPE, stack.homeId)
       return Boolean(row && pageFromRow(row).nodes[rootId]?.label === 'Written while offline')
     })
   })
 })
+
+import { MAIN_SCOPE } from '../../../server/branches/scope'

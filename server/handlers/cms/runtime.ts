@@ -40,6 +40,7 @@ import type { Page, SiteDocument, SiteShell } from '@core/page-tree'
 import { badRequest, jsonResponse, methodNotAllowed, readValidatedBody } from '../../http'
 import { Type } from '@core/utils/typeboxHelpers'
 import { getErrorMessage } from '@core/utils/errorMessage'
+import type { BranchScope } from '../../branches/scope'
 
 function runtimeDependencyMap(raw: unknown): Record<string, string> {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {}
@@ -109,7 +110,11 @@ async function runtimeDependencyCache(site: SiteDocument) {
     : undefined
 }
 
-export async function handleRuntimeRoutes(req: Request, db: DbClient): Promise<Response | null> {
+export async function handleRuntimeRoutes(
+  req: Request,
+  db: DbClient,
+  scope: BranchScope,
+): Promise<Response | null> {
   const url = new URL(req.url)
 
   if (url.pathname === '/admin/api/cms/runtime/dependencies/resolve') {
@@ -225,6 +230,8 @@ export async function handleRuntimeRoutes(req: Request, db: DbClient): Promise<R
         breakpointId,
         templateContext,
         db,
+        // Loops on the canvas read the rows of the branch being edited.
+        branchId: scope.branchId,
       })
 
       return jsonResponse({

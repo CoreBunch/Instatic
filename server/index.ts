@@ -135,6 +135,7 @@ const server = Bun.serve({
         staticDir: config.staticDir,
         uploadsDir: config.uploadsDir,
         databaseUrl: config.databaseUrl,
+        collabRelay,
       })
       for (const [k, v] of Object.entries(cors)) {
         res.headers.set(k, v)

@@ -505,8 +505,9 @@ one text node, simultaneously), presence is visible, and there is **no save
 UI at all**: the server persists continuously.
 
 **Document model** (`src/core/collab/`): one Yjs doc per logical row —
-`page:<rowId>`, `component:<rowId>`, `layout:<rowId>` — plus one `site:default`
-doc for the shell and the roster order. Page/component trees map to
+`page:<branch>:<rowId>`, `component:<branch>:<rowId>`, `layout:<branch>:<rowId>` —
+plus one `site:<branch>` doc per branch for the shell and the roster order
+(`site:main` for the live site; see [`branches.md`](branches.md)). Page/component trees map to
 `getMap('tree')` (`rootNodeId` + a `nodes` Y.Map of per-node Y.Maps: `props`
 as a Y.Map with the module's inline-text prop as Y.Text, nested
 `breakpointOverrides` Y.Maps, `children` as Y.Array; `parentId` is derived,
@@ -549,7 +550,11 @@ across all their docs via a routing-group stack.
 seeds them from the stored JSON (the server is the ONLY seeder — fixed seed
 clientID, so two clients can never build divergent initial histories),
 persists each doc's update blob to `collab_documents` AND the derived row
-JSON to `data_rows`/site on a short debounce (~800 ms), applies
+JSON to `data_rows`/site on a short debounce (~800 ms) — replacing only the
+cells the doc owns (`OWNED_CELLS` in `relayPersistence.ts`: title, slug, body
+and the template cells for pages; name, slug, body, params, classIds for
+components; name, slug, body, classes for layouts), so SEO, featured media,
+and plugin cells edited elsewhere survive every relay write — applies
 roster-driven soft-deletes, and RESETS docs whose row was written outside
 the relay (`rowWriteEvents.ts`) — clients rebind and reseed. The publish
 endpoint flushes the relay first so the baked snapshot includes edits still
@@ -571,7 +576,11 @@ and reuse the HTTP path's `validateSiteWriteDiff`/`validatePageWriteDiff` —
 one enforcement vocabulary on both transports (the validators live in
 `server/writePolicy/` for exactly that reason). Rejected updates never touch
 the authoritative doc; the sender gets a targeted reset that reverts its
-local fork. Two more socket-level defenses: per-frame payload caps (64 KB
+local fork. Every frame carries the doc's lineage (`generation`, minted
+when the relay seeds a doc): a write from a dead lineage is reset as
+`stale`, and the client provider holds local updates back until the first
+inbound frame names the lineage, then sends them as one update — so a row
+created and placed inside the bind round trip is never refused. Two more socket-level defenses: per-frame payload caps (64 KB
 awareness / 4 MB sync, plus the transport `maxPayloadLength`) drop oversized
 frames before any decode work, and every awareness frame is decoded and
 checked against the session — a state claiming another user's identity

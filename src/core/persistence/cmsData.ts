@@ -1,5 +1,6 @@
 import { Type } from '@sinclair/typebox'
 import type {
+  DataRowVersionSummary,
   DataTable,
   DataTableListItem,
   DataRow,
@@ -12,6 +13,7 @@ import type {
 } from '@core/data/schemas'
 import type { DeletedRowSummary } from '@core/data/schemas'
 import {
+  DataRowVersionSummarySchema,
   DataMetaSchema,
   DataRowSchema,
   DataTableListItemSchema,
@@ -21,7 +23,7 @@ import {
 } from '@core/data/schemas'
 import type { LoopItem } from '@core/loops/types'
 import { LoopItemSchema } from '@core/loops/types'
-import { apiRequest, assertOk, ApiError, type FetchLike } from '@core/http'
+import { apiRequest, assertOk, ApiError, withAmbientHeaders, type FetchLike } from '@core/http'
 
 // ---------------------------------------------------------------------------
 // Envelope schemas
@@ -428,13 +430,14 @@ export async function previewCmsDataRow(
 ): Promise<string> {
   const fetchImpl = options.fetchImpl ?? globalThis.fetch.bind(globalThis)
   const basePath = options.basePath ?? '/admin/api/cms'
-  const res = await fetchImpl(`${basePath}/data/rows/${encodeURIComponent(rowId)}/preview`, {
+  // Own fetch (HTML response), so the branch header is merged in by hand.
+  const res = await fetchImpl(`${basePath}/data/rows/${encodeURIComponent(rowId)}/preview`, withAmbientHeaders({
     method: 'POST',
     credentials: 'include',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ cells: options.cells ?? {} }),
     signal: options.signal,
-  })
+  }))
   // The preview endpoint returns an HTML document on success; assertOk reads the
   // standard `{ error }` envelope (then raw text, then fallback) on failure.
   await assertOk(res, `CMS data row preview failed with ${res.status}`)
@@ -477,4 +480,34 @@ export async function getDataMeta(
     fallbackMessage: 'CMS data meta request failed',
   })
   return body.meta
+}
+
+const VersionsEnvelope = Type.Object({ versions: Type.Array(DataRowVersionSummarySchema) })
+
+/** Every published version of a row, newest first. */
+export async function listCmsDataRowVersions(
+  rowId: string,
+  signal?: AbortSignal,
+  basePath = '/admin/api/cms',
+): Promise<DataRowVersionSummary[]> {
+  const body = await apiRequest(`${basePath}/data/rows/${encodeURIComponent(rowId)}/versions`, {
+    schema: VersionsEnvelope,
+    signal,
+    fallbackMessage: 'Failed to load version history',
+  })
+  return body.versions
+}
+
+/** Copy a published version back into the row's draft on the active branch. */
+export async function restoreCmsDataRowVersion(
+  rowId: string,
+  versionId: string,
+  basePath = '/admin/api/cms',
+): Promise<DataRow> {
+  const body = await apiRequest(
+    `${basePath}/data/rows/${encodeURIComponent(rowId)}/versions/${encodeURIComponent(versionId)}/restore`,
+    { method: 'POST', schema: RowEnvelope, fallbackMessage: 'Failed to restore the version' },
+  )
+  if (!body.row) throw new ApiError('Failed to restore the version', 500)
+  return body.row
 }

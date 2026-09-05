@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
 import { createCapabilityTestHarness, type CapabilityTestHarness } from '../../../src/__tests__/helpers/capabilityHarness'
 import { createDataRow } from '../../repositories/data'
 import { authorizeMcpContentTool } from './contentAuthorization'
+import { MAIN_SCOPE } from '../../branches/scope'
 
 describe('MCP content row authorization', () => {
   let harness: CapabilityTestHarness
@@ -29,7 +30,7 @@ describe('MCP content row authorization', () => {
   })
 
   it('does not let an own-only connector borrow its owner browser\'s any-row authority', async () => {
-    const foreignRow = await createDataRow(harness.db, {
+    const foreignRow = await createDataRow(harness.db, MAIN_SCOPE, {
       id: 'foreign-document',
       tableId: 'posts',
       cells: { title: 'Foreign document' },
@@ -54,13 +55,13 @@ describe('MCP content row authorization', () => {
   })
 
   it('allows own-row grants for owned documents and any-row grants for foreign documents', async () => {
-    const ownRow = await createDataRow(harness.db, {
+    const ownRow = await createDataRow(harness.db, MAIN_SCOPE, {
       id: 'owned-document',
       tableId: 'posts',
       cells: { title: 'Owned document' },
       slug: 'owned-document',
     }, ownerId)
-    const foreignRow = await createDataRow(harness.db, {
+    const foreignRow = await createDataRow(harness.db, MAIN_SCOPE, {
       id: 'any-document',
       tableId: 'posts',
       cells: { title: 'Any document' },

@@ -35,6 +35,11 @@ export function badRequest(message: string): Response {
   return jsonResponse({ error: message }, { status: 400 })
 }
 
+/** The actor is signed in but this action is outside their capabilities. */
+export function forbidden(): Response {
+  return jsonResponse({ error: 'Forbidden' }, { status: 403 })
+}
+
 export function payloadTooLarge(message: string): Response {
   return jsonResponse({ error: message }, { status: 413 })
 }

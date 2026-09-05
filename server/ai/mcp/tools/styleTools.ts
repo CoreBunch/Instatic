@@ -20,6 +20,7 @@ import { generateClassCSS, generateFrameworkCss } from '@core/publisher'
 import type { CoreCapability } from '@core/capabilities'
 import type { AiTool, ToolContext } from '../../runtime/types'
 import { getDraftSite } from '../../../repositories/site'
+import { MAIN_SCOPE } from '../../../branches/scope'
 
 const SITE_READ_CAPS: readonly CoreCapability[] = [
   'site.read',
@@ -66,7 +67,7 @@ export const styleMcpTools: AiTool[] = [
         className?: string
         includeTokens?: boolean
       }
-      const site = await getDraftSite(ctx.db)
+      const site = await getDraftSite(ctx.db, MAIN_SCOPE)
       if (!site) return { ok: false, error: 'No site found.' }
 
       // Author-defined classes + ambient rules. Framework-generated utility
@@ -122,7 +123,7 @@ export const styleMcpTools: AiTool[] = [
     inputSchema: Type.Object({}, { additionalProperties: false }),
     requiredCapabilities: SITE_READ_CAPS,
     handler: async (_input, ctx: ToolContext) => {
-      const site = await getDraftSite(ctx.db)
+      const site = await getDraftSite(ctx.db, MAIN_SCOPE)
       if (!site) return { ok: false, error: 'No site found.' }
       return {
         breakpoints: site.breakpoints.map((b, i) => ({

@@ -1,9 +1,10 @@
 /**
  * CRUD for data tables.
  *
- *   listDataTables       — read every non-deleted table. System tables sort
- *                          first in a fixed order (pages, posts, components,
- *                          layouts); custom tables follow, ordered by created_at.
+ *   listDataTables       — read every non-deleted table of a branch. System
+ *                          tables sort first in a fixed order (pages, posts,
+ *                          components, layouts); custom tables follow, ordered
+ *                          by created_at.
  *   getDataTable         — read a single table by id (or null)
  *   getDataTableBySlug   — read a single table by slug (indexed; or null)
  *   createDataTable      — insert a new table
@@ -11,9 +12,15 @@
  *   softDeleteDataTable      — set deleted_at; refuses if rows exist or if the
  *                             table is the seeded `posts` post-type
  *   insertDataTableIfAbsent  — insert only if id absent; used by merge-add / merge-overwrite
+ *
+ * Ids in and out are LOGICAL; the branch comes from `scope` (see
+ * `@core/branches`). System tables keep their well-known logical ids
+ * (`pages`, `posts`, `components`, `layouts`) on every branch.
  */
 import { nanoid } from 'nanoid'
+import { physicalId } from '@core/branches'
 import type { DbClient } from '../../db/client'
+import type { BranchScope } from '../../branches/scope'
 import { countDataRows } from './rows/read'
 import { normalizeRouteBase } from '@core/templates/templateMatching'
 import { buildPostTypeDefaultFields, normalizeDataTableFields } from '@core/data/fields'
@@ -52,7 +59,7 @@ interface UpdateDataTableInput {
 }
 
 interface DataTableRow {
-  id: string
+  logical_id: string
   name: string
   slug: string
   kind: DataTableKind
@@ -96,7 +103,7 @@ function routeBaseForCreate(routeBase: string | undefined, slug: string): string
 
 function mapTable(row: DataTableRow): DataTable {
   return {
-    id: row.id,
+    id: row.logical_id,
     name: row.name,
     slug: row.slug,
     kind: row.kind,
@@ -113,13 +120,14 @@ function mapTable(row: DataTableRow): DataTable {
   }
 }
 
-export async function listDataTables(db: DbClient): Promise<DataTable[]> {
+export async function listDataTables(db: DbClient, scope: BranchScope): Promise<DataTable[]> {
   const { rows } = await db<DataTableRow>`
-    select id, name, slug, kind, route_base, singular_label, plural_label,
+    select logical_id, name, slug, kind, route_base, singular_label, plural_label,
            primary_field_id, fields_json, system,
            created_by_user_id, updated_by_user_id, created_at, updated_at
     from data_tables
-    where deleted_at is null
+    where branch_id = ${scope.branchId}
+      and deleted_at is null
     order by
       case kind
         when 'page' then 0
@@ -141,9 +149,12 @@ export async function listDataTables(db: DbClient): Promise<DataTable[]> {
  * SQL is dialect-naive: no Postgres-isms (`::int`, `now()`, `::jsonb`,
  * `any($N::...)`, `distinct on`) — runs identically on SQLite and Postgres.
  */
-export async function listDataTablesWithCounts(db: DbClient): Promise<DataTableListItem[]> {
+export async function listDataTablesWithCounts(
+  db: DbClient,
+  scope: BranchScope,
+): Promise<DataTableListItem[]> {
   const { rows } = await db<DataTableRow & { row_count: number | string }>`
-    select t.id, t.name, t.slug, t.kind, t.route_base, t.singular_label, t.plural_label,
+    select t.logical_id, t.name, t.slug, t.kind, t.route_base, t.singular_label, t.plural_label,
            t.primary_field_id, t.fields_json, t.system,
            t.created_by_user_id, t.updated_by_user_id, t.created_at, t.updated_at,
            coalesce(
@@ -151,7 +162,8 @@ export async function listDataTablesWithCounts(db: DbClient): Promise<DataTableL
              0
            ) as row_count
     from data_tables t
-    where t.deleted_at is null
+    where t.branch_id = ${scope.branchId}
+      and t.deleted_at is null
     order by
       case t.kind
         when 'page' then 0
@@ -168,13 +180,18 @@ export async function listDataTablesWithCounts(db: DbClient): Promise<DataTableL
   }))
 }
 
-export async function getDataTable(db: DbClient, tableId: string): Promise<DataTable | null> {
+export async function getDataTable(
+  db: DbClient,
+  scope: BranchScope,
+  tableId: string,
+): Promise<DataTable | null> {
   const { rows } = await db<DataTableRow>`
-    select id, name, slug, kind, route_base, singular_label, plural_label,
+    select logical_id, name, slug, kind, route_base, singular_label, plural_label,
            primary_field_id, fields_json, system,
            created_by_user_id, updated_by_user_id, created_at, updated_at
     from data_tables
-    where id = ${tableId}
+    where id = ${physicalId(scope.branchId, tableId)}
+      and branch_id = ${scope.branchId}
       and deleted_at is null
     limit 1
   `
@@ -183,17 +200,22 @@ export async function getDataTable(db: DbClient, tableId: string): Promise<DataT
 
 /**
  * Read a single non-deleted table by slug. One indexed lookup — the partial
- * unique index `data_tables_slug_active_idx` covers it — so per-call code
- * paths (every `cms.content.*` plugin api-call resolves its table this way)
- * never scan and re-parse the whole table list.
+ * unique index `data_tables_branch_slug_active_idx` covers it — so per-call
+ * code paths (every `cms.content.*` plugin api-call resolves its table this
+ * way) never scan and re-parse the whole table list.
  */
-export async function getDataTableBySlug(db: DbClient, slug: string): Promise<DataTable | null> {
+export async function getDataTableBySlug(
+  db: DbClient,
+  scope: BranchScope,
+  slug: string,
+): Promise<DataTable | null> {
   const { rows } = await db<DataTableRow>`
-    select id, name, slug, kind, route_base, singular_label, plural_label,
+    select logical_id, name, slug, kind, route_base, singular_label, plural_label,
            primary_field_id, fields_json, system,
            created_by_user_id, updated_by_user_id, created_at, updated_at
     from data_tables
-    where slug = ${slug}
+    where branch_id = ${scope.branchId}
+      and slug = ${slug}
       and deleted_at is null
     limit 1
   `
@@ -280,12 +302,15 @@ function keepPostTypeBuiltIns(existing: DataTable, next: DataField[]): DataField
 
 export async function createDataTable(
   db: DbClient,
+  scope: BranchScope,
   input: CreateDataTableInput,
 ): Promise<DataTable> {
   const fields = withPostTypeBuiltIns(input.kind, normalizeDataTableFields(input.fields ?? []))
+  const logicalId = input.id ?? nanoid()
   const { rows } = await db<DataTableRow>`
     insert into data_tables (
       id,
+      branch_id,
       name,
       slug,
       kind,
@@ -298,7 +323,8 @@ export async function createDataTable(
       updated_by_user_id
     )
     values (
-      ${input.id ?? nanoid()},
+      ${physicalId(scope.branchId, logicalId)},
+      ${scope.branchId},
       ${input.name},
       ${input.slug},
       ${input.kind ?? 'data'},
@@ -310,7 +336,7 @@ export async function createDataTable(
       ${input.createdByUserId ?? null},
       ${input.updatedByUserId ?? input.createdByUserId ?? null}
     )
-    returning id, name, slug, kind, route_base, singular_label, plural_label,
+    returning logical_id, name, slug, kind, route_base, singular_label, plural_label,
               primary_field_id, fields_json, system,
               created_by_user_id, updated_by_user_id, created_at, updated_at
   `
@@ -321,12 +347,13 @@ export async function createDataTable(
 
 export async function updateDataTable(
   db: DbClient,
+  scope: BranchScope,
   tableId: string,
   input: UpdateDataTableInput,
 ): Promise<DataTable | null> {
   let fields: DataField[] | null = null
   if (input.fields !== undefined) {
-    const existing = await getDataTable(db, tableId)
+    const existing = await getDataTable(db, scope, tableId)
     if (!existing) return null
     fields = keepPostTypeBuiltIns(existing, normalizeDataTableFields(input.fields))
   }
@@ -342,9 +369,10 @@ export async function updateDataTable(
         fields_json = coalesce(${fields}, fields_json),
         updated_by_user_id = coalesce(${input.updatedByUserId ?? null}, updated_by_user_id),
         updated_at = current_timestamp
-    where id = ${tableId}
+    where id = ${physicalId(scope.branchId, tableId)}
+      and branch_id = ${scope.branchId}
       and deleted_at is null
-    returning id, name, slug, kind, route_base, singular_label, plural_label,
+    returning logical_id, name, slug, kind, route_base, singular_label, plural_label,
               primary_field_id, fields_json, system,
               created_by_user_id, updated_by_user_id, created_at, updated_at
   `
@@ -360,14 +388,17 @@ export async function updateDataTable(
  */
 export async function insertDataTableIfAbsent(
   db: DbClient,
+  scope: BranchScope,
   input: CreateDataTableInput,
 ): Promise<boolean> {
   // Same seeding as createDataTable: `merge-add` / `merge-overwrite` is an
   // import, and an imported post type has to be routable too.
   const fields = withPostTypeBuiltIns(input.kind, normalizeDataTableFields(input.fields ?? []))
+  const logicalId = input.id ?? nanoid()
   const { rows } = await db<{ id: string }>`
     insert into data_tables (
       id,
+      branch_id,
       name,
       slug,
       kind,
@@ -380,7 +411,8 @@ export async function insertDataTableIfAbsent(
       updated_by_user_id
     )
     values (
-      ${input.id ?? nanoid()},
+      ${physicalId(scope.branchId, logicalId)},
+      ${scope.branchId},
       ${input.name},
       ${input.slug},
       ${input.kind ?? 'data'},
@@ -408,23 +440,59 @@ export async function insertDataTableIfAbsent(
  */
 export async function softDeleteDataTable(
   db: DbClient,
+  scope: BranchScope,
   tableId: string,
   actorUserId: string | null = null,
 ): Promise<DataTable | null> {
-  const table = await getDataTable(db, tableId)
+  const table = await getDataTable(db, scope, tableId)
   if (!table) return null
   if (table.system === true) return null
 
-  if (await countDataRows(db, tableId) > 0) return null
+  if (await countDataRows(db, scope, tableId) > 0) return null
 
   const { rows } = await db<DataTableRow>`
     update data_tables
     set deleted_at = current_timestamp,
         updated_by_user_id = ${actorUserId},
         updated_at = current_timestamp
-    where id = ${tableId}
+    where id = ${physicalId(scope.branchId, tableId)}
+      and branch_id = ${scope.branchId}
       and deleted_at is null
-    returning id, name, slug, kind, route_base, singular_label, plural_label,
+    returning logical_id, name, slug, kind, route_base, singular_label, plural_label,
+              primary_field_id, fields_json, system,
+              created_by_user_id, updated_by_user_id, created_at, updated_at
+  `
+  return rows[0] ? mapTable(rows[0]) : null
+}
+
+/**
+ * Bring a soft-deleted table back with new settings — the merge engine's
+ * path when a branch re-creates a table the target side had deleted. Null
+ * when no soft-deleted table has this id on the branch.
+ */
+export async function restoreDataTable(
+  db: DbClient,
+  scope: BranchScope,
+  tableId: string,
+  input: UpdateDataTableInput,
+): Promise<DataTable | null> {
+  const fields = input.fields !== undefined ? normalizeDataTableFields(input.fields) : null
+  const { rows } = await db<DataTableRow>`
+    update data_tables
+    set deleted_at = null,
+        name = coalesce(${input.name ?? null}, name),
+        slug = coalesce(${input.slug ?? null}, slug),
+        route_base = coalesce(${input.routeBase ?? null}, route_base),
+        singular_label = coalesce(${input.singularLabel ?? null}, singular_label),
+        plural_label = coalesce(${input.pluralLabel ?? null}, plural_label),
+        primary_field_id = coalesce(${input.primaryFieldId ?? null}, primary_field_id),
+        fields_json = coalesce(${fields}, fields_json),
+        updated_by_user_id = coalesce(${input.updatedByUserId ?? null}, updated_by_user_id),
+        updated_at = current_timestamp
+    where id = ${physicalId(scope.branchId, tableId)}
+      and branch_id = ${scope.branchId}
+      and deleted_at is not null
+    returning logical_id, name, slug, kind, route_base, singular_label, plural_label,
               primary_field_id, fields_json, system,
               created_by_user_id, updated_by_user_id, created_at, updated_at
   `

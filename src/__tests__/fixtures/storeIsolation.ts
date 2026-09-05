@@ -22,6 +22,7 @@
 
 import { useEditorStore } from '@site/store/store'
 import { useAdminUi } from '@admin/state/adminUi'
+import { useBranchStore } from '@admin/state/branchStore'
 import { useWorkspaceLayout } from '@admin/state/workspaceLayout'
 
 interface ResettableStore<T> {
@@ -45,6 +46,7 @@ function pristineResetter<T extends object>(store: ResettableStore<T>): () => vo
 const RESETTERS = [
   pristineResetter(useEditorStore),
   pristineResetter(useAdminUi),
+  pristineResetter(useBranchStore),
   pristineResetter(useWorkspaceLayout),
 ]
 

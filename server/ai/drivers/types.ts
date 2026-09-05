@@ -143,6 +143,8 @@ export interface AiStreamRequest {
  * `ToolContext` by spreading this and adding their own signal.
  */
 export interface ToolContextBase {
+  /** Branch the turn's server-resolved tools read and write. */
+  readonly branch: import('../../branches/scope').BranchScope
   readonly db: import('../../db/client').DbClient
   readonly userId: string
   /** The caller's capability set — threaded into ToolContext for the re-check gate. */

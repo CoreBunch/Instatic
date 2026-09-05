@@ -90,7 +90,7 @@ import { canonicalRenderQuery } from './loopPrefetch'
  *
  * Shared with the loop runtime so per-page slug resolution stays consistent.
  */
-function publicSlugFromPath(pathname: string): string {
+export function publicSlugFromPath(pathname: string): string {
   const trimmed = pathname.replace(/^\/+|\/+$/g, '')
   return trimmed === '' ? 'index' : trimmed
 }
@@ -101,7 +101,7 @@ function publicSlugFromPath(pathname: string): string {
  * have at least two segments — the caller should treat those as
  * "not a content-row URL" and move on.
  */
-function contentRouteFromPath(pathname: string): { tableRouteBase: string; rowSlug: string } | null {
+export function contentRouteFromPath(pathname: string): { tableRouteBase: string; rowSlug: string } | null {
   const parts = pathname.replace(/^\/+|\/+$/g, '').split('/').filter(Boolean)
   if (parts.length < 2) return null
   return {

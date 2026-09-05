@@ -47,6 +47,8 @@
  * delta reconciliation substrate for the live-sync plan).
  */
 import type { DbClient } from '../../db/client'
+import type { BranchScope } from '../../branches/scope'
+import { SITE_SHELL_LOGICAL_ID } from '@core/branches'
 import { requireAnyCapability } from '../../auth/authz'
 import type { CoreCapability } from '../../auth/capabilities'
 import {
@@ -180,7 +182,11 @@ function forbiddenStructuralChange(
   return jsonResponse({ error: err.message, kind: err.kind, path: err.path }, { status: 403 })
 }
 
-export async function handleSiteDocumentRoutes(req: Request, db: DbClient): Promise<Response | null> {
+export async function handleSiteDocumentRoutes(
+  req: Request,
+  db: DbClient,
+  scope: BranchScope,
+): Promise<Response | null> {
   const url = new URL(req.url)
   if (url.pathname !== `${CMS_API_PREFIX}/site-document`) return null
   if (req.method !== 'PUT') return methodNotAllowed()
@@ -206,7 +212,7 @@ export async function handleSiteDocumentRoutes(req: Request, db: DbClient): Prom
     // cheap (id, slug) page projection plus the component roster it needs
     // for ref validation — never all three hydrated collections.
 
-    const previousShell = await getDraftSite(db)
+    const previousShell = await getDraftSite(db, scope)
     const shell = validateSite(body.site)
     validateSiteWriteDiff(previousShell, shell, user.capabilities)
 
@@ -232,7 +238,7 @@ export async function handleSiteDocumentRoutes(req: Request, db: DbClient): Prom
       body.changedPages.length > 0 ||
       body.mode === 'replace'
     const existingVCs: VisualComponent[] = needsComponentRoster
-      ? (await listDataRows(db, 'components')).flatMap((r) => {
+      ? (await listDataRows(db, scope, 'components')).flatMap((r) => {
           const vc = visualComponentFromRow(r)
           return vc ? [vc] : []
         })
@@ -262,7 +268,7 @@ export async function handleSiteDocumentRoutes(req: Request, db: DbClient): Prom
     const needsLayoutRoster =
       body.changedLayouts.length > 0 || body.deletedLayoutIds.length > 0 || body.mode === 'replace'
     const existingLayouts: SavedLayout[] = needsLayoutRoster
-      ? (await listDataRows(db, 'layouts')).flatMap((r) => {
+      ? (await listDataRows(db, scope, 'layouts')).flatMap((r) => {
           const layout = savedLayoutFromRow(r)
           return layout ? [layout] : []
         })
@@ -296,7 +302,7 @@ export async function handleSiteDocumentRoutes(req: Request, db: DbClient): Prom
     // loaded only for the per-category diff, which callers holding all three
     // site-write capabilities skip entirely (its fast path).
     const needsPageSlugs = body.changedPages.length > 0 || body.mode === 'replace'
-    const existingPageSlugs = needsPageSlugs ? await listDataRowIdSlugs(db, 'pages') : []
+    const existingPageSlugs = needsPageSlugs ? await listDataRowIdSlugs(db, scope, 'pages') : []
     const changedPageIdsRaw = new Set(
       body.changedPages
         .map((p) => (p && typeof p === 'object' ? (p as { id?: unknown }).id : undefined))
@@ -321,7 +327,7 @@ export async function handleSiteDocumentRoutes(req: Request, db: DbClient): Prom
         : []
     const previousPages: Page[] =
       pages.length > 0 && !hasAllSiteCaps
-        ? (await listDataRows(db, 'pages')).map(pageFromRow)
+        ? (await listDataRows(db, scope, 'pages')).map(pageFromRow)
         : []
     validatePageWriteDiff({
       previousPages,
@@ -365,9 +371,9 @@ export async function handleSiteDocumentRoutes(req: Request, db: DbClient): Prom
       if (body.mode === 'incremental') {
         const conflicts: SaveConflict[] = []
         if (shellChanged) {
-          const storedShellSeq = await getDraftSiteSeq(tx)
+          const storedShellSeq = await getDraftSiteSeq(tx, scope)
           if (storedShellSeq > body.shellBaseSeq) {
-            conflicts.push({ table: 'site', rowId: 'default', seq: storedShellSeq })
+            conflicts.push({ table: 'site', rowId: SITE_SHELL_LOGICAL_ID, seq: storedShellSeq })
           }
         }
         const rowChecks = [
@@ -379,7 +385,7 @@ export async function handleSiteDocumentRoutes(req: Request, db: DbClient): Prom
           // listDataRowSeqs sees soft-deleted rows too: a remote deletion is
           // a newer write, not absence. Rows with no stored counterpart are
           // client creations and pass by construction (absent from the result).
-          for (const stored of await listDataRowSeqs(tx, table, ids)) {
+          for (const stored of await listDataRowSeqs(tx, scope, table, ids)) {
             const base = body.baseSeqs[stored.id]
             if (base === undefined || stored.seq > base) {
               conflicts.push({ table, rowId: stored.id, seq: stored.seq })
@@ -393,25 +399,25 @@ export async function handleSiteDocumentRoutes(req: Request, db: DbClient): Prom
       // — see the shellChanged comment in phase 1.
       if (shellChanged) {
         // In-transaction — collab listeners are notified post-commit below.
-        await saveDraftSite(tx, shell, user.id, { collabInternal: true })
-        await stampDraftSiteSeq(tx, seq)
+        await saveDraftSite(tx, scope, shell, user.id, { collabInternal: true })
+        await stampDraftSiteSeq(tx, scope, seq)
       }
       // Empty change sets skip their table entirely — a shell-only save
       // issues no row queries inside the transaction.
       if (componentWrites.length > 0 || componentDeleteIds.size > 0) {
-        await applyDataRowChangesInTx(tx, {
+        await applyDataRowChangesInTx(tx, scope, {
           tableId: 'components', writes: componentWrites, deleteIds: componentDeleteIds,
           actorUserId: user.id, seq,
         })
       }
       if (layoutWrites.length > 0 || layoutDeleteIds.size > 0) {
-        await applyDataRowChangesInTx(tx, {
+        await applyDataRowChangesInTx(tx, scope, {
           tableId: 'layouts', writes: layoutWrites, deleteIds: layoutDeleteIds,
           actorUserId: user.id, seq,
         })
       }
       if (pageWrites.length > 0 || pageDeleteIds.size > 0) {
-        const pagesResult = await applyDataRowChangesInTx(tx, {
+        const pagesResult = await applyDataRowChangesInTx(tx, scope, {
           tableId: 'pages', writes: pageWrites, deleteIds: pageDeleteIds,
           actorUserId: user.id, seq,
         })
@@ -422,7 +428,7 @@ export async function handleSiteDocumentRoutes(req: Request, db: DbClient): Prom
       // Collab invalidation — this save wrote rows/shell OUTSIDE the relay, so
       // affected CRDT documents must reset while this ordered write still owns
       // the lane (post-commit; see rowWriteEvents).
-      if (shellChanged) notifyShellWrite()
+      if (shellChanged) notifyShellWrite(scope.branchId)
       const writtenGroups: Array<[string, Iterable<string>, RowWriteKind]> = [
         ['pages', changedPageIdsRaw, 'update'],
         ['pages', pageDeleteIds, 'delete'],
@@ -433,7 +439,7 @@ export async function handleSiteDocumentRoutes(req: Request, db: DbClient): Prom
       ]
       for (const [tableId, ids, kind] of writtenGroups) {
         const rowIds = [...ids]
-        if (rowIds.length > 0) notifyRowWrite({ tableId, rowIds, kind })
+        if (rowIds.length > 0) notifyRowWrite({ branchId: scope.branchId, tableId, rowIds, kind })
       }
     })
 

@@ -134,6 +134,22 @@ CAP-005 note: plugin read/install/configure/lifecycle affordance splits, install
 
 Page management note: `page-management.e2e.ts` creates disposable pages from the Site Explorer, verifies new pages appear and open in the canvas, renames a page through the context menu, deletes a page through the confirmation dialog, and switches away from and back to an unsaved edited page before saving/reloading to prove draft state is retained.
 
+## Site Branches And Versions
+
+| ID | Priority | Auto | Area | User Goal | Setup | Path | Expected Outcome | Watch For |
+|---|---:|:---:|---|---|---|---|---|---|
+| BRANCH-001 | P1 | ✅ | Branches | Create a branch from the toolbar, edit on it, and return to main | Owner logged in | Toolbar branch chip → Create branch… → strip | The chip shows the branch, the strip appears above the toolbar, Publish is disabled with the reason inline, the branch survives a reload, and "Switch to main" clears the strip | branch lost on reload, publish enabled on a branch, strip missing |
+| BRANCH-002 | P1 | ✅ | Branches | Switch branches by search and from the command palette | Owner logged in, a branch exists | Chip search + Enter; ⌘K "Switch to main" | Enter switches to the first match; the palette command returns to main | stale palette results, switch without remount |
+| BRANCH-003 | P1 | ✅ | Branches | Rename and delete a branch from the manage dialog | Fresh login (step-up) | Chip → Manage branches… | Search narrows the list and clearing it restores every branch; inline rename updates the row; delete confirms, steps up, and removes the branch | delete without step-up, rename lost |
+| BRANCH-004 | P1 | ✅ | Branches | Share a preview link and open it as a visitor | Fresh login (step-up for cleanup) | Strip → Share preview; visitor context opens the URL | The visitor sees the branch draft with the "Previewing branch" banner and can exit; revoking kills the link | banner missing, link still works after revoke, main content shown |
+| BRANCH-005 | P1 | ✅ | Branches | Merge a branch into main from the review page | Fresh login (step-up) | Strip → Merge into main… | The review page lists the branch-only page as new, merging steps up, the branch is deleted, and the page exists on main | empty plan while the relay still holds the edit, merge without step-up |
+| REVIEW-001 | P1 | ✅ | Branches | Merge review across two accounts | Owner + a site editor without `site.branches.manage` | Editor edits on the branch, opens the review, comments, requests; owner sees the conflict, declines with a note; editor re-requests; owner resolves and merges with step-up | Before/after page renders with the changed and added nodes outlined, threads per change, decline note, merge lands the branch title on main, audit shows every step | request without merge rights merging, conflict merged without a decision, comments lost across a decline |
+| VERSION-001 | P1 | ✅ | Versions | Restore a published version of the active page | Fresh login (step-up for publish) | Publish menu → Version history… | The page's first version is listed as Latest; Restore asks for confirmation, then the draft is replaced and a toast confirms | empty list after publish, restore publishing instead of drafting |
+
+BRANCH-001 … BRANCH-005 note: `tests/e2e/branches.e2e.ts` drives the real toolbar chip, palette, in-place creator, context strip, manage dialog, preview-link visitor flow (a second browser context without an admin session), and the merge review dialog; every step captures evidence under `.tmp/evidence/branches-*.png`. Tests that step up run on a fresh login because step-up rotates the shared owner session.
+
+VERSION-001 note: `tests/e2e/version-history.e2e.ts` creates and opens a page of its own (so the history it asserts on is independent of earlier specs), publishes, opens the version list from the publish split menu, and restores version 1 through the inline confirmation.
+
 ## Visual Builder
 
 | ID | Priority | Auto | Area | User Goal | Setup | Path | Expected Outcome | Watch For |

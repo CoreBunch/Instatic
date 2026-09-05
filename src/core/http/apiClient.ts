@@ -25,6 +25,7 @@
 import type { TSchema, Static } from '@sinclair/typebox'
 import { Type } from '@core/utils/typeboxHelpers'
 import { parseJsonResponse } from '@core/utils/jsonValidate'
+import { ambientRequestHeaders } from './requestHeaders'
 
 export type FetchLike = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>
 
@@ -35,22 +36,75 @@ export type FetchLike = (input: RequestInfo | URL, init?: RequestInit) => Promis
  * {@link responseErrorMessage} instead of throwing.
  */
 const ErrorEnvelopeSchema = Type.Object(
-  { error: Type.Optional(Type.Unknown()) },
+  { error: Type.Optional(Type.Unknown()), code: Type.Optional(Type.String()) },
   { additionalProperties: true },
 )
 
 /**
  * The single error type thrown for every failed HTTP call. Carries the HTTP
- * status so UI can branch on it (e.g. 403 → "no access", 404 → "not found").
+ * status so UI can branch on it (e.g. 403 → "no access", 404 → "not found")
+ * and the envelope's machine-readable `code` when the server sent one
+ * (e.g. `branch_not_found`, which the branch store keys on).
  */
 export class ApiError extends Error {
   readonly status: number
+  readonly code: string | null
 
-  constructor(message: string, status: number) {
+  constructor(message: string, status: number, code: string | null = null) {
     super(message)
     this.name = 'ApiError'
     this.status = status
+    this.code = code
   }
+}
+
+/** What the transport knew about the request that failed. */
+export interface ApiErrorRequest {
+  /**
+   * The headers the request was sent with (ambient ones included), or null
+   * when the caller performed its own `fetch` and only handed over the
+   * `Response` — the transport never saw that request.
+   */
+  headers: Readonly<Record<string, string>> | null
+}
+
+export type ApiErrorListener = (error: ApiError, request: ApiErrorRequest) => void
+
+const apiErrorListeners = new Set<ApiErrorListener>()
+
+/**
+ * Observe every {@link ApiError} the transport throws. The listener runs
+ * before the caller sees the rejection; it must not throw. Used for
+ * cross-cutting reactions (the active branch vanishing under the tab) that
+ * no single call site owns.
+ */
+export function registerApiErrorListener(listener: ApiErrorListener): () => void {
+  apiErrorListeners.add(listener)
+  return () => {
+    apiErrorListeners.delete(listener)
+  }
+}
+
+function notifyApiError(error: ApiError, request: ApiErrorRequest): ApiError {
+  for (const listener of apiErrorListeners) listener(error, request)
+  return error
+}
+
+interface ResponseErrorEnvelope {
+  message: string
+  code: string | null
+}
+
+async function responseErrorEnvelope(res: Response, fallback: string): Promise<ResponseErrorEnvelope> {
+  let code: string | null = null
+  try {
+    const body = await parseJsonResponse(res.clone(), ErrorEnvelopeSchema)
+    code = body.code ?? null
+    if (typeof body.error === 'string' && body.error.trim()) return { message: body.error, code }
+  } catch {
+    // Not a JSON error envelope — fall through to text.
+  }
+  return { message: await responseErrorMessage(res, fallback), code }
 }
 
 /** True for an aborted fetch (user cancellation / superseded request). */
@@ -92,7 +146,8 @@ export async function responseErrorMessage(res: Response, fallback: string): Pro
  */
 export async function assertOk(res: Response, fallback: string): Promise<void> {
   if (!res.ok) {
-    throw new ApiError(await responseErrorMessage(res, fallback), res.status)
+    const envelope = await responseErrorEnvelope(res, fallback)
+    throw notifyApiError(new ApiError(envelope.message, res.status, envelope.code), { headers: null })
   }
 }
 
@@ -108,7 +163,8 @@ export async function readEnvelope<T extends TSchema>(
   fallback: string,
 ): Promise<Static<T>> {
   if (!res.ok) {
-    throw new ApiError(await responseErrorMessage(res, fallback), res.status)
+    const envelope = await responseErrorEnvelope(res, fallback)
+    throw notifyApiError(new ApiError(envelope.message, res.status, envelope.code), { headers: null })
   }
   return parseJsonResponse(res, schema)
 }
@@ -175,6 +231,19 @@ export async function apiBlobRequest(
   return res.blob()
 }
 
+/**
+ * Fetch a text response (server-rendered HTML for a sandboxed frame, plain
+ * text exports) through the same transport as {@link apiRequest}. Text has
+ * no TypeBox shape; the caller decides what the string is.
+ */
+export async function apiTextRequest(
+  path: string,
+  options: Omit<ApiRequestOptions, 'schema'> = {},
+): Promise<string> {
+  const res = await requestResponse(path, options)
+  return res.text()
+}
+
 async function requestResponse(
   path: string,
   options: Omit<ApiRequestOptions, 'schema'> | ApiRequestOptions,
@@ -193,7 +262,8 @@ async function requestResponse(
   const init: RequestInit = { method, credentials }
   if (signal) init.signal = signal
 
-  const finalHeaders: Record<string, string> = { ...headers }
+  // Ambient headers (the active branch) sit underneath the caller's own.
+  const finalHeaders: Record<string, string> = { ...ambientRequestHeaders(), ...headers }
   if (body !== undefined) {
     if (body instanceof FormData) {
       init.body = body
@@ -207,10 +277,8 @@ async function requestResponse(
   const res = await fetchImpl(buildUrl(path, query), init)
 
   if (!res.ok) {
-    throw new ApiError(
-      await responseErrorMessage(res, fallbackMessage ?? `Request failed: ${res.status}`),
-      res.status,
-    )
+    const envelope = await responseErrorEnvelope(res, fallbackMessage ?? `Request failed: ${res.status}`)
+    throw notifyApiError(new ApiError(envelope.message, res.status, envelope.code), { headers: finalHeaders })
   }
   return res
 }

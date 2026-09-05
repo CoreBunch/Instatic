@@ -82,6 +82,7 @@ import type {
   ToolScope,
 } from '../runtime/types'
 import type { AiStreamRequest } from '../drivers/types'
+import { resolveBranchScope } from '../../branches/scope'
 
 const VALID_SCOPES: ToolScope[] = ['site', 'content', 'data', 'plugin']
 const activeChatConversations = new Set<string>()
@@ -118,6 +119,11 @@ async function handleAiChat(
   const userOrResponse = await requireCapability(req, db, 'ai.chat')
   if (userOrResponse instanceof Response) return userOrResponse
   const user = userOrResponse
+
+  // Server-resolved tools read the branch the workspace is editing — the
+  // same header every CMS route honours.
+  const branch = await resolveBranchScope(req, db)
+  if (branch instanceof Response) return branch
 
   let chatBody: AiChatRequestBody | null
   try {
@@ -366,6 +372,7 @@ async function handleAiChat(
         // later in the same turn sees current state, not stale turn-start state.
         const toolContextBase = {
           db,
+          branch,
           userId: user.id,
           capabilities: user.capabilities,
           scope,

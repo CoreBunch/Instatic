@@ -111,6 +111,13 @@ interface PublishPageOptions {
    */
   cssEmission?: 'inline' | 'external'
   /**
+   * How request-dependent nodes render. `'holes'` (default) emits
+   * `<instatic-hole>` placeholders the Layer C runtime hydrates per request;
+   * `'inline'` renders them in place from the supplied `loopData` — for a
+   * one-off render that already carries its request context (branch previews).
+   */
+  dynamicNodes?: 'holes' | 'inline'
+  /**
    * Pre-built site CSS bundle. Required when `cssEmission === 'external'`.
    * Computed once per published-snapshot via `buildSiteCssBundle(site, registry)`.
    */
@@ -540,7 +547,9 @@ export function publishPage(
   // Layer C: classify every node as static or dynamic before walking the tree.
   // Dynamic node ids are threaded into the RenderConfig so renderNode can
   // emit <instatic-hole> placeholders instead of recursing.
-  const dynamicNodeIds = findDynamicNodeIds(page, site, registry)
+  const dynamicNodeIds = options.dynamicNodes === 'inline'
+    ? new Set<string>()
+    : findDynamicNodeIds(page, site, registry)
 
   // Composed once per page render: the walker reads it through the config,
   // and the <head> builder interpolates {source.field} tokens in the

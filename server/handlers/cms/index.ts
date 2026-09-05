@@ -29,7 +29,9 @@
 import type { DbClient } from '../../db/client'
 import { jsonResponse } from '../../http'
 import { isStateChangingMethod, originAllowed } from '../../auth/security'
+import { resolveBranchScope } from '../../branches/scope'
 import type { CmsHandlerOptions } from './shared'
+import { handleBranchesRoutes } from './branches'
 import { handleSetupRoutes } from './setup'
 import { handleAuthRoutes } from './auth'
 import { handleMeRoutes } from './me'
@@ -76,7 +78,14 @@ export async function handleCmsRequest(
   // Try each route group in order. The first to return a non-null
   // Response handled the request; null means "this group didn't match,
   // try the next one".
-  const response =
+  //
+  // The account groups run BEFORE the branch header is looked at. They have
+  // no branched data, and a tab can carry a header naming a branch that no
+  // longer exists (deleted from elsewhere, or the database reset under it):
+  // that must never stop anyone from finishing setup, checking their
+  // session, or signing in — signing in is how the tab recovers. It also
+  // means a branch's existence is not revealed before authentication.
+  const accountResponse =
     (await handleSetupRoutes(req, db))
     ?? (await handleMeRoutes(req, db, options))
     ?? (await handleAuthRoutes(req, db))
@@ -87,14 +96,25 @@ export async function handleCmsRequest(
     ?? (await handleUsersRoutes(req, db))
     ?? (await handleRolesRoutes(req, db))
     ?? (await handleAuditRoutes(req, db))
-    ?? (await handleSiteRoutes(req, db))
+  if (accountResponse) return accountResponse
+
+  // Branch scope — resolved ONCE per request from the `X-Instatic-Branch`
+  // header and handed to every content-shaped route group. Groups that only
+  // ever address the live site (dashboard, publish, plugins) pin MAIN_SCOPE
+  // themselves; the media groups have no branched data at all.
+  const scope = await resolveBranchScope(req, db)
+  if (scope instanceof Response) return scope
+
+  const response =
+    (await handleBranchesRoutes(req, db, scope, options))
+    ?? (await handleSiteRoutes(req, db, scope))
     // The transactional whole-document save — must run before the pages/
     // components/layouts GET handlers only for tidiness; paths are distinct.
-    ?? (await handleSiteDocumentRoutes(req, db))
-    ?? (await handlePagesRoutes(req, db))
-    ?? (await handleComponentsRoutes(req, db))
-    ?? (await handleLayoutsRoutes(req, db))
-    ?? (await handleRuntimeRoutes(req, db))
+    ?? (await handleSiteDocumentRoutes(req, db, scope))
+    ?? (await handlePagesRoutes(req, db, scope))
+    ?? (await handleComponentsRoutes(req, db, scope))
+    ?? (await handleLayoutsRoutes(req, db, scope))
+    ?? (await handleRuntimeRoutes(req, db, scope))
     // The folder routes match `/admin/api/cms/media/folders/...` so they must
     // run BEFORE the asset routes whose `/admin/api/cms/media/:id` pattern
     // would otherwise eat them (treating "folders" as an asset id). The
@@ -104,21 +124,21 @@ export async function handleCmsRequest(
     ?? (await handleMediaStorageAdminRoutes(req, db, options))
     ?? (await handleMediaRoutes(req, db))
     ?? (await handlePluginsRoutes(req, db, options))
-    ?? (await handleDataRoutes(req, db, options))
+    ?? (await handleDataRoutes(req, db, scope, options))
     // Dashboard stats — read-only aggregate counts used by the admin
     // dashboard widgets. Lives after data routes so future routes
     // under `/data/...` can never accidentally shadow it.
     ?? (await handleDashboardRoutes(req, db, options))
     ?? (await handleFontsRoutes(req, db, options))
-    ?? (await handlePublishRoutes(req, db, options))
+    ?? (await handlePublishRoutes(req, db, scope, options))
     // Export and import are registered after data routes so their exact paths
     // `/export` and `/import` cannot conflict with any `/data/...` sub-routes.
     // Preview must come before import: `/import/preview` is a longer path that
     // would otherwise be consumed by the `/import` handler first.
-    ?? (await handleExportRoute(req, db, options))
-    ?? (await handleImportPreviewRoute(req, db))
-    ?? (await handleImportArchiveRoute(req, db, options))
-    ?? (await handleImportRoute(req, db, options))
+    ?? (await handleExportRoute(req, db, scope, options))
+    ?? (await handleImportPreviewRoute(req, db, scope))
+    ?? (await handleImportArchiveRoute(req, db, scope, options))
+    ?? (await handleImportRoute(req, db, scope, options))
 
   return response ?? jsonResponse({ error: 'Not found' }, { status: 404 })
 }
