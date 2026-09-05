@@ -28,7 +28,10 @@ import styles from './BranchReviewPage.module.css'
 // tall as on a screen although the frame is as tall as the document.
 const PAGE_WIDTH = REVIEW_VIEWPORT.width
 const MIN_HEIGHT = 360
-const MAX_HEIGHT = 2400
+// The frame shows the page whole, however long: a change at the bottom of a
+// long page must be in view like any other. The ceiling only guards against
+// a runaway layout (a document that keeps growing as it is measured).
+const MAX_HEIGHT = 16000
 
 interface HighlightBox {
   key: string
