@@ -221,8 +221,16 @@ plus global preflight.
 Media-library background images are optimized in the same publish pass as
 `<img srcset>`. `mediaPrefetch.ts` collects `/uploads/...` URLs from
 image/media module props, node `inlineStyles.backgroundImage`, and StyleRule
-`backgroundImage` values (including breakpoint/context overrides), then
-batch-fetches their media rows. During CSS emission,
+`backgroundImage` values (including breakpoint/context overrides), plus
+media references carried by the ENTRY data itself: multi-media array members,
+scalar `/uploads/...` values, and the bare asset ids stored in fields that a
+`format: 'media'` binding references (custom media cells store the id — the
+binding, not the value's shape, marks the field as media). The resulting map
+is keyed by stored reference (id or path) AND by each asset's materialized
+`publicPath`, and is handed both to the render walk (prop enrichment) and to
+the template render context (`ctx.media`) so `format: 'media'` bindings can
+translate id → served URL. It then batch-fetches the media rows in one
+id-or-path query. During CSS emission,
 `responsiveBackground.ts` rewrites each matched `url('/uploads/original.png')`
 to two `background-image` declarations: an optimized variant URL fallback and
 an `image-set(...)` ladder built only from `media_assets.variants_json`. The

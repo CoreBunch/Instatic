@@ -1,10 +1,14 @@
 /**
- * The content outlet is, by definition, the hole the current entry's body
+ * The content outlet is, by definition, the hole the current entry's content
  * flows into. That must hold for ANY `base.outlet` on an entry-route template —
  * including one a user drags onto a custom template by hand, which carries no
  * persisted `dynamicBindings` overlay. The publisher applies the entry-body
  * binding implicitly (see `effectiveNodeBindings`), so the body renders without
  * the node needing to remember a binding it never had a UI to set.
+ *
+ * The implicit binding is a DEFAULT, not a lock: a persisted `html` binding on
+ * the outlet node wins, so authors and plugins can point an outlet at any rich
+ * field (e.g. a custom table's richText cell) instead of `body`.
  */
 
 import { describe, expect, it } from 'bun:test'
@@ -49,6 +53,30 @@ describe('entry outlet body binding', () => {
     expect(html).toContain('data-instatic-content-region')
     expect(html).toContain('<h2>Heading</h2>')
     expect(html).toContain('Hello world')
+  })
+
+  it('lets a persisted html binding override the implicit body default', () => {
+    const page = makePage({
+      root: { moduleId: 'base.body', children: ['outlet'] },
+      outlet: {
+        moduleId: 'base.outlet',
+        dynamicBindings: {
+          html: { source: 'currentEntry', field: 'summary', format: 'html' },
+        },
+      },
+    })
+
+    const { html } = publishPage(page, makeSite(), registry, {
+      templateContext: {
+        entryStack: [{
+          id: 'p1',
+          fields: { id: 'p1', body: 'BODY — must not render', summary: '## Summary heading' },
+        }],
+      },
+    })
+
+    expect(html).toContain('<h2>Summary heading</h2>')
+    expect(html).not.toContain('must not render')
   })
 
   it('leaves the outlet empty on a non-entry render (no current entry in scope)', () => {

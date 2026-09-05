@@ -98,6 +98,9 @@ export function useTemplatePreviewContext(page: Page | null): TemplatePreviewCon
       // doesn't have the real request URL, so we derive from the page's
       // permalink — same shape, same fields.
       route: buildRouteFrame(pageFrame.permalink),
+      // No `media` here: this context is also serialized to the runtime-preview
+      // endpoint (hover preview, preview overlay), where a live Map is dead
+      // weight. CanvasRoot attaches the media lookup for client-side rendering.
     },
   }
 }

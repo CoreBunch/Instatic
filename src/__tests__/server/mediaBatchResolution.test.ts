@@ -411,4 +411,65 @@ describe('prefetchMediaAssets (Finding 2)', () => {
       await cleanup()
     }
   })
+
+  it('resolves a bare scalar id when a format:media binding references the field', async () => {
+    const { db, cleanup } = await createTestDb()
+    try {
+      await insertMediaAsset(db, 'aid-4', '/uploads/aid-4.png')
+      await insertMediaAsset(db, 'aid-5', '/uploads/aid-5.png')
+      // A CUSTOM media cell stores the bare asset id. The node's binding is
+      // what marks the field as a media reference — that, not the value's
+      // shape, is what pulls the id into the batch lookup.
+      const page = {
+        id: 'p',
+        nodes: {
+          root: { id: 'root', moduleId: 'base.body', props: {}, children: ['n1'], breakpointOverrides: {}, classIds: [] },
+          n1: {
+            id: 'n1',
+            moduleId: 'test.img',
+            props: { src: '' },
+            children: [],
+            breakpointOverrides: {},
+            classIds: [],
+            dynamicBindings: {
+              src: { source: 'currentEntry', field: 'thumbnail', format: 'media' },
+            },
+          },
+        },
+        rootNodeId: 'root',
+      }
+      const registry = makeImageRegistry('src')
+
+      const map = await prefetchMediaAssets(
+        page as never,
+        { visualComponents: [] } as never,
+        registry,
+        db,
+        {
+          templateContext: {
+            entryStack: [{
+              id: 'row-1',
+              fields: { thumbnail: 'aid-4', otherCell: 'aid-6' },
+            }],
+          },
+          loopData: new Map([
+            ['loop-1', {
+              items: [{ id: 'row-2', fields: { thumbnail: 'aid-5' } }],
+              totalItems: 1,
+              pageNumber: 1,
+              hasMore: false,
+            }],
+          ]) as never,
+        },
+      )
+
+      // Both the template entry's and the loop item's values for the bound
+      // field are resolved; the unbound cell stays out of the lookup.
+      expect(map.get('aid-4')?.publicPath).toBe('/uploads/aid-4.png')
+      expect(map.get('aid-5')?.publicPath).toBe('/uploads/aid-5.png')
+      expect(map.has('aid-6')).toBe(false)
+    } finally {
+      await cleanup()
+    }
+  })
 })
