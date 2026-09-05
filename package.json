@@ -3,8 +3,9 @@
   "private": true,
   "version": "0.0.18",
   "engines": {
-    "bun": ">=1.3.0 <1.4.0"
+    "bun": ">=1.4.0 <1.5.0"
   },
+  "packageManager": "bun@1.4.2",
   "description": "Self-hosted CMS with an integrated visual editor.",
   "author": "David Babinec",
   "license": "MIT",
