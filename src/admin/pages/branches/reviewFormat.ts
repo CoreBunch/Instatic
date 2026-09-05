@@ -85,5 +85,18 @@ export function relativeIso(iso: string): string {
   return formatRelativeTime(ms)
 }
 
+/**
+ * The same stamp as a past-tense phrase — "3m ago", "4d ago".
+ *
+ * Under a minute `formatRelativeTime` says "now", which reads as "now ago"
+ * once a caller appends the word, so that case becomes "just now" instead.
+ * Callers that render a bare stamp want `relativeIso`.
+ */
+export function relativeIsoAgo(iso: string): string {
+  const stamp = relativeIso(iso)
+  if (!stamp) return ''
+  return stamp === 'now' ? 'just now' : `${stamp} ago`
+}
+
 /** Every comment on the request itself uses the empty key. */
 export const REQUEST_ENTITY_KEY = ''
