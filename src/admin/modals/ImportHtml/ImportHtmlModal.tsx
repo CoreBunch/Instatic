@@ -267,10 +267,13 @@ export function ImportHtmlModal() {
       if (rules.length) {
         detailParts.push(`${rules.length} CSS selector${rules.length > 1 ? 's' : ''}`)
       }
-      const { stripped } = result
+      const { stripped, headOnly } = result
       if (stripped.scripts) detailParts.push(`stripped ${stripped.scripts} <script>`)
       if (stripped.inlineHandlers) {
         detailParts.push(`stripped ${stripped.inlineHandlers} inline handler${stripped.inlineHandlers > 1 ? 's' : ''}`)
+      }
+      if (headOnly.length) {
+        detailParts.push(`ignored ${headOnly.map((tag) => `<${tag}>`).join(', ')} from <head>`)
       }
       const toastBody = detailParts.length > 0 ? detailParts.join(', ') : undefined
 

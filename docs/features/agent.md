@@ -96,7 +96,8 @@ src/admin/pages/site/agent/
 ├── pageContext.ts          — editor adapter: reads active page + store scalars, calls `buildSiteAgentSnapshot`
 ├── executor.ts             — browser-side dispatcher: validates + runs write tools; auto-navigates canvas to node's owning document before each write
 ├── cssTools.ts             — site_apply_css parser + exact-selector merge/replace/delete runners
-├── documentTools.ts        — list/read/open document helpers for pages, templates, and visual components
+├── documentTools.ts        — list/read/open document helpers for pages, templates, and visual components, plus active-document node lookup
+├── htmlTools.ts            — site_insert_html / site_replace_node_html runners and the stripped / head-only import notices (split from executor.ts)
 ├── tokenRunners.ts         — site_set_color_tokens / site_set_font_tokens / site_set_type_scale / site_set_spacing_scale runners (split from executor.ts)
 ├── renderEvidence.ts       — captureAgentRenderSnapshot (site_render_snapshot tool)
 ├── storeRef.ts             — setAgentStoreApi / getAgentStoreApi (avoids store ↔ executor cycle)
@@ -580,6 +581,7 @@ Drivers that support explicit prompt-cache controls (Anthropic) apply `cache_con
 - **Design system first.** Establish or reuse tokens before/while building (`site_set_color_tokens`, `site_set_type_scale`, `site_set_spacing_scale`, `site_set_font_tokens`), then reference them in CSS (`var(--<slug>)`, `var(--text-l)`, `var(--space-m)`, `var(--<font-var>)`) instead of raw hex/px/font-family. The dynamic suffix's `Tokens —` line shows what already exists; `(none …)` means no design system yet.
 - Structure as HTML (`site_insert_html` / `site_replace_node_html`); style with CSS in the same payload — a `<style>` block and/or `class=` attributes referencing the design tokens. The importer classifies selectors, so the agent never hand-builds classes at insert time.
 - `<style>` blocks inside imported HTML are parsed: class-bearing selectors become Selectors-panel classes while preserving complex selector text, class-free selectors (`a:hover`) become ambient rules, and supported `@keyframes` publish as raw keyframes CSS. `style=` attributes land on the node's inline styles. These are applied — not stripped.
+- What the importer does drop comes back as `warnings` on the tool result: `<script>` and `on*` handlers (write a code asset instead), and `<link>` / `<meta>` / `<title>` head elements, which the site generates from its settings. A payload made only of those is rejected with an error naming them, so a bare `<link rel="icon">` is never a silent no-op.
 - CSS-only edits use an explicit `site_apply_css` operation: merge for additive patches, remove-properties for stale declarations, replace only with the selector's complete desired CSS, and delete for whole exact rules. Read the document first before destructive operations; grouped and ungrouped selectors are different identities.
 - One `site_insert_html` call per logical section (nav, hero, pricing, footer = 4–6 calls); smaller chunks recover better if one fails.
 - Per-breakpoint variation: `@media` queries — in the `<style>` block of an insert or inside `site_apply_css` — with min/max-width queries that line up with the breakpoint widths in the dynamic suffix. Never invent ids like `"mobile"` or `"desktop"`.
