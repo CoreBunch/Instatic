@@ -57,13 +57,6 @@ so publishing never reloads the admin app mid-test. The Vite dev proxy follows
 the configured CMS `PORT`, keeping the Playwright admin UI pointed at the
 disposable CMS instead of any regular dev server on port 3001.
 
-When Vite itself runs on Bun, its Node-compatible native proxy can stop
-draining multi-megabyte request bodies after socket backpressure fills both
-sides. `largeBodyDevProxyPlugin` intercepts only known-length CMS API bodies of
-at least 1 MiB, buffers them with the same 128 MiB ceiling as `Bun.serve`, and
-forwards them with an explicit `Content-Length`. Small requests, non-CMS
-traffic, and streaming AI responses remain on Vite's native proxy.
-
 For debugging against a server you started yourself, set
 `E2E_REUSE_SERVER=1` and override `E2E_ADMIN_BASE_URL` /
 `E2E_PUBLIC_BASE_URL` as needed. Do not use reuse mode for CI or for
