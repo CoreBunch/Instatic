@@ -1190,4 +1190,17 @@ export const pgMigrations: Migration[] = [
         on plugin_media_sources (asset_id);
     `,
   },
+  {
+// Which plugin created this table via `cms.content.tables.create` (null
+    // for user/import-created tables). The plugin host's `@own-created`
+    // contentAccess marker resolves against this column, so a plugin keeps
+    // access to tables it created at runtime — durable across restarts and
+    // admin-side slug renames. Nullable, no default: purely additive.
+    //
+    // See the note on the SQLite twin for when renumbering this id is safe.
+    id: '027_data_tables_created_by_plugin',
+    sql: `
+      alter table data_tables add column created_by_plugin_id text;
+    `,
+  },
 ]

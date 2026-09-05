@@ -128,9 +128,10 @@ export default definePlugin({
     permissions.cmsContentWrite,
   ],
 
-  // Per-table allowlist for the cms.content.* surface. The install
-  // consent dialog renders this verbatim so the operator sees the exact
-  // set of tables your plugin can touch before approving the install.
+  // Per-table allowlist for the cms.content.* surface — the operator can
+  // review exactly which tables your plugin touches before installing.
+  // Declare concrete slugs, or '@own-created' to cover tables your plugin
+  // creates at runtime via api.cms.content.tables.create(...).
   contentAccess: [
     { table: 'pages', modes: ['read', 'write'] },
   ],
