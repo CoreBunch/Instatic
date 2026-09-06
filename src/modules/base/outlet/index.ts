@@ -39,12 +39,14 @@ export const OutletModule: ModuleDefinition<OutletStoredProps> = {
     /**
      * Binding target only — the publisher fills this with the current entry's
      * richtext body (`{currentEntry.body}`) or a bound VC param. Declared as a
-     * hidden richtext control so the publisher's `escapeProps` sanitises it via
-     * DOMPurify (rather than HTML-escaping it, which would entity-encode the
-     * rendered body). `hidden: true` keeps it out of the Properties panel — it
+     * hidden `richtextBody` control (not the narrower `richtext`) so the
+     * publisher's `escapeProps` sanitises it via the wider POST_BODY_CONFIG —
+     * images, tables, and iframe embeds scoped to a trusted-host allowlist,
+     * all of which a real markdown post body needs and plain `richtext`
+     * fields don't. `hidden: true` keeps it out of the Properties panel — it
      * is never hand-edited.
      */
-    html: { type: 'richtext', label: 'Content', hidden: true },
+    html: { type: 'richtextBody', label: 'Content', hidden: true },
   },
 
   propsSchema: OutletPropsSchema,
