@@ -15,6 +15,8 @@
 
 import { afterEach, describe, expect, it } from 'bun:test'
 import { createTestDb } from '../helpers/createTestDb'
+import { pgMigrations } from '../../../server/db/migrations-pg'
+import { sqliteMigrations } from '../../../server/db/migrations-sqlite'
 import {
   listMediaUsageRefs,
   setMediaUsageRef,
@@ -110,5 +112,77 @@ describe('media usage references', () => {
   it('returns nothing for an empty selection without touching the database', async () => {
     const db = await freshDb()
     expect(await listMediaUsageRefs(db, [])).toEqual([])
+  })
+})
+
+/**
+ * Run one shipped migration's own SQL, by id.
+ *
+ * `createTestDb` has already applied every migration before the test writes a
+ * row, so the backfill ran against an empty `users` table and the tracker now
+ * says it is done. Replaying its SQL directly is what actually exercises it —
+ * and running it twice is the only honest test of the `not exists` guard.
+ */
+async function replayMigration(db: Awaited<ReturnType<typeof freshDb>>, id: string) {
+  const list = db.dialect === 'postgres' ? pgMigrations : sqliteMigrations
+  const migration = list.find((m) => m.id === id)
+  if (!migration) throw new Error(`No migration ${id} — was it renamed?`)
+  await db.unsafe(migration.sql)
+}
+
+const BACKFILL = '028_backfill_avatar_usage_refs'
+
+describe('the avatar backfill', () => {
+  it('protects an avatar that was set before anything recorded usage', async () => {
+    // Every install that already has an avatar is in exactly this state.
+    // Without the backfill, the first build that warns before a delete would
+    // still say nothing about the picture already set — the one case the
+    // whole feature exists for.
+    const db = await freshDb()
+    await insertAsset(db, 'a1')
+    await db`update users set avatar_media_id = 'a1' where id = 'u1'`
+
+    await replayMigration(db, BACKFILL)
+
+    const refs = await listMediaUsageRefs(db, ['a1'])
+    expect(refs).toHaveLength(1)
+    expect(refs[0]!.refKind).toBe('user.avatar')
+    expect(refs[0]!.label).toBe('Ada Lovelace')
+  })
+
+  it('adds nothing on top of a reference that is already there', async () => {
+    const db = await freshDb()
+    await insertAsset(db, 'a1')
+    await db`update users set avatar_media_id = 'a1' where id = 'u1'`
+    await setMediaUsageRef(db, { assetId: 'a1', refKind: 'user.avatar', refId: 'u1' })
+
+    await replayMigration(db, BACKFILL)
+    await replayMigration(db, BACKFILL)
+
+    expect(await listMediaUsageRefs(db, ['a1'])).toHaveLength(1)
+  })
+
+  it('leaves a user with no avatar alone', async () => {
+    const db = await freshDb()
+    await insertAsset(db, 'a1')
+    await replayMigration(db, BACKFILL)
+    expect(await listMediaUsageRefs(db, ['a1'])).toEqual([])
+  })
+
+  it('writes the row a later avatar change will MOVE, not a second one', async () => {
+    // The backfilled row has to be indistinguishable from one the app wrote,
+    // or changing the avatar afterwards would leave the old picture warning
+    // forever. `setMediaUsageRef` deletes on (ref_kind, ref_id, ref_path) —
+    // so the backfill must write the same key.
+    const db = await freshDb()
+    await insertAsset(db, 'old')
+    await insertAsset(db, 'new')
+    await db`update users set avatar_media_id = 'old' where id = 'u1'`
+    await replayMigration(db, BACKFILL)
+
+    await setMediaUsageRef(db, { assetId: 'new', refKind: 'user.avatar', refId: 'u1' })
+
+    expect(await listMediaUsageRefs(db, ['old'])).toEqual([])
+    expect(await listMediaUsageRefs(db, ['new'])).toHaveLength(1)
   })
 })

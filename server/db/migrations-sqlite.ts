@@ -1266,4 +1266,34 @@ export const sqliteMigrations: Migration[] = [
         on plugin_media_sources (asset_id);
     `,
   },
+  {
+    // Existing avatars predate anything writing `media_usage_refs`, so the
+    // first build that warns before a delete would still have said nothing
+    // about the avatar already set — the one case the feature exists for.
+    //
+    // Idempotent by construction: `not exists` on the same key
+    // `setMediaUsageRef` writes, so re-running inserts nothing and the row a
+    // later avatar change moves is the row this created.
+    //
+    // `028`, skipping `027`, on purpose: #335 is in review and already claims
+    // `027_data_tables_created_by_plugin`. Ids are only ever sorted, so a gap
+    // costs nothing — and whichever of the two lands first, neither has to be
+    // renumbered. A migration an installation has already recorded can never
+    // be renamed: the runner keys on the full id, so a new one re-runs SQL
+    // that is not idempotent and fails the boot.
+    id: '028_backfill_avatar_usage_refs',
+    sql: `
+      insert into media_usage_refs (asset_id, ref_kind, ref_id, ref_path)
+      select u.avatar_media_id, 'user.avatar', u.id, ''
+        from users u
+       where u.avatar_media_id is not null
+         and not exists (
+           select 1 from media_usage_refs r
+            where r.asset_id = u.avatar_media_id
+              and r.ref_kind = 'user.avatar'
+              and r.ref_id = u.id
+              and r.ref_path = ''
+         );
+    `,
+  },
 ]
