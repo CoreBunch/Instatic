@@ -31,10 +31,11 @@ describe('CspPlan — serialization is deterministic and sorted', () => {
   it('sorts directives by name and sources within each directive', () => {
     const plan = createBaseCspPlan({ anyScriptTag: false })
     const csp = serializeCsp(plan)
-    // Directives alphabetical: default-src < frame-src < img-src < media-src
-    //   < script-src < style-src < worker-src
+    // Directives alphabetical: default-src < font-src < frame-src < img-src
+    //   < media-src < script-src < style-src < worker-src
     expect(csp).toBe(
-      "default-src 'self'; frame-src 'none'; img-src 'self' data: https:; " +
+      "default-src 'self'; font-src 'self' data: https:; frame-src 'none'; " +
+        "img-src 'self' data: https:; " +
         "media-src 'self' data: https:; " +
         "script-src 'none'; style-src 'self' 'unsafe-inline'; worker-src 'none';",
     )
@@ -50,6 +51,19 @@ describe('CspPlan — serialization is deterministic and sorted', () => {
     const img = /img-src ([^;]+);/.exec(csp)?.[1]
     const media = /media-src ([^;]+);/.exec(csp)?.[1]
     expect(media).toBe(img)
+  })
+
+  it('lets a base64 @font-face load, exactly like a data: image', () => {
+    // Icon fonts routinely inline their faces as base64. Without an explicit
+    // `font-src` the browser fell back to `default-src 'self'` and refused
+    // every one — and the only symptom was a console line, because the
+    // stylesheet is intact and the text just renders in the fallback family.
+    // An imported site ships these without the author ever writing one.
+    const csp = serializeCsp(createBaseCspPlan({ anyScriptTag: true }))
+    expect(csp).toContain("font-src 'self' data: https:;")
+    const img = /img-src ([^;]+);/.exec(csp)?.[1]
+    const font = /font-src ([^;]+);/.exec(csp)?.[1]
+    expect(font).toBe(img)
   })
 
   it('produces a byte-identical policy regardless of source insertion order', () => {
