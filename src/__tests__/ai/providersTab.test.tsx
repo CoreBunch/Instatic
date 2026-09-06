@@ -33,7 +33,7 @@ describe('ProvidersTab', () => {
 
     expect(screen.queryByRole('combobox', { name: 'Provider' })).toBeNull()
     expect(screen.queryByLabelText('Authentication')).toBeNull()
-    expect(screen.getByLabelText('API key')).toBeDefined()
+    expect(screen.getByLabelText(/API key/)).toBeDefined()
     expect(screen.queryByRole('button', { name: 'Add' })).toBeNull()
     expect(screen.queryByRole('heading', { name: 'Credentials' })).toBeNull()
     expect(screen.queryByText('Secrets are encrypted at rest and never returned to the browser.')).toBeNull()
@@ -52,6 +52,26 @@ describe('ProvidersTab', () => {
     expect(screen.getByLabelText('Base URL')).toBeDefined()
     expect(screen.getByLabelText(/Bearer token/)).toBeDefined()
     expect(screen.queryByLabelText('API key')).toBeNull()
+  })
+
+  it('shows MiniMax with the documented regional protocol endpoints and a required API key', async () => {
+    mockEmptyCredentials()
+
+    render(<ProvidersTab onNavigateToDefaults={() => {}} />)
+    await waitFor(() => expect(screen.getByRole('heading', { name: 'Connect Anthropic' })).toBeDefined())
+
+    fireEvent.click(screen.getByRole('button', { name: 'MiniMax M3 / M2.7' }))
+
+    expect(screen.getByRole('heading', { name: 'Connect MiniMax' })).toBeDefined()
+    const endpoint = screen.getByRole('combobox', { name: 'Base URL' }) as HTMLInputElement
+    expect(endpoint.value).toBe('Global - OpenAI-compatible')
+    fireEvent.click(endpoint)
+    fireEvent.click(screen.getByRole('option', { name: 'China - Anthropic-compatible' }))
+    expect(endpoint.value).toBe('China - Anthropic-compatible')
+    const nativeEndpoint = document.querySelector('select[aria-hidden="true"]') as HTMLSelectElement
+    expect(nativeEndpoint.value).toBe('https://api.minimaxi.com/anthropic')
+    expect((screen.getByLabelText('API key') as HTMLInputElement).required).toBe(true)
+    expect(screen.queryByLabelText('Authentication')).toBeNull()
   })
 
   it('opens configured credentials in the detail inspector', async () => {
