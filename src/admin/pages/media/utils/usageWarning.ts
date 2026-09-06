@@ -62,3 +62,38 @@ export function buildUsageWarning(
 
   return { heading, lines: named }
 }
+
+/**
+ * Ask what depends on these assets, then phrase it.
+ *
+ * NEVER REJECTS. This is the single door all three confirmations go through,
+ * so the guarantee belongs here rather than in each `lookupUsage` — the
+ * warning is advisory, and a failed request has to degrade to the plain
+ * confirmation. If this could reject, the `void (async () => …)()` that opens
+ * each dialog would drop the rejection on the floor and the dialog would
+ * never appear: a delete button that silently does nothing, which is worse
+ * than one that deletes without the extra warning.
+ *
+ * Deliberately NOT a hook holding state: every caller awaits this immediately
+ * before opening its confirmation, and a `setState` would not be visible in
+ * the closure that opens the dialog — the warning would always be one delete
+ * behind. Callers that need it across renders (a dialog kept open) store the
+ * returned value themselves.
+ *
+ * `selectionSize` is what the operator is being asked about, which is not
+ * always `assetIds.length`: the bulk window purges only the trashed members of
+ * a mixed selection, so "1 of 3" has to count the three it will delete.
+ */
+export async function resolveUsageWarning(
+  lookupUsage: (assetIds: string[]) => Promise<CmsMediaUsageRef[]>,
+  assetIds: string[],
+  selectionSize: number = assetIds.length,
+): Promise<UsageWarning | null> {
+  if (assetIds.length === 0) return null
+  try {
+    return buildUsageWarning(selectionSize, await lookupUsage(assetIds))
+  } catch (err) {
+    console.error('[usageWarning] usage lookup failed:', err)
+    return null
+  }
+}

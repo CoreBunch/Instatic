@@ -38,7 +38,14 @@ import { TrashSolidIcon } from 'pixel-art-icons/icons/trash-solid'
 import { VideoSolidIcon } from 'pixel-art-icons/icons/video-solid'
 import { PanelHeader } from '@admin/shared/PanelHeader'
 import { useDraggablePanel } from '@admin/shared/FloatingWindow'
-import type { CmsMediaAsset, CmsMediaFolder, UpdateCmsMediaAssetInput } from '@core/persistence/cmsMedia'
+import type {
+  CmsMediaAsset,
+  CmsMediaFolder,
+  CmsMediaUsageRef,
+  UpdateCmsMediaAssetInput,
+} from '@core/persistence/cmsMedia'
+import { resolveUsageWarning, type UsageWarning } from '../../utils/usageWarning'
+import { UsageWarningNotice } from '../UsageWarningNotice'
 import { bucketForMime } from '../../utils/filters'
 import { useDebouncedSave } from '../../hooks/useDebouncedSave'
 import { TagEditor } from '../TagEditor/TagEditor'
@@ -64,6 +71,7 @@ export interface MediaAssetEditor {
   replaceAssetFile: (id: string, file: File) => Promise<CmsMediaAsset | null>
   restoreAsset: (id: string) => Promise<unknown>
   purgeAsset: (id: string) => Promise<void>
+  lookupUsage: (assetIds: string[]) => Promise<CmsMediaUsageRef[]>
 }
 
 interface MediaViewerWindowProps {
@@ -103,6 +111,7 @@ function ViewerForAsset({ editor, onClose }: ViewerForAssetProps) {
   const { asset } = editor
   const [replaceOpen, setReplaceOpen] = useState(false)
   const [purgeConfirmOpen, setPurgeConfirmOpen] = useState(false)
+  const [purgeWarning, setPurgeWarning] = useState<UsageWarning | null>(null)
   const bucket = bucketForMime(asset.mimeType)
   const canWrite = canWriteMedia(currentUser)
   const canReplace = canReplaceMedia(currentUser)
@@ -330,7 +339,17 @@ function ViewerForAsset({ editor, onClose }: ViewerForAssetProps) {
                   <Button
                     variant="destructive"
                     size="sm"
-                    onClick={() => setPurgeConfirmOpen(true)}
+                    onClick={() => {
+                      // Look the usage up before the dialog appears, so the
+                      // warning is part of what the operator reads rather
+                      // than something that shows up after they decide.
+                      void (async () => {
+                        setPurgeWarning(
+                          await resolveUsageWarning(editor.lookupUsage, [asset.id]),
+                        )
+                        setPurgeConfirmOpen(true)
+                      })()
+                    }}
                   >
                     <TrashSolidIcon size={13} />
                     <span>Delete permanently</span>
@@ -383,6 +402,7 @@ function ViewerForAsset({ editor, onClose }: ViewerForAssetProps) {
           This removes the file and every generated size from disk. Any page
           still referencing it will render a broken image.
         </p>
+        <UsageWarningNotice warning={purgeWarning} />
       </Dialog>
     </aside>,
     document.body,

@@ -54,6 +54,8 @@ import {
   writeMediaFolderDragData,
 } from '../../utils/mediaDragDrop'
 import { useMediaDnd } from '../../hooks/useMediaDnd'
+import { UsageWarningNotice } from '../UsageWarningNotice'
+import { resolveUsageWarning } from '../../utils/usageWarning'
 import styles from './MediaCanvas.module.css'
 import {
   AssetRow,
@@ -541,14 +543,21 @@ export function MediaCanvas({ workspace, selectionMode = 'standard' }: MediaCanv
             // just the row. `alwaysConfirm` because the `confirmBeforeDelete`
             // preference defaults off, and an operator who turned it off was
             // opting out of confirming a TRASH, which is reversible.
-            confirmDelete({
-              title: `Delete "${target.filename}" permanently?`,
-              description:
-                'This removes the file and every generated size from disk. It cannot be undone.',
-              confirmLabel: 'Delete permanently',
-              alwaysConfirm: true,
-              commit: () => void workspace.purgeAsset(target.id),
-            })
+            //
+            // The usage lookup is awaited BEFORE the dialog opens so the
+            // warning is on screen when the operator reads it, not after.
+            void (async () => {
+              const warning = await resolveUsageWarning(workspace.lookupUsage, [target.id])
+              confirmDelete({
+                title: `Delete "${target.filename}" permanently?`,
+                description:
+                  'This removes the file and every generated size from disk. It cannot be undone.',
+                details: <UsageWarningNotice warning={warning} />,
+                confirmLabel: 'Delete permanently',
+                alwaysConfirm: true,
+                commit: () => void workspace.purgeAsset(target.id),
+              })
+            })()
           }}
           showRename={canWrite}
           showDelete={canDelete}

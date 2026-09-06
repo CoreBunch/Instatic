@@ -64,6 +64,7 @@ function renderViewer() {
     purgeAsset: async (id: string) => {
       purged.push(id)
     },
+    lookupUsage: async () => [],
   }
   // `media.delete` is what renders the purge button at all.
   const session = {
@@ -82,37 +83,44 @@ function renderViewer() {
   return { purged }
 }
 
-/** The button in the sidebar, not the one inside the dialog footer. */
-function clickPurgeButton() {
+/**
+ * The button in the sidebar, not the one inside the dialog footer.
+ *
+ * Awaited because the click looks up what still depends on the asset before
+ * opening the dialog — the warning has to be part of what the operator reads,
+ * not something that appears after they have decided.
+ */
+async function clickPurgeButton() {
   const buttons = screen.getAllByRole('button', { name: /delete permanently/i })
   fireEvent.click(buttons[0]!)
+  await screen.findByRole('alertdialog')
 }
 
 describe('permanent media deletion asks first', () => {
-  it('does not purge on the first click', () => {
+  it('does not purge on the first click', async () => {
     const { purged } = renderViewer()
-    clickPurgeButton()
+    await clickPurgeButton()
     expect(purged).toEqual([])
   })
 
-  it('names the asset so the operator can see what they are about to lose', () => {
+  it('names the asset so the operator can see what they are about to lose', async () => {
     renderViewer()
-    clickPurgeButton()
+    await clickPurgeButton()
     // The filename also appears in the window chrome, so match the dialog's
     // own heading rather than any occurrence of it.
     expect(screen.getByText('Delete "logo.png" permanently?')).toBeTruthy()
   })
 
-  it('cancelling leaves the asset alone', () => {
+  it('cancelling leaves the asset alone', async () => {
     const { purged } = renderViewer()
-    clickPurgeButton()
+    await clickPurgeButton()
     fireEvent.click(screen.getByRole('button', { name: /cancel/i }))
     expect(purged).toEqual([])
   })
 
-  it('confirming is what commits the purge', () => {
+  it('confirming is what commits the purge', async () => {
     const { purged } = renderViewer()
-    clickPurgeButton()
+    await clickPurgeButton()
     // The footer button — the last match, since the sidebar button is still
     // mounted behind the dialog.
     const buttons = screen.getAllByRole('button', { name: /delete permanently/i })

@@ -424,19 +424,10 @@ export function useMediaWorkspace(): UseMediaWorkspaceResult {
       return null
     })
 
-  /**
-   * Never throws. A usage lookup is advisory — it decorates a confirmation
-   * that must still appear if the request fails, so a network blip degrades
-   * to the plain warning rather than blocking the delete.
-   */
-  const lookupUsage = async (assetIds: string[]): Promise<CmsMediaUsageRef[]> => {
-    try {
-      return await listCmsMediaUsage(assetIds)
-    } catch (err) {
-      console.error('[useMediaWorkspace] usage lookup failed:', err)
-      return []
-    }
-  }
+  // Failure is absorbed by `resolveUsageWarning`, the one door every
+  // confirmation goes through — see the note there.
+  const lookupUsage = (assetIds: string[]): Promise<CmsMediaUsageRef[]> =>
+    listCmsMediaUsage(assetIds)
 
   const purgeAsset = async (assetId: string): Promise<void> => {
     await assetMut('Could not delete asset permanently', async () => {
