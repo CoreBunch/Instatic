@@ -11,7 +11,7 @@
  * only owns the two-button confirmation contract.
  */
 
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, type ReactNode } from 'react'
 import { Button } from '@ui/components/Button'
 import { Dialog } from '@ui/components/Dialog'
 
@@ -24,6 +24,8 @@ interface ConfirmDeleteDialogProps {
   confirmLabel?: string
   /** Cancel button label — defaults to "Cancel". */
   cancelLabel?: string
+  /** Caller-owned content rendered below the description. */
+  details?: ReactNode
   onCancel: () => void
   onConfirm: () => void
 }
@@ -33,6 +35,7 @@ export function ConfirmDeleteDialog({
   description,
   confirmLabel = 'Delete',
   cancelLabel = 'Cancel',
+  details,
   onCancel,
   onConfirm,
 }: ConfirmDeleteDialogProps) {
@@ -79,6 +82,7 @@ export function ConfirmDeleteDialog({
       }
     >
       {description && <p>{description}</p>}
+      {details}
     </Dialog>
   )
 }

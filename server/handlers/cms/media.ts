@@ -14,6 +14,10 @@
  *                                                  permitted on already-trashed
  *                                                  assets) and removes the file
  *                                                  (`media.delete`)
+ *   POST   /admin/api/cms/media/usage         — which of these assets are still
+ *                                              depended on, and by what:
+ *                                              recorded settings refs plus
+ *                                              page content, computed live
  *   POST   /admin/api/cms/media/:id/restore    — restore a soft-deleted asset
  *                                                  (`media.write`)
  *   POST   /admin/api/cms/media/:id/replace    — overwrite the bytes for an asset
@@ -38,11 +42,13 @@
  */
 import type { DbClient } from '../../db/client'
 import { requireCapability } from '../../auth/authz'
+import { collectContentUsageRefs } from '../../media/contentUsage'
 import {
   assignAssetToFolders,
   deleteMediaAsset,
   getMediaAsset,
   listMediaAssets,
+  listMediaUsageRefs,
   restoreMediaAsset,
   softDeleteMediaAsset,
   updateMediaAssetMetadata,
@@ -293,7 +299,41 @@ async function handleDeleteMedia(
 
 const ID_PATTERN = '(?<id>[^/]+)'
 
+/**
+ * Which of the given assets something still depends on.
+ *
+ * A POST because the id list is a selection and can be long — a query string
+ * of a hundred ids is the wrong shape for a read this cheap.
+ *
+ * The UI calls this before a destructive action so it can name what is about
+ * to break instead of warning in the abstract. Requires `media.read`: the
+ * response reveals nothing beyond what the library already lists.
+ */
+async function handleMediaUsage(req: Request, db: DbClient): Promise<Response> {
+  const user = await requireCapability(req, db, 'media.read')
+  if (user instanceof Response) return user
+
+  const body = await readValidatedBody(req, MediaUsageQuerySchema)
+  if (!body) return badRequest('Invalid request body')
+
+  // Two sources, one answer. Settings (an avatar, later a favicon) are
+  // recorded in `media_usage_refs` because they have one writer and an
+  // explicit set/unset. Page content is COMPUTED, because it has neither —
+  // see `server/media/contentUsage.ts` for why a table would go wrong there.
+  // Both run in parallel; the caller cannot tell which side a ref came from.
+  const [stored, content] = await Promise.all([
+    listMediaUsageRefs(db, body.assetIds),
+    collectContentUsageRefs(db, body.assetIds),
+  ])
+  return jsonResponse({ usage: [...stored, ...content] })
+}
+
+const MediaUsageQuerySchema = Type.Object({
+  assetIds: Type.Array(Type.String(), { maxItems: 500 }),
+}, { additionalProperties: false })
+
 const MEDIA_ROUTES: readonly Route<[]>[] = [
+  { method: 'POST', pattern: `${MEDIA_PREFIX}/usage`, handler: handleMediaUsage },
   { method: 'GET', pattern: MEDIA_PREFIX, handler: handleListMedia },
   { method: 'POST', pattern: MEDIA_PREFIX, handler: handleUploadMedia },
   {
