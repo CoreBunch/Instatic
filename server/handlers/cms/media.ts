@@ -15,7 +15,9 @@
  *                                                  assets) and removes the file
  *                                                  (`media.delete`)
  *   POST   /admin/api/cms/media/usage         — which of these assets are still
- *                                              depended on, and by what
+ *                                              depended on, and by what:
+ *                                              recorded settings refs plus
+ *                                              page content, computed live
  *   POST   /admin/api/cms/media/:id/restore    — restore a soft-deleted asset
  *                                                  (`media.write`)
  *   POST   /admin/api/cms/media/:id/replace    — overwrite the bytes for an asset
@@ -40,6 +42,7 @@
  */
 import type { DbClient } from '../../db/client'
 import { requireCapability } from '../../auth/authz'
+import { collectContentUsageRefs } from '../../media/contentUsage'
 import {
   assignAssetToFolders,
   deleteMediaAsset,
@@ -313,7 +316,16 @@ async function handleMediaUsage(req: Request, db: DbClient): Promise<Response> {
   const body = await readValidatedBody(req, MediaUsageQuerySchema)
   if (!body) return badRequest('Invalid request body')
 
-  return jsonResponse({ usage: await listMediaUsageRefs(db, body.assetIds) })
+  // Two sources, one answer. Settings (an avatar, later a favicon) are
+  // recorded in `media_usage_refs` because they have one writer and an
+  // explicit set/unset. Page content is COMPUTED, because it has neither —
+  // see `server/media/contentUsage.ts` for why a table would go wrong there.
+  // Both run in parallel; the caller cannot tell which side a ref came from.
+  const [stored, content] = await Promise.all([
+    listMediaUsageRefs(db, body.assetIds),
+    collectContentUsageRefs(db, body.assetIds),
+  ])
+  return jsonResponse({ usage: [...stored, ...content] })
 }
 
 const MediaUsageQuerySchema = Type.Object({

@@ -32,7 +32,14 @@ function describe(ref: CmsMediaUsageRef): string {
   switch (ref.refKind) {
     case 'user.avatar':
       return `profile picture — ${ref.label}`
+    case 'page.content':
+      return `on the page — ${ref.label}`
+    case 'site.styles':
+      return 'a site-wide background style'
     default:
+      // A kind this build does not know about — a newer server, or a source
+      // added since. The label is already display-ready, so showing it plain
+      // beats inventing a phrasing for something we cannot describe.
       return ref.label
   }
 }
@@ -47,14 +54,21 @@ export function buildUsageWarning(
 ): UsageWarning | null {
   if (refs.length === 0) return null
 
-  // One row per asset: an asset used twice is still one file to lose.
-  const byAsset = new Map<string, CmsMediaUsageRef>()
-  for (const ref of refs) if (!byAsset.has(ref.assetId)) byAsset.set(ref.assetId, ref)
-  const used = [...byAsset.values()]
+  // The COUNT is per asset: a file used on three pages is still one file to
+  // lose, and "3 of 11" would overstate what the operator is about to break.
+  const byAsset = new Map<string, CmsMediaUsageRef[]>()
+  for (const ref of refs) {
+    const list = byAsset.get(ref.assetId)
+    if (list) list.push(ref)
+    else byAsset.set(ref.assetId, [ref])
+  }
+  const usedCount = byAsset.size
+  // The LINES are per place, because each one is somewhere to go and fix.
+  const used = [...byAsset.values()].flat()
 
-  const heading = selectionSize > used.length
-    ? `${used.length} of ${selectionSize} ${used.length === 1 ? 'is' : 'are'} still in use:`
-    : `${used.length === 1 ? 'This file is' : 'These files are'} still in use:`
+  const heading = selectionSize > usedCount
+    ? `${usedCount} of ${selectionSize} ${usedCount === 1 ? 'is' : 'are'} still in use:`
+    : `${usedCount === 1 ? 'This file is' : 'These files are'} still in use:`
 
   const named = used.slice(0, MAX_NAMED).map(describe)
   const rest = used.length - named.length
