@@ -684,6 +684,7 @@ describe('generateClassCSS', () => {
 function makeSite(
   styleRules: SiteDocument['styleRules'],
   nodeClassIds: Record<string, string[]> = {},
+  files: SiteDocument['files'] = [],
 ): SiteDocument {
   const node: PageNode = {
     id: 'root',
@@ -722,12 +723,60 @@ function makeSite(
       shortcuts: {},
     },
     styleRules,
+    files,
     createdAt: 0,
     updatedAt: 0,
   }
 }
 
+function makeScript(path: string, content: string): SiteDocument['files'][number] {
+  return { id: path, path, type: 'script', content } as SiteDocument['files'][number]
+}
+
 describe('collectClassCSS', () => {
+  it('keeps a class no node carries when a runtime script names it', () => {
+    // The reason tree-shaking cannot work from node class ids alone: a modifier
+    // toggled by script is never authored onto a node, so publish saw it as
+    // dead and dropped it. The rule read back correctly everywhere up to
+    // publish, so the failure only showed on the live site.
+    const site = makeSite(
+      {
+        nav: makeClass('nav', { display: 'none' }),
+        'nav-open': makeClass('nav-open', { display: 'flex' }, {}, 'nav--open'),
+      },
+      { root: ['nav'] },
+      [makeScript('scripts/nav.js', "button.addEventListener('click', () => menu.classList.toggle('nav--open'))")],
+    )
+    const css = collectClassCSS(site)
+    expect(css).toContain('.nav {')
+    expect(css).toContain('.nav--open {')
+    expect(css).toContain('display: flex')
+  })
+
+  it('still drops a class that neither a node nor a script references', () => {
+    const site = makeSite(
+      {
+        nav: makeClass('nav', { display: 'none' }),
+        'nav-open': makeClass('nav-open', { display: 'flex' }, {}, 'nav--open'),
+        orphan: makeClass('orphan', { color: 'red' }),
+      },
+      { root: ['nav'] },
+      [makeScript('scripts/nav.js', "menu.classList.toggle('nav--open')")],
+    )
+    const css = collectClassCSS(site)
+    expect(css).toContain('.nav--open {')
+    expect(css).not.toContain('.orphan')
+  })
+
+  it('only counts script files, not other site file types', () => {
+    const site = makeSite(
+      { orphan: makeClass('orphan', { color: 'red' }) },
+      {},
+      [{ id: 'notes', path: 'docs/notes.md', type: 'doc', content: 'the orphan class is for later' } as SiteDocument['files'][number]],
+    )
+    expect(collectClassCSS(site)).not.toContain('.orphan')
+  })
+
   it('emits user-authored CSS but skips framework-generated CSS', () => {
     const userClass = makeClass('user-class', { color: 'green' })
     const frameworkClass: StyleRule = {
