@@ -89,7 +89,8 @@ const routes: readonly RouteHandler[] = [
   tryServePublicForm,              // /_instatic/form/*       → forms/handler.ts
   tryServeRuntimeAsset,            // /_instatic/assets/*     → published runtime assets
   tryServeRuntimePackageNamespace, // /_instatic/runtime/cache/<hash>/<...> → bun install workspace
-  tryServeSiteCssNamespace,        // /_instatic/css/*        → hashed CSS bundles
+  tryServeSiteCssNamespace,        // /_instatic/css/*        → publish/siteCssServer.ts
+                                   //   (hashed CSS bundles, disk-first)
   tryServeMediaRedirect,           // /_instatic/media/<adapterId>/<path> → 302 to signed read URL
   tryServeStaticAsset,             // /assets/* → dist/ (admin app)
   tryServeUpload,                  // /uploads/* → uploadsDir (with nosniff hardening)
