@@ -95,6 +95,10 @@ const routes: readonly RouteHandler[] = [
   tryServeStaticAsset,             // /assets/* → dist/ (admin app)
   tryServeUpload,                  // /uploads/* → uploadsDir (with nosniff hardening)
   tryServeAdminApp,                // /admin/* → dist/index.html (SPA fallback)
+  tryServeRobotsTxt,               // /robots.txt → server/siteRoot.ts (host document
+                                   //   plus the site.robots filter chain)
+  tryServeRootFile,                // /<name>.txt → plugin-claimed root text file
+                                   //   (site.rootFiles filter); null when unclaimed
   tryServePublicRoute,             // /<slug> OR /<route-base>/<row-slug>
                                    //   → server/publish/publicRouter.ts
                                    //   resolves to page snapshot OR data row + template,
@@ -110,6 +114,7 @@ Order matters. Two examples:
 
 - `tryServeAi` is matched **before** `tryServeCmsApi` so the AI endpoints (`/admin/api/ai/*`) aren't swallowed by the broader CMS dispatcher (`/admin/api/cms/*`).
 - `tryServeUpload` is matched **before** `tryServeAdminApp` because `/uploads/...` is a sub-tree the SPA fallback would otherwise consume.
+- `tryServeRobotsTxt` / `tryServeRootFile` are matched **after** every host-owned namespace and **before** `tryServePublicRoute`, so a plugin-claimed root file can shadow neither an admin path nor a built asset. It cannot shadow content either: page slugs may not contain `.` and a data-row route needs two segments, so no published URL is ever a root `.txt` path. An unclaimed `.txt` path returns null and keeps falling through.
 
 Adding a new endpoint is a one-line edit to `routes` plus a focused `tryServeX` function.
 
@@ -580,6 +585,8 @@ Three static handlers, in order:
 | `tryServeStaticAsset`  | `/assets/*` from `dist/` (Vite-built admin SPA assets)                |
 | `tryServeUpload`       | `/uploads/*` from `uploadsDir` with `hardenUploadResponse` (nosniff, attachment for non-inert MIMEs, CORS for plugin bundles) |
 | `tryServeAdminApp`     | `/admin/*` — serves the admin shell from `dist/index.html` with path-specific injections (see below) |
+
+The site-root text files (`/robots.txt` and plugin-claimed `/<name>.txt`) are served by `server/siteRoot.ts`, not from disk — see [docs/features/plugin-system.md](features/plugin-system.md) → "Site-root text files".
 
 `server/static.ts` owns all three. Key behaviors:
 

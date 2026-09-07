@@ -83,6 +83,17 @@ describe('hookBus', () => {
     expect(hookBus.hasListenersFor('evt')).toBe(true) // y still registered
     expect(hookBus.hasFiltersFor('pipe')).toBe(false)
   })
+
+  it('pluginsFor lists the plugin ids on a filter, in registration order', () => {
+    hookBus.filter('zeta.x', 'pipe', (v) => v)
+    hookBus.filter('acme.x', 'pipe', (v) => v)
+
+    expect(hookBus.pluginsFor('pipe')).toEqual(['zeta.x', 'acme.x'])
+    expect(hookBus.pluginsFor('unregistered')).toEqual([])
+
+    hookBus.unregisterPlugin('zeta.x')
+    expect(hookBus.pluginsFor('pipe')).toEqual(['acme.x'])
+  })
 })
 
 describe('canonicalPluginEventName', () => {

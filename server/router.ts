@@ -15,6 +15,7 @@ import { isRuntimePackagePath, tryServeRuntimePackage } from './publish/runtime/
 import { jsonResponse } from './http'
 import { binaryResponse } from './binary'
 import { hardenUploadResponse, serveAdminApp, serveStaticFile } from './static'
+import { serveRobotsTxt, serveRootFile } from './siteRoot'
 import { serveSiteCss } from './publish/siteCssServer'
 import { mediaStorageRegistry } from '@core/plugins/mediaStorageRegistry'
 
@@ -86,6 +87,12 @@ const routes: readonly RouteHandler[] = [
   tryServeStaticAsset,
   tryServeUpload,
   tryServeAdminApp,
+  // Site-root text files — `/robots.txt` and plugin-claimed `/<name>.txt`.
+  // Matched after every host-owned namespace above and before slug
+  // resolution; page slugs can't contain `.` and data-row routes need two
+  // segments, so neither can collide with published content (issue #425).
+  tryServeRobotsTxt,
+  tryServeRootFile,
   tryServePublicRoute,
   trySetupRedirect,
   tryServeNotFoundPage,
@@ -482,6 +489,26 @@ async function tryServeAdminApp(
   // Admin SPA isn't served from this port (dev mode, or production missing a
   // build). Tell the developer where to actually find it.
   return adminUiNotBuiltResponse(pathname)
+}
+
+/**
+ * Host-managed `/robots.txt`. The document is assembled from the host
+ * default plus whatever plugins contribute through the `site.robots`
+ * filter; `server/siteRoot.ts` owns the serialization.
+ */
+function tryServeRobotsTxt(req: Request, _runtime: ServerRuntime, _url: URL, pathname: string): Promise<Response | null> | null {
+  if (req.method !== 'GET') return null
+  return serveRobotsTxt(pathname)
+}
+
+/**
+ * Plugin-claimed root text file — `/<name>.txt`. Returns null for any path
+ * no plugin claimed, so an unclaimed `.txt` path keeps falling through to
+ * slug resolution and, ultimately, the site's 404 page.
+ */
+function tryServeRootFile(req: Request, _runtime: ServerRuntime, _url: URL, pathname: string): Promise<Response | null> | null {
+  if (req.method !== 'GET') return null
+  return serveRootFile(pathname)
 }
 
 /**
