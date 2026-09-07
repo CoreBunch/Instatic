@@ -14,14 +14,15 @@ import {
   DEFAULT_SITE_RUNTIME,
 } from '@core/site-runtime'
 import { clearCanvasSelectionDraft } from '../selectionSlice'
-import { resetCollabDocsFromSite } from './collabBinding'
+import { resetCollabDocsFromSite, collabSelectLocale } from './collabBinding'
+import { projectSiteLocale } from '@core/localization'
 import { createDefaultSiteDocument } from './defaults'
 import { reconcileFrameworkClasses } from './framework/reconcile'
 import type { SiteSlice, SiteSliceHelpers } from './types'
 
 type LifecycleActions = Pick<
   SiteSlice,
-  'createSite' | 'loadSite' | 'clearSite' | 'updateSiteName'
+  'createSite' | 'loadSite' | 'clearSite' | 'updateSiteName' | 'setActiveLocaleId' | 'setSiteLocales'
 >
 
 /**
@@ -39,6 +40,7 @@ function reindexSiteTreeParents(site: SiteDocument): void {
 
 export function createLifecycleActions({
   set,
+  get,
   mutateSite,
 }: SiteSliceHelpers): LifecycleActions {
   return {
@@ -48,6 +50,7 @@ export function createLifecycleActions({
       reindexSiteTreeParents(site)
       const siteRuntime = cloneSiteRuntimeConfig(site.runtime)
       set((state) => {
+        state.activeLocaleId = site.localeId ?? null
         state.site = { ...site, runtime: siteRuntime }
         state.packageJson = clonePackageJson(site.packageJson)
         state.siteRuntime = siteRuntime
@@ -78,6 +81,7 @@ export function createLifecycleActions({
       const packageJson = clonePackageJson(site.packageJson)
       const siteRuntime = cloneSiteRuntimeConfig(site.runtime)
       set((state) => {
+        state.activeLocaleId = site.localeId ?? null
         state.site = { ...site, packageJson, runtime: siteRuntime }
         state.packageJson = packageJson
         state.siteRuntime = siteRuntime
@@ -96,6 +100,7 @@ export function createLifecycleActions({
     clearSite: () => {
       set((state) => {
         state.site = null
+        state.activeLocaleId = null
         state.packageJson = clonePackageJson(DEFAULT_SITE_PACKAGE_JSON)
         state.siteRuntime = cloneSiteRuntimeConfig(DEFAULT_SITE_RUNTIME)
         state.activePageId = null
@@ -106,6 +111,31 @@ export function createLifecycleActions({
         state.canRedo = false
       })
       resetCollabDocsFromSite(null)
+    },
+
+    setSiteLocales: (locales) => {
+      const state = get()
+      if (!state.site) return
+      const localeId = locales.some((locale) => locale.id === state.activeLocaleId)
+        ? state.activeLocaleId : locales.find((locale) => locale.isDefault)?.id
+      if (!localeId) return
+      const site = projectSiteLocale({ ...state.site, locales }, localeId)
+      set((draft) => { draft.site = site; draft.activeLocaleId = localeId })
+      collabSelectLocale(site)
+    },
+
+    setActiveLocaleId: (localeId) => {
+      const state = get()
+      if (!state.site || state.activeLocaleId === localeId) return
+      const projected = projectSiteLocale(state.site, localeId)
+      state.endInlineEdit()
+      renderCache.clear()
+      set((draft) => {
+        draft.site = projected
+        draft.activeLocaleId = localeId
+        clearCanvasSelectionDraft(draft)
+      })
+      collabSelectLocale(projected)
     },
 
     updateSiteName: (name) => {

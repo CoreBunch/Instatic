@@ -58,6 +58,7 @@ export const createSiteSlice: EditorStoreSliceCreator<SiteSlice> = (set, get) =>
   return {
     // ─── Owned state ─────────────────────────────────────────────────────────
     site: null,
+    activeLocaleId: null,
 
     // Undo / redo availability — mirrored from the collab binding's per-doc
     // Y.UndoManagers (see ./site/collabBinding.ts).

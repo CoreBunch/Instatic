@@ -13,6 +13,7 @@
 
 import type { ContentEntryActor } from '@core/plugin-sdk'
 import { hookBus } from '@core/plugins/hookBus'
+import { getDefaultLocale } from '../repositories/localization'
 import type { DbClient } from '../db/client'
 
 /** Look up the table slug for a row id — needed to populate the event payload. */
@@ -31,10 +32,11 @@ export async function emitContentEntryCreated(
   db: DbClient,
   rowId: string,
   actor: ContentEntryActor,
+  localeId?: string | null,
 ): Promise<void> {
   const tableSlug = await resolveTableSlug(db, rowId)
   if (!tableSlug) return
-  await hookBus.emit('content.entry.created', { tableSlug, entryId: rowId, actor })
+  await hookBus.emit('content.entry.created', { tableSlug, entryId: rowId, localeId: localeId === undefined ? (await getDefaultLocale(db)).id : localeId, actor })
 }
 
 export async function emitContentEntryUpdated(
@@ -42,12 +44,14 @@ export async function emitContentEntryUpdated(
   rowId: string,
   changedFieldIds: string[],
   actor: ContentEntryActor,
+  localeId?: string | null,
 ): Promise<void> {
   const tableSlug = await resolveTableSlug(db, rowId)
   if (!tableSlug) return
   await hookBus.emit('content.entry.updated', {
     tableSlug,
     entryId: rowId,
+    localeId: localeId === undefined ? (await getDefaultLocale(db)).id : localeId,
     changedFieldIds,
     actor,
   })
@@ -60,7 +64,7 @@ export async function emitContentEntryDeleted(
 ): Promise<void> {
   const tableSlug = await resolveTableSlug(db, rowId)
   if (!tableSlug) return
-  await hookBus.emit('content.entry.deleted', { tableSlug, entryId: rowId, actor })
+  await hookBus.emit('content.entry.deleted', { tableSlug, entryId: rowId, localeId: null, actor })
 }
 
 /**
@@ -73,12 +77,14 @@ export async function applyContentEntryCellsFilter(
   ctx: {
     tableSlug: string
     entryId: string
+    localeId: string
     actor: ContentEntryActor
   },
 ): Promise<Record<string, unknown>> {
   return hookBus.applyFilter('content.entry.cells', cells, {
     tableSlug: ctx.tableSlug,
     entryId: ctx.entryId,
+    localeId: ctx.localeId,
     actor: ctx.actor,
   })
 }

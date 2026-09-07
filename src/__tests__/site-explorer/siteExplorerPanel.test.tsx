@@ -9,6 +9,9 @@ import { normalizeCmsMediaAsset } from '@core/persistence/cmsMedia'
 import { useEditorStore } from '@site/store/store'
 import { makeNode, makePage, makeSite } from '../fixtures'
 import type { VisualComponent } from '@core/visualComponents'
+import { Value } from '@core/utils/typeboxHelpers'
+import { DataRowSchema } from '@core/data/schemas'
+import { ContentLocalizationSchema } from '@core/localization-schema'
 import '@modules/base/index'
 
 afterEach(cleanup)
@@ -927,9 +930,15 @@ describe('SiteExplorerPanel', () => {
     })
   })
 
-  it('opens page routes in a new browser tab from the page context menu', () => {
+  it('opens the frozen locale route in a new browser tab from the page context menu', async () => {
     loadSite()
+    useEditorStore.setState({ site: { ...useEditorStore.getState().site!, localeId: 'de' } })
     const originalOpen = window.open
+    const originalFetch = globalThis.fetch
+    globalThis.fetch = async () => Response.json({ row: {
+      ...Value.Create(DataRowSchema), id: 'page-pricing', tableId: 'pages', localeId: 'de', publicPath: '/de/published-pricing',
+      localization: { ...Value.Create(ContentLocalizationSchema), rowId: 'page-pricing', localeId: 'de', availability: 'online' },
+    } })
     const openCalls: unknown[] = []
     window.open = ((...args: unknown[]) => {
       openCalls.push(args)
@@ -943,11 +952,12 @@ describe('SiteExplorerPanel', () => {
         clientX: 120,
         clientY: 140,
       })
-      fireEvent.click(screen.getByRole('menuitem', { name: /open in new tab/i }))
+      fireEvent.click(await screen.findByRole('menuitem', { name: /open in new tab/i }))
 
-      expect(openCalls).toEqual([['/pricing', '_blank', 'noopener,noreferrer']])
+      expect(openCalls).toEqual([['/de/published-pricing', '_blank', 'noopener,noreferrer']])
     } finally {
       window.open = originalOpen
+      globalThis.fetch = originalFetch
     }
   })
 

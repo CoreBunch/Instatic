@@ -64,6 +64,19 @@
     color: var(--text-disabled);
 }
 
+.lineupTitle {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3xs);
+    overflow: hidden;
+}
+
+.lineupTitle > span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
 .deltaSpacing {
     margin-left: var(--space-s);
 }

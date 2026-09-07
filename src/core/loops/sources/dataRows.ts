@@ -28,6 +28,7 @@ import { publicDataUserFromParts } from '@core/data/publicDataUser'
 import { normalizeDataTableFields } from '@core/data/fields'
 import { readFeaturedMediaCell } from '@core/data/cells'
 import type { DataField, DataRowCells } from '@core/data/schemas'
+import { materializeLocalizedCells, resolveDataFieldLocalization } from '@core/localization'
 import { collectMediaIds, resolveMediaIdsToPaths, resolvedMediaOverlay } from './dataRowsMedia'
 
 // ---------------------------------------------------------------------------
@@ -36,6 +37,8 @@ import { collectMediaIds, resolveMediaIdsToPaths, resolvedMediaOverlay } from '.
 
 interface PublishedDataRowSqlRow {
   version_id: string
+  locale_id: string
+  public_path: string
   row_id: string
   table_id: string
   table_slug: string
@@ -93,8 +96,7 @@ function rowToLoopItem(
   fields: readonly DataField[],
 ): LoopItem {
   const cells = row.cells_json as DataRowCells
-  const tableRouteBase = normalizeRouteBase(row.table_route_base || `/${row.table_slug}`)
-  const permalink = `${tableRouteBase === '/' ? '' : tableRouteBase}/${row.slug}`
+  const permalink = row.public_path
 
   // Extract first inline image from the `body` cell (post-type rows only).
   const bodyValue = cells['body']
@@ -127,6 +129,7 @@ function rowToLoopItem(
       // System identity (overlay after cells so these are never shadowed)
       id: row.row_id,
       rowId: row.row_id,
+      localeId: row.locale_id,
       versionId: row.version_id,
       versionNumber: Number(row.version_number),
       tableId: row.table_id,
@@ -174,7 +177,7 @@ function rowToLoopItem(
 const POST_TYPE_ORDER_COLUMN: Record<OrderColumn, string> = {
   publishedAt: 'data_row_versions.published_at',
   createdAt: 'data_row_versions.created_at',
-  updatedAt: 'data_rows.updated_at',
+  updatedAt: 'data_row_versions.created_at',
   slug: 'data_row_versions.slug',
 }
 
@@ -182,27 +185,28 @@ async function fetchPage(
   db: LoopSourceDb,
   orderBy: OrderColumn,
   direction: 'asc' | 'desc',
-  opts: { tableId: string; limit: number; offset: number; filter: CellFilter | null; orderCellField: string | null },
+  opts: { tableId: string; localeId: string; limit: number; offset: number; filter: CellFilter | null; orderCellField: string | null },
 ): Promise<PublishedDataRowSqlRow[]> {
-  const { tableId, limit, offset, filter, orderCellField } = opts
+  const { tableId, localeId, limit, offset, filter, orderCellField } = opts
   const column = 'data_row_versions.cells_json'
   // SQLite binds `?` by POSITION IN THE TEXT, so the parameter list must follow
   // the clause order: tableId, the cell condition (WHERE), the ordering cell
   // (ORDER BY), then limit/offset. Postgres indices are numbered to match.
   const cell = filter
-    ? cellFilterSql({ filter, dialect: db.dialect, column, nextParamIndex: 2 })
+    ? cellFilterSql({ filter, dialect: db.dialect, column, nextParamIndex: 3 })
     : null
   const cellParams = cell?.params ?? []
   const order = orderCellField
-    ? cellOrderSql({ field: orderCellField, dialect: db.dialect, column, paramIndex: 2 + cellParams.length })
+    ? cellOrderSql({ field: orderCellField, dialect: db.dialect, column, paramIndex: 3 + cellParams.length })
     : null
   const orderColumn = order ? order.sql : POST_TYPE_ORDER_COLUMN[orderBy]
   const orderParams = order?.params ?? []
   const before = cellParams.length + orderParams.length
-  const limitParam = positionalParam(db, 2 + before)
-  const offsetParam = positionalParam(db, 3 + before)
+  const limitParam = positionalParam(db, 3 + before)
+  const offsetParam = positionalParam(db, 4 + before)
   const { rows } = await db.unsafe<PublishedDataRowSqlRow>(
     `select data_row_versions.id as version_id,
+            data_row_versions.locale_id, data_row_versions.public_path,
             data_rows.id as row_id,
             data_rows.table_id,
             data_tables.slug as table_slug,
@@ -221,22 +225,27 @@ async function fetchPage(
             publisher_roles.name as published_by_role_name,
             data_row_versions.published_at,
             data_row_versions.created_at,
-            data_rows.updated_at
+            data_row_versions.created_at as updated_at
      from data_rows
      join data_tables on data_tables.id = data_rows.table_id
-     join data_row_versions on data_row_versions.id = data_rows.active_version_id
+     join data_row_localizations localized on localized.row_id = data_rows.id
+     join site_locales locale on locale.id = localized.locale_id
+     join data_row_versions on data_row_versions.id = localized.active_version_id
+       and data_row_versions.row_id = data_rows.id and data_row_versions.locale_id = localized.locale_id
      left join users author_users on author_users.id = data_rows.author_user_id
      left join roles author_roles on author_roles.id = author_users.role_id
      left join users publisher_users on publisher_users.id = data_row_versions.published_by_user_id
      left join roles publisher_roles on publisher_roles.id = publisher_users.role_id
      where data_rows.table_id = ${positionalParam(db, 1)}
-       and data_rows.status = 'published'
+       and localized.locale_id = ${positionalParam(db, 2)}
+       and localized.availability = 'online' and locale.enabled = true
+       and data_row_versions.public_path is not null
        and data_rows.deleted_at is null
        and data_tables.deleted_at is null
        ${cell ? `and ${cell.sql}` : ''}
      order by ${orderColumn} ${direction}, data_row_versions.id ${direction}
      limit ${limitParam} offset ${offsetParam}`,
-    [tableId, ...cellParams, ...orderParams, limit, offset],
+    [tableId, localeId, ...cellParams, ...orderParams, limit, offset],
   )
   return rows
 }
@@ -254,6 +263,8 @@ async function fetchPage(
 // ---------------------------------------------------------------------------
 
 interface DataKindRowSqlRow {
+  source_cells_json: DataRowCells | null
+  locale_cells_json: DataRowCells | null
   row_id: string
   table_id: string
   table_slug: string
@@ -274,7 +285,7 @@ function dataKindRowToLoopItem(
   mediaPathMap: Map<string, string>,
   fields: readonly DataField[],
 ): LoopItem {
-  const cells = row.cells_json as DataRowCells
+  const cells = materializeLocalizedCells(fields, row.cells_json, row.source_cells_json ?? {}, row.locale_cells_json ?? {})
   const tableRouteBase = normalizeRouteBase(row.table_route_base || `/${row.table_slug}`)
   const permalink = `${tableRouteBase === '/' ? '' : tableRouteBase}/${row.slug}`
 
@@ -333,32 +344,44 @@ function dataKindRowToLoopItem(
 const DATA_KIND_ORDER_COLUMN: Record<'createdAt' | 'updatedAt' | 'slug', string> = {
   createdAt: 'data_rows.created_at',
   updatedAt: 'data_rows.updated_at',
-  slug: 'data_rows.slug',
+  slug: "coalesce(localized.slug, source.slug, '')",
+}
+
+/** Choose the authoritative JSON cell container, preserving explicit target nulls. */
+function localizedDataColumn(key: string, fields: readonly DataField[], dialect: 'postgres' | 'sqlite'): string {
+  const field = fields.find((candidate) => candidate.id === key)
+  if (!field || resolveDataFieldLocalization(field) === 'shared') return 'data_rows.cells_json'
+  const quoted = key.replace(/'/g, "''")
+  const path = (`$.${JSON.stringify(key)}`).replace(/'/g, "''")
+  const present = dialect === 'postgres' ? `(localized.cells_json->'${quoted}') is not null`
+    : `json_type(localized.cells_json, '${path}') is not null`
+  return `(case when ${present} then localized.cells_json else source.cells_json end)`
 }
 
 async function fetchDataKindPage(
   db: LoopSourceDb,
   orderBy: OrderColumn,
   direction: 'asc' | 'desc',
-  opts: { tableId: string; limit: number; offset: number; filter: CellFilter | null; orderCellField: string | null },
+  opts: { tableId: string; localeId: string; fields: readonly DataField[]; limit: number; offset: number; filter: CellFilter | null; orderCellField: string | null },
 ): Promise<DataKindRowSqlRow[]> {
-  const { tableId, limit, offset, filter, orderCellField } = opts
+  const { tableId, localeId, fields, limit, offset, filter, orderCellField } = opts
   const sortKey: 'createdAt' | 'updatedAt' | 'slug' =
     orderBy === 'updatedAt' ? 'updatedAt' : orderBy === 'slug' ? 'slug' : 'createdAt'
-  const column = 'data_rows.cells_json'
+  const filterColumn = localizedDataColumn(filter?.field ?? '', fields, db.dialect)
+  const orderColumnSource = localizedDataColumn(orderCellField ?? '', fields, db.dialect)
   // Parameter order follows the clause order — see `fetchPage`.
   const cell = filter
-    ? cellFilterSql({ filter, dialect: db.dialect, column, nextParamIndex: 2 })
+    ? cellFilterSql({ filter, dialect: db.dialect, column: filterColumn, nextParamIndex: 3 })
     : null
   const cellParams = cell?.params ?? []
   const order = orderCellField
-    ? cellOrderSql({ field: orderCellField, dialect: db.dialect, column, paramIndex: 2 + cellParams.length })
+    ? cellOrderSql({ field: orderCellField, dialect: db.dialect, column: orderColumnSource, paramIndex: 3 + cellParams.length })
     : null
   const orderColumn = order ? order.sql : DATA_KIND_ORDER_COLUMN[sortKey]
   const orderParams = order?.params ?? []
   const before = cellParams.length + orderParams.length
-  const limitParam = positionalParam(db, 2 + before)
-  const offsetParam = positionalParam(db, 3 + before)
+  const limitParam = positionalParam(db, 3 + before)
+  const offsetParam = positionalParam(db, 4 + before)
 
   // Same safety contract as `fetchPage`: the ORDER BY text comes only from
   // the closed map above; every runtime value is a positional parameter.
@@ -367,8 +390,8 @@ async function fetchDataKindPage(
             data_rows.table_id,
             data_tables.slug as table_slug,
             data_tables.route_base as table_route_base,
-            data_rows.cells_json,
-            data_rows.slug,
+            data_rows.cells_json, source.cells_json as source_cells_json, localized.cells_json as locale_cells_json,
+            coalesce(localized.slug, source.slug, '') as slug,
             data_rows.author_user_id,
             author_users.display_name as author_display_name,
             author_roles.slug as author_role_slug,
@@ -376,16 +399,19 @@ async function fetchDataKindPage(
             data_rows.created_at,
             data_rows.updated_at
      from data_rows
+     join site_locales source_locale on source_locale.is_default = true
+     left join data_row_localizations source on source.row_id = data_rows.id and source.locale_id = source_locale.id
+     left join data_row_localizations localized on localized.row_id = data_rows.id and localized.locale_id = ${positionalParam(db, 1)}
      join data_tables on data_tables.id = data_rows.table_id
      left join users author_users on author_users.id = data_rows.author_user_id
      left join roles author_roles on author_roles.id = author_users.role_id
-     where data_rows.table_id = ${positionalParam(db, 1)}
+     where data_rows.table_id = ${positionalParam(db, 2)}
        and data_rows.deleted_at is null
        and data_tables.deleted_at is null
        ${cell ? `and ${cell.sql}` : ''}
      order by ${orderColumn} ${direction}, data_rows.id ${direction}
      limit ${limitParam} offset ${offsetParam}`,
-    [tableId, ...cellParams, ...orderParams, limit, offset],
+    [localeId, tableId, ...cellParams, ...orderParams, limit, offset],
   )
   return rows
 }
@@ -408,6 +434,7 @@ export async function fetchPublishedDataRowItems(
   db: LoopSourceDb,
   opts: {
     tableId: string
+    localeId?: string
     orderBy: string
     direction: 'asc' | 'desc'
     limit: number
@@ -418,6 +445,12 @@ export async function fetchPublishedDataRowItems(
 ): Promise<LoopFetchResult> {
   if (!opts.tableId) return { items: [], totalItems: 0 }
   const cellFilter = opts.cellFilter ?? null
+  let localeId = opts.localeId
+  if (!localeId) {
+    const { rows } = await db<{ id: string }>`select id from site_locales where is_default = ${true}`
+    localeId = rows[0]?.id
+  }
+  if (!localeId) return { items: [], totalItems: 0 }
 
   const { rows: tableRows } = await db<DataTableProjectionRow>`
     select kind, fields_json
@@ -444,27 +477,31 @@ export async function fetchPublishedDataRowItems(
     // The count must apply the same condition, or pagination advertises rows
     // the page query filters out.
     const dataCountCell = cellFilter
-      ? cellFilterSql({ filter: cellFilter, dialect: db.dialect, column: 'data_rows.cells_json', nextParamIndex: 2 })
+      ? cellFilterSql({ filter: cellFilter, dialect: db.dialect, column: localizedDataColumn(cellFilter.field, fields, db.dialect), nextParamIndex: 3 })
       : null
     const { rows: countRows } = await db.unsafe<{ total: number }>(
       `select count(*) as total
        from data_rows
-       where data_rows.table_id = ${positionalParam(db, 1)}
+       join site_locales source_locale on source_locale.is_default = true
+       left join data_row_localizations source on source.row_id = data_rows.id and source.locale_id = source_locale.id
+       left join data_row_localizations localized on localized.row_id = data_rows.id and localized.locale_id = ${positionalParam(db, 1)}
+       where data_rows.table_id = ${positionalParam(db, 2)}
          and data_rows.deleted_at is null
          ${dataCountCell ? `and ${dataCountCell.sql}` : ''}`,
-      [opts.tableId, ...(dataCountCell?.params ?? [])],
+      [localeId, opts.tableId, ...(dataCountCell?.params ?? [])],
     )
     const totalItems = Number(countRows[0]?.total ?? 0)
     if (totalItems === 0) return { items: [], totalItems: 0 }
 
     const sqlRows = await fetchDataKindPage(db, orderBy, direction, {
       tableId: opts.tableId,
+      localeId, fields,
       limit: opts.limit,
       offset: opts.offset,
       filter: cellFilter,
       orderCellField,
     })
-    const mediaPathMap = await resolveMediaIdsToPaths(db, collectMediaIds(sqlRows, fields))
+    const mediaPathMap = await resolveMediaIdsToPaths(db, collectMediaIds(sqlRows.map((row) => ({ cells_json: materializeLocalizedCells(fields, row.cells_json, row.source_cells_json ?? {}, row.locale_cells_json ?? {}) })), fields))
     return {
       items: sqlRows.map((row) => dataKindRowToLoopItem(row, mediaPathMap, fields)),
       totalItems,
@@ -473,23 +510,29 @@ export async function fetchPublishedDataRowItems(
 
   // Post-type path (default): only published rows, joined to active version.
   const postCountCell = cellFilter
-    ? cellFilterSql({ filter: cellFilter, dialect: db.dialect, column: 'data_row_versions.cells_json', nextParamIndex: 2 })
+    ? cellFilterSql({ filter: cellFilter, dialect: db.dialect, column: 'data_row_versions.cells_json', nextParamIndex: 3 })
     : null
   const { rows: countRows } = await db.unsafe<{ total: number }>(
     `select count(*) as total
      from data_rows
-     join data_row_versions on data_row_versions.id = data_rows.active_version_id
+     join data_row_localizations localized on localized.row_id = data_rows.id
+     join site_locales locale on locale.id = localized.locale_id
+     join data_row_versions on data_row_versions.id = localized.active_version_id
+       and data_row_versions.row_id = data_rows.id and data_row_versions.locale_id = localized.locale_id
      where data_rows.table_id = ${positionalParam(db, 1)}
-       and data_rows.status = 'published'
+       and localized.locale_id = ${positionalParam(db, 2)}
+       and localized.availability = 'online' and locale.enabled = true
+       and data_row_versions.public_path is not null
        and data_rows.deleted_at is null
        ${postCountCell ? `and ${postCountCell.sql}` : ''}`,
-    [opts.tableId, ...(postCountCell?.params ?? [])],
+    [opts.tableId, localeId, ...(postCountCell?.params ?? [])],
   )
   const totalItems = Number(countRows[0]?.total ?? 0)
   if (totalItems === 0) return { items: [], totalItems: 0 }
 
   const sqlRows = await fetchPage(db, orderBy, direction, {
     tableId: opts.tableId,
+    localeId,
     limit: opts.limit,
     offset: opts.offset,
     filter: cellFilter,
@@ -575,6 +618,7 @@ export const DataRowsSource: LoopEntitySource = {
 
   async fetch(ctx): Promise<LoopFetchResult> {
     return fetchPublishedDataRowItems(ctx.db, {
+      localeId: ctx.site.localeId,
       tableId: typeof ctx.filters.tableId === 'string' ? ctx.filters.tableId : '',
       orderBy: ctx.orderBy,
       direction: ctx.direction,

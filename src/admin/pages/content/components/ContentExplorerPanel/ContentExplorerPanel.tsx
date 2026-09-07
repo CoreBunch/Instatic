@@ -26,7 +26,8 @@ import {
   type ContentItemRenamePayload,
 } from '@content/components/ContentItemRenameDialog/ContentItemRenameDialog'
 import styles from '../../ContentPage.module.css'
-import { publicContentPath } from '@content/utils/contentEntryUtils'
+import { pushToast } from '@ui/components/Toast'
+import { getErrorMessage } from '@core/utils/errorMessage'
 
 type ContentExplorerContextTarget =
   | { kind: 'collection'; collection: DataTable }
@@ -39,6 +40,7 @@ interface ContextMenuState {
 }
 
 interface ContentExplorerPanelProps {
+  languageOnline: boolean
   loading: boolean
   error: string | null
   collections: DataTable[]
@@ -99,6 +101,7 @@ function entryAuthorLabel(entry: DataRow): string {
 }
 
 export function ContentExplorerPanel({
+  languageOnline,
   loading,
   error,
   collections,
@@ -155,13 +158,13 @@ export function ContentExplorerPanel({
   }
 
   async function copyEntryUrl(entry: DataRow) {
-    const collection = collectionForEntry(entry)
-    if (!collection) return
-    const url = `${window.location.origin}${publicContentPath(collection.routeBase, entry.slug)}`
+    if (!entry.publicPath) return
+    const url = `${window.location.origin}${entry.publicPath}`
     try {
       await navigator.clipboard.writeText(url)
     } catch (err) {
       console.error('[ContentExplorerPanel] copy entry URL error:', err)
+      pushToast({ kind: 'error', title: 'Could not copy URL', body: getErrorMessage(err, 'Clipboard unavailable') })
     }
   }
 
@@ -211,15 +214,13 @@ export function ContentExplorerPanel({
           setContextMenu(null)
         },
       })
-    } else {
+    }
+    if (languageOnline && target.entry.localization?.availability === 'online' && target.entry.publicPath) {
       items.push({
         label: 'Open in new tab',
         icon: <ExternalLinkSolidIcon size={13} />,
         action: () => {
-          const collection = collectionForEntry(target.entry)
-          if (collection) {
-            window.open(publicContentPath(collection.routeBase, target.entry.slug), '_blank', 'noopener,noreferrer')
-          }
+          if (target.entry.publicPath) window.open(target.entry.publicPath, '_blank', 'noopener,noreferrer')
           setContextMenu(null)
         },
       })

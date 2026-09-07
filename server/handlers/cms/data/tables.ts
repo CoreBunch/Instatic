@@ -1,3 +1,4 @@
+import { requestLocale } from '../localeContext'
 /**
  * Data-table endpoints.
  *
@@ -305,12 +306,16 @@ async function handleTableRows(
     // system table's rows still needs data.system.tables.read (GHSA-x69h).
     if (!canReadTable(user, table)) return jsonResponse({ error: 'Table not found' }, { status: 404 })
     const visibility = canSeeAllDataRows(user) ? {} : { ownerUserId: user.id }
-    return jsonResponse({ rows: await listDataRows(db, tableId, visibility) })
+    const locale = await requestLocale(req, db)
+    if (locale instanceof Response) return locale
+    return jsonResponse({ rows: await listDataRows(db, tableId, { ...visibility, localeId: locale.id }) })
   }
 
   if (req.method === 'POST') {
     const body = await readValidatedBody(req, RowUpsertBodySchema)
     if (!body) return badRequest('Invalid row payload')
+    const locale = await requestLocale(req, db, body.localeId)
+    if (locale instanceof Response) return locale
 
     // Editor-managed built-in values can't be set through the Data grid.
     if (body.cells) {
@@ -326,6 +331,7 @@ async function handleTableRows(
     const cells = await applyContentEntryCellsFilter(body.cells ?? {}, {
       tableSlug: table.slug,
       entryId: 'new',
+      localeId: locale.id,
       actor: { kind: 'user', userId: user.id },
     })
     const slug = slugForTable(table, cells)
@@ -335,7 +341,7 @@ async function handleTableRows(
     // opaque 500 — leaving the caller (often a script or an MCP connector) to
     // guess whether it hit a bug or a duplicate. Name it instead.
     if (slug) {
-      const clash = await getDataRowBySlug(db, tableId, slug)
+      const clash = await getDataRowBySlug(db, tableId, slug, locale.id)
       if (clash) {
         return jsonResponse(
           { error: `A row with slug "${slug}" already exists in this table.`, conflictRowId: clash.id },
@@ -344,8 +350,8 @@ async function handleTableRows(
       }
     }
 
-    const row = await createDataRow(db, { tableId, cells, slug }, user.id)
-    await emitContentEntryCreated(db, row.id, { kind: 'user', userId: user.id })
+    const row = await createDataRow(db, { tableId, cells, slug, localeId: locale.id }, user.id)
+    await emitContentEntryCreated(db, row.id, { kind: 'user', userId: user.id }, locale.id)
     await createAuditEvent(db, {
       actorUserId: user.id,
       action: 'data.row.create',
@@ -377,6 +383,8 @@ async function handleTableLoopPreview(
 
   const table = await getDataTable(db, tableId)
   if (!table) return jsonResponse({ error: 'Table not found' }, { status: 404 })
+  const locale = await requestLocale(req, db)
+  if (locale instanceof Response) return locale
 
   const url = new URL(req.url)
   const orderBy = url.searchParams.get('orderBy') ?? 'publishedAt'
@@ -396,6 +404,7 @@ async function handleTableLoopPreview(
 
   const result = await fetchPublishedDataRowItems(db, {
     tableId,
+    localeId: locale.id,
     orderBy,
     direction,
     limit,

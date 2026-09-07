@@ -55,9 +55,9 @@ export const FORM_RUNTIME_JS = `(() => {
 
   async function submitForm(form) {
     const formId = form.getAttribute('data-instatic-form-id') || '';
-    const pageId = form.getAttribute('data-instatic-page-id') || '';
+    const identity = formIdentity(form);
     const pageToken = form.getAttribute('data-instatic-page-token') || '';
-    if (!formId || !pageId || !pageToken) {
+    if (!formId || !identity || !pageToken) {
       setState(form, 'error', 'This form is missing its published form link.');
       return;
     }
@@ -68,7 +68,7 @@ export const FORM_RUNTIME_JS = `(() => {
     try {
       const challenge = await takeChallenge(form);
       await postJson('/_instatic/form/submit', {
-        pageId,
+        ...identity,
         formId,
         token: challenge.token,
         challenge: challenge.challenge,
@@ -122,14 +122,24 @@ export const FORM_RUNTIME_JS = `(() => {
     return challenge;
   }
 
+  function formIdentity(form) {
+    const identity = {
+      pageId: form.getAttribute('data-instatic-page-id') || '',
+      localeId: form.getAttribute('data-instatic-locale-id') || '',
+      publishedVersionId: form.getAttribute('data-instatic-published-version-id') || '',
+      pagePath: form.getAttribute('data-instatic-page-path') || '',
+    };
+    return Object.values(identity).every(Boolean) ? identity : null;
+  }
+
   function requestChallenge(form) {
     const formId = form.getAttribute('data-instatic-form-id') || '';
-    const pageId = form.getAttribute('data-instatic-page-id') || '';
+    const identity = formIdentity(form);
     const pageToken = form.getAttribute('data-instatic-page-token') || '';
-    if (!formId || !pageId || !pageToken) {
+    if (!formId || !identity || !pageToken) {
       return Promise.reject(new Error('This form is missing its published form link.'));
     }
-    return postJson('/_instatic/form/challenge', { pageId, formId, pageToken });
+    return postJson('/_instatic/form/challenge', { ...identity, formId, pageToken });
   }
 
   function challengeIsFresh(challenge) {

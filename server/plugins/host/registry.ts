@@ -59,9 +59,15 @@ export function assertContentTableAccess(
 }
 
 let dbForApi: DbClient | null = null
+let uploadsDirForApi: string | undefined
 
-export function setPluginWorkerDbClient(db: DbClient): void {
+export function setPluginWorkerDbClient(db: DbClient, options: { uploadsDir?: string } = {}): void {
   dbForApi = db
+  uploadsDirForApi = options.uploadsDir
+}
+
+export function getPluginUploadsDir(db: DbClient): string | undefined {
+  return db === dbForApi ? uploadsDirForApi : undefined
 }
 
 export function getDbForApi(): DbClient | null {

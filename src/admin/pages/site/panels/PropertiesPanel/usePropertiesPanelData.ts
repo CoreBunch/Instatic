@@ -1,3 +1,4 @@
+import { useEditorLocale } from '@site/localization'
 /**
  * usePropertiesPanelData — single store-binding + derivation hook for the
  * Properties Panel. Owns every editor-store subscription, every derived value
@@ -96,6 +97,7 @@ interface PropertiesPanelData {
 }
 
 export function usePropertiesPanelData(): PropertiesPanelData {
+  const { isTranslation } = useEditorLocale()
   // ─── Store subscriptions ────────────────────────────────────────────────
   const selectedNode = useEditorStore(selectSelectedNode)
   const selectedNodeId = useEditorStore((s) => s.selectedNodeId)
@@ -204,7 +206,7 @@ export function usePropertiesPanelData(): PropertiesPanelData {
     if (!selectedNodeId) return
     const def = moduleId ? registry.get(moduleId) : null
     const isOverridable = def?.schema[propKey]?.breakpointOverridable === true
-    if (activeBreakpointId && activeBreakpointId !== 'desktop' && isOverridable) {
+    if (!isTranslation && activeBreakpointId && activeBreakpointId !== 'desktop' && isOverridable) {
       setBreakpointOverride(selectedNodeId, activeBreakpointId, { [propKey]: value })
     } else {
       updateNodeProps(selectedNodeId, { [propKey]: value })

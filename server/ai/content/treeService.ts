@@ -22,6 +22,7 @@ import { getDataRow, getDataTable, saveDataRowDraft } from '../../repositories/d
 import { applyContentEntryCellsFilter } from '../../publish/contentEvents'
 
 export interface PageTreeAccessOptions {
+  localeId?: string
   /** Invoked after the field resolves, before any read/mutation. Throw to deny. */
   assertAccess?: (table: DataTable) => void
 }
@@ -30,8 +31,9 @@ async function resolvePageTreeField(
   db: DbClient,
   entryId: string,
   fieldId: string,
+  localeId?: string,
 ): Promise<{ row: DataRow; table: DataTable }> {
-  const row = await getDataRow(db, entryId)
+  const row = await getDataRow(db, entryId, localeId)
   if (!row) throw new Error(`Entry "${entryId}" not found`)
   const table = await getDataTable(db, row.tableId)
   if (!table) throw new Error(`Table for entry "${entryId}" missing`)
@@ -56,7 +58,7 @@ export async function readPageTree(
   fieldId: string,
   options: PageTreeAccessOptions = {},
 ): Promise<unknown> {
-  const { row, table } = await resolvePageTreeField(db, entryId, fieldId)
+  const { row, table } = await resolvePageTreeField(db, entryId, fieldId, options.localeId)
   options.assertAccess?.(table)
   return row.cells[fieldId] ?? null
 }
@@ -69,7 +71,7 @@ export async function mutatePageTree(
   actor: ContentEntryActor,
   options: PageTreeAccessOptions = {},
 ): Promise<{ tree: unknown; affectedNodeIds: string[] }> {
-  const { row, table } = await resolvePageTreeField(db, entryId, fieldId)
+  const { row, table } = await resolvePageTreeField(db, entryId, fieldId, options.localeId)
   options.assertAccess?.(table)
 
   const initial = row.cells[fieldId]
@@ -89,13 +91,13 @@ export async function mutatePageTree(
 
   const nextCells = await applyContentEntryCellsFilter(
     { ...row.cells, [fieldId]: tree },
-    { tableSlug: table.slug, entryId, actor },
+    { tableSlug: table.slug, entryId, actor, localeId: row.localeId },
   )
   const { actorUserId, pluginActorId } = actorToSaveArgs(actor)
   const updated = await saveDataRowDraft(
     db,
     entryId,
-    { cells: nextCells, slug: row.slug },
+    { cells: nextCells, slug: row.slug, localeId: row.localeId },
     actorUserId,
     pluginActorId,
   )
@@ -105,6 +107,7 @@ export async function mutatePageTree(
     tableSlug: table.slug,
     entryId,
     changedFieldIds: [fieldId],
+    localeId: row.localeId,
     actor,
   })
 

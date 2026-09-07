@@ -1,7 +1,13 @@
+import { ContentLanguagesDialog } from '@admin/shared/ContentLanguagesDialog'
+import { useCurrentAdminUser } from '@admin/sessionContext'
+import { hasCapability } from '@admin/access'
+import type { PublishVariantSelection } from '@core/localization-schema'
+import { SitePublishDialog } from '@admin/shared/SitePublishDialog'
+import { Select } from '@ui/components/Select'
 import { useEffect, useRef, useState } from 'react'
 import type { SiteDocument } from '@core/page-tree'
 import { selectActivePage, useEditorStore } from '@site/store/store'
-import { getCmsPublishStatus, publishCmsDraft } from '@core/persistence'
+import { getCmsDataRow, getCmsPublishStatus, publishCmsDraft } from '@core/persistence'
 import { LoaderIcon } from 'pixel-art-icons/icons/loader'
 import { CalendarSolidIcon } from 'pixel-art-icons/icons/calendar-solid'
 import { CheckIcon } from 'pixel-art-icons/icons/check'
@@ -14,6 +20,7 @@ import type { PersistenceSaveStatus } from '@site/hooks/usePersistence'
 import { pushToast } from '@ui/components/Toast'
 import { PublishActionGroup, type PublishActionMenuItem } from './PublishActionGroup'
 import { getErrorMessage } from '@core/utils/errorMessage'
+import { notifyCmsPublicationChanged } from '@admin/state/adminEvents'
 import type { SiteRuntimeDiagnostic } from '@core/site-runtime'
 
 type PublishState = 'idle' | 'publishing' | 'published' | 'error'
@@ -34,12 +41,19 @@ export function PublishButton({
   runtimeValidationPending = false,
 }: PublishButtonProps) {
   const site = useEditorStore((s) => s.site)
+  const activeLocaleId = useEditorStore((s) => s.activeLocaleId)
+  const setActiveLocaleId = useEditorStore((s) => s.setActiveLocaleId)
+  const [publicationDialogOpen, setPublicationDialogOpen] = useState(false)
+  const [languagesOpen, setLanguagesOpen] = useState(false)
+  const currentUser = useCurrentAdminUser()
   const siteId = useEditorStore((s) => s.site?.id ?? null)
   const activePage = useEditorStore(selectActivePage)
   const openPreview = useEditorStore((s) => s.openPreview)
   const { runStepUp } = useStepUp()
   const [state, setState] = useState<PublishState>('idle')
-  const [scheduleDialogOpen, setScheduleDialogOpen] = useState(false)
+  const [scheduleTarget, setScheduleTarget] = useState<{ rowId: string; localeId: string; scheduledAt: string | null } | null>(null)
+  const [scheduleLoading, setScheduleLoading] = useState(false)
+  const scheduleRequestRef = useRef(0)
   const statusTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   /**
    * The `site` reference captured when the button entered the "published"
@@ -56,6 +70,7 @@ export function PublishButton({
     const timer = statusTimerRef
     return () => {
       if (timer.current) clearTimeout(timer.current)
+      scheduleRequestRef.current += 1
     }
   }, [])
 
@@ -65,7 +80,7 @@ export function PublishButton({
 
     async function loadPublishStatus() {
       try {
-        const status = await getCmsPublishStatus()
+        const status = await getCmsPublishStatus(undefined, undefined, activeLocaleId ?? undefined)
         if (cancelled) return
         if (status.draftMatchesPublished) {
           publishedSiteRef.current = useEditorStore.getState().site
@@ -78,7 +93,7 @@ export function PublishButton({
 
     void loadPublishStatus()
     return () => { cancelled = true }
-  }, [enabled, siteId])
+  }, [enabled, siteId, activeLocaleId])
 
   useEffect(() => {
     if (state !== 'published' || site === publishedSiteRef.current) return
@@ -98,14 +113,14 @@ export function PublishButton({
     }, 5000)
   }
 
-  const handlePublish = async () => {
+  const handlePublish = async (selection: PublishVariantSelection): Promise<boolean> => {
     if (
       !site ||
       !enabled ||
       state === 'publishing' ||
       runtimeErrorCount > 0 ||
       runtimeValidationPending
-    ) return
+    ) return false
 
     if (statusTimerRef.current) {
       clearTimeout(statusTimerRef.current)
@@ -120,19 +135,21 @@ export function PublishButton({
       // Wrap the publish call in `runStepUp` so the StepUpProvider can
       // intercept the server's `step_up_required` 401, prompt the user
       // to re-enter their password, then retry. Publish is the highest-
-      // blast-radius site action (one click replaces every public page),
+      // publication action (it updates the selected language variants),
       // which is why the server gates it behind a fresh step-up window
       // in addition to the `pages.publish` capability check.
-      await runStepUp(() => publishCmsDraft())
+      await runStepUp(() => publishCmsDraft(undefined, undefined, selection))
+      notifyCmsPublicationChanged()
       publishedSiteRef.current = useEditorStore.getState().site
       setState('published')
+      return true
     } catch (err) {
       if (err instanceof Error && err.message === StepUpCancelledMessage) {
         // User dismissed the step-up dialog — return the button to its
         // resting state without surfacing an error message; this is the
         // same UX every other step-up-gated action uses.
         setState('idle')
-        return
+        return false
       }
       console.error('[toolbar] Publish failed:', err)
       setState('error')
@@ -143,6 +160,7 @@ export function PublishButton({
         location: 'site-editor',
       })
       resetErrorLater()
+      return false
     }
   }
 
@@ -202,18 +220,42 @@ export function PublishButton({
     state === 'error' ? CircleAlertSolidIcon :
     CloudUploadSolidIcon
 
+  async function openScheduleDialog() {
+    const localeId = activeLocaleId ?? site?.localeId
+    if (!activePage || !localeId || scheduleLoading) return
+    const rowId = activePage.id
+    const request = ++scheduleRequestRef.current
+    setScheduleLoading(true)
+    try {
+      const row = await getCmsDataRow(rowId, undefined, undefined, localeId)
+      const current = useEditorStore.getState()
+      if (request === scheduleRequestRef.current && selectActivePage(current)?.id === rowId && (current.activeLocaleId ?? current.site?.localeId) === localeId) {
+        if (!row) throw new Error('This page no longer exists')
+        setScheduleTarget({ rowId, localeId, scheduledAt: row.scheduledPublishAt })
+      }
+    } catch (err) {
+      if (request === scheduleRequestRef.current) {
+        console.error('[toolbar] Failed to load publication schedule:', err)
+        pushToast({ kind: 'error', title: 'Could not load publication schedule', body: getErrorMessage(err, 'Could not load schedule'), location: 'site-editor' })
+      }
+    }
+    if (request === scheduleRequestRef.current) setScheduleLoading(false)
+  }
+
   const menuItems: PublishActionMenuItem[] = [
+    { id: 'translations', label: 'Page languages and publication…', icon: EyeSolidIcon,
+      disabled: !activePage || notSynced, onSelect: () => setLanguagesOpen(true) },
     {
       // Per-page scheduling. The Site editor's primary Publish button
-      // still publishes ALL draft pages at once (existing behaviour);
+      // selects page-language variants explicitly;
       // the schedule action targets the currently-active page only —
       // matching what the user sees in the editor when they make the
       // decision.
       id: 'schedule-publish',
       label: 'Schedule publish…',
       icon: CalendarSolidIcon,
-      disabled: !activePage || runtimeErrorCount > 0 || runtimeValidationPending,
-      onSelect: () => setScheduleDialogOpen(true),
+      disabled: !activePage || notSynced || scheduleLoading || runtimeErrorCount > 0 || runtimeValidationPending,
+      onSelect: () => { void openScheduleDialog() },
       testId: 'toolbar-schedule-publish-action',
     },
     {
@@ -231,6 +273,14 @@ export function PublishButton({
 
   return (
     <>
+      {site?.locales && <Select aria-label="Site language" fieldSize="sm" value={activeLocaleId ?? site.localeId ?? ''}
+        disabled={isPublishing} options={site.locales.map((locale) => ({ value: locale.id, label: `${locale.name}${locale.enabled ? '' : ' · Offline'}` }))}
+        onChange={(event) => setActiveLocaleId(event.target.value)} />}
+      {languagesOpen && activePage && activeLocaleId && <ContentLanguagesDialog
+        rowId={activePage.id} localeId={activeLocaleId} canPublish={enabled}
+        canEdit={hasCapability(currentUser, 'site.content.edit')}
+        onClose={() => setLanguagesOpen(false)} onEditLanguage={setActiveLocaleId} />}
+      {publicationDialogOpen && <SitePublishDialog busy={isPublishing} onClose={() => setPublicationDialogOpen(false)} onPublish={handlePublish} />}
       <PublishActionGroup
         statusLabel={state === 'published' ? null : status.label}
         statusTone={status.tone}
@@ -252,31 +302,20 @@ export function PublishButton({
         }
         publishState={state === 'publishing' ? 'busy' : state === 'published' ? 'success' : state}
         publishBusy={isPublishing}
-        publishDisabled={disabled || state === 'published'}
+        publishDisabled={disabled}
         publishIcon={PublishIcon}
-        onPublish={handlePublish}
+        onPublish={() => setPublicationDialogOpen(true)}
         menuItems={menuItems}
       />
-      {activePage && (
+      {scheduleTarget && scheduleTarget.rowId === activePage?.id && scheduleTarget.localeId === (activeLocaleId ?? site?.localeId) && (
         <SchedulePublishDialog
-          open={scheduleDialogOpen}
-          onClose={() => setScheduleDialogOpen(false)}
-          rowId={activePage.id}
-          // The editor's in-memory Page shape doesn't carry the row's
-          // scheduledPublishAt — that lives on the CMS row, not in the
-          // site document. Future enhancement: read it from a
-          // useCmsPageStatus(activePage.id) hook so re-opening the
-          // dialog pre-fills with the current schedule. For now we
-          // start fresh on every open.
-          currentScheduledAt={null}
+          open
+          onClose={() => setScheduleTarget(null)}
+          rowId={scheduleTarget.rowId}
+          localeId={scheduleTarget.localeId}
+          currentScheduledAt={scheduleTarget.scheduledAt}
           entityLabel="page"
-          onScheduled={() => {
-            // Re-fetch publish status so the toolbar can transition out
-            // of "Draft saved" / "Unsaved" into the published state if
-            // the row picked up. Cheap call — the same endpoint the
-            // mount-time useEffect uses.
-            void getCmsPublishStatus().catch(() => undefined)
-          }}
+          onScheduled={() => notifyCmsPublicationChanged()}
         />
       )}
     </>

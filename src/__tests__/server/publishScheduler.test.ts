@@ -3,22 +3,21 @@ import type { DbClient } from '../../../server/db'
 import { tickPublishScheduler } from '../../../server/publish/publishScheduler'
 import { getDataRow, listDuePublishSchedules } from '../../../server/repositories/data/rows'
 import { createTestDb, type TestDb } from '../helpers/createTestDb'
+import { seedPublishingSite } from '../helpers/publishingTestDb'
+import { makeSite, makePage } from '../publisher/helpers'
+import { scheduleLocalizedDataRowPublish } from '../../../server/publish/schedulePublication'
 
 async function seedScheduledPageRow(
   db: DbClient,
   input: { rowId: string; slug: string; scheduledAt: string },
 ): Promise<void> {
-  await db`
-    insert into data_rows (id, table_id, cells_json, slug, status, scheduled_publish_at)
-    values (
-      ${input.rowId},
-      ${'pages'},
-      ${{ title: 'Scheduled page', page: { id: input.rowId } }},
-      ${input.slug},
-      ${'scheduled'},
-      ${input.scheduledAt}
-    )
-  `
+  const page = makePage({ root: { moduleId: 'base.container' } })
+  page.id = input.rowId
+  page.slug = input.slug
+  page.title = 'Scheduled page'
+  await seedPublishingSite(db, makeSite({ pages: [page] }))
+  await scheduleLocalizedDataRowPublish(db, input.rowId, input.scheduledAt)
+
 }
 
 describe('publish scheduler', () => {
@@ -56,15 +55,15 @@ describe('publish scheduler', () => {
       status: 'published',
       publishedByUserId: null,
       updatedByUserId: null,
-      scheduledPublishAt: scheduledAt,
+      scheduledPublishAt: null,
     })
     expect(row?.publishedAt).toBeString()
     await expect(listDuePublishSchedules(db, new Date().toISOString(), 25)).resolves.toHaveLength(0)
 
     const { rows: dataRows } = await db<{ active_version_id: string | null }>`
       select active_version_id
-      from data_rows
-      where id = ${rowId}
+      from data_row_localizations
+      where row_id = ${rowId} and locale_id = 'default'
     `
     expect(dataRows[0]?.active_version_id).toBeString()
 

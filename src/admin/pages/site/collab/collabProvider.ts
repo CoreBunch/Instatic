@@ -246,6 +246,9 @@ export function createCollabProvider(
     if (!entry) return
 
     if (frame.frameType === FRAME_RESET) {
+      // A reply to an older in-flight write can arrive after a rewritten-doc
+      // reset already rebound this id. It must not destroy the fresh lineage.
+      if (frame.generation !== '' && frame.generation !== entry.generation) return
       const reason = decodeResetReason(frame.payload)
       unbind(frame.docId)
       for (const listener of resetListeners) listener(frame.docId, reason)

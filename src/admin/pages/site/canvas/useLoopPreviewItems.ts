@@ -245,6 +245,7 @@ export function useLoopPreviewItems(
   templateContext?: TemplateRenderDataContext,
 ): LoopItem[] {
   const previewReadiness = use(CanvasPreviewReadinessContext)
+  const localeId = useEditorStore((s) => s.site?.localeId)
   // `readLoopProps()` reuses the shared `EMPTY_FILTERS` sentinel when the
   // node has no filters set, so `filters` identity is stable across renders
   // for the no-filter case. When filters ARE set, the value comes straight
@@ -300,6 +301,7 @@ export function useLoopPreviewItems(
         if (!cancelled) setAsyncDataTable(null)
       })
     const rowsRequest = previewCmsDataLoopItems(tableId, {
+      localeId,
       orderBy: orderBy || 'publishedAt',
       direction,
       limit,
@@ -318,7 +320,7 @@ export function useLoopPreviewItems(
     return () => {
       cancelled = true
     }
-  }, [sourceId, tableId, orderBy, direction, limit, offset, cellField, cellOperator, cellValue, previewReadiness])
+  }, [sourceId, tableId, localeId, orderBy, direction, limit, offset, cellField, cellOperator, cellValue, previewReadiness])
 
   // ── Async fetch: site.media ─────────────────────────────────────────
   useEffect(() => {

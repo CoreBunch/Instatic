@@ -440,6 +440,8 @@ export function CellDisplayRenderer({
       if (!tree) return <Empty />
       return <span className={styles.text}>Page tree</span>
     }
+    case 'parameterValues':
+      return <span className={styles.text}>Component defaults</span>
     case 'fieldSchema': {
       const params = readFieldSchemaCell(cells, field.id)
       if (params.length === 0) return <Empty />

@@ -6,6 +6,8 @@
  */
 import { useEffect, useLayoutEffect, useRef } from 'react'
 import { flushSync } from 'react-dom'
+import type { Locale } from '@core/localization-schema'
+import { resolveDataFieldLocalization } from '@core/localization'
 import { readTitleCell } from '@core/data/cells'
 import { normalizeDataTableFields } from '@core/data/fields'
 import type { DataField, DataRow, DataTable } from '@core/data/schemas'
@@ -32,6 +34,9 @@ import {
 const CONTENT_KIND_VISIBLE: ReadonlySet<string> = new Set(['postType'])
 
 interface ContentToolWorkspaceSurface {
+  locales: Locale[]
+  activeLocaleId: string | null
+  selectLocale(localeId: string): void
   collections: DataTable[]
   /** Re-reads the roster from the server and returns the fresh post types. */
   refreshCollections(): Promise<DataTable[]>
@@ -112,13 +117,15 @@ export function useContentToolBridge({
         )
       },
       async selectDocument(documentId) {
-        const cached = workspaceRef.current.entries.find((entry) => entry.id === documentId)
-        const row = cached ?? await getCmsDataRow(documentId)
+        const activeLocaleId = workspaceRef.current.activeLocaleId
+        const cached = workspaceRef.current.entries.find((entry) => entry.id === documentId && (!activeLocaleId || entry.localeId === activeLocaleId))
+        const row = cached ?? await getCmsDataRow(documentId, undefined, undefined, activeLocaleId ?? undefined)
         if (!row) return false
 
         // Re-read after the fetch: the user may have navigated while the row
         // request was in flight. Only Content-owned post-type rows are valid.
         const ws = workspaceRef.current
+        if (ws.activeLocaleId !== activeLocaleId) throw new Error('The active language changed while loading the document.')
         const table = ws.collections.find((candidate) => candidate.id === row.tableId)
         if (!table || !CONTENT_KIND_VISIBLE.has(table.kind)) return false
 
@@ -132,6 +139,13 @@ export function useContentToolBridge({
         })
         return opened
       },
+      async selectLocale(localeId) {
+        const ws = workspaceRef.current
+        if (!ws.locales.some((locale) => locale.id === localeId)) throw new Error('Unknown language.')
+        const documentId = ws.selectedEntry?.id
+        flushSync(() => ws.selectLocale(localeId))
+        if (documentId) await handle.selectDocument(documentId)
+      },
       async selectCollection(tableId) {
         const table = await resolveCollection(tableId)
         if (!table) return false
@@ -139,6 +153,7 @@ export function useContentToolBridge({
         return true
       },
       async createDocument({ tableId, fields }) {
+        const localeId = workspaceRef.current.activeLocaleId
         if (!(await resolveCollection(tableId))) {
           throw new Error(`Collection ${tableId} not found.`)
         }
@@ -147,8 +162,9 @@ export function useContentToolBridge({
         // createUntitledEntry action is intentionally tied to the currently
         // selected collection; using it here after setState would still read
         // the previous render and could insert into the wrong table.
-        const created = await createCmsDataRow(tableId, { cells })
+        const created = await createCmsDataRow(tableId, { cells, localeId: localeId ?? undefined })
         const latestWorkspace = workspaceRef.current
+        if (latestWorkspace.activeLocaleId !== localeId) throw new Error('Draft created, but the active language changed. Select its locale to open it.')
         let opened = false
         flushSync(() => {
           opened = latestWorkspace.openEntry(created)
@@ -159,13 +175,13 @@ export function useContentToolBridge({
       },
       async deleteDocument(documentId) {
         const ws = workspaceRef.current
-        const row = ws.entries.find((entry) => entry.id === documentId)
+        const row = ws.entries.find((entry) => entry.id === documentId && (!ws.activeLocaleId || entry.localeId === ws.activeLocaleId))
         if (!row) throw new Error(`Document ${documentId} not found.`)
         await ws.deleteEntry(row)
       },
       async setDocumentStatus({ documentId, status, scheduledAt }) {
         const ws = workspaceRef.current
-        const row = ws.entries.find((entry) => entry.id === documentId)
+        const row = ws.entries.find((entry) => entry.id === documentId && (!ws.activeLocaleId || entry.localeId === ws.activeLocaleId))
         if (!row) throw new Error(`Document ${documentId} not found.`)
         await applyStatus(ws, row, status, scheduledAt)
       },
@@ -175,6 +191,7 @@ export function useContentToolBridge({
           draftRef.current,
           documentId,
           { [fieldId]: value },
+          () => workspaceRef.current,
         )
       },
       async setDocumentFields({ documentId, fields }) {
@@ -183,11 +200,12 @@ export function useContentToolBridge({
           draftRef.current,
           documentId,
           fields,
+          () => workspaceRef.current,
         )
       },
       async setDocumentAuthor({ documentId, userId }) {
         const ws = workspaceRef.current
-        const row = ws.entries.find((entry) => entry.id === documentId)
+        const row = ws.entries.find((entry) => entry.id === documentId && (!ws.activeLocaleId || entry.localeId === ws.activeLocaleId))
         if (!row) throw new Error(`Document ${documentId} not found.`)
         await ws.updateEntryAuthor(row, userId)
       },
@@ -199,7 +217,7 @@ export function useContentToolBridge({
     }
   }, [])
 
-  useMcpWorkspaceBridge('content', executeContentTool)
+  useMcpWorkspaceBridge('content', executeContentTool, undefined, Boolean(workspace.activeLocaleId), workspace.activeLocaleId)
 }
 
 async function saveDocumentFields(
@@ -207,8 +225,9 @@ async function saveDocumentFields(
   draft: ContentToolDraftSurface,
   documentId: string,
   fields: Record<string, unknown>,
+  currentWorkspace: () => ContentToolWorkspaceSurface,
 ): Promise<void> {
-  const row = ws.entries.find((entry) => entry.id === documentId)
+  const row = ws.entries.find((entry) => entry.id === documentId && (!ws.activeLocaleId || entry.localeId === ws.activeLocaleId))
   if (!row || ws.selectedEntry?.id !== documentId) {
     throw new Error(
       `Document ${documentId} is not the active doc. ` +
@@ -223,7 +242,12 @@ async function saveDocumentFields(
   applyFieldsToDraft(draft, cells)
   const saved = await saveCmsDataRowDraft(row.id, {
     cells: { ...row.cells, ...cells },
+    localeId: row.localeId,
   })
+  const current = currentWorkspace()
+  if (current.activeLocaleId !== ws.activeLocaleId || current.selectedEntry?.id !== documentId) {
+    throw new Error('The draft was saved in its language, but the active document or language changed while saving.')
+  }
   ws.updateSelectedEntry(saved)
   draft.applySelectedEntry(saved)
 }
@@ -317,11 +341,11 @@ async function applyStatus(
 ): Promise<void> {
   if (status === 'scheduled') {
     if (!scheduledAt) throw new Error('scheduledAt is required for scheduled publishing.')
-    ws.applyEntryUpdate(await scheduleCmsDataRowPublish(row.id, scheduledAt))
+    ws.applyEntryUpdate(await scheduleCmsDataRowPublish(row.id, scheduledAt, undefined, undefined, row.localeId))
     return
   }
   if (status === 'published') {
-    ws.applyEntryUpdate(await publishCmsDataRow(row.id))
+    ws.applyEntryUpdate(await publishCmsDataRow(row.id, undefined, undefined, row.localeId))
     return
   }
   await ws.updateEntryStatus(row, status)
@@ -343,6 +367,8 @@ function buildSnapshotFromWorkspace(
 
   return {
     collections,
+    localeId: ws.activeLocaleId,
+    locales: ws.locales,
     activeTableId: ws.selectedCollectionId,
     activeDocument: ws.selectedEntry
       ? projectActiveDocument(ws.selectedEntry, ws.collections)
@@ -360,6 +386,7 @@ function projectActiveDocument(
   return {
     id: row.id,
     tableId: row.tableId,
+    localeId: row.localeId,
     title: readTitleCell(row.cells) || row.slug || row.id,
     slug: row.slug,
     status: row.status,
@@ -377,6 +404,7 @@ function projectField(field: DataField): ContentAgentFieldInfo {
     type: field.type,
     required: field.required ?? false,
     builtIn: field.builtIn ?? false,
+    localization: resolveDataFieldLocalization(field),
   }
   if (field.type === 'select' || field.type === 'multiSelect') {
     return {

@@ -5,9 +5,8 @@ import { handleCmsRequest } from './handlers/cms'
 import type { DbClient } from './db/client'
 import { renderNotFoundResponse, renderPublicResolution } from './publish/publicRouter'
 import { readStaticAsset } from './publish/staticArtefact'
-import { getLatestSnapshotForVersion } from './publish/publishedSnapshotCache'
+import { rebuildPublishedCss } from './publish/publishedCssFallback'
 import { getPublishVersion, registerVersionedCacheReset } from './publish/publishState'
-import { prefetchMediaAssets } from './publish/mediaPrefetch'
 import { getSetupStatusCached } from './repositories/setup'
 import { getPublishedRuntimeAsset } from './repositories/runtimeAsset'
 import { handleLoopRequest, isLoopRuntimeAssetPath, serveLoopRuntimeAsset } from './handlers/cms/loop'
@@ -18,9 +17,7 @@ import { isRuntimePackagePath, tryServeRuntimePackage } from './publish/runtime/
 import { jsonResponse } from './http'
 import { binaryResponse, toArrayBuffer } from './binary'
 import { hardenUploadResponse, serveAdminApp, serveStaticFile } from './static'
-import { registry } from '@core/module-engine'
-import type { CssBundleFile, SiteCssBundleId } from '@core/publisher'
-import { buildPublishedSiteCssBundle } from './publish/siteCssBundle'
+import type { SiteCssBundleId } from '@core/publisher'
 import { mediaStorageRegistry } from '@core/plugins/mediaStorageRegistry'
 
 const VITE_DEV_URL = 'http://localhost:5173'
@@ -634,7 +631,7 @@ async function serveSiteCss(db: DbClient, pathname: string, uploadsDir?: string)
   const inflight = cssFallbackInFlight.get(cacheKey)
   const promise = inflight ?? (async (): Promise<string | null> => {
     try {
-      const content = await rebuildSiteCssFromSnapshot(db, bundleId, requestedHash, version)
+      const content = await rebuildPublishedCss(db, bundleId, requestedHash, version)
       if (cssFallbackCache.size >= CSS_FALLBACK_CACHE_MAX) cssFallbackCache.clear()
       cssFallbackCache.set(cacheKey, content)
       return content
@@ -646,44 +643,6 @@ async function serveSiteCss(db: DbClient, pathname: string, uploadsDir?: string)
 
   const content = await promise
   return content === null ? new Response('Not found', { status: 404 }) : cssResponse(content, requestedHash)
-}
-
-/**
- * Rebuild the requested CSS bundle file from the latest published snapshot.
- * Returns the file body, or `null` when no page (nor the page-agnostic view)
- * produces the requested hash. The page-invariant trio comes from the
- * version-keyed memo, so only `userStyles` does per-page work here.
- */
-async function rebuildSiteCssFromSnapshot(
-  db: DbClient,
-  bundleId: SiteCssBundleId,
-  requestedHash: string,
-  version: number,
-): Promise<string | null> {
-  const snapshot = await getLatestSnapshotForVersion(db, version)
-  if (!snapshot) return null
-
-  const pages = bundleId === 'userStyles' ? snapshot.site.pages : snapshot.site.pages.slice(0, 1)
-  for (const page of pages) {
-    const mediaAssets = await prefetchMediaAssets(page, snapshot.site, registry, db)
-    const file: CssBundleFile = buildPublishedSiteCssBundle(snapshot.site, registry, page, version, { mediaAssets })[bundleId]
-    if (file.hash === requestedHash) return file.content
-  }
-  // Page-agnostic view (every enabled stylesheet) — covers a hash that
-  // predates a scope change but is still referenced somewhere.
-  const fallbackMediaAssets = snapshot.site.pages[0]
-    ? await prefetchMediaAssets(snapshot.site.pages[0], snapshot.site, registry, db)
-    : undefined
-  const fallback: CssBundleFile = buildPublishedSiteCssBundle(
-    snapshot.site,
-    registry,
-    undefined,
-    version,
-    { mediaAssets: fallbackMediaAssets },
-  )[bundleId]
-  if (fallback.hash === requestedHash) return fallback.content
-
-  return null
 }
 
 function cssResponse(body: BodyInit, hash: string): Response {

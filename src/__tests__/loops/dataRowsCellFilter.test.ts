@@ -37,7 +37,9 @@ async function seedPost(
     insert into data_row_versions (id, row_id, version_number, cells_json, slug, published_at, created_at)
     values (${`${rowId}-v1`}, ${rowId}, ${1}, ${cells}, ${slug}, ${publishedAt}, ${publishedAt})
   `
-  await db`update data_rows set active_version_id = ${`${rowId}-v1`} where id = ${rowId}`
+  await db`update data_row_versions set locale_id = 'default', public_path = ${`/posts/${slug}`} where id = ${`${rowId}-v1`}`
+  await db`insert into data_row_localizations (row_id, locale_id, cells_json, slug, availability, active_version_id)
+    values (${rowId}, 'default', ${cells}, ${slug}, 'online', ${`${rowId}-v1`})`
 }
 
 async function seedDataRow(
@@ -50,6 +52,8 @@ async function seedDataRow(
     insert into data_rows (id, table_id, cells_json, slug, status, created_at, updated_at)
     values (${rowId}, ${tableId}, ${cells}, ${slug}, ${'draft'}, ${'2024-01-01T00:00:00Z'}, ${'2024-01-01T00:00:00Z'})
   `
+  await db`insert into data_row_localizations (row_id, locale_id, cells_json, slug)
+    values (${rowId}, 'default', ${cells}, ${slug})`
 }
 
 async function slugsWith(tableId: string, cellFilter: CellFilter | null): Promise<string[]> {

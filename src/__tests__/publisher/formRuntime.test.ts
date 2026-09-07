@@ -5,6 +5,8 @@ import { pathToFileURL } from 'node:url'
 import { stampFormPageTokens } from '../../../server/forms/formRuntime'
 import { FORM_RUNTIME_JS } from '../../modules/base/forms/formRuntimeJs'
 
+const identity = { pageId: 'page-home', localeId: 'fr', publishedVersionId: 'version-fr', pagePath: '/fr/contact' }
+
 const PAGE_WITH_CMS_FORM = `<!doctype html>
 <html>
 <head>
@@ -17,7 +19,7 @@ const PAGE_WITH_CMS_FORM = `<!doctype html>
 
 describe('stampFormPageTokens', () => {
   it('stamps a page token and page id onto every CMS-native form tag', () => {
-    const html = stampFormPageTokens(PAGE_WITH_CMS_FORM, 'page-home')
+    const html = stampFormPageTokens(PAGE_WITH_CMS_FORM, identity)
     expect(html).toContain('data-instatic-page-token=')
     expect(html).toContain('data-instatic-page-id="page-home"')
   })
@@ -25,15 +27,15 @@ describe('stampFormPageTokens', () => {
   it('leaves non-CMS forms untouched', () => {
     const html = stampFormPageTokens(
       PAGE_WITH_CMS_FORM.replace('data-instatic-form-mode="cms"', 'data-instatic-form-mode="custom"'),
-      'page-home',
+      identity,
     )
     expect(html).not.toContain('data-instatic-page-token=')
     expect(html).not.toContain('data-instatic-page-id=')
   })
 
   it('is idempotent', () => {
-    const once = stampFormPageTokens(PAGE_WITH_CMS_FORM, 'page-home')
-    const twice = stampFormPageTokens(once, 'page-home')
+    const once = stampFormPageTokens(PAGE_WITH_CMS_FORM, identity)
+    const twice = stampFormPageTokens(once, identity)
     expect(twice).toBe(once)
     expect(twice.match(/data-instatic-page-token=/g)?.length).toBe(1)
   })
@@ -42,7 +44,7 @@ describe('stampFormPageTokens', () => {
 describe('form runtime browser behaviour', () => {
   it('prefetches the submit challenge on attach and submits via document-level delegation', async () => {
     document.body.innerHTML = `
-      <form data-instatic-form-mode="cms" data-instatic-form-id="contact" data-instatic-page-id="page-home" data-instatic-page-token="page-token">
+      <form data-instatic-form-mode="cms" data-instatic-form-id="contact" data-instatic-page-id="page-home" data-instatic-locale-id="fr" data-instatic-published-version-id="version-fr" data-instatic-page-path="/fr/contact" data-instatic-page-token="page-token">
         <input name="email" value="ai@example.com">
         <button type="submit">Send</button>
         <p data-instatic-form-message="status"></p>
@@ -83,7 +85,7 @@ describe('form runtime browser behaviour', () => {
       await flushRuntime()
 
       expect(calls.map((call) => call.path)).toEqual(['/_instatic/form/challenge'])
-      expect(calls[0].payload.pageId).toBe('page-home')
+      expect(calls[0].payload).toMatchObject(identity)
 
       const form = document.querySelector('form')
       expect(form).not.toBeNull()

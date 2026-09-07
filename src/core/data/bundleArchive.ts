@@ -12,11 +12,8 @@
  */
 
 import { Type, type Static } from '@core/utils/typeboxHelpers'
-import { DataRowSchema, DataTableSchema } from './schemas'
-import { SiteShellSchema } from '@core/page-tree'
 import {
-  BundleMediaFolderSchema,
-  BundleRedirectSchema,
+  SiteBundleSchema,
   MediaAssetMetadataSchema,
 } from './bundleSchema'
 
@@ -27,16 +24,9 @@ export function mediaArchivePath(storagePath: string): string {
   return `${BUNDLE_ARCHIVE_MEDIA_PREFIX}${storagePath}`
 }
 
-export const SiteBundleArchiveManifestSchema = Type.Object({
-  schemaVersion: Type.Literal(1),
-  exportedAt: Type.String(),
-  sourceSiteName: Type.Optional(Type.String()),
-  site: Type.Optional(SiteShellSchema),
-  tables: Type.Array(DataTableSchema),
-  rows: Type.Array(DataRowSchema),
-  media: Type.Optional(Type.Array(MediaAssetMetadataSchema)),
-  mediaFolders: Type.Optional(Type.Array(BundleMediaFolderSchema)),
-  redirects: Type.Optional(Type.Array(BundleRedirectSchema)),
-})
+export const SiteBundleArchiveManifestSchema = Type.Composite([
+  Type.Omit(SiteBundleSchema, ['media']),
+  Type.Object({ media: Type.Optional(Type.Array(MediaAssetMetadataSchema)) }),
+])
 
 export type SiteBundleArchiveManifest = Static<typeof SiteBundleArchiveManifestSchema>

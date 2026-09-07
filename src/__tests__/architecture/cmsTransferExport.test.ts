@@ -185,7 +185,7 @@ beforeAll(async () => {
   // Seed 1 row in pages
   const pg = await createDataRow(db, {
     tableId: 'pages',
-    cells: { title: 'Home Page', slug: 'home', body: { nodes: {}, rootNodeId: 'root' } },
+    cells: { title: 'Home Page', slug: 'home', body: { nodes: { root: { id: 'root', moduleId: 'base.container', props: {}, breakpointOverrides: {}, children: [], classIds: [] } }, rootNodeId: 'root' } },
     slug: 'home',
   })
   pageId = pg.id

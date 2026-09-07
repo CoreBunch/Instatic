@@ -18,7 +18,10 @@ import type { DbClient } from '../../db/client'
 import { registry } from '@core/module-engine'
 import { getLatestPublishedSiteSnapshot } from '../../repositories/publish'
 import { buildPublishedSiteModuleJsMap } from '../../publish/moduleJsBundle'
-import { createVersionedSingleFlight, getPublishVersion } from '../../publish/publishState'
+import { getPublishedRouteInventoryForVersion } from '../../publish/publishedRoutes'
+import { projectPublishedSite, readPublishedRouteContext } from '../../publish/publishedRouteContext'
+import { resolvePublishedRoute, localeForPublishedPath } from '@core/localization-routing'
+import { getPublishVersion } from '../../publish/publishState'
 
 const MODULE_JS_PATH_PREFIX = '/_instatic/module-js/'
 
@@ -36,23 +39,6 @@ export function isModuleJsAssetPath(pathname: string): boolean {
 
 interface ModuleJsHandlerContext {
   db: DbClient
-}
-
-// Version-keyed memo of the published module-JS map. Loading the snapshot +
-// walking every page per request would be the same per-request cost the hole
-// endpoint was flagged for — the single-flight runs the load once per publish
-// version and the shared test-reset hook clears it.
-const moduleJsMapCache = createVersionedSingleFlight<ReadonlyMap<string, string>>()
-
-function loadModuleJsMapForVersion(
-  db: DbClient,
-  version: number,
-): Promise<ReadonlyMap<string, string> | null> {
-  return moduleJsMapCache.get(version, async () => {
-    const snapshot = await getLatestPublishedSiteSnapshot(db)
-    if (!snapshot) return null
-    return buildPublishedSiteModuleJsMap(snapshot.site, registry)
-  })
 }
 
 function plainResponse(body: string, status: number): Response {
@@ -76,8 +62,19 @@ export async function handleModuleJsAssetRequest(
     return plainResponse('Not found', 404)
   }
 
-  const jsMap = await loadModuleJsMapForVersion(ctx.db, getPublishVersion())
-  const body = jsMap?.get(moduleId)
+  const pagePath = url.searchParams.get('u')
+  if (!pagePath) return plainResponse('Missing page path', 400)
+  const inventory = await getPublishedRouteInventoryForVersion(ctx.db, getPublishVersion())
+  const route = resolvePublishedRoute(inventory, pagePath)
+  let site
+  if (route) {
+    site = (await readPublishedRouteContext(ctx.db, route, inventory))?.snapshot.site
+  } else {
+    const locale = localeForPublishedPath(inventory.locales, pagePath)
+    const snapshot = locale ? await getLatestPublishedSiteSnapshot(ctx.db, locale.id) : null
+    if (snapshot && locale) site = projectPublishedSite(snapshot.site, inventory, locale.id)
+  }
+  const body = site ? buildPublishedSiteModuleJsMap(site, registry).get(moduleId) : undefined
   if (body === undefined) return plainResponse('Not found', 404)
 
   return new Response(body, {

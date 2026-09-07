@@ -12,6 +12,7 @@ import { Bars, StatValue } from '@ui/components/charts'
 import type { DashboardWidgetRendererProps } from '@core/dashboard'
 import { Widget } from '@ui/components/Widget'
 import { usePostsStats } from '../hooks/useDashboardStats'
+import styles from './widgets.module.css'
 
 // Last 6 days of the histogram are highlighted as the "current week".
 const ACCENT_INDEXES = [22, 23, 24, 25, 26, 27]
@@ -39,6 +40,10 @@ export function PostsWidget({ span, editing }: DashboardWidgetRendererProps) {
             )}
           />
           <Bars data={stats.daily28} accentIndexes={ACCENT_INDEXES} />
+          <div className={styles.subFootRow}>
+            <span>{stats.variants} language version{stats.variants === 1 ? '' : 's'}</span>
+            <span>{stats.scheduled} scheduled</span>
+          </div>
         </>
       )}
     </Widget>

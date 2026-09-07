@@ -71,6 +71,7 @@ describe('plugin content handlers — access enforced', () => {
     // Cross-table handlers (List on tables, search, republishAll) are
     // intentionally allowlisted — their authorization model differs.
     const crossTableAllowlist = new Set([
+      'handleContentLocalesList',    // registry metadata; requires cms.content.read
       'handleContentTablesList',     // intersects with allowlist itself
       'handleContentTablesCreate',   // gated by cms.content.tables.manage
       'handleContentRepublishAll',   // operates on all published pages

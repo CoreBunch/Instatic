@@ -8,6 +8,8 @@ import { readArtefact, readStaticAsset } from '../../publish/staticArtefact'
 import { createBearerConnection } from './connectors/store'
 import { generatePersonalAccessToken, hashMcpSecret } from './connectors/token'
 import { handleMcpHttp } from './transports/http'
+import { getDefaultLocale } from '../../repositories/localization'
+import { listDataRows } from '../../repositories/data'
 
 interface AuditRow {
   action: string
@@ -102,12 +104,19 @@ describe('site_publish MCP tool', () => {
       capabilities: {},
       clientInfo: { name: 'publish-test', version: '0' },
     })
+    const offlineResult = await callMcp(harness, uploadsDir, token, 'tools/call', { name: 'site_publish', arguments: {} })
+    expect(offlineResult.result?.isError).toBeFalsy()
+    expect(await readArtefact(uploadsDir, '/')).toBeNull()
+    const locale = await getDefaultLocale(harness.db)
+    const pages = await listDataRows(harness.db, 'pages', { localeId: locale.id })
+    const home = pages.find((page) => page.slug === 'index')
+    if (!home) throw new Error('Homepage was not seeded')
     const result = await callMcp(
       harness,
       uploadsDir,
       token,
       'tools/call',
-      { name: 'site_publish', arguments: {} },
+      { name: 'site_publish', arguments: { variants: [{ rowId: home.id, localeId: locale.id }] } },
     )
     expect(result.result?.isError).toBeFalsy()
     expect(JSON.stringify(result.result?.content)).toContain('publishedPages')

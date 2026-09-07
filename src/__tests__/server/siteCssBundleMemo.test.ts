@@ -103,12 +103,9 @@ describe('buildPublishedSiteCssBundle — page-invariant memo', () => {
     expect(after.style).not.toBe(before.style)
   })
 
-  it('memo key is the publish version ALONE — a different site object at the same version reuses it', () => {
-    // Every consumer loads the published snapshot fresh from the DB (a new
-    // JSON-parsed object per query), so a site-identity key would never hit.
-    // Published content is fixed per version (every snapshot writer bumps), so
-    // the version alone is a sound key — and two distinct site objects at the
-    // same version must share one walk.
+  it('different frozen locale snapshots have independent CSS at the same publish version', () => {
+    // Independent locale releases coexist at one process publication version.
+    // Identity separates their styles; a same-site call still reuses its memo.
     const firstSite = makeMultiPageSite()
     const secondSite = makeMultiPageSite()
 
@@ -117,9 +114,9 @@ describe('buildPublishedSiteCssBundle — page-invariant memo', () => {
 
     const second = buildPublishedSiteCssBundle(secondSite, registry, secondSite.pages[0])
 
-    expect(renderCalls).toBe(callsAfterFirstSite)
-    expect(second.framework).toBe(first.framework)
-    expect(second.style).toBe(first.style)
+    expect(renderCalls).toBeGreaterThan(callsAfterFirstSite)
+    expect(second.framework).not.toBe(first.framework)
+    expect(second.style).not.toBe(first.style)
   })
 
   it('an explicit publishVersion argument (publish-time bake) gets its own memo slot', () => {

@@ -66,6 +66,7 @@ function PreviewSourceSelect({ templateId, page }: PreviewSourceSelectProps) {
   // Select the stable pages array (not a freshly-filtered one) so unrelated
   // store changes don't churn this subscription; filter in the render body
   // where the React Compiler memoizes it.
+  const localeId = useEditorStore((s) => s.site?.localeId)
   const sitePages = useEditorStore((s) => s.site?.pages ?? null)
   const targetKind = page.template?.target?.kind ?? null
   const everywherePages = targetKind === 'everywhere' && sitePages
@@ -83,6 +84,7 @@ function PreviewSourceSelect({ templateId, page }: PreviewSourceSelectProps) {
             .then(async (table) => {
               if (!table) return EMPTY_ITEMS
               const { items } = await previewCmsDataLoopItems(table.id, {
+                localeId,
                 orderBy: 'publishedAt',
                 direction: 'desc',
                 limit: 50,
@@ -91,7 +93,7 @@ function PreviewSourceSelect({ templateId, page }: PreviewSourceSelectProps) {
             })
             .catch(() => EMPTY_ITEMS)
         : Promise.resolve(EMPTY_ITEMS),
-    [tableSlug],
+    [tableSlug, localeId],
   )
 
   const options =

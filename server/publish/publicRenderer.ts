@@ -11,11 +11,15 @@ import { prefetchLoopData, publishedDataRowToLoopItem } from './loopPrefetch'
 import { prefetchMediaAssets } from './mediaPrefetch'
 import { getPublishVersion } from './publishState'
 import type { Page } from '@core/page-tree'
+import type { PublicFormRouteIdentity } from '@core/forms'
 import type { DocumentMetaOverride, SiteCssBundle } from '@core/publisher'
 import type { PublishedDataRow } from '@core/data/schemas'
 import { readEntrySeoOverride } from '@core/data/cells'
 import type { DbClient } from '../db/client'
 import type { PublishedPageSnapshot } from '../repositories/publish'
+import { publishedLanguageAlternatives, type PublishedRoute, type PublishedRouteInventory } from '@core/localization-routing'
+import { buildLocalizedSeo, renderLocalizedSeoLinks } from './localizedSeo'
+import type { PublishedRouteContext } from './publishedRouteContext'
 
 /**
  * URL prefix where the Bun server exposes the per-site CSS bundle. Mirrors
@@ -62,6 +66,8 @@ export interface RendererOutput {
    * whose page-scoped `userStyles` hash can differ from any raw page's).
    */
   cssBundle: SiteCssBundle
+  publicPath?: string
+  formIdentity?: PublicFormRouteIdentity
 }
 
 interface RenderPublishedSnapshotContext {
@@ -71,11 +77,13 @@ interface RenderPublishedSnapshotContext {
   /**
    * Publish version to stamp into `<instatic-hole data-instatic-version>` placeholders.
    * Defaults to the live `getPublishVersion()`. The full/incremental publish
-   * bakes shells BEFORE bumping the version, so it passes the next version
-   * (`getPublishVersion() + 1`) here — otherwise every baked hole would carry
+   * bakes shells after committing and bumping, so it passes that exact version
+   * here — otherwise every baked hole would carry
    * a stale version and the hole endpoint would refuse to hydrate it.
    */
   publishVersion?: number
+  route?: PublishedRoute
+  inventory?: PublishedRouteInventory
 }
 
 /**
@@ -111,6 +119,7 @@ async function renderMergedTemplate(
     cssAssetBaseUrl: CSS_ASSET_BASE_URL,
     loopData,
     mediaAssets,
+    languageAlternatives: ctx.route && ctx.inventory ? publishedLanguageAlternatives(ctx.inventory, ctx.route) : [],
     loopEndpointBaseUrl: LOOP_ENDPOINT_BASE_URL,
     publishVersion,
   })
@@ -118,7 +127,26 @@ async function renderMergedTemplate(
   // subtrees) ∩ the site module-JS map — over-inclusive candidates from
   // unbaked holes are filtered down to modules that actually ship JS.
   const jsModuleIds = published.jsModuleIds.filter((id) => moduleJsMap.has(id))
-  return { html: published.html, jsModuleIds, publishVersion, cssBundle }
+  let html = published.html
+  if (ctx.route && ctx.inventory && snapshot.site.settings.publicOrigin) {
+    const seo = buildLocalizedSeo(ctx.inventory, ctx.route, snapshot.site.settings.publicOrigin)
+    if (seo) html = html.replace('</head>', `${renderLocalizedSeoLinks(seo)}\n</head>`)
+  }
+  return { html, jsModuleIds, publishVersion, cssBundle }
+}
+
+export async function renderResolvedPublishedRoute(
+  context: PublishedRouteContext,
+  db: DbClient,
+  url: URL,
+  inventory: PublishedRouteInventory,
+  publishVersion?: number,
+): Promise<RendererOutput | null> {
+  const ctx = { db, url, inventory, route: context.route, publishVersion }
+  const rendered = await (context.row
+    ? renderPublishedDataRowTemplate(context.snapshot, context.row, ctx)
+    : renderPublishedSnapshot(context.snapshot, ctx))
+  return rendered ? { ...rendered, formIdentity: { pageId: context.route.contentId, localeId: context.route.localeId, publishedVersionId: context.route.publishedVersionId, pagePath: context.route.path } } : null
 }
 
 export async function renderPublishedSnapshot(
@@ -142,7 +170,7 @@ export async function renderPublishedSnapshot(
     : undefined
 
   const rendered = await renderMergedTemplate(merged, snapshot, templateContext, ctx)
-  return { ...rendered, pageId: snapshot.pageRowId, slug: page.slug, siteId: snapshot.site.id }
+  return { ...rendered, pageId: snapshot.pageRowId, slug: page.slug, siteId: snapshot.site.id, publicPath: ctx.url?.pathname }
 }
 
 /**
@@ -167,7 +195,7 @@ export async function renderPublishedNotFound(
     : undefined
 
   const rendered = await renderMergedTemplate(merged, snapshot, templateContext, ctx)
-  return { ...rendered, pageId: page.id, slug: page.slug, siteId: snapshot.site.id }
+  return { ...rendered, pageId: page.id, slug: page.slug, siteId: snapshot.site.id, publicPath: ctx.url?.pathname }
 }
 
 export async function renderPublishedDataRowTemplate(
@@ -186,6 +214,7 @@ export async function renderPublishedDataRowTemplate(
   // binding as well as `<title>`, so the SEO override travels separately
   // through `documentMeta` and only reaches the `<head>`.
   if (typeof row.cells.title === 'string') merged.title = row.cells.title
+  if (row.publicPath) merged.publicPath = row.publicPath
 
   // Seed the entry stack with the published row + route frame from the request
   // URL. Loop interceptors push/pop iteration items on top of this stack;
@@ -203,5 +232,5 @@ export async function renderPublishedDataRowTemplate(
     ctx,
     readEntrySeoOverride(row.cells),
   )
-  return { ...rendered, pageId: merged.id, slug: merged.slug, siteId: snapshot.site.id }
+  return { ...rendered, pageId: merged.id, slug: merged.slug, siteId: snapshot.site.id, publicPath: ctx.url?.pathname }
 }

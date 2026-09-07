@@ -7,6 +7,7 @@
  */
 
 import type { StoreApi } from 'zustand'
+import type { Locale } from '@core/localization-schema'
 import type { Draft } from 'mutative'
 import type { FrameworkColorToken, FrameworkColorUtilityType, FrameworkPreferencesSettings, FrameworkScaleManualSize, FrameworkScaleMode, FrameworkSpacingClassGenerator, FrameworkSpacingGroup, FrameworkTypographyClassGenerator, FrameworkTypographyGroup } from '@core/framework-schema'
 import type {
@@ -105,6 +106,9 @@ type UpdateFontTokenPatch = Partial<{
 
 export interface SiteSlice {
   site: SiteDocument | null
+  activeLocaleId: string | null
+  setActiveLocaleId: (localeId: string) => void
+  setSiteLocales: (locales: Locale[]) => void
 
   // SiteDocument lifecycle
   createSite: (name: string) => SiteDocument
@@ -116,6 +120,7 @@ export interface SiteSlice {
   addPage: (title: string, slug?: string) => Page
   deletePage: (pageId: string) => void
   renamePage: (pageId: string, title: string, slug?: string) => void
+  updatePageSeo: (pageId: string, seo: { title?: string; description?: string }) => void
   duplicatePage: (sourcePageId: string, title: string, slug?: string) => Page
   reorderPages: (fromIndex: number, toIndex: number) => void
   convertPageToTemplate: (pageId: string, config: PageTemplateConfig) => void

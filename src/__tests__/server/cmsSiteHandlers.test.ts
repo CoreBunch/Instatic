@@ -23,6 +23,7 @@ function makeFakeDb() {
     // Reconstruct a parameterized SQL string for pattern matching.
     const sql = strings.reduce<string>((acc, str, i) => (i === 0 ? str : `${acc}$${i}${str}`), '')
     const normalized = sql.replace(/\s+/g, ' ').trim().toLowerCase()
+    if (normalized.includes('from site_locales')) return { rows: [{ id: 'default', code: 'en', name: 'English', path_prefix: '', is_default: true, enabled: true, direction: 'ltr' } as unknown as Row], rowCount: 1 }
 
     if (normalized.includes('from sessions') && normalized.includes('join users')) {
       const session = sessions.find((s) => String(s.id_hash) === String(values[0]))

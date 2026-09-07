@@ -28,6 +28,16 @@ function fixture(): { site: SiteDocument; active: Page } {
 }
 
 describe('buildSiteAgentSnapshot', () => {
+  it('keeps the selected language but excludes sparse drafts for other languages', () => {
+    const { site, active } = fixture()
+    site.localeId = 'de'
+    site.localization = { fieldLocalizations: {}, rows: {} }
+    const snap = buildSiteAgentSnapshot(active, site, {
+      selectedNodeId: null, activeBreakpointId: 'desktop', currentDocument: { type: 'page', id: active.id },
+    })
+    expect(snap.site.localeId).toBe('de')
+    expect(Object.hasOwn(snap.site, 'localization')).toBe(false)
+  })
   it('posts the active page with full nodes', () => {
     const { site, active } = fixture()
     const snap = buildSiteAgentSnapshot(active, site, {

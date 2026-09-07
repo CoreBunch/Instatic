@@ -37,6 +37,9 @@
  * mounts, do it module-level so multiple sibling widgets that share a
  * domain (none today) reuse one fetch.
  */
+import { useEffect } from 'react'
+import { DashboardPagesStatsSchema, DashboardPostsStatsSchema, DashboardPublishLineupStatsSchema, type DashboardPagesStats, type DashboardPostsStats, type DashboardPublishLineupStats } from '@core/dashboard'
+import { CMS_PUBLICATION_CHANGED_EVENT, CMS_SITE_RELOAD_EVENT } from '@admin/state/adminEvents'
 import type { TSchema, TProperties } from '@sinclair/typebox'
 import { Type, type Static } from '@core/utils/typeboxHelpers'
 import { apiRequest } from '@core/http'
@@ -83,22 +86,6 @@ const DashboardPluginRowSchema = looseObject({
 })
 export type DashboardPluginRow = Static<typeof DashboardPluginRowSchema>
 
-const DashboardPublishLineupRowSchema = looseObject({
-  id: Type.String(),
-  /** Public path (`/blog/sandbox-deep-dive`). */
-  path: Type.String(),
-  status: Type.Union([Type.Literal('scheduled'), Type.Literal('published'), Type.Literal('draft')]),
-  /**
-   * ISO datetime relevant to the status:
-   *   - scheduled → future scheduled_publish_at
-   *   - published → past published_at
-   *   - draft     → null
-   * The widget renders this as a relative-time label client-side.
-   */
-  at: Type.Union([Type.String(), Type.Null()]),
-})
-export type DashboardPublishLineupRow = Static<typeof DashboardPublishLineupRowSchema>
-
 const DashboardActivityActorSchema = looseObject({
   displayName: Type.String(),
   email: Type.String(),
@@ -116,23 +103,6 @@ const DashboardActivityEntrySchema = looseObject({
 })
 export type DashboardActivityEntry = Static<typeof DashboardActivityEntrySchema>
 
-const DashboardPagesStatsSchema = looseObject({
-  total: Type.Number(),
-  published: Type.Number(),
-  drafts: Type.Number(),
-  scheduled: Type.Number(),
-  deltaPublishedThisWeek: Type.Number(),
-})
-type DashboardPagesStats = Static<typeof DashboardPagesStatsSchema>
-
-const DashboardPostsStatsSchema = looseObject({
-  total: Type.Number(),
-  categories: Type.Number(),
-  scheduled: Type.Number(),
-  daily28: Type.Array(Type.Number()),
-})
-type DashboardPostsStats = Static<typeof DashboardPostsStatsSchema>
-
 const DashboardMediaStatsSchema = looseObject({
   count: Type.Number(),
   totalBytes: Type.Number(),
@@ -148,11 +118,6 @@ const DashboardPluginsStatsSchema = looseObject({
   rows: Type.Array(DashboardPluginRowSchema),
 })
 type DashboardPluginsStats = Static<typeof DashboardPluginsStatsSchema>
-
-const DashboardPublishLineupStatsSchema = looseObject({
-  rows: Type.Array(DashboardPublishLineupRowSchema),
-})
-type DashboardPublishLineupStats = Static<typeof DashboardPublishLineupStatsSchema>
 
 /**
  * Storage widget payload. Mirrors `StorageStats` on the server (see
@@ -197,7 +162,7 @@ type DashboardActivityStats = Static<typeof DashboardActivityStatsSchema>
  */
 function useDashboardEndpoint<S extends TSchema>(endpoint: string, schema: S): Static<S> | null {
   const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone
-  return useAsyncResource(
+  const { data, refresh } = useAsyncResource(
     (signal) =>
       apiRequest(`/admin/api/cms/dashboard/${endpoint}`, {
         schema,
@@ -206,7 +171,16 @@ function useDashboardEndpoint<S extends TSchema>(endpoint: string, schema: S): S
       }),
     [endpoint, schema, timeZone],
     { swallowErrors: true },
-  ).data
+  )
+  useEffect(() => {
+    window.addEventListener(CMS_PUBLICATION_CHANGED_EVENT, refresh)
+    window.addEventListener(CMS_SITE_RELOAD_EVENT, refresh)
+    return () => {
+      window.removeEventListener(CMS_PUBLICATION_CHANGED_EVENT, refresh)
+      window.removeEventListener(CMS_SITE_RELOAD_EVENT, refresh)
+    }
+  }, [refresh])
+  return data
 }
 
 // ---------------------------------------------------------------------------

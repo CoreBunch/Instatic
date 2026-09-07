@@ -47,3 +47,12 @@ export async function getPublishedRuntimeAsset(
     bytes: row.content_bytes,
   }
 }
+
+/** Includes imported chunks, source maps and files referenced by entry scripts. */
+export async function listPublishedRuntimeAssetsForVersion(db: DbClient, versionId: string): Promise<PublishedRuntimeAssetRecord[]> {
+  const { rows } = await db<RuntimeAssetRow>`
+    select public_path, content_type, content_bytes from published_runtime_assets
+    where data_row_version_id = ${versionId}
+  `
+  return rows.map((row) => ({ publicPath: row.public_path, contentType: row.content_type, bytes: row.content_bytes }))
+}

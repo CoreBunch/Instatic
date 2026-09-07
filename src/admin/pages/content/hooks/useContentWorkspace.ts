@@ -32,6 +32,8 @@ import { buildDuplicateRowCells } from '@core/data/duplicateRow'
 import { updateRowList } from '@content/utils/contentEntryUtils'
 import { useInitialQueryParams, useUrlQuerySync } from '@admin/lib/urlState'
 import { getErrorMessage } from '@core/utils/errorMessage'
+import { listCmsLocales } from '@core/persistence'
+import { useAsyncResource } from '@admin/lib/useAsyncResource'
 
 interface UseContentWorkspaceOptions {
   loadAuthors?: boolean
@@ -65,6 +67,9 @@ export function useContentWorkspace({
   // one-shot deep-link reads. Held in refs so the deep-link effects read
   // imperative values rather than reactive state.
   const initialParams = useInitialQueryParams()
+  const [requestedLocaleId, setRequestedLocaleId] = useState<string | null>(() => initialParams.get('localeId'))
+  const { data: locales, loading: localesLoading, error: localesError } = useAsyncResource(listCmsLocales, [])
+  const activeLocaleId = requestedLocaleId ?? locales?.find((locale) => locale.isDefault)?.id ?? null
   const initialTableSlugRef = useRef(initialParams.get('table'))
   const initialRowIdRef = useRef(initialParams.get('row'))
   // Prevent the one-shot deep-link from firing more than once per mount.
@@ -76,7 +81,7 @@ export function useContentWorkspace({
   const entriesLoadEpochRef = useRef(0)
 
   const selectedCollection = collections.find((collection) => collection.id === selectedCollectionId) ?? null
-  const contentLoading = loading || entriesLoading
+  const contentLoading = loading || entriesLoading || localesLoading
 
   // The selection usually holds the stored row, but `createUntitledEntry`
   // deliberately selects an editor-local *view* of it whose title is blank so
@@ -136,6 +141,7 @@ export function useContentWorkspace({
    * whatever the author had open and unsaved.
    */
   const applyEntryUpdate = (entry: DataRow) => {
+    if (selectedEntryRef.current?.localeId !== entry.localeId) return
     if (selectedEntryRef.current?.id === entry.id) {
       updateSelectedEntry(entry)
       return
@@ -201,7 +207,7 @@ export function useContentWorkspace({
 
   useEffect(() => {
     const loadEpoch = ++entriesLoadEpochRef.current
-    if (!selectedCollectionId) {
+    if (!selectedCollectionId || !activeLocaleId) {
       let cancelled = false
       queueMicrotask(() => {
         if (!cancelled && loadEpoch === entriesLoadEpochRef.current) {
@@ -218,14 +224,14 @@ export function useContentWorkspace({
       setEntriesLoading(true)
       setError(null)
       try {
-        const nextEntries = await listCmsDataRows(tableId)
+        const nextEntries = await listCmsDataRows(tableId, undefined, undefined, activeLocaleId ?? undefined)
         if (cancelled || loadEpoch !== entriesLoadEpochRef.current) return
         // A row changed after this request began (for example by an MCP save)
         // wins over the older list snapshot. Otherwise the response is
         // authoritative, including when it omits a concurrently deleted row.
         const current = selectedEntryRef.current
         const currentIsInTable = current?.tableId === tableId
-        const currentChangedDuringLoad = currentIsInTable && current !== selectedAtLoadStart
+        const currentChangedDuringLoad = currentIsInTable && current.localeId === activeLocaleId && current !== selectedAtLoadStart
         const serverSelected = currentIsInTable
           ? nextEntries.find((entry) => entry.id === current.id) ?? null
           : null
@@ -254,7 +260,7 @@ export function useContentWorkspace({
 
     void loadEntries()
     return () => { cancelled = true }
-  }, [selectedCollectionId])
+  }, [selectedCollectionId, activeLocaleId])
 
   // Deep-link effect A: once collections finish loading, resolve ?table= in the
   // original URL and override the default collection selection if a slug match
@@ -312,9 +318,17 @@ export function useContentWorkspace({
     {
       table: selectedCollection?.slug ?? null,
       row: selectedEntry?.id ?? null,
+      localeId: activeLocaleId,
     },
     { enabled: !loading },
   )
+
+  const selectLocale = (localeId: string) => {
+    if (localeId === activeLocaleId || !locales?.some((locale) => locale.id === localeId)) return
+    entriesLoadEpochRef.current += 1
+    setEntriesLoading(true)
+    setRequestedLocaleId(localeId)
+  }
 
   const selectCollection = (tableId: string) => {
     if (tableId === selectedCollectionIdRef.current) return
@@ -326,6 +340,7 @@ export function useContentWorkspace({
 
   const openEntry = (entry: DataRow): boolean => {
     if (!collections.some((collection) => collection.id === entry.tableId)) return false
+    if (entry.localeId !== activeLocaleId) selectLocale(entry.localeId)
 
     if (entry.tableId !== selectedCollectionIdRef.current) {
       // Invalidate the previous collection's in-flight list immediately. The
@@ -350,6 +365,7 @@ export function useContentWorkspace({
     if (!selectedCollection) return null
     const nextSlug = entries.length === 0 ? 'untitled' : `untitled-${entries.length + 1}`
     const row = await createCmsDataRow(selectedCollection.id, {
+      localeId: activeLocaleId ?? undefined,
       cells: {
         title: 'Untitled',
         slug: nextSlug,
@@ -373,6 +389,7 @@ export function useContentWorkspace({
     const collection = collections.find((candidate) => candidate.id === entry.tableId)
     if (!collection) throw new Error('Collection not found')
     const duplicated = await createCmsDataRow(entry.tableId, {
+      localeId: entry.localeId,
       cells: buildDuplicateRowCells(collection, entry, entries),
     })
     setEntries((current) => updateRowList(current, duplicated))
@@ -437,6 +454,7 @@ export function useContentWorkspace({
   ) => {
     setError(null)
     const updatedRow = await saveCmsDataRowDraft(row.id, {
+      localeId: row.localeId,
       cells: {
         ...row.cells,
         title: input.title,
@@ -447,8 +465,7 @@ export function useContentWorkspace({
         seoDescription: readSeoDescriptionCell(row.cells),
       },
     })
-    setEntries((current) => updateRowList(current, updatedRow))
-    if (selectedEntry?.id === row.id) selectEntry(updatedRow)
+    applyEntryUpdate(updatedRow)
     return updatedRow
   }
 
@@ -470,9 +487,8 @@ export function useContentWorkspace({
 
   const publishEntry = async (entry: DataRow) => {
     setError(null)
-    const updatedRow = await publishCmsDataRow(entry.id)
-    setEntries((current) => updateRowList(current, updatedRow))
-    if (selectedEntry?.id === entry.id) selectEntry(updatedRow)
+    const updatedRow = await publishCmsDataRow(entry.id, undefined, undefined, entry.localeId)
+    applyEntryUpdate(updatedRow)
     return updatedRow
   }
 
@@ -484,9 +500,8 @@ export function useContentWorkspace({
     status: 'draft' | 'unpublished',
   ) => {
     setError(null)
-    const updatedRow = await updateCmsDataRowStatus(entry.id, status)
-    setEntries((current) => updateRowList(current, updatedRow))
-    if (selectedEntry?.id === entry.id) selectEntry(updatedRow)
+    const updatedRow = await updateCmsDataRowStatus(entry.id, status, undefined, undefined, entry.localeId)
+    applyEntryUpdate(updatedRow)
     return updatedRow
   }
 
@@ -496,9 +511,8 @@ export function useContentWorkspace({
   ) => {
     if (entry.authorUserId === authorUserId) return entry
     setError(null)
-    const updatedRow = await updateCmsDataRowAuthor(entry.id, authorUserId)
-    setEntries((current) => updateRowList(current, updatedRow))
-    if (selectedEntry?.id === entry.id) selectEntry(updatedRow)
+    const updatedRow = await updateCmsDataRowAuthor(entry.id, authorUserId, undefined, undefined, entry.localeId)
+    applyEntryUpdate(updatedRow)
     return updatedRow
   }
 
@@ -508,7 +522,7 @@ export function useContentWorkspace({
   ) => {
     if (entry.tableId === tableId) return entry
     setError(null)
-    const updatedRow = await updateCmsDataRowTable(entry.id, tableId)
+    const updatedRow = await updateCmsDataRowTable(entry.id, tableId, undefined, undefined, entry.localeId)
     // Active collection view: the moved entry no longer belongs here.
     if (entry.tableId === selectedCollectionId) {
       setEntries((current) => current.filter((candidate) => candidate.id !== entry.id))
@@ -526,7 +540,7 @@ export function useContentWorkspace({
     if (!selectedEntry || selectedEntry.tableId === tableId) return selectedEntry
     setError(null)
     setEntriesLoading(true)
-    const entry = await updateCmsDataRowTable(selectedEntry.id, tableId)
+    const entry = await updateCmsDataRowTable(selectedEntry.id, tableId, undefined, undefined, selectedEntry.localeId)
     entriesLoadEpochRef.current += 1
     selectedCollectionIdRef.current = tableId
     setSelectedCollectionId(tableId)
@@ -536,6 +550,9 @@ export function useContentWorkspace({
   }
 
   return {
+    locales: locales ?? [],
+    activeLocaleId,
+    selectLocale,
     tables,
     collections,
     refreshCollections,
@@ -546,7 +563,7 @@ export function useContentWorkspace({
     selectedCollectionId,
     selectedEntry,
     contentLoading,
-    error,
+    error: error ?? localesError,
     setError,
     selectCollection,
     openEntry,

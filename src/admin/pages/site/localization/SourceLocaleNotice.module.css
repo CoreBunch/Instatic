@@ -1,0 +1,9 @@
+.notice {
+  padding: var(--space-m);
+  color: var(--text-muted);
+  font-size: var(--text-s);
+}
+
+.notice p {
+  margin: 0 0 var(--space-s);
+}

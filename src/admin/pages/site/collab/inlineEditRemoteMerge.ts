@@ -167,12 +167,22 @@ function domPositionAt(el: HTMLElement, target: number): { node: Node; offset: n
 export function attachInlineEditRemoteMerge(options: {
   el: HTMLElement
   doc: Y.Doc
+  /** Sparse locale text resolves through source and shared baseline documents. */
+  fallbackDocs?: readonly Y.Doc[]
   nodeId: string
   prop: string
   onInvalidated?: () => void
 }): () => void {
   const { el, doc, nodeId, prop, onInvalidated } = options
-  if (!nodeTextOf(doc, nodeId, prop)) return () => {}
+  const documents = [doc, ...(options.fallbackDocs ?? [])]
+  const currentText = (): Y.Text | null => {
+    for (const candidate of documents) {
+      const text = nodeTextOf(candidate, nodeId, prop)
+      if (text) return text
+    }
+    return null
+  }
+  if (!currentText()) return () => {}
 
   let composing = false
   let deferredWhileComposing = false
@@ -221,7 +231,7 @@ export function attachInlineEditRemoteMerge(options: {
     // Local edits are already in the DOM (the DOM is where they came from);
     // seeds mirror content the session was opened on.
     if (transaction.origin === LOCAL_ORIGIN || transaction.origin === SEED_ORIGIN) return
-    const text = nodeTextOf(doc, nodeId, prop)
+    const text = currentText()
     if (!text) {
       if (!invalidated) {
         invalidated = true
@@ -255,7 +265,7 @@ export function attachInlineEditRemoteMerge(options: {
     composing = false
     if (!deferredWhileComposing) return
     deferredWhileComposing = false
-    const text = nodeTextOf(doc, nodeId, prop)
+    const text = currentText()
     if (!text) {
       if (!invalidated) {
         invalidated = true
@@ -269,15 +279,15 @@ export function attachInlineEditRemoteMerge(options: {
     mergeIntoSurface(nextValue, spliceDelta(readInlineEditableText(el), nextValue))
   }
 
-  const tree = treeMap(doc)
+  const trees = documents.map((candidate) => treeMap(candidate))
   // Observe the tree rather than one Y.Text instance. A whole-node remote
   // write replaces the node map and its nested Y.Text; observing only the old
   // instance silently froze the editing surface after that replacement.
-  tree.observeDeep(observer)
+  for (const tree of trees) tree.observeDeep(observer)
   el.addEventListener('compositionstart', onCompositionStart)
   el.addEventListener('compositionend', onCompositionEnd)
   return () => {
-    tree.unobserveDeep(observer)
+    for (const tree of trees) tree.unobserveDeep(observer)
     el.removeEventListener('compositionstart', onCompositionStart)
     el.removeEventListener('compositionend', onCompositionEnd)
   }

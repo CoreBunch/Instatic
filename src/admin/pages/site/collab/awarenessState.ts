@@ -75,12 +75,13 @@ export function peerColor(userId: string): string {
 export function activeEditorDocId(state: {
   activeDocument: { kind: string; vcId?: string } | null
   activePageId: string | null
+  activeLocaleId?: string | null
 }): string | null {
   if (state.activeDocument?.kind === 'visualComponent' && state.activeDocument.vcId) {
-    return encodeCollabDocId({ kind: 'component', rowId: state.activeDocument.vcId })
+    return encodeCollabDocId({ kind: 'component', rowId: state.activeDocument.vcId, localeId: state.activeLocaleId ?? undefined })
   }
   return state.activePageId
-    ? encodeCollabDocId({ kind: 'page', rowId: state.activePageId })
+    ? encodeCollabDocId({ kind: 'page', rowId: state.activePageId, localeId: state.activeLocaleId ?? undefined })
     : null
 }
 

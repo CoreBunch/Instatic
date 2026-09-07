@@ -242,7 +242,7 @@ describe('NewTableDialog schema composer', () => {
     await user.click(screen.getByRole('button', { name: 'Add field' }))
 
     const fieldDialog = screen.getAllByRole('dialog').at(-1)!
-    await user.click(within(fieldDialog).getByRole('combobox'))
+    await user.click(within(fieldDialog).getByRole('combobox', { name: 'Type' }))
     await user.click(screen.getByRole('option', { name: 'Repeater' }))
     await user.type(within(fieldDialog).getByLabelText(/^Label/), 'Gallery')
     expect((within(fieldDialog).getByLabelText(/^ID/) as HTMLInputElement).value).toBe('gallery')
@@ -272,7 +272,8 @@ describe('NewTableDialog schema composer', () => {
       type: 'repeater',
       id: 'gallery',
       label: 'Gallery',
-      fields: [{ type: 'text', id: 'caption', label: 'Caption' }],
+      localization: 'localized',
+      fields: [{ type: 'text', id: 'caption', label: 'Caption', localization: 'localized' }],
     })
   })
 

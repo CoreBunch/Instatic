@@ -34,8 +34,12 @@ export const PageSchema = Type.Object({
   id: Type.String(),
   /** URL-safe slug — used as the public URL path when published */
   slug: Type.String(),
+  /** Frozen URL of a published locale variant; absent on editable drafts. */
+  publicPath: Type.Optional(Type.String()),
   /** Display title e.g. "Home", "About Us" */
   title: Type.String(),
+  seoTitle: Type.Optional(Type.String()),
+  seoDescription: Type.Optional(Type.String()),
   /** Owning user for admin/editor workflows; server-owned when persisted in CMS. */
   ownerUserId: Type.Optional(Type.Union([Type.String(), Type.Null()])),
   /** User who originally created this page; server-owned when persisted in CMS. */
@@ -96,7 +100,10 @@ export function parsePage(raw: unknown, pageIndex: number): Page {
   return {
     id: r.id,
     slug: r.slug,
+    ...(typeof r.publicPath === 'string' ? { publicPath: r.publicPath } : {}),
     title: r.title,
+    ...(typeof r.seoTitle === 'string' ? { seoTitle: r.seoTitle } : {}),
+    ...(typeof r.seoDescription === 'string' ? { seoDescription: r.seoDescription } : {}),
     ...(typeof r.ownerUserId === 'string' || r.ownerUserId === null ? { ownerUserId: r.ownerUserId } : {}),
     ...(typeof r.createdByUserId === 'string' || r.createdByUserId === null
       ? { createdByUserId: r.createdByUserId }

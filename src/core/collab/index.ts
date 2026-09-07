@@ -11,6 +11,7 @@ export {
   encodeCollabDocId,
   parseCollabDocId,
   SITE_DOC_ID,
+  sharedCollabDocId,
   type CollabDocId,
   type CollabDocKind,
 } from './docIds'
@@ -63,3 +64,4 @@ export {
   projectSiteDoc,
   type ProjectedSiteDoc,
 } from './project'
+export { applyLocalizationDraftToDoc, projectLocalizationDoc, seedLocalizationDoc } from './localizationDoc'

@@ -1,5 +1,14 @@
 export { cmsAdapter } from './cms'
-export { getCmsPublishStatus, publishCmsDraft } from './cmsPublish'
+export { getCmsPublicationOverview, getCmsPublishStatus, publishCmsDraft } from './cmsPublish'
+export {
+  changeCmsTranslation,
+  createCmsLocale,
+  getCmsRowLocalizations,
+  getCmsTableLocalizations,
+  listCmsLocales,
+  updateCmsLocale,
+  updateCmsTableLocalization,
+} from './cmsLocales'
 export {
   buildCmsRuntimePreview,
   resolveCmsRuntimeDependencies,

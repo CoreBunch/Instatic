@@ -19,7 +19,7 @@ import { act, cleanup, fireEvent, render, waitFor } from '@testing-library/react
 import * as Y from 'yjs'
 import { CanvasTransformLayer } from '@site/canvas/CanvasTransformLayer'
 import { useEditorStore } from '@site/store/store'
-import { encodeCollabDocId, LOCAL_ORIGIN, seedPageDoc, treeMap } from '@core/collab'
+import { applyLocalizationDraftToDoc, encodeCollabDocId, LOCAL_ORIGIN, projectLocalizationDoc, seedLocalizationDoc, seedPageDoc, treeMap } from '@core/collab'
 import { collabDocFor } from '@site/store/slices/site/collabBinding'
 import {
   attachInlineEditRemoteMerge,
@@ -31,6 +31,27 @@ import { makeNode, makePage } from '../fixtures'
 import '@modules/base'
 
 const originalFetch = globalThis.fetch
+
+it('merges inherited source text during editing, then follows an explicit locale override and its reset', () => {
+  const source = new Y.Doc()
+  const locale = new Y.Doc()
+  seedLocalizationDoc(source, { cells: { body: { nodes: { text: { props: { text: 'Hello' } } } } }, slug: 'index' })
+  seedLocalizationDoc(locale, { cells: {}, slug: 'index' })
+  const el = document.createElement('div')
+  seedInlineEditableContent(el, 'Hello')
+  const detach = attachInlineEditRemoteMerge({ el, doc: locale, fallbackDocs: [source], nodeId: 'text', prop: 'text' })
+  applyLocalizationDraftToDoc(source, projectLocalizationDoc(source), { cells: { body: { nodes: { text: { props: { text: 'Hello world' } } } } }, slug: 'index' }, 'remote')
+  expect(el.textContent).toBe('Hello world')
+  applyLocalizationDraftToDoc(locale, projectLocalizationDoc(locale), { cells: { body: { nodes: { text: { props: { text: 'Hallo' } } } } }, slug: 'index' }, 'remote')
+  expect(el.textContent).toBe('Hallo')
+  applyLocalizationDraftToDoc(source, projectLocalizationDoc(source), { cells: { body: { nodes: { text: { props: { text: 'New source' } } } } }, slug: 'index' }, 'remote')
+  expect(el.textContent).toBe('Hallo')
+  applyLocalizationDraftToDoc(locale, projectLocalizationDoc(locale), { cells: {}, slug: 'index' }, 'remote')
+  expect(el.textContent).toBe('New source')
+  detach()
+  source.destroy()
+  locale.destroy()
+})
 
 function yTextOf(doc: Y.Doc, nodeId: string): Y.Text {
   const nodes = treeMap(doc).get('nodes') as Y.Map<unknown>

@@ -47,7 +47,9 @@
  * delta reconciliation substrate for the live-sync plan).
  */
 import type { DbClient } from '../../db/client'
-import { requireAnyCapability } from '../../auth/authz'
+import { requireAnyCapability, requireCapability } from '../../auth/authz'
+import { getDraftSiteDocumentInTx } from '../../repositories/publish'
+import { requestLocale } from './localeContext'
 import type { CoreCapability } from '../../auth/capabilities'
 import {
   applyDataRowChangesInTx,
@@ -99,6 +101,7 @@ const SITE_WRITE_CAPABILITIES = [
 
 const SiteDocumentBodySchema = Type.Object({
   mode: Type.Union([Type.Literal('incremental'), Type.Literal('replace')]),
+  localeId: Type.Optional(Type.String({ minLength: 1 })),
   // The shell — validated structurally by validateSite in phase 1.
   site: Type.Unknown(),
   // Pages are parsed/validated by validatePagesForPartialSave.
@@ -183,6 +186,23 @@ function forbiddenStructuralChange(
 export async function handleSiteDocumentRoutes(req: Request, db: DbClient): Promise<Response | null> {
   const url = new URL(req.url)
   if (url.pathname !== `${CMS_API_PREFIX}/site-document`) return null
+  if (req.method === 'GET') {
+    const reader = await requireCapability(req, db, 'site.read')
+    if (reader instanceof Response) return reader
+    const locale = await requestLocale(req, db)
+    if (locale instanceof Response) return locale
+    return db.transaction(async (tx) => {
+      const site = await getDraftSiteDocumentInTx(tx, { localeId: locale.id })
+      if (!site) return jsonResponse({ error: 'Draft site not found' }, { status: 404 })
+      const [pages, components, layouts, shellSeq] = await Promise.all([
+        listDataRowSeqs(tx, 'pages', site.pages.map((page) => page.id)),
+        listDataRowSeqs(tx, 'components', site.visualComponents.map((component) => component.id)),
+        listDataRowSeqs(tx, 'layouts', site.layouts.map((layout) => layout.id)),
+        getDraftSiteSeq(tx),
+      ])
+      return jsonResponse({ site, rowSeqs: Object.fromEntries([...pages, ...components, ...layouts].map((row) => [row.id, row.seq])), shellSeq })
+    })
+  }
   if (req.method !== 'PUT') return methodNotAllowed()
 
   const user = await requireAnyCapability(req, db, SITE_WRITE_CAPABILITIES)
@@ -190,6 +210,11 @@ export async function handleSiteDocumentRoutes(req: Request, db: DbClient): Prom
 
   const body = await readValidatedBody(req, SiteDocumentBodySchema)
   if (!body) return badRequest('Invalid request body')
+  const locale = await requestLocale(req, db, body.localeId)
+  if (locale instanceof Response) return locale
+  if (!locale.isDefault && (body.mode === 'replace' || body.deletedPageIds.length || body.deletedComponentIds.length || body.deletedLayoutIds.length)) {
+    return badRequest('Change shared structure in the source language. Use language availability to take a translation offline.')
+  }
 
   if (
     body.mode === 'replace' &&
@@ -232,7 +257,7 @@ export async function handleSiteDocumentRoutes(req: Request, db: DbClient): Prom
       body.changedPages.length > 0 ||
       body.mode === 'replace'
     const existingVCs: VisualComponent[] = needsComponentRoster
-      ? (await listDataRows(db, 'components')).flatMap((r) => {
+      ? (await listDataRows(db, 'components', { localeId: locale.id })).flatMap((r) => {
           const vc = visualComponentFromRow(r)
           return vc ? [vc] : []
         })
@@ -262,7 +287,7 @@ export async function handleSiteDocumentRoutes(req: Request, db: DbClient): Prom
     const needsLayoutRoster =
       body.changedLayouts.length > 0 || body.deletedLayoutIds.length > 0 || body.mode === 'replace'
     const existingLayouts: SavedLayout[] = needsLayoutRoster
-      ? (await listDataRows(db, 'layouts')).flatMap((r) => {
+      ? (await listDataRows(db, 'layouts', { localeId: locale.id })).flatMap((r) => {
           const layout = savedLayoutFromRow(r)
           return layout ? [layout] : []
         })
@@ -321,7 +346,7 @@ export async function handleSiteDocumentRoutes(req: Request, db: DbClient): Prom
         : []
     const previousPages: Page[] =
       pages.length > 0 && !hasAllSiteCaps
-        ? (await listDataRows(db, 'pages')).map(pageFromRow)
+        ? (await listDataRows(db, 'pages', { localeId: locale.id })).map(pageFromRow)
         : []
     validatePageWriteDiff({
       previousPages,
@@ -334,16 +359,19 @@ export async function handleSiteDocumentRoutes(req: Request, db: DbClient): Prom
 
     const componentWrites: DataRowWrite[] = components.map((vc) => ({
       id: vc.id,
+      localeId: locale.id,
       cells: visualComponentToCells(vc),
       slug: vcSlugFromName(vc.name),
     }))
     const layoutWrites: DataRowWrite[] = layouts.map((layout) => ({
       id: layout.id,
+      localeId: locale.id,
       cells: savedLayoutToCells(layout),
       slug: layoutSlugFromName(layout.name),
     }))
     const pageWrites: DataRowWrite[] = pages.map((page) => ({
       id: page.id,
+      localeId: locale.id,
       cells: pageToCells(page),
       slug: page.slug,
     }))

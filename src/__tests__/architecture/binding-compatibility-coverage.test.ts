@@ -14,11 +14,10 @@
  *      Every type listed as compatible must be a real `DataFieldType` member.
  *      Catches typos and stale entries.
  *
- *   3. Every DataFieldType appears in at least one control's compatibility list.
- *      A field type invisible to the picker cannot be bound by page authors.
- *      If a new field type is added to `DataFieldSchema`, it must also be wired
- *      into BINDING_COMPATIBILITY. The covered-types set must equal the full
- *      `DATA_FIELD_TYPES` set — neither a subset nor a superset.
+ *   3. Every scalar DataFieldType appears in at least one compatibility list.
+ *      Whole-document and parameter-schema storage cannot be bound to a node
+ *      property. Explicitly enumerate those exceptions rather than claiming
+ *      they are compatible with a group control.
  *
  * @see src/core/data/schemas.ts — DATA_FIELD_TYPES / DataFieldType
  * @see src/admin/shared/DataBindingPicker/bindingCompatibility.ts
@@ -63,9 +62,11 @@ describe('BINDING_COMPATIBILITY — architecture coverage', () => {
     expect(invalid).toHaveLength(0)
   })
 
-  test('every DataFieldType is bindable to at least one PropertyControl', () => {
+  test('every scalar DataFieldType is bindable to at least one PropertyControl', () => {
+    const documentTypes = new Set(['repeater', 'pageTree', 'fieldSchema', 'parameterValues'])
+    const bindableTypes = DATA_FIELD_TYPES.filter((type) => !documentTypes.has(type))
     const coveredTypes = new Set(Object.values(BINDING_COMPATIBILITY).flat())
-    const uncovered = DATA_FIELD_TYPES.filter((t) => !coveredTypes.has(t))
+    const uncovered = bindableTypes.filter((t) => !coveredTypes.has(t))
 
     if (uncovered.length > 0) {
       throw new Error(
@@ -80,6 +81,6 @@ describe('BINDING_COMPATIBILITY — architecture coverage', () => {
       )
     }
 
-    expect(coveredTypes).toEqual(new Set(DATA_FIELD_TYPES))
+    expect(coveredTypes).toEqual(new Set(bindableTypes))
   })
 })

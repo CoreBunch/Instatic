@@ -2,6 +2,7 @@ import { describe, expect, it } from 'bun:test'
 import type { SiteShell } from '@core/page-tree'
 import { normalizeSiteRuntimeConfig } from '@core/site-runtime'
 import { saveDraftSite } from '../../../server/repositories/site'
+import { listDataRows } from '../../../server/repositories/data'
 import {
   createCapabilityTestHarness,
   readJson,
@@ -93,9 +94,11 @@ describe('publish runtime validation response', () => {
         }),
       })
 
+      const rows = await listDataRows(harness.db, 'pages')
       const response = await harness.cms('/admin/api/cms/publish', {
         method: 'POST',
         cookie,
+        json: { variants: rows.map((row) => ({ rowId: row.id, localeId: 'default' })) },
       })
       expect(response.status).toBe(422)
       const body = await readJson<{ error: string }>(response)

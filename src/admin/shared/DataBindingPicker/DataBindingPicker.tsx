@@ -89,6 +89,7 @@ type SystemPreviewValues = Partial<
 >
 
 export interface DataBindingPickerProps {
+  localeId?: string
   label: string
   control: PropertyControl
   availableFields?: LoopSourceField[]
@@ -143,6 +144,7 @@ export interface DataBindingPickerProps {
 }
 
 export function DataBindingPicker({
+  localeId,
   label,
   control,
   availableFields,
@@ -216,6 +218,7 @@ export function DataBindingPicker({
   // flashes preview values from the previous table.
   const [fetchedEntry, setFetchedEntry] = useState<{
     tableId: string
+    localeId?: string
     item: LoopItem | null
   } | null>(null)
   const hasProvidedPreview = previewFields !== undefined
@@ -233,13 +236,14 @@ export function DataBindingPicker({
       if (loadPublishedPreview) {
         try {
           const result = await previewCmsDataLoopItems(tableId, {
+            localeId,
             limit: 1,
             orderBy: 'publishedAt',
             direction: 'desc',
           })
           if (cancelled) return
           if (result.items.length > 0) {
-            setFetchedEntry({ tableId, item: result.items[0] ?? null })
+            setFetchedEntry({ tableId, localeId, item: result.items[0] ?? null })
             return
           }
         } catch {
@@ -252,10 +256,10 @@ export function DataBindingPicker({
       try {
         const table = await getCmsDataTable(tableId)
         if (cancelled || !table) return
-        setFetchedEntry({ tableId, item: dataTablePreviewToLoopItem(table) })
+        setFetchedEntry({ tableId, localeId, item: dataTablePreviewToLoopItem(table) })
       } catch {
         if (cancelled) return
-        setFetchedEntry({ tableId, item: null })
+        setFetchedEntry({ tableId, localeId, item: null })
       }
     }
 
@@ -263,10 +267,10 @@ export function DataBindingPicker({
     return () => {
       cancelled = true
     }
-  }, [scopedTable, loadPublishedPreview, hasProvidedPreview])
+  }, [scopedTable, localeId, loadPublishedPreview, hasProvidedPreview])
 
   const currentEntryFields = previewFields ??
-    (fetchedEntry && scopedTable && fetchedEntry.tableId === scopedTable.id
+    (fetchedEntry && scopedTable && fetchedEntry.tableId === scopedTable.id && fetchedEntry.localeId === localeId
       ? fetchedEntry.item?.fields
       : null)
 

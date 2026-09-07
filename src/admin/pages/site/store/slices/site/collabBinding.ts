@@ -31,9 +31,7 @@
  */
 import * as Y from 'yjs'
 import type { Patches } from 'mutative'
-import type { Page, SiteDocument, SiteShell } from '@core/page-tree'
-import type { VisualComponent } from '@core/visualComponents'
-import type { SavedLayout } from '@core/layouts'
+import type { SiteDocument } from '@core/page-tree'
 import {
   applySitePatchesToDocs,
   createCollabDocSet,
@@ -41,11 +39,7 @@ import {
   encodeCollabDocId,
   LOCAL_ORIGIN,
   metaMap,
-  parseCollabDocId,
-  projectComponentDoc,
-  projectLayoutDoc,
-  projectPageDoc,
-  projectSiteDoc,
+  seedLocalizationDoc,
   rostersMap,
   seedComponentDoc,
   seedLayoutDoc,
@@ -57,11 +51,9 @@ import {
   treeMap,
   type CollabDocSet,
 } from '@core/collab'
-import { clonePackageJson } from '@core/site-dependencies/manifest'
-import { cloneSiteRuntimeConfig } from '@core/site-runtime'
-import { validateSite } from '@core/persistence/validate'
+import { createCollabProjector } from './collabProjection'
+import { projectSiteLocale } from '@core/localization'
 import type { EditorStoreApi } from '@site/store/types'
-import { pruneCanvasSelectionDraft } from '../selectionSlice'
 import type { Awareness } from 'y-protocols/awareness'
 import type { CollabProvider } from '@site/collab/collabProvider'
 import {
@@ -93,6 +85,7 @@ let managed = new Map<string, ManagedDoc>()
  */
 let undoRoute: string[][] = []
 let redoRoute: string[][] = []
+const routeLocales = new Map<string[], string | null>()
 const lastCoalesce = new Map<string, string | null>()
 let provider: CollabProvider | null = null
 let detachProviderReset: (() => void) | null = null
@@ -108,6 +101,14 @@ let projectionFlushScheduled = false
  * from the pre-mutation site before translating.
  */
 let alignedSiteRef: SiteDocument | null = null
+
+const projectDocIntoStore = createCollabProjector({
+  getStoreApi: () => storeApi,
+  getDocs: () => docs,
+  onAligned: (site) => { alignedSiteRef = site },
+  bindLocaleDocsForRow,
+  bindDocThroughProvider,
+})
 
 /** Called once by store creation — the binding's only handle into Zustand. */
 export function initCollabBinding(api: EditorStoreApi): void {
@@ -289,7 +290,8 @@ export function applyLocalSitePatches(
   )
   if (grew.length > 0) {
     undoRoute.push(grew)
-    redoRoute = []
+    routeLocales.set(grew, nextSite.localeId ?? null)
+    redoRoute = redoRoute.filter((group) => !isActiveLocaleGroup(group))
     syncUndoFlags()
   }
   return { accepted: true }
@@ -304,10 +306,18 @@ export function collabBreakCoalescing(): void {
 // Undo / redo
 // ---------------------------------------------------------------------------
 
+function isActiveLocaleGroup(group: string[]): boolean {
+  return (routeLocales.get(group) ?? null) === (storeApi?.getState().activeLocaleId ?? null)
+}
+
+function lastActiveGroup(route: string[][]): number {
+  return route.findLastIndex(isActiveLocaleGroup)
+}
+
 function syncUndoFlags(): void {
   storeApi?.setState({
-    canUndo: undoRoute.length > 0,
-    canRedo: redoRoute.length > 0,
+    canUndo: lastActiveGroup(undoRoute) !== -1,
+    canRedo: lastActiveGroup(redoRoute) !== -1,
   })
 }
 
@@ -322,8 +332,8 @@ export function collabUndo(): boolean {
     notifyCollabBlocked(blocked)
     return false
   }
-  while (undoRoute.length > 0) {
-    const group = undoRoute.pop()!
+  while (lastActiveGroup(undoRoute) !== -1) {
+    const [group] = undoRoute.splice(lastActiveGroup(undoRoute), 1)
     let undid = false
     lastCoalesce.clear()
     // Reverse touch order: the site doc is always first in a group, so
@@ -354,8 +364,8 @@ export function collabRedo(): boolean {
     notifyCollabBlocked(blocked)
     return false
   }
-  while (redoRoute.length > 0) {
-    const group = redoRoute.pop()!
+  while (lastActiveGroup(redoRoute) !== -1) {
+    const [group] = redoRoute.splice(lastActiveGroup(redoRoute), 1)
     let redid = false
     lastCoalesce.clear()
     for (const docId of group) {
@@ -380,6 +390,7 @@ export function collabClearHistory(): void {
   for (const [, entry] of managed) entry.manager.clear()
   undoRoute = []
   redoRoute = []
+  routeLocales.clear()
   lastCoalesce.clear()
   syncUndoFlags()
 }
@@ -406,144 +417,6 @@ function scheduleProjection(docId: string): void {
   })
 }
 
-function rowFromDoc(docId: string): Page | VisualComponent | SavedLayout | null {
-  const parsed = parseCollabDocId(docId)
-  if (!parsed || parsed.kind === 'site') return null
-  const doc = docs.get(docId)
-  if (!doc) return null
-  if (parsed.kind === 'page') {
-    const page = projectPageDoc(doc, parsed.rowId)
-    return page.rootNodeId ? page : null
-  }
-  if (parsed.kind === 'component') {
-    const vc = projectComponentDoc(doc, parsed.rowId)
-    return vc.tree.rootNodeId ? vc : null
-  }
-  const layout = projectLayoutDoc(doc, parsed.rowId)
-  return layout.rootNodeId ? layout : null
-}
-
-function projectDocIntoStore(docId: string): void {
-  const api = storeApi
-  if (!api) return
-  const state = api.getState()
-  const site = state.site
-  if (!site) return
-  const parsed = parseCollabDocId(docId)
-  if (!parsed) return
-
-  if (parsed.kind === 'site') {
-    const doc = docs.get(docId)
-    if (!doc) return
-    const projected = projectSiteDoc(doc)
-    if (Object.keys(projected.shell).length === 0) return
-    // The projected shell is untyped wire data — validate it before it enters
-    // the store, exactly like the HTTP load path (validateSite) and the relay's
-    // persist path both do. `validateSite` is tolerant of individual malformed
-    // entries (drops bad style rules / conditions / files rather than
-    // rejecting the whole shell), so one corrupt rule from any source can't
-    // crash a panel. `id`/`updatedAt` are non-collaborative — inject them like
-    // the persist path. If the shell is not yet coherent (mid-sync), skip this
-    // tick; the next projection re-runs once it is.
-    let shell: SiteShell
-    try {
-      shell = validateSite({
-        ...projected.shell,
-        id: 'default',
-        updatedAt:
-          typeof projected.shell.updatedAt === 'number' ? projected.shell.updatedAt : Date.now(),
-      })
-    } catch (err) {
-      console.warn('[collabBinding] projected shell failed validation — projection skipped:', err)
-      return
-    }
-    const byId = {
-      pages: new Map(site.pages.map((p) => [p.id, p])),
-      components: new Map(site.visualComponents.map((vc) => [vc.id, vc])),
-      layouts: new Map(site.layouts.map((l) => [l.id, l])),
-    }
-    const assemble = <T extends { id: string }>(
-      ids: readonly string[],
-      existing: Map<string, T>,
-      kind: 'page' | 'component' | 'layout',
-    ): T[] => {
-      const rows: T[] = []
-      for (const id of ids) {
-        const known = existing.get(id)
-        if (known) {
-          rows.push(known)
-          continue
-        }
-        const rowDocId = encodeCollabDocId({ kind, rowId: id })
-        const fresh = rowFromDoc(rowDocId) as T | null
-        if (fresh) {
-          rows.push(fresh)
-          continue
-        }
-        // A peer created this row — its doc isn't bound here yet. Bind it;
-        // the whenSynced hook re-projects the site once content arrives.
-        bindDocThroughProvider(rowDocId)
-      }
-      return rows
-    }
-    const nextSite: SiteDocument = {
-      ...site,
-      ...shell,
-      pages: assemble(projected.rosters.pages, byId.pages, 'page'),
-      visualComponents: assemble(projected.rosters.components, byId.components, 'component'),
-      layouts: assemble(projected.rosters.layouts, byId.layouts, 'layout'),
-    }
-    if (projected.shell.conditions === undefined) delete nextSite.conditions
-    const packageJson = clonePackageJson(nextSite.packageJson)
-    const siteRuntime = cloneSiteRuntimeConfig(nextSite.runtime)
-    const alignedSite = { ...nextSite, packageJson, runtime: siteRuntime }
-    alignedSiteRef = alignedSite
-    api.setState((draft) => {
-      draft.site = alignedSite
-      draft.packageJson = packageJson
-      draft.siteRuntime = siteRuntime
-      if (!nextSite.pages.some((p) => p.id === draft.activePageId)) {
-        draft.activePageId = nextSite.pages[0]?.id ?? null
-      }
-      // A roster change can drop the whole document the selection lives in (a
-      // peer deleted the page, or an undo removed it). Prune AFTER site +
-      // activePageId land, since the pruner resolves the active tree from them.
-      pruneCanvasSelectionDraft(draft)
-    })
-    return
-  }
-
-  const row = rowFromDoc(docId)
-  const collection =
-    parsed.kind === 'page' ? 'pages' : parsed.kind === 'component' ? 'visualComponents' : 'layouts'
-  const rows = site[collection] as Array<{ id: string }>
-  const index = rows.findIndex((r) => r.id === parsed.rowId)
-  if (!row) {
-    if (index === -1) return
-    const nextRows = rows.filter((r) => r.id !== parsed.rowId)
-    const nextSite = { ...site, [collection]: nextRows } as SiteDocument
-    alignedSiteRef = nextSite
-    api.setState((draft) => {
-      draft.site = nextSite
-      pruneCanvasSelectionDraft(draft)
-    })
-    return
-  }
-  const nextRows = index === -1 ? [...rows, row] : rows.map((r, i) => (i === index ? row : r))
-  const nextSite = { ...site, [collection]: nextRows } as SiteDocument
-  alignedSiteRef = nextSite
-  api.setState((draft) => {
-    draft.site = nextSite
-    // The freshly projected row may have lost nodes — a peer deleted them, or a
-    // Y.UndoManager undo reverted their creation. Prune by tree-membership, the
-    // same way a local delete does: survivors keep their selection, dead ids
-    // (including descendants swept with a subtree) drop out, and an inline-edit
-    // session on a vanished node is closed. `pruneCanvasSelectionDraft` reads
-    // the ACTIVE tree, so it self-limits to the doc the user is looking at.
-    pruneCanvasSelectionDraft(draft)
-  })
-}
-
 // ---------------------------------------------------------------------------
 // Lifecycle + provider connection
 // ---------------------------------------------------------------------------
@@ -554,6 +427,10 @@ function allDocIdsForSite(site: SiteDocument): string[] {
     ...site.pages.map((p) => encodeCollabDocId({ kind: 'page', rowId: p.id })),
     ...site.visualComponents.map((vc) => encodeCollabDocId({ kind: 'component', rowId: vc.id })),
     ...site.layouts.map((l) => encodeCollabDocId({ kind: 'layout', rowId: l.id })),
+    ...Object.entries(site.localization?.rows ?? {}).flatMap(([rowId, row]) => {
+      const kind = row.tableId === 'pages' ? 'page' : row.tableId === 'components' ? 'component' : 'layout'
+      return editorLocaleIds(site).map((localeId) => encodeCollabDocId({ kind, rowId, localeId }))
+    }),
   ]
 }
 
@@ -575,6 +452,7 @@ export function resetCollabDocsFromSite(site: SiteDocument | null): void {
   }
   undoRoute = []
   redoRoute = []
+  routeLocales.clear()
   lastCoalesce.clear()
   // Drop any projection still queued for the OLD docs — flushing it against
   // the fresh doc set would project empty rows into the just-loaded site.
@@ -590,6 +468,7 @@ export function resetCollabDocsFromSite(site: SiteDocument | null): void {
 }
 
 function seedDetachedDocs(site: SiteDocument): void {
+  if (site.localization && site.localeId) site = projectSiteLocale(site, site.localeId, true)
   const siteDoc = docs.ensure(SITE_DOC_ID)
   seedSiteDoc(siteDoc, site)
   ensureManaged(SITE_DOC_ID, siteDoc)
@@ -611,6 +490,40 @@ function seedDetachedDocs(site: SiteDocument): void {
     seedLayoutDoc(doc, layout)
     ensureManaged(docId, doc)
   }
+  for (const [rowId, row] of Object.entries(site.localization?.rows ?? {})) {
+    const kind = row.tableId === 'pages' ? 'page' : row.tableId === 'components' ? 'component' : 'layout'
+    bindLocaleDocsForRow(site, kind, rowId)
+  }
+}
+
+function editorLocaleIds(site: SiteDocument): string[] {
+  return [...new Set([site.localeId, site.locales?.find((locale) => locale.isDefault)?.id].filter((id): id is string => !!id))]
+}
+
+function bindLocaleDocsForRow(site: SiteDocument, kind: 'page' | 'component' | 'layout', rowId: string): void {
+  if (!site.localization) return
+  for (const localeId of editorLocaleIds(site)) {
+    const id = encodeCollabDocId({ kind, rowId, localeId })
+    if (provider) bindDocThroughProvider(id)
+    else if (!docs.get(id)) {
+      const doc = docs.ensure(id)
+      const row = site.localization.rows[rowId]
+      const sourceId = site.locales?.find((locale) => locale.isDefault)?.id ?? ''
+      seedLocalizationDoc(doc, row?.localizations[localeId] ?? { cells: {}, slug: row?.localizations[sourceId]?.slug ?? '' })
+      ensureManaged(id, doc)
+    }
+  }
+}
+
+/** Switching language preserves each locale's own CRDT history. */
+export function collabSelectLocale(site: SiteDocument): void {
+  alignedSiteRef = site
+  collabBreakCoalescing()
+  for (const [rowId, row] of Object.entries(site.localization?.rows ?? {})) {
+    const kind = row.tableId === 'pages' ? 'page' : row.tableId === 'components' ? 'component' : 'layout'
+    bindLocaleDocsForRow(site, kind, rowId)
+  }
+  syncUndoFlags()
 }
 
 function bindDocThroughProvider(docId: string): void {
@@ -654,15 +567,20 @@ export function connectCollabProvider(next: CollabProvider): void {
     const current = storeApi?.getState()
     if (
       current?.activeInlineEdit &&
-      resetTargetsActiveDocument(docId, current.activeDocument, current.activePageId)
+      resetTargetsActiveDocument(docId, current.activeDocument, current.activePageId, current.activeLocaleId)
     ) {
       current.endInlineEdit()
     }
     // The undo history belongs to the lineage that just died: its
     // UndoManager is rebuilt empty below, so any routing entry still naming
     // this doc would make Cmd+Z a silent no-op that consumes a step.
-    undoRoute = undoRoute.map((group) => group.filter((id) => id !== docId)).filter((g) => g.length > 0)
-    redoRoute = redoRoute.map((group) => group.filter((id) => id !== docId)).filter((g) => g.length > 0)
+    const prune = (route: string[][]) => route.filter((group) => {
+      const index = group.indexOf(docId)
+      if (index !== -1) group.splice(index, 1)
+      return group.length > 0
+    })
+    undoRoute = prune(undoRoute)
+    redoRoute = prune(redoRoute)
     syncUndoFlags()
     // The server dropped this doc: rebind and let the fresh server seed
     // re-project into the store.

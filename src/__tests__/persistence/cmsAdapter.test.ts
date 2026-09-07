@@ -1,3 +1,4 @@
+import { SOURCE_LOCALE } from '../fixtures/localization'
 import { describe, expect, it } from 'bun:test'
 import type { Page, SiteDocument } from '@core/page-tree'
 import type { VisualComponent } from '@core/visualComponents'
@@ -68,6 +69,7 @@ function makeLayout(id: string, name: string): SavedLayout {
 
 function site(): SiteDocument {
   return {
+    localeId: 'default', locales: [SOURCE_LOCALE], localization: { rows: {}, fieldLocalizations: {} },
     id: 'project_1',
     name: 'CMS Site',
     pages: [makePage('page_home', 'index')],
@@ -92,14 +94,14 @@ describe('CmsAdapter', () => {
     const calls: Array<{ input: RequestInfo | URL; init?: RequestInit }> = []
     const adapter = new CmsAdapter(async (input, init) => {
       calls.push({ input, init })
-      return new Response(JSON.stringify({ site: site() }), { status: 200 })
+      return new Response(JSON.stringify({ site: site(), rowSeqs: {}, shellSeq: 0 }), { status: 200 })
     })
 
     const loaded = await adapter.loadSite('ignored-in-single-site-mode')
 
     expect(loaded?.site.id).toBe('project_1')
     expect(calls[0]).toMatchObject({
-      input: '/admin/api/cms/site',
+      input: '/admin/api/cms/site-document',
       init: { method: 'GET', credentials: 'include' },
     })
   })
@@ -360,23 +362,8 @@ describe('CmsAdapter conflict protocol', () => {
 
   it('loadSite returns per-row seqs and the shell seq alongside the document', async () => {
     const adapter = new CmsAdapter(async (input) => {
-      const url = String(input)
-      if (url.endsWith('/site')) {
-        return new Response(JSON.stringify({ site: site(), seq: 3 }), { status: 200 })
-      }
-      if (url.endsWith('/pages')) {
-        return new Response(JSON.stringify({
-          rows: [{
-            id: 'page_home', tableId: 'pages', slug: 'index', status: 'draft', seq: 2,
-            cells: { title: 'index', slug: 'index', body: { rootNodeId: 'root', nodes: { root: { id: 'root', moduleId: 'base.body', props: {}, breakpointOverrides: {}, children: [] } } } },
-            authorUserId: null, createdByUserId: null, updatedByUserId: null, publishedByUserId: null,
-            author: null, createdBy: null, updatedBy: null, publishedBy: null,
-            createdAt: '2026-01-01', updatedAt: '2026-01-01', publishedAt: null,
-            scheduledPublishAt: null, deletedAt: null,
-          }],
-        }), { status: 200 })
-      }
-      return new Response(JSON.stringify({ rows: [] }), { status: 200 })
+      expect(String(input)).toBe('/admin/api/cms/site-document')
+      return new Response(JSON.stringify({ site: site(), shellSeq: 3, rowSeqs: { page_home: 2 } }), { status: 200 })
     })
 
     const loaded = await adapter.loadSite('default')

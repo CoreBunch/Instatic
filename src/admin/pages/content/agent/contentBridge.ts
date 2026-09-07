@@ -17,7 +17,7 @@
  * `agentSlice.ts`.
  */
 
-import { aiToolError, aiToolOk, type AiToolOutput } from '@core/ai'
+import { aiToolError, aiToolOk, readLocaleToolInput, type AiToolOutput } from '@core/ai'
 import { getErrorMessage } from '@core/utils/errorMessage'
 import { Type, parseValue, type Static } from '@core/utils/typeboxHelpers'
 import { getContentBridgeHandle } from './contentBridgeHandle'
@@ -90,6 +90,14 @@ export async function executeContentTool(
 ): Promise<AiToolOutput> {
   try {
     const handle = getContentBridgeHandle()
+    const localeInput = readLocaleToolInput(rawInput)
+    if (toolName === 'content_select_locale') {
+      if (!localeInput.localeId) return aiToolError('localeId is required')
+      await handle.selectLocale(localeInput.localeId)
+      return aiToolOk({ localeId: localeInput.localeId })
+    }
+    if (localeInput.localeId && handle.buildSnapshot().localeId !== localeInput.localeId) return aiToolError('The active language changed. Select the requested locale before retrying.')
+    rawInput = localeInput.input
     switch (toolName) {
       case 'content_create_document':
         return await handleCreateDocument(handle, rawInput)

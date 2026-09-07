@@ -107,10 +107,10 @@ export function BreakpointFrame({
 
   // Breakpoint chrome (active highlight + label-click-to-activate) is a style
   // editing affordance — picking the "active" breakpoint controls where per-
-  // breakpoint style overrides land. Hidden for content-only Clients and
-  // pure Viewers; they get plain frames without an active-state outline.
+  // breakpoint style overrides land. Content authors also use the chrome to
+  // inspect translations at each viewport; it does not grant style editing.
   const permissions = useEditorPermissions()
-  const breakpointChromeVisible = permissions.canEditStyle || permissions.canEditStructure
+  const breakpointChromeVisible = permissions.canEditStyle || permissions.canEditStructure || permissions.canEditContent
 
   const handleIframeRef = (handle: IframeFrameSurfaceHandle | null) => {
     iframeHandleRef.current = handle

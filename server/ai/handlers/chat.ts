@@ -1,3 +1,4 @@
+import { ContentAgentSnapshotSchema } from '@core/ai'
 /**
  * POST /admin/api/ai/chat/:scope
  *
@@ -508,7 +509,8 @@ export function buildSystemPromptForScope(
     return buildSiteSystemPrompt(result.value)
   }
   if (scope === 'content') {
-    return buildContentSystemPrompt((snapshot ?? emptyContentSnapshot()) as ContentSnapshot)
+    const result = safeParseValue(ContentAgentSnapshotSchema, snapshot ?? emptyContentSnapshot())
+    return buildContentSystemPrompt(result.ok ? result.value : emptyContentSnapshot())
   }
   // Other scopes don't have system prompts yet. The driver gets a minimal
   // prompt so the conversation isn't completely contextless.

@@ -1,3 +1,4 @@
+import { useEditorLocale } from '@site/localization'
 /**
  * AdminCanvasLayout — the Site editor admin shell.
  *
@@ -147,9 +148,10 @@ export function AdminCanvasLayout() {
   // three holds full editor rights; a user with only `canEditContent` is the
   // "Client / copy editor" persona: read everything, change copy on existing
   // nodes, no DnD, no style edits, no structural changes.
-  const canEditStructureFlag = accessCanEditStructure(currentUser)
+  const { isTranslation } = useEditorLocale()
+  const canEditStructureFlag = accessCanEditStructure(currentUser) && !isTranslation
   const canEditContentFlag = accessCanEditContent(currentUser)
-  const canEditStyleFlag = accessCanEditStyle(currentUser)
+  const canEditStyleFlag = accessCanEditStyle(currentUser) && !isTranslation
   const canSaveSite = canSaveDraftSite(currentUser)
   const canUseAgent = canUseAiChat(currentUser)
   // Legacy "anything-editable" flag — true when the caller can drag/drop and

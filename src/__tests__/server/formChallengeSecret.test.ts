@@ -45,17 +45,17 @@ describe('public form challenge signing secret configuration', () => {
     })
 
     const pageToken = issuer.issuePublicFormPageToken({
-      pageId: 'page-home',
+      pageId: 'page-home', localeId: 'fr', publishedVersionId: 'version-fr', pagePath: '/fr/newsletter',
       formId: 'newsletter',
     })
 
     expect(sameFormSecret.verifyPublicFormPageToken({
-      pageId: 'page-home',
+      pageId: 'page-home', localeId: 'fr', publishedVersionId: 'version-fr', pagePath: '/fr/newsletter',
       formId: 'newsletter',
       pageToken,
     })).toBe(true)
     expect(changedFormSecret.verifyPublicFormPageToken({
-      pageId: 'page-home',
+      pageId: 'page-home', localeId: 'fr', publishedVersionId: 'version-fr', pagePath: '/fr/newsletter',
       formId: 'newsletter',
       pageToken,
     })).toBe(false)
@@ -67,17 +67,17 @@ describe('public form challenge signing secret configuration', () => {
     const rotatedMasterKey = await importChallengeWithEnv({ secretKey: 'rotated-master-key' })
 
     const pageToken = issuer.issuePublicFormPageToken({
-      pageId: 'page-home',
+      pageId: 'page-home', localeId: 'fr', publishedVersionId: 'version-fr', pagePath: '/fr/newsletter',
       formId: 'newsletter',
     })
 
     expect(verifier.verifyPublicFormPageToken({
-      pageId: 'page-home',
+      pageId: 'page-home', localeId: 'fr', publishedVersionId: 'version-fr', pagePath: '/fr/newsletter',
       formId: 'newsletter',
       pageToken,
     })).toBe(true)
     expect(rotatedMasterKey.verifyPublicFormPageToken({
-      pageId: 'page-home',
+      pageId: 'page-home', localeId: 'fr', publishedVersionId: 'version-fr', pagePath: '/fr/newsletter',
       formId: 'newsletter',
       pageToken,
     })).toBe(false)
@@ -88,17 +88,17 @@ describe('public form challenge signing secret configuration', () => {
     const secondProcessSecret = await importChallengeWithEnv({})
 
     const pageToken = issuer.issuePublicFormPageToken({
-      pageId: 'page-home',
+      pageId: 'page-home', localeId: 'fr', publishedVersionId: 'version-fr', pagePath: '/fr/newsletter',
       formId: 'newsletter',
     })
 
     expect(issuer.verifyPublicFormPageToken({
-      pageId: 'page-home',
+      pageId: 'page-home', localeId: 'fr', publishedVersionId: 'version-fr', pagePath: '/fr/newsletter',
       formId: 'newsletter',
       pageToken,
     })).toBe(true)
     expect(secondProcessSecret.verifyPublicFormPageToken({
-      pageId: 'page-home',
+      pageId: 'page-home', localeId: 'fr', publishedVersionId: 'version-fr', pagePath: '/fr/newsletter',
       formId: 'newsletter',
       pageToken,
     })).toBe(false)

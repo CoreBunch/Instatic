@@ -34,7 +34,7 @@ export function PagesWidget({ span, editing }: DashboardWidgetRendererProps) {
             value={stats.published.toLocaleString()}
             sub={(
               <>
-                <span>Published</span>
+                <span>Online language versions</span>
                 {stats.deltaPublishedThisWeek > 0 && (
                   <Delta>+{stats.deltaPublishedThisWeek} this week</Delta>
                 )}
@@ -42,7 +42,10 @@ export function PagesWidget({ span, editing }: DashboardWidgetRendererProps) {
             )}
           />
           <div className={styles.subFootRow}>
-            <span>{stats.drafts} draft{stats.drafts === 1 ? '' : 's'}</span>
+            <span>{stats.total} page{stats.total === 1 ? '' : 's'} · {stats.variants} language version{stats.variants === 1 ? '' : 's'}</span>
+          </div>
+          <div className={styles.subFootRow}>
+            <span>{stats.drafts} draft{stats.drafts === 1 ? '' : 's'} · {stats.offline} offline</span>
             <span>{stats.scheduled} scheduled</span>
           </div>
         </>

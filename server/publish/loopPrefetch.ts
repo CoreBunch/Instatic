@@ -20,7 +20,6 @@ import type {
 } from '@core/loops/types'
 import { loopSourceRegistry } from '@core/loops/registry'
 import { firstImagePathFromMarkdown } from '@core/markdown/renderMarkdown'
-import { normalizeRouteBase } from '@core/templates/templateMatching'
 import { publicDataUserFromParts } from '@core/data/publicDataUser'
 import type { PublishedDataRow } from '@core/data/schemas'
 import type { DbClient } from '../db/client'
@@ -49,8 +48,7 @@ type LoopDataMap = Map<string, ResolvedLoopData>
  * are overlaid after so they can never be shadowed by a user-defined cell.
  */
 export function publishedDataRowToLoopItem(row: PublishedDataRow): LoopItem {
-  const tableRouteBase = normalizeRouteBase(row.tableRouteBase || `/${row.tableSlug}`)
-  const permalink = `${tableRouteBase === '/' ? '' : tableRouteBase}/${row.slug}`
+  const permalink = row.publicPath ?? ''
 
   // For post-type rows the `body` cell holds markdown — extract the first
   // inline image to populate the `firstImage` aliases.

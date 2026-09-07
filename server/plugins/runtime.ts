@@ -381,7 +381,7 @@ export async function activateInstalledServerPlugins(
   // Make sure the worker host can reach the DbClient — required before any
   // worker-initiated `cms.storage.*` round-trip lands. Idempotent; safe to
   // call on every boot.
-  setPluginWorkerDbClient(db)
+  setPluginWorkerDbClient(db, { uploadsDir })
   registerCrashRecoveryHandler(db, uploadsDir)
 
   // Reset existing in-process state so a re-bind (from `bun --watch`

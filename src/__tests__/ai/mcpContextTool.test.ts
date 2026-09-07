@@ -2,6 +2,8 @@ import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
 import { createCapabilityTestHarness, type CapabilityTestHarness } from '../helpers/capabilityHarness'
 import { contextMcpTools } from '../../../server/ai/mcp/tools/contextTool'
 import { createEditorBridgeStream } from '../../../server/ai/mcp/editorBridge'
+import { createDataRow } from '../../../server/repositories/data'
+import { getDefaultLocale, createLocale } from '../../../server/repositories/localization'
 import type { ToolContext } from '../../../server/ai/runtime/types'
 
 function ctxFor(harness: CapabilityTestHarness): ToolContext {
@@ -27,7 +29,10 @@ describe('get_context', () => {
     harness = await createCapabilityTestHarness()
     await harness.setupOwner()
   })
-  afterEach(() => { console.error = originalError })
+  afterEach(async () => {
+    console.error = originalError
+    await harness.cleanup()
+  })
 
   it('reports editor disconnected when no bridge is open and lists templates', async () => {
     const out = (await getContext.handler!({}, ctxFor(harness))) as {
@@ -42,18 +47,16 @@ describe('get_context', () => {
   })
 
   it('surfaces an everywhere template as wrapping a page', async () => {
-    const cells = JSON.stringify({
+    const cells = {
       title: 'Shell', slug: 'shell',
       body: { rootNodeId: 'r', nodes: { r: { id: 'r', moduleId: 'base.body', props: {}, breakpointOverrides: {}, classIds: [], children: [] } } },
       templateEnabled: true,
       templateTarget: { kind: 'everywhere' },
       templatePriority: 10,
-    })
-    await harness.db`insert into data_rows (id, table_id, cells_json, slug, status)
-                     values ('tpl1', 'pages', ${cells}, 'shell', 'draft')`
-    const pageCells = JSON.stringify({ title: 'Home', slug: 'home', body: { rootNodeId: 'r', nodes: { r: { id: 'r', moduleId: 'base.body', props: {}, breakpointOverrides: {}, classIds: [], children: [] } } } })
-    await harness.db`insert into data_rows (id, table_id, cells_json, slug, status)
-                     values ('home1', 'pages', ${pageCells}, 'home', 'draft')`
+    }
+    await createDataRow(harness.db, { id: 'tpl1', tableId: 'pages', slug: 'shell', cells })
+    const pageCells = { title: 'Home', slug: 'home', body: { rootNodeId: 'r', nodes: { r: { id: 'r', moduleId: 'base.body', props: {}, breakpointOverrides: {}, classIds: [], children: [] } } } }
+    await createDataRow(harness.db, { id: 'home1', tableId: 'pages', slug: 'home', cells: pageCells })
 
     const out = (await getContext.handler!({ entryId: 'home1' }, ctxFor(harness))) as {
       templates: Array<{ target: string; title: string }>
@@ -67,7 +70,9 @@ describe('get_context', () => {
   it('reports Site and Content workspace connections independently', async () => {
     const siteCtrl = new AbortController()
     const contentCtrl = new AbortController()
-    createEditorBridgeStream('no-editor-user', 'site', siteCtrl.signal)
+    const source = await getDefaultLocale(harness.db)
+    const german = await createLocale(harness.db, { code: 'de', name: 'Deutsch', pathPrefix: 'de', direction: 'ltr', enabled: true })
+    createEditorBridgeStream('no-editor-user', 'site', siteCtrl.signal, undefined, source.id)
 
     try {
       const siteOnly = (await getContext.handler!({}, ctxFor(harness))) as {
@@ -76,15 +81,19 @@ describe('get_context', () => {
       expect(siteOnly.editor).toEqual({
         siteConnected: true,
         contentConnected: false,
+        siteLocaleId: source.id,
+        contentLocaleId: null,
       })
 
-      createEditorBridgeStream('no-editor-user', 'content', contentCtrl.signal)
+      createEditorBridgeStream('no-editor-user', 'content', contentCtrl.signal, undefined, german.id)
       const both = (await getContext.handler!({}, ctxFor(harness))) as {
         editor: { siteConnected: boolean; contentConnected: boolean }
       }
       expect(both.editor).toEqual({
         siteConnected: true,
         contentConnected: true,
+        siteLocaleId: source.id,
+        contentLocaleId: german.id,
       })
     } finally {
       siteCtrl.abort()

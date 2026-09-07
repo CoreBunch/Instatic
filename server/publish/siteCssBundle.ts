@@ -19,13 +19,10 @@
  *   publish version (preview, AI render, the CSS-route fallback) use this:
  *   memoising across them would cross-contaminate unpublished content.
  *
- * - `buildPublishedSiteCssBundle` is the hot path for the published-snapshot
- *   renderer (`publicRenderer.ts`). There the site content is fixed for a
- *   given publish version, so the three page-invariant files (reset /
- *   framework / style) are memoised by `publishVersion` and reused across
- *   every render at that version — the expensive all-pages walk runs once per
- *   publish, not once per request. Only `userStyles` (page-scoped) is rebuilt
- *   per call. The memo is invalidated automatically by `bumpPublishVersion()`.
+ * - `buildPublishedSiteCssBundle` shares page-invariant files for each immutable
+ *   projected release document at a publish version. Different languages and
+ *   releases have independent cache entries. Only page-scoped userStyles are
+ *   rebuilt per call.
  */
 
 import { createHash } from 'node:crypto'
@@ -81,22 +78,9 @@ export function buildSiteCssBundle(
 }
 
 /**
- * Published-render variant of `buildSiteCssBundle`. Memoises the three
- * page-invariant files (reset / framework / style) by `publishVersion`, so
- * the O(all-pages) module-CSS walk runs once per publish version instead of
- * once per render. Only `userStyles` is rebuilt per call (it is page-scoped).
- *
- * Memo key = publish version ALONE. The published site content is fixed for a
- * given version: `publishDraftSite` is the only snapshot writer and it bumps
- * the version right after committing, and incremental row publishes never
- * write the site document (they bump too, which just re-primes the memo with
- * identical content). The publish-time bake renders the NEXT version's content
- * before the bump, so it passes `nextPublishVersion` explicitly — its entries
- * can never collide with pre-publish renders at the old version.
- *
- * Safe ONLY for published-snapshot content. Callers that pass draft /
- * arbitrary sites (preview, AI render) must use `buildSiteCssBundle` —
- * sharing a render-path cache across them would serve stale CSS.
+ * Reuse page-invariant CSS for a stable projected release document. The route
+ * context cache preserves document identity across requests; separate locales
+ * and frozen releases never reuse each other's framework or class CSS.
  */
 export function buildPublishedSiteCssBundle(
   site: SiteDocument,
@@ -124,16 +108,11 @@ function computePageInvariantBundles(
   }
 }
 
-// Page-invariant bundle memo, keyed by publish version. A bump invalidates it
-// (the next read sees a new version → recompute), so a content change can never
-// serve stale framework/style CSS. Registered with the shared test-reset hook.
-//
-// Deliberately NOT keyed on the site object: every consumer loads the snapshot
-// fresh (DB JSON parse per query), so an identity key would never hit — that
-// was exactly the bug that made every Layer B miss re-walk the whole site.
-let pageInvariantCache: { version: number; mediaSignature: string; bundles: PageInvariantBundles } | null = null
+// Immutable document identity separates simultaneous locale releases. Version
+// and media signatures invalidate dependent publication and asset changes.
+let pageInvariantCache = new WeakMap<SiteDocument, { version: number; mediaSignature: string; bundles: PageInvariantBundles }>()
 registerVersionedCacheReset(() => {
-  pageInvariantCache = null
+  pageInvariantCache = new WeakMap()
 })
 
 /**
@@ -147,11 +126,12 @@ function memoizedPageInvariantBundles(
   options: ResponsiveCssOptions,
 ): PageInvariantBundles {
   const mediaSignature = styleMediaSignature(site, options)
-  if (pageInvariantCache && pageInvariantCache.version === version && pageInvariantCache.mediaSignature === mediaSignature) {
-    return pageInvariantCache.bundles
+  const cached = pageInvariantCache.get(site)
+  if (cached && cached.version === version && cached.mediaSignature === mediaSignature) {
+    return cached.bundles
   }
   const bundles = computePageInvariantBundles(site, registry, options)
-  pageInvariantCache = { version, mediaSignature, bundles }
+  pageInvariantCache.set(site, { version, mediaSignature, bundles })
   return bundles
 }
 

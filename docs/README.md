@@ -23,6 +23,7 @@ docs/
 │   ├── plugin-system.md            ← plugin SDK, sandbox, lifecycle, permissions
 │   ├── publisher.md                ← page tree → static HTML/CSS pipeline
 │   ├── visual-components.md        ← VCs, slots, params, instantiation
+│   ├── localization.md             ← languages, translations and per-language publication
 │   ├── content-storage.md          ← data_tables + data_rows (the universal store)
 │   ├── content-workspace.md        ← Content workspace: collections, entries, body editor
 │   ├── auth-and-access.md          ← sessions, MFA, capabilities, roles
@@ -140,6 +141,7 @@ Three categories, three voices:
 | [features/publisher.md](features/publisher.md)                   | The page-tree-to-HTML/CSS renderer + server-side publishing wrappers |
 | [features/visual-components.md](features/visual-components.md)   | VCs, slots, params, instantiation, recursion guard                   |
 | [features/content-storage.md](features/content-storage.md)       | `data_tables` + `data_rows` — the universal content store           |
+| [features/localization.md](features/localization.md)             | Languages, inheritance, translation review and independent publication |
 | [features/content-workspace.md](features/content-workspace.md)   | Content workspace UI: collections, entries, body editor, settings panel |
 | [features/data-workspace.md](features/data-workspace.md)         | Data workspace UI: DataInspector, field management, DataGrid        |
 | [features/auth-and-access.md](features/auth-and-access.md)       | Sessions, MFA, step-up, lockout, CSRF, capabilities                  |

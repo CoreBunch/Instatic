@@ -1,3 +1,6 @@
+import { changeTableFieldLocalizationInTx } from './tableFieldLocalization'
+import { getDefaultLocale, saveTableLocalization, LocalizationError } from '../localization'
+import { serializeCollabAwareWrite, notifyRowWrite } from '../rowWriteEvents'
 /**
  * CRUD for data tables.
  *
@@ -233,6 +236,16 @@ function withPostTypeBuiltIns(kind: DataTableKind | undefined, fields: DataField
   return held.length === 0 ? fields : [...held, ...fields]
 }
 
+/** Public URL slugs belong to each locale; component/layout identifiers remain shared. */
+function enforceRoutingFieldPolicy(kind: DataTableKind | undefined, fields: DataField[]): DataField[] {
+  if (kind !== 'page' && kind !== 'postType') return fields
+  return fields.map((field) => {
+    if (field.id !== 'slug') return field
+    if (field.localization === 'shared') throw new LocalizationError('Public URL slugs are managed separately for each language', 'fields.slug.localization')
+    return { ...field, builtIn: true, localization: 'localized' }
+  })
+}
+
 /**
  * The same invariant, held across a PATCH.
  *
@@ -282,7 +295,7 @@ export async function createDataTable(
   db: DbClient,
   input: CreateDataTableInput,
 ): Promise<DataTable> {
-  const fields = withPostTypeBuiltIns(input.kind, normalizeDataTableFields(input.fields ?? []))
+  const fields = enforceRoutingFieldPolicy(input.kind, withPostTypeBuiltIns(input.kind, normalizeDataTableFields(input.fields ?? [])))
   const { rows } = await db<DataTableRow>`
     insert into data_tables (
       id,
@@ -324,11 +337,27 @@ export async function updateDataTable(
   tableId: string,
   input: UpdateDataTableInput,
 ): Promise<DataTable | null> {
+  return serializeCollabAwareWrite(async () => {
+    const updated = await db.transaction((tx) => updateDataTableInTx(tx, tableId, input))
+    if (updated && input.fields) {
+      const { rows } = await db<{ id: string }>`select id from data_rows where table_id = ${tableId} and deleted_at is null`
+      notifyRowWrite({ tableId, rowIds: rows.map((row) => row.id), kind: 'update', sharedChanged: true })
+    }
+    return updated
+  })
+}
+
+export async function updateDataTableInTx(
+  db: DbClient,
+  tableId: string,
+  input: UpdateDataTableInput,
+): Promise<DataTable | null> {
   let fields: DataField[] | null = null
   if (input.fields !== undefined) {
     const existing = await getDataTable(db, tableId)
     if (!existing) return null
-    fields = keepPostTypeBuiltIns(existing, normalizeDataTableFields(input.fields))
+    fields = enforceRoutingFieldPolicy(existing.kind, keepPostTypeBuiltIns(existing, normalizeDataTableFields(input.fields)))
+    await changeTableFieldLocalizationInTx(db, existing, fields, input.updatedByUserId ?? null)
   }
   const routeBase = input.routeBase === undefined ? null : normalizeExplicitRouteBase(input.routeBase)
   const { rows } = await db<DataTableRow>`
@@ -348,7 +377,12 @@ export async function updateDataTable(
               primary_field_id, fields_json, system,
               created_by_user_id, updated_by_user_id, created_at, updated_at
   `
-  return rows[0] ? mapTable(rows[0]) : null
+  if (!rows[0]) return null
+  if (routeBase !== null) {
+    const source = await getDefaultLocale(db)
+    await saveTableLocalization(db, tableId, source.id, routeBase)
+  }
+  return mapTable(rows[0])
 }
 
 /**
@@ -364,7 +398,7 @@ export async function insertDataTableIfAbsent(
 ): Promise<boolean> {
   // Same seeding as createDataTable: `merge-add` / `merge-overwrite` is an
   // import, and an imported post type has to be routable too.
-  const fields = withPostTypeBuiltIns(input.kind, normalizeDataTableFields(input.fields ?? []))
+  const fields = enforceRoutingFieldPolicy(input.kind, withPostTypeBuiltIns(input.kind, normalizeDataTableFields(input.fields ?? [])))
   const { rows } = await db<{ id: string }>`
     insert into data_tables (
       id,

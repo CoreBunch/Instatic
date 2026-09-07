@@ -523,8 +523,9 @@ describe('CMS data ownership authorization', () => {
       row: {
         id: rowId,
         status: 'unpublished',
-        publishedAt: null,
-        publishedByUserId: null,
+        publishedAt: expect.any(String),
+        publishedByUserId: expect.any(String),
+        localization: { availability: 'offline', activeVersionId: expect.any(String) },
       },
     })
   })

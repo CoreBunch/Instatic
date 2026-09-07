@@ -5,6 +5,8 @@ import { runMigrations } from '../../../../db/runMigrations'
 import type { DbClient } from '../../../../db/client'
 import { applyDataRowChanges } from '../apply'
 import { allocateSiteSeq } from '../../../syncSequence'
+import { seedLocalizedVariant } from './fixtures'
+import type { DataRowStatus } from '@core/data/schemas'
 
 const USER_ID = 'user-owner'
 
@@ -18,17 +20,19 @@ async function freshDb(): Promise<DbClient> {
   return db
 }
 
-async function seedRow(db: DbClient, id: string, slug: string, status = 'draft'): Promise<void> {
+async function seedRow(db: DbClient, id: string, slug: string, status: DataRowStatus = 'draft'): Promise<void> {
   await db`
     insert into data_rows (id, table_id, cells_json, slug, status, author_user_id, created_by_user_id, updated_by_user_id)
     values (${id}, ${'components'}, ${{ name: id }}, ${slug}, ${status}, ${USER_ID}, ${USER_ID}, ${USER_ID})
   `
+  await seedLocalizedVariant(db, { rowId: id, cells: {}, slug, status })
 }
 
 async function activeSlugs(db: DbClient): Promise<Map<string, string>> {
   const { rows } = await db<{ id: string; slug: string }>`
-    select id, slug from data_rows
-    where table_id = ${'components'} and deleted_at is null
+    select data_rows.id, localized.slug from data_rows
+    join data_row_localizations localized on localized.row_id = data_rows.id and localized.locale_id = 'default'
+    where data_rows.table_id = ${'components'} and data_rows.deleted_at is null
   `
   return new Map(rows.map((r) => [r.id, r.slug]))
 }

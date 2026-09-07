@@ -35,6 +35,7 @@ export const TablePatchBodySchema = Type.Partial(Type.Object({
 }))
 
 export const RowUpsertBodySchema = Type.Object({
+  localeId: Type.Optional(Type.String({ minLength: 1 })),
   cells: Type.Optional(Type.Record(Type.String(), Type.Unknown())),
 })
 

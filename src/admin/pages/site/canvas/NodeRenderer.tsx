@@ -25,6 +25,7 @@ import { readInlineEditableText, seedInlineEditableContent } from '@modules/base
 import { activeEditorDocId } from '@site/collab/awarenessState'
 import { attachInlineEditRemoteMerge } from '@site/collab/inlineEditRemoteMerge'
 import { collabDocFor } from '@site/store/slices/site/collabBinding'
+import { encodeCollabDocId, parseCollabDocId, sharedCollabDocId } from '@core/collab'
 import { useEditorStore, selectActiveCanvasPage } from '@site/store/store'
 import { resolveProps } from '@core/page-tree'
 import { registry } from '@core/module-engine'
@@ -71,6 +72,8 @@ export const NodeRenderer = memo(function NodeRenderer({ nodeId }: NodeRendererP
   // in a multi-selection shows the selection ring. The selector still resolves
   // to a boolean, so per-node memoization isn't disturbed — only rows whose
   // `includes(nodeId)` result flips will re-render.
+  const locales = useEditorStore((s) => s.site?.locales)
+  const localeId = useEditorStore((s) => s.site?.localeId)
   const isSelected = useEditorStore((s) => s.selectedNodeIds.includes(nodeId))
   const isHovered = useEditorStore(
     (s) =>
@@ -208,9 +211,20 @@ export const NodeRenderer = memo(function NodeRenderer({ nodeId }: NodeRendererP
     const collabDocId = activeEditorDocId(state)
     const collabDoc = collabDocId ? collabDocFor(collabDocId) : null
     if (!session || !collabDoc) return
+    const address = collabDocId ? parseCollabDocId(collabDocId) : null
+    const sourceId = state.site?.locales?.find((locale) => locale.isDefault)?.id
+    const fallbackIds = address && address.kind !== 'site' && address.localeId ? [
+      ...(sourceId && sourceId !== address.localeId ? [encodeCollabDocId({ ...address, localeId: sourceId })] : []),
+      sharedCollabDocId(collabDocId!),
+    ] : []
+    const fallbackDocs = fallbackIds.flatMap((id) => {
+      const document = collabDocFor(id)
+      return document ? [document] : []
+    })
     return attachInlineEditRemoteMerge({
       el,
       doc: collabDoc,
+      fallbackDocs,
       nodeId,
       prop: session.prop,
       onInvalidated: () => useEditorStore.getState().endInlineEdit(),
@@ -444,6 +458,8 @@ export const NodeRenderer = memo(function NodeRenderer({ nodeId }: NodeRendererP
           mcClassName={mcClassName}
           nodeWrapperProps={effectiveWrapperProps}
           inlineEdit={inlineEditBinding}
+          locales={locales}
+          localeId={localeId}
         >
           {isInlineEditing ? undefined : children}
         </ComponentType>

@@ -222,12 +222,12 @@ The dashboard fans out into **per-domain** endpoints under `/admin/api/cms/dashb
 
 | Endpoint                    | Hook                     | Capability gate | Response shape (summary) |
 |-----------------------------|--------------------------|-----------------|--------------------------|
-| `/dashboard/pages`          | `usePagesStats`          | authenticated user | `{ total, published, drafts, scheduled, deltaPublishedThisWeek }` |
-| `/dashboard/posts`          | `usePostsStats`          | authenticated user | `{ total, categories, scheduled, daily28 }` |
+| `/dashboard/pages`          | `usePagesStats`          | authenticated user | `{ total, variants, published, drafts, offline, scheduled, deltaPublishedThisWeek }` |
+| `/dashboard/posts`          | `usePostsStats`          | authenticated user | `{ total, variants, categories, scheduled, daily28 }` |
 | `/dashboard/media`          | `useMediaStats`          | `media.read` | `{ count, totalBytes, latestThumbs[] }` |
 | `/dashboard/plugins`        | `usePluginsStats`        | `plugins.read` | `{ total, active, disabled, errored, rows[] }` |
 | `/dashboard/storage`        | `useStorageStats`        | authenticated user | `{ imageBytes, videoBytes, documentBytes, pluginBytes, databaseBytes, totalBytes, dialect }` |
-| `/dashboard/publish-lineup` | `usePublishLineupStats`  | authenticated user | `{ rows: [{ id, path, status, at }] }` |
+| `/dashboard/publish-lineup` | `usePublishLineupStats`  | authenticated user | `{ rows: [{ id, localeId, localeCode, localeEnabled, title, path, status, at }] }` |
 | `/dashboard/activity`       | `useRecentActivityStats` | `audit.read` | `{ rows: [{ id, action, actor, targetCode, targetText, createdAt }] }` |
 
 Non-CMS first-party widgets:
@@ -237,6 +237,20 @@ Non-CMS first-party widgets:
 | `ai-usage` | `listAiAudit(startOfMonthIso())` -> `/admin/api/ai/audit` | Maps a 403 from missing `ai.audit.read` to a no-permission empty state. |
 | `domain` | Local component rows | Shows the current placeholder primary-domain / HTTPS rows. |
 | `status` | Local component rows | Shows the current placeholder site/build/backup/plugin status rows. |
+
+### Language-aware content statistics
+
+The Pages and Posts headline totals count logical content identities. `variants` counts authored language variants; published, draft, offline, and schedule counters describe those variants. A published variant can also have a frozen scheduled update. Disabled languages contribute no publicly online variants, while their paused schedules remain visible. The weekly delta and daily histogram count immutable locale publication versions, including versions superseded by later releases.
+
+The lineup carries row identity plus locale identity. Published paths come from the active version; scheduled paths come from the frozen scheduled revision. Draft paths use localized collection routes and the language prefix. A page named `index` displays the language homepage, while unfinished draft paths display their title. Templates and generic data rows are excluded from the route lineup. Activity resolves content against the event's locale, using the source language for older events without locale metadata.
+
+The shared TypeBox contracts live in `src/core/dashboard/contentStatsSchemas.ts`; server readers and client hooks consume the same definitions. `server/handlers/cms/dashboard/__tests__/localizedDashboard.test.ts` covers logical-versus-variant counts, disabled languages, concurrent live/scheduled states, frozen URLs, and locale activity titles.
+
+### Publishing from the dashboard
+
+The **Publish pages…** action opens the shared `SitePublishDialog` (`src/admin/shared/SitePublishDialog/`). Authors explicitly select page-language variants; disabled languages cannot be selected. `DashboardPublishButton` gates the action on `pages.publish`, runs the same step-up flow as the Site toolbar, and submits the selected `{rowId, localeId}` pairs. A successful publication emits `CMS_PUBLICATION_CHANGED_EVENT`; dashboard hooks refresh independently on that event and on `CMS_SITE_RELOAD_EVENT`. Failures keep the selection open and surface through the global toast bus. The Site toolbar keeps its additional collaboration-sync and runtime-validation checks.
+
+The lineup displays the server-provided title, language, status, and frozen address. A live version and its scheduled update have separate entries keyed by row, language, and status. `src/admin/pages/dashboard/components/DashboardPublishButton.test.tsx` covers explicit selection, disabled languages, capabilities, step-up cancellation, and failure handling; `src/admin/pages/dashboard/widgets/localizedWidgets.test.tsx` covers variant labels, frozen paths, and event-driven refresh.
 
 ### Timezone-aware day bucketing
 

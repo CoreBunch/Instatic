@@ -89,7 +89,7 @@ export function seedLayoutDoc(doc: Y.Doc, layout: SavedLayout): void {
 }
 
 /** Shell keys stored as per-entry Y.Maps (granular co-editing); the rest are plain LWW values. */
-const SHELL_SKIPPED_KEYS = new Set(['pages', 'visualComponents', 'layouts', 'id', 'updatedAt'])
+const SHELL_SKIPPED_KEYS = new Set(['pages', 'visualComponents', 'layouts', 'id', 'updatedAt', 'locales', 'localeId', 'localization'])
 
 export interface SiteDocRosterIds {
   pages: readonly string[]

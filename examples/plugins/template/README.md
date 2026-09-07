@@ -143,6 +143,23 @@ await api.cms.media.upsert({
 
 The path is package-relative. Plugins cannot read arbitrary host filesystem paths through this API.
 
+## Localized content
+
+For a translation integration, add `cms.content.read` and `cms.content.write` to the requested permissions and declare `contentAccess: [{ table: 'posts', modes: ['read', 'write'] }]`. After the operator grants these permissions, use the configured language identity on each call:
+
+```js
+const language = (await api.cms.content.locales.list()).find((locale) => locale.code === 'de')
+if (language) {
+  const posts = api.cms.content.table('posts')
+  const { entries } = await posts.list({ localeId: language.id, limit: 25 })
+  for (const entry of entries) {
+    await posts.update(entry.id, { localeId: language.id, cells: { seoTitle: entry.cells.title } })
+  }
+}
+```
+
+These writes remain drafts. Publishing or taking a variant offline additionally requires the granted `cms.content.publish` permission plus the table's `publish` mode, through `publish(id, { localeId })` or `unpublish(id, { localeId })`. Deleting an entry removes it in every language. Event listeners and cell filters receive `localeId` so they can preserve the edited language in follow-up work.
+
 ## Further reading
 
 - [Plugin system docs](../../../docs/features/plugin-system.md)

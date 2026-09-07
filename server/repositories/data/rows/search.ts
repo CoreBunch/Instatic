@@ -4,9 +4,10 @@
  *   searchDataRows — search non-deleted rows across all non-deleted data
  *                    tables by slug, returning a lightweight summary
  */
-import type { DbClient } from '../../../db/client'
+import { placeholder, type DbClient } from '../../../db/client'
 import type { DataRowStatus } from '@core/data/schemas'
 import { isoDate } from '@core/utils/isoDate'
+import { getDefaultLocale, resolveContentLocale } from '../../localization'
 
 /**
  * A lightweight row summary returned by spotlight content search.
@@ -38,6 +39,8 @@ interface DataRowSearchRow {
 }
 
 interface SearchDataRowsVisibility {
+  tableSlugs?: readonly string[]
+  localeId?: string
   /**
    * When set, only rows whose effective owner matches this user id are
    * returned. Ownership follows the same rule used by `listDataRows`:
@@ -67,12 +70,24 @@ export async function searchDataRows(
   limit: number,
   visibility: SearchDataRowsVisibility = {},
 ): Promise<DataRowSearchResult[]> {
-  const likePattern = `%${query.toLowerCase()}%`
-  const { rows } = await db<DataRowSearchRow>`
+  const sourceLocale = await getDefaultLocale(db)
+  const locale = visibility.localeId === undefined ? sourceLocale : await resolveContentLocale(db, visibility.localeId)
+  if (visibility.tableSlugs?.length === 0) return []
+  const params: unknown[] = []
+  const bind = (value: unknown) => { params.push(value); return placeholder(db.dialect, params.length) }
+  const selectedLocale = bind(locale.id)
+  const source = bind(sourceLocale.id)
+  const search = bind(`%${query.toLowerCase()}%`)
+  const ownerFilter = visibility.ownerUserId ? `and coalesce(data_rows.author_user_id, data_rows.created_by_user_id) = ${bind(visibility.ownerUserId)}` : ''
+  const tableFilter = visibility.tableSlugs ? `and data_tables.slug in (${visibility.tableSlugs.map(bind).join(', ')})` : ''
+  const boundedLimit = bind(limit)
+  const { rows } = await db.unsafe<DataRowSearchRow>(`
     select data_rows.id,
            data_rows.table_id,
-           data_rows.slug,
-           data_rows.status,
+           coalesce(localized.slug, source.slug, '') as slug,
+           case when localized.availability = 'online' and localized.active_version_id is not null then 'published'
+                when localized.scheduled_publish_at is not null then 'scheduled'
+                when localized.active_version_id is not null then 'unpublished' else 'draft' end as status,
            data_rows.author_user_id,
            data_rows.created_by_user_id,
            data_rows.updated_at,
@@ -81,12 +96,16 @@ export async function searchDataRows(
            data_tables.system as table_system
     from data_rows
     join data_tables on data_tables.id = data_rows.table_id
+    left join data_row_localizations localized on localized.row_id = data_rows.id and localized.locale_id = ${selectedLocale}
+    left join data_row_localizations source on source.row_id = data_rows.id and source.locale_id = ${source}
     where data_rows.deleted_at is null
       and data_tables.deleted_at is null
-      and lower(data_rows.slug) like ${likePattern}
+      and lower(coalesce(localized.slug, source.slug, '')) like ${search}
+      ${ownerFilter}
+      ${tableFilter}
     order by data_rows.updated_at desc
-    limit ${limit}
-  `
+    limit ${boundedLimit}
+  `, params)
   const results = rows.map((r) => ({
     row: r,
     result: {
@@ -100,15 +119,5 @@ export async function searchDataRows(
       tableSystem: Boolean(r.table_system),
     },
   }))
-  if (visibility.ownerUserId) {
-    const ownerUserId = visibility.ownerUserId
-    return results
-      .filter(({ row }) => {
-        if (row.author_user_id === ownerUserId) return true
-        if (row.author_user_id === null) return row.created_by_user_id === ownerUserId
-        return false
-      })
-      .map(({ result }) => result)
-  }
   return results.map(({ result }) => result)
 }

@@ -76,5 +76,5 @@ export interface IPersistenceAdapter {
    * Load the single site draft document (shell + pages assembled) together
    * with its sync-seq bases. Returns undefined before setup creates it.
    */
-  loadSite(id: string): Promise<SiteLoadResult | undefined>
+  loadSite(id: string, localeId?: string): Promise<SiteLoadResult | undefined>
 }

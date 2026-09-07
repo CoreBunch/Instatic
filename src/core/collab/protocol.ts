@@ -28,7 +28,9 @@
  * `''` means "I hold no server state for this doc yet": always safe for a
  * sync step1, and safe for a write only when the server's doc is still empty
  * (the client-created-row flow, which populates a doc at bind time before any
- * inbound frame). Presence and reset frames always use `''`.
+ * inbound frame). Presence and authoritative rewrite-reset broadcasts use
+ * `''`. A targeted reset carries the rejected client's generation, allowing
+ * an already-rebound client to ignore delayed rejections of its old lineage.
  */
 import * as encoding from 'lib0/encoding'
 import * as decoding from 'lib0/decoding'

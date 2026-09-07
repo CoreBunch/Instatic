@@ -56,11 +56,11 @@ export function parsePageRef(value: unknown): ParsedPageRef | null {
  */
 export function resolvePageRef(
   value: unknown,
-  pages: ReadonlyArray<Pick<Page, 'id' | 'slug'>>,
+  pages: ReadonlyArray<Pick<Page, 'id' | 'slug' | 'publicPath'>>,
 ): string | null {
   const parsed = parsePageRef(value)
   if (!parsed) return null
   const page = pages.find((p) => p.id === parsed.pageId)
   if (!page) return '#'
-  return `${pagePublicPath(page.slug)}${parsed.fragment}`
+  return `${page.publicPath ?? pagePublicPath(page.slug)}${parsed.fragment}`
 }

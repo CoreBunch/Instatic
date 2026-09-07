@@ -167,6 +167,7 @@ export function useCaretPresencePublisher(
           activeEditorDocId({
             activeDocument: store.activeDocument,
             activePageId: store.activePageId,
+            activeLocaleId: store.activeLocaleId,
           }) ?? '',
         )
         if (!collabDoc || !selection.anchorNode || !selection.focusNode) return

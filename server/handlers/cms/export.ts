@@ -40,6 +40,8 @@ import { stat } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { DbClient } from '../../db/client'
 import { requireCapability } from '../../auth/authz'
+import { exportBundlePublication, type BundlePublication } from '../../repositories/bundlePublication'
+import { runPublishFlush } from '../../publish/publishFlush'
 import { getDraftSite } from '../../repositories/site'
 import { listDataTables } from '../../repositories/data/tables'
 import { listDataRows } from '../../repositories/data/rows'
@@ -96,7 +98,7 @@ function mediaEntryMetadata(asset: ExportableAsset, sizeBytes = asset.sizeBytes)
   }
 }
 
-interface ExportSelection {
+interface ExportSelection extends BundlePublication {
   shell: NonNullable<Awaited<ReturnType<typeof getDraftSite>>>
   tables: Awaited<ReturnType<typeof listDataTables>>
   rows: Awaited<ReturnType<typeof listDataRows>>
@@ -182,6 +184,8 @@ export async function handleExportRoute(
     tables = tables.filter((t) => selectionByTable.has(t.id))
   }
 
+  await runPublishFlush()
+
   // Load rows per table (parallel), applying each table's row subset if one was
   // given. Visibility filtering: a caller without `content.edit.any` /
   // `content.publish.any` / `content.manage` only sees their own rows in the
@@ -197,7 +201,12 @@ export async function handleExportRoute(
       return all.filter((r) => want.has(r.id))
     }),
   )
-  const rows = rowsPerTable.flat()
+  const publication = await exportBundlePublication(db, rowsPerTable.flat().map((row) => row.id), tables.map((table) => table.id), canSeeAllDataRows(user))
+  const rows = rowsPerTable.flat().map((row) => {
+    if (canSeeAllDataRows(user)) return row
+    const localization = publication.localizations?.find((variant) => variant.rowId === row.id && variant.localeId === row.localeId) ?? null
+    return { ...row, localization, status: 'draft' as const, publicPath: null, scheduledPublishAt: null, publishedAt: null, publishedByUserId: null, publishedBy: null }
+  })
 
   // Media folder tree — cheap; gather whenever requested.
   const mediaFolders = includeMediaFolders ? await listExportableMediaFolders(db) : undefined
@@ -216,6 +225,7 @@ export async function handleExportRoute(
   }
 
   const selection: ExportSelection = {
+    ...publication,
     shell,
     tables,
     rows,
@@ -340,6 +350,8 @@ function buildArchiveManifest(
     ...(selection.includeSite ? { site: selection.shell } : {}),
     tables: selection.tables,
     rows: selection.rows,
+    locales: selection.locales, localizations: selection.localizations, tableLocalizations: selection.tableLocalizations,
+    versions: selection.versions, siteSnapshots: selection.siteSnapshots, runtimeAssets: selection.runtimeAssets,
     ...(media !== undefined ? { media } : {}),
     ...(selection.mediaFolders !== undefined ? { mediaFolders: selection.mediaFolders } : {}),
     ...(selection.redirects !== undefined ? { redirects: selection.redirects } : {}),

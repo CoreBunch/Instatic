@@ -15,8 +15,9 @@
  * easily: if the oldest page carries no scripts, a scoped script reaches
  * nothing.
  */
-import { describe, expect, it } from 'bun:test'
-import type { DbClient } from '../../../server/db'
+import { afterEach, describe, expect, it } from 'bun:test'
+import { cleanupPublishingTestDbs, createPublishingTestDb } from '../helpers/publishingTestDb'
+afterEach(cleanupPublishingTestDbs)
 import type { PublishedPageSnapshot } from '../../../server/repositories/publish'
 import { snapshotForEntryRoute } from '../../../server/publish/entryTemplateSnapshot'
 import { makeSite } from '../fixtures'
@@ -25,7 +26,7 @@ const postsTarget = { kind: 'postTypes' as const, tableSlugs: ['posts'] }
 
 function runtimeAssets(name: string) {
   return {
-    scripts: [{ publicPath: `/_instatic/assets/${name}/classic/001-${name}.js`, placement: 'body-end' as const }],
+    scripts: [{ fileId: name, src: `/_instatic/assets/${name}/classic/001-${name}.js`, placement: 'body-end' as const, timing: 'immediate' as const, priority: 0 }],
   }
 }
 
@@ -42,26 +43,23 @@ function siteSnapshot(): PublishedPageSnapshot {
   return { cmsSnapshotVersion: 1, pageRowId: 'oldest-page', site }
 }
 
-/** Stands in for the DB: only `getPublishedPageSnapshotById` is reached. */
-function dbReturning(byPageId: Record<string, unknown>): DbClient {
-  const fake = (async (_strings: TemplateStringsArray, ...params: unknown[]) => {
-    const pageId = String(params[0])
-    const assets = byPageId[pageId]
-    return assets
-      ? { rows: [{ row_id: pageId, site_json: makeSite(), runtime_assets_json: assets }], rowCount: 1 }
-      : { rows: [], rowCount: 0 }
-  }) as unknown as DbClient
-  return fake
+async function dbReturning(byPageId: Record<string, ReturnType<typeof runtimeAssets>>) {
+  const snapshot = siteSnapshot()
+  const db = await createPublishingTestDb(snapshot.site)
+  for (const [pageId, assets] of Object.entries(byPageId)) {
+    await db`update data_row_versions set runtime_assets_json = ${assets} where row_id = ${pageId} and locale_id = ${'default'}`
+  }
+  return db
 }
 
 describe('entry-route runtime manifest', () => {
   it('uses the entry template\'s own manifest, not the site snapshot\'s', async () => {
     const snapshot = siteSnapshot()
-    const db = dbReturning({ 'post-template': runtimeAssets('template') })
+    const db = await dbReturning({ 'post-template': runtimeAssets('template') })
 
     const resolved = await snapshotForEntryRoute(db, snapshot, 'posts')
 
-    expect(resolved.runtimeAssets?.scripts[0]?.publicPath).toContain('001-template.js')
+    expect(resolved.runtimeAssets?.scripts[0]?.src).toContain('001-template.js')
   })
 
   it('serves no scripts when the template has none, rather than another page\'s', async () => {
@@ -70,25 +68,25 @@ describe('entry-route runtime manifest', () => {
     // passed that straight through, so every entry route on the site served
     // `001-oldest.js`.
     const snapshot = { ...siteSnapshot(), runtimeAssets: runtimeAssets('oldest') }
-    const db = dbReturning({})
+    const db = await dbReturning({})
 
     const resolved = await snapshotForEntryRoute(db, snapshot, 'posts')
 
-    expect(resolved.runtimeAssets?.scripts[0]?.publicPath ?? '').not.toContain('001-oldest.js')
+    expect(resolved.runtimeAssets?.scripts[0]?.src ?? '').not.toContain('001-oldest.js')
   })
 
   it('overrides a stale manifest on the site snapshot with the template\'s', async () => {
     const snapshot = { ...siteSnapshot(), runtimeAssets: runtimeAssets('oldest') }
-    const db = dbReturning({ 'post-template': runtimeAssets('template') })
+    const db = await dbReturning({ 'post-template': runtimeAssets('template') })
 
     const resolved = await snapshotForEntryRoute(db, snapshot, 'posts')
 
-    expect(resolved.runtimeAssets?.scripts[0]?.publicPath).toContain('001-template.js')
+    expect(resolved.runtimeAssets?.scripts[0]?.src).toContain('001-template.js')
   })
 
   it('leaves the site document untouched so the resolved chain still applies', async () => {
     const snapshot = siteSnapshot()
-    const db = dbReturning({ 'post-template': runtimeAssets('template') })
+    const db = await dbReturning({ 'post-template': runtimeAssets('template') })
 
     const resolved = await snapshotForEntryRoute(db, snapshot, 'posts')
 
@@ -97,7 +95,7 @@ describe('entry-route runtime manifest', () => {
 
   it('falls back to the site snapshot when the table has no entry template', async () => {
     const snapshot = siteSnapshot()
-    const db = dbReturning({ 'post-template': runtimeAssets('template') })
+    const db = await dbReturning({ 'post-template': runtimeAssets('template') })
 
     const resolved = await snapshotForEntryRoute(db, snapshot, 'no-such-table')
 

@@ -1,168 +1,78 @@
-/**
- * Incremental (per-row) publish orchestrator.
- *
- * Drives one data row through the publish pipeline:
- *
- *   1. `persistDataRowPublish` — one short DB transaction (the data
- *      repository owns all SQL).
- *   2. Layer A — update the row's baked artefact in the ACTIVE slot in
- *      place (and prune the old path when the slug changed).
- *   3. Layer B — bump the publish version so the render cache refreshes.
- *
- * Data access lives in `server/repositories/data/publish.ts`; this module
- * owns the sequencing, rendering, and disk artefacts. The dependency
- * direction is one-way: publish → repositories, never back.
- */
+/** Publishes one locale variant and rebuilds surfaces that depend on visibility. */
 import type { DbClient } from '../db/client'
 import type { DataRow, DataRowVersion } from '@core/data/schemas'
+import type { ScheduledLocalizationRevision } from '@core/localization-schema'
+import { buildLocalizedPath, createPublishedRouteInventory, readSnapshotLanguage, LocalizedRouteError } from '@core/localization-routing'
 import { resolveTemplateChain } from '@core/templates'
-import {
-  getPublishedDataRowByRoute,
-  getRowTableRouteBase,
-  getRowTableRouteInfo,
-  persistDataRowPublish,
-  previousRouteChanged,
-  publicDataPath,
-  type PreviousPublishedRoute,
-} from '../repositories/data/publish'
+import { getDataRow, getDataTable, getPublishedDataRowById } from '../repositories/data'
+import { persistDataRowPublish, readPreviousPublishedRoute } from '../repositories/data/publish'
+import { getDefaultLocale, getLocale, getTableLocalization, listLocales } from '../repositories/localization'
+import { listPublishedRouteCandidates } from '../repositories/localizationRoutes'
 import { getLatestPublishedSiteSnapshot } from '../repositories/publish'
-import { snapshotForEntryRoute } from './entryTemplateSnapshot'
-import { renderPublishedDataRowTemplate } from './publicRenderer'
-import { applyPublishedHtmlPipeline } from './publishedHtmlPipeline'
-import { removeArtefactInPlace, updateArtefactInPlace } from './staticArtefact'
-import { bumpPublishVersion, getPublishVersion, withPublishLock } from './publishState'
+import { removeArtefactInPlace } from './staticArtefact'
+import { bumpPublishVersion, withPublishLock } from './publishState'
 import { runPublishFlush } from './publishFlush'
+import { publishDraftSite } from './publishSite'
+import { rebakePublishedRoutes } from './rebakePublishedRoutes'
 
-export interface PublishDataRowResult {
-  row: DataRow
-  version: DataRowVersion
-}
+export interface PublishDataRowResult { row: DataRow; version: DataRowVersion }
+export interface PublishDataRowOptions { localeId?: string; revision?: ScheduledLocalizationRevision }
 
 export async function publishDataRow(
-  db: DbClient,
-  rowId: string,
-  /**
-   * The user attributed as the publisher. `null` is allowed for system
-   * actors that have no user context — e.g. the scheduled-publish tick
-   * (`server/publish/publishScheduler.ts`).
-   */
-  publisherUserId: string | null,
-  uploadsDir?: string,
+  db: DbClient, rowId: string, publisherUserId: string | null,
+  uploadsDir?: string, options: PublishDataRowOptions = {},
 ): Promise<PublishDataRowResult> {
-  // Flush the collab relay before reading the row — a page/component/row doc
-  // edited live may still hold un-persisted changes inside the debounce
-  // window, and per-row publish must bake exactly what the admins see.
   await runPublishFlush()
-  // Serialize against every other publish so the version read→bake→bump window
-  // can't interleave and mis-stamp baked hole shells (ISS-038).
-  return withPublishLock(() => publishDataRowLocked(db, rowId, publisherUserId, uploadsDir))
-}
-
-async function publishDataRowLocked(
-  db: DbClient,
-  rowId: string,
-  publisherUserId: string | null,
-  uploadsDir?: string,
-): Promise<PublishDataRowResult> {
-  const { row, version, previousRoute } = await persistDataRowPublish(db, rowId, publisherUserId)
-
-  // Layer A: incremental artefact update outside the transaction.
-  // Disk artefacts are derived state — errors are logged but do not fail
-  // the publish. The next full publish (publishDraftSite) will rebuild.
-  if (uploadsDir) {
-    // Bake with the NEXT publish version — `bumpPublishVersion()` below is the
-    // synchronous statement right after this await resolves, so a hole-shell
-    // baked here carries the version that becomes current with no gap.
-    const nextPublishVersion = getPublishVersion() + 1
-    await writeDataRowArtefact(db, uploadsDir, row, previousRoute, nextPublishVersion).catch((err) => {
-      console.error('[publish:row] static artefact write failed (live renderer remains active):', err)
+  const initialRow = await getDataRow(db, rowId, options.localeId)
+  if (!initialRow) throw new Error('Content no longer exists')
+  if (initialRow.tableId === 'pages') {
+    await publishDraftSite(db, publisherUserId, uploadsDir, {
+      variants: [{ rowId, localeId: initialRow.localeId }],
+      ...(options.revision ? { revision: options.revision } : {}),
     })
+    const [publishedRow, version] = await Promise.all([
+      getDataRow(db, rowId, initialRow.localeId), getPublishedDataRowById(db, rowId, initialRow.localeId),
+    ])
+    if (!publishedRow || !version) throw new Error('Published page version is missing')
+    return { row: publishedRow, version }
   }
-
-  // Layer B: invalidate the in-memory render cache so the next visitor request
-  // re-renders against the freshly committed row version.
-  bumpPublishVersion()
-
-  return { row, version }
-}
-
-/**
- * After a successful `persistDataRowPublish` transaction, write (or remove)
- * the disk artefact for the row's entry-template page.
- *
- * The artefact is baked whether or not the template is fully static: a static
- * template bakes a complete document; a template with dynamic nodes bakes its
- * static SHELL with `<instatic-hole>` placeholders (the hole runtime hydrates each
- * fragment from `/_instatic/hole/`). Either way HTML + CSS + JS come from disk.
- *
- * Steps:
- *   1. Remove the old artefact if the slug changed (old URL no longer valid).
- *   2. Look up the table route info and site snapshot.
- *   3. Render through the template (stamping `publishVersion`) and write the
- *      artefact into the active slot.
- */
-async function writeDataRowArtefact(
-  db: DbClient,
-  uploadsDir: string,
-  publishedRow: DataRow,
-  previousRoute: PreviousPublishedRoute | null,
-  publishVersion: number,
-): Promise<void> {
-  const tableInfo = await getRowTableRouteInfo(db, publishedRow.id)
-  if (!tableInfo) return
-
-  // Remove old artefact when the slug changed (old URL is now stale).
-  if (previousRoute && previousRouteChanged(previousRoute, publishedRow.slug)) {
-    const oldPath = publicDataPath(previousRoute.routeBase, previousRoute.slug)
-    await removeArtefactInPlace(uploadsDir, oldPath).catch((err) => {
-      console.error('[publish:row] failed to remove stale artefact at', oldPath, err)
+  return withPublishLock(async () => {
+    const row = await getDataRow(db, rowId, initialRow.localeId)
+    if (!row) throw new Error('Content no longer exists')
+    const [table, locale, locales, live] = await Promise.all([
+      getDataTable(db, row.tableId), getLocale(db, row.localeId), listLocales(db), listPublishedRouteCandidates(db),
+    ])
+    if (!table || !locale) throw new Error('Content collection or language no longer exists')
+    if (!locale.enabled) throw new LocalizedRouteError(locale.id, 'Enable this language before publishing content.')
+    const primary = await getDefaultLocale(db)
+    const routeConfig = await getTableLocalization(db, table.id, locale.id)
+      ?? await getTableLocalization(db, table.id, primary.id)
+    const snapshot = options.revision && !options.revision.siteSnapshotId ? null
+      : await getLatestPublishedSiteSnapshot(db, locale.id, options.revision?.siteSnapshotId)
+    const routed = table.kind === 'postType' && snapshot
+      && resolveTemplateChain(snapshot.site, { kind: 'entry', tableSlug: table.slug }).length > 0
+    const path = options.revision && options.revision.publicPath !== undefined ? options.revision.publicPath
+      : routed ? buildLocalizedPath(locale, options.revision?.slug ?? row.slug, routeConfig?.routeBase ?? table.routeBase) : null
+    createPublishedRouteInventory(locales, [
+      ...live.filter((entry) => entry.contentId !== rowId || entry.localeId !== locale.id),
+      ...(path ? [{ contentId: rowId, localeId: locale.id, publishedVersionId: 'planned',
+        languageCode: snapshot ? readSnapshotLanguage(locale.id, snapshot.site.locales, snapshot.site.settings.language).code : locale.code,
+        tableId: table.id, tableSlug: table.slug, availability: 'online' as const, kind: 'row' as const, path }] : []),
+    ])
+    const result = await persistDataRowPublish(db, rowId, publisherUserId, {
+      localeId: locale.id, publicPath: path, siteSnapshotId: snapshot?.siteSnapshotId ?? null,
+      revision: options.revision,
     })
-  }
-
-  // Resolve the full template chain for this row's table (everywhere layout +
-  // entry template). No chain → no entry route to bake.
-  const siteSnapshot = await getLatestPublishedSiteSnapshot(db)
-  if (!siteSnapshot) return
-
-  const chain = resolveTemplateChain(siteSnapshot.site, { kind: 'entry', tableSlug: tableInfo.tableSlug })
-  if (chain.length === 0) return
-
-  // Fetch the full PublishedDataRow (needed for templateContext + media path).
-  const publishedDataRow = await getPublishedDataRowByRoute(db, tableInfo.tableRouteBase, publishedRow.slug)
-  if (!publishedDataRow) return
-
-  const newPath = publicDataPath(tableInfo.tableRouteBase, publishedRow.slug)
-  const syntheticUrl = new URL(`http://localhost${newPath}`)
-  // Runtime assets come from this table's entry template, not from the
-  // arbitrary page the site-wide snapshot happens to name.
-  const snapshot = await snapshotForEntryRoute(db, siteSnapshot, tableInfo.tableSlug)
-  const rendered = await renderPublishedDataRowTemplate(snapshot, publishedDataRow, {
-    db,
-    url: syntheticUrl,
-    publishVersion,
+    const version = bumpPublishVersion()
+    if (uploadsDir) await rebakePublishedRoutes(db, uploadsDir, version)
+    return { row: result.row, version: result.version }
   })
-  if (!rendered) return
-
-  const html = await applyPublishedHtmlPipeline(rendered, db)
-  await updateArtefactInPlace(uploadsDir, newPath, html)
 }
 
-/**
- * Remove a data row's baked Layer-A artefact from the active slot. Called when
- * a row leaves public visibility (unpublish, revert-to-draft, soft-delete) so
- * the static file stops being served — Layer A reads the disk slot with no
- * publishVersion awareness, so without this a retracted row stays public
- * (ISS-039). The route is resolved WITHOUT the `deleted_at is null` filter so
- * it still works after a soft delete. Best-effort: unresolved route or missing
- * file is a no-op (removeArtefactInPlace never throws on a missing file).
- */
+/** The previous version retains its public path even after retraction or deletion. */
 export async function removeDataRowArtefact(
-  db: DbClient,
-  uploadsDir: string,
-  rowId: string,
-  slug: string,
+  db: DbClient, uploadsDir: string, rowId: string, options: { localeId?: string } = {},
 ): Promise<void> {
-  const routeBase = await getRowTableRouteBase(db, rowId)
-  if (routeBase === null) return
-  await removeArtefactInPlace(uploadsDir, publicDataPath(routeBase, slug))
+  const previous = await readPreviousPublishedRoute(db, rowId, options.localeId)
+  if (previous) await removeArtefactInPlace(uploadsDir, previous.path)
 }

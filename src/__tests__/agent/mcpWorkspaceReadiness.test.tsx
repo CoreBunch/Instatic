@@ -9,6 +9,25 @@ afterEach(() => {
 })
 
 describe('MCP workspace bridge readiness', () => {
+  it('reconnects with the selected locale when the user changes language', async () => {
+    const realFetch = globalThis.fetch
+    const paths: string[] = []
+    globalThis.fetch = (async (input) => {
+      paths.push(String(input))
+      return new Response(null, { status: 401 })
+    }) as typeof fetch
+    const dispatch = async () => ({ ok: true as const })
+    try {
+      const view = renderHook(({ localeId }) => useMcpWorkspaceBridge('site', dispatch, undefined, true, localeId), { initialProps: { localeId: 'en' } })
+      await waitFor(() => expect(paths).toHaveLength(1))
+      view.rerender({ localeId: 'de:at' })
+      await waitFor(() => expect(paths).toHaveLength(2))
+      expect(paths.map((path) => new URL(path, 'http://localhost').searchParams.get('localeId'))).toEqual(['en', 'de:at'])
+    } finally {
+      cleanup()
+      globalThis.fetch = realFetch
+    }
+  })
   it('does not register a Site bridge before the editor store is hydrated', async () => {
     const realFetch = globalThis.fetch
     let bridgeRequests = 0
@@ -49,7 +68,7 @@ describe('MCP workspace bridge readiness', () => {
       'const siteHydrated = useEditorStore((state) => state.site !== null)',
     )
     expect(source).toContain(
-      "useMcpWorkspaceBridge('site', executeAgentTool, undefined, siteHydrated)",
+      "useMcpWorkspaceBridge('site', executeAgentTool, undefined, siteHydrated, activeLocaleId)",
     )
   })
 })

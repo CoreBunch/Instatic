@@ -32,6 +32,8 @@ import {
 import { CryptoDigestArgSchema, CryptoSignHmacArgSchema } from './schemas/crypto'
 import {
   ContentEntriesCreateArgsSchema,
+  ContentEntriesUnpublishArgsSchema,
+  ContentLocalesListArgsSchema,
   ContentEntriesCreateManyArgsSchema,
   ContentEntriesDeleteArgsSchema,
   ContentEntriesDeleteManyArgsSchema,
@@ -125,6 +127,8 @@ export const ApiCallSchemas = {
     'cms.media.registerVariantDelegate',
     Type.Tuple([RegisterVariantDelegateArgSchema]),
   ),
+  'cms.content.locales.list': apiCallSchema('cms.content.locales.list', ContentLocalesListArgsSchema),
+  'cms.content.entries.unpublish': apiCallSchema('cms.content.entries.unpublish', ContentEntriesUnpublishArgsSchema),
   'cms.content.tables.list': apiCallSchema('cms.content.tables.list', ContentTablesListArgsSchema),
   'cms.content.tables.get': apiCallSchema('cms.content.tables.get', ContentTablesGetArgsSchema),
   'cms.content.tables.create': apiCallSchema('cms.content.tables.create', ContentTablesCreateArgsSchema),

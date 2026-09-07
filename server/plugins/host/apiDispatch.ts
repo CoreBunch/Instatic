@@ -42,6 +42,8 @@ import {
 import { handleCryptoDigest, handleCryptoSignHmac } from './handlers/crypto'
 import {
   handleContentEntriesCreate,
+  handleContentEntriesUnpublish,
+  handleContentLocalesList,
   handleContentEntriesCreateMany,
   handleContentEntriesDelete,
   handleContentEntriesDeleteMany,
@@ -103,6 +105,8 @@ const apiHandlers = {
   'cms.media.registerVariantDelegate': handleMediaRegisterVariantDelegate,
   'crypto.digest': handleCryptoDigest,
   'crypto.signHmac': handleCryptoSignHmac,
+  'cms.content.locales.list': handleContentLocalesList,
+  'cms.content.entries.unpublish': handleContentEntriesUnpublish,
   'cms.content.tables.list': handleContentTablesList,
   'cms.content.tables.get': handleContentTablesGet,
   'cms.content.tables.create': handleContentTablesCreate,

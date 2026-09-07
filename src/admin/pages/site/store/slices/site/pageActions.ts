@@ -20,6 +20,7 @@ type PageActions = Pick<
   | 'addPage'
   | 'deletePage'
   | 'renamePage'
+  | 'updatePageSeo'
   | 'duplicatePage'
   | 'reorderPages'
   | 'convertPageToTemplate'
@@ -65,6 +66,15 @@ export function createPageActions({
         if (!page) return false
         renamePage(p, pageId, title, slug)
         return true
+      })
+    },
+
+    updatePageSeo: (pageId, seo) => {
+      mutateSite((site) => {
+        const page = site.pages.find((candidate) => candidate.id === pageId)
+        if (!page) return false
+        if (seo.title !== undefined) page.seoTitle = seo.title
+        if (seo.description !== undefined) page.seoDescription = seo.description
       })
     },
 

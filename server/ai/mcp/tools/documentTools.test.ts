@@ -5,6 +5,8 @@ import { runMigrations } from '../../../db/runMigrations'
 import type { DbClient } from '../../../db/client'
 import type { ToolContext } from '../../runtime/types'
 import { mcpToolsForCapabilities } from '../registry'
+import { createDataRow, getDataRow, saveDataRowDraft } from '../../../repositories/data'
+import { createLocale } from '../../../repositories/localization'
 
 const PAGE_TREE = {
   rootNodeId: 'root',
@@ -22,11 +24,7 @@ async function freshDb(): Promise<DbClient> {
     values ('default', 'Test', ${{ cmsSiteSchemaVersion: 1, site: {} }})
   `
   // Seed one page row into the (already-seeded) `pages` system table.
-  const cells = JSON.stringify({ title: 'Home', slug: 'index', body: PAGE_TREE })
-  await db`
-    insert into data_rows (id, table_id, cells_json, slug, status)
-    values ('home', 'pages', ${cells}, 'index', 'draft')
-  `
+  await createDataRow(db, { id: 'home', tableId: 'pages', cells: { title: 'Home', slug: 'index', body: PAGE_TREE }, slug: 'index' })
   return db
 }
 
@@ -77,5 +75,16 @@ describe('mcp site_list_documents (headless)', () => {
       (candidate) => candidate.name === 'site_list_documents',
     )
     expect(tool).toBeUndefined()
+  })
+
+  it('reads the requested language without requiring a browser workspace', async () => {
+    const locale = await createLocale(db, { code: 'de', name: 'Deutsch', pathPrefix: 'de', enabled: true, direction: 'ltr' })
+    const source = await getDataRow(db, 'home')
+    await saveDataRowDraft(db, 'home', { localeId: locale.id, cells: { ...source!.cells, title: 'Startseite', slug: 'start' }, slug: 'start' })
+    const tool = mcpToolsForCapabilities(['site.read']).find((candidate) => candidate.name === 'site_list_documents')!
+    const result = await tool.handler!({ localeId: locale.id }, headlessCtx(db))
+    expect(result).toMatchObject({ localeId: locale.id, documents: [{ title: 'Startseite', slug: 'start' }] })
+    const sourceResult = await tool.handler!({}, headlessCtx(db))
+    expect(sourceResult).toMatchObject({ documents: [{ title: 'Home', slug: 'index' }] })
   })
 })

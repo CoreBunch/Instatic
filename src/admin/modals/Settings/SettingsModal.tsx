@@ -26,6 +26,7 @@ import { SettingsCogSolidIcon } from 'pixel-art-icons/icons/settings-cog-solid'
 import { CommandIcon } from 'pixel-art-icons/icons/command'
 import { UploadIcon } from 'pixel-art-icons/icons/upload'
 import { SlidersHorizontalIcon } from 'pixel-art-icons/icons/sliders-horizontal'
+import { LanguagesSection } from './sections/LanguagesSection'
 import { GeneralSection } from './sections/GeneralSection'
 import { PublishingSection } from './sections/PublishingSection'
 import { ShortcutsSection } from './sections/ShortcutsSection'
@@ -39,6 +40,7 @@ import s from './SettingsModal.module.css'
 
 const NAV_ITEMS = [
   { id: 'general',     label: 'General',     icon: SettingsCogSolidIcon,  accent: 'lilac' },
+  { id: 'languages', label: 'Languages', icon: SettingsCogSolidIcon, accent: 'sky' },
   { id: 'shortcuts',   label: 'Shortcuts',   icon: CommandIcon,           accent: 'sky'   },
   { id: 'publishing',  label: 'Publishing',  icon: UploadIcon,            accent: 'mint'  },
   { id: 'preferences', label: 'Preferences', icon: SlidersHorizontalIcon, accent: 'peach' },
@@ -251,6 +253,7 @@ export function SettingsModal() {
               className={s.content}
             >
               {activeSection === 'general'     && <GeneralSection />}
+              {activeSection === 'languages'   && <LanguagesSection />}
               {activeSection === 'shortcuts'   && <ShortcutsSection />}
               {activeSection === 'publishing'  && <PublishingSection />}
               {activeSection === 'preferences' && <PreferencesSection />}

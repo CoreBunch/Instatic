@@ -25,6 +25,7 @@ export {
   getDataTableBySlug,
   createDataTable,
   updateDataTable,
+  updateDataTableInTx,
   softDeleteDataTable,
 } from './tables'
 
@@ -44,6 +45,7 @@ export {
   createDataRowMany,
   saveDataRowDraft,
   upsertDataRowDraft,
+  upsertSharedDataRowDraft,
   updateDataRowDraftCells,
   saveDataRowDraftMany,
   softDeleteDataRow,
@@ -62,6 +64,8 @@ export type { ApplyDataRowChangesInput, DataRowWrite } from './rows'
 
 export {
   getPublishedDataRowByRoute,
+  getPublishedDataRowById,
+  getPublishedRedirectByPath,
   getDataRowRedirectByRoute,
 } from './publish'
 

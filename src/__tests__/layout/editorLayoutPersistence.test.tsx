@@ -1,3 +1,4 @@
+import { SOURCE_LOCALE } from '../fixtures/localization'
 /**
  * Editor layout persistence + rail integration tests.
  *
@@ -18,7 +19,6 @@ import { StepUpProvider } from '@admin/shared/StepUp'
 import { useEditorStore } from '@site/store/store'
 import { makeNode, makePage, makeSite } from '../fixtures'
 import type { CmsCurrentUser } from '@core/persistence'
-import { pageToCells } from '@core/data/pageFromRow'
 import '@modules/base/index'
 
 const LAYOUT_STORAGE_KEY = 'instatic-editor-layout-v2'
@@ -239,42 +239,12 @@ beforeEach(() => {
 
 describe('AdminCanvasLayout — CMS site hydration gate', () => {
   it('keeps the editor shell mounted while the CMS site hydrates', async () => {
-    const loaded = makeSite({ name: 'Hydrated Site' })
+    const loaded = { ...makeSite({ name: 'Hydrated Site' }), localeId: SOURCE_LOCALE.id, locales: [SOURCE_LOCALE], localization: { fieldLocalizations: {}, rows: {} } }
     const originalFetch = globalThis.fetch
     globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input)
-      const { pages, ...shell } = loaded
-      if (url.includes('/admin/api/cms/pages')) {
-        const rows = pages.map((page) => ({
-          id: page.id,
-          tableId: 'pages',
-          cells: pageToCells(page),
-          slug: page.slug,
-          status: 'draft',
-          authorUserId: null,
-          createdByUserId: null,
-          updatedByUserId: null,
-          publishedByUserId: null,
-          author: null,
-          createdBy: null,
-          updatedBy: null,
-          publishedBy: null,
-          createdAt: '2026-01-01T00:00:00.000Z',
-          updatedAt: '2026-01-01T00:00:00.000Z',
-          publishedAt: null,
-          scheduledPublishAt: null,
-          deletedAt: null,
-        }))
-        return new Response(JSON.stringify({ rows }), { status: 200 })
-      }
-      if (url.includes('/admin/api/cms/components')) {
-        return new Response(JSON.stringify({ rows: [] }), { status: 200 })
-      }
-      if (url.includes('/admin/api/cms/layouts')) {
-        return new Response(JSON.stringify({ rows: [] }), { status: 200 })
-      }
-      if (url.includes('/admin/api/cms/site')) {
-        return new Response(JSON.stringify({ site: shell }), { status: 200 })
+      if (url.includes('/admin/api/cms/site-document')) {
+        return new Response(JSON.stringify({ site: loaded, rowSeqs: {}, shellSeq: 0 }), { status: 200 })
       }
       return originalFetch(input, init)
     }) as typeof fetch
@@ -754,5 +724,23 @@ describe('AdminCanvasLayout — permanent panel rail', () => {
     // Properties lives in the right sidebar, never as a left-rail panel button.
     expect(within(rail).queryByRole('button', { name: /properties panel/i })).toBeNull()
     expect(sidebar.getAttribute('data-active-panel')).toBe('explorer')
+  })
+})
+
+describe('AdminCanvasLayout — language authoring', () => {
+  it('retains history and viewport inspection while disabling shared insertion tools', async () => {
+    loadSiteWithSelectedHeading()
+    const site = useEditorStore.getState().site!
+    useEditorStore.setState({ site: { ...site, localeId: 'de', locales: [SOURCE_LOCALE,
+      { id: 'de', code: 'de', name: 'Deutsch', isDefault: false, enabled: true, pathPrefix: 'de', direction: 'ltr' },
+    ] }, activeLocaleId: 'de' })
+    renderEditorLayout()
+    expect(await screen.findByRole('group', { name: 'Undo and redo' })).toBeDefined()
+    expect(screen.getByRole('button', { name: 'Undo', exact: true })).toBeDefined()
+    expect(screen.getByRole('button', { name: 'Redo', exact: true })).toBeDefined()
+    expect(screen.queryByTestId('canvas-notch-add-btn')).toBeNull()
+    expect(screen.queryByTestId('canvas-notch-container-btn')).toBeNull()
+    expect(screen.getAllByRole('button', { name: /Switch to .* breakpoint/ }).length).toBeGreaterThan(0)
+    expect(screen.queryByRole('button', { name: 'Rename Text', exact: true })).toBeNull()
   })
 })

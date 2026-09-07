@@ -118,3 +118,8 @@ export type {
   AgentDocumentCleanedStrings,
   AgentDocumentRenderOptions,
 } from './readSurface'
+
+export { readLocaleToolInput, toolLocaleId } from './localeContext'
+
+export { ContentAgentSnapshotSchema } from './contentSnapshot'
+export type { ContentAgentCurrentUser, ContentAgentFieldInfo, ContentAgentActiveDocument, ContentAgentSnapshot } from './contentSnapshot'

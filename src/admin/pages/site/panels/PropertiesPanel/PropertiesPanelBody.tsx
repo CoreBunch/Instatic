@@ -1,3 +1,6 @@
+import { SourceLocaleNotice, useEditorLocale } from '@site/localization'
+import { useEditorStore } from '@site/store/store'
+import { Switch } from '@ui/components/Switch'
 /**
  * PropertiesPanelBody — selects which inspector surface to show inside the
  * scrollable content area of the Properties panel.
@@ -82,6 +85,24 @@ export function PropertiesPanelBody(props: PropertiesPanelBodyProps): React.Reac
   } = props
   const permissions = useEditorPermissions()
   const [activeNodeView, setActiveNodeView] = useState<NodeInspectorView>('styles')
+  const { isTranslation } = useEditorLocale()
+  const toggleNodeHidden = useEditorStore((state) => state.toggleNodeHidden)
+
+  if (isTranslation) {
+    return <>
+      <SourceLocaleNotice />
+      {selectedNode && !isMultiSelect && !selectedSelectorClass && !isSelectorMultiSelect ? <>
+        <Switch aria-label="Visible in this language" checked={!selectedNode.hidden}
+          disabled={!permissions.canEditContent}
+          onCheckedChange={() => toggleNodeHidden(selectedNode.id)}>Visible in this language</Switch>
+        {selectedNode.moduleId === 'base.visual-component-ref' ?
+          <ComponentRefView nodeId={selectedNode.id} componentId={String(selectedNode.props.componentId ?? '')}
+            propOverrides={(selectedNode.props.propOverrides ?? {}) as Record<string, unknown>} /> : moduleTabContent}
+      </> : activeVc && activeDocument?.kind === 'visualComponent' ?
+        <ComponentParamsOverview vc={activeVc} /> :
+        <EmptyState variant="centered" title="Select an element to translate its content." />}
+    </>
+  }
 
   // Selector multi-selection (Selectors panel checkboxes) takes priority — the
   // user explicitly built a bulk set and expects the bulk action surface.

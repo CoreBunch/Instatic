@@ -244,6 +244,9 @@ export function ContentSettingsPanel({
             <div className={styles.metaBlock}>
               <span>Public URL</span>
               <strong>{publicPath || 'Not available'}</strong>
+              {selectedEntry?.localization?.availability === 'online' && !selectedEntry.publicPath && (
+                <span>This release has no public route. Publish a matching template in this language, then republish the entry.</span>
+              )}
             </div>
             {selectedEntry && (
               <div className={styles.authorBlock} aria-label="Content author">

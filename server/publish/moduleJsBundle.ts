@@ -74,13 +74,14 @@ export function injectModuleScripts(
   html: string,
   jsModuleIds: readonly string[],
   publishVersion: number,
+  publicPath = '/',
 ): string {
   if (jsModuleIds.length === 0 || html.includes('data-instatic-module-js=')) return html
   const ids = [...new Set(jsModuleIds)].sort()
   const tags = ids
     .map(
       (id) =>
-        `<script src="/_instatic/module-js/${encodeURIComponent(id)}.js?v=${publishVersion}" defer data-instatic-module-js="${escapeHtml(id)}"></script>`,
+        `<script src="/_instatic/module-js/${encodeURIComponent(id)}.js?v=${publishVersion}&amp;u=${encodeURIComponent(publicPath)}" defer data-instatic-module-js="${escapeHtml(id)}"></script>`,
     )
     .join('\n')
   const withScripts = html.includes('</body>')

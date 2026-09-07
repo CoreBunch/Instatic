@@ -67,7 +67,7 @@ describe('site.pages loop-item parity (canvas preview ↔ engine source)', () =>
     expect(canvasPath(PAGES, filters, limit)).toEqual(enginePreview)
   })
 
-  it('matches the engine fetch() projection (definition order)', async () => {
+  it('matches the engine public fetch projection while excluding technical templates)', async () => {
     const filters = {}
     const engineFetch = await SitePagesSource.fetch({
       site: site(PAGES),
@@ -77,7 +77,8 @@ describe('site.pages loop-item parity (canvas preview ↔ engine source)', () =>
       offset: 0,
       limit: 10,
     })
-    expect(canvasPath(PAGES, filters, 10)).toEqual(engineFetch.items)
+    expect(canvasPath(PAGES, { excludeTemplates: true }, 10)).toEqual(engineFetch.items)
+    expect(engineFetch.items.map((item) => item.id)).toEqual(['a', 'b', 'c'])
   })
 
   it('agrees on permalink normalization (index → /, bare slug → /slug)', () => {

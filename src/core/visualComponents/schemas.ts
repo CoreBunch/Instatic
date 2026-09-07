@@ -8,6 +8,7 @@
  * Constraint #269: This file must NOT import from editor/ or editor-store/.
  */
 
+import { FieldLocalizationSchema } from '@core/localization-schema'
 import { Type, type Static, withFallback } from '@core/utils/typeboxHelpers'
 import {
   BaseNodeSchema,
@@ -73,6 +74,7 @@ const VCParamSchema = Type.Object({
   /** Optional human-readable description shown in the Properties Panel */
   description: Type.Optional(Type.String()),
   defaultValue: Type.Unknown(),
+  localization: Type.Optional(FieldLocalizationSchema),
   required: Type.Boolean(),
   /** Only meaningful when type === 'enum' — non-string items are silently dropped */
   enumOptions: Type.Optional(Type.Array(Type.String())),
@@ -108,6 +110,7 @@ function parseVCParam(raw: unknown): VCParam | null {
     type,
     ...(typeof r.description === 'string' ? { description: r.description } : {}),
     defaultValue: r.defaultValue !== undefined ? r.defaultValue : '',
+    ...(r.localization === 'shared' || r.localization === 'localized' ? { localization: r.localization } : {}),
     required: typeof r.required === 'boolean' ? r.required : false,
     ...(enumOptions !== undefined ? { enumOptions } : {}),
   }

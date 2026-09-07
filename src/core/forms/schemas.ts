@@ -30,17 +30,29 @@ const FormValidationErrorSchema = Type.Object({
 
 export type FormValidationError = Static<typeof FormValidationErrorSchema>
 
-export const PublicFormSubmitBodySchema = Type.Object({
-  formId: Type.String({ minLength: 1 }),
+export const PublicFormRouteIdentitySchema = Type.Object({
   pageId: Type.String({ minLength: 1 }),
+  localeId: Type.String({ minLength: 1 }),
+  publishedVersionId: Type.String({ minLength: 1 }),
+  pagePath: Type.String({ minLength: 1 }),
+})
+export type PublicFormRouteIdentity = Static<typeof PublicFormRouteIdentitySchema>
+
+export const PublicFormIdentitySchema = Type.Object({
+  ...PublicFormRouteIdentitySchema.properties,
+  formId: Type.String({ minLength: 1 }),
+})
+export type PublicFormIdentity = Static<typeof PublicFormIdentitySchema>
+
+export const PublicFormSubmitBodySchema = Type.Object({
+  ...PublicFormIdentitySchema.properties,
   token: Type.String({ minLength: 1 }),
   challenge: Type.String({ minLength: 1 }),
   values: Type.Record(Type.String(), Type.Unknown()),
 })
 
 export const PublicFormChallengeBodySchema = Type.Object({
-  formId: Type.String({ minLength: 1 }),
-  pageId: Type.String({ minLength: 1 }),
+  ...PublicFormIdentitySchema.properties,
   pageToken: Type.String({ minLength: 1 }),
 })
 

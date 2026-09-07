@@ -67,8 +67,16 @@ export function jsonField(column: string, field: string, dialect: Dialect): Json
   return Object.freeze({ __brand: 'JsonFieldExpr', sql } as const)
 }
 
+/** Presence differs from a null value: explicit localized null must stop inheritance. */
+export function jsonFieldExists(column: string, field: string, dialect: Dialect): JsonFieldExpr {
+  if (!IDENT_RE.test(column) || !IDENT_RE.test(field)) throw new Error('[db/jsonExtract] invalid JSON field identifier')
+  const sql = dialect === 'postgres'
+    ? `(${column}->'${field}') is not null`
+    : `json_type(${column}, '$.${field}') is not null`
+  return Object.freeze({ __brand: 'JsonFieldExpr', sql } as const)
+}
+
 // DbClient is imported as a type so that downstream code can write
 // convenience wrappers that accept a DbClient and read its .dialect.
 // The import is type-only and erased at runtime; it does not create a
 // circular dependency.
-

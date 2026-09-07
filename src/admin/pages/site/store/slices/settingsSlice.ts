@@ -29,6 +29,7 @@ import { useAdminUi, bindEditorSettingsBridge } from '@admin/state/adminUi'
 
 export type SettingsSection =
   | 'general'
+  | 'languages'
   | 'preferences'
   | 'shortcuts'
   | 'publishing'

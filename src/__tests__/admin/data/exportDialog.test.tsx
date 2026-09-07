@@ -15,6 +15,7 @@
  *   10. An empty category (count 0 from the summary) is disabled
  */
 
+import { makeContentLocalization } from '../../fixtures/localization'
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import type { DataTableListItem } from '@core/data/schemas'
@@ -311,8 +312,8 @@ describe('ExportDialog', () => {
       if (url.includes('/data/tables/posts/rows')) {
         return jsonResponse({
           rows: [
-            { id: 'p1', tableId: 'posts', cells: { title: 'First' }, slug: 'first', status: 'published', createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-01T00:00:00.000Z', publishedAt: null, scheduledPublishAt: null, deletedAt: null, authorUserId: null, createdByUserId: null, updatedByUserId: null, publishedByUserId: null, author: null, createdBy: null, updatedBy: null, publishedBy: null },
-            { id: 'p2', tableId: 'posts', cells: { title: 'Second' }, slug: 'second', status: 'draft', createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-01T00:00:00.000Z', publishedAt: null, scheduledPublishAt: null, deletedAt: null, authorUserId: null, createdByUserId: null, updatedByUserId: null, publishedByUserId: null, author: null, createdBy: null, updatedBy: null, publishedBy: null },
+            { id: 'p1', tableId: 'posts', localeId: 'default', sharedCells: {}, localization: makeContentLocalization('p1', { slug: 'first' }), publicPath: null, cells: { title: 'First' }, slug: 'first', status: 'published', createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-01T00:00:00.000Z', publishedAt: null, scheduledPublishAt: null, deletedAt: null, authorUserId: null, createdByUserId: null, updatedByUserId: null, publishedByUserId: null, author: null, createdBy: null, updatedBy: null, publishedBy: null },
+            { id: 'p2', tableId: 'posts', localeId: 'default', sharedCells: {}, localization: makeContentLocalization('p2', { slug: 'second' }), publicPath: null, cells: { title: 'Second' }, slug: 'second', status: 'draft', createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-01T00:00:00.000Z', publishedAt: null, scheduledPublishAt: null, deletedAt: null, authorUserId: null, createdByUserId: null, updatedByUserId: null, publishedByUserId: null, author: null, createdBy: null, updatedBy: null, publishedBy: null },
           ],
         })
       }

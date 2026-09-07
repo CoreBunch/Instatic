@@ -193,12 +193,12 @@ describe('SettingsModal — backdrop', () => {
 // ---------------------------------------------------------------------------
 
 describe('SettingsModal — section navigation', () => {
-  it('renders exactly 4 nav items (general, shortcuts, publishing, preferences)', () => {
+  it('renders five nav items including language settings', () => {
     openModal()
     render(<SettingsModal />)
     const nav = screen.getByRole('navigation', { name: /settings sections/i })
     const navBtns = Array.from(nav.querySelectorAll('button'))
-    expect(navBtns.length).toBe(4)
+    expect(navBtns.length).toBe(5)
   })
 
   it('renders nav items with the current section labels', () => {

@@ -7,6 +7,7 @@
  * conversation.
  */
 
+import { selectLocaleTool, withBrowserLocaleContext } from '../localeTools'
 import type { AiTool } from '../types'
 import { contentReadTools } from './readTools'
 import { contentWriteTools } from './writeTools'
@@ -16,7 +17,7 @@ import { contentWriteTools } from './writeTools'
 export const contentTools: AiTool[] = [
   ...contentReadTools.map((t) => ({ ...t, mutates: false })),
   ...contentWriteTools.map((t) => ({ ...t, mutates: true })),
-]
+].map(withBrowserLocaleContext).concat(selectLocaleTool('content'))
 
 export { buildContentSystemPrompt } from './systemPrompt'
 export type { ContentSnapshot } from './snapshot'

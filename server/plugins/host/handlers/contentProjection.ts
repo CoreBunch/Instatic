@@ -18,6 +18,7 @@ import type {
   DataTable,
   RepeaterItemField,
 } from '@core/data/schemas'
+import { resolveDataFieldLocalization } from '@core/localization'
 import type { DbClient } from '../../../db/client'
 import { getDataTableBySlug, listDataTables } from '../../../repositories/data'
 
@@ -138,6 +139,9 @@ function projectFields(
         })
         break
       }
+      case 'parameterValues':
+        out.push({ type: 'parameterValues', id: f.id, label: f.label })
+        break
       case 'pageTree':
         out.push({ type: 'pageTree', id: f.id, label: f.label })
         break
@@ -147,7 +151,7 @@ function projectFields(
         break
     }
   }
-  return out
+  return out.map((field) => ({ ...field, localization: resolveDataFieldLocalization(fields.find((entry) => entry.id === field.id)!) }))
 }
 
 export function tableSummary(
@@ -188,6 +192,9 @@ export function rowToEntry(row: DataRow, tableSlug: string): ContentEntry {
   return {
     id: row.id,
     tableSlug,
+    localeId: row.localeId,
+    localization: row.localization,
+    publicPath: row.publicPath,
     slug: row.slug,
     status: row.status,
     cells: row.cells,

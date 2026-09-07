@@ -26,6 +26,8 @@
  */
 
 import { Type, type Static } from '@core/utils/typeboxHelpers'
+import { ContentLocalizationSchema, LocaleSchema } from '@core/localization-schema'
+export { LocaleSchema } from '@core/localization-schema'
 import { DataTableKindSchema, DataRowStatusSchema } from '@core/data/schemas'
 import {
   TreeMutateResultSchema,
@@ -79,9 +81,19 @@ export type CreateContentTableInput = Static<typeof CreateContentTableInputSchem
 // Entries
 // ---------------------------------------------------------------------------
 
+export const ContentLocaleOptionsSchema = Type.Object({ localeId: Type.Optional(Type.String({ minLength: 1 })) }, { additionalProperties: false })
+export type ContentLocaleOptions = Static<typeof ContentLocaleOptionsSchema>
+export const ContentLocalesResultSchema = Type.Array(LocaleSchema)
+export type ContentLocale = Static<typeof LocaleSchema>
+export const ContentSearchOptionsSchema = Type.Composite([ContentLocaleOptionsSchema, Type.Object({ limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 500 })) })])
+export type ContentSearchOptions = Static<typeof ContentSearchOptionsSchema>
+
 export const ContentEntrySchema = Type.Object({
   id: Type.String(),
   tableSlug: Type.String(),
+  localeId: Type.String(),
+  localization: Type.Union([ContentLocalizationSchema, Type.Null()]),
+  publicPath: Type.Union([Type.String(), Type.Null()]),
   slug: Type.String(),
   status: DataRowStatusSchema,
   cells: Type.Record(Type.String(), Type.Unknown()),
@@ -95,12 +107,14 @@ export const ContentEntrySchema = Type.Object({
 export type ContentEntry = Static<typeof ContentEntrySchema>
 
 export const CreateContentEntryInputSchema = Type.Object({
+  localeId: Type.Optional(Type.String({ minLength: 1 })),
   slug: Type.Optional(Type.String()),
   cells: Type.Record(Type.String(), Type.Unknown()),
 }, { additionalProperties: false })
 export type CreateContentEntryInput = Static<typeof CreateContentEntryInputSchema>
 
 export const UpdateContentEntryInputSchema = Type.Object({
+  localeId: Type.Optional(Type.String({ minLength: 1 })),
   slug: Type.Optional(Type.String()),
   cells: Type.Optional(Type.Record(Type.String(), Type.Unknown())),
 }, { additionalProperties: false })
@@ -111,6 +125,7 @@ export type UpdateContentEntryInput = Static<typeof UpdateContentEntryInputSchem
 // ---------------------------------------------------------------------------
 
 export const ContentListOptionsSchema = Type.Object({
+  localeId: Type.Optional(Type.String({ minLength: 1 })),
   filter: Type.Optional(Type.Record(Type.String(), StorageFilterValueSchema)),
   orderBy: Type.Optional(Type.Record(
     Type.String(),
@@ -121,6 +136,7 @@ export const ContentListOptionsSchema = Type.Object({
     Type.Literal('draft'),
     Type.Literal('published'),
     Type.Literal('scheduled'),
+    Type.Literal('unpublished'),
   ])),
   limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 500 })),
   offset: Type.Optional(Type.Integer({ minimum: 0 })),
@@ -148,6 +164,7 @@ export type { TreeMutateResult }
 // ---------------------------------------------------------------------------
 
 export const ContentSearchResultSchema = Type.Object({
+  localeId: Type.String(),
   id: Type.String(),
   tableSlug: Type.String(),
   tableName: Type.String(),
@@ -158,6 +175,8 @@ export const ContentSearchResultSchema = Type.Object({
 export type ContentSearchResult = Static<typeof ContentSearchResultSchema>
 
 export const PublishedSnapshotSchema = Type.Object({
+  localeId: Type.String(),
+  publicPath: Type.Union([Type.String(), Type.Null()]),
   entryId: Type.String(),
   tableSlug: Type.String(),
   versionNumber: Type.Integer(),

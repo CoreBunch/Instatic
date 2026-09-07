@@ -34,6 +34,7 @@ const FIELD_ICONS: Record<DataFieldType, IconComponent> = {
   // Structural field types: visual page-node tree and component parameter schema.
   pageTree: LayoutSolidIcon,
   fieldSchema: BracesIcon,
+  parameterValues: BracesIcon,
 }
 
 export function getFieldIcon(type: DataFieldType): IconComponent {

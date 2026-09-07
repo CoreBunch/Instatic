@@ -214,9 +214,12 @@ describe('Step-up auth', () => {
     const { db } = testDb
     let cookie = await login(db)
 
-    for (let i = 0; i < 35; i += 1) {
-      cookie = await completeStepUp(db, cookie, VALID_LOGIN_PHRASE)
-    }
+    // Reach the last allowed attempt without repeating expensive password
+    // verification 35 times. Without the success reset, the second request
+    // below exceeds the limit and returns 429.
+    for (let i = 0; i < 29; i += 1) expect(loginPerIpRateLimit.consume(IP).ok).toBe(true)
+    cookie = await completeStepUp(db, cookie, VALID_LOGIN_PHRASE)
+    await completeStepUp(db, cookie, VALID_LOGIN_PHRASE)
   })
 
   it('POST /step-up for an MFA-enabled account requires a second-factor code', async () => {

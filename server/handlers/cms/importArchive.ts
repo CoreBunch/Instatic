@@ -39,6 +39,7 @@ import {
 } from '@core/data/bundleArchive'
 import { createCrc32 } from '../../archive/storedZip'
 import { CMS_API_PREFIX, type CmsHandlerOptions } from './shared'
+import { filterBundlePublication } from '@core/data/bundleSelection'
 import { handleImportRoute } from './import'
 
 const IMPORT_ARCHIVE_PATH = `${CMS_API_PREFIX}/import/archive`
@@ -430,6 +431,7 @@ function filterArchiveManifestForSelection(
     ...(selection.includeSite && manifest.site ? { site: manifest.site } : {}),
     tables,
     rows,
+    ...filterBundlePublication(manifest, rows, tables.map((table) => table.id)),
     ...(media ? { media } : {}),
     ...(selection.includeMediaFolders && manifest.mediaFolders ? { mediaFolders: manifest.mediaFolders } : {}),
     ...(redirects ? { redirects } : {}),

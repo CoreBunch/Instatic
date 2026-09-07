@@ -1,3 +1,4 @@
+import { useEditorLocale } from '@site/localization'
 import { Fragment, useState, type KeyboardEvent, type MouseEvent, type ReactNode } from 'react'
 import { useDroppable } from '@dnd-kit/core'
 import type { IconComponent } from 'pixel-art-icons/types'
@@ -77,6 +78,7 @@ export function SiteExplorerTreeSection<TTarget>({
   onKeyDownFolder,
   emptyLabel = 'None yet',
 }: SiteExplorerTreeSectionProps<TTarget>) {
+  const { isTranslation } = useEditorLocale()
   const [expandedFolderIds, setExpandedFolderIds] = useState(() => new Set(initialExpandedFolderIds(model)))
   const ActionIcon = actionIcon
   const hasRows = model.pinnedItems.length > 0 || model.rootEntries.length > 0
@@ -117,6 +119,7 @@ export function SiteExplorerTreeSection<TTarget>({
           iconOnly
           aria-label={`New ${title.toLowerCase()} folder`}
           tooltip={`New ${title.toLowerCase()} folder`}
+          disabled={isTranslation}
           onClick={onCreateFolder}
         >
           <FolderGlyphIcon size={13} />
@@ -127,6 +130,7 @@ export function SiteExplorerTreeSection<TTarget>({
           iconOnly
           aria-label={actionLabel}
           tooltip={actionLabel}
+          disabled={isTranslation && model.sectionId !== 'pages'}
           onClick={onAction}
         >
           <ActionIcon size={13} />

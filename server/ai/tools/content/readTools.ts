@@ -11,6 +11,8 @@
  * Tiptap on the browser side. The tools here don't touch the body shape.
  */
 
+import { toolLocaleId } from '@core/ai'
+import { resolveDataFieldLocalization } from '@core/localization'
 import { Type, type Static } from '@core/utils/typeboxHelpers'
 import type { CoreCapability } from '@core/capabilities'
 import type { AiTool } from '../types'
@@ -85,6 +87,7 @@ function projectField(field: DataField) {
     type: field.type,
     required: field.required ?? false,
     builtIn: field.builtIn ?? false,
+    localization: resolveDataFieldLocalization(field),
   }
   if (field.type === 'select' || field.type === 'multiSelect') {
     return { ...base, options: field.options.map((o) => ({ value: o.id, label: o.label })) }
@@ -110,6 +113,8 @@ function projectRow(row: DataRow) {
   return {
     id: row.id,
     tableId: row.tableId,
+    localeId: row.localeId,
+    availability: row.localization?.availability ?? 'offline',
     title: readTitleCell(row.cells) || readSlugCell(row.cells) || row.slug || row.id,
     slug: row.slug,
     status: row.status,
@@ -180,6 +185,7 @@ const getCollectionSchemaTool: AiTool = {
 // ---------------------------------------------------------------------------
 
 const ListDocumentsInput = Type.Object({
+  localeId: Type.Optional(Type.String({ minLength: 1 })),
   tableId: Type.String({ minLength: 1 }),
   status: Type.Optional(Type.Union([
     Type.Literal('draft'),
@@ -202,7 +208,7 @@ const listDocumentsTool: AiTool = {
   inputSchema: ListDocumentsInput,
   handler: async (input, ctx) => {
     const args = input as Static<typeof ListDocumentsInput>
-    const all = await listDataRows(ctx.db, args.tableId)
+    const all = await listDataRows(ctx.db, args.tableId, { localeId: toolLocaleId(input, ctx.snapshot) })
     let filtered = all
     if (args.status) filtered = filtered.filter((r) => r.status === args.status)
     if (args.authorUserId) filtered = filtered.filter((r) => r.authorUserId === args.authorUserId)
@@ -223,6 +229,7 @@ const listDocumentsTool: AiTool = {
 // ---------------------------------------------------------------------------
 
 const GetDocumentInput = Type.Object({
+  localeId: Type.Optional(Type.String({ minLength: 1 })),
   documentId: Type.String({ minLength: 1 }),
 })
 
@@ -236,7 +243,7 @@ const getDocumentTool: AiTool = {
   inputSchema: GetDocumentInput,
   handler: async (input, ctx) => {
     const { documentId } = input as Static<typeof GetDocumentInput>
-    const row = await getDataRow(ctx.db, documentId)
+    const row = await getDataRow(ctx.db, documentId, toolLocaleId(input, ctx.snapshot))
     if (!row) {
       return { ok: false, error: `Document ${documentId} not found.` }
     }
@@ -244,6 +251,9 @@ const getDocumentTool: AiTool = {
       document: {
         id: row.id,
         tableId: row.tableId,
+        localeId: row.localeId,
+        availability: row.localization?.availability ?? 'offline',
+        translationMeta: row.localization?.translationMeta ?? {},
         title: readTitleCell(row.cells) || row.slug || row.id,
         slug: row.slug,
         status: row.status,
@@ -263,6 +273,7 @@ const getDocumentTool: AiTool = {
 // ---------------------------------------------------------------------------
 
 const SearchDocumentsInput = Type.Object({
+  localeId: Type.Optional(Type.String({ minLength: 1 })),
   query: Type.String({ minLength: 1 }),
   limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 100 })),
 })
@@ -277,7 +288,7 @@ const searchDocumentsTool: AiTool = {
   inputSchema: SearchDocumentsInput,
   handler: async (input, ctx) => {
     const { query, limit } = input as Static<typeof SearchDocumentsInput>
-    const results = await searchDataRows(ctx.db, query, limit ?? 25)
+    const results = await searchDataRows(ctx.db, query, limit ?? 25, { localeId: toolLocaleId(input, ctx.snapshot) })
     // Only surface Content-workspace post-type rows.
     const tables = await listDataTablesWithCounts(ctx.db)
     const visibleTableIds = new Set(

@@ -8,6 +8,9 @@ import { afterEach, describe, expect, it, spyOn } from 'bun:test'
 import * as Y from 'yjs'
 import {
   LOCAL_ORIGIN,
+  encodeCollabDocId,
+  projectLocalizationDoc,
+  applyLocalizationDraftToDoc,
   projectPageDoc,
   rostersMap,
   shellMap,
@@ -19,11 +22,13 @@ import type { DbClient } from '../../../server/db'
 import { getCollabDocumentState } from '../../../server/repositories/collabDocuments'
 import {
   createDataRow,
+  getDataRow,
   createDataTable,
   listDataRows,
   saveDataRowDraft,
   updateDataRowTable,
 } from '../../../server/repositories/data'
+import { getDefaultLocale } from '../../../server/repositories/localization'
 import { getDraftSite, saveDraftSite } from '../../../server/repositories/site'
 import {
   notifyRowWrite,
@@ -113,8 +118,8 @@ function gateDerivedRowWrites(db: DbClient, targetRowId: string): {
     if (
       armed &&
       !gated &&
-      sql.includes('update data_rows') &&
-      sql.includes('set cells_json') &&
+      sql.includes('insert into data_rows') &&
+      sql.includes('do update set cells_json') &&
       values.includes(targetRowId)
     ) {
       gated = true
@@ -152,7 +157,7 @@ function gateRosterSweep(db: DbClient): {
     if (
       armed &&
       !gated &&
-      sql.includes('select id, slug from data_rows') &&
+      sql.includes('as slug from data_rows') &&
       values.includes('pages')
     ) {
       gated = true
@@ -314,7 +319,7 @@ function observeRosterSweep(db: DbClient): {
     if (
       armed &&
       !announced &&
-      strings.join('?').includes('select id, slug from data_rows') &&
+      strings.join('?').includes('as slug from data_rows') &&
       values.includes('layouts')
     ) {
       announced = true
@@ -350,6 +355,7 @@ function populateFreshPage(doc: Y.Doc, title: string, slug: string): void {
     root.set('props', new Y.Map())
     root.set('breakpointOverrides', new Y.Map())
     root.set('children', new Y.Array())
+    root.set('classIds', new Y.Array())
     nodes.set('root', root)
     const meta = doc.getMap('meta')
     meta.set('title', title)
@@ -362,7 +368,10 @@ describe('collab relay', () => {
     const { harness, relay, homeId } = await setup()
     const { doc: doc } = await relay.openDoc(`page:${homeId}`)
     const projected = projectPageDoc(doc, homeId)
-    expect(projected.slug).toBe('index')
+    expect(projected.slug).toBe('')
+    const sourceLocale = await getDefaultLocale(harness.db)
+    const localized = await relay.openDoc(encodeCollabDocId({ kind: 'page', rowId: homeId, localeId: sourceLocale.id }))
+    expect(projectLocalizationDoc(localized.doc).slug).toBe('index')
     expect(projected.rootNodeId).not.toBe('')
 
     // A second relay (fresh registry, no blob persisted yet? force reset) —
@@ -479,10 +488,10 @@ describe('collab relay', () => {
     relay.onReset((id) => resets.push(id))
 
     // Simulate a pack install / data-workspace edit.
-    const { rows } = await harness.db<{ cells_json: Record<string, unknown>; slug: string }>`
-      select cells_json, slug from data_rows where id = ${homeId}
-    `
-    await saveDataRowDraft(harness.db, homeId, { cells: rows[0].cells_json, slug: rows[0].slug })
+    const row = (await getDataRow(harness.db, homeId))!
+    const body = row.cells.body as { rootNodeId: string; nodes: Record<string, { label?: string }> }
+    body.nodes[body.rootNodeId].label = 'Externally renamed section'
+    await saveDataRowDraft(harness.db, homeId, { cells: row.cells, slug: row.slug })
 
     await new Promise((resolve) => setTimeout(resolve, 20))
     expect(resets).toContain(docId)
@@ -507,6 +516,7 @@ describe('collab relay', () => {
       root.set('props', new Y.Map())
       root.set('breakpointOverrides', new Y.Map())
       root.set('children', new Y.Array())
+    root.set('classIds', new Y.Array())
       nodes.set('root', root)
       const meta = doc.getMap('meta')
       meta.set('title', 'Fresh')
@@ -519,7 +529,14 @@ describe('collab relay', () => {
     const { rows } = await harness.db<{ id: string; slug: string }>`
       select id, slug from data_rows where id = ${'fresh-row-id'}
     `
-    expect(rows[0]?.slug).toBe('fresh')
+    expect(rows[0]?.slug).toBe('')
+    const { doc: siteDoc } = await relay.openDoc(SITE_DOC_ID)
+    ;(rostersMap(siteDoc).get('pages') as Y.Map<unknown>).set('fresh-row-id', true)
+    const locale = await getDefaultLocale(harness.db)
+    const localized = await relay.openDoc(encodeCollabDocId({ kind: 'page', rowId: 'fresh-row-id', localeId: locale.id }))
+    applyLocalizationDraftToDoc(localized.doc, projectLocalizationDoc(localized.doc), { cells: { title: 'Fresh', slug: 'fresh' }, slug: 'fresh' }, LOCAL_ORIGIN)
+    await relay.flushAll()
+    expect((await getDataRow(harness.db, 'fresh-row-id', locale.id))?.slug).toBe('fresh')
   })
 
   it('does not resurrect a dirty deleted page ahead of its same-slug replacement', async () => {
@@ -542,7 +559,7 @@ describe('collab relay', () => {
 
     const { rows } = await harness.db<{ id: string; deleted_at: string | null }>`
       select id, deleted_at from data_rows
-      where table_id = ${'pages'} and slug = ${'index'}
+      where table_id = ${'pages'}
       order by id asc
     `
     expect(rows.find((row) => row.id === homeId)?.deleted_at).not.toBeNull()
@@ -995,6 +1012,7 @@ describe('collab relay', () => {
           ...page,
           tableId: targetTable.id,
           cells: importedCells,
+          sharedCells: importedCells,
           slug: 'imported-custom-row',
         }],
       },
@@ -1084,7 +1102,7 @@ describe('collab relay', () => {
 
     const { rows } = await harness.db<{ id: string; deleted_at: string | null }>`
       select id, deleted_at from data_rows
-      where table_id = ${'pages'} and slug = ${'index'}
+      where table_id = ${'pages'}
       order by id asc
     `
     expect(rows.find((row) => row.id === homeId)?.deleted_at).not.toBeNull()
@@ -1553,6 +1571,7 @@ describe('collab relay', () => {
       root.set('props', new Y.Map())
       root.set('breakpointOverrides', new Y.Map())
       root.set('children', new Y.Array())
+    root.set('classIds', new Y.Array())
       nodes.set('root', root)
       tree.set('nodes', nodes)
       const meta = pageDoc.getMap('meta')

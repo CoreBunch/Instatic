@@ -38,6 +38,7 @@ import { handleUsersRoutes } from './users'
 import { handleRolesRoutes } from './roles'
 import { handleAuditRoutes } from './audit'
 import { handleSiteRoutes } from './site'
+import { handleLocaleRoutes } from './locales'
 import { handleSiteDocumentRoutes } from './siteDocument'
 import { handlePagesRoutes } from './pages'
 import { handleComponentsRoutes } from './components'
@@ -88,6 +89,7 @@ export async function handleCmsRequest(
     ?? (await handleRolesRoutes(req, db))
     ?? (await handleAuditRoutes(req, db))
     ?? (await handleSiteRoutes(req, db))
+    ?? (await handleLocaleRoutes(req, db, options))
     // The transactional whole-document save — must run before the pages/
     // components/layouts GET handlers only for tidiness; paths are distinct.
     ?? (await handleSiteDocumentRoutes(req, db))

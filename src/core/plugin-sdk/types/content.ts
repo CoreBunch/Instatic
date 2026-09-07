@@ -17,6 +17,7 @@
  * projection in lock-step.
  */
 
+import { FieldLocalizationSchema } from '@core/localization-schema'
 import { Type, type Static } from '@core/utils/typeboxHelpers'
 
 const PluginRepeaterItemCommon = {
@@ -70,45 +71,53 @@ export const PluginContentFieldSchema = Type.Union([
     type: Type.Literal('text'),
     id: Type.String(),
     label: Type.String(),
+    localization: Type.Optional(FieldLocalizationSchema),
     required: Type.Optional(Type.Boolean()),
   }),
   Type.Object({
     type: Type.Literal('longText'),
     id: Type.String(),
     label: Type.String(),
+    localization: Type.Optional(FieldLocalizationSchema),
     required: Type.Optional(Type.Boolean()),
   }),
   Type.Object({
     type: Type.Literal('richText'),
     id: Type.String(),
     label: Type.String(),
+    localization: Type.Optional(FieldLocalizationSchema),
     required: Type.Optional(Type.Boolean()),
   }),
   Type.Object({
     type: Type.Literal('number'),
     id: Type.String(),
     label: Type.String(),
+    localization: Type.Optional(FieldLocalizationSchema),
     required: Type.Optional(Type.Boolean()),
   }),
   Type.Object({
     type: Type.Literal('boolean'),
     id: Type.String(),
     label: Type.String(),
+    localization: Type.Optional(FieldLocalizationSchema),
   }),
   Type.Object({
     type: Type.Literal('date'),
     id: Type.String(),
     label: Type.String(),
+    localization: Type.Optional(FieldLocalizationSchema),
   }),
   Type.Object({
     type: Type.Literal('dateTime'),
     id: Type.String(),
     label: Type.String(),
+    localization: Type.Optional(FieldLocalizationSchema),
   }),
   Type.Object({
     type: Type.Literal('select'),
     id: Type.String(),
     label: Type.String(),
+    localization: Type.Optional(FieldLocalizationSchema),
     options: Type.Array(
       Type.Object({ value: Type.String(), label: Type.String() }),
     ),
@@ -117,6 +126,7 @@ export const PluginContentFieldSchema = Type.Union([
     type: Type.Literal('multiSelect'),
     id: Type.String(),
     label: Type.String(),
+    localization: Type.Optional(FieldLocalizationSchema),
     options: Type.Array(
       Type.Object({ value: Type.String(), label: Type.String() }),
     ),
@@ -125,35 +135,42 @@ export const PluginContentFieldSchema = Type.Union([
     type: Type.Literal('url'),
     id: Type.String(),
     label: Type.String(),
+    localization: Type.Optional(FieldLocalizationSchema),
   }),
   Type.Object({
     type: Type.Literal('email'),
     id: Type.String(),
     label: Type.String(),
+    localization: Type.Optional(FieldLocalizationSchema),
   }),
   Type.Object({
     type: Type.Literal('media'),
     id: Type.String(),
     label: Type.String(),
+    localization: Type.Optional(FieldLocalizationSchema),
   }),
   Type.Object({
     type: Type.Literal('relation'),
     id: Type.String(),
     label: Type.String(),
+    localization: Type.Optional(FieldLocalizationSchema),
     targetTableSlug: Type.String(),
   }),
   Type.Object({
     type: Type.Literal('repeater'),
     id: Type.String(),
     label: Type.String(),
+    localization: Type.Optional(FieldLocalizationSchema),
     required: Type.Optional(Type.Boolean()),
     fields: Type.Array(PluginRepeaterItemFieldSchema),
     itemLabelFieldId: Type.Optional(Type.String()),
   }),
+  Type.Object({ type: Type.Literal('parameterValues'), id: Type.String(), label: Type.String(), localization: Type.Optional(FieldLocalizationSchema) }),
   Type.Object({
     type: Type.Literal('pageTree'),
     id: Type.String(),
     label: Type.String(),
+    localization: Type.Optional(FieldLocalizationSchema),
   }),
 ])
 

@@ -1,9 +1,9 @@
+import { FieldAuthoringSettings } from './FieldAuthoringSettings'
 import { useId, useState, type FormEvent } from 'react'
 import { Button } from '@ui/components/Button'
 import { Dialog } from '@ui/components/Dialog'
-import { Input, Textarea } from '@ui/components/Input'
+import { Input } from '@ui/components/Input'
 import { Select } from '@ui/components/Select'
-import { Switch } from '@ui/components/Switch'
 import { pushToast } from '@ui/components/Toast'
 import { PlusIcon } from 'pixel-art-icons/icons/plus'
 import {
@@ -16,6 +16,8 @@ import {
   type RepeaterItemField,
 } from '@core/data/schemas'
 import { buildPostTypeDefaultFields } from '@core/data/fields'
+import { defaultDataFieldLocalization, resolveDataFieldLocalization } from '@core/localization'
+import type { FieldLocalization } from '@core/localization-schema'
 import { safeParseValue, formatValueErrors } from '@core/utils/typeboxHelpers'
 import { StepUpCancelledMessage } from '@admin/shared/StepUp'
 import styles from './NewFieldDialog.module.css'
@@ -72,6 +74,7 @@ export function NewFieldDialog({
   const [label, setLabel] = useState(initialField?.label ?? '')
   const [required, setRequired] = useState(initialField?.required ?? false)
   const [description, setDescription] = useState(initialField?.description ?? '')
+  const [localization, setLocalization] = useState<FieldLocalization | null>(() => initialField ? resolveDataFieldLocalization(initialField) : null)
 
   const [textMaxLength, setTextMaxLength] = useState(
     initialField?.type === 'text' ? (initialField.maxLength?.toString() ?? '') : '',
@@ -142,7 +145,6 @@ export function NewFieldDialog({
   const idInputId = useId()
   const labelInputId = useId()
   const typeSelectId = useId()
-  const descriptionInputId = useId()
   const textMaxLengthId = useId()
   const textPlaceholderId = useId()
   const numberMinId = useId()
@@ -238,6 +240,7 @@ export function NewFieldDialog({
     const common = {
       id: trimmedId,
       label: trimmedLabel,
+      localization: localization ?? defaultDataFieldLocalization(type),
       ...(required ? { required: true } : {}),
       ...(description.trim() ? { description: description.trim() } : {}),
       ...(initialField?.builtIn ? { builtIn: true } : {}),
@@ -343,6 +346,7 @@ export function NewFieldDialog({
         break
       }
       case 'pageTree':
+      case 'parameterValues':
       case 'fieldSchema': {
         // Structural fields are internal and never offered by this dialog.
         break
@@ -558,37 +562,10 @@ export function NewFieldDialog({
           </div>
         </section>
 
-        <section className={styles.formSection}>
-          <div className={styles.sectionHeading}>
-            <h3>Authoring</h3>
-            <p>Set the expectations and guidance shown when someone edits a record.</p>
-          </div>
-
-          <div className={styles.wideNarrowRow}>
-            <div className={styles.field}>
-              <label htmlFor={descriptionInputId} className={styles.label}>Description <span className={styles.optional}>(optional)</span></label>
-              <Textarea
-                id={descriptionInputId}
-                fieldSize="sm"
-                value={description}
-                onChange={(event) => setDescription(event.target.value)}
-                placeholder="Shown next to the field in the editor"
-                rows={2}
-              />
-            </div>
-
-            <div className={styles.field}>
-              <span className={styles.label}>Required</span>
-              <div className={styles.switchControl}>
-                <Switch
-                  checked={required}
-                  onCheckedChange={setRequired}
-                  aria-label="Required"
-                />
-              </div>
-            </div>
-          </div>
-        </section>
+        <FieldAuthoringSettings description={description} required={required}
+          localization={localization ?? defaultDataFieldLocalization(type)}
+          localizationLocked={Boolean(initialField?.builtIn && (initialField.localization === 'shared' || initialField.id === 'slug'))}
+          onDescriptionChange={setDescription} onRequiredChange={setRequired} onLocalizationChange={setLocalization} />
 
         {hasTypeSettings && (
           <section className={`${styles.formSection} ${styles.typeSettingsSection}`}>

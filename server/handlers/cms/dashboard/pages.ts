@@ -17,6 +17,8 @@ export async function readPagesStats(db: DbClient): Promise<PagesStats> {
   ])
   return {
     total: counts.total,
+    variants: counts.variants,
+    offline: counts.offline,
     published: counts.published,
     drafts: counts.drafts,
     scheduled: counts.scheduled,

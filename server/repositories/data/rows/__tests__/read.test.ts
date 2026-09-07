@@ -6,6 +6,7 @@ import type { DbClient } from '../../../../db/client'
 import { countDataRows, getDataRow, getDataRowMany } from '../read'
 import { softDeleteDataRow } from '../mutations'
 import { getDataTableBySlug } from '../../tables'
+import { seedLocalizedVariant } from './fixtures'
 
 async function freshDb(): Promise<DbClient> {
   const db = createSqliteClient(':memory:')
@@ -21,6 +22,7 @@ async function seedRow(db: DbClient, id: string): Promise<void> {
       ${'2024-01-01T00:00:00.000Z'}, ${'2024-01-01T00:00:00.000Z'}
     )
   `
+  await seedLocalizedVariant(db, { rowId: id, cells: { title: id, slug: id }, slug: id })
 }
 
 describe('getDataRowMany', () => {

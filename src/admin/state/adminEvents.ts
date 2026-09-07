@@ -51,3 +51,10 @@ export function consumePendingCmsSiteReload(): boolean {
  * lists should refresh when they are mounted.
  */
 export const CMS_SITE_BUNDLE_IMPORTED_EVENT = 'cms-site-bundle-imported'
+
+/** Refresh published addresses after a local publication or withdrawal. */
+export const CMS_PUBLICATION_CHANGED_EVENT = 'cms-publication-changed'
+
+export function notifyCmsPublicationChanged(): void {
+  window.dispatchEvent(new Event(CMS_PUBLICATION_CHANGED_EVENT))
+}

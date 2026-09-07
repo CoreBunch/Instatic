@@ -35,11 +35,15 @@ import {
   resolveMediaWriteTarget,
 } from './importMediaValidation'
 import { requireCapability, requireStepUp, userHasCapability } from '../../auth/authz'
+import { restoreBundleLocales, restoreBundlePublication } from '../../repositories/bundlePublication'
+import { LocalizationError } from '../../repositories/localization'
+import { LocalizedRouteError } from '@core/localization-routing'
+import { bumpPublishVersionSerialized } from '../../publish/publishState'
 import { saveDraftSite } from '../../repositories/site'
 import {
   listDataTables,
   createDataTable,
-  updateDataTable,
+  updateDataTableInTx,
   insertDataTableIfAbsent,
 } from '../../repositories/data/tables'
 import {
@@ -173,6 +177,16 @@ export async function handleImportRoute(
     }
   }
 
+  const importsReleases = (bundle.localizations ?? []).some((variant) => variant.availability === 'online' || variant.scheduledPublishAt !== null)
+  if (importsReleases) {
+    if (!userHasCapability(user, 'content.publish.any')) return jsonResponse({ error: 'Publishing imported releases requires permission to publish all content' }, { status: 403 })
+    const stepUp = await requireStepUp(req, db, user)
+    if (stepUp) return stepUp
+  }
+  if (((bundle.siteSnapshots?.length ?? 0) > 0 || (bundle.runtimeAssets?.length ?? 0) > 0) && !userHasCapability(user, 'site.structure.edit')) {
+    return jsonResponse({ error: 'Importing site snapshots and runtime assets requires site structure permission' }, { status: 403 })
+  }
+
   // ---------------------------------------------------------------------------
   // Counters
   // ---------------------------------------------------------------------------
@@ -193,6 +207,7 @@ export async function handleImportRoute(
   // DB transaction
   // ---------------------------------------------------------------------------
 
+  try {
   await serializeCollabAwareWrite(async () => {
     const affectedCollabRows = new Map(
       ['pages', 'components', 'layouts'].map((tableId) => [tableId, new Set<string>()]),
@@ -204,6 +219,12 @@ export async function handleImportRoute(
       ['pages', 'components', 'layouts'].map((tableId) => [tableId, new Set<string>()]),
     )
     let shellWasWritten = false
+    const importedRowIds = new Set<string>()
+    const transaction = (apply: (tx: DbClient) => Promise<void>) => db.transaction(async (tx) => {
+      if (strategy !== 'replace') await restoreBundleLocales(tx, bundle, strategy)
+      await apply(tx)
+      await restoreBundlePublication(tx, bundle, importedRowIds, new Set(bundle.tables.map((table) => table.id)), strategy)
+    })
     if (strategy === 'replace') {
       for (const tableId of affectedCollabRows.keys()) {
         for (const row of await listDataRows(db, tableId)) {
@@ -214,9 +235,14 @@ export async function handleImportRoute(
 
   if (strategy === 'replace') {
     // Wipe-and-replace: delete all rows + custom tables, then reimport.
-    await db.transaction(async (tx) => {
+    await transaction(async (tx) => {
       // 1. Delete ALL data rows (covers all tables)
       await tx`delete from data_rows`
+      if (bundle.locales) {
+        await tx`delete from data_table_localizations`
+        await tx`delete from site_locales`
+      }
+      await restoreBundleLocales(tx, bundle, strategy)
 
       // 2. Delete all non-system data tables
       await tx`delete from data_tables where system = 0 or system = false`
@@ -230,7 +256,7 @@ export async function handleImportRoute(
       for (const table of bundle.tables) {
         if (existingTableIds.has(table.id)) {
           // System table already present — update its fields
-          await updateDataTable(tx, table.id, {
+          await updateDataTableInTx(tx, table.id, {
             name: table.name,
             slug: table.slug,
             routeBase: table.routeBase,
@@ -265,6 +291,9 @@ export async function handleImportRoute(
           id: row.id,
           tableId: row.tableId,
           cells: row.cells,
+          sharedCells: row.sharedCells,
+          localeId: row.localeId,
+          localization: row.localization,
           slug: row.slug,
           status: row.status,
           publishedAt: row.publishedAt,
@@ -272,6 +301,7 @@ export async function handleImportRoute(
           updatedAt: row.updatedAt,
         }
         await replaceDataRow(tx, input)
+        importedRowIds.add(row.id)
         affectedCollabRows.get(row.tableId)?.add(row.id)
         rowsInserted++
       }
@@ -307,7 +337,7 @@ export async function handleImportRoute(
     })
   } else if (strategy === 'merge-add') {
     // Add what's missing; never overwrite existing content.
-    await db.transaction(async (tx) => {
+    await transaction(async (tx) => {
       // Tables: insert if absent, skip if the id already exists
       for (const table of bundle.tables) {
         const inserted = await insertDataTableIfAbsent(tx, {
@@ -330,6 +360,9 @@ export async function handleImportRoute(
           id: row.id,
           tableId: row.tableId,
           cells: row.cells,
+          sharedCells: row.sharedCells,
+          localeId: row.localeId,
+          localization: row.localization,
           slug: row.slug,
           status: row.status,
           publishedAt: row.publishedAt,
@@ -338,6 +371,7 @@ export async function handleImportRoute(
         }
         const inserted = await insertDataRowIfAbsent(tx, input)
         if (inserted) {
+          importedRowIds.add(row.id)
           affectedCollabRows.get(row.tableId)?.add(row.id)
           rowsInserted++
         } else {
@@ -350,7 +384,7 @@ export async function handleImportRoute(
     })
   } else {
     // merge-overwrite: upsert rows/tables; update existing with bundle values.
-    await db.transaction(async (tx) => {
+    await transaction(async (tx) => {
       // Pre-fetch all existing rows. An upsert can move an id from a table the
       // bundle does not mention, and both its old and new collab docs/rosters
       // must be invalidated after commit.
@@ -374,7 +408,7 @@ export async function handleImportRoute(
           fields: table.fields,
         })
         if (!inserted) {
-          await updateDataTable(tx, table.id, {
+          await updateDataTableInTx(tx, table.id, {
             name: table.name,
             slug: table.slug,
             routeBase: table.routeBase,
@@ -393,6 +427,9 @@ export async function handleImportRoute(
           id: row.id,
           tableId: row.tableId,
           cells: row.cells,
+          sharedCells: row.sharedCells,
+          localeId: row.localeId,
+          localization: row.localization,
           slug: row.slug,
           status: row.status,
           publishedAt: row.publishedAt,
@@ -400,6 +437,7 @@ export async function handleImportRoute(
           updatedAt: row.updatedAt,
         }
         await upsertDataRow(tx, input)
+        importedRowIds.add(row.id)
         const previousTableId = existingRowTables.get(row.id)
         if (previousTableId === undefined) {
           createdCollabRows.get(row.tableId)?.add(row.id)
@@ -442,6 +480,13 @@ export async function handleImportRoute(
       }
     }
   })
+  } catch (err) {
+    if (err instanceof LocalizationError || err instanceof LocalizedRouteError) {
+      return jsonResponse({ error: err.message }, { status: 409 })
+    }
+    throw err
+  }
+  await bumpPublishVersionSerialized()
 
   // ---------------------------------------------------------------------------
   // Media — outside the DB transaction (filesystem writes)

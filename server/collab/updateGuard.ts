@@ -25,10 +25,12 @@ import {
   projectLayoutDoc,
   projectPageDoc,
   projectSiteDoc,
+  projectLocalizationDoc,
 } from '@core/collab'
 import type { CoreCapability } from '@core/capabilities'
 import { ForbiddenSiteChangeError, validateSiteWriteDiff } from '../writePolicy/siteDiff'
 import { validatePageWriteDiff } from '../writePolicy/pageDiff'
+import { validateLocalizationDraftChange, type LocalizationGuardContext } from './localizationGuard'
 
 export type UpdateGuardVerdict = { ok: true } | { ok: false; reason: string }
 
@@ -50,6 +52,7 @@ export function validateGuardedUpdate(
   doc: Y.Doc,
   update: Uint8Array,
   capabilities: readonly CoreCapability[],
+  localizationContext?: LocalizationGuardContext | null,
 ): UpdateGuardVerdict {
   const parsed = parseCollabDocId(docId)
   if (!parsed) return { ok: false, reason: `unknown doc id ${docId}` }
@@ -59,10 +62,20 @@ export function validateGuardedUpdate(
   try {
     Y.applyUpdate(fork, update)
   } catch (err) {
+    fork.destroy()
     return { ok: false, reason: `malformed update: ${err instanceof Error ? err.message : String(err)}` }
   }
 
   try {
+    if (parsed.localeId) {
+      const previous = projectLocalizationDoc(doc)
+      const next = projectLocalizationDoc(fork)
+      if (deepEqual(previous, next)) return { ok: true }
+      if (!capabilities.includes('site.content.edit')) return { ok: false, reason: 'Language changes require site.content.edit' }
+      if (!localizationContext) return { ok: false, reason: 'Unknown localization context' }
+      const reason = validateLocalizationDraftChange(previous, next, localizationContext)
+      return reason ? { ok: false, reason } : { ok: true }
+    }
     if (parsed.kind === 'page') {
       const previous = projectPageDoc(doc, parsed.rowId)
       const next = projectPageDoc(fork, parsed.rowId)
@@ -115,6 +128,9 @@ export function validateGuardedUpdate(
     if (err instanceof ForbiddenSiteChangeError) {
       return { ok: false, reason: err.message }
     }
+    if (parsed.localeId) return { ok: false, reason: err instanceof Error ? err.message : String(err) }
     throw err
+  } finally {
+    fork.destroy()
   }
 }

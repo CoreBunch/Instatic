@@ -23,7 +23,6 @@ import type { ContentTableSummary, PublishedSnapshot } from '@core/plugin-sdk/co
 import type { DataRow, DataTable } from '@core/data/schemas'
 import { parsePageNodeTree } from '@core/page-tree'
 import { readPageTree, mutatePageTree } from '../../../ai/content/treeService'
-import { hookBus } from '@core/plugins/hookBus'
 import {
   listDataTablesWithCounts,
   getDataTable,
@@ -41,14 +40,19 @@ import {
   softDeleteDataRow,
   softDeleteDataRowMany,
   updateDataRowTable,
-  scheduleDataRowPublish,
+  updateDataRowStatus,
+  getPublishedDataRowById,
 } from '../../../repositories/data'
 import { publishDataRow } from '../../../publish/publishRow'
 import { republishAllPages } from '../../../publish/republish'
-import { bumpPublishVersionSerialized } from '../../../publish/publishState'
-import { applyContentEntryCellsFilter } from '../../../publish/contentEvents'
+import { refreshPublishedRoutes } from '../../../publish/rebakePublishedRoutes'
+import { getPublishedPageSnapshotById } from '../../../repositories/publish'
+import { pageToCells } from '@core/data/pageFromRow'
+import { getDefaultLocale, getLocale, listLocales, LocalizationError } from '../../../repositories/localization'
+import { scheduleLocalizedDataRowPublish } from '../../../publish/schedulePublication'
+import { applyContentEntryCellsFilter, emitContentEntryCreated, emitContentEntryUpdated, emitContentEntryDeleted } from '../../../publish/contentEvents'
 import type { DbClient } from '../../../db/client'
-import { assertContentTableAccess } from '../registry'
+import { assertContentTableAccess, getPluginUploadsDir } from '../registry'
 import { buildContentTableIdLookup, pluginContentFieldsToDataFields } from '../contentFieldMapping'
 import {
   buildTableSlugLookup,
@@ -72,26 +76,14 @@ interface PluginActor {
   pluginId: string
 }
 
-async function emitEntryCreated(tableSlug: string, entryId: string, actor: PluginActor): Promise<void> {
-  await hookBus.emit('content.entry.created', { tableSlug, entryId, actor })
+async function requestedLocaleId(db: DbClient, localeId?: string): Promise<string> {
+  const locale = localeId ? await getLocale(db, localeId) : await getDefaultLocale(db)
+  if (!locale) throw new LocalizationError('Unknown content language', 'localeId')
+  return locale.id
 }
 
-async function emitEntryUpdated(
-  tableSlug: string,
-  entryId: string,
-  changedFieldIds: string[],
-  actor: PluginActor,
-): Promise<void> {
-  await hookBus.emit('content.entry.updated', {
-    tableSlug,
-    entryId,
-    changedFieldIds,
-    actor,
-  })
-}
-
-async function emitEntryDeleted(tableSlug: string, entryId: string, actor: PluginActor): Promise<void> {
-  await hookBus.emit('content.entry.deleted', { tableSlug, entryId, actor })
+export async function handleContentLocalesList(msg: ApiCallFor<'cms.content.locales.list'>, _entry: HostPluginRecord, db: DbClient): Promise<void> {
+  replyApiOk(msg.pluginId, msg.correlationId, await listLocales(db))
 }
 
 /** Diff two cell-bags by key. Falls back to whole-object compare per key. */
@@ -209,10 +201,10 @@ export async function handleContentEntriesGet(
   entry: HostPluginRecord,
   db: DbClient,
 ): Promise<void> {
-  const [tableSlug, entryId] = msg.args
+  const [tableSlug, entryId, options] = msg.args
   assertContentTableAccess(entry, tableSlug, 'read')
   const table = await resolveTableBySlug(db, tableSlug)
-  const row = await getDataRow(db, entryId)
+  const row = await getDataRow(db, entryId, options.localeId)
   if (!row || row.tableId !== table.id) {
     replyApiOk(msg.pluginId, msg.correlationId, null)
     return
@@ -225,10 +217,10 @@ export async function handleContentEntriesGetBySlug(
   entry: HostPluginRecord,
   db: DbClient,
 ): Promise<void> {
-  const [tableSlug, slug] = msg.args
+  const [tableSlug, slug, options] = msg.args
   assertContentTableAccess(entry, tableSlug, 'read')
   const table = await resolveTableBySlug(db, tableSlug)
-  const row = await getDataRowBySlug(db, table.id, slug)
+  const row = await getDataRowBySlug(db, table.id, slug, options.localeId)
   replyApiOk(msg.pluginId, msg.correlationId, row ? rowToEntry(row, tableSlug) : null)
 }
 
@@ -240,20 +232,22 @@ export async function handleContentEntriesCreate(
   const [tableSlug, input] = msg.args
   assertContentTableAccess(entry, tableSlug, 'write')
   const table = await resolveTableBySlug(db, tableSlug)
+  const localeId = await requestedLocaleId(db, input.localeId)
   const actor: PluginActor = { kind: 'plugin', pluginId: msg.pluginId }
   const cells = await applyContentEntryCellsFilter(input.cells, {
     tableSlug,
     entryId: 'new',
+    localeId,
     actor,
   })
   const slug = input.slug ?? denormalizeSlug(table, cells)
   const created = await createDataRow(
     db,
-    { tableId: table.id, cells, slug },
+    { tableId: table.id, cells, slug, localeId },
     null,
     msg.pluginId,
   )
-  await emitEntryCreated(tableSlug, created.id, actor)
+  await emitContentEntryCreated(db, created.id, actor, created.localeId)
   replyApiOk(msg.pluginId, msg.correlationId, rowToEntry(created, tableSlug))
 }
 
@@ -265,7 +259,7 @@ export async function handleContentEntriesUpdate(
   const [tableSlug, entryId, patch] = msg.args
   assertContentTableAccess(entry, tableSlug, 'write')
   const table = await resolveTableBySlug(db, tableSlug)
-  const existing = await getDataRow(db, entryId)
+  const existing = await getDataRow(db, entryId, patch.localeId)
   if (!existing || existing.tableId !== table.id) {
     throw new Error(`Entry "${entryId}" not found in table "${tableSlug}"`)
   }
@@ -274,6 +268,7 @@ export async function handleContentEntriesUpdate(
   const filteredCells = await applyContentEntryCellsFilter(mergedCells, {
     tableSlug,
     entryId,
+    localeId: existing.localeId,
     actor,
   })
   const changedIds = diffCells(existing.cells, filteredCells)
@@ -284,13 +279,13 @@ export async function handleContentEntriesUpdate(
   const updated = await saveDataRowDraft(
     db,
     entryId,
-    { cells: filteredCells, slug: nextSlug || existing.slug },
+    { cells: filteredCells, slug: nextSlug || existing.slug, localeId: existing.localeId },
     null,
     msg.pluginId,
   )
   if (!updated) throw new Error(`Entry "${entryId}" could not be updated`)
   if (changedIds.length > 0) {
-    await emitEntryUpdated(tableSlug, entryId, changedIds, actor)
+    await emitContentEntryUpdated(db, entryId, changedIds, actor, existing.localeId)
   }
   replyApiOk(msg.pluginId, msg.correlationId, rowToEntry(updated, tableSlug))
 }
@@ -309,9 +304,9 @@ export async function handleContentEntriesDelete(
   }
   const deleted = await softDeleteDataRow(db, entryId)
   if (deleted) {
-    // A published row's route is retracted — invalidate the render cache.
-    if (deleted.status === 'published') await bumpPublishVersionSerialized()
-    await emitEntryDeleted(tableSlug, entryId, { kind: 'plugin', pluginId: msg.pluginId })
+    const uploadsDir = getPluginUploadsDir(db)
+    if (uploadsDir) await refreshPublishedRoutes(db, uploadsDir)
+    await emitContentEntryDeleted(db, entryId, { kind: 'plugin', pluginId: msg.pluginId })
   }
   replyApiOk(msg.pluginId, msg.correlationId, undefined)
 }
@@ -324,23 +319,41 @@ export async function handleContentEntriesPublish(
   const [tableSlug, entryId, options] = msg.args
   assertContentTableAccess(entry, tableSlug, 'publish')
   const table = await resolveTableBySlug(db, tableSlug)
-  const existing = await getDataRow(db, entryId)
+  const existing = await getDataRow(db, entryId, options.localeId)
   if (!existing || existing.tableId !== table.id) {
     throw new Error(`Entry "${entryId}" not found in table "${tableSlug}"`)
   }
   const actor: PluginActor = { kind: 'plugin', pluginId: msg.pluginId }
 
   if (options.scheduledFor) {
-    const scheduled = await scheduleDataRowPublish(db, entryId, options.scheduledFor, null)
+    const scheduled = await scheduleLocalizedDataRowPublish(db, entryId, options.scheduledFor, null, existing.localeId)
     if (!scheduled) throw new Error(`Entry "${entryId}" could not be scheduled`)
-    await emitEntryUpdated(tableSlug, entryId, ['status'], actor)
+    await emitContentEntryUpdated(db, entryId, ['status'], actor, existing.localeId)
     replyApiOk(msg.pluginId, msg.correlationId, rowToEntry(scheduled, tableSlug))
     return
   }
 
-  const result = await publishDataRow(db, entryId, null)
-  await emitEntryUpdated(tableSlug, entryId, ['status'], actor)
+  const result = await publishDataRow(db, entryId, null, getPluginUploadsDir(db), { localeId: existing.localeId })
+  await emitContentEntryUpdated(db, entryId, ['status'], actor, existing.localeId)
   replyApiOk(msg.pluginId, msg.correlationId, rowToEntry(result.row, tableSlug))
+}
+
+export async function handleContentEntriesUnpublish(
+  msg: ApiCallFor<'cms.content.entries.unpublish'>,
+  entry: HostPluginRecord,
+  db: DbClient,
+): Promise<void> {
+  const [tableSlug, entryId, options] = msg.args
+  assertContentTableAccess(entry, tableSlug, 'publish')
+  const table = await resolveTableBySlug(db, tableSlug)
+  const existing = await getDataRow(db, entryId, options.localeId)
+  if (!existing || existing.tableId !== table.id) throw new Error(`Entry "${entryId}" not found in table "${tableSlug}"`)
+  const row = await updateDataRowStatus(db, entryId, 'unpublished', null, existing.localeId)
+  if (!row) throw new Error('Content could not be taken offline')
+  const uploadsDir = getPluginUploadsDir(db)
+  if (uploadsDir) await refreshPublishedRoutes(db, uploadsDir)
+  await emitContentEntryUpdated(db, entryId, ['status'], { kind: 'plugin', pluginId: msg.pluginId }, row.localeId)
+  replyApiOk(msg.pluginId, msg.correlationId, rowToEntry(row, tableSlug))
 }
 
 export async function handleContentEntriesMoveTable(
@@ -348,19 +361,21 @@ export async function handleContentEntriesMoveTable(
   entry: HostPluginRecord,
   db: DbClient,
 ): Promise<void> {
-  const [tableSlug, entryId, targetSlug] = msg.args
+  const [tableSlug, entryId, targetSlug, options] = msg.args
   assertContentTableAccess(entry, tableSlug, 'write')
   assertContentTableAccess(entry, targetSlug, 'write')
   const source = await resolveTableBySlug(db, tableSlug)
   const target = await resolveTableBySlug(db, targetSlug)
-  const existing = await getDataRow(db, entryId)
+  const existing = await getDataRow(db, entryId, options.localeId)
   if (!existing || existing.tableId !== source.id) {
     throw new Error(`Entry "${entryId}" not found in table "${tableSlug}"`)
   }
-  const result = await updateDataRowTable(db, entryId, target.id, null)
+  const result = await updateDataRowTable(db, entryId, target.id, null, { localeId: existing.localeId })
   if (!result.ok) throw new Error(`moveToTable failed: ${result.reason}`)
+  const uploadsDir = getPluginUploadsDir(db)
+  if (uploadsDir) await refreshPublishedRoutes(db, uploadsDir)
   const actor: PluginActor = { kind: 'plugin', pluginId: msg.pluginId }
-  await emitEntryUpdated(tableSlug, entryId, ['tableId'], actor)
+  await emitContentEntryUpdated(db, entryId, ['tableId'], actor, null)
   replyApiOk(msg.pluginId, msg.correlationId, rowToEntry(result.row, targetSlug))
 }
 
@@ -379,13 +394,14 @@ export async function handleContentEntriesCreateMany(
   // runs INSIDE the same plugin's worker; running it inside the per-row
   // transaction would tie up the DB connection.
   const prepared = await Promise.all(inputs.map(async (input) => {
-    const cells = await applyContentEntryCellsFilter(input.cells, { tableSlug, entryId: 'new', actor })
+    const localeId = await requestedLocaleId(db, input.localeId)
+    const cells = await applyContentEntryCellsFilter(input.cells, { tableSlug, entryId: 'new', localeId, actor })
     const slug = input.slug ?? denormalizeSlug(table, cells)
-    return { tableId: table.id, cells, slug }
+    return { tableId: table.id, cells, slug, localeId }
   }))
   const created = await createDataRowMany(db, prepared, null, msg.pluginId)
   for (const row of created) {
-    await emitEntryCreated(tableSlug, row.id, actor)
+    await emitContentEntryCreated(db, row.id, actor, row.localeId)
   }
   replyApiOk(msg.pluginId, msg.correlationId, created.map((r) => rowToEntry(r, tableSlug)))
 }
@@ -403,11 +419,16 @@ export async function handleContentEntriesUpdateMany(
   // Read every targeted row in ONE IN-list query, then apply filter + diff
   // per-row before the transaction. Iterating `updates` in input order
   // preserves the first-bad-id error semantics of the old per-row reads.
-  const existingRows = await getDataRowMany(db, updates.map((u) => u.id))
-  const existingById = new Map(existingRows.map((row) => [row.id, row]))
-  const prepared: Array<{ id: string; input: { cells: Record<string, unknown>; slug: string }; changedIds: string[] }> = []
-  for (const { id, patch } of updates) {
-    const existing = existingById.get(id)
+  const localeIds = await Promise.all(updates.map((update) => requestedLocaleId(db, update.patch.localeId)))
+  const localeGroups = new Map<string, string[]>()
+  updates.forEach((update, index) => localeGroups.set(localeIds[index], [...(localeGroups.get(localeIds[index]) ?? []), update.id]))
+  const existingByLocale = new Map<string, Map<string, DataRow>>()
+  await Promise.all([...localeGroups].map(async ([localeId, ids]) => {
+    existingByLocale.set(localeId, new Map((await getDataRowMany(db, ids, localeId)).map((row) => [row.id, row])))
+  }))
+  const prepared: Array<{ id: string; input: { cells: Record<string, unknown>; slug: string; localeId: string }; changedIds: string[] }> = []
+  for (const [index, { id, patch }] of updates.entries()) {
+    const existing = existingByLocale.get(localeIds[index])?.get(id)
     if (!existing || existing.tableId !== table.id) {
       throw new Error(`Entry "${id}" not found in table "${tableSlug}"`)
     }
@@ -415,13 +436,14 @@ export async function handleContentEntriesUpdateMany(
     const filteredCells = await applyContentEntryCellsFilter(mergedCells, {
       tableSlug,
       entryId: id,
+      localeId: existing.localeId,
       actor,
     })
     const changedIds = diffCells(existing.cells, filteredCells)
     const nextSlug = patch.slug ?? denormalizeSlug(table, filteredCells)
     prepared.push({
       id,
-      input: { cells: filteredCells, slug: nextSlug || existing.slug },
+      input: { cells: filteredCells, slug: nextSlug || existing.slug, localeId: existing.localeId },
       changedIds,
     })
   }
@@ -433,7 +455,7 @@ export async function handleContentEntriesUpdateMany(
   )
   for (const p of prepared) {
     if (p.changedIds.length > 0) {
-      await emitEntryUpdated(tableSlug, p.id, p.changedIds, actor)
+      await emitContentEntryUpdated(db, p.id, p.changedIds, actor, p.input.localeId)
     }
   }
   replyApiOk(msg.pluginId, msg.correlationId, updated.map((r) => rowToEntry(r, tableSlug)))
@@ -459,11 +481,11 @@ export async function handleContentEntriesDeleteMany(
     }
   }
   const result = await softDeleteDataRowMany(db, ids, null)
-  // Published rows' routes were retracted — one cache invalidation per batch.
-  if (result.publishedDeleted > 0) await bumpPublishVersionSerialized()
+  const uploadsDir = getPluginUploadsDir(db)
+  if (uploadsDir && result.deleted > 0) await refreshPublishedRoutes(db, uploadsDir)
   const actor: PluginActor = { kind: 'plugin', pluginId: msg.pluginId }
   for (const id of ids) {
-    await emitEntryDeleted(tableSlug, id, actor)
+    await emitContentEntryDeleted(db, id, actor)
   }
   // Reply shape is part of the plugin API — only `deleted` is exposed.
   replyApiOk(msg.pluginId, msg.correlationId, { deleted: result.deleted })
@@ -482,8 +504,9 @@ async function resolvePageTreeField(
   db: DbClient,
   entryId: string,
   fieldId: string,
+  localeId?: string,
 ): Promise<{ row: DataRow; table: DataTable }> {
-  const row = await getDataRow(db, entryId)
+  const row = await getDataRow(db, entryId, localeId)
   if (!row) throw new Error(`Entry "${entryId}" not found`)
   const table = await getDataTable(db, row.tableId)
   if (!table) throw new Error(`Table for entry "${entryId}" missing`)
@@ -500,8 +523,9 @@ export async function handleContentTreeRead(
   entry: HostPluginRecord,
   db: DbClient,
 ): Promise<void> {
-  const [entryId, fieldId] = msg.args
+  const [entryId, fieldId, options] = msg.args
   const tree = await readPageTree(db, entryId, fieldId, {
+    localeId: options.localeId,
     assertAccess: (table) => assertContentTableAccess(entry, table.slug, 'read'),
   })
   replyApiOk(msg.pluginId, msg.correlationId, tree)
@@ -512,7 +536,7 @@ export async function handleContentTreeMutate(
   entry: HostPluginRecord,
   db: DbClient,
 ): Promise<void> {
-  const [entryId, fieldId, operations] = msg.args
+  const [entryId, fieldId, operations, options] = msg.args
   // Delegate to the shared, actor-agnostic page-tree service. The per-table
   // manifest allowlist is plugin-specific, so it stays here and is injected
   // via `assertAccess`.
@@ -522,7 +546,7 @@ export async function handleContentTreeMutate(
     fieldId,
     operations,
     { kind: 'plugin', pluginId: msg.pluginId },
-    { assertAccess: (table) => assertContentTableAccess(entry, table.slug, 'write') },
+    { localeId: options.localeId, assertAccess: (table) => assertContentTableAccess(entry, table.slug, 'write') },
   )
   replyApiOk(msg.pluginId, msg.correlationId, { tree, affectedNodeIds })
 }
@@ -532,8 +556,8 @@ export async function handleContentTreeReplace(
   entry: HostPluginRecord,
   db: DbClient,
 ): Promise<void> {
-  const [entryId, fieldId, replacement] = msg.args
-  const { row, table } = await resolvePageTreeField(db, entryId, fieldId)
+  const [entryId, fieldId, replacement, options] = msg.args
+  const { row, table } = await resolvePageTreeField(db, entryId, fieldId, options.localeId)
   assertContentTableAccess(entry, table.slug, 'write')
 
   const replacementTree = parsePageNodeTree(
@@ -544,17 +568,17 @@ export async function handleContentTreeReplace(
   const actor: PluginActor = { kind: 'plugin', pluginId: msg.pluginId }
   const nextCells = await applyContentEntryCellsFilter(
     { ...row.cells, [fieldId]: replacementTree },
-    { tableSlug: table.slug, entryId, actor },
+    { tableSlug: table.slug, entryId, localeId: row.localeId, actor },
   )
   const updated = await saveDataRowDraft(
     db,
     entryId,
-    { cells: nextCells, slug: row.slug },
+    { cells: nextCells, slug: row.slug, localeId: row.localeId },
     null,
     msg.pluginId,
   )
   if (!updated) throw new Error(`Entry "${entryId}" could not be updated after tree replace`)
-  await emitEntryUpdated(table.slug, entryId, [fieldId], actor)
+  await emitContentEntryUpdated(db, entryId, [fieldId], actor, row.localeId)
   replyApiOk(msg.pluginId, msg.correlationId, undefined)
 }
 
@@ -567,13 +591,15 @@ export async function handleContentSearch(
   entry: HostPluginRecord,
   db: DbClient,
 ): Promise<void> {
-  const [query, limit] = msg.args
-  const allowedSlugs = new Set((entry.manifest.contentAccess ?? []).map((e) => e.table))
-  const all = await searchDataRows(db, query, limit)
+  const [query, options] = msg.args
+  const localeId = await requestedLocaleId(db, options.localeId)
+  const allowedSlugs = new Set((entry.manifest.contentAccess ?? []).filter((access) => access.modes.includes('read')).map((access) => access.table))
+  const all = await searchDataRows(db, query, options.limit ?? 50, { localeId, tableSlugs: [...allowedSlugs] })
   const filtered = all
     .filter((r) => allowedSlugs.has(r.tableSlug))
     .map((r) => ({
       id: r.id,
+      localeId,
       tableSlug: r.tableSlug,
       tableName: r.tableName,
       slug: r.slug,
@@ -588,50 +614,31 @@ export async function handleContentSnapshot(
   entry: HostPluginRecord,
   db: DbClient,
 ): Promise<void> {
-  const [entryId] = msg.args
-  const row = await getDataRow(db, entryId)
-  if (!row) {
-    replyApiOk(msg.pluginId, msg.correlationId, null)
-    return
-  }
-  const table = await getDataTable(db, row.tableId)
-  if (!table) {
+  const [entryId, options] = msg.args
+  const row = await getDataRow(db, entryId, options.localeId)
+  const table = row ? await getDataTable(db, row.tableId) : null
+  if (!row || !table) {
     replyApiOk(msg.pluginId, msg.correlationId, null)
     return
   }
   assertContentTableAccess(entry, table.slug, 'read')
-
-  const { rows } = await db<{
-    version_number: number
-    cells_json: Record<string, unknown>
-    slug: string
-    published_at: string | Date
-  }>`
-    select data_row_versions.version_number,
-           data_row_versions.cells_json,
-           data_row_versions.slug,
-           data_row_versions.published_at
-    from data_rows
-    join data_row_versions on data_row_versions.id = data_rows.active_version_id
-    where data_rows.id = ${entryId}
-      and data_rows.deleted_at is null
-    limit 1
-  `
-  if (!rows[0]) {
+  const version = await getPublishedDataRowById(db, entryId, row.localeId)
+  if (!version) {
     replyApiOk(msg.pluginId, msg.correlationId, null)
     return
   }
-  const snap: PublishedSnapshot = {
-    entryId: row.id,
-    tableSlug: table.slug,
-    versionNumber: rows[0].version_number,
-    slug: rows[0].slug,
-    cells: rows[0].cells_json,
-    publishedAt: typeof rows[0].published_at === 'string'
-      ? rows[0].published_at
-      : rows[0].published_at.toISOString(),
+  let cells = version.cells
+  if (table.kind === 'page') {
+    const snapshot = await getPublishedPageSnapshotById(db, entryId, row.localeId, version.siteSnapshotId ?? undefined)
+    const page = snapshot?.site.pages.find((candidate) => candidate.id === entryId)
+    if (!page) throw new Error('Published page snapshot is missing')
+    cells = pageToCells(page)
   }
-  replyApiOk(msg.pluginId, msg.correlationId, snap)
+  const snapshot: PublishedSnapshot = {
+    entryId, tableSlug: table.slug, localeId: row.localeId, publicPath: version.publicPath,
+    versionNumber: version.versionNumber, slug: version.slug, cells, publishedAt: version.publishedAt,
+  }
+  replyApiOk(msg.pluginId, msg.correlationId, snapshot)
 }
 
 export async function handleContentRepublishAll(

@@ -50,13 +50,14 @@ export async function applyPublishedHtmlPipeline(
   const withInjections = injectFrontendAssets(rendered.html, injections)
   // Token stamping is an HTML mutation (needs the server signing secret) —
   // its own step, independent of JS injection.
-  const withFormTokens = stampFormPageTokens(withInjections, rendered.pageId)
+  const withFormTokens = rendered.formIdentity ? stampFormPageTokens(withInjections, rendered.formIdentity) : withInjections
   // Module-JS channel: one external <script defer> per moduleId the page
   // needs; relaxes CSP script-src to 'self' iff at least one tag landed.
   const withModuleScripts = injectModuleScripts(
     withFormTokens,
     rendered.jsModuleIds,
     rendered.publishVersion,
+    rendered.publicPath,
   )
   const filtered = await hookBus.applyFilter('publish.html', withModuleScripts, {
     siteId: rendered.siteId,

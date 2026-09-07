@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'bun:test'
+import { afterEach, describe, expect, it } from 'bun:test'
 import type { DbResult } from '../../../server/db'
 import { pgMigrations } from '../../../server/db/migrations-pg'
 import {
@@ -7,14 +7,27 @@ import {
   updateDataTable,
   createDataRow,
   listDataAuthorOptions,
-  updateDataRowAuthor,
-  saveDataRowDraft,
   getPublishedDataRowByRoute,
   getDataRowRedirectByRoute,
 } from '../../../server/repositories/data'
 import { handleServerRequest } from '../../../server/router'
 import { resetForTests } from '../../../server/publish/renderCache'
 import { createFakeDb } from './dbTestFake'
+
+import { createSqliteClient } from '../../../server/db/sqlite'
+import { runMigrations } from '../../../server/db/runMigrations'
+import { sqliteMigrations } from '../../../server/db/migrations-sqlite'
+import type { DbClient } from '../../../server/db/client'
+import { publishDataRow } from '../../../server/publish/publishRow'
+import { createUser } from '../../../server/repositories/users'
+
+const clients: DbClient[] = []
+afterEach(async () => { for (const db of clients.splice(0)) await db.close() })
+async function realDb() {
+  const db = createSqliteClient(':memory:'); clients.push(db)
+  await runMigrations(db, sqliteMigrations)
+  return db
+}
 
 type QueryHandler = (sql: string, params: unknown[]) => DbResult | undefined
 
@@ -151,70 +164,12 @@ describe('data CMS repository', () => {
     })
   })
 
-  it('updates table identity, route, labels, and field settings', async () => {
+  it('updates table identity, route, labels, and field settings without losing locale paths', async () => {
+    const db = await realDb()
+    const table = await createDataTable(db, { id: 'products', name: 'Products', slug: 'products', kind: 'postType', routeBase: '/products', singularLabel: 'Product', pluralLabel: 'Products', fields: defaultFields })
     const nextFields = defaultFields.slice(0, 2)
-    const db = makeDataFakeDb([
-      // updateDataTable reads the table first, so a patch cannot drop the
-      // mandatory `title`/`slug` of a post type by omitting them.
-      (sql) => {
-        if (!sql.startsWith('select id, name, slug, kind')) return undefined
-        return {
-          rows: [{
-            id: 'products',
-            name: 'Products',
-            slug: 'products',
-            kind: 'postType',
-            route_base: '/products',
-            singular_label: 'Product',
-            plural_label: 'Products',
-            primary_field_id: 'title',
-            fields_json: defaultFields,
-            created_by_user_id: null,
-            updated_by_user_id: null,
-            created_at: rowDate('2026-05-01T10:00:00Z'),
-            updated_at: rowDate('2026-05-01T10:00:00Z'),
-          }],
-          rowCount: 1,
-        }
-      },
-      (sql, params) => {
-        if (!sql.startsWith('update data_tables')) return undefined
-        expect(params).toContain('Catalog')
-        expect(params).toContain('catalog')
-        return {
-          rows: [{
-            id: 'products',
-            name: 'Catalog',
-            slug: 'catalog',
-            kind: 'postType',
-            route_base: '/catalog',
-            singular_label: 'Product',
-            plural_label: 'Catalog',
-            primary_field_id: 'title',
-            fields_json: nextFields,
-            created_by_user_id: null,
-            updated_by_user_id: null,
-            created_at: rowDate('2026-05-01T10:00:00Z'),
-            updated_at: rowDate('2026-05-01T10:05:00Z'),
-          }],
-          rowCount: 1,
-        }
-      },
-    ])
-
-    await expect(updateDataTable(db, 'products', {
-      name: 'Catalog',
-      slug: 'catalog',
-      routeBase: '/catalog',
-      singularLabel: 'Product',
-      pluralLabel: 'Catalog',
-      fields: nextFields,
-    }, null)).resolves.toMatchObject({
-      id: 'products',
-      name: 'Catalog',
-      slug: 'catalog',
-      routeBase: '/catalog',
-      fields: nextFields,
+    expect(await updateDataTable(db, table.id, { name: 'Catalog', slug: 'catalog', routeBase: '/catalog', singularLabel: 'Product', pluralLabel: 'Catalog', fields: nextFields }, null)).toMatchObject({
+      id: 'products', name: 'Catalog', slug: 'catalog', routeBase: '/catalog', fields: nextFields,
     })
   })
 
@@ -261,12 +216,16 @@ describe('data CMS repository', () => {
     const db = makeDataFakeDb([
       (sql, params) => {
         if (!sql.startsWith('select data_row_versions.id')) return undefined
-        expect(sql).toContain('data_row_versions.id = data_rows.active_version_id')
-        expect(params).toEqual(['/posts', 'hello'])
+        expect(sql).toContain('data_row_versions.id = variants.active_version_id')
+        expect(sql).toContain('data_row_versions.locale_id = variants.locale_id')
+        expect(params).toEqual(['default', '/posts/hello', true])
         return {
           rows: [{
             id: 'version_1',
             row_id: 'row_1',
+            locale_id: 'default',
+            public_path: '/posts/hello',
+            site_snapshot_id: null,
             table_id: 'posts',
             table_slug: 'posts',
             table_kind: 'postType',
@@ -297,7 +256,7 @@ describe('data CMS repository', () => {
       },
     ])
 
-    await expect(getPublishedDataRowByRoute(db, '/posts', 'hello')).resolves.toMatchObject({
+    await expect(getPublishedDataRowByRoute(db, '/posts', 'hello', 'default')).resolves.toMatchObject({
       id: 'version_1',
       rowId: 'row_1',
       tableSlug: 'posts',
@@ -315,26 +274,25 @@ describe('data CMS repository', () => {
     const db = makeDataFakeDb([
       (sql, params) => {
         if (!sql.startsWith('select data_row_versions.id')) return undefined
-        expect(params).toEqual(['/posts', 'untitled'])
+        expect(params).toEqual(['default', '/posts/untitled', true])
         return { rows: [], rowCount: 0 }
       },
     ])
 
-    await expect(getPublishedDataRowByRoute(db, '/posts', 'untitled')).resolves.toBeNull()
+    await expect(getPublishedDataRowByRoute(db, '/posts', 'untitled', 'default')).resolves.toBeNull()
   })
 
   it('resolves old published slugs as redirects to the active published slug', async () => {
     const db = makeDataFakeDb([
       (sql, params) => {
-        if (!sql.startsWith('select data_row_redirects.id')) return undefined
-        expect(params).toEqual(['/posts', 'untitled'])
+        if (!sql.startsWith('select redirects.id')) return undefined
+        expect(params).toEqual(['/posts', 'untitled', true])
         return {
           rows: [{
             id: 'redirect_1',
             from_route_base: '/posts',
             from_slug: 'untitled',
-            target_route_base: '/posts',
-            target_slug: 'post',
+            target_path: '/posts/post',
           }],
           rowCount: 1,
         }
@@ -350,75 +308,17 @@ describe('data CMS repository', () => {
 })
 
 describe('data CMS public routes', () => {
-  it('returns 404 when a postType row has no matching entry template', async () => {
-    // The row route consults the version-keyed published-snapshot memo; reset
-    // publish state so a snapshot cached by another test file can't leak in.
+  it('returns 404 when a published postType variant has no matching entry template', async () => {
     resetForTests()
-    // A postType table only gets a public row route when the site has an
-    // explicitly authored entry template. Without one, the dispatcher surfaces
-    // the request as a 404 rather than inventing a half-styled fallback
-    // document.
-    const db = makeDataFakeDb([
-      (sql) => {
-        if (sql.startsWith('select id, name, version, enabled, lifecycle_status')) {
-          return { rows: [], rowCount: 0 }
-        }
-        return undefined
-      },
-      (sql) => {
-        // getPublishedPageBySlug / getLatestPublishedSiteSnapshot — no
-        // published snapshot at all (both run the same site_snapshots join).
-        if (sql.includes('site_snapshots.site_json')) {
-          return { rows: [], rowCount: 0 }
-        }
-        return undefined
-      },
-      (sql) => {
-        if (!sql.startsWith('select data_row_versions.id')) return undefined
-        return {
-          rows: [{
-            id: 'version_1',
-            row_id: 'row_1',
-            table_id: 'products',
-            table_slug: 'products',
-            table_kind: 'postType',
-            table_route_base: '/products',
-            version_number: 1,
-            cells_json: {
-              title: 'Some product',
-              slug: 'some-product',
-              body: 'A product body.',
-              featuredMedia: null,
-              seoTitle: '',
-              seoDescription: '',
-            },
-            slug: 'some-product',
-            published_at: rowDate('2026-05-01T10:00:00Z'),
-            created_at: rowDate('2026-05-01T10:00:00Z'),
-          }],
-          rowCount: 1,
-        }
-      },
-      (sql) => {
-        // No redirect for this slug either.
-        if (sql.startsWith('select id, table_id, from_route_base')) {
-          return { rows: [], rowCount: 0 }
-        }
-        return undefined
-      },
-      (sql) => {
-        if (sql.startsWith('select count(*) as count from site')) {
-          return { rows: [{ count: 1 }], rowCount: 1 }
-        }
-        if (sql.startsWith('select count(*) as count') && sql.includes('from users')) {
-          return { rows: [{ count: 1 }], rowCount: 1 }
-        }
-        return undefined
-      },
-    ])
-
+    const db = await realDb()
+    await db`insert into site (id, name, settings_json) values ('default', 'Test', ${{}})`
+    await createUser(db, { id: 'owner', email: 'owner@example.test', displayName: 'Owner', passwordHash: 'fixture', roleId: 'owner', allowOwnerRole: true })
+    await createDataTable(db, { id: 'products', name: 'Products', slug: 'products', kind: 'postType', routeBase: '/products', singularLabel: 'Product', pluralLabel: 'Products' })
+    const row = await createDataRow(db, { tableId: 'products', cells: { title: 'Some product', slug: 'some-product', body: 'Product body' }, slug: 'some-product' })
+    const result = await publishDataRow(db, row.id, null)
+    expect(result.row.status).toBe('published')
+    expect(result.version.publicPath).toBeNull()
     const res = await handleServerRequest(new Request('http://localhost/products/some-product'), { db })
-
     expect(res.status).toBe(404)
   })
 })

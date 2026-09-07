@@ -20,7 +20,7 @@ import styles from './PeerAvatarStack.module.css'
 
 export function PeerAvatarStack() {
   const docId = useEditorStore((s) =>
-    activeEditorDocId({ activeDocument: s.activeDocument, activePageId: s.activePageId }),
+    activeEditorDocId(s),
   )
   const peers = useSitePeers(docId)
   if (peers.length === 0) return null

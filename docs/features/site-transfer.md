@@ -26,6 +26,7 @@ The **Export site** dialog (`src/admin/pages/data/components/ExportDialog`) is a
 - Three import strategies: `replace` (destructive — the full-restore path), `merge-add` (insert if new), `merge-overwrite` (upsert).
 - Media bytes are stored as raw files under `media/`. Export and archive import stream media bytes; the browser and server do not assemble a media-heavy archive as a JSON/base64 payload.
 - Media folders + redirects are restored by the **`replace`** strategy (the full-restore path); merge strategies leave the local folder tree and redirects untouched.
+- Each selected content row carries every stored language variant, its independent availability and schedule, and the immutable releases needed to restore its public URLs. Locale configuration and translated collection paths travel with the bundle.
 
 ---
 
@@ -88,6 +89,13 @@ interface SiteBundleArchiveManifest {
   /** All (or selected) data rows — `data_rows` rows. Cells included verbatim. */
   rows:   DataRow[]
 
+  locales?: Locale[]
+  localizations?: ContentLocalization[]
+  tableLocalizations?: TableLocalization[]
+  versions?: BundleVersion[]
+  siteSnapshots?: BundleSiteSnapshot[]
+  runtimeAssets?: BundleRuntimeAsset[]
+
   /** Optional: media asset metadata. Bytes live at media/<storagePath>. */
   media?: MediaAssetMetadata[]
 
@@ -100,6 +108,10 @@ interface SiteBundleArchiveManifest {
 ```
 
 `media[].folderIds` carries each asset's folder membership; on import it's restored only into folders that arrived in `mediaFolders`. The export keeps the bundle self-consistent: it only includes a redirect when both its table and its target row are part of the same bundle, so the import never hits a dangling foreign key.
+
+`server/repositories/bundlePublication.ts` exports raw shared cells and sparse locale drafts separately. It preserves version IDs, locale IDs, frozen public paths, snapshot references, translation review metadata, and scheduled revisions. Historical page versions can contain only title and slug; their body remains in the referenced site snapshot. The snapshot JSON, import-map text and hashes, and version runtime-asset bytes travel unchanged. Runtime assets are base64 fields in the manifest; media-library originals remain streamed ZIP entries.
+
+`src/core/data/bundleSelection.ts` keeps the releases and snapshots needed by the selected rows and schedules. Changing an imported draft slug clears that variant's live pointer and schedule while retaining immutable history. Other language variants retain their own publication state.
 
 The archive manifest parses through TypeBox before import. The admin import path reads only the first stored manifest entry for preview. Commit sends the original ZIP to `/admin/api/cms/import/archive`, which applies the validated manifest and streams selected `media/<storagePath>` entries through temporary files before moving them to `uploads/<storagePath>`.
 
@@ -115,7 +127,7 @@ A portable bundle deliberately carries **no secrets and no instance-runtime stat
 | Users / roles + passwords | Bundles are for site content, not account migration; password hashes must not travel |
 | AI provider keys        | Credentials — never in a portable file                                |
 | Audit / login logs      | Local to the host                                                     |
-| Published HTML files    | Re-rendered on first publish after import                             |
+| Published HTML files    | Served from restored immutable snapshots; static artifacts are rebuilt by publication |
 | Media variants          | Omitted; imported assets fall back to originals until a later upload/replace regenerates variants |
 | Plugin packages + install state | Plugin-owned `data_rows` are in `rows`; the installed-plugin set + package bytes are a separate subsystem |
 | Per-user preferences    | Per-device — `localStorage` + `user_preferences` rows                 |
@@ -157,6 +169,8 @@ The handler:
 5. Returns a stored ZIP64 stream with `Content-Type: application/zip` and `Content-Disposition: attachment`.
 
 Row visibility: callers without `content.edit.any` / `content.publish.any` / `content.manage` only export their own rows (gated by `canSeeAllDataRows`).
+
+An export restricted to the caller's rows contains language drafts with publication and schedule pointers cleared. It omits site snapshots, release history, and runtime assets because a whole-site snapshot can contain other authors' content. Full-content exports preserve those dependencies.
 
 ---
 
@@ -267,6 +281,8 @@ Per strategy:
 
 Primary merge identity is **id**: a row in the bundle with the same id as an existing row is the same row. Row slugs still have a table-scoped uniqueness constraint for active rows, so a new incoming row can collide with an unrelated local row's slug. Preview reports those collisions as `rowConflicts`; Super Import lets the operator rename or skip them. The `merge-add` repository path also uses `on conflict do nothing`, so a missed slug collision is skipped instead of surfacing as a 500.
 
+Language identity is also preserved by ID. A merge rejects a locale ID whose language code or default-language role differs locally. Imported live pointers must reference an included version of the same row and locale; published pages must also reference a valid included site snapshot. Conflicting immutable version or snapshot identities and public-path collisions roll back the transaction. Draft inheritance never activates an unimported language. The restoration rules are covered by `server/repositories/__tests__/bundlePublication.test.ts`.
+
 ### Capability gates
 
 | Operation                             | Required capability                                 |
@@ -276,6 +292,8 @@ Primary merge identity is **id**: a row in the bundle with the same id as an exi
 | Apply (any strategy)                  | `data.import`                                       |
 | Apply with `replace` strategy         | `data.import` AND `content.manage` AND step-up      |
 | Apply bundle that carries `site` shell| ALSO `site.structure.edit`                          |
+| Apply site snapshots or runtime assets | ALSO `site.structure.edit`                         |
+| Apply online or scheduled language variants | ALSO `content.publish.any` AND step-up        |
 
 ---
 
@@ -287,6 +305,7 @@ The export → import path round-trips losslessly for everything in the bundle. 
 - `src/__tests__/architecture/cmsTransferPreview.test.ts` — preview matches what import would do.
 - `src/__tests__/architecture/cmsTransferImport.test.ts` — applying then re-exporting produces a bundle equivalent to the original.
 - `src/__tests__/architecture/import-export-roundtrip.test.ts` — full round-trip, including a dedicated block that proves the **media folder tree, asset folder membership, and redirects** survive an export → `replace`-import into a pristine instance.
+- `server/repositories/__tests__/bundlePublication.test.ts` — language drafts, independent live pointers and frozen schedules, historical page snapshots, runtime bytes, and atomic rejection of missing or conflicting release references.
 
 If you change a persisted shape (a new column on `data_rows`, a new field on `data_tables`), you also need to:
 
@@ -317,7 +336,7 @@ Save the response ZIP to disk (browser handles the download automatically).
 2. On the destination host: setup wizard completes (creates an owner account, empty site).
 3. On the destination host: open **Import Site** from Spotlight or the Data workspace, then drop the exported ZIP bundle.
 4. Review the preview and import with `strategy: replace`.
-5. After import, the published HTML is regenerated on next publish (or `republish-all`).
+5. Restored online variants serve their frozen releases immediately; subsequent publication also rebuilds static artifacts.
 
 ### Selective export (one table only)
 

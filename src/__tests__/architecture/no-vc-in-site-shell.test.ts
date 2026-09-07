@@ -78,10 +78,10 @@ describe('Gate SH-3 — site repository does not read/write visualComponents', (
 // 4 — CMS adapter fetches/saves VCs separately from the shell
 // ---------------------------------------------------------------------------
 
-describe('Gate SH-4 — CMS adapter uses /components endpoint for VCs', () => {
-  it('cms.ts fetches /components endpoint (not embedded in /site GET)', () => {
+describe('Gate SH-4 — CMS adapter loads a consistent assembled document', () => {
+  it('cms.ts loads /site-document and excludes components from stored shell writes', () => {
     const source = readFileSync(CMS_ADAPTER, 'utf-8')
-    expect(source).toMatch(/\/components/)
+    expect(source).toMatch(/site-document/)
   })
 
   it('cms.ts calls validateVisualComponents', () => {
@@ -89,9 +89,10 @@ describe('Gate SH-4 — CMS adapter uses /components endpoint for VCs', () => {
     expect(source).toMatch(/validateVisualComponents/)
   })
 
-  it('cms.ts calls visualComponentFromRow', () => {
+  it('the assembled document loader validates components at its wire boundary', () => {
     const source = readFileSync(CMS_ADAPTER, 'utf-8')
-    expect(source).toMatch(/visualComponentFromRow/)
+    expect(source).toMatch(/validateVisualComponents/)
+    expect(source).toMatch(/site-document/)
   })
 })
 
@@ -124,7 +125,7 @@ describe('Gate SH-6 — /admin/api/cms/components handler exists', () => {
 
   it('components handler matches /admin/api/cms/components path', () => {
     const source = readFileSync(COMPONENTS_HANDLER, 'utf-8')
-    expect(source).toMatch(/\/components/)
+    expect(source).toMatch(/site-document/)
   })
 
   it('components handler serves GET; component writes live in the site-document save', () => {

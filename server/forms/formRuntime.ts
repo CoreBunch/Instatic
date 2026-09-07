@@ -14,18 +14,19 @@
  * them into disk artefacts and cached fragments is safe.
  */
 import { issuePublicFormPageToken } from './challenge'
+import type { PublicFormRouteIdentity } from '@core/forms'
 
 const CMS_FORM_TAG_PATTERN = /<form\b(?=[^>]*\bdata-instatic-form-mode=(["'])cms\1)(?=[^>]*\bdata-instatic-form-id=(["'])[^"']+\2)[^>]*>/gi
 
-export function stampFormPageTokens(html: string, pageId: string): string {
+export function stampFormPageTokens(html: string, identity: PublicFormRouteIdentity): string {
   return html.replace(CMS_FORM_TAG_PATTERN, (tag) => {
     if (/\bdata-instatic-page-token=/.test(tag)) return tag
     const formId = attrValue(tag, 'data-instatic-form-id')
     if (!formId) return tag
-    const token = issuePublicFormPageToken({ pageId, formId })
+    const token = issuePublicFormPageToken({ ...identity, formId })
     return tag.replace(
       /<form\b/i,
-      `<form data-instatic-page-token="${escapeAttr(token)}" data-instatic-page-id="${escapeAttr(pageId)}"`,
+      `<form data-instatic-page-token="${escapeAttr(token)}" data-instatic-page-id="${escapeAttr(identity.pageId)}" data-instatic-locale-id="${escapeAttr(identity.localeId)}" data-instatic-published-version-id="${escapeAttr(identity.publishedVersionId)}" data-instatic-page-path="${escapeAttr(identity.pagePath)}"`,
     )
   })
 }

@@ -6,6 +6,7 @@ import { readServerConfig } from './config'
 import { DEV_ORIGIN_ALLOWLIST, configurePublicOrigins, configureTrustedProxyCidrs, stampSocketIp } from './auth/security'
 import { applySecurityHeaders } from './securityHeaders'
 import { startConversationPurgeTick } from './ai/boot'
+import { getPublishVersion, withPublishLock } from './publish/publishState'
 
 await import('./richtextSanitizer')
 const { handleServerRequest } = await import('./router')
@@ -30,6 +31,12 @@ await syncSystemRoles(db)
 // always the fallback for unset roles. See `mediaStorageRegistry.ts`.
 mediaStorageRegistry.configureLocalDisk({ uploadsDir: config.uploadsDir })
 await activateInstalledServerPlugins(db, config.uploadsDir)
+const { rebakePublishedRoutes } = await import('./publish/rebakePublishedRoutes')
+// A previous process may have stopped after a retraction and before replacing
+// its disk slot. Rebuild from current live variants before trusting artefacts.
+await withPublishLock(() => rebakePublishedRoutes(db, config.uploadsDir, getPublishVersion())).catch((err) => {
+  console.error('[publish:boot] static rebuild failed; live rendering remains active:', err)
+})
 // AI runtime: start the nightly conversation-purge tick. Operators add
 // their own provider credentials via /admin/ai/providers on first install.
 startConversationPurgeTick(db)

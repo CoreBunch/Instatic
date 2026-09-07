@@ -32,6 +32,9 @@ import { buildBreakpointOverridesMap, buildNodeMap, buildPropsMap } from './node
 import { populateComponentDoc, populateLayoutDoc, populatePageDoc } from './seed'
 import { applyTextDiff } from './textDiff'
 import type { CollabDocSet } from './docSet'
+import { projectSiteLocale } from '@core/localization'
+import { deepEqual } from '@core/utils/deepEqual'
+import { applyLocalizationDraftToDoc } from './localizationDoc'
 
 type Collection = 'pages' | 'visualComponents' | 'layouts'
 const COLLECTIONS: readonly Collection[] = ['pages', 'visualComponents', 'layouts']
@@ -40,7 +43,7 @@ const COLLECTION_KIND: Record<Collection, 'page' | 'component' | 'layout'> = {
   visualComponents: 'component',
   layouts: 'layout',
 }
-const SHELL_SKIPPED_KEYS = new Set(['updatedAt', 'id'])
+const SHELL_SKIPPED_KEYS = new Set(['updatedAt', 'id', 'localeId', 'locales', 'localization'])
 
 type Row = Page | VisualComponent | SavedLayout
 
@@ -361,6 +364,10 @@ export function applySitePatchesToDocs(
   docs: CollabDocSet,
   origin: unknown,
 ): string[] {
+  const preLocalization = preSite.localization
+  const nextLocalization = nextSite.localization
+  if (preLocalization && preSite.localeId) preSite = projectSiteLocale(preSite, preSite.localeId, true)
+  if (nextLocalization && nextSite.localeId) nextSite = projectSiteLocale(nextSite, nextSite.localeId, true)
   const touchedDocs: string[] = []
   const touch = (docId: string): void => {
     if (!touchedDocs.includes(docId)) touchedDocs.push(docId)
@@ -374,6 +381,11 @@ export function applySitePatchesToDocs(
     const head = String(path[0])
     if (COLLECTIONS.includes(head as Collection)) {
       const col = head as Collection
+      if (preLocalization && nextLocalization) {
+        const index = path[1]
+        if (typeof index === 'number' && path.length > 2
+          && deepEqual(preSite[col][index], nextSite[col][index])) continue
+      }
       collectionPatches.set(col, collectionPatches.get(col) ?? [])
       collectionPatches.get(col)!.push(patch)
       continue
@@ -478,6 +490,7 @@ export function applySitePatchesToDocs(
     // Wholesale collection replacement (imports) → repopulate every row doc.
     if (colPatches.some((p) => patchPath(p).length === 1)) {
       for (const [id, row] of nextById) {
+        if (!preById.has(id)) continue // rosterWork already initialized this new lineage
         const rowDoc = docs.ensure(encodeCollabDocId({ kind, rowId: id }))
         touch(encodeCollabDocId({ kind, rowId: id }))
         rowDoc.transact(() => repopulateRowDoc(rowDoc, kind, row), origin)
@@ -498,6 +511,9 @@ export function applySitePatchesToDocs(
         : nextSite[col][index]
       if (!row) continue
       const id = (row as Row).id
+      // A new row must initialize once. A second pre-sync update still has
+      // generation:'' and the relay correctly refuses it after the first write.
+      if (!preById.has(id)) continue
       if (rest.length === 0) {
         if (preById.get(id) !== nextById.get(id)) {
           const rowDoc = docs.ensure(encodeCollabDocId({ kind, rowId: id }))
@@ -506,7 +522,6 @@ export function applySitePatchesToDocs(
         }
         continue
       }
-      if (!preById.has(id)) continue // freshly created — already populated
       rowSubPaths.set(id, rowSubPaths.get(id) ?? [])
       rowSubPaths.get(id)!.push(rest)
     }
@@ -528,5 +543,18 @@ export function applySitePatchesToDocs(
     }
   }
 
+  if (nextLocalization) {
+    const kindFor = { pages: 'page', components: 'component', layouts: 'layout' } as const
+    for (const [rowId, row] of Object.entries(nextLocalization.rows)) {
+      for (const [localeId, nextDraft] of Object.entries(row.localizations)) {
+        const previous = preLocalization?.rows[rowId]?.localizations[localeId]
+        if (deepEqual(previous, nextDraft)) continue
+        const docId = encodeCollabDocId({ kind: kindFor[row.tableId], rowId, localeId })
+        const doc = docs.ensure(docId)
+        applyLocalizationDraftToDoc(doc, previous ?? { cells: {}, slug: '' }, nextDraft, origin)
+        touch(docId)
+      }
+    }
+  }
   return touchedDocs
 }

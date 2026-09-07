@@ -37,6 +37,7 @@ export function useTemplatePreviewContext(page: Page | null): TemplatePreviewCon
   // published rows yet do we fall back to a synthetic sample row so the layout
   // is still visible. An `everywhere` layout has no current entry (null
   // tableSlug → empty entry stack); its outlet previews a page instead.
+  const localeId = site?.localeId
   const tableSlug = page ? primaryTemplateTableSlug(page) : null
   // The post the author picked to preview (TemplateModeControl), or null → the
   // first published row. Session-only; keyed by the template page id.
@@ -57,6 +58,7 @@ export function useTemplatePreviewContext(page: Page | null): TemplatePreviewCon
               const synthetic = dataTablePreviewToLoopItem(table)
               try {
                 const { items } = await previewCmsDataLoopItems(table.id, {
+                  localeId,
                   orderBy: 'publishedAt',
                   direction: 'desc',
                   limit: 50,
@@ -68,7 +70,7 @@ export function useTemplatePreviewContext(page: Page | null): TemplatePreviewCon
             })
             .catch(() => ({ tableSlug, items: [], synthetic: null }))
         : Promise.resolve(null),
-    [tableSlug],
+    [tableSlug, localeId],
   )
 
   // ── Compose the full context ─────────────────────────────────────────

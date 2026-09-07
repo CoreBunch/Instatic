@@ -99,8 +99,10 @@ export function resetTargetsActiveDocument(
   docId: string,
   activeDocument: ActiveEditorDocument,
   fallbackActivePageId: string | null | undefined,
+  activeLocaleId?: string | null,
 ): boolean {
   const parsed = parseCollabDocId(docId)
+  if (parsed?.localeId && parsed.localeId !== activeLocaleId) return false
   const activePageId =
     activeDocument?.kind === 'page' ? activeDocument.pageId : fallbackActivePageId
   return (

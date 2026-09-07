@@ -1,3 +1,5 @@
+import { materializeLocalizedCells } from '@core/localization'
+import { getDataTable } from '../../../server/repositories/data'
 /**
  * PUT /admin/api/cms/site-document — the transactional whole-document save.
  *
@@ -135,6 +137,8 @@ interface StoredRow {
   id: string
   slug: string
   cells_json: { title?: string } & Record<string, unknown>
+  shared_cells_json: Record<string, unknown>
+  localized_cells_json: Record<string, unknown> | null
   seq: number
   updated_at: string
   deleted_at: string | null
@@ -142,11 +146,17 @@ interface StoredRow {
 
 async function storedRows(harness: CapabilityTestHarness, tableId: string): Promise<Map<string, StoredRow>> {
   const { rows } = await harness.db<StoredRow>`
-    select id, slug, cells_json, seq, updated_at, deleted_at
+    select data_rows.id, coalesce(data_row_localizations.slug, '') as slug,
+           data_rows.cells_json as shared_cells_json, data_row_localizations.cells_json as localized_cells_json,
+           data_rows.seq, data_rows.updated_at, data_rows.deleted_at
     from data_rows
-    where table_id = ${tableId}
+    left join data_row_localizations on data_row_localizations.row_id = data_rows.id and data_row_localizations.locale_id = 'default'
+    where data_rows.table_id = ${tableId}
   `
-  return new Map(rows.map((row) => [row.id, row]))
+  const table = await getDataTable(harness.db, tableId)
+  return new Map(rows.map((row) => [row.id, { ...row,
+    cells_json: materializeLocalizedCells(table!.fields, row.shared_cells_json, row.localized_cells_json ?? {}, row.localized_cells_json ?? {}),
+  }]))
 }
 
 async function backdateRows(harness: CapabilityTestHarness, tableId: string): Promise<void> {
@@ -268,6 +278,29 @@ async function expectOk(res: Response): Promise<number> {
 // ---------------------------------------------------------------------------
 
 describe('site-document save — pages', () => {
+  it('loads a coherent localized document and releases the transaction for subsequent language writes', async () => {
+    const ctx = await setupHarness()
+    try {
+      const response = await ctx.harness.cms('/admin/api/cms/site-document', { cookie: ctx.cookie })
+      expect(response.status).toBe(200)
+      const document = await readJson<{ site: { localeId: string; pages: { id: string }[] }; rowSeqs: Record<string, number> }>(response)
+      expect(document.site.localeId).toBe('default')
+      expect(document.site.pages.map((page) => page.id)).toContain(ctx.homeId)
+      expect(document.rowSeqs[ctx.homeId]).toBeNumber()
+      const created = await ctx.harness.cms('/admin/api/cms/locales', {
+        method: 'POST', cookie: ctx.cookie,
+        json: { code: 'de', name: 'Deutsch', pathPrefix: 'de', direction: 'ltr', enabled: false },
+      })
+      expect(created.status).toBe(201)
+      const { locale } = await readJson<{ locale: { id: string } }>(created)
+      const translated = await ctx.harness.cms(`/admin/api/cms/site-document?localeId=${locale.id}`, { cookie: ctx.cookie })
+      expect(translated.status).toBe(200)
+      expect((await readJson<{ site: { localeId: string } }>(translated)).site.localeId).toBe(locale.id)
+    } finally {
+      await ctx.harness.cleanup()
+    }
+  })
+
   it('writes ONLY the changed page among N stored rows; unmentioned rows are byte-untouched', async () => {
     const ctx = await setupHarness()
     try {
@@ -291,6 +324,8 @@ describe('site-document save — pages', () => {
       for (const id of [ctx.homeId, 'page-b']) {
         expect(after.get(id)!.updated_at).toBe(BACKDATED)
         expect(after.get(id)!.cells_json).toEqual(before.get(id)!.cells_json)
+        expect(after.get(id)!.shared_cells_json).toEqual(before.get(id)!.shared_cells_json)
+        expect(after.get(id)!.localized_cells_json).toEqual(before.get(id)!.localized_cells_json)
         expect(after.get(id)!.deleted_at).toBeNull()
       }
     } finally {

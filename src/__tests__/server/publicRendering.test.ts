@@ -1,5 +1,5 @@
-import { beforeEach, describe, expect, it } from 'bun:test'
-import type { DbClient, DbResult } from '../../../server/db'
+import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
+import type { DbClient } from '../../../server/db'
 import { resetForTests } from '../../../server/publish/renderCache'
 import type { PublishedPageSnapshot } from '../../../server/repositories/publish'
 import {
@@ -8,6 +8,13 @@ import {
 } from '../../../server/publish/publicRenderer'
 import type { PublishedDataRow } from '@core/data/schemas'
 import { handleServerRequest } from '../../../server/router'
+import { cleanupPublishingTestDbs, createPublishingTestDb } from '../helpers/publishingTestDb'
+import { createFakeDb } from './dbTestFake'
+import { createUser } from '../../../server/repositories/users'
+import { saveDraftSite } from '../../../server/repositories/site'
+import { makeSite } from '../publisher/helpers'
+
+afterEach(cleanupPublishingTestDbs)
 
 function snapshot(text: string): PublishedPageSnapshot {
   return {
@@ -56,53 +63,21 @@ function snapshot(text: string): PublishedPageSnapshot {
   }
 }
 
-function makeFakeDb(
+async function makePublishedDb(
   activeSnapshot: PublishedPageSnapshot | null,
   runtimeAssets: Record<string, unknown>[] = [],
-): DbClient {
-  const handle = async <Row extends Record<string, unknown> = Record<string, unknown>>(
-    strings: TemplateStringsArray,
-    ...values: unknown[]
-  ): Promise<DbResult<Row>> => {
-    // Reconstruct a parameterized SQL string for pattern matching.
-    const sql = strings.reduce<string>((acc, str, i) => (i === 0 ? str : `${acc}$${i}${str}`), '')
-    const normalized = sql.replace(/\s+/g, ' ').trim().toLowerCase()
-
-    // getPublishedRuntimeAsset — values[0]=publicPath
-    if (normalized.includes('select public_path, content_type, content_bytes')) {
-      const row = runtimeAssets.find((asset) => asset.public_path === values[0])
-      return { rows: row ? [row as Row] : [], rowCount: row ? 1 : 0 }
+): Promise<DbClient> {
+  const db = await createPublishingTestDb(activeSnapshot?.site ?? null)
+  if (!activeSnapshot) await saveDraftSite(db, makeSite())
+  await createUser(db, { email: 'public-test@local.test', displayName: 'Local owner', passwordHash: 'unused-test-hash', roleId: 'owner', allowOwnerRole: true })
+  if (!runtimeAssets.length) return db
+  return createFakeDb(async (sql, params) => {
+    if (sql.includes('select public_path, content_type, content_bytes')) {
+      const row = runtimeAssets.find((asset) => asset.public_path === params[0])
+      return { rows: row ? [row] : [], rowCount: row ? 1 : 0 }
     }
-    // getPublishedPageBySlug / getLatestPublishedSiteSnapshot — joins
-    // data_row_versions to site_snapshots
-    if (normalized.includes('site_snapshots.site_json')) {
-      return {
-        rows: activeSnapshot
-          ? [{
-              row_id: activeSnapshot.pageRowId,
-              site_json: activeSnapshot.site,
-              runtime_assets_json: activeSnapshot.runtimeAssets ?? null,
-              importmap_body: activeSnapshot.runtimePackageImportmap?.body ?? null,
-              importmap_sha256: activeSnapshot.runtimePackageImportmap?.sha256 ?? null,
-            } as unknown as Row]
-          : [],
-        rowCount: activeSnapshot ? 1 : 0,
-      }
-    }
-    // getSetupStatus — public-rendering tests assume CMS is already set up
-    if (normalized.includes('count(*) as count from site')) {
-      return { rows: [{ count: 1 } as unknown as Row], rowCount: 1 }
-    }
-    if (normalized.includes('count(*) as count') && normalized.includes('from users')) {
-      return { rows: [{ count: 1 } as unknown as Row], rowCount: 1 }
-    }
-    return { rows: [], rowCount: 0 }
-  }
-
-  handle.transaction = async <T>(cb: (tx: DbClient) => Promise<T>): Promise<T> =>
-    cb(handle as unknown as DbClient)
-
-  return handle as DbClient
+    return db.unsafe(sql, params)
+  })
 }
 
 describe('public rendering', () => {
@@ -115,11 +90,11 @@ describe('public rendering', () => {
 
   it('renders complete HTML from a published snapshot', async () => {
     const snap = snapshot('Visible to public')
-    const { html } = await renderPublishedSnapshot(snap, { db: makeFakeDb(snap) })
+    const { html } = await renderPublishedSnapshot(snap, { db: await makePublishedDb(snap) })
 
     expect(html).toContain('<!DOCTYPE html>')
     expect(html).toContain('Visible to public')
-    expect(html).toContain('<title>Public Site</title>')
+    expect(html).toContain('<title>Home</title>')
   })
 
   // Guards the page-wrapper's identity reporting after the shared
@@ -127,7 +102,7 @@ describe('public rendering', () => {
   // not the merged tree.
   it('reports pageId and slug from the page row for the snapshot path', async () => {
     const snap = snapshot('Identity')
-    const out = await renderPublishedSnapshot(snap, { db: makeFakeDb(snap) })
+    const out = await renderPublishedSnapshot(snap, { db: await makePublishedDb(snap) })
     expect(out.pageId).toBe('page_home')
     expect(out.slug).toBe('index')
     expect(out.siteId).toBe('project_1')
@@ -161,7 +136,7 @@ describe('public rendering', () => {
       publishedAt: '2024-01-01T00:00:00.000Z',
       createdAt: '2024-01-01T00:00:00.000Z',
     }
-    const result = await renderPublishedDataRowTemplate(snap, row, { db: makeFakeDb(snap) })
+    const result = await renderPublishedDataRowTemplate(snap, row, { db: await makePublishedDb(snap) })
     expect(result).toBeNull()
   })
 
@@ -259,7 +234,7 @@ describe('public rendering', () => {
           seoDescription: 'SEO override description',
         },
       },
-      { db: makeFakeDb(snap) },
+      { db: await makePublishedDb(snap) },
     )
     expect(withSeo?.html).toContain('<title>SEO Override Title</title>')
     expect(withSeo?.html).toContain(
@@ -276,7 +251,7 @@ describe('public rendering', () => {
     const withoutSeo = await renderPublishedDataRowTemplate(
       snap,
       { ...entryBaseRow, cells: { title: 'Plain H1 Title' } },
-      { db: makeFakeDb(snap) },
+      { db: await makePublishedDb(snap) },
     )
     expect(withoutSeo?.html).toContain('<title>Plain H1 Title</title>')
     expect(withoutSeo?.html).not.toContain('<meta name="description"')
@@ -288,7 +263,7 @@ describe('public rendering', () => {
     const blankSeo = await renderPublishedDataRowTemplate(
       snap,
       { ...entryBaseRow, cells: { title: 'Plain H1 Title', seoTitle: '   ', seoDescription: '' } },
-      { db: makeFakeDb(snap) },
+      { db: await makePublishedDb(snap) },
     )
     expect(blankSeo?.html).toContain('<title>Plain H1 Title</title>')
     expect(blankSeo?.html).not.toContain('<meta name="description"')
@@ -313,7 +288,7 @@ describe('public rendering', () => {
           seoDescription: 'SEO override description',
         },
       },
-      { db: makeFakeDb(snap) },
+      { db: await makePublishedDb(snap) },
     )
     expect(withSeo?.html).toContain('<title>SEO Override Title</title>')
     expect(withSeo?.html).toContain(
@@ -322,14 +297,14 @@ describe('public rendering', () => {
 
     resetForTests()
 
-    // Without an entry override the site-level settings still win over the
-    // entry title, unchanged from before.
+    // Without an SEO title override the localized entry title is preferred;
+    // the site description remains the fallback.
     const withoutSeo = await renderPublishedDataRowTemplate(
       snap,
       { ...entryBaseRow, cells: { title: 'Plain H1 Title' } },
-      { db: makeFakeDb(snap) },
+      { db: await makePublishedDb(snap) },
     )
-    expect(withoutSeo?.html).toContain('<title>Site Wide Meta Title</title>')
+    expect(withoutSeo?.html).toContain('<title>Plain H1 Title</title>')
     expect(withoutSeo?.html).toContain(
       '<meta name="description" content="Site wide description">',
     )
@@ -349,7 +324,7 @@ describe('public rendering', () => {
       ],
     }
 
-    const { html } = await renderPublishedSnapshot(published, { db: makeFakeDb(published) })
+    const { html } = await renderPublishedSnapshot(published, { db: await makePublishedDb(published) })
 
     expect(html).toContain("script-src 'self'")
     expect(html).toContain('/_instatic/assets/version_1/entries/entry.js')
@@ -357,7 +332,7 @@ describe('public rendering', () => {
 
   it('serves / from the active published index snapshot', async () => {
     const res = await handleServerRequest(new Request('http://localhost/'), {
-      db: makeFakeDb(snapshot('Homepage')),
+      db: await makePublishedDb(snapshot('Homepage')),
     })
 
     expect(res.status).toBe(200)
@@ -367,7 +342,7 @@ describe('public rendering', () => {
 
   it('serves immutable published runtime assets by public path', async () => {
     const res = await handleServerRequest(new Request('http://localhost/_instatic/assets/version_1/entries/entry.js'), {
-      db: makeFakeDb(null, [
+      db: await makePublishedDb(null, [
         {
           public_path: '/_instatic/assets/version_1/entries/entry.js',
           content_type: 'text/javascript; charset=utf-8',
@@ -390,7 +365,7 @@ describe('public rendering', () => {
   // refuses everything else, even a file that is present.
   it('refuses to serve an SVG from the runtime-asset namespace', async () => {
     const res = await handleServerRequest(new Request('http://localhost/_instatic/assets/version_1/poc.svg'), {
-      db: makeFakeDb(null, [
+      db: await makePublishedDb(null, [
         {
           public_path: '/_instatic/assets/version_1/poc.svg',
           content_type: 'image/svg+xml',
@@ -404,7 +379,7 @@ describe('public rendering', () => {
 
   it('returns 404 when there is no active published snapshot', async () => {
     const res = await handleServerRequest(new Request('http://localhost/'), {
-      db: makeFakeDb(null),
+      db: await makePublishedDb(null),
     })
 
     expect(res.status).toBe(404)
@@ -412,7 +387,7 @@ describe('public rendering', () => {
 
   it('emits external CSS <link> tags pointing at the per-site bundle', async () => {
     const snap = snapshot('Hello')
-    const { html } = await renderPublishedSnapshot(snap, { db: makeFakeDb(snap) })
+    const { html } = await renderPublishedSnapshot(snap, { db: await makePublishedDb(snap) })
     expect(html).toMatch(/<link rel="stylesheet" href="\/_instatic\/css\/reset-[a-f0-9]{12}\.css">/)
     // No inline reset block — site-wide CSS lives in the external bundle.
     expect(html).not.toContain(':where(*, *::before, *::after)')
@@ -422,7 +397,7 @@ describe('public rendering', () => {
     const published = snapshot('Hello')
     // First request the page to discover the current bundle filenames.
     const pageRes = await handleServerRequest(new Request('http://localhost/'), {
-      db: makeFakeDb(published),
+      db: await makePublishedDb(published),
     })
     const pageHtml = await pageRes.text()
     const resetMatch = pageHtml.match(/href="(\/_instatic\/css\/reset-[a-f0-9]{12}\.css)"/)
@@ -431,7 +406,7 @@ describe('public rendering', () => {
     // Now fetch the bundle.
     const cssRes = await handleServerRequest(
       new Request(`http://localhost${resetMatch![1]}`),
-      { db: makeFakeDb(published) },
+      { db: await makePublishedDb(published) },
     )
     expect(cssRes.status).toBe(200)
     expect(cssRes.headers.get('content-type')).toContain('text/css')
@@ -444,7 +419,7 @@ describe('public rendering', () => {
   it('returns 404 for stale CSS hashes so cached HTML refetches the page', async () => {
     const cssRes = await handleServerRequest(
       new Request('http://localhost/_instatic/css/reset-deadbeefdead.css'),
-      { db: makeFakeDb(snapshot('Hello')) },
+      { db: await makePublishedDb(snapshot('Hello')) },
     )
     expect(cssRes.status).toBe(404)
   })
@@ -452,7 +427,7 @@ describe('public rendering', () => {
   it('returns 404 for malformed CSS bundle paths', async () => {
     const cssRes = await handleServerRequest(
       new Request('http://localhost/_instatic/css/whatever.css'),
-      { db: makeFakeDb(snapshot('Hello')) },
+      { db: await makePublishedDb(snapshot('Hello')) },
     )
     expect(cssRes.status).toBe(404)
   })

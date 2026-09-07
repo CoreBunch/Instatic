@@ -36,9 +36,11 @@ export async function readPostsStats(
 
   let postsTotal = 0
   let postsScheduled = 0
+  let variants = 0
   for (const c of countsArr) {
     postsTotal += c.total
     postsScheduled += c.scheduled
+    variants += c.variants
   }
 
   // Densify into [28] oldest-first. The bucket labels are the viewer's local
@@ -51,6 +53,7 @@ export async function readPostsStats(
 
   return {
     total: postsTotal,
+    variants,
     categories: postTypeIds.length,
     scheduled: postsScheduled,
     daily28,
@@ -81,12 +84,10 @@ async function readPostsHistogram(
 ): Promise<Map<string, number>> {
   if (postTypeTableIds.length === 0) return new Map()
   const { rows } = await db<{ table_id: string; published_at: string | Date }>`
-    select table_id, published_at
-    from data_rows
-    where deleted_at is null
-      and status = 'published'
-      and published_at is not null
-      and published_at >= ${sinceIso}
+    select r.table_id, v.published_at
+    from data_row_versions v
+    join data_rows r on r.id = v.row_id
+    where r.deleted_at is null and v.published_at >= ${sinceIso}
   `
   const counts = new Map<string, number>()
   const postTypeSet = new Set(postTypeTableIds)

@@ -24,6 +24,7 @@
  */
 
 import { Type, type Static } from '@core/utils/typeboxHelpers'
+import { FieldLocalizationSchema, ContentLocalizationSchema } from '@core/localization-schema'
 
 // ---------------------------------------------------------------------------
 // DataRowStatus
@@ -91,6 +92,8 @@ const FieldCommonProps = {
   required: Type.Optional(Type.Boolean()),
   description: Type.Optional(Type.String()),
   builtIn: Type.Optional(Type.Boolean()),
+  /** Whether this field is shared by all languages or authored per locale. */
+  localization: Type.Optional(FieldLocalizationSchema),
 }
 
 const TextFieldSchema = Type.Object({
@@ -260,6 +263,11 @@ const FieldSchemaFieldSchema = Type.Object({
   ...FieldCommonProps,
 })
 
+const ParameterValuesFieldSchema = Type.Object({
+  type: Type.Literal('parameterValues'),
+  ...FieldCommonProps,
+})
+
 export const DataFieldSchema = Type.Union([
   TextFieldSchema,
   LongTextFieldSchema,
@@ -277,6 +285,7 @@ export const DataFieldSchema = Type.Union([
   RepeaterFieldSchema,
   PageTreeFieldSchema,
   FieldSchemaFieldSchema,
+  ParameterValuesFieldSchema,
 ])
 
 export type DataField = Static<typeof DataFieldSchema>
@@ -306,6 +315,7 @@ export const DATA_FIELD_TYPES = [
   'repeater',
   'pageTree',
   'fieldSchema',
+  'parameterValues',
 ] as const
 
 export type DataFieldType = (typeof DATA_FIELD_TYPES)[number]
@@ -400,9 +410,17 @@ const NullableUserIdSchema = Type.Union([Type.String(), Type.Null()])
 export const DataRowSchema = Type.Object({
   id: Type.String(),
   tableId: Type.String(),
+  /** The selected authoring locale; identity remains the language-neutral row id. */
+  localeId: Type.String(),
+  /** Stored language-neutral values, including the shared visual tree. */
+  sharedCells: DataRowCellsSchema,
+  /** Absent translation is an explicit offline state, with inherited preview values. */
+  localization: Type.Union([ContentLocalizationSchema, Type.Null()]),
   cells: DataRowCellsSchema,
   /** Denormalized from `cells.slug` for fast unique / route lookup. */
   slug: Type.String(),
+  /** Frozen active-version URL. Draft path changes must not alter the Open live link. */
+  publicPath: Type.Union([Type.String(), Type.Null()]),
   status: DataRowStatusSchema,
   /**
    * Site-global sync seq stamped by the last transactional save that wrote or
@@ -461,9 +479,12 @@ export type DeletedRowSummary = Static<typeof DeletedRowSummarySchema>
 // DataRowVersion — one row in data_row_versions.
 // ---------------------------------------------------------------------------
 
-const DataRowVersionSchema = Type.Object({
+export const DataRowVersionSchema = Type.Object({
   id: Type.String(),
   rowId: Type.String(),
+  localeId: Type.String(),
+  publicPath: Type.Union([Type.String(), Type.Null()]),
+  siteSnapshotId: Type.Union([Type.String(), Type.Null()]),
   versionNumber: Type.Number(),
   cells: DataRowCellsSchema,
   slug: Type.String(),
@@ -486,6 +507,9 @@ export type DataRowVersion = Static<typeof DataRowVersionSchema>
 const PublishedDataRowSchema = Type.Object({
   id: Type.String(),
   rowId: Type.String(),
+  localeId: Type.String(),
+  publicPath: Type.Union([Type.String(), Type.Null()]),
+  siteSnapshotId: Type.Union([Type.String(), Type.Null()]),
   tableId: Type.String(),
   tableSlug: Type.String(),
   tableKind: DataTableKindSchema,
@@ -582,12 +606,14 @@ const UpdateDataTableInputSchema = Type.Object({
 export type UpdateDataTableInput = Static<typeof UpdateDataTableInputSchema>
 
 const CreateDataRowInputSchema = Type.Object({
+  localeId: Type.Optional(Type.String()),
   cells: Type.Optional(DataRowCellsSchema),
 })
 
 export type CreateDataRowInput = Static<typeof CreateDataRowInputSchema>
 
 const SaveDataRowDraftInputSchema = Type.Object({
+  localeId: Type.Optional(Type.String()),
   cells: DataRowCellsSchema,
 })
 

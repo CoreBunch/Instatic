@@ -44,6 +44,7 @@ import { SitePackageJsonSchema, type SitePackageJson } from '@core/site-dependen
 import { type VisualComponent } from '@core/visual-components-schema'
 import type { SavedLayout } from '@core/layouts-schema'
 import type { Page } from './page'
+import type { Locale, SiteLocalizationContext } from '@core/localization-schema'
 import {
   SiteExplorerOrganizationSchema,
   parseSiteExplorerOrganization,
@@ -103,6 +104,11 @@ export type SiteDocument = SiteShell & {
   pages: Page[]
   visualComponents: VisualComponent[]
   layouts: SavedLayout[]
+  /** Locale of the materialized rows; absent on a newly imported, unattached document. */
+  localeId?: string
+  locales?: Locale[]
+  /** Raw shared content and sparse variants for the editor; omitted from live snapshots. */
+  localization?: SiteLocalizationContext
 }
 
 // ---------------------------------------------------------------------------

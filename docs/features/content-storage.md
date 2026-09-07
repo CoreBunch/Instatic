@@ -341,6 +341,10 @@ Events are emitted from `server/publish/contentEvents.ts`, which also exports `a
 
 ---
 
+## Localization
+
+Logical content identities share structure while per-language records own draft values, availability, publication history and schedules. Site and Content authoring, collaboration, public routes and integrations carry an explicit locale. See [`localization.md`](localization.md) for the storage model and lifecycle.
+
 ## Related
 
 - [docs/architecture.md](../architecture.md) — system overview ("All content lives in `data_tables` + `data_rows`")

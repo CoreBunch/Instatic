@@ -1,3 +1,4 @@
+import { SOURCE_LOCALE } from '../../../../../__tests__/fixtures/localization'
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
 import { act, cleanup, renderHook, waitFor } from '@testing-library/react'
 import type { DataRow } from '@core/data/schemas'
@@ -46,6 +47,7 @@ function row(id: string, tableId: string, title: string): DataRow {
   return {
     id,
     tableId,
+    localeId: SOURCE_LOCALE.id, sharedCells: {}, localization: null, publicPath: null, seq: 0,
     cells: { title, slug: id },
     slug: id,
     status: 'draft',
@@ -70,7 +72,8 @@ describe('useContentWorkspace document navigation', () => {
     const post = row('post-1', 'posts', 'Post')
     window.history.replaceState({}, '', '/admin/content?table=posts&row=post-1')
     globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
-      const url = String(input)
+      const url = String(input).split('?')[0]
+      if (url === '/admin/api/cms/locales') return json({ locales: [SOURCE_LOCALE] })
       const method = init?.method ?? 'GET'
       if (url === '/admin/api/cms/data/tables' && method === 'GET') {
         return json({ tables: [table('posts', 'Posts')] })
@@ -97,7 +100,8 @@ describe('useContentWorkspace document navigation', () => {
     })
 
     globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
-      const url = String(input)
+      const url = String(input).split('?')[0]
+      if (url === '/admin/api/cms/locales') return json({ locales: [SOURCE_LOCALE] })
       const method = init?.method ?? 'GET'
       if (url === '/admin/api/cms/data/tables' && method === 'GET') {
         return json({ tables: [table('posts', 'Posts'), table('articles', 'Articles')] })

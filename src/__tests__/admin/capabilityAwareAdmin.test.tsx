@@ -1,3 +1,4 @@
+import { SOURCE_LOCALE, makeContentLocalization } from '../fixtures/localization'
 import { afterEach, describe, expect, it } from 'bun:test'
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import { MemoryRouter, Route, Routes } from '@admin/lib/routing'
@@ -99,6 +100,11 @@ function makeRow(
   return {
     id,
     tableId,
+    localeId: SOURCE_LOCALE.id,
+    sharedCells: {},
+    seq: 0,
+    localization: makeContentLocalization(id, { cells: mergedCells, slug: String(mergedCells.slug), ...(overrides.status === 'published' ? { availability: 'online', activeVersionId: 'version-1' } : {}) }),
+    publicPath: overrides.status === 'published' ? `/${tableId}/${mergedCells.slug}` : null,
     cells: mergedCells,
     slug: typeof mergedCells.slug === 'string' ? mergedCells.slug : 'untitled',
     status: 'draft',
@@ -197,7 +203,8 @@ describe('capability-aware admin UI', () => {
     setupEditorState()
     const calls: Array<{ url: string; method: string }> = []
     globalThis.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
-      const url = String(input)
+      const url = String(input).split('?')[0]
+      if (url === '/admin/api/cms/locales') return json({ locales: [SOURCE_LOCALE] })
       const method = init?.method ?? 'GET'
       calls.push({ url, method })
       if (url === '/admin/api/cms/data/tables') {
@@ -251,7 +258,8 @@ describe('capability-aware admin UI', () => {
     setupEditorState()
     const calls: Array<{ url: string; method: string }> = []
     globalThis.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
-      const url = String(input)
+      const url = String(input).split('?')[0]
+      if (url === '/admin/api/cms/locales') return json({ locales: [SOURCE_LOCALE] })
       const method = init?.method ?? 'GET'
       calls.push({ url, method })
 

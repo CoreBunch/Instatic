@@ -325,7 +325,7 @@ export function LiveCanvas({
       fetchAbortRef.current = controller
 
       const cells = { ...entry.cells, title, body: bodyRef.current }
-      previewCmsDataRow(entry.id, { cells, signal: controller.signal })
+      previewCmsDataRow(entry.id, { localeId: entry.localeId, cells, signal: controller.signal })
         .then((html) => {
           if (controller.signal.aborted) return
           setPreview({ status: 'ready', html, error: null })
@@ -342,7 +342,7 @@ export function LiveCanvas({
         window.clearTimeout(fetchDebounceRef.current)
       }
     }
-  }, [entry.id, entry.cells, title])
+  }, [entry.id, entry.localeId, entry.cells, title])
 
   // Mount the editor into the iframe once it loads. The handler runs
   // every time `preview.html` changes (i.e., every iframe reload). We
