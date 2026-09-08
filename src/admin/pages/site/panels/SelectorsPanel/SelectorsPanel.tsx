@@ -7,7 +7,7 @@ import {
   type MouseEvent,
 } from 'react'
 import { useShallow } from 'zustand/react/shallow'
-import { selectSelectedNode, useEditorStore } from '@site/store/store'
+import { selectActiveCanvasPage, useEditorStore } from '@site/store/store'
 import { classifySelectorCreateInput, styleRuleSelector } from '@core/page-tree'
 import { generatedClassKindLabel, isGeneratedClass, isGeneratedClassLocked } from '@core/page-tree'
 import type { StyleRule } from '@core/page-tree'
@@ -105,8 +105,10 @@ export function SelectorsPanel({
   const duplicateClass = useEditorStore((s) => s.duplicateClass)
   const deleteClass = useEditorStore((s) => s.deleteClass)
   const addNodeClass = useEditorStore((s) => s.addNodeClass)
+  const setNodeClassAssignments = useEditorStore((s) => s.setNodeClassAssignments)
   const removeNodeClass = useEditorStore((s) => s.removeNodeClass)
-  const selectedNode = useEditorStore(selectSelectedNode)
+  const activeCanvasPage = useEditorStore(selectActiveCanvasPage)
+  const selectedNodeIds = useEditorStore(useShallow((s) => s.selectedNodeIds))
   const selectedNodeId = useEditorStore((s) => s.selectedNodeId)
   const activeClassId = useEditorStore((s) => s.activeClassId)
 
@@ -164,6 +166,22 @@ export function SelectorsPanel({
   const hasMore = filteredClasses.length > visibleClasses.length
   const selectedClass = reusableClasses.find((cls) => cls.id === selectedSelectorClassId) ?? null
   const contextClass = contextMenu ? site?.styleRules[contextMenu.classId] ?? null : null
+  // `selectedNodeIds` is the source of truth for a multi-selection. The
+  // selectedNodeId fallback keeps direct single-selection callers and the
+  // existing single-node behavior intact.
+  const classAssignmentNodeIds = selectedNodeIds.length > 0
+    ? selectedNodeIds
+    : selectedNodeId
+      ? [selectedNodeId]
+      : []
+  const selectedNodesHaveContextClass = contextClass
+    ? classAssignmentNodeIds.map((nodeId) =>
+        Boolean(activeCanvasPage?.nodes[nodeId]?.classIds?.includes(contextClass.id)),
+      )
+    : []
+  const allSelectedNodesHaveContextClass =
+    selectedNodesHaveContextClass.length > 0 && selectedNodesHaveContextClass.every(Boolean)
+  const anySelectedNodeHasContextClass = selectedNodesHaveContextClass.some(Boolean)
 
   // The selector the Properties panel is currently editing. Mirrors that
   // panel's priority: an explicitly-selected selector wins, otherwise it's the
@@ -280,16 +298,24 @@ export function SelectorsPanel({
   }
 
   function handleApplyToSelected(cls: StyleRule) {
-    if (!selectedNodeId) return
+    if (classAssignmentNodeIds.length === 0) return
     if ((cls.kind ?? 'class') !== 'class') return
-    addNodeClass(selectedNodeId, cls.id)
+    if (classAssignmentNodeIds.length === 1) {
+      addNodeClass(classAssignmentNodeIds[0], cls.id)
+    } else {
+      setNodeClassAssignments(classAssignmentNodeIds, cls.id, true)
+    }
     setContextMenu(null)
   }
 
   function handleRemoveFromSelected(cls: StyleRule) {
-    if (!selectedNodeId) return
+    if (classAssignmentNodeIds.length === 0) return
     if ((cls.kind ?? 'class') !== 'class') return
-    removeNodeClass(selectedNodeId, cls.id)
+    if (classAssignmentNodeIds.length === 1) {
+      removeNodeClass(classAssignmentNodeIds[0], cls.id)
+    } else {
+      setNodeClassAssignments(classAssignmentNodeIds, cls.id, false)
+    }
     setContextMenu(null)
   }
 
@@ -408,8 +434,9 @@ export function SelectorsPanel({
         <SelectorContextMenu
           x={contextMenu.x}
           y={contextMenu.y}
-          selectedNodeHasClass={Boolean(selectedNode?.classIds?.includes(contextClass.id))}
-          selectedNodeId={selectedNodeId}
+          allSelectedNodesHaveClass={allSelectedNodesHaveContextClass}
+          anySelectedNodeHasClass={anySelectedNodeHasContextClass}
+          hasSelectedNodes={classAssignmentNodeIds.length > 0}
           assignable={(contextClass.kind ?? 'class') === 'class'}
           onClose={() => setContextMenu(null)}
           onEdit={() => {

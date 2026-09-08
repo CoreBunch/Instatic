@@ -252,6 +252,14 @@ export interface StyleRuleSlice {
    */
   addNodeClasses(nodeId: string, classIds: string[]): void
 
+  /**
+   * Add or remove one classId on several nodes in ONE batched mutation. This
+   * is the transaction boundary for applying a selector to a canvas
+   * multi-selection, so one action produces one undo step. Ambient rules are
+   * never treated as class assignments; existing class order is preserved.
+   */
+  setNodeClassAssignments(nodeIds: string[], classId: string, assigned: boolean): void
+
   /** Remove a classId from a node's classIds (no-op if not present). */
   removeNodeClass(nodeId: string, classId: string): void
 

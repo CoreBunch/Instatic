@@ -1,11 +1,12 @@
 /**
  * styleRule slice — node ↔ class assignment: addNodeClass, addNodeClasses,
- * removeNodeClass, reorderNodeClasses, reorderNodeClass.
+ * setNodeClassAssignments, removeNodeClass, reorderNodeClasses,
+ * reorderNodeClass.
  *
  * Invariant: `node.classIds` only ever holds class-kind rule ids. Ambient
  * rules attach by selector matching, not by class-attribute assignment, so
- * the add* actions refuse them (and log) rather than leak a never-matching
- * token into the rendered `class=` attribute.
+ * assignment actions refuse them (and log) rather than leak a
+ * never-matching token into the rendered `class=` attribute.
  */
 
 import type { SiteSliceHelpers } from '../site/types'
@@ -16,38 +17,58 @@ type AssignmentActions = Pick<
   StyleRuleSlice,
   | 'addNodeClass'
   | 'addNodeClasses'
+  | 'setNodeClassAssignments'
   | 'removeNodeClass'
   | 'reorderNodeClasses'
   | 'reorderNodeClass'
 >
 
 export function createAssignmentActions({ get, mutateSiteState }: SiteSliceHelpers): AssignmentActions {
+  function updateNodeClassAssignments(
+    nodeIds: string[],
+    classId: string,
+    assigned: boolean,
+  ): void {
+    const { site } = get()
+    const uniqueNodeIds = [...new Set(nodeIds)]
+    if (!site || uniqueNodeIds.length === 0) return
+
+    // `kind` was added after the original class registry, so an absent kind
+    // remains a normal class. Ambient rules are selector-attached and must
+    // never enter a node's classIds array.
+    const cls = site.styleRules[classId]
+    if (cls && cls.kind && cls.kind !== 'class') {
+      console.error(
+        '[styleRuleSlice] setNodeClassAssignments refused: classId references an ambient rule',
+        { nodeIds: uniqueNodeIds, classId, selector: cls.selector },
+      )
+      return
+    }
+
+    mutateSiteState((state) => {
+      let changed = false
+      for (const nodeId of uniqueNodeIds) {
+        mutateNodeClassIds(state, nodeId, (classIds) => {
+          if (assigned) {
+            if (classIds.includes(classId)) return
+            classIds.push(classId)
+            changed = true
+            return
+          }
+
+          const index = classIds.indexOf(classId)
+          if (index === -1) return
+          classIds.splice(index, 1)
+          changed = true
+        })
+      }
+      return changed
+    })
+  }
+
   return {
     addNodeClass(nodeId, classId) {
-      const { site } = get()
-      const node = findNodeWithClassIds(site, nodeId)
-      if (!node) return
-      // No-op if already assigned
-      if (node.classIds?.includes(classId)) return
-      // Invariant: node.classIds only holds class-kind rule ids. Ambient rules
-      // attach by selector matching, not by class-attribute assignment, so
-      // pushing one here would leak into the rendered class attribute via
-      // a never-matching token. Surface the misuse and bail.
-      const cls = site?.styleRules[classId]
-      if (cls && cls.kind && cls.kind !== 'class') {
-        console.error(
-          '[styleRuleSlice] addNodeClass refused: classId references an ambient rule',
-          { nodeId, classId, selector: cls.selector },
-        )
-        return
-      }
-
-      mutateSiteState((state) => {
-        const mutated = mutateNodeClassIds(state, nodeId, (classIds) => {
-          if (!classIds.includes(classId)) classIds.push(classId)
-        })
-        return mutated
-      })
+      updateNodeClassAssignments([nodeId], classId, true)
     },
 
     addNodeClasses(nodeId, classIds) {
@@ -81,18 +102,12 @@ export function createAssignmentActions({ get, mutateSiteState }: SiteSliceHelpe
       })
     },
 
-    removeNodeClass(nodeId, classId) {
-      const { site } = get()
-      const node = findNodeWithClassIds(site, nodeId)
-      if (!node?.classIds?.includes(classId)) return
+    setNodeClassAssignments(nodeIds, classId, assigned) {
+      updateNodeClassAssignments(nodeIds, classId, assigned)
+    },
 
-      mutateSiteState((state) => {
-        const mutated = mutateNodeClassIds(state, nodeId, (classIds) => {
-          const idx = classIds.indexOf(classId)
-          if (idx >= 0) classIds.splice(idx, 1)
-        })
-        return mutated
-      })
+    removeNodeClass(nodeId, classId) {
+      updateNodeClassAssignments([nodeId], classId, false)
     },
 
     reorderNodeClasses(nodeId, fromIndex, toIndex) {
