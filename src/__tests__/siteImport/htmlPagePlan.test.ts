@@ -229,10 +229,12 @@ describe('makeHtmlPagePlan', () => {
     const form = pagePlan.nodeFragment.nodes[pagePlan.nodeFragment.rootIds[0]!]!
 
     expect(form.moduleId).toBe('base.form')
-    expect(form.children).toHaveLength(3)
+    expect(form.children).toHaveLength(5)
     expect(pagePlan.nodeFragment.nodes[form.children[0]!]!.moduleId).toBe('base.label')
-    expect(pagePlan.nodeFragment.nodes[form.children[1]!]!.moduleId).toBe('base.input')
-    expect(pagePlan.nodeFragment.nodes[form.children[2]!]!.moduleId).toBe('base.submit')
+    expect(pagePlan.nodeFragment.nodes[form.children[1]!]!.props).toMatchObject({ tag: 'none', text: ' ' })
+    expect(pagePlan.nodeFragment.nodes[form.children[2]!]!.moduleId).toBe('base.input')
+    expect(pagePlan.nodeFragment.nodes[form.children[3]!]!.props).toMatchObject({ tag: 'none', text: ' ' })
+    expect(pagePlan.nodeFragment.nodes[form.children[4]!]!.moduleId).toBe('base.submit')
   })
 
   it('sets source to the HTML file path', () => {

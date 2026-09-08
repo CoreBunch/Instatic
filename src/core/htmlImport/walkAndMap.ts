@@ -244,14 +244,14 @@ function createTextNode(text: string, ctx: WalkContext): string {
  * `doc.body` at the top level) to PageNode ids in document order:
  *   - ELEMENT children route through the rule table via processElement.
  *   - significant TEXT children become synthesized no-wrapper base.text nodes.
- *   - whitespace-only text and comments are skipped.
+ *   - interior whitespace collapses to a text-node space; comments are skipped.
  *
  * Mutually recursive with processElement (function declarations are hoisted,
  * so definition order doesn't matter).
  */
 type ChildItem = { kind: 'el'; el: Element } | { kind: 'text'; text: string }
 
-function mapChildNodes(parent: Element, ctx: WalkContext): string[] {
+function mapChildNodes(parent: Element, ctx: WalkContext, ignoreWhitespace = false): string[] {
   // Inside <pre>: whitespace and newlines are significant — keep every text
   // node verbatim so terminal/code blocks retain their line structure (the
   // `white-space: pre` class then renders the newlines).
@@ -262,33 +262,26 @@ function mapChildNodes(parent: Element, ctx: WalkContext): string[] {
         ids.push(processElement(child as Element, ctx))
       } else if (child.nodeType === TEXT_NODE) {
         const raw = child.textContent ?? ''
+        if (ignoreWhitespace && /^\s*$/.test(raw)) continue
         if (raw.length > 0) ids.push(createTextNode(raw, ctx))
       }
     }
     return ids
   }
 
-  // Normal flow: collapse whitespace the way the browser renders it.
-  //   - runs of whitespace → a single space,
-  //   - a whitespace-only node containing a newline = pretty-print indentation
-  //     between block elements → dropped,
-  //   - a whitespace-only node WITHOUT a newline = a significant inline space
-  //     (e.g. `</span> <span>`) → kept as one space,
-  //   - leading/trailing space at the block's edges is insignificant → trimmed.
-  // This keeps inline spacing intact (`Bold <strong>word</strong> here` →
-  // "Bold word here") while not surfacing stray indentation in text fields.
+  // Normal flow collapses whitespace runs, including newlines, to one space.
+  // A newline between elements can separate inline content or allow nowrap
+  // spans to wrap. This CSS-agnostic walker cannot classify it as block
+  // indentation: CSS can make even <div> elements inline. Keep a bare text
+  // node and let browser layout discard whitespace where it is insignificant.
   const items: ChildItem[] = []
   for (const child of Array.from(parent.childNodes)) {
     if (child.nodeType === ELEMENT_NODE) {
       items.push({ kind: 'el', el: child as Element })
     } else if (child.nodeType === TEXT_NODE) {
       const raw = child.textContent ?? ''
-      if (/^\s*$/.test(raw)) {
-        if (/[\n\r]/.test(raw)) continue // indentation between block tags
-        items.push({ kind: 'text', text: ' ' }) // significant inline space
-      } else {
-        items.push({ kind: 'text', text: raw.replace(/\s+/g, ' ') })
-      }
+      if (ignoreWhitespace && /^\s*$/.test(raw)) continue
+      items.push({ kind: 'text', text: raw.replace(/\s+/g, ' ') })
     }
   }
 
@@ -363,7 +356,9 @@ function processElement(el: Element, ctx: WalkContext): string {
       ctx.preserveWs || el.tagName.toLowerCase() === 'pre'
         ? { ...ctx, preserveWs: true }
         : ctx
-    node.children = mapChildNodes(el, childCtx)
+    // Loop children are rotating templates, not ordinary layout siblings.
+    // Formatting whitespace must not become an empty template iteration.
+    node.children = mapChildNodes(el, childCtx, moduleId === 'base.loop')
     // A node that recursed into real child nodes must NOT also keep a flattened
     // `text` prop: the children (including synthesized base.text for direct
     // text) are the source of truth. Without this, an element that both sets
