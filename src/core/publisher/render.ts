@@ -20,7 +20,7 @@
  * threading another ternary through 150 lines.
  */
 
-import type { Page, SiteDocument } from '@core/page-tree'
+import type { Page, SiteCspSettings, SiteDocument } from '@core/page-tree'
 import type { IModuleRegistry } from '@core/module-engine'
 import type { TemplateRenderDataContext } from '@core/templates/dynamicBindings'
 import { buildPageFrame, buildSiteFrame, buildRouteFrame } from '@core/templates/contextFrames'
@@ -455,6 +455,7 @@ function buildContentSecurityPolicy(
   anyScriptTag: boolean,
   importmap: PublishedRuntimePackageImportmap | undefined,
   moduleCspSources: ReadonlyMap<string, ReadonlySet<string>>,
+  siteCsp: SiteCspSettings | undefined,
 ): string {
   const plan = createBaseCspPlan({ anyScriptTag, importmapSha: importmap?.sha256 })
   // Merge per-page CSP requirements declared by module render() outputs.
@@ -464,6 +465,21 @@ function buildContentSecurityPolicy(
   // unaffected and keep frame-src 'none'.
   for (const [directive, sources] of moduleCspSources) {
     addCspSources(plan, directive, sources)
+  }
+  // Site-level allowlist (`settings.csp`): the owner's explicit list of
+  // third-party origins. Script origins union into `script-src` (dropping the
+  // lone 'none' on script-less pages, which is harmless — nothing on the page
+  // loads them). Connect origins union into `connect-src` together with
+  // `'self'`: the base plan has no `connect-src`, so without `'self'` a
+  // newly-created directive would stop falling back to `default-src 'self'`
+  // and cut off same-origin fetches (forms, holes, loops).
+  if (siteCsp) {
+    if (siteCsp.scriptOrigins.length > 0) {
+      addCspSources(plan, 'script-src', siteCsp.scriptOrigins)
+    }
+    if (siteCsp.connectOrigins.length > 0) {
+      addCspSources(plan, 'connect-src', ["'self'", ...siteCsp.connectOrigins])
+    }
   }
   return `\n  ${cspMetaTag(plan)}`
 }
@@ -605,7 +621,12 @@ export function publishPage(
 
   const meta = buildDocumentMetaTags(site, page, templateContext, options.documentMeta)
   const runtime = buildRuntimeAssetsBlock(options, acc)
-  const csp = buildContentSecurityPolicy(runtime.anyScriptTag, runtime.importmap, acc.cspSources)
+  const csp = buildContentSecurityPolicy(
+    runtime.anyScriptTag,
+    runtime.importmap,
+    acc.cspSources,
+    site.settings.csp,
+  )
 
   const html = assembleHtmlDocument({
     langAttr: meta.langAttr,

@@ -118,7 +118,7 @@ export function validateSiteWriteDiff(
   }
 
   // Settings — split into chromatic-style fields (framework/fonts) and
-  // structural fields (metaTitle/metaDescription/favicon/language/shortcuts).
+  // structural fields (metaTitle/metaDescription/favicon/language/shortcuts/csp).
   diffSettings(ctx, previous.settings, next.settings)
 
   // breakpoints — adding / removing / reordering is style infra.
@@ -180,6 +180,7 @@ function diffSettings(
     'faviconUrl',
     'language',
     'shortcuts',
+    'csp',
   ]
   for (const key of structuralKeys) {
     if (!deepEqual(prev[key], next[key])) {

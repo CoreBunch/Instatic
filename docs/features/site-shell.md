@@ -127,9 +127,12 @@ type SiteSettings = {
   language?:        string
   framework?:       FrameworkSettings       // colors, typography, spacing, preferences — absent when disabled
   fonts?:           SiteFontsSettings       // installed font library + editable font tokens
+  csp?:             SiteCspSettings         // third-party origins allowed by the published-page CSP
   shortcuts:        Record<string, string>  // keyboard shortcut overrides
 }
 ```
+
+`csp` is the published-page Content-Security-Policy allowlist: `scriptOrigins` (unioned into `script-src`) and `connectOrigins` (unioned into `connect-src`), each a list of exact `https://` host sources (a leading `*.` wildcard label is allowed; paths, `http://` and CSP keywords are not — `isCspOrigin` is the gate, `parseCspOriginList` the normalizer). Absent when empty; the write policy treats it as a structural setting. How the publisher applies it: [docs/features/publisher.md](publisher.md) → "CSP".
 
 `framework` holds the structured design token system (`src/core/framework/`). When present it carries:
 - `colors.tokens` — `FrameworkColorToken[]`, each with a slug (becomes a CSS var like `--primary`), light/dark values, utility generation flags (text/background/border/fill), shade/tint variant counts. Slugs are normalized by `normalizeFrameworkColorSlug` (trim, lowercase, strip leading `--`, replace non-alphanumeric runs with `-`). When two tokens normalize to the same root slug, the second receives a `-2` suffix, the third `-3`, and so on — resolved in generation order via `buildColorSlugMap` so the earlier token keeps the base name.
