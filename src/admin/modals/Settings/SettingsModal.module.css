@@ -163,11 +163,19 @@
   border-top: 1px solid var(--overlay-10);
 }
 
+/* Sits on the footer's close Button. Keeps the row reading as a quiet hint
+   rather than a control — the keycap already carries the affordance — while
+   the element underneath is a real button. `justify-content: start` because a
+   Button centres its content by default and this row aligns with the nav
+   above it. */
 .shortcutHint {
   display: flex;
   align-items: center;
+  justify-content: start;
   gap: var(--space-xs);
   flex-wrap: wrap;
+  width: 100%;
+  padding: 0;
   color: var(--text-subtle);
   font-size: var(--text-s);
 }
