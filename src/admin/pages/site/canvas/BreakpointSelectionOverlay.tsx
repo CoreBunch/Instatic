@@ -80,6 +80,7 @@ import { cn } from '@ui/cn'
 import { CopyPlusSolidIcon } from 'pixel-art-icons/icons/copy-plus-solid'
 import { TrashSolidIcon } from 'pixel-art-icons/icons/trash-solid'
 import { HandGrabSolidIcon } from 'pixel-art-icons/icons/hand-grab-solid'
+import { SparklesSolidIcon } from 'pixel-art-icons/icons/sparkles-solid'
 import { CanvasViewportActionsContext } from './CanvasContexts'
 import { CanvasInsertModuleButton } from './CanvasInsertModuleButton'
 import { useCanvasReorderDrag } from './useCanvasReorderDrag'
@@ -137,6 +138,13 @@ function deleteSelectedLayers() {
   const state = useEditorStore.getState()
   state.deleteNodes(ids)
   state.clearSelection()
+}
+
+function addSelectedLayersToAiChat() {
+  const ids = useEditorStore.getState().selectedNodeIds
+  if (ids.length === 0) return
+  const mentions = ids.map((id) => ({ nodeId: id, label: `Layer ${id}` }))
+  useEditorStore.getState().stageAgentMentions(mentions)
 }
 
 export function BreakpointSelectionOverlay({
@@ -389,6 +397,17 @@ export function BreakpointSelectionOverlay({
       </Button>
       <CanvasInsertModuleButton buttonClassName={styles.selectionToolbarButton} />
 
+      <Button
+        variant="secondary"
+        size="xs"
+        iconOnly
+        aria-label="Add selected layers to AI chat"
+        tooltip="Add selected layers to AI chat"
+        className={styles.selectionToolbarButton}
+        onClick={addSelectedLayersToAiChat}
+      >
+        <SparklesSolidIcon size={13} color="var(--text)" />
+      </Button>
       <Button
         variant="secondary"
         size="xs"

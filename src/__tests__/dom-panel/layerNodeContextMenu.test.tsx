@@ -864,3 +864,88 @@ describe('LayerNodeContextMenu — multi-delete confirmation', () => {
     expect(pageAfterConfirm?.nodes.c).toBeDefined()
   })
 })
+
+describe('LayerNodeContextMenu — Add to AI chat', () => {
+  function setupAiChatPage() {
+    localStorage.clear()
+    const home = makePage({
+      id: 'page-ai',
+      title: 'Home',
+      slug: 'index',
+      rootNodeId: 'root',
+      nodes: {
+        root: makeNode({ id: 'root', moduleId: 'base.body', children: ['a', 'b'] }),
+        a: makeNode({ id: 'a', moduleId: 'base.text' }),
+        b: makeNode({ id: 'b', moduleId: 'base.button' }),
+      },
+    })
+    useEditorStore.setState({
+      site: makeSite({ pages: [home], files: [], visualComponents: [] }),
+      activePageId: 'page-ai',
+      selectedNodeId: 'a',
+      selectedNodeIds: ['a'],
+      hoveredNodeId: null,
+      activeDocument: null,
+      isAgentOpen: false,
+      agentDraftMentions: [],
+      _historyPast: [],
+      _historyFuture: [],
+      canUndo: false,
+      canRedo: false,
+      hasUnsavedChanges: false,
+    } as Parameters<typeof useEditorStore.setState>[0])
+  }
+
+  function renderAiChatMenu(nodeId = 'a') {
+    return render(
+      <LayerNodeContextMenu
+        x={100}
+        y={200}
+        nodeId={nodeId}
+        onClose={noop}
+        onDelete={noop}
+        onDuplicate={noop}
+        onRename={noop}
+        onWrapInContainer={noop}
+        onCopy={noop}
+        onCut={noop}
+        onPaste={noop}
+      />,
+    )
+  }
+
+  it('renders the "Add to AI chat" menu item', () => {
+    setupAiChatPage()
+    renderAiChatMenu()
+    expect(screen.getByRole('menuitem', { name: /add to ai chat/i })).toBeDefined()
+  })
+
+  it('stages a single node id as the agent draft and opens the panel', () => {
+    setupAiChatPage()
+    renderAiChatMenu('a')
+
+    fireEvent.click(screen.getByRole('menuitem', { name: /add to ai chat/i }))
+
+    expect(useEditorStore.getState().agentDraftMentions).toEqual([
+      { nodeId: 'a', label: '<p>' },
+    ])
+    expect(useEditorStore.getState().isAgentOpen).toBe(true)
+  })
+
+  it('stages multiple selected node ids when right-clicking a multi-selection', () => {
+    setupAiChatPage()
+    useEditorStore.setState({
+      selectedNodeId: 'b',
+      selectedNodeIds: ['a', 'b'],
+    } as Parameters<typeof useEditorStore.setState>[0])
+    renderAiChatMenu('b')
+
+    fireEvent.click(screen.getByRole('menuitem', { name: /add to ai chat/i }))
+
+    expect(useEditorStore.getState().agentDraftMentions).toEqual([
+      { nodeId: 'a', label: '<p>' },
+      { nodeId: 'b', label: '<button>' },
+    ])
+    expect(useEditorStore.getState().isAgentOpen).toBe(true)
+  })
+})

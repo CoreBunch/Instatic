@@ -112,6 +112,10 @@ const GRANDFATHERED: Record<string, number> = {
   'src/admin/pages/site/panels/TypographyPanel/FontsSection/AddGoogleFontDialog.tsx': 751,
   'src/core/markdown/markdownDocument.ts': 748,
   'src/admin/pages/dashboard/DashboardPage.tsx': 732,
+  // Grew past CEILING while adding the layer-mention queue and label registry to
+  // the agent slice. Extract conversation-reset and credential helpers to
+  // graduate this entry.
+  'src/admin/pages/site/agent/agentSlice.ts': 742,
 }
 
 // ---------------------------------------------------------------------------

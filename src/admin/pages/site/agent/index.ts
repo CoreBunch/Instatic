@@ -13,6 +13,7 @@ export type {
   AgentConversationUsage,
   AgentSlice,
   AgentSliceConfig,
+  AgentDraftMention,
 } from './agentSliceTypes'
 
 // Site-editor wiring (scope, snapshot, dispatcher) handed to the factory.

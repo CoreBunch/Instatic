@@ -162,6 +162,8 @@ function createAgentStore(overrides: Partial<AgentSlice> = {}) {
     isAgentConversationPending: false,
     isAgentProviderPending: false,
     agentComposerEpoch: 0,
+    agentDraftMentions: [],
+    agentMentionLabels: {},
     openAgent: () => set({ isAgentOpen: true }),
     closeAgent: () => set({ isAgentOpen: false }),
     toggleAgent: () => set((state) => ({ isAgentOpen: !state.isAgentOpen })),
@@ -184,6 +186,8 @@ function createAgentStore(overrides: Partial<AgentSlice> = {}) {
       set({ agentActiveCredentialId: credentialId, agentActiveModelId: modelId, agentError: null })
     },
     loadScopeDefault: async () => {},
+    stageAgentMentions: () => {},
+    clearAgentDraftMentions: () => set({ agentDraftMentions: [] }),
     ...overrides,
   }))
 }

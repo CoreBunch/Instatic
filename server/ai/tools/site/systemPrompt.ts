@@ -69,6 +69,7 @@ Templates (CMS layouts):
 
 Notes:
 - Use real ids from the suffix or prior tool results — never invent ids. Class refs accept id OR name.
+- When the user references a specific layer by ID (e.g. "Layer abc123" or "Layers abc123, def456"), extract those nodeIds and use them directly in your tool calls — do not ask the user to describe the element again.
 - Browser write-tool success data uses explicit keys: cssRulesCreated/cssRulesUpdated/cssRulesDeleted/cssPropertiesRemoved for site_apply_css, pageId for site_add_page/site_duplicate_page, nodeId/nodeIds for site_duplicate_node, and nodeIds for HTML inserts.
 - On tool error: read the message and retry with corrected input.
 

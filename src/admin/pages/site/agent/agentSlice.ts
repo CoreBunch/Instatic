@@ -48,6 +48,7 @@ export type {
 import type {
   AgentBridgeRuntime,
   AgentMessage,
+  AgentMessageMention,
   AgentTextStreamSink,
 } from './types'
 import { getErrorMessage } from '@core/utils/errorMessage'
@@ -148,6 +149,8 @@ type ConversationResetKeys =
   | 'agentActiveModelId'
   | 'agentUsage'
   | 'agentComposerEpoch'
+  | 'agentDraftMentions'
+  | 'agentMentionLabels'
 
 function emptyConversationUsage(): AgentConversationUsage {
   return {
@@ -171,6 +174,8 @@ function conversationResetState(agentComposerEpoch: number): Pick<AgentSlice, Co
     agentActiveModelId: null,
     agentUsage: emptyConversationUsage(),
     agentComposerEpoch,
+    agentDraftMentions: [],
+    agentMentionLabels: {},
   }
 }
 
@@ -289,6 +294,8 @@ export function createAgentSlice(
     isAgentConversationPending: false,
     isAgentProviderPending: false,
     agentComposerEpoch: 0,
+    agentDraftMentions: [],
+    agentMentionLabels: {},
 
     // ── UI actions ───────────────────────────────────────────────────────────
     openAgent() {
@@ -303,6 +310,20 @@ export function createAgentSlice(
       set((s) => {
         s.isAgentOpen = !s.isAgentOpen
       })
+    },
+
+    stageAgentMentions(mentions) {
+      set((state) => {
+        state.agentDraftMentions.push(...mentions)
+        for (const m of mentions) {
+          state.agentMentionLabels[m.nodeId] = m.label
+        }
+        state.isAgentOpen = true
+      })
+    },
+
+    clearAgentDraftMentions() {
+      set({ agentDraftMentions: [] })
     },
 
     abortAgent() {
@@ -524,7 +545,7 @@ export function createAgentSlice(
     },
 
     // ── sendAgentMessage ─────────────────────────────────────────────────────
-    async sendAgentMessage(content) {
+    async sendAgentMessage(content, mentions?: AgentMessageMention[]) {
       if (
         get().isAgentStreaming
         || get().isAgentConversationPending
@@ -547,6 +568,7 @@ export function createAgentSlice(
             }
           : { ...block }),
         timestamp: Date.now(),
+        mentions,
       }
 
       const assistantId = nanoid()
@@ -605,7 +627,28 @@ export function createAgentSlice(
           }
         }
 
-        const body: AiChatRequestBody = { conversationId, content: [...content], snapshot }
+        // Build machine-readable content: replace human mention labels with
+        // Layer <nodeId> so the AI knows these are layer references. Keep
+        // image blocks untouched.
+        const hasMentions = (mentions ?? []).length > 0
+        const instruction = hasMentions
+          ? `Write layer references exactly as: the word Layer, a space, then the raw id with no extra characters. Example: Layer b3zJlOcL1. Never wrap ids in angle brackets or backticks.\n\n`
+          : ''
+        let instructionInjected = false
+        const machineContent = content.map((block) => {
+          if (block.kind !== 'text') return block
+          let text = block.text
+          for (const mention of mentions ?? []) {
+            text = text.replaceAll(mention.label, `Layer ${mention.nodeId}`)
+          }
+          if (!instructionInjected && hasMentions) {
+            text = instruction + text
+            instructionInjected = true
+          }
+          return { ...block, text }
+        })
+
+        const body: AiChatRequestBody = { conversationId, content: machineContent, snapshot }
         const res = await fetch(`/admin/api/ai/chat/${config.scope}`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -624,6 +667,10 @@ export function createAgentSlice(
         set((state) => {
           state.agentMessages.push(userMsg)
           state.agentMessages.push(assistantMsg)
+          // Register mention labels so they survive node deletion.
+          for (const m of mentions ?? []) {
+            state.agentMentionLabels[m.nodeId] = m.label
+          }
         })
         if (!res.body) throw new Error('Agent response has no body')
 

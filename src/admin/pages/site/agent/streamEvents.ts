@@ -187,6 +187,14 @@ export async function processStreamEvent(
           if (inputAsRecord) existing.toolCall.params = inputAsRecord
           return
         }
+        // Capture the referenced node id so the UI can resolve a friendly
+        // display label at render time. We deliberately avoid reading the
+        // editor store here to break the store ↔ agent barrel import cycle.
+        const nodeId =
+          typeof inputAsRecord?.nodeId === 'string'
+            ? (inputAsRecord.nodeId as string)
+            : undefined
+
         msg.blocks.push({
           kind: 'toolCall',
           toolCall: {
@@ -196,6 +204,7 @@ export async function processStreamEvent(
             params: inputAsRecord ?? {},
             result: null,
             status: 'pending',
+            displayLabel: nodeId,
           },
         })
       })
