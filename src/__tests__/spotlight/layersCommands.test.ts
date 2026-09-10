@@ -26,9 +26,11 @@ function loadVisualComponentCanvas(): void {
     id: 'vc-card',
     name: 'Card',
     tree: makeVCTree('vc-root', [
-      makeVCNode({ id: 'vc-root', moduleId: 'base.body', children: ['vc-a', 'vc-b'] }),
+      makeVCNode({ id: 'vc-root', moduleId: 'base.body', children: ['vc-a', 'vc-b', 'vc-c', 'vc-d'] }),
       makeVCNode({ id: 'vc-a', moduleId: 'base.text', props: { text: 'A' } }),
       makeVCNode({ id: 'vc-b', moduleId: 'base.text', props: { text: 'B' } }),
+      makeVCNode({ id: 'vc-c', moduleId: 'base.text', props: { text: 'C' } }),
+      makeVCNode({ id: 'vc-d', moduleId: 'base.text', props: { text: 'D' } }),
     ]),
   })
 
@@ -88,10 +90,24 @@ beforeEach(() => {
 describe('Spotlight layer commands', () => {
   it('moves selected Visual Component nodes within the active canvas tree', async () => {
     await runLayerCommand('layers.moveUp', ['vc-b'])
-    expect(vcChildren()).toEqual(['vc-b', 'vc-a'])
+    expect(vcChildren()).toEqual(['vc-b', 'vc-a', 'vc-c', 'vc-d'])
 
     await runLayerCommand('layers.moveDown', ['vc-b'])
-    expect(vcChildren()).toEqual(['vc-a', 'vc-b'])
+    expect(vcChildren()).toEqual(['vc-a', 'vc-b', 'vc-c', 'vc-d'])
+  })
+
+  it('moves a multi-selection as one sibling block in one undo step', async () => {
+    await runLayerCommand('layers.moveUp', ['vc-c', 'vc-b'])
+    expect(vcChildren()).toEqual(['vc-b', 'vc-c', 'vc-a', 'vc-d'])
+
+    useEditorStore.getState().undo()
+    expect(vcChildren()).toEqual(['vc-a', 'vc-b', 'vc-c', 'vc-d'])
+
+    await runLayerCommand('layers.moveDown', ['vc-a', 'vc-b'])
+    expect(vcChildren()).toEqual(['vc-c', 'vc-a', 'vc-b', 'vc-d'])
+
+    useEditorStore.getState().undo()
+    expect(vcChildren()).toEqual(['vc-a', 'vc-b', 'vc-c', 'vc-d'])
   })
 
   it('navigates parent and child selection inside the active Visual Component tree', async () => {
