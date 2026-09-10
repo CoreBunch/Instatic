@@ -46,6 +46,8 @@ const listDocumentsTool: AiTool = {
   handler: async (_input, ctx) => {
     const snap = asSnap(ctx.snapshot)
     return {
+      localeId: snap.site.localeId,
+      locales: snap.site.locales,
       currentDocument: snap.currentDocument,
       documents: describeAgentDocuments(snap.site, snap.page.id, snap.currentDocument),
     }

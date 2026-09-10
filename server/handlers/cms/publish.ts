@@ -27,6 +27,14 @@ import { RuntimeScriptBuildError } from '../../publish/runtime/buildError'
 import { jsonResponse, methodNotAllowed } from '../../http'
 import type { CmsHandlerOptions } from './shared'
 import { requestAuditContext } from './shared'
+import { PublishVariantSelectionSchema } from '@core/localization-schema'
+import { badRequest, readValidatedBody } from '../../http'
+import { listLocales } from '../../repositories/localization'
+import { listDataRows } from '../../repositories/data'
+import { readTitleCell } from '@core/data/cells'
+import { requestLocale } from './localeContext'
+import { LocalizedRouteError } from '@core/localization-routing'
+import { LocalizationError } from '../../repositories/localization'
 
 export async function handlePublishRoutes(
   req: Request,
@@ -42,13 +50,16 @@ export async function handlePublishRoutes(
     const stepUp = await requireStepUp(req, db, user)
     if (stepUp) return stepUp
 
+    const selection = req.body ? await readValidatedBody(req, PublishVariantSelectionSchema) : {}
+    if (!selection) return badRequest('Invalid publication selection')
+
     // publishDraftSite flushes the collab relay itself (see publishFlush.ts),
     // so the snapshot includes edits still inside the debounce window.
     let result: Awaited<ReturnType<typeof publishDraftSite>>
     try {
-      result = await publishDraftSite(db, user.id, options.uploadsDir)
+      result = await publishDraftSite(db, user.id, options.uploadsDir, selection)
     } catch (err) {
-      if (err instanceof RuntimeScriptBuildError) {
+      if (err instanceof RuntimeScriptBuildError || err instanceof LocalizedRouteError || err instanceof LocalizationError) {
         return jsonResponse({ error: err.message }, { status: 422 })
       }
       throw err
@@ -58,10 +69,24 @@ export async function handlePublishRoutes(
       action: 'publish',
       targetType: 'site',
       targetId: 'default',
-      metadata: { publishedPages: result.publishedPages },
+      metadata: { publishedPages: result.publishedPages, variantIds: selection.variants?.map((variant) => `${variant.rowId}:${variant.localeId}`) ?? null },
       ...requestAuditContext(req),
     })
     return jsonResponse(result)
+  }
+
+  if (url.pathname === '/admin/api/cms/publish/selection') {
+    const user = await requireCapability(req, db, 'pages.publish')
+    if (user instanceof Response) return user
+    if (req.method !== 'GET') return methodNotAllowed()
+    const locales = await listLocales(db)
+    const rows = await Promise.all(locales.map((locale) => listDataRows(db, 'pages', { localeId: locale.id })))
+    return jsonResponse({ locales, variants: rows.flat().map((row) => ({
+      rowId: row.id, localeId: row.localeId, title: readTitleCell(row.cells), slug: row.slug,
+      isTemplate: row.cells.templateEnabled === true,
+      availability: row.localization?.availability ?? 'offline',
+      scheduledPublishAt: row.scheduledPublishAt, publicPath: row.publicPath,
+    })) })
   }
 
   if (url.pathname === '/admin/api/cms/publish/status') {
@@ -69,7 +94,9 @@ export async function handlePublishRoutes(
     if (user instanceof Response) return user
     if (req.method !== 'GET') return methodNotAllowed()
 
-    return jsonResponse(await getDraftPublishStatus(db))
+    const locale = await requestLocale(req, db)
+    if (locale instanceof Response) return locale
+    return jsonResponse(await getDraftPublishStatus(db, { localeId: locale.id }))
   }
 
   return null

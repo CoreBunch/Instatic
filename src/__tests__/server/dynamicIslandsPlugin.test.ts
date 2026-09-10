@@ -20,7 +20,7 @@
 
 import { beforeEach, afterEach, describe, expect, it } from 'bun:test'
 import { Value } from '@sinclair/typebox/value'
-import type { DbClient, DbResult } from '../../../server/db'
+import type { DbClient } from '../../../server/db'
 import { handleHoleRequest } from '../../../server/handlers/cms/hole'
 import { resetForTests } from '../../../server/publish/renderCache'
 import { getPublishVersion } from '../../../server/publish/publishState'
@@ -31,6 +31,10 @@ import { loopSourceRegistry } from '../../core/loops/registry'
 import { findDynamicNodeIds } from '../../core/publisher/dynamicDetection'
 import type { LoopEntitySource, SourceFetchContext } from '../../core/loops/types'
 import { makeModule, makePage, makeSite } from '../publisher/helpers'
+import { cleanupPublishingTestDbs, createPublishingTestDb } from '../helpers/publishingTestDb'
+import { createFakeDb } from './dbTestFake'
+
+afterEach(cleanupPublishingTestDbs)
 
 const LIVE_SOURCE_ID = 'acme.di.live'
 const VISITOR_SOURCE_ID = 'acme.di.visitor'
@@ -171,35 +175,16 @@ function makeReq(cookie?: string): Request {
   } as unknown as Request
 }
 
-function makeFakeDb(
+async function makePublishedDb(
   snapshot: ReturnType<typeof makeSnapshotWithLoop> | null,
   counters?: { snapshotLoads: number },
-): DbClient {
-  const handle = async <Row extends Record<string, unknown> = Record<string, unknown>>(
-    strings: TemplateStringsArray,
-    ..._values: unknown[]
-  ): Promise<DbResult<Row>> => {
-    const sql = strings.join(' ').replace(/\s+/g, ' ').trim().toLowerCase()
-    if (sql.includes('site_snapshots.site_json')) {
-      if (counters) counters.snapshotLoads++
-      return {
-        rows: snapshot
-          ? [{
-              row_id: snapshot.pageRowId,
-              site_json: snapshot.site,
-              runtime_assets_json: null,
-              importmap_body: null,
-              importmap_sha256: null,
-            } as unknown as Row]
-          : [],
-        rowCount: snapshot ? 1 : 0,
-      }
-    }
-    return { rows: [], rowCount: 0 }
-  }
-  handle.transaction = async <T>(cb: (tx: DbClient) => Promise<T>): Promise<T> =>
-    cb(handle as unknown as DbClient)
-  return handle as DbClient
+): Promise<DbClient> {
+  const db = await createPublishingTestDb(snapshot?.site ?? null)
+  if (!counters) return db
+  return createFakeDb(async (sql, params) => {
+    if (sql.includes('site_snapshots.site_json')) counters.snapshotLoads++
+    return db.unsafe(sql, params)
+  })
 }
 
 beforeEach(() => {
@@ -286,7 +271,7 @@ describe('findDynamicNodeIds — plugin loop sources', () => {
 describe('hole endpoint — shared (requestDependent) hole', () => {
   it('renders request-time data from route.query and does NOT expose cookies', async () => {
     const snap = makeSnapshotWithLoop('hole-loop', LIVE_SOURCE_ID)
-    const db = makeFakeDb(snap)
+    const db = await makePublishedDb(snap)
     const v = getPublishVersion()
     const u = encodeURIComponent('/search?q=shoes')
     const url = new URL(`http://localhost/_instatic/hole/hole-loop?v=${v}&u=${u}`)
@@ -301,7 +286,7 @@ describe('hole endpoint — shared (requestDependent) hole', () => {
 
   it('caches per query: same query reuses the render, different query re-fetches', async () => {
     const snap = makeSnapshotWithLoop('hole-loop', LIVE_SOURCE_ID)
-    const db = makeFakeDb(snap)
+    const db = await makePublishedDb(snap)
     const v = getPublishVersion()
 
     const hit = async (q: string) => {
@@ -327,9 +312,9 @@ describe('hole endpoint — shared (requestDependent) hole', () => {
 describe('hole endpoint — per-visitor hole', () => {
   it('reads cookies, bypasses the cache (no-store), and re-renders every request', async () => {
     const snap = makeSnapshotWithLoop('hole-loop', VISITOR_SOURCE_ID)
-    const db = makeFakeDb(snap)
+    const db = await makePublishedDb(snap)
     const v = getPublishVersion()
-    const url = new URL(`http://localhost/_instatic/hole/hole-loop?v=${v}&u=${encodeURIComponent('/')}`)
+    const url = new URL(`http://localhost/_instatic/hole/hole-loop?v=${v}&u=${encodeURIComponent('/search')}`)
 
     const res1 = await handleHoleRequest(makeReq('sid=alice'), url, { db })
     expect(res1.headers.get('cache-control')).toBe('no-store')
@@ -355,11 +340,11 @@ describe('hole endpoint — versioned snapshot cache', () => {
   it('loads the published snapshot from the DB once per publish version', async () => {
     const snap = makeSnapshotWithLoop('hole-loop', LIVE_SOURCE_ID)
     const counters = { snapshotLoads: 0 }
-    const db = makeFakeDb(snap, counters)
+    const db = await makePublishedDb(snap, counters)
     const v = getPublishVersion()
 
     for (const q of ['a', 'b', 'c']) {
-      const url = new URL(`http://localhost/_instatic/hole/hole-loop?v=${v}&u=${encodeURIComponent(`/s?q=${q}`)}`)
+      const url = new URL(`http://localhost/_instatic/hole/hole-loop?v=${v}&u=${encodeURIComponent(`/search?q=${q}`)}`)
       await handleHoleRequest(makeReq(), url, { db })
     }
     // Three distinct requests, one snapshot DB read.

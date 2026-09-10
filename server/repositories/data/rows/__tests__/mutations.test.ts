@@ -5,6 +5,7 @@ import { runMigrations } from '../../../../db/runMigrations'
 import type { DbClient } from '../../../../db/client'
 import { softDeleteDataRow, upsertDataRowDraft } from '../mutations'
 import { getDataRow } from '../read'
+import { seedLocalizedVariant } from './fixtures'
 
 const USER_ID = 'user-author'
 
@@ -27,6 +28,7 @@ async function seedRow(db: DbClient, id: string): Promise<void> {
       ${'2024-01-01T00:00:00.000Z'}, ${'2024-01-01T00:00:00.000Z'}
     )
   `
+  await seedLocalizedVariant(db, { rowId: id, cells: { title: id, slug: id }, slug: id })
 }
 
 describe('softDeleteDataRow', () => {

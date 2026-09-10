@@ -23,6 +23,7 @@
  * artefact writes, cache bump) lives in `server/publish/publishRow.ts` and
  * calls down into this repository.
  */
+import type { BundleRedirect } from '@core/data/bundleSchema'
 import { nanoid } from 'nanoid'
 import { placeholder, type DbClient } from '../../db/client'
 import { userRefColumns, userRefJoin } from './shared'
@@ -30,6 +31,8 @@ import type { DataRow, DataRowVersion, DataRowRedirect, PublishedDataRow } from 
 import { normalizeRouteBase } from '@core/templates/templateMatching'
 import { readFeaturedMediaCell } from '@core/data/cells'
 import { getDataRow } from './rows'
+import { getDefaultLocale, setContentLocalizationPublishedVersion } from '../localization'
+import type { ScheduledLocalizationRevision } from '@core/localization-schema'
 import { nextDataRowVersionNumber } from './versions'
 import { isoDate } from '@core/utils/isoDate'
 
@@ -44,6 +47,9 @@ interface PublishedDataRowQueryRow {
   table_slug: string
   table_kind: string
   table_route_base: string
+  locale_id: string
+  public_path: string | null
+  site_snapshot_id: string | null
   version_number: number
   cells_json: Record<string, unknown>
   slug: string
@@ -59,17 +65,11 @@ interface PublishedDataRowQueryRow {
   created_at: string | Date
 }
 
-interface PreviousPublishedRouteRow {
-  previous_slug: string
-  previous_route_base: string
-}
-
 interface DataRowRedirectRow {
   id: string
   from_route_base: string
   from_slug: string
-  target_route_base: string
-  target_slug: string
+  target_path: string
 }
 
 interface MediaAssetRow {
@@ -84,6 +84,8 @@ interface MediaAssetRow {
 export interface PreviousPublishedRoute {
   slug: string
   routeBase: string
+  path: string
+  localeId: string
 }
 
 export interface PersistDataRowPublishResult {
@@ -97,11 +99,6 @@ export interface PersistDataRowPublishResult {
   previousRoute: PreviousPublishedRoute | null
 }
 
-export interface RowTableRouteInfo {
-  tableRouteBase: string
-  tableSlug: string
-}
-
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -112,15 +109,6 @@ export function publicDataPath(routeBase: string, slug: string): string {
   return `${normalizedBase === '/' ? '' : normalizedBase}/${slug}`
 }
 
-/** True when the previously-published route differs from the current slug's. */
-export function previousRouteChanged(previous: PreviousPublishedRoute, currentSlug: string): boolean {
-  return (
-    previous.slug.length > 0 &&
-    publicDataPath(previous.routeBase, previous.slug) !==
-      publicDataPath(previous.routeBase, currentSlug)
-  )
-}
-
 // ---------------------------------------------------------------------------
 // Publish persistence
 // ---------------------------------------------------------------------------
@@ -129,109 +117,93 @@ export function previousRouteChanged(previous: PreviousPublishedRoute, currentSl
  * Transactional write of one row publish. DB writes only — the publish lock,
  * artefact bake, and cache bump are owned by `server/publish/publishRow.ts`.
  */
+export interface PersistDataRowPublishOptions {
+  localeId: string
+  publicPath: string | null
+  siteSnapshotId: string | null
+  revision?: ScheduledLocalizationRevision
+}
+
 export async function persistDataRowPublish(
   db: DbClient,
   rowId: string,
-  /**
-   * The user attributed as the publisher. `null` is allowed for system
-   * actors that have no user context — e.g. the scheduled-publish tick
-   * (`server/publish/publishScheduler.ts`) which fires once
-   * `scheduled_publish_at` is in the past. The `published_by_user_id`
-   * column on `data_rows` is nullable (`on delete set null`), so a
-   * null publisher round-trips cleanly through the schema.
-   */
   publisherUserId: string | null,
+  options: PersistDataRowPublishOptions,
 ): Promise<PersistDataRowPublishResult> {
   return db.transaction(async (tx) => {
-    const row = await getDataRow(tx, rowId)
-    if (!row) throw new Error('data row not found')
-
-    const previousRoute = await readPreviousPublishedRoute(tx, rowId)
+    const draft = await getDataRow(tx, rowId, options.localeId)
+    if (!draft) throw new Error('Content item not found')
+    const cells = options.revision?.cells ?? draft.cells
+    const slug = options.revision?.slug ?? draft.slug
+    const previousRoute = await readPreviousPublishedRoute(tx, rowId, options.localeId)
     const versionNumber = await nextDataRowVersionNumber(tx, rowId)
     const versionId = nanoid()
-
     await tx`
       insert into data_row_versions
-        (id, row_id, version_number, cells_json, slug, published_by_user_id)
-      values (
-        ${versionId},
-        ${row.id},
-        ${versionNumber},
-        ${row.cells},
-        ${row.slug},
-        ${publisherUserId}
-      )
+        (id, row_id, locale_id, version_number, cells_json, slug, public_path, site_snapshot_id, published_by_user_id)
+      values (${versionId}, ${rowId}, ${options.localeId}, ${versionNumber}, ${cells}, ${slug},
+              ${options.publicPath}, ${options.siteSnapshotId}, ${publisherUserId})
     `
-
-    const { rows: updateRows } = await tx<{ id: string }>`
-      update data_rows
-      set status = 'published',
-          active_version_id = ${versionId},
-          published_by_user_id = ${publisherUserId},
-          published_at = current_timestamp,
-          updated_by_user_id = ${publisherUserId},
-          updated_at = current_timestamp
-      where id = ${row.id}
-        and deleted_at is null
-      returning id
+    await tx`
+      insert into data_row_localizations (row_id, locale_id, slug)
+      values (${rowId}, ${options.localeId}, ${slug})
+      on conflict (row_id, locale_id) do nothing
     `
-    if (!updateRows[0]) throw new Error('data row publish update failed')
-
-    if (previousRoute && previousRouteChanged(previousRoute, row.slug)) {
-      await tx`
-        insert into data_row_redirects (id, table_id, from_route_base, from_slug, target_row_id)
-        values (
-          ${nanoid()},
-          ${row.tableId},
-          ${normalizeRouteBase(previousRoute.routeBase)},
-          ${previousRoute.slug},
-          ${row.id}
-        )
-        on conflict (from_route_base, from_slug) do update
-          set table_id = excluded.table_id,
-              target_row_id = excluded.target_row_id
-      `
+    const localization = await setContentLocalizationPublishedVersion(tx, rowId, options.localeId, versionId, publisherUserId)
+    if (!localization) throw new Error('Content item disappeared during publication')
+    if (previousRoute && options.publicPath !== previousRoute.path) {
+      await savePublishedRedirect(tx, rowId, draft.tableId, options.localeId, previousRoute.path)
     }
-
-    const publishedRow = await getDataRow(tx, row.id)
-    if (!publishedRow) throw new Error('data row could not be re-read after publish')
-
-    const publishedAt = publishedRow.publishedAt ?? new Date().toISOString()
+    const row = await getDataRow(tx, rowId, options.localeId)
+    if (!row) throw new Error('Published content item could not be read')
+    const publishedAt = localization.publishedAt ?? new Date().toISOString()
     return {
-      row: publishedRow,
+      row,
       version: {
-        id: versionId,
-        rowId: publishedRow.id,
-        versionNumber,
-        cells: publishedRow.cells,
-        slug: publishedRow.slug,
-        publishedByUserId: publisherUserId,
-        publishedAt,
-        createdAt: publishedAt,
+        id: versionId, rowId, localeId: options.localeId, publicPath: options.publicPath,
+        siteSnapshotId: options.siteSnapshotId, versionNumber, cells, slug,
+        publishedByUserId: publisherUserId, publishedAt, createdAt: publishedAt,
       },
       previousRoute,
     }
   })
 }
 
-async function readPreviousPublishedRoute(
+/** Reads the frozen route even after unpublishing or soft deletion. */
+export async function readPreviousPublishedRoute(
   db: DbClient,
   rowId: string,
+  localeId?: string,
 ): Promise<PreviousPublishedRoute | null> {
-  const { rows } = await db<PreviousPublishedRouteRow>`
-    select data_row_versions.slug as previous_slug,
-           data_tables.route_base as previous_route_base
-    from data_rows
-    join data_tables on data_tables.id = data_rows.table_id
-    join data_row_versions on data_row_versions.id = data_rows.active_version_id
-    where data_rows.id = ${rowId}
-      and data_rows.deleted_at is null
-      and data_tables.deleted_at is null
+  const targetLocaleId = localeId ?? (await getDefaultLocale(db)).id
+  const { rows } = await db<{ slug: string; public_path: string | null }>`
+    select versions.slug, versions.public_path
+    from data_row_localizations variants
+    join data_row_versions versions on versions.id = variants.active_version_id
+      and versions.row_id = variants.row_id and versions.locale_id = variants.locale_id
+    where variants.row_id = ${rowId} and variants.locale_id = ${targetLocaleId}
     limit 1
   `
-  return rows[0]
-    ? { slug: rows[0].previous_slug, routeBase: rows[0].previous_route_base }
-    : null
+  const row = rows[0]
+  if (!row?.public_path) return null
+  const slash = row.public_path.lastIndexOf('/')
+  return { slug: row.slug, routeBase: row.public_path.slice(0, slash) || '/', path: row.public_path, localeId: targetLocaleId }
+}
+
+export async function savePublishedRedirect(
+  db: DbClient,
+  rowId: string,
+  tableId: string,
+  localeId: string,
+  previousPath: string,
+): Promise<void> {
+  const slash = previousPath.lastIndexOf('/')
+  await db`
+    insert into data_row_redirects (id, table_id, locale_id, from_route_base, from_slug, target_row_id)
+    values (${nanoid()}, ${tableId}, ${localeId}, ${previousPath.slice(0, slash) || '/'}, ${previousPath.slice(slash + 1)}, ${rowId})
+    on conflict (from_route_base, from_slug) do update
+      set table_id = excluded.table_id, locale_id = excluded.locale_id, target_row_id = excluded.target_row_id
+  `
 }
 
 // ---------------------------------------------------------------------------
@@ -244,145 +216,52 @@ async function readPreviousPublishedRoute(
  * `server/publish/publishRow.ts` to resolve the public URL path without
  * joining the table into every other query.
  */
-export async function getRowTableRouteInfo(
-  db: DbClient,
-  rowId: string,
-): Promise<RowTableRouteInfo | null> {
-  const { rows } = await db<{ route_base: string; table_slug: string }>`
-    select data_tables.route_base,
-           data_tables.slug as table_slug
-    from data_rows
-    join data_tables on data_tables.id = data_rows.table_id
-    where data_rows.id = ${rowId}
-      and data_rows.deleted_at is null
-      and data_tables.deleted_at is null
-    limit 1
-  `
-  if (!rows[0]) return null
-  return {
-    tableRouteBase: normalizeRouteBase(rows[0].route_base),
-    tableSlug: rows[0].table_slug,
-  }
-}
-
-/**
- * The owning table's raw `route_base` for a row, resolved WITHOUT the
- * `deleted_at is null` filters — artefact removal must still resolve the
- * route after a soft delete (ISS-039).
- */
-export async function getRowTableRouteBase(
-  db: DbClient,
-  rowId: string,
-): Promise<string | null> {
-  const { rows } = await db<{ route_base: string }>`
-    select data_tables.route_base
-    from data_rows
-    join data_tables on data_tables.id = data_rows.table_id
-    where data_rows.id = ${rowId}
-    limit 1
-  `
-  return rows[0]?.route_base ?? null
-}
-
-// ---------------------------------------------------------------------------
-// Public-route lookups
-// ---------------------------------------------------------------------------
-
-interface PublishedRowRoute {
-  rowId: string
-  /** Slug of the row's ACTIVE published version (what the public URL uses). */
-  rowSlug: string
-  tableSlug: string
-  tableRouteBase: string
-}
-
-/**
- * Every published, non-deleted data row (excluding the `pages` table) with
- * its active version's slug and its table's route info. The full publish uses
- * this to bake a Layer A artefact for each row route into the fresh slot —
- * without it, the slot swap would strand every row artefact written by
- * incremental publishes.
- */
-export async function listPublishedRowRoutes(db: DbClient): Promise<PublishedRowRoute[]> {
-  const { rows } = await db<{
-    row_id: string
-    row_slug: string
-    table_slug: string
-    table_route_base: string
-  }>`
-    select data_rows.id as row_id,
-           data_row_versions.slug as row_slug,
-           data_tables.slug as table_slug,
-           data_tables.route_base as table_route_base
-    from data_rows
-    join data_tables on data_tables.id = data_rows.table_id
-    join data_row_versions on data_row_versions.id = data_rows.active_version_id
-    where data_rows.table_id <> 'pages'
-      and data_rows.status = 'published'
-      and data_rows.deleted_at is null
-      and data_tables.deleted_at is null
-    order by data_rows.created_at asc
-  `
-  return rows.map((row) => ({
-    rowId: row.row_id,
-    rowSlug: row.row_slug,
-    tableSlug: row.table_slug,
-    tableRouteBase: normalizeRouteBase(row.table_route_base),
-  }))
-}
-
-/**
- * Resolve a public URL (tableRouteBase + rowSlug) to the active published
- * version of a data row.
- *
- * `featuredMediaPath` is resolved in app code: first we read
- * `cells.featuredMedia` (via `readFeaturedMediaCell`) from the version's
- * `cells_json`, then — only when a media id is present — we do a second
- * query against `media_assets` for the `public_path`. This keeps the primary
- * query dialect-naive (no JSON-extract functions, no PG-specific operators).
- */
 export async function getPublishedDataRowByRoute(
   db: DbClient,
   tableRouteBase: string,
   rowSlug: string,
+  localeId?: string,
 ): Promise<PublishedDataRow | null> {
-  const normalizedBase = normalizeRouteBase(tableRouteBase)
+  return readPublishedDataRow(db, { localeId, publicPath: publicDataPath(tableRouteBase, rowSlug) })
+}
 
-  // The author/publisher user-ref joins reuse the shared `userRefColumns` /
-  // `userRefJoin` fragments (the single source, also spliced by the hydrated
-  // data-row SELECT in `rows/mapper.ts`). The publisher join targets
-  // `data_row_versions.published_by_user_id` — the per-version publisher — not
-  // `data_rows.published_by_user_id`. SQL stays dialect-naive (ANSI joins,
-  // positional `placeholder()` binds).
+export async function getPublishedDataRowById(
+  db: DbClient,
+  rowId: string,
+  localeId?: string,
+): Promise<PublishedDataRow | null> {
+  return readPublishedDataRow(db, { localeId, rowId })
+}
+
+async function readPublishedDataRow(
+  db: DbClient,
+  options: { localeId?: string; rowId?: string; publicPath?: string },
+): Promise<PublishedDataRow | null> {
+  const localeId = options.localeId ?? (await getDefaultLocale(db)).id
   const p = (n: number) => placeholder(db.dialect, n)
+  const where = options.rowId !== undefined ? `data_rows.id = ${p(2)}` : `data_row_versions.public_path = ${p(2)}`
   const { rows } = await db.unsafe<PublishedDataRowQueryRow>(
-    `select data_row_versions.id,
-           data_row_versions.row_id,
-           data_rows.table_id,
-           data_tables.slug as table_slug,
-           data_tables.kind as table_kind,
+    `select data_row_versions.id, data_row_versions.row_id, data_row_versions.locale_id,
+           data_row_versions.public_path, data_row_versions.site_snapshot_id,
+           data_rows.table_id, data_tables.slug as table_slug, data_tables.kind as table_kind,
            data_tables.route_base as table_route_base,
-           data_row_versions.version_number,
-           data_row_versions.cells_json,
-           data_row_versions.slug,
-           data_rows.author_user_id,
-           ${userRefColumns('author')},
-           data_row_versions.published_by_user_id,
-           ${userRefColumns('published_by')},
-           data_row_versions.published_at,
-           data_row_versions.created_at
+           data_row_versions.version_number, data_row_versions.cells_json, data_row_versions.slug,
+           data_rows.author_user_id, ${userRefColumns('author')},
+           data_row_versions.published_by_user_id, ${userRefColumns('published_by')},
+           data_row_versions.published_at, data_row_versions.created_at
     from data_rows
     join data_tables on data_tables.id = data_rows.table_id
-    join data_row_versions on data_row_versions.id = data_rows.active_version_id
+    join data_row_localizations variants on variants.row_id = data_rows.id
+    join data_row_versions on data_row_versions.id = variants.active_version_id
+      and data_row_versions.row_id = variants.row_id and data_row_versions.locale_id = variants.locale_id
+    join site_locales locales on locales.id = variants.locale_id
     ${userRefJoin('author', 'data_rows.author_user_id')}
     ${userRefJoin('published_by', 'data_row_versions.published_by_user_id')}
-    where data_tables.route_base = ${p(1)}
-      and data_row_versions.slug = ${p(2)}
-      and data_rows.status = 'published'
-      and data_rows.deleted_at is null
-      and data_tables.deleted_at is null
+    where variants.locale_id = ${p(1)} and ${where}
+      and variants.availability = 'online' and locales.enabled = ${p(3)}
+      and data_rows.deleted_at is null and data_tables.deleted_at is null
     limit 1`,
-    [normalizedBase, rowSlug],
+    [localeId, options.rowId ?? options.publicPath, true],
   )
 
   if (!rows[0]) return null
@@ -408,6 +287,9 @@ export async function getPublishedDataRowByRoute(
   return {
     id: queryRow.id,
     rowId: queryRow.row_id,
+    localeId: queryRow.locale_id,
+    publicPath: queryRow.public_path,
+    siteSnapshotId: queryRow.site_snapshot_id,
     tableId: queryRow.table_id,
     tableSlug: queryRow.table_slug,
     tableKind: queryRow.table_kind as PublishedDataRow['tableKind'],
@@ -435,34 +317,32 @@ export async function getDataRowRedirectByRoute(
   tableRouteBase: string,
   rowSlug: string,
 ): Promise<DataRowRedirect | null> {
-  const normalizedBase = normalizeRouteBase(tableRouteBase)
+  return getPublishedRedirectByPath(db, publicDataPath(tableRouteBase, rowSlug))
+}
 
+export async function getPublishedRedirectByPath(db: DbClient, publicPath: string): Promise<DataRowRedirect | null> {
+  const slash = publicPath.lastIndexOf('/')
+  const base = publicPath.slice(0, slash) || '/'
+  const slug = publicPath.slice(slash + 1)
   const { rows } = await db<DataRowRedirectRow>`
-    select data_row_redirects.id,
-           data_row_redirects.from_route_base,
-           data_row_redirects.from_slug,
-           data_tables.route_base as target_route_base,
-           data_row_versions.slug as target_slug
-    from data_row_redirects
-    join data_rows target_rows on target_rows.id = data_row_redirects.target_row_id
+    select redirects.id, redirects.from_route_base, redirects.from_slug,
+           versions.public_path as target_path
+    from data_row_redirects redirects
+    join data_rows target_rows on target_rows.id = redirects.target_row_id
     join data_tables on data_tables.id = target_rows.table_id
-    join data_row_versions on data_row_versions.id = target_rows.active_version_id
-    where data_row_redirects.from_route_base = ${normalizedBase}
-      and data_row_redirects.from_slug = ${rowSlug}
-      and target_rows.status = 'published'
-      and target_rows.deleted_at is null
-      and data_tables.deleted_at is null
+    join data_row_localizations variants on variants.row_id = target_rows.id and variants.locale_id = redirects.locale_id
+    join data_row_versions versions on versions.id = variants.active_version_id
+      and versions.row_id = variants.row_id and versions.locale_id = variants.locale_id
+    join site_locales locales on locales.id = variants.locale_id
+    where redirects.from_route_base = ${base} and redirects.from_slug = ${slug}
+      and variants.availability = 'online' and locales.enabled = ${true}
+      and target_rows.deleted_at is null and data_tables.deleted_at is null
+      and versions.public_path is not null
     limit 1
   `
-
-  if (!rows[0]) return null
-
-  const queryRow = rows[0]
-  const fromPath = publicDataPath(queryRow.from_route_base, queryRow.from_slug)
-  const targetPath = publicDataPath(queryRow.target_route_base, queryRow.target_slug)
-  if (fromPath === targetPath) return null
-
-  return { id: queryRow.id, fromPath, targetPath }
+  const row = rows[0]
+  if (!row || row.target_path === publicPath) return null
+  return { id: row.id, fromPath: publicPath, targetPath: row.target_path }
 }
 
 // ---------------------------------------------------------------------------
@@ -474,15 +354,10 @@ export async function getDataRowRedirectByRoute(
  * Shape-compatible with `BundleRedirect` in `@core/data/bundleSchema` so the
  * export handler can pass these straight through.
  */
-export interface ExportableRedirect {
-  id: string
-  tableId: string
-  fromRouteBase: string
-  fromSlug: string
-  targetRowId: string
-}
+export type ExportableRedirect = BundleRedirect
 
 interface ExportableRedirectRow {
+  locale_id: string
   id: string
   table_id: string
   from_route_base: string
@@ -493,12 +368,13 @@ interface ExportableRedirectRow {
 /** Every redirect, raw, for a full-site export. */
 export async function listExportableRedirects(db: DbClient): Promise<ExportableRedirect[]> {
   const { rows } = await db<ExportableRedirectRow>`
-    select id, table_id, from_route_base, from_slug, target_row_id
+    select id, table_id, locale_id, from_route_base, from_slug, target_row_id
     from data_row_redirects
     order by from_route_base asc, from_slug asc
   `
   return rows.map((row) => ({
     id: row.id,
+    localeId: row.locale_id,
     tableId: row.table_id,
     fromRouteBase: row.from_route_base,
     fromSlug: row.from_slug,
@@ -517,16 +393,18 @@ export async function deleteAllDataRowRedirects(db: DbClient): Promise<void> {
  */
 export async function importDataRowRedirect(db: DbClient, input: ExportableRedirect): Promise<void> {
   await db`
-    insert into data_row_redirects (id, table_id, from_route_base, from_slug, target_row_id)
+    insert into data_row_redirects (id, table_id, locale_id, from_route_base, from_slug, target_row_id)
     values (
       ${input.id},
       ${input.tableId},
+      ${input.localeId},
       ${input.fromRouteBase},
       ${input.fromSlug},
       ${input.targetRowId}
     )
     on conflict (from_route_base, from_slug) do update
       set table_id = excluded.table_id,
+          locale_id = excluded.locale_id,
           target_row_id = excluded.target_row_id
   `
 }

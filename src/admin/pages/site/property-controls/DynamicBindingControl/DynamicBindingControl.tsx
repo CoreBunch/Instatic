@@ -201,6 +201,7 @@ export function DynamicBindingControl({
 
       {pickerOpen && (
         <DataBindingPicker
+          localeId={activeSite?.localeId}
           label={label}
           control={control}
           availableFields={availableFields}

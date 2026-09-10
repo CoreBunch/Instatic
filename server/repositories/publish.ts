@@ -23,17 +23,28 @@
  */
 import { createHash } from 'node:crypto'
 import type { DataRow } from '@core/data/schemas'
-import type { SiteDocument } from '@core/page-tree'
-import type { PublishedPageRuntimeAssets } from '@core/site-runtime'
+import { PageSchema, SiteShellSchema, type SiteDocument } from '@core/page-tree'
+import { VisualComponentSchema } from '@core/visual-components-schema'
+import { SavedLayoutSchema } from '@core/layouts-schema'
+import { LocaleSchema } from '@core/localization-schema'
+import { Type, parseValue } from '@core/utils/typeboxHelpers'
+import { nanoid } from 'nanoid'
+import { isTemplatePage } from '@core/templates'
+import { readPreviousPublishedRoute, savePublishedRedirect } from './data/publish'
+import { PublishedPageRuntimeAssetsSchema, type PublishedPageRuntimeAssets } from '@core/site-runtime'
 import type { PublishedRuntimePackageImportmap } from '@core/publisher'
-import type { DbClient } from '../db/client'
+import { placeholder, type DbClient } from '../db/client'
 import type { BuiltRuntimeAssetFile } from '../publish/runtime/bundleScripts'
 import { getDraftSite } from './site'
-import { listDataRows } from './data'
+import { getDataTable, listDataRows } from './data'
 import { pageFromRow } from '../../src/core/data/pageFromRow'
 import { visualComponentFromRow } from '../../src/core/data/componentFromRow'
 import { validateVisualComponents } from '../../src/core/persistence/validate'
 import { savePublishedRuntimeAssets } from './runtimeAsset'
+import { getDefaultLocale, getLocale, listLocales, listContentLocalizations, setContentLocalizationPublishedVersion } from './localization'
+import type { SiteLocalizationContext } from '@core/localization-schema'
+import { resolveDataFieldLocalization } from '@core/localization'
+import { savedLayoutFromRow } from '@core/data/layoutFromRow'
 
 // ---------------------------------------------------------------------------
 // Types
@@ -44,6 +55,10 @@ export interface PublishedPageSnapshot {
   /** id of the `data_rows` row for this page (was `pageId` in the old schema). */
   pageRowId: string
   site: SiteDocument
+  localeId?: string
+  versionId?: string
+  siteSnapshotId?: string
+  publicPath?: string | null
   runtimeAssets?: PublishedPageRuntimeAssets
   /**
    * Pre-serialised importmap mapping bare specifiers like `three` to URLs
@@ -75,6 +90,10 @@ interface SnapshotQueryRow {
   runtime_assets_json: PublishedPageRuntimeAssets | null
   importmap_body: string | null
   importmap_sha256: string | null
+  locale_id: string
+  version_id: string
+  site_snapshot_id: string
+  public_path: string | null
 }
 
 /** One page's version write within `persistSitePublish`. */
@@ -86,6 +105,11 @@ export interface PublishedPageVersionWrite {
   versionNumber: number
   runtimeAssets: PublishedPageRuntimeAssets | null
   runtimeFiles: BuiltRuntimeAssetFile[]
+  localeId: string
+  publicPath: string | null
+  cells: DataRow['cells']
+  /** Dependency snapshots do not change a template's selected live release. */
+  activate: boolean
 }
 
 export interface PersistSitePublishInput {
@@ -94,7 +118,29 @@ export interface PersistSitePublishInput {
   site: SiteDocument
   serializedImportmap: { body: string; sha256: string } | null
   pages: PublishedPageVersionWrite[]
-  publishedByUserId: string
+  publishedByUserId: string | null
+}
+
+const PublishedSiteDocumentSchema = Type.Intersect([SiteShellSchema, Type.Object({
+  pages: Type.Array(PageSchema),
+  visualComponents: Type.Array(VisualComponentSchema),
+  layouts: Type.Array(SavedLayoutSchema),
+  localeId: Type.Optional(Type.String()),
+  locales: Type.Optional(Type.Array(LocaleSchema)),
+})])
+
+/** Frozen schedule payloads and publication versions use the same snapshot store. */
+export async function saveSiteDocumentSnapshot(db: DbClient, site: SiteDocument): Promise<string> {
+  const id = nanoid()
+  const { localization: _draftContext, ...withoutDrafts } = site
+  const frozen = { ...withoutDrafts, layouts: [] }
+  await db`insert into site_snapshots (id, site_json, content_hash) values (${id}, ${frozen}, ${siteContentHash(frozen)})`
+  return id
+}
+
+export async function getStoredSiteDocument(db: DbClient, id: string): Promise<SiteDocument | null> {
+  const { rows } = await db<{ site_json: unknown }>`select site_json from site_snapshots where id = ${id}`
+  return rows[0] ? parseValue(PublishedSiteDocumentSchema, rows[0].site_json) : null
 }
 
 // ---------------------------------------------------------------------------
@@ -138,12 +184,17 @@ function orderSiteDocumentRows(rows: readonly DataRow[]): DataRow[] {
 
 /** Reassemble the `PublishedPageSnapshot` shape from the getter join. */
 function snapshotFromQueryRow(row: SnapshotQueryRow): PublishedPageSnapshot {
+  const runtimeAssets = row.runtime_assets_json ? parseValue(PublishedPageRuntimeAssetsSchema, row.runtime_assets_json) : null
   return {
     cmsSnapshotVersion: 1,
     pageRowId: row.row_id,
-    site: row.site_json,
-    ...(row.runtime_assets_json && row.runtime_assets_json.scripts.length > 0
-      ? { runtimeAssets: row.runtime_assets_json }
+    site: parseValue(PublishedSiteDocumentSchema, row.site_json),
+    localeId: row.locale_id,
+    versionId: row.version_id,
+    siteSnapshotId: row.site_snapshot_id,
+    publicPath: row.public_path,
+    ...(runtimeAssets && runtimeAssets.scripts.length > 0
+      ? { runtimeAssets }
       : {}),
     ...(row.importmap_body && row.importmap_sha256
       ? { runtimePackageImportmap: { body: row.importmap_body, sha256: row.importmap_sha256 } }
@@ -160,72 +211,80 @@ function snapshotFromQueryRow(row: SnapshotQueryRow): PublishedPageSnapshot {
  * `pages` and `components` data rows. Returns `null` when no draft site
  * exists yet. Saved layouts are editor-only; publishing ignores them.
  */
-export async function getDraftSiteDocument(db: DbClient): Promise<SiteDocument | null> {
+export async function getDraftSiteDocument(db: DbClient, options: { localeId?: string } = {}): Promise<SiteDocument | null> {
+  return db.transaction((tx) => getDraftSiteDocumentInTx(tx, options))
+}
+
+/** Assemble inside an existing transaction, including callers reading sync metadata. */
+export async function getDraftSiteDocumentInTx(db: DbClient, options: { localeId?: string }): Promise<SiteDocument | null> {
   const shell = await getDraftSite(db)
   if (!shell) return null
 
-  const [pageRows, vcRows] = await Promise.all([
-    listDataRows(db, 'pages'),
-    listDataRows(db, 'components'),
+  const locale = options.localeId ? await getLocale(db, options.localeId) : await getDefaultLocale(db)
+  if (!locale) throw new Error('Language not found')
+  const [pageRows, vcRows, layoutRows, locales] = await Promise.all([
+    listDataRows(db, 'pages', { localeId: locale.id }),
+    listDataRows(db, 'components', { localeId: locale.id }),
+    listDataRows(db, 'layouts', { localeId: locale.id }),
+    listLocales(db),
   ])
   const visualComponents = validateVisualComponents(
     orderSiteDocumentRows(vcRows)
       .flatMap((r) => { const vc = visualComponentFromRow(r); return vc ? [vc] : [] })
   )
+  const contentRows = [...pageRows, ...vcRows, ...layoutRows]
+  const tables = await Promise.all(['pages', 'components', 'layouts'].map((tableId) => getDataTable(db, tableId)))
+  const fieldLocalizations = new Map(tables.filter((table) => table !== null).map((table) => [table.id,
+    Object.fromEntries(table.fields.map((field) => [field.id, resolveDataFieldLocalization(field)])),
+  ]))
+  const variants = await listContentLocalizations(db, { rowIds: contentRows.map((row) => row.id) })
+  const localization: SiteLocalizationContext = {
+    fieldLocalizations: Object.fromEntries(fieldLocalizations),
+    rows: Object.fromEntries(contentRows.map((row) => [row.id, {
+      tableId: row.tableId === 'pages' ? 'pages' : row.tableId === 'components' ? 'components' : 'layouts',
+      sharedCells: row.sharedCells,
+      localizations: Object.fromEntries(variants.filter((variant) => variant.rowId === row.id).map((variant) => [variant.localeId, {
+        cells: variant.cells, slug: variant.slug, translationMeta: variant.translationMeta,
+      }])),
+    }])),
+  }
   return {
     ...shell,
+    locales,
+    localeId: locale.id,
+    localization,
     pages: orderSiteDocumentRows(pageRows).map(pageFromRow),
     visualComponents,
-    layouts: [],
+    layouts: orderSiteDocumentRows(layoutRows).flatMap((row) => {
+      const layout = savedLayoutFromRow(row)
+      return layout ? [layout] : []
+    }),
   }
 }
 
-export async function getDraftPublishStatus(db: DbClient): Promise<DraftPublishStatus> {
-  const draftSite = await getDraftSiteDocument(db)
-  if (!draftSite) {
-    return {
-      hasPublishedVersion: false,
-      draftMatchesPublished: false,
-      draftPages: 0,
-      publishedPages: 0,
-    }
-  }
-
-  // Only the per-publish content hash is fetched — never the stored site
-  // document. Comparing the draft's hash against each row's stamped hash is
-  // observationally identical to comparing canonical JSON strings, but costs
-  // one draft serialisation instead of one per published page.
-  const { rows: publishedRows } = await db<PublishStatusRow>`
-    select data_rows.id as row_id,
-           site_snapshots.content_hash,
-           data_row_versions.published_at
-    from data_rows
-    join data_row_versions on data_row_versions.id = data_rows.active_version_id
-    join site_snapshots on site_snapshots.id = data_row_versions.site_snapshot_id
-    where data_rows.table_id = 'pages'
-      and data_rows.status = 'published'
-      and data_rows.deleted_at is null
-    order by data_rows.created_at asc
+export async function getDraftPublishStatus(db: DbClient, options: { localeId?: string } = {}): Promise<DraftPublishStatus> {
+  const draft = await getDraftSiteDocument(db, options)
+  if (!draft) return { hasPublishedVersion: false, draftMatchesPublished: false, draftPages: 0, publishedPages: 0 }
+  const pages = draft.pages.filter((page) => !isTemplatePage(page))
+  const { rows } = await db<PublishStatusRow>`
+    select content_rows.id as row_id, snapshots.content_hash, versions.published_at
+    from data_rows content_rows
+    join data_row_localizations variants on variants.row_id = content_rows.id
+    join data_row_versions versions on versions.id = variants.active_version_id
+      and versions.row_id = variants.row_id and versions.locale_id = variants.locale_id
+    join site_snapshots snapshots on snapshots.id = versions.site_snapshot_id
+    join site_locales locales on locales.id = variants.locale_id
+    where content_rows.table_id = 'pages' and content_rows.deleted_at is null
+      and variants.locale_id = ${draft.localeId} and variants.availability = 'online'
+      and locales.enabled = ${true} and versions.public_path is not null
   `
-
-  const draftSiteHash = siteContentHash(draftSite)
-  const draftPageIds = new Set(draftSite.pages.map((page) => page.id))
-  const draftMatchesPublished =
-    publishedRows.length === draftSite.pages.length &&
-    publishedRows.every((row) =>
-      draftPageIds.has(row.row_id) &&
-      row.content_hash === draftSiteHash
-    )
-  const lastPublishedAt = publishedRows
-    .map((row) => new Date(row.published_at).getTime())
-    .filter(Number.isFinite)
-    .sort((a, b) => b - a)[0]
-
+  const { localization: _context, ...withoutContext } = draft
+  const hash = siteContentHash({ ...withoutContext, layouts: [] })
+  const lastPublishedAt = rows.map((row) => new Date(row.published_at).getTime()).filter(Number.isFinite).sort((a, b) => b - a)[0]
   return {
-    hasPublishedVersion: publishedRows.length > 0,
-    draftMatchesPublished,
-    draftPages: draftSite.pages.length,
-    publishedPages: publishedRows.length,
+    hasPublishedVersion: rows.length > 0,
+    draftMatchesPublished: rows.length === pages.length && rows.every((row) => row.content_hash === hash),
+    draftPages: pages.length, publishedPages: rows.length,
     ...(lastPublishedAt ? { lastPublishedAt: new Date(lastPublishedAt).toISOString() } : {}),
   }
 }
@@ -240,9 +299,10 @@ export async function getDraftPublishStatus(db: DbClient): Promise<DraftPublishS
  */
 export async function persistSitePublish(
   db: DbClient,
-  input: PersistSitePublishInput,
+  inputs: PersistSitePublishInput[],
 ): Promise<void> {
   await db.transaction(async (tx) => {
+    for (const input of inputs) {
     // The site document is stored ONCE per publish; every page version row
     // references it. The content hash powers the publish-status check without
     // ever re-fetching the document.
@@ -258,37 +318,36 @@ export async function persistSitePublish(
     `
 
     for (const page of input.pages) {
+      const previous = page.activate ? await readPreviousPublishedRoute(tx, page.pageId, page.localeId) : null
       await tx`
         insert into data_row_versions
-          (id, row_id, version_number, cells_json, slug, site_snapshot_id, runtime_assets_json, published_by_user_id)
+          (id, row_id, locale_id, version_number, cells_json, slug, public_path, site_snapshot_id, runtime_assets_json, published_by_user_id)
         values (
           ${page.versionId},
           ${page.pageId},
+          ${page.localeId},
           ${page.versionNumber},
-          ${{ title: page.title, slug: page.slug }},
+          ${page.cells},
           ${page.slug},
+          ${page.publicPath},
           ${input.siteSnapshotId},
           ${page.runtimeAssets},
           ${input.publishedByUserId}
         )
       `
       await savePublishedRuntimeAssets(tx, page.versionId, page.runtimeFiles)
-      const { rowCount } = await tx`
-        update data_rows
-        set active_version_id = ${page.versionId},
-            status = 'published',
-            published_by_user_id = ${input.publishedByUserId},
-            published_at = current_timestamp,
-            updated_by_user_id = ${input.publishedByUserId},
-            updated_at = current_timestamp
-        where id = ${page.pageId}
-          and deleted_at is null
+      if (!page.activate) continue
+      await tx`
+        insert into data_row_localizations (row_id, locale_id, slug)
+        values (${page.pageId}, ${page.localeId}, ${page.slug})
+        on conflict (row_id, locale_id) do nothing
       `
-      // The page was read before the transaction opened; if a concurrent save
-      // reaped it in between, don't leave an orphan version pointing at it.
-      if (rowCount === 0) {
-        await tx`delete from data_row_versions where id = ${page.versionId}`
+      const localization = await setContentLocalizationPublishedVersion(tx, page.pageId, page.localeId, page.versionId, input.publishedByUserId)
+      if (!localization) throw new Error(`Page "${page.pageId}" disappeared during publication`)
+      if (previous && previous.path !== page.publicPath) {
+        await savePublishedRedirect(tx, page.pageId, 'pages', page.localeId, previous.path)
       }
+    }
     }
   })
 }
@@ -296,45 +355,18 @@ export async function persistSitePublish(
 export async function getPublishedPageBySlug(
   db: DbClient,
   slug: string,
+  localeId?: string,
 ): Promise<PublishedPageSnapshot | null> {
-  const { rows } = await db<SnapshotQueryRow>`
-    select data_rows.id as row_id,
-           site_snapshots.site_json,
-           data_row_versions.runtime_assets_json,
-           site_snapshots.importmap_body,
-           site_snapshots.importmap_sha256
-    from data_rows
-    join data_row_versions on data_row_versions.id = data_rows.active_version_id
-    join site_snapshots on site_snapshots.id = data_row_versions.site_snapshot_id
-    where data_rows.table_id = 'pages'
-      and data_rows.slug = ${slug}
-      and data_rows.status = 'published'
-      and data_rows.deleted_at is null
-    limit 1
-  `
-  return rows[0] ? snapshotFromQueryRow(rows[0]) : null
+  return readPageSnapshot(db, { localeId, slug })
 }
 
 export async function getPublishedPageSnapshotById(
   db: DbClient,
   pageId: string,
+  localeId?: string,
+  siteSnapshotId?: string,
 ): Promise<PublishedPageSnapshot | null> {
-  const { rows } = await db<SnapshotQueryRow>`
-    select data_rows.id as row_id,
-           site_snapshots.site_json,
-           data_row_versions.runtime_assets_json,
-           site_snapshots.importmap_body,
-           site_snapshots.importmap_sha256
-    from data_rows
-    join data_row_versions on data_row_versions.id = data_rows.active_version_id
-    join site_snapshots on site_snapshots.id = data_row_versions.site_snapshot_id
-    where data_rows.id = ${pageId}
-      and data_rows.table_id = 'pages'
-      and data_rows.status = 'published'
-      and data_rows.deleted_at is null
-    limit 1
-  `
-  return rows[0] ? snapshotFromQueryRow(rows[0]) : null
+  return readPageSnapshot(db, { localeId, pageId, siteSnapshotId })
 }
 
 /**
@@ -352,21 +384,53 @@ export async function getPublishedPageSnapshotById(
  */
 export async function getLatestPublishedSiteSnapshot(
   db: DbClient,
+  localeId?: string,
+  siteSnapshotId?: string,
 ): Promise<PublishedPageSnapshot | null> {
-  const { rows } = await db<SnapshotQueryRow>`
-    select data_rows.id as row_id,
-           site_snapshots.site_json,
-           site_snapshots.importmap_body,
-           site_snapshots.importmap_sha256
-    from data_rows
-    join data_row_versions on data_row_versions.id = data_rows.active_version_id
-    join site_snapshots on site_snapshots.id = data_row_versions.site_snapshot_id
-    where data_rows.table_id = 'pages'
-      and data_rows.status = 'published'
-      and data_rows.deleted_at is null
-    order by data_rows.created_at asc
+  const snapshot = await readPageSnapshot(db, { localeId, siteSnapshotId })
+  if (!snapshot) return null
+  const { runtimeAssets: _runtimeAssets, ...withoutRuntime } = snapshot
+  return withoutRuntime
+}
+
+async function readPageSnapshot(
+  db: DbClient,
+  options: { localeId?: string; slug?: string; pageId?: string; siteSnapshotId?: string },
+): Promise<PublishedPageSnapshot | null> {
+  const localeId = options.localeId ?? (await getDefaultLocale(db)).id
+  const values: unknown[] = [localeId, true]
+  const conditions = [
+    `versions.locale_id = ${placeholder(db.dialect, 1)}`,
+    `locales.enabled = ${placeholder(db.dialect, 2)}`,
+    "content_rows.table_id = 'pages'",
+    ...(!options.siteSnapshotId ? ['content_rows.deleted_at is null'] : []),
+  ]
+  for (const [column, value] of [
+    ['versions.slug', options.slug], ['content_rows.id', options.pageId], ['versions.site_snapshot_id', options.siteSnapshotId],
+  ] as const) {
+    if (value !== undefined) {
+      values.push(value)
+      conditions.push(`${column} = ${placeholder(db.dialect, values.length)}`)
+    }
+  }
+  // A content version pins the template release it was published with. Such
+  // dependencies may be historical; direct public reads use only active ones.
+  const activeJoin = options.siteSnapshotId ? '' : `
+    join data_row_localizations variants on variants.row_id = versions.row_id
+      and variants.locale_id = versions.locale_id and variants.active_version_id = versions.id
+      and variants.availability = 'online'`
+  const { rows } = await db.unsafe<SnapshotQueryRow>(`
+    select content_rows.id as row_id, versions.id as version_id, versions.locale_id,
+           versions.site_snapshot_id, versions.public_path, versions.runtime_assets_json,
+           site_snapshots.site_json, site_snapshots.importmap_body, site_snapshots.importmap_sha256
+    from data_row_versions versions
+    join data_rows content_rows on content_rows.id = versions.row_id
+    join site_snapshots on site_snapshots.id = versions.site_snapshot_id
+    join site_locales locales on locales.id = versions.locale_id
+    ${activeJoin}
+    where ${conditions.join(' and ')}
+    order by versions.published_at desc, versions.version_number desc
     limit 1
-  `
-  const row = rows[0]
-  return row ? snapshotFromQueryRow({ ...row, runtime_assets_json: null }) : null
+  `, values)
+  return rows[0] ? snapshotFromQueryRow(rows[0]) : null
 }

@@ -49,16 +49,19 @@ import {
   softDeleteDataRow,
 } from './mutations'
 import { listDataRowIdSlugs, listSoftDeletedDataRowIds } from './read'
+import { getDefaultLocale } from '../../localization'
 import { notifyRowWrite, serializeCollabAwareWrite } from '../../rowWriteEvents'
 
 export interface DataRowWrite {
   id: string
+  localeId?: string
   cells: Record<string, unknown>
   slug: string
 }
 
 export interface ApplyDataRowChangesInput {
   tableId: string
+  localeId?: string
   /** Rows to create/update, with their final slugs. */
   writes: DataRowWrite[]
   /** Row ids to soft-delete. Unknown / already-deleted ids are no-ops. */
@@ -89,11 +92,11 @@ async function stampDataRowSeq(db: DbClient, rowId: string, seq: number): Promis
  */
 export async function applyDataRowChangesInTx(
   tx: DbClient,
-  { tableId, writes, deleteIds, actorUserId, seq }: ApplyDataRowChangesInput,
+  { tableId, localeId, writes, deleteIds, actorUserId, seq }: ApplyDataRowChangesInput,
 ): Promise<ApplyDataRowChangesResult> {
   let deletedPublished = false
 
-  const existing = await listDataRowIdSlugs(tx, tableId)
+  const existing = await listDataRowIdSlugs(tx, tableId, localeId)
   const existingSlugById = new Map(existing.map((r) => [r.id, r.slug]))
   const softDeletedIds = new Set(await listSoftDeletedDataRowIds(tx, tableId))
 
@@ -120,9 +123,9 @@ export async function applyDataRowChangesInTx(
     const storedSlug = existingSlugById.get(write.id)
     if (storedSlug === undefined) continue // created or revived below
     if (storedSlug === write.slug) {
-      await updateDataRowDraftCells(tx, write.id, { cells: write.cells, slug: write.slug }, actorUserId)
+      await updateDataRowDraftCells(tx, write.id, { cells: write.cells, slug: write.slug, localeId: write.localeId ?? localeId }, actorUserId)
     } else {
-      await updateDataRowDraftCells(tx, write.id, { cells: write.cells, slug: '' }, actorUserId)
+      await updateDataRowDraftCells(tx, write.id, { cells: write.cells, slug: '', localeId: write.localeId ?? localeId }, actorUserId)
       parked.push(write)
     }
     await stampDataRowSeq(tx, write.id, seq)
@@ -130,12 +133,12 @@ export async function applyDataRowChangesInTx(
   for (const write of writes) {
     if (existingSlugById.has(write.id)) continue
     if (softDeletedIds.has(write.id)) {
-      await resurrectDataRow(tx, write.id, { cells: write.cells, slug: '' }, actorUserId)
+      await resurrectDataRow(tx, write.id, { cells: write.cells, slug: '', localeId: write.localeId ?? localeId }, actorUserId)
       parked.push(write)
     } else {
       await createDataRow(
         tx,
-        { id: write.id, tableId, cells: write.cells, slug: write.slug },
+        { id: write.id, tableId, cells: write.cells, slug: write.slug, localeId: write.localeId ?? localeId },
         actorUserId,
         null,
         // In-transaction: the caller notifies row-write listeners post-commit
@@ -148,7 +151,7 @@ export async function applyDataRowChangesInTx(
 
   // 3. Final slugs for the parked rows — every old slug is free by now.
   for (const write of parked) {
-    await updateDataRowSlug(tx, write.id, write.slug)
+    await updateDataRowSlug(tx, write.id, write.slug, write.localeId ?? localeId)
   }
 
   return { deletedPublished }
@@ -169,10 +172,13 @@ export async function applyDataRowChanges(
       result = await applyDataRowChangesInTx(tx, input)
     })
     if (input.writes.length > 0) {
-      notifyRowWrite({
+      const defaultLocale = await getDefaultLocale(db)
+      for (const write of input.writes) notifyRowWrite({
         tableId: input.tableId,
-        rowIds: input.writes.map((write) => write.id),
+        rowIds: [write.id],
         kind: 'update',
+        localeId: write.localeId ?? input.localeId ?? defaultLocale.id,
+        sharedChanged: true,
       })
     }
     if (input.deleteIds.size > 0) {

@@ -1,0 +1,9 @@
+.section { display: flex; flex-direction: column; gap: 16px; }
+.description { color: var(--text-muted); font-size: var(--text-s); line-height: 1.5; margin: 0; }
+.form { background: var(--bg-surface-2); border-radius: 16px; padding: 16px; display: flex; flex-direction: column; gap: 16px; }
+.heading { margin: 0; font-size: var(--text-m); color: var(--text); }
+.fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.field { display: flex; flex-direction: column; gap: 6px; font-size: var(--text-s); }
+.availability { display: flex; align-items: center; justify-content: space-between; gap: 16px; font-size: var(--text-s); }
+.actions { display: flex; gap: 8px; }
+@media (max-width: 640px) { .fields { grid-template-columns: 1fr; } }

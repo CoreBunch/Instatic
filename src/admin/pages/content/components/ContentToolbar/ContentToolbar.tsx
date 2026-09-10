@@ -27,6 +27,7 @@ interface ContentToolbarProps {
   canPublish: boolean
   onSaveDraft: () => void
   onPublish: () => void
+  onTranslations: () => void
   onSchedule: (entry: DataRow) => void
 }
 
@@ -163,6 +164,7 @@ export function ContentToolbar({
   onSaveDraft,
   onPublish,
   onSchedule,
+  onTranslations,
 }: ContentToolbarProps) {
   const entryLabel = (selectedCollection?.singularLabel ?? 'entry').toLowerCase()
   // Destructure the derived view state so the JSX below keeps reading like
@@ -177,6 +179,15 @@ export function ContentToolbar({
   const [scheduleDialogOpen, setScheduleDialogOpen] = useState(false)
 
   const menuItems: PublishActionMenuItem[] = [
+    ...(isCleanPublished ? [{
+      id: 'republish',
+      label: `Republish ${entryLabel}`,
+      icon: SendSolidIcon,
+      disabled: !canPublish || isSaving || isPublishing,
+      onSelect: onPublish,
+    }] : []),
+    { id: 'translations', label: 'Languages and publication…', icon: ExternalLinkSolidIcon,
+      disabled: !selectedEntry || isSaving || isPublishing, onSelect: onTranslations },
     {
       id: 'save-draft',
       label: 'Save draft',
@@ -229,6 +240,7 @@ export function ContentToolbar({
           open={scheduleDialogOpen}
           onClose={() => setScheduleDialogOpen(false)}
           rowId={selectedEntry.id}
+          localeId={selectedEntry.localeId}
           currentScheduledAt={selectedEntry.scheduledPublishAt}
           entityLabel={entryLabel}
           onScheduled={onSchedule}

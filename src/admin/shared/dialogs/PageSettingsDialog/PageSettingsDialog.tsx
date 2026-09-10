@@ -8,12 +8,14 @@ import {
 } from '@core/page-tree'
 import { Button } from '@ui/components/Button'
 import { Dialog } from '@ui/components/Dialog'
-import { Input } from '@ui/components/Input'
+import { Input, Textarea } from '@ui/components/Input'
 import dialogStyles from '../SiteCreateDialog/SiteCreateDialog.module.css'
 
 export interface PageSettingsPayload {
   title: string
   slug: string
+  seoTitle: string
+  seoDescription: string
 }
 
 interface PageSettingsDialogProps {
@@ -39,6 +41,8 @@ export function PageSettingsDialog({
 }: PageSettingsDialogProps) {
   const [title, setTitle] = useState(page.title)
   const [slug, setSlug] = useState(page.slug)
+  const [seoTitle, setSeoTitle] = useState(page.seoTitle ?? '')
+  const [seoDescription, setSeoDescription] = useState(page.seoDescription ?? '')
   const isHome = isHomePage(page)
   const inputRef = useRef<HTMLInputElement>(null)
   const titleInputId = useId()
@@ -59,7 +63,7 @@ export function PageSettingsDialog({
   function handleSubmit(event: FormEvent) {
     event.preventDefault()
     if (saveDisabled) return
-    onSave({ title: trimmedTitle, slug: isHome ? page.slug : normalizedSlug })
+    onSave({ title: trimmedTitle, slug: isHome ? page.slug : normalizedSlug, seoTitle, seoDescription })
   }
 
   return (
@@ -113,10 +117,20 @@ export function PageSettingsDialog({
             invalid={Boolean(slugValidation)}
           />
           {isHome ? (
-            <p className={dialogStyles.label}>The homepage is always served at &ldquo;/&rdquo;.</p>
+            <p className={dialogStyles.label}>The homepage uses this language’s root URL.</p>
           ) : slugValidation ? (
             <p role="alert" className={dialogStyles.errorText}>{slugValidation}</p>
           ) : null}
+        </div>
+        <div className={dialogStyles.field}>
+          <label htmlFor={`${titleInputId}-seo`} className={dialogStyles.label}>SEO title</label>
+          <Input id={`${titleInputId}-seo`} value={seoTitle} placeholder={title}
+            onChange={(event) => setSeoTitle(event.target.value)} />
+        </div>
+        <div className={dialogStyles.field}>
+          <label htmlFor={`${titleInputId}-description`} className={dialogStyles.label}>SEO description</label>
+          <Textarea id={`${titleInputId}-description`} value={seoDescription} rows={3}
+            onChange={(event) => setSeoDescription(event.target.value)} />
         </div>
       </form>
     </Dialog>

@@ -17,7 +17,10 @@ import type { DbClient } from '../../../db/client'
 import type { AuditAction } from '../../../repositories/audit'
 import { isoDateOrNull } from '@core/utils/isoDate'
 import { computeGravatarHash } from '../../../repositories/users'
-import { buildRowPath } from './shared'
+import { draftContentPath } from './shared'
+import { getDataRowMany, listDataTables } from '../../../repositories/data'
+import { getDefaultLocale, listLocales, listTableLocalizations } from '../../../repositories/localization'
+import type { DataRow } from '@core/data/schemas'
 import type { RecentActivityActor, RecentActivityEntry, RecentActivityStats } from './types'
 
 const WIDGET_LIMIT = 10
@@ -77,10 +80,10 @@ export async function readRecentActivity(db: DbClient): Promise<RecentActivitySt
   `
 
   const visible = rows.filter((r) => !isDashboardActivityNoise(r.action)).slice(0, WIDGET_LIMIT)
-  const routeBaseById = await loadRouteBases(db, visible)
+  const contentTargets = await loadContentTargets(db, visible)
 
   return {
-    rows: visible.map((r): RecentActivityEntry => projectActivityRow(r, routeBaseById)),
+    rows: visible.map((r): RecentActivityEntry => projectActivityRow(r, contentTargets)),
   }
 }
 
@@ -94,40 +97,41 @@ function isDashboardActivityNoise(action: AuditAction): boolean {
   return action.startsWith('login.') || action === 'logout'
 }
 
-/**
- * Look up the route_base for every data.* event in one pass so we can
- * build "/blog/launching-…" paths without an N+1. Returns a map keyed
- * by table id; missing entries fall through to {@link buildRowPath}'s
- * `/${tableId}/` fallback.
- */
-async function loadRouteBases(
-  db: DbClient,
-  visible: readonly ActivityRow[],
-): Promise<Map<string, string | null>> {
-  const tableIds = new Set<string>()
-  for (const r of visible) {
-    if (r.action.startsWith('data.row.') || r.action === 'data.author.assign') {
-      const meta = metadataAsRecord(r.metadata_json)
-      const tableId = readMetadataString(meta, 'tableId')
-      if (tableId) tableIds.add(tableId)
-    }
+/** Resolve each event in its authored language; old events without a locale use the source language. */
+async function loadContentTargets(db: DbClient, visible: readonly ActivityRow[]): Promise<Map<string, { code: string | null; text: string | null }>> {
+  const contentEvents = visible.filter((row) => row.action.startsWith('data.row.') || row.action === 'data.author.assign' || row.action.startsWith('translation.'))
+  const targets = new Map<string, { code: string | null; text: string | null }>()
+  if (contentEvents.length === 0) return targets
+  const [source, locales, tables, paths] = await Promise.all([getDefaultLocale(db), listLocales(db), listDataTables(db), listTableLocalizations(db)])
+  const projected = new Map<string, DataRow>()
+  await Promise.all(locales.map(async (locale) => {
+    const ids = [...new Set(contentEvents.filter((row) => (readMetadataString(metadataAsRecord(row.metadata_json), 'localeId') ?? source.id) === locale.id).flatMap((row) => row.target_id ? [row.target_id] : []))]
+    for (const row of await getDataRowMany(db, ids, locale.id)) projected.set(`${row.id}:${locale.id}`, row)
+  }))
+  for (const event of contentEvents) {
+    const metadata = metadataAsRecord(event.metadata_json)
+    const localeId = readMetadataString(metadata, 'localeId') ?? source.id
+    const row = projected.get(`${event.target_id}:${localeId}`)
+    const locale = locales.find((entry) => entry.id === localeId)
+    const tableId = row?.tableId ?? readMetadataString(metadata, 'tableId')
+    const table = tables.find((entry) => entry.id === tableId)
+    const title = row && table ? String(row.cells[table.primaryFieldId] ?? row.slug) : readMetadataString(metadata, 'title')
+    const slug = row?.slug ?? readMetadataString(metadata, 'slug')
+    const routeBase = paths.find((entry) => entry.tableId === tableId && entry.localeId === localeId)?.routeBase
+      ?? paths.find((entry) => entry.tableId === tableId && entry.localeId === source.id)?.routeBase
+    const path = event.action === 'data.row.publish' && row?.publicPath ? row.publicPath
+      : locale && table && slug !== null ? draftContentPath(locale, { slug }, table, routeBase) : null
+    targets.set(event.id, { code: path, text: path ? null : title ?? null })
   }
-  const routeBaseById = new Map<string, string | null>()
-  for (const id of tableIds) {
-    const { rows } = await db<{ route_base: string | null }>`
-      select route_base from data_tables where id = ${id}
-    `
-    routeBaseById.set(id, rows[0]?.route_base ?? null)
-  }
-  return routeBaseById
+  return targets
 }
 
 function projectActivityRow(
   row: ActivityRow,
-  routeBaseById: Map<string, string | null>,
+  contentTargets: Map<string, { code: string | null; text: string | null }>,
 ): RecentActivityEntry {
   const metadata = metadataAsRecord(row.metadata_json)
-  const target = resolveActivityTarget(row.action, row.target_id, metadata, routeBaseById, {
+  const target = contentTargets.get(row.id) ?? resolveActivityTarget(row.action, row.target_id, metadata, {
     targetUserLabel: userDisplayLabel(row.target_user_display_name, row.target_user_email),
   })
 
@@ -187,20 +191,8 @@ function resolveActivityTarget(
   action: AuditAction,
   targetId: string | null,
   metadata: Record<string, unknown>,
-  routeBaseById: Map<string, string | null>,
   context: { targetUserLabel: string | null },
 ): { code: string | null; text: string | null } {
-  // Data-row events: render a code-styled path so the row reads
-  // "edited /blog/launching-instatic".
-  if (action.startsWith('data.row.') || action === 'data.author.assign') {
-    const tableId = readMetadataString(metadata, 'tableId')
-    const slug = readMetadataString(metadata, 'slug')
-    if (tableId && slug !== null) {
-      return { code: buildRowPath(routeBaseById.get(tableId) ?? null, tableId, slug ?? ''), text: null }
-    }
-    return { code: null, text: null }
-  }
-
   // Data-table events: target_id is the collection id, metadata.name
   // is the human label. Prefer the human label when present.
   if (action.startsWith('data.table.')) {

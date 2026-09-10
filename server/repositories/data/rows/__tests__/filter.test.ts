@@ -4,6 +4,7 @@ import { sqliteMigrations } from '../../../../db/migrations-sqlite'
 import { runMigrations } from '../../../../db/runMigrations'
 import type { DbClient } from '../../../../db/client'
 import { listDataRowsWithFilter } from '../filter'
+import { seedLocalizedVariant } from './fixtures'
 
 /**
  * Wrap a DbClient so every `db.unsafe()` call is counted. The hydrated SELECT
@@ -54,6 +55,7 @@ async function seedRow(db: DbClient, row: SeedRow): Promise<void> {
       ${row.deleted ? '2024-12-31T00:00:00.000Z' : null}
     )
   `
+  await seedLocalizedVariant(db, { rowId: row.id, cells: { title: row.title, slug: row.id }, slug: row.id, status: row.status, updatedAt: row.updatedAt })
 }
 
 async function freshDb(): Promise<DbClient> {
@@ -141,10 +143,10 @@ describe('listDataRowsWithFilter', () => {
     const bigResult = await listDataRowsWithFilter(big.db, 'posts', { limit: 500 })
     expect(bigResult.rows).toHaveLength(50)
 
-    // Two queries total: one hydrated data page + one count. Crucially the
-    // count is identical for 4 rows and 50 rows — no per-row hydration.
-    expect(small.counts.unsafe).toBe(2)
-    expect(big.counts.unsafe).toBe(2)
+    // Hydration, locale variants, live URL snapshots and count are batched;
+    // the number of queries must stay bounded as the result grows.
+    expect(small.counts.unsafe).toBeLessThanOrEqual(4)
+    expect(big.counts.unsafe).toBeLessThanOrEqual(4)
     expect(big.counts.unsafe).toBe(small.counts.unsafe)
   })
 })

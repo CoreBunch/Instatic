@@ -9,7 +9,7 @@ The published output has **no framework runtime**, **no client-side hydration of
 ## TL;DR
 
 - Entry point: `publishPage(page, site, registry, options?)` in `src/core/publisher/render.ts`. Returns `{ filename, html, jsModuleIds }`, where `html` is the full document string and `jsModuleIds` are per-page module-JS candidates for the server injection pass.
-- Recursion: `renderNode(nodeId, config, acc)` in `renderNode.ts`. Bottom-up walk. Two specialized renderers hook in for `base.visual-component-ref` and `base.loop`.
+- Recursion: `renderNode(nodeId, config, acc)` in `renderNode.ts`. Bottom-up walk. Specialized renderers handle Visual Components, loops, outlets and the language switcher.
 - Hidden nodes (`node.hidden`) are pruned at the top of `renderNode`, before unknown-module comments, dynamic holes, specialized renderers, standard rendering, or CSS collection.
 - Per-node flow: render children → resolve effective + dynamic props → `escapeProps` → call `module.render(props, renderedChildren)` → collect deduped CSS → inject author class names.
 - CSS is deduped by `moduleId` via `CssCollector` (~60–80% size reduction on typical pages).
@@ -44,7 +44,7 @@ src/core/publisher/
 └── utils.ts                        — escapeHtml, isSafeUrl, safeUrl (re-exported from @core/html-sanitize); sanitiseCssValue (from @core/css-sanitize)
 
 server/publish/
-├── publicRouter.ts                 — gateway: Layer A disk fast-path → Layer B LRU → live resolver
+├── publicRouter.ts                 — gateway: live language inventory → Layer A disk → Layer B LRU → frozen context
 ├── staticArtefact.ts               — two-slot pointer-file swap + read/write/purge artefacts (Layer A); all URL-derived paths are validated by `resolveArtefactPath` (URL-decode + `..`-rejection + containment check after `path.join`)
 ├── renderCache.ts                  — in-memory LRU (Layer B); reads publishVersion from publishState
 ├── publishState.ts                 — publishVersion (bump/get) + withPublishLock + createVersionedSingleFlight
@@ -57,7 +57,13 @@ server/publish/
 ├── renderTreeWalk.ts               — walkRenderTree: visits every node that contributes to a rendered page (page nodes + VC definition trees, cycle-guarded); single source of truth for loop-prefetch and media-prefetch
 ├── mediaPrefetch.ts, loopPrefetch.ts — pre-warm caches needed by the renderer
 ├── republish.ts                    — bulk re-publish on site-level changes
-├── publishScheduler.ts             — scheduled publish jobs
+├── publishScheduler.ts             — scheduled language publications
+├── schedulePublication.ts          — capture content, public path and design dependencies for a schedule
+├── publishedRoutes.ts              — authoritative live route inventory, cached per DB + publish version
+├── publishedRouteContext.ts        — hydrate pinned releases and project live navigation
+├── rebakePublishedRoutes.ts        — rebuild every live route after publication or retraction
+├── localizedSeo.ts                 — canonical, reciprocal hreflang and live sitemap
+├── publishedCssFallback.ts         — recreate CSS from exact composed live release contexts
 ├── runtime/                        — per-site bun install workspace serving
 └── loopRuntime.ts                  — loop runtime asset
 ```
@@ -250,9 +256,10 @@ published-snapshot renderer uses `buildPublishedSiteCssBundle`, which memoises
 the three page-invariant files by `publishVersion` + site object. The all-pages
 walk then runs **once per published snapshot object** instead of once per render,
 so a Layer-B cache miss or a background republish no longer repays it per page.
-The site-object guard matters during a full publish: HTML is baked before
-`bumpPublishVersion()`, so a new snapshot at the still-current version must not
-reuse CSS from the previous published site. `userStyles` is still rebuilt per
+Different languages and independently published content may retain different
+immutable releases at the same process publish version. The route-context memo
+shares a projected site object per release; the CSS cache keeps their class and
+framework output separate. `userStyles` is still rebuilt per
 call (page-scoped). `bumpPublishVersion()` invalidates the memo, so a content
 change can never serve stale framework/style CSS. Callers that pass draft or
 arbitrary sites at the live version (preview, AI render, the CSS-route fallback)
@@ -290,28 +297,31 @@ Four bundles per page (each hashed independently): `reset`, `framework`,
 
 ### Static publishing — everything baked to disk
 
-A full publish (`publishDraftSite`) bakes **every page** plus all of its assets
-into the publish slot:
+Every publication rebuilds all currently live routes into the inactive slot.
+Each route uses its own immutable content version and pinned site release.
+Offlining a page, item or language invalidates the complete previous generation;
+rebaking updates lists, navigation, language-switcher links and SEO on the
+remaining pages as well as removing the retracted route.
 
-- **HTML** — fully-static pages bake to a complete document; pages with dynamic
-  nodes bake their static **shell** with `<instatic-hole>` placeholders (the hole
-  runtime hydrates each fragment from `/_instatic/hole/`). Either way the HTML is on
-  disk. A page that fails to render (e.g. a VC ref cycle) is skipped and falls
-  through to the live renderer.
-- **CSS bundles** — `/_instatic/css/<bundle>-<hash>.css`, for every page.
-- **Runtime JS** — `/_instatic/assets/<versionId>/…`, for every page.
+- **HTML** is either a complete document or a static shell with dynamic holes.
+- **CSS bundles** include every linked, content-addressed stylesheet.
+- **Runtime JS** includes the rendering page/template's manifest and its chunks.
+- **404 documents** have internal language-specific storage keys, so an authored
+  `/404` page cannot replace an unrelated missing-page response. Conventional
+  locale `/404.html` files are also written when no actual route owns that URL.
+- **Sitemap** contains only live page and CMS item variants with public routes.
 
-The visitor router serves all of these straight off disk (`readArtefact` /
-`readStaticAsset`) — no DB round-trip, no per-request rebuild. The slot is a
-self-contained static export: **a published page never hits the server to
-generate its HTML, CSS, or JS. The only request that touches the DB is the
-`/_instatic/hole/` fragment fetch** for a page's dynamic islands.
+The request resolves the cached live inventory **before** reading HTML from
+disk. The first request at a publish version loads the inventory; subsequent
+validated disk hits require no snapshot hydration or additional SQL. A version
+bump disables the old complete slot immediately. Only a successful slot swap
+marks the replacement current. If the bake fails, live rendering remains
+available and old navigation cannot leak retracted content. Startup rebakes
+under the publication lock before trusting an existing slot again.
 
-Hole shells are stamped with the *next* publish version (`getPublishVersion() +
-1`) at bake time, because `bumpPublishVersion()` runs as the synchronous
-statement right after the slot swap — so a baked `<instatic-hole data-instatic-version>`
-always matches what the hole endpoint expects (a mismatch would make the
-endpoint refuse to hydrate).
+HTML and hole placeholders use the committed process publish version. The
+version is bumped immediately after the DB commit, before the rebake starts;
+there is no interval in which newly committed content can reuse the old cache.
 
 The exclusive namespaces `/_instatic/css/*` (`serveSiteCss`) and `/_instatic/assets/*`
 (`tryServeRuntimeAsset`) are served **disk-first**, falling back to a rebuild
@@ -371,7 +381,7 @@ Because `serializeCsp` sorts, the same plugins + adapters always emit a **byte-i
 
 ## Module JS channel
 
-`render()` may return `js` next to `html`/`css` (`RenderOutput`, `src/core/module-engine/types.ts`). The walker dedupes it per moduleId into `RenderAccumulators.jsMap`; `publishPage` reports per-page candidates (`jsModuleIds` = render-emitted ids ∪ every moduleId inside the page's hole subtrees via `collectHoleSubtreeModuleIds`); the server intersects candidates with the site-wide map (`buildPublishedSiteModuleJsMap`) and injects one external `<script defer>` per module before `</body>`. JS is never inlined — no `</script>` escaping anywhere. Pages with no module JS ship zero script tags and keep `script-src 'none'`. The CMS form runtime is the first consumer: `base.form` emits it when `mode === 'cms'` (`src/modules/base/forms/formRuntimeJs.ts`); token stamping stays server-side (`stampFormPageTokens`, applied to baked pages and hole fragments).
+`render()` may return `js` next to `html`/`css` (`RenderOutput`, `src/core/module-engine/types.ts`). The walker dedupes it per moduleId into `RenderAccumulators.jsMap`; `publishPage` reports per-page candidates (`jsModuleIds` = render-emitted ids ∪ every moduleId inside the page's hole subtrees via `collectHoleSubtreeModuleIds`); the server intersects candidates with the site-wide map (`buildPublishedSiteModuleJsMap`) and injects one external `<script defer>` per module before `</body>`. JS is never inlined — no `</script>` escaping anywhere. Pages with no module JS ship zero script tags and keep `script-src 'none'`. The CMS form runtime is the first consumer: `base.form` emits it when `mode === 'cms'` (`src/modules/base/forms/formRuntimeJs.ts`); token stamping stays server-side (`stampFormPageTokens`, applied to baked pages, hole fragments and infinite-loop fragments).
 
 ---
 
@@ -381,7 +391,7 @@ Because `serializeCsp` sorts, the same plugins + adapters always emit a **byte-i
 
 | File                                            | Role                                                                |
 |-------------------------------------------------|---------------------------------------------------------------------|
-| `server/publish/publicRouter.ts`                | Gateway: Layer A disk fast-path → Layer B LRU → live `resolvePublicRoute` + `renderPublicResolution`. |
+| `server/publish/publicRouter.ts`                | Gateway: authoritative language inventory → current disk generation → LRU → immutable route context. |
 | `server/publish/staticArtefact.ts`              | Two-slot pointer-file swap (`swapSlot`), per-file atomic writes (`writeArtefact`, `updateArtefactInPlace`), and reads (`readArtefact`). Layer A. |
 | `server/publish/renderCache.ts`                 | In-memory LRU keyed by `(urlPath, canonicalQuery)`, entries versioned. `getOrRender` (single-flight). Reads the version from `publishState`; version captured at render start — a publish landing mid-render discards the result rather than caching stale HTML. Layer B. |
 | `server/publish/publishState.ts`                | Publish-time process state: `publishVersion` (`bumpPublishVersion`/`getPublishVersion`), `withPublishLock` (ISS-038 publish serializer), and `createVersionedSingleFlight` — the generalized version-keyed single-flight memo the hole endpoint reuses. Repositories import the version + lock from here (not from the cache). |
@@ -402,7 +412,7 @@ Because `serializeCsp` sorts, the same plugins + adapters always emit a **byte-i
 | `server/publish/runtime/packageServer.ts`       | Serve per-site `bun install` workspace under `/_instatic/runtime/cache/`. |
 | `server/publish/loopRuntime.ts`                 | The loop runtime asset (small JS shim used by certain loop variants).|
 | `server/handlers/cms/hole.ts`                   | `GET /_instatic/hole-runtime.js` (serves `HOLE_RUNTIME_JS`) and `GET /_instatic/hole/<nodeId>?v=<publishVersion>&u=<page-url>` (renders a node subtree at request time for Layer C islands). |
-| `server/handlers/cms/moduleJs.ts`               | `GET /_instatic/module-js/<moduleId>.js?v=<publishVersion>` — serves a module's render-emitted JS from the memoised site map; validates the untrusted moduleId segment; 404 unknown; `text/javascript`; `cache-control: public, max-age=3600`. |
+| `server/handlers/cms/moduleJs.ts`               | `GET /_instatic/module-js/<moduleId>.js?v=<publishVersion>&u=<page-url>` — serves a module's render-emitted JS from the memoised site map; validates the untrusted moduleId segment; 404 unknown; `text/javascript`; `cache-control: public, max-age=3600`. |
 | `server/richtextSanitizer.ts`                   | Installs the server's jsdom-backed DOMPurify runtime without global DOM objects. |
 
 ### `publishedHtmlPipeline.ts` — the plugin filter point
@@ -418,7 +428,7 @@ applyPublishedHtmlPipeline(renderedOutput, db)
     ├─→ Emit `publish.before` hook (plugins can prepare state)
     ├─→ Splice in declarative tags from plugin manifests' `frontend.assets[]`
     ├─→ Stamp form page tokens onto CMS-native <form> tags (`stampFormPageTokens`)
-    ├─→ Inject per-module published JS: one `<script src="/_instatic/module-js/<id>.js?v=N" defer data-instatic-module-js="<id>">` per moduleId in the page's injection set (render-emitted ∪ hole-subtree ∩ site jsMap), sorted; CSP script-src → 'self' iff ≥ 1 tag
+    ├─→ Inject per-module published JS: one `<script src="/_instatic/module-js/<id>.js?v=N&amp;u=<page-url>" defer data-instatic-module-js="<id>">` per moduleId in the page's injection set (render-emitted ∪ hole-subtree ∩ site jsMap), sorted; CSP script-src → 'self' iff ≥ 1 tag
     ├─→ Run `publish.html` filters in registration order (plugins transform the HTML string)
     ├─→ Emit `publish.after` hook
     └─→ Return final HTML
@@ -429,108 +439,133 @@ Plugins shouldn't need to know about the publisher internals — they get the HT
 
 ---
 
-## Publishing a single page
+## Language publications and visibility
+
+The logical content identity is `data_rows.id`. Each `(row_id, locale_id)` in
+`data_row_localizations` has its own draft overrides, online/offline state,
+active immutable version and optional schedule. `data_row_versions` stores the
+materialized cells, frozen slug, `public_path`, locale and site-snapshot ID.
+Neither the logical row's old global status nor a current draft slug determines
+public visibility.
+
+A variant is live only when its language is enabled, its logical row and
+collection exist, its availability is online, and its active version matches
+**both** its row ID and locale ID. A translated variant may remain online while
+the source language is offline. Draft inheritance materializes missing source
+values during publication; routing never falls back to an unpublished source
+page or item.
+
+`@core/localization-routing` owns path normalization and inventory collision
+checks. The primary language uses the root; secondary languages use configured
+prefixes. Homepages map `index` to `/` or the language prefix; a CMS item named
+`index` retains its slug. Collection route bases can be translated. Published
+paths stay frozen after draft slug, prefix or collection-path edits, until an
+intentional publication replaces them. Changed paths create redirects to the
+same logical item and language, and redirects only resolve to live targets.
+Configured language namespaces and server namespaces are reserved; equivalent
+Unicode/percent-encoded paths share one collision key.
+Language codes in live releases are frozen too. If a draft language rename
+frees a code for another language, publishing rejects duplicate live codes for
+the same logical content. Republish the renamed variant first, or select both
+variants together, to keep `hreflang` alternatives unambiguous.
+Snapshots created before localization retain their stored `settings.language`;
+the reader derives the original text direction without modifying those snapshots.
+
+`POST /admin/api/cms/publish` accepts explicit `{ variants: [{ rowId, localeId }] }`.
+`publishDraftSite` prepares all selected languages and their design dependencies,
+compiles runtime assets and checks the prospective inventory before one database
+transaction activates any selected versions. With no selection it refreshes
+only already-online variants. Technical template pages become frozen release
+dependencies without acquiring public URLs. The selection dialog also offers
+templates independently. Only selected templates change their live pointer or
+availability; other templates are captured as immutable design dependencies.
+CMS item publication pins a
+same-language published template release. Shared draft structure and sparse
+localization context are resolved before snapshotting; published documents
+contain materialized content and no editor localization context.
 
 ```text
-POST /admin/api/cms/publish/site
-    │
-    ▼
-publishDraftSite (server/publish/publishSite.ts)
-    │
-    ├─→ load draft site shell + all page-table rows + all VC rows
-    ├─→ build runtime scripts + runtime package importmap
-    ├─→ build EVERYTHING expensive first, outside any transaction — dependency
-    │     cache (`bun install`), importmap, per-page esbuild runtime builds.
-    │     The SQLite adapter serializes all transactions through one chain, so
-    │     this work inside the transaction would stall every concurrent write.
-    ├─→ short transaction: write the SiteDocument ONCE into site_snapshots
-    │     (content hash stamped for the publish-status check); each page's
-    │     data_row_versions row references it via site_snapshot_id + carries
-    │     its runtime_assets_json
-    ├─→ flip data_rows.status = 'published', set active_version_id
-    │
-    ├─→ Layer A bake — the 404 page (when a notFound template exists):
-    │     renderPublishedNotFound (notFound template wrapped in the everywhere
-    │     chain) → same pipeline → writeArtefact(<inactiveSlot>, '/404')
-    │     (`404.html` — the static-hosting convention, so Netlify/GH Pages
-    │      pick it up in a raw static export; baked first so a literal page
-    │      with slug `404` would overwrite it and stay authoritative)
-    │
-    ├─→ Layer A bake — every page (complete doc, or static shell with <instatic-hole>):
-    │     ├── renderPublishedSnapshot(snapshot, { db, url, publishVersion }) → HTML
-    │     ├── applyPublishedHtmlPipeline(rendered, db) → final HTML
-    │     │   (plugin filters + frontend asset injection baked in)
-    │     └── writeArtefact(<inactiveSlot>, urlPath, html)
-    │
-    ├─→ Layer A bake — every published data-row route (bakeDataRows.ts):
-    │     entry-template render through the same pipeline → writeArtefact
-    │     (without this, the slot swap would strand every row artefact)
-    │
-    ├─→ Layer A bake — CSS bundles + runtime JS → writeStaticAsset(<slot>)
-    │     (page-invariant CSS trio computed once per publish via the
-    │      version-keyed memo in siteCssBundle.ts; userStyles per page)
-    │         (atomic per-file: tmp + rename; per-page try/catch)
-    │
-    ├─→ swapSlot(uploadsDir, newActiveSlot)
-    │     uploads/published/current → flips atomically (rename of a pointer file
-    │     is a single-inode swap; in-flight readers keep fds into the OLD
-    │     slot until they close)
-    │
-    └─→ bumpPublishVersion() → Layer B LRU evicts lazily on next read
-
-— and on the visitor request side —
-
-GET /<slug>  OR  /<route-base>/<row-slug>
-    │
-    ▼
-tryServePublicRoute (server/router.ts)
-    │
-    └─→ server/publish/publicRouter.ts:renderPublicResolution
-          │
-          ├─→ canonicalRenderQuery(url.searchParams) → canonicalQuery
-          │     keeps only loop_<nodeId>_page params (sorted); everything else → ''
-          │     e.g. ?utm=foo → '' (junk collapses);  ?loop_x_page=2 → '?loop_x_page=2'
-          │
-          ├─→ Layer A disk fast-path (only if canonicalQuery === ''):
-          │     readArtefact(uploadsDir, url.pathname)
-          │     hit → stream HTML (~0.6–1.4 ms, no DB, no render, no filter)
-          │     (URLs with only junk params hit Layer A just like bare URLs)
-          │
-          ├─→ Layer B peek (warm fast-path): a version-matched cached 200 for
-          │     (urlPath, canonicalQuery) is served immediately — zero DB work.
-          │     Safe because every route retraction (unpublish, soft-delete,
-          │     table move) bumps publishVersion, evicting the whole cache.
-          │
-          ├─→ resolvePublicRoute(db, url) → page | row | redirect | not-found
-          │     page slug hit skipped when page.template.enabled === true (template pages
-          │     are never directly routable — falls through to row/redirect/not-found)
-          │     row resolutions read the site snapshot via the per-version memo
-          │     (publishedSnapshotCache.ts) — no per-request full-site parse
-          │     redirects → 301 (not cached)
-          │     not-found → null (router falls through: trySetupRedirect, then
-          │     tryServeNotFoundPage → renderNotFoundResponse serves the site's
-          │     404 page — baked `404.html` artefact first, else live render
-          │     through the LRU under the reserved `/404` key — with status 404;
-          │     no notFound template → the dispatcher's bare JSON 404)
-          │
-          └─→ Layer B in-memory LRU (miss path):
-                getOrRender({urlPath, queryString: canonicalQuery}, async () => {
-                  publishPage(page, site, registry, options) using snapshot bytes
-                  applyPublishedHtmlPipeline (plugin filters)
-                  return { body, headers, status: 200 }
-                })
-                hit → return cached body (~0.8 ms)
-                miss → factory runs once (single-flight on concurrent keys)
-                publishVersion bumped at publish → entries evict lazily on next read
-                version captured at factory start → mid-flight publish discards result (not cached)
+flush collaboration → publication lock
+  → assemble selected locale drafts and frozen dependencies
+  → compile runtime assets and validate all planned paths
+  → commit versions + locale active pointers in one transaction
+  → bump publishVersion (all old caches and disk generation become stale)
+  → rebake every live page/item from its own immutable release
+  → write assets, localized 404s and sitemap
+  → swap inactive slot and mark that exact generation current
 ```
 
-The visitor-facing artefacts are:
-1. **Disk files in the active slot** (`uploads/published/current/<route>.html`) — for fully-static routes. Final HTML, post-filter, frontend assets baked in. Rebuilt on each full publish.
-2. **In-memory LRU entries** — for dynamic routes (loops, request-dependent bindings). Filled lazily, evicted on every publish.
-3. **`<instatic-hole>` fragment responses** at `/_instatic/hole/<nodeId>?v=<publishVersion>&u=<page-url>` — for dynamic nodes inside otherwise-cacheable pages. Fetched lazily by the IntersectionObserver runtime; shared responses are cached in Layer B, while per-visitor holes bypass it.
+Status retraction changes one locale. Deleting a logical row retracts all its
+languages. Moving between collections retracts every variant and cancels its
+schedules because the collection schema and template context have changed; an
+explicit publication is required in the destination collection. The lock order
+for collaboration-aware mutations is collaboration write lane → publication
+lock → database transaction. Publishers flush collaboration before acquiring
+the publication lock. Never wait for the collaboration write lane while holding
+the publication lock, or acquire that lock inside an open database transaction.
 
-The published `SiteDocument` is stored once per publish in `site_snapshots` and referenced by `data_row_versions.site_snapshot_id`; the `PublishedPageSnapshot` reassembled from that join remains the canonical audit record — all three layers derive from it. At request time it is memoised per publish version (`server/publish/publishedSnapshotCache.ts`, shared by the public router's row resolution, the hole endpoint, and the loop endpoint), and `renderPublicResolution` serves a warm Layer B entry *before* any route resolution — a cache hit does zero DB work.
+Scheduling captures the materialized cells, slug, public path and the complete
+page design release (or the CMS item's already published template release).
+Later draft edits do not change the intended scheduled publication. A failed
+schedule cancels that pending operation while preserving an older online version.
+
+## Public request resolution
+
+```text
+request path
+  → live locale inventory (versioned, single-flight)
+  → frozen matching path, or live-target redirect
+  → current disk artefact when the canonical render query is empty
+  → version-matched LRU entry
+  → immutable route context + localized template chain
+  → publishPage + common publishedHtmlPipeline
+```
+
+Only `loop_<nodeId>_page` parameters contribute to the shared page-render query
+key. Unrelated query parameters share the normal static page. Retracting any
+variant bumps the process version, so disk, memory, inventory and context caches
+invalidate together. The projection of `site.pages`, internal page references
+and public page loops includes only live content; technical templates stay
+available solely for composition.
+
+Both fragment endpoints first resolve the originating public path in the same
+inventory. Holes require `u=<page-url>`; infinite loops require `pagePath`.
+They hydrate that route's locale and pinned release, follow its visible composed
+tree, and preserve the CMS entry frame through Visual Component instances.
+Missing/offline routes and hidden nodes cannot be reached by guessing an ID.
+Module-JS requests also carry `u` so their module map comes from the correct
+language release. Missing-page rendering uses the requested language's template;
+a disabled language prefix never falls through to the source-language 404.
+
+Public CMS form tokens and single-use challenges bind the logical route ID,
+language, immutable published version, canonical path and form ID. Challenge
+issuance and submission both verify that exact active inventory entry. Form
+policies come from the visible composed release, including instantiated Visual
+Components and slot content; hidden controls are omitted. Retraction or replacing
+the release invalidates old form links, while a translated form continues to
+work with the source language offline. Submission records keep the originating
+language. Draft previews and unaddressable technical templates issue no tokens.
+
+## Language navigation and SEO
+
+`base.language-switcher` is an ordinary styleable module with a specialized
+publisher renderer. Its links come from online alternatives of the current
+logical page or CMS item. Labels use configured language names or codes. An
+offline/missing translation contributes no guessed URL; authors can hide the
+current language and suppress the switcher when no other version is online.
+
+The document's `lang` and `dir` come from its frozen locale metadata. Page SEO
+fields and CMS SEO cells are localized independently. When `settings.publicOrigin`
+is configured, HTML receives an absolute self-canonical and reciprocal
+`hreflang` links for actual live alternatives. `x-default` exists only when the
+primary-language variant is online. `/sitemap.xml` uses the same inventory and
+excludes technical templates, offline items and disabled languages.
+
+Regression tests in `localizedPublication.test.ts`, `localizedRouteInventory.test.ts`,
+`localizedRoutes.test.ts` and `localizedSeo.test.ts` exercise real independent
+versions, retractions, frozen scheduled dependencies, translated paths, CSS
+release isolation, fragments, switchers and localized 404s. Older static/cache
+integration tests use real migrated SQLite fixtures rather than emulating SQL.
 
 ---
 

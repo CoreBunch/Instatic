@@ -27,6 +27,17 @@
 // ---------------------------------------------------------------------------
 
 let publishVersion = 0
+let artefactVersion = -1
+
+/** A version bump invalidates every baked list and navigation dependency. */
+export function arePublishedArtefactsCurrent(): boolean {
+  return artefactVersion === publishVersion
+}
+
+/** Call only after the complete matching slot has been written and swapped. */
+export function markPublishedArtefactsCurrent(version: number): void {
+  artefactVersion = version
+}
 
 /**
  * Increment the publish version. All version-keyed caches (the render-cache
@@ -177,6 +188,7 @@ export function createVersionedSingleFlight<T>(): VersionedSingleFlight<T> {
  */
 export function resetPublishStateForTests(): void {
   publishVersion = 0
+  artefactVersion = -1
   publishChain = Promise.resolve()
   for (const reset of versionedCacheResets) reset()
 }

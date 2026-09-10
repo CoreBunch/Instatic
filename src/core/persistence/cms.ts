@@ -1,4 +1,4 @@
-import { reconcileSiteExplorerOrganization, type SiteDocument, type SiteShell } from '@core/page-tree'
+import { reconcileSiteExplorerOrganization, type SiteDocument } from '@core/page-tree'
 import type {
   IPersistenceAdapter,
   SaveSiteOptions,
@@ -7,21 +7,10 @@ import type {
 } from './types'
 import { SaveConflictError, SaveConflictsEnvelopeSchema } from './saveConflict'
 import { parseJsonResponse } from '@core/utils/jsonValidate'
-import { assertOk, readEnvelope, type FetchLike } from '@core/http'
-import {
-  CmsSiteEnvelopeSchema,
-  CmsSiteDocumentSaveEnvelopeSchema,
-  CmsPagesEnvelopeSchema,
-  CmsComponentsEnvelopeSchema,
-  CmsLayoutsEnvelopeSchema,
-} from './responseSchemas'
+import { readEnvelope, type FetchLike } from '@core/http'
+import { CmsSiteDocumentEnvelopeSchema, CmsSiteDocumentSaveEnvelopeSchema } from './responseSchemas'
 import { validateSite, validatePages, validateVisualComponents } from './validate'
 import { validateSavedLayouts } from './validateLayouts'
-import { pageFromRow } from '@core/data/pageFromRow'
-import { visualComponentFromRow } from '@core/data/componentFromRow'
-import { savedLayoutFromRow } from '@core/data/layoutFromRow'
-import type { VisualComponent } from '@core/visualComponents'
-import type { SavedLayout } from '@core/layouts'
 
 const defaultFetch: FetchLike = (input, init) => globalThis.fetch(input, init)
 
@@ -56,7 +45,7 @@ export class CmsAdapter implements IPersistenceAdapter {
    */
   async saveSite(site: SiteDocument, opts: SaveSiteOptions = {}): Promise<SaveSiteResult> {
     // Extract shell (strip the row-backed collections from the full SiteDocument)
-    const { pages, visualComponents, layouts, ...shell } = site
+    const { pages, visualComponents, layouts, localeId, locales: _locales, localization: _localization, ...shell } = site
     const { dirty } = opts
     const incremental = dirty !== undefined && !dirty.all
 
@@ -80,6 +69,7 @@ export class CmsAdapter implements IPersistenceAdapter {
     const body = incremental
       ? {
           mode: 'incremental',
+          localeId,
           site: shell,
           changedPages: pages.filter((p) => dirty.pageIds.has(p.id)),
           deletedPageIds: [...dirty.deletedPageIds],
@@ -92,6 +82,7 @@ export class CmsAdapter implements IPersistenceAdapter {
         }
       : {
           mode: 'replace',
+          localeId,
           site: shell,
           changedPages: pages,
           deletedPageIds: [],
@@ -121,100 +112,24 @@ export class CmsAdapter implements IPersistenceAdapter {
     return { seq: saved.seq }
   }
 
-  /**
-   * Load the full site document:
-   *   1. GET /admin/api/cms/site — shell (validated by validateSite)
-   *   2. GET /admin/api/cms/pages — DataRow[] (converted via pageFromRow,
-   *      validated by validatePages with shell context)
-   *   3. GET /admin/api/cms/components — DataRow[] (converted via
-   *      visualComponentFromRow, validated by validateVisualComponents)
-   *   4. GET /admin/api/cms/layouts — DataRow[] (converted via
-   *      savedLayoutFromRow, validated by validateSavedLayouts)
-   *
-   * Returns undefined when any endpoint returns 404 (before setup).
-   *
-   * Alongside the document, returns the sync-seq bases (per-row + shell) the
-   * editor tracks for save conflict detection.
-   */
-  async loadSite(_id: string): Promise<SiteLoadResult | undefined> {
-    // Parallel fetch — all four are GETs with no dependency on each other
-    const [shellRes, pagesRes, componentsRes, layoutsRes] = await Promise.all([
-      this.fetchImpl(`${this.basePath}/site`, {
-        method: 'GET',
-        credentials: 'include',
-      }),
-      this.fetchImpl(`${this.basePath}/pages`, {
-        method: 'GET',
-        credentials: 'include',
-      }),
-      this.fetchImpl(`${this.basePath}/components`, {
-        method: 'GET',
-        credentials: 'include',
-      }),
-      this.fetchImpl(`${this.basePath}/layouts`, {
-        method: 'GET',
-        credentials: 'include',
-      }),
-    ])
-
-    if (
-      shellRes.status === 404 ||
-      pagesRes.status === 404 ||
-      componentsRes.status === 404 ||
-      layoutsRes.status === 404
-    ) return undefined
-    await assertOk(shellRes, `CMS shell load failed with ${shellRes.status}`)
-    await assertOk(pagesRes, `CMS pages load failed with ${pagesRes.status}`)
-    await assertOk(componentsRes, `CMS components load failed with ${componentsRes.status}`)
-    await assertOk(layoutsRes, `CMS layouts load failed with ${layoutsRes.status}`)
-
-    const shellBody = await parseJsonResponse(shellRes, CmsSiteEnvelopeSchema)
-    const pagesBody = await parseJsonResponse(pagesRes, CmsPagesEnvelopeSchema)
-    const componentsBody = await parseJsonResponse(componentsRes, CmsComponentsEnvelopeSchema)
-    const layoutsBody = await parseJsonResponse(layoutsRes, CmsLayoutsEnvelopeSchema)
-
-    if (!shellBody.site) return undefined
-
-    // Validate shell
-    const shell: SiteShell = validateSite(shellBody.site)
-
-    // Convert DataRow[] → VisualComponent[] → validate
-    const rawVCRows = componentsBody.rows ?? []
-    const rawVCs = rawVCRows.flatMap((row) => {
-      const vc = visualComponentFromRow(row)
-      return vc ? [vc] : []
+  /** Load one consistent authoring snapshot, including sparse translation contexts. */
+  async loadSite(_id: string, localeId?: string): Promise<SiteLoadResult | undefined> {
+    const query = localeId ? `?localeId=${encodeURIComponent(localeId)}` : ''
+    const response = await this.fetchImpl(`${this.basePath}/site-document${query}`, {
+      method: 'GET', credentials: 'include',
     })
-    const visualComponents: VisualComponent[] = validateVisualComponents(rawVCs)
-
-    // Convert DataRow[] → SavedLayout[] → validate
-    const rawLayouts = (layoutsBody.rows ?? []).flatMap((row) => {
-      const layout = savedLayoutFromRow(row)
-      return layout ? [layout] : []
-    })
-    const layouts: SavedLayout[] = validateSavedLayouts(rawLayouts)
-
-    // Convert DataRow[] → Page[] → validate (passes VCs for ref/slot checks)
-    const rawDataRows = pagesBody.rows ?? []
-    const rawPages = rawDataRows.map(pageFromRow)
-    // Load is tolerant: one corrupt page row must not brick the whole editor
-    // (ISS-017). Strip page VC-refs only against the ids genuinely in storage
-    // (rawVCs), so a VC the loader deduped/de-cycled away does not delete the
-    // page's authored slot content (ISS-016).
-    const pages = validatePages(shell, rawPages, visualComponents, {
-      tolerant: true,
-      storedVcIds: new Set(rawVCs.map((vc) => vc.id)),
-    })
-
-    const site: SiteDocument = { ...shell, pages, visualComponents, layouts }
-    site.explorer = reconcileSiteExplorerOrganization(site.explorer, site)
-
-    // Sync-seq bases: one entry per stored row (across all three
-    // collections — row ids are globally unique) plus the shell's seq.
-    const rowSeqs: Record<string, number> = {}
-    for (const row of [...rawDataRows, ...rawVCRows, ...(layoutsBody.rows ?? [])]) {
-      rowSeqs[row.id] = row.seq ?? 0
+    if (response.status === 404) return undefined
+    const body = await readEnvelope(response, CmsSiteDocumentEnvelopeSchema, 'CMS site load failed')
+    const shell = validateSite(body.site)
+    const visualComponents = validateVisualComponents(body.site.visualComponents)
+    const layouts = validateSavedLayouts(body.site.layouts)
+    const pages = validatePages(shell, body.site.pages, visualComponents, { tolerant: true })
+    const site: SiteDocument = {
+      ...shell, pages, visualComponents, layouts,
+      localeId: body.site.localeId, locales: body.site.locales, localization: body.site.localization,
     }
-    return { site, rowSeqs, shellSeq: shellBody.seq ?? 0 }
+    site.explorer = reconcileSiteExplorerOrganization(site.explorer, site)
+    return { site, rowSeqs: body.rowSeqs, shellSeq: body.shellSeq }
   }
 }
 

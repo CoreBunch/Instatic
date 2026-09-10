@@ -30,7 +30,10 @@ import { getPublishVersion } from '../../../publish/publishState'
 import { prefetchLoopData, publishedDataRowToLoopItem } from '../../../publish/loopPrefetch'
 import { prefetchMediaAssets } from '../../../publish/mediaPrefetch'
 import { registry } from '@core/module-engine'
-import { getLatestPublishedSiteSnapshot } from '../../../repositories/publish'
+import { getDraftSiteDocument, getLatestPublishedSiteSnapshot } from '../../../repositories/publish'
+import { getDefaultLocale, getTableLocalization } from '../../../repositories/localization'
+import { buildLocalizedPath } from '@core/localization-routing'
+import { requestLocale } from '../localeContext'
 import { getDataRow, getDataTable } from '../../../repositories/data'
 import { applyPublishedHtmlPipeline } from '../../../publish/publishedHtmlPipeline'
 import { badRequest, jsonResponse, readValidatedBody } from '../../../http'
@@ -65,7 +68,9 @@ export async function handleRowPreview(
   const user = await requireDataAccess(req, db)
   if (user instanceof Response) return user
 
-  const row = await getDataRow(db, params.id)
+  const locale = await requestLocale(req, db)
+  if (locale instanceof Response) return locale
+  const row = await getDataRow(db, params.id, locale.id)
   if (!row) return jsonResponse({ error: 'Row not found' }, { status: 404 })
 
   const table = await getDataTable(db, row.tableId)
@@ -84,15 +89,20 @@ export async function handleRowPreview(
     ...(body.cells ?? {}),
   }
 
-  const snapshot = await getLatestPublishedSiteSnapshot(db)
-  if (!snapshot) {
-    return jsonResponse({ error: 'Site has no published version yet' }, { status: 409 })
-  }
+  const [site, snapshot] = await Promise.all([
+    getDraftSiteDocument(db, { localeId: locale.id }),
+    getLatestPublishedSiteSnapshot(db, locale.id),
+  ])
+  if (!site) return jsonResponse({ error: 'Site draft not found' }, { status: 404 })
+  const primary = await getDefaultLocale(db)
+  const routeConfig = await getTableLocalization(db, table.id, locale.id)
+    ?? await getTableLocalization(db, table.id, primary.id)
+  const routeBase = routeConfig?.routeBase ?? table.routeBase
 
   // Resolve the full chain (everywhere layout + entry template) and merge it
   // into one tree, exactly like the live renderer, so the preview matches what
   // gets published.
-  const chain = resolveTemplateChain(snapshot.site, { kind: 'entry', tableSlug: table.slug })
+  const chain = resolveTemplateChain(site, { kind: 'entry', tableSlug: table.slug })
   if (chain.length === 0) {
     return jsonResponse({ error: 'No entry template found for this collection' }, { status: 404 })
   }
@@ -106,26 +116,26 @@ export async function handleRowPreview(
   // Build a synthetic PublishedDataRow with the draft cells merged in.
   // Bindings inside the template (`{currentEntry.body}`, featured-media
   // resolution, etc.) operate against this seed.
-  const draftPublishedRow: PublishedDataRow = synthesisePublishedRow(row, table, draftCells)
+  const draftPublishedRow: PublishedDataRow = synthesisePublishedRow(row, { ...table, routeBase }, draftCells, buildLocalizedPath(locale, typeof draftCells.slug === 'string' ? draftCells.slug : row.slug, routeBase))
 
-  const publicPath = buildEntryPublicPath(table.routeBase, draftPublishedRow.slug)
+  const publicPath = draftPublishedRow.publicPath
   const syntheticUrl = new URL(`http://localhost${publicPath}`)
   const templateContext = {
     entryStack: [publishedDataRowToLoopItem(draftPublishedRow)],
     route: buildRouteFrame(syntheticUrl.toString()),
   }
-  const loopData = await prefetchLoopData(merged, snapshot.site, db)
-  const mediaAssets = await prefetchMediaAssets(merged, snapshot.site, registry, db, {
+  const loopData = await prefetchLoopData(merged, site, db)
+  const mediaAssets = await prefetchMediaAssets(merged, site, registry, db, {
     templateContext,
     loopData,
   })
-  const cssBundle = buildSiteCssBundle(snapshot.site, registry, merged, { mediaAssets })
+  const cssBundle = buildSiteCssBundle(site, registry, merged, { mediaAssets })
 
-  const published = publishPage(merged, snapshot.site, registry, {
+  const published = publishPage(merged, site, registry, {
     templateContext,
     documentMeta: readEntrySeoOverride(draftCells),
-    runtimeAssets: snapshot.runtimeAssets,
-    runtimePackageImportmap: snapshot.runtimePackageImportmap,
+    runtimeAssets: snapshot?.runtimeAssets,
+    runtimePackageImportmap: snapshot?.runtimePackageImportmap,
     cssEmission: 'external',
     cssBundle,
     cssAssetBaseUrl: CSS_ASSET_BASE_URL,
@@ -133,14 +143,14 @@ export async function handleRowPreview(
     mediaAssets,
     loopEndpointBaseUrl: LOOP_ENDPOINT_BASE_URL,
   })
-  const moduleJsMap = buildPublishedSiteModuleJsMap(snapshot.site, registry)
+  const moduleJsMap = buildPublishedSiteModuleJsMap(site, registry)
 
   const finalHtml = await applyPublishedHtmlPipeline(
     {
       html: published.html,
       pageId: merged.id,
       slug: merged.slug,
-      siteId: snapshot.site.id,
+      siteId: site.id,
       cssBundle,
       jsModuleIds: published.jsModuleIds.filter((id) => moduleJsMap.has(id)),
       publishVersion: getPublishVersion(),
@@ -165,12 +175,16 @@ function synthesisePublishedRow(
   row: DataRow,
   table: { id: string; slug: string; routeBase: string; kind: string },
   cells: DataRowCells,
+  publicPath: string,
 ): PublishedDataRow {
   const now = new Date().toISOString()
   const slug = typeof cells['slug'] === 'string' ? cells['slug'] : row.slug
   return {
     id: row.id,
     rowId: row.id,
+    localeId: row.localeId,
+    publicPath,
+    siteSnapshotId: null,
     tableId: row.tableId,
     tableSlug: table.slug,
     tableKind: 'postType',
@@ -196,11 +210,4 @@ function synthesisePublishedRow(
     publishedAt: row.publishedAt ?? now,
     createdAt: row.createdAt,
   }
-}
-
-function buildEntryPublicPath(routeBase: string, slug: string): string {
-  const trimmed = routeBase.trim()
-  const withLeading = trimmed.startsWith('/') ? trimmed : `/${trimmed}`
-  const normalised = withLeading.replace(/\/+$/g, '') || '/'
-  return `${normalised === '/' ? '' : normalised}/${slug}`
 }

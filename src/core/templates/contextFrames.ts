@@ -70,7 +70,7 @@ export interface RouteFrame {
 export function buildPageFrame(page: Page): PageFrame {
   const slug = page.slug
   const normalizedSlug = slug.startsWith('/') ? slug : `/${slug}`
-  const permalink = normalizedSlug === '/index' ? '/' : normalizedSlug
+  const permalink = page.publicPath ?? (normalizedSlug === '/index' ? '/' : normalizedSlug)
   const parentSlug = (() => {
     const trimmed = slug.replace(/^\/+|\/+$/g, '')
     const idx = trimmed.lastIndexOf('/')

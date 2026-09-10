@@ -62,3 +62,9 @@ export async function deleteCollabDocuments(
     [...docIds],
   )
 }
+
+/** IDs only: resets must also invalidate dormant stored translation lineages. */
+export async function listCollabDocumentIds(db: DbClient): Promise<string[]> {
+  const { rows } = await db<{ doc_id: string }>`select doc_id from collab_documents`
+  return rows.map((row) => row.doc_id)
+}

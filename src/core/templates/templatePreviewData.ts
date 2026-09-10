@@ -87,6 +87,7 @@ function previewValueForField(field: DataField): unknown {
     // Preview data generation has no meaningful value to produce for them.
     case 'pageTree': return null
     case 'fieldSchema': return []
+    case 'parameterValues': return {}
     default: {
       // Exhaustive check: TypeScript will error here if a new field type
       // is added to the discriminated union without a case above.

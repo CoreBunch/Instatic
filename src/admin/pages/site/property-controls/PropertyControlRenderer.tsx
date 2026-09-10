@@ -115,7 +115,7 @@ export function PropertyControlRenderer({
   // editing permission.
   const permissions = useEditorPermissions()
   const category = resolvePropertyControlCategory(control)
-  const allowedByCategory = category === 'content'
+  const allowedByCategory = control.type === 'group' ? true : category === 'content'
     ? permissions.canEditContent
     : permissions.canEditStructure
   const effectiveDisabled = disabled || !allowedByCategory

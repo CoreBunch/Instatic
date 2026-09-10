@@ -13,6 +13,7 @@
 
 import { Type, type Static } from '@core/utils/typeboxHelpers'
 import { PageSchema, SiteShellSchema, type Page, type SiteDocument } from '@core/page-tree'
+import { LocaleSchema } from '@core/localization-schema'
 import { VisualComponentSchema } from '@core/visualComponents'
 import { SavedLayoutSchema } from '@core/layouts'
 import { AgentDocumentRefSchema, type AgentDocumentRef } from '@core/ai'
@@ -30,6 +31,8 @@ const SiteDocumentSchema = Type.Composite([
     pages: Type.Array(PageSchema),
     visualComponents: Type.Array(VisualComponentSchema),
     layouts: Type.Array(SavedLayoutSchema),
+    localeId: Type.Optional(Type.String()),
+    locales: Type.Optional(Type.Array(LocaleSchema)),
   }),
 ])
 
@@ -62,6 +65,7 @@ export function buildSiteAgentSnapshot(
   site: SiteDocument,
   options: SiteAgentSnapshotOptions,
 ): SiteAgentSnapshot {
+  const { localization: _localization, ...projectedSite } = site
   const pages = site.pages.map((p) => (p.id === page.id ? p : { ...p, nodes: {} }))
   return {
     page,
@@ -69,7 +73,7 @@ export function buildSiteAgentSnapshot(
     // Saved layouts are editor-only insertion templates — the agent never
     // reads them, so they ship emptied (same payload bounding as non-active
     // pages).
-    site: { ...site, pages, layouts: [] },
+    site: { ...projectedSite, pages, layouts: [] },
     selectedNodeId: options.selectedNodeId,
     activeBreakpointId: options.activeBreakpointId,
   }

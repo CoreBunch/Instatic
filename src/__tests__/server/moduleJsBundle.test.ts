@@ -67,7 +67,7 @@ describe('injectModuleScripts', () => {
     const zIdx = html.indexOf('data-instatic-module-js="z.widget"')
     expect(aIdx).toBeGreaterThan(-1)
     expect(zIdx).toBeGreaterThan(aIdx)
-    expect(html).toContain('<script src="/_instatic/module-js/a.widget.js?v=7" defer data-instatic-module-js="a.widget"></script>')
+    expect(html).toContain('<script src="/_instatic/module-js/a.widget.js?v=7&amp;u=%2F" defer data-instatic-module-js="a.widget"></script>')
     expect(zIdx).toBeLessThan(html.indexOf('</body>'))
     expect(html).toContain("script-src 'self';")
     expect(html).not.toContain("script-src 'none';")

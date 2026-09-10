@@ -15,7 +15,9 @@ import { addPage, createNode, reconcileSiteExplorerInPlace, reindexNodeParents }
 import type { VisualComponent } from '@core/visualComponents'
 import { syncAllVCRefSlotInstances, allTreeNodeMaps } from '../vcSlotReconcile'
 import { collectSlotOutletNames } from '@core/visualComponents'
-import { create } from 'mutative'
+import { create, current } from 'mutative'
+import { captureSiteLocalization, LocalizationValidationError } from '@core/localization'
+import { pushToast } from '@ui/components/Toast'
 import type { Draft, Patches } from 'mutative'
 import type { ImportFragment } from '@core/htmlImport'
 import type { NewStyleRule } from '@core/siteImport'
@@ -178,16 +180,27 @@ export function buildSiteHelpers(
     if (!cur.site) return false
 
     let result: SiteMutationResult = false
-    const [next, patches] = create(
-      cur,
-      (draft) => {
-        result = recipe(draft as Draft<EditorStore>)
-        if (result !== false && draft.site) {
-          draft.site.updatedAt = Date.now()
-        }
-      },
-      { enablePatches: true },
-    )
+    let next: EditorStore
+    let patches: Patches
+    try {
+      const produced = create(
+        cur,
+        (draft) => {
+          result = recipe(draft as Draft<EditorStore>)
+          if (result !== false && draft.site) {
+            draft.site.localization = captureSiteLocalization(cur.site!, current(draft.site))
+            draft.site.updatedAt = Date.now()
+          }
+        },
+        { enablePatches: true },
+      )
+      next = produced[0]
+      patches = produced[1]
+    } catch (error) {
+      if (!(error instanceof LocalizationValidationError)) throw error
+      pushToast({ kind: 'error', title: 'Language edit unavailable', body: error.message })
+      return false
+    }
     if (result === false) return false
 
     const touched = new Set<string>()

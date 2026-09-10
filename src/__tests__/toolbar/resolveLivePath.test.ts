@@ -30,14 +30,18 @@ describe('resolveLivePath', () => {
 
   it('maps a regular page to its public path', () => {
     expect(resolveLivePath({
-      activePage: page('p', 'about'), isTemplate: false, targetKind: null,
+      activePage: page('p', 'about-draft'), isTemplate: false, targetKind: null, pageLivePath: '/de/ueber-uns',
       selection: null, sitePages: null, rows: [],
-    })).toBe('/about')
+    })).toBe('/de/ueber-uns')
+  })
+
+  it('keeps an offline page without a live link even when its draft has a slug', () => {
+    expect(resolveLivePath({ activePage: page('offline', 'about'), isTemplate: false, targetKind: null, selection: null, sitePages: null, rows: [] })).toBeNull()
   })
 
   it('maps the home page (slug "index") to "/"', () => {
     expect(resolveLivePath({
-      activePage: page('home', 'index'), isTemplate: false, targetKind: null,
+      activePage: page('home', 'index'), isTemplate: false, targetKind: null, pageLivePath: '/',
       selection: null, sitePages: null, rows: [],
     })).toBe('/')
   })
@@ -49,12 +53,12 @@ describe('resolveLivePath', () => {
     // No explicit selection → defaults to the first non-template page (home).
     expect(resolveLivePath({
       activePage: tpl, isTemplate: true, targetKind: 'everywhere',
-      selection: null, sitePages: [tpl, home, about], rows: [],
+      selection: null, sitePages: [tpl, home, about], rows: [], pageLivePath: '/',
     })).toBe('/')
     // Explicit selection wins.
     expect(resolveLivePath({
       activePage: tpl, isTemplate: true, targetKind: 'everywhere',
-      selection: 'about', sitePages: [tpl, home, about], rows: [],
+      selection: 'about', sitePages: [tpl, home, about], rows: [], pageLivePath: '/about',
     })).toBe('/about')
   })
 

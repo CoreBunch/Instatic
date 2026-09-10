@@ -190,6 +190,7 @@ const UNCOMPARABLE_FIELD_TYPES: ReadonlySet<string> = new Set([
   'repeater',
   'pageTree',
   'fieldSchema',
+  'parameterValues',
 ])
 
 /**

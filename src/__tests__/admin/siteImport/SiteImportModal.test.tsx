@@ -34,7 +34,6 @@ import { AnalyzeStep } from '@admin/modals/SiteImport/steps/AnalyzeStep'
 import { SiteImportModal } from '@admin/modals/SiteImport'
 import type { ImportSelection } from '@admin/modals/SiteImport'
 import { commitImportPlan } from '@core/siteImport'
-import { pageToCells } from '@core/data/pageFromRow'
 import { BUNDLE_ARCHIVE_MANIFEST_PATH } from '@core/data/bundleArchive'
 import { CORE_CAPABILITIES } from '@core/capabilities'
 // Static-site import maps HTML into base modules during plan analysis.
@@ -52,6 +51,7 @@ import type { CmsCurrentUser } from '@core/persistence'
 import type { SiteBundle } from '@core/data/bundleSchema'
 import type { Page, SiteDocument } from '@core/page-tree'
 import { makeSite } from '../../fixtures'
+import { makeContentLocalization, SOURCE_LOCALE } from '../../fixtures/localization'
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -166,6 +166,10 @@ const CMS_BUNDLE_ROW: DataRow = {
   id: 'cms-row-1',
   tableId: 'posts',
   cells: { title: 'Imported post', slug: 'imported-post' },
+  sharedCells: {},
+  localeId: 'default',
+  localization: makeContentLocalization('cms-row-1', { cells: { title: 'Imported post', slug: 'imported-post' }, slug: 'imported-post' }),
+  publicPath: null,
   slug: 'imported-post',
   status: 'published',
   authorUserId: null,
@@ -188,6 +192,7 @@ const CMS_BUNDLE_PAGE_ROW: DataRow = {
   id: 'cms-page-1',
   tableId: 'pages',
   cells: { title: 'Imported page', slug: 'imported-page' },
+  localization: makeContentLocalization('cms-page-1', { cells: { title: 'Imported page', slug: 'imported-page' }, slug: 'imported-page' }),
   slug: 'imported-page',
 }
 
@@ -230,51 +235,15 @@ function jsonResponse(body: unknown, status = 200): Response {
   })
 }
 
-function siteShell(site: SiteDocument): Omit<SiteDocument, 'pages' | 'visualComponents'> {
-  const { pages: _pages, visualComponents: _visualComponents, ...shell } = site
-  return shell
-}
-
-function pageRow(page: Page): DataRow {
-  return {
-    id: page.id,
-    tableId: 'pages',
-    cells: pageToCells(page),
-    slug: page.slug,
-    status: 'draft',
-    authorUserId: null,
-    createdByUserId: null,
-    updatedByUserId: null,
-    publishedByUserId: null,
-    author: null,
-    createdBy: null,
-    updatedBy: null,
-    publishedBy: null,
-    createdAt: '2026-01-01T00:00:00.000Z',
-    updatedAt: '2026-01-01T00:00:00.000Z',
-    publishedAt: null,
-    scheduledPublishAt: null,
-    deletedAt: null,
-  }
-}
-
 function mockDraftSiteLoad(site: SiteDocument): string[] {
   const requested: string[] = []
   globalThis.fetch = async (input: RequestInfo | URL) => {
     const url = String(input)
     requested.push(url)
-    if (url === '/admin/api/cms/site') {
-      return jsonResponse({ site: siteShell(site) })
-    }
-    if (url === '/admin/api/cms/pages') {
-      return jsonResponse({ rows: site.pages.map(pageRow) })
-    }
-    if (url === '/admin/api/cms/components') {
-      return jsonResponse({ rows: [] })
-    }
-    if (url === '/admin/api/cms/layouts') {
-      return jsonResponse({ rows: [] })
-    }
+    if (url === '/admin/api/cms/site-document') return jsonResponse({
+      site: { ...site, localeId: SOURCE_LOCALE.id, locales: [SOURCE_LOCALE], localization: { fieldLocalizations: {}, rows: {} } },
+      rowSeqs: {}, shellSeq: 0,
+    })
     return jsonResponse({ error: `Unexpected request: ${url}` }, 500)
   }
   return requested
@@ -1022,10 +991,7 @@ describe('SiteImportModal — global static import', () => {
     expect(screen.queryByText(/editor has no site loaded/i)).toBeNull()
     expect(useEditorStore.getState().site?.name).toBe('Global Draft Site')
     expect(requested).toEqual([
-      '/admin/api/cms/site',
-      '/admin/api/cms/pages',
-      '/admin/api/cms/components',
-      '/admin/api/cms/layouts',
+      '/admin/api/cms/site-document',
     ])
   })
 })

@@ -1,4 +1,4 @@
-import { useCallback, useLayoutEffect, useState } from 'react'
+import { useCallback, useLayoutEffect, useRef, useState } from 'react'
 import {
   publishCmsDataRow,
   saveCmsDataRowDraft,
@@ -50,6 +50,20 @@ export function useContentEntryDraft({
   // the same draft lifecycle as the built-ins above.
   const [customCells, setCustomCells] = useState<DataRowCells>({})
   const [saveMessage, setSaveMessage] = useState<SaveMessage>('idle')
+  const latestDraft = useRef({ selectedEntry, title, slug, seoTitle, seoDescription, featuredMediaId, body, customCells })
+  useLayoutEffect(() => {
+    latestDraft.current = { selectedEntry, title, slug, seoTitle, seoDescription, featuredMediaId, body, customCells }
+  }, [selectedEntry, title, slug, seoTitle, seoDescription, featuredMediaId, body, customCells])
+
+  const isCurrentSelection = () => latestDraft.current.selectedEntry?.id === selectedEntry?.id &&
+    latestDraft.current.selectedEntry?.localeId === selectedEntry?.localeId
+  const hasUnchangedFields = () => {
+    const current = latestDraft.current
+    return current.title === title && current.slug === slug && current.seoTitle === seoTitle &&
+      current.seoDescription === seoDescription && current.featuredMediaId === featuredMediaId &&
+      current.body === body && current.customCells === customCells
+  }
+
 
   // Exception #1: referenced in the useLayoutEffect dep array below, so it
   // needs a stable identity that react-hooks/exhaustive-deps can see.
@@ -71,7 +85,7 @@ export function useContentEntryDraft({
   /* eslint-disable react-hooks/set-state-in-effect, react-hooks/exhaustive-deps */
   useLayoutEffect(() => {
     applySelectedEntry(selectedEntry)
-  }, [applySelectedEntry, selectedEntry?.id])
+  }, [applySelectedEntry, selectedEntry?.id, selectedEntry?.localeId])
   /* eslint-enable react-hooks/set-state-in-effect, react-hooks/exhaustive-deps */
 
   const applyEntryFields = (entry: DataRow) => {
@@ -101,6 +115,7 @@ export function useContentEntryDraft({
     const nextTitle = title.trim() || 'Untitled'
     const nextSlug = slugFromTitle(slug || nextTitle)
     const row = await saveCmsDataRowDraft(selectedEntry.id, {
+      localeId: selectedEntry.localeId,
       cells: {
         ...selectedEntry.cells,
         ...customCells,
@@ -112,8 +127,10 @@ export function useContentEntryDraft({
         seoDescription: seoDescription.trim(),
       },
     })
-    updateSelectedEntry(row)
-    applyEntryFields(row)
+    if (isCurrentSelection()) {
+      updateSelectedEntry(row)
+      if (hasUnchangedFields()) applyEntryFields(row)
+    }
     return row
   }
 
@@ -122,8 +139,9 @@ export function useContentEntryDraft({
     setError(null)
     try {
       await saveDraft()
-      setSaveMessage('saved')
+      if (isCurrentSelection()) setSaveMessage(hasUnchangedFields() ? 'saved' : 'idle')
     } catch (err) {
+      if (!isCurrentSelection()) return
       setSaveMessage('error')
       setError(getErrorMessage(err, 'Could not save draft'))
     }
@@ -136,16 +154,12 @@ export function useContentEntryDraft({
     try {
       const savedRow = await saveDraft()
       if (!savedRow) return
-      const publishedRow = await publishCmsDataRow(savedRow.id)
-      updateSelectedEntry({
-        ...savedRow,
-        status: publishedRow.status,
-        updatedAt: publishedRow.updatedAt,
-        publishedAt: publishedRow.publishedAt,
-        deletedAt: publishedRow.deletedAt,
-      })
+      const publishedRow = await publishCmsDataRow(savedRow.id, undefined, undefined, savedRow.localeId)
+      if (!isCurrentSelection()) return
+      updateSelectedEntry(publishedRow)
       setSaveMessage('published')
     } catch (err) {
+      if (!isCurrentSelection()) return
       setSaveMessage('error')
       setError(getErrorMessage(err, 'Could not publish entry'))
     }
@@ -172,11 +186,13 @@ export function useContentEntryDraft({
     try {
       const savedRow = await saveDraft()
       if (!savedRow) return
-      const updatedRow = await updateCmsDataRowStatus(savedRow.id, nextStatus)
+      const updatedRow = await updateCmsDataRowStatus(savedRow.id, nextStatus, undefined, undefined, savedRow.localeId)
+      if (!isCurrentSelection()) return
       updateSelectedEntry(updatedRow)
-      applyEntryFields(updatedRow)
+      if (hasUnchangedFields()) applyEntryFields(updatedRow)
       setSaveMessage('idle')
     } catch (err) {
+      if (!isCurrentSelection()) return
       setSaveMessage('error')
       setError(getErrorMessage(err, 'Could not update entry status'))
     }
@@ -200,6 +216,7 @@ export function useContentEntryDraft({
     setBody,
     setCustomCell,
     setSaveMessage,
+    saveDraft,
     handleSaveDraft,
     handlePublish,
     handleStatusChange,

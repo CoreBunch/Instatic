@@ -11,8 +11,11 @@
  * Uses `getStats()` from renderCache to observe hit/miss counts without
  * requiring module-level spying on the renderer.
  */
-import { beforeEach, describe, expect, it } from 'bun:test'
-import type { DbClient, DbResult } from '../../../server/db'
+import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
+import { cleanupPublishingTestDbs, createPublishingTestDb, seedPublishingPage } from '../helpers/publishingTestDb'
+import { publishDraftSite } from '../../../server/publish/publishSite'
+import { savePublishedRedirect } from '../../../server/repositories/data/publish'
+afterEach(cleanupPublishingTestDbs)
 import type { PublishedPageSnapshot } from '../../../server/repositories/publish'
 import { renderPublicResolution } from '../../../server/publish/publicRouter'
 import { getStats, resetForTests } from '../../../server/publish/renderCache'
@@ -57,98 +60,16 @@ function makeSnapshot(): PublishedPageSnapshot {
   }
 }
 
-// ---------------------------------------------------------------------------
-// Fake DB
-// ---------------------------------------------------------------------------
-
-/**
- * Minimal DbClient that handles queries made by resolvePublicRoute,
- * renderPublishedSnapshot, and applyPublishedHtmlPipeline.
- *
- * When `snapshot` is provided, the slug lookup returns it.
- * Everything else returns empty results (no plugins, no media, etc.).
- */
-function makeFakeDb(snapshot: PublishedPageSnapshot | null): DbClient {
-  const handle = async <Row extends Record<string, unknown> = Record<string, unknown>>(
-    strings: TemplateStringsArray,
-    ...values: unknown[]
-  ): Promise<DbResult<Row>> => {
-    const sql = strings.reduce<string>((acc, str, i) => (i === 0 ? str : `${acc}$${i}${str}`), '')
-    const normalized = sql.replace(/\s+/g, ' ').trim().toLowerCase()
-
-    // getPublishedPageBySlug — joins data_row_versions to site_snapshots
-    if (normalized.includes('site_snapshots.site_json')) {
-      return {
-        rows: snapshot
-          ? [{
-              row_id: snapshot.pageRowId,
-              site_json: snapshot.site,
-              runtime_assets_json: snapshot.runtimeAssets ?? null,
-              importmap_body: snapshot.runtimePackageImportmap?.body ?? null,
-              importmap_sha256: snapshot.runtimePackageImportmap?.sha256 ?? null,
-            } as unknown as Row]
-          : [],
-        rowCount: snapshot ? 1 : 0,
-      }
-    }
-
-    // Anything else (plugins, media, loop data, etc.) → empty
-    return { rows: [], rowCount: 0 }
-  }
-
-  // getPublishedDataRowByRoute runs through db.unsafe (it splices the shared
-  // user-ref join fragments) — no content row in this fixture.
-  handle.unsafe = async <Row extends Record<string, unknown> = Record<string, unknown>>(
-    _sql: string,
-    _params?: unknown[],
-  ): Promise<DbResult<Row>> => ({ rows: [], rowCount: 0 })
-
-  handle.transaction = async <T>(cb: (tx: DbClient) => Promise<T>): Promise<T> =>
-    cb(handle as unknown as DbClient)
-
-  return handle as DbClient
+async function makePublishedDb(snapshot: PublishedPageSnapshot | null) {
+  return createPublishingTestDb(snapshot?.site ?? null)
 }
 
-/** Fake DB that returns a redirect for any slug lookup. */
-function makeRedirectDb(): DbClient {
-  const handle = async <Row extends Record<string, unknown> = Record<string, unknown>>(
-    strings: TemplateStringsArray,
-    ...values: unknown[]
-  ): Promise<DbResult<Row>> => {
-    const sql = strings.reduce<string>((acc, str, i) => (i === 0 ? str : `${acc}$${i}${str}`), '')
-    const normalized = sql.replace(/\s+/g, ' ').trim().toLowerCase()
-
-    // getPublishedPageBySlug → not found
-    if (normalized.includes('site_snapshots.site_json')) {
-      return { rows: [], rowCount: 0 }
-    }
-    // getDataRowRedirectByRoute → return a redirect
-    if (normalized.includes('from data_row_redirects')) {
-      return {
-        rows: [
-          {
-            id: 'redirect_1',
-            from_route_base: '/posts',
-            from_slug: 'old-post',
-            target_route_base: '/posts',
-            target_slug: 'new-post',
-          } as unknown as Row,
-        ],
-        rowCount: 1,
-      }
-    }
-    return { rows: [], rowCount: 0 }
-  }
-  // getPublishedDataRowByRoute → not found (no content row). It runs through
-  // db.unsafe (shared user-ref join fragments), so the not-found branch lives
-  // here, letting resolvePublicRoute fall through to the redirect lookup.
-  handle.unsafe = async <Row extends Record<string, unknown> = Record<string, unknown>>(
-    _sql: string,
-    _params?: unknown[],
-  ): Promise<DbResult<Row>> => ({ rows: [], rowCount: 0 })
-  handle.transaction = async <T>(cb: (tx: DbClient) => Promise<T>): Promise<T> =>
-    cb(handle as unknown as DbClient)
-  return handle as DbClient
+async function makeRedirectDb() {
+  const site = makeSnapshot().site
+  site.pages[0].slug = 'posts/new-post'
+  const db = await createPublishingTestDb(site)
+  await savePublishedRedirect(db, site.pages[0].id, 'pages', 'default', '/posts/old-post')
+  return db
 }
 
 // ---------------------------------------------------------------------------
@@ -162,7 +83,7 @@ beforeEach(() => {
 describe('Layer B render cache integration', () => {
   it('first request is a miss; second identical request is a cache hit', async () => {
     const snap = makeSnapshot()
-    const db = makeFakeDb(snap)
+    const db = await makePublishedDb(snap)
     const url = new URL('http://localhost/test')
 
     const res1 = await renderPublicResolution(db, url)
@@ -176,7 +97,7 @@ describe('Layer B render cache integration', () => {
 
   it('responses from cache and from renderer have the same body', async () => {
     const snap = makeSnapshot()
-    const db = makeFakeDb(snap)
+    const db = await makePublishedDb(snap)
     const url = new URL('http://localhost/test')
 
     const res1 = await renderPublicResolution(db, url)
@@ -191,7 +112,7 @@ describe('Layer B render cache integration', () => {
 
   it('bumpPublishVersion causes the next request to re-render', async () => {
     const snap = makeSnapshot()
-    const db = makeFakeDb(snap)
+    const db = await makePublishedDb(snap)
     const url = new URL('http://localhost/test')
 
     await renderPublicResolution(db, url)
@@ -205,7 +126,7 @@ describe('Layer B render cache integration', () => {
 
   it('after re-render following a bump, the subsequent request is a hit', async () => {
     const snap = makeSnapshot()
-    const db = makeFakeDb(snap)
+    const db = await makePublishedDb(snap)
     const url = new URL('http://localhost/test')
 
     await renderPublicResolution(db, url)
@@ -217,8 +138,10 @@ describe('Layer B render cache integration', () => {
 
   it('different URL paths are distinct cache entries', async () => {
     const snap = makeSnapshot()
-    const db = makeFakeDb(snap)
+    const db = await makePublishedDb(snap)
 
+    await seedPublishingPage(db, { ...snap.site.pages[0], id: 'other-page', slug: 'other' })
+    await publishDraftSite(db, null, undefined, { variants: [{ rowId: 'other-page', localeId: 'default' }] })
     await renderPublicResolution(db, new URL('http://localhost/test'))
     await renderPublicResolution(db, new URL('http://localhost/other'))
     expect(getStats().size).toBe(2)
@@ -227,7 +150,7 @@ describe('Layer B render cache integration', () => {
 
   it('same path with different render-affecting (loop pagination) queries are distinct entries', async () => {
     const snap = makeSnapshot()
-    const db = makeFakeDb(snap)
+    const db = await makePublishedDb(snap)
 
     // Only loop-pagination params survive query canonicalisation, so they are
     // the only thing that produces distinct cache keys (ISS-032). Junk params
@@ -240,7 +163,7 @@ describe('Layer B render cache integration', () => {
 
   it('different junk query strings collapse onto a single cache entry', async () => {
     const snap = makeSnapshot()
-    const db = makeFakeDb(snap)
+    const db = await makePublishedDb(snap)
 
     await renderPublicResolution(db, new URL('http://localhost/test?utm=a'))
     await renderPublicResolution(db, new URL('http://localhost/test?utm=b'))
@@ -249,7 +172,7 @@ describe('Layer B render cache integration', () => {
   })
 
   it('redirect resolutions are NOT cached', async () => {
-    const db = makeRedirectDb()
+    const db = await makeRedirectDb()
     // Redirect URL: /posts/old-post → resolved by getDataRowRedirectByRoute
     const url = new URL('http://localhost/posts/old-post')
 
@@ -264,7 +187,7 @@ describe('Layer B render cache integration', () => {
   })
 
   it('not-found resolutions are NOT cached', async () => {
-    const db = makeFakeDb(null) // no snapshot → not-found
+    const db = await makePublishedDb(null) // no snapshot → not-found
     const url = new URL('http://localhost/nowhere')
 
     const res1 = await renderPublicResolution(db, url)

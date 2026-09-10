@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test'
-import { getCmsPublishStatus, publishCmsDraft } from '@core/persistence/cmsPublish'
+import { getCmsPublishStatus, publishCmsDraft } from '@core/persistence'
 
 describe('publishCmsDraft', () => {
   it('posts to the CMS publish endpoint with session credentials', async () => {

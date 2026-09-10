@@ -504,7 +504,7 @@ granularly (two admins can restyle two nodes of the same page, or co-type
 one text node, simultaneously), presence is visible, and there is **no save
 UI at all**: the server persists continuously.
 
-**Document model** (`src/core/collab/`): one Yjs doc per logical row —
+**Document model** (`src/core/collab/`): one shared Yjs doc per logical row —
 `page:<rowId>`, `component:<rowId>`, `layout:<rowId>` — plus one `site:default`
 doc for the shell and the roster order. Page/component trees map to
 `getMap('tree')` (`rootNodeId` + a `nodes` Y.Map of per-node Y.Maps: `props`
@@ -512,8 +512,29 @@ as a Y.Map with the module's inline-text prop as Y.Text, nested
 `breakpointOverrides` Y.Maps, `children` as Y.Array; `parentId` is derived,
 never stored). Layout snapshots are whole-value LWW. The shell keeps
 `settings` / `styleRules` / `explorer` as per-entry Y.Maps and everything
-else plain. Deterministic reconciles (`integrity.ts` tree repair, roster
+else plain. Each language has a separate sparse document addressed by
+`localization:<kind>:<encodedRowId>:<encodedLocaleId>` (`localizationDoc.ts`).
+Its cells, slug, node content properties, visibility, and translation review
+metadata contain only authored overrides. Both source and secondary languages
+use this path. Shared tree documents retain structure, design, and the stored
+baseline; the editor composes source and selected-language overrides without
+writing the projection into the baseline. Component content parameter defaults
+and instance overrides merge per parameter; design parameters remain shared.
+Localized node values use independent tuple-addressed entries in one seeded
+`tree.nodes` map. No per-node container is created on first translation, so
+concurrent initial changes to different properties or parameters cannot
+replace one another. Empty/reset overlays remain sparse.
+Deterministic reconciles (`integrity.ts` tree repair, roster
 order) run identically on every peer.
+
+**Language authoring UI** (`src/admin/pages/site/localization/`): selecting a
+secondary language keeps content fields, content component defaults, element
+visibility, undo/redo, and viewport inspection available. Shared structure,
+styles, parameter definitions, code, and site settings have source-language
+controls with a direct switch back to the source. Page-language settings and
+new logical pages remain available. Site code buffers stream every edit
+immediately and include document/language identity in their editor key, so a
+language switch cannot flush pending text into another translation.
 
 **Editor write path** (`src/admin/pages/site/store/slices/site/collabBinding.ts`):
 local mutations keep applying directly to the Zustand store (the hot path is
@@ -522,7 +543,9 @@ untouched), and their Mutative patches translate into targeted Y operations
 children via array diffs, roster membership via pre/post id-set diffs;
 anything unattributable repopulates the doc (the conservative escape hatch).
 Remote/undo/reconcile changes flow the OTHER way: a per-doc projection
-replaces the affected row or shell in the store.
+replaces the affected row or shell in the store via `collabProjection.ts` and
+recomposes the selected language. Switching language binds its sparse documents
+and retains each language's independent undo routing.
 
 One surface needs more than the projection: the inline text editor is a
 contentEditable React does not own, and every keystroke commits the element's
@@ -535,7 +558,9 @@ deletion). During a session, `attachInlineEditRemoteMerge`
 every non-local change into the DOM — content rewritten through the same
 seeding writer, local caret restored at an index transformed through the Yjs
 delta (insert-at-caret pushes right, matching relative-position association).
-IME composition defers the rewrite to `compositionend`. This is what makes
+IME composition defers the rewrite to `compositionend`. Inherited text observes
+the source and shared baseline documents until an explicit target override
+exists, then follows that override; resetting it resumes inheritance. This makes
 co-typing ONE text node intent-preserving, not just convergent — gated
 end-to-end by `src/__tests__/collab/inlineEditRemoteMerge.test.tsx`.
 

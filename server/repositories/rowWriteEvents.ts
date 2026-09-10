@@ -16,6 +16,10 @@ export interface RowWriteEvent {
   tableId: string
   rowIds: readonly string[]
   kind: RowWriteKind
+  /** An exact translation write; absent means all translations may have changed. */
+  localeId?: string
+  /** Whether the logical shared structure also changed. */
+  sharedChanged?: boolean
 }
 
 type RowWriteListener = (event: RowWriteEvent) => void

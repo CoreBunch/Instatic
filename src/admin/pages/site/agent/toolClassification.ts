@@ -61,3 +61,11 @@ export const SITE_MUTATION_TOOLS: ReadonlySet<string> = new Set([
   'site_write_code_asset',
   'site_patch_code_asset',
 ])
+
+/** Translation mode can author content variants and create logical pages. */
+export const LOCALIZED_SITE_MUTATION_TOOLS: ReadonlySet<string> = new Set([
+  'site_update_node_props',
+  'site_add_page',
+  'site_rename_page',
+  'site_duplicate_page',
+])

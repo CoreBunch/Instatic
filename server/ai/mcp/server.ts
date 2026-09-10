@@ -16,6 +16,7 @@ import {
 } from '@modelcontextprotocol/server'
 import type { DbClient } from '../../db/client'
 import type { CoreCapability } from '@core/capabilities'
+import { readLocaleToolInput } from '@core/ai'
 import { getErrorMessage } from '@core/utils/errorMessage'
 import type { AiBrowserBridge, AiTool, AiToolOutput } from '../runtime/types'
 import { executeAiTool } from '../drivers/http/execTool'
@@ -23,6 +24,7 @@ import { mcpToolsForCapabilities } from './registry'
 import { authorizeMcpContentTool } from './contentAuthorization'
 import {
   getEditorBridgeForUser,
+  getEditorBridgeLocale,
   type EditorBridgeScope,
 } from './editorBridge'
 import { runPublishFlush } from '../../publish/publishFlush'
@@ -165,22 +167,21 @@ export function buildMcpServer(ctx: McpServerContext): Server {
           content: [{ type: 'text', text: NO_WORKSPACE_MESSAGE[browserScope] }],
         })
       }
-      bridge = browserScope === 'content'
-        ? {
-            callBrowser: async (toolName, input) => {
-              await authorizeMcpContentTool(
-                ctx.db,
-                ctx.userId,
-                ctx.capabilities,
-                toolName,
-                input,
-              )
-              const current = getEditorBridgeForUser(ctx.userId, browserScope)
-              if (!current) throw new Error(NO_WORKSPACE_MESSAGE[browserScope])
-              return current.callBrowser(toolName, input)
-            },
+      const activeLocaleId = getEditorBridgeLocale(ctx.userId, browserScope)
+      bridge = {
+        callBrowser: async (toolName, input) => {
+          if (browserScope === 'content') await authorizeMcpContentTool(ctx.db, ctx.userId, ctx.capabilities, toolName, input)
+          const current = getEditorBridgeForUser(ctx.userId, browserScope)
+          if (!current) throw new Error(NO_WORKSPACE_MESSAGE[browserScope])
+          if (toolName.endsWith('_select_locale')) return current.callBrowser(toolName, input)
+          const requested = readLocaleToolInput(input)
+          const expectedLocaleId = requested.localeId ?? activeLocaleId
+          if (expectedLocaleId && expectedLocaleId !== getEditorBridgeLocale(ctx.userId, browserScope)) {
+            return { ok: false, error: 'The active workspace language changed. Select the requested locale and retry.' }
           }
-        : live
+          return current.callBrowser(toolName, expectedLocaleId ? { ...requested.input, localeId: expectedLocaleId } : input)
+        },
+      }
     } else {
       // Headless reads hit the DB directly, but live co-editing persists on an
       // ~800 ms debounce — flush the relay first so a headless read reflects

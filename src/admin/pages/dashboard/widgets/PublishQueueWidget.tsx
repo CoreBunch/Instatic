@@ -11,13 +11,10 @@
  * orders and limits the list so the widget just renders.
  */
 import { CloudUploadSolidIcon } from 'pixel-art-icons/icons/cloud-upload-solid'
-import type { DashboardWidgetRendererProps } from '@core/dashboard'
+import type { DashboardWidgetRendererProps, DashboardPublishLineupRow } from '@core/dashboard'
 import { Widget } from '@ui/components/Widget'
 import { cn } from '@ui/cn'
-import {
-  usePublishLineupStats,
-  type DashboardPublishLineupRow,
-} from '../hooks/useDashboardStats'
+import { usePublishLineupStats } from '../hooks/useDashboardStats'
 import styles from './widgets.module.css'
 
 function badgeClass(status: DashboardPublishLineupRow['status']): string {
@@ -28,8 +25,8 @@ function badgeClass(status: DashboardPublishLineupRow['status']): string {
 
 function badgeLabel(status: DashboardPublishLineupRow['status']): string {
   if (status === 'scheduled') return 'scheduled'
-  if (status === 'published') return 'published'
-  return 'draft'
+  if (status === 'published') return 'online'
+  return status
 }
 
 /**
@@ -97,12 +94,15 @@ export function PublishQueueWidget({ span, editing }: DashboardWidgetRendererPro
       {!isLoading && !isEmpty && (
         <ul className={styles.wlist}>
           {rows.map((r) => (
-            <li key={r.id}>
-              <span className={styles.wlistTitle}>
-                <span className={styles.wlistPath}>{r.path}</span>
+            <li key={`${r.id}:${r.localeId}:${r.status}`}>
+              <span className={styles.lineupTitle}>
+                <span>{r.title || 'Untitled'}</span>
+                {r.path && <span className={styles.wlistPath}>{r.path}</span>}
               </span>
               <span className={styles.wlistMeta}>
-                <span className={`${styles.badge} ${badgeClass(r.status)}`}>{badgeLabel(r.status)}</span>
+                <span>{r.localeCode}</span>
+                <span className={cn(styles.badge, badgeClass(r.status))}>{badgeLabel(r.status)}</span>
+                {!r.localeEnabled && <span className={styles.badgeDraft}>Language offline</span>}
                 <span>{formatRelative(r.at)}</span>
               </span>
             </li>

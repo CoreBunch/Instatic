@@ -21,6 +21,7 @@
  * transactions — so there is no reconcile origin.)
  */
 import * as Y from 'yjs'
+import { localeNodeCellKey } from './localizationKeys'
 import { registry } from '@core/module-engine'
 
 export const LOCAL_ORIGIN = Symbol('collab-local')
@@ -64,6 +65,8 @@ export function inlineTextPropOf(moduleId: string): string | null {
 export function nodeTextOf(doc: Y.Doc, nodeId: string, prop: string): Y.Text | null {
   const nodes = treeMap(doc).get('nodes')
   if (!(nodes instanceof Y.Map)) return null
+  const localized = nodes.get(localeNodeCellKey(nodeId, prop))
+  if (localized instanceof Y.Text) return localized
   const node = nodes.get(nodeId)
   if (!(node instanceof Y.Map)) return null
   const props = node.get('props')

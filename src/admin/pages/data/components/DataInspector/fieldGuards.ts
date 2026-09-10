@@ -33,6 +33,7 @@ export const FIELD_TYPE_LABELS: Record<DataFieldType, string> = {
   repeater: 'Repeater',
   pageTree: 'Page tree',
   fieldSchema: 'Field schema',
+  parameterValues: 'Component defaults',
 }
 
 export function isMandatoryField(fieldId: string): boolean {

@@ -159,6 +159,14 @@ There is intentionally no headless page-tree mutation path. The open editor stor
 
 Writes remain drafts. Clients should finish and verify an edit sequence, then call `site_publish` once only when deployment was requested.
 
+### Language context
+
+`get_context` returns configured `locales`, the resolved `localeId`, and each live workspace's selected language (`editor.siteLocaleId` and `editor.contentLocaleId`). Headless document reads accept `localeId`; omission resolves the source language. Chat reads inherit the language in the validated workspace snapshot. Source: `server/ai/mcp/tools/contextTool.ts`, `server/ai/mcp/tools/documentTools.ts`, and `src/core/ai/localeContext.ts`.
+
+Browser tools accept an optional `localeId` as a precondition. The bridge pins each request to its workspace language and rejects a request if the user switched languages before execution. `site_select_locale({ localeId })` and `content_select_locale({ localeId })` change the visible workspace through its normal editor action. Node and document IDs remain the same across languages. Translation mode edits localized content; shared structure, design, and code are authored in the source language. The Site snapshot contains the visible materialized content and excludes other languages' sparse drafts. Source: `src/admin/ai/useMcpWorkspaceBridge.ts`, `src/admin/pages/site/agent/executor.ts`, and `src/admin/pages/content/agent/contentBridge.ts`.
+
+`site_publish({ variants: [{ rowId, localeId }] })` explicitly publishes the selected language variants. An omitted `variants` selection rebuilds only variants already online; it never takes offline content online. Publication still uses the canonical atomic pipeline and capability checks. Source: `server/ai/mcp/tools/publishTool.ts`; regression tests: `server/ai/mcp/publishTool.test.ts`, `src/__tests__/collab/localization.test.ts`, and `src/__tests__/agent/mcpWorkspaceReadiness.test.tsx`.
+
 ## Data model
 
 `ai_mcp_connectors` remains the persistent owner/capability grant (migrations `018` and `019`):

@@ -1,3 +1,5 @@
+import { useEditorLocale } from '@site/localization'
+import { LocalizedParameterValue } from './LocalizedParameterValue'
 /**
  * ComponentParamsOverview — inspector view for declared params on the active Visual Component.
  *
@@ -79,8 +81,12 @@ function summarizeParamDefault(param: VCParam): string {
 // ---------------------------------------------------------------------------
 
 export function ComponentParamsOverview({ vc }: ComponentParamsOverviewProps) {
+  const { isTranslation } = useEditorLocale()
   const selectNode = useEditorStore((s) => s.selectNode)
   const removeParamWithCleanup = useEditorStore((s) => s.removeParamWithCleanup)
+
+  if (isTranslation) return <div>{vc.params.map((param) =>
+    <LocalizedParameterValue key={param.id} vcId={vc.id} paramId={param.id} />)}</div>
 
   return (
     <div>

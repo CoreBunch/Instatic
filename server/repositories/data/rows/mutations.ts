@@ -18,16 +18,53 @@
  */
 import { nanoid } from 'nanoid'
 import type { DbClient } from '../../../db/client'
-import type { DataRow, DataRowStatus, DeletedRowSummary } from '@core/data/schemas'
-import { bumpPublishVersionSerialized } from '../../../publish/publishState'
+import type { DataRow, DataRowCells, DeletedRowSummary } from '@core/data/schemas'
+import { getLocalizablePropertyKeys, splitLocalizedCells, updateTranslationMetadata } from '@core/localization'
+import { registry } from '@core/module-engine'
+import { bumpPublishVersion, withPublishLock } from '../../../publish/publishState'
 import { type InsertDataRowInput, type UpdateDataRowDraftInput } from './mapper'
 import { isoDateOrNull } from '@core/utils/isoDate'
-import { getDataRow } from './read'
+import { deepEqual } from '@core/utils/deepEqual'
+import { getDataRow, listDataRows } from './read'
+import { localizableComponentParameterIds } from '@core/visualComponents'
+import { visualComponentFromRow } from '@core/data/componentFromRow'
 import { notifyRowWrite, serializeCollabAwareWrite } from '../../rowWriteEvents'
+import { getDataTable } from '../tables'
+import { changeRowFieldLocalizationInTx } from '../tableFieldLocalization'
+import { getDefaultLocale, resolveContentLocale, listContentLocalizations, LocalizationError, saveContentLocalizationDraft, setContentLocalizationAvailability } from '../../localization'
+
+
+async function localizationPropertyPolicy(db: DbClient) {
+  const components = new Map((await listDataRows(db, 'components')).flatMap((row) => {
+    const component = visualComponentFromRow({ ...row, cells: row.sharedCells })
+    return component ? [[component.id, component] as const] : []
+  }))
+  return (node: { moduleId: string; props: Record<string, unknown> }, key: string): boolean | ReadonlySet<string> => {
+    if (node.moduleId === 'base.visual-component-ref' && key === 'propOverrides') {
+      const component = components.get(String(node.props.componentId ?? ''))
+      return component ? localizableComponentParameterIds(component) : false
+    }
+    const definition = registry.get(node.moduleId)
+    return definition ? getLocalizablePropertyKeys(definition.schema).has(key) : false
+  }
+}
+
+async function assertDraftSlugAvailable(db: DbClient, tableId: string, rowId: string, localeId: string, slug: string): Promise<void> {
+  if (!slug) return
+  const { rows } = await db<{ row_id: string }>`
+    select localizations.row_id from data_row_localizations localizations
+    join data_rows on data_rows.id = localizations.row_id
+    where data_rows.table_id = ${tableId} and data_rows.deleted_at is null
+      and localizations.locale_id = ${localeId} and localizations.slug = ${slug}
+      and localizations.row_id <> ${rowId}
+    limit 1
+  `
+  if (rows[0]) throw new LocalizationError('This URL slug is already used in this language', 'slug')
+}
 
 type UpdateDataRowTableResult =
   | { ok: true; row: DataRow }
-  | { ok: false; reason: 'row_not_found' | 'table_not_found' | 'slug_conflict' }
+  | { ok: false; reason: 'row_not_found' | 'table_not_found' | 'slug_conflict' | 'unsupported_table' }
 
 export async function createDataRow(
   db: DbClient,
@@ -38,43 +75,50 @@ export async function createDataRow(
 ): Promise<DataRow> {
   if (!opts.collabInternal) {
     return serializeCollabAwareWrite(async () => {
-      const created = await createDataRow(
-        db,
+      const created = await db.transaction((tx) => createDataRow(
+        tx,
         input,
         actorUserId,
         pluginActorId,
         { collabInternal: true },
-      )
-      notifyRowWrite({ tableId: created.tableId, rowIds: [created.id], kind: 'create' })
+      ))
+      notifyRowWrite({ tableId: created.tableId, rowIds: [created.id], kind: 'create', localeId: created.localeId, sharedChanged: true })
       return created
     })
   }
-  const { rows } = await db<{ id: string }>`
+  const locale = await resolveContentLocale(db, input.localeId)
+  const table = await getDataTable(db, input.tableId)
+  if (!table) throw new Error('Data table not found')
+  const id = input.id ?? nanoid()
+  await assertDraftSlugAvailable(db, input.tableId, id, locale.id, input.slug)
+  const split = splitLocalizedCells(table.fields, {}, {}, input.cells, {}, {
+    allowStructureChanges: locale.isDefault,
+    canLocalizeProperty: await localizationPropertyPolicy(db),
+  })
+  await db`
     insert into data_rows (
       id,
       table_id,
       cells_json,
       slug,
-      status,
       author_user_id,
       created_by_user_id,
       updated_by_user_id,
       plugin_actor_id
     )
     values (
-      ${input.id ?? nanoid()},
+      ${id},
       ${input.tableId},
-      ${input.cells},
-      ${input.slug},
-      ${'draft'},
+      ${split.sharedCells},
+      ${''},
       ${actorUserId},
       ${actorUserId},
       ${actorUserId},
       ${pluginActorId}
     )
-    returning id
   `
-  const created = await getDataRow(db, rows[0].id)
+  await saveContentLocalizationDraft(db, id, locale.id, { cells: split.localeCells, slug: input.slug }, actorUserId)
+  const created = await getDataRow(db, id, locale.id)
   if (!created) throw new Error('data row was created but could not be re-read')
   return created
 }
@@ -89,20 +133,21 @@ export async function saveDataRowDraft(
 ): Promise<DataRow | null> {
   if (!opts.collabInternal) {
     return serializeCollabAwareWrite(async () => {
-      const row = await saveDataRowDraft(
-        db,
+      const before = await getDataRow(db, rowId, input.localeId)
+      const row = await db.transaction((tx) => saveDataRowDraft(
+        tx,
         rowId,
         input,
         actorUserId,
         pluginActorId,
         { collabInternal: true },
-      )
-      if (row) notifyRowWrite({ tableId: row.tableId, rowIds: [row.id], kind: 'update' })
+      ))
+      if (row) notifyRowWrite({ tableId: row.tableId, rowIds: [row.id], kind: 'update', localeId: row.localeId, sharedChanged: !deepEqual(before?.sharedCells, row.sharedCells) })
       return row
     })
   }
   const updated = await updateDataRowDraftCells(db, rowId, input, actorUserId, pluginActorId)
-  return updated ? getDataRow(db, rowId) : null
+  return updated ? getDataRow(db, rowId, input.localeId) : null
 }
 
 /**
@@ -118,10 +163,27 @@ export async function updateDataRowDraftCells(
   actorUserId: string | null = null,
   pluginActorId: string | null = null,
 ): Promise<boolean> {
+  const locale = await resolveContentLocale(db, input.localeId)
+  const previous = await getDataRow(db, rowId, locale.id)
+  if (!previous) return false
+  const table = await getDataTable(db, previous.tableId)
+  if (!table) return false
+  const slug = input.slug ?? (typeof input.cells.slug === 'string' ? input.cells.slug : previous.slug)
+  await assertDraftSlugAvailable(db, previous.tableId, rowId, locale.id, slug)
+  const inputCells = Object.hasOwn(input.cells, 'slug') ? { ...input.cells, slug } : input.cells
+  const split = splitLocalizedCells(table.fields, previous.sharedCells, previous.cells, inputCells, previous.localization?.cells ?? {}, {
+    allowStructureChanges: locale.isDefault,
+    canLocalizeProperty: await localizationPropertyPolicy(db),
+  })
+  const source = locale.isDefault ? previous : await getDataRow(db, rowId)
+  const translationMeta = locale.isDefault ? {} : updateTranslationMetadata(
+    source?.cells ?? {}, previous.localization?.cells ?? {}, split.localeCells,
+    previous.localization?.translationMeta ?? {},
+  )
   const { rows } = await db<{ id: string }>`
     update data_rows
-    set cells_json = ${input.cells},
-        slug = ${input.slug},
+    set cells_json = ${split.sharedCells},
+        slug = '',
         updated_by_user_id = ${actorUserId},
         plugin_actor_id = ${pluginActorId},
         updated_at = current_timestamp
@@ -129,6 +191,9 @@ export async function updateDataRowDraftCells(
       and deleted_at is null
     returning id
   `
+  if (rows.length > 0) {
+    await saveContentLocalizationDraft(db, rowId, locale.id, { cells: split.localeCells, slug, translationMeta }, actorUserId)
+  }
   return rows.length > 0
 }
 
@@ -147,13 +212,12 @@ export async function resurrectDataRow(
   await db`
     update data_rows
     set deleted_at = null,
-        cells_json = ${input.cells},
-        slug = ${input.slug},
         updated_by_user_id = ${actorUserId},
         updated_at = current_timestamp
     where id = ${rowId}
       and deleted_at is not null
   `
+  await updateDataRowDraftCells(db, rowId, input, actorUserId)
 }
 
 /**
@@ -171,11 +235,15 @@ export async function upsertDataRowDraft(
 ): Promise<void> {
   if (!opts.collabInternal) {
     return serializeCollabAwareWrite(async () => {
-      await upsertDataRowDraft(db, input, actorUserId, { collabInternal: true })
-      notifyRowWrite({ tableId: input.tableId, rowIds: [input.id], kind: 'update' })
+      const before = await getDataRow(db, input.id, input.localeId)
+      await db.transaction((tx) => upsertDataRowDraft(tx, input, actorUserId, { collabInternal: true }))
+      const after = await getDataRow(db, input.id, input.localeId)
+      notifyRowWrite({ tableId: input.tableId, rowIds: [input.id], kind: 'update', localeId: after?.localeId, sharedChanged: !deepEqual(before?.sharedCells, after?.sharedCells) })
     })
   }
-  const draft = { cells: input.cells, slug: input.slug }
+  const draft = { cells: input.cells, slug: input.slug, localeId: input.localeId }
+  const { rows: identities } = await db<{ table_id: string }>`select table_id from data_rows where id = ${input.id}`
+  if (identities[0] && identities[0].table_id !== input.tableId) throw new LocalizationError('This content identity belongs to another collection', 'tableId')
   const updated = await updateDataRowDraftCells(db, input.id, draft, actorUserId)
   if (updated) return
   const { rows } = await db<{ id: string }>`
@@ -198,13 +266,41 @@ export async function updateDataRowSlug(
   db: DbClient,
   rowId: string,
   slug: string,
+  localeId?: string,
 ): Promise<void> {
+  const locale = await resolveContentLocale(db, localeId)
+  const row = await getDataRow(db, rowId, locale.id)
+  if (!row) return
+  await assertDraftSlugAvailable(db, row.tableId, rowId, locale.id, slug)
   await db`
-    update data_rows
+    update data_row_localizations
     set slug = ${slug}
-    where id = ${rowId}
-      and deleted_at is null
+    where row_id = ${rowId} and locale_id = ${locale.id}
   `
+}
+
+/** CRDT shared documents persist only logical structure and shared values. */
+export async function upsertSharedDataRowDraft(
+  db: DbClient,
+  input: { id: string; tableId: string; cells: DataRowCells },
+  actorUserId: string | null = null,
+  opts: { collabInternal?: boolean } = {},
+): Promise<void> {
+  if (!opts.collabInternal) {
+    return serializeCollabAwareWrite(async () => {
+      await upsertSharedDataRowDraft(db, input, actorUserId, { collabInternal: true })
+      notifyRowWrite({ tableId: input.tableId, rowIds: [input.id], kind: 'update' })
+    })
+  }
+  const { rows } = await db<{ id: string }>`
+    insert into data_rows (id, table_id, cells_json, slug, author_user_id, created_by_user_id, updated_by_user_id)
+    values (${input.id}, ${input.tableId}, ${input.cells}, '', ${actorUserId}, ${actorUserId}, ${actorUserId})
+    on conflict (id) do update set cells_json = excluded.cells_json, slug = '',
+      deleted_at = null, updated_by_user_id = excluded.updated_by_user_id, updated_at = current_timestamp
+    where data_rows.table_id = excluded.table_id
+    returning id
+  `
+  if (!rows[0]) throw new LocalizationError('This content identity belongs to another collection', 'tableId')
 }
 
 /**
@@ -223,17 +319,19 @@ export async function softDeleteDataRow(
   opts: { collabInternal?: boolean } = {},
 ): Promise<DeletedRowSummary | null> {
   if (!opts.collabInternal) {
-    return serializeCollabAwareWrite(async () => {
-      const row = await softDeleteDataRow(db, rowId, actorUserId, { collabInternal: true })
+    return serializeCollabAwareWrite(() => withPublishLock(async () => {
+      const row = await db.transaction((tx) => softDeleteDataRow(tx, rowId, actorUserId, { collabInternal: true }))
       if (row) notifyRowWrite({ tableId: row.tableId, rowIds: [row.id], kind: 'delete' })
+      if (row?.status === 'published') bumpPublishVersion()
       return row
-    })
+    }))
   }
+  const localizations = await listContentLocalizations(db, { rowIds: [rowId] })
+  const defaultLocale = await getDefaultLocale(db)
+  const source = localizations.find((localization) => localization.localeId === defaultLocale.id)
   const { rows } = await db<{
     id: string
     table_id: string
-    slug: string
-    status: DataRowStatus
     deleted_at: string | Date | null
   }>`
     update data_rows
@@ -242,15 +340,16 @@ export async function softDeleteDataRow(
         updated_at = current_timestamp
     where id = ${rowId}
       and deleted_at is null
-    returning id, table_id, slug, status, deleted_at
+    returning id, table_id, deleted_at
   `
   const row = rows[0]
   if (!row) return null
   return {
     id: row.id,
     tableId: row.table_id,
-    slug: row.slug,
-    status: row.status,
+    slug: source?.slug ?? '',
+    status: localizations.some((localization) => localization.availability === 'online' && localization.activeVersionId)
+      ? 'published' : source?.activeVersionId ? 'unpublished' : 'draft',
     deletedAt: isoDateOrNull(row.deleted_at),
   }
 }
@@ -266,59 +365,52 @@ export async function updateDataRowTable(
   rowId: string,
   tableId: string,
   actorUserId: string | null = null,
-  opts: { collabInternal?: boolean } = {},
+  opts: { collabInternal?: boolean; localeId?: string } = {},
 ): Promise<UpdateDataRowTableResult> {
   if (!opts.collabInternal) {
-    const moved = await serializeCollabAwareWrite(async () => {
-      const before = await getDataRow(db, rowId)
-      const result = await updateDataRowTable(
-        db,
-        rowId,
-        tableId,
-        actorUserId,
-        { collabInternal: true },
-      )
-      let bumpPublishVersion = false
+    // Lock order: collab write lane → publication → DB transaction. Publishers
+    // flush collaboration before entering their publication critical section.
+    return serializeCollabAwareWrite(() => withPublishLock(async () => {
+      const before = await getDataRow(db, rowId, opts.localeId)
+      const hadLiveVariant = (await listContentLocalizations(db, { rowIds: [rowId] })).some((variant) => variant.availability === 'online')
+      const result = await db.transaction((tx) => updateDataRowTable(
+        tx, rowId, tableId, actorUserId, { collabInternal: true, localeId: opts.localeId },
+      ))
       if (before && result.ok && before.tableId !== result.row.tableId) {
-        // A table move changes both collection rosters. Emit the pair while
-        // still holding the collab-aware write lane so a dirty old row doc
-        // cannot land between the move and its synchronous invalidation.
         notifyRowWrite({ tableId: before.tableId, rowIds: [rowId], kind: 'delete' })
         notifyRowWrite({ tableId: result.row.tableId, rowIds: [rowId], kind: 'create' })
-        bumpPublishVersion = before.status === 'published'
+        if (hadLiveVariant) bumpPublishVersion()
       }
-      return { result, bumpPublishVersion }
-    })
-    // The publish lock may itself wait on persistence work. Never hold the
-    // non-reentrant collab-aware lane while awaiting that independent lock.
-    if (moved.bumpPublishVersion) await bumpPublishVersionSerialized()
-    return moved.result
+      return result
+    }))
   }
 
-  const row = await getDataRow(db, rowId)
+  const row = await getDataRow(db, rowId, opts.localeId)
   if (!row) return { ok: false, reason: 'row_not_found' }
   if (row.tableId === tableId) return { ok: true, row }
 
-  const { rows: tableRows } = await db<{ id: string }>`
-    select id from data_tables
-    where id = ${tableId}
-      and deleted_at is null
-    limit 1
-  `
-  if (!tableRows[0]) return { ok: false, reason: 'table_not_found' }
+  const targetTable = await getDataTable(db, tableId)
+  const sourceTable = await getDataTable(db, row.tableId)
+  if (!targetTable || !sourceTable) return { ok: false, reason: 'table_not_found' }
+  if (targetTable.kind !== 'data' && targetTable.kind !== 'postType') {
+    return { ok: false, reason: 'unsupported_table' }
+  }
 
-  // Only check for slug conflicts when the row has a non-empty slug.
-  if (row.slug) {
+  const variants = await listContentLocalizations(db, { rowIds: [rowId] })
+  for (const variant of variants) {
+    if (!variant.slug) continue
     const { rows: conflictRows } = await db<{ id: string }>`
-      select id from data_rows
-      where table_id = ${tableId}
-        and slug = ${row.slug}
-        and id <> ${rowId}
-        and deleted_at is null
+      select data_rows.id from data_rows
+      join data_row_localizations localized on localized.row_id = data_rows.id
+      where data_rows.table_id = ${tableId}
+        and localized.locale_id = ${variant.localeId} and localized.slug = ${variant.slug}
+        and data_rows.id <> ${rowId} and data_rows.deleted_at is null
       limit 1
     `
     if (conflictRows[0]) return { ok: false, reason: 'slug_conflict' }
   }
+
+  await changeRowFieldLocalizationInTx(db, { id: row.id, cells_json: row.sharedCells }, sourceTable.fields, targetTable.fields, actorUserId)
 
   const { rows } = await db<{ id: string }>`
     update data_rows
@@ -330,7 +422,11 @@ export async function updateDataRowTable(
     returning id
   `
   if (!rows[0]) return { ok: false, reason: 'row_not_found' }
-  const updated = await getDataRow(db, rows[0].id)
+  // A different collection changes route and template context for every language.
+  await db`update data_row_localizations set availability = 'offline', scheduled_publish_at = null,
+    scheduled_revision_json = null, seq = seq + 1, updated_at = current_timestamp, updated_by_user_id = ${actorUserId}
+    where row_id = ${rowId}`
+  const updated = await getDataRow(db, rows[0].id, opts.localeId)
   if (!updated) return { ok: false, reason: 'row_not_found' }
   return { ok: true, row: updated }
 }
@@ -338,31 +434,33 @@ export async function updateDataRowTable(
 /**
  * Flip a row between `draft` and `unpublished` (the only states reachable
  * from this endpoint — `published` goes through the dedicated publish flow).
- * Always clears publish and schedule metadata since neither remains meaningful
- * in the retracted state.
+ * Retracts one language atomically with publication. Unpublished keeps its
+ * historical version pointer; both states cancel the language schedule.
  */
 export async function updateDataRowStatus(
   db: DbClient,
   rowId: string,
   status: 'draft' | 'unpublished',
   actorUserId: string | null = null,
+  localeId?: string,
 ): Promise<DataRow | null> {
-  const { rows } = await db<{ id: string }>`
-    update data_rows
-    set status = ${status},
-        published_at = null,
-        published_by_user_id = null,
-        scheduled_publish_at = null,
-        updated_by_user_id = ${actorUserId},
-        updated_at = current_timestamp
-    where id = ${rowId}
-      and deleted_at is null
-    returning id
-  `
-  if (!rows[0]) return null
-  // Invalidate the render cache — the route's published state changed.
-  await bumpPublishVersionSerialized()
-  return getDataRow(db, rows[0].id)
+  return withPublishLock(async () => {
+    const result = await db.transaction(async (tx) => {
+      const locale = await resolveContentLocale(tx, localeId)
+      const current = await getDataRow(tx, rowId, locale.id)
+      if (!current) return null
+      if (!current.localization) await saveContentLocalizationDraft(tx, rowId, locale.id, { cells: {}, slug: current.slug }, actorUserId)
+      const updated = await setContentLocalizationAvailability(tx, rowId, locale.id, 'offline', actorUserId)
+      if (!updated) return null
+      // Both editor actions mean offline; historical publication remains in the version history.
+      if (status === 'draft') {
+        await tx`update data_row_localizations set active_version_id = null, published_at = null, published_by_user_id = null where row_id = ${rowId} and locale_id = ${locale.id}`
+      }
+      return getDataRow(tx, rowId, locale.id)
+    })
+    if (result) bumpPublishVersion()
+    return result
+  })
 }
 
 export async function updateDataRowAuthor(
@@ -370,7 +468,9 @@ export async function updateDataRowAuthor(
   rowId: string,
   authorUserId: string,
   actorUserId: string | null = null,
+  localeId?: string,
 ): Promise<DataRow | null> {
+  const locale = await resolveContentLocale(db, localeId)
   const { rows } = await db<{ id: string }>`
     update data_rows
     set author_user_id = ${authorUserId},
@@ -380,5 +480,5 @@ export async function updateDataRowAuthor(
       and deleted_at is null
     returning id
   `
-  return rows[0] ? getDataRow(db, rows[0].id) : null
+  return rows[0] ? getDataRow(db, rows[0].id, locale.id) : null
 }

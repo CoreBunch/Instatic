@@ -14,6 +14,7 @@ const STATIC_PROMPT_PREFIX = `You manage the user's website content (posts, page
 
 Scope:
 - Each collection is a typed table of documents (posts, pages, or custom). Documents have a fixed schema: built-in fields (title, slug, body, featuredMedia, seoTitle, seoDescription) plus any custom fields.
+- Language context: documents share identity and structure across locales. Pass the selected localeId to reads and writes. Use content_select_locale before changing language. Fields marked shared affect every language. Published/unpublished/scheduled state applies only to the selected locale; deleting removes the logical document across languages.
 - The active document is the one currently open in the editor. Most edits target it; call content_set_active_document to switch the user's view before editing another doc.
 - Body content is exchanged as **markdown**. Use standard markdown (headings, paragraphs, lists, links, bold/italic, code, blockquotes) — the bridge converts to the editor's internal format on write.
 
@@ -59,6 +60,7 @@ Reply: 1-2 sentences after acting. No raw HTML or full markdown bodies in the re
 
 function buildDynamicSuffix(snap: ContentSnapshot): string {
   const lines: string[] = []
+  lines.push(`Active language: ${snap.localeId ?? '(not configured)'}. Languages: ${(snap.locales ?? []).map((locale) => `${locale.id}=${locale.code}${locale.isDefault ? ' (source)' : ''}`).join(', ')}.`)
   lines.push(`You are ${snap.currentUser.displayName} (${snap.currentUser.email}).`)
   lines.push(
     `Collections: ${snap.collections.map((c) => `${c.slug} (${c.kind}, ${c.docCount} docs)`).join(', ') || '(none)'}.`,

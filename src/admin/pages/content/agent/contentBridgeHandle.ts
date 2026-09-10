@@ -27,50 +27,8 @@ import type { DataRowStatus } from '@core/data/schemas'
 // Keep the two in sync.
 // ---------------------------------------------------------------------------
 
-export interface ContentAgentCurrentUser {
-  id: string
-  displayName: string
-  email: string
-}
-
-interface ContentAgentCollectionSummary {
-  id: string
-  slug: string
-  label: string
-  kind: string
-  docCount: number
-}
-
-export interface ContentAgentFieldInfo {
-  id: string
-  label: string
-  type: string
-  required: boolean
-  builtIn: boolean
-  options?: Array<{ value: string; label: string }>
-  targetTableSlug?: string
-  mediaKind?: string
-  allowMultiple?: boolean
-}
-
-export interface ContentAgentActiveDocument {
-  id: string
-  tableId: string
-  title: string
-  slug: string
-  status: 'draft' | 'unpublished' | 'published' | 'scheduled'
-  fields: Record<string, unknown>
-  schema: ContentAgentFieldInfo[]
-  authorUserId: string | null
-  updatedAt: string
-}
-
-export interface ContentAgentSnapshot {
-  collections: ContentAgentCollectionSummary[]
-  activeTableId: string | null
-  activeDocument: ContentAgentActiveDocument | null
-  currentUser: ContentAgentCurrentUser
-}
+export type { ContentAgentCurrentUser, ContentAgentFieldInfo, ContentAgentActiveDocument, ContentAgentSnapshot } from '@core/ai'
+import type { ContentAgentSnapshot } from '@core/ai'
 
 /**
  * Imperative surface ContentPage exposes to the agent bridge. Every method
@@ -95,6 +53,7 @@ export interface ContentBridgeHandle {
   selectDocument(documentId: string): Promise<boolean>
   /** Switch the sidebar focus to a different collection. */
   selectCollection(tableId: string): Promise<boolean>
+  selectLocale(localeId: string): Promise<void>
 
   /**
    * Create a new draft row in `tableId`. When `fields` is provided, the

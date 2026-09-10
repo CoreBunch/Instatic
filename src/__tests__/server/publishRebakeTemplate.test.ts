@@ -13,89 +13,11 @@ import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import type { DbResult } from '../../../server/db'
+import { cleanupPublishingTestDbs, createPublishingTestDb } from '../helpers/publishingTestDb'
+import { makeSite } from '../publisher/helpers'
+afterEach(cleanupPublishingTestDbs)
 import { readArtefact } from '../../../server/publish/staticArtefact'
-import { createFakeDb } from './dbTestFake'
 import { makePage } from '../publisher/helpers'
-import type { Page } from '../../../src/core/page-tree'
-
-function rowDate(value: string) {
-  return new Date(value)
-}
-
-function pageRow(page: Page, extraCells: Record<string, unknown> = {}) {
-  return {
-    id: page.id,
-    table_id: 'pages',
-    slug: page.slug,
-    status: 'draft',
-    cells_json: {
-      title: page.title,
-      slug: page.slug,
-      body: { nodes: page.nodes, rootNodeId: page.rootNodeId },
-      ...extraCells,
-    },
-    author_user_id: null, author_email: null, author_display_name: null,
-    author_role_slug: null, author_role_name: null,
-    created_by_user_id: null, created_by_email: null, created_by_display_name: null,
-    created_by_role_slug: null, created_by_role_name: null,
-    updated_by_user_id: null, updated_by_email: null, updated_by_display_name: null,
-    updated_by_role_slug: null, updated_by_role_name: null,
-    published_by_user_id: null, published_by_email: null, published_by_display_name: null,
-    published_by_role_slug: null, published_by_role_name: null,
-    created_at: rowDate('2026-01-01'), updated_at: rowDate('2026-01-01'),
-    published_at: null, scheduled_publish_at: null, deleted_at: null,
-  }
-}
-
-function buildFakeDb(layout: Page, about: Page) {
-  return createFakeDb(async (sql: string, params: unknown[]): Promise<DbResult> => {
-    const s = sql.replace(/\s+/g, ' ').trim().toLowerCase()
-
-    if (s.startsWith('select id, name, version, enabled, lifecycle_status')) return { rows: [], rowCount: 0 }
-
-    if (s.includes('from site') && s.includes('select id')) {
-      return {
-        rows: [{
-          id: 'proj-1', name: 'Test Site',
-          settings_json: { metaTitle: 'Test Site', shortcuts: {} },
-          files_json: [], classes_json: {},
-          breakpoints_json: [{ id: 'desktop', label: 'Desktop', width: 1440, icon: 'monitor' }],
-          runtime_json: { dependencyLock: { version: 1, packages: {}, updatedAt: 0 }, scripts: {} },
-          version: 1, created_at: rowDate('2026-01-01'), updated_at: rowDate('2026-01-01'),
-        }],
-        rowCount: 1,
-      }
-    }
-
-    if (s.includes('select data_rows.id') && s.includes('from data_rows') && s.includes('order by')) {
-      if (params[0] === 'pages') {
-        return {
-          rows: [
-            pageRow(layout, {
-              templateEnabled: true,
-              templateTarget: { kind: 'everywhere' },
-              templatePriority: 0,
-            }),
-            pageRow(about),
-          ],
-          rowCount: 2,
-        }
-      }
-      return { rows: [], rowCount: 0 }
-    }
-
-    if (s.includes('coalesce(max(version_number), 0) + 1')) return { rows: [{ next_version: 1 }], rowCount: 1 }
-    if (s.includes('insert into data_row_versions')) return { rows: [], rowCount: 1 }
-    if (s.includes('insert into runtime_assets')) return { rows: [], rowCount: 0 }
-    if (s.includes('select count') && s.includes('from runtime_assets')) return { rows: [{ count: 0 }], rowCount: 1 }
-    if (s.includes('update data_rows') && s.includes("status = 'published'")) return { rows: [], rowCount: 1 }
-    if (s.includes('from active_media_storage_adapter')) return { rows: [], rowCount: 0 }
-    if (s.includes('count(*) as count from site')) return { rows: [{ count: 1 }], rowCount: 1 }
-
-    return { rows: [], rowCount: 0 }
-  })
-}
 
 describe('publishDraftSite — template re-bake', () => {
   let uploadsDir: string
@@ -126,9 +48,9 @@ describe('publishDraftSite — template re-bake', () => {
     about.slug = 'about'
     about.title = 'About'
 
-    const db = buildFakeDb(layout, about)
+    const db = await createPublishingTestDb(makeSite({ pages: [layout, about], layouts: [] }), false)
     const { publishDraftSite } = await import('../../../server/publish/publishSite')
-    await publishDraftSite(db, 'user-1', uploadsDir)
+    await publishDraftSite(db, null, uploadsDir, { variants: [{ rowId: about.id, localeId: 'default' }] })
 
     // /about is baked AND wrapped in the layout (MASTHEAD present + own body).
     const aboutHtml = await readArtefact(uploadsDir, '/about')

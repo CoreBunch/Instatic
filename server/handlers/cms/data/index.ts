@@ -29,14 +29,29 @@ import { handleDataMetaRoutes } from './meta'
 import { handleDataSearchRoute } from './search'
 import { handleDataTableRoutes } from './tables'
 import { handleDataRowRoutes } from './rows'
+import { handleRowLocalizationRoutes } from './rowLocalizations'
+import { handleTableLocalizationRoutes } from './tableLocalizations'
+import { LocalizationError } from '../../../repositories/localization'
+import { LocalizationValidationError } from '@core/localization'
+import { LocalizedRouteError } from '@core/localization-routing'
+import { badRequest } from '../../../http'
 
 export async function handleDataRoutes(
   req: Request,
   db: DbClient,
   options: CmsHandlerOptions = {},
 ): Promise<Response | null> {
-  return (await handleDataMetaRoutes(req, db))
-    ?? (await handleDataSearchRoute(req, db))
-    ?? (await handleDataTableRoutes(req, db))
-    ?? (await handleDataRowRoutes(req, db, options))
+  try {
+    return (await handleDataMetaRoutes(req, db))
+      ?? (await handleDataSearchRoute(req, db))
+      ?? (await handleTableLocalizationRoutes(req, db))
+      ?? (await handleDataTableRoutes(req, db))
+      ?? (await handleRowLocalizationRoutes(req, db))
+      ?? (await handleDataRowRoutes(req, db, options))
+  } catch (err) {
+    if (err instanceof LocalizationError || err instanceof LocalizationValidationError || err instanceof LocalizedRouteError) {
+      return badRequest(err.message)
+    }
+    throw err
+  }
 }

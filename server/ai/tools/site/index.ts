@@ -10,6 +10,7 @@
  * callers without `ai.tools.write`.
  */
 
+import { selectLocaleTool, withBrowserLocaleContext } from '../localeTools'
 import type { AiTool } from '../types'
 import { siteReadTools } from './readTools'
 import { siteWriteTools } from './writeTools'
@@ -36,7 +37,7 @@ function stampMutationFlag(tools: AiTool[], isMutating: boolean): AiTool[] {
 export const siteTools: AiTool[] = [
   ...stampMutationFlag(siteReadTools, false),
   ...stampMutationFlag(siteWriteTools, true),
-]
+].map(withBrowserLocaleContext).concat(selectLocaleTool('site'))
 
 export { buildSiteSystemPrompt } from './systemPrompt'
 export { SiteAgentSnapshotSchema } from './snapshot'

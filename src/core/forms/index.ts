@@ -1,7 +1,11 @@
 export type {
   PublishedFormSnapshot,
+  PublicFormIdentity,
+  PublicFormRouteIdentity,
 } from './schemas'
 export {
+  PublicFormIdentitySchema,
+  PublicFormRouteIdentitySchema,
   PublicFormChallengeBodySchema,
   PublicFormSubmitBodySchema,
 } from './schemas'

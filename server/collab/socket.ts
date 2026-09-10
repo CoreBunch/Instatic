@@ -271,8 +271,9 @@ export function createCollabSocketLayer(relay: CollabRelay) {
     ws: ServerWebSocket<CollabSocketData>,
     docId: string,
     reason: ResetReason,
+    rejectedGeneration: string,
   ): void {
-    ws.send(encodeCollabFrame(docId, '', FRAME_RESET, encodeResetPayload(reason)))
+    ws.send(encodeCollabFrame(docId, rejectedGeneration, FRAME_RESET, encodeResetPayload(reason)))
   }
 
   /**
@@ -322,7 +323,8 @@ export function createCollabSocketLayer(relay: CollabRelay) {
       }
 
       if (frame.frameType !== FRAME_SYNC) return
-      if (!parseCollabDocId(frame.docId)) return
+      const parsedDocId = parseCollabDocId(frame.docId)
+      if (!parsedDocId) return
       if (frame.payload.byteLength > MAX_SYNC_PAYLOAD_BYTES) {
         console.warn(
           `[collab] oversize ${frame.docId} frame (${frame.payload.byteLength}B) from ${ws.data.userId}`,
@@ -331,7 +333,7 @@ export function createCollabSocketLayer(relay: CollabRelay) {
         // structs the server will never receive, every later update queues
         // behind them as pending, and the screen shows edits that can never
         // publish. A visible revert is strictly better.
-        sendReset(ws, frame.docId, 'oversize')
+        sendReset(ws, frame.docId, 'oversize', frame.generation)
         return
       }
 
@@ -371,14 +373,14 @@ export function createCollabSocketLayer(relay: CollabRelay) {
         // before any inbound frame has taught it a generation.
         const serverIsEmpty = Y.encodeStateVector(doc).byteLength === 1
         if (messageType !== SYNC_STEP_1 && !serverIsEmpty) {
-          sendReset(ws, frame.docId, 'stale')
+          sendReset(ws, frame.docId, 'stale', frame.generation)
           return
         }
       } else if (frame.generation !== generation) {
         console.warn(
           `[collab] stale generation for ${frame.docId} from ${ws.data.userId}`,
         )
-        sendReset(ws, frame.docId, 'stale')
+        sendReset(ws, frame.docId, 'stale', frame.generation)
         return
       }
 
@@ -391,17 +393,18 @@ export function createCollabSocketLayer(relay: CollabRelay) {
       // nothing and passes as a no-op. Both non-step1 message types (step2
       // replies and updates) carry `varUint8Array update` after the type
       // varUint, so one extraction covers whatever a client might send.
-      if (messageType !== SYNC_STEP_1 && !ws.data.fullSiteWriter) {
+      if (messageType !== SYNC_STEP_1 && (!ws.data.fullSiteWriter || parsedDocId.localeId)) {
         const guardDecoder = decoding.createDecoder(frame.payload)
         decoding.readVarUint(guardDecoder)
         const update = decoding.readVarUint8Array(guardDecoder)
-        const verdict = validateGuardedUpdate(frame.docId, doc, update, ws.data.capabilities)
+        const localizationContext = parsedDocId.localeId ? await relay.localizationGuardContext(frame.docId) : undefined
+        const verdict = validateGuardedUpdate(frame.docId, doc, update, ws.data.capabilities, localizationContext)
         if (!verdict.ok) {
           console.warn(`[collab] rejected ${frame.docId} update from ${ws.data.userId}: ${verdict.reason}`)
           // The sender's local doc holds the forbidden change — a TARGETED
           // reset makes their client rebind and reseed from the server,
           // reverting it everywhere (including their own screen).
-          sendReset(ws, frame.docId, 'refused')
+          sendReset(ws, frame.docId, 'refused', frame.generation)
           return
         }
         Y.applyUpdate(doc, update, ws)
@@ -466,7 +469,7 @@ export function createCollabSocketLayer(relay: CollabRelay) {
         // rebinds and reseeds. Awareness/malformed frames just get dropped.
         if (frame && frame.frameType === FRAME_SYNC && parseCollabDocId(frame.docId)) {
           try {
-            sendReset(ws, frame.docId, 'refused')
+            sendReset(ws, frame.docId, 'refused', frame.generation)
           } catch (_sendErr) {
             // Socket already closing — nothing to recover.
           }

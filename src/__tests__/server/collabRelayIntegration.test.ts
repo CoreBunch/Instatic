@@ -27,11 +27,17 @@ import {
   FRAME_SYNC,
   PRESENCE_DOC_ID,
   LOCAL_ORIGIN,
+  encodeCollabDocId,
+  projectLocalizationDoc,
   projectPageDoc,
   SITE_SOCKET_PATH,
   treeMap,
 } from '@core/collab'
 import { pageFromRow } from '@core/data/pageFromRow'
+import { useEditorStore } from '@site/store/store'
+import { connectCollabProvider, disconnectCollabProvider } from '@site/store/slices/site/collabBinding'
+import { whenCollabWritable } from '@site/store/slices/site/collabWriteGate'
+import { getDraftSiteDocument } from '../../../server/repositories/publish'
 import {
   createCollabProvider,
   type CollabProvider,
@@ -43,6 +49,7 @@ import {
   handleCollabSocketUpgrade,
 } from '../../../server/collab/socket'
 import { getCollabDocumentState } from '../../../server/repositories/collabDocuments'
+import { getDefaultLocale } from '../../../server/repositories/localization'
 import { runPublishFlush } from '../../../server/publish/publishFlush'
 import { getDataRow, saveDataRowDraft } from '../../../server/repositories/data'
 import { findUserByEmail } from '../../../server/repositories/users'
@@ -154,6 +161,7 @@ function insertChildNode(doc: Y.Doc, nodeId: string, moduleId: string): void {
     const nodes = tree.get('nodes') as Y.Map<unknown>
     const rootId = tree.get('rootNodeId') as string
     const node = new Y.Map<unknown>()
+    node.set('id', nodeId)
     node.set('moduleId', moduleId)
     node.set('props', new Y.Map())
     node.set('breakpointOverrides', new Y.Map())
@@ -166,6 +174,29 @@ function insertChildNode(doc: Y.Doc, nodeId: string, moduleId: string): void {
 }
 
 describe('collab relay integration (real server, real sockets)', () => {
+  it('creates a localized page and converts it to a template without resetting its new lineage', async () => {
+    const stack = await startStack()
+    const site = (await getDraftSiteDocument(stack.harness.db))!
+    useEditorStore.getState().loadSite(site)
+    const client = connectClient(stack)
+    const resets: string[] = []
+    client.onReset((id, reason) => resets.push(`${id}:${reason}`))
+    connectCollabProvider(client)
+    cleanups.push(() => { disconnectCollabProvider(); useEditorStore.getState().clearSite() })
+    expect(await whenCollabWritable()).toBe(true)
+    const created = useEditorStore.getState().addPage('New post template', 'new-post-template')
+    expect(await whenCollabWritable()).toBe(true)
+    await waitFor(async () => (await getDataRow(stack.harness.db, created.id))?.cells.title === 'New post template')
+    expect(resets).toEqual([])
+    const template = { enabled: true, target: { kind: 'postTypes' as const, tableSlugs: ['posts'] }, priority: 100 }
+    useEditorStore.getState().renamePage(created.id, 'Post template', 'post-template')
+    useEditorStore.getState().convertPageToTemplate(created.id, template)
+    await waitFor(async () => (await getDataRow(stack.harness.db, created.id))?.sharedCells.templateEnabled === true)
+    await new Promise((resolve) => setTimeout(resolve, 100))
+    expect(useEditorStore.getState().site!.pages.find((page) => page.id === created.id)?.template).toEqual(template)
+    expect(resets).toEqual([])
+  })
+
   it('two clients edit concurrently, converge, and the relay persists blob + derived JSON', async () => {
     const stack = await startStack()
     const docId = `page:${stack.homeId}`
@@ -342,7 +373,8 @@ describe('collab relay integration (real server, real sockets)', () => {
 
   it('resets a doc when the row is written outside the relay', async () => {
     const stack = await startStack()
-    const docId = `page:${stack.homeId}`
+    const locale = await getDefaultLocale(stack.harness.db)
+    const docId = encodeCollabDocId({ kind: 'page', rowId: stack.homeId, localeId: locale.id })
 
     const client = connectClient(stack)
     const bound = client.bind(docId)
@@ -365,8 +397,8 @@ describe('collab relay integration (real server, real sockets)', () => {
     // Rebinding gets a FRESH server seed carrying the out-of-relay write.
     const rebound = client.bind(docId)
     await rebound.whenSynced
-    const projected = projectPageDoc(rebound.doc, stack.homeId)
-    expect(projected.title).toBe('Rewritten outside the relay')
+    const projected = projectLocalizationDoc(rebound.doc)
+    expect(projected.cells.title).toBe('Rewritten outside the relay')
   })
 
   it('a reconnecting client catches up on edits it missed while offline', async () => {

@@ -25,6 +25,7 @@
  * @see src/core/data/bundleSchema.ts
  */
 
+import { makeContentLocalization } from '../fixtures/localization'
 import { describe, test, expect, beforeAll, afterAll } from 'bun:test'
 import { createSqliteClient } from '../../../server/db/sqlite'
 import { runMigrations } from '../../../server/db/runMigrations'
@@ -81,7 +82,7 @@ beforeAll(async () => {
       title: 'Home',
       slug: 'home',
       templateEnabled: false,
-      body: { nodes: {}, rootNodeId: 'root' },
+      body: { nodes: { root: { id: 'root', moduleId: 'base.container', props: {}, breakpointOverrides: {}, children: [], classIds: [] } }, rootNodeId: 'root' },
     },
     slug: 'home',
   })
@@ -94,7 +95,7 @@ beforeAll(async () => {
       templateEnabled: true,
       templateTarget: { kind: 'postTypes', tableSlugs: ['posts'] },
       templatePriority: 100,
-      body: { nodes: {}, rootNodeId: 'root' },
+      body: { nodes: { root: { id: 'root', moduleId: 'base.container', props: {}, breakpointOverrides: {}, children: [], classIds: [] } }, rootNodeId: 'root' },
     },
     slug: 'blog-template',
   })
@@ -356,7 +357,7 @@ describe('with strategies — handler-level roundtrip', () => {
     })
     await createDataRow(sourceDb, {
       tableId: 'pages',
-      cells: { title: 'Home', slug: 'home', body: { nodes: {}, rootNodeId: 'root' } },
+      cells: { title: 'Home', slug: 'home', body: { nodes: { root: { id: 'root', moduleId: 'base.container', props: {}, breakpointOverrides: {}, children: [], classIds: [] } }, rootNodeId: 'root' } },
       slug: 'home',
     })
     // A saved layout — rides the same generic table/row pipeline; the
@@ -675,6 +676,7 @@ describe('full-site round-trip — folders, membership, redirects', () => {
     await importDataRowRedirect(sourceDb, {
       id: 'redirect-1',
       tableId: 'posts',
+      localeId: 'default',
       fromRouteBase: '/posts',
       fromSlug: 'old-slug',
       targetRowId: targetRow.id,
@@ -872,6 +874,10 @@ describe('archive import validation', () => {
             id: 'bundle-conflicting-row',
             tableId: 'posts',
             cells: { title: 'Bundle row', slug: 'shared-slug' },
+            sharedCells: {},
+            localeId: 'default',
+            localization: makeContentLocalization('bundle-conflicting-row', { cells: { title: 'Bundle row', slug: 'shared-slug' }, slug: 'shared-slug' }),
+            publicPath: null,
             slug: 'shared-slug',
             status: 'draft',
             authorUserId: null,

@@ -12,6 +12,7 @@
  */
 import { Type, safeParseValue } from '@core/utils/typeboxHelpers'
 import type { CoreCapability } from '@core/capabilities'
+import { getLocale } from '../../../repositories/localization'
 import { jsonResponse } from '../../../http'
 import {
   requireAuthenticatedUser,
@@ -79,7 +80,9 @@ async function handle(req: Request, db: DbClient): Promise<Response> {
     return jsonResponse({ error: 'Forbidden' }, { status: 403 })
   }
 
-  const stream = createEditorBridgeStream(userOrResponse.id, scope, req.signal)
+  const localeId = new URL(req.url).searchParams.get('localeId')
+  if (localeId && !(await getLocale(db, localeId))) return jsonResponse({ error: 'Unknown language' }, { status: 400 })
+  const stream = createEditorBridgeStream(userOrResponse.id, scope, req.signal, undefined, localeId)
   return new Response(stream, {
     status: 200,
     headers: {

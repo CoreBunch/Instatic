@@ -134,7 +134,7 @@ function ringKey(peer: PeerPresence, nodeId: string): string {
 
 export function PeerPresenceOverlay({ breakpointId, iframeElement }: PeerPresenceOverlayProps) {
   const docId = useEditorStore((s) =>
-    activeEditorDocId({ activeDocument: s.activeDocument, activePageId: s.activePageId }),
+    activeEditorDocId(s),
   )
   const peers = usePeerPresences(docId)
   const viewportActions = use(CanvasViewportActionsContext)

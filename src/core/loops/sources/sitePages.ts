@@ -32,7 +32,7 @@ import { primaryTemplateTableSlug } from '@core/templates'
  */
 export function pageToLoopItem(page: Page): LoopItem {
   const slug = page.slug.startsWith('/') ? page.slug : `/${page.slug}`
-  const permalink = slug === '/index' ? '/' : slug
+  const permalink = page.template?.enabled === true ? '' : page.publicPath ?? (slug === '/index' ? '/' : slug)
   return {
     id: page.id,
     fields: {
@@ -103,7 +103,7 @@ export const SitePagesSource: LoopEntitySource = {
   ],
 
   async fetch(ctx): Promise<LoopFetchResult> {
-    const filtered = filterPagesForLoop(ctx.site.pages, ctx.filters)
+    const filtered = filterPagesForLoop(ctx.site.pages.filter((page) => page.template?.enabled !== true), ctx.filters)
     const sorted =
       ctx.orderBy === 'title' || ctx.orderBy === 'slug'
         ? [...filtered].sort((a, b) => compare(a, b, ctx.orderBy, ctx.direction))

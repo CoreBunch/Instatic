@@ -39,7 +39,38 @@ import {
 import type { DbClient } from '../../../db/client'
 import { jsonResponse } from '../../../http'
 import type { AuthUser } from '../../../repositories/users'
-import type { DataTable } from '@core/data/schemas'
+import type { DataRow, DataTable } from '@core/data/schemas'
+import { getDataRow, getDataTable } from '../../../repositories/data'
+import { requestLocale } from '../localeContext'
+
+/** Identity-based ownership is shared across translations; a translation never changes its owner. */
+export async function loadDataRowForAccess(
+  req: Request,
+  db: DbClient,
+  rowId: string,
+  user: AuthUser,
+  operation: 'read' | 'edit' | 'publish' | 'localize',
+  bodyLocaleId?: string,
+): Promise<DataRow | Response> {
+  const locale = await requestLocale(req, db, bodyLocaleId)
+  if (locale instanceof Response) return locale
+  const row = await getDataRow(db, rowId, locale.id)
+  const table = row ? await getDataTable(db, row.tableId) : null
+  const missing = () => jsonResponse({ error: 'Data row not found' }, { status: 404 })
+  if (!row || !table) return missing()
+  if (table.kind === 'page' && operation !== 'edit') {
+    if (!userHasCapability(user, 'site.read')) return missing()
+    if (operation === 'publish' && !userHasCapability(user, 'pages.publish')) return forbidden()
+    if (operation === 'localize' && !userHasCapability(user, 'site.content.edit')) return forbidden()
+  } else {
+    if (!canReadTable(user, table)) return missing()
+    const permitted = operation === 'read' ? canReadDataRow(user, row)
+      : operation === 'publish' ? canPublishDataRow(user, row)
+      : canEditDataRow(user, row)
+    if (!permitted) return forbidden()
+  }
+  return row
+}
 
 const DATA_ACCESS_CAPABILITIES = [
   'content.create',

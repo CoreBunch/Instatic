@@ -11,8 +11,11 @@ import {
 import { publicFormPerFormRateLimit, publicFormPerIpRateLimit } from '../../../server/forms/rateLimit'
 import { configurePublicOrigins, resetPublicOrigins, stampSocketIp } from '../../../server/auth/security'
 import { hookBus } from '@core/plugins/hookBus'
-import { createFakeDb } from './dbTestFake'
-import type { PublishedPageSnapshot } from '../../../server/repositories/publish'
+import type { PublicFormIdentity } from '@core/forms'
+import { createDataTable } from '../../../server/repositories/data'
+import { loadPublishedRouteInventory } from '../../../server/publish/publishedRoutes'
+import { createPublishingTestDb, cleanupPublishingTestDbs } from '../helpers/publishingTestDb'
+import { makePage, makeSite } from '../publisher/helpers'
 
 function makeRequest(
   path: string,
@@ -44,161 +47,41 @@ function node(id: string, moduleId: string, props: Record<string, unknown>, chil
   }
 }
 
-function makeSnapshot(targetTableId = 'newsletter_submissions'): PublishedPageSnapshot {
-  return {
-    cmsSnapshotVersion: 1,
-    pageRowId: 'page-home',
-    site: {
-      id: 'site',
-      name: 'Site',
-      settings: {},
-      pages: [{
-        id: 'page-home',
-        slug: 'index',
-        title: 'Home',
-        rootNodeId: 'body',
-        nodes: {
-          body: node('body', 'base.body', {}, ['form']),
-          form: node('form', 'base.form', {
-            mode: 'cms',
-            formId: 'newsletter',
-            targetTableId,
-            honeypotName: 'company',
-            minSubmitSeconds: 0,
-          }, ['input']),
-          input: node('input', 'base.input', {
-            fieldId: 'email',
-            name: 'email',
-            id: 'email-input',
-            inputType: 'email',
-            required: true,
-          }),
-        },
-      }],
-      visualComponents: [],
-      classes: [],
-      breakpoints: [],
-      settingsVersion: 1,
-    },
-  } as PublishedPageSnapshot
-}
-
-interface FakeTableRow {
-  id: string
-  name: string
-  slug: string
-  kind: string
-  route_base: string
-  singular_label: string
-  plural_label: string
-  primary_field_id: string
-  fields_json: unknown[]
-  system: number
-}
-
-const newsletterTableRow: FakeTableRow = {
-  id: 'newsletter_submissions',
-  name: 'Newsletter submissions',
-  slug: 'newsletter-submissions',
-  kind: 'data',
-  route_base: '',
-  singular_label: 'Submission',
-  plural_label: 'Submissions',
-  primary_field_id: 'email',
-  fields_json: [{ id: 'email', label: 'Email', type: 'email', required: true }],
-  system: 0,
-}
-
-function makeDb(options: {
-  snapshot?: PublishedPageSnapshot
-  tableRows?: Record<string, FakeTableRow>
-} = {}) {
-  const createdRows: Record<string, unknown>[] = []
-  const snapshot = options.snapshot ?? makeSnapshot()
-  const tableRows = options.tableRows ?? { newsletter_submissions: newsletterTableRow }
-  const db = createFakeDb(async (rawSql, params): Promise<DbResult> => {
-    const sql = rawSql.replace(/\s+/g, ' ').trim().toLowerCase()
-    // getPublishedPageSnapshotById — joins data_row_versions to site_snapshots.
-    // Must be matched before the generic `select data_rows.id` branch below
-    // (the snapshot getter's SELECT also starts with `select data_rows.id`).
-    if (sql.includes('site_snapshots.site_json')) {
-      return {
-        rows: [{
-          row_id: snapshot.pageRowId,
-          site_json: snapshot.site,
-          runtime_assets_json: snapshot.runtimeAssets ?? null,
-          importmap_body: snapshot.runtimePackageImportmap?.body ?? null,
-          importmap_sha256: snapshot.runtimePackageImportmap?.sha256 ?? null,
-        }],
-        rowCount: 1,
-      }
-    }
-    if (sql.startsWith('select id, name, slug, kind, route_base')) {
-      const row = tableRows[String(params[0])]
-      if (!row) return { rows: [], rowCount: 0 }
-      return {
-        rows: [{
-          ...row,
-          created_by_user_id: null,
-          updated_by_user_id: null,
-          created_at: new Date('2026-06-01T00:00:00Z'),
-          updated_at: new Date('2026-06-01T00:00:00Z'),
-        }],
-        rowCount: 1,
-      }
-    }
-    if (sql.startsWith('insert into data_rows')) {
-      createdRows.push({
-        id: params[0],
-        table_id: params[1],
-        cells_json: params[2],
-        slug: params[3],
-        status: params[4],
-        author_user_id: params[5],
-        created_by_user_id: params[6],
-        updated_by_user_id: params[7],
-      })
-      return { rows: [{ id: params[0] }], rowCount: 1 }
-    }
-    if (sql.startsWith('select data_tables.slug')) {
-      const row = createdRows.find((candidate) => candidate.id === params[0])
-      const table = row ? tableRows[String(row.table_id)] : undefined
-      return table ? { rows: [{ slug: table.slug }], rowCount: 1 } : { rows: [], rowCount: 0 }
-    }
-    if (sql.startsWith('select data_rows.id') && sql.includes('from data_rows')) {
-      const row = createdRows.find((candidate) => candidate.id === params[0])
-      if (!row) return { rows: [], rowCount: 0 }
-      return {
-        rows: [{
-          ...row,
-          author_email: null,
-          author_display_name: null,
-          author_role_slug: null,
-          author_role_name: null,
-          created_by_email: null,
-          created_by_display_name: null,
-          created_by_role_slug: null,
-          created_by_role_name: null,
-          updated_by_email: null,
-          updated_by_display_name: null,
-          updated_by_role_slug: null,
-          updated_by_role_name: null,
-          published_by_email: null,
-          published_by_display_name: null,
-          published_by_role_slug: null,
-          published_by_role_name: null,
-          published_at: null,
-          scheduled_publish_at: null,
-          deleted_at: null,
-          created_at: new Date('2026-06-01T00:00:00Z'),
-          updated_at: new Date('2026-06-01T00:00:00Z'),
-        }],
-        rowCount: 1,
-      }
-    }
-    throw new Error(`Unhandled SQL: ${rawSql}`)
+async function makeDb(options: { targetTableId?: string; system?: boolean } = {}) {
+  const targetTableId = options.targetTableId ?? 'newsletter_submissions'
+  const page = makePage({
+    body: node('body', 'base.body', {}, ['form']),
+    form: node('form', 'base.form', {
+      mode: 'cms', formId: 'newsletter', targetTableId,
+      honeypotName: 'company', minSubmitSeconds: 0,
+    }, ['input']),
+    input: node('input', 'base.input', {
+      fieldId: 'email', name: 'email', id: 'email-input', inputType: 'email', required: true,
+    }),
+  }, 'body')
+  page.id = 'page-home'
+  const db = await createPublishingTestDb(makeSite({ pages: [page] }))
+  await createDataTable(db, {
+    id: targetTableId,
+    name: 'Newsletter submissions', slug: 'newsletter-submissions', kind: 'data',
+    routeBase: '', singularLabel: 'Submission', pluralLabel: 'Submissions',
+    primaryFieldId: 'email',
+    fields: [{ id: 'email', label: 'Email', type: 'email', required: true }],
   })
-  return { db, createdRows }
+  if (options.system) await db`update data_tables set system = ${true} where id = ${targetTableId}`
+  const route = (await loadPublishedRouteInventory(db)).routes.find((entry) => entry.contentId === page.id)
+  if (!route) throw new Error('Form fixture did not publish its originating route')
+  const identity: PublicFormIdentity = {
+    pageId: route.contentId, localeId: route.localeId,
+    publishedVersionId: route.publishedVersionId, pagePath: route.path, formId: 'newsletter',
+  }
+  return {
+    db, identity,
+    pageToken: () => issuePublicFormPageToken(identity),
+    createdRows: async () => (await db<{ id: string; table_id: string; cells_json: Record<string, unknown> }>`
+      select id, table_id, cells_json from data_rows where table_id = ${targetTableId}
+    `).rows,
+  }
 }
 
 function makeThrowingDb(): { db: DbClient; wasQueried: () => boolean } {
@@ -219,24 +102,21 @@ async function readJson(response: Response): Promise<Record<string, unknown>> {
   return await response.json() as Record<string, unknown>
 }
 
-function pageToken(): string {
-  return issuePublicFormPageToken({ pageId: 'page-home', formId: 'newsletter' })
-}
-
 describe('public CMS-native form endpoint', () => {
-  afterEach(() => {
+  afterEach(async () => {
+    await cleanupPublishingTestDbs()
     resetPublicOrigins()
     hookBus.reset()
   })
 
   it('router owns public form challenge URLs before public-route/setup fallthrough', async () => {
     resetPublicFormChallenges()
-    const { db } = makeDb()
+    const { db, identity, pageToken } = await makeDb()
 
     const response = await handleServerRequest(
       makeRequest(
         '/_instatic/form/challenge',
-        { formId: 'newsletter', pageId: 'page-home', pageToken: pageToken() },
+        { ...identity, pageToken: pageToken() },
         'http://cms.test',
         '203.0.113.40',
       ),
@@ -280,9 +160,9 @@ describe('public CMS-native form endpoint', () => {
   })
 
   it('rejects challenge requests from foreign origins', async () => {
-    const { db } = makeDb()
+    const { db, identity, pageToken } = await makeDb()
     const response = await handlePublicFormRequest(
-      makeRequest('/_instatic/form/challenge', { formId: 'newsletter', pageId: 'page-home', pageToken: pageToken() }, 'https://evil.test'),
+      makeRequest('/_instatic/form/challenge', { ...identity, pageToken: pageToken() }, 'https://evil.test'),
       db,
       new URL('http://cms.test/_instatic/form/challenge'),
     )
@@ -298,11 +178,11 @@ describe('public CMS-native form endpoint', () => {
     // — the old inline duplicate only compared against expectedOrigin() and
     // would have rejected this.
     configurePublicOrigins(['https://app.up.railway.app', 'https://forms.example.com'])
-    const { db } = makeDb()
+    const { db, identity, pageToken } = await makeDb()
     const response = await handlePublicFormRequest(
       makeRequest(
         '/_instatic/form/challenge',
-        { formId: 'newsletter', pageId: 'page-home', pageToken: pageToken() },
+        { ...identity, pageToken: pageToken() },
         'https://forms.example.com',
       ),
       db,
@@ -314,9 +194,9 @@ describe('public CMS-native form endpoint', () => {
 
   it('issues a same-origin challenge and rejects submits without it', async () => {
     resetPublicFormChallenges()
-    const { db } = makeDb()
+    const { db, identity, pageToken } = await makeDb()
     const challenge = await handlePublicFormRequest(
-      makeRequest('/_instatic/form/challenge', { formId: 'newsletter', pageId: 'page-home', pageToken: pageToken() }),
+      makeRequest('/_instatic/form/challenge', { ...identity, pageToken: pageToken() }),
       db,
       new URL('http://cms.test/_instatic/form/challenge'),
     )
@@ -327,8 +207,7 @@ describe('public CMS-native form endpoint', () => {
 
     const submit = await handlePublicFormRequest(
       makeRequest('/_instatic/form/submit', {
-        formId: 'newsletter',
-        pageId: 'page-home',
+        ...identity,
         token: 'missing',
         challenge: 'missing',
         values: { email: 'ai@example.com' },
@@ -341,11 +220,10 @@ describe('public CMS-native form endpoint', () => {
 
   it('rejects challenge requests without the published page token', async () => {
     resetPublicFormChallenges()
-    const { db } = makeDb()
+    const { db, identity } = await makeDb()
     const response = await handlePublicFormRequest(
       makeRequest('/_instatic/form/challenge', {
-        formId: 'newsletter',
-        pageId: 'page-home',
+        ...identity,
         pageToken: 'forged',
       }),
       db,
@@ -357,11 +235,10 @@ describe('public CMS-native form endpoint', () => {
 
   it('rejects oversized challenge payloads before accepting the request', async () => {
     resetPublicFormChallenges()
-    const { db } = makeDb()
+    const { db, identity, pageToken } = await makeDb()
     const response = await handlePublicFormRequest(
       makeRequest('/_instatic/form/challenge', {
-        formId: 'newsletter',
-        pageId: 'page-home',
+        ...identity,
         pageToken: pageToken(),
         padding: 'x'.repeat(9 * 1024),
       }, 'http://cms.test', '203.0.113.20'),
@@ -374,13 +251,12 @@ describe('public CMS-native form endpoint', () => {
 
   it('rate-limits challenge issuance per client', async () => {
     resetPublicFormChallenges()
-    const { db } = makeDb()
+    const { db, identity, pageToken } = await makeDb()
     const ip = '203.0.113.21'
     for (let i = 0; i < 60; i++) {
       const response = await handlePublicFormRequest(
         makeRequest('/_instatic/form/challenge', {
-          formId: 'newsletter',
-          pageId: 'page-home',
+          ...identity,
           pageToken: pageToken(),
         }, 'http://cms.test', ip),
         db,
@@ -391,8 +267,7 @@ describe('public CMS-native form endpoint', () => {
 
     const limited = await handlePublicFormRequest(
       makeRequest('/_instatic/form/challenge', {
-        formId: 'newsletter',
-        pageId: 'page-home',
+        ...identity,
         pageToken: pageToken(),
       }, 'http://cms.test', ip),
       db,
@@ -403,14 +278,14 @@ describe('public CMS-native form endpoint', () => {
 
   it('keeps the in-memory challenge store bounded by evicting oldest entries', () => {
     resetPublicFormChallenges()
-    const first = issuePublicFormChallenge({ pageId: 'page-home', formId: 'newsletter' })
+    const identity: PublicFormIdentity = { pageId: 'page-home', localeId: 'default', publishedVersionId: 'version-home', pagePath: '/', formId: 'newsletter' }
+    const first = issuePublicFormChallenge(identity)
     for (let i = 0; i < 2_000; i++) {
-      issuePublicFormChallenge({ pageId: 'page-home', formId: `newsletter-${i}` })
+      issuePublicFormChallenge({ ...identity, formId: `newsletter-${i}` })
     }
 
     expect(verifyAndConsumePublicFormChallenge({
-      pageId: 'page-home',
-      formId: 'newsletter',
+      ...identity,
       challenge: first.challenge,
       token: first.token,
     })).toBeNull()
@@ -420,13 +295,13 @@ describe('public CMS-native form endpoint', () => {
     resetPublicFormChallenges()
     publicFormPerIpRateLimit.reset('unknown')
     publicFormPerFormRateLimit.reset('unknown|newsletter')
-    const { db, createdRows } = makeDb()
+    const { db, identity, pageToken, createdRows } = await makeDb()
     const createdEvents: unknown[] = []
     hookBus.on('test.notifications', 'content.entry.created', (payload) => {
       createdEvents.push(payload)
     })
     const challengeResponse = await handlePublicFormRequest(
-      makeRequest('/_instatic/form/challenge', { formId: 'newsletter', pageId: 'page-home', pageToken: pageToken() }),
+      makeRequest('/_instatic/form/challenge', { ...identity, pageToken: pageToken() }),
       db,
       new URL('http://cms.test/_instatic/form/challenge'),
     )
@@ -434,8 +309,7 @@ describe('public CMS-native form endpoint', () => {
 
     const submit = await handlePublicFormRequest(
       makeRequest('/_instatic/form/submit', {
-        formId: 'newsletter',
-        pageId: 'page-home',
+        ...identity,
         token: challenge.token,
         challenge: challenge.challenge,
         values: { email: 'ai@example.com', company: '' },
@@ -445,12 +319,14 @@ describe('public CMS-native form endpoint', () => {
     )
 
     expect(submit?.status).toBe(200)
-    expect(createdRows).toHaveLength(1)
-    expect(createdRows[0].table_id).toBe('newsletter_submissions')
-    expect(createdRows[0].cells_json).toEqual({ email: 'ai@example.com' })
+    const rows = await createdRows()
+    expect(rows).toHaveLength(1)
+    expect(rows[0].table_id).toBe('newsletter_submissions')
+    expect(rows[0].cells_json).toEqual({ email: 'ai@example.com' })
     expect(createdEvents).toEqual([{
       tableSlug: 'newsletter-submissions',
-      entryId: createdRows[0].id,
+      entryId: rows[0].id,
+      localeId: 'default',
       actor: { kind: 'system' },
     }])
   })
@@ -459,12 +335,11 @@ describe('public CMS-native form endpoint', () => {
     resetPublicFormChallenges()
     publicFormPerIpRateLimit.reset('203.0.113.22')
     publicFormPerFormRateLimit.reset('203.0.113.22|newsletter')
-    const { db } = makeDb()
+    const { db, identity } = await makeDb()
 
     const response = await handlePublicFormRequest(
       makeRequest('/_instatic/form/submit', {
-        formId: 'newsletter',
-        pageId: 'page-home',
+        ...identity,
         token: 'missing',
         challenge: 'missing',
         values: { email: `${'a'.repeat(1024 * 1024)}@example.com` },
@@ -484,20 +359,9 @@ describe('public CMS-native form endpoint', () => {
     resetPublicFormChallenges()
     publicFormPerIpRateLimit.reset('unknown')
     publicFormPerFormRateLimit.reset('unknown|newsletter')
-    const { db, createdRows } = makeDb({
-      snapshot: makeSnapshot('system_submissions'),
-      tableRows: {
-        system_submissions: {
-          ...newsletterTableRow,
-          id: 'system_submissions',
-          name: 'System submissions',
-          slug: 'system-submissions',
-          system: 1,
-        },
-      },
-    })
+    const { db, identity, pageToken, createdRows } = await makeDb({ targetTableId: 'system_submissions', system: true })
     const challengeResponse = await handlePublicFormRequest(
-      makeRequest('/_instatic/form/challenge', { formId: 'newsletter', pageId: 'page-home', pageToken: pageToken() }),
+      makeRequest('/_instatic/form/challenge', { ...identity, pageToken: pageToken() }),
       db,
       new URL('http://cms.test/_instatic/form/challenge'),
     )
@@ -505,8 +369,7 @@ describe('public CMS-native form endpoint', () => {
 
     const submit = await handlePublicFormRequest(
       makeRequest('/_instatic/form/submit', {
-        formId: 'newsletter',
-        pageId: 'page-home',
+        ...identity,
         token: challenge.token,
         challenge: challenge.challenge,
         values: { email: 'ai@example.com', company: '' },
@@ -516,6 +379,6 @@ describe('public CMS-native form endpoint', () => {
     )
 
     expect(submit?.status).toBe(404)
-    expect(createdRows).toHaveLength(0)
+    expect(await createdRows()).toHaveLength(0)
   })
 })

@@ -418,6 +418,10 @@ bun run test:e2e          # run specs in tests/e2e/*.e2e.ts
 
 ---
 
+## Localization
+
+Logical content identities share structure while per-language records own draft values, availability, publication history and schedules. Site and Content authoring, collaboration, public routes and integrations carry an explicit locale. See [`localization.md`](features/localization.md) for the storage model and lifecycle.
+
 ## Related
 
 - `CLAUDE.md` — the agent rule book (start there before changing code)

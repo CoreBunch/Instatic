@@ -1,13 +1,12 @@
 import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto'
+import type { PublicFormIdentity } from '@core/forms'
 
 const CHALLENGE_TTL_MS = 5 * 60 * 1000
 const MAX_PUBLIC_FORM_CHALLENGES = 2_000
 const fallbackSecret = randomBytes(32).toString('hex')
 const signingSecret = process.env.INSTATIC_FORM_SECRET ?? process.env.INSTATIC_SECRET_KEY ?? fallbackSecret
 
-type PublicFormChallengeRecord = {
-  pageId: string
-  formId: string
+type PublicFormChallengeRecord = PublicFormIdentity & {
   challenge: string
   token: string
   issuedAt: number
@@ -16,12 +15,9 @@ type PublicFormChallengeRecord = {
 
 const challenges = new Map<string, PublicFormChallengeRecord>()
 
-type VerifiedPublicFormChallenge =
-  Pick<PublicFormChallengeRecord, 'pageId' | 'formId' | 'issuedAt' | 'expiresAt'>
+type VerifiedPublicFormChallenge = PublicFormIdentity & Pick<PublicFormChallengeRecord, 'issuedAt' | 'expiresAt'>
 
-export function issuePublicFormChallenge(input: {
-  pageId: string
-  formId: string
+export function issuePublicFormChallenge(input: PublicFormIdentity & {
   now?: number
 }): PublicFormChallengeRecord {
   const now = input.now ?? Date.now()
@@ -30,15 +26,13 @@ export function issuePublicFormChallenge(input: {
   const challenge = randomBytes(18).toString('base64url')
   const expiresAt = now + CHALLENGE_TTL_MS
   const token = signChallenge({
-    pageId: input.pageId,
-    formId: input.formId,
+    ...formIdentity(input),
     challenge,
     issuedAt: now,
     expiresAt,
   })
   const record = {
-    pageId: input.pageId,
-    formId: input.formId,
+    ...formIdentity(input),
     challenge,
     token,
     issuedAt: now,
@@ -48,9 +42,7 @@ export function issuePublicFormChallenge(input: {
   return record
 }
 
-export function verifyAndConsumePublicFormChallenge(input: {
-  pageId: string
-  formId: string
+export function verifyAndConsumePublicFormChallenge(input: PublicFormIdentity & {
   challenge: string
   token: string
   now?: number
@@ -61,28 +53,22 @@ export function verifyAndConsumePublicFormChallenge(input: {
   if (!record) return null
   challenges.delete(input.challenge)
   if (record.expiresAt < now) return null
-  if (record.pageId !== input.pageId || record.formId !== input.formId) return null
+  if (identityKey(record) !== identityKey(input)) return null
   if (!constantTimeEqual(record.token, input.token)) return null
   const expected = signChallenge(record)
   if (!constantTimeEqual(expected, input.token)) return null
   return {
-    pageId: record.pageId,
-    formId: record.formId,
+    ...formIdentity(record),
     issuedAt: record.issuedAt,
     expiresAt: record.expiresAt,
   }
 }
 
-export function issuePublicFormPageToken(input: {
-  pageId: string
-  formId: string
-}): string {
+export function issuePublicFormPageToken(input: PublicFormIdentity): string {
   return signPageToken(input)
 }
 
-export function verifyPublicFormPageToken(input: {
-  pageId: string
-  formId: string
+export function verifyPublicFormPageToken(input: PublicFormIdentity & {
   pageToken: string
 }): boolean {
   return constantTimeEqual(signPageToken(input), input.pageToken)
@@ -106,37 +92,22 @@ function evictOldestPublicFormChallenges(): void {
   }
 }
 
-function signChallenge(input: {
-  pageId: string
-  formId: string
-  challenge: string
-  issuedAt: number
-  expiresAt: number
-}): string {
+function formIdentity(input: PublicFormIdentity): PublicFormIdentity {
+  return { pageId: input.pageId, localeId: input.localeId, publishedVersionId: input.publishedVersionId, pagePath: input.pagePath, formId: input.formId }
+}
+
+function identityKey(input: PublicFormIdentity): string {
+  return JSON.stringify([input.pageId, input.localeId, input.publishedVersionId, input.pagePath, input.formId])
+}
+
+function signChallenge(input: PublicFormIdentity & { challenge: string; issuedAt: number; expiresAt: number }): string {
   return createHmac('sha256', signingSecret)
-    .update(input.pageId)
-    .update('\0')
-    .update(input.formId)
-    .update('\0')
-    .update(input.challenge)
-    .update('\0')
-    .update(String(input.issuedAt))
-    .update('\0')
-    .update(String(input.expiresAt))
+    .update(JSON.stringify(['form-challenge', identityKey(input), input.challenge, input.issuedAt, input.expiresAt]))
     .digest('base64url')
 }
 
-function signPageToken(input: {
-  pageId: string
-  formId: string
-}): string {
-  return createHmac('sha256', signingSecret)
-    .update('page-form')
-    .update('\0')
-    .update(input.pageId)
-    .update('\0')
-    .update(input.formId)
-    .digest('base64url')
+function signPageToken(input: PublicFormIdentity): string {
+  return createHmac('sha256', signingSecret).update(JSON.stringify(['page-form', identityKey(input)])).digest('base64url')
 }
 
 function constantTimeEqual(a: string, b: string): boolean {

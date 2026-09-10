@@ -12,9 +12,9 @@
  *
  * No retry / failure UI: the picker rejects past timestamps client-side
  * before hitting the network, and server-side errors surface as a brief
- * inline message + the dialog stays open so the user can retry.
+ * toast and the dialog stays open so the user can retry.
  */
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import {
   scheduleCmsDataRowPublish,
   cancelCmsDataRowSchedule,
@@ -24,12 +24,15 @@ import { Dialog } from '@ui/components/Dialog'
 import { Button } from '@ui/components/Button'
 import { DateTimePicker } from '@ui/components/DateTimePicker'
 import { getErrorMessage } from '@core/utils/errorMessage'
+import { pushToast } from '@ui/components/Toast'
+import { StepUpCancelledMessage, useStepUp } from '@admin/shared/StepUp'
 import styles from './SchedulePublishDialog.module.css'
 
 interface SchedulePublishDialogProps {
   open: boolean
   onClose: () => void
   rowId: string
+  localeId?: string
   /**
    * Existing scheduled time (ISO datetime) if the row is already
    * `'scheduled'`. Pre-fills the picker so re-opening the dialog shows
@@ -55,17 +58,20 @@ async function schedulePublish(
   setError: (msg: string | null) => void,
   onScheduled: (row: DataRow) => void,
   onClose: () => void,
+  localeId: string | undefined,
+  runStepUp: <T>(operation: () => Promise<T>) => Promise<T>,
 ): Promise<void> {
   setBusy(true)
   setError(null)
   try {
-    const row = await scheduleCmsDataRowPublish(rowId, next.toISOString())
+    const row = await runStepUp(() => scheduleCmsDataRowPublish(rowId, next.toISOString(), undefined, undefined, localeId))
     onScheduled(row)
     onClose()
   } catch (err) {
+    if (err instanceof Error && err.message === StepUpCancelledMessage) return
     console.error('[schedule-dialog] Schedule failed:', err)
     const message = getErrorMessage(err, 'Failed to schedule publish')
-    setError(message)
+    pushToast({ kind: 'error', title: 'Could not schedule publication', body: message })
   } finally {
     setBusy(false)
   }
@@ -77,17 +83,20 @@ async function cancelSchedule(
   setError: (msg: string | null) => void,
   onScheduled: (row: DataRow) => void,
   onClose: () => void,
+  localeId: string | undefined,
+  runStepUp: <T>(operation: () => Promise<T>) => Promise<T>,
 ): Promise<void> {
   setBusy(true)
   setError(null)
   try {
-    const row = await cancelCmsDataRowSchedule(rowId)
+    const row = await runStepUp(() => cancelCmsDataRowSchedule(rowId, undefined, undefined, localeId))
     onScheduled(row)
     onClose()
   } catch (err) {
+    if (err instanceof Error && err.message === StepUpCancelledMessage) return
     console.error('[schedule-dialog] Cancel schedule failed:', err)
     const message = getErrorMessage(err, 'Failed to cancel schedule')
-    setError(message)
+    pushToast({ kind: 'error', title: 'Could not cancel publication', body: message })
   } finally {
     setBusy(false)
   }
@@ -97,33 +106,43 @@ export function SchedulePublishDialog({
   open,
   onClose,
   rowId,
+  localeId,
   currentScheduledAt,
   entityLabel,
   onScheduled,
 }: SchedulePublishDialogProps) {
+  const { runStepUp } = useStepUp()
   const initialValue = currentScheduledAt ? new Date(currentScheduledAt) : null
 
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  const pendingRef = useRef(false)
+  function setPending(value: boolean) { pendingRef.current = value; setBusy(value) }
+  function requestClose() { if (!pendingRef.current) onClose() }
 
   const isAlreadyScheduled = currentScheduledAt !== null
 
   async function handleConfirm(next: Date) {
+    if (pendingRef.current) return
     if (next.getTime() <= Date.now()) {
       setError('Scheduled time must be in the future.')
       return
     }
-    await schedulePublish(rowId, next, setBusy, setError, onScheduled, onClose)
+    await schedulePublish(rowId, next, setPending, setError, onScheduled, onClose, localeId, runStepUp)
   }
 
   async function handleCancelSchedule() {
-    await cancelSchedule(rowId, setBusy, setError, onScheduled, onClose)
+    if (pendingRef.current) return
+    await cancelSchedule(rowId, setPending, setError, onScheduled, onClose, localeId, runStepUp)
   }
 
   return (
     <Dialog
       open={open}
-      onClose={onClose}
+      onClose={requestClose}
+      closeOnEscape={!busy}
+      closeOnBackdrop={!busy}
+      hideCloseButton={busy}
       title={isAlreadyScheduled ? `Reschedule this ${entityLabel}` : `Schedule this ${entityLabel}`}
       eyebrow="Publish later"
       size="lg"
@@ -132,9 +151,13 @@ export function SchedulePublishDialog({
       // We don't render a separate Dialog footer to avoid two button
       // rows competing for attention.
     >
+      <p className={styles.description}>This schedules the current draft in the selected language. Later edits remain drafts. An existing published version stays online until the scheduled version replaces it.</p>
       <DateTimePicker
+        key={`${rowId}:${localeId ?? 'default'}:${currentScheduledAt ?? 'new'}`}
         value={initialValue}
-        onCancel={onClose}
+        onCancel={requestClose}
+        disabled={busy}
+        busy={busy}
         onConfirm={handleConfirm}
         minDate={new Date()}
         ariaLabel={`Schedule when to publish this ${entityLabel}`}

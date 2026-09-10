@@ -33,6 +33,7 @@ import { escapeProps } from './escapeProps'
 import { injectNodeClassIds, injectNodeId, injectNodeInlineStyles } from './classInjection'
 import { renderVisualComponentRef } from './renderVisualComponentRef'
 import { renderLoop } from './renderLoop'
+import { renderLanguageSwitcher } from './renderLanguageSwitcher'
 import { resolveAutoSizes } from './sizesResolver'
 import { sanitizeRichtext } from '@core/sanitize'
 import type {
@@ -261,6 +262,7 @@ type SpecialRenderer = (
 const SPECIAL_RENDERER_IMPLS: ReadonlyMap<string, SpecialRenderer> = new Map([
   ['base.visual-component-ref', renderVisualComponentRef],
   ['base.loop', renderLoop],
+  ['base.language-switcher', renderLanguageSwitcher],
 ])
 
 /** The moduleIds the publisher provides a specialised renderer for. */

@@ -33,7 +33,9 @@
  */
 
 import { Type, type Static } from '@core/utils/typeboxHelpers'
-import { DataTableSchema, DataRowSchema, DataTableKindSchema } from './schemas'
+import { DataTableSchema, DataRowSchema, DataTableKindSchema, DataRowVersionSchema } from './schemas'
+import { LocaleSchema, ContentLocalizationSchema, TableLocalizationSchema } from '@core/localization-schema'
+import { PublishedPageRuntimeAssetsSchema } from '@core/site-runtime-schema'
 import { SiteShellSchema } from '@core/page-tree'
 
 // ---------------------------------------------------------------------------
@@ -137,6 +139,7 @@ export const BundleRedirectSchema = Type.Object({
   fromRouteBase: Type.String(),
   fromSlug: Type.String(),
   targetRowId: Type.String(),
+  localeId: Type.String(),
 })
 
 export type BundleRedirect = Static<typeof BundleRedirectSchema>
@@ -353,6 +356,34 @@ export type ImportResult = Static<typeof ImportResultSchema>
 // SiteBundle
 // ---------------------------------------------------------------------------
 
+export const BundleVersionSchema = Type.Composite([
+  DataRowVersionSchema,
+  Type.Object({ runtimeAssets: Type.Union([PublishedPageRuntimeAssetsSchema, Type.Null()]) }),
+])
+export type BundleVersion = Static<typeof BundleVersionSchema>
+
+/** Stored publication JSON and exact importmap bytes retain old immutable releases. */
+export const BundleSiteSnapshotSchema = Type.Object({
+  id: Type.String(),
+  site: Type.Record(Type.String(), Type.Unknown()),
+  contentHash: Type.String(),
+  importmapBody: Type.Union([Type.String(), Type.Null()]),
+  importmapSha256: Type.Union([Type.String(), Type.Null()]),
+  createdAt: Type.String(),
+})
+export type BundleSiteSnapshot = Static<typeof BundleSiteSnapshotSchema>
+
+export const BundleRuntimeAssetSchema = Type.Object({
+  id: Type.String(),
+  dataRowVersionId: Type.String(),
+  assetPath: Type.String({ pattern: SAFE_RELATIVE_PATH_PATTERN }),
+  publicPath: Type.String({ pattern: '^/_instatic/assets/[^?#]+$' }),
+  contentType: Type.String(),
+  bytesBase64: Type.String(),
+  createdAt: Type.String(),
+})
+export type BundleRuntimeAsset = Static<typeof BundleRuntimeAssetSchema>
+
 export const SiteBundleSchema = Type.Object({
   /** Schema version for forward-compat checks. Always 1 for this format. */
   schemaVersion: Type.Literal(1),
@@ -370,6 +401,13 @@ export const SiteBundleSchema = Type.Object({
   tables: Type.Array(DataTableSchema),
   /** All (or selected) non-deleted data rows. */
   rows: Type.Array(DataRowSchema),
+  /** Locale configuration and sparse authoring state are separate from logical rows. */
+  locales: Type.Optional(Type.Array(LocaleSchema)),
+  localizations: Type.Optional(Type.Array(ContentLocalizationSchema)),
+  tableLocalizations: Type.Optional(Type.Array(TableLocalizationSchema)),
+  versions: Type.Optional(Type.Array(BundleVersionSchema)),
+  siteSnapshots: Type.Optional(Type.Array(BundleSiteSnapshotSchema)),
+  runtimeAssets: Type.Optional(Type.Array(BundleRuntimeAssetSchema)),
   /** Non-deleted media assets with embedded bytes (optional — may be omitted to keep bundle small). */
   media: Type.Optional(Type.Array(MediaAssetExportSchema)),
   /** Media-library folder tree (optional). Asset membership rides on `media[].folderIds`. */

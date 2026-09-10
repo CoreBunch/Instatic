@@ -32,11 +32,10 @@
 import * as Y from 'yjs'
 import { nanoid } from 'nanoid'
 import {
-  encodeCollabDocId,
   parseCollabDocId,
   projectSiteDoc,
+  sharedCollabDocId,
   SITE_DOC_ID,
-  type CollabDocKind,
 } from '@core/collab'
 import type { DbClient } from '../db/client'
 import {
@@ -44,18 +43,9 @@ import {
   getCollabDocumentState,
   putCollabDocumentState,
 } from '../repositories/collabDocuments'
-import {
-  registerRowWriteListener,
-  registerShellWriteListener,
-} from '../repositories/rowWriteEvents'
+import { createRelayResetSources } from './relayResetSources'
 import { registerPublishFlush } from '../publish/publishFlush'
-import { createRelayPersistence } from './relayPersistence'
-
-const TABLE_KIND: Record<string, Exclude<CollabDocKind, 'site'>> = {
-  pages: 'page',
-  components: 'component',
-  layouts: 'layout',
-}
+import { createRelayPersistence, type LocalizationGuardContext } from './relayPersistence'
 
 interface RelayEntry {
   doc: Y.Doc
@@ -86,6 +76,7 @@ export interface RelayDoc {
 }
 
 export interface CollabRelay {
+  localizationGuardContext(docId: string): Promise<LocalizationGuardContext | null>
   openDoc(docId: string): Promise<RelayDoc>
   retain(docId: string): Promise<RelayDoc>
   release(docId: string): void
@@ -123,6 +114,8 @@ export function createCollabRelay(
   const heldResetRefs = new Map<string, number>()
   const persistence = createRelayPersistence(db, {
     isResident: (docId) => entries.has(docId),
+    residentDoc: (docId) => entries.get(docId)?.doc,
+    residentDocIds: () => [...entries.keys()],
     schedulePersist: (docId) => schedulePersist(docId),
     openDoc: async (docId) => { await openDoc(docId) },
     invalidationVersion: (docId) => invalidationVersions.get(docId) ?? 0,
@@ -227,6 +220,7 @@ export function createCollabRelay(
 
   async function openDoc(docId: string, ignoreResetGate = false): Promise<RelayDoc> {
     const parsed = parseCollabDocId(docId)
+    if (!parsed) throw new Error('Invalid collaboration document ID')
     if (!ignoreResetGate) {
       const resetGate = resetGates.get(docId)
       if (resetGate) {
@@ -250,6 +244,7 @@ export function createCollabRelay(
       if (parsed && parsed.kind !== 'site' && !persistence.hasRosterSnapshot()) {
         await openDoc(SITE_DOC_ID, ignoreResetGate)
       }
+      if (parsed.localeId !== undefined) await openDoc(sharedCollabDocId(docId), ignoreResetGate)
       const doc = new Y.Doc()
       const stored = await getCollabDocumentState(db, docId)
       let generation: string
@@ -361,10 +356,11 @@ export function createCollabRelay(
   }
 
   function orderedEntryDocIds(): string[] {
-    const docIds = [...entries.keys()]
-    return entries.has(SITE_DOC_ID)
-      ? [SITE_DOC_ID, ...docIds.filter((docId) => docId !== SITE_DOC_ID)]
-      : docIds
+    // Establish shared rows before their independently arriving locale frames.
+    return [...entries.keys()].sort((a, b) => {
+      const rank = (id: string) => id === SITE_DOC_ID ? 0 : parseCollabDocId(id)?.localeId === undefined ? 1 : 2
+      return rank(a) - rank(b)
+    })
   }
 
   async function resetDocs(
@@ -516,89 +512,17 @@ export function createCollabRelay(
     }
   }
 
-  // ── Out-of-relay write sources → resets ───────────────────────────────────
-
-  const pendingResetDocIds = new Set<string>()
-  const failedResetDocIds = new Set<string>()
-  let resetBatchScheduled = false
-  let resetChain: Promise<void> = Promise.resolve()
-  let failedResetError: unknown = null
-
-  function queueResetDocs(docIds: readonly string[]): void {
-    // Mark synchronously with the post-commit notification. The microtask
-    // batching below must not create a window for an older persist to write.
-    const combined = [...new Set([...failedResetDocIds, ...docIds])]
-    failedResetDocIds.clear()
-    failedResetError = null
-    activateInvalidations(combined)
-    for (const docId of combined) pendingResetDocIds.add(docId)
-    if (resetBatchScheduled) return
-    resetBatchScheduled = true
-    queueMicrotask(() => {
-      resetBatchScheduled = false
-      const batch = [...pendingResetDocIds]
-      pendingResetDocIds.clear()
-      if (batch.length === 0) return
-      const invalidations = new Map(
-        batch.map((docId) => [docId, invalidationVersions.get(docId) ?? 0]),
-      )
-      const reset = resetChain.then(() => resetDocs(batch, invalidations))
-      resetChain = reset.then(
-        () => undefined,
-        (err) => {
-          failedResetError = err
-          for (const docId of batch) failedResetDocIds.add(docId)
-          console.error('[collab] reset after out-of-relay write failed:', err)
-        },
-      )
-    })
-  }
-
-  const detachRowListener = registerRowWriteListener((event) => {
-    const kind = TABLE_KIND[event.tableId]
-    if (!kind) return
-    const docIds = event.rowIds.map((rowId) => encodeCollabDocId({ kind, rowId }))
-    // The site-document batch API reports creations in its changed-id group as
-    // `update`. An id absent from the observed roster therefore also means
-    // membership may have changed and site authority must reseed.
-    if (
-      event.kind !== 'update' ||
-      !persistence.hasRosterSnapshot() ||
-      docIds.some((docId) => !persistence.rosterContains(docId))
-    ) docIds.push(SITE_DOC_ID)
-    queueResetDocs(docIds)
+  const resetSources = createRelayResetSources(db, {
+    activeDocIds: () => new Set([...entries.keys(), ...opening.keys()]),
+    activateInvalidations,
+    invalidationVersion: (docId) => invalidationVersions.get(docId) ?? 0,
+    resetDocs,
+    hasRosterSnapshot: persistence.hasRosterSnapshot,
+    rosterContains: persistence.rosterContains,
   })
-  const detachShellListener = registerShellWriteListener(() => {
-    queueResetDocs([SITE_DOC_ID])
-  })
-
-  async function drainResetQueue(throwOnFailure = true): Promise<void> {
-    let retriedFailure = false
-    for (;;) {
-      // Let a batch queued by the current call stack attach to resetChain.
-      await Promise.resolve()
-      const observed = resetChain
-      await observed
-      if (failedResetError) {
-        if (!throwOnFailure) return
-        if (!retriedFailure) {
-          const retry = [...failedResetDocIds]
-          retriedFailure = true
-          queueResetDocs(retry)
-          continue
-        }
-        throw failedResetError
-      }
-      if (
-        !resetBatchScheduled &&
-        pendingResetDocIds.size === 0 &&
-        resetChain === observed
-      ) return
-    }
-  }
 
   async function flushAll(): Promise<void> {
-    await drainResetQueue()
+    await resetSources.drain()
     await persistence.drainRecoveries(true)
     // The site sweep must free slugs before replacement row docs write them.
     for (const docId of orderedEntryDocIds()) {
@@ -626,7 +550,7 @@ export function createCollabRelay(
     }
     // A repository write may have committed during the loop above. Its reset
     // must finish before publish/headless reads consume the derived JSON.
-    await drainResetQueue()
+    await resetSources.drain()
     await persistence.drainRecoveries(true)
   }
 
@@ -635,6 +559,7 @@ export function createCollabRelay(
   const detachPublishFlush = registerPublishFlush(flushAll)
 
   return {
+    localizationGuardContext: persistence.localizationGuardContext,
     openDoc,
     retain: async (docId) => {
       // A reset can evict between `openDoc` resolving and the registry read,
@@ -684,10 +609,9 @@ export function createCollabRelay(
     resetDocs,
     flushAll,
     destroy: async () => {
-      detachRowListener()
-      detachShellListener()
+      resetSources.detach()
       detachPublishFlush()
-      await drainResetQueue()
+      await resetSources.drain()
       await persistence.drainRecoveries(true)
       for (const docId of [...entries.keys()]) {
         await evict(docId, { persist: true })

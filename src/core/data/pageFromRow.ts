@@ -60,6 +60,8 @@ export function pageFromRow(row: DataRow): Page {
     id: row.id,
     slug: row.slug,
     title,
+    ...(typeof cells.seoTitle === 'string' ? { seoTitle: cells.seoTitle } : {}),
+    ...(typeof cells.seoDescription === 'string' ? { seoDescription: cells.seoDescription } : {}),
     nodes,
     rootNodeId,
     ...(template !== null ? { template } : {}),
@@ -93,6 +95,8 @@ export function pageToCells(page: Page): DataRowCells {
   const cells: DataRowCells = {
     title: page.title,
     slug: page.slug,
+    ...(page.seoTitle !== undefined ? { seoTitle: page.seoTitle } : {}),
+    ...(page.seoDescription !== undefined ? { seoDescription: page.seoDescription } : {}),
     body: {
       nodes: page.nodes,
       rootNodeId: page.rootNodeId,

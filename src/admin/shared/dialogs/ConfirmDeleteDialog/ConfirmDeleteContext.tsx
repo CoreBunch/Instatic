@@ -16,7 +16,7 @@
  * component files to export only components).
  */
 
-import { useState, type ReactNode } from 'react'
+import { use, useState, type ReactNode } from 'react'
 import { useEditorPreference } from '@site/preferences/editorPreferences'
 import { ConfirmDeleteDialog } from './ConfirmDeleteDialog'
 import {
@@ -27,6 +27,11 @@ import {
 } from './confirmDeleteHook'
 
 export function ConfirmDeleteProvider({ children }: { children: ReactNode }) {
+  const parent = use(ConfirmDeleteContext)
+  return parent ? children : <ConfirmDeleteHost>{children}</ConfirmDeleteHost>
+}
+
+function ConfirmDeleteHost({ children }: { children: ReactNode }) {
   const confirmBeforeDelete = useEditorPreference('confirmBeforeDelete')
   const [pending, setPending] = useState<PendingConfirmState | null>(null)
 

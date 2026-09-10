@@ -21,6 +21,7 @@ function fakeRow(cells: DataRow['cells']): DataRow {
   return {
     id: 'row_1',
     tableId: 'tbl_posts',
+    localeId: 'default', sharedCells: {}, localization: null, publicPath: null, seq: 0,
     cells,
     slug: typeof cells.slug === 'string' ? cells.slug : '',
     status: 'draft',
@@ -90,6 +91,7 @@ describe('useContentEntryDraft custom cells', () => {
 
     await waitFor(() => expect(result.current.saveMessage).toBe('saved'))
     expect(patchBody).toEqual({
+      localeId: 'default',
       cells: {
         title: 'Hello',
         slug: 'hello',
@@ -101,5 +103,42 @@ describe('useContentEntryDraft custom cells', () => {
       },
     })
     expect(updateSelectedEntry).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('useContentEntryDraft pending language saves', () => {
+  it('keeps a newly selected language untouched when an earlier save resolves', async () => {
+    const source = fakeRow({ title: 'English', slug: 'english', body: 'Source', note: 'English note' })
+    const german = { ...fakeRow({ title: 'Deutsch', slug: 'deutsch', body: 'Übersetzung', note: 'Deutsche Notiz' }), localeId: 'de' }
+    let resolveSave!: (response: Response) => void
+    spyOn(globalThis, 'fetch').mockImplementation(() => new Promise<Response>((resolve) => { resolveSave = resolve }))
+    const updateSelectedEntry = mock(() => {})
+    const setError = mock(() => {})
+    const { result, rerender } = renderHook(({ entry }) => useContentEntryDraft({ selectedEntry: entry, updateSelectedEntry, setError }), { initialProps: { entry: source } })
+    let saving!: Promise<void>
+    act(() => { saving = result.current.handleSaveDraft() })
+    rerender({ entry: german })
+    await act(async () => { resolveSave(new Response(JSON.stringify({ row: source }))); await saving })
+    expect(result.current.title).toBe('Deutsch')
+    expect(result.current.customCells).toEqual({ note: 'Deutsche Notiz' })
+    expect(result.current.saveMessage).toBe('idle')
+    expect(updateSelectedEntry).not.toHaveBeenCalled()
+  })
+
+  it('preserves newer typed values while updating the saved baseline for the same language', async () => {
+    const source = fakeRow({ title: 'Original', slug: 'original', body: 'Body' })
+    let resolveSave!: (response: Response) => void
+    spyOn(globalThis, 'fetch').mockImplementation(() => new Promise<Response>((resolve) => { resolveSave = resolve }))
+    const { result, updateSelectedEntry } = renderDraft(source)
+    act(() => result.current.setTitle('Sent title'))
+    let saving!: Promise<void>
+    act(() => { saving = result.current.handleSaveDraft() })
+    act(() => result.current.setTitle('Newer draft title'))
+    const saved = { ...source, cells: { ...source.cells, title: 'Sent title' } }
+    await act(async () => { resolveSave(new Response(JSON.stringify({ row: saved }))); await saving })
+    expect(result.current.title).toBe('Newer draft title')
+    expect(result.current.saveMessage).toBe('idle')
+    expect(result.current.isDirty).toBe(true)
+    expect(updateSelectedEntry).toHaveBeenCalledWith(saved)
   })
 })

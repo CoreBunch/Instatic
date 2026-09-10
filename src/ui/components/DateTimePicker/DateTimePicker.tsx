@@ -169,6 +169,9 @@ interface DateTimePickerProps {
    * so users can't schedule a publish in the past.
    */
   minDate?: Date
+  /** Freeze all editing and confirmation while the consumer saves. */
+  disabled?: boolean
+  busy?: boolean
   /**
    * Optional aria-label override. Defaults to "Date and time picker".
    */
@@ -208,7 +211,10 @@ export function DateTimePicker({
   onCancel,
   minDate,
   ariaLabel = 'Date and time picker',
+  disabled = false,
+  busy = false,
 }: DateTimePickerProps) {
+  const inactive = disabled || busy
   const initial = value ?? defaultInitialDate()
 
   // Internal state — confirms commit via `onConfirm`; closing without
@@ -266,6 +272,7 @@ export function DateTimePicker({
   }
 
   function handleGridKey(e: ReactKeyboardEvent<HTMLDivElement>) {
+    if (inactive) return
     // Arrow-key navigation: ±1 day for left/right, ±7 days for up/down.
     let delta: number
     if (e.key === 'ArrowLeft') delta = -1
@@ -314,6 +321,7 @@ export function DateTimePicker({
   }
 
   function handleConfirm() {
+    if (inactive) return
     onConfirm(selected)
   }
 
@@ -324,6 +332,7 @@ export function DateTimePicker({
       className={styles.root}
       role="dialog"
       aria-label={ariaLabel}
+      aria-busy={busy}
       // Pre-fill `--current-week-col` so the active week row gets a
       // subtle highlight in CSS. Computed from selected day below.
       style={
@@ -340,6 +349,7 @@ export function DateTimePicker({
               size="sm"
               iconOnly
               aria-label="Previous month"
+              disabled={inactive}
               onClick={goPrevMonth}
             >
               <ChevronLeftIcon size={12} aria-hidden="true" />
@@ -350,6 +360,7 @@ export function DateTimePicker({
               size="sm"
               iconOnly
               aria-label="Next month"
+              disabled={inactive}
               onClick={goNextMonth}
             >
               <ChevronRightIcon size={12} aria-hidden="true" />
@@ -392,7 +403,7 @@ export function DateTimePicker({
                     isSelected && styles.dayCellSelected,
                     isBeforeMin && styles.dayCellDisabled,
                   )}
-                  disabled={isBeforeMin}
+                  disabled={inactive || isBeforeMin}
                   aria-label={cell.date.toDateString()}
                   aria-selected={isSelected}
                   onClick={() => handlePickDay(cell)}
@@ -413,6 +424,7 @@ export function DateTimePicker({
               onChange={handleHourChange}
               onBump={bumpHour}
               max={23}
+              disabled={inactive}
             />
             <span className={styles.timeColon} aria-hidden="true">:</span>
             <TimeSpinner
@@ -421,6 +433,7 @@ export function DateTimePicker({
               onChange={handleMinuteChange}
               onBump={bumpMinute}
               max={59}
+              disabled={inactive}
             />
           </div>
           <p className={styles.timeHelp}>24-hour · local time</p>
@@ -443,8 +456,8 @@ export function DateTimePicker({
           })}
         </span>
         <div className={styles.footerActions}>
-          <Button variant="ghost" size="sm" onClick={onCancel}>Cancel</Button>
-          <Button variant="primary" size="sm" onClick={handleConfirm}>Confirm</Button>
+          <Button variant="ghost" size="sm" disabled={inactive} onClick={onCancel}>Cancel</Button>
+          <Button variant="primary" size="sm" disabled={inactive} onClick={handleConfirm}>{busy ? 'Saving…' : 'Confirm'}</Button>
         </div>
       </footer>
     </div>
@@ -461,9 +474,10 @@ interface TimeSpinnerProps {
   onChange: (raw: string) => void
   onBump: (delta: number) => void
   max: number
+  disabled: boolean
 }
 
-function TimeSpinner({ label, value, onChange, onBump, max: _max }: TimeSpinnerProps) {
+function TimeSpinner({ label, value, onChange, onBump, max: _max, disabled }: TimeSpinnerProps) {
   // 2-digit display ("04", "59"). `value` is the source of truth; the
   // input is controlled so users can clear / type freely while the
   // displayed digits update on every render.
@@ -475,6 +489,7 @@ function TimeSpinner({ label, value, onChange, onBump, max: _max }: TimeSpinnerP
         size="micro"
         iconOnly
         aria-label={`Increase ${label.toLowerCase()}`}
+        disabled={disabled}
         onClick={() => onBump(1)}
       >
         <ChevronUpIcon size={10} aria-hidden="true" />
@@ -482,6 +497,7 @@ function TimeSpinner({ label, value, onChange, onBump, max: _max }: TimeSpinnerP
       <input
         type="text"
         inputMode="numeric"
+        disabled={disabled}
         pattern="[0-9]*"
         className={styles.spinnerInput}
         value={display}
@@ -493,6 +509,7 @@ function TimeSpinner({ label, value, onChange, onBump, max: _max }: TimeSpinnerP
         size="micro"
         iconOnly
         aria-label={`Decrease ${label.toLowerCase()}`}
+        disabled={disabled}
         onClick={() => onBump(-1)}
       >
         <ChevronDownIcon size={10} aria-hidden="true" />

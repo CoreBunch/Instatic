@@ -12,10 +12,3 @@ export function updateRowList(rows: DataRow[], row: DataRow): DataRow[] {
 export function mediaTypeFromAsset(asset: CmsMediaAsset): 'image' | 'video' {
   return asset.mimeType.startsWith('video/') ? 'video' : 'image'
 }
-
-export function publicContentPath(routeBase: string, rowSlug: string): string {
-  const trimmedBase = routeBase.trim()
-  const withLeadingSlash = trimmedBase.startsWith('/') ? trimmedBase : `/${trimmedBase}`
-  const normalizedBase = withLeadingSlash.replace(/\/+$/g, '') || '/'
-  return `${normalizedBase === '/' ? '' : normalizedBase}/${rowSlug}`
-}

@@ -1190,4 +1190,156 @@ export const pgMigrations: Migration[] = [
         on plugin_media_sources (asset_id);
     `,
   },
+  {
+    // Locale variants preserve every existing identity and published snapshot.
+    // Tree structure remains in the logical row; both primary and secondary
+    // variants store sparse node-property overrides, initially empty.
+    id: '027_content_localization',
+    sql: `
+      update data_tables
+      set fields_json = (
+        select jsonb_agg(
+          case when (data_tables.id = 'pages' and field->>'id' in ('templateEnabled', 'templateTarget', 'templatePriority'))
+                 or (data_tables.id = 'components' and field->>'id' in ('name', 'slug', 'params', 'classIds'))
+                 or (data_tables.id = 'layouts' and field->>'id' in ('name', 'slug', 'classes'))
+               then field || '{"localization":"shared"}'::jsonb else field end
+          order by position
+        )
+        from jsonb_array_elements(data_tables.fields_json) with ordinality as fields(field, position)
+      )
+      where id in ('pages', 'components', 'layouts');
+
+      update data_tables
+      set fields_json = (
+        select jsonb_agg(case when field->>'id' in ('seoTitle', 'seoDescription')
+          then field || '{"localization":"localized","builtIn":true}'::jsonb else field end order by position)
+        from jsonb_array_elements(fields_json) with ordinality as fields(field, position)
+      ) where id = 'pages';
+      update data_tables set fields_json = fields_json || '[{"id":"seoTitle","label":"SEO title","type":"text","builtIn":true,"localization":"localized"}]'::jsonb
+      where id = 'pages' and not exists (select 1 from jsonb_array_elements(fields_json) field where field->>'id' = 'seoTitle');
+      update data_tables set fields_json = fields_json || '[{"id":"seoDescription","label":"SEO description","type":"longText","builtIn":true,"localization":"localized"}]'::jsonb
+      where id = 'pages' and not exists (select 1 from jsonb_array_elements(fields_json) field where field->>'id' = 'seoDescription');
+
+      update data_tables set fields_json = fields_json || '[{"id":"parameterDefaults","label":"Parameter defaults","type":"parameterValues","builtIn":true,"localization":"localized"}]'::jsonb
+      where id = 'components' and not exists (select 1 from jsonb_array_elements(fields_json) field where field->>'id' = 'parameterDefaults');
+
+      update data_tables set fields_json = (
+        select jsonb_agg(case when field->>'id' = 'slug'
+          then field || '{"localization":"localized","builtIn":true}'::jsonb else field end order by position)
+        from jsonb_array_elements(fields_json) with ordinality as fields(field, position)
+      ) where kind in ('page', 'postType');
+
+      create table if not exists site_locales (
+        id text primary key,
+        code text not null,
+        name text not null,
+        path_prefix text not null,
+        is_default boolean not null default false,
+        enabled boolean not null default false,
+        direction text not null default 'ltr' check (direction in ('ltr', 'rtl')),
+        created_at timestamptz not null default current_timestamp,
+        updated_at timestamptz not null default current_timestamp,
+        check ((is_default = true and path_prefix = '') or (is_default = false and path_prefix <> ''))
+      );
+      create unique index if not exists site_locales_code_idx on site_locales (lower(code));
+      create unique index if not exists site_locales_prefix_idx on site_locales (lower(path_prefix));
+      create unique index if not exists site_locales_default_idx on site_locales (is_default) where is_default = true;
+
+      with initial_locale as (
+        select coalesce(
+          nullif((select settings_json #>> '{site,settings,language}' from site where id = 'default'), ''),
+          'en'
+        ) as code
+      )
+      insert into site_locales (id, code, name, path_prefix, is_default, enabled, direction)
+      select 'default', code, code, '', true, true,
+             case when lower(split_part(code, '-', 1)) in ('ar', 'fa', 'he', 'ur', 'ps', 'dv', 'yi')
+                  then 'rtl' else 'ltr' end
+      from initial_locale;
+
+      alter table data_row_versions add column locale_id text references site_locales(id) on delete restrict;
+      update data_row_versions set locale_id = 'default';
+      alter table data_row_redirects add column locale_id text references site_locales(id) on delete restrict;
+      update data_row_redirects set locale_id = 'default';
+      alter table data_row_versions add column public_path text;
+      update data_row_versions versions
+      set public_path = case
+        when tables.kind = 'page' and exists (
+          select 1 from site_snapshots snapshots,
+            jsonb_array_elements(snapshots.site_json->'pages') page
+          where snapshots.id = versions.site_snapshot_id
+            and page->>'id' = versions.row_id and page->'template'->>'enabled' = 'true'
+        ) then null
+        when tables.kind = 'page' then case when versions.slug = 'index' then '/' else '/' || versions.slug end
+        when tables.kind = 'postType' and tables.route_base <> '' then
+          rtrim(tables.route_base, '/') || '/' || versions.slug
+        else null
+      end
+      from data_rows rows, data_tables tables
+      where rows.id = versions.row_id and tables.id = rows.table_id;
+      create index if not exists data_row_versions_locale_idx on data_row_versions (row_id, locale_id, version_number desc);
+
+      create table if not exists data_row_localizations (
+        row_id text not null references data_rows(id) on delete cascade,
+        locale_id text not null references site_locales(id) on delete restrict,
+        cells_json jsonb not null default '{}'::jsonb,
+        slug text not null default '',
+        availability text not null default 'offline' check (availability in ('offline', 'online')),
+        active_version_id text references data_row_versions(id) on delete restrict,
+        scheduled_publish_at timestamptz,
+        scheduled_revision_json jsonb,
+        translation_meta_json jsonb not null default '{}'::jsonb,
+        seq bigint not null default 0,
+        created_by_user_id text references users(id) on delete set null,
+        updated_by_user_id text references users(id) on delete set null,
+        published_by_user_id text references users(id) on delete set null,
+        created_at timestamptz not null default current_timestamp,
+        updated_at timestamptz not null default current_timestamp,
+        published_at timestamptz,
+        primary key (row_id, locale_id),
+        check (availability = 'offline' or active_version_id is not null),
+        check ((scheduled_publish_at is null and scheduled_revision_json is null) or
+               (scheduled_publish_at is not null and scheduled_revision_json is not null))
+      );
+      create index if not exists data_row_localizations_availability_idx
+        on data_row_localizations (locale_id, availability, row_id);
+      create index if not exists data_row_localizations_schedule_idx
+        on data_row_localizations (scheduled_publish_at)
+        where scheduled_publish_at is not null;
+
+      insert into data_row_localizations
+        (row_id, locale_id, cells_json, slug, availability, active_version_id,
+         scheduled_publish_at, scheduled_revision_json, seq,
+         created_by_user_id, updated_by_user_id, published_by_user_id,
+         created_at, updated_at, published_at)
+      select data_rows.id, 'default',
+             case when data_tables.kind in ('page', 'component', 'layout')
+                  then data_rows.cells_json - 'body' else data_rows.cells_json end,
+             data_rows.slug,
+             case when data_rows.status = 'published' and data_rows.active_version_id is not null
+                  then 'online' else 'offline' end,
+             data_rows.active_version_id,
+             case when data_rows.status = 'scheduled' then data_rows.scheduled_publish_at else null end,
+             case when data_rows.status = 'scheduled' and data_rows.scheduled_publish_at is not null
+                  then jsonb_build_object('cells', data_rows.cells_json, 'slug', data_rows.slug) else null end,
+             data_rows.seq,
+             data_rows.created_by_user_id, data_rows.updated_by_user_id, data_rows.published_by_user_id,
+             data_rows.created_at, data_rows.updated_at, data_rows.published_at
+      from data_rows
+      join data_tables on data_tables.id = data_rows.table_id;
+
+      update data_row_localizations set cells_json = jsonb_set(cells_json, '{slug}', to_jsonb(slug), true)
+      where cells_json ? 'slug';
+
+      create table if not exists data_table_localizations (
+        table_id text not null references data_tables(id) on delete cascade,
+        locale_id text not null references site_locales(id) on delete restrict,
+        route_base text not null default '',
+        primary key (table_id, locale_id)
+      );
+      insert into data_table_localizations (table_id, locale_id, route_base)
+      select id, 'default', route_base from data_tables;
+
+    `,
+  },
 ]

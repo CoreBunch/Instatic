@@ -1,7 +1,8 @@
+import { SourceLocaleNotice, useEditorLocale } from '@site/localization'
 /**
  * GeneralSection — site-level metadata.
  *
- * Fields: site name, meta title, meta description, language, favicon (picked
+ * Fields: site name, meta title, meta description, favicon (picked
  * from the CMS media library — the same modal Content / Site property
  * controls use). All changes are persisted immediately to the Zustand store
  * and ultimately to the CMS draft via the autosave pipeline.
@@ -38,6 +39,9 @@ const MediaPickerModal = lazy(() =>
 
 export function GeneralSection() {
   const { site, error, updateSiteName, updateSiteSettings } = useSiteSettingsController()
+
+  const { isTranslation } = useEditorLocale()
+  if (isTranslation) return <SourceLocaleNotice />
 
   if (error) {
     return <p className={s.sectionDescription} role="alert">{error}</p>
@@ -102,23 +106,6 @@ export function GeneralSection() {
           onBlur={(e) =>
             updateSiteSettings({ metaDescription: e.target.value.trim() || undefined })
           }
-        />
-      </div>
-
-      {/* ── Language ──────────────────────────────────────────────────────── */}
-      <div className={s.genFieldRow}>
-        <label htmlFor="gen-lang" className={s.label}>
-          Language
-        </label>
-        <Input
-          id="gen-lang"
-          type="text"
-          defaultValue={settings.language ?? 'en'}
-          placeholder="en"
-          onBlur={(e) =>
-            updateSiteSettings({ language: e.target.value.trim() || 'en' })
-          }
-          onKeyDown={(e) => e.key === 'Enter' && (e.target as HTMLInputElement).blur()}
         />
       </div>
 

@@ -23,6 +23,10 @@ import type { LoopItem } from '@core/loops/types'
 import { LoopItemSchema } from '@core/loops/types'
 import { apiRequest, assertOk, ApiError, type FetchLike } from '@core/http'
 
+function withLocale(path: string, localeId?: string): string {
+  return localeId ? `${path}?localeId=${encodeURIComponent(localeId)}` : path
+}
+
 // ---------------------------------------------------------------------------
 // Envelope schemas
 // ---------------------------------------------------------------------------
@@ -156,9 +160,10 @@ export async function listCmsDataRows(
   tableId: string,
   fetchImpl: FetchLike = globalThis.fetch.bind(globalThis),
   basePath = '/admin/api/cms',
+  localeId?: string,
 ): Promise<DataRow[]> {
   const body = await apiRequest(
-    `${basePath}/data/tables/${encodeURIComponent(tableId)}/rows`,
+    withLocale(`${basePath}/data/tables/${encodeURIComponent(tableId)}/rows`, localeId),
     { schema: RowsListEnvelope, fetchImpl, fallbackMessage: 'CMS data rows request failed' },
   )
   return body.rows ?? []
@@ -168,9 +173,10 @@ export async function getCmsDataRow(
   rowId: string,
   fetchImpl: FetchLike = globalThis.fetch.bind(globalThis),
   basePath = '/admin/api/cms',
+  localeId?: string,
 ): Promise<DataRow | null> {
   try {
-    const body = await apiRequest(`${basePath}/data/rows/${encodeURIComponent(rowId)}`, {
+    const body = await apiRequest(withLocale(`${basePath}/data/rows/${encodeURIComponent(rowId)}`, localeId), {
       schema: RowEnvelope,
       fetchImpl,
       fallbackMessage: 'CMS data row fetch failed',
@@ -232,8 +238,9 @@ export async function publishCmsDataRow(
   rowId: string,
   fetchImpl: FetchLike = globalThis.fetch.bind(globalThis),
   basePath = '/admin/api/cms',
+  localeId?: string,
 ): Promise<DataRow> {
-  const body = await apiRequest(`${basePath}/data/rows/${encodeURIComponent(rowId)}/publish`, {
+  const body = await apiRequest(withLocale(`${basePath}/data/rows/${encodeURIComponent(rowId)}/publish`, localeId), {
     method: 'POST',
     schema: RowEnvelope,
     fetchImpl,
@@ -255,8 +262,9 @@ export async function scheduleCmsDataRowPublish(
   atIso: string,
   fetchImpl: FetchLike = globalThis.fetch.bind(globalThis),
   basePath = '/admin/api/cms',
+  localeId?: string,
 ): Promise<DataRow> {
-  const body = await apiRequest(`${basePath}/data/rows/${encodeURIComponent(rowId)}/schedule`, {
+  const body = await apiRequest(withLocale(`${basePath}/data/rows/${encodeURIComponent(rowId)}/schedule`, localeId), {
     method: 'POST',
     body: { at: atIso },
     schema: RowEnvelope,
@@ -276,8 +284,9 @@ export async function cancelCmsDataRowSchedule(
   rowId: string,
   fetchImpl: FetchLike = globalThis.fetch.bind(globalThis),
   basePath = '/admin/api/cms',
+  localeId?: string,
 ): Promise<DataRow> {
-  const body = await apiRequest(`${basePath}/data/rows/${encodeURIComponent(rowId)}/schedule`, {
+  const body = await apiRequest(withLocale(`${basePath}/data/rows/${encodeURIComponent(rowId)}/schedule`, localeId), {
     method: 'DELETE',
     schema: RowEnvelope,
     fetchImpl,
@@ -298,8 +307,9 @@ export async function updateCmsDataRowStatus(
   status: 'draft' | 'unpublished',
   fetchImpl: FetchLike = globalThis.fetch.bind(globalThis),
   basePath = '/admin/api/cms',
+  localeId?: string,
 ): Promise<DataRow> {
-  const body = await apiRequest(`${basePath}/data/rows/${encodeURIComponent(rowId)}/status`, {
+  const body = await apiRequest(withLocale(`${basePath}/data/rows/${encodeURIComponent(rowId)}/status`, localeId), {
     method: 'PATCH',
     body: { status },
     schema: RowEnvelope,
@@ -315,8 +325,9 @@ export async function updateCmsDataRowAuthor(
   authorUserId: string,
   fetchImpl: FetchLike = globalThis.fetch.bind(globalThis),
   basePath = '/admin/api/cms',
+  localeId?: string,
 ): Promise<DataRow> {
-  const body = await apiRequest(`${basePath}/data/rows/${encodeURIComponent(rowId)}/author`, {
+  const body = await apiRequest(withLocale(`${basePath}/data/rows/${encodeURIComponent(rowId)}/author`, localeId), {
     method: 'PATCH',
     body: { authorUserId },
     schema: RowEnvelope,
@@ -332,8 +343,9 @@ export async function updateCmsDataRowTable(
   tableId: string,
   fetchImpl: FetchLike = globalThis.fetch.bind(globalThis),
   basePath = '/admin/api/cms',
+  localeId?: string,
 ): Promise<DataRow> {
-  const body = await apiRequest(`${basePath}/data/rows/${encodeURIComponent(rowId)}/table`, {
+  const body = await apiRequest(withLocale(`${basePath}/data/rows/${encodeURIComponent(rowId)}/table`, localeId), {
     method: 'PATCH',
     body: { tableId },
     schema: RowEnvelope,
@@ -361,6 +373,7 @@ const LoopPreviewEnvelope = Type.Object(
 )
 
 interface DataLoopPreviewOptions {
+  localeId?: string
   orderBy?: string
   direction?: 'asc' | 'desc'
   limit?: number
@@ -386,6 +399,7 @@ export async function previewCmsDataLoopItems(
     `${basePath}/data/tables/${encodeURIComponent(tableId)}/loop-preview`,
     {
       query: {
+        localeId: options.localeId,
         orderBy: options.orderBy,
         direction: options.direction,
         limit: options.limit,
@@ -414,6 +428,7 @@ export async function previewCmsDataLoopItems(
 // ---------------------------------------------------------------------------
 
 interface PreviewCmsDataRowOptions {
+  localeId?: string
   /** Draft cells to merge over the row's persisted state. */
   cells?: Record<string, unknown>
   /** Abort signal so the caller can cancel a stale request. */
@@ -428,7 +443,7 @@ export async function previewCmsDataRow(
 ): Promise<string> {
   const fetchImpl = options.fetchImpl ?? globalThis.fetch.bind(globalThis)
   const basePath = options.basePath ?? '/admin/api/cms'
-  const res = await fetchImpl(`${basePath}/data/rows/${encodeURIComponent(rowId)}/preview`, {
+  const res = await fetchImpl(withLocale(`${basePath}/data/rows/${encodeURIComponent(rowId)}/preview`, options.localeId), {
     method: 'POST',
     credentials: 'include',
     headers: { 'content-type': 'application/json' },

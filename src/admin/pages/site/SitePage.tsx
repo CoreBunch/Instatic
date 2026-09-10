@@ -13,6 +13,7 @@ import { executeAgentTool } from './agent'
  * lazy-loaded one level down by AdminCanvasLayout after the shell has painted.
  */
 export function SitePage() {
+  const activeLocaleId = useEditorStore((state) => state.activeLocaleId)
   const siteHydrated = useEditorStore((state) => state.site !== null)
 
   // Relay MCP browser-tool calls to this open editor while it's mounted. No
@@ -22,7 +23,7 @@ export function SitePage() {
   // always observes the edit. Delay registration until the editor store is
   // hydrated so get_context's siteConnected flag means browser tools can
   // actually see an active site.
-  useMcpWorkspaceBridge('site', executeAgentTool, undefined, siteHydrated)
+  useMcpWorkspaceBridge('site', executeAgentTool, undefined, siteHydrated, activeLocaleId)
 
   // Consume cross-workspace pending actions queued by the spotlight. Each
   // action waits for the editor store to hydrate (site !== null) — we

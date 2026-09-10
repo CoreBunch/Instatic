@@ -145,6 +145,8 @@ function buildDynamicSuffix(snap: SiteAgentSnapshot): string {
         .join(', ')
     : '(none)'
   return [
+    `Language: ${snap.site.localeId ?? '(not configured)'}; configured: ${(snap.site.locales ?? []).map((locale) => `${locale.id}=${locale.code}${locale.isDefault ? ' (source)' : ''}`).join(', ')}` ,
+    'Pass localeId to guard reads and writes. Use site_select_locale to switch. Shared structure and design changes belong in the source language; content and visibility are localized. Publishing is separate per language.',
     `Page: "${snap.page.title}"`,
     `current document: ${snap.currentDocument.type}:${snap.currentDocument.id}`,
     `root: ${snap.page.rootNodeId || '(empty)'}`,

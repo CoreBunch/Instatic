@@ -19,6 +19,7 @@
 import { Type, parseValue } from '@core/utils/typeboxHelpers'
 import {
   aiToolError,
+  readLocaleToolInput,
   aiToolOk,
   type AiToolOutput,
   InsertHtmlInputSchema,
@@ -75,6 +76,7 @@ import { renderNode, type RenderConfig, type RenderAccumulators } from '@core/pu
 import { getAgentStoreApi } from './storeRef'
 import { whenCollabWritable } from '@site/store/slices/site/collabWriteGate'
 import { AUTO_NAVIGATE_TOOLS, SITE_MUTATION_TOOLS } from './toolClassification'
+import { assertLocalizedSiteTool, assertLocalizedNodePatch } from './localePolicy'
 import {
   runSetColorTokens,
   runSetFontTokens,
@@ -416,6 +418,7 @@ function runUpdateNodeProps(input: UpdateNodePropsInput): AiToolOutput {
       ? sanitizeRichtext(value)
       : value
   }
+  assertLocalizedNodePatch(store, input.nodeId, sanitizedPatch, input.breakpointId)
   if (input.breakpointId) {
     const breakpointError = validateBreakpointId(store, input.breakpointId)
     if (breakpointError) return aiToolError(breakpointError)
@@ -588,6 +591,17 @@ export async function executeAgentTool(
   rawInput: unknown,
 ): Promise<AiToolOutput> {
   try {
+    const localeInput = readLocaleToolInput(rawInput)
+    const state = getStoreState()
+    if (toolName === 'site_select_locale') {
+      if (!localeInput.localeId || !state.site?.locales?.some((locale) => locale.id === localeInput.localeId)) return aiToolError('Unknown language. Read get_context for configured locales.')
+      state.setActiveLocaleId(localeInput.localeId)
+      if (!(await whenCollabWritable())) return aiToolError('Language selected; collaboration is still syncing. Retry shortly.')
+      return aiToolOk({ localeId: localeInput.localeId })
+    }
+    if (localeInput.localeId && localeInput.localeId !== state.activeLocaleId) return aiToolError('The active language changed. Select the requested locale before retrying.')
+    const expectedLocaleId = state.activeLocaleId
+    rawInput = localeInput.input
     // A write refused by the collab sync gate never reaches the relay, so wait
     // for the gate to open rather than reporting a success the server will
     // never see. Sub-second in practice; the deadline exists so a genuinely
@@ -597,6 +611,9 @@ export async function executeAgentTool(
         'Editor is still syncing with the collaboration relay; the write was not applied. Retry shortly.',
       )
     }
+
+    if (getStoreState().activeLocaleId !== expectedLocaleId) return aiToolError('The active language changed while the tool was waiting. Retry in the requested locale.')
+    assertLocalizedSiteTool(toolName, getStoreState())
 
     // Auto-navigate: if a node-targeting tool references a node that lives in a
     // different document, switch the canvas to that document BEFORE running, so

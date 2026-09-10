@@ -112,7 +112,7 @@ describe('collab provider', () => {
     const resets: string[] = []
     provider.onReset((docId) => resets.push(docId))
 
-    socket.emit(encodeCollabFrame('page:p1', 'gen-1', FRAME_RESET, new Uint8Array()))
+    socket.emit(encodeCollabFrame('page:p1', '', FRAME_RESET, new Uint8Array()))
     expect(resets).toEqual(['page:p1'])
     // A rebind gets a FRESH doc (the old one was destroyed).
     const rebound = provider.bind('page:p1')
@@ -132,7 +132,7 @@ describe('collab provider', () => {
     })
     // Reset (or any unbind) before the first sync must resolve the promise,
     // not leave every chained continuation pending forever.
-    socket.emit(encodeCollabFrame('page:p1', 'gen-1', FRAME_RESET, new Uint8Array()))
+    socket.emit(encodeCollabFrame('page:p1', '', FRAME_RESET, new Uint8Array()))
     await binding.whenSynced // resolves instead of hanging the test
     await Promise.resolve()
     expect(settled).toBe(true)
@@ -140,6 +140,37 @@ describe('collab provider', () => {
   })
 
   // ── Liveness ──────────────────────────────────────────────────────────────
+  it('ignores a delayed rejection from the previous generation after rebinding', async () => {
+    const socket = new FakeSocket()
+    const provider = createCollabProvider({ createSocket: () => socket })
+    socket.open()
+    const binding = provider.bind('page:p1')
+    function syncGeneration(generation: string, title: string) {
+      const server = new Y.Doc()
+      server.getMap('meta').set('title', title)
+      const encoder = encoding.createEncoder()
+      syncProtocol.writeSyncStep2(encoder, server, Y.encodeStateVector(new Y.Doc()))
+      socket.emit(encodeCollabFrame('page:p1', generation, FRAME_SYNC, encoding.toUint8Array(encoder)))
+      server.destroy()
+    }
+    syncGeneration('old-generation', 'Old')
+    await binding.whenSynced
+    socket.emit(encodeCollabFrame('page:p1', '', FRAME_RESET, new Uint8Array()))
+    const rebound = provider.bind('page:p1')
+    socket.emit(encodeCollabFrame('page:p1', 'old-generation', FRAME_RESET, new Uint8Array()))
+    expect(provider.bind('page:p1').doc).toBe(rebound.doc)
+    expect(rebound.synced).toBe(false)
+    syncGeneration('new-generation', 'Rewritten')
+    await rebound.whenSynced
+    socket.emit(encodeCollabFrame('page:p1', 'old-generation', FRAME_RESET, new Uint8Array()))
+    expect(provider.bind('page:p1').doc).toBe(rebound.doc)
+    expect(rebound.doc.getMap('meta').get('title')).toBe('Rewritten')
+    // A rejection of this live generation still performs the required reset.
+    socket.emit(encodeCollabFrame('page:p1', 'new-generation', FRAME_RESET, new Uint8Array()))
+    expect(provider.bind('page:p1').doc).not.toBe(rebound.doc)
+    provider.destroy()
+  })
+
   // `readyState` cannot distinguish a live socket from a black-holed one, and
   // the write gate refuses edits it cannot deliver — so "connected" has to
   // mean "answered a ping recently", not "the browser has not noticed yet".

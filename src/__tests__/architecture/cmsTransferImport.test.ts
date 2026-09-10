@@ -15,6 +15,7 @@
  * @see docs/plans/2026-05-19-site-transfer-ux.md
  */
 
+import { makeContentLocalization } from '../fixtures/localization'
 import { describe, test, expect, beforeAll } from 'bun:test'
 import { createSqliteClient } from '../../../server/db/sqlite'
 import { runMigrations } from '../../../server/db/runMigrations'
@@ -131,6 +132,10 @@ function bundleRowEntry(
     id,
     tableId,
     cells: { slug, ...cellOverrides },
+    sharedCells: { slug, ...cellOverrides },
+    localeId: 'default',
+    localization: makeContentLocalization(id, { cells: { slug, ...cellOverrides }, slug }),
+    publicPath: null,
     slug,
     status: 'draft',
     authorUserId: null,

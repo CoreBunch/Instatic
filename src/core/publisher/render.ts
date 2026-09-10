@@ -20,6 +20,7 @@
  * threading another ternary through 150 lines.
  */
 
+import type { LanguageAlternative } from '@core/localization-routing'
 import type { Page, SiteDocument } from '@core/page-tree'
 import type { IModuleRegistry } from '@core/module-engine'
 import type { TemplateRenderDataContext } from '@core/templates/dynamicBindings'
@@ -89,6 +90,7 @@ interface PublishPageOptions {
    * when the page contains an infinite-mode loop. Defaults to
    * `/_instatic/loop/`.
    */
+  languageAlternatives?: readonly LanguageAlternative[]
   loopEndpointBaseUrl?: string
   /**
    * How site-wide CSS (reset, framework, user classes) is emitted into the
@@ -345,6 +347,7 @@ interface DocumentMetaTags {
   metaDesc: string
   favicon: string
   langAttr: string
+  dirAttr?: 'ltr' | 'rtl'
 }
 
 function buildDocumentMetaTags(
@@ -354,7 +357,8 @@ function buildDocumentMetaTags(
   override: DocumentMetaOverride = {},
 ): DocumentMetaTags {
   const { settings } = site
-  const description = override.description || settings.metaDescription
+  const locale = site.locales?.find((entry) => entry.id === site.localeId)
+  const description = override.description || page.seoDescription || settings.metaDescription
   const metaDesc = description
     ? `
   <meta name="description" content="${escapeHtml(interpolateTokens(description, context))}">`
@@ -365,11 +369,12 @@ function buildDocumentMetaTags(
       : ''
   return {
     pageTitle: escapeHtml(
-      interpolateTokens(override.title || (settings.metaTitle ?? page.title ?? site.name), context),
+      interpolateTokens(override.title || page.seoTitle || page.title || settings.metaTitle || site.name, context),
     ),
     metaDesc,
     favicon,
-    langAttr: escapeHtml(settings.language ?? 'en'),
+    langAttr: escapeHtml(locale?.code ?? settings.language ?? 'en'),
+    ...(locale ? { dirAttr: locale.direction } : {}),
   }
 }
 
@@ -479,6 +484,7 @@ function lineOrEmpty(content: string): string {
 
 interface AssembledDocumentParts {
   langAttr: string
+  dirAttr?: 'ltr' | 'rtl'
   csp: string
   pageTitle: string
   metaDesc: string
@@ -497,7 +503,7 @@ interface AssembledDocumentParts {
 function assembleHtmlDocument(parts: AssembledDocumentParts): string {
   return (
     `<!DOCTYPE html>\n` +
-    `<html lang="${parts.langAttr}">\n` +
+    `<html lang="${parts.langAttr}"${parts.dirAttr ? ` dir="${parts.dirAttr}"` : ''}>\n` +
     `<head>\n` +
     `  <meta charset="UTF-8">\n` +
     `  <meta name="viewport" content="width=device-width, initial-scale=1.0">${parts.csp}\n` +
@@ -557,6 +563,7 @@ export function publishPage(
     breakpointId: options.breakpointId,
     templateContext,
     loopData: options.loopData,
+    languageAlternatives: options.languageAlternatives,
     mediaAssets: options.mediaAssets,
     dynamicNodeIds: dynamicNodeIds.size > 0 ? dynamicNodeIds : undefined,
     publishVersion: options.publishVersion ?? 0,
@@ -609,6 +616,7 @@ export function publishPage(
 
   const html = assembleHtmlDocument({
     langAttr: meta.langAttr,
+    dirAttr: meta.dirAttr,
     csp,
     pageTitle: meta.pageTitle,
     metaDesc: meta.metaDesc,

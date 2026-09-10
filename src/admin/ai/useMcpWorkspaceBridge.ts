@@ -76,13 +76,14 @@ export async function runMcpWorkspaceBridgeConnection(
   dispatchTool: McpToolDispatcher,
   afterSuccessfulTool: McpAfterSuccessfulTool | undefined,
   lifecycleSignal: AbortSignal,
+  localeId?: string | null,
 ): Promise<McpBridgeConnectionOutcome> {
   const connectionController = new AbortController()
   const signal = AbortSignal.any([lifecycleSignal, connectionController.signal])
   let bridgeId = ''
 
   try {
-    const res = await fetch(`${MCP_BRIDGE_PATH}?scope=${scope}`, {
+    const res = await fetch(`${MCP_BRIDGE_PATH}?scope=${scope}${localeId ? `&localeId=${encodeURIComponent(localeId)}` : ''}`, {
       method: 'GET',
       credentials: 'same-origin',
       // The bridge body stays newline-delimited JSON, but the event-stream
@@ -120,6 +121,7 @@ export function useMcpWorkspaceBridge(
   dispatchTool: McpToolDispatcher,
   afterSuccessfulTool?: McpAfterSuccessfulTool,
   enabled = true,
+  localeId?: string | null,
 ): void {
   useEffect(() => {
     // A mounted route is not necessarily a usable workspace yet. In
@@ -143,6 +145,7 @@ export function useMcpWorkspaceBridge(
         dispatchTool,
         afterSuccessfulTool,
         lifecycleController.signal,
+        localeId,
       )
     }
 
@@ -197,5 +200,5 @@ export function useMcpWorkspaceBridge(
       if (reconnectTimer) clearTimeout(reconnectTimer)
       lifecycleController.abort()
     }
-  }, [scope, dispatchTool, afterSuccessfulTool, enabled])
+  }, [scope, dispatchTool, afterSuccessfulTool, enabled, localeId])
 }

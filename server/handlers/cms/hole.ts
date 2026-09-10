@@ -43,10 +43,15 @@ import { renderNode, type RenderConfig, type RenderAccumulators } from '@core/pu
 import { buildPageFrame, buildRouteFrame, buildSiteFrame } from '@core/templates/contextFrames'
 import { prefetchLoopData } from '../../publish/loopPrefetch'
 import { getOrRender } from '../../publish/renderCache'
-import { getPublishedNodeIndexForVersion } from '../../publish/publishedSnapshotCache'
+import { getPublishedRouteInventoryForVersion } from '../../publish/publishedRoutes'
+import { findPublishedFragmentTarget, readPublishedRouteContext } from '../../publish/publishedRouteContext'
+import { publishedLanguageAlternatives, type LanguageAlternative, resolvePublishedRoute } from '@core/localization-routing'
+import type { LoopItem } from '@core/loops/types'
+import { publishedDataRowToLoopItem } from '../../publish/loopPrefetch'
 import { getPublishVersion } from '../../publish/publishState'
 import { HOLE_RUNTIME_JS } from '../../publish/holeRuntime'
 import { stampFormPageTokens } from '../../forms/formRuntime'
+import type { PublicFormRouteIdentity } from '@core/forms'
 
 const HOLE_RUNTIME_PATH = '/_instatic/hole-runtime.js'
 const HOLE_PATH_PREFIX = '/_instatic/hole/'
@@ -123,6 +128,9 @@ async function renderHoleFragment(
   db: DbClient,
   pageUrl: URL,
   request: SourceRequestContext,
+  entryStack: readonly LoopItem[] = [],
+  languageAlternatives: readonly LanguageAlternative[] = [],
+  formIdentity?: PublicFormRouteIdentity,
 ): Promise<string> {
   const route = buildRouteFrame(pageUrl.toString())
   const loopData = await prefetchLoopData(page, site, db, pageUrl, {
@@ -135,8 +143,9 @@ async function renderHoleFragment(
     registry,
     breakpointId: undefined,
     loopData,
+    languageAlternatives,
     templateContext: {
-      entryStack: [],
+      entryStack,
       page: buildPageFrame(page),
       site: buildSiteFrame(site),
       route,
@@ -153,7 +162,8 @@ async function renderHoleFragment(
   // Hole fragments bypass the published-HTML pipeline, so CMS forms inside
   // them would never receive their page token. Stamp here — tokens are
   // stateless HMAC signatures, safe to store in the Layer B fragment cache.
-  return stampFormPageTokens(renderNode(nodeId, config, acc), page.id)
+  const html = renderNode(nodeId, config, acc)
+  return formIdentity ? stampFormPageTokens(html, formIdentity) : html
 }
 
 /**
@@ -195,32 +205,26 @@ export async function handleHoleRequest(
     })
   }
 
-  // Load (memoised) snapshot for this version and find the node's page in O(1).
-  const snap = await getPublishedNodeIndexForVersion(ctx.db, currentVersion)
-  if (!snap) {
-    return new Response('Site not published', {
-      status: 404,
-      headers: { 'content-type': 'text/plain; charset=utf-8' },
-    })
-  }
-  const foundPage = snap.nodeIndex.get(nodeId)
-  if (!foundPage) {
-    return new Response('Node not found', {
-      status: 404,
-      headers: { 'content-type': 'text/plain; charset=utf-8' },
-    })
-  }
-  const node = foundPage.nodes[nodeId]!
-
-  // Reconstruct the originating page URL forwarded by the runtime (`u`). Falls
-  // back to the page's own permalink when absent (older runtime / direct hit).
-  const pageUrlRaw = url.searchParams.get('u') ?? buildPageFrame(foundPage).permalink
+  const pageUrlRaw = url.searchParams.get('u')
+  if (!pageUrlRaw) return new Response('Missing originating page URL', { status: 400 })
   let pageUrl: URL
   try {
     pageUrl = new URL(pageUrlRaw, url.origin)
   } catch {
-    pageUrl = new URL(buildPageFrame(foundPage).permalink, url.origin)
+    return new Response('Invalid originating page URL', { status: 400 })
   }
+  if (pageUrl.origin !== url.origin) return new Response('Page not found', { status: 404 })
+  const inventory = await getPublishedRouteInventoryForVersion(ctx.db, currentVersion)
+  const publishedRoute = resolvePublishedRoute(inventory, pageUrl.pathname)
+  if (!publishedRoute) return new Response('Page not found', { status: 404 })
+  const context = await readPublishedRouteContext(ctx.db, publishedRoute, inventory)
+  if (!context) return new Response('Page not found', { status: 404 })
+  const target = findPublishedFragmentTarget(context.page, context.snapshot.site, nodeId)
+  if (!target) return new Response('Node not found', { status: 404 })
+  const { page: foundPage, node } = target
+  const site = context.snapshot.site
+  const entryStack = context.row ? [publishedDataRowToLoopItem(context.row)] : []
+  const languageAlternatives = publishedLanguageAlternatives(inventory, publishedRoute)
 
   const perVisitor = isPerVisitorHole(node)
   const route = buildRouteFrame(pageUrl.toString())
@@ -236,7 +240,7 @@ export async function handleHoleRequest(
       slug: route.slug,
       cookies: parseCookies(req.headers.get('cookie')),
     }
-    const html = await renderHoleFragment(nodeId, foundPage, snap.site, ctx.db, pageUrl, request)
+    const html = await renderHoleFragment(nodeId, foundPage, site, ctx.db, pageUrl, request, entryStack, languageAlternatives, { pageId: publishedRoute.contentId, localeId: publishedRoute.localeId, publishedVersionId: publishedRoute.publishedVersionId, pagePath: publishedRoute.path })
     return new Response(html, {
       status: 200,
       headers: {
@@ -266,7 +270,7 @@ export async function handleHoleRequest(
       queryString: `v=${currentVersion}&u=${encodeURIComponent(pageUrl.pathname)}&${normalizeQuery(pageUrl.searchParams)}`,
     },
     async () => {
-      const html = await renderHoleFragment(nodeId, foundPage, snap.site, ctx.db, pageUrl, request)
+      const html = await renderHoleFragment(nodeId, foundPage, site, ctx.db, pageUrl, request, entryStack, languageAlternatives, { pageId: publishedRoute.contentId, localeId: publishedRoute.localeId, publishedVersionId: publishedRoute.publishedVersionId, pagePath: publishedRoute.path })
       return {
         body: html,
         headers: { 'content-type': 'text/html; charset=utf-8' },

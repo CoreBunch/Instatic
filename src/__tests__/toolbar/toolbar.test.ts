@@ -346,7 +346,8 @@ describe('PublishButton — publish state machine', () => {
     // Live co-editing streams every edit to the server as it happens; the
     // publish ENDPOINT flushes the relay's debounced persist. The button must
     // not carry a client-side save path anymore.
-    expect(src).toContain('publishCmsDraft()')
+    expect(src).toContain('publishCmsDraft(undefined, undefined, selection)')
+    expect(src).toContain('onPublish={() => setPublicationDialogOpen(true)}')
     expect(src).not.toContain('onSave')
   })
 
@@ -562,7 +563,7 @@ describe('Toolbar — structural requirements', () => {
     )
     expect(src).toContain('Draft synced')
     expect(src).toContain('Offline — reconnecting')
-    expect(src).toContain('publishDisabled={disabled || state === \'published\'}')
+    expect(src).toContain('publishDisabled={disabled}')
     expect(src).not.toContain('Save draft')
   })
   it('PublishActionGroup keeps the status pill and delegates its split control to the shared SplitButton', () => {

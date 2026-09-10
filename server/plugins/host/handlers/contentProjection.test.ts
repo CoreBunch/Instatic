@@ -55,6 +55,7 @@ describe('content projection', () => {
 
     expect(projected.fields[1]).toEqual({
       type: 'repeater',
+      localization: 'localized',
       id: 'gallery',
       label: 'Gallery',
       required: undefined,

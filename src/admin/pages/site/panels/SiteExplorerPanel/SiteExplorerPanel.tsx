@@ -1,3 +1,4 @@
+import { SourceLocaleNotice, useEditorLocale } from '@site/localization'
 import { useState, type KeyboardEvent, type MouseEvent } from 'react'
 import { useEditorStore } from '@site/store/store'
 import type { SiteFile } from '@core/files/schemas'
@@ -17,6 +18,7 @@ import { Settings2SolidIcon } from 'pixel-art-icons/icons/settings-2-solid'
 import { SiteCreateDialog, buildScriptPath, buildStylePath, slugifySiteItemName, type SiteCreatePayload, type SiteCreateKind } from '@admin/shared/dialogs/SiteCreateDialog'
 import type { ExplorerContextMenuItem } from '@site/explorer-actions'
 import { usePageSettingsDialogs } from './usePageSettingsDialogs'
+import { useSiteExplorerLivePath } from './useSiteExplorerLivePath'
 import { useVCDeletionConfirm } from '@admin/shared/dialogs/VCDeletionConfirmDialog'
 import { useConfirmDelete } from '@admin/shared/dialogs/ConfirmDeleteDialog'
 import {
@@ -92,6 +94,7 @@ export function SiteExplorerPanel({
   sectionGroup,
   organizationDndEnabled = false,
 }: SiteExplorerPanelProps) {
+  const { isTranslation } = useEditorLocale()
   const site = useEditorStore((s) => s.site)
   const activePageId = useEditorStore((s) => s.activePageId)
   const activeDocument = useEditorStore((s) => s.activeDocument)
@@ -100,6 +103,7 @@ export function SiteExplorerPanel({
   const setActiveDocument = useEditorStore((s) => s.setActiveDocument)
   const addPage = useEditorStore((s) => s.addPage)
   const renamePage = useEditorStore((s) => s.renamePage)
+  const updatePageSeo = useEditorStore((s) => s.updatePageSeo)
   const deletePage = useEditorStore((s) => s.deletePage)
   const convertPageToTemplate = useEditorStore((s) => s.convertPageToTemplate)
   const convertTemplateToPage = useEditorStore((s) => s.convertTemplateToPage)
@@ -122,6 +126,8 @@ export function SiteExplorerPanel({
   const confirmDelete = useConfirmDelete()
   const [createKind, setCreateKind] = useState<SiteCreateKind | null>(null)
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null)
+  const livePath = useSiteExplorerLivePath(contextMenu?.target.kind === 'page'
+    ? site?.pages.find((page) => page.id === contextMenu.target.id) ?? null : null)
   const [inlineRenameTarget, setInlineRenameTarget] = useState<SiteExplorerContextTarget | null>(null)
   const [pathConfirmPlan, setPathConfirmPlan] = useState<ExplorerPathChangePlan | null>(null)
   const explorerSelection = useSiteExplorerSelection<SiteExplorerContextTarget>()
@@ -156,6 +162,7 @@ export function SiteExplorerPanel({
   const { openTemplateSettings, openPageSettings, dialogs: pageSettingsDialogs } = usePageSettingsDialogs({
     pages,
     renamePage,
+    updatePageSeo,
     convertPageToTemplate,
     openPageInCanvas,
   })
@@ -226,6 +233,7 @@ export function SiteExplorerPanel({
   }
 
   function startInlineRename(target: SiteExplorerContextTarget) {
+    if (isTranslation && target.kind !== 'page') return
     setInlineRenameTarget(target)
     setContextMenu(null)
   }
@@ -361,6 +369,7 @@ export function SiteExplorerPanel({
   }
 
   function templateMenuItems(target: SiteExplorerContextTarget) {
+    if (isTranslation) return []
     const page = pageForTarget(target)
     if (!page) return []
 
@@ -408,17 +417,15 @@ export function SiteExplorerPanel({
           setContextMenu(null)
         },
       }] : []),
-      {
+      ...(livePath ? [{
         label: 'Open in new tab',
         icon: <ExternalLinkSolidIcon size={13} />,
         action: () => {
-          window.open(pagePublicPath(page.slug), '_blank', 'noopener,noreferrer')
+          window.open(livePath, '_blank', 'noopener,noreferrer')
           setContextMenu(null)
         },
-      },
-      // Templates get title+slug through "Template settings" already — avoid
-      // a second, redundant slug editor for the same page.
-      ...(!page.template ? [{
+      }] : []),
+      ...(!page.template || isTranslation ? [{
         label: 'Page settings',
         icon: <Settings2SolidIcon size={13} />,
         action: () => {
@@ -431,6 +438,7 @@ export function SiteExplorerPanel({
   }
 
   function contextMenuItems(menu: ContextMenuState): ExplorerContextMenuItem[] {
+    if (isTranslation) return menu.selection && menu.selection.itemIds.length > 1 ? [] : pageMenuItems(menu.target)
     const selection = menu.selection
     if (selection && selection.itemIds.length > 1) {
       const wrappableIds = wrappableSelectionIds(selection)
@@ -611,6 +619,7 @@ export function SiteExplorerPanel({
   function renderPanel(explorerDnd: SiteExplorerDndState) {
     return (
       <div className={styles.panelBody} data-testid="site-explorer-panel">
+        <SourceLocaleNotice />
         {!site ? (
           <SkeletonBlock minHeight={160} ariaLabel="Loading site" />
         ) : (
@@ -678,7 +687,7 @@ export function SiteExplorerPanel({
 
   return (
     <SiteExplorerDndScope
-      enabled={organizationDndEnabled}
+      enabled={organizationDndEnabled && !isTranslation}
       onStructuralPathPlan={presentStructuralPathPlan}
     >
       {renderPanel}

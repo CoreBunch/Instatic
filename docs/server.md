@@ -631,6 +631,10 @@ See [docs/reference/typebox-patterns.md](reference/typebox-patterns.md) for boun
 
 ---
 
+## Localization
+
+Logical content identities share structure while per-language records own draft values, availability, publication history and schedules. Site and Content authoring, collaboration, public routes and integrations carry an explicit locale. See [`localization.md`](features/localization.md) for the storage model and lifecycle.
+
 ## Related
 
 - [docs/architecture.md](architecture.md) — system overview

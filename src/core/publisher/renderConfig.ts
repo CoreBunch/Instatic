@@ -30,6 +30,7 @@
 import type { Page, SiteDocument } from '@core/page-tree'
 import type { IModuleRegistry } from '@core/module-engine'
 import type { TemplateRenderDataContext } from '@core/templates/dynamicBindings'
+import type { LanguageAlternative } from '@core/localization-routing'
 import type { LoopFetchResult } from '@core/loops/types'
 
 /**
@@ -75,6 +76,7 @@ export interface RenderResolvedMedia {
  * passes that down.
  */
 export interface RenderConfig {
+  readonly languageAlternatives?: readonly LanguageAlternative[]
   readonly page: Page
   readonly site: SiteDocument
   readonly registry: IModuleRegistry

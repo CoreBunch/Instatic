@@ -66,6 +66,8 @@ export const TARGET_PERMISSIONS = {
   'cms.media.registerUrlTransformer': 'media.url.transform',
   'cms.media.registerVariantDelegate': 'media.variant.delegate',
   // CMS content — read / write / publish / delete / tables.manage.
+  'cms.content.locales.list': 'cms.content.read',
+  'cms.content.entries.unpublish': 'cms.content.publish',
   'cms.content.tables.list': 'cms.content.read',
   'cms.content.tables.get': 'cms.content.read',
   'cms.content.tables.create': 'cms.content.tables.manage',

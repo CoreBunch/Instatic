@@ -17,6 +17,7 @@ import styles from '../../ContentPage.module.css'
 import { slugFromTitle } from '@core/utils/slug'
 import { getErrorMessage } from '@core/utils/errorMessage'
 import { StepUpCancelledMessage } from '@admin/shared/StepUp'
+import { CollectionLanguagesSection } from './CollectionLanguagesSection'
 
 interface ContentCollectionSettingsDialogProps {
   collection: DataTable
@@ -235,6 +236,7 @@ export function ContentCollectionSettingsDialog({
           </p>
         )}
       </form>
+      <CollectionLanguagesSection tableId={collection.id} routeBase={collection.routeBase} />
     </Dialog>
   )
 }

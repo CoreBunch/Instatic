@@ -59,14 +59,16 @@ function collectFiles(dir: string, exts = ['.ts', '.tsx', '.js', '.jsx', '.mts',
 }
 
 // Scan production source under src/. We deliberately skip `src/__tests__/`
-// — test files may contain the package names as literal patterns (this file
-// is one of them) and would self-match.
+// and collocated test/spec files: their runtime helpers do not enter the
+// production bundle.
 const PROD_DIRS = ['admin', 'core', 'modules', 'ui', 'editor', 'app', 'lib'].map((d) =>
   join(SRC_ROOT, d)
 )
 
 function collectProdFiles(): string[] {
-  return PROD_DIRS.flatMap((dir) => collectFiles(dir))
+  return PROD_DIRS.flatMap((dir) => collectFiles(dir)).filter((file) =>
+    !/[/\\]__tests__[/\\]|\.(?:test|spec)\.[cm]?[jt]sx?$/.test(file),
+  )
 }
 
 // ---------------------------------------------------------------------------

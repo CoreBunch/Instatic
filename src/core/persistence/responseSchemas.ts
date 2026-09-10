@@ -30,6 +30,7 @@
 
 import { Type, type Static } from '@sinclair/typebox'
 import { DataRowSchema } from '@core/data/schemas'
+import { LocaleSchema, SiteLocalizationContextSchema } from '@core/localization-schema'
 import { FontEntrySchema } from '@core/fonts'
 import {
   PublishedPageRuntimeAssetsSchema,
@@ -41,6 +42,20 @@ import {
 // Re-exported types are inferred from the schemas below — these schemas are
 // the source of truth, the types follow. Removes the previous duplication
 // where each consumer module also declared its own TS interface.
+
+/** The assembled authoring document. Domain validators parse its shell and trees after the wire boundary. */
+export const CmsSiteDocumentEnvelopeSchema = Type.Object({
+  site: Type.Object({
+    pages: Type.Array(Type.Unknown()),
+    visualComponents: Type.Array(Type.Unknown()),
+    layouts: Type.Array(Type.Unknown()),
+    localeId: Type.String(),
+    locales: Type.Array(LocaleSchema),
+    localization: SiteLocalizationContextSchema,
+  }, { additionalProperties: true }),
+  rowSeqs: Type.Record(Type.String(), Type.Number()),
+  shellSeq: Type.Number(),
+})
 
 // ---------------------------------------------------------------------------
 // Error envelope used by every CMS endpoint. Defined in the generic HTTP layer

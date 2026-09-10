@@ -48,7 +48,7 @@ export function dataTableHasField(table: Pick<DataTable, 'fields'>, fieldId: str
  * values and multi-value fields are not meaningful candidates.
  */
 export function isPrimaryFieldCandidate(field: DataField): boolean {
-  if (field.type === 'repeater' || field.type === 'pageTree' || field.type === 'fieldSchema') {
+  if (field.type === 'repeater' || field.type === 'pageTree' || field.type === 'fieldSchema' || field.type === 'parameterValues') {
     return false
   }
   if (field.type === 'multiSelect') return false
@@ -142,7 +142,7 @@ function buildMetaFields(
           ? field.itemLabelFieldId
           : undefined,
       })
-    } else if (field.type === 'pageTree' || field.type === 'fieldSchema') {
+    } else if (field.type === 'pageTree' || field.type === 'fieldSchema' || field.type === 'parameterValues') {
       // Structural types — not part of the instatic binding catalog.
       // pageTree and fieldSchema cells hold whole documents (tree/field array),
       // not scalar values that can be bound to a property control.

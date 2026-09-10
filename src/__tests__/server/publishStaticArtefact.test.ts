@@ -1,7 +1,7 @@
 /**
  * Integration test for the Layer A static-artefact publish protocol.
  *
- * Uses a minimal fake DB and a real tmpdir to exercise:
+ * Uses real SQLite publications and a real tmpdir to exercise:
  *
  *   1. `publishDraftSite` with a mixed fixture site (some fully-static pages,
  *      one page with a request-dependent loop source) → only static pages get
@@ -22,11 +22,15 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
-import { mkdtemp, readFile, rm, readlink } from 'node:fs/promises'
+import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { DbResult } from '../../../server/db'
-import type { PublishedPageSnapshot } from '../../../server/repositories/publish'
+import { cleanupPublishingTestDbs, createPublishingTestDb } from '../helpers/publishingTestDb'
+import { getPublishedRouteInventoryForVersion } from '../../../server/publish/publishedRoutes'
+import { getPublishVersion, markPublishedArtefactsCurrent } from '../../../server/publish/publishState'
+
+afterEach(cleanupPublishingTestDbs)
 import { handleServerRequest } from '../../../server/router'
 import {
   getActiveSlot,
@@ -42,232 +46,32 @@ import { loopSourceRegistry } from '../../../src/core/loops/registry'
 // Helpers
 // ---------------------------------------------------------------------------
 
-function rowDate(value: string) {
-  return new Date(value)
+async function buildPublishedDb(...pages: Array<ReturnType<typeof makePage>>) {
+  return createPublishingTestDb(makeSite({ pages }))
 }
 
-/** Make a minimal PublishedPageSnapshot with the given page as the only content. */
-function makeSnapshot(page: ReturnType<typeof makePage>): PublishedPageSnapshot {
-  return {
-    cmsSnapshotVersion: 1,
-    pageRowId: page.id,
-    site: makeSite({ pages: [page] }),
-  }
+async function makeRouteDb(slug = 'about') {
+  const page = makePage({ root: { moduleId: 'base.text', props: { text: 'Live page' } } })
+  page.slug = slug
+  return buildPublishedDb(page)
 }
 
-/**
- * Build a fake DbClient that answers the queries `publishDraftSite` and
- * the live-render fallback path need. Snapshots are built on-the-fly from
- * the provided page fixtures.
- */
-function buildFakeDb(
-  staticPage: ReturnType<typeof makePage>,
-  dynamicPage: ReturnType<typeof makePage>,
-) {
-  const staticSnapshot = makeSnapshot(staticPage)
-  const dynamicSnapshot = makeSnapshot(dynamicPage)
-
-  /** Row shape the snapshot getters' 3-way join returns. */
-  const toSnapshotRow = (snapshot: PublishedPageSnapshot) => ({
-    row_id: snapshot.pageRowId,
-    site_json: snapshot.site,
-    runtime_assets_json: snapshot.runtimeAssets ?? null,
-    importmap_body: snapshot.runtimePackageImportmap?.body ?? null,
-    importmap_sha256: snapshot.runtimePackageImportmap?.sha256 ?? null,
+/** Warm the authoritative route inventory, then enforce zero further SQL. */
+async function makeWarmInventoryDb(slug = 'about') {
+  const real = await makeRouteDb(slug)
+  let deny = false
+  let queried = false
+  const db = createFakeDb(async (sql, params) => {
+    if (deny) {
+      queried = true
+      throw new Error(`unexpected DB query after inventory warmup: ${sql.slice(0, 80)}`)
+    }
+    return real.unsafe(sql, params)
   })
-
-  let insertCallCount = 0
-
-  return createFakeDb(async (sql: string, params: unknown[]): Promise<DbResult> => {
-    const s = sql.replace(/\s+/g, ' ').trim().toLowerCase()
-
-    // ── snapshot getters (live render fallback / row bake) ────────────────
-    // MUST precede the listDataRows branch below: getLatestPublishedSiteSnapshot
-    // also contains `select data_rows.id` + `order by`.
-    if (s.includes('site_snapshots.site_json')) {
-      // getPublishedPageBySlug — parameterised on data_rows.slug.
-      if (s.includes('data_rows.slug =')) {
-        const slug = typeof params[0] === 'string' ? params[0] : ''
-        if (slug === staticPage.slug || slug === 'index') {
-          return { rows: [toSnapshotRow(staticSnapshot)], rowCount: 1 }
-        }
-        if (slug === dynamicPage.slug) {
-          return { rows: [toSnapshotRow(dynamicSnapshot)], rowCount: 1 }
-        }
-        return { rows: [], rowCount: 0 }
-      }
-      // getLatestPublishedSiteSnapshot
-      return { rows: [toSnapshotRow(staticSnapshot)], rowCount: 1 }
-    }
-
-    // ── getDraftSite ───────────────────────────────────────────────────────
-    if (s.startsWith('select id, name, version, enabled, lifecycle_status')) {
-      // Plugin listing for hook bus
-      return { rows: [], rowCount: 0 }
-    }
-
-    if (s.includes('from site') && s.includes('select id')) {
-      return {
-        rows: [{
-          id: 'proj-1',
-          name: 'Test Site',
-          settings_json: {
-            metaTitle: 'Test Site',
-            shortcuts: {},
-          },
-          files_json: [],
-          classes_json: {},
-          breakpoints_json: [
-            { id: 'desktop', label: 'Desktop', width: 1440, icon: 'monitor' },
-          ],
-          runtime_json: {
-            dependencyLock: { version: 1, packages: {}, updatedAt: 0 },
-            scripts: {},
-          },
-          version: 1,
-          created_at: rowDate('2026-01-01'),
-          updated_at: rowDate('2026-01-01'),
-        }],
-        rowCount: 1,
-      }
-    }
-
-    // ── listDataRows (pages + components) ─────────────────────────────────
-    // `listDataRows` parameterizes the table_id ($1), so we check params.
-    if (s.includes('select data_rows.id') && s.includes('from data_rows') && s.includes('order by')) {
-      if (params[0] === 'pages') {
-        return {
-          rows: [
-            {
-              id: staticPage.id,
-              table_id: 'pages',
-              slug: staticPage.slug,
-              status: 'draft',
-              cells_json: {
-                title: staticPage.title,
-                slug: staticPage.slug,
-                body: { nodes: staticPage.nodes, rootNodeId: staticPage.rootNodeId },
-              },
-              author_user_id: null,
-              author_email: null,
-              author_display_name: null,
-              author_role_slug: null,
-              author_role_name: null,
-              created_by_user_id: null,
-              created_by_email: null,
-              created_by_display_name: null,
-              created_by_role_slug: null,
-              created_by_role_name: null,
-              updated_by_user_id: null,
-              updated_by_email: null,
-              updated_by_display_name: null,
-              updated_by_role_slug: null,
-              updated_by_role_name: null,
-              published_by_user_id: null,
-              published_by_email: null,
-              published_by_display_name: null,
-              published_by_role_slug: null,
-              published_by_role_name: null,
-              created_at: rowDate('2026-01-01'),
-              updated_at: rowDate('2026-01-01'),
-              published_at: null,
-              scheduled_publish_at: null,
-              deleted_at: null,
-            },
-            {
-              id: dynamicPage.id,
-              table_id: 'pages',
-              slug: dynamicPage.slug,
-              status: 'draft',
-              cells_json: {
-                title: dynamicPage.title,
-                slug: dynamicPage.slug,
-                body: { nodes: dynamicPage.nodes, rootNodeId: dynamicPage.rootNodeId },
-              },
-              author_user_id: null,
-              author_email: null,
-              author_display_name: null,
-              author_role_slug: null,
-              author_role_name: null,
-              created_by_user_id: null,
-              created_by_email: null,
-              created_by_display_name: null,
-              created_by_role_slug: null,
-              created_by_role_name: null,
-              updated_by_user_id: null,
-              updated_by_email: null,
-              updated_by_display_name: null,
-              updated_by_role_slug: null,
-              updated_by_role_name: null,
-              published_by_user_id: null,
-              published_by_email: null,
-              published_by_display_name: null,
-              published_by_role_slug: null,
-              published_by_role_name: null,
-              created_at: rowDate('2026-01-01'),
-              updated_at: rowDate('2026-01-01'),
-              published_at: null,
-              scheduled_publish_at: null,
-              deleted_at: null,
-            },
-          ],
-          rowCount: 2,
-        }
-      }
-      // components or any other table
-      return { rows: [], rowCount: 0 }
-    }
-
-    // ── nextVersionNumber ─────────────────────────────────────────────────
-    if (s.includes('coalesce(max(version_number), 0) + 1')) {
-      return { rows: [{ next_version: 1 }], rowCount: 1 }
-    }
-
-    // ── insert into site_snapshots (one per publish) ──────────────────────
-    if (s.includes('insert into site_snapshots')) {
-      return { rows: [], rowCount: 1 }
-    }
-
-    // ── insert into data_row_versions ─────────────────────────────────────
-    if (s.includes('insert into data_row_versions')) {
-      insertCallCount++
-      return { rows: [], rowCount: 1 }
-    }
-
-    // ── savePublishedRuntimeAssets ────────────────────────────────────────
-    if (s.includes('insert into runtime_assets')) {
-      return { rows: [], rowCount: 0 }
-    }
-    if (s.includes('select count') && s.includes('from runtime_assets')) {
-      return { rows: [{ count: 0 }], rowCount: 1 }
-    }
-
-    // ── update data_rows (status=published) ───────────────────────────────
-    if (s.includes('update data_rows') && s.includes("status = 'published'")) {
-      return { rows: [], rowCount: 1 }
-    }
-
-    // ── collectFrontendInjections: active_media_storage_adapter ──────────
-    if (s.includes('from active_media_storage_adapter')) {
-      return { rows: [], rowCount: 0 }
-    }
-
-    // ── getSetupStatus ────────────────────────────────────────────────────
-    if (s.includes('count(*) as count from site')) {
-      return { rows: [{ count: 1 }], rowCount: 1 }
-    }
-    if (s.includes('from users') && s.includes('role_id')) {
-      return { rows: [{ count: 1 }], rowCount: 1 }
-    }
-
-    // ── fallthrough ───────────────────────────────────────────────────────
-    return { rows: [], rowCount: 0 }
-  })
+  await getPublishedRouteInventoryForVersion(db, getPublishVersion())
+  deny = true
+  return { db, wasQueried: () => queried }
 }
-
-// ---------------------------------------------------------------------------
-// Fixtures
-// ---------------------------------------------------------------------------
 
 const REQUEST_DEPENDENT_SOURCE_ID = 'test.requestDependent'
 
@@ -320,10 +124,10 @@ describe('publishDraftSite — Layer A static artefacts', () => {
     dynamicPage.slug = 'news'
     dynamicPage.title = 'News'
 
-    const db = buildFakeDb(staticPage, dynamicPage)
+    const db = await buildPublishedDb(staticPage, dynamicPage)
 
     const { publishDraftSite } = await import('../../../server/publish/publishSite')
-    const result = await publishDraftSite(db, 'user-1', uploadsDir)
+    const result = await publishDraftSite(db, null, uploadsDir)
 
     expect(result.publishedPages).toBe(2)
 
@@ -388,9 +192,9 @@ describe('publishDraftSite — Layer A static artefacts', () => {
     dynamicPage.slug = 'empty'
     dynamicPage.title = 'Empty'
 
-    const db = buildFakeDb(page, dynamicPage)
+    const db = await buildPublishedDb(page, dynamicPage)
     const { publishDraftSite } = await import('../../../server/publish/publishSite')
-    const result = await publishDraftSite(db, 'user-1')  // no uploadsDir
+    const result = await publishDraftSite(db, null)  // no uploadsDir
 
     expect(result.publishedPages).toBe(2)
     // No symlink should exist
@@ -414,15 +218,14 @@ describe('publishDraftSite — Layer A static artefacts', () => {
     page2.slug = 'flip2'
     page2.title = 'Flip2'
 
-    const db = buildFakeDb(page, page2)
+    const db = await buildPublishedDb(page, page2)
     const { publishDraftSite } = await import('../../../server/publish/publishSite')
 
     // First publish: writes to inactive slot (b), flips current → b
-    await publishDraftSite(db, 'user-1', uploadsDir)
+    await publishDraftSite(db, null, uploadsDir)
     const slotAfterFirst = await getActiveSlot(uploadsDir)
 
     // The other slot directory should still exist on disk (not wiped until next publish)
-    const otherSlot = slotAfterFirst === 'a' ? 'b' : 'a'
     // The inactive slot from the perspective of "before the first publish" is
     // the one the publish just wrote into — the OLD slot is what was active before.
     // On a brand-new uploadsDir there's no old slot, so just verify the active one has content.
@@ -430,7 +233,7 @@ describe('publishDraftSite — Layer A static artefacts', () => {
     expect(html).toContain('First publish')
 
     // Second publish: writes to inactive slot (the other one), flips current
-    await publishDraftSite(db, 'user-1', uploadsDir)
+    await publishDraftSite(db, null, uploadsDir)
     const slotAfterSecond = await getActiveSlot(uploadsDir)
 
     // Slots must have rotated
@@ -453,28 +256,15 @@ describe('publicRouter — Layer A disk fast-path', () => {
     await rm(uploadsDir, { recursive: true, force: true })
   })
 
-  it('serves a baked artefact without DB snapshot lookup when URL has no query string', async () => {
+  it('serves a baked artefact after route validation without snapshot hydration', async () => {
+    const { db, wasQueried } = await makeWarmInventoryDb()
     // Pre-bake an artefact
     const { prepareInactiveSlot, writeArtefact, swapSlot } = await import('../../../server/publish/staticArtefact')
     const { slot, slotDir } = await prepareInactiveSlot(uploadsDir)
     await writeArtefact(slotDir, '/about', '<html><body><h1>Baked about page</h1></body></html>')
     await swapSlot(uploadsDir, slot)
+    markPublishedArtefactsCurrent(getPublishVersion())
 
-    // Fake DB that throws on any snapshot lookup — proves we never hit it
-    let snapshotLookupCalled = false
-    const db = createFakeDb(async (sql: string): Promise<DbResult> => {
-      const s = sql.toLowerCase()
-      if (s.includes('site_snapshots')) {
-        snapshotLookupCalled = true
-      }
-      if (s.includes('count(*) as count from site')) {
-        return { rows: [{ count: 1 }], rowCount: 1 }
-      }
-      if (s.includes('from users') && s.includes('role_id')) {
-        return { rows: [{ count: 1 }], rowCount: 1 }
-      }
-      return { rows: [], rowCount: 0 }
-    })
 
     const res = await handleServerRequest(
       new Request('http://localhost/about'),
@@ -484,10 +274,11 @@ describe('publicRouter — Layer A disk fast-path', () => {
     expect(res.status).toBe(200)
     expect(res.headers.get('content-type')).toContain('text/html')
     expect(await res.text()).toContain('Baked about page')
-    expect(snapshotLookupCalled).toBe(false)
+    expect(wasQueried()).toBe(false)
   })
 
-  it('serves a static page (HTML + CSS + JS) entirely from disk with ZERO database queries', async () => {
+  it('serves static HTML, CSS and JS with zero queries after inventory warmup', async () => {
+    const { db: throwingDb, wasQueried } = await makeWarmInventoryDb()
     // Pre-bake a full static page: HTML that links a CSS bundle and a JS chunk,
     // plus those two assets baked into the slot — exactly what a full publish
     // produces for a fully-static page.
@@ -508,14 +299,7 @@ describe('publicRouter — Layer A disk fast-path', () => {
     await writeStaticAsset(slotDir, cssPath, enc.encode('body{margin:0}'))
     await writeStaticAsset(slotDir, jsPath, enc.encode('console.log("hi")'))
     await swapSlot(uploadsDir, slot)
-
-    // A DB that throws on ANY query — the only way the three requests below can
-    // succeed is if NOTHING touches the database.
-    let dbQueried = false
-    const throwingDb = createFakeDb(async (sql: string): Promise<DbResult> => {
-      dbQueried = true
-      throw new Error(`unexpected DB query during static serve: ${sql.slice(0, 80)}`)
-    })
+    markPublishedArtefactsCurrent(getPublishVersion())
 
     // No staticDir → the admin static handler is a no-op; the public/asset
     // handlers own these paths.
@@ -535,10 +319,11 @@ describe('publicRouter — Layer A disk fast-path', () => {
     expect(await jsRes.text()).toBe('console.log("hi")')
 
     // The hard guarantee: not a single DB query was issued for any of the three.
-    expect(dbQueried).toBe(false)
+    expect(wasQueried()).toBe(false)
   })
 
-  it('serves a hole-page SHELL (HTML + CSS) from disk with ZERO DB — only the /_instatic/hole fragment is dynamic', async () => {
+  it('serves a hole shell and CSS with zero queries after inventory warmup', async () => {
+    const { db: throwingDb, wasQueried } = await makeWarmInventoryDb('blog')
     // A page with a hole bakes a static shell: real HTML + a <instatic-hole>
     // placeholder + the hole runtime. The shell and its CSS are on disk; only
     // the hole fragment fetch (/_instatic/hole/<id>) touches the server at runtime.
@@ -557,12 +342,7 @@ describe('publicRouter — Layer A disk fast-path', () => {
     await writeArtefact(slotDir, '/blog', shell)
     await writeStaticAsset(slotDir, cssPath, new TextEncoder().encode('h1{color:#000}'))
     await swapSlot(uploadsDir, slot)
-
-    let dbQueried = false
-    const throwingDb = createFakeDb(async (sql: string): Promise<DbResult> => {
-      dbQueried = true
-      throw new Error(`unexpected DB query serving hole-shell: ${sql.slice(0, 80)}`)
-    })
+    markPublishedArtefactsCurrent(getPublishVersion())
 
     const htmlRes = await handleServerRequest(new Request('http://localhost/blog'), { db: throwingDb, uploadsDir })
     expect(htmlRes.status).toBe(200)
@@ -578,36 +358,29 @@ describe('publicRouter — Layer A disk fast-path', () => {
     // The shell + CSS were served entirely from disk — zero DB. (The hole
     // fragment endpoint, exercised in holeRouteHandler.test.ts, is the only
     // request that reads the DB.)
-    expect(dbQueried).toBe(false)
+    expect(wasQueried()).toBe(false)
   })
 
   it('falls through to the live renderer when URL has a render-affecting (loop pagination) query', async () => {
+    const db = await makeRouteDb()
     // Pre-bake an artefact for /about
     const { prepareInactiveSlot, writeArtefact, swapSlot } = await import('../../../server/publish/staticArtefact')
     const { slot, slotDir } = await prepareInactiveSlot(uploadsDir)
     await writeArtefact(slotDir, '/about', '<html><body><h1>Baked about page</h1></body></html>')
     await swapSlot(uploadsDir, slot)
+    markPublishedArtefactsCurrent(getPublishVersion())
 
     // A loop-pagination query affects the render, so it must bypass the disk
     // path (junk queries instead serve the baked artefact — ISS-032)
-    const db = createFakeDb(async (sql: string): Promise<DbResult> => {
-      const s = sql.toLowerCase()
-      if (s.includes('count(*) as count from site')) {
-        return { rows: [{ count: 1 }], rowCount: 1 }
-      }
-      if (s.includes('from users') && s.includes('role_id')) {
-        return { rows: [{ count: 1 }], rowCount: 1 }
-      }
-      return { rows: [], rowCount: 0 }
-    })
 
     const res = await handleServerRequest(
       new Request('http://localhost/about?loop_x_page=2'),
       { db, uploadsDir },
     )
 
-    // No snapshot for this URL → falls through to not-found (404)
-    // The baked artefact must NOT have been served
-    expect(res.status).toBe(404)
+    expect(res.status).toBe(200)
+    const html = await res.text()
+    expect(html).toContain('Live page')
+    expect(html).not.toContain('Baked about page')
   })
 })

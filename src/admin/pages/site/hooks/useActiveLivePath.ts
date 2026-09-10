@@ -10,13 +10,13 @@
  * against.
  *
  * Resolution:
- *   - Regular page            → `pagePublicPath(slug)` (e.g. `/about`, home → `/`).
+ *   - Regular page            → the selected language's immutable live path.
  *   - Everywhere template      → the previewed page's public path. Defaults to
  *     the first non-template page, matching `TemplateModeControl`'s own default.
  *   - postTypes template       → the previewed published row's permalink.
  *     Defaults to the first published row (newest first), again matching the
  *     preview-source dropdown.
- *   - notFound template        → `/404`, the baked 404 artefact's path.
+ *   - notFound template        → a missing path under the selected language prefix.
  *
  * Mounted once from `AdminCanvasEditorBody` (the lazy editor body) so the CMS
  * data fetch needed for the postTypes case stays out of the always-loaded admin
@@ -24,13 +24,14 @@
  * it clears the field on unmount so navigating away from the editor leaves the
  * toolbar pointing at the site root again.
  */
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
+import { CMS_PUBLICATION_CHANGED_EVENT } from '@admin/state/adminEvents'
 import { useAdminUi } from '@admin/state/adminUi'
 import { useAsyncResource } from '@admin/lib/useAsyncResource'
 import { selectActivePage, useEditorStore } from '@site/store/store'
 import { isTemplatePage, primaryTemplateTableSlug } from '@core/templates'
-import { pagePublicPath, type TemplateTarget } from '@core/page-tree'
-import { getCmsDataTableBySlug, previewCmsDataLoopItems } from '@core/persistence/cmsData'
+import { type TemplateTarget } from '@core/page-tree'
+import { getCmsDataRow, getCmsDataTableBySlug, previewCmsDataLoopItems } from '@core/persistence/cmsData'
 import type { LoopItem } from '@core/loops/types'
 
 const EMPTY_ITEMS: LoopItem[] = []
@@ -39,6 +40,14 @@ export function useActiveLivePath(): void {
   const publish = useAdminUi((s) => s.setActiveLivePath)
   const activePage = useEditorStore(selectActivePage)
   const sitePages = useEditorStore((s) => s.site?.pages ?? null)
+  const localeId = useEditorStore((s) => s.site?.localeId)
+  const locale = useEditorStore((s) => s.site?.locales?.find((candidate) => candidate.id === s.site?.localeId))
+  const [publicationRevision, setPublicationRevision] = useState(0)
+  useEffect(() => {
+    const refresh = () => setPublicationRevision((value) => value + 1)
+    window.addEventListener(CMS_PUBLICATION_CHANGED_EVENT, refresh)
+    return () => window.removeEventListener(CMS_PUBLICATION_CHANGED_EVENT, refresh)
+  }, [])
   const selection = useEditorStore((s) =>
     activePage ? s.templatePreviewSelection[activePage.id] ?? null : null,
   )
@@ -60,6 +69,7 @@ export function useActiveLivePath(): void {
             .then(async (table) => {
               if (!table) return EMPTY_ITEMS
               const { items } = await previewCmsDataLoopItems(table.id, {
+                localeId,
                 orderBy: 'publishedAt',
                 direction: 'desc',
                 limit: 50,
@@ -68,16 +78,28 @@ export function useActiveLivePath(): void {
             })
             .catch(() => EMPTY_ITEMS)
         : Promise.resolve(EMPTY_ITEMS),
-    [tableSlug],
+    [tableSlug, localeId, publicationRevision],
   )
 
-  const livePath = resolveLivePath({
+  const candidates = sitePages?.filter((page) => !isTemplatePage(page)) ?? []
+  const pageId = !isTemplate ? activePage?.id
+    : targetKind === 'everywhere' ? (candidates.find((page) => page.id === selection) ?? candidates[0])?.id : undefined
+  const { data: liveRow } = useAsyncResource(
+    () => pageId ? getCmsDataRow(pageId, undefined, undefined, localeId) : Promise.resolve(null),
+    [pageId, localeId, publicationRevision],
+  )
+  const pageLivePath = liveRow?.id === pageId && liveRow?.localeId === localeId && liveRow?.localization?.availability === 'online'
+    ? liveRow.publicPath : null
+
+  const livePath = locale?.enabled === false ? null : resolveLivePath({
     activePage,
     isTemplate,
     targetKind,
     selection,
     sitePages,
     rows: rows ?? EMPTY_ITEMS,
+    pageLivePath,
+    localePrefix: locale?.pathPrefix,
   })
 
   useEffect(() => {
@@ -93,6 +115,8 @@ interface ResolveArgs {
   selection: string | null
   sitePages: ReturnType<typeof selectActivePage>[] | null
   rows: LoopItem[]
+  pageLivePath?: string | null
+  localePrefix?: string
 }
 
 /**
@@ -108,19 +132,21 @@ export function resolveLivePath({
   selection,
   sitePages,
   rows,
+  pageLivePath = null,
+  localePrefix = '',
 }: ResolveArgs): string | null {
   if (!activePage) return null
 
   // Regular page (or VC mode falling back to its underlying page): the slug is
   // a real route.
-  if (!isTemplate) return pagePublicPath(activePage.slug)
+  if (!isTemplate) return pageLivePath
 
   if (targetKind === 'everywhere') {
     const candidates = (sitePages ?? []).filter(
       (page): page is NonNullable<typeof page> => page != null && !isTemplatePage(page),
     )
     const previewed = candidates.find((page) => page.id === selection) ?? candidates[0] ?? null
-    return previewed ? pagePublicPath(previewed.slug) : null
+    return previewed ? pageLivePath : null
   }
 
   if (targetKind === 'postTypes') {
@@ -131,7 +157,7 @@ export function resolveLivePath({
 
   // notFound template: `/404` serves its baked artefact (the same body every
   // unmatched URL gets with status 404), so it is the natural live preview.
-  if (targetKind === 'notFound') return '/404'
+  if (targetKind === 'notFound') return localePrefix ? `/${localePrefix}/404` : '/404'
 
   return null
 }

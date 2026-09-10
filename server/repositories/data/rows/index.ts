@@ -38,6 +38,7 @@ export {
   createDataRow,
   saveDataRowDraft,
   upsertDataRowDraft,
+  upsertSharedDataRowDraft,
   updateDataRowDraftCells,
   softDeleteDataRow,
   updateDataRowTable,

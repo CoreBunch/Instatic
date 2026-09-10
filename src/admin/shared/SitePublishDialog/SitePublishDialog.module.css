@@ -1,0 +1,9 @@
+.description { color: var(--text-muted); font-size: var(--text-s); line-height: 1.5; }
+.languages { display: flex; flex-direction: column; gap: 16px; }
+.language { background: var(--bg-surface-2); border-radius: 16px; padding: 12px; }
+.heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.heading h3 { font-size: var(--text-m); margin: 0; }
+.heading h3 span { color: var(--text-muted); font-size: var(--text-xs); font-weight: normal; }
+.row { display: flex; align-items: center; gap: 12px; padding: 10px 0; cursor: pointer; }
+.title { display: flex; flex-direction: column; gap: 2px; flex: 1; font-size: var(--text-s); }
+.title small, .state { color: var(--text-muted); font-size: var(--text-xs); }

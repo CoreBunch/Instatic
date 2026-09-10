@@ -63,7 +63,9 @@ async function seedPost(db: Db, seed: PostSeed): Promise<void> {
       (${versionId}, ${seed.rowId}, ${1}, ${JSON.stringify(seed.cells)}, ${seed.slug},
        ${seed.publishedByUserId ?? null}, ${seed.versionPublishedAt}, ${seed.versionCreatedAt})
   `
-  await db`update data_rows set active_version_id = ${versionId} where id = ${seed.rowId}`
+  await db`update data_row_versions set locale_id = 'default', public_path = ${`/posts/${seed.slug}`} where id = ${versionId}`
+  await db`insert into data_row_localizations (row_id, locale_id, cells_json, slug, availability, active_version_id)
+    values (${seed.rowId}, 'default', ${seed.cells}, ${seed.slug}, ${seed.status === 'draft' ? 'offline' : 'online'}, ${versionId})`
 }
 
 interface DataRowSeed {
@@ -84,6 +86,8 @@ async function seedDataRow(db: Db, tableId: string, seed: DataRowSeed): Promise<
       (${seed.rowId}, ${tableId}, ${JSON.stringify(seed.cells)}, ${seed.slug},
        ${'draft'}, ${seed.createdAt}, ${seed.updatedAt}, ${seed.deletedAt ?? null})
   `
+  await db`insert into data_row_localizations (row_id, locale_id, cells_json, slug)
+    values (${seed.rowId}, 'default', ${seed.cells}, ${seed.slug})`
 }
 
 async function fetchSlugs(
@@ -248,9 +252,9 @@ describe('fetchPublishedDataRowItems — post-type ordering', () => {
     expect(await fetchSlugs(db, 'posts', 'createdAt', 'desc')).toEqual(['bravo', 'charlie', 'alpha'])
   })
 
-  it('orders by updatedAt in both directions (row updated_at)', async () => {
-    expect(await fetchSlugs(db, 'posts', 'updatedAt', 'asc')).toEqual(['bravo', 'alpha', 'charlie'])
-    expect(await fetchSlugs(db, 'posts', 'updatedAt', 'desc')).toEqual(['charlie', 'alpha', 'bravo'])
+  it('orders by updatedAt using the frozen version timestamp', async () => {
+    expect(await fetchSlugs(db, 'posts', 'updatedAt', 'asc')).toEqual(['alpha', 'charlie', 'bravo'])
+    expect(await fetchSlugs(db, 'posts', 'updatedAt', 'desc')).toEqual(['bravo', 'charlie', 'alpha'])
   })
 
   it('orders by slug in both directions (version slug)', async () => {
@@ -341,7 +345,7 @@ describe('fetchPublishedDataRowItems — post-type ordering', () => {
     expect(f['slug']).toBe('alpha')
     expect(f['publishedAt']).toBe('2026-01-03T00:00:00.000Z')
     expect(f['createdAt']).toBe('2026-01-01T00:00:00.000Z')
-    expect(f['updatedAt']).toBe('2026-01-02T00:00:00.000Z')
+    expect(f['updatedAt']).toBe('2026-01-01T00:00:00.000Z')
     expect(f['permalink']).toBe('/posts/alpha')
   })
 })
@@ -493,7 +497,9 @@ describe('fetchPublishedDataRowItems — custom media field resolution', () => {
       values ('vendor-a-v1', 'vendor-a', 1, ${vendorCells}, 'vendere',
               '2026-03-01T00:00:00.000Z', '2026-03-01T00:00:00.000Z')
     `
-    await db`update data_rows set active_version_id = 'vendor-a-v1' where id = 'vendor-a'`
+    await db`update data_row_versions set locale_id = 'default', public_path = '/vendors/vendere' where id = 'vendor-a-v1'`
+    await db`insert into data_row_localizations (row_id, locale_id, cells_json, slug, availability, active_version_id)
+      values ('vendor-a', 'default', ${vendorCells}, 'vendere', 'online', 'vendor-a-v1')`
   })
 
   async function clientFields(rowId: string): Promise<Record<string, unknown>> {

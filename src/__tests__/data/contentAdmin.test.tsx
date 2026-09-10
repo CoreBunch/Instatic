@@ -1,3 +1,4 @@
+import { SOURCE_LOCALE, makeContentLocalization } from '../fixtures/localization'
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
@@ -132,6 +133,11 @@ function makeRow(
   return {
     id,
     tableId,
+    localeId: SOURCE_LOCALE.id,
+    sharedCells: {},
+    seq: 0,
+    localization: makeContentLocalization(id, { cells: mergedCells, slug: String(mergedCells.slug), ...(overrides.status === 'published' ? { availability: 'online', activeVersionId: 'version-1' } : {}) }),
+    publicPath: overrides.status === 'published' ? `/${tableId}/${mergedCells.slug}` : null,
     cells: mergedCells,
     slug: typeof mergedCells.slug === 'string' ? mergedCells.slug : 'untitled',
     status: 'draft',
@@ -170,8 +176,12 @@ function json(body: unknown, status = 200) {
  * `undefined` for non-ambient URLs so per-test handlers stay authoritative.
  */
 function ambientFetchFallback(url: string): Response | undefined {
+  if (url === '/admin/api/cms/locales') return json({ locales: [SOURCE_LOCALE] })
   if (url.endsWith('/admin/api/cms/plugins')) {
     return json({ plugins: [], adminPages: [] })
+  }
+  if (url.endsWith('/admin/api/cms/site-document')) {
+    return json({ site: { ...makeSite({ name: 'Content Shell Site' }), localeId: 'default', locales: [SOURCE_LOCALE], localization: { rows: {}, fieldLocalizations: {} } }, shellSeq: 0, rowSeqs: {} })
   }
   if (url.endsWith('/admin/api/cms/site')) {
     return json({ site: makeSite({ name: 'Content Shell Site' }) })
@@ -351,7 +361,7 @@ beforeEach(() => {
 
   globalThis.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
     calls.push({ input, init })
-    const url = String(input)
+    const url = String(input).split('?')[0]
 
     if (url === '/admin/api/cms/data/tables') {
       return json({
@@ -423,8 +433,10 @@ beforeEach(() => {
     if (url === '/admin/api/cms/data/rows/entry_1/publish' && init?.method === 'POST') {
       return json({
         row: putRow({
-          ...makeRow('entry_1', 'posts', { title: 'My first post', slug: 'untitled', body: '## Intro', featuredMedia: null, seoTitle: '', seoDescription: '' }),
+          ...(postsRows.find((row) => row.id === 'entry_1') ?? makeRow('entry_1', 'posts')),
           status: 'published',
+          publicPath: '/posts/untitled',
+          localization: makeContentLocalization('entry_1', { availability: 'online', activeVersionId: 'version-1' }),
           updatedAt: '2026-05-01T10:02:00.000Z',
           publishedAt: '2026-05-01T10:02:00.000Z',
         }),
@@ -631,7 +643,7 @@ describe('ContentPage', () => {
     })
 
     globalThis.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
-      const url = String(input)
+      const url = String(input).split('?')[0]
 
       if (url === '/admin/api/cms/data/tables') {
         return json({ tables: [makeTable('posts', 'Posts', 'posts', '/posts', 'Post', 'Posts')] })
@@ -713,7 +725,7 @@ describe('ContentPage', () => {
   it('suppresses the token tooltip while open and inserts populated media and repeater fields', async () => {
     const defaultFetch = globalThis.fetch
     globalThis.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
-      const url = String(input)
+      const url = String(input).split('?')[0]
       if (url === '/admin/api/cms/data/_meta') {
         return json({
           meta: {
@@ -909,7 +921,7 @@ describe('ContentPage', () => {
     const calls = (globalThis as typeof globalThis & { __contentFetchCalls?: FetchCall[] }).__contentFetchCalls ?? []
     await waitFor(() => {
       expect(calls.some((call) =>
-        String(call.input) === '/admin/api/cms/data/rows/entry_1' &&
+        String(call.input).split('?')[0] === '/admin/api/cms/data/rows/entry_1' &&
         call.init?.method === 'DELETE'
       )).toBe(true)
     })
@@ -968,7 +980,7 @@ describe('ContentPage', () => {
     ;(globalThis as typeof globalThis & { __contentFetchCalls?: FetchCall[] }).__contentFetchCalls = calls
     globalThis.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
       calls.push({ input, init })
-      const url = String(input)
+      const url = String(input).split('?')[0]
 
       if (url === '/admin/api/cms/data/tables') {
         return json({ tables: [makeTable('posts', 'Posts', 'posts', '/posts', 'Post', 'Posts')] })
@@ -1039,7 +1051,7 @@ describe('ContentPage', () => {
 
     await waitFor(() => {
       expect(calls.some((call) =>
-        String(call.input) === '/admin/api/cms/data/rows/entry_1/author' &&
+        String(call.input).split('?')[0] === '/admin/api/cms/data/rows/entry_1/author' &&
         call.init?.method === 'PATCH' &&
         call.init?.body === JSON.stringify({ authorUserId: adminAuthor.id })
       )).toBe(true)
@@ -1066,7 +1078,8 @@ describe('ContentPage', () => {
 
     globalThis.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
       calls.push({ input, init })
-      const url = String(input)
+      const url = String(input).split('?')[0]
+      if (url === '/admin/api/cms/locales') return json({ locales: [SOURCE_LOCALE] })
       const method = init?.method ?? 'GET'
 
       if (url === '/admin/api/cms/data/tables' && method === 'GET') {
@@ -1132,7 +1145,7 @@ describe('ContentPage', () => {
     expect(activationResult?.ok).toBe(true)
     expect(writeResult?.ok).toBe(true)
     const patchCall = calls.find((call) =>
-      String(call.input) === '/admin/api/cms/data/rows/article_2' &&
+      String(call.input).split('?')[0] === '/admin/api/cms/data/rows/article_2' &&
       call.init?.method === 'PATCH'
     )
     expect(JSON.parse(String(patchCall?.init?.body))).toMatchObject({
@@ -1169,7 +1182,8 @@ describe('ContentPage', () => {
     const postB = makeRow('post_b', 'posts', { title: 'Other post', slug: 'other-post', seoTitle: '' })
 
     globalThis.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
-      const url = String(input)
+      const url = String(input).split('?')[0]
+      if (url === '/admin/api/cms/locales') return json({ locales: [SOURCE_LOCALE] })
       const method = init?.method ?? 'GET'
 
       if (url === '/admin/api/cms/data/tables' && method === 'GET') {
@@ -1317,8 +1331,9 @@ describe('ContentPage', () => {
     expect(publishedButton.getAttribute('aria-disabled')).toBe('true')
 
     const calls = (globalThis as typeof globalThis & { __contentFetchCalls?: FetchCall[] }).__contentFetchCalls ?? []
-    const saveCall = calls.find((call) => String(call.input) === '/admin/api/cms/data/rows/entry_1' && call.init?.method === 'PATCH')
+    const saveCall = calls.find((call) => String(call.input).split('?')[0] === '/admin/api/cms/data/rows/entry_1' && call.init?.method === 'PATCH')
     expect(saveCall?.init?.body).toBe(JSON.stringify({
+      localeId: 'default',
       cells: {
         title: 'My first post',
         slug: 'untitled',
@@ -1329,7 +1344,7 @@ describe('ContentPage', () => {
       },
     }))
     expect(calls.some((call) =>
-      String(call.input) === '/admin/api/cms/data/rows/entry_1/publish' &&
+      String(call.input).split('?')[0] === '/admin/api/cms/data/rows/entry_1/publish' &&
       call.init?.method === 'POST'
     )).toBe(true)
   })
@@ -1367,7 +1382,7 @@ describe('ContentPage', () => {
     ;(globalThis as typeof globalThis & { __contentFetchCalls?: FetchCall[] }).__contentFetchCalls = calls
     globalThis.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
       calls.push({ input, init })
-      const url = String(input)
+      const url = String(input).split('?')[0]
 
       if (url === '/admin/api/cms/data/tables' && init?.method === 'GET') {
         return json({ tables: [makeTable('posts', 'Posts', 'posts', '/posts', 'Post', 'Posts')] })
@@ -1426,7 +1441,7 @@ describe('ContentPage', () => {
     expect(await screen.findByLabelText('Title')).toBeDefined()
 
     const createCollectionCall = calls.find((call) =>
-      String(call.input) === '/admin/api/cms/data/tables' &&
+      String(call.input).split('?')[0] === '/admin/api/cms/data/tables' &&
       call.init?.method === 'POST'
     )
     expect(createCollectionCall?.init?.body).toBe(JSON.stringify({
@@ -1447,7 +1462,7 @@ describe('ContentPage', () => {
       ],
     }))
     expect(calls.some((call) =>
-      String(call.input) === '/admin/api/cms/data/tables/products/rows' &&
+      String(call.input).split('?')[0] === '/admin/api/cms/data/tables/products/rows' &&
       call.init?.method === 'POST'
     )).toBe(true)
   })
@@ -1457,7 +1472,7 @@ describe('ContentPage', () => {
     ;(globalThis as typeof globalThis & { __contentFetchCalls?: FetchCall[] }).__contentFetchCalls = calls
     globalThis.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
       calls.push({ input, init })
-      const url = String(input)
+      const url = String(input).split('?')[0]
 
       if (url === '/admin/api/cms/data/tables') {
         return json({
@@ -1528,10 +1543,13 @@ describe('ContentPage', () => {
 
     fireEvent.click(screen.getByLabelText('Collection'))
     fireEvent.click(await screen.findByRole('option', { name: 'Products' }))
+    expect(await screen.findByText(/All language versions will go offline/)).toBeDefined()
+    expect(calls.some((call) => String(call.input).split('?')[0] === '/admin/api/cms/data/rows/entry_1/table' && call.init?.method === 'PATCH')).toBe(false)
+    fireEvent.click(screen.getByRole('button', { name: 'Move entry' }))
 
     await waitFor(() => {
       expect(calls.some((call) =>
-        String(call.input) === '/admin/api/cms/data/rows/entry_1/table' &&
+        String(call.input).split('?')[0] === '/admin/api/cms/data/rows/entry_1/table' &&
         call.init?.method === 'PATCH' &&
         call.init?.body === JSON.stringify({ tableId: 'products' })
       )).toBe(true)
@@ -1547,7 +1565,7 @@ describe('ContentPage', () => {
     ;(globalThis as typeof globalThis & { __contentFetchCalls?: FetchCall[] }).__contentFetchCalls = calls
     globalThis.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
       calls.push({ input, init })
-      const url = String(input)
+      const url = String(input).split('?')[0]
 
       if (url === '/admin/api/cms/data/tables' && init?.method === 'GET') {
         return json({
@@ -1644,7 +1662,7 @@ describe('ContentPage', () => {
     fireEvent.click(within(menu).getByRole('menuitem', { name: /convert to draft/i }))
     await waitFor(() => {
       expect(calls.some((call) =>
-        String(call.input) === '/admin/api/cms/data/rows/entry_2/status' &&
+        String(call.input).split('?')[0] === '/admin/api/cms/data/rows/entry_2/status' &&
         call.init?.method === 'PATCH' &&
         call.init?.body === JSON.stringify({ status: 'draft' })
       )).toBe(true)
@@ -1661,7 +1679,7 @@ describe('ContentPage', () => {
     fireEvent.click(within(menu).getByRole('menuitem', { name: /^publish$/i }))
     await waitFor(() => {
       expect(calls.some((call) =>
-        String(call.input) === '/admin/api/cms/data/rows/entry_1/publish' &&
+        String(call.input).split('?')[0] === '/admin/api/cms/data/rows/entry_1/publish' &&
         call.init?.method === 'POST'
       )).toBe(true)
     })
@@ -1677,9 +1695,10 @@ describe('ContentPage', () => {
 
     expect(await within(postsRegion).findByText('Winter sale')).toBeDefined()
     expect(calls.some((call) =>
-      String(call.input) === '/admin/api/cms/data/rows/entry_1' &&
+      String(call.input).split('?')[0] === '/admin/api/cms/data/rows/entry_1' &&
       call.init?.method === 'PATCH' &&
       call.init?.body === JSON.stringify({
+        localeId: 'default',
         cells: {
           title: 'Winter sale',
           slug: 'winter-sale',
@@ -1710,7 +1729,7 @@ describe('ContentPage', () => {
 
     expect(await within(collectionsRegion).findByText('Catalog')).toBeDefined()
     expect(calls.some((call) =>
-      String(call.input) === '/admin/api/cms/data/tables/products' &&
+      String(call.input).split('?')[0] === '/admin/api/cms/data/tables/products' &&
       call.init?.method === 'PATCH' &&
       call.init?.body === JSON.stringify({
         name: 'Catalog',
@@ -1730,7 +1749,7 @@ describe('ContentPage', () => {
 
     await waitFor(() => {
       expect(calls.some((call) =>
-        String(call.input) === '/admin/api/cms/data/rows/entry_1' &&
+        String(call.input).split('?')[0] === '/admin/api/cms/data/rows/entry_1' &&
         call.init?.method === 'DELETE'
       )).toBe(true)
     })
@@ -1745,7 +1764,7 @@ describe('ContentPage', () => {
 
     await waitFor(() => {
       expect(calls.some((call) =>
-        String(call.input) === '/admin/api/cms/data/tables/products' &&
+        String(call.input).split('?')[0] === '/admin/api/cms/data/tables/products' &&
         call.init?.method === 'DELETE'
       )).toBe(true)
     })
@@ -1773,6 +1792,10 @@ describe('ContentPage', () => {
           .getByRole('button', { name: /new post/i }),
       )
 
+      await screen.findByLabelText('Title')
+      await waitFor(() => expect(screen.getByTestId('toolbar-publish-btn').hasAttribute('disabled')).toBe(false))
+      clickToolbarPublish()
+      await screen.findByRole('button', { name: /^published$/i })
       await waitFor(() => {
         expect(screen.getByRole('button', { name: /more publishing actions/i }).hasAttribute('disabled')).toBe(false)
       })
@@ -1830,9 +1853,14 @@ describe('ContentPage', () => {
     // The notch "Media" button opens the workspace media picker. Pick an
     // image, commit, and confirm the editor surfaces a media node and the
     // saved draft body cell holds the markdown image line.
-    fireEvent.click(screen.getByRole('button', { name: /add media/i }))
-    fireEvent.click(await screen.findByRole('button', { name: /hero\.png/i }))
-    fireEvent.click(screen.getByRole('button', { name: /use selected/i }))
+    // Flush the lazy picker mount and its media requests before querying
+    // the asset grid; the first opening also loads the workspace module.
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /add media/i }))
+    })
+    const mediaPicker = within(await screen.findByRole('dialog', { name: 'Select media' }))
+    fireEvent.click(await mediaPicker.findByRole('button', { name: /hero\.png/i }))
+    fireEvent.click(mediaPicker.getByRole('button', { name: /use selected/i }))
 
     expect(await screen.findByRole('img', { name: 'hero.png' })).toBeDefined()
 
@@ -1840,8 +1868,9 @@ describe('ContentPage', () => {
     await screen.findByText('Draft saved')
 
     const calls = (globalThis as typeof globalThis & { __contentFetchCalls?: FetchCall[] }).__contentFetchCalls ?? []
-    const saveCalls = calls.filter((call) => String(call.input) === '/admin/api/cms/data/rows/entry_1' && call.init?.method === 'PATCH')
+    const saveCalls = calls.filter((call) => String(call.input).split('?')[0] === '/admin/api/cms/data/rows/entry_1' && call.init?.method === 'PATCH')
     expect(saveCalls.at(-1)?.init?.body).toBe(JSON.stringify({
+      localeId: 'default',
       cells: {
         title: 'Untitled',
         slug: 'untitled',
@@ -1881,10 +1910,13 @@ describe('ContentPage', () => {
     expect(slugInput.disabled).toBe(false)
     fireEvent.change(slugInput, { target: { value: 'updated slug' } })
 
-    fireEvent.click(screen.getByRole('button', { name: /choose featured media/i }))
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /choose featured media/i }))
+    })
     // Workspace-style MediaPickerModal: pick + commit via "Use selected".
-    fireEvent.click(await screen.findByRole('button', { name: /hero\.png/i }))
-    fireEvent.click(screen.getByRole('button', { name: /use selected/i }))
+    const mediaPicker = within(await screen.findByRole('dialog', { name: 'Select media' }))
+    fireEvent.click(await mediaPicker.findByRole('button', { name: /hero\.png/i }))
+    fireEvent.click(mediaPicker.getByRole('button', { name: /use selected/i }))
 
     clickToolbarSaveDraft()
     await screen.findByText('Draft saved')
@@ -1895,8 +1927,9 @@ describe('ContentPage', () => {
     await screen.findByText('Unpublished')
 
     const calls = (globalThis as typeof globalThis & { __contentFetchCalls?: FetchCall[] }).__contentFetchCalls ?? []
-    const saveCalls = calls.filter((call) => String(call.input) === '/admin/api/cms/data/rows/entry_1' && call.init?.method === 'PATCH')
+    const saveCalls = calls.filter((call) => String(call.input).split('?')[0] === '/admin/api/cms/data/rows/entry_1' && call.init?.method === 'PATCH')
     expect(saveCalls.at(-1)?.init?.body).toBe(JSON.stringify({
+      localeId: 'default',
       cells: {
         title: 'My first post',
         slug: 'updated-slug',
@@ -1907,7 +1940,7 @@ describe('ContentPage', () => {
       },
     }))
     expect(calls.some((call) =>
-      String(call.input) === '/admin/api/cms/data/rows/entry_1/status' &&
+      String(call.input).split('?')[0] === '/admin/api/cms/data/rows/entry_1/status' &&
       call.init?.method === 'PATCH' &&
       call.init?.body === JSON.stringify({ status: 'unpublished' })
     )).toBe(true)
@@ -1916,7 +1949,7 @@ describe('ContentPage', () => {
   it('hydrates saved featured media metadata when reopening the content page', async () => {
     const baseFetch = globalThis.fetch
     globalThis.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
-      const url = String(input)
+      const url = String(input).split('?')[0]
       if (url === '/admin/api/cms/data/tables/posts/rows' && init?.method === 'GET') {
         return json({
           rows: [makeRow('entry_1', 'posts', {
@@ -1983,7 +2016,7 @@ describe('ContentPage', () => {
   })
 
   it('uses the shared data-binding picker instead of inserting a fixed token', () => {
-    const src = readFileSync(join(process.cwd(), 'src/admin/pages/content/ContentPage.tsx'), 'utf8')
+    const src = readFileSync(join(process.cwd(), 'src/admin/pages/content/components/ContentTokenPicker/ContentTokenPicker.tsx'), 'utf8')
 
     expect(src).toContain("from '@admin/shared/DataBindingPicker'")
     expect(src).toContain('<DataBindingPicker')

@@ -43,6 +43,7 @@ function rowFixture(overrides: Record<string, unknown> = {}) {
   return {
     id: 'row_1',
     tableId: 'posts',
+    localeId: 'default', sharedCells: {}, localization: null, publicPath: null, seq: 0,
     cells: { title: 'Hello', slug: 'hello', body: '', featuredMedia: null, seoTitle: '', seoDescription: '' },
     slug: 'hello',
     status: 'draft',

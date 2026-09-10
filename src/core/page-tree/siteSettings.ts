@@ -38,6 +38,8 @@ export const SiteSettingsSchema = Type.Object({
   metaDescription: Type.Optional(Type.String()),
   faviconUrl: Type.Optional(Type.String()),
   language: Type.Optional(Type.String()),
+  /** Configured public origin for canonical URLs, language alternates and sitemap. */
+  publicOrigin: Type.Optional(Type.String()),
   /** Structured framework token settings — absent means framework disabled. */
   framework: Type.Optional(FrameworkSettingsSchema),
   /** Library of installed fonts — absent when no fonts added. */
@@ -91,6 +93,7 @@ export function parseSiteSettings(raw: unknown): SiteSettings {
     ...(typeof r.metaDescription === 'string' ? { metaDescription: r.metaDescription } : {}),
     ...(typeof r.faviconUrl === 'string' ? { faviconUrl: r.faviconUrl } : {}),
     ...(typeof r.language === 'string' ? { language: r.language } : {}),
+    ...(typeof r.publicOrigin === 'string' ? { publicOrigin: r.publicOrigin } : {}),
     framework,
     fonts,
     shortcuts,

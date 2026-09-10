@@ -15,6 +15,8 @@ import { Type } from '@sinclair/typebox'
 import { NodeTreeSchema } from '@core/page-tree'
 import {
   ContentListOptionsSchema,
+  ContentLocaleOptionsSchema,
+  ContentSearchOptionsSchema,
   CreateContentEntryInputSchema,
   CreateContentTableInputSchema,
   TreeOperationSchema,
@@ -25,10 +27,11 @@ const SlugSchema = Type.String({ minLength: 1 })
 const EntryIdSchema = Type.String({ minLength: 1 })
 const FieldIdSchema = Type.String({ minLength: 1 })
 const QueryStringSchema = Type.String({ minLength: 1, maxLength: 200 })
-const PositiveLimit = Type.Integer({ minimum: 1, maximum: 500 })
 
 // ── Tables ──────────────────────────────────────────────────────────────────
 
+export const ContentLocalesListArgsSchema = Type.Tuple([])
+export const ContentEntriesUnpublishArgsSchema = Type.Tuple([SlugSchema, EntryIdSchema, ContentLocaleOptionsSchema])
 export const ContentTablesListArgsSchema = Type.Tuple([])
 export const ContentTablesGetArgsSchema = Type.Tuple([SlugSchema])
 export const ContentTablesCreateArgsSchema = Type.Tuple([CreateContentTableInputSchema])
@@ -36,8 +39,8 @@ export const ContentTablesCreateArgsSchema = Type.Tuple([CreateContentTableInput
 // ── Entries ─────────────────────────────────────────────────────────────────
 
 export const ContentEntriesListArgsSchema = Type.Tuple([SlugSchema, ContentListOptionsSchema])
-export const ContentEntriesGetArgsSchema = Type.Tuple([SlugSchema, EntryIdSchema])
-export const ContentEntriesGetBySlugArgsSchema = Type.Tuple([SlugSchema, SlugSchema])
+export const ContentEntriesGetArgsSchema = Type.Tuple([SlugSchema, EntryIdSchema, ContentLocaleOptionsSchema])
+export const ContentEntriesGetBySlugArgsSchema = Type.Tuple([SlugSchema, SlugSchema, ContentLocaleOptionsSchema])
 export const ContentEntriesCreateArgsSchema = Type.Tuple([SlugSchema, CreateContentEntryInputSchema])
 export const ContentEntriesUpdateArgsSchema = Type.Tuple([
   SlugSchema,
@@ -49,10 +52,11 @@ export const ContentEntriesPublishArgsSchema = Type.Tuple([
   SlugSchema,
   EntryIdSchema,
   Type.Object({
+    localeId: Type.Optional(Type.String({ minLength: 1 })),
     scheduledFor: Type.Optional(Type.String({ minLength: 1, maxLength: 64 })),
   }, { additionalProperties: false }),
 ])
-export const ContentEntriesMoveTableArgsSchema = Type.Tuple([SlugSchema, EntryIdSchema, SlugSchema])
+export const ContentEntriesMoveTableArgsSchema = Type.Tuple([SlugSchema, EntryIdSchema, SlugSchema, ContentLocaleOptionsSchema])
 
 export const ContentEntriesCreateManyArgsSchema = Type.Tuple([
   SlugSchema,
@@ -75,20 +79,22 @@ export const ContentEntriesDeleteManyArgsSchema = Type.Tuple([
 
 // ── Tree ───────────────────────────────────────────────────────────────────
 
-export const ContentTreeReadArgsSchema = Type.Tuple([EntryIdSchema, FieldIdSchema])
+export const ContentTreeReadArgsSchema = Type.Tuple([EntryIdSchema, FieldIdSchema, ContentLocaleOptionsSchema])
 export const ContentTreeMutateArgsSchema = Type.Tuple([
   EntryIdSchema,
   FieldIdSchema,
   Type.Array(TreeOperationSchema, { maxItems: 500 }),
+  ContentLocaleOptionsSchema,
 ])
 export const ContentTreeReplaceArgsSchema = Type.Tuple([
   EntryIdSchema,
   FieldIdSchema,
   NodeTreeSchema,
+  ContentLocaleOptionsSchema,
 ])
 
 // ── Cross-table ────────────────────────────────────────────────────────────
 
-export const ContentSearchArgsSchema = Type.Tuple([QueryStringSchema, PositiveLimit])
-export const ContentSnapshotArgsSchema = Type.Tuple([EntryIdSchema])
+export const ContentSearchArgsSchema = Type.Tuple([QueryStringSchema, ContentSearchOptionsSchema])
+export const ContentSnapshotArgsSchema = Type.Tuple([EntryIdSchema, ContentLocaleOptionsSchema])
 export const ContentRepublishAllArgsSchema = Type.Tuple([])

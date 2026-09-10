@@ -26,17 +26,23 @@ export interface CmsServerEvents {
   'content.entry.created': {
     tableSlug: string
     entryId: string
+    /** Null denotes a global identity or shared-structure change. */
+    localeId: string | null
     actor: ContentEntryActor
   }
   'content.entry.updated': {
     tableSlug: string
     entryId: string
+    /** Null denotes a global identity or shared-structure change. */
+    localeId: string | null
     changedFieldIds: string[]
     actor: ContentEntryActor
   }
   'content.entry.deleted': {
     tableSlug: string
     entryId: string
+    /** Null denotes a global identity or shared-structure change. */
+    localeId: string | null
     actor: ContentEntryActor
   }
   // Plugin-defined events fall through. The host does not pre-define any
@@ -81,6 +87,8 @@ export interface CmsServerFilterContexts {
   'content.entry.cells': {
     tableSlug: string
     entryId: string
+    /** Null denotes a global identity or shared-structure change. */
+    localeId: string
     actor: ContentEntryActor
   }
 }

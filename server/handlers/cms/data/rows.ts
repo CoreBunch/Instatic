@@ -25,22 +25,21 @@ import {
 } from '../../../publish/contentEvents'
 import {
   cancelScheduledPublish,
-  getDataRow,
   getDataTable,
   listDataAuthorOptions,
   saveDataRowDraft,
-  scheduleDataRowPublish,
   softDeleteDataRow,
   updateDataRowAuthor,
   updateDataRowStatus,
   updateDataRowTable,
 } from '../../../repositories/data'
-import { publishDataRow, removeDataRowArtefact } from '../../../publish/publishRow'
+import { publishDataRow } from '../../../publish/publishRow'
 import { runPublishFlush } from '../../../publish/publishFlush'
+import { scheduleLocalizedDataRowPublish } from '../../../publish/schedulePublication'
 import { findUserById } from '../../../repositories/users'
 import { slugForTable } from '@core/data/cells'
 import { badRequest, jsonResponse, readValidatedBody } from '../../../http'
-import { bumpPublishVersionSerialized } from '../../../publish/publishState'
+import { refreshPublishedRoutes } from '../../../publish/rebakePublishedRoutes'
 import type { CmsHandlerOptions } from '../shared'
 import { CMS_API_PREFIX, requestAuditContext } from '../shared'
 import { runRouteTable, type Route, type RouteParams } from '../routeTable'
@@ -52,18 +51,13 @@ import {
   RowUpsertBodySchema,
 } from './schemas'
 import {
-  canEditDataRow,
-  canPublishDataRow,
-  canReadDataRow,
-  canReadTable,
-  forbidden,
-  requireDataAccess,
   requireDataAuthorManager,
   requireDataEditor,
-  requireDataPublisher,
   requireDataRowMover,
+  loadDataRowForAccess,
 } from './access'
 import { handleRowPreview } from './preview'
+import { requireAuthenticatedUser } from '../../../auth/authz'
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -103,33 +97,11 @@ async function recordRowAuditEvent(
     metadata: {
       tableId: row.tableId,
       slug: row.slug,
+      ...('localeId' in row && typeof row.localeId === 'string' ? { localeId: row.localeId } : {}),
       ...extraMetadata,
     },
     ...requestAuditContext(req),
   })
-}
-
-/**
- * Load a row and run the caller's access check. Returns a Response on
- * 404 / forbidden so call sites can `if (row instanceof Response) return row`.
- */
-async function loadRowForAccess(
-  db: DbClient,
-  rowId: string,
-  user: AuthUser,
-  check: (user: AuthUser, row: DataRow) => boolean,
-): Promise<DataRow | Response> {
-  const row = await getDataRow(db, rowId)
-  if (!row) return rowNotFound()
-  // Enforce the table-family read boundary BEFORE the row-ownership check. A
-  // persona granted a broad content.* capability but NOT data.system.tables.read
-  // satisfies row ownership on every row, so without this it could read, edit,
-  // and publish system-table rows (pages/posts drafts, author identity). The
-  // schema-read sibling already checks this; the row layer did not (GHSA-x69h).
-  const table = await getDataTable(db, row.tableId)
-  if (!table || !canReadTable(user, table)) return rowNotFound()
-  if (!check(user, row)) return forbidden()
-  return row
 }
 
 // ---------------------------------------------------------------------------
@@ -150,10 +122,10 @@ async function handleRowItemGet(
   db: DbClient,
   params: RouteParams,
 ): Promise<Response> {
-  const user = await requireDataAccess(req, db)
+  const user = await requireAuthenticatedUser(req, db)
   if (user instanceof Response) return user
 
-  const row = await loadRowForAccess(db, params.id, user, canReadDataRow)
+  const row = await loadDataRowForAccess(req, db, params.id, user, 'read')
   if (row instanceof Response) return row
   return jsonResponse({ row })
 }
@@ -167,11 +139,11 @@ async function handleRowItemPatch(
   const user = await requireDataEditor(req, db)
   if (user instanceof Response) return user
 
-  const currentRow = await loadRowForAccess(db, rowId, user, canEditDataRow)
-  if (currentRow instanceof Response) return currentRow
-
   const body = await readValidatedBody(req, RowUpsertBodySchema)
   if (!body) return badRequest('Invalid row payload')
+
+  const currentRow = await loadDataRowForAccess(req, db, rowId, user, 'edit', body.localeId)
+  if (currentRow instanceof Response) return currentRow
 
   const table = await getDataTable(db, currentRow.tableId)
   if (!table) return rowNotFound()
@@ -183,11 +155,12 @@ async function handleRowItemPatch(
   const cells = await applyContentEntryCellsFilter(rawCells, {
     tableSlug: table.slug,
     entryId: rowId,
+    localeId: currentRow.localeId,
     actor: { kind: 'user', userId: user.id },
   })
   const slug = slugForTable(table, cells)
 
-  const row = await saveDataRowDraft(db, rowId, { cells, slug }, user.id)
+  const row = await saveDataRowDraft(db, rowId, { cells, slug, localeId: currentRow.localeId }, user.id)
   if (!row) return rowNotFound()
   // Changed cell ids: the patch's own keys plus any keys the filter added
   // or rewrote. Plugins watch this list to loop-guard their own writes;
@@ -195,7 +168,7 @@ async function handleRowItemPatch(
   const patchedIds = body.cells ? Object.keys(body.cells) : []
   const filterChangedIds = Object.keys(cells).filter((k) => cells[k] !== rawCells[k])
   const changedFieldIds = [...new Set([...patchedIds, ...filterChangedIds])]
-  await emitContentEntryUpdated(db, rowId, changedFieldIds, { kind: 'user', userId: user.id })
+  await emitContentEntryUpdated(db, rowId, changedFieldIds, { kind: 'user', userId: user.id }, currentRow.localeId)
   await recordRowAuditEvent(db, user, req, 'data.row.update', row)
   return jsonResponse({ row })
 }
@@ -210,21 +183,12 @@ async function handleRowItemDelete(
   const user = await requireDataEditor(req, db)
   if (user instanceof Response) return user
 
-  const currentRow = await loadRowForAccess(db, rowId, user, canEditDataRow)
+  const currentRow = await loadDataRowForAccess(req, db, rowId, user, 'edit')
   if (currentRow instanceof Response) return currentRow
 
   const row = await softDeleteDataRow(db, rowId, user.id)
   if (!row) return rowNotFound()
-  // Prune the baked public artefact — a deleted row must stop being served
-  // by Layer A, which reads the disk slot with no DB awareness (ISS-039).
-  if (options.uploadsDir) {
-    await removeDataRowArtefact(db, options.uploadsDir, rowId, row.slug).catch((err) => {
-      console.error('[publish:row] failed to remove artefact for deleted row', rowId, err)
-    })
-  }
-  // Layer B mirror of the artefact prune: a published row's route is
-  // retracted, so the render cache must stop serving it.
-  if (row.status === 'published') await bumpPublishVersionSerialized()
+  if (options.uploadsDir) await refreshPublishedRoutes(db, options.uploadsDir)
   await emitContentEntryDeleted(db, rowId, { kind: 'user', userId: user.id })
   await recordRowAuditEvent(db, user, req, 'data.row.delete', row)
   return jsonResponse({ row })
@@ -237,14 +201,14 @@ async function handleRowPublish(
   options: CmsHandlerOptions,
 ): Promise<Response> {
   const rowId = params.id
-  const user = await requireDataPublisher(req, db)
+  const user = await requireAuthenticatedUser(req, db)
   if (user instanceof Response) return user
 
-  const currentRow = await loadRowForAccess(db, rowId, user, canPublishDataRow)
+  const currentRow = await loadDataRowForAccess(req, db, rowId, user, 'publish')
   if (currentRow instanceof Response) return currentRow
 
-  const result = await publishDataRow(db, rowId, user.id, options.uploadsDir)
-  await emitContentEntryUpdated(db, rowId, ['status'], { kind: 'user', userId: user.id })
+  const result = await publishDataRow(db, rowId, user.id, options.uploadsDir, { localeId: currentRow.localeId })
+  await emitContentEntryUpdated(db, rowId, ['status'], { kind: 'user', userId: user.id }, currentRow.localeId)
   await recordRowAuditEvent(db, user, req, 'data.row.publish', result.row, {
     versionNumber: result.version.versionNumber,
   })
@@ -261,7 +225,7 @@ async function handleRowSchedulePost(
   params: RouteParams,
 ): Promise<Response> {
   const rowId = params.id
-  const user = await requireDataPublisher(req, db)
+  const user = await requireAuthenticatedUser(req, db)
   if (user instanceof Response) return user
 
   // Flush the collab relay before reading the row, exactly as `publishDataRow`
@@ -270,7 +234,7 @@ async function handleRowSchedulePost(
   // after creating it would otherwise 404 with "Data row not found".
   await runPublishFlush()
 
-  const currentRow = await loadRowForAccess(db, rowId, user, canPublishDataRow)
+  const currentRow = await loadDataRowForAccess(req, db, rowId, user, 'publish')
   if (currentRow instanceof Response) return currentRow
 
   const body = await readValidatedBody(req, RowScheduleBodySchema)
@@ -285,7 +249,7 @@ async function handleRowSchedulePost(
   }
   const whenIso = when.toISOString()
 
-  const row = await scheduleDataRowPublish(db, rowId, whenIso, user.id)
+  const row = await scheduleLocalizedDataRowPublish(db, rowId, whenIso, user.id, currentRow.localeId)
   if (!row) return rowNotFound()
   await recordRowAuditEvent(db, user, req, 'data.row.schedule', row, {
     scheduledPublishAt: whenIso,
@@ -299,13 +263,13 @@ async function handleRowScheduleDelete(
   params: RouteParams,
 ): Promise<Response> {
   const rowId = params.id
-  const user = await requireDataPublisher(req, db)
+  const user = await requireAuthenticatedUser(req, db)
   if (user instanceof Response) return user
 
-  const currentRow = await loadRowForAccess(db, rowId, user, canPublishDataRow)
+  const currentRow = await loadDataRowForAccess(req, db, rowId, user, 'publish')
   if (currentRow instanceof Response) return currentRow
 
-  const row = await cancelScheduledPublish(db, rowId, user.id)
+  const row = await cancelScheduledPublish(db, rowId, user.id, currentRow.localeId)
   if (!row) {
     // Either the row doesn't exist OR it wasn't scheduled. The repo
     // function gates on `status = 'scheduled'`, so a non-scheduled
@@ -323,24 +287,18 @@ async function handleRowStatus(
   options: CmsHandlerOptions,
 ): Promise<Response> {
   const rowId = params.id
-  const user = await requireDataEditor(req, db)
+  const user = await requireAuthenticatedUser(req, db)
   if (user instanceof Response) return user
 
   const body = await readValidatedBody(req, RowStatusBodySchema)
   if (!body) return badRequest('Status must be draft or unpublished')
 
-  const currentRow = await loadRowForAccess(db, rowId, user, canEditDataRow)
+  const currentRow = await loadDataRowForAccess(req, db, rowId, user, 'publish')
   if (currentRow instanceof Response) return currentRow
 
-  const row = await updateDataRowStatus(db, rowId, body.status, user.id)
+  const row = await updateDataRowStatus(db, rowId, body.status, user.id, currentRow.localeId)
   if (!row) return rowNotFound()
-  // draft and unpublished both leave public visibility — prune the baked
-  // artefact so Layer A stops serving the retracted content (ISS-039).
-  if (options.uploadsDir) {
-    await removeDataRowArtefact(db, options.uploadsDir, rowId, row.slug).catch((err) => {
-      console.error('[publish:row] failed to remove artefact for retracted row', rowId, err)
-    })
-  }
+  if (options.uploadsDir) await refreshPublishedRoutes(db, options.uploadsDir)
   await recordRowAuditEvent(db, user, req, 'data.row.status', row, { status: body.status })
   return jsonResponse({ row })
 }
@@ -360,10 +318,10 @@ async function handleRowAuthor(
   const author = await findUserById(db, body.authorUserId)
   if (!author || author.status !== 'active') return badRequest('Author must be an active user')
 
-  const currentRow = await getDataRow(db, rowId)
-  if (!currentRow) return rowNotFound()
+  const currentRow = await loadDataRowForAccess(req, db, rowId, user, 'edit')
+  if (currentRow instanceof Response) return currentRow
 
-  const row = await updateDataRowAuthor(db, rowId, body.authorUserId, user.id)
+  const row = await updateDataRowAuthor(db, rowId, body.authorUserId, user.id, currentRow.localeId)
   if (!row) return rowNotFound()
 
   await createAuditEvent(db, {
@@ -384,6 +342,7 @@ async function handleRowTable(
   req: Request,
   db: DbClient,
   params: RouteParams,
+  options: CmsHandlerOptions,
 ): Promise<Response> {
   const rowId = params.id
   // Cross-collection move = structurally distinct from cell-level editing.
@@ -397,11 +356,12 @@ async function handleRowTable(
   const body = await readValidatedBody(req, RowTableBodySchema)
   if (!body || !body.tableId.trim()) return badRequest('Table is required')
 
-  const currentRow = await loadRowForAccess(db, rowId, user, canEditDataRow)
+  const currentRow = await loadDataRowForAccess(req, db, rowId, user, 'edit')
   if (currentRow instanceof Response) return currentRow
 
-  const result = await updateDataRowTable(db, rowId, body.tableId, user.id)
+  const result = await updateDataRowTable(db, rowId, body.tableId, user.id, { localeId: currentRow.localeId })
   if (result.ok) {
+    if (options.uploadsDir) await refreshPublishedRoutes(db, options.uploadsDir)
     await recordRowAuditEvent(db, user, req, 'data.row.move', result.row)
     return jsonResponse({ row: result.row })
   }
@@ -414,6 +374,7 @@ async function handleRowTable(
   if (result.reason === 'table_not_found') {
     return jsonResponse({ error: 'Table not found' }, { status: 404 })
   }
+  if (result.reason === 'unsupported_table') return badRequest('Entries can move only into content collections and data tables')
   return rowNotFound()
 }
 

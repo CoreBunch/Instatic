@@ -326,7 +326,7 @@ export function CanvasRoot({ editable = true }: CanvasRootProps) {
    */
   const onNodeDoubleClick = (nodeId: string, e: React.MouseEvent, breakpointId?: string) => {
     e.stopPropagation()
-    if (isLive || !editable || !permissions.canEditContent) return
+    if (isLive || !permissions.canEditContent) return
     startInlineEdit(nodeId, breakpointId ?? activeBreakpointId)
   }
 
@@ -475,8 +475,10 @@ export function CanvasRoot({ editable = true }: CanvasRootProps) {
             equally; only the frame layout differs (all frames vs. one). In live
             mode the frame is flush with the top edge, so the notch auto-hides
             (peek) and rolls down on hover instead of overlaying the page. */}
-          {editable && (
+          {(editable || permissions.canEditContent || permissions.canEditStyle) && (
             <CanvasNotch
+              actions={editable ? undefined : []}
+              addControl={editable ? undefined : null}
               peek={isLive}
               floatingControl={
                 activeDocument?.kind === 'visualComponent' ? (

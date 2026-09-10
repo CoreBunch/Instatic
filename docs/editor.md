@@ -603,13 +603,14 @@ The sidebar shell expands/collapses by animating `--*-panel-width`. The panel sl
 
 `src/admin/modals/Settings/SettingsModal.tsx`. Shares the visual language of the Spotlight palette and Module Inserter: a direct-token panel shell, `--bg-surface-2` rail with categorical accent icon chips, accent-bar section header, card-group rows (`--bg-surface-2` fills, `--panel-radius` corners, 1px gaps showing the darker panel surface through) for section content, and an Esc keycap affordance. Backdrop click and Esc both close — there is no dedicated close button.
 
-**Sections** (rail nav, four entries):
+**Sections** (rail nav):
 
 | Section       | What it contains                                                             |
 |---------------|------------------------------------------------------------------------------|
-| General       | Site name, meta title, meta description, language, favicon                   |
+| General       | Site name, meta title, meta description, favicon                            |
+| Languages     | Source and translation languages, URL prefixes, direction and availability |
 | Shortcuts     | Auto-rendered keyboard shortcut reference from the keybindings registry       |
-| Publishing    | Self-hosted runtime info + framework CSS tree-shaking toggle                 |
+| Publishing    | Public website URL, self-hosted runtime info and framework CSS tree-shaking toggle |
 | Preferences   | Catalog-driven editor preferences (auto-rendered from `PREFERENCE_CATALOG`)  |
 
 Site-specific controls that were previously sections of this modal (Pages roster, Breakpoints/Viewports, Conditions) now live in their dedicated surfaces: the Site Explorer panel and `CanvasContextSelector` (unified condition axis).
@@ -720,6 +721,10 @@ See [docs/features/plugin-system.md](features/plugin-system.md) for the plugin S
 3. If the command needs async data, write a provider in `spotlight/providers/`.
 
 ---
+
+## Localization
+
+Logical content identities share structure while per-language records own draft values, availability, publication history and schedules. Site and Content authoring, collaboration, public routes and integrations carry an explicit locale. See [`localization.md`](features/localization.md) for the storage model and lifecycle.
 
 ## Related
 

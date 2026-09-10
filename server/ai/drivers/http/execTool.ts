@@ -12,7 +12,7 @@
  */
 
 import { parseValue, safeParseValue } from '@core/utils/typeboxHelpers'
-import { AiToolOutputSchema } from '@core/ai'
+import { AiToolOutputSchema, toolLocaleId, readLocaleToolInput } from '@core/ai'
 import { toolAllowedForCapabilities } from '../../tools/capabilityGate'
 import type {
   AiBrowserBridge,
@@ -70,6 +70,10 @@ export async function executeAiTool(
   // Browser execution: forward to the bridge and wait for the POST-back.
   // A resolved `{ ok: false }` remains a recoverable domain failure. Rejection
   // means the transport itself is unavailable and deliberately propagates.
+  if (!aiTool.name.endsWith('_select_locale')) {
+    const localeId = toolLocaleId(validated, toolContextBase.snapshot)
+    if (localeId) validated = { ...readLocaleToolInput(validated).input, localeId }
+  }
   return await bridge.callBrowser(aiTool.name, validated)
 }
 

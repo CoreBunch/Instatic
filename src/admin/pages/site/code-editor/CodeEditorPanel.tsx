@@ -1,3 +1,5 @@
+import { SourceLocaleNotice, useEditorLocale } from '@site/localization'
+import { canLocalizeEditorProperty } from '@core/localization'
 /**
  * CodeEditorPanel — floating code editor panel (Task 432).
  *
@@ -29,7 +31,7 @@
 import { Suspense, lazy, useEffect, useId, useRef, useState, type CSSProperties } from 'react'
 import { ChevronUpIcon } from 'pixel-art-icons/icons/chevron-up'
 import { MinusIcon } from 'pixel-art-icons/icons/minus'
-import { useEditorStore } from '@site/store/store'
+import { useEditorStore, selectActiveCanvasPage } from '@site/store/store'
 import { PanelHeader } from '@admin/shared/PanelHeader'
 import { useDraggablePanel } from '@admin/shared/FloatingWindow'
 import { ImagePreview } from './ImagePreview'
@@ -93,6 +95,8 @@ const EMPTY_DIAGNOSTICS: SiteRuntimeDiagnostic[] = []
 
 export function CodeEditorPanel({ runtimeValidation }: CodeEditorPanelProps) {
   // ── Store subscriptions ──────────────────────────────────────────────────
+  const { isTranslation, localeId } = useEditorLocale()
+  const canvasPage = useEditorStore(selectActiveCanvasPage)
   const activeEditorFileId = useEditorStore((s) => s.activeEditorFileId)
   const activeCodeBuffer = useEditorStore((s) => s.activeCodeBuffer)
   const codeEditorPanelOpen = useEditorStore((s) => s.codeEditorPanelOpen)
@@ -112,13 +116,12 @@ export function CodeEditorPanel({ runtimeValidation }: CodeEditorPanelProps) {
 
   // Current value of the active node-prop buffer (read live so the editor
   // mounts with the node's markup). Looked up in the active page tree.
-  const bufferValue = useEditorStore((s) => {
-    const buf = s.activeCodeBuffer
-    if (!buf || !s.site) return ''
-    const page = s.site.pages.find((p) => p.id === s.activePageId)
-    const v = page?.nodes[buf.nodeId]?.props?.[buf.propKey]
-    return typeof v === 'string' ? v : ''
-  })
+  const bufferNode = activeCodeBuffer ? canvasPage?.nodes[activeCodeBuffer.nodeId] : undefined
+  const bufferPropValue = bufferNode && activeCodeBuffer ? bufferNode.props[activeCodeBuffer.propKey] : ''
+  const bufferValue = typeof bufferPropValue === 'string' ? bufferPropValue : ''
+  const sharedCode = isTranslation && (!site || !activeCodeBuffer || !bufferNode ||
+    !canLocalizeEditorProperty(site, bufferNode, activeCodeBuffer.propKey))
+
 
   // ── Draggable panel position ─────────────────────────────────────────────
   // Default: center-stage per UX Spec (Contribution 612 §4)
@@ -196,7 +199,7 @@ export function CodeEditorPanel({ runtimeValidation }: CodeEditorPanelProps) {
   // Editor props for the active document — either a node-prop buffer or a file.
   const editorDoc = activeCodeBuffer
     ? {
-        docKey: `prop:${activeCodeBuffer.nodeId}:${activeCodeBuffer.propKey}`,
+        docKey: `prop:${canvasPage?.id}:${localeId}:${activeCodeBuffer.nodeId}:${activeCodeBuffer.propKey}`,
         value: bufferValue,
         language: activeCodeBuffer.language,
         onChange: (content: string) =>
@@ -253,7 +256,7 @@ export function CodeEditorPanel({ runtimeValidation }: CodeEditorPanelProps) {
             /* Asset file — ImagePreview handles both image and binary cases */
             <ImagePreview file={activeFile} />
 
-          ) : editorDoc ? (
+          ) : sharedCode ? <SourceLocaleNotice /> : editorDoc ? (
             /* Text file OR node-prop buffer — lazy-load the CodeMirror 6 bundle */
             <div className={styles.editorWorkspace}>
               {isScriptFile && activeFile && <ScriptSettingsPane file={activeFile} />}
@@ -265,6 +268,7 @@ export function CodeEditorPanel({ runtimeValidation }: CodeEditorPanelProps) {
                     value={editorDoc.value}
                     language={editorDoc.language}
                     onChange={editorDoc.onChange}
+                    changeDelayMs={0}
                     diagnostics={isScriptFile ? activeFileDiagnostics : EMPTY_DIAGNOSTICS}
                     filePath={isScriptFile ? activeFile?.path : undefined}
                     projectFiles={isScriptFile ? site?.files : undefined}

@@ -1,312 +1,140 @@
-/**
- * Full-site publish orchestrator.
- *
- * Drives the whole publish pipeline for the current draft site:
- *
- *   Phase 1 — read the draft + run every expensive non-DB build (runtime
- *             script bundling, dependency cache, package importmap).
- *   Phase 2 — one short DB transaction via `persistSitePublish` (the
- *             publish repository owns all SQL).
- *   Layer A — bake static artefacts (HTML + CSS + runtime JS) into the
- *             inactive slot and swap it live (`staticArtefact.ts`).
- *   Layer B — bump the publish version so the in-memory render cache and
- *             the version-keyed snapshot memos refresh.
- *
- * Data access lives in `server/repositories/publish.ts`; this module owns
- * the sequencing, rendering, and disk artefacts. The dependency direction is
- * one-way: publish → repositories, never back.
- */
+/** Publishes explicit language variants and their frozen design dependencies. */
 import { nanoid } from 'nanoid'
+import type { ScheduledLocalizationRevision } from '@core/localization-schema'
 import type { SiteDocument } from '@core/page-tree'
-import type { PublishedPageRuntimeAssets } from '@core/site-runtime'
-import type { PublishedRuntimePackageImportmap, SiteCssBundle } from '@core/publisher'
 import { normalizeSiteRuntimeConfig } from '@core/site-runtime'
-import { registry } from '@core/module-engine'
-import { isTemplatePage, resolveNotFoundTemplate } from '@core/templates'
+import { isTemplatePage } from '@core/templates'
+import { pageToCells } from '@core/data/pageFromRow'
+import { buildLocalizedPath, createPublishedRouteInventory, readSnapshotLanguage, LocalizedRouteError, type PublishedRouteCandidate } from '@core/localization-routing'
 import type { DbClient } from '../db/client'
 import { nextDataRowVersionNumber } from '../repositories/data'
+import { getLocale, listLocales } from '../repositories/localization'
+import { listPublishedRouteCandidates } from '../repositories/localizationRoutes'
 import {
   getDraftSiteDocument,
+  getStoredSiteDocument,
+  getPublishedPageSnapshotById,
   persistSitePublish,
-  type PublishedPageSnapshot,
+  type PersistSitePublishInput,
   type PublishedPageVersionWrite,
 } from '../repositories/publish'
 import { buildSiteRuntimeScripts } from './runtime/bundleScripts'
 import { RuntimeScriptBuildError } from './runtime/buildError'
 import { ensureRuntimeDependencyCache } from './runtime/dependencyCache'
-import {
-  buildRuntimePackageImportmap,
-  serializeImportmapForCsp,
-} from './runtime/packageImportmap'
-import { renderPublishedNotFound, renderPublishedSnapshot } from './publicRenderer'
-import { prefetchMediaAssets } from './mediaPrefetch'
-import { applyPublishedHtmlPipeline } from './publishedHtmlPipeline'
-import {
-  NOT_FOUND_ARTEFACT_URL_PATH,
-  prepareInactiveSlot,
-  swapSlot,
-  writeArtefact,
-  writeStaticAsset,
-} from './staticArtefact'
-import { buildPublishedSiteCssBundle } from './siteCssBundle'
-import { bakePublishedDataRowArtefacts } from './bakeDataRows'
-import { bumpPublishVersion, getPublishVersion, withPublishLock } from './publishState'
+import { buildRuntimePackageImportmap, serializeImportmapForCsp } from './runtime/packageImportmap'
+import { bumpPublishVersion, withPublishLock } from './publishState'
 import { runPublishFlush } from './publishFlush'
+import { rebakePublishedRoutes } from './rebakePublishedRoutes'
 
-interface PublishResult {
-  publishedPages: number
-}
-
-/**
- * Assemble the in-memory snapshot for one page. The `site` object is SHARED
- * across every snapshot of a publish (it is frozen content — nothing mutates
- * it after creation), so building N snapshots costs N small objects, not N
- * deep clones of the whole site.
- */
-function createSnapshot(
-  site: SiteDocument,
-  pageRowId: string,
-  runtimeAssets?: PublishedPageRuntimeAssets,
-  runtimePackageImportmap?: PublishedRuntimePackageImportmap,
-): PublishedPageSnapshot {
-  return {
-    cmsSnapshotVersion: 1,
-    pageRowId,
-    site,
-    ...(runtimeAssets && runtimeAssets.scripts.length > 0 ? { runtimeAssets } : {}),
-    ...(runtimePackageImportmap ? { runtimePackageImportmap } : {}),
-  }
+export interface PublishSiteOptions {
+  /** Omitted means refresh currently online variants; offline stays offline. */
+  variants?: { rowId: string; localeId: string }[]
+  /** Internal scheduler input; never accepted from the site-publish HTTP body. */
+  revision?: ScheduledLocalizationRevision
 }
 
 export async function publishDraftSite(
   db: DbClient,
-  adminUserId: string,
+  adminUserId: string | null,
   uploadsDir?: string,
-): Promise<PublishResult> {
-  // Flush the collab relay so the published snapshot includes edits still
-  // inside the debounce window (publish bakes exactly what the admins see).
-  // Intrinsic to publishing now, not bolted onto the HTTP route.
+  options: PublishSiteOptions = {},
+): Promise<{ publishedPages: number }> {
   await runPublishFlush()
-  // Serialize against every other publish so the version read→bake→bump window
-  // can't interleave and mis-stamp baked hole shells (ISS-038).
-  return withPublishLock(() => publishDraftSiteLocked(db, adminUserId, uploadsDir))
+  return withPublishLock(async () => {
+    const [live, locales] = await Promise.all([listPublishedRouteCandidates(db), listLocales(db)])
+    const selection = options.variants ?? live.filter((entry) => entry.kind !== 'row').map((entry) => ({
+      rowId: entry.contentId, localeId: entry.localeId,
+    }))
+    const localeSelections = new Map<string, Set<string>>()
+    for (const variant of selection) {
+      const ids = localeSelections.get(variant.localeId) ?? new Set<string>()
+      ids.add(variant.rowId)
+      localeSelections.set(variant.localeId, ids)
+    }
+    const inputs: PersistSitePublishInput[] = []
+    // Build every requested locale before committing any of them. A runtime
+    // compilation error in one language cannot publish the other languages.
+    for (const [localeId, selectedIds] of localeSelections) {
+      inputs.push(await prepareLocalePublish(db, adminUserId, localeId, selectedIds, options.revision))
+    }
+    const allocatedVersions = new Map<string, number>()
+    for (const input of inputs) for (const page of input.pages) {
+      page.versionNumber = Math.max(page.versionNumber, (allocatedVersions.get(page.pageId) ?? 0) + 1)
+      allocatedVersions.set(page.pageId, page.versionNumber)
+    }
+    const variantKey = (localeId: string, rowId: string): string => JSON.stringify([localeId, rowId])
+    const replaced = new Set(inputs.flatMap((input) => input.pages.filter((page) => page.activate).map((page) => variantKey(page.localeId, page.pageId))))
+    const planned: PublishedRouteCandidate[] = inputs.flatMap((input) => input.pages.filter((page) => page.activate).map((page) => ({
+      contentId: page.pageId, localeId: page.localeId, publishedVersionId: page.versionId,
+      siteSnapshotId: input.siteSnapshotId, tableId: 'pages', tableSlug: 'pages', availability: 'online',
+      languageCode: readSnapshotLanguage(page.localeId, input.site.locales, input.site.settings.language).code,
+      kind: page.publicPath === null ? 'template' : 'page',
+      ...(page.publicPath !== null ? { path: page.publicPath } : {}),
+    })))
+    // Collision checks include existing CMS URLs and other languages. They
+    // happen before the short transaction, never after exposing a new route.
+    createPublishedRouteInventory(locales, [
+      ...live.filter((entry) => !replaced.has(variantKey(entry.localeId, entry.contentId))), ...planned,
+    ])
+    if (inputs.length > 0) await persistSitePublish(db, inputs)
+    const version = bumpPublishVersion()
+    if (uploadsDir) await rebakePublishedRoutes(db, uploadsDir, version)
+    return { publishedPages: inputs.reduce((count, input) => count + input.pages.filter((page) => page.publicPath !== null).length, 0) }
+  })
 }
 
-async function publishDraftSiteLocked(
+async function prepareLocalePublish(
   db: DbClient,
-  adminUserId: string,
-  uploadsDir?: string,
-): Promise<PublishResult> {
-  // ── Phase 1: read inputs + run every expensive non-DB build ──────────────
-  // Dependency installs (`bun install` on a cold cache) and per-page esbuild
-  // runs take seconds; the SQLite adapter serializes ALL transactions through
-  // one chain, so doing this inside the transaction stalled every concurrent
-  // write (autosaves, row publishes) behind it. `withPublishLock` already
-  // serializes publishes, and version numbers are only allocated by publish
-  // paths under that same lock, so reading outside the transaction is stable.
-  const site = await getDraftSiteDocument(db)
-  if (!site) throw new Error('draft site not found')
-
+  publisherId: string | null,
+  localeId: string,
+  selectedIds: ReadonlySet<string>,
+  revision?: ScheduledLocalizationRevision,
+): Promise<PersistSitePublishInput> {
+  const [draft, locale] = await Promise.all([
+    revision?.siteSnapshotId ? getStoredSiteDocument(db, revision.siteSnapshotId) : getDraftSiteDocument(db, { localeId }), getLocale(db, localeId),
+  ])
+  if (!draft || !locale) throw new LocalizedRouteError(localeId, 'The site or language does not exist.')
+  if (!locale.enabled) throw new LocalizedRouteError(locale.id, 'Enable this language before publishing content.')
+  const frozenLocale = draft.locales?.find((entry) => entry.id === localeId) ?? locale
+  for (const selectedId of selectedIds) {
+    if (!draft.pages.some((page) => page.id === selectedId)) {
+      throw new LocalizedRouteError(selectedId, 'A selected page no longer exists.')
+    }
+  }
+  const pages: SiteDocument['pages'] = []
+  for (const page of draft.pages) {
+    if (isTemplatePage(page) || selectedIds.has(page.id)) {
+      pages.push(page)
+    } else {
+      const published = await getPublishedPageSnapshotById(db, page.id, localeId)
+      const frozen = published?.site.pages.find((candidate) => candidate.id === page.id)
+      if (frozen) pages.push(frozen)
+    }
+  }
+  const { localization: _draftVariants, ...withoutDraftVariants } = draft
+  const site: SiteDocument = { ...withoutDraftVariants, pages, layouts: [] }
   const runtime = normalizeSiteRuntimeConfig(site.runtime)
   const dependencyCache = Object.keys(runtime.dependencyLock.packages).length > 0
-    ? await ensureRuntimeDependencyCache(runtime.dependencyLock)
-    : undefined
-  // Build the package importmap once per publish — the JSON is identical
-  // for every page sharing the same lock, so its SHA-256 stays stable
-  // across snapshots. Module plugins use bare imports (`import "three"`)
-  // and the browser resolves them through this map at page load.
+    ? await ensureRuntimeDependencyCache(runtime.dependencyLock) : undefined
   const packageImportmap = dependencyCache
-    ? await buildRuntimePackageImportmap(runtime.dependencyLock, dependencyCache)
-    : null
-  const serializedImportmap = packageImportmap
-    ? await serializeImportmapForCsp(packageImportmap.importmap)
-    : null
-  const runtimePackageImportmap: PublishedRuntimePackageImportmap | undefined = serializedImportmap
-    ? { body: serializedImportmap.body, sha256: serializedImportmap.sha256 }
-    : undefined
-
-  const publishedSite: SiteDocument = {
-    ...site,
-    pages: site.pages.map((page) => ({
-      ...page,
-      updatedByUserId: adminUserId,
-    })),
-  }
-
-  const siteSnapshotId = nanoid()
-  const snapshots: PublishedPageSnapshot[] = []
-  // Runtime JS bytes for every page, collected for the Layer A disk write so
-  // published pages serve their scripts straight off disk (not the DB).
-  const runtimeAssetFiles: Array<{ publicPath: string; bytes: Uint8Array }> = []
+    ? await buildRuntimePackageImportmap(runtime.dependencyLock, dependencyCache) : null
+  const serializedImportmap = packageImportmap ? await serializeImportmapForCsp(packageImportmap.importmap) : null
   const pageWrites: PublishedPageVersionWrite[] = []
-  for (const page of publishedSite.pages) {
-    const versionNumber = await nextDataRowVersionNumber(db, page.id)
+  for (const page of site.pages) {
+    if (!selectedIds.has(page.id) && !isTemplatePage(page)) continue
     const versionId = nanoid()
-    const runtimeBuild = await buildSiteRuntimeScripts({
-      site: publishedSite,
-      page,
-      target: 'publish',
-      assetBasePath: `/_instatic/assets/${versionId}/`,
-      dependencyCache,
+    const built = await buildSiteRuntimeScripts({
+      site, page, target: 'publish', assetBasePath: `/_instatic/assets/${versionId}/`, dependencyCache,
     })
-    const runtimeErrors = runtimeBuild.diagnostics.filter((d) => d.severity === 'error')
-    if (runtimeErrors.length > 0) {
-      throw new RuntimeScriptBuildError(page, runtimeErrors)
-    }
-
-    const snapshot = createSnapshot(
-      publishedSite,
-      page.id,
-      runtimeBuild.runtimeAssets,
-      runtimePackageImportmap,
-    )
-    snapshots.push(snapshot)
+    const errors = built.diagnostics.filter((diagnostic) => diagnostic.severity === 'error')
+    if (errors.length > 0) throw new RuntimeScriptBuildError(page, errors)
     pageWrites.push({
-      pageId: page.id,
-      title: page.title,
-      slug: page.slug,
-      versionId,
-      versionNumber,
-      runtimeAssets: snapshot.runtimeAssets ?? null,
-      runtimeFiles: runtimeBuild.files,
+      pageId: page.id, title: page.title, slug: page.slug, cells: pageToCells(page), localeId,
+      activate: selectedIds.has(page.id),
+      publicPath: isTemplatePage(page) ? null : revision?.publicPath ?? buildLocalizedPath(frozenLocale, page.slug),
+      versionId, versionNumber: await nextDataRowVersionNumber(db, page.id),
+      runtimeAssets: built.runtimeAssets, runtimeFiles: built.files,
     })
-    for (const file of runtimeBuild.files) {
-      runtimeAssetFiles.push({ publicPath: file.publicPath, bytes: file.bytes })
-    }
   }
-
-  // ── Phase 2: short transaction — DB writes only ───────────────────────────
-  await persistSitePublish(db, {
-    siteSnapshotId,
-    site: publishedSite,
-    serializedImportmap: serializedImportmap
-      ? { body: serializedImportmap.body, sha256: serializedImportmap.sha256 }
-      : null,
-    pages: pageWrites,
-    publishedByUserId: adminUserId,
-  })
-
-  const publishedPages = publishedSite.pages.length
-
-  // Layer A: write static artefacts outside the transaction. Disk artefacts
-  // are derived state — a write failure is logged but does not roll back the
-  // DB publish. Visitors fall through to the live renderer until the next
-  // full publish rebuilds the slot.
-  //
-  // Complete static publishing: alongside each page's HTML we bake the CSS
-  // bundles and runtime JS into the same slot under their public paths
-  // (`/_instatic/css/...`, `/_instatic/assets/...`). The visitor router serves these off
-  // disk, so a published page never hits the server to (re)generate its CSS
-  // or JS — the slot is a self-contained static export.
-  //
-  // EVERY page is baked: fully-static pages bake to a complete document; pages
-  // with dynamic nodes bake their static SHELL with `<instatic-hole>` placeholders
-  // (the hole runtime lazy-fetches each fragment from `/_instatic/hole/`). Either way
-  // the HTML + CSS + JS are served from disk — only the hole fragment touches
-  // the server. The shells are stamped with `nextPublishVersion` (the version
-  // that becomes current the instant `bumpPublishVersion()` runs after the
-  // swap) so their `<instatic-hole data-instatic-version>` matches what the hole endpoint
-  // expects; otherwise every baked hole would be rejected as stale.
-  const nextPublishVersion = getPublishVersion() + 1
-  if (uploadsDir) {
-    try {
-      const { slot, slotDir } = await prepareInactiveSlot(uploadsDir)
-
-      // Every distinct static asset referenced by ANY baked artefact.
-      // Content-hashed filenames dedupe identical bytes across pages to a
-      // single write. The page-invariant CSS trio (reset/framework/style) is
-      // computed ONCE per publish via the version-keyed memo — the all-pages
-      // walk no longer repeats per page. Only `userStyles` is page-scoped.
-      const assetsByPath = new Map<string, Uint8Array>()
-      const encoder = new TextEncoder()
-      const collectCssFiles = (cssBundle: SiteCssBundle): void => {
-        for (const file of [cssBundle.reset, cssBundle.framework, cssBundle.style, cssBundle.userStyles]) {
-          if (file.content.length === 0) continue
-          const publicPath = `/_instatic/css/${file.filename}`
-          if (!assetsByPath.has(publicPath)) assetsByPath.set(publicPath, encoder.encode(file.content))
-        }
-      }
-      for (const snapshot of snapshots) {
-        const page = snapshot.site.pages.find((p) => p.id === snapshot.pageRowId)
-        if (!page || isTemplatePage(page)) continue // template pages only ever wrap; never baked at their own slug
-        const mediaAssets = await prefetchMediaAssets(page, snapshot.site, registry, db)
-        collectCssFiles(buildPublishedSiteCssBundle(snapshot.site, registry, page, nextPublishVersion, { mediaAssets }))
-      }
-      for (const asset of runtimeAssetFiles) {
-        if (!assetsByPath.has(asset.publicPath)) assetsByPath.set(asset.publicPath, asset.bytes)
-      }
-
-      // The 404 page: bake the notFound template (wrapped in its everywhere
-      // layout chain) to `404.html`. Baked FIRST so a literal page with slug
-      // `404` — if anyone creates one — overwrites it below and stays
-      // authoritative for both `/404` and the static-export error page.
-      const notFoundPage = resolveNotFoundTemplate(publishedSite)
-      const notFoundSnapshot = notFoundPage
-        ? snapshots.find((s) => s.pageRowId === notFoundPage.id)
-        : undefined
-      if (notFoundSnapshot) {
-        try {
-          const rendered = await renderPublishedNotFound(notFoundSnapshot, {
-            db,
-            url: new URL(`http://localhost${NOT_FOUND_ARTEFACT_URL_PATH}`),
-            publishVersion: nextPublishVersion,
-          })
-          if (rendered) {
-            const html = await applyPublishedHtmlPipeline(rendered, db)
-            await writeArtefact(slotDir, NOT_FOUND_ARTEFACT_URL_PATH, html)
-            collectCssFiles(rendered.cssBundle)
-          }
-        } catch (err) {
-          console.error('[publish:site] failed to bake the 404 artefact (falls through to live renderer):', err)
-        }
-      }
-
-      // HTML artefacts (or hole shells) for every page. A page that fails to
-      // render (e.g. a VC ref cycle) is skipped and falls through to the live
-      // renderer at request time — one bad page never aborts the whole bake.
-      for (const snapshot of snapshots) {
-        const page = snapshot.site.pages.find((p) => p.id === snapshot.pageRowId)
-        if (!page || isTemplatePage(page)) continue // template pages only ever wrap; never baked at their own slug
-        const urlPath = page.slug === 'index' ? '/' : `/${page.slug}`
-        try {
-          const syntheticUrl = new URL(`http://localhost${urlPath}`)
-          const rendered = await renderPublishedSnapshot(snapshot, {
-            db,
-            url: syntheticUrl,
-            publishVersion: nextPublishVersion,
-          })
-          const html = await applyPublishedHtmlPipeline(rendered, db)
-          await writeArtefact(slotDir, urlPath, html)
-          // The render's own bundle covers template-composed hashes the raw
-          // page bundle above cannot (the merged page's userStyles).
-          collectCssFiles(rendered.cssBundle)
-        } catch (err) {
-          console.error('[publish:site] failed to bake artefact for', urlPath, '(falls through to live renderer):', err)
-        }
-      }
-
-      // Data-row artefacts: every published row whose table has an entry
-      // template bakes into the same slot. Without this the slot swap would
-      // strand every previously-baked row artefact in the inactive slot and
-      // ALL row routes would fall to the live renderer after a full publish.
-      const rowBake = await bakePublishedDataRowArtefacts(db, slotDir, nextPublishVersion)
-      for (const cssBundle of rowBake.cssBundles) collectCssFiles(cssBundle)
-
-      for (const [publicPath, bytes] of assetsByPath) {
-        await writeStaticAsset(slotDir, publicPath, bytes)
-      }
-      await swapSlot(uploadsDir, slot)
-    } catch (err) {
-      console.error('[publish:site] static artefact write failed (live renderer remains active):', err)
-    }
-  }
-
-  // Layer B: invalidate the in-memory render cache so the next visitor request
-  // re-renders against the freshly committed snapshot. This is the SYNCHRONOUS
-  // statement right after the swap — no `await` between them — so there is no
-  // window where the freshly-swapped shells (stamped nextPublishVersion) are
-  // live while the version counter still reads the old value.
-  bumpPublishVersion()
-
-  return { publishedPages }
+  return { siteSnapshotId: nanoid(), site, serializedImportmap, pages: pageWrites, publishedByUserId: publisherId }
 }

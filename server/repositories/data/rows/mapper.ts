@@ -17,8 +17,14 @@
  */
 import { placeholder, type DbClient } from '../../../db/client'
 import type { DataRow, DataRowCells, DataRowStatus } from '@core/data/schemas'
+import { DataUserReferenceSchema } from '@core/data/schemas'
+import { parseValue } from '@core/utils/typeboxHelpers'
 import { userRefAt, userRefColumns, userRefJoin, type UserJoinColumns } from '../shared'
 import { isoDate, isoDateOrNull } from '@core/utils/isoDate'
+import { normalizeDataTableFields } from '@core/data/fields'
+import { materializeLocalizedCells, resolveDataFieldLocalization } from '@core/localization'
+import type { ContentLocalization } from '@core/localization-schema'
+import { getDefaultLocale, resolveContentLocale, listContentLocalizations } from '../../localization'
 
 // Re-exported so the sibling rows/ query modules (filter, read) keep one
 // local entry point for the dialect-aware placeholder; the single definition
@@ -39,11 +45,13 @@ export interface InsertDataRowInput {
    * tables that have no slug field.
    */
   slug: string
+  localeId?: string
 }
 
 export interface UpdateDataRowDraftInput {
   cells: DataRowCells
-  slug: string
+  slug?: string
+  localeId?: string
 }
 
 // ---------------------------------------------------------------------------
@@ -54,6 +62,7 @@ interface DataRowRow extends UserJoinColumns {
   id: string
   table_id: string
   cells_json: Record<string, unknown>
+  fields_json: unknown
   slug: string
   status: DataRowStatus
   seq: number
@@ -72,26 +81,48 @@ interface DataRowRow extends UserJoinColumns {
 // Mapper
 // ---------------------------------------------------------------------------
 
-function mapRow(row: DataRowRow): DataRow {
+function mapRow(
+  row: DataRowRow,
+  localeId: string,
+  localization: ContentLocalization | null,
+  source: ContentLocalization | null,
+  publishedBy: DataRow['publishedBy'],
+  publicPath: string | null,
+): DataRow {
+  const fields = normalizeDataTableFields(row.fields_json)
+  let slug = localization?.slug ?? source?.slug ?? ''
+  const cells = materializeLocalizedCells(fields, row.cells_json, source?.cells ?? {}, localization?.cells ?? {})
+  const slugField = fields.find((field) => field.id === 'slug')
+  if (slugField && resolveDataFieldLocalization(slugField) === 'shared') slug = typeof cells.slug === 'string' ? cells.slug : ''
+  else if (slugField) cells.slug = slug
+  const status: DataRowStatus = localization?.availability === 'online' && localization.activeVersionId
+    ? 'published'
+    : localization?.scheduledPublishAt
+      ? 'scheduled'
+      : localization?.activeVersionId ? 'unpublished' : 'draft'
   return {
     id: row.id,
     tableId: row.table_id,
-    cells: row.cells_json,
-    slug: row.slug,
-    status: row.status,
+    localeId,
+    sharedCells: row.cells_json,
+    localization,
+    cells,
+    slug,
+    publicPath,
+    status,
     seq: Number(row.seq),
     authorUserId: row.author_user_id ?? null,
     createdByUserId: row.created_by_user_id ?? null,
     updatedByUserId: row.updated_by_user_id ?? null,
-    publishedByUserId: row.published_by_user_id ?? null,
+    publishedByUserId: localization?.publishedByUserId ?? null,
     author: userRefAt(row, 'author'),
     createdBy: userRefAt(row, 'created_by'),
     updatedBy: userRefAt(row, 'updated_by'),
-    publishedBy: userRefAt(row, 'published_by'),
+    publishedBy,
     createdAt: isoDate(row.created_at),
     updatedAt: isoDate(row.updated_at),
-    publishedAt: isoDateOrNull(row.published_at),
-    scheduledPublishAt: isoDateOrNull(row.scheduled_publish_at),
+    publishedAt: localization?.publishedAt ?? null,
+    scheduledPublishAt: localization?.scheduledPublishAt ?? null,
     deletedAt: isoDateOrNull(row.deleted_at),
   }
 }
@@ -114,6 +145,7 @@ export function isOwnedByUser(row: DataRow, ownerUserId: string): boolean {
 const DATA_ROW_COLUMNS = `data_rows.id,
        data_rows.table_id,
        data_rows.cells_json,
+       data_tables.fields_json,
        data_rows.slug,
        data_rows.status,
        data_rows.seq,
@@ -133,6 +165,7 @@ const DATA_ROW_COLUMNS = `data_rows.id,
 
 /** The `from data_rows` clause with the four user-ref left joins. */
 const DATA_ROW_JOINS = `from data_rows
+    join data_tables on data_tables.id = data_rows.table_id
     ${userRefJoin('author', 'data_rows.author_user_id')}
     ${userRefJoin('created_by', 'data_rows.created_by_user_id')}
     ${userRefJoin('updated_by', 'data_rows.updated_by_user_id')}
@@ -146,6 +179,8 @@ const DATA_ROW_JOINS = `from data_rows
  * (ANSI joins + CTE, no Postgres-isms).
  */
 interface HydratedDataRowsQuery {
+  /** Omitted means the configured source locale, on the same localization path. */
+  localeId?: string
   /**
    * Optional CTE body spliced as `with <cte> select …`. Provide the full
    * `name as ( … )` clause. Lets callers inline a filtered/paginated id set so
@@ -173,6 +208,8 @@ export async function selectHydratedDataRows(
   db: DbClient,
   query: HydratedDataRowsQuery,
 ): Promise<DataRow[]> {
+  const sourceLocale = await getDefaultLocale(db)
+  const localeId = query.localeId === undefined ? sourceLocale.id : (await resolveContentLocale(db, query.localeId)).id
   const sql = `
     ${query.cte ? `with ${query.cte}` : ''}
     select ${DATA_ROW_COLUMNS}
@@ -182,5 +219,46 @@ export async function selectHydratedDataRows(
     ${query.tail ?? ''}
   `
   const { rows } = await db.unsafe<DataRowRow>(sql, query.params)
-  return rows.map(mapRow)
+  if (rows.length === 0) return []
+  const localizations = await listContentLocalizations(db, { rowIds: rows.map((row) => row.id) })
+  const byRow = new Map<string, Map<string, ContentLocalization>>()
+  for (const localization of localizations) {
+    let locales = byRow.get(localization.rowId)
+    if (!locales) {
+      locales = new Map()
+      byRow.set(localization.rowId, locales)
+    }
+    locales.set(localization.localeId, localization)
+  }
+  const publisherIds = [...new Set(localizations.map((localization) => localization.publishedByUserId).filter((id): id is string => id !== null))]
+  const publishers = new Map<string, NonNullable<DataRow['publishedBy']>>()
+  const publicPaths = new Map<string, string | null>()
+  const versionIds = [...new Set(localizations.map((localization) => localization.activeVersionId).filter((id): id is string => id !== null))]
+  if (versionIds.length > 0) {
+    const { rows: versions } = await db.unsafe<{ id: string; public_path: string | null }>(
+      `select id, public_path from data_row_versions where id in (${versionIds.map((_, i) => placeholder(db.dialect, i + 1)).join(', ')})`, versionIds,
+    )
+    for (const version of versions) publicPaths.set(version.id, version.public_path)
+  }
+  if (publisherIds.length > 0) {
+    const { rows: users } = await db.unsafe<{
+      id: string; email: string; display_name: string; role_slug: string | null; role_name: string | null
+    }>(`select users.id, users.email, users.display_name, roles.slug as role_slug, roles.name as role_name
+        from users left join roles on roles.id = users.role_id
+        where users.id in (${publisherIds.map((_, i) => placeholder(db.dialect, i + 1)).join(', ')})`, publisherIds)
+    for (const user of users) {
+      publishers.set(user.id, parseValue(DataUserReferenceSchema, {
+        id: user.id, email: user.email, displayName: user.display_name || user.email,
+        roleSlug: user.role_slug, roleName: user.role_name,
+      }))
+    }
+  }
+  return rows.map((row) => mapRow(
+    row,
+    localeId,
+    byRow.get(row.id)?.get(localeId) ?? null,
+    byRow.get(row.id)?.get(sourceLocale.id) ?? null,
+    publishers.get(byRow.get(row.id)?.get(localeId)?.publishedByUserId ?? '') ?? null,
+    publicPaths.get(byRow.get(row.id)?.get(localeId)?.activeVersionId ?? '') ?? null,
+  ))
 }

@@ -47,6 +47,8 @@ export function emptyCellValue(field: DataField): unknown {
 
     case 'fieldSchema':
       return []
+    case 'parameterValues':
+      return {}
 
     default: {
       const _exhaustive: never = field

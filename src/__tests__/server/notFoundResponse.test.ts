@@ -12,13 +12,20 @@
  *     bare JSON 404 takes over), and nothing is cached.
  */
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
-import { mkdir, mkdtemp, rm, symlink, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import type { DbClient, DbResult } from '../../../server/db'
+import type { DbClient } from '../../../server/db'
 import type { PublishedPageSnapshot } from '../../../server/repositories/publish'
 import { renderNotFoundResponse } from '../../../server/publish/publicRouter'
 import { getStats, resetForTests } from '../../../server/publish/renderCache'
+import { createPublishingTestDb, cleanupPublishingTestDbs } from '../helpers/publishingTestDb'
+import { createFakeDb } from './dbTestFake'
+import { getPublishedRouteInventoryForVersion } from '../../../server/publish/publishedRoutes'
+import { getPublishVersion, markPublishedArtefactsCurrent } from '../../../server/publish/publishState'
+import { notFoundArtefactPath, swapSlot, writeArtefact, removeArtefactInPlace } from '../../../server/publish/staticArtefact'
+
+afterEach(cleanupPublishingTestDbs)
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -78,41 +85,8 @@ function makeSnapshot(withNotFound: boolean): PublishedPageSnapshot {
   } as unknown as PublishedPageSnapshot
 }
 
-/**
- * Minimal DbClient for the live-render path: `getLatestPublishedSiteSnapshot`
- * (distinguished by its `order by data_rows.created_at` clause) returns the
- * fixture snapshot; everything else is empty.
- */
-function makeFakeDb(snapshot: PublishedPageSnapshot | null): DbClient {
-  const handle = async <Row extends Record<string, unknown> = Record<string, unknown>>(
-    strings: TemplateStringsArray,
-    ...values: unknown[]
-  ): Promise<DbResult<Row>> => {
-    void values
-    const sql = strings.join(' ').replace(/\s+/g, ' ').trim().toLowerCase()
-    if (sql.includes('site_snapshots.site_json') && sql.includes('order by data_rows.created_at')) {
-      return {
-        rows: snapshot
-          ? [{
-              row_id: snapshot.pageRowId,
-              site_json: snapshot.site,
-              runtime_assets_json: snapshot.runtimeAssets ?? null,
-              importmap_body: null,
-              importmap_sha256: null,
-            } as unknown as Row]
-          : [],
-        rowCount: snapshot ? 1 : 0,
-      }
-    }
-    return { rows: [], rowCount: 0 }
-  }
-  handle.unsafe = async <Row extends Record<string, unknown> = Record<string, unknown>>(
-    _sql: string,
-    _params?: unknown[],
-  ): Promise<DbResult<Row>> => ({ rows: [], rowCount: 0 })
-  handle.transaction = async <T>(cb: (tx: DbClient) => Promise<T>): Promise<T> =>
-    cb(handle as unknown as DbClient)
-  return handle as DbClient
+async function makePublishedDb(snapshot: PublishedPageSnapshot | null): Promise<DbClient> {
+  return createPublishingTestDb(snapshot?.site ?? null)
 }
 
 // ---------------------------------------------------------------------------
@@ -125,7 +99,7 @@ beforeEach(() => {
 
 describe('renderNotFoundResponse — Layer B live render', () => {
   it('renders the notFound template with status 404 and caches it', async () => {
-    const db = makeFakeDb(makeSnapshot(true))
+    const db = await makePublishedDb(makeSnapshot(true))
 
     const res1 = await renderNotFoundResponse(db, new URL('http://localhost/nowhere'))
     expect(res1?.status).toBe(404)
@@ -141,13 +115,13 @@ describe('renderNotFoundResponse — Layer B live render', () => {
   })
 
   it('returns null — and caches nothing — when the site has no notFound template', async () => {
-    const db = makeFakeDb(makeSnapshot(false))
+    const db = await makePublishedDb(makeSnapshot(false))
     expect(await renderNotFoundResponse(db, new URL('http://localhost/nowhere'))).toBeNull()
-    expect(getStats()).toMatchObject({ hits: 0, misses: 0, size: 0 })
+    expect(getStats()).toMatchObject({ hits: 0, misses: 1, size: 0 })
   })
 
   it('returns null when nothing is published at all', async () => {
-    const db = makeFakeDb(null)
+    const db = await makePublishedDb(null)
     expect(await renderNotFoundResponse(db, new URL('http://localhost/nowhere'))).toBeNull()
   })
 })
@@ -159,19 +133,24 @@ describe('renderNotFoundResponse — Layer A baked artefact', () => {
     uploadsDir = await mkdtemp(join(tmpdir(), 'instatic-404-'))
     const slotDir = join(uploadsDir, 'published', 'a')
     await mkdir(slotDir, { recursive: true })
-    await writeFile(join(slotDir, '404.html'), '<!DOCTYPE html><h1>baked 404</h1>', 'utf-8')
-    await symlink('a', join(uploadsDir, 'published', 'current'))
+    await writeArtefact(slotDir, notFoundArtefactPath('default'), '<!DOCTYPE html><h1>baked 404</h1>')
+    await swapSlot(uploadsDir, 'a')
   })
 
   afterEach(async () => {
     await rm(uploadsDir, { recursive: true, force: true })
   })
 
-  it('serves the baked 404.html with status 404 without touching the DB', async () => {
-    // A DB that throws on ANY query proves the artefact path is DB-free.
-    const explodingDb = (async () => {
-      throw new Error('DB must not be queried on the Layer A path')
-    }) as unknown as DbClient
+  it('serves the baked 404 after warming the locale inventory without further SQL', async () => {
+    const db = await makePublishedDb(makeSnapshot(true))
+    let deny = false
+    const explodingDb = createFakeDb(async (sql, params) => {
+      if (deny) throw new Error('DB must not be queried after the inventory is warm')
+      return db.unsafe(sql, params)
+    })
+    await getPublishedRouteInventoryForVersion(explodingDb, getPublishVersion())
+    markPublishedArtefactsCurrent(getPublishVersion())
+    deny = true
 
     const res = await renderNotFoundResponse(explodingDb, new URL('http://localhost/nope'), uploadsDir)
     expect(res?.status).toBe(404)
@@ -180,8 +159,8 @@ describe('renderNotFoundResponse — Layer A baked artefact', () => {
   })
 
   it('falls through to the live render when the artefact is missing', async () => {
-    await rm(join(uploadsDir, 'published', 'a', '404.html'))
-    const db = makeFakeDb(makeSnapshot(true))
+    await removeArtefactInPlace(uploadsDir, notFoundArtefactPath('default'))
+    const db = await makePublishedDb(makeSnapshot(true))
     const res = await renderNotFoundResponse(db, new URL('http://localhost/nope'), uploadsDir)
     expect(res?.status).toBe(404)
     expect(await res!.text()).toContain('This page is missing')

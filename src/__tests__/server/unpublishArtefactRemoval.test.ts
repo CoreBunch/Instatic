@@ -34,6 +34,11 @@ describe('removeDataRowArtefact', () => {
     await db`
       insert into data_rows (id, table_id, slug, status, cells_json)
       values (${rowId}, ${'pages'}, ${slug}, ${status}, ${{ title: 'Ghost', slug }})`
+    const versionId = crypto.randomUUID()
+    await db`insert into data_row_versions (id, row_id, locale_id, version_number, cells_json, slug, public_path)
+      values (${versionId}, ${rowId}, ${'default'}, ${1}, ${{ title: 'Ghost' }}, ${slug}, ${`/${slug}`})`
+    await db`insert into data_row_localizations (row_id, locale_id, slug, active_version_id, availability)
+      values (${rowId}, ${'default'}, ${'new-draft-slug'}, ${versionId}, ${status === 'published' ? 'online' : 'offline'})`
     const artefactPath = `/${slug}`
     await updateArtefactInPlace(uploadsDir, artefactPath, '<html>ghost content</html>')
     // Establish the `current` symlink so readArtefact (Layer A) can see it.
@@ -55,7 +60,7 @@ describe('removeDataRowArtefact', () => {
     const ctx = await withRow('unpublished')
     try {
       expect(await readArtefact(ctx.uploadsDir, ctx.artefactPath)).toContain('ghost content')
-      await removeDataRowArtefact(ctx.db, ctx.uploadsDir, ctx.rowId, ctx.slug)
+      await removeDataRowArtefact(ctx.db, ctx.uploadsDir, ctx.rowId, { localeId: 'default' })
       expect(await readArtefact(ctx.uploadsDir, ctx.artefactPath)).toBeNull()
     } finally {
       await ctx.cleanup()
@@ -67,7 +72,7 @@ describe('removeDataRowArtefact', () => {
     try {
       await ctx.db`update data_rows set deleted_at = current_timestamp where id = ${ctx.rowId}`
       expect(await readArtefact(ctx.uploadsDir, ctx.artefactPath)).toContain('ghost content')
-      await removeDataRowArtefact(ctx.db, ctx.uploadsDir, ctx.rowId, ctx.slug)
+      await removeDataRowArtefact(ctx.db, ctx.uploadsDir, ctx.rowId, { localeId: 'default' })
       expect(await readArtefact(ctx.uploadsDir, ctx.artefactPath)).toBeNull()
     } finally {
       await ctx.cleanup()

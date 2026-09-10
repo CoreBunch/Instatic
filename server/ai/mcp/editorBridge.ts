@@ -24,6 +24,7 @@ import { createBridge, encodeStreamEvent } from '../runtime'
 
 interface EditorBridgeEntry {
   bridgeId: string
+  localeId: string | null
   bridge: AiBrowserBridge
   destroy: () => void
 }
@@ -50,6 +51,10 @@ export function getEditorBridgeForUser(
   return byUser.get(userId)?.get(scope)?.bridge ?? null
 }
 
+export function getEditorBridgeLocale(userId: string, scope: EditorBridgeScope): string | null {
+  return byUser.get(userId)?.get(scope)?.localeId ?? null
+}
+
 export function hasEditorBridge(userId: string, scope: EditorBridgeScope): boolean {
   return byUser.get(userId)?.has(scope) ?? false
 }
@@ -65,6 +70,7 @@ export function createEditorBridgeStream(
   signal: AbortSignal,
   // Test seam: the idle lease shrinks to milliseconds in unit tests.
   idleLeaseMs: number = STREAM_IDLE_LEASE_MS,
+  localeId: string | null = null,
 ): ReadableStream<Uint8Array> {
   let closeStream: (() => void) | null = null
 
@@ -129,7 +135,7 @@ export function createEditorBridgeStream(
       const userBridges = byUser.get(userId) ?? new Map<EditorBridgeScope, EditorBridgeEntry>()
       const previous = userBridges.get(scope)
       if (previous) previous.destroy()
-      userBridges.set(scope, { bridgeId, bridge: created.bridge, destroy: destroyBridge })
+      userBridges.set(scope, { bridgeId, localeId, bridge: created.bridge, destroy: destroyBridge })
       byUser.set(userId, userBridges)
 
       emit({ type: 'bridgeReady', bridgeId })

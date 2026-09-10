@@ -1,3 +1,5 @@
+import { getLocalizablePropertyKeys } from '@core/localization'
+import { LocalizedParameterValue } from './LocalizedParameterValue'
 /**
  * renderModuleTabContent — derive the JSX shown inside StyleSurface's Module
  * section.
@@ -41,6 +43,7 @@ import { isFormSettingsModule } from './formSettingsAnalysis'
 const PROMOTED_FORM_PROPERTY_KEYS = new Set(['mode', 'formId', 'targetTableId'])
 
 interface ModuleTabContentArgs {
+  isTranslation?: boolean
   selectedNode: PageNode | null
   selectedNodeId: string | null
   definition: AnyModuleDefinition | null | undefined
@@ -59,6 +62,7 @@ interface ModuleTabContentArgs {
 
 export function renderModuleTabContent(args: ModuleTabContentArgs): React.ReactNode {
   const {
+    isTranslation = false,
     selectedNode,
     selectedNodeId,
     definition,
@@ -76,7 +80,7 @@ export function renderModuleTabContent(args: ModuleTabContentArgs): React.ReactN
   } = args
 
   // Branch 1: `base.loop` gets the dedicated loop UI.
-  if (selectedNode?.moduleId === 'base.loop' && selectedNodeId) {
+  if (!isTranslation && selectedNode?.moduleId === 'base.loop' && selectedNodeId) {
     return (
       <LoopPropertiesView
         nodeId={selectedNodeId}
@@ -93,10 +97,11 @@ export function renderModuleTabContent(args: ModuleTabContentArgs): React.ReactN
   const inVisualComponent =
     activeDocument?.kind === 'visualComponent' && selectedNodeId !== null
   const showFormSettings =
-    activePage !== null &&
+    !isTranslation && activePage !== null &&
     selectedNodeId !== null &&
     isFormSettingsModule(selectedNode.moduleId)
 
+  const localizableKeys = getLocalizablePropertyKeys(definition.schema)
   return (
     <>
       {showFormSettings && (
@@ -112,12 +117,17 @@ export function renderModuleTabContent(args: ModuleTabContentArgs): React.ReactN
         // render no editor surface — e.g. base.outlet.html, a publisher-filled
         // binding target the author never edits.
         if (control.hidden) return null
+        if (isTranslation && control.type !== 'group' && !localizableKeys.has(key)) return null
+        if (isTranslation && control.type === 'group' && getLocalizablePropertyKeys(control.children).size === 0) return null
         if (isPromotedFormProperty(selectedNode, key)) return null
         if (control.condition && !evaluateCondition(control.condition, resolvedPropsForBreakpoint)) {
           return null
         }
 
-        if (inVisualComponent && activeDocument?.kind === 'visualComponent' && selectedNodeId) {
+        if (isTranslation && activeDocument?.kind === 'visualComponent' && selectedNode.propBindings?.[key]) {
+          return <LocalizedParameterValue key={key} vcId={activeDocument.vcId} paramId={selectedNode.propBindings[key].paramId} />
+        }
+        if (!isTranslation && inVisualComponent && activeDocument?.kind === 'visualComponent' && selectedNodeId) {
           return (
             <ParamPromotableRow
               key={key}
@@ -140,7 +150,7 @@ export function renderModuleTabContent(args: ModuleTabContentArgs): React.ReactN
             value={resolvedPropsForBreakpoint[key]}
             onChange={updateModuleProp}
             isOverride={overrideKeys.has(key)}
-            dynamicBinding={dynamicBindingsEnabled && selectedNodeId ? {
+            dynamicBinding={!isTranslation && dynamicBindingsEnabled && selectedNodeId ? {
               binding: selectedNode.dynamicBindings?.[key],
               onSet: (binding) => onSetDynamicBinding(key, binding),
               onClear: () => onClearDynamicBinding(key),

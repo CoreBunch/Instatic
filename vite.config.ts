@@ -41,6 +41,7 @@ function shouldProxyPublicSiteRequest(req: IncomingMessage): boolean {
   //   /_instatic/css/     → per-site published CSS bundle (reset / framework / style)
   if (pathname.startsWith('/_instatic/assets/')) return true
   if (pathname.startsWith('/_instatic/css/')) return true
+  if (pathname === '/sitemap.xml') return true
 
   return pathname === '/' || !FILE_EXTENSION_RE.test(pathname)
 }
@@ -267,7 +268,7 @@ export default defineConfig({
       // built bundle. None are part of the client module graph, so watching them
       // only triggers spurious full reloads — which, during E2E, would reload the
       // admin app mid-test. Ignore them.
-      ignored: ['**/.tmp/**', '**/uploads/**', '**/dist/**'],
+      ignored: ['**/.tmp/**', '**/.tmp-lint/**', '**/uploads/**', '**/dist/**'],
     },
     proxy: {
       // The whole `/admin/api/` prefix (CMS + agent) is forwarded to the

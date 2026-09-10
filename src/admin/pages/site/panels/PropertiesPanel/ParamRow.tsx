@@ -330,21 +330,15 @@ export function ParamRow({
         <div className={styles.row}>
           {/* Label slot */}
           <div className={styles.labelSlot}>
-            {mode === 'override-edit' && (
-              <span className={styles.paramNameChip} title={paramName}>
-                {paramName}
-              </span>
-            )}
-            {mode === 'plain' && (
-              <span className={styles.paramLabel} title={paramName}>
-                {paramName}
-              </span>
-            )}
+            <label htmlFor={valueInputId}
+              className={mode === 'override-edit' ? styles.paramNameChip : styles.paramLabel}>
+              {paramName}
+            </label>
           </div>
 
           {/* Value slot */}
           <div className={styles.valueSlot}>
-            {renderValueControl()}
+            {renderValueControl(valueInputId)}
           </div>
 
           {/* Chip / action slot */}

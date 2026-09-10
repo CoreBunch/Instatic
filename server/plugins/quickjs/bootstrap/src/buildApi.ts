@@ -404,6 +404,7 @@ globalThis.__buildApi = function buildApi() {
       settings: settingsApi,
       schedule: scheduleApi,
       content: {
+        locales: { list: function () { assertTargetPermission('cms.content.locales.list'); return call('cms.content.locales.list', []) } },
         // Schema introspection
         tables: {
           list: function () {
@@ -427,13 +428,13 @@ globalThis.__buildApi = function buildApi() {
               assertTargetPermission('cms.content.entries.list')
               return call('cms.content.entries.list', [s, options || {}])
             },
-            get: function (entryId: unknown) {
+            get: function (entryId: unknown, options: unknown) {
               assertTargetPermission('cms.content.entries.get')
-              return call('cms.content.entries.get', [s, String(entryId)])
+              return call('cms.content.entries.get', [s, String(entryId), options || {}])
             },
-            getBySlug: function (entrySlug: unknown) {
+            getBySlug: function (entrySlug: unknown, options: unknown) {
               assertTargetPermission('cms.content.entries.getBySlug')
-              return call('cms.content.entries.getBySlug', [s, String(entrySlug)])
+              return call('cms.content.entries.getBySlug', [s, String(entrySlug), options || {}])
             },
             create: function (input: unknown) {
               assertTargetPermission('cms.content.entries.create')
@@ -451,9 +452,13 @@ globalThis.__buildApi = function buildApi() {
               assertTargetPermission('cms.content.entries.publish')
               return call('cms.content.entries.publish', [s, String(entryId), options || {}])
             },
-            moveToTable: function (entryId: unknown, targetSlug: unknown) {
+            unpublish: function (entryId: unknown, options: unknown) {
+              assertTargetPermission('cms.content.entries.unpublish')
+              return call('cms.content.entries.unpublish', [s, String(entryId), options || {}])
+            },
+            moveToTable: function (entryId: unknown, targetSlug: unknown, options: unknown) {
               assertTargetPermission('cms.content.entries.moveTable')
-              return call('cms.content.entries.moveTable', [s, String(entryId), String(targetSlug)])
+              return call('cms.content.entries.moveTable', [s, String(entryId), String(targetSlug), options || {}])
             },
             createMany: function (inputs: unknown) {
               assertTargetPermission('cms.content.entries.createMany')
@@ -470,32 +475,32 @@ globalThis.__buildApi = function buildApi() {
           }
         },
         // Tree mutation for pageTree-typed cells
-        tree: function (entryId: unknown, fieldId: unknown) {
+        tree: function (entryId: unknown, fieldId: unknown, options: unknown) {
           const e = String(entryId)
           const f = String(fieldId)
           return {
             read: function () {
               assertTargetPermission('cms.content.tree.read')
-              return call('cms.content.tree.read', [e, f])
+              return call('cms.content.tree.read', [e, f, options || {}])
             },
             mutate: function (operations: unknown) {
               assertTargetPermission('cms.content.tree.mutate')
-              return call('cms.content.tree.mutate', [e, f, operations])
+              return call('cms.content.tree.mutate', [e, f, operations, options || {}])
             },
             replace: function (tree: unknown) {
               assertTargetPermission('cms.content.tree.replace')
-              return call('cms.content.tree.replace', [e, f, tree])
+              return call('cms.content.tree.replace', [e, f, tree, options || {}])
             },
           }
         },
         // Cross-table
-        search: function (query: unknown, limit: unknown) {
+        search: function (query: unknown, options: unknown) {
           assertTargetPermission('cms.content.search')
-          return call('cms.content.search', [String(query), Number(limit || 50)])
+          return call('cms.content.search', [String(query), options || {}])
         },
-        getPublishedSnapshot: function (entryId: unknown) {
+        getPublishedSnapshot: function (entryId: unknown, options: unknown) {
           assertTargetPermission('cms.content.snapshot')
-          return call('cms.content.snapshot', [String(entryId)])
+          return call('cms.content.snapshot', [String(entryId), options || {}])
         },
         republishAll: function () {
           assertTargetPermission('cms.content.republishAll')

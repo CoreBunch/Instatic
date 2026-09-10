@@ -1009,11 +1009,12 @@ describe('publishPage', () => {
     expect(html).not.toContain('zustand')
   })
 
-  it('uses site metaTitle for <title> when set', () => {
+  it('uses site metaTitle when the page has no title', () => {
     const proj = makeSite({
       settings: { ...makeSite().settings, metaTitle: 'My Site — Home' },
     })
     const page = makePage({ root: { moduleId: 'base.text', props: { text: 'Hi' } } })
+    page.title = ''
     const { html } = publishPage(page, proj, registry)
     expect(html).toContain('<title>My Site — Home</title>')
   })
@@ -1026,6 +1027,7 @@ describe('publishPage', () => {
       },
     })
     const page = makePage({ root: { moduleId: 'base.text', props: { text: 'Hi' } } })
+    page.title = ''
     const { html } = publishPage(page, proj, registry)
     expect(html).not.toContain('<script>')
     expect(html).toContain('&lt;script&gt;')
@@ -1040,6 +1042,7 @@ describe('publishPage', () => {
       settings: { ...makeSite().settings, metaTitle: '{currentEntry.name} | Acme Agency' },
     })
     const page = makePage({ root: { moduleId: 'base.text', props: { text: 'Hi' } } })
+    page.title = ''
     const { html } = publishPage(page, proj, registry, {
       templateContext: {
         entryStack: [{ id: 'row-1', fields: { name: 'Our Discovery Process' } }],
@@ -1053,6 +1056,7 @@ describe('publishPage', () => {
       settings: { ...makeSite().settings, metaDescription: '{currentEntry.summary}' },
     })
     const page = makePage({ root: { moduleId: 'base.text', props: { text: 'Hi' } } })
+    page.title = ''
     const { html } = publishPage(page, proj, registry, {
       templateContext: {
         entryStack: [{ id: 'row-1', fields: { summary: 'How we run discovery.' } }],
@@ -1067,6 +1071,7 @@ describe('publishPage', () => {
     })
     const page = makePage({ root: { moduleId: 'base.text', props: { text: 'Hi' } } })
     // No templateContext → empty entry stack → the token's own |fallback applies.
+    page.title = ''
     const { html } = publishPage(page, proj, registry)
     expect(html).toContain('<title>Home | Acme Agency</title>')
     expect(html).not.toContain('{currentEntry')
@@ -1092,6 +1097,7 @@ describe('publishPage', () => {
       },
     })
     const page = makePage({ root: { moduleId: 'base.text', props: { text: 'Hi' } } })
+    page.seoTitle = '{currentEntry.name}'
     const { html } = publishPage(page, proj, registry, {
       templateContext: {
         entryStack: [{ id: 'row-1', fields: { name: '<script>alert(1)</script>"' } }],

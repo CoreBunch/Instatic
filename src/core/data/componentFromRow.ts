@@ -18,7 +18,7 @@
  */
 
 import type { DataRow, DataRowCells } from '@core/data/schemas'
-import { parseVisualComponent, vcSlugFromName, type VisualComponent } from '@core/visualComponents'
+import { parseVisualComponent, vcSlugFromName, localizableComponentParameterIds, projectComponentParameterDefaults, type VisualComponent } from '@core/visualComponents'
 
 // ---------------------------------------------------------------------------
 // DataRow → VisualComponent
@@ -50,7 +50,8 @@ export function visualComponentFromRow(row: DataRow): VisualComponent | null {
       : Date.now(),
   }
 
-  return parseVisualComponent(rawVC)
+  const component = parseVisualComponent(rawVC)
+  return component ? projectComponentParameterDefaults(component, cells.parameterDefaults) : null
 }
 
 // ---------------------------------------------------------------------------
@@ -67,6 +68,7 @@ export function visualComponentFromRow(row: DataRow): VisualComponent | null {
  * `data_rows_table_slug_active_idx` partial index.
  */
 export function visualComponentToCells(vc: VisualComponent): DataRowCells {
+  const localizedParams = localizableComponentParameterIds(vc)
   return {
     name: vc.name,
     slug: vcSlugFromName(vc.name),
@@ -75,6 +77,7 @@ export function visualComponentToCells(vc: VisualComponent): DataRowCells {
       rootNodeId: vc.tree.rootNodeId,
     },
     params: vc.params,
+    parameterDefaults: Object.fromEntries(vc.params.filter((parameter) => localizedParams.has(parameter.id)).map((parameter) => [parameter.id, parameter.defaultValue])),
     classIds: vc.classIds,
   }
 }

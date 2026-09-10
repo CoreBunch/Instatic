@@ -11,10 +11,13 @@ import {
   parseCollabDocId,
   projectComponentDoc,
   projectLayoutDoc,
+  projectLocalizationDoc,
   projectPageDoc,
   projectSiteDoc,
   seedComponentDoc,
   seedLayoutDoc,
+  seedLocalizationDoc,
+  sharedCollabDocId,
   seedPageDoc,
   seedSiteDocFromParts,
   type CollabDocKind,
@@ -24,18 +27,22 @@ import type { SiteShell } from '@core/page-tree'
 import { pageFromRow, pageToCells } from '@core/data/pageFromRow'
 import { visualComponentFromRow, visualComponentToCells } from '@core/data/componentFromRow'
 import { savedLayoutFromRow, savedLayoutToCells } from '@core/data/layoutFromRow'
-import { vcSlugFromName } from '@core/visualComponents'
-import { layoutSlugFromName } from '@core/layouts'
+import { resolveDataFieldLocalization } from '@core/localization'
+import type { DataField } from '@core/data/schemas'
+import type { VisualComponent } from '@core/visualComponents'
 import { validateSite } from '@core/persistence/validate'
 import type { DbClient } from '../db/client'
 import {
   getDataRow,
+  getDataTable,
   listDataRowIdSlugs,
+  listDataRows,
   softDeleteDataRow,
-  upsertDataRowDraft,
+  upsertSharedDataRowDraft,
 } from '../repositories/data'
+import { getContentLocalization, getDefaultLocale, getLocale, saveContentLocalizationDraft } from '../repositories/localization'
 import { getDraftSite, saveDraftSite } from '../repositories/site'
-import { getCollabDocumentState } from '../repositories/collabDocuments'
+import { getCollabDocumentState, listCollabDocumentIds } from '../repositories/collabDocuments'
 import { serializeCollabAwareWrite } from '../repositories/rowWriteEvents'
 import { bumpPublishVersionSerialized } from '../publish/publishState'
 
@@ -50,12 +57,21 @@ type SiteRosters = ReturnType<typeof projectSiteDoc>['rosters']
 
 interface RelayPersistenceHooks {
   isResident(docId: string): boolean
+  residentDoc(docId: string): Y.Doc | undefined
+  residentDocIds(): string[]
   schedulePersist(docId: string): void
   openDoc(docId: string): Promise<void>
   invalidationVersion(docId: string): number
 }
 
+export interface LocalizationGuardContext {
+  fields: DataField[]
+  components: VisualComponent[]
+  sharedCells: Record<string, unknown>
+}
+
 export interface RelayPersistence {
+  localizationGuardContext(docId: string): Promise<LocalizationGuardContext | null>
   hasRosterSnapshot(): boolean
   rosterContains(docId: string): boolean
   observeSiteRoster(doc: Y.Doc): void
@@ -127,18 +143,21 @@ export function createRelayPersistence(
 
   function scheduleRosterRecovery(docId: string): void {
     failedRosterRecoveries.delete(docId)
-    if (hooks.isResident(docId)) {
-      hooks.schedulePersist(docId)
-      return
-    }
+    if (hooks.isResident(docId)) hooks.schedulePersist(docId)
     if (pendingRosterRecoveries.has(docId)) return
     const recovery = (async () => {
       // Collaborative deletion keeps the row blob as an undo tombstone. Only
       // a stored lineage can be revived; never mint an empty page here.
       const stored = await getCollabDocumentState(db, docId)
-      if (!stored || !rosterDocIds?.has(docId)) return
+      if ((!stored && !hooks.isResident(docId)) || !rosterDocIds?.has(docId)) return
       await hooks.openDoc(docId)
       if (rosterDocIds?.has(docId)) hooks.schedulePersist(docId)
+      // Locale tombstones carry edits accepted while the global row was absent.
+      for (const relatedId of await listCollabDocumentIds(db)) {
+        if (relatedId === docId || sharedCollabDocId(relatedId) !== docId || !rosterDocIds?.has(docId)) continue
+        await hooks.openDoc(relatedId)
+        if (rosterDocIds?.has(docId)) hooks.schedulePersist(relatedId)
+      }
     })()
     pendingRosterRecoveries.set(docId, recovery)
     void recovery.catch((err) => {
@@ -152,6 +171,7 @@ export function createRelayPersistence(
   }
 
   function markRowEstablished(docId: string): void {
+    docId = sharedCollabDocId(docId)
     knownRowDocIds.add(docId)
     provisionalRowDocIds.delete(docId)
   }
@@ -160,6 +180,7 @@ export function createRelayPersistence(
     docId: string,
     state: { stored: boolean; seeded: boolean },
   ): void {
+    docId = sharedCollabDocId(docId)
     if (provisionalRowDocIds.has(docId)) {
       // A fresh client-created doc can reconnect before its roster frame.
     } else if (state.stored || state.seeded || knownRowDocIds.has(docId)) {
@@ -170,6 +191,7 @@ export function createRelayPersistence(
   }
 
   function isUnrosteredEstablishedDoc(docId: string): boolean {
+    docId = sharedCollabDocId(docId)
     return rosterDocIds !== null && knownRowDocIds.has(docId) && !rosterDocIds.has(docId)
   }
 
@@ -191,8 +213,18 @@ export function createRelayPersistence(
       })
       return true
     }
-    const row = await getDataRow(db, parsed.rowId)
+    const row = await getDataRow(db, parsed.rowId, parsed.localeId)
     if (!row || row.tableId !== KIND_TABLE[parsed.kind]) return false
+    if (parsed.localeId !== undefined) {
+      const source = await getDefaultLocale(db)
+      const draft = row.localization ?? await getContentLocalization(db, row.id, source.id)
+      seedLocalizationDoc(doc, row.localization ?? { cells: {}, slug: draft?.slug ?? '' })
+      return true
+    }
+    row.cells = { ...row.sharedCells }
+    row.slug = typeof row.sharedCells.slug === 'string' ? row.sharedCells.slug : ''
+    // Required domain names are metadata; translated page text stays in its locale doc.
+    if (parsed.kind !== 'page' && !row.cells.name) row.cells.name = row.id
     if (parsed.kind === 'page') {
       seedPageDoc(doc, pageFromRow(row))
     } else if (parsed.kind === 'component') {
@@ -277,36 +309,89 @@ export function createRelayPersistence(
       return 'written'
     }
 
-    const table = KIND_TABLE[parsed.kind]
-    let cells: Record<string, unknown>
-    let slug: string
-    if (parsed.kind === 'page') {
-      const page = projectPageDoc(doc, parsed.rowId)
-      if (!page.rootNodeId) return 'incomplete'
-      cells = pageToCells(page)
-      slug = page.slug
-    } else if (parsed.kind === 'component') {
-      const component = projectComponentDoc(doc, parsed.rowId)
-      if (
-        !component.tree.rootNodeId ||
-        typeof component.name !== 'string' ||
-        component.name === ''
-      ) return 'incomplete'
-      cells = visualComponentToCells(component)
-      slug = vcSlugFromName(component.name)
+    if (parsed.localeId !== undefined) {
+      let row = await getDataRow(db, parsed.rowId, parsed.localeId)
+      if (!row) {
+        // A new row's locale frame may arrive before the common doc debounce.
+        const common = hooks.residentDoc(sharedCollabDocId(docId))
+        if (!common || await persistSharedRow(sharedCollabDocId(docId), common) !== 'written') return 'incomplete'
+        row = await getDataRow(db, parsed.rowId, parsed.localeId)
+      }
+      if (!row || row.tableId !== KIND_TABLE[parsed.kind]) return 'incomplete'
+      await saveContentLocalizationDraft(db, parsed.rowId, parsed.localeId, projectLocalizationDoc(doc))
     } else {
-      const layout = projectLayoutDoc(doc, parsed.rowId)
-      if (!layout.rootNodeId || layout.name === '') return 'incomplete'
-      cells = savedLayoutToCells(layout)
-      slug = layoutSlugFromName(layout.name)
+      const result = await persistSharedRow(docId, doc)
+      if (result !== 'written') return result
     }
 
-    await upsertDataRowDraft(
-      db,
-      { id: parsed.rowId, tableId: table, cells, slug },
-      null,
-      { collabInternal: true },
-    )
+    markRowEstablished(docId)
+    return 'written'
+  }
+
+  function projectSharedCells(docId: string, doc: Y.Doc): Record<string, unknown> | null {
+    const parsed = parseCollabDocId(docId)
+    if (!parsed || parsed.kind === 'site') return null
+    if (parsed.kind === 'page') {
+      const page = projectPageDoc(doc, parsed.rowId)
+      return page.rootNodeId ? pageToCells(page) : null
+    }
+    if (parsed.kind === 'component') {
+      const component = projectComponentDoc(doc, parsed.rowId)
+      return component.tree.rootNodeId && component.name ? visualComponentToCells(component) : null
+    }
+    const layout = projectLayoutDoc(doc, parsed.rowId)
+    return layout.rootNodeId && layout.name ? savedLayoutToCells(layout) : null
+  }
+
+  function sharedProjection(fields: readonly DataField[], stored: Record<string, unknown>, projected: Record<string, unknown>): Record<string, unknown> {
+    const cells = { ...stored }
+    for (const field of fields) {
+      if (field.type === 'pageTree' || resolveDataFieldLocalization(field) === 'shared') {
+        if (Object.hasOwn(projected, field.id)) cells[field.id] = projected[field.id]
+        else if (['templateEnabled', 'templateTarget', 'templatePriority'].includes(field.id)) delete cells[field.id]
+      } else {
+        delete cells[field.id]
+      }
+    }
+    return cells
+  }
+
+  async function localizationGuardContext(docId: string): Promise<LocalizationGuardContext | null> {
+    const parsed = parseCollabDocId(docId)
+    if (!parsed || parsed.kind === 'site' || parsed.localeId === undefined || !await getLocale(db, parsed.localeId)) return null
+    const table = await getDataTable(db, KIND_TABLE[parsed.kind])
+    if (!table) return null
+    const row = await getDataRow(db, parsed.rowId)
+    if (row && row.tableId !== table.id) return null
+    const common = hooks.residentDoc(sharedCollabDocId(docId))
+    const projected = common ? projectSharedCells(docId, common) : null
+    const sharedCells = row?.sharedCells ?? {}
+    const components = new Map<string, VisualComponent>()
+    for (const definition of await listDataRows(db, 'components')) {
+      const component = visualComponentFromRow({ ...definition, cells: definition.sharedCells })
+      if (component) components.set(component.id, component)
+    }
+    for (const id of hooks.residentDocIds()) {
+      const address = parseCollabDocId(id)
+      if (address?.kind !== 'component' || address.localeId !== undefined) continue
+      const resident = hooks.residentDoc(id)
+      if (!resident) continue
+      const component = projectComponentDoc(resident, address.rowId)
+      if (component.tree.rootNodeId && component.name) components.set(component.id, component)
+    }
+    return { fields: table.fields, components: [...components.values()], sharedCells: projected ? sharedProjection(table.fields, sharedCells, projected) : sharedCells }
+  }
+
+  async function persistSharedRow(docId: string, doc: Y.Doc): Promise<DerivedWrite> {
+    const parsed = parseCollabDocId(docId)
+    if (!parsed || parsed.kind === 'site') return 'incomplete'
+    const projected = projectSharedCells(docId, doc)
+    if (!projected) return 'incomplete'
+    const table = await getDataTable(db, KIND_TABLE[parsed.kind])
+    if (!table) return 'incomplete'
+    const row = await getDataRow(db, parsed.rowId)
+    const cells = sharedProjection(table.fields, row?.sharedCells ?? {}, projected)
+    await upsertSharedDataRowDraft(db, { id: parsed.rowId, tableId: table.id, cells }, null, { collabInternal: true })
     markRowEstablished(docId)
     return 'written'
   }
@@ -332,8 +417,9 @@ export function createRelayPersistence(
   }
 
   return {
+    localizationGuardContext,
     hasRosterSnapshot: () => rosterDocIds !== null,
-    rosterContains: (docId) => rosterDocIds?.has(docId) ?? false,
+    rosterContains: (docId) => rosterDocIds?.has(sharedCollabDocId(docId)) ?? false,
     observeSiteRoster,
     noteOpenedRow,
     markRowEstablished,

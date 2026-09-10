@@ -1,3 +1,4 @@
+import type { Locale } from '@core/localization-schema'
 import type {
   ComponentType,
   FocusEventHandler,
@@ -119,6 +120,9 @@ export interface ModuleComponentProps<
   TProps extends Record<string, unknown> = Record<string, unknown>,
 > {
   props: TProps
+  /** Configured languages for locale-aware editor previews. Public links are resolved by the publisher. */
+  locales?: readonly Locale[]
+  localeId?: string
   nodeId: string
   isSelected: boolean
   /** Already-rendered child module React nodes */

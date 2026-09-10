@@ -1,3 +1,4 @@
+import { SOURCE_LOCALE } from '../../fixtures/localization'
 import { afterEach, beforeEach, describe, expect, it, mock } from 'bun:test'
 import React, { type ReactNode } from 'react'
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
@@ -118,9 +119,11 @@ describe('Content collection step-up flow', () => {
     const stepUpRequests: Array<Record<string, unknown>> = []
 
     globalThis.fetch = mock(async (input: RequestInfo | URL, init?: RequestInit) => {
-      const url = String(input)
+      const url = String(input).split('?')[0]
+      if (url === '/admin/api/cms/locales') return json({ locales: [SOURCE_LOCALE] })
 
-      if (url === '/admin/api/ai/editor-bridge?scope=content') {
+      if (url === '/admin/api/ai/editor-bridge' && new URL(String(input), 'http://localhost').searchParams.get('scope') === 'content') {
+        expect(new URL(String(input), 'http://localhost').searchParams.get('localeId')).toBe('default')
         contentBridgeRequests += 1
         return json({ error: 'Unauthorized' }, 401)
       }
@@ -172,6 +175,7 @@ describe('Content collection step-up flow', () => {
 
       if (url.endsWith('/admin/api/cms/plugins')) return json({ plugins: [], adminPages: [] })
       if (url.endsWith('/admin/api/cms/site')) return json({ site: null }, 404)
+      if (url.endsWith('/admin/api/cms/site-document')) return json({ error: 'Not found' }, 404)
       if (url.endsWith('/admin/api/cms/publish/status')) return json({ ok: false }, 404)
       if (url.endsWith('/admin/api/cms/media/folders')) return json({ folders: [] })
 

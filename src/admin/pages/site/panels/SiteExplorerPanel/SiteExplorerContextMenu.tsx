@@ -1,3 +1,4 @@
+import { useEditorLocale } from '@site/localization'
 import { ExplorerItemContextMenu, type ExplorerContextMenuItem } from '@site/explorer-actions'
 import { bulkDeleteLabel, bulkSelectionLabel } from './siteExplorerPanelUtils'
 import type { SiteExplorerMenuSelection } from './siteExplorerSelection'
@@ -30,6 +31,7 @@ export function SiteExplorerContextMenu<TTarget extends SiteExplorerContextMenuT
   onRename,
   onDelete,
 }: SiteExplorerContextMenuProps<TTarget>) {
+  const { isTranslation } = useEditorLocale()
   const isBulk = Boolean(menu.selection && menu.selection.itemIds.length > 1)
 
   return (
@@ -41,10 +43,11 @@ export function SiteExplorerContextMenu<TTarget extends SiteExplorerContextMenuT
         ? bulkSelectionLabel(menu.selection.sectionId, menu.selection.itemIds.length)
         : undefined}
       showRename={!isBulk}
+      renameDisabled={isTranslation && menu.target.kind !== 'page'}
       deleteLabel={menu.selection && isBulk
         ? bulkDeleteLabel(menu.selection.sectionId, menu.selection.itemIds.length)
         : undefined}
-      deleteDisabled={!isBulk && menu.target.kind === 'page' && pageCount <= 1}
+      deleteDisabled={isTranslation || (!isBulk && menu.target.kind === 'page' && pageCount <= 1)}
       extraItems={extraItems}
       onClose={onClose}
       onRename={onRename}

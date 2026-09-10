@@ -28,6 +28,9 @@ function registerHandle(overrides: Partial<ContentBridgeHandle> = {}) {
       calls.push('selectDocument')
       return true
     },
+    async selectLocale() {
+      calls.push('selectLocale')
+    },
     async selectCollection() {
       calls.push('selectCollection')
       return true
@@ -62,6 +65,20 @@ afterEach(() => {
 })
 
 describe('executeContentTool', () => {
+  it('rejects a command addressed to another locale before mutating the workspace', async () => {
+    const { calls } = registerHandle()
+    const result = await executeContentTool('content_create_document', { tableId: 'posts', localeId: 'de', fields: { title: 'Hallo' } })
+    expect(result.ok).toBe(false)
+    expect(result.error).toContain('language')
+    expect(calls).toEqual([])
+  })
+
+  it('selects the requested locale through the live workspace', async () => {
+    const { calls } = registerHandle()
+    const result = await executeContentTool('content_select_locale', { localeId: 'de' })
+    expect(result).toEqual({ ok: true, data: { localeId: 'de' } })
+    expect(calls).toEqual(['selectLocale'])
+  })
   it('returns the new document id in canonical tool data', async () => {
     let createArgs: Parameters<ContentBridgeHandle['createDocument']>[0] | null = null
     let createCalls = 0

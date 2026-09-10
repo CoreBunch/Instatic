@@ -1,0 +1,5 @@
+.section { display: flex; flex-direction: column; gap: 12px; }
+.section h3 { margin: 0; font-size: var(--text-m); }
+.section p { margin: 0; color: var(--text-muted); font-size: var(--text-s); line-height: 1.5; }
+.row { display: flex; gap: 12px; align-items: end; }
+.field { display: flex; flex-direction: column; gap: 6px; flex: 1; font-size: var(--text-s); }

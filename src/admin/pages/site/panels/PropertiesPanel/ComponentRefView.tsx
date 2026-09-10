@@ -1,3 +1,5 @@
+import { useEditorLocale } from '@site/localization'
+import { localizableComponentParameterIds } from '@core/visualComponents'
 /**
  * ComponentRefView — PropertiesPanel view for a selected base.visual-component-ref instance.
  *
@@ -31,6 +33,7 @@ interface ComponentRefViewProps {
 }
 
 export function ComponentRefView({ nodeId, componentId, propOverrides }: ComponentRefViewProps) {
+  const { isTranslation } = useEditorLocale()
   const setActiveDocument = useEditorStore((s) => s.setActiveDocument)
   const updateNodeProps = useEditorStore((s) => s.updateNodeProps)
 
@@ -64,6 +67,8 @@ export function ComponentRefView({ nodeId, componentId, propOverrides }: Compone
     )
   }
 
+  const localizable = localizableComponentParameterIds(vc)
+  const params = isTranslation ? vc.params.filter((param) => localizable.has(param.id)) : vc.params
   return (
     <>
       {/* ── Header: VC name + Open in canvas link ──────────────────────── */}
@@ -84,15 +89,15 @@ export function ComponentRefView({ nodeId, componentId, propOverrides }: Compone
       </div>
 
       {/* ── Param rows ──────────────────────────────────────────────────── */}
-      {vc.params.length === 0 ? (
+      {params.length === 0 ? (
         <div className={styles.noParams}>
-          This component has no exposed parameters.
+          This component has no editable parameters in this language.
           <br />
-          Open it in canvas to add parameters.
+          Shared parameter definitions are edited in the source language.
         </div>
       ) : (
         <div className={styles.paramsList} role="list" aria-label="Component parameters">
-          {vc.params.map((param) => {
+          {params.map((param) => {
             const isOverridden = Object.prototype.hasOwnProperty.call(propOverrides, param.id)
             const effectiveValue = isOverridden ? propOverrides[param.id] : param.defaultValue
 

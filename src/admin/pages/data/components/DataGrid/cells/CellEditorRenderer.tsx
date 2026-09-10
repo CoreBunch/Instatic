@@ -100,6 +100,8 @@ export function CellEditorRenderer({
 
     case 'fieldSchema':
       return <FieldSchemaCell field={field} {...rest} onOpenFieldEditor={onOpenFieldEditor} />
+    case 'parameterValues':
+      return <span>Edit component defaults in the Site editor</span>
 
     default: {
       // Exhaustive check: TypeScript will error here if a new field type

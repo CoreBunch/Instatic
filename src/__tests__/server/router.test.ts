@@ -2,6 +2,13 @@ import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { createPublishingTestDb, cleanupPublishingTestDbs, seedPublishingPage } from '../helpers/publishingTestDb'
+import { createUser } from '../../../server/repositories/users'
+import { makeSite, makePage } from '../publisher/helpers'
+import { publishDraftSite } from '../../../server/publish/publishSite'
+import { markPublishedArtefactsCurrent, getPublishVersion } from '../../../server/publish/publishState'
+import { getPublishedRouteInventoryForVersion } from '../../../server/publish/publishedRoutes'
+import { resetForTests } from '../../../server/publish/renderCache'
 import { handleServerRequest } from '../../../server/router'
 import type { DbClient, DbResult } from '../../../server/db'
 import {
@@ -15,38 +22,30 @@ interface FakeDbCounts {
   owners: number
 }
 
-function makeFakeDb(counts: FakeDbCounts = { site: 0, owners: 0 }): DbClient {
-  const handle = async <Row = Record<string, unknown>>(
-    strings: TemplateStringsArray,
-    ...values: unknown[]
-  ): Promise<DbResult<Row>> => {
-    const sql = strings.reduce<string>((acc, str, i) => (i === 0 ? str : `${acc}$${i}${str}`), '')
-    const normalized = sql.toLowerCase()
-    if (normalized.includes('count(*) as count from site')) {
-      return { rows: [{ count: counts.site } as Row], rowCount: 1 }
-    }
-    if (normalized.includes('from users') && normalized.includes('role_id')) {
-      return { rows: [{ count: counts.owners } as Row], rowCount: 1 }
-    }
-    // Catch-all: unknown queries (e.g. publishRepository.getPublishedPageBySlug) return empty
-    return { rows: [], rowCount: 0 }
-  }
-
-  handle.transaction = async <T>(cb: (tx: DbClient) => Promise<T>): Promise<T> =>
-    cb(handle as unknown as DbClient)
-
-  return handle as DbClient
+async function makeDb(counts: FakeDbCounts = { site: 0, owners: 0 }): Promise<DbClient> {
+  const db = await createPublishingTestDb(counts.site ? makeSite() : null, false)
+  if (counts.owners) await createUser(db, { email: 'router@local.test', displayName: 'Owner', passwordHash: 'unused-test-hash', roleId: 'owner', allowOwnerRole: true })
+  return db
 }
+
+async function publishRoute(db: DbClient, slug: string): Promise<void> {
+  await seedPublishingPage(db, { ...makePage({ root: { moduleId: 'base.body' } }), id: slug, slug })
+  await publishDraftSite(db, null, undefined, { variants: [{ rowId: slug, localeId: 'default' }] })
+  markPublishedArtefactsCurrent(getPublishVersion())
+}
+
+beforeEach(() => resetForTests())
+afterEach(cleanupPublishingTestDbs)
 
 describe('server router', () => {
   it('serves health checks', async () => {
-    const res = await handleServerRequest(new Request('http://localhost/health'), { db: makeFakeDb() })
+    const res = await handleServerRequest(new Request('http://localhost/health'), { db: await makeDb() })
     expect(res.status).toBe(200)
     expect(await res.json()).toMatchObject({ status: 'ok' })
   })
 
   it('routes cms setup status', async () => {
-    const res = await handleServerRequest(new Request('http://localhost/admin/api/cms/setup/status'), { db: makeFakeDb() })
+    const res = await handleServerRequest(new Request('http://localhost/admin/api/cms/setup/status'), { db: await makeDb() })
     expect(res.status).toBe(200)
     expect(await res.json()).toMatchObject({ needsSetup: true })
   })
@@ -54,7 +53,7 @@ describe('server router', () => {
   it('redirects unmatched public routes to /admin on a fresh install', async () => {
     const res = await handleServerRequest(
       new Request('http://localhost/'),
-      { db: makeFakeDb({ site: 0, owners: 0 }) },
+      { db: await makeDb({ site: 0, owners: 0 }) },
     )
     expect(res.status).toBe(302)
     expect(res.headers.get('location')).toBe('/admin')
@@ -63,7 +62,7 @@ describe('server router', () => {
   it('returns 404 for unknown routes once setup is complete', async () => {
     const res = await handleServerRequest(
       new Request('http://localhost/nope'),
-      { db: makeFakeDb({ site: 1, owners: 1 }) },
+      { db: await makeDb({ site: 1, owners: 1 }) },
     )
     expect(res.status).toBe(404)
   })
@@ -71,7 +70,7 @@ describe('server router', () => {
   it('explains where the admin UI lives when /admin is hit on the cms port without a build', async () => {
     const res = await handleServerRequest(
       new Request('http://localhost/admin'),
-      { db: makeFakeDb() },
+      { db: await makeDb() },
     )
     expect(res.status).toBe(404)
     expect(res.headers.get('content-type')).toContain('text/html')
@@ -99,7 +98,9 @@ describe('server router — Layer A disk artefact fast-path', () => {
 
     // DB that tracks snapshot lookups — should never be called for a disk hit
     let snapshotQueried = false
-    const db = makeFakeDb({ site: 1, owners: 1 })
+    const db = await makeDb({ site: 1, owners: 1 })
+    await publishRoute(db, 'about')
+    await getPublishedRouteInventoryForVersion(db, getPublishVersion())
     const originalHandle = db as unknown as (strings: TemplateStringsArray, ...values: unknown[]) => Promise<DbResult>
     const trackingDb = Object.assign(
       async (strings: TemplateStringsArray, ...values: unknown[]): Promise<DbResult> => {
@@ -107,7 +108,7 @@ describe('server router — Layer A disk artefact fast-path', () => {
         if (sql.toLowerCase().includes('site_snapshots')) snapshotQueried = true
         return originalHandle(strings, ...values)
       },
-      { transaction: db.transaction, unsafe: db.unsafe },
+      { transaction: db.transaction, unsafe: db.unsafe, dialect: db.dialect },
     ) as DbClient
 
     const res = await handleServerRequest(
@@ -131,7 +132,7 @@ describe('server router — Layer A disk artefact fast-path', () => {
     // (junk queries instead serve the baked artefact — ISS-032).
     const res = await handleServerRequest(
       new Request('http://localhost/about?loop_x_page=2'),
-      { db: makeFakeDb({ site: 1, owners: 1 }), uploadsDir },
+      { db: await makeDb({ site: 1, owners: 1 }), uploadsDir },
     )
 
     // The DB has no snapshot → resolvePublicRoute returns not-found → 404
@@ -147,7 +148,7 @@ describe('server router — Layer A disk artefact fast-path', () => {
 
     const res = await handleServerRequest(
       new Request('http://localhost/contact'),
-      { db: makeFakeDb({ site: 1, owners: 1 }), uploadsDir },
+      { db: await makeDb({ site: 1, owners: 1 }), uploadsDir },
     )
 
     // No DB snapshot → 404
@@ -178,7 +179,9 @@ describe('server router — HEAD is GET minus the body', () => {
     await writeArtefact(slotDir, '/kontakt', '<html><body>Kontakt</body></html>')
     await swapSlot(uploadsDir, slot)
 
-    const runtime = { db: makeFakeDb({ site: 1, owners: 1 }), uploadsDir }
+    const db = await makeDb({ site: 1, owners: 1 })
+    await publishRoute(db, 'kontakt')
+    const runtime = { db, uploadsDir }
     const get = await handleServerRequest(new Request('http://localhost/kontakt'), runtime)
     const head = await handleServerRequest(
       new Request('http://localhost/kontakt', { method: 'HEAD' }),
@@ -193,7 +196,7 @@ describe('server router — HEAD is GET minus the body', () => {
   it('answers HEAD with the setup redirect on a fresh install, like GET', async () => {
     const res = await handleServerRequest(
       new Request('http://localhost/', { method: 'HEAD' }),
-      { db: makeFakeDb({ site: 0, owners: 0 }) },
+      { db: await makeDb({ site: 0, owners: 0 }) },
     )
 
     expect(res.status).toBe(302)
@@ -203,7 +206,7 @@ describe('server router — HEAD is GET minus the body', () => {
   it('answers HEAD on a JSON API route like GET instead of 405', async () => {
     const res = await handleServerRequest(
       new Request('http://localhost/admin/api/cms/setup/status', { method: 'HEAD' }),
-      { db: makeFakeDb() },
+      { db: await makeDb() },
     )
 
     expect(res.status).toBe(200)
@@ -212,7 +215,7 @@ describe('server router — HEAD is GET minus the body', () => {
   it('still rejects a method that GET-only routes genuinely do not support', async () => {
     const res = await handleServerRequest(
       new Request('http://localhost/admin/api/cms/setup/status', { method: 'DELETE' }),
-      { db: makeFakeDb() },
+      { db: await makeDb() },
     )
 
     expect(res.status).not.toBe(200)

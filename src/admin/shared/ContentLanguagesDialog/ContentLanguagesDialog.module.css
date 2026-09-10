@@ -1,0 +1,10 @@
+.description { font-size: var(--text-s); line-height: 1.5; color: var(--text-muted); }
+.tableWrap { overflow-x: auto; }
+.table { width: 100%; border-collapse: collapse; font-size: var(--text-s); }
+.table th { color: var(--text-muted); font-size: var(--text-xs); font-weight: 500; text-align: left; }
+.table td, .table th { padding: 10px 8px; border-bottom: 1px solid var(--border); }
+.table small, .field small { display: block; color: var(--text-muted); font-size: var(--text-xs); margin-top: 4px; }
+.actions { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
+.details { background: var(--bg-surface-2); border-radius: 16px; padding: 16px; margin-top: 16px; }
+.details h3 { font-size: var(--text-m); margin: 0 0 12px; }
+.field { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 0; font-size: var(--text-s); }

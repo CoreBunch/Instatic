@@ -20,6 +20,7 @@
  * bodies; the runtime's "Try again" UX surfaces network failures.
  */
 
+import { stampFormPageTokens } from '../../forms/formRuntime'
 import type { DbClient } from '../../db/client'
 import { registry } from '@core/module-engine'
 import { loopSourceRegistry } from '@core/loops/registry'
@@ -30,8 +31,11 @@ import {
   type ResolvedLoopRenderData,
 } from '@core/publisher'
 import { jsonResponse } from '../../http'
-import { readLoopProps } from '../../publish/loopPrefetch'
-import { getPublishedLoopIndexForVersion } from '../../publish/publishedSnapshotCache'
+import { publishedDataRowToLoopItem, readLoopProps } from '../../publish/loopPrefetch'
+import { getPublishedRouteInventoryForVersion } from '../../publish/publishedRoutes'
+import { readPublishedRouteContext, findPublishedFragmentTarget } from '../../publish/publishedRouteContext'
+import { publishedLanguageAlternatives, resolvePublishedRoute } from '@core/localization-routing'
+import { buildRouteFrame } from '@core/templates/contextFrames'
 import { getPublishVersion } from '../../publish/publishState'
 import { LOOP_RUNTIME_JS } from '../../publish/loopRuntime'
 
@@ -73,21 +77,21 @@ export async function handleLoopRequest(
   const pageNumberRaw = url.searchParams.get('page') ?? '1'
   const pageNumber = Math.max(1, Number.parseInt(pageNumberRaw, 10) || 1)
 
-  // Find the page that contains this loop via the per-publish-version
-  // loopId → { page, node } index. Every page version in one publish shares
-  // the same site document, so the index covers regular pages and template
-  // pages alike (the runtime's `pagePath` hint is no longer needed) — and the
-  // old per-request full-snapshot parse + all-pages tree walk is gone.
-  const loopIndex = await getPublishedLoopIndexForVersion(ctx.db, getPublishVersion())
-  if (!loopIndex) {
-    return jsonResponse({ error: 'Site not published' }, { status: 404 })
-  }
-  const indexed = loopIndex.loops.get(loopId)
-  if (!indexed) {
-    return jsonResponse({ error: 'Loop not found' }, { status: 404 })
-  }
-  const { page: containingPage, node: loopNode } = indexed
-  const site = loopIndex.site
+  const pagePath = url.searchParams.get('pagePath')
+  if (!pagePath) return jsonResponse({ error: 'Missing page path' }, { status: 400 })
+  let pageUrl: URL
+  try { pageUrl = new URL(pagePath, url.origin) } catch { return jsonResponse({ error: 'Invalid page path' }, { status: 400 }) }
+  if (pageUrl.origin !== url.origin) return jsonResponse({ error: 'Page not found' }, { status: 404 })
+  const inventory = await getPublishedRouteInventoryForVersion(ctx.db, getPublishVersion())
+  const route = resolvePublishedRoute(inventory, pageUrl.pathname)
+  if (!route) return jsonResponse({ error: 'Page not found' }, { status: 404 })
+  const context = await readPublishedRouteContext(ctx.db, route, inventory)
+  if (!context) return jsonResponse({ error: 'Page not found' }, { status: 404 })
+  const target = findPublishedFragmentTarget(context.page, context.snapshot.site, loopId)
+  if (!target || target.node.moduleId !== 'base.loop') return jsonResponse({ error: 'Loop not found' }, { status: 404 })
+  const { page: containingPage, node: loopNode } = target
+  const site = context.snapshot.site
+  const entryStack = context.row ? [publishedDataRowToLoopItem(context.row)] : []
 
   const props = readLoopProps(loopNode)
   if (props.pagination !== 'infinite') {
@@ -135,7 +139,8 @@ export async function handleLoopRequest(
     site,
     registry,
     breakpointId: undefined,
-    templateContext: { entryStack: [] },
+    languageAlternatives: publishedLanguageAlternatives(inventory, route),
+    templateContext: { entryStack, route: buildRouteFrame(pageUrl.toString()) },
     loopData: new Map<string, ResolvedLoopRenderData>([
       [loopId, { items: result.items, totalItems: result.totalItems, pageNumber, hasMore }],
     ]),
@@ -161,10 +166,11 @@ export async function handleLoopRequest(
       // Spread the base templateContext so any page/site/route frames survive —
       // mirrors renderLoop.ts. Today the handler's base context carries no
       // frames, but spreading keeps the two iteration paths symmetric.
-      templateContext: { ...baseConfig.templateContext, entryStack: [item] },
+      templateContext: { ...baseConfig.templateContext, entryStack: [...entryStack, item] },
     }
     html += renderNode(variantId, iterationConfig, acc)
   })
 
+  html = stampFormPageTokens(html, { pageId: route.contentId, localeId: route.localeId, publishedVersionId: route.publishedVersionId, pagePath: route.path })
   return jsonResponse({ html, hasMore, pageNumber })
 }

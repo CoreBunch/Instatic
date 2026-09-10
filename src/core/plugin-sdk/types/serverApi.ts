@@ -5,6 +5,9 @@ import type {
 } from '../storageSchemas'
 import type {
   ContentEntry,
+  ContentLocale,
+  ContentLocaleOptions,
+  ContentSearchOptions,
   ContentListOptions,
   ContentListResult,
   ContentSearchResult,
@@ -146,6 +149,7 @@ export interface ServerPluginApi {
      * Plugins fail closed on either gap.
      */
     content: {
+      locales: { list: () => Promise<ReadonlyArray<ContentLocale>> }
       tables: {
         list: () => Promise<ReadonlyArray<ContentTableSummary>>
         get: (slug: string) => Promise<ContentTableSchema | null>
@@ -153,13 +157,14 @@ export interface ServerPluginApi {
       }
       table: (slug: string) => {
         list: (options?: ContentListOptions) => Promise<ContentListResult>
-        get: (entryId: string) => Promise<ContentEntry | null>
-        getBySlug: (slug: string) => Promise<ContentEntry | null>
+        get: (entryId: string, options?: ContentLocaleOptions) => Promise<ContentEntry | null>
+        getBySlug: (slug: string, options?: ContentLocaleOptions) => Promise<ContentEntry | null>
         create: (input: CreateContentEntryInput) => Promise<ContentEntry>
         update: (entryId: string, patch: UpdateContentEntryInput) => Promise<ContentEntry>
         delete: (entryId: string) => Promise<void>
-        publish: (entryId: string, options?: { scheduledFor?: string }) => Promise<ContentEntry>
-        moveToTable: (entryId: string, targetTableSlug: string) => Promise<ContentEntry>
+        publish: (entryId: string, options?: ContentLocaleOptions & { scheduledFor?: string }) => Promise<ContentEntry>
+        unpublish: (entryId: string, options?: ContentLocaleOptions) => Promise<ContentEntry>
+        moveToTable: (entryId: string, targetTableSlug: string, options?: ContentLocaleOptions) => Promise<ContentEntry>
         createMany: (
           inputs: ReadonlyArray<CreateContentEntryInput>,
         ) => Promise<ReadonlyArray<ContentEntry>>
@@ -168,13 +173,13 @@ export interface ServerPluginApi {
         ) => Promise<ReadonlyArray<ContentEntry>>
         deleteMany: (entryIds: ReadonlyArray<string>) => Promise<{ deleted: number }>
       }
-      tree: (entryId: string, fieldId: string) => {
+      tree: (entryId: string, fieldId: string, options?: ContentLocaleOptions) => {
         read: () => Promise<unknown>
         mutate: (operations: ReadonlyArray<ContentTreeOperation>) => Promise<TreeMutateResult>
         replace: (tree: unknown) => Promise<void>
       }
-      search: (query: string, limit?: number) => Promise<ReadonlyArray<ContentSearchResult>>
-      getPublishedSnapshot: (entryId: string) => Promise<PublishedSnapshot | null>
+      search: (query: string, options?: ContentSearchOptions) => Promise<ReadonlyArray<ContentSearchResult>>
+      getPublishedSnapshot: (entryId: string, options?: ContentLocaleOptions) => Promise<PublishedSnapshot | null>
       republishAll: () => Promise<{ count: number }>
     }
     /**

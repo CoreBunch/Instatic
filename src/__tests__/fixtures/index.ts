@@ -145,6 +145,9 @@ export function makeSite(overrides: Partial<SiteDocument> = {}): SiteDocument {
   return {
     id: overrides.id ?? 'site-1',
     name: overrides.name ?? 'Test SiteDocument',
+    ...(overrides.localeId !== undefined ? { localeId: overrides.localeId } : {}),
+    ...(overrides.locales !== undefined ? { locales: overrides.locales } : {}),
+    ...(overrides.localization !== undefined ? { localization: overrides.localization } : {}),
     pages: overrides.pages ?? [makePage()],
     breakpoints: overrides.breakpoints ?? DEFAULT_BREAKPOINTS,
     settings: overrides.settings ?? structuredClone(DEFAULT_SITE_SETTINGS),

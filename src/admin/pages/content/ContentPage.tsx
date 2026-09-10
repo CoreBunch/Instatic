@@ -1,8 +1,7 @@
+import { ConfirmDeleteProvider } from '@admin/shared/dialogs/ConfirmDeleteDialog'
+import { useContentPanel } from './hooks/useContentPanel'
+import { ContentLanguagesDialog } from '@admin/shared/ContentLanguagesDialog'
 import { Suspense, lazy, useEffect, useId, useRef, useState } from 'react'
-import {
-  readWorkspaceLayout,
-  writeWorkspaceLayout,
-} from '@admin/state/workspaceLayoutStorage'
 import { useAdminUi } from '@admin/state/adminUi'
 import { readTitleCell } from '@core/data/cells'
 import type {
@@ -16,8 +15,7 @@ import { ImagesSolidIcon } from 'pixel-art-icons/icons/images-solid'
 import { TextPlusIcon } from 'pixel-art-icons/icons/text-plus'
 import { BracesIcon } from 'pixel-art-icons/icons/braces'
 import { AdminWorkspaceCanvasLayout } from '@admin/layouts/AdminWorkspaceCanvasLayout'
-import { DataBindingPicker } from '@admin/shared/DataBindingPicker'
-import { bindingToToken } from '@core/templates/tokenInterpolation'
+import { ContentTokenPicker } from './components/ContentTokenPicker/ContentTokenPicker'
 import { MediaExplorerPanel } from '@site/panels/MediaExplorerPanel'
 import type { CanvasNotchAction } from '@site/canvas/CanvasNotch'
 import { ContentDocumentCanvas } from './components/ContentDocumentCanvas/ContentDocumentCanvas'
@@ -25,7 +23,7 @@ import { NewTableDialog } from '@admin/pages/data/components/NewTableDialog/NewT
 import { ContentExplorerPanel } from './components/ContentExplorerPanel/ContentExplorerPanel'
 import { ContentSettingsPanel } from './components/ContentSettingsPanel/ContentSettingsPanel'
 import { MediaViewerWindow } from '@admin/pages/media/components/MediaViewerWindow/MediaViewerWindow'
-import { ContentSidebar, type ContentPanelId } from './components/ContentSidebar/ContentSidebar'
+import { ContentSidebar } from './components/ContentSidebar/ContentSidebar'
 import { ContentToolbar } from './components/ContentToolbar/ContentToolbar'
 import type { TiptapBodyEditorHandle } from './TiptapBodyEditor'
 // Lazy-load the WordPress-style fullscreen media picker. Pulls in the full
@@ -38,13 +36,15 @@ const MediaPickerModal = lazy(() =>
   ),
 )
 import { runEntryOp, type EntryOpDeps, type EntryOpOptions } from './utils/entryOp'
+import { useContentMoveConfirmation } from './hooks/useContentMoveConfirmation'
 import { useContentEntryDraft } from './hooks/useContentEntryDraft'
 import { useContentMediaPicker } from './hooks/useContentMediaPicker'
 import { useContentWorkspace } from './hooks/useContentWorkspace'
-import { publicContentPath } from './utils/contentEntryUtils'
 import { useAuthenticatedAdminUser } from '@admin/sessionContext'
 import { StepUpCancelledMessage, useStepUp } from '@admin/shared/StepUp'
 import { getErrorMessage } from '@core/utils/errorMessage'
+import { Select } from '@ui/components/Select'
+import { pushToast } from '@ui/components/Toast'
 import { ContentAgentMount } from './agent/ContentAgentMount'
 import { useContentToolBridge } from './agent/useContentToolBridge'
 import {
@@ -57,37 +57,19 @@ import {
   canUseAiChat,
 } from '@admin/access'
 
-const CONTENT_PANEL_IDS: ReadonlySet<ContentPanelId> = new Set(['content', 'media', 'agent'])
-
-function readPersistedContentPanel(): ContentPanelId | null {
-  const stored = readWorkspaceLayout('content').activeLeftPanel
-  if (stored === null) return null
-  if (typeof stored === 'string' && CONTENT_PANEL_IDS.has(stored as ContentPanelId)) {
-    return stored as ContentPanelId
-  }
-  return 'content'
+export function ContentPage() {
+  return <ConfirmDeleteProvider><ContentPageBody /></ConfirmDeleteProvider>
 }
 
-export function ContentPage() {
-  // Initial value pulls from the per-workspace stored layout so the rail
-  // remembers the last panel the user had open in the Content workspace.
-  // First-time visitors fall back to the 'content' panel; an explicit `null`
-  // (user closed the rail) is preserved.
-  const [activeContentPanel, setActiveContentPanel] = useState<ContentPanelId | null>(
-    readPersistedContentPanel,
-  )
-  // Persist any rail change so the next visit to /admin/content reopens the
-  // same panel. Effect runs on mount too — that's fine; the value is
-  // identical to what we just read.
-  useEffect(() => {
-    writeWorkspaceLayout('content', { activeLeftPanel: activeContentPanel })
-  }, [activeContentPanel])
+function ContentPageBody() {
+  const [activeContentPanel, setActiveContentPanel] = useContentPanel()
   const [collectionDialogOpen, setCollectionDialogOpen] = useState(false)
   // These are monotonic counters used purely as "do the action now" pings:
   // bumping them re-runs the focus effect inside the canvas / body editor.
   const [focusTitleSignal, setFocusTitleSignal] = useState(0)
   const [focusBodySignal, setFocusBodySignal] = useState(0)
   const [tokenPickerOpen, setTokenPickerOpen] = useState(false)
+  const [languagesOpen, setLanguagesOpen] = useState(false)
   // Canvas display mode: 'write' is the bare editor surface, 'live' is
   // the entry rendered inside its template (real site styles, inline
   // editing). Switching is purely client-side — the body markdown is the
@@ -119,6 +101,7 @@ export function ContentPage() {
     ? null
     : activeContentPanel
   const workspace = useContentWorkspace({ loadAuthors: canReassignAuthor })
+  const confirmContentMove = useContentMoveConfirmation()
   // Collection schema mutations (create/update/delete) are step-up gated on
   // the server — they change the public route surface — so they must run
   // through `runStepUp`, which transparently opens the password re-entry
@@ -148,9 +131,9 @@ export function ContentPage() {
     entries: workspace.entries,
   })
 
-  const publicPath = workspace.selectedCollection && draft.slug
-    ? publicContentPath(workspace.selectedCollection.routeBase, draft.slug)
-    : ''
+  const publicPath = workspace.selectedEntry?.localization?.availability === 'online'
+    && workspace.locales.some((locale) => locale.id === workspace.activeLocaleId && locale.enabled)
+    ? workspace.selectedEntry.publicPath ?? '' : ''
   const canEditSelectedEntry = canEditContentEntry(permissionUser, workspace.selectedEntry)
   const canMoveRows = canMoveDataRow(permissionUser)
   const canMoveSelectedEntry = canEditSelectedEntry && canMoveRows
@@ -192,6 +175,26 @@ export function ContentPage() {
   }
   const SAVE_PHASE = { pending: 'saving', done: 'saved' } as const
 
+  async function openLanguages() {
+    try {
+      if (draft.isDirty) await draft.saveDraft()
+      setLanguagesOpen(true)
+    } catch (err) {
+      console.error('[ContentPage] failed to save before opening translations:', err)
+      pushToast({ kind: 'error', title: 'Could not open translations', body: getErrorMessage(err, 'Could not save current draft') })
+    }
+  }
+
+  async function handleLocaleChange(localeId: string) {
+    try {
+      if (draft.isDirty) await draft.saveDraft()
+      workspace.selectLocale(localeId)
+    } catch (err) {
+      console.error('[ContentPage] failed to switch language:', err)
+      pushToast({ kind: 'error', title: 'Could not switch language', body: getErrorMessage(err, 'Could not save the current draft') })
+    }
+  }
+
   function handleCreateEntry() {
     return withEntryOp(() => workspace.createUntitledEntry(), {
       permitted: canCreateEntries,
@@ -209,13 +212,14 @@ export function ContentPage() {
   }
 
   function handleMoveEntryCollection(tableId: string) {
-    return withEntryOp(() => workspace.moveSelectedEntryToCollection(tableId), {
+    if (workspace.selectedEntry?.tableId === tableId) return Promise.resolve()
+    return confirmContentMove(workspace.selectedEntry, workspace.collections.find((table) => table.id === tableId)?.name ?? 'this collection', () => withEntryOp(() => workspace.moveSelectedEntryToCollection(tableId), {
       permitted: canMoveSelectedEntry,
       permMsg: 'Your role cannot move this entry',
       fallback: 'Could not move entry',
       phase: SAVE_PHASE,
       apply: (entry) => { if (entry) draft.applySelectedEntry(entry) },
-    })
+    }))
   }
 
   function handleUpdateEntryAuthor(authorUserId: string) {
@@ -344,17 +348,16 @@ export function ContentPage() {
 
   function handleMoveEntryToCollection(entry: DataRow, tableId: string) {
     if (entry.tableId === tableId) return Promise.resolve()
-    return withEntryOp(() => workspace.moveEntryToCollection(entry, tableId), {
+    return confirmContentMove(entry, workspace.collections.find((table) => table.id === tableId)?.name ?? 'this collection', () => withEntryOp(() => workspace.moveEntryToCollection(entry, tableId), {
       permitted: canMoveRows && canEditContentEntry(permissionUser, entry),
       permMsg: 'Your role cannot move this entry',
       fallback: 'Could not move entry',
-      rethrow: true,
       apply: (updatedEntry) => {
         if (workspace.selectedEntry?.id === entry.id) {
           draft.applySelectedEntry(updatedEntry)
         }
       },
-    })
+    }))
   }
 
   async function handlePublishEntry(entry: DataRow) {
@@ -456,9 +459,24 @@ export function ContentPage() {
 
   return (
     <>
+      {languagesOpen && workspace.selectedEntry && <ContentLanguagesDialog
+        rowId={workspace.selectedEntry.id} localeId={workspace.selectedEntry.localeId}
+        canPublish={canPublishSelectedEntry} canEdit={canEditSelectedEntry}
+        onClose={() => setLanguagesOpen(false)} onEditLanguage={(id) => void handleLocaleChange(id)}
+        onUpdated={(row) => {
+          if (row.localeId === workspace.activeLocaleId) {
+            workspace.updateSelectedEntry(row)
+            draft.applySelectedEntry(row)
+          }
+        }} />}
       <AdminWorkspaceCanvasLayout
         workspace="content"
         toolbarRightSlot={(
+          <>
+          <Select aria-label="Content language" fieldSize="sm" value={workspace.activeLocaleId ?? ''}
+            disabled={workspace.contentLoading || draft.saveMessage === 'saving' || draft.saveMessage === 'publishing'}
+            options={workspace.locales.map((locale) => ({ value: locale.id, label: `${locale.name}${locale.enabled ? '' : ' · Offline'}` }))}
+            onChange={(event) => void handleLocaleChange(event.target.value)} />
           <ContentToolbar
             contentLoading={workspace.contentLoading}
             saveMessage={draft.saveMessage}
@@ -473,7 +491,9 @@ export function ContentPage() {
               if (workspace.selectedEntry) void handlePublishEntry(workspace.selectedEntry)
             }}
             onSchedule={handleScheduleEntry}
+            onTranslations={() => void openLanguages()}
           />
+          </>
         )}
         contentSidebar={(
           <ContentSidebar
@@ -484,6 +504,7 @@ export function ContentPage() {
             }}
             contentPanel={(
               <ContentExplorerPanel
+                languageOnline={workspace.locales.some((locale) => locale.id === workspace.activeLocaleId && locale.enabled)}
                 loading={workspace.contentLoading}
                 error={workspace.error}
                 collections={workspace.collections}
@@ -637,32 +658,10 @@ export function ContentPage() {
       )}
 
       {tokenPickerOpen && workspace.selectedCollection && (
-        <DataBindingPicker
-          label="Post body"
-          control={{ type: 'text', label: 'Post body' }}
-          insertMode
-          fieldSelectionMode="token"
-          anchorRef={tokenPickerTriggerRef}
-          triggerRef={tokenPickerTriggerRef}
-          scopedTableId={workspace.selectedCollection.id}
-          scopeLabel="Current entry"
-          previewFields={{
-            ...workspace.selectedEntry?.cells,
-            ...draft.customCells,
-            title: draft.title,
-            slug: draft.slug,
-            body: draft.body,
-            featuredMedia: draft.featuredMediaId,
-            seoTitle: draft.seoTitle,
-            seoDescription: draft.seoDescription,
-          }}
-          onClose={() => setTokenPickerOpen(false)}
-          onPick={(binding) => {
-            bodyEditorRef.current?.insertText(
-              bindingToToken(binding.source, binding.field),
-            )
-          }}
-        />
+        <ContentTokenPicker localeId={workspace.activeLocaleId ?? undefined}
+          tableId={workspace.selectedCollection.id} entry={workspace.selectedEntry} draft={draft}
+          triggerRef={tokenPickerTriggerRef} onClose={() => setTokenPickerOpen(false)}
+          onInsert={(text) => bodyEditorRef.current?.insertText(text)} />
       )}
     </>
   )

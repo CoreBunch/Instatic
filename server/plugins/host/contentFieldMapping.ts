@@ -4,14 +4,16 @@ import type { DataField, RepeaterItemField } from '@core/data/schemas'
 import { listDataTables } from '../../repositories/data'
 import type { DbClient } from '../../db/client'
 
-function pluginFieldCommon(field: { id: string; label: string; required?: boolean }): {
+function pluginFieldCommon(field: { id: string; label: string; required?: boolean; localization?: 'shared' | 'localized' }): {
   id: string
   label: string
   required?: boolean
+  localization?: 'shared' | 'localized'
 } {
   return {
     id: field.id,
     label: field.label,
+    ...(field.localization !== undefined ? { localization: field.localization } : {}),
     ...(field.required !== undefined ? { required: field.required } : {}),
   }
 }
@@ -89,6 +91,7 @@ export function pluginContentFieldsToDataFields(
       case 'url':
       case 'email':
       case 'media':
+      case 'parameterValues':
       case 'pageTree':
         out.push({ ...pluginFieldCommon(field), type: field.type })
         break

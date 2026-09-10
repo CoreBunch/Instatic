@@ -9,8 +9,11 @@
  *   • `readPublishedSinceCount` — Pages (Posts uses the histogram instead)
  *   • `coerceCount`             — every reader that calls `count(*)`
  *   • `coerceBytes`             — Media, Storage
- *   • `buildRowPath`            — Publish lineup, Activity
+ *   • `draftContentPath`            — Publish lineup, Activity
  */
+import { buildLocalizedPath, LocalizedRouteError } from '@core/localization-routing'
+import type { DataRow, DataTable } from '@core/data/schemas'
+import type { Locale } from '@core/localization-schema'
 import type { DbClient } from '../../../db/client'
 
 /**
@@ -34,76 +37,48 @@ export function coerceCount(raw: number | string | null | undefined): number {
  */
 export const coerceBytes = coerceCount
 
-/**
- * Group counts of `data_rows.status` for a single table. Returns
- * {draft, published, scheduled, total} so the handler can derive
- * everything from one round-trip per table.
- */
-export async function readStatusCounts(
-  db: DbClient,
-  tableId: string,
-): Promise<{ total: number; published: number; drafts: number; scheduled: number }> {
-  const { rows } = await db<{ status: string; count: number | string }>`
-    select status, count(*) as count
-    from data_rows
-    where table_id = ${tableId}
-      and deleted_at is null
-    group by status
+/** Logical content totals and independent authored language states. A live variant can also be scheduled. */
+export async function readStatusCounts(db: DbClient, tableId: string) {
+  const { rows } = await db<{
+    total: number | string; variants: number | string; published: number | string;
+    drafts: number | string; offline: number | string; scheduled: number | string;
+  }>`
+    select count(distinct r.id) as total, count(l.locale_id) as variants,
+      sum(case when l.availability = 'online' and v.id is not null and sl.enabled = true then 1 else 0 end) as published,
+      sum(case when l.locale_id is not null and l.active_version_id is null then 1 else 0 end) as drafts,
+      sum(case when l.active_version_id is not null and (l.availability = 'offline' or sl.enabled = false) then 1 else 0 end) as offline,
+      sum(case when l.scheduled_publish_at is not null then 1 else 0 end) as scheduled
+    from data_rows r
+    left join data_row_localizations l on l.row_id = r.id
+    left join site_locales sl on sl.id = l.locale_id
+    left join data_row_versions v on v.id = l.active_version_id and v.row_id = r.id and v.locale_id = l.locale_id
+    where r.table_id = ${tableId} and r.deleted_at is null
   `
-  let published = 0
-  let drafts = 0
-  let scheduled = 0
-  for (const r of rows) {
-    const n = coerceCount(r.count)
-    if (r.status === 'published') published += n
-    else if (r.status === 'draft') drafts += n
-    else if (r.status === 'scheduled') scheduled += n
-  }
+  const row = rows[0]
   return {
-    total: published + drafts + scheduled,
-    published,
-    drafts,
-    scheduled,
+    total: coerceCount(row?.total), variants: coerceCount(row?.variants),
+    published: coerceCount(row?.published), drafts: coerceCount(row?.drafts),
+    offline: coerceCount(row?.offline), scheduled: coerceCount(row?.scheduled),
   }
 }
 
-/**
- * Count `data_rows` whose `published_at` lies in the trailing window,
- * for one table. Used by the Pages widget's "+N this week" delta.
- */
-export async function readPublishedSinceCount(
-  db: DbClient,
-  tableId: string,
-  sinceIso: string,
-): Promise<number> {
+/** Every locale release in the trailing window counts once, including later replaced versions. */
+export async function readPublishedSinceCount(db: DbClient, tableId: string, sinceIso: string): Promise<number> {
   const { rows } = await db<{ count: number | string }>`
-    select count(*) as count
-    from data_rows
-    where table_id = ${tableId}
-      and deleted_at is null
-      and status = 'published'
-      and published_at is not null
-      and published_at >= ${sinceIso}
+    select count(*) as count from data_row_versions v
+    join data_rows r on r.id = v.row_id
+    where r.table_id = ${tableId} and r.deleted_at is null and v.published_at >= ${sinceIso}
   `
   return coerceCount(rows[0]?.count)
 }
 
-/**
- * Build the public path for a content row from its table's route_base
- * and the row's slug. Shared by the Publish lineup and Activity widgets
- * so both render the same `/blog/<slug>` style label.
- *
- *   • Falls back to `/${tableId}/<slug>` when route_base is missing
- *     (collection still being set up, or a system table without a
- *     route prefix yet).
- *   • An empty slug renders as the literal `(no slug)` placeholder so
- *     the row stays clickable in the widget instead of dropping a
- *     trailing slash that looks like a broken link.
- */
-export function buildRowPath(routeBase: string | null, tableId: string, slug: string): string {
-  const safeSlug = slug || '(no slug)'
-  const base = routeBase && routeBase.trim().length > 0 ? routeBase : `/${tableId}`
-  const normalizedBase = base.startsWith('/') ? base : `/${base}`
-  const trimmedBase = normalizedBase.endsWith('/') ? normalizedBase.slice(0, -1) : normalizedBase
-  return `${trimmedBase}/${safeSlug}`
+/** Invalid or unfinished draft paths have a title in the dashboard, never a fabricated URL. */
+export function draftContentPath(locale: Locale, row: Pick<DataRow, 'slug'>, table: DataTable, routeBase?: string): string | null {
+  if (!row.slug || (table.kind !== 'page' && table.kind !== 'postType')) return null
+  try {
+    return buildLocalizedPath(locale, row.slug, table.kind === 'page' ? undefined : (routeBase ?? table.routeBase))
+  } catch (error) {
+    if (error instanceof LocalizedRouteError) return null
+    throw error
+  }
 }

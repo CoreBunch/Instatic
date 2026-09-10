@@ -13,8 +13,10 @@
 import type { DbClient } from '../../../db/client'
 import type { DataRow } from '@core/data/schemas'
 import { selectHydratedDataRows, isOwnedByUser, placeholder } from './mapper'
+import { getDefaultLocale, resolveContentLocale } from '../../localization'
 
 interface ListDataRowsVisibility {
+  localeId?: string
   /**
    * When set, only rows whose effective owner is this user id are returned.
    * Ownership: author overrides; when no author is assigned the creator is
@@ -37,6 +39,7 @@ export async function listDataRows(
   visibility: ListDataRowsVisibility = {},
 ): Promise<DataRow[]> {
   const dataRows = await selectHydratedDataRows(db, {
+    localeId: visibility.localeId,
     where: `data_rows.table_id = ${placeholder(db.dialect, 1)} and data_rows.deleted_at is null`,
     params: [tableId],
     tail: 'order by data_rows.updated_at desc, data_rows.created_at desc',
@@ -62,11 +65,16 @@ interface DataRowIdSlug {
 export async function listDataRowIdSlugs(
   db: DbClient,
   tableId: string,
+  localeId?: string,
 ): Promise<DataRowIdSlug[]> {
+  const sourceLocale = await getDefaultLocale(db)
+  const selectedLocale = localeId === undefined ? sourceLocale : await resolveContentLocale(db, localeId)
   const { rows } = await db<DataRowIdSlug>`
-    select id, slug from data_rows
-    where table_id = ${tableId}
-      and deleted_at is null
+    select data_rows.id, coalesce(localized.slug, source.slug, '') as slug from data_rows
+    left join data_row_localizations localized on localized.row_id = data_rows.id and localized.locale_id = ${selectedLocale.id}
+    left join data_row_localizations source on source.row_id = data_rows.id and source.locale_id = ${sourceLocale.id}
+    where data_rows.table_id = ${tableId}
+      and data_rows.deleted_at is null
   `
   return rows
 }
@@ -154,8 +162,10 @@ export async function listChangedDataRowRefsSince(
 export async function getDataRow(
   db: DbClient,
   rowId: string,
+  localeId?: string,
 ): Promise<DataRow | null> {
   const rows = await selectHydratedDataRows(db, {
+    localeId,
     where: `data_rows.id = ${placeholder(db.dialect, 1)} and data_rows.deleted_at is null`,
     params: [rowId],
     tail: 'limit 1',
@@ -172,34 +182,42 @@ export async function getDataRow(
 export async function getDataRowMany(
   db: DbClient,
   rowIds: ReadonlyArray<string>,
+  localeId?: string,
 ): Promise<DataRow[]> {
-  if (rowIds.length === 0) return []
+  if (rowIds.length === 0) {
+    if (localeId !== undefined) await resolveContentLocale(db, localeId)
+    return []
+  }
   const placeholders = rowIds.map((_, i) => placeholder(db.dialect, i + 1)).join(', ')
   return selectHydratedDataRows(db, {
+    localeId,
     where: `data_rows.id in (${placeholders}) and data_rows.deleted_at is null`,
     params: [...rowIds],
   })
 }
 
 /**
- * Read a non-deleted row in a table by its denormalized slug. Plain ANSI
- * SQL — the `data_rows_table_slug_active_idx` index covers this query
- * (the `where slug <> ''` partial guard does not exclude the lookup here
- * because we pass an explicit slug).
+ * Read a non-deleted row by the selected language's draft slug. A missing
+ * variant inherits its source slug through the same join as row projection.
  */
 export async function getDataRowBySlug(
   db: DbClient,
   tableId: string,
   slug: string,
+  localeId?: string,
 ): Promise<DataRow | null> {
+  const sourceLocale = await getDefaultLocale(db)
+  const selectedLocale = localeId === undefined ? sourceLocale : await resolveContentLocale(db, localeId)
   const { rows } = await db<{ id: string }>`
-    select id from data_rows
-    where table_id = ${tableId}
-      and slug = ${slug}
-      and deleted_at is null
+    select data_rows.id from data_rows
+    left join data_row_localizations localized on localized.row_id = data_rows.id and localized.locale_id = ${selectedLocale.id}
+    left join data_row_localizations source on source.row_id = data_rows.id and source.locale_id = ${sourceLocale.id}
+    where data_rows.table_id = ${tableId}
+      and coalesce(localized.slug, source.slug, '') = ${slug}
+      and data_rows.deleted_at is null
     limit 1
   `
-  return rows[0] ? getDataRow(db, rows[0].id) : null
+  return rows[0] ? getDataRow(db, rows[0].id, localeId) : null
 }
 
 /** Count non-deleted rows in a table — one indexed COUNT. */

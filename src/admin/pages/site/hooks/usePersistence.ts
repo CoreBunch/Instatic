@@ -27,6 +27,7 @@ import { useEditorStore } from '@site/store/store'
 import type { SiteDocument } from '@core/page-tree'
 import type { IPersistenceAdapter } from '@core/persistence/types'
 import { cmsAdapter } from '@core/persistence/cms'
+import { listCmsLocales } from '@core/persistence'
 import { SiteValidationError } from '@core/persistence/validate'
 import { getErrorMessage } from '@core/utils/errorMessage'
 import { pushToast } from '@ui/components/Toast'
@@ -37,6 +38,7 @@ import {
   disconnectCollabProvider,
 } from '@site/store/slices/site/collabBinding'
 import {
+  CMS_SITE_RELOAD_EVENT,
   consumePendingCmsSiteReload,
   hasPendingCmsSiteReload,
 } from '@admin/state/adminEvents'
@@ -99,6 +101,24 @@ export function usePersistence(
     adapterRef.current = adapter
   }, [adapter])
 
+  // Language configuration is outside the shared CRDT shell. Refresh it after
+  // Settings changes without replacing current content or its undo history.
+  useEffect(() => {
+    if (!enabled) return undefined
+    let disposed = false
+    const refreshLocales = () => {
+      void listCmsLocales().then((locales) => {
+        if (!disposed) useEditorStore.getState().setSiteLocales(locales)
+      }).catch((error: unknown) => {
+        if (disposed) return
+        console.error('[persistence] Failed to refresh languages:', error)
+        pushToast({ kind: 'error', title: 'Languages could not be refreshed', body: getErrorMessage(error, 'Unknown language error') })
+      })
+    }
+    window.addEventListener(CMS_SITE_RELOAD_EVENT, refreshLocales)
+    return () => { disposed = true; window.removeEventListener(CMS_SITE_RELOAD_EVENT, refreshLocales) }
+  }, [enabled])
+
   // ─── 1. Load site document + connect the collab provider ──────────────────
   useEffect(() => {
     if (!enabled) return undefined
@@ -109,6 +129,11 @@ export function usePersistence(
     async function load(): Promise<void> {
       // Read actions point-in-time — no React subscription needed.
       const { site: existingSite, loadSite, createSite } = useEditorStore.getState()
+      const applyLocaleDeepLink = () => {
+        const localeId = (typeof window === 'undefined' ? null : new URLSearchParams(window.location.search).get('localeId')) ?? existingSite?.localeId
+        const state = useEditorStore.getState()
+        if (localeId && state.site?.locales?.some((locale) => locale.id === localeId)) state.setActiveLocaleId(localeId)
+      }
 
       const pendingCmsSiteReload = hasPendingCmsSiteReload()
       const shouldReloadExistingSite = existingSite
@@ -116,6 +141,7 @@ export function usePersistence(
         : false
 
       if (existingSite && !shouldReloadExistingSite) {
+        applyLocaleDeepLink()
         // In-memory document from an earlier editor mount. The provider
         // connect below re-syncs every doc against the server, so any drift
         // (writes from other admins / plugins while we were away) projects in.
@@ -133,6 +159,7 @@ export function usePersistence(
         if (result) {
           if (pendingCmsSiteReload) consumePendingCmsSiteReload()
           loadSite(result.site)
+          applyLocaleDeepLink()
           applyDefaultBreakpointPreference(result.site.breakpoints)
           setLoadState({ phase: 'ready' })
           return

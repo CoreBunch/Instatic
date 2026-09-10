@@ -1,3 +1,4 @@
+import { useEditorLocale } from '@site/localization'
 /**
  * PropertiesPanel — self-contained inspector for element properties.
  *
@@ -75,6 +76,7 @@ export function PropertiesPanel({ variant = 'floating' }: PropertiesPanelProps) 
   usePropertiesPanelAutoOpen()
 
   const data = usePropertiesPanelData()
+  const { isTranslation } = useEditorLocale()
 
   // ── ClassPicker ref — for the locked-state 'Add class' CTA ────────────────
   const classPickerRef = useRef<ClassPickerHandle>(null)
@@ -127,6 +129,7 @@ export function PropertiesPanel({ variant = 'floating' }: PropertiesPanelProps) 
   // The dispatch lives in `renderModuleTabContent` (own file) to keep this
   // shell flat — see that helper for the per-branch rationale.
   const moduleTabContent: React.ReactNode = renderModuleTabContent({
+    isTranslation,
     selectedNode: data.selectedNode,
     selectedNodeId: data.selectedNodeId,
     definition: data.definition,

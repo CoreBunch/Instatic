@@ -1,3 +1,4 @@
+import { bumpPublishVersion, withPublishLock } from '../../../publish/publishState'
 /**
  * Transactional batch operations for data rows. Each helper wraps the
  * matching single-row mutation in one transaction so a failure aborts the
@@ -11,6 +12,8 @@ import type { DbClient } from '../../../db/client'
 import type { DataRow } from '@core/data/schemas'
 import type { InsertDataRowInput, UpdateDataRowDraftInput } from './mapper'
 import { createDataRow, saveDataRowDraft, softDeleteDataRow } from './mutations'
+import { getDataRowMany } from './read'
+import { deepEqual } from '@core/utils/deepEqual'
 import { notifyRowWrite, serializeCollabAwareWrite } from '../../rowWriteEvents'
 
 /**
@@ -40,7 +43,7 @@ export async function createDataRowMany(
       return rows
     })
     for (const row of created) {
-      notifyRowWrite({ tableId: row.tableId, rowIds: [row.id], kind: 'create' })
+      notifyRowWrite({ tableId: row.tableId, rowIds: [row.id], kind: 'create', localeId: row.localeId, sharedChanged: true })
     }
     return created
   })
@@ -58,6 +61,7 @@ export async function saveDataRowDraftMany(
   pluginActorId: string | null = null,
 ): Promise<DataRow[]> {
   return serializeCollabAwareWrite(async () => {
+    const before = new Map((await getDataRowMany(db, updates.map((update) => update.id))).map((row) => [row.id, row.sharedCells]))
     const updated = await db.transaction(async (tx) => {
       const rows: DataRow[] = []
       for (const { id, input } of updates) {
@@ -74,7 +78,7 @@ export async function saveDataRowDraftMany(
       return rows
     })
     for (const row of updated) {
-      notifyRowWrite({ tableId: row.tableId, rowIds: [row.id], kind: 'update' })
+      notifyRowWrite({ tableId: row.tableId, rowIds: [row.id], kind: 'update', localeId: row.localeId, sharedChanged: !deepEqual(before.get(row.id), row.sharedCells) })
     }
     return updated
   })
@@ -93,7 +97,7 @@ export async function softDeleteDataRowMany(
   rowIds: ReadonlyArray<string>,
   actorUserId: string | null = null,
 ): Promise<{ deleted: number; publishedDeleted: number }> {
-  return serializeCollabAwareWrite(async () => {
+  return serializeCollabAwareWrite(() => withPublishLock(async () => {
     const deletedRows = await db.transaction(async (tx) => {
       const rows: NonNullable<Awaited<ReturnType<typeof softDeleteDataRow>>>[] = []
       for (const id of rowIds) {
@@ -110,9 +114,10 @@ export async function softDeleteDataRowMany(
     for (const row of deletedRows) {
       notifyRowWrite({ tableId: row.tableId, rowIds: [row.id], kind: 'delete' })
     }
+    if (deletedRows.some((row) => row.status === 'published')) bumpPublishVersion()
     return {
       deleted: deletedRows.length,
       publishedDeleted: deletedRows.filter((row) => row.status === 'published').length,
     }
-  })
+  }))
 }

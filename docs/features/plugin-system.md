@@ -745,7 +745,7 @@ await bodyTree.mutate([
 await bodyTree.replace(currentTree)
 
 // Cross-table
-await api.cms.content.search('hello world', 25)
+await api.cms.content.search('hello world', { limit: 25 })
 const snap = await api.cms.content.getPublishedSnapshot(entryId)
 const { count } = await api.cms.content.republishAll()
 ```
@@ -756,7 +756,26 @@ const { count } = await api.cms.content.republishAll()
 
 Tree mutation and replacement payloads are validated against the canonical `@core/page-tree` TypeBox schemas before host dispatch. `insertNode.node` must be a complete `PageNode`, and `replace(tree)` must receive a complete `NodeTree` with a valid `rootNodeId`, matching node-map keys, resolvable child IDs, and no reachable cycles.
 
-The host protocol names the per-table entry calls as `cms.content.entries.list`, `cms.content.entries.get`, `cms.content.entries.getBySlug`, `cms.content.entries.create`, `cms.content.entries.update`, `cms.content.entries.delete`, `cms.content.entries.publish`, `cms.content.entries.moveTable`, `cms.content.entries.createMany`, `cms.content.entries.updateMany`, and `cms.content.entries.deleteMany`. Tree calls dispatch as `cms.content.tree.read`, `cms.content.tree.mutate`, and `cms.content.tree.replace`; `getPublishedSnapshot(...)` dispatches as `cms.content.snapshot`.
+Content reads and writes accept a `localeId`. Omitting it selects the configured primary language. `api.cms.content.locales.list()` returns the configured languages (including disabled languages available for authoring). Entries expose `localeId`, their sparse `localization` draft, and the frozen `publicPath` of their active version. Collection fields expose their resolved `localization: 'shared' | 'localized'` policy.
+
+```ts
+const locales = await api.cms.content.locales.list()
+const german = locales.find((locale) => locale.code === 'de')
+if (german) {
+  const posts = api.cms.content.table('posts')
+  const entry = await posts.get(entryId, { localeId: german.id })
+  await posts.update(entryId, { localeId: german.id, cells: { title: 'Hallo' } })
+  await posts.publish(entryId, { localeId: german.id })
+  await posts.unpublish(entryId, { localeId: german.id })
+  await api.cms.content.tree(pageId, 'body', { localeId: german.id }).read()
+}
+```
+
+Sparse target edits inherit untouched source fields. A missing translation stays offline; a plugin must explicitly publish that variant. `publish` and `unpublish` require the granted `cms.content.publish` permission and the table's `publish` access mode. `delete` removes the logical item in every language. Scheduled publication accepts `{ localeId, scheduledFor }` and freezes both content and design dependencies; later draft changes do not alter the planned release. Tree edits in secondary languages support localized properties and visibility while structural changes remain shared.
+
+`content.entry.created`/`updated` and the `content.entry.cells` filter context carry `localeId`; a global table move or delete uses `localeId: null`. Filters must retain that scope when issuing follow-up writes. Published snapshots resolve only an online variant in the requested enabled language, with its frozen path and cells. Search applies language and table access filters before its limit.
+
+The host protocol names the per-table entry calls as `cms.content.entries.list`, `cms.content.entries.get`, `cms.content.entries.getBySlug`, `cms.content.entries.create`, `cms.content.entries.update`, `cms.content.entries.delete`, `cms.content.entries.publish`, `cms.content.entries.unpublish`, `cms.content.entries.moveTable`, `cms.content.entries.createMany`, `cms.content.entries.updateMany`, and `cms.content.entries.deleteMany`. Tree calls dispatch as `cms.content.tree.read`, `cms.content.tree.mutate`, and `cms.content.tree.replace`; `getPublishedSnapshot(...)` dispatches as `cms.content.snapshot`.
 
 #### Content events
 
