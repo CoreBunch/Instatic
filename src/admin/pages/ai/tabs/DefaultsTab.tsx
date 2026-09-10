@@ -1,5 +1,5 @@
 /** Per-surface model defaults in the shared AI master-detail workspace. */
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useAsyncResource } from '@admin/lib/useAsyncResource'
 import { Button } from '@ui/components/Button'
 import { pushToast } from '@ui/components/Toast'
@@ -59,44 +59,134 @@ export function DefaultsTab({
 }: {
   onNavigateToProviders: () => void
 }) {
-  const { data, loading, error, refresh } = useAsyncResource(
+  const { data, loading, error } = useAsyncResource(
     () => Promise.all([listCredentials(), listDefaults()]).then(([creds, defs]) => ({ creds, defs })),
     [],
     { fallbackError: 'Failed to load defaults.' },
   )
   const credentials: CredentialView[] = data?.creds ?? []
-  const defaults: AiDefaults = data?.defs ?? {}
+  const [defaults, setDefaults] = useState<AiDefaults>({})
+  const [seededDefaults, setSeededDefaults] = useState<AiDefaults | null>(null)
+  if (data && data.defs !== seededDefaults) {
+    setSeededDefaults(data.defs)
+    setDefaults(data.defs)
+  }
   const [selectedScope, setSelectedScope] = useState<ToolScope>('site')
-  const [savingScope, setSavingScope] = useState<ToolScope | null>(null)
-  const [statusByScope, setStatusByScope] = useState<Record<string, string>>({})
+  const [saving, setSaving] = useState(false)
+  const [clearingScope, setClearingScope] = useState<ToolScope | null>(null)
+  const [overrides, setOverrides] = useState<Partial<Record<ToolScope, ModelChoice>>>({})
+  const operationInFlight = useRef(false)
+  const mounted = useRef(true)
 
-  async function handleSave(scope: ToolScope, credentialId: string, modelId: string) {
-    setSavingScope(scope)
-    setStatusByScope((previous) => ({ ...previous, [scope]: '' }))
+  useEffect(() => {
+    mounted.current = true
+    return () => {
+      mounted.current = false
+    }
+  }, [])
+
+  /** Scopes whose override differs from the persisted value. */
+  function getDirtyScopes(): ToolScope[] {
+    return SCOPES.filter((scope) => {
+      const override = overrides[scope]
+      if (!override) return false
+      const current = defaults[scope]
+      return override.credentialId !== current?.credentialId || override.modelId !== current?.modelId
+    })
+  }
+
+  const dirtyScopes = getDirtyScopes()
+  const busy = saving || clearingScope != null
+  const canSave = !busy && dirtyScopes.length > 0
+
+  async function handleSaveAll() {
+    if (operationInFlight.current) return
+    const toSave = getDirtyScopes()
+    if (toSave.length === 0) return
+    const submitted = toSave.map((scope) => ({ scope, choice: overrides[scope]! }))
+    operationInFlight.current = true
+    setSaving(true)
     try {
-      await setDefault(scope, { credentialId, modelId })
-      setStatusByScope((previous) => ({ ...previous, [scope]: 'Saved' }))
-      refresh()
-    } catch (err) {
-      pushToast({
-        kind: 'error',
-        title: `Could not save ${SCOPE_META[scope].label} default`,
-        body: getErrorMessage(err, 'Unknown AI default error'),
+      const results = await Promise.allSettled(
+        submitted.map(({ scope, choice }) => {
+          return setDefault(scope, { credentialId: choice.credentialId, modelId: choice.modelId })
+        }),
+      )
+      if (!mounted.current) return
+
+      const succeeded: Array<{ scope: ToolScope; choice: ModelChoice }> = []
+      const failed: Array<{ scope: ToolScope; error: unknown }> = []
+      results.forEach((result, index) => {
+        const entry = submitted[index]!
+        if (result.status === 'fulfilled') {
+          succeeded.push(entry)
+        } else {
+          failed.push({ scope: entry.scope, error: result.reason })
+        }
       })
+
+      setDefaults((previous) => {
+        const next = { ...previous }
+        for (const { scope, choice } of succeeded) next[scope] = choice
+        return next
+      })
+      setOverrides((previous) => {
+        const next = { ...previous }
+        for (const { scope, choice } of succeeded) {
+          const latest = next[scope]
+          if (latest?.credentialId === choice.credentialId && latest.modelId === choice.modelId) {
+            delete next[scope]
+          }
+        }
+        return next
+      })
+
+      if (failed.length === 0) {
+        pushToast({ kind: 'success', title: 'Defaults saved' })
+      } else if (succeeded.length === 0) {
+        const label = toSave.length === 1
+          ? SCOPE_META[toSave[0]!].label
+          : `${toSave.length} defaults`
+        pushToast({
+          kind: 'error',
+          title: `Could not save ${label}`,
+          body: getErrorMessage(failed[0]!.error, 'Unknown AI default error'),
+        })
+      } else {
+        const failedLabels = failed.map((f) => SCOPE_META[f.scope].label).join(', ')
+        pushToast({
+          kind: 'error',
+          title: 'Some defaults could not be saved',
+          body: `Failed: ${failedLabels}. ${getErrorMessage(failed[0]!.error, 'Unknown AI default error')}`,
+        })
+      }
     } finally {
-      setSavingScope(null)
+      operationInFlight.current = false
+      if (mounted.current) setSaving(false)
     }
   }
 
   async function handleClear(scope: ToolScope): Promise<boolean> {
-    setSavingScope(scope)
-    setStatusByScope((previous) => ({ ...previous, [scope]: '' }))
+    if (operationInFlight.current) return false
+    operationInFlight.current = true
+    setClearingScope(scope)
     try {
       await clearDefault(scope)
-      setStatusByScope((previous) => ({ ...previous, [scope]: 'Cleared' }))
-      refresh()
+      if (!mounted.current) return false
+      setDefaults((previous) => {
+        const next = { ...previous }
+        delete next[scope]
+        return next
+      })
+      setOverrides((prev) => {
+        const next = { ...prev }
+        delete next[scope]
+        return next
+      })
+      pushToast({ kind: 'success', title: `${SCOPE_META[scope].label} default cleared` })
       return true
     } catch (err) {
+      if (!mounted.current) return false
       pushToast({
         kind: 'error',
         title: `Could not clear ${SCOPE_META[scope].label} default`,
@@ -104,8 +194,13 @@ export function DefaultsTab({
       })
       return false
     } finally {
-      setSavingScope(null)
+      operationInFlight.current = false
+      if (mounted.current) setClearingScope(null)
     }
+  }
+
+  function handleOverrideChange(scope: ToolScope, choice: ModelChoice) {
+    setOverrides((prev) => ({ ...prev, [scope]: choice }))
   }
 
   return (
@@ -121,6 +216,9 @@ export function DefaultsTab({
               const meta = SCOPE_META[scope]
               const Icon = meta.icon
               const active = selectedScope === scope
+              const hasPending = overrides[scope] != null
+                && (overrides[scope]!.credentialId !== defaults[scope]?.credentialId
+                  || overrides[scope]!.modelId !== defaults[scope]?.modelId)
               return (
                 <Button
                   key={scope}
@@ -138,7 +236,10 @@ export function DefaultsTab({
                     <Icon size={16} />
                   </span>
                   <span className={styles.settingsListIdentity}>
-                    <span className={styles.settingsListLabel}>{meta.label}</span>
+                    <span className={styles.settingsListLabel}>
+                      {meta.label}
+                      {hasPending && <span className={styles.pendingDot} aria-label="unsaved changes" />}
+                    </span>
                     <span className={styles.settingsListMeta}>
                       {defaults[scope]?.modelId ?? 'Not configured'}
                     </span>
@@ -158,14 +259,17 @@ export function DefaultsTab({
           <p role="alert" className={styles.errorAlert}>{error}</p>
         ) : (
           <ScopeDetail
-            key={selectedScope}
             scope={selectedScope}
             credentials={credentials}
             current={defaults[selectedScope]}
-            busy={savingScope === selectedScope}
-            status={statusByScope[selectedScope]}
+            override={overrides[selectedScope] ?? null}
+            onOverrideChange={(choice) => handleOverrideChange(selectedScope, choice)}
+            busy={busy}
+            saving={saving}
+            canSave={canSave}
+            dirtyCount={dirtyScopes.length}
             onNavigateToProviders={onNavigateToProviders}
-            onSave={(credentialId, modelId) => handleSave(selectedScope, credentialId, modelId)}
+            onSave={handleSaveAll}
             onClear={() => handleClear(selectedScope)}
           />
         )}
@@ -178,8 +282,12 @@ function ScopeDetail({
   scope,
   credentials,
   current,
+  override,
+  onOverrideChange,
   busy,
-  status,
+  saving,
+  canSave,
+  dirtyCount,
   onNavigateToProviders,
   onSave,
   onClear,
@@ -187,13 +295,16 @@ function ScopeDetail({
   scope: ToolScope
   credentials: CredentialView[]
   current: { credentialId: string; modelId: string } | undefined
+  override: ModelChoice | null
+  onOverrideChange: (choice: ModelChoice) => void
   busy: boolean
-  status: string | undefined
+  saving: boolean
+  canSave: boolean
+  dirtyCount: number
   onNavigateToProviders: () => void
-  onSave: (credentialId: string, modelId: string) => Promise<void>
+  onSave: () => Promise<void>
   onClear: () => Promise<boolean>
 }) {
-  const [override, setOverride] = useState<ModelChoice | null>(null)
   const meta = SCOPE_META[scope]
   const Icon = meta.icon
   const savedCredential = current
@@ -205,9 +316,6 @@ function ScopeDetail({
       ? { credentialId: current.credentialId, modelId: current.modelId }
       : null)
   const stale = Boolean(current?.credentialId) && !savedResolves
-  const dirty = override != null
-    && (override.credentialId !== current?.credentialId || override.modelId !== current?.modelId)
-  const canSave = !busy && value != null && dirty
   const canClear = !busy && current != null
 
   return (
@@ -252,8 +360,9 @@ function ScopeDetail({
                   placeholder="Choose credential and model"
                   credentials={credentials}
                   credentialsLoaded
+                  disabled={busy}
                   value={value}
-                  onChange={setOverride}
+                  onChange={onOverrideChange}
                 />
                 {savedCredential && current && (
                   <span className={styles.defaultCurrentChoice}>
@@ -276,11 +385,7 @@ function ScopeDetail({
                   variant="ghost"
                   size="sm"
                   disabled={!canClear}
-                  onClick={() => {
-                    void onClear().then((cleared) => {
-                      if (cleared) setOverride(null)
-                    })
-                  }}
+                  onClick={() => { void onClear() }}
                 >
                   <CloseIcon size={12} aria-hidden="true" />
                   <span>Clear</span>
@@ -291,12 +396,11 @@ function ScopeDetail({
                 variant="primary"
                 size="sm"
                 disabled={!canSave}
-                onClick={() => value && void onSave(value.credentialId, value.modelId)}
+                onClick={() => { void onSave() }}
               >
                 <SaveSolidIcon size={13} aria-hidden="true" />
-                <span>Save default</span>
+                <span>{saving ? 'Saving…' : dirtyCount > 1 ? `Save ${dirtyCount} defaults` : 'Save default'}</span>
               </Button>
-              {status && <span role="status" className={styles.defaultSaveStatus}>{status}</span>}
             </div>
           </>
         )}
