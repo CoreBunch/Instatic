@@ -135,6 +135,25 @@ describe('AI credential handler', () => {
     expect(warnings.join('\n')).toContain('auto-default skipped')
   })
 
+  it('requires a MiniMax base URL credential to include an API key', async () => {
+    const cookie = await harness.setupOwner()
+    const res = await harness.ai('/admin/api/ai/credentials', {
+      method: 'POST',
+      cookie,
+      json: {
+        providerId: 'minimax',
+        authMode: 'baseUrl',
+        displayLabel: 'MiniMax',
+        baseUrl: 'https://api.minimax.io/v1',
+      },
+    })
+
+    expect(res.status).toBe(400)
+    expect(await readJson<{ error: string }>(res)).toEqual({
+      error: 'MiniMax requires a base URL and API key.',
+    })
+  })
+
   it('redacts API keys from auto-default model lookup warnings', async () => {
     const cookie = await harness.setupOwner()
     const apiKey = 'sk-proj-redaction-test'

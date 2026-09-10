@@ -4,6 +4,7 @@ import { useAsyncResource } from '@admin/lib/useAsyncResource'
 import { Button } from '@ui/components/Button'
 import { Dialog } from '@ui/components/Dialog'
 import { Input } from '@ui/components/Input'
+import { Select } from '@ui/components/Select'
 import { pushToast } from '@ui/components/Toast'
 import { ArrowRightIcon } from 'pixel-art-icons/icons/arrow-right'
 import { CheckIcon } from 'pixel-art-icons/icons/check'
@@ -38,6 +39,7 @@ type Selection =
 const API_KEY_PLACEHOLDER: Partial<Record<ProviderId, string>> = {
   anthropic: 'sk-ant-...',
   openai: 'sk-...',
+  minimax: 'sk-...',
   openrouter: 'sk-or-...',
   'openai-compatible': 'sk-... (optional)',
 }
@@ -495,7 +497,7 @@ function ProviderSetupPanel({
             <p>Instatic validates and encrypts the credential before storing it.</p>
           </div>
         </div>
-        <AddCredentialForm provider={provider} onCreated={onCreated} />
+        <AddCredentialForm key={provider.id} provider={provider} onCreated={onCreated} />
       </section>
 
     </article>
@@ -515,8 +517,9 @@ function AddCredentialForm({
   const baseUrlInputId = useId()
   const [displayLabel, setDisplayLabel] = useState('')
   const [apiKey, setApiKey] = useState('')
-  const [baseUrl, setBaseUrl] = useState('')
+  const [baseUrl, setBaseUrl] = useState(provider.baseUrlOptions?.[0]?.value ?? '')
   const [busy, setBusy] = useState(false)
+  const apiKeyRequired = provider.authMode === 'apiKey' || provider.requiresApiKey === true
   const baseUrlPlaceholder = provider.id === 'ollama'
     ? 'http://localhost:11434'
     : 'https://api.example.com/v1'
@@ -573,14 +576,24 @@ function AddCredentialForm({
         <div className={styles.providerSetupField}>
           <label htmlFor={baseUrlInputId}>Base URL</label>
           <div>
-            <Input
-              id={baseUrlInputId}
-              value={baseUrl}
-              onChange={(event) => setBaseUrl(event.currentTarget.value)}
-              placeholder={baseUrlPlaceholder}
-              required
-            />
-            <p>The root URL of the compatible API.</p>
+            {provider.baseUrlOptions ? (
+              <Select
+                id={baseUrlInputId}
+                value={baseUrl}
+                onChange={(event) => setBaseUrl(event.currentTarget.value)}
+                options={provider.baseUrlOptions.map((option) => ({ ...option }))}
+                required
+              />
+            ) : (
+              <Input
+                id={baseUrlInputId}
+                value={baseUrl}
+                onChange={(event) => setBaseUrl(event.currentTarget.value)}
+                placeholder={baseUrlPlaceholder}
+                required
+              />
+            )}
+            <p>{provider.baseUrlOptions ? 'Select the regional API and wire protocol.' : 'The root URL of the compatible API.'}</p>
           </div>
         </div>
       )}
@@ -590,7 +603,7 @@ function AddCredentialForm({
           {provider.authMode === 'apiKey'
             ? 'API key'
             : provider.id === 'ollama' ? 'Bearer token' : 'API key'}
-          {provider.authMode === 'baseUrl' && <span>Optional</span>}
+          {provider.authMode === 'baseUrl' && !apiKeyRequired && <span>Optional</span>}
         </label>
         <div>
           <Input
@@ -604,9 +617,9 @@ function AddCredentialForm({
             data-lpignore="true"
             data-bwignore="true"
             data-form-type="other"
-            required={provider.authMode === 'apiKey'}
+            required={apiKeyRequired}
           />
-          <p>{provider.authMode === 'apiKey' ? 'Stored encrypted and never displayed again.' : 'Leave blank when the endpoint does not require authentication.'}</p>
+          <p>{apiKeyRequired ? 'Stored encrypted and never displayed again.' : 'Leave blank when the endpoint does not require authentication.'}</p>
         </div>
       </div>
 

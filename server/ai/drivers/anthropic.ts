@@ -216,10 +216,54 @@ export interface AnthropicMessage {
 // Adapter
 // ---------------------------------------------------------------------------
 
-const anthropicAdapter: ProviderAdapter<AnthropicMessage> = {
+export function makeAnthropicMessagesAdapter(opts: {
+  label: string
+  endpoint: string
+  buildHeaders: (req: AiStreamRequest) => Record<string, string>
+}): ProviderAdapter<AnthropicMessage> {
+  const { label, endpoint, buildHeaders } = opts
+  return {
+    label,
+    endpoint,
+
+    buildHeaders,
+
+    mapHistory(req) {
+      return mapHistory(req.messages)
+    },
+
+    buildRequestBody(messages, req) {
+      const body: Record<string, unknown> = {
+        model: req.modelId,
+        max_tokens: MAX_OUTPUT_TOKENS,
+        system: buildSystemBlocks(req.systemPrompt),
+        messages,
+        stream: true,
+      }
+      if (req.tools.length > 0) {
+        body.tools = req.tools.map((t) => ({
+          name: t.name,
+          description: t.description,
+          // The TypeBox schema IS JSON Schema — pass it straight through.
+          input_schema: t.inputSchema,
+        }))
+      }
+      return body
+    },
+
+    buildToolResultMessage(results) {
+      return buildToolResultMessage(results)
+    },
+
+    createTurnTranslator() {
+      return new AnthropicTurnTranslator(label)
+    },
+  }
+}
+
+const anthropicAdapter = makeAnthropicMessagesAdapter({
   label: 'Anthropic',
   endpoint: ANTHROPIC_ENDPOINT,
-
   buildHeaders(req) {
     return {
       'x-api-key': req.credentials.apiKey!,
@@ -227,38 +271,7 @@ const anthropicAdapter: ProviderAdapter<AnthropicMessage> = {
       'content-type': 'application/json',
     }
   },
-
-  mapHistory(req) {
-    return mapHistory(req.messages)
-  },
-
-  buildRequestBody(messages, req) {
-    const body: Record<string, unknown> = {
-      model: req.modelId,
-      max_tokens: MAX_OUTPUT_TOKENS,
-      system: buildSystemBlocks(req.systemPrompt),
-      messages,
-      stream: true,
-    }
-    if (req.tools.length > 0) {
-      body.tools = req.tools.map((t) => ({
-        name: t.name,
-        description: t.description,
-        // The TypeBox schema IS JSON Schema — pass it straight through.
-        input_schema: t.inputSchema,
-      }))
-    }
-    return body
-  },
-
-  buildToolResultMessage(results) {
-    return buildToolResultMessage(results)
-  },
-
-  createTurnTranslator() {
-    return new AnthropicTurnTranslator()
-  },
-}
+})
 
 // ---------------------------------------------------------------------------
 // System prompt → system blocks
@@ -476,6 +489,12 @@ interface MutableUsage {
 }
 
 export class AnthropicTurnTranslator implements TurnTranslator<AnthropicMessage> {
+  private readonly label: string
+
+  constructor(label = 'Anthropic') {
+    this.label = label
+  }
+
   // Block order as it streams, so the assistant turn rebuilds text/tool_use
   // blocks in the sequence the model emitted them.
   private readonly order: number[] = []
@@ -557,8 +576,8 @@ export class AnthropicTurnTranslator implements TurnTranslator<AnthropicMessage>
         return [{
           type: 'error',
           message: detail
-            ? `Anthropic error: ${detail}`
-            : 'Anthropic stream failed. Check your credentials in /admin/ai/providers.',
+            ? `${this.label} error: ${detail}`
+            : `${this.label} stream failed. Check your credentials in /admin/ai/providers.`,
         }]
       }
 

@@ -25,6 +25,7 @@ import {
 } from './toolLoop'
 import type { SseFrame } from './sse'
 import { parseToolArguments } from './toolArgs'
+import type { AiStreamRequest } from '../types'
 import { nanoid } from 'nanoid'
 
 // ---------------------------------------------------------------------------
@@ -329,8 +330,9 @@ export function makeChatCompletionsAdapter(opts: {
   baseUrl: string
   apiKey: string | null
   label: string
+  requestBodyExtras?: (req: AiStreamRequest) => Record<string, unknown>
 }): ProviderAdapter<ChatTurn> {
-  const { baseUrl, apiKey, label } = opts
+  const { baseUrl, apiKey, label, requestBodyExtras } = opts
   return {
     label,
     endpoint: `${normalizeOpenAiBaseUrl(baseUrl)}/v1/chat/completions`,
@@ -355,6 +357,8 @@ export function makeChatCompletionsAdapter(opts: {
           function: { name: t.name, description: t.description, parameters: t.inputSchema },
         }))
       }
+      const extra = requestBodyExtras?.(req)
+      if (extra) Object.assign(body, extra)
       return body
     },
     buildToolResultMessage(results: TurnToolResult[]): ChatTurn {
