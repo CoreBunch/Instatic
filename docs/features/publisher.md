@@ -52,6 +52,7 @@ server/publish/
 ├── publicRenderer.ts               — renderPublishedSnapshot, renderPublishedDataRowTemplate
 ├── publishedHtmlPipeline.ts        — post-process (sanitize + plugin filters + injections)
 ├── siteCssBundle.ts                — server-side hashing + file emission
+├── siteCssServer.ts                — serves `/_instatic/css/*` (disk-first, memoised DB-rebuild fallback)
 ├── frontendInjections.ts           — splice plugin <script>/<link>/<meta> into HTML
 ├── mediaPresentation.ts            — media URL materialization for originals + responsive variants
 ├── renderTreeWalk.ts               — walkRenderTree: visits every node that contributes to a rendered page (page nodes + VC definition trees, cycle-guarded); single source of truth for loop-prefetch and media-prefetch
@@ -313,10 +314,11 @@ statement right after the slot swap — so a baked `<instatic-hole data-instatic
 always matches what the hole endpoint expects (a mismatch would make the
 endpoint refuse to hydrate).
 
-The exclusive namespaces `/_instatic/css/*` (`serveSiteCss`) and `/_instatic/assets/*`
-(`tryServeRuntimeAsset`) are served **disk-first**, falling back to a rebuild
-(`serveSiteCss`) or the DB (`published_runtime_assets`) only for preview or a
-publish whose disk write failed. Unknown paths under either prefix 404 rather
+The exclusive namespaces `/_instatic/css/*` (`siteCssServer.ts`) and
+`/_instatic/assets/*` (`tryServeRuntimeAsset`) are served **disk-first**,
+falling back to a rebuild (`serveSiteCss`) or the DB
+(`published_runtime_assets`) only for preview or a publish whose disk write
+failed. Unknown paths under either prefix 404 rather
 than falling through.
 
 ---
@@ -389,6 +391,7 @@ Because `serializeCsp` sorts, the same plugins + adapters always emit a **byte-i
 | `server/publish/publicRenderer.ts`              | `renderPublishedSnapshot`, `renderPublishedDataRowTemplate` — thin wrappers (resolve + compose the template chain, seed the context) over one shared `renderMergedTemplate` (CSS bundle + loop/media prefetch + `publishPage` + publish-version stamping). The entry path also passes the row's `readEntrySeoOverride(...)` through as `documentMeta`. |
 | `server/publish/publishedHtmlPipeline.ts`       | Post-process: DOMPurify the final HTML, run plugin `publish.html` filter, splice in declarative tags from plugin manifests, inject runtime assets. Runs at publish time only — never per-request. |
 | `server/publish/siteCssBundle.ts`               | Hash the four CSS strings, write `uploads/css/...` files. The framework bundle's module-CSS half comes from the shared walk in `siteModuleAssets.ts`. |
+| `server/publish/siteCssServer.ts`               | `serveSiteCss` — answers `/_instatic/css/<bundle>-<hash>.css` disk-first, with a `(bundle, hash)`-memoised rebuild from the published snapshot as the preview fallback. |
 | `server/publish/siteModuleAssets.ts`            | `collectSiteModuleAssets` — the one full-site render walk whose accumulators feed BOTH the framework CSS bundle (`cssMap`) and the published module-JS map (`jsMap`). |
 | `server/publish/moduleJsBundle.ts`              | Module-JS channel: `buildSiteModuleJsMap` (fresh), `buildPublishedSiteModuleJsMap` (memoised per publishVersion + site, invalidated by `bumpPublishVersion()`), and `injectModuleScripts` (per-page `<script defer>` tags + CSP `script-src 'self'` relaxation). |
 | `server/publish/republish.ts`                   | Bulk re-publish on settings change (touches every page).            |

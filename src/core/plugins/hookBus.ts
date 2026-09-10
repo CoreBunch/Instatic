@@ -204,6 +204,16 @@ class HookBus {
     return (this.filters.get(name)?.length ?? 0) > 0
   }
 
+  /**
+   * Plugin ids with a handler on a filter pipeline, in registration order.
+   * `applyFilter` chains handlers opaquely, so a host that has to report a
+   * bad contribution (e.g. two plugins claiming the same root file path)
+   * uses this to name the candidates in the log line.
+   */
+  pluginsFor(name: string): string[] {
+    return (this.filters.get(name) ?? []).map((entry) => entry.pluginId)
+  }
+
   // Test-only introspection
   __debug__(): { events: string[]; filters: string[] } {
     return {

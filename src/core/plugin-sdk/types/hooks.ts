@@ -2,6 +2,8 @@
 // CMS server-side hook event surface
 // ---------------------------------------------------------------------------
 
+import type { RobotsDocument, SiteRootFiles } from '../siteRootSchemas'
+
 /**
  * Actor that originated a content mutation. Carried on every
  * `content.entry.*` event so listeners can filter their own writes
@@ -59,6 +61,44 @@ export interface CmsServerFilters {
    * entry id (or `'new'` for create), and the actor.
    */
   'content.entry.cells': Record<string, unknown>
+  /**
+   * The host-managed `/robots.txt` document, run through every registered
+   * handler on each request for that path. The host owns the serialization,
+   * so a handler contributes directives — most often a `Sitemap:` URL —
+   * rather than text:
+   *
+   * ```ts
+   * api.cms.hooks.filter('site.robots', (doc) => {
+   *   doc.sitemaps.push('https://example.com/sitemap.xml')
+   *   return doc
+   * })
+   * ```
+   *
+   * The host seeds the chain with its default `User-agent: *` / `Allow: /`
+   * group, then validates every list entry: a group is accepted or dropped
+   * as a unit (`RobotsGroupSchema`), sitemap URLs one by one, and the
+   * sitemap list is de-duplicated. When the filtered document has no valid
+   * group left the host default one is re-inserted.
+   */
+  'site.robots': RobotsDocument
+  /**
+   * Root-level text files plugins claim, run through every registered
+   * handler on each request for a `/<name>.txt` path. Covers standards
+   * that authorize by file location — the IndexNow key file being the
+   * motivating case:
+   *
+   * ```ts
+   * api.cms.hooks.filter('site.rootFiles', (doc) => {
+   *   doc.files.push({ path: `/${key}.txt`, content: key })
+   *   return doc
+   * })
+   * ```
+   *
+   * Claims are validated against `SiteRootFileSchema`; `/robots.txt` is
+   * reserved for the host, and a path claimed more than once is refused
+   * rather than resolved to an arbitrary winner.
+   */
+  'site.rootFiles': SiteRootFiles
   // Plugin-defined filters fall through.
   [key: string]: unknown
 }

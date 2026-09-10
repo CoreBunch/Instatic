@@ -39,6 +39,7 @@ A plugin is a zip package containing a `plugin.json` manifest and one or more bu
 | Route request/response I/O     | `server/plugins/host/routeIo.ts`          |
 | Media extension handlers       | `server/plugins/host/handlers/media.ts`, `src/core/plugins/mediaStorageRegistry.ts`, `src/core/plugins/mediaVariantDelegateRegistry.ts` |
 | Published-page asset injection | `server/publish/frontendInjections.ts`    |
+| Site-root text files (`/robots.txt`, `/<name>.txt`) | `server/siteRoot.ts`, `src/core/plugin-sdk/siteRootSchemas.ts` |
 | Dashboard widget registry      | `src/core/dashboard/registry.ts`          |
 | Plugin asset path containment      | `server/util/pathWithin.ts`            |
 | Plugin lifecycle (boot, install, activate, uninstall) | `server/plugins/runtime.ts`, `package.ts` |
@@ -543,11 +544,40 @@ const name = await api.cms.hooks.emit('sync.done', { /* … */ })
 // name === 'plugin.<your-plugin-id>.sync.done'
 ```
 
-**Host-emitted events** (the reserved core list, `CORE_HOOK_EVENTS` in `src/core/plugins/hookBus.ts`): `publish.before`, `publish.after`, `content.entry.created`, `content.entry.updated`, `content.entry.deleted`, `settings.changed`. **Filters**: `publish.html`, `publish.headers`, `content.entry.cells`.
+**Host-emitted events** (the reserved core list, `CORE_HOOK_EVENTS` in `src/core/plugins/hookBus.ts`): `publish.before`, `publish.after`, `content.entry.created`, `content.entry.updated`, `content.entry.deleted`, `settings.changed`. **Filters**: `publish.html`, `publish.headers`, `content.entry.cells`, `site.robots`, `site.rootFiles`.
 
 Every filter handler returns the same runtime value type it received. `src/core/plugins/hookBus.ts` checks each result before passing it to the next handler; a mismatched result keeps the previous value and logs the offending plugin ID. For example, `publish.html` returns a string and `content.entry.cells` returns an object, never `null`.
 
 **Plugin emits are namespaced.** The host rewrites every `emit('<name>', …)` to `plugin.<your-plugin-id>.<name>` (a name already in your own namespace passes through unchanged), so event provenance is unforgeable — a plugin cannot fire `content.entry.created` or any other core event at other listeners, and emitting a name in *another* plugin's namespace (`plugin.<other-id>.*`) is rejected with an error. `emit` resolves to the canonical namespaced name. Cross-plugin eventing still works: subscribing is unrestricted, so a plugin listens to another plugin's events by their full namespaced name, e.g. `api.cms.hooks.on('plugin.acme.analytics.page-view', …)`.
+
+### Site-root text files — requires `cms.hooks`
+
+Two SEO standards authorize by file *location*, and a plugin's routes mount under `/admin/api/cms/plugins/<id>/runtime/*`: the sitemaps.org protocol scopes a sitemap to its own directory and below, and indexnow.org scopes a key file the same way. Both surfaces below close that gap with hook-bus filters — no new permission, because `publish.html` already lets a `cms.hooks` plugin rewrite every published page.
+
+`/robots.txt` is **host-managed**. The host serves it whether or not a plugin contributes, seeding the chain with `User-agent: *` / `Allow: /` — the same instruction to a crawler that its previous 404 carried (RFC 9309 §2.3.1.3). Plugins contribute *directives*, not text, and the host renders the document:
+
+```js
+api.cms.hooks.filter('site.robots', (doc) => {
+  doc.sitemaps.push('https://example.com/sitemap.xml')
+  doc.groups.push({ userAgent: 'BadBot', allow: [], disallow: ['/'] })
+  return doc
+})
+```
+
+Handlers chain in registration order. Every list entry is validated against `src/core/plugin-sdk/siteRootSchemas.ts` — a group is accepted or dropped as a unit, sitemap URLs one by one — so a value carrying whitespace, a `#`, or a CR/LF can never forge an extra directive line. Sitemap URLs are de-duplicated; when the filtered document has no valid group left, the host default one is re-inserted.
+
+`site.rootFiles` claims one root `.txt` path per file — the IndexNow key case:
+
+```js
+api.cms.hooks.filter('site.rootFiles', (doc) => {
+  doc.files.push({ path: `/${key}.txt`, content: key })
+  return doc
+})
+```
+
+Claimable paths are an allowlist: one root segment, `.txt`, starting with an alphanumeric (`/a1b2c3.txt`). Nested paths, dot segments, percent escapes, and any other extension are rejected, and `/robots.txt` is reserved for the host. Bodies are capped at 4 KiB and may not carry C0 control characters other than tab and newline. **A path claimed by two plugins is served by neither** — resolving it to one winner would silently authorize the wrong submitter — and the refusal is logged with the candidate plugin ids. Both responses go out as `text/plain` with `nosniff`, `default-src 'none'`, and `no-store`.
+
+Both handlers sit directly before `tryServePublicRoute` in the dispatcher, so every host-owned namespace still wins. They cannot shadow content either: `pageSlugError` rejects any page slug containing `.` and a data-row route needs at least `/<table>/<slug>`, so no published URL is ever a root `.txt` path. Neither response is baked into the published slot — both depend on which plugins are active right now, not on the published snapshot.
 
 ### Loop sources — requires `loops.register`
 
