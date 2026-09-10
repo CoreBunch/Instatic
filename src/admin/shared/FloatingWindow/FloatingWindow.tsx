@@ -1,9 +1,13 @@
-import { useImperativeHandle, type CSSProperties, type ReactNode, type Ref } from 'react'
+import { useImperativeHandle, useState, type CSSProperties, type ReactNode, type Ref } from 'react'
 import { createPortal } from 'react-dom'
 import { PanelHeader } from '@admin/shared/PanelHeader'
+import { Button } from '@ui/components/Button'
+import { MinusIcon } from 'pixel-art-icons/icons/minus'
+import { PlusIcon } from 'pixel-art-icons/icons/plus'
 import type { FloatingPanelId, PanelPosition } from '@admin/state/workspaceLayoutStorage'
 import { cn } from '@ui/cn'
 import { useDraggablePanel } from './useDraggablePanel'
+import { useTopmostEscape } from './useTopmostEscape'
 import styles from './FloatingWindow.module.css'
 
 interface FloatingWindowProps {
@@ -19,6 +23,18 @@ interface FloatingWindowProps {
   bodyClassName?: string
   ariaLabel?: string
   testId?: string
+  /**
+   * Offer a collapse control beside Close, leaving only the title bar.
+   *
+   * For windows that stay useful while the user works around them — an upload
+   * in flight, a bulk edit mid-review — where the choice is otherwise between
+   * losing the panel and letting it cover the grid.
+   *
+   * Collapsed state is per-session and stays where the window sits: the
+   * position is the user's own, so folding to a corner would discard it, and
+   * expanding would then have nowhere honest to return to.
+   */
+  minimizable?: boolean
   onClose(): void
   children?: ReactNode
   ref?: Ref<HTMLDivElement>
@@ -42,6 +58,7 @@ export function FloatingWindow({
   bodyClassName,
   ariaLabel,
   testId,
+  minimizable = false,
   onClose,
   children,
   ref: forwardedRef,
@@ -52,12 +69,16 @@ export function FloatingWindow({
   )
   useImperativeHandle(forwardedRef, () => panelRef.current as HTMLDivElement)
 
+  const [minimized, setMinimized] = useState(false)
+
+  useTopmostEscape(open, panelRef, onClose)
+
   if (!open) return null
 
   const style = {
     '--floating-window-w': cssLength(width),
-    '--floating-window-h': cssLength(height),
-    '--floating-window-max-h': cssLength(maxHeight),
+    '--floating-window-h': minimized ? 'auto' : cssLength(height),
+    '--floating-window-max-h': minimized ? 'none' : cssLength(maxHeight),
     ...panelPositionStyle,
   } as CSSProperties
 
@@ -78,9 +99,23 @@ export function FloatingWindow({
         onClose={onClose}
         dragHandleProps={headerDragProps}
       >
-        {headerActions}
+        {minimized ? null : headerActions}
+        {minimizable && (
+          <Button
+            variant="ghost"
+            size="xs"
+            iconOnly
+            tooltip={minimized ? 'Expand' : 'Minimize'}
+            aria-label={minimized ? `Expand ${title}` : `Minimize ${title}`}
+            aria-expanded={!minimized}
+            data-testid={`panel-minimize-${panelId}`}
+            onClick={() => setMinimized((value) => !value)}
+          >
+            {minimized ? <PlusIcon size={13} /> : <MinusIcon size={13} />}
+          </Button>
+        )}
       </PanelHeader>
-      <div className={cn(styles.body, bodyClassName)}>{children}</div>
+      {!minimized && <div className={cn(styles.body, bodyClassName)}>{children}</div>}
     </aside>,
     document.body,
   )

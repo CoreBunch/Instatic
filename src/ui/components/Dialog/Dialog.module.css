@@ -83,6 +83,15 @@
 .body {
     padding: var(--space-2xl);
     overflow-y: auto;
+    /* The shell never set a size, and nothing above it does either — no rule
+       in globals.css sets `font-size` at all — so body copy fell through to
+       the browser's 16px default while the rest of the admin runs at 12-14px.
+       Every existing caller worked around it by sizing its own children;
+       a bare <p> in a dialog rendered noticeably larger than the panel
+       behind it. */
+    font-size: var(--text-m);
+    line-height: 1.5;
+    color: var(--text-muted);
 }
 
 .footer {

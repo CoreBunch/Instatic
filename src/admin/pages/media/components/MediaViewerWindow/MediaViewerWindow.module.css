@@ -20,6 +20,15 @@
     overflow: hidden;
 }
 
+/* Collapsed: shrink to the header. The height above is a fixed length, so
+   hiding the body alone left the window at full size with an empty pane
+   under the title bar. `height: auto` sizes it to the header that remains,
+   while `top` above keeps clamping against the FULL height — which is what
+   stops a window collapsed near the bottom edge from jumping. */
+.window[data-minimized="true"] {
+    height: auto;
+}
+
 .body {
     flex: 1 1 auto;
     display: grid;
