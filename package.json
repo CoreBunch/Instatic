@@ -24,6 +24,7 @@
     "dev:vite": "bun run scripts/vite.ts",
     "e2e:dev": "bun run scripts/e2e-dev.ts",
     "db:drop": "bun run scripts/db-drop.ts",
+    "security:rotate-mcp": "bun run scripts/rotate-mcp-token.ts",
     "start": "bun run scripts/start.ts",
     "docker:up": "docker compose -f compose.prod.yml -f compose.build.yml up --build",
     "release:bundle": "bun run scripts/build-release-bundle.ts",
