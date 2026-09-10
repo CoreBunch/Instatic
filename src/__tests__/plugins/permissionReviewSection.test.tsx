@@ -3,12 +3,16 @@
  *
  * The critical safety invariant is: when a plugin upgrade requests new
  * permissions, the UI must surface them prominently so the site owner
- * can spot a permission expansion before clicking "Update".
+ * can spot a permission expansion before clicking "Update". The same
+ * invariant covers the manifest's `contentAccess[]` allowlist — a new
+ * table, or a new mode on an already-approved table, must show as new.
  */
 import { afterEach, describe, expect, it } from 'bun:test'
 import { cleanup, render, screen } from '@testing-library/react'
 import {
+  OWN_CREATED_CONTENT_TABLE,
   PermissionReviewSection,
+  computeContentAccessDiff,
   computePermissionDiff,
 } from '@plugins/components/PermissionReviewSection'
 import type { PluginManifest, PluginPermission } from '@core/plugin-sdk'
@@ -66,6 +70,71 @@ describe('computePermissionDiff', () => {
       ['cms.routes', 'cms.storage'],
     )
     expect(rows.every((r) => r.status === 'existing')).toBe(true)
+  })
+})
+
+describe('computeContentAccessDiff', () => {
+  it('marks every entry new on a fresh install and sorts modes canonically', () => {
+    const rows = computeContentAccessDiff(
+      [{ table: 'posts', modes: ['write', 'read'] }],
+      undefined,
+      false,
+    )
+    expect(rows).toEqual([
+      { table: 'posts', modes: ['read', 'write'], addedModes: [], status: 'new' },
+    ])
+  })
+
+  it('diffs new, existing, and dropped tables on upgrade, new first', () => {
+    const rows = computeContentAccessDiff(
+      [
+        { table: 'pages', modes: ['read'] },
+        { table: 'reviews', modes: ['read', 'write'] },
+      ],
+      [
+        { table: 'pages', modes: ['read'] },
+        { table: 'posts', modes: ['read'] },
+      ],
+      true,
+    )
+    expect(rows.map((r) => [r.table, r.status])).toEqual([
+      ['reviews', 'new'],
+      ['pages', 'existing'],
+      ['posts', 'dropped'],
+    ])
+  })
+
+  it('promotes an already-approved table to new when the update adds modes', () => {
+    const rows = computeContentAccessDiff(
+      [{ table: 'posts', modes: ['read', 'write'] }],
+      [{ table: 'posts', modes: ['read'] }],
+      true,
+    )
+    expect(rows).toEqual([
+      { table: 'posts', modes: ['read', 'write'], addedModes: ['write'], status: 'new' },
+    ])
+  })
+
+  it('keeps a table with reduced modes as existing, showing the requested modes', () => {
+    const rows = computeContentAccessDiff(
+      [{ table: 'posts', modes: ['read'] }],
+      [{ table: 'posts', modes: ['read', 'write'] }],
+      true,
+    )
+    expect(rows).toEqual([
+      { table: 'posts', modes: ['read'], addedModes: [], status: 'existing' },
+    ])
+  })
+
+  it('renders dropped rows with the previously-declared modes', () => {
+    const rows = computeContentAccessDiff(
+      [],
+      [{ table: 'posts', modes: ['delete', 'read'] }],
+      true,
+    )
+    expect(rows).toEqual([
+      { table: 'posts', modes: ['read', 'delete'], addedModes: [], status: 'dropped' },
+    ])
   })
 })
 
@@ -267,5 +336,127 @@ describe('PermissionReviewSection — upgrade with new permissions', () => {
     const droppedRow = container.querySelector('[data-status="dropped"]')
     expect(droppedRow).not.toBeNull()
     expect(droppedRow?.getAttribute('data-permission')).toBe('cms.storage')
+  })
+})
+
+describe('PermissionReviewSection — content tables', () => {
+  it('lists each contentAccess entry with its modes on a fresh install', () => {
+    render(
+      <PermissionReviewSection
+        pending={{
+          manifest: {
+            ...baseManifest,
+            permissions: [
+              'cms.content.read',
+              'cms.content.write',
+            ] satisfies PluginPermission[],
+            contentAccess: [
+              { table: 'posts', modes: ['read', 'write'] },
+              { table: 'pages', modes: ['read'] },
+            ],
+          },
+        }}
+        uploading={false}
+        onCancel={() => {}}
+        onConfirm={() => {}}
+      />,
+    )
+    const section = screen.getByTestId('permission-review-content-tables')
+    expect(section.textContent).toContain('Content tables')
+    const rows = Array.from(
+      section.querySelectorAll<HTMLElement>('[data-content-table]'),
+    )
+    expect(rows.map((row) => row.dataset.contentTable)).toEqual(['pages', 'posts'])
+    expect(rows[1].textContent).toContain('posts')
+    expect(rows[1].textContent).toContain('Read, write')
+    // Fresh install shows no diff badges.
+    expect(screen.queryByText('Already approved')).toBeNull()
+  })
+
+  it('omits the section when the manifest declares no contentAccess', () => {
+    render(
+      <PermissionReviewSection
+        pending={{
+          manifest: { ...baseManifest, permissions: ['cms.routes'] },
+        }}
+        uploading={false}
+        onCancel={() => {}}
+        onConfirm={() => {}}
+      />,
+    )
+    expect(screen.queryByTestId('permission-review-content-tables')).toBeNull()
+  })
+
+  it('renders the @own-created marker human-readably', () => {
+    render(
+      <PermissionReviewSection
+        pending={{
+          manifest: {
+            ...baseManifest,
+            permissions: [
+              'cms.content.read',
+              'cms.content.write',
+            ] satisfies PluginPermission[],
+            contentAccess: [
+              { table: OWN_CREATED_CONTENT_TABLE, modes: ['read', 'write'] },
+            ],
+          },
+        }}
+        uploading={false}
+        onCancel={() => {}}
+        onConfirm={() => {}}
+      />,
+    )
+    const section = screen.getByTestId('permission-review-content-tables')
+    expect(section.textContent).toContain('Tables this plugin creates')
+    expect(section.textContent).not.toContain(OWN_CREATED_CONTENT_TABLE)
+  })
+
+  it('badges new tables, added modes, and dropped tables on upgrade', () => {
+    render(
+      <PermissionReviewSection
+        pending={{
+          manifest: {
+            ...baseManifest,
+            permissions: [
+              'cms.content.read',
+              'cms.content.write',
+            ] satisfies PluginPermission[],
+            contentAccess: [
+              // `write` is newly requested on the already-approved table.
+              { table: 'posts', modes: ['read', 'write'] },
+              // Brand-new table.
+              { table: 'reviews', modes: ['read'] },
+            ],
+          },
+          upgradeFromVersion: '1.0.0',
+          previouslyGrantedPermissions: [
+            'cms.content.read',
+            'cms.content.write',
+          ] satisfies PluginPermission[],
+          previousContentAccess: [
+            { table: 'posts', modes: ['read'] },
+            { table: 'legacy', modes: ['read'] },
+          ],
+        }}
+        uploading={false}
+        onCancel={() => {}}
+        onConfirm={() => {}}
+      />,
+    )
+    const section = screen.getByTestId('permission-review-content-tables')
+    const rows = Array.from(
+      section.querySelectorAll<HTMLElement>('[data-content-table]'),
+    )
+    expect(rows.map((row) => [row.dataset.contentTable, row.dataset.status])).toEqual([
+      ['posts', 'new'],
+      ['reviews', 'new'],
+      ['legacy', 'dropped'],
+    ])
+    // The already-approved table that gained a mode calls the mode out.
+    expect(rows[0].textContent).toContain('newly requested: write')
+    // The dropped table shows its previously-declared modes, struck through.
+    expect(rows[2].textContent).toContain('No longer requested')
+    expect(rows[2].textContent).toContain('Read')
   })
 })

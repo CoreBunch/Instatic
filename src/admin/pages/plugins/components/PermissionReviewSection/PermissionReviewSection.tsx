@@ -20,18 +20,28 @@
  * banner ("No new permissions in this update") so the user can confirm
  * with confidence.
  *
- * Also displays `networkAllowedHosts` from the manifest in its own section.
- * Permissions describe broad CMS capabilities ("inject scripts"); the
- * host list describes the concrete remote origins those scripts will talk
- * to (e.g. `threejs.org`, `*.cdn.example.com`). Both dimensions are
- * security-relevant: a plugin with `frontend.assets` plus an unexpected
- * allowlist entry can exfiltrate visitor data to that host. Showing both
- * before activation is the only way the operator can make an informed
- * decision.
+ * Also displays the manifest's two allowlists, each in its own section:
+ *
+ *   • `networkAllowedHosts` — the concrete remote origins the plugin's
+ *     code will talk to (e.g. `threejs.org`, `*.cdn.example.com`).
+ *   • `contentAccess` — the CMS tables whose entries the plugin can touch,
+ *     with per-table modes. The `@own-created` marker renders as the
+ *     human-readable "Tables this plugin creates".
+ *
+ * Permissions describe broad CMS capabilities ("inject scripts", "write
+ * content"); the allowlists describe the concrete origins and tables those
+ * capabilities apply to. All three dimensions are security-relevant: a
+ * plugin with `frontend.assets` plus an unexpected host entry can
+ * exfiltrate visitor data, and an upgrade adding `write` mode on an
+ * already-approved table is a silent privilege expansion. Each section
+ * diffs new/existing/dropped rows on upgrade so nothing slips in
+ * unreviewed.
  */
 import { Button } from '@ui/components/Button'
 import {
   permissionDescription,
+  type ContentAccessEntry,
+  type ContentAccessMode,
   type PluginManifest,
   type PluginPermission,
 } from '@core/plugin-sdk'
@@ -41,6 +51,10 @@ import {
   type PermissionDiffRow,
   type PermissionDiffStatus,
 } from './computePermissionDiff'
+import {
+  computeContentAccessDiff,
+  isOwnCreatedContentTable,
+} from './computeContentAccessDiff'
 import styles from './PermissionReviewSection.module.css'
 
 interface PermissionReviewPending {
@@ -54,6 +68,12 @@ interface PermissionReviewPending {
    * exactly the kind of supply-chain attack the consent screen should catch.
    */
   previousNetworkAllowedHosts?: string[]
+  /**
+   * The previously-installed manifest's `contentAccess` allowlist (when this
+   * is an upgrade). Used to flag tables — and modes on already-approved
+   * tables — that the upgrade adds, the same way hosts are diffed above.
+   */
+  previousContentAccess?: ContentAccessEntry[]
 }
 
 type HostDiffStatus = 'new' | 'existing' | 'dropped'
@@ -105,6 +125,12 @@ function statusBadgeLabel(status: PermissionDiffStatus): string {
   return 'No longer requested'
 }
 
+/** "read, write" → "Read, write" — modes stay lowercase manifest literals. */
+function formatContentAccessModes(modes: readonly ContentAccessMode[]): string {
+  const joined = modes.join(', ')
+  return joined.charAt(0).toUpperCase() + joined.slice(1)
+}
+
 export function PermissionReviewSection({
   pending,
   uploading,
@@ -133,6 +159,17 @@ export function PermissionReviewSection({
   const runsUnsandboxedCode = pending.manifest.permissions.includes('editor.code')
   const hasAppPages = pending.manifest.adminPages.some((page) => page.content.kind === 'app')
   const hasEditorEntrypoint = Boolean(pending.manifest.entrypoints?.editor)
+
+  const contentAccessRows = computeContentAccessDiff(
+    pending.manifest.contentAccess ?? [],
+    pending.previousContentAccess,
+    isUpgrade,
+  )
+  const hostRows = diffNetworkAllowedHosts(
+    pending.manifest.networkAllowedHosts ?? [],
+    pending.previousNetworkAllowedHosts,
+    isUpgrade,
+  )
 
   return (
     <section
@@ -220,47 +257,83 @@ export function PermissionReviewSection({
         </ul>
       )}
 
-      {(() => {
-        const hostRows = diffNetworkAllowedHosts(
-          pending.manifest.networkAllowedHosts ?? [],
-          pending.previousNetworkAllowedHosts,
-          isUpgrade,
-        )
-        if (hostRows.length === 0) return null
-        return (
-          <div
-            className={styles.networkSection}
-            data-testid="permission-review-network-hosts"
-          >
-            <div className={styles.networkHeader}>
-              <strong>External hosts</strong>
-              <span className={styles.description}>
-                The plugin will connect to these hosts from the server and
-                from published pages. Hosts not listed here are blocked.
-              </span>
-            </div>
-            <ul className={styles.list}>
-              {hostRows.map((row) => (
-                <li
-                  key={`${row.host}:${row.status}`}
-                  className={styles.row}
-                  data-status={row.status}
-                  data-network-host={row.host}
-                >
-                  <div className={styles.label}>
-                    <code>{row.host}</code>
-                    {isUpgrade && (
-                      <span className={`${styles.badge} ${statusBadgeClass(row.status)}`}>
-                        {statusBadgeLabel(row.status)}
-                      </span>
-                    )}
-                  </div>
-                </li>
-              ))}
-            </ul>
+      {contentAccessRows.length > 0 && (
+        <div
+          className={styles.allowlistSection}
+          data-testid="permission-review-content-tables"
+        >
+          <div className={styles.allowlistHeader}>
+            <strong>Content tables</strong>
+            <span className={styles.description}>
+              The plugin's access to CMS content is limited to these tables
+              and modes. Tables not listed here are blocked.
+            </span>
           </div>
-        )
-      })()}
+          <ul className={styles.list}>
+            {contentAccessRows.map((row) => (
+              <li
+                key={`${row.table}:${row.status}`}
+                className={styles.row}
+                data-status={row.status}
+                data-content-table={row.table}
+              >
+                <div className={styles.label}>
+                  {isOwnCreatedContentTable(row.table) ? (
+                    <strong>Tables this plugin creates</strong>
+                  ) : (
+                    <code>{row.table}</code>
+                  )}
+                  {isUpgrade && (
+                    <span className={`${styles.badge} ${statusBadgeClass(row.status)}`}>
+                      {statusBadgeLabel(row.status)}
+                    </span>
+                  )}
+                </div>
+                <span className={styles.description}>
+                  {formatContentAccessModes(row.modes)}
+                  {isUpgrade && row.addedModes.length > 0 && (
+                    <> — newly requested: {row.addedModes.join(', ')}</>
+                  )}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {hostRows.length > 0 && (
+        <div
+          className={styles.allowlistSection}
+          data-testid="permission-review-network-hosts"
+        >
+          <div className={styles.allowlistHeader}>
+            <strong>External hosts</strong>
+            <span className={styles.description}>
+              The plugin will connect to these hosts from the server and
+              from published pages. Hosts not listed here are blocked.
+            </span>
+          </div>
+          <ul className={styles.list}>
+            {hostRows.map((row) => (
+              <li
+                key={`${row.host}:${row.status}`}
+                className={styles.row}
+                data-status={row.status}
+                data-network-host={row.host}
+              >
+                <div className={styles.label}>
+                  <code>{row.host}</code>
+                  {isUpgrade && (
+                    <span className={`${styles.badge} ${statusBadgeClass(row.status)}`}>
+                      {statusBadgeLabel(row.status)}
+                    </span>
+                  )}
+                </div>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       <div className={styles.actions}>
         <Button

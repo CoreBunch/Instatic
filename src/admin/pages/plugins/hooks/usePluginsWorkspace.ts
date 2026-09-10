@@ -18,6 +18,7 @@ import {
 } from '@core/plugins/manifest'
 import type {
   CmsPluginsPayload,
+  ContentAccessEntry,
   InstalledPlugin,
   PluginManifest,
   PluginPermission,
@@ -61,6 +62,13 @@ interface PendingInstall {
    * value so an upgrade adding new external hosts shows them as "New".
    */
   previousNetworkAllowedHosts?: string[]
+  /**
+   * `contentAccess` from the manifest of the existing install (when this is
+   * an upgrade). The dialog diffs it against the new manifest's value so an
+   * upgrade adding tables — or new modes on already-approved tables — shows
+   * them as "New".
+   */
+  previousContentAccess?: ContentAccessEntry[]
 }
 
 /**
@@ -312,6 +320,7 @@ export function usePluginsWorkspace(): PluginsWorkspaceVM {
         ? existing.grantedPermissions
         : undefined
       const previousNetworkAllowedHosts = existing?.manifest.networkAllowedHosts
+      const previousContentAccess = existing?.manifest.contentAccess
 
       // EVERY install and upgrade goes through the review dialog — including
       // a zero-permission declarative plugin, which renders "No permissions
@@ -325,6 +334,7 @@ export function usePluginsWorkspace(): PluginsWorkspaceVM {
         ...(previousNetworkAllowedHosts !== undefined
           ? { previousNetworkAllowedHosts }
           : {}),
+        ...(previousContentAccess !== undefined ? { previousContentAccess } : {}),
       })
     } catch (err) {
       setError(getErrorMessage(err, 'Could not install plugin'))
