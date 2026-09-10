@@ -27,6 +27,7 @@
 import { useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { Button } from '@ui/components/Button'
+import { Dialog } from '@ui/components/Dialog'
 import { Input, Textarea } from '@ui/components/Input'
 import { canDeleteMedia, canReplaceMedia, canWriteMedia } from '@admin/access'
 import { useCurrentAdminUser } from '@admin/sessionContext'
@@ -101,6 +102,7 @@ function ViewerForAsset({ editor, onClose }: ViewerForAssetProps) {
   const currentUser = useCurrentAdminUser()
   const { asset } = editor
   const [replaceOpen, setReplaceOpen] = useState(false)
+  const [purgeConfirmOpen, setPurgeConfirmOpen] = useState(false)
   const bucket = bucketForMime(asset.mimeType)
   const canWrite = canWriteMedia(currentUser)
   const canReplace = canReplaceMedia(currentUser)
@@ -328,7 +330,7 @@ function ViewerForAsset({ editor, onClose }: ViewerForAssetProps) {
                   <Button
                     variant="destructive"
                     size="sm"
-                    onClick={() => void editor.purgeAsset(asset.id)}
+                    onClick={() => setPurgeConfirmOpen(true)}
                   >
                     <TrashSolidIcon size={13} />
                     <span>Delete permanently</span>
@@ -348,6 +350,40 @@ function ViewerForAsset({ editor, onClose }: ViewerForAssetProps) {
           onReplace={(file) => editor.replaceAssetFile(asset.id, file)}
         />
       )}
+
+      {/* Local dialog rather than the shared `useConfirmDelete`: that hook
+          falls back to running `commit()` immediately when no provider is
+          mounted, and this window is also rendered from the dashboard widget,
+          which has none. A confirmation that silently disappears on one
+          surface is worse than none, because it reads as covered. */}
+      <Dialog
+        open={purgeConfirmOpen}
+        onClose={() => setPurgeConfirmOpen(false)}
+        tone="danger"
+        eyebrow="Cannot be undone"
+        title={`Delete "${asset.filename}" permanently?`}
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setPurgeConfirmOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={() => {
+                setPurgeConfirmOpen(false)
+                void editor.purgeAsset(asset.id)
+              }}
+            >
+              Delete permanently
+            </Button>
+          </>
+        }
+      >
+        <p>
+          This removes the file and every generated size from disk. Any page
+          still referencing it will render a broken image.
+        </p>
+      </Dialog>
     </aside>,
     document.body,
   )
