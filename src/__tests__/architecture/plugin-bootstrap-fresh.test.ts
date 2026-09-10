@@ -30,7 +30,8 @@ describe('generated plugin bootstrap artifacts', () => {
     for (const { outFile, content } of built) {
       const path = join(GENERATED_DIR, outFile)
       expect(existsSync(path), `missing generated/${outFile}`).toBe(true)
-      const current = readFileSync(path, 'utf8')
+      // Tolerate CRLF working-tree line endings on Windows checkouts.
+      const current = readFileSync(path, 'utf8').replace(/\r\n/g, '\n')
       expect(
         current === content,
         `generated/${outFile} is stale — run \`bun run bootstrap:sync\``,
