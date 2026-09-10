@@ -241,7 +241,10 @@ export async function handleImportRoute(
           })
           tablesAffected++
         } else if (!SYSTEM_TABLE_IDS.has(table.id)) {
-          // Custom table — insert with original id
+          // Custom table — insert with original id. `createdByPluginId` is
+          // access-control state (the `@own-created` contentAccess marker
+          // resolves against it), so a restore keeps plugin-created tables
+          // owned by their plugin.
           await createDataTable(tx, {
             id: table.id,
             name: table.name,
@@ -252,6 +255,7 @@ export async function handleImportRoute(
             pluralLabel: table.pluralLabel,
             primaryFieldId: table.primaryFieldId,
             fields: table.fields,
+            createdByPluginId: table.createdByPluginId ?? null,
           })
           tablesAffected++
         }
@@ -320,6 +324,7 @@ export async function handleImportRoute(
           pluralLabel: table.pluralLabel,
           primaryFieldId: table.primaryFieldId,
           fields: table.fields,
+          createdByPluginId: table.createdByPluginId ?? null,
         })
         if (inserted) tablesAffected++
       }
@@ -372,6 +377,7 @@ export async function handleImportRoute(
           pluralLabel: table.pluralLabel,
           primaryFieldId: table.primaryFieldId,
           fields: table.fields,
+          createdByPluginId: table.createdByPluginId ?? null,
         })
         if (!inserted) {
           await updateDataTable(tx, table.id, {

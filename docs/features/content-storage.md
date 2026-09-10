@@ -36,6 +36,7 @@ The schema for a collection. One row per collection.
 | `primary_field_id`| text      | Field id used as the row's display name in grids / pickers      |
 | `fields_json`     | jsonb     | `DataField[]` — the schema                                       |
 | `system`          | boolean   | `true` for seeded tables (`posts`, `pages`, `components`, `layouts`) |
+| `created_by_plugin_id` | text | Plugin that created the table via `cms.content.tables.create`; null for user/import-created tables. The plugin host's `@own-created` contentAccess marker resolves against it. |
 | `created_*`, `updated_*` | -  | Standard audit fields                                            |
 
 ### `data_rows`

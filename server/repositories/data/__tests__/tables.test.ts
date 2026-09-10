@@ -6,6 +6,7 @@ import type { DbClient } from '../../../db/client'
 import {
   createDataTable,
   getDataTable,
+  getDataTableBySlug,
   insertDataTableIfAbsent,
   listDataTables,
   updateDataTable,
@@ -140,5 +141,50 @@ describe('data_tables.route_base persistence', () => {
 
     expect(inserted).toBe(true)
     expect((await getDataTable(db, 'imported-custody-stages'))?.routeBase).toBe('')
+  })
+})
+
+describe('data_tables.created_by_plugin_id column', () => {
+  let db: DbClient
+
+  beforeEach(async () => {
+    db = await freshDb()
+  })
+
+  it('defaults to null for user-created tables (and the seeded system tables)', async () => {
+    const table = await createDataTable(db, {
+      name: 'Products',
+      slug: 'products',
+      kind: 'data',
+      singularLabel: 'Product',
+      pluralLabel: 'Products',
+    })
+    expect(table.createdByPluginId).toBeNull()
+
+    for (const id of ['pages', 'posts', 'components', 'layouts']) {
+      const system = await getDataTable(db, id)
+      expect(system?.createdByPluginId).toBeNull()
+    }
+  })
+
+  it('persists the creating plugin id and surfaces it on every read path', async () => {
+    const created = await createDataTable(db, {
+      name: 'Imported Products',
+      slug: 'imported-products',
+      kind: 'data',
+      singularLabel: 'Imported product',
+      pluralLabel: 'Imported products',
+      createdByPluginId: 'acme.importer',
+    })
+    expect(created.createdByPluginId).toBe('acme.importer')
+
+    const byId = await getDataTable(db, created.id)
+    expect(byId?.createdByPluginId).toBe('acme.importer')
+
+    const bySlug = await getDataTableBySlug(db, 'imported-products')
+    expect(bySlug?.createdByPluginId).toBe('acme.importer')
+
+    const listed = await listDataTables(db)
+    expect(listed.find((t) => t.slug === 'imported-products')?.createdByPluginId).toBe('acme.importer')
   })
 })
