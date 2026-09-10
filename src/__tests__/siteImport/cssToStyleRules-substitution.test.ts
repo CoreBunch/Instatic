@@ -28,7 +28,10 @@ describe('cssToStyleRules — substitution declarations survive verbatim', () =>
     const { rules, warnings } = cssToStyleRules(`
       .inner-page-wrap section { padding: 70px max(24px, calc((100% - 1120px)/2)); }
       .wrapper { width: min(100% - 48px, 1160px); }
-      @media (max-width: 620px) { .inner-page-wrap section { padding: 54px 20px; } }
+      @media (max-width: 620px) {
+        .inner-page-wrap section { padding: 54px 20px; }
+        .wrapper { width: min(100% - 28px, 1220px); }
+      }
     `)
     const section = rules.find((rule) => rule.selector === '.inner-page-wrap section')!
     expect(section.styles.padding).toBe('70px max(24px, calc((100% - 1120px)/2))')
@@ -36,6 +39,10 @@ describe('cssToStyleRules — substitution declarations survive verbatim', () =>
       .toBe('min(100% - 48px, 1160px)')
     expect(Object.values(section.contextStyles ?? {})[0]).toMatchObject({
       paddingTop: '54px', paddingRight: '20px', paddingBottom: '54px', paddingLeft: '20px',
+    })
+    const wrapper = rules.find((rule) => rule.selector === '.wrapper')!
+    expect(Object.values(wrapper.contextStyles ?? {})[0]).toMatchObject({
+      width: 'min(100% - 28px, 1220px)',
     })
     expect(warnings).toHaveLength(0)
   })
