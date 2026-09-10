@@ -1,11 +1,12 @@
 /**
  * Shared constants for the automated Playwright E2E suite.
  *
- * The Playwright `webServer` (`scripts/e2e-dev.ts`) resets the disposable
- * `.tmp/e2e-*` database once per run and then serves a single shared stack:
- * one admin origin, one public origin, one SQLite database. Every spec runs
- * serially against that shared state (`workers: 1`), so these constants are the
- * single source of truth for the suite identities and origins.
+ * The Playwright `webServer` (`scripts/e2e-server.ts`) resets the disposable
+ * `.tmp/e2e-*` database once per run, builds the admin SPA, and serves it from
+ * the same Bun process that serves the published site: one origin, one SQLite
+ * database. Every spec runs serially against that shared state (`workers: 1`),
+ * so these constants are the single source of truth for the suite identities
+ * and origins.
  */
 
 /** First-run owner created by the `setup` project and reused by ordinary specs. */
@@ -15,9 +16,19 @@ export const OWNER = {
   siteName: 'Automated E2E Site',
 } as const
 
-/** Public (visitor-facing) origin. Different port → always a fresh context. */
-export const PUBLIC_BASE_URL =
-  process.env.E2E_PUBLIC_BASE_URL ?? 'http://127.0.0.1:3002'
+/** Admin origin. Also the public origin — the stack serves both from one port. */
+export const ADMIN_BASE_URL =
+  process.env.E2E_ADMIN_BASE_URL ?? 'http://127.0.0.1:3002'
+
+/**
+ * Public (visitor-facing) origin — the same origin as the admin.
+ *
+ * What keeps a visitor check honest is the fresh browser context
+ * `visitPublicPage` opens, not a separate port: the admin session cookie is
+ * scoped to `Path=/admin`, so it never accompanies a public request even on a
+ * shared origin.
+ */
+export const PUBLIC_BASE_URL = process.env.E2E_PUBLIC_BASE_URL ?? ADMIN_BASE_URL
 
 /**
  * Saved owner authentication state. The `setup` project writes this after

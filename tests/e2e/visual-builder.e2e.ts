@@ -5,6 +5,7 @@ import {
   canvasFrameForBreakpoint,
   completeStepUp,
   createPage,
+  deleteTemplate,
   insertModuleViaPicker,
   insertNotchModule,
   login,
@@ -561,6 +562,11 @@ test.describe('visual builder', () => {
         path: `/posts/${postSlug}`,
         visibleText: ['Template headline:', postTitle, bodyText],
         hiddenText: ['Example Post Title', '{currentEntry.title}', templateName],
+      })
+
+      await test.step('remove the template so later specs resolve their own', async () => {
+        await openSiteEditor(page)
+        await deleteTemplate(page, templateName)
       })
     })
 

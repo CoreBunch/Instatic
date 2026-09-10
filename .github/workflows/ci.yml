@@ -72,8 +72,7 @@ jobs:
       - name: Test
         run: bun test
 
-# NOTE: The Playwright E2E suite is intentionally NOT run in CI yet. As
-# configured (`workers: 1`, fully serial, 156 tests) it takes ~45-60 min and is
-# timeout-fragile against the un-optimized dev server, so it cannot gate PRs
-# reliably today. Run it locally with `bun run test:e2e`. It will be reintroduced
-# as its own workflow once the suite is sharded/parallelized and stabilized.
+# The Playwright E2E suite runs in its own workflow (.github/workflows/e2e.yml),
+# sharded four ways so each shard is a few minutes rather than one serial hour.
+# It is kept separate from this workflow so a slow browser run never delays the
+# build/lint/test feedback a PR needs first.

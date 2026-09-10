@@ -45,7 +45,7 @@ describe('development workflow', () => {
 
   it('development launchers route local Vite binaries through Bun on Windows', () => {
     const devScript = readSiteFile('scripts/dev.ts')
-    const e2eScript = readSiteFile('scripts/e2e-dev.ts')
+    const e2eScript = readSiteFile('scripts/e2e-server.ts')
     const startScript = readSiteFile('scripts/start.ts')
     const viteScript = readSiteFile('scripts/vite.ts')
 
@@ -65,9 +65,13 @@ describe('development workflow', () => {
     expect(devScript).not.toContain("bunRunCommand('vite'")
     expect(devScript).not.toContain('command: `vite')
     expect(devScript).not.toContain('command.split')
-    expect(e2eScript).toContain("viteCommand('--host', '127.0.0.1'")
-    expect(e2eScript).not.toContain("bunRunCommand('dev:vite'")
-    expect(e2eScript).not.toContain("bunRunCommand('vite'")
+    // The E2E stack deliberately runs NO Vite dev server: it builds the SPA
+    // and serves it from the Bun process, so the suite exercises the shipped
+    // bundle and never depends on the dev server surviving inside Bun.
+    expect(e2eScript).toContain("bunRunCommand('build')")
+    expect(e2eScript).toContain("bunCommand('server/index.ts')")
+    expect(e2eScript).toContain("STATIC_DIR: './dist'")
+    expect(e2eScript).not.toContain('viteCommand')
     expect(e2eScript).not.toContain("['vite'")
     expect(e2eScript).not.toContain("['bun'")
     expect(viteScript).toContain('viteCommand(...Bun.argv.slice(2))')
