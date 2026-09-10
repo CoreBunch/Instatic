@@ -29,6 +29,7 @@ import { Button } from '@ui/components/Button'
 import { ClassPicker, type ClassPickerHandle } from './ClassPicker'
 import { StyleSurface } from './StyleSurface'
 import { HtmlAttributesPanel } from './HtmlAttributesPanel'
+import { VisibilityConditionPanel } from './VisibilityConditionPanel'
 import { ComponentRefView } from './ComponentRefView'
 import { ComponentParamsOverview } from './ComponentParamsOverview'
 import { ConvertToComponentButton } from './ConvertToComponentButton'
@@ -194,11 +195,18 @@ export function PropertiesPanelBody(props: PropertiesPanelBodyProps): React.Reac
           onFocusClassPicker={onFocusClassPicker}
         />
       ) : (
-        <HtmlAttributesPanel
-          nodeId={selectedNode.id}
-          htmlAttributes={selectedNode.props.htmlAttributes}
-          readOnly={!permissions.canEditStructure}
-        />
+        <>
+          <VisibilityConditionPanel
+            nodeId={selectedNode.id}
+            visibleWhen={selectedNode.visibleWhen}
+            readOnly={!permissions.canEditStructure}
+          />
+          <HtmlAttributesPanel
+            nodeId={selectedNode.id}
+            htmlAttributes={selectedNode.props.htmlAttributes}
+            readOnly={!permissions.canEditStructure}
+          />
+        </>
       )}
     </div>
   )

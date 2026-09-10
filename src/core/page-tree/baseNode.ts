@@ -19,6 +19,7 @@ import {
   requireArrayField,
   requireStringField,
 } from './parseHelpers'
+import { VisibilityConditionSchema, parseVisibilityCondition } from './dynamicBinding'
 
 // ---------------------------------------------------------------------------
 // PropBinding — used by both BaseNode (propBindings field) and VCNodeSchema
@@ -89,6 +90,16 @@ export const BaseNodeSchema = Type.Object({
 
   // When true, hidden on the canvas (still present in the tree)
   hidden: Type.Optional(Type.Boolean()),
+
+  /**
+   * Show this node only when the data it renders against says so.
+   *
+   * `hidden` above is the author's own switch and is the same on every render;
+   * this one is evaluated per row, which is what a non-uniform list needs — a
+   * video player on the rows that have a video, a caption on the rows that do
+   * not. Absent means always visible.
+   */
+  visibleWhen: Type.Optional(VisibilityConditionSchema),
 
   // Ordered class IDs from the site's class registry.
   // Applied as the referenced user-facing class names on the element.
@@ -179,6 +190,10 @@ export function parseBaseNodeFields(r: Record<string, unknown>, path: string): B
   // Inline styles — same tolerant bag parser as props/class styles. Dropped
   // when missing or empty so nodes without inline styles stay lean.
   const inlineStyles = parseStylesBag(r.inlineStyles)
+  // Malformed conditions become `undefined` — the node stays visible, which
+  // is the only safe direction: a bad condition must never silently erase
+  // content that was rendering fine.
+  const visibleWhen = parseVisibilityCondition(r.visibleWhen)
 
   return {
     id,
@@ -190,6 +205,7 @@ export function parseBaseNodeFields(r: Record<string, unknown>, path: string): B
     ...(typeof r.label === 'string' ? { label: r.label } : {}),
     ...(typeof r.locked === 'boolean' ? { locked: r.locked } : {}),
     ...(typeof r.hidden === 'boolean' ? { hidden: r.hidden } : {}),
+    ...(visibleWhen !== undefined ? { visibleWhen } : {}),
     ...(propBindings !== undefined ? { propBindings } : {}),
     ...(Object.keys(inlineStyles).length > 0 ? { inlineStyles } : {}),
   }
