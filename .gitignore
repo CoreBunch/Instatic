@@ -17,6 +17,10 @@ dist-ssr
 .claude/
 .tmp/
 .tmp-lint/
+# Master encryption key — auto-generated for local dev when
+# INSTATIC_ALLOW_DEV_KEY_AUTOGEN=1 is set. Written to
+# ~/.config/instatic/secret.key (or platform equivalent), not to the source tree.
+.tmp/secret.key
 .coverage/
 coverage/
 .matrix/

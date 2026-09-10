@@ -6,28 +6,30 @@
  * and MFA TOTP seeds. It is loaded once at boot and cached for the lifetime of
  * the process.
  *
- * Source priority:
+ * Source priority outside production:
  *
- *   1. `INSTATIC_SECRET_KEY` environment variable (base64).
- *      Production deployments MUST set this. If unset in production
- *      (`NODE_ENV=production`), boot fails loudly with instructions.
+ *   1. `INSTATIC_SECRET_KEY` environment variable (base64 or hex).
+ *   2. `INSTATIC_SECRET_KEY_FILE`, when set to an absolute key-file path.
+ *   3. The platform-native per-user key file, but only when
+ *      `INSTATIC_ALLOW_DEV_KEY_AUTOGEN=1`. It is created on first boot and
+ *      re-used on later boots.
  *
- *   2. `.tmp/secret.key` file in the working directory.
- *      Dev / non-production fallback. Auto-created on first boot so a fresh
- *      `bun run dev` works without manual setup. The file is intentionally
- *      under `.tmp/` (already git-ignored).
+ * Production deployments MUST set `INSTATIC_SECRET_KEY`; key files and dev
+ * auto-generation do not replace that requirement.
  *
- * Key rotation: replace the env var or `.tmp/secret.key` file and restart.
- * Existing encrypted rows whose key fingerprint no longer matches will require
- * re-entry or re-enrollment.
+ * Key rotation: replace the configured key and restart. Existing encrypted
+ * rows whose key fingerprint no longer matches will require re-entry or
+ * re-enrollment.
  */
 
-import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
-import { dirname } from 'node:path'
+import { readFile, writeFile } from 'node:fs/promises'
+import { dirname, isAbsolute } from 'node:path'
+import { defaultMasterKeyPath, ensureDir } from './paths'
 
 const REQUIRED_KEY_BYTES = 32
-const DEV_KEY_PATH = '.tmp/secret.key'
 const ENV_VAR_NAME = 'INSTATIC_SECRET_KEY'
+const FILE_ENV_VAR_NAME = 'INSTATIC_SECRET_KEY_FILE'
+const DEV_AUTOGEN_ENV_VAR_NAME = 'INSTATIC_ALLOW_DEV_KEY_AUTOGEN'
 
 let cachedKey: CryptoKey | null = null
 let cachedFingerprint: string | null = null
@@ -41,7 +43,7 @@ export class MasterKeyConfigurationError extends Error {
 
 export async function loadMasterKey(): Promise<CryptoKey> {
   if (cachedKey) return cachedKey
-  const rawBytes = readMasterKeyBytes()
+  const rawBytes = await readMasterKeyBytes()
   cachedKey = await crypto.subtle.importKey(
     'raw',
     rawBytes as BufferSource,
@@ -68,60 +70,101 @@ export function __resetMasterKeyCacheForTesting(): void {
   cachedFingerprint = null
 }
 
-function readMasterKeyBytes(): Uint8Array {
+async function readMasterKeyBytes(): Promise<Uint8Array> {
   const envValue = process.env[ENV_VAR_NAME]
-  if (envValue && envValue.trim()) {
-    return parseAndValidateBase64(envValue.trim(), `env var ${ENV_VAR_NAME}`)
+  if (envValue?.trim()) {
+    return parseAndValidateKey(envValue.trim(), `env var ${ENV_VAR_NAME}`)
   }
 
   if (process.env.NODE_ENV === 'production') {
     throw new MasterKeyConfigurationError(
       `[secrets/masterKey] ${ENV_VAR_NAME} is required in production. ` +
-      'Generate one with: bun run scripts/generate-secret-key.ts',
+        'Generate one with: bun run scripts/generate-secret-key.ts',
     )
   }
 
-  return readOrCreateDevKey(DEV_KEY_PATH)
+  const filePath = process.env[FILE_ENV_VAR_NAME]?.trim()
+  if (filePath) {
+    if (!isAbsolute(filePath)) {
+      throw new MasterKeyConfigurationError(
+        `[secrets/masterKey] ${FILE_ENV_VAR_NAME} must be an absolute path.`,
+      )
+    }
+    return readKeyFile(filePath)
+  }
+
+  if (process.env[DEV_AUTOGEN_ENV_VAR_NAME] !== '1') {
+    throw new MasterKeyConfigurationError(
+      `[secrets/masterKey] Set ${ENV_VAR_NAME}, ${FILE_ENV_VAR_NAME}, or ` +
+        `${DEV_AUTOGEN_ENV_VAR_NAME}=1 for local development.`,
+    )
+  }
+
+  return readOrCreateDevKey(defaultMasterKeyPath())
 }
 
-function readOrCreateDevKey(path: string): Uint8Array {
-  if (existsSync(path)) {
-    const raw = readFileSync(path, 'utf8').trim()
-    return parseAndValidateBase64(raw, `file ${path}`)
-  }
-  const fresh = crypto.getRandomValues(new Uint8Array(REQUIRED_KEY_BYTES))
-  const dir = dirname(path)
-  if (dir && !existsSync(dir)) mkdirSync(dir, { recursive: true })
-  const base64 = bytesToBase64(fresh)
-  writeFileSync(path, base64 + '\n', 'utf8')
+async function readKeyFile(path: string): Promise<Uint8Array> {
+  let raw: string
   try {
-    chmodSync(path, 0o600)
-  } catch {
-    // chmod is best-effort on non-POSIX filesystems.
+    raw = await readFile(path, 'utf8')
+  } catch (err) {
+    throw new MasterKeyConfigurationError(
+      `[secrets/masterKey] Unable to read master key file ${path}.`,
+      { cause: err },
+    )
   }
-  console.warn(
-    `[secrets/masterKey] Generated a new dev master key at ${path}. ` +
-    `Set ${ENV_VAR_NAME} for production.`,
-  )
+  return parseAndValidateKey(raw.trim(), `file ${path}`)
+}
+
+async function readOrCreateDevKey(path: string): Promise<Uint8Array> {
+  try {
+    const raw = await readFile(path, 'utf8')
+    return parseAndValidateKey(raw.trim(), `file ${path}`)
+  } catch (err) {
+    if (!isErrorCode(err, 'ENOENT')) {
+      if (err instanceof MasterKeyConfigurationError) throw err
+      throw new MasterKeyConfigurationError(
+        `[secrets/masterKey] Unable to read master key file ${path}.`,
+        { cause: err },
+      )
+    }
+  }
+
+  const fresh = crypto.getRandomValues(new Uint8Array(REQUIRED_KEY_BYTES))
+  await ensureDir(dirname(path))
+
+  try {
+    await writeFile(path, bytesToBase64(fresh) + '\n', {
+      encoding: 'utf8',
+      mode: 0o600,
+      flag: 'wx',
+    })
+  } catch (err) {
+    // Another dev process may have created the key after the initial read.
+    if (isErrorCode(err, 'EEXIST')) return readKeyFile(path)
+    throw err
+  }
+
+  console.log(`[master-key] generated dev key at ${path}`)
   return fresh
 }
 
-function parseAndValidateBase64(value: string, source: string): Uint8Array {
+function parseAndValidateKey(value: string, source: string): Uint8Array {
   let bytes: Uint8Array
   try {
-    bytes = base64ToBytes(value)
+    bytes = /^[0-9a-fA-F]{64}$/.test(value) ? hexToBytes(value) : base64ToBytes(value)
   } catch (err) {
     throw new MasterKeyConfigurationError(
-      `[secrets/masterKey] ${source} is not valid base64. ` +
-      'Generate a new key with: bun run scripts/generate-secret-key.ts',
+      `[secrets/masterKey] ${source} is not valid base64 or hex. ` +
+        'Generate a new key with: bun run scripts/generate-secret-key.ts',
       { cause: err },
     )
   }
   if (bytes.length !== REQUIRED_KEY_BYTES) {
     throw new MasterKeyConfigurationError(
       `[secrets/masterKey] ${source} decoded to ${bytes.length} bytes; ` +
-      `must be exactly ${REQUIRED_KEY_BYTES}. ` +
-      'Generate a new key with: bun run scripts/generate-secret-key.ts',
+        `must be exactly ${REQUIRED_KEY_BYTES}. ` +
+        'Generate a new key with: bun run scripts/generate-secret-key.ts',
     )
   }
   return bytes
@@ -133,6 +176,18 @@ async function computeMasterKeyFingerprint(keyBytes: Uint8Array): Promise<string
     .map((b) => b.toString(16).padStart(2, '0'))
     .join('')
   return hex.slice(0, 16)
+}
+
+function isErrorCode(error: unknown, code: string): boolean {
+  return typeof error === 'object' && error !== null && 'code' in error && error.code === code
+}
+
+function hexToBytes(value: string): Uint8Array {
+  const out = new Uint8Array(value.length / 2)
+  for (let i = 0; i < out.length; i++) {
+    out[i] = Number.parseInt(value.slice(i * 2, i * 2 + 2), 16)
+  }
+  return out
 }
 
 function base64ToBytes(value: string): Uint8Array {
