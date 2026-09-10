@@ -274,9 +274,14 @@ The Settings → Preferences screen renders this list automatically from the cat
 | Layers panel     | `layersShowClasses`         | boolean              | `true`      | `TreeNode.tsx`                                 |
 | Layers panel     | `layersAutoExpandSelected`  | boolean              | `true`      | `DomPanel.tsx` selection effect                |
 | Layers panel     | `layersSmoothScroll`        | boolean              | `true`      | `DomPanel.tsx` scroll handler                  |
+| Layers panel     | `layersArrowKeyReorder`     | boolean              | `false`     | `keybindings.ts` / `shortcutDispatch.ts`      |
 | Properties panel | `propertiesSmoothScroll`    | boolean              | `true`      | `StyleSurface.tsx` + `PropertiesPanel.tsx`     |
 | Properties panel | `propertiesSectionsExpanded`| boolean              | `true`      | `StyleSectionsEditor.tsx`, `StyleSurface.tsx`, `CustomPropertiesSection.tsx` |
 | Command palette  | `spotlightTelemetryEnabled` | boolean              | `false`     | command palette usage tracking                  |
+
+### Arrow-key layer reordering
+
+`layersArrowKeyReorder` is an opt-in editor preference. Enable it under `Settings → Preferences → Layers panel` to use plain `↑` and `↓` on the canvas or Layers tree to move the selected layer one position within its current parent. The existing `Move layer up` and `Move layer down` commands in Spotlight remain available through `⌘K` / `Ctrl+K` regardless of this preference. Modifier keys, editable fields, inline text editing, and the Alt/Option inspect ladder are excluded.
 
 ### Confirm-before-delete flow
 
