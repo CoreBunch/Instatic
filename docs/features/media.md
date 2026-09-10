@@ -350,7 +350,7 @@ The redirect handler is `tryServeMediaRedirect` in `server/router.ts`. The redir
 
 ### Register a plugin storage adapter
 
-See [docs/features/plugin-system.md](plugin-system.md). The plugin SDK's `api.cms.media.registerStorageAdapter(adapter)` provides the registration surface and requires `media.storage.adapter`. Adapters declare a `servingMode` and either return public URLs, implement `getReadUrl(storagePath, ttlSeconds)` for signed redirects, or implement `readStream(storagePath)` for proxy reads. The host streams upload bytes to adapter-provided upload plans; ordinary writes do not move media bytes through the QuickJS heap.
+See [docs/features/plugin-system.md](plugin-system.md). The plugin SDK's `api.cms.media.registerStorageAdapter(adapter)` provides the registration surface and requires `media.storage.adapter`. Adapters declare a `servingMode` and either return public URLs, implement `getReadUrl(storagePath, ttlSeconds)` for signed redirects, or implement `readStream(storagePath)` for proxy reads. The host streams upload bytes to adapter-provided upload plans through the DNS-pinned SSRF guard (internal addresses refused on both the read and the write side); ordinary writes do not move media bytes through the QuickJS heap.
 
 ---
 
