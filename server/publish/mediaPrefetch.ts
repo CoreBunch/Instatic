@@ -45,9 +45,18 @@ interface MediaPrefetchOptions {
 
 /**
  * Collect every `/uploads/...` path referenced by an image/media-typed prop
- * across the page tree.
+ * in ONE page's tree.
+ *
+ * Site-level style backgrounds are deliberately NOT included: they belong to
+ * the site, not to any page that happens to be rendering. The prefetch adds
+ * them separately, and the media-usage lookup attributes them to the site so
+ * a delete warning can say where a file is actually used.
  */
-function collectMediaPaths(page: Page, site: SiteDocument, registry: IModuleRegistry): Set<string> {
+export function collectPageMediaPaths(
+  page: Page,
+  site: SiteDocument,
+  registry: IModuleRegistry,
+): Set<string> {
   const paths = new Set<string>()
   // Descend into referenced VC definition trees so an image/media prop inside a
   // VC body is resolved too (ISS-022).
@@ -64,6 +73,16 @@ function collectMediaPaths(page: Page, site: SiteDocument, registry: IModuleRegi
       paths.add(value)
     }
   })
+  return paths
+}
+
+/** The page's own references plus the site-level style backgrounds. */
+function collectMediaPaths(
+  page: Page,
+  site: SiteDocument,
+  registry: IModuleRegistry,
+): Set<string> {
+  const paths = collectPageMediaPaths(page, site, registry)
   for (const path of collectSiteStyleBackgroundImagePaths(site)) {
     paths.add(path)
   }

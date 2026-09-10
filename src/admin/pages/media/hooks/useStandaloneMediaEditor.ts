@@ -17,6 +17,7 @@
  */
 import {
   deleteCmsMediaAsset,
+  listCmsMediaUsage,
   purgeCmsMediaAsset,
   renameCmsMediaAsset,
   replaceCmsMediaAssetFile,
@@ -24,6 +25,7 @@ import {
   updateCmsMediaAsset,
   type CmsMediaAsset,
   type CmsMediaFolder,
+  type CmsMediaUsageRef,
   type UpdateCmsMediaAssetInput,
 } from '@core/persistence/cmsMedia'
 import type { MediaAssetEditor } from '../components/MediaViewerWindow/MediaViewerWindow'
@@ -125,6 +127,11 @@ export function useStandaloneMediaEditor({
     }
   }
 
+  // Failure is absorbed by `resolveUsageWarning`, the one door every
+  // confirmation goes through — see the note there.
+  const lookupUsage = (assetIds: string[]): Promise<CmsMediaUsageRef[]> =>
+    listCmsMediaUsage(assetIds)
+
   if (!asset) return null
   return {
     asset,
@@ -135,5 +142,6 @@ export function useStandaloneMediaEditor({
     replaceAssetFile,
     restoreAsset,
     purgeAsset,
+    lookupUsage,
   }
 }
