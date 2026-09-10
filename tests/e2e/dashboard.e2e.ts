@@ -212,7 +212,7 @@ test.describe('dashboard', () => {
 
     await expectOnboardingStep(panel, 'Set site identity', 'Completed', 'Open settings')
     await expectOnboardingStep(panel, 'Choose Core Framework import', 'In progress', 'Import')
-    await expectOnboardingStep(panel, 'Create your first page', 'Not started', 'New page')
+    await expectOnboardingStep(panel, 'Create a new page', 'Not started', 'New page')
     await expectOnboardingStep(panel, 'Install a plugin', 'Not started', 'Browse plugins')
     await expectOnboardingStep(panel, 'Invite your team', 'Not started', 'Add members')
 
