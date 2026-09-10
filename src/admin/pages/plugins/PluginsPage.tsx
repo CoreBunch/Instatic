@@ -1,4 +1,5 @@
 import { Button } from '@ui/components/Button'
+import { ExternalLinkSolidIcon } from 'pixel-art-icons/icons/external-link-solid'
 import { UploadIcon } from 'pixel-art-icons/icons/upload'
 import { AdminPageLayout } from '@admin/layouts/AdminPageLayout'
 import { PluginCard } from './components/PluginCard/PluginCard'
@@ -21,6 +22,11 @@ import styles from './PluginsPage.module.css'
 // (e.g. host plugins + Analytics). PluginCard's `loading` prop owns
 // the actual skeleton markup — page-level code only decides count.
 const SKELETON_CARD_COUNT = 3
+const COMMUNITY_PLUGIN_DIRECTORY_URL = 'https://github.com/topics/instatic-plugin'
+
+function openCommunityPluginDirectory(): void {
+  window.open(COMMUNITY_PLUGIN_DIRECTORY_URL, '_blank', 'noopener,noreferrer')
+}
 
 export function PluginsPage() {
   const currentUser = useAuthenticatedAdminUser()
@@ -48,28 +54,40 @@ export function PluginsPage() {
       workspace="plugins"
       title="Plugins"
       titleId="plugins-title"
-      description="Install admin extensions and control what they add to the CMS."
-      actions={canInstall ? (
+      description="Discover community extensions, install packages, and control what they add to the CMS."
+      actions={(
         <>
           <Button
-            variant="primary"
+            variant="secondary"
             size="md"
-            disabled={uploading}
-            onClick={() => fileInputRef.current?.click()}
+            onClick={openCommunityPluginDirectory}
           >
-            <UploadIcon size={15} aria-hidden="true" />
-            <span>{uploading ? 'Uploading' : 'Upload Plugin'}</span>
+            <ExternalLinkSolidIcon size={15} aria-hidden="true" />
+            <span>Browse Community Plugins</span>
           </Button>
-          <input
-            ref={fileInputRef}
-            className={styles.fileInput}
-            aria-label="Plugin file"
-            type="file"
-            accept="application/json,.json,.plugin.json,.pbplugin,.zip,application/zip"
-            onChange={(event) => void vm.handleUpload(event)}
-          />
+          {canInstall && (
+            <>
+              <Button
+                variant="primary"
+                size="md"
+                disabled={uploading}
+                onClick={() => fileInputRef.current?.click()}
+              >
+                <UploadIcon size={15} aria-hidden="true" />
+                <span>{uploading ? 'Uploading' : 'Upload Plugin'}</span>
+              </Button>
+              <input
+                ref={fileInputRef}
+                className={styles.fileInput}
+                aria-label="Plugin file"
+                type="file"
+                accept="application/json,.json,.plugin.json,.pbplugin,.zip,application/zip"
+                onChange={(event) => void vm.handleUpload(event)}
+              />
+            </>
+          )}
         </>
-      ) : null}
+      )}
     >
       <div className={styles.pluginsBody} data-testid="plugins-admin-canvas">
         {error && (
@@ -144,7 +162,22 @@ export function PluginsPage() {
               <PluginCard key={i} loading />
             ))
           ) : payload.plugins.length === 0 ? (
-            <p className={styles.emptyState}>No plugins installed yet.</p>
+            <div className={styles.emptyState}>
+              <h2>No plugins installed yet.</h2>
+              <p>
+                Browse community plugins on GitHub, download a release ZIP,
+                then upload it here. Review the source and requested permissions
+                before installing any community package.
+              </p>
+              <Button
+                variant="secondary"
+                size="md"
+                onClick={openCommunityPluginDirectory}
+              >
+                <ExternalLinkSolidIcon size={15} aria-hidden="true" />
+                <span>Find Community Plugins</span>
+              </Button>
+            </div>
           ) : (
             payload.plugins.map((plugin) => (
               <PluginCard
