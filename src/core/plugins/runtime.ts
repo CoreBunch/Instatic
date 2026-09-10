@@ -306,11 +306,15 @@ class PluginRuntime {
    * `IconResolver` (`bindDashboardWidgetIconResolver`) — if no resolver
    * has been bound by the host, the registration throws loudly.
    */
-  registerDashboardWidget(pluginId: string, widget: PluginDashboardWidget): void {
+  registerDashboardWidget(manifest: PluginManifest, widget: PluginDashboardWidget): void {
     const iconResolve = requireDashboardIconResolver()
     dashboardWidgetRegistry.register({
       id: widget.id,
-      ownerId: pluginId,
+      ownerId: manifest.id,
+      pluginContext: {
+        version: manifest.version,
+        grantedPermissions: manifest.grantedPermissions ?? [],
+      },
       name: widget.name,
       description: widget.description,
       icon: iconResolve(widget.iconName),
@@ -534,7 +538,7 @@ export function createEditorPluginApi(
       widgets: {
         register(widget) {
           assertPluginPermission(manifest, 'dashboard.widgets.register')
-          pluginRuntime.registerDashboardWidget(manifest.id, widget)
+          pluginRuntime.registerDashboardWidget(manifest, widget)
         },
       },
     },

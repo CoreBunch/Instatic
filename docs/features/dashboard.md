@@ -149,6 +149,8 @@ Each widget renderer composes the shared `<Widget>` primitive and receives only 
 
 A plugin with the `dashboard.widgets.register` permission can register widgets from its admin-window entrypoint via `api.dashboard.widgets.register(...)`. The widget's React `component` runs in the **admin app context** (not the QuickJS sandbox) — plugin server code runs sandboxed, but admin / dashboard widgets render in-process.
 
+The host mounts plugin-owned widgets under the same `PluginContext` in the dashboard grid, Customize mode, and Block Library preview. Widget components can therefore use `usePluginContext`, `usePluginSettings`, `usePluginRoutes`, and other host hooks with the plugin's identity, grants, settings, and route scope intact.
+
 Plugin-owned analytics tiles such as `visitors` or `top-pages` are plugin widgets, not first-party dashboard widgets. They are not seeded into the default layout; once a plugin registers them, users can add them from the Block Library and their saved layout references the plugin-owned id.
 
 ---
@@ -332,6 +334,8 @@ That's it. Users see it in the BlockLibrary; dragging it onto the grid persists 
 ### Register a plugin widget
 
 Plugins with `dashboard.widgets.register` permission register widgets from their admin-window entrypoint via `api.dashboard.widgets.register(...)`. The widget's `component` runs in the **admin React app** (not the QuickJS sandbox). Plugin server code runs sandboxed; plugin dashboard widgets do not.
+
+Every dashboard render location supplies the widget's plugin context, including the grid, Customize mode, and the Block Library preview. Host hooks imported from `@instatic/host-hooks` therefore resolve the registering plugin just as they do in panels, app pages, and canvas overlays.
 
 ### Gate widget data on capability
 
