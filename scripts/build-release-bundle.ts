@@ -19,9 +19,12 @@ const bundleFiles = [
   'compose.prod.yml',
   'compose.sqlite.yml',
   'compose.tls.yml',
+  'docker-compose.coolify.yml',
+  'docker-compose.coolify.sqlite.yml',
   '.env.production.example',
   'docs/deployment/README.md',
   'docs/deployment/vps.md',
+  'docs/deployment/coolify.md',
   'docs/deployment/docker-image.md',
   'docs/deployment/tls-caddy.md',
   'docs/deployment/backup-restore.md',
@@ -88,6 +91,17 @@ cp .env.production.example .env
 # Edit .env and set POSTGRES_PASSWORD and INSTATIC_SECRET_KEY.
 INSTATIC_IMAGE=ghcr.io/corebunch/instatic:${version} docker compose -f compose.prod.yml up -d
 \`\`\`
+
+## Coolify install
+
+Create a Docker Compose resource pointing at one of:
+
+- \`docker-compose.coolify.yml\` (bundled Postgres)
+- \`docker-compose.coolify.sqlite.yml\` (single container, SQLite)
+
+Assign a domain to the \`instatic\` service and deploy; Coolify generates every secret and terminates TLS.
+Pin this release by setting \`INSTATIC_IMAGE=ghcr.io/corebunch/instatic:${version}\` in the Coolify UI.
+Read \`docs/deployment/coolify.md\` first.
 
 ## Railway image-source install
 
