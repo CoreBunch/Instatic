@@ -91,6 +91,39 @@ describe('generateCanvasClassCSS', () => {
     expect(css).not.toMatch(/\[data-breakpoint-id\][^{]*\{[^}]*color:\s*#000/)
   })
 
+  /**
+   * Cascade layers. Everything this builder returns is wrapped in
+   * `@layer user-authored` by ClassStyleInjector, and imported stylesheets land
+   * in that same layer via UserStylesheetInjector. Rules sitting DIRECTLY in
+   * `user-authored` outrank rules in its nested sublayers, so an unlayered
+   * reset here beat every rule of an imported Tailwind sheet (whose output is
+   * entirely layered, nested one level deeper once wrapped). The canvas then
+   * previewed CMS defaults — `:where(body) { font-family: system-ui }` winning
+   * over the site's own font — while the published page rendered correctly.
+   */
+  it('declares the baseline layer order before populating either layer', () => {
+    const css = generateCanvasClassCSS({}, [])
+    const order = css.indexOf('@layer instatic-reset, instatic-framework;')
+    expect(order).toBe(0)
+    expect(order).toBeLessThan(css.indexOf('@layer instatic-reset {'))
+  })
+
+  it('wraps the publisher reset inside the reset layer', () => {
+    const css = generateCanvasClassCSS({}, [])
+    const layerStart = css.indexOf('@layer instatic-reset {')
+    expect(layerStart).toBeGreaterThan(-1)
+    // The reset's rules must sit inside the layer block, not beside it.
+    expect(css.indexOf(':where(body)')).toBeGreaterThan(layerStart)
+  })
+
+  it('leaves author class CSS unlayered so it still wins', () => {
+    const css = generateCanvasClassCSS({ hero: makeClass('hero', { color: 'red' }) }, [])
+    const ruleAt = css.search(/\.hero\b/)
+    expect(ruleAt).toBeGreaterThan(-1)
+    // Nothing re-opens a baseline layer after the class rules begin.
+    expect(css.slice(ruleAt)).not.toContain('@layer instatic-')
+  })
+
   it('uses the viewport context media query for canvas breakpoint styles', () => {
     const css = generateCanvasClassCSS(
       {

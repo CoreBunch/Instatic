@@ -91,6 +91,14 @@ export function createBaseCspPlan(opts: {
   // invisible in the markup: the element is correct, the URL resolves, and
   // only the console says why nothing happens.
   setCspDirective(plan, 'media-src', ["'self'", 'data:', 'https:'])
+  // Fonts, for the third time and the same reason — but this one bites more
+  // often than the other two. Base64 `@font-face` sources are routine in
+  // third-party CSS (icon fonts especially), so a site brought in through
+  // Site Import ships them without the author ever having written one.
+  // Falling back to `default-src 'self'` blocked every such face, and the
+  // only symptom was a console line: the stylesheet is intact, the rule
+  // parses, the text just silently renders in the fallback family.
+  setCspDirective(plan, 'font-src', ["'self'", 'data:', 'https:'])
   setCspDirective(plan, 'frame-src', ["'none'"])
   setCspDirective(plan, 'worker-src', opts.anyScriptTag ? ["'self'", 'blob:'] : ["'none'"])
   return plan
