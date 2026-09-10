@@ -196,6 +196,28 @@ export function MediaCanvas({ workspace, selectionMode = 'standard' }: MediaCanv
     writeMediaAssetDragData(event.dataTransfer, dragIds)
   }
 
+  /**
+   * Which assets a right-click acts on.
+   *
+   * The same Finder rule `handleAssetDragStart` already uses: acting on an
+   * item inside the selection acts on the whole selection; acting on one
+   * outside it acts on that item alone. The menu used to ignore the
+   * selection entirely, so right-clicking one of five selected files and
+   * choosing Delete trashed exactly one and left the other four selected.
+   *
+   * Deliberately does NOT adopt the clicked asset into the selection the way
+   * the site explorer does. Media's floating windows are derived from the
+   * selection during render — `viewerOpen` at <= 1, `bulkEditOpen` at >= 2
+   * (MediaPage.tsx) — so writing the selection here would pop a window open
+   * underneath the menu.
+   */
+  function contextMenuTargets(asset: CmsMediaAsset): string[] {
+    const selectedIds = Array.from(workspace.selectedAssetIds)
+    return workspace.selectedAssetIds.has(asset.id) && selectedIds.length > 0
+      ? selectedIds
+      : [asset.id]
+  }
+
   function handleFolderDragStart(folder: CmsMediaFolder, event: DragEvent<HTMLButtonElement>) {
     if (!canWrite) {
       event.preventDefault()
@@ -517,27 +539,39 @@ export function MediaCanvas({ workspace, selectionMode = 'standard' }: MediaCanv
         )}
       </div>
 
-      {contextMenu && (
-        <ExplorerItemContextMenu
-          x={contextMenu.x}
-          y={contextMenu.y}
-          ariaLabel="Media item options"
-          onClose={() => setContextMenu(null)}
-          onRename={() => {
-            setRenameTarget(contextMenu.asset)
-            setContextMenu(null)
-          }}
-          onDelete={() => {
-            const target = contextMenu.asset
-            setContextMenu(null)
-            if (trashView) void workspace.purgeAsset(target.id)
-            else void workspace.trashAsset(target.id)
-          }}
-          showRename={canWrite}
-          showDelete={canDelete}
-          extraItems={buildExtraMenuItems(contextMenu.asset)}
-        />
-      )}
+      {contextMenu && (() => {
+        const targets = contextMenuTargets(contextMenu.asset)
+        const many = targets.length > 1
+        return (
+          <ExplorerItemContextMenu
+            x={contextMenu.x}
+            y={contextMenu.y}
+            ariaLabel="Media item options"
+            onClose={() => setContextMenu(null)}
+            {...(many ? { headerLabel: `${targets.length} files` } : {})}
+            onRename={() => {
+              setRenameTarget(contextMenu.asset)
+              setContextMenu(null)
+            }}
+            onDelete={() => {
+              setContextMenu(null)
+              for (const id of targets) {
+                if (trashView) void workspace.purgeAsset(id)
+                else void workspace.trashAsset(id)
+              }
+            }}
+            deleteLabel={
+              many
+                ? `${trashView ? 'Delete' : 'Trash'} ${targets.length} files`
+                : trashView ? 'Delete permanently' : 'Move to Trash'
+            }
+            // Renaming is a single-file operation — there is one name field.
+            showRename={canWrite && !many}
+            showDelete={canDelete}
+            extraItems={buildExtraMenuItems(contextMenu.asset)}
+          />
+        )
+      })()}
 
       {renameTarget && (
         <ExplorerRenameDialog
