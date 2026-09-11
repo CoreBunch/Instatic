@@ -6,7 +6,7 @@
 import { afterEach, describe, expect, it } from 'bun:test'
 import { MAIN_SCOPE } from '../../../server/branches/scope'
 import { applyBranchMerge, planBranchMerge } from '../../../server/branches/merge'
-import { getDataRow, listDataRows, saveDataRowDraft, upsertDataRowDraft } from '../../../server/repositories/data'
+import { listDataRows, saveDataRowDraft, upsertDataRowDraft } from '../../../server/repositories/data'
 import { getDraftSite, saveDraftSite } from '../../../server/repositories/site'
 import {
   createCapabilityTestHarness,
