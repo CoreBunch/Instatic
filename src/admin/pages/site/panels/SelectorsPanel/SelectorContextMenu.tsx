@@ -8,8 +8,9 @@ import { PaintBucketSolidIcon } from 'pixel-art-icons/icons/paint-bucket-solid'
 interface SelectorContextMenuProps {
   x: number
   y: number
-  selectedNodeHasClass: boolean
-  selectedNodeId: string | null
+  allSelectedNodesHaveClass: boolean
+  anySelectedNodeHasClass: boolean
+  hasSelectedNodes: boolean
   assignable: boolean
   onClose: () => void
   onEdit: () => void
@@ -25,8 +26,9 @@ interface SelectorContextMenuProps {
 export function SelectorContextMenu({
   x,
   y,
-  selectedNodeHasClass,
-  selectedNodeId,
+  allSelectedNodesHaveClass,
+  anySelectedNodeHasClass,
+  hasSelectedNodes,
   assignable,
   onClose,
   onEdit,
@@ -53,11 +55,11 @@ export function SelectorContextMenu({
         Duplicate
       </ContextMenuItem>
       <ContextMenuSeparator />
-      <ContextMenuItem disabled={!assignable || !selectedNodeId || selectedNodeHasClass} onClick={onApply}>
+      <ContextMenuItem disabled={!assignable || !hasSelectedNodes || allSelectedNodesHaveClass} onClick={onApply}>
         <span aria-hidden="true"><PaintBucketSolidIcon size={13} /></span>
         Apply to selected element
       </ContextMenuItem>
-      <ContextMenuItem disabled={!assignable || !selectedNodeId || !selectedNodeHasClass} onClick={onRemove}>
+      <ContextMenuItem disabled={!assignable || !hasSelectedNodes || !anySelectedNodeHasClass} onClick={onRemove}>
         <span aria-hidden="true"><CloseIcon size={13} /></span>
         Remove from selected element
       </ContextMenuItem>
