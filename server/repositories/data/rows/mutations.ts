@@ -22,7 +22,7 @@
 import { nanoid } from 'nanoid'
 import { logicalIdOf, physicalId } from '@core/branches'
 import type { DbClient } from '../../../db/client'
-import type { BranchScope } from '../../../branches/scope'
+import { isMainScope, type BranchScope } from '../../../branches/scope'
 import type { DataRow, DataRowStatus, DeletedRowSummary } from '@core/data/schemas'
 import { bumpPublishVersionSerialized } from '../../../publish/publishState'
 import { type InsertDataRowInput, type UpdateDataRowDraftInput } from './mapper'
@@ -320,7 +320,8 @@ export async function updateDataRowTable(
         // cannot land between the move and its synchronous invalidation.
         notifyRowWrite({ branchId: scope.branchId, tableId: before.tableId, rowIds: [rowId], kind: 'delete' })
         notifyRowWrite({ branchId: scope.branchId, tableId: result.row.tableId, rowIds: [rowId], kind: 'create' })
-        bumpPublishVersion = before.status === 'published'
+        // Only main's routes are served, so only main evicts the render cache.
+        bumpPublishVersion = before.status === 'published' && isMainScope(scope)
       }
       return { result, bumpPublishVersion }
     })
@@ -402,8 +403,9 @@ export async function updateDataRowStatus(
     returning id
   `
   if (!rows[0]) return null
-  // Invalidate the render cache — the route's published state changed.
-  await bumpPublishVersionSerialized()
+  // Invalidate the render cache — the route's published state changed. Only
+  // main's routes are served, so a branch row never had a cached route.
+  if (isMainScope(scope)) await bumpPublishVersionSerialized()
   return getDataRow(db, scope, rowId)
 }
 

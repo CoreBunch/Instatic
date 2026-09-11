@@ -60,7 +60,6 @@ import { MAIN_SCOPE } from '../../branches/scope'
 import type { AuthUser } from '../../repositories/users'
 import type { MergePlan } from '@core/branches'
 import type { DbClient } from '../../db/client'
-import type { BranchScope } from '../../branches/scope'
 import { forkBranch } from '../../branches/fork'
 import { deleteBranch } from '../../branches/deleteBranch'
 import { issueBranchPreviewLink, previewEntryPath } from '../../branches/previewLinks'
@@ -89,7 +88,6 @@ function normalizeName(raw: string): string | null {
 export async function handleBranchesRoutes(
   req: Request,
   db: DbClient,
-  _scope: BranchScope,
   options: CmsHandlerOptions = {},
 ): Promise<Response | null> {
   const url = new URL(req.url)

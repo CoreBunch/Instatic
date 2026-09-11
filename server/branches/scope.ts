@@ -11,6 +11,7 @@
 import { MAIN_BRANCH_ID, isValidBranchId } from '@core/branches'
 import type { DbClient } from '../db/client'
 import { jsonResponse } from '../http'
+import { requireAuthenticatedUser } from '../auth/authz'
 import { branchExists } from '../repositories/branches'
 
 export interface BranchScope {
@@ -32,13 +33,16 @@ export function isMainScope(scope: BranchScope): boolean {
  * Resolve the request's branch. A missing or `main` header is the main
  * branch without touching the database; anything else must be a well-formed
  * id naming an existing branch, otherwise the caller gets a 400 or a 404
- * carrying `BRANCH_NOT_FOUND_CODE`.
+ * carrying `BRANCH_NOT_FOUND_CODE`. The 404 is for callers with a session:
+ * whether a branch exists is not for anonymous callers to learn, so without
+ * one an unknown id answers with the 401 the route itself would give and
+ * reads the same as a real one.
  */
 export async function resolveBranchScope(
   req: Request,
   db: DbClient,
 ): Promise<BranchScope | Response> {
-  return resolveBranchScopeById(db, req.headers.get(BRANCH_HEADER)?.trim() ?? '')
+  return resolveBranchScopeById(req, db, req.headers.get(BRANCH_HEADER)?.trim() ?? '')
 }
 
 /**
@@ -47,6 +51,7 @@ export async function resolveBranchScope(
  * branch in its body.
  */
 export async function resolveBranchScopeById(
+  req: Request,
   db: DbClient,
   raw: string,
 ): Promise<BranchScope | Response> {
@@ -55,6 +60,8 @@ export async function resolveBranchScopeById(
     return jsonResponse({ error: 'Invalid branch id' }, { status: 400 })
   }
   if (!(await branchExists(db, raw))) {
+    const user = await requireAuthenticatedUser(req, db)
+    if (user instanceof Response) return user
     return jsonResponse(
       { error: `Branch "${raw}" does not exist`, code: BRANCH_NOT_FOUND_CODE },
       { status: 404 },

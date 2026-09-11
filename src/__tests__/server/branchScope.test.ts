@@ -50,12 +50,15 @@ describe('resolveBranchScope', () => {
     expect((res as Response).status).toBe(400)
   })
 
-  it('answers 404 with a stable code for an unknown branch', async () => {
+  it('answers an anonymous caller naming an unknown branch with 401, never revealing it is unknown', async () => {
+    // With a session the same header answers 404 + BRANCH_NOT_FOUND_CODE
+    // (branchesHandler.test.ts); without one, an unknown id must read
+    // exactly like a real one.
     const res = await resolveBranchScope(request('ghost'), testDb.db)
     expect(res).toBeInstanceOf(Response)
-    expect((res as Response).status).toBe(404)
+    expect((res as Response).status).toBe(401)
     const body = await (res as Response).json()
-    expect(body.code).toBe(BRANCH_NOT_FOUND_CODE)
+    expect(body.code).not.toBe(BRANCH_NOT_FOUND_CODE)
   })
 
   it('resolves an existing branch', async () => {

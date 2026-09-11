@@ -47,7 +47,7 @@
  * delta reconciliation substrate for the live-sync plan).
  */
 import type { DbClient } from '../../db/client'
-import type { BranchScope } from '../../branches/scope'
+import { isMainScope, type BranchScope } from '../../branches/scope'
 import { SITE_SHELL_LOGICAL_ID } from '@core/branches'
 import { requireAnyCapability } from '../../auth/authz'
 import type { CoreCapability } from '../../auth/capabilities'
@@ -446,7 +446,8 @@ export async function handleSiteDocumentRoutes(
     // Publish-lock work stays outside the collab-aware lane: publish flushes
     // need that lane, so acquiring the locks in the opposite order could
     // deadlock. The database transaction and sync invalidations are complete.
-    if (deletedPublishedPage) await bumpPublishVersionSerialized()
+    // Only main's routes are served, so only main's deletions evict the cache.
+    if (deletedPublishedPage && isMainScope(scope)) await bumpPublishVersionSerialized()
 
     return jsonResponse({ ok: true, seq })
   } catch (err) {

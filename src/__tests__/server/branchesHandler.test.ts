@@ -78,6 +78,19 @@ describe('branches endpoints', () => {
     expect(await readJson<{ code: string }>(unknown)).toMatchObject({ code: 'branch_not_found' })
   })
 
+  it('never tells an anonymous caller whether a branch exists', async () => {
+    harness = await createCapabilityTestHarness()
+    const owner = await harness.setupOwner()
+    const created = await harness.cms(BRANCHES, { method: 'POST', cookie: owner, json: { name: 'Spring Redesign' } })
+    expect(created.status).toBe(201)
+    // A real id and a guessed one answer the same without a session: the
+    // route's own 401, not a 404 that would confirm the guess.
+    for (const branch of ['spring-redesign', 'nope']) {
+      const res = await harness.cms('/admin/api/cms/data/tables', { headers: { [BRANCH_HEADER]: branch } })
+      expect(res.status).toBe(401)
+    }
+  })
+
   it('lets a stale branch header through the account routes and still refuses it on content', async () => {
     harness = await createCapabilityTestHarness()
     const owner = await harness.setupOwner()

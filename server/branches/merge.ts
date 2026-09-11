@@ -592,7 +592,10 @@ export async function undoBranchMerge(db: DbClient, input: UndoMergeInput): Prom
     await db.transaction(async (tx) => {
       const bases: BranchBase[] = []
       const removed: Array<{ kind: BranchEntityKind; logicalId: string }> = []
-      for (const entry of entries) {
+      // Reverse apply order: the rows an apply created go before the table
+      // it created them in (a table with rows refuses to be deleted), and a
+      // table an apply deleted comes back before its rows do.
+      for (const entry of [...entries].reverse()) {
         const work: Work = { change: entry.change, ours: undefined, theirs: undefined, result: null }
         const intoBefore = entry.intoBefore ?? null
         if (contentHashOrNull(intoBefore) !== entry.resultHash) {

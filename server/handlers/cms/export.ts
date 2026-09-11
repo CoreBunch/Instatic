@@ -161,7 +161,7 @@ export async function handleExportRoute(
     includeMediaFolders = exportReq.includeMediaFolders ?? true
     includeRedirects = exportReq.includeRedirects ?? true
     if (exportReq.branchId !== undefined) {
-      const requested = await resolveBranchScopeById(db, exportReq.branchId)
+      const requested = await resolveBranchScopeById(req, db, exportReq.branchId)
       if (requested instanceof Response) return requested
       exportScope = requested
     }

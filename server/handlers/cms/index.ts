@@ -83,8 +83,10 @@ export async function handleCmsRequest(
   // no branched data, and a tab can carry a header naming a branch that no
   // longer exists (deleted from elsewhere, or the database reset under it):
   // that must never stop anyone from finishing setup, checking their
-  // session, or signing in — signing in is how the tab recovers. It also
-  // means a branch's existence is not revealed before authentication.
+  // session, or signing in — signing in is how the tab recovers. (An
+  // anonymous caller never learns whether a branch exists either way:
+  // `resolveBranchScope` answers an unknown id with a 401 when there is no
+  // session.)
   const accountResponse =
     (await handleSetupRoutes(req, db))
     ?? (await handleMeRoutes(req, db, options))
@@ -106,7 +108,7 @@ export async function handleCmsRequest(
   if (scope instanceof Response) return scope
 
   const response =
-    (await handleBranchesRoutes(req, db, scope, options))
+    (await handleBranchesRoutes(req, db, options))
     ?? (await handleSiteRoutes(req, db, scope))
     // The transactional whole-document save — must run before the pages/
     // components/layouts GET handlers only for tidiness; paths are distinct.

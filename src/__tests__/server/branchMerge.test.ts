@@ -6,7 +6,7 @@
 import { afterEach, describe, expect, it } from 'bun:test'
 import { MAIN_SCOPE } from '../../../server/branches/scope'
 import { MergeUndoError, applyBranchMerge, planBranchMerge, undoBranchMerge } from '../../../server/branches/merge'
-import { getDataRow, listDataRows, saveDataRowDraft, softDeleteDataRow, upsertDataRowDraft } from '../../../server/repositories/data'
+import { createDataTable, getDataRow, getDataTable, listDataRows, saveDataRowDraft, softDeleteDataRow, upsertDataRowDraft } from '../../../server/repositories/data'
 import { getDraftSite, saveDraftSite } from '../../../server/repositories/site'
 import {
   createCapabilityTestHarness,
@@ -224,6 +224,27 @@ describe('branch merge', () => {
     })
     await expect(undoBranchMerge(harness.db, { branchId, direction: 'merge', actorUserId: null })).rejects.toBeInstanceOf(MergeUndoError)
     expect((await getDataRow(harness.db, MAIN_SCOPE, home!.id))!.cells.title).toBe('Edited on main after')
+  })
+
+  it('undoes a merge that created a table with rows, taking the rows out first', async () => {
+    harness = await createCapabilityTestHarness()
+    const owner = await harness.setupOwner()
+    const branchId = await forkViaApi(harness, owner, 'Undo Table')
+    const branch = { branchId }
+    await createDataTable(harness.db, branch, { id: 'faq', name: 'FAQ', slug: 'faq', kind: 'data', singularLabel: 'Question', pluralLabel: 'Questions', fields: [] })
+    await upsertDataRowDraft(harness.db, branch, { id: 'faq-1', tableId: 'faq', cells: { title: 'Why?' }, slug: 'why' })
+
+    const applied = await applyBranchMerge(harness.db, { branchId, direction: 'merge', resolutions: {}, actorUserId: null })
+    expect(applied.merge).toMatchObject({ changeCount: 2 })
+    expect(await getDataTable(harness.db, MAIN_SCOPE, 'faq')).not.toBeNull()
+    expect(await getDataRow(harness.db, MAIN_SCOPE, 'faq-1')).not.toBeNull()
+
+    // The table's before-image is "absent", which only an empty table can go
+    // back to: the undo must take the row out before the table.
+    const undone = await undoBranchMerge(harness.db, { branchId, direction: 'merge', actorUserId: null })
+    expect(undone.restoredCount).toBe(2)
+    expect(await getDataRow(harness.db, MAIN_SCOPE, 'faq-1')).toBeNull()
+    expect(await getDataTable(harness.db, MAIN_SCOPE, 'faq')).toBeNull()
   })
 
   it('exposes undo over HTTP behind the merge gates and reports a moved target as 409', async () => {
