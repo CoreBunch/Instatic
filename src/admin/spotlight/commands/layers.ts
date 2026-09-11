@@ -43,6 +43,8 @@ function resolveSelectedSiblingMove(
   selectedNodeIds: readonly string[],
   direction: LayerMoveDirection,
 ): { nodeIds: string[]; parentId: string; newIndex: number } | null {
+  if (selectedNodeIds.some((id) => page.nodes[id]?.locked)) return null
+
   const selected = new Set(selectedNodeIds)
   const topLevelIds = selectedNodeIds.filter((id) => {
     if (!page.nodes[id] || id === page.rootNodeId) return false

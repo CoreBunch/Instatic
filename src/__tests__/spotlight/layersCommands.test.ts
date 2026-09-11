@@ -30,7 +30,7 @@ function loadVisualComponentCanvas(): void {
       makeVCNode({ id: 'vc-a', moduleId: 'base.text', props: { text: 'A' } }),
       makeVCNode({ id: 'vc-b', moduleId: 'base.text', props: { text: 'B' } }),
       makeVCNode({ id: 'vc-c', moduleId: 'base.text', props: { text: 'C' } }),
-      makeVCNode({ id: 'vc-d', moduleId: 'base.text', props: { text: 'D' } }),
+      makeVCNode({ id: 'vc-d', moduleId: 'base.text', props: { text: 'D' }, locked: true }),
     ]),
   })
 
@@ -107,6 +107,11 @@ describe('Spotlight layer commands', () => {
     expect(vcChildren()).toEqual(['vc-c', 'vc-a', 'vc-b', 'vc-d'])
 
     useEditorStore.getState().undo()
+    expect(vcChildren()).toEqual(['vc-a', 'vc-b', 'vc-c', 'vc-d'])
+  })
+
+  it('does not move a selection that contains a locked layer', async () => {
+    await runLayerCommand('layers.moveUp', ['vc-b', 'vc-d'])
     expect(vcChildren()).toEqual(['vc-a', 'vc-b', 'vc-c', 'vc-d'])
   })
 
