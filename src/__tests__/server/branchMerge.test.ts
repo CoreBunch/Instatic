@@ -231,11 +231,13 @@ describe('branch merge', () => {
     const owner = await harness.setupOwner()
     const branchId = await forkViaApi(harness, owner, 'Undo Table')
     const branch = { branchId }
-    await createDataTable(harness.db, branch, { id: 'faq', name: 'FAQ', slug: 'faq', kind: 'data', singularLabel: 'Question', pluralLabel: 'Questions', fields: [] })
-    await upsertDataRowDraft(harness.db, branch, { id: 'faq-1', tableId: 'faq', cells: { title: 'Why?' }, slug: 'why' })
+    await createDataTable(harness.db, branch, { id: 'faq', name: 'FAQ', slug: 'faq', kind: 'data', singularLabel: 'Question', pluralLabel: 'Questions', fields: [{ type: 'text', id: 'question', label: 'Question' }] })
+    await upsertDataRowDraft(harness.db, branch, { id: 'faq-1', tableId: 'faq', cells: { question: 'Why?' }, slug: 'why' })
 
     const applied = await applyBranchMerge(harness.db, { branchId, direction: 'merge', resolutions: {}, actorUserId: null })
     expect(applied.merge).toMatchObject({ changeCount: 2 })
+    // A row with no title is named by its first text field, never by its id.
+    expect(applied.plan.changes.map((change) => change.label).sort()).toEqual(['FAQ', 'Why?'])
     expect(await getDataTable(harness.db, MAIN_SCOPE, 'faq')).not.toBeNull()
     expect(await getDataRow(harness.db, MAIN_SCOPE, 'faq-1')).not.toBeNull()
 

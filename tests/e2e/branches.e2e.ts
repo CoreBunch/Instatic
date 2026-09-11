@@ -1,10 +1,11 @@
 import { mkdir } from 'node:fs/promises'
 import { expect, test, type Page } from '@playwright/test'
-import { ANONYMOUS_STATE, completeStepUp, createPage, login, openSiteEditor, openSitePanel } from './helpers'
+import { ANONYMOUS_STATE, completeStepUp, createPage, entryRow, login, openSiteEditor, openSitePanel, saveSelectedDraft, startNewPost } from './helpers'
 
 /**
  * Site branches — the toolbar switcher, the context strip, publish gating,
- * the manage dialog, and the palette commands (BRANCH-001 … BRANCH-004).
+ * the manage dialog, the palette commands, and content written on a branch
+ * (BRANCH-001 … BRANCH-006).
  *
  * Every step also captures evidence under `.tmp/evidence/branches-*.png` so
  * the switcher can be reviewed visually after a run.
@@ -213,5 +214,40 @@ test('merge a branch into main from the review page (BRANCH-005)', async ({ page
   // … where the page now exists.
   await openSitePanel(page)
   await expect(page.getByRole('treeitem', { name: 'Open page Branch Page' })).toBeVisible()
+})
+test('a post written on a branch in the Content workspace stays off main until merged (BRANCH-006)', async ({ page }) => {
+  await login(page)
+  await openSiteEditor(page)
+  await page.getByTestId('branch-chip').click()
+  await page.getByTestId('branch-create-action').click()
+  await page.getByTestId('branch-create-name').fill('Content Branch')
+  await page.getByTestId('branch-create-submit').click()
+  await expect(page.getByTestId('branch-strip')).toContainText('Content Branch')
+
+  // The Content workspace follows the tab's branch.
+  await page.goto('/admin/content')
+  await expect(page.getByTestId('branch-strip')).toContainText('Content Branch')
+  await startNewPost(page)
+  await page.getByRole('textbox', { name: 'Title', exact: true }).fill('Branch post')
+  await saveSelectedDraft(page, 'Branch post')
+
+  // Main does not have it.
+  await page.goto('/admin/content?branch=main')
+  await expect(page.getByTestId('branch-strip')).toHaveCount(0)
+  await expect(entryRow(page, 'Branch post')).toHaveCount(0)
+
+  // The review names the post by its title, and merging lands it on main.
+  await page.goto('/admin/branches/content-branch/review?branch=content-branch')
+  await expect(page.getByTestId('branch-review-title')).toHaveText('Merge Content Branch into main')
+  await expect(page.getByTestId('branch-review')).toContainText('Branch post')
+  await page.getByTestId('review-delete-toggle').click()
+  await page.getByTestId('review-merge').click()
+  await page.getByRole('button', { name: 'Merge into main' }).click()
+  await completeStepUp(page)
+  await expect(page).toHaveURL(/\/admin\/site/)
+  await page.goto('/admin/content')
+  await expect(page.getByTestId('branch-strip')).toHaveCount(0)
+  await expect(entryRow(page, 'Branch post')).toBeVisible()
+  await shot(page, '9-content-merged', 'full')
 })
 })

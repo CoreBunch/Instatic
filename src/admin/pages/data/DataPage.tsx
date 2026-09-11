@@ -4,6 +4,7 @@
  * Composes the DataSidebar, DataCanvas, and DataInspector through
  * AdminWorkspaceCanvasLayout. Capability resolution mirrors ContentPage.
  */
+import { readDisplayTitle } from '@core/data/cells'
 import { useEffect, useRef, useState } from 'react'
 import { AdminWorkspaceCanvasLayout } from '@admin/layouts/AdminWorkspaceCanvasLayout'
 import { useAuthenticatedAdminUser } from '@admin/sessionContext'
@@ -190,12 +191,7 @@ export function DataPage() {
   function handleDeleteRow(rowId: string): void {
     const table = workspace.selectedTable
     const row = workspace.rows.find((r) => r.id === rowId)
-    const primaryValue = row && table
-      ? (typeof row.cells[table.primaryFieldId] === 'string'
-          ? (row.cells[table.primaryFieldId] as string)
-          : null)
-      : null
-    const label = primaryValue || 'row'
+    const label = row && table ? readDisplayTitle(row.cells, table) : 'row'
 
     confirmDelete({
       title: `Delete "${label}"?`,

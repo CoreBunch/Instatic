@@ -204,7 +204,7 @@ Return `409` with the standard message the way `branchOnlyResponse(scope)` in `s
 
 ### Add a new branched table
 
-Add `branch_id text not null default 'main'` and the generated `logical_id` to the table in both migration files, make every repository function on it take `BranchScope`, bind `physicalId(...)` in its SQL, add it to `collectBranchEntities` in `server/branches/entities.ts` (what a branch is made of, keyed by `entityKey`) and to `forkBranch` / `deleteBranch`, and extend the gate test's table list.
+Add `branch_id text not null default 'main'` and the generated `logical_id` to the table in both migration files, make every repository function on it take `BranchScope`, bind `physicalId(...)` in its SQL, add it to `collectBranchEntities` in `server/branches/entities.ts` (what a branch is made of, keyed by `entityKey`; a row is named by `readDisplayTitle` from `@core/data/cells`, the same name the Content explorer shows: primary field, else title, else the first text field, else “Untitled”, never the id) and to `forkBranch` / `deleteBranch`, and extend the gate test's table list.
 
 ---
 

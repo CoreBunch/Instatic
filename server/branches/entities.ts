@@ -3,8 +3,8 @@
  * every table, every row — in one keyed map, with the content projection the merge compares
  * and hashes. Shared by fork (to record bases) and merge (to plan).
  */
+import { readDisplayTitle } from '@core/data/cells'
 import { SITE_SHELL_LOGICAL_ID } from '@core/branches'
-import type { DataRow, DataTable } from '@core/data/schemas'
 import type { DbClient } from '../db/client'
 import type { BranchScope } from './scope'
 import { fileContent, rowContent, siteContent, tableContent, type BranchEntityKind } from './contentHash'
@@ -25,12 +25,6 @@ export const SITE_ENTITY_KEY = `site:${SITE_SHELL_LOGICAL_ID}`
 
 export function entityKey(kind: BranchEntityKind, logicalId: string): string {
   return `${kind}:${logicalId}`
-}
-
-function rowLabel(row: DataRow, table: DataTable): string {
-  const title = row.cells[table.primaryFieldId] ?? row.cells.title
-  if (typeof title === 'string' && title.trim()) return title.trim()
-  return row.slug || row.id
 }
 
 export async function collectBranchEntities(db: DbClient, scope: BranchScope): Promise<Map<string, BranchEntity>> {
@@ -71,7 +65,7 @@ export async function collectBranchEntities(db: DbClient, scope: BranchScope): P
       entities.set(entityKey('row', row.id), {
         kind: 'row',
         logicalId: row.id,
-        label: rowLabel(row, table),
+        label: readDisplayTitle(row.cells, table),
         tableId: table.id,
         tableName: table.singularLabel,
         content: rowContent(row),
