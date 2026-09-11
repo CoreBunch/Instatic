@@ -6,13 +6,22 @@
  */
 import { useEffect } from 'react'
 import { Type } from '@core/utils/typeboxHelpers'
-import type { AiToolOutput } from '@core/ai'
+import { MCP_BRIDGE_PING_TOOL, type AiToolOutput } from '@core/ai'
 import { getErrorMessage } from '@core/utils/errorMessage'
 import { readNdjsonStream } from './ndjsonStream'
 import { postToolResult } from './toolResultApi'
 
 const MCP_BRIDGE_PATH = '/admin/api/ai/editor-bridge'
 const RECONNECT_DELAY_MS = 3000
+/**
+ * Longest one relayed tool (plus its persistence step) may run before the
+ * loop gives up on it and moves on. Requests are serviced serially, so a tool
+ * whose promise never settled used to block every later request on the stream
+ * until the tab reloaded (#490). Kept under the relay's 90 s per-call timeout
+ * (`server/ai/runtime/transport.ts`) so the caller reads this diagnosis rather
+ * than a bare timeout, and so the result POST still finds its waiter.
+ */
+const BROWSER_TOOL_DEADLINE_MS = 60_000
 // Auth failures (logged out / brief blip during a server restart) back off
 // longer but still retry so the bridge self-heals once the session is valid.
 const AUTH_RETRY_DELAY_MS = 15000
@@ -42,27 +51,54 @@ export type McpToolDispatcher = (
 export type McpAfterSuccessfulTool = () => Promise<void>
 
 /**
- * Run one relayed tool and any workspace-specific persistence step. Keeping
- * the persistence callback inside the same try/catch is deliberate: a tool is
- * not successful until its mutation is durably saved for the MCP caller's
- * next request.
+ * Run one relayed tool and any workspace-specific persistence step, bounded
+ * by `deadlineMs`. Keeping the persistence callback inside the same try/catch
+ * is deliberate: a tool is not successful until its mutation is durably saved
+ * for the MCP caller's next request. Past the deadline the caller gets an
+ * error naming the tool and the loop is free again; the tool itself cannot be
+ * cancelled and may still finish in the background, which the error says.
  */
 export async function executeMcpBridgeRequest(
   dispatchTool: McpToolDispatcher,
   toolName: string,
   input: unknown,
   afterSuccessfulTool?: McpAfterSuccessfulTool,
+  deadlineMs: number = BROWSER_TOOL_DEADLINE_MS,
 ): Promise<AiToolOutput> {
+  let deadline: ReturnType<typeof setTimeout> | undefined
+  const expired = new Promise<AiToolOutput>((resolve) => {
+    deadline = setTimeout(() => {
+      resolve({
+        ok: false,
+        error:
+          `Browser tool "${toolName}" did not finish within ${Math.round(deadlineMs / 1000)}s. `
+          + 'The editor may still complete it in the background, so read the document before '
+          + 'retrying; if later calls keep failing, reload the workspace tab.',
+      })
+    }, deadlineMs)
+  })
+  const run = (async (): Promise<AiToolOutput> => {
+    try {
+      const result = await dispatchTool(toolName, input)
+      if (result.ok && afterSuccessfulTool) await afterSuccessfulTool()
+      return result
+    } catch (err) {
+      return { ok: false, error: getErrorMessage(err, 'Tool failed.') }
+    }
+  })()
   try {
-    const result = await dispatchTool(toolName, input)
-    if (result.ok && afterSuccessfulTool) await afterSuccessfulTool()
-    return result
-  } catch (err) {
-    return { ok: false, error: getErrorMessage(err, 'Tool failed.') }
+    return await Promise.race([run, expired])
+  } finally {
+    clearTimeout(deadline)
   }
 }
 
 type McpBridgeConnectionOutcome = 'auth' | 'transient'
+
+interface McpBridgeConnectionOptions {
+  /** Test seam: the per-tool deadline shrinks to milliseconds in unit tests. */
+  toolDeadlineMs?: number
+}
 
 /**
  * Run one editor-bridge connection. Every attempt owns a fresh controller;
@@ -76,6 +112,7 @@ export async function runMcpWorkspaceBridgeConnection(
   dispatchTool: McpToolDispatcher,
   afterSuccessfulTool: McpAfterSuccessfulTool | undefined,
   lifecycleSignal: AbortSignal,
+  options: McpBridgeConnectionOptions = {},
 ): Promise<McpBridgeConnectionOutcome> {
   const connectionController = new AbortController()
   const signal = AbortSignal.any([lifecycleSignal, connectionController.signal])
@@ -101,11 +138,21 @@ export async function runMcpWorkspaceBridgeConnection(
         continue
       }
 
+      if (event.toolName === MCP_BRIDGE_PING_TOOL) {
+        // Liveness probe from get_context. Answered here, by the loop itself:
+        // a reply proves the stream AND this request loop are servicing calls,
+        // which is what "connected" has to mean. It never reaches the
+        // workspace dispatcher.
+        await postToolResult(bridgeId, event.requestId, { ok: true, data: { alive: true } }, signal)
+        continue
+      }
+
       const result = await executeMcpBridgeRequest(
         dispatchTool,
         event.toolName,
         event.input,
         afterSuccessfulTool,
+        options.toolDeadlineMs,
       )
       await postToolResult(bridgeId, event.requestId, result, signal)
     }

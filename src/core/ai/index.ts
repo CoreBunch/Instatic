@@ -6,6 +6,7 @@ export {
   aiToolOk,
 } from './toolOutput'
 export type { AiToolImage, AiToolOutput } from './toolOutput'
+export { MCP_BRIDGE_PING_TOOL } from './bridgePing'
 export {
   AiContentBlockSchema,
   AiContentViewBlockSchema,

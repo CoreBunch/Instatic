@@ -47,6 +47,16 @@ describe('bridge tool-call settlement', () => {
     destroy()
   })
 
+  test('a per-call timeout overrides the bridge-wide one', async () => {
+    // Bridge-wide wait is long; the call asks for a short one (a liveness
+    // probe must not wait the 90 s a slow legitimate write is allowed).
+    const { bridge, destroy } = createBridge(() => {}, undefined, 60_000)
+    const started = Date.now()
+    await expect(bridge.callBrowser('probe', {}, { timeoutMs: 20 })).rejects.toThrow(/timed out/i)
+    expect(Date.now() - started).toBeLessThan(5_000)
+    destroy()
+  })
+
   test('a delivered tool result settles the call and clears the timeout', async () => {
     let requestId = ''
     const { bridgeId, bridge, destroy } = createBridge((ev: AiStreamEvent) => {

@@ -194,13 +194,23 @@ export type AiStreamEvent =
 // tools can yield a `toolRequest` and await the browser POST.
 // ---------------------------------------------------------------------------
 
+export interface AiBrowserCallOptions {
+  /**
+   * Per-call wait before the pending result is reclaimed, overriding the
+   * bridge-wide timeout. A liveness probe wants seconds, not the 90 s a slow
+   * legitimate write is allowed.
+   */
+  timeoutMs?: number
+}
+
 export interface AiBrowserBridge {
   /**
    * Forward a `toolRequest` to the browser and resolve with whatever the
    * browser POSTs back to /admin/api/ai/tool-result. Rejects if the stream
-   * closes before a result arrives (browser disconnected, stream aborted).
+   * closes before a result arrives (browser disconnected, stream aborted) or
+   * the wait times out.
    */
-  callBrowser(toolName: string, input: unknown): Promise<AiToolOutput>
+  callBrowser(toolName: string, input: unknown, options?: AiBrowserCallOptions): Promise<AiToolOutput>
 }
 
 // ---------------------------------------------------------------------------

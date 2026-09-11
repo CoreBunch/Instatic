@@ -19,6 +19,7 @@
  * connector can only ever reach the open workspace of its OWN owner and a
  * content tool can never be dispatched to the site editor (or vice versa).
  */
+import { MCP_BRIDGE_PING_TOOL } from '@core/ai'
 import type { AiBrowserBridge, AiStreamEvent } from '../runtime/types'
 import { createBridge, encodeStreamEvent } from '../runtime'
 
@@ -29,6 +30,23 @@ interface EditorBridgeEntry {
 }
 
 export type EditorBridgeScope = 'site' | 'content'
+
+/**
+ * What a liveness probe learned about a workspace bridge:
+ *   - `live` — the tab answered just now; browser tools will be serviced.
+ *   - `unresponsive` — a stream is registered but nothing answered in time.
+ *     The tab's request loop is stuck or its connection died without the
+ *     server noticing. Relayed tools will time out until that tab reloads.
+ *   - `closed` — no stream is registered for this scope.
+ */
+export type EditorBridgeLiveness = 'live' | 'unresponsive' | 'closed'
+
+/**
+ * How long a workspace gets to answer a probe. A healthy loop answers in
+ * milliseconds; a stuck one never does, and a caller orienting itself should
+ * not wait the full per-tool timeout to learn that.
+ */
+const BRIDGE_PING_TIMEOUT_MS = 2_500
 /**
  * How long a stream may sit with NO tool traffic before the server drops it.
  * This is an IDLE lease: every relayed tool request re-arms it, so an active
@@ -52,6 +70,31 @@ export function getEditorBridgeForUser(
 
 export function hasEditorBridge(userId: string, scope: EditorBridgeScope): boolean {
   return byUser.get(userId)?.has(scope) ?? false
+}
+
+/**
+ * Prove the registered workspace still answers. Registration only says a tab
+ * opened a stream: a tab whose request loop is stuck behind a tool that never
+ * settled, or whose connection died behind a proxy, keeps its entry until the
+ * idle lease recycles it, so `hasEditorBridge` alone reported "connected"
+ * while every relayed call timed out (#490). The probe is a real round-trip
+ * through the same stream and the same client loop every tool uses.
+ */
+export async function pingEditorBridge(
+  userId: string,
+  scope: EditorBridgeScope,
+  timeoutMs: number = BRIDGE_PING_TIMEOUT_MS,
+): Promise<EditorBridgeLiveness> {
+  const bridge = getEditorBridgeForUser(userId, scope)
+  if (!bridge) return 'closed'
+  try {
+    const answer = await bridge.callBrowser(MCP_BRIDGE_PING_TOOL, {}, { timeoutMs })
+    return answer.ok ? 'live' : 'unresponsive'
+  } catch (_err) {
+    // A rejected probe (timed out, or the stream was torn down mid-probe) IS
+    // the finding; the registry says whether anything is left to talk to.
+    return hasEditorBridge(userId, scope) ? 'unresponsive' : 'closed'
+  }
 }
 
 /**

@@ -167,7 +167,7 @@ export function buildMcpServer(ctx: McpServerContext): Server {
       }
       bridge = browserScope === 'content'
         ? {
-            callBrowser: async (toolName, input) => {
+            callBrowser: async (toolName, input, options) => {
               await authorizeMcpContentTool(
                 ctx.db,
                 ctx.userId,
@@ -177,7 +177,7 @@ export function buildMcpServer(ctx: McpServerContext): Server {
               )
               const current = getEditorBridgeForUser(ctx.userId, browserScope)
               if (!current) throw new Error(NO_WORKSPACE_MESSAGE[browserScope])
-              return current.callBrowser(toolName, input)
+              return current.callBrowser(toolName, input, options)
             },
           }
         : live
