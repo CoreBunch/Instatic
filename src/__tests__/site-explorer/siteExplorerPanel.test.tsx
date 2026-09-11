@@ -400,7 +400,7 @@ describe('SiteExplorerPanel', () => {
     expect(treeDropCss).toContain('.dropInside')
     expect(css).toContain('.dragOverlayRow')
 
-    const beforeAfterBlock = treeDropCss.match(/\.dropBefore::before,\n\.dropAfter::after,\n\.dropRoot::after,\n\.rootDropGapActive::after\s*\{[^}]*\}/s)?.[0] ?? ''
+    const beforeAfterBlock = treeDropCss.match(/\.dropBefore::before,\r?\n\.dropAfter::after,\r?\n\.dropRoot::after,\r?\n\.rootDropGapActive::after\s*\{[^}]*\}/s)?.[0] ?? ''
     expect(beforeAfterBlock).toContain('position: absolute')
     expect(beforeAfterBlock).not.toMatch(/(?:^|\n)\s*(margin|padding)\b/)
 

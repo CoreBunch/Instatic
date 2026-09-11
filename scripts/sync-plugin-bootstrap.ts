@@ -85,7 +85,10 @@ async function bundleEntry(entry: string): Promise<string> {
       `[sync-plugin-bootstrap] expected exactly one output for ${entry}, got ${result.outputs.length}`,
     )
   }
-  return await result.outputs[0].text()
+  const text = await result.outputs[0].text()
+  // Normalize line endings so the emitted artifact (and the in-memory
+  // comparison in the freshness gate) is identical on LF and CRLF checkouts.
+  return text.replace(/\r\n/g, '\n')
 }
 
 /**
