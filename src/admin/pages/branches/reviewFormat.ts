@@ -3,7 +3,7 @@
  * read, which filter a change belongs to, and short relative times.
  */
 import type { MergeChange, MergeRequestStatus, MergeTreeDiff } from '@core/branches'
-import { formatRelativeTime } from '@core/utils/relativeTime'
+import { formatRelativeTime, formatRelativeTimeAgo } from '@core/utils/relativeTime'
 import type { TagPillTone } from '@ui/components/TagPill'
 
 export const REVIEW_FILTERS = ['all', 'pages', 'content', 'files', 'conflicts', 'comments'] as const
@@ -85,32 +85,31 @@ export function relativeIso(iso: string): string {
   return formatRelativeTime(ms)
 }
 
-/**
- * The same stamp as a past-tense phrase — "3m ago", "4d ago".
- *
- * Under a minute `formatRelativeTime` says "now", which reads as "now ago"
- * once a caller appends the word, so that case becomes "just now" instead.
- * Callers that render a bare stamp want `relativeIso`.
- */
+/** The same stamp as an age: "just now", "3m ago", or the date once older than a week. */
 export function relativeIsoAgo(iso: string): string {
-  const stamp = relativeIso(iso)
-  if (!stamp) return ''
-  return stamp === 'now' ? 'just now' : `${stamp} ago`
+  const ms = Date.parse(iso)
+  return Number.isNaN(ms) ? '' : formatRelativeTimeAgo(ms)
 }
 
 /** Every comment on the request itself uses the empty key. */
 export const REQUEST_ENTITY_KEY = ''
 
 /**
- * "Changed text: “a” → “b”" for a node the tree diff lists as changed. The
- * diff names props in full (`text: “a” → “b”`); when the node is labelled by
- * the same word (a `text` node's `text` prop) the label already says it, so
- * the prop name is not repeated. Without details it is "Changed text".
+ * "Changed Headline: text: “a” → “b”" for a node the tree diff lists as
+ * changed, from the diff's own per-node details; "Changed Headline" without
+ * them.
  */
 export function changedNodeLine(tree: MergeTreeDiff, id: string): string {
   const label = tree.labels[id] ?? id
-  const details = (tree.details[id] ?? []).map((detail) =>
-    detail.startsWith(`${label}: `) ? detail.slice(label.length + 2) : detail,
-  )
+  const details = tree.details[id] ?? []
   return details.length > 0 ? `Changed ${label}: ${details.join('; ')}` : `Changed ${label}`
+}
+
+/** The tree diff as the review's change list: added, changed, removed nodes. */
+export function treeChangeLines(tree: MergeTreeDiff): string[] {
+  return [
+    ...tree.added.map((id) => `Added ${tree.labels[id] ?? id}`),
+    ...tree.changed.map((id) => changedNodeLine(tree, id)),
+    ...tree.removed.map((id) => `Removed ${tree.labels[id] ?? id}`),
+  ]
 }

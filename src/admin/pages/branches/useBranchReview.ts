@@ -6,7 +6,8 @@
  */
 import { useEffect, useState } from 'react'
 import type { BranchMergeRequest, BranchReviewComment, BranchReviewState, MergePlan, UndoMergeEnvelope } from '@core/branches'
-import { isAbortError } from '@core/http'
+import { ApiError, isAbortError } from '@core/http'
+import { pushToast } from '@ui/components/Toast'
 import {
   addCmsBranchReviewComment,
   declineCmsBranchMergeRequest,
@@ -37,7 +38,7 @@ async function fetchReviewData(
   signal?: AbortSignal,
 ): Promise<{ plan: MergePlan; review: BranchReviewState }> {
   const [plan, review] = await Promise.all([
-    getCmsBranchMergePlan(branchId, 'merge'),
+    getCmsBranchMergePlan(branchId, 'merge', signal),
     getCmsBranchReview(branchId, signal),
   ])
   return { plan, review }
@@ -73,7 +74,13 @@ export function useBranchReview(branchId: string): BranchReviewData {
       setLoadError(null)
     } catch (err) {
       console.error('[branch-review] reload failed:', err)
-      setLoadError(getErrorMessage(err, 'Could not load the review'))
+      // A review already on screen stays on screen; only a first load that
+      // fails takes the page over. A branch that vanished under the reload
+      // is reported by the store's fallback, not again here.
+      if (plan === null) setLoadError(getErrorMessage(err, 'Could not load the review'))
+      else if (!(err instanceof ApiError && err.status === 404)) {
+        pushToast({ kind: 'error', title: 'Could not refresh the review', body: getErrorMessage(err, 'Unknown review error') })
+      }
     }
   }
 

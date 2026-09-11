@@ -113,9 +113,12 @@ const leaving = new Set<string>()
  * say so. Shared by the HTTP 404 listener and the collab socket's `gone`.
  */
 export function fallBackToMain(branchId: string): void {
-  const { activeBranchId, setActiveBranch } = useBranchStore.getState()
+  const { activeBranchId } = useBranchStore.getState()
   if (activeBranchId !== branchId || branchId === MAIN_BRANCH_ID) return
-  setActiveBranch(MAIN_BRANCH_ID)
+  // Drop the branch from the registry in the same tick as the switch: a page
+  // that keeps the tab on the branch it shows (the review) would otherwise
+  // switch straight back onto it while the re-read is still in flight.
+  leaveDeletedBranch(branchId)
   if (leaving.has(branchId)) return
   void refreshBranchesAfterMutation()
   pushToast({

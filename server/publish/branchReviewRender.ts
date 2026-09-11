@@ -13,13 +13,12 @@ import '../../src/modules/base'
 import '@core/loops/sources'
 import { registry } from '@core/module-engine'
 import { publishPage } from '@core/publisher'
-import { composeTemplateChain, resolveTemplateChain } from '@core/templates'
-import { buildRouteFrame } from '@core/templates/contextFrames'
+import { buildRouteFrame, composeTemplateChain, resolveTemplateChain } from '@core/templates'
 import type { SourceRequestContext } from '@core/loops/types'
 import type { DbClient } from '../db/client'
 import { MAIN_SCOPE, type BranchScope } from '../branches/scope'
 import { getDraftSiteDocument } from '../repositories/publish'
-import { resolveViewportUnits } from './reviewViewportUnits'
+import { resolveViewportUnitsInHtml } from '@core/utils/viewportUnits'
 import { prefetchLoopData } from './loopPrefetch'
 import { prefetchMediaAssets } from './mediaPrefetch'
 import { getPublishVersion } from './publishState'
@@ -65,6 +64,7 @@ export async function renderBranchReviewPage(
     annotateNodeIds: true,
     publishVersion: getPublishVersion(),
   })
-  // Viewport units against a desktop screen, not against the document-tall frame.
-  return resolveViewportUnits(rendered.html, REVIEW_VIEWPORT)
+  // Viewport units against a desktop screen, not against the document-tall
+  // frame: the same scanner the canvas frames use.
+  return resolveViewportUnitsInHtml(rendered.html, REVIEW_VIEWPORT)
 }

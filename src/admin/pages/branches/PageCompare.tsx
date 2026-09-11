@@ -20,7 +20,7 @@ import { composedNodeSourceId } from '@core/templates'
 import { getErrorMessage } from '@core/utils/errorMessage'
 import { SegmentedControl } from '@ui/components/SegmentedControl'
 import { Switch } from '@ui/components/Switch'
-import { changedNodeLine } from './reviewFormat'
+import { treeChangeLines } from './reviewFormat'
 import styles from './BranchReviewPage.module.css'
 
 // The frame is laid out at the review viewport's width; the server resolved
@@ -154,7 +154,7 @@ function ScaledFrame({ branchId, rowId, side, title, marks, showHighlights }: Fr
   }, [marksKey, loaded, measure])
 
   const hostStyle = { '--frame-scale': scale, '--frame-h': `${docHeight * scale}px` } as CSSProperties
-  const stageStyle = { '--doc-h': `${docHeight}px` } as CSSProperties
+  const stageStyle = { '--doc-h': `${docHeight}px`, '--page-w': `${PAGE_WIDTH}px` } as CSSProperties
   if (error) {
     return (
       <div ref={hostRef} className={styles.frameHost} style={hostStyle} data-loaded="error" role="alert">
@@ -238,13 +238,7 @@ export function PageCompare({ branchId, rowId, label, action, tree, fieldLines, 
       ]
     : []
   const mainMarks = tree ? tree.removed.map((id) => ({ id, label: markLabel('Removed', tree.labels[id]), tone: 'removed' as const })) : []
-  const treeLines = tree
-    ? [
-        ...tree.added.map((id) => `Added ${tree.labels[id] ?? id}`),
-        ...tree.changed.map((id) => changedNodeLine(tree, id)),
-        ...tree.removed.map((id) => `Removed ${tree.labels[id] ?? id}`),
-      ]
-    : []
+  const treeLines = tree ? treeChangeLines(tree) : []
   const lines = [...fieldLines, ...treeLines]
 
   // Drag anywhere on the stack to move the divider; the frames ignore the

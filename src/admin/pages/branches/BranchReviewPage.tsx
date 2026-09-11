@@ -51,6 +51,12 @@ import styles from './BranchReviewPage.module.css'
 export function BranchReviewPage() {
   const params = useParams<{ branchId: string }>()
   const branchId = params.branchId ?? ''
+  // Keyed on the id: what the page learned about one branch (that it was
+  // there, then gone) must not decide how a link to the next one behaves.
+  return <BranchReviewGate key={branchId} branchId={branchId} />
+}
+
+function BranchReviewGate({ branchId }: { branchId: string }) {
   const branches = useBranchStore((state) => state.branches)
   const branchesLoaded = useBranchStore((state) => state.branchesLoaded)
   const activeBranchId = useActiveBranchId()
@@ -116,7 +122,6 @@ interface ReviewProps {
 function Review({ branch }: ReviewProps) {
   const branchId = branch.id
   const branchName = branch.name
-  const navigate = useNavigate()
   const user = useAuthenticatedAdminUser()
   const canManage = hasCapability(user, 'site.branches.manage')
   // Dropping the branch is for whoever may delete it: a manager, or its creator.
@@ -233,8 +238,9 @@ function Review({ branch }: ReviewProps) {
         body: `${count} change${count === 1 ? '' : 's'} landed in main's draft. Publish when you're ready.${result.branchDeleted ? ' The branch was deleted.' : ''}`,
         ...(result.merge ? { action: { label: 'Undo', onSelect: () => { void undo() } } } : {}),
       })
-      if (result.branchDeleted) navigate('/admin/site')
-      else await data.reload()
+      // A deleted branch leaves through the gate above (the store drops it
+      // from the registry at once); only a kept branch has a review to reload.
+      if (!result.branchDeleted) await data.reload()
     })
   }
 

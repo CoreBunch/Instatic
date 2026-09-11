@@ -10,7 +10,7 @@ import { SegmentedControl } from '@ui/components/SegmentedControl'
 import { TagPill } from '@ui/components/TagPill'
 import { WarningDiamondSolidIcon } from 'pixel-art-icons/icons/warning-diamond-solid'
 import { PageCompare } from './PageCompare'
-import { ACTION_TONE, ACTION_WORD, changeKindLabel, changedNodeLine, isPageChange } from './reviewFormat'
+import { ACTION_TONE, ACTION_WORD, changeKindLabel, treeChangeLines, isPageChange } from './reviewFormat'
 import styles from './BranchReviewPage.module.css'
 
 interface ReviewChangeCardProps {
@@ -129,9 +129,7 @@ export function ReviewChangeCard({ branchId, change, resolution, canResolve, onR
         <FieldTable fields={detail.fields} action={change.action} />
         {detail.tree && (
           <ul className={styles.changeList}>
-            {detail.tree.added.map((id) => <li key={`a-${id}`}>Added {detail.tree!.labels[id] ?? id}</li>)}
-            {detail.tree.changed.map((id) => <li key={`c-${id}`}>{changedNodeLine(detail.tree!, id)}</li>)}
-            {detail.tree.removed.map((id) => <li key={`r-${id}`}>Removed {detail.tree!.labels[id] ?? id}</li>)}
+            {treeChangeLines(detail.tree).map((line, index) => <li key={`${index}-${line}`}>{line}</li>)}
           </ul>
         )}
       </>

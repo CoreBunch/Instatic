@@ -10,6 +10,7 @@
  * update.
  */
 import { parsePageNode } from '@core/page-tree'
+import { buildPostTypeDefaultFields } from '@core/data/fields'
 import { canonicalJson } from '@core/utils/canonicalJson'
 import type {
   MergeChangeDetail,
@@ -108,26 +109,29 @@ function isScalar(value: unknown): value is string | number | boolean {
 }
 
 /**
- * What moved between two versions of one node, as lines the review prints:
- * a prop with scalar values on both sides is quoted (`text: “a” → “b”`), a
- * prop or node field that is structured or missing on one side is named.
+ * What moved between two versions of one node, as lines the review prints
+ * after the node's label: a prop with scalar values on both sides is quoted
+ * (`text: “a” → “b”`), a prop or node field that is structured or missing on
+ * one side is named. A prop that is the label itself (a `text` node's
+ * `text`) is not repeated, so the line reads `Changed text: “a” → “b”`.
  * Children are not compared here; a child list change is the child's own
  * add or remove.
  */
-function nodeChangeDetails(before: Record<string, unknown>, after: Record<string, unknown>): string[] {
+function nodeChangeDetails(before: Record<string, unknown>, after: Record<string, unknown>, label: string): string[] {
   const lines: string[] = []
   const a = normalizeNode(before)
   const b = normalizeNode(after)
   const aProps = isRecord(a.props) ? a.props : {}
   const bProps = isRecord(b.props) ? b.props : {}
+  const name = (key: string): string => (key === label ? '' : `${key}: `)
   for (const key of [...new Set([...Object.keys(aProps), ...Object.keys(bProps)])].sort()) {
     const x = aProps[key]
     const y = bProps[key]
     if (canonicalJson(x ?? null) === canonicalJson(y ?? null)) continue
-    if (isScalar(x) && isScalar(y)) lines.push(`${key}: ${quote(x)} → ${quote(y)}`)
-    else if (x === undefined || x === null) lines.push(`${key}: set`)
-    else if (y === undefined || y === null) lines.push(`${key}: cleared`)
-    else lines.push(`${key} changed`)
+    if (isScalar(x) && isScalar(y)) lines.push(`${name(key)}${quote(x)} → ${quote(y)}`)
+    else if (x === undefined || x === null) lines.push(`${name(key)}set`)
+    else if (y === undefined || y === null) lines.push(`${name(key)}cleared`)
+    else lines.push(key === label ? 'changed' : `${key} changed`)
   }
   for (const key of Object.keys({ ...a, ...b }).sort()) {
     if (key === 'props' || key === 'children' || key === 'parentId' || key === 'id') continue
@@ -161,7 +165,7 @@ export function treeDiff(before: unknown, after: unknown): MergeTreeDiff | null 
       diff.labels[id] = nodeLabel(b[id])
       const before = a[id]
       const after = b[id]
-      if (isRecord(before) && isRecord(after)) diff.details[id] = nodeChangeDetails(before, after)
+      if (isRecord(before) && isRecord(after)) diff.details[id] = nodeChangeDetails(before, after, diff.labels[id])
     }
   }
   for (const id of Object.keys(a)) {
@@ -205,14 +209,10 @@ function schemaDiff(before: readonly unknown[], after: readonly unknown[]): Merg
   return out
 }
 
-const ROW_LABELS: Record<string, string> = {
-  title: 'Title',
-  slug: 'Slug',
-  body: 'Body',
-  seoTitle: 'SEO title',
-  seoDescription: 'SEO description',
-  featuredMediaId: 'Featured media',
-}
+/** Built-in row fields carry the editor's labels; a custom field is named by its id. */
+const ROW_LABELS: Record<string, string> = Object.fromEntries(
+  buildPostTypeDefaultFields().map((field) => [field.id, field.label]),
+)
 const TABLE_LABELS: Record<string, string> = {
   name: 'Name',
   slug: 'Slug',

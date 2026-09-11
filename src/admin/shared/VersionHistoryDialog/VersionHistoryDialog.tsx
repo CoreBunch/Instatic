@@ -10,7 +10,7 @@ import type { DataRow, DataRowVersionSummary } from '@core/data/schemas'
 import { isAbortError } from '@core/http'
 import { listCmsDataRowVersions, restoreCmsDataRowVersion } from '@core/persistence'
 import { getErrorMessage } from '@core/utils/errorMessage'
-import { formatRelativeTime } from '@core/utils/relativeTime'
+import { formatRelativeTimeAgo } from '@core/utils/relativeTime'
 import { Button } from '@ui/components/Button'
 import { Dialog } from '@ui/components/Dialog'
 import { Skeleton } from '@ui/components/Skeleton'
@@ -32,13 +32,9 @@ interface VersionHistoryDialogProps {
 
 function publishedLabel(version: DataRowVersionSummary): string {
   const when = new Date(version.publishedAt)
-  const relative = formatRelativeTime(when.getTime())
   const absolute = Number.isNaN(when.getTime()) ? '' : when.toLocaleString()
   const by = version.publishedByName ? ` by ${version.publishedByName}` : ''
-  // formatRelativeTime returns "now", "5m" / "3h" / "2d", or a plain date
-  // once older than a week — only the middle form takes "ago".
-  const when2 = relative === 'now' ? 'just now' : /^\d+[mhd]$/.test(relative) ? `${relative} ago` : relative
-  return `Published ${when2}${by}${absolute ? ` · ${absolute}` : ''}`
+  return `Published ${formatRelativeTimeAgo(when.getTime())}${by}${absolute ? ` · ${absolute}` : ''}`
 }
 
 export function VersionHistoryDialog({ rowId, entityLabel, title, onClose, onRestored }: VersionHistoryDialogProps) {
