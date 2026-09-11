@@ -46,6 +46,8 @@ The Playwright config starts a disposable local stack by default:
 - CMS/public site: `http://127.0.0.1:3002`
 - Database: `.tmp/e2e-agent.db`
 - Uploads: `.tmp/e2e-uploads`
+- Time zone: the CMS process runs pinned to `Europe/Prague`, never UTC, so
+  zone bugs in SQL-stamped timestamps surface (CONFIG-004)
 
 `scripts/e2e-dev.ts` resets only those `.tmp/e2e-*` paths, then runs the same
 Vite + Bun CMS stack a developer uses — with one deliberate difference: the CMS

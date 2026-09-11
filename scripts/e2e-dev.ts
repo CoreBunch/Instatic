@@ -46,6 +46,11 @@ const sharedEnv = {
   PORT: CMS_PORT,
   DATABASE_URL: `sqlite:${DATABASE_PATH}`,
   UPLOADS_DIR,
+  // Self-hosted installs run in whatever zone the host has. Pinning the E2E
+  // stack away from UTC makes zone bugs visible: SQLite's `current_timestamp`
+  // carries no zone marker, so a UTC runner would parse it correctly by
+  // accident. `timestamps.e2e.ts` (CONFIG-004) relies on this.
+  TZ: 'Europe/Prague',
 }
 
 const children: Bun.Subprocess[] = []
