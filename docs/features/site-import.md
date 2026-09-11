@@ -4,6 +4,8 @@
 
 The static-site pipeline has two parts: a pure analysis function (`buildImportPlan`) that produces an `ImportPlan` preview, and an async commit function (`commitImportPlan`) that uploads assets and writes to the store. CMS bundle imports keep their native semantics: validate the `SiteBundle`, preview against `/admin/api/cms/import/preview`, resolve any row slug conflicts in the shared Conflicts step, then apply through `/admin/api/cms/import` or `/admin/api/cms/import/archive`. The modal uses the same Review category navigator and Import progress surface for CMS bundles, so tables, media, folders, redirects, conflict resolution, and completion all live in the same picker pattern as HTML/CSS/media imports.
 
+CSS declarations containing `var()`, `env()`, `clamp()`, `min()`, or `max()` pass through the shared CSS substitution encoder before CSSOM parsing. This preserves their authored values in both browser and headless imports, including centered section padding and responsive wrapper widths. The decoder restores the original property names before storage.
+
 ---
 
 ## TL;DR
