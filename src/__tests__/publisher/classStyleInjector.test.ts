@@ -662,6 +662,84 @@ describe('generateClassCSS', () => {
     expect(desktopIdx).toBeGreaterThan(tabletIdx)
   })
 
+  it('keeps min-width contexts narrowest-first when a max-width context sits between them', () => {
+    // Regression: width order is only defined between two contexts of the same
+    // query kind, so ordering used to fall back to registry index for a
+    // min-vs-max pair. That made the comparison non-transitive — the two
+    // min-width contexts below are never compared to each other, and the
+    // 1024px block was emitted before the 768px one. Both match above 1024px,
+    // specificity is equal, so the 768px block won and mobile-first inverted.
+    const breakpoints = [
+      { id: 'desktop', width: 1024, mediaQuery: '(min-width: 1024px)' },
+      { id: 'mobile', width: 900, mediaQuery: '(max-width: 900px)' },
+      { id: 'tablet', width: 768, mediaQuery: '(min-width: 768px)' },
+    ]
+    const classes = {
+      hero: makeClass('hero', { color: 'rgb(1, 2, 3)' }, {
+        desktop: { color: 'rgb(13, 14, 15)' },
+        mobile: { color: 'rgb(7, 8, 9)' },
+        tablet: { color: 'rgb(10, 11, 12)' },
+      }),
+    }
+    const css = generateClassCSS(classes, breakpoints)
+    const tabletIdx = css.indexOf('@media (min-width: 768px)')
+    const desktopIdx = css.indexOf('@media (min-width: 1024px)')
+    expect(tabletIdx).toBeGreaterThanOrEqual(0)
+    expect(desktopIdx).toBeGreaterThan(tabletIdx)
+  })
+
+  it('keeps max-width contexts widest-first when a min-width context sits between them', () => {
+    const breakpoints = [
+      { id: 'narrow', width: 600, mediaQuery: '(max-width: 600px)' },
+      { id: 'desktop', width: 1024, mediaQuery: '(min-width: 1024px)' },
+      { id: 'wide', width: 900, mediaQuery: '(max-width: 900px)' },
+    ]
+    const classes = {
+      hero: makeClass('hero', { color: 'rgb(1, 2, 3)' }, {
+        narrow: { color: 'rgb(4, 5, 6)' },
+        desktop: { color: 'rgb(13, 14, 15)' },
+        wide: { color: 'rgb(7, 8, 9)' },
+      }),
+    }
+    const css = generateClassCSS(classes, breakpoints)
+    const wideIdx = css.indexOf('@media (max-width: 900px)')
+    const narrowIdx = css.indexOf('@media (max-width: 600px)')
+    expect(wideIdx).toBeGreaterThanOrEqual(0)
+    expect(narrowIdx).toBeGreaterThan(wideIdx)
+  })
+
+  it('orders viewport contexts by the registry, not by contextStyles key order', () => {
+    // `contextStyles` is keyed in authoring order, which is not registry order.
+    // Emission must not depend on it: the same registry and the same overrides
+    // produce the same CSS whichever order the keys were written in.
+    const breakpoints = [
+      { id: 'desktop', width: 1024, mediaQuery: '(min-width: 1024px)' },
+      { id: 'mid', width: 1023, mediaQuery: '(max-width: 1023px)' },
+      { id: 'tablet', width: 768, mediaQuery: '(min-width: 768px)' },
+    ]
+    const overrides = {
+      desktop: { color: 'rgb(13, 14, 15)' },
+      mid: { color: 'rgb(7, 8, 9)' },
+      tablet: { color: 'rgb(10, 11, 12)' },
+    }
+    const authoredOneWay = generateClassCSS(
+      { hero: makeClass('hero', { color: 'rgb(1, 2, 3)' }, overrides) },
+      breakpoints,
+    )
+    const authoredAnother = generateClassCSS(
+      { hero: makeClass('hero', { color: 'rgb(1, 2, 3)' }, {
+        tablet: overrides.tablet,
+        desktop: overrides.desktop,
+        mid: overrides.mid,
+      }) },
+      breakpoints,
+    )
+    expect(authoredAnother).toBe(authoredOneWay)
+    expect(authoredOneWay.indexOf('@media (min-width: 1024px)')).toBeGreaterThan(
+      authoredOneWay.indexOf('@media (min-width: 768px)'),
+    )
+  })
+
   it('rewrites class background images with responsive image-set candidates', () => {
     const classes = {
       hero: makeClass('hero', { backgroundImage: "url('/uploads/hero.png')" }),
@@ -684,6 +762,7 @@ describe('generateClassCSS', () => {
 function makeSite(
   styleRules: SiteDocument['styleRules'],
   nodeClassIds: Record<string, string[]> = {},
+  files: SiteDocument['files'] = [],
 ): SiteDocument {
   const node: PageNode = {
     id: 'root',
@@ -722,12 +801,60 @@ function makeSite(
       shortcuts: {},
     },
     styleRules,
+    files,
     createdAt: 0,
     updatedAt: 0,
   }
 }
 
+function makeScript(path: string, content: string): SiteDocument['files'][number] {
+  return { id: path, path, type: 'script', content } as SiteDocument['files'][number]
+}
+
 describe('collectClassCSS', () => {
+  it('keeps a class no node carries when a runtime script names it', () => {
+    // The reason tree-shaking cannot work from node class ids alone: a modifier
+    // toggled by script is never authored onto a node, so publish saw it as
+    // dead and dropped it. The rule read back correctly everywhere up to
+    // publish, so the failure only showed on the live site.
+    const site = makeSite(
+      {
+        nav: makeClass('nav', { display: 'none' }),
+        'nav-open': makeClass('nav-open', { display: 'flex' }, {}, 'nav--open'),
+      },
+      { root: ['nav'] },
+      [makeScript('scripts/nav.js', "button.addEventListener('click', () => menu.classList.toggle('nav--open'))")],
+    )
+    const css = collectClassCSS(site)
+    expect(css).toContain('.nav {')
+    expect(css).toContain('.nav--open {')
+    expect(css).toContain('display: flex')
+  })
+
+  it('still drops a class that neither a node nor a script references', () => {
+    const site = makeSite(
+      {
+        nav: makeClass('nav', { display: 'none' }),
+        'nav-open': makeClass('nav-open', { display: 'flex' }, {}, 'nav--open'),
+        orphan: makeClass('orphan', { color: 'red' }),
+      },
+      { root: ['nav'] },
+      [makeScript('scripts/nav.js', "menu.classList.toggle('nav--open')")],
+    )
+    const css = collectClassCSS(site)
+    expect(css).toContain('.nav--open {')
+    expect(css).not.toContain('.orphan')
+  })
+
+  it('only counts script files, not other site file types', () => {
+    const site = makeSite(
+      { orphan: makeClass('orphan', { color: 'red' }) },
+      {},
+      [{ id: 'notes', path: 'docs/notes.md', type: 'doc', content: 'the orphan class is for later' } as SiteDocument['files'][number]],
+    )
+    expect(collectClassCSS(site)).not.toContain('.orphan')
+  })
+
   it('emits user-authored CSS but skips framework-generated CSS', () => {
     const userClass = makeClass('user-class', { color: 'green' })
     const frameworkClass: StyleRule = {
