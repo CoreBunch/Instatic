@@ -135,7 +135,8 @@ export default definePlugin({
     { table: 'pages', modes: ['read', 'write'] },
   ],
 
-  entrypoints: { server: 'server/index.js' },
+  // No entrypoints here — \`instatic-plugin build\` auto-wires
+  // \`entrypoints.server\` because \`server/index.ts\` exists.
 })
 `
 }

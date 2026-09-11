@@ -13,16 +13,14 @@
  *     permissions: [permissions.modulesRegister, permissions.visualComponentsRegister],
  *     modules: [callout],
  *     pack,
- *     // Optional entry-point hooks — pure objects, not file paths.
- *     // The build script wires them into the runtime zip layout.
- *     editor:   () => import(`./editor`),
- *     server:   () => import(`./server`),
- *     frontend: () => import(`./frontend/tracker`),
  *   })
  *
  * The return value is the host's runtime `PluginManifest` plus the bundled
- * builder objects. The build script (PR 1.1, see scripts/build-plugin.ts)
- * uses those builder objects to emit the final zip.
+ * builder objects. The build CLI (`cli/build.ts`) uses those builder
+ * objects to emit the final zip. Entrypoints are NOT declared here —
+ * `instatic-plugin build` auto-wires them into the emitted `plugin.json`
+ * from the source layout (`server/index.ts`, `editor/index.ts`, top-level
+ * `frontend/*.ts`, admin app entries).
  */
 
 import { PLUGIN_API_VERSION } from '../types'
@@ -33,6 +31,7 @@ import type {
   PluginPermission,
   PluginResource,
 } from '../types'
+import type { ContentAccessEntry } from '../contentSchemas'
 import type { PluginModuleDefinition } from '../modules'
 import type { PluginPackContents } from './definePack'
 import {
@@ -82,6 +81,13 @@ export interface DefinePluginConfig {
    * persists records under each resource's id.
    */
   resources?: PluginResource[]
+
+  /**
+   * Per-table allowlist for the `cms.content.*` surface. Required by the
+   * manifest parser whenever any `cms.content.*` permission is declared;
+   * the host fails closed at runtime for tables/modes not listed here.
+   */
+  contentAccess?: ContentAccessEntry[]
 
   /**
    * Admin pages registered by the plugin (markdown / map / resource / app).
@@ -177,6 +183,9 @@ export function definePlugin(config: DefinePluginConfig): PluginDefinition {
     ...(config.description !== undefined ? { description: config.description } : {}),
     ...(config.networkAllowedHosts
       ? { networkAllowedHosts: [...config.networkAllowedHosts] }
+      : {}),
+    ...(config.contentAccess
+      ? { contentAccess: config.contentAccess.map((entry) => ({ ...entry, modes: [...entry.modes] })) }
       : {}),
     ...(config.settings !== undefined ? { settings: config.settings } : {}),
     ...(config.author !== undefined ? { author: config.author } : {}),

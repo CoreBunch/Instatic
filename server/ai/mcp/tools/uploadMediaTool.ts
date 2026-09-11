@@ -12,12 +12,10 @@
  * The `sourceUrl` branch is the sharp edge: letting the server fetch an
  * arbitrary URL is a classic SSRF vector (`http://169.254.169.254/…` cloud
  * metadata, `localhost` admin ports). It is gated exactly like the plugin
- * network layer — https-only, DNS-resolved, every resolved address checked
- * against the shared `isBlockedAddress` blocklist, redirects followed manually
- * and re-validated per hop, and the download size-capped while streaming.
+ * network layer: HTTPS-only, DNS-resolved and pinned, redirects followed
+ * manually and re-validated per hop, and the download size-capped while
+ * streaming.
  */
-import { isIP } from 'node:net'
-import { lookup } from 'node:dns/promises'
 import { Type } from '@core/utils/typeboxHelpers'
 import type { Static } from '@core/utils/typeboxHelpers'
 import type { AiTool, ToolContext } from '../../runtime/types'
@@ -27,11 +25,8 @@ import {
   acceptUploadedMedia,
 } from '../../../handlers/cms/mediaUpload'
 import { updateMediaAssetMetadata } from '../../../repositories/media'
-import { isBlockedAddress } from '../../../plugins/host/network'
+import { downloadRemoteMedia } from '../../../media/remoteDownload'
 
-const MAX_IMAGE_REDIRECTS = 5
-const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308])
-const FETCH_TIMEOUT_MS = 15_000
 const MAX_FILENAME_CHARS = 255
 const MAX_SOURCE_URL_CHARS = 2_048
 const MAX_ALT_TEXT_CHARS = 4_096
@@ -74,111 +69,6 @@ const UploadMediaInput = Type.Object(
 )
 
 type UploadMediaArgs = Static<typeof UploadMediaInput>
-
-/** Strip an IPv6 URL bracket wrapper so `isIP`/`isBlockedAddress` see the raw address. */
-function unbracketHost(host: string): string {
-  return host.startsWith('[') && host.endsWith(']') ? host.slice(1, -1) : host
-}
-
-/**
- * Validate one outbound target: https only, host resolves, and NO resolved
- * address is in a blocked range. Re-run for every redirect hop so an
- * allowed-looking host can never bounce the download to an internal target.
- *
- * Residual note: like the plugin path, we validate resolved addresses then
- * `fetch` by hostname (which re-resolves) — the same DNS-rebinding window the
- * rest of the host tolerates. Redirects are followed manually so each new
- * location is re-validated here before any request is made to it.
- */
-async function assertPublicHttpsTarget(urlString: string, signal: AbortSignal): Promise<URL> {
-  signal.throwIfAborted()
-  let parsed: URL
-  try {
-    parsed = new URL(urlString)
-  } catch {
-    throw new Error(`Invalid sourceUrl: "${urlString}"`)
-  }
-  if (parsed.protocol !== 'https:') {
-    throw new Error(`sourceUrl must be an https URL (got "${parsed.protocol}").`)
-  }
-  const host = unbracketHost(parsed.hostname)
-  const addresses = isIP(host)
-    ? [host]
-    : (await lookup(host, { all: true })).map((r) => r.address)
-  signal.throwIfAborted()
-  if (addresses.length === 0) {
-    throw new Error(`sourceUrl host "${host}" did not resolve to any address.`)
-  }
-  for (const address of addresses) {
-    if (isBlockedAddress(address)) {
-      throw new Error(
-        `sourceUrl host "${host}" resolves to a blocked address (${address}).`,
-      )
-    }
-  }
-  return parsed
-}
-
-/** Read a response stream into a buffer, aborting if it exceeds `maxBytes`. */
-async function readBounded(
-  stream: ReadableStream<Uint8Array>,
-  maxBytes: number,
-  signal: AbortSignal,
-): Promise<Uint8Array<ArrayBuffer>> {
-  const reader = stream.getReader()
-  const chunks: Uint8Array[] = []
-  let total = 0
-  for (;;) {
-    signal.throwIfAborted()
-    const { done, value } = await reader.read()
-    if (done) break
-    if (!value) continue
-    total += value.length
-    if (total > maxBytes) {
-      await reader.cancel()
-      throw new Error(`Image exceeds the ${Math.floor(maxBytes / (1024 * 1024))} MB limit.`)
-    }
-    chunks.push(value)
-  }
-  const out = new Uint8Array(total)
-  let offset = 0
-  for (const chunk of chunks) {
-    out.set(chunk, offset)
-    offset += chunk.length
-  }
-  return out
-}
-
-async function downloadRemoteImage(
-  sourceUrl: string,
-  requestSignal: AbortSignal,
-): Promise<Uint8Array<ArrayBuffer>> {
-  const signal = AbortSignal.any([
-    requestSignal,
-    AbortSignal.timeout(FETCH_TIMEOUT_MS),
-  ])
-  let current = sourceUrl
-  for (let hop = 0; ; hop++) {
-    const target = await assertPublicHttpsTarget(current, signal)
-    const response = await fetch(target, {
-      redirect: 'manual',
-      signal,
-    })
-    const location = response.headers.get('location')
-    if (REDIRECT_STATUSES.has(response.status) && location) {
-      if (hop >= MAX_IMAGE_REDIRECTS) {
-        throw new Error(`sourceUrl exceeded ${MAX_IMAGE_REDIRECTS} redirects.`)
-      }
-      await response.body?.cancel()
-      current = new URL(location, current).toString()
-      continue
-    }
-    if (!response.ok || !response.body) {
-      throw new Error(`sourceUrl download failed (HTTP ${response.status}).`)
-    }
-    return readBounded(response.body, MAX_MEDIA_BYTES, signal)
-  }
-}
 
 function inlineBase64Payload(data: string): string {
   if (!data.startsWith('data:')) return data
@@ -236,7 +126,11 @@ export const uploadMediaMcpTool: AiTool = {
     ctx.signal.throwIfAborted()
     const bytes = hasData
       ? decodeInlineImage(args.data!)
-      : await downloadRemoteImage(args.sourceUrl!, ctx.signal)
+      : await downloadRemoteMedia(args.sourceUrl!, {
+          signal: ctx.signal,
+          maxBytes: MAX_MEDIA_BYTES,
+          label: 'MCP media_upload',
+        })
     if (bytes.length === 0) {
       throw new Error('Decoded image is empty.')
     }

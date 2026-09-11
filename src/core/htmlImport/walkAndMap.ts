@@ -26,6 +26,9 @@
  *     base modules that emit matching authored elements, so imported CSS/JS and
  *     template runtime hooks keep working after publish. `class` and inline
  *     `style` are handled by first-class node class/style fields instead.
+ *   - an `<img>`'s `alt` is reported per node in `WalkResult.imageAlts` rather
+ *     than stored on the node: the Media Library asset owns alt text, so the
+ *     site importer creates the record with the authored value.
  *
  * Consumers (all call importHtml(source) — the single public entry point):
  *   - Paste-HTML modal (browser-side)
@@ -73,6 +76,12 @@ export interface ImportFragment {
  */
 export interface WalkResult extends ImportFragment {
   warnings: ImportWarning[]
+  /**
+   * Authored `alt` per `base.image` node id, for every `<img>` that had an
+   * alt attribute. An empty string is a deliberate decorative alt and is
+   * reported as such; an `<img>` without the attribute has no entry.
+   */
+  imageAlts: Record<string, string>
 }
 
 interface ImportBodyAttributes {
@@ -163,6 +172,8 @@ interface WalkContext {
    * walk so nested subtrees report into one list.
    */
   warnings: ImportWarning[]
+  /** See `WalkResult.imageAlts`. */
+  imageAlts: Record<string, string>
 }
 
 /**
@@ -329,6 +340,11 @@ function processElement(el: Element, ctx: WalkContext): string {
   // auto-creates bare classes for unknown names) when the fragment is inserted.
   node.classIds = Array.from(el.classList)
 
+  if (moduleId === 'base.image') {
+    const alt = el.getAttribute('alt')
+    if (alt !== null) ctx.imageAlts[node.id] = alt
+  }
+
   // Attach the element's inline `style="…"` declarations (harvested before
   // stripUnsafe removed the `style` attribute) as the node's inline styles —
   // the editor's first-class per-node `style=""` layer.
@@ -385,14 +401,20 @@ export function walkAndMap(
   doc: Document,
   inlineStyles: Map<Element, Record<string, string>> = new Map(),
 ): WalkResult {
-  const ctx: WalkContext = { nodes: {}, inlineStyles, preserveWs: false, warnings: [] }
+  const ctx: WalkContext = { nodes: {}, inlineStyles, preserveWs: false, warnings: [], imageAlts: {} }
 
-  if (!doc.body) return { nodes: ctx.nodes, rootIds: [], warnings: [] }
+  if (!doc.body) return { nodes: ctx.nodes, rootIds: [], warnings: [], imageAlts: {} }
 
   const rootIds = mapChildNodes(doc.body, ctx)
   const body = collectBodyAttributes(doc.body, inlineStyles)
 
-  return { nodes: ctx.nodes, rootIds, warnings: ctx.warnings, ...(body ? { body } : {}) }
+  return {
+    nodes: ctx.nodes,
+    rootIds,
+    warnings: ctx.warnings,
+    imageAlts: ctx.imageAlts,
+    ...(body ? { body } : {}),
+  }
 }
 
 /**

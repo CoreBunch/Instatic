@@ -80,6 +80,8 @@ export type {
   ImportPlan,
   ImportResult,
   ImportWarning,
+  ImportAsset,
+  UploadedImportAsset,
   StylesheetImportMode,
   ImportStylesheet,
   // @font-face import

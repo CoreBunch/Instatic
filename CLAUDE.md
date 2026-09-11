@@ -298,7 +298,7 @@ Note: `@core/framework-schema` is a dependency of both `@core/page-tree` (for `F
 - Always use `bun` (not `npm` / `pnpm` / `yarn`) for installs, scripts, and tests.
 - Lockfile is `bun.lock`. Do not introduce `package-lock.json` or `yarn.lock`.
 - Server scripts run with `bun --watch server/index.ts`. Frontend dev runs with `vite`.
-- Run the full stack locally with `bun run dev` (defaults to SQLite at `.tmp/dev.db` — no external dependencies) or `docker compose up --build` (everything in containers with Postgres). Set `DATABASE_URL=postgres://...` before `bun run dev` to use Postgres instead.
+- Run the full stack locally with `bun run dev` (defaults to SQLite at `.tmp/dev.db` — no external dependencies; runs `bun install --frozen-lockfile` first, so a pull never leaves a stale `node_modules`) or `docker compose up --build` (everything in containers with Postgres). Set `DATABASE_URL=postgres://...` before `bun run dev` to use Postgres instead.
 - **`bun run build` runs `tsc -b && vite build`** — both type-checking and bundling. A change that runs in dev but fails `tsc` is not done.
 
 ## Verification

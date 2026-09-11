@@ -51,7 +51,7 @@ const ALLOWLIST: ReadonlyMap<string, string> = new Map([
   // exports. No request handlers live here.
   ['shared.ts', 'Shared request helpers; no handlers.'],
   ['session.ts', 'Session lookup helper; called from auth.ts which gates.'],
-  // Media upload helpers — `acceptUploadedMedia`, `readUploadedFile`,
+  // Media upload helpers — `acceptUploadedMedia`, `readUploadForm`,
   // file-magic sniffing. Always called by an already-gated parent
   // handler (`/me/avatar`, `/media`).
   ['mediaUpload.ts', 'Multipart parse helper called by gated parent handlers.'],

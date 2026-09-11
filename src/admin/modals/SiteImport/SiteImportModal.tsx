@@ -51,6 +51,7 @@ import { ConflictsStep } from './steps/ConflictsStep'
 import { ImportStep } from './steps/ImportStep'
 import { SiteImportFooter } from './SiteImportFooter'
 import {
+  importNeedsAttention,
   makeCmsRunDoneProgress,
   makeCmsRunProgress,
   makeInitialRunProgress,
@@ -397,12 +398,21 @@ export function SiteImportModal({ onCmsBundleImportComplete }: SiteImportModalPr
         currentItem: 'Saving imported draft…',
       }))
       await saveImportedDraftSite()
-      setRunProgress(makeStaticRunDoneProgress(importResult))
+      const doneProgress = makeStaticRunDoneProgress(resolvedPlan, importResult)
+      setRunProgress(doneProgress)
       setResult(importResult)
+      // A run that lost uploads or references is not a clean success: say so,
+      // and open the log so the affected paths are on screen without a click.
+      const needsAttention = importNeedsAttention(doneProgress, importResult)
+      setLogOpen(needsAttention)
+      const media = doneProgress.categories.media
+      const mediaSummary = media.done < media.total
+        ? `${media.done} of ${media.total} assets uploaded`
+        : `${media.done} assets`
       pushToast({
-        kind: 'success',
-        title: 'Site imported',
-        body: `${importResult.pages.length} pages · ${importResult.styleRules.length} style rules · ${importResult.assets.length} assets`,
+        kind: needsAttention ? 'warning' : 'success',
+        title: needsAttention ? 'Site imported with warnings' : 'Site imported',
+        body: `${importResult.pages.length} pages · ${importResult.styleRules.length} style rules · ${mediaSummary}`,
         location: 'site-workspace',
       })
     } catch (err) {

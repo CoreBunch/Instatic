@@ -12,9 +12,11 @@
  *   the already-uploaded assets remain in the media library. They are harmless
  *   (unused orphans) and will be reaped by a future background sweep. Per-asset
  *   failures are recorded as warnings and the rest continue — one bad file
- *   never aborts the import. The store mutation (Step C) is a single
- *   `adapter.commit` call that the admin side executes as one history
- *   snapshot — Cmd+Z reverts the entire import in one step.
+ *   never aborts the import. An upload that succeeded but could not be filed
+ *   under its folder still counts as uploaded: its URL is rewritten and the
+ *   adapter's non-fatal notes join the warnings. The store mutation (Step C)
+ *   is a single `adapter.commit` call that the admin side executes as one
+ *   history snapshot — Cmd+Z reverts the entire import in one step.
  *
  * Cancellation:
  *   `options.signal` aborts the run at the next boundary — before each asset
@@ -167,13 +169,15 @@ async function uploadPlanAssets(
   for (const asset of plan.assets) {
     signal?.throwIfAborted()
     try {
-      const newUrl = await adapter.uploadAsset({
+      const uploaded = await adapter.uploadAsset({
         path: asset.sourcePath,
         bytes: asset.bytes,
         mimeType: asset.mimeType,
+        ...(asset.altText !== undefined ? { altText: asset.altText } : {}),
         signal,
       })
-      rewriteMap[asset.sourcePath] = newUrl
+      rewriteMap[asset.sourcePath] = uploaded.url
+      warnings.push(...uploaded.warnings)
     } catch (err) {
       // Cancellation ends the run — it must never degrade into a warning.
       if (isAbortError(err)) throw err
@@ -336,7 +340,9 @@ function commitStyleRules(
       tx.overwriteStyleRule(conflict.existingRuleId, rule)
       id = conflict.existingRuleId
     } else {
-      id = tx.addStyleRule(rule)
+      // Ambient rules never reach the conflict step; a re-imported one is
+      // recognised by its origin inside `putStyleRule` and replaced in place.
+      id = tx.putStyleRule(rule)
     }
 
     results.styleRules.push({ id, selector: rule.selector, kind: rule.kind })

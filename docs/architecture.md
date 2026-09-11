@@ -401,7 +401,7 @@ See [docs/reference/architecture-tests.md](reference/architecture-tests.md) for 
 bun install
 
 # develop
-bun run dev              # SQLite at .tmp/dev.db, no Docker
+bun run dev              # SQLite at .tmp/dev.db, no Docker; runs bun install --frozen-lockfile first
 DATABASE_URL=postgres://… bun run dev   # Postgres mode
 
 # verify

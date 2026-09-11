@@ -207,6 +207,32 @@ describe('collab relay integration (real server, real sockets)', () => {
     })
   })
 
+  it('keeps the cells the doc does not own when it persists the derived row', async () => {
+    const stack = await startStack()
+    const docId = `page:${stack.homeId}`
+    // SEO lives on the row, never in the doc: seed it out of band before any
+    // doc exists, then let the relay write the row from a doc edit.
+    const seeded = (await getDataRow(stack.harness.db, stack.homeId))!
+    await saveDataRowDraft(stack.harness.db, stack.homeId, {
+      cells: { ...seeded.cells, seoTitle: 'Kept title', seoDescription: 'Kept description' },
+      slug: seeded.slug,
+    })
+
+    const client = connectClient(stack)
+    const bound = client.bind(docId)
+    await bound.whenSynced
+    const rootId = treeMap(bound.doc).get('rootNodeId') as string
+    setNodeLabel(bound.doc, rootId, 'Edited in the doc')
+
+    await waitFor(async () => {
+      const row = await getDataRow(stack.harness.db, stack.homeId)
+      return row !== null && pageFromRow(row).nodes[rootId]?.label === 'Edited in the doc'
+    })
+    const row = (await getDataRow(stack.harness.db, stack.homeId))!
+    expect(row.cells.seoTitle).toBe('Kept title')
+    expect(row.cells.seoDescription).toBe('Kept description')
+  })
+
   it('refuses a read-only edit AND resets the viewer so its own screen reverts', async () => {
     const stack = await startStack()
     const docId = `page:${stack.homeId}`

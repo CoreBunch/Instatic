@@ -4,8 +4,9 @@
  * `instatic-server-<version>-<platform>.tar.gz` with a sha256 checksums file.
  *
  * These assets let a release run anywhere Bun does, no container needed (a
- * release is "artifact-enabled" when they are present). The compile has two
- * requirements the CLI can't express, so the build goes through `Bun.build`:
+ * release is "artifact-enabled" when they are present). The compile has three
+ * requirements the CLI can't express, so the build goes through `Bun.build`
+ * (plugins in `scripts/lib/serverArtifactPlugins.ts`):
  *
  *  1. `sharp` must resolve to its CJS entry — the ESM entry loads the native
  *     binding via `createRequire(import.meta.url)`, which cannot resolve bare
@@ -14,6 +15,10 @@
  *  2. Every non-target `@img/*` package must be externalized — with all
  *     platforms installed (`bun install --os='*' --cpu='*'`), every
  *     platform's native blobs would otherwise embed into every binary.
+ *  3. jsdom's default stylesheet must be inlined, its sync-XHR worker dropped,
+ *     and css-tree routed to its CJS build — the originals resolve files
+ *     at runtime relative to `__dirname` / `import.meta.url`, which inside a
+ *     compiled binary name the build machine, not `/$bunfs`.
  *
  * Usage:
  *   bun scripts/build-server-artifact.ts [targets...] [--all] [--version <v>]
@@ -25,6 +30,7 @@ import { existsSync, readdirSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
 import { cp, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
+import { serverArtifactPlugins } from './lib/serverArtifactPlugins'
 
 const ROOT = resolve(import.meta.dir, '..')
 const OUT_DIR = join(ROOT, '.tmp', 'server-artifacts')
@@ -189,7 +195,6 @@ async function compileBinary(target: ArtifactTarget, outfile: string): Promise<v
   await mkdir(ENTRY_DIR, { recursive: true })
   await writeFile(entryPath, entrySource(target), 'utf-8')
 
-  const sharpCjs = join(ROOT, 'node_modules', 'sharp', 'dist', 'index.cjs')
   const external = readdirSync(join(ROOT, 'node_modules', '@img'))
     .filter((name) => name.startsWith('sharp-') && !name.endsWith(`-${sharpTarget(target)}`))
     .flatMap((name) => [`@img/${name}`, `@img/${name}/*`])
@@ -198,14 +203,7 @@ async function compileBinary(target: ArtifactTarget, outfile: string): Promise<v
     entrypoints: [entryPath],
     external,
     compile: { outfile, target: `bun-${target}` },
-    plugins: [
-      {
-        name: 'force-sharp-cjs',
-        setup(build) {
-          build.onResolve({ filter: /^sharp$/ }, () => ({ path: sharpCjs }))
-        },
-      },
-    ],
+    plugins: serverArtifactPlugins(ROOT),
   })
   if (!result.success) {
     throw new Error(`Compile failed for ${target}:\n${result.logs.join('\n')}`)

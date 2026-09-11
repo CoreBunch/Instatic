@@ -91,8 +91,17 @@ describe('anchor recursion preserves nested icons', () => {
     expect('text' in link.props).toBe(false)
   })
 
-  it('a btn-classed anchor stays base.button (icon not preserved — buttons are leaves)', () => {
-    const node = single('<a class="btn" href="/x"><svg viewBox="0 0 24 24"></svg> Go</a>')
+  it('a btn-classed anchor wrapping an icon recurses so the <svg> survives', () => {
+    // base.button cannot hold children, so a compound .btn recurses into
+    // base.link instead of keeping only its label.
+    const result = importHtml('<a class="btn" href="/x"><svg viewBox="0 0 24 24"></svg> Go</a>')
+    const link = result.nodes[result.rootIds[0]!]!
+    expect(link.moduleId).toBe('base.link')
+    expect(link.children.map((id) => result.nodes[id]!.moduleId)).toContain('base.svg')
+  })
+
+  it('a text-only btn-classed anchor stays a childless base.button', () => {
+    const node = single('<a class="btn" href="/x">Go</a>')
     expect(node.moduleId).toBe('base.button')
     expect(node.children).toHaveLength(0)
   })

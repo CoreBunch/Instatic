@@ -10,6 +10,10 @@
  *               with a travelling shimmer, a one-line current-item ticker, and a
  *               per-category breakdown mirroring the Review navigator.
  *   complete  — a success mark + summary, with every category shown as done.
+ *               A category that fell short of its planned total (media
+ *               uploads that failed) stays visibly partial — `22 / 30`, a
+ *               warning mark, and a line saying how many failed — instead
+ *               of collapsing to `22 / 22` (#412).
  *   failed    — an inline error surface (failures are also surfaced via toast).
  *
  * Media (asset uploads) is the only genuinely incremental phase — every other
@@ -26,11 +30,16 @@ import { HeadingIcon } from 'pixel-art-icons/icons/heading'
 import { CodeIcon } from 'pixel-art-icons/icons/code'
 import { CheckIcon } from 'pixel-art-icons/icons/check'
 import { WarningDiamondSolidIcon } from 'pixel-art-icons/icons/warning-diamond-solid'
-import type { ImportResult, ImportWarning } from '@core/siteImport'
+import type { ImportResult } from '@core/siteImport'
 import type { ImportResult as CmsImportResult } from '@core/data/bundleSchema'
 import { ImportStepper } from '../shared/ImportStepper'
 import { withSiteImportCategoryTints } from '../shared/importCategoryAccent'
-import type { CategoryCount, ImportCategoryId, RunProgress } from '../shared/importProgress'
+import {
+  rankWarning,
+  type CategoryCount,
+  type ImportCategoryId,
+  type RunProgress,
+} from '../shared/importProgress'
 import styles from './ImportStep.module.css'
 
 // ---------------------------------------------------------------------------
@@ -66,7 +75,8 @@ const CMS_CATEGORIES: CategoryConfig[] = withSiteImportCategoryTints<BaseCategor
   { id: 'redirects', label: 'Redirects', unit: 'redirects', verb: 'Restoring redirects', Icon: CodeIcon },
 ])
 
-type RowState = 'pending' | 'active' | 'done'
+/** `partial`: the run finished but this category fell short of its planned total. */
+type RowState = 'pending' | 'active' | 'done' | 'partial'
 
 interface ImportStepProps {
   progress: RunProgress
@@ -100,7 +110,7 @@ export function ImportStep({
   const pct = done ? 100 : Math.min(99, Math.round(uploadFrac * 92))
 
   function rowState(id: string, c: CategoryCount): RowState {
-    if (done) return 'done'
+    if (done) return c.done < c.total ? 'partial' : 'done'
     if (c.total === 0) return 'done' // nothing to import in this category
     if (id === 'media') {
       if (c.done >= c.total) return 'done'
@@ -135,12 +145,18 @@ export function ImportStep({
           </div>
         ) : done ? (
           <div className={styles.doneHead}>
-            <span className={styles.doneMark}>
-              <CheckIcon size={28} />
+            <span className={styles.doneMark} data-partial={media.done < media.total ? 'true' : undefined}>
+              {media.done < media.total ? <WarningDiamondSolidIcon size={26} /> : <CheckIcon size={28} />}
             </span>
             <h3 className={styles.doneTitle}>Imported into {siteName}</h3>
             {mode === 'cms' && cmsResult && <p className={styles.doneSub}>{cmsSummaryLine(cmsResult)}</p>}
-            {mode !== 'cms' && result && <p className={styles.doneSub}>{summaryLine(result)}</p>}
+            {mode !== 'cms' && result && <p className={styles.doneSub}>{summaryLine(result, media)}</p>}
+            {mode !== 'cms' && media.done < media.total && (
+              <p className={styles.doneWarn} role="status">
+                {media.total - media.done} of {media.total} media files failed to upload. Their pages
+                still point at the original file paths — the import log lists them.
+              </p>
+            )}
           </div>
         ) : (
           <div className={styles.summary} role="status" aria-live="polite">
@@ -175,11 +191,11 @@ export function ImportStep({
               {configs.map((cfg) => {
                 const c = categoryCount(categories, cfg.id)
                 const state = rowState(cfg.id, c)
-                const local = state === 'done' ? 1 : cfg.id === 'media' && c.total > 0 ? c.done / c.total : 0
+                const local = state === 'done' ? 1 : c.total > 0 && (state === 'partial' || cfg.id === 'media') ? c.done / c.total : 0
                 const countText =
                   state === 'done'
                     ? `${c.total} / ${c.total}`
-                    : state === 'active' && cfg.id === 'media'
+                    : state === 'partial' || (state === 'active' && cfg.id === 'media')
                       ? `${c.done} / ${c.total}`
                       : `0 / ${c.total}`
                 return (
@@ -206,6 +222,10 @@ export function ImportStep({
                         <span className={styles.check}>
                           <CheckIcon size={13} />
                         </span>
+                      ) : state === 'partial' ? (
+                        <span className={styles.partialMark}>
+                          <WarningDiamondSolidIcon size={13} />
+                        </span>
                       ) : state === 'active' ? (
                         <span className={styles.spinner} />
                       ) : (
@@ -220,7 +240,7 @@ export function ImportStep({
         )}
 
         {mode === 'static' && logOpen && done && result && (
-          <ImportLog result={result} droppedAtRules={droppedAtRules} />
+          <ImportLog result={result} media={media} droppedAtRules={droppedAtRules} />
         )}
         {mode === 'cms' && logOpen && done && cmsResult && (
           <CmsImportLog result={cmsResult} />
@@ -234,11 +254,21 @@ export function ImportStep({
 // Import log — revealed on demand from the complete state
 // ---------------------------------------------------------------------------
 
-function ImportLog({ result, droppedAtRules }: { result: ImportResult; droppedAtRules: number }) {
+function ImportLog({
+  result,
+  media,
+  droppedAtRules,
+}: {
+  result: ImportResult
+  media: CategoryCount
+  droppedAtRules: number
+}) {
   const counts: string[] = [
     `${result.pages.length} ${plural(result.pages.length, 'page')} imported`,
     `${result.styleRules.length} style ${plural(result.styleRules.length, 'rule')} imported`,
-    `${result.assets.length} ${plural(result.assets.length, 'asset')} uploaded`,
+    media.done < media.total
+      ? `${media.done} of ${media.total} ${plural(media.total, 'asset')} uploaded`
+      : `${result.assets.length} ${plural(result.assets.length, 'asset')} uploaded`,
   ]
   if (result.colors.length > 0) counts.push(`${result.colors.length} ${plural(result.colors.length, 'color')} added`)
   if (result.fonts.length > 0) counts.push(`${result.fonts.length} ${plural(result.fonts.length, 'font')} imported`)
@@ -317,11 +347,11 @@ function CmsImportLog({ result }: { result: CmsImportResult }) {
 // Helpers
 // ---------------------------------------------------------------------------
 
-function summaryLine(result: ImportResult): string {
+function summaryLine(result: ImportResult, media: CategoryCount): string {
   const parts = [
     `${result.pages.length} ${plural(result.pages.length, 'page')}`,
     `${result.styleRules.length} ${plural(result.styleRules.length, 'rule')}`,
-    `${result.assets.length} media`,
+    media.done < media.total ? `${media.done} of ${media.total} media` : `${result.assets.length} media`,
   ]
   if (result.colors.length > 0) parts.push(`${result.colors.length} ${plural(result.colors.length, 'token')}`)
   if (result.fontTokens.length > 0) {
@@ -348,24 +378,4 @@ function categoryCount(categories: RunProgress['categories'], id: ImportCategory
 
 function plural(n: number, word: string): string {
   return n === 1 ? word : `${word}s`
-}
-
-/**
- * Display order for the import log's warning list: something is missing from
- * the site → something needs re-adding by hand → everything else, which is a
- * note about how a CSS declaration was interpreted.
- */
-function rankWarning(kind: ImportWarning['kind']): number {
-  switch (kind) {
-    case 'unresolved-asset':
-    case 'asset-upload-failed':
-    case 'missing-stylesheet':
-    case 'missing-script':
-      return 0
-    case 'external-font':
-    case 'font-install-failed':
-      return 1
-    default:
-      return 2
-  }
 }

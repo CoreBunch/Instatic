@@ -10,7 +10,7 @@
  * atomic commit, so those counts flip from 0 → committed-total together.
  */
 
-import type { ImportPlan, ImportResult } from '@core/siteImport'
+import type { ImportPlan, ImportResult, ImportWarning } from '@core/siteImport'
 import type { ImportResult as CmsImportResult } from '@core/data/bundleSchema'
 
 type RunPhase = 'idle' | 'uploading' | 'applying' | 'done' | 'failed'
@@ -83,22 +83,59 @@ export function makeStaticRunProgress(plan: ImportPlan): RunProgress {
 }
 
 /**
- * Done-phase progress reconciled to what a static run actually committed —
- * skipped pages or rules (conflict resolutions) leave fewer than the planned
- * totals.
+ * Done-phase progress reconciled to what a static run actually committed.
+ *
+ * Pages, rules and tokens the user chose to skip in the Conflicts step are
+ * not shortfalls, so those categories report what was committed as their
+ * total. Media is different: every planned upload was meant to happen, so the
+ * planned total stays and a failed upload shows as `done < total` (#412).
  */
-export function makeStaticRunDoneProgress(result: ImportResult): RunProgress {
+export function makeStaticRunDoneProgress(plan: ImportPlan, result: ImportResult): RunProgress {
   const progress = makeInitialRunProgress()
   progress.phase = 'done'
   progress.categories.pages = { done: result.pages.length, total: result.pages.length }
   const styleCount = result.styleRules.length + result.stylesheets.length
   progress.categories.styles = { done: styleCount, total: styleCount }
-  progress.categories.media = { done: result.assets.length, total: result.assets.length }
+  progress.categories.media = { done: result.assets.length, total: plan.assets.length }
   progress.categories.colors = { done: result.colors.length, total: result.colors.length }
   const fontCount = result.fonts.length + result.fontTokens.length
   progress.categories.fonts = { done: fontCount, total: fontCount }
   progress.categories.scripts = { done: result.scripts.length, total: result.scripts.length }
   return progress
+}
+
+/**
+ * Display rank for the import log's warning list: something is missing from
+ * the site → something needs re-adding or re-filing by hand → everything
+ * else, which is a note about how a CSS declaration was interpreted.
+ */
+export function rankWarning(kind: ImportWarning['kind']): number {
+  switch (kind) {
+    case 'unresolved-asset':
+    case 'asset-upload-failed':
+    case 'missing-stylesheet':
+    case 'missing-script':
+    case 'script-order-conflict':
+      return 0
+    case 'external-font':
+    case 'font-install-failed':
+    case 'asset-folder-failed':
+      return 1
+    default:
+      return 2
+  }
+}
+
+/**
+ * True when the finished run left something the user has to act on before
+ * publishing — a broken asset reference, a missing file, a script order no
+ * page agreed on — as opposed to cosmetic CSS notes. Drives the completion
+ * state: the import log opens by itself, and the toast is a warning.
+ */
+export function importNeedsAttention(progress: RunProgress, result: ImportResult): boolean {
+  const media = progress.categories.media
+  if (media.done < media.total) return true
+  return result.warnings.some((warning) => rankWarning(warning.kind) === 0)
 }
 
 /** Selected category totals for a CMS bundle run, computed before it starts. */

@@ -28,6 +28,12 @@ interface CreateMediaAssetInput {
   storageAdapterId: string
   /** True when this row's bytes are stored outside the host's uploads dir. */
   externallyHosted: boolean
+  /**
+   * Alt text the record starts with. A site import passes the authored
+   * `<img alt>` so the library never has to be back-filled by hand; every
+   * other upload leaves it empty and the user writes it in the Media viewer.
+   */
+  altText?: string
 }
 
 export interface UpdateMediaAssetMetadataInput {
@@ -102,6 +108,7 @@ export async function createMediaAsset(
     uploaded_by_user_id: input.uploadedByUserId,
     storage_adapter_id: input.storageAdapterId,
     externally_hosted: input.externallyHosted,
+    alt_text: input.altText ?? '',
   }
   const params = MEDIA_ASSET_INSERT_COLUMNS.map((column) => valuesByColumn[column])
   const placeholders = MEDIA_ASSET_INSERT_COLUMNS.map((_, i) => placeholder(db.dialect, i + 1)).join(', ')

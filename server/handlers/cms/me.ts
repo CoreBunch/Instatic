@@ -52,7 +52,7 @@ import {
 import {
   IMAGE_MIMES,
   acceptUploadedMedia,
-  readUploadedFile,
+  readUploadForm,
 } from './mediaUpload'
 import { Type } from '@core/utils/typeboxHelpers'
 import { isValidEmail } from '@core/utils/email'
@@ -313,7 +313,7 @@ export async function handleMeRoutes(
   if (user instanceof Response) return user
 
   if (req.method === 'POST') {
-    const file = await readUploadedFile(req)
+    const { file } = await readUploadForm(req)
     if (!file) return badRequest('Missing file')
 
     const asset = await acceptUploadedMedia(db, {

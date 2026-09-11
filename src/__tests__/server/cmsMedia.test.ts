@@ -133,11 +133,11 @@ function makeFakeDb() {
       return { rows: [], rowCount: 0 }
     }
 
-    // createMediaAsset — values[0..8] = id, filename, mimeType, sizeBytes,
+    // createMediaAsset — values[0..9] = id, filename, mimeType, sizeBytes,
     // storagePath, publicPath, uploadedByUserId, storageAdapterId,
-    // externallyHosted. The fake DB router matches before importMediaAsset
-    // because importMediaAsset's column list is much longer.
-    if (normalized.includes('insert into media_assets') && values.length === 9) {
+    // externallyHosted, altText. The fake DB router matches before
+    // importMediaAsset because importMediaAsset's column list is much longer.
+    if (normalized.includes('insert into media_assets') && values.length === 10) {
       const row = mediaRow({
         id: values[0],
         filename: values[1],
@@ -148,6 +148,7 @@ function makeFakeDb() {
         uploaded_by_user_id: values[6],
         storage_adapter_id: values[7],
         externally_hosted: values[8],
+        alt_text: values[9],
         created_at: new Date('2026-01-03').toISOString(),
       })
       media.push(row)
@@ -407,6 +408,35 @@ describe('CMS media handlers', () => {
       // the original filename's extension is irrelevant once stripped.
       expect(extname(String(db.media[0].storage_path))).toBe('.png')
       expect(new Uint8Array(await readFile(join(uploadsDir, String(db.media[0].storage_path))))).toEqual(PNG_BYTES)
+    } finally {
+      rmSync(uploadsDir, { recursive: true, force: true })
+    }
+  })
+
+  it('stores the alt text sent with the upload on the new asset row (#411)', async () => {
+    const db = makeFakeDb()
+    const cookie = await createCookie(db)
+    const uploadsDir = mkdtempSync(join(tmpdir(), 'instatic-uploads-'))
+    mediaStorageRegistry.configureLocalDisk({ uploadsDir })
+    const body = new FormData()
+    body.set('file', pngFile('hero.png'))
+    body.set('altText', 'Team photo in the Berlin office')
+
+    try {
+      const res = await handleCmsRequest(
+        cmsRequest('http://localhost/admin/api/cms/media', {
+          method: 'POST',
+          headers: { cookie },
+          formData: body,
+        }),
+        db,
+        { uploadsDir },
+      )
+
+      expect(res.status).toBe(201)
+      const payload = await res.json() as { asset: { altText: string } }
+      expect(payload.asset.altText).toBe('Team photo in the Berlin office')
+      expect(db.media[0].alt_text).toBe('Team photo in the Berlin office')
     } finally {
       rmSync(uploadsDir, { recursive: true, force: true })
     }

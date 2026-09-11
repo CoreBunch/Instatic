@@ -218,6 +218,14 @@
 .cat[data-state='done'] .catCount {
   color: var(--text-subtle);
 }
+.cat[data-state='partial'] .catCount {
+  color: var(--warning);
+}
+.partialMark {
+  display: grid;
+  place-items: center;
+  color: var(--warning);
+}
 
 /* Trailing status glyph. */
 .catStatus {
@@ -293,6 +301,18 @@
   margin: 0;
   font-size: var(--text-s);
   color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+.doneMark[data-partial='true'] {
+  background: var(--warning-10);
+  color: var(--warning);
+}
+.doneWarn {
+  margin: 0;
+  max-width: 44ch;
+  font-size: var(--text-s);
+  line-height: 1.45;
+  color: var(--warning);
   font-variant-numeric: tabular-nums;
 }
 

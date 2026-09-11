@@ -45,6 +45,7 @@ interface StyleRule {
   contextStylePriorities?: Record<string, Record<string, 'important'>>
   rawCss?:                 string                     // supported raw at-rule CSS, currently imported @keyframes
   generated?:              GeneratedClassMetadata    // framework-generated flags
+  origin?:                 { source: string; ordinal: number } // import provenance: stylesheet key + rule ordinal
   createdAt?:              number
   updatedAt?:              number
 }
@@ -56,6 +57,8 @@ interface StyleRule {
 - a **custom condition id** (from `site.conditions`, the reusable `@media`/`@container`/`@supports` registry) → the publisher emits that condition's `@`-prelude.
 
 `parseStyleRule` reads only the current `contextStyles` shape. Obsolete per-rule context fields are ignored rather than migrated.
+
+`origin` is stamped by Site Import (`buildAssetPlan`) on every rule parsed from a stylesheet: the source FileMap key (`styles/main.css`, or `index.html::inline` for a `<style>` block) and the rule's ordinal within it. It is the identity a re-import reconciles against — same origin **and** same selector means "this rule arriving again", which replaces the existing rule in place (id and `order` kept) instead of adding a duplicate. See `findReimportedStyleRule` in `src/admin/pages/site/store/slices/site/importLinking.ts`. User-authored rules have no `origin` and are never matched.
 
 `styles` and `contextStyles` are typed `Record<string, unknown>` at the persistence boundary — narrowing happens at the publisher's `bagToCSS` (`classCss.ts`). The WRITE API (class slice, framework generators) uses the typed `CSSPropertyBag` shape from `src/core/page-tree/cssPropertyBag.ts`.
 

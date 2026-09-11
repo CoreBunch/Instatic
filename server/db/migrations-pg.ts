@@ -1168,4 +1168,26 @@ export const pgMigrations: Migration[] = [
          and capabilities_json ? 'roles.manage';
     `,
   },
+  {
+    // Stable provenance for plugin-managed media. The mapping lets an
+    // integration converge on one media asset instead of creating a duplicate
+    // on every sync, and keeps replacements on the same asset id.
+    id: '026_plugin_media_sources',
+    sql: `
+      create table if not exists plugin_media_sources (
+        plugin_id text not null references installed_plugins(id) on delete cascade,
+        source_key text not null,
+        asset_id text not null references media_assets(id) on delete cascade,
+        source_version text,
+        content_hash text not null,
+        created_at timestamptz not null default current_timestamp,
+        updated_at timestamptz not null default current_timestamp,
+        primary key (plugin_id, source_key),
+        unique (asset_id)
+      );
+
+      create index if not exists plugin_media_sources_asset_idx
+        on plugin_media_sources (asset_id);
+    `,
+  },
 ]

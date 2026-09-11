@@ -20,6 +20,8 @@ bun run dev
 
 The default local database is SQLite at `.tmp/dev.db`. Postgres mode is selected by setting `DATABASE_URL`.
 
+`bun run dev` runs `bun install --frozen-lockfile` before starting the servers, so after a `git pull` it is the only command you need.
+
 Useful checks:
 
 ```sh

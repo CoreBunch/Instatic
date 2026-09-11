@@ -221,6 +221,15 @@ DATABASE_URL=sqlite:./data/cms.db \
 
 Replace `DATABASE_URL` with a Postgres connection string for Postgres mode. `STATIC_DIR` must point at the built admin SPA (`dist/` after `bun run build`).
 
+Update a direct install by pulling, reinstalling dependencies, rebuilding, and restarting the process. `bun install` is not optional: a release can add a server dependency (0.0.18 added `jsdom` for the richtext sanitizer), and without it the server exits on startup with `Cannot find module`.
+
+```sh
+git pull
+bun install --frozen-lockfile
+bun run build
+# then restart the bun process under your supervisor
+```
+
 Wrap the command in a process supervisor (systemd, pm2, supervisord) for auto-restart on crash and on server boot. Put an HTTPS-capable reverse proxy (Caddy, Nginx, Cloudflare Tunnel) in front for TLS, and set `PUBLIC_ORIGIN=https://your-domain` so the CSRF origin check matches the public URL even though the proxy hands the Bun process plain HTTP. `TRUSTED_PROXY_CIDRS` is independent of CSRF: set it to the proxy's source CIDR only if you want real client IPs in audit logs and rate-limit keys, and leave it empty if the app is directly exposed.
 
 ## Data Safety
