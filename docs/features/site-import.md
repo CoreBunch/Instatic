@@ -273,10 +273,18 @@ Class-free ambient selectors and supported raw blocks such as `@keyframes`
 remain conservative and global. This retains framework cascades such as `.row`
 plus `.row > *` without shipping thousands of unused utilities.
 
-Runtime code that constructs class names dynamically cannot be inferred from a
-static page tree. Those classes must be assigned in the editor (including to a
-hidden structural node) or the stylesheet should use `mode:'file'`, which is
-the explicit non-tree-shaken escape hatch for runtime-owned CSS.
+A class that only exists at runtime — a modifier a script toggles, such as
+`.nav--open` — is never assigned to a node, so node class ids alone would
+prune it. `collectUsedStyleRuleIds` therefore also keeps every class whose
+name appears literally in a `type: 'script'` site file: the script source is
+split on every character a class name cannot contain, and a class rule whose
+name is among the surviving runs counts as used. This over-collects on purpose
+(`add`, `length` and every other identifier in the script also land in the
+set) — a false positive costs a few bytes of CSS, a false negative drops a rule
+that is correct everywhere until publish. Only literal names are seen: a class
+built by concatenation at runtime still cannot be inferred and must be assigned
+in the editor (including to a hidden structural node) or shipped in a
+`mode:'file'` stylesheet, the explicit non-tree-shaken escape hatch.
 
 The escape hatch for "this sheet's resets/styles must not leak into other pages at all" is no longer a generated scope class — it is keeping that sheet as a file (`mode: 'file'`), page-scoped via runtime config.
 
