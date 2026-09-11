@@ -18,11 +18,15 @@ import { createHash } from 'node:crypto'
 import { registry } from '@core/module-engine'
 import { escapeHtml } from '@core/html-sanitize'
 import { publishPage, type PublishedRuntimePackageImportmap } from '@core/publisher'
-import { composeTemplateChain, isTemplatePage, resolveTemplateChain } from '@core/templates'
-import { buildRouteFrame } from '@core/templates/contextFrames'
-import type { TemplateRenderDataContext } from '@core/templates/dynamicBindings'
+import {
+  buildRouteFrame,
+  composeTemplateChain,
+  isTemplatePage,
+  normalizeRouteBase,
+  resolveTemplateChain,
+  type TemplateRenderDataContext,
+} from '@core/templates'
 import type { SourceRequestContext } from '@core/loops/types'
-import { normalizeRouteBase } from '@core/templates/templateMatching'
 import { normalizeSiteRuntimeConfig } from '@core/site-runtime'
 import { readFeaturedMediaCell } from '@core/data/cells'
 import type { DataRow, DataTable, PublishedDataRow } from '@core/data/schemas'
@@ -34,7 +38,8 @@ import { BRANCH_PREVIEW_EXIT_PATH } from '../branches/previewLinks'
 import { getBranch } from '../repositories/branches'
 import { getDataRowBySlug, listDataTables } from '../repositories/data'
 import { getDraftSiteDocument } from '../repositories/publish'
-import { collectFrontendInjections, injectFrontendAssets } from './frontendInjections'
+import { buildPublishedSiteModuleJsMap } from './moduleJsBundle'
+import { applyPublishedHtmlPipeline } from './publishedHtmlPipeline'
 import { prefetchLoopData, publishedDataRowToLoopItem } from './loopPrefetch'
 import { prefetchMediaAssets } from './mediaPrefetch'
 import { contentRouteFromPath, publicSlugFromPath } from './publicRouter'
@@ -217,11 +222,28 @@ export async function renderBranchPreview(
     dynamicNodes: 'inline',
     publishVersion: getPublishVersion(),
   })
-  const withFrontend = injectFrontendAssets(rendered.html, await collectFrontendInjections(db))
+  // The same pipeline as a published page (plugin frontend assets, form
+  // tokens, module scripts, the `publish.*` hooks), so a form or a plugin's
+  // client script works on the preview too. The banner goes in last, past
+  // the filters.
+  const moduleJsMap = buildPublishedSiteModuleJsMap(site, registry)
+  const finalHtml = await applyPublishedHtmlPipeline(
+    {
+      html: rendered.html,
+      pageId: merged.id,
+      slug: merged.slug,
+      siteId: site.id,
+      jsModuleIds: rendered.jsModuleIds.filter((id) => moduleJsMap.has(id)),
+      publishVersion: getPublishVersion(),
+    },
+    db,
+  )
   const banner = previewBanner(branch.name)
-  const html = withFrontend.includes('</body>')
-    ? withFrontend.replace('</body>', `${banner}</body>`)
-    : `${withFrontend}${banner}`
+  // A function replacement: a `$` in the branch name must not be read as a
+  // replacement pattern.
+  const html = finalHtml.includes('</body>')
+    ? finalHtml.replace('</body>', () => `${banner}</body>`)
+    : `${finalHtml}${banner}`
 
   return new Response(html, {
     headers: {

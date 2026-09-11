@@ -15,8 +15,11 @@ export {
   templateTargetLabel,
   resolveTemplateChain,
   resolveNotFoundTemplate,
+  normalizeRouteBase,
   type RouteResolutionContext,
 } from './templateMatching'
+export { buildRouteFrame } from './contextFrames'
+export type { TemplateRenderDataContext } from './dynamicBindings'
 export { composeTemplateChain } from './templateCompose'
 export { firstOutletId, treeHasOutlet, subtreeHasOutlet } from './outlet'
 export { composedNodeSourceId } from './templateCompose'

@@ -101,6 +101,26 @@ describe('branch preview links', () => {
     expect(deadEntry.headers.get('set-cookie')).toContain('Max-Age=0')
   })
 
+  it('keeps a $ in the branch name as text in the banner', async () => {
+    harness = await createCapabilityTestHarness()
+    const owner = await harness.setupOwner()
+    const created = await harness.cms(BRANCHES, { method: 'POST', cookie: owner, json: { name: 'Q4 $` promo' } })
+    expect(created.status).toBe(201)
+    const { branch } = await readJson<{ branch: { id: string } }>(created)
+    const issued = await harness.cms(`${BRANCHES}/${branch.id}/preview`, { method: 'POST', cookie: owner })
+    expect(issued.status).toBe(201)
+    const { url } = await readJson<{ url: string }>(issued)
+    const entry = await handleServerRequest(publicRequest(new URL(url).pathname), { db: harness.db })
+    const previewed = await handleServerRequest(publicRequest('/', cookieFrom(entry)), { db: harness.db })
+    expect(previewed.status).toBe(200)
+    const html = await previewed.text()
+    // A string replacement would have read `$\`` as "everything before the
+    // match" and pasted the whole document into the banner.
+    expect(html).toContain('Previewing branch <strong>Q4 $` promo</strong>')
+    expect(html.match(/<\/body>/g)?.length).toBe(1)
+    expect(html.match(/<html/gi)?.length).toBe(1)
+  })
+
   it('rotates the link on every share and gates issuing on who may act on the branch', async () => {
     harness = await createCapabilityTestHarness()
     const owner = await harness.setupOwner()
