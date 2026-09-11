@@ -28,7 +28,7 @@
  * Bundler determinism: `Bun.build` output is stable within a Bun minor but is
  * NOT guaranteed bit-identical across minors, so a Bun upgrade can legitimately
  * change the bytes. The expected Bun is pinned by `engines.bun` in package.json
- * (`>=1.3.0 <1.4.0`) and by the `oven/bun:1.3` base image in the Dockerfile. On
+ * (`>=1.4.0 <1.5.0`) and by the `oven/bun:1.4` base image in the Dockerfile. On
  * a deliberate Bun-minor bump, regenerate (`bun run bootstrap:sync`) in the same
  * change so the gate fails only on real source drift, never on a routine
  * upgrade.
