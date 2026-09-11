@@ -35,6 +35,7 @@ import { pageFromRow } from '../../src/core/data/pageFromRow'
 import { visualComponentFromRow } from '../../src/core/data/componentFromRow'
 import { validateVisualComponents } from '../../src/core/persistence/validate'
 import { savePublishedRuntimeAssets } from './runtimeAsset'
+import { nowIso } from '@core/utils/isoDate'
 
 // ---------------------------------------------------------------------------
 // Types
@@ -259,14 +260,15 @@ export async function persistSitePublish(
         )
       `
       await savePublishedRuntimeAssets(tx, page.versionId, page.runtimeFiles)
+      const now = nowIso()
       const { rowCount } = await tx`
         update data_rows
         set active_version_id = ${page.versionId},
             status = 'published',
             published_by_user_id = ${input.publishedByUserId},
-            published_at = current_timestamp,
+            published_at = ${now},
             updated_by_user_id = ${input.publishedByUserId},
-            updated_at = current_timestamp
+            updated_at = ${now}
         where id = ${page.pageId}
           and deleted_at is null
       `

@@ -60,9 +60,9 @@ function makeFakeDb(pluginRows: FakePluginRow[]) {
       const row = pluginRows.find((r) => r.id === values[0])
       return { rows: row ? [row as Row] : [], rowCount: row ? 1 : 0 }
     }
-    // setPluginLifecycleStatus — values: [lifecycleStatus, lastError, id]
+    // setPluginLifecycleStatus — values: [lifecycleStatus, lastError, updated_at, id]
     if (norm.includes('update installed_plugins set lifecycle_status')) {
-      const id = values[2] as string
+      const id = values[3] as string
       const row = pluginRows.find((r) => r.id === id)
       if (row) {
         row.lifecycle_status = values[0]

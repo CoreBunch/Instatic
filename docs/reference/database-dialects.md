@@ -11,7 +11,7 @@ The CMS supports **Postgres** (production, multi-author teams, horizontal scale)
 - **One `DbClient` interface** (`server/db/client.ts`). Two adapters: `postgres.ts` (via `Bun.sql`) and `sqlite.ts` (via `bun:sqlite`).
 - **Repositories are dialect-naive.** They use ANSI-standard SQL only. The five Postgres-isms are banned. Gated by `db-postgres-isms.test.ts`.
 - **JSON columns end in `_json`.** Adapters hydrate string-valued JSON on read; SQLite also stringifies objects on write. Gated by `db-json-column-naming.test.ts`.
-- **`current_timestamp` only lands in `*_at` columns.** The SQLite adapter rewrites SQLite's `YYYY-MM-DD HH:MM:SS` stamp to ISO 8601 UTC by that suffix, so both dialects hand repositories the same timestamp shape. Gated by `db-timestamp-column-naming.test.ts`.
+- **Timestamps are bound from JS as ISO 8601.** Repositories write `${nowIso()}`, never SQL `current_timestamp`, so every timestamp column holds one shape on both dialects. Migration 030 rewrote the rows stamped before that rule, and the SQLite adapter still normalises the three legacy DDL defaults on read. Gated by `db-timestamp-writes.test.ts`.
 - **Migrations are split per dialect.** `migrations-pg.ts` and `migrations-sqlite.ts` carry identical migration IDs in the same order. Parity gated by `migration-parity.test.ts`.
 - **Adding a migration** means editing both files. **Adding a JSON column** means naming it `<something>_json`.
 
@@ -25,13 +25,13 @@ Files under `server/` that import `DbClient` use **only ANSI-standard SQL** that
 
 | Forbidden                          | Reason                                                 | Use instead                                    |
 |------------------------------------|--------------------------------------------------------|------------------------------------------------|
-| `now()` in DML                     | SQLite has no `now()`                                  | `current_timestamp`                            |
+| `now()` or `current_timestamp` in DML | SQLite has no `now()`, and its `current_timestamp` writes a second timestamp shape (`YYYY-MM-DD HH:MM:SS`) | Bind `${nowIso()}` from `@core/utils/isoDate` (Rule 4) |
 | `::int` (PG cast syntax)           | SQLite doesn't recognize `::`                          | `cast(x as integer)` (rarely needed — Bun's drivers infer types) |
 | `::jsonb`                          | SQLite has no JSONB                                    | Use `_json` columns; both adapters handle the conversion |
 | `any($N::...)`                     | PG-specific array binding                              | Compose an `in (?, ?, ?)` list in JS           |
 | `distinct on`                      | PG-specific                                            | Window-function subquery (`row_number() over (...)`) |
 
-`current_timestamp` is right for a column only the server compares (`expires_at`, `revoked_at`). For a column the admin parses and displays, bind `nowIso()` (`@core/utils/isoDate`) instead: SQLite's `current_timestamp` is a space-separated UTC string that `Date.parse` reads as local time, so a row touched a second ago shows as "updated 2h ago". The branch tables (migrations 027 to 029) default their timestamps to ISO text for the same reason.
+Timestamps are never stamped with `current_timestamp` either, not even for columns only the server compares: bind `nowIso()` (`@core/utils/isoDate`) so every timestamp column holds one shape. Rule 4 has the reasons and the gate.
 
 Gated by `src/__tests__/architecture/db-postgres-isms.test.ts` — scans every file under `server/` that imports `DbClient` and rejects any of the patterns above.
 
@@ -79,7 +79,7 @@ The two arrays must have **identical IDs in the same order**. Each migration has
 | Postgres                 | SQLite              | Used for                                |
 |--------------------------|---------------------|-----------------------------------------|
 | `jsonb`                  | `text`              | JSON payloads                           |
-| `timestamptz`            | `text`              | Timestamps. JS-bound values are stored as ISO 8601; SQL `current_timestamp` stores `YYYY-MM-DD HH:MM:SS` (UTC), rewritten to ISO 8601 on read — Rule 4 |
+| `timestamptz`            | `text`              | Timestamps, bound from JS as ISO 8601 — Rule 4 |
 | `bytea`                  | `blob`              | Binary blobs                            |
 | `bigint`                 | `integer`           | Large integers — **reads back as a `string` on Postgres**, see below |
 | `boolean`                | `integer`           | Booleans (`0` / `1` in SQLite)          |
@@ -87,20 +87,25 @@ The two arrays must have **identical IDs in the same order**. Each migration has
 
 The parity gate (`src/__tests__/architecture/migration-parity.test.ts`) compares the two arrays element-by-element and fails the build if IDs drift.
 
-### Rule 4 — `current_timestamp` only lands in `*_at` columns
+### Rule 4 — Timestamps are bound from JS as ISO 8601
 
-SQLite's `current_timestamp` (and `datetime('now', 'subsec')`) write `YYYY-MM-DD HH:MM:SS[.SSS]` in UTC, with no `T` separator and no zone marker. V8 parses that shape as **local** time, so a server running in UTC+2 would read a row stamped a second ago as two hours old — and only on SQLite, only outside UTC, so a UTC test run never notices.
-
-The SQLite adapter fixes this at the read boundary: any `*_at` column holding that shape is rewritten to ISO 8601 UTC (`normalizeSqliteRow` in `server/db/sqlite.ts`), the same shape the Postgres adapter derives from `timestamptz`. The suffix is what makes the rewrite safe — a `title` that happens to look like a timestamp is data and stays untouched — so every SQL-side stamp must target a `*_at` column:
+Repositories never stamp a row with SQL `current_timestamp`. They bind an ISO 8601 string from `nowIso()` (`@core/utils/isoDate`), hoisted once per write so every column in the statement carries the same instant:
 
 ```ts
-await db`update users set display_name = ${name}, updated_at = current_timestamp where id = ${id}`
-//                                                 ▲ *_at: normalised to ISO 8601 on read
+import { nowIso } from '@core/utils/isoDate'
+
+const now = nowIso()
+await db`update data_rows set deleted_at = ${now}, updated_at = ${now} where id = ${rowId}`
 ```
 
-JS-bound timestamps (`${new Date()}`, `${nowIso}`) are already ISO 8601 and pass through unchanged, whatever the column is called.
+Why: on SQLite `current_timestamp` writes `YYYY-MM-DD HH:MM:SS` (UTC, no `T`, no `Z`) while JS-bound values and the schema's `strftime` defaults write `2026-09-11T18:00:00.000Z`. Two shapes in one column break it three ways: V8 parses the space form as **local** time (a row updated a second ago read "2h ago" on a UTC+2 server), the space form sorts before the `T` form so `order by updated_at desc` misorders same-day rows, and a bound ISO cutoff such as `published_at >= ${sinceIso}` skips the whole boundary day. Postgres never had the problem: `timestamptz` arrives as a `Date`.
 
-Gated by `src/__tests__/architecture/db-timestamp-column-naming.test.ts` — scans every `.ts` file under `server/` for `col = current_timestamp`, positional `values (…, current_timestamp)`, and `default current_timestamp` DDL, and rejects any column not ending in `_at`. Read contract: `src/__tests__/db/sqlite-timestamp-normalization.test.ts`, which pins the process to `Europe/Prague`.
+Two safety nets cover what the rule cannot reach:
+
+- **Migration `030_iso_timestamps`** rewrote every `*_at` text value already stored in the space form (`ISO_TIMESTAMP_COLUMNS_030` in `migrations-sqlite.ts` lists the columns; `src/__tests__/db/iso-timestamp-migration.test.ts` checks the list against the live schema). Postgres ships it as a no-op.
+- **The SQLite adapter normalises on read.** `collab_documents`, `plugin_media_sources`, and `schema_migrations` predate the ISO `strftime` default and still declare `default current_timestamp`; their inserts bind the columns explicitly, and `normalizeSqliteRow` rewrites any `*_at` value that still arrives in the space form. That is why a DDL `default current_timestamp` may only sit on a `*_at` column.
+
+Gated by `src/__tests__/architecture/db-timestamp-writes.test.ts` — scans every `.ts` file under `server/` and rejects `col = current_timestamp`, positional `values (…, current_timestamp)`, and any `default current_timestamp` on a column not ending in `_at`. Read contract: `src/__tests__/db/sqlite-timestamp-normalization.test.ts`, which pins the process to `Europe/Prague`. Boundary-day regression: `src/__tests__/server/publishedSinceBoundary.test.ts`.
 
 ---
 
@@ -166,7 +171,7 @@ For SQLite, the parent directory of the DB file is created automatically.
    - `null` / `undefined` → `null`
    - Everything else → pass through
 2. On read, columns ending in `_json` whose value is a non-empty string are auto-`JSON.parse`d.
-3. On read, columns ending in `_at` whose value is SQLite's `YYYY-MM-DD HH:MM:SS[.SSS]` stamp are rewritten to ISO 8601 UTC (Rule 4). Both read conversions live in `normalizeSqliteRow`.
+3. On read, columns ending in `_at` whose value is SQLite's `YYYY-MM-DD HH:MM:SS[.SSS]` stamp are rewritten to ISO 8601 UTC. Only the three legacy DDL defaults can still write that shape (Rule 4); both read conversions live in `normalizeSqliteRow`.
 4. Pragmas set at boot: `journal_mode = WAL`, `foreign_keys = ON`, `synchronous = NORMAL`, `busy_timeout = 5000`.
 5. **Transaction serialization.** `bun:sqlite` uses one shared synchronous connection, but a transaction callback can `await` async work while its `BEGIN` is still open. Two concurrent `db.transaction()` calls would cause the second `BEGIN` to throw "cannot start a transaction within a transaction", and the implied `ROLLBACK` would silently abort the first transaction's writes. The adapter prevents this with a promise chain (`txChain`): each `.transaction()` call queues behind the previous one and only issues `BEGIN` after the prior transaction has fully settled. Callers don't need to do anything — it's automatic.
 
@@ -220,11 +225,12 @@ Skipping the coercion is invisible in the default SQLite install and only breaks
          id text primary key,
          email text not null unique,
          metadata_json text not null default '{}',
-         created_at text not null default current_timestamp
+         created_at text not null default (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
        );
      `,
    },
    ```
+   The SQLite default is the ISO `strftime` form, never `current_timestamp` (Rule 4).
 4. **Run `bun test`** — the parity gate and the JSON-naming gate confirm you got it right.
 
 ### Dropping a constraint or altering a table in SQLite (table-rebuild dance)
@@ -280,7 +286,7 @@ Examples in the codebase: `migrations-sqlite.ts` migration `006_data_rows_schedu
      return rows
    }
    ```
-3. Use ANSI SQL only. No `now()`, no `::jsonb`, no `distinct on`.
+3. Use ANSI SQL only. No `now()`, no `::jsonb`, no `distinct on`. Stamp timestamps with `${nowIso()}`, never `current_timestamp`.
 4. JSON columns end in `_json` — both adapters handle them.
 
 ### Using `db.unsafe()` with dialect-aware placeholders
@@ -398,12 +404,13 @@ Inserts must not name the column; reads and `returning` may. Migration 026 uses 
 
 | Pattern                                                | Use instead                                                   |
 |--------------------------------------------------------|---------------------------------------------------------------|
-| `now()` in DML (`server/` files importing `DbClient`)  | `current_timestamp`                                           |
+| `now()` or `current_timestamp` in DML (`server/` files importing `DbClient`) | Bind `${nowIso()}` — see Rule 4                    |
 | `cast(x as int)` via `x::int`                          | Drivers usually infer; use `cast(x as integer)` when needed   |
 | `where col = any($1::text[])`                          | Build an `in (...)` list in JS                                |
 | `select distinct on (col) ...`                         | `row_number() over (partition by ...)` subquery               |
 | `column_name jsonb` without the `_json` suffix         | Rename to `column_name_json`                                  |
-| `some_column = current_timestamp` where the column does not end in `_at` | Name it `<something>_at` — the SQLite adapter normalises timestamps by that suffix (`db-timestamp-column-naming.test.ts`) |
+| `updated_at = current_timestamp` (SET or positional INSERT)  | `const now = nowIso()` then `updated_at = ${now}` — SQLite would store a second timestamp shape (`db-timestamp-writes.test.ts`) |
+| `default current_timestamp` on a column not ending in `_at` | Name it `<something>_at`, or better use the ISO `strftime` default — the SQLite adapter normalises the legacy shape by that suffix |
 | Writing a JSON value as `${JSON.stringify(obj)}`       | Pass the object directly — both adapters handle it            |
 | Reading a JSON value as a string and then `JSON.parse`ing | Read it as `Record<string, unknown>` — auto-parsed in SQLite, auto-decoded in PG |
 | Adding a migration to only one dialect's file          | Mirror it to the other — `migration-parity.test.ts` enforces this |
@@ -427,9 +434,11 @@ Inserts must not name the column; reads and `returning` may. Migration 026 uses 
 - Gate tests:
   - `src/__tests__/architecture/db-postgres-isms.test.ts`
   - `src/__tests__/architecture/db-json-column-naming.test.ts`
-  - `src/__tests__/architecture/db-timestamp-column-naming.test.ts`
+  - `src/__tests__/architecture/db-timestamp-writes.test.ts`
   - `src/__tests__/architecture/migration-parity.test.ts`
   - `src/__tests__/architecture/json-extract-egress.test.ts`
 - Regression tests:
   - `src/__tests__/db/adapter-rowcount.test.ts` — cross-dialect `rowCount` contract (affected rows for non-RETURNING writes, returned rows for SELECT / RETURNING)
   - `src/__tests__/db/sqlite-timestamp-normalization.test.ts` — `*_at` columns stamped by `current_timestamp` read back as ISO 8601 UTC under a non-UTC `TZ`
+  - `src/__tests__/db/iso-timestamp-migration.test.ts` — migration 030 covers every `*_at` text column and rewrites the space form in place
+  - `src/__tests__/server/publishedSinceBoundary.test.ts` — a row published on the `since` day counts toward the dashboard window

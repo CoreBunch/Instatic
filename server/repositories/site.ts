@@ -30,6 +30,7 @@ import type { DbClient } from '../db/client'
 import type { BranchScope } from '../branches/scope'
 import { notifyShellWrite, serializeCollabAwareWrite } from './rowWriteEvents'
 import type { SiteRow } from '../types'
+import { nowIso } from '@core/utils/isoDate'
 
 const CMS_SITE_SCHEMA_VERSION = 1
 
@@ -117,7 +118,7 @@ export async function saveDraftSite(
     on conflict (id) do update
       set name = excluded.name,
           settings_json = excluded.settings_json,
-          updated_at = current_timestamp
+          updated_at = ${nowIso()}
   `
 }
 

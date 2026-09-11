@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test'
+import { expect, test, type Page } from '@playwright/test'
 import { Type } from '@sinclair/typebox'
 import { Value } from '@sinclair/typebox/value'
 import { ANONYMOUS_STATE, OWNER, loginAs, logout } from './helpers'
@@ -84,4 +84,52 @@ test.describe('timestamps on a non-UTC server', () => {
       await second.close()
     }
   })
+
+  test('an entry edited after a newer one was created moves to the top of the list (CONFIG-004)', async ({
+    page,
+  }) => {
+    // `updated_at` is written two ways: the insert default (ISO `strftime`) and
+    // every later save. When saves stamped with SQL `current_timestamp`, SQLite
+    // stored `YYYY-MM-DD HH:MM:SS`, which sorts *before* the ISO form of a row
+    // that was merely created later, so `order by updated_at desc` put the
+    // untouched newer entry above the one edited a moment ago.
+    const suffix = Date.now().toString(36)
+    const title = `Clock check ${suffix}`
+    await page.goto('/admin/content')
+    const entries = page.getByRole('region', { name: 'Posts' })
+    const rows = entries.getByRole('button', { name: /draft|published|scheduled/ })
+    await expect(page.getByRole('button', { name: 'New post', exact: true })).toBeEnabled()
+    const initialCount = await rows.count()
+
+    const older = await createUntitledPost(page)
+    await expect(rows).toHaveCount(initialCount + 1)
+    await createUntitledPost(page)
+    await expect(rows).toHaveCount(initialCount + 2)
+
+    // Edit the older entry after the newer one exists.
+    await page.goto(`/admin/content?row=${older}`)
+    await page.getByRole('textbox', { name: 'Title', exact: true }).fill(title)
+    const saved = page.waitForResponse(
+      (response) =>
+        /\/admin\/api\/cms\/data\/rows\/[^/]+$/.test(new URL(response.url()).pathname) &&
+        response.request().method() === 'PATCH',
+    )
+    await page.getByRole('button', { name: 'More publishing actions' }).click()
+    await page.getByTestId('toolbar-content-save-draft-action').click()
+    expect((await saved).ok()).toBe(true)
+
+    await page.reload()
+    await expect(rows.first()).toContainText(title)
+  })
 })
+
+/** Click "New post" and return the new entry's id once the workspace has selected it. */
+async function createUntitledPost(page: Page): Promise<string> {
+  const previous = new URL(page.url()).searchParams.get('row')
+  await page.getByRole('button', { name: 'New post', exact: true }).click()
+  await page.waitForURL((url) => {
+    const next = url.searchParams.get('row')
+    return next !== null && next !== previous
+  })
+  return new URL(page.url()).searchParams.get('row')!
+}
