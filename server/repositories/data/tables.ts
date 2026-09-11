@@ -465,10 +465,30 @@ export async function softDeleteDataTable(
   return rows[0] ? mapTable(rows[0]) : null
 }
 
+/** The soft-deleted table with this id, the one `restoreDataTable` brings back. */
+async function getDeletedDataTable(
+  db: DbClient,
+  scope: BranchScope,
+  tableId: string,
+): Promise<DataTable | null> {
+  const { rows } = await db<DataTableRow>`
+    select logical_id, name, slug, kind, route_base, singular_label, plural_label,
+           primary_field_id, fields_json, system,
+           created_by_user_id, updated_by_user_id, created_at, updated_at
+    from data_tables
+    where id = ${physicalId(scope.branchId, tableId)}
+      and branch_id = ${scope.branchId}
+      and deleted_at is not null
+  `
+  return rows[0] ? mapTable(rows[0]) : null
+}
+
 /**
  * Bring a soft-deleted table back with new settings — the merge engine's
  * path when a branch re-creates a table the target side had deleted. Null
- * when no soft-deleted table has this id on the branch.
+ * when no soft-deleted table has this id on the branch. The incoming field
+ * list replaces the stored one under the same hold as a PATCH: a post type
+ * keeps `title` and `slug` however the other side shaped it.
  */
 export async function restoreDataTable(
   db: DbClient,
@@ -476,7 +496,9 @@ export async function restoreDataTable(
   tableId: string,
   input: UpdateDataTableInput,
 ): Promise<DataTable | null> {
-  const fields = input.fields !== undefined ? normalizeDataTableFields(input.fields) : null
+  const stored = await getDeletedDataTable(db, scope, tableId)
+  if (!stored) return null
+  const fields = input.fields !== undefined ? keepPostTypeBuiltIns(stored, normalizeDataTableFields(input.fields)) : null
   const { rows } = await db<DataTableRow>`
     update data_tables
     set deleted_at = null,

@@ -4,7 +4,7 @@
  */
 import { afterEach, describe, expect, it } from 'bun:test'
 import { handleServerRequest } from '../../../server/router'
-import { listDataRows, saveDataRowDraft } from '../../../server/repositories/data'
+import { listDataRows, saveDataRowDraft, upsertDataRowDraft } from '../../../server/repositories/data'
 import {
   createCapabilityTestHarness,
   expectForbidden,
@@ -119,6 +119,52 @@ describe('branch preview links', () => {
     expect(html).toContain('Previewing branch <strong>Q4 $` promo</strong>')
     expect(html.match(/<\/body>/g)?.length).toBe(1)
     expect(html.match(/<html/gi)?.length).toBe(1)
+  })
+
+  it('carries an entry\'s SEO title and description into the preview head', async () => {
+    harness = await createCapabilityTestHarness()
+    const owner = await harness.setupOwner()
+    expect((await harness.cms(BRANCHES, { method: 'POST', cookie: owner, json: { name: 'Seo Preview' } })).status).toBe(201)
+    const scope = { branchId: 'seo-preview' }
+    // An entry template for posts on the branch, and a post with SEO of its own.
+    const node = (id: string, moduleId: string, props: Record<string, unknown>, children: string[] = []) =>
+      ({ id, moduleId, props, children, breakpointOverrides: {}, classIds: [] })
+    await upsertDataRowDraft(harness.db, scope, {
+      id: 'post-template',
+      tableId: 'pages',
+      slug: 'post-template',
+      cells: {
+        title: 'Post template',
+        slug: 'post-template',
+        templateEnabled: true,
+        templateTarget: { kind: 'postTypes', tableSlugs: ['posts'] },
+        templatePriority: 0,
+        body: {
+          rootNodeId: 'root',
+          nodes: {
+            root: node('root', 'base.container', {}, ['copy']),
+            copy: node('copy', 'base.text', { text: 'Entry body' }),
+          },
+        },
+      },
+    })
+    await upsertDataRowDraft(harness.db, scope, {
+      id: 'seo-post',
+      tableId: 'posts',
+      slug: 'seo-post',
+      cells: { title: 'Plain title', slug: 'seo-post', seoTitle: 'Search title', seoDescription: 'Search description' },
+    })
+
+    const issued = await harness.cms(`${BRANCHES}/seo-preview/preview`, { method: 'POST', cookie: owner })
+    expect(issued.status).toBe(201)
+    const { url } = await readJson<{ url: string }>(issued)
+    const entry = await handleServerRequest(publicRequest(new URL(url).pathname), { db: harness.db })
+    const previewed = await handleServerRequest(publicRequest('/posts/seo-post', cookieFrom(entry)), { db: harness.db })
+    expect(previewed.status).toBe(200)
+    const html = await previewed.text()
+    expect(html).toContain('Entry body')
+    expect(html).toMatch(/<title>[^<]*Search title[^<]*<\/title>/)
+    expect(html).toContain('<meta name="description" content="Search description">')
   })
 
   it('rotates the link on every share and gates issuing on who may act on the branch', async () => {

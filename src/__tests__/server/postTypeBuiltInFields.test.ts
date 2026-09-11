@@ -22,7 +22,7 @@ import { createSqliteClient } from '../../../server/db/sqlite'
 import { runMigrations } from '../../../server/db/runMigrations'
 import { sqliteMigrations } from '../../../server/db/migrations-sqlite'
 import type { DbClient } from '../../../server/db/client'
-import { createDataTable, getDataTable, updateDataTable } from '../../../server/repositories/data'
+import { createDataTable, getDataTable, restoreDataTable, softDeleteDataTable, updateDataTable } from '../../../server/repositories/data'
 import { insertDataTableIfAbsent } from '../../../server/repositories/data/tables'
 import { slugForTable } from '@core/data/cells'
 import { buildPostTypeDefaultFields } from '@core/data/fields'
@@ -357,6 +357,37 @@ describe('updateDataTable — post-type built-in fields survive a PATCH', () => 
         fields: [{ type: 'text', id: 'rack', label: 'Rack' }],
       })
       expect(updated!.fields.map((field) => field.id)).toEqual(['rack'])
+    } finally {
+      await cleanup()
+    }
+  })
+})
+
+describe('restoreDataTable — the merge engine\'s revival keeps a post type routable', () => {
+  it('holds title and slug when the incoming fields omit them', async () => {
+    const { db, cleanup } = await setupDb()
+    try {
+      const table = await createDataTable(db, MAIN_SCOPE, {
+        name: 'Recipes',
+        slug: 'recipes',
+        kind: 'postType',
+        routeBase: '/recipes',
+        singularLabel: 'Recipe',
+        pluralLabel: 'Recipes',
+        fields: [{ type: 'text', id: 'crop', label: 'Crop' }],
+      })
+      expect(await softDeleteDataTable(db, MAIN_SCOPE, table.id)).not.toBeNull()
+
+      // A merge revives the table with the other side's field list, which
+      // may carry only the custom fields.
+      const restored = await restoreDataTable(db, MAIN_SCOPE, table.id, {
+        fields: [{ type: 'text', id: 'crop', label: 'Crop' }],
+      })
+      expect(restored).not.toBeNull()
+      const ids = restored!.fields.map((field) => field.id)
+      for (const id of POST_TYPE_MANDATORY_FIELD_IDS) expect(ids).toContain(id)
+      expect(ids).toContain('crop')
+      expect((await getDataTable(db, MAIN_SCOPE, table.id))!.fields.map((field) => field.id)).toEqual(ids)
     } finally {
       await cleanup()
     }

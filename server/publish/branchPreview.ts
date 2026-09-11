@@ -17,7 +17,7 @@ import '@core/loops/sources'
 import { createHash } from 'node:crypto'
 import { registry } from '@core/module-engine'
 import { escapeHtml } from '@core/html-sanitize'
-import { publishPage, type PublishedRuntimePackageImportmap } from '@core/publisher'
+import { publishPage, type DocumentMetaOverride, type PublishedRuntimePackageImportmap } from '@core/publisher'
 import {
   buildRouteFrame,
   composeTemplateChain,
@@ -28,7 +28,7 @@ import {
 } from '@core/templates'
 import type { SourceRequestContext } from '@core/loops/types'
 import { normalizeSiteRuntimeConfig } from '@core/site-runtime'
-import { readFeaturedMediaCell } from '@core/data/cells'
+import { readEntrySeoOverride, readFeaturedMediaCell } from '@core/data/cells'
 import type { DataRow, DataTable, PublishedDataRow } from '@core/data/schemas'
 import type { Page, SiteDocument } from '@core/page-tree'
 import { canonicalJson } from '@core/utils/canonicalJson'
@@ -54,6 +54,8 @@ interface ResolvedPreview {
   /** The page whose scripts run — the routed page, or the entry template. */
   scriptPage: Page
   templateContext: TemplateRenderDataContext
+  /** An entry's SEO title and description; they reach the head only. */
+  documentMeta?: DocumentMetaOverride
 }
 
 /**
@@ -134,6 +136,7 @@ async function resolvePreview(
       entryStack: [publishedDataRowToLoopItem(published)],
       route: buildRouteFrame(url.toString()),
     },
+    documentMeta: readEntrySeoOverride(row.cells),
   }
 }
 
@@ -199,7 +202,7 @@ export async function renderBranchPreview(
   const resolved = await resolvePreview(db, scope, site, url)
   if (!resolved) return null
 
-  const { merged, scriptPage, templateContext } = resolved
+  const { merged, scriptPage, templateContext, documentMeta } = resolved
   const { runtimeAssets, runtimePackageImportmap } = await buildPreviewRuntime(site, scriptPage)
   // A preview is one uncached render with the request in hand, so
   // request-dependent nodes resolve inline instead of becoming holes that
@@ -215,6 +218,7 @@ export async function renderBranchPreview(
   const mediaAssets = await prefetchMediaAssets(merged, site, registry, db, { templateContext, loopData })
   const rendered = publishPage(merged, site, registry, {
     templateContext,
+    ...(documentMeta ? { documentMeta } : {}),
     runtimeAssets,
     runtimePackageImportmap,
     loopData,
