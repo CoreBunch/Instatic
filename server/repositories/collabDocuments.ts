@@ -9,6 +9,7 @@
  * reset deletes the row, so the next open mints a fresh one — which is exactly
  * what lets both ends refuse a frame from a dead lineage.
  */
+import { encodeCollabDocId, siteDocId } from '@core/collab'
 import { placeholder, type DbClient } from '../db/client'
 
 export interface StoredCollabDocument {
@@ -61,4 +62,22 @@ export async function deleteCollabDocuments(
     `delete from collab_documents where doc_id in (${placeholders})`,
     [...docIds],
   )
+}
+
+/** Every stored doc id of a branch: its shell doc plus one per row doc. */
+export async function listCollabDocumentIdsForBranch(
+  db: DbClient,
+  branchId: string,
+): Promise<string[]> {
+  const rowDocPrefixes = (['page', 'component', 'layout'] as const).map(
+    (kind) => `${encodeCollabDocId({ kind, branchId, rowId: '' })}%`,
+  )
+  const { rows } = await db<{ doc_id: string }>`
+    select doc_id from collab_documents
+    where doc_id = ${siteDocId(branchId)}
+      or doc_id like ${rowDocPrefixes[0]}
+      or doc_id like ${rowDocPrefixes[1]}
+      or doc_id like ${rowDocPrefixes[2]}
+  `
+  return rows.map((row) => row.doc_id)
 }

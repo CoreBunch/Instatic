@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
 import { createCapabilityTestHarness, type CapabilityTestHarness } from '../helpers/capabilityHarness'
 import { contextMcpTools } from '../../../server/ai/mcp/tools/contextTool'
 import { createEditorBridgeStream } from '../../../server/ai/mcp/editorBridge'
+import { MAIN_SCOPE } from '../../../server/branches/scope'
 import type { ToolContext } from '../../../server/ai/runtime/types'
 
 function ctxFor(harness: CapabilityTestHarness): ToolContext {
@@ -10,6 +11,7 @@ function ctxFor(harness: CapabilityTestHarness): ToolContext {
     userId: 'no-editor-user',
     capabilities: ['site.read'],
     scope: 'site',
+    branch: MAIN_SCOPE,
     conversationId: 'test',
     snapshot: null,
     signal: new AbortController().signal,

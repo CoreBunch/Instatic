@@ -32,7 +32,7 @@ describe('editor bridge idle lease', () => {
   it('keeps an active stream alive past the lease while tools flow, then recycles it when idle', async () => {
     const controller = new AbortController()
     const userId = `lease-user-${Date.now()}`
-    const stream = createEditorBridgeStream(userId, 'site', controller.signal, 80)
+    const stream = createEditorBridgeStream(userId, 'site', controller.signal, { idleLeaseMs: 80 })
     drain(stream)
     await sleep(10)
     expect(hasEditorBridge(userId, 'site')).toBe(true)
@@ -59,7 +59,7 @@ describe('editor bridge idle lease', () => {
   it('recycles a stream that never sees tool traffic after one idle lease', async () => {
     const controller = new AbortController()
     const userId = `lease-idle-${Date.now()}`
-    const stream = createEditorBridgeStream(userId, 'site', controller.signal, 60)
+    const stream = createEditorBridgeStream(userId, 'site', controller.signal, { idleLeaseMs: 60 })
     drain(stream)
     await sleep(10)
     expect(hasEditorBridge(userId, 'site')).toBe(true)

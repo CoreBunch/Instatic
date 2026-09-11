@@ -30,6 +30,8 @@ Files under `server/` that import `DbClient` use **only ANSI-standard SQL** that
 | `any($N::...)`                     | PG-specific array binding                              | Compose an `in (?, ?, ?)` list in JS           |
 | `distinct on`                      | PG-specific                                            | Window-function subquery (`row_number() over (...)`) |
 
+`current_timestamp` is right for a column only the server compares (`expires_at`, `revoked_at`). For a column the admin parses and displays, bind `nowIso()` (`@core/utils/isoDate`) instead: SQLite's `current_timestamp` is a space-separated UTC string that `Date.parse` reads as local time, so a row touched a second ago shows as "updated 2h ago". The branch tables (migrations 027 to 029) default their timestamps to ISO text for the same reason.
+
 Gated by `src/__tests__/architecture/db-postgres-isms.test.ts` — scans every file under `server/` that imports `DbClient` and rejects any of the patterns above.
 
 The two migration files (`migrations-pg.ts`, `migrations-sqlite.ts`) are explicitly allowlisted because that's where dialect-specific DDL lives by design.
@@ -354,6 +356,24 @@ await db.transaction(async (tx) => {
 ```
 
 The callback receives a `DbClient` scoped to the transaction. If it throws, the transaction is rolled back.
+
+### Adding a generated column
+
+Both dialects accept a column computed from the same row. SQLite can only ADD a `virtual` generated column; Postgres wants `stored`:
+
+```sql
+-- migrations-sqlite.ts
+alter table data_rows add column logical_id text generated always as (
+  case when branch_id = 'main' then id else substr(id, length(branch_id) + 2) end
+) virtual;
+
+-- migrations-pg.ts
+alter table data_rows add column logical_id text generated always as (
+  case when branch_id = 'main' then id else substr(id, length(branch_id) + 2) end
+) stored;
+```
+
+Inserts must not name the column; reads and `returning` may. Migration 026 uses this for `logical_id` on the three branched tables.
 
 ---
 

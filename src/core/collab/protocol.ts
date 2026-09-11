@@ -61,10 +61,12 @@ export const FRAME_PONG = 4
  *               held for that doc has been discarded.
  *   refused   — the write-policy guard rejected the update.
  *   oversize  — the frame exceeded the sync payload ceiling.
+ *   gone      — the doc's branch no longer exists; do not rebind, leave the
+ *               branch instead.
  */
-export type ResetReason = 'rewritten' | 'stale' | 'refused' | 'oversize'
+export type ResetReason = 'rewritten' | 'stale' | 'refused' | 'oversize' | 'gone'
 
-const RESET_REASONS: readonly ResetReason[] = ['rewritten', 'stale', 'refused', 'oversize']
+const RESET_REASONS: readonly ResetReason[] = ['rewritten', 'stale', 'refused', 'oversize', 'gone']
 
 export interface CollabFrame {
   docId: string

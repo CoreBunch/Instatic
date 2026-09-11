@@ -13,7 +13,7 @@ import { FileTextSolidIcon } from 'pixel-art-icons/icons/file-text-solid'
 import { MoveIcon } from 'pixel-art-icons/icons/move'
 import { Settings2SolidIcon } from 'pixel-art-icons/icons/settings-2-solid'
 import { UploadIcon } from 'pixel-art-icons/icons/upload'
-import { readTitleCell } from '@core/data/cells'
+import { readDisplayTitle, readTitleCell } from '@core/data/cells'
 import type { CmsMediaAsset } from '@core/persistence'
 import type { DataTable, DataRow, UpdateDataTableInput } from '@core/data/schemas'
 import { ExplorerItemContextMenu, type ExplorerContextMenuItem } from '@site/explorer-actions'
@@ -402,7 +402,7 @@ export function ContentExplorerPanel({
                   >
                     <EntryRowPreview asset={getFeaturedMediaAssetForEntry(entry)} />
                     <span className={styles.entryTitleStack}>
-                      <span className={styles.entryTitle}>{readTitleCell(entry.cells)}</span>
+                      <span className={styles.entryTitle}>{readDisplayTitle(entry.cells)}</span>
                       <span className={styles.entryAuthor} aria-hidden="true">{entryAuthorLabel(entry)}</span>
                     </span>
                     <span className={explorerStyles.rowMeta}>{entry.status}</span>

@@ -26,6 +26,8 @@ import { Switch } from '@ui/components/Switch'
 import { pushToast } from '@ui/components/Toast'
 import { assignRailAccents, railTintVar } from '@ui/railAccent'
 import { getExportSummary, submitSiteBundleExport } from '@core/persistence/cmsTransfer'
+import { MAIN_BRANCH_ID } from '@core/branches'
+import { useActiveBranchId } from '@admin/state/branchStore'
 import { listCmsDataRows } from '@core/persistence/cmsData'
 import { isAbortError } from '@core/http'
 import { getErrorMessage } from '@core/utils/errorMessage'
@@ -194,6 +196,7 @@ export function ExportDialog({
   const requestedTablesRef = useRef<Set<string>>(new Set())
 
   const [summary, setSummary] = useState<ExportSummary | null>(null)
+  const activeBranchId = useActiveBranchId()
   const [exporting, setExporting] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -274,6 +277,8 @@ export function ExportDialog({
     includeSite: siteShell,
     includeMediaFolders,
     includeRedirects,
+    // The download is a form POST without the branch header: name the branch.
+    ...(activeBranchId === MAIN_BRANCH_ID ? {} : { branchId: activeBranchId }),
   }
 
   const estimate = useExportEstimate(open ? request : null)

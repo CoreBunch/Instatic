@@ -40,6 +40,7 @@ import {
   classKindSelector,
   replaceCssSelectorClassName,
 } from '@core/page-tree'
+import { canonicalJson } from '@core/utils/canonicalJson'
 import {
   createCascadedStyleRuleLayers,
   mergeStyleRuleCascade,
@@ -171,7 +172,7 @@ export function detectCrossSheetClassConflicts(
   const defsByName = new Map<string, Array<{ contentKey: string; cascades: Cascade[] }>>()
   for (const cascade of cascades) {
     for (const [name, def] of effectiveClassDefs(cascade, rulesByCssPath)) {
-      const contentKey = stableStringify(def)
+      const contentKey = canonicalJson(def)
       let defs = defsByName.get(name)
       if (!defs) {
         defs = []
@@ -501,14 +502,6 @@ function rewriteSelectorClassTokens(selector: string, renames: Map<string, strin
 }
 
 /** Deterministic JSON with sorted object keys (arrays keep their order). */
-function stableStringify(value: unknown): string {
-  if (value === null || typeof value !== 'object') return JSON.stringify(value)
-  if (Array.isArray(value)) return `[${value.map(stableStringify).join(',')}]`
-  const obj = value as Record<string, unknown>
-  const keys = Object.keys(obj).sort()
-  return `{${keys.map((k) => `${JSON.stringify(k)}:${stableStringify(obj[k])}`).join(',')}}`
-}
-
 function hashText(value: string): string {
   let hash = 5381
   for (let i = 0; i < value.length; i++) {

@@ -223,7 +223,14 @@ function readPageNumber(url: URL | undefined, loopNodeId: string): number {
 async function resolveOneLoop(
   node: PageNode,
   source: PrefetchedLoopEntitySource,
-  ctx: { db: DbClient; site: SiteDocument; url?: URL; request?: SourceRequestContext },
+  ctx: {
+    db: DbClient
+    site: SiteDocument
+    url?: URL
+    request?: SourceRequestContext
+    branchId?: string
+    drafts?: boolean
+  },
 ): Promise<ResolvedLoopData> {
   const props = readLoopProps(node)
   const pageNumber = props.pagination === 'infinite' ? readPageNumber(ctx.url, node.id) : 1
@@ -246,6 +253,8 @@ async function resolveOneLoop(
     // Request context — present only when rendering inside a Layer C hole.
     // Built-in publish-time sources ignore it.
     request: ctx.request,
+    branchId: ctx.branchId,
+    drafts: ctx.drafts,
   }
 
   try {
@@ -282,6 +291,9 @@ export async function prefetchLoopData(
     request?: SourceRequestContext
     /** Limit the walk to a subtree (the hole node id). Defaults to page root. */
     rootNodeId?: string
+    /** Branch whose rows loops read; absent means main (publishing, public routes). */
+    branchId?: string
+    drafts?: boolean
   },
 ): Promise<LoopDataMap> {
   const nodes = collectLoopNodes(page, site, options?.rootNodeId)
@@ -302,6 +314,8 @@ export async function prefetchLoopData(
         site,
         url,
         request: options?.request,
+        branchId: options?.branchId,
+        drafts: options?.drafts,
       })
       return [node.id, data] as [string, ResolvedLoopData]
     }),

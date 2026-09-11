@@ -20,11 +20,14 @@ import { pillAccent, pillAccentVar, type PillAccent } from '@ui/pillAccent'
 import styles from './TagPill.module.css'
 
 type TagPillSize = 'xs' | 'sm'
+/** A semantic state instead of a categorical accent: same tint, state-coloured. */
+export type TagPillTone = 'success' | 'warning' | 'danger'
 
 interface TagPillProps {
   label: string
   colorKey?: string
   accent?: PillAccent
+  tone?: TagPillTone
   active?: boolean
   muted?: boolean
   monospace?: boolean
@@ -48,6 +51,7 @@ export function TagPill({
   label,
   colorKey,
   accent,
+  tone,
   active = false,
   muted = false,
   monospace = false,
@@ -69,7 +73,7 @@ export function TagPill({
   const resolvedAccent = accent ?? pillAccent(colorKey ?? label)
   const removable = Boolean(onRemove)
   const style = {
-    '--pill-accent': pillAccentVar(resolvedAccent),
+    '--pill-accent': tone ? `var(--${tone})` : pillAccentVar(resolvedAccent),
   } as CSSProperties
 
   const labelContent = (
@@ -94,6 +98,7 @@ export function TagPill({
     <span
       className={cn(styles.pill, className)}
       data-accent={resolvedAccent}
+      data-tone={tone}
       data-active={active ? 'true' : undefined}
       data-clickable={onClick ? 'true' : undefined}
       data-muted={muted ? 'true' : undefined}

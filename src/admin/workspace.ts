@@ -28,4 +28,6 @@ export type AdminWorkspace =
   | 'users'
   | 'ai'
   | 'pluginPage'
+  /** The merge review of one branch (`/admin/branches/:branchId/review`). */
+  | 'branchReview'
   | 'account'

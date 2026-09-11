@@ -140,7 +140,7 @@ export function AdminSectionNavigation({
           to="/admin/site"
           icon={<LayoutSolidIcon size={NAV_ICON_SIZE} aria-hidden="true" />}
           label="Site"
-          active={section === 'site'}
+          active={section === 'site' || section === 'branchReview'}
           onNavigateStart={onWorkspaceNavigateStart}
         />
       )}

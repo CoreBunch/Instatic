@@ -3,9 +3,10 @@ import { createCapabilityTestHarness, type CapabilityTestHarness } from '../help
 import { styleMcpTools } from '../../../server/ai/mcp/tools/styleTools'
 import { getDraftSite, saveDraftSite } from '../../../server/repositories/site'
 import type { ToolContext } from '../../../server/ai/runtime/types'
+import { MAIN_SCOPE } from '../../../server/branches/scope'
 
 async function seedClass(harness: CapabilityTestHarness): Promise<void> {
-  const site = await getDraftSite(harness.db)
+  const site = await getDraftSite(harness.db, MAIN_SCOPE)
   if (!site) throw new Error('no default site')
   const now = Date.now()
   site.styleRules['r_testcard'] = {
@@ -19,7 +20,7 @@ async function seedClass(harness: CapabilityTestHarness): Promise<void> {
     createdAt: now,
     updatedAt: now,
   }
-  await saveDraftSite(harness.db, site)
+  await saveDraftSite(harness.db, MAIN_SCOPE, site)
 }
 
 function ctxFor(harness: CapabilityTestHarness): ToolContext {
@@ -28,6 +29,7 @@ function ctxFor(harness: CapabilityTestHarness): ToolContext {
     userId: 'u1',
     capabilities: ['site.read'],
     scope: 'site',
+    branch: MAIN_SCOPE,
     conversationId: 'test',
     snapshot: null, // headless — no browser snapshot, unlike the old list_tokens
     signal: new AbortController().signal,
@@ -65,13 +67,13 @@ describe('read_styles (headless design-system read)', () => {
   })
 
   it('summary mode returns a compact catalog (selector + token refs, no declarations)', async () => {
-    const site = await getDraftSite(harness.db)
+    const site = await getDraftSite(harness.db, MAIN_SCOPE)
     const now = Date.now()
     site!.styleRules['r_tok'] = {
       id: 'r_tok', name: 'tok-card', kind: 'class', selector: '.tok-card', order: 0,
       styles: { color: 'var(--ist-accent)', padding: '8px' }, contextStyles: {}, createdAt: now, updatedAt: now,
     }
-    await saveDraftSite(harness.db, site!)
+    await saveDraftSite(harness.db, MAIN_SCOPE, site!)
     const out = (await readStyles.handler!({ format: 'summary' }, ctxFor(harness))) as {
       classes: Array<{ selector: string; tokens: string[] }>
     }

@@ -19,12 +19,15 @@
  * connector can only ever reach the open workspace of its OWN owner and a
  * content tool can never be dispatched to the site editor (or vice versa).
  */
+import { MAIN_BRANCH_ID } from '@core/branches'
 import type { AiBrowserBridge, AiStreamEvent } from '../runtime/types'
 import { createBridge, encodeStreamEvent } from '../runtime'
 
 interface EditorBridgeEntry {
   bridgeId: string
   bridge: AiBrowserBridge
+  /** The branch the connected workspace has open; browser tools act in it. */
+  branchId: string
   destroy: () => void
 }
 
@@ -54,6 +57,11 @@ export function hasEditorBridge(userId: string, scope: EditorBridgeScope): boole
   return byUser.get(userId)?.has(scope) ?? false
 }
 
+/** The branch the user's live workspace has open, or null when disconnected. */
+export function getEditorBridgeBranch(userId: string, scope: EditorBridgeScope): string | null {
+  return byUser.get(userId)?.get(scope)?.branchId ?? null
+}
+
 /**
  * Open the long-lived stream the editor consumes. The server pushes
  * `toolRequest` events down it whenever an MCP browser tool is invoked for this
@@ -63,9 +71,14 @@ export function createEditorBridgeStream(
   userId: string,
   scope: EditorBridgeScope,
   signal: AbortSignal,
-  // Test seam: the idle lease shrinks to milliseconds in unit tests.
-  idleLeaseMs: number = STREAM_IDLE_LEASE_MS,
+  options: {
+    /** The branch the workspace has open (its `X-Instatic-Branch`); main when absent. */
+    branchId?: string
+    /** Test seam: the idle lease shrinks to milliseconds in unit tests. */
+    idleLeaseMs?: number
+  } = {},
 ): ReadableStream<Uint8Array> {
+  const { branchId = MAIN_BRANCH_ID, idleLeaseMs = STREAM_IDLE_LEASE_MS } = options
   let closeStream: (() => void) | null = null
 
   return new ReadableStream<Uint8Array>({
@@ -129,7 +142,7 @@ export function createEditorBridgeStream(
       const userBridges = byUser.get(userId) ?? new Map<EditorBridgeScope, EditorBridgeEntry>()
       const previous = userBridges.get(scope)
       if (previous) previous.destroy()
-      userBridges.set(scope, { bridgeId, bridge: created.bridge, destroy: destroyBridge })
+      userBridges.set(scope, { bridgeId, bridge: created.bridge, branchId, destroy: destroyBridge })
       byUser.set(userId, userBridges)
 
       emit({ type: 'bridgeReady', bridgeId })

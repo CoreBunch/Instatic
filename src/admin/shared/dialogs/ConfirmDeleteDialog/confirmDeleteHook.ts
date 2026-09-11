@@ -23,6 +23,12 @@ export interface ConfirmDeleteRequest {
   alwaysConfirm?: boolean
   /** Action to execute on confirm or, when confirmation is skipped, immediately. */
   commit: () => void
+  /**
+   * `danger` (the default) styles the dialog and its confirm button as
+   * destructive. `primary` is for consequential but non-destructive acts
+   * (merging a branch into main, updating a branch from main).
+   */
+  tone?: 'danger' | 'primary'
 }
 
 export interface PendingConfirmState {
@@ -53,4 +59,15 @@ export const ConfirmDeleteContext = createContext<ConfirmDeleteContextValue | nu
 export function useConfirmDelete(): ConfirmDeleteContextValue['confirmDelete'] {
   const ctx = use(ConfirmDeleteContext)
   return ctx?.confirmDelete ?? ((request) => request.commit())
+}
+
+
+/**
+ * Confirm a consequential, non-destructive action. Unlike `useConfirmDelete`
+ * it never honours the `confirmBeforeDelete` preference: that preference is
+ * about deletes, and a merge or an update should always ask.
+ */
+export function useConfirmAction(): (request: Omit<ConfirmDeleteRequest, 'alwaysConfirm'>) => void {
+  const confirmDelete = useConfirmDelete()
+  return (request) => confirmDelete({ tone: 'primary', ...request, alwaysConfirm: true })
 }

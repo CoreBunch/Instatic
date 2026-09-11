@@ -37,6 +37,7 @@ const GROUP_ACCENT: Record<CommandGroup, SpotlightAccent> = {
   account: 'peach',
   settings: 'lilac',
   preview: 'cyan',
+  branches: 'mint',
   ai: 'violet',
   help: 'gold',
   recent: 'rose',

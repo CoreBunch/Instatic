@@ -5,6 +5,7 @@ import { runMigrations } from '../../../../db/runMigrations'
 import type { DbClient } from '../../../../db/client'
 import { softDeleteDataRow, upsertDataRowDraft } from '../mutations'
 import { getDataRow } from '../read'
+import { MAIN_SCOPE } from '../../../../branches/scope'
 
 const USER_ID = 'user-author'
 
@@ -38,7 +39,7 @@ describe('softDeleteDataRow', () => {
   })
 
   it('returns the narrow deleted-row summary', async () => {
-    const result = await softDeleteDataRow(db, 'post-1', USER_ID)
+    const result = await softDeleteDataRow(db, MAIN_SCOPE, 'post-1', USER_ID)
     expect(result).not.toBeNull()
     if (!result) throw new Error('expected a summary')
 
@@ -61,14 +62,14 @@ describe('softDeleteDataRow', () => {
   })
 
   it('hides the row from the hydrated read afterwards', async () => {
-    await softDeleteDataRow(db, 'post-1', USER_ID)
-    expect(await getDataRow(db, 'post-1')).toBeNull()
+    await softDeleteDataRow(db, MAIN_SCOPE, 'post-1', USER_ID)
+    expect(await getDataRow(db, MAIN_SCOPE, 'post-1')).toBeNull()
   })
 
   it('returns null when the row is already gone', async () => {
-    await softDeleteDataRow(db, 'post-1', USER_ID)
-    expect(await softDeleteDataRow(db, 'post-1', USER_ID)).toBeNull()
-    expect(await softDeleteDataRow(db, 'missing', USER_ID)).toBeNull()
+    await softDeleteDataRow(db, MAIN_SCOPE, 'post-1', USER_ID)
+    expect(await softDeleteDataRow(db, MAIN_SCOPE, 'post-1', USER_ID)).toBeNull()
+    expect(await softDeleteDataRow(db, MAIN_SCOPE, 'missing', USER_ID)).toBeNull()
   })
 })
 
@@ -82,10 +83,11 @@ describe('upsertDataRowDraft', () => {
     await seedRow(db, 'post-1')
     await upsertDataRowDraft(
       db,
+     MAIN_SCOPE,
       { id: 'post-1', tableId: 'posts', cells: { title: 'Updated' }, slug: 'updated' },
       USER_ID,
     )
-    const row = await getDataRow(db, 'post-1')
+    const row = await getDataRow(db, MAIN_SCOPE, 'post-1')
     expect(row?.cells.title).toBe('Updated')
     expect(row?.slug).toBe('updated')
   })
@@ -93,10 +95,11 @@ describe('upsertDataRowDraft', () => {
   it('creates a fresh row when the id is unknown', async () => {
     await upsertDataRowDraft(
       db,
+     MAIN_SCOPE,
       { id: 'post-new', tableId: 'posts', cells: { title: 'Fresh' }, slug: 'fresh' },
       USER_ID,
     )
-    expect((await getDataRow(db, 'post-new'))?.cells.title).toBe('Fresh')
+    expect((await getDataRow(db, MAIN_SCOPE, 'post-new'))?.cells.title).toBe('Fresh')
   })
 
   it('RESURRECTS a soft-deleted row instead of hitting its primary key', async () => {
@@ -104,16 +107,17 @@ describe('upsertDataRowDraft', () => {
     // peer restored. getDataRow filters soft-deleted rows, so a plain insert
     // would conflict on the still-present primary key forever.
     await seedRow(db, 'post-1')
-    await softDeleteDataRow(db, 'post-1', USER_ID)
-    expect(await getDataRow(db, 'post-1')).toBeNull() // soft-deleted, hidden
+    await softDeleteDataRow(db, MAIN_SCOPE, 'post-1', USER_ID)
+    expect(await getDataRow(db, MAIN_SCOPE, 'post-1')).toBeNull() // soft-deleted, hidden
 
     await upsertDataRowDraft(
       db,
+     MAIN_SCOPE,
       { id: 'post-1', tableId: 'posts', cells: { title: 'Revived' }, slug: 'revived' },
       USER_ID,
     )
 
-    const revived = await getDataRow(db, 'post-1')
+    const revived = await getDataRow(db, MAIN_SCOPE, 'post-1')
     expect(revived).not.toBeNull()
     expect(revived?.cells.title).toBe('Revived')
     expect(revived?.deletedAt).toBeNull()

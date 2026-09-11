@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { Suspense, lazy, useEffect, useRef, useState } from 'react'
 import type { SiteDocument } from '@core/page-tree'
 import { selectActivePage, useEditorStore } from '@site/store/store'
 import { getCmsPublishStatus, publishCmsDraft } from '@core/persistence'
@@ -8,7 +8,9 @@ import { CheckIcon } from 'pixel-art-icons/icons/check'
 import { CircleAlertSolidIcon } from 'pixel-art-icons/icons/circle-alert-solid'
 import { CloudUploadSolidIcon } from 'pixel-art-icons/icons/cloud-upload-solid'
 import { EyeSolidIcon } from 'pixel-art-icons/icons/eye-solid'
+import { ArchiveRestoreSolidIcon } from 'pixel-art-icons/icons/archive-restore-solid'
 import { StepUpCancelledMessage, useStepUp } from '@admin/shared/StepUp'
+import { useBranchPublishGate } from '@admin/state/branchStore'
 import { SchedulePublishDialog } from '@admin/modals/SchedulePublishDialog'
 import type { PersistenceSaveStatus } from '@site/hooks/usePersistence'
 import { pushToast } from '@ui/components/Toast'
@@ -17,6 +19,11 @@ import { getErrorMessage } from '@core/utils/errorMessage'
 import type { SiteRuntimeDiagnostic } from '@core/site-runtime'
 
 type PublishState = 'idle' | 'publishing' | 'published' | 'error'
+
+// Opened rarely — loaded on first open so the site route shell stays small.
+const VersionHistoryDialog = lazy(() =>
+  import('@admin/shared/VersionHistoryDialog').then((m) => ({ default: m.VersionHistoryDialog })),
+)
 
 interface PublishButtonProps {
   enabled?: boolean
@@ -38,8 +45,12 @@ export function PublishButton({
   const activePage = useEditorStore(selectActivePage)
   const openPreview = useEditorStore((s) => s.openPreview)
   const { runStepUp } = useStepUp()
+  // Publishing only exists on main: on a branch the control stays visible
+  // but disabled, and the status chip carries the reason inline.
+  const branchGate = useBranchPublishGate()
   const [state, setState] = useState<PublishState>('idle')
   const [scheduleDialogOpen, setScheduleDialogOpen] = useState(false)
+  const [historyOpen, setHistoryOpen] = useState(false)
   const statusTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   /**
    * The `site` reference captured when the button entered the "published"
@@ -60,7 +71,7 @@ export function PublishButton({
   }, [])
 
   useEffect(() => {
-    if (!enabled || !siteId) return
+    if (!enabled || !siteId || branchGate.onBranch) return
     let cancelled = false
 
     async function loadPublishStatus() {
@@ -78,7 +89,7 @@ export function PublishButton({
 
     void loadPublishStatus()
     return () => { cancelled = true }
-  }, [enabled, siteId])
+  }, [enabled, siteId, branchGate.onBranch])
 
   useEffect(() => {
     if (state !== 'published' || site === publishedSiteRef.current) return
@@ -102,6 +113,7 @@ export function PublishButton({
     if (
       !site ||
       !enabled ||
+      branchGate.onBranch ||
       state === 'publishing' ||
       runtimeErrorCount > 0 ||
       runtimeValidationPending
@@ -156,6 +168,7 @@ export function PublishButton({
   const disabled = (
     !site ||
     !enabled ||
+    branchGate.onBranch ||
     isPublishing ||
     notSynced ||
     runtimeErrorCount > 0 ||
@@ -167,6 +180,8 @@ export function PublishButton({
     state === 'error' ? 'Retry publish' :
     'Publish'
 
+  // No branch entry here: the strip names the branch and the disabled Publish
+  // carries the reason, so the status pill stays about sync and code health.
   const status =
     syncError ? {
       label: 'Sync failed',
@@ -212,7 +227,7 @@ export function PublishButton({
       id: 'schedule-publish',
       label: 'Schedule publish…',
       icon: CalendarSolidIcon,
-      disabled: !activePage || runtimeErrorCount > 0 || runtimeValidationPending,
+      disabled: !activePage || branchGate.onBranch || runtimeErrorCount > 0 || runtimeValidationPending,
       onSelect: () => setScheduleDialogOpen(true),
       testId: 'toolbar-schedule-publish-action',
     },
@@ -223,6 +238,16 @@ export function PublishButton({
       disabled: !site,
       onSelect: () => openPreview(),
       testId: 'toolbar-preview-action',
+    },
+    {
+      // Published versions of the active page; restoring rewrites its draft
+      // on the active branch and the relay reloads the canvas.
+      id: 'version-history',
+      label: 'Version history…',
+      icon: ArchiveRestoreSolidIcon,
+      disabled: !activePage,
+      onSelect: () => setHistoryOpen(true),
+      testId: 'toolbar-version-history-action',
     },
     // "Open live page" used to live here. It now has a dedicated
     // toolbar icon button (`OpenLivePageButton`) next to the avatar so
@@ -237,18 +262,21 @@ export function PublishButton({
         statusAriaLabel={status.ariaLabel}
         publishLabel={label}
         publishAriaLabel={
-          state === 'published'
-            ? 'Published'
-            : runtimeErrorCount > 0
-              ? `Cannot publish: ${runtimeErrorLabel}`
-              : 'Publish site'
+          branchGate.reason
+            ? `Cannot publish: ${branchGate.reason}`
+            : state === 'published'
+              ? 'Published'
+              : runtimeErrorCount > 0
+                ? `Cannot publish: ${runtimeErrorLabel}`
+                : 'Publish site'
         }
         publishTitle={
-          state === 'published'
-            ? 'Published'
-            : runtimeErrorCount > 0
-              ? `Resolve ${runtimeErrorLabel} before publishing`
-              : 'Publish site'
+          branchGate.reason
+            ?? (state === 'published'
+              ? 'Published'
+              : runtimeErrorCount > 0
+                ? `Resolve ${runtimeErrorLabel} before publishing`
+                : 'Publish site')
         }
         publishState={state === 'publishing' ? 'busy' : state === 'published' ? 'success' : state}
         publishBusy={isPublishing}
@@ -257,6 +285,16 @@ export function PublishButton({
         onPublish={handlePublish}
         menuItems={menuItems}
       />
+      {activePage && historyOpen && (
+        <Suspense fallback={null}>
+          <VersionHistoryDialog
+            rowId={activePage.id}
+            entityLabel="page"
+            title={activePage.title}
+            onClose={() => setHistoryOpen(false)}
+          />
+        </Suspense>
+      )}
       {activePage && (
         <SchedulePublishDialog
           open={scheduleDialogOpen}

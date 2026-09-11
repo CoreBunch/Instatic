@@ -9,7 +9,7 @@
  * affordances inside design frames. Live frames get neither — they behave
  * exactly like the published site.
  */
-import { CANVAS_VIEWPORT_HEIGHT } from './resolveViewportUnits'
+import { CANVAS_VIEWPORT_HEIGHT } from './canvasViewport'
 
 /**
  * Frame interaction model.

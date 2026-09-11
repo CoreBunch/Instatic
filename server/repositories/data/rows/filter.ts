@@ -7,7 +7,9 @@
  * The filter SQL is dialect-naive (ANSI lower/like, the `jsonField()` helper
  * for cells_json paths) — `db-postgres-isms.test.ts` gates against drift.
  */
+import { physicalId } from '@core/branches'
 import type { DbClient } from '../../../db/client'
+import type { BranchScope } from '../../../branches/scope'
 import type { DataRow } from '@core/data/schemas'
 import type { StorageFilterOperator, StorageFilterValue } from '@core/plugin-sdk/storageSchemas'
 import { jsonField } from '../../../db/jsonExtract'
@@ -62,12 +64,13 @@ const ROW_LEVEL_ORDER_KEYS = new Set([
  */
 export async function listDataRowsWithFilter(
   db: DbClient,
+  scope: BranchScope,
   tableId: string,
   options: ListDataRowsFilterOptions = {},
 ): Promise<ListDataRowsWithFilterResult> {
   const { filter, orderBy, status = 'any', limit = 100, offset = 0 } = options
 
-  const params: unknown[] = [tableId]
+  const params: unknown[] = [physicalId(scope.branchId, tableId)]
   let paramIdx = 1
   function addParam(value: unknown): string {
     params.push(value)
@@ -76,6 +79,7 @@ export async function listDataRowsWithFilter(
   }
 
   let whereSql = `data_rows.table_id = ${placeholder(db.dialect, 1)} and data_rows.deleted_at is null`
+  whereSql += ` and data_rows.branch_id = ${addParam(scope.branchId)}`
 
   if (status !== 'any') {
     whereSql += ` and data_rows.status = ${addParam(status)}`
@@ -157,7 +161,7 @@ export async function listDataRowsWithFilter(
   const countParams = params.slice(0, countParamCount)
 
   const [rows, countResult] = await Promise.all([
-    selectHydratedDataRows(db, {
+    selectHydratedDataRows(db, scope, {
       cte,
       join: 'join filtered_ids on filtered_ids.id = data_rows.id',
       tail: `order by ${orderBySql}`,

@@ -81,6 +81,8 @@ const routes: readonly RouteHandler[] = [
   tryServeHealth,                  // /health
   tryServeAi,                      // /admin/api/ai/*         → server/ai/handlers/
   tryServeCmsApi,                  // /admin/api/cms/*        → handlers/cms/index.ts
+  tryServeBranchPreviewLink,       // /_instatic/preview/<token> | /exit → publish/publicRoutes.ts
+                                   //   sets / clears the branch preview cookie
   tryServeLoopRuntimeAsset,        // /_instatic/loop-runtime.js (fixed CMS asset)
   tryServeLoop,                    // /_instatic/loop/*       → handlers/cms/loop.ts
   tryServeHoleRuntimeAsset,        // /_instatic/hole-runtime.js (fixed CMS asset)
@@ -95,9 +97,11 @@ const routes: readonly RouteHandler[] = [
   tryServeUpload,                  // /uploads/* → uploadsDir (with nosniff hardening)
   tryServeAdminApp,                // /admin/* → dist/index.html (SPA fallback)
   tryServePublicRoute,             // /<slug> OR /<route-base>/<row-slug>
-                                   //   → server/publish/publicRouter.ts
-                                   //   resolves to page snapshot OR data row + template,
-                                   //   live-renders, runs publish.html pipeline
+                                   //   → server/publish/publicRoutes.ts: a live preview
+                                   //   cookie renders the branch draft (branchPreview.ts),
+                                   //   otherwise publicRouter.ts resolves to page snapshot
+                                   //   OR data row + template, live-renders, runs the
+                                   //   publish.html pipeline
   trySetupRedirect,                // first-run redirect → /admin/setup
   tryServeNotFoundPage,            // fall-through GET → site's 404 page (notFound
                                    //   template; baked 404.html artefact, else live
@@ -140,7 +144,9 @@ This prevents an unknown path under a known namespace from accidentally matching
 
 1. **CSRF defense in depth.** State-changing methods (`POST/PUT/PATCH/DELETE`) must come from an `Origin` matching a configured public origin (`PUBLIC_ORIGIN`, auto-detected from `RENDER_EXTERNAL_URL` / `RAILWAY_PUBLIC_DOMAIN`), or a dev allowlist entry. With nothing configured the check falls back to the inbound `Host` header. Forwarded headers (`X-Forwarded-Host` / `X-Forwarded-Proto`) are never consulted, so `TRUSTED_PROXY_CIDRS` has no bearing on CSRF. `SameSite=Lax` already covers most CSRF; this catches the same-site-different-subdomain edge.
 
-2. **Group dispatch.** The handler walks an ordered chain of route-group handlers, each owning a resource:
+2. **Branch scope.** `resolveBranchScope(req, db)` (`server/branches/scope.ts`) turns the `X-Instatic-Branch` header into a `BranchScope` — `MAIN_SCOPE` when absent, `400` for a malformed id, `404 { code: 'branch_not_found' }` for an unknown one. Content handlers receive it and pass it to every repository call; see [`features/branches.md`](features/branches.md).
+
+3. **Group dispatch.** The handler walks an ordered chain of route-group handlers, each owning a resource:
 
 ```ts
 const response =
@@ -151,21 +157,22 @@ const response =
   ?? (await handleUsersRoutes(req, db))
   ?? (await handleRolesRoutes(req, db))
   ?? (await handleAuditRoutes(req, db))
-  ?? (await handleSiteRoutes(req, db))
-  ?? (await handlePagesRoutes(req, db))
-  ?? (await handleComponentsRoutes(req, db))
-  ?? (await handleRuntimeRoutes(req, db))
+  ?? (await handleBranchesRoutes(req, db, scope, options))
+  ?? (await handleSiteRoutes(req, db, scope))
+  ?? (await handlePagesRoutes(req, db, scope))
+  ?? (await handleComponentsRoutes(req, db, scope))
+  ?? (await handleRuntimeRoutes(req, db, scope))
   ?? (await handleMediaFolderRoutes(req, db))           // before /media/:id
   ?? (await handleMediaStorageAdminRoutes(req, db, …))  // before /media/:id
   ?? (await handleMediaRoutes(req, db, …))
   ?? (await handlePluginsRoutes(req, db, …))
-  ?? (await handleDataRoutes(req, db))
+  ?? (await handleDataRoutes(req, db, scope, options))
   ?? (await handleDashboardRoutes(req, db))
   ?? (await handleFontsRoutes(req, db, …))
-  ?? (await handlePublishRoutes(req, db))
-  ?? (await handleExportRoute(req, db, options))
-  ?? (await handleImportPreviewRoute(req, db))          // before /import (longer path)
-  ?? (await handleImportRoute(req, db, options))
+  ?? (await handlePublishRoutes(req, db, scope))         // 409 off main
+  ?? (await handleExportRoute(req, db, scope, options))
+  ?? (await handleImportPreviewRoute(req, db, scope))   // before /import (longer path)
+  ?? (await handleImportRoute(req, db, scope, options))
 ```
 
 Each group module owns its URL matching and returns `Response | null`. The first non-null wins. Order matters — handler order comments in `index.ts` document the load-bearing precedence (e.g. media folder/storage routes must run before `/media/:id` because that pattern would otherwise eat them).

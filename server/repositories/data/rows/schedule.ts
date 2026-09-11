@@ -7,8 +7,12 @@
  *
  * The publish-scheduler tick (`server/publish/publishScheduler.ts`) polls
  * `listDuePublishSchedules` and calls the regular publish path on each result.
+ * Scheduling only exists on `main` — publishing is a main-only operation —
+ * so the due query is pinned to the main branch.
  */
+import { MAIN_BRANCH_ID, physicalId } from '@core/branches'
 import type { DbClient } from '../../../db/client'
+import type { BranchScope } from '../../../branches/scope'
 import type { DataRow } from '@core/data/schemas'
 import { isoDate } from '@core/utils/isoDate'
 import { getDataRow } from './read'
@@ -33,6 +37,7 @@ import { getDataRow } from './read'
  */
 export async function scheduleDataRowPublish(
   db: DbClient,
+  scope: BranchScope,
   rowId: string,
   whenIso: string,
   actorUserId: string | null = null,
@@ -45,11 +50,12 @@ export async function scheduleDataRowPublish(
         published_by_user_id = null,
         updated_by_user_id = ${actorUserId},
         updated_at = current_timestamp
-    where id = ${rowId}
+    where id = ${physicalId(scope.branchId, rowId)}
+      and branch_id = ${scope.branchId}
       and deleted_at is null
     returning id
   `
-  return rows[0] ? getDataRow(db, rows[0].id) : null
+  return rows[0] ? getDataRow(db, scope, rowId) : null
 }
 
 /**
@@ -60,6 +66,7 @@ export async function scheduleDataRowPublish(
  */
 export async function cancelScheduledPublish(
   db: DbClient,
+  scope: BranchScope,
   rowId: string,
   actorUserId: string | null = null,
 ): Promise<DataRow | null> {
@@ -69,12 +76,13 @@ export async function cancelScheduledPublish(
         scheduled_publish_at = null,
         updated_by_user_id = ${actorUserId},
         updated_at = current_timestamp
-    where id = ${rowId}
+    where id = ${physicalId(scope.branchId, rowId)}
+      and branch_id = ${scope.branchId}
       and deleted_at is null
       and status = 'scheduled'
     returning id
   `
-  return rows[0] ? getDataRow(db, rows[0].id) : null
+  return rows[0] ? getDataRow(db, scope, rowId) : null
 }
 
 /**
@@ -90,11 +98,12 @@ interface DueScheduledRow {
 }
 
 /**
- * List scheduled rows whose target time has passed and that aren't
+ * List `main` rows whose scheduled publish time has passed and that aren't
  * already deleted. Returns up to `limit` rows ordered by their target
  * time (oldest first — back-pressure favours the rows that have been
  * waiting longest). The scheduler tick calls this, then calls
- * `publishDataRow(...)` on each result.
+ * `publishDataRow(...)` on each result. On main, physical and logical ids
+ * coincide, so the projected ids are directly usable.
  *
  * NOT atomic — two concurrent leader instances could read the same
  * batch. The publish-scheduler tick relies on the host-level leader
@@ -111,9 +120,10 @@ export async function listDuePublishSchedules(
     table_id: string
     scheduled_publish_at: string | Date
   }>`
-    select id, table_id, scheduled_publish_at
+    select logical_id as id, table_id, scheduled_publish_at
     from data_rows
-    where status = 'scheduled'
+    where branch_id = ${MAIN_BRANCH_ID}
+      and status = 'scheduled'
       and deleted_at is null
       and scheduled_publish_at is not null
       and scheduled_publish_at <= ${nowIso}

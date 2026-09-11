@@ -3,6 +3,7 @@ import { handleCmsRequest } from '../../../server/handlers/cms'
 import type { DbClient } from '../../../server/db'
 import { createTestDb, type TestDb } from '../helpers/createTestDb'
 import { registerPublishFlush } from '../../../server/publish/publishFlush'
+import { MAIN_SCOPE } from '../../../server/branches/scope'
 import { upsertDataRowDraft } from '../../../server/repositories/data'
 
 const ownedPassword = 'long-enough-password'
@@ -383,6 +384,7 @@ describe('CMS data ownership authorization', () => {
       flushed = true
       await upsertDataRowDraft(
         db,
+       MAIN_SCOPE,
         {
           id: relayResidentId,
           tableId: 'posts',
