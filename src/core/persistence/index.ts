@@ -115,6 +115,7 @@ export {
   addCmsBranchReviewComment,
   cmsBranchReviewRenderUrl,
 } from './cmsBranches'
+export {
   getCmsRegistryLatestVersion,
   getCmsRegistryPackage,
   getCmsRegistryPackageAdvisories,
