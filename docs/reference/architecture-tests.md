@@ -29,6 +29,7 @@ See [CLAUDE.md → Barrel imports](../../CLAUDE.md) and [docs/reference/page-tre
 |-----------------------------------------------|----------------------------------------------------------------------------------|
 | `db-postgres-isms.test.ts`                    | Files that import `DbClient` use only ANSI SQL. Blocks `now()` in DML, `::int`, `::jsonb`, `any($N::...)`, `distinct on`. |
 | `db-json-column-naming.test.ts`               | Every `jsonb` PG column has a name ending in `_json`. Same column appears in SQLite migrations as `text`. |
+| `db-timestamp-column-naming.test.ts`          | Every `current_timestamp` write under `server/` (SET, positional INSERT, DDL default) targets a column ending in `_at`, the suffix the SQLite adapter normalises to ISO 8601 UTC. |
 | `migration-parity.test.ts`                    | `migrations-pg.ts` and `migrations-sqlite.ts` have identical migration IDs in the same order. |
 | `json-extract-egress.test.ts`                 | `JSON.parse` of stored data goes through a TypeBox boundary helper.              |
 

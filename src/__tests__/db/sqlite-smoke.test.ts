@@ -34,7 +34,7 @@ describe('SQLite adapter smoke test', () => {
       expect(rows).toHaveLength(1)
 
       // Critical assertion: _json columns must be deserialized to objects, not
-      // returned as raw SQLite TEXT strings. This validates the parseJsonColumns
+      // returned as raw SQLite TEXT strings. This validates the normalizeSqliteRow
       // logic in the SQLite adapter.
       expect(typeof rows[0]!.cells_json).toBe('object')
       expect(rows[0]!.cells_json).toEqual(cells)

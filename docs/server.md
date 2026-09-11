@@ -452,11 +452,12 @@ Same code, both engines.
 ### The two adapters
 
 - **`server/db/postgres.ts`** wraps `Bun.sql` (native Bun Postgres client). `rowCount` is read from `result.count` (Bun's CommandComplete affected-row count) rather than `result.length`, which is always 0 for non-RETURNING writes.
-- **`server/db/sqlite.ts`** wraps `bun:sqlite`, with four custom behaviors:
+- **`server/db/sqlite.ts`** wraps `bun:sqlite`, with five custom behaviors:
   1. `toBindable(value)` converts JS values (objects, dates, booleans, `Uint8Array`) to SQLite-bindable types.
   2. On read, any column ending in `_json` whose value is a non-empty string is auto-`JSON.parse`d.
-  3. On boot, PRAGMAs are set: `journal_mode = WAL`, `foreign_keys = ON`, `synchronous = NORMAL`, `busy_timeout = 5000`.
-  4. Transaction serialization: concurrent `db.transaction()` calls are queued via a promise chain so `BEGIN` is never issued while another transaction is open on the single shared connection. This prevents "cannot start a transaction within a transaction" errors when transaction callbacks `await` async work.
+  3. On read, any column ending in `_at` holding SQLite's `YYYY-MM-DD HH:MM:SS` stamp (what `current_timestamp` writes) is rewritten to ISO 8601 UTC, so both dialects return the same timestamp shape. V8 would otherwise parse it as local time.
+  4. On boot, PRAGMAs are set: `journal_mode = WAL`, `foreign_keys = ON`, `synchronous = NORMAL`, `busy_timeout = 5000`.
+  5. Transaction serialization: concurrent `db.transaction()` calls are queued via a promise chain so `BEGIN` is never issued while another transaction is open on the single shared connection. This prevents "cannot start a transaction within a transaction" errors when transaction callbacks `await` async work.
 
 Both adapters return the same `DbResult<Row>` shape, so callers never branch on dialect.
 
