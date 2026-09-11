@@ -99,7 +99,12 @@ routes `css-tree` to its CJS build, whose requires the bundler embeds.
 `scripts/lib/serverArtifactPlugins.test.ts` compiles the production sanitizer,
 checks the binary for the build machine's `node_modules` path, and boots it
 with `node_modules` reads denied, so a regression fails `bun test` rather than
-a release.
+a release. esbuild, which the publisher runs at publish time, spawns a Go
+binary it locates relative to `__dirname`; the artifact embeds the target's
+binary, extracts it at boot to a per-version temp directory
+(`scripts/lib/serverArtifactRuntime.ts`), and points `ESBUILD_BINARY_PATH` at
+it. The compile itself fails if the finished binary still contains the build
+machine's `node_modules` path.
 
 Release notes should link to:
 

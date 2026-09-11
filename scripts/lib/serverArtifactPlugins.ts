@@ -24,7 +24,13 @@ import type { BunPlugin } from 'bun'
  * boots it with `node_modules` reads denied.
  */
 export function serverArtifactPlugins(root: string): BunPlugin[] {
-  return [forceSharpCjs(root), forceCssTreeCjs(root), inlineJsdomDefaultStylesheet(), disableJsdomSyncXhrWorker()]
+  return [
+    forceSharpCjs(root),
+    forceCssTreeCjs(root),
+    inlineJsdomDefaultStylesheet(),
+    disableJsdomSyncXhrWorker(),
+    relocateEsbuildEntry(),
+  ]
 }
 
 /**
@@ -126,6 +132,35 @@ function disableJsdomSyncXhrWorker(): BunPlugin {
             newWorker,
             '(() => { throw new Error("Synchronous XMLHttpRequest is not available inside the compiled Instatic server binary") })()',
           )
+        return { contents, loader: 'js' }
+      })
+    },
+  }
+}
+
+/**
+ * `esbuild/lib/main.js` checks that it still lives at `esbuild/lib/main.js`
+ * and, without `ESBUILD_BINARY_PATH`, looks for its Go binary relative to
+ * `__dirname`. Bundled, both names are the build machine's absolute paths.
+ * The artifact entry sets `ESBUILD_BINARY_PATH` to an extracted copy
+ * (`serverArtifactRuntime.ts`), so those paths are never followed; rewriting
+ * them to fixed `/$bunfs` locations keeps esbuild's own location check true
+ * and leaves no build-machine path in the binary.
+ */
+function relocateEsbuildEntry(): BunPlugin {
+  return {
+    name: 'relocate-esbuild-entry',
+    setup(build) {
+      build.onLoad({ filter: /[\\/]esbuild[\\/]lib[\\/]main\.js$/ }, (args) => {
+        const source = readFileSync(args.path, 'utf-8')
+        if (!source.includes('process.env.ESBUILD_BINARY_PATH') || !/\b__dirname\b/.test(source) || !/\b__filename\b/.test(source)) {
+          throw new Error(
+            `${args.path} no longer locates its binary as expected; update relocateEsbuildEntry in scripts/lib/serverArtifactPlugins.ts`,
+          )
+        }
+        const contents = source
+          .replace(/\b__filename\b/g, () => '"/$bunfs/root/node_modules/esbuild/lib/main.js"')
+          .replace(/\b__dirname\b/g, () => '"/$bunfs/root/node_modules/esbuild/lib"')
         return { contents, loader: 'js' }
       })
     },
