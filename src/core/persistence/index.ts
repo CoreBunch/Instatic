@@ -25,6 +25,8 @@ export {
   updateCmsDataRowStatus,
   updateCmsDataRowTable,
   updateCmsDataTable,
+  listCmsDataRowVersions,
+  restoreCmsDataRowVersion,
 } from './cmsData'
 
 export {
@@ -96,6 +98,23 @@ export type {
 
 // usePersistence moved to src/editor/hooks/usePersistence.ts (Constraint #179 — no React in core)
 export {
+  listCmsBranches,
+  createCmsBranch,
+  renameCmsBranch,
+  deleteCmsBranch,
+  getCmsBranchPreview,
+  issueCmsBranchPreview,
+  revokeCmsBranchPreview,
+  getCmsBranchMergePlan,
+  applyCmsBranchMerge,
+  undoCmsBranchMerge,
+  getCmsBranchReview,
+  requestCmsBranchMerge,
+  withdrawCmsBranchMergeRequest,
+  declineCmsBranchMergeRequest,
+  addCmsBranchReviewComment,
+  cmsBranchReviewRenderUrl,
+} from './cmsBranches'
   getCmsRegistryLatestVersion,
   getCmsRegistryPackage,
   getCmsRegistryPackageAdvisories,

@@ -15,3 +15,13 @@ export function formatRelativeTime(epochMs: number): string {
   if (days < 7) return `${days}d`
   return new Date(epochMs).toLocaleDateString()
 }
+
+/**
+ * `formatRelativeTime` phrased as an age: "just now", "3h ago", and the
+ * locale date unchanged once older than a week (a date takes no "ago").
+ */
+export function formatRelativeTimeAgo(epochMs: number): string {
+  const relative = formatRelativeTime(epochMs)
+  if (relative === 'now') return 'just now'
+  return /^\d+[mhd]$/.test(relative) ? `${relative} ago` : relative
+}

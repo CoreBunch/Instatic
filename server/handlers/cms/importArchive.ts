@@ -39,6 +39,7 @@ import {
 } from '@core/data/bundleArchive'
 import { createCrc32 } from '../../archive/storedZip'
 import { CMS_API_PREFIX, type CmsHandlerOptions } from './shared'
+import type { BranchScope } from '../../branches/scope'
 import { handleImportRoute } from './import'
 
 const IMPORT_ARCHIVE_PATH = `${CMS_API_PREFIX}/import/archive`
@@ -77,6 +78,7 @@ interface StagedArchiveMediaEntry {
 export async function handleImportArchiveRoute(
   req: Request,
   db: DbClient,
+  scope: BranchScope,
   options: CmsHandlerOptions = {},
 ): Promise<Response | null> {
   const url = new URL(req.url)
@@ -120,7 +122,7 @@ export async function handleImportArchiveRoute(
   try {
     const dataBundle = siteBundleWithoutMediaBytes(selectedManifest)
     const dataImportReq = makeInternalImportRequest(req, strategy, dataBundle)
-    const dataImportRes = await handleImportRoute(dataImportReq, db, options)
+    const dataImportRes = await handleImportRoute(dataImportReq, db, scope, options)
     if (!dataImportRes || !dataImportRes.ok) {
       return dataImportRes ?? jsonResponse({ error: 'Import route did not handle archive manifest' }, { status: 500 })
     }

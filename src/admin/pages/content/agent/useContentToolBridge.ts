@@ -6,7 +6,7 @@
  */
 import { useEffect, useLayoutEffect, useRef } from 'react'
 import { flushSync } from 'react-dom'
-import { readTitleCell } from '@core/data/cells'
+import { readDisplayTitle } from '@core/data/cells'
 import { normalizeDataTableFields } from '@core/data/fields'
 import type { DataField, DataRow, DataTable } from '@core/data/schemas'
 import {
@@ -360,7 +360,7 @@ function projectActiveDocument(
   return {
     id: row.id,
     tableId: row.tableId,
-    title: readTitleCell(row.cells) || row.slug || row.id,
+    title: readDisplayTitle(row.cells, table),
     slug: row.slug,
     status: row.status,
     fields: row.cells,

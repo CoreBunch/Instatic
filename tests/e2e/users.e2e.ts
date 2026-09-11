@@ -335,8 +335,15 @@ test.describe('users and roles', () => {
       await dialog.getByLabel('Name', { exact: true }).fill(editedRoleName)
       await dialog.getByLabel('Description').fill('Lifecycle role edited by E2E')
       await dialog.getByText('View site', { exact: true }).click()
-      await dialog.getByText('Manage roles', { exact: true }).click()
+      await dialog.getByText('View dashboard', { exact: true }).click()
       await expect(dialog.getByText('2 of')).toBeVisible()
+
+      // `roles.manage` is an installation-Owner power, never delegable to a
+      // custom role (see OWNER_ONLY_CAPABILITIES) — the picker renders it
+      // disabled so it cannot be granted by editing a role.
+      await expect(
+        dialog.getByRole('checkbox', { name: 'Manage roles' }),
+      ).toBeDisabled()
 
       await page.locator('button[form="users-page-role-form"]').click()
       await completeStepUp(page)

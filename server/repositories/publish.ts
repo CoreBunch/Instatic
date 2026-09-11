@@ -21,12 +21,13 @@
  *   getLatestPublishedSiteSnapshot — first published page snapshot (for 404s etc.)
  *   getDraftPublishStatus     — compare draft vs published state for the UI
  */
-import { createHash } from 'node:crypto'
+import { contentHash } from '../branches/contentHash'
 import type { DataRow } from '@core/data/schemas'
 import type { SiteDocument } from '@core/page-tree'
 import type { PublishedPageRuntimeAssets } from '@core/site-runtime'
 import type { PublishedRuntimePackageImportmap } from '@core/publisher'
 import type { DbClient } from '../db/client'
+import { MAIN_SCOPE, type BranchScope } from '../branches/scope'
 import type { BuiltRuntimeAssetFile } from '../publish/runtime/bundleScripts'
 import { getDraftSite } from './site'
 import { listDataRows } from './data'
@@ -101,28 +102,6 @@ export interface PersistSitePublishInput {
 // Helpers
 // ---------------------------------------------------------------------------
 
-function canonicalJson(value: unknown): string {
-  if (Array.isArray(value)) {
-    return `[${value.map(canonicalJson).join(',')}]`
-  }
-  if (value && typeof value === 'object') {
-    const record = value as Record<string, unknown>
-    return `{${Object.keys(record).sort().map((key) =>
-      `${JSON.stringify(key)}:${canonicalJson(record[key])}`
-    ).join(',')}}`
-  }
-  return JSON.stringify(value)
-}
-
-/**
- * Canonical content hash of a site document, stamped on `site_snapshots` at
- * publish time. The publish-status check compares the draft's hash against
- * it — equality is observationally identical to comparing the canonical JSON
- * strings, without fetching or parsing any stored snapshot.
- */
-function siteContentHash(site: SiteDocument): string {
-  return createHash('sha256').update(canonicalJson(site)).digest('hex')
-}
 
 /**
  * `listDataRows` is intentionally recency-ordered for authoring surfaces, but
@@ -156,17 +135,20 @@ function snapshotFromQueryRow(row: SnapshotQueryRow): PublishedPageSnapshot {
 // ---------------------------------------------------------------------------
 
 /**
- * Assemble the current draft `SiteDocument` from the site shell plus the
- * `pages` and `components` data rows. Returns `null` when no draft site
+ * Assemble a branch's current draft `SiteDocument` from its site shell plus
+ * the `pages` and `components` data rows. Returns `null` when no draft site
  * exists yet. Saved layouts are editor-only; publishing ignores them.
  */
-export async function getDraftSiteDocument(db: DbClient): Promise<SiteDocument | null> {
-  const shell = await getDraftSite(db)
+export async function getDraftSiteDocument(
+  db: DbClient,
+  scope: BranchScope,
+): Promise<SiteDocument | null> {
+  const shell = await getDraftSite(db, scope)
   if (!shell) return null
 
   const [pageRows, vcRows] = await Promise.all([
-    listDataRows(db, 'pages'),
-    listDataRows(db, 'components'),
+    listDataRows(db, scope, 'pages'),
+    listDataRows(db, scope, 'components'),
   ])
   const visualComponents = validateVisualComponents(
     orderSiteDocumentRows(vcRows)
@@ -180,8 +162,12 @@ export async function getDraftSiteDocument(db: DbClient): Promise<SiteDocument |
   }
 }
 
+/**
+ * Draft-vs-published comparison for the Publish control. Publishing only
+ * exists on `main`, so this always reads the main draft.
+ */
 export async function getDraftPublishStatus(db: DbClient): Promise<DraftPublishStatus> {
-  const draftSite = await getDraftSiteDocument(db)
+  const draftSite = await getDraftSiteDocument(db, MAIN_SCOPE)
   if (!draftSite) {
     return {
       hasPublishedVersion: false,
@@ -208,7 +194,7 @@ export async function getDraftPublishStatus(db: DbClient): Promise<DraftPublishS
     order by data_rows.created_at asc
   `
 
-  const draftSiteHash = siteContentHash(draftSite)
+  const draftSiteHash = contentHash(draftSite)
   const draftPageIds = new Set(draftSite.pages.map((page) => page.id))
   const draftMatchesPublished =
     publishedRows.length === draftSite.pages.length &&
@@ -251,7 +237,7 @@ export async function persistSitePublish(
       values (
         ${input.siteSnapshotId},
         ${input.site},
-        ${siteContentHash(input.site)},
+        ${contentHash(input.site)},
         ${input.serializedImportmap?.body ?? null},
         ${input.serializedImportmap?.sha256 ?? null}
       )

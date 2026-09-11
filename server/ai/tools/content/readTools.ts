@@ -133,7 +133,7 @@ const listCollectionsTool: AiTool = {
     'List every Content-workspace collection (routable post types only) with id, slug, label, kind, row count, and primary field id. Pages are edited through Site tools; reusable tables through Data tools.',
   inputSchema: ListCollectionsInput,
   handler: async (_input, ctx) => {
-    const tables = await listDataTablesWithCounts(ctx.db)
+    const tables = await listDataTablesWithCounts(ctx.db, ctx.branch)
     return {
       collections: tables
         .filter((t) => CONTENT_KIND_VISIBLE.has(t.kind))
@@ -160,7 +160,7 @@ const getCollectionSchemaTool: AiTool = {
   inputSchema: GetCollectionSchemaInput,
   handler: async (input, ctx) => {
     const { tableId } = input as Static<typeof GetCollectionSchemaInput>
-    const tables = await listDataTablesWithCounts(ctx.db)
+    const tables = await listDataTablesWithCounts(ctx.db, ctx.branch)
     const table = tables.find((t) => t.id === tableId)
     if (!table) {
       return { ok: false, error: `Collection ${tableId} not found.` }
@@ -202,7 +202,7 @@ const listDocumentsTool: AiTool = {
   inputSchema: ListDocumentsInput,
   handler: async (input, ctx) => {
     const args = input as Static<typeof ListDocumentsInput>
-    const all = await listDataRows(ctx.db, args.tableId)
+    const all = await listDataRows(ctx.db, ctx.branch, args.tableId)
     let filtered = all
     if (args.status) filtered = filtered.filter((r) => r.status === args.status)
     if (args.authorUserId) filtered = filtered.filter((r) => r.authorUserId === args.authorUserId)
@@ -236,7 +236,7 @@ const getDocumentTool: AiTool = {
   inputSchema: GetDocumentInput,
   handler: async (input, ctx) => {
     const { documentId } = input as Static<typeof GetDocumentInput>
-    const row = await getDataRow(ctx.db, documentId)
+    const row = await getDataRow(ctx.db, ctx.branch, documentId)
     if (!row) {
       return { ok: false, error: `Document ${documentId} not found.` }
     }
@@ -277,9 +277,9 @@ const searchDocumentsTool: AiTool = {
   inputSchema: SearchDocumentsInput,
   handler: async (input, ctx) => {
     const { query, limit } = input as Static<typeof SearchDocumentsInput>
-    const results = await searchDataRows(ctx.db, query, limit ?? 25)
+    const results = await searchDataRows(ctx.db, ctx.branch, query, limit ?? 25)
     // Only surface Content-workspace post-type rows.
-    const tables = await listDataTablesWithCounts(ctx.db)
+    const tables = await listDataTablesWithCounts(ctx.db, ctx.branch)
     const visibleTableIds = new Set(
       tables.filter((t) => CONTENT_KIND_VISIBLE.has(t.kind)).map((t) => t.id),
     )

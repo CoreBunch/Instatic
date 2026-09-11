@@ -55,6 +55,7 @@ const GROUP_LABELS: Record<CommandGroup, string> = {
   account: 'Account',
   settings: 'Settings',
   preview: 'Preview',
+  branches: 'Branches',
   ai: 'AI Assistant',
   help: 'Help',
   recent: 'Recent',

@@ -11,6 +11,7 @@ import { publishDraftSite } from '../../../server/publish/publishSite'
 import { createDataRow, saveDataRowDraft } from '../../../server/repositories/data'
 import { pageToCells } from '../../../src/core/data/pageFromRow'
 import { createFakeDb } from './dbTestFake'
+import { MAIN_SCOPE } from '../../../server/branches/scope'
 
 function createPublishFakeDb() {
   const state = {
@@ -28,8 +29,8 @@ function createPublishFakeDb() {
     if (sql.startsWith('insert into site (')) {
       state.site = {
         id: 'default',
-        name: params[0],
-        settings_json: params[1],
+        name: params[1],
+        settings_json: params[2],
         created_at: new Date('2026-01-01').toISOString(),
         updated_at: new Date('2026-01-02').toISOString(),
       }
@@ -43,13 +44,14 @@ function createPublishFakeDb() {
     if (sql.startsWith('insert into data_rows')) {
       const row = {
         id: params[0],
-        table_id: params[1],
-        cells_json: params[2],
-        slug: params[3],
-        status: params[4],
-        author_user_id: params[5],
-        created_by_user_id: params[6],
-        updated_by_user_id: params[7],
+        logical_id: params[0],
+        table_id: params[2],
+        cells_json: params[3],
+        slug: params[4],
+        status: params[5],
+        author_user_id: params[6],
+        created_by_user_id: params[7],
+        updated_by_user_id: params[8],
         active_version_id: null,
         published_by_user_id: null,
         published_at: null,
@@ -60,7 +62,7 @@ function createPublishFakeDb() {
       const idx = state.dataRows.findIndex((r) => r.id === row.id)
       if (idx >= 0) state.dataRows[idx] = row
       else state.dataRows.push(row)
-      return { rows: [{ id: row.id }], rowCount: 1 }
+      return { rows: [{ logical_id: row.id }], rowCount: 1 }
     }
     // saveDataRowDraft — update data_rows set cells_json, slug, updated_by_user_id, plugin_actor_id
     // params: [0]=cells_json, [1]=slug, [2]=updated_by_user_id, [3]=plugin_actor_id, [4]=rowId
@@ -267,9 +269,9 @@ async function seedSiteAndPage(
   text: string,
 ) {
   const shell = makeSiteShell()
-  await saveDraftSite(db, shell)
+  await saveDraftSite(db, MAIN_SCOPE, shell)
   const page = makeHomePage(text)
-  await createDataRow(db, {
+  await createDataRow(db, MAIN_SCOPE, {
     id: page.id,
     tableId: 'pages',
     cells: pageToCells(page),
@@ -296,7 +298,7 @@ describe('CMS publishing', () => {
     await publishDraftSite(db, 'admin_1')
 
     // Update the draft page text
-    await saveDataRowDraft(db, 'page_home', {
+    await saveDataRowDraft(db, MAIN_SCOPE, 'page_home', {
       cells: pageToCells({ ...makeHomePage('Draft only') }),
       slug: 'index',
     }, 'admin_1')
@@ -324,7 +326,7 @@ describe('CMS publishing', () => {
   it('keeps publish status matched when publishing changes the rows recency order', async () => {
     const { state, db } = createPublishFakeDb()
     const shell = makeSiteShell()
-    await saveDraftSite(db, shell)
+    await saveDraftSite(db, MAIN_SCOPE, shell)
 
     const home = makeHomePage('Home')
     const layout = {
@@ -339,7 +341,7 @@ describe('CMS publishing', () => {
       },
     }
     for (const page of [home, layout]) {
-      await createDataRow(db, {
+      await createDataRow(db, MAIN_SCOPE, {
         id: page.id,
         tableId: 'pages',
         cells: pageToCells(page),
@@ -372,7 +374,7 @@ describe('CMS publishing', () => {
     await publishDraftSite(db, 'admin_1')
 
     // Update the draft to create mismatch
-    await saveDataRowDraft(db, 'page_home', {
+    await saveDataRowDraft(db, MAIN_SCOPE, 'page_home', {
       cells: pageToCells({ ...makeHomePage('Draft only') }),
       slug: 'index',
     }, 'admin_1')
@@ -409,9 +411,9 @@ describe('CMS publishing', () => {
         },
       }),
     })
-    await saveDraftSite(db, shell)
+    await saveDraftSite(db, MAIN_SCOPE, shell)
     const page = makeHomePage('Runtime page')
-    await createDataRow(db, {
+    await createDataRow(db, MAIN_SCOPE, {
       id: page.id,
       tableId: 'pages',
       cells: pageToCells(page),
@@ -449,9 +451,9 @@ describe('CMS publishing', () => {
         },
       }),
     })
-    await saveDraftSite(db, shell)
+    await saveDraftSite(db, MAIN_SCOPE, shell)
     const page = makeHomePage('Runtime page')
-    await createDataRow(db, {
+    await createDataRow(db, MAIN_SCOPE, {
       id: page.id,
       tableId: 'pages',
       cells: pageToCells(page),

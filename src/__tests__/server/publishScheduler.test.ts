@@ -3,6 +3,7 @@ import type { DbClient } from '../../../server/db'
 import { tickPublishScheduler } from '../../../server/publish/publishScheduler'
 import { getDataRow, listDuePublishSchedules } from '../../../server/repositories/data/rows'
 import { createTestDb, type TestDb } from '../helpers/createTestDb'
+import { MAIN_SCOPE } from '../../../server/branches/scope'
 
 async function seedScheduledPageRow(
   db: DbClient,
@@ -48,7 +49,7 @@ describe('publish scheduler', () => {
 
     await tickPublishScheduler(db)
 
-    const row = await getDataRow(db, rowId)
+    const row = await getDataRow(db, MAIN_SCOPE, rowId)
     expect(row).toMatchObject({
       id: rowId,
       tableId: 'pages',

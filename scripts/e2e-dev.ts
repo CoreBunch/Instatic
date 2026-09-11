@@ -15,6 +15,7 @@
 import { mkdir, rm } from 'node:fs/promises'
 import { bunCommand, viteCommand } from './lib/bunCommand'
 import { ensureDependencies } from './lib/ensureDependencies'
+import { devStackBunError } from '../server/bunVersion'
 
 const DATABASE_PATH = './.tmp/e2e-agent.db'
 const UPLOADS_DIR = './.tmp/e2e-uploads'
@@ -24,6 +25,12 @@ const VITE_PORT = process.env.E2E_VITE_PORT ?? '5174'
 // Same guard as `bun run dev`: Playwright starts this stack right after a
 // `git pull`, and a stale node_modules would otherwise surface as a CMS crash
 // on its first import instead of a missing install.
+const bunError = devStackBunError(Bun.version)
+if (bunError) {
+  console.error(`[e2e-dev] ${bunError}`)
+  process.exit(1)
+}
+
 await ensureDependencies((msg) => console.error(`[e2e-dev] ${msg}`))
 
 await mkdir('./.tmp', { recursive: true })
@@ -39,6 +46,11 @@ const sharedEnv = {
   PORT: CMS_PORT,
   DATABASE_URL: `sqlite:${DATABASE_PATH}`,
   UPLOADS_DIR,
+  // Self-hosted installs run in whatever zone the host has. Pinning the E2E
+  // stack away from UTC makes zone bugs visible: SQLite's `current_timestamp`
+  // carries no zone marker, so a UTC runner would parse it correctly by
+  // accident. `timestamps.e2e.ts` (CONFIG-004) relies on this.
+  TZ: 'Europe/Prague',
 }
 
 const children: Bun.Subprocess[] = []

@@ -37,6 +37,7 @@ const SCHEDULE_RPC_SLACK_MS = 10_000
 export async function loadPluginInWorker(args: {
   manifest: PluginManifest
   entryFileUrl: string
+  assetRootPath: string
   settings: PluginSettingsValues
 }): Promise<LoadPluginResult> {
   // Clear any prior host-side state for this plugin id — hook listeners,
@@ -55,6 +56,7 @@ export async function loadPluginInWorker(args: {
   }
   hostPlugins.set(args.manifest.id, {
     manifest: args.manifest,
+    assetRootPath: args.assetRootPath,
     routes: new Map(),
     hookListeners: [],
     hookFilters: [],

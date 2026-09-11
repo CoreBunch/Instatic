@@ -8,6 +8,7 @@ import { AdminZoomGuard } from './shared/AdminZoomGuard'
 import { ErrorBoundary, flattenErrorChain, logErrorChain } from '@ui/components/ErrorBoundary'
 import { ToastProvider, pushToast } from '@ui/components/Toast'
 import '../styles/globals.css'
+import { installBranchRequestHeaders } from './state/activeBranch'
 
 // `installPluginRuntime()` used to be called here, eagerly. That dragged
 // the whole plugin-host-hooks module (which imports `useEditorStore` from
@@ -54,6 +55,9 @@ function handleRootError(
     })
   }
 }
+
+// Every admin request names the branch this tab edits (main sends nothing).
+installBranchRequestHeaders()
 
 const root = createRoot(rootElement, {
   onCaughtError: (error, info) => {

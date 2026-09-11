@@ -54,7 +54,7 @@ import type {
   OpenAgentImageMenu,
 } from './agentImageTypes'
 import { ToolCallRow } from './ToolCallRow'
-import { formatRelativeTime } from './relativeTime'
+import { formatRelativeTime } from '@core/utils/relativeTime'
 import styles from './AgentPanel.module.css'
 
 const PANEL_WIDTH = 320

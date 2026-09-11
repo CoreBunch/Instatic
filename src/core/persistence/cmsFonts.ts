@@ -16,7 +16,7 @@
  */
 
 import type { FontEntry } from '@core/fonts'
-import { apiRequest, type FetchLike } from '@core/http'
+import { apiRequest, withAmbientHeaders, type FetchLike } from '@core/http'
 import {
   type CmsFontEstimateDto,
   CmsFontEntryEnvelopeSchema,
@@ -25,7 +25,7 @@ import {
   type GoogleFontFamilyDto,
 } from './responseSchemas'
 
-const defaultFetch: FetchLike = (input, init) => globalThis.fetch(input, init)
+const defaultFetch: FetchLike = (input, init) => globalThis.fetch(input, withAmbientHeaders(init))
 
 export async function listCmsGoogleFonts(
   fetchImpl: FetchLike = defaultFetch,

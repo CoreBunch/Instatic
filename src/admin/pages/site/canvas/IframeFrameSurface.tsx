@@ -79,7 +79,8 @@ import type { InjectableRuntimeScript } from './useRuntimeScriptBuild'
 import { useIframeCursorBridge } from './useIframeCursorBridge'
 import { iframeLocalPointToParentClientPoint } from './iframeEventCoordinates'
 import { useCanvasFormControlSuppression } from './useCanvasFormControlSuppression'
-import { CANVAS_VIEWPORT_HEIGHT, type CanvasViewport } from './resolveViewportUnits'
+import type { Viewport } from '@core/utils/viewportUnits'
+import { CANVAS_VIEWPORT_HEIGHT } from './canvasViewport'
 import { useIframeFrameAutoHeight } from './useIframeFrameAutoHeight'
 import { applyIframeBodyReset, type IframeInteraction } from './iframeBodyReset'
 import {
@@ -630,7 +631,7 @@ export const IframeFrameSurface = forwardRef<IframeFrameSurfaceHandle, IframeFra
     // breakpoint width (the iframe's real width); height is a fixed
     // device-like value. Pinning `vh`/`vmax`/… to this stops authored
     // viewport units from feeding the grow-to-content height loop above.
-    const viewport: CanvasViewport = { width, height: CANVAS_VIEWPORT_HEIGHT }
+    const viewport: Viewport = { width, height: CANVAS_VIEWPORT_HEIGHT }
 
     return (
       <>

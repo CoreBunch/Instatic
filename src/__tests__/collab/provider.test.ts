@@ -47,6 +47,13 @@ class FakeSocket implements CollabSocketLike {
   }
 }
 
+/** A server step2 for an empty doc — the reply to the client's step1. */
+function emptyStep2(): Uint8Array {
+  const encoder = encoding.createEncoder()
+  syncProtocol.writeSyncStep2(encoder, new Y.Doc())
+  return encoding.toUint8Array(encoder)
+}
+
 function lastSyncMessageType(socket: FakeSocket, docId: string): number | null {
   for (let i = socket.sent.length - 1; i >= 0; i--) {
     const frame = decodeCollabFrame(socket.sent[i])
@@ -79,11 +86,12 @@ describe('collab provider', () => {
     provider.destroy()
   })
 
-  it('sends an update frame immediately on a local transaction; remote-applied updates do not echo', () => {
+  it('sends an update frame immediately on a local transaction once the lineage is known; remote-applied updates do not echo', () => {
     const socket = new FakeSocket()
     const provider = createCollabProvider({ createSocket: () => socket })
     socket.open()
     const { doc } = provider.bind('page:p1')
+    socket.emit(encodeCollabFrame('page:p1', 'gen-1', FRAME_SYNC, emptyStep2()))
     const sentBefore = socket.sent.length
 
     doc.transact(() => {
@@ -91,6 +99,7 @@ describe('collab provider', () => {
     }, LOCAL_ORIGIN)
     expect(socket.sent.length).toBe(sentBefore + 1)
     expect(lastSyncMessageType(socket, 'page:p1')).toBe(2) // update
+    expect(decodeCollabFrame(socket.sent[socket.sent.length - 1]!).generation).toBe('gen-1')
 
     // A remote update applied by the provider must NOT be re-sent.
     const remote = new Y.Doc()
@@ -101,6 +110,38 @@ describe('collab provider', () => {
     socket.emit(encodeCollabFrame('page:p1', 'gen-1', FRAME_SYNC, encoding.toUint8Array(encoder)))
     expect(doc.getMap('meta').get('title')).toBe('From remote')
     expect(socket.sent.length).toBe(countBeforeRemote)
+    provider.destroy()
+  })
+
+  it('holds local updates until the server names the lineage, then sends them as one update', () => {
+    const socket = new FakeSocket()
+    const provider = createCollabProvider({ createSocket: () => socket })
+    socket.open()
+    const { doc } = provider.bind('page:p1')
+    const sentAfterBind = socket.sent.length
+
+    // Two local transactions inside the bind round trip — a row created and
+    // placed before the server answered step1.
+    doc.transact(() => { doc.getMap('meta').set('title', 'New page') }, LOCAL_ORIGIN)
+    doc.transact(() => { doc.getMap('tree').set('rootNodeId', 'root') }, LOCAL_ORIGIN)
+    expect(socket.sent.length).toBe(sentAfterBind)
+
+    socket.emit(encodeCollabFrame('page:p1', 'gen-1', FRAME_SYNC, emptyStep2()))
+    const frames = socket.sent.slice(sentAfterBind).map((raw) => decodeCollabFrame(raw))
+    const updates = frames.filter((frame) => frame.docId === 'page:p1' && frame.frameType === FRAME_SYNC
+      && decoding.readVarUint(decoding.createDecoder(frame.payload)) === 2)
+    expect(updates).toHaveLength(1)
+    expect(updates[0]!.generation).toBe('gen-1')
+    // Nothing ever went out with an empty lineage.
+    expect(frames.every((frame) => frame.generation === 'gen-1' || frame.frameType !== FRAME_SYNC
+      || decoding.readVarUint(decoding.createDecoder(frame.payload)) !== 2)).toBe(true)
+    // Both changes reached the wire.
+    const mirror = new Y.Doc()
+    const decoder = decoding.createDecoder(updates[0]!.payload)
+    decoding.readVarUint(decoder)
+    Y.applyUpdate(mirror, decoding.readVarUint8Array(decoder))
+    expect(mirror.getMap('meta').get('title')).toBe('New page')
+    expect(mirror.getMap('tree').get('rootNodeId')).toBe('root')
     provider.destroy()
   })
 

@@ -8,7 +8,7 @@ The server is a single `Bun.serve` process that boots the DB, runs migrations, a
 
 ## TL;DR
 
-- **Entrypoint:** `server/index.ts` (boots DB → migrations → role sync → plugin activation → `Bun.serve`).
+- **Entrypoint:** `server/index.ts` (boots DB → migrations → role sync → plugin activation → `Bun.serve`). Its first act is `unsupportedBunWarning(Bun.version)` from `server/bunVersion.ts`: when the runtime is outside `SUPPORTED_BUN_RANGE` (a constant mirroring `engines.bun`, gated by `bunVersion.test.ts`) it logs one `[server]` warning and boots anyway. The dev launchers use the same module's `devStackBunError` and refuse a Bun older than 1.4.1.
 - **Router:** `server/router.ts` — ordered route table, first-match wins. Each route is a `tryServeX(req, runtime, url, pathname)` function returning `Response | null`.
 - **CMS API:** every `/admin/api/cms/*` request goes through `server/handlers/cms/index.ts`, which runs a CSRF origin check and dispatches to per-resource handler groups.
 - **Auth:** session cookie (`SESSION_COOKIE_NAME`) → `findUserBySessionHash` → `requireCapability(req, db, 'site.read')`. Every state-changing handler starts with one of these guards.
@@ -83,6 +83,8 @@ const routes: readonly RouteHandler[] = [
   tryServeHealth,                  // /health
   tryServeAi,                      // /admin/api/ai/*         → server/ai/handlers/
   tryServeCmsApi,                  // /admin/api/cms/*        → handlers/cms/index.ts
+  tryServeBranchPreviewLink,       // /_instatic/preview/<token> | /exit → publish/publicRoutes.ts
+                                   //   sets / clears the branch preview cookie
   tryServeLoopRuntimeAsset,        // /_instatic/loop-runtime.js (fixed CMS asset)
   tryServeLoop,                    // /_instatic/loop/*       → handlers/cms/loop.ts
   tryServeHoleRuntimeAsset,        // /_instatic/hole-runtime.js (fixed CMS asset)
@@ -97,9 +99,11 @@ const routes: readonly RouteHandler[] = [
   tryServeUpload,                  // /uploads/* → uploadsDir (with nosniff hardening)
   tryServeAdminApp,                // /admin/* → dist/index.html (SPA fallback)
   tryServePublicRoute,             // /<slug> OR /<route-base>/<row-slug>
-                                   //   → server/publish/publicRouter.ts
-                                   //   resolves to page snapshot OR data row + template,
-                                   //   live-renders, runs publish.html pipeline
+                                   //   → server/publish/publicRoutes.ts: a live preview
+                                   //   cookie renders the branch draft (branchPreview.ts),
+                                   //   otherwise publicRouter.ts resolves to page snapshot
+                                   //   OR data row + template, live-renders, runs the
+                                   //   publish.html pipeline
   trySetupRedirect,                // first-run redirect → /admin/setup
   tryServeNotFoundPage,            // fall-through GET → site's 404 page (notFound
                                    //   template; baked 404.html artefact, else live
@@ -142,7 +146,9 @@ This prevents an unknown path under a known namespace from accidentally matching
 
 1. **CSRF defense in depth.** State-changing methods (`POST/PUT/PATCH/DELETE`) must come from an `Origin` matching a configured public origin (`PUBLIC_ORIGIN`, auto-detected from `RENDER_EXTERNAL_URL` / `RAILWAY_PUBLIC_DOMAIN`), or a dev allowlist entry. With nothing configured the check falls back to the inbound `Host` header. Forwarded headers (`X-Forwarded-Host` / `X-Forwarded-Proto`) are never consulted, so `TRUSTED_PROXY_CIDRS` has no bearing on CSRF. `SameSite=Lax` already covers most CSRF; this catches the same-site-different-subdomain edge.
 
-2. **Group dispatch.** The handler walks an ordered chain of route-group handlers, each owning a resource:
+2. **Branch scope.** `resolveBranchScope(req, db)` (`server/branches/scope.ts`) turns the `X-Instatic-Branch` header into a `BranchScope` — `MAIN_SCOPE` when absent, `400` for a malformed id, `404 { code: 'branch_not_found' }` for an unknown one. Content handlers receive it and pass it to every repository call; see [`features/branches.md`](features/branches.md).
+
+3. **Group dispatch.** The handler walks an ordered chain of route-group handlers, each owning a resource:
 
 ```ts
 const response =
@@ -153,22 +159,23 @@ const response =
   ?? (await handleUsersRoutes(req, db))
   ?? (await handleRolesRoutes(req, db))
   ?? (await handleAuditRoutes(req, db))
-  ?? (await handleSiteRoutes(req, db))
-  ?? (await handlePagesRoutes(req, db))
-  ?? (await handleComponentsRoutes(req, db))
-  ?? (await handleRuntimeRoutes(req, db))
+  ?? (await handleBranchesRoutes(req, db, scope, options))
+  ?? (await handleSiteRoutes(req, db, scope))
+  ?? (await handlePagesRoutes(req, db, scope))
+  ?? (await handleComponentsRoutes(req, db, scope))
+  ?? (await handleRuntimeRoutes(req, db, scope))
   ?? (await handleRegistryRoutes(req, db))              // npm registry proxy, site.read
   ?? (await handleMediaFolderRoutes(req, db))           // before /media/:id
   ?? (await handleMediaStorageAdminRoutes(req, db, …))  // before /media/:id
   ?? (await handleMediaRoutes(req, db, …))
   ?? (await handlePluginsRoutes(req, db, …))
-  ?? (await handleDataRoutes(req, db))
+  ?? (await handleDataRoutes(req, db, scope, options))
   ?? (await handleDashboardRoutes(req, db))
   ?? (await handleFontsRoutes(req, db, …))
-  ?? (await handlePublishRoutes(req, db))
-  ?? (await handleExportRoute(req, db, options))
-  ?? (await handleImportPreviewRoute(req, db))          // before /import (longer path)
-  ?? (await handleImportRoute(req, db, options))
+  ?? (await handlePublishRoutes(req, db, scope))         // 409 off main
+  ?? (await handleExportRoute(req, db, scope, options))
+  ?? (await handleImportPreviewRoute(req, db, scope))   // before /import (longer path)
+  ?? (await handleImportRoute(req, db, scope, options))
 ```
 
 Each group module owns its URL matching and returns `Response | null`. The first non-null wins. Order matters — handler order comments in `index.ts` document the load-bearing precedence (e.g. media folder/storage routes must run before `/media/:id` because that pattern would otherwise eat them).
@@ -448,11 +455,12 @@ Same code, both engines.
 ### The two adapters
 
 - **`server/db/postgres.ts`** wraps `Bun.sql` (native Bun Postgres client). `rowCount` is read from `result.count` (Bun's CommandComplete affected-row count) rather than `result.length`, which is always 0 for non-RETURNING writes.
-- **`server/db/sqlite.ts`** wraps `bun:sqlite`, with four custom behaviors:
+- **`server/db/sqlite.ts`** wraps `bun:sqlite`, with five custom behaviors:
   1. `toBindable(value)` converts JS values (objects, dates, booleans, `Uint8Array`) to SQLite-bindable types.
   2. On read, any column ending in `_json` whose value is a non-empty string is auto-`JSON.parse`d.
-  3. On boot, PRAGMAs are set: `journal_mode = WAL`, `foreign_keys = ON`, `synchronous = NORMAL`, `busy_timeout = 5000`.
-  4. Transaction serialization: concurrent `db.transaction()` calls are queued via a promise chain so `BEGIN` is never issued while another transaction is open on the single shared connection. This prevents "cannot start a transaction within a transaction" errors when transaction callbacks `await` async work.
+  3. On read, any column ending in `_at` holding SQLite's `YYYY-MM-DD HH:MM:SS` stamp (what `current_timestamp` writes) is rewritten to ISO 8601 UTC, so both dialects return the same timestamp shape. V8 would otherwise parse it as local time.
+  4. On boot, PRAGMAs are set: `journal_mode = WAL`, `foreign_keys = ON`, `synchronous = NORMAL`, `busy_timeout = 5000`.
+  5. Transaction serialization: concurrent `db.transaction()` calls are queued via a promise chain so `BEGIN` is never issued while another transaction is open on the single shared connection. This prevents "cannot start a transaction within a transaction" errors when transaction callbacks `await` async work.
 
 Both adapters return the same `DbResult<Row>` shape, so callers never branch on dialect.
 

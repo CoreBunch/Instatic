@@ -19,6 +19,7 @@ import {
   userHasCapability,
 } from '../../../auth/authz'
 import type { DbClient } from '../../../db/client'
+import { resolveBranchScope } from '../../../branches/scope'
 import {
   createEditorBridgeStream,
   type EditorBridgeScope,
@@ -79,7 +80,12 @@ async function handle(req: Request, db: DbClient): Promise<Response> {
     return jsonResponse({ error: 'Forbidden' }, { status: 403 })
   }
 
-  const stream = createEditorBridgeStream(userOrResponse.id, scope, req.signal)
+  // The workspace's branch (the tab's header): browser tools act in it, so
+  // the ownership pre-check on a content tool must read the row there.
+  const branch = await resolveBranchScope(req, db)
+  if (branch instanceof Response) return branch
+
+  const stream = createEditorBridgeStream(userOrResponse.id, scope, req.signal, { branchId: branch.branchId })
   return new Response(stream, {
     status: 200,
     headers: {

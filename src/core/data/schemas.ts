@@ -668,3 +668,19 @@ export type DataMetaField = Static<typeof DataMetaFieldSchema>
 export type DataMetaRepeaterItemField = Static<typeof DataMetaRepeaterItemFieldSchema>
 export type DataMetaTable = Static<typeof DataMetaTableSchema>
 export type DataMeta = Static<typeof DataMetaSchema>
+
+// ---------------------------------------------------------------------------
+// DataRowVersionSummary — one published version of a row, as listed by the
+// version-history endpoint (content lives server-side until restored).
+// ---------------------------------------------------------------------------
+
+export const DataRowVersionSummarySchema = Type.Object({
+  id: Type.String(),
+  rowId: Type.String(),
+  versionNumber: Type.Number(),
+  slug: Type.String(),
+  publishedAt: Type.String(),
+  publishedByUserId: Type.Union([Type.String(), Type.Null()]),
+  publishedByName: Type.Union([Type.String(), Type.Null()]),
+})
+export type DataRowVersionSummary = Static<typeof DataRowVersionSummarySchema>

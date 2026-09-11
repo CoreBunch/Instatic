@@ -30,7 +30,7 @@
  *
  * @see server/db/migrations-pg.ts   — Postgres dialect migrations
  * @see server/db/migrations-sqlite.ts — SQLite dialect translations
- * @see server/db/sqlite.ts          — why _json suffix matters (parseJsonColumns)
+ * @see server/db/sqlite.ts          — why _json suffix matters (normalizeSqliteRow)
  */
 
 import { describe, test, expect } from 'bun:test'

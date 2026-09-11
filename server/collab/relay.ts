@@ -32,30 +32,23 @@
 import * as Y from 'yjs'
 import { nanoid } from 'nanoid'
 import {
-  encodeCollabDocId,
+  isSiteDocId,
   parseCollabDocId,
   projectSiteDoc,
-  SITE_DOC_ID,
-  type CollabDocKind,
+  siteDocId,
 } from '@core/collab'
 import type { DbClient } from '../db/client'
 import {
   deleteCollabDocuments,
   getCollabDocumentState,
+  listCollabDocumentIdsForBranch,
   putCollabDocumentState,
 } from '../repositories/collabDocuments'
-import {
-  registerRowWriteListener,
-  registerShellWriteListener,
-} from '../repositories/rowWriteEvents'
 import { registerPublishFlush } from '../publish/publishFlush'
+import { BranchGoneError, createRelayBranchAdmission } from './relayBranches'
+import { createInvalidationTracker } from './relayInvalidations'
 import { createRelayPersistence } from './relayPersistence'
-
-const TABLE_KIND: Record<string, Exclude<CollabDocKind, 'site'>> = {
-  pages: 'page',
-  components: 'component',
-  layouts: 'layout',
-}
+import { createRelayResetQueue } from './relayResetQueue'
 
 interface RelayEntry {
   doc: Y.Doc
@@ -94,6 +87,18 @@ export interface CollabRelay {
   resetDocs(docIds: readonly string[]): Promise<void>
   /** Flush every dirty doc now (tests + shutdown). */
   flushAll(): Promise<void>
+  /**
+   * A branch was deleted: drop its resident docs and roster state without
+   * persisting, and stop accepting its doc ids. Bound sockets receive a
+   * reset for each dropped doc.
+   */
+  forgetBranch(branchId: string): Promise<void>
+  /**
+   * A branch id was (re)created, or its delete failed: accept its docs again,
+   * reseeded from the rows — a reset dropped while the branch was tombstoned
+   * may have left a stored blob behind an out-of-relay write.
+   */
+  rememberBranch(branchId: string): Promise<void>
   /** Detach the row-write reset sources and drop all docs (tests). */
   destroy(): Promise<void>
 }
@@ -114,9 +119,10 @@ export function createCollabRelay(
   const resetGates = new Map<string, Promise<void>>()
   const updateListeners = new Set<RelayUpdateListener>()
   const resetListeners = new Set<RelayResetListener>()
-  const invalidationVersions = new Map<string, number>()
-  const activeInvalidations = new Set<string>()
-  let nextInvalidationVersion = 0
+  // Which branches may have documents minted for them (see relayBranches.ts).
+  const branches = createRelayBranchAdmission(db)
+  // Out-of-relay write markers (see relayInvalidations.ts).
+  const invalidation = createInvalidationTracker((docId) => branches.docForgotten(docId))
   // A reset evicts live docs before deleting their stored lineages. If that
   // deletion fails, preserve socket ref counts until a later retry can reseed
   // the docs; the sockets still list those ids in their bound-doc sets.
@@ -125,35 +131,21 @@ export function createCollabRelay(
     isResident: (docId) => entries.has(docId),
     schedulePersist: (docId) => schedulePersist(docId),
     openDoc: async (docId) => { await openDoc(docId) },
-    invalidationVersion: (docId) => invalidationVersions.get(docId) ?? 0,
+    invalidationVersion: (docId) => invalidation.version(docId),
   })
-
-  function activateInvalidations(docIds: readonly string[]): Map<string, number> {
-    const versions = new Map<string, number>()
-    const version = ++nextInvalidationVersion
-    for (const docId of docIds) {
-      invalidationVersions.set(docId, version)
-      activeInvalidations.add(docId)
-      versions.set(docId, version)
-    }
-    return versions
-  }
-
-  function finishInvalidations(versions: ReadonlyMap<string, number>): void {
-    for (const [docId, version] of versions) {
-      // A newer queued invalidation still owns the active marker.
-      if ((invalidationVersions.get(docId) ?? 0) === version) {
-        activeInvalidations.delete(docId)
-      }
-    }
-  }
 
   async function persistNow(docId: string): Promise<PersistOutcome> {
     const entry = entries.get(docId)
     if (!entry || !entry.dirty) return 'clean'
+    // A forgotten branch has nowhere to persist to (its tables are gone);
+    // the eviction that follows drops the entry.
+    if (branches.docForgotten(docId)) {
+      entry.dirty = false
+      return 'clean'
+    }
     entry.dirty = false
-    const invalidationVersion = invalidationVersions.get(docId) ?? 0
-    const invalidationCutoff = nextInvalidationVersion
+    const invalidationVersion = invalidation.version(docId)
+    const invalidationCutoff = invalidation.cutoff()
     const state = Y.encodeStateAsUpdate(entry.doc)
     const snapshot = new Y.Doc()
     Y.applyUpdate(snapshot, state, 'persist-snapshot')
@@ -167,8 +159,8 @@ export function createCollabRelay(
         // queued reset is authoritative; never overwrite it with this older
         // collaborative snapshot.
         if (
-          activeInvalidations.has(docId) ||
-          (invalidationVersions.get(docId) ?? 0) !== invalidationVersion
+          invalidation.isActive(docId) ||
+          invalidation.version(docId) !== invalidationVersion
         ) {
           return 'superseded' as const
         }
@@ -245,10 +237,17 @@ export function createCollabRelay(
     if (inFlight) return inFlight
 
     const open = (async () => {
-      // Row-doc persistence needs a current roster snapshot. Register this
-      // page opening before awaiting SITE so resetDocs can see and drain it.
-      if (parsed && parsed.kind !== 'site' && !persistence.hasRosterSnapshot()) {
-        await openDoc(SITE_DOC_ID, ignoreResetGate)
+      if (parsed && !(await branches.admits(parsed.branchId))) {
+        throw new BranchGoneError(parsed.branchId, docId)
+      }
+      // Row-doc persistence needs a current roster snapshot of ITS branch.
+      // Register this page opening before awaiting the branch's site doc so
+      // resetDocs can see and drain it. A reset that already gates this doc
+      // is waiting for exactly this open to settle before it evicts the
+      // result — so this open must not block on the site gate that same
+      // reset holds, or the two wait on each other forever.
+      if (parsed && parsed.kind !== 'site' && !persistence.hasRosterSnapshot(parsed.branchId)) {
+        await openDoc(siteDocId(parsed.branchId), ignoreResetGate || resetGates.has(docId))
       }
       const doc = new Y.Doc()
       const stored = await getCollabDocumentState(db, docId)
@@ -265,9 +264,14 @@ export function createCollabRelay(
         generation = nanoid()
         minted = true
       }
+      // The branch may have been forgotten while this open awaited the site
+      // doc, the blob, or the seed — never install an entry for it.
+      if (parsed && branches.forgotten(parsed.branchId)) {
+        throw new BranchGoneError(parsed.branchId, docId)
+      }
       const updateHandler = (update: Uint8Array, origin: unknown) => {
         for (const listener of updateListeners) listener(docId, update, origin, generation)
-        if (docId === SITE_DOC_ID) persistence.observeSiteRoster(doc)
+        if (parsed?.kind === 'site') persistence.observeSiteRoster(parsed.branchId, doc)
         schedulePersist(docId)
       }
       doc.on('update', updateHandler)
@@ -286,7 +290,7 @@ export function createCollabRelay(
       // subsequent retain/release operations update one logical ref count.
       if (heldRefs > 0) heldResetRefs.delete(docId)
       if (parsed?.kind === 'site') {
-        persistence.observeSiteRoster(doc)
+        persistence.observeSiteRoster(parsed.branchId, doc)
       } else if (parsed) {
         persistence.noteOpenedRow(docId, { stored: stored !== null, seeded })
       }
@@ -360,18 +364,30 @@ export function createCollabRelay(
     }
   }
 
+  /** Site docs first — each branch's shell sweep must free slugs before its row docs write them. */
   function orderedEntryDocIds(): string[] {
     const docIds = [...entries.keys()]
-    return entries.has(SITE_DOC_ID)
-      ? [SITE_DOC_ID, ...docIds.filter((docId) => docId !== SITE_DOC_ID)]
-      : docIds
+    return [
+      ...docIds.filter((docId) => isSiteDocId(docId)),
+      ...docIds.filter((docId) => !isSiteDocId(docId)),
+    ]
   }
 
   async function resetDocs(
     docIds: readonly string[],
     ownedInvalidations?: ReadonlyMap<string, number>,
   ): Promise<void> {
-    const affected = [...new Set(docIds.filter((id) => parseCollabDocId(id) !== null))]
+    // A deleted branch has nothing to reseed from: its ids drop out, and the
+    // markers they were activated with (before the tombstone) go with them.
+    const affected: string[] = []
+    for (const docId of new Set(docIds)) {
+      if (parseCollabDocId(docId) === null) continue
+      if (branches.docForgotten(docId)) {
+        invalidation.release(docId)
+        continue
+      }
+      affected.push(docId)
+    }
     if (affected.length === 0) return
     const existingGates = [...new Set(
       affected.flatMap((docId) => {
@@ -382,7 +398,7 @@ export function createCollabRelay(
     if (existingGates.length > 0) {
       await Promise.all(existingGates)
       const refreshedInvalidations = ownedInvalidations
-        ? activateInvalidations(affected)
+        ? invalidation.activate(affected)
         : undefined
       return resetDocs(affected, refreshedInvalidations)
     }
@@ -391,7 +407,7 @@ export function createCollabRelay(
       releaseResetGate = resolve
     })
     for (const docId of affected) resetGates.set(docId, resetGate)
-    const invalidations = ownedInvalidations ?? activateInvalidations(affected)
+    const invalidations = ownedInvalidations ?? invalidation.activate(affected)
     let completed = false
     try {
     // An open that registered before this gate may already be reading the old
@@ -412,9 +428,12 @@ export function createCollabRelay(
       // phase for this id, including when that write is a deletion.
       persistence.markRowEstablished(docId)
     }
-    const resetsSite = affected.includes(SITE_DOC_ID)
-    if (resetsSite) {
-      const siteEntry = entries.get(SITE_DOC_ID)
+    const affectedSiteDocs = affected.flatMap((docId) => {
+      const parsedSite = parseCollabDocId(docId)
+      return parsedSite?.kind === 'site' ? [{ docId, branchId: parsedSite.branchId }] : []
+    })
+    for (const { docId: affectedSiteDocId, branchId } of affectedSiteDocs) {
+      const siteEntry = entries.get(affectedSiteDocId)
       if (siteEntry) {
         // The shell write that triggered this reset must win, so do not persist
         // the stale collaborative shell. Apply only its authoritative deletion
@@ -429,8 +448,9 @@ export function createCollabRelay(
         const sweep = siteEntry.persistChain.then(() =>
           persistence.serializeMutation(() =>
             persistence.sweepRosterDeletions(
+              branchId,
               projected.rosters,
-              invalidations.get(SITE_DOC_ID) ?? nextInvalidationVersion,
+              invalidations.get(affectedSiteDocId) ?? invalidation.cutoff(),
               new Set(affected),
             ),
           ),
@@ -442,7 +462,7 @@ export function createCollabRelay(
       }
       // The site doc reseeds from the DB on next bind. Its first later persist
       // must run a full sweep even if the old and replacement keys compare equal.
-      persistence.invalidateRosterSweep()
+      persistence.invalidateRosterSweep(branchId)
     }
 
     // Flush the docs we are NOT resetting first. The site doc reseeds its
@@ -485,11 +505,11 @@ export function createCollabRelay(
       for (const docId of affected) settling.delete(docId)
     }
 
-    if (resetsSite) {
+    for (const { docId: affectedSiteDocId } of affectedSiteDocs) {
       // Keep the old authority through eviction/deletion, then replace it in
       // one step by observing the freshly seeded site doc. There is never a
       // null-authority window in which a dirty deleted row can pass its guard.
-      await openDoc(SITE_DOC_ID, true)
+      await openDoc(affectedSiteDocId, true)
     }
 
     // Re-register the ref counts the eviction dropped. Without this the next
@@ -508,7 +528,7 @@ export function createCollabRelay(
       // A failed reset leaves the ids actively invalidated. The queued reset
       // path retains the failed batch and explicit flushes refuse to publish;
       // a later successful retry owns a newer version and clears the marker.
-      if (completed) finishInvalidations(invalidations)
+      if (completed) invalidation.finish(invalidations)
       for (const docId of affected) {
         if (resetGates.get(docId) === resetGate) resetGates.delete(docId)
       }
@@ -516,86 +536,16 @@ export function createCollabRelay(
     }
   }
 
-  // ── Out-of-relay write sources → resets ───────────────────────────────────
+  // ── Out-of-relay write sources → resets (see relayResetQueue.ts) ──────────
 
-  const pendingResetDocIds = new Set<string>()
-  const failedResetDocIds = new Set<string>()
-  let resetBatchScheduled = false
-  let resetChain: Promise<void> = Promise.resolve()
-  let failedResetError: unknown = null
-
-  function queueResetDocs(docIds: readonly string[]): void {
-    // Mark synchronously with the post-commit notification. The microtask
-    // batching below must not create a window for an older persist to write.
-    const combined = [...new Set([...failedResetDocIds, ...docIds])]
-    failedResetDocIds.clear()
-    failedResetError = null
-    activateInvalidations(combined)
-    for (const docId of combined) pendingResetDocIds.add(docId)
-    if (resetBatchScheduled) return
-    resetBatchScheduled = true
-    queueMicrotask(() => {
-      resetBatchScheduled = false
-      const batch = [...pendingResetDocIds]
-      pendingResetDocIds.clear()
-      if (batch.length === 0) return
-      const invalidations = new Map(
-        batch.map((docId) => [docId, invalidationVersions.get(docId) ?? 0]),
-      )
-      const reset = resetChain.then(() => resetDocs(batch, invalidations))
-      resetChain = reset.then(
-        () => undefined,
-        (err) => {
-          failedResetError = err
-          for (const docId of batch) failedResetDocIds.add(docId)
-          console.error('[collab] reset after out-of-relay write failed:', err)
-        },
-      )
-    })
-  }
-
-  const detachRowListener = registerRowWriteListener((event) => {
-    const kind = TABLE_KIND[event.tableId]
-    if (!kind) return
-    const docIds = event.rowIds.map((rowId) => encodeCollabDocId({ kind, rowId }))
-    // The site-document batch API reports creations in its changed-id group as
-    // `update`. An id absent from the observed roster therefore also means
-    // membership may have changed and site authority must reseed.
-    if (
-      event.kind !== 'update' ||
-      !persistence.hasRosterSnapshot() ||
-      docIds.some((docId) => !persistence.rosterContains(docId))
-    ) docIds.push(SITE_DOC_ID)
-    queueResetDocs(docIds)
+  const resetQueue = createRelayResetQueue({
+    activateInvalidations: (docIds) => invalidation.activate(docIds),
+    invalidationVersion: (docId) => invalidation.version(docId),
+    resetDocs,
+    hasRosterSnapshot: (branchId) => persistence.hasRosterSnapshot(branchId),
+    rosterContains: (docId) => persistence.rosterContains(docId),
   })
-  const detachShellListener = registerShellWriteListener(() => {
-    queueResetDocs([SITE_DOC_ID])
-  })
-
-  async function drainResetQueue(throwOnFailure = true): Promise<void> {
-    let retriedFailure = false
-    for (;;) {
-      // Let a batch queued by the current call stack attach to resetChain.
-      await Promise.resolve()
-      const observed = resetChain
-      await observed
-      if (failedResetError) {
-        if (!throwOnFailure) return
-        if (!retriedFailure) {
-          const retry = [...failedResetDocIds]
-          retriedFailure = true
-          queueResetDocs(retry)
-          continue
-        }
-        throw failedResetError
-      }
-      if (
-        !resetBatchScheduled &&
-        pendingResetDocIds.size === 0 &&
-        resetChain === observed
-      ) return
-    }
-  }
+  const drainResetQueue = resetQueue.drainResetQueue
 
   async function flushAll(): Promise<void> {
     await drainResetQueue()
@@ -683,9 +633,52 @@ export function createCollabRelay(
     },
     resetDocs,
     flushAll,
+    forgetBranch: async (branchId) => {
+      branches.forget(branchId)
+      resetQueue.forgetBranch(branchId)
+      invalidation.releaseBranch(branchId)
+      // An open that passed the branch check before the tombstone may still
+      // be installing its entry — let every in-flight open of the branch
+      // settle, then evict from a fresh snapshot.
+      for (const [docId, inFlight] of [...opening]) {
+        if (parseCollabDocId(docId)?.branchId !== branchId) continue
+        try {
+          await inFlight
+        } catch {
+          // A refused or failed open installed nothing.
+        }
+      }
+      const docIds = [...entries.keys()].filter(
+        (docId) => parseCollabDocId(docId)?.branchId === branchId,
+      )
+      for (const docId of docIds) {
+        // The sockets still list these docs as bound (they are told the
+        // branch is gone, not unbound). Hold their counts exactly as a reset
+        // does: a reopen after the branch is remembered starts at the right
+        // count, and a stale close drains the held count instead of driving
+        // a live entry's refs negative.
+        // A reset mid-eviction may already hold the authoritative count.
+        const refs = entries.get(docId)?.refs ?? 0
+        if (refs > 0 && !heldResetRefs.has(docId)) heldResetRefs.set(docId, refs)
+        await evict(docId, { persist: false })
+      }
+      persistence.forgetBranch(branchId)
+      for (const docId of docIds) {
+        for (const listener of resetListeners) listener(docId)
+      }
+    },
+    rememberBranch: (branchId) => branches.remember(branchId, async () => {
+      // The rows are authoritative again, and a stored blob may predate an
+      // out-of-relay write whose reset was dropped while the branch was
+      // tombstoned. Drop every stored blob UNDER the tombstone — nothing can
+      // open or persist the branch meanwhile — so the next open reseeds from
+      // the rows. After a completed delete nothing is stored, so a re-fork
+      // deletes nothing.
+      const stored = await listCollabDocumentIdsForBranch(db, branchId)
+      await deleteCollabDocuments(db, stored)
+    }),
     destroy: async () => {
-      detachRowListener()
-      detachShellListener()
+      resetQueue.detach()
       detachPublishFlush()
       await drainResetQueue()
       await persistence.drainRecoveries(true)

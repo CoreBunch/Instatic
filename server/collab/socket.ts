@@ -53,6 +53,7 @@ import { validateGuardedUpdate } from './updateGuard'
 import { originAllowed } from '../auth/security'
 import type { DbClient } from '../db/client'
 import { jsonResponse } from '../http'
+import { BranchGoneError } from './relayBranches'
 import type { CollabRelay, RelayDoc } from './relay'
 
 export { SITE_SOCKET_PATH }
@@ -460,6 +461,16 @@ export function createCollabSocketLayer(relay: CollabRelay) {
         frame = decodeCollabFrame(new Uint8Array(raw))
         await dispatchFrame(ws, frame)
       } catch (err) {
+        if (err instanceof BranchGoneError && frame) {
+          // The doc's branch was deleted. The client must leave the branch,
+          // not rebind — rebinding would loop through this refusal forever.
+          try {
+            sendReset(ws, frame.docId, 'gone')
+          } catch (_sendErr) {
+            // Socket already closing — nothing to recover.
+          }
+          return
+        }
         console.error('[collab] socket message handler failed:', err)
         // A sync-write frame whose guard/apply threw left the sender's local
         // doc diverged from the authoritative one — reset it so their client

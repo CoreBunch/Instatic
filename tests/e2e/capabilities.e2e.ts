@@ -519,9 +519,17 @@ test.describe.serial('content row move capability boundaries', () => {
       await createContentCollection(ownerPage, targetCollectionName, 'Target item')
       await createContentEntry(ownerPage, sourceCollectionName, 'Source item', entryTitle)
 
-      await createRole(ownerPage, personas.editor.roleName, ['Edit any content'])
+      // Reading a collection's rows needs a table-read capability on top of
+      // the content one (GHSA-x69h) — without it the explorer shows nothing
+      // and neither persona can get as far as the move controls this spec is
+      // actually about.
+      await createRole(ownerPage, personas.editor.roleName, [
+        'Edit any content',
+        'Browse custom tables',
+      ])
       await createRole(ownerPage, personas.mover.roleName, [
         'Edit any content',
+        'Browse custom tables',
         'Move rows between tables',
       ])
       for (const persona of Object.values(personas)) {

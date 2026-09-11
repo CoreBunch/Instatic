@@ -27,6 +27,7 @@ export type CommandGroup =
   | 'account'
   | 'settings'
   | 'preview'
+  | 'branches'
   | 'ai'
   | 'help'
   | 'recent'   // synthetic — only when query is empty
@@ -123,8 +124,24 @@ export interface Command {
   capability?: string | readonly string[]
   /** Workspace gate — only show on these workspaces. 'any' = always. */
   workspaces?: ReadonlyArray<AdminWorkspace | 'any'>
-  /** Predicate run at query time — finer-grained gating. */
+  /**
+   * Contextual relevance — the command needs something to act on that the
+   * user has RIGHT NOW (a selection, an open page, an undoable edit). False
+   * hides the command; true also scores +250, because a command that matches
+   * the moment should outrank one that merely matches the query.
+   *
+   * Do NOT use this for an environment gate that is simply true most of the
+   * time (on main, holding a permission) — a standing +250 there outranks
+   * recency and pins the command to the top of an empty palette. Use
+   * `available` for that.
+   */
   when?: (ctx: CommandContext) => boolean
+  /**
+   * Visibility gate — whether the command EXISTS in this environment at all
+   * (publishing only on main, branch actions only off main). False hides it;
+   * true says nothing about relevance and never scores.
+   */
+  available?: (ctx: CommandContext) => boolean
   /** Boosts ranking when `when` returns true. Default 1.0. */
   priorityBoost?: number
   /** Arguments collected via subcommand flow (Phase 2). */

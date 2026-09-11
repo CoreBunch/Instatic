@@ -94,7 +94,8 @@ async function fetchSlice(
              r.published_at
       from data_rows r
       join data_tables t on t.id = r.table_id
-      where r.deleted_at is null
+      where r.branch_id = 'main'
+        and r.deleted_at is null
         and r.status = 'scheduled'
         and r.scheduled_publish_at is not null
       order by r.scheduled_publish_at asc
@@ -112,7 +113,8 @@ async function fetchSlice(
              r.published_at
       from data_rows r
       join data_tables t on t.id = r.table_id
-      where r.deleted_at is null
+      where r.branch_id = 'main'
+        and r.deleted_at is null
         and r.status = 'published'
         and r.published_at is not null
       order by r.published_at desc
@@ -131,7 +133,8 @@ async function fetchSlice(
            r.published_at
     from data_rows r
     join data_tables t on t.id = r.table_id
-    where r.deleted_at is null
+    where r.branch_id = 'main'
+      and r.deleted_at is null
       and r.status = 'draft'
     order by r.updated_at desc
     limit ${limit}

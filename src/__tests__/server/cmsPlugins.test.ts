@@ -1290,7 +1290,8 @@ describe('CMS plugin handlers', () => {
   // The upgrade path detects an already-installed plugin id, runs the new
   // version's `migrate({ fromVersion }, api)` between the old version's
   // deactivate and the new version's activate, preserves settings + installed_at,
-  // drops the old version's asset dir on success, and rolls back to the prior
+  // keeps the old version's asset dir on disk (published pages still link it
+  // by version until the next publish sweeps it), and rolls back to the prior
   // version on activate failure.
 
   it('routes a same-id newer-version upload through the upgrade flow with migrate', async () => {
@@ -1390,13 +1391,16 @@ describe('CMS plugin handlers', () => {
       // installed_at preserved across the upgrade.
       expect(db.plugins[0].installed_at).toBe(installedAtBefore)
 
-      // Old version's asset dir was deleted; new version's is on disk.
+      // New version's assets are on disk — and so are the OLD version's.
+      // Published HTML links plugin frontend assets by version, and only a
+      // publish rewrites those links, so deleting here 404'd every baked page.
+      // The next publish retires the old dir (`sweepStalePluginVersionAssets`).
       await expect(readFile(
         join(uploadsDir, 'plugins/acme.upgrade/1.1.0/server/index.js'),
         'utf-8',
       )).resolves.toContain('migrate')
       const { existsSync } = await import('node:fs')
-      expect(existsSync(join(uploadsDir, 'plugins/acme.upgrade/1.0.0'))).toBe(false)
+      expect(existsSync(join(uploadsDir, 'plugins/acme.upgrade/1.0.0'))).toBe(true)
     } finally {
       hookBus.unregisterPlugin('test')
       await rm(uploadsDir, { recursive: true, force: true })
@@ -1509,6 +1513,69 @@ describe('CMS plugin handlers', () => {
       expect(body.error).toMatch(/refusing to downgrade/)
       // DB row unchanged.
       expect(db.plugins[0].version).toBe('2.0.0')
+    } finally {
+      await rm(uploadsDir, { recursive: true, force: true })
+    }
+  })
+
+  it('re-uploading the SAME version takes the upgrade path, not the fresh one', async () => {
+    // Uploading a rebuilt package under an unchanged version number used to
+    // fall through both semver guards into `installFreshFromPackage` — the
+    // path written for a plugin that is not installed. That skipped the
+    // running version's `deactivate`, ran `install` a second time on a live
+    // plugin, and had no rollback if it threw.
+    const uploadsDir = await mkdtemp(join(tmpdir(), 'instatic-reinstall-'))
+    const db = makeFakeDb()
+    const cookie = await createCookie(db)
+    const manifest = {
+      id: 'acme.reinstall',
+      name: 'Reinstall Demo',
+      version: '1.0.0',
+      apiVersion: 1,
+      permissions: ['cms.routes'],
+      entrypoints: { server: 'server/index.js' },
+      resources: [],
+      adminPages: [],
+    }
+    const upload = async (body: string) => {
+      const form = new FormData()
+      form.set('file', pluginZip({
+        'plugin.json': JSON.stringify(manifest),
+        'server/index.js': body,
+      }))
+      form.set('grantedPermissions', JSON.stringify(['cms.routes']))
+      return await handleCmsRequest(
+        cmsFormRequest('http://localhost/admin/api/cms/plugins/package', form, { cookie }),
+        db,
+        { uploadsDir },
+      )
+    }
+
+    try {
+      expect((await upload('export function activate() {}')).status).toBe(201)
+
+      const again = await upload('export function activate() { globalThis.__v2 = true }')
+      expect(again.ok).toBe(true)
+
+      // The upgrade path reports the transition; the fresh path reports none.
+      // Both versions are the same string here, which is the point: the route
+      // recognised an existing install rather than treating it as new.
+      const body = await again.json() as { upgrade?: { fromVersion: string; toVersion: string } }
+      expect(body.upgrade).toEqual({ fromVersion: '1.0.0', toVersion: '1.0.0' })
+
+      // Exactly one row, still at the same version — a reinstall replaces, it
+      // does not duplicate.
+      expect(db.plugins.filter((p) => p.id === 'acme.reinstall')).toHaveLength(1)
+      expect(db.plugins[0].version).toBe('1.0.0')
+
+      // And the new bytes are on disk: with matching versions the upgrade's
+      // "drop the old version" sweep names the same directory it just wrote,
+      // so an unguarded sweep would delete the plugin it had installed.
+      const entry = await readFile(
+        join(uploadsDir, 'plugins/acme.reinstall/1.0.0/server/index.js'),
+        'utf8',
+      )
+      expect(entry).toContain('__v2')
     } finally {
       await rm(uploadsDir, { recursive: true, force: true })
     }

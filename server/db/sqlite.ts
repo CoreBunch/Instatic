@@ -46,11 +46,31 @@ function renderTemplate(
 }
 
 /**
- * Walk every column in a returned row and JSON.parse any column whose name
- * ends in `_json` and whose value is a non-empty string. This keeps the
- * DbClient `_json` read contract dialect-neutral for repository code.
+ * SQLite's `current_timestamp` (and `datetime('now', 'subsec')`) yield
+ * `YYYY-MM-DD HH:MM:SS[.SSS]` in UTC, with no `T` separator and no zone
+ * marker. V8 parses that shape as *local* time, so a server running in UTC+2
+ * would read a row stamped a second ago as two hours old. JS-bound timestamps
+ * never have this shape — `toBindable` writes ISO 8601 — so only SQL-side
+ * stamps need rewriting.
  */
-function parseJsonColumns<Row>(row: Row): Row {
+const SQLITE_TIMESTAMP_RE = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}(?:\.\d{1,3})?$/
+
+function sqliteTimestampToIso(value: string): string {
+  const parsed = new Date(`${value.replace(' ', 'T')}Z`)
+  return Number.isNaN(parsed.getTime()) ? value : parsed.toISOString()
+}
+
+/**
+ * Walk every column in a returned row and apply the read-side conversions
+ * that keep the DbClient contract dialect-neutral for repository code:
+ *
+ * - `*_json` columns holding a non-empty string are JSON.parsed.
+ * - `*_at` columns holding SQLite's `current_timestamp` shape are rewritten
+ *   to ISO 8601 UTC, matching what the Postgres adapter derives from
+ *   `timestamptz`. The suffix is load-bearing: `current_timestamp` may only
+ *   be written to `*_at` columns (gated by `db-timestamp-column-naming.test.ts`).
+ */
+function normalizeSqliteRow<Row>(row: Row): Row {
   if (row === null || typeof row !== 'object' || Array.isArray(row)) return row
   const result: Record<string, unknown> = {}
   for (const [key, value] of Object.entries(row as Record<string, unknown>)) {
@@ -60,6 +80,8 @@ function parseJsonColumns<Row>(row: Row): Row {
       } catch {
         result[key] = value
       }
+    } else if (key.endsWith('_at') && typeof value === 'string' && SQLITE_TIMESTAMP_RE.test(value)) {
+      result[key] = sqliteTimestampToIso(value)
     } else {
       result[key] = value
     }
@@ -96,7 +118,7 @@ export function createSqliteClient(filename: string): DbClient {
     const stmt = db.query(sql)
     if (isSelectishStatement(sql)) {
       const rows = stmt.all(...params) as Row[]
-      return { rows: rows.map(parseJsonColumns), rowCount: rows.length }
+      return { rows: rows.map(normalizeSqliteRow), rowCount: rows.length }
     }
     const info = stmt.run(...params)
     return { rows: [], rowCount: info.changes ?? 0 }
@@ -117,7 +139,7 @@ export function createSqliteClient(filename: string): DbClient {
     const stmt = db.query(rawSql)
     const bindParams = (params ?? []).map(toBindable)
     const rows = stmt.all(...bindParams) as Row[]
-    return { rows: rows.map(parseJsonColumns), rowCount: rows.length }
+    return { rows: rows.map(normalizeSqliteRow), rowCount: rows.length }
   }
 
   // bun:sqlite is synchronous, but a transaction body may `await` real async

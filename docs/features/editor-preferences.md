@@ -280,7 +280,7 @@ The Settings → Preferences screen renders this list automatically from the cat
 
 ### Confirm-before-delete flow
 
-`confirmBeforeDelete` runs through a single shared `<ConfirmDeleteProvider/>` mounted in `AdminCanvasLayout`. Components call `useConfirmDelete()` and pass a `commit` callback:
+`confirmBeforeDelete` runs through a single shared `<ConfirmDeleteProvider/>` mounted once at the admin root (`AuthenticatedAdmin`, inside `StepUpProvider`), so every route — the editor body, the workspace layouts, and pages such as the merge review that render a layout themselves — asks through the same dialog. Components call `useConfirmDelete()` and pass a `commit` callback (`useConfirmAction()` is the always-ask, non-destructive variant for merges and updates; a request may carry `tone: 'primary'`):
 
 ```tsx
 const confirmDelete = useConfirmDelete()

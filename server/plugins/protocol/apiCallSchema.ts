@@ -27,6 +27,7 @@ import {
   RegisterStorageAdapterArgSchema,
   RegisterUrlTransformerArgSchema,
   RegisterVariantDelegateArgSchema,
+  MediaUpsertArgSchema,
 } from './schemas/media'
 import { CryptoDigestArgSchema, CryptoSignHmacArgSchema } from './schemas/crypto'
 import {
@@ -108,6 +109,10 @@ export const ApiCallSchemas = {
   'network.abort': apiCallSchema('network.abort', Type.Tuple([NetworkAbortArgSchema])),
   'cms.schedule.register': apiCallSchema('cms.schedule.register', Type.Tuple([ScheduleRegisterArgSchema])),
   'cms.schedule.cancel': apiCallSchema('cms.schedule.cancel', Type.Tuple([ScheduleCancelArgSchema])),
+  'cms.media.upsert': apiCallSchema(
+    'cms.media.upsert',
+    Type.Tuple([MediaUpsertArgSchema]),
+  ),
   'cms.media.registerStorageAdapter': apiCallSchema(
     'cms.media.registerStorageAdapter',
     Type.Tuple([RegisterStorageAdapterArgSchema]),
