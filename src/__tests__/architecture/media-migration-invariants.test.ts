@@ -67,11 +67,12 @@ describe('media migration invariants', () => {
   it('source byte reader is sandbox-free (no __hostCall, no quickjs)', async () => {
     const source = await read('server/handlers/cms/mediaStorageReader.ts')
     expect(source).not.toMatch(/__hostCall|callHostApi|quickjsHost/)
-    // The reader must use either local fs or Bun's native `fetch`. We
-    // assert at least one of each shows up — and that the QuickJS
-    // bridge doesn't.
+    // The reader must use either local fs or a native-fetch path (never the
+    // QuickJS bridge). The external path goes through `guardedFetch`, the
+    // SSRF-safe wrapper over Bun's `fetch` (a plugin controls that URL, so it
+    // must not reach internal addresses — GHSA-rmm7).
     expect(source).toContain('readFile(join(input.uploadsDir')
-    expect(source).toMatch(/await\s+fetch\(fetchUrl\)/)
+    expect(source).toMatch(/await\s+guardedFetch\(fetchUrl/)
   })
 
   it('per-role in-memory lock prevents concurrent migrations of the same role', async () => {

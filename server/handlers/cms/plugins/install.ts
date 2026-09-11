@@ -19,7 +19,7 @@
  * `runPluginLifecycleHook` and `runPluginMigrate` in `./lifecycle.ts` and
  * `../../../plugins/runtime`; the on-disk side lives in `./shared.ts`.
  */
-import { gt as semverGt, lt as semverLt } from 'semver'
+import { lt as semverLt } from 'semver'
 import type { DbClient } from '../../../db/client'
 import type { AuthUser } from '../../../repositories/users'
 import {
@@ -179,7 +179,14 @@ export async function handlePackageInstall(
       grantedPermissions,
     }
 
-    if (existing && semverGt(pluginPackage.manifest.version, existing.version)) {
+    // Anything still here is installed at the same version or lower, and the
+    // lower case already returned. So `existing` means upgrade-or-reinstall,
+    // and both belong on the upgrade path: it deactivates the running version
+    // before replacing its files, runs `migrate`, and rolls back on failure.
+    // The fresh path does none of that — it was written for a plugin that is
+    // not there, and re-uploading the same version used to fall into it,
+    // running `install` again on a live plugin with no rollback if it threw.
+    if (existing) {
       return await installUpgradeFromPackage({ ...ctx, existing })
     }
     return await installFreshFromPackage(ctx)
@@ -462,7 +469,12 @@ async function rollbackUpgrade(args: {
   // Drop new version assets — the upgrade didn't take. With worker
   // isolation, plugin server files no longer live in the host's `bun
   // --watch` graph; plain `await rm` is safe.
-  if (options.uploadsDir) {
+  //
+  // NOT when the versions match. A same-version reinstall writes into the
+  // directory the restored manifest still points at, so deleting "the new
+  // version" here would delete the only copy and leave every published page
+  // linking a 404. Restoring the row is the whole rollback in that case.
+  if (options.uploadsDir && newManifest.version !== existing.version) {
     await removePluginVersionAssets(options.uploadsDir, pluginId, newManifest.version)
   }
 

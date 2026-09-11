@@ -5,10 +5,37 @@
 }
 
 /* Primary half forms the left side — square off the inner (right) corners so it
- * butts flush against the chevron trigger. */
+ * butts flush against the chevron trigger. Positioned so the iconless busy
+ * loader can center over the hidden label without changing the width. */
 .primary {
+    position: relative;
     border-top-right-radius: 0;
     border-bottom-right-radius: 0;
+}
+
+/* Iconless busy: the label keeps its box (width anchor) but goes invisible,
+ * and the loader spins centered in the freed space. */
+.busyHiddenLabel {
+    visibility: hidden;
+}
+
+.busyOverlay {
+    position: absolute;
+    inset: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.busySpin {
+    display: inline-flex;
+    animation: splitBusySpin 0.9s linear infinite;
+}
+
+@keyframes splitBusySpin {
+    to {
+        transform: rotate(360deg);
+    }
 }
 
 /* Chevron trigger forms the right side — square off the inner (left) corners and
@@ -16,7 +43,9 @@
 .trigger {
     border-top-left-radius: 0;
     border-bottom-left-radius: 0;
-    box-shadow: inset 1px 0 var(--overlay-5);
+    /* currentColor-derived so the seam stays visible on every variant,
+       including the inverse primary where a white overlay would vanish. */
+    box-shadow: inset 1px 0 color-mix(in srgb, currentColor 15%, transparent);
 }
 
 @keyframes splitButtonSpin {

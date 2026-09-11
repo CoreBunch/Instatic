@@ -58,6 +58,12 @@ interface ResolvedTag {
   placement: FrontendAssetPlacement
 }
 
+const NO_HOST_OWNED_ATTRS = new Set<string>()
+const SCRIPT_HOST_OWNED_ATTRS = new Set(['src', 'defer', 'async'])
+const MODULE_SCRIPT_HOST_OWNED_ATTRS = new Set(['src', 'defer', 'async', 'type'])
+const INLINE_SCRIPT_HOST_OWNED_ATTRS = new Set(['src'])
+const STYLESHEET_HOST_OWNED_ATTRS = new Set(['href', 'rel'])
+
 export interface FrontendInjections {
   /**
    * Tags to splice at each placement anchor. Order within each bucket
@@ -176,8 +182,12 @@ function renderAsset(asset: FrontendAsset, plugin: InstalledPlugin): ResolvedTag
   if (asset.kind === 'script') {
     const url = resolveAssetUrl(plugin, asset.src)
     if (!url) return null
-    const strategyAttrs = scriptStrategyAttrs(asset.strategy ?? 'defer')
-    const extra = formatAttrs(asset.attrs)
+    const strategy = asset.strategy ?? 'defer'
+    const strategyAttrs = scriptStrategyAttrs(strategy)
+    const extra = formatAttrs(
+      asset.attrs,
+      strategy === 'module' ? MODULE_SCRIPT_HOST_OWNED_ATTRS : SCRIPT_HOST_OWNED_ATTRS,
+    )
     const pluginAttr = ` data-plugin-id="${escapeAttr(plugin.manifest.id)}"`
     return {
       html: `<script src="${escapeAttr(url)}"${strategyAttrs}${extra}${pluginAttr}></script>`,
@@ -186,7 +196,7 @@ function renderAsset(asset: FrontendAsset, plugin: InstalledPlugin): ResolvedTag
   }
 
   if (asset.kind === 'script-inline') {
-    const extra = formatAttrs(asset.attrs)
+    const extra = formatAttrs(asset.attrs, INLINE_SCRIPT_HOST_OWNED_ATTRS)
     const pluginAttr = ` data-plugin-id="${escapeAttr(plugin.manifest.id)}"`
     // Inline `</script>` would close the wrapping tag. Standard escape.
     const body = asset.content.replace(/<\/script/gi, '<\\/script')
@@ -199,7 +209,7 @@ function renderAsset(asset: FrontendAsset, plugin: InstalledPlugin): ResolvedTag
   if (asset.kind === 'style') {
     const url = resolveAssetUrl(plugin, asset.href)
     if (!url) return null
-    const extra = formatAttrs(asset.attrs)
+    const extra = formatAttrs(asset.attrs, STYLESHEET_HOST_OWNED_ATTRS)
     const pluginAttr = ` data-plugin-id="${escapeAttr(plugin.manifest.id)}"`
     return {
       html: `<link rel="stylesheet" href="${escapeAttr(url)}"${extra}${pluginAttr}>`,
@@ -276,15 +286,18 @@ function resolveAssetUrl(plugin: InstalledPlugin, relativePath: string): string 
   return `${base.replace(/\/+$/g, '')}/${relativePath.replace(/^\/+/g, '')}`
 }
 
-function formatAttrs(attrs: Record<string, string> | undefined): string {
+function formatAttrs(
+  attrs: Record<string, string> | undefined,
+  hostOwnedAttrs: ReadonlySet<string> = NO_HOST_OWNED_ATTRS,
+): string {
   if (!attrs) return ''
-  // Skip the few reserved attributes the host owns ("src" on script, "href"
-  // on style, "data-plugin-id"). Authors who set those values can break the
-  // tag — silently dropping is safer than emitting two competing attributes.
-  const RESERVED = new Set(['src', 'href', 'rel', 'data-plugin-id', 'defer', 'async', 'type'])
+  // data-plugin-id identifies every injected tag. Other host-owned attributes
+  // are specific to the rendered tag kind, so bare link/meta tags and inline
+  // assets retain the complete attrs bag they rely on.
   const parts: string[] = []
   for (const [name, value] of Object.entries(attrs)) {
-    if (RESERVED.has(name.toLowerCase())) continue
+    const normalizedName = name.toLowerCase()
+    if (normalizedName === 'data-plugin-id' || hostOwnedAttrs.has(normalizedName)) continue
     parts.push(`${name}="${escapeAttr(value)}"`)
   }
   return parts.length === 0 ? '' : ` ${parts.join(' ')}`

@@ -103,11 +103,15 @@ async function createCustomRole(
   return payload.role.id
 }
 
+// These personas work on posts/pages, which are system tables, so a realistic
+// content editor also holds data.system.tables.read (GHSA-x69h: reading a
+// system table's rows requires it, matching the schema-read gate).
 const OWN_EDIT_CAPS = [
   'site.read',
   'content.create',
   'content.edit.own',
   'content.publish.own',
+  'data.system.tables.read',
 ]
 
 const ANY_EDIT_CAPS = [
@@ -116,6 +120,7 @@ const ANY_EDIT_CAPS = [
   'content.edit.any',
   'content.publish.any',
   'content.manage',
+  'data.system.tables.read',
   'media.read',
   'media.write',
   'media.replace',

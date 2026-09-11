@@ -511,12 +511,22 @@ describe('capability route matrix', () => {
         method: 'GET',
         cookie: pluginReader.cookie,
       }))
+      // GHSA-q5j5: reading plugin records exposes raw data_json, so it needs
+      // `plugins.configure`, not the browse-only `plugins.read`.
+      await expectForbidden(await harness.cms('/admin/api/cms/plugins/missing/resources/res1/records', {
+        method: 'GET',
+        cookie: pluginReader.cookie,
+      }))
 
       const settingsRead = await harness.cms('/admin/api/cms/plugins/missing/settings', {
         method: 'GET',
         cookie: pluginConfigurator.cookie,
       })
       expectPastAuth(settingsRead)
+      expectPastAuth(await harness.cms('/admin/api/cms/plugins/missing/resources/res1/records', {
+        method: 'GET',
+        cookie: pluginConfigurator.cookie,
+      }))
       await expectStepUpRequired(await harness.cms('/admin/api/cms/plugins/missing/settings', {
         method: 'PUT',
         cookie: pluginConfigurator.cookie,

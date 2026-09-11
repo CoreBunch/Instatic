@@ -128,7 +128,7 @@ export const CAPABILITY_META: Record<CoreCapability, CapabilityMeta> = {
   },
   'roles.manage': {
     label: 'Manage roles',
-    description: 'Create, edit, and delete custom roles; assign capabilities to roles.',
+    description: 'Owner account only. Create, edit, and delete roles; assign capabilities to roles.',
   },
   'audit.read': {
     label: 'Read audit log',

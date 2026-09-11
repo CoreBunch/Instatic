@@ -2,7 +2,12 @@
 import { getErrorMessage } from '@core/utils/errorMessage'
 import { CreateMcpAccessTokenBodySchema } from '@core/ai'
 import { jsonResponse, readValidatedBody, badRequest } from '../../../http'
-import { requireCapability, requireStepUp, userHasCapability } from '../../../auth/authz'
+import {
+  capabilitiesUserCannotGrant,
+  requireCapability,
+  requireStepUp,
+  userHasCapability,
+} from '../../../auth/authz'
 import { expectedOrigin } from '../../../auth/security'
 import type { DbClient } from '../../../db/client'
 import { createAuditEvent } from '../../../repositories/audit'
@@ -76,7 +81,7 @@ async function handleCreateAccessToken(req: Request, db: DbClient): Promise<Resp
   if (userHasCapability(userOrResponse, 'ai.chat') && !capabilities.includes('ai.chat')) {
     capabilities.push('ai.chat')
   }
-  const overreach = capabilities.filter((capability) => !userHasCapability(userOrResponse, capability))
+  const overreach = capabilitiesUserCannotGrant(userOrResponse, capabilities)
   if (overreach.length > 0) {
     return jsonResponse(
       { error: `You cannot grant capabilities you don't hold: ${overreach.join(', ')}` },

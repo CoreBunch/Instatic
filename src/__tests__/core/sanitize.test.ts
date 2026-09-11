@@ -228,6 +228,46 @@ describe('sanitizeRichtext() in server runtime', () => {
       throw new Error(stderr)
     }
   })
+
+  // GHSA-jg75-xjf8-vvf8: the previous backend (happy-dom) stopped DOMPurify's
+  // node walk at the first removed node, so a disallowed element (`<img>` is
+  // not in the richtext profile) followed by a `<script>` shipped the script
+  // unsanitized. Run through the real server sanitizer in a clean process so
+  // the ambient happy-dom test DOM cannot mask the production backend.
+  it('sanitizes siblings that follow a removed node (no NodeIterator skip)', () => {
+    const result = Bun.spawnSync({
+      cmd: [
+        process.execPath,
+        '-e',
+        `
+          await import('./server/richtextSanitizer.ts')
+          const { sanitizeRichtext } = await import('./src/core/sanitize.ts')
+          const vectors = [
+            '<img src=/i.png><script>alert(1)</script>',
+            '<img src=x><img src=y onerror=alert(1)>',
+            '<img src=x><svg onload=alert(1)>',
+          ]
+          for (const v of vectors) {
+            const out = sanitizeRichtext(v)
+            if (out.includes('<script') || out.includes('onerror') || out.includes('onload') || out.includes('<svg')) {
+              throw new Error('sibling-skip XSS survived: ' + JSON.stringify(out))
+            }
+          }
+          const kept = sanitizeRichtext('<img src=/a.png><p>Text stays.</p>')
+          if (!kept.includes('Text stays.')) {
+            throw new Error('lost content after a removed node: ' + kept)
+          }
+        `,
+      ],
+      stdout: 'pipe',
+      stderr: 'pipe',
+    })
+
+    if (result.exitCode !== 0) {
+      const stderr = new TextDecoder().decode(result.stderr)
+      throw new Error(stderr)
+    }
+  })
 })
 
 // ---------------------------------------------------------------------------

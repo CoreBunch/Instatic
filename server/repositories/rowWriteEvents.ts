@@ -22,6 +22,28 @@ type RowWriteListener = (event: RowWriteEvent) => void
 
 const listeners = new Set<RowWriteListener>()
 
+/**
+ * One ordering lane for authoritative repository writes and the collab
+ * relay's derived-JSON writes. Notifications alone are too late to arbitrate
+ * a derived UPDATE that is already waiting on the same database row: it can
+ * otherwise land after the external commit and erase the authoritative body
+ * before reset gets a chance to reseed. Callers hold this through their
+ * commit and synchronous notification; relay writes re-check invalidation
+ * after they enter the same lane.
+ *
+ * This lane is deliberately NON-REENTRANT. A coordinated transaction must
+ * call nested repositories with `collabInternal: true`, may synchronously
+ * notify before returning, and must never await reset/publish-flush work from
+ * inside the callback.
+ */
+let collabAwareWriteChain: Promise<void> = Promise.resolve()
+
+export function serializeCollabAwareWrite<T>(operation: () => Promise<T>): Promise<T> {
+  const run = collabAwareWriteChain.then(operation)
+  collabAwareWriteChain = run.then(() => undefined, () => undefined)
+  return run
+}
+
 export function registerRowWriteListener(listener: RowWriteListener): () => void {
   listeners.add(listener)
   return () => listeners.delete(listener)

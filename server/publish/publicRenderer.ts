@@ -11,8 +11,9 @@ import { prefetchLoopData, publishedDataRowToLoopItem } from './loopPrefetch'
 import { prefetchMediaAssets } from './mediaPrefetch'
 import { getPublishVersion } from './publishState'
 import type { Page } from '@core/page-tree'
-import type { SiteCssBundle } from '@core/publisher'
+import type { DocumentMetaOverride, SiteCssBundle } from '@core/publisher'
 import type { PublishedDataRow } from '@core/data/schemas'
+import { readEntrySeoOverride } from '@core/data/cells'
 import type { DbClient } from '../db/client'
 import type { PublishedPageSnapshot } from '../repositories/publish'
 
@@ -90,6 +91,7 @@ async function renderMergedTemplate(
   snapshot: PublishedPageSnapshot,
   templateContext: TemplateRenderDataContext | undefined,
   ctx: RenderPublishedSnapshotContext,
+  documentMeta?: DocumentMetaOverride,
 ): Promise<{ html: string; jsModuleIds: string[]; publishVersion: number; cssBundle: SiteCssBundle }> {
   const publishVersion = ctx.publishVersion ?? getPublishVersion()
   const moduleJsMap = buildPublishedSiteModuleJsMap(snapshot.site, registry)
@@ -101,6 +103,7 @@ async function renderMergedTemplate(
   const cssBundle = buildPublishedSiteCssBundle(snapshot.site, registry, merged, publishVersion, { mediaAssets })
   const published = publishPage(merged, snapshot.site, registry, {
     templateContext,
+    ...(documentMeta ? { documentMeta } : {}),
     runtimeAssets: snapshot.runtimeAssets,
     runtimePackageImportmap: snapshot.runtimePackageImportmap,
     cssEmission: 'external',
@@ -178,7 +181,10 @@ export async function renderPublishedDataRowTemplate(
   if (chain.length === 0) return null // no entry template → 404 (unchanged behaviour)
   const merged = composeTemplateChain(chain, { kind: 'entry' })
   // The template chain has no Page for the entry, so composeTemplateChain
-  // can't know its title — the entry's own title is the real document title.
+  // can't know its title — the entry's own title is the real page title.
+  // It stays the plain `title` cell: `page.title` feeds the `{page.title}`
+  // binding as well as `<title>`, so the SEO override travels separately
+  // through `documentMeta` and only reaches the `<head>`.
   if (typeof row.cells.title === 'string') merged.title = row.cells.title
 
   // Seed the entry stack with the published row + route frame from the request
@@ -190,6 +196,12 @@ export async function renderPublishedDataRowTemplate(
     ...(ctx.url ? { route: buildRouteFrame(ctx.url.toString()) } : {}),
   }
 
-  const rendered = await renderMergedTemplate(merged, snapshot, templateContext, ctx)
+  const rendered = await renderMergedTemplate(
+    merged,
+    snapshot,
+    templateContext,
+    ctx,
+    readEntrySeoOverride(row.cells),
+  )
   return { ...rendered, pageId: merged.id, slug: merged.slug, siteId: snapshot.site.id }
 }

@@ -29,7 +29,7 @@ const roles = [
     name: 'Admin',
     description: 'Full admin access.',
     isSystem: true,
-    capabilities: ['site.read', 'site.structure.edit','site.content.edit','site.style.edit', 'plugins.read', 'plugins.configure', 'plugins.install', 'plugins.lifecycle', 'users.manage', 'roles.manage', 'audit.read'],
+    capabilities: ['site.read', 'site.structure.edit','site.content.edit','site.style.edit', 'plugins.read', 'plugins.configure', 'plugins.install', 'plugins.lifecycle', 'users.manage', 'audit.read'],
     createdAt: now,
     updatedAt: now,
   },
@@ -474,7 +474,7 @@ describe('UsersPage', () => {
     expect(within(adminRole).getByText('Admin')).toBeDefined()
     expect(within(adminRole).queryByText('admin')).toBeNull()
     expect(within(adminRole).getByText('Full admin access.')).toBeDefined()
-    expect(within(adminRole).getByText('11 capabilities')).toBeDefined()
+    expect(within(adminRole).getByText('10 capabilities')).toBeDefined()
     expect(within(adminRole).queryByText('Plugins')).toBeNull()
     expect(within(adminRole).queryByText('Users & Roles')).toBeNull()
     expect(within(adminRole).queryByText('plugins.read')).toBeNull()
@@ -516,6 +516,7 @@ describe('UsersPage', () => {
     const createRoleDialog = screen.getByRole('dialog', { name: 'Create Role' })
     expect(within(createRoleDialog).getByText('Site')).toBeDefined()
     expect(within(createRoleDialog).getByRole('button', { name: 'Select all Site capabilities' })).toBeDefined()
+    expect(within(createRoleDialog).getByLabelText(/Manage roles/).hasAttribute('disabled')).toBe(true)
   })
 
   it('renders audit events as human-readable activity rows', async () => {

@@ -83,6 +83,14 @@ export function createBaseCspPlan(opts: {
 
   setCspDirective(plan, 'style-src', ["'self'", "'unsafe-inline'"])
   setCspDirective(plan, 'img-src', ["'self'", 'data:', 'https:'])
+  // Same sources as `img-src`, and for the same reason. Without an explicit
+  // `media-src` the browser falls back to `default-src 'self'` and refuses
+  // every cross-origin `<video>` / `<audio>` — so a page could show a remote
+  // image but not play a remote video, which is an arbitrary line to draw
+  // between two passive, non-executing references. The failure is also
+  // invisible in the markup: the element is correct, the URL resolves, and
+  // only the console says why nothing happens.
+  setCspDirective(plan, 'media-src', ["'self'", 'data:', 'https:'])
   setCspDirective(plan, 'frame-src', ["'none'"])
   setCspDirective(plan, 'worker-src', opts.anyScriptTag ? ["'self'", 'blob:'] : ["'none'"])
   return plan

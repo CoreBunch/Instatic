@@ -92,11 +92,13 @@ function ArgModeResults({
   query,
   highlightedIndex,
   onHighlightChange,
+  onSelectArg,
 }: {
   argMode: ArgModeState
   query: string
   highlightedIndex: number
   onHighlightChange: (index: number) => void
+  onSelectArg: (value: string) => void
 }): ReactNode {
   const args = argMode.command.args ?? []
   const currentArg = args[argMode.argIndex]
@@ -156,6 +158,7 @@ function ArgModeResults({
               role="option"
               aria-selected={idx === highlightedIndex}
               onMouseEnter={() => onHighlightChange(idx)}
+              onClick={() => onSelectArg(opt.value)}
             >
               <span className={styles.rowIcon} />
               <span className={styles.rowContent}>
@@ -205,6 +208,7 @@ interface SpotlightResultsProps {
   listboxId: string
   highlightedIndex: number
   onHighlightChange: (index: number) => void
+  onSelectArg: (value: string) => void
   onRun: (command: Command) => void
   activeScopeId: string
 }
@@ -213,6 +217,7 @@ export function SpotlightResults({
   listboxId,
   highlightedIndex,
   onHighlightChange,
+  onSelectArg,
   onRun,
   activeScopeId,
 }: SpotlightResultsProps): ReactNode {
@@ -326,6 +331,7 @@ export function SpotlightResults({
         query={query}
         highlightedIndex={highlightedIndex}
         onHighlightChange={onHighlightChange}
+        onSelectArg={onSelectArg}
       />
     )
   }

@@ -1,8 +1,8 @@
 /**
- * Module-level DataMeta cache for DynamicBindingControl.
+ * Module-level DataMeta cache for the shared data-binding picker.
  *
- * Lives in a separate `.ts` file so `DynamicBindingControl.tsx` can remain a
- * pure component file (required for React Fast Refresh to work correctly).
+ * Lives in a separate `.ts` file so picker components remain pure component
+ * files (required for React Fast Refresh to work correctly).
  *
  * `clearDataMetaCache` is exported for test isolation; import it from this
  * module directly — do not re-export it from the `.tsx` component file.

@@ -14,15 +14,25 @@ import type { PersistenceSaveStatus } from '@site/hooks/usePersistence'
 import { pushToast } from '@ui/components/Toast'
 import { PublishActionGroup, type PublishActionMenuItem } from './PublishActionGroup'
 import { getErrorMessage } from '@core/utils/errorMessage'
+import type { SiteRuntimeDiagnostic } from '@core/site-runtime'
 
 type PublishState = 'idle' | 'publishing' | 'published' | 'error'
 
 interface PublishButtonProps {
   enabled?: boolean
   saveStatus?: PersistenceSaveStatus
+  runtimeDiagnostics?: SiteRuntimeDiagnostic[]
+  runtimeValidationPending?: boolean
 }
 
-export function PublishButton({ enabled = true, saveStatus }: PublishButtonProps) {
+const EMPTY_RUNTIME_DIAGNOSTICS: SiteRuntimeDiagnostic[] = []
+
+export function PublishButton({
+  enabled = true,
+  saveStatus,
+  runtimeDiagnostics = EMPTY_RUNTIME_DIAGNOSTICS,
+  runtimeValidationPending = false,
+}: PublishButtonProps) {
   const site = useEditorStore((s) => s.site)
   const siteId = useEditorStore((s) => s.site?.id ?? null)
   const activePage = useEditorStore(selectActivePage)
@@ -39,10 +49,13 @@ export function PublishButton({ enabled = true, saveStatus }: PublishButtonProps
    */
   const publishedSiteRef = useRef<SiteDocument | null>(null)
   const syncError = saveStatus?.state === 'error' ? saveStatus.message ?? 'Sync failed' : null
+  const runtimeErrorCount = runtimeDiagnostics.filter((diagnostic) => diagnostic.severity === 'error').length
+  const runtimeErrorLabel = `${runtimeErrorCount} code error${runtimeErrorCount === 1 ? '' : 's'}`
 
   useEffect(() => {
+    const timer = statusTimerRef
     return () => {
-      if (statusTimerRef.current) clearTimeout(statusTimerRef.current)
+      if (timer.current) clearTimeout(timer.current)
     }
   }, [])
 
@@ -86,7 +99,13 @@ export function PublishButton({ enabled = true, saveStatus }: PublishButtonProps
   }
 
   const handlePublish = async () => {
-    if (!site || !enabled || state === 'publishing') return
+    if (
+      !site ||
+      !enabled ||
+      state === 'publishing' ||
+      runtimeErrorCount > 0 ||
+      runtimeValidationPending
+    ) return
 
     if (statusTimerRef.current) {
       clearTimeout(statusTimerRef.current)
@@ -134,7 +153,14 @@ export function PublishButton({ enabled = true, saveStatus }: PublishButtonProps
   // status chip states the reason inline (never available-then-blocked). An
   // absent saveStatus (collab info unavailable) doesn't gate.
   const notSynced = saveStatus ? saveStatus.state !== 'synced' : false
-  const disabled = !site || !enabled || isPublishing || notSynced
+  const disabled = (
+    !site ||
+    !enabled ||
+    isPublishing ||
+    notSynced ||
+    runtimeErrorCount > 0 ||
+    runtimeValidationPending
+  )
   const label =
     isPublishing ? 'Publishing' :
     state === 'published' ? 'Published' :
@@ -154,6 +180,16 @@ export function PublishButton({ enabled = true, saveStatus }: PublishButtonProps
     saveStatus?.state === 'connecting' || saveStatus?.state === 'loading' ? {
       label: 'Connecting',
       tone: 'neutral' as const,
+    } :
+    runtimeErrorCount > 0 ? {
+      label: runtimeErrorLabel,
+      tone: 'danger' as const,
+      ariaLabel: `${runtimeErrorLabel}. Resolve the highlighted script errors before publishing.`,
+    } :
+    runtimeValidationPending ? {
+      label: 'Checking code',
+      tone: 'neutral' as const,
+      ariaLabel: 'Checking runtime scripts before publishing.',
     } :
     {
       label: 'Draft synced',
@@ -176,7 +212,7 @@ export function PublishButton({ enabled = true, saveStatus }: PublishButtonProps
       id: 'schedule-publish',
       label: 'Schedule publish…',
       icon: CalendarSolidIcon,
-      disabled: !activePage,
+      disabled: !activePage || runtimeErrorCount > 0 || runtimeValidationPending,
       onSelect: () => setScheduleDialogOpen(true),
       testId: 'toolbar-schedule-publish-action',
     },
@@ -200,8 +236,20 @@ export function PublishButton({ enabled = true, saveStatus }: PublishButtonProps
         statusTone={status.tone}
         statusAriaLabel={status.ariaLabel}
         publishLabel={label}
-        publishAriaLabel={state === 'published' ? 'Published' : 'Publish site'}
-        publishTitle={state === 'published' ? 'Published' : 'Publish site'}
+        publishAriaLabel={
+          state === 'published'
+            ? 'Published'
+            : runtimeErrorCount > 0
+              ? `Cannot publish: ${runtimeErrorLabel}`
+              : 'Publish site'
+        }
+        publishTitle={
+          state === 'published'
+            ? 'Published'
+            : runtimeErrorCount > 0
+              ? `Resolve ${runtimeErrorLabel} before publishing`
+              : 'Publish site'
+        }
         publishState={state === 'publishing' ? 'busy' : state === 'published' ? 'success' : state}
         publishBusy={isPublishing}
         publishDisabled={disabled || state === 'published'}

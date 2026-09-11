@@ -17,7 +17,7 @@
  */
 import React from 'react'
 import type { ModuleComponentProps } from '@core/module-engine'
-import { htmlAttributesForReact } from '@modules/base/shared/htmlAttributes'
+import { htmlAttributesForReact } from '@core/htmlAttributes'
 import { inlineEditableElementProps, rawTextToBreakHtml } from '@modules/base/shared/inlineText'
 import { normalizeTag } from './tags'
 import type { TextStoredProps } from './props'

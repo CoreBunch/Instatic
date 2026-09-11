@@ -1,6 +1,9 @@
 .sidebar {
     position: relative;
-    z-index: 85;
+    /* Keep the layout shell out of the stacking ladder. Floating descendants
+       (the Agent panel and an undocked panel slot) must participate in the
+       editor's shared z-index context instead of being trapped below the
+       later right sidebar. The docked panel owns layer 85 below. */
     display: flex;
     --left-sidebar-rail-width: 42px;
     --left-sidebar-panel-width: 0px;
@@ -26,6 +29,7 @@
 .panelSlot {
     --panel-fade-bg: var(--bg-body);
     position: absolute;
+    z-index: 85;
     top: 0;
     bottom: 0;
     left: var(--left-sidebar-rail-width);

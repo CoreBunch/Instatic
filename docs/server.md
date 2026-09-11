@@ -66,6 +66,14 @@ export async function handleServerRequest(req: Request, runtime: ServerRuntime):
 
 It walks an ordered `routes` array of `RouteHandler` functions. Each handler returns `Response` (it owns the request) or `null` (try the next handler). The first non-null wins. Unknown paths fall through to a `404`.
 
+**`HEAD` is normalised to `GET` before dispatch.** RFC 9110 §9.3.2 defines `HEAD` as identical to `GET` except that the server must not send content, so `handleServerRequest` rewrites the method once and hands the same request to the table. That means:
+
+- Route handlers gate on `GET` only — never write `req.method !== 'GET' && req.method !== 'HEAD'`. The dispatcher already guarantees a `HEAD` arrives as a `GET`.
+- Dropping the body is `Bun.serve`'s job. A `HEAD` response ships the headers a `GET` would have produced, `content-length` included, with no content — handlers stay body-agnostic.
+- A method a route genuinely doesn't support still gets its `405`; only `HEAD` is folded into `GET`.
+
+Before this normalisation existed, `HEAD` matched no `GET`-gated route and fell through to the terminal JSON `404`, so uptime monitors and link checkers — which probe with `HEAD` by convention — reported healthy published pages as missing ([#306](https://github.com/CoreBunch/Instatic/issues/306)).
+
 ### The route table
 
 ```ts
@@ -181,6 +189,8 @@ export async function handlePagesRoutes(req: Request, db: DbClient): Promise<Res
 
 - Path matches some route, but no route has the right method → **405 Method Not Allowed**
 - No route's pattern matches the path → **`null`**, so the CMS entry point tries the next group and ultimately 404s.
+
+A `HEAD` never reaches this rule as `HEAD` — `handleServerRequest` has already normalised it to `GET` — so a `GET` route answers it and only genuinely unsupported methods get the `405`. Route tables therefore declare `GET` and never a parallel `HEAD` entry.
 
 Parameterised routes use a `RegExp` with **named capture groups** (`(?<id>[^/]+)`). The dispatcher decodes each captured value once via `decodeURIComponent`, so handlers receive already-decoded params and never call `decodeURIComponent` themselves.
 
@@ -614,6 +624,7 @@ Three static handlers, in order:
 - **Domain errors** are typed `Error` subclasses with a `path` (or similar) field — e.g. `SiteValidationError`, `VisualComponentNameError`. Add a typed class when callers need to distinguish causes.
 - **Generic `throw new Error(...)`** is fine for "this should never happen" invariants.
 - **Never echo raw error messages to the client.** The top-level catch in `server/index.ts` returns a generic 500. Handlers return `{ error: <safe message> }`.
+- **When a failure is the author's to fix, catch it before the generic 500.** That catch is deliberately silent, so a failure a person could act on has to be intercepted first. `RuntimeScriptBuildError` (`server/publish/runtime/buildError.ts`) is the worked example: a script importing an undeclared package used to surface as a bare "Internal server error" while the package name and file sat in the server log. It carries the structured `SiteRuntimeDiagnostic[]`, formats them with `path:line:column`, and the publish handler answers `422` with that message. Everything else still falls through to the 500.
 - **`catch (err)` → client error string:** use `getErrorMessage(err, 'fallback message')` from `src/core/utils/errorMessage.ts`. The hand-rolled `err instanceof Error ? err.message : 'fallback'` pattern is forbidden because it surfaces a blank string for `new Error('')` — `getErrorMessage` falls back when the message is empty or whitespace-only.
 
 See [docs/reference/typebox-patterns.md](reference/typebox-patterns.md) for boundary validation patterns.

@@ -109,6 +109,11 @@
     color: var(--text);
 }
 
+.item[data-active="true"] {
+    background: var(--overlay-10);
+    color: var(--text);
+}
+
 .item > span[aria-hidden="true"] {
     display: inline-flex;
     width: 16px;

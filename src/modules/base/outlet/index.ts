@@ -18,11 +18,8 @@ import type { ModuleDefinition } from '@core/module-engine'
 import { registry } from '@core/module-engine'
 import { Value } from '@core/utils/typeboxHelpers'
 import { TargetSolidIcon } from 'pixel-art-icons/icons/target-solid'
-import {
-  customHtmlTagControl,
-  htmlTagControl,
-  resolveHtmlTag,
-} from '@modules/base/utils/htmlTag'
+import { resolveHtmlTag } from '@core/htmlAttributes'
+import { customHtmlTagControl, htmlTagControl } from '@modules/base/utils/htmlTag'
 import { OutletEditor } from './OutletEditor'
 import { OutletPropsSchema, type OutletStoredProps } from './props'
 

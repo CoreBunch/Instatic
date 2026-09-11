@@ -266,6 +266,21 @@ describe('SelectorsPanel', () => {
     expect(within(panel).queryByRole('button', { name: /edit selector \.cta-button/i })).toBeNull()
   })
 
+  it('filters to only used selectors', () => {
+    loadSiteWithSelectors()
+    render(<SelectorsPanel variant="docked" />)
+
+    const panel = screen.getByTestId('selectors-panel')
+    fireEvent.click(within(panel).getByRole('button', { name: /^used$/i }))
+
+    // hero-title and cta-button are referenced by page nodes; unused-card and
+    // text-m have no nodes referencing them.
+    expect(within(panel).getByRole('button', { name: /edit selector \.hero-title/i })).toBeDefined()
+    expect(within(panel).getByRole('button', { name: /edit selector \.cta-button/i })).toBeDefined()
+    expect(within(panel).queryByRole('button', { name: /edit selector \.unused-card/i })).toBeNull()
+    expect(within(panel).queryByRole('button', { name: /edit selector \.text-m/i })).toBeNull()
+  })
+
   it('searches selector property names and values, not just names', () => {
     loadSiteWithSelectors()
     render(<SelectorsPanel variant="docked" />)

@@ -55,6 +55,12 @@
     background: var(--rail-icon-active-bg);
 }
 
+.railButtonDetached .railIcon {
+    color: var(--text-disabled);
+    filter: grayscale(1);
+    opacity: 0.55;
+}
+
 .railIcon {
     color: var(--rail-icon-color);
     filter: drop-shadow(0 0 5px var(--rail-icon-glow));

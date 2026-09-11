@@ -29,10 +29,10 @@ import {
   TextareaEditor,
 } from './FormControls'
 import {
-  htmlAttributesAttr,
   htmlAttributesControl,
   HtmlAttributesPropSchemaOptions,
 } from '@modules/base/shared/htmlAttributes'
+import { htmlAttributesAttr } from '@core/publisher'
 
 const FormPropsSchema = Type.Object({
   mode: Type.Union([Type.Literal('cms'), Type.Literal('custom')], { default: 'cms' }),

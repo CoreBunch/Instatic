@@ -1,7 +1,7 @@
 /**
  * dynamicBindingPicker.test.tsx
  *
- * Tests for the BindingPickerPopover UX inside DynamicBindingControl.
+ * Tests for the shared DataBindingPicker UX inside DynamicBindingControl.
  * Uses globalThis.fetch mocking (same pattern as templatePreviewBindings.test.tsx)
  * to intercept the DataMeta API call.
  *
@@ -15,7 +15,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
 import React from 'react'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { DynamicBindingControl } from '@site/property-controls/DynamicBindingControl'
-import { clearDataMetaCache } from '@site/property-controls/DynamicBindingControl/cache'
+import { clearDataMetaCache } from '@admin/shared/DataBindingPicker/cache'
 import { useEditorStore } from '@site/store/store'
 import { makeNode, makePage, makeSite } from '../fixtures'
 import type { DynamicPropBinding } from '@core/page-tree'

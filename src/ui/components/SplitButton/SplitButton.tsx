@@ -16,6 +16,7 @@ import { cn } from '@ui/cn'
 import { Button, type ButtonProps } from '@ui/components/Button'
 import { ContextMenu, ContextMenuItem } from '@ui/components/ContextMenu'
 import { ChevronDown2Icon } from 'pixel-art-icons/icons/chevron-down-2'
+import { LoaderIcon } from 'pixel-art-icons/icons/loader'
 import type { IconComponent } from 'pixel-art-icons/types'
 import styles from './SplitButton.module.css'
 
@@ -44,7 +45,12 @@ export interface SplitButtonProps {
   size?: ButtonProps['size']
   /** Disables the primary half only — the chevron trigger stays usable. */
   disabled?: boolean
-  /** Spins the leading icon and sets `aria-busy` on the primary half. */
+  /**
+   * Busy state on the primary half: spins the leading icon when one is set;
+   * without one, the label hides in place (keeping the button's width) and a
+   * centered loader spins over it. Activation is blocked either way, and
+   * `aria-busy` is always set.
+   */
   busy?: boolean
   /** Accessible label for the primary half. Falls back to `label` when it is a string. */
   primaryAriaLabel?: string
@@ -122,7 +128,8 @@ export function SplitButton({
         aria-busy={busy || undefined}
         tooltip={primaryTooltip}
         onClick={() => void onClick()}
-        disabled={disabled}
+        // A busy button must not fire again mid-flight.
+        disabled={disabled || busy}
         data-state={primaryState}
         data-testid={primaryTestId}
       >
@@ -133,7 +140,16 @@ export function SplitButton({
             aria-hidden="true"
           />
         )}
-        <span>{label}</span>
+        {/* Iconless busy: hide the label in place so the width holds, and
+            center a loader over it. With an icon, the icon spins instead. */}
+        <span className={cn(!PrimaryIcon && busy && styles.busyHiddenLabel)}>{label}</span>
+        {!PrimaryIcon && busy && (
+          <span className={styles.busyOverlay} aria-hidden="true">
+            <span className={styles.busySpin}>
+              <LoaderIcon size={12} />
+            </span>
+          </span>
+        )}
       </Button>
       <Button
         ref={triggerRef}

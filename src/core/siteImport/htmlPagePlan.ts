@@ -98,7 +98,7 @@ export function makeHtmlPagePlan(
   const slug = deriveSlug(htmlPath)
 
   // --- Step 5: parse body nodes (+ harvest inline styles and <style> CSS) ---
-  const { styleCss, stripped: _stripped, ...nodeFragment } = importHtml(htmlSource)
+  const { styleCss, stripped: _stripped, imageAlts, ...nodeFragment } = importHtml(htmlSource)
 
   const pagePlan: PagePlan = {
     source: htmlPath,
@@ -107,6 +107,7 @@ export function makeHtmlPagePlan(
     linkedCssPaths,
     scripts,
     nodeFragment,
+    imageAlts,
   }
 
   return { pagePlan, warnings, inlineCss: styleCss }

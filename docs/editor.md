@@ -439,7 +439,7 @@ Full details: [`docs/features/canvas-iframe-per-frame.md`](features/canvas-ifram
 
 `CanvasRoot` (`src/admin/pages/site/canvas/CanvasRoot.module.css`) sets `position: relative; z-index: 0`. This establishes an **isolating stacking context** for the entire canvas subtree. Every canvas-internal z-index value is confined inside that context and cannot compete with sibling layout elements.
 
-Why this matters: selection rings and the floating selection toolbar are portaled into the canvas root and painted at z-index 51 (above the `PluginCanvasOverlayLayer` at 50). Without the `z-index: 0` stacking context on the canvas, those z-index 51 values escape into the shared layout context and paint over the floating `PropertiesPanel` (also z-index 50), which is a sibling of the canvas. With the isolation in place, the canvas as a whole occupies z-index 0 in the shared layout context — well below the panel's 50.
+Why this matters: selection rings and the floating selection toolbar are portaled into the canvas root and painted at z-index 51 (above the `PluginCanvasOverlayLayer` at 50). Without the `z-index: 0` stacking context on the canvas, those values escape into the shared layout context instead of remaining a single isolated canvas layer. With the isolation in place, the canvas as a whole occupies z-index 0 in the shared layout context — well below the floating-panel tier at 90.
 
 **Editor layout z-index table** (shared context, outside the canvas):
 
@@ -447,11 +447,9 @@ Why this matters: selection rings and the floating selection toolbar are portale
 |---------------------------------------|---------|------|
 | Canvas (CanvasRoot, isolation root)   | 0       | `canvas/CanvasRoot.module.css` |
 | Toolbar (main bar)                    | 30      | `toolbar/Toolbar.module.css` |
-| PropertiesPanel (floating)            | 50      | `panels/PropertiesPanel/PropertiesPanel.module.css` |
-| AgentPanel (floating)                 | 50      | `panels/AgentPanel/AgentPanel.module.css` |
 | PanelRail                             | 55      | `sidebars/PanelRail/PanelRail.module.css` |
-| LeftSidebar, RightSidebar             | 85      | `sidebars/{Left,Right}Sidebar/` |
-| Undocked left-panel host              | 90      | `sidebars/LeftSidebar/LeftSidebar.module.css` |
+| Docked left-panel host, RightSidebar  | 85      | `sidebars/{Left,Right}Sidebar/` |
+| PropertiesPanel, AgentPanel, undocked left-panel host, shared floating windows | 90 | `panels/`, `sidebars/LeftSidebar/`, `shared/FloatingWindow/` |
 | CodeEditorPanel (floats over sidebars)| 95      | `code-editor/CodeEditorPanel.module.css` |
 | Toolbar popovers / dropdowns          | 201     | `toolbar/Toolbar.module.css` |
 | PreviewOverlay                        | 400–401 | `preview/PreviewOverlay.module.css` |
@@ -534,20 +532,22 @@ Opens the rail-selected panel:
 - `PluginEditorPanel` — plugin-provided editor panels
 - `AgentPanel` — AI assistant
 
-Explorer, Selectors, Framework, Dependencies, and plugin panels use the shared
-`Panel` header contract and can be unpinned into one draggable canvas window.
-Switching among those rail items while unpinned replaces the window content
-without redocking it; the same header action docks the active panel back into
-the left sidebar. A keyboard-accessible bottom-right handle resizes the
-floating window in both axes (arrow keys resize by 10px; Shift+arrow by 40px).
-`leftSidebarMode`, the shared floating position, and its user-set width and
-height are persisted through `siteEditorLayoutPersistence` /
-`workspaceLayoutStorage`.
+Every built-in left-rail panel, including AI, can be undocked independently;
+the active plugin panel follows the same host contract. An undocked panel stays open as its own draggable canvas window
+while another rail item can open normally in the left sidebar. Its rail icon is
+muted while detached, and the panel header can dock it back into the sidebar.
+Each floating window has its own keyboard-accessible bottom-right resize handle
+(arrow keys resize by 10px; Shift+arrow by 40px). Built-in panel modes, open
+state, positions, and dimensions are persisted through
+`siteEditorLayoutPersistence` / `workspaceLayoutStorage`.
 
-The AI Assistant is an independent draggable and resizable floating window, so
-it can stay open beside Explorer/Layers or any other hosted panel. Its position,
-dimensions, and open state persist separately across reloads. Properties
-follows the same independent floating-window interaction contract on the right.
+The outer left-sidebar layout shell intentionally has no `z-index`, so it does
+not trap floating descendants in a sidebar stacking context. Its docked panel
+slot owns layer 85; individually undocked panel hosts participate directly in
+the shared floating tier at 90. The AI Assistant is docked by default and uses
+the same per-panel contract as Explorer, Framework, Selectors, and Dependencies.
+Properties follows the equivalent independent floating-window interaction
+contract on the right.
 
 ### Right sidebar (`RightSidebar`)
 

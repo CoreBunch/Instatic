@@ -50,6 +50,7 @@ const IMPORT_UPLOADABLE_MIME_TYPES: ReadonlySet<string> = new Set([
   'image/png',
   'image/gif',
   'image/webp',
+  'image/avif',
   'image/svg+xml',
   'video/mp4',
   'video/webm',

@@ -2,7 +2,7 @@
  * Architecture gate — Binding compatibility coverage
  *
  * Enforces three structural invariants on the BINDING_COMPATIBILITY map
- * (`src/admin/pages/site/property-controls/bindingCompatibility.ts`)
+ * (`src/admin/shared/DataBindingPicker/bindingCompatibility.ts`)
  * and the `DATA_FIELD_TYPES` array (`src/core/data/schemas.ts`):
  *
  *   1. Every PropertyControlKind has an entry in BINDING_COMPATIBILITY.
@@ -21,12 +21,12 @@
  *      `DATA_FIELD_TYPES` set — neither a subset nor a superset.
  *
  * @see src/core/data/schemas.ts — DATA_FIELD_TYPES / DataFieldType
- * @see src/admin/pages/site/property-controls/bindingCompatibility.ts
+ * @see src/admin/shared/DataBindingPicker/bindingCompatibility.ts
  */
 
 import { describe, test, expect } from 'bun:test'
 import { DATA_FIELD_TYPES } from '@core/data/schemas'
-import { BINDING_COMPATIBILITY } from '@site/property-controls/bindingCompatibility'
+import { BINDING_COMPATIBILITY } from '@admin/shared/DataBindingPicker/bindingCompatibility'
 
 /**
  * The complete list of PropertyControlKind values, mirrored from

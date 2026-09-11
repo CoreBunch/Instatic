@@ -166,7 +166,31 @@ describe('capability-aware admin UI', () => {
     expect(screen.getByText('Content')).toBeDefined()
     expect(screen.queryByRole('link', { name: 'Site' })).toBeNull()
     expect(screen.queryByRole('link', { name: 'Plugins' })).toBeNull()
+    expect(screen.queryByRole('link', { name: 'AI' })).toBeNull()
     expect(screen.queryByRole('link', { name: 'Users' })).toBeNull()
+  })
+
+  it('shows AI settings navigation only to users who can access that workspace', () => {
+    const firstRender = render(
+      <MemoryRouter initialEntries={['/admin/content']}>
+        <AdminSessionProvider user={currentUser(['ai.providers.manage'])}>
+          <AdminSectionNavigation section="content" />
+        </AdminSessionProvider>
+      </MemoryRouter>,
+    )
+
+    expect(screen.getByRole('link', { name: 'AI' }).getAttribute('href')).toBe('/admin/ai')
+
+    firstRender.unmount()
+    render(
+      <MemoryRouter initialEntries={['/admin/content']}>
+        <AdminSessionProvider user={currentUser(['ai.chat'])}>
+          <AdminSectionNavigation section="content" />
+        </AdminSessionProvider>
+      </MemoryRouter>,
+    )
+
+    expect(screen.queryByRole('link', { name: 'AI' })).toBeNull()
   })
 
   it('removes collection management and author reassignment for own-content editors', async () => {

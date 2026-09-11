@@ -52,9 +52,11 @@ import {
 import {
   IMAGE_MIMES,
   acceptUploadedMedia,
-  readUploadedFile,
+  readUploadForm,
 } from './mediaUpload'
 import { Type } from '@core/utils/typeboxHelpers'
+import { isValidEmail } from '@core/utils/email'
+import { MIN_PASSWORD_LENGTH, PASSWORD_TOO_SHORT_MESSAGE } from '@core/utils/passwordPolicy'
 
 /**
  * Avatars are capped at 5 MB — full-resolution camera output is wildly
@@ -64,7 +66,7 @@ import { Type } from '@core/utils/typeboxHelpers'
 const MAX_AVATAR_BYTES = 5 * 1024 * 1024
 
 const ChangePasswordBodySchema = Type.Object({
-  newPassword: Type.String({ minLength: 12 }),
+  newPassword: Type.String({ minLength: MIN_PASSWORD_LENGTH }),
 })
 
 const UpdateProfileBodySchema = Type.Object({
@@ -117,7 +119,7 @@ export async function handleMeRoutes(
     if (!body) return badRequest('Invalid profile payload')
 
     const email = body.email.trim()
-    if (!email.toLowerCase().includes('@')) return badRequest('Invalid email')
+    if (!isValidEmail(email)) return badRequest('Invalid email address')
     const existing = await findUserByEmail(db, email)
     if (existing && existing.id !== user.id) {
       return badRequest('Email is already in use')
@@ -155,7 +157,7 @@ export async function handleMeRoutes(
     const stepUp = await requireStepUp(req, db, user)
     if (stepUp) return stepUp
     const body = await readValidatedBody(req, ChangePasswordBodySchema)
-    if (!body) return badRequest('Password must be at least 12 characters')
+    if (!body) return badRequest(PASSWORD_TOO_SHORT_MESSAGE)
     if (await verifyPassword(body.newPassword, user.passwordHash)) {
       return badRequest('Choose a different password')
     }
@@ -311,7 +313,7 @@ export async function handleMeRoutes(
   if (user instanceof Response) return user
 
   if (req.method === 'POST') {
-    const file = await readUploadedFile(req)
+    const { file } = await readUploadForm(req)
     if (!file) return badRequest('Missing file')
 
     const asset = await acceptUploadedMedia(db, {

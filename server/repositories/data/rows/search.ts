@@ -20,6 +20,8 @@ interface DataRowSearchResult {
   slug: string
   status: DataRowStatus
   updatedAt: string
+  /** The row's table family — the handler drops rows the caller cannot read. */
+  tableSystem: boolean
 }
 
 interface DataRowSearchRow {
@@ -27,6 +29,7 @@ interface DataRowSearchRow {
   table_id: string
   table_slug: string
   table_name: string
+  table_system: number | boolean
   slug: string
   status: DataRowStatus
   author_user_id: string | null
@@ -74,7 +77,8 @@ export async function searchDataRows(
            data_rows.created_by_user_id,
            data_rows.updated_at,
            data_tables.slug as table_slug,
-           data_tables.name as table_name
+           data_tables.name as table_name,
+           data_tables.system as table_system
     from data_rows
     join data_tables on data_tables.id = data_rows.table_id
     where data_rows.deleted_at is null
@@ -93,6 +97,7 @@ export async function searchDataRows(
       slug: r.slug,
       status: r.status,
       updatedAt: isoDate(r.updated_at),
+      tableSystem: Boolean(r.table_system),
     },
   }))
   if (visibility.ownerUserId) {

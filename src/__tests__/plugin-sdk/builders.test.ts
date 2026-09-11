@@ -17,6 +17,7 @@ import {
   raw,
   safeUrl,
   vc,
+  type ContentAccessEntry,
 } from '@core/plugin-sdk'
 // Layout compilation maps HTML elements to base.* modules via the registry.
 import '@modules/base'
@@ -323,6 +324,44 @@ describe('definePlugin', () => {
     ].sort())
     expect(definition.modules).toHaveLength(1)
     expect(definition.pack?.classes[0].id).toBe('acme.ui-kit/section')
+  })
+
+  it('copies contentAccess into the manifest as an independent deep copy', () => {
+    const contentAccess: ContentAccessEntry[] = [
+      { table: 'pages', modes: ['read', 'write'] },
+    ]
+    const definition = definePlugin({
+      id: 'acme.workflow',
+      name: 'Workflow',
+      version: '1.0.0',
+      permissions: [permissions.cmsContentRead, permissions.cmsContentWrite],
+      contentAccess,
+    })
+
+    expect(definition.manifest.contentAccess).toEqual([
+      { table: 'pages', modes: ['read', 'write'] },
+    ])
+
+    // Mutating the config input after the fact must not leak into the
+    // manifest — the builder snapshots entries and their modes arrays.
+    contentAccess[0].modes.push('delete')
+    contentAccess.push({ table: 'posts', modes: ['read'] })
+    expect(definition.manifest.contentAccess).toEqual([
+      { table: 'pages', modes: ['read', 'write'] },
+    ])
+  })
+
+  it('omits contentAccess from the manifest when not configured', () => {
+    const definition = definePlugin({
+      id: 'acme.ui-kit',
+      name: 'UI Kit',
+      version: '1.0.0',
+      permissions: [permissions.modulesRegister],
+    })
+    // The key must be absent — not `undefined` — so the in-memory manifest
+    // round-trips through `parsePluginManifest` exactly like the zipped
+    // `plugin.json` (see the omission rationale in definePlugin).
+    expect('contentAccess' in definition.manifest).toBe(false)
   })
 
   it('rejects plugin ids without a vendor namespace', () => {

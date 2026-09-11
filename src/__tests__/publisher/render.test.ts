@@ -1030,4 +1030,74 @@ describe('publishPage', () => {
     expect(html).not.toContain('<script>')
     expect(html).toContain('&lt;script&gt;')
   })
+
+  // Token interpolation in <head> meta — entry routes carry the published row
+  // on the context's entryStack (seeded by renderPublishedDataRowTemplate), so
+  // `{currentEntry.*}` resolves to per-entry SEO titles/descriptions through
+  // the same engine dynamic text bindings use.
+  it('interpolates {currentEntry.*} tokens in metaTitle on an entry route', () => {
+    const proj = makeSite({
+      settings: { ...makeSite().settings, metaTitle: '{currentEntry.name} | Acme Agency' },
+    })
+    const page = makePage({ root: { moduleId: 'base.text', props: { text: 'Hi' } } })
+    const { html } = publishPage(page, proj, registry, {
+      templateContext: {
+        entryStack: [{ id: 'row-1', fields: { name: 'Our Discovery Process' } }],
+      },
+    })
+    expect(html).toContain('<title>Our Discovery Process | Acme Agency</title>')
+  })
+
+  it('interpolates {currentEntry.*} tokens in the meta description', () => {
+    const proj = makeSite({
+      settings: { ...makeSite().settings, metaDescription: '{currentEntry.summary}' },
+    })
+    const page = makePage({ root: { moduleId: 'base.text', props: { text: 'Hi' } } })
+    const { html } = publishPage(page, proj, registry, {
+      templateContext: {
+        entryStack: [{ id: 'row-1', fields: { summary: 'How we run discovery.' } }],
+      },
+    })
+    expect(html).toContain('<meta name="description" content="How we run discovery.">')
+  })
+
+  it('entry tokens in metaTitle degrade gracefully on a plain page (no leaked placeholders)', () => {
+    const proj = makeSite({
+      settings: { ...makeSite().settings, metaTitle: '{currentEntry.name|Home} | Acme Agency' },
+    })
+    const page = makePage({ root: { moduleId: 'base.text', props: { text: 'Hi' } } })
+    // No templateContext → empty entry stack → the token's own |fallback applies.
+    const { html } = publishPage(page, proj, registry)
+    expect(html).toContain('<title>Home | Acme Agency</title>')
+    expect(html).not.toContain('{currentEntry')
+  })
+
+  it('interpolates tokens in the page.title fallback of the <title> chain', () => {
+    // No metaTitle set → the chain picks page.title, which may itself carry
+    // tokens (entry templates title themselves per-entry this way).
+    const page = makePage({ root: { moduleId: 'base.text', props: { text: 'Hi' } } })
+    page.title = '{currentEntry.name} — {site.name}'
+    const { html } = publishPage(page, makeSite(), registry, {
+      templateContext: { entryStack: [{ id: 'row-1', fields: { name: 'Launch Week' } }] },
+    })
+    expect(html).toContain('<title>Launch Week — Test SiteDocument</title>')
+  })
+
+  it('XSS: interpolated token values are escaped in <title> and description', () => {
+    const proj = makeSite({
+      settings: {
+        ...makeSite().settings,
+        metaTitle: '{currentEntry.name}',
+        metaDescription: '{currentEntry.name}',
+      },
+    })
+    const page = makePage({ root: { moduleId: 'base.text', props: { text: 'Hi' } } })
+    const { html } = publishPage(page, proj, registry, {
+      templateContext: {
+        entryStack: [{ id: 'row-1', fields: { name: '<script>alert(1)</script>"' } }],
+      },
+    })
+    expect(html).not.toContain('<script>alert(1)')
+    expect(html).toContain('<title>&lt;script&gt;alert(1)&lt;/script&gt;&quot;</title>')
+  })
 })

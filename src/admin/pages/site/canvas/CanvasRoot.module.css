@@ -6,14 +6,10 @@
 .canvas {
     flex: 1;
     position: relative;
-    /* Establish a stacking context for the whole canvas subtree. The selection /
-       hover rings and toolbar are portaled into this element at z-index 51 (so
-       they paint above the in-canvas PluginCanvasOverlayLayer at 50). Without an
-       isolating context here, that 51 escapes into the shared layout stacking
-       context and paints over the floating PropertiesPanel (z-index 50), which
-       is a sibling of the canvas. Pinning the canvas to z-index 0 keeps the
-       rings' internal ordering intact while ensuring the entire canvas — rings
-       included — sits below floating overlay panels and sidebars. */
+    /* Establish a stacking context for the whole canvas subtree. Canvas chrome
+       owns an internal z-index ladder for selection rings, mode controls, and
+       plugin overlays. Pinning the canvas to z-index 0 keeps that ordering
+       internal while ensuring the entire canvas sits below editor panels. */
     z-index: 0;
     overflow: hidden;
     background: var(--bg-surface-2);

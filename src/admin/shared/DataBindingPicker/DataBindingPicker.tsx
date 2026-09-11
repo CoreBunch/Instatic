@@ -1,5 +1,6 @@
 /**
- * BindingPickerPopover — the single-pane DataMeta picker.
+ * DataBindingPicker — shared single-pane picker for inserting tokens or
+ * creating structured data bindings.
  *
  * Rendered as a non-modal popover anchored to the affordance button (same
  * ContextMenu primitive ClassPicker uses for its dropdown). Clicking a
@@ -21,12 +22,10 @@
  */
 
 import { useEffect, useState, type RefObject } from 'react'
-import { createPortal } from 'react-dom'
 import type { PropertyControl } from '@core/module-engine'
 import type { DynamicPropBinding } from '@core/page-tree'
 import type { LoopItem, LoopSourceField } from '@core/loops/types'
 import type { DataMeta, DataMetaField, DataMetaTable } from '@core/data/schemas'
-import { useEditorStore, selectActivePage } from '@site/store/store'
 import { Button } from '@ui/components/Button'
 import { ContextMenu } from '@ui/components/ContextMenu'
 import { EmptyState } from '@ui/components/EmptyState'
@@ -34,26 +33,21 @@ import { SkeletonBlock } from '@ui/components/Skeleton'
 import { ImageSolidIcon } from 'pixel-art-icons/icons/image-solid'
 import { VideoSolidIcon } from 'pixel-art-icons/icons/video-solid'
 import { getFieldIcon } from '@admin/pages/data/utils/fieldIcons'
-import { isFieldBindable, type PropertyControlKind } from '../bindingCompatibility'
+import { isFieldBindable, type PropertyControlKind } from './bindingCompatibility'
 import { _cachedMeta, loadDataMeta } from './cache'
-import { SYSTEM_SOURCES, type SystemSourceId } from '../systemSources'
-import {
-  buildPageFrame,
-  buildSiteFrame,
-  buildRouteFrame,
-} from '@core/templates/contextFrames'
+import { SYSTEM_SOURCES, type SystemSourceId } from './systemSources'
 import { getCmsDataTable, previewCmsDataLoopItems } from '@core/persistence/cmsData'
 import { dataTablePreviewToLoopItem } from '@core/templates/templatePreviewData'
-import { primaryTemplateTableSlug } from '@core/templates'
 import {
   deriveFormat,
+  formatMetaFieldPreview,
   formatPreviewValue,
   loopFieldFormat,
   loopFieldMatchesControl,
   type FieldEntry,
   type FieldGroup,
 } from './helpers'
-import styles from './DynamicBindingControl.module.css'
+import styles from './DataBindingPicker.module.css'
 import { getErrorMessage } from '@core/utils/errorMessage'
 
 // ---------------------------------------------------------------------------
@@ -90,12 +84,29 @@ const POST_TYPE_ONLY_LOOP_FIELDS = new Set([
 // Props
 // ---------------------------------------------------------------------------
 
-interface PickerPopoverProps {
+type SystemPreviewValues = Partial<
+  Record<SystemSourceId, object | null>
+>
+
+export interface DataBindingPickerProps {
   label: string
   control: PropertyControl
   availableFields?: LoopSourceField[]
   sourceLabel?: string
-  loopTableId?: string | null
+  /** Table scope for currentEntry fields. Id takes precedence over slug. */
+  scopedTableId?: string | null
+  scopedTableSlug?: string | null
+  /** Prefix shown in the scope chip, e.g. "Current entry" or "Loop row". */
+  scopeLabel?: string
+  /**
+   * Current values shown as row previews. When omitted, the picker loads a
+   * representative row for the scoped table.
+   */
+  previewFields?: Record<string, unknown> | null
+  /** Prefer a real published row before falling back to synthetic previews. */
+  loadPublishedPreview?: boolean
+  /** Optional page/site/route values used by system-source preview pills. */
+  systemPreviewValues?: SystemPreviewValues
   /**
    * Insert mode — clicks insert a `{source.field}` token and the popover
    * stays open so multiple tokens can be inserted in one session.
@@ -103,6 +114,12 @@ interface PickerPopoverProps {
    * within `onPick`.
    */
   insertMode?: boolean
+  /**
+   * Structured bindings must match the destination control. Token insertion
+   * can select any field because interpolation serializes whole media and
+   * repeater values as well as scalar values.
+   */
+  fieldSelectionMode?: 'compatible' | 'token'
   /**
    * Element the popover positions itself against. Typically the affordance
    * wrapper (input + {} button). The popover opens below this element and
@@ -125,30 +142,34 @@ interface PickerPopoverProps {
   onPick: (binding: DynamicPropBinding) => void
 }
 
-export function BindingPickerPopover({
+export function DataBindingPicker({
   label,
   control,
   availableFields,
   sourceLabel,
-  loopTableId,
+  scopedTableId,
+  scopedTableSlug,
+  scopeLabel = 'Current row',
+  previewFields,
+  loadPublishedPreview = false,
+  systemPreviewValues,
   insertMode = false,
+  fieldSelectionMode = 'compatible',
   anchorRef,
   triggerRef,
   onClose,
   onPick,
-}: PickerPopoverProps) {
+}: DataBindingPickerProps) {
   // ─── Meta fetching ─────────────────────────────────────────────────────
   // Lazy initializer picks up the cached value so already-loaded meta is
   // immediately available without a synchronous setState in the effect.
   const [meta, setMeta] = useState<DataMeta | null>(() => _cachedMeta)
-  const [metaLoading, setMetaLoading] = useState(false)
+  const [metaLoading, setMetaLoading] = useState(() => _cachedMeta === null)
   const [metaError, setMetaError] = useState<string | null>(null)
 
-  /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
     if (_cachedMeta) return // already in state via lazy initializer
     let cancelled = false
-    setMetaLoading(true)
     loadDataMeta()
       .then((m) => {
         if (cancelled) return
@@ -165,34 +186,16 @@ export function BindingPickerPopover({
     }
   }, [])
 
-  // ─── Active page template for auto-scope + frame data ─────────────────
-  const activePageTableSlug = useEditorStore((s) => {
-    const page = selectActivePage(s)
-    return page ? primaryTemplateTableSlug(page) : null
-  })
-
-  // Live page/site frames for the per-row value preview. Read off the
-  // store so the preview shows the same values bindings will resolve to
-  // on the actual page.
-  const activePageForFrame = useEditorStore(selectActivePage)
-  const activeSite = useEditorStore((s) => s.site)
-
-  const pageFrame = activePageForFrame ? buildPageFrame(activePageForFrame) : null
-  const siteFrame = activeSite ? buildSiteFrame(activeSite) : null
-  const routeFrame = pageFrame ? buildRouteFrame(pageFrame.permalink) : null
-
-  // Auto-scope precedence:
-  //   1. `loopTableId` (Loop bound to a specific data table) — most specific.
-  //   2. `activePageTableSlug` (template page) — currentEntry resolves
-  //      against this table.
+  // Table id is the strongest scope signal. Site templates can instead
+  // provide a slug; Content supplies its selected collection id.
   const scopedTable: DataMetaTable | null = (() => {
     if (!meta) return null
-    if (loopTableId) {
-      const byId = meta.tables.find((t) => t.id === loopTableId)
+    if (scopedTableId) {
+      const byId = meta.tables.find((t) => t.id === scopedTableId)
       if (byId) return byId
     }
-    if (activePageTableSlug) {
-      return meta.tables.find((t) => t.slug === activePageTableSlug) ?? null
+    if (scopedTableSlug) {
+      return meta.tables.find((t) => t.slug === scopedTableSlug) ?? null
     }
     return null
   })()
@@ -201,34 +204,33 @@ export function BindingPickerPopover({
   const hasLoopOnlyScope = !scopedTable && (availableFields?.length ?? 0) > 0
 
   // ─── currentEntry preview item ─────────────────────────────────────────
-  // The value shown on each row for `currentEntry.X` bindings comes from
-  // this LoopItem. Resolution priority:
+  // When the caller does not provide live preview fields, the value shown
+  // for `currentEntry.X` comes from a representative LoopItem:
   //   1. Loop-bound table — fetch the most recent published row so the
   //      preview matches what real iterations will render.
   //   2. Template-page scope — synthesize from the table's field
   //      definitions so the preview is sensible even before any row is
   //      published (titles like "Example Post Title", etc.).
   //   3. Loop-bound with no published rows — fall back to (2).
-  // The fetched preview item is stored together with the table id it was
-  // fetched for. The value the rows actually consume (`currentEntryItem`) is
-  // derived during render and only surfaces the fetched item when it still
-  // belongs to the current scope — so changing scope never flashes the
-  // previous table's preview values, and there is no setState-in-effect reset.
+  // The fetched item is stored with its table id so changing scope never
+  // flashes preview values from the previous table.
   const [fetchedEntry, setFetchedEntry] = useState<{
     tableId: string
     item: LoopItem | null
   } | null>(null)
+  const hasProvidedPreview = previewFields !== undefined
 
   // No eslint-disable needed here: the only setState (setFetchedEntry) runs
   // inside the async load(), not synchronously in the effect body.
   useEffect(() => {
-    if (!scopedTable) return
+    if (!scopedTable || hasProvidedPreview) return
     let cancelled = false
     const tableId = scopedTable.id
 
     async function load() {
-      // Loop-bound table → prefer real rows.
-      if (loopTableId === tableId) {
+      // Loop and content scopes can prefer a real row so previews match the
+      // values authors are working with.
+      if (loadPublishedPreview) {
         try {
           const result = await previewCmsDataLoopItems(tableId, {
             limit: 1,
@@ -261,17 +263,18 @@ export function BindingPickerPopover({
     return () => {
       cancelled = true
     }
-  }, [scopedTable, loopTableId])
+  }, [scopedTable, loadPublishedPreview, hasProvidedPreview])
 
-  const currentEntryItem =
-    fetchedEntry && scopedTable && fetchedEntry.tableId === scopedTable.id
-      ? fetchedEntry.item
-      : null
+  const currentEntryFields = previewFields ??
+    (fetchedEntry && scopedTable && fetchedEntry.tableId === scopedTable.id
+      ? fetchedEntry.item?.fields
+      : null)
 
   // ─── Field list assembly ───────────────────────────────────────────────
   const controlKind = control.type as PropertyControlKind
 
   function entryMatchesControl(entry: FieldEntry): boolean {
+    if (fieldSelectionMode === 'token') return true
     if (entry.kind === 'meta') return isFieldBindable(controlKind, entry.field)
     return loopFieldMatchesControl(entry.field, controlKind)
   }
@@ -376,28 +379,17 @@ export function BindingPickerPopover({
   // ─── Per-row value preview ─────────────────────────────────────────────
   function getFieldPreviewValue(entry: FieldEntry): unknown {
     if (entry.kind === 'system') {
-      const frame =
-        entry.source === 'page'
-          ? pageFrame
-          : entry.source === 'site'
-            ? siteFrame
-            : entry.source === 'route'
-              ? routeFrame
-              : null
+      const frame = systemPreviewValues?.[entry.source]
       if (!frame) return undefined
-      return (frame as unknown as Record<string, unknown>)[entry.field.id]
+      return (frame as Record<string, unknown>)[entry.field.id]
     }
-    return currentEntryItem?.fields[entry.field.id]
+    return currentEntryFields?.[entry.field.id]
   }
 
   // ─── Auto-scope chip ───────────────────────────────────────────────────
   const isAutoScoped = scopedTable !== null
-  const isLoopTableScope =
-    isAutoScoped && Boolean(loopTableId) && scopedTable?.id === loopTableId
   const autoScopeChipLabel = scopedTable
-    ? isLoopTableScope
-      ? `Loop row — ${scopedTable.name}`
-      : `Current row — ${scopedTable.name}`
+    ? `${scopeLabel} — ${scopedTable.name}`
     : ''
 
   // ─── Render: single field row ──────────────────────────────────────────
@@ -405,12 +397,13 @@ export function BindingPickerPopover({
     if (entry.kind === 'meta') {
       const { field } = entry
       const FieldIcon = getFieldIcon(field.type)
-      const bindable = isFieldBindable(controlKind, field)
+      const bindable =
+        fieldSelectionMode === 'token' || isFieldBindable(controlKind, field)
       const tooltip = !bindable
         ? `Cannot bind a ${field.type} field to a ${control.label} control`
         : undefined
       const rawValue = getFieldPreviewValue(entry)
-      const previewText = formatPreviewValue(rawValue)
+      const previewText = formatMetaFieldPreview(field, rawValue)
 
       return (
         <Button
@@ -445,7 +438,8 @@ export function BindingPickerPopover({
 
     if (entry.kind === 'system') {
       const { source, field } = entry
-      const bindable = loopFieldMatchesControl(field, controlKind)
+      const bindable =
+        fieldSelectionMode === 'token' || loopFieldMatchesControl(field, controlKind)
       const tooltip = !bindable
         ? `Cannot bind this ${source} field to a ${control.label} control`
         : undefined
@@ -481,7 +475,8 @@ export function BindingPickerPopover({
 
     // Loop source field.
     const { field } = entry
-    const bindable = loopFieldMatchesControl(field, controlKind)
+    const bindable =
+      fieldSelectionMode === 'token' || loopFieldMatchesControl(field, controlKind)
     const tooltip = !bindable
       ? `Cannot bind this loop field to a ${control.label} control`
       : undefined
@@ -581,11 +576,10 @@ export function BindingPickerPopover({
     ? `Insert binding for ${label}`
     : `Bind ${label}`
 
-  // The picker portals into <body> via ContextMenu and positions itself
-  // below the anchor (the affordance wrapper). `triggerRef` keeps clicks
-  // on the {} affordance from counting as outside-clicks so the parent
-  // owns the open/close toggle.
-  return createPortal(
+  // ContextMenu owns the body portal and positions the picker below the
+  // supplied anchor. `triggerRef` keeps clicks on the braces affordance from
+  // counting as outside clicks so the caller owns the open/close toggle.
+  return (
     <ContextMenu
       ariaLabel={popoverLabel}
       onClose={onClose}
@@ -601,7 +595,6 @@ export function BindingPickerPopover({
       menuClassName={styles.popoverMenu}
     >
       {renderBody()}
-    </ContextMenu>,
-    document.body,
+    </ContextMenu>
   )
 }

@@ -10,6 +10,7 @@
  */
 import { useEffect, useState, useSyncExternalStore, type MouseEvent, type ReactNode } from 'react'
 import { ArticleSolidIcon } from 'pixel-art-icons/icons/article-solid'
+import { AiBoxSolidIcon } from 'pixel-art-icons/icons/ai-box-solid'
 import { DashboardSolidIcon } from 'pixel-art-icons/icons/dashboard-solid'
 import { DatabaseSolidIcon } from 'pixel-art-icons/icons/database-solid'
 import { ImagesSolidIcon } from 'pixel-art-icons/icons/images-solid'
@@ -173,6 +174,15 @@ export function AdminSectionNavigation({
       {canAccess('plugins') && (
         <PluginsNavLink
           active={section === 'plugins'}
+          onNavigateStart={onWorkspaceNavigateStart}
+        />
+      )}
+      {canAccess('ai') && (
+        <NavItem
+          to="/admin/ai"
+          icon={<AiBoxSolidIcon size={NAV_ICON_SIZE} aria-hidden="true" />}
+          label="AI"
+          active={section === 'ai'}
           onNavigateStart={onWorkspaceNavigateStart}
         />
       )}

@@ -6,14 +6,20 @@
  *  • Missing or malformed `instatic-plugin.config.ts` is surfaced cleanly
  *  • `network.outbound` permission without `networkAllowedHosts` is an error
  *  • `networkAllowedHosts` without `network.outbound` is a warning
+ *  • `cms.content.*` permissions without a matching `contentAccess` mode
+ *    entry are a warning; the missing-allowlist case stays a single error
  *  • Source files with `'node:*'` / `'bun:*'` / `require(` are errors
  *  • Bundled `dist/` outputs that smuggle forbidden literals are errors
  *  • A clean plugin reports zero findings
+ *  • The CLI's own content-editor scaffold builds a manifest that carries
+ *    `contentAccess` through `definePlugin` and lints clean
  */
 import { describe, expect, it } from 'bun:test'
 import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { lintPlugin } from '../../core/plugin-sdk/cli/lint'
+import { runPluginInit } from '../../core/plugin-sdk/cli/init'
+import { readPluginDefinition } from '../../core/plugin-sdk/cli/build'
 
 const PROJECT_ROOT = join(import.meta.dir, '../../..')
 
@@ -83,6 +89,41 @@ describe('instatic-plugin lint', () => {
     expect(findings).toHaveLength(1)
     expect(findings[0].scope).toBe('manifest')
     expect(findings[0].message).toContain('network.outbound')
+  })
+
+  it('warns when a cms.content.* permission has no contentAccess entry declaring its mode', async () => {
+    const result = await withTempPlugin(async (dir) => {
+      await writeConfig(dir, {
+        permissions: ['cms.content.read', 'cms.content.delete'],
+        contentAccess: [{ table: 'posts', modes: ['read'] }],
+      })
+    })
+    expect(result.findings.filter((f) => f.severity === 'error')).toEqual([])
+    const warnings = result.findings.filter((f) => f.severity === 'warning')
+    expect(warnings).toHaveLength(1)
+    expect(warnings[0].scope).toBe('manifest')
+    expect(warnings[0].message).toContain('cms.content.delete')
+    expect(warnings[0].message).toContain('"delete"')
+  })
+
+  it('does not warn when every cms.content.* permission is covered by a contentAccess mode', async () => {
+    const result = await withTempPlugin(async (dir) => {
+      await writeConfig(dir, {
+        permissions: ['cms.content.read', 'cms.content.write'],
+        contentAccess: [{ table: 'pages', modes: ['read', 'write'] }],
+      })
+    })
+    expect(result.findings).toEqual([])
+  })
+
+  it('keeps the missing-contentAccess case a single manifest error (no duplicate warnings)', async () => {
+    const result = await withTempPlugin(async (dir) => {
+      await writeConfig(dir, { permissions: ['cms.content.read'] })
+    })
+    expect(result.findings).toHaveLength(1)
+    expect(result.findings[0].severity).toBe('error')
+    expect(result.findings[0].scope).toBe('manifest')
+    expect(result.findings[0].message).toContain('contentAccess')
   })
 
   it('errors on forbidden literals in server source files', async () => {
@@ -157,5 +198,33 @@ describe('instatic-plugin lint', () => {
     expect(result.findings[0].severity).toBe('error')
     expect(result.findings[0].scope).toBe('config')
     expect(result.pluginId).toBe('<unknown>')
+  })
+
+  it('content-editor scaffold carries contentAccess into the manifest and lints clean', async () => {
+    // Regression: `definePlugin` used to drop `contentAccess` from the
+    // manifest it returned, so the CLI's own content-editor scaffold failed
+    // this very lint with "contentAccess is required when any cms.content.*
+    // permission is granted" — and installed plugins failed closed on every
+    // cms.content.* call despite the operator's grant.
+    const parentDir = join(PROJECT_ROOT, '.tmp-lint')
+    await mkdir(parentDir, { recursive: true })
+    const dir = await mkdtemp(join(parentDir, 'scaffold-'))
+    try {
+      const pluginDir = await runPluginInit('acme.content-lint', {
+        kind: 'content-editor',
+        parentDir: dir,
+      })
+
+      const definition = await readPluginDefinition(pluginDir)
+      expect(definition.manifest.contentAccess).toEqual([
+        { table: 'pages', modes: ['read', 'write'] },
+      ])
+
+      const result = await lintPlugin(pluginDir)
+      expect(result.findings).toEqual([])
+      expect(result.pluginId).toBe('acme.content-lint')
+    } finally {
+      await rm(dir, { recursive: true, force: true })
+    }
   })
 })

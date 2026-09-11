@@ -144,6 +144,25 @@ describe('self-hosted admin static serving', () => {
     }
   })
 
+  it('serves AVIF uploads inline with the image/avif content type', async () => {
+    const uploadsDir = mkdtempSync(join(tmpdir(), 'instatic-uploads-'))
+    try {
+      writeFileSync(join(uploadsDir, 'hero.avif'), 'image-bytes')
+
+      const res = await handleServerRequest(new Request('http://localhost/uploads/hero.avif'), {
+        db: fakeDb,
+        uploadsDir,
+      })
+
+      expect(res.status).toBe(200)
+      expect(res.headers.get('content-type')).toBe('image/avif')
+      expect(res.headers.get('content-disposition')).toBeNull()
+      expect(res.headers.get('x-content-type-options')).toBe('nosniff')
+    } finally {
+      rmSync(uploadsDir, { recursive: true, force: true })
+    }
+  })
+
   // F-0002 regression: even if a file with an unsafe extension somehow
   // landed in the uploads dir (legacy file from before extension hardening,
   // or a future regression), forcing `Content-Disposition: attachment` on

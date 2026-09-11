@@ -7,10 +7,14 @@
  * `ai-credentials-never-leak.test.ts`.
  */
 
+import { isIP } from 'node:net'
+import { lookup } from 'node:dns/promises'
 import { Type } from '@core/utils/typeboxHelpers'
 import { getErrorMessage } from '@core/utils/errorMessage'
 import { jsonResponse, readValidatedBody, badRequest } from '../../http'
 import { requireCapability } from '../../auth/authz'
+import { isBlockedAddress } from '../../plugins/host/network'
+import type { AuthUser } from '../../repositories/users'
 import type { DbClient } from '../../db/client'
 import { createAuditEvent } from '../../repositories/audit'
 import {
@@ -63,6 +67,53 @@ const UpdateBodySchema = Type.Object({
 })
 
 // ---------------------------------------------------------------------------
+// SSRF gate for operator-set base URLs (GHSA-886f)
+// ---------------------------------------------------------------------------
+
+/**
+ * Whether a provider base URL resolves to an internal / non-public address.
+ * A local model (Ollama on `localhost`, a LAN LLM) legitimately does; an
+ * internal service or cloud metadata endpoint does too, which is the SSRF. We
+ * do not distinguish here — we let only the owner set either (see below). An
+ * unparseable or unresolvable host is treated as not-internal: the driver
+ * rejects the former, and we cannot classify the latter.
+ */
+async function baseUrlTargetsInternal(baseUrl: string): Promise<boolean> {
+  let host: string
+  try {
+    host = new URL(baseUrl).hostname.replace(/^\[|\]$/g, '')
+  } catch {
+    return false
+  }
+  let addresses: string[]
+  try {
+    addresses = isIP(host) ? [host] : (await lookup(host, { all: true })).map((r) => r.address)
+  } catch {
+    return false
+  }
+  return addresses.length > 0 && addresses.some(isBlockedAddress)
+}
+
+/**
+ * Gate an operator-set base URL that points at an internal address. Pointing a
+ * provider at loopback / a LAN host is how self-hosted local models are wired,
+ * so we keep it working for the owner; a non-owner with `ai.providers.manage`
+ * could otherwise turn credential creation into an SSRF probe of the server's
+ * internal network (GHSA-886f), so for them an internal target is refused.
+ * Returns a 403 Response when a non-owner sets one, else null.
+ */
+async function guardOperatorBaseUrl(baseUrl: string | undefined, user: AuthUser): Promise<Response | null> {
+  if (!baseUrl || user.role.slug === 'owner') return null
+  if (await baseUrlTargetsInternal(baseUrl)) {
+    return jsonResponse(
+      { error: 'Only the owner can set an AI provider base URL that points at an internal or local address.' },
+      { status: 403 },
+    )
+  }
+  return null
+}
+
+// ---------------------------------------------------------------------------
 // Router entry
 // ---------------------------------------------------------------------------
 
@@ -109,6 +160,12 @@ async function handleCreate(req: Request, db: DbClient): Promise<Response> {
 
   const body = await readValidatedBody(req, CreateBodySchema)
   if (!body) return badRequest('Invalid request body.')
+
+  const baseUrlGate = await guardOperatorBaseUrl(
+    body.authMode === 'baseUrl' ? body.baseUrl : undefined,
+    userOrResponse,
+  )
+  if (baseUrlGate) return baseUrlGate
 
   try {
     const record = await createCredentialForUser(db, userOrResponse.id, body)
@@ -220,6 +277,9 @@ async function handleUpdate(req: Request, db: DbClient, id: string): Promise<Res
 
   const body = await readValidatedBody(req, UpdateBodySchema)
   if (!body) return badRequest('Invalid request body.')
+
+  const baseUrlGate = await guardOperatorBaseUrl(body.baseUrl, userOrResponse)
+  if (baseUrlGate) return baseUrlGate
 
   try {
     const record = await updateCredentialForUser(db, userOrResponse.id, id, body)

@@ -62,6 +62,13 @@ declare global {
 
   // --- host-injected (wired by vm.ts before the bootstrap evaluates) -------
   var __hostCall: (target: string, args: unknown[]) => Promise<unknown>
+  /**
+   * Synchronous CSPRNG bridge behind `crypto.getRandomValues` /
+   * `crypto.randomUUID` (`bootstrap/crypto.ts`): `count` bytes of host
+   * entropy, base64-encoded. Not routed through `__hostCall`, which returns a
+   * Promise and cannot back a synchronous WebCrypto call.
+   */
+  var __hostRandomBytes: (count: number) => string
   var __log: (level: string, message: string) => void
   var __plugin_meta: PluginMeta
   var __plugin_settings: Record<string, string | number | boolean>

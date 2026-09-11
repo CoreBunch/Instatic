@@ -194,6 +194,7 @@ export function PropertiesPanel({ variant = 'floating' }: PropertiesPanelProps) 
           mode={variant}
           panelLabel="Properties"
           dockLocation="right sidebar"
+          dockSide="right"
           onToggle={() => data.setPropertiesPanelMode(variant === 'docked' ? 'floating' : 'docked')}
         />
       </PanelHeader>

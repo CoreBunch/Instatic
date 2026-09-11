@@ -154,3 +154,67 @@ describe('server router — Layer A disk artefact fast-path', () => {
     expect(res.status).toBe(404)
   })
 })
+
+/**
+ * RFC 9110 §9.3.2 — HEAD is identical to GET except that the server must not
+ * send content. Every route below the dispatcher gates on `GET`, so an
+ * un-normalised HEAD used to fall past all of them to the terminal JSON 404:
+ * uptime monitors and link checkers probe with HEAD and concluded a healthy
+ * published site was gone. See issue #306.
+ */
+describe('server router — HEAD is GET minus the body', () => {
+  let uploadsDir: string
+
+  beforeEach(async () => {
+    uploadsDir = await mkdtemp(join(tmpdir(), 'router-head-test-'))
+  })
+
+  afterEach(async () => {
+    await rm(uploadsDir, { recursive: true, force: true })
+  })
+
+  it('answers HEAD on a published page with the same status and content-type as GET', async () => {
+    const { slot, slotDir } = await prepareInactiveSlot(uploadsDir)
+    await writeArtefact(slotDir, '/kontakt', '<html><body>Kontakt</body></html>')
+    await swapSlot(uploadsDir, slot)
+
+    const runtime = { db: makeFakeDb({ site: 1, owners: 1 }), uploadsDir }
+    const get = await handleServerRequest(new Request('http://localhost/kontakt'), runtime)
+    const head = await handleServerRequest(
+      new Request('http://localhost/kontakt', { method: 'HEAD' }),
+      runtime,
+    )
+
+    expect(get.status).toBe(200)
+    expect(head.status).toBe(200)
+    expect(head.headers.get('content-type')).toBe(get.headers.get('content-type'))
+  })
+
+  it('answers HEAD with the setup redirect on a fresh install, like GET', async () => {
+    const res = await handleServerRequest(
+      new Request('http://localhost/', { method: 'HEAD' }),
+      { db: makeFakeDb({ site: 0, owners: 0 }) },
+    )
+
+    expect(res.status).toBe(302)
+    expect(res.headers.get('location')).toBe('/admin')
+  })
+
+  it('answers HEAD on a JSON API route like GET instead of 405', async () => {
+    const res = await handleServerRequest(
+      new Request('http://localhost/admin/api/cms/setup/status', { method: 'HEAD' }),
+      { db: makeFakeDb() },
+    )
+
+    expect(res.status).toBe(200)
+  })
+
+  it('still rejects a method that GET-only routes genuinely do not support', async () => {
+    const res = await handleServerRequest(
+      new Request('http://localhost/admin/api/cms/setup/status', { method: 'DELETE' }),
+      { db: makeFakeDb() },
+    )
+
+    expect(res.status).not.toBe(200)
+  })
+})

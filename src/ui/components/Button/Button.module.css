@@ -187,17 +187,20 @@
 }
 
 /* ── Variant: primary ─────────────────────────────────────────────────────── */
+/* The one visually loud button: a high-contrast inverse pill (white in the
+   dark theme, ink in the light theme) so the screen's key action reads
+   instantly. */
 .variant-primary {
-    background: var(--overlay-20);
-    color: var(--text);
+    background: var(--btn-primary-bg);
+    color: var(--btn-primary-fg);
 }
 
 .variant-primary:hover {
-    background: var(--overlay-30);
+    background: var(--btn-primary-bg-hover);
 }
 
 .variant-primary:active {
-    background: var(--overlay-20);
+    background: var(--btn-primary-bg-active);
 }
 
 /* ── Variant: secondary ───────────────────────────────────────────────────── */
@@ -271,4 +274,15 @@
     background: var(--overlay-5);
     border-left-color: var(--text);
     color: var(--text);
+}
+
+.busySpinner {
+    display: inline-flex;
+    animation: btnBusySpin 0.9s linear infinite;
+}
+
+@keyframes btnBusySpin {
+    to {
+        transform: rotate(360deg);
+    }
 }

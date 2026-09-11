@@ -93,6 +93,12 @@
     --text-subtle: #787878;
     --text-disabled: #52525b;
 
+    /* Primary action: high-contrast inverse pill (white-on-dark). */
+    --btn-primary-bg: #ffffff;
+    --btn-primary-bg-hover: #e4e4e7;
+    --btn-primary-bg-active: #d4d4d8;
+    --btn-primary-fg: #111827;
+
     /* White overlay scale. Suffix = alpha x 100. */
     --overlay: #ffffff;
     --overlay-5: rgba(255, 255, 255, 0.05);
@@ -394,6 +400,12 @@
     --accent-9-10: rgba(162, 28, 175, 0.1);
     --accent-10: #b91c1c;
     --accent-10-10: rgba(185, 28, 28, 0.1);
+
+    /* Primary action: high-contrast inverse pill (ink-on-light). */
+    --btn-primary-bg: #111827;
+    --btn-primary-bg-hover: #1f2937;
+    --btn-primary-bg-active: #374151;
+    --btn-primary-fg: #ffffff;
 
     /* Foreground overlay scale. Suffix = alpha x 100. */
     --overlay: #111827;

@@ -132,18 +132,30 @@ export async function listCmsMediaAssets(
   return parsed.value.assets.map(normalizeCmsMediaAsset)
 }
 
+interface UploadCmsMediaAssetOptions extends ClientBase {
+  /** Aborts the in-flight upload (e.g. the Super Import run was cancelled). */
+  signal?: AbortSignal
+  /**
+   * Alt text the new record starts with — the authored `<img alt>` on a site
+   * import. Omitted: the record keeps the server default (empty).
+   */
+  altText?: string
+}
+
 export async function uploadCmsMediaAsset(
   file: File,
-  options: ClientBase = {},
+  options: UploadCmsMediaAssetOptions = {},
 ): Promise<CmsMediaAsset> {
   const { fetchImpl, basePath } = resolveClient(options)
   const body = new FormData()
   body.set('file', file)
+  if (options.altText !== undefined) body.set('altText', options.altText)
 
   const res = await fetchImpl(`${basePath}/media`, {
     method: 'POST',
     credentials: 'include',
     body,
+    signal: options.signal,
   })
   const payload = await readEnvelope(res, CmsMediaAssetEnvelopeSchema, `CMS media upload failed with ${res.status}`)
   return normalizeCmsMediaAsset(payload.asset)

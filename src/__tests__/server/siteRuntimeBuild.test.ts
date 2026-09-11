@@ -113,6 +113,171 @@ describe('site runtime build', () => {
     ])
   })
 
+  it('maps syntax diagnostics back to the authored script and source location', async () => {
+    const site = runtimeSite({
+      files: [
+        {
+          id: 'broken-script',
+          path: 'src/scripts/broken.ts',
+          type: 'script',
+          content: `const value from 'broken'`,
+          createdAt: 1,
+          updatedAt: 1,
+        },
+      ],
+      runtime: normalizeSiteRuntimeConfig({
+        scripts: {
+          'broken-script': {
+            placement: 'head',
+            priority: 10,
+          },
+        },
+      }),
+    })
+
+    const result = await buildSiteRuntimeScripts({
+      site,
+      page,
+      target: 'publish',
+      assetBasePath: '/_instatic/assets/runtime/',
+    })
+
+    expect(result.files).toEqual([])
+    expect(result.diagnostics).toEqual([
+      expect.objectContaining({
+        code: 'runtime-bundle-error',
+        severity: 'error',
+        message: 'Expected ";" but found "from"',
+        fileId: 'broken-script',
+        path: 'src/scripts/broken.ts',
+        line: 1,
+        column: expect.any(Number),
+      }),
+    ])
+  })
+
+  it('validates enabled scripts even when their scope excludes the current page', async () => {
+    const site = runtimeSite({
+      files: [{
+        id: 'other-page-script',
+        path: 'src/scripts/other-page.ts',
+        type: 'script',
+        content: `const value from 'broken'`,
+        createdAt: 1,
+        updatedAt: 1,
+      }],
+      runtime: normalizeSiteRuntimeConfig({
+        scripts: {
+          'other-page-script': {
+            scope: { type: 'pages', pageIds: ['another-page'] },
+          },
+        },
+      }),
+    })
+
+    const result = await buildSiteRuntimeScripts({
+      site,
+      target: 'publish',
+      assetBasePath: '/_instatic/runtime-validation/',
+      scriptSelection: 'all-enabled',
+    })
+
+    expect(result.diagnostics).toEqual([
+      expect.objectContaining({
+        fileId: 'other-page-script',
+        path: 'src/scripts/other-page.ts',
+        line: 1,
+        severity: 'error',
+      }),
+    ])
+  })
+
+  it('syntax-checks classic scripts while preserving their raw published output', async () => {
+    const site = runtimeSite({
+      files: [{
+        id: 'classic-script',
+        path: 'src/scripts/classic.js',
+        type: 'script',
+        content: 'window.classic = ;',
+        createdAt: 1,
+        updatedAt: 1,
+      }],
+      runtime: normalizeSiteRuntimeConfig({
+        scripts: {
+          'classic-script': { format: 'classic' },
+        },
+      }),
+    })
+
+    const result = await buildSiteRuntimeScripts({
+      site,
+      page,
+      target: 'publish',
+      assetBasePath: '/_instatic/assets/runtime/',
+    })
+
+    expect(result.files).toEqual([])
+    expect(result.diagnostics).toEqual([
+      expect.objectContaining({
+        fileId: 'classic-script',
+        path: 'src/scripts/classic.js',
+        line: 1,
+        severity: 'error',
+      }),
+    ])
+  })
+
+  it('reports classic and module syntax errors in the same validation pass', async () => {
+    const site = runtimeSite({
+      files: [
+        {
+          id: 'classic-script',
+          path: 'src/scripts/classic.js',
+          type: 'script',
+          content: 'window.classic = ;',
+          createdAt: 1,
+          updatedAt: 1,
+        },
+        {
+          id: 'module-script',
+          path: 'src/scripts/module.ts',
+          type: 'script',
+          content: `const value from 'broken'`,
+          createdAt: 1,
+          updatedAt: 1,
+        },
+      ],
+      runtime: normalizeSiteRuntimeConfig({
+        scripts: {
+          'classic-script': { format: 'classic' },
+          'module-script': { format: 'module' },
+        },
+      }),
+    })
+
+    const result = await buildSiteRuntimeScripts({
+      site,
+      target: 'publish',
+      assetBasePath: '/_instatic/runtime-validation/',
+      scriptSelection: 'all-enabled',
+    })
+
+    expect(result.files).toEqual([])
+    expect(result.runtimeAssets.scripts).toEqual([])
+    expect(result.diagnostics).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        fileId: 'classic-script',
+        path: 'src/scripts/classic.js',
+        severity: 'error',
+      }),
+      expect.objectContaining({
+        fileId: 'module-script',
+        path: 'src/scripts/module.ts',
+        severity: 'error',
+      }),
+    ]))
+  })
+
   it('builds a preview document with the same runtime assets used by publish rendering', async () => {
     const result = await buildRuntimePreviewDocument({
       site: runtimeSite(),

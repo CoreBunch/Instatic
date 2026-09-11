@@ -1,9 +1,10 @@
-import { relative, sep } from 'node:path'
+import { isAbsolute, relative, sep } from 'node:path'
 import * as esbuild from 'esbuild'
 import type { Page, SiteDocument } from '@core/page-tree'
 import {
   analyzeRuntimeScriptImports,
   collectRuntimeScripts,
+  DEFAULT_SCRIPT_RUNTIME_CONFIG,
   normalizeSiteRuntimeConfig,
 } from '@core/site-runtime'
 import type {
@@ -34,9 +35,8 @@ export interface SiteRuntimeBuildResult {
   diagnostics: SiteRuntimeDiagnostic[]
 }
 
-export interface BuildSiteRuntimeScriptsInput {
+interface BuildSiteRuntimeScriptsBaseInput {
   site: SiteDocument
-  page: Page
   target: SiteRuntimeTarget
   assetBasePath: string
   dependencyCache?: Pick<RuntimeDependencyCache, 'nodeModulesDir'>
@@ -44,6 +44,18 @@ export interface BuildSiteRuntimeScriptsInput {
   /** Override the bundle timeout (ms). Mainly for tests. */
   bundleTimeoutMs?: number
 }
+
+export type BuildSiteRuntimeScriptsInput = BuildSiteRuntimeScriptsBaseInput & (
+  | {
+      page: Page
+      scriptSelection?: 'page'
+    }
+  | {
+      /** Validate every enabled script, independent of its page scope. */
+      scriptSelection: 'all-enabled'
+      page?: never
+    }
+)
 
 /**
  * Hard upper bound on the time a single esbuild invocation may run.
@@ -71,6 +83,22 @@ function contentTypeForPath(path: string): string {
 
 function scriptFormat(entry: RuntimeScriptEntry): 'module' | 'classic' {
   return entry.config.format === 'classic' ? 'classic' : 'module'
+}
+
+function collectAllEnabledRuntimeScripts(
+  site: SiteDocument,
+  runtime: ReturnType<typeof normalizeSiteRuntimeConfig>,
+): RuntimeScriptEntry[] {
+  const scripts: RuntimeScriptEntry[] = []
+  for (const file of site.files) {
+    if (file.type !== 'script') continue
+    const config = runtime.scripts[file.id] ?? { ...DEFAULT_SCRIPT_RUNTIME_CONFIG }
+    if (config.enabled) scripts.push({ file, config })
+  }
+  return scripts.sort((a, b) => {
+    const priority = a.config.priority - b.config.priority
+    return priority || a.file.path.localeCompare(b.file.path)
+  })
 }
 
 function safeOutputFileName(path: string): string {
@@ -136,7 +164,31 @@ function emptyRuntimeBuild(diagnostics: SiteRuntimeDiagnostic[] = []): SiteRunti
   }
 }
 
-function esbuildDiagnostics(error: unknown): SiteRuntimeDiagnostic[] {
+function diagnosticPathInsideWorkspace(path: string, rootDir: string): string | undefined {
+  const relativePath = isAbsolute(path) ? relative(rootDir, path) : path
+  const normalized = toPosixPath(relativePath).replace(/^\.\//, '')
+  if (!normalized || normalized === '..' || normalized.startsWith('../') || normalized.startsWith('/')) {
+    return undefined
+  }
+  return normalized
+}
+
+function esbuildDiagnostics(
+  error: unknown,
+  site: SiteDocument,
+  rootDir: string,
+  entryPointByFileId: Map<string, string>,
+): SiteRuntimeDiagnostic[] {
+  const authoredFileById = new Map(site.files.map((file) => [file.id, file]))
+  const authoredFileByWorkspacePath = new Map(
+    [...entryPointByFileId.entries()].flatMap(([fileId, absolutePath]) => {
+      const file = authoredFileById.get(fileId)
+      return file
+        ? [[toPosixPath(relative(rootDir, absolutePath)), file] as const]
+        : []
+    }),
+  )
+
   if (
     error &&
     typeof error === 'object' &&
@@ -144,14 +196,23 @@ function esbuildDiagnostics(error: unknown): SiteRuntimeDiagnostic[] {
     Array.isArray((error as { errors: unknown }).errors)
   ) {
     return (error as { errors: Array<{ text?: string; location?: { file?: string; line?: number; column?: number } }> }).errors
-      .map((item) => ({
-        code: 'runtime-bundle-error',
-        severity: 'error' as const,
-        message: item.text ?? 'Runtime script bundle failed',
-        path: item.location?.file,
-        line: item.location?.line,
-        column: item.location?.column,
-      }))
+      .map((item) => {
+        const workspacePath = item.location?.file
+          ? diagnosticPathInsideWorkspace(item.location.file, rootDir)
+          : undefined
+        const authoredFile = workspacePath
+          ? authoredFileByWorkspacePath.get(workspacePath)
+          : undefined
+        return {
+          code: 'runtime-bundle-error',
+          severity: 'error' as const,
+          message: item.text ?? 'Runtime script bundle failed',
+          ...(authoredFile ? { fileId: authoredFile.id, path: authoredFile.path } : {}),
+          ...(!authoredFile && workspacePath ? { path: workspacePath } : {}),
+          ...(item.location?.line !== undefined ? { line: item.location.line } : {}),
+          ...(item.location?.column !== undefined ? { column: item.location.column } : {}),
+        }
+      })
   }
 
   return [{
@@ -159,6 +220,62 @@ function esbuildDiagnostics(error: unknown): SiteRuntimeDiagnostic[] {
     severity: 'error',
     message: error instanceof Error ? error.message : 'Runtime script bundle failed',
   }]
+}
+
+function classicScriptDiagnostics(
+  error: unknown,
+  script: RuntimeScriptEntry,
+): SiteRuntimeDiagnostic[] {
+  if (
+    error &&
+    typeof error === 'object' &&
+    'errors' in error &&
+    Array.isArray((error as { errors: unknown }).errors)
+  ) {
+    return (error as { errors: Array<{ text?: string; location?: { line?: number; column?: number } }> }).errors
+      .map((item) => ({
+        code: 'runtime-bundle-error',
+        severity: 'error' as const,
+        message: item.text ?? 'Runtime script syntax check failed',
+        fileId: script.file.id,
+        path: script.file.path,
+        ...(item.location?.line !== undefined ? { line: item.location.line } : {}),
+        ...(item.location?.column !== undefined ? { column: item.location.column } : {}),
+      }))
+  }
+
+  return [{
+    code: 'runtime-bundle-error',
+    severity: 'error',
+    message: error instanceof Error ? error.message : 'Runtime script syntax check failed',
+    fileId: script.file.id,
+    path: script.file.path,
+  }]
+}
+
+async function validateClassicRuntimeScripts(
+  scripts: RuntimeScriptEntry[],
+): Promise<SiteRuntimeDiagnostic[]> {
+  const diagnosticsByScript = await Promise.all(scripts.map(async (script) => {
+    try {
+      // Classic scripts are emitted byte-for-byte so they retain browser
+      // globals. Parse them separately to catch syntax errors without
+      // changing their published output.
+      await esbuild.transform(script.file.content ?? '', {
+        loader: 'js',
+        logLevel: 'silent',
+        target: ['es2020'],
+      })
+      return []
+    } catch (error) {
+      return classicScriptDiagnostics(error, script)
+    }
+  }))
+  const diagnostics: SiteRuntimeDiagnostic[] = []
+  for (const scriptDiagnostics of diagnosticsByScript) {
+    diagnostics.push(...scriptDiagnostics)
+  }
+  return diagnostics
 }
 
 function selectedScriptByEntryPoint(
@@ -179,32 +296,43 @@ export async function buildSiteRuntimeScripts(
   input: BuildSiteRuntimeScriptsInput,
 ): Promise<SiteRuntimeBuildResult> {
   const runtime = normalizeSiteRuntimeConfig(input.site.runtime)
-  const selectedScripts = collectRuntimeScripts({
-    files: input.site.files,
-    runtime,
-    page: input.page,
-    target: input.target,
-  })
+  let selectedScripts: RuntimeScriptEntry[]
+  if (input.scriptSelection === 'all-enabled') {
+    selectedScripts = collectAllEnabledRuntimeScripts(input.site, runtime)
+  } else {
+    selectedScripts = collectRuntimeScripts({
+      files: input.site.files,
+      runtime,
+      page: input.page,
+      target: input.target,
+    })
+  }
 
   if (selectedScripts.length === 0) return emptyRuntimeBuild()
 
   const moduleScripts = selectedScripts.filter((entry) => scriptFormat(entry) === 'module')
   const classicScripts = selectedScripts.filter((entry) => scriptFormat(entry) === 'classic')
   const classicBuild = buildClassicRuntimeFiles(classicScripts, input.assetBasePath)
+  const classicDiagnostics = await validateClassicRuntimeScripts(classicScripts)
 
   const packageJson = clonePackageJson(input.site.packageJson ?? DEFAULT_SITE_PACKAGE_JSON)
   const importAnalysis = analyzeRuntimeScriptImports(
     moduleScripts.map((entry) => entry.file),
     packageJson,
   )
+  const staticDiagnostics = [
+    ...classicDiagnostics,
+    ...importAnalysis.diagnostics,
+  ]
   const blockingDiagnostics = importAnalysis.diagnostics.filter((diagnostic) => diagnostic.severity === 'error')
-  if (blockingDiagnostics.length > 0) return emptyRuntimeBuild(importAnalysis.diagnostics)
+  if (blockingDiagnostics.length > 0) return emptyRuntimeBuild(staticDiagnostics)
 
   if (moduleScripts.length === 0) {
+    if (classicDiagnostics.length > 0) return emptyRuntimeBuild(staticDiagnostics)
     return {
       files: classicBuild.files,
       runtimeAssets: { scripts: classicBuild.assets },
-      diagnostics: importAnalysis.diagnostics,
+      diagnostics: staticDiagnostics,
     }
   }
 
@@ -215,10 +343,11 @@ export async function buildSiteRuntimeScripts(
       .filter((entryPoint): entryPoint is string => Boolean(entryPoint))
 
     if (entryPoints.length === 0) {
+      if (classicDiagnostics.length > 0) return emptyRuntimeBuild(staticDiagnostics)
       return {
         files: classicBuild.files,
         runtimeAssets: { scripts: classicBuild.assets },
-        diagnostics: importAnalysis.diagnostics,
+        diagnostics: staticDiagnostics,
       }
     }
 
@@ -326,13 +455,18 @@ export async function buildSiteRuntimeScripts(
     const scripts = [...moduleAssetScripts, ...classicBuild.assets]
       .sort((a, b) => a.priority - b.priority || a.src.localeCompare(b.src))
 
+    if (classicDiagnostics.length > 0) return emptyRuntimeBuild(staticDiagnostics)
+
     return {
       files: [...files, ...classicBuild.files],
       runtimeAssets: { scripts },
-      diagnostics: importAnalysis.diagnostics,
+      diagnostics: staticDiagnostics,
     }
   } catch (error) {
-    return emptyRuntimeBuild([...importAnalysis.diagnostics, ...esbuildDiagnostics(error)])
+    return emptyRuntimeBuild([
+      ...staticDiagnostics,
+      ...esbuildDiagnostics(error, input.site, workspace.rootDir, workspace.entryPointByFileId),
+    ])
   } finally {
     await workspace.cleanup()
   }

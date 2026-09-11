@@ -365,6 +365,10 @@ interface DataLoopPreviewOptions {
   direction?: 'asc' | 'desc'
   limit?: number
   offset?: number
+  /** Cell condition, so the canvas previews the rows the page will publish. */
+  cellField?: string
+  cellOperator?: string
+  cellValue?: string
 }
 
 interface DataLoopPreviewResult {
@@ -386,6 +390,9 @@ export async function previewCmsDataLoopItems(
         direction: options.direction,
         limit: options.limit,
         offset: options.offset,
+        cellField: options.cellField,
+        cellOperator: options.cellOperator,
+        cellValue: options.cellValue,
       },
       schema: LoopPreviewEnvelope,
       fetchImpl,

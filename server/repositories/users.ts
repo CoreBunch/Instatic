@@ -2,7 +2,8 @@ import { createHash } from 'node:crypto'
 import { nanoid } from 'nanoid'
 import { placeholder, type DbClient } from '../db/client'
 import { isoDateOrNull } from '@core/utils/isoDate'
-import { normalizeCapabilities, type CoreCapability } from '../auth/capabilities'
+import { isValidEmail } from '@core/utils/email'
+import { normalizeCapabilitiesForRole, type CoreCapability } from '../auth/capabilities'
 import {
   normalizeStepUpAuthMode,
   normalizeStepUpWindowMinutes,
@@ -175,7 +176,7 @@ export function computeGravatarHash(email: string): string {
 }
 
 export function rowToUser(row: JoinedUserRow): AuthUser {
-  const capabilities = normalizeCapabilities(row.role_capabilities_json)
+  const capabilities = normalizeCapabilitiesForRole(row.role_id, row.role_capabilities_json)
   const mfaRecoveryCodeHashes = filterArray(
     RecoveryCodeHashSchema,
     row.mfa_recovery_code_hashes_json,
@@ -284,7 +285,7 @@ export async function createUser(
 ): Promise<CmsUser> {
   const email = input.email.trim()
   const emailNormalized = normalizeEmail(email)
-  if (!emailNormalized.includes('@')) throw new UserMutationError('Invalid email')
+  if (!isValidEmail(emailNormalized)) throw new UserMutationError('Invalid email address')
   // Empty means empty. `display_name` is rendered on PUBLIC pages through
   // author bindings, so defaulting it to the email address publishes the
   // address the moment anyone binds an author field. Admin surfaces already
@@ -323,7 +324,12 @@ export async function updateUser(
 
   const email = input.email === undefined ? current.email : input.email.trim()
   const emailNormalized = normalizeEmail(email)
-  if (!emailNormalized.includes('@')) throw new UserMutationError('Invalid email')
+  // Validate only an email that is actually being CHANGED — a patch that
+  // touches role/status/password must still work on a user whose stored
+  // email predates this check.
+  if (input.email !== undefined && !isValidEmail(emailNormalized)) {
+    throw new UserMutationError('Invalid email address')
+  }
   // Clearing the field is allowed and means "no public name" — see createUser.
   const displayName = input.displayName === undefined
     ? current.displayName

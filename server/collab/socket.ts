@@ -116,8 +116,11 @@ type AwarenessRefusal = 'impersonation' | 'foreignClear' | 'malformed'
  *   - refuse a `null` (clear) for a clientID this connection never announced.
  *
  * Returns `null` when the frame is legitimate and may be applied.
+ *
+ * Exported for direct unit testing — the review rules are the security
+ * boundary and deserve cases of their own.
  */
-function reviewAwarenessUpdate(
+export function reviewAwarenessUpdate(
   payload: Uint8Array,
   data: Pick<CollabSocketData, 'identity' | 'awarenessClients'>,
 ): AwarenessRefusal | null {
@@ -132,6 +135,11 @@ function reviewAwarenessUpdate(
         if (!data.awarenessClients.has(clientId)) return 'foreignClear'
         continue
       }
+      // y-protocols initializes every client's local state to `{}`, and a
+      // freshly connected client announces exactly that before the editor
+      // publishes real presence. Protocol-normal, carries nothing to verify
+      // — let it through (peers validate states and skip user-less entries).
+      if (raw === '{}') continue
       const parsed = safeParseValue(PresenceUserSchema, JSON.parse(raw))
       if (!parsed.ok) return 'malformed'
       const u = parsed.value.user

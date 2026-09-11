@@ -66,7 +66,40 @@ It also uploads:
 
 ```txt
 instatic-0.0.1-release-bundle.tar.gz
+instatic-server-0.0.1-darwin-arm64.tar.gz
+instatic-server-0.0.1-darwin-x64.tar.gz
+instatic-server-0.0.1-linux-x64.tar.gz
+instatic-server-0.0.1-windows-x64.tar.gz
+instatic-server-0.0.1-checksums.txt
 ```
+
+The `instatic-server-*` assets are per-platform **runnable server artifacts**: a
+`bun build --compile` single-file server binary (Bun runtime, sharp/libvips,
+and the QuickJS plugin-sandbox WASM all embedded) plus the built admin `dist/`.
+They are built by `bun run release:server-artifacts` (`scripts/build-server-artifact.ts`)
+on a macOS arm64 runner, which cross-compiles every target. Tooling that
+installs releases should treat a release as artifact-enabled only when these
+assets are present, and verify the sha256 checksums file after download. The Windows artifact
+self-extracts its libvips DLLs on boot into a per-version temp directory
+(Bun embeds files under hashed names, which breaks by-name DLL resolution)
+and preloads them bottom-up — `libvips-42.dll`, then `libvips-cpp-*.dll`,
+then the sharp `.node` — because the Windows loader resolves by-name imports
+from already-loaded modules but never searches a loaded DLL's own directory.
+The C++ DLL is loaded via `kernel32.LoadLibraryW` rather than `bun:ffi`'s
+`dlopen`: it exports only C++-mangled names, which cannot appear in the C
+wrapper `bun:ffi` generates per requested symbol. jsdom and one of its
+dependencies resolve their own files at runtime, which works in dev and fails on
+boot inside the binary: jsdom reads `default-stylesheet.css` through `__dirname`
+and resolves its synchronous-XHR worker with `require.resolve` (a compiled
+binary bakes both as the build machine's absolute paths), and css-tree's ESM
+build loads its data through `createRequire(import.meta.url)` (which resolves
+against `/$bunfs`). `scripts/lib/serverArtifactPlugins.ts` inlines the
+stylesheet, drops the worker (the server never issues synchronous XHR), and
+routes `css-tree` to its CJS build, whose requires the bundler embeds.
+`scripts/lib/serverArtifactPlugins.test.ts` compiles the production sanitizer,
+checks the binary for the build machine's `node_modules` path, and boots it
+with `node_modules` reads denied, so a regression fails `bun test` rather than
+a release.
 
 Release notes should link to:
 
@@ -122,6 +155,7 @@ The release workflow should:
 - push `latest` for tagged releases
 - create a release bundle with the Compose files and deployment docs
 - include the Render Blueprint templates in the release bundle
+- build and upload the per-platform runnable server artifacts + checksums (macOS arm64 runner, cross-compiled)
 
 The first release targets `linux/amd64` because QEMU-based arm64 publishing made the tagged workflow too slow to use as a release gate. Add arm64 as a separate native-runner build before advertising multi-arch images.
 

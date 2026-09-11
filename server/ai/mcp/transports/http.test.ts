@@ -218,4 +218,18 @@ describe('mcp http transport', () => {
     expect(rpc.result?.protocolVersion).toBe('2025-06-18')
     expect(rpc.result?.serverInfo).toEqual({ name: 'instatic', version: '1.0.0' })
   })
+
+  it('rejects an oversized request before MCP protocol dispatch', async () => {
+    const maxRequestBytes = 64
+    const res = await handleMcpHttp(
+      mcpRequest(initBody(), token),
+      db,
+      { maxRequestBytes },
+    )
+
+    expect(res?.status).toBe(413)
+    const rpc = parseRpcBody(await res!.text())
+    expect(rpc.error?.code).toBe(-32000)
+    expect(rpc.error?.message).toContain(`${maxRequestBytes} bytes`)
+  })
 })

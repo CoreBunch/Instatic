@@ -11,28 +11,28 @@ function renderCanvas() {
   return render(<DndContext><CanvasRoot /></DndContext>)
 }
 
+// No hand-written store partial here: the preload resets every app store
+// before each test. This file used to seed one, and the field it forgot to
+// mention (`canvasView`) is exactly what broke it. See
+// `src/__tests__/fixtures/storeIsolation.ts`.
 beforeEach(() => {
   cleanup()
-  useEditorStore.setState({
-    site: null,
-    _historyPast: [],
-    _historyFuture: [],
-    canUndo: false,
-    canRedo: false,
-    selectedNodeId: null,
-    selectedNodeIds: [],
-    hoveredNodeId: null,
-    activeDocument: null,
-    activePageId: null,
-    activeBreakpointId: 'desktop',
-    propertiesPanel: { collapsed: false, x: 0, y: 0, width: 360 },
-    propertiesPanelMode: 'docked',
-    hasUnsavedChanges: false,
-  })
 })
 
 describe('canvas form controls', () => {
+  // Reproduces the leak that made the next test fail on CI and pass locally.
+  // `it` bodies run in declaration order, so this guarantees the real test
+  // always runs against a store a previous test has already dirtied. In live
+  // view `CanvasRoot` renders one preview frame with form-control suppression
+  // deliberately off, which is what the real test used to assert against.
+  it('is isolated from a leaked live canvas view', () => {
+    useEditorStore.setState({ canvasView: 'live' })
+    expect(useEditorStore.getState().canvasView).toBe('live')
+  })
+
   it('prevents native form-control activation while preserving canvas node selection', async () => {
+    expect(useEditorStore.getState().canvasView).toBe('design')
+
     const site = useEditorStore.getState().createSite('Form Controls')
     const page = site.pages[0]!
     const formId = useEditorStore.getState().insertNode('base.form', {

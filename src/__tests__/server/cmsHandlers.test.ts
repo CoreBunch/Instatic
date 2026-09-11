@@ -79,7 +79,6 @@ function makeFakeDb() {
         'plugins.install',
         'plugins.lifecycle',
         'users.manage',
-        'roles.manage',
         'audit.read',
       ],
     },
@@ -128,6 +127,17 @@ function makeFakeDb() {
         user.deleted_at == null
       ).length
       return { rows: [{ count } as Row], rowCount: 1 }
+    }
+    if (normalized.includes('from roles') && normalized.includes('where id =')) {
+      const role = roles.find((candidate) => candidate.id === values[0])
+      const row = role
+        ? {
+          ...role,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        }
+        : null
+      return { rows: row ? [row as Row] : [], rowCount: row ? 1 : 0 }
     }
     // createSite (repositories.ts) — values[0]=name, values[1]=settings
     // saveDraftSite (siteRepository.ts) — values[0]=name, values[1]=siteShell (via transaction)

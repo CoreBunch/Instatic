@@ -57,7 +57,8 @@ interface FrameworkColorVariant {
 
 const TRANSPARENT_STEPS = [5, 10, 20, 30, 40, 50, 60, 70, 80, 90] as const
 const UTILITY_ORDER: FrameworkColorUtilityType[] = ['text', 'background', 'border', 'fill']
-const HSLA_RE = /^hsla?\(\s*([-+]?\d*\.?\d+)(?:deg)?\s*,\s*([-+]?\d*\.?\d+)%\s*,\s*([-+]?\d*\.?\d+)%(?:\s*,\s*([-+]?\d*\.?\d+))?\s*\)$/i
+// hsl()/hsla(), both comma and space syntax, alpha as number or percentage.
+const HSLA_RE = /^hsla?\(\s*([-+]?\d*\.?\d+)(?:deg)?\s*[, ]\s*([-+]?\d*\.?\d+)%\s*[, ]\s*([-+]?\d*\.?\d+)%(?:\s*[,/]\s*(\d*\.?\d+%?))?\s*\)$/i
 const HEX_RE = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i
 // rgb()/rgba(), both comma and space syntax, alpha as number or percentage.
 const RGBA_RE = /^rgba?\(\s*(\d*\.?\d+)\s*[, ]\s*(\d*\.?\d+)\s*[, ]\s*(\d*\.?\d+)\s*(?:[,/]\s*(\d*\.?\d+%?))?\s*\)$/i
@@ -389,6 +390,15 @@ function shiftLightness(
   return formatHsla({ ...channels, l: nextLightness })
 }
 
+// The alpha channel accepts either a number (`0.5`) or a percentage (`50%`)
+// in both rgb/rgba and hsl/hsla, comma or space/slash syntax. A missing alpha
+// is fully opaque.
+function parseAlpha(raw: string | undefined): number {
+  if (raw === undefined) return 1
+  if (raw.endsWith('%')) return clamp(Number(raw.slice(0, -1)) / 100, 0, 1)
+  return clamp(Number(raw), 0, 1)
+}
+
 function parseColor(value: string): ColorChannels | null {
   const input = value.trim()
   const hslaMatch = input.match(HSLA_RE)
@@ -397,7 +407,7 @@ function parseColor(value: string): ColorChannels | null {
       h: normalizeHue(Number(hslaMatch[1])),
       s: clamp(Number(hslaMatch[2]), 0, 100),
       l: clamp(Number(hslaMatch[3]), 0, 100),
-      a: hslaMatch[4] === undefined ? 1 : clamp(Number(hslaMatch[4]), 0, 1),
+      a: parseAlpha(hslaMatch[4]),
     }
   }
 
@@ -408,19 +418,13 @@ function parseColor(value: string): ColorChannels | null {
 
   const rgbaMatch = input.match(RGBA_RE)
   if (rgbaMatch) {
-    const alphaRaw = rgbaMatch[4]
-    const alpha = alphaRaw === undefined
-      ? 1
-      : alphaRaw.endsWith('%')
-        ? clamp(Number(alphaRaw.slice(0, -1)) / 100, 0, 1)
-        : clamp(Number(alphaRaw), 0, 1)
     return {
       ...rgbToHsl(
         clamp(Number(rgbaMatch[1]), 0, 255),
         clamp(Number(rgbaMatch[2]), 0, 255),
         clamp(Number(rgbaMatch[3]), 0, 255),
       ),
-      a: alpha,
+      a: parseAlpha(rgbaMatch[4]),
     }
   }
 

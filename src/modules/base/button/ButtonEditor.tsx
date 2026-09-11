@@ -11,7 +11,7 @@
 import React from 'react'
 import type { ModuleComponentProps } from '@core/module-engine'
 import { anchorRel } from '@modules/base/shared/anchorTarget'
-import { htmlAttributesForReact } from '@modules/base/shared/htmlAttributes'
+import { htmlAttributesForReact } from '@core/htmlAttributes'
 import { inlineEditableElementProps } from '@modules/base/shared/inlineText'
 import { resolveButtonAnchor } from './anchor'
 import type { ButtonStoredProps } from './props'

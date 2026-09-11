@@ -114,8 +114,10 @@ export function SegmentedControl<T extends string>({
               onChange(option.value)
             }}
           >
-            {option.icon}
-            {option.label}
+            <span className={styles.segmentContent}>
+              {option.icon}
+              {option.label}
+            </span>
             {/* Hover close overlay — only rendered (and only visible via CSS)
                 when the parent is `data-clearable="true"` and this segment is
                 pressed. Pure visual hint; the actual clear handler runs on the

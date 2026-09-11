@@ -31,7 +31,7 @@ import { registry } from '../../core/module-engine/registry'
 // Snapshot fixture
 // ---------------------------------------------------------------------------
 
-function makeSnapshot() {
+function makeSnapshot(text = 'Hello from hole') {
   return {
     cmsSnapshotVersion: 1 as const,
     pageRowId: 'page_1',
@@ -56,7 +56,7 @@ function makeSnapshot() {
             'text-node': {
               id: 'text-node',
               moduleId: 'test.text',
-              props: { text: 'Hello from hole' },
+              props: { text },
               breakpointOverrides: {},
               children: [],
               classIds: [],
@@ -408,6 +408,24 @@ describe('handleHoleRequest — successful render', () => {
 
     expect(body1).toBe(body2)
     expect(res2.status).toBe(200)
+  })
+
+  it('keys the fragment cache on the page path, so a poisoned u= cannot leak across paths (GHSA-f29g)', async () => {
+    // The fragment's content depends on the originating page path (route.path).
+    const snapshot = makeSnapshot('viewing:{route.path}')
+    const db = makeFakeDb(snapshot)
+    const version = getPublishVersion()
+
+    // Attacker renders the fragment under an arbitrary originating path.
+    const evilUrl = new URL(`http://localhost/_instatic/hole/text-node?v=${version}&u=${encodeURIComponent('/evil-path')}`)
+    const evil = await handleHoleRequest(new Request(evilUrl), evilUrl, { db })
+    expect(await evil.text()).toContain('/evil-path')
+
+    // A normal visitor of a different path (same query) must render its own
+    // path, not be served the attacker's fragment from a shared cache slot.
+    const realUrl = new URL(`http://localhost/_instatic/hole/text-node?v=${version}&u=${encodeURIComponent('/')}`)
+    const real = await handleHoleRequest(new Request(realUrl), realUrl, { db })
+    expect(await real.text()).not.toContain('/evil-path')
   })
 
   it('becomes stale for old ?v= after bumpPublishVersion()', async () => {

@@ -141,14 +141,17 @@ executeAiTool(...) / live editor bridge
 | `auth.ts` | Resolves OAuth access tokens or personal tokens to `{ connectorId, userId, capabilities }`; returns a discovery-aware 401 otherwise. |
 | `transports/http.ts` | Authenticated, Origin-validated `createMcpHandler` entry for MCP 2026-07-28 plus the stateless 2025 fallback. |
 | `server.ts` / `registry.ts` | Low-level SDK server, TypeBox input schemas, catalog deduplication, and capability filtering. |
-| `editorBridge.ts` | Per-user, per-scope live workspace bridge. |
+| `editorBridge.ts` | Per-user, per-scope live workspace bridge. The stream carries an **idle lease** (120s, re-armed by every relayed tool request) so an active batch is never cut mid-flight; only quiet streams recycle. The workspace's reconnect loop (`useMcpWorkspaceBridge`) reopens a recycled healthy stream immediately off the stream-end network event — deliberately timer-free, because hidden webviews (backgrounded browser tabs) clamp timers to minutes while network events still fire — and a tab becoming visible short-circuits any pending retry delay. |
 | `tools/publishTool.ts` | Explicit canonical full-site publish with MCP audit metadata. |
+| `tools/uploadMediaTool.ts` | Server-resolved image upload (`media_upload`) — inline base64 or SSRF-guarded `sourceUrl` download, through the shared media pipeline. |
 
 ## Tool execution model
 
 MCP exposes the full deduplicated tool catalog, filtered by the connection's capabilities.
 
-Server-resolved tools work without an editor open. They include content reads, `get_context`, `site_list_documents`, `site_read_styles`, `site_list_breakpoints`, and explicit `site_publish`. Publishing requires `ai.tools.write` plus `pages.publish`, runs the canonical full-site pipeline, swaps the static slot atomically, and records the connection id in the publish audit event.
+Server-resolved tools work without an editor open. They include content reads, `get_context`, `site_list_documents`, `site_read_styles`, `site_list_breakpoints`, `media_upload`, and explicit `site_publish`. Publishing requires `ai.tools.write` plus `pages.publish`, runs the canonical full-site pipeline, swaps the static slot atomically, and records the connection id in the publish audit event.
+
+`media_upload` is the one server-resolved write that mutates outside the live editor draft: it adds an image to the Media library through the same `acceptUploadedMedia` core the HTTP route uses (magic-byte sniffing, SVG sanitisation, storage dispatch, responsive variants). Bytes arrive inline (base64) or via an https `sourceUrl` the host downloads under the plugin network layer's SSRF blocklist — https-only, DNS-resolved, per-redirect-hop re-validation, size-capped. It requires `ai.tools.write` plus `media.write`.
 
 Browser tools run against the connection owner's live workspace. Site structure, HTML/CSS, page lifecycle, design-token, content mutation, code-asset, and live-DOM tools route to the matching open Site or Content workspace. If that workspace is not open, the tool returns a scope-specific error while headless tools remain available. `tools/list` states that requirement in each browser tool's description, so a client learns the precondition when it picks the tool rather than from a failed call.
 

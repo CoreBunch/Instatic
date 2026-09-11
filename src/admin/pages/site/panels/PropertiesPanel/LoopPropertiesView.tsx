@@ -17,17 +17,20 @@ import { useAsyncResource } from '@admin/lib/useAsyncResource'
 import { useEditorStore } from '@site/store/store'
 import { loopSourceRegistry } from '@core/loops/registry'
 import { ENTRY_FIELD_FILTER_KEY, ENTRY_FIELD_SOURCE_ID } from '@core/loops'
+import {
+  CELL_ORDER_PREFIX,
+  isCellComparableField,
+  parseCellOrder,
+  withoutCellFilter,
+} from '@core/loops/cellFilter'
 import type { LoopEntitySource } from '@core/loops/types'
-import type { DataTableListItem } from '@core/data/schemas'
+import type { DataRow, DataTableListItem } from '@core/data/schemas'
 import type { PropertyControl, PropertySchema } from '@core/module-engine'
-import { listCmsDataTables } from '@core/persistence/cmsData'
+import { listCmsDataRows, listCmsDataTables } from '@core/persistence/cmsData'
 import { getAncestors, type Page } from '@core/page-tree'
 import { PropertyControlRenderer } from '@site/property-controls/PropertyControlRenderer'
-import {
-  CUSTOM_HTML_TAG_VALUE,
-  customHtmlTagControl,
-  htmlTagControl,
-} from '@modules/base/utils/htmlTag'
+import { CUSTOM_HTML_TAG_VALUE } from '@core/htmlAttributes'
+import { customHtmlTagControl, htmlTagControl } from '@modules/base/utils/htmlTag'
 
 interface LoopPropertiesViewProps {
   nodeId: string
@@ -59,13 +62,41 @@ export function LoopPropertiesView({ nodeId, props, activePage }: LoopProperties
     [sourceId],
   )
 
+  // A relation cell stores the referenced row's ID, so a free-text value box
+  // would ask the author to type an opaque string the editor never shows them
+  // and they have no way to look up. When the chosen field is a relation, load
+  // the referenced table's rows so the value can be picked by name instead.
+  // Every other field type keeps the text box.
+  const relationTargetTableId = (() => {
+    if (sourceId !== 'data.rows' || typeof filters.cellField !== 'string') return null
+    const table = tables?.find((t) => t.id === filters.tableId)
+    const field = table?.fields.find((f) => f.id === filters.cellField)
+    return field?.type === 'relation' ? field.targetTableId : null
+  })()
+
+  const { data: relationRows } = useAsyncResource<DataRow[] | null>(
+    () => (
+      relationTargetTableId
+        ? listCmsDataRows(relationTargetTableId).catch(() => [])
+        : Promise.resolve(null)
+    ),
+    [relationTargetTableId],
+  )
+
   // Build the per-source filter schema with dynamic options patched in.
   function buildFilterSchema(): PropertySchema {
     if (!source) return {}
     if (source.id === 'data.rows' && tables) {
       const tableField = source.filterSchema.tableId
       if (tableField && tableField.type === 'select') {
-        return {
+        const selectedTable = tables.find((t) => t.id === filters.tableId)
+        const comparableFields = (selectedTable?.fields ?? []).filter(isCellComparableField)
+        const cellFieldControl = source.filterSchema.cellField
+        const operator = typeof filters.cellOperator === 'string' ? filters.cellOperator : 'is'
+        // The value box is meaningless for the checkbox / emptiness operators,
+        // and a stale value in it would read as a live condition.
+        const valuelessOperator = ['isTrue', 'isFalse', 'isSet', 'isEmpty'].includes(operator)
+        const schema: PropertySchema = {
           ...source.filterSchema,
           tableId: {
             ...tableField,
@@ -75,6 +106,37 @@ export function LoopPropertiesView({ nodeId, props, activePage }: LoopProperties
             ],
           },
         }
+        if (cellFieldControl?.type === 'select') {
+          schema.cellField = {
+            ...cellFieldControl,
+            options: [
+              { label: '— No filter —', value: '' },
+              ...comparableFields.map((f) => ({ label: f.label || f.id, value: f.id })),
+            ],
+          }
+        }
+        // Condition + value only matter once a field is picked.
+        if (!filters.cellField) {
+          delete schema.cellOperator
+          delete schema.cellValue
+        } else if (valuelessOperator) {
+          delete schema.cellValue
+        } else if (relationRows) {
+          // Rows are labelled by their `name` cell, falling back to the slug —
+          // the same identity the Data workspace shows in its own row list.
+          schema.cellValue = {
+            type: 'select',
+            label: 'Value',
+            options: [
+              { label: '— Choose a row —', value: '' },
+              ...relationRows.map((row) => ({
+                label: typeof row.cells.name === 'string' && row.cells.name ? row.cells.name : row.slug,
+                value: row.id,
+              })),
+            ],
+          }
+        }
+        return schema
       }
     }
     if (source.id === ENTRY_FIELD_SOURCE_ID && tables) {
@@ -96,14 +158,26 @@ export function LoopPropertiesView({ nodeId, props, activePage }: LoopProperties
   }
   const filterSchema = buildFilterSchema()
 
-  // Order options reactive to source change.
+  // Order options reactive to source change. For data rows the selected
+  // table's own fields are offered too (`cell:<id>`), so a list can sort by a
+  // real date or title instead of only by the row's SQL columns. The `Field:`
+  // prefix separates them from the row's built-in columns above, which can
+  // carry the same names. Only fields a cell condition can address are
+  // offered — sorting by a repeater or a multi-value relation compares JSON
+  // array text, which orders nothing an author would recognise.
   const orderOptions: PropertyControl = {
     type: 'select',
     label: 'Order by',
-    options:
-      source?.orderByOptions.map((o) => ({ label: o.label, value: o.id })) ?? [
-        { label: 'Default', value: '' },
-      ],
+    options: source
+      ? [
+        ...source.orderByOptions.map((o) => ({ label: o.label, value: o.id })),
+        ...(source.id === 'data.rows'
+          ? (tables?.find((t) => t.id === filters.tableId)?.fields ?? [])
+            .filter(isCellComparableField)
+            .map((f) => ({ label: `Field: ${f.label || f.id}`, value: `${CELL_ORDER_PREFIX}${f.id}` }))
+          : []),
+      ]
+      : [{ label: 'Default', value: '' }],
   }
 
   function handleSourceChange(_key: string, value: unknown) {
@@ -121,6 +195,24 @@ export function LoopPropertiesView({ nodeId, props, activePage }: LoopProperties
 
   function handleFilterChange(key: string, value: unknown) {
     const nextFilters = { ...filters, [key]: value }
+
+    // Pointing the loop at a different table invalidates any cell filter or
+    // cell sort: those field ids name columns the new table does not have. A
+    // stale one silently empties the list while the pickers — which fall back
+    // to their first option when the stored value is not among them — read as
+    // "No filter" and the default order. Clear both instead of leaving the
+    // panel disagreeing with the query.
+    if (key === 'tableId' && value !== filters.tableId) {
+      const orderBy = typeof props.orderBy === 'string' ? props.orderBy : ''
+      updateNodeProps(nodeId, {
+        filters: withoutCellFilter(nextFilters),
+        ...(parseCellOrder(orderBy)
+          ? { orderBy: source?.orderByOptions[0]?.id ?? '' }
+          : {}),
+      })
+      return
+    }
+
     updateNodeProps(nodeId, { filters: nextFilters })
   }
 

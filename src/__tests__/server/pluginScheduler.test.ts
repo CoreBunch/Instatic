@@ -122,6 +122,7 @@ async function setupDb(): Promise<{ db: DbClient; cleanup: () => Promise<void> }
   return {
     db,
     cleanup: async () => {
+      await db.close()
       await rm(dir, { recursive: true, force: true })
     },
   }

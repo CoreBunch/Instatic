@@ -1224,4 +1224,46 @@ export const sqliteMigrations: Migration[] = [
        where trim(lower(display_name)) = trim(lower(email));
     `,
   },
+  {
+    // `roles.manage` is an installation-Owner power, not a delegable grant.
+    // Older builds allowed it to be persisted on custom/non-Owner roles.
+    id: '025_remove_non_owner_role_management',
+    sql: `
+      update roles
+         set capabilities_json = (
+               select coalesce(json_group_array(value), '[]')
+                 from json_each(roles.capabilities_json)
+                where value <> 'roles.manage'
+             ),
+             updated_at = current_timestamp
+       where id <> 'owner'
+         and exists (
+               select 1
+                 from json_each(roles.capabilities_json)
+                where value = 'roles.manage'
+             );
+    `,
+  },
+  {
+    // Stable provenance for plugin-managed media. The mapping lets an
+    // integration converge on one media asset instead of creating a duplicate
+    // on every sync, and keeps replacements on the same asset id.
+    id: '026_plugin_media_sources',
+    sql: `
+      create table if not exists plugin_media_sources (
+        plugin_id text not null references installed_plugins(id) on delete cascade,
+        source_key text not null,
+        asset_id text not null references media_assets(id) on delete cascade,
+        source_version text,
+        content_hash text not null,
+        created_at text not null default current_timestamp,
+        updated_at text not null default current_timestamp,
+        primary key (plugin_id, source_key),
+        unique (asset_id)
+      );
+
+      create index if not exists plugin_media_sources_asset_idx
+        on plugin_media_sources (asset_id);
+    `,
+  },
 ]

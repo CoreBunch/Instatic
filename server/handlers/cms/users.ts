@@ -15,9 +15,15 @@
  */
 import type { DbClient } from '../../db/client'
 import { hashPassword } from '../../auth/tokens'
-import { getSessionHash, requireCapability, requireStepUp } from '../../auth/authz'
+import {
+  capabilitiesUserCannotGrant,
+  getSessionHash,
+  requireCapability,
+  requireStepUp,
+} from '../../auth/authz'
 import type { AuthUser } from '../../repositories/users'
 import { createAuditEvent } from '../../repositories/audit'
+import { findRoleById } from '../../repositories/roles'
 import { revokeAllOtherSessions } from '../../repositories/sessions'
 import {
   countActiveOwners,
@@ -29,6 +35,7 @@ import {
 } from '../../repositories/users'
 import type { UserStatus } from '../../types'
 import { Type } from '@core/utils/typeboxHelpers'
+import { MIN_PASSWORD_LENGTH, PASSWORD_TOO_SHORT_MESSAGE } from '@core/utils/passwordPolicy'
 import { badRequest, jsonResponse, readValidatedBody } from '../../http'
 import {
   CMS_API_PREFIX,
@@ -77,19 +84,34 @@ function rejectsOwnerRoleAssignment(roleId: string | undefined): Response | null
     : null
 }
 
+async function rejectsRoleCapabilityEscalation(
+  db: DbClient,
+  actor: AuthUser,
+  roleId: string,
+): Promise<Response | null> {
+  const role = await findRoleById(db, roleId)
+  if (!role) return jsonResponse({ error: 'Role not found' }, { status: 404 })
+
+  const overreach = capabilitiesUserCannotGrant(actor, role.capabilities)
+  return overreach.length > 0
+    ? jsonResponse(
+      { error: `You cannot assign capabilities you don't hold: ${overreach.join(', ')}` },
+      { status: 403 },
+    )
+    : null
+}
+
 const USER_NOT_FOUND_BODY = { error: 'User not found' }
 
 function userNotFound(): Response {
   return jsonResponse(USER_NOT_FOUND_BODY, { status: 404 })
 }
 
-const PASSWORD_MIN_LENGTH = 12
-
 function rejectsShortPassword(password: string | undefined): Response | null {
   if (password === undefined) return null
-  return password.length >= PASSWORD_MIN_LENGTH
+  return password.length >= MIN_PASSWORD_LENGTH
     ? null
-    : badRequest(`Password must be at least ${PASSWORD_MIN_LENGTH} characters`)
+    : badRequest(PASSWORD_TOO_SHORT_MESSAGE)
 }
 
 // ---------------------------------------------------------------------------
@@ -115,6 +137,8 @@ async function handleCreateUser(
   if (passwordError) return passwordError
   const ownerRoleError = rejectsOwnerRoleAssignment(body.roleId)
   if (ownerRoleError) return ownerRoleError
+  const roleCapabilityError = await rejectsRoleCapabilityEscalation(db, actor, body.roleId)
+  if (roleCapabilityError) return roleCapabilityError
 
   try {
     const user = await createUser(db, {
@@ -166,6 +190,10 @@ async function handleUserPatch(
 
   const ownerRoleError = rejectsOwnerRoleAssignment(body.roleId)
   if (ownerRoleError) return ownerRoleError
+  if (body.roleId !== undefined) {
+    const roleCapabilityError = await rejectsRoleCapabilityEscalation(db, actor, body.roleId)
+    if (roleCapabilityError) return roleCapabilityError
+  }
 
   if (
     body.roleId !== undefined &&

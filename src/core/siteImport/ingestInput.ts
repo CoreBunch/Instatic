@@ -30,7 +30,7 @@ import {
   ZipBombError,
   TooManyFilesError,
   PathTraversalError,
-} from './types'
+} from './errors'
 
 // ---------------------------------------------------------------------------
 // Default limits

@@ -11,6 +11,7 @@ import {
 } from '../http'
 import { createDataRow, getDataTable } from '../repositories/data'
 import { getLatestPublishedSiteSnapshot } from '../repositories/publish'
+import { emitContentEntryCreated } from '../publish/contentEvents'
 import {
   PublicFormChallengeBodySchema,
   PublicFormSubmitBodySchema,
@@ -138,6 +139,7 @@ async function handleSubmit(req: Request, db: DbClient): Promise<Response> {
     cells: validation.cells,
     slug: '',
   })
+  await emitContentEntryCreated(db, row.id, { kind: 'system' })
   return jsonResponse({ ok: true, rowId: row.id })
 }
 

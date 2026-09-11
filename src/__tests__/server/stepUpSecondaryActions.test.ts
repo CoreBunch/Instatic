@@ -118,33 +118,31 @@ describe('secondary step-up protected actions', () => {
 
   it('requires step-up before deleting a custom role', async () => {
     const harness = await createCapabilityTestHarness()
-    await harness.setupOwner()
-
-    const roleManager = await harness.createRoleUser({
-      name: 'Step-up Role Manager',
-      slug: 'step-up-role-manager',
-      capabilities: ['roles.manage'],
-    })
+    const ownerCookie = await harness.setupOwner()
     const roleId = await harness.createRole({
       name: 'Role Pending Step-up Delete',
       slug: 'role-pending-step-up-delete',
       capabilities: ['site.read'],
     })
+    await harness.db`
+      update sessions
+         set step_up_expires_at = ${new Date(Date.now() - 1000)}
+    `
 
     await expectStepUpRequired(await harness.cms(`/admin/api/cms/roles/${roleId}`, {
       method: 'DELETE',
-      cookie: roleManager.cookie,
+      cookie: ownerCookie,
     }))
-    expect((await listRoles(harness, roleManager.cookie)).some((role) => role.id === roleId)).toBe(true)
+    expect((await listRoles(harness, ownerCookie)).some((role) => role.id === roleId)).toBe(true)
 
-    const steppedRoleManagerCookie = await harness.stepUp(roleManager.cookie)
+    const steppedOwnerCookie = await harness.stepUp(ownerCookie)
     const deleted = await harness.cms(`/admin/api/cms/roles/${roleId}`, {
       method: 'DELETE',
-      cookie: steppedRoleManagerCookie,
+      cookie: steppedOwnerCookie,
     })
     expect(deleted.status).toBe(200)
     await expect(readJson<{ ok: boolean }>(deleted)).resolves.toEqual({ ok: true })
-    expect((await listRoles(harness, steppedRoleManagerCookie)).some((role) => role.id === roleId)).toBe(false)
+    expect((await listRoles(harness, steppedOwnerCookie)).some((role) => role.id === roleId)).toBe(false)
   })
 
   it('always requires fresh step-up before changing step-up policy settings', async () => {

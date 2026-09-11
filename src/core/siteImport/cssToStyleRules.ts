@@ -563,9 +563,13 @@ function processBaseSelector(
     kind: classified.kind,
     selector,
     order: idx,
-    styles: declarations.styles,
+    // A selector list is split into independently editable rules. Do not let
+    // those rules share the parser's declaration objects: a later duplicate
+    // of one selector merges in place, and shared bags would leak that update
+    // into every sibling from the original list.
+    styles: { ...declarations.styles },
     ...(sparsePriorities(declarations.priorities)
-      ? { stylePriorities: declarations.priorities }
+      ? { stylePriorities: { ...declarations.priorities } }
       : {}),
     contextStyles: {},
   })

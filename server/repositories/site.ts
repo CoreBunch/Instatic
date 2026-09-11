@@ -22,7 +22,7 @@ import { validateSite } from '@core/persistence/validate'
 import { normalizeSitePackageJson } from '@core/site-dependencies/manifest'
 import { normalizeSiteRuntimeConfig } from '@core/site-runtime'
 import type { DbClient } from '../db/client'
-import { notifyShellWrite } from './rowWriteEvents'
+import { notifyShellWrite, serializeCollabAwareWrite } from './rowWriteEvents'
 import type { SiteRow } from '../types'
 
 const CMS_SITE_SCHEMA_VERSION = 1
@@ -88,6 +88,12 @@ export async function saveDraftSite(
   _actorUserId: string | null = null,
   opts: { collabInternal?: boolean } = {},
 ): Promise<void> {
+  if (!opts.collabInternal) {
+    return serializeCollabAwareWrite(async () => {
+      await saveDraftSite(db, shell, _actorUserId, { collabInternal: true })
+      notifyShellWrite()
+    })
+  }
   await db`
     insert into site (id, name, settings_json)
     values ('default', ${shell.name}, ${shellToStorage(shell)})
@@ -96,10 +102,6 @@ export async function saveDraftSite(
           settings_json = excluded.settings_json,
           updated_at = current_timestamp
   `
-  // Out-of-relay shell writes invalidate the site collab doc — see
-  // rowWriteEvents. The relay's own persistence (and the transactional save,
-  // which notifies post-commit) opt out.
-  if (!opts.collabInternal) notifyShellWrite()
 }
 
 /**

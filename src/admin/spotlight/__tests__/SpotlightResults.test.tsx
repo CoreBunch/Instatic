@@ -1,8 +1,9 @@
 import { afterEach, describe, expect, it, mock } from 'bun:test'
 import React from 'react'
-import { cleanup, render, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { SpotlightInternalContext, type SpotlightInternalContextValue } from '../spotlightContext'
 import { SpotlightResults } from '../SpotlightResults'
+import type { Command } from '../types'
 import type { SpotlightOpenState } from '../state'
 
 afterEach(() => {
@@ -65,5 +66,54 @@ describe('SpotlightResults', () => {
     } finally {
       HTMLElement.prototype.scrollIntoView = originalScrollIntoView
     }
+  })
+
+  it('selects a select-type arg value when its option row is clicked', () => {
+    const onSelectArg = mock(() => {})
+    const command: Command = {
+      id: 'test.cmd',
+      title: 'Test command',
+      group: 'plugins',
+      args: [
+        {
+          id: 'tone',
+          label: 'Tone',
+          type: 'select',
+          options: [
+            { value: 'formal', label: 'Formal' },
+            { value: 'casual', label: 'Casual' },
+          ],
+        },
+      ],
+    }
+
+    const context: SpotlightInternalContextValue = {
+      state: {
+        ...makeOpenState(0),
+        argMode: { command, argIndex: 0, values: {} },
+      },
+      dispatch: () => {},
+      commandContext: null,
+      runCommand: async () => {},
+      runCommandWithArgs: async () => {},
+    }
+
+    render(
+      <SpotlightInternalContext.Provider value={context}>
+        <SpotlightResults
+          listboxId="spotlight-results"
+          highlightedIndex={0}
+          onHighlightChange={() => {}}
+          onSelectArg={onSelectArg}
+          onRun={() => {}}
+          activeScopeId="root"
+        />
+      </SpotlightInternalContext.Provider>,
+    )
+
+    fireEvent.click(screen.getByText('Casual'))
+
+    expect(onSelectArg).toHaveBeenCalledTimes(1)
+    expect(onSelectArg).toHaveBeenCalledWith('casual')
   })
 })

@@ -10,7 +10,11 @@
  *
  * See docs/reference/capabilities.md for the full per-capability reference.
  */
-import { CORE_CAPABILITIES, type CoreCapability } from '@core/capabilities'
+import {
+  CORE_CAPABILITIES,
+  OWNER_ONLY_CAPABILITIES,
+  type CoreCapability,
+} from '@core/capabilities'
 
 
 export type { CoreCapability }
@@ -128,6 +132,24 @@ export const SYSTEM_ROLES: SystemRoleDefinition[] = [
  * The Owner role id is the well-known constant the boot-time sync targets.
  */
 export const OWNER_ROLE_ID = 'owner'
+
+const OWNER_ONLY_CAPABILITY_SET = new Set<CoreCapability>(OWNER_ONLY_CAPABILITIES)
+
+/**
+ * Normalize persisted role grants and enforce the Owner-only capability
+ * invariant while reading. The forward migration removes legacy invalid
+ * grants, but this read guard keeps authorization safe even if an operator
+ * restores an older database snapshot without rerunning migrations first.
+ */
+export function normalizeCapabilitiesForRole(
+  roleId: string,
+  capabilities: unknown,
+): CoreCapability[] {
+  const normalized = normalizeCapabilities(capabilities)
+  return roleId === OWNER_ROLE_ID
+    ? normalized
+    : normalized.filter((capability) => !OWNER_ONLY_CAPABILITY_SET.has(capability))
+}
 
 /**
  * The Admin role id — also boot-resynced (see `SYSTEM_ROLES` comment).

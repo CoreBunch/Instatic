@@ -1,10 +1,8 @@
 /**
- * AgentPanel — self-contained floating AI assistant panel (Guideline #410).
+ * AgentPanel — AI assistant content for a docked or floating panel host.
  *
- * This component renders its own floating overlay container — positioned at
- * bottom-right of the canvas area. Visibility is controlled by `isAgentOpen`
- * in the agentSlice. Always-mounted (CSS display:none when closed) to preserve
- * Zustand conversation state across open/close cycles.
+ * Visibility is controlled by `isAgentOpen` in the agentSlice. The Site editor
+ * supplies per-panel dock/drag controls; Content embeds the same panel docked.
  *
  * Runtime model:
  * - Agent calls stream through `/admin/api/ai/chat/site`.
@@ -32,7 +30,8 @@ import { AiBoxSolidIcon } from 'pixel-art-icons/icons/ai-box-solid'
 import { AiSettingsSolidIcon } from 'pixel-art-icons/icons/ai-settings-solid'
 import { EditSolidIcon } from 'pixel-art-icons/icons/edit-solid'
 import { ArrowRightIcon } from 'pixel-art-icons/icons/arrow-right'
-import { PanelHeader } from '@admin/shared/PanelHeader'
+import { PanelHeader, PanelModeButton } from '@admin/shared/PanelHeader'
+import type { DockablePanelProps } from '@admin/shared/Panel'
 import { UserAvatar } from '@admin/shared/UserAvatar'
 import { Button } from '@ui/components/Button'
 import { EmptyState } from '@ui/components/EmptyState'
@@ -63,7 +62,7 @@ const PANEL_HEIGHT = 480
 const AI_SETTINGS_ROUTE = '/admin/ai'
 type PanelVariant = 'floating' | 'docked'
 
-interface AgentPanelProps {
+interface AgentPanelProps extends DockablePanelProps {
   variant?: PanelVariant
 }
 
@@ -78,7 +77,12 @@ interface AgentPanelProps {
  * (`.floatPanelClosed`) to preserve Zustand conversation state across open/close cycles.
  * Agent routes via Vite proxy `/admin/api/agent` → local Bun server → Claude SDK.
  */
-export function AgentPanel({ variant = 'floating' }: AgentPanelProps) {
+export function AgentPanel({
+  variant = 'floating',
+  mode = variant,
+  dragHandleProps,
+  onToggleMode,
+}: AgentPanelProps) {
   const agentStore = useAgentStoreApi()
   const isOpen = useAgentStore((s) => s.isAgentOpen)
   const isStreaming = useAgentStore((s) => s.isAgentStreaming)
@@ -239,7 +243,7 @@ export function AgentPanel({ variant = 'floating' }: AgentPanelProps) {
         panelId="agent"
         title="AI Assistant"
         onClose={closeAgent}
-        dragHandleProps={variant === 'floating' ? headerDragProps : undefined}
+        dragHandleProps={dragHandleProps ?? (variant === 'floating' ? headerDragProps : undefined)}
       >
         {/* History popover — list past chats, start a new one, delete. */}
         <ConversationHistory />
@@ -268,6 +272,14 @@ export function AgentPanel({ variant = 'floating' }: AgentPanelProps) {
           label="AI settings"
           data-testid="agent-settings-header-button"
         />
+        {onToggleMode && (
+          <PanelModeButton
+            mode={mode}
+            panelLabel="AI Assistant"
+            dockLocation="left sidebar"
+            onToggle={onToggleMode}
+          />
+        )}
       </PanelHeader>
 
       {/* ── Message thread ──────────────────────────────────────────────────── */}

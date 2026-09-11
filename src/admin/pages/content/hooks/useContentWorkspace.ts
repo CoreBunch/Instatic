@@ -78,10 +78,20 @@ export function useContentWorkspace({
   const selectedCollection = collections.find((collection) => collection.id === selectedCollectionId) ?? null
   const contentLoading = loading || entriesLoading
 
+  // The selection usually holds the stored row, but `createUntitledEntry`
+  // deliberately selects an editor-local *view* of it whose title is blank so
+  // the title field shows its placeholder instead of pre-filling "Untitled".
+  // That view must never reach the sidebar list, which has to show the stored
+  // title. Keeping the stored row here lets the list rebuild from the real row
+  // while the editor keeps its view, and leaves an MCP save — where the
+  // selection genuinely IS the newer row — merging as before.
+  const editorViewRef = useRef<{ id: string; storedRow: DataRow } | null>(null)
+
   // Exception #1: referenced in deep-link effect B's dependency array, so it
   // needs a stable identity for react-hooks/exhaustive-deps.
   const selectEntry = useCallback((entry: DataRow | null) => {
     selectedEntryRef.current = entry
+    editorViewRef.current = null
     setSelectedEntry(entry)
     if (entry) setRightPanel({ collapsed: false })
   }, [setRightPanel])
@@ -114,6 +124,7 @@ export function useContentWorkspace({
 
   const updateSelectedEntry = (entry: DataRow) => {
     selectedEntryRef.current = entry
+    editorViewRef.current = null
     setSelectedEntry(entry)
     setEntries((current) => updateRowList(current, entry))
   }
@@ -222,8 +233,12 @@ export function useContentWorkspace({
           ? current
           : serverSelected ?? nextEntries[0] ?? null
         selectedEntryRef.current = nextSelected
-        setEntries(currentChangedDuringLoad && nextSelected
-          ? updateRowList(nextEntries, nextSelected)
+        const editorView = editorViewRef.current
+        const listRow = currentIsInTable && editorView && current.id === editorView.id
+          ? editorView.storedRow
+          : nextSelected
+        setEntries(currentChangedDuringLoad && listRow
+          ? updateRowList(nextEntries, listRow)
           : nextEntries)
         setSelectedEntry(nextSelected)
       } catch (err) {
@@ -349,6 +364,7 @@ export function useContentWorkspace({
     const draftRow: DataRow = { ...row, cells: { ...row.cells, title: '' } }
     setEntries((current) => updateRowList(current, row))
     selectEntry(draftRow)
+    editorViewRef.current = { id: draftRow.id, storedRow: row }
     return draftRow
   }
 

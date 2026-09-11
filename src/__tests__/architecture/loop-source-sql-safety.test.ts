@@ -1,7 +1,12 @@
 /**
- * Architecture gate — loop sources under `src/core/loops/sources/` issue
- * SQL via the LoopSourceDb tagged-template surface, so they must obey
- * the same dialect-neutral rules as `server/cms/*` repositories.
+ * Architecture gate — loop code under `src/core/loops/` issues SQL via the
+ * LoopSourceDb tagged-template surface, so it must obey the same
+ * dialect-neutral rules as `server/cms/*` repositories.
+ *
+ * The scan covers the whole `loops/` tree, not just `sources/`: the cell
+ * filter's dialect switch lives in `cellFilter.ts` one level up, and a gate
+ * that stops at `sources/` would be blind to exactly the file that renders
+ * the most engine-specific SQL in the subsystem.
  *
  * Mirrors `db-postgres-isms.test.ts` for a different scan root.
  *
@@ -15,7 +20,7 @@ import { existsSync, readFileSync, readdirSync, statSync } from 'fs'
 import { extname, join, relative } from 'path'
 
 const PROJECT_ROOT = join(import.meta.dir, '../../../')
-const LOOP_SOURCES_ROOT = join(PROJECT_ROOT, 'src/core/loops/sources')
+const LOOP_SOURCES_ROOT = join(PROJECT_ROOT, 'src/core/loops')
 
 function walk(dir: string, out: string[] = []): string[] {
   if (!existsSync(dir)) return out

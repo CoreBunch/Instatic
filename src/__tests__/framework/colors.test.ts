@@ -100,6 +100,37 @@ describe('framework color generation', () => {
     expect(spaceSets.light.find((variable) => variable.name === '--space')?.value).toBe('hsla(0, 0%, 1.96%, 0.78)')
   })
 
+  it('parses space-separated hsl() base values — CSS Color-4 / imported tokens derive variants', () => {
+    // Modern CSS and importers (e.g. Tailwind) emit space-separated hsl()
+    // like `hsl(0 0% 80%)` and `hsl(0 0% 80% / 50%)`; parsing only the
+    // comma form dropped every derived variant for those tokens.
+    const sets = generateFrameworkColorVariableSets(makeColorSettings({
+      tokens: [{
+        ...makeColorSettings().tokens[0],
+        id: 'rule-token',
+        slug: 'rule',
+        lightValue: 'hsl(0 0% 80%)',
+        darkModeEnabled: false,
+      }],
+    }))
+
+    expect(sets.light.find((variable) => variable.name === '--rule')?.value).toBe('hsla(0, 0%, 80%, 1)')
+    expect(sets.light.find((variable) => variable.name === '--rule-20')?.value).toBe('hsla(0, 0%, 80%, 0.2)')
+    expect(sets.light.some((variable) => variable.name === '--rule-d-1')).toBe(true)
+
+    // Slash-delimited percentage alpha resolves like the rgb() space form.
+    const alphaSets = generateFrameworkColorVariableSets(makeColorSettings({
+      tokens: [{
+        ...makeColorSettings().tokens[0],
+        id: 'veil-token',
+        slug: 'veil',
+        lightValue: 'hsl(0 0% 80% / 50%)',
+        darkModeEnabled: false,
+      }],
+    }))
+    expect(alphaSets.light.find((variable) => variable.name === '--veil')?.value).toBe('hsla(0, 0%, 80%, 0.5)')
+  })
+
   it('emits unparseable base values verbatim instead of silently dropping the variable', () => {
     const sets = generateFrameworkColorVariableSets(makeColorSettings({
       tokens: [{

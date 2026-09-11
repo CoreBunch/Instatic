@@ -120,6 +120,11 @@ Was a single `plugins.manage`. Split per the four very different blast radii: re
 
 `roles.manage` is **owner-only by design** — only the installation owner edits capability grants. Admins manage everything else but can't grant themselves new capabilities.
 
+Role assignment is also bounded by delegation: a `users.manage` actor may
+assign only roles whose complete capability set is already held by that actor.
+This applies to both creating users and changing an existing user's role.
+`roles.manage` cannot be stored on any non-Owner role.
+
 ### Audit
 
 | Capability       | Grants                                                              | Roles         |

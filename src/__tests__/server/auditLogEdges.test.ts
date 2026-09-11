@@ -144,13 +144,7 @@ describe('audit log edge semantics', () => {
   it('resolves labels for soft-deleted users and roles deleted after audit capture', async () => {
     const harness = await createCapabilityTestHarness()
     try {
-      await harness.setupOwner()
-      const manager = await harness.createRoleUser({
-        name: 'Audit Manager',
-        slug: `audit-manager-${crypto.randomUUID().slice(0, 8)}`,
-        capabilities: ['users.manage', 'roles.manage', 'audit.read'],
-      })
-      const steppedManagerCookie = await harness.stepUp(manager.cookie)
+      const ownerCookie = await harness.setupOwner()
 
       const deletedUserEmail = `audit-deleted-${crypto.randomUUID().slice(0, 8)}@example.com`
       await harness.createUser({
@@ -168,17 +162,17 @@ describe('audit log edge semantics', () => {
 
       const userDelete = await harness.cms(`/admin/api/cms/users/${deletedUserId}`, {
         method: 'DELETE',
-        cookie: steppedManagerCookie,
+        cookie: ownerCookie,
       })
       expect(userDelete.status).toBe(200)
 
       const roleDelete = await harness.cms(`/admin/api/cms/roles/${deletedRoleId}`, {
         method: 'DELETE',
-        cookie: steppedManagerCookie,
+        cookie: ownerCookie,
       })
       expect(roleDelete.status).toBe(200)
 
-      const events = await listAuditPayload(harness, steppedManagerCookie)
+      const events = await listAuditPayload(harness, ownerCookie)
       expect(events.find((event) => event.action === 'user.delete' && event.targetId === deletedUserId))
         .toMatchObject({
           targetLabel: 'Audit Deleted User',

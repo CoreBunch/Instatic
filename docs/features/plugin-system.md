@@ -204,6 +204,7 @@ Authors normally write `instatic-plugin.config.ts` with `definePlugin(...)`; the
 - `frontend.assets[]` requires `frontend.assets`.
 - Public routes require both `cms.routes` and `cms.routes.public`.
 - Server `fetch()` requires `network.outbound` and a matching `networkAllowedHosts[]` entry.
+- Any `cms.content.*` permission requires a non-empty `contentAccess[]`, and every mode an entry declares requires its permission (`CONTENT_ACCESS_MODE_PERMISSIONS` in `src/core/plugin-sdk/contentSchemas.ts` is the one mode-to-permission table both checks read). `instatic-plugin lint` additionally warns when a `cms.content.*` permission is requested but no entry declares its mode, since the host fails closed per table and mode and every call under it would be rejected.
 
 ---
 
@@ -319,6 +320,7 @@ Inside the admin window, plugin React surfaces (panels, app pages, canvas overla
 - **`console.{log, info, warn, error, debug, trace}`** — routes to `api.plugin.log`.
 - **`fetch(url, init)`** — opt-in: requires `network.outbound` permission AND the URL host on the `networkAllowedHosts` allowlist. Byte-safe: `arrayBuffer()` returns exact bytes; request bodies accept `string | ArrayBuffer | TypedArray/DataView`.
 - **`crypto.subtle`** — pure computation bridge: `digest(...)`, `importKey('raw', ..., { name: 'HMAC', hash })`, and `sign('HMAC', ...)`. These map to ungated `crypto.digest` / `crypto.signHmac` RPC targets because they do no I/O.
+- **`crypto.getRandomValues(view)` / `crypto.randomUUID()`** — CSPRNG entropy from the host, for tokens, nonces, invitation codes and one-time links. Unlike the digest/HMAC pair these do **not** use the `__hostCall` RPC bridge, because that returns a Promise and `getRandomValues` is synchronous by spec; they call the dedicated synchronous `__hostRandomBytes` host function instead. Also ungated (no I/O, nothing to escalate). `getRandomValues` accepts integer-typed views only, throwing `TypeMismatchError` for float or non-view arguments, and caps a single call at 65536 bytes with `QuotaExceededError` above it — the WebCrypto quota, enforced in both the shim and the host function. `randomUUID` returns an RFC 9562 version-4 UUID.
 
 ### What's denied
 
@@ -368,7 +370,7 @@ VM budgets live in `server/plugins/quickjs/limits.ts`; the host-side RPC timeout
 
 Before any plugin code runs, the host evaluates a **bootstrap** program inside the
 VM: Web-Platform polyfills (URL, TextEncoder, console, AbortController, timers,
-crypto.subtle, fetch) plus the SDK factory `__buildApi()` and the `__run*`
+crypto.subtle, crypto.getRandomValues, fetch) plus the SDK factory `__buildApi()` and the `__run*`
 dispatchers the host calls to drive plugin code. QuickJS has no module loader, so
 this bootstrap must reach the VM as a single source **string** — but that string
 is a build artifact, not the authoring surface.
@@ -547,6 +549,8 @@ const name = await api.cms.hooks.emit('sync.done', { /* … */ })
 
 **Host-emitted events** (the reserved core list, `CORE_HOOK_EVENTS` in `src/core/plugins/hookBus.ts`): `publish.before`, `publish.after`, `content.entry.created`, `content.entry.updated`, `content.entry.deleted`, `settings.changed`. **Filters**: `publish.html`, `publish.headers`, `content.entry.cells`.
 
+Every filter handler returns the same runtime value type it received. `src/core/plugins/hookBus.ts` checks each result before passing it to the next handler; a mismatched result keeps the previous value and logs the offending plugin ID. For example, `publish.html` returns a string and `content.entry.cells` returns an object, never `null`.
+
 **Plugin emits are namespaced.** The host rewrites every `emit('<name>', …)` to `plugin.<your-plugin-id>.<name>` (a name already in your own namespace passes through unchanged), so event provenance is unforgeable — a plugin cannot fire `content.entry.created` or any other core event at other listeners, and emitting a name in *another* plugin's namespace (`plugin.<other-id>.*`) is rejected with an error. `emit` resolves to the canonical namespaced name. Cross-plugin eventing still works: subscribing is unrestricted, so a plugin listens to another plugin's events by their full namespaced name, e.g. `api.cms.hooks.on('plugin.acme.analytics.page-view', …)`.
 
 ### Loop sources — requires `loops.register`
@@ -621,6 +625,8 @@ Published-page tags are declarative. A plugin declares `frontend.assets[]` in th
 ```
 
 Supported `kind` values are `script`, `script-inline`, `style`, `style-inline`, `link`, and `meta`. Placements are `head`, `head-end`, `body-start`, and `body-end`; defaults are chosen by tag type when omitted. `script.strategy` maps to `defer`, `async`, `module`, or sync script emission. External `src` / `href` paths are plugin-package-relative safe paths resolved under `/uploads/plugins/<id>/<version>/`; arbitrary remote script URLs are not accepted as plugin asset paths.
+
+`attrs` passes through to the emitted tag except where `server/publish/frontendInjections.ts` owns the value: `data-plugin-id` on every tag, `src` on every script, strategy attributes on external scripts, and `href` plus `rel` on stylesheet assets. Bare `link` and `meta` declarations rely entirely on `attrs`. Inline JSON-LD uses `{ "kind": "script-inline", "attrs": { "type": "application/ld+json" }, "content": "..." }`.
 
 The injection pipeline derives CSP changes from the plan. Inline scripts/styles add the matching `'unsafe-inline'` directive. `networkAllowedHosts[]` contributes published-page `connect-src` origins for plugins with frontend assets, which is why frontend trackers that call their own or third-party ingest endpoints must list those hosts as well as declare `frontend.assets`.
 
@@ -760,6 +766,8 @@ The host protocol names the per-table entry calls as `cms.content.entries.list`,
 
 Three event channels fire alongside every content write. Plugins use `actor` to skip their own writes (avoid feedback loops):
 
+Successful CMS-native public form submissions emit `content.entry.created` with `{ kind: 'system' }`, so notification and automation plugins observe them through the same channel as other row creation.
+
 ```js
 api.cms.hooks.on('content.entry.updated', async ({ tableSlug, entryId, changedFieldIds, actor }) => {
   if (actor.kind === 'plugin' && actor.pluginId === api.plugin.id) return
@@ -779,9 +787,40 @@ api.cms.hooks.filter('content.entry.cells', (cells, { tableSlug, entryId, actor 
 })
 ```
 
-### CMS media extensions — three independent permissions
+### CMS media ingestion and extensions
 
-The media plugin surface lives at `api.cms.media.*` and is implemented by `server/plugins/host/handlers/media.ts`. It has three independent tiers so a CDN URL rewrite plugin does not need storage-adapter authority.
+The media plugin surface lives at `api.cms.media.*` and is implemented by `server/plugins/host/handlers/media.ts`. Managed-media ingestion is separate from the three extension tiers so an integration does not need storage-adapter authority, and a CDN URL rewrite plugin does not receive media-write authority.
+
+#### Managed-media ingestion — requires `media.import`
+
+Plugins can import remote images or package assets into the managed Media library without moving bytes through QuickJS. `sourceKey` is scoped to the calling plugin and makes the operation idempotent; `sourceVersion` lets an unchanged sync return immediately without reading the source. When the version changes, the host ingests the source and replaces the existing asset while preserving its id.
+
+```js
+const result = await api.cms.media.upsert({
+  sourceKey: `catalog:${item.id}:hero`,
+  source: { kind: 'remote', url: item.heroUrl },
+  sourceVersion: item.updatedAt,
+  filename: item.heroFilename,
+  altText: item.name,
+})
+
+// Store result.asset.id in the content's media field.
+```
+
+Remote sources additionally require `network.outbound`. The URL must use HTTPS and every redirect host must match `networkAllowedHosts`. The Bun host downloads through the shared DNS-pinned SSRF guard and caps the response at 50 MB.
+
+Plugins can also promote a bundled file into managed media without network authority:
+
+```js
+await api.cms.media.upsert({
+  sourceKey: 'starter:default-hero',
+  source: { kind: 'pluginAsset', path: 'assets/default-hero.jpg' },
+  sourceVersion: api.plugin.version,
+  filename: 'default-hero.jpg',
+})
+```
+
+Package paths are resolved beneath the plugin's installed asset root; arbitrary host filesystem paths, traversal, and symlink escapes are rejected. Both sources are MIME-sniffed and passed through the ordinary upload pipeline. JPEG, PNG, WebP, and AVIF receive the WebP ladder, intrinsic dimensions, and BlurHash; storage adapters and variant delegates apply exactly as they do to an admin upload. If `sourceVersion` is unavailable, the host reads the source and compares a SHA-256 content hash instead.
 
 #### Storage adapters — requires `media.storage.adapter`
 
@@ -823,7 +862,7 @@ api.cms.media.registerStorageAdapter({
 })
 ```
 
-Writes are two-phase. The adapter returns a signed upload plan from `beginWrite`; the **host** streams the bytes to the plan URLs; then the adapter confirms with `finalizeWrite`. Media bytes do not cross the QuickJS boundary for ordinary writes, which keeps large uploads out of the VM heap. `servingMode` controls reads: `public-url` emits the adapter URL directly, `signed-redirect` lets the host 302 to a short-lived URL, and `proxy` streams chunks through the host via `readStream`.
+Writes are two-phase. The adapter returns a signed upload plan from `beginWrite`; the **host** streams the bytes to the plan URLs; then the adapter confirms with `finalizeWrite`. The plan URLs are plugin-controlled, so the host streams them through the same DNS-pinned SSRF guard it uses for adapter reads — internal addresses are refused and every redirect hop is re-validated, so `media.storage.adapter` cannot be used as `network.outbound` reach. There is no host allowlist on either side: an object-store endpoint is an arbitrary operator-chosen public host. Media bytes do not cross the QuickJS boundary for ordinary writes, which keeps large uploads out of the VM heap. `servingMode` controls reads: `public-url` emits the adapter URL directly, `signed-redirect` lets the host 302 to a short-lived URL, and `proxy` streams chunks through the host via `readStream`.
 
 #### URL transformers — requires `media.url.transform`
 
@@ -945,6 +984,7 @@ Risk levels:
 | `dashboard.widgets.register`| Admin                | Medium    | Register cards in the admin dashboard widget grid                       |
 | `frontend.assets`           | Frontend / manifest  | High      | Inject declarative tags into every published page; also gates module render() `js` |
 | `network.outbound`          | Server               | High      | Make outbound HTTP requests (with `networkAllowedHosts` allowlist)      |
+| `media.import`              | Server / CMS media   | High      | Upsert managed media from a remote URL or contained package asset       |
 | `media.storage.adapter`     | Server / CMS media   | Dangerous | Register an electable media storage backend                             |
 | `media.url.transform`       | Server / CMS media   | Medium    | Rewrite media URLs at render/preview/admin read time                    |
 | `media.variant.delegate`    | Server / CMS media   | High      | Replace local responsive variant generation with URL templates          |
@@ -1019,6 +1059,8 @@ bun instatic-plugin dev --uploads ../instatic/uploads
 ```
 
 First install still goes through the admin UI (`/admin/plugins` → Upload Plugin) so the owner approves permissions. Every `instatic-plugin dev` rebuild after that flows in without another upload.
+
+**The SDK import specifier is monorepo-only today.** `@instatic/plugin-sdk` is not a published package, and `@core/plugin-sdk` (what `instatic-plugin init` scaffolds) resolves through this repo's `tsconfig.json` `paths`, so neither works from a plugin repo that does not sit inside an Instatic checkout. Until the SDK ships to a registry, an out-of-tree plugin has to point at the SDK itself — for example a single indirection module re-exporting `<instatic>/src/core/plugin-sdk/index.ts`, with the path written from an env var at build time so it lives in exactly one place. The CLI, the lint pass and the sandbox scan all work fine that way; only the bare specifier does not resolve.
 
 ---
 

@@ -15,6 +15,8 @@ import {
 import panelStyles from '../AdminEntry.module.css'
 import styles from './AdminPreAuthForm.module.css'
 import { getErrorMessage } from '@core/utils/errorMessage'
+import { isValidEmail } from '@core/utils/email'
+import { MIN_PASSWORD_LENGTH } from '@core/utils/passwordPolicy'
 
 // Phase the unauthenticated form can be in. 'mfa' is a sub-state reached
 // only after a login submit returns `mfaRequired: true` — never set by the
@@ -41,7 +43,6 @@ const PHASE_COPY: Record<PreAuthPhase, PhaseCopy> = {
   mfa: { title: 'Two-Factor Authentication', submit: 'Verify', submitPending: 'Verifying' },
 }
 
-const MIN_PASSWORD_LENGTH = 12
 
 async function runAuthAction(
   action: () => Promise<void>,
@@ -83,6 +84,13 @@ export function AdminPreAuthForm({
 
   async function handleSetup(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
+    // The native type="email" check accepts dot-less values like a@b; the
+    // server rejects those, so catch them here first. Login stays unchecked —
+    // an existing account must always be able to sign in.
+    if (!isValidEmail(email.trim())) {
+      setError('Enter a valid email address')
+      return
+    }
     if (password.length < MIN_PASSWORD_LENGTH) {
       setError(`Password must be at least ${MIN_PASSWORD_LENGTH} characters`)
       return

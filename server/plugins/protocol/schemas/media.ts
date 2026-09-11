@@ -1,9 +1,10 @@
 /**
- * TypeBox schemas for `cms.media.*` api-call arguments (registration payloads).
- * Callbacks themselves live INSIDE the VM; only metadata crosses the host bridge.
+ * TypeBox schemas for `cms.media.*` api-call arguments. Ingestion sends source
+ * metadata only; extension callbacks remain inside the VM.
  */
 
 import { Type } from '@sinclair/typebox'
+import { MediaUpsertInputSchema } from '@core/plugin-sdk'
 import { NETWORK_HOST_PATTERN } from './network'
 
 const MEDIA_ID_PATTERN = '^[a-z][a-z0-9-]*(?:\\.[a-z][a-z0-9-]*)+$'
@@ -31,6 +32,8 @@ const MediaCspOriginSchema = Type.Object(
   },
   { additionalProperties: false },
 )
+
+export const MediaUpsertArgSchema = MediaUpsertInputSchema
 
 export const RegisterStorageAdapterArgSchema = Type.Object(
   {

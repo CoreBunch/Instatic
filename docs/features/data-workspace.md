@@ -118,7 +118,7 @@ isLabelLocked(field, table)         // true for built-in postType fields and sys
 deleteTooltip(field, table)         // disabled-button tooltip text, or undefined
 ```
 
-Built-in field **values** (row cells) are additionally read-only on the *structural* system tables (pages/components/layouts) via `isBuiltInValueLocked` (`@core/data/systemTableGuard`); `posts` built-in values stay editable. The same predicate backs the server's row-write rejection (`lockedBuiltInCellKey`).
+Built-in field **values** (row cells) stay editable on existing records everywhere, including the *structural* system tables (pages/components/layouts). The one remaining value lock is at **create** time: `protectedBuiltInCreateCellKey` (`@core/data/systemTableGuard`) rejects a create that supplies built-in cells for a structural system table, so those rows are born through their own authoring surfaces rather than the generic row endpoint. `posts` is exempt (`kind === 'postType'`), and the server enforces this in `server/handlers/cms/data/tables.ts`.
 
 `FIELD_TYPE_LABELS` maps every `DataFieldType` to a human-readable string and
 is shared by `FieldRow` and `FieldSchemaComposer`.

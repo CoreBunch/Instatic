@@ -2,14 +2,14 @@ import { nanoid } from 'nanoid'
 import type { DbClient } from '../db/client'
 import {
   FORCE_SYNC_ROLE_IDS,
-  normalizeCapabilities,
+  normalizeCapabilitiesForRole,
   OWNER_ROLE_ID,
   SYSTEM_ROLES,
   type CoreCapability,
 } from '../auth/capabilities'
 import type { RoleRow } from '../types'
 
-interface Role {
+export interface Role {
   id: string
   slug: string
   name: string
@@ -37,7 +37,7 @@ function rowToRole(row: RoleRow): Role {
     name: row.name,
     description: row.description,
     isSystem: Boolean(row.is_system),
-    capabilities: normalizeCapabilities(row.capabilities_json),
+    capabilities: normalizeCapabilitiesForRole(row.id, row.capabilities_json),
     createdAt: new Date(row.created_at).toISOString(),
     updatedAt: new Date(row.updated_at).toISOString(),
   }
@@ -71,7 +71,7 @@ export async function listRoles(db: DbClient): Promise<Role[]> {
   return rows.map(rowToRole).sort(compareRolesByRank)
 }
 
-async function getRole(db: DbClient, roleId: string): Promise<Role | null> {
+export async function findRoleById(db: DbClient, roleId: string): Promise<Role | null> {
   const { rows } = await db<RoleRow>`
     select id, slug, name, description, is_system, capabilities_json, created_at, updated_at
     from roles
@@ -111,6 +111,9 @@ export async function createCustomRole(
     capabilities: CoreCapability[]
   },
 ): Promise<Role> {
+  if (input.capabilities.includes('roles.manage')) {
+    throw new RoleMutationError('roles.manage is reserved for the Owner role')
+  }
   const name = input.name.trim()
   if (!name) throw new RoleMutationError('Role name is required')
 
@@ -147,10 +150,13 @@ export async function updateRole(
     capabilities?: CoreCapability[]
   },
 ): Promise<Role | null> {
-  const current = await getRole(db, roleId)
+  const current = await findRoleById(db, roleId)
   if (!current) return null
   if (current.id === OWNER_ROLE_ID) {
     throw new RoleMutationError('The Owner role is locked and cannot be edited', 409)
+  }
+  if (input.capabilities?.includes('roles.manage')) {
+    throw new RoleMutationError('roles.manage is reserved for the Owner role')
   }
 
   const name = input.name === undefined ? current.name : input.name.trim()
@@ -180,7 +186,7 @@ export async function updateRole(
  * to edit a non-owner system role's name/capabilities instead.
  */
 export async function deleteCustomRole(db: DbClient, roleId: string): Promise<Role | null> {
-  const current = await getRole(db, roleId)
+  const current = await findRoleById(db, roleId)
   if (!current) return null
   if (current.isSystem) throw new RoleMutationError('System roles cannot be deleted', 409)
 

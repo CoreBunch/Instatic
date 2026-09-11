@@ -23,7 +23,7 @@ import { bumpPublishVersionSerialized } from '../../../publish/publishState'
 import { type InsertDataRowInput, type UpdateDataRowDraftInput } from './mapper'
 import { isoDateOrNull } from '@core/utils/isoDate'
 import { getDataRow } from './read'
-import { notifyRowWrite } from '../../rowWriteEvents'
+import { notifyRowWrite, serializeCollabAwareWrite } from '../../rowWriteEvents'
 
 type UpdateDataRowTableResult =
   | { ok: true; row: DataRow }
@@ -36,6 +36,19 @@ export async function createDataRow(
   pluginActorId: string | null = null,
   opts: { collabInternal?: boolean } = {},
 ): Promise<DataRow> {
+  if (!opts.collabInternal) {
+    return serializeCollabAwareWrite(async () => {
+      const created = await createDataRow(
+        db,
+        input,
+        actorUserId,
+        pluginActorId,
+        { collabInternal: true },
+      )
+      notifyRowWrite({ tableId: created.tableId, rowIds: [created.id], kind: 'create' })
+      return created
+    })
+  }
   const { rows } = await db<{ id: string }>`
     insert into data_rows (
       id,
@@ -63,11 +76,6 @@ export async function createDataRow(
   `
   const created = await getDataRow(db, rows[0].id)
   if (!created) throw new Error('data row was created but could not be re-read')
-  // Out-of-relay creations invalidate collab state (roster + row doc) — see
-  // rowWriteEvents. The relay's own persistence opts out.
-  if (!opts.collabInternal) {
-    notifyRowWrite({ tableId: created.tableId, rowIds: [created.id], kind: 'create' })
-  }
   return created
 }
 
@@ -79,12 +87,22 @@ export async function saveDataRowDraft(
   pluginActorId: string | null = null,
   opts: { collabInternal?: boolean } = {},
 ): Promise<DataRow | null> {
-  const updated = await updateDataRowDraftCells(db, rowId, input, actorUserId, pluginActorId)
-  const row = updated ? await getDataRow(db, rowId) : null
-  if (row && !opts.collabInternal) {
-    notifyRowWrite({ tableId: row.tableId, rowIds: [row.id], kind: 'update' })
+  if (!opts.collabInternal) {
+    return serializeCollabAwareWrite(async () => {
+      const row = await saveDataRowDraft(
+        db,
+        rowId,
+        input,
+        actorUserId,
+        pluginActorId,
+        { collabInternal: true },
+      )
+      if (row) notifyRowWrite({ tableId: row.tableId, rowIds: [row.id], kind: 'update' })
+      return row
+    })
   }
-  return row
+  const updated = await updateDataRowDraftCells(db, rowId, input, actorUserId, pluginActorId)
+  return updated ? getDataRow(db, rowId) : null
 }
 
 /**
@@ -151,14 +169,15 @@ export async function upsertDataRowDraft(
   actorUserId: string | null = null,
   opts: { collabInternal?: boolean } = {},
 ): Promise<void> {
+  if (!opts.collabInternal) {
+    return serializeCollabAwareWrite(async () => {
+      await upsertDataRowDraft(db, input, actorUserId, { collabInternal: true })
+      notifyRowWrite({ tableId: input.tableId, rowIds: [input.id], kind: 'update' })
+    })
+  }
   const draft = { cells: input.cells, slug: input.slug }
   const updated = await updateDataRowDraftCells(db, input.id, draft, actorUserId)
-  if (updated) {
-    if (!opts.collabInternal) {
-      notifyRowWrite({ tableId: input.tableId, rowIds: [input.id], kind: 'update' })
-    }
-    return
-  }
+  if (updated) return
   const { rows } = await db<{ id: string }>`
     select id from data_rows where id = ${input.id} and deleted_at is not null
   `
@@ -166,9 +185,6 @@ export async function upsertDataRowDraft(
     await resurrectDataRow(db, input.id, draft, actorUserId)
   } else {
     await createDataRow(db, input, actorUserId, null, { collabInternal: true })
-  }
-  if (!opts.collabInternal) {
-    notifyRowWrite({ tableId: input.tableId, rowIds: [input.id], kind: 'create' })
   }
 }
 
@@ -206,6 +222,13 @@ export async function softDeleteDataRow(
   actorUserId: string | null = null,
   opts: { collabInternal?: boolean } = {},
 ): Promise<DeletedRowSummary | null> {
+  if (!opts.collabInternal) {
+    return serializeCollabAwareWrite(async () => {
+      const row = await softDeleteDataRow(db, rowId, actorUserId, { collabInternal: true })
+      if (row) notifyRowWrite({ tableId: row.tableId, rowIds: [row.id], kind: 'delete' })
+      return row
+    })
+  }
   const { rows } = await db<{
     id: string
     table_id: string
@@ -223,9 +246,6 @@ export async function softDeleteDataRow(
   `
   const row = rows[0]
   if (!row) return null
-  if (!opts.collabInternal) {
-    notifyRowWrite({ tableId: row.table_id, rowIds: [row.id], kind: 'delete' })
-  }
   return {
     id: row.id,
     tableId: row.table_id,
@@ -246,7 +266,35 @@ export async function updateDataRowTable(
   rowId: string,
   tableId: string,
   actorUserId: string | null = null,
+  opts: { collabInternal?: boolean } = {},
 ): Promise<UpdateDataRowTableResult> {
+  if (!opts.collabInternal) {
+    const moved = await serializeCollabAwareWrite(async () => {
+      const before = await getDataRow(db, rowId)
+      const result = await updateDataRowTable(
+        db,
+        rowId,
+        tableId,
+        actorUserId,
+        { collabInternal: true },
+      )
+      let bumpPublishVersion = false
+      if (before && result.ok && before.tableId !== result.row.tableId) {
+        // A table move changes both collection rosters. Emit the pair while
+        // still holding the collab-aware write lane so a dirty old row doc
+        // cannot land between the move and its synchronous invalidation.
+        notifyRowWrite({ tableId: before.tableId, rowIds: [rowId], kind: 'delete' })
+        notifyRowWrite({ tableId: result.row.tableId, rowIds: [rowId], kind: 'create' })
+        bumpPublishVersion = before.status === 'published'
+      }
+      return { result, bumpPublishVersion }
+    })
+    // The publish lock may itself wait on persistence work. Never hold the
+    // non-reentrant collab-aware lane while awaiting that independent lock.
+    if (moved.bumpPublishVersion) await bumpPublishVersionSerialized()
+    return moved.result
+  }
+
   const row = await getDataRow(db, rowId)
   if (!row) return { ok: false, reason: 'row_not_found' }
   if (row.tableId === tableId) return { ok: true, row }
@@ -284,10 +332,6 @@ export async function updateDataRowTable(
   if (!rows[0]) return { ok: false, reason: 'row_not_found' }
   const updated = await getDataRow(db, rows[0].id)
   if (!updated) return { ok: false, reason: 'row_not_found' }
-  // Moving a published row changes its public route (the route base comes
-  // from the table) — invalidate the render cache so the old URL stops
-  // being served.
-  if (row.status === 'published') await bumpPublishVersionSerialized()
   return { ok: true, row: updated }
 }
 

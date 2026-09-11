@@ -16,6 +16,13 @@ const RECONNECT_DELAY_MS = 3000
 // Auth failures (logged out / brief blip during a server restart) back off
 // longer but still retry so the bridge self-heals once the session is valid.
 const AUTH_RETRY_DELAY_MS = 15000
+// A stream that lived at least this long ended because the server recycled
+// its idle lease, not because anything is wrong — reconnect immediately.
+// This matters in background/hidden webviews (a browser tab in the
+// background, a minimized window): timers there are throttled to minutes, but the
+// stream-end network event still fires, so a timerless reconnect is what
+// keeps the bridge alive without the window being focused.
+const HEALTHY_STREAM_MIN_UPTIME_MS = 30_000
 
 const BridgeEventSchema = Type.Union([
   Type.Object({ type: Type.Literal('bridgeReady'), bridgeId: Type.String() }),
@@ -78,7 +85,9 @@ export async function runMcpWorkspaceBridgeConnection(
     const res = await fetch(`${MCP_BRIDGE_PATH}?scope=${scope}`, {
       method: 'GET',
       credentials: 'same-origin',
-      headers: { Accept: 'application/x-ndjson' },
+      // The bridge body stays newline-delimited JSON, but the event-stream
+      // media type prevents reverse proxies from buffering the open response.
+      headers: { Accept: 'text/event-stream' },
       signal,
     })
     if (res.status === 401 || res.status === 403) return 'auth'
@@ -110,8 +119,17 @@ export function useMcpWorkspaceBridge(
   scope: McpWorkspaceScope,
   dispatchTool: McpToolDispatcher,
   afterSuccessfulTool?: McpAfterSuccessfulTool,
+  enabled = true,
 ): void {
   useEffect(() => {
+    // A mounted route is not necessarily a usable workspace yet. In
+    // particular, SitePage paints its shell before usePersistence has loaded
+    // the SiteDocument into the editor store. Registering during that window
+    // makes get_context report siteConnected=true even though every browser
+    // runner sees store.site === null. Keep the server-side presence signal
+    // aligned with actual dispatcher readiness.
+    if (!enabled) return undefined
+
     const lifecycleController = new AbortController()
     let stopped = false
     let reconnectTimer: ReturnType<typeof setTimeout> | null = null
@@ -128,20 +146,47 @@ export function useMcpWorkspaceBridge(
       )
     }
 
+    /**
+     * Delay the next attempt — but let the tab becoming visible cut the wait
+     * short. In a hidden webview the timer itself is throttled (possibly to
+     * minutes); the visibilitychange event fires the moment the user looks
+     * again, so a stale bridge recovers instantly on focus instead of
+     * waiting out a clamped timer.
+     */
+    function reconnectDelay(delay: number): Promise<void> {
+      return new Promise<void>((resolve) => {
+        const settle = (): void => {
+          if (reconnectTimer) clearTimeout(reconnectTimer)
+          reconnectTimer = null
+          document.removeEventListener('visibilitychange', onVisible)
+          resolve()
+        }
+        const onVisible = (): void => {
+          if (document.visibilityState === 'visible') settle()
+        }
+        reconnectTimer = setTimeout(settle, delay)
+        document.addEventListener('visibilitychange', onVisible)
+      })
+    }
+
     async function loop(): Promise<void> {
       while (!stopped) {
+        const startedAt = Date.now()
         let delay = RECONNECT_DELAY_MS
         try {
           const outcome = await connectOnce()
           if (outcome === 'auth') delay = AUTH_RETRY_DELAY_MS
+          else if (Date.now() - startedAt >= HEALTHY_STREAM_MIN_UPTIME_MS) {
+            // The server recycled a healthy stream's idle lease — go
+            // straight back, no timer involved (see the constant's note).
+            delay = 0
+          }
         } catch (err) {
           if (stopped || lifecycleController.signal.aborted) break
           console.error(`[mcp-workspace-bridge:${scope}] stream error (will retry):`, err)
         }
         if (stopped) break
-        await new Promise<void>((resolve) => {
-          reconnectTimer = setTimeout(resolve, delay)
-        })
+        if (delay > 0) await reconnectDelay(delay)
       }
     }
 
@@ -152,5 +197,5 @@ export function useMcpWorkspaceBridge(
       if (reconnectTimer) clearTimeout(reconnectTimer)
       lifecycleController.abort()
     }
-  }, [scope, dispatchTool, afterSuccessfulTool])
+  }, [scope, dispatchTool, afterSuccessfulTool, enabled])
 }

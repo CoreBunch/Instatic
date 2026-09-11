@@ -69,9 +69,6 @@ describe('neutral interactive chrome', () => {
 
     const ghostHover = cssRule(css, '.variant-ghost:hover')
     const ghostActive = cssRule(css, '.variant-ghost:active')
-    const primary = cssRule(css, '.variant-primary')
-    const primaryHover = cssRule(css, '.variant-primary:hover')
-    const primaryActive = cssRule(css, '.variant-primary:active')
     const secondary = cssRule(css, '.variant-secondary')
     const secondaryHover = cssRule(css, '.variant-secondary:hover')
     const secondaryActive = cssRule(css, '.variant-secondary:active')
@@ -79,9 +76,6 @@ describe('neutral interactive chrome', () => {
 
     expectBackgroundToken(ghostHover, '--overlay-10')
     expectBackgroundToken(ghostActive, '--overlay-20')
-    expectBackgroundToken(primary, '--overlay-20')
-    expectBackgroundToken(primaryHover, '--overlay-30')
-    expectBackgroundToken(primaryActive, '--overlay-20')
     expectBackgroundToken(secondary, '--overlay-10')
     expectBackgroundToken(secondaryHover, '--overlay-20')
     expectBackgroundToken(secondaryActive, '--overlay-30')
@@ -90,14 +84,31 @@ describe('neutral interactive chrome', () => {
     for (const rule of [
       ghostHover,
       ghostActive,
-      primary,
-      primaryHover,
-      primaryActive,
       secondary,
       secondaryHover,
       secondaryActive,
       secondaryPressed,
     ]) {
+      expectNoSurfaceBackground(rule)
+    }
+  })
+
+  it('renders the primary variant as the high-contrast inverse pill', () => {
+    // Primary deliberately left the neutral overlay family: it is the one
+    // visually loud button (white in the dark theme, ink in the light
+    // theme), driven by the dedicated --btn-primary-* tokens.
+    const css = readFileSync(BUTTON_CSS, 'utf8')
+
+    const primary = cssRule(css, '.variant-primary')
+    const primaryHover = cssRule(css, '.variant-primary:hover')
+    const primaryActive = cssRule(css, '.variant-primary:active')
+
+    expectBackgroundToken(primary, '--btn-primary-bg')
+    expect(primary).toMatch(/color:\s*var\(--btn-primary-fg\);/)
+    expectBackgroundToken(primaryHover, '--btn-primary-bg-hover')
+    expectBackgroundToken(primaryActive, '--btn-primary-bg-active')
+
+    for (const rule of [primary, primaryHover, primaryActive]) {
       expectNoSurfaceBackground(rule)
     }
   })

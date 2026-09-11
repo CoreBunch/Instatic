@@ -1,16 +1,15 @@
 /**
- * Pure helpers, types and constants for DynamicBindingControl.
+ * Pure helpers, types and constants for the shared data-binding picker.
  *
  * Lives in a `.ts` file (no JSX) so React Fast Refresh continues to work
- * for the sibling `.tsx` component files. Anything component-shaped lives
- * in `BindingPickerPopover.tsx` or `DynamicBindingControl.tsx`.
+ * for the sibling `.tsx` component files.
  */
 
 import type { DataMeta, DataMetaField } from '@core/data/schemas'
 import type { DynamicPropBinding } from '@core/page-tree'
 import type { LoopSourceField } from '@core/loops/types'
-import { SYSTEM_SOURCES, type SystemSourceId } from '../systemSources'
-import type { PropertyControlKind } from '../bindingCompatibility'
+import { SYSTEM_SOURCES, type SystemSourceId } from './systemSources'
+import type { PropertyControlKind } from './bindingCompatibility'
 
 // ---------------------------------------------------------------------------
 // Field-list entry shape — one of three kinds depending on the active scope
@@ -82,6 +81,38 @@ export function formatPreviewValue(value: unknown): string {
     }
   }
   return String(value)
+}
+
+/**
+ * Use concise, semantic summaries for structured Data fields. Token insertion
+ * supports their whole stored value, but dumping media ids or repeater JSON
+ * into a narrow picker row does not help authors recognize populated fields.
+ */
+export function formatMetaFieldPreview(
+  field: DataMetaField,
+  value: unknown,
+): string {
+  if (field.type === 'repeater') {
+    if (!Array.isArray(value) || value.length === 0) return '(empty)'
+    return `${value.length} ${value.length === 1 ? 'item' : 'items'}`
+  }
+
+  if (field.type === 'media') {
+    const values = Array.isArray(value)
+      ? value.filter((entry) => typeof entry === 'string' && entry.length > 0)
+      : typeof value === 'string' && value.length > 0
+        ? [value]
+        : []
+    if (values.length === 0) return '(empty)'
+    const noun = field.mediaKind === 'image'
+      ? 'image'
+      : field.mediaKind === 'video'
+        ? 'video'
+        : 'asset'
+    return `${values.length} ${values.length === 1 ? noun : `${noun}s`}`
+  }
+
+  return formatPreviewValue(value)
 }
 
 // ---------------------------------------------------------------------------

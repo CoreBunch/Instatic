@@ -35,7 +35,7 @@ import styles from './SelectorsPanel.module.css'
 
 type SelectorsPanelProps = DockablePanelProps
 
-type SelectorFilter = 'all' | 'user' | 'utility' | 'unused'
+type SelectorFilter = 'all' | 'user' | 'utility' | 'used' | 'unused'
 
 /**
  * How many selector rows to mount per batch. A generated framework (e.g. the
@@ -53,6 +53,7 @@ const SELECTOR_FILTER_ITEMS: FilterBarItem<SelectorFilter>[] = [
   { value: 'all', label: 'All' },
   { value: 'user', label: 'User' },
   { value: 'utility', label: 'Utility' },
+  { value: 'used', label: 'Used' },
   { value: 'unused', label: 'Unused' },
 ]
 
@@ -75,6 +76,7 @@ function getEmptyFilterMessage(filter: SelectorFilter, query: string): string {
   if (normalized) return `No selectors match “${normalized}”.`
   if (filter === 'user') return 'No user selectors yet.'
   if (filter === 'utility') return 'No utility selectors yet.'
+  if (filter === 'used') return 'No used selectors yet.'
   if (filter === 'unused') return 'No unused selectors — every selector is in use.'
   return 'No selectors match the current filters.'
 }
@@ -138,6 +140,8 @@ export function SelectorsPanel({
   const filteredClasses = reusableClasses.filter((cls) => {
     if (filter === 'user' && isGeneratedClass(cls)) return false
     if (filter === 'utility' && !isGeneratedClass(cls)) return false
+    if (filter === 'used' && resolveSelectorUsage(cls, usageMap, classTokenUsage).unused)
+      return false
     if (filter === 'unused' && !resolveSelectorUsage(cls, usageMap, classTokenUsage).unused)
       return false
     // Search matches the selector name AND its declared CSS (property names and

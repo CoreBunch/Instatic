@@ -13,6 +13,7 @@ const MIME_TYPES: Record<string, string> = {
   '.jpeg': 'image/jpeg',
   '.map': 'application/json; charset=utf-8',
   '.mp4': 'video/mp4',
+  '.avif': 'image/avif',
   '.png': 'image/png',
   '.svg': 'image/svg+xml',
   '.webm': 'video/webm',
@@ -549,6 +550,7 @@ const INERT_UPLOAD_MIMES = new Set([
   'image/png',
   'image/gif',
   'image/webp',
+  'image/avif',
   'video/mp4',
   'video/webm',
 ])

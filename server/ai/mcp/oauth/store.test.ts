@@ -10,6 +10,7 @@ import {
   createOAuthAuthorizationGrant,
   exchangeAuthorizationCode,
   findOAuthAccessGrant,
+  findOAuthClient,
   registerOAuthClient,
   rotateRefreshToken,
 } from './store'
@@ -26,6 +27,22 @@ async function freshDb(): Promise<DbClient> {
     values ('u1', 'u1@example.com', 'u1@example.com', 'User One', 'x', 'owner')
   `
   return db
+}
+
+/**
+ * Minimal DbClient stub that yields one fixed row.
+ *
+ * Postgres returns `bigint` columns as strings to avoid precision loss. The
+ * in-memory SQLite harness above cannot reproduce that — SQLite's `integer`
+ * affinity always hands back a number — so the Postgres row shape is stubbed.
+ */
+function stubDbReturningRow(row: Record<string, unknown>): DbClient {
+  const query = (async () => ({ rows: [row], rowCount: 1 })) as unknown as DbClient
+  return Object.assign(query, {
+    unsafe: async () => ({ rows: [row], rowCount: 1 }),
+    transaction: async <T>(fn: (tx: DbClient) => Promise<T>) => fn(query),
+    dialect: 'postgres',
+  }) as DbClient
 }
 
 let db: DbClient
@@ -177,5 +194,21 @@ describe('MCP OAuth grant store', () => {
 
     expect(await revokeConnector(db, connection.id, 'u1')).toBe(true)
     expect(await findOAuthAccessGrant(db, tokens!.accessToken, RESOURCE)).toBeNull()
+  })
+
+  it('reads a string-valued bigint client_id_issued_at back as a number', async () => {
+    const pgDb = stubDbReturningRow({
+      client_id: 'imcp_client_test',
+      client_name: 'Claude',
+      redirect_uris_json: [REDIRECT_URI],
+      client_id_issued_at: '1786813381',
+    })
+
+    const client = await findOAuthClient(pgDb, 'imcp_client_test')
+
+    // RFC 7591 types client_id_issued_at as a number; clients that validate the
+    // registration response reject a quoted timestamp.
+    expect(client?.clientIdIssuedAt).toBe(1786813381)
+    expect(typeof client?.clientIdIssuedAt).toBe('number')
   })
 })

@@ -63,6 +63,20 @@ export const CSSDeclarationPriorityBagSchema = Type.Record(
 )
 export type CSSDeclarationPriorityBag = Static<typeof CSSDeclarationPriorityBagSchema>
 
+/**
+ * Where an imported rule came from: the stylesheet it was parsed out of (a
+ * FileMap key, or `<page>::inline` for a `<style>` block) and the rule's
+ * ordinal within that sheet. A re-import matches incoming rules against this
+ * — plus the selector — so the same rule arriving again replaces itself in
+ * place instead of stacking a duplicate. Absent on user-authored rules.
+ */
+export const StyleRuleOriginSchema = Type.Object({
+  source: Type.String(),
+  ordinal: Type.Integer({ minimum: 0 }),
+})
+
+export type StyleRuleOrigin = Static<typeof StyleRuleOriginSchema>
+
 export const StyleRuleSchema = Type.Object({
   id: Type.String(),
   name: Type.String(),
@@ -125,6 +139,8 @@ export const StyleRuleSchema = Type.Object({
   tags: Type.Optional(Type.Array(Type.String())),
   /** Metadata for framework-generated classes. Undefined if invalid — handled in parseStyleRule. */
   generated: Type.Optional(GeneratedClassMetadataSchema),
+  /** Import provenance (see `StyleRuleOriginSchema`). Undefined if invalid — handled in parseStyleRule. */
+  origin: Type.Optional(StyleRuleOriginSchema),
   createdAt: Type.Number(),
   updatedAt: Type.Number(),
 })
@@ -235,6 +251,9 @@ export function parseStyleRule(raw: unknown): StyleRule | null {
   const generated = compiledCheck(GeneratedClassMetadataSchema, r.generated)
     ? (r.generated as StyleRule['generated'])
     : undefined
+  const origin = compiledCheck(StyleRuleOriginSchema, r.origin)
+    ? (r.origin as StyleRuleOrigin)
+    : undefined
 
   return {
     id: r.id,
@@ -251,6 +270,7 @@ export function parseStyleRule(raw: unknown): StyleRule | null {
     ...(typeof r.rawCss === 'string' && r.rawCss.trim() ? { rawCss: r.rawCss } : {}),
     ...(tags !== undefined ? { tags } : {}),
     ...(generated !== undefined ? { generated } : {}),
+    ...(origin !== undefined ? { origin } : {}),
     createdAt: parseTimestamp(r.createdAt),
     updatedAt: parseTimestamp(r.updatedAt),
   }

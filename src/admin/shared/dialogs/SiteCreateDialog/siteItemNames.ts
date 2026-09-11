@@ -25,6 +25,9 @@ export function buildStylePath(value: string) {
 }
 
 export function buildScriptPath(value: string) {
-  const name = ensureExtension(stripSitePrefix(value, 'src/scripts/'), '.ts')
+  const requestedName = stripSitePrefix(value, 'src/scripts/')
+  const name = /\.(?:[cm]?ts|tsx)$/.test(requestedName)
+    ? requestedName
+    : ensureExtension(requestedName, '.ts')
   return `src/scripts/${name}`
 }
