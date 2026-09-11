@@ -4,7 +4,7 @@
  * `instatic-server-<version>-<platform>.tar.gz` with a sha256 checksums file.
  *
  * These assets let a release run anywhere Bun does, no container needed (a
- * release is "artifact-enabled" when they are present). The compile has three
+ * release is "artifact-enabled" when they are present). The compile has four
  * requirements the CLI can't express, so the build goes through `Bun.build`
  * (plugins in `scripts/lib/serverArtifactPlugins.ts`):
  *
@@ -19,6 +19,11 @@
  *     and css-tree routed to its CJS build — the originals resolve files
  *     at runtime relative to `__dirname` / `import.meta.url`, which inside a
  *     compiled binary name the build machine, not `/$bunfs`.
+ *  4. esbuild's Go binary must be embedded and extracted at boot, with
+ *     `ESBUILD_BINARY_PATH` pointing at it: esbuild otherwise locates the
+ *     binary relative to `__dirname`. After compiling, the binary is scanned
+ *     for this machine's `node_modules` path and the build fails if any
+ *     survived.
  *
  * Usage:
  *   bun scripts/build-server-artifact.ts [targets...] [--all] [--version <v>]
@@ -26,10 +31,10 @@
  * Targets: darwin-arm64 | darwin-x64 | linux-x64 (default: host platform).
  * Cross-target builds need `bun install --os='*' --cpu='*'` first.
  */
-import { existsSync, readdirSync } from 'node:fs'
+import { existsSync, readdirSync, readFileSync, realpathSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
 import { cp, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
-import { join, resolve } from 'node:path'
+import { basename, join, resolve, sep } from 'node:path'
 import { serverArtifactPlugins } from './lib/serverArtifactPlugins'
 
 const ROOT = resolve(import.meta.dir, '..')
@@ -39,8 +44,8 @@ const ENTRY_DIR = join(ROOT, '.tmp')
 const SUPPORTED_TARGETS = ['darwin-arm64', 'darwin-x64', 'linux-x64', 'windows-x64'] as const
 type ArtifactTarget = (typeof SUPPORTED_TARGETS)[number]
 
-/** npm platform suffix for `@img/sharp-*` packages (windows is `win32` there). */
-function sharpTarget(target: ArtifactTarget): string {
+/** npm platform suffix for `@img/sharp-*` and `@esbuild/*` packages (windows is `win32` there). */
+function npmPlatform(target: ArtifactTarget): string {
   return target === 'windows-x64' ? 'win32-x64' : target
 }
 
@@ -83,10 +88,10 @@ async function resolveVersion(explicit: string | null): Promise<string> {
 
 /** libvips binary filename inside the sharp platform package is versioned — discover it. */
 function findLibvips(target: ArtifactTarget): { pkgDir: string; file: string } {
-  const pkgDir = join(ROOT, 'node_modules', '@img', `sharp-libvips-${sharpTarget(target)}`, 'lib')
+  const pkgDir = join(ROOT, 'node_modules', '@img', `sharp-libvips-${npmPlatform(target)}`, 'lib')
   if (!existsSync(pkgDir)) {
     throw new Error(
-      `Missing @img/sharp-libvips-${sharpTarget(target)}. Cross-target builds need: bun install --os='*' --cpu='*'`,
+      `Missing @img/sharp-libvips-${npmPlatform(target)}. Cross-target builds need: bun install --os='*' --cpu='*'`,
     )
   }
   const file = readdirSync(pkgDir).find((name) => name.startsWith('libvips-cpp.'))
@@ -107,7 +112,21 @@ function findWindowsDlls(): { base: string; cpp: string } {
   return { base, cpp }
 }
 
+/** esbuild's Go binary for a target; embedded and extracted at boot (see serverArtifactRuntime.ts). */
+function findEsbuildBinary(target: ArtifactTarget): { file: string; version: string } {
+  const file = target === 'windows-x64' ? 'esbuild.exe' : 'bin/esbuild'
+  if (!existsSync(join(ROOT, 'node_modules', '@esbuild', npmPlatform(target), file))) {
+    throw new Error(`Missing @esbuild/${npmPlatform(target)}. Cross-target builds need: bun install --os='*' --cpu='*'`)
+  }
+  const pkg = JSON.parse(readFileSync(join(ROOT, 'node_modules', 'esbuild', 'package.json'), 'utf-8')) as { version: string }
+  return { file, version: pkg.version }
+}
+
 function entrySource(target: ArtifactTarget): string {
+  const esbuild = findEsbuildBinary(target)
+  const esbuildEmbed = `// @ts-expect-error file embed
+import esbuildBinaryPath from '../node_modules/@esbuild/${npmPlatform(target)}/${esbuild.file}' with { type: 'file' }`
+  const esbuildInstall = `await installEsbuildBinary(esbuildBinaryPath, '${esbuild.version}', '${basename(esbuild.file)}')`
   if (target === 'windows-x64') {
     const { base, cpp } = findWindowsDlls()
     const libvipsVersion = /^libvips-cpp-(.+)\.dll$/.exec(cpp)?.[1] ?? cpp
@@ -119,39 +138,20 @@ function entrySource(target: ArtifactTarget): string {
 // (and never searches the loaded DLL's own directory), so preload
 // bottom-up: ${base} ← ${cpp} ← sharp.node. Extraction is per-libvips
 // version and tolerant of a sibling server holding the same DLLs mapped
-// (writing to a mapped DLL is a sharing violation).
+// (extraction lives in scripts/lib/serverArtifactRuntime.ts).
 // @ts-expect-error file embed
 import libvipsBasePath from '../node_modules/@img/sharp-win32-x64/lib/${base}' with { type: 'file' }
 // @ts-expect-error file embed
 import libvipsCppPath from '../node_modules/@img/sharp-win32-x64/lib/${cpp}' with { type: 'file' }
+${esbuildEmbed}
 import { dlopen, ptr } from 'bun:ffi'
-import { mkdirSync, renameSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { extractEmbeddedFile, installEsbuildBinary } from '../scripts/lib/serverArtifactRuntime'
 
 const libDir = join(tmpdir(), 'instatic-native', '${libvipsVersion}')
-mkdirSync(libDir, { recursive: true })
-
-async function extractDll(name: string, embedded: string): Promise<string> {
-  const target = join(libDir, name)
-  const source = Bun.file(embedded)
-  const existing = Bun.file(target)
-  if ((await existing.exists()) && existing.size === source.size) return target
-  const tmp = target + '.' + process.pid + '.tmp'
-  try {
-    await Bun.write(tmp, source)
-    renameSync(tmp, target)
-  } catch (err) {
-    rmSync(tmp, { force: true })
-    // A running sibling server holds the same-version DLL mapped; the file
-    // on disk is identical, so load it as-is.
-    if (!(await existing.exists())) throw err
-  }
-  return target
-}
-
-const baseDll = await extractDll('${base}', libvipsBasePath)
-const cppDll = await extractDll('${cpp}', libvipsCppPath)
+const baseDll = await extractEmbeddedFile(libDir, '${base}', libvipsBasePath)
+const cppDll = await extractEmbeddedFile(libDir, '${cpp}', libvipsCppPath)
 // Belt-and-braces: PATH is the loader's fallback should a preload be bypassed.
 process.env.PATH = libDir + ';' + (process.env.PATH ?? '')
 dlopen(baseDll, { vips_version: { args: ['i32'], returns: 'i32' } })
@@ -167,37 +167,47 @@ if (!kernel32.symbols.LoadLibraryW(ptr(cppDllWide))) {
   throw new Error('Failed to load ' + cppDll)
 }
 require('@img/sharp-win32-x64/sharp.node')
+${esbuildInstall}
 await import('../server/index.ts')
 `
   }
   const { file: libvipsFile } = findLibvips(target)
   return `// GENERATED by scripts/build-server-artifact.ts — compile entry for ${target}.
 // Embeds libvips, preloads it via dlopen (the .node's loader dependency is
-// then satisfied in-process), embeds the sharp native binding, then boots
-// the server. See the script header for why this wrapper exists.
+// then satisfied in-process), embeds the sharp native binding, extracts
+// esbuild's binary, then boots the server. See the script header for why
+// this wrapper exists.
 // @ts-expect-error file embed
 import libvipsPath from '../node_modules/@img/sharp-libvips-${target}/lib/${libvipsFile}' with { type: 'file' }
+${esbuildEmbed}
 import { dlopen } from 'bun:ffi'
+import { installEsbuildBinary } from '../scripts/lib/serverArtifactRuntime'
 dlopen(libvipsPath, { vips_version: { args: ['i32'], returns: 'i32' } })
 require('@img/sharp-${target}/sharp.node')
+${esbuildInstall}
 await import('../server/index.ts')
 `
 }
 
 async function compileBinary(target: ArtifactTarget, outfile: string): Promise<void> {
-  const sharpNative = join(ROOT, 'node_modules', '@img', `sharp-${sharpTarget(target)}`)
+  const sharpNative = join(ROOT, 'node_modules', '@img', `sharp-${npmPlatform(target)}`)
   if (!existsSync(sharpNative)) {
     throw new Error(
-      `Missing @img/sharp-${sharpTarget(target)}. Cross-target builds need: bun install --os='*' --cpu='*'`,
+      `Missing @img/sharp-${npmPlatform(target)}. Cross-target builds need: bun install --os='*' --cpu='*'`,
     )
   }
   const entryPath = join(ENTRY_DIR, `server-artifact-entry-${target}.ts`)
   await mkdir(ENTRY_DIR, { recursive: true })
   await writeFile(entryPath, entrySource(target), 'utf-8')
 
-  const external = readdirSync(join(ROOT, 'node_modules', '@img'))
-    .filter((name) => name.startsWith('sharp-') && !name.endsWith(`-${sharpTarget(target)}`))
-    .flatMap((name) => [`@img/${name}`, `@img/${name}/*`])
+  const external = [
+    ...readdirSync(join(ROOT, 'node_modules', '@img'))
+      .filter((name) => name.startsWith('sharp-') && !name.endsWith(`-${npmPlatform(target)}`))
+      .flatMap((name) => [`@img/${name}`, `@img/${name}/*`]),
+    ...readdirSync(join(ROOT, 'node_modules', '@esbuild'))
+      .filter((name) => name !== npmPlatform(target))
+      .flatMap((name) => [`@esbuild/${name}`, `@esbuild/${name}/*`]),
+  ]
 
   const result = await Bun.build({
     entrypoints: [entryPath],
@@ -207,6 +217,18 @@ async function compileBinary(target: ArtifactTarget, outfile: string): Promise<v
   })
   if (!result.success) {
     throw new Error(`Compile failed for ${target}:\n${result.logs.join('\n')}`)
+  }
+
+  // No absolute path into this machine's node_modules may survive into the
+  // binary: it would resolve only here. The same check runs in
+  // serverArtifactPlugins.test.ts; this one guards the release build.
+  const buildNodeModules = Buffer.from(realpathSync(join(ROOT, 'node_modules')) + sep)
+  const binary = Buffer.from(await Bun.file(outfile).arrayBuffer())
+  const bakedAt = binary.indexOf(buildNodeModules)
+  if (bakedAt !== -1) {
+    throw new Error(
+      `${target}: build-machine path baked into the binary: ${binary.subarray(Math.max(0, bakedAt - 80), bakedAt + 160).toString()}`,
+    )
   }
 }
 
