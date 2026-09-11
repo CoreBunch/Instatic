@@ -1290,7 +1290,8 @@ describe('CMS plugin handlers', () => {
   // The upgrade path detects an already-installed plugin id, runs the new
   // version's `migrate({ fromVersion }, api)` between the old version's
   // deactivate and the new version's activate, preserves settings + installed_at,
-  // drops the old version's asset dir on success, and rolls back to the prior
+  // keeps the old version's asset dir on disk (published pages still link it
+  // by version until the next publish sweeps it), and rolls back to the prior
   // version on activate failure.
 
   it('routes a same-id newer-version upload through the upgrade flow with migrate', async () => {
@@ -1390,13 +1391,16 @@ describe('CMS plugin handlers', () => {
       // installed_at preserved across the upgrade.
       expect(db.plugins[0].installed_at).toBe(installedAtBefore)
 
-      // Old version's asset dir was deleted; new version's is on disk.
+      // New version's assets are on disk — and so are the OLD version's.
+      // Published HTML links plugin frontend assets by version, and only a
+      // publish rewrites those links, so deleting here 404'd every baked page.
+      // The next publish retires the old dir (`sweepStalePluginVersionAssets`).
       await expect(readFile(
         join(uploadsDir, 'plugins/acme.upgrade/1.1.0/server/index.js'),
         'utf-8',
       )).resolves.toContain('migrate')
       const { existsSync } = await import('node:fs')
-      expect(existsSync(join(uploadsDir, 'plugins/acme.upgrade/1.0.0'))).toBe(false)
+      expect(existsSync(join(uploadsDir, 'plugins/acme.upgrade/1.0.0'))).toBe(true)
     } finally {
       hookBus.unregisterPlugin('test')
       await rm(uploadsDir, { recursive: true, force: true })

@@ -52,6 +52,7 @@ import { buildPublishedSiteCssBundle } from './siteCssBundle'
 import { bakePublishedDataRowArtefacts } from './bakeDataRows'
 import { bumpPublishVersion, getPublishVersion, withPublishLock } from './publishState'
 import { runPublishFlush } from './publishFlush'
+import { sweepStalePluginVersionAssets } from './stalePluginAssets'
 
 interface PublishResult {
   publishedPages: number
@@ -197,7 +198,10 @@ async function publishDraftSiteLocked(
   // bundles and runtime JS into the same slot under their public paths
   // (`/_instatic/css/...`, `/_instatic/assets/...`). The visitor router serves these off
   // disk, so a published page never hits the server to (re)generate its CSS
-  // or JS — the slot is a self-contained static export.
+  // or JS — the slot is a self-contained static export. The one thing it
+  // references from outside is plugin frontend assets
+  // (`/uploads/plugins/<id>/<version>/…`), which is why the stale-version
+  // sweep below runs only after a publish has rewritten those links.
   //
   // EVERY page is baked: fully-static pages bake to a complete document; pages
   // with dynamic nodes bake their static SHELL with `<instatic-hole>` placeholders
@@ -298,6 +302,18 @@ async function publishDraftSiteLocked(
       await swapSlot(uploadsDir, slot)
     } catch (err) {
       console.error('[publish:site] static artefact write failed (live renderer remains active):', err)
+    }
+
+    // The artefacts just written link the CURRENTLY installed plugin versions,
+    // so any older version's files are now referenced by nothing. This is the
+    // only moment that is true — which is why an upgrade must not delete them
+    // itself. Leftovers are wasted disk, never a broken page, so a failure
+    // here is logged and the publish still succeeds.
+    try {
+      const { removed } = await sweepStalePluginVersionAssets(db, uploadsDir)
+      if (removed > 0) console.warn(`[publish:site] retired ${removed} stale plugin version dir(s)`)
+    } catch (err) {
+      console.error('[publish:site] stale plugin asset sweep failed (harmless, retries next publish):', err)
     }
   }
 

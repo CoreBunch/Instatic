@@ -281,13 +281,16 @@ interface UpgradeContext extends InstallContext {
  * Order of operations:
  *   1. Run old version's `deactivate(api)` and unregister its module pack.
  *   2. Write the new version's assets to its own version-stamped dir
- *      (`/uploads/plugins/{id}/{newVersion}/`). The old version's dir is
- *      preserved on disk until step 6 — that's what makes rollback cheap.
+ *      (`/uploads/plugins/{id}/{newVersion}/`). The old version's dir stays on
+ *      disk — that's what makes rollback cheap, and published pages still
+ *      link it by version (see step 6).
  *   3. Replace the DB row with the new manifest (settings, granted
  *      permissions from the user's confirmation, installed_at preserved).
  *   4. Run new version's `migrate({ fromVersion }, api)`.
  *   5. Run new version's `activate(api)`.
- *   6. Delete the OLD version's asset dir.
+ *   6. Leave the OLD version's asset dir alone. Baked pages reference plugin
+ *      frontend assets by version, so the next publish retires it
+ *      (`sweepStalePluginVersionAssets`), not the upgrade.
  *
  * Any failure in steps 4 or 5 triggers a rollback: revert the DB row to
  * the previous manifest, delete the new version's assets, re-activate the
@@ -359,19 +362,16 @@ async function installUpgradeFromPackage(ctx: UpgradeContext): Promise<Response>
     )
   }
 
-  // 6. Drop the old version's assets. With worker isolation, plugin server
-  //    files no longer live in the host process's `bun --watch` graph
-  //    (they're imported inside the worker), so deleting them here doesn't
-  //    race the response write — straightforward `await rm` is safe in
-  //    both dev and production.
+  // 6. The old version's files STAY. Published pages link plugin frontend
+  //    assets by version (`/uploads/plugins/<id>/<version>/frontend/…`), and
+  //    those artefacts are only rewritten by a publish — so deleting here
+  //    404'd every page already on disk. On a real site an upgrade took out
+  //    jQuery, GSAP, Lenis, Splide and the boot script across every page at
+  //    once, with no warning and no prompt to re-publish.
   //
-  //    Except on a reinstall, where `fromVersion` and `newVersion` name the
-  //    SAME directory: step 2 has already overwritten it with the new files,
-  //    so removing "the old version" here would delete the plugin that was
-  //    just installed.
-  if (newVersion !== fromVersion) {
-    await removePluginVersionAssets(options.uploadsDir, pluginId, fromVersion)
-  }
+  //    The next publish retires them, because that is the moment the URLs
+  //    stop pointing at this version: `sweepStalePluginVersionAssets` in
+  //    `server/publish/stalePluginAssets.ts`.
 
   // Re-fetch so the response carries the post-activation row (settings,
   // lifecycle = 'active', etc.).
