@@ -30,6 +30,7 @@
 import { mkdir } from 'node:fs/promises'
 import { dirname } from 'node:path'
 import { isSqliteUrl } from '../server/db'
+import { devStackBunError } from '../server/bunVersion'
 import { bunCommand, viteCommand } from './lib/bunCommand'
 import { ensureDependencies } from './lib/ensureDependencies'
 import { ensurePortFree } from './lib/freePort'
@@ -209,6 +210,11 @@ async function waitForPostgresReady(timeoutMs = 60_000): Promise<void> {
 }
 
 // --- main -----------------------------------------------------------------
+
+// Refuse before touching anything: on a Bun older than the Vite proxy needs,
+// the stack comes up looking healthy and the editor never connects.
+const bunError = devStackBunError(Bun.version)
+if (bunError) fail(bunError)
 
 if (isSqliteUrl(DATABASE_URL)) {
   const dbPath = DATABASE_URL.replace(/^sqlite:|^file:/, '')
