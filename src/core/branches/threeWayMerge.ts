@@ -53,8 +53,3 @@ export function mergeJson(base: unknown, ours: unknown, theirs: unknown): JsonMe
   const value = mergeValue(base, ours, theirs, '', conflicts)
   return { value, conflicts }
 }
-
-/** True when two values serialize identically. */
-export function jsonEquals(a: unknown, b: unknown): boolean {
-  return same(a, b)
-}

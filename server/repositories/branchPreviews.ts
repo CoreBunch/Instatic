@@ -8,7 +8,7 @@
  */
 import { nanoid } from 'nanoid'
 import type { DbClient } from '../db/client'
-import { isoDate } from '@core/utils/isoDate'
+import { isoDate, nowIso } from '@core/utils/isoDate'
 
 export interface BranchPreview {
   id: string
@@ -76,7 +76,7 @@ export async function resolveBranchPreviewToken(db: DbClient, tokenHash: string)
 
 /** Retire every active link of a branch; returns how many were active. */
 export async function revokeBranchPreviews(db: DbClient, branchId: string): Promise<number> {
-  const now = new Date().toISOString()
+  const now = nowIso()
   const { rows } = await db<{ id: string }>`
     update site_branch_previews
     set revoked_at = ${now}

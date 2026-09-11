@@ -21,8 +21,7 @@
  *   getLatestPublishedSiteSnapshot — first published page snapshot (for 404s etc.)
  *   getDraftPublishStatus     — compare draft vs published state for the UI
  */
-import { createHash } from 'node:crypto'
-import { canonicalJson } from '@core/utils/canonicalJson'
+import { contentHash } from '../branches/contentHash'
 import type { DataRow } from '@core/data/schemas'
 import type { SiteDocument } from '@core/page-tree'
 import type { PublishedPageRuntimeAssets } from '@core/site-runtime'
@@ -103,15 +102,6 @@ export interface PersistSitePublishInput {
 // Helpers
 // ---------------------------------------------------------------------------
 
-/**
- * Canonical content hash of a site document, stamped on `site_snapshots` at
- * publish time. The publish-status check compares the draft's hash against
- * it — equality is observationally identical to comparing the canonical JSON
- * strings, without fetching or parsing any stored snapshot.
- */
-function siteContentHash(site: SiteDocument): string {
-  return createHash('sha256').update(canonicalJson(site)).digest('hex')
-}
 
 /**
  * `listDataRows` is intentionally recency-ordered for authoring surfaces, but
@@ -204,7 +194,7 @@ export async function getDraftPublishStatus(db: DbClient): Promise<DraftPublishS
     order by data_rows.created_at asc
   `
 
-  const draftSiteHash = siteContentHash(draftSite)
+  const draftSiteHash = contentHash(draftSite)
   const draftPageIds = new Set(draftSite.pages.map((page) => page.id))
   const draftMatchesPublished =
     publishedRows.length === draftSite.pages.length &&
@@ -247,7 +237,7 @@ export async function persistSitePublish(
       values (
         ${input.siteSnapshotId},
         ${input.site},
-        ${siteContentHash(input.site)},
+        ${contentHash(input.site)},
         ${input.serializedImportmap?.body ?? null},
         ${input.serializedImportmap?.sha256 ?? null}
       )

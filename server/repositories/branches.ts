@@ -7,7 +7,7 @@
  * `server/branches/`.
  */
 import { MAIN_BRANCH_ID, type SiteBranch } from '@core/branches'
-import { isoDate } from '@core/utils/isoDate'
+import { isoDate, nowIso } from '@core/utils/isoDate'
 import type { DbClient } from '../db/client'
 
 interface SiteBranchRow {
@@ -75,7 +75,7 @@ export async function renameBranch(
   id: string,
   name: string,
 ): Promise<SiteBranch | null> {
-  const now = new Date().toISOString()
+  const now = nowIso()
   const { rows } = await db<SiteBranchRow>`
     update site_branches
     set name = ${name},
@@ -88,10 +88,7 @@ export async function renameBranch(
 }
 
 export async function touchBranch(db: DbClient, id: string): Promise<void> {
-  // Bound as ISO text: SQLite's `current_timestamp` is a space-separated
-  // local-time string that `Date.parse` reads as local time, which showed
-  // a just-merged branch as "updated 2h ago".
-  const now = new Date().toISOString()
+  const now = nowIso()
   await db`
     update site_branches
     set updated_at = ${now}

@@ -22,7 +22,7 @@ function sortableId(): string {
   return `${Date.now().toString(36).padStart(9, '0')}${idCounter.toString(36).padStart(3, '0')}${nanoid(8)}`
 }
 import type { BranchMergeRequest, BranchReviewComment, MergeRequestStatus, ReviewUserLabel } from '@core/branches'
-import { isoDate, isoDateOrNull } from '@core/utils/isoDate'
+import { isoDate, isoDateOrNull, nowIso } from '@core/utils/isoDate'
 import { placeholder, type DbClient } from '../db/client'
 import { computeGravatarHash } from './users'
 
@@ -141,7 +141,7 @@ export async function insertMergeRequest(
   input: { branchId: string; requestedByUserId: string; note: string; contentHash: string },
 ): Promise<BranchMergeRequest> {
   const id = sortableId()
-  const now = new Date().toISOString()
+  const now = nowIso()
   await db`
     insert into site_branch_merge_requests (id, branch_id, requested_by_user_id, note, content_hash, status, created_at, updated_at)
     values (${id}, ${input.branchId}, ${input.requestedByUserId}, ${input.note}, ${input.contentHash}, 'open', ${now}, ${now})
@@ -161,9 +161,7 @@ export async function closeOpenMergeRequests(
   branchId: string,
   input: { status: Exclude<MergeRequestStatus, 'open'>; resolvedByUserId: string | null; resolutionNote: string },
 ): Promise<BranchMergeRequest | null> {
-  // Bound as ISO text from here: SQLite's `current_timestamp` is a space-
-  // separated local-time string that `Date.parse` reads as local time.
-  const now = new Date().toISOString()
+  const now = nowIso()
   const { rows } = await db<{ id: string }>`
     update site_branch_merge_requests
     set status = ${input.status},
@@ -223,7 +221,7 @@ export async function insertReviewComment(
   const id = sortableId()
   await db`
     insert into site_branch_review_comments (id, branch_id, request_id, entity_key, author_user_id, body, created_at)
-    values (${id}, ${input.branchId}, ${input.requestId}, ${input.entityKey}, ${input.authorUserId}, ${input.body}, ${new Date().toISOString()})
+    values (${id}, ${input.branchId}, ${input.requestId}, ${input.entityKey}, ${input.authorUserId}, ${input.body}, ${nowIso()})
   `
   const [comment] = await selectComments(db, `where c.id = ${placeholder(db.dialect, 1)} limit 1`, [id])
   if (!comment) throw new Error('[branches] review comment vanished after insert')
@@ -240,7 +238,7 @@ export async function reopenMergedRequest(db: DbClient, branchId: string): Promi
   `
   const id = rows[0]?.id
   if (!id) return null
-  const now = new Date().toISOString()
+  const now = nowIso()
   await db`
     update site_branch_merge_requests
     set status = 'open', resolved_by_user_id = null, resolved_at = null, resolution_note = '', updated_at = ${now}

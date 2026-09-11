@@ -30,6 +30,8 @@ Files under `server/` that import `DbClient` use **only ANSI-standard SQL** that
 | `any($N::...)`                     | PG-specific array binding                              | Compose an `in (?, ?, ?)` list in JS           |
 | `distinct on`                      | PG-specific                                            | Window-function subquery (`row_number() over (...)`) |
 
+`current_timestamp` is right for a column only the server compares (`expires_at`, `revoked_at`). For a column the admin parses and displays, bind `nowIso()` (`@core/utils/isoDate`) instead: SQLite's `current_timestamp` is a space-separated UTC string that `Date.parse` reads as local time, so a row touched a second ago shows as "updated 2h ago". The branch tables (migrations 027 to 029) default their timestamps to ISO text for the same reason.
+
 Gated by `src/__tests__/architecture/db-postgres-isms.test.ts` — scans every file under `server/` that imports `DbClient` and rejects any of the patterns above.
 
 The two migration files (`migrations-pg.ts`, `migrations-sqlite.ts`) are explicitly allowlisted because that's where dialect-specific DDL lives by design.

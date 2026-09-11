@@ -10,6 +10,7 @@ import { Value } from '@sinclair/typebox/value'
 import { nanoid } from 'nanoid'
 import { MergeChangeSchema, type BranchMergeRecord, type MergeDirection } from '@core/branches'
 import type { DbClient } from '../db/client'
+import { isoDate, isoDateOrNull, nowIso } from '@core/utils/isoDate'
 
 /** What one entity looked like on every side before the apply wrote it. */
 export const MergeUndoEntrySchema = Type.Object({
@@ -36,10 +37,6 @@ interface BranchMergeRow {
   undone_at: string | Date | null
 }
 
-function toIso(value: string | Date): string {
-  return value instanceof Date ? value.toISOString() : value
-}
-
 function toRecord(row: BranchMergeRow): BranchMergeRecord {
   return {
     id: row.id,
@@ -47,8 +44,8 @@ function toRecord(row: BranchMergeRow): BranchMergeRecord {
     direction: row.direction,
     appliedByUserId: row.applied_by_user_id,
     changeCount: row.change_count,
-    createdAt: toIso(row.created_at),
-    undoneAt: row.undone_at === null ? null : toIso(row.undone_at),
+    createdAt: isoDate(row.created_at),
+    undoneAt: isoDateOrNull(row.undone_at),
   }
 }
 
@@ -57,7 +54,7 @@ export async function insertBranchMerge(
   input: { branchId: string; direction: MergeDirection; appliedByUserId: string | null; entries: MergeUndoEntry[] },
 ): Promise<BranchMergeRecord> {
   const id = nanoid()
-  const now = new Date().toISOString()
+  const now = nowIso()
   await db`
     insert into site_branch_merges (id, branch_id, direction, applied_by_user_id, change_count, entries_json, created_at)
     values (${id}, ${input.branchId}, ${input.direction}, ${input.appliedByUserId}, ${input.entries.length}, ${JSON.stringify(input.entries)}, ${now})
@@ -105,6 +102,6 @@ export async function listMergeUndoEntries(db: DbClient, mergeId: string): Promi
 }
 
 export async function markBranchMergeUndone(db: DbClient, id: string): Promise<void> {
-  const now = new Date().toISOString()
+  const now = nowIso()
   await db`update site_branch_merges set undone_at = ${now} where id = ${id}`
 }
