@@ -609,7 +609,7 @@ The sidebar shell expands/collapses by animating `--*-panel-width`. The panel sl
 |---------------|------------------------------------------------------------------------------|
 | General       | Site name, meta title, meta description, language, favicon                   |
 | Shortcuts     | Auto-rendered keyboard shortcut reference from the keybindings registry       |
-| Publishing    | Self-hosted runtime info + framework CSS tree-shaking toggle                 |
+| Publishing    | Self-hosted runtime info, framework CSS tree-shaking toggle, published-page CSP allowlist (`settings.csp`) |
 | Preferences   | Catalog-driven editor preferences (auto-rendered from `PREFERENCE_CATALOG`)  |
 
 Site-specific controls that were previously sections of this modal (Pages roster, Breakpoints/Viewports, Conditions) now live in their dedicated surfaces: the Site Explorer panel and `CanvasContextSelector` (unified condition axis).

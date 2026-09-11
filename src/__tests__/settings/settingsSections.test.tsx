@@ -114,3 +114,59 @@ describe('PublishingSection — framework CSS output preferences', () => {
     ).toBe(false)
   })
 })
+
+describe('PublishingSection — Content Security Policy allowlist', () => {
+  function mountWithSite() {
+    const site = makeSite()
+    useEditorStore.setState({
+      site,
+      activePageId: site.pages[0].id,
+    } as Parameters<typeof useEditorStore.setState>[0])
+    render(<PublishingSection />)
+  }
+
+  it('commits one origin per line into settings.csp on blur', () => {
+    mountWithSite()
+    const scripts = screen.getByLabelText(/allowed script origins/i)
+    fireEvent.change(scripts, {
+      target: { value: 'https://www.googletagmanager.com\n\n  https://connect.facebook.net  ' },
+    })
+    fireEvent.blur(scripts)
+
+    expect(useEditorStore.getState().site!.settings.csp).toEqual({
+      scriptOrigins: ['https://www.googletagmanager.com', 'https://connect.facebook.net'],
+      connectOrigins: [],
+    })
+    expect(screen.queryByRole('alert')).toBeNull()
+  })
+
+  it('reports invalid lines next to the field and persists only the valid ones', () => {
+    mountWithSite()
+    const connect = screen.getByLabelText(/allowed connection origins/i)
+    fireEvent.change(connect, {
+      target: { value: 'https://www.google-analytics.com\nhttp://insecure.example\nnot a url' },
+    })
+    fireEvent.blur(connect)
+
+    expect(useEditorStore.getState().site!.settings.csp).toEqual({
+      scriptOrigins: [],
+      connectOrigins: ['https://www.google-analytics.com'],
+    })
+    const alert = screen.getByRole('alert')
+    expect(alert.textContent).toContain('http://insecure.example')
+    expect(alert.textContent).toContain('not a url')
+    expect(connect.getAttribute('aria-invalid')).toBe('true')
+  })
+
+  it('clears settings.csp when both lists are emptied', () => {
+    mountWithSite()
+    const scripts = screen.getByLabelText(/allowed script origins/i)
+    fireEvent.change(scripts, { target: { value: 'https://www.googletagmanager.com' } })
+    fireEvent.blur(scripts)
+    expect(useEditorStore.getState().site!.settings.csp).toBeDefined()
+
+    fireEvent.change(scripts, { target: { value: '' } })
+    fireEvent.blur(scripts)
+    expect(useEditorStore.getState().site!.settings.csp).toBeUndefined()
+  })
+})

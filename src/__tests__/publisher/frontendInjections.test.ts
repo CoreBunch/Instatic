@@ -23,6 +23,14 @@ import {
 } from '../../../server/publish/frontendInjections'
 import { createFakeDb } from '../server/dbTestFake'
 
+const PAGE_WITH_ALLOWLISTED_CSP = `<!doctype html>
+<html>
+<head>
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'sha256-IMPORTMAP' https://www.googletagmanager.com; worker-src 'none'; style-src 'self' 'unsafe-inline';">
+</head>
+<body></body>
+</html>`
+
 const PAGE_WITH_CSP_META = `<!doctype html>
 <html>
 <head>
@@ -147,6 +155,18 @@ describe('frontend injection — asset attributes', () => {
 })
 
 describe('frontend injection — CSP relaxation', () => {
+  it('unions `self` into script-src without dropping the importmap hash or site allowlist', () => {
+    const out = injectFrontendAssets(PAGE_WITH_ALLOWLISTED_CSP, {
+      ...emptyPlan(),
+      hasExternalScript: true,
+      hasInlineScript: true,
+      tags: { ...emptyPlan().tags, 'body-end': ['<script>window.t=1</script>'] },
+    })
+    expect(out).toContain(
+      "script-src 'self' 'sha256-IMPORTMAP' 'unsafe-inline' https://www.googletagmanager.com;",
+    )
+  })
+
   it('keeps script-src `none` when no plugin contributes a tag', () => {
     const out = injectFrontendAssets(PAGE_WITH_CSP_META, emptyPlan())
     expect(out).toContain("script-src 'none'")

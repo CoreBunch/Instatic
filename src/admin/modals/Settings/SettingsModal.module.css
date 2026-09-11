@@ -301,6 +301,24 @@
 }
 
 /* ── PublishingSection ───────────────────────────────────────────────────── */
+.fieldHint {
+  font-size: var(--text-s);
+  color: var(--text-subtle);
+  margin: 0 0 var(--space-l);
+  line-height: 1.5;
+}
+
+.fieldHint code {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+
+.fieldError {
+  margin: var(--space-s) 0 0;
+  font-size: var(--text-xs);
+  color: var(--danger);
+}
+
 .pubRuntimeList {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
