@@ -111,7 +111,7 @@ violations, and manifest errors — **not** TypeScript semantic errors
 ## Runtime model and lifecycle
 
 A site plugin IS an `installed_plugins` row (`source: 'site-local'`,
-migration `022_installed_plugins_source`, additive, both dialects). The
+migration `031_installed_plugins_source`, additive, both dialects). The
 worker, QuickJS VM, route registry, hooks, schedules, settings/secrets,
 event broadcaster, crash recovery, and frontend injection consume it with
 **zero provenance branches** (gated by `site-plugin-invariants.test.ts`).

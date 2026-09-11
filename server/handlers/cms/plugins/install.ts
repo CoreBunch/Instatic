@@ -244,17 +244,19 @@ export interface ActivatePackageOutcome {
  * full plugin lifecycle: fresh = `install` -> `activate`; upgrade = old
  * `deactivate` -> row swap -> `migrate({ fromVersion })` -> `activate`,
  * with rollback to the previous version on failure. Audit + event
- * broadcast included. Callers with version-ordering rules (the zip route
- * rejects downgrades) enforce them BEFORE calling.
+ * broadcast included. Anything already installed takes the upgrade path
+ * whatever its version: a same-version rebuild and a rollback to an older
+ * build must deactivate the running plugin before replacing its files, and
+ * the fresh path would run `install` on a live plugin with no rollback.
+ * Callers with version-ordering rules (the zip route rejects downgrades)
+ * enforce them BEFORE calling.
  */
 export async function activatePluginPackageFromDisk(
   input: ActivatePackageFromDiskInput,
 ): Promise<ActivatePackageOutcome> {
   const existingResult = await getInstalledPlugin(input.db, input.manifest.id)
   const existing = existingResult?.kind === 'ok' ? existingResult.plugin : null
-  if (existing && semverGt(input.manifest.version, existing.version)) {
-    return upgradeFromDisk(input, existing)
-  }
+  if (existing) return upgradeFromDisk(input, existing)
   return freshInstallFromDisk(input)
 }
 
