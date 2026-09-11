@@ -3,6 +3,7 @@ import { createCapabilityTestHarness, type CapabilityTestHarness } from '../../.
 import { createDataRow } from '../../repositories/data'
 import { authorizeMcpContentTool } from './contentAuthorization'
 import { MAIN_SCOPE } from '../../branches/scope'
+import { MAIN_SCOPE } from '../../branches/scope'
 
 describe('MCP content row authorization', () => {
   let harness: CapabilityTestHarness
@@ -43,6 +44,7 @@ describe('MCP content row authorization', () => {
       ['content.edit.own'],
       'content_set_document_fields',
       { documentId: foreignRow.id, fields: { title: 'Not allowed' } },
+      MAIN_SCOPE,
     )).rejects.toThrow('not permitted')
 
     await expect(authorizeMcpContentTool(
@@ -51,6 +53,7 @@ describe('MCP content row authorization', () => {
       ['content.publish.own'],
       'content_set_document_status',
       { documentId: foreignRow.id, status: 'published' },
+      MAIN_SCOPE,
     )).rejects.toThrow('not permitted')
   })
 
@@ -74,6 +77,7 @@ describe('MCP content row authorization', () => {
       ['content.edit.own'],
       'content_set_document_field',
       { documentId: ownRow.id, fieldId: 'title', value: 'Allowed' },
+      MAIN_SCOPE,
     )).resolves.toBeUndefined()
 
     await expect(authorizeMcpContentTool(
@@ -82,6 +86,7 @@ describe('MCP content row authorization', () => {
       ['content.edit.any'],
       'content_delete_document',
       { documentId: foreignRow.id },
+      MAIN_SCOPE,
     )).resolves.toBeUndefined()
 
     await expect(authorizeMcpContentTool(
@@ -90,6 +95,7 @@ describe('MCP content row authorization', () => {
       ['content.publish.any'],
       'content_set_document_status',
       { documentId: foreignRow.id, status: 'published' },
+      MAIN_SCOPE,
     )).resolves.toBeUndefined()
   })
 })

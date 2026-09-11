@@ -10,7 +10,7 @@
 import type { CoreCapability } from '@core/capabilities'
 import type { DbClient } from '../../db/client'
 import { getDataRow } from '../../repositories/data'
-import { MAIN_SCOPE } from '../../branches/scope'
+import type { BranchScope } from '../../branches/scope'
 
 const DOCUMENT_EDIT_TOOLS = new Set([
   'content_delete_document',
@@ -47,13 +47,15 @@ export async function authorizeMcpContentTool(
   capabilities: readonly CoreCapability[],
   toolName: string,
   input: unknown,
+  /** The branch the connected workspace has open: the tool acts on that row. */
+  scope: BranchScope,
 ): Promise<void> {
   const checksEditOwnership = DOCUMENT_EDIT_TOOLS.has(toolName)
   const checksPublishOwnership = DOCUMENT_PUBLISH_TOOLS.has(toolName)
   if (!checksEditOwnership && !checksPublishOwnership) return
 
   const documentId = inputDocumentId(input)
-  const row = await getDataRow(db, MAIN_SCOPE, documentId)
+  const row = await getDataRow(db, scope, documentId)
   if (!row) throw new Error(`Document ${documentId} not found.`)
 
   if (checksEditOwnership) {
