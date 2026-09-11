@@ -170,13 +170,18 @@ test('the editor edits the branch, reads the review, comments and requests a mer
   }
   await saveHome(page, home, { ...home.cells, title: BRANCH_TITLE, body: { ...home.cells.body, nodes } }, BRANCH_ID)
 
-  // The review page is where the branch strip's "Request merge…" lands.
-  await page.goto(`/admin/branches/${BRANCH_ID}/review?branch=${BRANCH_ID}`)
+  // Without merge rights the strip's action reads as a request, not a merge,
+  // and it lands on the review page.
+  await page.goto(`/admin/site?branch=${BRANCH_ID}`)
+  await expect(page.getByTestId('branch-strip-merge')).toHaveText(/Request merge/)
+  await page.getByTestId('branch-strip-merge').click()
+  await expect(page).toHaveURL(new RegExp(`/admin/branches/${BRANCH_ID}/review`))
   await expect(page.getByTestId('branch-review-title')).toHaveText(/Merge Launch review into main/)
   const strip = page.getByTestId('branch-strip')
   await expect(strip).toContainText('Launch review')
-  // Without merge rights the strip's action reads as a request, not a merge.
-  await expect(page.getByTestId('branch-strip-merge')).toHaveText(/Request merge/)
+  // The review page carries the request itself; the strip's button steps aside.
+  await expect(page.getByTestId('branch-strip-merge')).toHaveCount(0)
+  await expect(page.getByTestId('review-request-open').first()).toHaveText(/Request merge/)
   const homeChange = page.getByTestId(`review-change-row:${home.id}`)
   await expect(homeChange).toBeVisible()
   // Both renders load (the frame host flips to loaded once measured).

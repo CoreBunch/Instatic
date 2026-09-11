@@ -148,6 +148,8 @@ Page management note: `page-management.e2e.ts` creates disposable pages from the
 
 BRANCH-001 … BRANCH-005 note: `tests/e2e/branches.e2e.ts` drives the real toolbar chip, palette, in-place creator, context strip, manage dialog, preview-link visitor flow (a second browser context without an admin session), and the merge review dialog; every step captures evidence under `.tmp/evidence/branches-*.png`. Tests that step up run on a fresh login because step-up rotates the shared owner session.
 
+REVIEW-001 note: `tests/e2e/branch-review.e2e.ts` runs serially across two accounts on a fresh database: the owner seeds a page and forks the branch through the API and creates an editor persona without `site.branches.manage`; the editor edits the branch, follows the strip's *Request merge…* to the review, checks both frames load with the changed and added nodes outlined, comments on the page, and requests a merge; the owner edits main to conflict, comments, and declines with a note; the editor re-requests; the owner takes the branch's side, opts into deleting the branch, and merges through the confirmation and the step-up, landing the branch's title on main. Evidence under `.tmp/evidence/branch-review-*.png`.
+
 VERSION-001 note: `tests/e2e/version-history.e2e.ts` creates and opens a page of its own (so the history it asserts on is independent of earlier specs), publishes, opens the version list from the publish split menu, and restores version 1 through the inline confirmation.
 
 ## Visual Builder
