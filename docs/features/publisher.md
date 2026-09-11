@@ -207,8 +207,11 @@ userStyles-<hash>.css  = collectUserStylesheetCss(site, page)      ← author st
 ```
 
 `styleRuleTreeShake.ts` computes the site-wide used class-id set once across
-page and Visual Component trees. A class rule emits only when its id is used
-and every known class dependency in its preserved selector is used. Ambient
+page and Visual Component trees, plus every class rule whose name appears
+literally in a `type: 'script'` site file (a modifier a script toggles is never
+assigned to a node; see `docs/features/site-import.md`). A class rule emits
+only when its id is used and every known class dependency in its preserved
+selector is used. Ambient
 selector fragments emit when at least one selector-list alternative has all of
 its known class dependencies in use; class-free selectors and supported raw
 blocks stay conservative. The editor canvas calls the same selector and

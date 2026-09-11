@@ -6,9 +6,54 @@ import {
   type StyleRule,
 } from '@core/page-tree'
 
-/** Collect every registry class id referenced by page and Visual Component nodes. */
+let lastScriptFiles: SiteDocument['files'] | null = null
+let lastScriptRuns: Set<string> = new Set()
+
+/**
+ * Identifier-shaped runs in a runtime script's source.
+ *
+ * A modifier a script toggles never appears on an authored node, so node class
+ * ids alone cannot see it. The script is the only place it is written down, in
+ * whatever call the author used — `classList.add('nav--open')`, a `className`
+ * assignment, a template literal, a lookup table of state names. Rather than
+ * model those shapes, split the source on everything a CSS class name cannot
+ * contain and keep the runs that survive.
+ *
+ * This over-collects: `add`, `length` and every other identifier in the file
+ * land in the set too, so a class named after one of them is kept even when no
+ * script really references it. That is the safe direction. The cost of a false
+ * positive is a few bytes of CSS; the cost of a false negative is a rule that
+ * is correct everywhere until publish drops it and the feature dies on the
+ * live site with nothing to point at.
+ */
+function scriptIdentifierRuns(files: SiteDocument['files']): Set<string> {
+  // `usedStyleRuleIdSignature` runs inside a canvas store selector, so this is
+  // hit on every store change. The store snapshot is immutable, so identity on
+  // the files array is enough to skip re-splitting unchanged sources.
+  if (files === lastScriptFiles) return lastScriptRuns
+
+  const runs = new Set<string>()
+  for (const file of files) {
+    if (file.type !== 'script' || typeof file.content !== 'string') continue
+    for (const run of file.content.split(/[^A-Za-z0-9_-]+/)) {
+      if (run) runs.add(run)
+    }
+  }
+
+  lastScriptFiles = files
+  lastScriptRuns = runs
+  return runs
+}
+
+/**
+ * Collect every registry class id referenced by page and Visual Component
+ * nodes, plus every class a runtime script names.
+ *
+ * Script-referenced ids are unioned in, never subtracted, so this can only
+ * ever keep more CSS than node class ids alone would.
+ */
 export function collectUsedStyleRuleIds(
-  site: Pick<SiteDocument, 'pages' | 'visualComponents'>,
+  site: Pick<SiteDocument, 'pages' | 'visualComponents' | 'files' | 'styleRules'>,
 ): Set<string> {
   const usedIds = new Set<string>()
   for (const page of site.pages) {
@@ -22,6 +67,14 @@ export function collectUsedStyleRuleIds(
       for (const id of node.classIds ?? []) usedIds.add(id)
     }
   }
+
+  const runs = scriptIdentifierRuns(site.files ?? [])
+  if (runs.size > 0) {
+    for (const rule of Object.values(site.styleRules ?? {})) {
+      if (rule.kind === 'class' && runs.has(rule.name)) usedIds.add(rule.id)
+    }
+  }
+
   return usedIds
 }
 
@@ -30,7 +83,7 @@ export function collectUsedStyleRuleIds(
  * only when the set of assigned class ids changes, not for unrelated edits.
  */
 export function usedStyleRuleIdSignature(
-  site: Pick<SiteDocument, 'pages' | 'visualComponents'>,
+  site: Pick<SiteDocument, 'pages' | 'visualComponents' | 'files' | 'styleRules'>,
 ): string {
   return [...collectUsedStyleRuleIds(site)].sort().join('\0')
 }
