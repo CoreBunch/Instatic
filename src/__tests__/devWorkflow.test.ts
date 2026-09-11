@@ -134,3 +134,22 @@ describe('development workflow', () => {
     expect(compose).toContain('image: postgres:16')
   })
 })
+
+describe('Bun version guard wiring', () => {
+  // The guard is worthless unless every launcher actually calls it, and the
+  // server must only warn: a direct install must keep serving on an old Bun.
+  it('both dev launchers refuse an old Bun before starting anything', () => {
+    for (const script of ['scripts/dev.ts', 'scripts/e2e-dev.ts']) {
+      const src = readSiteFile(script)
+      expect(src).toContain("from '../server/bunVersion'")
+      expect(src).toContain('devStackBunError(Bun.version)')
+    }
+  })
+
+  it('the server logs the unsupported-Bun warning and boots anyway', () => {
+    const src = readSiteFile('server/index.ts')
+    expect(src).toContain('unsupportedBunWarning(Bun.version)')
+    expect(src).toContain('console.warn(bunWarning)')
+    expect(src).not.toContain('devStackBunError')
+  })
+})

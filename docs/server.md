@@ -8,7 +8,7 @@ The server is a single `Bun.serve` process that boots the DB, runs migrations, a
 
 ## TL;DR
 
-- **Entrypoint:** `server/index.ts` (boots DB → migrations → role sync → plugin activation → `Bun.serve`).
+- **Entrypoint:** `server/index.ts` (boots DB → migrations → role sync → plugin activation → `Bun.serve`). Its first act is `unsupportedBunWarning(Bun.version)` from `server/bunVersion.ts`: when the runtime is outside `SUPPORTED_BUN_RANGE` (a constant mirroring `engines.bun`, gated by `bunVersion.test.ts`) it logs one `[server]` warning and boots anyway. The dev launchers use the same module's `devStackBunError` and refuse a Bun older than 1.4.1.
 - **Router:** `server/router.ts` — ordered route table, first-match wins. Each route is a `tryServeX(req, runtime, url, pathname)` function returning `Response | null`.
 - **CMS API:** every `/admin/api/cms/*` request goes through `server/handlers/cms/index.ts`, which runs a CSRF origin check and dispatches to per-resource handler groups.
 - **Auth:** session cookie (`SESSION_COOKIE_NAME`) → `findUserBySessionHash` → `requireCapability(req, db, 'site.read')`. Every state-changing handler starts with one of these guards.
