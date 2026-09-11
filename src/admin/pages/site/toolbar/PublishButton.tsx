@@ -80,6 +80,37 @@ export function PublishButton({
     return () => { cancelled = true }
   }, [enabled, siteId])
 
+  // Re-confirm publish availability whenever a draft save completes. The
+  // `hasUnsavedChanges` reset effect below catches manual edits (the flag stays
+  // true long enough to be observed), but an MCP editor-bridge edit flushes the
+  // save immediately (`flushEditorSave`), flipping the flag true→false within a
+  // single tick — too fast for that effect to ever render with `true`, so the
+  // button stayed stuck on "Published". Keying off the save's `lastSavedAt`
+  // re-asks the server after every save (manual OR bridge), so bridge-driven
+  // edits surface the Publish affordance without an editor reload.
+  const lastSavedAt = saveStatus?.state === 'saved' ? saveStatus.lastSavedAt : undefined
+  useEffect(() => {
+    if (!enabled || !siteId || lastSavedAt === undefined) return
+    let cancelled = false
+
+    async function refreshAfterSave() {
+      try {
+        const status = await getCmsPublishStatus()
+        if (cancelled) return
+        setState((prev) => {
+          if (prev === 'publishing') return prev // never interrupt an in-flight publish
+          if (status.draftMatchesPublished) return 'published'
+          return prev === 'published' ? 'idle' : prev // draft now differs → re-enable Publish
+        })
+      } catch (err) {
+        console.warn('[toolbar] Failed to refresh publish status:', err)
+      }
+    }
+
+    void refreshAfterSave()
+    return () => { cancelled = true }
+  }, [enabled, siteId, lastSavedAt])
+
   useEffect(() => {
     if (state !== 'published' || site === publishedSiteRef.current) return
     if (statusTimerRef.current) clearTimeout(statusTimerRef.current)
