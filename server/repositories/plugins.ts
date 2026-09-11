@@ -15,7 +15,7 @@ import {
 import type { StorageListOptions, StorageFilterOperator } from '@core/plugin-sdk/storageSchemas'
 import { parsePluginManifest } from '@core/plugins/manifest'
 import type { DbClient, Dialect } from '../db/client'
-import { isoDate } from '@core/utils/isoDate'
+import { isoDate, nowIso } from '@core/utils/isoDate'
 import { jsonField } from '../db/jsonExtract'
 
 /**
@@ -214,7 +214,7 @@ export async function installPlugin(
           enabled = true,
           lifecycle_status = 'installed',
           last_error = null,
-          updated_at = current_timestamp
+          updated_at = ${nowIso()}
     returning id, name, version, enabled, lifecycle_status, last_error,
               granted_permissions_json, manifest_json, settings_json, installed_at, updated_at
   `
@@ -237,7 +237,7 @@ export async function setPluginEnabled(
   enabled: boolean,
 ): Promise<InstalledPluginResult | null> {
   const { rows } = await db<InstalledPluginRow>`
-    update installed_plugins set enabled = ${enabled}, updated_at = current_timestamp
+    update installed_plugins set enabled = ${enabled}, updated_at = ${nowIso()}
     where id = ${id}
     returning id, name, version, enabled, lifecycle_status, last_error,
               granted_permissions_json, manifest_json, settings_json, installed_at, updated_at
@@ -252,7 +252,7 @@ export async function setPluginLifecycleStatus(
   lastError: string | null = null,
 ): Promise<InstalledPluginResult | null> {
   const { rows } = await db<InstalledPluginRow>`
-    update installed_plugins set lifecycle_status = ${lifecycleStatus}, last_error = ${lastError}, updated_at = current_timestamp
+    update installed_plugins set lifecycle_status = ${lifecycleStatus}, last_error = ${lastError}, updated_at = ${nowIso()}
     where id = ${id}
     returning id, name, version, enabled, lifecycle_status, last_error,
               granted_permissions_json, manifest_json, settings_json, installed_at, updated_at
@@ -284,7 +284,7 @@ export async function setPluginSettings(
   const { rows } = await db<InstalledPluginRow>`
     update installed_plugins
        set settings_json = ${writeJson(plainSettings)},
-           updated_at = current_timestamp
+           updated_at = ${nowIso()}
      where id = ${id}
     returning id, name, version, enabled, lifecycle_status, last_error,
               granted_permissions_json, manifest_json, settings_json, installed_at, updated_at
@@ -446,7 +446,7 @@ export async function updatePluginRecord(
   },
 ): Promise<PluginRecord | null> {
   const { rows } = await db<PluginRecordRow>`
-    update plugin_records set data_json = ${writeJson(input.data)}, updated_at = current_timestamp
+    update plugin_records set data_json = ${writeJson(input.data)}, updated_at = ${nowIso()}
     where id = ${input.id} and plugin_id = ${input.pluginId} and resource_id = ${input.resourceId}
     returning id, plugin_id, resource_id, data_json, created_at, updated_at
   `

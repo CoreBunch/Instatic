@@ -31,7 +31,7 @@ import type {
   DataTableKind,
   DataTableListItem,
 } from '@core/data/schemas'
-import { isoDate } from '@core/utils/isoDate'
+import { isoDate, nowIso } from '@core/utils/isoDate'
 
 interface CreateDataTableInput {
   id?: string
@@ -368,7 +368,7 @@ export async function updateDataTable(
         primary_field_id = coalesce(${input.primaryFieldId ?? null}, primary_field_id),
         fields_json = coalesce(${fields}, fields_json),
         updated_by_user_id = coalesce(${input.updatedByUserId ?? null}, updated_by_user_id),
-        updated_at = current_timestamp
+        updated_at = ${nowIso()}
     where id = ${physicalId(scope.branchId, tableId)}
       and branch_id = ${scope.branchId}
       and deleted_at is null
@@ -450,11 +450,12 @@ export async function softDeleteDataTable(
 
   if (await countDataRows(db, scope, tableId) > 0) return null
 
+  const now = nowIso()
   const { rows } = await db<DataTableRow>`
     update data_tables
-    set deleted_at = current_timestamp,
+    set deleted_at = ${now},
         updated_by_user_id = ${actorUserId},
-        updated_at = current_timestamp
+        updated_at = ${now}
     where id = ${physicalId(scope.branchId, tableId)}
       and branch_id = ${scope.branchId}
       and deleted_at is null
@@ -510,7 +511,7 @@ export async function restoreDataTable(
         primary_field_id = coalesce(${input.primaryFieldId ?? null}, primary_field_id),
         fields_json = coalesce(${fields}, fields_json),
         updated_by_user_id = coalesce(${input.updatedByUserId ?? null}, updated_by_user_id),
-        updated_at = current_timestamp
+        updated_at = ${nowIso()}
     where id = ${physicalId(scope.branchId, tableId)}
       and branch_id = ${scope.branchId}
       and deleted_at is not null

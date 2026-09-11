@@ -12,7 +12,7 @@
  * pulling the user from the cookie before calling these.
  */
 import type { DbClient } from '../db/client'
-import { isoDateOrNull } from '@core/utils/isoDate'
+import { isoDateOrNull, nowIso } from '@core/utils/isoDate'
 
 interface SessionListItem {
   id: string                       // sha256 hash of the cookie token (same as session.id_hash)
@@ -97,7 +97,7 @@ export async function revokeSessionByHashForUser(
 ): Promise<boolean> {
   const result = await db`
     update sessions
-    set revoked_at = current_timestamp
+    set revoked_at = ${nowIso()}
     where id_hash = ${sessionHash}
       and user_id = ${userId}
       and revoked_at is null
@@ -124,7 +124,7 @@ export async function revokeAllOtherSessions(
   if (keepSessionHash) {
     const result = await db`
       update sessions
-      set revoked_at = current_timestamp
+      set revoked_at = ${nowIso()}
       where user_id = ${userId}
         and id_hash != ${keepSessionHash}
         and revoked_at is null
@@ -133,7 +133,7 @@ export async function revokeAllOtherSessions(
   }
   const result = await db`
     update sessions
-    set revoked_at = current_timestamp
+    set revoked_at = ${nowIso()}
     where user_id = ${userId}
       and revoked_at is null
   `

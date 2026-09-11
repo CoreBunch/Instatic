@@ -12,6 +12,7 @@ import { appendMessage } from '../conversations/store'
 import { resolveCostUsd } from '../pricing'
 import { normalizeContextTokens } from '../contextTokens'
 import type { AiContentBlock, AiProviderId } from './types'
+import { nowIso } from '@core/utils/isoDate'
 
 export interface ConversationsPersister {
   appendAssistantText(text: string): Promise<void>
@@ -216,7 +217,7 @@ async function updateMessageUsage(
           cache_read_tokens_total = cache_read_tokens_total + ${cacheReadTokens},
           cache_creation_tokens_total = cache_creation_tokens_total + ${cacheCreationTokens},
           context_tokens = ${contextTokens},
-          updated_at = current_timestamp
+          updated_at = ${nowIso()}
       where id = ${conversationId}
     `
   })
