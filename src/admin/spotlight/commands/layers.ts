@@ -18,7 +18,7 @@
  */
 
 import { getParent } from '@core/page-tree'
-import type { Command } from '../types'
+import type { Command, CommandRunContext } from '../types'
 
 const hasSelection = (ctx: { editor?: { selectedNodeIds: ReadonlyArray<string> } }) =>
   (ctx.editor?.selectedNodeIds.length ?? 0) > 0
@@ -27,6 +27,71 @@ async function getActiveLayerTree() {
   const { useEditorStore, selectActiveCanvasPage } = await import('@site/store/store')
   const store = useEditorStore.getState()
   return { store, page: selectActiveCanvasPage(store) }
+}
+
+type LayerMoveDirection = 'up' | 'down'
+
+/**
+ * Resolve a one-step sibling move for the current selection.
+ *
+ * Multi-selection is treated as one ordered block. Nested selections collapse
+ * to their selected ancestors, and selections spanning different parents are
+ * left untouched because one sibling move cannot represent that operation.
+ */
+function resolveSelectedSiblingMove(
+  page: NonNullable<Awaited<ReturnType<typeof getActiveLayerTree>>['page']>,
+  selectedNodeIds: readonly string[],
+  direction: LayerMoveDirection,
+): { nodeIds: string[]; parentId: string; newIndex: number } | null {
+  if (selectedNodeIds.some((id) => page.nodes[id]?.locked)) return null
+
+  const selected = new Set(selectedNodeIds)
+  const topLevelIds = selectedNodeIds.filter((id) => {
+    if (!page.nodes[id] || id === page.rootNodeId) return false
+    let ancestor = getParent(page, id)
+    while (ancestor) {
+      if (selected.has(ancestor.id)) return false
+      ancestor = getParent(page, ancestor.id)
+    }
+    return true
+  })
+  if (topLevelIds.length === 0) return null
+
+  const parents = topLevelIds.map((id) => getParent(page, id))
+  if (parents.some((parent) => !parent)) return null
+  const parentId = parents[0]!.id
+  if (parents.some((parent) => parent!.id !== parentId)) return null
+
+  const topLevelSet = new Set(topLevelIds)
+  const nodeIds = parents[0]!.children.filter((id) => topLevelSet.has(id))
+  if (nodeIds.length === 0) return null
+
+  const firstIndex = parents[0]!.children.indexOf(nodeIds[0]!)
+  const lastIndex = parents[0]!.children.indexOf(nodeIds[nodeIds.length - 1]!)
+  if (direction === 'up' && firstIndex <= 0) return null
+  if (direction === 'down' && lastIndex >= parents[0]!.children.length - 1) return null
+
+  return {
+    nodeIds,
+    parentId,
+    newIndex: direction === 'up' ? firstIndex - 1 : firstIndex + 1,
+  }
+}
+
+async function moveSelectedLayers(ctx: CommandRunContext, direction: LayerMoveDirection): Promise<void> {
+  ctx.closeSpotlight()
+  const selectedNodeIds = ctx.editor?.selectedNodeIds ?? []
+  if (selectedNodeIds.length === 0) return
+
+  try {
+    const { store, page } = await getActiveLayerTree()
+    if (!page) return
+    const target = resolveSelectedSiblingMove(page, selectedNodeIds, direction)
+    if (!target) return
+    store.moveNodes(target.nodeIds, target.parentId, target.newIndex)
+  } catch (err) {
+    console.error(`[spotlight] moveNode ${direction} failed:`, err)
+  }
 }
 
 export function getLayersCommands(): Command[] {
@@ -293,23 +358,7 @@ export function getLayersCommands(): Command[] {
       workspaces: ['site'],
       capability: 'site.structure.edit',
       when: hasSelection,
-      run: async (ctx) => {
-        ctx.closeSpotlight()
-        const nodeId = ctx.editor?.selectedNodeIds[ctx.editor.selectedNodeIds.length - 1]
-        if (!nodeId) return
-        try {
-          const { store, page } = await getActiveLayerTree()
-          if (!page) return
-          const parent = getParent(page, nodeId)
-          if (!parent) return
-          const siblings = parent.children ?? []
-          const idx = siblings.indexOf(nodeId)
-          if (idx <= 0) return
-          store.moveNode(nodeId, parent.id, idx - 1)
-        } catch (err) {
-          console.error('[spotlight] moveNode up failed:', err)
-        }
-      },
+      run: (ctx) => moveSelectedLayers(ctx, 'up'),
     },
 
     // ── Move down ────────────────────────────────────────────────────────────
@@ -323,23 +372,7 @@ export function getLayersCommands(): Command[] {
       workspaces: ['site'],
       capability: 'site.structure.edit',
       when: hasSelection,
-      run: async (ctx) => {
-        ctx.closeSpotlight()
-        const nodeId = ctx.editor?.selectedNodeIds[ctx.editor.selectedNodeIds.length - 1]
-        if (!nodeId) return
-        try {
-          const { store, page } = await getActiveLayerTree()
-          if (!page) return
-          const parent = getParent(page, nodeId)
-          if (!parent) return
-          const siblings = parent.children ?? []
-          const idx = siblings.indexOf(nodeId)
-          if (idx < 0 || idx >= siblings.length - 1) return
-          store.moveNode(nodeId, parent.id, idx + 1)
-        } catch (err) {
-          console.error('[spotlight] moveNode down failed:', err)
-        }
-      },
+      run: (ctx) => moveSelectedLayers(ctx, 'down'),
     },
 
     // ── Select parent ────────────────────────────────────────────────────────
