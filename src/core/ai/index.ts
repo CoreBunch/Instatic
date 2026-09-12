@@ -73,6 +73,13 @@ export {
   SetTypeScaleInputSchema,
   SetSpacingScaleInputSchema,
   RenderSnapshotInputSchema,
+  PluginListFilesInputSchema,
+  PluginReadFileInputSchema,
+  PluginWriteFileInputSchema,
+  PluginPatchFileInputSchema,
+  PluginRenameFileInputSchema,
+  PluginDeleteFileInputSchema,
+  PluginOpenFileInputSchema,
 } from './toolSchemas'
 export type {
   InsertHtmlInput,
@@ -102,6 +109,12 @@ export type {
   SetPageTemplateInput,
   ClearPageTemplateInput,
 } from './toolSchemas'
+export { applyExactReplacements, countOccurrences } from './textReplacements'
+export type { ExactReplacementResult, ExactTextReplacement } from './textReplacements'
+export { hashText, paginateText, utf8ByteLength } from './textPages'
+export type { TextPage, TextPageInfo } from './textPages'
+export { PluginIdeSnapshotSchema, emptyPluginIdeSnapshot } from './pluginIdeSnapshot'
+export type { PluginIdeSnapshot } from './pluginIdeSnapshot'
 export {
   describeAgentDocuments,
   documentRefEquals,

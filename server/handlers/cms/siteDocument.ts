@@ -93,10 +93,15 @@ import { CMS_API_PREFIX } from './shared'
 import { ForbiddenSiteChangeError, validateSiteWriteDiff } from '../../writePolicy/siteDiff'
 import { validatePageWriteDiff } from '../../writePolicy/pageDiff'
 
+// Any of these opens the save endpoint; the per-category diff validator
+// (`validateSiteWriteDiff`) then gates each individual change. `plugins.edit`
+// is included so a plugin-developer persona can persist plugin-source file
+// changes — every non-plugin change still requires the matching site cap.
 const SITE_WRITE_CAPABILITIES = [
   'site.structure.edit',
   'site.content.edit',
   'site.style.edit',
+  'plugins.edit',
 ] satisfies CoreCapability[]
 
 const SiteDocumentBodySchema = Type.Object({

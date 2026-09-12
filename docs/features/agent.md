@@ -104,7 +104,7 @@ src/admin/pages/site/agent/
 
 src/admin/pages/content/agent/
 ├── agentSliceConfig.content.ts — content-workspace config: scope, snapshot builder, executor wiring
-├── contentAgentStore.ts        — standalone per-mount Zustand store (AgentSlice only)
+├── (store: src/admin/ai/createScopedAgentStore.ts — one AgentSlice-only Zustand instance per mount, shared with the Plugin IDE)
 ├── contentBridge.ts            — content workspace write-tool executor
 ├── contentBridgeHandle.ts      — live ContentPage operation handle
 └── useContentToolBridge.ts     — always-mounted handle + content-scope MCP relay
@@ -316,7 +316,7 @@ The handler (`server/ai/handlers/chat.ts`):
 7. Calls `runChat(...)` with the full history as `req.messages`. Direct HTTP drivers have no server-side session, so each driver maps the whole `AiMessage[]` log into the provider's native message array every turn (the Anthropic driver pairs assistant `tool_use` blocks with their following `tool_result` turns). The runner pipes all stream events to the HTTP response. Before recording a terminal usage event, the runner flushes any pending assistant text so text-only replies have an assistant message row for per-turn usage and audit rollups. The multi-turn agentic loop lives in `drivers/http/toolLoop.ts`, not in a provider SDK.
 8. Emits a terminal `ai.chat.completed` / `ai.chat.failed` audit event.
 
-Valid scopes are `site`, `content`, `data`, and `plugin`; only `site` and `content` currently register tools and prompts. The handler rejects a request when the URL scope does not match the `ai_conversations.scope` row.
+Valid scopes are `site`, `content`, `data`, and `plugin`; `site`, `content`, and `plugin` register tools and prompts, `data` has none yet. The handler rejects a request when the URL scope does not match the `ai_conversations.scope` row.
 
 ### `GET /admin/api/ai/audit?since=ISO&tz=IANA`
 
@@ -520,7 +520,7 @@ When a node-targeting write tool (`site_insert_html`, `site_get_node_html`, `sit
 Content-scope tools are registered under `server/ai/tools/content/`. They use the same `POST /admin/api/ai/chat/content` stream and `POST /admin/api/ai/tool-result` bridge as the Site editor, but the snapshot and browser executor are content-specific:
 
 - `ContentAgentMount` builds a `ContentSnapshot` from the live Content workspace: visible `postType` collections, active collection id, active document fields/schema, and current user identity.
-- `contentAgentStore.ts` mounts a standalone `AgentSlice` instance per `ContentPage` mount. The Content workspace is hook-based rather than a global Zustand store, so the bridge is exposed through `contentBridgeHandle.ts`.
+- `ContentAgentMount` creates a standalone `AgentSlice` instance per `ContentPage` mount through `createScopedAgentStore` (`src/admin/ai/`, shared with the Plugin IDE). The Content workspace is hook-based rather than a global Zustand store, so the bridge is exposed through `contentBridgeHandle.ts`.
 - Server read tools hit the data, media, and user repositories through `ctx.db`; write tools are browser-bridged so unsaved draft state in `useContentEntryDraft` and the Tiptap body editor stay authoritative.
 
 **Server-side content reads — 7**
@@ -634,7 +634,7 @@ export const siteAgentSliceConfig: AgentSliceConfig = {
 
 `getAgentStoreApi` reads the live store via `storeRef.ts`, wired in `store.ts` after store creation (`setAgentStoreApi(useEditorStore)`). This avoids a static import cycle: executor → store → agentSlice → executor.
 
-The content workspace uses the same factory with `contentAgentSliceConfig` mounted in a standalone per-page store (`contentAgentStore.ts`).
+The content workspace uses the same factory with `contentAgentSliceConfig` mounted in a standalone per-page store (`createScopedAgentStore`, shared with the Plugin IDE).
 
 `agentProviderUpdate.ts` owns the existing-conversation provider/model PUT and its failure reconciliation. A definite 4xx can roll the picker back to the re-read row; a timeout, network failure, or 5xx stays fail-closed unless the re-read already proves that the requested selection committed. `agentSlice.ts` keeps the ordering queue and Send lock because those coordinate store actions rather than HTTP persistence.
 
@@ -864,7 +864,7 @@ unblocks deletion of the credential that had been protected by the default FK.
   - `src/admin/pages/site/agent/types.ts` — `ServerStreamEvent`, `AgentMessage`, `AgentRequestBody`, …
   - `src/admin/pages/site/agent/index.ts` — public barrel
   - `src/admin/pages/content/agent/ContentAgentMount.tsx` — content workspace AgentPanel mount + live bridge handle registration
-  - `src/admin/pages/content/agent/contentAgentStore.ts` — standalone content-workspace agent store
+  - `src/admin/ai/createScopedAgentStore.ts` — standalone per-mount agent store factory (Content workspace, Plugin IDE)
   - `src/admin/pages/content/agent/contentBridge.ts` — content write-tool browser dispatcher
   - `src/admin/pages/content/agent/contentBridgeHandle.ts` — imperative bridge handle registered by ContentPage
   - `src/admin/pages/site/panels/AgentPanel/AgentComposer.tsx` — resolves model window/pricing/capabilities and places the meter in the action row

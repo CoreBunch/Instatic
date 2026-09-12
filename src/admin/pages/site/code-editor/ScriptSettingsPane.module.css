@@ -110,3 +110,16 @@
     border-bottom: 1px solid var(--border);
   }
 }
+
+.placementHint {
+  margin: 0;
+  padding: var(--space-xs) 0;
+  font-size: var(--text-xs);
+  line-height: 1.5;
+  color: var(--text-muted);
+}
+
+.placementHint code {
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+}

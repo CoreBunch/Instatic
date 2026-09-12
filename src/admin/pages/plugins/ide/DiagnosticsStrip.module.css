@@ -1,0 +1,73 @@
+.strip {
+  flex-shrink: 0;
+  max-height: 180px;
+  display: flex;
+  flex-direction: column;
+  border-top: 1px solid var(--border-muted);
+  /* Transparent — part of the editor column's canvas surface. */
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-xs) var(--space-m);
+  border-bottom: 1px solid var(--border-muted);
+}
+
+.title {
+  font-size: var(--text-xs);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-subtle);
+}
+
+.status {
+  font-size: var(--text-xs);
+  color: var(--text-subtle);
+}
+
+.empty {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  margin: 0;
+  padding: var(--space-s) var(--space-m);
+  font-size: var(--text-xs);
+  color: var(--text-subtle);
+}
+
+.okIcon {
+  color: var(--success-text);
+  flex-shrink: 0;
+}
+
+.list {
+  margin: 0;
+  padding: var(--space-xs) 0;
+  list-style: none;
+  overflow-y: auto;
+}
+
+.item {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-xs);
+  padding: var(--space-3xs) var(--space-m);
+  font-size: var(--text-xs);
+  line-height: 1.5;
+  color: var(--text);
+}
+
+.errorIcon {
+  color: var(--danger);
+  flex-shrink: 0;
+  margin-top: var(--space-px);
+}
+
+.message {
+  font-family: var(--font-mono);
+  white-space: pre-wrap;
+  word-break: break-word;
+}

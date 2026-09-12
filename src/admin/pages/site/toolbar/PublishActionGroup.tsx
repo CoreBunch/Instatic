@@ -1,8 +1,9 @@
 import { SplitButton, type SplitButtonMenuItem } from '@ui/components/SplitButton'
 import type { IconComponent } from 'pixel-art-icons/types'
+import { ToolbarStatus, type ToolbarStatusTone } from './ToolbarStatus'
 import styles from './Toolbar.module.css'
 
-export type PublishActionStatusTone = 'neutral' | 'success' | 'warning' | 'danger'
+export type PublishActionStatusTone = ToolbarStatusTone
 type PublishActionState = 'idle' | 'busy' | 'success' | 'error'
 
 export type PublishActionMenuItem = SplitButtonMenuItem
@@ -43,16 +44,7 @@ export function PublishActionGroup({
   return (
     <div className={styles.publishActionGroup}>
       {statusLabel && (
-        <span
-          role="status"
-          aria-live="polite"
-          aria-label={statusAriaLabel ?? statusLabel}
-          className={styles.publishActionStatus}
-          data-tone={statusTone}
-        >
-          <span className={styles.publishActionStatusDot} aria-hidden="true" />
-          {statusLabel}
-        </span>
+        <ToolbarStatus label={statusLabel} tone={statusTone} ariaLabel={statusAriaLabel} />
       )}
 
       <SplitButton

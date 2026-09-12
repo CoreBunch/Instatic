@@ -62,7 +62,13 @@ export const CAPABILITY_GROUPS: CapabilityGroup[] = [
   },
   {
     title: 'Plugins',
-    capabilities: ['plugins.read', 'plugins.configure', 'plugins.install', 'plugins.lifecycle'],
+    capabilities: [
+      'plugins.read',
+      'plugins.configure',
+      'plugins.edit',
+      'plugins.install',
+      'plugins.lifecycle',
+    ],
   },
   {
     title: 'AI',

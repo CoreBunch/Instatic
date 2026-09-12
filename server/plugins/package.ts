@@ -1,5 +1,6 @@
 import { strFromU8, unzipSync } from 'fflate'
 import {
+  isReservedSitePluginId,
   parsePluginManifest,
 } from '@core/plugins/manifest'
 import { assertSandboxSafe } from '@core/plugins/sandboxScan'
@@ -48,6 +49,17 @@ export async function readPluginPackage(file: File): Promise<PluginPackage> {
   // parsePluginManifest is a TypeBox schema validator — it accepts unknown
   // and throws on shape mismatch. Safe boundary.
   const manifest = parsePluginManifest(JSON.parse(manifestText))
+
+  // The `site.` namespace belongs to site plugins built from the site draft.
+  // An uploaded zip claiming it could hijack a site plugin's runtime
+  // identity, grants, settings, and secrets — reject at the zip boundary.
+  if (isReservedSitePluginId(manifest.id)) {
+    throw new Error(
+      `Plugin id "${manifest.id}" uses the reserved "site." namespace. ` +
+        `That namespace belongs to site plugins built from the site draft; ` +
+        `uploaded packages must use a vendor namespace (e.g. "acme.${manifest.id.slice(5)}").`,
+    )
+  }
   const entrypoints = [
     ...Object.values(manifest.entrypoints ?? {}),
     ...manifest.adminPages.flatMap((page) =>

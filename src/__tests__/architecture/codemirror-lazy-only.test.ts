@@ -73,9 +73,21 @@ function collectProdFiles(): string[] {
 // CodeMirror lazy-load enforcement
 // ---------------------------------------------------------------------------
 
-// The ONE file allowed to statically import the CodeMirror packages.
-// Path is relative to SRC_ROOT (i.e. relative to `src/`).
-const ALLOWED_CONSUMER = 'admin/pages/site/code-editor/CodeMirrorEditor.tsx'
+// The files allowed to statically import the CodeMirror packages — the base
+// lazy module and its collab sibling (both only reachable through
+// React.lazy() boundaries; the sibling adds the y-codemirror binding for
+// the Plugin IDE's co-edited buffers).
+// Paths are relative to SRC_ROOT (i.e. relative to `src/`).
+const ALLOWED_CONSUMERS = new Set([
+  'admin/pages/site/code-editor/CodeMirrorEditor.tsx',
+  'admin/pages/site/code-editor/CollabCodeMirrorEditor.tsx',
+  // Read-only agent code/diff blocks — lazy-loaded by ToolCallRow, same
+  // chunk graph as the code editor.
+  'admin/pages/site/code-editor/AgentCodeView.tsx',
+  // Theme + language stacks shared by the three viewers above (non-component
+  // module so the component files keep react-refresh eligibility).
+  'admin/pages/site/code-editor/codeMirrorShared.ts',
+])
 
 // Matches: import ... from 'codemirror' / '@codemirror/...' / '@lezer/...'
 //          require('codemirror') / require('@codemirror/...') / require('@lezer/...')
@@ -98,13 +110,13 @@ const CODEMIRROR_IMPORT_PATTERNS: { family: string; pattern: RegExp }[] = [
 ]
 
 describe('CodeMirror lazy-load enforcement', () => {
-  it(`only ${ALLOWED_CONSUMER} may statically import codemirror / @codemirror / @lezer`, () => {
+  it('only the code-editor lazy modules may statically import codemirror / @codemirror / @lezer', () => {
     const allFiles = collectProdFiles()
     const violations: { file: string; family: string }[] = []
 
     for (const file of allFiles) {
       const rel = relative(SRC_ROOT, file)
-      if (rel === ALLOWED_CONSUMER) continue
+      if (ALLOWED_CONSUMERS.has(rel)) continue
 
       let source: string
       try {
@@ -125,8 +137,8 @@ describe('CodeMirror lazy-load enforcement', () => {
         (v) => `  src/${v.file}  →  imports ${v.family}`
       )
       throw new Error(
-        `[codemirror-lazy-only] CodeMirror must stay behind the React.lazy()\n` +
-        `boundary in CodeEditorPanel.tsx. Only src/${ALLOWED_CONSUMER} is\n` +
+        `[codemirror-lazy-only] CodeMirror must stay behind a React.lazy()\n` +
+        `boundary. Only ${[...ALLOWED_CONSUMERS].map((f) => `src/${f}`).join(' and ')} are\n` +
         `permitted to statically import CodeMirror packages. A static import\n` +
         `elsewhere pulls the ~605 kB CodeMirror bundle into the eager admin\n` +
         `chunk and undoes the code-split.\n\n` +
@@ -139,11 +151,12 @@ describe('CodeMirror lazy-load enforcement', () => {
     expect(violations).toHaveLength(0)
   })
 
-  it('the allowed consumer file actually exists at the documented path', () => {
-    // Sanity check — if CodeMirrorEditor.tsx is renamed or moved without
-    // updating ALLOWED_CONSUMER above, the gate would silently start
-    // failing for the lazy module itself. Detect that case directly.
-    const allowed = join(SRC_ROOT, ALLOWED_CONSUMER)
-    expect(existsSync(allowed)).toBe(true)
+  it('the allowed consumer files actually exist at the documented paths', () => {
+    // Sanity check — if a lazy module is renamed or moved without updating
+    // ALLOWED_CONSUMERS above, the gate would silently start failing for
+    // the lazy module itself. Detect that case directly.
+    for (const consumer of ALLOWED_CONSUMERS) {
+      expect(existsSync(join(SRC_ROOT, consumer))).toBe(true)
+    }
   })
 })

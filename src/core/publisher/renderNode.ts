@@ -305,7 +305,19 @@ export function renderNode(
 
   const def = config.registry.get(node.moduleId)
   if (!def) {
-    // Unknown module — emit a comment so the page doesn't silently lose content
+    // Unknown module — emit a comment so the page doesn't silently lose
+    // content. A `site.<plugin>.*` id names its site plugin explicitly:
+    // the module was previewed from a draft (or the plugin was
+    // deactivated) but never activated — the fix is Build & activate,
+    // and the publish log must say so instead of burying a silent comment.
+    if (node.moduleId.startsWith('site.')) {
+      const pluginId = node.moduleId.split('.').slice(0, 2).join('.')
+      console.warn(
+        `[publish] page uses module "${node.moduleId}" from site plugin "${pluginId}" ` +
+          `with no ACTIVE registration — Build & activate the site plugin so published ` +
+          `pages can render it.`,
+      )
+    }
     return `<!-- instatic: unknown module "${escapeHtml(node.moduleId)}" -->`
   }
 

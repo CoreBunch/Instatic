@@ -3,8 +3,12 @@
  * human title · muted detail, status glyph, plus optional colour-token
  * swatches and an inline error message. Captured images are grouped by the
  * parent turn so they share the conversation gallery and preview window.
+ *
+ * Write/patch tools additionally render their code payload inline — a lazy
+ * CodeMirror block (unified diff for patches) so the user always sees
+ * exactly what the agent wrote.
  */
-import type { CSSProperties } from 'react'
+import { lazy, Suspense, type CSSProperties } from 'react'
 import type { AgentToolCall } from '@site/agent'
 import { cn } from '@ui/cn'
 import { Tooltip } from '@ui/components/Tooltip'
@@ -30,8 +34,20 @@ import { ColorsSwatchSolidIcon } from 'pixel-art-icons/icons/colors-swatch-solid
 import { LayoutSolidIcon } from 'pixel-art-icons/icons/layout-solid'
 import { UsersSolidIcon } from 'pixel-art-icons/icons/users-solid'
 import { ZapSolidIcon } from 'pixel-art-icons/icons/zap-solid'
-import { getToolCallDisplay, extractColorSwatches, type ToolCallIcon, type ToolCallTone } from './toolCallDisplay'
+import {
+  getToolCallDisplay,
+  extractColorSwatches,
+  extractCodePayload,
+  type ToolCallCodePayload,
+  type ToolCallIcon,
+  type ToolCallTone,
+} from './toolCallDisplay'
 import styles from './AgentPanel.module.css'
+
+// CodeMirror is ~150 kB min+gz — the chunk loads when the first code-bearing
+// tool row renders (same lazy policy as the site code editor); the plain-text
+// fallback shows the same content meanwhile.
+const AgentCodeView = lazy(() => import('@site/code-editor/AgentCodeView'))
 
 export function ToolCallRow({ toolCall }: { toolCall: AgentToolCall }) {
   const isPending = toolCall.status === 'pending'
@@ -40,6 +56,7 @@ export function ToolCallRow({ toolCall }: { toolCall: AgentToolCall }) {
 
   const display = getToolCallDisplay(toolCall.actionType, toolCall.params)
   const swatches = extractColorSwatches(toolCall.actionType, toolCall.params)
+  const codePayload = extractCodePayload(toolCall.actionType, toolCall.params)
   const accessibleStatus = isPending ? 'Running' : isSuccess ? 'Completed' : 'Failed'
   const statusLabel = `${accessibleStatus} ${display.title}${display.detail ? ` — ${display.detail}` : ''}`
   const statusClass = isPending
@@ -90,6 +107,45 @@ export function ToolCallRow({ toolCall }: { toolCall: AgentToolCall }) {
           {errorMessage}
         </p>
       )}
+      {codePayload && (
+        <div className={styles.toolCallCode}>
+          <Suspense fallback={<CodeBlockFallback payload={codePayload} />}>
+            {codePayload.kind === 'code' ? (
+              <div className={styles.toolCallCodeBlock}>
+                <AgentCodeView code={codePayload.code} path={codePayload.path} />
+              </div>
+            ) : (
+              codePayload.edits.map((edit, index) => (
+                // Edits are positional within one immutable tool call, so
+                // the index is a stable key.
+                <div key={index} className={styles.toolCallCodeBlock}>
+                  <AgentCodeView
+                    code={edit.newText}
+                    diffOriginal={edit.oldText}
+                    path={codePayload.path}
+                  />
+                </div>
+              ))
+            )}
+          </Suspense>
+        </div>
+      )}
+    </>
+  )
+}
+
+// Plain-text stand-in while the CodeMirror chunk loads — same box, same
+// content, no highlight. Keeps the row from jumping when the viewer lands.
+function CodeBlockFallback({ payload }: { payload: ToolCallCodePayload }) {
+  const texts = payload.kind === 'code' ? [payload.code] : payload.edits.map((edit) => edit.newText)
+  return (
+    <>
+      {texts.map((text, index) => (
+        // Positional content within one immutable tool call.
+        <pre key={index} className={cn(styles.toolCallCodeBlock, styles.toolCallCodeFallback)}>
+          {text}
+        </pre>
+      ))}
     </>
   )
 }

@@ -19,16 +19,26 @@ import { Type, type Static } from '@sinclair/typebox'
 // SiteFileType
 // ---------------------------------------------------------------------------
 
-const SiteFileTypeSchema = Type.Union([
-  Type.Literal('component'), // src/components/*.tsx — user-authored React components
-  Type.Literal('script'),    // src/scripts/*.ts, src/utils/*.ts, src/hooks/*.ts
-  Type.Literal('style'),     // src/styles/*.css — global CSS
-  Type.Literal('asset'),     // public/* — images, fonts, etc. (binary)
-  Type.Literal('config'),    // package.json, tsconfig.json, vite.config.ts, .env, etc.
-  Type.Literal('doc'),       // README.md, CHANGELOG.md — markdown docs
-])
+/**
+ * THE list of site file types — the schema union and every runtime
+ * validator derive from this one array (no parallel lists).
+ */
+export const SITE_FILE_TYPES = [
+  'component', // src/components/*.tsx — user-authored React components
+  'script',    // src/scripts/*.ts, src/utils/*.ts, src/hooks/*.ts
+  'style',     // src/styles/*.css — global CSS
+  'asset',     // public/* — images, fonts, etc. (binary)
+  'config',    // package.json, tsconfig.json, vite.config.ts, .env, etc.
+  'doc',       // README.md, CHANGELOG.md — markdown docs
+  'plugin',    // plugins/<local-id>/** — site plugin source; NEVER enters
+               // published bundles, _siteScripts, or module-readable file
+               // lists, and never appears in the site editor (edited in the
+               // Plugin IDE). Gated by site-plugin-file-isolation.test.ts.
+] as const
 
-export type SiteFileType = Static<typeof SiteFileTypeSchema>
+const SiteFileTypeSchema = Type.Union(SITE_FILE_TYPES.map((type) => Type.Literal(type)))
+
+export type SiteFileType = (typeof SITE_FILE_TYPES)[number]
 
 // ---------------------------------------------------------------------------
 // SiteFile

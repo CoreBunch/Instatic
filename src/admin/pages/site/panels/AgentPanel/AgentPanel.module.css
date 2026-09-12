@@ -473,6 +473,40 @@
   color: var(--text-disabled);
 }
 
+/* Expandable code / diff payload under write- and patch-tool rows. */
+.toolCallCode {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-2xs);
+  min-width: 0;
+}
+
+.toolCallCodeBlock {
+  align-self: stretch;
+  max-height: 260px;
+  overflow: auto;
+  border-radius: 12px;
+  background: var(--bg-surface);
+}
+
+/* The read-only viewer sizes to content; the block owns the scroll. */
+.toolCallCodeBlock :global(.cm-editor) {
+  height: auto;
+}
+
+/* Plain-text stand-in while the CodeMirror chunk loads. */
+.toolCallCodeFallback {
+  margin: 0;
+  padding: var(--space-s);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  line-height: 1.5;
+  color: var(--text);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
 .toolCallStatus {
   display: inline-flex;
   align-items: center;

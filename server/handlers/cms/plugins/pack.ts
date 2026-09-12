@@ -60,7 +60,7 @@ async function installPluginPackToSite(
   plugin: InstalledPlugin,
   uploadsDir: string,
   actorUserId: string,
-  req: Request,
+  req: Request | null,
 ): Promise<PluginPackSummary | null> {
   if (!plugin.manifest.pack) return null
   if (!plugin.manifest.assetBasePath) return null
@@ -175,7 +175,7 @@ export async function maybeAutoInstallPluginPack(
   plugin: InstalledPlugin,
   options: CmsHandlerOptions,
   user: AuthUser,
-  req: Request,
+  req: Request | null,
 ): Promise<PluginPackSummary | null> {
   if (!options.uploadsDir) return null
   if (!plugin.manifest.pack) return null

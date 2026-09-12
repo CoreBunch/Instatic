@@ -37,7 +37,7 @@ import {
 } from './condition'
 import { StyleRuleSchema, parseStyleRuleRegistry } from './styleRule'
 import { SiteSettingsSchema, parseSiteSettings } from './siteSettings'
-import { SiteFileSchema, type SiteFile, type SiteFileType } from '@core/files/schemas'
+import { SITE_FILE_TYPES, SiteFileSchema, type SiteFile, type SiteFileType } from '@core/files/schemas'
 import { SiteRuntimeConfigSchema, type SiteRuntimeConfig } from '@core/site-runtime/schemas'
 import { normalizeSiteRuntimeConfig } from '@core/site-runtime/runtimeConfig'
 import { SitePackageJsonSchema, type SitePackageJson } from '@core/site-dependencies/manifest'
@@ -109,7 +109,7 @@ export type SiteDocument = SiteShell & {
 // Tolerant parsing
 // ---------------------------------------------------------------------------
 
-const VALID_SITE_FILE_TYPES: SiteFileType[] = ['component', 'script', 'style', 'asset', 'config', 'doc']
+const VALID_SITE_FILE_TYPES: readonly SiteFileType[] = SITE_FILE_TYPES
 
 /**
  * Parse a SiteFile. Keeps the file with blob=undefined when the blob is

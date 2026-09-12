@@ -149,6 +149,31 @@ export function getToolCallDisplay(actionType: string, params: unknown): ToolCal
     case 'set_active_collection':
       return display('Opening collection', collectionDetail(p), 'open', 'read')
 
+    // Plugin IDE scope — file tools carry relative paths; lifecycle tools
+    // carry an optional localId (defaulting to the open plugin).
+    case 'list_files':
+      return display('Listing plugin files', '', 'code', 'read')
+    case 'read_file':
+      return display('Reading file', pluginFileDetail(p), 'code', 'read')
+    case 'write_file':
+      return display('Writing file', pluginFileDetail(p), 'code', 'write')
+    case 'patch_file':
+      return display('Editing file', pluginPatchDetail(p), 'code', 'write')
+    case 'rename_file':
+      return display('Renaming file', pluginRenameDetail(p), 'edit', 'write')
+    case 'delete_file':
+      return display('Deleting file', pluginFileDetail(p), 'delete', 'danger')
+    case 'open_file':
+      return display('Opening file', pluginFileDetail(p), 'open', 'read')
+    case 'validate':
+      return display('Validating plugin', optionalString(p.localId), 'runtime', 'read')
+    case 'activate':
+      return display('Building & activating', optionalString(p.localId), 'runtime', 'write')
+    case 'list_plugins':
+      return display('Listing site plugins', '', 'collection', 'read')
+    case 'docs':
+      return display('Reading plugin docs', optionalString(p.topic) || 'index', 'document', 'read')
+
     default:
       return display(`Running ${humanizeToolName(toolName)}`, '', 'tool', 'neutral')
   }
@@ -156,6 +181,40 @@ export function getToolCallDisplay(actionType: string, params: unknown): ToolCal
 
 function display(title: string, detail: string, icon: ToolCallIcon, tone: ToolCallTone): ToolCallDisplay {
   return { title, detail, icon, tone }
+}
+
+/**
+ * Code payload behind a tool row — powers the expandable CodeMirror block.
+ * `code` = full written content (write tools); `diff` = one entry per exact
+ * text replacement (patch tools), rendered as a unified diff.
+ */
+export type ToolCallCodePayload =
+  | { kind: 'code'; path: string; code: string }
+  | { kind: 'diff'; path: string; edits: Array<{ oldText: string; newText: string }> }
+
+export function extractCodePayload(
+  actionType: string,
+  params: unknown,
+): ToolCallCodePayload | null {
+  const toolName = normalizeToolName(actionType)
+  const p = asRecord(params)
+  if (toolName === 'write_file' || toolName === 'write_code_asset') {
+    const path = optionalString(p.path)
+    if (!path || typeof p.content !== 'string' || p.content.length === 0) return null
+    return { kind: 'code', path, code: p.content }
+  }
+  if (toolName === 'patch_file' || toolName === 'patch_code_asset') {
+    const path = optionalString(p.path) || optionalString(p.fileId)
+    if (!Array.isArray(p.replacements)) return null
+    const edits = p.replacements.flatMap((entry) => {
+      const replacement = asRecord(entry)
+      return typeof replacement.oldText === 'string' && typeof replacement.newText === 'string'
+        ? [{ oldText: replacement.oldText, newText: replacement.newText }]
+        : []
+    })
+    return edits.length > 0 ? { kind: 'diff', path, edits } : null
+  }
+  return null
 }
 
 export interface ColorSwatch {
@@ -183,12 +242,12 @@ export function extractColorSwatches(actionType: string, params: unknown): Color
 }
 
 // Canonicalise a provider tool name to a stable snake_case key: drop the MCP
-// namespace and the `site_`/`content_` domain prefixes, then fold any camelCase
-// (historical names like `insertHtml`) down to snake_case.
+// namespace and the `site_`/`content_`/`plugin_` domain prefixes, then fold
+// any camelCase (historical names like `insertHtml`) down to snake_case.
 function normalizeToolName(actionType: string): string {
   return actionType
     .replace(/^mcp__instatic__/, '')
-    .replace(/^(site|content)_/, '')
+    .replace(/^(site|content|plugin)_/, '')
     .replace(/([a-z0-9])([A-Z])/g, '$1_$2')
     .toLowerCase()
 }
@@ -267,6 +326,25 @@ function documentKind(type: string): string {
 
 function codeAssetDetail(params: Record<string, unknown>): string {
   return optionalString(params.path) || shortId(params.fileId)
+}
+
+function pluginFileDetail(params: Record<string, unknown>): string {
+  return optionalString(params.path) || shortId(params.fileId)
+}
+
+function pluginPatchDetail(params: Record<string, unknown>): string {
+  const file = pluginFileDetail(params)
+  const count = Array.isArray(params.replacements) ? params.replacements.length : 0
+  const edits = count > 1 ? `${count} edits` : ''
+  if (!file) return edits
+  return edits ? `${file} · ${edits}` : file
+}
+
+function pluginRenameDetail(params: Record<string, unknown>): string {
+  const from = pluginFileDetail(params)
+  const to = optionalString(params.newPath)
+  if (!from) return to
+  return to ? `${from} → ${to}` : from
 }
 
 function pageTitleDetail(params: Record<string, unknown>): string {

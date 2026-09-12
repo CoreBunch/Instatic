@@ -126,9 +126,12 @@ const BUDGETS: ChunkBudget[] = [
     // Raised from 30 KB when site branches landed: the publish gate (disabled
     // with the inline reason on a branch), the version-history entry, and the
     // per-branch persistence hook are part of the shell by design (~+1 KB raw).
-    maxBytes: 32_000,
+    // Raised again for site plugins: the `plugins.edit` gate, the Plugin IDE
+    // route and workspace entry (~+0.8 KB raw). The editor body still lands in
+    // its own chunk — the shell carries no DnD, canvas, or module code.
+    maxBytes: 33_500,
     rationale:
-      'site route shell (current ~31 KB raw / ~10 KB gzipped). Must not ' +
+      'site route shell (current ~32 KB raw / ~10 KB gzipped). Must not ' +
       'pull the visual editor body, DnD, canvas, first-party modules, or ' +
       'PropertiesPanel back into the active route chunk.',
   },
@@ -227,14 +230,18 @@ function findChunk(prefix: string): { path: string; size: number } | null {
     (f) => f.startsWith(prefix) && f.endsWith('.js'),
   )
   if (matches.length === 0) return null
-  if (matches.length > 1) {
-    throw new Error(
-      `[bundle-size-budgets] Found ${matches.length} files matching prefix ` +
-      `"${prefix}" in dist/assets/: ${matches.join(', ')}. Expected exactly one.`,
-    )
-  }
+  // A module reachable through BOTH a dynamic and a static import (e.g.
+  // CodeMirrorEditor: lazy from CodeEditorPanel, static from its collab
+  // sibling lazy module) makes rolldown emit a tiny re-export facade chunk
+  // alongside the real one. Budget the SUM of all matches — that stays
+  // facade-tolerant while still catching genuine duplication (two full
+  // copies would blow the budget immediately).
+  const size = matches.reduce(
+    (total, match) => total + statSync(join(DIST_ASSETS, match)).size,
+    0,
+  )
   const path = join(DIST_ASSETS, matches[0]!)
-  return { path, size: statSync(path).size }
+  return { path, size }
 }
 
 function findChunks(prefix: string): string[] {
@@ -319,9 +326,19 @@ describe('Bundle size budgets', () => {
     const iconChunkPatterns = vendoredIconNames().map(
       (iconName) => new RegExp(`^${regexEscape(iconName)}-[A-Za-z0-9_-]+\\.js$`),
     )
-    const individualIconChunks = readdirSync(DIST_ASSETS).filter((asset) =>
-      iconChunkPatterns.some((pattern) => pattern.test(asset)),
-    )
+    const individualIconChunks = readdirSync(DIST_ASSETS).filter((asset) => {
+      if (!iconChunkPatterns.some((pattern) => pattern.test(asset))) return false
+      // Name-collision guard: rolldown names shared feature chunks after one
+      // of their modules, and a feature module can legitimately share a name
+      // with an icon (e.g. an "upload" helpers chunk vs the upload icon). A
+      // chunk that IMPORTS the grouped icon chunk is a consumer, not an
+      // escaped icon — only an actual icon module body (svg markup, no
+      // grouped-chunk import) counts as a violation.
+      const source = readFileSync(join(DIST_ASSETS, asset), 'utf8')
+      const importsGroupedIcons = source.includes('./pixel-art-icons-')
+      const looksLikeIconBody = source.includes('viewBox')
+      return !importsGroupedIcons && looksLikeIconBody
+    })
 
     expect(individualIconChunks).toEqual([])
   })

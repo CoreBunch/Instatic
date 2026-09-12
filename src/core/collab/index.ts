@@ -29,6 +29,11 @@ export {
   treeMap,
 } from './schema'
 export { reconcileTreeIntegrity } from './integrity'
+export {
+  buildSiteFileEntry,
+  buildSiteFilesMap,
+  siteFileContentText,
+} from './filesY'
 export { applyTextDiff } from './textDiff'
 export {
   decodeCollabFrame,

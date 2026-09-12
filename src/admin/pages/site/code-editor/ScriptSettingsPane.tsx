@@ -50,6 +50,11 @@ export function ScriptSettingsPane({ file }: ScriptSettingsPaneProps) {
 
   return (
     <aside className={styles.pane} aria-label="Script runtime settings">
+      <p className={styles.placementHint}>
+        Frontend scripts are standalone page JavaScript. Browser code that
+        calls a site plugin’s backend belongs in that plugin’s{' '}
+        <code>frontend/</code> assets instead.
+      </p>
       <div className={styles.header}>
         <span className={styles.title}>Runtime</span>
         <Button

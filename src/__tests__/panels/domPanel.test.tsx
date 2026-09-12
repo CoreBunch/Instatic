@@ -527,28 +527,29 @@ describe('DomPanel — open container group highlight', () => {
     fireEvent.click(rootItem)
 
     const containerWrapper = document.querySelector('[data-node-id="container-1"]')
-    expect(containerWrapper?.getAttribute('data-open-container-group')).toBeNull()
+    expect(containerWrapper?.getAttribute('data-tree-group-open')).toBeNull()
 
     const containerItem = screen.getByRole('treeitem', { name: /container/i })
     fireEvent.click(containerItem)
 
-    expect(containerWrapper?.getAttribute('data-open-container-group')).toBe('true')
+    expect(containerWrapper?.getAttribute('data-tree-group-open')).toBe('true')
   })
 
-  it('styles open container groups with a rounded background on the wrapper', () => {
+  it('paints open container groups through the shared TreeGroup primitive', () => {
     const source = readFileSync(TREE_NODE_SOURCE_PATH, 'utf8')
     const rowCss = readFileSync(TREE_ROW_CSS_PATH, 'utf8')
-    const css = readFileSync(TREE_NODE_CSS_PATH, 'utf8')
 
-    expect(source).toContain('styles.openContainerGroup')
-    expect(css).toContain('.openContainerGroup')
+    // The wrapper IS the primitive: no panel-local group styling.
+    expect(source).toContain('<TreeGroup')
+    expect(source).toContain('open={isOpenContainerGroup}')
+    expect(source).not.toContain('styles.openContainerGroup')
 
     const rowBlock = rowCss.match(/\.row\s*\{[^}]*\}/s)?.[0] ?? ''
-    const block = css.match(/\.openContainerGroup\s*\{[^}]*\}/s)?.[0] ?? ''
-    expect(block).toContain('background:')
+    const groupBlock = rowCss.match(/\.group\s*\{[^}]*\}/s)?.[0] ?? ''
+    const openBlock = rowCss.match(/\.groupOpen\s*\{[^}]*\}/s)?.[0] ?? ''
     expect(rowBlock).toMatch(/border-radius:\s*8px/)
-    expect(block).toMatch(/border-radius:\s*8px/)
-    expect(block).not.toContain('18px')
+    expect(groupBlock).toMatch(/border-radius:\s*8px/)
+    expect(openBlock).toContain('background:')
   })
 
   it('moves the open group highlight when selecting a different expanded container', () => {
@@ -563,13 +564,13 @@ describe('DomPanel — open container group highlight', () => {
     const containerItems = screen.getAllByRole('treeitem', { name: /container/i })
     fireEvent.click(containerItems[0])
 
-    expect(firstWrapper?.getAttribute('data-open-container-group')).toBe('true')
-    expect(secondWrapper?.getAttribute('data-open-container-group')).toBeNull()
+    expect(firstWrapper?.getAttribute('data-tree-group-open')).toBe('true')
+    expect(secondWrapper?.getAttribute('data-tree-group-open')).toBeNull()
 
     fireEvent.click(containerItems[1])
 
-    expect(firstWrapper?.getAttribute('data-open-container-group')).toBeNull()
-    expect(secondWrapper?.getAttribute('data-open-container-group')).toBe('true')
+    expect(firstWrapper?.getAttribute('data-tree-group-open')).toBeNull()
+    expect(secondWrapper?.getAttribute('data-tree-group-open')).toBe('true')
   })
 })
 

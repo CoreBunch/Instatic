@@ -129,31 +129,48 @@ export async function handlePluginItem(
 
   if (req.method === 'DELETE') {
     const force = new URL(req.url).searchParams.get('force') === 'true'
-    const lookup = await getInstalledPlugin(db, pluginId)
-    if (!lookup) return pluginNotFound()
-
-    // Lifecycle hooks run only on the normal path with a parseable manifest:
-    // `?force=true` is the operator's escape hatch for a throwing or
-    // unloadable hook, and a corrupt manifest has no valid plugin to run
-    // hooks on. Both skip straight to teardown.
-    if (!force && lookup.kind === 'ok') {
-      let current = lookup.plugin
-      // Uninstall contract: "(if active) deactivate → uninstall". Run
-      // deactivate first so the plugin tears down its active-state
-      // resources before the uninstall hook does its permanent cleanup.
-      if (current.lifecycleStatus === 'active') {
-        const deactivated = await runPluginLifecycleHook(db, current, options, 'deactivate', 'disabled')
-        if (!deactivated.ok) return uninstallHookFailure('deactivate', deactivated.plugin)
-        current = deactivated.plugin
-      }
-      const uninstalled = await runPluginLifecycleHook(db, current, options, 'uninstall', current.lifecycleStatus)
-      if (!uninstalled.ok) return uninstallHookFailure('uninstall', uninstalled.plugin)
-    }
-
-    return removePluginCompletely(req, db, options, user, pluginId, force)
+    return uninstallPluginById(req, db, options, user, pluginId, force)
   }
 
   return methodNotAllowed()
+}
+
+/**
+ * The full uninstall path — lifecycle hooks (unless forced or the manifest
+ * is corrupt) followed by complete teardown. Shared by the plugin DELETE
+ * route above and the site plugin delete route (which additionally removes
+ * the draft source folder).
+ */
+export async function uninstallPluginById(
+  req: Request,
+  db: DbClient,
+  options: CmsHandlerOptions,
+  user: AuthUser,
+  pluginId: string,
+  force: boolean,
+): Promise<Response> {
+  const lookup = await getInstalledPlugin(db, pluginId)
+  if (!lookup) return pluginNotFound()
+
+  // Lifecycle hooks run only on the normal path with a parseable manifest:
+  // `?force=true` is the operator's escape hatch for a throwing or
+  // unloadable hook, and a corrupt manifest has no valid plugin to run
+  // hooks on. Both skip straight to teardown.
+  if (!force && lookup.kind === 'ok') {
+    let current = lookup.plugin
+    // Uninstall contract: "(if active) deactivate → uninstall". Run
+    // deactivate first so the plugin tears down its active-state
+    // resources before the uninstall hook does its permanent cleanup.
+    if (current.lifecycleStatus === 'active') {
+      const deactivated = await runPluginLifecycleHook(db, current, options, 'deactivate', 'disabled')
+      if (!deactivated.ok) return uninstallHookFailure('deactivate', deactivated.plugin)
+      current = deactivated.plugin
+    }
+    const uninstalled = await runPluginLifecycleHook(db, current, options, 'uninstall', current.lifecycleStatus)
+    if (!uninstalled.ok) return uninstallHookFailure('uninstall', uninstalled.plugin)
+  }
+
+  return removePluginCompletely(req, db, options, user, pluginId, force)
 }
 
 /**

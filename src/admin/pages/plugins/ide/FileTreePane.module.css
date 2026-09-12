@@ -1,0 +1,75 @@
+/* The Panel shell owns chrome + background (transparent over the sidebar's
+   black) — this module only lays out the tree body. */
+
+.body {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+/* Same inset as the Layers panel's tree area: rows keep a gap from the
+   panel's right edge so their hover and selection paint stays rounded. */
+.tree {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: var(--space-xs) var(--space-s) var(--space-xs) 0;
+}
+
+/* Same reset the Site Explorer applies to its row buttons — the TreeRow
+   owns hover/selection paint; the button is a transparent hit surface. */
+.treeRowButton {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  padding: 0;
+  gap: var(--space-4xs);
+  border-radius: 0;
+  background: transparent;
+  color: inherit;
+  font-size: inherit;
+  font-weight: inherit;
+  justify-content: flex-start;
+  text-align: left;
+}
+
+.treeRowButton:hover,
+.treeRowButton:active {
+  background: transparent;
+}
+
+/* Folder chevrons sit at the end of the row: files and folders at one depth
+   then share the same left edge (icon, then name). */
+.chevronEnd {
+  margin-left: auto;
+}
+
+.rowPeers {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-px);
+  margin-left: auto;
+  padding-right: var(--space-xs);
+}
+
+.titleContent {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--space-xs);
+  min-width: 0;
+}
+
+.titleName {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.titleVersion {
+  opacity: 0.5;
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  font-weight: 400;
+  white-space: nowrap;
+}
