@@ -32,6 +32,7 @@ STATIC_DIR    built admin SPA directory; /app/dist in the Docker image
 INSTATIC_SECRET_KEY  base64 32-byte key for encrypted server secrets
 PUBLIC_ORIGIN        comma-separated public origin(s) the CSRF check trusts; auto-detected from RENDER_EXTERNAL_URL / RAILWAY_PUBLIC_DOMAIN on those platforms
 TRUSTED_PROXY_CIDRS  optional; trusts proxy socket peers for forwarded client-IP attribution only (audit logs, rate-limit keys) — NOT used for CSRF
+NPM_REGISTRY_URL     optional; registry for the Dependencies panel, the dependency resolver and runtime installs (default https://registry.npmjs.org); set it for a private registry or corporate mirror
 ```
 
 Generate `INSTATIC_SECRET_KEY` with `bun run scripts/generate-secret-key.ts` before adding Anthropic, OpenAI, or OpenRouter credentials or enabling TOTP MFA in production. Without it, the admin can load but saving reversible secrets fails because there is no stable encryption key.

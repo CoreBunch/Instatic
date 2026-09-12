@@ -1,0 +1,62 @@
+.row {
+    display: flex;
+    align-items: center;
+    gap: var(--space-s);
+    width: 100%;
+}
+
+.row > :last-child {
+    margin-left: auto;
+}
+
+.versionSelect {
+    flex: 1;
+    min-width: 0;
+}
+
+.installedPill {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-3xs);
+    height: 26px;
+    padding: 0 var(--space-s);
+    border-radius: var(--input-radius);
+    background: var(--success-10);
+    color: var(--success-text-muted);
+    font-size: var(--text-2xs);
+    font-family: var(--font-mono);
+    font-weight: 600;
+    white-space: nowrap;
+}
+
+.devTag {
+    margin-left: var(--space-3xs);
+    padding: 0 var(--space-2xs);
+    border-radius: var(--radius-sm);
+    background: var(--overlay-10);
+    color: var(--text-muted);
+    font-family: var(--font-sans);
+    font-size: var(--text-3xs);
+    font-weight: 700;
+}
+
+.stack {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-s);
+    width: 100%;
+}
+
+.errorRow {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--space-2xs);
+    color: var(--danger-text);
+    font-size: var(--text-2xs);
+    line-height: 1.4;
+}
+
+.errorText {
+    min-width: 0;
+    overflow-wrap: anywhere;
+}

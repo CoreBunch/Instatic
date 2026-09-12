@@ -4,6 +4,7 @@ import { mkdir, rename, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import type { SiteDependencyLock } from '@core/site-runtime'
+import { isPublicNpmRegistry, npmRegistryUrl } from '../../registry/config'
 
 export interface RuntimeDependencyCache {
   hash: string
@@ -214,12 +215,16 @@ async function performInstall(
     const timer = setTimeout(() => abort.abort(), installTimeoutMs)
     try {
       const command = [options.bunExecutable ?? process.execPath, 'install', '--ignore-scripts']
+      // The same registry the resolver read metadata from — a private mirror
+      // configured through NPM_REGISTRY_URL must also serve the tarballs.
+      const registryUrl = npmRegistryUrl()
       await (options.runInstall ?? defaultRunInstall)(command, {
         cwd: tempDir,
         env: {
           PATH: process.env.PATH ?? '',
           HOME: process.env.HOME ?? '',
           BUN_CONFIG_IGNORE_SCRIPTS: '1',
+          ...(isPublicNpmRegistry(registryUrl) ? {} : { NPM_CONFIG_REGISTRY: registryUrl }),
         },
         signal: abort.signal,
       })

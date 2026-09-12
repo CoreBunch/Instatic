@@ -14,7 +14,7 @@ import { ReloadIcon } from 'pixel-art-icons/icons/reload'
 import { UploadIcon } from 'pixel-art-icons/icons/upload'
 import { FloatingWindow } from '@admin/shared/FloatingWindow'
 import type { UploadItem, UseUploadQueueResult } from '../../hooks/useUploadQueue'
-import { formatBytes } from '../../utils/formatBytes'
+import { formatBytes } from '@admin/lib/formatBytes'
 import styles from './UploadQueueWindow.module.css'
 
 interface UploadQueueWindowProps {

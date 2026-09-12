@@ -128,10 +128,11 @@ describe('readServerConfig', () => {
       staticDir: './dist',
       trustedProxyCidrs: [],
       publicOrigins: [],
+      npmRegistryUrl: 'https://registry.npmjs.org',
     })
   })
 
-  it('reads runtime paths, port, trusted proxies, and public origins from env', () => {
+  it('reads runtime paths, port, trusted proxies, public origins, and the registry from env', () => {
     expect(
       readServerConfig({
         PORT: '4321',
@@ -144,6 +145,7 @@ describe('readServerConfig', () => {
         PUBLIC_ORIGIN: 'https://CMS.example.com/, http://localhost:5173',
         RENDER_EXTERNAL_URL: 'https://ignored.onrender.com',
         RAILWAY_PUBLIC_DOMAIN: 'ignored.up.railway.app',
+        NPM_REGISTRY_URL: 'https://npm.example.com/registry/',
       }),
     ).toEqual({
       port: 4321,
@@ -154,6 +156,7 @@ describe('readServerConfig', () => {
       staticDir: '/srv/instatic/dist',
       trustedProxyCidrs: ['10.0.0.0/8', '192.168.0.0/16'],
       publicOrigins: ['https://cms.example.com', 'http://localhost:5173'],
+      npmRegistryUrl: 'https://npm.example.com/registry',
     })
   })
 })

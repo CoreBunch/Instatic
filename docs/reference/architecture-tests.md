@@ -19,7 +19,7 @@ Catalog of every test in `src/__tests__/architecture/`. These are structural gat
 
 | Test                                          | What it enforces                                                                 |
 |-----------------------------------------------|----------------------------------------------------------------------------------|
-| `no-core-barrel-deep-imports.test.ts`         | External callers import through the barrel, never through a concrete internal path (`@core/<module>/<file>`). Files inside a module are exempt — they use relative paths. Enforced for: `@core/page-tree`, `@core/module-engine`, `@core/visualComponents`, `@core/publisher`, `@core/framework`, `@core/framework-schema`, `@core/fonts`. |
+| `no-core-barrel-deep-imports.test.ts`         | External callers import through the barrel, never through a concrete internal path (`@core/<module>/<file>`). Files inside a module are exempt — they use relative paths. Enforced for: `@core/page-tree`, `@core/module-engine`, `@core/visualComponents`, `@core/publisher`, `@core/framework`, `@core/framework-schema`, `@core/fonts`, `@core/collab`, `@core/registry`. |
 
 See [CLAUDE.md → Barrel imports](../../CLAUDE.md) and [docs/reference/page-tree.md](page-tree.md).
 
