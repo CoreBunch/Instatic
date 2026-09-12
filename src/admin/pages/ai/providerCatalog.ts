@@ -1,4 +1,4 @@
-export type ProviderId = 'anthropic' | 'openai' | 'openrouter' | 'ollama' | 'openai-compatible'
+export type ProviderId = 'anthropic' | 'openai' | 'openrouter' | 'requesty' | 'ollama' | 'openai-compatible'
 export type ProviderAuthMode = 'apiKey' | 'baseUrl'
 
 export interface ProviderSpec {
@@ -34,6 +34,14 @@ export const PROVIDER_SPECS: ProviderSpec[] = [
     description: 'Route requests to models from multiple providers through one API.',
     authMode: 'apiKey',
     endpointLabel: 'openrouter.ai',
+  },
+  {
+    id: 'requesty',
+    label: 'Requesty',
+    shortLabel: 'Multi-provider models',
+    description: 'Route requests to models from multiple providers through one OpenAI-compatible API.',
+    authMode: 'apiKey',
+    endpointLabel: 'router.requesty.ai',
   },
   {
     id: 'ollama',
