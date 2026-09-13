@@ -87,7 +87,24 @@ then the sharp `.node` — because the Windows loader resolves by-name imports
 from already-loaded modules but never searches a loaded DLL's own directory.
 The C++ DLL is loaded via `kernel32.LoadLibraryW` rather than `bun:ffi`'s
 `dlopen`: it exports only C++-mangled names, which cannot appear in the C
-wrapper `bun:ffi` generates per requested symbol.
+wrapper `bun:ffi` generates per requested symbol. jsdom and one of its
+dependencies resolve their own files at runtime, which works in dev and fails on
+boot inside the binary: jsdom reads `default-stylesheet.css` through `__dirname`
+and resolves its synchronous-XHR worker with `require.resolve` (a compiled
+binary bakes both as the build machine's absolute paths), and css-tree's ESM
+build loads its data through `createRequire(import.meta.url)` (which resolves
+against `/$bunfs`). `scripts/lib/serverArtifactPlugins.ts` inlines the
+stylesheet, drops the worker (the server never issues synchronous XHR), and
+routes `css-tree` to its CJS build, whose requires the bundler embeds.
+`scripts/lib/serverArtifactPlugins.test.ts` compiles the production sanitizer,
+checks the binary for the build machine's `node_modules` path, and boots it
+with `node_modules` reads denied, so a regression fails `bun test` rather than
+a release. esbuild, which the publisher runs at publish time, spawns a Go
+binary it locates relative to `__dirname`; the artifact embeds the target's
+binary, extracts it at boot to a per-version temp directory
+(`scripts/lib/serverArtifactRuntime.ts`), and points `ESBUILD_BINARY_PATH` at
+it. The compile itself fails if the finished binary still contains the build
+machine's `node_modules` path.
 
 Release notes should link to:
 

@@ -19,7 +19,7 @@
  *
  * All scanned files must use dialect-neutral SQL only:
  *
- *   - `current_timestamp` instead of `now()`
+ *   - No `now()` — timestamps are bound from `nowIso()` (see `db-timestamp-writes.test.ts`)
  *   - No `::int` or `::jsonb` PG casts
  *   - No `any($N::...)` PG array-binding syntax
  *   - No `distinct on` (use a window-function subquery for SQLite compat)
@@ -30,7 +30,7 @@
  *
  * @see server/db/migrations-pg.ts   — Postgres dialect migrations
  * @see server/db/migrations-sqlite.ts — SQLite dialect translations
- * @see server/db/sqlite.ts          — why _json suffix matters (parseJsonColumns)
+ * @see server/db/sqlite.ts          — why _json suffix matters (normalizeSqliteRow)
  */
 
 import { describe, test, expect } from 'bun:test'
@@ -110,9 +110,9 @@ interface ForbiddenPattern {
 
 const FORBIDDEN_PATTERNS: ForbiddenPattern[] = [
   {
-    // `now()` is Postgres-specific; SQLite uses `current_timestamp` (no parens).
+    // `now()` is Postgres-specific; repositories bind `nowIso()` from JS instead.
     // Exclude lines that contain `Date.now()` — that is JS, not SQL.
-    name: 'now() in SQL — use current_timestamp instead',
+    name: 'now() in SQL — bind nowIso() instead',
     regex: /\bnow\(\)/,
     lineExclusion: /\bDate\.now\(\)/,
   },

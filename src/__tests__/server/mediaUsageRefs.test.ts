@@ -130,7 +130,7 @@ async function replayMigration(db: Awaited<ReturnType<typeof freshDb>>, id: stri
   await db.unsafe(migration.sql)
 }
 
-const BACKFILL = '028_backfill_avatar_usage_refs'
+const BACKFILL = '032_backfill_avatar_usage_refs'
 
 describe('the avatar backfill', () => {
   it('protects an avatar that was set before anything recorded usage', async () => {

@@ -19,6 +19,7 @@ import { normalizeSiteRuntimeConfig } from '@core/site-runtime'
 import { createTestDb } from '../helpers/createTestDb'
 import { saveDraftSite } from '../../../server/repositories/site'
 import { createDataRow, saveDataRowDraft } from '../../../server/repositories/data'
+import { MAIN_SCOPE } from '../../../server/branches/scope'
 import { pageToCells } from '../../../src/core/data/pageFromRow'
 import { collectContentUsageRefs } from '../../../server/media/contentUsage'
 
@@ -94,7 +95,7 @@ async function seedPage(
   db: Awaited<ReturnType<typeof freshDb>>,
   page: ReturnType<typeof pageWith>,
 ) {
-  await createDataRow(db, {
+  await createDataRow(db, MAIN_SCOPE, {
     id: page.id,
     tableId: 'pages',
     cells: pageToCells(page as never),
@@ -105,7 +106,7 @@ async function seedPage(
 describe('media used by page content', () => {
   it('names the page an image sits on', async () => {
     const db = await freshDb()
-    await saveDraftSite(db, siteShell())
+    await saveDraftSite(db, MAIN_SCOPE, siteShell())
     await seedPage(db, pageWith('page_home', 'Home', 'index', HERO_PATH))
 
     const refs = await collectContentUsageRefs(db, ['a1'])
@@ -117,7 +118,7 @@ describe('media used by page content', () => {
 
   it('reports nothing for a file no page references', async () => {
     const db = await freshDb()
-    await saveDraftSite(db, siteShell())
+    await saveDraftSite(db, MAIN_SCOPE, siteShell())
     await seedPage(db, pageWith('page_home', 'Home', 'index', HERO_PATH))
 
     expect(await collectContentUsageRefs(db, ['a2'])).toEqual([])
@@ -125,7 +126,7 @@ describe('media used by page content', () => {
 
   it('names every page, because every one of them breaks', async () => {
     const db = await freshDb()
-    await saveDraftSite(db, siteShell())
+    await saveDraftSite(db, MAIN_SCOPE, siteShell())
     await seedPage(db, pageWith('page_home', 'Home', 'index', HERO_PATH))
     await seedPage(db, pageWith('page_about', 'About us', 'about', HERO_PATH))
 
@@ -139,11 +140,11 @@ describe('media used by page content', () => {
     // would still be pointing at this page — and the warning would send the
     // operator to fix something that is already fine.
     const db = await freshDb()
-    await saveDraftSite(db, siteShell())
+    await saveDraftSite(db, MAIN_SCOPE, siteShell())
     await seedPage(db, pageWith('page_home', 'Home', 'index', HERO_PATH))
     expect(await collectContentUsageRefs(db, ['a1'])).toHaveLength(1)
 
-    await saveDataRowDraft(db, 'page_home', {
+    await saveDataRowDraft(db, MAIN_SCOPE, 'page_home', {
       cells: pageToCells(pageWith('page_home', 'Home', 'index', null) as never),
       slug: 'index',
     }, 'admin_1')
@@ -156,7 +157,7 @@ describe('media used by page content', () => {
     // break the page the moment it goes live. Reading published artefacts
     // instead of the draft document would have missed exactly this.
     const db = await freshDb()
-    await saveDraftSite(db, siteShell())
+    await saveDraftSite(db, MAIN_SCOPE, siteShell())
     await seedPage(db, pageWith('page_draft', 'Not yet live', 'soon', HERO_PATH))
 
     const refs = await collectContentUsageRefs(db, ['a1'])
@@ -166,7 +167,7 @@ describe('media used by page content', () => {
 
   it('answers for a whole selection in one call', async () => {
     const db = await freshDb()
-    await saveDraftSite(db, siteShell())
+    await saveDraftSite(db, MAIN_SCOPE, siteShell())
     await seedPage(db, pageWith('page_home', 'Home', 'index', HERO_PATH))
 
     const refs = await collectContentUsageRefs(db, ['a1', 'a2'])

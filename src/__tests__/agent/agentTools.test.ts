@@ -1,6 +1,7 @@
 import { describe, expect, it, beforeAll } from 'bun:test'
 import type { SiteAgentSnapshot } from '@site/agent/siteAgentSnapshot'
 import type { AiTool, ToolContext } from '../../../server/ai/runtime/types'
+import { MAIN_SCOPE } from '../../../server/branches/scope'
 import { makePage, makeSite } from '../publisher/helpers'
 import type { VisualComponent } from '@core/visualComponents'
 
@@ -104,6 +105,7 @@ describe('site read tools', () => {
         rows: [
           {
             id: 'tbl_posts',
+            logical_id: 'tbl_posts',
             name: 'Posts',
             slug: 'posts',
             kind: 'postType',
@@ -125,6 +127,7 @@ describe('site read tools', () => {
           },
         ],
       }),
+      branch: MAIN_SCOPE,
     } as unknown as ToolContext
 
     const result = (await tool.handler!({}, ctx)) as {

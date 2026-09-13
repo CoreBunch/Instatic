@@ -15,6 +15,7 @@
  * around inside the repo so the type system doesn't lie about contents.
  */
 import type { DbClient } from '../db/client'
+import { nowIso } from '@core/utils/isoDate'
 
 interface UserPreferenceRow {
   value_json: unknown
@@ -63,12 +64,13 @@ export async function upsertUserPreferenceRow(
   key: string,
   value: unknown,
 ): Promise<void> {
+  const now = nowIso()
   await db`
     insert into user_preferences (user_id, key, value_json, updated_at)
-    values (${userId}, ${key}, ${value}, current_timestamp)
+    values (${userId}, ${key}, ${value}, ${now})
     on conflict (user_id, key) do update
       set value_json = excluded.value_json,
-          updated_at = current_timestamp
+          updated_at = ${now}
   `
 }
 

@@ -232,6 +232,7 @@ These are admin tokens. The published-site Framework engine also emits short spa
 | `--panel-radius`     | 12px  | Floating overlay panels (Spotlight, modals, popovers)        |
 | `--card-radius`      | 16px  | Borderless tile cards (Widget, dashboard cells, module inserter tiles) |
 | `--input-radius`     | 1em   | Pill-shaped inputs, classes / property chips                 |
+| `--radius-pill`      | 999px | Fully round dots, badges, and handles                        |
 | `--tooltip-radius`   | 6px   | Tooltips                                                     |
 
 Do not introduce ad-hoc radius values. Tile-card surfaces use `--card-radius`.

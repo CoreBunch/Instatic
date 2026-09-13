@@ -59,6 +59,7 @@ export function ConfirmDeleteProvider({ children }: { children: ReactNode }) {
           description={pending.request.description}
           confirmLabel={pending.request.confirmLabel}
           details={pending.request.details}
+          tone={pending.request.tone}
           onCancel={handleCancel}
           onConfirm={handleConfirm}
         />

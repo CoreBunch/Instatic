@@ -33,6 +33,7 @@
  */
 
 import { Type, type Static } from '@core/utils/typeboxHelpers'
+import { BRANCH_ID_PATTERN } from '@core/branches'
 import { DataTableSchema, DataRowSchema, DataTableKindSchema } from './schemas'
 import { SiteShellSchema } from '@core/page-tree'
 
@@ -207,6 +208,11 @@ export const ExportRequestSchema = Type.Object({
   includeMediaFolders: Type.Optional(Type.Boolean()),
   /** Include published-URL redirects (old route → row). Default true. */
   includeRedirects: Type.Optional(Type.Boolean()),
+  /**
+   * Site branch to export. The download is a form POST, which cannot carry
+   * the branch header every other admin request uses. Omit for main.
+   */
+  branchId: Type.Optional(Type.String({ pattern: BRANCH_ID_PATTERN.source })),
 })
 
 export type ExportRequest = Static<typeof ExportRequestSchema>

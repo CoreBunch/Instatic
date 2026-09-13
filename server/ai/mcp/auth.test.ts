@@ -15,6 +15,7 @@ import {
   exchangeAuthorizationCode,
   registerOAuthClient,
 } from './oauth/store'
+import { nowIso } from '@core/utils/isoDate'
 
 async function freshDb(): Promise<DbClient> {
   const db = createSqliteClient(':memory:')
@@ -60,7 +61,7 @@ describe('mcp auth', () => {
     const rec = await createBearerConnection(db, {
       userId: 'u1', label: 'L', capabilities: ['ai.chat'], tokenHash: await hashMcpSecret(token),
     })
-    await db`update ai_mcp_connectors set revoked_at = current_timestamp where id = ${rec.id}`
+    await db`update ai_mcp_connectors set revoked_at = ${nowIso()} where id = ${rec.id}`
     const req = new Request('http://x/_instatic/mcp', { headers: { Authorization: `Bearer ${token}` } })
     expect((await resolveMcpAuth(req, db)).ok).toBe(false)
   })

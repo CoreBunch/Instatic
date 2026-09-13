@@ -32,6 +32,7 @@
  */
 import { existsSync } from 'node:fs'
 import { resolve as resolvePath } from 'node:path'
+import { isPathWithin } from '../../util/pathWithin'
 import { nodeModulesDirForHash, sentinelPathForHash } from './dependencyCache'
 
 const RUNTIME_PACKAGE_PREFIX = '/_instatic/runtime/cache/'
@@ -76,8 +77,10 @@ function resolveCacheFilePath(pathname: string): { hash: string; absPath: string
   const absPath = resolvePath(nodeModulesDir, subPath)
 
   // Final containment check — the resolved path must live inside
-  // node_modules/. Any escape attempt returns null.
-  if (!absPath.startsWith(`${nodeModulesDir}/`)) return null
+  // node_modules/. Any escape returns null. Decided by `relative()`, not a
+  // string prefix: a hard-coded `/` rejected every legitimate path on Windows
+  // (GHSA-hwp9), where `resolvePath` yields `\` separators.
+  if (!isPathWithin(nodeModulesDir, absPath)) return null
 
   return { hash, absPath }
 }

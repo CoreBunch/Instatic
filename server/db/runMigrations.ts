@@ -1,4 +1,5 @@
 import type { DbClient } from './client'
+import { nowIso } from '@core/utils/isoDate'
 
 export interface Migration {
   id: string
@@ -54,7 +55,7 @@ export async function runMigrations(db: DbClient, migrations: Migration[]): Prom
         // required because tagged templates cannot accept a runtime string value,
         // and multi-statement batches are not supported by the parameterised path.
         await tx.unsafe(migration.sql)
-        await tx`insert into schema_migrations (id) values (${migration.id})`
+        await tx`insert into schema_migrations (id, applied_at) values (${migration.id}, ${nowIso()})`
       })
       if (migration.disableForeignKeys) {
         // The rebuild ran unenforced — prove referential integrity before

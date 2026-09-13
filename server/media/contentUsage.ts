@@ -36,6 +36,7 @@ import '@modules/base'
 import { registry } from '@core/module-engine'
 import { collectSiteStyleBackgroundImagePaths } from '@core/publisher'
 import { placeholder, type DbClient } from '../db/client'
+import { MAIN_SCOPE } from '../branches/scope'
 import { getDraftSiteDocument } from '../repositories/publish'
 import { collectPageMediaPaths } from '../publish/mediaPrefetch'
 import type { MediaUsageRef } from '../repositories/media'
@@ -86,7 +87,7 @@ export async function collectContentUsageRefs(
   const assetIdByPath = await pathsForAssetIds(db, assetIds)
   if (assetIdByPath.size === 0) return []
 
-  const site = await getDraftSiteDocument(db)
+  const site = await getDraftSiteDocument(db, MAIN_SCOPE)
   if (!site) return []
 
   const refs: MediaUsageRef[] = []

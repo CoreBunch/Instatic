@@ -18,6 +18,7 @@ import { hookBus } from '@core/plugins/hookBus'
 import type { ContentEntryActor } from '@core/plugin-sdk'
 import type { DataRow, DataTable } from '@core/data/schemas'
 import type { DbClient } from '../../db/client'
+import type { BranchScope } from '../../branches/scope'
 import { getDataRow, getDataTable, saveDataRowDraft } from '../../repositories/data'
 import { applyContentEntryCellsFilter } from '../../publish/contentEvents'
 
@@ -28,12 +29,13 @@ export interface PageTreeAccessOptions {
 
 async function resolvePageTreeField(
   db: DbClient,
+  scope: BranchScope,
   entryId: string,
   fieldId: string,
 ): Promise<{ row: DataRow; table: DataTable }> {
-  const row = await getDataRow(db, entryId)
+  const row = await getDataRow(db, scope, entryId)
   if (!row) throw new Error(`Entry "${entryId}" not found`)
-  const table = await getDataTable(db, row.tableId)
+  const table = await getDataTable(db, scope, row.tableId)
   if (!table) throw new Error(`Table for entry "${entryId}" missing`)
   const field = table.fields.find((f) => f.id === fieldId)
   if (!field) throw new Error(`Field "${fieldId}" not found on table "${table.slug}"`)
@@ -52,24 +54,26 @@ function actorToSaveArgs(actor: ContentEntryActor): { actorUserId: string | null
 
 export async function readPageTree(
   db: DbClient,
+  scope: BranchScope,
   entryId: string,
   fieldId: string,
   options: PageTreeAccessOptions = {},
 ): Promise<unknown> {
-  const { row, table } = await resolvePageTreeField(db, entryId, fieldId)
+  const { row, table } = await resolvePageTreeField(db, scope, entryId, fieldId)
   options.assertAccess?.(table)
   return row.cells[fieldId] ?? null
 }
 
 export async function mutatePageTree(
   db: DbClient,
+  scope: BranchScope,
   entryId: string,
   fieldId: string,
   operations: readonly TreeOperation[],
   actor: ContentEntryActor,
   options: PageTreeAccessOptions = {},
 ): Promise<{ tree: unknown; affectedNodeIds: string[] }> {
-  const { row, table } = await resolvePageTreeField(db, entryId, fieldId)
+  const { row, table } = await resolvePageTreeField(db, scope, entryId, fieldId)
   options.assertAccess?.(table)
 
   const initial = row.cells[fieldId]
@@ -94,6 +98,7 @@ export async function mutatePageTree(
   const { actorUserId, pluginActorId } = actorToSaveArgs(actor)
   const updated = await saveDataRowDraft(
     db,
+    scope,
     entryId,
     { cells: nextCells, slug: row.slug },
     actorUserId,

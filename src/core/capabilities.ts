@@ -28,6 +28,13 @@ export const CORE_CAPABILITIES = [
   'site.structure.edit',
   'site.content.edit',
   'site.style.edit',
+  // Branches. `create` forks a branch and covers the branches the user
+  // forked: rename, delete, update from main, share and revoke a preview
+  // link. `manage` covers every branch, plus merging into main and declining
+  // a merge request; it does not fork on its own. Listing and switching
+  // branches only need `site.read`.
+  'site.branches.create',
+  'site.branches.manage',
   'pages.edit',
   'pages.publish',
   'content.create',

@@ -28,6 +28,8 @@ interface ConfirmDeleteDialogProps {
   details?: ReactNode
   onCancel: () => void
   onConfirm: () => void
+  /** `danger` (default) or `primary`; see `ConfirmDeleteRequest.tone`. */
+  tone?: 'danger' | 'primary'
 }
 
 export function ConfirmDeleteDialog({
@@ -38,6 +40,7 @@ export function ConfirmDeleteDialog({
   details,
   onCancel,
   onConfirm,
+  tone = 'danger',
 }: ConfirmDeleteDialogProps) {
   const confirmRef = useRef<HTMLButtonElement>(null)
 
@@ -60,7 +63,7 @@ export function ConfirmDeleteDialog({
     <Dialog
       open
       onClose={onCancel}
-      tone="danger"
+      tone={tone === 'danger' ? 'danger' : undefined}
       title={title}
       size="sm"
       initialFocusRef={confirmRef}
@@ -71,7 +74,7 @@ export function ConfirmDeleteDialog({
           </Button>
           <Button
             ref={confirmRef}
-            variant="destructive"
+            variant={tone === 'danger' ? 'destructive' : 'primary'}
             size="sm"
             type="button"
             onClick={onConfirm}

@@ -16,6 +16,7 @@ import { contentProvider } from '../providers/contentProvider'
 import { mediaProvider } from '../providers/mediaProvider'
 import { dataProvider } from '../providers/dataProvider'
 import { pluginPagesProvider } from '../providers/pluginPagesProvider'
+import { branchesProvider } from '../providers/branchesProvider'
 
 export const rootScope: Scope = {
   id: 'root',
@@ -27,5 +28,6 @@ export const rootScope: Scope = {
     mediaProvider,
     dataProvider,
     pluginPagesProvider,
+    branchesProvider,
   ],
 }

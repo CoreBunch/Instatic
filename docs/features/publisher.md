@@ -207,8 +207,11 @@ userStyles-<hash>.css  = collectUserStylesheetCss(site, page)      ← author st
 ```
 
 `styleRuleTreeShake.ts` computes the site-wide used class-id set once across
-page and Visual Component trees. A class rule emits only when its id is used
-and every known class dependency in its preserved selector is used. Ambient
+page and Visual Component trees, plus every class rule whose name appears
+literally in a `type: 'script'` site file (a modifier a script toggles is never
+assigned to a node; see `docs/features/site-import.md`). A class rule emits
+only when its id is used and every known class dependency in its preserved
+selector is used. Ambient
 selector fragments emit when at least one selector-list alternative has all of
 its known class dependencies in use; class-free selectors and supported raw
 blocks stay conservative. The editor canvas calls the same selector and
@@ -382,6 +385,8 @@ Because `serializeCsp` sorts, the same plugins + adapters always emit a **byte-i
 | File                                            | Role                                                                |
 |-------------------------------------------------|---------------------------------------------------------------------|
 | `server/publish/publicRouter.ts`                | Gateway: Layer A disk fast-path → Layer B LRU → live `resolvePublicRoute` + `renderPublicResolution`. |
+| `server/publish/publicRoutes.ts`                | Dispatcher tail: `tryServeBranchPreviewLink` (preview cookie in/out), `tryServePublicRoute` (a live preview cookie → `renderBranchPreview`, otherwise `renderPublicResolution`), setup redirect, 404 page. |
+| `server/publish/branchPreview.ts`               | Render a public URL from a branch's DRAFT for preview-link visitors: same composition as the editor's runtime preview (inline CSS, loops on the branch, on-demand runtime bundles kept in `branchPreviewAssets.ts`, plugin frontend injections, no publish hooks), `no-store` + `noindex`, with a banner. |
 | `server/publish/staticArtefact.ts`              | Two-slot pointer-file swap (`swapSlot`), per-file atomic writes (`writeArtefact`, `updateArtefactInPlace`), and reads (`readArtefact`). Layer A. |
 | `server/publish/renderCache.ts`                 | In-memory LRU keyed by `(urlPath, canonicalQuery)`, entries versioned. `getOrRender` (single-flight). Reads the version from `publishState`; version captured at render start — a publish landing mid-render discards the result rather than caching stale HTML. Layer B. |
 | `server/publish/publishState.ts`                | Publish-time process state: `publishVersion` (`bumpPublishVersion`/`getPublishVersion`), `withPublishLock` (ISS-038 publish serializer), and `createVersionedSingleFlight` — the generalized version-keyed single-flight memo the hole endpoint reuses. Repositories import the version + lock from here (not from the cache). |
