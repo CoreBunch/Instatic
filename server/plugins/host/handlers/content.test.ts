@@ -16,6 +16,7 @@ import { sqliteMigrations } from '../../../db/migrations-sqlite'
 import { runMigrations } from '../../../db/runMigrations'
 import type { DbClient } from '../../../db/client'
 import { getDataTableBySlug, getDataRowBySlug } from '../../../repositories/data'
+import { MAIN_SCOPE } from '../../../branches/scope'
 import type { DataTable } from '@core/data/schemas'
 import { parsePluginManifest } from '@core/plugins/manifest'
 import { OWN_CREATED_TABLES_MARKER, type ContentAccessEntry } from '@core/plugin-sdk'
@@ -59,7 +60,7 @@ function pluginRecord(id: string, contentAccess: ContentAccessEntry[]): HostPlug
 const IMPORTER = 'acme.importer'
 
 async function mustGetTable(db: DbClient, slug: string): Promise<DataTable> {
-  const table = await getDataTableBySlug(db, slug)
+  const table = await getDataTableBySlug(db, MAIN_SCOPE, slug)
   if (!table) throw new Error(`fixture table "${slug}" missing`)
   return table
 }
@@ -118,7 +119,7 @@ describe('cms.content.tables.create → @own-created access', () => {
       db,
     )
     const table = await mustGetTable(db, 'imported-products')
-    const row = await getDataRowBySlug(db, table.id, 'widget-1')
+    const row = await getDataRowBySlug(db, MAIN_SCOPE, table.id, 'widget-1')
     expect(row?.cells.title).toBe('Widget')
 
     // Reads ride the same marker — the list handler resolves + asserts.

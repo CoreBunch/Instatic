@@ -205,6 +205,8 @@ docker compose -f compose.prod.yml -f compose.sqlite.yml up -d
 
 ## Without Docker (Direct Bun Install)
 
+This is the one install path that uses your own Bun. Keep it inside `engines.bun` in `package.json` (`>=1.4.0 <1.5.0` for this release): the Docker image and the Desktop server bundle carry that Bun themselves, and it is the only one releases are built and tested on. Bun does not enforce the range, so the server checks it at boot (`server/bunVersion.ts`) and logs `[server] Bun <version> is outside the supported range …` before continuing; `bun run dev` refuses a Bun older than 1.4.1 outright, because its Vite proxy needs that release to forward the editor's WebSocket. `bun upgrade` moves an older install forward.
+
 The CMS runs directly on the host without Docker. From a source checkout:
 
 ```sh

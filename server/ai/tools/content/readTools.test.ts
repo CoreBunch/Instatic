@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
 import { createCapabilityTestHarness, type CapabilityTestHarness } from '../../../../src/__tests__/helpers/capabilityHarness'
 import { createDataTable } from '../../../repositories/data'
 import { contentReadTools } from './readTools'
+import { MAIN_SCOPE } from '../../../branches/scope'
 
 describe('content read tools', () => {
   let harness: CapabilityTestHarness
@@ -15,7 +16,7 @@ describe('content read tools', () => {
   })
 
   it('keeps collection discovery aligned with the Content workspace', async () => {
-    await createDataTable(harness.db, {
+    await createDataTable(harness.db, MAIN_SCOPE, {
       id: 'projects',
       name: 'Projects',
       slug: 'projects',
@@ -24,7 +25,7 @@ describe('content read tools', () => {
       singularLabel: 'Project',
       pluralLabel: 'Projects',
     })
-    await createDataTable(harness.db, {
+    await createDataTable(harness.db, MAIN_SCOPE, {
       id: 'people',
       name: 'People',
       slug: 'people',
@@ -43,6 +44,7 @@ describe('content read tools', () => {
       userId: 'owner',
       capabilities: ['data.system.tables.read', 'data.custom.tables.read'],
       scope: 'content',
+      branch: MAIN_SCOPE,
       conversationId: 'test',
       snapshot: null,
       signal: new AbortController().signal,

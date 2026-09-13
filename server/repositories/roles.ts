@@ -8,6 +8,7 @@ import {
   type CoreCapability,
 } from '../auth/capabilities'
 import type { RoleRow } from '../types'
+import { nowIso } from '@core/utils/isoDate'
 
 export interface Role {
   id: string
@@ -173,7 +174,7 @@ export async function updateRole(
         name = ${name},
         description = ${description},
         capabilities_json = ${capabilities},
-        updated_at = current_timestamp
+        updated_at = ${nowIso()}
     where id = ${roleId}
     returning id, slug, name, description, is_system, capabilities_json, created_at, updated_at
   `
@@ -242,7 +243,7 @@ export async function syncSystemRoles(db: DbClient): Promise<void> {
             description = excluded.description,
             is_system = excluded.is_system,
             capabilities_json = excluded.capabilities_json,
-            updated_at = current_timestamp
+            updated_at = ${nowIso()}
       `
     } else {
       // First-boot seed for the role; preserve any later customisation.

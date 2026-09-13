@@ -144,6 +144,7 @@ Three categories, three voices:
 | [features/data-workspace.md](features/data-workspace.md)         | Data workspace UI: DataInspector, field management, DataGrid        |
 | [features/auth-and-access.md](features/auth-and-access.md)       | Sessions, MFA, step-up, lockout, CSRF, capabilities                  |
 | [features/site-shell.md](features/site-shell.md)                 | The persisted site config (breakpoints, classes, files, deps)        |
+| [features/branches.md](features/branches.md)                     | Site branches: fork, edit in isolation, preview links, three-way merge, version restore |
 | [features/modules.md](features/modules.md)                       | Module engine, defining first-party blocks                          |
 | [features/dashboard.md](features/dashboard.md)                   | Dashboard workspace, widgets, grid, customize mode                  |
 | [features/spotlight.md](features/spotlight.md)                   | Cmd+K command palette                                                |

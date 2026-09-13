@@ -153,3 +153,19 @@
     width: 20px;
     height: 20px;
 }
+
+/* State tones — the same gradient tint, coloured by the semantic state
+   tokens instead of the categorical accent (`--pill-accent` is set from
+   the tone by TagPill.tsx). Text takes the state's text token so it reads
+   on both themes. Declared last: same specificity as the accent rule. */
+.pill[data-tone="success"] {
+    --pill-color: var(--success-text-muted);
+}
+
+.pill[data-tone="warning"] {
+    --pill-color: var(--warning-text);
+}
+
+.pill[data-tone="danger"] {
+    --pill-color: var(--danger-text);
+}

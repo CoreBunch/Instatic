@@ -11,6 +11,7 @@ import {
   listDataTables,
   updateDataTable,
 } from '../tables'
+import { MAIN_SCOPE } from '../../../branches/scope'
 
 async function freshDb(): Promise<DbClient> {
   const db = createSqliteClient(':memory:')
@@ -27,7 +28,7 @@ describe('data_tables.system column', () => {
 
   it('is not-null with a false default — a custom table reads system=false', async () => {
     // createDataTable never sets `system`, so it relies on the column default.
-    const table = await createDataTable(db, {
+    const table = await createDataTable(db, MAIN_SCOPE, {
       name: 'Products',
       slug: 'products',
       kind: 'data',
@@ -36,13 +37,13 @@ describe('data_tables.system column', () => {
     })
     expect(table.system).toBe(false)
 
-    const reread = await getDataTable(db, table.id)
+    const reread = await getDataTable(db, MAIN_SCOPE, table.id)
     expect(reread?.system).toBe(false)
   })
 
   it('reads system=true for the seeded system tables', async () => {
     for (const id of ['pages', 'posts', 'components', 'layouts']) {
-      const table = await getDataTable(db, id)
+      const table = await getDataTable(db, MAIN_SCOPE, id)
       expect(table).not.toBeNull()
       expect(table?.system).toBe(true)
     }
@@ -59,7 +60,7 @@ describe('data_tables.system column', () => {
   })
 
   it('list and read agree on system flags', async () => {
-    const tables = await listDataTables(db)
+    const tables = await listDataTables(db, MAIN_SCOPE)
     const systemSlugs = tables.filter((t) => t.system).map((t) => t.slug).sort()
     expect(systemSlugs).toEqual(['components', 'layouts', 'pages', 'posts'])
   })
@@ -73,7 +74,7 @@ describe('data_tables.route_base persistence', () => {
   })
 
   it('preserves an explicitly blank route base on create and read', async () => {
-    const table = await createDataTable(db, {
+    const table = await createDataTable(db, MAIN_SCOPE, {
       name: 'Fee lines',
       slug: 'fee-lines',
       kind: 'data',
@@ -83,7 +84,7 @@ describe('data_tables.route_base persistence', () => {
     })
 
     expect(table.routeBase).toBe('')
-    expect((await getDataTable(db, table.id))?.routeBase).toBe('')
+    expect((await getDataTable(db, MAIN_SCOPE, table.id))?.routeBase).toBe('')
 
     const { rows } = await db<{ route_base: string }>`
       select route_base from data_tables where id = ${table.id}
@@ -92,14 +93,14 @@ describe('data_tables.route_base persistence', () => {
   })
 
   it('uses the slug fallback only when routeBase is omitted', async () => {
-    const fallback = await createDataTable(db, {
+    const fallback = await createDataTable(db, MAIN_SCOPE, {
       name: 'Work orders',
       slug: 'work-orders',
       kind: 'data',
       singularLabel: 'Work order',
       pluralLabel: 'Work orders',
     })
-    const explicit = await createDataTable(db, {
+    const explicit = await createDataTable(db, MAIN_SCOPE, {
       name: 'Bench notes',
       slug: 'bench-notes',
       kind: 'data',
@@ -113,7 +114,7 @@ describe('data_tables.route_base persistence', () => {
   })
 
   it('preserves an explicitly blank route base on update', async () => {
-    const table = await createDataTable(db, {
+    const table = await createDataTable(db, MAIN_SCOPE, {
       name: 'Questions',
       slug: 'questions',
       kind: 'data',
@@ -122,14 +123,14 @@ describe('data_tables.route_base persistence', () => {
       pluralLabel: 'Questions',
     })
 
-    const updated = await updateDataTable(db, table.id, { routeBase: '   ' })
+    const updated = await updateDataTable(db, MAIN_SCOPE, table.id, { routeBase: '   ' })
 
     expect(updated?.routeBase).toBe('')
-    expect((await getDataTable(db, table.id))?.routeBase).toBe('')
+    expect((await getDataTable(db, MAIN_SCOPE, table.id))?.routeBase).toBe('')
   })
 
   it('preserves an explicitly blank route base on the import insertion path', async () => {
-    const inserted = await insertDataTableIfAbsent(db, {
+    const inserted = await insertDataTableIfAbsent(db, MAIN_SCOPE, {
       id: 'imported-custody-stages',
       name: 'Custody stages',
       slug: 'custody-stages',
@@ -140,7 +141,7 @@ describe('data_tables.route_base persistence', () => {
     })
 
     expect(inserted).toBe(true)
-    expect((await getDataTable(db, 'imported-custody-stages'))?.routeBase).toBe('')
+    expect((await getDataTable(db, MAIN_SCOPE, 'imported-custody-stages'))?.routeBase).toBe('')
   })
 })
 
@@ -152,7 +153,7 @@ describe('data_tables.created_by_plugin_id column', () => {
   })
 
   it('defaults to null for user-created tables (and the seeded system tables)', async () => {
-    const table = await createDataTable(db, {
+    const table = await createDataTable(db, MAIN_SCOPE, {
       name: 'Products',
       slug: 'products',
       kind: 'data',
@@ -162,13 +163,13 @@ describe('data_tables.created_by_plugin_id column', () => {
     expect(table.createdByPluginId).toBeNull()
 
     for (const id of ['pages', 'posts', 'components', 'layouts']) {
-      const system = await getDataTable(db, id)
+      const system = await getDataTable(db, MAIN_SCOPE, id)
       expect(system?.createdByPluginId).toBeNull()
     }
   })
 
   it('persists the creating plugin id and surfaces it on every read path', async () => {
-    const created = await createDataTable(db, {
+    const created = await createDataTable(db, MAIN_SCOPE, {
       name: 'Imported Products',
       slug: 'imported-products',
       kind: 'data',
@@ -178,13 +179,13 @@ describe('data_tables.created_by_plugin_id column', () => {
     })
     expect(created.createdByPluginId).toBe('acme.importer')
 
-    const byId = await getDataTable(db, created.id)
+    const byId = await getDataTable(db, MAIN_SCOPE, created.id)
     expect(byId?.createdByPluginId).toBe('acme.importer')
 
-    const bySlug = await getDataTableBySlug(db, 'imported-products')
+    const bySlug = await getDataTableBySlug(db, MAIN_SCOPE, 'imported-products')
     expect(bySlug?.createdByPluginId).toBe('acme.importer')
 
-    const listed = await listDataTables(db)
+    const listed = await listDataTables(db, MAIN_SCOPE)
     expect(listed.find((t) => t.slug === 'imported-products')?.createdByPluginId).toBe('acme.importer')
   })
 })

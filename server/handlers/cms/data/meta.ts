@@ -15,10 +15,12 @@ import { listDataTables } from '../../../repositories/data'
 import { jsonResponse } from '../../../http'
 import { CMS_API_PREFIX } from '../shared'
 import { requireDataAccess } from './access'
+import type { BranchScope } from '../../../branches/scope'
 
 export async function handleDataMetaRoutes(
   req: Request,
   db: DbClient,
+  scope: BranchScope,
 ): Promise<Response | null> {
   const { pathname } = new URL(req.url)
 
@@ -26,7 +28,7 @@ export async function handleDataMetaRoutes(
     const access = await requireDataAccess(req, db)
     if (access instanceof Response) return access
 
-    const tables = await listDataTables(db)
+    const tables = await listDataTables(db, scope)
     return jsonResponse({ meta: buildDataMeta(tables) })
   }
 

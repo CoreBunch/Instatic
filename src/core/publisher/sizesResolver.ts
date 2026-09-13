@@ -62,7 +62,7 @@
  * tier — the caller falls back to `100vw`.
  */
 import { breakpointMediaQuery, type Page, type PageNode, type SiteDocument } from '@core/page-tree'
-import { compareViewportContextCascade } from './classCss'
+import { sortViewportContextCascade } from './classCss'
 
 // ---------------------------------------------------------------------------
 // Linear width candidates
@@ -491,10 +491,9 @@ export function resolveAutoSizes(
 
   // Viewport tiers in `sizes` first-match order — the reverse of the CSS
   // cascade, so the candidate that would win in CSS is hit first.
-  const tiers = site.breakpoints
-    .map((breakpoint, index) => ({ breakpoint, index }))
-    .sort(compareViewportContextCascade)
-    .reverse()
+  const tiers = sortViewportContextCascade(
+    site.breakpoints.map((breakpoint, index) => ({ breakpoint, index })),
+  ).reverse()
 
   const entries: Array<{ query: string | null; value: string }> = []
   for (const { breakpoint } of tiers) {

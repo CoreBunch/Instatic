@@ -75,7 +75,7 @@ Every interactive control in `src/admin/` goes through one of these. Bare `<butt
 | Primitive                  | When to use                                                  | Key props                                                |
 |----------------------------|--------------------------------------------------------------|----------------------------------------------------------|
 | `DataTable`                | Token-backed table shell; caller owns rows, sorting, and selection | `density`, `wrapperClassName`; compose `DataTableHead`, `DataTableBody`, `DataTableRow`, `DataTableHeader`, `DataTableCell` |
-| `TagPill`                  | Compact tinted labels, selector chips, removable tag pills   | `label`, `active`, `muted`, `size: 'xs' \| 'sm'`, `monospace`, `leading` (ReactNode prefix slot), `colorKey`, `onClick`, `onRemove`, `onContextMenu`, `mainAriaLabel`, `removeAriaLabel`, `removeTooltip` |
+| `TagPill`                  | Compact tinted labels, selector chips, removable tag pills   | `label`, `active`, `muted`, `size: 'xs' \| 'sm'`, `monospace`, `leading` (ReactNode prefix slot), `colorKey`, `tone: 'success' \| 'warning' \| 'danger'` (a semantic state instead of the label's accent), `onClick`, `onRemove`, `onContextMenu`, `mainAriaLabel`, `removeAriaLabel`, `removeTooltip` |
 | `Heading`                  | Semantic h1-h6 using editor typography tokens                | `level`, `children`                                      |
 | `Text`                     | Body, muted, strong, or monospace text in host/plugin UI     | `variant`, `size`, `children`                            |
 | `Code`                     | Preformatted snippets or logs                                | `children`                                               |

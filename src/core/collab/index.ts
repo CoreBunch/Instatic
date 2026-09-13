@@ -9,8 +9,10 @@
  */
 export {
   encodeCollabDocId,
+  isSiteDocId,
+  MAIN_SITE_DOC_ID,
   parseCollabDocId,
-  SITE_DOC_ID,
+  siteDocId,
   type CollabDocId,
   type CollabDocKind,
 } from './docIds'

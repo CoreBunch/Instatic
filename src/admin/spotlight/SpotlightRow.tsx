@@ -39,6 +39,8 @@ import { ArrowUpIcon } from 'pixel-art-icons/icons/arrow-up'
 import { ArrowDownIcon } from 'pixel-art-icons/icons/arrow-down'
 import { PlusIcon } from 'pixel-art-icons/icons/plus'
 import { EditSolidIcon } from 'pixel-art-icons/icons/edit-solid'
+import { GitBranchSolidIcon } from 'pixel-art-icons/icons/git-branch-solid'
+import { CircleDotSolidIcon } from 'pixel-art-icons/icons/circle-dot-solid'
 import { ContainerSolidIcon } from 'pixel-art-icons/icons/container-solid'
 import { BoxSolidIcon } from 'pixel-art-icons/icons/box-solid'
 import { BoxStackSolidIcon } from 'pixel-art-icons/icons/box-stack-solid'
@@ -101,6 +103,8 @@ const ICON_MAP: Record<string, IconComponent> = {
   'arrow-down': ArrowDownIcon,
   'plus': PlusIcon,
   'edit-solid': EditSolidIcon,
+  'git-branch-solid': GitBranchSolidIcon,
+  'circle-dot-solid': CircleDotSolidIcon,
   'container-solid': ContainerSolidIcon,
   'box-solid': BoxSolidIcon,
   'box-stack-solid': BoxStackSolidIcon,

@@ -25,13 +25,14 @@
  */
 import { nanoid } from 'nanoid'
 import { placeholder, type DbClient } from '../../db/client'
+import { MAIN_SCOPE } from '../../branches/scope'
 import { userRefColumns, userRefJoin } from './shared'
 import type { DataRow, DataRowVersion, DataRowRedirect, PublishedDataRow } from '@core/data/schemas'
 import { normalizeRouteBase } from '@core/templates/templateMatching'
 import { readFeaturedMediaCell } from '@core/data/cells'
 import { getDataRow } from './rows'
 import { nextDataRowVersionNumber } from './versions'
-import { isoDate } from '@core/utils/isoDate'
+import { isoDate, nowIso } from '@core/utils/isoDate'
 
 // ---------------------------------------------------------------------------
 // Internal row shapes
@@ -142,8 +143,10 @@ export async function persistDataRowPublish(
    */
   publisherUserId: string | null,
 ): Promise<PersistDataRowPublishResult> {
+  // Publishing only exists on `main`: versions and redirects reference main
+  // rows, whose physical and logical ids coincide.
   return db.transaction(async (tx) => {
-    const row = await getDataRow(tx, rowId)
+    const row = await getDataRow(tx, MAIN_SCOPE, rowId)
     if (!row) throw new Error('data row not found')
 
     const previousRoute = await readPreviousPublishedRoute(tx, rowId)
@@ -163,14 +166,15 @@ export async function persistDataRowPublish(
       )
     `
 
+    const now = nowIso()
     const { rows: updateRows } = await tx<{ id: string }>`
       update data_rows
       set status = 'published',
           active_version_id = ${versionId},
           published_by_user_id = ${publisherUserId},
-          published_at = current_timestamp,
+          published_at = ${now},
           updated_by_user_id = ${publisherUserId},
-          updated_at = current_timestamp
+          updated_at = ${now}
       where id = ${row.id}
         and deleted_at is null
       returning id
@@ -193,7 +197,7 @@ export async function persistDataRowPublish(
       `
     }
 
-    const publishedRow = await getDataRow(tx, row.id)
+    const publishedRow = await getDataRow(tx, MAIN_SCOPE, row.id)
     if (!publishedRow) throw new Error('data row could not be re-read after publish')
 
     const publishedAt = publishedRow.publishedAt ?? new Date().toISOString()

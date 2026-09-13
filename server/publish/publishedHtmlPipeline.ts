@@ -38,8 +38,11 @@ import { stampFormPageTokens } from '../forms/formRuntime'
 import { injectModuleScripts } from './moduleJsBundle'
 import type { RendererOutput } from './publicRenderer'
 
+/** What the pipeline reads of a render; the CSS bundle is the bake's concern. */
+export type PublishedHtmlPipelineInput = Omit<RendererOutput, 'cssBundle'>
+
 export async function applyPublishedHtmlPipeline(
-  rendered: RendererOutput,
+  rendered: PublishedHtmlPipelineInput,
   db: DbClient,
 ): Promise<string> {
   await hookBus.emit('publish.before', {

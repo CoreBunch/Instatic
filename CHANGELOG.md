@@ -4,6 +4,16 @@ All notable changes to Instatic will be documented here.
 
 This project is pre-1.0. Breaking changes may appear in minor or patch releases until a stable release line exists.
 
+## 0.0.19 - 2026-09-10
+
+### Security
+
+- Closed a server-side request forgery in the media storage write path ([GHSA-9pq7-m5wf-r7f6](https://github.com/CoreBunch/Instatic/security/advisories/GHSA-9pq7-m5wf-r7f6)). A plugin holding only `media.storage.adapter` supplies the step URLs in an upload plan, and the executor streamed the bytes to them with an unguarded `fetch()`, so the grant carried the network reach of `network.outbound` without asking for it: arbitrary `PUT` and `POST` at loopback, private, link-local, and cloud-metadata addresses, with plugin-chosen headers and the validated media bytes as the body. This is the write-side sibling of the media migration SSRF fixed in 0.0.18, which closed the read path and left this one open. Upload plan steps now go through the same SSRF-safe guard as the read path: internal addresses are refused before a connection opens, the connection is pinned to the checked IP, and every redirect hop is re-validated. Reported by [@skeletonsec](https://github.com/skeletonsec).
+
+### Publishing and runtime
+
+- Fixed the runtime dependency package server returning 404 for every package asset on Windows hosts ([GHSA-hwp9-vc7h-gvvf](https://github.com/CoreBunch/Instatic/security/advisories/GHSA-hwp9-vc7h-gvvf)). The containment check that keeps a resolved path inside the cache directory compared against a hard-coded forward slash, but `path.resolve` produces backslashes on Windows, so the check was false for every legitimate path and the endpoint refused all runtime package assets. It fails closed, so nothing was exposed. Containment is now decided with `path.relative()`, which is correct on both separators, and the same helper replaced a prefix comparison in the site-script workspace that carried no separator at all and would have accepted a sibling directory whose name merely began with the root. Reported by [@uziii2208](https://github.com/uziii2208).
+
 ## 0.0.18 - 2026-09-01
 
 ### Security

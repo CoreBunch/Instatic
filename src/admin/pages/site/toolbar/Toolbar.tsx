@@ -2,8 +2,12 @@
  * Toolbar — fixed top bar shared by every admin route.
  *
  * Layout (left → right):
- *   [Site brand] [admin nav]
+ *   [Site brand] [Branch chip] [admin nav]
  *   [Plugin buttons] [spacer→] [right slot]    [Account menu]
+ *
+ * While a branch other than main is active, the branch context strip renders
+ * as a sibling ABOVE the header (a full-width band in the workspace surface
+ * colour) — see src/admin/shared/BranchSwitcher.
  *
  * Undo/Redo lives inside the canvas notch (CanvasNotch), not the toolbar —
  * those controls only operate on the visual editor's page tree, so they have
@@ -38,6 +42,7 @@ import { PackageSolidIcon } from 'pixel-art-icons/icons/package-solid'
 import { pluginRuntime } from '@core/plugins/runtime'
 import type { RegisteredPluginToolbarButton } from '@core/plugin-sdk'
 import { AccountMenuButton } from '@admin/shared/AccountMenuButton'
+import { BranchChip, BranchContextStrip } from '@admin/shared/BranchSwitcher'
 import { OpenLivePageButton } from '@admin/shared/OpenLivePageButton'
 import { SettingsButton } from './SettingsButton'
 import { Link } from '@admin/lib/routing'
@@ -163,6 +168,7 @@ export function Toolbar({
   return (
     <>
       {overlay}
+      <BranchContextStrip />
       <header
         aria-label="Editor toolbar"
         data-testid="toolbar"
@@ -199,6 +205,7 @@ export function Toolbar({
             </span>
           </Tooltip>
         )}
+        <BranchChip />
         {adminNavigationSlot ?? <DefaultAdminNavigation section={section} />}
 
         <div className={styles.workspaceToolbarItems}>
