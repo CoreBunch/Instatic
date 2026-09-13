@@ -47,6 +47,7 @@ const BLOCK_COPY: Record<BlockedReason, string> = {
 
 const RESET_REASON_COPY: Record<ResetReason, string> = {
   rewritten: '',
+  gone: '',
   stale: 'This document was rebuilt while you were disconnected, so unsent changes were discarded. The latest version is now loaded.',
   refused: 'Your role does not allow that change, so it was undone.',
   oversize: 'That change was too large to sync in one step and was undone. Try making it in smaller pieces.',
@@ -84,7 +85,8 @@ export function clearCollabBlockNotice(): void {
  * so it stays silent; the other three mean their work was discarded.
  */
 export function collabResetToast(reason: ResetReason): void {
-  if (reason === 'rewritten') return
+  // `gone` is handled by the branch fallback (a toast of its own).
+  if (reason === 'rewritten' || reason === 'gone') return
   pushToast({ kind: 'error', title: 'A change was reverted', body: RESET_REASON_COPY[reason] })
 }
 

@@ -21,7 +21,7 @@ import {
   type SiteBundleArchiveManifest,
 } from '@core/data/bundleArchive'
 import { parseValue, formatValueErrors, compiled } from '@core/utils/typeboxHelpers'
-import { apiRequest, readEnvelope } from '@core/http'
+import { apiRequest, readEnvelope, withAmbientHeaders } from '@core/http'
 
 const ZIP_LOCAL_FILE_HEADER = 0x04034b50
 const ZIP_STORED_METHOD = 0
@@ -67,7 +67,8 @@ export class SiteBundleParseError extends Error {
  *
  * The export endpoint returns a zip attachment, not the standard `{ data,
  * error }` envelope — so this helper intentionally does not use `apiRequest`
- * / `readEnvelope`.
+ * / `readEnvelope`. A form POST cannot carry the ambient branch header
+ * either, so the request names its branch in `branchId` (omitted on main).
  */
 export function submitSiteBundleExport(opts: ExportRequest): void {
   if (typeof document === 'undefined' || !document.body) {
@@ -167,12 +168,12 @@ export async function getExportSummary(signal?: AbortSignal): Promise<ExportSumm
  * happen before they commit an import.
  */
 export async function previewSiteBundle(bundle: SiteBundle): Promise<BundlePreview> {
-  const res = await fetch('/admin/api/cms/import/preview', {
+  const res = await fetch('/admin/api/cms/import/preview', withAmbientHeaders({
     method: 'POST',
     credentials: 'include',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify(bundle),
-  })
+  }))
   return readEnvelope(res, BundlePreviewSchema, 'Failed to preview bundle')
 }
 
@@ -192,12 +193,12 @@ export async function importSiteBundle(
   bundle: SiteBundle,
   strategy: ImportStrategy,
 ): Promise<ImportResult> {
-  const res = await fetch(`/admin/api/cms/import?strategy=${encodeURIComponent(strategy)}`, {
+  const res = await fetch(`/admin/api/cms/import?strategy=${encodeURIComponent(strategy)}`, withAmbientHeaders({
     method: 'POST',
     credentials: 'include',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify(bundle),
-  })
+  }))
   return readEnvelope(res, ImportResultSchema, 'Failed to import bundle')
 }
 
@@ -209,12 +210,12 @@ export async function importSiteBundleArchive(
   const params = new URLSearchParams({ strategy })
   if (selection) params.set('selection', JSON.stringify(selection))
 
-  const res = await fetch(`/admin/api/cms/import/archive?${params.toString()}`, {
+  const res = await fetch(`/admin/api/cms/import/archive?${params.toString()}`, withAmbientHeaders({
     method: 'POST',
     credentials: 'include',
     headers: { 'content-type': 'application/zip' },
     body: archiveFile,
-  })
+  }))
   return readEnvelope(res, ImportResultSchema, 'Failed to import bundle')
 }
 

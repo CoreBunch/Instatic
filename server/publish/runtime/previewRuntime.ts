@@ -39,6 +39,8 @@ interface RuntimePreviewDocumentInput {
    * loops emit a "no resolved data" comment.
    */
   db?: DbClient
+  /** Branch whose rows loops read (see `@core/branches`); absent means main. */
+  branchId?: string
 }
 
 interface RuntimePreviewDocumentResult extends SiteRuntimeBuildResult {
@@ -77,7 +79,7 @@ export async function buildRuntimePreviewDocument(
     }
   }
   const loopData = input.db
-    ? await prefetchLoopData(input.page, input.site, input.db)
+    ? await prefetchLoopData(input.page, input.site, input.db, undefined, { branchId: input.branchId })
     : undefined
   const mediaAssets = input.db
     ? await prefetchMediaAssets(input.page, input.site, input.registry, input.db, {

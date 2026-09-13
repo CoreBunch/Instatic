@@ -22,7 +22,8 @@ export async function readPostsStats(
   const { rows: postTypeRows } = await db<{ id: string }>`
     select id
     from data_tables
-    where kind = 'postType'
+    where branch_id = 'main'
+      and kind = 'postType'
       and deleted_at is null
   `
   const postTypeIds = postTypeRows.map((r) => r.id)
@@ -83,7 +84,8 @@ async function readPostsHistogram(
   const { rows } = await db<{ table_id: string; published_at: string | Date }>`
     select table_id, published_at
     from data_rows
-    where deleted_at is null
+    where branch_id = 'main'
+      and deleted_at is null
       and status = 'published'
       and published_at is not null
       and published_at >= ${sinceIso}

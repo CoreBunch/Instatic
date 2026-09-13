@@ -218,6 +218,10 @@ Upgrade to v2:    (old) deactivate → (new) migrate({fromVersion}) → (new) ac
 Uninstall:        (if active) deactivate → uninstall
 ```
 
+**An upgrade does not delete the previous version's files.** Published pages link a plugin's frontend assets by version (`/uploads/plugins/<id>/<version>/frontend/…`, which is what makes the URL cache-bustable), and those artefacts are only rewritten by a **publish**. Deleting on upgrade therefore 404'd every page already baked to disk — on a real site an upgrade took out jQuery, GSAP, Lenis, Splide and the boot script across every page at once, with no warning and no prompt to re-publish.
+
+The old directory is retired by the next publish instead, which is the exact moment those URLs stop pointing at it (`sweepStalePluginVersionAssets`, `server/publish/stalePluginAssets.ts`, called after the slot swap). Between an upgrade and the next publish both versions sit on disk: the installed one for new renders, the previous one for pages not yet re-baked. A plugin with no installed record is never swept — uninstall already removes its tree, so anything left is unexplained, and a publish is a bad moment to act on that.
+
 Each hook receives the `api` object (see below). All hooks may be sync or async. If any hook throws, the host:
 
 1. Rolls back to the previous lifecycle state.
@@ -858,7 +862,7 @@ api.cms.media.registerStorageAdapter({
 })
 ```
 
-Writes are two-phase. The adapter returns a signed upload plan from `beginWrite`; the **host** streams the bytes to the plan URLs; then the adapter confirms with `finalizeWrite`. Media bytes do not cross the QuickJS boundary for ordinary writes, which keeps large uploads out of the VM heap. `servingMode` controls reads: `public-url` emits the adapter URL directly, `signed-redirect` lets the host 302 to a short-lived URL, and `proxy` streams chunks through the host via `readStream`.
+Writes are two-phase. The adapter returns a signed upload plan from `beginWrite`; the **host** streams the bytes to the plan URLs; then the adapter confirms with `finalizeWrite`. The plan URLs are plugin-controlled, so the host streams them through the same DNS-pinned SSRF guard it uses for adapter reads — internal addresses are refused and every redirect hop is re-validated, so `media.storage.adapter` cannot be used as `network.outbound` reach. There is no host allowlist on either side: an object-store endpoint is an arbitrary operator-chosen public host. Media bytes do not cross the QuickJS boundary for ordinary writes, which keeps large uploads out of the VM heap. `servingMode` controls reads: `public-url` emits the adapter URL directly, `signed-redirect` lets the host 302 to a short-lived URL, and `proxy` streams chunks through the host via `readStream`.
 
 #### URL transformers — requires `media.url.transform`
 

@@ -26,6 +26,7 @@ export {
   createDataTable,
   updateDataTable,
   softDeleteDataTable,
+  restoreDataTable,
 } from './tables'
 
 export {
@@ -65,4 +66,9 @@ export {
   getDataRowRedirectByRoute,
 } from './publish'
 
-export { nextDataRowVersionNumber } from './versions'
+export {
+  nextDataRowVersionNumber,
+  listDataRowVersions,
+  getDataRowVersion,
+  type DataRowVersionSummary,
+} from './versions'

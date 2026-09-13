@@ -27,7 +27,7 @@
 import { useEffect } from 'react'
 import { useEditorStore } from '@site/store/store'
 import { collectUserStylesheetCss } from '@core/publisher'
-import { resolveViewportUnitsForCanvas, type CanvasViewport } from './resolveViewportUnits'
+import { resolveViewportUnits, type Viewport } from '@core/utils/viewportUnits'
 
 const STYLE_TAG_ID = 'mc-user-styles'
 
@@ -41,9 +41,9 @@ interface UserStylesheetInjectorProps {
    * Frame viewport used to resolve CSS viewport units (`vh`/`vw`/…) to fixed
    * px so they don't feed the iframe's grow-to-content height loop. When
    * omitted (non-iframe contexts), CSS is injected verbatim. See
-   * `resolveViewportUnits.ts`.
+   * `@core/utils/viewportUnits`.
    */
-  viewport?: CanvasViewport
+  viewport?: Viewport
 }
 
 export function UserStylesheetInjector({ targetDocument, viewport }: UserStylesheetInjectorProps = {}) {
@@ -58,7 +58,7 @@ export function UserStylesheetInjector({ targetDocument, viewport }: UserStylesh
   // iframe height explode.
   const activePage = site ? site.pages.find((page) => page.id === activePageId) ?? site.pages[0] : undefined
   const collected = site && activePage ? collectUserStylesheetCss(site, activePage) : ''
-  const css = viewport ? resolveViewportUnitsForCanvas(collected, viewport) : collected
+  const css = viewport ? resolveViewportUnits(collected, viewport) : collected
 
   useEffect(() => {
     const targetDoc = targetDocument ?? document

@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import type { SiteDocument } from '@core/page-tree'
 import { isSafePath, normalizePath } from '@core/files/pathValidation'
+import { isPathWithin } from '../../util/pathWithin'
 
 interface SiteScriptWorkspace {
   rootDir: string
@@ -23,7 +24,9 @@ export async function materializeSiteScriptWorkspace(site: SiteDocument): Promis
       if (!isSafePath(normalized)) continue
 
       const absolutePath = resolve(rootDir, normalized)
-      if (!absolutePath.startsWith(rootDir)) continue
+      // Bare `startsWith(rootDir)` would also accept a sibling directory whose
+      // name merely begins with the root. Use the shared containment rule.
+      if (!isPathWithin(rootDir, absolutePath)) continue
 
       await mkdir(dirname(absolutePath), { recursive: true })
       await writeFile(absolutePath, file.content, 'utf8')

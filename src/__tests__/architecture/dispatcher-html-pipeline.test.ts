@@ -82,15 +82,26 @@ describe('dispatcher HTML pipeline', () => {
   })
 
   it('the dispatcher emits public HTML only through applyPublishedHtmlPipeline', () => {
-    const routerPath = join(ROOT, 'server/router.ts')
-    const router = readFileSync(routerPath, 'utf-8')
+    // The dispatcher's public tail lives in publicRoutes.ts; published HTML
+    // comes from publicRouter.ts (pages + posts), which owns the pipeline
+    // call. A branch preview (renderBranchPreview in branchPreview.ts) is
+    // the one other visitor-facing HTML path there, and it feeds the same
+    // pipeline: a form or a plugin's client script works on a preview link.
+    const router = readFileSync(join(ROOT, 'server/router.ts'), 'utf-8')
+    const publicRoutes = readFileSync(join(ROOT, 'server/publish/publicRoutes.ts'), 'utf-8')
+    const publicRouter = readFileSync(join(ROOT, 'server/publish/publicRouter.ts'), 'utf-8')
+    const branchPreview = readFileSync(join(ROOT, 'server/publish/branchPreview.ts'), 'utf-8')
 
-    // Both content paths (pages + posts) call the pipeline helper.
-    expect(router).toContain('applyPublishedHtmlPipeline')
+    expect(publicRoutes).toContain('renderPublicResolution')
+    expect(publicRoutes).toContain('renderBranchPreview')
+    expect(publicRouter).toContain('applyPublishedHtmlPipeline')
+    expect(branchPreview).toContain('applyPublishedHtmlPipeline')
 
-    // Sanity: neither path should call the deprecated direct helpers.
-    expect(router).not.toContain('injectFrontendAssets(')
-    expect(router).not.toContain("hookBus.applyFilter('publish.html'")
+    // Sanity: no path calls the deprecated direct helpers.
+    for (const src of [router, publicRoutes, publicRouter, branchPreview]) {
+      expect(src).not.toContain('injectFrontendAssets(')
+      expect(src).not.toContain("hookBus.applyFilter('publish.html'")
+    }
   })
 
   it('the renderer output type stays raw (no injected HTML, no fired hooks)', () => {

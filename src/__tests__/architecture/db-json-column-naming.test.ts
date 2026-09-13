@@ -5,7 +5,7 @@
  * a name ending in `_json`. This convention is not merely cosmetic:
  *
  *   - The SQLite adapter (`server/db/sqlite.ts`) auto-parses column values
- *     whose keys end in `_json` (see `parseJsonColumns`). Columns that store
+ *     whose keys end in `_json` (see `normalizeSqliteRow`). Columns that store
  *     JSON but lack the suffix will be returned as raw strings instead of
  *     parsed objects under SQLite, causing silent data-shape divergence.
  *   - It makes JSON payload columns instantly recognisable in query results,
@@ -16,7 +16,7 @@
  *   2. Every such column appears in the corresponding `migrations-sqlite.ts`
  *      migration declared as `text` (SQLite's JSON storage type).
  *
- * @see server/db/sqlite.ts — parseJsonColumns (auto-parse by _json suffix)
+ * @see server/db/sqlite.ts — normalizeSqliteRow (auto-parse by _json suffix)
  * @see server/db/migrations-pg.ts — Postgres schema source of truth
  * @see server/db/migrations-sqlite.ts — SQLite dialect translations
  */

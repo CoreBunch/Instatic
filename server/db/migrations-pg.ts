@@ -1191,21 +1191,191 @@ export const pgMigrations: Migration[] = [
     `,
   },
   {
+    // See migrations-sqlite.ts:026 — site branches. Same semantic effect:
+    // branch registry, `branch_id` + `logical_id` on the three branched
+    // tables backfilled to main, per-branch table-slug uniqueness, collab
+    // doc ids gaining a branch segment, and the base-hash + preview tables.
+    id: '027_site_branches',
+    sql: `
+      create table if not exists site_branches (
+        id text primary key,
+        name text not null,
+        base_branch_id text,
+        created_by_user_id text references users(id) on delete set null,
+        created_at timestamptz not null default now(),
+        updated_at timestamptz not null default now()
+      );
+
+      insert into site_branches (id, name, base_branch_id)
+      values ('main', 'main', null)
+      on conflict (id) do nothing;
+
+      alter table site add column branch_id text not null default 'main';
+      alter table site add column logical_id text generated always as (
+        case when branch_id = 'main' then id else substr(id, length(branch_id) + 2) end
+      ) stored;
+
+      create unique index if not exists site_branch_idx
+        on site (branch_id);
+
+      alter table data_tables add column branch_id text not null default 'main';
+      alter table data_tables add column logical_id text generated always as (
+        case when branch_id = 'main' then id else substr(id, length(branch_id) + 2) end
+      ) stored;
+
+      create index if not exists data_tables_branch_idx
+        on data_tables (branch_id);
+
+      drop index if exists data_tables_slug_active_idx;
+
+      create unique index if not exists data_tables_branch_slug_active_idx
+        on data_tables (branch_id, slug)
+        where deleted_at is null;
+
+      alter table data_rows add column branch_id text not null default 'main';
+      alter table data_rows add column logical_id text generated always as (
+        case when branch_id = 'main' then id else substr(id, length(branch_id) + 2) end
+      ) stored;
+
+      create index if not exists data_rows_branch_idx
+        on data_rows (branch_id);
+
+      update collab_documents
+         set doc_id = 'site:main'
+       where doc_id = 'site:default';
+
+      update collab_documents
+         set doc_id = 'page:main:' || substr(doc_id, 6)
+       where doc_id like 'page:%'
+         and doc_id not like 'page:main:%';
+
+      update collab_documents
+         set doc_id = 'component:main:' || substr(doc_id, 11)
+       where doc_id like 'component:%'
+         and doc_id not like 'component:main:%';
+
+      update collab_documents
+         set doc_id = 'layout:main:' || substr(doc_id, 8)
+       where doc_id like 'layout:%'
+         and doc_id not like 'layout:main:%';
+
+      create table if not exists site_branch_bases (
+        branch_id text not null references site_branches(id) on delete cascade,
+        kind text not null,
+        logical_id text not null,
+        content_hash text not null,
+        content_json jsonb not null default '{}'::jsonb,
+        primary key (branch_id, kind, logical_id)
+      );
+
+      create table if not exists site_branch_previews (
+        id text primary key,
+        branch_id text not null references site_branches(id) on delete cascade,
+        token_hash text not null,
+        expires_at timestamptz,
+        created_by_user_id text references users(id) on delete set null,
+        created_at timestamptz not null default now(),
+        revoked_at timestamptz
+      );
+
+      create unique index if not exists site_branch_previews_token_idx
+        on site_branch_previews (token_hash);
+
+      create index if not exists site_branch_previews_branch_idx
+        on site_branch_previews (branch_id);
+
+      update roles
+         set capabilities_json = capabilities_json || '["site.branches.create"]'::jsonb,
+             updated_at = current_timestamp
+       where id in ('owner', 'admin')
+         and not (capabilities_json ? 'site.branches.create');
+
+      update roles
+         set capabilities_json = capabilities_json || '["site.branches.manage"]'::jsonb,
+             updated_at = current_timestamp
+       where id in ('owner', 'admin')
+         and not (capabilities_json ? 'site.branches.manage');
+    `,
+  },
+  {
+    id: '028_site_branch_reviews',
+    sql: `
+      create table if not exists site_branch_merge_requests (
+        id text primary key,
+        branch_id text not null references site_branches(id) on delete cascade,
+        requested_by_user_id text references users(id) on delete set null,
+        note text not null default '',
+        content_hash text not null default '',
+        status text not null default 'open',
+        resolved_by_user_id text references users(id) on delete set null,
+        resolved_at timestamptz,
+        resolution_note text not null default '',
+        created_at timestamptz not null default now(),
+        updated_at timestamptz not null default now()
+      );
+
+      create index if not exists site_branch_merge_requests_branch_idx
+        on site_branch_merge_requests (branch_id, status, created_at desc);
+
+      create unique index if not exists site_branch_merge_requests_open_idx
+        on site_branch_merge_requests (branch_id)
+        where status = 'open';
+
+      create table if not exists site_branch_review_comments (
+        id text primary key,
+        branch_id text not null references site_branches(id) on delete cascade,
+        request_id text references site_branch_merge_requests(id) on delete set null,
+        entity_key text not null default '',
+        author_user_id text references users(id) on delete set null,
+        body text not null,
+        created_at timestamptz not null default now()
+      );
+
+      create index if not exists site_branch_review_comments_branch_idx
+        on site_branch_review_comments (branch_id, created_at);
+    `,
+  },
+  {
+    id: '029_site_branch_merges',
+    sql: `
+      create table if not exists site_branch_merges (
+        id text primary key,
+        branch_id text not null references site_branches(id) on delete cascade,
+        direction text not null,
+        applied_by_user_id text references users(id) on delete set null,
+        change_count integer not null default 0,
+        entries_json jsonb not null default '[]',
+        undone_at timestamptz,
+        created_at timestamptz not null default now()
+      );
+
+      create index if not exists site_branch_merges_branch_idx
+        on site_branch_merges (branch_id, created_at desc);
+    `,
+  },
+  {
+    // SQLite-only data migration (see migrations-sqlite.ts): `timestamptz`
+    // columns already hold real timestamps, so there is nothing to rewrite.
+    id: '030_iso_timestamps',
+    sql: 'select 1',
+  },
+  {
     // Existing avatars predate anything writing `media_usage_refs`, so the
     // first build that warns before a delete would still have said nothing
     // about the avatar already set — the one case the feature exists for.
     //
     // Idempotent by construction: `not exists` on the same key
     // `setMediaUsageRef` writes, so re-running inserts nothing and the row a
-    // later avatar change moves is the row this created.
+    // later avatar change moves is the row this created. Re-running is also
+    // what makes the id itself safe to change: an installation that recorded
+    // it under another number runs it again and inserts nothing.
     //
-    // `028`, skipping `027`, on purpose: #335 is in review and already claims
-    // `027_data_tables_created_by_plugin`. Ids are only ever sorted, so a gap
-    // costs nothing — and whichever of the two lands first, neither has to be
-    // renumbered. A migration an installation has already recorded can never
-    // be renamed: the runner keys on the full id, so a new one re-runs SQL
-    // that is not idempotent and fails the boot.
-    id: '028_backfill_avatar_usage_refs',
+    // `032`, skipping `031`, on purpose: #335 is in review and claims
+    // `031_data_tables_created_by_plugin`. Ids are only ever sorted, so a gap
+    // costs nothing, and whichever of the two lands first neither has to be
+    // renumbered. That is not true of #335's own migration — an ALTER re-run
+    // under a new id fails the boot — which is why it keeps its number here.
+    id: '032_backfill_avatar_usage_refs',
     sql: `
       insert into media_usage_refs (asset_id, ref_kind, ref_id, ref_path)
       select u.avatar_media_id, 'user.avatar', u.id, ''

@@ -14,7 +14,7 @@ import { ContextMenu, ContextMenuItem, ContextMenuSeparator } from '@ui/componen
 import { BulletlistSolidIcon } from 'pixel-art-icons/icons/bulletlist-solid'
 import { PlusIcon } from 'pixel-art-icons/icons/plus'
 import { TrashSolidIcon } from 'pixel-art-icons/icons/trash-solid'
-import { formatRelativeTime } from './relativeTime'
+import { formatRelativeTime } from '@core/utils/relativeTime'
 import styles from './AgentPanel.module.css'
 
 export function ConversationHistory() {

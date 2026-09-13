@@ -13,6 +13,19 @@ function hasMeaningfulBodyProps(node: PageNode): boolean {
     || Object.keys(node.breakpointOverrides ?? {}).length > 0
 }
 
+/**
+ * The page-tree id a composed node came from. Composition prefixes ids
+ * (`c0_` for the terminal page, then `t<i>_` per outer template, applied
+ * innermost first), so a rendered `uid` reads `t0_c0_<id>`. Anything that
+ * maps rendered elements back to the plan's node ids (the merge review's
+ * highlights) resolves them through this, never by guessing the prefix.
+ * Ids the composer invents (`<prefix>bodyprops`) come back as `bodyprops`,
+ * which matches no page node, which is right.
+ */
+export function composedNodeSourceId(composedId: string): string {
+  return composedId.replace(/^(?:t\d+_)*c0_/, '')
+}
+
 /** Clone a tree's nodes with every id prefixed, returning the remapped root id. */
 function rekey(nodes: Nodes, rootId: string, prefix: string): { nodes: Nodes; rootId: string } {
   const map = new Map<string, string>()

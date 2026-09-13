@@ -65,6 +65,8 @@ import {
   protectedBuiltInCreateCellKey,
 } from '@core/data/systemTableGuard'
 import { requireStepUp } from '../../../auth/authz'
+import { isMainScope, type BranchScope } from '../../../branches/scope'
+import { physicalId } from '@core/branches'
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -73,8 +75,8 @@ import { requireStepUp } from '../../../auth/authz'
 function buildTablePatch(
   body: TablePatchBody,
   actorUserId: string,
-): Parameters<typeof updateDataTable>[2] | { error: string } {
-  const update: Parameters<typeof updateDataTable>[2] = {}
+): Parameters<typeof updateDataTable>[3] | { error: string } {
+  const update: Parameters<typeof updateDataTable>[3] = {}
 
   if (body.name !== undefined) {
     if (!body.name.trim()) return { error: 'Table name is required' }
@@ -155,7 +157,11 @@ async function requireAnyRead(req: Request, db: DbClient): Promise<AuthUser | Re
   return requireDataAccess(req, db)
 }
 
-async function handleTablesCollection(req: Request, db: DbClient): Promise<Response> {
+async function handleTablesCollection(
+  req: Request,
+  db: DbClient,
+  scope: BranchScope,
+): Promise<Response> {
   // GET = schema-level read (Data workspace floor; `content.*` callers also
   // accepted because the loop picker calls this and needs to know what tables
   // exist). POST = create a CUSTOM table (`data.custom.tables.manage` + step-up
@@ -176,7 +182,7 @@ async function handleTablesCollection(req: Request, db: DbClient): Promise<Respo
     const limitParam = url.searchParams.get('limit')
     const limit = limitParam ? Math.min(Math.max(parseInt(limitParam, 10) || 25, 1), 100) : null
 
-    let tables = await listDataTablesWithCounts(db)
+    let tables = await listDataTablesWithCounts(db, scope)
 
     // Per-family visibility: a custom-only persona (e.g. "client") never sees
     // the system tables. Content-row callers (loop/template pickers) keep the
@@ -211,7 +217,7 @@ async function handleTablesCollection(req: Request, db: DbClient): Promise<Respo
     const pluralLabel = body.pluralLabel?.trim() || name
     const slug = slugFromTitle(body.slug?.trim() || pluralLabel)
 
-    const table = await createDataTable(db, {
+    const table = await createDataTable(db, scope, {
       name,
       slug,
       kind: body.kind === 'postType' ? 'postType' : 'data',
@@ -233,13 +239,14 @@ async function handleTablesCollection(req: Request, db: DbClient): Promise<Respo
 async function handleTableItem(
   req: Request,
   db: DbClient,
+  scope: BranchScope,
   tableId: string,
 ): Promise<Response> {
   // GET = schema read (Data workspace OR loop pickers in site editor).
   if (req.method === 'GET') {
     const user = await requireAnyRead(req, db)
     if (user instanceof Response) return user
-    const table = await getDataTable(db, tableId)
+    const table = await getDataTable(db, scope, tableId)
     if (!table) return jsonResponse({ error: 'Table not found' }, { status: 404 })
     // A custom-only persona must not read a system table by id. Content-row
     // callers (loop pickers) may still resolve any table.
@@ -254,7 +261,7 @@ async function handleTableItem(
   // affect the public URL surface.
   const user = await requireDataTablesRead(req, db)
   if (user instanceof Response) return user
-  const table = await getDataTable(db, tableId)
+  const table = await getDataTable(db, scope, tableId)
   if (!table) return jsonResponse({ error: 'Table not found' }, { status: 404 })
   if (!canManageTable(user, table)) return forbidden()
   const stepUp = await requireStepUp(req, db, user)
@@ -271,14 +278,14 @@ async function handleTableItem(
     const frozenError = assertSystemTableUpdateAllowed(table, update)
     if (frozenError) return badRequest(frozenError)
 
-    const updated = await updateDataTable(db, tableId, update)
+    const updated = await updateDataTable(db, scope, tableId, update)
     if (!updated) return jsonResponse({ error: 'Table not found' }, { status: 404 })
     await recordTableAuditEvent(db, user, req, 'data.table.update', updated)
     return jsonResponse({ table: updated })
   }
 
   if (req.method === 'DELETE') {
-    const deleted = await softDeleteDataTable(db, tableId, user.id)
+    const deleted = await softDeleteDataTable(db, scope, tableId, user.id)
     if (!deleted) return jsonResponse({ error: 'Table cannot be deleted' }, { status: 409 })
     await recordTableAuditEvent(db, user, req, 'data.table.delete', deleted)
     return jsonResponse({ table: deleted })
@@ -290,6 +297,7 @@ async function handleTableItem(
 async function handleTableRows(
   req: Request,
   db: DbClient,
+  scope: BranchScope,
   tableId: string,
 ): Promise<Response> {
   const user = req.method === 'POST'
@@ -297,7 +305,7 @@ async function handleTableRows(
     : await requireDataAccess(req, db)
   if (user instanceof Response) return user
 
-  const table = await getDataTable(db, tableId)
+  const table = await getDataTable(db, scope, tableId)
   if (!table) return jsonResponse({ error: 'Table not found' }, { status: 404 })
 
   if (req.method === 'GET') {
@@ -305,7 +313,7 @@ async function handleTableRows(
     // system table's rows still needs data.system.tables.read (GHSA-x69h).
     if (!canReadTable(user, table)) return jsonResponse({ error: 'Table not found' }, { status: 404 })
     const visibility = canSeeAllDataRows(user) ? {} : { ownerUserId: user.id }
-    return jsonResponse({ rows: await listDataRows(db, tableId, visibility) })
+    return jsonResponse({ rows: await listDataRows(db, scope, tableId, visibility) })
   }
 
   if (req.method === 'POST') {
@@ -335,7 +343,7 @@ async function handleTableRows(
     // opaque 500 — leaving the caller (often a script or an MCP connector) to
     // guess whether it hit a bug or a duplicate. Name it instead.
     if (slug) {
-      const clash = await getDataRowBySlug(db, tableId, slug)
+      const clash = await getDataRowBySlug(db, scope, tableId, slug)
       if (clash) {
         return jsonResponse(
           { error: `A row with slug "${slug}" already exists in this table.`, conflictRowId: clash.id },
@@ -344,8 +352,8 @@ async function handleTableRows(
       }
     }
 
-    const row = await createDataRow(db, { tableId, cells, slug }, user.id)
-    await emitContentEntryCreated(db, row.id, { kind: 'user', userId: user.id })
+    const row = await createDataRow(db, scope, { tableId, cells, slug }, user.id)
+    await emitContentEntryCreated(db, scope, row.id, { kind: 'user', userId: user.id })
     await createAuditEvent(db, {
       actorUserId: user.id,
       action: 'data.row.create',
@@ -368,6 +376,7 @@ async function handleTableRows(
 async function handleTableLoopPreview(
   req: Request,
   db: DbClient,
+  scope: BranchScope,
   tableId: string,
 ): Promise<Response> {
   if (req.method !== 'GET') return methodNotAllowed()
@@ -375,7 +384,7 @@ async function handleTableLoopPreview(
   const user = await requireDataAccess(req, db)
   if (user instanceof Response) return user
 
-  const table = await getDataTable(db, tableId)
+  const table = await getDataTable(db, scope, tableId)
   if (!table) return jsonResponse({ error: 'Table not found' }, { status: 404 })
 
   const url = new URL(req.url)
@@ -395,7 +404,10 @@ async function handleTableLoopPreview(
   })
 
   const result = await fetchPublishedDataRowItems(db, {
-    tableId,
+    // The loop source binds PHYSICAL table ids; on a branch the rows are
+    // drafts (publishing is main-only).
+    tableId: physicalId(scope.branchId, tableId),
+    drafts: !isMainScope(scope),
     orderBy,
     direction,
     limit,
@@ -420,11 +432,12 @@ const TABLE_LOOP_PREVIEW_PATTERN = /^\/admin\/api\/cms\/data\/tables\/([^/]+)\/l
 export async function handleDataTableRoutes(
   req: Request,
   db: DbClient,
+  scope: BranchScope,
 ): Promise<Response | null> {
   const { pathname } = new URL(req.url)
 
   if (pathname === `${CMS_API_PREFIX}/data/tables`) {
-    return handleTablesCollection(req, db)
+    return handleTablesCollection(req, db, scope)
   }
 
   // Sub-routes must match before the bare `/tables/:id` so that pattern
@@ -432,17 +445,17 @@ export async function handleDataTableRoutes(
   // matches the whole tail).
   const loopPreviewMatch = pathname.match(TABLE_LOOP_PREVIEW_PATTERN)
   if (loopPreviewMatch) {
-    return handleTableLoopPreview(req, db, decodeURIComponent(loopPreviewMatch[1]))
+    return handleTableLoopPreview(req, db, scope, decodeURIComponent(loopPreviewMatch[1]))
   }
 
   const rowsMatch = pathname.match(TABLE_ROWS_PATTERN)
   if (rowsMatch) {
-    return handleTableRows(req, db, decodeURIComponent(rowsMatch[1]))
+    return handleTableRows(req, db, scope, decodeURIComponent(rowsMatch[1]))
   }
 
   const itemMatch = pathname.match(TABLE_ITEM_PATTERN)
   if (itemMatch) {
-    return handleTableItem(req, db, decodeURIComponent(itemMatch[1]))
+    return handleTableItem(req, db, scope, decodeURIComponent(itemMatch[1]))
   }
 
   return null

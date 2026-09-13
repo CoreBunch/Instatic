@@ -140,11 +140,12 @@ function makeFakeDb() {
       return { rows: [row as Row], rowCount: 1 }
     }
     // updatePluginRecord — values[0]=dataJson, values[1]=id, values[2]=pluginId, values[3]=resourceId
+    // values[0]=data_json, values[1]=updated_at, values[2]=id, values[3]=pluginId, values[4]=resourceId
     if (normalized.includes('update plugin_records set data_json')) {
       const row = records.find((record) =>
-        record.id === values[1] &&
-        record.plugin_id === values[2] &&
-        record.resource_id === values[3]
+        record.id === values[2] &&
+        record.plugin_id === values[3] &&
+        record.resource_id === values[4]
       )
       if (!row) return { rows: [], rowCount: 0 }
       row.data_json = values[0]

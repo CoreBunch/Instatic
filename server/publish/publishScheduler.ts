@@ -37,6 +37,7 @@ import {
   cancelScheduledPublish,
   listDuePublishSchedules,
 } from '../repositories/data/rows'
+import { MAIN_SCOPE } from '../branches/scope'
 
 // ---------------------------------------------------------------------------
 // Tunables
@@ -115,12 +116,12 @@ async function fireOne(db: DbClient, rowId: string, uploadsDir?: string): Promis
     // The `published_by_user_id` column lands as null which downstream
     // UI renders as "Scheduled publish" instead of a user attribution.
     await publishDataRow(db, rowId, null, uploadsDir)
-    await emitContentEntryUpdated(db, rowId, ['status'], { kind: 'system' })
+    await emitContentEntryUpdated(db, MAIN_SCOPE, rowId, ['status'], { kind: 'system' })
   } catch (err) {
     console.error(`[publish-scheduler] failed to publish row ${rowId}:`, err)
     // Revert to draft so the row stops being selected on subsequent
     // ticks. Operator sees it back in drafts and retries manually.
-    await cancelScheduledPublish(db, rowId, null).catch((cancelErr) => {
+    await cancelScheduledPublish(db, MAIN_SCOPE, rowId, null).catch((cancelErr) => {
       console.error(`[publish-scheduler] failed to revert row ${rowId} after publish error:`, cancelErr)
     })
   }

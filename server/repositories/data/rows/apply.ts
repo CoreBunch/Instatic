@@ -40,7 +40,9 @@
  * (the 2026-06-12 audit's critical finding; do not reintroduce).
  * `applyDataRowChanges` is the standalone wrapper that opens one.
  */
+import { physicalId } from '@core/branches'
 import type { DbClient } from '../../../db/client'
+import type { BranchScope } from '../../../branches/scope'
 import {
   createDataRow,
   updateDataRowDraftCells,
@@ -74,11 +76,12 @@ export interface ApplyDataRowChangesResult {
 }
 
 /** Stamp the sync seq on a row. Deliberately no `deleted_at` filter — soft-deleted rows are stamped too. */
-async function stampDataRowSeq(db: DbClient, rowId: string, seq: number): Promise<void> {
+async function stampDataRowSeq(db: DbClient, scope: BranchScope, rowId: string, seq: number): Promise<void> {
   await db`
     update data_rows
     set seq = ${seq}
-    where id = ${rowId}
+    where id = ${physicalId(scope.branchId, rowId)}
+      and branch_id = ${scope.branchId}
   `
 }
 
@@ -89,13 +92,14 @@ async function stampDataRowSeq(db: DbClient, rowId: string, seq: number): Promis
  */
 export async function applyDataRowChangesInTx(
   tx: DbClient,
+  scope: BranchScope,
   { tableId, writes, deleteIds, actorUserId, seq }: ApplyDataRowChangesInput,
 ): Promise<ApplyDataRowChangesResult> {
   let deletedPublished = false
 
-  const existing = await listDataRowIdSlugs(tx, tableId)
+  const existing = await listDataRowIdSlugs(tx, scope, tableId)
   const existingSlugById = new Map(existing.map((r) => [r.id, r.slug]))
-  const softDeletedIds = new Set(await listSoftDeletedDataRowIds(tx, tableId))
+  const softDeletedIds = new Set(await listSoftDeletedDataRowIds(tx, scope, tableId))
 
   // 1. Explicit deletes first — frees the slugs of deleted rows for the
   //    writes below. Deletes are SCOPED TO THIS TABLE: an id that doesn't
@@ -104,9 +108,9 @@ export async function applyDataRowChangesInTx(
   //    Already-deleted / unknown ids no-op for the same reason (idempotent).
   for (const rowId of deleteIds) {
     if (!existingSlugById.has(rowId)) continue
-    const deleted = await softDeleteDataRow(tx, rowId, actorUserId, { collabInternal: true })
+    const deleted = await softDeleteDataRow(tx, scope, rowId, actorUserId, { collabInternal: true })
     if (!deleted) continue
-    await stampDataRowSeq(tx, rowId, seq)
+    await stampDataRowSeq(tx, scope, rowId, seq)
     if (deleted.status === 'published') deletedPublished = true
   }
 
@@ -120,21 +124,22 @@ export async function applyDataRowChangesInTx(
     const storedSlug = existingSlugById.get(write.id)
     if (storedSlug === undefined) continue // created or revived below
     if (storedSlug === write.slug) {
-      await updateDataRowDraftCells(tx, write.id, { cells: write.cells, slug: write.slug }, actorUserId)
+      await updateDataRowDraftCells(tx, scope, write.id, { cells: write.cells, slug: write.slug }, actorUserId)
     } else {
-      await updateDataRowDraftCells(tx, write.id, { cells: write.cells, slug: '' }, actorUserId)
+      await updateDataRowDraftCells(tx, scope, write.id, { cells: write.cells, slug: '' }, actorUserId)
       parked.push(write)
     }
-    await stampDataRowSeq(tx, write.id, seq)
+    await stampDataRowSeq(tx, scope, write.id, seq)
   }
   for (const write of writes) {
     if (existingSlugById.has(write.id)) continue
     if (softDeletedIds.has(write.id)) {
-      await resurrectDataRow(tx, write.id, { cells: write.cells, slug: '' }, actorUserId)
+      await resurrectDataRow(tx, scope, write.id, { cells: write.cells, slug: '' }, actorUserId)
       parked.push(write)
     } else {
       await createDataRow(
         tx,
+        scope,
         { id: write.id, tableId, cells: write.cells, slug: write.slug },
         actorUserId,
         null,
@@ -143,12 +148,12 @@ export async function applyDataRowChangesInTx(
         { collabInternal: true },
       )
     }
-    await stampDataRowSeq(tx, write.id, seq)
+    await stampDataRowSeq(tx, scope, write.id, seq)
   }
 
   // 3. Final slugs for the parked rows — every old slug is free by now.
   for (const write of parked) {
-    await updateDataRowSlug(tx, write.id, write.slug)
+    await updateDataRowSlug(tx, scope, write.id, write.slug)
   }
 
   return { deletedPublished }
@@ -161,15 +166,17 @@ export async function applyDataRowChangesInTx(
  */
 export async function applyDataRowChanges(
   db: DbClient,
+  scope: BranchScope,
   input: ApplyDataRowChangesInput,
 ): Promise<ApplyDataRowChangesResult> {
   return serializeCollabAwareWrite(async () => {
     let result: ApplyDataRowChangesResult = { deletedPublished: false }
     await db.transaction(async (tx) => {
-      result = await applyDataRowChangesInTx(tx, input)
+      result = await applyDataRowChangesInTx(tx, scope, input)
     })
     if (input.writes.length > 0) {
       notifyRowWrite({
+        branchId: scope.branchId,
         tableId: input.tableId,
         rowIds: input.writes.map((write) => write.id),
         kind: 'update',
@@ -177,6 +184,7 @@ export async function applyDataRowChanges(
     }
     if (input.deleteIds.size > 0) {
       notifyRowWrite({
+        branchId: scope.branchId,
         tableId: input.tableId,
         rowIds: [...input.deleteIds],
         kind: 'delete',
