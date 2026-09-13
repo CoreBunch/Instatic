@@ -16,7 +16,7 @@ import { fileURLToPath } from 'node:url'
 const configDir = path.dirname(fileURLToPath(import.meta.url))
 
 export default defineConfig([
-  globalIgnores(['dist', '.worktrees', '.claude']),
+  globalIgnores(['dist', '.worktrees', '.claude', '.tmp']),
   {
     files: ['**/*.{ts,tsx}'],
     extends: [

@@ -53,9 +53,11 @@ describe('media storage — no bytes in sandbox', () => {
 
   it('the host-side executor is the only fetch-with-body site for storage uploads', async () => {
     const executor = await read('server/handlers/cms/mediaUploadExecutor.ts')
-    // The executor must use Bun's native fetch — NOT route through the
-    // QuickJS sandbox bridge.
-    expect(executor).toContain('await fetch(step.url')
+    // The executor must upload host-side — NOT route through the QuickJS
+    // sandbox bridge. The host call goes through `guardedFetch`, the SSRF-safe
+    // wrapper over Bun's native fetch: the plan URL is plugin-controlled, so it
+    // must not be able to reach internal addresses (GHSA-9pq7).
+    expect(executor).toMatch(/await guardedFetch\(\s*step\.url/)
     // No hostCall / QuickJS bridge usage in this file.
     expect(executor).not.toMatch(/__hostCall|callHostApi|quickjsHost/)
   })
@@ -77,5 +79,25 @@ describe('media storage — no bytes in sandbox', () => {
     // are stripped before matching so a comment can reflow naturally.
     const flattened = protocol.replace(/[\s*]+/g, ' ')
     expect(flattened).toMatch(/Bytes are NEVER part of `args`/i)
+  })
+
+  it('managed-media ingestion crosses the sandbox as source metadata only', async () => {
+    const source = await read('src/core/plugin-sdk/types/media.ts')
+    const sourceMatch = source.match(
+      /export const MediaUpsertSourceSchema = Type\.Union\(\[([\s\S]*?)\n\]\)/,
+    )
+    const inputMatch = source.match(
+      /export const MediaUpsertInputSchema = Type\.Object\(\{([\s\S]*?)\n\}, \{ additionalProperties: false \}\)/,
+    )
+    expect(sourceMatch).not.toBeNull()
+    expect(inputMatch).not.toBeNull()
+    const body = `${sourceMatch![1]}\n${inputMatch![1]}`
+    expect(body).toContain("kind: Type.Literal('remote')")
+    expect(body).toContain("kind: Type.Literal('pluginAsset')")
+    expect(body).toContain('url:')
+    expect(body).toContain('path:')
+    for (const forbidden of ['bytes', 'buffer', 'body', 'data', 'payload']) {
+      expect(body).not.toMatch(new RegExp(`\\b${forbidden}\\s*:`))
+    }
   })
 })

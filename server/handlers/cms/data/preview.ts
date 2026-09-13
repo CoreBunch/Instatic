@@ -20,6 +20,7 @@
 import { Type } from '@sinclair/typebox'
 import type { DbClient } from '../../../db/client'
 import type { DataRow, DataRowCells, PublishedDataRow } from '@core/data/schemas'
+import { readEntrySeoOverride } from '@core/data/cells'
 import { resolveTemplateChain, composeTemplateChain } from '@core/templates'
 import { buildRouteFrame } from '@core/templates/contextFrames'
 import { publishPage } from '@core/publisher'
@@ -33,8 +34,9 @@ import { getLatestPublishedSiteSnapshot } from '../../../repositories/publish'
 import { getDataRow, getDataTable } from '../../../repositories/data'
 import { applyPublishedHtmlPipeline } from '../../../publish/publishedHtmlPipeline'
 import { badRequest, jsonResponse, readValidatedBody } from '../../../http'
-import { canReadDataRow, forbidden, requireDataAccess } from './access'
+import { canReadDataRow, canReadTable, forbidden, requireDataAccess } from './access'
 import type { RouteParams } from '../routeTable'
+import type { BranchScope } from '../../../branches/scope'
 
 const CSS_ASSET_BASE_URL = '/_instatic/css/'
 const LOOP_ENDPOINT_BASE_URL = '/_instatic/loop/'
@@ -60,15 +62,18 @@ export async function handleRowPreview(
   req: Request,
   db: DbClient,
   params: RouteParams,
+  scope: BranchScope,
 ): Promise<Response> {
   const user = await requireDataAccess(req, db)
   if (user instanceof Response) return user
 
-  const row = await getDataRow(db, params.id)
+  const row = await getDataRow(db, scope, params.id)
   if (!row) return jsonResponse({ error: 'Row not found' }, { status: 404 })
 
-  const table = await getDataTable(db, row.tableId)
+  const table = await getDataTable(db, scope, row.tableId)
   if (!table) return jsonResponse({ error: 'Table not found' }, { status: 404 })
+  // System-table rows need data.system.tables.read even to preview (GHSA-x69h).
+  if (!canReadTable(user, table)) return jsonResponse({ error: 'Row not found' }, { status: 404 })
 
   if (!canReadDataRow(user, row)) return forbidden()
   if (table.kind !== 'postType') return badRequest('Only post-type rows can be previewed')
@@ -95,7 +100,9 @@ export async function handleRowPreview(
   }
   const merged = composeTemplateChain(chain, { kind: 'entry' })
   // The template chain has no Page for the entry, so composeTemplateChain
-  // can't know its title — the entry's own (draft) title is the real document title.
+  // can't know its title — the entry's own (draft) title is the real page
+  // title. The draft SEO override travels separately through
+  // `documentMeta` so it only ever reaches the `<head>`, mirroring publish.
   if (typeof draftCells.title === 'string') merged.title = draftCells.title
 
   // Build a synthetic PublishedDataRow with the draft cells merged in.
@@ -109,7 +116,9 @@ export async function handleRowPreview(
     entryStack: [publishedDataRowToLoopItem(draftPublishedRow)],
     route: buildRouteFrame(syntheticUrl.toString()),
   }
-  const loopData = await prefetchLoopData(merged, snapshot.site, db)
+  const loopData = await prefetchLoopData(merged, snapshot.site, db, undefined, {
+    branchId: scope.branchId,
+  })
   const mediaAssets = await prefetchMediaAssets(merged, snapshot.site, registry, db, {
     templateContext,
     loopData,
@@ -118,6 +127,7 @@ export async function handleRowPreview(
 
   const published = publishPage(merged, snapshot.site, registry, {
     templateContext,
+    documentMeta: readEntrySeoOverride(draftCells),
     runtimeAssets: snapshot.runtimeAssets,
     runtimePackageImportmap: snapshot.runtimePackageImportmap,
     cssEmission: 'external',
@@ -135,7 +145,6 @@ export async function handleRowPreview(
       pageId: merged.id,
       slug: merged.slug,
       siteId: snapshot.site.id,
-      cssBundle,
       jsModuleIds: published.jsModuleIds.filter((id) => moduleJsMap.has(id)),
       publishVersion: getPublishVersion(),
     },

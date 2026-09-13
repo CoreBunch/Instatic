@@ -16,6 +16,12 @@ export function escapeCssIdentifier(value: string): string {
     const codeUnit = value.charCodeAt(index)
     const char = value.charAt(index)
 
+    // NULL (U+0000) serializes to the replacement character U+FFFD.
+    if (codeUnit === 0x0000) {
+      escaped += '\uFFFD'
+      continue
+    }
+
     if (
       (codeUnit >= 0x0001 && codeUnit <= 0x001f) ||
       codeUnit === 0x007f ||

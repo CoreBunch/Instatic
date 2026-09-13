@@ -12,7 +12,9 @@
     left: var(--panel-x);
     top: var(--panel-y);
     bottom: auto;
-    z-index: 50;
+    /* Shared floating tier above docked panel slots (85). The docked variant
+       resets to auto below. */
+    z-index: 90;
     display: flex;
     flex-direction: column;
     width: var(--panel-w);

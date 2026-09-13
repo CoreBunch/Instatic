@@ -74,6 +74,124 @@
   overflow: hidden;
 }
 
+.problems {
+  flex: 0 0 auto;
+  max-height: 116px;
+  display: flex;
+  flex-direction: column;
+  border-top: 1px solid var(--border-muted);
+  background: var(--bg-surface-2);
+}
+
+.problemsCollapsed {
+  max-height: none;
+}
+
+.problemsHeader {
+  min-height: 26px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-s);
+  padding: 0 var(--space-s) 0 var(--space-m);
+  border-bottom: 1px solid var(--border-muted);
+}
+
+.problemsCollapsed .problemsHeader {
+  border-bottom: 0;
+}
+
+.problemsTitle,
+.problemsStatus {
+  font-size: var(--text-3xs);
+  line-height: 1.2;
+}
+
+.problemsTitle {
+  color: var(--text-subtle);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.problemsStatus {
+  color: var(--text-muted);
+}
+
+.problemsStatusError {
+  color: var(--danger-text);
+}
+
+.problemsActions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2xs);
+  min-width: 0;
+}
+
+.problemsToggle {
+  color: var(--text-subtle);
+}
+
+.problemsContent {
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.problemsList {
+  min-height: 0;
+  margin: 0;
+  padding: var(--space-3xs) 0;
+  overflow: auto;
+  list-style: none;
+  scrollbar-gutter: stable;
+}
+
+.problem {
+  display: grid;
+  grid-template-columns: minmax(104px, 0.32fr) minmax(0, 1fr);
+  gap: var(--space-s);
+  padding: var(--space-3xs) var(--space-m);
+  border-left: 1px solid transparent;
+  font-family: var(--font-mono);
+  font-size: var(--text-3xs);
+  line-height: 1.35;
+}
+
+.problem[data-severity='error'] {
+  border-left-color: var(--danger);
+}
+
+.problem[data-severity='warning'] {
+  border-left-color: var(--warning);
+}
+
+.problemLocation {
+  overflow: hidden;
+  color: var(--text-muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.problemMessage {
+  display: -webkit-box;
+  overflow: hidden;
+  color: var(--text);
+  overflow-wrap: anywhere;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.problemsEmpty {
+  margin: 0;
+  padding: var(--space-xs) var(--space-m);
+  color: var(--text-muted);
+  font-size: var(--text-3xs);
+  line-height: 1.35;
+}
+
 @media (max-width: 760px) {
   .editorWorkspace {
     flex-direction: column;

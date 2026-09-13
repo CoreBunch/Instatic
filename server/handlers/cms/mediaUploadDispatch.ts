@@ -33,6 +33,7 @@ import type {
 import { mediaStorageRegistry } from '@core/plugins/mediaStorageRegistry'
 import { getElectedAdapterId } from '../../repositories/mediaStorageAdapters'
 import { executeUploadPlan, type StepReceipt } from './mediaUploadExecutor'
+import { sha256Hex } from '../../binary'
 
 export class MediaStorageDispatchError extends Error {
   readonly status: number
@@ -68,31 +69,6 @@ interface DispatchUploadResult {
   storageAdapterId: string
   /** Persist on `media_assets.externally_hosted`. */
   externallyHosted: boolean
-}
-
-/**
- * Compute SHA-256 over the upload bytes. The adapter receives this in
- * `beginWrite` so it can dedupe or verify on the backend side.
- *
- * Web Crypto runs in Bun without an import; the result is a lowercase
- * hex string to match what S3 / R2 etc. expect in their X-Amz-Content-Sha256
- * headers (adapters can use it as-is).
- */
-async function sha256Hex(bytes: Uint8Array): Promise<string> {
-  // `Uint8Array` is structurally a valid `BufferSource` but TS's lib.dom
-  // currently types `crypto.subtle.digest` as requiring `BufferSource`
-  // narrowed to `ArrayBufferView<ArrayBuffer>`. A defensive copy into a
-  // tight ArrayBuffer slice satisfies both shapes and avoids accidentally
-  // hashing past the end of a sub-array view.
-  const copy = new Uint8Array(bytes.byteLength)
-  copy.set(bytes)
-  const digest = await crypto.subtle.digest('SHA-256', copy.buffer)
-  const view = new Uint8Array(digest)
-  let out = ''
-  for (let i = 0; i < view.length; i++) {
-    out += view[i].toString(16).padStart(2, '0')
-  }
-  return out
 }
 
 /**

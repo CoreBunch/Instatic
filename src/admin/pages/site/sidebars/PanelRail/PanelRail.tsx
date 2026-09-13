@@ -8,6 +8,7 @@ import { BoxStackSolidIcon } from 'pixel-art-icons/icons/box-stack-solid'
 import { PaintBucketSolidIcon } from 'pixel-art-icons/icons/paint-bucket-solid'
 import { ColorsSwatchSolidIcon } from 'pixel-art-icons/icons/colors-swatch-solid'
 import { Button } from '@ui/components/Button'
+import { cn } from '@ui/cn'
 import { assignRailAccents, railTintVar, type RailAccent } from '@ui/railAccent'
 import { pluginRuntime } from '@core/plugins/runtime'
 import { resolvePluginPanelIcon } from './pluginPanelIcons'
@@ -27,6 +28,7 @@ interface RailItem {
   iconName: string
   accent: RailAccent
   open: boolean
+  detached?: boolean
   disabled?: boolean
   onToggle: () => void
   disabledTitle?: string
@@ -94,7 +96,9 @@ export function PanelRail({
   const frameworkOpen = useEditorStore((s) => s.frameworkPanelOpen)
   const dependenciesOpen = useEditorStore((s) => s.dependenciesPanelOpen)
   const agentOpen = useEditorStore((s) => s.isAgentOpen)
+  const leftPanelModes = useEditorStore((s) => s.leftPanelModes)
   const activePluginPanelId = useEditorStore((s) => s.activePluginPanelId)
+  const pluginPanelMode = useEditorStore((s) => s.pluginPanelMode)
 
   const toggleLeftSidebarPanel = useEditorStore((s) => s.toggleLeftSidebarPanel)
   const setLeftSidebarPanel = useEditorStore((s) => s.setLeftSidebarPanel)
@@ -147,6 +151,7 @@ export function PanelRail({
     return {
       ...item,
       open: panelOpenById[item.id] && !railOnly,
+      detached: panelOpenById[item.id] && leftPanelModes[item.id] === 'floating',
       onToggle: () => {
         if (railOnly) {
           revealBuiltInPanel(item.id)
@@ -194,6 +199,7 @@ export function PanelRail({
         iconName: panel.iconName,
         accent: pluginAccents[index] ?? 'mint',
         open: activePluginPanelId === panel.id && !railOnly,
+        detached: activePluginPanelId === panel.id && pluginPanelMode === 'floating',
         onToggle: () => {
           if (railOnly) {
             revealPluginPanel(panel.id)
@@ -253,16 +259,17 @@ function RailButton({ item }: { item: RailItem }) {
       variant="ghost"
       size="md"
       iconOnly
-      pressed={item.open}
+      pressed={item.open && !item.detached}
       aria-label={`${action} ${item.label} panel`}
       disabled={item.disabled}
       tooltip={title}
       data-testid={`panel-rail-${item.id}`}
       data-icon={item.iconName}
       data-accent={item.accent}
+      data-detached={item.detached ? 'true' : undefined}
       style={style}
       onClick={item.onToggle}
-      className={styles.railButton}
+      className={cn(styles.railButton, item.detached && styles.railButtonDetached)}
     >
       <span className={styles.activeIndicator} aria-hidden="true" />
       <RailIcon size={16} className={styles.railIcon} />

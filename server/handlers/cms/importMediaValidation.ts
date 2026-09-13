@@ -13,7 +13,7 @@
  *   - `resolveMediaWriteTarget` — destination: no traversal, and never a
  *     reserved served subtree (`published/`, `plugins/`, `fonts/`).
  */
-import { extname, join } from 'node:path'
+import { extname, join, relative, sep } from 'node:path'
 import { assertPathWithin } from '../../util/pathWithin'
 import { detectAcceptedMime, EXTENSION_FOR_MIME } from './mediaUpload'
 import { sanitizeSvgBytes } from './svgSanitize'
@@ -58,15 +58,21 @@ const RESERVED_MEDIA_SUBTREES = new Set(['published', 'plugins', 'fonts'])
  * target path to write.
  */
 export function resolveMediaWriteTarget(uploadsDir: string, storagePath: string): string {
-  const firstSegment = storagePath.split('/', 1)[0]?.toLowerCase()
+  const target = join(uploadsDir, storagePath)
+  assertPathWithin(uploadsDir, target)
+  // Test the reserved-subtree denylist against the NORMALISED landing path, not
+  // the raw storagePath. `join` collapses `./published/...` (and any other
+  // traversal that resolves back inside a reserved subtree) to
+  // `<uploads>/published/...`, so a leading `./` slipped straight past a check
+  // on the raw string (GHSA-5h25). `relative` gives the path as it actually
+  // lands under uploadsDir; assertPathWithin above guarantees no `..` prefix.
+  const firstSegment = relative(uploadsDir, target).split(sep, 1)[0]?.toLowerCase()
   if (firstSegment && RESERVED_MEDIA_SUBTREES.has(firstSegment)) {
     throw new ImportMediaValidationError(
       `Media storagePath "${storagePath}" targets the reserved "${firstSegment}" subtree; imported media may only be written to the media area`,
       storagePath,
     )
   }
-  const target = join(uploadsDir, storagePath)
-  assertPathWithin(uploadsDir, target)
   return target
 }
 

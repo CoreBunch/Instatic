@@ -146,8 +146,6 @@ function TooltipInner({
     const onScroll = () => hide()
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key !== 'Escape') return
-      e.preventDefault()
-      e.stopPropagation()
       hide()
     }
     const onPointerDown = (e: PointerEvent) => {
@@ -155,8 +153,12 @@ function TooltipInner({
     }
 
     window.addEventListener('scroll', onScroll, { capture: true, passive: true })
-    // Capture lets the tooltip consume Escape before a parent panel's document
-    // handler sees it and closes the whole surface.
+    // Capture so the tooltip still hides even if a downstream handler stops
+    // propagation. It must NOT consume the key: a tooltip shows on plain
+    // hover, so swallowing Escape here (preventDefault + stopPropagation)
+    // silently killed Escape app-wide — no modal, context menu, or spotlight
+    // could close whenever the pointer happened to rest on a tooltip trigger.
+    // Escape dismisses the tooltip AND whatever surface owns the keystroke.
     window.addEventListener('keydown', onKeyDown, { capture: true })
     window.addEventListener('pointerdown', onPointerDown)
 

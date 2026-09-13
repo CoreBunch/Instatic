@@ -310,7 +310,7 @@ test.describe('users and roles', () => {
     const editedRoleName = `Role lifecycle edited ${suffix}`
 
     await page.goto('/admin/users')
-    await page.getByRole('button', { name: 'Roles', exact: true }).click()
+    await page.getByRole('tab', { name: 'Roles', exact: true }).click()
 
     await test.step('create a custom role with selected capabilities', async () => {
       await page.getByRole('button', { name: 'Create Role', exact: true }).click()
@@ -335,8 +335,15 @@ test.describe('users and roles', () => {
       await dialog.getByLabel('Name', { exact: true }).fill(editedRoleName)
       await dialog.getByLabel('Description').fill('Lifecycle role edited by E2E')
       await dialog.getByText('View site', { exact: true }).click()
-      await dialog.getByText('Manage roles', { exact: true }).click()
+      await dialog.getByText('View dashboard', { exact: true }).click()
       await expect(dialog.getByText('2 of')).toBeVisible()
+
+      // `roles.manage` is an installation-Owner power, never delegable to a
+      // custom role (see OWNER_ONLY_CAPABILITIES) — the picker renders it
+      // disabled so it cannot be granted by editing a role.
+      await expect(
+        dialog.getByRole('checkbox', { name: 'Manage roles' }),
+      ).toBeDisabled()
 
       await page.locator('button[form="users-page-role-form"]').click()
       await completeStepUp(page)
@@ -361,7 +368,7 @@ test.describe('users and roles', () => {
     const roleName = `Role mobile ${Date.now().toString(36)}`
 
     await page.goto('/admin/users')
-    await page.getByRole('button', { name: 'Roles', exact: true }).click()
+    await page.getByRole('tab', { name: 'Roles', exact: true }).click()
 
     const rolesTable = page.getByRole('table', { name: 'Roles' })
     await expect(rolesTable).toBeVisible()
@@ -399,7 +406,7 @@ test.describe('users and roles', () => {
 
     // Reload so the read-only audit feed is fetched from the authoritative API.
     await page.goto('/admin/users')
-    await page.getByRole('button', { name: 'Audit', exact: true }).click()
+    await page.getByRole('tab', { name: 'Audit', exact: true }).click()
 
     const auditTable = page.getByRole('table', { name: 'Audit events' })
     await expect(auditTable).toBeVisible()
@@ -431,7 +438,7 @@ test.describe('users and roles', () => {
     await expect(page.getByText(email)).toBeVisible()
 
     await page.goto('/admin/users')
-    await page.getByRole('button', { name: 'Audit', exact: true }).click()
+    await page.getByRole('tab', { name: 'Audit', exact: true }).click()
 
     const auditTable = page.getByRole('table', { name: 'Audit events' })
     await expect(auditTable).toBeVisible()
@@ -514,7 +521,7 @@ if (result.changes !== 1) {
 /** Create a custom role granting only Site (read) and Media (read). */
 async function createSiteAndMediaRole(page: Page, name: string): Promise<void> {
   await page.goto('/admin/users')
-  await page.getByRole('button', { name: 'Roles', exact: true }).click()
+  await page.getByRole('tab', { name: 'Roles', exact: true }).click()
   await page.getByRole('button', { name: 'Create Role', exact: true }).click()
 
   const dialog = page.getByRole('dialog', { name: 'Create Role' })

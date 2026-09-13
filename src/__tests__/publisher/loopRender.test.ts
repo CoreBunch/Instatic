@@ -393,3 +393,66 @@ describe('publisher loop renderer', () => {
     expect(html).not.toContain('loop-runtime.js')
   })
 })
+
+// ---------------------------------------------------------------------------
+// Author attributes on the wrapper
+// ---------------------------------------------------------------------------
+
+describe('publisher loop renderer — htmlAttributes', () => {
+  const items = [makeItem('1', 'one'), makeItem('2', 'two')]
+
+  function publishLoopWith(htmlAttributes: unknown): string {
+    const page = makePage({
+      root: { moduleId: 'base.body', children: ['loop'] },
+      loop: { moduleId: 'base.loop', children: ['card'], props: { htmlAttributes } },
+      card: {
+        moduleId: 'base.text',
+        props: { text: '' },
+        dynamicBindings: { text: { source: 'currentEntry', field: 'title' } },
+      },
+    })
+    return publishPage(page, makeSite(), baseRegistry, {
+      loopData: new Map([['loop', loopData(items)]]),
+    }).html
+  }
+
+  it('emits author attributes on the wrapper element', () => {
+    // A repeated list is exactly what a carousel / filter script addresses,
+    // and what a screen reader needs labelled.
+    const html = publishLoopWith({ role: 'list', 'aria-label': 'Members', 'data-marquee': 'slow' })
+    expect(html).toContain('role="list"')
+    expect(html).toContain('aria-label="Members"')
+    expect(html).toContain('data-marquee="slow"')
+  })
+
+  it('keeps the loop runtime bookkeeping when an author reuses the name', () => {
+    // The shared sanitiser reserves the `data-instatic-*` prefix, so the
+    // pagination and hole machinery cannot be redirected from the attributes
+    // panel — the author's value never reaches the tag at all.
+    const html = publishLoopWith({ 'data-instatic-loop': 'hijacked' })
+    expect(html).toContain('data-instatic-loop="loop"')
+    expect(html).not.toContain('hijacked')
+  })
+
+  it('drops values the attribute sanitiser rejects', () => {
+    const html = publishLoopWith({ onclick: 'alert(1)', href: 'javascript:alert(1)' })
+    expect(html).not.toContain('alert(1)')
+  })
+
+  it('escapes attribute values', () => {
+    const html = publishLoopWith({ 'data-label': '"><script>x</script>' })
+    expect(html).not.toContain('<script>x</script>')
+  })
+
+  it('adds nothing when no attributes are set', () => {
+    const page = makePage({
+      root: { moduleId: 'base.body', children: ['loop'] },
+      loop: { moduleId: 'base.loop', children: ['card'], props: {} },
+      card: { moduleId: 'base.text', props: { text: 'x' } },
+    })
+    const html = publishPage(page, makeSite(), baseRegistry, {
+      loopData: new Map([['loop', loopData(items)]]),
+    }).html
+    expect(html).toContain('<div data-instatic-loop="loop" data-instatic-loop-page="1">')
+  })
+})

@@ -28,6 +28,69 @@ import type { Migration } from './runMigrations'
  * same unified store as posts. The legacy "pages" and "page_versions" tables
  * have been removed from this baseline.
  */
+/**
+ * Every `*_at` text column that existed when migration 030 shipped. Rows
+ * stamped by SQL `current_timestamp` hold `YYYY-MM-DD HH:MM:SS`, which sorts
+ * before the ISO 8601 `T` form written from JS and compares wrongly against a
+ * bound ISO cutoff (`published_at >= ${sinceIso}` misses the whole boundary
+ * day). 030 rewrites those values in place so every timestamp column holds one
+ * shape. Checked against the live schema by
+ * `src/__tests__/db/iso-timestamp-migration.test.ts`.
+ */
+export const ISO_TIMESTAMP_COLUMNS_030: ReadonlyArray<readonly [table: string, columns: readonly string[]]> = [
+  ['active_media_storage_adapter', ['elected_at']],
+  ['active_media_variant_delegate', ['elected_at']],
+  ['ai_conversations', ['created_at', 'updated_at', 'deleted_at']],
+  ['ai_defaults', ['updated_at']],
+  ['ai_mcp_connectors', ['created_at', 'last_used_at', 'revoked_at', 'expires_at']],
+  ['ai_mcp_oauth_clients', ['created_at']],
+  ['ai_mcp_oauth_codes', ['created_at', 'expires_at', 'consumed_at']],
+  ['ai_mcp_oauth_tokens', ['created_at', 'expires_at', 'revoked_at']],
+  ['ai_messages', ['created_at']],
+  ['ai_model_pricing', ['refreshed_at']],
+  ['ai_provider_credentials', ['created_at', 'updated_at', 'last_used_at']],
+  ['audit_events', ['created_at']],
+  ['collab_documents', ['updated_at']],
+  ['data_row_redirects', ['created_at']],
+  ['data_row_versions', ['published_at', 'created_at']],
+  ['data_rows', ['created_at', 'updated_at', 'published_at', 'scheduled_publish_at', 'deleted_at']],
+  ['data_tables', ['created_at', 'updated_at', 'deleted_at']],
+  ['installed_plugins', ['installed_at', 'updated_at']],
+  ['login_attempts', ['attempted_at']],
+  ['media_assets', ['deleted_at', 'replaced_at', 'created_at']],
+  ['media_folders', ['created_at']],
+  ['media_smart_folders', ['created_at']],
+  ['media_usage_refs', ['computed_at']],
+  ['plugin_crash_events', ['occurred_at']],
+  ['plugin_media_sources', ['created_at', 'updated_at']],
+  ['plugin_records', ['created_at', 'updated_at']],
+  ['plugin_schedule_runs', ['started_at', 'finished_at']],
+  ['plugin_schedules', ['last_run_at', 'last_finished_at', 'next_run_at', 'claimed_at', 'created_at', 'updated_at']],
+  ['plugin_secrets', ['created_at', 'updated_at']],
+  ['published_runtime_assets', ['created_at']],
+  ['roles', ['created_at', 'updated_at']],
+  ['schema_migrations', ['applied_at']],
+  ['sessions', ['created_at', 'last_seen_at', 'expires_at', 'revoked_at', 'mfa_passed_at', 'step_up_expires_at']],
+  ['site', ['created_at', 'updated_at']],
+  ['site_branch_merge_requests', ['resolved_at', 'created_at', 'updated_at']],
+  ['site_branch_merges', ['undone_at', 'created_at']],
+  ['site_branch_previews', ['expires_at', 'created_at', 'revoked_at']],
+  ['site_branch_review_comments', ['created_at']],
+  ['site_branches', ['created_at', 'updated_at']],
+  ['site_snapshots', ['created_at']],
+  ['user_preferences', ['updated_at']],
+  ['users', ['last_login_at', 'password_updated_at', 'mfa_enabled_at', 'created_at', 'updated_at', 'deleted_at']],
+]
+
+function isoTimestampRewrite030(): string {
+  return ISO_TIMESTAMP_COLUMNS_030.flatMap(([table, columns]) =>
+    columns.map(
+      (column) =>
+        `update ${table} set ${column} = strftime('%Y-%m-%dT%H:%M:%fZ', ${column}) where ${column} like '____-__-__ __:__:__%';`,
+    ),
+  ).join('\n')
+}
+
 export const sqliteMigrations: Migration[] = [
   {
     id: '001_baseline',
@@ -1223,5 +1286,233 @@ export const sqliteMigrations: Migration[] = [
       update users set display_name = ''
        where trim(lower(display_name)) = trim(lower(email));
     `,
+  },
+  {
+    // `roles.manage` is an installation-Owner power, not a delegable grant.
+    // Older builds allowed it to be persisted on custom/non-Owner roles.
+    id: '025_remove_non_owner_role_management',
+    sql: `
+      update roles
+         set capabilities_json = (
+               select coalesce(json_group_array(value), '[]')
+                 from json_each(roles.capabilities_json)
+                where value <> 'roles.manage'
+             ),
+             updated_at = current_timestamp
+       where id <> 'owner'
+         and exists (
+               select 1
+                 from json_each(roles.capabilities_json)
+                where value = 'roles.manage'
+             );
+    `,
+  },
+  {
+    // Stable provenance for plugin-managed media. The mapping lets an
+    // integration converge on one media asset instead of creating a duplicate
+    // on every sync, and keeps replacements on the same asset id.
+    id: '026_plugin_media_sources',
+    sql: `
+      create table if not exists plugin_media_sources (
+        plugin_id text not null references installed_plugins(id) on delete cascade,
+        source_key text not null,
+        asset_id text not null references media_assets(id) on delete cascade,
+        source_version text,
+        content_hash text not null,
+        created_at text not null default current_timestamp,
+        updated_at text not null default current_timestamp,
+        primary key (plugin_id, source_key),
+        unique (asset_id)
+      );
+
+      create index if not exists plugin_media_sources_asset_idx
+        on plugin_media_sources (asset_id);
+    `,
+  },
+  {
+    // Site branches. Every content row keeps its LOGICAL id on every branch;
+    // the physical primary key stays `id` and is `<branch>:<logical>` off
+    // main (see src/core/branches/ids.ts). Existing rows all belong to
+    // `main`, where physical == logical, so nothing moves. Collab doc ids
+    // gain a branch segment. Nothing is dropped except the table-slug
+    // uniqueness index, which is recreated per branch.
+    id: '027_site_branches',
+    sql: `
+      create table if not exists site_branches (
+        id text primary key,
+        name text not null,
+        base_branch_id text,
+        created_by_user_id text references users(id) on delete set null,
+        created_at text not null default (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+        updated_at text not null default (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+      );
+
+      insert into site_branches (id, name, base_branch_id)
+      values ('main', 'main', null)
+      on conflict (id) do nothing;
+
+      alter table site add column branch_id text not null default 'main';
+      alter table site add column logical_id text generated always as (
+        case when branch_id = 'main' then id else substr(id, length(branch_id) + 2) end
+      ) virtual;
+
+      create unique index if not exists site_branch_idx
+        on site (branch_id);
+
+      alter table data_tables add column branch_id text not null default 'main';
+      alter table data_tables add column logical_id text generated always as (
+        case when branch_id = 'main' then id else substr(id, length(branch_id) + 2) end
+      ) virtual;
+
+      create index if not exists data_tables_branch_idx
+        on data_tables (branch_id);
+
+      drop index if exists data_tables_slug_active_idx;
+
+      create unique index if not exists data_tables_branch_slug_active_idx
+        on data_tables (branch_id, slug)
+        where deleted_at is null;
+
+      alter table data_rows add column branch_id text not null default 'main';
+      alter table data_rows add column logical_id text generated always as (
+        case when branch_id = 'main' then id else substr(id, length(branch_id) + 2) end
+      ) virtual;
+
+      create index if not exists data_rows_branch_idx
+        on data_rows (branch_id);
+
+      update collab_documents
+         set doc_id = 'site:main'
+       where doc_id = 'site:default';
+
+      update collab_documents
+         set doc_id = 'page:main:' || substr(doc_id, 6)
+       where doc_id like 'page:%'
+         and doc_id not like 'page:main:%';
+
+      update collab_documents
+         set doc_id = 'component:main:' || substr(doc_id, 11)
+       where doc_id like 'component:%'
+         and doc_id not like 'component:main:%';
+
+      update collab_documents
+         set doc_id = 'layout:main:' || substr(doc_id, 8)
+       where doc_id like 'layout:%'
+         and doc_id not like 'layout:main:%';
+
+      create table if not exists site_branch_bases (
+        branch_id text not null references site_branches(id) on delete cascade,
+        kind text not null,
+        logical_id text not null,
+        content_hash text not null,
+        content_json text not null default '{}',
+        primary key (branch_id, kind, logical_id)
+      );
+
+      create table if not exists site_branch_previews (
+        id text primary key,
+        branch_id text not null references site_branches(id) on delete cascade,
+        token_hash text not null,
+        expires_at text,
+        created_by_user_id text references users(id) on delete set null,
+        created_at text not null default (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+        revoked_at text
+      );
+
+      create unique index if not exists site_branch_previews_token_idx
+        on site_branch_previews (token_hash);
+
+      create index if not exists site_branch_previews_branch_idx
+        on site_branch_previews (branch_id);
+
+      -- Branch powers are Owner/Admin by default: create forks a branch and
+      -- reaches the branches you forked; manage reaches every branch and
+      -- merges. The boot-time role sync re-applies both; the migration
+      -- records them for the seed snapshot.
+      update roles
+         set capabilities_json = json_insert(capabilities_json, '$[#]', 'site.branches.create'),
+             updated_at = current_timestamp
+       where id in ('owner', 'admin')
+         and not exists (
+               select 1
+                 from json_each(roles.capabilities_json)
+                where value = 'site.branches.create'
+             );
+
+      update roles
+         set capabilities_json = json_insert(capabilities_json, '$[#]', 'site.branches.manage'),
+             updated_at = current_timestamp
+       where id in ('owner', 'admin')
+         and not exists (
+               select 1
+                 from json_each(roles.capabilities_json)
+                where value = 'site.branches.manage'
+             );
+    `,
+  },
+  {
+    id: '028_site_branch_reviews',
+    sql: `
+      create table if not exists site_branch_merge_requests (
+        id text primary key,
+        branch_id text not null references site_branches(id) on delete cascade,
+        requested_by_user_id text references users(id) on delete set null,
+        note text not null default '',
+        content_hash text not null default '',
+        status text not null default 'open',
+        resolved_by_user_id text references users(id) on delete set null,
+        resolved_at text,
+        resolution_note text not null default '',
+        created_at text not null default (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+        updated_at text not null default (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+      );
+
+      create index if not exists site_branch_merge_requests_branch_idx
+        on site_branch_merge_requests (branch_id, status, created_at desc);
+
+      create unique index if not exists site_branch_merge_requests_open_idx
+        on site_branch_merge_requests (branch_id)
+        where status = 'open';
+
+      create table if not exists site_branch_review_comments (
+        id text primary key,
+        branch_id text not null references site_branches(id) on delete cascade,
+        request_id text references site_branch_merge_requests(id) on delete set null,
+        entity_key text not null default '',
+        author_user_id text references users(id) on delete set null,
+        body text not null,
+        created_at text not null default (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+      );
+
+      create index if not exists site_branch_review_comments_branch_idx
+        on site_branch_review_comments (branch_id, created_at);
+    `,
+  },
+  {
+    id: '029_site_branch_merges',
+    sql: `
+      create table if not exists site_branch_merges (
+        id text primary key,
+        branch_id text not null references site_branches(id) on delete cascade,
+        direction text not null,
+        applied_by_user_id text references users(id) on delete set null,
+        change_count integer not null default 0,
+        entries_json text not null default '[]',
+        undone_at text,
+        created_at text not null default (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+      );
+
+      create index if not exists site_branch_merges_branch_idx
+        on site_branch_merges (branch_id, created_at desc);
+    `,
+  },
+  {
+    // Repositories now bind ISO 8601 timestamps from JS (`nowIso()`) instead
+    // of stamping with SQL `current_timestamp`, which on SQLite wrote
+    // `YYYY-MM-DD HH:MM:SS`. Convert the rows written before that change so a
+    // column never mixes the two shapes: the space form sorts before the `T`
+    // form and compares wrongly against bound ISO cutoffs.
+    id: '030_iso_timestamps',
+    sql: isoTimestampRewrite030(),
   },
 ]

@@ -30,5 +30,8 @@ export function createFakeDb(
   }) as DbClient
   fn.unsafe = async (sql: string, params: unknown[] = []) => handler(sql, params)
   fn.transaction = async <T>(cb: (tx: DbClient) => Promise<T>): Promise<T> => cb(fn)
+  // No resource to release; present so fakes satisfy DbClient at runtime, not
+  // only through the `as DbClient` assertion.
+  fn.close = async (): Promise<void> => {}
   return Object.assign(fn, { dialect: 'sqlite' as const })
 }

@@ -16,6 +16,7 @@ import {
   uploadCurrentUserAvatar,
   type CmsCurrentUser,
 } from '@core/persistence'
+import { isValidEmail } from '@core/utils/email'
 import { useAdminSessionSetter } from '@admin/sessionContext'
 import { useStepUp } from '@admin/shared/StepUp'
 import { UserAvatar } from '@admin/shared/UserAvatar'
@@ -120,7 +121,7 @@ export function ProfileTab({ user }: ProfileTabProps) {
     if (busy) return
 
     const email = profileForm.email.trim()
-    if (!email.includes('@')) {
+    if (!isValidEmail(email)) {
       setStatus({ tone: 'error', message: 'Enter a valid email address.' })
       return
     }

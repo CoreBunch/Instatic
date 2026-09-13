@@ -246,9 +246,14 @@ export async function handleHoleRequest(
     })
   }
 
-  // Shared hole: cache via Layer B keyed on the normalized PAGE query so
-  // distinct queries get distinct slots while identical queries single-flight.
-  // Cookies are intentionally NOT exposed (they would fragment the cache).
+  // Shared hole: cache via Layer B keyed on the originating page's PATH and
+  // normalized query, so distinct requests get distinct slots while identical
+  // ones single-flight. The fragment's content depends on the page URL (its
+  // path drives `route.path` / `route.slug` / `route.segments`), so the path
+  // MUST be part of the key. Keying on the query alone let an attacker render a
+  // fragment under an arbitrary `u` path and have it served as the canonical
+  // cached response for the real page (GHSA-f29g). Cookies are intentionally
+  // NOT exposed (they would fragment the cache).
   const request: SourceRequestContext = {
     query,
     path: route.path,
@@ -258,7 +263,7 @@ export async function handleHoleRequest(
   const cached = await getOrRender(
     {
       urlPath: `${HOLE_PATH_PREFIX}${nodeId}`,
-      queryString: `v=${currentVersion}&${normalizeQuery(pageUrl.searchParams)}`,
+      queryString: `v=${currentVersion}&u=${encodeURIComponent(pageUrl.pathname)}&${normalizeQuery(pageUrl.searchParams)}`,
     },
     async () => {
       const html = await renderHoleFragment(nodeId, foundPage, snap.site, ctx.db, pageUrl, request)

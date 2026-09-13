@@ -7,6 +7,15 @@ import { pillAccent } from '@ui/pillAccent'
 afterEach(cleanup)
 
 describe('TagPill', () => {
+  it('colours a state tone from the semantic token instead of the label accent', () => {
+    render(<TagPill label="Awaiting review" tone="warning" />)
+
+    const pill = screen.getByText('Awaiting review').closest('[data-tone]') as HTMLElement
+
+    expect(pill.getAttribute('data-tone')).toBe('warning')
+    expect(pill.style.getPropertyValue('--pill-accent')).toBe('var(--warning)')
+  })
+
   it('renders a read-only tinted label from the label text', () => {
     render(<TagPill label=".alpha" />)
 

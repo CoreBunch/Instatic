@@ -47,6 +47,35 @@ function resetStore() {
 beforeEach(resetStore)
 
 describe('Script runtime settings pane', () => {
+  it('keeps many problems bounded and collapses to the live error count', () => {
+    const diagnostics = Array.from({ length: 12 }, (_, index) => ({
+      code: `runtime-error-${index}`,
+      severity: 'error' as const,
+      message: `Problem ${index + 1}: ${'long diagnostic details '.repeat(8)}`,
+      path: 'src/scripts/celebrate.ts',
+      line: index + 1,
+      column: 4,
+    }))
+
+    render(<CodeEditorPanel runtimeValidation={{ status: 'valid', diagnostics }} />)
+
+    const problems = screen.getByRole('region', { name: 'Script problems' })
+    expect(screen.getByText('12 errors')).toBeDefined()
+    expect(problems.querySelectorAll('li')).toHaveLength(12)
+
+    const minimize = screen.getByRole('button', { name: 'Minimize Problems' })
+    expect(minimize.getAttribute('aria-expanded')).toBe('true')
+    fireEvent.click(minimize)
+
+    expect(screen.getByText('12 errors')).toBeDefined()
+    expect(problems.querySelectorAll('li')).toHaveLength(0)
+    const expand = screen.getByRole('button', { name: 'Expand Problems' })
+    expect(expand.getAttribute('aria-expanded')).toBe('false')
+
+    fireEvent.click(expand)
+    expect(problems.querySelectorAll('li')).toHaveLength(12)
+  })
+
   it('renders next to active script files and updates runtime config', () => {
     render(<CodeEditorPanel />)
 

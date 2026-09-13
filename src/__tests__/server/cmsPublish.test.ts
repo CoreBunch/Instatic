@@ -11,6 +11,7 @@ import { publishDraftSite } from '../../../server/publish/publishSite'
 import { createDataRow, saveDataRowDraft } from '../../../server/repositories/data'
 import { pageToCells } from '../../../src/core/data/pageFromRow'
 import { createFakeDb } from './dbTestFake'
+import { MAIN_SCOPE } from '../../../server/branches/scope'
 
 function createPublishFakeDb() {
   const state = {
@@ -28,8 +29,8 @@ function createPublishFakeDb() {
     if (sql.startsWith('insert into site (')) {
       state.site = {
         id: 'default',
-        name: params[0],
-        settings_json: params[1],
+        name: params[1],
+        settings_json: params[2],
         created_at: new Date('2026-01-01').toISOString(),
         updated_at: new Date('2026-01-02').toISOString(),
       }
@@ -43,13 +44,14 @@ function createPublishFakeDb() {
     if (sql.startsWith('insert into data_rows')) {
       const row = {
         id: params[0],
-        table_id: params[1],
-        cells_json: params[2],
-        slug: params[3],
-        status: params[4],
-        author_user_id: params[5],
-        created_by_user_id: params[6],
-        updated_by_user_id: params[7],
+        logical_id: params[0],
+        table_id: params[2],
+        cells_json: params[3],
+        slug: params[4],
+        status: params[5],
+        author_user_id: params[6],
+        created_by_user_id: params[7],
+        updated_by_user_id: params[8],
         active_version_id: null,
         published_by_user_id: null,
         published_at: null,
@@ -60,12 +62,12 @@ function createPublishFakeDb() {
       const idx = state.dataRows.findIndex((r) => r.id === row.id)
       if (idx >= 0) state.dataRows[idx] = row
       else state.dataRows.push(row)
-      return { rows: [{ id: row.id }], rowCount: 1 }
+      return { rows: [{ logical_id: row.id }], rowCount: 1 }
     }
     // saveDataRowDraft — update data_rows set cells_json, slug, updated_by_user_id, plugin_actor_id
-    // params: [0]=cells_json, [1]=slug, [2]=updated_by_user_id, [3]=plugin_actor_id, [4]=rowId
+    // params: [0]=cells_json, [1]=slug, [2]=updated_by_user_id, [3]=plugin_actor_id, [4]=updated_at, [5]=rowId
     if (sql.startsWith('update data_rows set cells_json')) {
-      const row = state.dataRows.find((r) => r.id === params[4])
+      const row = state.dataRows.find((r) => r.id === params[5])
       if (row) {
         row.cells_json = params[0]
         row.slug = params[1]
@@ -75,8 +77,19 @@ function createPublishFakeDb() {
     }
     // listDataRows for pages — select from data_rows where table_id = 'pages'
     if (sql.includes('from data_rows') && sql.includes('left join users')) {
-      const rows = state.dataRows
-        .filter((r) => r.deleted_at == null)
+      const matchingRows = state.dataRows.filter((r) => {
+        if (r.deleted_at != null) return false
+        if (sql.includes('data_rows.table_id =')) return r.table_id === params[0]
+        if (sql.includes('data_rows.id =')) return r.id === params[0]
+        return true
+      })
+      const rows = (sql.includes('order by data_rows.updated_at desc')
+        ? matchingRows.sort((a, b) =>
+            String(b.updated_at).localeCompare(String(a.updated_at)) ||
+            String(b.created_at).localeCompare(String(a.created_at))
+          )
+        : matchingRows
+      )
         .map((r) => ({
           ...r,
           author_email: null,
@@ -146,17 +159,19 @@ function createPublishFakeDb() {
       return { rows: [], rowCount: 1 }
     }
     // update data_rows set active_version_id = $1 ... (after publish)
-    // SQL params: $1=versionId, $2=publishedByUserId, $3=updatedByUserId, $4=rowId
+    // SQL params: $1=versionId, $2=publishedByUserId, $3=published_at, $4=updatedByUserId, $5=updated_at, $6=rowId
     if (sql.startsWith('update data_rows') && sql.includes('active_version_id')) {
       const versionId = params[0] as string
       const publishedBy = params[1] as string
-      const rowId = params[3] as string
+      const rowId = params[5] as string
       const row = state.dataRows.find((r) => r.id === rowId)
       if (row) {
         row.active_version_id = versionId
         row.status = 'published'
         row.published_by_user_id = publishedBy
         row.published_at = new Date('2026-01-03').toISOString()
+        row.updated_by_user_id = publishedBy
+        row.updated_at = new Date('2026-01-03').toISOString()
       }
       return { rows: [], rowCount: row ? 1 : 0 }
     }
@@ -254,9 +269,9 @@ async function seedSiteAndPage(
   text: string,
 ) {
   const shell = makeSiteShell()
-  await saveDraftSite(db, shell)
+  await saveDraftSite(db, MAIN_SCOPE, shell)
   const page = makeHomePage(text)
-  await createDataRow(db, {
+  await createDataRow(db, MAIN_SCOPE, {
     id: page.id,
     tableId: 'pages',
     cells: pageToCells(page),
@@ -283,7 +298,7 @@ describe('CMS publishing', () => {
     await publishDraftSite(db, 'admin_1')
 
     // Update the draft page text
-    await saveDataRowDraft(db, 'page_home', {
+    await saveDataRowDraft(db, MAIN_SCOPE, 'page_home', {
       cells: pageToCells({ ...makeHomePage('Draft only') }),
       slug: 'index',
     }, 'admin_1')
@@ -308,13 +323,58 @@ describe('CMS publishing', () => {
     expect(status.lastPublishedAt).toBeTruthy()
   })
 
+  it('keeps publish status matched when publishing changes the rows recency order', async () => {
+    const { state, db } = createPublishFakeDb()
+    const shell = makeSiteShell()
+    await saveDraftSite(db, MAIN_SCOPE, shell)
+
+    const home = makeHomePage('Home')
+    const layout = {
+      ...makeHomePage('Layout'),
+      id: 'page_layout',
+      title: 'Main layout',
+      slug: 'main-layout',
+      template: {
+        enabled: true as const,
+        target: { kind: 'everywhere' as const },
+        priority: 0,
+      },
+    }
+    for (const page of [home, layout]) {
+      await createDataRow(db, MAIN_SCOPE, {
+        id: page.id,
+        tableId: 'pages',
+        cells: pageToCells(page),
+        slug: page.slug,
+      }, 'admin_1')
+    }
+
+    const homeRow = state.dataRows.find((row) => row.id === home.id)
+    const layoutRow = state.dataRows.find((row) => row.id === layout.id)
+    if (!homeRow || !layoutRow) throw new Error('test pages were not seeded')
+    homeRow.created_at = new Date('2026-01-01').toISOString()
+    homeRow.updated_at = new Date('2026-01-02').toISOString()
+    layoutRow.created_at = new Date('2026-01-02').toISOString()
+    layoutRow.updated_at = new Date('2026-01-01').toISOString()
+
+    await publishDraftSite(db, 'admin_1')
+    const status = await getDraftPublishStatus(db)
+
+    expect(status).toMatchObject({
+      hasPublishedVersion: true,
+      draftMatchesPublished: true,
+      draftPages: 2,
+      publishedPages: 2,
+    })
+  })
+
   it('reports that the current draft no longer matches after a later draft save', async () => {
     const { db } = createPublishFakeDb()
     await seedSiteAndPage(db, 'Public version')
     await publishDraftSite(db, 'admin_1')
 
     // Update the draft to create mismatch
-    await saveDataRowDraft(db, 'page_home', {
+    await saveDataRowDraft(db, MAIN_SCOPE, 'page_home', {
       cells: pageToCells({ ...makeHomePage('Draft only') }),
       slug: 'index',
     }, 'admin_1')
@@ -351,9 +411,9 @@ describe('CMS publishing', () => {
         },
       }),
     })
-    await saveDraftSite(db, shell)
+    await saveDraftSite(db, MAIN_SCOPE, shell)
     const page = makeHomePage('Runtime page')
-    await createDataRow(db, {
+    await createDataRow(db, MAIN_SCOPE, {
       id: page.id,
       tableId: 'pages',
       cells: pageToCells(page),
@@ -367,5 +427,43 @@ describe('CMS publishing', () => {
     expect(String(state.runtimeAssets[0].public_path)).toContain('/_instatic/assets/')
     expect(published?.runtimeAssets?.scripts).toHaveLength(1)
     expect(published?.runtimeAssets?.scripts[0].src).toBe(state.runtimeAssets[0].public_path)
+  })
+
+  it('rejects invalid authored runtime scripts with their file and location before writing a publish', async () => {
+    const { state, db } = createPublishFakeDb()
+    const shell = makeSiteShell({
+      files: [
+        {
+          id: 'forgotten-test-script',
+          path: 'src/scripts/forgotten-test.ts',
+          type: 'script',
+          content: `const value from 'broken'`,
+          createdAt: 1,
+          updatedAt: 1,
+        },
+      ],
+      runtime: normalizeSiteRuntimeConfig({
+        scripts: {
+          'forgotten-test-script': {
+            placement: 'body-end',
+            priority: 10,
+          },
+        },
+      }),
+    })
+    await saveDraftSite(db, MAIN_SCOPE, shell)
+    const page = makeHomePage('Runtime page')
+    await createDataRow(db, MAIN_SCOPE, {
+      id: page.id,
+      tableId: 'pages',
+      cells: pageToCells(page),
+      slug: page.slug,
+    }, 'admin_1')
+
+    await expect(publishDraftSite(db, 'admin_1')).rejects.toThrow(
+      'Runtime script build failed for page "Home": src/scripts/forgotten-test.ts:1:',
+    )
+    expect(state.siteSnapshots).toEqual([])
+    expect(state.dataRowVersions).toEqual([])
   })
 })

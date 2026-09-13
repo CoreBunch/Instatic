@@ -60,6 +60,11 @@ export interface WidgetProps {
   /** Optional action slot rendered between the title and the drag handle. */
   action?: ReactNode
   /**
+   * Opens the widget's options menu. The kebab button renders only when a
+   * handler is provided — a widget without menu actions shows no dead chrome.
+   */
+  onMenuClick?: (event: React.MouseEvent<HTMLButtonElement>) => void
+  /**
    * True when the dashboard is in customize mode (drag handle becomes
    * visible, hover ring appears). Plugin widgets receive this through
    * the `DashboardWidgetRendererProps` and pass it straight through.
@@ -142,6 +147,7 @@ export function Widget({
   tint,
   span,
   action,
+  onMenuClick,
   editing,
   loading = false,
   children,
@@ -166,17 +172,19 @@ export function Widget({
         </div>
         <div className={styles.headEnd}>
           {action}
-          {editing ? (
+          {editing && (
             <span className={styles.handle} aria-hidden="true">
               <DragAndDropSolidIcon size={12} />
             </span>
-          ) : (
+          )}
+          {!editing && onMenuClick && (
             <Button
               variant="ghost"
               size="micro"
               iconOnly
               className={styles.menu}
               aria-label={`${title} options`}
+              onClick={onMenuClick}
             >
               <MoreHorizontalSolidIcon size={12} />
             </Button>

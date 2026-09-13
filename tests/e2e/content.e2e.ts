@@ -1,5 +1,8 @@
 import { expect, test, type Page } from '@playwright/test'
 import {
+  entryRow,
+  saveSelectedDraft,
+  startNewPost,
   ANONYMOUS_STATE,
   OWNER,
   canvasFrame,
@@ -51,7 +54,7 @@ test.describe('content', () => {
       const bodyEditor = page.getByTestId('content-body-editor')
       await bodyEditor.click()
       await page.keyboard.type('/h2')
-      await page.getByTestId('content-slash-menu').getByRole('option', {
+      await page.getByTestId('content-slash-menu').getByRole('menuitem', {
         name: /Heading 2/,
       }).click()
       await page.keyboard.type('Release notes')
@@ -59,9 +62,12 @@ test.describe('content', () => {
 
       await page.keyboard.press('Enter')
       await page.keyboard.type('/data')
-      await page.getByTestId('content-slash-menu').getByRole('option', {
+      await page.getByTestId('content-slash-menu').getByRole('menuitem', {
         name: /Data token/,
       }).click()
+      // The command opens the data-binding picker; choosing a field inserts
+      // its token at the caret. Field rows read as label plus value preview.
+      await page.getByRole('button', { name: /^Title\b/ }).first().click()
       await expect(bodyEditor).toContainText('{currentEntry.title}')
     })
 
@@ -309,8 +315,12 @@ test.describe('content', () => {
         await dialog.getByLabel('Name').fill(collectionName)
         await dialog.getByLabel('Singular label').fill('Product')
         await dialog.getByLabel('Plural label').fill(pluralLabel)
-        await dialog.getByLabel('Featured media').setChecked(false)
-        await dialog.getByLabel('SEO fields').setChecked(false)
+        // `confirmBeforeDelete` is off by default, so removing a field
+        // commits immediately with no confirmation dialog.
+        for (const fieldLabel of ['Featured media', 'SEO title', 'SEO description']) {
+          await dialog.getByRole('button', { name: `Delete ${fieldLabel}` }).click()
+          await expect(dialog.getByRole('button', { name: `Delete ${fieldLabel}` })).toHaveCount(0)
+        }
         await dialog.getByRole('button', { name: 'Create' }).click()
         await completeStepUp(page)
 
@@ -531,30 +541,6 @@ async function createPostsTemplate(
   await expect(page.getByTestId('document-switcher')).toHaveAttribute('placeholder', templateName)
 }
 
-async function saveSelectedDraft(page: Page, title: string): Promise<void> {
-  await page.getByRole('button', { name: 'More publishing actions' }).click()
-  const saveResponse = page.waitForResponse((response) =>
-    /\/admin\/api\/cms\/data\/rows\/[^/]+$/.test(new URL(response.url()).pathname) &&
-    response.request().method() === 'PATCH',
-  )
-  await page.getByTestId('toolbar-content-save-draft-action').click()
-  expect((await saveResponse).ok()).toBe(true)
-  // The new title replaces the "Untitled draft" placeholder once saved.
-  await expect(entryRow(page, title)).toBeVisible({ timeout: 20_000 })
-}
-
-async function startNewPost(page: Page): Promise<void> {
-  const previousRow = new URL(page.url()).searchParams.get('row')
-  const newPost = page.getByRole('button', { name: 'New post', exact: true })
-  await expect(newPost).toBeEnabled()
-  await newPost.click()
-  await page.waitForURL((url) => {
-    const nextRow = url.searchParams.get('row')
-    return nextRow !== null && nextRow !== previousRow
-  })
-  await expect(page.getByRole('textbox', { name: 'Title', exact: true })).toHaveValue('')
-}
-
 async function createPublishedPostsTemplate(
   page: Page,
   suffix: string,
@@ -585,6 +571,3 @@ async function createPublishedPostsTemplate(
 }
 
 /** The entry's row button in the content explorer list. */
-function entryRow(page: Page, title: string) {
-  return page.getByRole('button').filter({ hasText: title })
-}

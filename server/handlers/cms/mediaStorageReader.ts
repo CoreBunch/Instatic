@@ -28,6 +28,7 @@
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { mediaStorageRegistry } from '@core/plugins/mediaStorageRegistry'
+import { guardedFetch } from '../../plugins/host/network'
 
 interface ReadSourceInput {
   /** Adapter id pinned on the asset row (or `''` for local-disk). */
@@ -127,7 +128,11 @@ export async function readMediaSourceBytes(input: ReadSourceInput): Promise<Uint
 
   let response: Response
   try {
-    response = await fetch(fetchUrl)
+    // The URL comes from a storage-adapter plugin (`publicPath` or `getReadUrl`).
+    // Route it through the SSRF-safe guard so `media.storage.adapter` cannot be
+    // used as `network.outbound` reach: internal addresses are refused and the
+    // connection is pinned to the checked IP (GHSA-rmm7).
+    response = await guardedFetch(fetchUrl, {}, { label: 'Media migration source' })
   } catch (err) {
     throw new MediaSourceReadError(
       `fetch("${fetchUrl}") failed: ${err instanceof Error ? err.message : String(err)}`,

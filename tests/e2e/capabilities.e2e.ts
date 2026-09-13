@@ -519,9 +519,17 @@ test.describe.serial('content row move capability boundaries', () => {
       await createContentCollection(ownerPage, targetCollectionName, 'Target item')
       await createContentEntry(ownerPage, sourceCollectionName, 'Source item', entryTitle)
 
-      await createRole(ownerPage, personas.editor.roleName, ['Edit any content'])
+      // Reading a collection's rows needs a table-read capability on top of
+      // the content one (GHSA-x69h) — without it the explorer shows nothing
+      // and neither persona can get as far as the move controls this spec is
+      // actually about.
+      await createRole(ownerPage, personas.editor.roleName, [
+        'Edit any content',
+        'Browse custom tables',
+      ])
       await createRole(ownerPage, personas.mover.roleName, [
         'Edit any content',
+        'Browse custom tables',
         'Move rows between tables',
       ])
       for (const persona of Object.values(personas)) {
@@ -1019,14 +1027,16 @@ test.describe.serial('AI capability boundaries', () => {
   }) => {
     await withPersona(browser, personas.providerManager, async (personaPage) => {
       await openAiWorkspace(personaPage)
-      await expect(personaPage.getByRole('tab', { name: 'Providers' })).toBeVisible()
-      await expect(personaPage.getByRole('tab', { name: 'Defaults' })).toBeVisible()
-      await expect(personaPage.getByRole('tab', { name: 'Audit' })).toHaveCount(0)
-      await expect(personaPage.getByRole('heading', { name: 'Credentials' })).toBeVisible()
-      await expect(personaPage.getByRole('button', { name: 'Add credential' })).toBeVisible()
+      await expect(personaPage.getByTestId('ai-nav-providers')).toBeVisible()
+      await expect(personaPage.getByTestId('ai-nav-defaults')).toBeVisible()
+      await expect(personaPage.getByTestId('ai-nav-audit')).toHaveCount(0)
+      // A fresh install lists only the provider catalog; the Credentials
+      // section appears once a credential exists.
+      await expect(personaPage.getByRole('heading', { name: 'Add provider' })).toBeVisible()
+      await expect(personaPage.getByRole('button', { name: /^Ollama\b/ })).toBeVisible()
 
-      await personaPage.getByRole('tab', { name: 'Defaults' }).click()
-      await expect(personaPage.getByRole('heading', { name: 'Per-scope defaults' })).toBeVisible()
+      await personaPage.getByTestId('ai-nav-defaults').click()
+      await expect(personaPage.getByRole('heading', { name: 'Defaults', exact: true })).toBeVisible()
       await expect(personaPage.getByRole('heading', { name: 'Usage audit' })).toHaveCount(0)
     })
   })
@@ -1036,13 +1046,13 @@ test.describe.serial('AI capability boundaries', () => {
   }) => {
     await withPersona(browser, personas.auditor, async (personaPage) => {
       await openAiWorkspace(personaPage)
-      await expect(personaPage.getByRole('tab', { name: 'Audit' })).toBeVisible()
-      await expect(personaPage.getByRole('tab', { name: 'Providers' })).toHaveCount(0)
-      await expect(personaPage.getByRole('tab', { name: 'Defaults' })).toHaveCount(0)
+      await expect(personaPage.getByTestId('ai-nav-audit')).toBeVisible()
+      await expect(personaPage.getByTestId('ai-nav-providers')).toHaveCount(0)
+      await expect(personaPage.getByTestId('ai-nav-defaults')).toHaveCount(0)
       await expect(personaPage.getByRole('heading', { name: 'Usage audit' })).toBeVisible()
       await expect(personaPage.getByLabel('Audit range')).toBeVisible()
       await expect(personaPage.getByRole('button', { name: 'Add credential' })).toHaveCount(0)
-      await expect(personaPage.getByRole('heading', { name: 'Per-scope defaults' })).toHaveCount(0)
+      await expect(personaPage.getByRole('heading', { name: 'Defaults', exact: true })).toHaveCount(0)
     })
   })
 })
@@ -1069,7 +1079,7 @@ async function createRole(
   capabilityLabels: readonly string[],
 ): Promise<void> {
   await page.goto('/admin/users')
-  await page.getByRole('button', { name: 'Roles', exact: true }).click()
+  await page.getByRole('tab', { name: 'Roles', exact: true }).click()
   await page.getByRole('button', { name: 'Create Role', exact: true }).click()
 
   const dialog = page.getByRole('dialog', { name: 'Create Role' })

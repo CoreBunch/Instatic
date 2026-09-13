@@ -3,6 +3,7 @@ import { handleCmsRequest } from '../../../server/handlers/cms'
 import type { DbClient } from '../../../server/db'
 import { createTestDb, type TestDb } from '../helpers/createTestDb'
 import { registerPublishFlush } from '../../../server/publish/publishFlush'
+import { MAIN_SCOPE } from '../../../server/branches/scope'
 import { upsertDataRowDraft } from '../../../server/repositories/data'
 
 const ownedPassword = 'long-enough-password'
@@ -103,11 +104,15 @@ async function createCustomRole(
   return payload.role.id
 }
 
+// These personas work on posts/pages, which are system tables, so a realistic
+// content editor also holds data.system.tables.read (GHSA-x69h: reading a
+// system table's rows requires it, matching the schema-read gate).
 const OWN_EDIT_CAPS = [
   'site.read',
   'content.create',
   'content.edit.own',
   'content.publish.own',
+  'data.system.tables.read',
 ]
 
 const ANY_EDIT_CAPS = [
@@ -116,6 +121,7 @@ const ANY_EDIT_CAPS = [
   'content.edit.any',
   'content.publish.any',
   'content.manage',
+  'data.system.tables.read',
   'media.read',
   'media.write',
   'media.replace',
@@ -378,6 +384,7 @@ describe('CMS data ownership authorization', () => {
       flushed = true
       await upsertDataRowDraft(
         db,
+       MAIN_SCOPE,
         {
           id: relayResidentId,
           tableId: 'posts',

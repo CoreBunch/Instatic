@@ -232,6 +232,7 @@ These are admin tokens. The published-site Framework engine also emits short spa
 | `--panel-radius`     | 12px  | Floating overlay panels (Spotlight, modals, popovers)        |
 | `--card-radius`      | 16px  | Borderless tile cards (Widget, dashboard cells, module inserter tiles) |
 | `--input-radius`     | 1em   | Pill-shaped inputs, classes / property chips                 |
+| `--radius-pill`      | 999px | Fully round dots, badges, and handles                        |
 | `--tooltip-radius`   | 6px   | Tooltips                                                     |
 
 Do not introduce ad-hoc radius values. Tile-card surfaces use `--card-radius`.
@@ -382,7 +383,7 @@ Every interactive control in the admin and editor goes through a primitive from 
 
 | Primitive            | When to use                                                                 |
 |----------------------|-----------------------------------------------------------------------------|
-| `Button`             | Every action button. Variants for primary / secondary / ghost / danger.     |
+| `Button`             | Every action button. Variants for primary / secondary / ghost / danger. Primary is the high-contrast inverse pill (`--btn-primary-*`: white-on-dark, ink-on-light) — the one visually loud action; secondary/ghost stay on the neutral overlay scale. |
 | `Input`              | Single-line text input. Pill radius, transparent fill, bordered.            |
 | `FormField`          | Label + description shell for form controls.                               |
 | `Switch`             | Boolean toggle.                                                             |

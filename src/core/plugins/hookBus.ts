@@ -91,6 +91,12 @@ interface RegisteredFilter {
   handler: HookFilterHandler
 }
 
+function runtimeValueType(value: unknown): string {
+  if (value === null) return 'null'
+  if (Array.isArray(value)) return 'array'
+  return typeof value
+}
+
 class HookBus {
   private listeners = new Map<string, RegisteredListener[]>()
   private filters = new Map<string, RegisteredFilter[]>()
@@ -154,8 +160,9 @@ class HookBus {
   /**
    * Run a value through every registered handler for a filter pipeline.
    * Each handler receives the previous handler's output and the context
-   * merged from `{ pluginId }` + the optional `contextExtras`. Errors are
-   * logged and the value is left unchanged.
+   * merged from `{ pluginId }` + the optional `contextExtras`. Errors and
+   * results of a different runtime type are logged and leave the value
+   * unchanged.
    *
    * @param contextExtras  Additional context fields forwarded to every
    *   handler alongside `{ pluginId }`. Used by `publish.html` and
@@ -175,6 +182,12 @@ class HookBus {
           ? { pluginId: entry.pluginId, ...contextExtras }
           : { pluginId: entry.pluginId }
         const next = await entry.handler(current, context)
+        if (runtimeValueType(next) !== runtimeValueType(current)) {
+          console.error(
+            `[plugin:${entry.pluginId}] filter "${name}" returned a different value type; keeping the previous value.`,
+          )
+          continue
+        }
         current = next
       } catch (err) {
         console.error(`[plugin:${entry.pluginId}] filter "${name}" threw:`, err)

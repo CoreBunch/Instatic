@@ -54,15 +54,14 @@ import { CMS_API_PREFIX } from './shared'
 import { runRouteTable, type Route, type RouteParams } from './routeTable'
 import {
   EXTENSION_FOR_MIME,
+  MAX_MEDIA_BYTES,
   acceptReplacementMedia,
   acceptUploadedMedia,
-  readUploadedFile,
+  readUploadForm,
 } from './mediaUpload'
 import { removeVariantFiles } from './mediaVariants'
 import { dispatchDelete } from './mediaUploadDispatch'
 import { materializeAssetListForClient } from '../../publish/mediaPresentation'
-
-const MAX_MEDIA_BYTES = 50 * 1024 * 1024
 
 const MEDIA_LIBRARY_MIMES = Object.keys(EXTENSION_FOR_MIME) as Array<
   keyof typeof EXTENSION_FOR_MIME
@@ -150,7 +149,7 @@ async function handleUploadMedia(req: Request, db: DbClient): Promise<Response> 
   const user = await requireCapability(req, db, 'media.write')
   if (user instanceof Response) return user
 
-  const file = await readUploadedFile(req)
+  const { file, altText } = await readUploadForm(req)
   if (!file) return badRequest('Missing file')
 
   const result = await acceptUploadedMedia(db, {
@@ -159,6 +158,7 @@ async function handleUploadMedia(req: Request, db: DbClient): Promise<Response> 
     allowedMimes: MEDIA_LIBRARY_MIMES,
     role: 'original',
     uploadedByUserId: user.id,
+    ...(altText !== undefined ? { altText } : {}),
     oversizedMessage: 'File exceeds the 50 MB hard limit',
     unsupportedMessage: 'Only JPEG, PNG, GIF, WebP, SVG, MP4, WebM, and web font (WOFF, WOFF2, TTF, OTF) files can be uploaded',
   })
@@ -190,7 +190,7 @@ async function handleReplaceMedia(
   const user = await requireCapability(req, db, 'media.replace')
   if (user instanceof Response) return user
 
-  const file = await readUploadedFile(req)
+  const { file } = await readUploadForm(req)
   if (!file) return badRequest('Missing file')
 
   const result = await acceptReplacementMedia(db, params.id, {

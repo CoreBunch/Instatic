@@ -58,7 +58,9 @@ describe('MCP editor bridge handler', () => {
       signal: siteCtrl.signal,
     })
     expect(siteAllowed.status).toBe(200)
-    expect(siteAllowed.headers.get('content-type')).toBe('application/x-ndjson')
+    expect(siteAllowed.headers.get('content-type')).toBe('text/event-stream')
+    expect(siteAllowed.headers.get('cache-control')).toBe('no-cache, no-transform')
+    expect(siteAllowed.headers.get('x-accel-buffering')).toBe('no')
     siteCtrl.abort()
 
     const contentCtrl = new AbortController()
@@ -67,7 +69,9 @@ describe('MCP editor bridge handler', () => {
       signal: contentCtrl.signal,
     })
     expect(contentAllowed.status).toBe(200)
-    expect(contentAllowed.headers.get('content-type')).toBe('application/x-ndjson')
+    expect(contentAllowed.headers.get('content-type')).toBe('text/event-stream')
+    expect(contentAllowed.headers.get('cache-control')).toBe('no-cache, no-transform')
+    expect(contentAllowed.headers.get('x-accel-buffering')).toBe('no')
     contentCtrl.abort()
   })
 })

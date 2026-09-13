@@ -11,9 +11,9 @@
  *                CMS handlers.
  *   - `plugin` — a plugin acting via `api.cms.content.*`; the host fills
  *                in the plugin's id from the dispatcher context.
- *   - `system` — schedulers and other unattended jobs (e.g. the
- *                publish-scheduler tick once `scheduled_publish_at` is in
- *                the past).
+ *   - `system` — unattended server paths (e.g. public form submissions and
+ *                the publish-scheduler tick once `scheduled_publish_at` is
+ *                in the past).
  */
 export type ContentEntryActor =
   | { kind: 'user'; userId: string }

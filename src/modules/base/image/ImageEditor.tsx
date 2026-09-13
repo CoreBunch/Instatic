@@ -23,7 +23,7 @@ import {
 import { useCmsMediaAssetByPath } from '@admin/pages/media/hooks/useCmsMediaAssetByPath'
 import { CanvasModulePlaceholder } from '@ui/components/CanvasModulePlaceholder'
 import { ImageSolidIcon } from 'pixel-art-icons/icons/image-solid'
-import { htmlAttributesForReact } from '@modules/base/shared/htmlAttributes'
+import { htmlAttributesForReact } from '@core/htmlAttributes'
 import type { ImageStoredProps } from './props'
 import { shouldUseBlurPlaceholder } from './placeholder'
 

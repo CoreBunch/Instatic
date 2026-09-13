@@ -109,6 +109,20 @@ document.body.dataset.site014MobileDependencyType = typeof leftPad
     await expectMobileDependencyPanelContained(page, dependenciesPanel, addButton)
 
     await addButton.click({ trial: true })
+
+    await test.step('clear the unresolved import so later specs can publish', async () => {
+      // The unresolved `left-pad` import trips the Publish safety gate for
+      // every later spec sharing this site — rewrite the script without it.
+      await openCodePanel(page)
+      // Reopening the panel starts with no file selected — pick the script.
+      await page.getByRole('button', { name: new RegExp(`site014-mobile-${suffix}`) }).first().click()
+      const editor = page.locator('[data-codemirror-container] .cm-content')
+      await expect(editor).toBeVisible({ timeout: 15_000 })
+      await editor.click()
+      await page.keyboard.press('ControlOrMeta+a')
+      await page.keyboard.insertText("document.body.dataset.site014MobileDependencyType = 'resolved'\n")
+      await expect(page.getByLabel('Script imports').getByText(mobilePackage)).toHaveCount(0)
+    })
   })
 })
 

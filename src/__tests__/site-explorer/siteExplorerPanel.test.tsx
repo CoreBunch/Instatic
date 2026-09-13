@@ -400,7 +400,7 @@ describe('SiteExplorerPanel', () => {
     expect(treeDropCss).toContain('.dropInside')
     expect(css).toContain('.dragOverlayRow')
 
-    const beforeAfterBlock = treeDropCss.match(/\.dropBefore::before,\n\.dropAfter::after,\n\.dropRoot::after,\n\.rootDropGapActive::after\s*\{[^}]*\}/s)?.[0] ?? ''
+    const beforeAfterBlock = treeDropCss.match(/\.dropBefore::before,\r?\n\.dropAfter::after,\r?\n\.dropRoot::after,\r?\n\.rootDropGapActive::after\s*\{[^}]*\}/s)?.[0] ?? ''
     expect(beforeAfterBlock).toContain('position: absolute')
     expect(beforeAfterBlock).not.toMatch(/(?:^|\n)\s*(margin|padding)\b/)
 
@@ -876,6 +876,40 @@ describe('SiteExplorerPanel', () => {
     // The code editor is a focused, draggable surface — it must float OVER the
     // docked Explorer panel / sidebars, not hide behind them.
     expect(panelZIndex).toBeGreaterThan(Math.max(...sidebarZIndexes))
+  })
+
+  it('keeps every floating editor panel above the docked panel hosts', () => {
+    const leftSidebarCss = readFileSync(
+      new URL('../../admin/pages/site/sidebars/LeftSidebar/LeftSidebar.module.css', import.meta.url),
+      'utf-8',
+    )
+    const rightSidebarCss = readFileSync(
+      new URL('../../admin/pages/site/sidebars/RightSidebar/RightSidebar.module.css', import.meta.url),
+      'utf-8',
+    )
+    const agentPanelCss = readFileSync(
+      new URL('../../admin/pages/site/panels/AgentPanel/AgentPanel.module.css', import.meta.url),
+      'utf-8',
+    )
+    const propertiesPanelCss = readFileSync(
+      new URL('../../admin/pages/site/panels/PropertiesPanel/PropertiesPanel.module.css', import.meta.url),
+      'utf-8',
+    )
+
+    const sidebarRule = leftSidebarCss.match(/\.sidebar\s*\{[\s\S]*?\}/)?.[0] ?? ''
+    const dockedSlotRule = leftSidebarCss.match(/\.panelSlot\s*\{[\s\S]*?\}/)?.[0] ?? ''
+    const rightSidebarRule = rightSidebarCss.match(/\.sidebar\s*\{[\s\S]*?\}/)?.[0] ?? ''
+    const floatingSlotRule = leftSidebarCss.match(/\.panelSlotFloating\s*\{[\s\S]*?\}/)?.[0] ?? ''
+    const agentRule = agentPanelCss.match(/\.floatPanel\s*\{[\s\S]*?\}/)?.[0] ?? ''
+    const propertiesRule = propertiesPanelCss.match(/\.panel\s*\{[\s\S]*?\}/)?.[0] ?? ''
+    const dockedZIndexes = [dockedSlotRule, rightSidebarRule]
+      .map((rule) => Number(rule.match(/z-index:\s*(\d+)/)?.[1]))
+    const floatingZIndexes = [floatingSlotRule, agentRule, propertiesRule]
+      .map((rule) => Number(rule.match(/z-index:\s*(\d+)/)?.[1]))
+
+    expect(sidebarRule).not.toContain('z-index:')
+    expect(dockedZIndexes).toEqual([85, 85])
+    expect(floatingZIndexes.every((zIndex) => zIndex > Math.max(...dockedZIndexes))).toBe(true)
   })
 
   it('opens pages and components on the canvas from concept rows', () => {

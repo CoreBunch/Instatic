@@ -33,7 +33,12 @@ import { handleStorageList, handleStorageCreate, handleStorageUpdate, handleStor
 import { handleSettingsReplace } from './handlers/settings'
 import { handleNetworkFetch, handleNetworkAbort } from './handlers/network'
 import { handleScheduleRegister, handleScheduleCancel } from './handlers/schedule'
-import { handleMediaRegisterStorageAdapter, handleMediaRegisterUrlTransformer, handleMediaRegisterVariantDelegate } from './handlers/media'
+import {
+  handleMediaRegisterStorageAdapter,
+  handleMediaRegisterUrlTransformer,
+  handleMediaRegisterVariantDelegate,
+  handleMediaUpsert,
+} from './handlers/media'
 import { handleCryptoDigest, handleCryptoSignHmac } from './handlers/crypto'
 import {
   handleContentEntriesCreate,
@@ -92,6 +97,7 @@ const apiHandlers = {
   'network.abort': handleNetworkAbort,
   'cms.schedule.register': handleScheduleRegister,
   'cms.schedule.cancel': handleScheduleCancel,
+  'cms.media.upsert': handleMediaUpsert,
   'cms.media.registerStorageAdapter': handleMediaRegisterStorageAdapter,
   'cms.media.registerUrlTransformer': handleMediaRegisterUrlTransformer,
   'cms.media.registerVariantDelegate': handleMediaRegisterVariantDelegate,

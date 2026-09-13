@@ -1,6 +1,6 @@
-import { lazy, Suspense, useRef, type CSSProperties } from 'react'
+import { lazy, Suspense, useRef, type CSSProperties, type ReactNode } from 'react'
 import { useEditorStore } from '@site/store/store'
-import type { LeftSidebarPanelId } from '@site/store/slices/uiSlice'
+import type { LeftSidebarPanelId, PanelMode } from '@site/store/slices/uiSlice'
 import { AgentStoreProvider } from '@admin/ai/AgentStoreContext'
 import { FrameworkPanel } from '@site/panels/FrameworkPanel'
 import { ExplorerPanel } from '@site/panels/ExplorerPanel'
@@ -11,69 +11,44 @@ import { SelectorsPanel } from '@site/panels/SelectorsPanel'
 import { FrameworkChangeConfirmProvider } from '@admin/shared/dialogs/FrameworkChangeConfirmDialog'
 import { VCDeletionConfirmProvider } from '@admin/shared/dialogs/VCDeletionConfirmDialog'
 import { SidebarResizeHandle } from '@admin/shared/SidebarResizeHandle'
-import {
-  PanelResizeHandle,
-  useDraggablePanel,
-  useResizablePanel,
-} from '@admin/shared/FloatingWindow'
+import { PanelResizeHandle, useDraggablePanel, useResizablePanel } from '@admin/shared/FloatingWindow'
+import type { DockablePanelProps } from '@admin/shared/Panel'
+import type { FloatingPanelId } from '@admin/state/workspaceLayoutStorage'
 import { cn } from '@ui/cn'
 import styles from './LeftSidebar.module.css'
 
-// Image preparation and provider catalogue code belong to the AI surface, not
-// the editor startup path. A nested boundary lets the sidebar/canvas render as
-// soon as their parent chunk is ready, then loads the always-mounted AgentPanel
-// independently so its local draft survives panel switches after first load.
 const AgentPanel = lazy(() =>
   import('@site/panels/AgentPanel').then((module) => ({ default: module.AgentPanel })),
 )
 
-type HostedLeftPanelId = Exclude<LeftSidebarPanelId, 'agent'>
-
-function selectActiveLeftSidebarPanel(
-  state: ReturnType<typeof useEditorStore.getState>,
-): HostedLeftPanelId | null {
-  // A plugin panel takes precedence over the built-in `*PanelOpen` flags;
-  // the LeftSidebar reads `activePluginPanelId` separately and shows the
-  // plugin mount when set.
-  if (state.activePluginPanelId !== null) return null
-  if (state.explorerPanelOpen) return 'explorer'
-  if (state.selectorsPanelOpen) return 'selectors'
-  if (state.frameworkPanelOpen) return 'framework'
-  if (state.dependenciesPanelOpen) return 'dependencies'
-  return null
-}
-
-interface LeftSidebarProps {
-  /** Drives the rail-button accent identity hash (`${workspace}:${id}:…`). */
-  workspace?: 'site' | 'content' | 'media'
-  railOnly?: boolean
-  /**
-   * Whether the caller can perform structural edits (DnD, add/remove nodes,
-   * pages, styles). Controls which side-panels are exposed in the rail.
-   *
-   * Falsy callers (Viewer / Client) still see the Explorer panel (Layers /
-   * Pages / Media navigation surfaces) — they're not editing tools. The
-   * structural Selectors / Framework / Dependencies panels stay hidden. The
-   * Agent panel is controlled separately by `canUseAiChat`.
-   *
-   * Each panel is responsible for respecting its own read-only state for
-   * the interactions it exposes (TreeNode drag, context menus, etc.).
-   */
-  editable?: boolean
-  canUseAiChat?: boolean
-}
-
-/**
- * Set of rail items that remain visible to read-only callers — purely
- * navigational / view surfaces. Anything not in this set is editing-only
- * and is dropped from the rail (and its panel mount) when `editable=false`.
- */
 const READ_ONLY_RAIL_IDS: ReadonlySet<LeftSidebarPanelId> = new Set(['explorer'])
-const PANEL_RESIZE_LABELS: Record<HostedLeftPanelId, string> = {
+const PANEL_LABELS: Record<LeftSidebarPanelId, string> = {
   explorer: 'Explorer',
   selectors: 'Selectors',
   framework: 'Framework',
   dependencies: 'Dependencies',
+  agent: 'AI Assistant',
+}
+
+interface LeftSidebarProps {
+  workspace?: 'site' | 'content' | 'media'
+  railOnly?: boolean
+  editable?: boolean
+  canUseAiChat?: boolean
+}
+
+function selectActiveDockedPanel(
+  state: ReturnType<typeof useEditorStore.getState>,
+): LeftSidebarPanelId | null {
+  const candidates: Array<[LeftSidebarPanelId, boolean]> = [
+    ['explorer', state.explorerPanelOpen],
+    ['selectors', state.selectorsPanelOpen],
+    ['framework', state.frameworkPanelOpen],
+    ['dependencies', state.dependenciesPanelOpen],
+    ['agent', state.isAgentOpen],
+  ]
+  return candidates.find(([panel, open]) => open && state.leftPanelModes[panel] === 'docked')?.[0]
+    ?? null
 }
 
 export function LeftSidebar({
@@ -83,57 +58,31 @@ export function LeftSidebar({
   canUseAiChat = true,
 }: LeftSidebarProps) {
   const sidebarRef = useRef<HTMLElement | null>(null)
-  const activePanel = useEditorStore(selectActiveLeftSidebarPanel)
+  const activeDockedPanel = useEditorStore(selectActiveDockedPanel)
   const activePluginPanelId = useEditorStore((s) => s.activePluginPanelId)
+  const pluginPanelMode = useEditorStore((s) => s.pluginPanelMode)
   const leftSidebarWidth = useEditorStore((s) => s.leftSidebarWidth)
-  const leftSidebarMode = useEditorStore((s) => s.leftSidebarMode)
   const setLeftSidebarWidth = useEditorStore((s) => s.setLeftSidebarWidth)
-  const setLeftSidebarMode = useEditorStore((s) => s.setLeftSidebarMode)
-  // When the user can't edit structure, drop them onto Layers if they had a
-  // hidden-for-them panel active (selectors, colors, …). Plugin panels are
-  // editing-only by definition.
-  const effectiveActivePanel =
-    activePanel && canShowBuiltInPanel(activePanel, editable, canUseAiChat)
-      ? activePanel
+  const setPluginPanelMode = useEditorStore((s) => s.setPluginPanelMode)
+  const explorerOpen = useEditorStore((s) => s.explorerPanelOpen)
+  const selectorsOpen = useEditorStore((s) => s.selectorsPanelOpen)
+  const frameworkOpen = useEditorStore((s) => s.frameworkPanelOpen)
+  const dependenciesOpen = useEditorStore((s) => s.dependenciesPanelOpen)
+  const agentOpen = useEditorStore((s) => s.isAgentOpen)
+
+  const effectiveActivePanel = activeDockedPanel === null
+    ? null
+    : canShowBuiltInPanel(activeDockedPanel, editable, canUseAiChat)
+      ? activeDockedPanel
       : editable
         ? null
         : 'explorer'
-  const effectivePluginPanelId = editable ? activePluginPanelId : null
-  // Sidebar is "expanded" whenever a built-in OR plugin panel is showing.
-  const sidebarOpen = Boolean(effectiveActivePanel) || effectivePluginPanelId !== null
-  const panelFloating = sidebarOpen && leftSidebarMode === 'floating'
-  const panelExpanded = sidebarOpen && leftSidebarMode === 'docked' && !railOnly
-  const panelVisible = panelExpanded || panelFloating
+  const dockedPluginPanelId = editable && pluginPanelMode === 'docked'
+    ? activePluginPanelId
+    : null
+  const panelExpanded = !railOnly
+    && (effectiveActivePanel !== null || dockedPluginPanelId !== null)
   const panelWidth = panelExpanded ? leftSidebarWidth : 0
-  const panelResizeLabel = effectivePluginPanelId !== null
-    ? 'plugin'
-    : effectiveActivePanel
-      ? PANEL_RESIZE_LABELS[effectiveActivePanel]
-      : 'left sidebar'
-  const {
-    panelRef,
-    setPanelRef,
-    headerDragProps,
-    panelPositionStyle,
-  } = useDraggablePanel('site', () => ({ x: 58, y: 64 }))
-  const {
-    panelSizeStyle,
-    resizeHandleProps,
-  } = useResizablePanel(
-    'site',
-    panelRef,
-    () => ({ width: leftSidebarWidth, height: 520 }),
-  )
-
-  const togglePanelMode = () => {
-    setLeftSidebarMode(leftSidebarMode === 'docked' ? 'floating' : 'docked')
-  }
-  const dockablePanelProps = {
-    mode: leftSidebarMode,
-    dragHandleProps: panelFloating ? headerDragProps : undefined,
-    onToggleMode: togglePanelMode,
-  } as const
-
   const style = {
     '--left-sidebar-panel-width': `${panelWidth}px`,
     '--left-sidebar-panel-layout-width': `${panelExpanded ? leftSidebarWidth : 0}px`,
@@ -146,8 +95,8 @@ export function LeftSidebar({
       data-testid="left-sidebar"
       data-expanded={panelExpanded ? 'true' : 'false'}
       data-rail-only={railOnly ? 'true' : undefined}
-      data-active-panel={effectivePluginPanelId !== null
-        ? `plugin:${effectivePluginPanelId}`
+      data-active-panel={dockedPluginPanelId !== null
+        ? `plugin:${dockedPluginPanelId}`
         : effectiveActivePanel ?? 'none'}
       style={style}
     >
@@ -160,66 +109,48 @@ export function LeftSidebar({
 
       <FrameworkChangeConfirmProvider>
       <VCDeletionConfirmProvider>
-        <div
-          ref={panelFloating ? setPanelRef : undefined}
-          className={cn(styles.panelSlot, panelFloating && styles.panelSlotFloating)}
-          data-testid="left-sidebar-panel-slot"
-          data-mode={leftSidebarMode}
-          inert={panelVisible ? undefined : true}
-          style={panelFloating ? { ...panelPositionStyle, ...panelSizeStyle } : undefined}
-        >
-          {/* Read-only-safe panels — always rendered for any role with
-              `site.read`. These are navigation/inspection surfaces, not
-              editing tools; each respects its own read-only state internally
-              (e.g. TreeNode disables drag + context menu via `editable`). */}
-          <div className={styles.panelMount} hidden={effectiveActivePanel !== 'explorer'}>
-            <ExplorerPanel editable={editable} {...dockablePanelProps} />
-          </div>
-          {/* Editor-only panels — only mounted when the caller can perform
-              structural edits. Mounting them for non-editors would expose
-              actions (style edits, framework token changes, plugin panels)
-              they have no capability to commit. */}
-          {editable && (
-            <>
-              <div className={styles.panelMount} hidden={effectiveActivePanel !== 'selectors'}>
-                <SelectorsPanel {...dockablePanelProps} />
-              </div>
-              <div className={styles.panelMount} hidden={effectiveActivePanel !== 'framework'}>
-                <FrameworkPanel {...dockablePanelProps} />
-              </div>
-              <div className={styles.panelMount} hidden={effectiveActivePanel !== 'dependencies'}>
-                <DependenciesPanel {...dockablePanelProps} />
-              </div>
-              {effectivePluginPanelId !== null && (
-                <div
-                  className={styles.panelMount}
-                  data-testid="left-sidebar-plugin-panel-mount"
-                >
-                  <PluginEditorPanel
-                    panelId={effectivePluginPanelId}
-                    {...dockablePanelProps}
-                  />
-                </div>
-              )}
-            </>
-          )}
-          {panelFloating && (
-            <PanelResizeHandle
-              panelLabel={panelResizeLabel}
-              resizeHandleProps={resizeHandleProps}
-            />
-          )}
-        </div>
+        <BuiltInPanelHost panel="explorer" open={explorerOpen} activeDockedPanel={effectiveActivePanel}>
+          {(props) => <ExplorerPanel editable={editable} {...props} />}
+        </BuiltInPanelHost>
+
+        {editable && (
+          <>
+            <BuiltInPanelHost panel="selectors" open={selectorsOpen} activeDockedPanel={effectiveActivePanel}>
+              {(props) => <SelectorsPanel {...props} />}
+            </BuiltInPanelHost>
+            <BuiltInPanelHost panel="framework" open={frameworkOpen} activeDockedPanel={effectiveActivePanel}>
+              {(props) => <FrameworkPanel {...props} />}
+            </BuiltInPanelHost>
+            <BuiltInPanelHost panel="dependencies" open={dependenciesOpen} activeDockedPanel={effectiveActivePanel}>
+              {(props) => <DependenciesPanel {...props} />}
+            </BuiltInPanelHost>
+            {activePluginPanelId !== null && (
+              <FloatingPanelHost
+                panelId="plugin"
+                label="Plugin"
+                mode={pluginPanelMode}
+                open
+                activeDocked={dockedPluginPanelId !== null}
+                onToggleMode={() => setPluginPanelMode(
+                  pluginPanelMode === 'docked' ? 'floating' : 'docked',
+                )}
+              >
+                {(props) => <PluginEditorPanel panelId={activePluginPanelId} {...props} />}
+              </FloatingPanelHost>
+            )}
+          </>
+        )}
+
         {canUseAiChat && (
-          /* The AI assistant stays independent from the hosted left panel so
-             users can keep Layers visible while following a conversation.
-             Keeping it mounted also preserves the current draft. */
-          // eslint-disable-next-line react-compiler/react-compiler
-          <AgentStoreProvider store={useEditorStore}>
-            <Suspense fallback={null}>
-              <AgentPanel />
-            </Suspense>
-          </AgentStoreProvider>
+          <BuiltInPanelHost panel="agent" open={agentOpen} activeDockedPanel={effectiveActivePanel}>
+            {(props) => (
+              <AgentStoreProvider store={useEditorStore}>
+                <Suspense fallback={null}>
+                  <AgentPanel variant="docked" {...props} />
+                </Suspense>
+              </AgentStoreProvider>
+            )}
+          </BuiltInPanelHost>
         )}
       </VCDeletionConfirmProvider>
       </FrameworkChangeConfirmProvider>
@@ -236,6 +167,87 @@ export function LeftSidebar({
         />
       )}
     </aside>
+  )
+}
+
+function BuiltInPanelHost({
+  panel,
+  open,
+  activeDockedPanel,
+  children,
+}: {
+  panel: LeftSidebarPanelId
+  open: boolean
+  activeDockedPanel: LeftSidebarPanelId | null
+  children: (props: DockablePanelProps) => ReactNode
+}) {
+  const mode = useEditorStore((s) => s.leftPanelModes[panel])
+  const setMode = useEditorStore((s) => s.setLeftSidebarPanelMode)
+  return (
+    <FloatingPanelHost
+      panelId={panel}
+      label={PANEL_LABELS[panel]}
+      mode={mode}
+      open={open}
+      activeDocked={activeDockedPanel === panel}
+      onToggleMode={() => setMode(panel, mode === 'docked' ? 'floating' : 'docked')}
+    >
+      {children}
+    </FloatingPanelHost>
+  )
+}
+
+function FloatingPanelHost({
+  panelId,
+  label,
+  mode,
+  open,
+  activeDocked,
+  onToggleMode,
+  children,
+}: {
+  panelId: FloatingPanelId
+  label: string
+  mode: PanelMode
+  open: boolean
+  activeDocked: boolean
+  onToggleMode: () => void
+  children: (props: DockablePanelProps) => ReactNode
+}) {
+  const floating = mode === 'floating'
+  const visible = floating ? open : activeDocked
+  const leftSidebarWidth = useEditorStore((s) => s.leftSidebarWidth)
+  const { panelRef, setPanelRef, headerDragProps, panelPositionStyle } = useDraggablePanel(
+    panelId,
+    () => ({ x: 58, y: 64 }),
+  )
+  const { panelSizeStyle, resizeHandleProps } = useResizablePanel(
+    panelId,
+    panelRef,
+    () => ({ width: leftSidebarWidth, height: 520 }),
+  )
+
+  return (
+    <div
+      ref={floating ? setPanelRef : undefined}
+      className={cn(styles.panelSlot, floating && styles.panelSlotFloating)}
+      data-testid={`left-panel-${panelId}-host`}
+      data-mode={mode}
+      hidden={!visible}
+      inert={visible ? undefined : true}
+      style={floating ? { ...panelPositionStyle, ...panelSizeStyle } : undefined}
+    >
+      <div className={styles.panelMount}>
+        {children({
+          mode,
+          dragHandleProps: floating ? headerDragProps : undefined,
+          onToggleMode,
+        })}
+      </div>
+      {floating && visible && (
+        <PanelResizeHandle panelLabel={label} resizeHandleProps={resizeHandleProps} />
+      )}
+    </div>
   )
 }
 

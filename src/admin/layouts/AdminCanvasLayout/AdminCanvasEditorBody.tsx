@@ -16,11 +16,11 @@ import { LeftSidebar } from '@admin/pages/site/sidebars/LeftSidebar'
 import { RightSidebar } from '@admin/pages/site/sidebars/RightSidebar'
 import { selectRightSidebarExpanded, useEditorStore } from '@admin/pages/site/store/store'
 import { useNarrowEditorChrome } from '@site/layout/responsiveChrome'
-import { ConfirmDeleteProvider } from '@admin/shared/dialogs/ConfirmDeleteDialog'
 import { Dialog } from '@ui/components/Dialog'
 import { Button } from '@ui/components/Button'
 import { cn } from '@ui/cn'
 import styles from './AdminCanvasLayout.module.css'
+import type { RuntimeScriptValidationState } from '@admin/pages/site/hooks/useRuntimeScriptDiagnostics'
 
 // Register the editor-only runtime graph from the lazy body, not the route
 // shell. The toolbar/chrome can paint without block definitions or loop
@@ -37,6 +37,7 @@ interface AdminCanvasEditorBodyProps {
   canSaveSite: boolean
   canUseAiChat: boolean
   loadError: string | null
+  runtimeValidation: RuntimeScriptValidationState
 }
 
 export function AdminCanvasEditorBody({
@@ -44,6 +45,7 @@ export function AdminCanvasEditorBody({
   canSaveSite,
   canUseAiChat,
   loadError,
+  runtimeValidation,
 }: AdminCanvasEditorBodyProps) {
   // Keep `siteRuntime.dependencyLock` in lockstep with `packageJson` while
   // the editor body is open.
@@ -81,53 +83,45 @@ export function AdminCanvasEditorBody({
         context is isolated; nested DndContexts are fully supported by dnd-kit.
       */}
       <DndContext sensors={canvasDndSensors} collisionDetection={pointerWithin}>
-        {/* `ConfirmDeleteProvider` wraps the editor body so the canvas
-            Delete-key handler, Layers panel context menu, and other
-            descendant destructive actions can call `useConfirmDelete()`
-            and gate on the `confirmBeforeDelete` editor preference.
-            Plugin uninstall is intentionally *not* gated on that preference
-            and uses its own dedicated `PluginRemoveDialog` instead. */}
-        <ConfirmDeleteProvider>
-          <div className={styles.editorBody}>
-            <LeftSidebar
-              workspace="site"
-              editable={canEditDraftSite}
-              canUseAiChat={canUseAiChat}
-              railOnly={hasRightSidebar && narrowChrome}
-            />
-            <div
-              className={cn(styles.canvasStage, hasRightSidebar && styles.canvasStageRightSidebarOpen)}
-              data-right-sidebar-expanded={hasRightSidebar ? 'true' : 'false'}
-            >
-              <div className={styles.canvasContent} key="site">
-                {/* Canvas — fills the remaining space between sidebars */}
-                {loadError ? (
-                  <SiteEditorLoadError message={loadError} />
-                ) : (
-                  <CanvasRoot editable={canEditDraftSite} />
-                )}
-                {/* Properties can be unpinned into the floating draggable overlay. */}
-                {canSaveSite && propertiesPanelMode === 'floating' && <PropertiesPanel variant="floating" />}
-              </div>
+        <div className={styles.editorBody}>
+          <LeftSidebar
+            workspace="site"
+            editable={canEditDraftSite}
+            canUseAiChat={canUseAiChat}
+            railOnly={hasRightSidebar && narrowChrome}
+          />
+          <div
+            className={cn(styles.canvasStage, hasRightSidebar && styles.canvasStageRightSidebarOpen)}
+            data-right-sidebar-expanded={hasRightSidebar ? 'true' : 'false'}
+          >
+            <div className={styles.canvasContent} key="site">
+              {/* Canvas — fills the remaining space between sidebars */}
+              {loadError ? (
+                <SiteEditorLoadError message={loadError} />
+              ) : (
+                <CanvasRoot editable={canEditDraftSite} />
+              )}
+              {/* Properties can be unpinned into the floating draggable overlay. */}
+              {canSaveSite && propertiesPanelMode === 'floating' && <PropertiesPanel variant="floating" />}
             </div>
-            {/* `mode` tells the RightSidebar which expansion model to use:
-                - `'site'`:      Site editor — width follows the selection-
-                  gated `sitePropertiesExpanded` selector.
-                - `'hidden'`:    Site viewer with no `pages.draft.save`
-                  capability. */}
-            <RightSidebar
-              key="site"
-              mode={canSaveSite ? 'site' : 'hidden'}
-            />
           </div>
-        </ConfirmDeleteProvider>
+          {/* `mode` tells the RightSidebar which expansion model to use:
+              - `'site'`:      Site editor — width follows the selection-
+                gated `sitePropertiesExpanded` selector.
+              - `'hidden'`:    Site viewer with no `pages.draft.save`
+                capability. */}
+          <RightSidebar
+            key="site"
+            mode={canSaveSite ? 'site' : 'hidden'}
+          />
+        </div>
       </DndContext>
 
       {/* Code editor/media preview: viewport overlay, not constrained by the
           canvas stage. The panel itself is small chrome; the heavy CodeMirror
           6 bundle (~600 kB) is lazy-loaded inside the panel only when the
           user opens a text file. */}
-      <CodeEditorPanel />
+      <CodeEditorPanel runtimeValidation={runtimeValidation} />
 
       {/* Naming step for "Save as layout" / saved-layout rename. Renders null
           until a layoutNameDialogRequest is set on the ui slice. */}

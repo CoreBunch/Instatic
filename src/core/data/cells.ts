@@ -16,6 +16,7 @@ import {
   type DataRowCells,
   type DataTable,
   type RepeaterValue,
+  POST_TYPE_FIELD_TITLE,
 } from './schemas'
 import { dataTableHasField, isPostTypeBuiltInFieldId } from './fields'
 import { slugFromTitle } from '@core/utils/slug'
@@ -48,6 +49,20 @@ export function readStringArrayCell(cells: DataRowCells, fieldId: string): strin
 }
 
 /**
+ * Read every media-asset id from a media cell, tolerating both cardinalities:
+ * a single-value media field stores a bare id string, a multi-value field
+ * (`allowMultiple`) stores a `string[]`. Empty / malformed cells yield `[]`.
+ */
+export function readMediaCellIds(cells: DataRowCells, fieldId: string): string[] {
+  const value = cells[fieldId]
+  if (typeof value === 'string') return value.length > 0 ? [value] : []
+  if (Array.isArray(value)) {
+    return value.filter((item): item is string => typeof item === 'string' && item.length > 0)
+  }
+  return []
+}
+
+/**
  * Read an ordered repeater value. Malformed legacy or manually-edited values
  * resolve to an empty collection instead of leaking an untyped shape into
  * record editors and loop projection.
@@ -61,6 +76,33 @@ export function readRepeaterCell(cells: DataRowCells, fieldId: string): Repeater
  * Convenience for the post-type built-in field ids. These are read often
  * enough that giving them a named accessor avoids string-literal sprawl.
  */
+/** What a row with no name of its own is called, everywhere the admin names rows. */
+export const UNTITLED_ROW_TITLE = 'Untitled'
+
+/**
+ * The name a row goes by in the admin: the table's primary field, else the
+ * `title` cell, else the first text field with a value, else "Untitled".
+ * Every surface that names a row (the Content explorer, the merge review,
+ * the AI document list, the Data delete prompt) reads it here, and none
+ * falls back to the row id or slug, which are not names.
+ */
+export function readDisplayTitle(
+  cells: DataRowCells,
+  table?: Pick<DataTable, 'primaryFieldId' | 'fields'> | null,
+): string {
+  const candidates = [
+    ...(table ? [table.primaryFieldId] : []),
+    POST_TYPE_FIELD_TITLE,
+    ...(table ? table.fields.filter((field) => field.type === 'text').map((field) => field.id) : []),
+  ]
+  for (const id of candidates) {
+    if (!id) continue
+    const value = cells[id]
+    if (typeof value === 'string' && value.trim()) return value.trim()
+  }
+  return UNTITLED_ROW_TITLE
+}
+
 export function readTitleCell(cells: DataRowCells): string {
   return readStringCell(cells, 'title')
 }
@@ -95,6 +137,31 @@ export function readSeoTitleCell(cells: DataRowCells): string {
 
 export function readSeoDescriptionCell(cells: DataRowCells): string {
   return readStringCell(cells, 'seoDescription')
+}
+
+/**
+ * The author-set `<head>` overrides for a post-type entry — its `seoTitle`
+ * and `seoDescription` built-in fields. Both entry render paths
+ * (`renderPublishedDataRowTemplate` for publish, `handleRowPreview` for the
+ * Content editor's Live mode) hand the result to `publishPage` as
+ * `documentMeta`, so publish and preview stay in parity.
+ *
+ * A blank field is omitted rather than returned empty, so it falls through
+ * to the site-level `metaTitle` / `metaDescription` exactly as before.
+ *
+ * This deliberately never writes to `page.title`: that also feeds the
+ * `{page.title}` binding, which must keep rendering the entry's real title.
+ */
+export function readEntrySeoOverride(cells: DataRowCells): {
+  title?: string
+  description?: string
+} {
+  const title = readSeoTitleCell(cells).trim()
+  const description = readSeoDescriptionCell(cells).trim()
+  return {
+    ...(title ? { title } : {}),
+    ...(description ? { description } : {}),
+  }
 }
 
 /**

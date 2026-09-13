@@ -28,6 +28,9 @@ import {
   indexStyleRulesByName,
   linkImportedClassNames,
   type StyleRuleOrderAllocator,
+  findReimportedStyleRule,
+  indexStyleRulesByOrigin,
+  registerStyleRuleOrigin,
 } from './importLinking'
 import { addImportedColorTokens, overwriteImportedColorTokens } from './importedColorTokens'
 import { addImportedFonts, addImportedFontTokens, addInstalledFontEntries, overwriteImportedFontTokens } from './importedFonts'
@@ -334,7 +337,7 @@ export function buildSiteHelpers(
    * Class names on imported fragment nodes are resolved to registry ids (and
    * unknown names auto-create bare classes) via the shared `byName` map that
    * the helpers build once and share across the whole recipe. This guarantees
-   * that a class added by `addStyleRule` earlier in the recipe is reused by
+   * that a class added by `putStyleRule` earlier in the recipe is reused by
    * `addPage` later in the same recipe — no duplicate rules for the same name.
    *
    * A history snapshot is pushed ONLY when the recipe returns a non-false
@@ -349,9 +352,10 @@ export function buildSiteHelpers(
       let didMutate = false
 
       // Build the name→id index once. All helpers share this map so that
-      // a `addStyleRule(kind:'class', name:'btn')` followed by
+      // a `putStyleRule(kind:'class', name:'btn')` followed by
       // `addPage(fragment with node.classIds:['btn'])` resolves to the same id.
       const byName = indexStyleRulesByName(site.styleRules)
+      const byOrigin = indexStyleRulesByOrigin(site.styleRules)
       const allocateStyleRuleOrder = createStyleRuleOrderAllocator(site.styleRules)
 
       const helpers: SiteImportTransaction = {
@@ -388,7 +392,17 @@ export function buildSiteHelpers(
           return page.id
         },
 
-        addStyleRule(rule: NewStyleRule): string {
+        putStyleRule(rule: NewStyleRule): string {
+          // A rule this import is delivering AGAIN (same origin + selector)
+          // replaces itself in place — id and cascade order survive, so a
+          // re-imported site does not stack a second copy of every `body`,
+          // `h1`, … rule above the first (#404).
+          const reimported = findReimportedStyleRule(byOrigin, rule)
+          if (reimported) {
+            helpers.overwriteStyleRule(reimported.id, rule)
+            return reimported.id
+          }
+
           const id = nanoid()
           const now = Date.now()
           const newRule: StyleRule = {
@@ -399,6 +413,7 @@ export function buildSiteHelpers(
             order: allocateStyleRuleOrder(),
           }
           site.styleRules[id] = newRule
+          registerStyleRuleOrigin(byOrigin, newRule)
           // Register in byName so subsequent addPage calls referencing this
           // class name resolve to this id rather than creating a duplicate.
           if (rule.kind === 'class') byName.set(rule.name, id)
@@ -443,13 +458,15 @@ export function buildSiteHelpers(
 
           const now = Date.now()
           // Replace all fields except identity + cascade position.
-          site.styleRules[ruleId] = {
+          const replaced: StyleRule = {
             ...rule,
             id: ruleId,
             createdAt: existing.createdAt,
             updatedAt: now,
             order: existing.order,
           }
+          site.styleRules[ruleId] = replaced
+          registerStyleRuleOrigin(byOrigin, replaced)
           if (rule.kind === 'class') byName.set(rule.name, ruleId)
           didMutate = true
         },

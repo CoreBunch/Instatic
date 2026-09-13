@@ -16,7 +16,7 @@ import {
   type RenderResolvedMedia,
 } from '@core/publisher'
 import { resolveSlotName, safePropOverrides } from '@core/visualComponents'
-import { VOID_HTML_ELEMENTS } from '@modules/base/utils/htmlTag'
+import { VOID_HTML_ELEMENTS } from '@core/htmlAttributes'
 import { buildMediaSrcset, pickMediaVariantUrl } from '@modules/base/utils/mediaAttrs'
 import { Value } from '@core/utils/typeboxHelpers'
 

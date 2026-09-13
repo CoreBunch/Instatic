@@ -31,12 +31,25 @@ describe('CspPlan — serialization is deterministic and sorted', () => {
   it('sorts directives by name and sources within each directive', () => {
     const plan = createBaseCspPlan({ anyScriptTag: false })
     const csp = serializeCsp(plan)
-    // Directives alphabetical: default-src < frame-src < img-src < script-src
-    //   < style-src < worker-src
+    // Directives alphabetical: default-src < frame-src < img-src < media-src
+    //   < script-src < style-src < worker-src
     expect(csp).toBe(
       "default-src 'self'; frame-src 'none'; img-src 'self' data: https:; " +
+        "media-src 'self' data: https:; " +
         "script-src 'none'; style-src 'self' 'unsafe-inline'; worker-src 'none';",
     )
+  })
+
+  it('lets a cross-origin video load, exactly like a cross-origin image', () => {
+    // Without an explicit `media-src` the browser falls back to
+    // `default-src 'self'` and blocks every remote `<video>`/`<audio>` — a
+    // page could show a remote image but never play a remote video. The
+    // element and URL are both correct, so the only symptom is silence.
+    const csp = serializeCsp(createBaseCspPlan({ anyScriptTag: true }))
+    expect(csp).toContain("media-src 'self' data: https:;")
+    const img = /img-src ([^;]+);/.exec(csp)?.[1]
+    const media = /media-src ([^;]+);/.exec(csp)?.[1]
+    expect(media).toBe(img)
   })
 
   it('produces a byte-identical policy regardless of source insertion order', () => {

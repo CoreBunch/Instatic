@@ -26,13 +26,15 @@ The schema for a collection. One row per collection.
 
 | Column            | Type      | Notes                                                            |
 |-------------------|-----------|------------------------------------------------------------------|
-| `id`              | text PK   |                                                                  |
+| `id`              | text PK   | Physical key: the logical id on main, `<branch>:<logical>` on a branch |
+| `branch_id`       | text      | `main` by default; see [`branches.md`](branches.md)                 |
+| `logical_id`      | text      | Generated from `id` + `branch_id` — the id content code uses      |
 | `name`            | text      | Human-readable                                                   |
 | `slug`            | text      | URL-safe (kebab-case)                                            |
 | `kind`            | text      | `'postType' \| 'data' \| 'page' \| 'component' \| 'layout'`      |
 | `singular_label`  | text      | "Post"                                                           |
 | `plural_label`    | text      | "Posts"                                                          |
-| `route_base`      | text      | Empty = not publicly routable. Post-types default to `/<slug>`. |
+| `route_base`      | text      | Empty = not publicly routable. An omitted create value defaults to `/<slug>`; an explicitly empty value stays empty through create, update, and import. |
 | `primary_field_id`| text      | Field id used as the row's display name in grids / pickers      |
 | `fields_json`     | jsonb     | `DataField[]` — the schema                                       |
 | `system`          | boolean   | `true` for seeded tables (`posts`, `pages`, `components`, `layouts`) |
@@ -44,8 +46,10 @@ One row per content row.
 
 | Column                  | Type       | Notes                                                           |
 |-------------------------|------------|-----------------------------------------------------------------|
-| `id`                    | text PK    |                                                                 |
-| `table_id`              | text FK    | → `data_tables.id`                                              |
+| `id`                    | text PK    | Physical key: the logical id on main, `<branch>:<logical>` on a branch |
+| `branch_id`             | text       | `main` by default; repositories read and write one branch per `BranchScope` |
+| `logical_id`            | text       | Generated from `id` + `branch_id`; the id every API and tree carries |
+| `table_id`              | text FK    | → `data_tables.id` (physical — a branch row points at the branch's table) |
 | `cells_json`            | jsonb      | `Record<fieldId, cellValue>`                                    |
 | `slug`                  | text       | Denormalized from `cells_json.slug` for fast route lookup       |
 | `status`                | text       | `'draft' \| 'published' \| 'unpublished' \| 'scheduled'`        |
@@ -311,7 +315,7 @@ Every successful content write fires one of three events on the hook bus alongsi
 
 | Event                       | Fires when                                                                 | Payload                                                                                  |
 |-----------------------------|-----------------------------------------------------------------------------|------------------------------------------------------------------------------------------|
-| `content.entry.created`     | A new row is inserted (admin CMS, plugin via `api.cms.content`)              | `{ tableSlug, entryId, actor }`                                                          |
+| `content.entry.created`     | A new row is inserted (admin CMS, public form, plugin via `api.cms.content`) | `{ tableSlug, entryId, actor }`                                                          |
 | `content.entry.updated`     | A row's cells / slug / status change (draft save, publish, schedule, move)  | `{ tableSlug, entryId, changedFieldIds, actor }`                                         |
 | `content.entry.deleted`     | A row is soft-deleted                                                       | `{ tableSlug, entryId, actor }`                                                          |
 
@@ -321,10 +325,10 @@ The `actor` shape:
 type ContentEntryActor =
   | { kind: 'user'; userId: string }
   | { kind: 'plugin'; pluginId: string }
-  | { kind: 'system' }  // schedulers, scheduled-publish tick
+  | { kind: 'system' }  // public forms, schedulers, scheduled-publish tick
 ```
 
-There's also one filter — `content.entry.cells` — that runs over the cell bag BEFORE persistence. All write paths — admin HTTP handlers (`rows.ts`, `tables.ts`) and the plugin `api.cms.content.*` surface — apply it via `applyContentEntryCellsFilter` from `server/publish/contentEvents.ts`. Plugins use it to validate, normalize, or auto-fill cells:
+There's also one filter — `content.entry.cells` — that runs over the cell bag BEFORE persistence. Admin HTTP handlers (`rows.ts`, `tables.ts`) and the plugin `api.cms.content.*` surface apply it via `applyContentEntryCellsFilter` from `server/publish/contentEvents.ts`. Plugins use it to validate, normalize, or auto-fill cells:
 
 ```ts
 api.cms.hooks.filter('content.entry.cells', (cells, { tableSlug, entryId, actor }) => {
@@ -337,7 +341,7 @@ api.cms.hooks.filter('content.entry.cells', (cells, { tableSlug, entryId, actor 
 })
 ```
 
-Events are emitted from `server/publish/contentEvents.ts`, which also exports `applyContentEntryCellsFilter`. Admin CMS handlers and plugin handlers both call these helpers directly; the publish scheduler emits the `system` actor variant.
+Events are emitted from `server/publish/contentEvents.ts`, which also exports `applyContentEntryCellsFilter`. Admin CMS handlers, the public form handler, and plugin handlers call these helpers directly; public submissions and the publish scheduler emit the `system` actor variant.
 
 ---
 

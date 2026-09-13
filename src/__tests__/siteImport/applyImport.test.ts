@@ -39,7 +39,7 @@ interface MockTxOp {
   type:
     | 'addPage'
     | 'overwritePage'
-    | 'addStyleRule'
+    | 'putStyleRule'
     | 'overwriteStyleRule'
     | 'addFonts'
     | 'addInstalledFonts'
@@ -59,17 +59,21 @@ function makeMockAdapter(opts?: {
   commitFail?: boolean
 }): SiteImportAdapter & {
   uploads: string[]
+  /** Alt text handed to `uploadAsset`, keyed by source path (absent = none authored). */
+  uploadAlts: Record<string, string | undefined>
   installs: { family: string; variants: string[]; subsets: string[] }[]
   ops: MockTxOp[]
 } {
   let idCounter = 0
   const nextId = () => `mock-id-${++idCounter}`
   const uploads: string[] = []
+  const uploadAlts: Record<string, string | undefined> = {}
   const installs: { family: string; variants: string[]; subsets: string[] }[] = []
   const ops: MockTxOp[] = []
 
   return {
     uploads,
+    uploadAlts,
     installs,
     async installGoogleFont(request) {
       installs.push(request)
@@ -93,7 +97,8 @@ function makeMockAdapter(opts?: {
     async uploadAsset(file) {
       if (opts?.uploadFail) throw new Error('upload failure')
       uploads.push(file.path)
-      return `/uploads/media/${file.path.replace(/[^a-z0-9.]/g, '_')}`
+      uploadAlts[file.path] = file.altText
+      return { url: `/uploads/media/${file.path.replace(/[^a-z0-9.]/g, '_')}`, warnings: [] }
     },
     async commit(recipe) {
       if (opts?.commitFail) throw new Error('commit failure')
@@ -107,9 +112,9 @@ function makeMockAdapter(opts?: {
           const id = pageId
           ops.push({ type: 'overwritePage', args: { pageId, ...input }, id })
         },
-        addStyleRule(rule) {
+        putStyleRule(rule) {
           const id = nextId()
-          ops.push({ type: 'addStyleRule', args: rule, id })
+          ops.push({ type: 'putStyleRule', args: rule, id })
           return id
         },
         overwriteStyleRule(ruleId, rule) {
@@ -236,6 +241,13 @@ describe('buildImportPlan — structure', () => {
     const sourcePaths = plan.assets.map((a) => a.sourcePath)
     expect(sourcePaths).toContain('images/hero.png')
     expect(sourcePaths).toContain('images/logo.png')
+  })
+
+  it('carries each image\'s authored alt text onto its planned asset', () => {
+    // INDEX_HTML: <img src="images/hero.png" alt="Hero">; ABOUT_HTML: alt="Logo".
+    const byPath = new Map(plan.assets.map((a) => [a.sourcePath, a.altText]))
+    expect(byPath.get('images/hero.png')).toBe('Hero')
+    expect(byPath.get('images/logo.png')).toBe('Logo')
   })
 
   it('plan.assets contains only media files — HTML pages are excluded even when linked via anchor', () => {
@@ -650,6 +662,14 @@ describe('commitImportPlan — happy path', () => {
     expect(adapter.uploads).toContain('images/logo.png')
   })
 
+  it('hands each asset\'s authored alt text to the upload', async () => {
+    const adapter = makeMockAdapter()
+    const plan = buildImportPlan({ fileMap: makeSampleFileMap(), currentSite: makeEmptySiteDocument() })
+    await commitImportPlan(plan, adapter)
+    expect(adapter.uploadAlts['images/hero.png']).toBe('Hero')
+    expect(adapter.uploadAlts['images/logo.png']).toBe('Logo')
+  })
+
   it('calls addPage for each non-conflicting page', async () => {
     const plan = buildImportPlan({ fileMap: makeSampleFileMap(), currentSite: makeEmptySiteDocument() })
     const adapter = makeMockAdapter()
@@ -658,11 +678,11 @@ describe('commitImportPlan — happy path', () => {
     expect(addPageOps).toHaveLength(3)
   })
 
-  it('calls addStyleRule for each non-conflicting rule', async () => {
+  it('calls putStyleRule for each non-conflicting rule', async () => {
     const plan = buildImportPlan({ fileMap: makeSampleFileMap(), currentSite: makeEmptySiteDocument() })
     const adapter = makeMockAdapter()
     await commitImportPlan(plan, adapter)
-    const addRuleOps = adapter.ops.filter((o) => o.type === 'addStyleRule')
+    const addRuleOps = adapter.ops.filter((o) => o.type === 'putStyleRule')
     expect(addRuleOps.length).toBeGreaterThan(0)
   })
 

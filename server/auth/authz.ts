@@ -77,6 +77,14 @@ export function userHasAnyCapability(
   return capabilities.some((capability) => userHasCapability(user, capability))
 }
 
+/** Return grants a user cannot delegate because they do not hold them. */
+export function capabilitiesUserCannotGrant(
+  user: Pick<AuthUser, 'capabilities'>,
+  capabilities: readonly CoreCapability[],
+): CoreCapability[] {
+  return capabilities.filter((capability) => !userHasCapability(user, capability))
+}
+
 export async function requireAnyCapability(
   req: Request,
   db: DbClient,

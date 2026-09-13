@@ -169,10 +169,12 @@ function resolvePluginRoutePolicy(method: string, pathname: string): PluginRoute
     return { capability: 'plugins.configure', stepUp: false }
   }
 
-  // Per-plugin records — bounded by the plugin's own resource schemas.
-  // Read = `plugins.read`; write = `plugins.configure` (settings-class).
+  // Per-plugin records hold plugin-owned data returned as raw `data_json` with
+  // no field masking, which can include tokens, customer data, or other secrets.
+  // Reading them therefore requires `plugins.configure` (manage plugin-owned
+  // records), the same capability as writing them — NOT the browse-only
+  // `plugins.read`, which is for the plugin list and masked settings (GHSA-q5j5).
   if (PLUGIN_RECORD_ITEM_PATTERN.test(pathname) || PLUGIN_RECORDS_PATTERN.test(pathname)) {
-    if (method === 'GET') return { capability: 'plugins.read', stepUp: false }
     return { capability: 'plugins.configure', stepUp: false }
   }
 

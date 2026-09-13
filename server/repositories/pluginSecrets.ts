@@ -38,6 +38,7 @@ import {
   type PluginSettingDefinition,
   type PluginSettingsValues,
 } from '@core/plugin-sdk'
+import { nowIso } from '@core/utils/isoDate'
 
 interface PluginSecretRow {
   setting_id: string
@@ -269,7 +270,7 @@ async function writePluginSecret(
       set ciphertext = excluded.ciphertext,
           iv = excluded.iv,
           key_fingerprint = excluded.key_fingerprint,
-          updated_at = current_timestamp
+          updated_at = ${nowIso()}
   `
 }
 

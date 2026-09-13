@@ -254,6 +254,10 @@ export function useLoopPreviewItems(
   const { sourceId, filters, orderBy, direction, offset, limit } = readLoopProps(node)
   const tableId = typeof filters.tableId === 'string' ? filters.tableId : ''
   const mimePrefix = typeof filters.mimePrefix === 'string' ? filters.mimePrefix : ''
+  // Read as primitives so the fetch effect's dependency list stays stable.
+  const cellField = typeof filters.cellField === 'string' ? filters.cellField : ''
+  const cellOperator = typeof filters.cellOperator === 'string' ? filters.cellOperator : ''
+  const cellValue = typeof filters.cellValue === 'string' ? filters.cellValue : ''
   const isPluginSource = sourceId !== '' && !BUILT_IN_SOURCE_IDS.has(sourceId)
 
   // Narrow, identity-stable subscriptions (see module header). Inactive
@@ -300,6 +304,9 @@ export function useLoopPreviewItems(
       direction,
       limit,
       offset,
+      cellField,
+      cellOperator,
+      cellValue,
     })
       .then((result) => {
         if (!cancelled) setAsyncDataRowItems(result.items)
@@ -311,7 +318,7 @@ export function useLoopPreviewItems(
     return () => {
       cancelled = true
     }
-  }, [sourceId, tableId, orderBy, direction, limit, offset, previewReadiness])
+  }, [sourceId, tableId, orderBy, direction, limit, offset, cellField, cellOperator, cellValue, previewReadiness])
 
   // ── Async fetch: site.media ─────────────────────────────────────────
   useEffect(() => {

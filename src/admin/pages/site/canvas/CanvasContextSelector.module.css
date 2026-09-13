@@ -16,32 +16,6 @@
     pointer-events: none;
 }
 
-.badge {
-    display: inline-flex;
-    align-items: center;
-    gap: var(--space-xs);
-    padding: var(--space-3xs) var(--space-3xs) var(--space-3xs) var(--space-m);
-    margin-right: var(--space-xs);
-    pointer-events: auto;
-    color: var(--success-text);
-    background: var(--accent-1-10);
-    border-radius: var(--panel-radius);
-    box-shadow: 0 8px 18px var(--scrim-20);
-    font-size: var(--text-xs);
-    font-weight: 620;
-}
-
-.badgeLabel {
-    max-width: 180px;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-}
-
-.badgeExit.badgeExit {
-    color: var(--success-text-muted);
-}
-
 .notch {
     --breakpoint-notch-bg: var(--bg-body);
     --breakpoint-notch-radius: 16px;

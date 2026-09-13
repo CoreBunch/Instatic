@@ -57,8 +57,8 @@ function fixtureSite(): SiteDocument {
 /** Seed a doc set exactly like the server would, then hand it to the translator. */
 function seededDocSet(site: SiteDocument): CollabDocSet {
   const docs = createCollabDocSet()
-  seedSiteDoc(docs.ensure('site:default'), site)
-  for (const page of site.pages) seedPageDoc(docs.ensure(`page:${page.id}`), page)
+  seedSiteDoc(docs.ensure('site:main'), site)
+  for (const page of site.pages) seedPageDoc(docs.ensure(`page:main:${page.id}`), page)
   return docs
 }
 
@@ -79,7 +79,7 @@ function mutate(
 
 function translate(site: SiteDocument, docs: CollabDocSet, recipe: (d: SiteDocument) => void): SiteDocument {
   const { next, patches } = mutate(site, recipe)
-  applySitePatchesToDocs(patches, site, next, docs, LOCAL_ORIGIN)
+  applySitePatchesToDocs(patches, site, next, docs, LOCAL_ORIGIN, 'main')
   return next
 }
 
@@ -90,7 +90,7 @@ describe('applySitePatchesToDocs — page tree edits', () => {
     const next = translate(site, docs, (d) => {
       updateNodeProps(d.pages[0], 't1', { tag: 'h2' })
     })
-    const projected = projectPageDoc(docs.ensure('page:p1'), 'p1')
+    const projected = projectPageDoc(docs.ensure('page:main:p1'), 'p1')
     expect(projected.nodes.t1.props.tag).toBe('h2')
     expect(projected.nodes.t1.props.text).toBe('hello world')
     expect(projected.nodes.root.children).toEqual(next.pages[0].nodes.root.children)
@@ -99,7 +99,7 @@ describe('applySitePatchesToDocs — page tree edits', () => {
   it('inline-text edit splices Y.Text so a concurrent remote insertion survives', () => {
     const site = fixtureSite()
     const docs = seededDocSet(site)
-    const local = docs.ensure('page:p1')
+    const local = docs.ensure('page:main:p1')
     // Remote peer shares history and types at the end concurrently.
     const remote = new Y.Doc()
     Y.applyUpdate(remote, Y.encodeStateAsUpdate(local))
@@ -125,7 +125,7 @@ describe('applySitePatchesToDocs — page tree edits', () => {
   it('falls back safely when the projected pre-value drifted from the live Y.Text', () => {
     const site = fixtureSite()
     const docs = seededDocSet(site)
-    const local = docs.ensure('page:p1')
+    const local = docs.ensure('page:main:p1')
     // Simulate a caller holding a stale JSON snapshot after a remote update
     // already landed in the authoritative doc. The stale splice indexes used
     // to target the wrong characters or throw when the live text was shorter.
@@ -146,7 +146,7 @@ describe('applySitePatchesToDocs — page tree edits', () => {
     const next = translate(site, docs, (d) => {
       moveNode(d.pages[0], 'c1', 'root', 0) // move c1 before t1
     })
-    expect(projectPageDoc(docs.ensure('page:p1'), 'p1').nodes.root.children)
+    expect(projectPageDoc(docs.ensure('page:main:p1'), 'p1').nodes.root.children)
       .toEqual(next.pages[0].nodes.root.children)
 
     const next2 = translate(next, docs, (d) => {
@@ -154,7 +154,7 @@ describe('applySitePatchesToDocs — page tree edits', () => {
       d.pages[0].nodes.root.children = d.pages[0].nodes.root.children.filter((c) => c !== 'c1')
       delete d.pages[0].nodes.c1
     })
-    const projected = projectPageDoc(docs.ensure('page:p1'), 'p1')
+    const projected = projectPageDoc(docs.ensure('page:main:p1'), 'p1')
     expect(projected.nodes.c1).toBeUndefined()
     expect(projected.nodes.root.children).toEqual(next2.pages[0].nodes.root.children)
   })
@@ -165,7 +165,7 @@ describe('applySitePatchesToDocs — page tree edits', () => {
     translate(site, docs, (d) => {
       renamePage(d, 'p1', 'Homepage', 'index')
     })
-    expect(projectPageDoc(docs.ensure('page:p1'), 'p1').title).toBe('Homepage')
+    expect(projectPageDoc(docs.ensure('page:main:p1'), 'p1').title).toBe('Homepage')
   })
 })
 
@@ -177,9 +177,9 @@ describe('applySitePatchesToDocs — rosters', () => {
     translate(site, docs, (d) => {
       newId = addPage(d, 'Fresh', 'fresh').id
     })
-    const projectedSite = projectSiteDoc(docs.ensure('site:default'))
+    const projectedSite = projectSiteDoc(docs.ensure('site:main'))
     expect(projectedSite.rosters.pages).toContain(newId)
-    const projectedPage = projectPageDoc(docs.ensure(`page:${newId}`), newId)
+    const projectedPage = projectPageDoc(docs.ensure(`page:main:${newId}`), newId)
     expect(projectedPage.title).toBe('Fresh')
     expect(Object.keys(projectedPage.nodes).length).toBeGreaterThan(0)
   })
@@ -190,7 +190,7 @@ describe('applySitePatchesToDocs — rosters', () => {
     translate(site, docs, (d) => {
       deletePage(d, 'p2')
     })
-    const projected = projectSiteDoc(docs.ensure('site:default'))
+    const projected = projectSiteDoc(docs.ensure('site:main'))
     expect(projected.rosters.pages).not.toContain('p2')
     expect(projected.rosters.pages).toContain('p1')
   })
@@ -203,7 +203,7 @@ describe('applySitePatchesToDocs — rosters', () => {
       d.pages[0] = b
       d.pages[1] = a
     })
-    expect(projectSiteDoc(docs.ensure('site:default')).rosters.pages).toEqual(['p2', 'p1'])
+    expect(projectSiteDoc(docs.ensure('site:main')).rosters.pages).toEqual(['p2', 'p1'])
   })
 })
 
@@ -215,7 +215,7 @@ describe('applySitePatchesToDocs — shell', () => {
       d.styleRules.r1.styles.color = 'var(--text-muted)'
       d.settings.metaTitle = 'Acme rules'
     })
-    const projected = projectSiteDoc(docs.ensure('site:default'))
+    const projected = projectSiteDoc(docs.ensure('site:main'))
     const rule = projected.shell.styleRules as Record<string, { styles: Record<string, unknown> }>
     expect(rule.r1.styles.color).toBe('var(--text-muted)')
     expect((projected.shell.settings as Record<string, unknown>).metaTitle).toBe('Acme rules')
@@ -227,6 +227,6 @@ describe('applySitePatchesToDocs — shell', () => {
     translate(site, docs, (d) => {
       d.name = 'Renamed'
     })
-    expect(projectSiteDoc(docs.ensure('site:default')).shell.name).toBe('Renamed')
+    expect(projectSiteDoc(docs.ensure('site:main')).shell.name).toBe('Renamed')
   })
 })

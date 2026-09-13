@@ -223,6 +223,10 @@ export const CmsRuntimePreviewResponseSchema = Type.Object(
   { additionalProperties: true },
 )
 
+export const CmsRuntimeValidationResponseSchema = Type.Object({
+  diagnostics: Type.Array(SiteRuntimeDiagnosticSchema),
+})
+
 // ---------------------------------------------------------------------------
 // cms.ts — envelopes only; inner types are deep
 // ---------------------------------------------------------------------------

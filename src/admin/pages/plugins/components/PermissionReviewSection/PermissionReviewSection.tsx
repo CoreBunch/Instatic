@@ -37,6 +37,7 @@
  * diffs new/existing/dropped rows on upgrade so nothing slips in
  * unreviewed.
  */
+import { lt as semverLt } from 'semver'
 import { Button } from '@ui/components/Button'
 import {
   permissionDescription,
@@ -137,8 +138,18 @@ export function PermissionReviewSection({
   onCancel,
   onConfirm,
 }: PermissionReviewSectionProps) {
-  const isUpgrade = Boolean(pending.upgradeFromVersion)
-  const rows: PermissionDiffRow[] = isUpgrade
+  // Three cases, not two. `upgradeFromVersion` is now set whenever the plugin
+  // is already installed, so compare it to tell an upgrade from a reinstall of
+  // the same build — and from a downgrade, which the server refuses outright
+  // (install.ts) and which used to be described here as an update that would
+  // migrate and re-activate.
+  const installedVersion = pending.upgradeFromVersion
+  const isInstalled = Boolean(installedVersion)
+  const isReinstall = isInstalled && installedVersion === pending.manifest.version
+  const isDowngrade =
+    isInstalled && !isReinstall && semverLt(pending.manifest.version, installedVersion!)
+  const isUpgrade = isInstalled && !isReinstall && !isDowngrade
+  const rows: PermissionDiffRow[] = isInstalled
     ? computePermissionDiff(
         pending.manifest.permissions,
         pending.previouslyGrantedPermissions,
@@ -178,16 +189,24 @@ export function PermissionReviewSection({
     >
       <div>
         <h2 id="plugin-permissions-title">
-          {isUpgrade
-            ? `Update ${pending.manifest.name}`
-            : `Review ${pending.manifest.name}`}
+          {isReinstall
+            ? `Reinstall ${pending.manifest.name}`
+            : isDowngrade
+              ? `Cannot downgrade ${pending.manifest.name}`
+              : isUpgrade
+                ? `Update ${pending.manifest.name}`
+                : `Review ${pending.manifest.name}`}
         </h2>
         <p>
-          {isUpgrade
-            ? `Updating from ${pending.upgradeFromVersion} to ${pending.manifest.version}. Existing settings and stored data are preserved; the plugin runs its migrate hook before re-activating.`
-            : rows.length > 0
-              ? `${pending.manifest.name} requests access before activation.`
-              : `${pending.manifest.name} is ready to install.`}
+          {isReinstall
+            ? `Version ${pending.manifest.version} is already installed. Reinstalling replaces its files in place and re-runs the plugin's lifecycle; settings and stored data are preserved.`
+            : isDowngrade
+              ? `${pending.manifest.name} is installed at ${installedVersion}. Downgrades are refused — uninstall it first if you need to go back to ${pending.manifest.version}.`
+              : isUpgrade
+                ? `Updating from ${installedVersion} to ${pending.manifest.version}. Existing settings and stored data are preserved; the plugin runs its migrate hook before re-activating.`
+                : rows.length > 0
+                  ? `${pending.manifest.name} requests access before activation.`
+                  : `${pending.manifest.name} is ready to install.`}
         </p>
       </div>
 
@@ -346,19 +365,28 @@ export function PermissionReviewSection({
         <Button
           variant="primary"
           size="sm"
-          disabled={uploading}
+          // A downgrade is refused by the server before anything is written,
+          // so offering the button only buys the operator a round trip and an
+          // error banner.
+          disabled={uploading || isDowngrade}
           onClick={onConfirm}
         >
           <span>
             {uploading
-              ? isUpgrade
-                ? 'Updating'
-                : 'Installing'
-              : isUpgrade
-                ? newCount > 0
-                  ? `Approve ${newCount} new and update to ${pending.manifest.version}`
-                  : `Update to ${pending.manifest.version}`
-                : 'Approve and Install'}
+              ? isReinstall
+                ? 'Reinstalling'
+                : isUpgrade
+                  ? 'Updating'
+                  : 'Installing'
+              : isDowngrade
+                ? 'Downgrade not allowed'
+                : isReinstall
+                  ? `Reinstall ${pending.manifest.version}`
+                  : isUpgrade
+                    ? newCount > 0
+                      ? `Approve ${newCount} new and update to ${pending.manifest.version}`
+                      : `Update to ${pending.manifest.version}`
+                    : 'Approve and Install'}
           </span>
         </Button>
       </div>

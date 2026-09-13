@@ -4,10 +4,11 @@
  * Browser-execution tools (insert HTML, apply CSS, set tokens, manage pages,
  * content CRUD, …) have no server implementation — their logic runs in the
  * editor app against the live store. To let an external MCP client use them,
- * the editor holds a long-lived NDJSON stream open while mounted; this module
- * keeps one bridge per user and workspace (the newest open instance wins)
- * and lets the MCP server relay a browser tool call to the correct workspace
- * before awaiting its result.
+ * the editor holds a long-lived newline-delimited JSON stream open while
+ * mounted. Its HTTP response is advertised as an event stream so reverse
+ * proxies preserve incremental delivery. This module keeps one bridge per user
+ * and workspace (the newest open instance wins) and lets the MCP server relay a
+ * browser tool call to the correct workspace before awaiting its result.
  *
  * Reuses the chat bridge machinery wholesale: `createBridge` issues the
  * `AiBrowserBridge` (whose `callBrowser` resolves when the editor POSTs back to
@@ -18,17 +19,29 @@
  * connector can only ever reach the open workspace of its OWN owner and a
  * content tool can never be dispatched to the site editor (or vice versa).
  */
+import { MAIN_BRANCH_ID } from '@core/branches'
 import type { AiBrowserBridge, AiStreamEvent } from '../runtime/types'
 import { createBridge, encodeStreamEvent } from '../runtime'
 
 interface EditorBridgeEntry {
   bridgeId: string
   bridge: AiBrowserBridge
+  /** The branch the connected workspace has open; browser tools act in it. */
+  branchId: string
   destroy: () => void
 }
 
 export type EditorBridgeScope = 'site' | 'content'
-const STREAM_LEASE_MS = 120_000
+/**
+ * How long a stream may sit with NO tool traffic before the server drops it.
+ * This is an IDLE lease: every relayed tool request re-arms it, so an active
+ * batch is never cut mid-flight (a fixed lease used to kill the stream at
+ * exactly two minutes, failing whichever tool call straddled the boundary).
+ * Its purpose is bounding orphan lifetime when a proxy fails to propagate a
+ * closed downstream connection; the client reconnect loop restores a
+ * legitimately alive workspace within seconds of the drop.
+ */
+const STREAM_IDLE_LEASE_MS = 120_000
 
 const byUser = new Map<string, Map<EditorBridgeScope, EditorBridgeEntry>>()
 
@@ -44,6 +57,11 @@ export function hasEditorBridge(userId: string, scope: EditorBridgeScope): boole
   return byUser.get(userId)?.has(scope) ?? false
 }
 
+/** The branch the user's live workspace has open, or null when disconnected. */
+export function getEditorBridgeBranch(userId: string, scope: EditorBridgeScope): string | null {
+  return byUser.get(userId)?.get(scope)?.branchId ?? null
+}
+
 /**
  * Open the long-lived stream the editor consumes. The server pushes
  * `toolRequest` events down it whenever an MCP browser tool is invoked for this
@@ -53,7 +71,14 @@ export function createEditorBridgeStream(
   userId: string,
   scope: EditorBridgeScope,
   signal: AbortSignal,
+  options: {
+    /** The branch the workspace has open (its `X-Instatic-Branch`); main when absent. */
+    branchId?: string
+    /** Test seam: the idle lease shrinks to milliseconds in unit tests. */
+    idleLeaseMs?: number
+  } = {},
 ): ReadableStream<Uint8Array> {
+  const { branchId = MAIN_BRANCH_ID, idleLeaseMs = STREAM_IDLE_LEASE_MS } = options
   let closeStream: (() => void) | null = null
 
   return new ReadableStream<Uint8Array>({
@@ -89,10 +114,20 @@ export function createEditorBridgeStream(
       }
       closeStream = cleanup
 
+      const armLease = (): void => {
+        if (closed) return
+        if (lease) clearTimeout(lease)
+        lease = setTimeout(cleanup, idleLeaseMs)
+      }
+
       const emit = (event: AiStreamEvent): void => {
         if (closed) return
         try {
           controller.enqueue(encodeStreamEvent(event))
+          // Tool traffic proves the stream is wanted — keep the idle lease
+          // from expiring under an active batch. (The relay's own per-call
+          // timeout is 90s, comfortably inside the lease.)
+          armLease()
         } catch {
           cleanup()
         }
@@ -107,7 +142,7 @@ export function createEditorBridgeStream(
       const userBridges = byUser.get(userId) ?? new Map<EditorBridgeScope, EditorBridgeEntry>()
       const previous = userBridges.get(scope)
       if (previous) previous.destroy()
-      userBridges.set(scope, { bridgeId, bridge: created.bridge, destroy: destroyBridge })
+      userBridges.set(scope, { bridgeId, bridge: created.bridge, branchId, destroy: destroyBridge })
       byUser.set(userId, userBridges)
 
       emit({ type: 'bridgeReady', bridgeId })
@@ -123,8 +158,9 @@ export function createEditorBridgeStream(
         }
       }, 25_000)
       // Bound orphan lifetime when a proxy fails to propagate a closed
-      // downstream connection. The client reconnect loop restores the bridge.
-      lease = setTimeout(cleanup, STREAM_LEASE_MS)
+      // downstream connection. Idle-based: re-armed by every relayed tool
+      // request, so only genuinely quiet streams recycle.
+      armLease()
 
       if (signal.aborted) cleanup()
       else signal.addEventListener('abort', cleanup, { once: true })

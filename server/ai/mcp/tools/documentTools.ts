@@ -17,6 +17,7 @@ import { Type } from '@core/utils/typeboxHelpers'
 import { describeAgentDocuments } from '@core/ai'
 import type { AiTool, ToolContext } from '../../runtime/types'
 import { getDraftSiteDocument } from '../../../repositories/publish'
+import { MAIN_SCOPE } from '../../../branches/scope'
 
 export const documentMcpTools: AiTool[] = [
   {
@@ -28,7 +29,7 @@ export const documentMcpTools: AiTool[] = [
     inputSchema: Type.Object({}, { additionalProperties: false }),
     requiredCapabilities: ['site.read'],
     handler: async (_input, ctx: ToolContext) => {
-      const site = await getDraftSiteDocument(ctx.db)
+      const site = await getDraftSiteDocument(ctx.db, MAIN_SCOPE)
       if (!site) return { ok: false, error: 'No site found.' }
       return {
         currentDocument: null,

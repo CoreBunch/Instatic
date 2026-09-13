@@ -1,7 +1,7 @@
 /**
  * Focused tests for the batched media-resolution helpers.
  *
- * Finding 1 — resolveMediaIdsToPaths (src/core/loops/sources/dataRows.ts):
+ * Finding 1 — resolveMediaIdsToPaths (src/core/loops/sources/dataRowsMedia.ts):
  *   Verifies that N media-id lookups collapse into ONE query (not N), that
  *   repeated ids are deduplicated before the query, and that ids absent from
  *   the database are absent from the returned map.
@@ -18,7 +18,7 @@
 import { describe, expect, it } from 'bun:test'
 import { createTestDb } from '../helpers/createTestDb'
 import { createFakeDb } from './dbTestFake'
-import { resolveMediaIdsToPaths } from '../../../src/core/loops/sources/dataRows'
+import { resolveMediaIdsToPaths } from '../../../src/core/loops/sources/dataRowsMedia'
 import { prefetchMediaAssets } from '../../../server/publish/mediaPrefetch'
 import type { IModuleRegistry } from '../../../src/core/module-engine'
 
@@ -128,6 +128,20 @@ describe('resolveMediaIdsToPaths (Finding 1)', () => {
       expect(map.get('m1')).toBe('/uploads/hero.png')
       expect(map.get('m2')).toBe('/uploads/thumb.webp')
       expect(map.has('missing')).toBe(false)
+    } finally {
+      await cleanup()
+    }
+  })
+
+  it('omits soft-deleted assets', async () => {
+    const { db, cleanup } = await createTestDb()
+    try {
+      await insertMediaAsset(db, 'deleted-media', '/uploads/deleted.png')
+      await db`update media_assets set deleted_at = '2026-08-11T00:00:00.000Z' where id = 'deleted-media'`
+
+      const map = await resolveMediaIdsToPaths(db, ['deleted-media'])
+
+      expect(map.has('deleted-media')).toBe(false)
     } finally {
       await cleanup()
     }

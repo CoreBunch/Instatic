@@ -309,3 +309,39 @@ if (typeof (globalThis as { EventSource?: unknown }).EventSource === 'undefined'
     document.getElementById('toast-root')?.remove()
   })
 }
+
+// ---------------------------------------------------------------------------
+// Reset every app store before each test.
+//
+// Same class of cross-file flake as the RTL cleanup above, one layer down. The
+// app stores are module-level Zustand singletons shared by the whole run, and
+// `setState(partial)` merges, so a test file that seeds a store with a
+// hand-written partial inherits every field it didn't mention from whichever
+// file ran before it. See `./fixtures/storeIsolation` for the flake this
+// actually caused.
+//
+// Registering the reset here (from the preload) means it runs before each
+// file's own `beforeEach`, so a test seeds on top of pristine state instead of
+// on top of the previous file's leftovers. Importing the module here is also
+// what fixes the snapshot at a point where nothing has run yet.
+{
+  const { beforeEach } = await import('bun:test')
+  const { resetAppStores } = await import('./fixtures/storeIsolation')
+  beforeEach(() => {
+    resetAppStores()
+  })
+}
+
+// ---------------------------------------------------------------------------
+// Run DOMPurify on the same jsdom backend the server installs in production.
+//
+// The ambient happy-dom DOM above is fine for @testing-library/react, but its
+// NodeIterator mishandles DOMPurify's node walk: siblings (and SVG geometry)
+// after the first removed node are dropped or, for richtext, passed through
+// unsanitised (GHSA-jg75). Configuring the real server runtime here means every
+// test's `sanitizeRichtext` / `sanitizeSvg` matches runtime behaviour instead
+// of the test DOM's, so sanitisation assertions are trustworthy.
+{
+  const { installServerRichtextSanitizer } = await import('../../server/richtextSanitizer')
+  installServerRichtextSanitizer()
+}

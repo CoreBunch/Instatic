@@ -18,7 +18,7 @@
 
 import { nanoid } from 'nanoid'
 import type { EditorStoreSliceCreator } from '@site/store/types'
-import { ApiError, isAbortError, responseErrorMessage } from '@core/http'
+import { ApiError, isAbortError, responseErrorMessage, withAmbientHeaders } from '@core/http'
 import type { AiChatRequestBody } from '@core/ai'
 import { pushToast } from '@ui/components/Toast'
 import {
@@ -606,12 +606,12 @@ export function createAgentSlice(
         }
 
         const body: AiChatRequestBody = { conversationId, content: [...content], snapshot }
-        const res = await fetch(`/admin/api/ai/chat/${config.scope}`, {
+        const res = await fetch(`/admin/api/ai/chat/${config.scope}`, withAmbientHeaders({
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(body),
           signal: controller.signal,
-        })
+        }))
 
         if (!res.ok) {
           const fallback = res.status === 502

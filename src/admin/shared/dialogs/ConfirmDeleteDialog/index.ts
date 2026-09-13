@@ -1,2 +1,2 @@
 export { ConfirmDeleteProvider } from './ConfirmDeleteContext'
-export { useConfirmDelete } from './confirmDeleteHook'
+export { useConfirmAction, useConfirmDelete } from './confirmDeleteHook'

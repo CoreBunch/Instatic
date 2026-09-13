@@ -11,6 +11,7 @@ import {
 } from '../http'
 import { createDataRow, getDataTable } from '../repositories/data'
 import { getLatestPublishedSiteSnapshot } from '../repositories/publish'
+import { emitContentEntryCreated } from '../publish/contentEvents'
 import {
   PublicFormChallengeBodySchema,
   PublicFormSubmitBodySchema,
@@ -30,6 +31,7 @@ import {
   publicFormPerFormRateLimit,
   publicFormPerIpRateLimit,
 } from './rateLimit'
+import { MAIN_SCOPE } from '../branches/scope'
 
 type PublicFormRoute = 'challenge' | 'submit'
 
@@ -119,7 +121,7 @@ async function handleSubmit(req: Request, db: DbClient): Promise<Response> {
     return badRequest('Invalid form submission')
   }
 
-  const table = await getDataTable(db, snapshot.targetTableId)
+  const table = await getDataTable(db, MAIN_SCOPE, snapshot.targetTableId)
   if (!table || !isFormSubmissionTargetTable(table)) {
     return jsonResponse({ error: 'Form target not found' }, { status: 404 })
   }
@@ -133,11 +135,12 @@ async function handleSubmit(req: Request, db: DbClient): Promise<Response> {
     return jsonResponse({ error: 'Invalid form values', errors: validation.errors }, { status: 400 })
   }
 
-  const row = await createDataRow(db, {
+  const row = await createDataRow(db, MAIN_SCOPE, {
     tableId: table.id,
     cells: validation.cells,
     slug: '',
   })
+  await emitContentEntryCreated(db, MAIN_SCOPE, row.id, { kind: 'system' })
   return jsonResponse({ ok: true, rowId: row.id })
 }
 

@@ -204,6 +204,19 @@ Schema source of truth: `src/core/files/schemas.ts`.
 
 Generated files (e.g. `package.json`, `vite.config.ts`) are hidden in the Site Explorer until the user ejects them. Files are created and renamed through the Site Explorer panel and edited with the CodeMirror-backed code editor.
 
+TypeScript site scripts get semantic authoring support in that editor, not
+just grammar highlighting. Opening a `.ts`/`.tsx` script lazily starts a
+dedicated browser Worker containing TypeScript's language service and the
+ES2020 + DOM standard-library declarations. The worker keeps an in-memory
+project of authored TypeScript script files so CodeMirror can show strict type
+diagnostics, DOM-aware completions, cross-file relative-import types, and hover
+signatures without running the compiler on the UI thread. Bare npm imports stay
+under the existing runtime dependency analyzer—the browser language service
+does not pretend an installed package has declarations when none were loaded.
+The worker is editor assistance only: esbuild remains the authoritative canvas
+and publish compiler, and semantic type errors do not replace the publish-time
+runtime validation gate.
+
 ### Site Explorer organization — `SiteExplorerOrganization`
 
 Site Explorer organization is split by whether a section owns URL/file paths.
@@ -492,8 +505,9 @@ one text node, simultaneously), presence is visible, and there is **no save
 UI at all**: the server persists continuously.
 
 **Document model** (`src/core/collab/`): one Yjs doc per logical row —
-`page:<rowId>`, `component:<rowId>`, `layout:<rowId>` — plus one `site:default`
-doc for the shell and the roster order. Page/component trees map to
+`page:<branch>:<rowId>`, `component:<branch>:<rowId>`, `layout:<branch>:<rowId>` —
+plus one `site:<branch>` doc per branch for the shell and the roster order
+(`site:main` for the live site; see [`branches.md`](branches.md)). Page/component trees map to
 `getMap('tree')` (`rootNodeId` + a `nodes` Y.Map of per-node Y.Maps: `props`
 as a Y.Map with the module's inline-text prop as Y.Text, nested
 `breakpointOverrides` Y.Maps, `children` as Y.Array; `parentId` is derived,
@@ -536,7 +550,11 @@ across all their docs via a routing-group stack.
 seeds them from the stored JSON (the server is the ONLY seeder — fixed seed
 clientID, so two clients can never build divergent initial histories),
 persists each doc's update blob to `collab_documents` AND the derived row
-JSON to `data_rows`/site on a short debounce (~800 ms), applies
+JSON to `data_rows`/site on a short debounce (~800 ms) — replacing only the
+cells the doc owns (`OWNED_CELLS` in `relayPersistence.ts`: title, slug, body
+and the template cells for pages; name, slug, body, params, classIds for
+components; name, slug, body, classes for layouts), so SEO, featured media,
+and plugin cells edited elsewhere survive every relay write — applies
 roster-driven soft-deletes, and RESETS docs whose row was written outside
 the relay (`rowWriteEvents.ts`) — clients rebind and reseed. The publish
 endpoint flushes the relay first so the baked snapshot includes edits still
@@ -558,7 +576,11 @@ and reuse the HTTP path's `validateSiteWriteDiff`/`validatePageWriteDiff` —
 one enforcement vocabulary on both transports (the validators live in
 `server/writePolicy/` for exactly that reason). Rejected updates never touch
 the authoritative doc; the sender gets a targeted reset that reverts its
-local fork. Two more socket-level defenses: per-frame payload caps (64 KB
+local fork. Every frame carries the doc's lineage (`generation`, minted
+when the relay seeds a doc): a write from a dead lineage is reset as
+`stale`, and the client provider holds local updates back until the first
+inbound frame names the lineage, then sends them as one update — so a row
+created and placed inside the bind round trip is never refused. Two more socket-level defenses: per-frame payload caps (64 KB
 awareness / 4 MB sync, plus the transport `maxPayloadLength`) drop oversized
 frames before any decode work, and every awareness frame is decoded and
 checked against the session — a state claiming another user's identity
@@ -571,19 +593,21 @@ exponential backoff, and each (re)connect re-runs syncStep1 so Yjs state
 vectors pull exactly the missed delta. `usePersistence` HTTP-loads the
 document once for first paint, then connects the provider — edits gate on
 each doc's first sync so an unseeded doc can never receive local ops.
+Because every committed edit is a frame, burst-prone inputs coalesce before
+they commit: the `ColorInput` primitive throttles picker-drag change events
+(leading fire for instant clicks, one trailing fire with the final value),
+so a color drag cannot fill the socket backlog past the provider's send
+gate.
 
-In production the socket is same-origin. Under `vite dev` it is NOT: the
-socket dials the CMS port directly, bypassing the Vite proxy
-(`src/admin/pages/site/collab/socketUrl.ts`). `scripts/vite.ts` runs Vite
-inside Bun, and Bun's `node:http` ClientRequest never emits `'upgrade'`, so a
-proxied 101 takes the non-upgrade fallback: the browser socket hangs in
-`readyState 0` forever — never opening, never closing, so the provider's
-reconnect path is never even reached — and when that connection later ends,
-the proxy's `socket.destroySoon()` call (an API Bun's socket lacks) throws
-uncaught and kills the whole dev process. Only the PORT is swapped; the
-hostname is preserved, because the session cookie is `SameSite=Lax` and
-`localhost` ↔ `127.0.0.1` is a cross-site handshake that would drop it.
-`devWorkflow.test.ts` gates the proxy against re-enabling `ws` forwarding.
+The socket is same-origin in production and under `vite dev` alike: the
+Vite proxy forwards the upgrade to the CMS (`ws: true` on the `/admin/api`
+entry in `vite.config.ts`), so the provider simply dials
+`window.location.host` + `SITE_SOCKET_PATH`. Before Bun 1.4.1 the
+`node:http` client Vite runs on inside Bun never emitted `'upgrade'`, so the
+socket had to dial the CMS port directly and the dev process could be killed
+by a `socket.destroySoon()` call Bun lacked; 1.4.1 fixed both, and
+`devWorkflow.test.ts` now gates the proxy the other way, requiring `ws`
+forwarding to stay on.
 
 **Presence** (`src/admin/pages/site/collab/awarenessState.ts`; per-frame
 publishers in `collab/framePresencePublishers.ts`, rendering in

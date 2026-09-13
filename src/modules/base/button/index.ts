@@ -11,9 +11,9 @@ import { CursorClickSolidIcon } from 'pixel-art-icons/icons/cursor-click-solid'
 import { Value } from '@core/utils/typeboxHelpers'
 import { ANCHOR_TARGET_OPTIONS, anchorRel } from '@modules/base/shared/anchorTarget'
 import {
-  htmlAttributesAttr,
   htmlAttributesControl,
 } from '@modules/base/shared/htmlAttributes'
+import { htmlAttributesAttr } from '@core/publisher'
 import { resolveButtonAnchor } from './anchor'
 import { ButtonEditor } from './ButtonEditor'
 import { ButtonPropsSchema, type ButtonStoredProps } from './props'

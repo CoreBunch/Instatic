@@ -1,3 +1,4 @@
+import { timingSafeEqual } from 'node:crypto'
 import { createDbClient } from './db'
 import { runMigrations } from './db/runMigrations'
 import { syncSystemRoles } from './repositories/roles'
@@ -5,6 +6,12 @@ import { readServerConfig } from './config'
 import { DEV_ORIGIN_ALLOWLIST, configurePublicOrigins, configureTrustedProxyCidrs, stampSocketIp } from './auth/security'
 import { applySecurityHeaders } from './securityHeaders'
 import { startConversationPurgeTick } from './ai/boot'
+import { unsupportedBunWarning } from './bunVersion'
+
+// Before anything that could fail for a version-related reason, say which
+// Bun this is when it is not one a release was tested on. Boot continues.
+const bunWarning = unsupportedBunWarning(Bun.version)
+if (bunWarning) console.warn(bunWarning)
 
 await import('./richtextSanitizer')
 const { handleServerRequest } = await import('./router')
@@ -68,6 +75,7 @@ function corsHeaders(origin: string | null): Record<string, string> {
 
 const server = Bun.serve({
   port: config.port,
+  hostname: config.host,
 
   // Disable Bun's default 10-second idle timeout. The agent endpoint streams
   // NDJSON for as long as Claude's loop is running — Claude's "thinking"
@@ -96,6 +104,26 @@ const server = Bun.serve({
       )
     }
 
+    // Supervisor shutdown: on platforms without POSIX signals (Windows, where
+    // Bun never receives SIGTERM) a supervising process stops the server
+    // through this token-gated endpoint instead. Only exists when the
+    // supervisor set INSTATIC_SHUTDOWN_TOKEN at spawn; 404s otherwise so it
+    // is invisible on normal deployments.
+    if (pathname === '/_instatic/shutdown' && req.method === 'POST') {
+      const provided = req.headers.get('x-instatic-shutdown-token')
+      if (config.shutdownToken && shutdownTokenMatches(provided, config.shutdownToken)) {
+        setTimeout(() => void shutdown('shutdown endpoint'), 50)
+        return applySecurityHeaders(
+          new Response(JSON.stringify({ ok: true }), {
+            status: 202,
+            headers: { 'Content-Type': 'application/json' },
+          }),
+          pathname,
+        )
+      }
+      return applySecurityHeaders(new Response('Not Found', { status: 404 }), pathname)
+    }
+
     // Real-time co-editing socket — a WebSocket upgrade is a different
     // protocol lifecycle from the request/response router, so it dispatches
     // here at the `Bun.serve` boundary (the only place `server.upgrade` is
@@ -113,6 +141,7 @@ const server = Bun.serve({
         staticDir: config.staticDir,
         uploadsDir: config.uploadsDir,
         databaseUrl: config.databaseUrl,
+        collabRelay,
       })
       for (const [k, v] of Object.entries(cors)) {
         res.headers.set(k, v)
@@ -166,5 +195,12 @@ async function shutdown(signal: string): Promise<void> {
 }
 process.on('SIGTERM', () => void shutdown('SIGTERM'))
 process.on('SIGINT', () => void shutdown('SIGINT'))
+
+function shutdownTokenMatches(provided: string | null, expected: string): boolean {
+  if (!provided) return false
+  const providedBytes = Buffer.from(provided)
+  const expectedBytes = Buffer.from(expected)
+  return providedBytes.length === expectedBytes.length && timingSafeEqual(providedBytes, expectedBytes)
+}
 
 console.log(`[server] Listening on http://localhost:${config.port}`)

@@ -205,6 +205,8 @@ docker compose -f compose.prod.yml -f compose.sqlite.yml up -d
 
 ## Without Docker (Direct Bun Install)
 
+This is the one install path that uses your own Bun. Keep it inside `engines.bun` in `package.json` (`>=1.4.0 <1.5.0` for this release): the Docker image and the Desktop server bundle carry that Bun themselves, and it is the only one releases are built and tested on. Bun does not enforce the range, so the server checks it at boot (`server/bunVersion.ts`) and logs `[server] Bun <version> is outside the supported range …` before continuing; `bun run dev` refuses a Bun older than 1.4.1 outright, because its Vite proxy needs that release to forward the editor's WebSocket. `bun upgrade` moves an older install forward.
+
 The CMS runs directly on the host without Docker. From a source checkout:
 
 ```sh
@@ -220,6 +222,15 @@ DATABASE_URL=sqlite:./data/cms.db \
 ```
 
 Replace `DATABASE_URL` with a Postgres connection string for Postgres mode. `STATIC_DIR` must point at the built admin SPA (`dist/` after `bun run build`).
+
+Update a direct install by pulling, reinstalling dependencies, rebuilding, and restarting the process. `bun install` is not optional: a release can add a server dependency (0.0.18 added `jsdom` for the richtext sanitizer), and without it the server exits on startup with `Cannot find module`.
+
+```sh
+git pull
+bun install --frozen-lockfile
+bun run build
+# then restart the bun process under your supervisor
+```
 
 Wrap the command in a process supervisor (systemd, pm2, supervisord) for auto-restart on crash and on server boot. Put an HTTPS-capable reverse proxy (Caddy, Nginx, Cloudflare Tunnel) in front for TLS, and set `PUBLIC_ORIGIN=https://your-domain` so the CSRF origin check matches the public URL even though the proxy hands the Bun process plain HTTP. `TRUSTED_PROXY_CIDRS` is independent of CSRF: set it to the proxy's source CIDR only if you want real client IPs in audit logs and rate-limit keys, and leave it empty if the app is directly exposed.
 

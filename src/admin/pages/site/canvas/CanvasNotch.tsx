@@ -1,4 +1,4 @@
-import { useState, type MouseEvent, type ReactNode, type SyntheticEvent } from "react";
+import { useState, type MouseEvent, type ReactNode, type Ref, type SyntheticEvent } from "react";
 import { createPortal } from "react-dom";
 import { registry } from "@core/module-engine";
 import type { VisualComponent } from "@core/visualComponents";
@@ -49,6 +49,10 @@ export type CanvasNotchAction = {
   id: string;
   label: string;
   onClick: () => void;
+  /** Optional anchor ref for action-owned popovers. */
+  buttonRef?: Ref<HTMLButtonElement>;
+  /** Marks an action-owned popover as open and suppresses the button tooltip. */
+  expanded?: boolean;
   /** Renders the action disabled, with this string as the tooltip. */
   disabledReason?: string;
 } & (
@@ -309,6 +313,7 @@ function renderActionButton(
   return (
     <Button
       key={action.id}
+      ref={action.buttonRef}
       variant="ghost"
       size="sm"
       iconOnly
@@ -317,6 +322,7 @@ function renderActionButton(
       onContextMenu={options?.onContextMenu}
       disabled={Boolean(action.disabledReason)}
       aria-label={`Add ${action.label}`}
+      aria-expanded={action.expanded}
       tooltip={action.disabledReason ?? `Add ${action.label}`}
       data-testid={`canvas-notch-${testIdPart(action.label)}-btn`}
     >

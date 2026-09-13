@@ -1479,6 +1479,28 @@ describe('ImportStep — progress + completion states', () => {
     expect(screen.getByText('Dropped @keyframes slideIn')).toBeDefined()
   })
 
+  it('complete state keeps the planned media total and flags the shortfall (#412)', () => {
+    const result = makeMinimalResult({
+      assets: [{ sourcePath: 'images/a.png', mediaUrl: '/uploads/a.png' }],
+      warnings: [
+        { kind: 'asset-upload-failed', message: 'Failed to upload images/b.png (image/png): boom', path: 'images/b.png' },
+      ],
+    })
+    const progress = makeDoneProgress(result)
+    progress.categories.media = { done: 1, total: 2 }
+    renderImportStep(progress, result)
+
+    const media = screen.getByTestId('site-import-category-media')
+    expect(media.getAttribute('data-state')).toBe('partial')
+    expect(media.textContent).toContain('1 / 2')
+    expect(screen.getByText(/1 of 2 media files failed to upload/i)).toBeDefined()
+    const normalize = (s: string) => s.replace(/\s+/g, ' ').trim()
+    const sub = Array.from(document.querySelectorAll('p')).find((p) =>
+      normalize(p.textContent ?? '').includes('1 of 2 media'),
+    )
+    expect(sub).not.toBeUndefined()
+  })
+
   it('running state shows a determinate percentage from media uploads', () => {
     const progress = makeInitialRunProgress()
     progress.phase = 'uploading'
@@ -2077,12 +2099,12 @@ describe('commitImportPlan — uploadAsset called only for entries in plan.asset
       }),
       uploadAsset: async ({ path }) => {
         uploadedPaths.push(path)
-        return `/uploads/logo.png`
+        return { url: '/uploads/logo.png', warnings: [] }
       },
       commit: async (recipe) => {
         recipe({
           addPage: (_input) => 'page-id',
-          addStyleRule: (_rule) => 'rule-id',
+          putStyleRule: (_rule) => 'rule-id',
           overwritePage: () => {},
           overwriteStyleRule: () => {},
           addConditions: () => {},
@@ -2137,14 +2159,14 @@ describe('commitImportPlan — overwrite with no existing target falls back to a
         createdAt: 1,
         updatedAt: 1,
       }),
-      uploadAsset: async ({ path }) => `/uploads/${path}`,
+      uploadAsset: async ({ path }) => ({ url: `/uploads/${path}`, warnings: [] }),
       commit: async (recipe) => {
         recipe({
           addPage: (input) => {
             addedPageIds.push(input.id)
             return input.id ?? 'fresh-id'
           },
-          addStyleRule: () => 'rule-id',
+          putStyleRule: () => 'rule-id',
           overwritePage: (pageId) => {
             if (!pageId) throw new Error('overwritePage: page not found')
             overwrotePageIds.push(pageId)
@@ -2237,5 +2259,336 @@ describe('commitImportPlan — overwrite with no existing target falls back to a
 
     expect(overwrotePageIds).toEqual(['existing-page-1'])
     expect(addedPageIds).toHaveLength(0)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// 12 — commitImportPlan: abort signal cancels the run
+// ---------------------------------------------------------------------------
+
+describe('commitImportPlan — abort signal cancels the run', () => {
+  function cancellableAdapter(onUpload: (path: string) => void) {
+    let commitCalled = false
+    const adapter: SiteImportAdapter = {
+      installGoogleFont: async (font) => ({
+        id: `font-${font.family}`,
+        source: 'google',
+        family: font.family,
+        variants: font.variants,
+        subsets: font.subsets,
+        files: [],
+        createdAt: 1,
+        updatedAt: 1,
+      }),
+      uploadAsset: async ({ path }) => {
+        onUpload(path)
+        return { url: `/uploads/${path}`, warnings: [] }
+      },
+      commit: async () => { commitCalled = true },
+    }
+    return { adapter, commitCalled: () => commitCalled }
+  }
+
+  const twoAssetPlan = () => makeMinimalPlan({
+    assets: [
+      { sourcePath: 'one.png', mimeType: 'image/png', bytes: new Uint8Array([1]) },
+      { sourcePath: 'two.png', mimeType: 'image/png', bytes: new Uint8Array([2]) },
+    ],
+  })
+
+  it('stops before the next upload and never commits once aborted', async () => {
+    const controller = new AbortController()
+    const uploadedPaths: string[] = []
+    const { adapter, commitCalled } = cancellableAdapter((path) => {
+      uploadedPaths.push(path)
+      controller.abort()
+    })
+
+    await expect(
+      commitImportPlan(twoAssetPlan(), adapter, { signal: controller.signal }),
+    ).rejects.toThrow()
+
+    expect(uploadedPaths).toEqual(['one.png'])
+    expect(commitCalled()).toBe(false)
+  })
+
+  it('an aborted in-flight upload ends the run instead of degrading to a warning', async () => {
+    const controller = new AbortController()
+    const uploadedPaths: string[] = []
+    const { adapter, commitCalled } = cancellableAdapter(() => {})
+    adapter.uploadAsset = async ({ path }) => {
+      uploadedPaths.push(path)
+      // What an aborted fetch rejects with.
+      throw new DOMException('The operation was aborted.', 'AbortError')
+    }
+
+    await expect(
+      commitImportPlan(twoAssetPlan(), adapter, { signal: controller.signal }),
+    ).rejects.toThrow()
+
+    expect(uploadedPaths).toEqual(['one.png'])
+    expect(commitCalled()).toBe(false)
+  })
+
+  it('aborting after every upload still prevents the commit', async () => {
+    const controller = new AbortController()
+    const uploadedPaths: string[] = []
+    const { adapter, commitCalled } = cancellableAdapter((path) => {
+      uploadedPaths.push(path)
+      if (uploadedPaths.length === 2) controller.abort()
+    })
+
+    await expect(
+      commitImportPlan(twoAssetPlan(), adapter, { signal: controller.signal }),
+    ).rejects.toThrow()
+
+    expect(uploadedPaths).toEqual(['one.png', 'two.png'])
+    expect(commitCalled()).toBe(false)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// 13 — Cancelling a static import run (issue #410)
+//
+// Cancel during the upload phase must actually stop the run: no further
+// uploads, no store commit, no draft save. The first upload response is held
+// so the click deterministically lands mid-upload.
+// ---------------------------------------------------------------------------
+
+describe('SiteImportModal — cancelling a static import run', () => {
+  it('Cancel during the upload phase stops uploads and never commits or saves', async () => {
+    let uploadCalls = 0
+    let saveCalls = 0
+    let releaseFirstUpload: () => void = () => {}
+    const firstUploadHeld = new Promise<void>((resolve) => { releaseFirstUpload = resolve })
+
+    globalThis.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+      if (url === '/admin/api/cms/media' && init?.method === 'POST') {
+        uploadCalls += 1
+        if (uploadCalls === 1) await firstUploadHeld
+        return jsonResponse({
+          asset: {
+            id: `asset-${uploadCalls}`,
+            filename: `upload-${uploadCalls}.png`,
+            mimeType: 'image/png',
+            sizeBytes: 2,
+            publicPath: `/uploads/upload-${uploadCalls}.png`,
+            uploadedByUserId: null,
+            createdAt: NOW_ISO,
+          },
+        })
+      }
+      if (url === '/admin/api/cms/site-document' && init?.method === 'PUT') {
+        saveCalls += 1
+        return jsonResponse({ ok: true, seq: 1 })
+      }
+      return jsonResponse({ error: `Unexpected request: ${url}` }, 500)
+    }
+
+    let capturedToasts: Toast[] = []
+    const unsubscribe = subscribeToasts((snapshot) => { capturedToasts = [...snapshot] })
+
+    try {
+      useEditorStore.setState({
+        site: makeSite(),
+      } as Parameters<typeof useEditorStore.setState>[0])
+      const pagesBefore = useEditorStore.getState().site!.pages.length
+      useAdminUi.getState().openSiteImport()
+
+      render(<SiteImportHarness />)
+
+      const htmlFile = new File(
+        [
+          '<!doctype html><html><head><title>Cancel Repro</title></head>' +
+          '<body><img src="one.png"><img src="two.png"><img src="three.png"></body></html>',
+        ],
+        'cancel-repro.html',
+        { type: 'text/html' },
+      )
+      const images = ['one.png', 'two.png', 'three.png'].map(
+        (name) => new File([new Uint8Array([0x89, 0x50])], name, { type: 'image/png' }),
+      )
+      fireEvent.drop(screen.getByLabelText(/drop site files/i), {
+        dataTransfer: { files: [htmlFile, ...images] },
+      })
+
+      expect(await screen.findByText('Review import')).toBeDefined()
+      fireEvent.click(screen.getByRole('button', { name: /continue/i }))
+
+      // The run is now in the upload phase, blocked on the held first upload.
+      await waitFor(() => {
+        expect(uploadCalls).toBe(1)
+      })
+      fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
+      expect(useAdminUi.getState().siteImportOpen).toBe(false)
+
+      // Let the held upload finish and give the (cancelled) run every chance
+      // to keep going — the bug was that it did.
+      releaseFirstUpload()
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 30))
+      })
+
+      expect(uploadCalls).toBe(1)
+      expect(useEditorStore.getState().site!.pages.length).toBe(pagesBefore)
+      expect(saveCalls).toBe(0)
+      expect(capturedToasts.some((toast) => /cancelled/i.test(toast.title))).toBe(true)
+      expect(capturedToasts.some((toast) => toast.title === 'Site imported')).toBe(false)
+    } finally {
+      unsubscribe()
+    }
+  })
+
+  it('closing the dialog during the upload phase cancels the run the same way', async () => {
+    let uploadCalls = 0
+    let saveCalls = 0
+    let releaseFirstUpload: () => void = () => {}
+    const firstUploadHeld = new Promise<void>((resolve) => { releaseFirstUpload = resolve })
+
+    globalThis.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+      if (url === '/admin/api/cms/media' && init?.method === 'POST') {
+        uploadCalls += 1
+        if (uploadCalls === 1) await firstUploadHeld
+        return jsonResponse({
+          asset: {
+            id: `asset-${uploadCalls}`,
+            filename: `upload-${uploadCalls}.png`,
+            mimeType: 'image/png',
+            sizeBytes: 2,
+            publicPath: `/uploads/upload-${uploadCalls}.png`,
+            uploadedByUserId: null,
+            createdAt: NOW_ISO,
+          },
+        })
+      }
+      if (url === '/admin/api/cms/site-document' && init?.method === 'PUT') {
+        saveCalls += 1
+        return jsonResponse({ ok: true, seq: 1 })
+      }
+      return jsonResponse({ error: `Unexpected request: ${url}` }, 500)
+    }
+
+    useEditorStore.setState({
+      site: makeSite(),
+    } as Parameters<typeof useEditorStore.setState>[0])
+    const pagesBefore = useEditorStore.getState().site!.pages.length
+    useAdminUi.getState().openSiteImport()
+
+    render(<SiteImportHarness />)
+
+    const htmlFile = new File(
+      [
+        '<!doctype html><html><head><title>Close Repro</title></head>' +
+        '<body><img src="one.png"><img src="two.png"></body></html>',
+      ],
+      'close-repro.html',
+      { type: 'text/html' },
+    )
+    const images = ['one.png', 'two.png'].map(
+      (name) => new File([new Uint8Array([0x89, 0x50])], name, { type: 'image/png' }),
+    )
+    fireEvent.drop(screen.getByLabelText(/drop site files/i), {
+      dataTransfer: { files: [htmlFile, ...images] },
+    })
+
+    expect(await screen.findByText('Review import')).toBeDefined()
+    fireEvent.click(screen.getByRole('button', { name: /continue/i }))
+
+    await waitFor(() => {
+      expect(uploadCalls).toBe(1)
+    })
+    // Escape routes through the dialog's onClose, same as the X button.
+    fireEvent.keyDown(document.body, { key: 'Escape' })
+    expect(useAdminUi.getState().siteImportOpen).toBe(false)
+
+    releaseFirstUpload()
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 30))
+    })
+
+    expect(uploadCalls).toBe(1)
+    expect(useEditorStore.getState().site!.pages.length).toBe(pagesBefore)
+    expect(saveCalls).toBe(0)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// 12 — A static run where one upload fails (#412)
+// ---------------------------------------------------------------------------
+
+describe('SiteImportModal — a static run with a failed upload', () => {
+  it('finishes with the planned total, names the shortfall, and opens the import log', async () => {
+    let uploadCalls = 0
+    globalThis.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+      if (url === '/admin/api/cms/media' && init?.method === 'POST') {
+        uploadCalls += 1
+        if (uploadCalls === 2) {
+          return jsonResponse({ error: 'Only JPEG, PNG, GIF, WebP, SVG, MP4, WebM, and web font files can be uploaded' }, 400)
+        }
+        return jsonResponse({
+          asset: {
+            id: `asset-${uploadCalls}`,
+            filename: `upload-${uploadCalls}.png`,
+            mimeType: 'image/png',
+            sizeBytes: 2,
+            publicPath: `/uploads/upload-${uploadCalls}.png`,
+            uploadedByUserId: null,
+            createdAt: NOW_ISO,
+          },
+        }, 201)
+      }
+      if (url === '/admin/api/cms/site-document' && init?.method === 'PUT') {
+        return jsonResponse({ ok: true, seq: 1 })
+      }
+      return jsonResponse({ error: `Unexpected request: ${url}` }, 500)
+    }
+
+    let capturedToasts: Toast[] = []
+    const unsubscribe = subscribeToasts((snapshot) => { capturedToasts = [...snapshot] })
+
+    try {
+      useEditorStore.setState({
+        site: makeSite(),
+      } as Parameters<typeof useEditorStore.setState>[0])
+      useAdminUi.getState().openSiteImport()
+
+      render(<SiteImportHarness />)
+
+      const htmlFile = new File(
+        [
+          '<!doctype html><html><head><title>Partial Repro</title></head>' +
+          '<body><img src="one.png" alt="One"><img src="two.png" alt="Two"></body></html>',
+        ],
+        'partial-repro.html',
+        { type: 'text/html' },
+      )
+      const images = ['one.png', 'two.png'].map(
+        (name) => new File([new Uint8Array([0x89, 0x50])], name, { type: 'image/png' }),
+      )
+      fireEvent.drop(screen.getByLabelText(/drop site files/i), {
+        dataTransfer: { files: [htmlFile, ...images] },
+      })
+
+      expect(await screen.findByText('Review import')).toBeDefined()
+      fireEvent.click(screen.getByRole('button', { name: /continue/i }))
+
+      expect(await screen.findByText('Import complete')).toBeDefined()
+      expect(uploadCalls).toBe(2)
+
+      const media = screen.getByTestId('site-import-category-media')
+      expect(media.getAttribute('data-state')).toBe('partial')
+      expect(media.textContent).toContain('1 / 2')
+      expect(screen.getByText(/1 of 2 media files failed to upload/i)).toBeDefined()
+
+      // The log opens by itself so the failed path is visible without a click.
+      expect(screen.getByText(/two\.png/)).toBeDefined()
+      expect(capturedToasts.some((toast) => toast.kind === 'warning' && /1 of 2/.test(toast.body ?? ''))).toBe(true)
+      expect(capturedToasts.some((toast) => toast.kind === 'success')).toBe(false)
+    } finally {
+      unsubscribe()
+    }
   })
 })

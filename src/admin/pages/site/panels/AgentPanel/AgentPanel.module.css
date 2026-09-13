@@ -10,7 +10,10 @@
   --panel-h: 480px;
   left: var(--panel-x);
   top: var(--panel-y);
-  z-index: 50;
+  /* Shared floating tier above docked panel slots (85). The left sidebar
+     layout shell deliberately does not create a stacking context, so this
+     panel participates in the editor-wide layer. */
+  z-index: 90;
   width: var(--panel-w);
   height: var(--panel-h);
   min-width: 280px;

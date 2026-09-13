@@ -3,7 +3,7 @@
  *
  * Component-only file so React Fast Refresh can hot-patch edits without
  * re-running module registration. Tag resolution lives in the shared
- * `@modules/base/utils/htmlTag` helper — same code path the publisher
+ * `@core/htmlAttributes` resolver — same code path the publisher
  * uses, so canvas + published HTML match exactly.
  *
  * Empty containers render the shared `CanvasModulePlaceholder` *inside*
@@ -33,8 +33,7 @@
  */
 import React from 'react'
 import type { ModuleComponentProps } from '@core/module-engine'
-import { resolveHtmlTag, VOID_HTML_ELEMENTS } from '@modules/base/utils/htmlTag'
-import { htmlAttributesForReact } from '@modules/base/shared/htmlAttributes'
+import { htmlAttributesForReact, resolveHtmlTag, VOID_HTML_ELEMENTS } from '@core/htmlAttributes'
 import { CanvasModulePlaceholder } from '@ui/components/CanvasModulePlaceholder'
 import { ContainerSolidIcon } from 'pixel-art-icons/icons/container-solid'
 import type { ContainerStoredProps } from './props'

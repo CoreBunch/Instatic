@@ -1,6 +1,10 @@
 export { cmsAdapter } from './cms'
 export { getCmsPublishStatus, publishCmsDraft } from './cmsPublish'
-export { buildCmsRuntimePreview, resolveCmsRuntimeDependencies } from './cmsRuntime'
+export {
+  buildCmsRuntimePreview,
+  resolveCmsRuntimeDependencies,
+  validateCmsRuntimeScripts,
+} from './cmsRuntime'
 export type { CmsRuntimePreviewResult } from './cmsRuntime'
 export { listCmsMediaAssets } from './cmsMedia'
 export type { CmsMediaAsset } from './cmsMedia'
@@ -21,6 +25,8 @@ export {
   updateCmsDataRowStatus,
   updateCmsDataRowTable,
   updateCmsDataTable,
+  listCmsDataRowVersions,
+  restoreCmsDataRowVersion,
 } from './cmsData'
 
 export {
@@ -91,3 +97,21 @@ export type {
 } from './cmsAuth'
 
 // usePersistence moved to src/editor/hooks/usePersistence.ts (Constraint #179 — no React in core)
+export {
+  listCmsBranches,
+  createCmsBranch,
+  renameCmsBranch,
+  deleteCmsBranch,
+  getCmsBranchPreview,
+  issueCmsBranchPreview,
+  revokeCmsBranchPreview,
+  getCmsBranchMergePlan,
+  applyCmsBranchMerge,
+  undoCmsBranchMerge,
+  getCmsBranchReview,
+  requestCmsBranchMerge,
+  withdrawCmsBranchMergeRequest,
+  declineCmsBranchMergeRequest,
+  addCmsBranchReviewComment,
+  cmsBranchReviewRenderUrl,
+} from './cmsBranches'

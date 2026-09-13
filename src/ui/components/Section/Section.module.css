@@ -111,6 +111,20 @@
     text-transform: none;
 }
 
+/* Opt-in disclosure chevron (standalone accordions). Pushed to the trailing
+   edge; flips upward when the section is open. */
+.sectionChevron {
+    display: inline-flex;
+    align-items: center;
+    margin-left: auto;
+    color: var(--text-subtle);
+    transition: transform 120ms ease;
+}
+
+.sectionChevronOpen {
+    transform: rotate(180deg);
+}
+
 .sectionIndicatorDot {
     width: 5px;
     height: 5px;

@@ -35,6 +35,7 @@ import {
 } from '@core/page-tree'
 import { StorageFilterValueSchema } from './storageSchemas'
 import { PluginContentFieldSchema } from './types/content'
+import type { PluginPermission } from './types/permissions'
 
 // ---------------------------------------------------------------------------
 // Tables
@@ -177,6 +178,19 @@ export const ContentAccessModeSchema = Type.Union([
   Type.Literal('delete'),
 ])
 export type ContentAccessMode = Static<typeof ContentAccessModeSchema>
+
+/**
+ * The permission each `contentAccess` mode consumes. `parsePluginManifest`
+ * requires the permission for every declared mode and `instatic-plugin lint`
+ * warns about a permission no entry's mode consumes — both read this one
+ * table, so the two checks cannot drift apart.
+ */
+export const CONTENT_ACCESS_MODE_PERMISSIONS: Readonly<Record<ContentAccessMode, PluginPermission>> = {
+  read: 'cms.content.read',
+  write: 'cms.content.write',
+  publish: 'cms.content.publish',
+  delete: 'cms.content.delete',
+}
 
 export const ContentAccessEntrySchema = Type.Object({
   table: Type.String(),

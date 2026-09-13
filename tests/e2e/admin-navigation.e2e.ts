@@ -285,21 +285,20 @@ test.describe('admin settings', () => {
 
       await test.step('preference controls write and reload from local storage', async () => {
         const dialog = await openSettings(page, 'Preferences')
-        const autoSave = dialog.getByRole('switch', { name: 'Auto-save' })
-        const delay = dialog.getByRole('combobox', { name: 'Auto-save delay' })
+        // Auto-save retired with live co-editing — the boolean round-trip
+        // rides the confirm-before-delete switch instead.
+        const confirmDelete = dialog.getByRole('switch', { name: 'Confirm before deleting layers' })
         const theme = dialog.getByRole('combobox', { name: 'Theme' })
         const density = dialog.getByRole('combobox', { name: 'UI density' })
         const textSize = dialog.getByRole('combobox', { name: 'UI text size' })
 
-        await expect(autoSave).toHaveAttribute('aria-checked', 'true')
-        await expect(delay).toHaveValue('30 seconds')
+        await expect(confirmDelete).toHaveAttribute('aria-checked', 'false')
         await expect(theme).toHaveValue('Dark')
         await expect(density).toHaveValue('Compact')
         await expect(textSize).toHaveValue('Default')
 
-        await autoSave.click()
-        await expect(autoSave).toHaveAttribute('aria-checked', 'false')
-        await chooseComboboxOption(page, delay, '15 seconds')
+        await confirmDelete.click()
+        await expect(confirmDelete).toHaveAttribute('aria-checked', 'true')
         await chooseComboboxOption(page, theme, 'Light')
         await chooseComboboxOption(page, density, 'Comfortable')
         await chooseComboboxOption(page, textSize, 'Large')
@@ -308,8 +307,7 @@ test.describe('admin settings', () => {
           const raw = localStorage.getItem(key)
           return raw ? JSON.parse(raw) as Record<string, unknown> : {}
         }, EDITOR_PREFS_KEY)
-        expect(savedPrefs.autoSave).toBe(false)
-        expect(savedPrefs.autoSaveDelay).toBe('15')
+        expect(savedPrefs.confirmBeforeDelete).toBe(true)
         expect(savedPrefs.theme).toBe('light')
         expect(savedPrefs.density).toBe('comfortable')
         expect(savedPrefs.textScale).toBe('large')
@@ -320,13 +318,9 @@ test.describe('admin settings', () => {
         await page.reload()
         await expect(page.getByRole('heading', { name: 'Overview' })).toBeVisible()
         const reloadedDialog = await openSettings(page, 'Preferences')
-        await expect(reloadedDialog.getByRole('switch', { name: 'Auto-save' })).toHaveAttribute(
-          'aria-checked',
-          'false',
-        )
         await expect(
-          reloadedDialog.getByRole('combobox', { name: 'Auto-save delay' }),
-        ).toHaveValue('15 seconds')
+          reloadedDialog.getByRole('switch', { name: 'Confirm before deleting layers' }),
+        ).toHaveAttribute('aria-checked', 'true')
         await expect(reloadedDialog.getByRole('combobox', { name: 'Theme' })).toHaveValue(
           'Light',
         )
@@ -346,13 +340,9 @@ test.describe('admin settings', () => {
         await expect(page.getByRole('heading', { name: 'Overview' })).toBeVisible()
 
         const dialog = await openSettings(page, 'Preferences')
-        await expect(dialog.getByRole('switch', { name: 'Auto-save' })).toHaveAttribute(
-          'aria-checked',
-          'true',
-        )
-        await expect(dialog.getByRole('combobox', { name: 'Auto-save delay' })).toHaveValue(
-          '30 seconds',
-        )
+        await expect(
+          dialog.getByRole('switch', { name: 'Confirm before deleting layers' }),
+        ).toHaveAttribute('aria-checked', 'false')
         await expect(dialog.getByRole('combobox', { name: 'Theme' })).toHaveValue('Dark')
         await expect(dialog.getByRole('combobox', { name: 'UI density' })).toHaveValue('Compact')
         await expect(dialog.getByRole('combobox', { name: 'UI text size' })).toHaveValue('Default')
@@ -367,7 +357,9 @@ test.describe('admin settings', () => {
 
         const dialog = await openSettings(page, 'Preferences')
         const preferences = dialog.getByRole('region', { name: 'Preferences' })
-        await expect(preferences.getByRole('switch', { name: 'Auto-save' })).toBeVisible()
+        await expect(
+          preferences.getByRole('switch', { name: 'Confirm before deleting layers' }),
+        ).toBeVisible()
         await expect(preferences.getByRole('combobox', { name: 'Theme' })).toBeVisible()
         await expect(preferences.getByRole('combobox', { name: 'UI density' })).toBeVisible()
         await expect(preferences.getByRole('combobox', { name: 'UI text size' })).toBeVisible()
@@ -379,8 +371,8 @@ test.describe('admin settings', () => {
         )
         await expectLocatorContained(
           page,
-          preferences.getByRole('switch', { name: 'Auto-save' }),
-          'mobile settings Auto-save switch',
+          preferences.getByRole('switch', { name: 'Confirm before deleting layers' }),
+          'mobile settings confirm-delete switch',
         )
         await expectLocatorContained(
           page,

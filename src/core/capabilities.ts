@@ -28,6 +28,13 @@ export const CORE_CAPABILITIES = [
   'site.structure.edit',
   'site.content.edit',
   'site.style.edit',
+  // Branches. `create` forks a branch and covers the branches the user
+  // forked: rename, delete, update from main, share and revoke a preview
+  // link. `manage` covers every branch, plus merging into main and declining
+  // a merge request; it does not fork on its own. Listing and switching
+  // branches only need `site.read`.
+  'site.branches.create',
+  'site.branches.manage',
   'pages.edit',
   'pages.publish',
   'content.create',
@@ -75,3 +82,10 @@ export const CORE_CAPABILITIES = [
 ] as const
 
 export type CoreCapability = typeof CORE_CAPABILITIES[number]
+
+/**
+ * Capabilities that are structural powers of the installation Owner rather
+ * than delegable role grants. Keeping this policy beside CORE_CAPABILITIES
+ * gives the server and role editor one shared source of truth.
+ */
+export const OWNER_ONLY_CAPABILITIES = ['roles.manage'] as const satisfies readonly CoreCapability[]

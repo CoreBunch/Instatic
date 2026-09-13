@@ -75,3 +75,62 @@ describe('<pre> preserves significant whitespace', () => {
     expect(hasNewline).toBe(false)
   })
 })
+
+describe('compound buttons keep what they wrap', () => {
+  it('an a.btn wrapping an icon recurses into base.link, keeping href + children', () => {
+    const { root, kids } = childrenOf(
+      '<a class="btn" href="/download" target="_blank"><svg viewBox="0 0 1 1"></svg><span>Download</span></a>',
+    )
+
+    // base.button is canHaveChildren:false, so a compound .btn has to land on
+    // the child-capable anchor module or the icon is dropped on import.
+    expect(root.moduleId).toBe('base.link')
+    expect(root.props.href).toBe('/download')
+    expect(root.props.target).toBe('_blank')
+
+    expect(kids.map((k) => k.moduleId)).toContain('base.svg')
+    const texts = kids.filter((k) => k.moduleId === 'base.text').map((k) => k.props.text)
+    expect(texts).toContain('Download')
+
+    // the btn class still rides along, so the module swap does not restyle it
+    expect(root.classIds).toEqual(expect.arrayContaining(['btn']))
+  })
+
+  it('a text-only a.btn stays a childless base.button', () => {
+    const { root } = childrenOf('<a class="btn" href="/pricing">See pricing</a>')
+    expect(root.moduleId).toBe('base.button')
+    expect(root.props.label).toBe('See pricing')
+    expect(root.props.href).toBe('/pricing')
+    expect(root.children).toHaveLength(0)
+  })
+
+  it('a button wrapping an image + label recurses into a button-tagged container', () => {
+    const { root, kids } = childrenOf(
+      '<button><img src="/shot.png"><span>Open screenshot</span></button>',
+    )
+    expect(root.moduleId).toBe('base.container')
+    expect(root.props.customTag).toBe('button')
+
+    const images = kids.filter((k) => k.moduleId === 'base.image')
+    expect(images).toHaveLength(1)
+    expect(images[0]!.props.src).toBe('/shot.png')
+    const texts = kids.filter((k) => k.moduleId === 'base.text').map((k) => k.props.text)
+    expect(texts).toContain('Open screenshot')
+  })
+
+  it('a text-only button stays a childless base.button', () => {
+    const { root } = childrenOf('<button type="button">Play</button>')
+    expect(root.moduleId).toBe('base.button')
+    expect(root.props.label).toBe('Play')
+    expect(root.children).toHaveLength(0)
+  })
+
+  it('a submit button stays base.submit even when compound', () => {
+    // core/forms finds a form's submit control by module id, so a compound
+    // submit must not be re-tagged as a container. It keeps only its label.
+    const r = importHtml('<form><button><svg viewBox="0 0 1 1"></svg><span>Send</span></button></form>')
+    const submit = Object.values(r.nodes).find((n) => n.moduleId === 'base.submit')
+    expect(submit).toBeDefined()
+    expect(submit!.children).toHaveLength(0)
+  })
+})

@@ -23,6 +23,7 @@ export {
 export { PageSchema } from './page'
 export {
   CSSDeclarationPriorityBagSchema,
+  StyleRuleOriginSchema,
   StyleRuleSchema,
   classKindSelector,
   classifySelectorCreateInput,
@@ -51,6 +52,7 @@ export type {
   SelectorCreateInput,
   StyleRule,
   StyleRuleKind,
+  StyleRuleOrigin,
 } from './styleRule'
 export type { Condition, ConditionDef } from './condition'
 export type { SiteSettings } from './siteSettings'

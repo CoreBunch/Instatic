@@ -11,9 +11,9 @@ import { safeUrl } from '@modules/base/utils/escape'
 import { Value } from '@core/utils/typeboxHelpers'
 import { ANCHOR_TARGET_OPTIONS, anchorRel } from '@modules/base/shared/anchorTarget'
 import {
-  htmlAttributesAttr,
   htmlAttributesControl,
 } from '@modules/base/shared/htmlAttributes'
+import { htmlAttributesAttr } from '@core/publisher'
 import { linkUsesChildren } from './content'
 import { LinkEditor } from './LinkEditor'
 import { LinkPropsSchema, type LinkStoredProps } from './props'

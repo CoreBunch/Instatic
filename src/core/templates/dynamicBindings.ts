@@ -27,7 +27,7 @@
 
 import type { DynamicPropBinding } from '@core/page-tree'
 import { renderMarkdownToHtml } from '@core/markdown/renderMarkdown'
-import { isRichtextPropKey } from '@core/sanitize'
+import { isRichtextPropKey, sanitizeRichtext } from '@core/sanitize'
 import type { TemplateRenderDataContext } from './renderDataContext'
 
 export type { TemplateRenderDataContext } from './renderDataContext'
@@ -164,19 +164,66 @@ export function resolveDynamicProps(
   // tokens so the loop below does nothing).
   const target = resolved ?? staticProps
   let mutated = resolved !== null
-  for (const key of Object.keys(target)) {
-    const v = target[key]
-    if (typeof v !== 'string') continue
-    if (!containsTokens(v)) continue
+  const ensureCopy = () => {
     if (!mutated) {
       resolved = { ...staticProps }
       mutated = true
     }
+  }
+
+  for (const key of Object.keys(target)) {
+    const v = target[key]
+
+    // `htmlAttributes` is the one prop that holds strings a level down, and
+    // its values are authored the same way every other string prop is — an
+    // `href` written on a link interpolates, so a `src` written on a custom
+    // tag has to as well. Without this the token ships to the browser as
+    // literal text and the attribute silently points nowhere.
+    if (key === HTML_ATTRIBUTES_PROP_KEY) {
+      if (!isStringRecord(v)) continue
+      const withTokens = Object.entries(v).filter(([, av]) => containsTokens(av))
+      if (withTokens.length === 0) continue
+      ensureCopy()
+      const attrs = { ...v }
+      for (const [attrName, attrValue] of withTokens) {
+        // Never markdown-rendered: an attribute value is a value, not a body.
+        attrs[attrName] = interpolateTokens(attrValue, context)
+      }
+      resolved![key] = attrs
+      continue
+    }
+
+    if (typeof v !== 'string') continue
+    if (!containsTokens(v)) continue
+    ensureCopy()
     const interpolated = interpolateTokens(v, context)
     resolved![key] = isRichtextPropKey(key)
       ? renderMarkdownToHtml(interpolated)
       : interpolated
   }
 
+  // Richtext binding outputs render through `dangerouslySetInnerHTML` on the
+  // editor canvas (base.outlet's `html`) with no other guard, so sanitise every
+  // resolved richtext-keyed value the way the publisher's `escapeProps` does.
+  // The publisher sanitises these again in escapeProps, so this is idempotent
+  // on the publish path; the canvas has no escapeProps, so this is its only
+  // sanitiser (GHSA-7vxr-r5h2-rh76).
+  if (resolved) {
+    for (const key of Object.keys(resolved)) {
+      const value = resolved[key]
+      if (typeof value === 'string' && isRichtextPropKey(key)) {
+        resolved[key] = sanitizeRichtext(value)
+      }
+    }
+  }
+
   return resolved ?? staticProps
+}
+
+/** Prop holding author-set HTML attributes — see the loop in `resolveDynamicProps`. */
+const HTML_ATTRIBUTES_PROP_KEY = 'htmlAttributes'
+
+function isStringRecord(value: unknown): value is Record<string, string> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false
+  return Object.values(value).every((entry) => typeof entry === 'string')
 }

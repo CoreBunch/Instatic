@@ -19,6 +19,7 @@
  *   - default type="button" (never accidentally submits forms)
  */
 import { type Ref, type ReactNode } from "react";
+import { LoaderIcon } from "pixel-art-icons/icons/loader";
 import { cn } from "@ui/cn";
 import { Tooltip, type TooltipSide } from "@ui/components/Tooltip";
 import styles from "./Button.module.css";
@@ -38,6 +39,12 @@ export interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElemen
   navItem?: boolean;
   dangerHover?: boolean;
   numeric?: boolean;
+  /**
+   * In-flight state for async actions: shows a spinning loader, sets
+   * `aria-busy`, and disables activation until the work settles. Icon-only
+   * buttons swap their icon for the spinner.
+   */
+  busy?: boolean;
   /**
    * Tooltip content shown on hover. Works even for disabled buttons — icon-only
    * disabled buttons especially benefit from a tooltip to communicate their
@@ -67,6 +74,7 @@ export function Button(
     navItem = false,
     dangerHover = false,
     numeric = false,
+    busy = false,
     className,
     children,
     type = "button",
@@ -97,10 +105,13 @@ export function Button(
     // still lands on the rendered <button> for accessibility.
     const popupOpen = rest['aria-expanded'] === true || rest['aria-expanded'] === 'true'
 
+    // A busy button must not fire again mid-flight — it disables like `disabled`.
+    const isDisabled = !!disabled || busy;
+
     // When a tooltip is provided alongside disabled, use aria-disabled instead
     // of the native disabled attribute so that mouseenter still fires and the
     // tooltip can show (native disabled silently swallows pointer events).
-    const useAriaDisabled = !!disabled && !!tooltip;
+    const useAriaDisabled = isDisabled && !!tooltip;
 
     // effectiveAriaDisabled is true when:
     //   • disabled+tooltip combo (converts to aria-disabled), OR
@@ -133,11 +144,19 @@ export function Button(
         {...restProps}
         // Override disabled/aria semantics and click interception for both the
         // disabled+tooltip case and the direct aria-disabled case.
-        disabled={useAriaDisabled ? undefined : (disabled || undefined)}
+        disabled={useAriaDisabled ? undefined : (isDisabled || undefined)}
         aria-disabled={effectiveAriaDisabled ? true : undefined}
+        // Honor a caller-provided aria-busy (e.g. SplitButton's overlay
+        // spinner drives busy semantics without Button's own spinner).
+        aria-busy={busy || restProps["aria-busy"] === true || restProps["aria-busy"] === "true" ? true : undefined}
         onClick={effectiveAriaDisabled ? (e: React.MouseEvent<HTMLButtonElement>) => e.preventDefault() : onClick}
       >
-        {children}
+        {busy && (
+          <span className={styles.busySpinner} aria-hidden="true">
+            <LoaderIcon size={12} />
+          </span>
+        )}
+        {busy && iconOnly ? null : children}
       </button>
     );
 

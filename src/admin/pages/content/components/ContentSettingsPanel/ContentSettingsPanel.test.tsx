@@ -34,6 +34,13 @@ function fakeCollection(): DataTable {
         options: [{ id: 'opt_news', label: 'News', value: 'news' }],
       },
       { type: 'boolean', id: 'featured', label: 'Featured' },
+      {
+        type: 'repeater',
+        id: 'feature_rows',
+        label: 'Feature rows',
+        description: 'Highlights shown on the post',
+        fields: [{ type: 'text', id: 'heading', label: 'Heading' }],
+      },
     ],
     system: true,
     createdByUserId: null,
@@ -88,7 +95,13 @@ async function renderPanel(overrides: Partial<Parameters<typeof ContentSettingsP
       mediaError={null}
       featuredMediaId={null}
       featuredMediaAsset={null}
-      customCells={{ subtitle: 'World' }}
+      customCells={{
+        subtitle: 'World',
+        feature_rows: [{
+          id: 'feature_1',
+          cells: { heading: 'Fast' },
+        }],
+      }}
       canEditEntry
       canMoveEntry
       canPublishEntry
@@ -132,6 +145,14 @@ describe('ContentSettingsPanel custom fields', () => {
     const subtitleInput = screen.getByLabelText('Subtitle') as HTMLInputElement
     expect(subtitleInput.value).toBe('World')
     expect(screen.getByText('Shown under the title')).toBeTruthy()
+  })
+
+  it('lets the repeater editor own its label and description without duplicating them', async () => {
+    await renderPanel()
+
+    expect(screen.getAllByText('Feature rows')).toHaveLength(1)
+    expect(screen.getAllByText('Highlights shown on the post')).toHaveLength(1)
+    expect(screen.getByText('1 item')).toBeTruthy()
   })
 
   it('propagates edits through onCustomCellChange', async () => {

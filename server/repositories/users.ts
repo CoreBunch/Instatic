@@ -1,8 +1,9 @@
 import { createHash } from 'node:crypto'
 import { nanoid } from 'nanoid'
 import { placeholder, type DbClient } from '../db/client'
-import { isoDateOrNull } from '@core/utils/isoDate'
-import { normalizeCapabilities, type CoreCapability } from '../auth/capabilities'
+import { isoDateOrNull, nowIso } from '@core/utils/isoDate'
+import { isValidEmail } from '@core/utils/email'
+import { normalizeCapabilitiesForRole, type CoreCapability } from '../auth/capabilities'
 import {
   normalizeStepUpAuthMode,
   normalizeStepUpWindowMinutes,
@@ -175,7 +176,7 @@ export function computeGravatarHash(email: string): string {
 }
 
 export function rowToUser(row: JoinedUserRow): AuthUser {
-  const capabilities = normalizeCapabilities(row.role_capabilities_json)
+  const capabilities = normalizeCapabilitiesForRole(row.role_id, row.role_capabilities_json)
   const mfaRecoveryCodeHashes = filterArray(
     RecoveryCodeHashSchema,
     row.mfa_recovery_code_hashes_json,
@@ -284,7 +285,7 @@ export async function createUser(
 ): Promise<CmsUser> {
   const email = input.email.trim()
   const emailNormalized = normalizeEmail(email)
-  if (!emailNormalized.includes('@')) throw new UserMutationError('Invalid email')
+  if (!isValidEmail(emailNormalized)) throw new UserMutationError('Invalid email address')
   // Empty means empty. `display_name` is rendered on PUBLIC pages through
   // author bindings, so defaulting it to the email address publishes the
   // address the moment anyone binds an author field. Admin surfaces already
@@ -323,7 +324,12 @@ export async function updateUser(
 
   const email = input.email === undefined ? current.email : input.email.trim()
   const emailNormalized = normalizeEmail(email)
-  if (!emailNormalized.includes('@')) throw new UserMutationError('Invalid email')
+  // Validate only an email that is actually being CHANGED — a patch that
+  // touches role/status/password must still work on a user whose stored
+  // email predates this check.
+  if (input.email !== undefined && !isValidEmail(emailNormalized)) {
+    throw new UserMutationError('Invalid email address')
+  }
   // Clearing the field is allowed and means "no public name" — see createUser.
   const displayName = input.displayName === undefined
     ? current.displayName
@@ -342,7 +348,7 @@ export async function updateUser(
         password_updated_at = ${passwordUpdatedAt},
         status = ${status},
         role_id = ${roleId},
-        updated_at = current_timestamp
+        updated_at = ${nowIso()}
     where id = ${userId}
       and deleted_at is null
   `
@@ -362,7 +368,7 @@ export async function setUserAvatarMediaId(
   const result = await db`
     update users
     set avatar_media_id = ${mediaId},
-        updated_at = current_timestamp
+        updated_at = ${nowIso()}
     where id = ${userId}
       and deleted_at is null
   `
@@ -374,11 +380,12 @@ export async function updateUserPasswordHash(
   userId: string,
   passwordHash: string,
 ): Promise<CmsUser | null> {
+  const now = nowIso()
   const result = await db`
     update users
     set password_hash = ${passwordHash},
-        password_updated_at = current_timestamp,
-        updated_at = current_timestamp
+        password_updated_at = ${now},
+        updated_at = ${now}
     where id = ${userId}
       and deleted_at is null
   `
@@ -394,15 +401,16 @@ export async function enableUserTotpMfa(
   },
 ): Promise<CmsUser | null> {
   const encryptedSecret = await encryptTotpSecret(input.secret)
+  const now = nowIso()
   const result = await db`
     update users
     set mfa_enabled = ${true},
-        mfa_enabled_at = current_timestamp,
+        mfa_enabled_at = ${now},
         mfa_totp_secret_ciphertext = ${encryptedSecret.ciphertext},
         mfa_totp_secret_iv = ${encryptedSecret.iv},
         mfa_totp_secret_key_fingerprint = ${encryptedSecret.keyFingerprint},
         mfa_recovery_code_hashes_json = ${input.recoveryCodeHashes},
-        updated_at = current_timestamp
+        updated_at = ${now}
     where id = ${userId}
       and deleted_at is null
   `
@@ -421,7 +429,7 @@ export async function disableUserTotpMfa(
         mfa_totp_secret_iv = ${null},
         mfa_totp_secret_key_fingerprint = ${null},
         mfa_recovery_code_hashes_json = ${[]},
-        updated_at = current_timestamp
+        updated_at = ${nowIso()}
     where id = ${userId}
       and deleted_at is null
   `
@@ -436,7 +444,7 @@ export async function replaceUserRecoveryCodeHashes(
   const result = await db`
     update users
     set mfa_recovery_code_hashes_json = ${recoveryCodeHashes},
-        updated_at = current_timestamp
+        updated_at = ${nowIso()}
     where id = ${userId}
       and deleted_at is null
       and mfa_enabled = ${true}
@@ -456,7 +464,7 @@ export async function updateUserStepUpPolicy(
     update users
     set step_up_auth_mode = ${input.mode},
         step_up_window_minutes = ${input.windowMinutes},
-        updated_at = current_timestamp
+        updated_at = ${nowIso()}
     where id = ${userId}
       and deleted_at is null
   `
@@ -474,7 +482,7 @@ export async function consumeUserRecoveryCodeHash(
   const result = await db`
     update users
     set mfa_recovery_code_hashes_json = ${remaining},
-        updated_at = current_timestamp
+        updated_at = ${nowIso()}
     where id = ${userId}
       and deleted_at is null
       and mfa_enabled = ${true}
@@ -483,10 +491,11 @@ export async function consumeUserRecoveryCodeHash(
 }
 
 export async function softDeleteUser(db: DbClient, userId: string): Promise<boolean> {
+  const now = nowIso()
   const result = await db`
     update users
-    set deleted_at = current_timestamp,
-        updated_at = current_timestamp
+    set deleted_at = ${now},
+        updated_at = ${now}
     where id = ${userId}
       and deleted_at is null
   `
@@ -505,12 +514,13 @@ export async function countActiveOwners(db: DbClient): Promise<number> {
 }
 
 export async function markUserLoggedIn(db: DbClient, userId: string): Promise<void> {
+  const now = nowIso()
   await db`
     update users
-    set last_login_at = current_timestamp,
+    set last_login_at = ${now},
         failed_login_count = 0,
         locked_until = ${null},
-        updated_at = current_timestamp
+        updated_at = ${now}
     where id = ${userId}
   `
 }
@@ -532,7 +542,7 @@ export async function recordFailedLoginAttempt(
     update users
     set failed_login_count = failed_login_count + 1,
         locked_until = ${lockedUntil},
-        updated_at = current_timestamp
+        updated_at = ${nowIso()}
     where id = ${userId}
       and deleted_at is null
     returning failed_login_count, locked_until

@@ -4,7 +4,7 @@ import {
   getDynamicBindingMode,
   isFieldBindable,
   type PropertyControlKind,
-} from '@site/property-controls/bindingCompatibility'
+} from '@admin/shared/DataBindingPicker/bindingCompatibility'
 import type { DataMetaField } from '@core/data/schemas'
 
 // ---------------------------------------------------------------------------

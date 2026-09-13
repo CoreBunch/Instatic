@@ -172,6 +172,7 @@ describe('base.loop — module contract specifics', () => {
       'customTag',
       'direction',
       'filters',
+      'htmlAttributes',
       'limit',
       'offset',
       'orderBy',

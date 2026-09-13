@@ -6,7 +6,7 @@
 // relative paths and never through this barrel.
 
 export { publishPage } from './render'
-export type { PublishedRuntimePackageImportmap } from './render'
+export type { DocumentMetaOverride, PublishedRuntimePackageImportmap } from './render'
 
 export { renderNode, resolveSpecialRenderer, getSpecialRendererModuleIds } from './renderNode'
 
@@ -33,6 +33,8 @@ export {
 
 
 export { escapeHtml, isSafeUrl, safeUrl, sanitiseCssValue } from './utils'
+
+export { htmlAttributesAttr } from './htmlAttributesEmit'
 
 export {
   bagToCSS,

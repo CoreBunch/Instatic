@@ -426,7 +426,8 @@ The publisher emits a `<script type="importmap">` entry. `getMissingModuleDepend
   - `src/modules/base/link/content.ts` — `linkUsesChildren()` (per-module shared leaf)
   - `src/modules/base/list/items.ts` — `parseItems()` (per-module shared leaf)
   - `src/modules/base/video/youtube.ts` — `parseYoutubeId()`, `youtubeEmbedUrl()` (per-module shared leaf)
-  - `src/modules/base/utils/htmlTag.ts` — `resolveHtmlTag`, `htmlTagControl`, `customHtmlTagControl`, `VOID_HTML_ELEMENTS`
+  - `src/core/htmlAttributes/tags.ts` — `resolveHtmlTag`, `BUILTIN_HTML_TAGS`, `VOID_HTML_ELEMENTS`
+  - `src/modules/base/utils/htmlTag.ts` — `htmlTagControl`, `customHtmlTagControl`
   - `src/modules/base/utils/mediaAttrs.ts` — `buildMediaSrcset`, `pickMediaVariantUrl`
   - `src/modules/base/utils/escape.ts` — `escapeHtml`, `safeUrl`, `buildStyle`
 - Regression tests:
