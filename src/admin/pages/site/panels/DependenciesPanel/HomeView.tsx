@@ -196,10 +196,10 @@ function InstalledRow({ name, range, locked, dev = false, usage, onOpen }: Insta
       )}
       {locked ? (
         <Tooltip content={`Locked at ${locked}`}>
-          <VersionPill tone="locked" testId={`dep-locked-${name}`}>{locked}</VersionPill>
+          <VersionPill label={locked} locked testId={`dep-locked-${name}`} />
         </Tooltip>
       ) : (
-        !dev && <VersionPill>unresolved</VersionPill>
+        !dev && <VersionPill label="unresolved" />
       )}
       <ChevronRightIcon size={10} className={tileStyles.chevron} aria-hidden="true" />
     </Tile>

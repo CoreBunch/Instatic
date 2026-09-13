@@ -113,7 +113,7 @@ export function PackageDetailView({ name, hit: knownHit, publicNpm, deps, onBack
               <div className={styles.heroText}>
                 <h2 className={styles.heroName}>{data.name}</h2>
                 <div className={styles.heroMeta}>
-                  <VersionPill>v{data.latest}</VersionPill>
+                  <VersionPill label={`v${data.latest}`} />
                   {data.license && <MetaItem icon={FileTextSolidIcon}>{data.license}</MetaItem>}
                   {maintainer && <MetaItem icon={UsersSolidIcon}>{maintainer}</MetaItem>}
                 </div>
@@ -194,8 +194,8 @@ function VersionsList({ details }: { details: RegistryPackageDetails }) {
       {rows.map((info) => (
         <div key={info.version} className={styles.versionRow} data-deprecated={info.deprecated ? 'true' : undefined}>
           <span className={styles.mono}>{info.version}</span>
-          {tagByVersion.has(info.version) && <StatusBadge tone="info">{tagByVersion.get(info.version)}</StatusBadge>}
-          {info.deprecated && <StatusBadge tone="danger">deprecated</StatusBadge>}
+          {tagByVersion.has(info.version) && <StatusBadge label={tagByVersion.get(info.version) ?? ''} />}
+          {info.deprecated && <StatusBadge label="deprecated" tone="danger" />}
           <span className={styles.versionMeta}>{info.unpackedSize === null ? '' : formatBytes(info.unpackedSize)}</span>
           <span className={styles.versionMeta}>{formatDate(info.date)}</span>
         </div>
@@ -257,7 +257,7 @@ function AdvisoryList({ name, version, publicNpm }: { name: string; version: str
           <span className={styles.advisoryHead}>
             <WarningDiamondSolidIcon size={11} aria-hidden="true" />
             <span className={styles.mono}>{advisory.id}</span>
-            {advisory.severity && <StatusBadge tone="danger">{advisory.severity}</StatusBadge>}
+            {advisory.severity && <StatusBadge label={advisory.severity} tone="danger" />}
           </span>
           <span className={styles.advisorySummary}>{advisory.summary}</span>
         </div>

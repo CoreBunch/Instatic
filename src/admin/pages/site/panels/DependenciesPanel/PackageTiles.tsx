@@ -16,6 +16,7 @@
 import type { HTMLAttributes, ReactNode } from 'react'
 import { Button, type ButtonProps } from '@ui/components/Button'
 import { Tooltip } from '@ui/components/Tooltip'
+import { TagPill, type TagPillTone } from '@ui/components/TagPill'
 import { cn } from '@ui/cn'
 import type { RailAccent } from '@ui/railAccent'
 import { Sparkline } from '@ui/components/charts'
@@ -103,28 +104,34 @@ export function MetaItem({ icon: Icon, children, className }: { icon?: IconCompo
   )
 }
 
-interface VersionPillProps extends HTMLAttributes<HTMLSpanElement> {
-  children: ReactNode
-  tone?: 'default' | 'locked'
+/**
+ * A version number. `TagPill` in monospace: muted by default, success-toned
+ * once the package is locked.
+ */
+export function VersionPill({ label, locked = false, testId, ...rest }: {
+  label: string
+  locked?: boolean
   testId?: string
-}
-
-/** Spreads the rest props so `Tooltip` can clone it and attach its handlers. */
-export function VersionPill({ children, tone = 'default', testId, ...rest }: VersionPillProps) {
+} & HTMLAttributes<HTMLSpanElement>) {
   return (
-    <span className={cn(styles.versionPill, tone === 'locked' && styles.versionPillLocked)} data-testid={testId} {...rest}>
-      {children}
+    // The wrapper is what `Tooltip` clones: `TagPill` takes named props, not
+    // arbitrary DOM handlers.
+    <span className={styles.pillSlot} {...rest}>
+      <TagPill label={label} size="xs" monospace muted={!locked} tone={locked ? 'success' : undefined} testId={testId} />
     </span>
   )
 }
 
-type StatusTone = 'info' | 'success' | 'warning' | 'danger'
-
-/** `hint` shows on hover through the Tooltip primitive; only use it where the badge sits outside a button. */
-export function StatusBadge({ tone, hint, children, ...rest }: { tone: StatusTone; hint?: string; children: ReactNode } & HTMLAttributes<HTMLSpanElement>) {
+/**
+ * A compatibility or health signal on a package. State tones carry meaning
+ * (`ESM` good, `main only` caution, `no entry` / `deprecated` / `insecure`
+ * bad); anything factual keeps the categorical accent `TagPill` derives from
+ * its own label.
+ */
+export function StatusBadge({ label, tone, hint }: { label: string; tone?: TagPillTone; hint?: string }) {
   const badge = (
-    <span className={styles.badge} data-tone={tone} {...rest}>
-      {children}
+    <span className={styles.pillSlot}>
+      <TagPill label={label} size="xs" tone={tone} />
     </span>
   )
   return hint ? <Tooltip content={hint}>{badge}</Tooltip> : badge
@@ -134,18 +141,18 @@ export function PackageBadges({ info, hit }: { info: RegistryVersionInfo | null;
   const entry = info?.esmEntry
   return (
     <span className={styles.badges}>
-      {info?.hasTypes && <StatusBadge tone="info" hint="Ships its own TypeScript types">TS</StatusBadge>}
+      {info?.hasTypes && <StatusBadge label="TS" hint="Ships its own TypeScript types" />}
       {entry && entry.source !== 'main' && (
-        <StatusBadge tone="success" hint={`ESM entry from "${entry.source}": ${entry.path}`}>ESM</StatusBadge>
+        <StatusBadge label="ESM" tone="success" hint={`ESM entry from "${entry.source}": ${entry.path}`} />
       )}
       {entry?.source === 'main' && (
-        <StatusBadge tone="warning" hint={`Only a "main" entry (${entry.path}); it may be CommonJS`}>main only</StatusBadge>
+        <StatusBadge label="main only" tone="warning" hint={`Only a "main" entry (${entry.path}); it may be CommonJS`} />
       )}
       {info && !entry && (
-        <StatusBadge tone="danger" hint="No resolvable entry: the site runtime cannot import this package">no entry</StatusBadge>
+        <StatusBadge label="no entry" tone="danger" hint="No resolvable entry: the site runtime cannot import this package" />
       )}
-      {info?.deprecated && <StatusBadge tone="danger" hint={info.deprecated}>deprecated</StatusBadge>}
-      {hit?.insecure && <StatusBadge tone="danger" hint="Flagged insecure by the registry">insecure</StatusBadge>}
+      {info?.deprecated && <StatusBadge label="deprecated" tone="danger" hint={info.deprecated} />}
+      {hit?.insecure && <StatusBadge label="insecure" tone="danger" hint="Flagged insecure by the registry" />}
     </span>
   )
 }
@@ -170,12 +177,13 @@ export function DownloadsSparkline({ daily }: { daily: number[] | null }) {
   )
 }
 
+/** Keywords take the categorical accent each label produces, like every other tag in the editor. */
 export function KeywordChips({ keywords }: { keywords: string[] }) {
   if (keywords.length === 0) return null
   return (
     <div className={styles.keywords}>
       {keywords.slice(0, KEYWORD_LIMIT).map((keyword) => (
-        <span key={keyword} className={styles.keyword}>{keyword}</span>
+        <TagPill key={keyword} label={keyword} size="xs" muted />
       ))}
     </div>
   )
