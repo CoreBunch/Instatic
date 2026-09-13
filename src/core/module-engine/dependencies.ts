@@ -1,5 +1,5 @@
 import type { AnyModuleDefinition, IModuleRegistry, ModuleDependencies } from './types'
-import type { SitePackageJson } from '@core/site-dependencies/manifest'
+import { readDeclaredDependency, type SitePackageJson } from '@core/site-dependencies/manifest'
 import { isSafePackageName } from '@core/site-dependencies/packageNames'
 import type { BaseNode } from '@core/page-tree-schema'
 
@@ -49,8 +49,11 @@ export function getSiteDependencyVersion(
   packageJson: SitePackageJson,
   dependency: Pick<NormalizedModuleDependency, 'name' | 'dev'>,
 ): string | null {
-  const bucket = dependency.dev ? packageJson.devDependencies : packageJson.dependencies
-  return bucket[dependency.name] ?? null
+  const declared = readDeclaredDependency(packageJson, dependency.name)
+  // A module's dev-declared dependency is satisfied by either bucket; a
+  // runtime one only by `dependencies`, since dev packages are never resolved.
+  if (!declared || (!dependency.dev && declared.dev)) return null
+  return declared.range
 }
 
 export function getMissingModuleDependencies(

@@ -1,0 +1,97 @@
+.home {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    padding: var(--space-xs) var(--space-s) var(--space-2xl);
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2xl);
+}
+
+.section {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-s);
+}
+
+.status {
+    font-size: var(--text-3xs);
+    color: var(--text-disabled);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 160px;
+}
+
+.status[data-status='resolved'] {
+    color: var(--success-text-muted);
+}
+
+.status[data-status='error'] {
+    color: var(--danger-light);
+}
+
+/* ── Installed rows ─────────────────────────────────────────────────────── */
+.usagePill {
+    flex-shrink: 0;
+    padding: var(--space-px) var(--space-2xs);
+    border-radius: var(--input-radius);
+    background: color-mix(in srgb, var(--info-text) 12%, transparent);
+    color: var(--info-text);
+    font-size: var(--text-3xs);
+    font-weight: 700;
+    letter-spacing: 0.02em;
+}
+
+.updateChip {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-4xs);
+    flex-shrink: 0;
+    font-family: var(--font-mono);
+    font-size: var(--text-3xs);
+    padding: var(--space-px) var(--space-2xs);
+    border-radius: var(--radius-sm);
+    color: var(--info-text);
+    background: color-mix(in srgb, var(--info-text) 12%, transparent);
+    white-space: nowrap;
+}
+
+/* ── Curated tiles ──────────────────────────────────────────────────────── */
+
+.curatedName {
+    flex: 1;
+}
+
+.installedIcon {
+    color: var(--success-bright);
+    flex-shrink: 0;
+}
+
+/* ── Category tiles ─────────────────────────────────────────────────────── */
+.categoryTile {
+    display: flex;
+    align-items: center;
+    gap: var(--space-s);
+    min-height: 42px;
+    padding: var(--space-s) var(--space-m);
+}
+
+.categoryIcon {
+    display: inline-grid;
+    place-items: center;
+    width: 24px;
+    height: 24px;
+    flex-shrink: 0;
+    border-radius: var(--radius);
+    background: color-mix(in srgb, var(--tint) 14%, transparent);
+}
+
+.categoryLabel {
+    font-size: var(--text-2xs);
+    font-weight: 600;
+    color: var(--text);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}

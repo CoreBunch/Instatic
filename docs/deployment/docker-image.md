@@ -144,6 +144,7 @@ Render auto-injects `RENDER_EXTERNAL_URL`, which Instatic uses as the CSRF publi
 | `INSTATIC_SECRET_KEY` | Yes for reversible server secrets | Output of `bun run scripts/generate-secret-key.ts` |
 | `PUBLIC_ORIGIN` | Behind managed HTTPS proxies | Comma-separated public origins for the CSRF check, e.g. `https://www.example.com`. Auto-detected from `RENDER_EXTERNAL_URL` / `RAILWAY_PUBLIC_DOMAIN` on those platforms |
 | `TRUSTED_PROXY_CIDRS` | Optional | Comma-separated trusted proxy CIDRs for client-IP attribution only (audit logs, rate-limit keys) — **not** used for CSRF. Trust only your real proxy CIDRs; never `0.0.0.0/0` for a public service |
+| `NPM_REGISTRY_URL` | Optional | Registry used by the Dependencies panel, the dependency resolver and runtime `bun install`; defaults to `https://registry.npmjs.org`. Set for a private registry or mirror; downloads/advisories are skipped for non-public registries |
 
 Managed platforms usually inject `PORT`. Do not hard-code a different listen port unless the platform asks for a fixed target port.
 

@@ -3,7 +3,7 @@
  *
  * Owns the in-memory `packageJson` manifest.
  * The SitePanel overlay UI was deleted in Task #434 (Guideline #410: 5-panel layout);
- * DependenciesPanel now owns all dependency UI through DepsSection.tsx.
+ * The Dependencies panel (`RegistryPanel` + `useInstalledDependencies`) owns the UI.
  *
  * This slice owns dependency-adjacent editor state:
  *   - packageJson         in-memory package.json manifest
@@ -30,6 +30,8 @@ import type {
 import {
   clonePackageJson,
   DEFAULT_SITE_PACKAGE_JSON,
+  hasDeclaredDependency,
+  readDeclaredDependency,
   type SitePackageJson,
 } from '@core/site-dependencies/manifest'
 import { isSafePackageName } from '@core/site-dependencies/packageNames'
@@ -57,7 +59,7 @@ type PackageJson = SitePackageJson
 /**
  * Lifecycle of the background dependency-lock resolution. Driven by the
  * auto-resolve hook (and the manual `resolveDependencyLock()` action),
- * surfaced by DepsSection so the user can see what's happening even when
+ * surfaced by the Dependencies panel so the user can see what's happening even when
  * the work was triggered without a click.
  */
 type DependencyResolveStatus = 'idle' | 'resolving' | 'resolved' | 'error'
@@ -83,7 +85,7 @@ interface SitePanelSlice {
 
   /**
    * Number of packages locked at the end of the last successful resolution.
-   * Used by DepsSection to render `"N locked"` after a background resolve.
+   * Used by the Dependencies panel to render `"N locked"` after a background resolve.
    */
   dependencyResolveLockedCount: number
 
@@ -211,7 +213,7 @@ export const createSitePanelSlice: EditorStoreSliceCreator<SitePanelSlice> = (se
     const bucket = dev ? 'devDependencies' : 'dependencies'
     const otherBucket = dev ? 'dependencies' : 'devDependencies'
     // No-op guard (Guideline #242): skip if value unchanged and no bucket move is needed.
-    if (Object.is(current[bucket][name], safeVersion) && !(name in current[otherBucket])) return
+    if (Object.is(current[bucket][name], safeVersion) && !hasDeclaredDependency(current, name, !dev)) return
     const nextBucket = { ...current[bucket], [name]: safeVersion }
     const nextOtherBucket = { ...current[otherBucket] }
     delete nextOtherBucket[name]
@@ -223,9 +225,8 @@ export const createSitePanelSlice: EditorStoreSliceCreator<SitePanelSlice> = (se
   },
 
   removeDependency: (name) => {
-    const { dependencies, devDependencies } = get().packageJson
-    // No-op guard: package not present in either bucket
-    if (!(name in dependencies) && !(name in devDependencies)) return
+    // No-op guard: package not declared in either bucket.
+    if (readDeclaredDependency(get().packageJson, name) === null) return
     const deps = { ...get().packageJson.dependencies }
     const devDeps = { ...get().packageJson.devDependencies }
     delete deps[name]

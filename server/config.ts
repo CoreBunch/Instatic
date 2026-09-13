@@ -1,3 +1,5 @@
+import { parseNpmRegistryUrl } from './registry/config'
+
 interface ServerConfig {
   port: number
   /** Bind address. Defaults to 0.0.0.0; set 127.0.0.1 to keep a local instance off the LAN. */
@@ -13,6 +15,8 @@ interface ServerConfig {
   staticDir: string
   trustedProxyCidrs: string[]
   publicOrigins: string[]
+  /** Registry every package read and install goes to; see `server/registry/config.ts`. */
+  npmRegistryUrl: string
 }
 
 function readCsvList(value: string | undefined): string[] {
@@ -105,5 +109,6 @@ export function readServerConfig(
     staticDir: env.STATIC_DIR ?? './dist',
     trustedProxyCidrs: readCsvList(env.TRUSTED_PROXY_CIDRS),
     publicOrigins: resolvePublicOrigins(env),
+    npmRegistryUrl: parseNpmRegistryUrl(env.NPM_REGISTRY_URL),
   }
 }

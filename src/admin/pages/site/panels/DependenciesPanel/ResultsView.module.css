@@ -1,0 +1,89 @@
+.results {
+    display: flex;
+    flex: 1;
+    min-height: 0;
+    flex-direction: column;
+}
+
+.bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-xs);
+    padding: var(--space-2xs) var(--space-m) var(--space-s);
+}
+
+.count {
+    font-size: var(--text-3xs);
+    color: var(--text-subtle);
+    white-space: nowrap;
+}
+
+.count strong {
+    color: var(--text);
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+}
+
+.scroll {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    padding: 0 var(--space-s) var(--space-2xl);
+}
+
+.title {
+    display: flex;
+    align-items: baseline;
+    gap: var(--space-2xs);
+    flex: 1;
+    min-width: 0;
+}
+
+.version {
+    font-family: var(--font-mono);
+    font-size: var(--text-3xs);
+    color: var(--text-subtle);
+    flex-shrink: 0;
+}
+
+.installedMark {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-4xs);
+    color: var(--success-text-muted);
+    font-size: var(--text-3xs);
+    font-weight: 700;
+    flex-shrink: 0;
+}
+
+.meta {
+    display: flex;
+    align-items: center;
+    gap: var(--space-m);
+    margin-top: var(--space-4xs);
+    overflow: hidden;
+}
+
+.publisher {
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.more {
+    padding: var(--space-s) 0 0;
+}
+
+.exactName {
+    font-family: var(--font-mono);
+}
+
+.exactHint {
+    font-size: var(--text-3xs);
+    color: var(--text-subtle);
+    white-space: normal;
+}
+
+.skeleton {
+    padding-top: var(--space-2xs);
+}
