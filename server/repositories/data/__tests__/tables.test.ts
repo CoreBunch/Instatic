@@ -12,6 +12,7 @@ import {
   updateDataTable,
 } from '../tables'
 import { MAIN_SCOPE } from '../../../branches/scope'
+import { forkBranch } from '../../../branches/fork'
 
 async function freshDb(): Promise<DbClient> {
   const db = createSqliteClient(':memory:')
@@ -187,5 +188,23 @@ describe('data_tables.created_by_plugin_id column', () => {
 
     const listed = await listDataTables(db, MAIN_SCOPE)
     expect(listed.find((t) => t.slug === 'imported-products')?.createdByPluginId).toBe('acme.importer')
+  })
+
+  it('survives forking a branch — ownership is copied, not dropped', async () => {
+    // A fork copies data_tables with an explicit column list. Leaving this
+    // column out would hand the branch a table that no longer belongs to the
+    // plugin that created it, silently, with nothing to say so.
+    const created = await createDataTable(db, MAIN_SCOPE, {
+      name: 'Imported Products',
+      slug: 'imported-products',
+      kind: 'data',
+      singularLabel: 'Imported product',
+      pluralLabel: 'Imported products',
+      createdByPluginId: 'acme.importer',
+    })
+    await forkBranch(db, { id: 'redesign', name: 'Redesign', fromBranchId: 'main', createdByUserId: null })
+
+    const onBranch = await getDataTable(db, { branchId: 'redesign' }, created.id)
+    expect(onBranch?.createdByPluginId).toBe('acme.importer')
   })
 })
