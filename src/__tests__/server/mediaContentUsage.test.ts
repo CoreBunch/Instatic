@@ -19,7 +19,8 @@ import { normalizeSiteRuntimeConfig } from '@core/site-runtime'
 import { createTestDb } from '../helpers/createTestDb'
 import { saveDraftSite } from '../../../server/repositories/site'
 import { createDataRow, saveDataRowDraft } from '../../../server/repositories/data'
-import { MAIN_SCOPE } from '../../../server/branches/scope'
+import { MAIN_SCOPE, type BranchScope } from '../../../server/branches/scope'
+import { forkBranch } from '../../../server/branches/fork'
 import { pageToCells } from '../../../src/core/data/pageFromRow'
 import { collectContentUsageRefs } from '../../../server/media/contentUsage'
 
@@ -182,5 +183,62 @@ describe('media used by page content', () => {
   it('reports nothing when there is no site document yet', async () => {
     const db = await freshDb()
     expect(await collectContentUsageRefs(db, ['a1'])).toEqual([])
+  })
+
+  describe('across site branches', () => {
+    // Media is shared by every branch while pages are not, so purging a file
+    // takes it out of all of them at once. A branch-only use breaks that
+    // branch's preview immediately and the live site when the branch merges.
+
+    async function editOnBranch(
+      db: Awaited<ReturnType<typeof freshDb>>,
+      scope: BranchScope,
+      page: ReturnType<typeof pageWith>,
+    ) {
+      await saveDataRowDraft(db, scope, page.id, {
+        cells: pageToCells(page as never),
+        slug: page.slug,
+      }, 'admin_1')
+    }
+
+    it('names the branch when only a branch uses the file', async () => {
+      const db = await freshDb()
+      await saveDraftSite(db, MAIN_SCOPE, siteShell())
+      await seedPage(db, pageWith('page_home', 'Home', 'index', null))
+      await forkBranch(db, { id: 'redesign', name: 'Redesign', fromBranchId: 'main', createdByUserId: null })
+      await editOnBranch(db, { branchId: 'redesign' }, pageWith('page_home', 'Home', 'index', HERO_PATH))
+
+      const refs = await collectContentUsageRefs(db, ['a1'])
+      expect(refs).toHaveLength(1)
+      expect(refs[0]!.label).toBe('Home')
+      expect(refs[0]!.branchName).toBe('Redesign')
+    })
+
+    it('says nothing extra when a branch shares what main already uses', async () => {
+      // Every fork starts as a full copy of main. Naming the page once per
+      // branch would repeat the same line for every branch that exists.
+      const db = await freshDb()
+      await saveDraftSite(db, MAIN_SCOPE, siteShell())
+      await seedPage(db, pageWith('page_home', 'Home', 'index', HERO_PATH))
+      await forkBranch(db, { id: 'redesign', name: 'Redesign', fromBranchId: 'main', createdByUserId: null })
+      await forkBranch(db, { id: 'q4', name: 'Q4 launch', fromBranchId: 'main', createdByUserId: null })
+
+      const refs = await collectContentUsageRefs(db, ['a1'])
+      expect(refs).toHaveLength(1)
+      expect(refs[0]!.branchName).toBeUndefined()
+    })
+
+    it('keeps main and branch-only pages apart in one answer', async () => {
+      const db = await freshDb()
+      await saveDraftSite(db, MAIN_SCOPE, siteShell())
+      await seedPage(db, pageWith('page_home', 'Home', 'index', HERO_PATH))
+      await seedPage(db, pageWith('page_about', 'About us', 'about', null))
+      await forkBranch(db, { id: 'redesign', name: 'Redesign', fromBranchId: 'main', createdByUserId: null })
+      await editOnBranch(db, { branchId: 'redesign' }, pageWith('page_about', 'About us', 'about', HERO_PATH))
+
+      const refs = await collectContentUsageRefs(db, ['a1'])
+      const lines = refs.map((r) => `${r.label}${r.branchName ? ` @ ${r.branchName}` : ''}`).sort()
+      expect(lines).toEqual(['About us @ Redesign', 'Home'])
+    })
   })
 })

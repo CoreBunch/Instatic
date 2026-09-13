@@ -29,6 +29,14 @@ export interface UsageWarning {
 }
 
 function describe(ref: CmsMediaUsageRef): string {
+  const where = describePlace(ref)
+  // Main is the default and goes unsaid. A branch is only ever named when the
+  // use is on that branch alone, so this is the operator's one hint to look
+  // somewhere other than the site they are editing.
+  return ref.branchName ? `${where} (branch "${ref.branchName}")` : where
+}
+
+function describePlace(ref: CmsMediaUsageRef): string {
   switch (ref.refKind) {
     case 'user.avatar':
       return `profile picture — ${ref.label}`

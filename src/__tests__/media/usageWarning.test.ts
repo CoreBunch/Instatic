@@ -75,6 +75,19 @@ describe('the usage warning', () => {
     ])
   })
 
+  it('names a branch only when the use is on that branch alone', () => {
+    // Main goes unsaid — it is the site being edited. A branch name is the
+    // one hint that the page to fix is somewhere else.
+    const warning = buildUsageWarning(1, [
+      { assetId: 'a1', refKind: 'page.content', refId: 'p1', label: 'Home' },
+      { assetId: 'a1', refKind: 'page.content', refId: 'p2', label: 'About us', branchName: 'Redesign' },
+    ])
+    expect(warning?.lines).toEqual([
+      'on the page — Home',
+      'on the page — About us (branch "Redesign")',
+    ])
+  })
+
   it('describes a site-wide background without pretending it is a page', () => {
     const warning = buildUsageWarning(1, [
       { assetId: 'a1', refKind: 'site.styles', refId: 'site', label: 'site styles' },

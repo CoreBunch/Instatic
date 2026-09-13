@@ -14,17 +14,23 @@
  * `getDraftSiteDocument` — which cannot drift, because there is nothing to
  * keep in sync.
  *
- * The cost lands where it belongs. Walking every page tree is O(site), and it
- * happens only when someone asks to permanently delete something — never on a
- * page load, never on a trash. For the site sizes this product is built for,
- * that is a few milliseconds on an action that is about to be irreversible.
- * If a site ever grows past that, the fix is to cache this — with the walk
- * still the source of truth, so the cache can be checked against it.
+ * Deliberately reads DRAFTS, not the published artefacts: an image placed on
+ * an unpublished page is still in use, and a warning that only knew about live
+ * pages would let a delete quietly break the next publish.
  *
- * Deliberately reads the DRAFT document, not the published artefacts: an
- * image placed on an unpublished page is still in use, and a warning that
- * only knew about live pages would let a delete quietly break the next
- * publish.
+ * And it reads EVERY branch. Media is shared across branches while pages are
+ * not, so purging a file removes it from all of them at once — an image that
+ * only a branch uses breaks that branch's preview now, and the live site the
+ * moment the branch merges. Main is reported plainly; a branch is named only
+ * where it adds something main does not already say, so a site with five
+ * branches does not list the same page five times.
+ *
+ * The cost lands where it belongs. The walk is O(branches × site), and it runs
+ * only when someone asks to permanently delete something — never on a page
+ * load, never on a trash. For the site sizes this product is built for, that
+ * is milliseconds on an action that is about to be irreversible. If a site ever
+ * grows past that, the fix is to cache this — with the walk still the source
+ * of truth, so the cache can be checked against it.
  */
 
 // Registry population. The walk asks the registry which props are
@@ -33,13 +39,16 @@
 // which is the one failure mode worse than not having it. Same import
 // `pageDiff.ts` and the collab relay make, and for the same reason.
 import '@modules/base'
+import { MAIN_BRANCH_ID } from '@core/branches'
 import { registry } from '@core/module-engine'
+import type { SiteDocument } from '@core/page-tree'
 import { collectSiteStyleBackgroundImagePaths } from '@core/publisher'
-import { placeholder, type DbClient } from '../db/client'
 import { MAIN_SCOPE } from '../branches/scope'
+import { placeholder, type DbClient } from '../db/client'
+import { listBranches } from '../repositories/branches'
+import type { MediaUsageRef } from '../repositories/media'
 import { getDraftSiteDocument } from '../repositories/publish'
 import { collectPageMediaPaths } from '../publish/mediaPrefetch'
-import type { MediaUsageRef } from '../repositories/media'
 
 /**
  * `ref_kind` values this module produces. They share the namespace with the
@@ -71,12 +80,62 @@ async function pathsForAssetIds(
   return byPath
 }
 
+/** One place a file is used, before it is decided which branch to name. */
+interface Sighting {
+  assetId: string
+  refKind: string
+  refId: string
+  label: string
+}
+
 /**
- * Which of `assetIds` the site's own content references, and where.
+ * Identity of a sighting, independent of branch. Page ids are LOGICAL on every
+ * branch, so the same page on main and on a fork produces the same key.
+ */
+function sightingKey(sighting: Sighting): string {
+  return JSON.stringify([sighting.assetId, sighting.refKind, sighting.refId])
+}
+
+/**
+ * Everywhere one branch's draft uses one of the requested files.
  *
- * One ref per (asset, page) — a file used by four nodes on one page is one
- * page to fix, and repeating its title four times would turn the warning into
- * the wall of text it exists to avoid.
+ * One sighting per (asset, page) — a file used by four nodes on one page is
+ * one page to fix, and repeating its title four times would turn the warning
+ * into the wall of text it exists to avoid.
+ */
+function sightingsInSite(
+  site: SiteDocument,
+  assetIdByPath: ReadonlyMap<string, string>,
+): Sighting[] {
+  const found = new Map<string, Sighting>()
+  const add = (sighting: Sighting) => found.set(sightingKey(sighting), sighting)
+
+  for (const page of site.pages) {
+    // `collectPageMediaPaths` descends into the definition tree of every
+    // Visual Component the page references, so an image inside a VC body is
+    // attributed to the page that renders it — which is the page that would
+    // break, and so the one worth naming.
+    for (const path of collectPageMediaPaths(page, site, registry)) {
+      const assetId = assetIdByPath.get(path)
+      if (!assetId) continue
+      add({ assetId, refKind: PAGE_CONTENT_REF_KIND, refId: page.id, label: page.title || page.slug })
+    }
+  }
+
+  // Site-level style backgrounds belong to no single page — every page that
+  // matches the rule renders them, so naming one page would be misleading.
+  for (const path of collectSiteStyleBackgroundImagePaths(site)) {
+    const assetId = assetIdByPath.get(path)
+    if (!assetId) continue
+    add({ assetId, refKind: SITE_STYLES_REF_KIND, refId: 'site', label: 'site styles' })
+  }
+
+  return [...found.values()]
+}
+
+/**
+ * Which of `assetIds` the site's own content references, and where — across
+ * every branch.
  */
 export async function collectContentUsageRefs(
   db: DbClient,
@@ -87,40 +146,20 @@ export async function collectContentUsageRefs(
   const assetIdByPath = await pathsForAssetIds(db, assetIds)
   if (assetIdByPath.size === 0) return []
 
-  const site = await getDraftSiteDocument(db, MAIN_SCOPE)
-  if (!site) return []
+  // Main first, read explicitly: everything a branch reports is measured
+  // against it, so a branch that shares a use with main adds nothing.
+  const mainSite = await getDraftSiteDocument(db, MAIN_SCOPE)
+  const refs: MediaUsageRef[] = mainSite ? sightingsInSite(mainSite, assetIdByPath) : []
+  const onMain = new Set(refs.map(sightingKey))
 
-  const refs: MediaUsageRef[] = []
-
-  for (const page of site.pages) {
-    // `collectPageMediaPaths` descends into the definition tree of every
-    // Visual Component the page references, so an image inside a VC body is
-    // attributed to the page that renders it — which is the page that would
-    // break, and so the one worth naming.
-    const used = collectPageMediaPaths(page, site, registry)
-    for (const path of used) {
-      const assetId = assetIdByPath.get(path)
-      if (!assetId) continue
-      refs.push({
-        assetId,
-        refKind: PAGE_CONTENT_REF_KIND,
-        refId: page.id,
-        label: page.title || page.slug,
-      })
+  for (const branch of await listBranches(db)) {
+    if (branch.id === MAIN_BRANCH_ID) continue
+    const site = await getDraftSiteDocument(db, { branchId: branch.id })
+    if (!site) continue
+    for (const sighting of sightingsInSite(site, assetIdByPath)) {
+      if (onMain.has(sightingKey(sighting))) continue
+      refs.push({ ...sighting, branchName: branch.name })
     }
-  }
-
-  // Site-level style backgrounds belong to no single page — every page that
-  // matches the rule renders them, so naming one page would be misleading.
-  for (const path of collectSiteStyleBackgroundImagePaths(site)) {
-    const assetId = assetIdByPath.get(path)
-    if (!assetId) continue
-    refs.push({
-      assetId,
-      refKind: SITE_STYLES_REF_KIND,
-      refId: 'site',
-      label: 'site styles',
-    })
   }
 
   return refs

@@ -150,6 +150,8 @@ export const CmsMediaUsageRefSchema = Type.Object({
   refKind: Type.String(),
   refId: Type.String(),
   label: Type.String(),
+  /** Present only when the use is on a site branch and not on main. */
+  branchName: Type.Optional(Type.String()),
 })
 export type CmsMediaUsageRef = Static<typeof CmsMediaUsageRefSchema>
 

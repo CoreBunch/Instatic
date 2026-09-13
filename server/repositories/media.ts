@@ -564,6 +564,12 @@ export interface MediaUsageRef {
   refId: string
   /** Human-readable, e.g. a person's name for an avatar. Never a raw id. */
   label: string
+  /**
+   * Set only when the dependency exists on a site branch and NOT on main —
+   * the branch's display name, so the warning can say where to look. Stored
+   * references (an avatar) belong to no branch and never carry it.
+   */
+  branchName?: string
 }
 
 /**
