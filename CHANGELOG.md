@@ -4,6 +4,33 @@ All notable changes to Instatic will be documented here.
 
 This project is pre-1.0. Breaking changes may appear in minor or patch releases until a stable release line exists.
 
+## 0.0.20 - 2026-09-13
+
+### Features
+
+- Added site branches: fork the whole site into a private copy, edit it in the normal editor, and share a preview link with someone who has no admin account. Merging goes through a review page that shows each change with the page rendered before and after, and an editor without merge rights can request a merge instead of making one.
+- Added version history for pages and content entries. Every published version is listed with who published it and when, and any one can be restored into the draft.
+- The Dependencies panel now browses npm: search for a package, read its README, versions, and known advisories, and install the version you pick.
+- Publish errors now name the file. Each code error that blocks a publish is listed with its file and position, and the Explorer badges the scripts and stylesheets at fault instead of only showing a count.
+
+### Bug fixes
+
+- Editing a page no longer wipes its SEO fields, featured image, or plugin data, which were lost on the first edit after they were set.
+- Upgrading a plugin no longer breaks the JavaScript on every published page. The old plugin files now stay in place until the next publish rewrites the links to them.
+- Publishing keeps CSS classes that only a script switches on, such as an open mobile menu. They were dropped as unused, so the menu worked in the editor and did nothing on the live site.
+- Responsive styles no longer invert at publish on sites that mix min-width and max-width breakpoints, where a narrow rule could end up winning on wide screens.
+- Imported sites keep their `min()`, `max()`, and `clamp()` sizing instead of losing fluid spacing and typography.
+- Times in the admin are correct on SQLite installs running outside UTC, where a device that signed in seconds ago could read as hours old.
+- Content lists sort correctly again on SQLite, and the dashboard no longer drops a day from its window.
+- Re-uploading a plugin at the same version is treated as a reinstall instead of a first install, so its hooks run in the right order and a failed upload no longer leaves it stuck in an error state.
+- The downloadable server builds now start on machines other than the one that built them. Every 0.0.19 artifact exited immediately, so Instatic Desktop could not run that release.
+- Sites with runtime scripts can be published from those server builds, which previously could not start the bundler.
+- `bun run dev` refuses a Bun older than 1.4.1 with a clear message instead of starting up and leaving the editor unable to connect.
+
+### Other changes
+
+- Instatic runs on Bun 1.4.2. Installing from source needs Bun 1.4.x.
+
 ## 0.0.19 - 2026-09-10
 
 ### Security
