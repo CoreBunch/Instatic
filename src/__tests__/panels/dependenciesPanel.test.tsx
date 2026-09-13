@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
 import React from 'react'
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import { RegistryPanel } from '@site/panels/DependenciesPanel/RegistryPanel'
+import { ResultsView } from '@site/panels/DependenciesPanel/ResultsView'
 import { isDependencyLockInSync } from '@core/site-dependencies/lockStatus'
 import { versionRange } from '@site/panels/DependenciesPanel/useInstalledDependencies'
 import { formatCount } from '@site/panels/DependenciesPanel/format'
@@ -413,6 +414,35 @@ describe('Dependencies panel: registry browsing', () => {
     fireEvent.click(screen.getByTestId('dep-row-canvas-confetti'))
     const detail = await screen.findByTestId('package-detail-canvas-confetti')
     expect(isDisabled(await within(detail).findByTestId('dependency-remove-canvas-confetti'))).toBe(true)
+  })
+})
+
+describe('Dependencies panel: loading states', () => {
+  const viewProps = {
+    query: 'motion',
+    hits: [],
+    total: 0,
+    error: null,
+    hasMore: false,
+    onLoadMore: () => {},
+    sort: 'relevance' as const,
+    onSort: () => {},
+    exactName: null,
+    isInstalled: () => false,
+    onOpen: () => {},
+  }
+
+  it('stands in for results with package-shaped placeholders, not a bare block', () => {
+    render(<ResultsView {...viewProps} loading />)
+    const placeholder = screen.getByRole('status', { name: 'Searching the registry' })
+    expect(placeholder.getAttribute('aria-busy')).toBe('true')
+    // Shaped like the tiles it replaces: one placeholder per result row.
+    expect(placeholder.querySelectorAll('[aria-hidden="true"]').length).toBeGreaterThan(5)
+  })
+
+  it('drops the placeholder once the query has answered', () => {
+    render(<ResultsView {...viewProps} loading={false} />)
+    expect(screen.queryByRole('status', { name: 'Searching the registry' })).toBeNull()
   })
 })
 

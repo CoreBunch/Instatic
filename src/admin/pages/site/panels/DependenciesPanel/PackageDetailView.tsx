@@ -8,7 +8,6 @@
 import { useState } from 'react'
 import { Button } from '@ui/components/Button'
 import { SegmentedControl } from '@ui/components/SegmentedControl'
-import { SkeletonRows } from '@ui/components/Skeleton'
 import { ArrowLeftIcon } from 'pixel-art-icons/icons/arrow-left'
 import { ExternalLinkSolidIcon } from 'pixel-art-icons/icons/external-link-solid'
 import { FileTextSolidIcon } from 'pixel-art-icons/icons/file-text-solid'
@@ -23,6 +22,7 @@ import { formatBytes } from '@admin/lib/formatBytes'
 import type { RegistryPackageDetails, RegistrySearchHit, RegistryVersionInfo } from '@core/registry'
 import { formatCount, formatDate, timeAgo } from './format'
 import { InstallControl } from './InstallControl'
+import { PackageDetailSkeleton } from './PackageSkeletons'
 import { PackageReadme } from './PackageReadme'
 import { renderReadmeHtml } from './readmeHtml'
 import {
@@ -97,11 +97,7 @@ export function PackageDetailView({ name, hit: knownHit, publicNpm, deps, onBack
       </div>
 
       <div className={styles.scroll}>
-        {details.loading && !data && (
-          <div className={styles.pad}>
-            <SkeletonRows count={8} rowHeight={18} ariaLabel="Loading package" />
-          </div>
-        )}
+        {details.loading && !data && <PackageDetailSkeleton />}
         {details.error && (
           <div className={styles.pad}>
             <StaticTile className={tileStyles.errorTile} role="alert">

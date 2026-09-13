@@ -5,7 +5,6 @@
 import { Button } from '@ui/components/Button'
 import { EmptyState } from '@ui/components/EmptyState'
 import { SegmentedControl } from '@ui/components/SegmentedControl'
-import { SkeletonRows } from '@ui/components/Skeleton'
 import { TrendingUpIcon } from 'pixel-art-icons/icons/trending-up'
 import { CalendarSolidIcon } from 'pixel-art-icons/icons/calendar-solid'
 import { UsersSolidIcon } from 'pixel-art-icons/icons/users-solid'
@@ -18,6 +17,7 @@ import { isSafePackageName } from '@core/site-dependencies/packageNames'
 import type { RegistrySearchHit, RegistrySearchSort } from '@core/registry'
 import { formatCount, timeAgo } from './format'
 import { MetaItem, Monogram, StaticTile, Tile, TileGrid } from './PackageTiles'
+import { ResultsSkeleton } from './PackageSkeletons'
 import tileStyles from './PackageTiles.module.css'
 import styles from './ResultsView.module.css'
 
@@ -103,7 +103,7 @@ export function ResultsView({ query, hits, total, loading, error, hasMore, onLoa
         </TileGrid>
         {loading && hits.length === 0 && !error && (
           <div className={styles.skeleton}>
-            <SkeletonRows count={6} rowHeight={84} ariaLabel="Searching the registry" />
+            <ResultsSkeleton />
           </div>
         )}
         {hasMore && (
