@@ -65,6 +65,17 @@ export function PublishButton({
   const diagnosticsSummary = summarizeRuntimeDiagnostics(runtimeDiagnostics)
   const runtimeErrorCount = diagnosticsSummary.errors
   const runtimeErrorLabel = `${runtimeErrorCount} code error${runtimeErrorCount === 1 ? '' : 's'}`
+  // A count alone is not actionable. The same breakdown hangs off both the
+  // status text and the publish button, because a blocked publish disables
+  // the button and the status is then the only thing left to hover.
+  const diagnosticsDetail = (
+    <SiteDiagnosticsList
+      files={diagnosticsSummary.files}
+      siteWide={diagnosticsSummary.siteWide}
+      errors={diagnosticsSummary.errors}
+      warnings={diagnosticsSummary.warnings}
+    />
+  )
 
   useEffect(() => {
     const timer = statusTimerRef
@@ -263,6 +274,7 @@ export function PublishButton({
         statusLabel={state === 'published' ? null : status.label}
         statusTone={status.tone}
         statusAriaLabel={status.ariaLabel}
+        statusTooltip={runtimeErrorCount > 0 ? diagnosticsDetail : undefined}
         publishLabel={label}
         publishAriaLabel={
           branchGate.reason
@@ -277,17 +289,8 @@ export function PublishButton({
           branchGate.reason
             ?? (state === 'published'
               ? 'Published'
-              // A count alone is not actionable: show the files, positions and
-              // messages so the developer knows where to go.
               : runtimeErrorCount > 0
-                ? (
-                  <SiteDiagnosticsList
-                    files={diagnosticsSummary.files}
-                    siteWide={diagnosticsSummary.siteWide}
-                    errors={diagnosticsSummary.errors}
-                    warnings={diagnosticsSummary.warnings}
-                  />
-                )
+                ? diagnosticsDetail
                 : 'Publish site')
         }
         publishState={state === 'publishing' ? 'busy' : state === 'published' ? 'success' : state}

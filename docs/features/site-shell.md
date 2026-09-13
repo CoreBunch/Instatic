@@ -225,7 +225,9 @@ groups the result per file, and `AdminCanvasEditorBody` publishes that summary
 through `RuntimeDiagnosticsContext` so every surface reports the same build:
 
 - **The publish gate** blocks with "N code errors" and, on hover, lists each
-  failure with its file, position and message (`SiteDiagnosticsList`).
+  failure with its file, position and message (`SiteDiagnosticsList`). The
+  status text carries the same tooltip as the button: a blocked publish
+  disables the button, leaving the status as the only thing left to hover.
 - **Site Explorer rows** carry a count badge on any script or stylesheet with
   problems (`ProblemBadge`), whose tooltip shows that file's messages.
 - **The code editor** underlines them in place, via `codeMirrorDiagnostics`.
