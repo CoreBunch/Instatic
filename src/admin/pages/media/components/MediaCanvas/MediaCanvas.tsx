@@ -6,6 +6,8 @@
  * navigation land in M3/M4 — this component is the first interactive surface.
  */
 import {
+  useEffect,
+  useEffectEvent,
   useState,
   type ChangeEvent,
   type DragEvent,
@@ -196,6 +198,83 @@ export function MediaCanvas({ workspace, selectionMode = 'standard' }: MediaCanv
     writeMediaAssetDragData(event.dataTransfer, dragIds)
   }
 
+  /**
+   * Select everything currently on screen.
+   *
+   * "Everything" is `visibleAssets` — what the active folder, filter, search
+   * and trash toggle have already narrowed to — not the whole library. That is
+   * what every file manager means by Select All, and it is the only reading
+   * that makes the trash view's "select all, then delete" safe: it cannot
+   * reach past the filter into live assets.
+   */
+  const allVisibleSelected =
+    workspace.visibleAssets.length > 0
+    && workspace.visibleAssets.every((asset) => workspace.selectedAssetIds.has(asset.id))
+
+  /** Select every visible asset, or clear the selection when it already covers them. */
+  function toggleSelectAllVisible() {
+    if (workspace.visibleAssets.length === 0) return
+    if (allVisibleSelected) {
+      workspace.clearSelection()
+      return
+    }
+    workspace.addToSelection(workspace.visibleAssets.map((asset) => asset.id))
+  }
+
+  // Ctrl/Cmd+A, the shortcut people try first. Document-level because the grid
+  // is a plain div with no tabindex, so a React `onKeyDown` would only fire
+  // while focus happened to sit on a tile.
+  //
+  // Ignored while focus is in a text field — the browser's own select-all is
+  // what someone typing in the search box means — and while any dialog is
+  // open, so a rename or a delete confirmation keeps its own select-all.
+  const selectAllEvent = useEffectEvent(() => toggleSelectAllVisible())
+  useEffect(() => {
+    function onKeyDown(event: globalThis.KeyboardEvent) {
+      if (event.key !== 'a' && event.key !== 'A') return
+      if (!(isMacLike() ? event.metaKey : event.ctrlKey)) return
+      const target = event.target
+      if (
+        target instanceof HTMLInputElement
+        || target instanceof HTMLTextAreaElement
+        || (target instanceof HTMLElement && target.isContentEditable)
+      ) return
+      // Only a real MODAL takes the shortcut away. `aria-modal` is what marks
+      // one: `Dialog` sets it, the floating windows do not. Matching
+      // `role="dialog"` instead disabled the shortcut almost everywhere in
+      // Media, because selecting a single asset opens the viewer window — and
+      // that carries `role="dialog"` while deliberately leaving the grid
+      // usable behind it.
+      if (document.querySelector('[aria-modal="true"]')) return
+      event.preventDefault()
+      selectAllEvent()
+    }
+    document.addEventListener('keydown', onKeyDown)
+    return () => document.removeEventListener('keydown', onKeyDown)
+  }, [])
+
+  /**
+   * Which assets a right-click acts on.
+   *
+   * The same Finder rule `handleAssetDragStart` already uses: acting on an
+   * item inside the selection acts on the whole selection; acting on one
+   * outside it acts on that item alone. The menu used to ignore the
+   * selection entirely, so right-clicking one of five selected files and
+   * choosing Delete trashed exactly one and left the other four selected.
+   *
+   * Deliberately does NOT adopt the clicked asset into the selection the way
+   * the site explorer does. Media's floating windows are derived from the
+   * selection during render — `viewerOpen` at <= 1, `bulkEditOpen` at >= 2
+   * (MediaPage.tsx) — so writing the selection here would pop a window open
+   * underneath the menu.
+   */
+  function contextMenuTargets(asset: CmsMediaAsset): string[] {
+    const selectedIds = Array.from(workspace.selectedAssetIds)
+    return workspace.selectedAssetIds.has(asset.id) && selectedIds.length > 0
+      ? selectedIds
+      : [asset.id]
+  }
+
   function handleFolderDragStart(folder: CmsMediaFolder, event: DragEvent<HTMLButtonElement>) {
     if (!canWrite) {
       event.preventDefault()
@@ -346,6 +425,30 @@ export function MediaCanvas({ workspace, selectionMode = 'standard' }: MediaCanv
           groupLabel="Filter media type"
           trailing={(
             <div role="group" aria-label="Media view" className={styles.viewGroup}>
+              {/* Discoverability for Ctrl/Cmd+A. The shortcut is the one people
+                  reach for, but only if they already know it exists — and the
+                  trash is where it matters most, because emptying it was
+                  otherwise a file-at-a-time job. */}
+              <Button
+                variant="ghost"
+                size="xs"
+                pressed={allVisibleSelected}
+                tooltip={
+                  allVisibleSelected
+                    ? 'Clear selection'
+                    : `Select all ${workspace.visibleAssets.length}`
+                }
+                aria-label={
+                  allVisibleSelected
+                    ? 'Clear selection'
+                    : `Select all ${workspace.visibleAssets.length} items`
+                }
+                disabled={workspace.visibleAssets.length === 0}
+                onClick={toggleSelectAllVisible}
+              >
+                <CheckIcon size={13} />
+                <span>{allVisibleSelected ? 'None' : 'All'}</span>
+              </Button>
               <SortMenu
                 value={workspace.filters.sort}
                 onChange={workspace.setSort}
@@ -517,27 +620,39 @@ export function MediaCanvas({ workspace, selectionMode = 'standard' }: MediaCanv
         )}
       </div>
 
-      {contextMenu && (
-        <ExplorerItemContextMenu
-          x={contextMenu.x}
-          y={contextMenu.y}
-          ariaLabel="Media item options"
-          onClose={() => setContextMenu(null)}
-          onRename={() => {
-            setRenameTarget(contextMenu.asset)
-            setContextMenu(null)
-          }}
-          onDelete={() => {
-            const target = contextMenu.asset
-            setContextMenu(null)
-            if (trashView) void workspace.purgeAsset(target.id)
-            else void workspace.trashAsset(target.id)
-          }}
-          showRename={canWrite}
-          showDelete={canDelete}
-          extraItems={buildExtraMenuItems(contextMenu.asset)}
-        />
-      )}
+      {contextMenu && (() => {
+        const targets = contextMenuTargets(contextMenu.asset)
+        const many = targets.length > 1
+        return (
+          <ExplorerItemContextMenu
+            x={contextMenu.x}
+            y={contextMenu.y}
+            ariaLabel="Media item options"
+            onClose={() => setContextMenu(null)}
+            {...(many ? { headerLabel: `${targets.length} files` } : {})}
+            onRename={() => {
+              setRenameTarget(contextMenu.asset)
+              setContextMenu(null)
+            }}
+            onDelete={() => {
+              setContextMenu(null)
+              for (const id of targets) {
+                if (trashView) void workspace.purgeAsset(id)
+                else void workspace.trashAsset(id)
+              }
+            }}
+            deleteLabel={
+              many
+                ? `${trashView ? 'Delete' : 'Trash'} ${targets.length} files`
+                : trashView ? 'Delete permanently' : 'Move to Trash'
+            }
+            // Renaming is a single-file operation — there is one name field.
+            showRename={canWrite && !many}
+            showDelete={canDelete}
+            extraItems={buildExtraMenuItems(contextMenu.asset)}
+          />
+        )
+      })()}
 
       {renameTarget && (
         <ExplorerRenameDialog

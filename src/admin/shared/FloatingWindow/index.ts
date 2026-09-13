@@ -8,3 +8,4 @@ export {
   clampFloatingPanelSize,
   useResizablePanel,
 } from './useResizablePanel'
+export { useTopmostEscape } from './useTopmostEscape'
