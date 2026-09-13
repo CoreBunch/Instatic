@@ -264,11 +264,16 @@ function slugToFilename(slug: string, title: string): string {
  * populated so dynamic bindings against those sources resolve — even on
  * plain (non-template, non-loop) pages. Caller-provided values always
  * win; missing slots fall back to defaults derived from the page/site.
+ *
+ * The media lookup defaults to the pre-fetched asset map so `format: 'media'`
+ * bindings can translate bare asset references (custom media cells store the
+ * id) into served URLs during the render walk.
  */
 function composeTemplateContext(
   page: Page,
   site: SiteDocument,
   incoming: TemplateRenderDataContext | undefined,
+  mediaAssets: Map<string, RenderResolvedMedia> | undefined,
 ): TemplateRenderDataContext {
   const provided = incoming ?? { entryStack: [] }
   const pageFrame = provided.page ?? buildPageFrame(page)
@@ -277,6 +282,7 @@ function composeTemplateContext(
     page: pageFrame,
     site: provided.site ?? buildSiteFrame(site),
     route: provided.route ?? buildRouteFrame(pageFrame.permalink),
+    media: provided.media ?? mediaAssets,
   }
 }
 
@@ -554,7 +560,7 @@ export function publishPage(
   // Composed once per page render: the walker reads it through the config,
   // and the <head> builder interpolates {source.field} tokens in the
   // title/description against the same frames.
-  const templateContext = composeTemplateContext(page, site, options.templateContext)
+  const templateContext = composeTemplateContext(page, site, options.templateContext, options.mediaAssets)
 
   // Read-only inputs of this render pass. A renderer that needs a different
   // page (VC ref) or template frame (loop iteration) derives a child config —

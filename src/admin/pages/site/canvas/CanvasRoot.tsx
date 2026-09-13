@@ -57,6 +57,7 @@ import { clientPointToEditorDoc } from './canvasDomGeometry'
 import { useConfirmDelete } from '@admin/shared/dialogs/ConfirmDeleteDialog'
 import { useEditorPreference, readEditorSelectPreference } from '@site/preferences/editorPreferences'
 import { useTemplatePreviewContext } from '@site/hooks/useTemplatePreviewContext'
+import { useCmsMediaAssetLookup } from '@admin/pages/media/hooks/useCmsMediaAssetByPath'
 import styles from './CanvasRoot.module.css'
 
 const VisualComponentModeControl = lazy(() =>
@@ -138,6 +139,16 @@ export function CanvasRoot({ editable = true }: CanvasRootProps) {
     context: templatePreviewContext,
     loading: templatePreviewContextLoading,
   } = useTemplatePreviewContext(canvasPage)
+  // Client-side rendering context: the media lookup (id + path keyed) lets
+  // `format: 'media'` bindings resolve bare asset references on the canvas
+  // exactly like the publisher does. Attached HERE, not inside
+  // useTemplatePreviewContext, because that hook's context also serializes to
+  // the runtime-preview endpoint (hover preview, preview overlay, script
+  // build), where the server substitutes its own prefetch map.
+  const canvasMediaLookup = useCmsMediaAssetLookup()
+  const canvasTemplateContext = templatePreviewContext
+    ? { ...templatePreviewContext, media: canvasMediaLookup }
+    : undefined
   const agentSnapshotBreakpoint = agentSnapshotCaptureRequest
     ? breakpoints.find((breakpoint) => breakpoint.id === agentSnapshotCaptureRequest.breakpointId) ?? null
     : null
@@ -524,7 +535,7 @@ export function CanvasRoot({ editable = true }: CanvasRootProps) {
               <CanvasLiveSurface
                 page={canvasPage}
                 activeBreakpoint={activeBreakpoint}
-                templateContext={templatePreviewContext}
+                templateContext={canvasTemplateContext}
                 runtimeScripts={runtimeScripts}
               />
             ) : (
@@ -536,7 +547,7 @@ export function CanvasRoot({ editable = true }: CanvasRootProps) {
                 dimInactiveBreakpoints={focusActiveBreakpoint}
                 activationHintEnabled={preserveSelectionWhenActivatingBreakpoint}
                 onBreakpointActivate={setActiveBreakpoint}
-                templateContext={templatePreviewContext}
+                templateContext={canvasTemplateContext}
                 runtimeScripts={runtimeScripts}
               />
             )}
@@ -582,7 +593,7 @@ export function CanvasRoot({ editable = true }: CanvasRootProps) {
               requestId={agentSnapshotCaptureRequest.requestId}
               page={canvasPage}
               breakpoint={agentSnapshotBreakpoint}
-              templateContext={templatePreviewContext}
+              templateContext={canvasTemplateContext}
               templateContextLoading={templatePreviewContextLoading}
             />
           ) : null}
