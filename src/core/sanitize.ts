@@ -31,12 +31,22 @@ import DOMPurify, { type Config } from 'dompurify'
 
 type DOMPurifyHookNode = {
   tagName?: string
+  getAttribute?: (name: string) => string | null
   setAttribute?: (name: string, value: string) => void
+  remove?: () => void
 }
+
+type DOMPurifySanitizeElementData = { tagName: string; allowedTags: Record<string, boolean> }
 
 export type DOMPurifyRuntime = {
   sanitize?: (value: string, config?: Config) => unknown
-  addHook?: (hookName: 'afterSanitizeAttributes', callback: (node: DOMPurifyHookNode) => void) => void
+  addHook?: {
+    (hookName: 'afterSanitizeAttributes', callback: (node: DOMPurifyHookNode) => void): void
+    (
+      hookName: 'uponSanitizeElement',
+      callback: (node: DOMPurifyHookNode, data: DOMPurifySanitizeElementData) => void,
+    ): void
+  }
 }
 
 type DOMPurifyFactory = DOMPurifyRuntime & ((window: Window) => DOMPurifyRuntime)
@@ -141,6 +151,110 @@ const RICHTEXT_CONFIG: Config = {
   // Return a string, not a DOM node
   RETURN_DOM: false,
   RETURN_DOM_FRAGMENT: false,
+}
+
+/**
+ * Hosts a `<iframe>` in post-body content is allowed to embed. Checked
+ * against the `src` attribute's hostname (case-insensitive, exact match or
+ * subdomain of one of these) by the DOMPurify hook installed below —
+ * everything else has its iframe stripped, script tags and all other
+ * dangerous elements are already excluded by ALLOWED_TAGS regardless of
+ * this list.
+ */
+const TRUSTED_IFRAME_HOSTS = [
+  'youtube.com',
+  'youtube-nocookie.com',
+] as const
+
+function isTrustedIframeHost(hostname: string): boolean {
+  const host = hostname.toLowerCase()
+  return TRUSTED_IFRAME_HOSTS.some((trusted) => host === trusted || host.endsWith(`.${trusted}`))
+}
+
+/**
+ * Post-body config — used for full post/page body content rendered from
+ * markdown (base.outlet's `html` binding, `richtextBody` control type).
+ * Wider than `RICHTEXT_CONFIG`: adds the block-level elements a markdown
+ * body actually produces (images, GFM tables, headings' remaining levels,
+ * horizontal rules, the CMS `@[video](url)` embed) PLUS `iframe`, scoped to
+ * `TRUSTED_IFRAME_HOSTS` via the `uponSanitizeElement` hook below — an
+ * iframe whose `src` host isn't on the allowlist (or is missing/unparsable)
+ * is removed entirely, not just stripped of the offending attribute, since
+ * a same-tag-different-src replacement is exactly what an attacker would
+ * try first.
+ *
+ * `source`, `figure`, and `figcaption` are included because that's the
+ * markup real rich-text editors and importers (Webflow, etc.) actually
+ * emit — a `<video>` wraps its playable file in `<source src=… type=…>`
+ * rather than using `<video src=…>` directly, and images get wrapped in
+ * `<figure>`/`<figcaption>` for captions. Without `source` the tag was
+ * previously dropped, so a `<video controls poster="…"><source src="…"
+ * type="video/mp4"></video>` published as a bare, unplayable `<video
+ * controls>`.
+ */
+const POST_BODY_CONFIG: Config = {
+  ALLOWED_TAGS: [
+    'p', 'br', 'hr',
+    'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
+    'strong', 'b', 'em', 'i', 'u', 's', 'del', 'ins',
+    'a', 'ul', 'ol', 'li',
+    'blockquote', 'code', 'pre',
+    'span', 'div',
+    'img', 'video', 'source', 'figure', 'figcaption',
+    'table', 'thead', 'tbody', 'tr', 'th', 'td',
+    'iframe',
+  ],
+  ALLOWED_ATTR: [
+    'href', 'target', 'rel', 'class', 'id',
+    'src', 'alt', 'title', 'loading', 'controls',
+    'width', 'height', 'frameborder', 'allow', 'allowfullscreen', 'referrerpolicy',
+    'poster', 'type', 'playsinline', 'loop', 'muted', 'preload',
+  ],
+  ADD_ATTR: ['target'],
+  ALLOW_DATA_ATTR: false,
+  NAMESPACE: 'http://www.w3.org/1999/xhtml',
+  RETURN_DOM: false,
+  RETURN_DOM_FRAGMENT: false,
+}
+
+const postBodyPurifiersWithIframeHook = new WeakSet<object>()
+
+function installIframeHostHook(purifier: DOMPurifyRuntime): DOMPurifyRuntime {
+  if (postBodyPurifiersWithIframeHook.has(purifier) || typeof purifier.addHook !== 'function') {
+    return purifier
+  }
+  purifier.addHook('uponSanitizeElement', (node, data) => {
+    if (data.tagName !== 'iframe') return
+    const src = node.getAttribute?.('src') ?? ''
+    let hostname: string
+    try {
+      hostname = new URL(src, 'http://invalid.example').hostname
+    } catch {
+      hostname = ''
+    }
+    if (!src || !isTrustedIframeHost(hostname)) {
+      node.remove?.()
+    }
+  })
+  postBodyPurifiersWithIframeHook.add(purifier)
+  return purifier
+}
+
+/**
+ * Sanitize full post/page body HTML (already markdown-rendered) — the
+ * `richtextBody` control type's escapeProps() path. See `POST_BODY_CONFIG`.
+ */
+export function sanitizePostBody(value: unknown): string {
+  const str = String(value ?? '')
+  if (!str.trim()) return ''
+
+  const purifier = getDOMPurify()
+  if (!purifier || typeof purifier.sanitize !== 'function') {
+    return stripHtmlFallback(str)
+  }
+
+  installIframeHostHook(purifier)
+  return String(purifier.sanitize(str, POST_BODY_CONFIG))
 }
 
 /**

@@ -18,11 +18,11 @@ const bodyModule = makeModule('base.body', {
   render: (_props, children) => ({ html: `<main>${children.join('')}</main>` }),
 })
 
-// Mirrors the real base.outlet render: a hidden richtext `html` prop (so
-// `escapeProps` sanitises rather than HTML-escapes it) emitted inside the
-// content-region marker.
+// Mirrors the real base.outlet render: a hidden richtextBody `html` prop (so
+// `escapeProps` sanitises via the wider POST_BODY_CONFIG rather than
+// HTML-escaping it) emitted inside the content-region marker.
 const outletModule = makeModule('base.outlet', {
-  schema: { html: { type: 'richtext', label: 'Content', hidden: true } },
+  schema: { html: { type: 'richtextBody', label: 'Content', hidden: true } },
   render: (props) => ({
     html: `<section data-instatic-content-region>${String((props as { html?: string }).html ?? '')}</section>`,
   }),
@@ -66,6 +66,53 @@ describe('entry outlet body binding', () => {
 
     expect(html).toContain('data-instatic-content-region')
     expect(html).not.toContain('Hello world')
+  })
+
+  // 2026-08-13 blog round-2 regression: a raw <iframe> YouTube embed pasted
+  // into a post's markdown body (the CMS has no @[video]-style syntax for
+  // iframe embeds — authors paste the platform's real embed HTML) was being
+  // silently stripped by the outlet's sanitizer end-to-end. This is the same
+  // path the real blog posts hit: markdown body -> renderMarkdownToHtml
+  // (passes raw HTML blocks through untouched) -> escapeProps ->
+  // sanitizePostBody (trusted-host allowlist, not a blanket strip).
+  it('renders a YouTube iframe embed pasted into the entry body, end-to-end', () => {
+    const page = makePage({
+      root: { moduleId: 'base.body', children: ['outlet'] },
+      outlet: { moduleId: 'base.outlet' },
+    })
+
+    const body = [
+      '## How to Run MCP Servers',
+      '',
+      '<iframe src="https://www.youtube.com/embed/dQw4w9WgXcQ" width="560" height="315" allowfullscreen></iframe>',
+      '',
+      'More text after the embed.',
+    ].join('\n')
+
+    const { html } = publishPage(page, makeSite(), registry, {
+      templateContext: { entryStack: [entry(body)] },
+    })
+
+    expect(html).toContain('<iframe')
+    expect(html).toContain('youtube.com/embed/dQw4w9WgXcQ')
+    expect(html).toContain('More text after the embed.')
+  })
+
+  it('strips an iframe embed from an untrusted host in the entry body, end-to-end', () => {
+    const page = makePage({
+      root: { moduleId: 'base.body', children: ['outlet'] },
+      outlet: { moduleId: 'base.outlet' },
+    })
+
+    const body = '<iframe src="https://evil.com/phish"></iframe>\n\nSafe text.'
+
+    const { html } = publishPage(page, makeSite(), registry, {
+      templateContext: { entryStack: [entry(body)] },
+    })
+
+    expect(html).not.toContain('<iframe')
+    expect(html).not.toContain('evil.com')
+    expect(html).toContain('Safe text.')
   })
 })
 
