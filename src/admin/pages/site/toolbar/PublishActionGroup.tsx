@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react'
 import { SplitButton, type SplitButtonMenuItem } from '@ui/components/SplitButton'
 import type { IconComponent } from 'pixel-art-icons/types'
 import styles from './Toolbar.module.css'
@@ -13,7 +14,8 @@ interface PublishActionGroupProps {
   statusAriaLabel?: string
   publishLabel: string
   publishAriaLabel: string
-  publishTitle: string
+  /** Rich node allowed: the runtime gate shows the actual diagnostics here. */
+  publishTitle: ReactNode
   publishState?: PublishActionState
   publishDisabled?: boolean
   publishBusy?: boolean

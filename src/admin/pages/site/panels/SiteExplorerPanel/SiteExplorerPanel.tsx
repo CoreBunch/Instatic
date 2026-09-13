@@ -1,6 +1,8 @@
 import { useState, type KeyboardEvent, type MouseEvent } from 'react'
 import { useEditorStore } from '@site/store/store'
 import type { SiteFile } from '@core/files/schemas'
+import { fileDiagnostics } from '@core/site-runtime'
+import { useRuntimeDiagnostics } from '@site/diagnostics'
 import type { ExplorerPathChangePlan, Page, SiteExplorerSectionId, StructuralSiteExplorerSectionId } from '@core/page-tree'
 import { createUniquePageSlug, pagePublicPath, isHomePage } from '@core/page-tree'
 import { templateTargetLabel } from '@core/templates'
@@ -128,6 +130,9 @@ export function SiteExplorerPanel({
 
   const files = site?.files ?? EMPTY_FILES
   const fileBuckets = groupSiteFiles(files)
+  // Build problems for the current draft, so a failing script is visible in
+  // the tree instead of only as a count on the publish button.
+  const diagnostics = useRuntimeDiagnostics()
 
   function handleCreate({ name, slug }: SiteCreatePayload) {
     if (!createKind) return
@@ -588,6 +593,7 @@ export function SiteExplorerPanel({
         active: activeEditorFileId === file.id,
         ariaLabel: `Open ${fileName(file.path)}`,
         target: { kind: 'file', id: file.id, path: file.path },
+        problems: fileDiagnostics(diagnostics, file.id) ?? undefined,
       })),
     )
     : null
@@ -604,6 +610,7 @@ export function SiteExplorerPanel({
         active: activeEditorFileId === file.id,
         ariaLabel: `Open ${fileName(file.path)}`,
         target: { kind: 'file', id: file.id, path: file.path },
+        problems: fileDiagnostics(diagnostics, file.id) ?? undefined,
       })),
     )
     : null

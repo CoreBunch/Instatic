@@ -14,6 +14,8 @@ import { useBranchPublishGate } from '@admin/state/branchStore'
 import { SchedulePublishDialog } from '@admin/modals/SchedulePublishDialog'
 import type { PersistenceSaveStatus } from '@site/hooks/usePersistence'
 import { pushToast } from '@ui/components/Toast'
+import { summarizeRuntimeDiagnostics } from '@core/site-runtime'
+import { SiteDiagnosticsList } from '@site/diagnostics'
 import { PublishActionGroup, type PublishActionMenuItem } from './PublishActionGroup'
 import { getErrorMessage } from '@core/utils/errorMessage'
 import type { SiteRuntimeDiagnostic } from '@core/site-runtime'
@@ -60,7 +62,8 @@ export function PublishButton({
    */
   const publishedSiteRef = useRef<SiteDocument | null>(null)
   const syncError = saveStatus?.state === 'error' ? saveStatus.message ?? 'Sync failed' : null
-  const runtimeErrorCount = runtimeDiagnostics.filter((diagnostic) => diagnostic.severity === 'error').length
+  const diagnosticsSummary = summarizeRuntimeDiagnostics(runtimeDiagnostics)
+  const runtimeErrorCount = diagnosticsSummary.errors
   const runtimeErrorLabel = `${runtimeErrorCount} code error${runtimeErrorCount === 1 ? '' : 's'}`
 
   useEffect(() => {
@@ -274,8 +277,17 @@ export function PublishButton({
           branchGate.reason
             ?? (state === 'published'
               ? 'Published'
+              // A count alone is not actionable: show the files, positions and
+              // messages so the developer knows where to go.
               : runtimeErrorCount > 0
-                ? `Resolve ${runtimeErrorLabel} before publishing`
+                ? (
+                  <SiteDiagnosticsList
+                    files={diagnosticsSummary.files}
+                    siteWide={diagnosticsSummary.siteWide}
+                    errors={diagnosticsSummary.errors}
+                    warnings={diagnosticsSummary.warnings}
+                  />
+                )
                 : 'Publish site')
         }
         publishState={state === 'publishing' ? 'busy' : state === 'published' ? 'success' : state}
