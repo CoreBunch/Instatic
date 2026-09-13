@@ -186,6 +186,16 @@ describe('SettingsModal — backdrop', () => {
     fireEvent.click(backdrop)
     expect(useEditorStore.getState().isSettingsOpen).toBe(false)
   })
+
+  it('clicking the Esc keycap closes the modal it advertises', () => {
+    // The keycap depresses on `:active` like every other `Kbd`, and sits
+    // beside the word "close". It used to be inert markup, so clicking it
+    // played the press animation and did nothing.
+    openModal()
+    render(<SettingsModal />)
+    fireEvent.click(screen.getByRole('button', { name: /esc\s*close/i }))
+    expect(useEditorStore.getState().isSettingsOpen).toBe(false)
+  })
 })
 
 // ---------------------------------------------------------------------------
