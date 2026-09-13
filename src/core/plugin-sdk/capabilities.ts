@@ -142,14 +142,14 @@ export const PLUGIN_CAPABILITIES: PluginCapability[] = [
   {
     permission: 'cms.content.read',
     label: 'Read CMS content',
-    description: 'Allows the plugin to list / read entries (pages, posts, custom tables) in the tables declared in its manifest\'s `contentAccess[]`. Includes reading tree-shaped fields and published snapshots.',
+    description: 'Allows the plugin to list / read entries (pages, posts, custom tables) in the tables declared in its manifest\'s `contentAccess[]` — by slug, or via the `@own-created` marker for tables the plugin itself created. Includes reading tree-shaped fields and published snapshots.',
     risk: 'low',
     surfaces: ['server', 'cms'],
   },
   {
     permission: 'cms.content.write',
     label: 'Write CMS content',
-    description: 'Allows the plugin to create entries, update entry cells, mutate tree-shaped fields via the canonical mutation engine, and move entries between tables — for the tables declared in its manifest\'s `contentAccess[]`.',
+    description: 'Allows the plugin to create entries, update entry cells, mutate tree-shaped fields via the canonical mutation engine, and move entries between tables — for the tables declared in its manifest\'s `contentAccess[]` (by slug, or via the `@own-created` marker for tables the plugin itself created).',
     risk: 'high',
     surfaces: ['server', 'cms'],
   },
@@ -163,14 +163,14 @@ export const PLUGIN_CAPABILITIES: PluginCapability[] = [
   {
     permission: 'cms.content.delete',
     label: 'Delete CMS content',
-    description: 'Allows the plugin to soft-delete entries in the tables declared in its manifest\'s `contentAccess[]`. Split out as its own permission so the common SEO / translator / AI cases don\'t carry delete capability.',
+    description: 'Allows the plugin to soft-delete entries in the tables declared in its manifest\'s `contentAccess[]` (by slug or `@own-created`). Split out as its own permission so the common SEO / translator / AI cases don\'t carry delete capability.',
     risk: 'high',
     surfaces: ['server', 'cms'],
   },
   {
     permission: 'cms.content.tables.manage',
     label: 'Create CMS tables',
-    description: 'Allows the plugin to create user-managed content tables (never system tables — `pages`, `posts`, `components` are protected at the repository layer). Tables created by a plugin survive uninstall — listed as `dangerous` so the operator sees the warning.',
+    description: 'Allows the plugin to create user-managed content tables (never system tables — `pages`, `posts`, `components` are protected at the repository layer). The creating plugin is recorded on each table, and a `contentAccess[]` entry of `@own-created` grants it entry access to those tables. Tables created by a plugin survive uninstall — listed as `dangerous` so the operator sees the warning.',
     risk: 'dangerous',
     surfaces: ['server', 'cms'],
   },

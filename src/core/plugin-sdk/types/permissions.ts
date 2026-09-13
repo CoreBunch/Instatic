@@ -19,10 +19,11 @@ export const PLUGIN_PERMISSION_VALUES = [
   // CMS content — read/write/publish/delete the host's content tables
   // (`data_tables` + `data_rows`) through the `api.cms.content.*` surface.
   // Each mode is split so a typical plugin (SEO assistant, translator)
-  // doesn't carry the dangerous bits. The manifest must additionally list
-  // the targeted tables in `contentAccess[]`; the host fails closed without
-  // both the permission and the allowlist entry. See
-  // docs/features/plugin-system.md → "Content access".
+  // doesn't carry the dangerous bits. The manifest must additionally cover
+  // the targeted tables in `contentAccess[]` — by slug, or via the
+  // `@own-created` marker for tables the plugin created at runtime; the
+  // host fails closed without both the permission and a covering entry.
+  // See docs/features/plugin-system.md → "Content access".
   'cms.content.read',
   'cms.content.write',
   'cms.content.publish',

@@ -334,6 +334,14 @@ export const DataTableSchema = Type.Object({
    */
   system: Type.Boolean(),
   createdByUserId: Type.Union([Type.String(), Type.Null()]),
+  /**
+   * Plugin id when the table was created through the plugin surface
+   * (`cms.content.tables.create`); null for user/import-created tables. The
+   * plugin host's `@own-created` contentAccess marker matches against this.
+   * OPTIONAL because `DataTableSchema` also validates bundle archives exported
+   * before the column existed — server reads always populate it.
+   */
+  createdByPluginId: Type.Optional(Type.Union([Type.String(), Type.Null()])),
   updatedByUserId: Type.Union([Type.String(), Type.Null()]),
   /** ISO datetime string from DB */
   createdAt: Type.String(),

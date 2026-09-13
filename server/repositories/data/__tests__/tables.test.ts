@@ -6,11 +6,13 @@ import type { DbClient } from '../../../db/client'
 import {
   createDataTable,
   getDataTable,
+  getDataTableBySlug,
   insertDataTableIfAbsent,
   listDataTables,
   updateDataTable,
 } from '../tables'
 import { MAIN_SCOPE } from '../../../branches/scope'
+import { forkBranch } from '../../../branches/fork'
 
 async function freshDb(): Promise<DbClient> {
   const db = createSqliteClient(':memory:')
@@ -141,5 +143,68 @@ describe('data_tables.route_base persistence', () => {
 
     expect(inserted).toBe(true)
     expect((await getDataTable(db, MAIN_SCOPE, 'imported-custody-stages'))?.routeBase).toBe('')
+  })
+})
+
+describe('data_tables.created_by_plugin_id column', () => {
+  let db: DbClient
+
+  beforeEach(async () => {
+    db = await freshDb()
+  })
+
+  it('defaults to null for user-created tables (and the seeded system tables)', async () => {
+    const table = await createDataTable(db, MAIN_SCOPE, {
+      name: 'Products',
+      slug: 'products',
+      kind: 'data',
+      singularLabel: 'Product',
+      pluralLabel: 'Products',
+    })
+    expect(table.createdByPluginId).toBeNull()
+
+    for (const id of ['pages', 'posts', 'components', 'layouts']) {
+      const system = await getDataTable(db, MAIN_SCOPE, id)
+      expect(system?.createdByPluginId).toBeNull()
+    }
+  })
+
+  it('persists the creating plugin id and surfaces it on every read path', async () => {
+    const created = await createDataTable(db, MAIN_SCOPE, {
+      name: 'Imported Products',
+      slug: 'imported-products',
+      kind: 'data',
+      singularLabel: 'Imported product',
+      pluralLabel: 'Imported products',
+      createdByPluginId: 'acme.importer',
+    })
+    expect(created.createdByPluginId).toBe('acme.importer')
+
+    const byId = await getDataTable(db, MAIN_SCOPE, created.id)
+    expect(byId?.createdByPluginId).toBe('acme.importer')
+
+    const bySlug = await getDataTableBySlug(db, MAIN_SCOPE, 'imported-products')
+    expect(bySlug?.createdByPluginId).toBe('acme.importer')
+
+    const listed = await listDataTables(db, MAIN_SCOPE)
+    expect(listed.find((t) => t.slug === 'imported-products')?.createdByPluginId).toBe('acme.importer')
+  })
+
+  it('survives forking a branch — ownership is copied, not dropped', async () => {
+    // A fork copies data_tables with an explicit column list. Leaving this
+    // column out would hand the branch a table that no longer belongs to the
+    // plugin that created it, silently, with nothing to say so.
+    const created = await createDataTable(db, MAIN_SCOPE, {
+      name: 'Imported Products',
+      slug: 'imported-products',
+      kind: 'data',
+      singularLabel: 'Imported product',
+      pluralLabel: 'Imported products',
+      createdByPluginId: 'acme.importer',
+    })
+    await forkBranch(db, { id: 'redesign', name: 'Redesign', fromBranchId: 'main', createdByUserId: null })
+
+    const onBranch = await getDataTable(db, { branchId: 'redesign' }, created.id)
+    expect(onBranch?.createdByPluginId).toBe('acme.importer')
   })
 })

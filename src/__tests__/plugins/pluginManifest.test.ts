@@ -520,3 +520,62 @@ describe('plugin manifest validation', () => {
       .toThrow('Missing required field "Title"')
   })
 })
+
+describe('contentAccess coherence', () => {
+  it('accepts slug entries and the @own-created marker, preserving both', () => {
+    const manifest = parsePluginManifest({
+      id: 'acme.importer',
+      name: 'Importer',
+      version: '1.0.0',
+      apiVersion: 1,
+      permissions: ['cms.content.read', 'cms.content.write', 'cms.content.tables.manage'],
+      contentAccess: [
+        { table: 'posts', modes: ['read'] },
+        { table: '@own-created', modes: ['read', 'write'] },
+      ],
+    })
+    expect(manifest.contentAccess).toEqual([
+      { table: 'posts', modes: ['read'] },
+      { table: '@own-created', modes: ['read', 'write'] },
+    ])
+  })
+
+  it('requires contentAccess when a cms.content.* permission is declared — and points at the marker', () => {
+    expect(() =>
+      parsePluginManifest({
+        id: 'acme.importer',
+        name: 'Importer',
+        version: '1.0.0',
+        apiVersion: 1,
+        permissions: ['cms.content.write'],
+      }),
+    ).toThrow(/@own-created/)
+  })
+
+  it('rejects marker-like table names other than @own-created', () => {
+    // The `@` namespace is reserved for markers; only the one marker exists.
+    expect(() =>
+      parsePluginManifest({
+        id: 'acme.importer',
+        name: 'Importer',
+        version: '1.0.0',
+        apiVersion: 1,
+        permissions: ['cms.content.read'],
+        contentAccess: [{ table: '@all-tables', modes: ['read'] }],
+      }),
+    ).toThrow()
+  })
+
+  it('holds marker modes to the same permission coherence as slug entries', () => {
+    expect(() =>
+      parsePluginManifest({
+        id: 'acme.importer',
+        name: 'Importer',
+        version: '1.0.0',
+        apiVersion: 1,
+        permissions: ['cms.content.read'],
+        contentAccess: [{ table: '@own-created', modes: ['read', 'write'] }],
+      }),
+    ).toThrow('the matching permission "cms.content.write" is not in `permissions`')
+  })
+})
