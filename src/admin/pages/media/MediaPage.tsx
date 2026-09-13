@@ -65,6 +65,7 @@ export function MediaPage() {
         replaceAssetFile: workspace.replaceAssetFile,
         restoreAsset: workspace.restoreAsset,
         purgeAsset: workspace.purgeAsset,
+        lookupUsage: workspace.lookupUsage,
       }
     : null
 

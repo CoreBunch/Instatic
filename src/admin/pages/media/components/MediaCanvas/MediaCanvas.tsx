@@ -19,6 +19,7 @@ import { FilterBar, type FilterBarItem } from '@ui/components/FilterBar'
 import { Select } from '@ui/components/Select'
 import { Skeleton } from '@ui/components/Skeleton'
 import { canDeleteMedia, canWriteMedia } from '@admin/access'
+import { useConfirmDelete } from '@admin/shared/dialogs/ConfirmDeleteDialog'
 import { useCurrentAdminUser } from '@admin/sessionContext'
 import {
   ExplorerItemContextMenu,
@@ -53,6 +54,8 @@ import {
   writeMediaFolderDragData,
 } from '../../utils/mediaDragDrop'
 import { useMediaDnd } from '../../hooks/useMediaDnd'
+import { UsageWarningNotice } from '../UsageWarningNotice'
+import { resolveUsageWarning } from '../../utils/usageWarning'
 import styles from './MediaCanvas.module.css'
 import {
   AssetRow,
@@ -122,6 +125,7 @@ function folderMatchesQuery(folder: CmsMediaFolder, query: string): boolean {
 
 export function MediaCanvas({ workspace, selectionMode = 'standard' }: MediaCanvasProps) {
   const currentUser = useCurrentAdminUser()
+  const confirmDelete = useConfirmDelete()
   const [viewMode, setViewModeState] = useState<MediaViewMode>(readStoredMediaViewMode)
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null)
   const [renameTarget, setRenameTarget] = useState<CmsMediaAsset | null>(null)
@@ -530,8 +534,30 @@ export function MediaCanvas({ workspace, selectionMode = 'standard' }: MediaCanv
           onDelete={() => {
             const target = contextMenu.asset
             setContextMenu(null)
-            if (trashView) void workspace.purgeAsset(target.id)
-            else void workspace.trashAsset(target.id)
+            if (!trashView) {
+              void workspace.trashAsset(target.id)
+              return
+            }
+            // Purging is the one media action nothing can undo: it removes the
+            // original and every generated size from the storage adapter, not
+            // just the row. `alwaysConfirm` because the `confirmBeforeDelete`
+            // preference defaults off, and an operator who turned it off was
+            // opting out of confirming a TRASH, which is reversible.
+            //
+            // The usage lookup is awaited BEFORE the dialog opens so the
+            // warning is on screen when the operator reads it, not after.
+            void (async () => {
+              const warning = await resolveUsageWarning(workspace.lookupUsage, [target.id])
+              confirmDelete({
+                title: `Delete "${target.filename}" permanently?`,
+                description:
+                  'This removes the file and every generated size from disk. It cannot be undone.',
+                details: <UsageWarningNotice warning={warning} />,
+                confirmLabel: 'Delete permanently',
+                alwaysConfirm: true,
+                commit: () => void workspace.purgeAsset(target.id),
+              })
+            })()
           }}
           showRename={canWrite}
           showDelete={canDelete}
