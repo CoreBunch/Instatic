@@ -28,6 +28,69 @@ import type { Migration } from './runMigrations'
  * same unified store as posts. The legacy "pages" and "page_versions" tables
  * have been removed from this baseline.
  */
+/**
+ * Every `*_at` text column that existed when migration 030 shipped. Rows
+ * stamped by SQL `current_timestamp` hold `YYYY-MM-DD HH:MM:SS`, which sorts
+ * before the ISO 8601 `T` form written from JS and compares wrongly against a
+ * bound ISO cutoff (`published_at >= ${sinceIso}` misses the whole boundary
+ * day). 030 rewrites those values in place so every timestamp column holds one
+ * shape. Checked against the live schema by
+ * `src/__tests__/db/iso-timestamp-migration.test.ts`.
+ */
+export const ISO_TIMESTAMP_COLUMNS_030: ReadonlyArray<readonly [table: string, columns: readonly string[]]> = [
+  ['active_media_storage_adapter', ['elected_at']],
+  ['active_media_variant_delegate', ['elected_at']],
+  ['ai_conversations', ['created_at', 'updated_at', 'deleted_at']],
+  ['ai_defaults', ['updated_at']],
+  ['ai_mcp_connectors', ['created_at', 'last_used_at', 'revoked_at', 'expires_at']],
+  ['ai_mcp_oauth_clients', ['created_at']],
+  ['ai_mcp_oauth_codes', ['created_at', 'expires_at', 'consumed_at']],
+  ['ai_mcp_oauth_tokens', ['created_at', 'expires_at', 'revoked_at']],
+  ['ai_messages', ['created_at']],
+  ['ai_model_pricing', ['refreshed_at']],
+  ['ai_provider_credentials', ['created_at', 'updated_at', 'last_used_at']],
+  ['audit_events', ['created_at']],
+  ['collab_documents', ['updated_at']],
+  ['data_row_redirects', ['created_at']],
+  ['data_row_versions', ['published_at', 'created_at']],
+  ['data_rows', ['created_at', 'updated_at', 'published_at', 'scheduled_publish_at', 'deleted_at']],
+  ['data_tables', ['created_at', 'updated_at', 'deleted_at']],
+  ['installed_plugins', ['installed_at', 'updated_at']],
+  ['login_attempts', ['attempted_at']],
+  ['media_assets', ['deleted_at', 'replaced_at', 'created_at']],
+  ['media_folders', ['created_at']],
+  ['media_smart_folders', ['created_at']],
+  ['media_usage_refs', ['computed_at']],
+  ['plugin_crash_events', ['occurred_at']],
+  ['plugin_media_sources', ['created_at', 'updated_at']],
+  ['plugin_records', ['created_at', 'updated_at']],
+  ['plugin_schedule_runs', ['started_at', 'finished_at']],
+  ['plugin_schedules', ['last_run_at', 'last_finished_at', 'next_run_at', 'claimed_at', 'created_at', 'updated_at']],
+  ['plugin_secrets', ['created_at', 'updated_at']],
+  ['published_runtime_assets', ['created_at']],
+  ['roles', ['created_at', 'updated_at']],
+  ['schema_migrations', ['applied_at']],
+  ['sessions', ['created_at', 'last_seen_at', 'expires_at', 'revoked_at', 'mfa_passed_at', 'step_up_expires_at']],
+  ['site', ['created_at', 'updated_at']],
+  ['site_branch_merge_requests', ['resolved_at', 'created_at', 'updated_at']],
+  ['site_branch_merges', ['undone_at', 'created_at']],
+  ['site_branch_previews', ['expires_at', 'created_at', 'revoked_at']],
+  ['site_branch_review_comments', ['created_at']],
+  ['site_branches', ['created_at', 'updated_at']],
+  ['site_snapshots', ['created_at']],
+  ['user_preferences', ['updated_at']],
+  ['users', ['last_login_at', 'password_updated_at', 'mfa_enabled_at', 'created_at', 'updated_at', 'deleted_at']],
+]
+
+function isoTimestampRewrite030(): string {
+  return ISO_TIMESTAMP_COLUMNS_030.flatMap(([table, columns]) =>
+    columns.map(
+      (column) =>
+        `update ${table} set ${column} = strftime('%Y-%m-%dT%H:%M:%fZ', ${column}) where ${column} like '____-__-__ __:__:__%';`,
+    ),
+  ).join('\n')
+}
+
 export const sqliteMigrations: Migration[] = [
   {
     id: '001_baseline',
@@ -1442,5 +1505,14 @@ export const sqliteMigrations: Migration[] = [
       create index if not exists site_branch_merges_branch_idx
         on site_branch_merges (branch_id, created_at desc);
     `,
+  },
+  {
+    // Repositories now bind ISO 8601 timestamps from JS (`nowIso()`) instead
+    // of stamping with SQL `current_timestamp`, which on SQLite wrote
+    // `YYYY-MM-DD HH:MM:SS`. Convert the rows written before that change so a
+    // column never mixes the two shapes: the space form sorts before the `T`
+    // form and compares wrongly against bound ISO cutoffs.
+    id: '030_iso_timestamps',
+    sql: isoTimestampRewrite030(),
   },
 ]

@@ -67,8 +67,10 @@ function sqliteTimestampToIso(value: string): string {
  * - `*_json` columns holding a non-empty string are JSON.parsed.
  * - `*_at` columns holding SQLite's `current_timestamp` shape are rewritten
  *   to ISO 8601 UTC, matching what the Postgres adapter derives from
- *   `timestamptz`. The suffix is load-bearing: `current_timestamp` may only
- *   be written to `*_at` columns (gated by `db-timestamp-column-naming.test.ts`).
+ *   `timestamptz`. Repositories bind `nowIso()` instead of stamping with
+ *   `current_timestamp`, so only the three legacy DDL defaults still write this
+ *   shape; the suffix is what makes the rewrite safe (gated by
+ *   `db-timestamp-writes.test.ts`).
  */
 function normalizeSqliteRow<Row>(row: Row): Row {
   if (row === null || typeof row !== 'object' || Array.isArray(row)) return row

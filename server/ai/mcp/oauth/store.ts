@@ -187,7 +187,7 @@ export async function exchangeAuthorizationCode(
 
     const consumed = await tx`
       update ai_mcp_oauth_codes
-      set consumed_at = current_timestamp
+      set consumed_at = ${now}
       where code_hash = ${codeHash} and consumed_at is null
     `
     if (consumed.rowCount !== 1) return null
@@ -235,12 +235,12 @@ export async function rotateRefreshToken(
     if (token?.revoked_at && !token.connector_revoked_at) {
       await tx`
         update ai_mcp_connectors
-        set revoked_at = current_timestamp
+        set revoked_at = ${now}
         where id = ${token.connector_id} and revoked_at is null
       `
       await tx`
         update ai_mcp_oauth_tokens
-        set revoked_at = current_timestamp
+        set revoked_at = ${now}
         where connector_id = ${token.connector_id} and revoked_at is null
       `
       console.warn(`[ai:mcp:oauth] refresh-token reuse revoked connection ${token.connector_id}`)
@@ -258,7 +258,7 @@ export async function rotateRefreshToken(
 
     const revoked = await tx`
       update ai_mcp_oauth_tokens
-      set revoked_at = current_timestamp
+      set revoked_at = ${now}
       where id = ${token.id} and revoked_at is null
     `
     if (revoked.rowCount !== 1) return null

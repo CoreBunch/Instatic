@@ -217,6 +217,24 @@ The worker is editor assistance only: esbuild remains the authoritative canvas
 and publish compiler, and semantic type errors do not replace the publish-time
 runtime validation gate.
 
+#### Where build failures surface
+
+`useRuntimeScriptDiagnostics()` posts the draft to be built and runs once, in
+`AdminCanvasLayout`. `summarizeRuntimeDiagnostics` (`@core/site-runtime`)
+groups the result per file, and `AdminCanvasEditorBody` publishes that summary
+through `RuntimeDiagnosticsContext` so every surface reports the same build:
+
+- **The publish gate** blocks with "N code errors" and, on hover, lists each
+  failure with its file, position and message (`SiteDiagnosticsList`). The
+  status text carries the same tooltip as the button: a blocked publish
+  disables the button, leaving the status as the only thing left to hover.
+- **Site Explorer rows** carry a count badge on any script or stylesheet with
+  problems (`ProblemBadge`), whose tooltip shows that file's messages.
+- **The code editor** underlines them in place, via `codeMirrorDiagnostics`.
+
+A count with no detail is not actionable, which is why the gate and the tree
+both carry the messages rather than only the number.
+
 ### Site Explorer organization — `SiteExplorerOrganization`
 
 Site Explorer organization is split by whether a section owns URL/file paths.

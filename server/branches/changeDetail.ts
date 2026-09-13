@@ -1,7 +1,8 @@
 /**
- * What a planned change looks like, for the review page: which fields moved
- * (as display text), which page nodes were added, changed or removed, how a
- * table's schema differs, or a file's text on both sides. Computed from the
+ * The diff helpers behind a planned change's `detail` on the review page:
+ * which fields moved (as display text), which page nodes were added, changed
+ * or removed, how a table's schema differs. Each entity adapter's
+ * `describe` (`./entities/`) builds its kind's detail from these, over the
  * same content projections the merge compares, so the review never
  * disagrees with the plan.
  *
@@ -10,20 +11,10 @@
  * update.
  */
 import { parsePageNode } from '@core/page-tree'
-import { buildPostTypeDefaultFields } from '@core/data/fields'
 import { canonicalJson } from '@core/utils/canonicalJson'
-import type {
-  MergeChangeDetail,
-  MergeFieldChange,
-  MergeSchemaField,
-  MergeTreeDiff,
-} from '@core/branches'
-import type { BranchEntityKind, FileContent, RowContent, SiteContent, TableContent } from './contentHash'
+import type { MergeFieldChange, MergeSchemaField, MergeTreeDiff } from '@core/branches'
 
 const PREVIEW_LIMIT = 240
-
-/** Tables whose `body` cell is a node tree. */
-const TREE_TABLES = new Set(['pages', 'components', 'layouts'])
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -37,7 +28,7 @@ function displayValue(value: unknown): { text: string | null; structured: boolea
   return { text: json.length > PREVIEW_LIMIT ? `${json.slice(0, PREVIEW_LIMIT)}…` : json, structured: true }
 }
 
-interface FieldChangeOptions {
+export interface FieldChangeOptions {
   /** Prefix that turns a key into the conflict path the merge reports. */
   prefix: string
   conflicts: ReadonlySet<string>
@@ -45,7 +36,8 @@ interface FieldChangeOptions {
   labels?: Readonly<Record<string, string>>
 }
 
-function fieldChanges(
+/** Field-by-field difference of two flat records, as the review displays it. */
+export function fieldChanges(
   before: Record<string, unknown>,
   after: Record<string, unknown>,
   options: FieldChangeOptions,
@@ -184,7 +176,8 @@ function schemaFieldSummary(field: unknown): { id: string; label: string; type: 
   return { id: field.id, label, type }
 }
 
-function schemaDiff(before: readonly unknown[], after: readonly unknown[]): MergeSchemaField[] {
+/** Which fields a table schema gained, lost, or changed. */
+export function schemaDiff(before: readonly unknown[], after: readonly unknown[]): MergeSchemaField[] {
   const beforeById = new Map<string, unknown>()
   for (const field of before) {
     const summary = schemaFieldSummary(field)
@@ -207,106 +200,4 @@ function schemaDiff(before: readonly unknown[], after: readonly unknown[]): Merg
     if (summary && !seen.has(summary.id)) out.push({ ...summary, status: 'removed' })
   }
   return out
-}
-
-/** Built-in row fields carry the editor's labels; a custom field is named by its id. */
-const ROW_LABELS: Record<string, string> = Object.fromEntries(
-  buildPostTypeDefaultFields().map((field) => [field.id, field.label]),
-)
-const TABLE_LABELS: Record<string, string> = {
-  name: 'Name',
-  slug: 'Slug',
-  kind: 'Kind',
-  routeBase: 'Route base',
-  singularLabel: 'Singular label',
-  pluralLabel: 'Plural label',
-  primaryFieldId: 'Primary field',
-}
-const SITE_LABELS: Record<string, string> = {
-  name: 'Site name',
-  settings: 'Settings',
-  breakpoints: 'Breakpoints',
-  styleRules: 'Style rules',
-  conditions: 'Conditions',
-  explorer: 'Explorer organization',
-  packageJson: 'package.json',
-  runtime: 'Runtime',
-}
-
-/**
- * Describe the difference between the two sides of one entity. Either side
- * may be absent (a creation or a deletion).
- */
-export function describeChange(
-  kind: BranchEntityKind,
-  tableId: string | null,
-  before: unknown | undefined,
-  after: unknown | undefined,
-  conflicts: readonly string[],
-): MergeChangeDetail {
-  const conflictSet = new Set(conflicts)
-  switch (kind) {
-    case 'row': {
-      const a = (before ?? null) as RowContent | null
-      const b = (after ?? null) as RowContent | null
-      const hasTree = tableId !== null && TREE_TABLES.has(tableId)
-      const fields = fieldChanges(
-        { ...(a?.cells ?? {}), slug: a?.slug },
-        { ...(b?.cells ?? {}), slug: b?.slug },
-        {
-          prefix: 'cells.',
-          conflicts: new Set([...conflictSet, ...(conflictSet.has('slug') ? ['cells.slug'] : [])]),
-          skip: hasTree ? new Set(['body']) : undefined,
-          labels: ROW_LABELS,
-        },
-      )
-      return {
-        kind: 'row',
-        fields,
-        tree: hasTree ? treeDiff(a?.cells.body, b?.cells.body) : null,
-      }
-    }
-    case 'table': {
-      const a = (before ?? null) as TableContent | null
-      const b = (after ?? null) as TableContent | null
-      const { fields: beforeFields = [], ...beforeSettings } = a ?? {}
-      const { fields: afterFields = [], ...afterSettings } = b ?? {}
-      return {
-        kind: 'table',
-        fields: fieldChanges(beforeSettings, afterSettings, { prefix: '', conflicts: conflictSet, labels: TABLE_LABELS }),
-        schema: schemaDiff(beforeFields, afterFields),
-      }
-    }
-    case 'site': {
-      const a = (before ?? null) as SiteContent | null
-      const b = (after ?? null) as SiteContent | null
-      const shellConflicts = new Set<string>()
-      for (const path of conflictSet) {
-        shellConflicts.add(path.startsWith('shell.') ? path.slice('shell.'.length) : path)
-      }
-      return {
-        kind: 'site',
-        fields: fieldChanges(
-          { name: a?.name, ...(a?.shell ?? {}) },
-          { name: b?.name, ...(b?.shell ?? {}) },
-          { prefix: '', conflicts: shellConflicts, labels: SITE_LABELS },
-        ),
-      }
-    }
-    case 'file': {
-      const a = (before ?? null) as FileContent | null
-      const b = (after ?? null) as FileContent | null
-      const type = b?.type ?? a?.type ?? 'script'
-      const binary = type === 'asset'
-      return {
-        kind: 'file',
-        path: b?.path ?? a?.path ?? '',
-        pathBefore: a && b && a.path !== b.path ? a.path : null,
-        fileType: type,
-        before: binary ? null : (a?.content ?? null),
-        after: binary ? null : (b?.content ?? null),
-        binary,
-      }
-    }
-  }
 }

@@ -1,3 +1,4 @@
+import type { FileRuntimeDiagnostics } from '@core/site-runtime'
 import type { IconComponent } from 'pixel-art-icons/types'
 import type { Page } from '@core/page-tree'
 import type {
@@ -19,6 +20,8 @@ export interface SiteExplorerTreeItem<TTarget> {
   ariaLabel: string
   target: TTarget
   preview?: SiteExplorerItemPreview
+  /** Build problems for this file, badged on the row. Code files only. */
+  problems?: FileRuntimeDiagnostics
 }
 
 export interface SiteExplorerItemPreview {

@@ -11,6 +11,7 @@
  */
 import { encodeCollabDocId, siteDocId } from '@core/collab'
 import { placeholder, type DbClient } from '../db/client'
+import { nowIso } from '@core/utils/isoDate'
 
 export interface StoredCollabDocument {
   state: Uint8Array
@@ -41,14 +42,15 @@ export async function putCollabDocumentState(
   state: Uint8Array,
   generation: string,
 ): Promise<void> {
+  const now = nowIso()
   await db`
-    insert into collab_documents (doc_id, state_blob, seq, generation)
-    values (${docId}, ${state}, 1, ${generation})
+    insert into collab_documents (doc_id, state_blob, seq, generation, updated_at)
+    values (${docId}, ${state}, 1, ${generation}, ${now})
     on conflict (doc_id) do update
       set state_blob = excluded.state_blob,
           seq = collab_documents.seq + 1,
           generation = excluded.generation,
-          updated_at = current_timestamp
+          updated_at = ${now}
   `
 }
 

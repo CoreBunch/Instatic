@@ -65,9 +65,9 @@ function createPublishFakeDb() {
       return { rows: [{ logical_id: row.id }], rowCount: 1 }
     }
     // saveDataRowDraft — update data_rows set cells_json, slug, updated_by_user_id, plugin_actor_id
-    // params: [0]=cells_json, [1]=slug, [2]=updated_by_user_id, [3]=plugin_actor_id, [4]=rowId
+    // params: [0]=cells_json, [1]=slug, [2]=updated_by_user_id, [3]=plugin_actor_id, [4]=updated_at, [5]=rowId
     if (sql.startsWith('update data_rows set cells_json')) {
-      const row = state.dataRows.find((r) => r.id === params[4])
+      const row = state.dataRows.find((r) => r.id === params[5])
       if (row) {
         row.cells_json = params[0]
         row.slug = params[1]
@@ -159,11 +159,11 @@ function createPublishFakeDb() {
       return { rows: [], rowCount: 1 }
     }
     // update data_rows set active_version_id = $1 ... (after publish)
-    // SQL params: $1=versionId, $2=publishedByUserId, $3=updatedByUserId, $4=rowId
+    // SQL params: $1=versionId, $2=publishedByUserId, $3=published_at, $4=updatedByUserId, $5=updated_at, $6=rowId
     if (sql.startsWith('update data_rows') && sql.includes('active_version_id')) {
       const versionId = params[0] as string
       const publishedBy = params[1] as string
-      const rowId = params[3] as string
+      const rowId = params[5] as string
       const row = state.dataRows.find((r) => r.id === rowId)
       if (row) {
         row.active_version_id = versionId

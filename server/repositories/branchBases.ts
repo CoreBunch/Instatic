@@ -6,7 +6,7 @@
  * field-level merge.
  */
 import type { DbClient } from '../db/client'
-import type { BranchEntityKind } from '../branches/contentHash'
+import type { BranchEntityKind } from '../branches/entities'
 
 export interface BranchBase {
   kind: BranchEntityKind

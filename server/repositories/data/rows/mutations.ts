@@ -26,7 +26,7 @@ import { isMainScope, type BranchScope } from '../../../branches/scope'
 import type { DataRow, DataRowStatus, DeletedRowSummary } from '@core/data/schemas'
 import { bumpPublishVersionSerialized } from '../../../publish/publishState'
 import { type InsertDataRowInput, type UpdateDataRowDraftInput } from './mapper'
-import { isoDateOrNull } from '@core/utils/isoDate'
+import { isoDateOrNull, nowIso } from '@core/utils/isoDate'
 import { getDataRow } from './read'
 import { notifyRowWrite, serializeCollabAwareWrite } from '../../rowWriteEvents'
 
@@ -144,7 +144,7 @@ export async function updateDataRowDraftCells(
         slug = ${input.slug},
         updated_by_user_id = ${actorUserId},
         plugin_actor_id = ${pluginActorId},
-        updated_at = current_timestamp
+        updated_at = ${nowIso()}
     where id = ${physicalId(scope.branchId, rowId)}
       and branch_id = ${scope.branchId}
       and deleted_at is null
@@ -172,7 +172,7 @@ export async function resurrectDataRow(
         cells_json = ${input.cells},
         slug = ${input.slug},
         updated_by_user_id = ${actorUserId},
-        updated_at = current_timestamp
+        updated_at = ${nowIso()}
     where id = ${physicalId(scope.branchId, rowId)}
       and branch_id = ${scope.branchId}
       and deleted_at is not null
@@ -261,6 +261,7 @@ export async function softDeleteDataRow(
       return row
     })
   }
+  const now = nowIso()
   const { rows } = await db<{
     logical_id: string
     table_id: string
@@ -269,9 +270,9 @@ export async function softDeleteDataRow(
     deleted_at: string | Date | null
   }>`
     update data_rows
-    set deleted_at = current_timestamp,
+    set deleted_at = ${now},
         updated_by_user_id = ${actorUserId},
-        updated_at = current_timestamp
+        updated_at = ${now}
     where id = ${physicalId(scope.branchId, rowId)}
       and branch_id = ${scope.branchId}
       and deleted_at is null
@@ -364,7 +365,7 @@ export async function updateDataRowTable(
     update data_rows
     set table_id = ${targetTableId},
         updated_by_user_id = ${actorUserId},
-        updated_at = current_timestamp
+        updated_at = ${nowIso()}
     where id = ${physicalRowId}
       and branch_id = ${scope.branchId}
       and deleted_at is null
@@ -396,7 +397,7 @@ export async function updateDataRowStatus(
         published_by_user_id = null,
         scheduled_publish_at = null,
         updated_by_user_id = ${actorUserId},
-        updated_at = current_timestamp
+        updated_at = ${nowIso()}
     where id = ${physicalId(scope.branchId, rowId)}
       and branch_id = ${scope.branchId}
       and deleted_at is null
@@ -420,7 +421,7 @@ export async function updateDataRowAuthor(
     update data_rows
     set author_user_id = ${authorUserId},
         updated_by_user_id = ${actorUserId},
-        updated_at = current_timestamp
+        updated_at = ${nowIso()}
     where id = ${physicalId(scope.branchId, rowId)}
       and branch_id = ${scope.branchId}
       and deleted_at is null

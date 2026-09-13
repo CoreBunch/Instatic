@@ -83,9 +83,9 @@ function makeFakeDb() {
     if (normalized.includes('select id, name, version, enabled')) {
       return { rows: [...plugins] as Row[], rowCount: plugins.length }
     }
-    // setPluginSettings — values[0]=settings_json, values[1]=id
+    // setPluginSettings — values[0]=settings_json, values[1]=updated_at, values[2]=id
     if (normalized.includes('update installed_plugins') && normalized.includes('set settings_json')) {
-      const row = plugins.find((plugin) => plugin.id === values[1])
+      const row = plugins.find((plugin) => plugin.id === values[2])
       if (!row) return { rows: [], rowCount: 0 }
       row.settings_json = values[0]
       row.updated_at = new Date('2026-05-01T10:07:00.000Z').toISOString()
@@ -117,17 +117,17 @@ function makeFakeDb() {
       else plugins.push(row)
       return { rows: [row as Row], rowCount: 1 }
     }
-    // setPluginEnabled — values[0]=enabled, values[1]=id (note: order changed from old pg API)
+    // setPluginEnabled — values[0]=enabled, values[1]=updated_at, values[2]=id
     if (normalized.includes('update installed_plugins set enabled')) {
-      const row = plugins.find((plugin) => plugin.id === values[1])
+      const row = plugins.find((plugin) => plugin.id === values[2])
       if (!row) return { rows: [], rowCount: 0 }
       row.enabled = values[0]
       row.updated_at = new Date('2026-05-01T10:05:00.000Z').toISOString()
       return { rows: [row as Row], rowCount: 1 }
     }
-    // setPluginLifecycleStatus — values[0]=lifecycleStatus, values[1]=lastError, values[2]=id
+    // setPluginLifecycleStatus — values[0]=lifecycleStatus, values[1]=lastError, values[2]=updated_at, values[3]=id
     if (normalized.includes('update installed_plugins set lifecycle_status')) {
-      const row = plugins.find((plugin) => plugin.id === values[2])
+      const row = plugins.find((plugin) => plugin.id === values[3])
       if (!row) return { rows: [], rowCount: 0 }
       row.lifecycle_status = values[0]
       row.last_error = values[1] ?? null

@@ -28,22 +28,20 @@ import {
   type MergePlan,
   type MergeResolution,
 } from '@core/branches'
-import { SiteValidationError, validateSite } from '@core/persistence/validate'
-import { normalizePath } from '@core/files/pathValidation'
-import type { SiteFile } from '@core/files/schemas'
 import type { DbClient } from '../db/client'
 import { MAIN_SCOPE, isMainScope, type BranchScope } from './scope'
+import { contentHash } from './contentHash'
 import {
-  FileContentSchema,
-  RowContentSchema,
-  SiteContentSchema,
-  TableContentSchema,
-  contentHash,
-  parseContent,
+  adapterFor,
+  collectBranchEntities,
+  contentOf,
+  entityKey,
+  type BranchEntity,
   type BranchEntityKind,
-} from './contentHash'
-import { describeChange } from './changeDetail'
-import { collectBranchEntities, type BranchEntity } from './entities'
+  type EntityRef,
+  type WriteContext,
+  type WriteNotices,
+} from './entities'
 import { deleteBranchBases, listBranchBases, upsertBranchBases, type BranchBase } from '../repositories/branchBases'
 import { touchBranch } from '../repositories/branches'
 import {
@@ -53,19 +51,6 @@ import {
   markBranchMergeUndone,
   type MergeUndoEntry,
 } from '../repositories/branchMerges'
-import {
-  createDataTable,
-  getDataRow,
-  getDataTable,
-  restoreDataTable,
-  saveDataRowDraft,
-  softDeleteDataRow,
-  softDeleteDataTable,
-  updateDataRowTable,
-  updateDataTable,
-  upsertDataRowDraft,
-} from '../repositories/data'
-import { getDraftSite, saveDraftSite } from '../repositories/site'
 import {
   notifyRowWrite,
   notifyShellWrite,
@@ -80,7 +65,7 @@ import {
 import { runPublishFlush } from '../publish/publishFlush'
 
 export type { MergeChange, MergeDirection, MergePlan, MergeResolution } from '@core/branches'
-export type MergeAction = MergeChange['action']
+export { MergeApplyError } from './entities'
 
 interface Work {
   change: MergeChange
@@ -100,69 +85,36 @@ export class MergeConflictsUnresolvedError extends Error {
   }
 }
 
-/** A planned change that cannot be applied as such (e.g. a table that still has rows). */
-export class MergeApplyError extends Error {
-  readonly key: string
-
-  constructor(key: string, message: string) {
-    super(message)
-    this.name = 'MergeApplyError'
-    this.key = key
-  }
-}
-
 const DELETED_MARKER = '(deleted)'
-/** A file whose path another file (a different id) already uses on the receiving side. */
-const PATH_MARKER = '(path)'
-
-/**
- * The shell keeps one file per normalized path (first wins), so a merged
- * file that lands on a path a different file already holds would vanish
- * silently. Report it on the plan instead; applying it is refused.
- */
-function pathCollision(entry: Work, into: Map<string, BranchEntity>): boolean {
-  if (entry.change.kind !== 'file' || entry.result === null) return false
-  const incoming = entry.result as { path?: unknown }
-  if (typeof incoming.path !== 'string') return false
-  const path = normalizePath(incoming.path)
-  for (const entity of into.values()) {
-    if (entity.kind !== 'file' || entity.logicalId === entry.change.logicalId) continue
-    const other = entity.content as { path?: unknown }
-    if (typeof other.path === 'string' && normalizePath(other.path) === path) return true
-  }
-  return false
-}
 
 function scopesFor(branchId: string, direction: MergeDirection): { from: BranchScope; into: BranchScope } {
   const branch: BranchScope = { branchId }
   return direction === 'merge' ? { from: branch, into: MAIN_SCOPE } : { from: MAIN_SCOPE, into: branch }
 }
 
-/** Site first, then files, table creates/updates, rows, and table deletes last. */
+/** Where a change sits in an apply: the adapter of its kind decides. */
 function changeOrder(change: MergeChange): number {
-  if (change.kind === 'site') return 0
-  if (change.kind === 'file') return 1
-  if (change.kind === 'table') return change.action === 'delete' ? 4 : 2
-  return 3
+  return adapterFor(change.kind).order(change.action)
 }
 
 function describe(
   entity: BranchEntity,
-  action: MergeAction,
+  action: MergeChange['action'],
   conflicts: string[],
   ours: BranchEntity | undefined,
   theirs: BranchEntity | undefined,
 ): MergeChange {
+  const { kind } = entity
   return {
-    key: `${entity.kind}:${entity.logicalId}`,
-    kind: entity.kind,
+    key: entityKey(kind, entity.logicalId),
+    kind,
     logicalId: entity.logicalId,
     label: entity.label,
     tableId: entity.tableId,
     tableName: entity.tableName,
     action,
     conflicts,
-    detail: describeChange(entity.kind, entity.tableId, ours?.content, theirs?.content, conflicts),
+    detail: adapterFor(kind).describe(contentOf(kind, ours), contentOf(kind, theirs), conflicts, entity.tableId),
   }
 }
 
@@ -190,7 +142,7 @@ export async function planBranchMerge(
 ): Promise<PlanResult> {
   if (branchId === MAIN_BRANCH_ID) throw new Error('main cannot be merged into itself')
   const { from, into } = scopesFor(branchId, direction)
-  const bases = new Map((await listBranchBases(db, branchId)).map((base) => [`${base.kind}:${base.logicalId}`, base]))
+  const bases = new Map((await listBranchBases(db, branchId)).map((base) => [entityKey(base.kind, base.logicalId), base]))
   const [fromEntities, intoEntities] = await Promise.all([
     collectBranchEntities(db, from),
     collectBranchEntities(db, into),
@@ -236,10 +188,11 @@ export async function planBranchMerge(
     work.push({ change: describe(theirs, 'update', merged.conflicts, ours, theirs), ours, theirs, result: merged.value })
   }
 
+  // A refusal the three-way compare cannot see (a file path another file holds).
   for (const entry of work) {
-    if (pathCollision(entry, intoEntities) && !entry.change.conflicts.includes(PATH_MARKER)) {
-      entry.change.conflicts.push(PATH_MARKER)
-    }
+    if (entry.result === null) continue
+    const marker = adapterFor(entry.change.kind).collision?.(entry.result, entry.change.logicalId, intoEntities) ?? null
+    if (marker && !entry.change.conflicts.includes(marker)) entry.change.conflicts.push(marker)
   }
   work.sort((a, b) => changeOrder(a.change) - changeOrder(b.change) || a.change.label.localeCompare(b.change.label))
   const changes = work.map((entry) => entry.change)
@@ -258,16 +211,6 @@ export async function planBranchMerge(
   }
 }
 
-/** A merged shell that fails validation is a refused change, not a crash. */
-function validateMergedShell(key: string, candidate: unknown): ReturnType<typeof validateSite> {
-  try {
-    return validateSite(candidate)
-  } catch (err) {
-    if (err instanceof SiteValidationError) throw new MergeApplyError(key, `The merged site is invalid: ${err.message}`)
-    throw err
-  }
-}
-
 function resolvedResult(entry: Work, resolutions: Readonly<Record<string, MergeResolution>>): unknown | null {
   if (entry.change.conflicts.length === 0) return entry.result
   const resolution = resolutions[entry.change.key]
@@ -275,145 +218,16 @@ function resolvedResult(entry: Work, resolutions: Readonly<Record<string, MergeR
   return entry.ours?.content ?? null
 }
 
-interface RowNotice {
-  kind: RowWriteKind
-  tableId: string
-  rowId: string
-  /** Cell ids that changed on an update (for the content event). */
-  changedFieldIds: string[]
-}
-
-interface WriteNotices {
-  rows: RowNotice[]
-  shell: boolean
-}
-
-function changedCellIds(before: unknown, after: unknown): string[] {
-  const a = (before as { cells?: Record<string, unknown> } | null)?.cells ?? {}
-  const b = (after as { cells?: Record<string, unknown> } | null)?.cells ?? {}
-  const keys = new Set([...Object.keys(a), ...Object.keys(b)])
-  return [...keys].filter((key) => JSON.stringify(a[key]) !== JSON.stringify(b[key]))
-}
-
+/** Write one change's result on a scope through the adapter of its kind; null deletes. */
 async function writeEntity(
   tx: DbClient,
   scope: BranchScope,
-  entry: Work,
+  target: EntityRef,
   result: unknown | null,
-  actorUserId: string | null,
-  notices: WriteNotices,
+  ctx: WriteContext,
 ): Promise<void> {
-  const { kind, logicalId, key } = entry.change
-  if (kind === 'site') {
-    const current = await getDraftSite(tx, scope)
-    if (!current || result === null) return
-    const content = parseContent(SiteContentSchema, result, 'site')
-    // The merged shell is rebuilt from stored JSON — validate it as a whole
-    // before it becomes the draft, exactly like the relay's projection.
-    const shell = validateMergedShell(key, {
-      ...current,
-      ...content.shell,
-      id: current.id,
-      name: content.name,
-      createdAt: current.createdAt,
-      updatedAt: Date.now(),
-    })
-    await saveDraftSite(tx, scope, shell, actorUserId, { collabInternal: true })
-    notices.shell = true
-    return
-  }
-  if (kind === 'file') {
-    const current = await getDraftSite(tx, scope)
-    if (!current) return
-    const now = Date.now()
-    const others = current.files.filter((file) => file.id !== logicalId)
-    let files: SiteFile[]
-    if (result === null) {
-      if (others.length === current.files.length) return
-      files = others
-    } else {
-      const content = parseContent(FileContentSchema, result, 'file')
-      const existing = current.files.find((file) => file.id === logicalId)
-      // The merged content is the whole file: a key the other side dropped
-      // (blob, ejected, …) must not survive from the previous version.
-      files = [...others, { id: logicalId, createdAt: existing?.createdAt ?? now, ...content, updatedAt: now }]
-    }
-    const shell = validateMergedShell(key, { ...current, files, updatedAt: now })
-    if (shell.files.length < files.length) {
-      throw new MergeApplyError(
-        key,
-        `Another file on ${scope.branchId} already uses the path "${entry.change.label}"; rename one of them first`,
-      )
-    }
-    await saveDraftSite(tx, scope, shell, actorUserId, { collabInternal: true })
-    notices.shell = true
-    return
-  }
-  if (kind === 'table') {
-    if (result === null) {
-      const deleted = await softDeleteDataTable(tx, scope, logicalId, actorUserId)
-      if (!deleted) {
-        throw new MergeApplyError(
-          key,
-          `The table "${entry.change.label}" still has rows on ${scope.branchId}; delete them or keep the table`,
-        )
-      }
-      return
-    }
-    const content = parseContent(TableContentSchema, result, 'table')
-    const settings = {
-      name: content.name,
-      slug: content.slug,
-      routeBase: content.routeBase,
-      singularLabel: content.singularLabel,
-      pluralLabel: content.pluralLabel,
-      primaryFieldId: content.primaryFieldId,
-      fields: content.fields,
-      updatedByUserId: actorUserId,
-    }
-    if (await getDataTable(tx, scope, logicalId)) {
-      await updateDataTable(tx, scope, logicalId, settings)
-      return
-    }
-    // A table this side had deleted comes back with the incoming settings.
-    if (await restoreDataTable(tx, scope, logicalId, settings)) return
-    await createDataTable(tx, scope, {
-      id: logicalId,
-      ...content,
-      createdByUserId: actorUserId,
-      updatedByUserId: actorUserId,
-    })
-    return
-  }
-  if (result === null) {
-    const deleted = await softDeleteDataRow(tx, scope, logicalId, actorUserId, { collabInternal: true })
-    if (deleted) notices.rows.push({ kind: 'delete', tableId: deleted.tableId, rowId: logicalId, changedFieldIds: [] })
-    return
-  }
-  const content = parseContent(RowContentSchema, result, 'row')
-  const existing = await getDataRow(tx, scope, logicalId)
-  if (existing) {
-    if (existing.tableId !== content.tableId) {
-      await updateDataRowTable(tx, scope, logicalId, content.tableId, actorUserId, { collabInternal: true })
-      notices.rows.push({ kind: 'delete', tableId: existing.tableId, rowId: logicalId, changedFieldIds: [] })
-    }
-    await saveDataRowDraft(tx, scope, logicalId, { cells: content.cells, slug: content.slug }, actorUserId, null, { collabInternal: true })
-    notices.rows.push({
-      kind: 'update',
-      tableId: content.tableId,
-      rowId: logicalId,
-      changedFieldIds: changedCellIds({ cells: existing.cells }, content),
-    })
-    return
-  }
-  await upsertDataRowDraft(
-    tx,
-    scope,
-    { id: logicalId, tableId: content.tableId, cells: content.cells, slug: content.slug },
-    actorUserId,
-    { collabInternal: true },
-  )
-  notices.rows.push({ kind: 'create', tableId: content.tableId, rowId: logicalId, changedFieldIds: [] })
+  const adapter = adapterFor(target.kind)
+  await adapter.write(tx, scope, target, result === null ? null : adapter.parse(result), ctx)
 }
 
 function emitCollabNotices(scope: BranchScope, notices: WriteNotices): void {
@@ -475,6 +289,8 @@ export async function applyBranchMerge(db: DbClient, input: ApplyMergeInput): Pr
     const mirrorOntoFrom = input.direction === 'merge'
     const intoNotices: WriteNotices = { rows: [], shell: false }
     const fromNotices: WriteNotices = { rows: [], shell: false }
+    const intoCtx: WriteContext = { actorUserId: input.actorUserId, notices: intoNotices }
+    const fromCtx: WriteContext = { actorUserId: input.actorUserId, notices: fromNotices }
     let merge: BranchMergeRecord | null = null
 
     await db.transaction(async (tx) => {
@@ -483,7 +299,7 @@ export async function applyBranchMerge(db: DbClient, input: ApplyMergeInput): Pr
       // Before-images for undo: what every written entity held on each side,
       // and the base it was judged against.
       const basesBefore = new Map(
-        (await listBranchBases(tx, input.branchId)).map((base) => [baseKey(base.kind, base.logicalId), base.content]),
+        (await listBranchBases(tx, input.branchId)).map((base) => [entityKey(base.kind, base.logicalId), base.content]),
       )
       const undoEntries: MergeUndoEntry[] = []
       for (const entry of work) {
@@ -493,14 +309,14 @@ export async function applyBranchMerge(db: DbClient, input: ApplyMergeInput): Pr
           change: entry.change,
           intoBefore: entry.ours?.content ?? null,
           fromBefore: mirrorOntoFrom ? entry.theirs?.content ?? null : null,
-          baseBefore: basesBefore.get(baseKey(entry.change.kind, entry.change.logicalId)) ?? null,
+          baseBefore: basesBefore.get(entry.change.key) ?? null,
           resultHash,
         })
         const oursHash = entry.ours ? contentHash(entry.ours.content) : null
         const theirsHash = entry.theirs ? contentHash(entry.theirs.content) : null
-        if (resultHash !== oursHash) await writeEntity(tx, into, entry, result, input.actorUserId, intoNotices)
+        if (resultHash !== oursHash) await writeEntity(tx, into, entry.change, result, intoCtx)
         if (mirrorOntoFrom && resultHash !== theirsHash) {
-          await writeEntity(tx, from, entry, result, input.actorUserId, fromNotices)
+          await writeEntity(tx, from, entry.change, result, fromCtx)
         }
         // After a merge both sides hold the result. After an update main is
         // untouched, so main's content is what the branch last agreed with.
@@ -527,10 +343,6 @@ export async function applyBranchMerge(db: DbClient, input: ApplyMergeInput): Pr
   })
   if (isMainScope(into)) await emitContentEvents(db, intoNotices, input.actorUserId)
   return { plan, merge }
-}
-
-function baseKey(kind: BranchEntityKind, logicalId: string): string {
-  return `${kind}\n${logicalId}`
 }
 
 function contentHashOrNull(content: unknown | null): string | null {
@@ -588,6 +400,8 @@ export async function undoBranchMerge(db: DbClient, input: UndoMergeInput): Prom
     const fromNow = mirrorOntoFrom ? await collectBranchEntities(db, from) : null
     const intoNotices: WriteNotices = { rows: [], shell: false }
     const fromNotices: WriteNotices = { rows: [], shell: false }
+    const intoCtx: WriteContext = { actorUserId: input.actorUserId, notices: intoNotices }
+    const fromCtx: WriteContext = { actorUserId: input.actorUserId, notices: fromNotices }
     let restored = 0
     await db.transaction(async (tx) => {
       const bases: BranchBase[] = []
@@ -596,16 +410,15 @@ export async function undoBranchMerge(db: DbClient, input: UndoMergeInput): Prom
       // it created them in (a table with rows refuses to be deleted), and a
       // table an apply deleted comes back before its rows do.
       for (const entry of [...entries].reverse()) {
-        const work: Work = { change: entry.change, ours: undefined, theirs: undefined, result: null }
         const intoBefore = entry.intoBefore ?? null
         if (contentHashOrNull(intoBefore) !== entry.resultHash) {
-          await writeEntity(tx, into, work, intoBefore, input.actorUserId, intoNotices)
+          await writeEntity(tx, into, entry.change, intoBefore, intoCtx)
           restored += 1
         }
         if (fromNow && entityHash(fromNow.get(entry.change.key)) === entry.resultHash) {
           const fromBefore = entry.fromBefore ?? null
           if (contentHashOrNull(fromBefore) !== entry.resultHash) {
-            await writeEntity(tx, from, work, fromBefore, input.actorUserId, fromNotices)
+            await writeEntity(tx, from, entry.change, fromBefore, fromCtx)
           }
         }
         const { kind, logicalId } = entry.change

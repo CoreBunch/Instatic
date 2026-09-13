@@ -14,7 +14,7 @@ import { MAIN_BRANCH_ID, physicalId } from '@core/branches'
 import type { DbClient } from '../../../db/client'
 import type { BranchScope } from '../../../branches/scope'
 import type { DataRow } from '@core/data/schemas'
-import { isoDate } from '@core/utils/isoDate'
+import { isoDate, nowIso } from '@core/utils/isoDate'
 import { getDataRow } from './read'
 
 /**
@@ -49,7 +49,7 @@ export async function scheduleDataRowPublish(
         published_at = null,
         published_by_user_id = null,
         updated_by_user_id = ${actorUserId},
-        updated_at = current_timestamp
+        updated_at = ${nowIso()}
     where id = ${physicalId(scope.branchId, rowId)}
       and branch_id = ${scope.branchId}
       and deleted_at is null
@@ -75,7 +75,7 @@ export async function cancelScheduledPublish(
     set status = 'draft',
         scheduled_publish_at = null,
         updated_by_user_id = ${actorUserId},
-        updated_at = current_timestamp
+        updated_at = ${nowIso()}
     where id = ${physicalId(scope.branchId, rowId)}
       and branch_id = ${scope.branchId}
       and deleted_at is null

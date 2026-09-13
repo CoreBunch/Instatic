@@ -1353,4 +1353,10 @@ export const pgMigrations: Migration[] = [
         on site_branch_merges (branch_id, created_at desc);
     `,
   },
+  {
+    // SQLite-only data migration (see migrations-sqlite.ts): `timestamptz`
+    // columns already hold real timestamps, so there is nothing to rewrite.
+    id: '030_iso_timestamps',
+    sql: 'select 1',
+  },
 ]

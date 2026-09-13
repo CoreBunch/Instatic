@@ -1,5 +1,6 @@
 import { MAIN_BRANCH_ID } from '@core/branches'
 import type { DbClient } from '../db/client'
+import { nowIso } from '@core/utils/isoDate'
 
 interface SetupStatus {
   hasSite: boolean
@@ -71,6 +72,6 @@ export async function createSite(
     on conflict (id) do update
       set name = excluded.name,
           settings_json = excluded.settings_json,
-          updated_at = current_timestamp
+          updated_at = ${nowIso()}
   `
 }

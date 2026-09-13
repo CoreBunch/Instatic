@@ -32,7 +32,7 @@ import { normalizeRouteBase } from '@core/templates/templateMatching'
 import { readFeaturedMediaCell } from '@core/data/cells'
 import { getDataRow } from './rows'
 import { nextDataRowVersionNumber } from './versions'
-import { isoDate } from '@core/utils/isoDate'
+import { isoDate, nowIso } from '@core/utils/isoDate'
 
 // ---------------------------------------------------------------------------
 // Internal row shapes
@@ -166,14 +166,15 @@ export async function persistDataRowPublish(
       )
     `
 
+    const now = nowIso()
     const { rows: updateRows } = await tx<{ id: string }>`
       update data_rows
       set status = 'published',
           active_version_id = ${versionId},
           published_by_user_id = ${publisherUserId},
-          published_at = current_timestamp,
+          published_at = ${now},
           updated_by_user_id = ${publisherUserId},
-          updated_at = current_timestamp
+          updated_at = ${now}
       where id = ${row.id}
         and deleted_at is null
       returning id
