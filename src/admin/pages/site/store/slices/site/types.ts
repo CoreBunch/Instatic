@@ -12,6 +12,7 @@ import type { FrameworkColorToken, FrameworkColorUtilityType, FrameworkPreferenc
 import type {
   DecorativeSiteExplorerSectionId,
   DynamicPropBinding,
+  VisibilityCondition,
   ExplorerPathChangePlan,
   Page,
   PageNode,
@@ -232,6 +233,8 @@ export interface SiteSlice {
    */
   wrapNodes: (nodeIds: string[], containerModuleId: string, defaults?: Record<string, unknown>) => string | null
   setNodeDynamicBinding: (nodeId: string, propKey: string, binding: DynamicPropBinding) => void
+  /** Set or clear the per-render visibility condition; `undefined` clears it. */
+  setNodeVisibleWhen: (nodeId: string, condition: VisibilityCondition | undefined) => void
   clearNodeDynamicBinding: (nodeId: string, propKey: string) => void
 
   // Breakpoint mutations

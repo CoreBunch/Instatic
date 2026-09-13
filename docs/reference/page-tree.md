@@ -55,6 +55,7 @@ export const BaseNodeSchema = Type.Object({
   label:               Type.Optional(Type.String()),
   locked:              Type.Optional(Type.Boolean()),
   hidden:              Type.Optional(Type.Boolean()),
+  visibleWhen:         Type.Optional(VisibilityConditionSchema),  // per-render visibility; see below
   classIds:            withFallback(Type.Array(Type.String()), []),
   inlineStyles:        Type.Optional(Type.Record(Type.String(), Type.Unknown())),
   // ... propBindings, etc.
@@ -73,6 +74,32 @@ The rules:
 - **Optional at the schema level** so persisted data predating the field and transient detached nodes still validate. The runtime invariant guarantees full population for any tree that has entered the system, so `getParent` reads the pointer directly with no scan fallback.
 
 `inlineStyles` is the per-node **inline-style layer**: a camelCase CSS bag (same shape as a `StyleRule`'s `styles`) that the publisher emits as a literal `style="…"` attribute on the node's root element (or on `<body>` for the root `base.body` node). It is independent of `classIds` (a node can have both) and is **base-only** — like a real HTML `style=""` attribute it cannot be breakpoint- or condition-scoped. Values are sanitised at the publish boundary by `bagToInlineStyle` → `sanitiseCssValue`. Edited via the Properties panel's "Style inline" mode (store actions `setNodeInlineStyles` / `removeNodeInlineStyleProperty`); the HTML importer also writes it when it harvests an element's inline background image.
+
+#### `hidden` vs `visibleWhen`
+
+Two ways a node can be absent from the output, and they answer different questions.
+
+`hidden` is the author's own switch, flipped from the DOM panel. It is the same on every render.
+
+`visibleWhen` is evaluated **per render, against the data being rendered** — which is what a list with non-uniform rows needs. Two nodes sit in one card, a video player and a "Coming soon" caption, and exactly one belongs on any given row depending on whether that row's video field is filled. Without it the card is authored once, so every row gets a blank player or every row gets the caption. (Visual CMSs generally call this conditional visibility; sites migrating from one rely on it heavily.)
+
+```ts
+{ source: 'currentEntry', field: 'video', test: 'isSet' }
+```
+
+- **`source`** — the same set the prop bindings use (`currentEntry`, `parentEntry`, `page`, `site`, `route`), so inside a `base.loop` `currentEntry` is that iteration's row.
+- **`field`** — dotted paths work, exactly as in a binding (`author.name`).
+- **`test`** — `isSet` or `isNotSet`, and nothing else. Comparisons against a value would need an operand and a type model; every case met so far is "does this row have one".
+
+What counts as set (`isValueSet`): a non-blank string, a non-empty array or object, any number including `0`, and `true`. Absent, `null`, `""`, whitespace, `[]`, `{}` and `false` are unset — an unset checkbox reads as unset, which is what an author picking "is set" means.
+
+Three behaviours worth knowing:
+
+- **The publisher hides; the editor canvas does not.** This is the one place the two surfaces differ on purpose. The canvas is where the node gets edited, and one hidden because the preview row happens to have no video is one the author cannot click. The Properties panel states the rule in words instead.
+- **A malformed condition parses to `undefined`** and the node stays visible. The only safe direction — the alternative is silently erasing content that was rendering fine.
+- **A condition on a request-dependent source makes the node a Layer C hole** (dynamic-detection rule 2c). Whether the node renders at all now depends on that source, which is a stronger dependency than any prop binding: baking it would freeze one request's answer into the static artefact for every visitor.
+
+Set from the Properties panel's Attributes view, or with the `setNodeVisibleWhen` store action.
 
 `PageNode` (in `src/core/page-tree/pageNode.ts`) extends `BaseNode` with an optional `dynamicBindings` field for template data-binding. `VCNode` (in `src/core/visualComponents/schemas.ts`) is a direct re-export — `VCNode === BaseNode`.
 
@@ -117,6 +144,7 @@ All mutations live in `src/core/page-tree/mutations.ts`. They take a `NodeTree<P
 | `renameNode(tree, nodeId, label)`                                 | Set the user-facing `label`                                 |
 | `toggleNodeLocked(tree, nodeId)`                                  | Flip `locked`                                               |
 | `toggleNodeHidden(tree, nodeId)`                                  | Flip `hidden`                                               |
+| `setNodeVisibleWhen(tree, nodeId, condition \| undefined)`         | Set or clear the per-render visibility condition. Lives in its own module (`nodeVisibility.ts`) — `mutations.ts` is a size-capped module that may only shrink. |
 | `moveNode(tree, nodeId, newParentId, newIndex)`                   | Re-parent + re-order                                        |
 | `moveNodes(tree, nodeIds, newParentId, newIndex)`                 | Same, multi-select                                          |
 | `buildSubtreeNodeIdMap(rootNodeId, nodes)`                        | Build a `Map<oldId, newId>` for all nodes reachable from `rootNodeId`. Used by callers that need the id map before pasting (e.g. to remap scoped class `scope.nodeId`). |
