@@ -102,8 +102,8 @@ interface AssetPlanResult {
  * The four normalisers below (node props, CSS bags, raw CSS text, `@font-face`)
  * all funnel into `resolveAndRecord`, and all of them need the same four
  * things — so they take the resolver rather than passing the pieces around
- * individually. The two caches live here for the same reason: they are per
- * import, not per call.
+ * individually. The lookup indexes live here for the same reason: they are
+ * per import, not per call.
  */
 interface AssetResolver {
   fileMap: FileMap
@@ -112,6 +112,8 @@ interface AssetResolver {
   warnings: ImportWarning[]
   /** Lazily built by `normalizedIndex` — see the note there. */
   byNormalizedPath?: ReadonlyMap<string, string | null>
+  /** Lazily built by `suffixIndex` — see the note there. */
+  bySuffixPath?: ReadonlyMap<string, string | null>
   /** One `unresolved-asset` warning per path, however many pages reference it. */
   reportedMissing: Set<string>
 }
@@ -588,23 +590,22 @@ function resolveAndRecord(rawUrl: string, basePath: string, resolver: AssetResol
  * Turn a resolved archive path into the FileMap key that actually holds the
  * bytes, and report the ones that hold nothing.
  *
- * An exact hit is the normal case. The fallback exists because exporters do
- * not always agree with themselves about filenames: a file stored as
- * `101-&Berlin-Office-Us+ Coworking.webp` gets referenced from the HTML as
- * `101-Berlin-Office-Us-Coworking.webp`, and the page imports with a broken
- * image through no fault of the archive's owner. Comparing punctuation-
- * insensitively reunites the two.
+ * Exporters do not always agree with themselves about filenames or archive
+ * roots. Punctuation-insensitive matching rejoins filename variants, while a
+ * unique path suffix finds files stored below an extra archive directory.
  *
- * The match must be UNIQUE. Two files that differ only in punctuation are two
- * different files, and picking one would silently put the wrong image on the
- * page — a worse outcome than the broken reference we started with. Ambiguity
- * and genuine absence both fall through to the same warning.
+ * A fallback match must be UNIQUE. Picking between equivalent candidates would
+ * silently put the wrong image on the page. Ambiguity and genuine absence both
+ * fall through to the same warning.
  */
 function resolveFileMapKey(resolvedPath: string, resolver: AssetResolver): string | null {
   if (resolver.fileMap.files[resolvedPath]) return resolvedPath
 
   const match = normalizedIndex(resolver).get(normalizeAssetPath(resolvedPath))
   if (match) return match
+
+  const suffixMatch = suffixIndex(resolver).get(resolvedPath)
+  if (suffixMatch) return suffixMatch
 
   // Only media references are worth reporting. Anchors point at pages and
   // extensionless routes that legitimately live outside the archive, and a
@@ -636,6 +637,26 @@ function normalizedIndex(resolver: AssetResolver): ReadonlyMap<string, string | 
     index.set(key, index.has(key) ? null : filePath)
   }
   resolver.byNormalizedPath = index
+  return index
+}
+
+/**
+ * Index FileMap keys by path-segment suffix. Shared suffixes map to `null`, and
+ * lazy construction avoids a full FileMap scan for every lookup.
+ */
+function suffixIndex(resolver: AssetResolver): ReadonlyMap<string, string | null> {
+  if (resolver.bySuffixPath) return resolver.bySuffixPath
+
+  const index = new Map<string, string | null>()
+  for (const filePath of Object.keys(resolver.fileMap.files)) {
+    let separatorIndex = filePath.indexOf('/')
+    while (separatorIndex !== -1) {
+      const suffix = filePath.slice(separatorIndex + 1)
+      index.set(suffix, index.has(suffix) ? null : filePath)
+      separatorIndex = filePath.indexOf('/', separatorIndex + 1)
+    }
+  }
+  resolver.bySuffixPath = index
   return index
 }
 
@@ -674,4 +695,3 @@ function replaceRawUrlInValue(value: string, rawUrl: string, fileMapKey: string)
   const re = new RegExp(`url\\(\\s*(['"]?)${escaped}\\1\\s*\\)`, 'g')
   return value.replace(re, `url('${fileMapKey}')`)
 }
-
