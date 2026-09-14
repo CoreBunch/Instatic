@@ -1,4 +1,4 @@
-export type ProviderId = 'anthropic' | 'openai' | 'openrouter' | 'ollama' | 'openai-compatible'
+export type ProviderId = 'anthropic' | 'openai' | 'minimax' | 'openrouter' | 'ollama' | 'openai-compatible'
 export type ProviderAuthMode = 'apiKey' | 'baseUrl'
 
 export interface ProviderSpec {
@@ -8,6 +8,8 @@ export interface ProviderSpec {
   description: string
   authMode: ProviderAuthMode
   endpointLabel: string
+  requiresApiKey?: boolean
+  baseUrlOptions?: readonly { value: string; label: string }[]
 }
 
 export const PROVIDER_SPECS: ProviderSpec[] = [
@@ -26,6 +28,21 @@ export const PROVIDER_SPECS: ProviderSpec[] = [
     description: 'General-purpose language and multimodal models from OpenAI.',
     authMode: 'apiKey',
     endpointLabel: 'api.openai.com',
+  },
+  {
+    id: 'minimax',
+    label: 'MiniMax',
+    shortLabel: 'M3 / M2.7',
+    description: 'MiniMax text models with the documented API endpoint.',
+    authMode: 'baseUrl',
+    endpointLabel: 'Global / China endpoints',
+    requiresApiKey: true,
+    baseUrlOptions: [
+      { value: 'https://api.minimax.io/v1', label: 'Global - OpenAI-compatible' },
+      { value: 'https://api.minimax.io/anthropic', label: 'Global - Anthropic-compatible' },
+      { value: 'https://api.minimaxi.com/v1', label: 'China - OpenAI-compatible' },
+      { value: 'https://api.minimaxi.com/anthropic', label: 'China - Anthropic-compatible' },
+    ],
   },
   {
     id: 'openrouter',
