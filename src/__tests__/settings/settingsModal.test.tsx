@@ -483,7 +483,7 @@ describe('SettingsModal — PreferencesSection toggles', () => {
     openModal('preferences')
     render(<SettingsModal />)
     const switches = screen.getAllByRole('switch')
-    expect(switches.length).toBe(11)
+    expect(switches.length).toBe(12)
   })
 
   it('Hover-preview toggle has aria-checked="true" by default', () => {

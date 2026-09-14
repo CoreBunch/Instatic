@@ -47,7 +47,7 @@ const PREFERENCE_CATEGORIES: ReadonlyArray<{
   {
     id: 'layers',
     label: 'Layers panel',
-    description: 'Control what is shown next to each row in the DOM tree.',
+    description: 'Control layer-row display and keyboard behavior.',
   },
   {
     id: 'properties',
@@ -246,6 +246,14 @@ export const PREFERENCE_CATALOG = [
     label: 'Smooth scroll to selected',
     description: 'Animate scrolling when the tree jumps to a newly selected layer. Turn off for instant snapping.',
     default: true,
+  },
+  {
+    id: 'layersArrowKeyReorder',
+    type: 'boolean',
+    category: 'layers',
+    label: 'Move layers with Arrow keys',
+    description: 'Use ArrowUp and ArrowDown to move the selected layer within its current parent. Off by default so the keys remain available for navigation.',
+    default: false,
   },
 
   // ── Properties panel ────────────────────────────────────────────────────
