@@ -339,4 +339,47 @@ describe('buildSiteCssBundle', () => {
     expect(before.framework.content).not.toContain('.bg-primary')
     expect(after.framework.content).toContain('.bg-primary')
   })
+
+  /**
+   * Cascade layering. Unlayered CSS outranks every cascade layer regardless of
+   * specificity or source order, so emitting the CMS baseline unlayered made it
+   * silently override any imported stylesheet that uses `@layer` — i.e. every
+   * Tailwind v4 build, whose whole output is layered. The imported CSS shipped
+   * intact but inert, and the site rendered with CMS tokens instead.
+   */
+  describe('cascade layers', () => {
+    it('declares the baseline layer order in reset, before either layer is used', () => {
+      const { reset } = buildSiteCssBundle(makeSite(), registry)
+      const order = reset.content.indexOf('@layer instatic-reset, instatic-framework;')
+      expect(order).toBe(0)
+      // The order statement must precede the block that populates the layer.
+      expect(order).toBeLessThan(reset.content.indexOf('@layer instatic-reset {'))
+    })
+
+    it('wraps reset and framework in the baseline layers', () => {
+      const site = makeSite()
+      site.pages = [makePage({ root: { moduleId: 'base.text', props: { text: 'Hi' } } })]
+
+      const { reset, framework } = buildSiteCssBundle(site, registry)
+      expect(reset.content).toContain('@layer instatic-reset {')
+      expect(framework.content).toContain('@layer instatic-framework {')
+      // Module CSS travels inside the framework bundle, so it is layered too.
+      expect(framework.content).toContain('h1 { color: black; }')
+    })
+
+    it('leaves author-authored class CSS unlayered so it still wins', () => {
+      // `style` carries Styles-panel and imported class rules — explicit
+      // authoring decisions that must outrank both the baseline and any
+      // imported sheet. Unlayered is what buys that.
+      const { style } = buildSiteCssBundle(makeSite(), registry)
+      expect(style.content).not.toContain('@layer')
+    })
+
+    it('keeps user stylesheets unwrapped so their own @layer rules survive', () => {
+      // A kept Tailwind sheet arrives already layered. Wrapping it again would
+      // nest its layers under ours and re-invert the very precedence we fixed.
+      const { userStyles } = buildSiteCssBundle(makeSite(), registry)
+      expect(userStyles.content).not.toContain('@layer instatic-')
+    })
+  })
 })

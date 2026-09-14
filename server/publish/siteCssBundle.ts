@@ -111,6 +111,38 @@ export function buildPublishedSiteCssBundle(
   }
 }
 
+/**
+ * Cascade layers for the CMS's own baseline CSS, lowest priority first.
+ *
+ * Unlayered CSS beats every cascade layer, regardless of specificity or source
+ * order. Emitting `reset` and `framework` unlayered therefore made them
+ * outrank any imported stylesheet that uses `@layer` — which is every Tailwind
+ * v4 build, whose entire output is wrapped in `@layer theme/base/utilities/…`.
+ * A site imported through the Site Import wizard rendered with the CMS's own
+ * tokens (`--primary`, font stack, layout defaults) silently overriding the
+ * imported design, while the imported CSS shipped intact but inert.
+ *
+ * Naming these layers puts the baseline below imported CSS. Order within the
+ * document follows first appearance, and `reset` is the first stylesheet on
+ * the page, so the declaration below fixes the order for both.
+ *
+ * Deliberately NOT layered: `style` (author-authored class CSS from the
+ * Styles panel + import). Those are explicit authoring decisions and stay
+ * unlayered so they keep winning over both the baseline and imported sheets.
+ */
+const BASELINE_LAYERS = { reset: 'instatic-reset', framework: 'instatic-framework' } as const
+
+/** `@layer a, b;` — fixes relative order before either layer is populated. */
+const BASELINE_LAYER_ORDER = `@layer ${BASELINE_LAYERS.reset}, ${BASELINE_LAYERS.framework};`
+
+/**
+ * Wrap a CSS body in a named cascade layer. Empty bodies still emit the block
+ * so the layer is registered in the document's layer order either way.
+ */
+function inCascadeLayer(layer: string, css: string): string {
+  return `@layer ${layer} {\n${css}\n}`
+}
+
 /** Build the three page-invariant bundle files from scratch. */
 function computePageInvariantBundles(
   site: SiteDocument,
@@ -118,8 +150,14 @@ function computePageInvariantBundles(
   options: ResponsiveCssOptions,
 ): PageInvariantBundles {
   return {
-    reset: makeBundleFile('reset', PUBLISHER_RESET_CSS),
-    framework: makeBundleFile('framework', buildFrameworkCss(site, registry)),
+    reset: makeBundleFile(
+      'reset',
+      `${BASELINE_LAYER_ORDER}\n${inCascadeLayer(BASELINE_LAYERS.reset, PUBLISHER_RESET_CSS)}`,
+    ),
+    framework: makeBundleFile(
+      'framework',
+      inCascadeLayer(BASELINE_LAYERS.framework, buildFrameworkCss(site, registry)),
+    ),
     style: makeBundleFile('style', collectClassCSS(site, options)),
   }
 }
