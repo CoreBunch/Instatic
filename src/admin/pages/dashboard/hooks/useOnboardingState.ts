@@ -7,8 +7,9 @@
  *   • Framework import — derived from `site.settings.framework` being
  *     populated. Defaults to `'active'` so the user is nudged to make a
  *     deliberate decision; once they pick a mode the step flips to done.
- *   • First page — done when ≥ 2 pages exist (the seed Home page
- *     doesn't count).
+ *   • New page — done when ≥ 2 pages exist. Setup seeds a Home page
+ *     nobody authored, so it does not count toward the step; the panel
+ *     labels this one "Create a new page" for that reason.
  *   • First plugin — done when any plugin is installed.
  *   • Team — done when more than the owner is in the users table.
  *
