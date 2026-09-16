@@ -1,7 +1,6 @@
 import type { EditorStoreSliceCreator } from '@site/store/types'
 import {
   INITIAL_ZOOM,
-  RESET_ZOOM,
   clampZoom,
   clampPan,
   nearestZoomStep,
@@ -99,7 +98,6 @@ interface CanvasSlice {
   toggleBreakpointCollapsed: (id: string) => void
   /** Mount or release the agent's one-shot offscreen snapshot frame. */
   setAgentSnapshotCaptureRequest: (request: AgentSnapshotCaptureRequest | null) => void
-  resetView: () => void
   /**
    * Step zoom up to the next preset level. When `originX`/`originY` are
    * provided (in viewport-space, relative to the canvas root), the pan is
@@ -166,8 +164,6 @@ export const createCanvasSlice: EditorStoreSliceCreator<CanvasSlice> = (set, get
   setAgentSnapshotCaptureRequest: (agentSnapshotCaptureRequest) => set({
     agentSnapshotCaptureRequest,
   }),
-
-  resetView: () => set({ zoom: RESET_ZOOM, panX: 0, panY: 0 }),
 
   zoomIn: (originX, originY) => {
     const { zoom, panX, panY, zoomTo } = get()

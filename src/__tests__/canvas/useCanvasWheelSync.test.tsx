@@ -72,6 +72,27 @@ afterEach(() => {
 })
 
 describe('useCanvas wheel pan sync', () => {
+  it('resets zoom around the visible canvas center without jumping to the page top', () => {
+    useEditorStore.setState({ zoom: 2, panX: -800, panY: -1200 })
+    render(<TestCanvas />)
+
+    const root = screen.getByTestId('test-canvas-root')
+    const layer = screen.getByTestId('test-transform-layer')
+    Object.defineProperty(root, 'getBoundingClientRect', {
+      configurable: true,
+      value: () => ({ width: 800, height: 600, top: 0, left: 0 }),
+    })
+
+    fireEvent.keyDown(document, { metaKey: true, key: '0' })
+
+    expect(useEditorStore.getState()).toMatchObject({
+      zoom: RESET_ZOOM,
+      panX: -200,
+      panY: -450,
+    })
+    expect(layer.style.transform).toBe('translate(-200px, -450px) scale(1)')
+  })
+
   it('maps shift-wheel mouse scrolling to horizontal canvas pan', async () => {
     render(<TestCanvas />)
 
