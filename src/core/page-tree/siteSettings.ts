@@ -30,6 +30,64 @@ import { FrameworkSettingsSchema } from '@core/framework-schema'
 import { SiteFontsSettingsSchema, parseSiteFontsSettings } from '@core/fonts'
 
 // ---------------------------------------------------------------------------
+// SiteCspSettings — site-level Content-Security-Policy allowlist
+//
+// The publisher's base policy locks `script-src` to `'self'`, which is right
+// for a static site but blocks every third-party tag a marketing site needs
+// (Google Analytics / Tag Manager loaders, the Meta pixel, chat widgets, …).
+// Plugins cannot lift this — `frontend.assets[]` is same-origin only and
+// `networkAllowedHosts` reaches `connect-src`, not `script-src`. This is the
+// one explicit, owner-controlled place to allow an external origin. Entries
+// are exact HTTPS origins (`https://host[:port]`, optionally `https://*.host`)
+// — never a scheme wildcard, never `'unsafe-inline'`, never a path — so the
+// policy stays a real allowlist.
+// ---------------------------------------------------------------------------
+
+/**
+ * One CSP host source: `https://` + host (optionally a `*.` wildcard label)
+ * + optional port. No path, query, credentials, or trailing slash — CSP
+ * ignores everything after the host anyway, so accepting it would only hide
+ * typos.
+ */
+export const CSP_ORIGIN_PATTERN =
+  '^https://(?:\\*\\.)?[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?(?:\\.[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?)+(?::[0-9]{1,5})?$'
+
+const CSP_ORIGIN_RE = new RegExp(CSP_ORIGIN_PATTERN)
+
+/** True when `value` is a CSP host source the allowlist accepts. */
+export function isCspOrigin(value: string): boolean {
+  return CSP_ORIGIN_RE.test(value)
+}
+
+const CspOriginSchema = Type.String({ pattern: CSP_ORIGIN_PATTERN })
+
+export const SiteCspSettingsSchema = Type.Object({
+  /** Origins merged into the published page's `script-src` (third-party loaders). */
+  scriptOrigins: Type.Array(CspOriginSchema),
+  /** Origins merged into `connect-src` (where those scripts send beacons / fetch). */
+  connectOrigins: Type.Array(CspOriginSchema),
+})
+
+export type SiteCspSettings = Static<typeof SiteCspSettingsSchema>
+
+/**
+ * Normalize a raw origin list: trim, drop blanks and anything that is not a
+ * valid CSP host source, de-duplicate, keep first-seen order. Used by the
+ * tolerant settings parser and by the Settings UI when it commits a textarea.
+ */
+export function parseCspOriginList(raw: unknown): string[] {
+  if (!Array.isArray(raw)) return []
+  const out: string[] = []
+  for (const entry of raw) {
+    if (typeof entry !== 'string') continue
+    const trimmed = entry.trim()
+    if (!trimmed || !isCspOrigin(trimmed) || out.includes(trimmed)) continue
+    out.push(trimmed)
+  }
+  return out
+}
+
+// ---------------------------------------------------------------------------
 // SiteSettingsSchema
 // ---------------------------------------------------------------------------
 
@@ -42,6 +100,8 @@ export const SiteSettingsSchema = Type.Object({
   framework: Type.Optional(FrameworkSettingsSchema),
   /** Library of installed fonts — absent when no fonts added. */
   fonts: Type.Optional(SiteFontsSettingsSchema),
+  /** Third-party origins allowed by the published-page CSP — absent when none. */
+  csp: Type.Optional(SiteCspSettingsSchema),
   /** Keyboard shortcut overrides — defaults to {} — handled in parseSiteSettings. */
   shortcuts: Type.Record(Type.String(), Type.String()),
 })
@@ -86,6 +146,8 @@ export function parseSiteSettings(raw: unknown): SiteSettings {
 
   const fonts = r.fonts != null ? parseSiteFontsSettings(r.fonts) : undefined
 
+  const csp = parseSiteCspSettings(r.csp)
+
   return {
     ...(typeof r.metaTitle === 'string' ? { metaTitle: r.metaTitle } : {}),
     ...(typeof r.metaDescription === 'string' ? { metaDescription: r.metaDescription } : {}),
@@ -93,6 +155,21 @@ export function parseSiteSettings(raw: unknown): SiteSettings {
     ...(typeof r.language === 'string' ? { language: r.language } : {}),
     framework,
     fonts,
+    ...(csp ? { csp } : {}),
     shortcuts,
   }
+}
+
+/**
+ * Tolerant parse of `settings.csp`: invalid entries are dropped rather than
+ * failing the whole settings object, and an allowlist with nothing left in it
+ * collapses to `undefined` so an empty object never persists.
+ */
+function parseSiteCspSettings(raw: unknown): SiteCspSettings | undefined {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return undefined
+  const r = raw as Record<string, unknown>
+  const scriptOrigins = parseCspOriginList(r.scriptOrigins)
+  const connectOrigins = parseCspOriginList(r.connectOrigins)
+  if (scriptOrigins.length === 0 && connectOrigins.length === 0) return undefined
+  return { scriptOrigins, connectOrigins }
 }

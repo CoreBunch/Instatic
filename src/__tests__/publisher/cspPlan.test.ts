@@ -26,6 +26,7 @@ import {
 } from '../../../server/publish/frontendInjections'
 import { VideoModule } from '@modules/base/video'
 import { makeModule, makeRegistry, makePage, makeSite } from './helpers'
+import { DEFAULT_SITE_SETTINGS } from '@core/page-tree'
 
 describe('CspPlan — serialization is deterministic and sorted', () => {
   it('sorts directives by name and sources within each directive', () => {
@@ -259,5 +260,73 @@ describe('publishPage — CSP frame-src from module cspSources', () => {
     const { html } = publishPage(page, makeSite(), reg)
     const csp = extractPublishedCsp(html)
     expect(csp).toContain('https://www.youtube-nocookie.com')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// publishPage — site-level CSP allowlist (`settings.csp`)
+//
+// The base policy locks `script-src` to `'self'`, which blocks every
+// third-party tag (GA / GTM loaders, the Meta pixel). Plugins cannot lift it:
+// `frontend.assets[]` is same-origin only and `networkAllowedHosts` reaches
+// `connect-src`, not `script-src`. The owner's explicit allowlist is the one
+// sanctioned way through, and it must survive the downstream plugin pass.
+// ---------------------------------------------------------------------------
+
+const ANALYTICS_CSP = {
+  scriptOrigins: ['https://www.googletagmanager.com', 'https://connect.facebook.net'],
+  connectOrigins: ['https://www.google-analytics.com', 'https://*.google-analytics.com'],
+}
+
+function siteWithCsp(csp: typeof ANALYTICS_CSP | undefined) {
+  return makeSite({
+    settings: { ...structuredClone(DEFAULT_SITE_SETTINGS), ...(csp ? { csp } : {}) },
+  })
+}
+
+describe('publishPage — CSP allowlist from settings.csp', () => {
+  const plainPage = () => makePage({ root: { moduleId: 'test.plain', props: {} } })
+  const reg = () => makeRegistry({ 'test.plain': makeModule('test.plain') })
+
+  it('unions allowlisted script origins into script-src', () => {
+    const { html } = publishPage(plainPage(), siteWithCsp(ANALYTICS_CSP), reg())
+    const csp = extractPublishedCsp(html)
+    expect(csp).toContain('script-src https://connect.facebook.net https://www.googletagmanager.com;')
+    expect(csp).not.toContain("script-src 'none'")
+  })
+
+  it("adds connect-src with 'self' so same-origin fetches keep working", () => {
+    const { html } = publishPage(plainPage(), siteWithCsp(ANALYTICS_CSP), reg())
+    const csp = extractPublishedCsp(html)
+    expect(csp).toContain(
+      "connect-src 'self' https://*.google-analytics.com https://www.google-analytics.com;",
+    )
+  })
+
+  it('leaves the policy untouched when no allowlist is set', () => {
+    const { html } = publishPage(plainPage(), siteWithCsp(undefined), reg())
+    const csp = extractPublishedCsp(html)
+    expect(csp).toContain("script-src 'none'")
+    expect(csp).not.toContain('connect-src')
+  })
+
+  it('survives the plugin relaxation pass (plugin tracker must not strip the allowlist)', () => {
+    const { html } = publishPage(plainPage(), siteWithCsp(ANALYTICS_CSP), reg())
+    const out = injectFrontendAssets(
+      html,
+      planWith({
+        hasExternalScript: true,
+        tags: {
+          head: [],
+          'head-end': [],
+          'body-start': [],
+          'body-end': ['<script src="/uploads/plugins/acme/1.0.0/t.js" defer></script>'],
+        },
+      }),
+    )
+    const csp = extractPublishedCsp(out)
+    expect(csp).toContain(
+      "script-src 'self' https://connect.facebook.net https://www.googletagmanager.com;",
+    )
   })
 })

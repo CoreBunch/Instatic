@@ -55,7 +55,7 @@ export type {
   StyleRuleOrigin,
 } from './styleRule'
 export type { Condition, ConditionDef } from './condition'
-export type { SiteSettings } from './siteSettings'
+export type { SiteSettings, SiteCspSettings } from './siteSettings'
 export type { SiteShell, SiteDocument } from './siteDocument'
 export type {
   DecorativeSiteExplorerSectionId,
@@ -69,7 +69,14 @@ export type {
 
 // Defaults
 export { DEFAULT_BREAKPOINTS, breakpointMediaQuery, defaultBreakpointMediaQuery } from './breakpoint'
-export { DEFAULT_SITE_SETTINGS } from './siteSettings'
+export {
+  DEFAULT_SITE_SETTINGS,
+  SiteCspSettingsSchema,
+  CSP_ORIGIN_PATTERN,
+  isCspOrigin,
+  parseCspOriginList,
+  parseSiteSettings,
+} from './siteSettings'
 
 // Condition helpers
 export { conditionId, conditionLabel, makeConditionDef, parseConditions } from './condition'

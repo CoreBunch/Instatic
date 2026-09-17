@@ -20,7 +20,9 @@
  *        - inline style  → `style-src`  gets `'unsafe-inline'`
  *        - external script/style: no relaxation needed (same-origin / allowlisted)
  *        - plugin-declared `networkAllowedHosts` → appended to `connect-src`
- *      Pure-meta plans get no CSP changes.
+ *      Pure-meta plans get no CSP changes. Every relaxation is a union into
+ *      the publisher's plan, so sources it already emitted (importmap hash,
+ *      the site's `settings.csp` allowlist) survive.
  *
  * Pure data assembly — no DOM, no fetch. Called from a single place at the
  * dispatcher (`server/router.ts → tryServePublishedPage / tryServeContentRoute`),
@@ -383,8 +385,13 @@ function relaxCspForPlan(html: string, plan: FrontendInjections, hasTags: boolea
       //     adds `'unsafe-inline'` on top
       //   • Worker spawn from any plugin script → relax `worker-src`
       //     to `'self' blob:`
+      //
+      // These are UNIONS, not replacements: the publisher may already have
+      // put the importmap `sha256-…` hash and the site's own allowlisted
+      // third-party origins (`settings.csp.scriptOrigins`) into `script-src`,
+      // and a plugin shipping a tracker must not silently strip them.
       if (plan.hasExternalScript || plan.hasInlineScript) {
-        setCspDirective(
+        addCspSources(
           csp,
           'script-src',
           plan.hasInlineScript ? ["'self'", "'unsafe-inline'"] : ["'self'"],
@@ -394,7 +401,7 @@ function relaxCspForPlan(html: string, plan: FrontendInjections, hasTags: boolea
 
       // Style: relax to `'unsafe-inline'` only when an inline style is present.
       if (plan.hasInlineStyle) {
-        setCspDirective(csp, 'style-src', ["'self'", "'unsafe-inline'"])
+        addCspSources(csp, 'style-src', ["'self'", "'unsafe-inline'"])
       }
 
       // Connect: union per-plugin `networkAllowedHosts`, plus the standard
