@@ -374,12 +374,21 @@ On success the same step switches to its **complete** state — a success mark, 
 | `invalid-rule` | A CSS rule caused `replaceSync` to throw (sheet-level parse error) |
 | `blocked-property` | A CSS property name is on the security denylist (`behavior`, `-moz-binding`, …) — declaration dropped |
 | `duplicate-class` | Two `.foo {}` rules in the same file; later declarations win |
-| `missing-stylesheet` | A `<link rel="stylesheet">` href was not found in the FileMap |
+| `missing-stylesheet` | A `<link rel="stylesheet">` href was not found in the FileMap (a cache-busting `?v=…` query is stripped before the lookup, so it is not a cause) |
 | `asset-upload-failed` | An individual asset upload was rejected by the server; the original FileMap path remains in the import |
 | `asset-folder-failed` | The asset uploaded and its URL was rewritten, but filing it under the folder mirroring its bundle path failed; it sits at the media root |
 | `script-order-conflict` | Two pages link the same scripts in contradictory orders; the order from the page that links them first wins |
 | `external-font` | An `@font-face` with no bundled file (all `src` entries are external URLs) — skipped |
 | `unresolved-asset` | An HTML/CSS reference to a media file the archive does not contain under that path — one warning per distinct path |
+
+### Cache-busted URLs
+
+Reference resolution strips any query string or fragment before looking a path up in the FileMap:
+`assets/site.css?v=8f3a1c` and `assets/site.css` address the same file. This applies to
+`<link rel="stylesheet">`, `<script src>`, CSS `@import`, CSS `url()`, and node `src` / `href` / `srcset` —
+static site generators commonly emit a content hash on all of them.
+
+The original URL is preserved for the in-place CSS rewrite; only the lookup is affected.
 
 The import log shows the first 12 warnings, ordered so the kinds that name a
 missing file come first and the CSS interpretation notes last
