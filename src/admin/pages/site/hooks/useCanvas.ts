@@ -31,6 +31,7 @@ import {
   RESET_ZOOM,
 } from '@site/canvas/math'
 import { panToCenterBreakpointFrame } from '@site/canvas/canvasDomGeometry'
+import { CANVAS_RESET_ZOOM_EVENT } from '@site/canvas/canvasEvents'
 import {
   CANVAS_DRAG_PAN_BUTTONS,
   isCanvasPointerPanActive,
@@ -317,6 +318,20 @@ export function useCanvas({ canvasRootRef, transformLayerRef, enabled }: UseCanv
       document.removeEventListener('keyup', onKeyUp)
     }
   }, [])
+
+  // The toolbar lives outside CanvasRoot, so it routes reset requests through
+  // this hook. Keeping the request here ensures the live transform ref and
+  // its pending debounced store commit are handled as one operation.
+  useEffect(() => {
+    function onResetZoom() {
+      if (enabled) resetCanvasZoom()
+    }
+
+    document.addEventListener(CANVAS_RESET_ZOOM_EVENT, onResetZoom)
+    return () => {
+      document.removeEventListener(CANVAS_RESET_ZOOM_EVENT, onResetZoom)
+    }
+  }, [enabled, resetCanvasZoom])
 
   // ─── Browser-style reset shortcut ─────────────────────────────────────────
 

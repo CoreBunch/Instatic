@@ -22,7 +22,7 @@
  */
 
 import { useEditorStore } from '@site/store/store'
-import { RESET_ZOOM } from '@site/canvas/math'
+import { CANVAS_RESET_ZOOM_EVENT } from '@site/canvas/canvasEvents'
 import { MinusIcon } from 'pixel-art-icons/icons/minus'
 import { PlusIcon } from 'pixel-art-icons/icons/plus'
 import { Button } from '@ui/components/Button'
@@ -52,8 +52,6 @@ export function ZoomControls() {
   const isLive = useEditorStore((s) => s.canvasView === 'live')
   const zoomIn = useEditorStore((s) => s.zoomIn)
   const zoomOut = useEditorStore((s) => s.zoomOut)
-  const setZoom = useEditorStore((s) => s.setZoom)
-  const zoomTo = useEditorStore((s) => s.zoomTo)
 
   const handleZoomIn = () => {
     const center = getCanvasCenter()
@@ -68,9 +66,7 @@ export function ZoomControls() {
   }
 
   const handleResetZoom = () => {
-    const center = getCanvasCenter()
-    if (center) zoomTo(RESET_ZOOM, center.x, center.y)
-    else setZoom(RESET_ZOOM)
+    document.dispatchEvent(new Event(CANVAS_RESET_ZOOM_EVENT))
   }
 
   // The live frame renders real-size regardless of the stored design-canvas
