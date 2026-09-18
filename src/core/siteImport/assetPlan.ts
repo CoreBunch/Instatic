@@ -126,7 +126,7 @@ const FONT_FORMAT_RANK: Record<FontFileFormat, number> = {
 
 /** Map a FileMap key's extension to a font format, or null if not a font. */
 function fontFormatForPath(path: string): FontFileFormat | null {
-  const lower = path.split('?')[0].toLowerCase()
+  const lower = path.toLowerCase()
   if (lower.endsWith('.woff2')) return 'woff2'
   if (lower.endsWith('.woff')) return 'woff'
   if (lower.endsWith('.ttf')) return 'ttf'
