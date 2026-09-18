@@ -182,6 +182,53 @@ export function splitCssSelectorList(selector: string): string[] {
   return parts
 }
 
+const COMBINATOR_CHARS = new Set([' ', '\t', '\n', '\f', '\r', '>', '+', '~'])
+
+/**
+ * The subject compound of a single selector part — everything after the last
+ * top-level combinator. Combinators inside attribute selectors, functional
+ * pseudos, and quoted strings do not split the selector.
+ */
+function subjectCompound(part: string): string {
+  let quote: '"' | "'" | null = null
+  let bracketDepth = 0
+  let parenDepth = 0
+  let subjectStart = 0
+
+  for (let index = 0; index < part.length; index += 1) {
+    const char = part[index]
+    if (quote) {
+      if (char === '\\') index += 1
+      else if (char === quote) quote = null
+      continue
+    }
+    if (char === '"' || char === "'") {
+      quote = char
+      continue
+    }
+    if (char === '\\') {
+      index += 1
+      continue
+    }
+    if (char === '[') bracketDepth += 1
+    else if (char === ']') bracketDepth = Math.max(0, bracketDepth - 1)
+    else if (char === '(') parenDepth += 1
+    else if (char === ')') parenDepth = Math.max(0, parenDepth - 1)
+    else if (bracketDepth === 0 && parenDepth === 0 && COMBINATOR_CHARS.has(char)) {
+      subjectStart = index + 1
+    }
+  }
+
+  return part.slice(subjectStart)
+}
+
+/** Count the class tokens a compound binds directly (ignoring `:not()` / `:is()` interiors). */
+function subjectClassCount(part: string): number {
+  return extractCssSelectorClasses(subjectCompound(part)).filter(
+    (token) => token.functionalDepth === 0,
+  ).length
+}
+
 /**
  * The class token a selector rule should expose in the class picker.
  *
@@ -190,10 +237,18 @@ export function splitCssSelectorList(selector: string): string[] {
  * the same subject class, the whole list is bindable to that one class.
  * Callers normally split lists first, but the all-equal behavior keeps this
  * helper safe for hand-authored selector lists too.
+ *
+ * A subject compound stacking two or more classes (`.drawer.is-open`) has no
+ * unambiguous binding: either token could be the one authored onto the node,
+ * and the other commonly arrives at runtime (a state class toggled by a
+ * script). Returning null classifies the rule as ambient, so it emits whenever
+ * its class dependencies can match instead of requiring a node assignment that
+ * a runtime-only class can never provide.
  */
 export function selectorBindingClassName(selector: string): string | null {
   let binding: string | null = null
   for (const part of splitCssSelectorList(selector)) {
+    if (subjectClassCount(part) > 1) return null
     const tokens = extractCssSelectorClasses(part).filter(
       (token) => token.functionalDepth === 0,
     )
