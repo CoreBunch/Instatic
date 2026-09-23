@@ -25,6 +25,7 @@ import type { PluginPermission } from './permissions'
 import type { ServerPluginRouteHandler } from './routes'
 import type { ServerPluginScheduleApi } from './schedule'
 import type { ServerPluginSettingsApi } from './settings'
+import type { PluginMailSendInput } from '../mailSchemas'
 
 // ---------------------------------------------------------------------------
 // ServerPluginApi — full API surface available to server entrypoints
@@ -107,6 +108,10 @@ export interface ServerPluginApi {
      * boundary. Emits the `settings.changed` event when values change.
      */
     settings: ServerPluginSettingsApi
+    /** Send through host-managed SMTP; requires `cms.mail.send`. */
+    mail: {
+      send: (input: PluginMailSendInput) => Promise<{ messageId: string }>
+    }
     storage: {
       collection: (resourceId: string) => {
         list: (options?: StorageListOptions) => Promise<StorageListResult>

@@ -86,6 +86,8 @@ export interface PluginManifest {
    * permission is granted — fail-closed defense.
    */
   networkAllowedHosts?: string[]
+  /** SMTP hosts this plugin may connect to through `api.cms.mail.send`. */
+  smtpAllowedHosts?: string[]
   /**
    * Per-table allowlist for the `api.cms.content.*` surface. Required when
    * ANY of the `cms.content.*` permissions are granted. The install consent

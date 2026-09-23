@@ -7,6 +7,17 @@ import {
 } from '@core/plugins/manifest'
 
 describe('plugin manifest validation', () => {
+  it('requires an SMTP host allowlist for the mail permission', () => {
+    const base = {
+      id: 'acme.mail', name: 'Mail', version: '1.0.0', apiVersion: 1,
+      permissions: ['cms.mail.send'],
+    }
+    expect(() => parsePluginManifest(base)).toThrow('smtpAllowedHosts')
+    expect(() => parsePluginManifest({ ...base, smtpAllowedHosts: ['127.0.0.1'] }))
+      .toThrow('public hostname')
+    expect(parsePluginManifest({ ...base, smtpAllowedHosts: ['mail.example.com'] }).smtpAllowedHosts)
+      .toEqual(['mail.example.com'])
+  })
   it('accepts a declarative admin-page plugin manifest', () => {
     const manifest = parsePluginManifest({
       id: 'local.map',

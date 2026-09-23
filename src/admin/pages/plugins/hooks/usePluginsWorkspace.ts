@@ -61,6 +61,7 @@ interface PendingInstall {
    * value so an upgrade adding new external hosts shows them as "New".
    */
   previousNetworkAllowedHosts?: string[]
+  previousSmtpAllowedHosts?: string[]
 }
 
 /**
@@ -317,6 +318,7 @@ export function usePluginsWorkspace(): PluginsWorkspaceVM {
         ? existing.grantedPermissions
         : undefined
       const previousNetworkAllowedHosts = existing?.manifest.networkAllowedHosts
+      const previousSmtpAllowedHosts = existing?.manifest.smtpAllowedHosts
 
       // EVERY install and upgrade goes through the review dialog — including
       // a zero-permission declarative plugin, which renders "No permissions
@@ -329,6 +331,9 @@ export function usePluginsWorkspace(): PluginsWorkspaceVM {
         previouslyGrantedPermissions,
         ...(previousNetworkAllowedHosts !== undefined
           ? { previousNetworkAllowedHosts }
+          : {}),
+        ...(previousSmtpAllowedHosts !== undefined
+          ? { previousSmtpAllowedHosts }
           : {}),
       })
     } catch (err) {

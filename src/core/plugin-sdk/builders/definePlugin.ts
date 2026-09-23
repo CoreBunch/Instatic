@@ -75,6 +75,8 @@ export interface DefinePluginConfig {
    * `docs/features/plugin-system.md` for full semantics.
    */
   networkAllowedHosts?: string[]
+  /** Allowed SMTP hosts when requesting `cms.mail.send`. */
+  smtpAllowedHosts?: string[]
 
   /**
    * Resources declared by the plugin (used by `cms.storage`). The host
@@ -183,6 +185,9 @@ export function definePlugin(config: DefinePluginConfig): PluginDefinition {
     ...(config.description !== undefined ? { description: config.description } : {}),
     ...(config.networkAllowedHosts
       ? { networkAllowedHosts: [...config.networkAllowedHosts] }
+      : {}),
+    ...(config.smtpAllowedHosts
+      ? { smtpAllowedHosts: [...config.smtpAllowedHosts] }
       : {}),
     ...(config.contentAccess
       ? { contentAccess: config.contentAccess.map((entry) => ({ ...entry, modes: [...entry.modes] })) }

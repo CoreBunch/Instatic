@@ -650,6 +650,12 @@ The settings form round-trips the mask: a PUT where a secret field still carries
 
 **Master-key rotation.** If `INSTATIC_SECRET_KEY` changes, stored plugin secrets can no longer be decrypted. The host does not crash plugin load — the worker simply sees those fields empty, and the server logs a `[plugin:<id>]` re-entry notice. The settings GET reports the affected field ids in `secretsNeedingReentry`, and the settings dialog shows a warning prompting the operator to re-enter them. Re-saving a value heals the row under the new key.
 
+### Host-mediated SMTP mail
+
+Plugins that need SMTP declare `cms.mail.send` and a nonempty `smtpAllowedHosts` list in the manifest. The admin install review shows the permitted SMTP hosts. The plugin can put its mailbox password in a `secret: true` setting and read it only inside its server entrypoint. Then it calls `api.cms.mail.send({ transport, message })`; the host makes the SMTP connection. The QuickJS VM never opens a socket.
+
+The transport has `host`, `port` (465 or 587), `secure` (`true` for 465), `username`, and `password`. The message has `from`, `to`, `subject`, `text`, and optional `html`. The host checks the host against `smtpAllowedHosts`, rejects private or loopback DNS answers, pins the public IP for the connection, verifies TLS using the original hostname, and requires STARTTLS on 587. SMTP failures reject the call without exposing the password in plugin logs. This call is synchronous with the triggering plugin hook; applications that require guaranteed eventual delivery should add a durable queue.
+
 ### Scheduled jobs — requires `cms.schedule`
 
 ```js
@@ -966,6 +972,7 @@ Risk levels:
 | `cms.routes`                | Server               | High      | Register authenticated backend routes                                   |
 | `cms.routes.public`         | Server               | Dangerous | Register anonymously-callable routes; requires `cms.routes` too          |
 | `cms.hooks`                 | Server               | High      | Listen to CMS events / filter values                                    |
+| `cms.mail.send`             | Server               | High      | Send via allowlisted SMTP hosts with TLS                                |
 | `cms.schedule`              | Server               | High      | Register cadence-driven handlers                                        |
 | `cms.content.read`          | Server               | Low       | List / read entries; read trees; search; published snapshots             |
 | `cms.content.write`         | Server               | High      | Create / update entries; mutate trees; move between tables               |

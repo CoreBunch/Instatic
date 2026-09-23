@@ -32,6 +32,7 @@ import { handleLoopsRegisterSource } from './handlers/loops'
 import { handleStorageList, handleStorageCreate, handleStorageUpdate, handleStorageDelete } from './handlers/storage'
 import { handleSettingsReplace } from './handlers/settings'
 import { handleNetworkFetch, handleNetworkAbort } from './handlers/network'
+import { handleMailSend } from './handlers/mail'
 import { handleScheduleRegister, handleScheduleCancel } from './handlers/schedule'
 import {
   handleMediaRegisterStorageAdapter,
@@ -93,6 +94,7 @@ const apiHandlers = {
   'cms.storage.update': handleStorageUpdate,
   'cms.storage.delete': handleStorageDelete,
   'cms.settings.replace': handleSettingsReplace,
+  'cms.mail.send': handleMailSend,
   'network.fetch': handleNetworkFetch,
   'network.abort': handleNetworkAbort,
   'cms.schedule.register': handleScheduleRegister,

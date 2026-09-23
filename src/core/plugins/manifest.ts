@@ -16,6 +16,7 @@ import {
   permissionLabel as sdkPermissionLabel,
 } from '@core/plugin-sdk'
 import { collectEnabledAdminPages, pluginAdminPageRoute } from './manifestAdminPages'
+import { assertSmtpAllowedHosts } from './smtpHosts'
 
 // Admin-page route helpers and resource-record helpers live in sibling
 // modules (responsibility split); re-exported here so
@@ -270,6 +271,10 @@ const manifestSchema = Type.Object({
   // match exactly; the leading `*.` wildcard matches one subdomain segment.
   // Hostnames are normalized (lowercased, trimmed) at manifest parse time.
   networkAllowedHosts: Type.Optional(Type.Array(
+    Type.String({ pattern: NETWORK_HOST_PATTERN.source, maxLength: 253 }),
+    { maxItems: 50 },
+  )),
+  smtpAllowedHosts: Type.Optional(Type.Array(
     Type.String({ pattern: NETWORK_HOST_PATTERN.source, maxLength: 253 }),
     { maxItems: 50 },
   )),
@@ -616,6 +621,8 @@ export function parsePluginManifest(input: unknown): PluginManifest {
     }
   }
 
+  assertSmtpAllowedHosts(data.permissions, data.smtpAllowedHosts)
+
   // Settings — duplicate id check.
   if (data.settings && data.settings.length > 0) {
     const seen = new Set<string>()
@@ -649,6 +656,7 @@ export function parsePluginManifest(input: unknown): PluginManifest {
     // permission to work. Dropping this field would silently turn every gated
     // fetch into a "host not in allowlist" 403 even with the permission granted.
     networkAllowedHosts: data.networkAllowedHosts ? [...data.networkAllowedHosts] : undefined,
+    ...(data.smtpAllowedHosts ? { smtpAllowedHosts: [...data.smtpAllowedHosts] } : {}),
     // Per-table allowlist for the `api.cms.content.*` surface — required
     // when any `cms.content.*` permission is granted (coherence checked above).
     contentAccess: data.contentAccess
@@ -683,4 +691,3 @@ export function missingPluginPermissionGrants(
 export function permissionLabel(permission: PluginPermission): string {
   return sdkPermissionLabel(permission)
 }
-

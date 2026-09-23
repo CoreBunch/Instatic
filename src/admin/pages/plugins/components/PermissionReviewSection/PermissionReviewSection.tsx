@@ -55,6 +55,7 @@ interface PermissionReviewPending {
    * exactly the kind of supply-chain attack the consent screen should catch.
    */
   previousNetworkAllowedHosts?: string[]
+  previousSmtpAllowedHosts?: string[]
 }
 
 type HostDiffStatus = 'new' | 'existing' | 'dropped'
@@ -64,7 +65,7 @@ interface HostDiffRow {
   status: HostDiffStatus
 }
 
-function diffNetworkAllowedHosts(
+function diffAllowedHosts(
   next: readonly string[],
   previous: readonly string[] | undefined,
   isUpgrade: boolean,
@@ -240,7 +241,7 @@ export function PermissionReviewSection({
       )}
 
       {(() => {
-        const hostRows = diffNetworkAllowedHosts(
+        const hostRows = diffAllowedHosts(
           pending.manifest.networkAllowedHosts ?? [],
           pending.previousNetworkAllowedHosts,
           isUpgrade,
@@ -266,6 +267,39 @@ export function PermissionReviewSection({
                   data-status={row.status}
                   data-network-host={row.host}
                 >
+                  <div className={styles.label}>
+                    <code>{row.host}</code>
+                    {isUpgrade && (
+                      <span className={`${styles.badge} ${statusBadgeClass(row.status)}`}>
+                        {statusBadgeLabel(row.status)}
+                      </span>
+                    )}
+                  </div>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )
+      })()}
+
+      {(() => {
+        const hostRows = diffAllowedHosts(
+          pending.manifest.smtpAllowedHosts ?? [],
+          pending.previousSmtpAllowedHosts,
+          isUpgrade,
+        )
+        if (hostRows.length === 0) return null
+        return (
+          <div className={styles.networkSection} data-testid="permission-review-smtp-hosts">
+            <div className={styles.networkHeader}>
+              <strong>SMTP hosts</strong>
+              <span className={styles.description}>
+                The plugin may send email through these server hosts. Other SMTP hosts are blocked.
+              </span>
+            </div>
+            <ul className={styles.list}>
+              {hostRows.map((row) => (
+                <li key={`${row.host}:${row.status}`} className={styles.row} data-status={row.status}>
                   <div className={styles.label}>
                     <code>{row.host}</code>
                     {isUpgrade && (

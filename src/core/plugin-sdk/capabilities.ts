@@ -55,6 +55,13 @@ export const PLUGIN_CAPABILITIES: PluginCapability[] = [
     surfaces: ['server', 'cms'],
   },
   {
+    permission: 'cms.mail.send',
+    label: 'Send email through SMTP',
+    description: 'Allows the plugin to send email through the SMTP hosts declared in its manifest. SMTP credentials are provided by the plugin at send time.',
+    risk: 'high',
+    surfaces: ['server', 'cms'],
+  },
+  {
     permission: 'editor.toolbar',
     label: 'Add controls to the editor toolbar',
     description: 'Allows the plugin editor entrypoint to add toolbar buttons.',

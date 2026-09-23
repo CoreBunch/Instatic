@@ -48,6 +48,7 @@ export const TARGET_PERMISSIONS = {
   'cms.hooks.on': 'cms.hooks',
   'cms.hooks.filter': 'cms.hooks',
   'cms.hooks.emit': 'cms.hooks',
+  'cms.mail.send': 'cms.mail.send',
   // Loops
   'cms.loops.registerSource': 'loops.register',
   // Storage

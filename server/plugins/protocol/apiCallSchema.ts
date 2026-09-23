@@ -22,6 +22,7 @@ import { HookListenerArgSchema, HookFilterArgSchema, HookEmitArgSchema } from '.
 import { LoopSourceDescriptorSchema } from './schemas/loops'
 import { JsonRecordSchema } from './schemas/storage'
 import { NetworkFetchInitSchema, NetworkAbortArgSchema } from './schemas/network'
+import { PluginMailSendInputSchema } from '@core/plugin-sdk/mailSchemas'
 import { ScheduleRegisterArgSchema, ScheduleCancelArgSchema } from './schemas/schedule'
 import {
   RegisterStorageAdapterArgSchema,
@@ -98,6 +99,7 @@ export const ApiCallSchemas = {
     Type.String({ minLength: 1 }),
   ])),
   'cms.settings.replace': apiCallSchema('cms.settings.replace', Type.Tuple([JsonRecordSchema])),
+  'cms.mail.send': apiCallSchema('cms.mail.send', Type.Tuple([PluginMailSendInputSchema])),
   'network.fetch': apiCallSchema('network.fetch', Type.Tuple([
     Type.String({ minLength: 1, maxLength: 2048 }),
     NetworkFetchInitSchema,

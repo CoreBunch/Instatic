@@ -54,6 +54,7 @@ const EXPECTED_TARGET_PERMISSIONS: Record<string, string> = {
   'cms.hooks.on': 'cms.hooks',
   'cms.hooks.filter': 'cms.hooks',
   'cms.hooks.emit': 'cms.hooks',
+  'cms.mail.send': 'cms.mail.send',
   'cms.loops.registerSource': 'loops.register',
   'cms.storage.list': 'cms.storage',
   'cms.storage.create': 'cms.storage',

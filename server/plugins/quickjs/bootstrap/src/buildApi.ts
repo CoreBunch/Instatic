@@ -402,6 +402,12 @@ globalThis.__buildApi = function buildApi() {
       hooks: { on: on, filter: filter, emit: emit },
       loops: { registerSource: registerSource },
       settings: settingsApi,
+      mail: {
+        send: function (input: unknown) {
+          assertTargetPermission('cms.mail.send')
+          return call('cms.mail.send', [input])
+        },
+      },
       schedule: scheduleApi,
       content: {
         // Schema introspection
