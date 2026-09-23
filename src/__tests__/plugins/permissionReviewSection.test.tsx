@@ -70,6 +70,22 @@ describe('computePermissionDiff', () => {
 })
 
 describe('PermissionReviewSection — fresh install', () => {
+  it('shows declared SMTP hosts before mail permission approval', () => {
+    render(
+      <PermissionReviewSection
+        pending={{ manifest: {
+          ...baseManifest,
+          permissions: ['cms.mail.send'],
+          smtpAllowedHosts: ['mail.example.com'],
+        } }}
+        uploading={false}
+        onCancel={() => {}}
+        onConfirm={() => {}}
+      />,
+    )
+    expect(screen.getByTestId('permission-review-smtp-hosts').textContent)
+      .toContain('mail.example.com')
+  })
   it('shows the review heading + lists every permission with no badges', () => {
     render(
       <PermissionReviewSection

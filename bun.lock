@@ -46,6 +46,7 @@
         "marked": "^18.0.3",
         "mutative": "^1.3.0",
         "nanoid": "^5.1.11",
+        "nodemailer": "^10.0.10",
         "pixel-art-icons": "file:./vendor/pixel-art-icons",
         "quickjs-emscripten": "^0.32.0",
         "quickjs-emscripten-core": "^0.32.0",
@@ -77,6 +78,7 @@
         "@types/react-dom": "^19.2.3",
         "@types/semver": "^7.7.1",
         "@vitejs/plugin-react": "^6.0.1",
+        "babel-plugin-react-compiler": "1.0.0",
         "dependency-cruiser": "^17.4.0",
         "eslint": "^10.3.0",
         "eslint-plugin-react-compiler": "^19.1.0-rc.2",
@@ -1301,6 +1303,8 @@
     "node-sarif-builder": ["node-sarif-builder@3.4.0", "", { "dependencies": { "@types/sarif": "^2.1.7", "fs-extra": "^11.1.1" } }, "sha512-tGnJW6OKRii9u/b2WiUViTJS+h7Apxx17qsMUjsUeNDiMMX5ZFf8F8Fcz7PAQ6omvOxHZtvDTmOYKJQwmfpjeg=="],
 
     "node-source-walk": ["node-source-walk@7.0.2", "", { "dependencies": { "@babel/parser": "^7.29.0" } }, "sha512-71kFFjYaSshDTA8/a2HiTYPLdASWjLJxUyJxGE+ffxU+KhxSBtM9kiLUX+R2yooFdSFKMFpi4n3PFtDy6qXv8A=="],
+
+    "nodemailer": ["nodemailer@10.0.10", "", {}, "sha512-He9XskOFms62SyAKkLu8CcGcYHAo+BSHSsORI8s4PJH8qZgZY4L4lDfvyN0twvmbpyG+eGrxpyBlskj9d9rJ8A=="],
 
     "normalize-package-data": ["normalize-package-data@8.0.0", "", { "dependencies": { "hosted-git-info": "^9.0.0", "semver": "^7.3.5", "validate-npm-package-license": "^3.0.4" } }, "sha512-RWk+PI433eESQ7ounYxIp67CYuVsS1uYSonX3kA6ps/3LWfjVQa/ptEg6Y3T6uAMq1mWpX9PQ+qx+QaHpsc7gQ=="],
 

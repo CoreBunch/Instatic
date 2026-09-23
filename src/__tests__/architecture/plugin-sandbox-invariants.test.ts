@@ -195,6 +195,7 @@ describe('plugin sandbox invariants', () => {
       'cms.hooks.filter',
       'cms.hooks.on',
       'cms.loops.registerSource',
+      'cms.mail.send',
       'cms.media.registerStorageAdapter',
       'cms.media.registerUrlTransformer',
       'cms.media.registerVariantDelegate',

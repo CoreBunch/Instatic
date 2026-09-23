@@ -1,6 +1,7 @@
 export * from './types'
 export * from './storageSchemas'
 export * from './contentSchemas'
+export * from './mailSchemas'
 export * from './capabilities'
 export * from './guards'
 export * from './modules'
