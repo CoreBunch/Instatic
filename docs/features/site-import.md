@@ -373,7 +373,7 @@ On success the same step switches to its **complete** state — a success mark, 
 | `unmatched-media-query` | Legacy warning kind retained for old import reports; current imports preserve unmatched `@media` blocks as reusable conditions |
 | `invalid-rule` | A CSS rule caused `replaceSync` to throw (sheet-level parse error) |
 | `blocked-property` | A CSS property name is on the security denylist (`behavior`, `-moz-binding`, …) — declaration dropped |
-| `duplicate-class` | Two `.foo {}` rules in the same file; later declarations win |
+| `duplicate-class` | Two `.foo {}` rules in the same file; both stay separate rules in source order, so the later one still cascades after anything between them (the repeat becomes an ambient fragment at commit) |
 | `missing-stylesheet` | A `<link rel="stylesheet">` href was not found in the FileMap |
 | `asset-upload-failed` | An individual asset upload was rejected by the server; the original FileMap path remains in the import |
 | `asset-folder-failed` | The asset uploaded and its URL was rewritten, but filing it under the folder mirroring its bundle path failed; it sits at the media root |

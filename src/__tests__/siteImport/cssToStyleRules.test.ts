@@ -490,40 +490,69 @@ describe('cssToStyleRules — duplicate class names', () => {
       '.register, .source-rule { color: red } .source-rule { display: grid }',
     )
 
-    expect(rules).toHaveLength(2)
-    expect(rules.find((rule) => rule.name === 'register')?.styles).toEqual({
-      color: 'red',
-    })
-    expect(rules.find((rule) => rule.name === 'source-rule')?.styles).toEqual({
-      color: 'red',
-      display: 'grid',
-    })
+    expect(rules.map((rule) => [rule.selector, rule.styles])).toEqual([
+      ['.register', { color: 'red' }],
+      ['.source-rule', { color: 'red' }],
+      ['.source-rule', { display: 'grid' }],
+    ])
   })
 
-  it('duplicate .foo → 1 rule with later value + 1 duplicate-class warning', () => {
+  it('duplicate .foo → 2 rules in source order + 1 duplicate-class warning', () => {
     const { rules, warnings } = cssToStyleRules('.foo { color: red } .foo { color: blue }')
-    expect(rules).toHaveLength(1)
-    // Later rule wins: color should be 'blue'
-    expect(rules[0].styles).toMatchObject({ color: 'blue' })
+    // Both occurrences stay separate rules so the later one keeps its cascade
+    // position; the registry demotes the repeat to an ambient fragment later.
+    expect(rules.map((rule) => [rule.kind, rule.selector, rule.order, rule.styles])).toEqual([
+      ['class', '.foo', 0, { color: 'red' }],
+      ['class', '.foo', 1, { color: 'blue' }],
+    ])
     expect(warnings).toHaveLength(1)
     expect(warnings[0].kind).toBe('duplicate-class')
     expect(warnings[0].selector).toBe('.foo')
   })
 
-  it('an earlier important declaration resists a later normal declaration', () => {
+  it('each occurrence keeps its own important priorities', () => {
     const { rules } = cssToStyleRules(
       '.foo { color: red !important } .foo { color: blue }',
     )
     expect(rules[0].styles.color).toBe('red')
     expect(rules[0].stylePriorities).toEqual({ color: 'important' })
+    expect(rules[1].styles.color).toBe('blue')
+    expect(rules[1].stylePriorities).toBeUndefined()
   })
 
-  it('a later important declaration replaces an earlier normal declaration', () => {
+  it('a later duplicate sorts after a rule that sits between the two occurrences', () => {
+    // In a browser an element with class="x y" gets padding-left 0: the last
+    // equal-specificity rule wins. Merging the repeat into the first .x would
+    // move it ahead of .y and flip that result.
     const { rules } = cssToStyleRules(
-      '.foo { color: red } .foo { color: blue !important }',
+      '.x { padding-left: 15px } .y { padding-left: 7px } .x { padding-left: 0 }',
     )
-    expect(rules[0].styles.color).toBe('blue')
-    expect(rules[0].stylePriorities).toEqual({ color: 'important' })
+    const ordered = [...rules].sort((a, b) => a.order - b.order)
+    expect(ordered.map((rule) => [rule.selector, rule.styles.paddingLeft])).toEqual([
+      ['.x', '15px'],
+      ['.y', '7px'],
+      ['.x', '0px'],
+    ])
+  })
+
+  it('a base rule after the class\'s @media block fills that one rule', () => {
+    const { rules, warnings } = cssToStyleRules(
+      '@media (max-width: 600px) { .x { color: pink } } .x { color: blue }',
+    )
+    expect(rules).toHaveLength(1)
+    expect(rules[0].kind).toBe('class')
+    expect(rules[0].styles).toEqual({ color: 'blue' })
+    expect(Object.values(rules[0].contextStyles)).toEqual([{ color: 'pink' }])
+    expect(warnings.filter((w) => w.kind === 'duplicate-class')).toHaveLength(0)
+  })
+
+  it('an authored empty rule is not filled: the repeat keeps its later position', () => {
+    const { rules } = cssToStyleRules('.x {} .y { color: green } .x { color: blue }')
+    expect(rules.map((rule) => [rule.selector, rule.order, rule.styles])).toEqual([
+      ['.x', 0, {}],
+      ['.y', 1, { color: 'green' }],
+      ['.x', 2, { color: 'blue' }],
+    ])
   })
 
   it('ambient h1 duplicates are allowed (no dedup for ambient)', () => {
