@@ -6,7 +6,9 @@ In the Site editor, the agent reads the current page snapshot, plans a sequence 
 
 In the Content workspace, the agent works against content collections and entries. It reads collection schemas and document state server-side, then mutates the live content editor through a browser bridge so the open draft, Tiptap body editor, and sidebar selection stay authoritative.
 
-The agent runs on a provider-agnostic AI runtime (`server/ai/`) that can drive any supported model (Anthropic Claude, OpenAI, OpenRouter, Ollama, or any OpenAI-compatible endpoint). Every driver talks directly to its provider's REST API over HTTP/SSE — no provider SDKs. All drivers share one multi-turn tool loop (`drivers/http/toolLoop.ts`); each supplies only a small `ProviderAdapter` of pure mapping functions. The plain `@anthropic-ai/sdk` (and any provider SDK) is banned repo-wide. Gated by `ai-driver-isolation.test.ts`.
+The agent runs on a provider-agnostic AI runtime (`server/ai/`) that can drive any supported model (Anthropic Claude, OpenAI, OpenRouter, Ollama, or any OpenAI-compatible endpoint). Every HTTP driver talks directly to its provider's REST API over HTTP/SSE — no provider SDKs. Those drivers share one multi-turn tool loop (`drivers/http/toolLoop.ts`); each supplies only a small `ProviderAdapter` of pure mapping functions. The plain `@anthropic-ai/sdk` (and any provider SDK) is banned repo-wide. Gated by `ai-driver-isolation.test.ts`.
+
+One driver is deliberately not an HTTP driver: [Claude Code](claude-code-provider.md) spawns the local `claude` CLI and runs the agent on the operator's Claude subscription rather than a metered API key. It brings its own tool loop (the CLI's), reaches the CMS over Instatic's own MCP server instead of the shared tool loop, and satisfies the SDK ban by construction — it imports nothing and spawns a binary.
 
 ---
 
@@ -72,7 +74,10 @@ server/ai/
 │   ├── openai.ts              — OpenAI driver: direct POST /v1/responses (no SDK)
 │   ├── openrouter.ts          — OpenRouter driver: direct POST /v1/responses (shared Responses path; live /models; native cost)
 │   ├── ollama.ts              — Ollama driver: POST /v1/chat/completions via shared chatCompletions adapter; live /api/tags catalogue
-│   └── openaiCompatible.ts    — Custom Provider driver: any /v1/chat/completions endpoint; live GET /v1/models catalogue
+│   ├── openaiCompatible.ts    — Custom Provider driver: any /v1/chat/completions endpoint; live GET /v1/models catalogue
+│   ├── claudeCode.ts          — Claude Code driver (NOT an HTTP driver): spawns the `claude` CLI on the machine subscription; argv/env + session mode
+│   ├── claudeCodeProcess.ts   — one CLI spawn: stderr drain, idle watchdog, session-mode fallback, terminal outcome classification
+│   └── claudeCodeEvents.ts    — CLI stream-json → AiStreamEvent translation (pure; unit-tested from recorded output)
 └── runtime/
     ├── runner.ts           — runChat(): drives a driver, emits stream events
     ├── persister.ts        — ConversationsPersister: messages + usage to DB; writes contextTokens snapshot
