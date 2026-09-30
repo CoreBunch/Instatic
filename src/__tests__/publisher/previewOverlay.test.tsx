@@ -28,6 +28,8 @@ function resetStore() {
   useEditorStore.setState({
     site: null,
     activePageId: null,
+    activeDocument: null,
+    componentPreviewSelection: {},
     selectedNodeId: null,
     selectedNodeIds: [],
     hoveredNodeId: null,
@@ -169,6 +171,18 @@ describe('PreviewOverlay — DOM rendering', () => {
     render(<PreviewOverlay />)
     const iframe = await screen.findByTestId('preview-iframe')
     expect(iframe).not.toBeNull()
+  })
+
+  it('previews the active component rather than the previously active page', async () => {
+    useEditorStore.getState().createSite('Component preview')
+    useEditorStore.getState().openPreview()
+    const vcId = useEditorStore.getState().createVisualComponent('Team card')
+    useEditorStore.getState().setActiveDocument({ kind: 'visualComponent', vcId })
+    render(<PreviewOverlay />)
+    const iframe = await screen.findByTestId('preview-iframe')
+    expect(iframe.getAttribute('title')).toBe('Preview: Team card')
+    const call = runtimePreviewCalls.find((call) => String(call.input).endsWith('/runtime/preview'))
+    expect(JSON.parse(String(call?.init?.body)).pageId).toBe(`vc-virtual:${vcId}`)
   })
 
   it('iframe has a non-empty srcdoc attribute', async () => {

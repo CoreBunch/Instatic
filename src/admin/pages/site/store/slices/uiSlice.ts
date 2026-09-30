@@ -212,17 +212,6 @@ interface UiSlice {
    */
   exitVisualComponentMode: () => void
 
-  /**
-   * Session-only preview source per template page (templateId → source id):
-   * the page id whose content fills an `everywhere` template's outlet, or the
-   * row id whose entry drives a `postTypes` template's `currentEntry`. A pure
-   * preview convenience — never persisted to the site document. Unset → the
-   * first real page / published row is previewed.
-   */
-  templatePreviewSelection: Record<string, string>
-  /** Set (or clear, with `null`) the previewed source for a template page. */
-  setTemplatePreviewSelection: (templateId: string, sourceId: string | null) => void
-
   /** Class selected in the global Selectors panel. */
   selectedSelectorClassId: string | null
   setSelectedSelectorClassId: (classId: string | null) => void
@@ -353,7 +342,6 @@ export const createUiSlice: EditorStoreSliceCreator<UiSlice> = (set, get) => ({
   activeEditorFileId: null,
   activeCodeBuffer: null,
   activeDocument: null,
-  templatePreviewSelection: {},
   selectedSelectorClassId: null,
   highlightedSelectorClassId: null,
   selectedSelectorClassIds: [],
@@ -589,15 +577,6 @@ export const createUiSlice: EditorStoreSliceCreator<UiSlice> = (set, get) => ({
         clearCanvasSelectionDraft(state)
         state.previousActivePageId = null
       }),
-
-  setTemplatePreviewSelection: (templateId, sourceId) =>
-    set((state) => {
-      if (sourceId === null) {
-        delete state.templatePreviewSelection[templateId]
-      } else {
-        state.templatePreviewSelection[templateId] = sourceId
-      }
-    }),
 
   setSelectedSelectorClassId: (classId) => {
     const state = get()

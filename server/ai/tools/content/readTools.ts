@@ -77,7 +77,7 @@ function projectCollection(table: DataTableListItem) {
   }
 }
 
-function projectField(field: DataField) {
+function projectLeafField(field: DataField) {
   // Discriminated union — pick the keys an agent actually consumes.
   const base = {
     id: field.id,
@@ -104,6 +104,18 @@ function projectField(field: DataField) {
     }
   }
   return base
+}
+
+function projectField(field: DataField) {
+  const projected = projectLeafField(field)
+  if (field.type === 'repeater') {
+    return {
+      ...projected,
+      fields: field.fields.map(projectLeafField),
+      itemLabelFieldId: field.itemLabelFieldId,
+    }
+  }
+  return projected
 }
 
 function projectRow(row: DataRow) {

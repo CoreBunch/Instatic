@@ -18,6 +18,14 @@ A VC **is** a `NodeTree<VCNode>` (structurally identical to `NodeTree<BaseNode>`
 
 ---
 
+## CMS data in the editor
+
+A component inside a Loop inherits that iteration's `currentEntry` in Design mode, including through nested component references and read-only template content. A single-card component does not need another Loop: the page's Loop chooses the rows; the component renders one row. A component can contain a Loop when the reusable unit is an entire list or when it renders a nested relation.
+
+When editing a component separately, **Preview data** lets the author select a table and a published example entry. Empty tables use schema-generated example content. The selection is session-only, keyed by component ID, and never changes the component definition or its live data source. Clearing the selection removes the example context. The full Preview overlay also renders the selected component with this context. A standalone media token such as `{currentEntry.featuredMedia}` is accepted by the media control without attempting to load the literal token as an image URL.
+
+---
+
 ## Data model
 
 ### `VisualComponent` (the source-of-truth schema)

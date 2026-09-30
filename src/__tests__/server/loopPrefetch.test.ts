@@ -18,8 +18,8 @@ import { makePage, makeSite } from '../publisher/helpers'
 import '@core/loops/sources'
 
 describe('loopPrefetch', () => {
-  it('maps published data row authorship into public loop fields', () => {
-    const item = publishedDataRowToLoopItem({
+  it('maps published data row authorship into public loop fields', async () => {
+    const item = await publishedDataRowToLoopItem(createFakeDb(async () => ({ rows: [], rowCount: 0 })), {
       id: 'version_1',
       rowId: 'row_1',
       tableId: 'posts',

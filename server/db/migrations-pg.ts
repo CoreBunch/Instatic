@@ -1359,4 +1359,90 @@ export const pgMigrations: Migration[] = [
     id: '030_iso_timestamps',
     sql: 'select 1',
   },
+  {
+    // Posts need an author-editable calendar date that can be displayed and
+    // ordered independently from the technical publish timestamp. Existing
+    // rows and immutable published versions inherit their publication day.
+    id: '031_posts_publication_date',
+    sql: `
+      update data_tables
+         set fields_json = fields_json ||
+               '[{"type":"date","id":"date","label":"Publication date","description":"Date shown on the post and available for sorting."}]'::jsonb
+       where id = 'posts'
+         and not exists (
+               select 1
+                 from jsonb_array_elements(data_tables.fields_json) as field
+                where field->>'id' = 'date'
+             );
+
+      update data_rows
+         set cells_json = jsonb_set(
+               cells_json,
+               '{date}',
+               to_jsonb(to_char(coalesce(published_at, created_at), 'YYYY-MM-DD')),
+               true
+             )
+       where table_id = 'posts'
+         and deleted_at is null
+         and coalesce(cells_json->>'date', '') = '';
+
+      update data_row_versions
+         set cells_json = jsonb_set(
+               data_row_versions.cells_json,
+               '{date}',
+               to_jsonb(to_char(coalesce(data_row_versions.published_at, data_row_versions.created_at), 'YYYY-MM-DD')),
+               true
+             )
+       where exists (
+               select 1
+                 from data_rows
+                where data_rows.id = data_row_versions.row_id
+                  and data_rows.table_id = 'posts'
+             )
+         and coalesce(data_row_versions.cells_json->>'date', '') = '';
+    `,
+  },
+  {
+    // Imported archive posts can carry their original publication day in the
+    // first markdown line. Prefer that editorial date over the later import
+    // timestamp populated by migration 031.
+    id: '032_posts_publication_date_from_body',
+    sql: `
+      update data_rows
+         set cells_json = jsonb_set(
+               cells_json,
+               '{date}',
+               to_jsonb(
+                 substr(cells_json->>'body', 27, 4) || '-' ||
+                 substr(cells_json->>'body', 24, 2) || '-' ||
+                 substr(cells_json->>'body', 21, 2)
+               ),
+               true
+             )
+       where table_id = 'posts'
+         and deleted_at is null
+         and substr(cells_json->>'body', 1, 20) = '**Veröffentlicht am '
+         and substr(cells_json->>'body', 21, 10) ~ '^[0-3][0-9]\\.[0-1][0-9]\\.[12][0-9]{3}$';
+
+      update data_row_versions
+         set cells_json = jsonb_set(
+               cells_json,
+               '{date}',
+               to_jsonb(
+                 substr(cells_json->>'body', 27, 4) || '-' ||
+                 substr(cells_json->>'body', 24, 2) || '-' ||
+                 substr(cells_json->>'body', 21, 2)
+               ),
+               true
+             )
+       where exists (
+               select 1
+                 from data_rows
+                where data_rows.id = data_row_versions.row_id
+                  and data_rows.table_id = 'posts'
+             )
+         and substr(cells_json->>'body', 1, 20) = '**Veröffentlicht am '
+         and substr(cells_json->>'body', 21, 10) ~ '^[0-3][0-9]\\.[0-1][0-9]\\.[12][0-9]{3}$';
+    `,
+  },
 ]

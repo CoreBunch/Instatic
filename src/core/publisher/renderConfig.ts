@@ -30,7 +30,7 @@
 import type { Page, SiteDocument } from '@core/page-tree'
 import type { IModuleRegistry } from '@core/module-engine'
 import type { TemplateRenderDataContext } from '@core/templates/dynamicBindings'
-import type { LoopFetchResult } from '@core/loops/types'
+import type { LoopFetchResult, LoopItem } from '@core/loops/types'
 
 /**
  * Resolved loop data for one `base.loop` node, produced by the server's
@@ -41,6 +41,8 @@ export interface ResolvedLoopRenderData extends LoopFetchResult {
   pageNumber: number
   /** Whether more rows remain past the current page. */
   hasMore: boolean
+  /** Contextual relation items, already sliced for each enclosing entry. */
+  entryItems?: ReadonlyMap<string, LoopItem[]>
 }
 
 /**

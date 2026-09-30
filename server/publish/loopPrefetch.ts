@@ -25,6 +25,12 @@ import { publicDataUserFromParts } from '@core/data/publicDataUser'
 import type { PublishedDataRow } from '@core/data/schemas'
 import type { DbClient } from '../db/client'
 import { walkRenderTree } from './renderTreeWalk'
+import { entryFieldContextKey, resolveEntryFieldItems } from '@core/loops'
+import { prefetchRelationLoopItems } from './relationLoopPrefetch'
+import { getDataTable } from '../repositories/data'
+import { logicalIdOf, MAIN_BRANCH_ID } from '@core/branches'
+import { collectMediaIds, resolveMediaIdsToPaths } from '@core/loops/sources/dataRowsMedia'
+import { resolvedCellOverlay } from '@core/loops/sources/dataRowsCells'
 
 /**
  * Resolved loop data for a single loop node on a page.
@@ -35,6 +41,7 @@ import { walkRenderTree } from './renderTreeWalk'
 interface ResolvedLoopData extends LoopFetchResult {
   pageNumber: number
   hasMore: boolean
+  entryItems?: Map<string, LoopItem[]>
 }
 
 type LoopDataMap = Map<string, ResolvedLoopData>
@@ -48,7 +55,14 @@ type LoopDataMap = Map<string, ResolvedLoopData>
  * bindings by their field id. System fields (id, tableId, author, etc.)
  * are overlaid after so they can never be shadowed by a user-defined cell.
  */
-export function publishedDataRowToLoopItem(row: PublishedDataRow): LoopItem {
+export async function publishedDataRowToLoopItem(
+  db: DbClient,
+  row: PublishedDataRow,
+  branchId = MAIN_BRANCH_ID,
+): Promise<LoopItem> {
+  const table = await getDataTable(db, { branchId }, logicalIdOf(branchId, row.tableId))
+  const fields = table?.fields ?? []
+  const media = await resolveMediaIdsToPaths(db, collectMediaIds([{ cells_json: row.cells }], fields))
   const tableRouteBase = normalizeRouteBase(row.tableRouteBase || `/${row.tableSlug}`)
   const permalink = `${tableRouteBase === '/' ? '' : tableRouteBase}/${row.slug}`
 
@@ -72,6 +86,7 @@ export function publishedDataRowToLoopItem(row: PublishedDataRow): LoopItem {
       // Cells — primary data, spread first so bindings can reference any
       // user-defined field by its fieldId.
       ...row.cells,
+      ...resolvedCellOverlay(row.cells, fields, media),
       // System identity (overlay after cells so these are never shadowed)
       id: row.rowId,
       rowId: row.rowId,
@@ -294,6 +309,10 @@ export async function prefetchLoopData(
     /** Branch whose rows loops read; absent means main (publishing, public routes). */
     branchId?: string
     drafts?: boolean
+    /** Entry-template seed, before any enclosing loop has rendered. */
+    entryStack?: readonly LoopItem[]
+    /** Already fetched slices, e.g. the outer loop of a load-more request. */
+    resolvedLoops?: ReadonlyMap<string, ResolvedLoopData>
   },
 ): Promise<LoopDataMap> {
   const nodes = collectLoopNodes(page, site, options?.rootNodeId)
@@ -301,6 +320,8 @@ export async function prefetchLoopData(
 
   const entries: Array<[string, ResolvedLoopData]> = await Promise.all(
     nodes.map(async (node) => {
+      const resolved = options?.resolvedLoops?.get(node.id)
+      if (resolved) return [node.id, resolved] as [string, ResolvedLoopData]
       const props = readLoopProps(node)
       const source = props.sourceId ? loopSourceRegistry.get(props.sourceId) : undefined
       if (!source || source.kind === 'contextual') {
@@ -321,5 +342,29 @@ export async function prefetchLoopData(
     }),
   )
 
-  return new Map(entries)
+  const data = new Map(entries)
+  const contextual: Array<{ node: PageNode; parentId?: string; depth: number }> = []
+  walkRenderTree(page.nodes, options?.rootNodeId ?? page.rootNodeId, site, (node, ancestors) => {
+    if (node.moduleId !== 'base.loop' || node.props.sourceId !== 'entry.field') return
+    const loops = ancestors.filter((ancestor) => ancestor.moduleId === 'base.loop')
+    contextual.push({ node: node as PageNode, parentId: loops.at(-1)?.id, depth: loops.length })
+  })
+  // Layout depth bounds traversal, even when content relations contain cycles.
+  for (const { node, parentId } of contextual.sort((a, b) => a.depth - b.depth)) {
+    const props = readLoopProps(node)
+    const fieldId = props.filters.fieldId
+    if (typeof fieldId !== 'string' || !fieldId) continue
+    const parents = parentId ? data.get(parentId)?.items ?? [] : options?.entryStack?.slice(-1) ?? []
+    const related = await prefetchRelationLoopItems(db, parents, fieldId, { ...options, ...props })
+    const resolved = data.get(node.id)!
+    resolved.entryItems ??= new Map()
+    for (const [key, items] of related) resolved.entryItems.set(key, items)
+    // Expose candidate entries to deeper contextual loops and media prefetch.
+    for (const parent of parents) {
+      resolved.items.push(...(related.get(entryFieldContextKey(parent)) ??
+        resolveEntryFieldItems(parent.fields[fieldId], props).items))
+    }
+    resolved.totalItems = resolved.items.length
+  }
+  return data
 }

@@ -400,10 +400,16 @@ interface RuntimeAssetsBlock {
 function buildRuntimeAssetsBlock(
   options: PublishPageOptions,
   acc: RenderAccumulators,
+  hasScrollAnimations: boolean,
+  hasLightbox: boolean,
 ): RuntimeAssetsBlock {
   const { runtimeAssets } = options
   const headRuntimeScripts = scriptTagsForRuntimeAssets(runtimeAssets, 'head')
-  const bodyEndRuntimeScripts = scriptTagsForRuntimeAssets(runtimeAssets, 'body-end')
+  const bodyEndRuntimeScripts = [
+    scriptTagsForRuntimeAssets(runtimeAssets, 'body-end'),
+    hasScrollAnimations ? '  <script type="module" src="/_instatic/scroll-animation-runtime.js"></script>' : '',
+    hasLightbox ? '  <script type="module" src="/_instatic/image-lightbox-runtime.js"></script>' : '',
+  ].filter(Boolean).join('\n')
   const hasRuntimeScripts = hasPublishedRuntimeScripts(runtimeAssets)
 
   // Loop runtime is a self-hosted script bundle served at a known fixed
@@ -443,7 +449,7 @@ function buildRuntimeAssetsBlock(
     holeRuntimeScript,
     importmapTag,
     importmap,
-    anyScriptTag: hasRuntimeScripts || hasInfiniteLoops || hasHoles || Boolean(importmap),
+    anyScriptTag: hasRuntimeScripts || hasInfiniteLoops || hasHoles || hasScrollAnimations || hasLightbox || Boolean(importmap),
   }
 }
 
@@ -613,7 +619,15 @@ export function publishPage(
   )
 
   const meta = buildDocumentMetaTags(site, page, templateContext, options.documentMeta)
-  const runtime = buildRuntimeAssetsBlock(options, acc)
+  // Class CSS is site-wide, including ambient selectors and component rules.
+  // Include the observer when any of those rules can enable a scroll preset.
+  const hasScrollAnimations = Object.values(site.styleRules ?? {}).some(rule =>
+    [rule.styles, ...Object.values(rule.contextStyles ?? {})].some(styles =>
+      Object.values(styles ?? {}).some(value => typeof value === 'string' && /\binstatic-[\w-]+-scroll\b/.test(value)),
+    ),
+  )
+  const runtime = buildRuntimeAssetsBlock(options, acc, hasScrollAnimations,
+    bodyHtml.includes('instatic-lightbox-trigger') || acc.holeNodeIds.size > 0 || acc.infiniteLoopIds.size > 0)
   const csp = buildContentSecurityPolicy(runtime.anyScriptTag, runtime.importmap, acc.cspSources)
 
   const html = assembleHtmlDocument({

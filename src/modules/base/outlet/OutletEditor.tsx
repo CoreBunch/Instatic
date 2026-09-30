@@ -27,6 +27,7 @@ import { resolveHtmlTag } from '@core/htmlAttributes'
 import { ReadOnlyNodeTree } from '@modules/base/utils/ReadOnlyNodeTree'
 import { CanvasModulePlaceholder } from '@ui/components/CanvasModulePlaceholder'
 import { TextPlusIcon } from 'pixel-art-icons/icons/text-plus'
+import { CanvasTemplateContext } from '@site/canvas/CanvasContexts'
 import type { OutletStoredProps } from './props'
 
 export const OutletEditor: React.FC<ModuleComponentProps<OutletStoredProps>> = ({
@@ -34,6 +35,7 @@ export const OutletEditor: React.FC<ModuleComponentProps<OutletStoredProps>> = (
   mcClassName,
   nodeWrapperProps,
 }) => {
+  const templateContext = React.use(CanvasTemplateContext)
   const tag = resolveHtmlTag(props.tag, props.customTag)
 
   const styleRules = useEditorStore((s) => s.site?.styleRules ?? null)
@@ -55,7 +57,7 @@ export const OutletEditor: React.FC<ModuleComponentProps<OutletStoredProps>> = (
   const html = typeof props.html === 'string' ? props.html : ''
 
   // (1) postTypes entry body, resolved into props.html via the binding.
-  if (html) {
+  if (html || templateContext?.entryStack.length) {
     return React.createElement(tag, {
       ...nodeWrapperProps,
       className: mcClassName || undefined,

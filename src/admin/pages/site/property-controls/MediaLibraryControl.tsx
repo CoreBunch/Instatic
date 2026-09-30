@@ -23,6 +23,7 @@ import {
   type CmsMediaAsset,
 } from '@core/persistence/cmsMedia'
 import { isValidImageUrl } from '@core/utils/urlValidation'
+import { parseTokenString } from '@core/templates/tokenInterpolation'
 import type { ControlProps } from './shared'
 import { ControlRow } from '@ui/components/ControlRow'
 import controlRowStyles from '@ui/components/ControlRow/ControlRow.module.css'
@@ -77,8 +78,14 @@ function isHttpUrl(value: string): boolean {
   }
 }
 
+function isMediaToken(value: string): boolean {
+  const segments = parseTokenString(value)
+  return segments.length === 1 && segments[0].kind === 'token'
+}
+
 function isValidMediaUrl(value: string, mediaKind: MediaKind): boolean {
   if (!value) return true
+  if (isMediaToken(value)) return true
   if (isLocalMediaPath(value)) return true
   if (mediaKind === 'image') return isValidImageUrl(value)
   return isHttpUrl(value)
@@ -155,7 +162,7 @@ export function MediaLibraryControl({
       if (viewerAssetId === id) setViewerAssetId(null)
     },
   })
-  const showUrlPreview = validCurrentValue && currentValue
+  const showUrlPreview = validCurrentValue && !isMediaToken(currentValue) && currentValue
   const urlDraft = urlDraftState.sourceValue === currentValue ? urlDraftState.draft : currentValue
   const urlError = !isValidMediaUrl(urlDraft, mediaKind)
 

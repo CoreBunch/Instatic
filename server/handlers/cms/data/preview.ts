@@ -113,11 +113,12 @@ export async function handleRowPreview(
   const publicPath = buildEntryPublicPath(table.routeBase, draftPublishedRow.slug)
   const syntheticUrl = new URL(`http://localhost${publicPath}`)
   const templateContext = {
-    entryStack: [publishedDataRowToLoopItem(draftPublishedRow)],
+    entryStack: [await publishedDataRowToLoopItem(db, draftPublishedRow, scope.branchId)],
     route: buildRouteFrame(syntheticUrl.toString()),
   }
   const loopData = await prefetchLoopData(merged, snapshot.site, db, undefined, {
     branchId: scope.branchId,
+    entryStack: templateContext.entryStack,
   })
   const mediaAssets = await prefetchMediaAssets(merged, snapshot.site, registry, db, {
     templateContext,

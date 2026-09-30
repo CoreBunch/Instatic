@@ -5,6 +5,7 @@ import { dataTablePreviewToLoopItem } from '@core/templates/templatePreviewData'
 import { getCmsDataTableBySlug, previewCmsDataLoopItems } from '@core/persistence/cmsData'
 import { buildPageFrame, buildRouteFrame, buildSiteFrame } from '@core/templates/contextFrames'
 import { primaryTemplateTableSlug } from '@core/templates'
+import { parseVirtualVCPageId } from '@core/visualComponents'
 import { useEditorStore } from '@site/store/store'
 
 /**
@@ -37,10 +38,13 @@ export function useTemplatePreviewContext(page: Page | null): TemplatePreviewCon
   // published rows yet do we fall back to a synthetic sample row so the layout
   // is still visible. An `everywhere` layout has no current entry (null
   // tableSlug → empty entry stack); its outlet previews a page instead.
-  const tableSlug = page ? primaryTemplateTableSlug(page) : null
+  const componentId = page ? parseVirtualVCPageId(page.id) : null
+  const componentSelection = useEditorStore((s) => componentId ? s.componentPreviewSelection[componentId] : undefined)
+  const tableSlug = componentSelection?.tableSlug ?? (page ? primaryTemplateTableSlug(page) : null)
   // The post the author picked to preview (TemplateModeControl), or null → the
   // first published row. Session-only; keyed by the template page id.
-  const selectedRowId = useEditorStore((s) => (page ? s.templatePreviewSelection[page.id] ?? null : null))
+  const templateRowId = useEditorStore((s) => (page ? s.templatePreviewSelection[page.id] ?? null : null))
+  const selectedRowId = componentId ? componentSelection?.rowId : templateRowId
   // Fetch a window of published rows once per table; the chosen row is picked
   // from it below so changing the preview selection never refetches. A failed
   // load resolves to an empty window so bindings stay empty rather than throw.

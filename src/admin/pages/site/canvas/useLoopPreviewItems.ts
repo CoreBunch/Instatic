@@ -53,6 +53,7 @@ import { getCmsDataTable, previewCmsDataLoopItems } from '@core/persistence/cmsD
 import { listCmsMediaAssets, type CmsMediaAsset } from '@core/persistence/cmsMedia'
 import { dataTablePreviewToLoopItem } from '@core/templates/templatePreviewData'
 import { CanvasPreviewReadinessContext } from './CanvasPreviewReadiness'
+import { useEntryRelationItems } from './useEntryRelationItems'
 
 // ---------------------------------------------------------------------------
 // Loop prop reader
@@ -254,6 +255,9 @@ export function useLoopPreviewItems(
   const { sourceId, filters, orderBy, direction, offset, limit } = readLoopProps(node)
   const tableId = typeof filters.tableId === 'string' ? filters.tableId : ''
   const mimePrefix = typeof filters.mimePrefix === 'string' ? filters.mimePrefix : ''
+  const currentEntry = templateContext?.entryStack.at(-1)
+  const entryFieldId = typeof filters.fieldId === 'string' ? filters.fieldId : ''
+  const relatedItems = useEntryRelationItems(currentEntry, entryFieldId, sourceId === ENTRY_FIELD_SOURCE_ID, previewReadiness)
   // Read as primitives so the fetch effect's dependency list stays stable.
   const cellField = typeof filters.cellField === 'string' ? filters.cellField : ''
   const cellOperator = typeof filters.cellOperator === 'string' ? filters.cellOperator : ''
@@ -378,6 +382,7 @@ export function useLoopPreviewItems(
       limit,
       direction,
       mediaByReference,
+      relatedItems,
     }).items
   }
 

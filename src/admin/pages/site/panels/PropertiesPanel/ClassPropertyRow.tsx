@@ -19,6 +19,7 @@ import { ColorControl } from '@site/property-controls/ColorControl'
 import { SelectControl } from '@site/property-controls/SelectControl'
 import { BackgroundImageControl } from '@site/property-controls/BackgroundImageControl'
 import { FontFamilyControl } from '@site/property-controls/FontFamilyControl'
+import { AnimationControl } from '@site/property-controls/AnimationControl'
 import { useEditorStore } from '@site/store/store'
 import { ControlRow } from '@ui/components/ControlRow'
 import { TokenAwareInput } from '@site/property-controls/TokenAwareInput'
@@ -187,7 +188,10 @@ export function ClassPropertyRow({
   // takes precedence over the generic text/select dispatch below.
   let control: React.ReactNode
 
-  if (property === 'fontFamily') {
+  if (property === 'animation') {
+    control = <AnimationControl propKey={String(property)} label={label}
+      value={String(value ?? '')} onChange={handleControlChange} />
+  } else if (property === 'fontFamily') {
     control = (
       <FontFamilyControl
         propKey={String(property)}

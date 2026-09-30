@@ -10,8 +10,7 @@
  * `marked`) plus two CMS extensions:
  *   - `@[video](url)` — a video media node (parsed by a custom marked
  *     tokenizer; serialised back as the same raw line)
- *   - Images on their own line are promoted to a block-level `media` node
- *     rather than wrapped in a paragraph
+ *   - Standalone images become media nodes; titles store image presentation.
  *
  * Headings are clamped to h2-h4. The title of a post owns h1, so anything
  * shallower is normalised up to h2 and anything deeper is normalised down
@@ -26,6 +25,8 @@
  */
 
 import { Marked, type Tokens, type Token } from 'marked'
+import { alignedBlock, serializeAlignedBlock } from './alignedBlock'
+import { mediaNode, parseMediaImageTitle, serializeMediaImageTitle, escapeImageTitle, mediaSizeAttr, booleanAttr, type MediaImagePresentation } from './mediaImagePresentation'
 
 // ---------------------------------------------------------------------------
 // ProseMirror JSON shape (just enough — we don't pull in @tiptap/pm here so
@@ -60,6 +61,7 @@ const marked = new Marked({ gfm: true })
 // token so the walker can map it to a media node.
 marked.use({
   extensions: [
+    alignedBlock,
     {
       name: 'instaticVideo',
       level: 'block',
@@ -122,6 +124,14 @@ function tokensToBlockNodes(tokens: Token[]): JSONNode[] {
 
 function tokenToBlockNode(token: Token): JSONNode | JSONNode[] | null {
   switch (token.type) {
+    case 'instaticAlignedBlock': {
+      const block = token as Tokens.Generic
+      return {
+        type: block.tag === 'p' ? 'paragraph' : 'heading',
+        attrs: { ...(block.tag === 'p' ? {} : { level: Number(block.tag.slice(1)) }), textAlign: block.alignment },
+        content: inlineTokensToNodes(block.tokens ?? [], []),
+      }
+    }
     case 'paragraph':
       return paragraphTokenToNode(token as Tokens.Paragraph)
     case 'heading':
@@ -167,7 +177,7 @@ function paragraphTokenToNode(token: Tokens.Paragraph): JSONNode | JSONNode[] {
   const inline = token.tokens ?? []
   if (inline.length === 1 && inline[0].type === 'image') {
     const img = inline[0] as Tokens.Image
-    return mediaNode('image', img.href, img.text)
+    return mediaNode('image', img.href, img.text, parseMediaImageTitle(img.title))
   }
 
   // Multiple inline tokens but the only non-text content is an image →
@@ -186,7 +196,7 @@ function paragraphTokenToNode(token: Tokens.Paragraph): JSONNode | JSONNode[] {
       if (t.type === 'image') {
         flush()
         const img = t as Tokens.Image
-        nodes.push(mediaNode('image', img.href, img.text))
+        nodes.push(mediaNode('image', img.href, img.text, parseMediaImageTitle(img.title)))
       } else {
         buffer.push(t)
       }
@@ -394,7 +404,7 @@ function pushInline(out: JSONNode[], token: Token, marks: JSONMark[]): void {
     }
     case 'link': {
       const link = token as Tokens.Link
-      const linkMark: JSONMark = { type: 'link', attrs: { href: link.href } }
+      const linkMark: JSONMark = { type: 'link', attrs: { href: link.href, ...(link.title === 'instatic:download' ? { download: '' } : {}) } }
       pushInlineGroup(out, link.tokens ?? [], addMark(marks, linkMark))
       return
     }
@@ -489,20 +499,11 @@ function blockNodesToMarkdown(nodes: JSONNode[]): string {
 
 function blockNodeToMarkdown(node: JSONNode): string {
   switch (node.type) {
-    // Note: paragraph / heading nodes may carry a `textAlign` attribute
-    // (set by the TextAlign extension in the editor). Markdown has no
-    // native alignment syntax, so the attribute is intentionally NOT
-    // serialised here in v1 — alignment is an editor-session only
-    // affordance. Persisting it would require wrapping the block in
-    // inline HTML (`<div class="text-align-…">…</div>`), which adds a
-    // round-trip parser + a publisher CSS rule, both of which are a
-    // separate follow-up. Authors using alignment today will see it
-    // visually while editing; it resets after save+reload.
     case 'paragraph':
-      return inlineToMarkdown(node.content ?? [])
+      return serializeAlignedBlock('p', node.attrs?.textAlign, inlineToMarkdown(node.content ?? [])) ?? inlineToMarkdown(node.content ?? [])
     case 'heading': {
       const level = clampHeadingLevel(numberAttr(node, 'level', 2))
-      return `${'#'.repeat(level)} ${inlineToMarkdown(node.content ?? [])}`
+      return serializeAlignedBlock(`h${level}`, node.attrs?.textAlign, inlineToMarkdown(node.content ?? [])) ?? `${'#'.repeat(level)} ${inlineToMarkdown(node.content ?? [])}`
     }
     case 'blockquote':
       return blockNodesToMarkdown(node.content ?? [])
@@ -530,7 +531,13 @@ function blockNodeToMarkdown(node: JSONNode): string {
       const mediaType = stringAttr(node, 'mediaType', 'image')
       if (mediaType === 'video') return `@[video](${src})`
       const alt = stringAttr(node, 'alt', '')
-      return `![${alt}](${src})`
+      const presentation: MediaImagePresentation = {
+        size: mediaSizeAttr(node, 'size'),
+        lightbox: booleanAttr(node, 'lightbox'),
+        title: stringAttr(node, 'title', ''),
+      }
+      const metadata = serializeMediaImageTitle(presentation)
+      return `![${alt}](${src}${metadata ? ` "${escapeImageTitle(metadata)}"` : ''})`
     }
     default:
       return ''
@@ -658,7 +665,7 @@ function openMark(mark: JSONMark): string {
 function closeMark(mark: JSONMark): string {
   if (mark.type === 'link') {
     const href = (mark.attrs?.href ?? '') as string
-    return `](${href})`
+    return `](${href}${mark.attrs?.download != null ? ' "instatic:download"' : ''})`
   }
   if (mark.type === 'underline') return '</u>'
   return MARK_OPEN[mark.type] ?? ''
@@ -683,13 +690,6 @@ function clampHeadingLevel(level: number): 2 | 3 | 4 {
 
 function emptyParagraph(): JSONNode {
   return { type: 'paragraph' }
-}
-
-function mediaNode(mediaType: 'image' | 'video', src: string, alt: string): JSONNode {
-  return {
-    type: 'media',
-    attrs: { mediaType, src, alt },
-  }
 }
 
 function isInlineTokenType(type: string): boolean {

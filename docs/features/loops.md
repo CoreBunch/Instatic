@@ -167,11 +167,43 @@ Projects loop
 ```
 
 The Properties panel offers collection fields from the current entry table:
-multi-media, multi-relation, and multi-select fields. Primitive items are
+repeater, multi-media, multi-relation, and multi-select fields. Primitive items are
 available as `currentEntry.value`; object-array members are exposed by key.
 Media ids are resolved through the publisher's batched media prefetch and
 provide `currentEntry.src`, `url`, `path`, `altText`, `mimeType`, `width`, and
 `height`.
+
+Multi-relations resolve to the referenced table's entries: an Offers loop can
+contain `Current entry field → teammembers`, whose Text and Image children bind
+to the Team table's name, function, and image fields. The field picker follows
+the relation's target table, including further nested relation loops.
+
+Repeater fields are also available under **Current entry field**. For example,
+an Offers loop can contain a second loop over `weeklySlots`. Its binding picker
+offers the repeater's item fields (`weekday`, `startTime`, `endTime`), and a Text
+child can render `{currentEntry.weekday}: {currentEntry.startTime}–{currentEntry.endTime}`.
+Stored `{ id, cells }` items expose their cells directly on the current entry;
+the stable item ID and original object (`value`) are retained. Multiple items
+render in authored order, independently for each offer, and empty fields render
+no items. The same projection runs in the canvas and publisher.
+Select and multi-select fields inside repeater items resolve stored option IDs
+to their display labels. Binding tokens use field IDs, which can differ from
+the displayed label; use the picker to insert the correct token.
+Individual entry routes and draft/branch previews apply the same schema-based
+cell projection before seeding the entry stack, including repeater media URLs.
+
+The server loads only referenced row IDs in batches, using the ordinary row/media
+projection. Post-type targets use published versions on public pages; branch
+previews use that branch's draft rows. Deleted, missing, and unavailable targets
+are omitted before direction/offset/limit are applied. Empty relations render no
+items. Stored relation IDs are unchanged. Prefetch follows the finite layout's
+loop ancestry (also inside visual components), so cyclic content relations do not
+cause recursive data expansion. Entry-template routes seed the same prefetch
+with their current entry. The canvas requests the same projection through
+`loop-preview` with an exact `rowIds` JSON array (up to 200 IDs per request).
+When an outer loop loads another page, the load-more endpoint seeds
+`prefetchLoopData` with that fetched slice and resolves its descendant loops.
+Nested relations therefore use the newly loaded entries and retain their fields.
 
 Contextual loops preserve authored order by default, can reverse/slice with
 direction/offset/limit, and do not support infinite pagination. Infinite

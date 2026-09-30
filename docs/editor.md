@@ -8,6 +8,9 @@ The frontend is a single React 19 + Vite SPA mounted at `/admin`. Inside it, two
 
 ## TL;DR
 
+- **Entrance animations:** select a class, then **Styles → Effects → Animation** to choose Fade in, Slide up/down/from left/from right, or Zoom in. Duration, delay (milliseconds), and easing are editable. Choose Trigger: On load or On scroll into view. Scroll effects run once when the element intersects the viewport; the configured delay starts at that point. Design mode keeps scroll effects visible for editing; Live mode and published pages use the same IntersectionObserver runtime, including entries inserted by loops. Without JavaScript/Web Animations support, or with reduced motion, scroll content remains visible. None disables an inherited animation; Inherited clears the local value. Custom CSS preserves arbitrary imported animation shorthands. Preset keyframes are emitted by the shared canvas/publisher class-CSS generator only when used. Reduced-motion preferences keep content visible without entrance movement, including during delays.
+- **Local links:** the URL control accepts `/page#section`, `#section`, `./page`, `../page`, query references, and `tel:` as well as HTTP(S)/mailto links. Protocol-relative URLs and unsafe schemes remain rejected.
+
 - **Entry:** `src/admin/main.tsx` mounts `<Router><AdminRoutes /></Router><AdminContextMenuGuard />` with React 19 root-level error callbacks. `flushSync` forces the initial render synchronous to cut LCP.
 - **Router:** `src/admin/lib/routing/` — in-house router replacing `react-router-dom`. Ten workspace/page routes are wrapped in a per-route `<ErrorBoundary>` and `<Suspense>`, with root redirects plus a final `path="/admin/*"` catch-all redirecting unknown admin URLs to `/admin/dashboard` (login form when unauthenticated) instead of rendering an empty tree. Public-site 404s are NOT claimed — the publish pipeline's NotFound handling owns those.
 - **Cold path:** entry chunk is tiny. `AuthenticatedAdmin` is `React.lazy` and only loads post-login. Each workspace page is wrapped in `prewarmedLazy(...)`: the active page fires its import at module evaluation; the remaining pages pre-warm via `requestIdleCallback` after first paint so subsequent nav is synchronous (no Suspense flicker).
@@ -337,6 +340,7 @@ The store is composed of **12 slices**, each created by a factory in `store/slic
 | `selectionSlice`       | `selectedNodeId`, `hoveredNodeId`                                          |
 | `canvasSlice`          | Zoom, pan, `activeBreakpointId`, `activeConditionId`, `canvasMode` ('select'|'pan'|'insert'), `canvasView` ('design'|'live'), `runScripts` |
 | `uiSlice`              | Site editor panel visibility, unsaved-changes flag, insert picker, `componentizeEditorRequest` |
+| `previewSelectionSlice` | Session-only template and component preview source selections |
 | `classSlice`           | Style-rule CRUD, node ↔ class assignment, ambient selector creation         |
 | `filesSlice`           | `SiteFile` CRUD                                                            |
 | `visualComponentsSlice`| Visual Component CRUD                                                      |
@@ -389,6 +393,14 @@ Selectors are pure reads. Mutations go through actions (`useEditorStore.getState
 `src/admin/pages/site/canvas/` is the rendering pipeline. Two key ideas:
 
 ### 1. Design mode and live mode
+
+Native `details`/`summary` accordions can be opened and closed by clicking their
+summary in either view, or with Enter/Space while the summary is focused.
+Selection still works normally. Selecting a layer inside a collapsed body
+reveals its ancestor accordions automatically. This state belongs only to the
+rendered editor frame: it does not change the page tree, collaboration document,
+undo history, or the published initial `open` attribute. Reloading the editor
+restores the authored state. Read-only composed regions are not toggled.
 
 `CanvasRoot` switches between two rendering surfaces based on `canvasView`:
 
@@ -788,3 +800,4 @@ See [docs/features/plugin-system.md](features/plugin-system.md) for the plugin S
   - `src/__tests__/architecture/canvas-aware-selectors.test.ts`
   - `src/__tests__/architecture/spotlight-no-direct-store-mutation.test.ts`
   - `src/__tests__/architecture/keybindings-registry-single-source.test.ts`
+

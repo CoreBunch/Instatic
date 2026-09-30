@@ -1,7 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
 import React from 'react'
-import { cleanup, render, screen, waitFor } from '@testing-library/react'
-import { useEditorStore } from '@site/store/store'
+import { act, cleanup, render, renderHook, screen, waitFor } from '@testing-library/react'
+import { selectActiveCanvasPage, useEditorStore } from '@site/store/store'
+import { useTemplatePreviewContext } from '@site/hooks/useTemplatePreviewContext'
 import { CanvasRoot } from '@site/canvas/CanvasRoot'
 import { makeNode, makePage, makeSite } from '../fixtures'
 import '@modules/base'
@@ -52,6 +53,7 @@ beforeEach(() => {
     canUndo: false,
     canRedo: false,
     hasUnsavedChanges: false,
+    componentPreviewSelection: {},
   } as Parameters<typeof useEditorStore.setState>[0])
 
   globalThis.fetch = (async (input: RequestInfo | URL) => {
@@ -69,6 +71,30 @@ afterEach(() => {
 })
 
 describe('canvas template preview bindings', () => {
+  it('previews a selected component entry without changing the component or its runtime data source', async () => {
+    globalThis.fetch = (async (input: RequestInfo | URL) => {
+      if (String(input).includes('/posts/loop-preview')) return Response.json({ items: [
+        { id: 'niko', fields: { title: 'Niko', body: '**Body**', featuredMedia: '/uploads/niko.jpg' } },
+        { id: 'marc', fields: { title: 'Marc', body: '', featuredMedia: '/uploads/marc.jpg' } },
+      ] })
+      return Response.json({ tables: [postsTable] })
+    }) as typeof fetch
+    useEditorStore.getState().createSite('Preview test')
+    const id = useEditorStore.getState().createVisualComponent('Card')
+    useEditorStore.getState().setActiveDocument({ kind: 'visualComponent', vcId: id })
+    const site = useEditorStore.getState().site
+    const page = selectActiveCanvasPage(useEditorStore.getState())
+    const { result } = renderHook(() => useTemplatePreviewContext(page))
+    expect(result.current.context?.entryStack).toHaveLength(0)
+    act(() => useEditorStore.getState().setComponentPreviewSelection(id, { tableSlug: 'posts', rowId: 'marc' }))
+    await waitFor(() => expect(result.current.context?.entryStack[0]?.fields.title).toBe('Marc'))
+    act(() => useEditorStore.getState().setComponentPreviewSelection(id, { tableSlug: 'posts', rowId: 'niko' }))
+    expect(result.current.context?.entryStack[0]?.fields.featuredMedia).toBe('/uploads/niko.jpg')
+    expect(useEditorStore.getState().site).toBe(site)
+    act(() => useEditorStore.getState().setComponentPreviewSelection(id, null))
+    expect(result.current.context?.entryStack).toHaveLength(0)
+  })
+
   it('renders template dynamic bindings with synthetic preview data from the table schema', async () => {
     const root = makeNode({ id: 'root', moduleId: 'base.body', children: ['title'] })
     const title = makeNode({

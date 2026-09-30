@@ -31,10 +31,11 @@ Writing:
     date / dateTime → ISO string
     select → option id (string)
     multiSelect → option ids (string[])
-    media (single) → { id: string }
-    media (multi) → { id: string }[]
-    relation (single) → { rowId: string }
-    relation (multi) → { rowId: string }[]
+    media (single) → asset id string or null
+    media (multi) → asset id strings (string[])
+    relation (single) → row id string or null
+    relation (multi) → row id strings (string[])
+    repeater → { id: string, cells: Record<itemFieldId, value> }[]; retain existing item ids when editing; use the returned item schema for cell values
     body → markdown string
 - content_set_document_fields(documentId, fields) — batch write; prefer this when generating a whole post.
 - content_set_document_status(documentId, status, scheduledAt?) — draft / unpublished / published / scheduled.
@@ -52,6 +53,7 @@ Media + users:
 Other:
 - Field ids are stable (title, slug, body, featuredMedia, seoTitle, seoDescription, plus custom). Use them verbatim; case-sensitive.
 - Don't invent option ids for select fields — read the schema first.
+- For relations, read targetTableId and allowMultiple from content_get_collection_schema. Use content_list_documents with targetTableId to find real target row ids; content_get_document reads their fields. Store bare ids, never { rowId } objects. Clear a single relation with null and a multi-relation with [].
 - content_create_document success data includes the new id as documentId.
 - On tool error: read the message and retry with corrected input.
 

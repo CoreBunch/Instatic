@@ -34,6 +34,7 @@ import {
   proseMirrorDocToMarkdown,
 } from '@core/markdown/markdownDocument'
 import { MediaNode, type MediaAttributes } from './nodes/MediaNode'
+import { ContentLinkAttributes } from './nodes/ContentLinkAttributes'
 import { MediaUploadPlaceholder } from './nodes/MediaUploadPlaceholder'
 import { useEditorMediaDrop } from './hooks/useEditorMediaDrop'
 import {
@@ -127,6 +128,7 @@ export function TiptapBodyEditor({
     immediatelyRender: false,
     editable: !readOnly,
     extensions: [
+      ContentLinkAttributes,
       StarterKit.configure({
         heading: { levels: [2, 3, 4] },
         // The link extension's "open on click" handler is helpful in
@@ -150,17 +152,7 @@ export function TiptapBodyEditor({
       TableRow,
       TableHeader,
       TableCell,
-      // Text alignment for paragraphs + headings. Markdown has no
-      // native alignment syntax, so alignment is a session-only
-      // affordance for v1 (resets on save+reload); persisting it would
-      // need inline HTML wrappers + a publisher CSS rule, both a
-      // separate follow-up.
-      //
-      // `defaultAlignment: null` matches the extension's own default so
-      // every existing doc loaded from markdown stays valid against
-      // the schema. Passing 'left' here was the cause of the test
-      // regression — the schema gained a required attr that the
-      // markdown parser doesn't populate, and PM rejected the doc.
+      // Alignment is persisted by the shared Markdown bridge.
       TextAlign.configure({
         types: ['paragraph', 'heading'],
         alignments: ['left', 'center', 'right', 'justify'],

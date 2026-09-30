@@ -7,6 +7,7 @@ import type {
 import { breakpointMediaQuery, styleRuleSelector } from '@core/page-tree'
 import { sanitiseCssValue } from './utils'
 import { responsiveBackgroundImage, type ResponsiveCssOptions } from './responsiveBackground'
+import { animationPresetCss } from '@core/animationPresets'
 
 /**
  * Convert a camelCase CSS property name to kebab-case.
@@ -470,7 +471,9 @@ export function generateClassCSS(
     blocks.push(...emitRule(styleRuleSelector(cls), cls))
   }
 
-  return blocks.join('\n\n')
+  const css = blocks.join('\n\n')
+  const presets = animationPresetCss(css)
+  return presets ? `${css}\n\n${presets}` : css
 }
 
 const RAW_KEYFRAMES_RE =

@@ -95,7 +95,7 @@ async function renderMergedTemplate(
 ): Promise<{ html: string; jsModuleIds: string[]; publishVersion: number; cssBundle: SiteCssBundle }> {
   const publishVersion = ctx.publishVersion ?? getPublishVersion()
   const moduleJsMap = buildPublishedSiteModuleJsMap(snapshot.site, registry)
-  const loopData = await prefetchLoopData(merged, snapshot.site, ctx.db, ctx.url)
+  const loopData = await prefetchLoopData(merged, snapshot.site, ctx.db, ctx.url, { entryStack: templateContext?.entryStack })
   const mediaAssets = await prefetchMediaAssets(merged, snapshot.site, registry, ctx.db, {
     templateContext,
     loopData,
@@ -192,7 +192,7 @@ export async function renderPublishedDataRowTemplate(
   // nodes outside any loop resolve their `currentEntry` bindings against this
   // seed. page/site/viewer frames are filled by `publishPage` from the document.
   const templateContext: TemplateRenderDataContext = {
-    entryStack: [publishedDataRowToLoopItem(row)],
+    entryStack: [await publishedDataRowToLoopItem(ctx.db, row)],
     ...(ctx.url ? { route: buildRouteFrame(ctx.url.toString()) } : {}),
   }
 

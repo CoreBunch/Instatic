@@ -20,16 +20,18 @@ export function walkRenderTree(
   nodes: Record<string, BaseNode>,
   rootNodeId: string,
   site: SiteDocument,
-  onNode: (node: BaseNode) => void,
+  onNode: (node: BaseNode, ancestors: readonly BaseNode[]) => void,
 ): void {
   const visit = (
     curNodes: Record<string, BaseNode>,
     nodeId: string,
     seenVcs: ReadonlySet<string>,
+    ancestors: readonly BaseNode[],
   ): void => {
     const node = curNodes[nodeId]
     if (!node) return
-    onNode(node)
+    onNode(node, ancestors)
+    const childAncestors = [...ancestors, node]
 
     if (node.moduleId === 'base.visual-component-ref') {
       const componentId = (node.props as Record<string, unknown> | undefined)?.['componentId']
@@ -37,13 +39,13 @@ export function walkRenderTree(
         const vc = selectVisualComponentById(site, componentId)
         if (vc) {
           const nextSeen = new Set(seenVcs).add(componentId)
-          visit(vc.tree.nodes as Record<string, BaseNode>, vc.tree.rootNodeId, nextSeen)
+          visit(vc.tree.nodes as Record<string, BaseNode>, vc.tree.rootNodeId, nextSeen, childAncestors)
         }
       }
     }
 
-    for (const childId of node.children) visit(curNodes, childId, seenVcs)
+    for (const childId of node.children) visit(curNodes, childId, seenVcs, childAncestors)
   }
 
-  visit(nodes, rootNodeId, new Set())
+  visit(nodes, rootNodeId, new Set(), [])
 }

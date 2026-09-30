@@ -8,6 +8,7 @@ import { createSiteSlice } from './slices/siteSlice'
 import { createSelectionSlice } from './slices/selectionSlice'
 import { createCanvasSlice } from './slices/canvasSlice'
 import { createUiSlice } from './slices/uiSlice'
+import { createPreviewSelectionSlice } from './slices/previewSelectionSlice'
 import { createStyleRuleSlice } from './slices/styleRuleSlice'
 import { createFilesSlice } from './slices/filesSlice'
 import { createVisualComponentsSlice } from './slices/visualComponentsSlice'
@@ -26,11 +27,12 @@ import { restoreStoredSiteEditorLayout } from '@site/layout/siteEditorLayoutPers
 /**
  * EditorStore — the central Zustand store for the visual editor.
  *
- * Composed of 13 slices (6 canonical Phase 0 + agentSlice + sitePanelSlice + filesSlice + visualComponentsSlice + clipboardSlice + inlineEditSlice + layoutsSlice):
+ * Composed of responsibility-specific slices:
  *   - siteSlice:        owns SiteDocument (pages, nodes, breakpoints, settings, classes, files)
  *   - selectionSlice:      selectedNodeId, hoveredNodeId
  *   - canvasSlice:         zoom, pan, activeBreakpointId, canvasMode (Constraint #317)
  *   - uiSlice:             panel visibility, insert picker
+ *   - previewSelectionSlice: session-only template and component example data
  *   - styleRuleSlice:      style-rule (class + ambient) CRUD + node↔class assignment
  *   - filesSlice:          SiteFile CRUD (Contribution #595 / Task #429)
  *   - visualComponentsSlice: VisualComponent CRUD (Contribution #619 / Task #436)
@@ -66,6 +68,7 @@ export const useEditorStore = create<EditorStore>()(
         ...createSelectionSlice(...args),
         ...createCanvasSlice(...args),
         ...createUiSlice(...args),
+        ...createPreviewSelectionSlice(...args),
         ...createStyleRuleSlice(...args),
         ...createFilesSlice(...args),
         ...createVisualComponentsSlice(...args),

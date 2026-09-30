@@ -12,6 +12,7 @@ import { describe, it, expect } from 'bun:test'
 import { escapeProps, publishPage, renderNode } from '@core/publisher'
 import type { PropertySchema } from '@core/module-engine'
 import { makeModule, makeRegistry, makePage, makeSite, makeAccumulators } from './helpers'
+import { renderMarkdownToHtml } from '@core/markdown/renderMarkdown'
 
 // ---------------------------------------------------------------------------
 // escapeProps richtext sanitization — routed by the prop's declared TYPE.
@@ -72,6 +73,17 @@ describe('publishPage richtext sanitization (Constraint #368)', () => {
     },
   })
   const registry = makeRegistry({ 'test.content': contentModule })
+
+  it('publishes aligned content and download links after sanitization', () => {
+    const page = makePage({ root: {
+      moduleId: 'test.content',
+      props: { html: renderMarkdownToHtml('<h2 align="right">[Wallpaper](/uploads/wallpaper.png "instatic:download")</h2>') },
+    } })
+    const { html } = publishPage(page, site, registry)
+    expect(html).toContain('class="instatic-content-align--right"')
+    expect(html).toContain('download=""')
+    expect(html).toContain('.instatic-content-align--right { text-align: right; }')
+  })
 
   it('<script> in html prop is stripped from published HTML', () => {
     const page = makePage({

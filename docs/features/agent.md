@@ -2,6 +2,10 @@
 
 The AI Agent is a model-powered assistant integrated into the Site editor and Content workspace. The shared Agent Panel owns conversation state, provider selection, streaming, history, and the browser bridge; each workspace supplies its own snapshot builder and tool executor.
 
+Relation and repeater catalogs are exposed through the existing tools. `site_list_loop_sources` preserves relation `targetTableSlug` and `allowMultiple`, media metadata, and repeater item fields with their binding tokens. An `entry.field` loop uses `<instatic-loop data-source-id="entry.field" data-field-id="teammembers" data-direction="asc">...</instatic-loop>` inside an entry context. Relation children bind the target table's fields; repeater children bind item fields. The HTML importer preserves the selected field and defaults contextual loops to authored order.
+
+`content_get_collection_schema` includes relation target table IDs/cardinality and repeater item schemas (including select option IDs). Content writes use bare row ID strings or `null` for single relations and string arrays for multi-relations; media uses the same shape with asset IDs. Repeaters use ordered `{ id, cells }` items. The Content bridge edits post-type entries; schema management and a Data-workspace toolset are not provided.
+
 In the Site editor, the agent reads the current page snapshot, plans a sequence of edits, and executes them by calling tools. Structure is written as semantic HTML (`site_insert_html` / `site_replace_node_html`); styling is written as CSS — a `<style>` block and/or `class=` attributes inside the insert, or the dedicated `site_apply_css` tool for authoring/editing any CSS on its own. There is one CSS path and it accepts every selector; `site_assign_class` / `site_remove_class` attach existing classes to nodes.
 
 In the Content workspace, the agent works against content collections and entries. It reads collection schemas and document state server-side, then mutates the live content editor through a browser bridge so the open draft, Tiptap body editor, and sidebar selection stay authoritative.

@@ -44,6 +44,8 @@
 
 .linkForm {
     display: inline-flex;
+    flex-wrap: wrap;
+    max-width: min(32rem, 85vw);
     align-items: center;
     gap: var(--space-3xs);
 }

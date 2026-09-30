@@ -11,6 +11,7 @@ import { afterEach, describe, expect, it, mock, spyOn } from 'bun:test'
 import { act, cleanup, renderHook, waitFor } from '@testing-library/react'
 import type { DataRow } from '@core/data/schemas'
 import { useContentEntryDraft } from '../useContentEntryDraft'
+import { markdownToProseMirrorDoc, proseMirrorDocToMarkdown } from '@core/markdown/markdownDocument'
 
 afterEach(() => {
   cleanup()
@@ -50,6 +51,16 @@ function renderDraft(entry: DataRow) {
 }
 
 describe('useContentEntryDraft custom cells', () => {
+  it('marks a published entry dirty when only text alignment changes', () => {
+    const entry = { ...fakeRow({ title: 'Hello', slug: 'hello', body: 'Desktop' }), status: 'published' as const }
+    const { result } = renderDraft(entry)
+    expect(result.current.isDirty).toBe(false)
+    const doc = markdownToProseMirrorDoc(result.current.body)
+    doc.content![0].attrs = { textAlign: 'center' }
+    act(() => result.current.setBody(proseMirrorDocToMarkdown(doc)))
+    expect(result.current.isDirty).toBe(true)
+  })
+
   it('hydrates customCells from the entry, excluding built-in field ids', () => {
     const { result } = renderDraft(fakeRow({
       title: 'Hello',

@@ -65,8 +65,16 @@ describe('isValidUrl', () => {
       expect(isValidUrl('not a url')).toBe(false)
     })
 
-    it('rejects relative paths', () => {
-      expect(isValidUrl('/relative/path')).toBe(false)
+    it('accepts explicit local navigation references', () => {
+      for (const url of ['/hochst-web#angebote', '#kontakt', './event', '../events', '?page=2', 'tel:+49621293']) {
+        expect(isValidUrl(url)).toBe(true)
+      }
+    })
+
+    it('rejects disguised external paths and control characters', () => {
+      for (const url of ['/\\example.com', '/\n/example.com', 'java\tscript:alert(1)', '/path with spaces']) {
+        expect(isValidUrl(url)).toBe(false)
+      }
     })
 
     it('rejects protocol-relative URLs', () => {

@@ -36,3 +36,49 @@
     text-overflow: ellipsis;
     white-space: nowrap;
 }
+
+.selectionSummary {
+    margin: 0;
+    color: var(--text-subtle);
+    font-size: var(--text-s);
+}
+
+.row {
+    display: flex;
+    align-items: center;
+    gap: var(--space-s);
+    padding: var(--space-s) var(--space-m);
+    border-radius: var(--editor-radius);
+    cursor: pointer;
+}
+
+.row:hover,
+.row[data-selected="true"] {
+    background: var(--editor-surface-2);
+}
+
+.row:focus-within {
+    outline: 1px solid var(--text-muted);
+    outline-offset: -1px;
+}
+
+.rowText {
+    display: flex;
+    flex: 1;
+    min-width: 0;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-m);
+}
+
+.rowStatus {
+    flex-shrink: 0;
+    color: var(--text-subtle);
+    font-size: var(--text-s);
+}
+
+.singleMarker {
+    display: inline-flex;
+    width: 16px;
+    flex-shrink: 0;
+}

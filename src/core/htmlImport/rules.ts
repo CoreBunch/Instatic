@@ -139,14 +139,18 @@ function submitLabel(el: Element): string {
 }
 
 function mapLoopProps(el: Element): Record<string, unknown> {
+  const sourceId = attr(el, 'data-source-id')
+  const direction = normalizedAttr(el, 'data-direction')
   const tableId = attr(el, 'data-table-id')
+  const fieldId = attr(el, 'data-field-id')
   const customTag = attr(el, 'data-custom-tag')
   const tag = attr(el, 'data-tag')
   return {
-    sourceId: attr(el, 'data-source-id'),
-    filters: tableId ? { tableId } : {},
+    sourceId,
+    filters: { ...(tableId ? { tableId } : {}), ...(fieldId ? { fieldId } : {}) },
     orderBy: attr(el, 'data-order-by'),
-    direction: normalizedAttr(el, 'data-direction') === 'asc' ? 'asc' : 'desc',
+    direction: direction === 'asc' || direction === 'desc'
+      ? direction : sourceId === 'entry.field' ? 'asc' : 'desc',
     limit: integerAttr(el, 'data-limit', 10, 1),
     offset: integerAttr(el, 'data-offset', 0, 0),
     pagination: normalizedAttr(el, 'data-pagination') === 'infinite' ? 'infinite' : 'none',

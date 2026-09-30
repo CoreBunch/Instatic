@@ -152,6 +152,13 @@ export async function persistDataRowPublish(
     const previousRoute = await readPreviousPublishedRoute(tx, rowId)
     const versionNumber = await nextDataRowVersionNumber(tx, rowId)
     const versionId = nanoid()
+    const now = nowIso()
+    const existingPublicationDate = row.cells['date']
+    const cells = row.tableId === 'posts' && (
+      typeof existingPublicationDate !== 'string' || !existingPublicationDate.trim()
+    )
+      ? { ...row.cells, date: now.slice(0, 10) }
+      : row.cells
 
     await tx`
       insert into data_row_versions
@@ -160,16 +167,16 @@ export async function persistDataRowPublish(
         ${versionId},
         ${row.id},
         ${versionNumber},
-        ${row.cells},
+        ${cells},
         ${row.slug},
         ${publisherUserId}
       )
     `
 
-    const now = nowIso()
     const { rows: updateRows } = await tx<{ id: string }>`
       update data_rows
       set status = 'published',
+          cells_json = ${cells},
           active_version_id = ${versionId},
           published_by_user_id = ${publisherUserId},
           published_at = ${now},

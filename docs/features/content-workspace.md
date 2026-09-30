@@ -12,6 +12,10 @@ The Content workspace renders a three-pane shell — explorer sidebar, document 
 - **Body editor:** `TiptapBodyEditor` — one ProseMirror document, not a block list. Body persists as markdown text in the `body` cell.
 - **Inline marks:** bubble menu (B / I / code / strike / link). Block inserts: slash menu (`/`) + notch quick-actions.
 - **Canvas modes:** `write` (bare editor surface) and `live` (entry rendered inside its template with real site styles).
+- **Body images:** toolbar sizes Original (intrinsic width), L (content width), M (560px), S (320px), capped to the available width. Zoom uses the active button variant. Markdown titles persist size and lightbox metadata; stored `size=sm` maps to M.
+- **Link insertion:** the block-options menu opens `InsertLinkDialog` for link text and a safe target URL. Both link editors offer the media library (all file types) and Open/Download. Download links store the reserved Markdown title `instatic:download` and publish with the HTML `download` attribute; browsers support forced downloads for same-origin media.
+- **Text alignment:** paragraph and heading alignment persists through the Markdown bridge as restricted `<p align="center">…</p>` / `<h2 align="right">…</h2>` wrappers. Their contents remain Markdown; the publisher emits semantic elements with `instatic-content-align--*` classes backed by `publisher/reset.ts`, surviving rich-text sanitization. Alignment-only edits therefore mark the entry dirty and can be published.
+- **Lightbox runtime:** `src/core/imageLightboxRuntime.ts` opens a native modal dialog in a shadow root to isolate it from site styles. Fade/scale animation respects reduced motion; closing by Escape, backdrop or the high-contrast button restores scroll and focus without fragment navigation. The publisher includes the same-origin runtime for lightbox content and deferred fragments. Without JavaScript the link opens the image file.
 - **Settings panel:** `ContentSettingsPanel` — entry-specific; hidden when no entry is selected. Reopened via the top-right notch when collapsed.
 - **Hooks:** `useContentWorkspace` (CRUD + selection), `useContentEntryDraft` (field state + save/publish), `useContentMediaPicker` (media modal + featured media).
 - **AI assistant:** `ContentAgentMount` docks the shared Agent Panel in the content rail. `useContentToolBridge`, mounted by `ContentPage`, exposes the live workspace to both the built-in agent and scoped MCP relay even when the panel is closed, so writes mutate the open draft/editor state rather than stale database rows.
@@ -195,3 +199,17 @@ Body content is exchanged with the model as markdown. The browser bridge convert
   - `src/admin/pages/content/hooks/useContentEntryDraft.ts` — field draft state
   - `src/core/markdown/markdownDocument.ts` — markdown ↔ ProseMirror round-trip
   - `src/admin/layouts/AdminWorkspaceCanvasLayout/AdminWorkspaceCanvasLayout.tsx` — workspace shell + notch
+
+---
+
+# Post publication dates
+
+The seeded **Posts** collection includes an editable `date` field labelled
+**Publication date**. Existing installations add it through migration 031 and
+backfill existing posts and published versions from their stored publication
+timestamp. Publishing a post with an empty date fills the current calendar day;
+an author-entered date is preserved. Site loops can order posts by this value
+with `orderBy: "cell:date"`, which keeps imported or intentionally backdated
+posts in editorial order instead of the order in which they were migrated.
+Migration 032 also recognises the opening `**Veröffentlicht am DD.MM.YYYY.**`
+line used by archive imports and restores that original date automatically.

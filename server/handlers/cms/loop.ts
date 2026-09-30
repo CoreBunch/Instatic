@@ -27,10 +27,9 @@ import {
   renderNode,
   type RenderConfig,
   type RenderAccumulators,
-  type ResolvedLoopRenderData,
 } from '@core/publisher'
 import { jsonResponse } from '../../http'
-import { readLoopProps } from '../../publish/loopPrefetch'
+import { prefetchLoopData, readLoopProps } from '../../publish/loopPrefetch'
 import { getPublishedLoopIndexForVersion } from '../../publish/publishedSnapshotCache'
 import { getPublishVersion } from '../../publish/publishState'
 import { LOOP_RUNTIME_JS } from '../../publish/loopRuntime'
@@ -121,6 +120,12 @@ export async function handleLoopRequest(
 
   const consumed = offset + result.items.length
   const hasMore = consumed < result.totalItems
+  const loopData = await prefetchLoopData(containingPage, site, ctx.db, undefined, {
+    rootNodeId: loopId,
+    resolvedLoops: new Map([
+      [loopId, { items: result.items, totalItems: result.totalItems, pageNumber, hasMore }],
+    ]),
+  })
 
   // Render just the loop's children for the new items. We re-use the
   // publisher's renderNode walker by constructing a synthetic context;
@@ -136,9 +141,7 @@ export async function handleLoopRequest(
     registry,
     breakpointId: undefined,
     templateContext: { entryStack: [] },
-    loopData: new Map<string, ResolvedLoopRenderData>([
-      [loopId, { items: result.items, totalItems: result.totalItems, pageNumber, hasMore }],
-    ]),
+    loopData,
   }
   const acc: RenderAccumulators = {
     cssMap: new Map(),

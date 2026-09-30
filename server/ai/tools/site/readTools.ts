@@ -145,12 +145,13 @@ const ListLoopSourcesInput = Type.Object({})
 
 type AgentBindingFormat = NonNullable<LoopSourceField['format']>
 
-interface AgentBindingField {
+interface AgentBindingField extends Omit<Partial<DataMetaField>, 'fields'> {
   id: string
   label: string
   token: string
   format?: AgentBindingFormat
   type?: DataMetaField['type']
+  fields?: AgentBindingField[]
 }
 
 function currentEntryToken(fieldId: string): string {
@@ -181,10 +182,10 @@ function dataMetaFieldFormat(field: DataMetaField): AgentBindingFormat | undefin
 
 function dataMetaFieldToAgentField(field: DataMetaField): AgentBindingField {
   const format = dataMetaFieldFormat(field)
+  const { fields, ...metadata } = field
   return {
-    id: field.id,
-    label: field.label,
-    type: field.type,
+    ...metadata,
+    ...(fields ? { fields: fields.map(dataMetaFieldToAgentField) } : {}),
     token: currentEntryToken(field.id),
     ...(format ? { format } : {}),
   }
@@ -222,6 +223,8 @@ const listLoopSourcesTool: AiTool = {
     return {
       usage: {
         loopElement: '<instatic-loop data-source-id="data.rows" data-table-id="<table id>" data-order-by="publishedAt" data-direction="desc" data-limit="3">...</instatic-loop>',
+        entryFieldLoopElement: '<instatic-loop data-source-id="entry.field" data-field-id="<array field id>" data-direction="asc">...</instatic-loop>',
+        entryFieldBindings: 'Inside an entry.field loop, a multi-relation uses the fields of the dataTables entry matching targetTableSlug; a repeater uses its nested fields. Tokens refer to the closest enclosing entry. Repeat this lookup for nested relation loops. Only array-valued fields can be looped; single relations cannot.',
         tokenSyntax: '{currentEntry.field}',
         invalidTokenSyntax: '{{post.field}}',
       },

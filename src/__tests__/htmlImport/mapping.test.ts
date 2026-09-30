@@ -1325,6 +1325,25 @@ describe('base.outlet — <instatic-outlet>', () => {
 // ---------------------------------------------------------------------------
 
 describe('base.loop — <instatic-loop>', () => {
+  it('preserves nested relation and repeater field selections and authored order', () => {
+    const result = importHtml(`
+      <instatic-loop data-source-id="data.rows" data-table-id="offers">
+        <instatic-loop data-source-id="entry.field" data-field-id="members">
+          <p>{currentEntry.role}</p>
+          <instatic-loop data-source-id="entry.field" data-field-id="slots" data-direction="desc">
+            <p>{currentEntry.weekday}</p>
+          </instatic-loop>
+        </instatic-loop>
+      </instatic-loop>
+    `)
+    const loops = Object.values(result.nodes).filter((node) => node.moduleId === 'base.loop')
+    expect(loops.map((node) => node.props)).toEqual(expect.arrayContaining([
+      expect.objectContaining({ sourceId: 'data.rows', filters: { tableId: 'offers' }, direction: 'desc' }),
+      expect.objectContaining({ sourceId: 'entry.field', filters: { fieldId: 'members' }, direction: 'asc' }),
+      expect.objectContaining({ sourceId: 'entry.field', filters: { fieldId: 'slots' }, direction: 'desc' }),
+    ]))
+    expect(loops).toHaveLength(3)
+  })
   it('maps <instatic-loop> to a configured base.loop node with child variants', () => {
     const result = importHtml(`
       <instatic-loop

@@ -12,7 +12,7 @@
  * scheme is — they differ only in which schemes they accept.
  *
  * Allowlists:
- *   isValidUrl()       — https, http, mailto
+ *   isValidUrl()       — https, http, mailto, tel, local paths and fragments
  *   isValidImageUrl()  — https, http, data:image/* (inline base64 images)
  */
 
@@ -44,14 +44,19 @@ function parses(v: string): boolean {
  * Returns true if `v` is a safe general-purpose URL for storing in site
  * props (e.g. a link href, a button href).
  *
- * Allows:  https:, http:, mailto:
- * Rejects: javascript:, data:, ftp:, blob:, custom schemes, schemeless values,
+ * Allows: https:, http:, mailto:, tel:, root/dot-relative paths and fragments.
+ * Rejects: javascript:, data:, ftp:, blob:, custom schemes, ambiguous plain text,
  *          and malformed absolute URLs (`http://`, `https://exa mple.com`)
  */
 export function isValidUrl(v: string): boolean {
   if (!v) return true
+  // Explicit local references must not become protocol-relative URLs after
+  // browser whitespace/backslash normalization.
+  if (/\s|\\/.test(v)) return false
+  if ((v.startsWith('/') && !v.startsWith('//')) || v.startsWith('#') ||
+      v.startsWith('./') || v.startsWith('../') || v.startsWith('?')) return true
   const scheme = urlScheme(v)
-  if (scheme !== 'https:' && scheme !== 'http:' && scheme !== 'mailto:') return false
+  if (scheme !== 'https:' && scheme !== 'http:' && scheme !== 'mailto:' && scheme !== 'tel:') return false
   return parses(v)
 }
 

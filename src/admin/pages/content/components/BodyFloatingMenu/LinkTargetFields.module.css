@@ -1,0 +1,10 @@
+.fields {
+    display: grid;
+    gap: var(--space-l);
+    min-width: 0;
+    width: 100%;
+}
+
+.libraryButton {
+    justify-self: start;
+}

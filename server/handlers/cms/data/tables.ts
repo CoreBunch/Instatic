@@ -41,6 +41,8 @@ import { slugForTable } from '@core/data/cells'
 import { slugFromTitle } from '@core/utils/slug'
 import { fetchPublishedDataRowItems } from '@core/loops/sources/dataRows'
 import { parseCellFilter } from '@core/loops/cellFilter'
+import { Type } from '@core/utils/typeboxHelpers'
+import { safeParseJson } from '@core/utils/jsonValidate'
 import { badRequest, jsonResponse, methodNotAllowed, readValidatedBody } from '../../../http'
 import { CMS_API_PREFIX, requestAuditContext } from '../shared'
 import {
@@ -389,6 +391,9 @@ async function handleTableLoopPreview(
 
   const url = new URL(req.url)
   const orderBy = url.searchParams.get('orderBy') ?? 'publishedAt'
+  const rowIdsValue = url.searchParams.get('rowIds')
+  const rowIds = rowIdsValue === null ? undefined : safeParseJson(rowIdsValue, Type.Array(Type.String({ minLength: 1 }), { maxItems: 200 }))
+  if (rowIds && !rowIds.ok) return badRequest('Invalid rowIds')
   const direction = url.searchParams.get('direction') === 'asc' ? 'asc' : 'desc'
   const rawLimit = Number.parseInt(url.searchParams.get('limit') ?? '6', 10)
   const limit = Math.min(Math.max(Number.isFinite(rawLimit) ? rawLimit : 6, 1), 50)
@@ -408,6 +413,7 @@ async function handleTableLoopPreview(
     // drafts (publishing is main-only).
     tableId: physicalId(scope.branchId, tableId),
     drafts: !isMainScope(scope),
+    rowIds: rowIds?.ok ? rowIds.value : undefined,
     orderBy,
     direction,
     limit,

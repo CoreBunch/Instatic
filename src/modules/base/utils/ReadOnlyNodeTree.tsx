@@ -28,7 +28,7 @@
  * `style="…"` the published page does.
  */
 
-import type { ReactNode } from 'react'
+import { use, type ReactNode } from 'react'
 import { registry } from '@core/module-engine'
 import type { NodeWrapperProps as NodeWrapperPropsType } from '@core/module-engine'
 import type { BaseNode, PageNode } from '@core/page-tree'
@@ -40,6 +40,7 @@ import {
   type TemplateRenderDataContext,
 } from '@core/templates/dynamicBindings'
 import { useLoopPreviewItems } from '@site/canvas/useLoopPreviewItems'
+import { CanvasTemplateContext } from '@site/canvas/CanvasContexts'
 
 /**
  * Identifies the editable source a read-only region was composed from, so the
@@ -86,7 +87,7 @@ interface ReadOnlyNodeTreeProps {
   readonly?: ReadOnlyRegion
   /**
    * Render data used to resolve template bindings and `{source.field}` tokens
-   * in read-only canvas content. When omitted, unresolved tokens stay visible.
+   * in read-only canvas content. Defaults to the enclosing canvas/loop context.
    */
   templateContext?: TemplateRenderDataContext
 }
@@ -119,6 +120,7 @@ export function ReadOnlyNodeTree({
   readonly,
   templateContext,
 }: ReadOnlyNodeTreeProps) {
+  const inheritedContext = use(CanvasTemplateContext)
   // Resolve the single outlet that hosts `outletSlot` up front so only the
   // first outlet is filled (matching the composer's "first outlet wins").
   const outletNodeId = outletSlot !== undefined ? firstOutletId(nodes) : undefined
@@ -132,7 +134,7 @@ export function ReadOnlyNodeTree({
       outletNodeId={outletNodeId}
       outletSlot={outletSlot}
       readonlyMarkers={readonlyMarkers(readonly)}
-      templateContext={templateContext}
+      templateContext={templateContext ?? inheritedContext}
     />
   )
 }
@@ -260,15 +262,17 @@ function ReadOnlyNodeRenderer({
   const nodeWrapperProps = style ? { ...baseWrapperProps, style } : baseWrapperProps
 
   return (
-    <ComponentType
-      props={effectiveProps as never}
-      nodeId={node.id}
-      isSelected={false}
-      mcClassName={mcClassName}
-      nodeWrapperProps={nodeWrapperProps}
-    >
-      {children}
-    </ComponentType>
+    <CanvasTemplateContext.Provider value={templateContext}>
+      <ComponentType
+        props={effectiveProps as never}
+        nodeId={node.id}
+        isSelected={false}
+        mcClassName={mcClassName}
+        nodeWrapperProps={nodeWrapperProps}
+      >
+        {children}
+      </ComponentType>
+    </CanvasTemplateContext.Provider>
   )
 }
 

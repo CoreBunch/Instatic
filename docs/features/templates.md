@@ -15,6 +15,7 @@ A template is an ordinary `pages` row carrying a `target` (everywhere, one/more 
 - **`base.outlet`** is the polymorphic outlet content flows into. A template *should* contain one. Having NO outlet is not blocked (you add it after converting the page to a template — requiring it first would be circular). The editor enforces a one-outlet-per-document invariant at the store's mutation chokepoints (`insertNode`, `duplicateNode(s)`, `pasteNode`), each surfacing a warning toast when blocked; the module pickers additionally render the outlet as a disabled tile with the reason (non-template page, VC mode, or outlet already placed) so authors rarely hit the block at all. The composer remains defensive for data pre-dating the guard: no outlet → template skipped; multiple → first wins.
 - Template pages are never served at their own slug; the live router and the static bake both skip them.
 - Dynamic bindings and token interpolation work exactly as before — the merged tree is a plain page tree.
+- Date-only ISO fields can be displayed with `{currentEntry.datum:date(de-DE,full)}` (for example, `Freitag, 18. September 2026`). The supported date styles are `full`, `long`, `medium`, and `short`; the locale is explicit. Formatting uses UTC calendar dates, leaves the stored value unchanged, and uses the normal `|fallback` for missing or invalid dates.
 - **`templateTargetLabel(page)`** returns a short human-readable string for a template's target (e.g. `"Everywhere"` or `"posts, news"`); import from `@core/templates`.
 
 ---

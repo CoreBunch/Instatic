@@ -13,6 +13,7 @@ import { useEditorStore } from '@site/store/store'
 import { Button } from '@ui/components/Button'
 import { ArrowLeftIcon } from 'pixel-art-icons/icons/arrow-left'
 import { DocumentSwitcher } from './DocumentSwitcher'
+import { ComponentPreviewSource } from './ComponentPreviewSource'
 import styles from './VisualComponentModeControl.module.css'
 
 export default function VisualComponentModeControl() {
@@ -47,6 +48,7 @@ export default function VisualComponentModeControl() {
       <span className={styles.modeLabel}>Editing component</span>
 
       <DocumentSwitcher current={{ kind: 'component', id: vc.id, label: vc.name }} />
+      <ComponentPreviewSource componentId={vc.id} />
     </div>
   )
 }

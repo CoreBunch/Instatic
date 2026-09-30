@@ -30,6 +30,8 @@ import { MoreVerticalSolidIcon } from 'pixel-art-icons/icons/more-vertical-solid
 import { ImagesSolidIcon } from 'pixel-art-icons/icons/images-solid'
 import { CopySolidIcon } from 'pixel-art-icons/icons/copy-solid'
 import { TrashSolidIcon } from 'pixel-art-icons/icons/trash-solid'
+import { LinkIcon } from 'pixel-art-icons/icons/link'
+import { InsertLinkDialog } from './InsertLinkDialog'
 import styles from './BodyFloatingMenu.module.css'
 import type { ReactNode } from 'react'
 
@@ -51,6 +53,7 @@ interface BodyFloatingMenuProps {
 }
 
 interface QuickInsertContext {
+  onInsertLink: () => void
   editor: Editor
   /**
    * A pre-focused, pre-positioned chain — focus has been restored to the
@@ -139,6 +142,16 @@ const QUICK_INSERT: QuickInsertOption[] = [
   // ── Insert ───────────────────────────────────────────────────────────
   {
     section: 'insert',
+    label: 'Link',
+    description: 'Insert a text link',
+    icon: <LinkIcon size={14} aria-hidden="true" />,
+    apply: ({ onInsertLink }) => {
+      onInsertLink()
+      return true
+    },
+  },
+  {
+    section: 'insert',
     label: 'Image / Video',
     description: 'From media library',
     icon: <ImagesSolidIcon size={14} aria-hidden="true" />,
@@ -220,6 +233,7 @@ interface ButtonPosition {
 }
 
 export function BodyFloatingMenu({ editor, onPickMedia, iframeEl }: BodyFloatingMenuProps) {
+  const [linkPosition, setLinkPosition] = useState<number | null>(null)
   // The button's vertical position. `null` means "don't render" — the
   // selection isn't on an empty top-level paragraph, or the editor is
   // blurred and we don't want a sticky affordance.
@@ -283,7 +297,7 @@ export function BodyFloatingMenu({ editor, onPickMedia, iframeEl }: BodyFloating
   // opening it (ContextMenu autofocuses its first item, blurring the
   // editor) would immediately unmount it and the user could never
   // click an option.
-  if (!position && !menuRect) return null
+  if (!position && !menuRect && linkPosition === null) return null
 
   return (
     <>
@@ -354,7 +368,10 @@ export function BodyFloatingMenu({ editor, onPickMedia, iframeEl }: BodyFloating
                     const chain = restoredPos !== null
                       ? editor.chain().focus(restoredPos)
                       : editor.chain().focus()
-                    option.apply({ editor, chain, onPickMedia })
+                    option.apply({
+                      editor, chain, onPickMedia,
+                      onInsertLink: () => setLinkPosition(restoredPos ?? editor.state.selection.from),
+                    })
                     setMenuRect(null)
                     selectionSnapshotRef.current = null
                   }}
@@ -366,6 +383,9 @@ export function BodyFloatingMenu({ editor, onPickMedia, iframeEl }: BodyFloating
             )
           })}
         </ContextMenu>
+      )}
+      {linkPosition !== null && (
+        <InsertLinkDialog editor={editor} position={linkPosition} onClose={() => setLinkPosition(null)} />
       )}
     </>
   )

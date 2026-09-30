@@ -19,6 +19,8 @@ import { BubbleMenu } from '@tiptap/react/menus'
 import type { VirtualElement } from '@floating-ui/dom'
 import { Button } from '@ui/components/Button'
 import { Input } from '@ui/components/Input'
+import { isSafeUrl } from '@core/html-sanitize'
+import { LinkTargetFields } from '../BodyFloatingMenu/LinkTargetFields'
 import { ContextMenu, ContextMenuItem } from '@ui/components/ContextMenu'
 import type { IconProps } from 'pixel-art-icons/types'
 import { ChevronDownIcon } from 'pixel-art-icons/icons/chevron-down'
@@ -326,17 +328,18 @@ export function BodyBubbleMenu({ editor, iframeEl }: BodyBubbleMenuProps) {
         ) : (
           <LinkEditor
             initial={linkDraft}
+            initialDownload={editor.getAttributes('link').download != null}
             onCancel={() => setLinkDraft(null)}
             onClear={() => {
               editor.chain().focus().unsetLink().run()
               setLinkDraft(null)
             }}
-            onSubmit={(href) => {
+            onSubmit={(href, download) => {
               const trimmed = href.trim()
               if (!trimmed) {
                 editor.chain().focus().unsetLink().run()
               } else {
-                editor.chain().focus().extendMarkRange('link').setLink({ href: trimmed }).run()
+                editor.chain().focus().extendMarkRange('link').setMark('link', { href: trimmed, download: download ? '' : null }).run()
               }
               setLinkDraft(null)
             }}
@@ -496,19 +499,22 @@ function MarkButton({ label, icon: Icon, active, onClick }: MarkButtonProps) {
 
 interface LinkEditorProps {
   initial: string
+  initialDownload: boolean
   onCancel: () => void
   onClear: () => void
-  onSubmit: (href: string) => void
+  onSubmit: (href: string, download: boolean) => void
 }
 
-function LinkEditor({ initial, onCancel, onClear, onSubmit }: LinkEditorProps) {
+function LinkEditor({ initial, initialDownload, onCancel, onClear, onSubmit }: LinkEditorProps) {
   const [value, setValue] = useState(initial)
+  const [download, setDownload] = useState(initialDownload)
+  const valid = !value.trim() || isSafeUrl(value.trim())
   return (
     <form
       className={styles.linkForm}
       onSubmit={(event: FormEvent<HTMLFormElement>) => {
         event.preventDefault()
-        onSubmit(value)
+        if (valid) onSubmit(value, download)
       }}
     >
       <Input
@@ -526,7 +532,9 @@ function LinkEditor({ initial, onCancel, onClear, onSubmit }: LinkEditorProps) {
           }
         }}
       />
-      <Button type="submit" variant="primary" size="xs">
+      <LinkTargetFields url={value} download={download} onDownloadChange={setDownload}
+        onUrlChange={setValue} />
+      <Button type="submit" variant="primary" size="xs" disabled={!valid}>
         Apply
       </Button>
       {initial.length > 0 && (

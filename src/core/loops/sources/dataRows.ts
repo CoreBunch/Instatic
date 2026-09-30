@@ -29,7 +29,8 @@ import { publicDataUserFromParts } from '@core/data/publicDataUser'
 import { normalizeDataTableFields } from '@core/data/fields'
 import { readFeaturedMediaCell } from '@core/data/cells'
 import type { DataField, DataRowCells } from '@core/data/schemas'
-import { collectMediaIds, resolveMediaIdsToPaths, resolvedMediaOverlay } from './dataRowsMedia'
+import { collectMediaIds, resolveMediaIdsToPaths } from './dataRowsMedia'
+import { resolvedCellOverlay } from './dataRowsCells'
 
 // ---------------------------------------------------------------------------
 // Internal SQL row shape
@@ -124,7 +125,7 @@ function rowToLoopItem(
       ...cells,
       // Media fields: replace stored ids with resolved public paths so a
       // `{currentEntry.<field>}` binding renders a URL, not the raw id.
-      ...resolvedMediaOverlay(cells, fields, mediaPathMap),
+      ...resolvedCellOverlay(cells, fields, mediaPathMap),
       // System identity (overlay after cells so these are never shadowed)
       id: row.row_id,
       rowId: row.row_id,
@@ -183,17 +184,18 @@ async function fetchPage(
   db: LoopSourceDb,
   orderBy: OrderColumn,
   direction: 'asc' | 'desc',
-  opts: { tableId: string; limit: number; offset: number; filter: CellFilter | null; orderCellField: string | null },
+  opts: { tableId: string; limit: number; offset: number; filter: CellFilter | null; orderCellField: string | null; rowIds?: readonly string[] },
 ): Promise<PublishedDataRowSqlRow[]> {
   const { tableId, limit, offset, filter, orderCellField } = opts
   const column = 'data_row_versions.cells_json'
+  const ids = opts.rowIds ?? []
   // SQLite binds `?` by POSITION IN THE TEXT, so the parameter list must follow
   // the clause order: tableId, the cell condition (WHERE), the ordering cell
   // (ORDER BY), then limit/offset. Postgres indices are numbered to match.
   const cell = filter
-    ? cellFilterSql({ filter, dialect: db.dialect, column, nextParamIndex: 2 })
+    ? cellFilterSql({ filter, dialect: db.dialect, column, nextParamIndex: 2 + ids.length })
     : null
-  const cellParams = cell?.params ?? []
+  const cellParams = [...ids, ...(cell?.params ?? [])]
   const order = orderCellField
     ? cellOrderSql({ field: orderCellField, dialect: db.dialect, column, paramIndex: 2 + cellParams.length })
     : null
@@ -234,6 +236,7 @@ async function fetchPage(
        and data_rows.status = 'published'
        and data_rows.deleted_at is null
        and data_tables.deleted_at is null
+       ${opts.rowIds ? `and data_rows.logical_id in (${ids.map((_, i) => positionalParam(db, i + 2)).join(', ')})` : ''}
        ${cell ? `and ${cell.sql}` : ''}
      order by ${orderColumn} ${direction}, data_row_versions.id ${direction}
      limit ${limitParam} offset ${offsetParam}`,
@@ -294,7 +297,7 @@ function dataKindRowToLoopItem(
       ...cells,
       // Media fields: replace stored ids with resolved public paths (see
       // `rowToLoopItem`).
-      ...resolvedMediaOverlay(cells, fields, mediaPathMap),
+      ...resolvedCellOverlay(cells, fields, mediaPathMap),
       id: row.row_id,
       rowId: row.row_id,
       tableId: row.table_id,
@@ -349,17 +352,19 @@ async function fetchDataKindPage(
     orderCellField: string | null
     /** Post-type drafts (a branch): skip rows explicitly taken offline. */
     excludeUnpublished: boolean
+    rowIds?: readonly string[]
   },
 ): Promise<DataKindRowSqlRow[]> {
   const { tableId, limit, offset, filter, orderCellField, excludeUnpublished } = opts
   const sortKey: 'createdAt' | 'updatedAt' | 'slug' =
     orderBy === 'updatedAt' ? 'updatedAt' : orderBy === 'slug' ? 'slug' : 'createdAt'
   const column = 'data_rows.cells_json'
+  const ids = opts.rowIds ?? []
   // Parameter order follows the clause order — see `fetchPage`.
   const cell = filter
-    ? cellFilterSql({ filter, dialect: db.dialect, column, nextParamIndex: 2 })
+    ? cellFilterSql({ filter, dialect: db.dialect, column, nextParamIndex: 2 + ids.length })
     : null
-  const cellParams = cell?.params ?? []
+  const cellParams = [...ids, ...(cell?.params ?? [])]
   const order = orderCellField
     ? cellOrderSql({ field: orderCellField, dialect: db.dialect, column, paramIndex: 2 + cellParams.length })
     : null
@@ -391,6 +396,7 @@ async function fetchDataKindPage(
      where data_rows.table_id = ${positionalParam(db, 1)}
        and data_rows.deleted_at is null
        and data_tables.deleted_at is null
+       ${opts.rowIds ? `and data_rows.logical_id in (${ids.map((_, i) => positionalParam(db, i + 2)).join(', ')})` : ''}
        ${excludeUnpublished ? "and data_rows.status <> 'unpublished'" : ''}
        ${cell ? `and ${cell.sql}` : ''}
      order by ${orderColumn} ${direction}, data_rows.id ${direction}
@@ -430,9 +436,12 @@ export async function fetchPublishedDataRowItems(
      * loops show what the branch would publish.
      */
     drafts?: boolean
+    /** Exact logical row identities, for batched relation projection. */
+    rowIds?: readonly string[]
   },
 ): Promise<LoopFetchResult> {
   if (!opts.tableId) return { items: [], totalItems: 0 }
+  if (opts.rowIds?.length === 0) return { items: [], totalItems: 0 }
   const cellFilter = opts.cellFilter ?? null
 
   const { rows: tableRows } = await db<DataTableProjectionRow>`
@@ -457,6 +466,27 @@ export async function fetchPublishedDataRowItems(
   const direction: 'asc' | 'desc' = opts.direction === 'asc' ? 'asc' : 'desc'
 
   const excludeUnpublished = table.kind !== 'data' && opts.drafts === true
+  if (opts.rowIds) {
+    const query = {
+      ...opts, filter: cellFilter, orderCellField, excludeUnpublished,
+    }
+    const items: LoopItem[] = []
+    // Stay below SQLite's bind limit even for large multi-relations.
+    const uniqueIds = [...new Set(opts.rowIds)]
+    for (let start = 0; start < uniqueIds.length; start += 200) {
+      const batch = { ...query, rowIds: uniqueIds.slice(start, start + 200), limit: 200, offset: 0 }
+      if (table.kind === 'data' || opts.drafts) {
+        const rows = await fetchDataKindPage(db, orderBy, direction, batch)
+        const media = await resolveMediaIdsToPaths(db, collectMediaIds(rows, fields))
+        items.push(...rows.map((row) => dataKindRowToLoopItem(row, media, fields)))
+      } else {
+        const rows = await fetchPage(db, orderBy, direction, batch)
+        const media = await resolveMediaIdsToPaths(db, collectMediaIds(rows, fields))
+        items.push(...rows.map((row) => rowToLoopItem(row, media, fields)))
+      }
+    }
+    return { items, totalItems: items.length }
+  }
   if (table.kind === 'data' || opts.drafts) {
     // The count must apply the same condition, or pagination advertises rows
     // the page query filters out.

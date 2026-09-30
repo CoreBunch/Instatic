@@ -1,0 +1,43 @@
+name: Fork staging image
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main, chore/mittwald-staging]
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: fork-image-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  image:
+    if: github.repository == 'Hubertoink/Instatic'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build and publish fork image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64
+          push: true
+          tags: ghcr.io/hubertoink/instatic:staging-${{ github.sha }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/Hubertoink/Instatic
+            org.opencontainers.image.url=https://github.com/Hubertoink/Instatic
+          build-args: |
+            INSTATIC_VERSION=staging-${{ github.sha }}
+            INSTATIC_REVISION=${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

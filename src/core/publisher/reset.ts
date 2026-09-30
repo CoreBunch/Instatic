@@ -81,6 +81,18 @@ export const PUBLISHER_RESET_CSS = [
   ':where(input, button, textarea, select) { font: inherit; color: inherit; }',
   ':where(button) { background: none; border: 0; cursor: pointer; }',
 
+  '.instatic-lightbox-trigger { cursor: zoom-in; }',
+  ':root .instatic-content-align--left { text-align: left; }',
+  ':root .instatic-content-align--center { text-align: center; }',
+  ':root .instatic-content-align--right { text-align: right; }',
+  ':root .instatic-content-align--justify { text-align: justify; }',
+  'a.instatic-lightbox-trigger { display: block; }',
+  'img.instatic-content-image.instatic-content-image { display: block; max-width: 100%; height: auto; margin-inline: auto; }',
+  ':root img.instatic-content-image.instatic-content-image--original { width: auto; }',
+  ':root img.instatic-content-image.instatic-content-image--l { width: 100%; }',
+  ':root img.instatic-content-image.instatic-content-image--m { width: min(100%, 560px); }',
+  ':root img.instatic-content-image.instatic-content-image--s { width: min(100%, 320px); }',
+
   // Long-word safety on text-bearing elements.
   ':where(p, h1, h2, h3, h4, h5, h6) { overflow-wrap: break-word; }',
 

@@ -363,6 +363,7 @@ const LoopPreviewEnvelope = Type.Object(
 )
 
 interface DataLoopPreviewOptions {
+  rowIds?: readonly string[]
   orderBy?: string
   direction?: 'asc' | 'desc'
   limit?: number
@@ -388,6 +389,7 @@ export async function previewCmsDataLoopItems(
     `${basePath}/data/tables/${encodeURIComponent(tableId)}/loop-preview`,
     {
       query: {
+        rowIds: options.rowIds ? JSON.stringify(options.rowIds) : undefined,
         orderBy: options.orderBy,
         direction: options.direction,
         limit: options.limit,

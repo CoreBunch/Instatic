@@ -16,7 +16,7 @@
 import { useAsyncResource } from '@admin/lib/useAsyncResource'
 import { useEditorStore } from '@site/store/store'
 import { loopSourceRegistry } from '@core/loops/registry'
-import { ENTRY_FIELD_FILTER_KEY, ENTRY_FIELD_SOURCE_ID } from '@core/loops'
+import { ENTRY_FIELD_FILTER_KEY, ENTRY_FIELD_SOURCE_ID, entryScopeTables } from '@core/loops'
 import {
   CELL_ORDER_PREFIX,
   isCellComparableField,
@@ -27,7 +27,7 @@ import type { LoopEntitySource } from '@core/loops/types'
 import type { DataRow, DataTableListItem } from '@core/data/schemas'
 import type { PropertyControl, PropertySchema } from '@core/module-engine'
 import { listCmsDataRows, listCmsDataTables } from '@core/persistence/cmsData'
-import { getAncestors, type Page } from '@core/page-tree'
+import { type Page } from '@core/page-tree'
 import { PropertyControlRenderer } from '@site/property-controls/PropertyControlRenderer'
 import { CUSTOM_HTML_TAG_VALUE } from '@core/htmlAttributes'
 import { customHtmlTagControl, htmlTagControl } from '@modules/base/utils/htmlTag'
@@ -348,24 +348,7 @@ function entryCollectionFieldOptions(
 ): Array<{ label: string; value: string }> {
   if (!activePage) return []
 
-  const enclosingDataRowsLoop = [...getAncestors(activePage, nodeId)]
-    .reverse()
-    .find((node) => node.moduleId === 'base.loop' && node.props.sourceId === 'data.rows')
-  const filters = enclosingDataRowsLoop?.props.filters
-  const enclosingTableId =
-    filters && typeof filters === 'object' && !Array.isArray(filters)
-      ? (filters as Record<string, unknown>).tableId
-      : null
-
-  let contextTables: DataTableListItem[]
-  if (typeof enclosingTableId === 'string' && enclosingTableId) {
-    contextTables = tables.filter((table) => table.id === enclosingTableId)
-  } else if (activePage.template?.target.kind === 'postTypes') {
-    const slugs = new Set(activePage.template.target.tableSlugs)
-    contextTables = tables.filter((table) => slugs.has(table.slug))
-  } else {
-    contextTables = []
-  }
+  const contextTables = entryScopeTables(activePage, nodeId, tables)
 
   const showTableName = contextTables.length > 1
   const seen = new Set<string>()
@@ -373,6 +356,7 @@ function entryCollectionFieldOptions(
   for (const table of contextTables) {
     for (const field of table.fields) {
       const isCollection =
+        field.type === 'repeater' ||
         field.type === 'multiSelect' ||
         ((field.type === 'media' || field.type === 'relation') && field.allowMultiple === true)
       if (!isCollection || seen.has(field.id)) continue

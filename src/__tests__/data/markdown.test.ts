@@ -6,6 +6,7 @@ import {
   type JSONNode,
 } from '@core/markdown/markdownDocument'
 import { renderMarkdownToHtml } from '@core/markdown/renderMarkdown'
+import { parseMediaImageTitle } from '@core/markdown/mediaImagePresentation'
 
 describe('content markdown ↔ ProseMirror document', () => {
   it('parses headings, paragraphs and a single-line image into a doc tree', () => {
@@ -108,6 +109,22 @@ describe('content markdown ↔ ProseMirror document', () => {
       content: [{ type: 'paragraph' }],
     })
   })
+
+  it('round-trips image size and lightbox presentation metadata', () => {
+    const source = '![Hero](/uploads/hero.png "size=sm lightbox")'
+    const doc = markdownToProseMirrorDoc(source)
+
+    expect(doc.content?.[0]).toMatchObject({
+      type: 'media',
+      attrs: { size: 'm', lightbox: true, title: '' },
+    })
+    expect(proseMirrorDocToMarkdown(doc)).toBe(source.replace('size=sm', 'size=m'))
+    expect(parseMediaImageTitle('size=sm lightbox editorial image')).toEqual({
+      size: 'm',
+      lightbox: true,
+      title: 'editorial image',
+    })
+  })
 })
 
 describe('publisher markdown renderer', () => {
@@ -138,6 +155,22 @@ describe('publisher markdown renderer', () => {
     expect(html).toContain('<video')
     expect(html).toContain('controls')
     expect(html).toContain('src="/uploads/clip.mp4"')
+  })
+
+  it('renders small images and lightbox markup from image metadata', () => {
+    const html = renderMarkdownToHtml('![Hero](/uploads/hero.png "size=sm lightbox")')
+
+    expect(html).toContain('class="instatic-lightbox-trigger"')
+    expect(html).toContain('class="instatic-content-image instatic-content-image--m"')
+    expect(html).toContain('width:min(100%, 560px);max-width:100%;height:auto')
+    expect(html).toContain('href="/uploads/hero.png"')
+    expect(html).not.toContain('href="#')
+  })
+
+  it('does not create a lightbox for unsafe image URLs', () => {
+    const html = renderMarkdownToHtml('![bad](javascript:alert(1) "lightbox")')
+    expect(html).not.toContain('instatic-lightbox-trigger')
+    expect(html).toContain('src="#"')
   })
 })
 

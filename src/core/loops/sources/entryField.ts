@@ -7,6 +7,8 @@
  * `data.rows` project listing resolves the gallery belonging to each project.
  */
 
+import { RepeaterItemSchema } from '@core/data/schemas'
+import { safeParseValue } from '@core/utils/typeboxHelpers'
 import type {
   ContextualLoopEntitySource,
   LoopFetchResult,
@@ -29,6 +31,12 @@ export interface ResolveEntryFieldItemsOptions {
   limit?: number
   direction?: 'asc' | 'desc'
   mediaByReference?: ReadonlyMap<string, EntryFieldMedia>
+  /** Present only for a schema-declared relation; missing targets are omitted. */
+  relatedItems?: ReadonlyMap<string, LoopItem>
+}
+
+export function entryFieldContextKey(entry: LoopItem): string {
+  return JSON.stringify([entry.fields.tableId ?? null, entry.id])
 }
 
 function itemId(value: unknown, index: number): string {
@@ -70,10 +78,12 @@ function projectItem(
   }
 
   if (value && typeof value === 'object' && !Array.isArray(value)) {
+    const repeater = safeParseValue(RepeaterItemSchema, value)
     return {
       id,
       fields: {
         ...(value as Record<string, unknown>),
+        ...(repeater.ok ? repeater.value.cells : {}),
         id,
         value,
         index,
@@ -98,15 +108,21 @@ export function resolveEntryFieldItems(
   if (!Array.isArray(value)) return { items: [], totalItems: 0 }
 
   const direction = options.direction === 'desc' ? 'desc' : 'asc'
-  const ordered = direction === 'desc' ? [...value].reverse() : value
+  const values: Array<{ value: unknown; related?: LoopItem }> = value.flatMap((value) => {
+    if (!options.relatedItems) return [{ value }]
+    const related = typeof value === 'string' ? options.relatedItems.get(value) : undefined
+    return related ? [{ value, related }] : []
+  })
+  const ordered = direction === 'desc' ? [...values].reverse() : values
   const offset = Math.max(0, Math.floor(options.offset ?? 0))
   const limit = Math.max(1, Math.floor(options.limit ?? (ordered.length || 1)))
   const slice = ordered.slice(offset, offset + limit)
 
   return {
-    items: slice.map((item, index) =>
-      projectItem(item, offset + index, options.mediaByReference)),
-    totalItems: value.length,
+    items: slice.map(({ value, related }, index) => related
+      ? { ...related, fields: { ...related.fields, index: offset + index } }
+      : projectItem(value, offset + index, options.mediaByReference)),
+    totalItems: values.length,
   }
 }
 

@@ -21,7 +21,7 @@
 import { useEffect, useRef } from 'react'
 import type { Page, SiteDocument } from '@core/page-tree'
 import type { TemplateRenderDataContext } from '@core/templates/dynamicBindings'
-import { useEditorStore, selectActivePage } from '@site/store/store'
+import { useEditorStore, selectActiveCanvasPage } from '@site/store/store'
 import { useTemplatePreviewContext } from '@site/hooks/useTemplatePreviewContext'
 import { EyeSolidIcon } from 'pixel-art-icons/icons/eye-solid'
 import { CloseIcon } from 'pixel-art-icons/icons/close'
@@ -99,7 +99,7 @@ export function PreviewOverlay() {
   const open = useEditorStore((s) => s.previewOpen)
   const closePreview = useEditorStore((s) => s.closePreview)
   const site = useEditorStore((s) => s.site)
-  const activePage = useEditorStore(selectActivePage)
+  const activePage = useEditorStore(selectActiveCanvasPage)
   const { context: templatePreviewContext } = useTemplatePreviewContext(activePage)
 
   const closeBtnRef = useRef<HTMLButtonElement>(null)

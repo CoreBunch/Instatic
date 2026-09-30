@@ -6,7 +6,8 @@
     display: flex;
     align-items: center;
     gap: var(--space-s);
-    max-width: min(560px, calc(100vw - 48px));
+    max-width: calc(100vw - 48px);
+    flex-wrap: wrap;
     padding: var(--space-xs) var(--space-xl);
     pointer-events: auto;
     border: 0;
@@ -38,4 +39,17 @@
     font-size: var(--text-s);
     font-weight: 500;
     user-select: none;
+}
+
+.previewGroup {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: var(--space-s);
+    min-width: 0;
+}
+
+.previewGroup .previewSelect {
+    width: 160px;
+    min-width: 0;
 }

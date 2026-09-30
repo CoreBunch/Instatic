@@ -125,7 +125,7 @@ const setDocumentFieldTool: AiTool = {
   execution: 'browser',
   requiredCapabilities: DOCUMENT_EDIT_CAPS,
   description:
-    "Write one field on a document. The document MUST be the active one — call content_set_active_document first, or the write is refused. (content_create_document leaves the new document active, so create-then-fill needs no extra call.) `value` shape depends on the field type (read content_get_collection_schema first if unsure): text/longText/richText/url/email → string; number → number; boolean → boolean; date/dateTime → ISO string; select → option id; multiSelect → option id[]; media → { id } or { id }[]; relation → { rowId } or { rowId }[]; body → markdown string. Bridge converts markdown ↔ Tiptap automatically for body.",
+    "Write one field on a document. The document MUST be the active one — call content_set_active_document first, or the write is refused. (content_create_document leaves the new document active, so create-then-fill needs no extra call.) `value` shape depends on the field type (read content_get_collection_schema first if unsure): text/longText/richText/url/email → string; number → number; boolean → boolean; date/dateTime → ISO string; select → option id; multiSelect → option id[]; media → asset id string or null (single), string[] (multi); relation → row id string or null (single), string[] (multi); repeater → { id: string, cells: Record<itemFieldId, value> }[] using the item schema and preserving existing item ids; body → markdown string. Use actual target row ids for relations, never { rowId } objects. Bridge converts markdown ↔ Tiptap automatically for body.",
   inputSchema: SetDocumentFieldInput,
 }
 

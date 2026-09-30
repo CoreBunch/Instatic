@@ -29,6 +29,9 @@ import { BubbleMenu } from '@tiptap/react/menus'
 import type { VirtualElement } from '@floating-ui/dom'
 import { Button } from '@ui/components/Button'
 import { Input } from '@ui/components/Input'
+import { Select } from '@ui/components/Select'
+import type { ContentMediaSize } from '../../nodes/MediaNode'
+import { normalizeMediaImageSize } from '@core/markdown/mediaImagePresentation'
 import { ImagesSolidIcon } from 'pixel-art-icons/icons/images-solid'
 import { TrashSolidIcon } from 'pixel-art-icons/icons/trash-solid'
 import styles from './MediaNodeToolbar.module.css'
@@ -57,6 +60,8 @@ interface MediaSelectionState {
   mediaType: 'image' | 'video'
   alt: string
   src: string
+  size: ContentMediaSize
+  lightbox: boolean
 }
 
 export function MediaNodeToolbar({ editor, onPickMedia, iframeEl }: MediaNodeToolbarProps) {
@@ -146,17 +151,56 @@ export function MediaNodeToolbar({ editor, onPickMedia, iframeEl }: MediaNodeToo
               <ImagesSolidIcon size={14} aria-hidden="true" />
             </Button>
             {state.mediaType === 'image' && (
-              <Button
-                variant="ghost"
-                size="xs"
-                tooltip="Edit alt text"
-                aria-label="Edit alt text"
-                onMouseDown={(event) => event.preventDefault()}
-                onClick={() => setAltDraft({ src: state.src, value: state.alt })}
-                className={styles.altButton}
-              >
-                Alt
-              </Button>
+              <>
+                <span
+                  className={styles.sizeControl}
+                  onMouseDown={(event) => event.preventDefault()}
+                >
+                  <Select
+                    aria-label="Image size"
+                    fieldSize="xs"
+                    value={state.size}
+                    options={[
+                      { value: 'original', label: 'Original' },
+                      { value: 'l', label: 'L' },
+                      { value: 'm', label: 'M' },
+                      { value: 's', label: 'S' },
+                    ]}
+                    onChange={(event) => {
+                      editor
+                        .chain()
+                        .focus()
+                        .updateAttributes('media', { size: event.target.value as ContentMediaSize })
+                        .run()
+                    }}
+                  />
+                </span>
+                <Button
+                  variant={state.lightbox ? 'primary' : 'ghost'}
+                  size="xs"
+                  tooltip="Open image in lightbox"
+                  aria-label="Lightbox"
+                  pressed={state.lightbox}
+                  onMouseDown={(event) => event.preventDefault()}
+                  onClick={() => {
+                    editor.chain().focus().updateAttributes('media', { lightbox: !state.lightbox }).run()
+                  }}
+                  className={styles.lightboxButton}
+                >
+                  Zoom
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="xs"
+                  tooltip="Edit alt text"
+                  aria-label="Edit alt text"
+                  onMouseDown={(event) => event.preventDefault()}
+                  onClick={() => setAltDraft({ src: state.src, value: state.alt })}
+                  className={styles.altButton}
+                >
+                  Alt
+                </Button>
+              </>
             )}
             <span className={styles.divider} aria-hidden="true" />
             <Button
@@ -230,17 +274,25 @@ function AltEditor({ initial, onCancel, onSubmit }: AltEditorProps) {
 
 function readMediaSelection(editor: Editor | null): MediaSelectionState {
   if (!editor) {
-    return { isMediaSelected: false, mediaType: 'image', alt: '', src: '' }
+    return { isMediaSelected: false, mediaType: 'image', alt: '', src: '', size: 'l', lightbox: false }
   }
   const sel = editor.state.selection
   if (!(sel instanceof NodeSelection) || sel.node.type.name !== 'media') {
-    return { isMediaSelected: false, mediaType: 'image', alt: '', src: '' }
+    return { isMediaSelected: false, mediaType: 'image', alt: '', src: '', size: 'l', lightbox: false }
   }
-  const attrs = sel.node.attrs as { mediaType?: string; alt?: string; src?: string }
+  const attrs = sel.node.attrs as {
+    mediaType?: string
+    alt?: string
+    src?: string
+    size?: string
+    lightbox?: boolean
+  }
   return {
     isMediaSelected: true,
     mediaType: attrs.mediaType === 'video' ? 'video' : 'image',
     alt: typeof attrs.alt === 'string' ? attrs.alt : '',
     src: typeof attrs.src === 'string' ? attrs.src : '',
+    size: normalizeMediaImageSize(attrs.size),
+    lightbox: attrs.lightbox === true,
   }
 }

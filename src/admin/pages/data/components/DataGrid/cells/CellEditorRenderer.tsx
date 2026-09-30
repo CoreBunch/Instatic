@@ -90,7 +90,7 @@ export function CellEditorRenderer({
       return <MediaCell field={field} {...rest} />
 
     case 'relation':
-      return <RelationCell field={field} {...rest} onOpenPicker={onOpenPicker} />
+      return <RelationCell field={field} {...rest} onOpenPicker={onOpenPicker} targetTable={tables?.find((table) => table.id === field.targetTableId)} />
 
     case 'repeater':
       return <RepeaterCell field={field} {...rest} tables={tables} />

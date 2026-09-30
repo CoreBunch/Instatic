@@ -1515,4 +1515,87 @@ export const sqliteMigrations: Migration[] = [
     id: '030_iso_timestamps',
     sql: isoTimestampRewrite030(),
   },
+  {
+    // Posts need an author-editable calendar date that can be displayed and
+    // ordered independently from the technical publish timestamp. Existing
+    // rows and immutable published versions inherit their publication day.
+    id: '031_posts_publication_date',
+    sql: `
+      update data_tables
+         set fields_json = json_insert(
+               fields_json,
+               '$[#]',
+               json('{"type":"date","id":"date","label":"Publication date","description":"Date shown on the post and available for sorting."}')
+             )
+       where id = 'posts'
+         and not exists (
+               select 1
+                 from json_each(data_tables.fields_json)
+                where json_extract(value, '$.id') = 'date'
+             );
+
+      update data_rows
+         set cells_json = json_set(
+               cells_json,
+               '$.date',
+               substr(coalesce(published_at, created_at), 1, 10)
+             )
+       where table_id = 'posts'
+         and deleted_at is null
+         and trim(coalesce(json_extract(cells_json, '$.date'), '')) = '';
+
+      update data_row_versions
+         set cells_json = json_set(
+               cells_json,
+               '$.date',
+               substr(coalesce(published_at, created_at), 1, 10)
+             )
+       where exists (
+               select 1
+                 from data_rows
+                where data_rows.id = data_row_versions.row_id
+                  and data_rows.table_id = 'posts'
+             )
+         and trim(coalesce(json_extract(cells_json, '$.date'), '')) = '';
+    `,
+  },
+  {
+    // Imported archive posts can carry their original publication day in the
+    // first markdown line. Prefer that editorial date over the later import
+    // timestamp populated by migration 031.
+    id: '032_posts_publication_date_from_body',
+    sql: `
+      update data_rows
+         set cells_json = json_set(
+               cells_json,
+               '$.date',
+               substr(json_extract(cells_json, '$.body'), 27, 4) || '-' ||
+               substr(json_extract(cells_json, '$.body'), 24, 2) || '-' ||
+               substr(json_extract(cells_json, '$.body'), 21, 2)
+             )
+       where table_id = 'posts'
+         and deleted_at is null
+         and substr(json_extract(cells_json, '$.body'), 1, 20) = '**Veröffentlicht am '
+         and substr(json_extract(cells_json, '$.body'), 21, 10)
+             glob '[0-3][0-9].[0-1][0-9].[12][0-9][0-9][0-9]';
+
+      update data_row_versions
+         set cells_json = json_set(
+               cells_json,
+               '$.date',
+               substr(json_extract(cells_json, '$.body'), 27, 4) || '-' ||
+               substr(json_extract(cells_json, '$.body'), 24, 2) || '-' ||
+               substr(json_extract(cells_json, '$.body'), 21, 2)
+             )
+       where exists (
+               select 1
+                 from data_rows
+                where data_rows.id = data_row_versions.row_id
+                  and data_rows.table_id = 'posts'
+             )
+         and substr(json_extract(cells_json, '$.body'), 1, 20) = '**Veröffentlicht am '
+         and substr(json_extract(cells_json, '$.body'), 21, 10)
+             glob '[0-3][0-9].[0-1][0-9].[12][0-9][0-9][0-9]';
+    `,
+  },
 ]

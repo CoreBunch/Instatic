@@ -28,6 +28,7 @@
  */
 
 import DOMPurify, { type Config } from 'dompurify'
+import { isSafeUrl } from '@core/html-sanitize'
 
 type DOMPurifyHookNode = {
   tagName?: string
@@ -47,6 +48,8 @@ export type SanitizerConfig = Config & {
   _plainText?: true
   /** Drop `<img src>` that is not absolute http(s) and stamp the rest no-referrer + lazy. */
   _externalImagesOnly?: true
+  /** Keep safe relative/http(s) rich-text images while rejecting executable URL schemes. */
+  _safeImages?: true
 }
 
 export type DOMPurifyRuntime = {
@@ -64,18 +67,27 @@ let activeDOMPurify: DOMPurifyRuntime | null = null
 const hookedPurifiers = new WeakSet<object>()
 
 /**
- * Attribute post-pass, installed once per purifier: every link opens in a new
- * tab with `noopener`, and profiles that opt in (`_externalImagesOnly`) keep
- * only absolute http(s) images, stamped no-referrer + lazy. DOMPurify admits
- * `data:` on <img> regardless of `ALLOWED_URI_REGEXP`, so the image rule
- * cannot be expressed in the config alone.
+ * Attribute post-pass, installed once per purifier: navigation links open in a new
+ * tab with `noopener`; download links keep their download action. Rich-text profiles that opt in (`_safeImages`) keep
+ * relative and http(s) images while rejecting executable/document schemes;
+ * README profiles (`_externalImagesOnly`) narrow that to absolute http(s)
+ * images and add a no-referrer policy. DOMPurify admits `data:` on <img>
+ * regardless of `ALLOWED_URI_REGEXP`, so these image rules cannot be
+ * expressed in the config alone.
  */
 function installAttributeHook(purifier: DOMPurifyRuntime): DOMPurifyRuntime {
   if (!hookedPurifiers.has(purifier) && typeof purifier.addHook === 'function') {
     purifier.addHook('afterSanitizeAttributes', (node, _hookEvent, config) => {
       if (node.tagName === 'A') {
-        node.setAttribute?.('target', '_blank')
+        if (node.getAttribute?.('download') != null) node.removeAttribute?.('target')
+        else node.setAttribute?.('target', '_blank')
         node.setAttribute?.('rel', 'noopener noreferrer')
+      }
+      if (node.tagName === 'IMG' && config._safeImages) {
+        const src = node.getAttribute?.('src') ?? ''
+        if (!src || !isSafeUrl(src)) node.removeAttribute?.('src')
+        node.setAttribute?.('loading', 'lazy')
+        node.setAttribute?.('decoding', 'async')
       }
       if (node.tagName === 'IMG' && config._externalImagesOnly) {
         const src = node.getAttribute?.('src') ?? ''
@@ -151,7 +163,7 @@ function stripHtmlFallback(value: string): string {
  * Default richtext config — allows safe HTML formatting, blocks all scripts.
  * Suitable for user-authored HTML content (headings, paragraphs, lists, links).
  */
-const RICHTEXT_CONFIG: Config = {
+const RICHTEXT_CONFIG: SanitizerConfig = {
   // Allow safe semantic/formatting tags
   ALLOWED_TAGS: [
     'p', 'br',
@@ -159,11 +171,14 @@ const RICHTEXT_CONFIG: Config = {
     'strong', 'b', 'em', 'i', 'u', 's', 'del', 'ins',
     'a', 'ul', 'ol', 'li',
     'blockquote', 'code', 'pre',
-    'span', 'div',
+    'span', 'div', 'img',
   ],
   // Restrict attributes to safe subset; data-* is blocked by default
-  ALLOWED_ATTR: ['href', 'target', 'rel', 'class', 'id'],
-  // Force all links to open in a new tab with noopener
+  ALLOWED_ATTR: [
+    'href', 'target', 'rel', 'class', 'id', 'download',
+    'src', 'alt', 'title', 'width', 'height', 'loading', 'decoding',
+  ],
+  // Navigation links open in a new tab with noopener; downloads omit target.
   ADD_ATTR: ['target'],
   // Never allow data: / javascript: in href
   ALLOW_DATA_ATTR: false,
@@ -172,6 +187,7 @@ const RICHTEXT_CONFIG: Config = {
   // Return a string, not a DOM node
   RETURN_DOM: false,
   RETURN_DOM_FRAGMENT: false,
+  _safeImages: true,
 }
 
 /**

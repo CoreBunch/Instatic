@@ -19,6 +19,11 @@ import type { BaseNode } from '@core/page-tree'
 import { bagToReactStyle, type RenderResolvedMedia } from '@core/publisher'
 import { responsiveBackgroundReactStyle } from '@admin/pages/media/hooks/useResponsiveBackgroundStyle'
 import { ReadOnlyNodeTree } from '@modules/base/utils/ReadOnlyNodeTree'
+import { CanvasTemplateContext } from '@site/canvas/CanvasContexts'
+import { VCInlineTree } from '@modules/base/visualComponentRef/VCInlineTree'
+import { useEditorStore } from '@site/store/store'
+import '@modules/base/visualComponentRef'
+import '@modules/base/outlet'
 // Self-registering module imports — ReadOnlyNodeTree resolves components via
 // the global registry.
 import '@modules/base/text'
@@ -120,6 +125,51 @@ describe('ReadOnlyNodeTree — inline styles', () => {
 })
 
 describe('ReadOnlyNodeTree — dynamic preview context', () => {
+  it('renders an empty bound body without the unconfigured outlet placeholder', () => {
+    const nodes = { body: textNode('body', { moduleId: 'base.outlet', props: { html: '{currentEntry.body}', tag: 'div' } }) }
+    const { container } = render(<ReadOnlyNodeTree nodes={nodes} rootNodeId="body" classes={{}} templateContext={{ entryStack: [{ id: 'marc', fields: { body: '' } }] }} />)
+    expect(container.textContent).toBe('')
+    expect(container.querySelector('[data-instatic-content-region]')).not.toBeNull()
+  })
+
+  it('passes an explicit read-only context into a nested component', () => {
+    useEditorStore.getState().createSite('Nested component preview')
+    const id = useEditorStore.getState().createVisualComponent('Nested card')
+    const vc = useEditorStore.getState().site!.visualComponents.find((v) => v.id === id)!
+    useEditorStore.getState().addNodeToVc(id, vc.tree.rootNodeId, textNode('nested-title', {
+      props: { text: '{parentEntry.title}: {currentEntry.title}', tag: 'h1' },
+    }))
+    const nodes = { ref: textNode('ref', { moduleId: 'base.visual-component-ref', props: { componentId: id, propOverrides: {} } }) }
+    const { container } = render(<ReadOnlyNodeTree nodes={nodes} rootNodeId="ref" classes={{}} templateContext={{ entryStack: [
+      { id: 'team', fields: { title: 'Team' } },
+      { id: 'niko', fields: { title: 'Niko' } },
+    ] }} />)
+    expect(container.querySelector('h1')?.textContent).toBe('Team: Niko')
+  })
+
+  it('inherits the enclosing loop item across a component boundary and updates when it changes', () => {
+    const nodes = { title: textNode('title', { props: { text: '{currentEntry.title}', tag: 'h1' } }) }
+    const view = (title: string) => (
+      <CanvasTemplateContext.Provider value={{ entryStack: [{ id: title, fields: { title } }] }}>
+        <VCInlineTree nodes={nodes} rootNodeId="title" classes={{}} />
+      </CanvasTemplateContext.Provider>
+    )
+    const { container, rerender } = render(view('Niko'))
+    expect(container.querySelector('h1')?.textContent).toBe('Niko')
+    rerender(view('Marc'))
+    expect(container.querySelector('h1')?.textContent).toBe('Marc')
+  })
+
+  it('lets an explicit read-only context override the outer entry', () => {
+    const nodes = { title: textNode('title', { props: { text: '{currentEntry.title}', tag: 'h1' } }) }
+    const { container } = render(
+      <CanvasTemplateContext.Provider value={{ entryStack: [{ id: 'outer', fields: { title: 'Outer' } }] }}>
+        <ReadOnlyNodeTree nodes={nodes} rootNodeId="title" classes={{}} templateContext={{ entryStack: [{ id: 'inner', fields: { title: 'Inner' } }] }} />
+      </CanvasTemplateContext.Provider>,
+    )
+    expect(container.querySelector('h1')?.textContent).toBe('Inner')
+  })
+
   it('resolves currentEntry tokens in read-only template previews', () => {
     const nodes: Record<string, BaseNode> = {
       h1: textNode('h1', {

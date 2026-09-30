@@ -189,6 +189,7 @@ function MediaPickerModalBody({
         role="dialog"
         aria-modal="true"
         aria-label={pickerTitle(mediaKind)}
+        data-ui-dialog="true"
         data-testid="media-picker-modal"
       >
         <header className={styles.header}>

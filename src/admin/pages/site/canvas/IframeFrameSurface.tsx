@@ -79,6 +79,8 @@ import type { InjectableRuntimeScript } from './useRuntimeScriptBuild'
 import { useIframeCursorBridge } from './useIframeCursorBridge'
 import { iframeLocalPointToParentClientPoint } from './iframeEventCoordinates'
 import { useCanvasFormControlSuppression } from './useCanvasFormControlSuppression'
+import { useCanvasDetailsPreview } from './useCanvasDetailsPreview'
+import { useCanvasScrollAnimations } from './useCanvasScrollAnimations'
 import type { Viewport } from '@core/utils/viewportUnits'
 import { CANVAS_VIEWPORT_HEIGHT } from './canvasViewport'
 import { useIframeFrameAutoHeight } from './useIframeFrameAutoHeight'
@@ -206,6 +208,8 @@ export const IframeFrameSurface = forwardRef<IframeFrameSurfaceHandle, IframeFra
 
     useIframeCursorBridge(iframeRef, iframeDoc, { onCursorMove, onCursorLeave })
     useCanvasFormControlSuppression(iframeDoc, { breakpointId, enabled: !isLive })
+    useCanvasDetailsPreview(iframeDoc)
+    useCanvasScrollAnimations(iframeDoc, isLive)
     useIframeFrameAutoHeight({ iframeRef, iframeDoc, isLive })
 
     // Bridge the iframe handle out to the parent (selection overlay reads

@@ -15,6 +15,33 @@ describe('content read tools', () => {
     await harness.cleanup()
   })
 
+  it('exposes writable relation and repeater item schemas', async () => {
+    await createDataTable(harness.db, MAIN_SCOPE, {
+      id: 'offers', name: 'Offers', slug: 'offers', kind: 'postType', routeBase: '/offers',
+      singularLabel: 'Offer', pluralLabel: 'Offers',
+      fields: [
+        { id: 'members', label: 'Members', type: 'relation', targetTableId: 'posts', allowMultiple: true },
+        { id: 'slots', label: 'Slots', type: 'repeater', itemLabelFieldId: 'weekday', fields: [
+          { id: 'weekday', label: 'Weekday', type: 'select', options: [{ id: 'mon', label: 'Monday', value: 'monday' }] },
+          { id: 'member', label: 'Member', type: 'relation', targetTableId: 'posts' },
+        ] },
+      ],
+    })
+    const tool = contentReadTools.find((candidate) => candidate.name === 'content_get_collection_schema')
+    if (!tool?.handler) throw new Error('content_get_collection_schema handler is missing')
+    const result = await tool.handler({ tableId: 'offers' }, {
+      db: harness.db, userId: 'owner', capabilities: ['data.custom.tables.read'], scope: 'content',
+      branch: MAIN_SCOPE, conversationId: 'test', snapshot: null, signal: new AbortController().signal,
+    })
+    expect(result).toMatchObject({ collection: { fields: expect.arrayContaining([
+      expect.objectContaining({ id: 'members', targetTableId: 'posts', allowMultiple: true }),
+      expect.objectContaining({ id: 'slots', itemLabelFieldId: 'weekday', fields: [
+        expect.objectContaining({ id: 'weekday', options: [{ value: 'mon', label: 'Monday' }] }),
+        expect.objectContaining({ id: 'member', targetTableId: 'posts', allowMultiple: false }),
+      ] }),
+    ]) } })
+  })
+
   it('keeps collection discovery aligned with the Content workspace', async () => {
     await createDataTable(harness.db, MAIN_SCOPE, {
       id: 'projects',

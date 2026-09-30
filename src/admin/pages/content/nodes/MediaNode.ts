@@ -8,13 +8,21 @@
  */
 
 import { Node, mergeAttributes } from '@tiptap/core'
+import { normalizeMediaImageSize, mediaImageWidth, type MediaImageSize } from '@core/markdown/mediaImagePresentation'
 
 export type ContentMediaType = 'image' | 'video'
+export type ContentMediaSize = MediaImageSize
 
 export interface MediaAttributes {
   mediaType: ContentMediaType
   src: string
   alt: string
+  /** Image presentation size. Videos keep the default full width. */
+  size?: ContentMediaSize
+  /** Open image in the publisher's modal lightbox when clicked. */
+  lightbox?: boolean
+  /** Optional normal HTML title, separate from the editor metadata. */
+  title?: string
 }
 
 declare module '@tiptap/core' {
@@ -57,6 +65,26 @@ export const MediaNode = Node.create({
         parseHTML: (element: HTMLElement) => element.getAttribute('data-alt') ?? '',
         renderHTML: (attrs: Record<string, unknown>) => ({ 'data-alt': String(attrs.alt) }),
       },
+      size: {
+        default: 'l' as ContentMediaSize,
+        parseHTML: (element: HTMLElement) =>
+          normalizeMediaImageSize(element.getAttribute('data-size')),
+        renderHTML: (attrs: Record<string, unknown>) => ({
+          'data-size': normalizeMediaImageSize(attrs.size),
+        }),
+      },
+      lightbox: {
+        default: false,
+        parseHTML: (element: HTMLElement) => element.getAttribute('data-lightbox') === 'true',
+        renderHTML: (attrs: Record<string, unknown>) =>
+          attrs.lightbox === true ? { 'data-lightbox': 'true' } : {},
+      },
+      title: {
+        default: '',
+        parseHTML: (element: HTMLElement) => element.getAttribute('data-title') ?? '',
+        renderHTML: (attrs: Record<string, unknown>) =>
+          attrs.title ? { 'data-title': String(attrs.title) } : {},
+      },
     }
   },
 
@@ -68,10 +96,22 @@ export const MediaNode = Node.create({
     const attrs = node.attrs as MediaAttributes
     const inner = attrs.mediaType === 'video'
       ? ['video', { controls: '', src: attrs.src }]
-      : ['img', { src: attrs.src, alt: attrs.alt }]
+      : ['img', {
+          src: attrs.src,
+          alt: attrs.alt,
+          style: `width:${attrs.size === 'original' ? 'auto' : '100%'};max-width:100%;height:auto`,
+          ...(attrs.title ? { title: attrs.title } : {}),
+        }]
     return [
       'figure',
-      mergeAttributes(HTMLAttributes, { 'data-instatic-media': '' }),
+      mergeAttributes(HTMLAttributes, {
+        'data-instatic-media': '',
+        'data-size': normalizeMediaImageSize(attrs.size),
+        ...(attrs.mediaType === 'image' ? {
+          style: `width:${attrs.size === 'original' ? 'fit-content' : mediaImageWidth(normalizeMediaImageSize(attrs.size))};max-width:100%;margin-inline:auto`,
+        } : {}),
+        ...(attrs.lightbox ? { 'data-lightbox': 'true' } : {}),
+      }),
       inner,
     ]
   },

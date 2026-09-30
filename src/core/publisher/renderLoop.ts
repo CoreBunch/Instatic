@@ -16,6 +16,7 @@ import {
   ENTRY_FIELD_FILTER_KEY,
   ENTRY_FIELD_SOURCE_ID,
   resolveEntryFieldItems,
+  entryFieldContextKey,
   type EntryFieldMedia,
   type LoopItem,
 } from '@core/loops'
@@ -151,6 +152,10 @@ function resolveLoopData(node: PageNode, config: RenderConfig) {
 
   const stack = config.templateContext?.entryStack ?? []
   const entry = stack[stack.length - 1]
+  const related = entry && config.loopData?.get(node.id)?.entryItems?.get(entryFieldContextKey(entry))
+  if (related) {
+    return { items: related, totalItems: related.length, pageNumber: 1, hasMore: false }
+  }
   const value = entry?.fields[fieldId]
   const resolved = resolveEntryFieldItems(value, {
     offset: typeof node.props.offset === 'number' ? node.props.offset : 0,

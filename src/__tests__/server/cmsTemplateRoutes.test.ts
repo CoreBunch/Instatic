@@ -23,6 +23,18 @@ function makeTemplateRouteFakeDb(handlers: QueryHandler[]) {
       const result = handler(sql, params)
       if (result) return result
     }
+    if (sql.startsWith('select logical_id, name, slug, kind, route_base')) {
+      expect(params).toEqual(['posts', 'main'])
+      return {
+        rows: [{
+          logical_id: 'posts', name: 'Posts', slug: 'posts', kind: 'postType', route_base: '/posts',
+          singular_label: 'Post', plural_label: 'Posts', primary_field_id: 'title',
+          fields_json: [], system: true, created_by_user_id: null, updated_by_user_id: null,
+          created_at: '2026-05-01T10:00:00Z', updated_at: '2026-05-01T10:00:00Z',
+        }],
+        rowCount: 1,
+      }
+    }
     throw new Error(`Unhandled SQL: ${rawSql}`)
   })
 }

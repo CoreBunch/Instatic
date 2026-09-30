@@ -139,6 +139,19 @@ describe('sanitizeRichtext() — safe markup preservation', () => {
     expect(result).toContain('<h2>Subtitle</h2>')
   })
 
+  it('preserves safe rich-text images and strips executable image attributes', () => {
+    const result = sanitizeRichtext(
+      '<img src="/uploads/poster.jpg" alt="Poster" onerror="alert(1)">' +
+        '<img src="javascript:alert(2)" alt="Unsafe">',
+    )
+    expect(result).toContain('src="/uploads/poster.jpg"')
+    expect(result).toContain('alt="Poster"')
+    expect(result).toContain('loading="lazy"')
+    expect(result).toContain('decoding="async"')
+    expect(result).not.toContain('onerror')
+    expect(result).not.toContain('javascript:')
+  })
+
   it('handles empty string gracefully', () => {
     expect(sanitizeRichtext('')).toBe('')
     expect(sanitizeRichtext(null)).toBe('')

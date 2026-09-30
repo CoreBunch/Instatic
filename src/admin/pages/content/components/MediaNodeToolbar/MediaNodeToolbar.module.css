@@ -38,6 +38,25 @@
     font-weight: 700;
 }
 
+.sizeControl {
+    display: inline-flex;
+    width: 88px;
+    flex-shrink: 0;
+}
+
+.sizeControl > * {
+    width: 100%;
+    min-width: 0;
+}
+
+.lightboxButton {
+    height: 28px;
+    min-width: 46px;
+    padding: 0 var(--space-s);
+    font-size: var(--text-xs);
+    font-weight: 700;
+}
+
 .altForm {
     display: inline-flex;
     align-items: center;

@@ -28,6 +28,8 @@ import { registry } from '@core/module-engine'
 import type { CssBundleFile, SiteCssBundleId } from '@core/publisher'
 import { buildPublishedSiteCssBundle } from './publish/siteCssBundle'
 import { mediaStorageRegistry } from '@core/plugins/mediaStorageRegistry'
+import { SCROLL_ANIMATION_RUNTIME_JS } from './publish/scrollAnimationRuntime'
+import { IMAGE_LIGHTBOX_RUNTIME_JS } from './publish/imageLightboxRuntime'
 
 const VITE_DEV_URL = 'http://localhost:5173'
 
@@ -64,6 +66,8 @@ const routes: readonly RouteHandler[] = [
   tryServeLoopRuntimeAsset,
   tryServeLoop,
   tryServeHoleRuntimeAsset,
+  tryServeScrollAnimationRuntimeAsset,
+  tryServeImageLightboxRuntimeAsset,
   tryServeHole,
   tryServeModuleJsAsset,
   tryServePublicForm,
@@ -200,6 +204,24 @@ function tryServeLoop(req: Request, runtime: ServerRuntime, url: URL, pathname: 
 function tryServeHoleRuntimeAsset(req: Request, _runtime: ServerRuntime, _url: URL, pathname: string): Response | null {
   if (req.method !== 'GET' || !isHoleRuntimeAssetPath(pathname)) return null
   return serveHoleRuntimeAsset()
+}
+
+function tryServeScrollAnimationRuntimeAsset(req: Request, _runtime: ServerRuntime, _url: URL, pathname: string): Response | null {
+  if (req.method !== 'GET' || pathname !== '/_instatic/scroll-animation-runtime.js') return null
+  return new Response(SCROLL_ANIMATION_RUNTIME_JS, { headers: {
+    'Content-Type': 'text/javascript; charset=utf-8',
+    'Cache-Control': 'no-cache',
+    'X-Content-Type-Options': 'nosniff',
+  } })
+}
+
+function tryServeImageLightboxRuntimeAsset(req: Request, _runtime: ServerRuntime, _url: URL, pathname: string): Response | null {
+  if (req.method !== 'GET' || pathname !== '/_instatic/image-lightbox-runtime.js') return null
+  return new Response(IMAGE_LIGHTBOX_RUNTIME_JS, { headers: {
+    'Content-Type': 'text/javascript; charset=utf-8',
+    'Cache-Control': 'no-cache',
+    'X-Content-Type-Options': 'nosniff',
+  } })
 }
 
 /**

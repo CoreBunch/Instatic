@@ -18,6 +18,10 @@ import { useEditorStore, selectSelectedNode } from '@site/store/store'
 import { registry } from '@core/module-engine'
 import { getAncestors, resolveProps } from '@core/page-tree'
 import { loopSourceRegistry } from '@core/loops/registry'
+import { entryScopeTables, entryScopeRepeater } from '@core/loops'
+import { listCmsDataTables } from '@core/persistence/cmsData'
+import { useAsyncResource } from '@admin/lib/useAsyncResource'
+import type { DataTable } from '@core/data/schemas'
 import { buildClassTokenUsageMap, buildSelectorUsageMap, resolveSelectorUsage } from '../selectorUsage'
 import type {
   AnyModuleDefinition,
@@ -175,9 +179,11 @@ export function usePropertiesPanelData(): PropertiesPanelData {
   // For nodes with a `base.loop` ancestor we expose the same `currentEntry`
   // bindings — they resolve to the loop's iteration item via the publisher's
   // entry-stack semantics.
+  const { data: bindingTables } = useAsyncResource(() => listCmsDataTables(), [])
   const { enclosingLoopSource, enclosingLoopTableId } = resolveEnclosingLoopContext(
     activePage,
     selectedNodeId,
+    bindingTables ?? [],
   )
   // Bindings are always available. The picker decides which sources are
   // meaningful in the current context (`currentEntry` / `parentEntry`
@@ -310,6 +316,7 @@ interface EnclosingLoopContext {
 function resolveEnclosingLoopContext(
   activePage: Page | null,
   selectedNodeId: string | null,
+  tables: readonly DataTable[],
 ): EnclosingLoopContext {
   if (!activePage || !selectedNodeId) {
     return { enclosingLoopSource: undefined, enclosingLoopTableId: null }
@@ -333,9 +340,25 @@ function resolveEnclosingLoopContext(
     ? loopSourceRegistry.get(enclosingLoopSourceId)
     : undefined
 
+  const repeater = entryScopeRepeater(activePage, selectedNodeId, tables)
+  if (repeater && enclosingLoopSource) {
+    return {
+      enclosingLoopSource: {
+        ...enclosingLoopSource,
+        label: repeater.label,
+        fields: [
+          ...repeater.fields.map((field) => ({ id: field.id, label: field.label })),
+          { id: 'index', label: 'Index' },
+        ],
+      },
+      enclosingLoopTableId: null,
+    }
+  }
+
   return {
     enclosingLoopSource,
-    enclosingLoopTableId: extractLoopTableId(enclosingLoopNode, enclosingLoopSourceId),
+    enclosingLoopTableId: entryScopeTables(activePage, selectedNodeId, tables)[0]?.id ??
+      extractLoopTableId(enclosingLoopNode, enclosingLoopSourceId),
   }
 }
 

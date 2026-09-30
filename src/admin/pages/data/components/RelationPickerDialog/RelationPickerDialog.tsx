@@ -1,12 +1,14 @@
 import { useState } from 'react'
 import { useAsyncResource } from '@admin/lib/useAsyncResource'
 import { Button } from '@ui/components/Button'
+import { Checkbox } from '@ui/components/Checkbox'
+import { CheckIcon } from 'pixel-art-icons/icons/check'
 import { Dialog } from '@ui/components/Dialog'
 import { EmptyState } from '@ui/components/EmptyState'
 import { SearchBar } from '@ui/components/SearchBar'
 import { SkeletonBlock } from '@ui/components/Skeleton'
 import { listCmsDataRows } from '@core/persistence/cmsData'
-import { readStringCell } from '@core/data/cells'
+import { readDisplayTitle } from '@core/data/cells'
 import type { DataRow, DataTable } from '@core/data/schemas'
 import styles from './RelationPickerDialog.module.css'
 
@@ -75,13 +77,11 @@ export function RelationPickerDialog({
     if (open) setSelected(normalizeSelection(currentValue))
   }
 
-  const primaryFieldId = targetTable?.primaryFieldId ?? ''
-
   const filteredRows = (() => {
     if (!search.trim()) return rows
     const q = search.trim().toLowerCase()
     return rows.filter((row) =>
-      readStringCell(row.cells, primaryFieldId).toLowerCase().includes(q),
+      readDisplayTitle(row.cells, targetTable).toLowerCase().includes(q),
     )
   })()
 
@@ -102,6 +102,7 @@ export function RelationPickerDialog({
 
   function handleConfirm() {
     onPick(buildResult(selected, allowMultiple))
+    setSearch('')
     onClose()
   }
 
@@ -154,6 +155,9 @@ export function RelationPickerDialog({
             placeholder={`Search ${targetTable.pluralLabel.toLowerCase()}…`}
             className={styles.search}
           />
+          <p className={styles.selectionSummary} role="status">
+            {allowMultiple ? `${selected.size} selected · Choose one or more entries` : 'Choose one entry'}
+          </p>
 
           {loading && <SkeletonBlock minHeight={140} ariaLabel="Loading rows" />}
 
@@ -174,10 +178,26 @@ export function RelationPickerDialog({
           )}
 
           {!loading && !loadError && filteredRows.length > 0 && (
-            <div className={styles.list} role="listbox" aria-multiselectable={allowMultiple}>
+            <div className={styles.list} role="group" aria-label={`Select ${targetTable.pluralLabel}`}>
               {filteredRows.map((row) => {
-                const displayValue = readStringCell(row.cells, primaryFieldId) || row.id
+                const displayValue = readDisplayTitle(row.cells, targetTable)
                 const isSelected = selected.has(row.id)
+                const rowLabel = (
+                  <span className={styles.rowText}>
+                    <span className={styles.rowLabel}>{displayValue}</span>
+                    {targetTable.kind === 'postType' && (
+                      <span className={styles.rowStatus}>{row.status === 'published' ? 'Published' : row.status === 'unpublished' ? 'Unpublished' : 'Draft'}</span>
+                    )}
+                  </span>
+                )
+                if (allowMultiple) {
+                  return (
+                    <label key={row.id} className={styles.row} data-selected={isSelected}>
+                      <Checkbox checked={isSelected} onCheckedChange={() => toggleRow(row.id)} aria-label={displayValue} />
+                      {rowLabel}
+                    </label>
+                  )
+                }
                 return (
                   <Button
                     key={row.id}
@@ -187,11 +207,12 @@ export function RelationPickerDialog({
                     fullWidth
                     align="start"
                     type="button"
-                    role="option"
-                    aria-selected={isSelected}
+                    className={styles.row}
+                    data-selected={isSelected}
                     onClick={() => toggleRow(row.id)}
                   >
-                    <span className={styles.rowLabel}>{displayValue}</span>
+                    <span className={styles.singleMarker} aria-hidden="true">{isSelected && <CheckIcon size={16} />}</span>
+                    {rowLabel}
                   </Button>
                 )
               })}

@@ -29,6 +29,7 @@
 
 import type { DynamicPropBinding } from '@core/page-tree'
 import type { TemplateRenderDataContext } from './renderDataContext'
+import { resolveDateToken } from './dateToken'
 
 // ---------------------------------------------------------------------------
 // Source identifiers — must match DynamicBindingSourceSchema
@@ -253,7 +254,9 @@ export function interpolateTokens(input: string, context: TemplateRenderDataCont
       continue
     }
     const frame = readFrame(seg.source, context)
-    const rawValue = frame ? walkFieldPath(frame, seg.field) : undefined
+    const rawValue = frame
+      ? resolveDateToken(frame, seg.field) ?? walkFieldPath(frame, seg.field)
+      : undefined
     // A token resolves to its fallback (if any) when:
     //   - the frame is absent
     //   - the field path is undefined / null

@@ -131,6 +131,12 @@ the ordinary row draft. Nested relation and media fields reuse their shared
 pickers. Multi-media fields place `MediaPickerModal` in true multi-selection
 mode: plain clicks toggle assets and the footer commits the entire selection.
 
+Relation pickers show checkboxes for multiple selection, a selection count, and
+the target entry's display title and publication status. Confirm commits the
+selection; Cancel leaves the stored value unchanged. Relation editor fields
+show the selected names in relation order, with the full list in a tooltip when
+space is limited. Titles use the target table's configured primary field.
+
 When a repeater contains exactly one single-value media field,
 `MediaRepeaterGallery.tsx` replaces the generic structured-item cards with the
 Media workspace presentation. It renders the shared `AssetTile` / `AssetRow`
