@@ -105,6 +105,10 @@ const routes: readonly RouteHandler[] = [
                                    //   OR data row + template, live-renders, runs the
                                    //   publish.html pipeline
   trySetupRedirect,                // first-run redirect → /admin/setup
+  tryServePluginRedirect,          // unmatched GET/HEAD → plugin-owned exact-path
+                                   //   301/302/307/308/410; publicRoutes.ts queries
+                                   //   plugin_redirects once via pluginRedirects.ts;
+                                   //   live content and row-rename redirects win
   tryServeNotFoundPage,            // fall-through GET → site's 404 page (notFound
                                    //   template; baked 404.html artefact, else live
                                    //   render) with status 404; null → JSON 404

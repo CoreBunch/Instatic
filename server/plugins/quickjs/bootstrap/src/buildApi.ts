@@ -340,6 +340,35 @@ globalThis.__buildApi = function buildApi() {
     }])
   }
 
+  // ---- plugin-owned redirects ----------------------------------------------
+  // Exact-path rules the public router consults just before the 404 page.
+  // Validation (paths, locations, statuses, the per-plugin cap) is host-side
+  // in the repository; the VM only normalizes the call shape.
+  function redirectRuleArg(rule: PluginInput) {
+    if (!rule || typeof rule !== 'object') throw new TypeError('redirects: rule must be an object')
+    return { from: rule.from, to: rule.to === undefined ? null : rule.to, status: rule.status }
+  }
+
+  const redirectsApi = {
+    list: function () {
+      assertTargetPermission('cms.redirects.list')
+      return call('cms.redirects.list', [])
+    },
+    set: function (rule: PluginInput) {
+      assertTargetPermission('cms.redirects.set')
+      return call('cms.redirects.set', [redirectRuleArg(rule)])
+    },
+    'delete': function (from: unknown) {
+      assertTargetPermission('cms.redirects.delete')
+      return call('cms.redirects.delete', [String(from)])
+    },
+    replaceAll: function (rules: unknown) {
+      assertTargetPermission('cms.redirects.replaceAll')
+      if (!Array.isArray(rules)) throw new TypeError('redirects.replaceAll: rules must be an array')
+      return call('cms.redirects.replaceAll', [rules.map(redirectRuleArg)])
+    },
+  }
+
   return {
     plugin: {
       id: meta.id,
@@ -508,6 +537,7 @@ globalThis.__buildApi = function buildApi() {
         registerUrlTransformer: registerUrlTransformer,
         registerVariantDelegate: registerVariantDelegate,
       },
+      redirects: redirectsApi,
     },
   }
 }

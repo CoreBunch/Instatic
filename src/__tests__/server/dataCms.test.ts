@@ -366,6 +366,12 @@ describe('data CMS public routes', () => {
     // document.
     const db = makeDataFakeDb([
       (sql) => {
+        if (sql.includes('from plugin_redirects')) {
+          return { rows: [], rowCount: 0 }
+        }
+        return undefined
+      },
+      (sql) => {
         if (sql.startsWith('select id, name, version, enabled, lifecycle_status')) {
           return { rows: [], rowCount: 0 }
         }

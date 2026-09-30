@@ -6,6 +6,7 @@ import { readPreviewAsset } from './publish/branchPreviewAssets'
 import {
   tryServeBranchPreviewLink,
   tryServeNotFoundPage,
+  tryServePluginRedirect,
   tryServePublicRoute,
   trySetupRedirect,
 } from './publish/publicRoutes'
@@ -76,6 +77,7 @@ const routes: readonly RouteHandler[] = [
   tryServeAdminApp,
   tryServePublicRoute,
   trySetupRedirect,
+  tryServePluginRedirect,
   tryServeNotFoundPage,
 ]
 

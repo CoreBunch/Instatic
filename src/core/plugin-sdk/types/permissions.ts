@@ -99,6 +99,12 @@ export const PLUGIN_PERMISSION_VALUES = [
   // `hourly`, `every: { minutes }`, …) by the host's scheduler tick.
   // The handler runs inside the same QuickJS sandbox as everything else.
   'cms.schedule',
+  // Site redirects — answer URLs that have NO page, row, or artefact with a
+  // 301/302/307/308 redirect or a 410 Gone, via `api.cms.redirects.*`. The
+  // public router consults plugin rules only just before the 404 page, so a
+  // rule never overrides live content. Rules are plugin-scoped and removed
+  // on uninstall.
+  'redirects.manage',
   // Reserved
   'unstable.internals',
 ] as const

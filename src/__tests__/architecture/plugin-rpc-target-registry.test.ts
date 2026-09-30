@@ -86,6 +86,10 @@ const EXPECTED_TARGET_PERMISSIONS: Record<string, string> = {
   'cms.content.search': 'cms.content.read',
   'cms.content.snapshot': 'cms.content.read',
   'cms.content.republishAll': 'cms.content.publish',
+  'cms.redirects.list': 'redirects.manage',
+  'cms.redirects.set': 'redirects.manage',
+  'cms.redirects.delete': 'redirects.manage',
+  'cms.redirects.replaceAll': 'redirects.manage',
 }
 
 /** Targets that intentionally require NO permission (must be absent from map). */

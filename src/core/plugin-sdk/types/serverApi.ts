@@ -22,6 +22,7 @@ import type { LoopEntitySource } from './loops'
 import type { ServerPluginMediaApi } from './media'
 import type { PluginMigrationContext } from './lifecycle'
 import type { PluginPermission } from './permissions'
+import type { ServerPluginRedirectsApi } from './redirects'
 import type { ServerPluginRouteHandler } from './routes'
 import type { ServerPluginScheduleApi } from './schedule'
 import type { ServerPluginSettingsApi } from './settings'
@@ -194,6 +195,14 @@ export interface ServerPluginApi {
      * `network.outbound` and a matching `networkAllowedHosts` entry.
      */
     media: ServerPluginMediaApi
+    /**
+     * Plugin-owned exact-path redirects. Requires `redirects.manage`. The
+     * public router consults these only when nothing else answers the URL —
+     * immediately before the site's 404 page — so a rule never overrides a
+     * live page, data row, disk artefact, or row-rename redirect. Each plugin
+     * sees and changes only its own rules.
+     */
+    redirects: ServerPluginRedirectsApi
   }
 }
 

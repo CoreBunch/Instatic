@@ -513,7 +513,8 @@ tryServePublicRoute (server/router.ts)
           │     (publishedSnapshotCache.ts) — no per-request full-site parse
           │     redirects → 301 (not cached)
           │     not-found → null (router falls through: trySetupRedirect, then
-          │     tryServeNotFoundPage → renderNotFoundResponse serves the site's
+          │     tryServePluginRedirect, then tryServeNotFoundPage →
+          │     renderNotFoundResponse serves the site's
           │     404 page — baked `404.html` artefact first, else live render
           │     through the LRU under the reserved `/404` key — with status 404;
           │     no notFound template → the dispatcher's bare JSON 404)
