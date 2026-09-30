@@ -144,7 +144,9 @@ export async function handleRowPreview(
       html: published.html,
       pageId: merged.id,
       slug: merged.slug,
-      path: publicPath,
+      // The encoded pathname, matching what live, baked and branch-preview
+      // renders report for the same entry (e.g. `/posts/caf%C3%A9`).
+      path: syntheticUrl.pathname,
       siteId: snapshot.site.id,
       jsModuleIds: published.jsModuleIds.filter((id) => moduleJsMap.has(id)),
       publishVersion: getPublishVersion(),

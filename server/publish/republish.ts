@@ -1,9 +1,10 @@
 /**
  * Background republish primitives.
  *
- * Called from the plugin API surface `api.cms.pages.republish(pageId)` and
- * `api.cms.pages.republishAll()`. These drive the full publish pipeline
- * (publish.before → publish.html filter → publish.after) for already-
+ * `republishAllPages` backs the plugin API call `api.cms.content.republishAll()`
+ * (host handler `handleContentRepublishAll` in
+ * `server/plugins/host/handlers/content.ts`). It drives the full published-HTML
+ * pipeline (publish.before → publish.html filter → publish.after) for already-
  * published pages, without writing a new snapshot. The side-effects — hook
  * listeners and filter handlers firing — are the whole point.
  *
@@ -14,8 +15,7 @@
  */
 
 import type { DbClient } from '../db/client'
-import { buildPageFrame } from '@core/templates/contextFrames'
-import { isTemplatePage } from '@core/templates'
+import { buildPageFrame, isTemplatePage } from '@core/templates'
 import { getPublishedPageSnapshotById } from '../repositories/publish'
 import { renderPublishedSnapshot } from './publicRenderer'
 import { applyPublishedHtmlPipeline } from './publishedHtmlPipeline'

@@ -5,9 +5,12 @@
  * Mirrors the editor's own runtime preview rather than the publish path: the
  * page (or entry template) is composed from the branch's draft rows, loops
  * read the branch, runtime scripts are bundled on demand and served from
- * memory, CSS is inlined, and no publish hook fires. Nothing here touches
- * the published snapshots, the render caches, or the disk slots — a preview
- * is a render, never a publish.
+ * memory, and CSS is inlined. The HTML then runs the same post-render
+ * pipeline as a published page (`applyPublishedHtmlPipeline`): the
+ * `publish.before` / `publish.after` events and the `publish.html` filter
+ * fire, with `path` set to the visitor's public pathname. Nothing here
+ * touches the published snapshots, the render caches, or the disk slots —
+ * a preview is a render, never a publish.
  *
  * Every response is `no-store` and `noindex`, and carries a banner naming
  * the branch with an exit link.
@@ -236,6 +239,7 @@ export async function renderBranchPreview(
       html: rendered.html,
       pageId: merged.id,
       slug: merged.slug,
+      path: url.pathname,
       siteId: site.id,
       jsModuleIds: rendered.jsModuleIds.filter((id) => moduleJsMap.has(id)),
       publishVersion: getPublishVersion(),

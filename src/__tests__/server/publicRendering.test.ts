@@ -229,6 +229,9 @@ describe('public rendering', () => {
       },
     })
 
+  // Public URL of `entryBaseRow` (`tableRouteBase` + `slug`).
+  const entryUrl = () => new URL('http://localhost/blog/hello')
+
   const entryBaseRow: Omit<PublishedDataRow, 'cells'> = {
     id: 'ver_1',
     rowId: 'row_1',
@@ -271,7 +274,7 @@ describe('public rendering', () => {
           seoDescription: 'SEO override description',
         },
       },
-      { db: makeFakeDb(snap) },
+      { db: makeFakeDb(snap), url: entryUrl() },
     )
     expect(withSeo?.html).toContain('<title>SEO Override Title</title>')
     expect(withSeo?.html).toContain(
@@ -288,7 +291,7 @@ describe('public rendering', () => {
     const withoutSeo = await renderPublishedDataRowTemplate(
       snap,
       { ...entryBaseRow, cells: { title: 'Plain H1 Title' } },
-      { db: makeFakeDb(snap) },
+      { db: makeFakeDb(snap), url: entryUrl() },
     )
     expect(withoutSeo?.html).toContain('<title>Plain H1 Title</title>')
     expect(withoutSeo?.html).not.toContain('<meta name="description"')
@@ -300,7 +303,7 @@ describe('public rendering', () => {
     const blankSeo = await renderPublishedDataRowTemplate(
       snap,
       { ...entryBaseRow, cells: { title: 'Plain H1 Title', seoTitle: '   ', seoDescription: '' } },
-      { db: makeFakeDb(snap) },
+      { db: makeFakeDb(snap), url: entryUrl() },
     )
     expect(blankSeo?.html).toContain('<title>Plain H1 Title</title>')
     expect(blankSeo?.html).not.toContain('<meta name="description"')
@@ -325,7 +328,7 @@ describe('public rendering', () => {
           seoDescription: 'SEO override description',
         },
       },
-      { db: makeFakeDb(snap) },
+      { db: makeFakeDb(snap), url: entryUrl() },
     )
     expect(withSeo?.html).toContain('<title>SEO Override Title</title>')
     expect(withSeo?.html).toContain(
@@ -339,7 +342,7 @@ describe('public rendering', () => {
     const withoutSeo = await renderPublishedDataRowTemplate(
       snap,
       { ...entryBaseRow, cells: { title: 'Plain H1 Title' } },
-      { db: makeFakeDb(snap) },
+      { db: makeFakeDb(snap), url: entryUrl() },
     )
     expect(withoutSeo?.html).toContain('<title>Site Wide Meta Title</title>')
     expect(withoutSeo?.html).toContain(

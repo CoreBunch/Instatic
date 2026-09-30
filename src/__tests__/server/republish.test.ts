@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from 'bun:test'
+import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
 import type { DbClient, DbResult } from '../../../server/db'
 import type { PublishedPageSnapshot } from '../../../server/repositories/publish'
 import { republishAllPages } from '../../../server/publish/republish'
@@ -80,6 +80,10 @@ function makeFakeDb(snapshots: Map<string, PublishedPageSnapshot>): DbClient {
 
 describe('background republish', () => {
   beforeEach(() => {
+    hookBus.reset()
+  })
+
+  afterEach(() => {
     hookBus.reset()
   })
 

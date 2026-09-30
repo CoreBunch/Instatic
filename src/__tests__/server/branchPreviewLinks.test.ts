@@ -2,9 +2,10 @@
  * Branch preview links — issuing, the cookie handshake, rendering the
  * branch's draft on the public site, and revocation.
  */
-import { afterEach, describe, expect, it } from 'bun:test'
+import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
 import { handleServerRequest } from '../../../server/router'
 import { listDataRows, saveDataRowDraft, upsertDataRowDraft } from '../../../server/repositories/data'
+import { hookBus } from '../../core/plugins/hookBus'
 import {
   createCapabilityTestHarness,
   expectForbidden,
@@ -29,7 +30,12 @@ function cookieFrom(res: Response): string {
 describe('branch preview links', () => {
   let harness: CapabilityTestHarness | null = null
 
+  beforeEach(() => {
+    hookBus.reset()
+  })
+
   afterEach(async () => {
+    hookBus.reset()
     await harness?.cleanup()
     harness = null
   })
@@ -165,6 +171,89 @@ describe('branch preview links', () => {
     expect(html).toContain('Entry body')
     expect(html).toMatch(/<title>[^<]*Search title[^<]*<\/title>/)
     expect(html).toContain('<meta name="description" content="Search description">')
+  })
+
+  it('passes the visitor pathname to publish.html, and the template slug for an entry', async () => {
+    harness = await createCapabilityTestHarness()
+    const owner = await harness.setupOwner()
+    const created = await harness.cms(BRANCHES, { method: 'POST', cookie: owner, json: { name: 'Filter Path' } })
+    expect(created.status).toBe(201)
+    const { branch } = await readJson<{ branch: { id: string } }>(created)
+    const scope = { branchId: branch.id }
+    const node = (id: string, moduleId: string, props: Record<string, unknown>, children: string[] = []) =>
+      ({ id, moduleId, props, children, breakpointOverrides: {}, classIds: [] })
+    await upsertDataRowDraft(harness.db, scope, {
+      id: 'about-page',
+      tableId: 'pages',
+      slug: 'about',
+      cells: {
+        title: 'About',
+        slug: 'about',
+        body: {
+          rootNodeId: 'root',
+          nodes: {
+            root: node('root', 'base.container', {}, ['copy']),
+            copy: node('copy', 'base.text', { text: 'About copy' }),
+          },
+        },
+      },
+    })
+    await upsertDataRowDraft(harness.db, scope, {
+      id: 'post-template',
+      tableId: 'pages',
+      slug: 'post-template',
+      cells: {
+        title: 'Post template',
+        slug: 'post-template',
+        templateEnabled: true,
+        templateTarget: { kind: 'postTypes', tableSlugs: ['posts'] },
+        templatePriority: 0,
+        body: {
+          rootNodeId: 'root',
+          nodes: {
+            root: node('root', 'base.container', {}, ['copy']),
+            copy: node('copy', 'base.text', { text: 'Entry body' }),
+          },
+        },
+      },
+    })
+    await upsertDataRowDraft(harness.db, scope, {
+      id: 'hello-world',
+      tableId: 'posts',
+      slug: 'hello-world',
+      cells: { title: 'Hello', slug: 'hello-world' },
+    })
+
+    const issued = await harness.cms(`${BRANCHES}/${branch.id}/preview`, { method: 'POST', cookie: owner })
+    expect(issued.status).toBe(201)
+    const { url } = await readJson<{ url: string }>(issued)
+    const entry = await handleServerRequest(publicRequest(new URL(url).pathname), { db: harness.db })
+    const cookie = cookieFrom(entry)
+
+    hookBus.filter('branch-preview-path', 'publish.html', (html, context) => {
+      const { path, slug } = context as { path?: string; slug?: string }
+      return `${html}<meta name="publish-context-path" content="${path ?? ''}"><meta name="publish-context-slug" content="${slug ?? ''}">`
+    })
+
+    const previewedEntry = await handleServerRequest(publicRequest('/posts/hello-world', cookie), { db: harness.db })
+    expect(previewedEntry.status).toBe(200)
+    const entryHtml = await previewedEntry.text()
+    expect(entryHtml).toContain('Entry body')
+    expect(entryHtml).toContain('<meta name="publish-context-path" content="/posts/hello-world">')
+    expect(entryHtml).toContain('<meta name="publish-context-slug" content="post-template">')
+
+    const previewedPage = await handleServerRequest(publicRequest('/about', cookie), { db: harness.db })
+    expect(previewedPage.status).toBe(200)
+    const pageHtml = await previewedPage.text()
+    expect(pageHtml).toContain('About copy')
+    expect(pageHtml).toContain('<meta name="publish-context-path" content="/about">')
+    expect(pageHtml).toContain('<meta name="publish-context-slug" content="about">')
+
+    const previewedHome = await handleServerRequest(publicRequest('/', cookie), { db: harness.db })
+    expect(previewedHome.status).toBe(200)
+    const homeHtml = await previewedHome.text()
+    expect(homeHtml).toContain('<meta name="publish-context-path" content="/">')
+    expect(homeHtml).toContain('<meta name="publish-context-slug" content="index">')
   })
 
   it('rotates the link on every share and gates issuing on who may act on the branch', async () => {
