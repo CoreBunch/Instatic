@@ -28,6 +28,7 @@ import type { Breakpoint } from '@core/page-tree'
 import { registry } from '@core/module-engine'
 import { getNodeDisplayName } from '@core/page-tree'
 import { ErrorBoundary } from '@ui/components/ErrorBoundary'
+import { CanvasLocalizationGate } from './CanvasLocalizationGate'
 import { SpotlightContext } from '@admin/spotlight/spotlightContext'
 import { getKeybindingForCommand } from '@admin/spotlight/keybindings'
 import { useCanvas } from '@site/hooks/useCanvas'
@@ -137,6 +138,7 @@ export function CanvasRoot({ editable = true }: CanvasRootProps) {
   const {
     context: templatePreviewContext,
     loading: templatePreviewContextLoading,
+    error: templatePreviewError,
   } = useTemplatePreviewContext(canvasPage)
   const agentSnapshotBreakpoint = agentSnapshotCaptureRequest
     ? breakpoints.find((breakpoint) => breakpoint.id === agentSnapshotCaptureRequest.breakpointId) ?? null
@@ -518,8 +520,9 @@ export function CanvasRoot({ editable = true }: CanvasRootProps) {
         */}
           <ErrorBoundary
             location="canvas"
-            resetKeys={[canvasPage?.id ?? null, activeDocument?.kind ?? null, canvasView]}
+            resetKeys={[canvasPage?.id ?? null, activeDocument?.kind ?? null, canvasView, templatePreviewError?.message ?? null, templatePreviewContext?.site?.translations]}
           >
+            <CanvasLocalizationGate error={templatePreviewError}>
             {isLive ? (
               <CanvasLiveSurface
                 page={canvasPage}
@@ -540,6 +543,7 @@ export function CanvasRoot({ editable = true }: CanvasRootProps) {
                 runtimeScripts={runtimeScripts}
               />
             )}
+            </CanvasLocalizationGate>
           </ErrorBoundary>
 
           {/*

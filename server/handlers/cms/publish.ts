@@ -19,6 +19,8 @@
  * and the `plugins.install` / `plugins.lifecycle` mutation surface.
  */
 import type { DbClient } from '../../db/client'
+import { FormConfigurationError } from '@core/forms'
+import { LocalizationError } from '@core/localization'
 import { isMainScope, type BranchScope } from '../../branches/scope'
 import { requireCapability, requireStepUp } from '../../auth/authz'
 import { createAuditEvent } from '../../repositories/audit'
@@ -58,7 +60,7 @@ export async function handlePublishRoutes(
     try {
       result = await publishDraftSite(db, user.id, options.uploadsDir)
     } catch (err) {
-      if (err instanceof RuntimeScriptBuildError) {
+      if (err instanceof FormConfigurationError || err instanceof RuntimeScriptBuildError || err instanceof LocalizationError) {
         return jsonResponse({ error: err.message }, { status: 422 })
       }
       throw err

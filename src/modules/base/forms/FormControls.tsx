@@ -1,86 +1,14 @@
+import type { FormProps, LabelProps, InputProps, TextareaProps, SelectProps, OptionProps, OptionGroupProps, ChoiceProps, SubmitProps, FormMessageProps } from './primitiveSchemas'
+import type { Static } from '@sinclair/typebox'
+import type { TurnstileConfigurationSchema } from '@core/forms-schema'
+import type { ConditionalPropsSchema, OutputPropsSchema } from './behaviorSchemas'
 import type { ModuleComponentProps } from '@core/module-engine'
 import { normalizeIdentifierValue } from '@core/utils/identifier'
 
-type FormProps = Record<string, unknown> & {
-  formId: string
-  editorPreviewState?: FormPreviewState
-}
-
-type LabelProps = Record<string, unknown> & {
-  text: string
-  targetMode: 'auto' | 'explicit'
-  targetId: string
-}
-
-type InputProps = Record<string, unknown> & {
-  inputType: string
-  name: string
-  id: string
-  placeholder: string
-  value: string
-  required: boolean
-  disabled: boolean
-  readOnly: boolean
-  autocomplete: string
-}
-
-type TextareaProps = Record<string, unknown> & {
-  name: string
-  id: string
-  placeholder: string
-  value: string
-  required: boolean
-  disabled: boolean
-  readOnly: boolean
-  rows: number
-}
-
-type SelectProps = Record<string, unknown> & {
-  name: string
-  id: string
-  required: boolean
-  disabled: boolean
-  multiple: boolean
-}
-
-type OptionProps = Record<string, unknown> & {
-  value: string
-  label: string
-  selected: boolean
-  disabled: boolean
-}
-
-type OptionGroupProps = Record<string, unknown> & {
-  label: string
-  disabled: boolean
-}
-
-type ChoiceProps = Record<string, unknown> & {
-  name: string
-  id: string
-  value: string
-  checked: boolean
-  required: boolean
-  disabled: boolean
-}
-
-type SubmitProps = Record<string, unknown> & {
-  label: string
-  disabled: boolean
-  formId: string
-}
-
-type FormMessageProps = Record<string, unknown> & {
-  formId: string
-  kind: 'status' | 'success' | 'error'
-  text: string
-  editorPreviewState?: FormPreviewState
-  editorPreviewSuccessMessage?: string
-}
-
+type EditorFormPreviewProps = { editorPreviewState?: FormPreviewState; editorPreviewMessage?: string }
 type FormPreviewState = 'default' | 'submitting' | 'success' | 'error'
 
-export function FormEditor({ children, mcClassName, nodeWrapperProps, props }: ModuleComponentProps<FormProps>) {
+export function FormEditor({ children, mcClassName, nodeWrapperProps, props }: ModuleComponentProps<FormProps & EditorFormPreviewProps>) {
   const previewState = normalizePreviewState(props.editorPreviewState)
   const runtimeState = previewState === 'submitting' ? 'pending' : previewState
   const formId = normalizeIdentifierValue(props.formId, 'form')
@@ -221,13 +149,11 @@ export function SubmitEditor({ mcClassName, nodeWrapperProps, props }: ModuleCom
   )
 }
 
-export function FormMessageEditor({ mcClassName, nodeWrapperProps, props }: ModuleComponentProps<FormMessageProps>) {
+export function FormMessageEditor({ mcClassName, nodeWrapperProps, props }: ModuleComponentProps<FormMessageProps & EditorFormPreviewProps>) {
   const previewState = normalizePreviewState(props.editorPreviewState)
   const previewKind = messageKindForPreview(previewState)
   const previewActive = previewKind !== null && props.kind === previewKind
-  const text = previewActive
-    ? previewTextForMessage(props.kind, props.text, props.editorPreviewSuccessMessage)
-    : props.text
+  const text = previewActive && props.source === 'state' ? props.editorPreviewMessage ?? '' : props.text
   return (
     <div
       {...nodeWrapperProps}
@@ -254,13 +180,14 @@ function messageKindForPreview(previewState: FormPreviewState): FormMessageProps
   return null
 }
 
-function previewTextForMessage(
-  kind: FormMessageProps['kind'],
-  text: string,
-  successMessage: string | undefined,
-): string {
-  if (text) return text
-  if (kind === 'status') return 'Sending...'
-  if (kind === 'success') return successMessage || 'Thanks. Your submission was received.'
-  return 'Please check the form and try again.'
+export function ConditionalEditor({ children, mcClassName, nodeWrapperProps }: ModuleComponentProps<Static<typeof ConditionalPropsSchema>>) {
+  return <div {...nodeWrapperProps} className={mcClassName}>{children}</div>
+}
+
+export function OutputEditor({ mcClassName, nodeWrapperProps, props }: ModuleComponentProps<Static<typeof OutputPropsSchema>>) {
+  return <output {...nodeWrapperProps} className={mcClassName}>{props.text}</output>
+}
+
+export function TurnstileEditor({ mcClassName, nodeWrapperProps, props }: ModuleComponentProps<Static<typeof TurnstileConfigurationSchema>>) {
+  return <div {...nodeWrapperProps} className={mcClassName} role="img" aria-label="Turnstile verification">{props.siteKey ? 'Turnstile' : 'Configure Turnstile site key'}</div>
 }

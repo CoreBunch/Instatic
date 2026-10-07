@@ -67,6 +67,7 @@ export function pageFromRow(row: DataRow): Page {
     id: row.id,
     slug: row.slug,
     title,
+    ...(typeof cells.language === 'string' && cells.language.length > 0 ? { language: cells.language } : {}),
     nodes,
     rootNodeId,
     ...(template !== null ? { template } : {}),
@@ -116,6 +117,8 @@ export function pageToCells(page: Page): DataRowCells {
       rootNodeId: page.rootNodeId,
     },
   }
+
+  if (page.language) cells.language = page.language
 
   if (page.template) {
     cells.templateEnabled = true

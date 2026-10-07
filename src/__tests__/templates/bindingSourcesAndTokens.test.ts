@@ -40,7 +40,7 @@ function ctx(overrides: Partial<TemplateRenderDataContext> = {}): TemplateRender
     title: 'About Us',
     template: undefined,
   } as unknown as Page
-  const fakeSite = { id: 'site_1', name: 'Acme' } as SiteDocument
+  const fakeSite = { id: 'site_1', name: 'Acme', settings: { shortcuts: {} } } as SiteDocument
 
   return {
     entryStack: [],

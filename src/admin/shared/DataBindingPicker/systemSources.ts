@@ -38,6 +38,7 @@ const PAGE_SOURCE: SystemSource = {
     { id: 'slug', label: 'Slug' },
     { id: 'permalink', label: 'Permalink', format: 'url' },
     { id: 'parentSlug', label: 'Parent slug' },
+    { id: 'language', label: 'Page language' },
   ],
 }
 
@@ -51,6 +52,7 @@ const SITE_SOURCE: SystemSource = {
   description: 'Site-wide author-facing fields.',
   fields: [
     { id: 'name', label: 'Site name' },
+    { id: 'language', label: 'Document language' },
   ],
 }
 

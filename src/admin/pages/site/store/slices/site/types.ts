@@ -116,6 +116,7 @@ export interface SiteSlice {
   addPage: (title: string, slug?: string) => Page
   deletePage: (pageId: string) => void
   renamePage: (pageId: string, title: string, slug?: string) => void
+  setPageLanguage: (pageId: string, language?: string) => void
   duplicatePage: (sourcePageId: string, title: string, slug?: string) => Page
   reorderPages: (fromIndex: number, toIndex: number) => void
   convertPageToTemplate: (pageId: string, config: PageTemplateConfig) => void

@@ -13,6 +13,10 @@ import { configurePublicOrigins, resetPublicOrigins, stampSocketIp } from '../..
 import { hookBus } from '@core/plugins/hookBus'
 import { createFakeDb } from './dbTestFake'
 import type { PublishedPageSnapshot } from '../../../server/repositories/publish'
+import { makeVC, makeVCTree, makeNode } from '../fixtures'
+import { publishPage } from '@core/publisher'
+import { registry } from '@core/module-engine'
+import '@modules/base'
 
 function makeRequest(
   path: string,
@@ -229,6 +233,41 @@ describe('public CMS-native form endpoint', () => {
   afterEach(() => {
     resetPublicOrigins()
     hookBus.reset()
+  })
+
+  it.each(['it','en','de','fr','es','pt','nl','pl','ro'])('submits a %s catalogue-backed CMS form inside native VC slots using the published authority', async (language) => {
+    resetPublicFormChallenges()
+    publicFormPerIpRateLimit.reset('unknown')
+    publicFormPerFormRateLimit.reset('unknown|newsletter')
+    const snapshot = makeSnapshot()
+    const page = snapshot.site.pages[0]
+    page.language = language
+    snapshot.site.files = [{ id: 'catalogue', path: 'locale.json', type: 'config', content: JSON.stringify({ language, messages: { forms: { email: language + ' email' } } }), createdAt: 0, updatedAt: 0 }]
+    snapshot.site.settings = { shortcuts: {}, localization: { catalogues: [{ language, fileId: 'catalogue' }] } }
+    const form = { ...page.nodes.form, props: { ...page.nodes.form.props, formId: '', targetTableId: '' }, propBindings: { formId: { paramId: 'identity' }, targetTableId: { paramId: 'table' } }, children: ['outlet'] }
+    snapshot.site.visualComponents = [makeVC({ id: 'newsletter-component', params: [
+      { id: 'identity', name: 'Identity', type: 'string', defaultValue: 'newsletter', required: true },
+      { id: 'table', name: 'Table', type: 'string', defaultValue: 'newsletter_submissions', required: true },
+      { id: 'fields', name: 'Fields', type: 'slot', defaultValue: [], required: false },
+    ], tree: makeVCTree('form', [form, makeNode({ id: 'outlet', moduleId: 'base.slot-outlet', props: { slotName: 'Fields' } })]) })]
+    delete page.nodes.form
+    page.nodes.body.children = ['ref']
+    page.nodes.ref = makeNode({ id: 'ref', moduleId: 'base.visual-component-ref', props: { componentId: 'newsletter-component' }, children: ['slot'] })
+    page.nodes.slot = makeNode({ id: 'slot', moduleId: 'base.slot-instance', props: { slotName: 'Fields' }, children: ['input'] })
+    page.nodes.input.dynamicBindings = { placeholder: { source: 'site', field: 'translations.forms.email' } }
+    const html = publishPage(page, snapshot.site, registry).html
+    expect(html).toContain(`placeholder="${language} email"`)
+    expect(html).toContain('data-instatic-form-id="newsletter"')
+    const { db, createdRows } = makeDb({ snapshot })
+    const challenged = await handlePublicFormRequest(makeRequest('/_instatic/form/challenge', { formId: 'newsletter', pageId: 'page-home', pageToken: pageToken() }), db, new URL('http://cms.test/_instatic/form/challenge'))
+    expect(challenged?.status).toBe(200)
+    const challenge = await readJson(challenged!)
+    const submitted = await handlePublicFormRequest(makeRequest('/_instatic/form/submit', { formId: 'newsletter', pageId: 'page-home', token: challenge.token, challenge: challenge.challenge, values: { email: 'visitor@example.com' } }), db, new URL('http://cms.test/_instatic/form/submit'))
+    expect(submitted?.status).toBe(200)
+    expect(createdRows[0].cells_json).toEqual({ email: 'visitor@example.com' })
+    const replayed = await handlePublicFormRequest(makeRequest('/_instatic/form/submit', { formId: 'newsletter', pageId: 'page-home', token: challenge.token, challenge: challenge.challenge, values: { email: 'visitor@example.com' } }), db, new URL('http://cms.test/_instatic/form/submit'))
+    expect(replayed?.status).toBe(400)
+    expect(createdRows).toHaveLength(1)
   })
 
   it('router owns public form challenge URLs before public-route/setup fallthrough', async () => {

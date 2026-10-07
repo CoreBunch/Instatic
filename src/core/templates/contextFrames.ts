@@ -20,6 +20,8 @@
 
 import type { Page, SiteDocument } from '@core/page-tree'
 import { primaryTemplateTableSlug } from './templateMatching'
+import { resolveSiteLanguage } from '@core/localization'
+import type { TranslationMessages } from '@core/localization-schema'
 
 // ---------------------------------------------------------------------------
 // Frame shapes
@@ -29,6 +31,7 @@ export interface PageFrame {
   id: string
   slug: string
   title: string
+  language?: string
   permalink: string
   isTemplate: boolean
   templateTableSlug: string | null
@@ -38,6 +41,8 @@ export interface PageFrame {
 export interface SiteFrame {
   id: string
   name: string
+  language?: string
+  translations?: TranslationMessages
 }
 
 /**
@@ -80,6 +85,7 @@ export function buildPageFrame(page: Page): PageFrame {
     id: page.id,
     slug,
     title: page.title,
+    ...(page.language ? { language: page.language } : {}),
     permalink,
     isTemplate: page.template?.enabled === true,
     templateTableSlug: primaryTemplateTableSlug(page),
@@ -87,10 +93,11 @@ export function buildPageFrame(page: Page): PageFrame {
   }
 }
 
-export function buildSiteFrame(site: SiteDocument): SiteFrame {
+export function buildSiteFrame(site: SiteDocument, pageLanguage?: string): SiteFrame {
   return {
     id: site.id,
     name: site.name,
+    ...resolveSiteLanguage(site, pageLanguage),
   }
 }
 

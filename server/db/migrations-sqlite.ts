@@ -1515,4 +1515,13 @@ export const sqliteMigrations: Migration[] = [
     id: '030_iso_timestamps',
     sql: isoTimestampRewrite030(),
   },
+  {
+    id: '031_page_language',
+    sql: `
+      update data_tables
+         set fields_json = json_insert(fields_json, '$[#]', json('{"type":"text","id":"language","label":"Language","builtIn":true}'))
+       where id = 'pages'
+         and not exists (select 1 from json_each(data_tables.fields_json) where json_extract(value, '$.id') = 'language');
+    `,
+  },
 ]
