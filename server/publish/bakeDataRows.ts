@@ -22,6 +22,7 @@
 
 import type { DbClient } from '../db/client'
 import type { SiteCssBundle } from '@core/publisher'
+import type { PublishedPageSnapshot } from '../repositories/publish'
 import { resolveTemplateChain } from '@core/templates'
 import { normalizeRouteBase } from '@core/templates/templateMatching'
 import {
@@ -31,8 +32,7 @@ import {
 import { renderPublishedDataRowTemplate } from './publicRenderer'
 import { applyPublishedHtmlPipeline } from './publishedHtmlPipeline'
 import { writeArtefact } from './staticArtefact'
-import { getLatestSnapshotForVersion } from './publishedSnapshotCache'
-import { snapshotForEntryRoute } from './entryTemplateSnapshot'
+import { PublicAssetValidationError } from '@core/files/publicAssets'
 
 interface DataRowBakeResult {
   /** Routes successfully baked into the slot. */
@@ -52,25 +52,27 @@ function publicRowPath(routeBase: string, slug: string): string {
 
 /**
  * Bake every published data-row route into `slotDir`. Called by the full
- * publish AFTER its transaction commits (the row list and snapshot reads see
- * the freshly-committed publish) and BEFORE the slot swap.
+ * publish BEFORE its transaction commits. Prepared page snapshots supply the
+ * new site and the exact entry template's runtime assets; data rows retain
+ * their already-published versions until separately published.
  *
  * `publishVersion` is the NEXT publish version — the bake runs before
  * `bumpPublishVersion()`, so baked hole shells must carry the version that
- * becomes current at the swap. Passing it to the versioned snapshot memo
- * also pre-warms the cache visitors are about to read.
+ * becomes current at the swap. Staging must not populate published snapshot
+ * memos with a generation that may still fail before publication.
  */
 export async function bakePublishedDataRowArtefacts(
   db: DbClient,
   slotDir: string,
   publishVersion: number,
+  pageSnapshots: readonly PublishedPageSnapshot[],
 ): Promise<DataRowBakeResult> {
   const result: DataRowBakeResult = { baked: 0, cssBundles: [] }
 
   const routes = await listPublishedRowRoutes(db)
   if (routes.length === 0) return result
 
-  const siteSnapshot = await getLatestSnapshotForVersion(db, publishVersion)
+  const siteSnapshot = pageSnapshots[0]
   if (!siteSnapshot) return result
 
   // Tables without an entry-template chain have no public row routes —
@@ -94,7 +96,9 @@ export async function bakePublishedDataRowArtefacts(
       const syntheticUrl = new URL(`http://localhost${urlPath}`)
       // Runtime assets come from this table's entry template, not from the
       // arbitrary page the site-wide snapshot happens to name.
-      const snapshot = await snapshotForEntryRoute(db, siteSnapshot, route.tableSlug)
+      const chain = resolveTemplateChain(siteSnapshot.site, { kind: 'entry', tableSlug: route.tableSlug })
+      const innermost = chain[chain.length - 1]
+      const snapshot = pageSnapshots.find((candidate) => candidate.pageRowId === innermost.id)!
       const rendered = await renderPublishedDataRowTemplate(snapshot, row, {
         db,
         url: syntheticUrl,
@@ -106,6 +110,7 @@ export async function bakePublishedDataRowArtefacts(
       result.cssBundles.push(rendered.cssBundle)
       result.baked++
     } catch (err) {
+      if (err instanceof PublicAssetValidationError) throw err
       console.error('[publish:site] failed to bake row artefact for', urlPath, '(falls through to live renderer):', err)
     }
   }

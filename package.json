@@ -41,6 +41,8 @@
     "fallow:health": "bun run test:coverage && npx fallow health --coverage .coverage/coverage-final.json",
     "icons:sync": "bun run scripts/sync-icons.ts",
     "icons:check": "bun run scripts/sync-icons.ts --check",
+    "forms:sync": "bun run scripts/sync-form-runtime.ts",
+    "forms:check": "bun run scripts/sync-form-runtime.ts --check",
     "bootstrap:sync": "bun run scripts/sync-plugin-bootstrap.ts",
     "bootstrap:check": "bun run scripts/sync-plugin-bootstrap.ts --check",
     "instatic-plugin": "bun run src/core/plugin-sdk/cli/index.ts",

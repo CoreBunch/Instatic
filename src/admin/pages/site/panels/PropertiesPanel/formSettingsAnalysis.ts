@@ -72,7 +72,7 @@ interface FormSettingsWarning {
 export interface FormContextSummary {
   nodeId: string
   formId: string
-  mode: 'cms' | 'custom'
+  mode: 'cms' | 'custom' | 'request'
   targetTableId: string
 }
 
@@ -341,7 +341,7 @@ function formSummary(node: PageNode): FormContextSummary {
   return {
     nodeId: node.id,
     formId: stringProp(node, 'formId', node.id) || node.id,
-    mode: stringProp(node, 'mode', 'cms') === 'custom' ? 'custom' : 'cms',
+    mode: formMode(node),
     targetTableId: stringProp(node, 'targetTableId', ''),
   }
 }
@@ -618,4 +618,9 @@ function numberProp<TName extends string>(
     if (Number.isFinite(parsed)) return { [outKey]: parsed } as Record<TName, number>
   }
   return {}
+}
+
+function formMode(node: PageNode): FormContextSummary['mode'] {
+  const value = stringProp(node, 'mode', 'cms')
+  return value === 'request' || value === 'custom' ? value : 'cms'
 }

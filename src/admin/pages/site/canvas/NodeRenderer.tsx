@@ -38,7 +38,7 @@ import { CanvasBreakpointContext, CanvasSelectionContext, CanvasTemplateContext 
 import {
   addEditorFormPreviewProps,
   resolveEditorFormPreviewState,
-  resolveEditorFormPreviewSuccessMessage,
+  resolveEditorFormPreviewMessage,
 } from './canvasFormPreview'
 import { useResponsiveBackgroundStyle } from '@admin/pages/media/hooks/useResponsiveBackgroundStyle'
 import { getCanvasNodeClassIds, getCanvasNodeClassName } from './canvasNodeClassName'
@@ -107,7 +107,7 @@ export const NodeRenderer = memo(function NodeRenderer({ nodeId }: NodeRendererP
     (s) => s.previewClassAssignment?.nodeId === nodeId ? s.previewClassAssignment : null,
   )
   const editorFormPreviewState = useEditorStore((s) => resolveEditorFormPreviewState(s, nodeId))
-  const editorFormPreviewSuccessMessage = useEditorStore((s) => resolveEditorFormPreviewSuccessMessage(s, nodeId))
+  const editorFormPreviewMessage = useEditorStore((s) => resolveEditorFormPreviewMessage(s, nodeId))
   const mcClassName = useEditorStore((s) => {
     const canvasNode = selectActiveCanvasPage(s)?.nodes[nodeId]
     const preview = s.previewClassAssignment?.nodeId === nodeId ? s.previewClassAssignment : null
@@ -262,7 +262,7 @@ export const NodeRenderer = memo(function NodeRenderer({ nodeId }: NodeRendererP
     templateContext,
     ),
     editorFormPreviewState,
-    editorFormPreviewSuccessMessage,
+    String(resolveDynamicProps({ message: editorFormPreviewMessage }, undefined, templateContext).message ?? ''),
   )
 
   // Build className from classIds using the user-facing class names.

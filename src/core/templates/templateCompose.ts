@@ -129,6 +129,8 @@ export function composeTemplateChain(chain: Page[], terminal: TerminalContent): 
       id: t.id,
       slug: t.slug,
       title: t.title,
+      ...(t.language ? { language: t.language } : {}),
+      ...(t.seo ? { seo: t.seo } : {}),
       ...(t.template ? { template: t.template } : {}),
       rootNodeId: t.rootNodeId,
       nodes: { ...t.nodes },
@@ -165,6 +167,11 @@ export function composeTemplateChain(chain: Page[], terminal: TerminalContent): 
     // terminals have no Page here; their caller overrides `title` from the
     // published row after composing.
     title: terminal.kind === 'page' ? terminal.page.title : innermost.title,
+    ...((terminal.kind === 'page' ? terminal.page.language : innermost.language)
+      ? { language: terminal.kind === 'page' ? terminal.page.language : innermost.language }
+      : {}),
+    ...((terminal.kind === 'page' ? terminal.page.seo : innermost.seo)
+      ? { seo: terminal.kind === 'page' ? terminal.page.seo : innermost.seo } : {}),
     // Carry the innermost template's `template` config. `assetScopeAppliesToPage`
     // gates its `templates` branch on `Boolean(page.template)`, so dropping it
     // here meant a stylesheet scoped to an entry template never applied to that

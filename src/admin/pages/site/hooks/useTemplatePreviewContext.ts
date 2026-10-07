@@ -3,9 +3,9 @@ import type { Page } from '@core/page-tree'
 import type { TemplateRenderDataContext } from '@core/templates/dynamicBindings'
 import { dataTablePreviewToLoopItem } from '@core/templates/templatePreviewData'
 import { getCmsDataTableBySlug, previewCmsDataLoopItems } from '@core/persistence/cmsData'
-import { buildPageFrame, buildRouteFrame, buildSiteFrame } from '@core/templates/contextFrames'
-import { primaryTemplateTableSlug } from '@core/templates'
+import { buildTemplateRenderContext, primaryTemplateTableSlug } from '@core/templates'
 import { useEditorStore } from '@site/store/store'
+const EMPTY_FILE_REFERENCES = {}
 
 /**
  * Build the canvas-side render context used by `resolveDynamicProps`.
@@ -24,6 +24,8 @@ interface TemplatePreviewContextState {
   context: TemplateRenderDataContext | undefined
   /** True while a post-type template's real preview row is still loading. */
   loading: boolean
+  error?: Error
+  refresh: () => void
 }
 
 export function useTemplatePreviewContext(page: Page | null): TemplatePreviewContextState {
@@ -44,7 +46,7 @@ export function useTemplatePreviewContext(page: Page | null): TemplatePreviewCon
   // Fetch a window of published rows once per table; the chosen row is picked
   // from it below so changing the preview selection never refetches. A failed
   // load resolves to an empty window so bindings stay empty rather than throw.
-  const { data: previewState, loading } = useAsyncResource<{
+  const { data: previewState, loading, refresh: refreshEntry } = useAsyncResource<{
     tableSlug: string
     items: TemplateRenderDataContext['entryStack']
     synthetic: TemplateRenderDataContext['entryStack'][number] | null
@@ -77,7 +79,7 @@ export function useTemplatePreviewContext(page: Page | null): TemplatePreviewCon
   // currentEntry stay empty until the loop interceptor pushes a real
   // iteration on top.
   const previewEntryLoading = Boolean(tableSlug) && loading
-  if (!page || !site) return { context: undefined, loading: previewEntryLoading }
+  if (!page || !site) return { context: undefined, loading: previewEntryLoading, refresh: refreshEntry }
   let entryStack: TemplateRenderDataContext['entryStack'] = []
   if (tableSlug && previewState?.tableSlug === tableSlug) {
     // Selected row → first published row → synthetic sample (empty table).
@@ -87,17 +89,18 @@ export function useTemplatePreviewContext(page: Page | null): TemplatePreviewCon
       ?? previewState.synthetic
     entryStack = chosen ? [chosen] : []
   }
-  const pageFrame = buildPageFrame(page)
-  return {
-    loading: previewEntryLoading,
-    context: {
-      entryStack,
-      page: pageFrame,
-      site: buildSiteFrame(site),
-      // Route frame mirrors what the published page will see. Editor
-      // doesn't have the real request URL, so we derive from the page's
-      // permalink — same shape, same fields.
-      route: buildRouteFrame(pageFrame.permalink),
-    },
+  try {
+    return {
+      loading: previewEntryLoading,
+      refresh: refreshEntry,
+      // The consuming surface supplies its file authority: canvas owns a
+      // private build; server previews generate their frame during publishing.
+      context: buildTemplateRenderContext(page, site, { entryStack, files: EMPTY_FILE_REFERENCES }),
+    }
+  } catch (error) {
+    // Keep authoring available while a required render context is invalid.
+    return { context: undefined, loading: previewEntryLoading, refresh: refreshEntry,
+      error: error instanceof Error ? error : new Error('Invalid render context', { cause: error }),
+    }
   }
 }

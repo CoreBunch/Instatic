@@ -1,0 +1,14 @@
+.control, .children, .child {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+  width: 100%;
+}
+.children {
+  padding-inline-start: var(--space-s);
+  border-inline-start: 1px solid var(--border);
+}
+.value {
+  display: flex;
+  gap: var(--space-xs);
+}

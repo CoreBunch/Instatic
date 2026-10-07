@@ -12,6 +12,7 @@ A template is an ordinary `pages` row carrying a `target` (everywhere, one/more 
 - **Chain resolver:** `resolveTemplateChain(site, ctx)` in `src/core/templates/templateMatching.ts` → `Page[]` ordered outer → inner. At most one template per breadth level (highest priority wins, document order breaks ties). Two breadth levels today: `everywhere` (outermost) → `postTypes` (innermost).
 - **404 resolver:** `resolveNotFoundTemplate(site)` → the highest-priority `notFound` template or null. A `notFound` template never enters a route chain — the public router renders it directly when a GET falls through every route (see "The Not found (404) template" below).
 - **Chain composer:** `composeTemplateChain(chain, terminal)` in `src/core/templates/templateCompose.ts` → one merged `Page` ready for `publishPage`.
+- **Public scopes:** `publishedRenderScopes(site)` in `src/core/templates/publishedRenderScopes.ts` yields composed ordinary pages, the winning 404 and entry-template chains for declared table slugs. Page and 404 scopes retain their terminal `sourcePage` for authoritative binding frames. Unused raw templates are never independent public scopes; entry-specific row data is supplied by the entry renderer.
 - **`base.outlet`** is the polymorphic outlet content flows into. A template *should* contain one. Having NO outlet is not blocked (you add it after converting the page to a template — requiring it first would be circular). The editor enforces a one-outlet-per-document invariant at the store's mutation chokepoints (`insertNode`, `duplicateNode(s)`, `pasteNode`), each surfacing a warning toast when blocked; the module pickers additionally render the outlet as a disabled tile with the reason (non-template page, VC mode, or outlet already placed) so authors rarely hit the block at all. The composer remains defensive for data pre-dating the guard: no outlet → template skipped; multiple → first wins.
 - Template pages are never served at their own slug; the live router and the static bake both skip them.
 - Dynamic bindings and token interpolation work exactly as before — the merged tree is a plain page tree.
@@ -233,6 +234,8 @@ Text props mix literal text + tokens:
 Interpolation applies to string-typed props during the tree walk **and** to the document `<title>` + `<meta name="description">` (`buildDocumentMetaTags` in `src/core/publisher/render.ts`), so a site-wide `metaTitle` like `{currentEntry.name} | Acme` publishes per-entry SEO titles on entry routes.
 
 Source: `src/core/templates/tokenInterpolation.ts`.
+
+Configured [language files](localization.md) add `site.language` and `site.translations.*` to this same frame. A token such as `{site.translations.header.contact}` resolves from the current page's language during canvas rendering and static publication. Missing translation keys are explicit authoring errors, including when a binding specifies fallback text.
 
 ### Where tokens are substituted
 

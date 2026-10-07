@@ -22,6 +22,7 @@ import { NodeTreeSchema } from './treeSchema'
 import { PageNodeSchema, type PageNode, parsePageNode } from './pageNode'
 import { PageTemplateConfigSchema, parsePageTemplate } from './pageTemplate'
 import { reindexNodeParents } from './parentIndex'
+import { PageSeoSchema, parsePageSeo } from './pageSeo'
 
 // ---------------------------------------------------------------------------
 // PageSchema
@@ -36,6 +37,10 @@ export const PageSchema = Type.Object({
   slug: Type.String(),
   /** Display title e.g. "Home", "About Us" */
   title: Type.String(),
+  /** Explicit document language; absent inherits the site's default. */
+  language: Type.Optional(Type.String({ minLength: 1 })),
+  /** Authored document metadata; independent of the editor's display title. */
+  seo: Type.Optional(PageSeoSchema),
   /** Owning user for admin/editor workflows; server-owned when persisted in CMS. */
   ownerUserId: Type.Optional(Type.Union([Type.String(), Type.Null()])),
   /** User who originally created this page; server-owned when persisted in CMS. */
@@ -92,11 +97,14 @@ export function parsePage(raw: unknown, pageIndex: number): Page {
   reindexNodeParents(nodes)
 
   const template = parsePageTemplate(r.template)
+  const seo = parsePageSeo(r.seo, `${pagePathPrefix}.seo`)
 
   return {
     id: r.id,
     slug: r.slug,
     title: r.title,
+    ...(typeof r.language === 'string' && r.language.length > 0 ? { language: r.language } : {}),
+    ...(seo ? { seo } : {}),
     ...(typeof r.ownerUserId === 'string' || r.ownerUserId === null ? { ownerUserId: r.ownerUserId } : {}),
     ...(typeof r.createdByUserId === 'string' || r.createdByUserId === null
       ? { createdByUserId: r.createdByUserId }

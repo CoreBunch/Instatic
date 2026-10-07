@@ -223,11 +223,14 @@ export async function getDraftPublishStatus(db: DbClient): Promise<DraftPublishS
  * each page row to `published`. DB writes only — every expensive non-DB
  * build (runtime bundling, rendering) happens in the orchestrator BEFORE
  * this is called, so the SQLite adapter's serialized transaction chain is
- * held for milliseconds, not seconds.
+ * held for milliseconds, not seconds. The orchestrator's already-staged
+ * generation activates as the final transaction step; an activation failure
+ * rolls back every snapshot/version write.
  */
 export async function persistSitePublish(
   db: DbClient,
   input: PersistSitePublishInput,
+  activateGeneration: () => Promise<void>,
 ): Promise<void> {
   await db.transaction(async (tx) => {
     // The site document is stored ONCE per publish; every page version row
@@ -278,6 +281,7 @@ export async function persistSitePublish(
         await tx`delete from data_row_versions where id = ${page.versionId}`
       }
     }
+    await activateGeneration()
   })
 }
 

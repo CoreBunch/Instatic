@@ -359,6 +359,33 @@ function populateFreshPage(doc: Y.Doc, title: string, slug: string): void {
 }
 
 describe('collab relay', () => {
+  it('persists and clears page language metadata without changing editorial SEO cells', async () => {
+    const { harness, relay, homeId } = await setup()
+    const { rows: initial } = await harness.db<{ cells_json: Record<string, unknown>; slug: string }>`
+      select cells_json, slug from data_rows where id = ${homeId}
+    `
+    await saveDataRowDraft(harness.db, MAIN_SCOPE, homeId, {
+      cells: { ...initial[0].cells_json, seoTitle: 'Editorial SEO', pluginField: 'Preserve me' },
+      slug: initial[0].slug,
+    })
+    const { doc } = await relay.openDoc(`page:main:${homeId}`)
+    doc.transact(() => { doc.getMap('meta').set('language', 'en') }, LOCAL_ORIGIN)
+    await relay.flushAll()
+    const { rows: added } = await harness.db<{ cells_json: Record<string, unknown> }>`
+      select cells_json from data_rows where id = ${homeId}
+    `
+    expect(added[0].cells_json.language).toBe('en')
+    expect(added[0].cells_json.seoTitle).toBe('Editorial SEO')
+    expect(added[0].cells_json.pluginField).toBe('Preserve me')
+    doc.transact(() => { doc.getMap('meta').delete('language') }, LOCAL_ORIGIN)
+    await relay.flushAll()
+    const { rows: cleared } = await harness.db<{ cells_json: Record<string, unknown> }>`
+      select cells_json from data_rows where id = ${homeId}
+    `
+    expect(cleared[0].cells_json.language).toBeUndefined()
+    expect(cleared[0].cells_json.seoTitle).toBe('Editorial SEO')
+    expect(cleared[0].cells_json.pluginField).toBe('Preserve me')
+  })
   it('seeds a page doc deterministically from the stored row (identical state on repeat)', async () => {
     const { harness, relay, homeId } = await setup()
     const { doc: doc } = await relay.openDoc(`page:main:${homeId}`)

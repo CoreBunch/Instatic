@@ -21,5 +21,10 @@ export {
 export { buildRouteFrame } from './contextFrames'
 export type { TemplateRenderDataContext } from './dynamicBindings'
 export { composeTemplateChain } from './templateCompose'
+export { publishedRenderScopes, type PublishedRenderScope } from './publishedRenderScopes'
 export { firstOutletId, treeHasOutlet, subtreeHasOutlet } from './outlet'
 export { composedNodeSourceId } from './templateCompose'
+export { parseTokenString, interpolateTokens } from './tokenInterpolation'
+
+export { buildTemplateRenderContext } from './renderDataContext'
+export { resolveDynamicProps, effectiveNodeBindings } from './dynamicBindings'

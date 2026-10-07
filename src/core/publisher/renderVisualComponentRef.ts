@@ -31,21 +31,12 @@ import type { RenderConfig, RenderAccumulators, RenderNodeFn } from './renderCon
  * (moduleId, props, breakpointOverrides, children, classIds). The extra
  * InstantiatedVCNode fields (_owningRefId, _fromSlotContent) are not part of
  * PageNode and are harmlessly ignored by the walker.
- * dynamicBindings is intentionally absent: VCNodes don't support template
- * bindings (those live only on page-level nodes).
+ * Slot fills originated as PageNodes and retain their dynamicBindings and
+ * inline styles. Spread the native node so materialization loses no fields.
  */
 function instantiatedNodeToPageNode(node: InstantiatedVCNode): PageNode {
   return {
-    id: node.id,
-    moduleId: node.moduleId,
-    props: node.props,
-    breakpointOverrides: node.breakpointOverrides,
-    children: node.children,
-    label: node.label,
-    locked: node.locked,
-    hidden: node.hidden,
-    classIds: node.classIds,
-    propBindings: node.propBindings,
+    ...node,
   }
 }
 

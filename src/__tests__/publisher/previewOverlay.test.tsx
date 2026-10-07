@@ -269,9 +269,10 @@ describe('PreviewOverlay — source enforcement', () => {
     expect(overlaySrc).toContain('data-testid="preview-iframe"')
   })
 
-  it('iframe uses sandbox="" (fully sandboxed — maximum security)', () => {
-    // sandbox="" with no value applies all restrictions (no scripts, no navigation, etc.)
-    expect(overlaySrc).toContain('sandbox=""')
+  it('preserves resource credentials while scripts and forms remain sandboxed', () => {
+    expect(overlaySrc).toContain('sandbox="allow-same-origin"')
+    expect(overlaySrc).not.toContain('sandbox="allow-same-origin allow-scripts"')
+    expect(overlaySrc).not.toContain('allow-forms')
   })
 
   it('handles Escape key to close (Guideline #225)', () => {

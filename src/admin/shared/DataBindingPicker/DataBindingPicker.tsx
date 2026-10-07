@@ -24,6 +24,8 @@
 import { useEffect, useState, type RefObject } from 'react'
 import type { PropertyControl } from '@core/module-engine'
 import type { DynamicPropBinding } from '@core/page-tree'
+import { readPublicFileField, type PublicFileReferences } from '@core/files/references'
+import { walkFieldPath } from '@core/templates/tokenInterpolation'
 import type { LoopItem, LoopSourceField } from '@core/loops/types'
 import type { DataMeta, DataMetaField, DataMetaTable } from '@core/data/schemas'
 import { Button } from '@ui/components/Button'
@@ -49,6 +51,9 @@ import {
 } from './helpers'
 import styles from './DataBindingPicker.module.css'
 import { getErrorMessage } from '@core/utils/errorMessage'
+import { translationKeys } from '@core/localization'
+import { TranslationMessagesSchema } from '@core/localization-schema'
+import { compiledCheck } from '@core/utils/typeboxCompiler'
 
 // ---------------------------------------------------------------------------
 // Icons for loop / system source field formats
@@ -85,7 +90,7 @@ const POST_TYPE_ONLY_LOOP_FIELDS = new Set([
 // ---------------------------------------------------------------------------
 
 type SystemPreviewValues = Partial<
-  Record<SystemSourceId, object | null>
+  Record<Exclude<SystemSourceId, 'file'>, object | null>
 >
 
 export interface DataBindingPickerProps {
@@ -107,6 +112,7 @@ export interface DataBindingPickerProps {
   loadPublishedPreview?: boolean
   /** Optional page/site/route values used by system-source preview pills. */
   systemPreviewValues?: SystemPreviewValues
+  publicFiles?: PublicFileReferences
   /**
    * Insert mode — clicks insert a `{source.field}` token and the popover
    * stays open so multiple tokens can be inserted in one session.
@@ -153,6 +159,7 @@ export function DataBindingPicker({
   previewFields,
   loadPublishedPreview = false,
   systemPreviewValues,
+  publicFiles,
   insertMode = false,
   fieldSelectionMode = 'compatible',
   anchorRef,
@@ -322,12 +329,31 @@ export function DataBindingPicker({
     // 3. System sources — Page / Site / Route. Always visible (and always
     // reachable) since the publisher seeds these frames on every render.
     for (const source of SYSTEM_SOURCES) {
-      const entries: FieldEntry[] = source.fields.map((f) => ({
+      const fields: LoopSourceField[] = source.id === 'file'
+        ? Object.values(publicFiles ?? {}).map((file) => ({
+            id: `${file.id}.url`, label: file.path,
+            format: file.mimeType.startsWith('image/') || file.mimeType.startsWith('video/') ? 'media' : 'url',
+          }))
+        : source.fields
+      const entries: FieldEntry[] = fields.map((f) => ({
         kind: 'system' as const,
         source: source.id,
         field: f,
       }))
       result.push({ label: source.label, entries })
+    }
+
+    const sitePreview = systemPreviewValues?.site
+    const messages = sitePreview && 'translations' in sitePreview ? sitePreview.translations : undefined
+    if (compiledCheck(TranslationMessagesSchema, messages)) {
+      result.push({
+        label: 'Translations',
+        entries: translationKeys(messages).map((key) => ({
+          kind: 'system' as const,
+          source: 'site' as const,
+          field: { id: `translations.${key}`, label: key },
+        })),
+      })
     }
 
     return result
@@ -379,9 +405,10 @@ export function DataBindingPicker({
   // ─── Per-row value preview ─────────────────────────────────────────────
   function getFieldPreviewValue(entry: FieldEntry): unknown {
     if (entry.kind === 'system') {
+      if (entry.source === 'file') return readPublicFileField(publicFiles, entry.field.id)
       const frame = systemPreviewValues?.[entry.source]
       if (!frame) return undefined
-      return (frame as Record<string, unknown>)[entry.field.id]
+      return walkFieldPath(frame as Record<string, unknown>, entry.field.id)
     }
     return currentEntryFields?.[entry.field.id]
   }

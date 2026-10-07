@@ -130,6 +130,7 @@ function directSite(page: Page, styleRules: SiteDocument['styleRules'] = {}): Si
     breakpoints: [{ id: 'desktop', label: 'Desktop', width: 1440, icon: 'monitor' }],
     settings: { colorTokens: {}, shortcuts: {} },
     styleRules,
+    files: [],
     createdAt: 0,
     updatedAt: 0,
   }
@@ -426,6 +427,7 @@ describe('Gate 8 — class breakpoint overrides emit @media blocks in published 
     const site: SiteDocument = {
       id: 'proj-1', name: 'Test',
       pages: [page],
+      files: [],
       breakpoints: [{ id: bpId, label: 'Mobile', width: 375, icon: 'smartphone' }],
       settings: { colorTokens: {}, shortcuts: {} },
       styleRules: {
@@ -457,6 +459,7 @@ describe('Gate 8 — class breakpoint overrides emit @media blocks in published 
     const site: SiteDocument = {
       id: 'proj-1', name: 'Test',
       pages: [page],
+      files: [],
       breakpoints: [{ id: bpId, label: 'Mobile', width: 375, icon: 'smartphone' }],
       settings: { colorTokens: {}, shortcuts: {} },
       styleRules: {
