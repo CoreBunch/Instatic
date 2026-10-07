@@ -1,8 +1,8 @@
 /**
  * Tool registry root — selects the right toolset for a chat scope.
  *
- * `site` and `content` scopes have tools registered. `data` and `plugin`
- * are reserved scopes with no toolset yet.
+ * `site`, `content`, and `data` scopes have tools registered. `plugin` is a
+ * reserved scope with no toolset yet.
  *
  * Adding a new scope:
  *   1. Create `server/ai/tools/<scope>/` with its tool files + index.ts.
@@ -25,16 +25,41 @@ import { toolAllowedForCapabilities } from './capabilityGate'
 import type { AiTool, ToolScope } from './types'
 import { siteTools } from './site'
 import { contentTools } from './content'
+import { tableScopedReadTools } from './content/readTools'
+import { dataTools } from './data'
 
-function scopeToolset(scope: ToolScope): AiTool[] {
+/**
+ * Per-request context the toolset needs from the server runtime. `uploadsDir`
+ * is what lets a data row's baked artefact be written and unlinked — without
+ * it a retract or delete from the in-app Data chat would leave the published
+ * HTML on disk, still served by Layer A.
+ */
+export interface ToolsetOptions {
+  uploadsDir?: string
+}
+
+function scopeToolset(scope: ToolScope, options: ToolsetOptions = {}): AiTool[] {
   switch (scope) {
     case 'site':
       return siteTools
     case 'content':
       return contentTools
     case 'data':
-      // Reserved: no data-scope toolset yet.
-      return []
+      // Schema + row tools, all server-resolved. The MCP registry builds its
+      // own copy with a connector-attributed runtime (see
+      // server/ai/mcp/registry.ts); the in-app agent gets the same tools with
+      // an uploads dir but no connector id, so its writes audit as
+      // `source: 'agent'`.
+      //
+      // `dataTools()` writes rows but cannot read one back, so the three
+      // table-scoped content reads come along — they resolve a reusable data
+      // table's id just as they resolve a post type's. Without them an agent
+      // in the Data workspace could create a table and fill it, then have no
+      // way to see what it wrote.
+      return [
+        ...dataTools(options.uploadsDir ? { uploadsDir: options.uploadsDir } : undefined),
+        ...tableScopedReadTools.map((t) => ({ ...t, mutates: false })),
+      ]
     case 'plugin':
       // Reserved: no plugin-scope toolset yet.
       return []
@@ -58,6 +83,7 @@ function scopeToolset(scope: ToolScope): AiTool[] {
 export function selectToolsForScope(
   scope: ToolScope,
   capabilities: readonly CoreCapability[],
+  options: ToolsetOptions = {},
 ): AiTool[] {
-  return scopeToolset(scope).filter((t) => toolAllowedForCapabilities(t, capabilities))
+  return scopeToolset(scope, options).filter((t) => toolAllowedForCapabilities(t, capabilities))
 }

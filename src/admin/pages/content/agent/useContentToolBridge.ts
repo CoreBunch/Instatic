@@ -31,10 +31,33 @@ import {
 // workspaces. Keep the bridge aligned with the Content workspace collection list.
 const CONTENT_KIND_VISIBLE: ReadonlySet<string> = new Set(['postType'])
 
+/** Where a table this workspace cannot author is actually edited. */
+const KIND_HOME: Record<string, string> = {
+  data: 'the Data workspace — write its rows with data_create_rows / data_update_row',
+  page: 'the Site editor — use the site_* tools',
+  component: 'the Site editor — use the site_* tools',
+  layout: 'the Site editor — use the site_* tools',
+}
+
+/**
+ * Why a table id the Content workspace was handed is not usable here.
+ *
+ * Reads the roster the bridge already has rather than asking the server, so a
+ * refusal stays a refusal and never turns into a network error of its own.
+ */
+function unusableCollectionMessage(tableId: string, table: DataTable | undefined): string {
+  const home = table && KIND_HOME[table.kind]
+  if (!table || !home) return `Collection ${tableId} not found.`
+  return `Table "${table.slug}" is a ${table.kind} table, not a post type: it is edited in ${home}.`
+}
+
 interface ContentToolWorkspaceSurface {
+  /** Post types only — what the sidebar lists and what this bridge can author. */
   collections: DataTable[]
-  /** Re-reads the roster from the server and returns the fresh post types. */
-  refreshCollections(): Promise<DataTable[]>
+  /** Every table, including the ones other workspaces own. Used to explain refusals. */
+  tables: DataTable[]
+  /** Re-reads the roster from the server and returns every table. */
+  refreshTables(): Promise<DataTable[]>
   entries: DataRow[]
   selectedEntry: DataRow | null
   selectedCollectionId: string | null
@@ -83,25 +106,31 @@ export function useContentToolBridge({
   useEffect(() => {
     /**
      * Find a Content-visible collection, refreshing the roster once if the id
-     * is unknown.
+     * is unknown, and throwing a message that says why when it stays unusable.
      *
      * The workspace caches its collections at mount, so a table created after
      * that — by an import, another admin, or an MCP connector building a site
      * — is invisible here and every write against it fails with "not found"
      * until someone reloads the page. One refresh distinguishes "created a
      * moment ago" from "does not exist".
+     *
+     * The refusal is kind-aware because "not found" was actively wrong for the
+     * commonest miss: a reusable `kind: 'data'` table exists, the caller has
+     * the right id, and it simply is not authored in this Tiptap editor. Agents
+     * responded by re-creating the table (issue #463). Name the mismatch and
+     * point at the toolset that can write it instead.
      */
-    const resolveCollection = async (tableId: string): Promise<DataTable | null> => {
-      const visible = (table: DataTable | undefined): DataTable | null =>
-        table && CONTENT_KIND_VISIBLE.has(table.kind) ? table : null
-
-      const cached = visible(
-        workspaceRef.current.collections.find((candidate) => candidate.id === tableId),
-      )
+    const resolveCollection = async (tableId: string): Promise<DataTable> => {
+      const cached = workspaceRef.current.collections.find((c) => c.id === tableId)
       if (cached) return cached
 
-      const refreshed = await workspaceRef.current.refreshCollections()
-      return visible(refreshed.find((candidate) => candidate.id === tableId))
+      // The refresh returns every table, so a miss here can say WHICH kind of
+      // table this is without a second request.
+      const refreshed = await workspaceRef.current.refreshTables()
+      const found = refreshed.find((candidate) => candidate.id === tableId)
+      if (found && CONTENT_KIND_VISIBLE.has(found.kind)) return found
+
+      throw new Error(unusableCollectionMessage(tableId, found))
     }
 
     const handle: ContentBridgeHandle = {
@@ -133,15 +162,11 @@ export function useContentToolBridge({
         return opened
       },
       async selectCollection(tableId) {
-        const table = await resolveCollection(tableId)
-        if (!table) return false
+        await resolveCollection(tableId)
         flushSync(() => workspaceRef.current.selectCollection(tableId))
-        return true
       },
       async createDocument({ tableId, fields }) {
-        if (!(await resolveCollection(tableId))) {
-          throw new Error(`Collection ${tableId} not found.`)
-        }
+        await resolveCollection(tableId)
         const cells = fields ? normalizeEditableFields(fields) : {}
         // Create directly in the requested collection. The manual
         // createUntitledEntry action is intentionally tied to the currently
@@ -154,7 +179,10 @@ export function useContentToolBridge({
           opened = latestWorkspace.openEntry(created)
           if (opened) draftRef.current.applySelectedEntry(created)
         })
-        if (!opened) throw new Error(`Collection ${tableId} not found.`)
+        if (!opened) {
+          const known = workspaceRef.current.tables.find((t) => t.id === tableId)
+          throw new Error(unusableCollectionMessage(tableId, known))
+        }
         return created.id
       },
       async deleteDocument(documentId) {

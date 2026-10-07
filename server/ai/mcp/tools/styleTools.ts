@@ -17,6 +17,7 @@ import { Type } from '@core/utils/typeboxHelpers'
 import { isGeneratedClass, styleRuleSelector, type SiteDocument, type StyleRule } from '@core/page-tree'
 import { generateFontTokenVariablesCss } from '@core/fonts'
 import { generateClassCSS, generateFrameworkCss } from '@core/publisher'
+import { SiteListBreakpointsOutputSchema, SiteReadStylesOutputSchema } from '@core/ai'
 import type { CoreCapability } from '@core/capabilities'
 import type { AiTool, ToolContext } from '../../runtime/types'
 import { getDraftSite } from '../../../repositories/site'
@@ -60,6 +61,7 @@ export const styleMcpTools: AiTool[] = [
     scope: 'site',
     execution: 'server',
     inputSchema: ReadStylesInput,
+    outputSchema: SiteReadStylesOutputSchema,
     requiredCapabilities: SITE_READ_CAPS,
     handler: async (input, ctx: ToolContext) => {
       const { format = 'full', className, includeTokens = true } = input as {
@@ -121,6 +123,7 @@ export const styleMcpTools: AiTool[] = [
     scope: 'site',
     execution: 'server',
     inputSchema: Type.Object({}, { additionalProperties: false }),
+    outputSchema: SiteListBreakpointsOutputSchema,
     requiredCapabilities: SITE_READ_CAPS,
     handler: async (_input, ctx: ToolContext) => {
       const site = await getDraftSite(ctx.db, MAIN_SCOPE)

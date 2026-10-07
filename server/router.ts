@@ -155,7 +155,7 @@ function tryServeMcpOAuth(
  * by the CMS dispatcher.
  */
 function tryServeAi(req: Request, runtime: ServerRuntime, url: URL, _pathname: string): Promise<Response> | null {
-  return tryHandleAi(req, runtime.db, url)
+  return tryHandleAi(req, runtime.db, url, { uploadsDir: runtime.uploadsDir })
 }
 
 /**

@@ -209,6 +209,18 @@ Both actions are opened from `DataSidebar`.
 
 ---
 
+## Agent and MCP access
+
+Everything this workspace does by hand is also reachable headlessly, through the `data` tool scope (`server/ai/tools/data/`): `data_list_tables`, `data_create_table`, `data_update_table`, `data_add_fields`, `data_create_rows`, `data_update_row`, `data_set_rows_status`, `data_delete_rows`. Both paths pass a runtime carrying the uploads directory, so publishing bakes a row's static artefact and retracting or deleting unlinks it again; an MCP connection also passes its connector id, which is what attributes its writes to the connection in the audit log instead of to the signed-in user. A headless call runs on `main` (the MCP context pins it); the in-app chat carries the workspace's branch, and publishing is refused off main.
+
+Those handlers reuse this workspace's server side rather than restating it — the same repository calls, the same `slugForTable` derivation, the same `content.entry.cells` plugin filter, and the same access predicates from `server/handlers/cms/data/access.ts`. Keep it that way: a second copy of a rule is a copy free to drift. When a rule changes here, it changes for the tools in the same edit.
+
+The tools are deliberately `execution: 'server'`, not browser-relayed like the `content_*` writes. A data row is a grid of typed cells, not a Tiptap document, so there is nothing an open tab could render that the server cannot do alone — and requiring one would make the toolset useless to a script or a remote agent.
+
+Full tool table and capability requirements: [docs/features/mcp-connectors.md](mcp-connectors.md) → "Reusable data tables".
+
+---
+
 ## Forbidden patterns
 
 | Pattern | Why |
@@ -229,6 +241,7 @@ Both actions are opened from `DataSidebar`.
 ## Related
 
 - [docs/features/content-storage.md](content-storage.md) — `DataField` schema, field types, `data_tables` / `data_rows` structure
+- [docs/features/mcp-connectors.md](mcp-connectors.md) — the `data_*` toolset that exposes this workspace headlessly
 - [docs/reference/ui-primitives.md](../reference/ui-primitives.md) — `Button`, `Input`, `Select`, `Switch` usage
 - [docs/reference/persistence-keys.md](../reference/persistence-keys.md) — `instatic-data-grid-primary-widths-v1`
 - Source-of-truth files:

@@ -9,6 +9,7 @@
  * static slot, swaps it atomically, and bumps the in-memory publish version.
  */
 import { Type } from '@core/utils/typeboxHelpers'
+import { SitePublishOutputSchema } from '@core/ai'
 import type { AiTool, ToolContext } from '../../runtime/types'
 import { createAuditEvent } from '../../../repositories/audit'
 import { publishDraftSite } from '../../../publish/publishSite'
@@ -28,6 +29,7 @@ export function createPublishMcpTool(runtime?: McpPublishRuntime): AiTool {
     mutates: true,
     requiredCapabilities: ['pages.publish'],
     inputSchema: Type.Object({}, { additionalProperties: false }),
+    outputSchema: SitePublishOutputSchema,
     handler: async (_input, ctx: ToolContext) => {
       if (!runtime) {
         throw new Error('MCP publish runtime uploads directory is not configured.')

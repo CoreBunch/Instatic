@@ -77,6 +77,15 @@ const DATA_PUBLISH_CAPABILITIES = [
   'content.publish.any',
 ] satisfies CoreCapability[]
 
+/**
+ * Who is asking. The predicates below take the caller's identity + capability
+ * set rather than a whole `AuthUser` so the AI tool handlers can reuse them:
+ * a tool has a `ToolContext` (userId + capabilities), never an `AuthUser`, and
+ * a second copy of these rules on that side would be free to drift from this
+ * one. See `server/ai/tools/data/access.ts`.
+ */
+type DataRowActor = Pick<AuthUser, 'id' | 'capabilities'>
+
 interface OwnedDataRow {
   authorUserId: string | null
   createdByUserId: string | null
@@ -121,7 +130,7 @@ export async function requireCustomTablesManager(req: Request, db: DbClient): Pr
  * cap; custom tables need a custom read cap. Used to filter the table list and
  * gate single-table reads at the boundary.
  */
-export function canReadTable(user: AuthUser, table: Pick<DataTable, 'system'>): boolean {
+export function canReadTable(user: Pick<AuthUser, 'capabilities'>, table: Pick<DataTable, 'system'>): boolean {
   return table.system
     ? userHasAnyCapability(user, ['data.system.tables.read', 'data.system.tables.manage'])
     : userHasAnyCapability(user, ['data.custom.tables.read', 'data.custom.tables.manage'])
@@ -132,7 +141,7 @@ export function canReadTable(user: AuthUser, table: Pick<DataTable, 'system'>): 
  * only governs custom fields + primary-field selection — identity and built-in
  * fields are immutable for everyone (`assertSystemTableUpdateAllowed`).
  */
-export function canManageTable(user: AuthUser, table: Pick<DataTable, 'system'>): boolean {
+export function canManageTable(user: Pick<AuthUser, 'capabilities'>, table: Pick<DataTable, 'system'>): boolean {
   return userHasCapability(user, table.system ? 'data.system.tables.manage' : 'data.custom.tables.manage')
 }
 
@@ -141,7 +150,7 @@ export function canManageTable(user: AuthUser, table: Pick<DataTable, 'system'>)
  * caller sees the full table list even without data-table read caps, because
  * picking a loop source needs to know what tables exist.
  */
-export function hasContentRowAccess(user: AuthUser): boolean {
+export function hasContentRowAccess(user: Pick<AuthUser, 'capabilities'>): boolean {
   return userHasAnyCapability(user, DATA_ACCESS_CAPABILITIES)
 }
 
@@ -175,7 +184,7 @@ export function canSeeAllDataRows(user: AuthUser): boolean {
   return userHasAnyCapability(user, DATA_ANY_VISIBILITY_CAPABILITIES)
 }
 
-function ownsDataRow(user: AuthUser, row: OwnedDataRow): boolean {
+function ownsDataRow(user: Pick<AuthUser, 'id'>, row: OwnedDataRow): boolean {
   return row.authorUserId === user.id || (!row.authorUserId && row.createdByUserId === user.id)
 }
 
@@ -184,12 +193,12 @@ export function canReadDataRow(user: AuthUser, row: OwnedDataRow): boolean {
     (ownsDataRow(user, row) && userHasAnyCapability(user, DATA_OWN_READ_CAPABILITIES))
 }
 
-export function canEditDataRow(user: AuthUser, row: OwnedDataRow): boolean {
+export function canEditDataRow(user: DataRowActor, row: OwnedDataRow): boolean {
   return userHasAnyCapability(user, ['content.edit.any', 'content.manage']) ||
     (ownsDataRow(user, row) && userHasCapability(user, 'content.edit.own'))
 }
 
-export function canPublishDataRow(user: AuthUser, row: OwnedDataRow): boolean {
+export function canPublishDataRow(user: DataRowActor, row: OwnedDataRow): boolean {
   return userHasCapability(user, 'content.publish.any') ||
     (ownsDataRow(user, row) && userHasCapability(user, 'content.publish.own'))
 }

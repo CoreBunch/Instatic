@@ -3,8 +3,9 @@
  * filtered to the connector's granted capabilities.
  *
  * Two execution classes are exposed:
- *   - server-resolved tools (content reads + `site_list_documents` +
- *     `site_read_styles`) run in-process and work with NO editor open;
+ *   - server-resolved tools (content reads, the `data_*` table and row tools,
+ *     `site_list_documents`, `site_read_styles`) run in-process and work with
+ *     NO editor open;
  *   - browser tools (structure edits, HTML/CSS authoring, design tokens, page
  *     lifecycle, content CRUD, code assets, live-DOM reads) are relayed to the
  *     connector owner's matching open Site or Content workspace via the live
@@ -26,6 +27,7 @@ import type { CoreCapability } from '@core/capabilities'
 import type { AiTool } from '../runtime/types'
 import { toolAllowedForCapabilities } from '../tools/capabilityGate'
 import { contentTools } from '../tools/content'
+import { dataTools } from '../tools/data'
 import { siteTools } from '../tools/site'
 import { styleMcpTools } from './tools/styleTools'
 import { contextMcpTools } from './tools/contextTool'
@@ -54,6 +56,11 @@ function allMcpTools(runtime?: McpPublishRuntime): AiTool[] {
     ...documentMcpTools,
     createPublishMcpTool(runtime),
     uploadMediaMcpTool,
+    // Schema + row writes for reusable data tables. Server-resolved, so they
+    // work with no workspace open — the Content workspace bridge only edits
+    // routable post types, and a `kind: 'data'` table has no editor to relay
+    // to. `DataToolsRuntime` is the same shape as `McpPublishRuntime`.
+    ...dataTools(runtime),
     ...contentTools,
     ...siteTools,
   ]

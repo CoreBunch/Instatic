@@ -1,4 +1,5 @@
 import { describe, expect, it, beforeEach } from 'bun:test'
+import { Value } from '@sinclair/typebox/value'
 import { InMemoryTransport } from '@modelcontextprotocol/server'
 import { Client } from '@modelcontextprotocol/client'
 import { createSqliteClient } from '../../db/sqlite'
@@ -7,6 +8,7 @@ import { runMigrations } from '../../db/runMigrations'
 import type { DbClient } from '../../db/client'
 import { createDataRow } from '../../repositories/data'
 import { resolveBridgeToolResult } from '../runtime'
+import { mcpToolsForCapabilities } from './registry'
 import { buildMcpServer } from './server'
 import { createEditorBridgeStream } from './editorBridge'
 import { MAIN_SCOPE } from '../../branches/scope'
@@ -94,6 +96,64 @@ describe('mcp server', () => {
     expect(result.isError).toBe(true)
     const text = (result.content as Array<{ type: string; text: string }>)[0].text
     expect(text).toContain('Site editor')
+    await client.close()
+  })
+
+  it('annotates each tool with read-only, destructive and idempotent hints', async () => {
+    const client = await connectClient(db, ['ai.chat', 'ai.tools.write', 'site.read', 'content.manage', 'content.create', 'content.edit.any', 'data.custom.tables.manage', 'data.system.tables.read'])
+    const { tools } = await client.listTools()
+    const byName = new Map(tools.map((t) => [t.name, t]))
+
+    // A read cannot change anything, so repeating it is safe by definition.
+    expect(byName.get('data_list_tables')?.annotations).toMatchObject({
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+    })
+    // A delete loses data, but deleting the same rows twice ends in one state.
+    expect(byName.get('data_delete_rows')?.annotations).toMatchObject({
+      readOnlyHint: false,
+      destructiveHint: true,
+      idempotentHint: true,
+    })
+    // An insert appends: calling it twice inserts twice.
+    expect(byName.get('data_create_rows')?.annotations).toMatchObject({
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: false,
+    })
+    // Nothing here reaches outside this install's own database and uploads.
+    expect(tools.every((t) => t.annotations?.openWorldHint === false)).toBe(true)
+
+    await client.close()
+  })
+
+  it('advertises an outputSchema with a JSON Schema object root for every tool', async () => {
+    const client = await connectClient(db, ['ai.chat', 'ai.tools.write', 'site.read', 'content.manage', 'data.custom.tables.manage', 'data.system.tables.read'])
+    const { tools } = await client.listTools()
+    expect(tools.length).toBeGreaterThan(0)
+    for (const tool of tools) {
+      expect(tool.outputSchema).toBeTruthy()
+      // The MCP wire has no place for an `allOf`/`anyOf` root — a client that
+      // reads `properties` would find none.
+      expect(tool.outputSchema?.type).toBe('object')
+    }
+    await client.close()
+  })
+
+  it('returns structuredContent that matches the advertised outputSchema', async () => {
+    const client = await connectClient(db, ['ai.chat', 'site.read', 'data.system.tables.read'])
+    const { tools } = await client.listTools()
+    expect(tools.find((t) => t.name === 'content_list_collections')?.outputSchema).toBeTruthy()
+    // Check against the TypeBox source, not the JSON Schema on the wire: the
+    // wire copy has had its TypeBox symbols stripped, so it is data, not a
+    // validator.
+    const schema = mcpToolsForCapabilities(['ai.chat', 'site.read', 'data.system.tables.read'])
+      .find((t) => t.name === 'content_list_collections')!.outputSchema!
+
+    const result = await client.callTool({ name: 'content_list_collections', arguments: {} })
+    expect(result.isError).toBeFalsy()
+    expect(Value.Check(schema, result.structuredContent)).toBe(true)
     await client.close()
   })
 

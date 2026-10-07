@@ -98,6 +98,21 @@ export interface AiTool {
   readonly execution: ToolExecution
   readonly inputSchema: TSchema
   /**
+   * Shape of a successful result's `data`, as JSON Schema.
+   *
+   * Only the MCP surface reads it: `tools/list` advertises it and
+   * `tools/call` ships the payload as `structuredContent`, so a client can
+   * parse a result instead of re-deriving its shape from the JSON text block.
+   * The in-app drivers ignore it — a provider tool definition carries no
+   * output schema.
+   *
+   * NOT validated at runtime, deliberately. A drift between this and what a
+   * handler returns must surface as a failing test, never as a tool that
+   * stops working in production. `server/ai/mcp/registry.test.ts` requires
+   * every advertised tool to declare one.
+   */
+  readonly outputSchema?: TSchema
+  /**
    * Does this tool mutate state? Read tools (snapshot, search, list) are
    * pure reads against the db / store; write tools (insertHtml,
    * replaceNodeHtml, deleteNode, …) cause user-visible state change.

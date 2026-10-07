@@ -13,7 +13,9 @@ import {
   type CallToolResult,
   type JSONValue,
   type Tool,
+  type ToolAnnotations,
 } from '@modelcontextprotocol/server'
+import type { TSchema } from '@core/utils/typeboxHelpers'
 import type { DbClient } from '../../db/client'
 import type { CoreCapability } from '@core/capabilities'
 import { getErrorMessage } from '@core/utils/errorMessage'
@@ -24,6 +26,7 @@ import { authorizeMcpContentTool } from './contentAuthorization'
 import { getEditorBridgeBranch, getEditorBridgeForUser, type EditorBridgeScope } from './editorBridge'
 import { runPublishFlush } from '../../publish/publishFlush'
 import { MAIN_SCOPE } from '../../branches/scope'
+import { version as INSTATIC_VERSION } from '../../../package.json'
 
 export interface McpServerContext {
   db: DbClient
@@ -96,7 +99,7 @@ function plainJsonValue(value: unknown): JSONValue {
   return out
 }
 
-function plainInputSchema(schema: AiTool['inputSchema']): Tool['inputSchema'] {
+function plainObjectSchema(schema: TSchema, label: string): Tool['inputSchema'] {
   const value = plainJsonValue(schema)
   if (
     value === null ||
@@ -104,14 +107,84 @@ function plainInputSchema(schema: AiTool['inputSchema']): Tool['inputSchema'] {
     typeof value !== 'object' ||
     value.type !== 'object'
   ) {
-    throw new TypeError('MCP tool input schema must be a JSON Schema object')
+    throw new TypeError(`MCP tool ${label} schema must be a JSON Schema object`)
   }
   return value as Tool['inputSchema']
 }
 
+function isJsonObject(value: unknown): value is Record<string, JSONValue> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+// ---------------------------------------------------------------------------
+// Tool annotations
+// ---------------------------------------------------------------------------
+
+/**
+ * Tools whose effect cannot be undone from the tool surface itself.
+ *
+ * `mutates` already separates reads from writes; this is the narrower
+ * question a client asks before prompting a human. Row deletes are soft and
+ * recoverable in the database, but not through any tool here, so they count.
+ * `data_update_table` is included because its `fields` array REPLACES the
+ * schema — an omitted field orphans every value stored under it.
+ */
+const DESTRUCTIVE_TOOLS: ReadonlySet<string> = new Set([
+  'data_delete_rows',
+  'data_update_table',
+  'content_delete_document',
+  'site_delete_node',
+  'site_delete_page',
+  'site_publish',
+])
+
+/**
+ * Tools where a repeat call with the same arguments lands on the same state.
+ * Setting a status or a token set is idempotent; inserting a node or creating
+ * a row is not — calling it twice produces two of the thing.
+ */
+const IDEMPOTENT_TOOLS: ReadonlySet<string> = new Set([
+  'data_set_rows_status',
+  'data_delete_rows',
+  'data_update_row',
+  'data_update_table',
+  'content_set_document_status',
+  'content_set_document_field',
+  'content_set_document_fields',
+  'content_set_document_author',
+  'content_delete_document',
+  'site_set_color_tokens',
+  'site_set_font_tokens',
+  'site_set_type_scale',
+  'site_set_spacing_scale',
+  'site_set_page_template',
+  'site_clear_page_template',
+  'site_delete_node',
+  'site_delete_page',
+])
+
+/**
+ * Behavioural hints for the client, derived from what the registry already
+ * knows. They are hints, not a security boundary — `toolAllowedForCapabilities`
+ * and the per-tool capability re-check are what actually gate a call.
+ *
+ * `openWorldHint` is false throughout: every tool reads or writes this
+ * instance's own database, uploads directory, and open editor. None of them
+ * reaches an external service whose result could vary independently.
+ */
+function advertisedAnnotations(tool: AiTool): ToolAnnotations {
+  const readOnly = tool.mutates !== true
+  return {
+    readOnlyHint: readOnly,
+    destructiveHint: !readOnly && DESTRUCTIVE_TOOLS.has(tool.name),
+    idempotentHint: readOnly || IDEMPOTENT_TOOLS.has(tool.name),
+    openWorldHint: false,
+  }
+}
+
 export function buildMcpServer(ctx: McpServerContext): Server {
   const server = new Server(
-    { name: 'instatic', version: '1.0.0' },
+    { name: 'instatic', version: INSTATIC_VERSION },
     { capabilities: { tools: {} } },
   )
 
@@ -130,15 +203,24 @@ export function buildMcpServer(ctx: McpServerContext): Server {
       // Every MCP tool schema is a Type.Object. Remove TypeBox's symbol-keyed
       // runtime annotations before handing the otherwise unchanged JSON Schema
       // to the v2 wire validator.
-      inputSchema: plainInputSchema(t.inputSchema),
+      inputSchema: plainObjectSchema(t.inputSchema, 'input'),
+      ...(t.outputSchema
+        ? { outputSchema: plainObjectSchema(t.outputSchema, 'output') }
+        : {}),
+      annotations: advertisedAnnotations(t),
     })),
   }))
 
   server.setRequestHandler('tools/call', async (request, requestContext): Promise<CallToolResult> => {
     const { name, arguments: args } = request.params
     const tool = byName.get(name)
+    // The advertised schema is what the SDK's era projection reconciles a
+    // result against, so hand it the same object `tools/list` published.
+    const advertisedOutput = tool?.outputSchema
+      ? plainObjectSchema(tool.outputSchema, 'output')
+      : undefined
     const project = (result: CallToolResult) =>
-      server.projectCallToolResult(result, undefined)
+      server.projectCallToolResult(result, advertisedOutput)
     if (!tool) {
       return project({ isError: true, content: [{ type: 'text', text: `Unknown tool: ${name}` }] })
     }
@@ -226,13 +308,19 @@ export function buildMcpServer(ctx: McpServerContext): Server {
     // read as an unambiguous success — never the literal "null".
     const payload = output.data === undefined || output.data === null ? { ok: true } : output.data
     const content: CallToolResult['content'] = [{ type: 'text', text: JSON.stringify(payload) }]
+    // Ship the payload as `structuredContent` too, so a client parses the
+    // result instead of re-deriving its shape from the text block. Only when
+    // it is an object: the 2025 wire shape requires one, and a tool returning
+    // a bare array would otherwise be wrapped as `{ result: … }` and stop
+    // matching its own advertised `outputSchema`.
+    const structuredContent = isJsonObject(payload) ? payload : undefined
     // Forward image attachments (e.g. render_snapshot's PNG) as MCP image
     // content blocks so vision clients actually receive the screenshot — they
     // travel on `output.images`, never inlined into the text payload.
     for (const image of output.images ?? []) {
       content.push({ type: 'image', data: image.data, mimeType: image.mimeType })
     }
-    return project({ content })
+    return project(structuredContent ? { content, structuredContent } : { content })
   })
 
   return server

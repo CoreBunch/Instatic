@@ -21,10 +21,20 @@ import { tryHandleAiMcpManagement } from '../mcp/handlers/management'
 import { tryHandleMcpOAuthAuthorization } from '../mcp/handlers/oauthAuthorization'
 import { tryHandleAiEditorBridge } from '../mcp/handlers/editorBridge'
 
+export interface AiHandlerOptions {
+  /**
+   * Where baked artefacts live. The chat handler passes it to the data
+   * toolset so a row retracted or deleted from the Data workspace also loses
+   * its published HTML — the same reason the CMS handlers take one.
+   */
+  uploadsDir?: string
+}
+
 export function tryHandleAi(
   req: Request,
   db: DbClient,
   url: URL,
+  options: AiHandlerOptions = {},
 ): Promise<Response> | null {
   const pathname = url.pathname
   if (!pathname.startsWith('/admin/api/ai/')) return null
@@ -44,7 +54,7 @@ export function tryHandleAi(
     tryHandleAiMcpManagement(req, db, pathname) ??
     tryHandleAiEditorBridge(req, db, pathname) ??
     tryHandleAiAudit(req, db, url, pathname) ??
-    tryHandleAiChat(req, db, pathname) ??
+    tryHandleAiChat(req, db, pathname, options) ??
     tryHandleAiToolResult(req, db, pathname) ??
     tryHandleAiCredentials(req, db, pathname) ??
     tryHandleAiConversations(req, db, url, pathname) ??

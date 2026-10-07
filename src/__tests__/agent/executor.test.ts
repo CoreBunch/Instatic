@@ -11,6 +11,8 @@
  */
 
 import { describe, it, expect } from 'bun:test'
+import { Value } from '@sinclair/typebox/value'
+import { SiteInsertHtmlOutputSchema } from '@core/ai'
 import { useEditorStore } from '@site/store/store'
 import { executeAgentTool } from '@site/agent'
 import type { AiToolOutput } from '@core/ai'
@@ -148,6 +150,11 @@ describe('executeAgentTool — insertHtml', () => {
     expect(section.moduleId).toBe('base.container')
     expect(section.classes).toContain('hero') // class name resolved, not the id
     expect(created.filter((c) => c.moduleId === 'base.text')).toHaveLength(2)
+
+    // The MCP surface advertises this shape as the tool's outputSchema, and
+    // the result is produced here in the browser — nothing at runtime checks
+    // that the two still agree.
+    expect(Value.Check(SiteInsertHtmlOutputSchema, expectToolData(result))).toBe(true)
   })
 
   it('a <style> block class is created in the store with its styles and bound to the node', async () => {

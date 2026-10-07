@@ -15,6 +15,15 @@ import { Type, type Static } from '@core/utils/typeboxHelpers'
 import type { CoreCapability } from '@core/capabilities'
 import type { AiTool } from '../types'
 import {
+  ContentGetCollectionSchemaOutputSchema,
+  ContentGetDocumentOutputSchema,
+  ContentListCollectionsOutputSchema,
+  ContentListDocumentsOutputSchema,
+  ContentListMediaOutputSchema,
+  ContentListUsersOutputSchema,
+  ContentSearchDocumentsOutputSchema,
+} from '@core/ai'
+import {
   getDataRow,
   listDataAuthorOptions,
   listDataRows,
@@ -63,6 +72,11 @@ const SCHEMA_READ_CAPS: readonly CoreCapability[] = [
  * workspaces and cannot be activated by the Content browser bridge. Keeping
  * this catalog aligned with the actual writable surface avoids advertising a
  * collection that every subsequent focus/write tool must reject.
+ *
+ * The filter stays, but it is no longer a dead end: reusable `kind: 'data'`
+ * tables are listed and written by the headless `data_*` toolset
+ * (`server/ai/tools/data/`), and the descriptions here say so. Widening this
+ * set instead would advertise tables the Tiptap editor cannot render.
  */
 const CONTENT_KIND_VISIBLE: ReadonlySet<string> = new Set(['postType'])
 
@@ -130,8 +144,9 @@ const listCollectionsTool: AiTool = {
   execution: 'server',
   requiredCapabilities: SCHEMA_READ_CAPS,
   description:
-    'List every Content-workspace collection (routable post types only) with id, slug, label, kind, row count, and primary field id. Pages are edited through Site tools; reusable tables through Data tools.',
+    'List every Content-workspace collection (routable post types only) with id, slug, label, kind, row count, and primary field id. Pages are edited through the site_* tools; reusable data tables through the data_* tools — call data_list_tables to see those, they are NOT listed here.',
   inputSchema: ListCollectionsInput,
+  outputSchema: ContentListCollectionsOutputSchema,
   handler: async (_input, ctx) => {
     const tables = await listDataTablesWithCounts(ctx.db, ctx.branch)
     return {
@@ -156,8 +171,9 @@ const getCollectionSchemaTool: AiTool = {
   execution: 'server',
   requiredCapabilities: SCHEMA_READ_CAPS,
   description:
-    "Return one collection's field schema: each field's id, label, type, required flag, builtIn flag, and per-type extras (select options, media kind, relation target). Call BEFORE content_set_document_field on an unfamiliar collection so you know the field's value shape.",
+    "Return one collection's field schema: each field's id, label, type, required flag, builtIn flag, and per-type extras (select options, media kind, relation target). Call BEFORE content_set_document_field on an unfamiliar collection so you know the field's value shape. Accepts any table id, including a reusable data table that content_list_collections does not list — its rows are written with data_create_rows / data_update_row.",
   inputSchema: GetCollectionSchemaInput,
+  outputSchema: ContentGetCollectionSchemaOutputSchema,
   handler: async (input, ctx) => {
     const { tableId } = input as Static<typeof GetCollectionSchemaInput>
     const tables = await listDataTablesWithCounts(ctx.db, ctx.branch)
@@ -198,8 +214,9 @@ const listDocumentsTool: AiTool = {
   execution: 'server',
   requiredCapabilities: DOCUMENT_READ_CAPS,
   description:
-    'List documents in one collection. Returns id, title, slug, status, authorUserId, updatedAt — light projection. Filter by status / authorUserId, paginate with limit (default 25, max 200) + offset.',
+    'List documents in one collection. Accepts a reusable data table id (from data_list_tables) as well as a post type id. Returns id, title, slug, status, authorUserId, updatedAt — light projection. Filter by status / authorUserId, paginate with limit (default 25, max 200) + offset.',
   inputSchema: ListDocumentsInput,
+  outputSchema: ContentListDocumentsOutputSchema,
   handler: async (input, ctx) => {
     const args = input as Static<typeof ListDocumentsInput>
     const all = await listDataRows(ctx.db, ctx.branch, args.tableId)
@@ -232,8 +249,9 @@ const getDocumentTool: AiTool = {
   execution: 'server',
   requiredCapabilities: DOCUMENT_READ_CAPS,
   description:
-    "Return one document's full state: every field value (body is a markdown string), status, author, slug, timestamps. Use for the doc the user wants to edit when it isn't the active doc, or to refresh state after another agent action.",
+    "Return one document's full state: every field value (body is a markdown string), status, author, slug, timestamps. Accepts a row of a reusable data table as well as a post. Use for the doc the user wants to edit when it isn't the active doc, or to refresh state after another agent action.",
   inputSchema: GetDocumentInput,
+  outputSchema: ContentGetDocumentOutputSchema,
   handler: async (input, ctx) => {
     const { documentId } = input as Static<typeof GetDocumentInput>
     const row = await getDataRow(ctx.db, ctx.branch, documentId)
@@ -273,8 +291,9 @@ const searchDocumentsTool: AiTool = {
   execution: 'server',
   requiredCapabilities: DOCUMENT_READ_CAPS,
   description:
-    "Full-text search across document slugs (the slug is a URL-safe derivative of the title — reliable text proxy for free-text lookup). Returns light summaries (id, tableId, slug, status, updatedAt). `limit` default 25, max 100.",
+    "Full-text search across document slugs (the slug is a URL-safe derivative of the title — reliable text proxy for free-text lookup) in post-type collections only; rows of a reusable data table are not searched here. Returns light summaries (id, tableId, slug, status, updatedAt). `limit` default 25, max 100.",
   inputSchema: SearchDocumentsInput,
+  outputSchema: ContentSearchDocumentsOutputSchema,
   handler: async (input, ctx) => {
     const { query, limit } = input as Static<typeof SearchDocumentsInput>
     const results = await searchDataRows(ctx.db, ctx.branch, query, limit ?? 25)
@@ -314,6 +333,7 @@ const listUsersTool: AiTool = {
   description:
     'List active users available as document authors (id, email, displayName, roleSlug, roleName). Use to look up an author id before content_set_document_author.',
   inputSchema: ListUsersInput,
+  outputSchema: ContentListUsersOutputSchema,
   handler: async (_input, ctx) => {
     const users = await listDataAuthorOptions(ctx.db)
     return { users }
@@ -338,6 +358,7 @@ const listMediaTool: AiTool = {
   description:
     "List existing media assets so you can pick one for a media-typed field. Returns id, filename, publicPath, mimeType, altText, width, height. Optional `query` substring-matches filename + altText (case-insensitive); `mimeType` substring-matches the mime (e.g. 'image' to filter to images). `limit` default 25, max 100. To add a new image, use media_upload.",
   inputSchema: ListMediaInput,
+  outputSchema: ContentListMediaOutputSchema,
   handler: async (input, ctx) => {
     const args = input as Static<typeof ListMediaInput>
     const all = await listMediaAssets(ctx.db)
@@ -379,4 +400,20 @@ export const contentReadTools: AiTool[] = [
   searchDocumentsTool,
   listUsersTool,
   listMediaTool,
+]
+
+/**
+ * The three reads that are about a TABLE, not about the Content workspace.
+ *
+ * All three resolve any table id, reusable `kind: 'data'` tables included, so
+ * they are the row-read half of the `data_*` toolset — which writes rows but
+ * has no reader of its own. The `data` chat scope re-exports them
+ * (`server/ai/tools/index.ts`); the MCP registry gets them anyway from the
+ * whole content set. Exported as a named subset rather than through
+ * `./index`, because that barrel stamps `mutates` across the full toolset.
+ */
+export const tableScopedReadTools: AiTool[] = [
+  getCollectionSchemaTool,
+  listDocumentsTool,
+  getDocumentTool,
 ]

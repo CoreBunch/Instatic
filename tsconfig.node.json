@@ -10,6 +10,7 @@
 
     /* Bundler mode */
     "moduleResolution": "bundler",
+    "resolveJsonModule": true,
     "allowImportingTsExtensions": true,
     "verbatimModuleSyntax": true,
     "moduleDetection": "force",
@@ -34,7 +35,7 @@
       "@users/*": ["./src/admin/pages/users/*"]
     }
   },
-  "include": ["vite.config.ts", "server/**/*.ts", "src/core/plugin-sdk/cli/**/*.ts"],
+  "include": ["vite.config.ts", "server/**/*.ts", "src/core/plugin-sdk/cli/**/*.ts", "package.json"],
   "exclude": [
     "server/**/__tests__",
     "server/**/*.test.ts",

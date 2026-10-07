@@ -9,7 +9,15 @@
  */
 
 import { Type, type Static } from '@core/utils/typeboxHelpers'
-import { describeAgentDocuments } from '@core/ai'
+import {
+  describeAgentDocuments,
+  SiteListBreakpointsOutputSchema,
+  SiteListDocumentsOutputSchema,
+  SiteListLoopSourcesOutputSchema,
+  SiteListModulesOutputSchema,
+  SiteListPostTypesOutputSchema,
+  SiteListTokensOutputSchema,
+} from '@core/ai'
 import '@core/loops/sources'
 import { buildDataMeta } from '@core/data/fields'
 import type { DataMetaField } from '@core/data/schemas'
@@ -43,6 +51,7 @@ const listDocumentsTool: AiTool = {
   description:
     'List editable documents: pages, templates, and visual components. Use the returned document refs with site_read_document/site_open_document. Each item includes rootNodeId, active/current flags, template metadata, and a short summary.',
   inputSchema: ListDocumentsInput,
+  outputSchema: SiteListDocumentsOutputSchema,
   handler: async (_input, ctx) => {
     const snap = asSnap(ctx.snapshot)
     return {
@@ -68,6 +77,7 @@ const listModulesTool: AiTool = {
   description:
     'List registered modules with id, name, category, props schema, and style targets. `category` filters case-insensitively.',
   inputSchema: ListModulesInput,
+  outputSchema: SiteListModulesOutputSchema,
   handler: async (input) => {
     const { category } = input as Static<typeof ListModulesInput>
     const normalized = category?.toLowerCase()
@@ -102,6 +112,7 @@ const listTokensTool: AiTool = {
   description:
     "List the site's design tokens — color tokens (with shades/tints), typography & spacing scale steps, and font tokens — each with its CSS variable (use as `var(--name)` in a <style> block) and the utility class(es) bound to it (e.g. `text-primary`, `text-l`, `padding-m`). Prefer these over hardcoded colors/sizes/fonts. `family` narrows to one of colors|typography|spacing|fonts.",
   inputSchema: ListTokensInput,
+  outputSchema: SiteListTokensOutputSchema,
   handler: async (input, ctx) => {
     const { family } = input as Static<typeof ListTokensInput>
     const snap = asSnap(ctx.snapshot)
@@ -123,6 +134,7 @@ const listPostTypesTool: AiTool = {
   description:
     'List the routable post types a `postTypes` template can target. Each entry has { slug, label, routeBase, kind }; pass the `slug` values to site_set_page_template\'s `target.tableSlugs`. System tables, pages, components, layouts, and reusable data tables are excluded.',
   inputSchema: ListPostTypesInput,
+  outputSchema: SiteListPostTypesOutputSchema,
   handler: async (_input, ctx) => {
     const tables = await listDataTablesWithCounts(ctx.db, ctx.branch)
     const postTypes = tables
@@ -204,6 +216,7 @@ const listLoopSourcesTool: AiTool = {
   description:
     'List loop source ids and the valid dynamic data tokens for loop children. Use before creating a <instatic-loop>. For posts/custom tables use sourceId "data.rows" and pass the chosen table id as data-table-id; inside the loop use returned tokens like {currentEntry.title}, never {{post.title}}.',
   inputSchema: ListLoopSourcesInput,
+  outputSchema: SiteListLoopSourcesOutputSchema,
   handler: async (_input, ctx) => {
     const sources = loopSourceRegistry.list().map((source) => ({
       id: source.id,
@@ -260,6 +273,7 @@ const listBreakpointsTool: AiTool = {
   description:
     'List configured breakpoints (id, label, frame width px, media query, icon) plus the active id. Same info is already in the system suffix; only call if you lost track.',
   inputSchema: ListBreakpointsInput,
+  outputSchema: SiteListBreakpointsOutputSchema,
   handler: async (_input, ctx) => {
     const snap = asSnap(ctx.snapshot)
     return {

@@ -11,6 +11,7 @@
  * come straight from the DB. No browser snapshot.
  */
 import { Type } from '@core/utils/typeboxHelpers'
+import { GetContextOutputSchema } from '@core/ai'
 import type { CoreCapability } from '@core/capabilities'
 import type { AiTool, ToolContext } from '../../runtime/types'
 import { getDraftSite } from '../../../repositories/site'
@@ -55,6 +56,7 @@ export const contextMcpTools: AiTool[] = [
     scope: 'site',
     execution: 'server',
     inputSchema: GetContextInput,
+    outputSchema: GetContextOutputSchema,
     requiredCapabilities: CONTEXT_READ_CAPS,
     handler: async (input, ctx: ToolContext) => {
       const { entryId } = input as { entryId?: string }

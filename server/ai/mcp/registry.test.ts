@@ -13,7 +13,9 @@ const FULL: Parameters<typeof mcpToolsForCapabilities>[0] = [
   'content.create',
   'content.edit.any',
   'data.custom.tables.read',
+  'data.custom.tables.manage',
   'data.system.tables.read',
+  'content.publish.any',
   'media.read',
   'media.write',
 ]
@@ -88,5 +90,57 @@ describe('mcp registry', () => {
       .not.toContain('site_publish')
     expect(mcpToolsForCapabilities(FULL.filter((c) => c !== 'ai.tools.write')).map((t) => t.name))
       .not.toContain('site_publish')
+  })
+  it('exposes the headless data toolset that reusable data tables need', () => {
+    const tools = mcpToolsForCapabilities(FULL)
+    const byName = new Map(tools.map((t) => [t.name, t]))
+
+    // Issue #463 / #433: without these, a `kind: 'data'` table could not be
+    // listed, created, or written over MCP at all.
+    for (const name of [
+      'data_list_tables',
+      'data_create_table',
+      'data_update_table',
+      'data_add_fields',
+      'data_create_rows',
+      'data_update_row',
+      'data_set_rows_status',
+      'data_delete_rows',
+    ]) {
+      expect(byName.get(name)).toBeTruthy()
+      // A data row is a grid of cells, not a Tiptap document — there is no
+      // editor surface to relay these through, and requiring one would make
+      // the whole toolset unusable from a headless agent.
+      expect(byName.get(name)!.execution).toBe('server')
+    }
+  })
+
+  it('drops every data write when ai.tools.write is absent, keeping the read', () => {
+    const readOnly = mcpToolsForCapabilities(FULL.filter((c) => c !== 'ai.tools.write'))
+      .map((t) => t.name)
+    expect(readOnly).toContain('data_list_tables')
+    expect(readOnly).not.toContain('data_create_table')
+    expect(readOnly).not.toContain('data_create_rows')
+    expect(readOnly).not.toContain('data_delete_rows')
+  })
+
+  it('gates schema writes on a table-manage capability, separately from row writes', () => {
+    const noTableManage = mcpToolsForCapabilities(
+      FULL.filter((c) => c !== 'data.custom.tables.manage'),
+    ).map((t) => t.name)
+    expect(noTableManage).not.toContain('data_create_table')
+    expect(noTableManage).not.toContain('data_add_fields')
+    // Row writes ride content.* capabilities, so they survive.
+    expect(noTableManage).toContain('data_create_rows')
+  })
+
+  it('advertises an outputSchema for every tool in the catalog', () => {
+    // The MCP surface promises structured output. A tool added without an
+    // `outputSchema` would silently ship `structuredContent` no client can
+    // interpret, so the catalog is the gate rather than each tool file.
+    const missing = mcpToolsForCapabilities(FULL)
+      .filter((t) => t.outputSchema === undefined)
+      .map((t) => t.name)
+    expect(missing).toEqual([])
   })
 })

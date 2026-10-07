@@ -144,23 +144,24 @@ export function useContentWorkspace({
   }
 
   /**
-   * Re-read the collection roster from the server and return it.
+   * Re-read the table roster from the server and return it.
    *
-   * The mount-time load is a snapshot: a collection created after it — by an
+   * The mount-time load is a snapshot: a table created after it — by an
    * import, another admin, or an MCP connector — is invisible to this
    * workspace until a reload, and every write against it fails with
    * "Collection not found". Callers that hit an unknown id refresh through
    * here and retry rather than making the operator reload the page.
    *
-   * Returns the fresh post-type list directly, so a caller can act on it in
-   * the same tick instead of waiting for a re-render.
+   * Returns EVERY table, not just the post types the sidebar shows, so a
+   * caller can tell "no such table" from "that table is not authored here"
+   * in the same tick instead of waiting for a re-render or asking the server
+   * a second time.
    */
-  const refreshCollections = useCallback(async (): Promise<DataTable[]> => {
+  const refreshTables = useCallback(async (): Promise<DataTable[]> => {
     const allTables = await listCmsDataTables()
-    const nextCollections = allTables.filter((table) => table.kind === 'postType')
     setTables(allTables)
-    setCollections(nextCollections)
-    return nextCollections
+    setCollections(allTables.filter((table) => table.kind === 'postType'))
+    return allTables
   }, [])
 
   useEffect(() => {
@@ -538,7 +539,7 @@ export function useContentWorkspace({
   return {
     tables,
     collections,
-    refreshCollections,
+    refreshTables,
     entries,
     authors,
     authorsLoading,

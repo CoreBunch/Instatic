@@ -102,6 +102,7 @@ export type {
   SetPageTemplateInput,
   ClearPageTemplateInput,
 } from './toolSchemas'
+export * from './toolOutputSchemas'
 export {
   describeAgentDocuments,
   documentRefEquals,

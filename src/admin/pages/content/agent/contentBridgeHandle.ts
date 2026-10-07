@@ -94,7 +94,8 @@ export interface ContentBridgeHandle {
    */
   selectDocument(documentId: string): Promise<boolean>
   /** Switch the sidebar focus to a different collection. */
-  selectCollection(tableId: string): Promise<boolean>
+  /** Throws with the reason when the table is not authorable in this workspace. */
+  selectCollection(tableId: string): Promise<void>
 
   /**
    * Create a new draft row in `tableId`. When `fields` is provided, the

@@ -50,6 +50,23 @@ import {
   SetTypeScaleInputSchema,
   SetSpacingScaleInputSchema,
   RenderSnapshotInputSchema,
+  AcknowledgementOutputSchema,
+  SiteAddPageOutputSchema,
+  SiteApplyCssOutputSchema,
+  SiteDuplicateNodeOutputSchema,
+  SiteDuplicatePageOutputSchema,
+  SiteGetNodeHtmlOutputSchema,
+  SiteInsertHtmlOutputSchema,
+  SiteInspectCodeRuntimeOutputSchema,
+  SiteListCodeAssetsOutputSchema,
+  SiteOpenDocumentOutputSchema,
+  SiteReadCodeAssetOutputSchema,
+  SiteReadDocumentOutputSchema,
+  SiteRenderSnapshotOutputSchema,
+  SiteSetColorTokensOutputSchema,
+  SiteSetFontTokensOutputSchema,
+  SiteSetScaleOutputSchema,
+  SiteWriteCodeAssetOutputSchema,
 } from '@core/ai'
 import type { CoreCapability } from '@core/capabilities'
 import type { AiTool } from '../types'
@@ -87,6 +104,7 @@ const insertHtmlTool: AiTool = {
   description:
     'Insert semantic HTML as a subtree of editable nodes under an existing parent. Write structure as HTML (<section>, <h1>, <a>, <button>, <img>, <ul>, ...) and style it with CSS in the same call: put a <style> block in the HTML and/or class= attributes. Custom importer markers: <instatic-loop data-source-id="…" ...> creates a real Loop node (call site_list_loop_sources first for source/table ids and {currentEntry.*} tokens; never place the loop inside a <table>, <tbody> or <tr> — HTML parsing moves it out of the table and leaves its rows behind, publishing one blank row. Wrap the whole <table> in the loop, or use a list); <instatic-outlet data-tag="div"> creates a neutral template content outlet. On PAGE routes the outlet element is not rendered at all — the page content is spliced in at its position — so wrap the outlet in <main> yourself if pages should have a main landmark. data-tag only takes effect on ENTRY routes, where the outlet stays and wraps the entry body (use data-custom-tag for a safe custom element). The importer parses every rule — a bare `.foo {}` selector becomes a reusable Selectors-panel class bound to class="foo"; any other selector (`.hero a`, `a:hover`, `nav > li`) becomes an ambient rule. Inline style= attributes land on the node\'s inline styles. To author or edit CSS on its own — pseudo/hover/descendant selectors, or restyling existing rules — use the dedicated site_apply_css tool instead (site_insert_html is for inserting structure). Returns `nodeIds` (the inserted roots) and `created` — every inserted node as { id, moduleId, classes } — so you can target a nested node (e.g. the wrapper you just added) without re-reading the whole tree.',
   inputSchema: InsertHtmlInputSchema,
+  outputSchema: SiteInsertHtmlOutputSchema,
 }
 
 const getNodeHtmlTool: AiTool = {
@@ -96,6 +114,7 @@ const getNodeHtmlTool: AiTool = {
   description:
     'Return the current HTML the published page would emit for a node subtree. Use before site_replace_node_html to read existing structure.',
   inputSchema: GetNodeHtmlInputSchema,
+  outputSchema: SiteGetNodeHtmlOutputSchema,
 }
 
 const readDocumentTool: AiTool = {
@@ -106,6 +125,7 @@ const readDocumentTool: AiTool = {
   description:
     'Read any editable document as annotated HTML + relevant CSS without switching the visible canvas. Pass a document ref from site_list_documents; omit document to read the current document. If pageInfo.nextPart is not null, call site_read_document again with the same document and part.',
   inputSchema: ReadDocumentInputSchema,
+  outputSchema: SiteReadDocumentOutputSchema,
 }
 
 const openDocumentTool: AiTool = {
@@ -116,6 +136,7 @@ const openDocumentTool: AiTool = {
   description:
     'Visibly open a page/template/visual component document in the editor. Use before site_render_snapshot or when the user asks to navigate. For background inspection, prefer site_read_document because it does not move the canvas.',
   inputSchema: OpenDocumentInputSchema,
+  outputSchema: SiteOpenDocumentOutputSchema,
 }
 
 const replaceNodeHtmlTool: AiTool = {
@@ -126,6 +147,7 @@ const replaceNodeHtmlTool: AiTool = {
   description:
     "Replace a node subtree's children with new HTML. The target node is preserved as the parent; its existing children are rebuilt from the HTML. Style with CSS exactly as in site_insert_html: a <style> block and/or class= attributes; bare `.foo` selectors become reusable classes, other selectors become ambient rules. Custom importer markers work here too: <instatic-loop data-source-id=\"…\" ...> creates a real Loop node and <instatic-outlet data-tag=\"div\"> creates a neutral template content outlet (omit data-tag only when the outlet should render as main). To author or edit CSS on its own (without rebuilding children), use the dedicated site_apply_css tool instead.",
   inputSchema: ReplaceNodeHtmlInputSchema,
+  outputSchema: SiteInsertHtmlOutputSchema,
 }
 
 // ---------------------------------------------------------------------------
@@ -140,6 +162,7 @@ const deleteNodeTool: AiTool = {
   description:
     'Remove a node and its descendants. Not undoable from inside the loop (user can Cmd+Z after).',
   inputSchema: DeleteNodeInputSchema,
+  outputSchema: AcknowledgementOutputSchema,
 }
 
 const updateNodePropsTool: AiTool = {
@@ -150,6 +173,7 @@ const updateNodePropsTool: AiTool = {
   description:
     'Shallow-merge a patch onto an existing node\'s props. `breakpointId` is only valid for props marked `breakpointOverridable` in the schema (rejected for content props like text/tag/src). For per-breakpoint visual variation use site_apply_css with an `@media` query, not this. Richtext props are auto-sanitised.',
   inputSchema: UpdateNodePropsInputSchema,
+  outputSchema: AcknowledgementOutputSchema,
 }
 
 const moveNodeTool: AiTool = {
@@ -160,6 +184,7 @@ const moveNodeTool: AiTool = {
   description:
     "Move a node to a different parent and/or position. `newIndex` is 0-based among the destination's children.",
   inputSchema: MoveNodeInputSchema,
+  outputSchema: AcknowledgementOutputSchema,
 }
 
 const renameNodeTool: AiTool = {
@@ -170,6 +195,7 @@ const renameNodeTool: AiTool = {
   description:
     "Set the node's display label in the DOM tree panel. Editor-only; doesn't affect rendered HTML.",
   inputSchema: RenameNodeInputSchema,
+  outputSchema: AcknowledgementOutputSchema,
 }
 
 const duplicateNodeTool: AiTool = {
@@ -180,6 +206,7 @@ const duplicateNodeTool: AiTool = {
   description:
     "Deep-clone a node + subtree (props, classIds, breakpoint overrides) right after the original. `count` (1-50, default 1) produces N clones in one call. Success data includes the first new node id as `nodeId` and all new ids as `nodeIds`.",
   inputSchema: DuplicateNodeInputSchema,
+  outputSchema: SiteDuplicateNodeOutputSchema,
 }
 
 // ---------------------------------------------------------------------------
@@ -194,6 +221,7 @@ const applyCssTool: AiTool = {
   description:
     'Author, repair, or delete CSS rules. `operation:"merge"` plus real CSS creates missing selectors and patches only authored declarations/contexts; use it for normal additive edits. `operation:"replace"` makes each supplied selector\'s COMPLETE CSS payload authoritative, removing omitted base/context declarations while preserving rule identity, cascade order, and class assignments. `operation:"remove-properties"` removes named CSS properties from base and every context without disturbing other declarations. `operation:"delete"` removes whole rules by exact emitted selector and detaches deleted classes. Selector identity is exact: `.grad`, `.hero .grad`, and `.grad, .hero .grad` are different rules; copy the full selector from site_read_document before destructive operations. Bare `.foo` rules are reusable classes; descendant/pseudo/element/grouped selectors are ambient rules. `@media`/`@supports`/`@container`, vendor properties, custom properties, and `!important` round-trip. Reference design tokens rather than repeated literals. Success data uses `cssRulesCreated`, `cssRulesUpdated`, `cssRulesDeleted`, and/or `cssPropertiesRemoved`.',
   inputSchema: ApplyCssInputSchema,
+  outputSchema: SiteApplyCssOutputSchema,
 }
 
 const assignClassTool: AiTool = {
@@ -204,6 +232,7 @@ const assignClassTool: AiTool = {
   description:
     "Attach an existing CSS class to a node. `classId` accepts id or name.",
   inputSchema: AssignClassInputSchema,
+  outputSchema: AcknowledgementOutputSchema,
 }
 
 const removeClassTool: AiTool = {
@@ -214,6 +243,7 @@ const removeClassTool: AiTool = {
   description:
     'Detach a class from a node (the class itself is not deleted). `classId` accepts id or name.',
   inputSchema: RemoveClassInputSchema,
+  outputSchema: AcknowledgementOutputSchema,
 }
 
 // ---------------------------------------------------------------------------
@@ -228,6 +258,7 @@ const listCodeAssetsTool: AiTool = {
   description:
     'List user-authored runtime code assets stored in the site file layer. Optional `type` filters to scripts or styles. Returns file ids, paths, content hashes, size metadata, and current runtime config. Use before site_read_code_asset / site_patch_code_asset when modifying existing scripts or stylesheets.',
   inputSchema: ListCodeAssetsInputSchema,
+  outputSchema: SiteListCodeAssetsOutputSchema,
 }
 
 const readCodeAssetTool: AiTool = {
@@ -238,6 +269,7 @@ const readCodeAssetTool: AiTool = {
   description:
     'Read one script or stylesheet by fileId or path. Returns the exact content slice, full-file SHA-256 hash, runtime config, and pageInfo for pagination. If pageInfo.nextPart is not null, call site_read_code_asset again with the same asset and part.',
   inputSchema: ReadCodeAssetInputSchema,
+  outputSchema: SiteReadCodeAssetOutputSchema,
 }
 
 const writeCodeAssetTool: AiTool = {
@@ -248,6 +280,7 @@ const writeCodeAssetTool: AiTool = {
   description:
     'Create or replace a runtime script/style file in site.files and attach normalized site.runtime config. Use `type:"script"` for behavior such as theme toggles, menus, tabs, analytics hooks, and DOM-ready interactions; use `type:"style"` for global user stylesheets that should load as files. `path` is a safe site-relative path such as src/scripts/theme-toggle.js or src/styles/theme.css. `runtime` is optional and merges with existing/default config. For module scripts that import npm packages, use bare package imports in `content` and declare them in `dependencies` (package name → semver/range) so they are added to the site dependency manifest; do not use npm CDN URLs for npm packages.',
   inputSchema: WriteCodeAssetInputSchema,
+  outputSchema: SiteWriteCodeAssetOutputSchema,
 }
 
 const patchCodeAssetTool: AiTool = {
@@ -258,6 +291,7 @@ const patchCodeAssetTool: AiTool = {
   description:
     'Patch an existing script or stylesheet by exact text replacement. Requires the latest `expectedHash` from site_read_code_asset/site_list_code_assets to prevent stale edits. Each replacement must match exactly; if oldText occurs multiple times, either make oldText more specific or set replaceAll:true.',
   inputSchema: PatchCodeAssetInputSchema,
+  outputSchema: SiteWriteCodeAssetOutputSchema,
 }
 
 const inspectCodeRuntimeTool: AiTool = {
@@ -268,6 +302,7 @@ const inspectCodeRuntimeTool: AiTool = {
   description:
     'Inspect which runtime scripts and user stylesheets apply to the current page/template, or to a supplied page/template document ref. Returns each asset path, enabled state, scope applicability, priority, and script placement/timing. Use after site_write_code_asset to confirm a script/style is targeted correctly.',
   inputSchema: InspectCodeRuntimeInputSchema,
+  outputSchema: SiteInspectCodeRuntimeOutputSchema,
 }
 
 // ---------------------------------------------------------------------------
@@ -282,6 +317,7 @@ const addPageTool: AiTool = {
   description:
     'Add an EMPTY page and make it the active page. `slug` defaults to a slugified title and is auto-uniqued (a repeat add becomes `-2`, `-3`) — so never call site_add_page twice for the same page. Success data: `pageId` and `rootNodeId`. To build into the new page, pass `rootNodeId` as site_insert_html\'s `parentId` — a pageId is NOT a node id. The page is already active, so just start inserting; no need to site_read_document/site_list_documents first. For copying an existing page use site_duplicate_page.',
   inputSchema: AddPageInputSchema,
+  outputSchema: SiteAddPageOutputSchema,
 }
 
 const deletePageTool: AiTool = {
@@ -292,6 +328,7 @@ const deletePageTool: AiTool = {
   description:
     'Permanently delete a page. Fails if it would leave the site with zero pages.',
   inputSchema: DeletePageInputSchema,
+  outputSchema: AcknowledgementOutputSchema,
 }
 
 const renamePageTool: AiTool = {
@@ -302,6 +339,7 @@ const renamePageTool: AiTool = {
   description:
     "Change a page's title and/or slug. `slug=\"index\"` makes this page the homepage. Omit slug to keep it.",
   inputSchema: RenamePageInputSchema,
+  outputSchema: AcknowledgementOutputSchema,
 }
 
 const duplicatePageTool: AiTool = {
@@ -312,6 +350,7 @@ const duplicatePageTool: AiTool = {
   description:
     'Deep-clone an existing page (every node, prop, class assignment, breakpoint override) under a new title/slug. Node ids are regenerated; class assignments preserved. Success data includes the new id as `pageId`.',
   inputSchema: DuplicatePageInputSchema,
+  outputSchema: SiteDuplicatePageOutputSchema,
 }
 
 // ---------------------------------------------------------------------------
@@ -332,6 +371,7 @@ const setPageTemplateTool: AiTool = {
   description:
     'Turn a page INTO a template (or update an existing template\'s target/priority). `target` is `{kind:"everywhere"}` for a site-wide layout that wraps every page+entry, `{kind:"postTypes", tableSlugs:[…]}` to wrap entries of those post types (slugs from site_list_post_types), or `{kind:"notFound"}` for the page served on public 404s (status 404, wrapped by the everywhere layout; needs no outlet). `priority` (default 100) breaks ties when several templates match at the same breadth level — higher wins. An everywhere/postTypes template needs exactly one `<instatic-outlet>` (insert it via site_insert_html) marking where matched content flows; a wrapper template with no outlet simply doesn\'t apply. Pass a real page id from the suffix / site_list_documents.',
   inputSchema: SetPageTemplateInputSchema,
+  outputSchema: AcknowledgementOutputSchema,
 }
 
 const clearPageTemplateTool: AiTool = {
@@ -342,6 +382,7 @@ const clearPageTemplateTool: AiTool = {
   description:
     'Revert a template back to an ordinary page: drops its template target and any dynamic bindings. The `<instatic-outlet>` node (if any) stays — delete it separately if unwanted. No-op error if the page is not a template.',
   inputSchema: ClearPageTemplateInputSchema,
+  outputSchema: AcknowledgementOutputSchema,
 }
 
 // ---------------------------------------------------------------------------
@@ -360,6 +401,7 @@ const setColorTokensTool: AiTool = {
   description:
     'Create or update framework COLOR tokens — the source of truth for color. Each `{ slug, lightValue }` becomes `var(--<slug>)` plus generated utility classes (text-/bg-/border-) and shade/tint variants. Create-or-update is keyed by `slug`: an existing slug is patched, a new one is created. `lightValue` is any CSS color (hex/rgb/hsl); omit `darkValue` to auto-generate it. Establish color tokens before styling and reference them as `var(--<slug>)` instead of raw hex.',
   inputSchema: SetColorTokensInputSchema,
+  outputSchema: SiteSetColorTokensOutputSchema,
 }
 
 const setFontTokensTool: AiTool = {
@@ -370,6 +412,7 @@ const setFontTokensTool: AiTool = {
   description:
     'Create or update FONT tokens — named typefaces referenced as `var(--<variable>)`. Pass `googleFamily` (e.g. "Inter") to install a new Google web font (downloads the files, then binds the token to it); `variants` defaults to ["400","700"] and `subsets` to ["latin"]. Pass `familyId` to reference an already-installed family. Pass neither for a fallback-only/system token. Create-or-update is keyed by `variable` (defaults from `name`). Prefer exactly one of `googleFamily` or `familyId`; if both are sent, `googleFamily` wins and the stale `familyId` is ignored.',
   inputSchema: SetFontTokensInputSchema,
+  outputSchema: SiteSetFontTokensOutputSchema,
 }
 
 const setTypeScaleTool: AiTool = {
@@ -380,6 +423,7 @@ const setTypeScaleTool: AiTool = {
   description:
     'Configure the TYPOGRAPHY scale — the fluid type ramp generating `--text-*` variables (default prefix "text"). A scale is a config: `min`/`max` give the base `fontSize` (px) and `scaleRatio` at the small/large screen anchors; `steps` is the comma-separated step list (e.g. "xs,s,m,l,xl,2xl,3xl,4xl") and `baseScaleIndex` picks which step equals the base size. Creates the group if none exists, else updates it. Only pass `groupId` when you have a real existing group id; use `namingConvention:"text"` for the prefix. Reference sizes as `var(--text-l)` rather than raw px.',
   inputSchema: SetTypeScaleInputSchema,
+  outputSchema: SiteSetScaleOutputSchema,
 }
 
 const setSpacingScaleTool: AiTool = {
@@ -390,6 +434,7 @@ const setSpacingScaleTool: AiTool = {
   description:
     'Configure the SPACING scale — the fluid spacing ramp generating `--space-*` variables (default prefix "space"). Same shape as site_set_type_scale but `min`/`max` carry `size` (px) instead of `fontSize`; `steps` defaults to an 11-step scale and `baseScaleIndex` to 5 ("m"). Creates the group if none exists, else updates it. Only pass `groupId` when you have a real existing group id; use `namingConvention:"space"` for the prefix. Reference gaps/padding as `var(--space-l)` rather than raw px.',
   inputSchema: SetSpacingScaleInputSchema,
+  outputSchema: SiteSetScaleOutputSchema,
 }
 
 // ---------------------------------------------------------------------------
@@ -403,6 +448,7 @@ const renderSnapshotTool: AiTool = {
   description:
     "Inspect the rendered canvas. Returns viewport and node geometry, image-load status, overflow/visibility warnings, and key computed styles including color, background image/clip, and WebKit text-mask values. Those computed fields expose cascade failures such as a shorthand resetting `background-clip:text`; compare them with source CSS from site_read_document. When the provider supports image-bearing tool results, a screenshot is also attached. Pass any configured `breakpointId` to render a readiness-aware one-shot frame at that exact width, independent of collapsed/disabled frames or Live mode (defaults to active; unknown ids error). Pass `nodeId` to crop the document to that node while preserving its HTML/body/ancestor paint; omit it for the full page.",
   inputSchema: RenderSnapshotInputSchema,
+  outputSchema: SiteRenderSnapshotOutputSchema,
 }
 
 // ---------------------------------------------------------------------------

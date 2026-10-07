@@ -211,10 +211,10 @@ async function handleSetActiveCollection(
   rawInput: unknown,
 ): Promise<AiToolOutput> {
   const input = parseInput(SetActiveCollectionSchema, rawInput) as Static<typeof SetActiveCollectionSchema>
-  const ok = await handle.selectCollection(input.tableId)
-  if (!ok) {
-    return aiToolError(`Collection ${input.tableId} not found.`)
-  }
+  // A table this workspace cannot author throws with the reason; the dispatch
+  // catch above turns it into the tool error, so the agent learns which
+  // toolset owns the table instead of a bare "not found".
+  await handle.selectCollection(input.tableId)
   return aiToolOk()
 }
 

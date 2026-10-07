@@ -15,29 +15,33 @@ import type { DataRow, DataTable } from '@core/data/schemas'
 import { useContentToolBridge } from '@admin/pages/content/agent/useContentToolBridge'
 import { getContentBridgeHandle } from '@admin/pages/content/agent/contentBridgeHandle'
 
-function table(id: string): DataTable {
+function table(id: string, kind: DataTable['kind'] = 'postType'): DataTable {
   return {
     id,
     name: id,
     slug: id,
-    kind: 'postType',
-    routeBase: `/${id}`,
+    kind,
+    routeBase: kind === 'postType' ? `/${id}` : '',
     fields: [],
   } as unknown as DataTable
 }
 
-/** Workspace whose roster starts stale and only learns `recipes` on refresh. */
+/**
+ * Workspace whose roster starts stale and only learns `recipes` (a post type)
+ * and `trainings` (a reusable data table) on refresh.
+ */
 function staleWorkspace() {
-  let collections = [table('posts')]
-  const refreshCollections = mock(async () => {
-    collections = [table('posts'), table('recipes')]
-    return collections
+  let tables = [table('posts')]
+  const refreshTables = mock(async () => {
+    tables = [table('posts'), table('recipes'), table('trainings', 'data')]
+    return tables
   })
   const selectCollection = mock(() => {})
   return {
     surface: {
-      get collections() { return collections },
-      refreshCollections,
+      get collections() { return tables.filter((t) => t.kind === 'postType') },
+      get tables() { return tables },
+      refreshTables,
       entries: [] as DataRow[],
       selectedEntry: null,
       selectedCollectionId: 'posts',
@@ -48,7 +52,7 @@ function staleWorkspace() {
       updateEntryAuthor: async (row: DataRow) => row,
       updateSelectedEntry: () => {},
     },
-    refreshCollections,
+    refreshTables,
     selectCollection,
   }
 }
@@ -79,8 +83,8 @@ describe('content bridge collection resolution', () => {
     const workspace = staleWorkspace()
     const handle = mountBridge(workspace)
 
-    expect(await handle.selectCollection('recipes')).toBe(true)
-    expect(workspace.refreshCollections).toHaveBeenCalledTimes(1)
+    await handle.selectCollection('recipes')
+    expect(workspace.refreshTables).toHaveBeenCalledTimes(1)
     expect(workspace.selectCollection).toHaveBeenCalledTimes(1)
   })
 
@@ -88,16 +92,26 @@ describe('content bridge collection resolution', () => {
     const workspace = staleWorkspace()
     const handle = mountBridge(workspace)
 
-    expect(await handle.selectCollection('posts')).toBe(true)
-    expect(workspace.refreshCollections).not.toHaveBeenCalled()
+    await handle.selectCollection('posts')
+    expect(workspace.refreshTables).not.toHaveBeenCalled()
   })
 
   it('still reports a genuinely unknown collection as missing', async () => {
     const workspace = staleWorkspace()
     const handle = mountBridge(workspace)
 
-    expect(await handle.selectCollection('nope')).toBe(false)
-    expect(workspace.refreshCollections).toHaveBeenCalledTimes(1)
+    await expect(handle.selectCollection('nope')).rejects.toThrow(/not found/)
+    expect(workspace.refreshTables).toHaveBeenCalledTimes(1)
+  })
+
+  it('tells the caller a reusable data table is real but authored elsewhere', async () => {
+    const workspace = staleWorkspace()
+    const handle = mountBridge(workspace)
+
+    // Issue #463: "not found" made agents re-create a table that already
+    // existed. The refusal names the toolset that can actually write it.
+    await expect(handle.selectCollection('trainings')).rejects.toThrow(/data_create_rows/)
+    expect(workspace.selectCollection).not.toHaveBeenCalled()
   })
 
   it('refuses to create in an unknown collection before issuing any row request', async () => {
@@ -105,6 +119,13 @@ describe('content bridge collection resolution', () => {
     const handle = mountBridge(workspace)
 
     await expect(handle.createDocument({ tableId: 'nope' })).rejects.toThrow(/not found/)
-    expect(workspace.refreshCollections).toHaveBeenCalledTimes(1)
+    expect(workspace.refreshTables).toHaveBeenCalledTimes(1)
+  })
+
+  it('refuses to create a document in a data table, naming the row tool', async () => {
+    const workspace = staleWorkspace()
+    const handle = mountBridge(workspace)
+
+    await expect(handle.createDocument({ tableId: 'trainings' })).rejects.toThrow(/data_create_rows/)
   })
 })

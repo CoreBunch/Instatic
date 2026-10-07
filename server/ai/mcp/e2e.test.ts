@@ -91,11 +91,21 @@ describe('MCP end-to-end (2026-07-28 stateless requests, real handler)', () => {
     expect(names).toContain('site_read_styles') // headless design-system read
     expect(names).toContain('site_insert_html') // browser editing tool, relayed to the editor
 
+    // Every listed tool carries its behaviour hints and a result schema.
+    const listed = list.json.result?.tools ?? []
+    const listTables = listed.find((t) => t.name === 'data_list_tables')
+    expect(listTables?.annotations).toMatchObject({ readOnlyHint: true, openWorldHint: false })
+    expect(listTables?.outputSchema?.type).toBe('object')
+    expect(listed.every((t) => t.outputSchema?.type === 'object')).toBe(true)
+
     const read = await rpc('tools/call', { name: 'content_list_collections', arguments: {} })
     expect(read.json.result?.isError).toBeFalsy()
     const content = JSON.stringify(read.json.result?.content)
     expect(content).toContain('posts')
     expect(content).not.toContain('"id":"pages"')
+    // The same payload as typed data, so a client parses it instead of the blob.
+    const structured = read.json.result?.structuredContent as { collections: Array<{ id: string }> }
+    expect(structured.collections.map((c) => c.id)).toContain('posts')
   })
 
   it('a read-only connector sees reads but no write tools', async () => {

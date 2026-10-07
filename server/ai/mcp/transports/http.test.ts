@@ -5,6 +5,7 @@ import { runMigrations } from '../../../db/runMigrations'
 import type { DbClient } from '../../../db/client'
 import { createBearerConnection } from '../connectors/store'
 import { generatePersonalAccessToken, hashMcpSecret } from '../connectors/token'
+import { version as INSTATIC_VERSION } from '../../../../package.json'
 import { handleMcpHttp } from './http'
 
 function initBody() {
@@ -216,7 +217,8 @@ describe('mcp http transport', () => {
     expect(res?.headers.get('Mcp-Session-Id')).toBeNull()
     const rpc = parseRpcBody(await res!.text())
     expect(rpc.result?.protocolVersion).toBe('2025-06-18')
-    expect(rpc.result?.serverInfo).toEqual({ name: 'instatic', version: '1.0.0' })
+    // The install's real version, so a client's logs name a build that exists.
+    expect(rpc.result?.serverInfo).toEqual({ name: 'instatic', version: INSTATIC_VERSION })
   })
 
   it('rejects an oversized request before MCP protocol dispatch', async () => {

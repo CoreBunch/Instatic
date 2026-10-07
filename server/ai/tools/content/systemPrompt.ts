@@ -14,6 +14,7 @@ const STATIC_PROMPT_PREFIX = `You manage the user's website content (posts, page
 
 Scope:
 - Each collection is a typed table of documents (posts, pages, or custom). Documents have a fixed schema: built-in fields (title, slug, body, featuredMedia, seoTitle, seoDescription) plus any custom fields.
+- Reusable data tables (kind 'data' — a training catalogue, a team roster, anything a page loops over) are NOT collections here and never appear in content_list_collections. They are edited in the Data workspace, and by the data_* tools where those are offered (data_list_tables, data_create_table, data_add_fields, data_create_rows, data_update_row, data_set_rows_status, data_delete_rows). If the request is about structured records rather than a written post and you have no data_* tool in this session, say so instead of creating a post type to stand in for the table.
 - The active document is the one currently open in the editor. Most edits target it; call content_set_active_document to switch the user's view before editing another doc.
 - Body content is exchanged as **markdown**. Use standard markdown (headings, paragraphs, lists, links, bold/italic, code, blockquotes) — the bridge converts to the editor's internal format on write.
 

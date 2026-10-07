@@ -60,7 +60,7 @@ import {
   canonicaliseAiUserContent,
   preflightAiUserContent,
 } from '../inputImages'
-import { selectToolsForScope } from '../tools'
+import { selectToolsForScope, type ToolsetOptions } from '../tools'
 import {
   buildSiteSystemPrompt,
   SiteAgentSnapshotSchema,
@@ -95,17 +95,19 @@ export function tryHandleAiChat(
   req: Request,
   db: DbClient,
   pathname: string,
+  options: ToolsetOptions = {},
 ): Promise<Response> | null {
   if (!pathname.startsWith('/admin/api/ai/chat/')) return null
   const scope = pathname.slice('/admin/api/ai/chat/'.length)
   if (!VALID_SCOPES.includes(scope as ToolScope)) return null
-  return handleAiChat(req, db, scope as ToolScope)
+  return handleAiChat(req, db, scope as ToolScope, options)
 }
 
 async function handleAiChat(
   req: Request,
   db: DbClient,
   scope: ToolScope,
+  options: ToolsetOptions,
 ): Promise<Response> {
   if (req.method !== 'POST') {
     return jsonResponse({ error: 'Method not allowed' }, { status: 405 })
@@ -191,7 +193,7 @@ async function handleAiChat(
     req.signal,
   )
   if (modelCapabilities === REQUEST_ABORTED) return clientClosedRequest()
-  const tools = selectToolsForScope(scope, user.capabilities)
+  const tools = selectToolsForScope(scope, user.capabilities, options)
   if (requestedImage && !modelCapabilities.visionInput) {
     return jsonResponse(
       { error: 'The selected model does not support image input. Choose a vision-capable model.' },

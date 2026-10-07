@@ -15,6 +15,7 @@
 import { Type } from '@core/utils/typeboxHelpers'
 import type { CoreCapability } from '@core/capabilities'
 import type { AiTool } from '../types'
+import { AcknowledgementOutputSchema, ContentCreateDocumentOutputSchema } from '@core/ai'
 
 // `fields` is a free-form `Record<fieldId, value>`. Per-type validation
 // happens on the browser bridge (it knows the collection's field schema).
@@ -67,8 +68,9 @@ const createDocumentTool: AiTool = {
   execution: 'browser',
   requiredCapabilities: ['content.create'],
   description:
-    "Create a new draft document in `tableId`. `fields` is a Record<fieldId, value> per the collection's schema; omit to create an empty draft. Success data includes the new id as `documentId`; the bridge auto-switches the user's editor to the new doc so they can see what you built. Use content_set_document_status separately to publish or schedule it.",
+    "Create a new draft document in a POST TYPE (`tableId` must be one content_list_collections returned). `fields` is a Record<fieldId, value> per the collection's schema; omit to create an empty draft. Success data includes the new id as `documentId`; the bridge auto-switches the user's editor to the new doc so they can see what you built. Use content_set_document_status separately to publish or schedule it. For a row in a reusable data table, use data_create_rows instead — this tool needs the Content editor open and cannot write one.",
   inputSchema: CreateDocumentInput,
+  outputSchema: ContentCreateDocumentOutputSchema,
 }
 
 // ---------------------------------------------------------------------------
@@ -87,6 +89,7 @@ const deleteDocumentTool: AiTool = {
   description:
     'Soft-delete a document. User can restore via the Trash UI.',
   inputSchema: DeleteDocumentInput,
+  outputSchema: AcknowledgementOutputSchema,
 }
 
 // ---------------------------------------------------------------------------
@@ -107,6 +110,7 @@ const setDocumentStatusTool: AiTool = {
   description:
     "Set the document's lifecycle status. `status='scheduled'` requires `scheduledAt` (ISO datetime). Publishing requires the user to hold content.publish.own (own docs) or content.publish.any (any doc).",
   inputSchema: SetDocumentStatusInput,
+  outputSchema: AcknowledgementOutputSchema,
 }
 
 // ---------------------------------------------------------------------------
@@ -127,6 +131,7 @@ const setDocumentFieldTool: AiTool = {
   description:
     "Write one field on a document. The document MUST be the active one — call content_set_active_document first, or the write is refused. (content_create_document leaves the new document active, so create-then-fill needs no extra call.) `value` shape depends on the field type (read content_get_collection_schema first if unsure): text/longText/richText/url/email → string; number → number; boolean → boolean; date/dateTime → ISO string; select → option id; multiSelect → option id[]; media → { id } or { id }[]; relation → { rowId } or { rowId }[]; body → markdown string. Bridge converts markdown ↔ Tiptap automatically for body.",
   inputSchema: SetDocumentFieldInput,
+  outputSchema: AcknowledgementOutputSchema,
 }
 
 // ---------------------------------------------------------------------------
@@ -146,6 +151,7 @@ const setDocumentFieldsTool: AiTool = {
   description:
     'Batch-write multiple fields on one document. The document MUST be the active one — call content_set_active_document first, or the write is refused. `fields` is Record<fieldId, value>; same per-type shapes as content_set_document_field. Prefer this when generating a whole post (title + slug + body + seo* in one call), and when filling several documents in sequence set each one active before writing to it.',
   inputSchema: SetDocumentFieldsInput,
+  outputSchema: AcknowledgementOutputSchema,
 }
 
 // ---------------------------------------------------------------------------
@@ -165,6 +171,7 @@ const setDocumentAuthorTool: AiTool = {
   description:
     'Reassign the document author to another user. Requires the caller to hold content.edit.any. Use content_list_users to find the right user id.',
   inputSchema: SetDocumentAuthorInput,
+  outputSchema: AcknowledgementOutputSchema,
 }
 
 // ---------------------------------------------------------------------------
@@ -182,6 +189,7 @@ const setActiveDocumentTool: AiTool = {
   description:
     "Switch the user's editor to this document so they can watch you work. Call BEFORE editing a doc that isn't already open — the user only sees the active doc, so content_set_document_field on a non-active doc happens invisibly.",
   inputSchema: SetActiveDocumentInput,
+  outputSchema: AcknowledgementOutputSchema,
 }
 
 // ---------------------------------------------------------------------------
@@ -197,8 +205,9 @@ const setActiveCollectionTool: AiTool = {
   scope: 'content',
   execution: 'browser',
   description:
-    'Switch the workspace sidebar focus to this collection. Use when working across collection-level actions (browsing, bulk reviews).',
+    'Switch the workspace sidebar focus to this collection. Use when working across collection-level actions (browsing, bulk reviews). Only post types can be focused; a reusable data table is refused with a message naming the data_* tool that can write it.',
   inputSchema: SetActiveCollectionInput,
+  outputSchema: AcknowledgementOutputSchema,
 }
 
 // ---------------------------------------------------------------------------

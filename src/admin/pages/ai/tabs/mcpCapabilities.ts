@@ -24,6 +24,20 @@ export const MCP_CAPABILITY_GROUPS: readonly CapabilityPickerGroup[] = [
     title: 'Content',
     capabilities: ['content.create', 'content.edit.own', 'content.edit.any', 'content.publish.own', 'content.publish.any'],
   },
+  // Schema, not rows: `data_create_table` / `data_update_table` / `data_add_fields`
+  // are gated on this and on nothing else, so without it here those tools can
+  // never be granted — the consent screen is the only place a connector's
+  // capability set is chosen. Its own group because creating a table is a
+  // different kind of authority than editing the rows in one.
+  //
+  // `data.system.tables.manage` is deliberately NOT offered: the four built-in
+  // tables refuse identity and built-in-field changes anyway
+  // (`assertSystemTableUpdateAllowed`), so granting it to a connector buys
+  // custom fields on system tables at the cost of a much wider-sounding grant.
+  {
+    title: 'Data tables',
+    capabilities: ['data.custom.tables.manage'],
+  },
   {
     title: 'Media',
     capabilities: ['media.write', 'media.replace', 'media.delete'],

@@ -30,7 +30,6 @@ function registerHandle(overrides: Partial<ContentBridgeHandle> = {}) {
     },
     async selectCollection() {
       calls.push('selectCollection')
-      return true
     },
     async createDocument() {
       calls.push('createDocument')
@@ -243,5 +242,24 @@ describe('runMcpWorkspaceBridgeConnection', () => {
       lifecycleController.abort()
       globalThis.fetch = realFetch
     }
+  })
+})
+
+describe('content_set_active_collection refusals', () => {
+  it("passes the workspace's own reason through instead of a bare not-found", async () => {
+    registerHandle({
+      async selectCollection(tableId) {
+        throw new Error(
+          `Table "trainings" is a data table, not a post type: it is edited in the Data workspace — write its rows with data_create_rows / data_update_row. (${tableId})`,
+        )
+      },
+    })
+
+    const result = await executeContentTool('content_set_active_collection', { tableId: 'trainings' })
+
+    expect(result.ok).toBe(false)
+    // Issue #463: an agent told "not found" re-creates the table it already
+    // has. The refusal has to name the toolset that can write it.
+    expect(result.error).toMatch(/data_create_rows/)
   })
 })

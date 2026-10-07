@@ -18,6 +18,7 @@
  */
 import { Type } from '@core/utils/typeboxHelpers'
 import type { Static } from '@core/utils/typeboxHelpers'
+import { MediaUploadOutputSchema } from '@core/ai'
 import type { AiTool, ToolContext } from '../../runtime/types'
 import {
   IMAGE_MIMES,
@@ -115,6 +116,7 @@ export const uploadMediaMcpTool: AiTool = {
   mutates: true,
   requiredCapabilities: ['media.write'],
   inputSchema: UploadMediaInput,
+  outputSchema: MediaUploadOutputSchema,
   handler: async (input, ctx: ToolContext) => {
     const args = input as UploadMediaArgs
     const hasData = typeof args.data === 'string' && args.data.length > 0
