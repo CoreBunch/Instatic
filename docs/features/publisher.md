@@ -330,14 +330,32 @@ The publisher emits `<head>` in this order:
 
 1. `<meta charset="utf-8">`
 2. `<meta name="viewport" content="width=device-width, initial-scale=1">`
-3. `<title>` — the entry's `seoTitle` (post-type entries only) → `settings.metaTitle` → `page.title` → site name, then token-interpolated against the render context before escaping, so `{currentEntry.*}` resolves per-entry on entry routes (e.g. `{currentEntry.name} | Acme`) and `{page.*}` / `{site.*}` / `{route.*}` work everywhere
-4. `<meta name="description">` — the entry's `seoDescription` (post-type entries only) → `settings.metaDescription`; omitted when neither is set, and token-interpolated the same way
+3. `<title>` — the entry's `seoTitle` → `page.seo.title` → `settings.metaTitle` → `page.title` → site name, then token-interpolated against the render context before escaping, so `{currentEntry.*}` resolves per-entry on entry routes (e.g. `{currentEntry.name} | Acme`) and `{page.*}` / `{site.*}` / `{route.*}` work everywhere
+4. `<meta name="description">` — the entry's `seoDescription` → `page.seo.description` → `settings.metaDescription`; omitted when neither is set, and token-interpolated the same way
 5. `<link rel="icon">` if a favicon is configured
 6. `<script type="importmap">` mapping bare specifiers (e.g. `three`) to `/_instatic/runtime/cache/<hash>/...` URLs
 7. Runtime asset `<script>` tags (`scriptTagsForRuntimeAssets`)
 8. `<link rel="stylesheet" href="/_instatic/css/<bundle>-<hash>.css">` per bundle
 9. **`head` placement** plugin-injected tags (after the publisher's own head, before custom user head content)
 10. `<meta http-equiv="Content-Security-Policy" content="...">` — assembled based on what's actually in the page
+
+### Authored page metadata
+
+`Page.seo` in `src/core/page-tree/pageSeo.ts` is the canonical TypeBox model for authored document metadata. `src/core/publisher/documentMeta.ts` resolves native tokens against the render context and escapes the resulting head tags. The same renderer serves previews, static baking and live routes.
+
+- `title` and `description` are independent of the page's display title. A page override precedes the site default; a per-entry override precedes the template's metadata.
+- `canonical` emits one canonical URL; `alternates` is an ordered list of stable-ID `{ language, href }` items, including `x-default`.
+- `meta` retains ordered repetitions and optional media queries. It supports `name`, `property`, and passive `http-equiv` pragmas (`content-language`, `default-style`, `x-ua-compatible`). Charset, viewport, description and the CSP remain publisher-owned. Security or redirect pragmas are validation errors.
+- `links` supports passive document relations: author, icon, apple-touch-icon, manifest, license, help, me, search, prev and next. A page icon replaces the site favicon. Stylesheets and executable resource links belong to their native asset pipeline and are rejected here. Emitted manifests add only their actual origin to `manifest-src`.
+- `structuredData` is an ordered array of JSON-LD objects. Recursive TypeBox validation permits JSON values only; tokens resolve in string values. Serialization escapes `<` to preserve the data while preventing a closing script tag from escaping its data block. JSON-LD does not enable executable scripts in the CSP.
+
+Canonical/link URLs allow HTTP(S) and relative forms. Authored tokens are resolved before the final URL safety check; unsafe or malformed metadata is reported, never silently removed. The renderer preserves authored URLs and does not invent a deployment host.
+
+Metadata uses ordinary `data_rows` cells: existing `seoTitle` and `seoDescription`, URL `seoCanonical`, repeaters `seoAlternates` / `seoMeta` / `seoLinks`, and JSON text in `seoStructuredData`. `src/core/data/pageSeoCells.ts` owns conversion and clearing; `pageFromRow.ts` reads and writes it. Page and template settings expose the same fields. The existing page Y document carries `seo` in its metadata map, with the normal per-document undo and last-writer resolution for that metadata value. Relay persistence owns these cells while preserving unrelated custom fields. SEO edits require `site.content.edit` in both write transports.
+
+`composeTemplateChain` carries the terminal page's SEO, or the innermost entry template's SEO. Duplicating a page deep-clones its authored metadata. Explicit canonical URLs remain authored values and must be edited when the copy should identify another URL.
+
+Tests: `src/__tests__/publisher/pageSeo.test.ts`, `src/core/data/__tests__/pageSeoCells.test.ts`, `src/__tests__/collab/pageSeo.test.ts`, `src/__tests__/ui/pageSeoSettings.test.tsx`, and `src/__tests__/server/pageSeoMigration.test.ts`.
 
 ### `documentMeta` — per-render `<head>` overrides
 
@@ -351,7 +369,7 @@ Rows 3 and 4 above take their most specific value from `PublishPageOptions.docum
 Two invariants:
 
 - **Never write the SEO override onto `page.title`.** `publishPage` hands `page` to `buildPageFrame`, so `page.title` is also the `{page.title}` binding — an SEO value assigned there renders inside the page body. `page.title` stays the entry's own `title` cell; the override reaches `<head>` and nothing else.
-- **A blank field is not an override.** `readEntrySeoOverride` omits an empty or whitespace-only cell, so it falls through to the site-level `metaTitle` / `metaDescription` exactly as an absent one does.
+- **A blank field is not an override.** `readEntrySeoOverride` omits an empty or whitespace-only cell, so it uses the template/page metadata and then the site-level defaults exactly as an absent one does.
 
 Both call sites read through the one helper so publish and Live preview can't drift.
 

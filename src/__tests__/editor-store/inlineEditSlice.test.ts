@@ -43,6 +43,12 @@ beforeEach(() => {
 })
 
 describe('startInlineEdit', () => {
+  it('keeps language-file text bound rather than replacing it with inline literal copy', () => {
+    const { nodeId } = setupSiteWithTextNode('{site.translations.header.contact}')
+    useEditorStore.getState().startInlineEdit(nodeId, 'bp-desktop')
+    expect(useEditorStore.getState().activeInlineEdit).toBeNull()
+    expect(nodeText(nodeId)).toBe('{site.translations.header.contact}')
+  })
   it('opens a multiline session for base.text on the text prop', () => {
     const { nodeId } = setupSiteWithTextNode()
     useEditorStore.getState().startInlineEdit(nodeId, 'bp-desktop')
