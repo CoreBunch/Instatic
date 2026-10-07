@@ -80,6 +80,23 @@ export interface CellFilter {
 /** Operators that ignore the comparison value. */
 const VALUELESS: ReadonlySet<CellFilterOperator> = new Set(['isTrue', 'isFalse', 'isSet', 'isEmpty'])
 
+/**
+ * Does the stored operator actually read `cellValue`?
+ *
+ * `isTrue` / `isFalse` / `isSet` / `isEmpty` never look at the value, so a
+ * caller that would otherwise refuse to run the query — the publisher, when a
+ * token in `cellValue` resolved to nothing — must not refuse for those: the
+ * value it could not resolve is one the query never touches.
+ *
+ * Takes the RAW stored value and resolves it exactly as `parseCellFilter`
+ * does, defaulting to `is`, so the two can never disagree about which operator
+ * a loop is running.
+ */
+export function cellFilterUsesValue(operator: unknown): boolean {
+  const resolved: CellFilterOperator = isCellFilterOperator(operator) ? operator : 'is'
+  return !VALUELESS.has(resolved)
+}
+
 export function isCellFilterOperator(value: unknown): value is CellFilterOperator {
   return typeof value === 'string' && (CELL_FILTER_OPERATORS as readonly string[]).includes(value)
 }

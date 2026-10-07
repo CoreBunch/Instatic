@@ -41,6 +41,7 @@ import { registry } from '@core/module-engine'
 import { loopSourceRegistry } from '@core/loops/registry'
 import { renderNode, type RenderConfig, type RenderAccumulators } from '@core/publisher'
 import { buildPageFrame, buildRouteFrame, buildSiteFrame } from '@core/templates/contextFrames'
+import type { TemplateRenderDataContext } from '@core/templates/renderDataContext'
 import { prefetchLoopData } from '../../publish/loopPrefetch'
 import { getOrRender } from '../../publish/renderCache'
 import { getPublishedNodeIndexForVersion } from '../../publish/publishedSnapshotCache'
@@ -125,9 +126,19 @@ async function renderHoleFragment(
   request: SourceRequestContext,
 ): Promise<string> {
   const route = buildRouteFrame(pageUrl.toString())
+  // A hole is fetched by node id with no entry in scope, so `entryStack` is
+  // empty here: `{page.*}` / `{route.*}` tokens in a loop filter resolve, and
+  // an `{currentEntry.*}` one resolves to nothing and renders the loop empty.
+  const templateContext: TemplateRenderDataContext = {
+    entryStack: [],
+    page: buildPageFrame(page),
+    site: buildSiteFrame(site),
+    route,
+  }
   const loopData = await prefetchLoopData(page, site, db, pageUrl, {
     request,
     rootNodeId: nodeId,
+    templateContext,
   })
   const config: RenderConfig = {
     page,
@@ -135,12 +146,7 @@ async function renderHoleFragment(
     registry,
     breakpointId: undefined,
     loopData,
-    templateContext: {
-      entryStack: [],
-      page: buildPageFrame(page),
-      site: buildSiteFrame(site),
-      route,
-    },
+    templateContext,
     // No dynamicNodeIds: inside a hole endpoint we render the full subtree.
   }
   const acc: RenderAccumulators = {

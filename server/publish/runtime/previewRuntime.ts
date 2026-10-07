@@ -79,7 +79,10 @@ export async function buildRuntimePreviewDocument(
     }
   }
   const loopData = input.db
-    ? await prefetchLoopData(input.page, input.site, input.db, undefined, { branchId: input.branchId })
+    ? await prefetchLoopData(input.page, input.site, input.db, undefined, {
+        branchId: input.branchId,
+        templateContext: input.templateContext,
+      })
     : undefined
   const mediaAssets = input.db
     ? await prefetchMediaAssets(input.page, input.site, input.registry, input.db, {

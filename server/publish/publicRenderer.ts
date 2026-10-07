@@ -2,7 +2,7 @@ import '../../src/modules/base'
 import '@core/loops/sources'
 import { registry } from '@core/module-engine'
 import { publishPage } from '@core/publisher'
-import { buildRouteFrame } from '@core/templates/contextFrames'
+import { buildPageFrame, buildRouteFrame, buildSiteFrame } from '@core/templates/contextFrames'
 import { buildPublishedSiteCssBundle } from './siteCssBundle'
 import { buildPublishedSiteModuleJsMap } from './moduleJsBundle'
 import { resolveTemplateChain, resolveNotFoundTemplate, composeTemplateChain } from '@core/templates'
@@ -10,7 +10,7 @@ import type { TemplateRenderDataContext } from '@core/templates/dynamicBindings'
 import { prefetchLoopData, publishedDataRowToLoopItem } from './loopPrefetch'
 import { prefetchMediaAssets } from './mediaPrefetch'
 import { getPublishVersion } from './publishState'
-import type { Page } from '@core/page-tree'
+import type { Page, SiteDocument } from '@core/page-tree'
 import type { DocumentMetaOverride, SiteCssBundle } from '@core/publisher'
 import type { PublishedDataRow } from '@core/data/schemas'
 import { readEntrySeoOverride } from '@core/data/cells'
@@ -86,6 +86,65 @@ interface RenderPublishedSnapshotContext {
  * resolve the chain and seed the context, plus which `pageId`/`slug` they
  * report — so any new `publishPage` option threads through here once.
  */
+/**
+ * The context a published document's loop filters resolve their tokens
+ * against.
+ *
+ * Loop filters resolve BEFORE `publishPage` runs, so they cannot wait for the
+ * page/site frames `publishPage` fills in itself — a `{page.title}` filter
+ * would resolve to nothing and empty the loop. This builds those two frames
+ * for the prefetch only, mirroring what `publishPage` will compute, and leaves
+ * the context handed to `publishPage` untouched: it derives its own route
+ * fallback from the page permalink when no URL is in hand, and that resolution
+ * stays its business.
+ *
+ * Shared with the infinite-loop pagination endpoint, so page 2 of a loop
+ * filters on exactly what page 1 did.
+ */
+export function loopFilterContext(
+  merged: Page,
+  site: SiteDocument,
+  templateContext: TemplateRenderDataContext | undefined,
+): TemplateRenderDataContext {
+  return {
+    entryStack: templateContext?.entryStack ?? [],
+    page: buildPageFrame(merged),
+    site: buildSiteFrame(site),
+    ...(templateContext?.route ? { route: templateContext.route } : {}),
+  }
+}
+
+/**
+ * A published page wrapped in its matching layout templates (everywhere → …),
+ * as one merged tree the publish pipeline renders in a single pass.
+ */
+export function composePublishedPageDocument(
+  snapshot: PublishedPageSnapshot,
+): { page: Page; merged: Page } {
+  const page = snapshot.site.pages.find((candidate) => candidate.id === snapshot.pageRowId)
+  if (!page) throw new Error(`Published page "${snapshot.pageRowId}" not found in snapshot`)
+  const chain = resolveTemplateChain(snapshot.site, { kind: 'page' })
+  return { page, merged: composeTemplateChain(chain, { kind: 'page', page }) }
+}
+
+/**
+ * A published row's entry document: the everywhere layout + entry template
+ * chain merged into one tree, whose innermost outlet renders the entry body.
+ * Null when no entry template targets the row's table (the route 404s).
+ */
+export function composeEntryDocument(site: SiteDocument, row: PublishedDataRow): Page | null {
+  const chain = resolveTemplateChain(site, { kind: 'entry', tableSlug: row.tableSlug })
+  if (chain.length === 0) return null
+  const merged = composeTemplateChain(chain, { kind: 'entry' })
+  // The template chain has no Page for the entry, so composeTemplateChain
+  // can't know its title — the entry's own title is the real page title.
+  // It stays the plain `title` cell: `page.title` feeds the `{page.title}`
+  // binding as well as `<title>`, so the SEO override travels separately
+  // through `documentMeta` and only reaches the `<head>`.
+  if (typeof row.cells.title === 'string') merged.title = row.cells.title
+  return merged
+}
+
 async function renderMergedTemplate(
   merged: Page,
   snapshot: PublishedPageSnapshot,
@@ -95,7 +154,9 @@ async function renderMergedTemplate(
 ): Promise<{ html: string; jsModuleIds: string[]; publishVersion: number; cssBundle: SiteCssBundle }> {
   const publishVersion = ctx.publishVersion ?? getPublishVersion()
   const moduleJsMap = buildPublishedSiteModuleJsMap(snapshot.site, registry)
-  const loopData = await prefetchLoopData(merged, snapshot.site, ctx.db, ctx.url)
+  const loopData = await prefetchLoopData(merged, snapshot.site, ctx.db, ctx.url, {
+    templateContext: loopFilterContext(merged, snapshot.site, templateContext),
+  })
   const mediaAssets = await prefetchMediaAssets(merged, snapshot.site, registry, ctx.db, {
     templateContext,
     loopData,
@@ -125,13 +186,7 @@ export async function renderPublishedSnapshot(
   snapshot: PublishedPageSnapshot,
   ctx: RenderPublishedSnapshotContext,
 ): Promise<RendererOutput> {
-  const page = snapshot.site.pages.find((candidate) => candidate.id === snapshot.pageRowId)
-  if (!page) throw new Error(`Published page "${snapshot.pageRowId}" not found in snapshot`)
-
-  // Wrap the page in any matching layout templates (everywhere → …), producing
-  // one merged tree so the existing publish pipeline runs in a single pass.
-  const chain = resolveTemplateChain(snapshot.site, { kind: 'page' })
-  const merged = composeTemplateChain(chain, { kind: 'page', page })
+  const { page, merged } = composePublishedPageDocument(snapshot)
 
   // Seed route frame from the actual request URL (when available) so
   // `{route.slug}` / `{route.path}` bindings resolve to live values.
@@ -175,17 +230,8 @@ export async function renderPublishedDataRowTemplate(
   row: PublishedDataRow,
   ctx: RenderPublishedSnapshotContext,
 ): Promise<RendererOutput | null> {
-  // Build the full chain (everywhere layout + entry template) and merge it into
-  // one tree; the innermost outlet renders the current entry's body.
-  const chain = resolveTemplateChain(snapshot.site, { kind: 'entry', tableSlug: row.tableSlug })
-  if (chain.length === 0) return null // no entry template → 404 (unchanged behaviour)
-  const merged = composeTemplateChain(chain, { kind: 'entry' })
-  // The template chain has no Page for the entry, so composeTemplateChain
-  // can't know its title — the entry's own title is the real page title.
-  // It stays the plain `title` cell: `page.title` feeds the `{page.title}`
-  // binding as well as `<title>`, so the SEO override travels separately
-  // through `documentMeta` and only reaches the `<head>`.
-  if (typeof row.cells.title === 'string') merged.title = row.cells.title
+  const merged = composeEntryDocument(snapshot.site, row)
+  if (!merged) return null // no entry template → 404 (unchanged behaviour)
 
   // Seed the entry stack with the published row + route frame from the request
   // URL. Loop interceptors push/pop iteration items on top of this stack;

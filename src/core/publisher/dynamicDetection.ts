@@ -16,8 +16,9 @@
  *   1. Module is flagged `dynamic: true` in the registry.
  *   2. Node has a `dynamicBindings` entry whose source is request-dependent
  *      (currently: `route.query.*`).
- *   2b. A string prop value contains a `{source.field}` token whose source is
- *      request-dependent.
+ *   2b. A string prop value — including one nested inside an object or array
+ *      prop, such as a loop's `filters.cellValue` — contains a
+ *      `{source.field}` token whose source is request-dependent.
  *   3. `moduleId === 'base.loop'` AND the loop source has `requestDependent: true`
  *      or `perVisitor: true`.
  *   4. `moduleId === 'base.visual-component-ref'` whose VC definition tree
@@ -116,18 +117,48 @@ function checkDynamicBindings(node: AnalysisNode): string | null {
 }
 
 /**
- * Rule 2b: {source.field} tokens embedded in string prop values.
+ * Every string reachable inside a prop value, with the dotted path that names
+ * it (`filters.cellValue`).
+ *
+ * Not every tokenised prop value is a top-level string: a loop's filter values
+ * live one level down, in the `filters` object. Scanning only top-level strings
+ * left `{route.query.course}` in a loop filter invisible to detection, so the
+ * page stayed bakeable and one visitor's `?course=A` render could be served to
+ * the next visitor asking for `?course=B`. Prop values are plain JSON from the
+ * page document, so this walks objects and arrays without a cycle guard.
+ */
+function* stringPropValues(
+  value: unknown,
+  path: string,
+): Generator<{ path: string; value: string }> {
+  if (typeof value === 'string') {
+    yield { path, value }
+    return
+  }
+  if (Array.isArray(value)) {
+    for (const [index, entry] of value.entries()) yield* stringPropValues(entry, `${path}[${index}]`)
+    return
+  }
+  if (value !== null && typeof value === 'object') {
+    for (const [key, entry] of Object.entries(value)) yield* stringPropValues(entry, `${path}.${key}`)
+  }
+}
+
+/**
+ * Rule 2b: {source.field} tokens embedded in string prop values, including
+ * strings nested inside object/array props such as a loop's `filters`.
  * Returns the first matching reason string or null.
  */
 function checkInlineTokens(node: AnalysisNode): string | null {
   for (const [propKey, propValue] of Object.entries(node.props)) {
-    if (typeof propValue !== 'string') continue
-    if (!containsTokens(propValue)) continue
-    const segments = parseTokenString(propValue)
-    for (const seg of segments) {
-      if (seg.kind !== 'token') continue
-      if (isBindingSourceRequestDependent(seg.source, seg.field)) {
-        return `node "${node.id}": prop "${propKey}" contains request-dependent token "{${seg.source}.${seg.field}}"`
+    for (const { path, value } of stringPropValues(propValue, propKey)) {
+      if (!containsTokens(value)) continue
+      const segments = parseTokenString(value)
+      for (const seg of segments) {
+        if (seg.kind !== 'token') continue
+        if (isBindingSourceRequestDependent(seg.source, seg.field)) {
+          return `node "${node.id}": prop "${path}" contains request-dependent token "{${seg.source}.${seg.field}}"`
+        }
       }
     }
   }

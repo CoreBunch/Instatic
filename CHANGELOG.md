@@ -4,6 +4,12 @@ All notable changes to Instatic will be documented here.
 
 This project is pre-1.0. Breaking changes may appear in minor or patch releases until a stable release line exists.
 
+## Unreleased
+
+### Features
+
+- A loop's cell filter now accepts tokens, so a template shared by many entries can list only the rows belonging to the entry on screen — a course page shows its own dates, not every course's. A filter whose tokens cannot be resolved shows nothing rather than falling back to the whole table. "Load more" on an infinite loop filters on the same entry as the first page.
+
 ## 0.0.20 - 2026-09-13
 
 ### Features

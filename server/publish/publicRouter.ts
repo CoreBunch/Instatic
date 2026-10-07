@@ -68,7 +68,12 @@ import {
 } from '../repositories/data/publish'
 import { getPublishedPageBySlug } from '../repositories/publish'
 import { applyPublishedHtmlPipeline } from './publishedHtmlPipeline'
+import type { TemplateRenderDataContext } from '@core/templates/renderDataContext'
+import { buildRouteFrame } from '@core/templates/contextFrames'
 import {
+  composeEntryDocument,
+  composePublishedPageDocument,
+  loopFilterContext,
   renderPublishedDataRowTemplate,
   renderPublishedNotFound,
   renderPublishedSnapshot,
@@ -78,7 +83,7 @@ import { getOrRender, peek } from './renderCache'
 import { getLatestSnapshotForVersion } from './publishedSnapshotCache'
 import { snapshotForEntryRoute, snapshotForNotFoundRoute } from './entryTemplateSnapshot'
 import { getPublishVersion } from './publishState'
-import { canonicalRenderQuery } from './loopPrefetch'
+import { canonicalRenderQuery, publishedDataRowToLoopItem } from './loopPrefetch'
 
 // ---------------------------------------------------------------------------
 // Path helpers
@@ -186,6 +191,39 @@ async function resolvePublicRoute(
   }
 
   return { kind: 'not-found' }
+}
+
+/**
+ * The context the loops on a public URL filter against: the same frames the
+ * page render hands `prefetchLoopData` for that URL, entry included.
+ *
+ * The infinite-loop pagination endpoint serves page 2+ outside any page
+ * render, so it has no entry, page, or route of its own — only the path the
+ * visitor is on. Resolving that path the way the public router does lets a
+ * `{currentEntry.slug}` filter on an entry template keep filtering on the same
+ * entry past page 1. Null when the path resolves to no published page or
+ * entry; the caller then resolves against nothing, which empties the loop
+ * rather than unfiltering it.
+ */
+export async function loopFilterContextForUrl(
+  db: DbClient,
+  url: URL,
+): Promise<TemplateRenderDataContext | null> {
+  const resolution = await resolvePublicRoute(db, url)
+  const route = buildRouteFrame(url.toString())
+  if (resolution.kind === 'page') {
+    const { merged } = composePublishedPageDocument(resolution.snapshot)
+    return loopFilterContext(merged, resolution.snapshot.site, { entryStack: [], route })
+  }
+  if (resolution.kind === 'row') {
+    const merged = composeEntryDocument(resolution.snapshot.site, resolution.row)
+    if (!merged) return null
+    return loopFilterContext(merged, resolution.snapshot.site, {
+      entryStack: [publishedDataRowToLoopItem(resolution.row)],
+      route,
+    })
+  }
+  return null
 }
 
 // ---------------------------------------------------------------------------

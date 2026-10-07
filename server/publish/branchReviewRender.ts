@@ -54,7 +54,7 @@ export async function renderBranchReviewPage(
   // Both sides read DRAFT rows: a merge compares main's draft with the
   // branch's draft, and main's published versions are what visitors see,
   // not what the merge would write over.
-  const loopData = await prefetchLoopData(merged, site, db, url, { branchId: scope.branchId, request, drafts: true })
+  const loopData = await prefetchLoopData(merged, site, db, url, { branchId: scope.branchId, request, drafts: true, templateContext })
   const mediaAssets = await prefetchMediaAssets(merged, site, registry, db, { templateContext, loopData })
   const rendered = publishPage(merged, site, registry, {
     templateContext,

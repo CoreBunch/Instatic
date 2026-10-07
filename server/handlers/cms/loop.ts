@@ -6,9 +6,10 @@
  * "Load more". Returns `{ html, hasMore, pageNumber }` JSON.
  *
  * Algorithm:
- *   1. Resolve the page from the request's `pagePath` query param via
- *      the same routing logic the public renderer uses.
- *   2. Find the loop node by id within the resolved page.
+ *   1. Find the loop node by id in the published loop index.
+ *   2. When its filter carries tokens, resolve the request's `pagePath`
+ *      through the public routing logic and resolve the tokens against that
+ *      page or entry, exactly as the page render did for page 1.
  *   3. Run the loop's source `fetch()` for the requested page slice.
  *   4. Render only the loop's children using a synthetic page context
  *      sharing the publisher's renderNode walker.
@@ -30,7 +31,10 @@ import {
   type ResolvedLoopRenderData,
 } from '@core/publisher'
 import { jsonResponse } from '../../http'
-import { readLoopProps } from '../../publish/loopPrefetch'
+import type { TemplateRenderDataContext } from '@core/templates/renderDataContext'
+import { buildPageFrame } from '@core/templates/contextFrames'
+import { filterHasTokens, readLoopProps, resolveFilterTokens } from '../../publish/loopPrefetch'
+import { loopFilterContextForUrl } from '../../publish/publicRouter'
 import { getPublishedLoopIndexForVersion } from '../../publish/publishedSnapshotCache'
 import { getPublishVersion } from '../../publish/publishState'
 import { LOOP_RUNTIME_JS } from '../../publish/loopRuntime'
@@ -101,6 +105,25 @@ export async function handleLoopRequest(
     return jsonResponse({ error: 'Contextual loops do not support infinite pagination' }, { status: 400 })
   }
 
+  // Resolve filter tokens against the page the visitor is on, exactly as the
+  // page render did for page 1. Passing the raw filters would send a literal
+  // `{currentEntry.slug}` to the query — matching nothing with `is`, and nearly
+  // the whole table with `isNot`. A path that resolves to no published page or
+  // entry leaves nothing to resolve against, which empties the loop.
+  let filterContext: TemplateRenderDataContext | undefined
+  if (filterHasTokens(props.filters)) {
+    const pagePath = url.searchParams.get('pagePath') ?? buildPageFrame(containingPage).permalink
+    let pageUrl: URL | null = null
+    try {
+      pageUrl = new URL(pagePath, url.origin)
+    } catch (_err) {
+      // A malformed path resolves to no page; the loop then renders empty.
+    }
+    if (pageUrl) filterContext = (await loopFilterContextForUrl(ctx.db, pageUrl)) ?? undefined
+  }
+  const { filters, unresolved } = resolveFilterTokens(props.filters, filterContext)
+  if (unresolved) return jsonResponse({ html: '', hasMore: false, pageNumber })
+
   // Fetch the requested page slice.
   const offset = props.offset + (pageNumber - 1) * props.pageSize
   let result
@@ -108,7 +131,7 @@ export async function handleLoopRequest(
     result = await source.fetch({
       db: ctx.db,
       site,
-      filters: props.filters,
+      filters,
       orderBy: props.orderBy || (source.orderByOptions[0]?.id ?? ''),
       direction: props.direction,
       limit: props.pageSize,

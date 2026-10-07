@@ -214,7 +214,7 @@ export async function renderBranchPreview(
     slug: segments.length > 0 ? decodeURIComponent(segments[segments.length - 1]!) : null,
     cookies: {},
   }
-  const loopData = await prefetchLoopData(merged, site, db, url, { branchId, request })
+  const loopData = await prefetchLoopData(merged, site, db, url, { branchId, request, templateContext })
   const mediaAssets = await prefetchMediaAssets(merged, site, registry, db, { templateContext, loopData })
   const rendered = publishPage(merged, site, registry, {
     templateContext,

@@ -22,7 +22,7 @@ import type { DbClient } from '../../../db/client'
 import type { DataRow, DataRowCells, PublishedDataRow } from '@core/data/schemas'
 import { readEntrySeoOverride } from '@core/data/cells'
 import { resolveTemplateChain, composeTemplateChain } from '@core/templates'
-import { buildRouteFrame } from '@core/templates/contextFrames'
+import { buildPageFrame, buildRouteFrame, buildSiteFrame } from '@core/templates/contextFrames'
 import { publishPage } from '@core/publisher'
 import { buildSiteCssBundle } from '../../../publish/siteCssBundle'
 import { buildPublishedSiteModuleJsMap } from '../../../publish/moduleJsBundle'
@@ -116,8 +116,18 @@ export async function handleRowPreview(
     entryStack: [publishedDataRowToLoopItem(draftPublishedRow)],
     route: buildRouteFrame(syntheticUrl.toString()),
   }
+  // Loop filters resolve their tokens before `publishPage` fills the page and
+  // site frames, so a `{page.title}` / `{site.name}` filter would see nothing.
+  // Build those two frames for the prefetch only; `publishPage` still gets the
+  // context above unchanged.
+  const prefetchContext = {
+    ...templateContext,
+    page: buildPageFrame(merged),
+    site: buildSiteFrame(snapshot.site),
+  }
   const loopData = await prefetchLoopData(merged, snapshot.site, db, undefined, {
     branchId: scope.branchId,
+    templateContext: prefetchContext,
   })
   const mediaAssets = await prefetchMediaAssets(merged, snapshot.site, registry, db, {
     templateContext,

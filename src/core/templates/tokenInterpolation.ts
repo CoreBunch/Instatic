@@ -242,10 +242,42 @@ export function walkFieldPath(frame: Record<string, unknown>, path: string): unk
  * prop value on a typical page.
  */
 export function interpolateTokens(input: string, context: TemplateRenderDataContext): string {
-  if (!containsTokens(input)) return input
-  const segments = parseTokenString(input)
-  if (segments.length === 0) return input
+  return interpolateTokensWithStatus(input, context).text
+}
 
+/**
+ * Result of {@link interpolateTokensWithStatus}.
+ */
+export interface TokenInterpolationResult {
+  /** The interpolated string — identical to what `interpolateTokens` returns. */
+  text: string
+  /**
+   * True when at least one token resolved to nothing AND carried no
+   * `|fallback`. A caller that must not act on a half-filled string — a loop
+   * filter, where `"course-"` would match rows the author never meant — reads
+   * this instead of testing the output for blankness: `{a}-{b}` with only `b`
+   * missing comes back non-blank but is just as wrong.
+   *
+   * A fallback that fires counts as RESOLVED: the author supplied the value.
+   * Malformed or unknown-source tokens emit verbatim as text (see
+   * `parseTokenString`) and are not tokens at all here, so they never set this.
+   */
+  unresolved: boolean
+}
+
+/**
+ * Interpolate like {@link interpolateTokens}, and report whether every token
+ * actually resolved.
+ */
+export function interpolateTokensWithStatus(
+  input: string,
+  context: TemplateRenderDataContext,
+): TokenInterpolationResult {
+  if (!containsTokens(input)) return { text: input, unresolved: false }
+  const segments = parseTokenString(input)
+  if (segments.length === 0) return { text: input, unresolved: false }
+
+  let unresolved = false
   let out = ''
   for (const seg of segments) {
     if (seg.kind === 'text') {
@@ -266,6 +298,7 @@ export function interpolateTokens(input: string, context: TemplateRenderDataCont
       (typeof rawValue === 'string' && rawValue.length === 0)
     if (missing) {
       if (seg.fallback !== undefined) out += seg.fallback
+      else unresolved = true
       continue
     }
     if (typeof rawValue === 'string') {
@@ -285,7 +318,8 @@ export function interpolateTokens(input: string, context: TemplateRenderDataCont
       //
       // Treated as missing, so an author-supplied fallback still applies.
       if (seg.fallback !== undefined) out += seg.fallback
+      else unresolved = true
     }
   }
-  return out
+  return { text: out, unresolved }
 }

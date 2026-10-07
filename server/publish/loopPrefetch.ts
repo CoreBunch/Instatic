@@ -21,6 +21,9 @@ import type {
 import { loopSourceRegistry } from '@core/loops/registry'
 import { firstImagePathFromMarkdown } from '@core/markdown/renderMarkdown'
 import { normalizeRouteBase } from '@core/templates/templateMatching'
+import { containsTokens, interpolateTokensWithStatus } from '@core/templates/tokenInterpolation'
+import { cellFilterUsesValue } from '@core/loops/cellFilter'
+import type { TemplateRenderDataContext } from '@core/templates/renderDataContext'
 import { publicDataUserFromParts } from '@core/data/publicDataUser'
 import type { PublishedDataRow } from '@core/data/schemas'
 import type { DbClient } from '../db/client'
@@ -210,6 +213,76 @@ function readPageNumber(url: URL | undefined, loopNodeId: string): number {
 }
 
 /**
+ * Render context used when a caller passed none. Tokens resolve against empty
+ * frames — which is exactly "nothing in scope", and lets an author's
+ * `|fallback` still fire instead of being short-circuited away.
+ */
+const EMPTY_RENDER_CONTEXT: TemplateRenderDataContext = { entryStack: [] }
+
+interface ResolvedFilters {
+  filters: Record<string, unknown>
+  /**
+   * True when a filter value the query will actually read carried a token that
+   * resolved to nothing. The loop must then render EMPTY, never unfiltered:
+   * `parseCellFilter` reads a blank value as "not configured yet" and lists the
+   * whole table, which on an entry route would spill every other row's data
+   * onto the page.
+   *
+   * Partial resolution counts too. `"course-{currentEntry.missing}"` comes back
+   * as `"course-"` — not blank, so a blankness test would let it through, and
+   * with `isNot` it would match nearly every row in the table.
+   */
+  unresolved: boolean
+}
+
+/**
+ * Does the loop's filter carry tokens that need a render context? Lets the
+ * pagination endpoint, which has to resolve the page or entry itself to build
+ * that context, skip the lookup for the common untokenised filter.
+ */
+export function filterHasTokens(filters: Record<string, unknown>): boolean {
+  const value = filters.cellValue
+  return typeof value === 'string' && containsTokens(value)
+}
+
+/**
+ * Resolve tokens in the filter values an author can write them into.
+ *
+ * A loop's `cellValue` is the only free-text filter input, and on an entry
+ * template it is the one value that has to change per rendered row: a course
+ * page's term list filters on THAT course, not on a name typed once into a
+ * template shared by every course. Every path that fetches a loop's rows
+ * resolves through here — the page-render prefetch below and the infinite-loop
+ * pagination endpoint (`server/handlers/cms/loop.ts`) — which keeps the sources
+ * and the SQL builder unaware that tokens exist.
+ */
+export function resolveFilterTokens(
+  filters: Record<string, unknown>,
+  context: TemplateRenderDataContext | undefined,
+): ResolvedFilters {
+  const value = filters.cellValue
+  if (typeof value !== 'string' || !containsTokens(value)) {
+    return { filters, unresolved: false }
+  }
+  const { text, unresolved } = interpolateTokensWithStatus(value, context ?? EMPTY_RENDER_CONTEXT)
+  // Two ways a tokenised filter ends up unusable, and both must empty the loop.
+  //
+  // A token that did not resolve is the obvious one. The other is a value that
+  // resolved to nothing but reports success: a token whose stored cell holds
+  // only whitespace, or an author-written empty fallback (`{a.b|}`). Neither
+  // counts as missing, so the per-token status stays clean while `text` trims
+  // to nothing — and `parseCellFilter` reads a blank `cellValue` as "not
+  // configured yet" and drops the condition, listing the whole table.
+  const blank = text.trim().length === 0
+  return {
+    filters: { ...filters, cellValue: text },
+    // An operator that ignores the value never reads what failed to resolve,
+    // so switching a filter to `isSet` must not empty the loop.
+    unresolved: (unresolved || blank) && cellFilterUsesValue(filters.cellOperator),
+  }
+}
+
+/**
  * Resolve one loop node by dispatching to its registered source and
  * applying the requested page slice.
  *
@@ -230,10 +303,14 @@ async function resolveOneLoop(
     request?: SourceRequestContext
     branchId?: string
     drafts?: boolean
+    templateContext?: TemplateRenderDataContext
   },
 ): Promise<ResolvedLoopData> {
   const props = readLoopProps(node)
   const pageNumber = props.pagination === 'infinite' ? readPageNumber(ctx.url, node.id) : 1
+
+  const { filters, unresolved } = resolveFilterTokens(props.filters, ctx.templateContext)
+  if (unresolved) return { items: [], totalItems: 0, pageNumber, hasMore: false }
 
   let limit = props.limit
   let offset = props.offset
@@ -245,7 +322,7 @@ async function resolveOneLoop(
   const fetchCtx: SourceFetchContext = {
     db: ctx.db,
     site: ctx.site,
-    filters: props.filters,
+    filters,
     orderBy: props.orderBy || (source.orderByOptions[0]?.id ?? ''),
     direction: props.direction,
     limit,
@@ -294,6 +371,12 @@ export async function prefetchLoopData(
     /** Branch whose rows loops read; absent means main (publishing, public routes). */
     branchId?: string
     drafts?: boolean
+    /**
+     * Render context the loop filters resolve their `{currentEntry.*}` tokens
+     * against. Absent for plain pages with no entry in scope; a tokenized
+     * filter then resolves to nothing and its loop renders empty.
+     */
+    templateContext?: TemplateRenderDataContext
   },
 ): Promise<LoopDataMap> {
   const nodes = collectLoopNodes(page, site, options?.rootNodeId)
@@ -316,6 +399,7 @@ export async function prefetchLoopData(
         request: options?.request,
         branchId: options?.branchId,
         drafts: options?.drafts,
+        templateContext: options?.templateContext,
       })
       return [node.id, data] as [string, ResolvedLoopData]
     }),
