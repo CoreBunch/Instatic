@@ -9,11 +9,14 @@ import {
 import { Button } from '@ui/components/Button'
 import { Dialog } from '@ui/components/Dialog'
 import { Input } from '@ui/components/Input'
+import { canonicalLanguage } from '@core/localization'
+import { getErrorMessage } from '@core/utils/errorMessage'
 import dialogStyles from '../SiteCreateDialog/SiteCreateDialog.module.css'
 
 export interface PageSettingsPayload {
   title: string
   slug: string
+  language?: string
 }
 
 interface PageSettingsDialogProps {
@@ -26,7 +29,7 @@ interface PageSettingsDialogProps {
 const FORM_ID = 'page-settings-form'
 
 /**
- * Title + slug editor for a regular page. The site explorer's inline rename
+ * Title, slug and language editor for a regular page. The site explorer's inline rename
  * only ever changes the title (`renamePage(id, title)` with no third arg
  * leaves the slug untouched) — this dialog is the one place a page's slug
  * can actually be changed after creation.
@@ -39,10 +42,12 @@ export function PageSettingsDialog({
 }: PageSettingsDialogProps) {
   const [title, setTitle] = useState(page.title)
   const [slug, setSlug] = useState(page.slug)
+  const [language, setLanguage] = useState(page.language ?? '')
   const isHome = isHomePage(page)
   const inputRef = useRef<HTMLInputElement>(null)
   const titleInputId = useId()
   const slugInputId = useId()
+  const languageInputId = useId()
 
   const trimmedTitle = title.trim()
   const normalizedSlug = normalizePageSlug(slug)
@@ -50,7 +55,13 @@ export function PageSettingsDialog({
     ? null
     : pageSlugError(normalizedSlug) || pageSlugDuplicateError(normalizedSlug, pages, page.id)
 
-  const saveDisabled = !trimmedTitle || Boolean(slugValidation)
+  let languageValidation: string | null = null
+  try {
+    if (language.trim()) canonicalLanguage(language)
+  } catch (error) {
+    languageValidation = getErrorMessage(error, 'Invalid language tag')
+  }
+  const saveDisabled = !trimmedTitle || Boolean(slugValidation) || Boolean(languageValidation)
 
   useEffect(() => {
     requestAnimationFrame(() => inputRef.current?.select())
@@ -59,7 +70,9 @@ export function PageSettingsDialog({
   function handleSubmit(event: FormEvent) {
     event.preventDefault()
     if (saveDisabled) return
-    onSave({ title: trimmedTitle, slug: isHome ? page.slug : normalizedSlug })
+    onSave({ title: trimmedTitle, slug: isHome ? page.slug : normalizedSlug,
+      ...(language.trim() ? { language: canonicalLanguage(language) } : {}),
+    })
   }
 
   return (
@@ -117,6 +130,13 @@ export function PageSettingsDialog({
           ) : slugValidation ? (
             <p role="alert" className={dialogStyles.errorText}>{slugValidation}</p>
           ) : null}
+        </div>
+        <div className={dialogStyles.field}>
+          <label htmlFor={languageInputId} className={dialogStyles.label}>Language</label>
+          <Input id={languageInputId} fieldSize="sm" value={language}
+            placeholder="Inherit site language" onChange={(event) => setLanguage(event.target.value)}
+            invalid={Boolean(languageValidation)} spellCheck={false} autoComplete="off" />
+          {languageValidation && <p role="alert" className={dialogStyles.errorText}>{languageValidation}</p>}
         </div>
       </form>
     </Dialog>

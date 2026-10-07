@@ -25,6 +25,7 @@ import type { IModuleRegistry } from '@core/module-engine'
 import type { TemplateRenderDataContext } from '@core/templates/dynamicBindings'
 import { buildPageFrame, buildSiteFrame, buildRouteFrame } from '@core/templates/contextFrames'
 import { interpolateTokens } from '@core/templates/tokenInterpolation'
+import { effectiveNodeBindings, resolveDynamicProps } from '@core/templates/dynamicBindings'
 import { classNamesForClassIds } from '@core/page-tree'
 import {
   normalizeHtmlAttributeName,
@@ -272,10 +273,11 @@ function composeTemplateContext(
 ): TemplateRenderDataContext {
   const provided = incoming ?? { entryStack: [] }
   const pageFrame = provided.page ?? buildPageFrame(page)
+  const siteFrame = buildSiteFrame(site, pageFrame.language)
   return {
     entryStack: provided.entryStack,
     page: pageFrame,
-    site: provided.site ?? buildSiteFrame(site),
+    site: { ...siteFrame, ...provided.site, language: siteFrame.language, translations: siteFrame.translations },
     route: provided.route ?? buildRouteFrame(pageFrame.permalink),
   }
 }
@@ -289,6 +291,7 @@ function composeTemplateContext(
 function computeBodyOpenTag(
   page: Page,
   site: SiteDocument,
+  context: TemplateRenderDataContext,
   mediaAssets?: Map<string, RenderResolvedMedia>,
 ): string {
   const rootNode = page.nodes[page.rootNodeId]
@@ -302,7 +305,8 @@ function computeBodyOpenTag(
   const styleAttr = rootNode.inlineStyles
     ? escapeHtml(bagToInlineStyle(rootNode.inlineStyles, { mediaAssets }))
     : ''
-  const htmlAttrs = bodyHtmlAttributes(rootNode.props.htmlAttributes)
+  const resolvedProps = resolveDynamicProps(rootNode.props, effectiveNodeBindings(rootNode), context)
+  const htmlAttrs = bodyHtmlAttributes(resolvedProps.htmlAttributes)
 
   const attrs =
     htmlAttrs +
@@ -376,7 +380,7 @@ function buildDocumentMetaTags(
     ),
     metaDesc,
     favicon,
-    langAttr: escapeHtml(settings.language ?? 'en'),
+    langAttr: escapeHtml(context.site?.language ?? page.language ?? settings.language ?? 'en'),
   }
 }
 
@@ -626,7 +630,7 @@ export function publishPage(
     importmapTag: runtime.importmapTag,
     headRuntimeScripts: runtime.headRuntimeScripts,
     holeRuntimeScript: runtime.holeRuntimeScript,
-    bodyOpenTag: computeBodyOpenTag(page, site, options.mediaAssets),
+    bodyOpenTag: computeBodyOpenTag(page, site, templateContext, options.mediaAssets),
     bodyHtml,
     bodyEndRuntimeScripts: runtime.bodyEndRuntimeScripts,
     loopRuntimeScript: runtime.loopRuntimeScript,

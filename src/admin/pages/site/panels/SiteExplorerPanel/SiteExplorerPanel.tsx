@@ -102,6 +102,7 @@ export function SiteExplorerPanel({
   const setActiveDocument = useEditorStore((s) => s.setActiveDocument)
   const addPage = useEditorStore((s) => s.addPage)
   const renamePage = useEditorStore((s) => s.renamePage)
+  const setPageLanguage = useEditorStore((s) => s.setPageLanguage)
   const deletePage = useEditorStore((s) => s.deletePage)
   const convertPageToTemplate = useEditorStore((s) => s.convertPageToTemplate)
   const convertTemplateToPage = useEditorStore((s) => s.convertTemplateToPage)
@@ -161,6 +162,7 @@ export function SiteExplorerPanel({
   const { openTemplateSettings, openPageSettings, dialogs: pageSettingsDialogs } = usePageSettingsDialogs({
     pages,
     renamePage,
+    setPageLanguage,
     convertPageToTemplate,
     openPageInCanvas,
   })

@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'bun:test'
+import { mkdtemp, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import type { SiteDocument, SiteShell } from '@core/page-tree'
+import { LocalizationError } from '@core/localization'
 import { normalizeSiteRuntimeConfig } from '@core/site-runtime'
 import type { DbResult } from '../../../server/db'
 import { saveDraftSite } from '../../../server/repositories/site'
@@ -12,6 +16,8 @@ import { createDataRow, saveDataRowDraft } from '../../../server/repositories/da
 import { pageToCells } from '../../../src/core/data/pageFromRow'
 import { createFakeDb } from './dbTestFake'
 import { MAIN_SCOPE } from '../../../server/branches/scope'
+import { getPublishVersion } from '../../../server/publish/publishState'
+import { getActiveSlot, prepareInactiveSlot, readArtefact, swapSlot, writeArtefact } from '../../../server/publish/staticArtefact'
 
 function createPublishFakeDb() {
   const state = {
@@ -280,6 +286,40 @@ async function seedSiteAndPage(
 }
 
 describe('CMS publishing', () => {
+  for (const invalid of ['catalogue', 'key', 'pageLanguage'] as const) {
+    it(`leaves snapshots, publish version and the active artefact intact for an invalid language ${invalid}`, async () => {
+      const { state, db } = createPublishFakeDb()
+      await seedSiteAndPage(db, 'Previous published content')
+      await publishDraftSite(db, 'admin_1')
+      const snapshots = structuredClone(state.siteSnapshots)
+      const versions = structuredClone(state.dataRowVersions)
+      const publishedRow = structuredClone(state.dataRows[0])
+      const uploadsDir = await mkdtemp(join(tmpdir(), 'language-publish-'))
+      try {
+        const { slot, slotDir } = await prepareInactiveSlot(uploadsDir)
+        await writeArtefact(slotDir, '/', '<html>Previous published content</html>')
+        await swapSlot(uploadsDir, slot)
+        const publishVersion = getPublishVersion()
+        const shell = makeSiteShell({
+          settings: { shortcuts: {}, language: 'it', localization: { catalogues: [{ language: 'it', fileId: 'it' }] } },
+          files: [{ id: 'it', path: 'locales/it.json', type: 'config', content: invalid === 'catalogue' ? '{' : JSON.stringify({ language: 'it', messages: { label: 'Contatti' } }), createdAt: 0, updatedAt: 0 }],
+        })
+        await saveDraftSite(db, MAIN_SCOPE, shell)
+        const page = { ...makeHomePage(invalid === 'key' ? '{site.translations.missing}' : '{site.translations.label}'), ...(invalid === 'pageLanguage' ? { language: 'fr' } : {}) }
+        await saveDataRowDraft(db, MAIN_SCOPE, page.id, { cells: pageToCells(page), slug: page.slug }, 'admin_1')
+        await expect(publishDraftSite(db, 'admin_1', uploadsDir)).rejects.toBeInstanceOf(LocalizationError)
+        expect(state.siteSnapshots).toEqual(snapshots)
+        expect(state.dataRowVersions).toEqual(versions)
+        expect(state.dataRows[0].active_version_id).toBe(publishedRow.active_version_id)
+        expect(getPublishVersion()).toBe(publishVersion)
+        expect(await getActiveSlot(uploadsDir)).toBe(slot)
+        expect(await readArtefact(uploadsDir, '/')).toBe('<html>Previous published content</html>')
+      } finally {
+        await rm(uploadsDir, { recursive: true, force: true })
+      }
+    })
+  }
+
   it('publishes draft pages as immutable active snapshots', async () => {
     const { state, db } = createPublishFakeDb()
     await seedSiteAndPage(db, 'Published headline')

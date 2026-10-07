@@ -129,6 +129,7 @@ export function duplicatePage(
     slug: uniquePageSlug(slug ?? title, site.pages),
     rootNodeId: newRootId,
     nodes: newNodes,
+    ...(source.language ? { language: source.language } : {}),
   }
   site.pages.push(newPage)
   return newPage
