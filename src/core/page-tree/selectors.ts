@@ -178,38 +178,5 @@ export function resolveProps(
   return { ...node.props, ...filtered }
 }
 
-// ---------------------------------------------------------------------------
-// Property condition evaluation
-// ---------------------------------------------------------------------------
-
-import type { PropertyCondition, PropertySchema } from '@core/module-engine-schema'
-
-/**
- * Evaluate a declarative PropertyCondition against a props object.
- * Used by the Properties Panel to show/hide controls.
- * Constraint #212: conditions are declarative objects, never functions.
- */
-export function evaluateCondition(
-  condition: PropertyCondition,
-  props: Record<string, unknown>
-): boolean {
-  if ('and' in condition) {
-    return condition.and.every((c) => evaluateCondition(c, props))
-  }
-  if ('or' in condition) {
-    return condition.or.some((c) => evaluateCondition(c, props))
-  }
-  if ('eq' in condition) {
-    return props[condition.field] === condition.eq
-  }
-  if ('notEq' in condition) {
-    return props[condition.field] !== condition.notEq
-  }
-  if ('in' in condition) {
-    return condition.in.includes(props[condition.field])
-  }
-  if ('notIn' in condition) {
-    return !condition.notIn.includes(props[condition.field])
-  }
-  return true
-}
+import type { PropertySchema } from '@core/module-engine-schema'
+export { evaluateCondition } from '@core/module-engine-schema'

@@ -25,8 +25,10 @@ import type { PageNode } from '@core/page-tree'
 import { isPageRef, resolvePageRef } from '@core/page-tree'
 import type { AnyModuleDefinition } from '@core/module-engine'
 import { validateNodeProps } from '@core/module-engine'
+import { resolveInitialFormValues, resolveFormRenderProps } from '@core/forms'
+import { buildTemplateRenderContext } from '@core/templates'
 import { resolveProps } from '@core/page-tree'
-import { resolveDynamicProps, effectiveNodeBindings } from '@core/templates/dynamicBindings'
+import { resolveDynamicProps, effectiveNodeBindings } from '@core/templates'
 import { sanitizeModuleCSS } from './cssCollector'
 import { escapeHtml } from './utils'
 import { escapeProps } from './escapeProps'
@@ -133,8 +135,6 @@ function renderStandardNode(
   config: RenderConfig,
   acc: RenderAccumulators,
 ): string {
-  const renderedChildren = (node.children ?? []).map((childId) => renderNode(childId, config, acc))
-
   // Resolve effective props (base + breakpoint shallow-merge for
   // breakpointOverridable schema keys only — content props always publish
   // their base value because HTML is a single document) and apply dynamic
@@ -154,10 +154,16 @@ function renderStandardNode(
   // Coerce/default-fill authored props against the module's TypeBox schema
   // (soft boundary — never throws; unknown injected keys survive the merge).
   const validatedProps = validateNodeProps(def, resolvedProps)
+  const formContext = node.moduleId === 'base.form'
+    ? { values: resolveInitialFormValues(config.site, config.page, node.id, config.templateContext ?? buildTemplateRenderContext(config.page, config.site, undefined)), active: true }
+    : config.formContext
+  const prepared = resolveFormRenderProps(node.moduleId, validatedProps, formContext)
+  const childConfig = prepared.context === config.formContext ? config : { ...config, formContext: prepared.context }
+  const renderedChildren = (node.children ?? []).map((childId) => renderNode(childId, childConfig, acc))
 
   // Escape all string props (Constraint #211) before calling render(), then
   // attach derived assets that survive the escape boundary unchanged.
-  const safeProps = escapeProps(validatedProps, def.schema)
+  const safeProps = escapeProps(prepared.props, def.schema)
   attachResolvedMediaByKey(safeProps, def, validatedProps, config.mediaAssets)
   attachResolvedAutoSizes(safeProps, def, node, config)
 

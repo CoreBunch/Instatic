@@ -10,7 +10,7 @@ This doc shows the type, the mutation API, and how to correctly route mutations 
 
 - Every tree of nodes in the CMS uses the shape `NodeTree<TNode> = { nodes: Record<string, TNode>, rootNodeId: string }`. **There is no other tree primitive.**
 - The TypeBox schema and the generic type live in **one file**: `src/core/page-tree/treeSchema.ts`.
-- A `Page` **is** a `NodeTree<PageNode>` (it adds metadata fields on top).
+- A `Page` **is** a `NodeTree<PageNode>` (it adds metadata fields on top). `Page.seo` is typed authored document metadata; its canonical schema is `src/core/page-tree/pageSeo.ts`, with normal row cells and page-document co-editing. See [publisher metadata](../features/publisher.md#authored-page-metadata).
 - A `VisualComponent` **has** a `NodeTree` exposed as `vc.tree`.
 - A slot fill is the children subtree of a `base.slot-instance` node — it lives directly in the consumer page tree, no separate prop.
 - All mutations live in `src/core/page-tree/mutations.ts` and operate **generically** on any `NodeTree<TNode>`. They know nothing about page vs. VC.

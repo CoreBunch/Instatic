@@ -15,9 +15,24 @@ describe('base.form module-JS emission', () => {
   })
 
   it('runtime binds via document-level delegation and reads pageId per form', () => {
-    expect(FORM_RUNTIME_JS).toContain("document.addEventListener('submit'")
-    expect(FORM_RUNTIME_JS).toContain('data-instatic-page-id')
+    expect(FORM_RUNTIME_JS).toContain('addEventListener("submit"')
+    expect(FORM_RUNTIME_JS).toContain('page-id')
     expect(FORM_RUNTIME_JS).toContain('/_instatic/form/challenge')
     expect(FORM_RUNTIME_JS).toContain('/_instatic/form/submit')
+  })
+})
+
+describe('declared form resources', () => {
+  it('emits one root runtime for request/enhanced HTML transports with precise resource declarations', () => {
+    const request = FormModule.render({ ...FormModule.defaults, mode: 'request', action: 'https://recipient.example/submit' }, [])
+    expect(request.js).toBe(FORM_RUNTIME_JS)
+    expect(request.cspSources).toEqual([
+      { directive: 'connect-src', sources: ['https://recipient.example'] },
+      { directive: 'form-action', sources: ['https://recipient.example'] },
+    ])
+    const html = FormModule.render({ ...FormModule.defaults, mode: 'custom', action: 'https://recipient.example/submit', enhance: true }, [])
+    expect(html.js).toBe(FORM_RUNTIME_JS)
+    expect(html.cspSources).toEqual([{ directive: 'form-action', sources: ['https://recipient.example'] }])
+    expect(FormModule.render(FormModule.defaults, []).cspSources).toBeUndefined()
   })
 })

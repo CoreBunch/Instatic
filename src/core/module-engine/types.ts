@@ -50,10 +50,9 @@ interface ModuleEditorRuntime {
 
 /**
  * The safe set of CSP directives a module may declare source requirements for.
- * Scoped to content-loading directives only — modules cannot request
- * 'script-src' relaxation through this channel (that would open arbitrary
- * script execution; plugin frontend assets go through the server injection
- * pipeline instead).
+ * First-party modules declare only the origins actually used by their
+ * authored configuration. Plugin frontend assets use the server injection
+ * pipeline and permission checks.
  */
 export type CspDirective =
   | 'frame-src'
@@ -63,6 +62,7 @@ export type CspDirective =
   | 'connect-src'
   | 'style-src'
   | 'font-src'
+  | 'form-action'
 
 /**
  * A single CSP source requirement declared by a module's render() output.

@@ -29,6 +29,8 @@
 
 import type { DynamicPropBinding } from '@core/page-tree'
 import type { TemplateRenderDataContext } from './renderDataContext'
+import { resolveTranslation } from '@core/localization'
+import { readPageTranslationField } from './pageTranslations'
 
 // ---------------------------------------------------------------------------
 // Source identifiers — must match DynamicBindingSourceSchema
@@ -228,6 +230,22 @@ export function walkFieldPath(frame: Record<string, unknown>, path: string): unk
   return cursor
 }
 
+/** Shared field resolution keeps catalogue diagnostics identical for both binding forms. */
+export function readFrameField(
+  source: DynamicPropBinding['source'],
+  field: string,
+  context: TemplateRenderDataContext,
+): unknown {
+  if (source === 'page' && field.startsWith('translations.')) {
+    return readPageTranslationField(context.page?.translations, field.slice('translations.'.length))
+  }
+  if (source === 'site' && field.startsWith('translations.')) {
+    return resolveTranslation(context.site?.translations, field.slice('translations.'.length), context.site?.language ?? 'en')
+  }
+  const frame = readFrame(source, context)
+  return frame ? walkFieldPath(frame, field) : undefined
+}
+
 // ---------------------------------------------------------------------------
 // Interpolation
 // ---------------------------------------------------------------------------
@@ -253,7 +271,7 @@ export function interpolateTokens(input: string, context: TemplateRenderDataCont
       continue
     }
     const frame = readFrame(seg.source, context)
-    const rawValue = frame ? walkFieldPath(frame, seg.field) : undefined
+    const rawValue = readFrameField(seg.source, seg.field, context)
     // A token resolves to its fallback (if any) when:
     //   - the frame is absent
     //   - the field path is undefined / null

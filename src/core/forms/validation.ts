@@ -3,6 +3,7 @@ import type {
   DataTable,
 } from '@core/data/schemas'
 import { isValidEmail } from '../utils/email'
+import { evaluateCondition } from '@core/module-engine-schema'
 import type {
   FormControlBinding,
   FormSubmissionLimits,
@@ -29,9 +30,15 @@ export function validateFormSubmission(input: {
   const maxStringLength = limits.maxStringLength ?? DEFAULT_MAX_STRING_LENGTH
 
   const controlByName = new Map<string, FormControlBinding>()
+  const activeControls = input.controls.filter((control) => !control.disabled && (control.conditions ?? []).every((condition) => evaluateCondition(condition, input.values)))
   const fieldById = new Map(input.table.fields.map((field) => [field.id, field]))
-  for (const control of input.controls) {
-    controlByName.set(control.name ?? control.fieldId, control)
+  for (const original of activeControls) {
+    const control = original.requiredWhen ? { ...original, required: evaluateCondition(original.requiredWhen, input.values) } : original
+    const name = control.name ?? control.fieldId
+    const previous = controlByName.get(name)
+    controlByName.set(name, previous?.inputType === 'radio' && control.inputType === 'radio'
+      ? { ...control, required: previous.required || control.required, options: [...(previous.options ?? []), ...(control.options ?? [])] }
+      : control)
   }
 
   const entries = Object.entries(input.values)
@@ -64,6 +71,14 @@ export function validateFormSubmission(input: {
       continue
     }
 
+    if ((control.inputType === 'radio' && typeof rawValue !== 'string') || (control.options && (Array.isArray(rawValue) ? rawValue : [rawValue]).some((value) => typeof value !== 'string' || !control.options!.includes(value)))) {
+      errors.push({ fieldId: control.fieldId, code: 'invalid_option', message: 'Select an offered option.' })
+      continue
+    }
+    if (control.valueSourceField && rawValue !== input.values[control.valueSourceField]) {
+      errors.push({ fieldId: control.fieldId, code: 'invalid_value', message: 'Invalid synchronized value.' })
+      continue
+    }
     const coerced = coerceFieldValue(field, rawValue)
     if (!coerced.ok) {
       errors.push({ fieldId: field.id, code: coerced.code, message: coerced.message })
@@ -79,7 +94,7 @@ export function validateFormSubmission(input: {
     cells[field.id] = coerced.value
   }
 
-  for (const control of input.controls) {
+  for (const control of controlByName.values()) {
     const field = fieldById.get(control.fieldId)
     if (!field) continue
     const name = control.name ?? control.fieldId

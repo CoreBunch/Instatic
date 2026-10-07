@@ -49,6 +49,11 @@ import {
 } from './helpers'
 import styles from './DataBindingPicker.module.css'
 import { getErrorMessage } from '@core/utils/errorMessage'
+import { translationKeys } from '@core/localization'
+import { PageTranslationsSchema } from '@core/templates'
+import { TranslationMessagesSchema } from '@core/localization-schema'
+import { compiledCheck } from '@core/utils/typeboxCompiler'
+import { walkFieldPath } from '@core/templates/tokenInterpolation'
 
 // ---------------------------------------------------------------------------
 // Icons for loop / system source field formats
@@ -330,6 +335,36 @@ export function DataBindingPicker({
       result.push({ label: source.label, entries })
     }
 
+    const pagePreview = systemPreviewValues?.page
+    const pageTranslations = pagePreview && 'translations' in pagePreview ? pagePreview.translations : undefined
+    if (compiledCheck(PageTranslationsSchema, pageTranslations)) {
+      result.push({
+        label: 'Page translations',
+        entries: Object.keys(pageTranslations).flatMap((language) => [
+          { kind: 'system' as const, source: 'page' as const,
+            field: { id: `translations.${language}.permalink`, label: `${language} — URL`, format: 'url' as const } },
+          { kind: 'system' as const, source: 'page' as const,
+            field: { id: `translations.${language}.language`, label: `${language} — Language` } },
+          { kind: 'system' as const, source: 'page' as const,
+            field: { id: `translations.${language}.title`, label: `${language} — Title` } },
+          { kind: 'system' as const, source: 'page' as const,
+            field: { id: `translations.${language}.ariaCurrent`, label: `${language} — Current page attribute` } },
+        ]),
+      })
+    }
+    const sitePreview = systemPreviewValues?.site
+    const messages = sitePreview && 'translations' in sitePreview ? sitePreview.translations : undefined
+    if (compiledCheck(TranslationMessagesSchema, messages)) {
+      result.push({
+        label: 'Translations',
+        entries: translationKeys(messages).map((key) => ({
+          kind: 'system' as const,
+          source: 'site' as const,
+          field: { id: `translations.${key}`, label: key },
+        })),
+      })
+    }
+
     return result
       .map((group) => ({
         ...group,
@@ -381,7 +416,7 @@ export function DataBindingPicker({
     if (entry.kind === 'system') {
       const frame = systemPreviewValues?.[entry.source]
       if (!frame) return undefined
-      return (frame as Record<string, unknown>)[entry.field.id]
+      return walkFieldPath(frame as Record<string, unknown>, entry.field.id)
     }
     return currentEntryFields?.[entry.field.id]
   }

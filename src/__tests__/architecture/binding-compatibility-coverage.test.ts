@@ -35,6 +35,7 @@ import { BINDING_COMPATIBILITY } from '@admin/shared/DataBindingPicker/bindingCo
  * `src/__tests__/property-controls/bindingCompatibility.test.ts`).
  */
 const ALL_CONTROL_KINDS = [
+  'condition',
   'text', 'textarea', 'number', 'color', 'select', 'toggle',
   'image', 'media', 'url', 'dataTable', 'richtext', 'svg', 'group',
 ] as const

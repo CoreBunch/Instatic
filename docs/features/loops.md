@@ -304,7 +304,7 @@ entry stack.
 `server/publish/loopPrefetch.ts`:
 
 ```ts
-// collectLoopNodes uses walkRenderTree (server/publish/renderTreeWalk.ts) so
+// collectLoopNodes uses walkRenderTree (@core/visualComponents) so
 // base.loop nodes inside Visual Component definition trees are included —
 // a loop inside a VC body is fetched and rendered with real data.
 async function prefetchLoops(page, site, db) {
