@@ -18,6 +18,7 @@ import { isPostTypeBuiltInFieldId } from '@core/data/fields'
 
 export const FIELD_TYPE_LABELS: Record<DataFieldType, string> = {
   text: 'Text',
+  localizedText: 'Localized text',
   longText: 'Long text',
   richText: 'Rich text',
   number: 'Number',

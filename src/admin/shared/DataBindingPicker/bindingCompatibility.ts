@@ -38,12 +38,13 @@ type DynamicBindingMode = 'token' | 'structured'
  *   compat array. The list is exhaustive; new structural types belong here.
  */
 export const BINDING_COMPATIBILITY: Record<PropertyControlKind, readonly DataFieldType[]> = {
+  condition: [],
   // text accepts every scalar type that can be meaningfully rendered as a string.
   // multiSelect binds as a comma-joined list of selected option labels.
   // relation binds as the related row's primary-field display label.
-  text:     ['text', 'longText', 'richText', 'url', 'email', 'select', 'multiSelect', 'relation', 'number', 'boolean', 'date', 'dateTime'],
-  textarea: ['text', 'longText', 'richText'],
-  richtext: ['richText', 'longText', 'text'],
+  text:     ['text', 'localizedText', 'longText', 'richText', 'url', 'email', 'select', 'multiSelect', 'relation', 'number', 'boolean', 'date', 'dateTime'],
+  textarea: ['text', 'localizedText', 'longText', 'richText'],
+  richtext: ['richText', 'longText', 'text', 'localizedText'],
   // svg holds raw inline-SVG markup — edited in the code editor, never wired
   // to a data field.
   svg:      [],

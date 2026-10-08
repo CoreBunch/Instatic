@@ -36,6 +36,10 @@ async function fetchedUrlFor(endpointAttr: string | null): Promise<string> {
     <div data-instatic-loop="loop-1"
          data-instatic-loop-mode="infinite"
          data-instatic-loop-page="1"
+         data-instatic-loop-version="0"
+         data-instatic-loop-load-more-label="Load more"
+         data-instatic-loop-loading-label="Loading…"
+         data-instatic-loop-retry-label="Try again"
          data-instatic-loop-has-more="true"></div>
   `
 
@@ -44,7 +48,7 @@ async function fetchedUrlFor(endpointAttr: string | null): Promise<string> {
     requested = typeof input === 'string' ? input : String(input)
     // The shape the runtime actually consumes: it parses JSON and reads
     // `html` / `hasMore`. Returning an empty body made it throw mid-handler.
-    return new Response(JSON.stringify({ html: '', hasMore: false }), {
+    return new Response(JSON.stringify({ html: '', hasMore: false, pageNumber: 2 }), {
       status: 200,
       headers: { 'content-type': 'application/json' },
     })

@@ -93,6 +93,8 @@ render: (props: TProps, renderedChildren: string[]) => RenderOutput
 
 ### `props` is trusted (after escaping)
 
+`parseModuleProps` is the common hard TypeBox boundary after binding resolution. It fills missing fields from schema defaults and performs the normal coercions, but raises `ModulePropsValidationError` with its cause and page/node/schema path if parsing fails. It never replaces invalid authored props with all module defaults.
+
 By the time `render` is called:
 
 - String props have been HTML-escaped.

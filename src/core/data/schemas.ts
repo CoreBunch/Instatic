@@ -24,6 +24,7 @@
  */
 
 import { Type, type Static } from '@core/utils/typeboxHelpers'
+export { DataLocalizationSchema, type DataLocalization } from './localizationSchema'
 
 // ---------------------------------------------------------------------------
 // DataRowStatus
@@ -73,6 +74,7 @@ export type DataTableKind = Static<typeof DataTableKindSchema>
 // Cell value shapes (what `cells_json[fieldId]` holds):
 //
 //   text / longText / richText / url / email  → string | null
+//   localizedText                              → { key: string } | null
 //   number                                    → number | null
 //   boolean                                   → boolean | null
 //   date / dateTime                           → ISO string | null
@@ -99,6 +101,11 @@ const TextFieldSchema = Type.Object({
   defaultValue: Type.Optional(Type.String()),
   maxLength: Type.Optional(Type.Number()),
   placeholder: Type.Optional(Type.String()),
+})
+
+const LocalizedTextFieldSchema = Type.Object({
+  type: Type.Literal('localizedText'),
+  ...FieldCommonProps,
 })
 
 const LongTextFieldSchema = Type.Object({
@@ -212,6 +219,7 @@ const RelationFieldSchema = Type.Object({
  */
 export const RepeaterItemFieldSchema = Type.Union([
   TextFieldSchema,
+  LocalizedTextFieldSchema,
   LongTextFieldSchema,
   RichTextFieldSchema,
   NumberFieldSchema,
@@ -262,6 +270,7 @@ const FieldSchemaFieldSchema = Type.Object({
 
 export const DataFieldSchema = Type.Union([
   TextFieldSchema,
+  LocalizedTextFieldSchema,
   LongTextFieldSchema,
   RichTextFieldSchema,
   NumberFieldSchema,
@@ -291,6 +300,7 @@ export type DataField = Static<typeof DataFieldSchema>
  */
 export const DATA_FIELD_TYPES = [
   'text',
+  'localizedText',
   'longText',
   'richText',
   'number',
@@ -489,6 +499,7 @@ const PublishedDataRowSchema = Type.Object({
   tableId: Type.String(),
   tableSlug: Type.String(),
   tableKind: DataTableKindSchema,
+  tableFields: Type.Array(DataFieldSchema),
   tableRouteBase: Type.String(),
   versionNumber: Type.Number(),
   cells: DataRowCellsSchema,
@@ -608,7 +619,7 @@ const DataMetaRepeaterItemFieldSchema = Type.Object({
   id: Type.String(),
   label: Type.String(),
   type: Type.Union([
-    Type.Literal('text'), Type.Literal('longText'), Type.Literal('richText'),
+    Type.Literal('text'), Type.Literal('localizedText'), Type.Literal('longText'), Type.Literal('richText'),
     Type.Literal('number'), Type.Literal('boolean'),
     Type.Literal('date'), Type.Literal('dateTime'),
     Type.Literal('select'), Type.Literal('multiSelect'),
@@ -628,7 +639,7 @@ const DataMetaFieldSchema = Type.Object({
   // NOTE: pageTree and fieldSchema are intentionally excluded — they are
   // document-level types not surfaced in the instatic binding catalog.
   type: Type.Union([
-    Type.Literal('text'), Type.Literal('longText'), Type.Literal('richText'),
+    Type.Literal('text'), Type.Literal('localizedText'), Type.Literal('longText'), Type.Literal('richText'),
     Type.Literal('number'), Type.Literal('boolean'),
     Type.Literal('date'), Type.Literal('dateTime'),
     Type.Literal('select'), Type.Literal('multiSelect'),

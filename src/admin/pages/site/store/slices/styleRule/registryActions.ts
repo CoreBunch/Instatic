@@ -5,15 +5,21 @@
  */
 
 import { nanoid } from 'nanoid'
+import { Value } from '@core/utils/typeboxHelpers'
 import type { StyleRule } from '@core/page-tree'
-import { classKindSelector } from '@core/page-tree'
+import {
+  classKindSelector,
+  replaceCssSelectorClassName,
+  selectorBindingClassName,
+} from '@core/page-tree'
 import { isGeneratedClassLocked, isUserVisibleClass } from '@core/page-tree'
 import { renameStyleRule } from '../../styleRuleRename'
 import type { SiteSliceHelpers } from '../site/types'
 import type { StyleRuleSlice } from './types'
 import {
   nextRuleOrder,
-  cloneContextStyles,
+  ruleOrderAfter,
+  removeStyleRuleReferences,
   uniqueClassCopyName,
   findNodeWithClassIds,
   mutateNodeClassIds,
@@ -44,7 +50,11 @@ export function createRegistryActions({
 
       const existingId = node.classIds?.find((id) => {
         const cls = site.styleRules[id]
-        return cls?.scope?.type === 'node' && cls.scope.nodeId === nodeId && cls.scope.role === 'module-style'
+        return (
+          cls?.scope?.type === 'node' &&
+          cls.scope.nodeId === nodeId &&
+          cls.scope.role === 'module-style'
+        )
       })
       if (existingId && site.styleRules[existingId]) {
         return site.styleRules[existingId]
@@ -106,43 +116,53 @@ export function createRegistryActions({
 
       const now = Date.now()
       const copyName = uniqueClassCopyName(site.styleRules, cls.name)
-      // Duplicating preserves the source rule's kind and selector pattern. For
-      // class-kind rules the selector is rebuilt from the new (unique) name; for
-      // ambient rules the selector text is copied verbatim so the rule still
-      // matches the same elements after duplication.
-      const kind = cls.kind ?? 'class'
-      const selector = kind === 'class' ? classKindSelector(copyName) : (cls.selector || classKindSelector(copyName))
+      const kind = cls.kind
+      const escapedName = classKindSelector(copyName).slice(1)
+      const selector =
+        kind === 'class'
+          ? replaceCssSelectorClassName(cls.selector, cls.name, escapedName)
+          : cls.selector
       const newClass: StyleRule = {
+        ...Value.Clone(cls),
         id: nanoid(),
         name: copyName,
         kind,
         selector,
-        order: nextRuleOrder(site.styleRules),
-        description: cls.description,
-        styles: { ...cls.styles },
-        ...(cls.stylePriorities
-          ? { stylePriorities: { ...cls.stylePriorities } }
-          : {}),
-        // Per-context overrides reference the shared site-level conditions
-        // registry by id, so cloning the bags (independent copies) is enough —
-        // no per-rule condition definitions to clone.
-        contextStyles: cloneContextStyles(cls.contextStyles),
-        ...(cls.contextStylePriorities
-          ? {
-              contextStylePriorities: Object.fromEntries(
-                Object.entries(cls.contextStylePriorities).map(([contextId, priorities]) => [
-                  contextId,
-                  { ...priorities },
-                ]),
-              ),
-            }
-          : {}),
-        tags: cls.tags ? [...cls.tags] : undefined,
+        order: ruleOrderAfter(site.styleRules, cls),
         createdAt: now,
         updatedAt: now,
       }
+      // A user-created copy is independent from import replacement and
+      // framework regeneration, while its native CSS metadata is retained.
+      delete newClass.origin
+      delete newClass.generated
 
       mutateSite((site) => {
+        if (kind === 'class') {
+          // A class may span several authored fragments. Copy every rule with
+          // that styled subject at its source position, including its nested
+          // contexts, so anonymous layer occurrences remain one block.
+          const fragments = Object.values(site.styleRules).filter(
+            (rule) =>
+              rule.id !== cls.id &&
+              !rule.atRule &&
+              !rule.rawCss &&
+              selectorBindingClassName(rule.selector) === cls.name,
+          )
+          for (const fragment of fragments) {
+            const copy = Value.Clone(fragment)
+            copy.id = nanoid()
+            copy.kind = 'ambient'
+            copy.selector = replaceCssSelectorClassName(fragment.selector, cls.name, escapedName)
+            copy.name = fragment.name === cls.name ? copyName : copy.selector
+            copy.order = ruleOrderAfter(site.styleRules, fragment)
+            copy.createdAt = now
+            copy.updatedAt = now
+            delete copy.origin
+            delete copy.generated
+            site.styleRules[copy.id] = copy
+          }
+        }
         site.styleRules[newClass.id] = newClass
         return true
       })
@@ -184,37 +204,9 @@ export function createRegistryActions({
           // Remove from registry
           delete site.styleRules[classId]
           mutated = true
-          // Remove from every node on every page AND every Visual Component
-          // tree — class IDs are global, so a deleted class must disappear
-          // from both surfaces or a VC keeps a dangling reference.
-          for (const page of site.pages) {
-            for (const node of Object.values(page.nodes)) {
-              if (node.classIds && node.classIds.includes(classId)) {
-                node.classIds = node.classIds.filter((id) => id !== classId)
-              }
-            }
-          }
-          for (const vc of site.visualComponents) {
-            for (const node of Object.values(vc.tree.nodes)) {
-              if (node.classIds && node.classIds.includes(classId)) {
-                node.classIds = node.classIds.filter((id) => id !== classId)
-              }
-            }
-          }
         }
         if (!mutated) return false
-        // Clear active / selected references that pointed at a deleted class.
-        if (state.activeClassId && targets.has(state.activeClassId)) {
-          state.activeClassId = null
-        }
-        if (state.selectedSelectorClassId && targets.has(state.selectedSelectorClassId)) {
-          state.selectedSelectorClassId = null
-        }
-        if (state.selectedSelectorClassIds.length > 0) {
-          state.selectedSelectorClassIds = state.selectedSelectorClassIds.filter(
-            (id) => !targets.has(id),
-          )
-        }
+        removeStyleRuleReferences(state, site, targets)
         return true
       })
     },

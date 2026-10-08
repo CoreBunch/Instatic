@@ -47,7 +47,7 @@ function ConflictStrip({ change, resolution, canResolve, onResolve }: Omit<Revie
         <SegmentedControl
           value={resolution}
           size="xs"
-          aria-label={`Resolve ${change.label}`}
+          aria-label={`Resolve ${change.label ?? 'localized row'}`}
           options={[
             { value: 'into', label: 'Keep main' },
             { value: 'from', label: 'Take branch' },
@@ -100,7 +100,7 @@ export function ReviewChangeCard({ branchId, change, resolution, canResolve, onR
   const header = (
     <div className={styles.cardHead}>
       <TagPill label={changeKindLabel(change)} size="xs" />
-      <strong className={detail.kind === 'file' ? styles.mono : undefined}>{change.label}</strong>
+      <strong className={detail.kind === 'file' ? styles.mono : undefined}>{change.label ?? 'Choose content language'}</strong>
       {detail.kind === 'file' && detail.pathBefore && (
         <span className={styles.cardPath}>was {detail.pathBefore}</span>
       )}
@@ -111,7 +111,9 @@ export function ReviewChangeCard({ branchId, change, resolution, canResolve, onR
   )
 
   let body
-  if (detail.kind === 'row' && isPageChange(change)) {
+  if (change.label === null) {
+    body = <p className={styles.cardEmpty} role="status">Choose an explicit content language to read this row.</p>
+  } else if (detail.kind === 'row' && isPageChange(change)) {
     body = (
       <PageCompare
         branchId={branchId}

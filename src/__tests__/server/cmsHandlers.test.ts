@@ -116,6 +116,13 @@ function makeFakeDb() {
     const sql = strings.reduce<string>((acc, str, i) => (i === 0 ? str : `${acc}$${i}${str}`), '')
     const normalized = sql.replace(/\s+/g, ' ').trim().toLowerCase()
 
+    if (normalized.includes('from data_tables') && values[0] === 'pages') {
+      return { rows: [{ logical_id: 'pages', name: 'Pages', slug: 'pages', kind: 'page', route_base: '/',
+        singular_label: 'Page', plural_label: 'Pages', primary_field_id: 'title', system: true,
+        fields_json: [{ id: 'title', label: 'Title', type: 'text' }, { id: 'body', label: 'Body', type: 'pageTree' }],
+        created_by_user_id: null, updated_by_user_id: null, created_at: '2026-01-01T00:00:00.000Z', updated_at: '2026-01-01T00:00:00.000Z' } as Row], rowCount: 1 }
+    }
+
     // getSetupStatus — no values
     if (normalized.includes('count(*) as count from site')) {
       return { rows: [{ count: site.length } as Row], rowCount: 1 }

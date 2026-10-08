@@ -15,8 +15,10 @@
  */
 
 import { describe, it, expect } from 'bun:test'
+import { GlobalWindow } from 'happy-dom'
 import '@modules/base'
 import { buildImportPlan, applyConflictResolutions } from '@core/siteImport'
+import { generateClassCSS } from '@core/publisher'
 import type { FileMap, ImportPlan } from '@core/siteImport'
 import { makeEmptySiteDocument } from './mockSite'
 
@@ -53,6 +55,50 @@ function resolveWithDefaults(plan: ImportPlan): ImportPlan {
 // ---------------------------------------------------------------------------
 
 describe('cross-sheet class conflicts', () => {
+  it('compares the later fragments of repeated selectors when detecting conflicts', () => {
+    const plan = buildImportPlan({
+      fileMap: twoPageFileMap(
+        '.btn { color: red } .btn { color: green }',
+        '.btn { color: red } .btn { color: blue }',
+      ),
+      currentSite: makeEmptySiteDocument(),
+    })
+    expect(plan.conflicts.crossSheetClasses).toHaveLength(1)
+    expect(plan.conflicts.crossSheetClasses[0].desiredName).toBe('btn')
+  })
+
+  it('keeps shared and exclusive renamed fragments ahead of intervening classes', () => {
+    const fileMap = twoPageFileMap('.btn { color: black }', '.btn { color: green } .b { color: blue }')
+    for (const page of ['index.html', 'original.html']) {
+      const file = fileMap.files[page]
+      const html = new TextDecoder().decode(file.bytes).replace(
+        '<head>', '<head><link rel="stylesheet" href="css/shared.css">',
+      )
+      fileMap.files[page] = { ...file, bytes: encoder.encode(html) }
+    }
+    fileMap.files['css/shared.css'] = {
+      bytes: encoder.encode('.btn { color: red }'), mimeType: 'text/css',
+    }
+    const plan = buildImportPlan({ fileMap, currentSite: makeEmptySiteDocument() })
+    const resolved = resolveWithDefaults(plan)
+    const rules = Object.fromEntries(resolved.styleRules.map((rule, index) => [
+      String(index), { ...rule, order: index, id: String(index), createdAt: 0, updatedAt: 0 },
+    ]))
+    const window = new GlobalWindow()
+    const style = window.document.createElement('style')
+    style.textContent = generateClassCSS(rules, [], resolved.conditions)
+    window.document.head.append(style)
+    const element = window.document.createElement('a')
+    element.className = 'btn-2 b'
+    window.document.body.append(element)
+    expect(window.getComputedStyle(element).color).toBe('blue')
+    expect(resolved.styleRules.filter((rule) => rule.selector === '.btn-2'))
+      .toHaveLength(2)
+    expect(resolved.styleRuleSources.filter((source, index) =>
+      resolved.styleRules[index].selector === '.btn-2',
+    )).toEqual(['css/shared.css', 'css/b.css'])
+  })
+
   it('flags divergent definitions and renames the later one by default', () => {
     const plan = buildImportPlan({
       fileMap: twoPageFileMap(
@@ -71,7 +117,7 @@ describe('cross-sheet class conflicts', () => {
 
     const resolved = resolveWithDefaults(plan)
 
-    // The kept definition owns the bare name; the renamed one is materialised.
+    // Both definitions retain their original cascade fragments.
     const classRules = resolved.styleRules.filter((r) => r.kind === 'class')
     expect(classRules.map((r) => r.name).sort()).toEqual(['btn', 'btn-2'])
     expect(classRules.find((r) => r.name === 'btn')?.styles.borderTopLeftRadius).toBe('0px')
@@ -122,7 +168,7 @@ describe('cross-sheet class conflicts', () => {
     expect(plan.conflicts.crossSheetClasses).toHaveLength(0)
   })
 
-  it('preserves priority when materialising a renamed divergent definition', () => {
+  it('preserves priority when renaming a divergent definition', () => {
     const plan = buildImportPlan({
       fileMap: twoPageFileMap(
         '.btn { color: red; }',

@@ -27,6 +27,7 @@ import { useConfirmAction } from '@admin/shared/dialogs/ConfirmDeleteDialog'
 import { Button } from '@ui/components/Button'
 import { Dialog } from '@ui/components/Dialog'
 import { SegmentedControl } from '@ui/components/SegmentedControl'
+import { Select } from '@ui/components/Select'
 import { Skeleton } from '@ui/components/Skeleton'
 import { TagPill } from '@ui/components/TagPill'
 import { pushToast } from '@ui/components/Toast'
@@ -68,7 +69,10 @@ function describeConflicts(conflicts: string[]): string {
 export function UpdateBranchDialog({ branch, onClose }: UpdateBranchDialogProps) {
   const { runStepUp } = useStepUp()
   const confirmAction = useConfirmAction()
-  const [plan, setPlan] = useState<MergePlan | null>(null)
+  const [loadedPlan, setPlan] = useState<MergePlan | null>(null)
+  const [language, setLanguage] = useState('')
+  const [loadedLanguage, setLoadedLanguage] = useState<string | null>(null)
+  const plan = loadedLanguage === language ? loadedPlan : null
   const [loadError, setLoadError] = useState<string | null>(null)
   const [resolutions, setResolutions] = useState<Record<string, MergeResolution>>({})
   const [busy, setBusy] = useState(false)
@@ -80,17 +84,18 @@ export function UpdateBranchDialog({ branch, onClose }: UpdateBranchDialogProps)
   // Mounted fresh per open, so the plan state starts empty and needs no reset.
   useEffect(() => {
     const controller = new AbortController()
-    getCmsBranchMergePlan(branch.id, 'update')
+    getCmsBranchMergePlan(branch.id, 'update', controller.signal, language || undefined)
       .then((next) => {
-        if (!controller.signal.aborted) setPlan(next)
+        if (!controller.signal.aborted) { setPlan(next); setLoadedLanguage(language); setLoadError(null) }
       })
       .catch((err: unknown) => {
         if (isAbortError(err) || controller.signal.aborted) return
         console.error('[branches] merge plan failed:', err)
         setLoadError(getErrorMessage(err, 'Could not compare the branches'))
+        pushToast({ kind: 'error', title: 'Could not compare the branches', body: getErrorMessage(err, 'Unknown review error') })
       })
     return () => controller.abort()
-  }, [branch.id])
+  }, [branch.id, language])
 
   const unresolved = plan
     ? plan.changes.filter((change) => change.conflicts.length > 0 && !resolutions[change.key]).length
@@ -128,7 +133,13 @@ export function UpdateBranchDialog({ branch, onClose }: UpdateBranchDialogProps)
         body: getErrorMessage(err, 'Unknown update error'),
       })
       // A conflict that appeared after the plan was loaded: reload it.
-      getCmsBranchMergePlan(branch.id, 'update').then(setPlan).catch(() => undefined)
+      try {
+        setPlan(await getCmsBranchMergePlan(branch.id, 'update', undefined, language || undefined))
+        setLoadedLanguage(language)
+      } catch (reloadError) {
+        console.error('[branches] reload update plan failed:', reloadError)
+        pushToast({ kind: 'error', title: 'Could not refresh the update', body: getErrorMessage(reloadError, 'Unknown review error') })
+      }
     } finally {
       setBusy(false)
     }
@@ -163,6 +174,11 @@ export function UpdateBranchDialog({ branch, onClose }: UpdateBranchDialogProps)
         </>
       )}
     >
+      {loadedPlan?.localization && (
+        <Select aria-label="Update content language" value={language} placeholder="Choose content language"
+          options={loadedPlan.localization.languages.map(option => ({ value: option, label: option }))}
+          onChange={event => { setLoadError(null); setLanguage(event.target.value) }} />
+      )}
       {loadError ? (
         <p className={styles.error} role="alert">{loadError}</p>
       ) : !plan ? (
@@ -202,7 +218,7 @@ export function UpdateBranchDialog({ branch, onClose }: UpdateBranchDialogProps)
                         <TagPill label={ACTION_LABEL[change.action]} size="xs" />
                       </span>
                       <span className={styles.main}>
-                        <span className={styles.label}>{change.label}</span>
+                        <span className={styles.label}>{change.label ?? 'Choose content language'}</span>
                         {conflicted && (
                           <span className={styles.conflict}>{describeConflicts(change.conflicts)}</span>
                         )}
@@ -216,7 +232,7 @@ export function UpdateBranchDialog({ branch, onClose }: UpdateBranchDialogProps)
                           ]}
                           onChange={(next) => setResolutions((current) => ({ ...current, [change.key]: next }))}
                           size="xs"
-                          aria-label={`Resolve ${change.label}`}
+                          aria-label={`Resolve ${change.label ?? 'localized row'}`}
                         />
                       )}
                     </li>

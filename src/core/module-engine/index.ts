@@ -26,6 +26,7 @@ export type {
 } from './propertySchema'
 
 export {
+  PropertyConditionSchema,
   PropertyControlSchema,
   PropertySchemaSchema,
   resolvePropertyControlCategory,
@@ -49,6 +50,6 @@ export {
 
 export { registry } from './registry'
 
-export { validateNodeProps } from './validateNodeProps'
+export { parseModuleProps, ModulePropsValidationError } from './parseModuleProps'
 
 export { resolveHtmlTagBadge } from './htmlTagBadge'

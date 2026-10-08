@@ -1,3 +1,4 @@
+import { PAGE_SEO_FIELDS_032 } from './migrationData/pageSeo032'
 import type { Migration } from './runMigrations'
 
 /**
@@ -1358,5 +1359,38 @@ export const pgMigrations: Migration[] = [
     // columns already hold real timestamps, so there is nothing to rewrite.
     id: '030_iso_timestamps',
     sql: 'select 1',
+  },
+  {
+    id: '031_page_language',
+    sql: `
+      update data_tables
+         set fields_json = fields_json || '[{"type":"text","id":"language","label":"Language","builtIn":true}]'::jsonb
+       where id = 'pages'
+         and not exists (select 1 from jsonb_array_elements(data_tables.fields_json) field where field ->> 'id' = 'language');
+    `,
+  },
+  {
+    id: '032_page_seo',
+    sql: PAGE_SEO_FIELDS_032.map((field) => `
+      update data_tables
+         set fields_json = fields_json || '${`[${field.json}]`.replace(/'/g, "''")}'::jsonb
+       where logical_id = 'pages'
+         and not exists (
+           select 1 from jsonb_array_elements(fields_json) existing
+            where existing->>'id' = '${field.id}'
+         );
+    `).join('\n'),
+  },
+  {
+    id: '033_page_translation_group',
+    sql: `
+      update data_tables
+         set fields_json = fields_json || '[{"type":"text","id":"translationGroup","label":"Translation group","builtIn":true}]'::jsonb
+       where id = 'pages'
+         and not exists (
+           select 1 from jsonb_array_elements(data_tables.fields_json) field
+            where field ->> 'id' = 'translationGroup'
+         );
+    `,
   },
 ]

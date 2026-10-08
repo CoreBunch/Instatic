@@ -1,5 +1,5 @@
 import type { ReactElement } from 'react'
-import type { RepeaterItemField } from '@core/data/schemas'
+import type { DataTable, RepeaterItemField } from '@core/data/schemas'
 import type { CellEditorProps } from '@admin/pages/data/types'
 import type { RelationCellProps } from './RelationCell'
 import { BooleanCell } from './BooleanCell'
@@ -14,10 +14,12 @@ import { RelationCell } from './RelationCell'
 import { RichTextCell } from './RichTextCell'
 import { SelectCell } from './SelectCell'
 import { TextCell } from './TextCell'
+import { LocalizedTextCell } from './LocalizedTextCell'
 import { UrlCell } from './UrlCell'
 
 type RepeaterItemCellEditorProps = CellEditorProps<RepeaterItemField> & {
   onOpenPicker?: RelationCellProps['onOpenPicker']
+  tables?: DataTable[]
 }
 
 /**
@@ -28,11 +30,14 @@ type RepeaterItemCellEditorProps = CellEditorProps<RepeaterItemField> & {
 export function RepeaterItemCellEditor({
   field,
   onOpenPicker,
+  tables,
   ...rest
 }: RepeaterItemCellEditorProps): ReactElement {
   switch (field.type) {
     case 'text':
       return <TextCell field={field} {...rest} />
+    case 'localizedText':
+      return <LocalizedTextCell field={field} {...rest} />
     case 'longText':
       return <LongTextCell field={field} {...rest} />
     case 'richText':
@@ -56,7 +61,7 @@ export function RepeaterItemCellEditor({
     case 'media':
       return <MediaCell field={field} {...rest} />
     case 'relation':
-      return <RelationCell field={field} {...rest} onOpenPicker={onOpenPicker} />
+      return <RelationCell field={field} {...rest} tables={tables} onOpenPicker={onOpenPicker} />
     default: {
       const _exhaustive: never = field
       void _exhaustive

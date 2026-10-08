@@ -18,31 +18,42 @@
  * Reference: Performance analysis in Contribution #308.
  */
 
-import type { SiteDocument } from '@core/page-tree'
+import type { Page, SiteDocument } from '@core/page-tree'
+import type { PublishedPageRuntimeAssets } from '@core/site-runtime'
+import { collectPublishedRuntimeScripts } from '@core/site-runtime'
 import { generateClassCSS } from './classCss'
 import type { ResponsiveCssOptions } from './responsiveBackground'
-import { collectUsedStyleRuleIds, treeShakeStyleRules } from './styleRuleTreeShake'
+import { treeShakeStyleRules } from './styleRuleTreeShake'
+import { collectPageStyleRuleIds } from './pageStyleUsage'
+
+export interface ClassCssOptions extends ResponsiveCssOptions {
+  /** Exact manifest emitted by this render; omitted means no runtime scripts. */
+  runtimeAssets?: PublishedPageRuntimeAssets
+}
 
 /**
  * Collect all user-authored CSS class declarations for the classes referenced
- * across a site's pages and VC trees. Framework-generated utilities are
+ * by the effective page and its reachable VC instances. Framework-generated utilities are
  * emitted through `framework.css` by `generateFrameworkCss()` instead.
  *
- * Only emits CSS for classes actually used by at least one node (tree-shaking).
- * Traverses both page nodes (flat map) and VisualComponent flat tree nodes
- * so that classes used inside VCs are also included.
+ * Includes modifiers named by emitted scripts and their local module imports.
+ * Other pages, unreferenced VCs, disabled/unscoped scripts and orphan nodes do
+ * not contribute. Ambient CSS stays conservative where usage is not knowable.
  * Sanitised via sanitizeModuleCSS (Constraint #228).
  *
  * @param site The site containing the class registry, page nodes, and VCs.
  * @returns A CSS string of all used class-name rules, or empty string if none.
  */
-export function collectClassCSS(site: SiteDocument, options: ResponsiveCssOptions = {}): string {
+export function collectClassCSS(site: SiteDocument, page: Page, options: ClassCssOptions = {}): string {
   // Defensive guard: corrupted/partial snapshots may have classes undefined
   if (!site.styleRules) return ''
 
   const usedClasses = treeShakeStyleRules(
     site.styleRules,
-    collectUsedStyleRuleIds(site),
+    // A composed template can have a different id from the page whose scripts
+    // were built. The emitted manifest, including the tag emitter's URL filter,
+    // is authoritative for this render's enabled/scoped/build-success selection.
+    collectPageStyleRuleIds(site, page, collectPublishedRuntimeScripts(options.runtimeAssets)),
   )
 
   if (Object.keys(usedClasses).length === 0) return ''

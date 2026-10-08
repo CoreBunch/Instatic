@@ -166,7 +166,7 @@ export function ParamPromotableRow({
 
   // ── Render: rule 4 — dynamic binding takes precedence ────────────────────
 
-  if (hasDynamicBinding) {
+  if (hasDynamicBinding || compatibleTypes.length === 0) {
     return (
       <PropertyControlRenderer
         propKey={propKey}

@@ -10,6 +10,9 @@
  * grid owns its own toolbar so the visual language stays consistent across
  * all three kinds.
  */
+import { useLocalizedData } from '@admin/pages/data/localizedData'
+import { hasLocalizedDataFields } from '@core/data/localizedCells'
+import { ErrorBoundary } from '@ui/components/ErrorBoundary'
 import { DatabaseSolidIcon } from 'pixel-art-icons/icons/database-solid'
 import { EmptyState } from '@ui/components/EmptyState'
 import { DataGrid } from '../DataGrid/DataGrid'
@@ -86,6 +89,7 @@ export function DataCanvas({
   canDelete,
   canExport,
 }: DataCanvasProps) {
+  const localization = useLocalizedData()
   // Tables still loading — render the layout skeleton (toolbar + chip
   // filter + grid placeholder) instead of the "Select a table" empty
   // state. The workspace auto-selects the first table as soon as the
@@ -112,6 +116,13 @@ export function DataCanvas({
     )
   }
 
+  if (hasLocalizedDataFields(table.fields) && !localization?.context) return (
+    <section className={`${canvasStyles.canvas} ${styles.canvasEmpty}`} aria-label="Localized data">
+      <EmptyState variant="centered" title={localization?.error ? 'Could not load language data' : localization?.loading ? 'Loading language data' : 'Choose a content language'}
+        description={localization?.error ?? 'Use the content language control to display and search localized text.'} />
+    </section>
+  )
+
   // System-table records belong to the Site and Content authoring workflows,
   // where their required structure and rich content can be created correctly.
   // The Data workspace remains an inspection/editing surface for those records.
@@ -119,7 +130,7 @@ export function DataCanvas({
 
   return (
     <section className={`${canvasStyles.canvas} ${styles.canvas}`} aria-label={`${table.pluralLabel} data grid`}>
-      <DataGrid
+      <ErrorBoundary location="data-grid-localization" resetKeys={[table.id, localization?.language, localization?.data, rows]}><DataGrid
         table={table}
         rows={rows}
         tables={tables}
@@ -136,7 +147,7 @@ export function DataCanvas({
         onDeleteRow={canDelete ? onDeleteRow : undefined}
         onSetRowStatus={canEdit ? onSetRowStatus : undefined}
         onExportRows={canExport ? onExportRows : undefined}
-      />
+      /></ErrorBoundary>
     </section>
   )
 }

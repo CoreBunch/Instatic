@@ -13,7 +13,8 @@
  * - Backdrop click closes the overlay
  *
  * Security:
- * - iframe uses sandbox="" — all sandboxing restrictions applied
+ * - iframe preserves same-origin resource credentials; scripts, forms and
+ *   popups remain sandboxed. Private file capabilities require the admin cookie.
  *
  * data-testid="preview-overlay" and data-testid="preview-iframe" for Playwright
  */
@@ -87,7 +88,7 @@ function PreviewDocument({ site, page, templatePreviewContext }: PreviewDocument
   return (
     <iframe
       srcDoc={html}
-      sandbox=""
+      sandbox="allow-same-origin"
       title={`Preview: ${page.title}`}
       data-testid="preview-iframe"
       className={styles.iframe}
@@ -100,7 +101,7 @@ export function PreviewOverlay() {
   const closePreview = useEditorStore((s) => s.closePreview)
   const site = useEditorStore((s) => s.site)
   const activePage = useEditorStore(selectActivePage)
-  const { context: templatePreviewContext } = useTemplatePreviewContext(activePage)
+  const { context: templatePreviewContext, loading: contextLoading, error: contextError, refresh: refreshContext } = useTemplatePreviewContext(activePage)
 
   const closeBtnRef = useRef<HTMLButtonElement>(null)
   const triggerRef = useRef<HTMLElement | null>(null)
@@ -170,11 +171,13 @@ export function PreviewOverlay() {
 
           {/* ── Sandboxed server-built preview ─────────────────────────── */}
           <div className={styles.previewContent}>
-            <PreviewDocument
+            {contextError ? <EmptyState title="Preview unavailable" description={contextError.message}
+              action={<Button variant="secondary" onClick={refreshContext}>Retry preview</Button>} role="alert" />
+              : contextLoading ? <EmptyState title="Resolving preview content…" role="status" /> : <PreviewDocument
               site={site}
               page={activePage}
               templatePreviewContext={templatePreviewContext}
-            />
+            />}
           </div>
         </div>
       </div>

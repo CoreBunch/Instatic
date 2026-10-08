@@ -27,6 +27,7 @@ import { nanoid } from 'nanoid'
 import { placeholder, type DbClient } from '../../db/client'
 import { MAIN_SCOPE } from '../../branches/scope'
 import { userRefColumns, userRefJoin } from './shared'
+import { normalizeDataTableFields } from '@core/data/fields'
 import type { DataRow, DataRowVersion, DataRowRedirect, PublishedDataRow } from '@core/data/schemas'
 import { normalizeRouteBase } from '@core/templates/templateMatching'
 import { readFeaturedMediaCell } from '@core/data/cells'
@@ -44,6 +45,7 @@ interface PublishedDataRowQueryRow {
   table_id: string
   table_slug: string
   table_kind: string
+  fields_json: unknown
   table_route_base: string
   version_number: number
   cells_json: Record<string, unknown>
@@ -365,6 +367,7 @@ export async function getPublishedDataRowByRoute(
            data_rows.table_id,
            data_tables.slug as table_slug,
            data_tables.kind as table_kind,
+           data_tables.fields_json,
            data_tables.route_base as table_route_base,
            data_row_versions.version_number,
            data_row_versions.cells_json,
@@ -415,6 +418,7 @@ export async function getPublishedDataRowByRoute(
     tableId: queryRow.table_id,
     tableSlug: queryRow.table_slug,
     tableKind: queryRow.table_kind as PublishedDataRow['tableKind'],
+    tableFields: normalizeDataTableFields(queryRow.fields_json),
     tableRouteBase: normalizeRouteBase(queryRow.table_route_base),
     versionNumber: Number(queryRow.version_number),
     cells,

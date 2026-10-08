@@ -88,12 +88,13 @@ const ALLOWLIST: ReadonlyMap<string, string> = new Map([
   ['plugins/pack.ts', 'Parent dispatcher (plugins/index.ts) gates all routes here.'],
   ['plugins/shared.ts', 'Shared plugin helpers (payload builders, audit envelopes); no handlers.'],
   // Data sub-handlers — meta and search use the access helpers (which
-  // wrap requireCapability inside data/access.ts); rows.ts and preview.ts
+  // wrap requireCapability inside auth/dataAccess.ts); rows.ts and preview.ts
   // do too. The regex doesn't pick up the indirection through helpers,
   // but the gates are present.
   ['data/meta.ts', 'Uses requireDataAccess (access helper that wraps requireCapability).'],
   ['data/search.ts', 'Uses requireDataAccess (access helper that wraps requireCapability).'],
-  ['data/rows.ts', 'Uses requireData* helpers from data/access.ts (which call requireCapability).'],
+  ['data/localization.ts', 'Uses canonical requireDataAccess from auth/dataAccess.ts.'],
+  ['data/rows.ts', 'Uses requireData* helpers from auth/dataAccess.ts (which call requireCapability).'],
   ['data/preview.ts', 'Uses requireDataAccess helper that wraps requireCapability.'],
   ['data/schemas.ts', 'TypeBox schema definitions; no handlers.'],
   ['data/index.ts', 'Sub-dispatcher; delegates to per-resource handlers that gate.'],

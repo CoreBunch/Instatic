@@ -7,7 +7,8 @@ import type {
   ContentEntry,
   ContentListOptions,
   ContentListResult,
-  ContentSearchResult,
+  ContentSearchOptions,
+  ContentSearchResults,
   ContentTableSchema,
   ContentTableSummary,
   ContentTreeOperation,
@@ -173,7 +174,7 @@ export interface ServerPluginApi {
         mutate: (operations: ReadonlyArray<ContentTreeOperation>) => Promise<TreeMutateResult>
         replace: (tree: unknown) => Promise<void>
       }
-      search: (query: string, limit?: number) => Promise<ReadonlyArray<ContentSearchResult>>
+      search: (query: string, options?: ContentSearchOptions) => Promise<ContentSearchResults>
       getPublishedSnapshot: (entryId: string) => Promise<PublishedSnapshot | null>
       republishAll: () => Promise<{ count: number }>
     }

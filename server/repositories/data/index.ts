@@ -72,3 +72,4 @@ export {
   getDataRowVersion,
   type DataRowVersionSummary,
 } from './versions'
+export { readDataLocalization, readPluginDataLocalization, readableLocalizedDataKeys, assertLocalizedDataPrincipalWrite } from './localization'

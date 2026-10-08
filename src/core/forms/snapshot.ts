@@ -1,5 +1,7 @@
 import { flattenSubtree, getParent, type Page, type PageNode } from '@core/page-tree'
 import { normalizeIdentifierValue } from '@core/utils/identifier'
+import { PropertyConditionSchema, type PropertyCondition } from '@core/module-engine-schema'
+import { compiledCheck } from '@core/utils/typeboxCompiler'
 import type {
   FormControlBinding,
   PublishedFormLabel,
@@ -48,6 +50,21 @@ function deriveFormSnapshot(
 
     if (FORM_CONTROL_MODULES.has(node.moduleId)) {
       const control = controlBindingFromNode(node)
+      if (control) {
+        const conditions: PropertyCondition[] = []
+        let parent = getParent(page, node.id)
+        while (parent && parent.id !== formNode.id) {
+          if (parent.moduleId === 'base.form-conditional' && compiledCheck(PropertyConditionSchema, parent.props.condition)) conditions.push(parent.props.condition)
+          parent = getParent(page, parent.id)
+        }
+        if (conditions.length) control.conditions = conditions
+        if (node.moduleId === 'base.select') {
+          control.options = flattenSubtree(page, node.id).map((id) => page.nodes[id])
+            .filter((entry) => entry?.moduleId === 'base.option' && !entry.props.disabled && !getParent(page, entry.id)?.props.disabled)
+            .map((entry) => stringProp(entry, 'value', ''))
+        }
+        if (node.moduleId === 'base.radio') control.options = [stringProp(node, 'value', 'on')]
+      }
       if (control) controls.push(control)
       continue
     }
@@ -109,13 +126,16 @@ function controlBindingFromNode(node: PageNode): FormControlBinding | null {
     nodeId: node.id,
     fieldId,
     name,
-    ...(node.moduleId === 'base.input' ? { inputType: stringProp(node, 'inputType', 'text') } : {}),
+    ...(node.moduleId === 'base.input' ? { inputType: stringProp(node, 'inputType', 'text') } : node.moduleId === 'base.radio' ? { inputType: 'radio' } : {}),
     ...(booleanProp(node, 'required') ? { required: true } : {}),
     ...(positiveNumberProp(node, 'minLength') !== undefined ? { minLength: positiveNumberProp(node, 'minLength') } : {}),
     ...(positiveNumberProp(node, 'maxLength') !== undefined ? { maxLength: positiveNumberProp(node, 'maxLength') } : {}),
     ...(numberPropOrUndefined(node, 'min') !== undefined ? { min: numberPropOrUndefined(node, 'min') } : {}),
     ...(numberPropOrUndefined(node, 'max') !== undefined ? { max: numberPropOrUndefined(node, 'max') } : {}),
     ...(stringProp(node, 'pattern', '') ? { pattern: stringProp(node, 'pattern', '') } : {}),
+    ...(booleanProp(node, 'disabled') ? { disabled: true } : {}),
+    ...(compiledCheck(PropertyConditionSchema, node.props.requiredWhen) ? { requiredWhen: node.props.requiredWhen } : {}),
+    ...(stringProp(node, 'valueSourceField', '') ? { valueSourceField: stringProp(node, 'valueSourceField', '') } : {}),
   }
 }
 

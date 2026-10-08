@@ -37,6 +37,7 @@ function projectRepeaterItemField(
 ): PluginRepeaterItemField | null {
   switch (field.type) {
     case 'text':
+    case 'localizedText':
     case 'longText':
     case 'richText':
     case 'number':
@@ -93,6 +94,7 @@ function projectFields(
   for (const f of fields) {
     switch (f.type) {
       case 'text':
+      case 'localizedText':
       case 'longText':
       case 'richText':
       case 'number':

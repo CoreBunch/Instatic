@@ -12,8 +12,8 @@
  * `/uploads/fonts/...` that are written to disk at install time.
  */
 
-import type { FontEntry, FontFile, FontFileFormat, SiteFontsSettings } from './schemas'
-import { isSafeFontSrc } from './schemas'
+import type { FontDisplay, FontEntry, FontFile, FontFileFormat, SiteFontsSettings } from './schemas'
+import { isSafeFontSrc, parseFontDisplay } from './schemas'
 import { parseVariant } from './variants'
 import {
   fontTokenCssVariable,
@@ -89,6 +89,7 @@ function fontFaceRule(
   urlPath: string,
   format: FontFileFormat,
   unicodeRange?: string,
+  fontDisplay?: FontDisplay,
 ): string | null {
   const parsed = parseVariant(variant)
   if (!parsed) return null
@@ -97,7 +98,7 @@ function fontFaceRule(
     `  font-family: "${escapeCssString(family)}";`,
     `  font-style: ${parsed.italic ? 'italic' : 'normal'};`,
     `  font-weight: ${parsed.weight};`,
-    `  font-display: swap;`,
+    `  font-display: ${parseFontDisplay(fontDisplay) ?? 'swap'};`,
     `  src: url("${escapeCssUrl(urlPath)}") format("${CSS_FORMAT_TOKEN[format]}");`,
   ]
   if (unicodeRange) {
@@ -128,7 +129,7 @@ export function generateSiteFontsCss(
       // HTML. Self-hosted /uploads/ paths and media-backed entries pass;
       // arbitrary third-party URLs are skipped (no-CDN guarantee).
       if (!isSafeFontSrc(file.path, file.mediaAssetId)) continue
-      const rule = fontFaceRule(entry.family, file.variant, file.path, file.format, file.unicodeRange)
+      const rule = fontFaceRule(entry.family, file.variant, file.path, file.format, file.unicodeRange, file.fontDisplay)
       if (rule) blocks.push(rule)
     }
   }

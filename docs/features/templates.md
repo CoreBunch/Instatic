@@ -12,6 +12,7 @@ A template is an ordinary `pages` row carrying a `target` (everywhere, one/more 
 - **Chain resolver:** `resolveTemplateChain(site, ctx)` in `src/core/templates/templateMatching.ts` → `Page[]` ordered outer → inner. At most one template per breadth level (highest priority wins, document order breaks ties). Two breadth levels today: `everywhere` (outermost) → `postTypes` (innermost).
 - **404 resolver:** `resolveNotFoundTemplate(site)` → the highest-priority `notFound` template or null. A `notFound` template never enters a route chain — the public router renders it directly when a GET falls through every route (see "The Not found (404) template" below).
 - **Chain composer:** `composeTemplateChain(chain, terminal)` in `src/core/templates/templateCompose.ts` → one merged `Page` ready for `publishPage`.
+- **Public scopes:** `publishedRenderScopes(site)` in `src/core/templates/publishedRenderScopes.ts` yields composed ordinary pages, the winning 404 and entry-template chains for declared table slugs. Page and 404 scopes retain their terminal `sourcePage` for authoritative binding frames. Unused raw templates are never independent public scopes; entry-specific row data is supplied by the entry renderer.
 - **`base.outlet`** is the polymorphic outlet content flows into. A template *should* contain one. Having NO outlet is not blocked (you add it after converting the page to a template — requiring it first would be circular). The editor enforces a one-outlet-per-document invariant at the store's mutation chokepoints (`insertNode`, `duplicateNode(s)`, `pasteNode`), each surfacing a warning toast when blocked; the module pickers additionally render the outlet as a disabled tile with the reason (non-template page, VC mode, or outlet already placed) so authors rarely hit the block at all. The composer remains defensive for data pre-dating the guard: no outlet → template skipped; multiple → first wins.
 - Template pages are never served at their own slug; the live router and the static bake both skip them.
 - Dynamic bindings and token interpolation work exactly as before — the merged tree is a plain page tree.
@@ -28,7 +29,6 @@ src/core/templates/
 ├── templateCompose.ts                 — composeTemplateChain, TerminalContent
 ├── contextFrames.ts                   — PageFrame, SiteFrame, RouteFrame + builders
 ├── dynamicBindings.ts                 — TemplateRenderDataContext + resolveDynamicProps
-├── templatePreviewData.ts             — buildPreviewCells, dataTablePreviewToLoopItem
 └── tokenInterpolation.ts             — parseTokenString, interpolateTokens, walkFieldPath
 
 src/modules/base/outlet/               — base.outlet module (Content Outlet)
@@ -234,6 +234,8 @@ Interpolation applies to string-typed props during the tree walk **and** to the 
 
 Source: `src/core/templates/tokenInterpolation.ts`.
 
+Configured [language files](localization.md) add `site.language` and `site.translations.*` to this same frame. A token such as `{site.translations.header.contact}` resolves from the current page's language during canvas rendering and static publication. Missing translation keys are explicit authoring errors, including when a binding specifies fallback text.
+
 ### Where tokens are substituted
 
 `resolveDynamicProps` walks a node's props and interpolates:
@@ -249,12 +251,12 @@ All three render surfaces — the publisher (`renderNode.ts`), the editor canvas
 
 ## Editor canvas preview
 
-When editing a template page, the canvas previews against **live data**, falling back to synthetic sample data only when none exists. `useTemplatePreviewContext` in `src/admin/pages/site/hooks/useTemplatePreviewContext.ts` builds the `currentEntry`:
+When editing a template page, the canvas previews against **live data**. `useTemplatePreviewContext` in `src/admin/pages/site/hooks/useTemplatePreviewContext.ts` builds the `currentEntry`:
 
-- **`postTypes` target:** fetches a window of published rows for `target.tableSlugs[0]` via `previewCmsDataLoopItems` and seeds the entry stack with the first one (or the author-picked one — see below). When the table has **no** published rows, it falls back to a synthetic sample row via `dataTablePreviewToLoopItem(table)` so the layout stays visible.
+- **`postTypes` target:** fetches authorized published rows for `target.tableSlugs[0]` via `previewCmsDataLoopItems`, using the canonical page language, and seeds the entry stack with the first row or the author-picked row. Empty sources have no current entry. Failed requests and an unavailable explicit selection surface errors with native retry controls; they never become sample content.
 - **`everywhere` target:** no current entry — the outlet previews the first non-template page's tree read-only via `ReadOnlyNodeTree` (or the author-picked page).
 
-Synthetic fallback values are generic placeholders: `'Example Post Title'` for the `title` field, `null` for `media` fields. Modules must handle `null` media gracefully — the canvas shows "No image selected" for an unbound or null image source.
+The source selector, canvas and live link share this preview owner. Localized cells resolve through the normal catalogue projection, while field schemas remain available for binding authoring even when no real entry exists. Modules handle absent media through their normal empty state.
 
 #### Floating controls — `TemplateModeControl` / `VisualComponentModeControl`
 
@@ -303,7 +305,7 @@ DataMeta is fetched once from `/data/_meta` and cached module-level in `cache.ts
 
 ## Template management in the editor
 
-The **Site Explorer** panel (`src/admin/pages/site/panels/SiteExplorerPanel/`) shows **Pages** and **Templates** in separate labelled sections. Clicking a template row opens it in the canvas like a page; the canvas preview uses the synthetic entry from `useTemplatePreviewContext`.
+The **Site Explorer** panel (`src/admin/pages/site/panels/SiteExplorerPanel/`) shows **Pages** and **Templates** in separate labelled sections. Clicking a template row opens it in the canvas like a page; the canvas preview uses the authorized real entry from `useTemplatePreviewContext`.
 
 ### Converting a page to a template
 
@@ -419,9 +421,8 @@ node.props.text = 'Posted by {currentEntry.author.displayName} on {currentEntry.
   - `src/core/templates/tokenInterpolation.ts` — `parseTokenString`, `interpolateTokens`
   - `src/modules/base/outlet/index.ts` — `base.outlet` module
   - `src/admin/pages/site/property-controls/DynamicBindingControl/` — binding affordance + picker popover
-  - `src/admin/pages/site/hooks/useTemplatePreviewContext.ts` — synthetic preview context for the canvas
+  - `src/admin/pages/site/hooks/useTemplatePreviewContext.ts` — canonical page context and real entry previews
   - `src/admin/pages/site/hooks/useActiveLivePath.ts` — resolves the toolbar "Open live page" path for templates
-  - `src/core/templates/templatePreviewData.ts` — `buildPreviewCells`, `dataTablePreviewToLoopItem`
   - `server/publish/publicRenderer.ts` — chain-aware render paths
   - `src/admin/pages/site/hooks/useInsertModule.ts` — hook-level outlet guard (toast + null return)
   - `src/admin/pages/site/store/slices/site/nodeActions.ts` — store-level outlet backstop in `insertNode`

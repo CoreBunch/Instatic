@@ -1,7 +1,10 @@
+import { resolveLocalizedTextValue, type DataLocalizationContext } from '@core/data/localizedCells'
+import { LocalizationError } from '@core/localization'
 import type { RepeaterItemField } from '@core/data/schemas'
 
 const SUMMARY_FIELD_TYPES = new Set<RepeaterItemField['type']>([
   'text',
+  'localizedText',
   'longText',
   'number',
   'boolean',
@@ -27,8 +30,13 @@ function selectOptionLabel(
 export function readableRepeaterSummaryValue(
   field: RepeaterItemField,
   value: unknown,
+  localization?: DataLocalizationContext,
 ): string | null {
   if (!isRepeaterSummaryField(field)) return null
+  if (field.type === 'localizedText') {
+    if (!localization) throw new LocalizationError(`cells.${field.id}`, 'Choose a content language to display localized data')
+    return resolveLocalizedTextValue(value, localization, `cells.${field.id}`)
+  }
   if (field.type === 'select' && typeof value === 'string' && value.trim()) {
     return selectOptionLabel(field, value)
   }

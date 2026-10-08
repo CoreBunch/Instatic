@@ -6,6 +6,8 @@ import type { DataField, DataRowCells } from '@core/data/schemas'
  */
 export function emptyCellValue(field: DataField): unknown {
   switch (field.type) {
+    case 'localizedText':
+      return null
     case 'text':
     case 'longText':
     case 'richText':

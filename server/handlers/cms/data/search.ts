@@ -17,7 +17,7 @@ import type { DbClient } from '../../../db/client'
 import { searchDataRows } from '../../../repositories/data'
 import { jsonResponse, methodNotAllowed } from '../../../http'
 import { CMS_API_PREFIX } from '../shared'
-import { canReadTable, canSeeAllDataRows, requireDataAccess } from './access'
+import { canReadTable, canSeeAllDataRows, requireDataAccess } from '../../../auth/dataAccess'
 import type { BranchScope } from '../../../branches/scope'
 
 const SEARCH_PATH = `${CMS_API_PREFIX}/data/search`

@@ -9,6 +9,7 @@ export interface DraftOption {
 
 export const FIELD_TYPE_OPTIONS: ReadonlyArray<{ value: DataFieldType; label: string }> = [
   { value: 'text', label: 'Text' },
+  { value: 'localizedText', label: 'Localized text' },
   { value: 'longText', label: 'Long text' },
   { value: 'richText', label: 'Rich text' },
   { value: 'number', label: 'Number' },

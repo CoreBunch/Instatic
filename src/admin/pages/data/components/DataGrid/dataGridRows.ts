@@ -6,6 +6,9 @@
  * the raw `rows` array into the shape the grid renders. Keeping it out of the
  * component body keeps `DataGrid.tsx` focused on wiring + interaction state.
  */
+import { compareDataCellValues, hasLocalizedDataFields, projectLocalizedDataCells, type DataLocalizationContext } from '@core/data/localizedCells'
+import { LocalizationError } from '@core/localization'
+import { dataCellTextValues } from '@core/data/cells'
 import type {
   DataField,
   DataRow,
@@ -139,6 +142,7 @@ interface FilterRowsParams {
   /** Already lower/trim-normalized by the caller is fine — we normalize too. */
   query: string
   sort: SortState | null
+  localization?: DataLocalizationContext
 }
 
 export function filterAndSortRows({
@@ -148,8 +152,11 @@ export function filterAndSortRows({
   statusFilter,
   query,
   sort,
+  localization,
 }: FilterRowsParams): DataRow[] {
   let r = rows
+  if (hasLocalizedDataFields(table.fields) && !localization) throw new LocalizationError(`tables.${table.id}`, 'Choose a content language to display localized data')
+  const projected = new Map(rows.map(row => [row.id, localization ? projectLocalizedDataCells(row.cells, table.fields, localization, `rows.${row.id}.cells`) : row.cells]))
 
   if (hasPublishWorkflow && statusFilter !== 'all') {
     // The 'pages' / 'templates' chips only filter the template flag —
@@ -165,23 +172,22 @@ export function filterAndSortRows({
     }
   }
 
-  const q = query.trim().toLowerCase()
+  const q = query.trim().toLocaleLowerCase(localization?.language)
   if (q.length > 0) {
     r = r.filter((row) => {
-      for (const field of table.fields) {
-        const v = row.cells[field.id]
-        if (typeof v === 'string' && v.toLowerCase().includes(q)) return true
-      }
-      return false
+      const cells = projected.get(row.id)!
+      const text = dataCellTextValues(cells, table.fields)
+      const scalars = table.fields.filter(field => !['text', 'localizedText', 'longText', 'richText', 'repeater'].includes(field.type))
+        .flatMap(field => typeof cells[field.id] === 'string' ? [cells[field.id] as string] : [])
+      return [...text, ...scalars].some(value => value.toLocaleLowerCase(localization?.language).includes(q))
     })
   }
 
   if (sort != null) {
     r = [...r].sort((a, b) => {
-      const av = a.cells[sort.fieldId]
-      const bv = b.cells[sort.fieldId]
-      const cmp = compareCellValues(av, bv)
-      return sort.dir === 'asc' ? cmp : -cmp
+      const av = projected.get(a.id)![sort.fieldId]
+      const bv = projected.get(b.id)![sort.fieldId]
+      return compareDataCellValues(av, bv, localization?.language, sort.dir) || a.id.localeCompare(b.id)
     })
   }
 
@@ -258,15 +264,3 @@ export function computeStatusCounts(rows: DataRow[]): StatusCounts {
 // ---------------------------------------------------------------------------
 // Cell comparator — numeric > date > string fallback.
 // ---------------------------------------------------------------------------
-
-function compareCellValues(a: unknown, b: unknown): number {
-  if (a == null && b == null) return 0
-  if (a == null) return 1
-  if (b == null) return -1
-  if (typeof a === 'number' && typeof b === 'number') return a - b
-  if (typeof a === 'boolean' && typeof b === 'boolean') return Number(a) - Number(b)
-  const sa = String(a)
-  const sb = String(b)
-  // Use numeric collation so '10' sorts after '2', and respect locale for dates.
-  return sa.localeCompare(sb, undefined, { numeric: true, sensitivity: 'base' })
-}

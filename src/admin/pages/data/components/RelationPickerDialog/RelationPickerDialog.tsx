@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useAsyncResource } from '@admin/lib/useAsyncResource'
 import { Button } from '@ui/components/Button'
 import { Dialog } from '@ui/components/Dialog'
@@ -6,7 +6,10 @@ import { EmptyState } from '@ui/components/EmptyState'
 import { SearchBar } from '@ui/components/SearchBar'
 import { SkeletonBlock } from '@ui/components/Skeleton'
 import { listCmsDataRows } from '@core/persistence/cmsData'
-import { readStringCell } from '@core/data/cells'
+import { useLocalizedData } from '@admin/pages/data/localizedData'
+import { hasLocalizedDataFields } from '@core/data/localizedCells'
+import { pushToast } from '@ui/components/Toast'
+import { readDisplayTitle } from '@core/data/cells'
 import type { DataRow, DataTable } from '@core/data/schemas'
 import styles from './RelationPickerDialog.module.css'
 
@@ -56,12 +59,17 @@ export function RelationPickerDialog({
 
   // Load rows when the dialog opens (or the target table changes); resolve to
   // an empty list while closed so nothing is fetched in the background.
-  const { data, loading, error: loadError } = useAsyncResource(
+  const { data, loading, error: loadError, refresh } = useAsyncResource(
     () => (open && targetTable ? listCmsDataRows(targetTable.id) : Promise.resolve<DataRow[]>([])),
     [open, targetTable],
     { fallbackError: 'Failed to load rows' },
   )
-  const rows: DataRow[] = data ?? []
+  const localization = useLocalizedData()
+  const needsLanguage = Boolean(targetTable && hasLocalizedDataFields(targetTable.fields) && !localization?.context)
+  useEffect(() => {
+    if (loadError) pushToast({ kind: 'error', title: 'Could not load related rows', body: loadError, action: { label: 'Retry', onSelect: refresh } })
+  }, [loadError, refresh])
+  const rows: DataRow[] = needsLanguage ? [] : data ?? []
 
   // Re-sync selection when the dialog opens or currentValue changes. Done by
   // adjusting state during render (tracking the previous open/value) rather
@@ -75,13 +83,13 @@ export function RelationPickerDialog({
     if (open) setSelected(normalizeSelection(currentValue))
   }
 
-  const primaryFieldId = targetTable?.primaryFieldId ?? ''
+  const displayTitle = (row: DataRow) => readDisplayTitle(row.cells, targetTable ?? undefined, localization?.context)
 
   const filteredRows = (() => {
     if (!search.trim()) return rows
     const q = search.trim().toLowerCase()
     return rows.filter((row) =>
-      readStringCell(row.cells, primaryFieldId).toLowerCase().includes(q),
+      displayTitle(row).toLowerCase().includes(q),
     )
   })()
 
@@ -133,7 +141,7 @@ export function RelationPickerDialog({
             size="sm"
             type="button"
             onClick={handleConfirm}
-            disabled={targetTable == null}
+            disabled={targetTable == null || loading || Boolean(loadError) || needsLanguage}
           >
             Confirm
           </Button>
@@ -165,7 +173,8 @@ export function RelationPickerDialog({
             />
           )}
 
-          {!loading && !loadError && filteredRows.length === 0 && (
+          {needsLanguage && <EmptyState title="Choose a content language" description="Select a language before choosing related localized rows." variant="card" />}
+          {!loading && !loadError && !needsLanguage && filteredRows.length === 0 && (
             <EmptyState
               title={search ? 'No matches' : `No ${targetTable.pluralLabel.toLowerCase()} yet`}
               description={search ? 'Try a different search term.' : undefined}
@@ -176,7 +185,7 @@ export function RelationPickerDialog({
           {!loading && !loadError && filteredRows.length > 0 && (
             <div className={styles.list} role="listbox" aria-multiselectable={allowMultiple}>
               {filteredRows.map((row) => {
-                const displayValue = readStringCell(row.cells, primaryFieldId) || row.id
+                const displayValue = displayTitle(row)
                 const isSelected = selected.has(row.id)
                 return (
                   <Button

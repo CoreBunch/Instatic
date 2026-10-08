@@ -9,7 +9,7 @@
  * What flows into the region, in priority order:
  *   1. `props.html` — a postTypes template resolves the current entry's body
  *      into this prop via the outlet's `{currentEntry.body}` binding (against
- *      the synthetic preview row). Rendered as read-only HTML.
+ *      the real preview row). Rendered as read-only HTML.
  *   2. The first non-template page — an `everywhere` template hosts whole pages,
  *      so we preview the first matching page's tree read-only via
  *      `ReadOnlyNodeTree`, the same renderer used for inlined VC bodies.

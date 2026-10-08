@@ -14,6 +14,9 @@ import { MoveIcon } from 'pixel-art-icons/icons/move'
 import { Settings2SolidIcon } from 'pixel-art-icons/icons/settings-2-solid'
 import { UploadIcon } from 'pixel-art-icons/icons/upload'
 import { readDisplayTitle, readTitleCell } from '@core/data/cells'
+import { hasLocalizedDataFields } from '@core/data/localizedCells'
+import { getErrorMessage } from '@core/utils/errorMessage'
+import { useLocalizedData } from '@admin/pages/data/localizedData'
 import type { CmsMediaAsset } from '@core/persistence'
 import type { DataTable, DataRow, UpdateDataTableInput } from '@core/data/schemas'
 import { ExplorerItemContextMenu, type ExplorerContextMenuItem } from '@site/explorer-actions'
@@ -118,6 +121,7 @@ export function ContentExplorerPanel({
   entryActions,
   onClose,
 }: ContentExplorerPanelProps) {
+  const localization = useLocalizedData()
   const {
     createCollection,
     updateCollection,
@@ -139,6 +143,13 @@ export function ContentExplorerPanel({
 
   function collectionForEntry(entry: DataRow): DataTable | null {
     return collections.find((collection) => collection.id === entry.tableId) ?? selectedCollection
+  }
+
+  function displayEntryTitle(entry: DataRow): string {
+    const table = collectionForEntry(entry)
+    if (table && hasLocalizedDataFields(table.fields) && !localization?.context) return 'Choose content language'
+    try { return readDisplayTitle(entry.cells, table ?? undefined, localization?.context) }
+    catch (error) { return `Invalid title: ${getErrorMessage(error, 'The localized title could not be resolved')}` }
   }
 
   function openContextMenu(target: ContentExplorerContextTarget, event: MouseEvent<HTMLButtonElement>) {
@@ -402,7 +413,7 @@ export function ContentExplorerPanel({
                   >
                     <EntryRowPreview asset={getFeaturedMediaAssetForEntry(entry)} />
                     <span className={styles.entryTitleStack}>
-                      <span className={styles.entryTitle}>{readDisplayTitle(entry.cells)}</span>
+                      <span className={styles.entryTitle}>{displayEntryTitle(entry)}</span>
                       <span className={styles.entryAuthor} aria-hidden="true">{entryAuthorLabel(entry)}</span>
                     </span>
                     <span className={explorerStyles.rowMeta}>{entry.status}</span>

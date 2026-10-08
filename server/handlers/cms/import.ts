@@ -1,3 +1,6 @@
+import { assertLocalizedDataImport } from '../../repositories/data/localization'
+import { LocalizedDataReferenceAccessError } from '@core/data/localizedCells'
+import { LocalizationError } from '@core/localization'
 /**
  * Site bundle import endpoint.
  *
@@ -173,6 +176,13 @@ export async function handleImportRoute(
     if (!userHasCapability(user, 'site.structure.edit')) {
       return jsonResponse({ error: 'Forbidden' }, { status: 403 })
     }
+  }
+
+  try { await assertLocalizedDataImport(db, scope, user, bundle, strategy) }
+  catch (error) {
+    if (error instanceof LocalizedDataReferenceAccessError) return jsonResponse({ error: error.message }, { status: 403 })
+    if (error instanceof LocalizationError) return jsonResponse({ error: error.message }, { status: 422 })
+    throw error
   }
 
   // ---------------------------------------------------------------------------

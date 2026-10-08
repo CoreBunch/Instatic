@@ -29,6 +29,7 @@ import { type InsertDataRowInput, type UpdateDataRowDraftInput } from './mapper'
 import { isoDateOrNull, nowIso } from '@core/utils/isoDate'
 import { getDataRow } from './read'
 import { notifyRowWrite, serializeCollabAwareWrite } from '../../rowWriteEvents'
+import { assertLocalizedDataRowWrite, assertLocalizedDataRowMove } from '../localization'
 
 type UpdateDataRowTableResult =
   | { ok: true; row: DataRow }
@@ -62,6 +63,7 @@ export async function createDataRow(
     })
   }
   const logicalId = input.id ?? nanoid()
+  await assertLocalizedDataRowWrite(db, scope, input.tableId, input.cells, actorUserId, pluginActorId, `rows.${logicalId}.cells`)
   const { rows } = await db<{ logical_id: string }>`
     insert into data_rows (
       id,
@@ -138,6 +140,9 @@ export async function updateDataRowDraftCells(
   actorUserId: string | null = null,
   pluginActorId: string | null = null,
 ): Promise<boolean> {
+  const current = await getDataRow(db, scope, rowId)
+  if (!current) return false
+  await assertLocalizedDataRowWrite(db, scope, current.tableId, input.cells, actorUserId, pluginActorId, `rows.${rowId}.cells`)
   const { rows } = await db<{ id: string }>`
     update data_rows
     set cells_json = ${input.cells},
@@ -166,6 +171,8 @@ export async function resurrectDataRow(
   input: UpdateDataRowDraftInput,
   actorUserId: string | null = null,
 ): Promise<void> {
+  const { rows: existing } = await db<{ table_id: string }>`select table_id from data_rows where id = ${physicalId(scope.branchId, rowId)} and branch_id = ${scope.branchId} limit 1`
+  if (existing[0]) await assertLocalizedDataRowWrite(db, scope, logicalIdOf(scope.branchId, existing[0].table_id), input.cells, actorUserId, null, `rows.${rowId}.cells`)
   await db`
     update data_rows
     set deleted_at = null,
@@ -301,6 +308,7 @@ export async function updateDataRowTable(
   rowId: string,
   tableId: string,
   actorUserId: string | null = null,
+  pluginActorId: string | null = null,
   opts: { collabInternal?: boolean } = {},
 ): Promise<UpdateDataRowTableResult> {
   if (!opts.collabInternal) {
@@ -312,6 +320,7 @@ export async function updateDataRowTable(
         rowId,
         tableId,
         actorUserId,
+        pluginActorId,
         { collabInternal: true },
       )
       let bumpPublishVersion = false
@@ -347,6 +356,7 @@ export async function updateDataRowTable(
   if (!tableRows[0]) return { ok: false, reason: 'table_not_found' }
 
   const physicalRowId = physicalId(scope.branchId, rowId)
+  await assertLocalizedDataRowMove(db, scope, tableId, rowId, row.cells, actorUserId, pluginActorId, `rows.${rowId}.cells`)
   // Only check for slug conflicts when the row has a non-empty slug.
   if (row.slug) {
     const { rows: conflictRows } = await db<{ id: string }>`

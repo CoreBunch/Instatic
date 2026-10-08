@@ -32,6 +32,7 @@ import { CanvasDocumentContext } from '@site/canvas/CanvasContexts'
 import { TextModule } from '@modules/base/text'
 import { ButtonModule } from '@modules/base/button'
 import { ContainerModule } from '@modules/base/container'
+import { DisclosureModule } from '@modules/base/disclosure'
 import { LoopModule } from '@modules/base/loop'
 import { ImageModule } from '@modules/base/image'
 import { SvgModule } from '@modules/base/svg'
@@ -51,6 +52,7 @@ import { SlotOutletModule } from '@modules/base/slotOutlet'
 runModuleConformanceSuite(TextModule)
 runModuleConformanceSuite(ButtonModule)
 runModuleConformanceSuite(ContainerModule)
+runModuleConformanceSuite(DisclosureModule)
 runModuleConformanceSuite(LoopModule)
 runModuleConformanceSuite(ImageModule)
 runModuleConformanceSuite(SvgModule)
@@ -163,21 +165,24 @@ describe('base.visual-component-ref and slot modules — contract specifics', ()
 // ---------------------------------------------------------------------------
 
 describe('base.loop — module contract specifics', () => {
-  it('uses dynamic loop properties outside the generic schema renderer', () => {
+  it('keeps source controls specialized and loading labels in the native text schema', () => {
     expect(LoopModule.id).toBe('base.loop')
     expect(LoopModule.canHaveChildren).toBe(true)
     expect(LoopModule.publishBehavior).toBe('special')
-    expect(Object.keys(LoopModule.schema)).toEqual([])
+    expect(Object.keys(LoopModule.schema).sort()).toEqual(['loadMoreLabel', 'loadingLabel', 'retryLabel'])
     expect(Object.keys(LoopModule.defaults).sort()).toEqual([
       'customTag',
       'direction',
       'filters',
       'htmlAttributes',
       'limit',
+      'loadMoreLabel',
+      'loadingLabel',
       'offset',
       'orderBy',
       'pageSize',
       'pagination',
+      'retryLabel',
       'sourceId',
       'tag',
     ])

@@ -40,6 +40,7 @@ import {
   type TemplateRenderDataContext,
 } from '@core/templates/dynamicBindings'
 import { useLoopPreviewItems } from '@site/canvas/useLoopPreviewItems'
+import { Button } from '@ui/components/Button'
 
 /**
  * Identifies the editable source a read-only region was composed from, so the
@@ -300,7 +301,8 @@ function ReadOnlyLoopIterationsPreview({
   readonlyMarkers,
   templateContext,
 }: ReadOnlyLoopIterationsPreviewProps) {
-  const items = useLoopPreviewItems(node, templateContext)
+  const { items, error, refresh } = useLoopPreviewItems(node, templateContext)
+  if (error) return <div data-canvas-interactive="true"><p>{error}</p><Button variant="secondary" size="sm" onClick={refresh}>Retry loop data</Button></div>
   if (items.length === 0) return null
 
   const baseStack = templateContext?.entryStack ?? []

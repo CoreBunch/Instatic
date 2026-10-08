@@ -11,9 +11,13 @@ import { physicalId } from '@core/branches'
 import type { DbClient } from '../../../db/client'
 import type { BranchScope } from '../../../branches/scope'
 import type { DataRow } from '@core/data/schemas'
-import type { StorageFilterOperator, StorageFilterValue } from '@core/plugin-sdk/storageSchemas'
+import { matchesStorageFilterValue, type ContentListOptions, type StorageFilterOperator } from '@core/plugin-sdk'
+import { compareDataCellValues, hasLocalizedDataFields, projectLocalizedDataCells, type DataLocalizationContext } from '@core/data/localizedCells'
+import { LocalizationError } from '@core/localization'
 import { jsonField } from '../../../db/jsonExtract'
 import { placeholder, selectHydratedDataRows } from './mapper'
+import { getDataTable } from '../tables'
+import { listDataRows } from './read'
 
 /**
  * Options accepted by `listDataRowsWithFilter`. Mirrors the plugin SDK's
@@ -28,12 +32,9 @@ import { placeholder, selectHydratedDataRows } from './mapper'
  * `slug` / `status` / `created_at` / `updated_at` (recognised by suffix
  * so the SQL stays dialect-naive).
  */
-interface ListDataRowsFilterOptions {
-  filter?: Record<string, StorageFilterValue>
-  orderBy?: Record<string, 'asc' | 'desc'>
-  status?: 'any' | 'draft' | 'published' | 'scheduled'
-  limit?: number
-  offset?: number
+type ListDataRowsFilterOptions = Omit<ContentListOptions, 'language'> & {
+  /** Derived query values only; returned rows preserve their authoring references. */
+  localization?: DataLocalizationContext
 }
 
 interface ListDataRowsWithFilterResult {
@@ -56,11 +57,12 @@ const ROW_LEVEL_ORDER_KEYS = new Set([
 /**
  * List rows in a table with operator-object filters, sort, and pagination.
  *
- * Two queries total, independent of page size: a single hydrated SELECT (the
+ * Ordinary fields use two SQL queries after table-schema lookup: a hydrated SELECT (the
  * filter + pagination live in a `filtered_ids` CTE that the row + user-ref
  * joins are restricted to) plus one COUNT. The CTE keeps the SQL dialect-naive
  * — both Postgres and SQLite support `with` — while collapsing what used to be
- * one hydration round-trip per matching id.
+ * one hydration round-trip per matching id. Localized tables with an explicit
+ * language project the eligible rows before filter/count/order/pagination.
  */
 export async function listDataRowsWithFilter(
   db: DbClient,
@@ -69,6 +71,49 @@ export async function listDataRowsWithFilter(
   options: ListDataRowsFilterOptions = {},
 ): Promise<ListDataRowsWithFilterResult> {
   const { filter, orderBy, status = 'any', limit = 100, offset = 0 } = options
+
+  for (const key of Object.keys(filter ?? {})) {
+    if (!FIELD_KEY_RE.test(key)) throw new Error(`[content] invalid filter field name: ${JSON.stringify(key)}`)
+  }
+  for (const key of Object.keys(orderBy ?? {})) {
+    if (!ROW_LEVEL_ORDER_KEYS.has(key) && !FIELD_KEY_RE.test(key)) throw new Error(`[content] invalid orderBy field name: ${JSON.stringify(key)}`)
+  }
+
+  const table = await getDataTable(db, scope, tableId)
+  if (table && hasLocalizedDataFields(table.fields)) {
+    const queryFields = [...Object.keys(filter ?? {}), ...Object.keys(orderBy ?? {}).filter(key => !ROW_LEVEL_ORDER_KEYS.has(key))]
+    const localizedQuery = queryFields.some(id => {
+      const field = table.fields.find(candidate => candidate.id === id)
+      return field !== undefined && hasLocalizedDataFields([field])
+    })
+    if (!options.localization && localizedQuery) throw new LocalizationError('query.language', 'Choose an explicit content language for localized field queries')
+    if (options.localization) {
+      const localization = options.localization
+      const candidates = (await listDataRows(db, scope, tableId))
+        .filter(row => status === 'any' || row.status === status)
+        .map(row => ({ row, cells: projectLocalizedDataCells(row.cells, table.fields, localization, `rows.${row.id}.cells`) }))
+      const matching = candidates.filter(candidate => Object.entries(filter ?? {})
+        .every(([key, value]) => matchesStorageFilterValue(candidate.cells[key], value)))
+      const orders = Object.entries(orderBy ?? {})
+      matching.sort((a, b) => {
+        for (const [key, direction] of orders) {
+          const aValue = ROW_LEVEL_ORDER_KEYS.has(key) ? rowOrderValue(a.row, key) : a.cells[key]
+          const bValue = ROW_LEVEL_ORDER_KEYS.has(key) ? rowOrderValue(b.row, key) : b.cells[key]
+          const comparison = compareDataCellValues(aValue, bValue, localization.language, direction)
+          if (comparison !== 0) return comparison
+        }
+        if (orders.length === 0) {
+          const updated = b.row.updatedAt.localeCompare(a.row.updatedAt)
+          if (updated !== 0) return updated
+          const created = b.row.createdAt.localeCompare(a.row.createdAt)
+          if (created !== 0) return created
+        }
+        return a.row.id.localeCompare(b.row.id)
+      })
+      const start = Math.max(0, offset)
+      return { rows: matching.slice(start, start + Math.max(1, Math.min(500, limit))).map(candidate => candidate.row), totalCount: matching.length }
+    }
+  }
 
   const params: unknown[] = [physicalId(scope.branchId, tableId)]
   let paramIdx = 1
@@ -87,9 +132,6 @@ export async function listDataRowsWithFilter(
 
   if (filter) {
     for (const [key, value] of Object.entries(filter)) {
-      if (!FIELD_KEY_RE.test(key)) {
-        throw new Error(`[content] invalid filter field name: ${JSON.stringify(key)}`)
-      }
       const fragment = jsonField('cells_json', key, db.dialect).sql
 
       if (value === null || typeof value !== 'object') {
@@ -127,9 +169,6 @@ export async function listDataRowsWithFilter(
       if (ROW_LEVEL_ORDER_KEYS.has(key)) {
         parts.push(`data_rows.${key} ${normalizedDir}`)
         continue
-      }
-      if (!FIELD_KEY_RE.test(key)) {
-        throw new Error(`[content] invalid orderBy field name: ${JSON.stringify(key)}`)
       }
       const fragment = jsonField('cells_json', key, db.dialect).sql
       parts.push(`${fragment} ${normalizedDir}`)
@@ -173,5 +212,16 @@ export async function listDataRowsWithFilter(
   return {
     rows,
     totalCount: Number(countResult.rows[0]?.total ?? 0),
+  }
+}
+
+function rowOrderValue(row: DataRow, key: string): string | null {
+  switch (key) {
+    case 'slug': return row.slug
+    case 'status': return row.status
+    case 'created_at': return row.createdAt
+    case 'updated_at': return row.updatedAt
+    case 'published_at': return row.publishedAt
+    default: throw new Error(`Unexpected row order field ${key}`)
   }
 }

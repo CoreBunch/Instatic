@@ -13,8 +13,10 @@
 
 import { describe, it, expect, beforeEach } from 'bun:test'
 import { useEditorStore } from '@site/store/store'
-import type { NewStyleRule } from '@core/siteImport'
+import { cssToStyleRules, type NewStyleRule } from '@core/siteImport'
 import { classKindSelector } from '@core/page-tree'
+import { generateClassCSS } from '@core/publisher'
+import parse from 'postcss/lib/parse'
 
 // ---------------------------------------------------------------------------
 // Test helpers
@@ -230,6 +232,90 @@ describe('styleRuleSlice.setClassContextStyles', () => {
 // ---------------------------------------------------------------------------
 
 describe('styleRuleSlice.applyCssRules', () => {
+  function apply(css: string, mode: 'merge' | 'replace' = 'merge') {
+    const parsed = cssToStyleRules(css, { breakpoints: [], mediaTolerance: 0 })
+    expect(parsed.warnings.filter((warning) => warning.kind !== 'duplicate-class')).toEqual([])
+    return getStore().applyCssRules(parsed.rules, parsed.conditions, mode)
+  }
+  function emitted() {
+    const site = getStore().site!
+    return generateClassCSS(site.styleRules, site.breakpoints, site.conditions)
+  }
+
+  it('preserves repeated source fragments, layer anchors, nested contexts and native registrations', () => {
+    setupSite()
+    const source =
+      '@layer low, high; @layer low { .a {color:red} .b {color:blue} .a {color:green!important} } @layer high { @media (min-width:1px) { @supports (display:grid) { .a {color:black} } } } @property --size {syntax:"<length>";inherits:false;initial-value:12px}'
+    apply(source)
+    const css = emitted()
+    expect(css.indexOf('color: red')).toBeLessThan(css.indexOf('color: blue'))
+    expect(css.indexOf('color: blue')).toBeLessThan(css.indexOf('color: green !important'))
+    expect(css).toContain('@supports (display:grid)')
+    expect(css).toContain('@property --size')
+    expect(
+      Object.values(getStore().site!.styleRules).filter(
+        (rule) => rule.kind === 'class' && rule.name === 'a',
+      ),
+    ).toHaveLength(1)
+    const before = getStore().site!.styleRules
+    expect(apply(source)).toEqual({ created: 0, updated: 0, blockedSelectors: [] })
+    expect(getStore().site!.styleRules).toBe(before)
+    expect(emitted()).toBe(css)
+  })
+
+  it('keeps named layers distinct and edits one group without moving its sibling declarations', () => {
+    setupSite()
+    apply('@layer first { .a {color:red} .b{color:blue} } @layer second { .a {color:green} }')
+    apply('@layer first { .a {color:black} }')
+    const root = parse(emitted())
+    const layers = root.nodes.filter((node) => node.type === 'atrule' && node.name === 'layer')
+    expect(layers).toHaveLength(2)
+    expect(layers[0].toString()).toContain('color: black')
+    expect(layers[0].toString()).toContain('.b')
+    expect(layers[1].toString()).toContain('color: green')
+  })
+
+  it('keeps anonymous layers independent across separately applied CSS batches', () => {
+    setupSite()
+    apply('@layer { .a {color:red!important} .b {color:blue} }')
+    apply('@layer { .a {color:green!important} }')
+    const layers = parse(emitted()).nodes.filter((node) => node.type === 'atrule')
+    expect(layers).toHaveLength(2)
+    expect(layers[0].toString()).toContain('color: red !important')
+    expect(layers[0].toString()).toContain('.b')
+    expect(layers[1].toString()).toContain('color: green !important')
+  })
+
+  it('replace removes omitted conditional fragments within one layer and retains assignment identity', () => {
+    setupSite()
+    apply(
+      '@layer first { .a {color:red} @media (min-width:1px) { .a {color:blue} } } @layer second { .a {color:green} }',
+    )
+    const binding = Object.values(getStore().site!.styleRules).find(
+      (rule) => rule.kind === 'class' && rule.name === 'a',
+    )!
+    const id = binding.id,
+      order = binding.order
+    apply('@layer first { .a {color:black} }', 'replace')
+    const css = emitted()
+    expect(css).not.toContain('@media')
+    expect(css).not.toContain('color: blue')
+    expect(css).toContain('color: black')
+    expect(css).toContain('color: green')
+    expect(getStore().site!.styleRules[id].order).toBe(order)
+  })
+
+  it('updates property descriptors rather than dropping metadata or treating the write as a no-op', () => {
+    setupSite()
+    apply('@property --size {syntax:"<length>";inherits:false;initial-value:12px}')
+    expect(
+      apply('@property --size {syntax:"<percentage>";inherits:true;initial-value:10%}').updated,
+    ).toBe(1)
+    expect(emitted()).toContain('syntax: "<percentage>"')
+    expect(emitted()).toContain('inherits: true')
+    expect(emitted()).toContain('initial-value: 10%')
+  })
+
   it('skips identical writes and prunes priority metadata when values are cleared', () => {
     setupSite()
     const incoming: NewStyleRule = {
@@ -248,8 +334,9 @@ describe('styleRuleSlice.applyCssRules', () => {
       updated: 0,
       blockedSelectors: [],
     })
-    const rule = Object.values(useEditorStore.getState().site!.styleRules)
-      .find((candidate) => candidate.selector === '.priority')!
+    const rule = Object.values(useEditorStore.getState().site!.styleRules).find(
+      (candidate) => candidate.selector === '.priority',
+    )!
     const historyBeforeNoop = historyLength()
     const updatedAtBeforeNoop = rule.updatedAt
 
@@ -673,7 +760,9 @@ describe('styleRuleSlice — undo / redo', () => {
 
     getStore().deleteClass(cls.id)
     expect(useEditorStore.getState().site!.styleRules[cls.id]).toBeUndefined()
-    expect(useEditorStore.getState().site!.pages[0].nodes[childId].classIds ?? []).not.toContain(cls.id)
+    expect(useEditorStore.getState().site!.pages[0].nodes[childId].classIds ?? []).not.toContain(
+      cls.id,
+    )
 
     useEditorStore.getState().undo()
     expect(useEditorStore.getState().site!.styleRules[cls.id]).toBeDefined()
@@ -681,7 +770,9 @@ describe('styleRuleSlice — undo / redo', () => {
 
     useEditorStore.getState().redo()
     expect(useEditorStore.getState().site!.styleRules[cls.id]).toBeUndefined()
-    expect(useEditorStore.getState().site!.pages[0].nodes[childId].classIds ?? []).not.toContain(cls.id)
+    expect(useEditorStore.getState().site!.pages[0].nodes[childId].classIds ?? []).not.toContain(
+      cls.id,
+    )
   })
 
   it('style edits are undoable and redoable', () => {
@@ -703,13 +794,19 @@ describe('styleRuleSlice — undo / redo', () => {
     const cls = getStore().createClass('responsive')
 
     getStore().setClassContextStyles(cls.id, 'mobile', { fontSize: '14px' })
-    expect(useEditorStore.getState().site!.styleRules[cls.id].contextStyles.mobile?.fontSize).toBe('14px')
+    expect(useEditorStore.getState().site!.styleRules[cls.id].contextStyles.mobile?.fontSize).toBe(
+      '14px',
+    )
 
     useEditorStore.getState().undo()
-    expect(useEditorStore.getState().site!.styleRules[cls.id].contextStyles.mobile?.fontSize).toBeUndefined()
+    expect(
+      useEditorStore.getState().site!.styleRules[cls.id].contextStyles.mobile?.fontSize,
+    ).toBeUndefined()
 
     useEditorStore.getState().redo()
-    expect(useEditorStore.getState().site!.styleRules[cls.id].contextStyles.mobile?.fontSize).toBe('14px')
+    expect(useEditorStore.getState().site!.styleRules[cls.id].contextStyles.mobile?.fontSize).toBe(
+      '14px',
+    )
   })
 
   it('node class assignments are undoable and redoable', () => {
@@ -720,13 +817,17 @@ describe('styleRuleSlice — undo / redo', () => {
     expect(useEditorStore.getState().site!.pages[0].nodes[childId].classIds ?? []).toContain(cls.id)
 
     useEditorStore.getState().undo()
-    expect(useEditorStore.getState().site!.pages[0].nodes[childId].classIds ?? []).not.toContain(cls.id)
+    expect(useEditorStore.getState().site!.pages[0].nodes[childId].classIds ?? []).not.toContain(
+      cls.id,
+    )
 
     useEditorStore.getState().redo()
     expect(useEditorStore.getState().site!.pages[0].nodes[childId].classIds ?? []).toContain(cls.id)
 
     getStore().removeNodeClass(childId, cls.id)
-    expect(useEditorStore.getState().site!.pages[0].nodes[childId].classIds ?? []).not.toContain(cls.id)
+    expect(useEditorStore.getState().site!.pages[0].nodes[childId].classIds ?? []).not.toContain(
+      cls.id,
+    )
 
     useEditorStore.getState().undo()
     expect(useEditorStore.getState().site!.pages[0].nodes[childId].classIds ?? []).toContain(cls.id)
@@ -828,9 +929,7 @@ describe('styleRuleSlice — node class assignment in VC canvas', () => {
 
     getStore().addNodeClass(vcChildId, cls.id)
 
-    const vc = useEditorStore
-      .getState()
-      .site!.visualComponents.find((v) => v.id === vcId)!
+    const vc = useEditorStore.getState().site!.visualComponents.find((v) => v.id === vcId)!
     expect(vc.tree.nodes[vcChildId].classIds).toContain(cls.id)
   })
 
@@ -841,9 +940,7 @@ describe('styleRuleSlice — node class assignment in VC canvas', () => {
     getStore().addNodeClass(vcChildId, cls.id)
     getStore().removeNodeClass(vcChildId, cls.id)
 
-    const vc = useEditorStore
-      .getState()
-      .site!.visualComponents.find((v) => v.id === vcId)!
+    const vc = useEditorStore.getState().site!.visualComponents.find((v) => v.id === vcId)!
     expect(vc.tree.nodes[vcChildId].classIds ?? []).not.toContain(cls.id)
   })
 
@@ -859,9 +956,7 @@ describe('styleRuleSlice — node class assignment in VC canvas', () => {
     // [a, b, c] → move c up → [a, c, b]
     getStore().reorderNodeClass(vcChildId, c.id, 'up')
 
-    const vc = useEditorStore
-      .getState()
-      .site!.visualComponents.find((v) => v.id === vcId)!
+    const vc = useEditorStore.getState().site!.visualComponents.find((v) => v.id === vcId)!
     expect(vc.tree.nodes[vcChildId].classIds).toEqual([a.id, c.id, b.id])
   })
 
@@ -872,9 +967,7 @@ describe('styleRuleSlice — node class assignment in VC canvas', () => {
 
     getStore().deleteClass(cls.id)
 
-    const vc = useEditorStore
-      .getState()
-      .site!.visualComponents.find((v) => v.id === vcId)!
+    const vc = useEditorStore.getState().site!.visualComponents.find((v) => v.id === vcId)!
     expect(vc.tree.nodes[vcChildId].classIds ?? []).not.toContain(cls.id)
   })
 })

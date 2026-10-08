@@ -50,10 +50,9 @@ interface ModuleEditorRuntime {
 
 /**
  * The safe set of CSP directives a module may declare source requirements for.
- * Scoped to content-loading directives only — modules cannot request
- * 'script-src' relaxation through this channel (that would open arbitrary
- * script execution; plugin frontend assets go through the server injection
- * pipeline instead).
+ * First-party modules declare only the origins actually used by their
+ * authored configuration. Plugin frontend assets use the server injection
+ * pipeline and permission checks.
  */
 export type CspDirective =
   | 'frame-src'
@@ -63,6 +62,7 @@ export type CspDirective =
   | 'connect-src'
   | 'style-src'
   | 'font-src'
+  | 'form-action'
 
 /**
  * A single CSP source requirement declared by a module's render() output.
@@ -369,9 +369,9 @@ export interface ModuleDefinition<
 
   /**
    * Optional TypeBox schema that declares the full shape and per-field
-   * defaults for this module's props. When present, `validateNodeProps`
-   * coerces and default-fills props at the publisher boundary (soft — never
-   * throws). The schema is the single source of truth for shape + defaults;
+   * defaults for this module's props. When present, `parseModuleProps`
+   * coerces and default-fills props at the publisher boundary, throwing a
+   * typed error if coercion cannot produce valid props. The schema owns defaults;
    * `defaults` should be derived from it via `Value.Create(propsSchema)`.
    *
    * Publisher-injected render-time fields (`_resolvedMediaByKey`,

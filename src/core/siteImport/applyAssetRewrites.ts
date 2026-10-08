@@ -7,7 +7,7 @@
  * newly-uploaded `newUrl`.
  *
  * Two surfaces to rewrite:
- *   1. Page node props — string values for `src`, `href`, `srcset` that equal
+ *   1. Page node props — source, link, srcset, video and poster URLs that equal
  *      a FileMap key after normalisation by `assetPlan`, plus imported
  *      `htmlAttributes` bags such as `data-bg-src`.
  *   2. CSS rule `styles` and `contextStyles` — `url('key')` expressions where
@@ -21,12 +21,7 @@
 import type { PageNode } from '@core/page-tree'
 import type { ImportFragment } from '@core/htmlImport'
 import type { ImportPlan, ImportStylesheet, NewStyleRule, ImportFontFamily } from './types'
-
-// ---------------------------------------------------------------------------
-// Props that may carry normalised FileMap keys in page nodes
-// ---------------------------------------------------------------------------
-
-const URL_BEARING_PROPS: ReadonlySet<string> = new Set(['src', 'href', 'srcset'])
+import { URL_BEARING_PROPS } from './assetProps'
 
 // ---------------------------------------------------------------------------
 // Public function
@@ -184,6 +179,9 @@ function rewriteRule(rule: NewStyleRule, rewriteMap: Record<string, string>): Ne
   const newRawCss = typeof rule.rawCss === 'string'
     ? rewriteUrlsInCssValue(rule.rawCss, rewriteMap)
     : rule.rawCss
+  const newAtRule = rule.atRule?.kind === 'property' && rule.atRule.initialValue !== undefined
+    ? { ...rule.atRule, initialValue: rewriteUrlsInCssValue(rule.atRule.initialValue, rewriteMap) }
+    : rule.atRule
 
   // Every per-context override (viewport contexts AND custom conditions) lives
   // in one map now and can carry url() backgrounds — rewrite each bag to the
@@ -201,6 +199,7 @@ function rewriteRule(rule: NewStyleRule, rewriteMap: Record<string, string>): Ne
     styles: newStyles,
     contextStyles: newContextStyles,
     ...(newRawCss !== undefined ? { rawCss: newRawCss } : {}),
+    ...(newAtRule !== undefined ? { atRule: newAtRule } : {}),
   }
 }
 

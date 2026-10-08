@@ -18,6 +18,7 @@ import { BracesIcon } from 'pixel-art-icons/icons/braces'
 
 const FIELD_ICONS: Record<DataFieldType, IconComponent> = {
   text: TextStartTIcon,
+  localizedText: TextStartTIcon,
   url: TextStartTIcon,
   email: TextStartTIcon,
   longText: TextColumsIcon,

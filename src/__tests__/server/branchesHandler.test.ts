@@ -3,7 +3,11 @@
  * the header-scoped fallback once a branch is gone.
  */
 import { afterEach, describe, expect, it } from 'bun:test'
-import { upsertDataRowDraft } from '../../../server/repositories/data'
+import { createDataRow, createDataTable, getDataRow, saveDataRowDraft, upsertDataRowDraft } from '../../../server/repositories/data'
+import { getDraftSiteDocument } from '../../../server/repositories/publish'
+import { saveDraftSite } from '../../../server/repositories/site'
+import { MAIN_SCOPE } from '../../../server/branches/scope'
+import type { MergePlan } from '@core/branches'
 import {
   createCapabilityTestHarness,
   expectForbidden,
@@ -27,6 +31,48 @@ describe('branches endpoints', () => {
   afterEach(async () => {
     await harness?.cleanup()
     harness = null
+  })
+
+  it('forks localized references structurally and requires a review language before showing names or fields', async () => {
+    harness = await createCapabilityTestHarness()
+    const owner = await harness.setupOwner()
+    const { rows: [user] } = await harness.db.unsafe<{ id: string }>('SELECT id FROM users')
+    const site = (await getDraftSiteDocument(harness.db, MAIN_SCOPE))!
+    site.settings.localization = { catalogues: ['it', 'de'].map(language => ({ language, fileId: `language-${language}` })) }
+    site.files = [
+      { id: 'language-it', path: 'languages/it.json', type: 'config', createdAt: 0, updatedAt: 0, content: JSON.stringify({ language: 'it', messages: { entry: { before: 'Prima', after: 'Dopo' } } }) },
+      { id: 'language-de', path: 'languages/de.json', type: 'config', createdAt: 0, updatedAt: 0, content: JSON.stringify({ language: 'de', messages: { entry: { before: 'Vorher', after: 'Nachher' } } }) },
+    ]
+    await saveDraftSite(harness.db, MAIN_SCOPE, site)
+    const table = await createDataTable(harness.db, MAIN_SCOPE, { id: 'localized-articles', name: 'Articles', slug: 'articles', kind: 'postType',
+      singularLabel: 'Article', pluralLabel: 'Articles', primaryFieldId: 'heading', fields: [{ id: 'heading', label: 'Heading', type: 'localizedText' }] })
+    const row = await createDataRow(harness.db, MAIN_SCOPE, { id: 'localized-row', tableId: table.id, slug: 'entry-url', cells: { heading: { key: 'entry.before' }, slug: 'entry-url' } }, user.id)
+    const fork = await harness.cms(BRANCHES, { method: 'POST', cookie: owner, json: { name: 'Localized branch' } })
+    expect(fork.status).toBe(201)
+    const scope = { branchId: 'localized-branch' }
+    expect((await getDataRow(harness.db, scope, row.id))!.cells.heading).toEqual({ key: 'entry.before' })
+    await saveDataRowDraft(harness.db, scope, row.id, { cells: { ...row.cells, heading: { key: 'entry.after' } }, slug: row.slug }, user.id)
+    const metadata = await readJson<{ plan: MergePlan }>(await harness.cms(`${BRANCHES}/${scope.branchId}/merge`, { cookie: owner }))
+    const change = metadata.plan.changes.find(change => change.logicalId === row.id)!
+    expect(change.label).toBeNull()
+    expect(change.detail).toEqual({ kind: 'row', fields: [], tree: null })
+    expect(metadata.plan.localization).toEqual({ languages: ['it', 'de'], canBrowseCatalogue: true })
+    const response = await harness.cms(`${BRANCHES}/${scope.branchId}/merge?language=de`, { cookie: owner })
+    expect(response.status).toBe(200)
+    const { plan } = await readJson<{ plan: MergePlan }>(response)
+    expect(plan.changes.find(change => change.logicalId === row.id)!.label).toBe('Nachher')
+    expect(plan.localization).toEqual({ languages: ['it', 'de'], canBrowseCatalogue: true, language: 'de' })
+    expect((await getDataRow(harness.db, scope, row.id))!.cells.heading).toEqual({ key: 'entry.after' })
+    expect((await harness.cms(`${BRANCHES}/${scope.branchId}/merge?language=fr`, { cookie: owner })).status).toBe(422)
+    const reader = await harness.createRoleUser({ name: 'Own branch reader', slug: 'own-branch-reader', capabilities: ['site.read', 'data.custom.tables.read', 'content.edit.own'] })
+    const restricted = await readJson<{ plan: MergePlan }>(await harness.cms(`${BRANCHES}/${scope.branchId}/merge?language=de`, { cookie: reader.cookie }))
+    expect(restricted.plan.changes.find(change => change.logicalId === row.id)).toMatchObject({ label: 'A row you cannot read', detail: { kind: 'row', fields: [], tree: null } })
+    expect(restricted.plan.localization).toBeUndefined()
+    // Apply and undo use reference content without choosing a display language.
+    expect((await harness.cms(`${BRANCHES}/${scope.branchId}/merge`, { method: 'POST', cookie: owner, json: { resolutions: {} } })).status).toBe(200)
+    expect((await getDataRow(harness.db, MAIN_SCOPE, row.id))!.cells.heading).toEqual({ key: 'entry.after' })
+    expect((await harness.cms(`${BRANCHES}/${scope.branchId}/merge/undo`, { method: 'POST', cookie: owner })).status).toBe(200)
+    expect((await getDataRow(harness.db, MAIN_SCOPE, row.id))!.cells.heading).toEqual({ key: 'entry.before' })
   })
 
   it('lists main, forks a branch, renames it, and scopes content requests by header', async () => {

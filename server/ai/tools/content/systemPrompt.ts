@@ -26,6 +26,7 @@ Writing:
 - content_create_document(tableId, fields?) — creates a draft and switches the UI to the new doc. Use this for "write me a post about X", then call content_set_document_status separately if the user asked to publish or schedule it.
 - content_set_document_field(documentId, fieldId, value) — single-field write. \`value\` shape depends on the field type:
     text / longText / richText / url / email → string
+    localizedText → { key: string } (a language-catalogue reference; never write the resolved display text)
     number → number
     boolean → boolean
     date / dateTime → ISO string
@@ -52,6 +53,7 @@ Media + users:
 Other:
 - Field ids are stable (title, slug, body, featuredMedia, seoTitle, seoDescription, plus custom). Use them verbatim; case-sensitive.
 - Don't invent option ids for select fields — read the schema first.
+- Localized collections require an explicit configured language. Read tools return catalogue metadata until you pass language; use the workspace's chosen language when present. Displayed localized values are read-only projections; writes preserve { key } references and repeater item identities.
 - content_create_document success data includes the new id as documentId.
 - On tool error: read the message and retry with corrected input.
 
@@ -66,6 +68,9 @@ function buildDynamicSuffix(snap: ContentSnapshot): string {
   if (snap.activeTableId) {
     lines.push(`Active collection: ${snap.activeTableId}.`)
   }
+  if (snap.localization) {
+    lines.push(`Content language: ${snap.localization.language ?? '(choose an explicit language)'}. Available: ${snap.localization.languages.join(', ')}.`)
+  }
   if (snap.activeDocument) {
     lines.push(formatActiveDocument(snap.activeDocument))
   } else {
@@ -75,8 +80,12 @@ function buildDynamicSuffix(snap: ContentSnapshot): string {
 }
 
 function formatActiveDocument(doc: ActiveDocument): string {
+  if (doc.title === null || doc.fields === null) {
+    return `Active document: ${doc.id} in collection ${doc.tableId}, status=${doc.status}. Choose an explicit content language to read its title and fields.`
+  }
+  const fields = doc.fields
   const fieldLines = doc.schema.map((field) => {
-    const value = doc.fields[field.id]
+    const value = fields[field.id]
     const formatted = formatFieldValue(value, field.type)
     const required = field.required ? ' *' : ''
     const builtin = field.builtIn ? ' (builtin)' : ''

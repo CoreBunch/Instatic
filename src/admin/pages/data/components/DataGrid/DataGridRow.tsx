@@ -15,7 +15,8 @@ import { cn } from '@ui/cn'
 import { TrashSolidIcon } from 'pixel-art-icons/icons/trash-solid'
 import { EditSolidIcon } from 'pixel-art-icons/icons/edit-solid'
 import { OpenSolidIcon } from 'pixel-art-icons/icons/open-solid'
-import { readStringCell } from '@core/data/cells'
+import { useLocalizedData } from '@admin/pages/data/localizedData'
+import { readDisplayTitle, readStringCell } from '@core/data/cells'
 import type { DataField, DataRow, DataTable } from '@core/data/schemas'
 import { CellDisplayRenderer } from './cells/CellDisplayRenderer'
 import styles from './DataGrid.module.css'
@@ -39,6 +40,7 @@ interface DataGridRowProps {
   tables: DataTable[]
   /** All rows in the active table — for in-table relation labels. */
   rows: DataRow[]
+  resolveRelationTarget?: (id: string) => DataRow | null
   selected: boolean
   /** True when the row's checkbox is ticked (bulk-select). */
   checked: boolean
@@ -69,6 +71,7 @@ export function DataGridRow({
   table,
   tables,
   rows,
+  resolveRelationTarget,
   selected,
   checked,
   readOnly: _readOnly,
@@ -86,7 +89,8 @@ export function DataGridRow({
   const PrimaryActionIcon = isPostType ? EditSolidIcon : OpenSolidIcon
 
   // Resolve primary title + subtitle.
-  const primaryValue = readStringCell(row.cells, primaryFieldId)
+  const localization = useLocalizedData()
+  const primaryValue = readDisplayTitle(row.cells, table, localization?.context)
   const subtitleValue = subtitleFieldId
     ? readStringCell(row.cells, subtitleFieldId)
     : ''
@@ -166,7 +170,7 @@ export function DataGridRow({
               field={field}
               cells={row.cells}
               tables={tables}
-              rows={rows}
+              rows={rows} resolveRelationTarget={resolveRelationTarget}
             />
           </div>
         )

@@ -14,7 +14,7 @@ import { buildDataMeta } from '@core/data/fields'
 import { listDataTables } from '../../../repositories/data'
 import { jsonResponse } from '../../../http'
 import { CMS_API_PREFIX } from '../shared'
-import { requireDataAccess } from './access'
+import { requireDataAccess } from '../../../auth/dataAccess'
 import type { BranchScope } from '../../../branches/scope'
 
 export async function handleDataMetaRoutes(

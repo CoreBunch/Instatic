@@ -489,9 +489,9 @@ globalThis.__buildApi = function buildApi() {
           }
         },
         // Cross-table
-        search: function (query: unknown, limit: unknown) {
+        search: function (query: unknown, options: unknown) {
           assertTargetPermission('cms.content.search')
-          return call('cms.content.search', [String(query), Number(limit || 50)])
+          return call('cms.content.search', [String(query), options ?? {}])
         },
         getPublishedSnapshot: function (entryId: unknown) {
           assertTargetPermission('cms.content.snapshot')

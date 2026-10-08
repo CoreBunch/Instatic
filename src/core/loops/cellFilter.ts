@@ -43,19 +43,31 @@ export function parseCellOrder(orderBy: string): { field: string } | null {
 /**
  * `ORDER BY` expression for a cell, with the field name bound as a parameter.
  *
- * Values are compared as TEXT in both dialects. ISO dates — the reason this
- * exists — sort chronologically that way, and text sorts naturally. Numbers
- * sort lexicographically (`'10' < '9'`), which is the price of one predictable
- * rule across Postgres and SQLite instead of two subtly different ones.
+ * Number fields compare their stored JSON numbers numerically. Missing, null
+ * or non-number cells sort last in either direction, matching readNumberCell's
+ * typed semantics. Other scalar fields compare as text; ISO dates retain their
+ * chronological ordering. The source selects the mode from table field metadata.
  */
 export function cellOrderSql(input: {
   field: string
   dialect: 'postgres' | 'sqlite'
   column: string
   paramIndex: number
+  numeric: boolean
 }): { sql: string; params: unknown[] } {
-  const { field, dialect, column, paramIndex } = input
+  const { field, dialect, column, paramIndex, numeric } = input
   const placeholder = dialect === 'postgres' ? `$${paramIndex}` : '?'
+  if (numeric) {
+    const value = dialect === 'postgres'
+      ? `case when jsonb_typeof(${column} #> array[${placeholder}]) = 'number' then cast((${column} #>> array[${placeholder}]) as numeric) end`
+      : `case when json_type(${column}, '$.' || ${placeholder}) in ('integer', 'real') then json_extract(${column}, '$.' || ${placeholder}) end`
+    return {
+      sql: `case when (${value}) is null then 1 else 0 end asc, ${value}`,
+      // Numbered Postgres parameters can be reused; SQLite's positional '?'
+      // binds once per occurrence, in the order they appear in the query.
+      params: dialect === 'postgres' ? [field] : [field, field, field, field],
+    }
+  }
   const raw = dialect === 'postgres'
     ? `(${column} #>> array[${placeholder}])`
     : `cast(json_extract(${column}, '$.' || ${placeholder}) as text)`
@@ -167,6 +179,20 @@ export function cellFilterSql(input: {
       return { sql: `${textValue} <> ''`, params: [filter.field] }
     case 'isEmpty':
       return { sql: `${textValue} = ''`, params: [filter.field] }
+  }
+}
+
+/** The same closed conditions apply after native localized-cell projection. */
+export function matchesCellFilter(cells: Record<string, unknown>, filter: CellFilter): boolean {
+  const value = cells[filter.field]
+  const text = value === undefined || value === null ? '' : typeof value === 'object' ? JSON.stringify(value) : String(value)
+  switch (filter.operator) {
+    case 'is': return text === filter.value
+    case 'isNot': return text !== filter.value
+    case 'isTrue': return text === 'true' || text === '1'
+    case 'isFalse': return text === 'false' || text === '0' || text === ''
+    case 'isSet': return text !== ''
+    case 'isEmpty': return text === ''
   }
 }
 

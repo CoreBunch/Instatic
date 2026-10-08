@@ -5,6 +5,7 @@ import type { RelationCellProps } from './RelationCell'
 import type { PageTreeCellProps } from './PageTreeCell'
 import type { FieldSchemaCellProps } from './FieldSchemaCell'
 import { TextCell } from './TextCell'
+import { LocalizedTextCell } from './LocalizedTextCell'
 import { LongTextCell } from './LongTextCell'
 import { RichTextCell } from './RichTextCell'
 import { NumberCell } from './NumberCell'
@@ -55,6 +56,8 @@ export function CellEditorRenderer({
   switch (field.type) {
     case 'text':
       return <TextCell field={field} {...rest} />
+    case 'localizedText':
+      return <LocalizedTextCell field={field} {...rest} />
 
     case 'longText':
       return <LongTextCell field={field} {...rest} />
@@ -90,7 +93,7 @@ export function CellEditorRenderer({
       return <MediaCell field={field} {...rest} />
 
     case 'relation':
-      return <RelationCell field={field} {...rest} onOpenPicker={onOpenPicker} />
+      return <RelationCell field={field} {...rest} tables={tables} onOpenPicker={onOpenPicker} />
 
     case 'repeater':
       return <RepeaterCell field={field} {...rest} tables={tables} />

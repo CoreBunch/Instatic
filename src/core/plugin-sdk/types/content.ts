@@ -1,7 +1,7 @@
 /**
  * Narrowed projection of `DataField` for the plugin boundary.
  *
- * The host's full `DataField` union has 16 types (`src/core/data/schemas.ts`).
+ * The host's full `DataField` union has 17 types (`src/core/data/schemas.ts`).
  * One is omitted and two are narrowed for the JSON RPC boundary:
  *
  *   - `fieldSchema` — recursive (a field whose value is `DataField[]`).
@@ -11,7 +11,7 @@
  *                     `api.cms.content.tree(...)`.
  *
  * Plugins receive a `PluginContentField[]` from `api.cms.content.tables.get`,
- * which is faithful to the host's catalog for the 15 projected types and
+ * which is faithful to the host's catalog for the 16 projected types and
  * intentionally omits `fieldSchema`. Adding new field kinds to the host's
  * union is its own follow-up plan (Gap A.4) — it requires extending this
  * projection in lock-step.
@@ -26,6 +26,7 @@ const PluginRepeaterItemCommon = {
 }
 
 const PluginRepeaterItemFieldSchema = Type.Union([
+  Type.Object({ type: Type.Literal('localizedText'), ...PluginRepeaterItemCommon }),
   Type.Object({ type: Type.Literal('text'), ...PluginRepeaterItemCommon }),
   Type.Object({ type: Type.Literal('longText'), ...PluginRepeaterItemCommon }),
   Type.Object({ type: Type.Literal('richText'), ...PluginRepeaterItemCommon }),
@@ -66,6 +67,12 @@ const PluginRepeaterItemFieldSchema = Type.Union([
 export type PluginRepeaterItemField = Static<typeof PluginRepeaterItemFieldSchema>
 
 export const PluginContentFieldSchema = Type.Union([
+  Type.Object({
+    type: Type.Literal('localizedText'),
+    id: Type.String(),
+    label: Type.String(),
+    required: Type.Optional(Type.Boolean()),
+  }),
   Type.Object({
     type: Type.Literal('text'),
     id: Type.String(),

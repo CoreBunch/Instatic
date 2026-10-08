@@ -1,3 +1,4 @@
+import { buildTemplateRenderContext } from '@core/templates'
 /**
  * Before/after page renders for the merge review — one page, from main's
  * draft or the branch's draft, as HTML for a sandboxed iframe.
@@ -44,7 +45,7 @@ export async function renderBranchReviewPage(
   const chain = resolveTemplateChain(site, { kind: 'page' })
   const merged = composeTemplateChain(chain, { kind: 'page', page })
   const url = new URL(`http://localhost/${page.slug}`)
-  const templateContext = { entryStack: [], route: buildRouteFrame(url.toString()) }
+  const templateContext = buildTemplateRenderContext(page, site, { entryStack: [], route: buildRouteFrame(url.toString()) })
   const request: SourceRequestContext = {
     query: {},
     path: url.pathname,
@@ -54,7 +55,7 @@ export async function renderBranchReviewPage(
   // Both sides read DRAFT rows: a merge compares main's draft with the
   // branch's draft, and main's published versions are what visitors see,
   // not what the merge would write over.
-  const loopData = await prefetchLoopData(merged, site, db, url, { branchId: scope.branchId, request, drafts: true })
+  const loopData = await prefetchLoopData(merged, site, db, url, { branchId: scope.branchId, request, drafts: true, templateContext })
   const mediaAssets = await prefetchMediaAssets(merged, site, registry, db, { templateContext, loopData })
   const rendered = publishPage(merged, site, registry, {
     templateContext,

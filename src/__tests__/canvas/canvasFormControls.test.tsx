@@ -20,6 +20,20 @@ beforeEach(() => {
 })
 
 describe('canvas form controls', () => {
+  it('renders range bounds and step in the editable canvas', async () => {
+    const site = useEditorStore.getState().createSite('Range controls')
+    const id = useEditorStore.getState().insertNode('base.input', {
+      inputType: 'range', min: '2', max: '20', step: '2', value: '6',
+    }, site.pages[0]!.rootNodeId)
+    renderCanvas()
+    const input = await waitForCanvasNodeInFrame<HTMLInputElement>('desktop', id)
+    expect(input.type).toBe('range')
+    expect(input.min).toBe('2')
+    expect(input.max).toBe('20')
+    expect(input.step).toBe('2')
+    expect(input.value).toBe('6')
+  })
+
   // Reproduces the leak that made the next test fail on CI and pass locally.
   // `it` bodies run in declaration order, so this guarantees the real test
   // always runs against a store a previous test has already dirtied. In live

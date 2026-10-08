@@ -4,7 +4,7 @@
 
 The static-site pipeline has two parts: a pure analysis function (`buildImportPlan`) that produces an `ImportPlan` preview, and an async commit function (`commitImportPlan`) that uploads assets and writes to the store. CMS bundle imports keep their native semantics: validate the `SiteBundle`, preview against `/admin/api/cms/import/preview`, resolve any row slug conflicts in the shared Conflicts step, then apply through `/admin/api/cms/import` or `/admin/api/cms/import/archive`. The modal uses the same Review category navigator and Import progress surface for CMS bundles, so tables, media, folders, redirects, conflict resolution, and completion all live in the same picker pattern as HTML/CSS/media imports.
 
-CSS declarations containing `var()`, `env()`, `clamp()`, `min()`, or `max()` pass through the shared CSS substitution encoder before CSSOM parsing. This preserves their authored values in both browser and headless imports, including centered section padding and responsive wrapper widths. The decoder restores the original property names before storage.
+PostCSS parses source structure so headless CSSOM support does not determine which grouping rules survive. Individual declarations still pass through the shared CSS substitution encoder and CSSOM reader. Values unsupported by the headless engine retain their authored text in native property bags; repeated properties retain separate ordered fragments, preserving browser fallbacks, shorthand resets, and declaration priority.
 
 ---
 
@@ -19,7 +19,8 @@ CSS declarations containing `var()`, `env()`, `clamp()`, `min()`, or `max()` pas
 - What imports: pages, linked CSS plus unconditional local CSS `@import` graphs, `kind:'class'` and `kind:'ambient'` style rules, stylesheets kept as page-scoped files, `@keyframes`, uploadable media/font files, root CSS color tokens, root CSS font tokens, `@font-face` families, known external font stylesheet imports, safe extra HTML attributes on base modules, body-level classes/attributes/style metadata, bare DOM text nodes in mixed content, and executable HTML scripts as page-scoped runtime scripts. Module-script imports from known npm CDNs are rewritten to bare package imports and added to the site dependency manifest.
 - CMS bundle import preserves selected exported tables, rows, optional site shell, media, folders, and redirects using the same merge strategies as site transfer (`replace`, `merge-add`, `merge-overwrite`).
 - HTML forms import through the shared HTML importer as first-class form primitives (`base.form`, controls, labels, submit buttons), not as custom containers.
-- What cannot be modeled: `@layer`, conditional local CSS `@import`, and arbitrary external `@import` — surfaced as warnings when the CSS engine exposes them, never silently dropped.
+- Imported self-hosted `@font-face` files retain their `font-display` descriptor in the native font library. An omitted descriptor imports as CSS's `auto`; fonts installed through other paths continue to default to `swap`.
+- What cannot be modeled: conditional local CSS `@import`, arbitrary external `@import`, nested selector rules, grouped `@font-face`, and other unsupported at-rules such as `@page` — surfaced as explicit source-parser warnings.
 - Headless: `src/core/siteImport/` carries no admin, React, or server imports (gated by `siteImport-headless.test.ts`).
 
 ---
@@ -218,19 +219,25 @@ interface ImportScript {
 
 ## CSS rule mapping
 
-`cssToStyleRules` parses a CSS file using the browser's native `CSSStyleSheet.replaceSync()`.
+`cssToStyleRules` parses the source tree with PostCSS, then uses `CSSStyleSheet.replaceSync()` for selector validation and individual declaration reading. Source occurrences retain their order. `StyleRule.grouping` records the ordered outer-to-inner path of layer and reusable condition groups; each group has an occurrence id, so one anonymous layer is never split into several independent layers. Layer anchors and property registrations are typed `StyleRule.atRule` entries, retained by dependency pruning even when their selector children are unused.
 
 | Source rule | Stored as |
 |---|---|
 | `.foo { … }` | `StyleRule{ kind:'class', name:'foo', selector:'.foo' }` |
 | `.hero .title`, `.group:hover .group-hover\:block` | One bindable class rule per selector-list alternative. The rightmost decoded class is `name`; the full selector is preserved. Selector dependency classes (`hero`, `group`) receive bare picker entries when they have no rule of their own. |
 | `h1`, `body`, `a:hover` | `StyleRule{ kind:'ambient', selector: verbatim }` |
-| `@media ... { … }` | Merged into a matching viewport context's `contextStyles` when it matches a configured media query (or an older/default max-width threshold); otherwise preserved as a reusable media condition |
+| `@media`, `@supports`, `@container` | Each selector occurrence becomes an ordered fragment. `grouping` preserves every enclosing condition in source order; declarations live in `contextStyles` under the innermost condition. Media queries use a matching viewport context or a reusable media condition |
+| `@layer name { … }`, anonymous `@layer { … }` | A typed group anchor plus selector fragments with the same layer occurrence in their `grouping` path. Empty anchors remain, preserving layer order even after unused classes are removed |
+| `@layer first, second;` | Typed layer-order statement with the authored ordered names |
+| `@property --name { … }` | Typed name, syntax, inheritance, and optional initial value. Initial-value assets use the same normalization/upload rewrite pipeline as declaration assets |
 | Unconditional local `@import "file.css"` | Followed recursively from the linked stylesheet; the imported file keeps its own source path so relative `url(...)` assets resolve correctly |
 | Trusted Google CSS2 `@import` | Parsed into `ImportGoogleFont` install requests and committed as self-hosted installed font entries |
-| `@keyframes` | Stored as a supported ambient raw CSS rule and emitted globally by the publisher after its raw-keyframes safety gate |
-| Conditional local `@import`, arbitrary external `@import`, `@layer` | Dropped; source text added to `droppedAtRules`; a `dropped-at-rule` warning emitted when surfaced by the CSS engine |
-| `@font-face` | Captured as `ParsedFontFace`; resolved into `ImportFontFamily` by `buildAssetPlan` |
+| `@keyframes` | Supported ambient raw CSS for this individual animation, emitted after its raw-keyframes safety gate inside its original grouping path |
+| Conditional local `@import`, arbitrary external `@import`, other unsupported at-rules | Dropped with an explicit `dropped-at-rule` source warning |
+| Nested supported grouping at-rules | Preserved recursively, including combinations of layers, media, supports, and containers |
+| `@font-face` | Top-level faces are captured as `ParsedFontFace` and resolved into `ImportFontFamily` by `buildAssetPlan`; grouped faces emit an explicit unsupported warning |
+
+The publisher keeps groups open across adjacent fragments from the same source occurrence and closes/reopens them only when the source path changes. This preserves anonymous-layer identity and the reverse layer priority of `!important` declarations. The canvas forced-state emitter uses the same group metadata. Root design-token extraction leaves grouped variables in their original registry fragments: moving a layered variable into an unlayered framework token would change the cascade.
 
 ---
 
@@ -253,11 +260,21 @@ A multi-page site typically links one stylesheet per page, and those stylesheets
 
 Resolutions apply in `applyCrossSheetClassResolutions` (via `applyConflictResolutions`, before site-vs-import rule conflicts):
 
-- **rename** — the divergent definition is materialised as ONE class rule under the new name carrying the cascade-merged declarations; the affected cascades' exclusive class fragments for the old name are dropped, class tokens in their exclusive ambient selectors follow the rename, and the affected pages' node class tokens move to the new name. Fragments in stylesheets *shared* with a kept cascade stay put (they also feed the kept definition; their declarations are still present in the materialised rule).
+- **rename** — every affected selector fragment retains its source position under the new name, and the affected pages' node class tokens follow. Exclusive fragments are renamed in place. Fragments in stylesheets *shared* with a kept cascade keep their original selector and gain a renamed companion at the same position, so both classes receive the shared declarations without collapsing the cascade.
 - **skip** — keep the first definition: the divergent cascades' exclusive fragments are dropped and their pages bind to the kept definition by name.
 - **overwrite** — this definition wins the bare name: every OTHER cascade's exclusive fragments for it are dropped.
 
 After all renames, `normalizeBindableClassRules` enforces the registry's unique-class-name invariant: per final name, the FIRST class-kind rule (in cascade source order) stays bindable; every later same-name class fragment becomes an ambient rule with the same selector — its declarations keep their cascade position, so within-cascade overrides (`base.css .btn` + `page.css .btn`) still compose like real CSS.
+
+`cssToStyleRules.ts` also preserves each occurrence within a stylesheet as a
+separate ordered fragment. Repeated base selectors and conditional overrides
+must not merge into an earlier fragment: `.a { color: red } .b { color: blue }
+.a { color: green }` makes an element with both classes green, and moving the
+last declarations into the first `.a` would incorrectly make it blue. Each
+conditional fragment keeps its own source position, with declarations stored
+under its condition's `contextStyles` id. The assignable registry rule remains
+unique, while ambient fragments retain the authored cascade and share the
+publisher's dependency-aware tree-shaker.
 
 All imported class-bearing selectors remain picker-addressable, whether or not
 the imported HTML currently uses them. This is what makes a large utility
@@ -369,9 +386,9 @@ On success the same step switches to its **complete** state — a success mark, 
 
 | Kind | When emitted |
 |---|---|
-| `dropped-at-rule` | An unsupported at-rule such as `@layer`, conditional local `@import`, or arbitrary external `@import` was present but cannot be modelled |
+| `dropped-at-rule` | An unsupported source construct such as conditional/external `@import`, grouped `@font-face`, nested selectors, or `@page` was present |
 | `unmatched-media-query` | Legacy warning kind retained for old import reports; current imports preserve unmatched `@media` blocks as reusable conditions |
-| `invalid-rule` | A CSS rule caused `replaceSync` to throw (sheet-level parse error) |
+| `invalid-rule` | Source parsing failed, the CSS engine rejected a selector, or declaration reading raised an error |
 | `blocked-property` | A CSS property name is on the security denylist (`behavior`, `-moz-binding`, …) — declaration dropped |
 | `duplicate-class` | Two `.foo {}` rules in the same file; later declarations win |
 | `missing-stylesheet` | A `<link rel="stylesheet">` href was not found in the FileMap |

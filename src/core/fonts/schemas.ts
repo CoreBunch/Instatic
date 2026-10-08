@@ -44,6 +44,17 @@ const FontFileFormatSchema = Type.Union([
 
 export type FontFileFormat = Static<typeof FontFileFormatSchema>
 
+export const FontDisplaySchema = Type.Union([
+  Type.Literal('auto'), Type.Literal('block'), Type.Literal('swap'),
+  Type.Literal('fallback'), Type.Literal('optional'),
+])
+export type FontDisplay = Static<typeof FontDisplaySchema>
+
+/** Share the descriptor check between the import and CSS emission boundaries. */
+export function parseFontDisplay(value: unknown): FontDisplay | undefined {
+  return compiledCheck(FontDisplaySchema, value) ? value : undefined
+}
+
 /** On-disk extension for each format — used for the path↔format consistency check. */
 const EXTENSION_FOR_FONT_FORMAT: Record<FontFileFormat, string> = {
   woff2: '.woff2',
@@ -103,6 +114,7 @@ const FontFileSchema = Type.Object({
   path: Type.String({ minLength: 1 }),
   format: FontFileFormatSchema,
   unicodeRange: Type.Optional(Type.String({ minLength: 1 })),
+  fontDisplay: Type.Optional(FontDisplaySchema),
   mediaAssetId: Type.Optional(Type.String({ minLength: 1 })),
 })
 

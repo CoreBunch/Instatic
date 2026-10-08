@@ -26,7 +26,7 @@
  */
 
 import { Type, type Static } from '@core/utils/typeboxHelpers'
-import { DataTableKindSchema, DataRowStatusSchema } from '@core/data/schemas'
+import { DataTableKindSchema, DataRowStatusSchema, DataLocalizationSchema } from '@core/data/schemas'
 import {
   TreeMutateResultSchema,
   TreeOperationSchema,
@@ -111,6 +111,7 @@ export type UpdateContentEntryInput = Static<typeof UpdateContentEntryInputSchem
 // ---------------------------------------------------------------------------
 
 export const ContentListOptionsSchema = Type.Object({
+  language: Type.Optional(Type.String({ minLength: 1 })),
   filter: Type.Optional(Type.Record(Type.String(), StorageFilterValueSchema)),
   orderBy: Type.Optional(Type.Record(
     Type.String(),
@@ -130,6 +131,7 @@ export type ContentListOptions = Static<typeof ContentListOptionsSchema>
 export const ContentListResultSchema = Type.Object({
   entries: Type.Array(ContentEntrySchema),
   totalCount: Type.Integer({ minimum: 0 }),
+  localization: Type.Optional(DataLocalizationSchema),
 })
 export type ContentListResult = Static<typeof ContentListResultSchema>
 
@@ -156,6 +158,18 @@ export const ContentSearchResultSchema = Type.Object({
   updatedAt: Type.String(),
 })
 export type ContentSearchResult = Static<typeof ContentSearchResultSchema>
+
+export const ContentSearchOptionsSchema = Type.Object({
+  language: Type.Optional(Type.String({ minLength: 1 })),
+  limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 500 })),
+}, { additionalProperties: false })
+export type ContentSearchOptions = Static<typeof ContentSearchOptionsSchema>
+
+export const ContentSearchResultsSchema = Type.Object({
+  results: Type.Array(ContentSearchResultSchema),
+  localization: Type.Optional(Type.Record(Type.String(), DataLocalizationSchema)),
+})
+export type ContentSearchResults = Static<typeof ContentSearchResultsSchema>
 
 export const PublishedSnapshotSchema = Type.Object({
   entryId: Type.String(),

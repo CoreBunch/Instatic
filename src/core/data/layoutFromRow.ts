@@ -41,6 +41,7 @@ export function savedLayoutFromRow(row: DataRow): SavedLayout | null {
     rootNodeId: typeof body.rootNodeId === 'string' ? body.rootNodeId : '',
     nodes: body.nodes ?? {},
     classes: cells.classes ?? {},
+    conditions: cells.conditions,
     // Convert ISO datetime string to epoch milliseconds.
     createdAt: typeof row.createdAt === 'string'
       ? (Date.parse(row.createdAt) || Date.now())
@@ -72,5 +73,6 @@ export function savedLayoutToCells(layout: SavedLayout): DataRowCells {
       rootNodeId: layout.rootNodeId,
     },
     classes: layout.classes,
+    ...(layout.conditions !== undefined ? { conditions: layout.conditions } : {}),
   }
 }

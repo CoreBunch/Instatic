@@ -12,6 +12,8 @@
  * compact string instead of a deeply nested ProseMirror node tree.
  */
 
+import type { DataLocalization } from '@core/data/schemas'
+
 export interface ContentSnapshot {
   /** Every postType / page collection in the site (lightweight). */
   collections: CollectionSummary[]
@@ -21,6 +23,7 @@ export interface ContentSnapshot {
   activeDocument: ActiveDocument | null
   /** Caller's identity so the agent can reason about authorship. */
   currentUser: CurrentUserInfo
+  localization?: DataLocalization
 }
 
 interface CollectionSummary {
@@ -38,11 +41,11 @@ export interface ActiveDocument {
   id: string
   tableId: string
   /** Resolved primary-field value — usually the title. */
-  title: string
+  title: string | null
   slug: string
   status: 'draft' | 'unpublished' | 'published' | 'scheduled'
   /** Per-field current value; body field is markdown, not Tiptap JSON. */
-  fields: Record<string, unknown>
+  fields: Record<string, unknown> | null
   /** Snapshot of the collection's field schema for the model's reference. */
   schema: FieldInfo[]
   authorUserId: string | null
@@ -65,6 +68,8 @@ interface FieldInfo {
   mediaKind?: string
   /** For `media` / `relation`: true when multiple values are allowed. */
   allowMultiple?: boolean
+  writeShape?: string
+  fields?: FieldInfo[]
 }
 
 interface CurrentUserInfo {

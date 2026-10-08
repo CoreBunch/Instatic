@@ -63,6 +63,7 @@ import {
   emitContentEntryUpdated,
 } from '../publish/contentEvents'
 import { runPublishFlush } from '../publish/publishFlush'
+import { assertLocalizedBranchWritePlan } from './localizedData'
 
 export type { MergeChange, MergeDirection, MergePlan, MergeResolution } from '@core/branches'
 export { MergeApplyError } from './entities'
@@ -194,7 +195,7 @@ export async function planBranchMerge(
     const marker = adapterFor(entry.change.kind).collision?.(entry.result, entry.change.logicalId, intoEntities) ?? null
     if (marker && !entry.change.conflicts.includes(marker)) entry.change.conflicts.push(marker)
   }
-  work.sort((a, b) => changeOrder(a.change) - changeOrder(b.change) || a.change.label.localeCompare(b.change.label))
+  work.sort((a, b) => changeOrder(a.change) - changeOrder(b.change) || (a.change.label ?? '').localeCompare(b.change.label ?? ''))
   const changes = work.map((entry) => entry.change)
   return {
     plan: {
@@ -294,6 +295,9 @@ export async function applyBranchMerge(db: DbClient, input: ApplyMergeInput): Pr
     let merge: BranchMergeRecord | null = null
 
     await db.transaction(async (tx) => {
+      const finalWrites = work.map(entry => ({ target: entry.change, content: resolvedResult(entry, input.resolutions) }))
+      await assertLocalizedBranchWritePlan(tx, into, finalWrites, input.actorUserId, [into, from])
+      if (mirrorOntoFrom) await assertLocalizedBranchWritePlan(tx, from, finalWrites, input.actorUserId, [into, from])
       const bases: BranchBase[] = [...converged]
       const removed: Array<{ kind: BranchEntityKind; logicalId: string }> = [...stale]
       // Before-images for undo: what every written entity held on each side,
@@ -392,7 +396,7 @@ export async function undoBranchMerge(db: DbClient, input: UndoMergeInput): Prom
     const intoNow = await collectBranchEntities(db, into)
     const moved = entries.filter((entry) => entityHash(intoNow.get(entry.change.key)) !== entry.resultHash)
     if (moved.length > 0) {
-      const names = moved.slice(0, 3).map((entry) => entry.change.label).join(', ')
+      const names = moved.slice(0, 3).map((entry) => entry.change.label ?? 'a localized row').join(', ')
       throw new MergeUndoError(
         `${into.branchId} changed since the merge (${names}${moved.length > 3 ? ', ...' : ''}); put it back by hand`,
       )
@@ -404,23 +408,27 @@ export async function undoBranchMerge(db: DbClient, input: UndoMergeInput): Prom
     const fromCtx: WriteContext = { actorUserId: input.actorUserId, notices: fromNotices }
     let restored = 0
     await db.transaction(async (tx) => {
+      const intoWrites = entries.map(entry => ({ target: entry.change, content: entry.intoBefore ?? null }))
+      const fromWrites = fromNow ? entries.filter(entry => entityHash(fromNow.get(entry.change.key)) === entry.resultHash)
+        .map(entry => ({ target: entry.change, content: entry.fromBefore ?? null })) : []
+      await assertLocalizedBranchWritePlan(tx, into, intoWrites, input.actorUserId, [into, from])
+      if (fromNow) await assertLocalizedBranchWritePlan(tx, from, fromWrites, input.actorUserId, [into, from])
       const bases: BranchBase[] = []
       const removed: Array<{ kind: BranchEntityKind; logicalId: string }> = []
-      // Reverse apply order: the rows an apply created go before the table
-      // it created them in (a table with rows refuses to be deleted), and a
-      // table an apply deleted comes back before its rows do.
-      for (const entry of [...entries].reverse()) {
-        const intoBefore = entry.intoBefore ?? null
-        if (contentHashOrNull(intoBefore) !== entry.resultHash) {
-          await writeEntity(tx, into, entry.change, intoBefore, intoCtx)
-          restored += 1
-        }
-        if (fromNow && entityHash(fromNow.get(entry.change.key)) === entry.resultHash) {
-          const fromBefore = entry.fromBefore ?? null
-          if (contentHashOrNull(fromBefore) !== entry.resultHash) {
-            await writeEntity(tx, from, entry.change, fromBefore, fromCtx)
-          }
-        }
+      // Apply each restored schema before its rows; row deletes still precede
+      // table deletes. This also keeps localized references under their final schema.
+      const restoreOrder = (write: { target: EntityRef; content: unknown | null }) => adapterFor(write.target.kind).order(write.content === null ? 'delete' : 'update')
+      for (const write of [...intoWrites].reverse().sort((a, b) => restoreOrder(a) - restoreOrder(b))) {
+        const entry = entries.find(candidate => candidate.change.key === write.target.key)!
+        if (contentHashOrNull(write.content) === entry.resultHash) continue
+        await writeEntity(tx, into, write.target, write.content, intoCtx)
+        restored += 1
+      }
+      for (const write of [...fromWrites].reverse().sort((a, b) => restoreOrder(a) - restoreOrder(b))) {
+        const entry = entries.find(candidate => candidate.change.key === write.target.key)!
+        if (contentHashOrNull(write.content) !== entry.resultHash) await writeEntity(tx, from, write.target, write.content, fromCtx)
+      }
+      for (const entry of entries) {
         const { kind, logicalId } = entry.change
         const baseBefore = entry.baseBefore ?? null
         if (baseBefore === null) removed.push({ kind, logicalId })

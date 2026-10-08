@@ -11,10 +11,8 @@
  * Built-in source dispatch table:
  *   - `data.rows`  — fetches real published rows via the admin endpoint
  *     `GET /data/tables/:id/loop-preview`, which runs the same
- *     `fetchPublishedDataRowItems` projection the publisher uses. Falls
- *     back to a synthetic preview item from the table's field definitions
- *     (`dataTablePreviewToLoopItem`) when the table has no published rows
- *     yet — keeps the loop body visible so the author can lay it out.
+ *     `fetchPublishedDataRowItems` projection the publisher uses, with the
+ *     canonical page language. Empty sources have no real iterations.
  *   - `site.pages` — reads pages from the in-memory site document,
  *     filters / sorts / offsets / limits client-side.
  *   - `site.media` — fetches via `listCmsMediaAssets()`, filters by
@@ -34,7 +32,9 @@
  * `site`, and only when such a source is selected.
  */
 
-import { use, useEffect, useState } from 'react'
+import { use, useEffect } from 'react'
+import { useAsyncResource } from '@admin/lib/useAsyncResource'
+import { pushToast } from '@ui/components/Toast'
 import { useEditorStore } from '@site/store/store'
 import { loopSourceRegistry } from '@core/loops/registry'
 import {
@@ -46,12 +46,10 @@ import {
   type EntryFieldMedia,
   type LoopItem,
 } from '@core/loops'
-import type { DataTable } from '@core/data/schemas'
 import type { Page, PageNode } from '@core/page-tree'
 import type { TemplateRenderDataContext } from '@core/templates/dynamicBindings'
 import { getCmsDataTable, previewCmsDataLoopItems } from '@core/persistence/cmsData'
 import { listCmsMediaAssets, type CmsMediaAsset } from '@core/persistence/cmsMedia'
-import { dataTablePreviewToLoopItem } from '@core/templates/templatePreviewData'
 import { CanvasPreviewReadinessContext } from './CanvasPreviewReadiness'
 
 // ---------------------------------------------------------------------------
@@ -243,7 +241,7 @@ const BUILT_IN_SOURCE_IDS = new Set([
 export function useLoopPreviewItems(
   node: PageNode,
   templateContext?: TemplateRenderDataContext,
-): LoopItem[] {
+): { items: LoopItem[]; error: string | null; loading: boolean; refresh: () => void } {
   const previewReadiness = use(CanvasPreviewReadinessContext)
   // `readLoopProps()` reuses the shared `EMPTY_FILTERS` sentinel when the
   // node has no filters set, so `filters` identity is stable across renders
@@ -258,6 +256,7 @@ export function useLoopPreviewItems(
   const cellField = typeof filters.cellField === 'string' ? filters.cellField : ''
   const cellOperator = typeof filters.cellOperator === 'string' ? filters.cellOperator : ''
   const cellValue = typeof filters.cellValue === 'string' ? filters.cellValue : ''
+  const language = templateContext?.site?.language
   const isPluginSource = sourceId !== '' && !BUILT_IN_SOURCE_IDS.has(sourceId)
 
   // Narrow, identity-stable subscriptions (see module header). Inactive
@@ -270,127 +269,82 @@ export function useLoopPreviewItems(
   // this is the one branch that genuinely depends on it.
   const pluginSite = useEditorStore((s) => (isPluginSource ? s.site : null))
 
-  // Raw fetched data for async sources — sort/offset/limit applied below.
-  const [asyncDataTable, setAsyncDataTable] = useState<DataTable | null>(null)
-  const [asyncDataRowItems, setAsyncDataRowItems] = useState<LoopItem[]>([])
-  const [asyncMedia, setAsyncMedia] = useState<CmsMediaAsset[]>([])
-
-  // ── Async fetch: data.rows ────────────────────────────────────────────
-  // Two fetches in parallel:
-  //   1. The table schema — used to synthesize a fallback preview item
-  //      via `dataTablePreviewToLoopItem` when the table has no published
-  //      rows yet, so the loop body stays visible while the author wires
-  //      up dynamic bindings.
-  //   2. Real published rows projected as LoopItems via the admin
-  //      `/data/tables/:id/loop-preview` endpoint. This is the same
-  //      projection the publisher uses (`fetchPublishedDataRowItems`),
-  //      so what the canvas shows matches what the published page emits.
-  useEffect(() => {
-    // Bail out when this loop isn't bound to data.rows. The memo below
-    // gates on `sourceId === 'data.rows'`, so stale state from a previous
-    // selection is never read — no need to reset it synchronously here
-    // (which would violate react-hooks/set-state-in-effect).
-    if (sourceId !== 'data.rows' || !tableId) return
-    let cancelled = false
-    const tableRequest = getCmsDataTable(tableId)
-      .then((table) => {
-        if (!cancelled) setAsyncDataTable(table)
-      })
-      .catch(() => {
-        if (!cancelled) setAsyncDataTable(null)
-      })
-    const rowsRequest = previewCmsDataLoopItems(tableId, {
-      orderBy: orderBy || 'publishedAt',
-      direction,
-      limit,
-      offset,
-      cellField,
-      cellOperator,
-      cellValue,
-    })
-      .then((result) => {
-        if (!cancelled) setAsyncDataRowItems(result.items)
-      })
-      .catch(() => {
-        if (!cancelled) setAsyncDataRowItems([])
-      })
-    previewReadiness?.track(Promise.all([tableRequest, rowsRequest]))
-    return () => {
-      cancelled = true
-    }
-  }, [sourceId, tableId, orderBy, direction, limit, offset, cellField, cellOperator, cellValue, previewReadiness])
-
-  // ── Async fetch: site.media ─────────────────────────────────────────
-  useEffect(() => {
-    if (sourceId !== 'site.media' && sourceId !== ENTRY_FIELD_SOURCE_ID) return
-    let cancelled = false
-    const request = listCmsMediaAssets()
-      .then((assets) => {
-        if (cancelled) return
-        setAsyncMedia(assets)
-      })
-      .catch(() => {
-        if (!cancelled) setAsyncMedia([])
-      })
+  // Schema and rows are one logical preview; a failure never becomes a
+  // successful empty collection or representative localized text.
+  const dataRequestKey = JSON.stringify([sourceId, tableId, orderBy, direction, limit, offset, cellField, cellOperator, cellValue, language])
+  const dataResource = useAsyncResource(async () => {
+    if (sourceId !== 'data.rows' || !tableId) return null
+    const request = Promise.all([getCmsDataTable(tableId), previewCmsDataLoopItems(tableId, {
+      orderBy: orderBy || 'publishedAt', direction, limit, offset, cellField, cellOperator, cellValue, language,
+    })])
     previewReadiness?.track(request)
-    return () => {
-      cancelled = true
-    }
-  }, [sourceId, previewReadiness])
+    const [table, result] = await request
+    if (!table) throw new Error('The loop data table was not found')
+    return { key: dataRequestKey, table, items: result.items }
+  }, [dataRequestKey, previewReadiness])
+  const readsMedia = sourceId === 'site.media' || sourceId === ENTRY_FIELD_SOURCE_ID
+  const mediaResource = useAsyncResource(async () => {
+    if (!readsMedia) return null
+    const request = listCmsMediaAssets()
+    previewReadiness?.track(request)
+    return await request
+  }, [readsMedia, previewReadiness])
+  const asyncMedia = readsMedia && !mediaResource.error ? mediaResource.data ?? [] : []
+  const pluginRequestKey = JSON.stringify([sourceId, filters, limit, offset])
+  const pluginResource = useAsyncResource(async () => {
+    if (!isPluginSource || !pluginSite) return null
+    const source = loopSourceRegistry.get(sourceId)
+    if (!source) throw new Error('The loop data source was not found')
+    if (source.kind === 'contextual') return null
+    return { key: pluginRequestKey, items: source.preview({ site: pluginSite, filters, limit }).slice(offset, offset + limit) }
+  }, [isPluginSource, pluginSite, pluginRequestKey])
+  const resourceError = sourceId === 'data.rows' ? dataResource.error : readsMedia ? mediaResource.error : isPluginSource ? pluginResource.error : null
+  const refresh = sourceId === 'data.rows' ? dataResource.refresh : readsMedia ? mediaResource.refresh : pluginResource.refresh
+  useEffect(() => {
+    if (resourceError) pushToast({ kind: 'error', title: 'Could not preview loop data', body: resourceError,
+      action: { label: 'Retry', onSelect: refresh } })
+  }, [resourceError, refresh])
 
   // ── Sort + offset + limit pipeline ──────────────────────────────────
-  if (!sourceId) return EMPTY_ITEMS
+  const items = (() => {
+    if (!sourceId) return EMPTY_ITEMS
 
-  if (sourceId === 'data.rows') {
-    // Prefer real published rows (server already applied orderBy /
-    // direction / offset / limit via `fetchPublishedDataRowItems`).
-    if (asyncDataRowItems.length > 0) return asyncDataRowItems
-    // No published rows yet (or fetch in flight) — synthesise placeholder
-    // items from the table's field definitions so the loop body stays
-    // visible in the canvas. The author can lay out the template; once
-    // rows are published the preview switches over automatically.
-    if (!asyncDataTable) return EMPTY_ITEMS
-    const previewItem = dataTablePreviewToLoopItem(asyncDataTable)
-    return Array.from({ length: Math.min(limit, 3) }, () => previewItem)
-  }
-
-  if (sourceId === 'site.media') {
-    if (asyncMedia.length === 0) return EMPTY_ITEMS
-    const filtered = mimePrefix
-      ? asyncMedia.filter((a) => a.mimeType.startsWith(mimePrefix))
-      : asyncMedia
-    const sorted = sortMedia(filtered, orderBy || 'createdAt', direction)
-    return sorted.slice(offset, offset + limit).map(mediaAssetToLoopItem)
-  }
-
-  if (sourceId === ENTRY_FIELD_SOURCE_ID) {
-    const fieldId = filters[ENTRY_FIELD_FILTER_KEY]
-    if (typeof fieldId !== 'string' || !fieldId) return EMPTY_ITEMS
-    const stack = templateContext?.entryStack ?? []
-    const entry = stack[stack.length - 1]
-    const mediaByReference = new Map<string, EntryFieldMedia>()
-    for (const asset of asyncMedia) {
-      mediaByReference.set(asset.id, asset)
-      mediaByReference.set(asset.publicPath, asset)
+    if (sourceId === 'data.rows') {
+      const data = dataResource.data?.key === dataRequestKey && !dataResource.error ? dataResource.data : null
+      if (!data) return EMPTY_ITEMS
+      return data.items
     }
-    return resolveEntryFieldItems(entry?.fields[fieldId], {
-      offset,
-      limit,
-      direction,
-      mediaByReference,
-    }).items
-  }
 
-  if (sourceId === 'site.pages') return sitePagesItems
+    if (sourceId === 'site.media') {
+      if (asyncMedia.length === 0) return EMPTY_ITEMS
+      const filtered = mimePrefix
+        ? asyncMedia.filter((a) => a.mimeType.startsWith(mimePrefix))
+        : asyncMedia
+      const sorted = sortMedia(filtered, orderBy || 'createdAt', direction)
+      return sorted.slice(offset, offset + limit).map(mediaAssetToLoopItem)
+    }
 
-  // Plugin source fallback — synchronous preview() with no client-side
-  // sort. Plugins that need ordering should apply it inside their own
-  // preview() implementation.
-  const source = loopSourceRegistry.get(sourceId)
-  if (!source || source.kind === 'contextual' || !pluginSite) return EMPTY_ITEMS
-  try {
-    return source.preview({ site: pluginSite, filters, limit }).slice(offset, offset + limit)
-  } catch {
-    return EMPTY_ITEMS
-  }
+    if (sourceId === ENTRY_FIELD_SOURCE_ID) {
+      const fieldId = filters[ENTRY_FIELD_FILTER_KEY]
+      if (typeof fieldId !== 'string' || !fieldId) return EMPTY_ITEMS
+      const stack = templateContext?.entryStack ?? []
+      const entry = stack[stack.length - 1]
+      const mediaByReference = new Map<string, EntryFieldMedia>()
+      for (const asset of asyncMedia) {
+        mediaByReference.set(asset.id, asset)
+        mediaByReference.set(asset.publicPath, asset)
+      }
+      return resolveEntryFieldItems(entry?.fields[fieldId], {
+        offset,
+        limit,
+        direction,
+        mediaByReference,
+      }).items
+    }
+
+    if (sourceId === 'site.pages') return sitePagesItems
+
+    return pluginResource.data?.key === pluginRequestKey && !pluginResource.error ? pluginResource.data.items : EMPTY_ITEMS
+  })()
+  return { items, error: resourceError, loading: sourceId === 'data.rows' ? dataResource.loading : readsMedia ? mediaResource.loading : isPluginSource && pluginResource.loading, refresh }
 }

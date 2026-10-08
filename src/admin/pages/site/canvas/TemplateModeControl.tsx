@@ -10,11 +10,11 @@
  */
 
 import { type CSSProperties } from 'react'
-import { useAsyncResource } from '@admin/lib/useAsyncResource'
 import { selectActivePage, useEditorStore } from '@site/store/store'
-import { isTemplatePage, primaryTemplateTableSlug } from '@core/templates'
-import { getCmsDataTableBySlug, previewCmsDataLoopItems } from '@core/persistence/cmsData'
-import type { LoopItem } from '@core/loops/types'
+import { isTemplatePage } from '@core/templates'
+import { readProjectedDisplayTitle } from '@core/data/cells'
+import { useTemplatePreviewContext } from '@site/hooks/useTemplatePreviewContext'
+import { Button } from '@ui/components/Button'
 import { Select } from '@ui/components/Select'
 import { DocumentSwitcher } from './DocumentSwitcher'
 import { measureToolbarValueWidth } from './measureToolbarText'
@@ -53,8 +53,6 @@ interface PreviewSourceSelectProps {
   page: NonNullable<ReturnType<typeof selectActivePage>>
 }
 
-const EMPTY_ITEMS: LoopItem[] = []
-
 /** Cap the preview-source trigger width (px) so a long title can't blow out the toolbar. */
 const MAX_PREVIEW_PX = 150
 /** Space reserved after the value text for the gap + chevron. */
@@ -72,35 +70,18 @@ function PreviewSourceSelect({ templateId, page }: PreviewSourceSelectProps) {
     ? sitePages.filter((p) => !isTemplatePage(p))
     : null
 
-  const tableSlug = targetKind === 'postTypes' ? primaryTemplateTableSlug(page) : null
-
-  // Published rows for a postTypes template's dropdown (live data). Resolves to
-  // an empty list for everywhere templates or on failure.
-  const { data: rows } = useAsyncResource<LoopItem[]>(
-    () =>
-      tableSlug
-        ? getCmsDataTableBySlug(tableSlug)
-            .then(async (table) => {
-              if (!table) return EMPTY_ITEMS
-              const { items } = await previewCmsDataLoopItems(table.id, {
-                orderBy: 'publishedAt',
-                direction: 'desc',
-                limit: 50,
-              })
-              return items
-            })
-            .catch(() => EMPTY_ITEMS)
-        : Promise.resolve(EMPTY_ITEMS),
-    [tableSlug],
-  )
+  const { rows, table, loading, error, refresh } = useTemplatePreviewContext(page)
 
   const options =
     everywherePages !== null
       ? everywherePages.map((p) => ({ value: p.id, label: p.title || p.slug || 'Untitled page' }))
-      : (rows ?? EMPTY_ITEMS).map((item) => ({
+      : rows.map((item) => ({
           value: item.id,
-          label: rowLabel(item),
+          label: readProjectedDisplayTitle(item.fields, table),
         }))
+
+  if (targetKind === 'postTypes' && error && rows.length === 0) return <Button variant="ghost" size="sm" onClick={refresh}>Retry preview entries</Button>
+  if (targetKind === 'postTypes' && loading) return <span role="status">Loading preview entries…</span>
 
   if (options.length === 0) return null
 
@@ -119,6 +100,7 @@ function PreviewSourceSelect({ templateId, page }: PreviewSourceSelectProps) {
     // `Select`'s own `style` prop is forwarded to its hidden native <select>.
     <span className={styles.previewGroup} style={{ '--tpl-preview-w': `${triggerWidth}px` } as CSSProperties}>
       <span className={styles.previewLabel}>Previewing</span>
+      {error && <span role="alert" className={styles.previewLabel}>{error.message}</span>}
       <Select
         fieldSize="sm"
         emphasis="strong"
@@ -127,15 +109,10 @@ function PreviewSourceSelect({ templateId, page }: PreviewSourceSelectProps) {
         aria-label="Preview source"
         data-testid="template-preview-source"
         value={value}
+        placeholder="Choose preview entry"
         options={options}
         onChange={(event) => setSelection(templateId, event.target.value)}
       />
     </span>
   )
-}
-
-function rowLabel(item: LoopItem): string {
-  const fields = item.fields
-  const title = fields.title ?? fields.slug ?? item.id
-  return typeof title === 'string' && title.trim() ? title : item.id
 }

@@ -47,6 +47,8 @@ import { StepUpCancelledMessage, useStepUp } from '@admin/shared/StepUp'
 import { getErrorMessage } from '@core/utils/errorMessage'
 import { ContentAgentMount } from './agent/ContentAgentMount'
 import { useContentToolBridge } from './agent/useContentToolBridge'
+import { ContentLanguageSelect } from '@admin/pages/data/LocalizedDataContext'
+import { LocalizedDataContext, localizedScopeTables, useLocalizedDataResource } from '@admin/pages/data/localizedData'
 import {
   canCreateContent,
   canEditAnyContent,
@@ -130,11 +132,16 @@ export function ContentPage() {
     updateSelectedEntry: workspace.updateSelectedEntry,
     setError: workspace.setError,
   })
+  const localization = useLocalizedDataResource(
+    localizedScopeTables(workspace.selectedCollection, workspace.tables),
+    workspace.selectedEntry?.updatedAt,
+  )
   // Keep content-scope MCP tools connected whenever this workspace is open.
   // The bridge is independent of whether the docked AI panel is visible.
   useContentToolBridge({
     workspace,
     draft,
+    localization,
     currentUser: {
       id: permissionUser.id,
       displayName: permissionUser.displayName ?? permissionUser.email,
@@ -455,26 +462,29 @@ export function ContentPage() {
   ]
 
   return (
-    <>
+    <LocalizedDataContext.Provider value={localization}>
       <AdminWorkspaceCanvasLayout
         workspace="content"
         toolbarRightSlot={(
-          <ContentToolbar
-            contentLoading={workspace.contentLoading}
-            saveMessage={draft.saveMessage}
-            isDirty={draft.isDirty}
-            selectedEntry={workspace.selectedEntry}
-            selectedCollection={workspace.selectedCollection}
-            publicPath={publicPath}
-            canSaveDraft={canEditSelectedEntry}
-            canPublish={canPublishSelectedEntry}
-            onSaveDraft={() => void draft.handleSaveDraft()}
-            onPublish={() => {
-              if (workspace.selectedEntry) void handlePublishEntry(workspace.selectedEntry)
-            }}
-            onSchedule={handleScheduleEntry}
-            onRestored={handleScheduleEntry}
-          />
+          <>
+            <ContentLanguageSelect />
+            <ContentToolbar
+              contentLoading={workspace.contentLoading}
+              saveMessage={draft.saveMessage}
+              isDirty={draft.isDirty}
+              selectedEntry={workspace.selectedEntry}
+              selectedCollection={workspace.selectedCollection}
+              publicPath={publicPath}
+              canSaveDraft={canEditSelectedEntry}
+              canPublish={canPublishSelectedEntry}
+              onSaveDraft={() => void draft.handleSaveDraft()}
+              onPublish={() => {
+                if (workspace.selectedEntry) void handlePublishEntry(workspace.selectedEntry)
+              }}
+              onSchedule={handleScheduleEntry}
+              onRestored={handleScheduleEntry}
+            />
+          </>
         )}
         contentSidebar={(
           <ContentSidebar
@@ -665,6 +675,6 @@ export function ContentPage() {
           }}
         />
       )}
-    </>
+    </LocalizedDataContext.Provider>
   )
 }

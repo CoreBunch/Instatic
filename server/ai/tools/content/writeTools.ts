@@ -38,7 +38,7 @@ const CreateDocumentInput = Type.Object({
 
 // ---------------------------------------------------------------------------
 // Capability requirements (ANY-OF) — each tool mirrors its HTTP-route gate
-// in server/handlers/cms/data/access.ts. `set_active_*` are pure editor-state
+// in server/auth/dataAccess.ts. `set_active_*` are pure editor-state
 // switches with no HTTP equivalent and stay gated by `ai.tools.write` alone.
 // ---------------------------------------------------------------------------
 

@@ -1,17 +1,14 @@
 /**
  * Version-keyed caches over the latest published site snapshot.
  *
- * The published snapshot (the entire SiteDocument) changes only when the
- * publish version moves, yet three request-time consumers used to load and
- * JSON-parse it from the DB per request — the per-request cost flagged in the
- * architecture review:
+ * The public router's entry/404 resolution and the Layer C hole endpoint
+ * share one latest published site snapshot per publish version:
  *
  *   - the public router's row-route resolution (`publicRouter.ts`)
  *   - the Layer C hole endpoint (`handlers/cms/hole.ts`)
- *   - the infinite-loop load-more endpoint (`handlers/cms/loop.ts`)
  *
- * This module owns ONE snapshot memo plus the two derived per-version indexes
- * (nodeId → page for holes, loopId → page+node for loops), all built on
+ * This module owns one snapshot memo plus the derived per-version
+ * nodeId → page index for holes, both built on
  * `createVersionedSingleFlight` from `publishState.ts`: one concurrent loader
  * per version, cached until the version changes, reset together with the rest
  * of the publish state in tests. A publish bump simply makes the next read
@@ -23,10 +20,9 @@
  */
 
 import type { DbClient } from '../db/client'
-import type { Page, PageNode, SiteDocument } from '@core/page-tree'
+import type { Page, SiteDocument } from '@core/page-tree'
 import type { PublishedPageSnapshot } from '../repositories/publish'
 import { getLatestPublishedSiteSnapshot } from '../repositories/publish'
-import { collectLoopNodes } from './loopPrefetch'
 import { createVersionedSingleFlight } from './publishState'
 
 // ---------------------------------------------------------------------------
@@ -76,39 +72,5 @@ export function getPublishedNodeIndexForVersion(
       }
     }
     return { site: snapshot.site, nodeIndex }
-  })
-}
-
-// ---------------------------------------------------------------------------
-// loopId → page + node index (infinite-loop load-more)
-// ---------------------------------------------------------------------------
-
-interface PublishedLoopIndex {
-  site: SiteDocument
-  /** First page wins on a duplicate loop id, matching the old scan order. */
-  loops: Map<string, { page: Page; node: PageNode }>
-}
-
-const loopIndexMemo = createVersionedSingleFlight<PublishedLoopIndex>()
-
-/**
- * The published site plus a `loopId → { page, node }` index for `version`.
- * Built once per publish version by walking each page's render tree (the same
- * `collectLoopNodes` walk the loop endpoint used to repeat per request).
- */
-export function getPublishedLoopIndexForVersion(
-  db: DbClient,
-  version: number,
-): Promise<PublishedLoopIndex | null> {
-  return loopIndexMemo.get(version, async () => {
-    const snapshot = await getLatestSnapshotForVersion(db, version)
-    if (!snapshot) return null
-    const loops = new Map<string, { page: Page; node: PageNode }>()
-    for (const page of snapshot.site.pages) {
-      for (const node of collectLoopNodes(page, snapshot.site)) {
-        if (!loops.has(node.id)) loops.set(node.id, { page, node })
-      }
-    }
-    return { site: snapshot.site, loops }
   })
 }

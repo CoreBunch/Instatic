@@ -26,6 +26,7 @@ import { Button } from '@ui/components/Button'
 import { Dialog } from '@ui/components/Dialog'
 import { FilterBar } from '@ui/components/FilterBar'
 import { Textarea } from '@ui/components/Input'
+import { Select } from '@ui/components/Select'
 import { Skeleton } from '@ui/components/Skeleton'
 import { TagPill } from '@ui/components/TagPill'
 import { pushToast } from '@ui/components/Toast'
@@ -145,10 +146,17 @@ function Review({ branch }: ReviewProps) {
   }
 
   const { plan, review } = data
+  const languageControl = data.localization ? (
+    <Select aria-label="Review content language" value={data.language}
+      placeholder="Choose content language"
+      options={data.localization.languages.map(language => ({ value: language, label: language }))}
+      onChange={event => data.setLanguage(event.target.value)} />
+  ) : null
   if (data.loadError) {
     return (
       <AdminWorkspaceCanvasLayout
         workspace="branchReview"
+        toolbarRightSlot={languageControl}
         contentCanvas={(
           <div className={styles.canvas}>
             <div className={styles.state} role="alert">
@@ -166,6 +174,7 @@ function Review({ branch }: ReviewProps) {
     return (
       <AdminWorkspaceCanvasLayout
         workspace="branchReview"
+        toolbarRightSlot={languageControl}
         contentCanvas={(
           <div className={styles.canvas}>
             <div className={styles.loading} aria-busy="true" aria-label="Comparing the branch with main">
@@ -266,6 +275,7 @@ function Review({ branch }: ReviewProps) {
   return (
     <AdminWorkspaceCanvasLayout
       workspace="branchReview"
+      toolbarRightSlot={languageControl}
       contentCanvas={(
         <div className={styles.canvas} data-testid="branch-review">
           <div className={styles.page}>
@@ -429,7 +439,7 @@ function Review({ branch }: ReviewProps) {
                     id={`review-change-${change.key}`}
                     left={(
                       <ReviewThread
-                        title={change.kind === 'row' && change.tableName && !isPageChange(change) ? `${change.tableName}: ${change.label}` : change.label}
+                        title={change.label === null ? 'Choose content language' : change.kind === 'row' && change.tableName && !isPageChange(change) ? `${change.tableName}: ${change.label}` : change.label}
                         comments={commentsFor(change.key)}
                         me={me}
                         placeholder={threadPlaceholder(change)}

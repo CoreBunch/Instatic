@@ -58,6 +58,9 @@ beforeEach(() => {
     if (String(input) === '/admin/api/cms/data/tables') {
       return new Response(JSON.stringify({ tables: [postsTable] }), { status: 200 })
     }
+    if (String(input).startsWith('/admin/api/cms/data/tables/posts/loop-preview')) {
+      return Response.json({ items: [{ id: 'real-entry', fields: { title: 'Published entry title', featuredMedia: null } }], totalItems: 1 })
+    }
 
     return new Response('{}', { status: 404 })
   }) as typeof fetch
@@ -69,7 +72,7 @@ afterEach(() => {
 })
 
 describe('canvas template preview bindings', () => {
-  it('renders template dynamic bindings with synthetic preview data from the table schema', async () => {
+  it('renders template dynamic bindings with real published preview data', async () => {
     const root = makeNode({ id: 'root', moduleId: 'base.body', children: ['title'] })
     const title = makeNode({
       id: 'title',
@@ -104,7 +107,7 @@ describe('canvas template preview bindings', () => {
     // sees the parent document. Pull the iframe document directly.
     await waitFor(() => {
       const text = combinedCanvasText()
-      expect(text).toContain('Example Post Title')
+      expect(text).toContain('Published entry title')
     })
     expect(combinedCanvasText()).not.toContain('Static fallback')
   })

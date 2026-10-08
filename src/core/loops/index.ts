@@ -9,7 +9,9 @@
  * them to guarantee canvas previews and published output never diverge.
  */
 
-export type { LoopItem } from './types'
+export { LoopItemSchema } from '@core/loops-schema'
+export { LOOP_LOADING_LABEL_DEFAULTS } from './loadingLabels'
+export type { LoopItem } from '@core/loops-schema'
 export { pageToLoopItem, filterPagesForLoop } from './sources/sitePages'
 export {
   ENTRY_FIELD_FILTER_KEY,

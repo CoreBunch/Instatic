@@ -4,6 +4,7 @@
  */
 import { Type, type Static } from '@core/utils/typeboxHelpers'
 import { BRANCH_NAME_MAX_LENGTH } from './ids'
+import { DataLocalizationSchema } from '@core/data/schemas'
 
 export const SiteBranchSchema = Type.Object({
   /** Branch slug — immutable, part of every physical row id off `main`. */
@@ -156,7 +157,7 @@ export const MergeChangeSchema = Type.Object({
   key: Type.String(),
   kind: MergeEntityKindSchema,
   logicalId: Type.String(),
-  label: Type.String(),
+  label: Type.Union([Type.String(), Type.Null()]),
   tableId: Type.Union([Type.String(), Type.Null()]),
   tableName: Type.Union([Type.String(), Type.Null()]),
   action: Type.Union([Type.Literal('create'), Type.Literal('update'), Type.Literal('delete')]),
@@ -172,6 +173,8 @@ export const MergePlanSchema = Type.Object({
   into: Type.String(),
   changes: Type.Array(MergeChangeSchema),
   conflictCount: Type.Number(),
+  /** Catalogue metadata only; the review resolves names on the server. */
+  localization: Type.Optional(Type.Omit(DataLocalizationSchema, ['translations'])),
 })
 export type MergePlan = Static<typeof MergePlanSchema>
 

@@ -247,6 +247,10 @@ export function NewFieldDialog({
     let fieldShape: unknown
 
     switch (type) {
+      case 'localizedText': {
+        fieldShape = { type: 'localizedText', ...common }
+        break
+      }
       case 'text': {
         fieldShape = {
           type: 'text',

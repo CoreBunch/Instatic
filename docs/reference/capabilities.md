@@ -223,7 +223,7 @@ Examples already in the tree:
 | Constant                       | Defined in | Gate |
 |--------------------------------|------------|------|
 | `SITE_WRITE_CAPABILITIES`      | `server/handlers/cms/site.ts`, `src/admin/access.ts` | Save the draft site |
-| `DATA_ACCESS_CAPABILITIES`, `DATA_EDIT_CAPABILITIES`, `DATA_PUBLISH_CAPABILITIES`, … | `server/handlers/cms/data/access.ts` | Data/content row operations |
+| `DATA_ACCESS_CAPABILITIES`, `DATA_EDIT_CAPABILITIES`, `DATA_PUBLISH_CAPABILITIES`, … | `server/auth/dataAccess.ts` | Data/content row operations |
 | `CONTENT_ACCESS_CAPABILITIES`, `PLUGIN_READ_CAPABILITIES`, `DATA_WORKSPACE_READ_CAPABILITIES` | `src/admin/access.ts` | Admin workspace visibility |
 
 There are deliberately **no** whole-family "super-set" constants (e.g. one `MEDIA_CAPABILITIES` listing every `media.*` cap). The system roles don't consume one — Owner uses the full `CORE_CAPABILITIES`, and Admin's grant list is written out leaf-by-leaf on purpose so every new capability forces a conscious per-PR decision about whether Admin gets it (see the `SYSTEM_ROLES` comment). A "future leaf auto-flows in" super-set is exactly the silent drift that design rejects. Group caps by what a gate needs, locally — never by family, globally.

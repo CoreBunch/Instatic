@@ -1,3 +1,4 @@
+import { buildTemplateRenderContext } from '@core/templates'
 /**
  * Branch preview rendering — the public site as a branch's DRAFT would show
  * it, for visitors carrying a valid preview cookie.
@@ -79,6 +80,7 @@ async function draftRowAsPublished(db: DbClient, row: DataRow, table: DataTable)
     tableId: table.id,
     tableSlug: table.slug,
     tableKind: table.kind,
+    tableFields: table.fields,
     tableRouteBase: table.routeBase,
     versionNumber: 0,
     cells: row.cells,
@@ -111,7 +113,7 @@ async function resolvePreview(
     return {
       merged: composeTemplateChain(chain, { kind: 'page', page }),
       scriptPage: page,
-      templateContext: { entryStack: [], route: buildRouteFrame(url.toString()) },
+      templateContext: buildTemplateRenderContext(page, site, { entryStack: [], route: buildRouteFrame(url.toString()) }),
     }
   }
 
@@ -129,13 +131,12 @@ async function resolvePreview(
   const merged = composeTemplateChain(chain, { kind: 'entry' })
   if (typeof row.cells.title === 'string') merged.title = row.cells.title
   const published = await draftRowAsPublished(db, row, table)
+  const templateContext = buildTemplateRenderContext(merged, site, { entryStack: [], route: buildRouteFrame(url.toString()) })
+  const localization = templateContext.site?.language ? { language: templateContext.site.language, translations: templateContext.site.translations } : undefined
   return {
     merged,
     scriptPage: chain[chain.length - 1] ?? merged,
-    templateContext: {
-      entryStack: [publishedDataRowToLoopItem(published)],
-      route: buildRouteFrame(url.toString()),
-    },
+    templateContext: { ...templateContext, entryStack: [publishedDataRowToLoopItem(published, localization)] },
     documentMeta: readEntrySeoOverride(row.cells),
   }
 }
@@ -214,7 +215,7 @@ export async function renderBranchPreview(
     slug: segments.length > 0 ? decodeURIComponent(segments[segments.length - 1]!) : null,
     cookies: {},
   }
-  const loopData = await prefetchLoopData(merged, site, db, url, { branchId, request })
+  const loopData = await prefetchLoopData(merged, site, db, url, { branchId, request, templateContext })
   const mediaAssets = await prefetchMediaAssets(merged, site, registry, db, { templateContext, loopData })
   const rendered = publishPage(merged, site, registry, {
     templateContext,

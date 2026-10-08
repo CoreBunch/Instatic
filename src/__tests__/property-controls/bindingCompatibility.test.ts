@@ -42,6 +42,11 @@ describe('BINDING_COMPATIBILITY', () => {
 // ---------------------------------------------------------------------------
 
 describe('isFieldBindable', () => {
+  it('offers localized text to caption controls after projection, keeping structured controls ineligible', () => {
+    const field = metaField('heading', 'localizedText')
+    for (const control of ['text', 'textarea', 'richtext'] as const) expect(isFieldBindable(control, field)).toBe(true)
+    for (const control of ['number', 'toggle', 'image', 'url'] as const) expect(isFieldBindable(control, field)).toBe(false)
+  })
   it('image + media(image) → true', () => {
     expect(isFieldBindable('image', metaField('f', 'media', { mediaKind: 'image' }))).toBe(true)
   })

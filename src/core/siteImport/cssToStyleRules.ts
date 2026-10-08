@@ -1,161 +1,42 @@
-/**
- * cssToStyleRules — Phase 1 of the Super Import pipeline.
- *
- * Pure, headless CSS text → NewStyleRule[] parser. No UI, no zip handling,
- * no store integration. Just parse + classify + collect warnings + collect
- * asset refs.
- *
- * ## @media policy
- *
- * Matched @media (configured viewport query, or within ±mediaTolerance of a known max-width):
- *   inner declarations are folded into `contextStyles[matchedViewportId]`.
- *
- * Unmatched @media / every @container / every @supports:
- *   inner declarations are stored as a faithful per-context override keyed by a
- *   deterministic condition id (`contextStyles[<conditionId>]`), and the
- *   condition is recorded in the returned `conditions` registry. No "unmatched"
- *   folding into base styles, no lossy condition drop.
- *
- * ## asset-reference warnings
- *
- * The parser collects `url(...)` payloads into `assetRefs` but does NOT emit
- * `asset-reference` entries in `warnings`. The `asset-reference` warning kind
- * exists for Phase 2's use; Phase 1 just records URLs for later rewriting.
- *
- * ## order assignment
- *
- * `order` is assigned ascending from 0 in source position. The caller
- * (Phase 2's `applyImport.ts`) may re-order on merge. For a rule created by
- * a matched @media block (when no base rule existed), order reflects the
- * source position of the @media block.
- *
- * ## duplicate class names
- *
- * When the same `.class-name` selector appears more than once in the file,
- * the later rule wins (later-in-source = higher cascade priority). One
- * `duplicate-class` warning is emitted per duplicated class. The rule's
- * order is kept as the FIRST occurrence.
- */
-
-import type { StyleRuleKind, Condition, ConditionDef } from '@core/page-tree'
+/** CSS source → native ordered registry fragments, preserving grouping blocks. */
+import parse from 'postcss/lib/parse'
+import { nanoid } from 'nanoid'
+import type { ChildNode, Container, AtRule } from 'postcss'
+import type { CSSRuleGroup, Condition, ConditionDef } from '@core/page-tree'
 import {
   classKindSelector,
   conditionId,
   makeConditionDef,
   selectorBindingClassName,
   splitCssSelectorList,
+  isValidCssLayerName,
 } from '@core/page-tree'
-import { processKeyframesRule } from './keyframesToStyleRule'
 import { encodeSubstitutionDeclarations } from '@core/css-substitution'
+import { processKeyframesRule } from './keyframesToStyleRule'
 import { matchMediaQueryToViewport } from './mediaQueryMatch'
-import {
-  mergeRuleBaseDeclarations,
-  mergeRuleContextDeclarations,
-  sparsePriorities,
-} from './declarationCascade'
-import { parseStyleDeclarations } from './cssDeclarationReader'
+import { sparsePriorities } from './declarationCascade'
+import { parseStyleDeclarations, parseAuthoredDeclarationLayers } from './cssDeclarationReader'
 import { extractUrlPayloads, parseFontFaceRule } from './fontFaceParser'
-import type {
-  ImportWarning,
-  BreakpointHint,
-  AssetRef,
-  NewStyleRule,
-  ParsedFontFace,
-} from './types'
-
-// ---------------------------------------------------------------------------
-// Public interface
-// ---------------------------------------------------------------------------
+import type { ImportWarning, BreakpointHint, AssetRef, NewStyleRule, ParsedFontFace } from './types'
 
 interface CssToStyleRulesOptions {
-  /**
-   * Site viewport contexts used to match `@media` queries.
-   * Defaults to `[]` (all @media queries are treated as unmatched).
-   */
   breakpoints?: BreakpointHint[]
-  /**
-   * Tolerance in CSS pixels for matching an older/default max-width media query
-   * to a viewport context by frame width. A query `(max-width: 768px)` matches a
-   * context with width 775px if `mediaTolerance >= 7`. Defaults to 10.
-   */
   mediaTolerance?: number
 }
-
 interface CssToStyleRulesResult {
   rules: NewStyleRule[]
   warnings: ImportWarning[]
   assetRefs: AssetRef[]
-  /**
-   * Reusable site-level conditions discovered in the source (custom @media /
-   * @container / @supports). Each rule's overrides under one of these reference
-   * it by id via `contextStyles[<conditionId>]`; the caller merges these into
-   * `site.conditions`.
-   */
   conditions: ConditionDef[]
-  /**
-   * `@font-face` blocks captured for import. The asset planner resolves each
-   * `srcUrls` entry to a FileMap key + media upload, then `applyImport`
-   * assembles a custom `FontEntry`. Raw url payloads here — not yet resolved.
-   */
   fontFaces: ParsedFontFace[]
 }
-
-// ---------------------------------------------------------------------------
-// CSSRule type constants (CSSOM spec §6.1 — rule.type numeric values)
-//
-// Using rule.type instead of instanceof so the code works in both the browser
-// (native CSSStyleRule global) and the happy-dom test environment (constructors
-// live on window, not globalThis).
-// ---------------------------------------------------------------------------
-
-const STYLE_RULE_TYPE = 1   // CSSStyleRule
-const IMPORT_RULE_TYPE = 3  // CSSImportRule
-const MEDIA_RULE_TYPE = 4   // CSSMediaRule
-const FONT_FACE_RULE_TYPE = 5  // CSSFontFaceRule
-const PAGE_RULE_TYPE = 6    // CSSPageRule
-const KEYFRAMES_RULE_TYPE = 7  // CSSKeyframesRule
-const KEYFRAME_RULE_TYPE = 8   // CSSKeyframeRule
-const NAMESPACE_RULE_TYPE = 10 // CSSNamespaceRule
-const SUPPORTS_RULE_TYPE = 12  // CSSSupportsRule
-
-// ---------------------------------------------------------------------------
-// Internal helpers
-// ---------------------------------------------------------------------------
-
-/**
- * Truncate a CSS source string for use in warning messages.
- * Appends `…` when the string is cut.
- */
-function truncate(text: string, maxLen = 120): string {
-  if (text.length <= maxLen) return text
-  return `${text.slice(0, maxLen)}…`
+function truncate(text: string): string {
+  return text.length > 120 ? `${text.slice(0, 120)}…` : text
 }
-
-function classifySelector(selector: string): { kind: StyleRuleKind; name: string } {
-  const bindingClassName = selectorBindingClassName(selector)
-  if (bindingClassName) return { kind: 'class', name: bindingClassName }
-  // kind:'ambient' — the selector text IS the display name
-  return { kind: 'ambient', name: selector }
-}
-
-/**
- * Get the CSSStyleSheet constructor, falling back to the happy-dom window
- * object in test environments where the constructor is not on globalThis.
- */
 function getSheetConstructor(): typeof CSSStyleSheet | null {
   if (typeof CSSStyleSheet !== 'undefined') return CSSStyleSheet
-  // happy-dom test env: available on globalThis.window
-  const w =
-    typeof window !== 'undefined'
-      ? (window as unknown as Record<string, unknown>)
-      : null
-  if (w?.CSSStyleSheet) return w.CSSStyleSheet as typeof CSSStyleSheet
-  return null
+  return typeof window !== 'undefined' && window.CSSStyleSheet ? window.CSSStyleSheet : null
 }
-
-/**
- * Scan a declarations map for `url(...)` values and append AssetRef entries.
- */
 function collectAssetRefsFromDecls(
   decls: Record<string, unknown>,
   ruleIndex: number,
@@ -165,66 +46,33 @@ function collectAssetRefsFromDecls(
 ): void {
   for (const [property, value] of Object.entries(decls)) {
     if (typeof value !== 'string') continue
-    for (const rawUrl of extractUrlPayloads(value)) {
+    for (const rawUrl of extractUrlPayloads(value))
       assetRefs.push({
         ruleIndex,
-        ...(contextId !== undefined ? { contextId } : {}),
-        ...(rawCss ? { rawCss: true } : {}),
         property,
         rawUrl,
+        ...(contextId === undefined ? {} : { contextId }),
+        ...(rawCss ? { rawCss: true } : {}),
       })
-    }
   }
 }
-
 /**
- * Human-readable @-rule name from the CSSOM `rule.type` integer.
- */
-function atRuleName(type: number): string {
-  switch (type) {
-    case IMPORT_RULE_TYPE:   return '@import'
-    case FONT_FACE_RULE_TYPE: return '@font-face'
-    case PAGE_RULE_TYPE:     return '@page'
-    case KEYFRAMES_RULE_TYPE: return '@keyframes'
-    case KEYFRAME_RULE_TYPE:  return '@keyframe'
-    case NAMESPACE_RULE_TYPE: return '@namespace'
-    case SUPPORTS_RULE_TYPE: return '@supports'
-    default:                 return `CSS at-rule (type ${type})`
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Main implementation
-// ---------------------------------------------------------------------------
-
-/**
- * Parse a CSS text string into an array of `NewStyleRule` objects.
- *
- * Uses the browser-native `CSSStyleSheet.replaceSync()` API (available in
- * modern browsers and happy-dom). If that throws (sheet-level parse error),
- * returns a single `invalid-rule` warning and no rules.
- *
- * @param cssText - Raw CSS source text.
- * @param options - Optional breakpoints + tolerance for @media matching.
- * @returns Parsed rules, warnings, and URL asset references.
+ * PostCSS owns source structure. CSSOM only reads individual declaration
+ * blocks: headless engines otherwise silently discard @layer, @property
+ * and every valid selector nested inside an unsupported block.
  */
 export function cssToStyleRules(
   cssText: string,
   options?: CssToStyleRulesOptions,
 ): CssToStyleRulesResult {
-  const breakpoints = options?.breakpoints ?? []
-  const mediaTolerance = options?.mediaTolerance ?? 10
-
-  const rules: NewStyleRule[] = []
-  const warnings: ImportWarning[] = []
-  const assetRefs: AssetRef[] = []
-  const fontFaces: ParsedFontFace[] = []
-  // Reusable conditions discovered in the source, deduped by id.
-  const conditionsById = new Map<string, ConditionDef>()
-
-  // ── Acquire the CSS engine ──────────────────────────────────────────────
-  const SheetCtor = getSheetConstructor()
-  if (!SheetCtor) {
+  const rules: NewStyleRule[] = [],
+    warnings: ImportWarning[] = [],
+    assetRefs: AssetRef[] = [],
+    fontFaces: ParsedFontFace[] = []
+  const conditions = new Map<string, ConditionDef>(),
+    seenClasses = new Set<string>()
+  const Sheet = getSheetConstructor()
+  if (!Sheet) {
     warnings.push({
       kind: 'invalid-rule',
       message: 'CSSStyleSheet is not available in this environment',
@@ -232,72 +80,276 @@ export function cssToStyleRules(
     })
     return { rules, warnings, assetRefs, conditions: [], fontFaces }
   }
-
-  // ── Sheet-level parse ───────────────────────────────────────────────────
-  let sheet: CSSStyleSheet
+  let root
   try {
-    sheet = new SheetCtor()
-    // Substitution declarations (`var()`/`env()`) are encoded as marker
-    // custom properties first — every engine preserves custom properties
-    // verbatim, where shorthand-with-var handling is lossy and
-    // engine-divergent. `parseDeclarations` decodes them back.
-    sheet.replaceSync(encodeSubstitutionDeclarations(cssText))
+    root = parse(cssText)
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err)
     warnings.push({
       kind: 'invalid-rule',
-      message: `CSS parse error: ${message}`,
+      message: `CSS parse error: ${err instanceof Error ? err.message : String(err)}`,
       source: truncate(cssText),
     })
     return { rules, warnings, assetRefs, conditions: [], fontFaces }
   }
-
-  // ── Rule-processing state ───────────────────────────────────────────────
-  //
-  // selectorToLastIndex: tracks the most-recently-created rule index for each
-  //   selector. Used when @media inner rules need to look up or create a rule.
-  //
-  // seenClassSelectors: tracks class selectors seen in base rules so we can
-  //   emit a duplicate-class warning on the second occurrence.
-  const selectorToLastIndex = new Map<string, number>()
-  const seenClassSelectors = new Set<string>()
-
-  // ── Process each top-level rule ─────────────────────────────────────────
-  for (let i = 0; i < sheet.cssRules.length; i++) {
-    const rule = sheet.cssRules[i]
-    try {
-      processTopLevelRule(
-        rule,
-        rules,
-        warnings,
-        assetRefs,
-        fontFaces,
-        conditionsById,
-        breakpoints,
-        mediaTolerance,
-        selectorToLastIndex,
-        seenClassSelectors,
-      )
-    } catch (_err) {
-      // Per-rule resilience: if a rule throws unexpectedly, warn and continue.
-      warnings.push({
-        kind: 'invalid-rule',
-        message: `Unexpected error processing rule: ${_err instanceof Error ? _err.message : String(_err)}`,
-        source: truncate(rule.cssText),
-      })
+  let nextGroupId = 0
+  const groupNamespace = nanoid()
+  const newGroupId = () => `${groupNamespace}:${nextGroupId++}`
+  const sheetRule = (node: ChildNode): CSSRule | undefined => {
+    const sheet = new Sheet()
+    sheet.replaceSync(encodeSubstitutionDeclarations(node.toString()))
+    return sheet.cssRules[0]
+  }
+  const addStructuralRule = (
+    selector: string,
+    grouping: CSSRuleGroup[],
+    atRule: NonNullable<NewStyleRule['atRule']>,
+  ) => {
+    rules.push({
+      name: selector,
+      kind: 'ambient',
+      selector,
+      order: rules.length,
+      styles: {},
+      contextStyles: {},
+      grouping: grouping.slice(),
+      atRule,
+    })
+  }
+  const contextGroup = (condition: Condition): CSSRuleGroup => {
+    const matched =
+      condition.kind === 'media'
+        ? matchMediaQueryToViewport(
+            condition.query,
+            options?.breakpoints ?? [],
+            options?.mediaTolerance ?? 10,
+          )
+        : null
+    let contextId: string
+    if (matched) contextId = matched.id
+    else {
+      contextId = conditionId(condition)
+      if (!conditions.has(contextId)) conditions.set(contextId, makeConditionDef(condition))
+    }
+    return { id: newGroupId(), kind: 'context', contextId }
+  }
+  const warnUnsupported = (node: AtRule, reason = 'is not supported by the import engine') => {
+    warnings.push({
+      kind: 'dropped-at-rule',
+      message: `@${node.name} ${reason}`,
+      source: truncate(node.toString()),
+    })
+  }
+  const walk = (container: Container, grouping: CSSRuleGroup[] = []) => {
+    for (const node of container.nodes ?? []) {
+      if (node.type === 'comment') continue
+      try {
+        if (node.type === 'rule') {
+          const rule = sheetRule(node)
+          if (!rule || rule.type !== 1) {
+            warnings.push({
+              kind: 'invalid-rule',
+              message: 'The CSS engine rejected a selector rule',
+              source: truncate(node.toString()),
+            })
+            continue
+          }
+          const styleRule = rule as CSSStyleRule
+          const declarationLayers = parseAuthoredDeclarationLayers(
+            node.nodes
+              .filter((child) => child.type === 'decl')
+              .map((child) => ({
+                property: child.prop,
+                value: child.value,
+                important: child.important ?? false,
+              })),
+            styleRule.selectorText,
+            Sheet,
+            warnings,
+          )
+          const context = grouping.findLast((group) => group.kind === 'context')
+          const contextId = context?.kind === 'context' ? context.contextId : undefined
+          for (const selector of selectorsForStorage(styleRule.selectorText.trim())) {
+            const binding = selectorBindingClassName(selector)
+            if (binding && contextId === undefined) {
+              if (seenClasses.has(selector))
+                warnings.push({
+                  kind: 'duplicate-class',
+                  message: `Class "${binding}" (${selector}) appears more than once; each occurrence keeps its cascade position`,
+                  selector,
+                })
+              seenClasses.add(selector)
+            }
+            for (const declarations of declarationLayers) {
+              const idx = rules.length,
+                priorities = sparsePriorities(declarations.priorities)
+              rules.push({
+                name: binding ?? selector,
+                kind: binding ? 'class' : 'ambient',
+                selector,
+                order: idx,
+                styles: contextId === undefined ? { ...declarations.styles } : {},
+                ...(contextId === undefined && priorities
+                  ? { stylePriorities: { ...priorities } }
+                  : {}),
+                contextStyles:
+                  contextId === undefined ? {} : { [contextId]: { ...declarations.styles } },
+                ...(contextId !== undefined && priorities
+                  ? { contextStylePriorities: { [contextId]: { ...priorities } } }
+                  : {}),
+                ...(grouping.length ? { grouping: grouping.slice() } : {}),
+              })
+              collectAssetRefsFromDecls(declarations.styles, idx, contextId, assetRefs)
+            }
+          }
+          for (const child of node.nodes ?? [])
+            if (child.type !== 'decl' && child.type !== 'comment') {
+              warnings.push({
+                kind: 'dropped-at-rule',
+                message: 'Nested selector rules are not supported by the import engine',
+                source: truncate(child.toString()),
+              })
+            }
+          continue
+        }
+        if (node.type !== 'atrule') continue
+        const name = node.name.toLowerCase()
+        if (name === 'layer') {
+          if (node.nodes) {
+            if (node.params.trim() && !isValidCssLayerName(node.params.trim())) {
+              warnUnsupported(node, 'block has an invalid layer name')
+              continue
+            }
+            const group: CSSRuleGroup = {
+              id: newGroupId(),
+              kind: 'layer',
+              ...(node.params.trim() ? { name: node.params.trim() } : {}),
+            }
+            addStructuralRule(`@layer ${node.params}`.trim(), grouping, { kind: 'group', group })
+            walk(node, [...grouping, group])
+          } else {
+            const names = splitCssSelectorList(node.params)
+            if (names.length && names.every(isValidCssLayerName))
+              addStructuralRule(`@layer ${node.params}`, grouping, { kind: 'layer-order', names })
+            else warnUnsupported(node, 'statement has invalid layer names')
+          }
+          continue
+        }
+        if (name === 'media' || name === 'supports' || name === 'container') {
+          if (!node.nodes) {
+            warnUnsupported(node, 'has no block')
+            continue
+          }
+          let condition: Condition
+          if (name === 'container') {
+            const params = node.params.trim(),
+              match = /^([\w-]+)\s+(.+)$/.exec(params)
+            condition = {
+              kind: 'container',
+              query: match?.[2] ?? params,
+              ...(match ? { name: match[1] } : {}),
+            }
+          } else condition = { kind: name, query: node.params.trim() }
+          walk(node, [...grouping, contextGroup(condition)])
+          continue
+        }
+        if (name === 'property') {
+          const descriptors = new Map(
+            (node.nodes ?? [])
+              .filter((child) => child.type === 'decl')
+              .map((child) => [child.prop.toLowerCase(), child.value]),
+          )
+          const syntax = descriptors.get('syntax'),
+            inherits = descriptors.get('inherits'),
+            initialValue = descriptors.get('initial-value')
+          if (
+            !syntax ||
+            !/^(['"])[\s\S]*\1$/.test(syntax) ||
+            !['true', 'false'].includes(inherits ?? '') ||
+            !node.params.trim().startsWith('--')
+          ) {
+            warnUnsupported(node, 'registration has invalid required descriptors')
+            continue
+          }
+          addStructuralRule(`@property ${node.params}`, grouping, {
+            kind: 'property',
+            name: node.params.trim(),
+            syntax: decodeCssString(syntax),
+            inherits: inherits === 'true',
+            ...(initialValue === undefined ? {} : { initialValue }),
+          })
+          if (initialValue !== undefined)
+            collectAssetRefsFromDecls({ initialValue }, rules.length - 1, undefined, assetRefs)
+          continue
+        }
+        if (name === 'font-face') {
+          if (grouping.length) {
+            warnUnsupported(
+              node,
+              'inside a grouping block cannot be represented by the native font library',
+            )
+            continue
+          }
+          const rule = sheetRule(node)
+          if (rule?.type !== 5) {
+            warnUnsupported(node, 'was rejected by the CSS engine')
+            continue
+          }
+          const parsed = parseFontFaceRule(rule as CSSFontFaceRule)
+          if (parsed) {
+            collectAssetRefsFromDecls({ src: parsed.srcValue }, rules.length, undefined, assetRefs)
+            if (parsed.fontFace) fontFaces.push(parsed.fontFace)
+          }
+          continue
+        }
+        if (name === 'keyframes' || name === '-webkit-keyframes') {
+          const rule = sheetRule(node)
+          if (rule?.type !== 7) {
+            warnUnsupported(node, 'was rejected by the CSS engine')
+            continue
+          }
+          const start = rules.length
+          processKeyframesRule(rule as CSSKeyframesRule, rules, warnings, assetRefs, {
+            parseDeclarations: (style, selector, frameWarnings) =>
+              parseStyleDeclarations(style, selector, frameWarnings).styles,
+            collectAssetRefsFromDecls,
+          })
+          for (let index = start; index < rules.length; index += 1)
+            if (grouping.length) rules[index].grouping = grouping.slice()
+          continue
+        }
+        warnUnsupported(node)
+      } catch (err) {
+        warnings.push({
+          kind: 'invalid-rule',
+          message: `Unexpected error processing rule: ${err instanceof Error ? err.message : String(err)}`,
+          source: truncate(node.toString()),
+        })
+      }
     }
   }
-
+  if (root.type === 'document') {
+    for (const stylesheet of root.nodes) walk(stylesheet)
+  } else {
+    walk(root)
+  }
   normalizeParsedBindableClassRules(rules)
-  return { rules, warnings, assetRefs, conditions: [...conditionsById.values()], fontFaces }
+  return { rules, warnings, assetRefs, conditions: [...conditions.values()], fontFaces }
+}
+function decodeCssString(value: string): string {
+  return value
+    .slice(1, -1)
+    .replace(
+      /\\(?:([\da-f]{1,6})\s?|([^\r\n]))/gi,
+      (_, hex: string | undefined, char: string | undefined) => {
+        if (!hex) return char ?? ''
+        const code = parseInt(hex, 16)
+        return String.fromCodePoint(
+          code === 0 || code > 0x10ffff || (code >= 0xd800 && code <= 0xdfff) ? 0xfffd : code,
+        )
+      },
+    )
 }
 
-/**
- * Keep one assignable registry rule per decoded class name within a source
- * file. Prefer its canonical bare selector when present; preserve every other
- * selector fragment as ambient CSS so state/vendor/structural variants retain
- * source order and become dependency-tree-shakeable with that class.
- */
 function normalizeParsedBindableClassRules(rules: NewStyleRule[]): void {
   const primaryIndexByName = new Map<string, number>()
   for (let index = 0; index < rules.length; index += 1) {
@@ -311,10 +363,7 @@ function normalizeParsedBindableClassRules(rules: NewStyleRule[]): void {
 
     const primary = rules[primaryIndex]
     const canonicalSelector = classKindSelector(rule.name)
-    if (
-      rule.selector === canonicalSelector
-      && primary.selector !== canonicalSelector
-    ) {
+    if (rule.selector === canonicalSelector && primary.selector !== canonicalSelector) {
       rules[primaryIndex] = {
         ...primary,
         kind: 'ambient',
@@ -347,354 +396,4 @@ function selectorsForStorage(selectorList: string): string[] {
     return [selectorList]
   }
   return parts
-}
-
-// ---------------------------------------------------------------------------
-// Top-level rule processing
-// ---------------------------------------------------------------------------
-
-function processTopLevelRule(
-  rule: CSSRule,
-  rules: NewStyleRule[],
-  warnings: ImportWarning[],
-  assetRefs: AssetRef[],
-  fontFaces: ParsedFontFace[],
-  conditionsById: Map<string, ConditionDef>,
-  breakpoints: BreakpointHint[],
-  mediaTolerance: number,
-  selectorToLastIndex: Map<string, number>,
-  seenClassSelectors: Set<string>,
-): void {
-  switch (rule.type) {
-    case STYLE_RULE_TYPE:
-      processBaseStyleRule(
-        rule as CSSStyleRule,
-        rules,
-        warnings,
-        assetRefs,
-        selectorToLastIndex,
-        seenClassSelectors,
-      )
-      return
-
-    case MEDIA_RULE_TYPE:
-      processMediaRule(
-        rule as CSSMediaRule,
-        rules,
-        warnings,
-        assetRefs,
-        conditionsById,
-        breakpoints,
-        mediaTolerance,
-        selectorToLastIndex,
-        seenClassSelectors,
-      )
-      return
-
-    case SUPPORTS_RULE_TYPE: {
-      // @supports (feature query) → custom-condition override, stored verbatim.
-      const supportsRule = rule as CSSConditionRule
-      const query = supportsRule.conditionText ?? ''
-      processConditionInner(
-        supportsRule,
-        rules,
-        warnings,
-        assetRefs,
-        conditionsById,
-        selectorToLastIndex,
-        seenClassSelectors,
-        { kind: 'supports', query },
-      )
-      return
-    }
-
-    case FONT_FACE_RULE_TYPE:
-      // @font-face isn't a StyleRule (no selector — it's a stylesheet-level
-      // declarative side-effect), so it's captured into `fontFaces` instead.
-      // We still scrape its `src: url(...)` as assetRefs so the binaries upload
-      // to the media library; `applyImport` then assembles a custom FontEntry
-      // from the captured face + uploaded files. No `dropped-at-rule` warning —
-      // self-hosted faces are imported, not dropped. Faces whose every src is
-      // external surface an `external-font` warning later (in applyImport).
-      collectFontFace(rule as CSSFontFaceRule, assetRefs, rules.length, fontFaces)
-      return
-
-    case KEYFRAMES_RULE_TYPE:
-      // Keyframes are stylesheet-level definitions that selector rules refer to
-      // by `animation-name`. They must publish globally or animation-start
-      // states like `opacity: 0` never resolve to their final frame.
-      processKeyframesRule(rule as CSSKeyframesRule, rules, warnings, assetRefs, {
-        parseDeclarations: (style, selector, keyframeWarnings) =>
-          parseStyleDeclarations(style, selector, keyframeWarnings).styles,
-        collectAssetRefsFromDecls,
-      })
-      return
-
-    default: {
-      // @container has no stable legacy `rule.type` (it's a newer CSSOM
-      // addition; browsers report 0). Detect it structurally: a grouping rule
-      // whose cssText starts with `@container`. Route it to a conditional
-      // layer keyed on the verbatim query (+ optional container name).
-      const groupingRule = rule as Partial<CSSGroupingRule> & { cssText?: string; containerName?: string; containerQuery?: string }
-      const cssText = groupingRule.cssText ?? ''
-      // A grouping rule (it exposes `cssRules`) whose cssText starts with
-      // `@container`. cssRules is a CSSRuleList, not an Array, so test for its
-      // presence rather than Array.isArray.
-      if (/^@container\b/i.test(cssText) && (groupingRule as CSSGroupingRule).cssRules) {
-        const containerMatch = cssText.match(/^@container\s+([^({]+?)?\s*\(([^)]*)\)/i)
-        if (containerMatch) {
-          const name = (groupingRule.containerName || containerMatch[1] || '').trim()
-          const query = (groupingRule.containerQuery || containerMatch[2] || '').trim()
-          processConditionInner(
-            groupingRule as CSSGroupingRule,
-            rules,
-            warnings,
-            assetRefs,
-            conditionsById,
-            selectorToLastIndex,
-            seenClassSelectors,
-            { kind: 'container', query, ...(name ? { name } : {}) },
-          )
-          return
-        }
-      }
-
-      // Genuinely unsupported at-rules: @import, @page, @namespace, @layer,
-      // and anything else. (@import is usually silently
-      // dropped by replaceSync; this handles the rare surfaced case.)
-      warnings.push({
-        kind: 'dropped-at-rule',
-        message: `${atRuleName(rule.type)} rule is not supported by the import engine`,
-        source: truncate(rule.cssText),
-      })
-      return
-    }
-  }
-}
-
-/**
- * Capture one `@font-face` block:
- *   - record every `src: url(...)` payload as an assetRef so the binaries
- *     upload to the media library (synthetic ruleIndex, same as before), and
- *   - push a `ParsedFontFace` (family + variant + raw urls + unicode-range)
- *     so `applyImport` can assemble a custom FontEntry once URLs are rewritten.
- *
- * A face with no `font-family` or no `url()` src (e.g. `local(...)`-only) is
- * skipped — there's nothing self-hostable to import.
- */
-function collectFontFace(
-  rule: CSSFontFaceRule,
-  assetRefs: AssetRef[],
-  syntheticRuleIndex: number,
-  fontFaces: ParsedFontFace[],
-): void {
-  const parsed = parseFontFaceRule(rule)
-  if (!parsed) return
-
-  // Upload every referenced binary (existing behavior) so even an unmodellable
-  // face leaves its files in the media library.
-  collectAssetRefsFromDecls(
-    { src: parsed.srcValue },
-    syntheticRuleIndex,
-    undefined,
-    assetRefs,
-  )
-
-  if (parsed.fontFace) fontFaces.push(parsed.fontFace)
-}
-
-// ---------------------------------------------------------------------------
-// Base CSSStyleRule processing
-// ---------------------------------------------------------------------------
-
-function processBaseStyleRule(
-  rule: CSSStyleRule,
-  rules: NewStyleRule[],
-  warnings: ImportWarning[],
-  assetRefs: AssetRef[],
-  selectorToLastIndex: Map<string, number>,
-  seenClassSelectors: Set<string>,
-): void {
-  const selectorList = rule.selectorText.trim()
-  const declarations = parseStyleDeclarations(rule.style, selectorList, warnings)
-  for (const selector of selectorsForStorage(selectorList)) {
-    processBaseSelector(
-      selector,
-      declarations,
-      rules,
-      warnings,
-      assetRefs,
-      selectorToLastIndex,
-      seenClassSelectors,
-    )
-  }
-}
-
-function processBaseSelector(
-  selector: string,
-  declarations: ReturnType<typeof parseStyleDeclarations>,
-  rules: NewStyleRule[],
-  warnings: ImportWarning[],
-  assetRefs: AssetRef[],
-  selectorToLastIndex: Map<string, number>,
-  seenClassSelectors: Set<string>,
-): void {
-  const classified = classifySelector(selector)
-  if (classified.kind === 'class') {
-    if (seenClassSelectors.has(selector)) {
-      // Duplicate class: later-in-source wins. Update existing rule's styles.
-      warnings.push({
-        kind: 'duplicate-class',
-        message: `Class "${classified.name}" (${selector}) appears more than once; later declaration wins`,
-        selector,
-      })
-      const existingIdx = selectorToLastIndex.get(selector)!
-      mergeRuleBaseDeclarations(rules[existingIdx], declarations)
-      // Collect any new asset refs from the updated declarations
-      collectAssetRefsFromDecls(declarations.styles, existingIdx, undefined, assetRefs)
-      return
-    }
-    seenClassSelectors.add(selector)
-  }
-
-  const idx = rules.length
-  rules.push({
-    name: classified.name,
-    kind: classified.kind,
-    selector,
-    order: idx,
-    // A selector list is split into independently editable rules. Do not let
-    // those rules share the parser's declaration objects: a later duplicate
-    // of one selector merges in place, and shared bags would leak that update
-    // into every sibling from the original list.
-    styles: { ...declarations.styles },
-    ...(sparsePriorities(declarations.priorities)
-      ? { stylePriorities: { ...declarations.priorities } }
-      : {}),
-    contextStyles: {},
-  })
-  selectorToLastIndex.set(selector, idx)
-  collectAssetRefsFromDecls(declarations.styles, idx, undefined, assetRefs)
-}
-
-// ---------------------------------------------------------------------------
-// @media rule processing
-// ---------------------------------------------------------------------------
-
-function processMediaRule(
-  mediaRule: CSSMediaRule,
-  rules: NewStyleRule[],
-  warnings: ImportWarning[],
-  assetRefs: AssetRef[],
-  conditionsById: Map<string, ConditionDef>,
-  breakpoints: BreakpointHint[],
-  mediaTolerance: number,
-  selectorToLastIndex: Map<string, number>,
-  seenClassSelectors: Set<string>,
-): void {
-  // conditionText is on CSSConditionRule (parent of CSSMediaRule) per CSSOM spec.
-  // Fallback to mediaText for environments that don't expose conditionText.
-  const conditionText =
-    (mediaRule as CSSMediaRule & { conditionText?: string }).conditionText
-    ?? mediaRule.media.mediaText
-
-  const matched = matchMediaQueryToViewport(conditionText, breakpoints, mediaTolerance)
-
-  if (matched !== null) {
-    // Matched breakpoint: merge inner rules into contextStyles[matched.id].
-    processConditionInner(
-      mediaRule,
-      rules,
-      warnings,
-      assetRefs,
-      conditionsById,
-      selectorToLastIndex,
-      seenClassSelectors,
-      { kind: 'breakpoint', breakpointId: matched.id },
-    )
-  } else {
-    // Unmatched @media: store the inner declarations as a faithful per-context
-    // override keyed on the verbatim media query — NOT folded into base styles
-    // (which was lossy: it dropped the condition and let the override leak to
-    // all viewports). The query round-trips and re-emits as `@media <query>`.
-    processConditionInner(
-      mediaRule,
-      rules,
-      warnings,
-      assetRefs,
-      conditionsById,
-      selectorToLastIndex,
-      seenClassSelectors,
-      { kind: 'media', query: conditionText },
-    )
-  }
-}
-
-/**
- * Process the inner CSSStyleRules of a conditional @-block (@media /
- * @container / @supports), writing each inner rule's declarations to one
- * editing context on the matching StyleRule. Both kinds land in the unified
- * `contextStyles` map:
- *   - `{ kind: 'breakpoint', breakpointId }` → `contextStyles[breakpointId]`.
- *   - any custom condition → `contextStyles[conditionId(condition)]`, and the
- *     condition is registered in `conditionsById` (the reusable registry).
- */
-type ConditionTarget =
-  | { kind: 'breakpoint'; breakpointId: string }
-  | Condition
-
-/** Resolve the `contextStyles` key for a target. */
-function targetContextId(target: ConditionTarget): string {
-  return target.kind === 'breakpoint' ? target.breakpointId : conditionId(target)
-}
-
-function processConditionInner(
-  block: CSSGroupingRule,
-  rules: NewStyleRule[],
-  warnings: ImportWarning[],
-  assetRefs: AssetRef[],
-  conditionsById: Map<string, ConditionDef>,
-  selectorToLastIndex: Map<string, number>,
-  seenClassSelectors: Set<string>,
-  target: ConditionTarget,
-): void {
-  const contextId = targetContextId(target)
-  // Register the reusable condition definition for custom conditions.
-  if (target.kind !== 'breakpoint' && !conditionsById.has(contextId)) {
-    conditionsById.set(contextId, makeConditionDef(target))
-  }
-
-  for (let i = 0; i < block.cssRules.length; i++) {
-    const inner = block.cssRules[i]
-    // Only process style rules inside the @-block (skip nested @-rules)
-    if (inner.type !== STYLE_RULE_TYPE) continue
-
-    const innerStyle = inner as CSSStyleRule
-    const selectorList = innerStyle.selectorText.trim()
-    const declarations = parseStyleDeclarations(innerStyle.style, selectorList, warnings)
-
-    for (const selector of selectorsForStorage(selectorList)) {
-      // Find or create the rule for this selector
-      let idx: number
-      if (selectorToLastIndex.has(selector)) {
-        idx = selectorToLastIndex.get(selector)!
-      } else {
-        const classified = classifySelector(selector)
-        idx = rules.length
-        rules.push({
-          name: classified.name,
-          kind: classified.kind,
-          selector,
-          order: idx,
-          styles: {},
-          contextStyles: {},
-        })
-        selectorToLastIndex.set(selector, idx)
-        if (classified.kind === 'class') seenClassSelectors.add(selector)
-      }
-
-      mergeRuleContextDeclarations(rules[idx], contextId, declarations)
-      collectAssetRefsFromDecls(declarations.styles, idx, contextId, assetRefs)
-    }
-  }
 }

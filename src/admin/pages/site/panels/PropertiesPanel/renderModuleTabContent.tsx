@@ -2,17 +2,12 @@
  * renderModuleTabContent — derive the JSX shown inside StyleSurface's Module
  * section.
  *
- * Three branches:
- *   1. `base.loop` — substitute the schema-driven control list with the
- *      dedicated `LoopPropertiesView` (source picker + dynamic filter UI).
- *      The loop's empty `schema` would otherwise leave the section blank.
- *      Crucially, we still render this *inside* the standard StyleSurface
- *      flow, which means the ClassPicker + style sections (display, layout,
- *      etc.) keep working — the user can assign classes to the loop wrapper
- *      to lay out iterations as a grid, flex row, columns, etc.
- *   2. Visual-component-mode — wrap each control in `ParamPromotableRow` so
+ * Source-dependent loop controls precede the ordinary schema control list.
+ * Native loading captions use that same list, including the binding picker
+ * and component parameter promotion; source configuration stays authored.
+ *   1. Visual-component-mode — wrap each control in `ParamPromotableRow` so
  *      the user can lift the prop to the VC's param surface in one click.
- *   3. Default — render each control via `PropertyControlRenderer` with
+ *   2. Default — render each control via `PropertyControlRenderer` with
  *      optional dynamic-binding wiring when the node sits inside an entry-
  *      template page or a `base.loop` ancestor subtree.
  *
@@ -75,19 +70,7 @@ export function renderModuleTabContent(args: ModuleTabContentArgs): React.ReactN
     onClearDynamicBinding,
   } = args
 
-  // Branch 1: `base.loop` gets the dedicated loop UI.
-  if (selectedNode?.moduleId === 'base.loop' && selectedNodeId) {
-    return (
-      <LoopPropertiesView
-        nodeId={selectedNodeId}
-        props={selectedNode.props as Record<string, unknown>}
-        activePage={activePage}
-      />
-    )
-  }
-
-  // Branches 2 & 3 share the schema iteration; bail when there's nothing
-  // to render against.
+  // Schema controls share binding and parameter authoring for every module.
   if (!definition || !selectedNode || !resolvedPropsForBreakpoint) return null
 
   const inVisualComponent =
@@ -99,6 +82,9 @@ export function renderModuleTabContent(args: ModuleTabContentArgs): React.ReactN
 
   return (
     <>
+      {selectedNode.moduleId === 'base.loop' && selectedNodeId && (
+        <LoopPropertiesView nodeId={selectedNodeId} props={selectedNode.props} activePage={activePage} />
+      )}
       {showFormSettings && (
         <FormSettingsPanel
           page={activePage}

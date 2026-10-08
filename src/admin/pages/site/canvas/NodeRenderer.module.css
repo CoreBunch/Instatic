@@ -25,3 +25,12 @@
   outline: 1px dashed var(--danger);
   padding: var(--space-3xs);
 }
+
+.loopPreviewError {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+  padding: var(--space-xs);
+  color: var(--danger);
+  background: var(--bg-surface);
+}

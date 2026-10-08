@@ -21,6 +21,8 @@ import {
 import { dataTableHasField, isPostTypeBuiltInFieldId } from './fields'
 import { slugFromTitle } from '@core/utils/slug'
 import { safeParseValue } from '@core/utils/typeboxHelpers'
+import { hasLocalizedDataFields, readDataRepeaterValue, resolveLocalizedTextValue, type DataLocalizationContext } from './localizedCells'
+import { LocalizationError } from '@core/localization'
 
 export function readStringCell(cells: DataRowCells, fieldId: string, fallback = ''): string {
   const value = cells[fieldId]
@@ -72,6 +74,19 @@ export function readRepeaterCell(cells: DataRowCells, fieldId: string): Repeater
   return result.ok ? result.value : []
 }
 
+/** Search consumes already-projected text leaves, never raw catalogue reference keys. */
+export function dataCellTextValues(cells: DataRowCells, fields: readonly DataField[]): string[] {
+  return fields.flatMap(field => {
+    if (field.type === 'repeater') {
+      const items = hasLocalizedDataFields(field.fields)
+        ? readDataRepeaterValue(cells[field.id], `cells.${field.id}`) : readRepeaterCell(cells, field.id)
+      return items.flatMap(item => dataCellTextValues(item.cells, field.fields))
+    }
+    const value = cells[field.id]
+    return ['text', 'localizedText', 'longText', 'richText'].includes(field.type) && typeof value === 'string' ? [value] : []
+  })
+}
+
 /**
  * Convenience for the post-type built-in field ids. These are read often
  * enough that giving them a named accessor avoids string-literal sprawl.
@@ -86,18 +101,41 @@ export const UNTITLED_ROW_TITLE = 'Untitled'
  * the AI document list, the Data delete prompt) reads it here, and none
  * falls back to the row id or slug, which are not names.
  */
+function displayTitleCandidates(table?: Pick<DataTable, 'primaryFieldId' | 'fields'> | null): (string | undefined)[] {
+  return [
+    ...(table ? [table.primaryFieldId] : []),
+    POST_TYPE_FIELD_TITLE,
+    ...(table ? table.fields.filter((field) => !isPostTypeBuiltInFieldId(field.id)
+      && (field.type === 'text' || field.type === 'localizedText')).map((field) => field.id) : []),
+  ]
+}
+
+/** Names from an explicit derived projection; references are never accepted here. */
+export function readProjectedDisplayTitle(cells: DataRowCells, table?: Pick<DataTable, 'primaryFieldId' | 'fields'> | null): string {
+  for (const id of displayTitleCandidates(table)) {
+    if (!id) continue
+    const value = cells[id]
+    if (table?.fields.find(field => field.id === id)?.type === 'localizedText' && value != null && typeof value !== 'string') {
+      throw new LocalizationError(`cells.${id}`, 'Expected projected language-catalogue text')
+    }
+    if (typeof value === 'string' && value.trim()) return value.trim()
+  }
+  return UNTITLED_ROW_TITLE
+}
+
 export function readDisplayTitle(
   cells: DataRowCells,
   table?: Pick<DataTable, 'primaryFieldId' | 'fields'> | null,
+  localization?: DataLocalizationContext,
 ): string {
-  const candidates = [
-    ...(table ? [table.primaryFieldId] : []),
-    POST_TYPE_FIELD_TITLE,
-    ...(table ? table.fields.filter((field) => field.type === 'text').map((field) => field.id) : []),
-  ]
-  for (const id of candidates) {
+  for (const id of displayTitleCandidates(table)) {
     if (!id) continue
-    const value = cells[id]
+    const field = table?.fields.find(candidate => candidate.id === id)
+    let value = cells[id]
+    if (field?.type === 'localizedText') {
+      if (!localization) throw new LocalizationError(`cells.${id}`, 'Choose an explicit content language')
+      value = resolveLocalizedTextValue(value, localization, `cells.${id}`)
+    }
     if (typeof value === 'string' && value.trim()) return value.trim()
   }
   return UNTITLED_ROW_TITLE

@@ -1,3 +1,6 @@
+import { useLocalizedData } from '@admin/pages/data/localizedData'
+import { readDataRepeaterValue, type DataLocalizationContext } from '@core/data/localizedCells'
+import { getErrorMessage } from '@core/utils/errorMessage'
 import { useState, type ReactElement } from 'react'
 import { nanoid } from 'nanoid'
 import { Button } from '@ui/components/Button'
@@ -45,20 +48,23 @@ function buildItem(field: RepeaterField): RepeaterItem {
   }
 }
 
-function itemSummary(item: RepeaterItem, field: RepeaterField, index: number): string {
-  if (field.itemLabelFieldId) {
-    const preferredField = field.fields.find((itemField) => itemField.id === field.itemLabelFieldId)
-    return (preferredField && readableRepeaterSummaryValue(
-      preferredField,
-      item.cells[preferredField.id],
-    )) || `Item ${index + 1}`
-  }
+function itemSummary(item: RepeaterItem, field: RepeaterField, index: number, localization?: DataLocalizationContext): string {
+  if (!localization && field.fields.some(itemField => itemField.type === 'localizedText')) return 'Choose a content language'
+  try {
+    if (field.itemLabelFieldId) {
+      const preferredField = field.fields.find((itemField) => itemField.id === field.itemLabelFieldId)
+      return (preferredField && readableRepeaterSummaryValue(
+        preferredField,
+        item.cells[preferredField.id], localization,
+      )) || `Item ${index + 1}`
+    }
 
-  for (const itemField of field.fields) {
-    const summary = readableRepeaterSummaryValue(itemField, item.cells[itemField.id])
-    if (summary) return summary
-  }
-  return `Item ${index + 1}`
+    for (const itemField of field.fields) {
+      const summary = readableRepeaterSummaryValue(itemField, item.cells[itemField.id], localization)
+      if (summary) return summary
+    }
+    return `Item ${index + 1}`
+  } catch (error) { return getErrorMessage(error, 'Invalid localized text') }
 }
 
 export function RepeaterCell({
@@ -71,8 +77,12 @@ export function RepeaterCell({
   resolveRelationTarget,
   tables = [],
 }: RepeaterCellProps): ReactElement {
+  const localization = useLocalizedData()
   const confirmDelete = useConfirmDelete()
-  const items = readRepeaterCell({ [field.id]: value }, field.id)
+  let items: RepeaterItem[] = []
+  let valueError: string | null = null
+  try { items = field.fields.some(item => item.type === 'localizedText') ? readDataRepeaterValue(value, `cells.${field.id}`) : readRepeaterCell({ [field.id]: value }, field.id) }
+  catch (error) { valueError = getErrorMessage(error, 'Invalid repeater value') }
   const [relationPicker, setRelationPicker] = useState<RelationPickerState | null>(null)
   const [expandedIds, setExpandedIds] = useState<Set<string>>(
     () => new Set(items[0] ? [items[0].id] : []),
@@ -125,6 +135,8 @@ export function RepeaterCell({
     : null
 
   if (mediaField) {
+    if (valueError) return <p role="alert">{valueError}</p>
+
     return (
       <MediaRepeaterGallery
         field={field}
@@ -183,12 +195,12 @@ export function RepeaterCell({
                   type="button"
                   align="start"
                   pressed={expandedIds.has(item.id)}
-                  aria-label={`${expandedIds.has(item.id) ? 'Collapse' : 'Expand'} ${itemSummary(item, field, index)}`}
+                  aria-label={`${expandedIds.has(item.id) ? 'Collapse' : 'Expand'} ${itemSummary(item, field, index, localization?.context)}`}
                   onClick={() => toggleItem(item.id)}
                   className={styles.repeaterItemDisclosure}
                 >
                   <span className={styles.repeaterItemSummary}>
-                    {itemSummary(item, field, index)}
+                    {itemSummary(item, field, index, localization?.context)}
                   </span>
                   {expandedIds.has(item.id)
                     ? <ChevronUpIcon size={11} aria-hidden="true" />
@@ -250,7 +262,7 @@ export function RepeaterCell({
                       tooltip="Delete item"
                       onClick={() => {
                         confirmDelete({
-                          title: `Delete "${itemSummary(item, field, index)}"?`,
+                          title: `Delete "${itemSummary(item, field, index, localization?.context)}"?`,
                           description: 'This removes the item and every value inside it.',
                           alwaysConfirm: true,
                           commit: () => {
@@ -285,6 +297,7 @@ export function RepeaterCell({
                         readOnly={readOnly}
                         rowId={rowId}
                         resolveRelationTarget={resolveRelationTarget}
+                        tables={tables}
                         onOpenPicker={itemField.type === 'relation'
                           ? () => setRelationPicker({ itemId: item.id, field: itemField })
                           : undefined}

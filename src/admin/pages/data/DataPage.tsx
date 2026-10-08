@@ -4,6 +4,8 @@
  * Composes the DataSidebar, DataCanvas, and DataInspector through
  * AdminWorkspaceCanvasLayout. Capability resolution mirrors ContentPage.
  */
+import { ContentLanguageSelect } from './LocalizedDataContext'
+import { LocalizedDataContext, useLocalizedDataResource, localizedScopeTables } from './localizedData'
 import { readDisplayTitle } from '@core/data/cells'
 import { useEffect, useRef, useState } from 'react'
 import { AdminWorkspaceCanvasLayout } from '@admin/layouts/AdminWorkspaceCanvasLayout'
@@ -72,6 +74,7 @@ export function DataPage() {
   const canLoadRows = canAccessDataRows(permissionUser)
 
   const workspace = useDataWorkspace({ shouldLoadRows: canLoadRows })
+  const localization = useLocalizedDataResource(localizedScopeTables(workspace.selectedTable, workspace.tables), workspace.rows)
   const setRightPanel = useWorkspaceLayout((s) => s.setRightPanel)
   const openSiteImport = useAdminUi((s) => s.openSiteImport)
   const openSiteExport = useAdminUi((s) => s.openSiteExport)
@@ -191,7 +194,7 @@ export function DataPage() {
   function handleDeleteRow(rowId: string): void {
     const table = workspace.selectedTable
     const row = workspace.rows.find((r) => r.id === rowId)
-    const label = row && table ? readDisplayTitle(row.cells, table) : 'row'
+    const label = row && table ? readDisplayTitle(row.cells, table, localization.context) : 'row'
 
     confirmDelete({
       title: `Delete "${label}"?`,
@@ -334,11 +337,11 @@ export function DataPage() {
   // ---------------------------------------------------------------------------
 
   return (
-    <>
+    <LocalizedDataContext.Provider value={localization}>
       <AdminWorkspaceCanvasLayout
         workspace="data"
         toolbarRightSlot={selectedTable ? (
-          <PublishActionGroup
+          <><ContentLanguageSelect /><PublishActionGroup
             statusLabel={publishStatus.label}
             statusTone={publishStatus.tone}
             statusAriaLabel={branchGate.reason ?? undefined}
@@ -360,7 +363,7 @@ export function DataPage() {
             menuItems={publishMenuItems}
             menuLabel="Data publishing actions"
             triggerLabel="More data publishing actions"
-          />
+          /></>
         ) : null}
         contentSidebar={(
           <DataSidebar
@@ -426,6 +429,6 @@ export function DataPage() {
         />
       )}
 
-    </>
+    </LocalizedDataContext.Provider>
   )
 }

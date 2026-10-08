@@ -1,31 +1,7 @@
 import { Type, type Static } from '@core/utils/typeboxHelpers'
 
-const PropertyConditionSchema = Type.Recursive((Self) => Type.Union([
-  Type.Object(
-    { field: Type.String({ minLength: 1 }), eq: Type.Unknown() },
-    { additionalProperties: false },
-  ),
-  Type.Object(
-    { field: Type.String({ minLength: 1 }), notEq: Type.Unknown() },
-    { additionalProperties: false },
-  ),
-  Type.Object(
-    { field: Type.String({ minLength: 1 }), in: Type.Array(Type.Unknown()) },
-    { additionalProperties: false },
-  ),
-  Type.Object(
-    { field: Type.String({ minLength: 1 }), notIn: Type.Array(Type.Unknown()) },
-    { additionalProperties: false },
-  ),
-  Type.Object(
-    { and: Type.Array(Self) },
-    { additionalProperties: false },
-  ),
-  Type.Object(
-    { or: Type.Array(Self) },
-    { additionalProperties: false },
-  ),
-]))
+import { PropertyConditionSchema } from '@core/value-conditions-schema'
+export { PropertyConditionSchema } from '@core/value-conditions-schema'
 
 const PropertyControlLayoutSchema = Type.Union([
   Type.Literal('inline'),
@@ -85,6 +61,10 @@ const PropertyControlOptionSchema = Type.Object(
 )
 
 export const PropertyControlSchema = Type.Recursive((Self) => Type.Union([
+  Type.Object(
+    { ...PropertyControlBaseSchema, type: Type.Literal('condition') },
+    { additionalProperties: false },
+  ),
   Type.Object(
     {
       ...PropertyControlBaseSchema,
@@ -187,7 +167,7 @@ export const PropertySchemaSchema = Type.Unsafe<Record<string, PropertyControl>>
   Type.Record(Type.String(), PropertyControlSchema),
 )
 
-export type PropertyCondition = Static<typeof PropertyConditionSchema>
+export type { PropertyCondition } from '@core/value-conditions-schema'
 export type PropertyControlLayout = Static<typeof PropertyControlLayoutSchema>
 export type TextControlNormalize = Static<typeof TextControlNormalizeSchema>
 type PropertyControlCategory = Static<typeof PropertyControlCategorySchema>

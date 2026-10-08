@@ -21,11 +21,14 @@
  * DataMeta is fetched once and cached module-level in `./cache.ts`.
  */
 
-import { useEffect, useState, type RefObject } from 'react'
+import { useEffect, type RefObject } from 'react'
+import { useAsyncResource } from '@admin/lib/useAsyncResource'
 import type { PropertyControl } from '@core/module-engine'
 import type { DynamicPropBinding } from '@core/page-tree'
-import type { LoopItem, LoopSourceField } from '@core/loops/types'
-import type { DataMeta, DataMetaField, DataMetaTable } from '@core/data/schemas'
+import { readPublicFileField, type PublicFileReferences } from '@core/files/references'
+import { walkFieldPath } from '@core/templates/tokenInterpolation'
+import type { LoopSourceField } from '@core/loops/types'
+import type { DataMetaField, DataMetaTable } from '@core/data/schemas'
 import { Button } from '@ui/components/Button'
 import { ContextMenu } from '@ui/components/ContextMenu'
 import { EmptyState } from '@ui/components/EmptyState'
@@ -34,10 +37,10 @@ import { ImageSolidIcon } from 'pixel-art-icons/icons/image-solid'
 import { VideoSolidIcon } from 'pixel-art-icons/icons/video-solid'
 import { getFieldIcon } from '@admin/pages/data/utils/fieldIcons'
 import { isFieldBindable, type PropertyControlKind } from './bindingCompatibility'
-import { _cachedMeta, loadDataMeta } from './cache'
+import { loadDataMeta } from './cache'
 import { SYSTEM_SOURCES, type SystemSourceId } from './systemSources'
-import { getCmsDataTable, previewCmsDataLoopItems } from '@core/persistence/cmsData'
-import { dataTablePreviewToLoopItem } from '@core/templates/templatePreviewData'
+import { previewCmsDataLoopItems } from '@core/persistence/cmsData'
+import { pushToast } from '@ui/components/Toast'
 import {
   deriveFormat,
   formatMetaFieldPreview,
@@ -48,7 +51,10 @@ import {
   type FieldGroup,
 } from './helpers'
 import styles from './DataBindingPicker.module.css'
-import { getErrorMessage } from '@core/utils/errorMessage'
+import { translationKeys } from '@core/localization'
+import { PageTranslationsSchema } from '@core/templates'
+import { TranslationMessagesSchema } from '@core/localization-schema'
+import { compiledCheck } from '@core/utils/typeboxCompiler'
 
 // ---------------------------------------------------------------------------
 // Icons for loop / system source field formats
@@ -85,7 +91,7 @@ const POST_TYPE_ONLY_LOOP_FIELDS = new Set([
 // ---------------------------------------------------------------------------
 
 type SystemPreviewValues = Partial<
-  Record<SystemSourceId, object | null>
+  Record<Exclude<SystemSourceId, 'file'>, object | null>
 >
 
 export interface DataBindingPickerProps {
@@ -100,13 +106,12 @@ export interface DataBindingPickerProps {
   scopeLabel?: string
   /**
    * Current values shown as row previews. When omitted, the picker loads a
-   * representative row for the scoped table.
+   * real published row for the scoped table.
    */
   previewFields?: Record<string, unknown> | null
-  /** Prefer a real published row before falling back to synthetic previews. */
-  loadPublishedPreview?: boolean
   /** Optional page/site/route values used by system-source preview pills. */
   systemPreviewValues?: SystemPreviewValues
+  publicFiles?: PublicFileReferences
   /**
    * Insert mode — clicks insert a `{source.field}` token and the popover
    * stays open so multiple tokens can be inserted in one session.
@@ -151,8 +156,8 @@ export function DataBindingPicker({
   scopedTableSlug,
   scopeLabel = 'Current row',
   previewFields,
-  loadPublishedPreview = false,
   systemPreviewValues,
+  publicFiles,
   insertMode = false,
   fieldSelectionMode = 'compatible',
   anchorRef,
@@ -161,30 +166,7 @@ export function DataBindingPicker({
   onPick,
 }: DataBindingPickerProps) {
   // ─── Meta fetching ─────────────────────────────────────────────────────
-  // Lazy initializer picks up the cached value so already-loaded meta is
-  // immediately available without a synchronous setState in the effect.
-  const [meta, setMeta] = useState<DataMeta | null>(() => _cachedMeta)
-  const [metaLoading, setMetaLoading] = useState(() => _cachedMeta === null)
-  const [metaError, setMetaError] = useState<string | null>(null)
-
-  useEffect(() => {
-    if (_cachedMeta) return // already in state via lazy initializer
-    let cancelled = false
-    loadDataMeta()
-      .then((m) => {
-        if (cancelled) return
-        setMeta(m)
-        setMetaLoading(false)
-      })
-      .catch((err) => {
-        if (cancelled) return
-        setMetaError(getErrorMessage(err, 'Failed to load data meta'))
-        setMetaLoading(false)
-      })
-    return () => {
-      cancelled = true
-    }
-  }, [])
+  const { data: meta, loading: metaLoading, error: metaError, refresh: refreshMeta } = useAsyncResource(() => loadDataMeta(), [])
 
   // Table id is the strongest scope signal. Site templates can instead
   // provide a slug; Content supplies its selected collection id.
@@ -203,72 +185,25 @@ export function DataBindingPicker({
   // Loop scope without a specific table — synthetic fields only.
   const hasLoopOnlyScope = !scopedTable && (availableFields?.length ?? 0) > 0
 
-  // ─── currentEntry preview item ─────────────────────────────────────────
-  // When the caller does not provide live preview fields, the value shown
-  // for `currentEntry.X` comes from a representative LoopItem:
-  //   1. Loop-bound table — fetch the most recent published row so the
-  //      preview matches what real iterations will render.
-  //   2. Template-page scope — synthesize from the table's field
-  //      definitions so the preview is sensible even before any row is
-  //      published (titles like "Example Post Title", etc.).
-  //   3. Loop-bound with no published rows — fall back to (2).
-  // The fetched item is stored with its table id so changing scope never
-  // flashes preview values from the previous table.
-  const [fetchedEntry, setFetchedEntry] = useState<{
-    tableId: string
-    item: LoopItem | null
-  } | null>(null)
+  // Only real authorized rows provide preview values; an empty source has none.
   const hasProvidedPreview = previewFields !== undefined
-
-  // No eslint-disable needed here: the only setState (setFetchedEntry) runs
-  // inside the async load(), not synchronously in the effect body.
+  const sitePreview = systemPreviewValues?.site
+  const language = sitePreview && 'language' in sitePreview && typeof sitePreview.language === 'string' ? sitePreview.language : undefined
+  const tableId = scopedTable?.id
+  const previewKey = JSON.stringify([tableId, language, hasProvidedPreview])
+  const entryResource = useAsyncResource(async () => {
+    if (!tableId || hasProvidedPreview) return null
+    const result = await previewCmsDataLoopItems(tableId, { limit: 1, orderBy: 'publishedAt', direction: 'desc', language })
+    return { key: previewKey, item: result.items[0] ?? null }
+  }, [previewKey])
   useEffect(() => {
-    if (!scopedTable || hasProvidedPreview) return
-    let cancelled = false
-    const tableId = scopedTable.id
-
-    async function load() {
-      // Loop and content scopes can prefer a real row so previews match the
-      // values authors are working with.
-      if (loadPublishedPreview) {
-        try {
-          const result = await previewCmsDataLoopItems(tableId, {
-            limit: 1,
-            orderBy: 'publishedAt',
-            direction: 'desc',
-          })
-          if (cancelled) return
-          if (result.items.length > 0) {
-            setFetchedEntry({ tableId, item: result.items[0] ?? null })
-            return
-          }
-        } catch {
-          if (cancelled) return
-          // fall through to synthetic
-        }
-      }
-      // Template-page scope (or loop fallback) → synthetic preview from
-      // the full DataTable schema.
-      try {
-        const table = await getCmsDataTable(tableId)
-        if (cancelled || !table) return
-        setFetchedEntry({ tableId, item: dataTablePreviewToLoopItem(table) })
-      } catch {
-        if (cancelled) return
-        setFetchedEntry({ tableId, item: null })
-      }
-    }
-
-    load()
-    return () => {
-      cancelled = true
-    }
-  }, [scopedTable, loadPublishedPreview, hasProvidedPreview])
-
+    if (metaError) pushToast({ kind: 'error', title: 'Could not load binding fields', body: metaError,
+      action: { label: 'Retry', onSelect: refreshMeta } })
+    if (entryResource.error) pushToast({ kind: 'error', title: 'Could not preview binding values', body: entryResource.error,
+      action: { label: 'Retry', onSelect: entryResource.refresh } })
+  }, [metaError, refreshMeta, entryResource.error, entryResource.refresh])
   const currentEntryFields = previewFields ??
-    (fetchedEntry && scopedTable && fetchedEntry.tableId === scopedTable.id
-      ? fetchedEntry.item?.fields
-      : null)
+    (entryResource.data?.key === previewKey && !entryResource.error ? entryResource.data?.item?.fields : null)
 
   // ─── Field list assembly ───────────────────────────────────────────────
   const controlKind = control.type as PropertyControlKind
@@ -322,12 +257,48 @@ export function DataBindingPicker({
     // 3. System sources — Page / Site / Route. Always visible (and always
     // reachable) since the publisher seeds these frames on every render.
     for (const source of SYSTEM_SOURCES) {
-      const entries: FieldEntry[] = source.fields.map((f) => ({
+      const fields: LoopSourceField[] = source.id === 'file'
+        ? Object.values(publicFiles ?? {}).map((file) => ({
+            id: `${file.id}.url`, label: file.path,
+            format: file.mimeType.startsWith('image/') || file.mimeType.startsWith('video/') ? 'media' : 'url',
+          }))
+        : source.fields
+      const entries: FieldEntry[] = fields.map((f) => ({
         kind: 'system' as const,
         source: source.id,
         field: f,
       }))
       result.push({ label: source.label, entries })
+    }
+
+    const pagePreview = systemPreviewValues?.page
+    const pageTranslations = pagePreview && 'translations' in pagePreview ? pagePreview.translations : undefined
+    if (compiledCheck(PageTranslationsSchema, pageTranslations)) {
+      result.push({
+        label: 'Page translations',
+        entries: Object.keys(pageTranslations).flatMap((language) => [
+          { kind: 'system' as const, source: 'page' as const,
+            field: { id: `translations.${language}.permalink`, label: `${language} — URL`, format: 'url' as const } },
+          { kind: 'system' as const, source: 'page' as const,
+            field: { id: `translations.${language}.language`, label: `${language} — Language` } },
+          { kind: 'system' as const, source: 'page' as const,
+            field: { id: `translations.${language}.title`, label: `${language} — Title` } },
+          { kind: 'system' as const, source: 'page' as const,
+            field: { id: `translations.${language}.ariaCurrent`, label: `${language} — Current page attribute` } },
+        ]),
+      })
+    }
+    const sitePreview = systemPreviewValues?.site
+    const messages = sitePreview && 'translations' in sitePreview ? sitePreview.translations : undefined
+    if (compiledCheck(TranslationMessagesSchema, messages)) {
+      result.push({
+        label: 'Translations',
+        entries: translationKeys(messages).map((key) => ({
+          kind: 'system' as const,
+          source: 'site' as const,
+          field: { id: `translations.${key}`, label: key },
+        })),
+      })
     }
 
     return result
@@ -379,9 +350,10 @@ export function DataBindingPicker({
   // ─── Per-row value preview ─────────────────────────────────────────────
   function getFieldPreviewValue(entry: FieldEntry): unknown {
     if (entry.kind === 'system') {
+      if (entry.source === 'file') return readPublicFileField(publicFiles, entry.field.id)
       const frame = systemPreviewValues?.[entry.source]
       if (!frame) return undefined
-      return (frame as Record<string, unknown>)[entry.field.id]
+      return walkFieldPath(frame as Record<string, unknown>, entry.field.id)
     }
     return currentEntryFields?.[entry.field.id]
   }
@@ -522,6 +494,8 @@ export function DataBindingPicker({
             variant="centered"
             title="Could not load tables"
             description={metaError}
+            action={<Button variant="secondary" onClick={refreshMeta}>Retry fields</Button>}
+            role="alert"
           />
         </div>
       )
@@ -529,6 +503,8 @@ export function DataBindingPicker({
 
     return (
       <>
+        {entryResource.error && <EmptyState title="Preview values unavailable" description={entryResource.error}
+          action={<Button variant="secondary" onClick={entryResource.refresh}>Retry values</Button>} role="alert" />}
         {/* Auto-scope chip — shown whenever we have a specific table scope */}
         {isAutoScoped && scopedTable && (
           <div

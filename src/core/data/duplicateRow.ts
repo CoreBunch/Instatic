@@ -30,6 +30,8 @@ export function buildDuplicateRowCells(
   siblingRows: DataRow[],
 ): DataRowCells {
   const cells = structuredClone(row.cells) as DataRowCells
+  // A copy is new content, not a second translation in the same language.
+  if (row.tableId === 'pages') delete cells.translationGroup
 
   if (dataTableHasField(table, 'title') || hasCell(row.cells, 'title')) {
     const title = readStringCell(row.cells, 'title')

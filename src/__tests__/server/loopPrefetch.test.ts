@@ -25,6 +25,7 @@ describe('loopPrefetch', () => {
       tableId: 'posts',
       tableSlug: 'posts',
       tableKind: 'postType',
+      tableFields: [],
       tableRouteBase: '/posts',
       versionNumber: 1,
       cells: {

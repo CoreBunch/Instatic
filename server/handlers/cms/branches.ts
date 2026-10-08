@@ -54,8 +54,13 @@ import {
 import { renderBranchReviewPage } from '../../publish/branchReviewRender'
 import { getOpenMergeRequest, reopenMergedRequest } from '../../repositories/branchReviews'
 import { requireAuthenticatedUser, userHasCapability } from '../../auth/authz'
-import { canReadTable } from './data/access'
-import { listDataTables } from '../../repositories/data'
+import { canReadDataRow, canReadTable } from '../../auth/dataAccess'
+import { getDataRow, listDataTables, readDataLocalization } from '../../repositories/data'
+import { readDisplayTitle } from '@core/data/cells'
+import { hasLocalizedDataFields, LocalizedDataReferenceAccessError } from '@core/data/localizedCells'
+import { LocalizationError } from '@core/localization'
+import type { DataLocalization, DataRow, DataTable } from '@core/data/schemas'
+import type { BranchScope } from '../../branches/scope'
 import { MAIN_SCOPE } from '../../branches/scope'
 import type { AuthUser } from '../../repositories/users'
 import type { MergePlan } from '@core/branches'
@@ -161,7 +166,13 @@ async function handleMergePlan(
   // the review shows exactly what people see on the canvas.
   await runPublishFlush()
   const { plan } = await planBranchMerge(db, branchId, direction)
-  return jsonResponse({ plan: await redactPlanForReader(db, plan, user) })
+  const language = new URL(req.url).searchParams.get('language') ?? undefined
+  try {
+    return jsonResponse({ plan: await projectPlanForReader(db, plan, user, language) })
+  } catch (error) {
+    if (error instanceof LocalizationError) return jsonResponse({ error: error.message }, { status: 422 })
+    throw error
+  }
 }
 
 /**
@@ -171,25 +182,65 @@ async function handleMergePlan(
  * `data.system.tables.read`, custom tables `data.custom.tables.read`). Rows
  * the reader may not open stay in the plan as a stub — the key and kind so
  * counts add up and a manager's resolution still addresses them — with the
- * label and detail withheld.
+ * label and detail withheld. Both sides obey the own/any-row policy before
+ * a field comparison is exposed. Localized rows require a chosen language;
+ * structural collection, hashing, apply and undo keep authored references.
  */
 const SITE_TABLES = new Set(['pages', 'components', 'layouts'])
 
-async function redactPlanForReader(db: DbClient, plan: MergePlan, user: AuthUser): Promise<MergePlan> {
-  const gated = plan.changes.filter((change) => change.kind === 'row' && change.tableId !== null && !SITE_TABLES.has(change.tableId))
-  if (gated.length === 0) return plan
-  const tables = new Map<string, { system: boolean }>()
-  for (const scope of [MAIN_SCOPE, { branchId: plan.branchId }]) {
-    for (const table of await listDataTables(db, scope)) tables.set(table.id, table)
+async function projectPlanForReader(db: DbClient, plan: MergePlan, user: AuthUser, language?: string): Promise<MergePlan> {
+  const scopes: BranchScope[] = [MAIN_SCOPE, { branchId: plan.branchId }]
+  const tables = new Map<string, Map<string, DataTable>>()
+  for (const scope of scopes) tables.set(scope.branchId, new Map((await listDataTables(db, scope)).map(table => [table.id, table])))
+  const localizationByScope = new Map<string, Promise<DataLocalization>>()
+  const languages = new Set<string>()
+  let localized = false
+  let canBrowseCatalogue = false
+  let resolvedLanguage: string | undefined
+  const changes: MergePlan['changes'] = []
+  for (const change of plan.changes) {
+    if (change.kind !== 'row' || change.tableId === null) { changes.push(change); continue }
+    const scope = { branchId: change.action === 'delete' ? plan.into : plan.from }
+    const table = tables.get(scope.branchId)?.get(change.tableId)
+    const rows = new Map<string, DataRow>()
+    let canRead = true
+    for (const side of scopes) {
+      const sideTable = tables.get(side.branchId)?.get(change.tableId)
+      if (!sideTable) continue
+      if (!SITE_TABLES.has(sideTable.id) && !canReadTable(user, sideTable)) { canRead = false; break }
+      const sideRow = await getDataRow(db, side, change.logicalId)
+      if (!sideRow) continue
+      if (!SITE_TABLES.has(sideTable.id) && !canReadDataRow(user, sideRow)) { canRead = false; break }
+      rows.set(side.branchId, sideRow)
+    }
+    const row = rows.get(scope.branchId)
+    if (!canRead || !table || !row) {
+      changes.push({ ...change, label: 'A row you cannot read', detail: { kind: 'row', fields: [], tree: null } })
+      continue
+    }
+    if (!hasLocalizedDataFields(table.fields)) { changes.push(change); continue }
+    localized = true
+    let pending = localizationByScope.get(scope.branchId)
+    if (!pending) {
+      pending = readDataLocalization(db, scope, user, [...tables.get(scope.branchId)!.values()], language)
+      localizationByScope.set(scope.branchId, pending)
+    }
+    const localization = await pending
+    canBrowseCatalogue = localization.canBrowseCatalogue
+    for (const available of localization.languages) languages.add(available)
+    if (!localization.language || !localization.translations) {
+      changes.push({ ...change, label: null, detail: { kind: 'row', fields: [], tree: null } })
+      continue
+    }
+    resolvedLanguage = localization.language
+    changes.push({ ...change, label: readDisplayTitle(row.cells, table, { language: localization.language, translations: localization.translations }) })
   }
+  const metadata = { languages: [...languages], canBrowseCatalogue }
+  const localization = resolvedLanguage ? { ...metadata, language: resolvedLanguage } : metadata
   return {
     ...plan,
-    changes: plan.changes.map((change) => {
-      if (change.kind !== 'row' || change.tableId === null || SITE_TABLES.has(change.tableId)) return change
-      const table = tables.get(change.tableId)
-      if (table && canReadTable(user, table)) return change
-      return { ...change, label: 'A row you cannot read', detail: { kind: 'row', fields: [], tree: null } }
-    }),
+    changes,
+    ...(localized ? { localization } : {}),
   }
 }
 
@@ -224,6 +275,8 @@ async function handleMergeApply(
       actorUserId: user.id,
     })
   } catch (err) {
+    if (err instanceof LocalizedDataReferenceAccessError) return jsonResponse({ error: err.message }, { status: 403 })
+    if (err instanceof LocalizationError) return jsonResponse({ error: err.message }, { status: 422 })
     if (err instanceof MergeConflictsUnresolvedError) {
       return jsonResponse({ error: err.message, code: 'merge_conflicts', keys: err.keys }, { status: 409 })
     }
@@ -580,6 +633,8 @@ async function handleMergeUndo(
   try {
     result = await undoBranchMerge(db, { branchId, direction, actorUserId: user.id })
   } catch (err) {
+    if (err instanceof LocalizedDataReferenceAccessError) return jsonResponse({ error: err.message }, { status: 403 })
+    if (err instanceof LocalizationError) return jsonResponse({ error: err.message }, { status: 422 })
     if (err instanceof MergeUndoError) {
       return jsonResponse({ error: err.message, code: 'merge_undo' }, { status: 409 })
     }

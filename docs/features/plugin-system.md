@@ -749,12 +749,29 @@ await bodyTree.mutate([
 await bodyTree.replace(currentTree)
 
 // Cross-table
-await api.cms.content.search('hello world', 25)
+const { results } = await api.cms.content.search('hello world', { limit: 25 })
 const snap = await api.cms.content.getPublishedSnapshot(entryId)
 const { count } = await api.cms.content.republishAll()
 ```
 
 `tables.create(input)` accepts the plugin-facing field projection, then maps it to the host's canonical `DataField` schema before storage. `richText` fields default to Markdown format, `select` / `multiSelect` option `value`s become stable option IDs, and `relation.targetTableSlug` must resolve to an existing table slug. `repeater` accepts a one-level `fields` schema made from ordinary authorable fields; nested relation slugs are resolved through the same gate, while recursive repeaters, `pageTree`, and `fieldSchema` item fields are rejected by the boundary schema.
+
+`localizedText` fields store `{ key: "articles.security" }` references, including inside repeaters. An ordinary `text` field stays literal. Entry `get`/`list` results preserve those authoring cells. For localized comparisons and ordering, pass an explicit configured `language` to `list`:
+
+```js
+const articles = api.cms.content.table('articles')
+const page = await articles.list({
+  language: 'de',
+  filter: { heading: { like: '%Sicherheit%' } },
+  orderBy: { heading: 'asc' },
+  limit: 10,
+})
+const matches = await api.cms.content.search('Sicherheit', { language: 'de', limit: 25 })
+```
+
+`list` derives text before applying the existing `eq`/`ne`/range/`in`/case-insensitive SQL-`like` operators, count, order and pagination; its entries retain raw references. A localized field comparison or order without `language` fails with a typed localization error. The optional `localization` result contains language choices until one is supplied, then only translated keys referenced by the authorized target table. It never contains source files or unrelated catalogue text.
+
+`search(query, options?)` returns `{ results, localization? }`; `localization` is keyed by authorized table slug. It considers only tables with `contentAccess` read mode, before applying the global limit. Without a language, localized tables contribute slug metadata only. With a language, search includes derived scalar and repeater text, never raw reference keys. Missing or invalid translations fail rather than selecting another language. Plugins may write only references already present in their authorized target table.
 
 `republishAll` fires the full publish pipeline (`publish.before` → `publish.html` → `publish.after`), so other plugins' filters and listeners participate.
 

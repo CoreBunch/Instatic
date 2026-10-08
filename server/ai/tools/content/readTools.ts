@@ -14,27 +14,27 @@
 import { Type, type Static } from '@core/utils/typeboxHelpers'
 import type { CoreCapability } from '@core/capabilities'
 import type { AiTool } from '../types'
+import type { ToolContext } from '../../runtime/types'
 import {
   getDataRow,
   listDataAuthorOptions,
   listDataRows,
   listDataTablesWithCounts,
-  searchDataRows,
+  readDataLocalization,
 } from '../../../repositories/data'
+import { canReadDataRow, canReadTable, canSeeAllDataRows, type DataAccessUser } from '../../../auth/dataAccess'
 import { listMediaAssets } from '../../../repositories/media'
-import {
-  readSlugCell,
-  readTitleCell,
-} from '@core/data/cells'
+import { readDisplayTitle, dataCellTextValues } from '@core/data/cells'
+import { hasLocalizedDataFields, projectLocalizedDataCells, type DataLocalizationContext } from '@core/data/localizedCells'
 import { normalizeDataTableFields } from '@core/data/fields'
-import type { DataField, DataRow, DataTableListItem } from '@core/data/schemas'
+import type { DataField, DataLocalization, DataRow, DataTableListItem } from '@core/data/schemas'
 
 // ---------------------------------------------------------------------------
 // Capability requirements (ANY-OF) — each tool mirrors its HTTP-route gate.
 // ---------------------------------------------------------------------------
 
 // Document (data-row) content read — mirrors `requireDataAccess`
-// (DATA_ACCESS_CAPABILITIES in server/handlers/cms/data/access.ts).
+// (DATA_ACCESS_CAPABILITIES in server/auth/dataAccess.ts).
 const DOCUMENT_READ_CAPS: readonly CoreCapability[] = [
   'content.create',
   'content.edit.own',
@@ -77,7 +77,7 @@ function projectCollection(table: DataTableListItem) {
   }
 }
 
-function projectField(field: DataField) {
+function projectField(field: DataField): Record<string, unknown> {
   // Discriminated union — pick the keys an agent actually consumes.
   const base = {
     id: field.id,
@@ -103,14 +103,36 @@ function projectField(field: DataField) {
       allowMultiple: field.allowMultiple ?? false,
     }
   }
+  if (field.type === 'localizedText') return { ...base, writeShape: '{ key: string }' }
+  if (field.type === 'repeater') return { ...base, fields: field.fields.map(projectField) }
   return base
 }
 
-function projectRow(row: DataRow) {
+function dataToolUser(ctx: ToolContext): DataAccessUser {
+  return { id: ctx.userId, capabilities: [...ctx.capabilities] }
+}
+
+function visibleContentTables(tables: DataTableListItem[], user: DataAccessUser): DataTableListItem[] {
+  return tables.filter(table => CONTENT_KIND_VISIBLE.has(table.kind) && canReadTable(user, table))
+}
+
+async function localizationFor(ctx: ToolContext, tables: DataTableListItem[], language?: string): Promise<DataLocalization | undefined> {
+  const localized = tables.filter(table => hasLocalizedDataFields(table.fields))
+  return localized.length > 0 ? readDataLocalization(ctx.db, ctx.branch, dataToolUser(ctx), localized, language) : undefined
+}
+
+function languageContext(localization: DataLocalization | undefined): DataLocalizationContext | undefined {
+  return localization?.language && localization.translations
+    ? { language: localization.language, translations: localization.translations }
+    : undefined
+}
+
+function projectRow(row: DataRow, table: DataTableListItem, localization?: DataLocalizationContext) {
+  const needsLanguage = hasLocalizedDataFields(table.fields) && !localization
   return {
     id: row.id,
     tableId: row.tableId,
-    title: readTitleCell(row.cells) || readSlugCell(row.cells) || row.slug || row.id,
+    ...(!needsLanguage ? { title: readDisplayTitle(row.cells, table, localization) } : {}),
     slug: row.slug,
     status: row.status,
     authorUserId: row.authorUserId,
@@ -122,7 +144,8 @@ function projectRow(row: DataRow) {
 // content_list_collections
 // ---------------------------------------------------------------------------
 
-const ListCollectionsInput = Type.Object({})
+const LanguageInput = Type.Optional(Type.String({ minLength: 1, description: 'Explicit configured content language. Localized collections return metadata only until chosen.' }))
+const ListCollectionsInput = Type.Object({ language: LanguageInput })
 
 const listCollectionsTool: AiTool = {
   name: 'content_list_collections',
@@ -132,12 +155,12 @@ const listCollectionsTool: AiTool = {
   description:
     'List every Content-workspace collection (routable post types only) with id, slug, label, kind, row count, and primary field id. Pages are edited through Site tools; reusable tables through Data tools.',
   inputSchema: ListCollectionsInput,
-  handler: async (_input, ctx) => {
-    const tables = await listDataTablesWithCounts(ctx.db, ctx.branch)
+  handler: async (input, ctx) => {
+    const { language } = input as Static<typeof ListCollectionsInput>
+    const tables = visibleContentTables(await listDataTablesWithCounts(ctx.db, ctx.branch), dataToolUser(ctx))
     return {
-      collections: tables
-        .filter((t) => CONTENT_KIND_VISIBLE.has(t.kind))
-        .map(projectCollection),
+      collections: tables.map(projectCollection),
+      localization: await localizationFor(ctx, tables, language),
     }
   },
 }
@@ -148,6 +171,7 @@ const listCollectionsTool: AiTool = {
 
 const GetCollectionSchemaInput = Type.Object({
   tableId: Type.String({ minLength: 1 }),
+  language: LanguageInput,
 })
 
 const getCollectionSchemaTool: AiTool = {
@@ -159,8 +183,8 @@ const getCollectionSchemaTool: AiTool = {
     "Return one collection's field schema: each field's id, label, type, required flag, builtIn flag, and per-type extras (select options, media kind, relation target). Call BEFORE content_set_document_field on an unfamiliar collection so you know the field's value shape.",
   inputSchema: GetCollectionSchemaInput,
   handler: async (input, ctx) => {
-    const { tableId } = input as Static<typeof GetCollectionSchemaInput>
-    const tables = await listDataTablesWithCounts(ctx.db, ctx.branch)
+    const { tableId, language } = input as Static<typeof GetCollectionSchemaInput>
+    const tables = visibleContentTables(await listDataTablesWithCounts(ctx.db, ctx.branch), dataToolUser(ctx))
     const table = tables.find((t) => t.id === tableId)
     if (!table) {
       return { ok: false, error: `Collection ${tableId} not found.` }
@@ -171,6 +195,7 @@ const getCollectionSchemaTool: AiTool = {
         ...projectCollection(table),
         fields: fields.map(projectField),
       },
+      localization: await localizationFor(ctx, [table], language),
     }
   },
 }
@@ -181,6 +206,7 @@ const getCollectionSchemaTool: AiTool = {
 
 const ListDocumentsInput = Type.Object({
   tableId: Type.String({ minLength: 1 }),
+  language: LanguageInput,
   status: Type.Optional(Type.Union([
     Type.Literal('draft'),
     Type.Literal('unpublished'),
@@ -202,8 +228,14 @@ const listDocumentsTool: AiTool = {
   inputSchema: ListDocumentsInput,
   handler: async (input, ctx) => {
     const args = input as Static<typeof ListDocumentsInput>
-    const all = await listDataRows(ctx.db, ctx.branch, args.tableId)
-    let filtered = all
+    const user = dataToolUser(ctx)
+    const tables = visibleContentTables(await listDataTablesWithCounts(ctx.db, ctx.branch), user)
+    const table = tables.find(candidate => candidate.id === args.tableId)
+    if (!table) return { ok: false, error: `Collection ${args.tableId} not found.` }
+    const localization = await localizationFor(ctx, [table], args.language)
+    const context = languageContext(localization)
+    const all = await listDataRows(ctx.db, ctx.branch, args.tableId, canSeeAllDataRows(user) ? {} : { ownerUserId: user.id })
+    let filtered = all.filter(row => canReadDataRow(user, row))
     if (args.status) filtered = filtered.filter((r) => r.status === args.status)
     if (args.authorUserId) filtered = filtered.filter((r) => r.authorUserId === args.authorUserId)
     const offset = args.offset ?? 0
@@ -213,7 +245,8 @@ const listDocumentsTool: AiTool = {
       total: filtered.length,
       offset,
       limit,
-      documents: slice.map(projectRow),
+      documents: slice.map(row => projectRow(row, table, context)),
+      localization,
     }
   },
 }
@@ -224,6 +257,7 @@ const listDocumentsTool: AiTool = {
 
 const GetDocumentInput = Type.Object({
   documentId: Type.String({ minLength: 1 }),
+  language: LanguageInput,
 })
 
 const getDocumentTool: AiTool = {
@@ -235,25 +269,27 @@ const getDocumentTool: AiTool = {
     "Return one document's full state: every field value (body is a markdown string), status, author, slug, timestamps. Use for the doc the user wants to edit when it isn't the active doc, or to refresh state after another agent action.",
   inputSchema: GetDocumentInput,
   handler: async (input, ctx) => {
-    const { documentId } = input as Static<typeof GetDocumentInput>
+    const { documentId, language } = input as Static<typeof GetDocumentInput>
+    const user = dataToolUser(ctx)
     const row = await getDataRow(ctx.db, ctx.branch, documentId)
-    if (!row) {
+    const tables = visibleContentTables(await listDataTablesWithCounts(ctx.db, ctx.branch), user)
+    const table = row && tables.find(candidate => candidate.id === row.tableId)
+    if (!row || !table || !canReadDataRow(user, row)) {
       return { ok: false, error: `Document ${documentId} not found.` }
     }
+    const localization = await localizationFor(ctx, [table], language)
+    const context = languageContext(localization)
+    const needsLanguage = hasLocalizedDataFields(table.fields) && !context
     return {
       document: {
-        id: row.id,
-        tableId: row.tableId,
-        title: readTitleCell(row.cells) || row.slug || row.id,
-        slug: row.slug,
-        status: row.status,
-        authorUserId: row.authorUserId,
+        ...projectRow(row, table, context),
         createdAt: row.createdAt,
         updatedAt: row.updatedAt,
         publishedAt: row.publishedAt,
         scheduledPublishAt: row.scheduledPublishAt,
-        fields: row.cells,
+        ...(!needsLanguage ? { fields: context ? projectLocalizedDataCells(row.cells, table.fields, context, `rows.${row.id}.cells`) : row.cells } : {}),
       },
+      localization,
     }
   },
 }
@@ -264,6 +300,7 @@ const getDocumentTool: AiTool = {
 
 const SearchDocumentsInput = Type.Object({
   query: Type.String({ minLength: 1 }),
+  language: LanguageInput,
   limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 100 })),
 })
 
@@ -273,29 +310,31 @@ const searchDocumentsTool: AiTool = {
   execution: 'server',
   requiredCapabilities: DOCUMENT_READ_CAPS,
   description:
-    "Full-text search across document slugs (the slug is a URL-safe derivative of the title — reliable text proxy for free-text lookup). Returns light summaries (id, tableId, slug, status, updatedAt). `limit` default 25, max 100.",
+    'Search readable Content documents using their displayed titles and text fields. Pass language for localized collections; otherwise their catalogue metadata is returned without searching references. `limit` default 25, max 100.',
   inputSchema: SearchDocumentsInput,
   handler: async (input, ctx) => {
-    const { query, limit } = input as Static<typeof SearchDocumentsInput>
-    const results = await searchDataRows(ctx.db, ctx.branch, query, limit ?? 25)
-    // Only surface Content-workspace post-type rows.
-    const tables = await listDataTablesWithCounts(ctx.db, ctx.branch)
-    const visibleTableIds = new Set(
-      tables.filter((t) => CONTENT_KIND_VISIBLE.has(t.kind)).map((t) => t.id),
-    )
+    const { query, limit, language } = input as Static<typeof SearchDocumentsInput>
+    const user = dataToolUser(ctx)
+    const tables = visibleContentTables(await listDataTablesWithCounts(ctx.db, ctx.branch), user)
+    const localization = await localizationFor(ctx, tables, language)
+    const context = languageContext(localization)
+    const results: ReturnType<typeof projectRow>[] = []
+    const needle = query.toLocaleLowerCase(context?.language)
+    for (const table of tables) {
+      if (hasLocalizedDataFields(table.fields) && !context) continue
+      const rows = await listDataRows(ctx.db, ctx.branch, table.id, canSeeAllDataRows(user) ? {} : { ownerUserId: user.id })
+      for (const row of rows) {
+        if (!canReadDataRow(user, row)) continue
+        const cells = context ? projectLocalizedDataCells(row.cells, table.fields, context, `rows.${row.id}.cells`) : row.cells
+        const title = readDisplayTitle(row.cells, table, context)
+        const text = [title, row.slug, ...dataCellTextValues(cells, table.fields)].join('\n')
+        if (text.toLocaleLowerCase(context?.language).includes(needle)) results.push(projectRow(row, table, context))
+      }
+    }
     return {
       query,
-      results: results
-        .filter((r) => visibleTableIds.has(r.tableId))
-        .map((r) => ({
-          id: r.id,
-          tableId: r.tableId,
-          tableSlug: r.tableSlug,
-          tableName: r.tableName,
-          slug: r.slug,
-          status: r.status,
-          updatedAt: r.updatedAt,
-        })),
+      results: results.slice(0, limit ?? 25),
+      localization,
     }
   },
 }

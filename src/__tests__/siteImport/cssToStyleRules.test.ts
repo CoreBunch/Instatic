@@ -130,14 +130,15 @@ describe('cssToStyleRules — selector classification', () => {
 // ---------------------------------------------------------------------------
 
 describe('cssToStyleRules — @media → contextStyles (matched)', () => {
-  it('base + matched @media → 1 rule, base styles + contextStyles', () => {
+  it('base + matched @media keep separately ordered style fragments', () => {
     const css = '.foo { color: red }\n@media (max-width: 768px) { .foo { color: blue } }'
     const { rules, warnings } = cssToStyleRules(css, {
       breakpoints: [{ id: 'tablet', width: 768 }],
     })
-    expect(rules).toHaveLength(1)
+    expect(rules).toHaveLength(2)
     expect(rules[0].styles).toMatchObject({ color: 'red' })
-    expect(rules[0].contextStyles.tablet).toMatchObject({ color: 'blue' })
+    expect(rules[1].contextStyles.tablet).toMatchObject({ color: 'blue' })
+    expect(rules.map((rule) => rule.kind)).toEqual(['class', 'ambient'])
     expect(warnings).toHaveLength(0)
   })
 
@@ -147,8 +148,8 @@ describe('cssToStyleRules — @media → contextStyles (matched)', () => {
       breakpoints: [{ id: 'tablet', width: 780 }],
       mediaTolerance: 15,
     })
-    expect(rules).toHaveLength(1)
-    expect(rules[0].contextStyles.tablet).toMatchObject({ color: 'blue' })
+    expect(rules).toHaveLength(2)
+    expect(rules[1].contextStyles.tablet).toMatchObject({ color: 'blue' })
     expect(warnings).toHaveLength(0)
   })
 
@@ -157,8 +158,8 @@ describe('cssToStyleRules — @media → contextStyles (matched)', () => {
     const { rules, warnings, conditions } = cssToStyleRules(css, {
       breakpoints: [{ id: 'tablet', width: 768, mediaQuery: '(min-width: 768px)' }],
     })
-    expect(rules).toHaveLength(1)
-    expect(rules[0].contextStyles.tablet).toMatchObject({ color: 'blue' })
+    expect(rules).toHaveLength(2)
+    expect(rules[1].contextStyles.tablet).toMatchObject({ color: 'blue' })
     expect(conditions).toHaveLength(0)
     expect(warnings).toHaveLength(0)
   })
@@ -195,13 +196,13 @@ describe('cssToStyleRules — unmatched @media → faithful condition context', 
     const { rules, warnings, conditions } = cssToStyleRules(css, {
       breakpoints: [{ id: 'desktop', width: 1200 }],
     })
-    expect(rules).toHaveLength(1)
+    expect(rules).toHaveLength(2)
     // Base stays exactly as authored — the @media override no longer leaks in.
     expect(rules[0].styles).toMatchObject({ color: 'red' })
     expect(rules[0].styles).not.toHaveProperty('__media')
     // The override lives in contextStyles keyed by the deterministic condition id.
     const cid = conditionId({ kind: 'media', query: '(max-width: 768px)' })
-    expect(rules[0].contextStyles[cid]).toMatchObject({ color: 'blue' })
+    expect(rules[1].contextStyles[cid]).toMatchObject({ color: 'blue' })
     // The reusable condition is registered.
     expect(conditions.map((c) => c.condition)).toContainEqual({ kind: 'media', query: '(max-width: 768px)' })
     // No lossy "unmatched-media-query" warning anymore.
@@ -490,21 +491,23 @@ describe('cssToStyleRules — duplicate class names', () => {
       '.register, .source-rule { color: red } .source-rule { display: grid }',
     )
 
-    expect(rules).toHaveLength(2)
+    expect(rules).toHaveLength(3)
     expect(rules.find((rule) => rule.name === 'register')?.styles).toEqual({
       color: 'red',
     })
     expect(rules.find((rule) => rule.name === 'source-rule')?.styles).toEqual({
       color: 'red',
-      display: 'grid',
     })
+    expect(rules[2].styles).toEqual({ display: 'grid' })
+    expect(rules[2].kind).toBe('ambient')
   })
 
-  it('duplicate .foo → 1 rule with later value + 1 duplicate-class warning', () => {
+  it('duplicate .foo keeps both source occurrences + 1 duplicate-class warning', () => {
     const { rules, warnings } = cssToStyleRules('.foo { color: red } .foo { color: blue }')
-    expect(rules).toHaveLength(1)
-    // Later rule wins: color should be 'blue'
-    expect(rules[0].styles).toMatchObject({ color: 'blue' })
+    expect(rules).toHaveLength(2)
+    expect(rules[0].styles).toMatchObject({ color: 'red' })
+    expect(rules[1].styles).toMatchObject({ color: 'blue' })
+    expect(rules[1].kind).toBe('ambient')
     expect(warnings).toHaveLength(1)
     expect(warnings[0].kind).toBe('duplicate-class')
     expect(warnings[0].selector).toBe('.foo')
@@ -522,8 +525,9 @@ describe('cssToStyleRules — duplicate class names', () => {
     const { rules } = cssToStyleRules(
       '.foo { color: red } .foo { color: blue !important }',
     )
-    expect(rules[0].styles.color).toBe('blue')
-    expect(rules[0].stylePriorities).toEqual({ color: 'important' })
+    expect(rules[0].styles.color).toBe('red')
+    expect(rules[1].styles.color).toBe('blue')
+    expect(rules[1].stylePriorities).toEqual({ color: 'important' })
   })
 
   it('ambient h1 duplicates are allowed (no dedup for ambient)', () => {
@@ -748,16 +752,17 @@ describe('cssToStyleRules — custom @media as conditional layers (no warnings)'
     }
   })
 
-  it('the same selector under the same query merges into one context bag', () => {
+  it('the same selector under the same query retains each source occurrence', () => {
     const css = [
       '@media (max-width: 860px) { .a { color: red } }',
       '@media (max-width: 860px) { .a { font-size: 14px } }',
     ].join('\n')
     const { rules } = cssToStyleRules(css, { breakpoints: [] })
-    const a = rules.find((r) => r.selector === '.a')!
     const cid = conditionId({ kind: 'media', query: '(max-width: 860px)' })
-    expect(Object.keys(a.contextStyles)).toEqual([cid])
-    expect(a.contextStyles[cid]).toMatchObject({ color: 'red', fontSize: '14px' })
+    expect(rules).toHaveLength(2)
+    expect(rules[0].contextStyles[cid]).toEqual({ color: 'red' })
+    expect(rules[1].contextStyles[cid]).toEqual({ fontSize: '14px' })
+    expect(rules.map((rule) => rule.kind)).toEqual(['class', 'ambient'])
   })
 })
 

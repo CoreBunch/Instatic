@@ -13,7 +13,9 @@ There are **no other content tables**. There is no `pages` table, no `page_versi
 - Every row's cells live in `cells_json` keyed by field id. `slug` and `status` are denormalized columns for index / route lookup.
 - Post-type rows have a workflow: `draft | published | unpublished | scheduled`, with a version history (`data_row_versions`) for the published copy.
 - "Data" tables are simple key-value grids — no workflow, no built-in fields.
-- Pages, components, and layouts are stored the same way: a `pages` table with `pageTree`-typed `body` cells; a `components` table with `pageTree`-typed `body` + `fieldSchema`-typed `params`; a `layouts` table with a `pageTree`-typed `body` snapshot plus serialized `classes`.
+- Pages, components, and layouts are stored the same way: a `pages` table with `pageTree`-typed `body` cells; a `components` table with `pageTree`-typed `body` + `fieldSchema`-typed `params`; a `layouts` table with a `pageTree`-typed `body` snapshot plus serialized `classes` and their `conditions` dependencies.
+
+Clipboard and saved-layout snapshots share one CSS capture/restore engine. Capture keeps the selected classes, matching ambient fragments, group openings and layer order, registered properties, animation keyframes, and all referenced CSS conditions. Viewport conditions carry their source media query. Restore reuses equivalent destination conditions, gives imported grouping occurrences fresh identities, and preserves the snapshot's cascade order. Missing CSS contexts reject the operation before any nodes or styles are inserted; the editor reports the failure through its toast bus.
 - Source of truth: `src/core/data/schemas.ts`. Repos: `server/repositories/data/`. Handlers: `server/handlers/cms/data/`.
 
 ---
@@ -118,6 +120,7 @@ Users can add their own custom fields to system tables.
 | `multiSelect`  | option ids (`string[]`)                   |                                             |
 | `url`          | `string \| null`                          |                                             |
 | `email`        | `string \| null`                          |                                             |
+| `localizedText` | `{ key: string } \| null`                | Text reference in the configured language files |
 | `media`        | single: `mediaId \| null`; multi: `string[]` | References `media_assets`                |
 | `relation`     | single: `rowId \| null`; multi: `string[]`| Relates to rows in another `data_table`     |
 | `repeater`     | ordered `{ id, cells }[]`                  | One-level structured item collection        |
@@ -344,6 +347,23 @@ api.cms.hooks.filter('content.entry.cells', (cells, { tableSlug, entryId, actor 
 Events are emitted from `server/publish/contentEvents.ts`, which also exports `applyContentEntryCellsFilter`. Admin CMS handlers, the public form handler, and plugin handlers call these helpers directly; public submissions and the publish scheduler emit the `system` actor variant.
 
 ---
+
+## Localized data text
+
+A `localizedText` cell stores `{ key: "articles.security" }` or `null`. Its text lives only in the site's JSON language files; repeaters can use the same field. An ordinary `text` cell is literal text, including strings resembling binding expressions.
+
+Data and Content use an explicit content-language control followed by a catalogue-key picker. Changing the language projects another text without rewriting cells or Y documents. Edit the text through the existing Language files editor in Site settings. No language is selected automatically and a missing catalogue, translation or malformed reference produces a typed error. The field is not supported as an inbound public-form value.
+
+Display titles, relation labels, searches and scalar ordering consume the shared localized-cell projection. Native `data.rows` loops receive the page's authoritative language/catalogue frame, project text before applying cell conditions, ordering and pagination, and preserve raw references in storage. A source failure propagates through publication rather than committing an empty loop. Entry-template seeds use the same table field metadata and projection.
+
+`GET /admin/api/cms/data/localization?table=<logical-id>&language=<tag>` returns only language metadata and the needed text projection, subject to the same table and own/any-row permissions as row reads. Omitting language returns metadata for an explicit choice. Whole-catalogue browsing requires `site.read`; Data-only callers receive only keys referenced by their authorized rows and readable versions. Source files, paths, unrelated settings and unreferenced text never leave this API.
+
+All ordinary repository row writers validate exact references before persistence. Data-only authors can reuse authorized references; introducing a new reference requires Site catalogue access. Plugins can reuse references already present in their authorized target table. Delegated MCP writes validate the connector's capabilities before relaying to its owner's browser. Schema edits, row moves, bundle-import preflight and the resolved final state of branch merge/undo enforce the same boundary, including retained rows and history. Import validation completes before any write or replacement operation.
+
+Plugin `entries.list` accepts `language` for localized field conditions and ordering, and returns raw authoring references. `cms.content.search(query, { language, limit })` searches projected text and returns identity metadata with a table-scoped localization envelope. Omitting language retains metadata access; a condition or order on a localized field requires an explicit language and otherwise throws a typed error. Headless Content tools follow the same permission and language boundary. Branch review requests a language for localized row names; structural fork, merge and undo preserve references without choosing a language.
+
+Queries that need localized ordering read the eligible candidate set before projecting and slicing it, since JSON reference ordering cannot order translated text. This unit does not add visitor-query parameters or ordered relation hydration. Untranslated migration staging content remains staging; missing excerpts must not be disguised by a language fallback.
+
 
 ## Related
 

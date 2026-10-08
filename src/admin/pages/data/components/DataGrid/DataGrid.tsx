@@ -11,6 +11,8 @@
  * state, bulk-action bar, and context menu. The filter → sort → group → count
  * pipeline lives in `dataGridRows.ts`; bulk-select state in `useDataGridSelection`.
  */
+import { useRelationTargetRows } from '@admin/pages/data/hooks/useRelationTargetRows'
+import { useLocalizedData } from '@admin/pages/data/localizedData'
 import {
   Fragment,
   useDeferredValue,
@@ -134,9 +136,12 @@ export function DataGrid({
   const orderedFields = getOrderedFields(table, subtitleFieldId)
 
   // ── Filtered + sorted rows, grouping, counts ──────────────────────────────
+  const localization = useLocalizedData()
+  const relations = useRelationTargetRows(table.fields)
   const visibleRows = filterAndSortRows({
     rows,
     table,
+    localization: localization?.context,
     hasPublishWorkflow,
     statusFilter,
     query: deferredQuery,
@@ -295,6 +300,7 @@ export function DataGrid({
         table={table}
         tables={tables}
         rows={rows}
+        resolveRelationTarget={relations.resolveRow}
         selected={row.id === selectedRowId}
         checked={selection.checkedIds.has(row.id)}
         readOnly={readOnly}

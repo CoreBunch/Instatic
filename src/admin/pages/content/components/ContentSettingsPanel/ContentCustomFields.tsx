@@ -3,7 +3,7 @@ import { CellEditorRenderer } from '@admin/pages/data/components/DataGrid/cells/
 import { RelationPickerDialog } from '@admin/pages/data/components/RelationPickerDialog/RelationPickerDialog'
 import { emptyCellValue } from '@admin/pages/data/utils/fieldDefaults'
 import type { DataField, DataRowCells, DataTable } from '@core/data/schemas'
-import { useRelationTargetRows } from '../../hooks/useRelationTargetRows'
+import { useRelationTargetRows } from '@admin/pages/data/hooks/useRelationTargetRows'
 import styles from '../../ContentPage.module.css'
 
 interface ContentCustomFieldsProps {
@@ -37,7 +37,7 @@ export function ContentCustomFields({
   onCustomCellChange,
 }: ContentCustomFieldsProps) {
   const [relationPickerFieldId, setRelationPickerFieldId] = useState<string | null>(null)
-  const resolveRelationRow = useRelationTargetRows(fields)
+  const { resolveRow: resolveRelationRow } = useRelationTargetRows(fields)
 
   // Derive relation-picker props from the open field id (same pattern as the
   // Data workspace's RowDetail form).

@@ -11,9 +11,11 @@
  */
 import { afterEach, describe, expect, it, mock } from 'bun:test'
 import { renderHook, cleanup } from '@testing-library/react'
-import type { DataRow, DataTable } from '@core/data/schemas'
+import type { DataLocalization, DataRow, DataTable } from '@core/data/schemas'
 import { useContentToolBridge } from '@admin/pages/content/agent/useContentToolBridge'
 import { getContentBridgeHandle } from '@admin/pages/content/agent/contentBridgeHandle'
+import type { LocalizedDataState } from '@admin/pages/data/localizedData'
+import { LocalizationError } from '@core/localization'
 
 function table(id: string): DataTable {
   return {
@@ -106,5 +108,60 @@ describe('content bridge collection resolution', () => {
 
     await expect(handle.createDocument({ tableId: 'nope' })).rejects.toThrow(/not found/)
     expect(workspace.refreshCollections).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('content bridge explicit language snapshot', () => {
+  function localizedWorkspace() {
+    const cells = { heading: { key: 'entry.title' }, cards: [{ id: 'stable', cells: { caption: { key: 'entry.caption' } } }] }
+    const collection: DataTable = { ...table('posts'), primaryFieldId: 'heading', fields: [
+      { id: 'heading', label: 'Heading', type: 'localizedText' },
+      { id: 'cards', label: 'Cards', type: 'repeater', fields: [{ id: 'caption', label: 'Caption', type: 'localizedText' }] },
+    ] }
+    const row = { id: 'article', tableId: 'posts', cells, slug: 'url', status: 'draft', authorUserId: 'u1', updatedAt: '2026-10-08' } as DataRow
+    return { ...staleWorkspace().surface, collections: [collection], entries: [row], selectedEntry: row }
+  }
+
+  function languageState(language = ''): LocalizedDataState {
+    const translations = language === 'de' ? { entry: { title: 'Sicherheit', caption: 'Bildunterschrift' } }
+      : { entry: { title: 'Sicurezza', caption: 'Didascalia' } }
+    const data: DataLocalization = language ? { languages: ['it', 'de'], canBrowseCatalogue: false, language, translations }
+      : { languages: ['it', 'de'], canBrowseCatalogue: false }
+    return { language, setLanguage: () => {}, loading: false, error: null, required: true, refresh: () => {},
+      context: language ? { language, translations } : undefined,
+      data }
+  }
+
+  it('withholds the localized document title and cells until the shared workspace language is chosen', () => {
+    const workspace = localizedWorkspace()
+    renderHook(() => useContentToolBridge({ workspace, draft, currentUser, localization: languageState() }))
+    const snapshot = getContentBridgeHandle().buildSnapshot()
+    expect(snapshot.localization).toEqual({ languages: ['it', 'de'], canBrowseCatalogue: false })
+    expect(snapshot.activeDocument?.title).toBeNull()
+    expect(snapshot.activeDocument?.fields).toBeNull()
+    expect(snapshot.activeDocument?.schema[0]).toMatchObject({ type: 'localizedText', writeShape: '{ key: string }' })
+  })
+
+  it('updates snapshot language independently of stored scalar and repeater references', () => {
+    const workspace = localizedWorkspace()
+    const before = structuredClone(workspace.selectedEntry.cells)
+    const { rerender } = renderHook(({ localization }: { localization: LocalizedDataState }) =>
+      useContentToolBridge({ workspace, draft, currentUser, localization }), { initialProps: { localization: languageState('it') } })
+    expect(getContentBridgeHandle().buildSnapshot().activeDocument?.title).toBe('Sicurezza')
+    rerender({ localization: languageState('de') })
+    const snapshot = getContentBridgeHandle().buildSnapshot()
+    expect(snapshot.activeDocument?.title).toBe('Sicherheit')
+    expect(snapshot.activeDocument?.fields?.cards).toEqual([{ id: 'stable', cells: { caption: 'Bildunterschrift' } }])
+    expect(workspace.selectedEntry.cells).toEqual(before)
+    rerender({ localization: { ...languageState('it'), loading: true, context: undefined } })
+    expect(getContentBridgeHandle().buildSnapshot().activeDocument?.title).toBeNull()
+    expect(getContentBridgeHandle().buildSnapshot().activeDocument?.fields).toBeNull()
+  })
+
+  it('reports a missing translation instead of showing the reference key or another language', () => {
+    const workspace = localizedWorkspace()
+    renderHook(() => useContentToolBridge({ workspace, draft, currentUser,
+      localization: { ...languageState('de'), context: { language: 'de', translations: {} } } }))
+    expect(() => getContentBridgeHandle().buildSnapshot()).toThrow(LocalizationError)
   })
 })

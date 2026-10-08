@@ -15,17 +15,17 @@ import { Type } from '@sinclair/typebox'
 import { NodeTreeSchema } from '@core/page-tree'
 import {
   ContentListOptionsSchema,
+  ContentSearchOptionsSchema,
   CreateContentEntryInputSchema,
   CreateContentTableInputSchema,
   TreeOperationSchema,
   UpdateContentEntryInputSchema,
-} from '@core/plugin-sdk/contentSchemas'
+} from '@core/plugin-sdk'
 
 const SlugSchema = Type.String({ minLength: 1 })
 const EntryIdSchema = Type.String({ minLength: 1 })
 const FieldIdSchema = Type.String({ minLength: 1 })
 const QueryStringSchema = Type.String({ minLength: 1, maxLength: 200 })
-const PositiveLimit = Type.Integer({ minimum: 1, maximum: 500 })
 
 // ── Tables ──────────────────────────────────────────────────────────────────
 
@@ -89,6 +89,6 @@ export const ContentTreeReplaceArgsSchema = Type.Tuple([
 
 // ── Cross-table ────────────────────────────────────────────────────────────
 
-export const ContentSearchArgsSchema = Type.Tuple([QueryStringSchema, PositiveLimit])
+export const ContentSearchArgsSchema = Type.Tuple([QueryStringSchema, ContentSearchOptionsSchema])
 export const ContentSnapshotArgsSchema = Type.Tuple([EntryIdSchema])
 export const ContentRepublishAllArgsSchema = Type.Tuple([])

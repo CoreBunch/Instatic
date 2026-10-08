@@ -5,6 +5,7 @@
 import { physicalId } from '@core/branches'
 import { encodeCollabDocId } from '@core/collab'
 import { readDisplayTitle } from '@core/data/cells'
+import { hasLocalizedDataFields } from '@core/data/localizedCells'
 import { buildPostTypeDefaultFields } from '@core/data/fields'
 import type { DataRow, DataRowStatus } from '@core/data/schemas'
 import { Type, type Static } from '@core/utils/typeboxHelpers'
@@ -96,7 +97,7 @@ export const rowAdapter: BranchEntityAdapter<'row', RowContent> = {
         entities.push({
           kind: 'row',
           logicalId: row.id,
-          label: readDisplayTitle(row.cells, table),
+          label: hasLocalizedDataFields(table.fields) ? null : readDisplayTitle(row.cells, table),
           tableId: table.id,
           tableName: table.singularLabel,
           content: rowContent(row),
@@ -138,7 +139,7 @@ export const rowAdapter: BranchEntityAdapter<'row', RowContent> = {
     const existing = await getDataRow(tx, scope, rowId)
     if (existing) {
       if (existing.tableId !== content.tableId) {
-        await updateDataRowTable(tx, scope, rowId, content.tableId, ctx.actorUserId, { collabInternal: true })
+        await updateDataRowTable(tx, scope, rowId, content.tableId, ctx.actorUserId, null, { collabInternal: true })
         ctx.notices.rows.push({ kind: 'delete', tableId: existing.tableId, rowId, changedFieldIds: [] })
       }
       await saveDataRowDraft(tx, scope, rowId, { cells: content.cells, slug: content.slug }, ctx.actorUserId, null, { collabInternal: true })

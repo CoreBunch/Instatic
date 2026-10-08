@@ -7,6 +7,7 @@ export {
   normalizeHtmlAttributes,
   sanitizeRenderableHtmlAttribute,
 } from './attributes'
+export { MODULE_GENERATED_ATTRIBUTE_NAMES } from './generatedAttributes'
 export {
   BUILTIN_HTML_TAGS,
   CUSTOM_HTML_TAG_VALUE,

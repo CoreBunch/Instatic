@@ -34,11 +34,11 @@ export type SiteFileType = Static<typeof SiteFileTypeSchema>
 // SiteFile
 // ---------------------------------------------------------------------------
 
-const SiteFileBlobSchema = Type.Object({
+export const SiteFileBlobSchema = Type.Object({
   mimeType: Type.String(),
   base64: Type.String(),
 })
-
+export type SiteFileBlob = Static<typeof SiteFileBlobSchema>
 
 export const SiteFileSchema = Type.Object({
   /** Unique ID — generated with nanoid() (NOT path; path is mutable on rename) */
@@ -66,9 +66,9 @@ export const SiteFileSchema = Type.Object({
    * structural sharing keep working; a real Blob would defeat that.
    * Always undefined for non-asset file types.
    *
-   * Lenient: a malformed blob silently becomes undefined so the file is still
-   * included. Mirrors validateSiteFile() which keeps the file with blob:undefined
-   * when mimeType/base64 are missing or wrong type.
+   * Absent while an asset placeholder is being authored. Present payloads
+   * are validated at the file writer and storage boundaries; publication
+   * requires a complete payload.
    */
   blob: Type.Optional(SiteFileBlobSchema),
 

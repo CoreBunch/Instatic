@@ -43,6 +43,7 @@ import { registry } from '@core/module-engine'
 import {
   normalizeHtmlAttributeName,
   sanitizeRenderableHtmlAttribute,
+  MODULE_GENERATED_ATTRIBUTE_NAMES,
 } from '@core/htmlAttributes'
 import { HTML_TO_MODULE_RULES } from './rules'
 import type { ImportRule } from './rules'
@@ -121,33 +122,12 @@ const HTML_ATTRIBUTE_MODULES = new Set([
   // so its safe data-* / ARIA attributes have to survive import like any other
   // element's. Without this the hooks silently vanish and the script no-ops.
   'base.form',
+  'base.input',
+  'base.textarea',
+  'base.select',
+  'base.checkbox',
+  'base.radio',
 ])
-
-const MODULE_GENERATED_ATTRIBUTE_NAMES: Record<string, readonly string[]> = {
-  'base.button': ['aria-disabled', 'disabled', 'href', 'rel', 'target', 'type'],
-  'base.form': [
-    'action',
-    'data-instatic-form-id',
-    'data-instatic-form-mode',
-    'data-instatic-success-message',
-    'data-instatic-success-redirect',
-    'data-instatic-target-table',
-    'method',
-  ],
-  'base.image': [
-    'alt',
-    'decoding',
-    'fetchpriority',
-    'height',
-    'loading',
-    'sizes',
-    'src',
-    'srcset',
-    'style',
-    'width',
-  ],
-  'base.link': ['href', 'rel', 'target'],
-}
 
 /**
  * Mutable accumulator threaded through the recursive walk.

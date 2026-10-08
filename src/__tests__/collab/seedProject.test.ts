@@ -44,6 +44,21 @@ function fixturePage() {
 }
 
 describe('page doc seed → project round-trip', () => {
+  it('replicates native binary site files without changing payload identity', () => {
+    const file = {
+      id: 'public-data', path: 'public/data', type: 'asset' as const,
+      blob: { mimeType: 'application/json', base64: Buffer.from('{"native":true}').toString('base64') },
+      createdAt: 1, updatedAt: 2,
+    }
+    const source = new Y.Doc()
+    const replica = new Y.Doc()
+    const site = makeSite({ files: [file] })
+    seedSiteDoc(source, site)
+    Y.applyUpdate(replica, Y.encodeStateAsUpdate(source))
+    expect(validateSite({ ...site, ...projectSiteDoc(replica).shell }).files).toEqual([file])
+    source.destroy()
+    replica.destroy()
+  })
   it('projects back exactly the seeded page (parentId re-derived)', () => {
     const page = fixturePage()
     const doc = new Y.Doc()

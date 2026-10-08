@@ -102,6 +102,7 @@ describe('ClassStyleInjector media backgrounds', () => {
       site.pages[0].nodes[site.pages[0].rootNodeId].classIds = ['hero-bg']
       useEditorStore.setState({
         site,
+        activePageId: site.pages[0].id,
       } as Parameters<typeof useEditorStore.setState>[0])
     })
 

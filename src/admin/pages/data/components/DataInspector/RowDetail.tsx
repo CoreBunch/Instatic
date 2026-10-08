@@ -1,9 +1,14 @@
+import { useLocalizedData } from '@admin/pages/data/localizedData'
+import { readDisplayTitle } from '@core/data/cells'
+import { getErrorMessage } from '@core/utils/errorMessage'
+import { hasLocalizedDataFields } from '@core/data/localizedCells'
 import { useEffect, useEffectEvent, useState, type ReactElement, type ReactNode } from 'react'
 import { Button } from '@ui/components/Button'
 import { ExternalLinkSolidIcon } from 'pixel-art-icons/icons/external-link-solid'
 import { LayoutSolidIcon } from 'pixel-art-icons/icons/layout-solid'
 import { CellEditorRenderer } from '@admin/pages/data/components/DataGrid/cells/CellEditorRenderer'
 import { RelationPickerDialog } from '@admin/pages/data/components/RelationPickerDialog/RelationPickerDialog'
+import { useRelationTargetRows } from '@admin/pages/data/hooks/useRelationTargetRows'
 import { useDataRowDraft } from '@admin/pages/data/hooks/useDataRowDraft'
 import { emptyCellValue } from '@admin/pages/data/utils/fieldDefaults'
 import type { DataTable, DataRow, DataRowCells } from '@core/data/schemas'
@@ -82,12 +87,6 @@ function authorDisplayName(row: DataRow): string {
   if (user?.displayName) return user.displayName
   if (user?.email) return user.email
   return '—'
-}
-
-function primaryDisplayValue(row: DataRow, table: DataTable): string {
-  const v = row.cells[table.primaryFieldId]
-  if (typeof v === 'string' && v.length > 0) return v
-  return row.id
 }
 
 // ---------------------------------------------------------------------------
@@ -189,6 +188,7 @@ function DataRowForm({
   onDraftStateChange?: (state: DataRowDraftState | null) => void
 }): ReactElement {
   const draft = useDataRowDraft(row, onSaveRow)
+  const relations = useRelationTargetRows(table.fields)
   const [pickerState, setPickerState] = useState<PickerState | null>(null)
 
   // Derive picker props from pickerState
@@ -243,7 +243,7 @@ function DataRowForm({
               readOnly={!canEdit}
               rowId={row.id}
               tables={tables}
-              resolveRelationTarget={resolveRow}
+              resolveRelationTarget={id => relations.resolveRow(id) ?? resolveRow(id)}
               onOpenPicker={
                 field.type === 'relation'
                   ? () => setPickerState({ fieldId: field.id })
@@ -316,7 +316,13 @@ export function RowDetail({
 
   // Pick the right action for the header card based on kind. The handlers
   // are wired at the DataPage level; here we just dispatch on `kind`.
-  const primaryValue = primaryDisplayValue(row, table)
+  const localization = useLocalizedData()
+  let primaryValue = 'Choose a content language'
+  let titleError: string | null = null
+  if (!hasLocalizedDataFields(table.fields) || localization?.context) {
+    try { primaryValue = readDisplayTitle(row.cells, table, localization?.context) }
+    catch (error) { titleError = getErrorMessage(error, 'Invalid localized title'); primaryValue = 'Invalid localized title' }
+  }
   let headerCard: ReactElement | null = null
 
   if (table.kind === 'postType') {
@@ -350,6 +356,7 @@ export function RowDetail({
 
   return (
     <>
+      {titleError && <p role="alert">{titleError}</p>}
       {showHeader && (
         <div className={styles.section}>
           {headerCard}

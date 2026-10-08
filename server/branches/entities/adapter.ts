@@ -22,7 +22,8 @@ export type MergeAction = MergeChange['action']
 export interface BranchEntityOf<K extends BranchEntityKind, C> {
   kind: K
   logicalId: string
-  label: string
+  /** Localized row names are projected only by a review with an explicit language. */
+  label: string | null
   /** Logical id of the row's table; null for every other kind. */
   tableId: string | null
   tableName: string | null
