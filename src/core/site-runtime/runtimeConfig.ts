@@ -1,6 +1,7 @@
 import { isSafePackageName } from '@core/site-dependencies/packageNames'
 import { isRecord } from '@core/utils/isRecord'
 import type { SiteFile } from '@core/files/schemas'
+import { normalizeResourceOrigins } from './resourceOrigins'
 import type {
   LockedSiteDependency,
   RuntimePackageImportmap,
@@ -86,6 +87,7 @@ function normalizeAssetScope(raw: unknown): SiteAssetScope {
 
 export function normalizeScriptRuntimeConfig(raw: unknown): SiteScriptRuntimeConfig {
   if (!isRecord(raw)) return { ...DEFAULT_SCRIPT_RUNTIME_CONFIG }
+  const resourceOrigins = normalizeResourceOrigins(raw.resourceOrigins)
 
   return {
     enabled: typeof raw.enabled === 'boolean' ? raw.enabled : DEFAULT_SCRIPT_RUNTIME_CONFIG.enabled,
@@ -101,6 +103,7 @@ export function normalizeScriptRuntimeConfig(raw: unknown): SiteScriptRuntimeCon
       : DEFAULT_SCRIPT_RUNTIME_CONFIG.timing,
     scope: normalizeAssetScope(raw.scope),
     priority: finiteNumberOr(raw.priority, DEFAULT_SCRIPT_RUNTIME_CONFIG.priority),
+    ...(resourceOrigins ? { resourceOrigins } : {}),
   }
 }
 

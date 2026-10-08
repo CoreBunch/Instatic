@@ -210,7 +210,10 @@ The following test lives in `src/__tests__/server/` (not `architecture/`) but en
 
 | Test (server/)                                | What it enforces                                                                 |
 |-----------------------------------------------|----------------------------------------------------------------------------------|
-| `siteCssBundleMemo.test.ts`                   | `buildPublishedSiteCssBundle` memoises the three page-invariant CSS bundles (reset/framework/style) by `publishVersion + site object`: the O(all-pages) walk runs once per publish snapshot, not once per render; `bumpPublishVersion()` invalidates the memo; memoized output is byte-identical to `buildSiteCssBundle`; `userStyles` is rebuilt per call (page-scoped, never memoized). |
+| `siteCssBundleMemo.test.ts`                   | `buildPublishedSiteCssBundle` memoises reset/framework by `publishVersion`: the O(all-pages) module walk runs once per version; publish invalidates the memo; output matches `buildSiteCssBundle`; style/userStyles rebuild per page. |
+| `pageScopedClassCss.test.ts`                  | Disjoint pages, reachable nested Visual Components and slot fills/defaults, cycle guards, enabled/scoped emitted scripts and imported helpers, conservative selectors, inline/external parity, and media/version isolation. |
+| `classStyleInjectorScope.test.tsx`            | Mounted canvas CSS follows the active page or VC, immediately updates new assignments/previews and respects canvas script flags/scopes/imported helpers without injecting other documents' classes. |
+| `pageCssAssets.test.ts`                       | Every page and composed template's CSS hash is served with its own runtime manifest; publish clears positive/negative results and old in-flight requests cannot poison the new cache. |
 
 See [docs/features/publisher.md](../features/publisher.md).
 

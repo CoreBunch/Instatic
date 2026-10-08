@@ -15,9 +15,9 @@
  *     node `class=` attributes. Used by the CSS importer and "Add ambient
  *     selector" affordance.
  *
- * Imported at-rules that cannot be represented as selector declarations, such
- * as `@keyframes`, store a sanitised `rawCss` block on an ambient rule. The
- * publisher only emits supported raw blocks after its own safety gate.
+ * Imported grouping paths and stylesheet side effects use typed `grouping`
+ * and `atRule` metadata. Individual animations store a sanitised `rawCss`
+ * keyframes block; the publisher emits it after its own safety gate.
  *
  * §4.1 persistence note: `styles` and `contextStyles` are stored as
  * `Record<string, unknown>` matching `validate.ts` which stores the raw object
@@ -44,6 +44,7 @@ import {
   parseTimestamp,
 } from './parseHelpers'
 import { escapeCssIdentifier as escapeCssIdent } from './cssIdentifier'
+import { CSSAtRuleSchema, CSSRuleGroupSchema } from './cssGrouping'
 
 // ---------------------------------------------------------------------------
 // StyleRuleSchema
@@ -133,6 +134,10 @@ export const StyleRuleSchema = Type.Object({
   ),
   /** Sparse context id -> declaration-priority metadata. */
   contextStylePriorities: Type.Optional(Type.Record(Type.String(), CSSDeclarationPriorityBagSchema)),
+  /** Exact outer-to-inner source block path; ids distinguish anonymous occurrences. */
+  grouping: Type.Optional(Type.Array(CSSRuleGroupSchema)),
+  /** Native group opening, layer-order statement, or custom-property registration. */
+  atRule: Type.Optional(CSSAtRuleSchema),
   /** Sanitised raw CSS for supported stylesheet-level rules such as @keyframes. */
   rawCss: Type.Optional(Type.String()),
   /** Optional search/filter tags. Invalid items silently dropped — handled in parseStyleRule. */
@@ -146,6 +151,8 @@ export const StyleRuleSchema = Type.Object({
 })
 
 export type StyleRule = Static<typeof StyleRuleSchema>
+
+const CSSRuleGroupingSchema = Type.Array(CSSRuleGroupSchema)
 
 export type SelectorCreateInput =
   | { kind: 'class'; name: string }
@@ -267,6 +274,8 @@ export function parseStyleRule(raw: unknown): StyleRule | null {
     ...(stylePriorities !== undefined ? { stylePriorities } : {}),
     contextStyles,
     ...(contextStylePriorities !== undefined ? { contextStylePriorities } : {}),
+    ...(compiledCheck(CSSRuleGroupingSchema, r.grouping) ? { grouping: r.grouping } : {}),
+    ...(compiledCheck(CSSAtRuleSchema, r.atRule) ? { atRule: r.atRule } : {}),
     ...(typeof r.rawCss === 'string' && r.rawCss.trim() ? { rawCss: r.rawCss } : {}),
     ...(tags !== undefined ? { tags } : {}),
     ...(generated !== undefined ? { generated } : {}),

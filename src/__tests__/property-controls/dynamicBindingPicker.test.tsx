@@ -155,6 +155,23 @@ function loadTemplatePageInStore(tableSlug = 'posts') {
 // ---------------------------------------------------------------------------
 
 describe('DynamicBindingControl picker', () => {
+  it('offers a native public file URL for image bindings', async () => {
+    const page = makePage({ id: 'public-files-page', title: 'Files', slug: 'files' })
+    useEditorStore.setState({
+      site: makeSite({ pages: [page], files: [
+        { id: 'logo-file', path: 'public/images/logo.png', type: 'asset', blob: { mimeType: 'image/png', base64: 'AAAA' }, createdAt: 1, updatedAt: 1 },
+      ] }),
+      activePageId: page.id,
+    })
+    let picked: DynamicPropBinding | undefined
+    render(<DynamicBindingControl propKey="src" label="Image" control={{ type: 'image', label: 'Image' }} onSet={(binding) => { picked = binding }} onClear={() => {}}>
+      <input aria-label="Image" />
+    </DynamicBindingControl>)
+    fireEvent.click(screen.getByRole('button', { name: 'Bind Image' }))
+    await waitFor(() => expect(screen.getByText('public/images/logo.png')).toBeDefined())
+    fireEvent.click(screen.getByText('public/images/logo.png'))
+    expect(picked).toEqual({ source: 'file', field: 'logo-file.url', format: 'media' })
+  })
   it('renders the binding affordance button in unbound state', () => {
     renderBinding()
     expect(screen.getByRole('button', { name: /bind text/i })).toBeDefined()

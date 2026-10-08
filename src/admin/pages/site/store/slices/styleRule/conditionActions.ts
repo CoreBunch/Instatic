@@ -5,11 +5,12 @@
  * removeClassContext.
  */
 
-import type { Condition } from '@core/page-tree'
+import type { Condition, StyleRule } from '@core/page-tree'
 import { conditionId, makeConditionDef } from '@core/page-tree'
 import { isGeneratedClassLocked } from '@core/page-tree'
 import type { SiteSliceHelpers } from '../site/types'
 import type { StyleRuleSlice } from './types'
+import { removeStyleRuleReferences } from './helpers'
 
 type ConditionActions = Pick<
   StyleRuleSlice,
@@ -21,7 +22,34 @@ type ConditionActions = Pick<
   | 'removeClassContext'
 >
 
-export function createConditionActions({ get, mutateSite }: SiteSliceHelpers): ConditionActions {
+function hasGroupedContext(rule: StyleRule, contextId: string): boolean {
+  return (
+    (rule.grouping ?? []).some(
+      (group) => group.kind === 'context' && group.contextId === contextId,
+    ) ||
+    (rule.atRule?.kind === 'group' &&
+      rule.atRule.group.kind === 'context' &&
+      rule.atRule.group.contextId === contextId)
+  )
+}
+
+/** Removing an outer condition removes its whole fragment, never lifts it into base CSS. */
+function clearGroupedFragment(rule: StyleRule): void {
+  rule.styles = {}
+  rule.contextStyles = {}
+  delete rule.stylePriorities
+  delete rule.contextStylePriorities
+  delete rule.grouping
+  delete rule.atRule
+  delete rule.rawCss
+  rule.updatedAt = Date.now()
+}
+
+export function createConditionActions({
+  get,
+  mutateSite,
+  mutateSiteState,
+}: SiteSliceHelpers): ConditionActions {
   return {
     addCondition(condition: Condition, label?: string) {
       const def = makeConditionDef(condition, label)
@@ -43,26 +71,36 @@ export function createConditionActions({ get, mutateSite }: SiteSliceHelpers): C
       if (!site) return
       const exists = (site.conditions ?? []).some((c) => c.id === condId)
       const usedByAnyClass = Object.values(site.styleRules).some(
-        (cls) => condId in cls.contextStyles,
+        (cls) => condId in cls.contextStyles || hasGroupedContext(cls, condId),
       )
       if (!exists && !usedByAnyClass) return
 
-      mutateSite((site) => {
+      mutateSiteState((state, site) => {
         if (site.conditions) {
           site.conditions = site.conditions.filter((c) => c.id !== condId)
           if (site.conditions.length === 0) delete site.conditions
         }
-        // Clear the override bag from every class that referenced it.
+        const removed = new Set<string>()
         for (const cls of Object.values(site.styleRules)) {
-          if (condId in cls.contextStyles) {
+          if (hasGroupedContext(cls, condId)) {
+            if (cls.kind === 'class') clearGroupedFragment(cls)
+            else {
+              delete site.styleRules[cls.id]
+              removed.add(cls.id)
+            }
+          } else if (condId in cls.contextStyles) {
             delete cls.contextStyles[condId]
             delete cls.contextStylePriorities?.[condId]
-            if (cls.contextStylePriorities && Object.keys(cls.contextStylePriorities).length === 0) {
+            if (
+              cls.contextStylePriorities &&
+              Object.keys(cls.contextStylePriorities).length === 0
+            ) {
               delete cls.contextStylePriorities
             }
             cls.updatedAt = Date.now()
           }
         }
+        removeStyleRuleReferences(state, site, removed)
         return true
       })
     },
@@ -127,16 +165,25 @@ export function createConditionActions({ get, mutateSite }: SiteSliceHelpers): C
       const cls = site?.styleRules[classId]
       if (!cls) return
       if (isGeneratedClassLocked(cls)) return
-      if (!(contextId in cls.contextStyles)) return
+      if (!(contextId in cls.contextStyles) && !hasGroupedContext(cls, contextId)) return
 
-      mutateSite((site) => {
+      mutateSiteState((state, site) => {
         const draftClass = site.styleRules[classId]
-        if (!draftClass || !(contextId in draftClass.contextStyles)) return false
+        if (!draftClass) return false
+        if (hasGroupedContext(draftClass, contextId)) {
+          if (draftClass.kind === 'class') clearGroupedFragment(draftClass)
+          else {
+            delete site.styleRules[classId]
+            removeStyleRuleReferences(state, site, new Set([classId]))
+          }
+          return true
+        }
+        if (!(contextId in draftClass.contextStyles)) return false
         delete draftClass.contextStyles[contextId]
         delete draftClass.contextStylePriorities?.[contextId]
         if (
-          draftClass.contextStylePriorities
-          && Object.keys(draftClass.contextStylePriorities).length === 0
+          draftClass.contextStylePriorities &&
+          Object.keys(draftClass.contextStylePriorities).length === 0
         ) {
           delete draftClass.contextStylePriorities
         }

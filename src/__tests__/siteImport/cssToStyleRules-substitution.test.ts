@@ -37,10 +37,15 @@ describe('cssToStyleRules — substitution declarations survive verbatim', () =>
     expect(section.styles.padding).toBe('70px max(24px, calc((100% - 1120px)/2))')
     expect(rules.find((rule) => rule.selector === '.wrapper')!.styles.width)
       .toBe('min(100% - 48px, 1160px)')
-    expect(Object.values(section.contextStyles ?? {})[0]).toMatchObject({
+    const sectionOverride = rules.find((rule) =>
+      rule.selector === '.inner-page-wrap section' && Object.keys(rule.contextStyles).length > 0,
+    )!
+    expect(Object.values(sectionOverride.contextStyles)[0]).toMatchObject({
       paddingTop: '54px', paddingRight: '20px', paddingBottom: '54px', paddingLeft: '20px',
     })
-    const wrapper = rules.find((rule) => rule.selector === '.wrapper')!
+    const wrapper = rules.find((rule) =>
+      rule.selector === '.wrapper' && Object.keys(rule.contextStyles).length > 0,
+    )!
     expect(Object.values(wrapper.contextStyles ?? {})[0]).toMatchObject({
       width: 'min(100% - 28px, 1220px)',
     })
@@ -108,7 +113,9 @@ describe('cssToStyleRules — substitution declarations survive verbatim', () =>
       .plan { color: red; }
       @media (max-width: 700px) { .plan { border-top: 1px solid var(--rule) } }
     `)
-    const plan = rules.find((r) => r.selector === '.plan')!
+    const plan = rules.find((r) =>
+      r.selector === '.plan' && Object.keys(r.contextStyles).length > 0,
+    )!
     const contexts = Object.values(plan.contextStyles ?? {})
     expect(contexts).toHaveLength(1)
     expect((contexts[0] as Record<string, unknown>).borderTop).toBe('1px solid var(--rule)')

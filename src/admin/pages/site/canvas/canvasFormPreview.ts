@@ -15,11 +15,11 @@
  */
 
 import type { PageNode } from '@core/page-tree'
+import { FormConfigurationProperties } from '@core/forms-schema'
 import { selectActiveCanvasPage, type EditorStore } from '@site/store/store'
 
 type FormPreviewState = 'default' | 'submitting' | 'success' | 'error'
 
-const DEFAULT_FORM_SUCCESS_MESSAGE = 'Thanks. Your submission was received.'
 
 /**
  * Resolve the editor form-preview state for `nodeId` — `default` unless the
@@ -31,12 +31,13 @@ export function resolveEditorFormPreviewState(state: EditorStore, nodeId: string
   return state.formPreviewStates[formNode.id] ?? 'default'
 }
 
-/** Resolve the success message the form preview should display for `nodeId`. */
-export function resolveEditorFormPreviewSuccessMessage(state: EditorStore, nodeId: string): string {
-  const formNode = previewedFormNode(state, nodeId)
-  return formNode
-    ? stringNodeProp(formNode, 'successMessage', DEFAULT_FORM_SUCCESS_MESSAGE)
-    : DEFAULT_FORM_SUCCESS_MESSAGE
+/** Resolve authored state copy before the canvas uses its native binding frame. */
+export function resolveEditorFormPreviewMessage(state: EditorStore, nodeId: string): string {
+  const node = previewedFormNode(state, nodeId)
+  const preview = node ? state.formPreviewStates[node.id] ?? 'default' : 'default'
+  const key = preview === 'submitting' ? 'pendingMessage' : preview === 'error' ? 'errorMessage' : 'successMessage'
+  const value = node?.props[key]
+  return typeof value === 'string' ? value : String(FormConfigurationProperties[key].default ?? '')
 }
 
 /**
@@ -47,14 +48,14 @@ export function addEditorFormPreviewProps(
   moduleId: string,
   props: Record<string, unknown>,
   previewState: FormPreviewState,
-  successMessage: string,
+  message: string,
 ): Record<string, unknown> {
   if (previewState === 'default') return props
   if (moduleId !== 'base.form' && moduleId !== 'base.form-message') return props
   return {
     ...props,
     editorPreviewState: previewState,
-    editorPreviewSuccessMessage: successMessage,
+    editorPreviewMessage: message,
   }
 }
 
@@ -99,9 +100,4 @@ export function nearestFormNode(
     currentId = parentByNodeId.get(current.id)
   }
   return null
-}
-
-function stringNodeProp(node: PageNode, key: string, fallback: string): string {
-  const value = node.props[key]
-  return typeof value === 'string' && value.trim() ? value : fallback
 }

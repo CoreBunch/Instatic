@@ -34,16 +34,16 @@ import { ImagePropsSchema, type ImageStoredProps } from './props'
 
 // ---------------------------------------------------------------------------
 // Props schema — authored fields only. Publisher-injected fields (_resolved*)
-// are NOT declared here; validateNodeProps merges them over the cleaned props
+// are NOT declared here; parseModuleProps merges them over the cleaned props
 // so they survive the coercion step untouched.
 // ---------------------------------------------------------------------------
 
 /**
  * Full render-time props. Intersects the authored schema shape with
- * publisher-injected fields that arrive after validateNodeProps runs.
+ * publisher-injected fields that arrive after parseModuleProps runs.
  * The `_resolved*` fields are NOT in ImagePropsSchema — they bypass
  * schema cleaning via the `{ ...rawProps, ...cleaned }` merge in
- * validateNodeProps. The `& Record<string, unknown>` satisfies the
+ * parseModuleProps. The `& Record<string, unknown>` satisfies the
  * ModuleDefinition<TProps extends Record<string, unknown>> constraint.
  */
 type ImageProps = ImageStoredProps & {

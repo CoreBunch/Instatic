@@ -123,7 +123,7 @@ export async function handleRowPreview(
     templateContext,
     loopData,
   })
-  const cssBundle = buildSiteCssBundle(snapshot.site, registry, merged, { mediaAssets })
+  const cssBundle = buildSiteCssBundle(snapshot.site, registry, merged, { mediaAssets, runtimeAssets: snapshot.runtimeAssets })
 
   const published = publishPage(merged, snapshot.site, registry, {
     templateContext,

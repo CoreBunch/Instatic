@@ -39,13 +39,12 @@ import type { CssFileResult } from './assetPlan'
 import {
   classKindSelector,
   replaceCssSelectorClassName,
+  selectorBindingClassName,
 } from '@core/page-tree'
 import { canonicalJson } from '@core/utils/canonicalJson'
 import {
   createCascadedStyleRuleLayers,
   mergeStyleRuleCascade,
-  sparseContextPriorities,
-  sparsePriorities,
   type CascadedStyleRuleLayers,
 } from './declarationCascade'
 
@@ -121,7 +120,7 @@ function buildCascades(pagePlans: readonly PagePlan[]): Cascade[] {
 
 /**
  * The effective declaration bags one page cascade produces for each class
- * name: every class-kind fragment merged in cascade source order, exactly as
+ * name: every bindable selector fragment merged in cascade source order, exactly as
  * a browser would cascade equal-specificity rules.
  */
 function effectiveClassDefs(
@@ -131,10 +130,11 @@ function effectiveClassDefs(
   const defs = new Map<string, CascadedStyleRuleLayers>()
   for (const cssPath of cascade.linkedCssPaths) {
     for (const rule of rulesByCssPath.get(cssPath) ?? []) {
-      if (rule.kind !== 'class' || isSharedUtilityClassName(rule.name)) continue
-      const def = defs.get(rule.name) ?? createCascadedStyleRuleLayers()
+      const name = selectorBindingClassName(rule.selector)
+      if (!name || isSharedUtilityClassName(name)) continue
+      const def = defs.get(name) ?? createCascadedStyleRuleLayers()
       mergeStyleRuleCascade(def, rule)
-      defs.set(rule.name, def)
+      defs.set(name, def)
     }
   }
   return defs
@@ -194,7 +194,7 @@ export function detectCrossSheetClassConflicts(
           .flatMap((c) => c.linkedCssPaths)
           .filter((cssPath) =>
             !keptCssPaths.has(cssPath)
-            && (rulesByCssPath.get(cssPath) ?? []).some((r) => r.kind === 'class' && r.name === name),
+            && (rulesByCssPath.get(cssPath) ?? []).some((r) => selectorBindingClassName(r.selector) === name),
           ),
       )]
       conflicts.push({
@@ -218,14 +218,9 @@ export function detectCrossSheetClassConflicts(
  * re-identified through each conflict's `pageSources` (stable across plan
  * filtering), never by re-hashing definitions.
  *
- * For a rename, the divergent definition is MATERIALISED: one class rule
- * named `resolvedName` carrying the cascade-merged effective declarations is
- * appended, the affected cascades' exclusive class fragments for the old name
- * are dropped, class tokens in their exclusive ambient selectors follow the
- * rename, and the affected pages' node class tokens move to the new name.
- * Fragments living in stylesheets SHARED with a kept cascade stay put (they
- * also feed the kept definition); their declarations are still present in the
- * materialised rule.
+ * A rename preserves each fragment's source position. Exclusive fragments
+ * move to the new name; shared fragments keep their original selector and
+ * gain a renamed companion at the same position. Node class tokens follow.
  */
 export function applyCrossSheetClassResolutions(
   plan: ImportPlan,
@@ -280,7 +275,7 @@ export function applyCrossSheetClassResolutions(
     const newName = res.resolvedName
     if (!newName || newName === conflict.desiredName) continue
 
-    const renamed = materialiseRenamedClass(
+    const renamed = renameCascadeClassFragments(
       { pages, styleRules, styleRuleSources },
       conflict,
       newName,
@@ -301,16 +296,11 @@ interface CascadeRuleState {
 }
 
 /**
- * Apply one rename resolution: materialise the divergent definition under
- * `newName` and move every reference in the affected cascades with it.
- *
- *   1. Materialise the effective definition under the new name, merged in
- *      this cascade's source order (shared fragments included).
- *   2. Drop the exclusive source fragments the materialised rule replaces.
- *   3. Class tokens in the cascade's exclusive ambient selectors follow.
- *   4. The affected pages' node class tokens move to the new name.
+ * Rename selector tokens without collapsing declarations or moving them
+ * ahead of intervening selectors. Shared source fragments are cloned so the
+ * kept class still receives them at their original cascade position.
  */
-function materialiseRenamedClass(
+function renameCascadeClassFragments(
   state: CascadeRuleState,
   conflict: CrossSheetClassConflict,
   newName: string,
@@ -322,46 +312,36 @@ function materialiseRenamedClass(
 ): CascadeRuleState {
   const { affectedPages, affectedCascadePaths, exclusivePaths } = scope
 
-  const merged = mergeClassDefinition(
-    state.styleRules,
-    state.styleRuleSources,
-    affectedCascadePaths,
-    conflict.desiredName,
-  )
-  const removed = removeClassFragments(
-    state.styleRules,
-    state.styleRuleSources,
-    conflict.desiredName,
-    (source) => exclusivePaths.has(source),
-  )
-  let styleRules = removed.styleRules
-  const styleRuleSources = removed.styleRuleSources
-  if (merged) {
-    styleRules.push({
-      kind: 'class',
-      name: newName,
-      selector: classKindSelector(newName),
-      order: 0,
-      styles: merged.styles as NewStyleRule['styles'],
-      ...(sparsePriorities(merged.stylePriorities)
-        ? { stylePriorities: merged.stylePriorities }
-        : {}),
-      contextStyles: merged.contextStyles as NewStyleRule['contextStyles'],
-      ...(sparseContextPriorities(merged.contextStylePriorities)
-        ? { contextStylePriorities: sparseContextPriorities(merged.contextStylePriorities) }
-        : {}),
-    })
-    styleRuleSources.push(conflict.sources[0] ?? affectedCascadePaths[0] ?? '')
-  }
-
+  const styleRules: NewStyleRule[] = []
+  const styleRuleSources: string[] = []
+  const affectedPaths = new Set(affectedCascadePaths)
   const renames = new Map([[conflict.desiredName, newName]])
-  styleRules = styleRules.map((rule, index) => {
-    if (rule.kind !== 'ambient' || typeof rule.rawCss === 'string') return rule
-    if (!exclusivePaths.has(styleRuleSources[index])) return rule
-    const selector = rewriteSelectorClassTokens(rule.selector, renames)
-    if (selector === rule.selector) return rule
-    return { ...rule, selector, name: rule.name === rule.selector ? selector : rule.name }
-  })
+  for (let index = 0; index < state.styleRules.length; index += 1) {
+    const rule = state.styleRules[index]
+    const source = state.styleRuleSources[index]
+    const selector = typeof rule.rawCss === 'string' || !affectedPaths.has(source)
+      ? rule.selector
+      : rewriteSelectorClassTokens(rule.selector, renames)
+    if (selector === rule.selector) {
+      styleRules.push(rule)
+      styleRuleSources.push(source)
+      continue
+    }
+
+    const ownsRenamedClass = selectorBindingClassName(rule.selector) === conflict.desiredName
+    const shared = !exclusivePaths.has(source)
+    if (shared) {
+      styleRules.push(rule)
+      styleRuleSources.push(source)
+    }
+    styleRules.push({
+      ...rule,
+      selector,
+      kind: ownsRenamedClass ? 'class' : shared ? 'ambient' : rule.kind,
+      name: ownsRenamedClass ? newName : shared || rule.kind === 'ambient' ? selector : rule.name,
+    })
+    styleRuleSources.push(source)
+  }
 
   const pages = state.pages.map((page) => {
     if (!affectedPages.has(page.source)) return page
@@ -422,38 +402,11 @@ function removeClassFragments(
   const keptSources: string[] = []
   for (let i = 0; i < styleRules.length; i++) {
     const rule = styleRules[i]
-    if (rule.kind === 'class' && rule.name === name && sourceMatches(styleRuleSources[i])) continue
+    if (selectorBindingClassName(rule.selector) === name && sourceMatches(styleRuleSources[i])) continue
     keptRules.push(rule)
     keptSources.push(styleRuleSources[i])
   }
   return { styleRules: keptRules, styleRuleSources: keptSources }
-}
-
-function mergeClassDefinition(
-  styleRules: readonly NewStyleRule[],
-  styleRuleSources: readonly string[],
-  cascadePaths: readonly string[],
-  name: string,
-): CascadedStyleRuleLayers | null {
-  const indexBySource = new Map<string, number[]>()
-  for (let i = 0; i < styleRules.length; i++) {
-    const rule = styleRules[i]
-    if (rule.kind !== 'class' || rule.name !== name) continue
-    const list = indexBySource.get(styleRuleSources[i]) ?? []
-    list.push(i)
-    indexBySource.set(styleRuleSources[i], list)
-  }
-
-  let found = false
-  const merged = createCascadedStyleRuleLayers()
-  for (const cssPath of cascadePaths) {
-    for (const index of indexBySource.get(cssPath) ?? []) {
-      const rule = styleRules[index]
-      found = true
-      mergeStyleRuleCascade(merged, rule)
-    }
-  }
-  return found ? merged : null
 }
 
 function renamePageClassTokens(page: PagePlan, from: string, to: string): PagePlan {

@@ -23,6 +23,34 @@ export function nextRuleOrder(classes: Record<string, StyleRule>): number {
   return max + 1
 }
 
+/** Insert a copied fragment beside its source without reopening an anonymous layer. */
+export function ruleOrderAfter(classes: Record<string, StyleRule>, rule: StyleRule): number {
+  const next = Object.values(classes).reduce(
+    (order, candidate) => (candidate.order > rule.order ? Math.min(order, candidate.order) : order),
+    Infinity,
+  )
+  return Number.isFinite(next) ? rule.order + (next - rule.order) / 2 : rule.order + 1
+}
+
+/** Clear tree assignments and editor selections after registry entries are deleted. */
+export function removeStyleRuleReferences(
+  state: Draft<EditorStore>,
+  site: SiteDocument,
+  ids: ReadonlySet<string>,
+): void {
+  if (ids.size === 0) return
+  for (const tree of [...site.pages, ...site.visualComponents.map((component) => component.tree)]) {
+    for (const node of Object.values(tree.nodes)) {
+      node.classIds = node.classIds.filter((id) => !ids.has(id))
+    }
+  }
+  if (state.activeClassId && ids.has(state.activeClassId)) state.activeClassId = null
+  if (state.selectedSelectorClassId && ids.has(state.selectedSelectorClassId)) {
+    state.selectedSelectorClassId = null
+  }
+  state.selectedSelectorClassIds = state.selectedSelectorClassIds.filter((id) => !ids.has(id))
+}
+
 export function hasStylePatchChanges(
   current: Record<string, unknown>,
   patch: Partial<CSSPropertyBag>,
@@ -52,17 +80,6 @@ export function shallowEqualStyles(
   return true
 }
 
-export function cloneContextStyles(
-  contextStyles: StyleRule['contextStyles'],
-): StyleRule['contextStyles'] {
-  return Object.fromEntries(
-    Object.entries(contextStyles).map(([contextId, styles]) => [
-      contextId,
-      { ...styles },
-    ]),
-  )
-}
-
 /**
  * Find a node by id anywhere in the site — pages **and** Visual Component
  * trees. Returns null when the node doesn't exist anywhere.
@@ -75,10 +92,7 @@ export function cloneContextStyles(
  * VCNode = BaseNode (structurally identical), so a single `BaseNode`-shaped
  * helper covers both tree kinds.
  */
-export function findNodeWithClassIds(
-  site: SiteDocument | null,
-  nodeId: string,
-): BaseNode | null {
+export function findNodeWithClassIds(site: SiteDocument | null, nodeId: string): BaseNode | null {
   if (!site) return null
   for (const page of site.pages) {
     const node = page.nodes[nodeId]
@@ -126,7 +140,10 @@ export function mutateNodeClassIds(
   return false
 }
 
-export function uniqueClassCopyName(classes: Record<string, StyleRule>, originalName: string): string {
+export function uniqueClassCopyName(
+  classes: Record<string, StyleRule>,
+  originalName: string,
+): string {
   const existingNames = new Set(Object.values(classes).map((cls) => cls.name))
   const baseName = `${originalName}-copy`
   if (!existingNames.has(baseName)) return baseName

@@ -41,6 +41,14 @@ import { badRequest, jsonResponse, methodNotAllowed, readValidatedBody } from '.
 import { Type } from '@core/utils/typeboxHelpers'
 import { getErrorMessage } from '@core/utils/errorMessage'
 import type { BranchScope } from '../../branches/scope'
+import { SiteFileSchema } from '@core/files/schemas'
+import { PublicAssetValidationError } from '@core/files/publicAssets'
+import {
+  PUBLIC_FILE_PREVIEW_PREFIX,
+  readPublicFilePreview,
+  registerPublicFilePreview,
+} from '../../publish/publicFilePreview'
+import { publicSiteAssetResponse } from '../../publish/publicSiteAssets'
 
 function runtimeDependencyMap(raw: unknown): Record<string, string> {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {}
@@ -116,6 +124,28 @@ export async function handleRuntimeRoutes(
   scope: BranchScope,
 ): Promise<Response | null> {
   const url = new URL(req.url)
+
+  if (url.pathname.startsWith(PUBLIC_FILE_PREVIEW_PREFIX)) {
+    const user = await requireCapability(req, db, 'site.read')
+    if (user instanceof Response) return user
+    if (req.method !== 'GET' && req.method !== 'HEAD') return methodNotAllowed()
+    const asset = readPublicFilePreview(user.id, url.pathname)
+    return asset ? publicSiteAssetResponse(req, asset, true) : jsonResponse({ error: 'File preview not found' }, { status: 404 })
+  }
+
+  if (url.pathname === '/admin/api/cms/runtime/files') {
+    const user = await requireCapability(req, db, 'site.read')
+    if (user instanceof Response) return user
+    if (req.method !== 'POST') return methodNotAllowed()
+    const body = await readValidatedBody(req, Type.Object({ files: Type.Array(SiteFileSchema) }))
+    if (!body) return badRequest('Invalid request body')
+    try {
+      return jsonResponse({ files: registerPublicFilePreview(user.id, body.files) }, { headers: { 'cache-control': 'no-store' } })
+    } catch (error) {
+      if (error instanceof PublicAssetValidationError) return badRequest(error.message)
+      throw error
+    }
+  }
 
   if (url.pathname === '/admin/api/cms/runtime/dependencies/resolve') {
     const user = await requireCapability(req, db, 'runtime.dependencies')
@@ -228,7 +258,11 @@ export async function handleRuntimeRoutes(
         assetBasePath: '/_instatic/preview/runtime/',
         dependencyCache: await runtimeDependencyCache(site),
         breakpointId,
-        templateContext,
+        templateContext: {
+          ...templateContext,
+          entryStack: templateContext?.entryStack ?? [],
+          files: registerPublicFilePreview(user.id, site.files),
+        },
         db,
         // Loops on the canvas read the rows of the branch being edited.
         branchId: scope.branchId,

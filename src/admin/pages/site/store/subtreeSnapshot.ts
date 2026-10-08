@@ -2,9 +2,9 @@
  * Subtree snapshots — the shared capture/restore engine behind the editor
  * clipboard (copy/cut/paste) and saved layouts (save-as-layout/insert).
  *
- * A snapshot is a self-contained `{ nodes, classes }` pair: the flat node map
- * of one or more captured subtrees plus every style rule those nodes
- * referenced at capture time. Restoring a snapshot mints fresh node ids and
+ * A snapshot contains nodes, style rules and their CSS condition dependencies:
+ * the flat node map of one or more captured subtrees plus the authored CSS
+ * needed to render them. Restoring a snapshot mints fresh node ids and
  * runs the class plan below, so both paste and layout insertion behave
  * identically — one engine, two front doors.
  *
@@ -21,11 +21,14 @@
  */
 
 import { nanoid } from 'nanoid'
-import type { NodeTree, PageNode, SiteDocument, StyleRule } from '@core/page-tree'
-import { buildSubtreeNodeIdMap, pasteSubtree } from '@core/page-tree'
+import type { ConditionDef, CSSRuleGroup, NodeTree, PageNode, SiteDocument, StyleRule } from '@core/page-tree'
+import { breakpointMediaQuery, buildSubtreeNodeIdMap, conditionId, pasteSubtree } from '@core/page-tree'
+import { treeShakeStyleRules } from '@core/publisher'
+import { Value } from '@core/utils/typeboxHelpers'
 import type { InsertLocation } from '@site/store/insertLocation'
+import { ruleOrderAfter } from './slices/styleRule/helpers'
 
-/** A captured set of subtrees plus the classes they reference. */
+/** Captured subtrees and their complete CSS dependencies. */
 interface SubtreeSnapshot {
   /** Ordered root node ids inside `nodes`. */
   rootNodeIds: string[]
@@ -33,6 +36,7 @@ interface SubtreeSnapshot {
   nodes: Record<string, PageNode>
   /** Style rules referenced by any captured node. */
   classes: Record<string, StyleRule>
+  conditions?: ConditionDef[]
 }
 
 /**
@@ -57,7 +61,7 @@ export function collectSubtreeNodes(
       if (nodes[id]) continue
       const node = tree.nodes[id]
       if (!node) continue
-      nodes[id] = { ...node, children: [...node.children] }
+      nodes[id] = Value.Clone(node)
       stack.push(...node.children)
     }
   }
@@ -66,24 +70,47 @@ export function collectSubtreeNodes(
 }
 
 /**
- * Collect every class referenced anywhere in the captured nodes from
- * `siteClasses`. Missing classes (e.g. dangling classIds) are silently
- * skipped — the restore step also filters dangling references via the
- * classIdRemap.
+ * Collect the authored rules used by captured nodes, including ambient rules,
+ * grouping declarations, keyframes and registered properties. Conditions and
+ * viewport queries travel with the snapshot so paste between installations preserves CSS
+ * meaning even when the destination has different viewport definitions.
  */
-export function collectReferencedClasses(
+export function collectSubtreeStyles(
   nodes: Record<string, PageNode>,
-  siteClasses: Record<string, StyleRule>,
-): Record<string, StyleRule> {
-  const classes: Record<string, StyleRule> = {}
+  site: Pick<SiteDocument, 'styleRules' | 'conditions' | 'breakpoints'>,
+): { classes: Record<string, StyleRule>; conditions: ConditionDef[] } {
+  const usedIds = new Set<string>()
   for (const node of Object.values(nodes)) {
-    for (const classId of node.classIds) {
-      if (classes[classId]) continue
-      const cls = siteClasses[classId]
-      if (cls) classes[classId] = cls
-    }
+    for (const classId of node.classIds) usedIds.add(classId)
   }
-  return classes
+  const selected = treeShakeStyleRules(site.styleRules, usedIds)
+  // Generated framework definitions are excluded from published authored CSS,
+  // but their names are needed to match references in the destination site.
+  for (const id of usedIds) if (site.styleRules[id]) selected[id] = site.styleRules[id]
+  const classes: Record<string, StyleRule> = {}
+  const contextIds = new Set<string>()
+  for (const rule of Object.values(selected).sort((a, b) => a.order - b.order)) {
+    if (rule.scope && !nodes[rule.scope.nodeId] && !usedIds.has(rule.id)) continue
+    classes[rule.id] = Value.Clone(rule)
+    for (const id of ruleContextIds(rule)) contextIds.add(id)
+  }
+  const conditions = [...contextIds].map((id): ConditionDef => {
+    const condition = site.conditions?.find((entry) => entry.id === id)
+    if (condition) return Value.Clone(condition)
+    const viewport = site.breakpoints.find((entry) => entry.id === id)
+    if (!viewport) throw new Error(`Cannot copy styles: CSS context "${id}" is missing`)
+    return { id, label: viewport.label, condition: { kind: 'media', query: breakpointMediaQuery(viewport) } }
+  })
+  return { classes, conditions }
+}
+
+function ruleContextIds(rule: StyleRule): string[] {
+  return [
+    ...Object.keys(rule.contextStyles),
+    ...Object.keys(rule.contextStylePriorities ?? {}),
+    ...(rule.grouping ?? []).flatMap((group) => group.kind === 'context' ? [group.contextId] : []),
+    ...(rule.atRule?.kind === 'group' && rule.atRule.group.kind === 'context' ? [rule.atRule.group.contextId] : []),
+  ]
 }
 
 const FRAMEWORK_ID_PREFIX = 'framework:'
@@ -130,6 +157,53 @@ export function insertSnapshotSubtrees(
   const now = Date.now()
   const targetClasses = site.styleRules
   const plans = new Map<string, ClassPlan>()
+  const contextIds = new Map<string, string>()
+  const conditions = [...(site.conditions ?? [])]
+  for (const source of snapshot.conditions ?? []) {
+    const signature = conditionId(source.condition)
+    const condition = conditions.find((entry) => conditionId(entry.condition) === signature)
+    const viewport = source.condition.kind === 'media'
+      ? site.breakpoints.find((entry) => breakpointMediaQuery(entry) === source.condition.query)
+      : undefined
+    if (condition || viewport) {
+      contextIds.set(source.id, (condition ?? viewport)!.id)
+      continue
+    }
+    const id = conditions.some((entry) => entry.id === signature)
+      || site.breakpoints.some((entry) => entry.id === signature) ? nanoid() : signature
+    conditions.push({ ...Value.Clone(source), id })
+    contextIds.set(source.id, id)
+  }
+  const groupIds = new Map<string, string>()
+  const remapGroup = (group: CSSRuleGroup): CSSRuleGroup => {
+    let id = groupIds.get(group.id)
+    if (!id) { id = nanoid(); groupIds.set(group.id, id) }
+    return group.kind === 'context'
+      ? { ...group, id, contextId: contextIds.get(group.contextId) ?? group.contextId }
+      : { ...group, id }
+  }
+  let nextOrder = Object.values(targetClasses).reduce((next, rule) => Math.max(next, rule.order + 1), 0)
+  const copiedRule = (source: StyleRule): StyleRule => {
+    const rule = Value.Clone(source)
+    const existing = targetClasses[source.id]
+    // A scoped copy whose source is still in this registry stays beside that
+    // source, inside the same anonymous layer occurrence. An imported snapshot
+    // gets a new namespace and appends its complete cohort instead.
+    rule.order = existing ? ruleOrderAfter(targetClasses, existing) : nextOrder++
+    rule.contextStyles = Object.fromEntries(Object.entries(rule.contextStyles).map(([id, bag]) => [contextIds.get(id) ?? id, bag]))
+    if (rule.contextStylePriorities) rule.contextStylePriorities = Object.fromEntries(Object.entries(rule.contextStylePriorities).map(([id, bag]) => [contextIds.get(id) ?? id, bag]))
+    const restoreGroup = (group: CSSRuleGroup): CSSRuleGroup => existing
+      ? group.kind === 'context' ? { ...group, contextId: contextIds.get(group.contextId) ?? group.contextId } : group
+      : remapGroup(group)
+    if (rule.grouping) rule.grouping = rule.grouping.map(restoreGroup)
+    if (rule.atRule?.kind === 'group') rule.atRule.group = restoreGroup(rule.atRule.group)
+    for (const id of ruleContextIds(rule)) {
+      if (!conditions.some((entry) => entry.id === id) && !site.breakpoints.some((entry) => entry.id === id)) {
+        throw new Error(`Cannot restore styles: CSS context "${id}" is missing`)
+      }
+    }
+    return rule
+  }
 
   // Build a name → id index for framework classes in the active document
   // (used to match regenerated framework references that may have a
@@ -139,7 +213,8 @@ export function insertSnapshotSubtrees(
     if (id.startsWith(FRAMEWORK_ID_PREFIX)) frameworkByName.set(cls.name, id)
   }
 
-  for (const [classId, cls] of Object.entries(snapshot.classes)) {
+  for (const cls of Object.values(snapshot.classes).sort((a, b) => a.order - b.order)) {
+    const classId = cls.id
     if (cls.scope?.type === 'node') {
       // Scoped class — always cloned with a fresh id, scope.nodeId remapped.
       const newScopeNodeId = nodeIdMap.get(cls.scope.nodeId)
@@ -152,29 +227,9 @@ export function insertSnapshotSubtrees(
         kind: 'add',
         id: newId,
         cls: {
-          ...cls,
+          ...copiedRule(cls),
           id: newId,
           scope: { ...cls.scope, nodeId: newScopeNodeId },
-          styles: { ...cls.styles },
-          ...(cls.stylePriorities
-            ? { stylePriorities: { ...cls.stylePriorities } }
-            : {}),
-          contextStyles: Object.fromEntries(
-            Object.entries(cls.contextStyles).map(([ctx, s]) => [
-              ctx,
-              { ...s },
-            ]),
-          ),
-          ...(cls.contextStylePriorities
-            ? {
-                contextStylePriorities: Object.fromEntries(
-                  Object.entries(cls.contextStylePriorities).map(([ctx, priorities]) => [
-                    ctx,
-                    { ...priorities },
-                  ]),
-                ),
-              }
-            : {}),
           createdAt: now,
           updatedAt: now,
         },
@@ -200,29 +255,7 @@ export function insertSnapshotSubtrees(
         plans.set(classId, {
           kind: 'add',
           id: classId,
-          cls: {
-            ...cls,
-            styles: { ...cls.styles },
-            ...(cls.stylePriorities
-              ? { stylePriorities: { ...cls.stylePriorities } }
-              : {}),
-            contextStyles: Object.fromEntries(
-              Object.entries(cls.contextStyles).map(([ctx, s]) => [
-                ctx,
-                { ...s },
-              ]),
-            ),
-            ...(cls.contextStylePriorities
-              ? {
-                  contextStylePriorities: Object.fromEntries(
-                    Object.entries(cls.contextStylePriorities).map(([ctx, priorities]) => [
-                      ctx,
-                      { ...priorities },
-                    ]),
-                  ),
-                }
-              : {}),
-          },
+          cls: copiedRule(cls),
         })
       }
     }
@@ -241,6 +274,7 @@ export function insertSnapshotSubtrees(
   }
 
   // 1. Materialise added classes into the target site.
+  if (conditions.length !== (site.conditions?.length ?? 0)) site.conditions = conditions
   for (const plan of plans.values()) {
     if (plan.kind === 'add' && !site.styleRules[plan.id]) {
       site.styleRules[plan.id] = plan.cls

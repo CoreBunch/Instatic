@@ -1,4 +1,5 @@
 import { Type, type Static } from '@core/utils/typeboxHelpers'
+import { PropertyConditionSchema } from '@core/module-engine-schema'
 
 const FormControlBindingSchema = Type.Object({
   nodeId: Type.String({ minLength: 1 }),
@@ -11,6 +12,11 @@ const FormControlBindingSchema = Type.Object({
   minLength: Type.Optional(Type.Number()),
   maxLength: Type.Optional(Type.Number()),
   pattern: Type.Optional(Type.String()),
+  conditions: Type.Optional(Type.Array(PropertyConditionSchema)),
+  requiredWhen: Type.Optional(PropertyConditionSchema),
+  disabled: Type.Optional(Type.Boolean()),
+  options: Type.Optional(Type.Array(Type.String())),
+  valueSourceField: Type.Optional(Type.String()),
 })
 
 export type FormControlBinding = Static<typeof FormControlBindingSchema>

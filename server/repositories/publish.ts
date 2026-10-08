@@ -25,6 +25,8 @@ import { contentHash } from '../branches/contentHash'
 import type { DataRow } from '@core/data/schemas'
 import type { SiteDocument } from '@core/page-tree'
 import type { PublishedPageRuntimeAssets } from '@core/site-runtime'
+import { PublishedPageRuntimeAssetsSchema } from '@core/site-runtime'
+import { compiledCheck } from '@core/utils/typeboxCompiler'
 import type { PublishedRuntimePackageImportmap } from '@core/publisher'
 import type { DbClient } from '../db/client'
 import { MAIN_SCOPE, type BranchScope } from '../branches/scope'
@@ -223,11 +225,14 @@ export async function getDraftPublishStatus(db: DbClient): Promise<DraftPublishS
  * each page row to `published`. DB writes only — every expensive non-DB
  * build (runtime bundling, rendering) happens in the orchestrator BEFORE
  * this is called, so the SQLite adapter's serialized transaction chain is
- * held for milliseconds, not seconds.
+ * held for milliseconds, not seconds. The orchestrator's already-staged
+ * generation activates as the final transaction step; an activation failure
+ * rolls back every snapshot/version write.
  */
 export async function persistSitePublish(
   db: DbClient,
   input: PersistSitePublishInput,
+  activateGeneration: () => Promise<void>,
 ): Promise<void> {
   await db.transaction(async (tx) => {
     // The site document is stored ONCE per publish; every page version row
@@ -278,6 +283,7 @@ export async function persistSitePublish(
         await tx`delete from data_row_versions where id = ${page.versionId}`
       }
     }
+    await activateGeneration()
   })
 }
 
@@ -323,6 +329,27 @@ export async function getPublishedPageSnapshotById(
     limit 1
   `
   return rows[0] ? snapshotFromQueryRow(rows[0]) : null
+}
+
+/** Per-page manifests without repeatedly loading the whole site document. */
+export async function listPublishedPageRuntimeAssets(db: DbClient): Promise<Map<string, PublishedPageRuntimeAssets>> {
+  const { rows } = await db<{ row_id: string; runtime_assets_json: unknown }>`
+    select data_rows.id as row_id, data_row_versions.runtime_assets_json
+    from data_rows
+    join data_row_versions on data_row_versions.id = data_rows.active_version_id
+    where data_rows.table_id = 'pages'
+      and data_rows.status = 'published'
+      and data_rows.deleted_at is null
+  `
+  const manifests = new Map<string, PublishedPageRuntimeAssets>()
+  for (const row of rows) {
+    if (row.runtime_assets_json === null) continue
+    if (!compiledCheck(PublishedPageRuntimeAssetsSchema, row.runtime_assets_json)) {
+      throw new Error(`Invalid published runtime manifest for page "${row.row_id}"`)
+    }
+    manifests.set(row.row_id, row.runtime_assets_json)
+  }
+  return manifests
 }
 
 /**

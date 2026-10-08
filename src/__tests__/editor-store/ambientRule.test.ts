@@ -185,7 +185,8 @@ describe('publisher emits ambient rules', () => {
 
     // Re-read state AFTER the mutation — `getState()` returns an immutable
     // snapshot, not a live ref.
-    const css = collectClassCSS(useEditorStore.getState().site!)
+    const site = useEditorStore.getState().site!
+    const css = collectClassCSS(site, site.pages[0])
     expect(css).toContain('h1 > span')
     expect(css).toContain('color: #f00')
   })

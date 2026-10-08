@@ -130,6 +130,8 @@ export function makePage(overrides: Partial<Page> = {}): Page {
     id: overrides.id ?? 'page-1',
     slug: overrides.slug ?? 'index',
     title: overrides.title ?? 'Home',
+    ...(overrides.language ? { language: overrides.language } : {}),
+    ...(overrides.translationGroup ? { translationGroup: overrides.translationGroup } : {}),
     rootNodeId: rootId,
     nodes,
     template: overrides.template,

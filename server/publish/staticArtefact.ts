@@ -363,17 +363,32 @@ async function removeCurrentEntry(path: string): Promise<void> {
  * pending IO callbacks fire first; every other error is a miss (`null`).
  */
 async function readFromActiveSlot(uploadsDir: string, relPath: string): Promise<Buffer | null> {
+  try {
+    return await readActivePublishSlot(uploadsDir, (slotDir) => readFile(join(slotDir, relPath)))
+  } catch {
+    // Existing HTML/runtime readers treat non-transient IO errors as misses.
+    return null
+  }
+}
+
+/**
+ * Read one generation using a fixed slot directory for every dependent read.
+ * Retrying re-resolves the pointer, so metadata and bytes can never come from
+ * independently selected generations. Non-transient errors remain explicit.
+ */
+export async function readActivePublishSlot<T>(
+  uploadsDir: string,
+  read: (slotDir: string) => Promise<T>,
+): Promise<T | null> {
   for (let attempt = 0; attempt < 5; attempt++) {
     // Re-resolve the pointer on every attempt so a mid-retry swap lands the
     // read in the new generation.
     const slot = await getActiveSlot(uploadsDir)
     try {
-      return await readFile(join(getSlotDir(uploadsDir, slot), relPath))
+      return await read(getSlotDir(uploadsDir, slot))
     } catch (err) {
       const code = isNodeError(err) ? err.code : null
-      if (code !== 'ENOENT' && code !== 'ENOTDIR' && code !== 'EINVAL') {
-        return null // Non-retriable IO error — treat as miss
-      }
+      if (code !== 'ENOENT' && code !== 'ENOTDIR' && code !== 'EINVAL' && code !== 'ESTALE') throw err
       if (attempt < 4) {
         await new Promise<void>((resolve) => setImmediate(resolve))
       }

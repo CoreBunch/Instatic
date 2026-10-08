@@ -137,7 +137,7 @@ async function renderHoleFragment(
     loopData,
     templateContext: {
       entryStack: [],
-      page: buildPageFrame(page),
+      page: buildPageFrame(page, site),
       site: buildSiteFrame(site),
       route,
     },
@@ -214,12 +214,12 @@ export async function handleHoleRequest(
 
   // Reconstruct the originating page URL forwarded by the runtime (`u`). Falls
   // back to the page's own permalink when absent (older runtime / direct hit).
-  const pageUrlRaw = url.searchParams.get('u') ?? buildPageFrame(foundPage).permalink
+  const pageUrlRaw = url.searchParams.get('u') ?? buildPageFrame(foundPage, snap.site).permalink
   let pageUrl: URL
   try {
     pageUrl = new URL(pageUrlRaw, url.origin)
   } catch {
-    pageUrl = new URL(buildPageFrame(foundPage).permalink, url.origin)
+    pageUrl = new URL(buildPageFrame(foundPage, snap.site).permalink, url.origin)
   }
 
   const perVisitor = isPerVisitorHole(node)

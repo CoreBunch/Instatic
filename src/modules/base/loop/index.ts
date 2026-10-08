@@ -33,6 +33,7 @@
  */
 import type { ModuleDefinition } from '@core/module-engine'
 import { registry } from '@core/module-engine'
+import { LOOP_LOADING_LABEL_DEFAULTS } from '@core/loops'
 import { Type, Value, type Static } from '@core/utils/typeboxHelpers'
 import { BoxStackSolidIcon } from 'pixel-art-icons/icons/box-stack-solid'
 import { resolveHtmlTag } from '@core/htmlAttributes'
@@ -51,6 +52,9 @@ const LoopPropsSchema = Type.Object({
   offset: Type.Number({ default: 0 }),
   pagination: Type.Union([Type.Literal('none'), Type.Literal('infinite')], { default: 'none' }),
   pageSize: Type.Number({ default: 10 }),
+  loadMoreLabel: Type.String({ default: LOOP_LOADING_LABEL_DEFAULTS.loadMoreLabel }),
+  loadingLabel: Type.String({ default: LOOP_LOADING_LABEL_DEFAULTS.loadingLabel }),
+  retryLabel: Type.String({ default: LOOP_LOADING_LABEL_DEFAULTS.retryLabel }),
   tag: Type.String({ default: 'div' }),
   customTag: Type.String({ default: '' }),
   htmlAttributes: Type.Record(Type.String(), Type.String(), HtmlAttributesPropSchemaOptions),
@@ -72,11 +76,14 @@ export const LoopModule: ModuleDefinition<LoopProps> = {
   // standard walk — declared here so the dispatch is visible on the definition.
   publishBehavior: 'special',
 
-  // Loop properties are NOT panel-edited via the generic schema renderer
-  // because filterSchema is dynamic per source. The Properties Panel
-  // branches on moduleId === 'base.loop' and renders LoopPropertiesView,
-  // which itself renders the shared htmlTag controls.
-  schema: {},
+  // Source configuration uses LoopPropertiesView because filterSchema is
+  // dynamic per source. Loading labels use ordinary schema controls so they
+  // share native bindings and Visual Component parameter authoring.
+  schema: {
+    loadMoreLabel: { type: 'text', label: 'Load more label', condition: { field: 'pagination', eq: 'infinite' } },
+    loadingLabel: { type: 'text', label: 'Loading label', condition: { field: 'pagination', eq: 'infinite' } },
+    retryLabel: { type: 'text', label: 'Retry label', condition: { field: 'pagination', eq: 'infinite' } },
+  },
 
   propsSchema: LoopPropsSchema,
   defaults: Value.Create(LoopPropsSchema),

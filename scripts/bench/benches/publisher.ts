@@ -17,58 +17,18 @@ import { gzipSync, brotliCompressSync } from 'node:zlib'
 import type { BenchModule, BenchResult, BenchRow, BenchContext } from '../lib/types'
 import { summarize, fmtMs, fmtBytes, fmtNum } from '../lib/stats'
 import { log } from '../lib/log'
+import type { Page, PageNode, SiteDocument, StyleRule } from '@core/page-tree'
 
 // Lazy imports — keep cold startup fast when this bench is skipped.
 async function loadEngine() {
   await import('../../../src/modules/base')
-  const { publishPage } = await import('../../../src/core/publisher/render')
-  const { registry } = await import('../../../src/core/module-engine/registry')
+  const { publishPage } = await import('../../../src/core/publisher')
+  const { registry } = await import('../../../src/core/module-engine')
   const { buildSiteCssBundle } = await import('../../../server/publish/siteCssBundle')
   return { publishPage, registry, buildSiteCssBundle }
 }
 
-type PageNode = {
-  id: string
-  moduleId: string
-  props: Record<string, unknown>
-  breakpointOverrides: Record<string, unknown>
-  children: string[]
-  classIds: string[]
-}
-
-type Page = {
-  id: string
-  slug: string
-  title: string
-  nodes: Record<string, PageNode>
-  rootNodeId: string
-}
-
-type CSSClass = {
-  id: string
-  name: string
-  styles: Record<string, unknown>
-  breakpointStyles: Record<string, Record<string, unknown>>
-  createdAt: number
-  updatedAt: number
-}
-
-type SiteDoc = {
-  id: string
-  name: string
-  pages: Page[]
-  files: unknown[]
-  visualComponents: unknown[]
-  packageJson: { dependencies: Record<string, string>; devDependencies: Record<string, string> }
-  runtime: { dependencyLock: { version: number; packages: Record<string, unknown>; updatedAt: number }; scripts: Record<string, unknown> }
-  breakpoints: unknown[]
-  settings: { colorTokens: Record<string, unknown>; shortcuts: Record<string, unknown> }
-  classes: Record<string, CSSClass>
-  createdAt: number
-  updatedAt: number
-}
-
-function emptySite(): SiteDoc {
+function emptySite(): SiteDocument {
   return {
     id: 'site-bench',
     name: 'Bench Site',
@@ -76,9 +36,9 @@ function emptySite(): SiteDoc {
     files: [],
     visualComponents: [],
     packageJson: { dependencies: {}, devDependencies: {} },
-    runtime: { dependencyLock: { version: 1, packages: {}, updatedAt: 0 }, scripts: {} },
+    runtime: { dependencyLock: { version: 1, packages: {}, updatedAt: 0 }, scripts: {}, styles: {} },
     breakpoints: [],
-    settings: { colorTokens: {}, shortcuts: {} },
+    settings: { shortcuts: {} },
     styleRules: {},
     createdAt: 0,
     updatedAt: 0,
@@ -139,19 +99,22 @@ function buildTreeOfSize(target: number, options: { classIdsPerNode?: number; av
   }
 }
 
-function buildClasses(n: number): Record<string, CSSClass> {
-  const out: Record<string, CSSClass> = {}
+function buildClasses(n: number): Record<string, StyleRule> {
+  const out: Record<string, StyleRule> = {}
   for (let i = 0; i < n; i++) {
     const id = `cls-${i}`
     out[id] = {
       id,
       name: `bench-class-${i}`,
+      kind: 'class',
+      selector: `.bench-class-${i}`,
+      order: i,
       styles: {
         color: `hsl(${(i * 137) % 360}deg 60% 50%)`,
         padding: `${(i % 4) * 4}px`,
         fontSize: `${12 + (i % 8)}px`,
       },
-      breakpointStyles: {},
+      contextStyles: {},
       createdAt: 0,
       updatedAt: 0,
     }
@@ -224,7 +187,7 @@ export const publisherBench: BenchModule = {
       for (const classCount of classCounts) {
         const classes = buildClasses(classCount)
         const availableClassIds = Object.keys(classes)
-        const siteWithClasses = { ...emptySite(), classes }
+        const siteWithClasses = { ...emptySite(), styleRules: classes }
         for (const classesPerNode of [0, 5, 20]) {
           const page = buildTreeOfSize(500, { classIdsPerNode: classesPerNode, availableClassIds })
           const iters = ctx.quick ? 50 : 200
@@ -256,17 +219,20 @@ export const publisherBench: BenchModule = {
       const classCounts = ctx.quick ? [0, 100, 1_000] : [0, 100, 1_000, 10_000]
       for (const classCount of classCounts) {
         const classes = buildClasses(classCount)
-        const siteWithClasses = { ...emptySite(), classes }
-        for (let i = 0; i < 5; i++) buildSiteCssBundle(siteWithClasses, registry)
+        const siteWithClasses = { ...emptySite(), styleRules: classes }
+        const page = buildTreeOfSize(1)
+        page.nodes[page.rootNodeId].classIds = Object.keys(classes)
+        siteWithClasses.pages = [page]
+        for (let i = 0; i < 5; i++) buildSiteCssBundle(siteWithClasses, registry, page)
         const samples: number[] = []
         const iters = ctx.quick ? 30 : 100
         for (let i = 0; i < iters; i++) {
           const t0 = performance.now()
-          buildSiteCssBundle(siteWithClasses, registry)
+          buildSiteCssBundle(siteWithClasses, registry, page)
           samples.push(performance.now() - t0)
         }
         const s = summarize(samples)
-        const bundle = buildSiteCssBundle(siteWithClasses, registry)
+        const bundle = buildSiteCssBundle(siteWithClasses, registry, page)
         const totalBytes = (bundle.reset?.content?.length ?? 0) + (bundle.framework?.content?.length ?? 0) + (bundle.style?.content?.length ?? 0)
         cssRows.push({
           label: `${fmtNum(classCount)} user classes`,
@@ -309,7 +275,7 @@ export const publisherBench: BenchModule = {
         {
           title: 'Site CSS bundle build',
           intro:
-            'Cost of `buildSiteCssBundle()` as the user defines more reusable classes. The bundle is built once per published snapshot and served with Cache-Control: immutable, so this cost is amortized across all page renders in a publish.',
+            'Cost of building one page’s CSS as the reusable class catalog grows. Published reset/framework files share a version memo; authored CSS is selected per page and served under content-hashed, immutable URLs.',
           rows: cssRows,
         },
       ],

@@ -10,6 +10,7 @@ import type { DynamicPropBinding } from '@core/page-tree'
 import type { LoopSourceField } from '@core/loops/types'
 import { SYSTEM_SOURCES, type SystemSourceId } from './systemSources'
 import type { PropertyControlKind } from './bindingCompatibility'
+import type { PublicFileReferences } from '@core/files/references'
 
 // ---------------------------------------------------------------------------
 // Field-list entry shape — one of three kinds depending on the active scope
@@ -160,7 +161,12 @@ export function resolveBindingLabel(
   availableFields: LoopSourceField[] | undefined,
   sourceLabel: string | undefined,
   meta: DataMeta | null,
+  files?: PublicFileReferences,
 ): string {
+  if (binding.source === 'file') {
+    const id = binding.field.replace(/\.url$/, '')
+    return `Public file → ${files?.[id]?.path ?? binding.field}`
+  }
   // System sources first — checked by `binding.source`, not by field id
   // alone, because the same field id ('id', 'slug') can exist on
   // multiple system sources.

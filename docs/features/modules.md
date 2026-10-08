@@ -32,7 +32,7 @@ src/core/module-engine/
 ├── dependencies.ts      — module dependency normalization + checks
 ├── runtimeResolver.ts   — bare-specifier → runtime URL mapping for ESM modules
 ├── htmlTagBadge.ts      — resolveHtmlTagBadge (shared dispatch for htmlTag field)
-└── validateNodeProps.ts — coerce + default-fill authored props against propsSchema
+└── parseModuleProps.ts — hard parsing + declared defaults against propsSchema
 
 src/modules/base/
 ├── body/                — base.body (root container)
@@ -41,6 +41,7 @@ src/modules/base/
 ├── outlet/              — base.outlet (Content Outlet — template content slot)
 ├── button/              — base.button (anchor.ts — element-decision leaf)
 ├── link/                — base.link (content.ts — children/text fallback leaf)
+├── disclosure/          — base.disclosure (native details/summary + shared dismissal behavior)
 ├── image/               — base.image
 ├── svg/                 — base.svg (inline sanitized SVG)
 ├── video/               — base.video (youtube.ts — ID parse + embed URL leaf)
@@ -161,6 +162,32 @@ Constraint #179: **`render()` is pure** — no DOM, no React, no side effects. I
 
 ---
 
+## Native disclosures
+
+`base.disclosure` emits a semantic `<details>` with exactly one generated first
+`<summary>` containing its `label`, followed by the authored child nodes. Bind
+the label to language-file content like any text prop. Style the details node
+with user classes and its direct summary with an ambient selector. The module
+adds no default visual CSS, ARIA menu roles, focus trap, or arrow-key navigation.
+
+`initiallyOpen` controls authored initial state. A nonempty `group` maps to the
+native HTML `name` attribute, so one related disclosure is open at a time. Keep
+members together and do not nest members of the same group. Only one member of
+a group should be initially open.
+
+`closeOnEscape` defaults to true; outside-click/tap and focus-leave dismissal
+default to false and are opt-in for navigation disclosures. Escape closes the
+innermost open disclosure and focuses its summary. Outside dismissal does not
+prevent the pointer's default action; closing restores focus only when it would
+remain in concealed content. Focus-leave dismissal preserves the new external
+focus. Native/scripted closing also moves any concealed focus back to summary.
+
+`disclosure/behavior.ts` owns one typed, self-contained document installer. The
+canvas leases that installer per mounted component; published pages receive its
+compiled function body via the existing external module-JS channel. Delegation
+handles dynamically inserted holes and installation is idempotent. Browser
+native summary activation and group exclusivity work without the enhancement.
+
 ## Property schema
 
 The schema drives the right-panel Properties UI. Each prop key maps to a `PropertyControl` describing how to edit it.
@@ -196,6 +223,7 @@ schema: PropertySchema = {
 | `image`     | Media picker                                              | media id or URL                 |
 | `media`     | Media picker (any media type)                             | media id                        |
 | `svg`       | Inline SVG editor                                         | SVG markup string               |
+| `condition` | Structured recursive value rule editor | `PropertyCondition` or `null` |
 | `group`     | Collapsible section header (visual grouping only)         | — (no data shape change)        |
 
 `PropertyControl` is a discriminated union — `propertySchema.ts` has the full schema.
@@ -277,12 +305,12 @@ A plugin canvas module is rendered inside the editor's sandboxed iframe just lik
 The publisher's per-node flow (see [docs/features/publisher.md](publisher.md)):
 
 ```text
-For each node, bottom-up:
-  1. renderedChildren = node.children.map(renderNode)
-  2. effectiveProps  = resolveProps(node, breakpoint, def.schema)  ← merge breakpoint overrides
-  3. dynamicProps    = resolveDynamicProps(effectiveProps, ...)     ← template bindings
-  4. resolvedProps   = resolvePageRefProps(dynamicProps, pages)     ← cms:page:<id> → /path
-  5. validatedProps  = validateNodeProps(def, resolvedProps)        ← coerce + default-fill
+For each node, with common preparation before standard/special dispatch:
+  1. effectiveProps  = resolveProps(node, breakpoint, def.schema)   ← merge breakpoint overrides
+  2. dynamicProps    = resolveDynamicProps(effectiveProps, ...)     ← template bindings
+  3. resolvedProps   = resolvePageRefProps(dynamicProps, pages)     ← cms:page:<id> → /path
+  4. validatedProps  = parseModuleProps(def, resolvedProps, path)   ← hard parse + declared defaults
+  5. renderedChildren = node.children.map(renderNode)              ← standard path; special renderers expand VC/loop children
   6. safeProps       = escapeProps(validatedProps, schema)          ← HTML-escape string props
   7. attachResolvedMediaByKey(safeProps, ...)                       ← prefetched media assets
   8. { html, css }  = def.render(safeProps, renderedChildren)
@@ -292,6 +320,8 @@ For each node, bottom-up:
 ```
 
 A module's CSS is **collected and deduped by `moduleId`** — emitting the same CSS for every instance is fine; it appears once in the published page bundle.
+
+Missing fields use defaults declared by `propsSchema`; unrecoverable values raise `ModulePropsValidationError` with their cause and page/node/schema path. Publishing never replaces invalid authored props with all module defaults.
 
 `renderedChildren` is a `string[]` of already-rendered child HTML. Leaf modules (text, input, image) receive an empty array. Container-like modules join it: `renderedChildren.join('')`.
 

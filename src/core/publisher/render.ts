@@ -22,9 +22,8 @@
 
 import type { Page, SiteDocument } from '@core/page-tree'
 import type { IModuleRegistry } from '@core/module-engine'
-import type { TemplateRenderDataContext } from '@core/templates/dynamicBindings'
-import { buildPageFrame, buildSiteFrame, buildRouteFrame } from '@core/templates/contextFrames'
-import { interpolateTokens } from '@core/templates/tokenInterpolation'
+import { buildTemplateRenderContext, effectiveNodeBindings, resolveDynamicProps } from '@core/templates'
+import type { TemplateRenderDataContext } from '@core/templates'
 import { classNamesForClassIds } from '@core/page-tree'
 import {
   normalizeHtmlAttributeName,
@@ -36,12 +35,14 @@ import { collectUserStylesheetCss } from './userStylesheets'
 import { PUBLISHER_RESET_CSS } from './reset'
 import { buildSiteFrameworkCss } from './frameworkCss'
 import type { SiteCssBundle } from './siteCssBundle'
-import { escapeHtml, isSafeUrl } from './utils'
+import { escapeHtml } from './utils'
+import { buildDocumentMetaTags, type DocumentMetaOverride } from './documentMeta'
 import { addCspSources, createBaseCspPlan, cspMetaTag } from './cspPlan'
-import type { PublishedPageRuntimeAssets } from '@core/site-runtime/schemas'
-import { hasPublishedRuntimeScripts, scriptTagsForRuntimeAssets } from '@core/site-runtime'
+import type { PublishedPageRuntimeAssets } from '@core/site-runtime-schema'
+import { hasPublishedRuntimeScripts, scriptTagsForRuntimeAssets, publishedRuntimeResourceOrigins } from '@core/site-runtime'
 import { renderNode } from './renderNode'
 import { findDynamicNodeIds } from './dynamicDetection'
+import { assertPageLoopScopes } from './loopRenderScopes'
 import { collectHoleSubtreeModuleIds } from './holeSubtreeModules'
 import type {
   RenderConfig,
@@ -119,7 +120,8 @@ interface PublishPageOptions {
   dynamicNodes?: 'holes' | 'inline'
   /**
    * Pre-built site CSS bundle. Required when `cssEmission === 'external'`.
-   * Computed once per published-snapshot via `buildSiteCssBundle(site, registry)`.
+   * Built for this effective page and emitted runtime manifest. Only the
+   * reset/framework layers are shared across pages at a publish version.
    */
   cssBundle?: SiteCssBundle
   /**
@@ -166,15 +168,6 @@ interface PublishPageOptions {
    * them here instead.
    */
   documentMeta?: DocumentMetaOverride
-}
-
-/**
- * `<head>` values supplied by the caller for this render only. An omitted
- * (or blank) key falls through to the site settings.
- */
-export interface DocumentMetaOverride {
-  title?: string
-  description?: string
 }
 
 /**
@@ -232,7 +225,7 @@ function buildStyleHead(
 
   const frameworkCss = buildSiteFrameworkCss(site)
   const moduleCss = Array.from(cssMap.values()).join('\n')
-  const classCss = collectClassCSS(site, { mediaAssets: options.mediaAssets })
+  const classCss = collectClassCSS(site, page, { mediaAssets: options.mediaAssets, runtimeAssets: options.runtimeAssets })
   const userCss = collectUserStylesheetCss(site, page)
   // Same cascade order as the external-link path: user CSS comes last so it
   // wins specificity ties against the class registry. Neutralise `</style>` in
@@ -259,28 +252,6 @@ function slugToFilename(slug: string, title: string): string {
 }
 
 /**
- * Seed the page/site/route frames a caller may have omitted from its
- * TemplateRenderDataContext. Every published page needs all four frames
- * populated so dynamic bindings against those sources resolve — even on
- * plain (non-template, non-loop) pages. Caller-provided values always
- * win; missing slots fall back to defaults derived from the page/site.
- */
-function composeTemplateContext(
-  page: Page,
-  site: SiteDocument,
-  incoming: TemplateRenderDataContext | undefined,
-): TemplateRenderDataContext {
-  const provided = incoming ?? { entryStack: [] }
-  const pageFrame = provided.page ?? buildPageFrame(page)
-  return {
-    entryStack: provided.entryStack,
-    page: pageFrame,
-    site: provided.site ?? buildSiteFrame(site),
-    route: provided.route ?? buildRouteFrame(pageFrame.permalink),
-  }
-}
-
-/**
  * Compute the `<body>` opening tag, lifting user class names from the
  * root PageNode onto `<body>` directly. base.body emits no wrapper
  * element, so root-level classIds belong on `<body>` itself — clean HTML
@@ -289,6 +260,7 @@ function composeTemplateContext(
 function computeBodyOpenTag(
   page: Page,
   site: SiteDocument,
+  context: TemplateRenderDataContext,
   mediaAssets?: Map<string, RenderResolvedMedia>,
 ): string {
   const rootNode = page.nodes[page.rootNodeId]
@@ -302,7 +274,8 @@ function computeBodyOpenTag(
   const styleAttr = rootNode.inlineStyles
     ? escapeHtml(bagToInlineStyle(rootNode.inlineStyles, { mediaAssets }))
     : ''
-  const htmlAttrs = bodyHtmlAttributes(rootNode.props.htmlAttributes)
+  const resolvedProps = resolveDynamicProps(rootNode.props, effectiveNodeBindings(rootNode), context)
+  const htmlAttrs = bodyHtmlAttributes(resolvedProps.htmlAttributes)
 
   const attrs =
     htmlAttrs +
@@ -322,62 +295,6 @@ function bodyHtmlAttributes(value: unknown): string {
       return ` ${name}="${escapeHtml(safeValue)}"`
     })
     .join('')
-}
-
-/**
- * `<head>` metadata tags derived from the caller's overrides + site
- * settings + page.
- *
- * - `title` falls back through the caller's `documentMeta.title` (a
- *   post-type entry's authored SEO title) → metaTitle → page.title →
- *   site.name.
- * - `description` falls back through `documentMeta.description` → the
- *   site-level metaDescription.
- * - Whichever value wins is then token-interpolated against the render
- *   context before escaping, so `{currentEntry.*}` / `{page.*}` /
- *   `{site.*}` resolve per-entry on entry routes. That serves both ways
- *   of authoring a title: fill each row's SEO field by hand, or write one
- *   pattern like `{currentEntry.name} | Acme` on the template page. The
- *   fallback chain picks the raw value first; a token that resolves empty
- *   does NOT re-trigger the fallback — authors opt into fallbacks with the
- *   token's own `{...|fallback}` syntax.
- * - URL-typed settings (faviconUrl) are validated by
- *   isSafeUrl() (blocks `javascript:` / `vbscript:` schemes) and then
- *   escapeHtml()'d for safe attribute interpolation.
- * - `lang` honours WCAG 2.1 AA SC 3.1.1 and escapes the BCP-47 tag
- *   because settings.language is user-controlled.
- */
-interface DocumentMetaTags {
-  pageTitle: string
-  metaDesc: string
-  favicon: string
-  langAttr: string
-}
-
-function buildDocumentMetaTags(
-  site: SiteDocument,
-  page: Page,
-  context: TemplateRenderDataContext,
-  override: DocumentMetaOverride = {},
-): DocumentMetaTags {
-  const { settings } = site
-  const description = override.description || settings.metaDescription
-  const metaDesc = description
-    ? `
-  <meta name="description" content="${escapeHtml(interpolateTokens(description, context))}">`
-    : ''
-  const favicon =
-    settings.faviconUrl && isSafeUrl(settings.faviconUrl)
-      ? `\n  <link rel="icon" href="${escapeHtml(settings.faviconUrl)}">`
-      : ''
-  return {
-    pageTitle: escapeHtml(
-      interpolateTokens(override.title || (settings.metaTitle ?? page.title ?? site.name), context),
-    ),
-    metaDesc,
-    favicon,
-    langAttr: escapeHtml(settings.language ?? 'en'),
-  }
 }
 
 /**
@@ -462,8 +379,18 @@ function buildContentSecurityPolicy(
   anyScriptTag: boolean,
   importmap: PublishedRuntimePackageImportmap | undefined,
   moduleCspSources: ReadonlyMap<string, ReadonlySet<string>>,
+  runtimeAssets: PublishedPageRuntimeAssets | undefined,
 ): string {
   const plan = createBaseCspPlan({ anyScriptTag, importmapSha: importmap?.sha256 })
+  for (const origins of publishedRuntimeResourceOrigins(runtimeAssets)) {
+    if (origins.scripts.length) addCspSources(plan, 'script-src', origins.scripts)
+    if (origins.styles?.length) addCspSources(plan, 'style-src', ["'self'", ...origins.styles])
+    if (origins.fonts?.length) addCspSources(plan, 'font-src', ["'self'", ...origins.fonts])
+    if (origins.frames.length) addCspSources(plan, 'frame-src', origins.frames)
+    if (origins.connections.length) {
+      addCspSources(plan, 'connect-src', ["'self'", ...origins.connections])
+    }
+  }
   // Merge per-page CSP requirements declared by module render() outputs.
   // addCspSources automatically drops the lone 'none' when real sources are
   // added, so frame-src 'none' becomes frame-src <origins> on pages that
@@ -490,6 +417,7 @@ interface AssembledDocumentParts {
   pageTitle: string
   metaDesc: string
   favicon: string
+  pageMeta: string
   styleHeadHtml: string
   importmapTag: string
   headRuntimeScripts: string
@@ -508,7 +436,7 @@ function assembleHtmlDocument(parts: AssembledDocumentParts): string {
     `<head>\n` +
     `  <meta charset="UTF-8">\n` +
     `  <meta name="viewport" content="width=device-width, initial-scale=1.0">${parts.csp}\n` +
-    `  <title>${parts.pageTitle}</title>${parts.metaDesc}${parts.favicon}\n` +
+    `  <title>${parts.pageTitle}</title>${parts.metaDesc}${parts.favicon}${parts.pageMeta}\n` +
     parts.styleHeadHtml +
     lineOrEmpty(parts.importmapTag) +
     lineOrEmpty(parts.headRuntimeScripts) +
@@ -544,6 +472,7 @@ export function publishPage(
   registry: IModuleRegistry,
   options: PublishPageOptions = {},
 ): PublishedPage {
+  assertPageLoopScopes(page, site)
   // Layer C: classify every node as static or dynamic before walking the tree.
   // Dynamic node ids are threaded into the RenderConfig so renderNode can
   // emit <instatic-hole> placeholders instead of recursing.
@@ -554,7 +483,7 @@ export function publishPage(
   // Composed once per page render: the walker reads it through the config,
   // and the <head> builder interpolates {source.field} tokens in the
   // title/description against the same frames.
-  const templateContext = composeTemplateContext(page, site, options.templateContext)
+  const templateContext = buildTemplateRenderContext(page, site, options.templateContext)
 
   // Read-only inputs of this render pass. A renderer that needs a different
   // page (VC ref) or template frame (loop iteration) derives a child config —
@@ -613,8 +542,13 @@ export function publishPage(
   )
 
   const meta = buildDocumentMetaTags(site, page, templateContext, options.documentMeta)
+  for (const [directive, sources] of meta.cspSources) {
+    const allSources = acc.cspSources.get(directive) ?? new Set<string>()
+    for (const source of sources) allSources.add(source)
+    acc.cspSources.set(directive, allSources)
+  }
   const runtime = buildRuntimeAssetsBlock(options, acc)
-  const csp = buildContentSecurityPolicy(runtime.anyScriptTag, runtime.importmap, acc.cspSources)
+  const csp = buildContentSecurityPolicy(runtime.anyScriptTag, runtime.importmap, acc.cspSources, options.runtimeAssets)
 
   const html = assembleHtmlDocument({
     langAttr: meta.langAttr,
@@ -622,11 +556,12 @@ export function publishPage(
     pageTitle: meta.pageTitle,
     metaDesc: meta.metaDesc,
     favicon: meta.favicon,
+    pageMeta: meta.pageMeta,
     styleHeadHtml,
     importmapTag: runtime.importmapTag,
     headRuntimeScripts: runtime.headRuntimeScripts,
     holeRuntimeScript: runtime.holeRuntimeScript,
-    bodyOpenTag: computeBodyOpenTag(page, site, options.mediaAssets),
+    bodyOpenTag: computeBodyOpenTag(page, site, templateContext, options.mediaAssets),
     bodyHtml,
     bodyEndRuntimeScripts: runtime.bodyEndRuntimeScripts,
     loopRuntimeScript: runtime.loopRuntimeScript,

@@ -6,30 +6,39 @@ export function getReusableClasses(classes: Record<string, StyleRule>): StyleRul
 }
 
 /**
- * Tally how many nodes reference each class, in a SINGLE pass over the whole
- * site tree. Returns a `Map<classId, count>`; classes with zero references are
- * simply absent (callers default to 0).
- *
- * This replaces a per-selector scan: counting one selector at a time was
- * O(selectors × pages × nodes), which made the Selectors panel janky to open
- * with hundreds of generated utility classes. One pass is O(pages × nodes)
- * regardless of how many selectors exist, and the React Compiler memoizes the
- * result against `site` so it only recomputes when the tree changes.
+ * Tally page-node references across immutable store snapshots. Reuse counts
+ * for unchanged trees, and retain the result identity when text or props
+ * change without changing class assignments. Absent classes have zero usage.
  */
-export function buildSelectorUsageMap(site: SiteDocument | null): Map<string, number> {
-  const usage = new Map<string, number>()
-  if (!site) return usage
-
-  for (const page of site.pages) {
-    for (const node of Object.values(page.nodes)) {
-      const classIds = node.classIds
-      if (!classIds) continue
-      for (const classId of classIds) {
-        usage.set(classId, (usage.get(classId) ?? 0) + 1)
-      }
+export function createSelectorUsageMapSelector(): (site: SiteDocument | null) => Map<string, number> {
+  const trees = new WeakMap<object, Map<string, number>>()
+  let previousPages: SiteDocument['pages'] | null = null
+  let previousUsage = new Map<string, number>()
+  return (site) => {
+    if (!site) {
+      previousPages = null
+      previousUsage = new Map()
+      return previousUsage
     }
+    if (site.pages === previousPages) return previousUsage
+    const usage = new Map<string, number>()
+    for (const page of site.pages) {
+      let counts = trees.get(page.nodes)
+      if (!counts) {
+        counts = new Map()
+        for (const node of Object.values(page.nodes)) {
+          for (const id of node.classIds ?? []) counts.set(id, (counts.get(id) ?? 0) + 1)
+        }
+        trees.set(page.nodes, counts)
+      }
+      for (const [id, count] of counts) usage.set(id, (usage.get(id) ?? 0) + count)
+    }
+    previousPages = site.pages
+    if (usage.size !== previousUsage.size || [...usage].some(([id, count]) => previousUsage.get(id) !== count)) {
+      previousUsage = usage
+    }
+    return previousUsage
   }
-  return usage
 }
 
 export function formatSelectorUsage(count: number): string {
@@ -39,7 +48,7 @@ export function formatSelectorUsage(count: number): string {
 
 /**
  * Map each class-kind rule's selector token (`.<escaped-name>`) to how many
- * nodes carry it, reusing the per-id tally from {@link buildSelectorUsageMap}.
+ * nodes carry it, reusing the per-id tally from {@link createSelectorUsageMapSelector}.
  * `rule.selector` is already the escaped `.name` form the publisher emits, so
  * tokens here compare directly against tokens pulled out of an ambient
  * selector string — no re-escaping, no guesswork.

@@ -45,11 +45,12 @@ function validateSelectorListWithCssSupports(selector: string): boolean | null {
 type CssStyleSheetConstructor = new () => CSSStyleSheet
 
 function validateSelectorRuleWithStylesheet(selector: string): boolean | null {
-  const Sheet = typeof CSSStyleSheet !== 'undefined'
-    ? CSSStyleSheet
-    : typeof window !== 'undefined' && typeof window.CSSStyleSheet === 'function'
-      ? window.CSSStyleSheet
-      : null
+  const Sheet =
+    typeof CSSStyleSheet !== 'undefined'
+      ? CSSStyleSheet
+      : typeof window !== 'undefined' && typeof window.CSSStyleSheet === 'function'
+        ? window.CSSStyleSheet
+        : null
   if (!Sheet) return null
 
   try {
@@ -133,12 +134,13 @@ export function renameStyleRule(
   name: string,
 ): boolean {
   const rule = styleRules[classId]
-  if (!rule || isGeneratedClassLocked(rule)) return false
+  if (!rule || rule.atRule || isGeneratedClassLocked(rule)) return false
 
   const trimmed = name.trim()
   if ((rule.kind ?? 'class') === 'ambient') {
     if (trimmed.length === 0) throw new Error('[classSlice] Ambient selector cannot be empty')
-    if (!isValidCssSelector(trimmed)) throw new Error(`[classSlice] Invalid CSS selector: ${trimmed}`)
+    if (!isValidCssSelector(trimmed))
+      throw new Error(`[classSlice] Invalid CSS selector: ${trimmed}`)
     if (Object.is(rule.selector, trimmed) && Object.is(rule.name, trimmed)) return false
 
     rule.name = trimmed
@@ -150,9 +152,10 @@ export function renameStyleRule(
   assertValidCssClassName(trimmed)
   const escapedName = classKindSelector(trimmed).slice(1)
   const renamedSelector = replaceCssSelectorClassName(rule.selector, rule.name, escapedName)
-  const selector = renamedSelector === rule.selector && rule.name !== trimmed
-    ? classKindSelector(trimmed)
-    : renamedSelector
+  const selector =
+    renamedSelector === rule.selector && rule.name !== trimmed
+      ? classKindSelector(trimmed)
+      : renamedSelector
   if (Object.is(rule.name, trimmed) && Object.is(rule.selector, selector)) return false
 
   const existing = Object.values(styleRules).find(
@@ -163,6 +166,17 @@ export function renameStyleRule(
   )
   if (existing) throw new Error(`[classSlice] A class named "${trimmed}" already exists`)
 
+  const previousName = rule.name
+  for (const dependent of Object.values(styleRules)) {
+    if (dependent.id === classId || dependent.atRule || dependent.rawCss) continue
+    const selector = replaceCssSelectorClassName(dependent.selector, previousName, escapedName)
+    if (selector === dependent.selector) continue
+    if (dependent.kind === 'ambient') {
+      dependent.name = dependent.name === previousName ? trimmed : selector
+    }
+    dependent.selector = selector
+    dependent.updatedAt = Date.now()
+  }
   rule.name = trimmed
   rule.selector = selector
   rule.updatedAt = Date.now()

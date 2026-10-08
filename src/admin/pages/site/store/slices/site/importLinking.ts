@@ -7,6 +7,7 @@
  */
 
 import { nanoid } from 'nanoid'
+import { Value } from '@sinclair/typebox/value'
 import { classKindSelector } from '@core/page-tree'
 import type { StyleRule, StyleRuleOrigin } from '@core/page-tree'
 import type { NewStyleRule } from '@core/siteImport'
@@ -148,18 +149,20 @@ export function linkImportedClassNames(
  * by `insertImportedNodes` so a pasted / agent-authored `<style>` block lands
  * in the Selectors panel and binds to the matching `class=` tokens.
  *
- * Collision policy (first-wins, mirroring the rest of the import pipeline):
+ * Source-fragment policy:
  *   - a rule that is a re-import of one already in the registry (same
  *     `origin` + selector, see `findReimportedStyleRule`) replaces that rule
  *     in place, keeping its id and cascade order.
- *   - class rules — otherwise skipped when a class of that name already
- *     exists; the node's `class=` token then links to the existing class.
- *     New names are added and registered in `byName` so
+ *   - class rules — preserve one assignable identity per class name. A later
+ *     occurrence retains its selector and declarations as an ambient fragment;
+ *     the node's `class=` token links to the existing class.
+ *     New names are registered in `byName` so
  *     `linkImportedClassNames` (run AFTER this) resolves the token to the
  *     freshly-added rule.
- *   - ambient rules (`body`, `a:hover`, `.a .b`, …) without an origin (pasted
- *     `<style>` CSS has none) — skipped when an ambient rule with the
- *     identical selector already exists, so repeated pastes don't pile up.
+ *   - every new ambient or structural fragment appends in authored order.
+ *     Equal selectors can have different layers, conditions or intervening
+ *     overrides and must not be collapsed. Source group occurrences receive
+ *     a fresh namespace shared by their opening markers and child paths.
  *
  * Mutates `siteRules` and `byName`. Must run inside the Mutative recipe that
  * owns the `site` draft, BEFORE `linkImportedClassNames`.
@@ -173,17 +176,12 @@ export function mergeImportedStyleRules(
   if (rules.length === 0) return
 
   const byOrigin = indexStyleRulesByOrigin(siteRules)
-  const ambientSelectors = new Set<string>()
-  for (const r of Object.values(siteRules)) {
-    if (r.kind === 'ambient') ambientSelectors.add(r.selector)
-  }
-
   const now = Date.now()
-  for (const rule of rules) {
-    const reimported = findReimportedStyleRule(byOrigin, rule)
+  for (const incoming of remapImportedRuleGroups(rules)) {
+    const reimported = findReimportedStyleRule(byOrigin, incoming)
     if (reimported) {
       siteRules[reimported.id] = {
-        ...rule,
+        ...incoming,
         id: reimported.id,
         order: reimported.order,
         createdAt: reimported.createdAt,
@@ -191,12 +189,10 @@ export function mergeImportedStyleRules(
       }
       continue
     }
-    if (rule.kind === 'class') {
-      if (byName.has(rule.name)) continue // existing class wins
-    } else if (!rule.origin && ambientSelectors.has(rule.selector)) {
-      continue // identical ambient selector already present
-    }
-
+    const rule =
+      incoming.kind === 'class' && byName.has(incoming.name)
+        ? { ...incoming, kind: 'ambient' as const }
+        : incoming
     const id = nanoid()
     const newRule: StyleRule = {
       ...rule,
@@ -208,6 +204,35 @@ export function mergeImportedStyleRules(
     siteRules[id] = newRule
     registerStyleRuleOrigin(byOrigin, newRule)
     if (rule.kind === 'class') byName.set(rule.name, id)
-    else ambientSelectors.add(rule.selector)
   }
+}
+
+/** One fresh namespace per inserted source batch; marker and child paths share ids. */
+export function remapImportedRuleGroups<T extends NewStyleRule>(rules: readonly T[]): T[] {
+  const ids = new Map<string, string>()
+  const remap = (group: NonNullable<T['grouping']>[number], source: string) => {
+    const key = source + '\0' + group.id
+    let id = ids.get(key)
+    if (!id) {
+      id = nanoid()
+      ids.set(key, id)
+    }
+    return { ...group, id }
+  }
+  return rules.map((original) => {
+    const rule = Value.Clone(original)
+    const source = rule.origin?.source ?? ''
+    return {
+      ...rule,
+      ...(rule.grouping ? { grouping: rule.grouping.map((group) => remap(group, source)) } : {}),
+      ...(rule.atRule
+        ? {
+            atRule:
+              rule.atRule.kind === 'group'
+                ? { ...rule.atRule, group: remap(rule.atRule.group, source) }
+                : rule.atRule,
+          }
+        : {}),
+    }
+  })
 }

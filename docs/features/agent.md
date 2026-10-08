@@ -398,7 +398,9 @@ Styling rides on the `html` payload — there is no separate `classes` parameter
 
 - a bare `.foo {}` rule → a reusable Selectors-panel **class**, bound to every `class="foo"` node in the fragment;
 - class-bearing selectors (`.hero a`, `.group:hover .group-hover\:block`) → a **class** rule whose decoded binding name is the rightmost class token and whose full selector is preserved;
-- class-free selectors (`a:hover`, `nav > li`) → an **ambient** rule (media queries fold into the matching breakpoint's `contextStyles`);
+- class-free selectors (`a:hover`, `nav > li`) → an **ambient** rule;
+- repeated selectors and conditional occurrences → separate ordered fragments; one class identity remains assignable, and `grouping` preserves the exact nested media/supports/container/layer path;
+- layer openings, layer-order statements and `@property` registrations → typed stylesheet metadata, retained even when unused class declarations are pruned;
 - supported stylesheet-level rules such as `@keyframes` → ambient raw CSS rules emitted by the publisher;
 - inline `style="…"` attributes → the node's inline styles.
 
@@ -411,7 +413,9 @@ Styling rides on the `html` payload — there is no separate `classes` parameter
 - `{ operation: "remove-properties", selectors, properties }` removes CSS-native property names from base plus every viewport/custom-condition bag without rebuilding unrelated CSS. Vendor names and custom properties are accepted; emitted `padding`/`margin` shorthands also clear their stored side longhands.
 - `{ operation: "delete", selectors }` removes every exact matching rule; class-kind rules are detached from page and Visual Component nodes in the same undo step.
 
-Selectors are matched by their exact emitted text across rule kinds. `.grad`, `.hero .grad`, and `.grad, .hero .grad` are separate rules—there is no unsafe attempt at semantic selector equivalence. Destructive batches preflight missing/locked targets and fail without partial mutation. Merge/replace accept real CSS through `cssToStyleRules`, including conditions, vendor/custom properties, raw keyframes, and structurally preserved `!important`. Framework-generated locked utilities are never changed. `<style>`-only `site_insert_html`/`site_replace_node_html` payloads keep merge behavior as a forgiving fallback; a `<style>` block accompanying inserted elements remains additive (`mergeImportedStyleRules`) so dropping in structure cannot clobber a shared rule.
+Merge matches exact selector text and the native grouping path. A named layer is addressed by its name; anonymous layer occurrences remain independent. A single incoming patch updates matching occurrences, while repeated incoming fragments pair with existing occurrences in source order and append additional fragments. Replace makes the selector's complete conditional cascade authoritative within its addressed layer path. `.grad`, `.hero .grad`, and `.grad, .hero .grad` remain separate selectors. Delete and property removal address every exact selector occurrence. Destructive batches preflight missing/locked targets and fail without partial mutation. The parser accepts conditions, layers, registered properties, vendor/custom properties, keyframes, and declaration priorities without collapsing authored fragments. Framework-generated locked utilities are never changed. A `<style>`-only HTML payload uses the same merge operation; accompanying inserted elements use additive source-fragment insertion, retaining all declarations and one assignable identity per class name.
+
+Class renames update matching class tokens in dependent selectors. Duplicating a class copies every fragment with that styled subject beside its source occurrence, preserving anonymous layer identity and nested conditions. Removing a grouping condition removes the conditional fragment instead of lifting its declarations into unconditional CSS. Structural stylesheet metadata is excluded from class picker controls.
 
 **Loops through HTML.** A repeated list is authored with the custom importer marker:
 

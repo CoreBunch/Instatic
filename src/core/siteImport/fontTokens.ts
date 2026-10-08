@@ -123,7 +123,7 @@ export function extractRootFontTokens(
   const out: NewStyleRule[] = []
 
   for (const rule of rules) {
-    if (rule.kind !== 'ambient' || !isRootScopeSelector(rule.selector)) {
+    if (rule.grouping?.length || rule.kind !== 'ambient' || !isRootScopeSelector(rule.selector)) {
       out.push(rule)
       continue
     }

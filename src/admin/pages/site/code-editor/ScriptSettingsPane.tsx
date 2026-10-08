@@ -14,6 +14,7 @@ import { Input } from '@ui/components/Input'
 import { Select } from '@ui/components/Select'
 import { Switch } from '@ui/components/Switch'
 import { AssetScopeControl, type ScopePageOption } from './AssetScopeControl'
+import { ResourceOriginsControl } from './ResourceOriginsControl'
 import styles from './ScriptSettingsPane.module.css'
 
 interface ScriptSettingsPaneProps {
@@ -136,6 +137,24 @@ export function ScriptSettingsPane({ file }: ScriptSettingsPaneProps) {
             patch({ priority: Number.isFinite(next) ? next : DEFAULT_SCRIPT_RUNTIME_CONFIG.priority })
           }}
         />
+      </div>
+
+      <div className={styles.field} aria-label="External resources">
+        <span className={styles.label}>External resources</span>
+        {(['scripts', 'styles', 'frames', 'fonts', 'connections'] as const).map((kind) => (
+          <ResourceOriginsControl
+            key={`${file.id}:${kind}`}
+            label={kind.charAt(0).toUpperCase() + kind.slice(1)}
+            origins={config.resourceOrigins?.[kind] ?? []}
+            onChange={(origins) => patch({ resourceOrigins: {
+              ...config.resourceOrigins,
+              scripts: config.resourceOrigins?.scripts ?? [],
+              frames: config.resourceOrigins?.frames ?? [],
+              connections: config.resourceOrigins?.connections ?? [],
+              [kind]: origins,
+            } })}
+          />
+        ))}
       </div>
 
       {(runtimePackages.length > 0 || diagnostics.length > 0) && (
