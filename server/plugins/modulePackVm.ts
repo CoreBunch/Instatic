@@ -3,7 +3,7 @@
  *
  * Plugins that declare `entrypoints.modules` ship a bundle whose default
  * export is an array of `PluginModuleDefinition` objects (or a function
- * returning one). Each definition has a `render(props, children) => { html, css }`
+ * returning one). Each definition has a `render(props, children) => { html, assetUsage? }`
  * that the publisher invokes per canvas node during page generation.
  *
  * Before this module existed, the host loaded module packs via
@@ -41,21 +41,14 @@ import {
 } from './quickjs/limits'
 import { callStringSync, evalStringSync, withSyncDeadline } from './quickjs/eval'
 import { wrapEsmAsGlobal } from './quickjs/esmShim'
+import { Type, type Static } from '@core/utils/typeboxHelpers'
+import { ModuleAssetsSchema } from '@core/module-engine-schema'
+import { PluginRenderOutputSchema, type PluginRenderOutput } from '@core/plugin-sdk'
+import { safeParseJson } from '@core/utils/jsonValidate'
 
 // ---------------------------------------------------------------------------
 // Public types
 // ---------------------------------------------------------------------------
-
-/**
- * Render output — must match `PluginRenderOutput` in the SDK. We restate it
- * here so this file stays free of the SDK dependency graph; mismatches would
- * be caught by the type system at the call site.
- */
-interface ModulePackRenderOutput {
-  html: string
-  css?: string
-  js?: string
-}
 
 /**
  * Module metadata as it exits the VM. Mirrors `PluginModuleDefinition` minus
@@ -68,26 +61,34 @@ interface ModulePackRenderOutput {
  * can write deps into the site's package.json and wire up the editor
  * iframe preview's import map.
  */
-interface SerializedModuleDefinition {
-  id: string
-  name: string
-  description?: string
-  category: string
-  version: string
-  defaults: Record<string, unknown>
-  schema: Record<string, unknown>
-  canHaveChildren?: boolean
-  htmlTag?: string
-  hasPreview: boolean
-  dependencies?: Record<string, string | { version: string; dev?: boolean }>
-  editorRuntime?: { sandbox?: { source: string; minHeight?: number } }
+const SerializedModuleDefinitionSchema = Type.Object({
+  id: Type.String(),
+  name: Type.String(),
+  description: Type.Optional(Type.String()),
+  category: Type.String(),
+  version: Type.String(),
+  defaults: Type.Record(Type.String(), Type.Unknown()),
+  schema: Type.Record(Type.String(), Type.Unknown()),
+  assets: Type.Optional(ModuleAssetsSchema),
+  canHaveChildren: Type.Optional(Type.Boolean()),
+  htmlTag: Type.Optional(Type.String()),
+  hasPreview: Type.Boolean(),
+  dependencies: Type.Optional(Type.Record(Type.String(), Type.Union([Type.String(), Type.Object({ version: Type.String(), dev: Type.Optional(Type.Boolean()) })]))),
+  editorRuntime: Type.Optional(Type.Object({ sandbox: Type.Optional(Type.Object({ source: Type.String(), minHeight: Type.Optional(Type.Number()) })) })),
+}, { additionalProperties: false })
+type SerializedModuleDefinition = Static<typeof SerializedModuleDefinitionSchema>
+
+function parseRenderOutput(raw: string): PluginRenderOutput {
+  const parsed = safeParseJson(raw, PluginRenderOutputSchema)
+  if (!parsed.ok) throw new Error('Invalid module render output', { cause: parsed.error })
+  return parsed.value
 }
 
 export interface ModulePackVm {
   readonly pluginId: string
   readonly modules: ReadonlyArray<SerializedModuleDefinition>
-  render(moduleId: string, props: Record<string, unknown>, children: string[]): ModulePackRenderOutput
-  preview(moduleId: string, props: Record<string, unknown>, children: string[]): ModulePackRenderOutput
+  render(moduleId: string, props: Record<string, unknown>, children: string[]): PluginRenderOutput
+  preview(moduleId: string, props: Record<string, unknown>, children: string[]): PluginRenderOutput
   dispose(): void
 }
 
@@ -163,7 +164,9 @@ export async function createModulePackVm(args: {
       MODULE_PACK_EVAL_TIMEOUT_MS,
       'modulepack-eval.js',
     )
-    const modules = JSON.parse(modulesJson) as SerializedModuleDefinition[]
+    const parsedModules = safeParseJson(modulesJson, Type.Array(SerializedModuleDefinitionSchema))
+    if (!parsedModules.ok) throw new Error('Invalid module pack metadata', { cause: parsedModules.error })
+    const modules = parsedModules.value
 
     const pluginId = args.pluginId
 
@@ -178,7 +181,7 @@ export async function createModulePackVm(args: {
           [moduleId, JSON.stringify(props), JSON.stringify(children)],
           MODULE_PACK_EVAL_TIMEOUT_MS,
         )
-        return JSON.parse(result) as ModulePackRenderOutput
+        return parseRenderOutput(result)
       },
 
       preview(moduleId, props, children) {
@@ -188,7 +191,7 @@ export async function createModulePackVm(args: {
           [moduleId, JSON.stringify(props), JSON.stringify(children)],
           MODULE_PACK_EVAL_TIMEOUT_MS,
         )
-        return JSON.parse(result) as ModulePackRenderOutput
+        return parseRenderOutput(result)
       },
 
       dispose() {

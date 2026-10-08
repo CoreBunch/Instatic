@@ -4,14 +4,15 @@ import type { RenderConfig } from '@core/publisher'
 import { makeAccumulators, makeModule, makePage, makeRegistry, makeSite } from './helpers'
 
 describe('renderNode module-JS collection', () => {
-  it('collects render() js once per moduleId (deduped like CSS)', () => {
+  it('collects declared type JS once per moduleId (deduped like CSS)', () => {
     const registry = makeRegistry({
       'base.body': makeModule('base.body', {
         canHaveChildren: true,
         render: (_p, children) => ({ html: children.join('') }),
       }),
       'test.jsy': makeModule('test.jsy', {
-        render: () => ({ html: '<div></div>', js: 'JS_BODY' }),
+        assets: { js: 'JS_BODY' },
+        render: () => ({ html: '<div></div>' }),
       }),
     })
     const page = makePage({

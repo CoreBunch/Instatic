@@ -30,9 +30,10 @@ import { layoutNameError, type SavedLayout } from '@core/layouts'
 import { wouldCreateCycle } from '@core/visualComponents'
 import { firstOutletId, treeHasOutlet } from '@core/templates'
 import { pushToast } from '@ui/components/Toast'
+import { getErrorMessage } from '@core/utils/errorMessage'
 import { resolveInsertLocation, type InsertLocation } from '@site/store/insertLocation'
 import {
-  collectReferencedClasses,
+  collectSubtreeStyles,
   collectSubtreeNodes,
   insertSnapshotSubtrees,
 } from '@site/store/subtreeSnapshot'
@@ -117,22 +118,28 @@ export const createLayoutsSlice: EditorStoreSliceCreator<LayoutsSlice> = (
       const nameError = layoutNameError(name, site.layouts)
       if (nameError) throw new SavedLayoutNameError(nameError)
 
-      const subtree = collectSubtreeNodes(page, [nodeId])
-      if (!subtree) return null
-      const classes = collectReferencedClasses(subtree.nodes, site.styleRules)
+      try {
+        const subtree = collectSubtreeNodes(page, [nodeId])
+        if (!subtree) return null
+        const styles = collectSubtreeStyles(subtree.nodes, site)
 
-      const layout: SavedLayout = {
-        id: nanoid(),
-        name: name.trim(),
-        rootNodeId: nodeId,
-        nodes: subtree.nodes,
-        classes,
-        createdAt: Date.now(),
+        const layout: SavedLayout = {
+          id: nanoid(),
+          name: name.trim(),
+          rootNodeId: nodeId,
+          nodes: subtree.nodes,
+          ...styles,
+          createdAt: Date.now(),
+        }
+        const saved = mutateSite((draftSite) => {
+          draftSite.layouts.push(layout)
+        })
+        return saved ? layout.id : null
+      } catch (err) {
+        console.error('[layouts] Save failed:', err)
+        pushToast({ kind: 'error', title: 'Save layout failed', body: getErrorMessage(err, 'Unable to save the selected layout'), location: 'site-editor' })
+        return null
       }
-      const saved = mutateSite((draftSite) => {
-        draftSite.layouts.push(layout)
-      })
-      return saved ? layout.id : null
     },
 
     insertLayout: (layoutId, explicitTarget) => {
@@ -210,19 +217,26 @@ export const createLayoutsSlice: EditorStoreSliceCreator<LayoutsSlice> = (
       if (snapshotRootId === null) return null
 
       const newRootIds: string[] = []
-      mutateActiveTreeAndSite((tree, draftSite) => {
-        newRootIds.push(...insertSnapshotSubtrees(
-          tree,
-          draftSite,
-          {
-            rootNodeIds: [snapshotRootId],
-            nodes: snapshotNodes,
-            classes: layout.classes,
-          },
-          location,
-        ))
-        return newRootIds.length > 0
-      })
+      try {
+        mutateActiveTreeAndSite((tree, draftSite) => {
+          newRootIds.push(...insertSnapshotSubtrees(
+            tree,
+            draftSite,
+            {
+              rootNodeIds: [snapshotRootId],
+              nodes: snapshotNodes,
+              classes: layout.classes,
+              conditions: layout.conditions,
+            },
+            location,
+          ))
+          return newRootIds.length > 0
+        })
+      } catch (err) {
+        console.error('[layouts] Insert failed:', err)
+        pushToast({ kind: 'error', title: 'Insert layout failed', body: getErrorMessage(err, 'Unable to insert the saved layout'), location: 'site-editor' })
+        return null
+      }
 
       const newRootId = newRootIds[0] ?? null
       if (newRootId) get().selectNode(newRootId)

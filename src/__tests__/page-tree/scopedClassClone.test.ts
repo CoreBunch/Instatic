@@ -65,6 +65,8 @@ describe('cloneScopedClassesForNodeMap', () => {
     classes['c-scoped'].contextStylePriorities = {
       mobile: { color: 'important' },
     }
+    classes['c-scoped'].grouping = [{ kind: 'context', id: 'group', contextId: 'mobile' }]
+    classes['c-scoped'].atRule = { kind: 'group', group: { kind: 'layer', id: 'layer', name: 'components' } }
 
     const { added, classIdRemap } = cloneScopedClassesForNodeMap(idMap, classes)
 
@@ -83,6 +85,10 @@ describe('cloneScopedClassesForNodeMap', () => {
     expect(added[0].contextStylePriorities?.mobile).not.toBe(
       classes['c-scoped'].contextStylePriorities?.mobile,
     )
+    expect(added[0].grouping).toEqual(classes['c-scoped'].grouping)
+    expect(added[0].grouping?.[0]).not.toBe(classes['c-scoped'].grouping?.[0])
+    expect(added[0].atRule).toEqual(classes['c-scoped'].atRule)
+    expect(added[0].atRule).not.toBe(classes['c-scoped'].atRule)
     // classIdRemap maps old → new id.
     expect(classIdRemap.get('c-scoped')).toBe(added[0].id)
   })

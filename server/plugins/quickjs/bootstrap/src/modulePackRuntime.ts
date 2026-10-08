@@ -25,16 +25,6 @@ globalThis.console = {
   error: noop, debug: noop, trace: noop,
 } as Console
 
-/** Normalize a render()/preview() return into the `{ html, css, js }` wire shape. */
-function normalizeRenderOutput(out: unknown): { html: string; css?: string; js?: string } {
-  const o = out as { html?: unknown; css?: unknown; js?: unknown } | null
-  return {
-    html: o && typeof o === 'object' && typeof o.html === 'string' ? o.html : '',
-    css: o && typeof o === 'object' && typeof o.css === 'string' ? o.css : undefined,
-    js: o && typeof o === 'object' && typeof o.js === 'string' ? o.js : undefined,
-  }
-}
-
 /**
  * Resolve the pack's default export to a flat array of module definitions.
  * The pack can default-export either an array or a function that returns
@@ -73,6 +63,7 @@ globalThis.__initPack = function initPack(pluginId) {
       category: def.category,
       version: def.version,
       defaults: def.defaults || {},
+      assets: def.assets,
       schema: def.schema || {},
       canHaveChildren: !!def.canHaveChildren,
       htmlTag: typeof def.htmlTag === 'string' ? def.htmlTag : undefined,
@@ -92,7 +83,7 @@ globalThis.__renderModule = function renderModule(moduleId, propsJson, childrenJ
   const props = fromJson(propsJson)
   const children = fromJson(childrenJson)
   const out = def.render(props, children)
-  return JSON.stringify(normalizeRenderOutput(out))
+  return JSON.stringify(out)
 }
 
 globalThis.__previewModule = function previewModule(moduleId, propsJson, childrenJson) {
@@ -106,5 +97,5 @@ globalThis.__previewModule = function previewModule(moduleId, propsJson, childre
   const props = fromJson(propsJson)
   const children = fromJson(childrenJson)
   const out = fn(props, children)
-  return JSON.stringify(normalizeRenderOutput(out))
+  return JSON.stringify(out)
 }

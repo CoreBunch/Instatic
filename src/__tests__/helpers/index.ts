@@ -190,15 +190,15 @@ export function runModuleConformanceSuite(def: AnyModuleDefinition): void {
       expect(typeof result).toBe('object')
       expect(result).not.toBeNull()
       expect(typeof result.html).toBe('string')
-      if (result.css !== undefined) {
-        expect(typeof result.css).toBe('string')
-      }
+      expect(result).not.toHaveProperty('css')
+      expect(result).not.toHaveProperty('js')
+      for (const payload of Object.values(def.assets ?? {})) expect(typeof payload).toBe('string')
 
       const children = ['<span>child</span>']
       const r1 = def.render(def.defaults, children)
       const r2 = def.render(def.defaults, children)
       expect(r1.html).toBe(r2.html)
-      expect(r1.css).toBe(r2.css)
+      expect(r1.assetUsage).toEqual(r2.assetUsage)
 
       expect(() =>
         withBannedGlobals(() => def.render(def.defaults, []))

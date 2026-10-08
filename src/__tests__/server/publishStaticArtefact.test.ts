@@ -35,6 +35,7 @@ import {
 } from '../../../server/publish/staticArtefact'
 import { createFakeDb } from './dbTestFake'
 import { makePage, makeSite } from '../publisher/helpers'
+import type { SiteDocument } from '@core/page-tree'
 import type { LoopEntitySource } from '../../../src/core/loops/types'
 import { loopSourceRegistry } from '../../../src/core/loops/registry'
 
@@ -63,6 +64,7 @@ function makeSnapshot(page: ReturnType<typeof makePage>): PublishedPageSnapshot 
 function buildFakeDb(
   staticPage: ReturnType<typeof makePage>,
   dynamicPage: ReturnType<typeof makePage>,
+  styleRules: SiteDocument['styleRules'] = {},
 ) {
   const staticSnapshot = makeSnapshot(staticPage)
   const dynamicSnapshot = makeSnapshot(dynamicPage)
@@ -112,8 +114,8 @@ function buildFakeDb(
           id: 'proj-1',
           name: 'Test Site',
           settings_json: {
-            metaTitle: 'Test Site',
-            shortcuts: {},
+            cmsSiteSchemaVersion: 1,
+            site: makeSite({ styleRules }),
           },
           files_json: [],
           classes_json: {},
@@ -299,6 +301,31 @@ describe('publishDraftSite — Layer A static artefacts', () => {
   afterEach(async () => {
     loopSourceRegistry.unregister(REQUEST_DEPENDENT_SOURCE_ID)
     await rm(uploadsDir, { recursive: true, force: true })
+  })
+
+  it('bakes separate class-CSS files for disjoint pages and serves both without database access', async () => {
+    const a = { ...makePage({ root: { moduleId: 'base.body', children: ['text'] }, text: { moduleId: 'base.text', props: { text: 'A' }, classIds: ['alpha'] } }), id: 'a', slug: 'alpha' }
+    const b = { ...makePage({ root: { moduleId: 'base.body', children: ['text'] }, text: { moduleId: 'base.text', props: { text: 'B' }, classIds: ['beta'] } }), id: 'b', slug: 'beta' }
+    const styleRules = Object.fromEntries(['alpha', 'beta'].map((id) => [id, {
+      id, name: id, kind: 'class' as const, selector: `.${id}`, order: 0,
+      styles: { color: 'green' }, contextStyles: {}, createdAt: 0, updatedAt: 0,
+    }]))
+    const { publishDraftSite } = await import('../../../server/publish/publishSite')
+    await publishDraftSite(buildFakeDb(a, b, styleRules), 'user-1', uploadsDir)
+    const diskOnlyDb = createFakeDb(async () => { throw new Error('Baked CSS must not query the database') })
+    const paths: string[] = []
+    for (const current of [a, b]) {
+      const html = await readArtefact(uploadsDir, `/${current.slug}`)
+      const href = html?.match(/href="(\/_instatic\/css\/style-[a-f0-9]{12}\.css)"/)?.[1]
+      expect(href).toBeDefined()
+      paths.push(href!)
+      const response = await handleServerRequest(new Request(`http://localhost${href}`), { db: diskOnlyDb, uploadsDir })
+      expect(response.status).toBe(200)
+      const css = await response.text()
+      expect(css).toContain(`.${current.slug} {`)
+      expect(css).not.toContain(current === a ? '.beta {' : '.alpha {')
+    }
+    expect(paths[0]).not.toBe(paths[1])
   })
 
   it('writes a disk artefact for a fully-static page and flips the symlink', async () => {

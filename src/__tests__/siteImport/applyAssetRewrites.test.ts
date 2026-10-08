@@ -9,6 +9,28 @@ import { applyAssetRewrites, buildImportPlan } from '@core/siteImport'
 import type { ImportPlan } from '@core/siteImport'
 import { makeSampleFileMap, makeMockSiteDocument } from './mockSite'
 
+describe('native video assets', () => {
+  it('normalises and rewrites both the video source and poster to uploaded media', () => {
+    const encoder = new TextEncoder()
+    const html = '<html><body><video poster="../images/poster.jpg" preload="none"><source src="/media/intro.mp4"></video></body></html>'
+    const plan = buildImportPlan({
+      currentSite: makeMockSiteDocument(),
+      fileMap: { files: {
+        'pages/index.html': { bytes: encoder.encode(html) },
+        'media/intro.mp4': { bytes: new Uint8Array([0, 0, 0, 0]), mimeType: 'video/mp4' },
+        'images/poster.jpg': { bytes: new Uint8Array([255, 216, 255]), mimeType: 'image/jpeg' },
+      } },
+    })
+    const video = Object.values(plan.pages[0]!.nodeFragment.nodes).find(node => node.moduleId === 'base.video')!
+    expect(video.props).toMatchObject({ videoUrl: 'media/intro.mp4', poster: 'images/poster.jpg', preload: 'none' })
+    expect(plan.assets.map(asset => asset.sourcePath).sort()).toEqual(['images/poster.jpg', 'media/intro.mp4'])
+    const rewritten = applyAssetRewrites(plan, { 'media/intro.mp4': '/uploads/video.mp4', 'images/poster.jpg': '/uploads/poster.jpg' })
+    expect(rewritten.pages[0]!.nodeFragment.nodes[video.id]!.props).toMatchObject({ videoUrl: '/uploads/video.mp4', poster: '/uploads/poster.jpg' })
+    expect(video.props.videoUrl).toBe('media/intro.mp4')
+    expect(applyAssetRewrites(rewritten, { 'media/intro.mp4': '/uploads/video.mp4' })).toEqual(rewritten)
+  })
+})
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------

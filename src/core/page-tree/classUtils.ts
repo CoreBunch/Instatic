@@ -6,7 +6,7 @@ function isNodeScopedClass(cls: StyleRule | null | undefined, nodeId?: string): 
 }
 
 export function isUserVisibleClass(cls: StyleRule | null | undefined): boolean {
-  return !isNodeScopedClass(cls)
+  return !!cls && !cls.atRule && !isNodeScopedClass(cls)
 }
 
 export function isGeneratedClass(cls: StyleRule | null | undefined): boolean {

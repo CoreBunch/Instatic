@@ -4,7 +4,7 @@
  *
  * The browser runtime itself ships through the module-JS channel
  * (`src/modules/base/forms/formRuntimeJs.ts`, emitted by `base.form`'s
- * render() when `mode === 'cms'`, served at `/_instatic/module-js/base.form.js`).
+ * the module definition, activated by render() for native/enhanced transports, served at `/_instatic/module-js/base.form.js`).
  * What CANNOT travel through render() is the per-page HMAC token — token
  * issuance needs the server signing secret — so `stampFormPageTokens` runs as
  * its own post-render step on every published page (publishedHtmlPipeline)

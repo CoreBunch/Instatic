@@ -12,7 +12,8 @@ const registry = makeRegistry({
     render: (_p, children) => ({ html: `<main>${children.join('')}</main>` }),
   }),
   'test.jsy': makeModule('test.jsy', {
-    render: () => ({ html: '<div></div>', js: 'JS_BODY' }),
+    assets: { js: 'JS_BODY' },
+    render: () => ({ html: '<div></div>' }),
   }),
   'test.plain': makeModule('test.plain'),
 })

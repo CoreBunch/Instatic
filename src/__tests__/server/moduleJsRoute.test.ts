@@ -107,7 +107,8 @@ beforeEach(() => {
   )
   registry.registerOrReplace(
     makeModule('test.jsy', {
-      render: () => ({ html: '<div></div>', js: '(function(){/* test runtime */})();' }),
+      assets: { js: '(function(){/* test runtime */})();' },
+      render: () => ({ html: '<div></div>' }),
     }),
   )
 })

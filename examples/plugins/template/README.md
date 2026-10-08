@@ -143,6 +143,17 @@ await api.cms.media.upsert({
 
 The path is package-relative. Plugins cannot read arbitrary host filesystem paths through this API.
 
+## Canvas module resources
+
+For modules created by `bun instatic-plugin init`, declare invariant payloads on the module definition:
+
+```ts
+assets: { css: '.hello { padding: 12px; }' },
+render: ({ props }) => ({ html: html`<div class="hello">${props.message}</div>` }),
+```
+
+A published runtime belongs in `assets.js` and requires the plugin's **granted** `frontend.assets` permission. Render output contains HTML and optional boolean `assetUsage`, never CSS/JS payloads. Use native classes and node properties for instance styling. See the [module SDK contract](../../../docs/features/plugin-system.md).
+
 ## Further reading
 
 - [Plugin system docs](../../../docs/features/plugin-system.md)

@@ -14,7 +14,7 @@
  *
  *   Bug B — `makeSite()` helper missing `classes: {}` default
  *     Projects created via `makeSite()` have `site.styleRules = undefined` unless
- *     overridden.  In `collectClassCSS(site)`, if any node has classIds AND
+ *     overridden.  In `collectClassCSS(site, page)`, if any node has classIds AND
  *     `site.styleRules` is undefined, the `site.styleRules[id]` read throws:
  *       TypeError: Cannot read properties of undefined (reading '<classId>')
  *     This turns any legitimate "preview with classes" scenario into an unhandled
@@ -80,10 +80,8 @@ const buttonModule = makeModule('base.button', {
 
 const headingModule = makeModule('base.text', {
   canHaveChildren: false,
-  render: (props) => ({
-    html: `<h2 class="instatic-heading">${props['text'] ?? ''}</h2>`,
-    css: '.instatic-heading { font-size: 1.5rem; }',
-  }),
+  assets: { css: '.instatic-heading { font-size: 1.5rem; }' },
+  render: (props) => ({ html: `<h2 class="instatic-heading">${props['text'] ?? ''}</h2>` }),
 })
 
 const reg = makeRegistry({
@@ -127,9 +125,11 @@ function directSite(page: Page, styleRules: SiteDocument['styleRules'] = {}): Si
     id: 'proj-1',
     name: 'Test',
     pages: [page],
+    visualComponents: [],
     breakpoints: [{ id: 'desktop', label: 'Desktop', width: 1440, icon: 'monitor' }],
     settings: { colorTokens: {}, shortcuts: {} },
     styleRules,
+    files: [],
     createdAt: 0,
     updatedAt: 0,
   }
@@ -222,8 +222,8 @@ describe('Gate 3 — collectClassCSS is defensive against missing site.styleRule
       createdAt: 0, updatedAt: 0,
     }
     // Should NOT throw — should return '' gracefully
-    expect(() => collectClassCSS(brokenSite)).not.toThrow()
-    expect(collectClassCSS(brokenSite)).toBe('')
+    expect(() => collectClassCSS(brokenSite, page)).not.toThrow()
+    expect(collectClassCSS(brokenSite, page)).toBe('')
   })
 })
 
@@ -426,6 +426,8 @@ describe('Gate 8 — class breakpoint overrides emit @media blocks in published 
     const site: SiteDocument = {
       id: 'proj-1', name: 'Test',
       pages: [page],
+      visualComponents: [],
+      files: [],
       breakpoints: [{ id: bpId, label: 'Mobile', width: 375, icon: 'smartphone' }],
       settings: { colorTokens: {}, shortcuts: {} },
       styleRules: {
@@ -457,6 +459,8 @@ describe('Gate 8 — class breakpoint overrides emit @media blocks in published 
     const site: SiteDocument = {
       id: 'proj-1', name: 'Test',
       pages: [page],
+      visualComponents: [],
+      files: [],
       breakpoints: [{ id: bpId, label: 'Mobile', width: 375, icon: 'smartphone' }],
       settings: { colorTokens: {}, shortcuts: {} },
       styleRules: {

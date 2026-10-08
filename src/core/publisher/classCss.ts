@@ -3,8 +3,10 @@ import type {
   StyleRule,
   Condition,
   ConditionDef,
+  CSSRuleGroup,
+  CSSAtRule,
 } from '@core/page-tree'
-import { breakpointMediaQuery, styleRuleSelector } from '@core/page-tree'
+import { breakpointMediaQuery, styleRuleSelector, isValidCssLayerName } from '@core/page-tree'
 import { sanitiseCssValue } from './utils'
 import { responsiveBackgroundImage, type ResponsiveCssOptions } from './responsiveBackground'
 
@@ -42,11 +44,7 @@ function toKebab(camel: string): string {
  * vectors (IE `behavior`, Mozilla XBL `-moz-binding`), so we drop them outright
  * regardless of value. Lowercased for comparison.
  */
-const DENIED_PROPS = new Set<string>([
-  'behavior',
-  '-moz-binding',
-  '-ms-behavior',
-])
+const DENIED_PROPS = new Set<string>(['behavior', '-moz-binding', '-ms-behavior'])
 
 /**
  * A syntactically valid CSS property name. `-{0,2}` allows an optional leading
@@ -226,7 +224,10 @@ export function bagToCSS(
  * Returns `''` when no declaration survives the gate (the caller then emits no
  * `style` attribute at all).
  */
-export function bagToInlineStyle(bag: Record<string, unknown>, options: ResponsiveCssOptions = {}): string {
+export function bagToInlineStyle(
+  bag: Record<string, unknown>,
+  options: ResponsiveCssOptions = {},
+): string {
   return bagToDeclarations(bag, options)
     .map(([prop, value]) => `${prop}: ${value}`)
     .join('; ')
@@ -319,9 +320,9 @@ function viewportQuerySort(breakpoint: ViewportContext): ViewportQuerySort {
  * interleave, and `other` (mixed or non-pixel queries, where width order is not
  * defined) is never reordered.
  */
-export function sortViewportContextCascade<T extends { breakpoint: ViewportContext; index: number }>(
-  entries: readonly T[],
-): T[] {
+export function sortViewportContextCascade<
+  T extends { breakpoint: ViewportContext; index: number },
+>(entries: readonly T[]): T[] {
   // Registry order first, so the result never depends on the caller's array
   // order (`contextStyles` key order is authoring order, not registry order).
   const ordered = entries.slice().sort((a, b) => a.index - b.index)
@@ -340,7 +341,9 @@ export function sortViewportContextCascade<T extends { breakpoint: ViewportConte
       if (aWidth !== bWidth) return kind === 'min' ? aWidth - bWidth : bWidth - aWidth
       return a.index - b.index
     })
-    slots.forEach((slot, i) => { ordered[slot] = group[i] })
+    slots.forEach((slot, i) => {
+      ordered[slot] = group[i]
+    })
   }
 
   return ordered
@@ -365,11 +368,13 @@ export interface StyleRuleDeclarationLayers {
   stylePriorities?: CSSDeclarationPriorityBag
   contextStyles?: Record<string, Record<string, unknown>>
   contextStylePriorities?: Record<string, CSSDeclarationPriorityBag>
+  grouping?: CSSRuleGroup[]
 }
 
 export type StyleRuleCssEmitter = (
   selector: string,
   layers: StyleRuleDeclarationLayers,
+  insideGrouping?: boolean,
 ) => string[]
 
 export function createStyleRuleCssEmitter(
@@ -386,8 +391,13 @@ export function createStyleRuleCssEmitter(
     conditions.map((c, index) => [c.id, { condition: c.condition, index }]),
   )
 
-  return (selector, layers) => {
+  return (selector, layers, insideGrouping = false) => {
     const blocks: string[] = []
+    const activeContexts = new Set(
+      (layers.grouping ?? []).flatMap((group) =>
+        group.kind === 'context' ? [group.contextId] : [],
+      ),
+    )
 
     const baseDecls = bagToCSS(layers.styles, options, layers.stylePriorities)
     if (baseDecls) {
@@ -426,7 +436,11 @@ export function createStyleRuleCssEmitter(
       if (!decls) continue
       const prelude = conditionPrelude(condition)
       if (!prelude) continue
-      blocks.push(`${prelude} {\n  ${selector} {\n${decls}\n  }\n}`)
+      blocks.push(
+        activeContexts.has(contextId)
+          ? `${selector} {\n${decls}\n}`
+          : `${prelude} {\n  ${selector} {\n${decls}\n  }\n}`,
+      )
     }
 
     for (const { contextId, bag, breakpoint } of sortViewportContextCascade(bpEntries)) {
@@ -434,10 +448,22 @@ export function createStyleRuleCssEmitter(
       if (!decls) continue
       const prelude = conditionPrelude({ kind: 'media', query: breakpointMediaQuery(breakpoint) })
       if (!prelude) continue
-      blocks.push(`${prelude} {\n  ${selector} {\n${decls}\n  }\n}`)
+      blocks.push(
+        activeContexts.has(contextId)
+          ? `${selector} {\n${decls}\n}`
+          : `${prelude} {\n  ${selector} {\n${decls}\n  }\n}`,
+      )
     }
 
-    return blocks
+    if (insideGrouping || !layers.grouping?.length) return blocks
+    const preludes = layers.grouping.map((group) => groupPrelude(group, breakpoints, conditions))
+    if (preludes.some((prelude) => prelude === null)) return []
+    return blocks.map((block) => {
+      for (let index = preludes.length - 1; index >= 0; index -= 1) {
+        block = `${preludes[index]} {\n${block}\n}`
+      }
+      return block
+    })
   }
 }
 
@@ -449,32 +475,103 @@ export function generateClassCSS(
 ): string {
   const blocks: string[] = []
   const emitRule = createStyleRuleCssEmitter(breakpoints, conditions, options)
+  let activeGroups: CSSRuleGroup[] = []
+  const moveToGroups = (groups: CSSRuleGroup[]): boolean => {
+    const preludes = groups.map((group) => groupPrelude(group, breakpoints, conditions))
+    if (preludes.some((prelude) => prelude === null)) return false
+    let shared = 0
+    while (
+      shared < activeGroups.length &&
+      shared < groups.length &&
+      sameGroup(activeGroups[shared], groups[shared])
+    )
+      shared += 1
+    for (let index = activeGroups.length; index > shared; index -= 1) blocks.push('}')
+    for (let index = shared; index < groups.length; index += 1) blocks.push(`${preludes[index]} {`)
+    activeGroups = groups.slice()
+    return true
+  }
 
   // Cascade order: rules with a smaller `order` are emitted first so a later,
   // more-specific override appears later in source and wins on equal
   // specificity. Imported rules carry the source stylesheet's position;
   // user-created rules append at the end (see classSlice.nextRuleOrder).
-  const orderedClasses = Object.values(classes).slice().sort((a, b) => {
-    const ao = typeof a.order === 'number' ? a.order : 0
-    const bo = typeof b.order === 'number' ? b.order : 0
-    return ao - bo
-  })
+  const orderedClasses = Object.values(classes)
+    .slice()
+    .sort((a, b) => {
+      const ao = typeof a.order === 'number' ? a.order : 0
+      const bo = typeof b.order === 'number' ? b.order : 0
+      return ao - bo
+    })
 
   for (const cls of orderedClasses) {
+    if (cls.atRule) {
+      if (cls.atRule.kind === 'group') {
+        if (!moveToGroups(cls.grouping ?? [])) continue
+        moveToGroups([...(cls.grouping ?? []), cls.atRule.group])
+      } else {
+        const statement = emitNativeAtRule(cls.atRule)
+        if (statement && moveToGroups(cls.grouping ?? [])) blocks.push(statement)
+      }
+      continue
+    }
     if (typeof cls.rawCss === 'string') {
       const rawCss = sanitizeRawKeyframesCss(cls.rawCss)
-      if (rawCss) blocks.push(rawCss)
+      if (rawCss && moveToGroups(cls.grouping ?? [])) blocks.push(rawCss)
       continue
     }
 
-    blocks.push(...emitRule(styleRuleSelector(cls), cls))
+    const declarations = emitRule(styleRuleSelector(cls), cls, true)
+    if (declarations.length && moveToGroups(cls.grouping ?? [])) blocks.push(...declarations)
   }
+  moveToGroups([])
 
   return blocks.join('\n\n')
 }
 
-const RAW_KEYFRAMES_RE =
-  /^@(?:-webkit-)?keyframes\s+-?[_a-zA-Z][\w-]*\s*\{[\s\S]*\}\s*$/i
+function sameGroup(a: CSSRuleGroup, b: CSSRuleGroup): boolean {
+  if (a.id !== b.id || a.kind !== b.kind) return false
+  return a.kind === 'layer'
+    ? b.kind === 'layer' && a.name === b.name
+    : b.kind === 'context' && a.contextId === b.contextId
+}
+
+function groupPrelude(
+  group: CSSRuleGroup,
+  breakpoints: ViewportContext[],
+  conditions: ReadonlyArray<ConditionDef>,
+): string | null {
+  if (group.kind === 'layer') {
+    return group.name === undefined
+      ? '@layer'
+      : isValidCssLayerName(group.name)
+        ? `@layer ${group.name}`
+        : null
+  }
+  const condition = conditions.find((entry) => entry.id === group.contextId)?.condition
+  if (condition) return conditionPrelude(condition)
+  const breakpoint = breakpoints.find((entry) => entry.id === group.contextId)
+  return breakpoint
+    ? conditionPrelude({ kind: 'media', query: breakpointMediaQuery(breakpoint) })
+    : null
+}
+
+function emitNativeAtRule(rule: Exclude<CSSAtRule, { kind: 'group' }>): string | null {
+  if (rule.kind === 'layer-order') {
+    return rule.names.every(isValidCssLayerName) ? `@layer ${rule.names.join(', ')};` : null
+  }
+  if (
+    !rule.name.startsWith('--') ||
+    !isEmittableProperty(rule.name) ||
+    /[{}\r\n]|<\//.test(rule.syntax)
+  )
+    return null
+  const initial = rule.initialValue === undefined ? undefined : sanitiseCssValue(rule.initialValue)
+  if (rule.initialValue !== undefined && initial === null) return null
+  return `@property ${rule.name} {\n  syntax: ${JSON.stringify(rule.syntax)};\n  inherits: ${rule.inherits};${initial === undefined ? '' : `\n  initial-value: ${initial};`}\n}`
+}
+
+const RAW_KEYFRAMES_RE = /^@(?:-webkit-)?keyframes\s+-?[_a-zA-Z][\w-]*\s*\{[\s\S]*\}\s*$/i
 
 /**
  * Raw style rules are intentionally narrow: today only imported @keyframes are
@@ -524,7 +621,9 @@ function conditionPrelude(condition: Condition): string | null {
         : `@container ${wrapParens(condition.query)}`
     }
     case 'supports':
-      return isSafeConditionText(condition.query) ? `@supports ${wrapParens(condition.query)}` : null
+      return isSafeConditionText(condition.query)
+        ? `@supports ${wrapParens(condition.query)}`
+        : null
   }
 }
 

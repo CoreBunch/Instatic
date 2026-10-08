@@ -24,7 +24,7 @@ import { DeleteSelectorDialog, SelectorNameDialog } from '../SelectorDialogs'
 import { SelectorContextMenu } from './SelectorContextMenu'
 import {
   buildClassTokenUsageMap,
-  buildSelectorUsageMap,
+  createSelectorUsageMapSelector,
   getReusableClasses,
   getSelectorStyleSummary,
   normalizeSelectorQuery,
@@ -45,6 +45,7 @@ type SelectorFilter = 'all' | 'user' | 'utility' | 'used' | 'unused'
  * a sentinel into view.
  */
 const SELECTOR_PAGE_SIZE = 100
+const selectorUsageForSnapshot = createSelectorUsageMapSelector()
 
 /** Placeholder rows shown on the first paint after the panel opens. */
 const SKELETON_ROW_COUNT = 10
@@ -127,9 +128,8 @@ export function SelectorsPanel({
   const sentinelRef = useRef<HTMLDivElement | null>(null)
 
   const reusableClasses = getReusableClasses(site?.styleRules ?? {})
-  // One pass over the whole tree, memoized against `site` by the React Compiler.
-  // Replaces a per-row scan that scaled with selector count × node count.
-  const usageMap = buildSelectorUsageMap(site)
+  // Collaborative row projections retain the other trees, so reuse their counts.
+  const usageMap = selectorUsageForSnapshot(site)
   // Class-token → applied-count rollup, so ambient rows can report "Unused"
   // only when provably dead (anchored on a class nothing uses) instead of the
   // blanket "Unused" the per-id tally produced for every ambient rule.

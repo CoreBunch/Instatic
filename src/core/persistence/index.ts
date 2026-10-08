@@ -1,6 +1,7 @@
 export { cmsAdapter } from './cms'
 export { getCmsPublishStatus, publishCmsDraft } from './cmsPublish'
 export {
+  buildCmsPublicFilePreview,
   buildCmsRuntimePreview,
   resolveCmsRuntimeDependencies,
   validateCmsRuntimeScripts,

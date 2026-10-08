@@ -1,37 +1,16 @@
-/**
- * `/_instatic/loop/<loopId>` endpoint — serves additional pages for
- * infinite-loading loops.
- *
- * Called by the loop runtime (`loopRuntime.ts`) after the user clicks
- * "Load more". Returns `{ html, hasMore, pageNumber }` JSON.
- *
- * Algorithm:
- *   1. Resolve the page from the request's `pagePath` query param via
- *      the same routing logic the public renderer uses.
- *   2. Find the loop node by id within the resolved page.
- *   3. Run the loop's source `fetch()` for the requested page slice.
- *   4. Render only the loop's children using a synthetic page context
- *      sharing the publisher's renderNode walker.
- *   5. Return the joined HTML — clients append it before the load-more
- *      button.
- *
- * This handler is GET-only and returns 404 for any combination that
- * doesn't resolve cleanly. Errors are rendered as 4xx/5xx with empty
- * bodies; the runtime's "Try again" UX surfaces network failures.
- */
-
+/** Public infinite-loop fragments use the originating published route's native context. */
 import type { DbClient } from '../../db/client'
-import { registry } from '@core/module-engine'
+import { ModulePropsValidationError, registry } from '@core/module-engine'
 import { loopSourceRegistry } from '@core/loops/registry'
-import {
-  renderNode,
-  type RenderConfig,
-  type RenderAccumulators,
-  type ResolvedLoopRenderData,
-} from '@core/publisher'
+import { Type, safeParseValue } from '@core/utils/typeboxHelpers'
+import { LocalizationError } from '@core/localization'
+import { PageTranslationError } from '@core/page-tree'
+import { PublicAssetValidationError } from '@core/files/publicAssets'
+import { LoopScopeConfigurationError, renderNode, type RenderConfig, type RenderAccumulators, type ResolvedLoopRenderData } from '@core/publisher'
 import { jsonResponse } from '../../http'
-import { readLoopProps } from '../../publish/loopPrefetch'
-import { getPublishedLoopIndexForVersion } from '../../publish/publishedSnapshotCache'
+import { prefetchLoopData, readLoopProps } from '../../publish/loopPrefetch'
+import { prefetchMediaAssets } from '../../publish/mediaPrefetch'
+import { LoopFragmentContextError, readLoopPageUrl, resolveLoopFragmentContext } from '../../publish/loopFragmentContext'
 import { getPublishVersion } from '../../publish/publishState'
 import { LOOP_RUNTIME_JS } from '../../publish/loopRuntime'
 
@@ -57,114 +36,76 @@ interface LoopHandlerContext {
   db: DbClient
 }
 
-export async function handleLoopRequest(
-  req: Request,
-  url: URL,
-  ctx: LoopHandlerContext,
-): Promise<Response> {
-  if (req.method !== 'GET') {
-    return jsonResponse({ error: 'Method not allowed' }, { status: 405 })
-  }
+const LoopRequestSchema = Type.Object({
+  loopId: Type.String({ minLength: 1 }),
+  pageNumber: Type.Integer({ minimum: 1 }),
+  pagePath: Type.String({ minLength: 1 }),
+  version: Type.String({ pattern: '^(0|[1-9][0-9]*)$' }),
+})
 
-  // /_instatic/loop/<encoded-loopId>
-  const loopId = decodeURIComponent(url.pathname.slice('/_instatic/loop/'.length))
-  if (!loopId) return jsonResponse({ error: 'Missing loop id' }, { status: 400 })
-
-  const pageNumberRaw = url.searchParams.get('page') ?? '1'
-  const pageNumber = Math.max(1, Number.parseInt(pageNumberRaw, 10) || 1)
-
-  // Find the page that contains this loop via the per-publish-version
-  // loopId → { page, node } index. Every page version in one publish shares
-  // the same site document, so the index covers regular pages and template
-  // pages alike (the runtime's `pagePath` hint is no longer needed) — and the
-  // old per-request full-snapshot parse + all-pages tree walk is gone.
-  const loopIndex = await getPublishedLoopIndexForVersion(ctx.db, getPublishVersion())
-  if (!loopIndex) {
-    return jsonResponse({ error: 'Site not published' }, { status: 404 })
-  }
-  const indexed = loopIndex.loops.get(loopId)
-  if (!indexed) {
-    return jsonResponse({ error: 'Loop not found' }, { status: 404 })
-  }
-  const { page: containingPage, node: loopNode } = indexed
-  const site = loopIndex.site
-
-  const props = readLoopProps(loopNode)
-  if (props.pagination !== 'infinite') {
-    return jsonResponse({ error: 'Loop is not in infinite mode' }, { status: 400 })
-  }
-  const source = loopSourceRegistry.get(props.sourceId)
-  if (!source) {
-    return jsonResponse({ error: 'Source not registered' }, { status: 404 })
-  }
-  if (source.kind === 'contextual') {
-    return jsonResponse({ error: 'Contextual loops do not support infinite pagination' }, { status: 400 })
-  }
-
-  // Fetch the requested page slice.
-  const offset = props.offset + (pageNumber - 1) * props.pageSize
-  let result
+export async function handleLoopRequest(req: Request, url: URL, ctx: LoopHandlerContext): Promise<Response> {
+  if (req.method !== 'GET') return jsonResponse({ error: 'Method not allowed' }, { status: 405 })
   try {
-    result = await source.fetch({
-      db: ctx.db,
-      site,
-      filters: props.filters,
-      orderBy: props.orderBy || (source.orderByOptions[0]?.id ?? ''),
-      direction: props.direction,
-      limit: props.pageSize,
-      offset,
-    })
-  } catch (err) {
-    console.error(`[loop] source "${source.id}" failed for "${loopId}":`, err)
-    return jsonResponse({ error: 'Source fetch failed' }, { status: 500 })
-  }
-
-  const consumed = offset + result.items.length
-  const hasMore = consumed < result.totalItems
-
-  // Render just the loop's children for the new items. We re-use the
-  // publisher's renderNode walker by constructing a synthetic context;
-  // CSS dedup is a no-op here because the asset bundle is already
-  // loaded on the client.
-  const variants = loopNode.children
-  if (variants.length === 0) {
-    return jsonResponse({ html: '', hasMore, pageNumber })
-  }
-  const baseConfig: RenderConfig = {
-    page: containingPage,
-    site,
-    registry,
-    breakpointId: undefined,
-    templateContext: { entryStack: [] },
-    loopData: new Map<string, ResolvedLoopRenderData>([
-      [loopId, { items: result.items, totalItems: result.totalItems, pageNumber, hasMore }],
-    ]),
-  }
-  const acc: RenderAccumulators = {
-    cssMap: new Map(),
-    jsMap: new Map(),
-    infiniteLoopIds: new Set(),
-    holeNodeIds: new Set(),
-    cspSources: new Map(),
-  }
-
-  // Render each item by walking each variant child once per iteration.
-  // Bypass renderLoop so we don't re-emit the wrapper element — the
-  // existing wrapper on the client absorbs the appended fragments. Each
-  // iteration derives a fresh config with a new entryStack snapshot rather
-  // than mutating a shared array in place.
-  let html = ''
-  result.items.forEach((item, i) => {
-    const variantId = variants[i % variants.length]
-    const iterationConfig: RenderConfig = {
-      ...baseConfig,
-      // Spread the base templateContext so any page/site/route frames survive —
-      // mirrors renderLoop.ts. Today the handler's base context carries no
-      // frames, but spreading keeps the two iteration paths symmetric.
-      templateContext: { ...baseConfig.templateContext, entryStack: [item] },
+    let loopId: string
+    try {
+      loopId = decodeURIComponent(url.pathname.slice('/_instatic/loop/'.length))
+    } catch {
+      throw new LoopFragmentContextError('Invalid loop id', 400)
     }
-    html += renderNode(variantId, iterationConfig, acc)
-  })
+    const parsed = safeParseValue(LoopRequestSchema, {
+      loopId,
+      pageNumber: Number(url.searchParams.get('page') ?? '1'),
+      pagePath: url.searchParams.get('pagePath'),
+      version: url.searchParams.get('v'),
+    })
+    if (!parsed.ok) throw new LoopFragmentContextError('Invalid loop request: ' + parsed.errors.map((error) => error.path + ' ' + error.message).join('; '), 400)
+    const { pageNumber, pagePath } = parsed.value
+    const version = Number(parsed.value.version)
+    if (version !== getPublishVersion()) throw new LoopFragmentContextError('The published page has changed; reload it before loading more', 409)
+    const pageUrl = readLoopPageUrl(pagePath, url)
+    const target = await resolveLoopFragmentContext(ctx.db, pageUrl, loopId)
+    const { node: loopNode, page, site, templateContext } = target
+    const props = readLoopProps(loopNode)
+    if (props.pagination !== 'infinite') throw new LoopFragmentContextError('Loop is not in infinite mode', 400)
+    const source = loopSourceRegistry.get(props.sourceId)
+    if (!source) throw new LoopFragmentContextError('Source not registered', 404)
+    if (source.kind === 'contextual') throw new LoopFragmentContextError('Contextual loops do not support infinite pagination', 400)
 
-  return jsonResponse({ html, hasMore, pageNumber })
+    const offset = props.offset + (pageNumber - 1) * props.pageSize
+    const result = await source.fetch({
+      db: ctx.db, site, filters: props.filters,
+      orderBy: props.orderBy || (source.orderByOptions[0]?.id ?? ''),
+      direction: props.direction, limit: props.pageSize, offset,
+      request: {
+        path: templateContext.route!.path, slug: templateContext.route!.slug,
+        query: Object.fromEntries(target.pageUrl.searchParams), cookies: {},
+      },
+    })
+    const hasMore = offset + result.items.length < result.totalItems
+    const loopData = new Map<string, ResolvedLoopRenderData>()
+    for (const variantId of loopNode.children) {
+      const nested = await prefetchLoopData(page, site, ctx.db, target.pageUrl, { rootNodeId: variantId })
+      for (const [id, data] of nested) loopData.set(id, data)
+    }
+    loopData.set(loopId, { ...result, pageNumber, hasMore })
+    const mediaAssets = await prefetchMediaAssets(page, site, registry, ctx.db, { templateContext, loopData })
+    const config: RenderConfig = { page, site, registry, breakpointId: undefined, templateContext, loopData, mediaAssets }
+    const acc: RenderAccumulators = { cssMap: new Map(), jsMap: new Map(), infiniteLoopIds: new Set(), holeNodeIds: new Set(), cspSources: new Map() }
+    let html = ''
+    if (loopNode.children.length > 0) {
+      result.items.forEach((item, i) => {
+        const iteration: RenderConfig = { ...config, templateContext: { ...templateContext, entryStack: [...templateContext.entryStack, item] } }
+        html += renderNode(loopNode.children[i % loopNode.children.length], iteration, acc)
+      })
+    }
+    if (version !== getPublishVersion()) throw new LoopFragmentContextError('The published page changed while loading more; reload it', 409)
+    return jsonResponse({ html, hasMore, pageNumber })
+  } catch (err) {
+    if (err instanceof LoopFragmentContextError) return jsonResponse({ error: err.message }, { status: err.status })
+    if (err instanceof LocalizationError || err instanceof PageTranslationError || err instanceof PublicAssetValidationError || err instanceof LoopScopeConfigurationError || err instanceof ModulePropsValidationError) {
+      return jsonResponse({ error: err.message }, { status: 422 })
+    }
+    console.error('[loop] Failed to load published loop fragment:', err)
+    return jsonResponse({ error: 'Failed to load published loop fragment' }, { status: 500 })
+  }
 }

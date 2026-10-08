@@ -62,6 +62,7 @@ const TEXT_INPUT_TYPES = [
   'tel',
   'url',
   'number',
+  'range',
   'date',
   'time',
   'datetime-local',
@@ -373,6 +374,7 @@ export const HTML_TO_MODULE_RULES: ImportRule[] = [
           autocomplete: attr(el, 'autocomplete'),
           min: attr(el, 'min'),
           max: attr(el, 'max'),
+          step: attr(el, 'step'),
           minLength: numberAttr(el, 'minlength'),
           maxLength: numberAttr(el, 'maxlength'),
           pattern: attr(el, 'pattern'),
@@ -608,11 +610,18 @@ export const HTML_TO_MODULE_RULES: ImportRule[] = [
         attr(el, 'src')
         || el.querySelector('source')?.getAttribute('src')
         || ''
+      const authoredPreload = normalizedAttr(el, 'preload')
+      const preload = authoredPreload === 'none' || authoredPreload === 'metadata' || authoredPreload === 'auto'
+        ? authoredPreload
+        : el.hasAttribute('preload') ? 'auto' : 'metadata'
 
       return {
         moduleId: 'base.video',
         props: {
           videoUrl,
+          poster: attr(el, 'poster'),
+          preload,
+          title: attr(el, 'title') || attr(el, 'aria-label') || 'Video',
           autoplay: el.hasAttribute('autoplay'),
           loop: el.hasAttribute('loop'),
           muted: el.hasAttribute('muted'),

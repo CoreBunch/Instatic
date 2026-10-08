@@ -13,7 +13,9 @@ There are **no other content tables**. There is no `pages` table, no `page_versi
 - Every row's cells live in `cells_json` keyed by field id. `slug` and `status` are denormalized columns for index / route lookup.
 - Post-type rows have a workflow: `draft | published | unpublished | scheduled`, with a version history (`data_row_versions`) for the published copy.
 - "Data" tables are simple key-value grids — no workflow, no built-in fields.
-- Pages, components, and layouts are stored the same way: a `pages` table with `pageTree`-typed `body` cells; a `components` table with `pageTree`-typed `body` + `fieldSchema`-typed `params`; a `layouts` table with a `pageTree`-typed `body` snapshot plus serialized `classes`.
+- Pages, components, and layouts are stored the same way: a `pages` table with `pageTree`-typed `body` cells; a `components` table with `pageTree`-typed `body` + `fieldSchema`-typed `params`; a `layouts` table with a `pageTree`-typed `body` snapshot plus serialized `classes` and their `conditions` dependencies.
+
+Clipboard and saved-layout snapshots share one CSS capture/restore engine. Capture keeps the selected classes, matching ambient fragments, group openings and layer order, registered properties, animation keyframes, and all referenced CSS conditions. Viewport conditions carry their source media query. Restore reuses equivalent destination conditions, gives imported grouping occurrences fresh identities, and preserves the snapshot's cascade order. Missing CSS contexts reject the operation before any nodes or styles are inserted; the editor reports the failure through its toast bus.
 - Source of truth: `src/core/data/schemas.ts`. Repos: `server/repositories/data/`. Handlers: `server/handlers/cms/data/`.
 
 ---

@@ -24,7 +24,7 @@ import { normalizeRouteBase } from '@core/templates/templateMatching'
 import { publicDataUserFromParts } from '@core/data/publicDataUser'
 import type { PublishedDataRow } from '@core/data/schemas'
 import type { DbClient } from '../db/client'
-import { walkRenderTree } from './renderTreeWalk'
+import { walkRenderTree } from '@core/visualComponents'
 
 /**
  * Resolved loop data for a single loop node on a page.
@@ -124,9 +124,9 @@ export function collectLoopNodes(
 ): PageNode[] {
   const result: PageNode[] = []
   const seen = new Set<string>()
-  // Descend into referenced VC definition trees so a base.loop inside a VC body
-  // is fetched too (ISS-022); a VC referenced twice yields one entry per id.
-  walkRenderTree(page.nodes, rootNodeId, site, (node) => {
+  // Materialize referenced VCs so loops see effective params and slots;
+  // hidden nodes are excluded, and repeated references yield one entry per id.
+  walkRenderTree(page.nodes, rootNodeId, site.visualComponents, (node) => {
     if (node.moduleId === 'base.loop' && !seen.has(node.id)) {
       seen.add(node.id)
       result.push(node as PageNode)

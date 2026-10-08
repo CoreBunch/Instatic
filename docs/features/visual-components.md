@@ -365,7 +365,7 @@ renderVisualComponentRef(refNode, config, acc, renderNode):
 
 Slot-outlet ↔ slot-instance bridging happens inside `instantiateVCAtRef` — by the time the recursive render walk starts, the instantiated node map already contains the consumer's slot content at the correct positions. The consumer page tree is the canonical store for slot fills; the publisher materialises them at render time only.
 
-Server-side prefetch — `loopPrefetch.ts` and `mediaPrefetch.ts` — both use `walkRenderTree` (`server/publish/renderTreeWalk.ts`) to descend into every VC definition tree referenced from the page, so a `base.loop` or image inside a VC body is collected and pre-fetched before the render walk starts.
+Server-side prefetch — `loopPrefetch.ts` and `mediaPrefetch.ts` — both use `walkRenderTree` from `@core/visualComponents`. The visitor materializes effective param overrides and filled or default slots through `instantiateVCAtRef`, follows nested references with a component cycle guard, and skips hidden subtrees and unused slot content. This is also the shared traversal for render-time preflight checks. Page-authored slot fills retain native dynamic bindings and inline styles when published.
 
 See [docs/features/publisher.md](publisher.md) for the broader pipeline.
 

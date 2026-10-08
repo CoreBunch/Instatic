@@ -36,15 +36,15 @@ import { VideoPropsSchema, type VideoStoredProps } from './props'
 
 // ---------------------------------------------------------------------------
 // Props schema — authored fields only. The publisher-injected field
-// (_resolvedMediaByKey) is NOT declared here; validateNodeProps merges it
+// (_resolvedMediaByKey) is NOT declared here; parseModuleProps merges it
 // over the cleaned props so it survives the coercion step untouched.
 // ---------------------------------------------------------------------------
 
 /**
  * Full render-time props. Intersects the authored schema shape with the
- * publisher-injected field that arrives after validateNodeProps runs.
+ * publisher-injected field that arrives after parseModuleProps runs.
  * `_resolvedMediaByKey` is NOT in VideoPropsSchema — it bypasses schema
- * cleaning via the `{ ...rawProps, ...cleaned }` merge in validateNodeProps.
+ * cleaning via the `{ ...rawProps, ...cleaned }` merge in parseModuleProps.
  * The `& Record<string, unknown>` satisfies the
  * ModuleDefinition<TProps extends Record<string, unknown>> constraint.
  */
@@ -52,6 +52,33 @@ type VideoProps = VideoStoredProps & {
   /** Internal: attached by the publisher's prefetchMediaAssets pass. */
   _resolvedMediaByKey?: Record<string, RenderResolvedMedia>
 } & Record<string, unknown>
+
+const YOUTUBE_FACADE_CSS = `
+.bv-yt {
+  position: relative;
+  display: block;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  background-color: #000;
+  overflow: hidden;
+}
+.bv-yt > .bv-yt-poster,
+.bv-yt > .bv-yt-frame {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  border: 0;
+}
+.bv-yt > .bv-yt-poster {
+  object-fit: cover;
+}
+.bv-yt > .bv-yt-frame {
+  background: transparent;
+  z-index: 1;
+}
+`.trim()
 
 export const VideoModule: ModuleDefinition<VideoProps> = {
   id: 'base.video',
@@ -64,6 +91,7 @@ export const VideoModule: ModuleDefinition<VideoProps> = {
   canHaveChildren: false,
 
   propsSchema: VideoPropsSchema,
+  assets: { css: YOUTUBE_FACADE_CSS },
 
   schema: {
     videoUrl: {
@@ -128,7 +156,7 @@ export const VideoModule: ModuleDefinition<VideoProps> = {
     }
 
     const videoSrc = safeUrl(rawUrl)
-    if (!videoSrc) return { html: '<video></video>' }
+    if (!videoSrc) return { html: '<video></video>', assetUsage: { css: false } }
 
     // Resolved video asset gives us intrinsic dimensions — emits
     // `width` / `height` attrs so the browser reserves layout space
@@ -160,7 +188,7 @@ export const VideoModule: ModuleDefinition<VideoProps> = {
     if (props.muted) attrs.push('muted')
     if (props.controls) attrs.push('controls')
 
-    return { html: `<video ${attrs.join(' ')}></video>` }
+    return { html: `<video ${attrs.join(' ')}></video>`, assetUsage: { css: false } }
   },
 }
 
@@ -262,37 +290,8 @@ function renderYoutube(input: YoutubeRenderInput): RenderOutput {
     + `<iframe class="bv-yt-frame" ${iframeAttrs.join(' ')}></iframe>`
     + `</div>`
 
-  return { html, css: YOUTUBE_FACADE_CSS, cspSources: YOUTUBE_CSP_SOURCES }
+  return { html, cspSources: YOUTUBE_CSP_SOURCES }
 }
 
-// Scoped to `.bv-yt` so the publisher's per-moduleId CSS dedup applies
-// (one block per page, not per instance). Constraint #310: this string
-// is props-independent — no template interpolation of `props.*`.
-const YOUTUBE_FACADE_CSS = `
-.bv-yt {
-  position: relative;
-  display: block;
-  width: 100%;
-  aspect-ratio: 16 / 9;
-  background-color: #000;
-  overflow: hidden;
-}
-.bv-yt > .bv-yt-poster,
-.bv-yt > .bv-yt-frame {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  display: block;
-  border: 0;
-}
-.bv-yt > .bv-yt-poster {
-  object-fit: cover;
-}
-.bv-yt > .bv-yt-frame {
-  background: transparent;
-  z-index: 1;
-}
-`.trim()
 
 registry.registerOrReplace(VideoModule)

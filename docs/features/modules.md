@@ -5,7 +5,7 @@ Modules are the building blocks the visual editor places on the canvas — `base
 A module declares:
 - A unique `id` (namespaced: `base.text`, `acme.product-card`)
 - A `PropertySchema` describing its props (drives the right-panel form)
-- A pure `render(props, renderedChildren)` function that returns `{ html, css? }`
+- A pure `render(props, renderedChildren)` function that returns `{ html, assetUsage?, cspSources? }`
 - An optional canvas `component` (React) for in-editor preview
 - Required metadata: `name`, `category`, `icon`, `version`, `trusted`, `canHaveChildren`, `defaults`
 
@@ -32,7 +32,7 @@ src/core/module-engine/
 ├── dependencies.ts      — module dependency normalization + checks
 ├── runtimeResolver.ts   — bare-specifier → runtime URL mapping for ESM modules
 ├── htmlTagBadge.ts      — resolveHtmlTagBadge (shared dispatch for htmlTag field)
-└── validateNodeProps.ts — coerce + default-fill authored props against propsSchema
+└── parseModuleProps.ts — hard parsing + declared defaults against propsSchema
 
 src/modules/base/
 ├── body/                — base.body (root container)
@@ -41,6 +41,7 @@ src/modules/base/
 ├── outlet/              — base.outlet (Content Outlet — template content slot)
 ├── button/              — base.button (anchor.ts — element-decision leaf)
 ├── link/                — base.link (content.ts — children/text fallback leaf)
+├── disclosure/          — base.disclosure (native details/summary + shared dismissal behavior)
 ├── image/               — base.image
 ├── svg/                 — base.svg (inline sanitized SVG)
 ├── video/               — base.video (youtube.ts — ID parse + embed URL leaf)
@@ -157,9 +158,35 @@ interface ModuleDefinition<TProps extends Record<string, unknown>> {
 
 Constraint #179: **`render()` is pure** — no DOM, no React, no side effects. Inputs in, strings out.
 
-`render()` may also return `js` next to `html`/`css` — an optional vanilla-JS runtime for the module TYPE, deduplicated per moduleId (like CSS) and served as an external file at `/_instatic/module-js/<moduleId>.js` on published pages. Authoring contract: a self-contained IIFE; bind via document-level event delegation (hole fragments insert into the DOM after load); idempotent; no load-order assumptions; no framework runtimes. Size discipline in the spirit of the ~1 KB hole runtime — the ~8 KB form runtime is the ceiling, not the norm. Module JS never executes in the admin canvas: the canvas renders React editor components, never published render() output.
+Declare invariant CSS and vanilla-JS in `ModuleDefinition.assets`. `render()` returns HTML, optional boolean `assetUsage` and instance-specific CSP requirements; it never returns asset payloads. The actual render may disable a payload, for example a native HTML form with enhancement disabled. Published JS is served at `/_instatic/module-js/<moduleId>.js`. Author it as a self-contained, idempotent IIFE with document-level event delegation and no framework runtime. The editor reads declared CSS and never executes published module JS. See `src/core/module-engine/moduleAssets.ts` for the shared TypeBox schemas.
 
 ---
+
+## Native disclosures
+
+`base.disclosure` emits a semantic `<details>` with exactly one generated first
+`<summary>` containing its `label`, followed by the authored child nodes. Bind
+the label to language-file content like any text prop. Style the details node
+with user classes and its direct summary with an ambient selector. The module
+adds no default visual CSS, ARIA menu roles, focus trap, or arrow-key navigation.
+
+`initiallyOpen` controls authored initial state. A nonempty `group` maps to the
+native HTML `name` attribute, so one related disclosure is open at a time. Keep
+members together and do not nest members of the same group. Only one member of
+a group should be initially open.
+
+`closeOnEscape` defaults to true; outside-click/tap and focus-leave dismissal
+default to false and are opt-in for navigation disclosures. Escape closes the
+innermost open disclosure and focuses its summary. Outside dismissal does not
+prevent the pointer's default action; closing restores focus only when it would
+remain in concealed content. Focus-leave dismissal preserves the new external
+focus. Native/scripted closing also moves any concealed focus back to summary.
+
+`disclosure/behavior.ts` owns one typed, self-contained document installer. The
+canvas leases that installer per mounted component; published pages receive its
+compiled function body via the existing external module-JS channel. Delegation
+handles dynamically inserted holes and installation is idempotent. Browser
+native summary activation and group exclusivity work without the enhancement.
 
 ## Property schema
 
@@ -196,6 +223,7 @@ schema: PropertySchema = {
 | `image`     | Media picker                                              | media id or URL                 |
 | `media`     | Media picker (any media type)                             | media id                        |
 | `svg`       | Inline SVG editor                                         | SVG markup string               |
+| `condition` | Structured recursive value rule editor | `PropertyCondition` or `null` |
 | `group`     | Collapsible section header (visual grouping only)         | — (no data shape change)        |
 
 `PropertyControl` is a discriminated union — `propertySchema.ts` has the full schema.
@@ -277,12 +305,12 @@ A plugin canvas module is rendered inside the editor's sandboxed iframe just lik
 The publisher's per-node flow (see [docs/features/publisher.md](publisher.md)):
 
 ```text
-For each node, bottom-up:
-  1. renderedChildren = node.children.map(renderNode)
-  2. effectiveProps  = resolveProps(node, breakpoint, def.schema)  ← merge breakpoint overrides
-  3. dynamicProps    = resolveDynamicProps(effectiveProps, ...)     ← template bindings
-  4. resolvedProps   = resolvePageRefProps(dynamicProps, pages)     ← cms:page:<id> → /path
-  5. validatedProps  = validateNodeProps(def, resolvedProps)        ← coerce + default-fill
+For each node, with common preparation before standard/special dispatch:
+  1. effectiveProps  = resolveProps(node, breakpoint, def.schema)   ← merge breakpoint overrides
+  2. dynamicProps    = resolveDynamicProps(effectiveProps, ...)     ← template bindings
+  3. resolvedProps   = resolvePageRefProps(dynamicProps, pages)     ← cms:page:<id> → /path
+  4. validatedProps  = parseModuleProps(def, resolvedProps, path)   ← hard parse + declared defaults
+  5. renderedChildren = node.children.map(renderNode)              ← standard path; special renderers expand VC/loop children
   6. safeProps       = escapeProps(validatedProps, schema)          ← HTML-escape string props
   7. attachResolvedMediaByKey(safeProps, ...)                       ← prefetched media assets
   8. { html, css }  = def.render(safeProps, renderedChildren)
@@ -292,6 +320,8 @@ For each node, bottom-up:
 ```
 
 A module's CSS is **collected and deduped by `moduleId`** — emitting the same CSS for every instance is fine; it appears once in the published page bundle.
+
+Missing fields use defaults declared by `propsSchema`; unrecoverable values raise `ModulePropsValidationError` with their cause and page/node/schema path. Publishing never replaces invalid authored props with all module defaults.
 
 `renderedChildren` is a `string[]` of already-rendered child HTML. Leaf modules (text, input, image) receive an empty array. Container-like modules join it: `renderedChildren.join('')`.
 
@@ -411,13 +441,13 @@ export const HeadingModule: ModuleDefinition<HeadingProps> = {
       ],
     },
   },
+  assets: { css: '.heading[data-align="center"] { text-align: center; } .heading[data-align="right"] { text-align: right; }' },
   component: HeadingEditor,
   htmlTag: 'h2',
   render: (props) => {
     const tag = `h${Math.max(1, Math.min(6, Number(props.level) || 2))}`
     return {
       html: `<${tag} class="heading" data-align="${props.align}">${props.text}</${tag}>`,
-      css: `.heading[data-align="center"] { text-align: center; } .heading[data-align="right"] { text-align: right; }`,
     }
   },
 }

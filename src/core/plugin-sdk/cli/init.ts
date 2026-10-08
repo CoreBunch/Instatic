@@ -190,9 +190,9 @@ export default defineModule({
   schema: {
     message: control.text('Message'),
   },
+  assets: { css: \`.hello { padding: 12px; border: 1px dashed currentColor; border-radius: 6px; }\` },
   render: ({ props }) => ({
     html: html\`<div class="hello">\${props.message}</div>\`,
-    css: \`.hello { padding: 12px; border: 1px dashed currentColor; border-radius: 6px; }\`,
   }),
 })
 `

@@ -119,11 +119,12 @@ export interface StyleRuleSlice {
   updateClassStyles(classId: string, patch: Partial<CSSPropertyBag>): void
 
   /**
-   * Apply parsed authored CSS by exact emitted selector. Merge patches only
-   * the addressed declarations/contexts; replace makes the incoming rule's
+   * Apply parsed authored CSS by exact selector and native grouping path.
+   * Merge patches only the addressed declarations/contexts; replace makes the incoming rule's
    * complete CSS payload authoritative while preserving registry identity,
-   * cascade order, assignments, and metadata. Duplicate exact selectors are
-   * all updated atomically. New selectors append in authored order.
+   * cascade order, assignments, and metadata. Source occurrences stay separate;
+   * a single patch updates all matching occurrences, while multiple incoming
+   * occurrences pair in source order. New fragments append in authored order.
    */
   applyCssRules(
     rules: NewStyleRule[],

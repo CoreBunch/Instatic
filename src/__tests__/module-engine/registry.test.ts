@@ -125,7 +125,7 @@ describe('ModuleDefinition render() contract', () => {
     const r1 = mod.render({ text: 'hello' }, ['<span>child</span>'])
     const r2 = mod.render({ text: 'hello' }, ['<span>child</span>'])
     expect(r1.html).toBe(r2.html)
-    expect(r1.css).toBe(r2.css)
+    expect(r1.assetUsage).toEqual(r2.assetUsage)
   })
 
   it('render() with children passes renderedChildren as strings', () => {

@@ -14,6 +14,27 @@ import { registry } from '@core/module-engine'
 import type { PageNode } from '@core/page-tree'
 import { importHtml } from '@core/htmlImport'
 
+describe('native media and range controls', () => {
+  it('keeps a range input and its numeric bounds through public rendering', () => {
+    const node = firstNodeOf('<input type="range" min="2" max="20" step="2" value="6">', 'base.input')
+    expect(node.props).toMatchObject({ inputType: 'range', min: '2', max: '20', step: '2', value: '6' })
+    const html = renderNode(node)
+    expect(html).toContain('type="range"')
+    expect(html).toContain('min="2"')
+    expect(html).toContain('max="20"')
+    expect(html).toContain('step="2"')
+  })
+
+  it('keeps video poster, preload, label and playback affordances', () => {
+    const node = firstNodeOf('<video poster="poster.jpg" preload="none" aria-label="Datacenter" autoplay loop muted playsinline><source src="intro.mp4"></video>', 'base.video')
+    expect(node.props).toMatchObject({ videoUrl: 'intro.mp4', poster: 'poster.jpg', preload: 'none', title: 'Datacenter', autoplay: true, loop: true, muted: true, playsinline: true })
+    const html = renderNode(node)
+    expect(html).toContain('poster="poster.jpg"')
+    expect(html).toContain('preload="none"')
+    expect(html).toContain('src="intro.mp4"')
+  })
+})
+
 /** Find the first imported node produced by `moduleId`. */
 function firstNodeOf(html: string, moduleId: string): PageNode {
   const result = importHtml(html)

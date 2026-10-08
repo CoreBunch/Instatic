@@ -1,7 +1,7 @@
 /**
  * `/_instatic/module-js/<moduleId>.js` — per-module published-JS assets.
  *
- * Modules may return `js` from `render()` (see `RenderOutput`); the publisher
+ * Modules declare invariant `assets.js` on their definition; the publisher
  * dedupes it per moduleId and pages reference it via
  * `<script src="/_instatic/module-js/<id>.js?v=<publishVersion>" defer>` tags
  * injected by `injectModuleScripts`. This endpoint serves the body from the

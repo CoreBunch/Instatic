@@ -125,19 +125,20 @@ describe('pluginModuleToHostModule', () => {
     ).toThrow(/must export a render/)
   })
 
-  it('drops render() js without the frontend.assets grant and warns once per module', () => {
+  it('drops declared type JS without the frontend.assets grant and warns once per module', () => {
     const jsDefinition = {
       ...counterDefinition,
       id: 'acme.canvas.jsy',
-      render: () => ({ html: '<div></div>', js: '(function(){})();' }),
+      assets: { js: '(function(){})();' },
+      render: () => ({ html: '<div></div>' }),
     }
     const warnings: string[] = []
     const originalWarn = console.warn
     console.warn = (...args: unknown[]) => { warnings.push(args.map(String).join(' ')) }
     try {
       const hostModule = pluginModuleToHostModule('acme.canvas', jsDefinition, () => () => null, [])
-      expect(hostModule.render({}, []).js).toBeUndefined()
-      expect(hostModule.render({}, []).js).toBeUndefined()
+      expect(hostModule.assets?.js).toBeUndefined()
+      expect(hostModule.assets?.js).toBeUndefined()
       expect(warnings.filter((w) => w.includes('frontend.assets')).length).toBe(1)
       expect(warnings[0]).toContain('[plugin-module:acme.canvas.jsy]')
     } finally {
@@ -145,18 +146,43 @@ describe('pluginModuleToHostModule', () => {
     }
   })
 
-  it('passes render() js through with the frontend.assets grant', () => {
+  it('passes declared type JS through with the frontend.assets grant', () => {
     const jsDefinition = {
       ...counterDefinition,
       id: 'acme.canvas.jsy',
-      render: () => ({ html: '<div></div>', js: '(function(){})();' }),
+      assets: { js: '(function(){})();' },
+      render: () => ({ html: '<div></div>' }),
     }
     const hostModule = pluginModuleToHostModule('acme.canvas', jsDefinition, () => () => null, ['frontend.assets'])
-    expect(hostModule.render({}, []).js).toBe('(function(){})();')
+    expect(hostModule.assets?.js).toBe('(function(){})();')
+  })
+
+  it('propagates render failures and rejects payloads on the instance output', () => {
+    const cause = new Error('Authored render failed')
+    const broken = pluginModuleToHostModule('acme.canvas', { ...counterDefinition, render: () => { throw cause } }, () => () => null, [])
+    expect(() => broken.render({}, [])).toThrow(cause)
+    const invalid = pluginModuleToHostModule('acme.canvas', { ...counterDefinition, render: () => ({ html: '<p>Content</p>', js: 'UNDECLARED_RUNTIME' }) }, () => () => null, ['frontend.assets'])
+    expect(() => invalid.render({}, [])).toThrow(PluginModuleValidationError)
   })
 })
 
 describe('activatePluginModulePack', () => {
+  it('gates payloads against granted permissions even when frontend.assets is declared', () => {
+    const originalWarn = console.warn
+    const warnings: string[] = []
+    console.warn = (...args: unknown[]) => { warnings.push(args.map(String).join(' ')) }
+    try {
+      activatePluginModulePack(
+        { ...sampleManifest, permissions: ['modules.register', 'frontend.assets'] },
+        { default: [{ ...counterDefinition, assets: { css: '.counter{display:block}', js: 'COUNTER_RUNTIME' } }] },
+      )
+      expect(registry.get(counterDefinition.id)?.assets).toEqual({ css: '.counter{display:block}' })
+      expect(warnings).toHaveLength(1)
+    } finally {
+      console.warn = originalWarn
+    }
+  })
+
   it('registers each module from the pack and tracks them by plugin id', () => {
     activatePluginModulePack(
       sampleManifest,

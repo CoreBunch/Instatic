@@ -13,6 +13,7 @@
  * Achromatic palette (Constraint #376). CSS Modules only (Constraint #402).
  */
 
+import { useEffect } from 'react'
 import { useAsyncResource } from '@admin/lib/useAsyncResource'
 import { useEditorStore } from '@site/store/store'
 import { loopSourceRegistry } from '@core/loops/registry'
@@ -31,6 +32,7 @@ import { getAncestors, type Page } from '@core/page-tree'
 import { PropertyControlRenderer } from '@site/property-controls/PropertyControlRenderer'
 import { CUSTOM_HTML_TAG_VALUE } from '@core/htmlAttributes'
 import { customHtmlTagControl, htmlTagControl } from '@modules/base/utils/htmlTag'
+import { pushToast } from '@ui/components/Toast'
 
 interface LoopPropertiesViewProps {
   nodeId: string
@@ -51,16 +53,20 @@ export function LoopPropertiesView({ nodeId, props, activePage }: LoopProperties
       : {}
 
   // Data table list — fetched lazily for the data.rows source's tableId picker.
-  // Other sources resolve to `null` (no fetch); a failed load resolves to an
-  // empty list so the picker degrades gracefully.
-  const { data: tables } = useAsyncResource<DataTableListItem[] | null>(
+  // Other sources resolve to `null` (no fetch); failed loads retain their
+  // real error and offer a retry through the ordinary toast bus.
+  const { data: tables, error: tablesError, refresh: refreshTables } = useAsyncResource<DataTableListItem[] | null>(
     () => (
       sourceId === 'data.rows' || sourceId === ENTRY_FIELD_SOURCE_ID
-        ? listCmsDataTables().catch(() => [])
+        ? listCmsDataTables()
         : Promise.resolve(null)
     ),
     [sourceId],
   )
+  useEffect(() => {
+    if (tablesError) pushToast({ kind: 'error', title: 'Could not load data tables', body: tablesError,
+      action: { label: 'Retry', onSelect: refreshTables } })
+  }, [tablesError, refreshTables])
 
   // A relation cell stores the referenced row's ID, so a free-text value box
   // would ask the author to type an opaque string the editor never shows them
@@ -74,14 +80,18 @@ export function LoopPropertiesView({ nodeId, props, activePage }: LoopProperties
     return field?.type === 'relation' ? field.targetTableId : null
   })()
 
-  const { data: relationRows } = useAsyncResource<DataRow[] | null>(
+  const { data: relationRows, error: relationRowsError, refresh: refreshRelationRows } = useAsyncResource<DataRow[] | null>(
     () => (
       relationTargetTableId
-        ? listCmsDataRows(relationTargetTableId).catch(() => [])
+        ? listCmsDataRows(relationTargetTableId)
         : Promise.resolve(null)
     ),
     [relationTargetTableId],
   )
+  useEffect(() => {
+    if (relationRowsError) pushToast({ kind: 'error', title: 'Could not load related rows', body: relationRowsError,
+      action: { label: 'Retry', onSelect: refreshRelationRows } })
+  }, [relationRowsError, refreshRelationRows])
 
   // Build the per-source filter schema with dynamic options patched in.
   function buildFilterSchema(): PropertySchema {

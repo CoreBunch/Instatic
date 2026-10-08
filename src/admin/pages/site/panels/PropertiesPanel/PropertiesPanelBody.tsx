@@ -196,6 +196,7 @@ export function PropertiesPanelBody(props: PropertiesPanelBodyProps): React.Reac
       ) : (
         <HtmlAttributesPanel
           nodeId={selectedNode.id}
+          moduleId={selectedNode.moduleId}
           htmlAttributes={selectedNode.props.htmlAttributes}
           readOnly={!permissions.canEditStructure}
         />

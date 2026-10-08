@@ -604,7 +604,7 @@ See [docs/features/publisher.md](publisher.md) for the full three-layer pipeline
 
 ### Module JS on published pages — requires `frontend.assets`
 
-A plugin module's `render()` may return `js` (see `PluginRenderOutput`). It crosses the QuickJS boundary string-typed (non-strings are dropped by the VM normalizer) and is then gated host-side in `moduleAdapter.ts`: unless the plugin's **granted** permissions include `frontend.assets` — the same authority that already controls script tags via `frontend.assets[]` — the `js` is dropped with one `console.warn` per module. Enforcement always checks `grantedPermissions`, never the declared `permissions` array. With the grant, the JS is deduped per moduleId and served at `/_instatic/module-js/<moduleId>.js` on pages that use the module. Manifest format is unchanged.
+A plugin module declares invariant CSS and JS in `PluginModuleDefinition.assets`. The QuickJS metadata boundary validates those payloads with the shared TypeBox `ModuleAssetsSchema`; render/preview output validates HTML and optional boolean `assetUsage`, and render-time payload fields are rejected. `moduleAdapter.ts` keeps JS only when **granted** permissions contain `frontend.assets`, using the same authority as declarative frontend assets. Without the grant it drops JS with one warning at activation. CSS is shared with the editor canvas; published JS never executes in that canvas. Required render or output-validation failures propagate instead of becoming success-shaped HTML comments. See `server/plugins/modulePackVm.ts`, the typed bootstrap and `src/core/plugins/moduleAdapter.ts`.
 
 ### Frontend assets — requires `frontend.assets`
 
@@ -982,7 +982,7 @@ Risk levels:
 | `loops.register`            | Editor / server / manifest | Medium | Register custom `base.loop` sources                                  |
 | `visualComponents.register` | Admin / manifest     | Medium    | Ship VCs / page templates / class / layout packs (via `pack/site.json`) |
 | `dashboard.widgets.register`| Admin                | Medium    | Register cards in the admin dashboard widget grid                       |
-| `frontend.assets`           | Frontend / manifest  | High      | Inject declarative tags into every published page; also gates module render() `js` |
+| `frontend.assets`           | Frontend / manifest  | High      | Inject declarative tags into every published page; also gates module `assets.js` |
 | `network.outbound`          | Server               | High      | Make outbound HTTP requests (with `networkAllowedHosts` allowlist)      |
 | `media.import`              | Server / CMS media   | High      | Upsert managed media from a remote URL or contained package asset       |
 | `media.storage.adapter`     | Server / CMS media   | Dangerous | Register an electable media storage backend                             |

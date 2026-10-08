@@ -6,7 +6,13 @@
 // relative paths and never through this barrel.
 
 export { publishPage } from './render'
-export type { DocumentMetaOverride, PublishedRuntimePackageImportmap } from './render'
+export { assertPagePublicFileBindings, assertSitePublicFileBindings } from './publicFilePreflight'
+export { assertSiteTranslations } from './languagePreflight'
+export { collectLoopRenderScopes, assertLoopRenderScopes, assertPageLoopScopes, assertSiteLoopScopes, LoopScopeConfigurationError } from './loopRenderScopes'
+export type { LoopRenderScope } from './loopRenderScopes'
+export { findDynamicNodeIds } from './dynamicDetection'
+export type { PublishedRuntimePackageImportmap } from './render'
+export type { DocumentMetaOverride } from './documentMeta'
 
 export { renderNode, resolveSpecialRenderer, getSpecialRendererModuleIds } from './renderNode'
 
@@ -60,11 +66,13 @@ export {
 export type { ResponsiveCssOptions } from './responsiveBackground'
 
 export { collectClassCSS, CssCollector, sanitizeModuleCSS } from './cssCollector'
+export type { ClassCssOptions } from './cssCollector'
+export { collectPageStyleRuleIds } from './pageStyleUsage'
+export type { StyleRuleScriptSource } from './pageStyleUsage'
 export {
   collectUsedStyleRuleIds,
   treeShakeStyleRules,
   treeShakeStyleRulesBySignature,
-  usedStyleRuleIdSignature,
 } from './styleRuleTreeShake'
 
 export { buildSiteFrameworkCss, generateFrameworkCss } from './frameworkCss'
@@ -76,3 +84,6 @@ export { PUBLISHER_RESET_CSS } from './reset'
 export { resolveAutoSizes } from './sizesResolver'
 
 export type { CssBundleFile, SiteCssBundle, SiteCssBundleId } from './siteCssBundle'
+
+export { collectModuleAssets } from './moduleAssets'
+export type { ModuleAssetMaps } from './moduleAssets'

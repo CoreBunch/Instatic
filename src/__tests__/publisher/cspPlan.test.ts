@@ -34,7 +34,7 @@ describe('CspPlan — serialization is deterministic and sorted', () => {
     // Directives alphabetical: default-src < frame-src < img-src < media-src
     //   < script-src < style-src < worker-src
     expect(csp).toBe(
-      "default-src 'self'; frame-src 'none'; img-src 'self' data: https:; " +
+      "default-src 'self'; form-action 'self'; frame-src 'none'; img-src 'self' data: https:; " +
         "media-src 'self' data: https:; " +
         "script-src 'none'; style-src 'self' 'unsafe-inline'; worker-src 'none';",
     )
@@ -208,6 +208,30 @@ function extractPublishedCsp(html: string): string {
 }
 
 describe('publishPage — CSP frame-src from module cspSources', () => {
+  it('grants external styles and fonts only for emitted local scripts, retaining same-origin sources', () => {
+    const page = makePage({ root: { moduleId: 'base.text', props: {} } })
+    const registry = makeRegistry({ 'base.text': makeModule('base.text') })
+    const asset = { fileId: 'widget', src: '/widget.js', placement: 'head' as const, timing: 'immediate' as const, priority: 1,
+      resourceOrigins: { scripts: [], frames: [], connections: [], styles: ['https://styles.example'], fonts: ['https://fonts.example'] } }
+    const csp = extractPublishedCsp(publishPage(page, makeSite(), registry, { runtimeAssets: { scripts: [asset] } }).html)
+    expect(csp).toContain("style-src 'self' 'unsafe-inline' https://styles.example;")
+    expect(csp).toContain("font-src 'self' https://fonts.example;")
+    expect(csp).toContain("frame-src 'none';")
+    const rejected = extractPublishedCsp(publishPage(page, makeSite(), registry, { runtimeAssets: { scripts: [{ ...asset, src: '//remote.example/widget.js' }] } }).html)
+    expect(rejected).not.toContain('styles.example')
+    expect(rejected).not.toContain('fonts.example')
+  })
+  it('does not lift frame restrictions for a connection-only script or invalid script URL', () => {
+    const page = makePage({ root: { moduleId: 'base.text', props: {} } })
+    const registry = makeRegistry({ 'base.text': makeModule('base.text') })
+    const asset = { fileId: 'forms', src: '/forms.js', placement: 'body-end' as const, timing: 'dom-ready' as const, priority: 1,
+      resourceOrigins: { scripts: [], frames: [], connections: ['https://forms.example'] } }
+    const csp = extractPublishedCsp(publishPage(page, makeSite(), registry, { runtimeAssets: { scripts: [asset] } }).html)
+    expect(csp).toContain("frame-src 'none';")
+    expect(csp).toContain("connect-src 'self' https://forms.example;")
+    const rejected = extractPublishedCsp(publishPage(page, makeSite(), registry, { runtimeAssets: { scripts: [{ ...asset, src: 'https://remote.example/script.js' }] } }).html)
+    expect(rejected).not.toContain('forms.example')
+  })
   it('page with a youtube video has youtube.com in frame-src (not none)', () => {
     const page = makePage({
       root: {

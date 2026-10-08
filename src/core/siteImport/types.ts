@@ -7,7 +7,7 @@
 
 import type { StyleRule, ConditionDef } from '@core/page-tree'
 import type { ImportFragment } from '@core/htmlImport'
-import type { FontFileFormat } from '@core/fonts'
+import type { FontDisplay, FontFileFormat } from '@core/fonts'
 import type { SiteScriptFormat } from '@core/site-runtime'
 
 // ---------------------------------------------------------------------------
@@ -49,8 +49,9 @@ export type NewStyleRule = Omit<StyleRule, 'id' | 'createdAt' | 'updatedAt'>
  *   declaration value. Assets are collected in `assetRefs` (not warnings) by
  *   the Phase 1 parser; this kind is reserved for Phase 2's use.
  * - `duplicate-class`: two `.foo { ... }` rules with the same class selector
- *   appeared in the same file. The later rule's declarations win (CSS cascade
- *   semantics). One warning is emitted per duplicated class.
+ *   appeared in the same file. Each occurrence keeps its source position;
+ *   the browser resolves declaration priority and source order. One warning
+ *   is emitted per repeated occurrence.
  *
  * Phase 2 (site import pipeline) kinds:
  * - `missing-stylesheet`: a stylesheet referenced from an HTML `<link>` or a
@@ -196,6 +197,7 @@ export interface ParsedFontFace {
   /** Raw `url(...)` payloads from the `src` descriptor, in source order. */
   srcUrls: string[]
   unicodeRange?: string
+  fontDisplay?: FontDisplay
 }
 
 /**
@@ -208,6 +210,7 @@ export interface ImportFontFile {
   /** FileMap key (pre-rewrite) → media public URL (post-rewrite). */
   src: string
   unicodeRange?: string
+  fontDisplay?: FontDisplay
 }
 
 /** A custom font family synthesized from imported `@font-face` blocks. */

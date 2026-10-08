@@ -11,7 +11,7 @@ Cookbook for adding a new first-party module — the building block used on the 
 - `id` is namespaced kebab-case (`base.heading`, `acme.product-card`).
 - `render(props, renderedChildren)` is **pure** — string → string. No DOM, no React, no side effects.
 - String props are HTML-escaped by the publisher before `render` is called.
-- CSS from `render()` is deduped by `moduleId` — emit the same CSS per instance, it ships once.
+- Declare invariant payloads in `assets: { css?, js? }`; the publisher dedupes them by `moduleId`. A real render can set `assetUsage.css` or `assetUsage.js` to false for that instance.
 - Editor components **must** spread `nodeWrapperProps` and apply `mcClassName` on the root element.
 
 ---
@@ -64,13 +64,12 @@ export const HeadingModule: ModuleDefinition<HeadingProps> = {
       ],
     },
   },
+  assets: { css: '.heading[data-align="center"] { text-align: center; } .heading[data-align="right"] { text-align: right; }' },
   component: HeadingEditor,
   render: (props) => {
     const tag = `h${Math.max(1, Math.min(6, Number(props.level) || 2))}`
     return {
       html: `<${tag} class="heading" data-align="${props.align}">${props.text}</${tag}>`,
-      css:  `.heading[data-align="center"] { text-align: center; }
-             .heading[data-align="right"]  { text-align: right;  }`,
     }
   },
 }
@@ -88,10 +87,12 @@ That's the whole feature loop: module picker, Properties Panel, publisher, CSS d
 
 ```ts
 render: (props: TProps, renderedChildren: string[]) => RenderOutput
-// RenderOutput = { html: string; css?: string }
+// RenderOutput = { html: string; assetUsage?: { css?: boolean; js?: boolean }; cspSources?: CspSourceRequirement[] }
 ```
 
 ### `props` is trusted (after escaping)
+
+`parseModuleProps` is the common hard TypeBox boundary after binding resolution. It fills missing fields from schema defaults and performs the normal coercions, but raises `ModulePropsValidationError` with its cause and page/node/schema path if parsing fails. It never replaces invalid authored props with all module defaults.
 
 By the time `render` is called:
 
@@ -113,16 +114,16 @@ render: (props, renderedChildren) => ({
 
 Leaf modules (`canHaveChildren: false`) receive an empty array — they can ignore the parameter.
 
-### Returning CSS
+### Declaring CSS
 
 ```ts
-return {
+assets: { css: '.my-mod { padding: 16px; }' },
+render: (_props, renderedChildren) => ({
   html: `<div class="my-mod">${renderedChildren.join('')}</div>`,
-  css:  `.my-mod { padding: 16px; }`,
-}
+}),
 ```
 
-- CSS is deduped per `moduleId` — emit the same CSS for every instance; it appears once in the page.
+- CSS is deduped per `moduleId`. The payload is independent of props, rows and requests. Put instance-dependent styling in native node classes and properties.
 - Use module-scoped selectors (`.my-mod`, `.my-mod__inner`). Avoid global or id-based selectors.
 - `src/modules/` is exempt from `css-token-policy.test.ts` — hex literals are fine here. Editor tokens aren't available in published pages.
 
@@ -370,7 +371,7 @@ publishBehavior: 'transparent'  // the node renders nothing on its own
 
 - **`'standard'`** (the default — just omit the field): `renderStandardNode` runs the usual flow — render children → resolve/escape props → call `render()` → inject classes. Almost every module.
 - **`'special'`**: the walker hands the node to a publisher-side specialised renderer keyed by module id (e.g. `renderLoop`, `renderVisualComponentRef`). These renderers replace the entire standard flow because the node's semantics need a different shape (a loop iterates a data source; a vc-ref inlines a Visual Component tree). The renderer **implementations** stay in the publisher (`SPECIAL_RENDERER_IMPLS` — they take `renderNode` as a callback and bypass the pure-render boundary); the module **declares** the contract via `publishBehavior: 'special'`. The contract is not magically derived — it is **declared, guarded, and gated**: a `'special'` declaration with no matching publisher implementation throws at dispatch (a forgotten renderer fails loudly instead of silently falling through to the wrong standard path), and a bidirectional test gate keeps `getSpecialRendererModuleIds()` and the set of modules declaring `'special'` from drifting apart.
-- **`'transparent'`**: the node contributes nothing on its own — its `render()` **must** return empty HTML (and empty/absent CSS). This is **validated at registration**: registering a transparent module whose `render()` returns non-empty output throws. Its content reaches the page by another mechanism — e.g. a `base.slot-instance`'s children are emitted at the matching `base.slot-outlet` position by the vc-ref renderer.
+- **`'transparent'`**: the node contributes nothing on its own — its `render()` **must** return empty HTML and the definition must declare no non-empty assets. This is **validated at registration**: registering a transparent module with its own HTML or assets throws. Its content reaches the page by another mechanism — e.g. a `base.slot-instance`'s children are emitted at the matching `base.slot-outlet` position by the vc-ref renderer.
 
 First-party assignments: `base.loop` and `base.visual-component-ref` are `'special'`; `base.slot-instance` and `base.slot-outlet` are `'transparent'`; everything else is `'standard'`.
 

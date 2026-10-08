@@ -9,6 +9,7 @@ import type {
 import type { IconComponent } from 'pixel-art-icons/types'
 import type { TSchema } from '@core/utils/typeboxHelpers'
 import type { PropertySchema } from './propertySchema'
+import type { ModuleAssets, ModuleAssetUsage } from './moduleAssets'
 
 // ---------------------------------------------------------------------------
 // Module package dependencies — dependency-backed editor runtimes
@@ -45,15 +46,14 @@ interface ModuleEditorRuntime {
 
 // ---------------------------------------------------------------------------
 // Render Output — the canonical return type for ModuleDefinition.render()
-// Decision #309: render() returns { html, css? } not a plain string
+// Decision #309: render() returns { html, assetUsage?, cspSources? } not a plain string
 // ---------------------------------------------------------------------------
 
 /**
  * The safe set of CSP directives a module may declare source requirements for.
- * Scoped to content-loading directives only — modules cannot request
- * 'script-src' relaxation through this channel (that would open arbitrary
- * script execution; plugin frontend assets go through the server injection
- * pipeline instead).
+ * First-party modules declare only the origins actually used by their
+ * authored configuration. Plugin frontend assets use the server injection
+ * pipeline and permission checks.
  */
 export type CspDirective =
   | 'frame-src'
@@ -63,6 +63,7 @@ export type CspDirective =
   | 'connect-src'
   | 'style-src'
   | 'font-src'
+  | 'form-action'
 
 /**
  * A single CSP source requirement declared by a module's render() output.
@@ -80,22 +81,8 @@ export interface CspSourceRequirement {
 export interface RenderOutput {
   /** Clean HTML string — no editor code, no React, no framework runtime */
   html: string
-  /**
-   * Optional scoped CSS for this module TYPE.
-   * The publisher deduplicates across all instances (one CSS block per module type).
-   */
-  css?: string
-  /**
-   * Optional vanilla-JS runtime for this module TYPE, deduplicated per
-   * moduleId exactly like `css` and served as an external per-module asset
-   * (`/_instatic/module-js/<moduleId>.js`) on published pages — never inlined,
-   * so no `</script>` escaping is needed. Authoring contract: a self-contained
-   * IIFE; bind via document-level event delegation (hole fragments insert into
-   * the DOM after load); idempotent; no load-order assumptions; no framework
-   * runtimes. Never executed in the admin canvas (the canvas renders editor
-   * React components, not published render() output).
-   */
-  js?: string
+  /** Disable a declared type asset for this resolved instance; omitted means enabled. */
+  assetUsage?: ModuleAssetUsage
   /**
    * Optional CSP source requirements for this specific render instance.
    *
@@ -369,9 +356,9 @@ export interface ModuleDefinition<
 
   /**
    * Optional TypeBox schema that declares the full shape and per-field
-   * defaults for this module's props. When present, `validateNodeProps`
-   * coerces and default-fills props at the publisher boundary (soft — never
-   * throws). The schema is the single source of truth for shape + defaults;
+   * defaults for this module's props. When present, `parseModuleProps`
+   * coerces and default-fills props at the publisher boundary, throwing a
+   * typed error if coercion cannot produce valid props. The schema owns defaults;
    * `defaults` should be derived from it via `Value.Create(propsSchema)`.
    *
    * Publisher-injected render-time fields (`_resolvedMediaByKey`,
@@ -379,6 +366,9 @@ export interface ModuleDefinition<
    * injected after the coercion step and survive through the merge.
    */
   propsSchema?: TSchema
+
+  /** Invariant CSS / vanilla-JS payloads, shared by every instance of this type. */
+  assets?: ModuleAssets
 
   /** Default property values matching the schema */
   defaults: TProps
@@ -414,7 +404,7 @@ export interface ModuleDefinition<
    * - No imports from src/editor/
    * - ALL string props MUST be HTML-escaped before interpolation
    * - MUST reject javascript: URLs in href/src/action attributes
-   * Decision #309: returns RenderOutput { html, css? } not a plain string
+   * Decision #309: returns RenderOutput { html, assetUsage?, cspSources? } not a plain string
    */
   render: (props: TProps, renderedChildren: string[]) => RenderOutput
 

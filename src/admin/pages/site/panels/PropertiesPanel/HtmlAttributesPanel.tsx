@@ -13,21 +13,25 @@ import {
   type HtmlAttributeDraftRow,
 } from './htmlAttributesModel'
 import styles from './HtmlAttributesPanel.module.css'
+import { MODULE_GENERATED_ATTRIBUTE_NAMES } from '@core/htmlAttributes'
 
 interface HtmlAttributesPanelProps {
   nodeId: string
+  moduleId: string
   htmlAttributes: unknown
   readOnly: boolean
 }
 
 export function HtmlAttributesPanel({
   nodeId,
+  moduleId,
   htmlAttributes,
   readOnly,
 }: HtmlAttributesPanelProps) {
   return (
     <HtmlAttributesPanelEditor
       nodeId={nodeId}
+      moduleId={moduleId}
       htmlAttributes={htmlAttributes}
       readOnly={readOnly}
     />
@@ -36,6 +40,7 @@ export function HtmlAttributesPanel({
 
 function HtmlAttributesPanelEditor({
   nodeId,
+  moduleId,
   htmlAttributes,
   readOnly,
 }: HtmlAttributesPanelProps) {
@@ -61,11 +66,12 @@ function HtmlAttributesPanelEditor({
     setRows(htmlAttributeRowsFromValue(htmlAttributes))
   }, [externalAttributesKey, htmlAttributes, nodeId])
 
-  const validation = validateHtmlAttributeRows(rows)
+  const generatedNames = MODULE_GENERATED_ATTRIBUTE_NAMES[moduleId]
+  const validation = validateHtmlAttributeRows(rows, generatedNames)
   const hasRows = rows.length > 0
 
   function persistRows(nextRows: HtmlAttributeDraftRow[]) {
-    const nextValidation = validateHtmlAttributeRows(nextRows)
+    const nextValidation = validateHtmlAttributeRows(nextRows, generatedNames)
     if (Object.keys(nextValidation.errors).length > 0) return
     const nextAttributesKey = htmlAttributesKey(nextValidation.attributes)
     if (nextAttributesKey === syncedAttributesKey.current) return

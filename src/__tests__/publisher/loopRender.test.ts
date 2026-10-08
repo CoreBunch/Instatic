@@ -8,6 +8,7 @@ import { describe, expect, it } from 'bun:test'
 import { makeModule, makePage, makeRegistry, makeSite } from './helpers'
 import { publishPage, type ResolvedLoopRenderData } from '@core/publisher'
 import type { LoopItem } from '@core/loops/types'
+import { LoopModule } from '@modules/base/loop'
 
 function loopData(items: LoopItem[]): ResolvedLoopRenderData {
   return { items, totalItems: items.length, pageNumber: 1, hasMore: false }
@@ -34,6 +35,8 @@ const rootModule = makeModule('base.body', {
 })
 
 const loopModule = makeModule('base.loop', {
+  propsSchema: LoopModule.propsSchema,
+  defaults: LoopModule.defaults,
   canHaveChildren: true,
   // Defense-in-depth fallback that should never be called — interceptor
   // handles loop rendering. If it IS called, the test will see this.

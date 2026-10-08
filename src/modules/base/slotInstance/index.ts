@@ -60,7 +60,7 @@ export const SlotInstanceModule: ModuleDefinition<SlotInstanceStoredProps> = {
    * nothing to the published page on its own (its children are rendered at the
    * slot-outlet position instead).
    */
-  render: () => ({ html: '', css: '' }),
+  render: () => ({ html: '' }),
 }
 
 registry.registerOrReplace(SlotInstanceModule)

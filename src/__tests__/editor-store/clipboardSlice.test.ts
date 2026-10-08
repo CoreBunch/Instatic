@@ -15,7 +15,7 @@
  *   6. Refusal to copy / cut the page root.
  */
 
-import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
+import { afterEach, beforeEach, describe, expect, it, spyOn } from 'bun:test'
 import { useEditorStore } from '@site/store/store'
 import {
   CLIPBOARD_STORAGE_KEY,
@@ -91,6 +91,25 @@ describe('clipboardSlice.copyNode', () => {
     expect(persisted).not.toBeNull()
     expect(persisted!.rootNodeIds).toEqual([textId])
     expect(localStorage.getItem(CLIPBOARD_STORAGE_KEY)).toBeTruthy()
+  })
+
+  it('refuses cut when a CSS dependency is missing and preserves the source', () => {
+    const site = useEditorStore.getState().createSite('Clip Site')
+    const nodeId = useEditorStore.getState().insertNode('base.text', {}, site.pages[0].rootNodeId)
+    const cls = useEditorStore.getState().createClass('broken-style')
+    useEditorStore.getState().addNodeClass(nodeId, cls.id)
+    useEditorStore.setState((state) => {
+      state.site!.styleRules[cls.id].grouping = [{ kind: 'context', id: 'group', contextId: 'missing' }]
+    })
+    const logged = spyOn(console, 'error').mockImplementation(() => {})
+    try {
+      expect(useEditorStore.getState().cutNode(nodeId)).toBe(false)
+      expect(useEditorStore.getState().site!.pages[0].nodes[nodeId]).toBeDefined()
+      expect(useEditorStore.getState().clipboardEntry).toBeNull()
+      expect(logged).toHaveBeenCalledTimes(1)
+    } finally {
+      logged.mockRestore()
+    }
   })
 })
 
@@ -237,7 +256,7 @@ describe('clipboardSlice — persistence', () => {
     // Round-trip through localStorage manually to confirm the persisted shape parses.
     const reloaded = readClipboardPayload()
     expect(reloaded).not.toBeNull()
-    expect(reloaded!.version).toBe(2)
+    expect(reloaded!.version).toBe(3)
     expect(reloaded!.rootNodeIds).toEqual([textId])
   })
 })

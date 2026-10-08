@@ -116,7 +116,7 @@ Iterates rows in any `data_table`. The user picks the table in the Properties pa
 
 **Filtering by a cell.** Three `filters` keys carry the condition: `cellField` (a field id from the selected table), `cellOperator`, and `cellValue`. The operator set is closed — `is`, `isNot`, `isTrue`, `isFalse`, `isSet`, `isEmpty` — and `parseCellFilter` in `src/core/loops/cellFilter.ts` returns `null` for anything absent or half-configured, so a loop mid-edit keeps listing everything rather than silently emptying.
 
-**Sorting by a cell.** `orderBy` also accepts `cell:<fieldId>`, read by `parseCellOrder`. Riding on `orderBy` rather than a separate prop means every caller that already threads it — the publisher, the canvas preview endpoint, imported `data-order-by` attributes — supports cell sorting without further plumbing. Values compare as text in both dialects: ISO dates sort chronologically, numbers sort lexicographically (`'10' < '9'`).
+**Sorting by a cell.** `orderBy` also accepts `cell:<fieldId>`, read by `parseCellOrder`. Riding on `orderBy` rather than a separate prop means every caller that already threads it — the publisher, the canvas preview endpoint, imported `data-order-by` attributes — supports cell sorting without further plumbing. Number fields use numeric comparison in both dialects; missing, null and non-number values sort last in either direction. Other scalar fields compare as text, so ISO dates sort chronologically. Field metadata selects the comparison type: authors keep actual numbers in their cells rather than formatting values to influence ordering.
 
 Both read `cells_json`, the one place the two dialects genuinely differ (`#>> array[$n]` on Postgres, `json_extract` on SQLite). **The field name binds as a parameter, never as SQL text.** `cellFilterSql` and `cellOrderSql` own that switch; `loop-source-sql-safety.test.ts` scans the whole `src/core/loops/` tree for Postgres-isms.
 
@@ -304,7 +304,7 @@ entry stack.
 `server/publish/loopPrefetch.ts`:
 
 ```ts
-// collectLoopNodes uses walkRenderTree (server/publish/renderTreeWalk.ts) so
+// collectLoopNodes uses walkRenderTree (@core/visualComponents) so
 // base.loop nodes inside Visual Component definition trees are included —
 // a loop inside a VC body is fetched and rendered with real data.
 async function prefetchLoops(page, site, db) {
@@ -478,12 +478,23 @@ Two modes are available via the loop node's `pagination` prop:
 
 **`pagination: 'none'` (default)** — renders up to `limit` items at publish time. No load-more affordance.
 
-**`pagination: 'infinite'`** — renders the first `pageSize` items and appends a **"Load more"** button. Each click fetches the next page from `/_instatic/loop/<loopId>?page=N&pagePath=<path>` and appends the returned HTML before the button. When `hasMore` is false the button is removed automatically.
+**`pagination: 'infinite'`** — renders the first `pageSize` items and appends a **"Load more"** button. Each click fetches the next page from `/_instatic/loop/<loopId>?page=N&pagePath=<path-and-query>&v=<publishVersion>` and appends the validated HTML before the button. When `hasMore` is false the button is removed automatically.
 
 To enable infinite loading:
 1. Set `props.pagination = 'infinite'` on the loop node.
 2. Set `props.pageSize` (items per click; defaults to 10).
-3. The publisher auto-injects `<script type="module" src="/_instatic/assets/loop-runtime.js">` when at least one infinite loop exists on the page (see `server/publish/loopRuntime.ts`). The runtime is < 2 KB and ships only when needed.
+3. The publisher auto-injects `<script type="module" src="/_instatic/assets/loop-runtime.js">` when at least one infinite loop exists on the page (see `server/publish/loopRuntime.ts`). The runtime has no visitor dependencies and ships only when needed.
+
+The Loop settings expose `loadMoreLabel`, `loadingLabel`, and `retryLabel`. These are native text properties in `src/modules/base/loop/index.ts`; use ordinary language-file tokens such as `{site.translations.loop.more}`. `src/core/publisher/renderLoop.ts` resolves and escapes the labels into runtime attributes. `server/publish/loopRuntime.ts` reads those exact labels for the idle, busy and failed states, toggles `aria-busy`, and validates the wire response using the compiled `LoopPageResponseSchema` from `src/core/loops-schema/index.ts`. It never downloads dictionaries.
+
+`server/publish/loopFragmentContext.ts` resolves the originating published route through `publicRouteResolution.ts`, then prepares the same template composition and native frames as the full renderer through `publishedRenderContext.ts`. Shared component IDs across page routes do not select another page's language or values. Effective component parameters, filled slots, published file references, request query and an entry route's parent entry survive in the fragment. Wrapping layouts retain the terminal page's native frame.
+
+The endpoint requires a local originating URL and the rendered publish version. Invalid input returns a 400 error envelope; a missing published route or loop returns 404; changed publications and moved routes return 409. Published translation/file and loop configuration validation errors return 422. There is no global loop-ID lookup or guessed empty entry context. Behavior is covered by `src/__tests__/server/loopRouteHandler.test.ts`.
+
+Infinite loading requires a unique loop ID on each effective public page and no outer loop iteration. A single native scope walker owns both fragment lookup and the publication check (`src/core/publisher/loopRenderScopes.ts`). Publication rejects nested infinite loops and repeated infinite-loop component instances with a `LoopScopeConfigurationError` carrying the offending property path, before writing any publication state. Checks use the actual page, entry and 404 template compositions, including effective VC params and slots; hidden, orphan and unused trees are omitted. An entry route's published row remains a supported initial `parentEntry` frame. Finite nested loops continue to render through the ordinary entry stack.
+
+Source, filters, pagination mode and page size are authored configuration, materialized through ordinary VC parameters before prefetch. Rendering the native text bindings for loading labels does not change that configuration after fetching the data.
+Structured dynamic bindings and inline tokens on `sourceId`, `filters`, `orderBy`, `direction`, `limit`, `offset`, `pagination` or `pageSize` are unsupported configuration and fail with a typed property path, rather than changing or silently ignoring the source configuration at render time. Inline tokens use the ordinary native token parser for this check.
 
 For static multi-page navigation (no JS required):
 - Set `pagination: 'infinite'` and link the pages with the query parameter below — the server renders each page. See "Deep-link to a loop page".

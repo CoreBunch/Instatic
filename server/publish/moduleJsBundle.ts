@@ -1,8 +1,9 @@
 /**
  * Published module-JS channel — server-side builder + injector.
  *
- * `render()` may return `js` next to `html`/`css` (see `RenderOutput`). The
- * publisher dedupes it per moduleId into `RenderAccumulators.jsMap`; this file
+ * `ModuleDefinition.assets.js` declares an invariant type payload. Real
+ * render output activates it through `assetUsage`; the publisher dedupes
+ * active payloads per moduleId into `RenderAccumulators.jsMap`. This file
  * owns the site-wide map and the page-level `<script>` injection:
  *
  * - `buildSiteModuleJsMap` rebuilds the map from scratch (preview, tests).

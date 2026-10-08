@@ -14,6 +14,7 @@ import type {
   DynamicPropBinding,
   ExplorerPathChangePlan,
   Page,
+  PageSeo,
   PageNode,
   NodeTree,
   Breakpoint,
@@ -116,6 +117,9 @@ export interface SiteSlice {
   addPage: (title: string, slug?: string) => Page
   deletePage: (pageId: string) => void
   renamePage: (pageId: string, title: string, slug?: string) => void
+  setPageTranslationGroup: (pageId: string, group?: string) => void
+  setPageLanguage: (pageId: string, language?: string) => void
+  setPageSeo: (pageId: string, seo: PageSeo | undefined) => void
   duplicatePage: (sourcePageId: string, title: string, slug?: string) => Page
   reorderPages: (fromIndex: number, toIndex: number) => void
   convertPageToTemplate: (pageId: string, config: PageTemplateConfig) => void

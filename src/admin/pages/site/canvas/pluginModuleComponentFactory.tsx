@@ -9,7 +9,7 @@
  * rendered React subtrees) are rendered as a sibling node, so plugins that
  * opt into `canHaveChildren` still see the host-rendered nested modules.
  *
- * Module CSS — the `.css` string a plugin returns from `render()` — is
+ * Module CSS — the invariant `assets.css` string a plugin declares — is
  * injected into the document head as a single `<style data-plugin-module="..."
  * data-css-hash="...">` element per module type + CSS content. The publisher
  * does the equivalent via `buildSiteCssBundle` for the published page, so
@@ -87,16 +87,16 @@ export const editorPluginModuleComponentFactory: PluginModuleComponentFactory = 
     // place and emit an inline placeholder, so a single bad module remains
     // visually contained to its own slot.
     let html: string
-    let css: string | undefined
+    let useCss = true
     try {
       const out = renderForEditor(props.props, childList)
       html = out.html
-      css = out.css
+      useCss = out.assetUsage?.css !== false
     } catch (err) {
       console.error(`[plugin-module:${definition.id}] preview/render() threw:`, err)
       html = `<!-- instatic: plugin module "${definition.id}" render failed -->`
     }
-    if (css) injectModuleCss(definition.id, css)
+    if (useCss && definition.assets?.css) injectModuleCss(definition.id, definition.assets.css)
     if (canHaveChildren) {
       // dangerouslySetInnerHTML and children are mutually exclusive in React.
       // Plugins with `canHaveChildren: true` need both: rendered HTML + a

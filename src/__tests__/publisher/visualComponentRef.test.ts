@@ -236,6 +236,38 @@ describe('VC inlining — slot expansion', () => {
     expect(html).toContain('Default slot content')
   })
 
+  it('preserves native dynamic bindings and inline styles on page-authored slot fills', () => {
+    const page = makePage({
+      root: { moduleId: 'base.visual-component-ref', props: { componentId: 'vc-slot' }, children: ['slot'] },
+      slot: { moduleId: 'base.slot-instance', props: { slotName: 'children' }, children: ['fill'] },
+      fill: {
+        moduleId: 'base.text', props: { text: 'Static placeholder', tag: 'p' },
+        dynamicBindings: { text: { source: 'page', field: 'title' } },
+        inlineStyles: { color: 'red' },
+      },
+    })
+    page.title = 'Bound slot title'
+    const { html } = publishPage(page, makeSite({ visualComponents: [vcWithSlot], pages: [page] }), registry)
+    expect(html).toContain('Bound slot title')
+    expect(html).toContain('color: red')
+    expect(html).not.toContain('Static placeholder')
+    expect(html).not.toContain('Default slot content')
+  })
+
+  it('does not expose filled or default content of a hidden slot outlet', () => {
+    const hidden = makeVC({ id: 'hidden-slot', name: 'HiddenSlot', rootId: 'vc-slot-root',
+      nodes: [slotContainerNode, { ...slotOutletNode, hidden: true }], params: vcWithSlot.params })
+    const page = makePage({
+      root: { moduleId: 'base.visual-component-ref', props: { componentId: 'hidden-slot' }, children: ['slot'] },
+      slot: { moduleId: 'base.slot-instance', props: { slotName: 'children' }, children: ['fill'] },
+      fill: { moduleId: 'base.text', props: { text: 'Hidden fill', tag: 'p' } },
+    })
+    const site = makeSite({ visualComponents: [hidden], pages: [page] })
+    expect(publishPage(page, site, registry).html).not.toContain('Hidden fill')
+    page.nodes.root!.children = []
+    expect(publishPage(page, site, registry).html).not.toContain('Default slot content')
+  })
+
   it('emits empty string for slot-outlet with no content and no defaultValue', () => {
     // VC with a slot outlet that has NO defaultValue
     const vcNoDefault = makeVC({
@@ -419,10 +451,8 @@ describe('VC inlining — class CSS collection', () => {
       'base.visual-component-ref': VisualComponentRefModule as never,
       'base.slot-outlet': SlotOutletModule as never,
       'test.styled': makeModule('test.styled', {
-        render: (props) => ({
-          html: `<p>${String((props as { text: unknown }).text)}</p>`,
-          css: 'p { color: navy; }',
-        }),
+        assets: { css: 'p { color: navy; }' },
+        render: (props) => ({ html: `<p>${String((props as { text: unknown }).text)}</p>` }),
       }),
       'base.container': ContainerModule as never,
     })

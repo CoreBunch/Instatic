@@ -33,6 +33,7 @@
  * Runtime: returns a `PluginModuleDefinition` ready to be re-exported from
  * a `modules/index.{ts,js}` plugin entrypoint.
  */
+import type { ModuleAssets } from '@core/module-engine-schema'
 import type {
   PluginEditorRuntime,
   PluginModuleDefinition,
@@ -50,6 +51,8 @@ interface DefineModuleConfig<TDefaults extends Record<string, unknown>> {
   defaults: TDefaults
   /** Property controls — keys must match `defaults`. */
   schema: { [K in keyof TDefaults]: PluginPropertyControl }
+  /** Invariant type assets, independent of render props. */
+  assets?: ModuleAssets
   /** Whether the module can hold child modules. */
   canHaveChildren?: boolean
   /** Optional concrete root tag for layer/DOM tree display. */
@@ -100,6 +103,7 @@ export function defineModule<const TDefaults extends Record<string, unknown>>(
     defaults: config.defaults as Record<string, unknown>,
     schema: config.schema as Record<string, PluginPropertyControl>,
     canHaveChildren: config.canHaveChildren,
+    ...(config.assets ? { assets: config.assets } : {}),
     htmlTag: config.htmlTag,
     ...(config.dependencies ? { dependencies: config.dependencies } : {}),
     ...(config.editorRuntime ? { editorRuntime: config.editorRuntime } : {}),

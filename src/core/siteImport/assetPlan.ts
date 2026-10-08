@@ -4,7 +4,7 @@
  * `applyAssetRewrites` can do exact-string replacement.
  *
  * Two sources of asset references:
- *   1. PageNode props — `src`, `href`, `srcset` values set by the HTML
+ *   1. PageNode props — source, link, srcset, video and poster URLs set by the HTML
  *      importer from element attributes, plus imported `htmlAttributes` bags
  *      such as `data-bg-src`.
  *   2. CSS rule styles — `url(...)` payloads recorded by Phase 1's
@@ -39,12 +39,7 @@ import type {
   ImportAsset,
 } from './types'
 import { guessMimeType, isImportUploadableMimeType } from './mimeTypes'
-
-// ---------------------------------------------------------------------------
-// Props that may contain relative asset URLs in page nodes
-// ---------------------------------------------------------------------------
-
-const URL_BEARING_PROPS: ReadonlySet<string> = new Set(['src', 'href', 'srcset'])
+import { URL_BEARING_PROPS } from './assetProps'
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -297,6 +292,7 @@ function buildFontFamilies(
         variant: face.variant,
         format: best.format,
         src: best.src,
+        ...(face.fontDisplay ? { fontDisplay: face.fontDisplay } : {}),
         ...(face.unicodeRange ? { unicodeRange: face.unicodeRange } : {}),
       })
     }
@@ -458,6 +454,7 @@ function normalizeRules(
 
     const newStyles = { ...rule.styles } as Record<string, unknown>
     let newRawCss = rule.rawCss
+    let newAtRule = rule.atRule
     // Clone every per-context override bag so url() rewrites don't mutate the
     // source plan. Both viewport contexts and custom conditions live here.
     const newContextStyles: Record<string, Record<string, unknown>> = {}
@@ -472,6 +469,13 @@ function normalizeRules(
       if (ref.rawCss === true) {
         if (typeof newRawCss === 'string') {
           newRawCss = replaceRawUrlInValue(newRawCss, ref.rawUrl, fileMapKey)
+        }
+      } else if (newAtRule?.kind === 'property' && ref.property === 'initialValue') {
+        if (newAtRule.initialValue !== undefined) {
+          newAtRule = {
+            ...newAtRule,
+            initialValue: replaceRawUrlInValue(newAtRule.initialValue, ref.rawUrl, fileMapKey),
+          }
         }
       } else if (ref.contextId === undefined) {
         const val = newStyles[ref.property]
@@ -494,6 +498,7 @@ function normalizeRules(
       styles: newStyles,
       contextStyles: newContextStyles,
       ...(newRawCss !== undefined ? { rawCss: newRawCss } : {}),
+      ...(newAtRule !== undefined ? { atRule: newAtRule } : {}),
     }
   })
 
@@ -674,4 +679,3 @@ function replaceRawUrlInValue(value: string, rawUrl: string, fileMapKey: string)
   const re = new RegExp(`url\\(\\s*(['"]?)${escaped}\\1\\s*\\)`, 'g')
   return value.replace(re, `url('${fileMapKey}')`)
 }
-

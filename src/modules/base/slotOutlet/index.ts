@@ -53,7 +53,7 @@ export const SlotOutletModule: ModuleDefinition<SlotOutletStoredProps> = {
    * content was provided AND the slot param has no defaultValue. Return empty
    * HTML so the slot contributes nothing to the published page.
    */
-  render: () => ({ html: '', css: '' }),
+  render: () => ({ html: '' }),
 }
 
 registry.registerOrReplace(SlotOutletModule)

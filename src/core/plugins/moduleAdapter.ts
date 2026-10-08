@@ -31,6 +31,9 @@ import type {
   PluginPropertySchema,
 } from '@core/plugin-sdk'
 import type { ComponentType } from 'react'
+import { ModuleAssetsSchema } from '@core/module-engine-schema'
+import { safeParseValue } from '@core/utils/typeboxHelpers'
+import { PluginRenderOutputSchema } from '@core/plugin-sdk'
 
 const SAFE_MODULE_NAME = /^[a-z][a-z0-9-]*$/
 
@@ -135,13 +138,15 @@ export function pluginModuleToHostModule(
     )
   }
 
-  // `frontend.assets` is the existing permission meaning "may put script tags
-  // on published pages" (enforced against grantedPermissions the same way in
-  // server/publish/frontendInjections.ts). Module render() `js` rides the
-  // same authority; without the grant it is dropped with ONE warning per
-  // module so a publish over hundreds of nodes doesn't spam the log.
-  const allowModuleJs = grantedPermissions.includes('frontend.assets')
-  let warnedDroppedJs = false
+  const parsedAssets = safeParseValue(ModuleAssetsSchema, definition.assets ?? {})
+  if (!parsedAssets.ok) {
+    throw new PluginModuleValidationError('Invalid module assets: ' + parsedAssets.errors.map((e) => e.path + ': ' + e.message).join('; '), definition.id + '.assets')
+  }
+  const assets = { ...parsedAssets.value }
+  if (assets.js !== undefined && !grantedPermissions.includes('frontend.assets')) {
+    console.warn('[plugin-module:' + definition.id + '] plugin "' + pluginId + '" was not granted "frontend.assets" — module JS dropped.')
+    delete assets.js
+  }
 
   return {
     id: definition.id,
@@ -158,9 +163,10 @@ export function pluginModuleToHostModule(
     // `editorRuntime.sandbox` in `module-engine/types.ts`).
     trusted: false,
     canHaveChildren: Boolean(definition.canHaveChildren),
+    assets,
     schema: translatePropertySchema(definition.schema),
     defaults: definition.defaults,
-    // Pass propsSchema through verbatim — validateNodeProps handles absence
+    // Pass propsSchema through verbatim — parseModuleProps handles absence
     // as a no-op, so plugins without a schema are unaffected.
     ...(definition.propsSchema ? { propsSchema: definition.propsSchema } : {}),
     component: componentFactory(definition),
@@ -177,27 +183,14 @@ export function pluginModuleToHostModule(
     // from `dependencies`, so `import * as THREE from 'three'` inside the
     // sandbox source resolves to the locked CDN URL.
     ...maybeEditorRuntime(definition.editorRuntime),
-    // Defensive wrap — a throwing plugin render() must not crash the
-    // publisher (one bad module would otherwise abort the entire publish
-    // job). The editor canvas separately wraps the React preview in an
-    // ErrorBoundary; this wrap protects the server-side publisher path.
+    // Render and boundary failures propagate: required module content is never
+    // replaced by a success-shaped comment during publication.
     render: (props, children) => {
-      try {
-        const out = definition.render(props, children)
-        if (out.js !== undefined && !allowModuleJs) {
-          if (!warnedDroppedJs) {
-            warnedDroppedJs = true
-            console.warn(
-              `[plugin-module:${definition.id}] render() emitted js but plugin "${pluginId}" was not granted "frontend.assets" — module JS dropped.`,
-            )
-          }
-          return { html: out.html, css: out.css }
-        }
-        return { html: out.html, css: out.css, js: out.js }
-      } catch (err) {
-        console.error(`[plugin-module:${definition.id}] render() threw:`, err)
-        return { html: `<!-- instatic: plugin module "${definition.id}" render failed -->` }
+      const parsed = safeParseValue(PluginRenderOutputSchema, definition.render(props, children))
+      if (!parsed.ok) {
+        throw new PluginModuleValidationError('Invalid module render output: ' + parsed.errors.map((e) => e.path + ': ' + e.message).join('; '), definition.id + '.render')
       }
+      return parsed.value
     },
   }
 }

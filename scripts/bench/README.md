@@ -68,7 +68,7 @@ Reads `dist/` and computes JS/CSS totals (raw / gzip / brotli), the eager first-
 ### publisher
 Drives `publishPage()` (the core page-tree → HTML/CSS function) against synthetic pages of 1 → 50,000 nodes. Reports mean/p50/p95/p99 latency and pages/sec. Also covers:
 - **Per-node class application:** how the renderer reacts when nodes carry 0/5/20 class IDs and the site has 100/1k/10k classes defined site-wide.
-- **CSS bundle build:** cost of `buildSiteCssBundle()` as the user-class catalog grows.
+- **CSS bundle build:** cost of `buildSiteCssBundle(site, registry, page)` as the assigned class catalog grows; the effective page is required.
 
 This is the *user-facing output speed* — what visitors will see.
 

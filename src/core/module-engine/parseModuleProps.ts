@@ -1,7 +1,7 @@
 /**
- * Publisher prop coercion — soft boundary, never throws.
+ * Publisher module-props parsing — one hard TypeBox boundary.
  *
- * `validateNodeProps` is the single call site that closes the module-props
+ * `parseModuleProps` is the single call site that closes the module-props
  * boundary leak: authored props coming from the database can be stale,
  * missing, or lightly malformed. It normalises them to the schema's declared
  * shape before they reach the module's pure `render()`.
@@ -25,7 +25,8 @@
  *      Check-pass does not imply Parse-identity.
  *
  * Design constraints:
- *   - SOFT boundary — exceptions from coercion are caught; never bubbles.
+ *   - HARD boundary — unrecoverable coercion errors retain their cause and
+ *     page/node/schema path; declared defaults only fill missing fields.
  *   - Unknown/injected keys survive — the fast path returns them untouched on
  *     `rawProps`; the slow path's merge is `{ ...rawProps, ...cleaned }` so
  *     publisher-injected fields (`_resolvedMediaByKey`, `_resolvedAutoSizes`)
@@ -36,9 +37,20 @@
 
 import { Kind, OptionalKind, TransformKind } from '@sinclair/typebox'
 import type { TSchema } from '@sinclair/typebox'
+import { AssertError } from '@sinclair/typebox/value'
 import { compiledCheck } from '@core/utils/typeboxCompiler'
 import { parseValue } from '@core/utils/typeboxHelpers'
+import { getErrorMessage } from '@core/utils/errorMessage'
 import type { AnyModuleDefinition } from './types'
+
+export class ModulePropsValidationError extends Error {
+  readonly path: string
+  constructor(path: string, message: string, options?: ErrorOptions) {
+    super(path + ': ' + message, options)
+    this.name = 'ModulePropsValidationError'
+    this.path = path
+  }
+}
 
 /**
  * Leaf kinds for which a Check-passing value is exactly the Parse output:
@@ -64,7 +76,7 @@ function isSchemaObject(value: unknown): value is TSchema {
  * Structural walk deciding whether `Check`-pass implies `Value.Parse`
  * value-identity for this schema. Conservative: anything we cannot reason
  * about confidently (Ref/This, Intersect, Date/custom kinds, symbol-less
- * plain-JSON schemas from the plugin boundary, cyclic schema objects) is
+ * hand-authored schemas, cyclic schema objects) is
  * ineligible and stays on the slow path.
  *
  * The two hard disqualifiers the fast path must catch:
@@ -83,8 +95,8 @@ function walkEligible(schema: TSchema, visiting: Set<TSchema>): boolean {
   try {
     if (TransformKind in schema) return false
 
-    // TSchema types `[Kind]` as `string`, but schemas that crossed a JSON
-    // boundary (plugin module packs) arrive symbol-less — guard at runtime.
+    // TSchema types `[Kind]` as `string`, but hand-authored schemas can omit
+    // the symbol — guard at runtime.
     const kind: unknown = schema[Kind]
     if (typeof kind !== 'string') return false
     if (ELIGIBLE_LEAF_KINDS.has(kind)) return true
@@ -158,9 +170,8 @@ function walkEligible(schema: TSchema, visiting: Set<TSchema>): boolean {
 }
 
 // Eligibility is a pure function of the schema object — computed once per
-// schema for the app's lifetime. The allowlisted kinds are all compilable, so
-// `compiledCheck` (which compiles on first use) cannot throw for an eligible
-// schema.
+// schema for the app's lifetime. Schema compilation and parsing share the
+// typed boundary below, including malformed declarations from plugins.
 const eligibilityCache = new WeakMap<TSchema, boolean>()
 
 function fastPathEligible(schema: TSchema): boolean {
@@ -181,31 +192,30 @@ function fastPathEligible(schema: TSchema): boolean {
  *   - Schema present, coercion succeeds → `{ ...rawProps, ...cleanedProps }`.
  *     Known props are coerced/defaulted by Value.Parse; unknown keys from
  *     rawProps survive untouched.
- *   - Schema present, coercion fails → `{ ...rawProps, ...def.defaults }`.
- *     Falls back to module defaults for known keys, unknown keys still survive.
+ *   - Schema present, coercion fails → ModulePropsValidationError.
+ *     Authored values are never replaced with all module defaults on failure.
  */
-export function validateNodeProps(
+export function parseModuleProps(
   def: AnyModuleDefinition,
   rawProps: Record<string, unknown>,
+  path = def.id,
 ): Record<string, unknown> {
   if (!def.propsSchema) return rawProps
 
-  // Tier 1: already-conforming props short-circuit through the cached
-  // compiled validator — no clone, no interpreted Value.Parse.
-  if (fastPathEligible(def.propsSchema) && compiledCheck(def.propsSchema, rawProps)) {
-    return rawProps
-  }
-
   try {
+    // Tier 1: already-conforming props short-circuit through the cached
+    // compiled validator — no clone, no interpreted Value.Parse.
+    if (fastPathEligible(def.propsSchema) && compiledCheck(def.propsSchema, rawProps)) {
+      return rawProps
+    }
+
     // Tier 2: parseValue = Value.Parse: Clone + Clean + Default + Convert +
     // Check. Clean strips unknown keys from the result, so `cleaned` contains
     // only schema-known props. The spread merge below restores everything else.
     const cleaned = parseValue(def.propsSchema, rawProps) as Record<string, unknown>
     return { ...rawProps, ...cleaned }
-  } catch (_err) {
-    // Value.Parse threw — the input is unrecoverable for this schema even
-    // after applying defaults and type coercions. Fall back to the module's
-    // declared defaults, while still preserving any injected unknown keys.
-    return { ...rawProps, ...def.defaults }
+  } catch (error) {
+    const schemaPath = error instanceof AssertError ? error.error?.path ?? '' : ''
+    throw new ModulePropsValidationError(path + '/props' + schemaPath, getErrorMessage(error, 'Invalid module props'), { cause: error })
   }
 }

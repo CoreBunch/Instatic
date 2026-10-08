@@ -426,12 +426,14 @@ Each iframe `<head>` receives five `<style>` elements (three from `ClassStyleInj
 | Element | Injector | Cascade layer | Contents |
 |---|---|---|---|
 | `<style id="instatic-editor-chrome">` | `EditorChromeInjector` | **unlayered** | Editor-only chrome: placeholder, slot-instance, list placeholder, unknown-module fallback |
-| `<style id="mc-classes">` | `ClassStyleInjector` | `@layer user-authored` | Publisher reset + framework CSS + class registry CSS |
+| `<style id="mc-classes">` | `ClassStyleInjector` | `@layer user-authored` | Publisher reset + framework CSS + active page/VC's reachable class CSS |
 | `<style id="mc-classes-preview">` | `ClassStyleInjector` | `@layer user-authored` | Higher-specificity preview rule while a property control is hovered; empty for state-pseudo rules |
 | `<style id="mc-classes-force-state">` | `ClassStyleInjector` | `@layer user-authored` | Forced state preview: paints the active state-pseudo rule onto the selected node via a doubled `[data-node-id]` selector |
 | `<style id="mc-user-styles">` | `UserStylesheetInjector` | `@layer user-authored` | User-uploaded stylesheets (verbatim, unscoped) |
 
 The **unlayered-vs-layered** split is the cascade isolation mechanism: CSS rules outside any `@layer` always beat rules inside `@layer`-d blocks, regardless of specificity. Author CSS (both the class registry and user stylesheets) goes into `@layer user-authored`, so it can never override the editor chrome even with a high-specificity selector.
+
+Class CSS follows the active page or Visual Component virtual page, including nested references and materialized slot content. The shared `collectPageStyleRuleIds` walker includes modifiers from enabled/scoped scripts permitted in canvas while **Run scripts** is on, plus their imported helpers. The all-site usage collector remains available for inventory. `canvasStyleUsage.ts` memoizes the active document's usage signature across breakpoint frames; assigning a class, editing a relevant script, changing document or previewing a property refreshes the injected CSS. Hovering a class suggestion temporarily adds its CSS for the visible target node without changing the authored tree or repeating the usage walk.
 
 `EditorChromeInjector` targets chrome elements via **stable data-attribute selectors** (`data-canvas-module-placeholder`, `data-instatic-slot-instance`, `data-instatic-unknown-module`, etc.) rather than hashed CSS-Module class names, which only exist in the parent document. At mount, it copies the required safe design tokens (`--text-subtle`, `--canvas-placeholder-bg`, `--radius`, etc.) from the parent document's `:root` onto the iframe's `:root` so `var(...)` references resolve correctly inside the iframe. Admin font, text-size, and spacing tokens are remapped to `--chrome-font-sans`, `--chrome-text-*`, and `--chrome-space-*` before use; they are never copied as `--font-sans`, `--text-*`, or `--space-*`, because those short names belong to the rendered site's Framework tokens inside the canvas.
 
@@ -479,7 +481,8 @@ Canvas-internal values are not CSS tokens — they are raw integers intentionall
 | `BreakpointFrame.tsx`           | One iframe per active breakpoint                                |
 | `IframeFrameSurface.tsx`        | The iframe element + portal + style injectors                   |
 | `EditorChromeInjector.tsx`      | Unlayered editor-chrome CSS into each iframe head               |
-| `ClassStyleInjector.tsx`        | Class registry + publisher reset CSS into each iframe head      |
+| `ClassStyleInjector.tsx`        | Active document's class CSS + publisher reset into each iframe head |
+| `canvasStyleUsage.ts`           | Active page/VC usage and canvas script selection, shared across frames |
 | `UserStylesheetInjector.tsx`    | User-uploaded CSS into each iframe head                         |
 | `NodeRenderer.tsx`              | Renders a single node and its children inside the iframe        |
 | `CanvasTransformLayer.tsx`      | Zoom + pan transform (design view)                              |

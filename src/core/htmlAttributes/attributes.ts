@@ -7,7 +7,7 @@ const RESERVED_DATA_NAMES = new Set([
   'data-module-id',
   'data-hovered',
 ])
-const RESERVED_HTML_ATTRIBUTE_NAMES = new Set(['class', 'style'])
+const RESERVED_HTML_ATTRIBUTE_NAMES = new Set(['class', 'style', 'ref', 'key', 'children', 'dangerouslysetinnerhtml'])
 
 /**
  * Attribute names that inject a raw HTML document / script and therefore cannot
@@ -79,13 +79,14 @@ export function sanitizeRenderableHtmlAttribute(name: string, value: string): st
  * emit (`htmlAttributesAttr` in `@core/publisher`) and the admin-canvas
  * React props (`htmlAttributesForReact`) — build on this.
  */
-export function normalizeHtmlAttributes(value: unknown): Record<string, string> {
+export function normalizeHtmlAttributes(value: unknown, generatedNames: readonly string[] = []): Record<string, string> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return {}
 
   const attrs: Record<string, string> = {}
   for (const [rawName, rawValue] of Object.entries(value as Record<string, unknown>)) {
     if (typeof rawValue !== 'string') continue
     const name = normalizeHtmlAttributeName(rawName)
+    if (generatedNames.includes(name)) continue
     const safeValue = sanitizeRenderableHtmlAttribute(name, rawValue)
     if (safeValue === null) continue
     attrs[name] = safeValue
@@ -94,6 +95,17 @@ export function normalizeHtmlAttributes(value: unknown): Record<string, string> 
 }
 
 /** Author `htmlAttributes` as React-spreadable props for canvas editors. */
-export function htmlAttributesForReact(value: unknown): Record<string, string> {
-  return normalizeHtmlAttributes(value)
+export function htmlAttributesForReact(value: unknown, generatedNames: readonly string[] = []): Record<string, string | boolean> {
+  return Object.fromEntries(Object.entries(normalizeHtmlAttributes(value, generatedNames)).map(([name, attrValue]) => [
+    REACT_ATTRIBUTE_NAMES[name] ?? name,
+    BOOLEAN_ATTRIBUTES.has(name) && !(name === 'hidden' && attrValue === 'until-found') ? true : attrValue,
+  ]))
 }
+
+const REACT_ATTRIBUTE_NAMES: Readonly<Record<string, string>> = {
+  tabindex: 'tabIndex', autocomplete: 'autoComplete', autofocus: 'autoFocus',
+  accesskey: 'accessKey', contenteditable: 'contentEditable', spellcheck: 'spellCheck',
+  for: 'htmlFor', readonly: 'readOnly', maxlength: 'maxLength', minlength: 'minLength',
+  autoplay: 'autoPlay', playsinline: 'playsInline',
+}
+const BOOLEAN_ATTRIBUTES = new Set(['hidden', 'inert', 'autofocus', 'disabled', 'required', 'readonly', 'multiple', 'checked', 'selected', 'open', 'controls', 'loop', 'muted', 'autoplay', 'playsinline', 'reversed'])
