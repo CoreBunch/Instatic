@@ -18,6 +18,7 @@ import { registry } from '@core/module-engine'
 import type { EditorStoreSliceCreator } from '@site/store/types'
 import { collabBreakCoalescing } from './site/collabBinding'
 import { getActiveTree } from './selectionSlice'
+import { parseTokenString } from '@core/templates'
 
 interface ActiveInlineEdit {
   nodeId: string
@@ -76,6 +77,11 @@ export const createInlineEditSlice: EditorStoreSliceCreator<InlineEditSlice> = (
     // overwrite every keystroke in the canvas preview.
     if (node.dynamicBindings?.[spec.prop]) return
     const value = node.props[spec.prop]
+    // Language-file copy belongs to the catalogue. Editing its resolved text
+    // inline would replace the binding with a duplicated literal.
+    if (typeof value === 'string' && parseTokenString(value).some((segment) =>
+      segment.kind === 'token' && segment.source === 'site' && segment.field.startsWith('translations.'),
+    )) return
     if (typeof value !== 'string') {
       console.warn(
         `[canvas] inline edit aborted: prop "${spec.prop}" on node "${nodeId}" is not a string`,

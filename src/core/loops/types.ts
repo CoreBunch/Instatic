@@ -20,7 +20,7 @@
  * `loop-source-id-format.test.ts`.
  */
 
-import { Type, type Static } from '@core/utils/typeboxHelpers'
+import type { LoopItem } from '@core/loops-schema'
 import type { PropertySchema } from '@core/module-engine'
 import type { SiteDocument } from '@core/page-tree'
 
@@ -60,14 +60,8 @@ export interface LoopSourceField {
  * The shape is intentionally generic across source types so that the same
  * publisher / resolver code paths handle every source.
  */
-export const LoopItemSchema = Type.Object({
-  /** Stable identity — used for keying in the editor and infinite-load dedup. */
-  id: Type.String(),
-  /** Field values keyed by `LoopSourceField.id`. */
-  fields: Type.Record(Type.String(), Type.Unknown()),
-})
-
-export type LoopItem = Static<typeof LoopItemSchema>
+export { LoopItemSchema } from '@core/loops-schema'
+export type { LoopItem } from '@core/loops-schema'
 
 // ---------------------------------------------------------------------------
 // Source contract

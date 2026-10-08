@@ -28,6 +28,7 @@ import '@modules/base' // registry population — inline-text props seed as Y.Te
 import type { SiteShell } from '@core/page-tree'
 import { MAIN_BRANCH_ID, SITE_SHELL_LOGICAL_ID } from '@core/branches'
 import { pageFromRow, pageToCells } from '@core/data/pageFromRow'
+import { PAGE_SEO_CELL_IDS } from '@core/data/pageSeoFields'
 import { visualComponentFromRow, visualComponentToCells } from '@core/data/componentFromRow'
 import { savedLayoutFromRow, savedLayoutToCells } from '@core/data/layoutFromRow'
 import { vcSlugFromName } from '@core/visualComponents'
@@ -54,13 +55,14 @@ const KIND_TABLE: Record<Exclude<CollabDocKind, 'site'>, string> = {
 
 /**
  * The cells each doc kind derives from its Y doc. Every other cell on the
- * row (SEO title and description, featured media, plugin-owned fields) is
+ * row (featured media, custom collection fields, plugin-owned fields) is
  * edited elsewhere and must survive a relay write untouched; an owned cell
  * the projection no longer emits (a page that stopped being a template)
  * is cleared.
  */
 const OWNED_CELLS: Record<Exclude<CollabDocKind, 'site'>, readonly string[]> = {
-  page: ['title', 'slug', 'body', 'templateEnabled', 'templateTarget', 'templatePriority'],
+  page: ['title', 'slug', 'language', 'body', 'templateEnabled', 'templateTarget', 'templatePriority',
+    ...PAGE_SEO_CELL_IDS],
   component: ['name', 'slug', 'body', 'params', 'classIds'],
   layout: ['name', 'slug', 'body', 'classes'],
 }

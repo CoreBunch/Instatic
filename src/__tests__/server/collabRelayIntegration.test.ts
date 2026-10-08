@@ -30,6 +30,7 @@ import {
   projectPageDoc,
   SITE_SOCKET_PATH,
   treeMap,
+  metaMap,
 } from '@core/collab'
 import { pageFromRow } from '@core/data/pageFromRow'
 import {
@@ -208,18 +209,17 @@ describe('collab relay integration (real server, real sockets)', () => {
     })
   })
 
-  it('keeps the cells the doc does not own when it persists the derived row', async () => {
+  it('persists native SEO through the live doc and keeps cells the doc does not own', async () => {
     const stack = await startStack()
     const docId = `page:main:${stack.homeId}`
-    // SEO lives on the row, never in the doc. Seeded as a collab-internal
-    // write so the roster's already-loaded doc is not reset under the client;
-    // what is under test is what the relay's own persist keeps on the row.
+    // Custom cells remain outside the page document. This internal row write
+    // keeps the already-loaded doc intact so persistence must preserve them.
     const seeded = (await getDataRow(stack.harness.db, MAIN_SCOPE, stack.homeId))!
     await saveDataRowDraft(
       stack.harness.db,
       MAIN_SCOPE,
       stack.homeId,
-      { cells: { ...seeded.cells, seoTitle: 'Kept title', seoDescription: 'Kept description' }, slug: seeded.slug },
+      { cells: { ...seeded.cells, pluginField: 'Kept custom value' }, slug: seeded.slug },
       null,
       null,
       { collabInternal: true },
@@ -230,14 +230,19 @@ describe('collab relay integration (real server, real sockets)', () => {
     await bound.whenSynced
     const rootId = treeMap(bound.doc).get('rootNodeId') as string
     setNodeLabel(bound.doc, rootId, 'Edited in the doc')
+    const seo = { title: 'Live SEO title', description: 'Live description', canonical: '/canonical',
+      structuredData: [{ '@type': 'WebSite', name: 'Live site' }] }
+    bound.doc.transact(() => metaMap(bound.doc).set('seo', seo), LOCAL_ORIGIN)
 
     await waitFor(async () => {
       const row = await getDataRow(stack.harness.db, MAIN_SCOPE, stack.homeId)
       return row !== null && pageFromRow(row).nodes[rootId]?.label === 'Edited in the doc'
+        && row.cells.seoTitle === 'Live SEO title'
     })
     const row = (await getDataRow(stack.harness.db, MAIN_SCOPE, stack.homeId))!
-    expect(row.cells.seoTitle).toBe('Kept title')
-    expect(row.cells.seoDescription).toBe('Kept description')
+    expect(row.cells.pluginField).toBe('Kept custom value')
+    expect(pageFromRow(row).seo).toEqual(seo)
+    expect(row.cells.seoStructuredData).toBe(JSON.stringify(seo.structuredData))
   })
 
   it('refuses a read-only edit AND resets the viewer so its own screen reverts', async () => {

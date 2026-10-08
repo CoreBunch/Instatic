@@ -25,6 +25,7 @@ import type { DynamicPropBinding } from '@core/page-tree'
 import { useEditorPermissions } from '@site/editorPermissionsContext'
 import { ChevronRightIcon } from 'pixel-art-icons/icons/chevron-right'
 import { TextControl } from './TextControl'
+import { ConditionControl } from './ConditionControl'
 import { TextareaControl } from './TextareaControl'
 import { NumberControl } from './NumberControl'
 import { ColorControl } from './ColorControl'
@@ -133,6 +134,9 @@ export function PropertyControlRenderer({
   let inner: React.ReactNode
 
   switch (control.type) {
+    case 'condition':
+      inner = <ConditionControl {...shared} />
+      break
     case 'text':
       inner = (
         <TextControl

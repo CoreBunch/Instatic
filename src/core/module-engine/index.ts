@@ -26,6 +26,7 @@ export type {
 } from './propertySchema'
 
 export {
+  PropertyConditionSchema,
   PropertyControlSchema,
   PropertySchemaSchema,
   resolvePropertyControlCategory,

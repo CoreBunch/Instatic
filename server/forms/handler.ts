@@ -15,7 +15,7 @@ import { emitContentEntryCreated } from '../publish/contentEvents'
 import {
   PublicFormChallengeBodySchema,
   PublicFormSubmitBodySchema,
-  derivePageFormSnapshots,
+  derivePublishedPageFormSnapshots,
   isFormSubmissionTargetTable,
   validateFormSubmission,
   type PublishedFormSnapshot,
@@ -169,7 +169,8 @@ async function findPublishedFormSnapshot(
   const snapshot = await getLatestPublishedSiteSnapshot(db)
   const page = snapshot?.site.pages.find((candidate) => candidate.id === pageId)
   if (!page) return null
-  return derivePageFormSnapshots(page).find((candidate) => candidate.formId === formId) ?? null
+  const matches = derivePublishedPageFormSnapshots(snapshot!.site, page).filter((candidate) => candidate.formId === formId)
+  return matches.length === 1 ? matches[0] : null
 }
 
 function publicFormRoute(pathname: string): PublicFormRoute | null {

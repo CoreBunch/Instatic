@@ -13,7 +13,8 @@
  * - Backdrop click closes the overlay
  *
  * Security:
- * - iframe uses sandbox="" — all sandboxing restrictions applied
+ * - iframe preserves same-origin resource credentials; scripts, forms and
+ *   popups remain sandboxed. Private file capabilities require the admin cookie.
  *
  * data-testid="preview-overlay" and data-testid="preview-iframe" for Playwright
  */
@@ -87,7 +88,7 @@ function PreviewDocument({ site, page, templatePreviewContext }: PreviewDocument
   return (
     <iframe
       srcDoc={html}
-      sandbox=""
+      sandbox="allow-same-origin"
       title={`Preview: ${page.title}`}
       data-testid="preview-iframe"
       className={styles.iframe}

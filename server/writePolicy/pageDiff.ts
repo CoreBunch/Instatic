@@ -95,11 +95,17 @@ function diffPage(capabilities: readonly CoreCapability[], previous: Page, next:
   if (previous.title !== next.title) {
     requireChange(capabilities, 'structure', `${pagePath}.title`, 'page title changed')
   }
+  if (previous.language !== next.language) {
+    requireChange(capabilities, 'structure', `${pagePath}.language`, 'document language changed')
+  }
   if (previous.rootNodeId !== next.rootNodeId) {
     requireChange(capabilities, 'structure', `${pagePath}.rootNodeId`, 'root node changed')
   }
   if (!deepEqual(previous.template, next.template)) {
     requireChange(capabilities, 'structure', `${pagePath}.template`, 'template settings changed')
+  }
+  if (!deepEqual(previous.seo, next.seo)) {
+    requireChange(capabilities, 'content', `${pagePath}.seo`, 'document metadata changed')
   }
 
   diffNodes(capabilities, pagePath, previous.nodes, next.nodes)
@@ -188,4 +194,3 @@ function propChangeKind(moduleId: string, propKey: string): PageChangeKind {
   if (!control) return 'structure'
   return resolvePropertyControlCategory(control) === 'content' ? 'content' : 'structure'
 }
-

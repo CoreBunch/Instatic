@@ -11,7 +11,7 @@
  *       NOT take the fast path (Value.Parse output is not value-identical to
  *       rawProps for them); Ref/recursive/cyclic schemas degrade safely to
  *       the slow path.
- *   (f) Every base module's propsSchema is fast-path eligible.
+ *   (f) Base modules are parse-stable; recursive form rules use the slow path.
  */
 
 import { describe, it, expect } from 'bun:test'
@@ -367,25 +367,42 @@ describe('validateNodeProps — (e) fast-path eligibility guards', () => {
 })
 
 // ---------------------------------------------------------------------------
-// (f) Every base module's propsSchema is fast-path eligible
+// (f) Base module schemas retain their declared normalization behavior
 // ---------------------------------------------------------------------------
 
-describe('validateNodeProps — (f) all base module schemas are fast-path eligible', () => {
+describe('validateNodeProps — (f) base module normalization paths', () => {
   const baseDefs = registry
     .list()
     .filter((d) => d.id.startsWith('base.') && d.propsSchema !== undefined)
+  // These schemas contain recursive declarative conditions. Ref/This are
+  // intentionally ineligible for the engine's conservative fast path.
+  const recursiveForms = new Set([
+    'base.input', 'base.textarea', 'base.select', 'base.checkbox', 'base.radio', 'base.form-conditional',
+  ])
 
-  it('registry contains base modules with propsSchemas', () => {
+  it('registry contains every module with recursive form conditions', () => {
     expect(baseDefs.length).toBeGreaterThan(5)
+    for (const id of recursiveForms) expect(baseDefs.some((def) => def.id === id)).toBe(true)
   })
 
   for (const def of baseDefs) {
-    it(`${def.id}: conforming props take the fast path (same reference back)`, () => {
-      // First call normalizes the module defaults through whatever path they
-      // need; the normalized output is by construction schema-conforming, so
-      // the second call MUST short-circuit and return the same reference.
-      const normalized = validateNodeProps(def, { ...def.defaults })
-      expect(validateNodeProps(def, normalized)).toBe(normalized)
-    })
+    if (recursiveForms.has(def.id)) {
+      it(`${def.id}: recursive conditions normalize without changing values or mutating input`, () => {
+        const rule = { and: [{ field: 'purpose', in: ['support', 'sales'] }, { or: [{ field: 'region', eq: 'eu' }] }] }
+        const key = def.id === 'base.form-conditional' ? 'condition' : 'requiredWhen'
+        const normalized = validateNodeProps(def, { ...def.defaults, [key]: rule, _injected: 'preserved' })
+        const before = structuredClone(normalized)
+        const result = validateNodeProps(def, normalized)
+        expect(result).not.toBe(normalized)
+        expect(result).toEqual(before)
+        expect(normalized).toEqual(before)
+        expect(result[key]).toEqual(rule)
+      })
+    } else {
+      it(`${def.id}: conforming props take the fast path (same reference back)`, () => {
+        const normalized = validateNodeProps(def, { ...def.defaults })
+        expect(validateNodeProps(def, normalized)).toBe(normalized)
+      })
+    }
   }
 })

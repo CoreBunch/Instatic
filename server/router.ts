@@ -3,6 +3,7 @@ import { handleMcpHttp, MCP_ENDPOINT_PATH } from './ai/mcp'
 import { tryHandleMcpOAuth } from './ai/mcp/oauth/handler'
 import { handleCmsRequest } from './handlers/cms'
 import { readPreviewAsset } from './publish/branchPreviewAssets'
+import { tryServePublicSiteAsset } from './publish/publicSiteAssetRoutes'
 import {
   tryServeBranchPreviewLink,
   tryServeNotFoundPage,
@@ -13,7 +14,7 @@ import type { DbClient } from './db/client'
 import type { RouteHandler, ServerRuntime } from './serverRuntime'
 import { readStaticAsset } from './publish/staticArtefact'
 import { getLatestSnapshotForVersion } from './publish/publishedSnapshotCache'
-import { getPublishVersion, registerVersionedCacheReset } from './publish/publishState'
+import { getPublishVersion, registerVersionedCacheReset, waitForPublishActivation } from './publish/publishState'
 import { prefetchMediaAssets } from './publish/mediaPrefetch'
 import { getPublishedRuntimeAsset } from './repositories/runtimeAsset'
 import { handleLoopRequest, isLoopRuntimeAssetPath, serveLoopRuntimeAsset } from './handlers/cms/loop'
@@ -71,6 +72,7 @@ const routes: readonly RouteHandler[] = [
   tryServeRuntimePackageNamespace,
   tryServeSiteCssNamespace,
   tryServeMediaRedirect,
+  tryServePublicSiteAsset,
   tryServeStaticAsset,
   tryServeUpload,
   tryServeAdminApp,
@@ -85,6 +87,7 @@ export async function handleServerRequest(
 ): Promise<Response> {
   const url = new URL(req.url)
   const { pathname } = url
+  if (pathname !== '/admin' && !pathname.startsWith('/admin/')) await waitForPublishActivation()
   const request = asGetForHead(req)
 
   for (const route of routes) {

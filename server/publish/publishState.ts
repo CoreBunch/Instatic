@@ -48,6 +48,24 @@ export function getPublishVersion(): number {
   return publishVersion
 }
 
+let activation: Promise<void> | null = null
+
+/** Block visitor reads only during pointer activation and the following commit. */
+export function beginPublishActivation(): () => void {
+  if (activation) throw new Error('A publish activation is already in progress')
+  let finish!: () => void
+  activation = new Promise<void>((resolve) => { finish = resolve })
+  return () => {
+    activation = null
+    finish()
+  }
+}
+
+/** The canonical dispatcher awaits this before reading any public generation. */
+export async function waitForPublishActivation(): Promise<void> {
+  while (activation) await activation
+}
+
 /**
  * Bump the publish version under the publish lock. The serialization matters
  * (ISS-038): a bare bump racing a publish's read-version → bake → bump window
@@ -125,6 +143,11 @@ export function registerVersionedCacheReset(reset: () => void): void {
   versionedCacheResets.push(reset)
 }
 
+/** Discard memoized snapshots from an aborted, unactivated publish attempt. */
+export function clearPublishSnapshotCaches(): void {
+  for (const reset of versionedCacheResets) reset()
+}
+
 /**
  * Create a generalized version-keyed single-flight memo. See
  * `VersionedSingleFlight` for the contract. Each memo registers its reset with
@@ -178,5 +201,5 @@ export function createVersionedSingleFlight<T>(): VersionedSingleFlight<T> {
 export function resetPublishStateForTests(): void {
   publishVersion = 0
   publishChain = Promise.resolve()
-  for (const reset of versionedCacheResets) reset()
+  clearPublishSnapshotCaches()
 }

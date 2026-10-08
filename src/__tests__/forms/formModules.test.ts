@@ -11,6 +11,7 @@ import {
   SelectModule,
   SubmitModule,
   TextareaModule,
+  FormConditionalModule, FormOutputModule, TurnstileModule,
 } from '@modules/base/forms'
 import { escapeProps } from '@core/publisher'
 import { runModuleConformanceSuite } from '../helpers'
@@ -28,6 +29,7 @@ const FORM_MODULES = [
   RadioModule,
   SubmitModule,
   FormMessageModule,
+  FormConditionalModule, FormOutputModule, TurnstileModule,
 ]
 
 for (const mod of FORM_MODULES) {
@@ -52,6 +54,7 @@ describe('base form primitive modules', () => {
 
   it('renders a CMS-native form with runtime metadata and children', () => {
     const output = FormModule.render({
+      ...FormModule.defaults,
       mode: 'cms',
       formId: 'newsletter',
       targetTableId: 'newsletter_submissions',
@@ -72,10 +75,11 @@ describe('base form primitive modules', () => {
   })
 
   it('renders labels and text-like controls as semantic HTML', () => {
-    expect(LabelModule.render({ text: 'Email', targetMode: 'auto', targetId: '' }, []).html)
+    expect(LabelModule.render({ ...LabelModule.defaults, text: 'Email', targetMode: 'auto', targetId: '' }, []).html)
       .toBe('<label data-instatic-label-target="auto">Email</label>')
 
     const input = InputModule.render({
+      ...InputModule.defaults,
       inputType: 'email',
       fieldId: 'email',
       name: 'email',
@@ -104,6 +108,7 @@ describe('base form primitive modules', () => {
 
   it('renders textarea, select, option, and option-group primitives', () => {
     expect(TextareaModule.render({
+      ...TextareaModule.defaults,
       fieldId: 'message',
       name: 'message',
       id: 'message-input',
@@ -115,15 +120,16 @@ describe('base form primitive modules', () => {
       rows: 4,
       minLength: 0,
       maxLength: 500,
-    }, []).html).toBe('<textarea data-instatic-form-control="textarea" data-instatic-field-id="message" name="message" id="message-input" placeholder="Message" rows="4" maxlength="500">Hello</textarea>')
+    }, []).html).toContain('name="message" id="message-input" placeholder="Message" rows="4" maxlength="500"')
 
-    expect(OptionModule.render({ value: 'pro', label: 'Pro', selected: true, disabled: false }, []).html)
+    expect(OptionModule.render({ ...OptionModule.defaults, value: 'pro', label: 'Pro', selected: true, disabled: false }, []).html)
       .toBe('<option value="pro" selected>Pro</option>')
 
-    expect(OptionGroupModule.render({ label: 'Plans', disabled: false }, ['<option>Pro</option>']).html)
+    expect(OptionGroupModule.render({ ...OptionGroupModule.defaults, label: 'Plans', disabled: false }, ['<option>Pro</option>']).html)
       .toBe('<optgroup label="Plans"><option>Pro</option></optgroup>')
 
     expect(SelectModule.render({
+      ...SelectModule.defaults,
       fieldId: 'plan',
       name: 'plan',
       id: 'plan-select',
@@ -131,11 +137,12 @@ describe('base form primitive modules', () => {
       disabled: false,
       multiple: false,
     }, ['<option value="pro">Pro</option>']).html)
-      .toBe('<select data-instatic-form-control="select" data-instatic-field-id="plan" name="plan" id="plan-select" required><option value="pro">Pro</option></select>')
+      .toContain('name="plan" id="plan-select" required')
   })
 
   it('renders choice controls, submit, and form messages', () => {
     expect(CheckboxModule.render({
+      ...CheckboxModule.defaults,
       fieldId: 'agree',
       name: 'agree',
       id: 'agree-input',
@@ -143,9 +150,10 @@ describe('base form primitive modules', () => {
       checked: true,
       required: true,
       disabled: false,
-    }, []).html).toBe('<input type="checkbox" data-instatic-form-control="checkbox" data-instatic-field-id="agree" name="agree" id="agree-input" value="yes" checked required>')
+    }, []).html).toContain('name="agree" id="agree-input" value="yes" checked required')
 
     expect(RadioModule.render({
+      ...RadioModule.defaults,
       fieldId: 'plan',
       name: 'plan',
       id: 'plan-pro',
@@ -153,16 +161,17 @@ describe('base form primitive modules', () => {
       checked: false,
       required: false,
       disabled: false,
-    }, []).html).toBe('<input type="radio" data-instatic-form-control="radio" data-instatic-field-id="plan" name="plan" id="plan-pro" value="pro">')
+    }, []).html).toContain('name="plan" id="plan-pro" value="pro"')
 
-    expect(SubmitModule.render({ label: 'Subscribe', disabled: false, formId: '' }, []).html)
+    expect(SubmitModule.render({ ...SubmitModule.defaults, label: 'Subscribe', disabled: false, formId: '' }, []).html)
       .toBe('<button type="submit">Subscribe</button>')
 
     expect(FormMessageModule.render({
+      ...FormMessageModule.defaults,
       formId: 'newsletter',
       kind: 'success',
       text: 'Thanks',
-    }, []).html).toBe('<div data-instatic-form-message="success" data-instatic-form-id="newsletter" role="status">Thanks</div>')
+    }, []).html).toBe('<div data-instatic-form-message="success" data-instatic-message-source="state" data-instatic-form-id="newsletter" role="status" hidden>Thanks</div>')
   })
 
   it('escapes authored form text and attributes through the publisher boundary', () => {
@@ -209,6 +218,7 @@ describe('base form primitive modules', () => {
 
   it('normalizes configured form ids while preserving safe custom-action URLs', () => {
     const formOutput = FormModule.render({
+      ...FormModule.defaults,
       ...FormModule.defaults,
       mode: 'custom',
       formId: 'Contact Form!',

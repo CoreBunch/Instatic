@@ -11,15 +11,19 @@ import {
   reorderPages,
   duplicatePage,
   reconcileSiteExplorerInPlace,
+  parsePageSeo,
 } from '@core/page-tree'
 import type { SiteSlice, SiteSliceHelpers } from './types'
 import { clearCanvasSelectionDraft } from '../selectionSlice'
+import { canonicalJson } from '@core/utils/canonicalJson'
 
 type PageActions = Pick<
   SiteSlice,
   | 'addPage'
   | 'deletePage'
   | 'renamePage'
+  | 'setPageSeo'
+  | 'setPageLanguage'
   | 'duplicatePage'
   | 'reorderPages'
   | 'convertPageToTemplate'
@@ -64,6 +68,27 @@ export function createPageActions({
         const page = p.pages.find((candidate) => candidate.id === pageId)
         if (!page) return false
         renamePage(p, pageId, title, slug)
+        return true
+      })
+    },
+
+    setPageLanguage: (pageId, language) => {
+      mutateSite((site) => {
+        const page = site.pages.find((candidate) => candidate.id === pageId)
+        if (!page || page.language === language) return false
+        if (language) page.language = language
+        else delete page.language
+        return true
+      })
+    },
+
+    setPageSeo: (pageId, seo) => {
+      const parsed = parsePageSeo(seo)
+      mutateSite((site) => {
+        const page = site.pages.find((candidate) => candidate.id === pageId)
+        if (!page || canonicalJson(page.seo) === canonicalJson(parsed)) return false
+        if (parsed) page.seo = structuredClone(parsed)
+        else delete page.seo
         return true
       })
     },

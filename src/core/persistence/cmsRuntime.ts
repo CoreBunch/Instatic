@@ -5,6 +5,9 @@ import type {
   SiteRuntimeDiagnostic,
 } from '@core/site-runtime'
 import type { SitePackageJson } from '@core/site-dependencies/manifest'
+import type { SiteFile } from '@core/files/schemas'
+import { PublicFileReferencesSchema, type PublicFileReferences } from '@core/files/references'
+import { Type } from '@sinclair/typebox'
 import type { TemplateRenderDataContext } from '@core/templates/dynamicBindings'
 import { apiRequest, type FetchLike } from '@core/http'
 import {
@@ -45,6 +48,22 @@ interface CmsRuntimeDependencyResolveResult {
    * published page consume the same URLs.
    */
   packageImportmap?: RuntimePackageImportmap
+}
+
+/** Private preview references for unsaved binary files, resolved by the native file binding. */
+export async function buildCmsPublicFilePreview(
+  files: readonly SiteFile[],
+  options: CmsRuntimePreviewRequestOptions = {},
+): Promise<PublicFileReferences> {
+  const body = await apiRequest(`${options.basePath ?? '/admin/api/cms'}/runtime/files`, {
+    method: 'POST',
+    body: { files },
+    schema: Type.Object({ files: PublicFileReferencesSchema }),
+    signal: options.signal,
+    fetchImpl: options.fetchImpl,
+    fallbackMessage: 'Public file preview failed',
+  })
+  return body.files
 }
 
 export async function resolveCmsRuntimeDependencies(
