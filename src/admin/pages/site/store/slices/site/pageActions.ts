@@ -20,6 +20,7 @@ type PageActions = Pick<
   | 'addPage'
   | 'deletePage'
   | 'renamePage'
+  | 'setPageLanguage'
   | 'duplicatePage'
   | 'reorderPages'
   | 'convertPageToTemplate'
@@ -64,6 +65,16 @@ export function createPageActions({
         const page = p.pages.find((candidate) => candidate.id === pageId)
         if (!page) return false
         renamePage(p, pageId, title, slug)
+        return true
+      })
+    },
+
+    setPageLanguage: (pageId, language) => {
+      mutateSite((site) => {
+        const page = site.pages.find((candidate) => candidate.id === pageId)
+        if (!page || page.language === language) return false
+        if (language) page.language = language
+        else delete page.language
         return true
       })
     },

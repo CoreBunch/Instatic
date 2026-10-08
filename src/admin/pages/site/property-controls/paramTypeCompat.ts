@@ -46,6 +46,8 @@ export function paramTypeForControl(control: PropertyControl): VCParamType {
  */
 export function paramTypesCompatibleWithControl(control: PropertyControl): VCParamType[] {
   switch (control.type) {
+    case 'condition':
+      return []
     case 'text':
     case 'textarea':
       return ['string', 'url', 'enum']

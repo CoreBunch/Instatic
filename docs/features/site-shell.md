@@ -125,6 +125,7 @@ type SiteSettings = {
   metaDescription?: string
   faviconUrl?:      string
   language?:        string
+  localization?:    { catalogues: { language: string; fileId: string }[] }
   framework?:       FrameworkSettings       // colors, typography, spacing, preferences — absent when disabled
   fonts?:           SiteFontsSettings       // installed font library + editable font tokens
   shortcuts:        Record<string, string>  // keyboard shortcut overrides

@@ -24,6 +24,7 @@ interface TemplatePreviewContextState {
   context: TemplateRenderDataContext | undefined
   /** True while a post-type template's real preview row is still loading. */
   loading: boolean
+  error?: Error
 }
 
 export function useTemplatePreviewContext(page: Page | null): TemplatePreviewContextState {
@@ -88,12 +89,21 @@ export function useTemplatePreviewContext(page: Page | null): TemplatePreviewCon
     entryStack = chosen ? [chosen] : []
   }
   const pageFrame = buildPageFrame(page)
+  let siteFrame
+  try {
+    siteFrame = buildSiteFrame(site, page.language)
+  } catch (error) {
+    // Keep file authoring available while a catalogue is temporarily invalid.
+    return { context: undefined, loading: previewEntryLoading,
+      error: error instanceof Error ? error : new Error('Invalid language catalogue', { cause: error }),
+    }
+  }
   return {
     loading: previewEntryLoading,
     context: {
       entryStack,
       page: pageFrame,
-      site: buildSiteFrame(site),
+      site: siteFrame,
       // Route frame mirrors what the published page will see. Editor
       // doesn't have the real request URL, so we derive from the page's
       // permalink — same shape, same fields.

@@ -6,6 +6,8 @@
 // relative paths and never through this barrel.
 
 export { publishPage } from './render'
+export { assertSiteTranslations } from './languagePreflight'
+export { findDynamicNodeIds } from './dynamicDetection'
 export type { DocumentMetaOverride, PublishedRuntimePackageImportmap } from './render'
 
 export { renderNode, resolveSpecialRenderer, getSpecialRendererModuleIds } from './renderNode'

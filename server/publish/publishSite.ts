@@ -18,8 +18,10 @@
  */
 import { nanoid } from 'nanoid'
 import type { SiteDocument } from '@core/page-tree'
+import { assertSiteForms } from '@core/forms'
 import type { PublishedPageRuntimeAssets } from '@core/site-runtime'
 import type { PublishedRuntimePackageImportmap, SiteCssBundle } from '@core/publisher'
+import { assertSiteTranslations } from '@core/publisher'
 import { normalizeSiteRuntimeConfig } from '@core/site-runtime'
 import { registry } from '@core/module-engine'
 import { isTemplatePage, resolveNotFoundTemplate } from '@core/templates'
@@ -108,6 +110,8 @@ async function publishDraftSiteLocked(
   // paths under that same lock, so reading outside the transaction is stable.
   const site = await getDraftSiteDocument(db, MAIN_SCOPE)
   if (!site) throw new Error('draft site not found')
+  assertSiteForms(site)
+  assertSiteTranslations(site)
 
   const runtime = normalizeSiteRuntimeConfig(site.runtime)
   const dependencyCache = Object.keys(runtime.dependencyLock.packages).length > 0

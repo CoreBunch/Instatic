@@ -34,8 +34,7 @@ export type { TemplateRenderDataContext } from './renderDataContext'
 import {
   containsTokens,
   interpolateTokens,
-  readFrame,
-  walkFieldPath,
+  readFrameField,
 } from './tokenInterpolation'
 
 /**
@@ -63,10 +62,7 @@ function resolveBindingValue(
   binding: DynamicPropBinding,
   context: TemplateRenderDataContext,
 ): unknown {
-  const frame = readFrame(binding.source, context)
-  if (!frame) return undefined
-
-  const value = walkFieldPath(frame, binding.field)
+  const value = readFrameField(binding.source, binding.field, context)
 
   // Markdown shim: when a binding targets the `body` cell (post-type rows)
   // or any `richText` field stored as markdown and the binding requests

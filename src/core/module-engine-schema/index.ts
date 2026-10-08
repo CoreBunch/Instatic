@@ -26,9 +26,12 @@ export type {
 } from '../module-engine/propertySchema'
 
 export {
+  PropertyConditionSchema,
   PropertyControlSchema,
   PropertySchemaSchema,
   resolvePropertyControlCategory,
 } from '../module-engine/propertySchema'
+
+export { evaluateCondition } from '@core/value-conditions'
 
 export { resolveHtmlTagBadge } from '../module-engine/htmlTagBadge'

@@ -23,7 +23,7 @@
  */
 
 import { Type } from '@sinclair/typebox'
-import type { BaseNode } from '@core/page-tree-schema'
+import type { BaseNode, PageNode } from '@core/page-tree-schema'
 import { compiledCheck } from '@core/utils/typeboxCompiler'
 import type { VisualComponent, VCNode } from './schemas'
 import { VCNodeSchema } from './schemas'
@@ -40,6 +40,8 @@ const VCNodeArraySchema = Type.Array(VCNodeSchema)
  * instantiateVCAtRef call and exist solely for canvas selection utilities.
  */
 export interface InstantiatedVCNode extends VCNode {
+  /** Consumer slot fills retain their page-level template bindings. */
+  dynamicBindings?: PageNode['dynamicBindings']
   /** ID of the page-level base.visual-component-ref node that owns this inlined node */
   _owningRefId: string
   /**
