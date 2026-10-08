@@ -196,6 +196,7 @@ schema: PropertySchema = {
 | `image`     | Media picker                                              | media id or URL                 |
 | `media`     | Media picker (any media type)                             | media id                        |
 | `svg`       | Inline SVG editor                                         | SVG markup string               |
+| `condition` | Structured recursive value rule editor | `PropertyCondition` or `null` |
 | `group`     | Collapsible section header (visual grouping only)         | — (no data shape change)        |
 
 `PropertyControl` is a discriminated union — `propertySchema.ts` has the full schema.

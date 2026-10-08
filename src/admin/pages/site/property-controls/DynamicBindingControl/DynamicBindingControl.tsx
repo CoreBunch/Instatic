@@ -128,7 +128,12 @@ export function DynamicBindingControl({
     ? primaryTemplateTableSlug(activePage)
     : null
   const pageFrame = activePage ? buildPageFrame(activePage) : null
-  const siteFrame = activeSite ? buildSiteFrame(activeSite) : null
+  let siteFrame = null
+  try {
+    siteFrame = activeSite ? buildSiteFrame(activeSite, activePage?.language) : null
+  } catch (_error) {
+    // Canvas reports catalogue errors; keep property and file controls editable.
+  }
   const routeFrame = pageFrame ? buildRouteFrame(pageFrame.permalink) : null
 
   // ── Bound state (structured whole-prop binding) ─────────────────────────

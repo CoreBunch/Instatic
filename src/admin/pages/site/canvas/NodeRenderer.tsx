@@ -28,6 +28,8 @@ import { collabDocFor } from '@site/store/slices/site/collabBinding'
 import { useEditorStore, selectActiveCanvasPage } from '@site/store/store'
 import { resolveProps } from '@core/page-tree'
 import { registry } from '@core/module-engine'
+import { resolveSelectInitialValue } from '@core/forms'
+import { useShallow } from 'zustand/react/shallow'
 import type { NodeWrapperProps as NodeWrapperPropsType } from '@core/module-engine'
 import { resolveDynamicProps, effectiveNodeBindings, type TemplateRenderDataContext } from '@core/templates/dynamicBindings'
 import type { PageNode } from '@core/page-tree'
@@ -38,7 +40,7 @@ import { CanvasBreakpointContext, CanvasSelectionContext, CanvasTemplateContext 
 import {
   addEditorFormPreviewProps,
   resolveEditorFormPreviewState,
-  resolveEditorFormPreviewSuccessMessage,
+  resolveEditorFormPreviewMessage,
 } from './canvasFormPreview'
 import { useResponsiveBackgroundStyle } from '@admin/pages/media/hooks/useResponsiveBackgroundStyle'
 import { getCanvasNodeClassIds, getCanvasNodeClassName } from './canvasNodeClassName'
@@ -62,6 +64,15 @@ export const NodeRenderer = memo(function NodeRenderer({ nodeId }: NodeRendererP
   const node = useEditorStore((s) => selectActiveCanvasPage(s)?.nodes[nodeId] ?? null)
   const breakpointId = use(CanvasBreakpointContext)
   const templateContext = use(CanvasTemplateContext)
+  const selectInitialValue = useEditorStore(useShallow((s) => {
+    const tree = selectActiveCanvasPage(s)
+    const select = tree?.nodes[nodeId]
+    if (!tree || select?.moduleId !== 'base.select') return undefined
+    return resolveSelectInitialValue(select, (id) => {
+      const child = tree.nodes[id]
+      return child ? { ...child, props: resolveDynamicProps(child.props, effectiveNodeBindings(child), templateContext) } : undefined
+    })
+  }))
 
   // Per-node selection/hover subscriptions (Perf fix — Contribution #495).
   // Only the 2 nodes whose boolean flips will re-render on any selection/hover
@@ -107,7 +118,7 @@ export const NodeRenderer = memo(function NodeRenderer({ nodeId }: NodeRendererP
     (s) => s.previewClassAssignment?.nodeId === nodeId ? s.previewClassAssignment : null,
   )
   const editorFormPreviewState = useEditorStore((s) => resolveEditorFormPreviewState(s, nodeId))
-  const editorFormPreviewSuccessMessage = useEditorStore((s) => resolveEditorFormPreviewSuccessMessage(s, nodeId))
+  const editorFormPreviewMessage = useEditorStore((s) => resolveEditorFormPreviewMessage(s, nodeId))
   const mcClassName = useEditorStore((s) => {
     const canvasNode = selectActiveCanvasPage(s)?.nodes[nodeId]
     const preview = s.previewClassAssignment?.nodeId === nodeId ? s.previewClassAssignment : null
@@ -254,7 +265,7 @@ export const NodeRenderer = memo(function NodeRenderer({ nodeId }: NodeRendererP
   // Pass the module schema so resolveProps drops breakpoint overrides for
   // non-responsive (content) keys — text/tag/src etc. must look identical
   // across every breakpoint frame, since published HTML is one document.
-  const effectiveProps = addEditorFormPreviewProps(
+  const effectiveProps = { ...addEditorFormPreviewProps(
     node.moduleId,
     resolveDynamicProps(
     resolveProps(node, breakpointId, definition.schema),
@@ -262,8 +273,8 @@ export const NodeRenderer = memo(function NodeRenderer({ nodeId }: NodeRendererP
     templateContext,
     ),
     editorFormPreviewState,
-    editorFormPreviewSuccessMessage,
-  )
+    String(resolveDynamicProps({ message: editorFormPreviewMessage }, undefined, templateContext).message ?? ''),
+  ), ...(selectInitialValue !== undefined ? { _formInitialValue: selectInitialValue } : {}) }
 
   // Build className from classIds using the user-facing class names.
   const effectiveClassIds = getCanvasNodeClassIds(node.classIds, previewClassAssignment, nodeId)

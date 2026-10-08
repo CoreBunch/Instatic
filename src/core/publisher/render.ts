@@ -22,9 +22,8 @@
 
 import type { Page, SiteDocument } from '@core/page-tree'
 import type { IModuleRegistry } from '@core/module-engine'
-import type { TemplateRenderDataContext } from '@core/templates/dynamicBindings'
-import { buildPageFrame, buildSiteFrame, buildRouteFrame } from '@core/templates/contextFrames'
-import { interpolateTokens } from '@core/templates/tokenInterpolation'
+import { buildTemplateRenderContext, interpolateTokens, effectiveNodeBindings, resolveDynamicProps } from '@core/templates'
+import type { TemplateRenderDataContext } from '@core/templates'
 import { classNamesForClassIds } from '@core/page-tree'
 import {
   normalizeHtmlAttributeName,
@@ -259,28 +258,6 @@ function slugToFilename(slug: string, title: string): string {
 }
 
 /**
- * Seed the page/site/route frames a caller may have omitted from its
- * TemplateRenderDataContext. Every published page needs all four frames
- * populated so dynamic bindings against those sources resolve — even on
- * plain (non-template, non-loop) pages. Caller-provided values always
- * win; missing slots fall back to defaults derived from the page/site.
- */
-function composeTemplateContext(
-  page: Page,
-  site: SiteDocument,
-  incoming: TemplateRenderDataContext | undefined,
-): TemplateRenderDataContext {
-  const provided = incoming ?? { entryStack: [] }
-  const pageFrame = provided.page ?? buildPageFrame(page)
-  return {
-    entryStack: provided.entryStack,
-    page: pageFrame,
-    site: provided.site ?? buildSiteFrame(site),
-    route: provided.route ?? buildRouteFrame(pageFrame.permalink),
-  }
-}
-
-/**
  * Compute the `<body>` opening tag, lifting user class names from the
  * root PageNode onto `<body>` directly. base.body emits no wrapper
  * element, so root-level classIds belong on `<body>` itself — clean HTML
@@ -289,6 +266,7 @@ function composeTemplateContext(
 function computeBodyOpenTag(
   page: Page,
   site: SiteDocument,
+  context: TemplateRenderDataContext,
   mediaAssets?: Map<string, RenderResolvedMedia>,
 ): string {
   const rootNode = page.nodes[page.rootNodeId]
@@ -302,7 +280,8 @@ function computeBodyOpenTag(
   const styleAttr = rootNode.inlineStyles
     ? escapeHtml(bagToInlineStyle(rootNode.inlineStyles, { mediaAssets }))
     : ''
-  const htmlAttrs = bodyHtmlAttributes(rootNode.props.htmlAttributes)
+  const resolvedProps = resolveDynamicProps(rootNode.props, effectiveNodeBindings(rootNode), context)
+  const htmlAttrs = bodyHtmlAttributes(resolvedProps.htmlAttributes)
 
   const attrs =
     htmlAttrs +
@@ -376,7 +355,7 @@ function buildDocumentMetaTags(
     ),
     metaDesc,
     favicon,
-    langAttr: escapeHtml(settings.language ?? 'en'),
+    langAttr: escapeHtml(context.site?.language ?? page.language ?? settings.language ?? 'en'),
   }
 }
 
@@ -554,7 +533,7 @@ export function publishPage(
   // Composed once per page render: the walker reads it through the config,
   // and the <head> builder interpolates {source.field} tokens in the
   // title/description against the same frames.
-  const templateContext = composeTemplateContext(page, site, options.templateContext)
+  const templateContext = buildTemplateRenderContext(page, site, options.templateContext)
 
   // Read-only inputs of this render pass. A renderer that needs a different
   // page (VC ref) or template frame (loop iteration) derives a child config —
@@ -626,7 +605,7 @@ export function publishPage(
     importmapTag: runtime.importmapTag,
     headRuntimeScripts: runtime.headRuntimeScripts,
     holeRuntimeScript: runtime.holeRuntimeScript,
-    bodyOpenTag: computeBodyOpenTag(page, site, options.mediaAssets),
+    bodyOpenTag: computeBodyOpenTag(page, site, templateContext, options.mediaAssets),
     bodyHtml,
     bodyEndRuntimeScripts: runtime.bodyEndRuntimeScripts,
     loopRuntimeScript: runtime.loopRuntimeScript,

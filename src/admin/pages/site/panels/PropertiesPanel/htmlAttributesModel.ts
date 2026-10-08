@@ -32,6 +32,7 @@ export function htmlAttributeRowsFromValue(value: unknown): HtmlAttributeDraftRo
 
 export function validateHtmlAttributeRows(
   rows: ReadonlyArray<HtmlAttributeDraftRow>,
+  generatedNames: readonly string[] = [],
 ): HtmlAttributeValidationResult {
   const attributes: Record<string, string> = {}
   const errors: Record<string, string> = {}
@@ -51,6 +52,11 @@ export function validateHtmlAttributeRows(
 
     if (!isRenderableHtmlAttributeName(name)) {
       errors[row.id] = htmlAttributeNameError(name)
+      continue
+    }
+
+    if (generatedNames.includes(name)) {
+      errors[row.id] = 'This attribute is managed in Module settings.'
       continue
     }
 

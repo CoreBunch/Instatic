@@ -34,7 +34,7 @@ describe('CspPlan — serialization is deterministic and sorted', () => {
     // Directives alphabetical: default-src < frame-src < img-src < media-src
     //   < script-src < style-src < worker-src
     expect(csp).toBe(
-      "default-src 'self'; frame-src 'none'; img-src 'self' data: https:; " +
+      "default-src 'self'; form-action 'self'; frame-src 'none'; img-src 'self' data: https:; " +
         "media-src 'self' data: https:; " +
         "script-src 'none'; style-src 'self' 'unsafe-inline'; worker-src 'none';",
     )

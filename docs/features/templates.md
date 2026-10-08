@@ -234,6 +234,8 @@ Interpolation applies to string-typed props during the tree walk **and** to the 
 
 Source: `src/core/templates/tokenInterpolation.ts`.
 
+Configured [language files](localization.md) add `site.language` and `site.translations.*` to this same frame. A token such as `{site.translations.header.contact}` resolves from the current page's language during canvas rendering and static publication. Missing translation keys are explicit authoring errors, including when a binding specifies fallback text.
+
 ### Where tokens are substituted
 
 `resolveDynamicProps` walks a node's props and interpolates:

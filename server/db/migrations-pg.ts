@@ -1359,4 +1359,13 @@ export const pgMigrations: Migration[] = [
     id: '030_iso_timestamps',
     sql: 'select 1',
   },
+  {
+    id: '031_page_language',
+    sql: `
+      update data_tables
+         set fields_json = fields_json || '[{"type":"text","id":"language","label":"Language","builtIn":true}]'::jsonb
+       where id = 'pages'
+         and not exists (select 1 from jsonb_array_elements(data_tables.fields_json) field where field ->> 'id' = 'language');
+    `,
+  },
 ]
