@@ -482,6 +482,43 @@ describe('buildImportPlan — structure', () => {
     expect(p.unusedCss).toContain('styles/unused.css')
   })
 
+  it('rewrites var() references to the slug a root colour token is emitted under (#615)', () => {
+    const html = `<!doctype html><html><head><link rel="stylesheet" href="style.css"></head><body>
+      <h1 class="title">Home</h1><a class="link" href="/">Link</a>
+      <p style="border-color: var(--brand---neutral--700, red)">Note</p>
+    </body></html>`
+    const css = `
+      :root {
+        --brand---neutral--700: #4f5459;
+        --brand-primary: #0575d6;
+        --alias: var(--brand---neutral--700);
+      }
+      .title { color: var(--brand---neutral--700); }
+      .link { color: var(--brand-primary); }
+      .dark { --brand---neutral--700: #000; }
+    `
+    const p = buildImportPlan({
+      fileMap: makeSinglePageFileMap(html, css),
+      currentSite: makeEmptySiteDocument(),
+    })
+
+    expect(p.colors).toEqual([
+      { slug: 'brand-neutral-700', value: '#4f5459' },
+      { slug: 'brand-primary', value: '#0575d6' },
+    ])
+    const rule = (selector: string) => p.styleRules.find((r) => r.selector === selector)
+    expect(rule('.title')?.styles.color).toBe('var(--brand-neutral-700)')
+    expect(rule('.link')?.styles.color).toBe('var(--brand-primary)')
+    expect(rule(':root')?.styles).toEqual({ '--alias': 'var(--brand-neutral-700)' })
+    // A non-root override follows the token to its new name.
+    expect(rule('.dark')?.styles).toEqual({ '--brand-neutral-700': '#000' })
+    const inline = Object.values(p.pages[0].nodeFragment.nodes)
+      .map((node) => node.inlineStyles)
+      .find((styles) => styles && 'borderColor' in styles)
+    expect(inline?.borderColor).toBe('var(--brand-neutral-700, red)')
+    expect(p.conflicts.tokens).toHaveLength(0)
+  })
+
   it('extracts root font variables into font tokens', () => {
     const html = `<!doctype html><html><head><link rel="stylesheet" href="style.css"></head><body><h1>Home</h1></body></html>`
     const css = `
