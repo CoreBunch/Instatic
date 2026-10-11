@@ -3,7 +3,7 @@
  */
 
 import { describe, it, expect } from 'bun:test'
-import { extractRootColorTokens, isCssColorValue, normalizeImportedColorTokens } from '@core/siteImport'
+import { extractRootColorTokens, isCssColorValue, normalizeImportedTokens } from '@core/siteImport'
 import type { NewStyleRule } from '@core/siteImport'
 
 function ambient(selector: string, styles: Record<string, unknown>): NewStyleRule {
@@ -83,14 +83,19 @@ describe('extractRootColorTokens', () => {
   })
 })
 
-describe('normalizeImportedColorTokens', () => {
-  it('gives each token its emitted slug and maps every changed name (#615)', () => {
-    const { colorTokens, renames } = normalizeImportedColorTokens([
-      { slug: 'brand---neutral--700', value: '#4f5459' },
-      { slug: 'brand-primary', value: '#0575d6' },
-      { slug: 'Brand-Accent', value: '#fc834b' },
-    ])
-    expect(colorTokens).toEqual([
+describe('normalizeImportedTokens', () => {
+  const font = (variable: string) => ({ name: variable, variable, family: 'Inter', fallback: 'sans-serif' })
+
+  it('gives each colour token its emitted slug and maps every changed name (#615)', () => {
+    const { colors, renames } = normalizeImportedTokens({
+      colors: [
+        { slug: 'brand---neutral--700', value: '#4f5459' },
+        { slug: 'brand-primary', value: '#0575d6' },
+        { slug: 'Brand-Accent', value: '#fc834b' },
+      ],
+      fonts: [],
+    })
+    expect(colors).toEqual([
       { slug: 'brand-neutral-700', value: '#4f5459' },
       { slug: 'brand-primary', value: '#0575d6' },
       { slug: 'brand-accent', value: '#fc834b' },
@@ -103,29 +108,53 @@ describe('normalizeImportedColorTokens', () => {
 
   it('keeps both tokens when two names normalise to the same slug', () => {
     // The name already in emitted form keeps it, wherever it appears.
-    const { colorTokens, renames } = normalizeImportedColorTokens([
-      { slug: 'Brand', value: '#111' },
-      { slug: 'brand', value: '#222' },
-      { slug: 'brand--', value: '#333' },
-    ])
-    expect(colorTokens.map((t) => t.slug)).toEqual(['brand-2', 'brand', 'brand-3'])
+    const { colors, renames } = normalizeImportedTokens({
+      colors: [
+        { slug: 'Brand', value: '#111' },
+        { slug: 'brand', value: '#222' },
+        { slug: 'brand--', value: '#333' },
+      ],
+      fonts: [],
+    })
+    expect(colors.map((t) => t.slug)).toEqual(['brand-2', 'brand', 'brand-3'])
     expect([...renames]).toEqual([['Brand', 'brand-2'], ['brand--', 'brand-3']])
   })
 
   it('does not rename a token onto another variable the import declares', () => {
-    const { colorTokens, renames } = normalizeImportedColorTokens(
-      [{ slug: 'a--b', value: '#111' }, { slug: 'bg', value: '#fff' }],
+    const { colors, renames } = normalizeImportedTokens(
+      { colors: [{ slug: 'a--b', value: '#111' }, { slug: 'bg', value: '#fff' }], fonts: [] },
       // `a-b` is an unrelated variable; `bg` is the token's own override.
       new Set(['a-b', 'bg']),
     )
-    expect(colorTokens.map((t) => t.slug)).toEqual(['a-b-2', 'bg'])
+    expect(colors.map((t) => t.slug)).toEqual(['a-b-2', 'bg'])
     expect([...renames]).toEqual([['a--b', 'a-b-2']])
   })
 
   it('returns no renames when every name is already in emitted form', () => {
-    const tokens = [{ slug: 'bg', value: '#fff' }, { slug: 'ink-2', value: '#000' }]
-    const { colorTokens, renames } = normalizeImportedColorTokens(tokens)
-    expect(colorTokens).toEqual(tokens)
+    const colorTokens = [{ slug: 'bg', value: '#fff' }, { slug: 'ink-2', value: '#000' }]
+    const { colors, fonts, renames } = normalizeImportedTokens({ colors: colorTokens, fonts: [font('font-body')] })
+    expect(colors).toEqual(colorTokens)
+    expect(fonts).toEqual([font('font-body')])
     expect(renames.size).toBe(0)
+  })
+
+  it('does not rename a colour onto a font token\'s name (#619)', () => {
+    const { colors, fonts, renames } = normalizeImportedTokens({
+      colors: [{ slug: 'font--accent', value: '#fff' }],
+      fonts: [font('font-accent')],
+    })
+    expect(colors.map((t) => t.slug)).toEqual(['font-accent-2'])
+    expect(fonts.map((t) => t.variable)).toEqual(['font-accent'])
+    expect([...renames]).toEqual([['font--accent', 'font-accent-2']])
+  })
+
+  it('does not rename a font onto a colour token\'s name (#619)', () => {
+    const { colors, fonts, renames } = normalizeImportedTokens({
+      colors: [{ slug: 'font-accent', value: '#fff' }],
+      fonts: [font('font-Accent')],
+    })
+    expect(colors.map((t) => t.slug)).toEqual(['font-accent'])
+    expect(fonts.map((t) => [t.name, t.variable])).toEqual([['Accent 2', 'font-accent-2']])
+    expect([...renames]).toEqual([['font-Accent', 'font-accent-2']])
   })
 })

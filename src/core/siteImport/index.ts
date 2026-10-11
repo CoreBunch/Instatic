@@ -45,7 +45,8 @@ export { applyAssetRewrites } from './applyAssetRewrites'
 
 // ── Phase 2 — colour-token extraction ─────────────────────────────────────────
 
-export { extractRootColorTokens, isCssColorValue, normalizeImportedColorTokens } from './colorTokens'
+export { extractRootColorTokens, isCssColorValue } from './colorTokens'
+export { normalizeImportedTokens } from './tokenNames'
 
 // ── Phase 2 — font-token extraction ───────────────────────────────────────────
 
