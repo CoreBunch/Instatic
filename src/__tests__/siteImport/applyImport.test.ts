@@ -546,6 +546,80 @@ describe('buildImportPlan — structure', () => {
     expect(p.styleRules.find((rule) => rule.selector === 'h1')?.styles.fontFamily).toBe('var(--font-display)')
   })
 
+  it('rewrites var() references to the variable a root font token is emitted under (#619)', () => {
+    const html = `<!doctype html><html><head><link rel="stylesheet" href="style.css"></head><body>
+      <h1 class="title">Home</h1><p class="body">Body</p><p class="hero">Hero</p>
+    </body></html>`
+    const css = `
+      :root {
+        --font-Heading: "Acme Grotesk", serif;
+        --font-body--alt: "Inter", sans-serif;
+        --font-display: "Acme Grotesk", serif;
+      }
+      .title { font-family: var(--font-Heading); }
+      .body { font-family: var(--font-body--alt); }
+      .hero { font-family: var(--font-display); }
+      .dark { --font-Heading: Georgia, serif; }
+    `
+    const p = buildImportPlan({
+      fileMap: makeSinglePageFileMap(html, css),
+      currentSite: makeEmptySiteDocument(),
+    })
+
+    expect(p.fontTokens.map((t) => [t.name, t.variable])).toEqual([
+      ['Heading', 'font-heading'],
+      ['Body Alt', 'font-body-alt'],
+      ['Display', 'font-display'],
+    ])
+    const rule = (selector: string) => p.styleRules.find((r) => r.selector === selector)
+    expect(rule('.title')?.styles.fontFamily).toBe('var(--font-heading)')
+    expect(rule('.body')?.styles.fontFamily).toBe('var(--font-body-alt)')
+    expect(rule('.hero')?.styles.fontFamily).toBe('var(--font-display)')
+    // A non-root override follows the token to its new name.
+    expect(rule('.dark')?.styles).toEqual({ '--font-heading': 'Georgia, serif' })
+    expect(p.conflicts.tokens).toHaveLength(0)
+  })
+
+  it('keeps both font tokens when two names normalise to the same variable', () => {
+    const html = `<!doctype html><html><head><link rel="stylesheet" href="style.css"></head><body><h1>x</h1></body></html>`
+    const css = `
+      :root { --font-Heading: "Acme Grotesk", serif; --font-heading: "Inter", sans-serif; }
+      h1 { font-family: var(--font-Heading); }
+      h2 { font-family: var(--font-heading); }
+    `
+    const p = buildImportPlan({
+      fileMap: makeSinglePageFileMap(html, css),
+      currentSite: makeEmptySiteDocument(),
+    })
+
+    // The name already in emitted form keeps it; the other takes a suffix.
+    expect(p.fontTokens.map((t) => [t.name, t.variable, t.family])).toEqual([
+      ['Heading 2', 'font-heading-2', 'Acme Grotesk'],
+      ['Heading', 'font-heading', 'Inter'],
+    ])
+    expect(p.styleRules.find((r) => r.selector === 'h1')?.styles.fontFamily).toBe('var(--font-heading-2)')
+    expect(p.styleRules.find((r) => r.selector === 'h2')?.styles.fontFamily).toBe('var(--font-heading)')
+  })
+
+  it('does not give a font token the name of an imported colour token', () => {
+    const html = `<!doctype html><html><head><link rel="stylesheet" href="style.css"></head><body><h1>x</h1></body></html>`
+    const css = `
+      :root { --font-accent: #fc834b; --font-Accent: "Inter", sans-serif; }
+      h1 { color: var(--font-accent); font-family: var(--font-Accent); }
+    `
+    const p = buildImportPlan({
+      fileMap: makeSinglePageFileMap(html, css),
+      currentSite: makeEmptySiteDocument(),
+    })
+
+    expect(p.colors).toEqual([{ slug: 'font-accent', value: '#fc834b' }])
+    expect(p.fontTokens.map((t) => t.variable)).toEqual(['font-accent-2'])
+    expect(p.styleRules.find((r) => r.selector === 'h1')?.styles).toMatchObject({
+      color: 'var(--font-accent)',
+      fontFamily: 'var(--font-accent-2)',
+    })
+  })
+
   it('plans Google Fonts @import as installed font requests', () => {
     const html = `<!doctype html><html><head><link rel="stylesheet" href="style.css"></head><body><h1>Home</h1></body></html>`
     const css = `
