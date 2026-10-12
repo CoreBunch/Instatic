@@ -521,7 +521,7 @@ Content-scope tools are registered under `server/ai/tools/content/`. They use th
 
 - `ContentAgentMount` builds a `ContentSnapshot` from the live Content workspace: visible `postType` collections, active collection id, active document fields/schema, and current user identity.
 - `contentAgentStore.ts` mounts a standalone `AgentSlice` instance per `ContentPage` mount. The Content workspace is hook-based rather than a global Zustand store, so the bridge is exposed through `contentBridgeHandle.ts`.
-- Server read tools hit the data, media, and user repositories through `ctx.db`; write tools are browser-bridged so unsaved draft state in `useContentEntryDraft` and the Tiptap body editor stay authoritative.
+- Server read tools hit the data, media, and user repositories through `ctx.db`, and every document read resolves the table family and row ownership through `server/auth/dataAccess.ts` for the calling identity (`ctx.userId` + `ctx.capabilities`), exactly as `GET /admin/api/cms/data/rows/:id` does: a `content.edit.own` caller sees only its own rows, and system-table rows need `data.system.tables.read`; write tools are browser-bridged so unsaved draft state in `useContentEntryDraft` and the Tiptap body editor stay authoritative.
 
 **Server-side content reads — 7**
 
