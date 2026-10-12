@@ -47,9 +47,11 @@ import {
   treeShakeStyleRulesBySignature,
   usedStyleRuleIdSignature,
 } from '@core/publisher'
+import { registry } from '@core/module-engine'
 import { useResponsiveEditorMediaAssets } from '@admin/pages/media/hooks/useResponsiveBackgroundStyle'
 import { selectorStatePseudo } from '@site/cssStatePseudo'
 import {
+  collectModuleCanvasCss,
   generateAmbientPlaceholderSuppressionCSS,
   generateCanvasClassCSS,
   generateForcedStateCSS,
@@ -116,6 +118,8 @@ export function ClassStyleInjector({ targetDocument, viewport }: ClassStyleInjec
   const previewClassStyles = useEditorStore((s) => s.previewClassStyles)
   const activeClassId = useEditorStore((s) => s.activeClassId)
   const selectedNodeId = useEditorStore((s) => s.selectedNodeId)
+  // A string, so the effect below only re-runs when the content changes.
+  const moduleCanvasCss = collectModuleCanvasCss(registry.list())
   const canvasClasses = treeShakeStyleRulesBySignature(
     classes ?? EMPTY_STYLE_RULES,
     usedClassIdSignature,
@@ -153,11 +157,15 @@ export function ClassStyleInjector({ targetDocument, viewport }: ClassStyleInjec
       frameworkSpacing,
       frameworkPreferences,
       fonts,
-      { mediaAssets: responsiveMediaAssets, mediaSignature: responsiveMediaSignature },
+      {
+        mediaAssets: responsiveMediaAssets,
+        mediaSignature: responsiveMediaSignature,
+        moduleCss: moduleCanvasCss,
+      },
     )
     // Wrap in a named cascade layer so editor-chrome CSS (unlayered, from
     // EditorChromeInjector) always wins over author CSS regardless of specificity.
-    // The publisher reset, framework CSS, and class rules are all inside the layer;
+    // The publisher reset, framework CSS, module canvas CSS, and class rules are all inside the layer;
     // their relative cascade among themselves is preserved (source order + specificity
     // within the layer). User CSS (also @layer user-authored) still wins over the
     // zero-specificity :where() publisher reset — same as before.
@@ -184,6 +192,7 @@ export function ClassStyleInjector({ targetDocument, viewport }: ClassStyleInjec
     fonts,
     responsiveMediaAssets,
     responsiveMediaSignature,
+    moduleCanvasCss,
   ])
 
   // Preview overlay — a higher-specificity rule emitted while a user is

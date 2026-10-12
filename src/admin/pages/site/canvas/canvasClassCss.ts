@@ -11,6 +11,7 @@ import { generateFontsCss } from '@core/fonts'
 import { styleRuleSelector } from '@core/page-tree'
 import type { StyleRule, ConditionDef } from '@core/page-tree'
 import type { SiteFontsSettings } from '@core/fonts'
+import type { AnyModuleDefinition } from '@core/module-engine'
 import type {
   FrameworkColorSettings,
   FrameworkPreferencesSettings,
@@ -18,8 +19,21 @@ import type {
   FrameworkTypographySettings,
 } from '@core/framework-schema'
 
-interface CanvasResponsiveCssOptions extends ResponsiveCssOptions {
+interface CanvasClassCssOptions extends ResponsiveCssOptions {
   mediaSignature?: string
+  /** Module canvas stylesheets. See `collectModuleCanvasCss`. */
+  moduleCss?: string
+}
+
+/**
+ * Join the `canvasCss` of every trusted module. Untrusted (plugin) modules
+ * are skipped: their preview renders in a sandbox frame this never reaches,
+ * and the string is injected unsanitised.
+ */
+export function collectModuleCanvasCss(modules: AnyModuleDefinition[]): string {
+  return modules
+    .flatMap((mod) => (mod.trusted && mod.canvasCss ? [mod.canvasCss.trim()] : []))
+    .join('\n\n')
 }
 
 function buildCanvasClassCSS(
@@ -31,7 +45,7 @@ function buildCanvasClassCSS(
   frameworkSpacing?: FrameworkSpacingSettings | null,
   frameworkPreferences?: FrameworkPreferencesSettings | null,
   fonts?: SiteFontsSettings | null,
-  responsiveOptions: CanvasResponsiveCssOptions = {},
+  options: CanvasClassCssOptions = {},
 ): string {
   const blocks: string[] = []
 
@@ -58,11 +72,17 @@ function buildCanvasClassCSS(
   })
   if (frameworkCss) blocks.push(frameworkCss)
 
+  // Module canvas CSS sits where `publishPage()` puts module CSS: after the
+  // reset and framework CSS, before the class registry. A class on a node
+  // then wins a specificity tie against its module's rules, as it does when
+  // published.
+  if (options.moduleCss) blocks.push(options.moduleCss)
+
   // The registry CSS is the publisher's own generator — the canvas ships the
   // exact bytes a publish would (rule order, condition/viewport cascade, and
   // sanitized raw @keyframes rules included), so the preview cannot drift
   // from the published output.
-  const classCss = generateClassCSS(classes, breakpoints, conditions, responsiveOptions)
+  const classCss = generateClassCSS(classes, breakpoints, conditions, options)
   if (classCss) blocks.push(classCss)
 
   return blocks.join('\n\n')
@@ -75,7 +95,7 @@ type CanvasClassCssGenerator = typeof buildCanvasClassCSS
  *
  * Every breakpoint-frame `ClassStyleInjector` regenerates this CSS with the
  * SAME store-snapshot inputs in the same commit — the generation is pure and
- * all inputs are Mutative-immutable, so comparing the 8 argument identities
+ * all inputs are Mutative-immutable or strings, so comparing the argument identities
  * is exact: frames 2..N (and any re-run with unchanged inputs) return the
  * cached string instead of re-sorting and re-emitting the whole registry.
  *
@@ -96,7 +116,7 @@ export function createCanvasClassCssMemo(
     frameworkSpacing,
     frameworkPreferences,
     fonts,
-    responsiveOptions = {},
+    options = {},
   ) => {
     const inputs = [
       classes,
@@ -107,7 +127,8 @@ export function createCanvasClassCssMemo(
       frameworkSpacing,
       frameworkPreferences,
       fonts,
-      responsiveOptions.mediaSignature,
+      options.mediaSignature,
+      options.moduleCss,
     ]
     const prev = lastInputs
     if (prev && inputs.every((value, i) => Object.is(value, prev[i]))) {
@@ -122,7 +143,7 @@ export function createCanvasClassCssMemo(
       frameworkSpacing,
       frameworkPreferences,
       fonts,
-      responsiveOptions,
+      options,
     )
     lastInputs = inputs
     return lastCss
@@ -131,7 +152,8 @@ export function createCanvasClassCssMemo(
 
 /**
  * Generate the canvas class-registry CSS (publisher reset + fonts +
- * framework root CSS + the publisher's `generateClassCSS` output).
+ * framework root CSS + module canvas CSS + the publisher's
+ * `generateClassCSS` output).
  * Identity-memoized — see `createCanvasClassCssMemo`.
  */
 export const generateCanvasClassCSS: CanvasClassCssGenerator = createCanvasClassCssMemo()

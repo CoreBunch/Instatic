@@ -34,7 +34,7 @@ import type { PageNode } from '@core/page-tree'
 import { WarningDiamondSolidIcon } from 'pixel-art-icons/icons/warning-diamond-solid'
 import { ErrorBoundary } from '@ui/components/ErrorBoundary'
 import { ModuleSandboxFrame } from './ModuleSandboxFrame'
-import { CanvasBreakpointContext, CanvasSelectionContext, CanvasTemplateContext } from './CanvasContexts'
+import { CanvasBreakpointContext, CanvasBreakpointWidthContext, CanvasSelectionContext, CanvasTemplateContext } from './CanvasContexts'
 import {
   addEditorFormPreviewProps,
   resolveEditorFormPreviewState,
@@ -61,6 +61,7 @@ export const NodeRenderer = memo(function NodeRenderer({ nodeId }: NodeRendererP
   // Uses selectActiveCanvasPage (Task #438) so VC canvas mode works alongside page mode.
   const node = useEditorStore((s) => selectActiveCanvasPage(s)?.nodes[nodeId] ?? null)
   const breakpointId = use(CanvasBreakpointContext)
+  const canvasViewportWidth = use(CanvasBreakpointWidthContext)
   const templateContext = use(CanvasTemplateContext)
 
   // Per-node selection/hover subscriptions (Perf fix — Contribution #495).
@@ -444,6 +445,7 @@ export const NodeRenderer = memo(function NodeRenderer({ nodeId }: NodeRendererP
           mcClassName={mcClassName}
           nodeWrapperProps={effectiveWrapperProps}
           inlineEdit={inlineEditBinding}
+          canvasViewportWidth={canvasViewportWidth}
         >
           {isInlineEditing ? undefined : children}
         </ComponentType>
