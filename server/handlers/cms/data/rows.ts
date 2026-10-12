@@ -25,7 +25,6 @@ import {
 } from '../../../publish/contentEvents'
 import {
   cancelScheduledPublish,
-  getDataRow,
   getDataTable,
   listDataAuthorOptions,
   saveDataRowDraft,
