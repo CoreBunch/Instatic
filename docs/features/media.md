@@ -261,6 +261,8 @@ Uploads initiated outside the Media page use the same pipeline. In particular, t
 
 The multipart body carries the `file` part and, optionally, an `altText` text part: Site Import sends the authored `<img alt>` so the record is created with it (`createMediaAsset` writes `alt_text`), instead of leaving every imported image blank for the user to back-fill. Every other upload omits it and the record starts empty.
 
+Library alt text can contain native language-file tokens such as `{site.translations.media.team}`. The Image canvas and publisher resolve them in the current render context without changing the asset record or adding per-instance alt overrides. A missing translation is a localization error; decorative images retain an empty library alt. See [Localization](localization.md).
+
 Plugins enter this same pipeline through `api.cms.media.upsert(...)`. Only source metadata crosses QuickJS. For a `remote` source, the Bun host performs a bounded, SSRF-guarded download. For a `pluginAsset` source, it reads a package-relative file beneath the plugin's canonical installed asset root and rejects traversal or symlink escapes. Both branches call the ordinary create or replace path, so storage-adapter election, MIME sniffing, intrinsic dimensions, BlurHash, and responsive variants stay identical to an admin upload. The provenance row determines whether the call creates, replaces, or returns the existing asset unchanged.
 
 ```text

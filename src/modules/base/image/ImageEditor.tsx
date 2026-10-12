@@ -14,6 +14,8 @@
  * re-running module registration.
  */
 import React from 'react'
+import { interpolateTokens } from '@core/templates'
+import { CanvasTemplateContext } from '@admin/pages/site/canvas/CanvasContexts'
 import type { ModuleComponentProps } from '@core/module-engine'
 import {
   blurHashToDataUrl,
@@ -39,6 +41,7 @@ export const ImageEditor: React.FC<ModuleComponentProps<ImageStoredProps>> = ({ 
   // round trip. `null` until the cache is populated — render shows the
   // raw src in the meantime so there's no flash of "No image selected".
   const asset = useCmsMediaAssetByPath(props.src || null)
+  const templateContext = React.use(CanvasTemplateContext)
 
   const responsive = !asset
     ? null
@@ -50,7 +53,6 @@ export const ImageEditor: React.FC<ModuleComponentProps<ImageStoredProps>> = ({ 
           : null,
         width: asset.width,
         height: asset.height,
-        libraryAlt: asset.altText,
       }
 
   if (!props.src) {
@@ -68,7 +70,7 @@ export const ImageEditor: React.FC<ModuleComponentProps<ImageStoredProps>> = ({ 
   // Alt text: library asset is the single source of truth. Matches the
   // published-render behaviour so the canvas preview never disagrees
   // with the published HTML. Edit alt via the Media viewer.
-  const alt = responsive?.libraryAlt ?? ''
+  const alt = asset ? interpolateTokens(asset.altText, templateContext ?? { entryStack: [] }) : ''
   const htmlAttrs = htmlAttributesForReact(props.htmlAttributes)
 
   // No resolved asset yet (cache loading, external URL, or row missing).

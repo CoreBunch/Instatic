@@ -26,7 +26,7 @@ import { isPageRef, resolvePageRef } from '@core/page-tree'
 import type { AnyModuleDefinition } from '@core/module-engine'
 import { validateNodeProps } from '@core/module-engine'
 import { resolveProps } from '@core/page-tree'
-import { resolveDynamicProps, effectiveNodeBindings } from '@core/templates/dynamicBindings'
+import { resolveDynamicProps, effectiveNodeBindings, interpolateTokens, type TemplateRenderDataContext } from '@core/templates'
 import { sanitizeModuleCSS } from './cssCollector'
 import { escapeHtml } from './utils'
 import { escapeProps } from './escapeProps'
@@ -80,6 +80,7 @@ function attachResolvedMediaByKey(
   def: AnyModuleDefinition,
   resolvedProps: Record<string, unknown>,
   mediaAssets: ReadonlyMap<string, RenderResolvedMedia> | undefined,
+  templateContext: TemplateRenderDataContext | undefined,
 ): void {
   if (!mediaAssets || mediaAssets.size === 0) return
   const byKey: Record<string, RenderResolvedMedia> = {}
@@ -88,7 +89,10 @@ function attachResolvedMediaByKey(
     const value = resolvedProps[propKey]
     if (typeof value !== 'string') continue
     const resolved = mediaAssets.get(value)
-    if (resolved) byKey[propKey] = resolved
+    if (resolved) byKey[propKey] = {
+      ...resolved,
+      altText: interpolateTokens(resolved.altText, templateContext ?? { entryStack: [] }),
+    }
   }
   if (Object.keys(byKey).length > 0) {
     safeProps._resolvedMediaByKey = byKey
@@ -158,7 +162,7 @@ function renderStandardNode(
   // Escape all string props (Constraint #211) before calling render(), then
   // attach derived assets that survive the escape boundary unchanged.
   const safeProps = escapeProps(validatedProps, def.schema)
-  attachResolvedMediaByKey(safeProps, def, validatedProps, config.mediaAssets)
+  attachResolvedMediaByKey(safeProps, def, validatedProps, config.mediaAssets, config.templateContext)
   attachResolvedAutoSizes(safeProps, def, node, config)
 
   const output = def.render(safeProps as never, renderedChildren)

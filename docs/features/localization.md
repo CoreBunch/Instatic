@@ -36,6 +36,8 @@ Plain translation text passes through the publisher's normal escaping. Rich-text
 
 ## Editing and publication
 
+Media Library alt text accepts the same `{site.translations.*}` language-file tokens. The canvas and publisher resolve the library value in the current page/component/loop context; a shared asset can therefore have localized accessibility text without duplicating files or adding per-image overrides. Literal alt text and an empty decorative alt remain unchanged. Missing translation keys fail through the normal localization boundary. Resolution does not modify the cached library record, and published HTML escapes the resolved text once.
+
 Page settings allow an explicit language or inheritance from the site default. The language is stored in `data_rows.cells_json.language`, carried by the page's Y-document metadata, and preserved through duplication and template composition. Migration `031_page_language` appends the built-in field to every existing pages table in both database dialects; it does not replace table fields or content.
 
 The canvas and publisher build the same language frame. Invalid intermediate JSON confines the preview error to the canvas boundary while the code editor remains usable; correcting the file restores the preview. Inline editing does not replace a translation token with resolved literal text. Edit the language file through General settings instead.
