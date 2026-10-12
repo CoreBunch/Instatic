@@ -19,6 +19,15 @@
     border-radius: var(--radius-sm);
 }
 
+/*
+ * A toggle row ends in a 38px switch, whose thumb sits exactly where the
+ * default corner position would put the button. Sit to the left of it.
+ */
+.affordanceBtn[data-placement="beside-switch"] {
+    top: 5px;
+    right: 44px;
+}
+
 .affordanceWrapper:hover .affordanceBtn,
 .affordanceWrapper:focus-within .affordanceBtn {
     opacity: 0.7;

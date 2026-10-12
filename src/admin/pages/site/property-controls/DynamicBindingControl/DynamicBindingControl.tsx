@@ -189,6 +189,7 @@ export function DynamicBindingControl({
           size="xs"
           iconOnly
           className={styles.affordanceBtn}
+          data-placement={control.type === 'toggle' ? 'beside-switch' : undefined}
           aria-label={insertMode ? `Insert binding for ${label}` : `Bind ${label}`}
           aria-expanded={pickerOpen}
           tooltip={insertMode ? 'Insert data token' : 'Bind to data field'}
