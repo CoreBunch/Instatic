@@ -14,7 +14,7 @@ const EMPTY_PAGES: { id: string; title: string; slug: string }[] = []
 
 /**
  * URL property control with two modes:
- *   - URL  — free-text external/relative URL (validated by isValidUrl).
+ *   - URL  — free-text absolute or site-relative URL (validated by isValidUrl).
  *   - Page — pick an existing CMS page; stored as a dynamic `cms:page:<id>`
  *            reference that the publisher resolves to the page's current path,
  *            so the link survives slug renames.
@@ -28,7 +28,12 @@ export function UrlControl({
   disabled,
   layout,
 }: ControlProps<string>) {
-  const [error, setError] = useState(false)
+  // What is being typed while it is not yet a valid URL. A URL is invalid at
+  // almost every keystroke on the way to being complete, and only valid
+  // values are stored, so the field shows this draft instead of the stored
+  // value until the two agree. null = show the stored value.
+  const [draft, setDraft] = useState<string | null>(null)
+  const error = draft !== null
   const pages = useEditorStore((s) => s.site?.pages ?? EMPTY_PAGES)
 
   const current = String(value ?? '')
@@ -37,9 +42,12 @@ export function UrlControl({
 
   const handleUrlChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const v = e.target.value
-    const valid = isValidUrl(v)
-    setError(!valid)
-    if (valid) onChange(propKey, v)
+    if (isValidUrl(v)) {
+      setDraft(null)
+      onChange(propKey, v)
+    } else {
+      setDraft(v)
+    }
   }
 
   const handlePagePick = (e: React.ChangeEvent<HTMLSelectElement>) => {
@@ -50,7 +58,7 @@ export function UrlControl({
   }
 
   // In URL mode never show a page-ref token in the text field — it isn't a URL.
-  const urlFieldValue = isPageRef(current) ? '' : current
+  const urlFieldValue = draft ?? (isPageRef(current) ? '' : current)
   const selectedPageId = ref?.pageId ?? ''
 
   const pageOptions = [
@@ -106,6 +114,9 @@ export function UrlControl({
             disabled={disabled}
             fieldSize="sm"
             onChange={handleUrlChange}
+            // An unfinished draft was never stored. Leaving the field drops
+            // it, so the field never shows a value the node does not have.
+            onBlur={() => setDraft(null)}
             invalid={error}
           />
         )}

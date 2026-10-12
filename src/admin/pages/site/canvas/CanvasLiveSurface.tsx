@@ -40,7 +40,7 @@ import type { Breakpoint, Page } from '@core/page-tree'
 import type { TemplateRenderDataContext } from '@core/templates/dynamicBindings'
 import { CanvasComposedTree } from './CanvasComposedTree'
 import { BreakpointSelectionOverlay } from './BreakpointSelectionOverlay'
-import { CanvasBreakpointContext, CanvasTemplateContext } from './CanvasContexts'
+import { CanvasBreakpointContext, CanvasBreakpointWidthContext, CanvasTemplateContext } from './CanvasContexts'
 import { IframeFrameSurface, type IframeFrameSurfaceHandle } from './IframeFrameSurface'
 import type { InjectableRuntimeScript } from './useRuntimeScriptBuild'
 import { CanvasFrameSkeleton } from '@admin/shared/CanvasFrameSkeleton'
@@ -176,7 +176,9 @@ export function CanvasLiveSurface({
             >
               <CanvasTemplateContext.Provider value={templateContext}>
                 <CanvasBreakpointContext.Provider value={activeBreakpoint.id}>
-                  <CanvasComposedTree page={page} />
+                  <CanvasBreakpointWidthContext.Provider value={activeBreakpoint.width}>
+                    <CanvasComposedTree page={page} />
+                  </CanvasBreakpointWidthContext.Provider>
                 </CanvasBreakpointContext.Provider>
               </CanvasTemplateContext.Provider>
             </IframeFrameSurface>

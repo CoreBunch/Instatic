@@ -80,6 +80,12 @@ const PropertyControlOptionSchema = Type.Object(
   {
     label: Type.String({ minLength: 1 }),
     value: Type.Unknown(),
+    /**
+     * Inline SVG markup for this option. When any option of a `select` has
+     * one, the control renders as an icon button row with `label` as each
+     * button's tooltip and accessible name. Sanitised with `sanitizeSvg`.
+     */
+    iconSvg: Type.Optional(Type.String()),
   },
   { additionalProperties: false },
 )
@@ -111,6 +117,8 @@ export const PropertyControlSchema = Type.Recursive((Self) => Type.Union([
       max: Type.Optional(Type.Number()),
       step: Type.Optional(Type.Number()),
       unit: Type.Optional(Type.String()),
+      /** Suggested values shown as buttons under the field. Any number is still accepted. */
+      presets: Type.Optional(Type.Array(Type.Number())),
     },
     { additionalProperties: false },
   ),

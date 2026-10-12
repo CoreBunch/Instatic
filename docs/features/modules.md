@@ -41,6 +41,8 @@ src/modules/base/
 ├── outlet/              — base.outlet (Content Outlet — template content slot)
 ├── button/              — base.button (anchor.ts — element-decision leaf)
 ├── link/                — base.link (content.ts — children/text fallback leaf)
+├── nav/                 — base.nav (nav bar that collapses to a dropdown or overlay, icons.ts/navCss.ts/navRuntimeJs.ts leaves)
+├── nav-item/            — base.nav-item (nestable menu entries, linked or submenu-toggle labels, content.ts/navItemCss.ts/navItemRuntimeJs.ts leaves)
 ├── image/               — base.image
 ├── svg/                 — base.svg (inline sanitized SVG)
 ├── video/               — base.video (youtube.ts — ID parse + embed URL leaf)
@@ -136,6 +138,9 @@ interface ModuleDefinition<TProps extends Record<string, unknown>> {
   /** React component for the editor canvas live preview. */
   component: React.ComponentType<ModuleComponentProps<TProps>>
 
+  /** Optional stylesheet for `component`. Trusted modules only. See "Canvas stylesheet". */
+  canvasCss?: string
+
   /**
    * Optional dependency-backed editor runtime. When present, the canvas renders
    * this module in a sandboxed iframe with an import map built from the module's
@@ -156,6 +161,10 @@ interface ModuleDefinition<TProps extends Record<string, unknown>> {
 ```
 
 Constraint #179: **`render()` is pure** — no DOM, no React, no side effects. Inputs in, strings out.
+
+`render()` may also return `instanceCss`. This is CSS that depends on that instance's props, which `css` cannot carry because only the first instance's `css` is kept per moduleId. The publisher deduplicates `instanceCss` by content, so instances producing the same string share one block. Keep it to the prop-dependent rules. Example: `base.nav` emits the media query for its author-chosen collapse width this way, for itself and the Menu Items nested inside it.
+
+Plugin modules cannot return `instanceCss`. The plugin module adapter (`src/core/plugins/moduleAdapter.ts`) forwards only `html`, `css`, and `js` from a plugin's `render()`, so any other field is dropped. A plugin module that needs per-instance styling writes the value into its `html` (a `style` attribute or a custom property) and keeps the rules that read it in `css`.
 
 `render()` may also return `js` next to `html`/`css` — an optional vanilla-JS runtime for the module TYPE, deduplicated per moduleId (like CSS) and served as an external file at `/_instatic/module-js/<moduleId>.js` on published pages. Authoring contract: a self-contained IIFE; bind via document-level event delegation (hole fragments insert into the DOM after load); idempotent; no load-order assumptions; no framework runtimes. Size discipline in the spirit of the ~1 KB hole runtime — the ~8 KB form runtime is the ceiling, not the norm. Module JS never executes in the admin canvas: the canvas renders React editor components, never published render() output.
 
@@ -197,6 +206,12 @@ schema: PropertySchema = {
 | `media`     | Media picker (any media type)                             | media id                        |
 | `svg`       | Inline SVG editor                                         | SVG markup string               |
 | `group`     | Collapsible section header (visual grouping only)         | — (no data shape change)        |
+
+A `number` control may carry `presets` (an array of numbers). They render as one-click buttons under the field, which still accepts any number. Example: `base.nav`'s "Collapse below" width.
+
+A `select` option may carry `iconSvg` (inline SVG markup). When any option has one, the control renders as an icon button row (`<SegmentedControl>`) with each option's `label` as its tooltip, instead of a dropdown. The markup is passed through `sanitizeSvg` before rendering. Example: `base.nav`'s "Menu icon" picker.
+
+A `url` control has two modes: **URL** (free text) and **Page** (pick a CMS page, stored as a `cms:page:<id>` reference that survives slug renames). In URL mode the field accepts `https:`, `http:`, `mailto:`, `tel:`, and `sms:` URLs, and site-relative links: a root path (`/about`), a fragment (`#pricing`), a query (`?page=2`), or a dot path (`./a`, `../a`). It rejects every other scheme, a bare word such as `about` or `example.com`, and protocol-relative `//host`. The rule is `isValidUrl` in `src/core/utils/urlValidation.ts`. While the text is not yet valid the field keeps what is being typed and shows "Invalid URL"; the prop is written once the text is valid, and leaving the field drops an unfinished entry.
 
 `PropertyControl` is a discriminated union — `propertySchema.ts` has the full schema.
 
@@ -324,8 +339,27 @@ interface ModuleComponentProps<TProps> {
    * undefined outside the editor (publisher, plugin sandbox preview).
    */
   nodeWrapperProps?: NodeWrapperProps
+  /** Set only while this node is being inline-edited in this frame. See canvas-iframe-per-frame.md → "Inline text editing". */
+  inlineEdit?:       InlineEditBinding
+  /**
+   * Pixel width of the breakpoint frame this component renders in (375 in a
+   * mobile frame). undefined outside the editor, for sandboxed plugin modules,
+   * and in agent snapshot rendering.
+   */
+  canvasViewportWidth?: number
 }
 ```
+
+`canvasViewportWidth` exists because a media query in the canvas matches the iframe, and module CSS and JS from `render()` never run there. A component that changes layout at a width compares the prop against that width itself. Treat `undefined` as "render the default layout". Example: `NavEditor` marks the nav collapsed when `canvasViewportWidth <= collapseBreakpoint`.
+
+### Canvas stylesheet (`canvasCss`)
+
+The canvas never loads `render().css`. Most editor components do not need it: they render the same elements and are styled by the author's classes. A component whose preview needs real rules (an ancestor's state, `:has()`, hover) declares them in `canvasCss` on the module definition.
+
+- **Where it lands.** `ClassStyleInjector` collects `canvasCss` from every trusted module (`collectModuleCanvasCss`) and puts it in each frame's `mc-classes` sheet, inside `@layer user-authored`: after the publisher reset and framework CSS, before class registry CSS and user stylesheets. That is the position `publishPage()` gives module CSS, so an author's class or a global `a { … }` rule wins or loses against the module exactly as it does when published.
+- **Write the published selectors.** Use the same class names and specificity as `render().css`. Do not style the preview with inline `style` props: an inline style beats every author class in the canvas and none when published. A dynamic custom property that `render()` also emits is fine.
+- **Share the rules.** Build both sheets from one function when the canvas differs only in what triggers a rule. `base.nav` and `base.nav-item` generate their collapse rules from a `scope` selector and an `open` selector (`nav/navCss.ts`, `nav-item/navItemCss.ts`). Published, those are the `[data-instatic-nav-collapse="<width>"]` attribute inside a media query and the state attribute module JS sets. In the canvas they are `[data-instatic-nav-canvas="collapsed"]`, which `NavEditor` stamps from `canvasViewportWidth`, and "this node or a node inside it is selected" (`shared/navCollapse.ts`).
+- **Trusted modules only.** A plugin module's component renders in a sandbox frame this stylesheet never reaches, and the string is injected unsanitised, so `canvasCss` on an untrusted module is ignored.
 
 **Spreading `nodeWrapperProps` is mandatory.** Every module editor component must spread `nodeWrapperProps` onto its root JSX element and apply `mcClassName` as the class. Without this the node is invisible to the editor's interaction layer (selection, hover, keyboard). Example:
 
@@ -457,6 +491,47 @@ Modules don't need to know — they just receive resolved props.
 ```
 
 At render time, `resolveDynamicProps(...)` substitutes the bound value. Used inside loops (the entry stack supplies `currentEntry`) and inside entry templates (the published row supplies `currentEntry`).
+
+### Build a navigation menu
+
+A menu is one `base.nav` (Header Navigation) with `base.nav-item` (Menu Item) nodes inside it. Nest Menu Items inside a Menu Item to make a submenu, to any depth. The page tree is the menu structure.
+
+`base.nav` props:
+
+| Prop                 | Panel label       | Effect |
+|----------------------|-------------------|--------|
+| `ariaLabel`          | Accessible name   | `aria-label` on the `<nav>`. Omitted when empty. |
+| `toggleLabel`        | Menu button label | Screen-reader-only text for the collapsed menu button. |
+| `collapseBreakpoint` | Collapse below    | Viewport width in px at or below which the menu button replaces the row. `0` never collapses. |
+| `collapsedStyle`     | Collapsed menu    | `dropdown` (panel under the nav) or `overlay` (covers the screen). |
+| `menuBackground`     | Menu background   | Background of the collapsed menu and of submenus. Empty uses the `Canvas` system colour: the browser's page background for the active colour scheme, not the site's body colour. Set it on a site with a dark background. |
+| `toggleIcon`         | Menu icon         | Glyph on the menu button. |
+| `toggleIconColor`    | Menu icon color   | Empty inherits the surrounding text colour. |
+| `menuAlign`          | Menu alignment    | Where the items sit in the bar. Collapsed, where the menu button sits. |
+
+`base.nav-item` props:
+
+| Prop     | Panel label | Effect |
+|----------|-------------|--------|
+| `label`  | Label       | The item text. |
+| `isLink` | Enable link | On by default. Off makes the item a static label and hides Link and Target. The stored `href` is kept for turning it back on. |
+| `href`   | Link        | A `url` control: a URL or a CMS page. |
+| `target` | Target      | Same tab or new tab. |
+
+What `isLink` renders:
+
+| `isLink` | Has a submenu | Label element | Submenu toggle |
+|----------|---------------|---------------|----------------|
+| on       | no            | `<a>`         | none |
+| on       | yes           | `<a>`         | a separate caret `<button>` beside the label |
+| off      | yes           | `<button>`    | the label itself: clicking it opens the submenu |
+| off      | no            | `<span>`      | none |
+
+Turn `isLink` off for a parent item that only groups a submenu, so that a tap on the label opens the submenu and does not navigate.
+
+A submenu opens on hover or keyboard focus at desktop widths, and from its toggle at every width. Escape or a click outside an open item closes it.
+
+Every class the two modules emit starts with `instatic-nav`, so author CSS can target them without colliding with site classes.
 
 ---
 

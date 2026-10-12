@@ -389,3 +389,23 @@
 .groupChildren {
     padding: var(--space-m) 0 0 var(--space-m);
 }
+
+/* Icon drawn inside a segment when a select's options carry `iconSvg`. */
+.selectOptionIcon {
+    display: inline-flex;
+    width: 16px;
+    height: 16px;
+}
+
+.selectOptionIcon svg {
+    width: 100%;
+    height: 100%;
+}
+
+/* Number field with a row of preset buttons under it. */
+.numberWithPresets {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-xs);
+    width: 100%;
+}

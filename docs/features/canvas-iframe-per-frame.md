@@ -38,7 +38,7 @@ IframeFrameSurface
   <iframe srcDoc="<!doctype html><html>…">
     (inside iframe document, via createPortal)
     ├── EditorChromeInjector   (head: unlayered editor chrome CSS)
-    ├── ClassStyleInjector     (head: @layer user-authored — publisher reset + class registry)
+    ├── ClassStyleInjector     (head: @layer user-authored — publisher reset + module canvasCss + class registry)
     ├── UserStylesheetInjector (head: @layer user-authored — user-uploaded stylesheets)
     ├── {children}             (body: React node tree via NodeRenderer)
     └── RuntimeScriptInjector (body: opt-in runtime scripts when "Run scripts" is on)
@@ -124,7 +124,7 @@ Five `<style>` elements are injected per iframe (three from `ClassStyleInjector`
 | Injector | `id` attribute | Cascade layer | Purpose |
 |---|---|---|---|
 | `EditorChromeInjector` | `instatic-editor-chrome` | **unlayered** | Editor chrome: placeholder, slot-instance, unknown-module styles. Copies safe required design tokens from parent `:root` onto iframe `:root`. The editor UI font, admin text-size tokens, and admin spacing tokens are forwarded as **chrome-namespaced** `--chrome-font-sans`, `--chrome-text-*`, and `--chrome-space-*` aliases, not as `--font-sans`, `--text-*`, or `--space-*`, because the injector is unlayered and would otherwise clobber the site's own Framework tokens. |
-| `ClassStyleInjector` | `mc-classes` | `@layer user-authored` | Publisher reset + framework CSS + class registry CSS |
+| `ClassStyleInjector` | `mc-classes` | `@layer user-authored` | Publisher reset + framework CSS + module `canvasCss` + class registry CSS, in the order `publishPage()` emits them |
 | `ClassStyleInjector` | `mc-classes-preview` | `@layer user-authored` | Higher-specificity preview rule (doubled selector) while a property control is hovered. Empty for state-pseudo rules — those use `mc-classes-force-state` instead. |
 | `ClassStyleInjector` | `mc-classes-force-state` | `@layer user-authored` | Force-paints the active state-pseudo rule (`.btn:hover`, `.card:focus`, etc.) onto the selected node via a doubled `[data-node-id]` selector so the state is visible/editable without physically triggering it. Mirrors the full `contextStyles` emission per breakpoint and condition. |
 | `UserStylesheetInjector` | `mc-user-styles` | `@layer user-authored` | User-uploaded stylesheets (verbatim, unscoped) |

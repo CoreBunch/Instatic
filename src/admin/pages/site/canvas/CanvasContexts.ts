@@ -24,6 +24,11 @@ export const CanvasViewportActionsContext =
   createContext<CanvasViewportActionsContextValue | null>(null)
 
 export const CanvasBreakpointContext = createContext<string | undefined>(undefined)
+/**
+ * Pixel width of the rendering breakpoint frame (e.g. 375 for mobile). Passed
+ * to modules as canvasViewportWidth.
+ */
+export const CanvasBreakpointWidthContext = createContext<number | undefined>(undefined)
 export const CanvasTemplateContext = createContext<TemplateRenderDataContext | undefined>(undefined)
 /** Final srcDoc document owned by the nearest IframeFrameSurface. */
 export const CanvasDocumentContext = createContext<Document | null>(null)

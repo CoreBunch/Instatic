@@ -23,7 +23,7 @@ import type { TemplateRenderDataContext } from '@core/templates/dynamicBindings'
 import { CanvasComposedTree } from './CanvasComposedTree'
 import { BreakpointSelectionOverlay } from './BreakpointSelectionOverlay'
 import { PeerPresenceOverlay } from './PeerPresenceOverlay'
-import { CanvasBreakpointContext, CanvasTemplateContext } from './CanvasContexts'
+import { CanvasBreakpointContext, CanvasBreakpointWidthContext, CanvasTemplateContext } from './CanvasContexts'
 import { IframeFrameSurface, type IframeFrameSurfaceHandle } from './IframeFrameSurface'
 import type { InjectableRuntimeScript } from './useRuntimeScriptBuild'
 import { Button } from '@ui/components/Button'
@@ -231,7 +231,9 @@ export function BreakpointFrame({
         >
           <CanvasTemplateContext.Provider value={templateContext}>
             <CanvasBreakpointContext.Provider value={breakpoint.id}>
-              <CanvasComposedTree page={page} />
+              <CanvasBreakpointWidthContext.Provider value={breakpoint.width}>
+                <CanvasComposedTree page={page} />
+              </CanvasBreakpointWidthContext.Provider>
             </CanvasBreakpointContext.Provider>
           </CanvasTemplateContext.Provider>
         </IframeFrameSurface>

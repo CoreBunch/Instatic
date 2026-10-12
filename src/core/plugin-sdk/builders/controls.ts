@@ -16,7 +16,7 @@
  */
 import type { PluginPropertyControl } from '../modules'
 
-type SelectOption<T> = { label: string; value: T }
+type SelectOption<T> = { label: string; value: T; iconSvg?: string }
 
 export const control = {
   text(label: string, options: { placeholder?: string; description?: string } = {}): PluginPropertyControl {
@@ -32,7 +32,7 @@ export const control = {
 
   number(
     label: string,
-    options: { min?: number; max?: number; step?: number; unit?: string; description?: string } = {},
+    options: { min?: number; max?: number; step?: number; unit?: string; presets?: number[]; description?: string } = {},
   ): PluginPropertyControl {
     return { type: 'number', label, ...options }
   },

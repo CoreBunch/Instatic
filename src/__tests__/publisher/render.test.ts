@@ -242,6 +242,36 @@ describe('renderNode', () => {
     expect(acc.cssMap.get('base.text')).toBe('h1,h2,h3,h4,h5,h6 { font-family: sans-serif; }')
   })
 
+  it('collects instanceCss by content, so same props share a block and different props each get one', () => {
+    const widthRegistry = makeRegistry({
+      'test.width': makeModule('test.width', {
+        render: (props) => ({
+          html: '<div></div>',
+          css: '.w { display: flex; }',
+          instanceCss: `@media (max-width: ${String(props.width)}px) { .w { display: none; } }`,
+        }),
+      }),
+      'test.box': makeModule('test.box', {
+        canHaveChildren: true,
+        render: (_props, children) => ({ html: `<div>${children.join('')}</div>` }),
+      }),
+    })
+    const page = makePage({
+      root: { moduleId: 'test.box', props: {}, children: ['a', 'b', 'c'] },
+      a: { moduleId: 'test.width', props: { width: 600 } },
+      b: { moduleId: 'test.width', props: { width: 600 } },
+      c: { moduleId: 'test.width', props: { width: 900 } },
+    })
+    const acc = makeAccumulators()
+    render('root', { page, site, registry: widthRegistry, breakpointId: undefined }, acc)
+    const sheet = Array.from(acc.cssMap.values())
+    expect(sheet).toEqual([
+      '.w { display: flex; }',
+      '@media (max-width: 600px) { .w { display: none; } }',
+      '@media (max-width: 900px) { .w { display: none; } }',
+    ])
+  })
+
   it('returns empty string for missing nodeId', () => {
     const page = makePage({ root: { moduleId: 'base.text', props: {} } })
     const c = ctx(page)

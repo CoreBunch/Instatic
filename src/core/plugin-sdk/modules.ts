@@ -29,9 +29,9 @@ export type PluginPropertyControl = PluginPropertyControlBase &
   (
     | { type: 'text'; placeholder?: string }
     | { type: 'textarea'; rows?: number; placeholder?: string }
-    | { type: 'number'; min?: number; max?: number; step?: number; unit?: string }
+    | { type: 'number'; min?: number; max?: number; step?: number; unit?: string; presets?: number[] }
     | { type: 'color'; format?: 'hex' | 'rgba' }
-    | { type: 'select'; options: Array<{ label: string; value: unknown }> }
+    | { type: 'select'; options: Array<{ label: string; value: unknown; iconSvg?: string }> }
     | { type: 'toggle' }
     | { type: 'image' }
     | { type: 'url' }

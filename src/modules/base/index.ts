@@ -31,6 +31,10 @@ import './svg'
 import './button'
 import './link'
 
+// Navigation modules
+import './nav'
+import './nav-item'
+
 // Form modules
 import './forms'
 

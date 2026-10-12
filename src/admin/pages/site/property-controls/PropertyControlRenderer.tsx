@@ -164,6 +164,7 @@ export function PropertyControlRenderer({
           max={control.max}
           step={control.step}
           unit={control.unit}
+          presets={control.presets}
         />
       )
       break

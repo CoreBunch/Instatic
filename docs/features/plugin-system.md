@@ -604,6 +604,8 @@ See [docs/features/publisher.md](publisher.md) for the full three-layer pipeline
 
 ### Module JS on published pages — requires `frontend.assets`
 
+A plugin module's `render()` returns `html`, `css`, and optionally `js`. Nothing else crosses: `moduleAdapter.ts` drops `instanceCss`, and a plugin module has no `canvasCss`, because both are first-party module features that bypass sanitisation or the sandbox frame.
+
 A plugin module's `render()` may return `js` (see `PluginRenderOutput`). It crosses the QuickJS boundary string-typed (non-strings are dropped by the VM normalizer) and is then gated host-side in `moduleAdapter.ts`: unless the plugin's **granted** permissions include `frontend.assets` — the same authority that already controls script tags via `frontend.assets[]` — the `js` is dropped with one `console.warn` per module. Enforcement always checks `grantedPermissions`, never the declared `permissions` array. With the grant, the JS is deduped per moduleId and served at `/_instatic/module-js/<moduleId>.js` on pages that use the module. Manifest format is unchanged.
 
 ### Frontend assets — requires `frontend.assets`

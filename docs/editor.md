@@ -426,7 +426,7 @@ Each iframe `<head>` receives five `<style>` elements (three from `ClassStyleInj
 | Element | Injector | Cascade layer | Contents |
 |---|---|---|---|
 | `<style id="instatic-editor-chrome">` | `EditorChromeInjector` | **unlayered** | Editor-only chrome: placeholder, slot-instance, list placeholder, unknown-module fallback |
-| `<style id="mc-classes">` | `ClassStyleInjector` | `@layer user-authored` | Publisher reset + framework CSS + class registry CSS |
+| `<style id="mc-classes">` | `ClassStyleInjector` | `@layer user-authored` | Publisher reset + framework CSS + module `canvasCss` + class registry CSS |
 | `<style id="mc-classes-preview">` | `ClassStyleInjector` | `@layer user-authored` | Higher-specificity preview rule while a property control is hovered; empty for state-pseudo rules |
 | `<style id="mc-classes-force-state">` | `ClassStyleInjector` | `@layer user-authored` | Forced state preview: paints the active state-pseudo rule onto the selected node via a doubled `[data-node-id]` selector |
 | `<style id="mc-user-styles">` | `UserStylesheetInjector` | `@layer user-authored` | User-uploaded stylesheets (verbatim, unscoped) |
