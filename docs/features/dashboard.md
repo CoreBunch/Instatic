@@ -265,11 +265,11 @@ Each CMS hook fetches on mount through `useAsyncResource` + `apiRequest`, valida
 
 - [ ] Set site identity
 - [ ] Choose Core Framework import
-- [ ] Create your first page
+- [ ] Edit the Home page
 - [ ] Install a plugin
 - [ ] Invite your team
 
-State lives in `useOnboardingState(...)`. It reads the current site, installed plugins, and users concurrently. The seed Home page does not satisfy "Create your first page"; that step flips done when the site has at least two pages. Framework import defaults to `active` until the user picks a framework mode.
+State lives in `useOnboardingState(...)`. It reads the current site, the dashboard `pages` stats, installed plugins, and users concurrently, then maps them through the pure `deriveOnboardingFacts` (unit-tested without the network). Setup seeds one empty, unpublished Home page, so "Edit the Home page" reads `active` until the `pages` stats report at least one published page, then `done`; publishing is the signal because it is what puts the site on the frontend, and it completes for a one-page site. Framework import defaults to `active` until the user picks a framework mode.
 
 The panel is dismissible per-user and persisted with the dashboard layout preference (`dashboard-layout`). `useDashboardLayout.restoreOnboarding()` flips the same preference flag back to visible.
 
