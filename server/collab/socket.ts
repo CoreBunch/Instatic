@@ -54,6 +54,7 @@ import { originAllowed } from '../auth/security'
 import type { DbClient } from '../db/client'
 import { jsonResponse } from '../http'
 import { BranchGoneError } from './relayBranches'
+import { userDisplayLabel } from '@core/users/displayName'
 import type { CollabRelay, RelayDoc } from './relay'
 
 export { SITE_SOCKET_PATH }
@@ -215,7 +216,7 @@ export async function handleCollabSocketUpgrade(
       userId: user.id,
       identity: {
         id: user.id,
-        name: user.displayName,
+        name: userDisplayLabel(user),
         avatarUrl: user.avatarUrl,
         gravatarHash: user.gravatarHash,
       },
