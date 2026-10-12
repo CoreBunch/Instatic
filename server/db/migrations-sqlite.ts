@@ -1521,15 +1521,7 @@ export const sqliteMigrations: Migration[] = [
     // contentAccess marker resolves against this column, so a plugin keeps
     // access to tables it created at runtime — durable across restarts and
     // admin-side slug renames. Nullable, no default: purely additive.
-    //
-    // Renumber this entry only while no installation has applied it: the ALTER
-    // carries no guard — SQLite has no `add column if not exists`, as migration
-    // 010 already documents — so a new id re-runs it against a column that
-    // exists and takes the boot down.
-    //
-    // `033` because the ids before it are claimed by other open PRs: `031`
-    // by #495 (`031_installed_plugins_source`) and `032` by #505.
-    id: '033_data_tables_created_by_plugin',
+    id: '031_data_tables_created_by_plugin',
     sql: `
       alter table data_tables add column created_by_plugin_id text;
     `,

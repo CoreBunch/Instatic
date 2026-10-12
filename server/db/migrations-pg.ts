@@ -1365,10 +1365,7 @@ export const pgMigrations: Migration[] = [
     // contentAccess marker resolves against this column, so a plugin keeps
     // access to tables it created at runtime — durable across restarts and
     // admin-side slug renames. Nullable, no default: purely additive.
-    //
-    // See the note on the SQLite twin for when renumbering this id is safe,
-    // and why it is `033`.
-    id: '033_data_tables_created_by_plugin',
+    id: '031_data_tables_created_by_plugin',
     sql: `
       alter table data_tables add column created_by_plugin_id text;
     `,
