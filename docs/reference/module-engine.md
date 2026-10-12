@@ -88,7 +88,7 @@ That's the whole feature loop: module picker, Properties Panel, publisher, CSS d
 
 ```ts
 render: (props: TProps, renderedChildren: string[]) => RenderOutput
-// RenderOutput = { html: string; css?: string }
+// RenderOutput = { html: string; css?: string; instanceCss?: string; js?: string }
 ```
 
 ### `props` is trusted (after escaping)
@@ -149,6 +149,12 @@ The `schema` field maps prop keys to `PropertyControl` descriptors. Full union i
 | `media`     | Media picker (image or video)                     | media id string          |
 | `svg`       | Inline SVG editor                                 | SVG markup string        |
 | `group`     | Collapsible section (visual grouping, no data)    | — (children record)      |
+
+A `number` control may carry `presets` (an array of numbers). They render as one-click buttons under the field, which still accepts any number. Example: `base.nav`'s "Collapse below" width.
+
+A `select` option may carry `iconSvg` (inline SVG markup). When any option has one, the control renders as an icon button row (`<SegmentedControl>`) with each option's `label` as its tooltip, instead of a dropdown. The markup is passed through `sanitizeSvg` before rendering. Example: `base.nav`'s "Menu icon" picker.
+
+A `url` control accepts `https:`, `http:`, `mailto:`, `tel:`, and `sms:` URLs and site-relative links (`/about`, `#pricing`, `?page=2`, `./a`, `../a`). Bare words and protocol-relative `//host` are rejected. This input rule (`isValidUrl`) is narrower than the publisher's `isSafeUrl`, which also lets through any other schemeless value. Detail: [docs/features/modules.md](../features/modules.md) → "Control types".
 
 ### Conditional controls
 
@@ -241,6 +247,8 @@ export const HeadingEditor: React.FC<ModuleComponentProps<HeadingProps>> = ({
 - Apply `mcClassName` as the root element's class. Without it the author's CSS class rules don't apply in the canvas.
 - Produce the same DOM structure as `render()` — canvas selection geometry, drop-target detection, and dimension measurement assume parity.
 - `nodeWrapperProps` is `undefined` outside the editor (publisher, plugin preview). Components that check for its presence can render a plain published element when it's absent.
+- `canvasViewportWidth` is the pixel width of the breakpoint frame the component renders in. Use it when the layout changes at a width, because a media query in the canvas matches the iframe and module CSS never loads there. It is `undefined` for sandboxed plugin modules and agent snapshot rendering.
+- Do not style the preview with inline `style` props. They beat every author class in the canvas and none when published. Put the rules in the module's `canvasCss`, which the canvas injects where the publisher puts module CSS. Trusted modules only. See [docs/features/modules.md](../features/modules.md) → "Canvas stylesheet".
 - **`*Editor.tsx` must only export React components.** Exporting utilities, types, or constants from the editor file breaks React Fast Refresh HMR — Vite can only hot-patch a component file when every export is a component.
 
 ### Sharing logic between `index.ts` and `*Editor.tsx`
