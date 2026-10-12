@@ -24,6 +24,7 @@ import { useEditorStore } from '@site/store/store'
 import { useAdminUi } from '@admin/state/adminUi'
 import { useBranchStore } from '@admin/state/branchStore'
 import { useWorkspaceLayout } from '@admin/state/workspaceLayout'
+import { useSettingsDraftStore } from '@admin/modals/Settings/useSiteSettingsController'
 
 interface ResettableStore<T> {
   getState: () => T
@@ -48,6 +49,7 @@ const RESETTERS = [
   pristineResetter(useAdminUi),
   pristineResetter(useBranchStore),
   pristineResetter(useWorkspaceLayout),
+  pristineResetter(useSettingsDraftStore),
 ]
 
 /** Restore every app store to the state it had before the suite started. */
