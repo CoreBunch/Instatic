@@ -34,7 +34,7 @@ describe('mcpIssuer', () => {
     const endpoints = mcpOAuthEndpoints(req)
     expect(endpoints).not.toBeNull()
     for (const value of Object.values(endpoints!)) {
-      expect(value.startsWith('https://cms.example.com')).toBe(true)
+      expect(new URL(value).origin).toBe('https://cms.example.com')
     }
   })
 

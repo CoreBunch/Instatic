@@ -249,7 +249,7 @@ describe('MCP OAuth issuer trust', () => {
     expect(serverText).not.toContain('attacker.example')
     const serverBody = JSON.parse(serverText) as Record<string, unknown>
     for (const key of ['issuer', 'authorization_endpoint', 'token_endpoint', 'registration_endpoint']) {
-      expect(String(serverBody[key]).startsWith(PUBLIC_ORIGIN)).toBe(true)
+      expect(new URL(String(serverBody[key])).origin).toBe(PUBLIC_ORIGIN)
     }
   })
 })
