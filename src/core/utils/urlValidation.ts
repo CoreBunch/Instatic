@@ -12,7 +12,7 @@
  * scheme is — they differ only in which schemes they accept.
  *
  * Allowlists:
- *   isValidUrl()       — https, http, mailto
+ *   isValidUrl()       — https, http, mailto, tel, sms, site-relative links
  *   isValidImageUrl()  — https, http, data:image/* (inline base64 images)
  */
 
@@ -41,18 +41,34 @@ function parses(v: string): boolean {
 }
 
 /**
+ * A link within the site: a root path (`/about`), a fragment (`#pricing`), a
+ * query (`?page=2`), or a dot path (`./a`, `../a`). No whitespace.
+ *
+ * Narrower than what `isSafeUrl()` lets through at export time. A bare word
+ * (`about`) is also a relative URL, but here it is far more likely a typo or
+ * a URL still being typed, and `//host` is left out because it reads as a
+ * path while leaving the site.
+ */
+const SITE_RELATIVE_URL = /^(?:\/(?!\/)|#|\?|\.\.?\/)\S*$/
+
+/** Every scheme `isSafeUrl()` keeps in a published href, so a link the publisher emits can also be entered. */
+const LINK_SCHEMES = new Set(['https:', 'http:', 'mailto:', 'tel:', 'sms:'])
+
+/**
  * Returns true if `v` is a safe general-purpose URL for storing in site
  * props (e.g. a link href, a button href).
  *
- * Allows:  https:, http:, mailto:
- * Rejects: javascript:, data:, ftp:, blob:, custom schemes, schemeless values,
- *          and malformed absolute URLs (`http://`, `https://exa mple.com`)
+ * Allows:  https:, http:, mailto:, tel:, sms:, and site-relative links (`/about`,
+ *          `#pricing`, `?page=2`, `./a`, `../a`)
+ * Rejects: javascript:, data:, ftp:, blob:, custom schemes, bare words,
+ *          protocol-relative `//host`, and malformed absolute URLs
+ *          (`http://`, `https://exa mple.com`)
  */
 export function isValidUrl(v: string): boolean {
   if (!v) return true
   const scheme = urlScheme(v)
-  if (scheme !== 'https:' && scheme !== 'http:' && scheme !== 'mailto:') return false
-  return parses(v)
+  if (scheme === null) return SITE_RELATIVE_URL.test(v)
+  return LINK_SCHEMES.has(scheme) && parses(v)
 }
 
 /**

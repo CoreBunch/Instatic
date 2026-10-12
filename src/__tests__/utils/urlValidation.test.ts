@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'bun:test'
 import { isValidUrl, isValidImageUrl } from '@core/utils/urlValidation'
+import { isSafeUrl } from '@core/html-sanitize'
 
 // ---------------------------------------------------------------------------
 // isValidUrl
@@ -27,6 +28,20 @@ describe('isValidUrl', () => {
 
     it('accepts mailto:', () => {
       expect(isValidUrl('mailto:user@example.com')).toBe(true)
+    })
+
+    it('accepts tel: and sms:, which the publisher also keeps in an href', () => {
+      expect(isValidUrl('tel:+15551234567')).toBe(true)
+      expect(isValidUrl('TEL:+15551234567')).toBe(true)
+      expect(isValidUrl('sms:+15551234567')).toBe(true)
+      expect(isValidUrl('sms:+15551234567?body=Hello')).toBe(true)
+    })
+
+    it('accepts every scheme the publisher lets through, so no publishable link is unenterable', () => {
+      for (const url of ['https://a.test', 'http://a.test', 'mailto:a@a.test', 'tel:+1555', 'sms:+1555']) {
+        expect(isSafeUrl(url)).toBe(true)
+        expect(isValidUrl(url)).toBe(true)
+      }
     })
   })
 
@@ -65,12 +80,41 @@ describe('isValidUrl', () => {
       expect(isValidUrl('not a url')).toBe(false)
     })
 
-    it('rejects relative paths', () => {
-      expect(isValidUrl('/relative/path')).toBe(false)
+    it('rejects a bare word, which is a typo or an unfinished URL far more often than a relative link', () => {
+      expect(isValidUrl('about')).toBe(false)
+      expect(isValidUrl('h')).toBe(false)
+      expect(isValidUrl('example.com')).toBe(false)
     })
 
     it('rejects protocol-relative URLs', () => {
       expect(isValidUrl('//example.com')).toBe(false)
+    })
+  })
+
+  describe('site-relative links', () => {
+    it('accepts a root path, with or without query and fragment', () => {
+      expect(isValidUrl('/')).toBe(true)
+      expect(isValidUrl('/relative/path')).toBe(true)
+      expect(isValidUrl('/pricing?plan=pro#faq')).toBe(true)
+    })
+
+    it('accepts a fragment, a query, and dot paths', () => {
+      expect(isValidUrl('#')).toBe(true)
+      expect(isValidUrl('#pricing')).toBe(true)
+      expect(isValidUrl('?page=2')).toBe(true)
+      expect(isValidUrl('./sibling')).toBe(true)
+      expect(isValidUrl('../parent')).toBe(true)
+    })
+
+    it('rejects one containing whitespace', () => {
+      expect(isValidUrl('/about us')).toBe(false)
+      expect(isValidUrl('# pricing')).toBe(false)
+    })
+
+    it('still rejects a script scheme hidden behind leading whitespace or control characters', () => {
+      expect(isValidUrl(' javascript:alert(1)')).toBe(false)
+      expect(isValidUrl('\tjavascript:alert(1)')).toBe(false)
+      expect(isValidUrl('/\njavascript:alert(1)')).toBe(false)
     })
   })
 })
