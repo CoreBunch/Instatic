@@ -170,6 +170,14 @@ function renderStandardNode(
     acc.cssMap.set(node.moduleId, sanitizeModuleCSS(output.css))
   }
 
+  // Instance CSS: keyed by content so instances with different props all emit.
+  if (output.instanceCss) {
+    const instanceKey = `${node.moduleId}\n${output.instanceCss}`
+    if (!acc.cssMap.has(instanceKey)) {
+      acc.cssMap.set(instanceKey, sanitizeModuleCSS(output.instanceCss))
+    }
+  }
+
   // JS dedup — one entry per moduleId, mirroring CSS. No escaping needed:
   // module JS is served as an external file (`/_instatic/module-js/<id>.js`),
   // never inlined into the document.
