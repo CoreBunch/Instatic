@@ -392,8 +392,12 @@ async function handleRowAuthor(
   const author = await findUserById(db, body.authorUserId)
   if (!author || author.status !== 'active') return badRequest('Author must be an active user')
 
-  const currentRow = await getDataRow(db, scope, rowId)
-  if (!currentRow) return rowNotFound()
+  // Reassignment is an edit of the row, so it rides the same table-family and
+  // ownership boundary as every other row write. Reading the row directly here
+  // let a content.edit.any persona without data.system.tables.read read and
+  // re-author system-table rows it could not open (GHSA-m425).
+  const currentRow = await loadRowForAccess(db, scope, rowId, user, canEditDataRow)
+  if (currentRow instanceof Response) return currentRow
 
   const row = await updateDataRowAuthor(db, scope, rowId, body.authorUserId, user.id)
   if (!row) return rowNotFound()
