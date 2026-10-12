@@ -126,7 +126,7 @@ const FONT_FORMAT_RANK: Record<FontFileFormat, number> = {
 
 /** Map a FileMap key's extension to a font format, or null if not a font. */
 function fontFormatForPath(path: string): FontFileFormat | null {
-  const lower = path.split('?')[0].toLowerCase()
+  const lower = path.toLowerCase()
   if (lower.endsWith('.woff2')) return 'woff2'
   if (lower.endsWith('.woff')) return 'woff'
   if (lower.endsWith('.ttf')) return 'ttf'
@@ -652,13 +652,22 @@ function normalizeAssetPath(path: string): string {
 /**
  * Resolve a raw URL against a base file path to produce a FileMap key.
  * Returns null for traversal-escaping paths or empty strings.
+ *
+ * As in `resolveHref`, a query string or fragment is stripped before the
+ * lookup — it addresses a file, it does not identify one. Callers keep the
+ * original `rawUrl` for the in-place CSS string replacement
+ * (`replaceRawUrlInValue`), so stripping here affects only which FileMap entry
+ * is found.
  */
 function resolveRelativePath(rawUrl: string, basePath: string): string | null {
   const baseDir = dirname(basePath)
 
-  const resolved = rawUrl.startsWith('/')
-    ? rawUrl.slice(1) // root-relative: strip leading /
-    : joinPaths(baseDir, rawUrl)
+  const pathOnly = rawUrl.split(/[?#]/)[0]
+  if (!pathOnly) return null
+
+  const resolved = pathOnly.startsWith('/')
+    ? pathOnly.slice(1) // root-relative: strip leading /
+    : joinPaths(baseDir, pathOnly)
 
   // Reject escaped or empty results
   if (!resolved || resolved.startsWith('../')) return null
