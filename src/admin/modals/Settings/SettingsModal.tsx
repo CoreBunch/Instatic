@@ -240,6 +240,8 @@ export function SettingsModal() {
               <Button
                 variant="ghost"
                 size="sm"
+                align="start"
+                fullWidth
                 onClick={handleClose}
                 className={s.shortcutHint}
               >
