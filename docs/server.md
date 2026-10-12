@@ -306,6 +306,7 @@ Use `binaryResponse` whenever a route handler returns binary content (runtime as
 | `sessions.ts`     | Session lookup, MFA gate, step-up timer                                    |
 | `authz.ts`        | `requireAuthenticatedUser`, `requireCapability`, `requireAnyCapability`    |
 | `capabilities.ts` | `CoreCapability` enum and per-capability membership rules                  |
+| `dataAccess.ts`   | Table-family and row-ownership rules for data rows (`canReadTable`, `canReadDataRow`, `resolveRowAccess`, `rowVisibilityFor`), shared by the HTTP data handlers, the AI read tools, and the MCP relay |
 | `lockout.ts`      | Failed-login lockout policy                                                |
 | `mfa.ts`          | TOTP enrollment, verification                                              |
 | `rateLimit.ts`    | Token-bucket rate limiters                                                 |

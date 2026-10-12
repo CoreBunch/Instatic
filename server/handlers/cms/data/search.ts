@@ -17,7 +17,8 @@ import type { DbClient } from '../../../db/client'
 import { searchDataRows } from '../../../repositories/data'
 import { jsonResponse, methodNotAllowed } from '../../../http'
 import { CMS_API_PREFIX } from '../shared'
-import { canReadTable, canSeeAllDataRows, requireDataAccess } from './access'
+import { requireDataAccess } from './access'
+import { canReadTable, rowVisibilityFor } from '../../../auth/dataAccess'
 import type { BranchScope } from '../../../branches/scope'
 
 const SEARCH_PATH = `${CMS_API_PREFIX}/data/search`
@@ -46,8 +47,7 @@ export async function handleDataSearchRoute(
     MAX_LIMIT,
   )
 
-  const visibility = canSeeAllDataRows(user) ? {} : { ownerUserId: user.id }
-  const results = await searchDataRows(db, scope, rawQuery, limit, visibility)
+  const results = await searchDataRows(db, scope, rawQuery, limit, rowVisibilityFor(user))
   // A broad content.* capability satisfies requireDataAccess, but the search
   // must not surface system-table rows (pages/posts) to a caller without
   // data.system.tables.read (GHSA-x69h). Drop them, and keep the internal

@@ -54,18 +54,20 @@ import {
   RowTableBodySchema,
   RowUpsertBodySchema,
 } from './schemas'
-import {
-  canEditDataRow,
-  canPublishDataRow,
-  canReadDataRow,
-  canReadTable,
-  forbidden,
+import {  forbidden,
   requireDataAccess,
   requireDataAuthorManager,
   requireDataEditor,
   requireDataPublisher,
   requireDataRowMover,
 } from './access'
+import {
+  canEditDataRow,
+  canPublishDataRow,
+  canReadDataRow,
+  resolveRowAccess,
+  type RowCheck,
+} from '../../../auth/dataAccess'
 import { handleRowPreview } from './preview'
 import { isMainScope, type BranchScope } from '../../../branches/scope'
 
@@ -130,24 +132,20 @@ async function recordRowAuditEvent(
  * Load a row and run the caller's access check. Returns a Response on
  * 404 / forbidden so call sites can `if (row instanceof Response) return row`.
  */
+// Bind the shared row-access decision to HTTP: an invisible row (missing, or in
+// a table family the user cannot see) answers 404 so the id leaks nothing; a
+// visible row the operation is not permitted on answers 403.
 async function loadRowForAccess(
   db: DbClient,
   scope: BranchScope,
   rowId: string,
   user: AuthUser,
-  check: (user: AuthUser, row: DataRow) => boolean,
+  check: RowCheck,
 ): Promise<DataRow | Response> {
-  const row = await getDataRow(db, scope, rowId)
-  if (!row) return rowNotFound()
-  // Enforce the table-family read boundary BEFORE the row-ownership check. A
-  // persona granted a broad content.* capability but NOT data.system.tables.read
-  // satisfies row ownership on every row, so without this it could read, edit,
-  // and publish system-table rows (pages/posts drafts, author identity). The
-  // schema-read sibling already checks this; the row layer did not (GHSA-x69h).
-  const table = await getDataTable(db, scope, row.tableId)
-  if (!table || !canReadTable(user, table)) return rowNotFound()
-  if (!check(user, row)) return forbidden()
-  return row
+  const access = await resolveRowAccess(db, scope, rowId, user, check)
+  if (access.kind === 'not-found') return rowNotFound()
+  if (access.kind === 'forbidden') return forbidden()
+  return access.row
 }
 
 // ---------------------------------------------------------------------------
