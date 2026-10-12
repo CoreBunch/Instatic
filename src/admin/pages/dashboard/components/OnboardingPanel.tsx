@@ -51,7 +51,7 @@ import { reconcileFrameworkClasses } from '@site/store/slices/site/framework/rec
 import styles from './OnboardingPanel.module.css'
 
 interface StepDef {
-  id: keyof Pick<OnboardingFacts, 'identity' | 'framework' | 'firstPage' | 'plugin' | 'team'>
+  id: keyof Pick<OnboardingFacts, 'identity' | 'framework' | 'homePage' | 'plugin' | 'team'>
   title: string
   desc: string
   cta: string
@@ -82,11 +82,11 @@ const STEPS: readonly StepDef[] = [
     action: { kind: 'framework-import' },
   },
   {
-    id: 'firstPage',
-    title: 'Create your first page',
+    id: 'homePage',
+    title: 'Edit the Home page',
     desc:
-      'Start from a blank canvas, a starter layout, or import HTML and we will scaffold a tree.',
-    cta: 'New page',
+      'It starts empty. Add content, then publish to put it live.',
+    cta: 'Open editor',
     icon: FileTextSolidIcon,
     action: { kind: 'navigate', to: '/admin/site' },
   },

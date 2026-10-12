@@ -212,7 +212,7 @@ test.describe('dashboard', () => {
 
     await expectOnboardingStep(panel, 'Set site identity', 'Completed', 'Open settings')
     await expectOnboardingStep(panel, 'Choose Core Framework import', 'In progress', 'Import')
-    await expectOnboardingStep(panel, 'Create your first page', 'Not started', 'New page')
+    await expectOnboardingStep(panel, 'Edit the Home page', 'In progress', 'Open editor')
     await expectOnboardingStep(panel, 'Install a plugin', 'Not started', 'Browse plugins')
     await expectOnboardingStep(panel, 'Invite your team', 'Not started', 'Add members')
 
@@ -222,7 +222,7 @@ test.describe('dashboard', () => {
       await page.keyboard.press('Escape')
       await expect(page.getByRole('dialog', { name: 'Settings' })).toBeHidden()
 
-      await panel.getByRole('button', { name: 'New page' }).click()
+      await panel.getByRole('button', { name: 'Open editor' }).click()
       await expect(page).toHaveURL(/\/admin\/site$/)
       await page.goto('/admin/dashboard')
       await expect(panel).toBeVisible({ timeout: 20_000 })
