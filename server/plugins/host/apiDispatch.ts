@@ -41,6 +41,12 @@ import {
 } from './handlers/media'
 import { handleCryptoDigest, handleCryptoSignHmac } from './handlers/crypto'
 import {
+  handleRedirectsDelete,
+  handleRedirectsList,
+  handleRedirectsReplaceAll,
+  handleRedirectsSet,
+} from './handlers/redirects'
+import {
   handleContentEntriesCreate,
   handleContentEntriesCreateMany,
   handleContentEntriesDelete,
@@ -123,6 +129,10 @@ const apiHandlers = {
   'cms.content.search': handleContentSearch,
   'cms.content.snapshot': handleContentSnapshot,
   'cms.content.republishAll': handleContentRepublishAll,
+  'cms.redirects.list': handleRedirectsList,
+  'cms.redirects.set': handleRedirectsSet,
+  'cms.redirects.delete': handleRedirectsDelete,
+  'cms.redirects.replaceAll': handleRedirectsReplaceAll,
 } satisfies HostApiHandlerTable
 
 export async function dispatchApiCall(msg: ValidatedApiCall): Promise<void> {

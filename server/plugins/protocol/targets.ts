@@ -86,4 +86,9 @@ export const TARGET_PERMISSIONS = {
   'cms.content.search': 'cms.content.read',
   'cms.content.snapshot': 'cms.content.read',
   'cms.content.republishAll': 'cms.content.publish',
+  // Plugin-owned redirects — answered only just before the 404 page.
+  'cms.redirects.list': 'redirects.manage',
+  'cms.redirects.set': 'redirects.manage',
+  'cms.redirects.delete': 'redirects.manage',
+  'cms.redirects.replaceAll': 'redirects.manage',
 } satisfies Partial<Record<AllowedApiTarget, PluginPermission>>

@@ -31,6 +31,12 @@ import {
 } from './schemas/media'
 import { CryptoDigestArgSchema, CryptoSignHmacArgSchema } from './schemas/crypto'
 import {
+  RedirectsDeleteArgsSchema,
+  RedirectsListArgsSchema,
+  RedirectsReplaceAllArgsSchema,
+  RedirectsSetArgsSchema,
+} from './schemas/redirects'
+import {
   ContentEntriesCreateArgsSchema,
   ContentEntriesCreateManyArgsSchema,
   ContentEntriesDeleteArgsSchema,
@@ -145,6 +151,10 @@ export const ApiCallSchemas = {
   'cms.content.search': apiCallSchema('cms.content.search', ContentSearchArgsSchema),
   'cms.content.snapshot': apiCallSchema('cms.content.snapshot', ContentSnapshotArgsSchema),
   'cms.content.republishAll': apiCallSchema('cms.content.republishAll', ContentRepublishAllArgsSchema),
+  'cms.redirects.list': apiCallSchema('cms.redirects.list', RedirectsListArgsSchema),
+  'cms.redirects.set': apiCallSchema('cms.redirects.set', RedirectsSetArgsSchema),
+  'cms.redirects.delete': apiCallSchema('cms.redirects.delete', RedirectsDeleteArgsSchema),
+  'cms.redirects.replaceAll': apiCallSchema('cms.redirects.replaceAll', RedirectsReplaceAllArgsSchema),
   'crypto.digest': apiCallSchema('crypto.digest', Type.Tuple([CryptoDigestArgSchema])),
   'crypto.signHmac': apiCallSchema('crypto.signHmac', Type.Tuple([CryptoSignHmacArgSchema])),
 } satisfies Record<string, TSchema>

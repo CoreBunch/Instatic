@@ -13,6 +13,7 @@ import {
   resolvePreviewToken,
 } from '../branches/previewLinks'
 import { getSetupStatusCached } from '../repositories/setup'
+import { findPluginRedirect } from '../repositories/pluginRedirects'
 import { setCookieHeader } from '../http'
 import { renderBranchPreview } from './branchPreview'
 import { renderNotFoundResponse, renderPublicResolution } from './publicRouter'
@@ -70,6 +71,31 @@ export async function trySetupRedirect(req: Request, runtime: ServerRuntime, _ur
   return setupStatus.needsSetup
     ? new Response(null, { status: 302, headers: { location: '/admin' } })
     : null
+}
+
+/** Plugin-owned exact-path rules only claim URLs left unmatched by the site. */
+export async function tryServePluginRedirect(req: Request, runtime: ServerRuntime, url: URL, _pathname: string): Promise<Response | null> {
+  if (req.method !== 'GET' && req.method !== 'HEAD') return null
+  const rule = await findPluginRedirect(runtime.db, url.pathname)
+  if (!rule) return null
+  if (rule.status === 410) {
+    const notFound = await renderNotFoundResponse(runtime.db, url, runtime.uploadsDir)
+    return notFound
+      ? new Response(req.method === 'HEAD' ? null : notFound.body, { status: 410, headers: notFound.headers })
+      : new Response(req.method === 'HEAD' ? null : 'Gone', { status: 410, headers: { 'content-type': 'text/plain; charset=utf-8' } })
+  }
+  let location = rule.toLocation!
+  if (url.search && !location.includes('?')) {
+    const fragmentIndex = location.indexOf('#')
+    location = fragmentIndex < 0
+      ? location + url.search
+      : location.slice(0, fragmentIndex) + url.search + location.slice(fragmentIndex)
+  }
+  // Location is an HTTP header: encode Unicode while preserving authored URL escapes.
+  location = location.replace(/[^\u0021-\u007e]/gu, (char) => encodeURIComponent(char.replace(/[\ud800-\udfff]/u, '\ufffd')))
+  const headers = new Headers({ location })
+  if (rule.status === 302 || rule.status === 307) headers.set('cache-control', 'no-store')
+  return new Response(null, { status: rule.status, headers })
 }
 
 /**

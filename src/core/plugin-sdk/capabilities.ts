@@ -210,6 +210,13 @@ export const PLUGIN_CAPABILITIES: PluginCapability[] = [
     surfaces: ['server', 'cms'],
   },
   {
+    permission: 'redirects.manage',
+    label: 'Manage site redirects',
+    description: 'Allows the plugin to answer site URLs that have no page, data row, or published file with a 301/302/307/308 redirect or a 410 Gone. Rules are exact paths owned by the plugin and removed when it is uninstalled. A rule never overrides live content: the host consults plugin redirects only just before the 404 page.',
+    risk: 'high',
+    surfaces: ['server', 'cms'],
+  },
+  {
     permission: 'unstable.internals',
     label: 'Use unstable internal APIs',
     description: 'Reserved for trusted first-party plugins that need unstable host internals.',

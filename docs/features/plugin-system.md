@@ -38,6 +38,7 @@ A plugin is a zip package containing a `plugin.json` manifest and one or more bu
 | Byte-safe body wire format     | `server/plugins/protocol/bodyEncoding.ts` |
 | Route request/response I/O     | `server/plugins/host/routeIo.ts`          |
 | Media extension handlers       | `server/plugins/host/handlers/media.ts`, `src/core/plugins/mediaStorageRegistry.ts`, `src/core/plugins/mediaVariantDelegateRegistry.ts` |
+| Redirect handlers + repository | `server/plugins/host/handlers/redirects.ts`, `server/repositories/pluginRedirects.ts` |
 | Published-page asset injection | `server/publish/frontendInjections.ts`    |
 | Dashboard widget registry      | `src/core/dashboard/registry.ts`          |
 | Plugin asset path containment      | `server/util/pathWithin.ts`            |
@@ -891,6 +892,47 @@ api.cms.media.registerVariantDelegate({
 
 Storage adapter and variant delegate ids must be namespaced under the plugin id (`<pluginId>.<rest>`). Registration is host-side state; re-registering the same id on re-activation replaces the previous definition.
 
+### Site redirects — requires `redirects.manage`
+
+A plugin (an SEO redirect manager, a migration importer) can make the site answer an old URL with a redirect or a `410 Gone`. Rules are exact paths stored in the `plugin_redirects` table, owned by the plugin that wrote them.
+
+```js
+await api.cms.redirects.set({ from: '/old-post', to: '/blog/new-post', status: 301 })
+await api.cms.redirects.set({ from: '/retired', status: 410 })
+await api.cms.redirects.set({ from: '/docs', to: 'https://docs.example.com/', status: 308 })
+
+const rules = await api.cms.redirects.list()      // this plugin's rules, ordered by `from`
+await api.cms.redirects.delete('/old-post')        // → true if a rule was removed
+
+// Replace this plugin's whole rule set in one transaction.
+await api.cms.redirects.replaceAll([
+  { from: '/a', to: '/b', status: 301 },
+  { from: '/c', to: '/d', status: 302 },
+])
+```
+
+| Method | Returns |
+|--------|---------|
+| `list()` | `PluginRedirectRule[]` — `{ from, to, status, createdAt, updatedAt }`, only the caller's rules |
+| `set(rule)` | The stored rule. Inserts, or updates the caller's rule for the same `from` (keeps `createdAt`) |
+| `delete(from)` | `true` when one of the caller's rules was removed; `false` otherwise (also for an invalid path, including `''`) |
+| `replaceAll(rules)` | `{ count }`. All rules are validated first; on any error nothing changes. Duplicate `from` values after normalization: the last one wins |
+
+**When a rule answers.** The public router consults plugin redirects only for `GET`/`HEAD` requests that nothing else answered — after pages, data rows, published disk artefacts, and data-row rename redirects, immediately before the site's 404 page. A rule therefore never shadows live content: publish a page at `/about` and a rule from `/about` stops applying. `POST`/`PUT`/`DELETE` are never redirected. The lookup is one indexed query, and only for otherwise-unmatched requests.
+
+**Response.** `301`/`302`/`307`/`308` reply with `location: <to>`; the request query string is appended unless `to` already has a `?`. `302`/`307` responses carry `cache-control: no-store`. `410` replies with the site's 404 page body (when a notFound template exists) and status 410.
+
+**Rules** (validated host-side in `server/repositories/pluginRedirects.ts`; a violation rejects the call with `<field>: <message>`, where the field is `fromPath`, `toLocation`, `status`, or `limit`):
+
+- `from` starts with `/` (not `//`), has no `?`, `#`, whitespace, or control characters, is at most 2048 characters, and is not under `/admin`, `/_instatic`, or `/uploads` (segment match — `/administrator` is allowed). A trailing slash is dropped (`/old/` is stored as `/old`; root `/` stays `/`) and a request for `/old/` matches it. Matching is otherwise exact and case-sensitive.
+- `to` is required for 301/302/307/308 and must be absent or `null` for 410. It is a path starting with `/` (not `//`) or an absolute `http:`/`https:` URL, with no whitespace or control characters, at most 2048 characters, and not equal to `from`.
+- `status` is one of `301`, `302`, `307`, `308`, `410`.
+- A plugin holds at most 5000 rules: `set` of a new `from` past the cap and a `replaceAll` over 5000 both reject with `limit`.
+
+The RPC arg schemas check only the call's shape and a payload-size safety ceiling (every string ≤ 8192 characters, `replaceAll` ≤ 10000 items, `status` a number from the list above). A call past that ceiling, or with a wrong type, is rejected before it reaches the repository with a generic `Invalid api-call payload for cms.redirects.<method>: …` message — not a field-named one. Everything inside the ceiling reaches the repository, so the 2048-character and 5000-rule limits above come back as `fromPath:` / `toLocation:` / `limit:`. A repository failure that is not a validation error (for example a database error) rejects with its plain message.
+
+**Ownership.** Every call is scoped to the calling plugin. Two plugins may own a rule for the same `from`; they are separate rows, and the rule with the oldest `createdAt` wins (tie → lower plugin id). Uninstalling a plugin deletes its rules (`on delete cascade` from `installed_plugins`). Without `redirects.manage`, every `api.cms.redirects.*` call throws inside the sandbox and the host dispatcher rejects the RPC as well.
+
 ### Outbound HTTP — requires `network.outbound` + `networkAllowedHosts`
 
 ```js
@@ -988,6 +1030,7 @@ Risk levels:
 | `media.storage.adapter`     | Server / CMS media   | Dangerous | Register an electable media storage backend                             |
 | `media.url.transform`       | Server / CMS media   | Medium    | Rewrite media URLs at render/preview/admin read time                    |
 | `media.variant.delegate`    | Server / CMS media   | High      | Replace local responsive variant generation with URL templates          |
+| `redirects.manage`          | Server / CMS         | High      | Answer URLs that have no page with plugin-owned 301/302/307/308/410 rules; never overrides live content |
 | `unstable.internals`        | Admin / editor / server | Dangerous | Reserved for trusted first-party plugins                            |
 
 Full descriptions and labels live in `src/core/plugin-sdk/capabilities.ts` — the source of truth.
@@ -1161,6 +1204,7 @@ export default definePlugin({
   - `src/core/plugin-sdk/types/editorApi.ts` — editor / dashboard browser API
   - `src/core/plugin-sdk/types/frontend.ts` — published-page frontend asset declarations
   - `src/core/plugin-sdk/types/media.ts` — media storage / URL / variant plugin API
+  - `src/core/plugin-sdk/types/redirects.ts` — `api.cms.redirects` plugin API
   - `src/core/plugin-sdk/builders/definePlugin.ts` — typed config builder
   - `src/core/plugin-sdk/builders/permissions.ts` — permission aliases for plugin authors
   - `src/core/plugin-sdk/builders/settings.ts` — setting field shapes and secret sentinel
@@ -1174,6 +1218,8 @@ export default definePlugin({
   - `server/plugins/host/apiDispatch.ts` — centralized host-side RPC permission enforcement
   - `server/plugins/protocol/apiCallSchema.ts` — RPC target schemas
   - `server/plugins/host/handlers/media.ts` — media extension RPC handlers
+  - `server/plugins/host/handlers/redirects.ts` — `cms.redirects.*` RPC handlers (SDK ↔ repository shape, `<field>: <message>` errors)
+  - `server/repositories/pluginRedirects.ts` — redirect validation, storage, and request-time lookup
   - `src/core/plugins/mediaStorageRegistry.ts` — registered/elected media storage adapters
   - `src/core/plugins/mediaVariantDelegateRegistry.ts` — registered/elected variant delegates
   - `src/core/dashboard/registry.ts` — dashboard widget registration
@@ -1223,6 +1269,7 @@ export default definePlugin({
   - `src/__tests__/server/pluginMediaAdapterBoundary.test.ts` — media adapter RPC boundary
   - `src/__tests__/server/pluginVmBinaryIo.test.ts` — VM-side byte safety: fetch `arrayBuffer()`/`text()`/`json()` decoding, binary request bodies, unsupported-body TypeError, route file facades + binary `__response`
   - `src/__tests__/plugins/pluginModulePack.test.ts` — module pack activation, re-activation, deactivation, and VM disposal
+  - `src/__tests__/server/pluginRedirectsApi.test.ts` — `api.cms.redirects`: VM + host permission gate, arg-schema safety ceiling, SDK ↔ repository mapping, per-plugin scoping, field-named validation and limit errors through the real `parseApiCall`
   - `src/__tests__/server/pluginVmPermissions.test.ts` — VM-side permission check: declared-but-not-granted permissions are denied at the VM boundary before host dispatch
   - `src/__tests__/server/pluginVmLoopDispatch.test.ts` — loop fetch/preview dispatcher robustness (no-return fallbacks, async-preview detection)
   - `src/__tests__/server/pluginVmDeadlines.test.ts` — hang hardening: top-level loops abort at load, overlapping evals keep their deadlines, runaway timer callbacks are interrupted, VM stacks survive with the `plugin:<id>` filename

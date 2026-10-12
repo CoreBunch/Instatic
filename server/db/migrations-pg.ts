@@ -1359,4 +1359,21 @@ export const pgMigrations: Migration[] = [
     id: '030_iso_timestamps',
     sql: 'select 1',
   },
+  {
+    id: '031_plugin_redirects',
+    sql: `
+      create table if not exists plugin_redirects (
+        plugin_id text not null references installed_plugins(id) on delete cascade,
+        from_path text not null,
+        to_location text,
+        status integer not null,
+        created_at timestamptz not null,
+        updated_at timestamptz not null,
+        primary key (plugin_id, from_path)
+      );
+
+      create index if not exists plugin_redirects_from_idx
+        on plugin_redirects (from_path, created_at);
+    `,
+  },
 ]

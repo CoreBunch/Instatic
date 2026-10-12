@@ -46,6 +46,7 @@ export const permissions = {
   mediaStorageAdapter: 'media.storage.adapter',
   mediaUrlTransform: 'media.url.transform',
   mediaVariantDelegate: 'media.variant.delegate',
+  redirectsManage: 'redirects.manage',
   unstableInternals: 'unstable.internals',
 } as const satisfies Record<string, PluginPermission>
 
