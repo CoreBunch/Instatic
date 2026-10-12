@@ -104,8 +104,10 @@ describe('language catalogue validation', () => {
     const { site, page, component } = languageFixture()
     expect(() => assertSiteTranslations(site)).not.toThrow()
     component.params = [{ id: 'param', name: 'Text', type: 'string', required: true, defaultValue: '{site.translations.header.missing}' }]
+    component.tree.nodes.label.propBindings = { text: { paramId: 'param' } }
     expect(() => assertSiteTranslations(site)).toThrow('translations.header.missing')
     component.params = []
+    delete component.tree.nodes.label.propBindings
     page.nodes.ref.props.propOverrides = { Text: '{site.translations.header.missing}' }
     expect(() => assertSiteTranslations(site)).toThrow('translations.header.missing')
     delete page.nodes.ref.props.propOverrides
@@ -126,6 +128,54 @@ describe('language catalogue validation', () => {
     const context = { entryStack: [], site: buildSiteFrame(site, 'en') }
     expect(() => interpolateTokens('{site.translations.header.missing|Fallback}', context)).toThrow(LocalizationError)
     expect(() => resolveDynamicProps({ text: 'Fallback' }, { text: { source: 'site', field: 'translations.header.missing', fallback: 'static' } }, context)).toThrow(LocalizationError)
+  })
+
+  it('checks language-specific slot fills without inventing absent paragraphs', () => {
+    const { site, page, component } = languageFixture()
+    component.tree = makeVCTree('answer', [
+      makeNode({ id: 'answer', moduleId: 'base.container', children: ['outlet'] }),
+      makeNode({ id: 'outlet', moduleId: 'base.slot-outlet', props: { slotName: 'answer' } }),
+    ])
+    page.nodes.ref.children = ['slot']
+    page.nodes.slot = makeNode({ id: 'slot', moduleId: 'base.slot-instance', props: { slotName: 'answer' }, children: ['first'] })
+    page.nodes.first = makeNode({ id: 'first', moduleId: 'base.text', props: { tag: 'p', text: '{site.translations.header.contact}' } })
+    const italian = structuredClone(page)
+    italian.id = 'italian'
+    italian.slug = 'it'
+    italian.language = 'it'
+    italian.nodes.slot.children.push('second')
+    italian.nodes.second = makeNode({ id: 'second', moduleId: 'base.text', props: { tag: 'p', text: '{site.translations.answer.second}' } })
+    site.pages.push(italian)
+    site.files = site.files.map((file) => file.id === 'it' ? { ...file, content: JSON.stringify({ language: 'it', messages: { header: { contact: 'Contatti' }, answer: { second: 'Secondo paragrafo' } } }) } : file)
+    expect(() => assertSiteTranslations(site)).not.toThrow()
+    expect(publishPage(italian, site, registry).html).toContain('<p>Secondo paragrafo</p>')
+    expect(publishPage(page, site, registry).html).not.toContain('Secondo paragrafo')
+    page.nodes.slot.children.push('second')
+    page.nodes.second = structuredClone(italian.nodes.second)
+    expect(() => assertSiteTranslations(site)).toThrow('Missing translation for "en"')
+  })
+
+  it('preflights shared components against the page language', () => {
+    const { site } = languageFixture()
+    site.files = site.files.map((file) => file.id === 'en' ? { ...file, content: JSON.stringify({ language: 'en', messages: { other: 'Text' } }) } : file)
+    expect(() => assertSiteTranslations(site)).toThrow('Missing translation for "en"')
+  })
+
+  it('ignores hidden and orphaned translation references while validating reachable nodes', () => {
+    const { site, page } = languageFixture()
+    page.nodes.root.children.push('hidden')
+    page.nodes.hidden = makeNode({ id: 'hidden', moduleId: 'base.text', hidden: true, props: { text: '{site.translations.absent}' } })
+    page.nodes.orphan = makeNode({ id: 'orphan', moduleId: 'base.text', props: { text: '{site.translations.absent}' } })
+    expect(() => assertSiteTranslations(site)).not.toThrow()
+    page.nodes.hidden.hidden = false
+    expect(() => assertSiteTranslations(site)).toThrow('translations.absent')
+  })
+
+  it('checks template definitions against every configured language', () => {
+    const { site, page } = languageFixture()
+    site.pages = [{ ...page, language: 'it', template: { enabled: true, target: { kind: 'everywhere' }, priority: 0 } }]
+    site.files = site.files.map((file) => file.id === 'en' ? { ...file, content: JSON.stringify({ language: 'en', messages: { other: 'Text' } }) } : file)
+    expect(() => assertSiteTranslations(site)).toThrow('Missing translation for "en"')
   })
 
   for (const [name, content] of Object.entries({

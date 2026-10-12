@@ -8,7 +8,7 @@ Language files supply shared interface text to native page and Visual Component 
 - `settings.localization.catalogues` maps language tags to stable file IDs. `settings.language` is the default; `page.language` overrides it explicitly.
 - Bind shared labels with `{site.translations.header.contact}`. The normal native binding engine resolves text, attributes, and SEO text.
 - Dictionary JSON is not downloaded by visitors. Localized HTML is baked statically, with the resolved language on `<html lang>`.
-- Malformed files, mismatched key sets, missing translations, empty text, and unconfigured page languages prevent publication. There is no implicit fallback to another language.
+- Malformed files, missing translations used by a page, empty authored text, and unconfigured page languages prevent publication. There is no implicit fallback to another language.
 
 ## Catalogue shape
 
@@ -22,7 +22,7 @@ Language files supply shared interface text to native page and Visual Component 
 }
 ```
 
-The file has `type: 'config'` and a `.json` path, for example `locales/en.json`. Nested dictionaries contain strings only. Keys start with a letter and contain letters, digits, underscores or hyphens; dots separate paths in bindings. Reserved object keys are rejected. All configured languages must declare identical leaf keys. Adding a language creates the same key structure with empty values so authors translate it explicitly before publication.
+The file has `type: 'config'` and a `.json` path, for example `locales/en.json`. Nested dictionaries contain strings only. Keys start with a letter and contain letters, digits, underscores or hyphens; dots separate paths in bindings. Reserved object keys are rejected. Every authored text value must be nonempty. Languages can declare different leaf keys when their native page or slot structure differs; every rendered reference must exist in that page's catalogue. Adding a language copies the existing key structure with empty values so authors translate the keys they retain explicitly before publication.
 
 `src/core/localization-schema/index.ts` owns the TypeBox schemas. `src/core/localization/index.ts` validates configured files, canonicalizes BCP-47 tags, checks key coverage, and resolves one language. `LocalizationError.path` identifies the file or key to fix. Cached catalogues revalidate when mappings or file content change.
 
@@ -44,7 +44,7 @@ The canvas and publisher build the same language frame. Invalid intermediate JSO
 
 Language bindings are known at publication time and do not introduce dynamic holes or a DOM translation runtime. Root body attributes also resolve through the native binding engine before HTML attribute sanitization.
 
-Full-site publication validates all configured catalogues, page languages and authored translation references before creating published snapshots or page versions. This includes shared component defaults and instance values, native attributes, whole-prop bindings and site SEO text. Escaped literal tokens retain the normal token parser behavior. Invalid translations leave the previous publication active; the publish endpoint returns a 422 error envelope naming the file or key to fix, surfaced by the existing operation toast.
+Full-site publication validates all configured catalogues, page languages and effective translation references before creating published snapshots or page versions. The shared render-tree walker checks wrapping templates, materialized component parameters and slot fills in the terminal page's language, including native attributes, whole-prop bindings and interpolated SEO fields. Dynamic template definitions are checked against every configured language. Hidden subtrees and orphaned nodes impose no translation requirements. Escaped literal tokens retain the normal token parser behavior. Invalid translations leave the previous publication active; the publish endpoint returns a 422 error envelope naming the file or key to fix, surfaced by the existing operation toast.
 
 ## Translated page routes
 

@@ -90,7 +90,6 @@ export function resolveSiteLanguage(site: SiteDocument, pageLanguage?: string): 
   let catalogues = unchanged ? cached.catalogues : undefined
   if (!catalogues) {
     catalogues = new Map()
-    let expectedKeys: string[] | undefined
     for (const entry of settings.catalogues) {
       const locale = canonicalLanguage(entry.language)
       if (catalogues.has(locale)) throw new LocalizationError('localization.catalogues', `Duplicate language "${locale}"`)
@@ -104,13 +103,8 @@ export function resolveSiteLanguage(site: SiteDocument, pageLanguage?: string): 
       if (canonicalLanguage(catalogue.language) !== locale) {
         throw new LocalizationError(file.path, `Expected language "${locale}"`)
       }
-      const keys = translationKeys(catalogue.messages)
-      if (expectedKeys && JSON.stringify(keys) !== JSON.stringify(expectedKeys)) {
-        const missing = expectedKeys.filter((key) => !keys.includes(key))
-        const extra = keys.filter((key) => !expectedKeys!.includes(key))
-        throw new LocalizationError(file.path, `Translation keys differ (missing: ${missing.join(', ') || 'none'}; extra: ${extra.join(', ') || 'none'})`)
-      }
-      expectedKeys ??= keys
+      // Coverage follows each effective page, including localized slot fills.
+      translationKeys(catalogue.messages)
       catalogues.set(locale, catalogue.messages)
     }
     catalogueCache.set(site.files, { inputs, catalogues })
