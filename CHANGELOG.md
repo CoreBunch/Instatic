@@ -4,6 +4,25 @@ All notable changes to Instatic will be documented here.
 
 This project is pre-1.0. Breaking changes may appear in minor or patch releases until a stable release line exists.
 
+## 0.0.21 - 2026-10-12
+
+### Features
+
+- Plugins can now keep access to the content tables they create. A plugin that creates a table at runtime, such as an importer, declares `@own-created` in its manifest instead of a table name it cannot know in advance, and the install dialog shows that grant to the operator.
+
+### Bug fixes
+
+- Applying or removing a class from the Selectors panel now affects every selected element, not only the last one clicked, and the whole change undoes in one step.
+- The `Esc` keycap at the bottom of the Settings panel closes it when clicked. It used to animate and do nothing.
+- Importing a site whose stylesheet, script, and image links carry a cache-busting query such as `?v=8f3a1c` now finds those files. They were reported missing and their styles and colour tokens were dropped.
+- The dashboard checklist's page step now follows the seeded Home page: it reads "In progress" until a page is published and completes on publish, so a one-page site can finish the checklist and editing Home no longer shows next to "Not started".
+
+### Security
+
+- Closed an authorization gap in author reassignment ([GHSA-m425-wmrc-4v4v](https://github.com/CoreBunch/Instatic/security/advisories/GHSA-m425-wmrc-4v4v)). An editor holding `content.edit.any` but not `data.system.tables.read` could read the full contents of any page or post row, including unpublished drafts and author identity, and change its author through `PATCH /admin/api/cms/data/rows/:id/author`, while reading the same row directly was correctly refused. The endpoint now applies the same table and ownership check as every other row read and write. Reported by [@sriman0707](https://github.com/sriman0707).
+- Closed an authorization gap in the AI and MCP content read tools ([GHSA-x5cc-8486-8qqx](https://github.com/CoreBunch/Instatic/security/advisories/GHSA-x5cc-8486-8qqx)). A user or MCP connection holding `ai.chat` and `content.edit.own` could read every other user's drafts and any page or post row through `content_get_document`, `content_list_documents`, and `content_search_documents`, although the same rows were refused on the normal API. The tools now decide access with the same table and ownership rules as the HTTP routes, and the MCP relay enforces the table boundary it was missing. Reported by [@sriman0707](https://github.com/sriman0707) and [@btarr-vc](https://github.com/btarr-vc).
+- MCP OAuth discovery no longer trusts the request's `Host` header ([GHSA-hgjv-q732-4phj](https://github.com/CoreBunch/Instatic/security/advisories/GHSA-hgjv-q732-4phj)). On a deployment without `PUBLIC_ORIGIN`, the authorization server, resource, and token URLs in the discovery documents and the `WWW-Authenticate` challenge were built from whatever `Host` an unauthenticated client sent. The issuer now comes only from the configured public origin; without one, OAuth discovery answers 503 and personal access tokens keep working, with loopback development exempt. Set `PUBLIC_ORIGIN` to use remote OAuth connectors (Render and Railway set it automatically). Reported by [@KadirArslan](https://github.com/KadirArslan).
+
 ## 0.0.20 - 2026-09-13
 
 ### Features
