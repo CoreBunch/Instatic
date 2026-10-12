@@ -86,6 +86,12 @@ export interface RenderOutput {
    */
   css?: string
   /**
+   * Optional CSS that depends on this instance's props (e.g. a media query at
+   * an author-chosen width). Deduplicated by content, not by module type.
+   * Prop-independent rules belong in `css`.
+   */
+  instanceCss?: string
+  /**
    * Optional vanilla-JS runtime for this module TYPE, deduplicated per
    * moduleId exactly like `css` and served as an external per-module asset
    * (`/_instatic/module-js/<moduleId>.js`) on published pages — never inlined,
@@ -158,6 +164,13 @@ export interface ModuleComponentProps<
    * See `inlineEditableElementProps` in `@modules/base/shared/inlineText`.
    */
   inlineEdit?: InlineEditBinding
+  /**
+   * Pixel width of the breakpoint frame this component renders in (e.g. 375
+   * for mobile), so it can mimic responsive behavior. `undefined` when the
+   * render path does not provide it (e.g. sandboxed plugin modules, agent
+   * snapshot rendering).
+   */
+  canvasViewportWidth?: number
 }
 
 /**
@@ -398,6 +411,21 @@ export interface ModuleDefinition<
    * NEVER called by the publisher.
    */
   component: ComponentType<ModuleComponentProps<TProps>>
+
+  /**
+   * Optional stylesheet for `component`. The canvas never loads
+   * `render().css`, so a module that wants its published rules in the canvas
+   * repeats them here.
+   *
+   * Injected into every canvas frame after the reset and framework CSS and
+   * before class and user CSS, the same order the publisher uses. Use the
+   * published selectors so author classes override it as they do when
+   * published.
+   *
+   * Trusted modules only. A plugin module's component renders in a sandbox
+   * frame that this stylesheet never reaches.
+   */
+  canvasCss?: string
 
   /**
    * Optional dependency-backed editor runtime. When present, the canvas renders
