@@ -176,3 +176,24 @@ export function mediaIdsInCells(fields: DataField[], cells: Record<string, unkno
     }
   }
 }
+
+/**
+ * Point loops (`filters.tableId`) and CMS forms (`targetTableId`) at the
+ * site's table ids.
+ */
+export function remapTableRefs(node: PageNode, tableIdMap: Map<string, string>): PageNode {
+  if (tableIdMap.size === 0) return node
+  if (node.moduleId === 'base.loop') {
+    const filters = node.props.filters
+    if (filters && typeof filters === 'object' && !Array.isArray(filters)) {
+      const tableId = (filters as Record<string, unknown>).tableId
+      const mapped = typeof tableId === 'string' ? tableIdMap.get(tableId) : undefined
+      if (mapped) return { ...node, props: { ...node.props, filters: { ...filters, tableId: mapped } } }
+    }
+  }
+  if (node.moduleId === 'base.form' && typeof node.props.targetTableId === 'string') {
+    const mapped = tableIdMap.get(node.props.targetTableId)
+    if (mapped) return { ...node, props: { ...node.props, targetTableId: mapped } }
+  }
+  return node
+}

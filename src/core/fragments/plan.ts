@@ -41,7 +41,7 @@ import {
 import { generateFrameworkUtilityClasses } from '@core/framework'
 import { firstOutletId, treeHasOutlet } from '@core/templates'
 import { forEachVCRef, vcSlugFromName, wouldCreateCycle, type VisualComponent } from '@core/visualComponents'
-import { mapNodeStrings, rewritePageRefs } from './references'
+import { mapNodeStrings, mapStrings, remapTableRefs, rewritePageRefs } from './references'
 import { planCustomProperties, planTokens, type TokenPlan } from './planTokens'
 import { planTables, referencedMedia } from './planData'
 import type { SiteFragment } from './schema'
@@ -134,6 +134,12 @@ export function planFragmentInsert(target: FragmentInsertTarget, fragment: SiteF
       if (mapped && mapped !== next.props.componentId) next = { ...next, props: { ...next.props, componentId: mapped } }
     }
     return next
+  }
+
+  // Rows of created tables can hold links too (rich text).
+  for (const table of tables) {
+    if (table.action !== 'create') continue
+    table.rows = table.rows.map((row) => ({ ...row, cells: mapStrings(row.cells, (text) => rewritePageRefs(text, resolveLink)) }))
   }
 
   // Placed nodes.
@@ -432,23 +438,6 @@ function linkResolver(
     }
     return resolved
   }
-}
-
-function remapTableRefs(node: PageNode, tableIdMap: Map<string, string>): PageNode {
-  if (tableIdMap.size === 0) return node
-  if (node.moduleId === 'base.loop') {
-    const filters = node.props.filters
-    if (filters && typeof filters === 'object' && !Array.isArray(filters)) {
-      const tableId = (filters as Record<string, unknown>).tableId
-      const mapped = typeof tableId === 'string' ? tableIdMap.get(tableId) : undefined
-      if (mapped) return { ...node, props: { ...node.props, filters: { ...filters, tableId: mapped } } }
-    }
-  }
-  if (node.moduleId === 'base.form' && typeof node.props.targetTableId === 'string') {
-    const mapped = tableIdMap.get(node.props.targetTableId)
-    if (mapped) return { ...node, props: { ...node.props, targetTableId: mapped } }
-  }
-  return node
 }
 
 /**
