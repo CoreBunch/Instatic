@@ -58,11 +58,30 @@ function resultRowCount<Row>(result: Row[]): number {
  * under the surrounding `sql.begin()`.
  */
 function wrapSql(sql: SQL, ownsPool = false): DbClient {
+  /**
+   * Convert an interpolated JS value into something Bun.sql can bind for
+   * Postgres, mirroring SQLite's toBindable so `*_json` columns round-trip
+   * identically on both dialects.
+   *
+   * - Plain objects / arrays → JSON.stringify (stored as TEXT)
+   * - Date → ISO 8601 string
+   * - Uint8Array / Buffer → pass through (bound to bytea)
+   * - string, number → pass through
+   * - null / undefined → null
+   */
+  const serialize = (value: unknown): unknown => {
+    if (value === null || value === undefined) return null
+    if (value instanceof Uint8Array) return value
+    if (value instanceof Date) return value.toISOString()
+    if (typeof value === 'object') return JSON.stringify(value)
+    return value
+  }
+
   const fn = (async <Row = Record<string, unknown>>(
     strings: TemplateStringsArray,
     ...values: unknown[]
   ): Promise<DbResult<Row>> => {
-    const rows = await sql<Row[]>(strings, ...values)
+    const rows = await sql<Row[]>(strings, ...values.map(serialize))
     return { rows: rows.map(normalizePostgresRow), rowCount: resultRowCount(rows) }
   }) as DbClient
 
@@ -71,7 +90,7 @@ function wrapSql(sql: SQL, ownsPool = false): DbClient {
     params?: unknown[],
   ): Promise<DbResult<Row>> => {
     const rows = params !== undefined
-      ? await sql.unsafe<Row[]>(rawSql, params as unknown[])
+      ? await sql.unsafe<Row[]>(rawSql, params.map(serialize))
       : await sql.unsafe<Row[]>(rawSql)
     return { rows: rows.map(normalizePostgresRow), rowCount: resultRowCount(rows) }
   }
