@@ -20,6 +20,7 @@ import type { FragmentInsertPlan, FragmentInsertResult } from '@core/fragments'
 import { isAbortError } from '@core/http'
 import { getErrorMessage } from '@core/utils/errorMessage'
 import { useEditorStore } from '@site/store/store'
+import { StepUpCancelledMessage, useStepUp } from '@admin/shared/StepUp'
 import { FragmentReport } from './FragmentReport'
 import { loadFragmentFile, planLoadedFragment, runFragmentInsert, type LoadedFragment } from './fragmentInsertFlow'
 import styles from './InsertFragmentModal.module.css'
@@ -48,15 +49,22 @@ async function readAndPlan(file: File, setStep: SetStep): Promise<void> {
   }
 }
 
+/** The user closed the password prompt a table write asked for. */
+function isStepUpCancel(err: unknown): boolean {
+  const cause = err instanceof Error ? err.cause : undefined
+  return cause instanceof Error && cause.message === StepUpCancelledMessage
+}
+
 async function insert(
   loaded: LoadedFragment,
   plan: FragmentInsertPlan,
+  runStepUp: ReturnType<typeof useStepUp>['runStepUp'],
   controller: AbortController,
   setStep: SetStep,
 ): Promise<void> {
   setStep({ kind: 'running', loaded, plan, line: 'Starting' })
   try {
-    const result = await runFragmentInsert(loaded, plan, controller.signal, (line) =>
+    const result = await runFragmentInsert(loaded, plan, runStepUp, controller.signal, (line) =>
       setStep((current) => (current.kind === 'running' ? { ...current, line } : current)),
     )
     setStep({ kind: 'done', loaded, result })
@@ -69,7 +77,7 @@ async function insert(
       location: 'site-editor',
     })
   } catch (err) {
-    if (isAbortError(err)) {
+    if (isAbortError(err) || isStepUpCancel(err)) {
       pushToast({ kind: 'info', title: 'Insert cancelled', body: 'Files already uploaded stay in the media library.' })
     } else {
       console.error('[InsertFragmentModal] insert failed:', err)
@@ -89,6 +97,7 @@ export function InsertFragmentModal() {
   const openPageInCanvas = useEditorStore((s) => s.openPageInCanvas)
   const [step, setStep] = useState<Step>({ kind: 'pick' })
   const controller = useRef<AbortController | null>(null)
+  const { runStepUp } = useStepUp()
 
   function handleClose() {
     if (step.kind === 'running') {
@@ -107,7 +116,7 @@ export function InsertFragmentModal() {
   function handleInsert() {
     if (step.kind !== 'review') return
     controller.current = new AbortController()
-    void insert(step.loaded, step.plan, controller.current, setStep)
+    void insert(step.loaded, step.plan, runStepUp, controller.current, setStep)
   }
 
   function handleOpenPage(pageId: string) {

@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
 import React from 'react'
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { InsertFragmentModal } from '@admin/modals/InsertFragment'
+import { StepUpProvider } from '@admin/shared/StepUp'
 import { getAllCommands } from '@admin/spotlight/builtinCommands'
 import { useEditorStore } from '@site/store/store'
 import { extractFragment, fragmentSourceFromSite, writeFragmentPackage } from '@core/fragments'
@@ -79,7 +80,7 @@ describe('Insert fragment', () => {
   })
 
   it('reviews the plan, inserts on confirm, and reports what was added', async () => {
-    render(<InsertFragmentModal />)
+    render(<StepUpProvider><InsertFragmentModal /></StepUpProvider>)
     const input = document.querySelector('input[type="file"]') as HTMLInputElement
     fireEvent.change(input, { target: { files: [await packageFile()] } })
 

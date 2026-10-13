@@ -64,10 +64,11 @@ export async function planLoadedFragment(loaded: LoadedFragment): Promise<Fragme
 export function runFragmentInsert(
   loaded: LoadedFragment,
   plan: FragmentInsertPlan,
+  runStepUp: <T>(action: () => Promise<T>) => Promise<T>,
   signal: AbortSignal,
   onProgress: (line: string) => void,
 ): Promise<FragmentInsertResult> {
-  return commitFragmentPlan(plan, createFragmentInsertAdapter(), {
+  return commitFragmentPlan(plan, createFragmentInsertAdapter(runStepUp), {
     readMediaBytes: loaded.readMedia,
     signal,
     onProgress: ({ phase, done, total, label }) => {
