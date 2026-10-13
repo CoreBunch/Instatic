@@ -77,6 +77,25 @@ describe('insertFragment', () => {
     expect(nodes[first!.rootIds[0]].children).not.toContain(second!.rootIds[0])
   })
 
+  it("an explicit placement goes inside the selected container ('inside-selection') or to the end ('end')", () => {
+    const site = useEditorStore.getState().createSite('Target')
+    const rootId = site.pages[0].rootNodeId
+    const first = useEditorStore.getState().insertFragment(resolvedPlanForStore(section))!
+    const firstId = first.rootIds[0]
+
+    const inside = useEditorStore.getState().insertFragment(resolvedPlanForStore(section), 'inside-selection')!
+    let nodes = useEditorStore.getState().site!.pages[0].nodes
+    expect(nodes[firstId].children.at(-1)).toBe(inside.rootIds[0])
+
+    const second = useEditorStore.getState().insertFragment(resolvedPlanForStore(section), 'after-selection')!
+    useEditorStore.getState().selectNode(firstId)
+    const end = useEditorStore.getState().insertFragment(resolvedPlanForStore(section), 'end')!
+    nodes = useEditorStore.getState().site!.pages[0].nodes
+    expect(nodes[rootId].children).toEqual([firstId, end.rootIds[0]])
+    // 'after-selection' with the nested section selected lands next to it, inside the first.
+    expect(nodes[firstId].children.slice(-2)).toEqual([inside.rootIds[0], second.rootIds[0]])
+  })
+
   it("never duplicates the seeded font role tokens of a new site", () => {
     useEditorStore.getState().createSite('Target')
     const before = useEditorStore.getState().site!.settings.fonts?.tokens?.map((t) => t.variable) ?? []

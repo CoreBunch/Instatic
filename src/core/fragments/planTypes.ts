@@ -23,6 +23,17 @@ export type FragmentInsertDocument =
   | { kind: 'page'; pageId: string }
   | { kind: 'visualComponent'; vcId: string }
 
+/**
+ * Where an editor places a section or component relative to its selection:
+ * - `after-selection`: the next sibling of the selected element (the end of
+ *   the document when nothing or the root is selected);
+ * - `inside-selection`: inside the selected container, like a paste (a leaf
+ *   target gets it as its next sibling);
+ * - `end`: the end of the document, whatever is selected.
+ * A page fragment ignores it and adds its own page.
+ */
+export type FragmentInsertPlacement = 'after-selection' | 'inside-selection' | 'end'
+
 export interface FragmentInsertTarget {
   site: SiteDocument
   /** The target's data tables (the editor store holds none; read them from the CMS API). */

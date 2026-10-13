@@ -50,6 +50,7 @@ export type { FragmentInsertErrorCode } from './plan'
 export { FRAGMENT_PROPERTIES_ORIGIN } from './planTokens'
 export type {
   FragmentInsertDocument,
+  FragmentInsertPlacement,
   FragmentInsertPlan,
   FragmentInsertReport,
   FragmentInsertTarget,

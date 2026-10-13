@@ -57,8 +57,12 @@ function requireEditorStore(): EditorStoreApi {
   return editorStoreApi
 }
 import type {
+  EditorFragmentsApi,
   EditorPluginApi,
   EditorPluginModule,
+  FragmentInsertInput,
+  FragmentInsertPlacement,
+  FragmentPlanInput,
   PluginCanvasOverlay,
   PluginCommand,
   PluginCommandResult,
@@ -73,6 +77,56 @@ import type {
 } from '@core/plugin-sdk'
 import { assertPluginPermission } from '@core/plugin-sdk'
 import { dashboardWidgetRegistry } from '@core/dashboard'
+
+/**
+ * Fragment insert host, injected by the site editor body while it is
+ * mounted (`useBindPluginFragmentsApi`). The implementation plans against
+ * the open document, uploads media and writes tables through the step-up
+ * prompt, and commits through the editor store: everything the runtime
+ * must not import. Unbound (no site editor open), `api.editor.fragments`
+ * resolves a not-available outcome instead of throwing.
+ */
+let fragmentsHost: EditorFragmentsApi | null = null
+
+/** Bind the fragment insert host; returns the unbind for the effect cleanup. */
+export function bindPluginRuntimeFragmentsHost(host: EditorFragmentsApi): () => void {
+  fragmentsHost = host
+  return () => {
+    if (fragmentsHost === host) fragmentsHost = null
+  }
+}
+
+const FRAGMENT_PLACEMENTS: ReadonlySet<string> = new Set<FragmentInsertPlacement>(['after-selection', 'inside-selection', 'end'])
+const FRAGMENTS_UNAVAILABLE = 'Open a page or component in the site editor to insert a fragment.'
+
+function assertFragmentPlanInput(input: unknown, method: string): asserts input is FragmentPlanInput {
+  if (!input || typeof input !== 'object') {
+    throw new TypeError(`editor.fragments.${method}: input must be an object`)
+  }
+  if (!('fragment' in input) || input.fragment === undefined || input.fragment === null) {
+    throw new TypeError(`editor.fragments.${method}: input.fragment is required`)
+  }
+}
+
+function assertFragmentInsertInput(input: unknown): asserts input is FragmentInsertInput {
+  assertFragmentPlanInput(input, 'insert')
+  const value = input as Partial<Record<keyof FragmentInsertInput, unknown>>
+  if (typeof value.readMediaBytes !== 'function') {
+    throw new TypeError('editor.fragments.insert: input.readMediaBytes must be a function')
+  }
+  if (value.placement !== undefined && !FRAGMENT_PLACEMENTS.has(value.placement as string)) {
+    throw new TypeError(`editor.fragments.insert: input.placement must be one of ${[...FRAGMENT_PLACEMENTS].join(', ')}`)
+  }
+  if (value.onProgress !== undefined && typeof value.onProgress !== 'function') {
+    throw new TypeError('editor.fragments.insert: input.onProgress must be a function')
+  }
+  if (value.signal !== undefined && !(value.signal instanceof AbortSignal)) {
+    throw new TypeError('editor.fragments.insert: input.signal must be an AbortSignal')
+  }
+  if (value.silent !== undefined && typeof value.silent !== 'boolean') {
+    throw new TypeError('editor.fragments.insert: input.silent must be a boolean')
+  }
+}
 
 /**
  * Icon-name → component resolver injected by the admin shell at boot.
@@ -505,6 +559,20 @@ export function createEditorPluginApi(
           requireEditorStore().setState((state) => {
             mutate(state)
           })
+        },
+      },
+      fragments: {
+        async insert(input) {
+          assertPluginPermission(manifest, 'editor.fragments')
+          assertFragmentInsertInput(input)
+          if (!fragmentsHost) return { ok: false, stage: 'unavailable', message: FRAGMENTS_UNAVAILABLE }
+          return await fragmentsHost.insert(input)
+        },
+        async plan(input) {
+          assertPluginPermission(manifest, 'editor.fragments')
+          assertFragmentPlanInput(input, 'plan')
+          if (!fragmentsHost) return { ok: false, message: FRAGMENTS_UNAVAILABLE }
+          return await fragmentsHost.plan(input)
         },
       },
       palette: {
