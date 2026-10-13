@@ -505,6 +505,8 @@ Editor surfaces are permission-split:
 | `api.editor.fragments.insert`, `api.editor.fragments.plan`, `api.editor.fragments.watchPreviewStyles` | `editor.fragments` |
 | `api.cms.storage.collection(...)` from browser plugin code | `cms.storage` |
 
+Panels, overlays and admin pages use `@instatic/host-ui` (`src/admin/plugin-host-ui/index.ts`) to render shared editor primitives, including `SegmentedControl`, `TagPill`, `Kbd`, and `ShortcutKeys`. Add new exports to the index, `src/admin/pluginRuntimeBootstrap.ts`, and `public/runtime/host-ui.js` together. `plugin-host-ui-runtime-parity.test.ts` checks all three surfaces.
+
 #### Inserting site fragments (`editor.fragments`)
 
 `api.editor.fragments` inserts a [site fragment](fragments.md) into the document open in the site editor, through the same flow as Spotlight **Insert fragment from file…**: the plan runs against the open document, the site's own classes, components, tokens and tables win, media and table writes go through the step-up prompt, and the whole insert is one undo step with the inserted root selected. Types (`FragmentInsertInput`, `FragmentInsertOutcome`, `FragmentPlanOutcome`, `FragmentInsertReport`, `FragmentMedia`, `FragmentInsertPlacement`) come from the SDK (`src/core/plugin-sdk/types/fragments.ts`).
