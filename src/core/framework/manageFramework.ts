@@ -135,8 +135,13 @@ export function mergeCoreFrameworkSettings(
   next.spacing = mergeScaleFamily(next.spacing, preset.spacing)
 
   // Preferences — existing wins wholesale when present (it is fully populated
-  // after schema parse); otherwise adopt the preset's.
-  next.preferences = existing.preferences ?? preset.preferences
+  // after schema parse); otherwise adopt the preset's. An existing framework
+  // without stored preferences has been rendering with the defaults, which
+  // never set the root font size, so adopting the preset must not switch
+  // `emitRootFontSize` on: that would resize every rem token on a live site.
+  if (!existing.preferences && preset.preferences) {
+    next.preferences = { ...preset.preferences, emitRootFontSize: false }
+  }
 
   return next
 }
