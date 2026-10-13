@@ -38,6 +38,7 @@ import { SvgModule } from '@modules/base/svg'
 import { VideoModule } from '@modules/base/video'
 import { ListModule } from '@modules/base/list'
 import { LinkModule } from '@modules/base/link'
+import { PreferenceModule } from '@modules/base/preference'
 import { BodyModule } from '@modules/base/body'
 import { VisualComponentRefModule } from '@modules/base/visualComponentRef'
 import { SlotInstanceModule } from '@modules/base/slotInstance'
@@ -57,6 +58,7 @@ runModuleConformanceSuite(SvgModule)
 runModuleConformanceSuite(VideoModule)
 runModuleConformanceSuite(ListModule)
 runModuleConformanceSuite(LinkModule)
+runModuleConformanceSuite(PreferenceModule)
 runModuleConformanceSuite(VisualComponentRefModule)
 runModuleConformanceSuite(SlotInstanceModule)
 runModuleConformanceSuite(SlotOutletModule)
@@ -944,13 +946,14 @@ describe('base.svg — render() specifics', () => {
 // ---------------------------------------------------------------------------
 
 describe('base.video — render() specifics', () => {
-  it('exposes the v4 schema (single videoUrl, playback, poster, perf hints, title, noRelatedVideos)', () => {
+  it('exposes video source, semantic playback role, poster and playback options', () => {
     expect(Object.keys(VideoModule.schema).sort()).toEqual([
       'autoplay',
       'controls',
       'loop',
       'muted',
       'noRelatedVideos',
+      'playbackRole',
       'playsinline',
       'poster',
       'preload',

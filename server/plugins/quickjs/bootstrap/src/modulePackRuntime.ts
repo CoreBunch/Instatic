@@ -14,6 +14,7 @@
  */
 
 import { fromJson } from './boundary'
+import { serializeTypeBoxSchema } from '../../../../../src/core/utils/typeboxSerialize'
 
 // Minimal console (silent). Module render() functions must not need logs;
 // plugins that need diagnostics use api.plugin.log via the server entrypoint,
@@ -74,6 +75,8 @@ globalThis.__initPack = function initPack(pluginId) {
       version: def.version,
       defaults: def.defaults || {},
       schema: def.schema || {},
+      propsSchema: serializeTypeBoxSchema(def.propsSchema),
+      publishSchema: serializeTypeBoxSchema(def.publishSchema),
       canHaveChildren: !!def.canHaveChildren,
       htmlTag: typeof def.htmlTag === 'string' ? def.htmlTag : undefined,
       hasPreview: typeof def.preview === 'function',

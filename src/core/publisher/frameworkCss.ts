@@ -24,6 +24,7 @@ import { resolveFrameworkPreferences } from '@core/framework'
 import { collectUsedFrameworkClassIds } from '@core/framework'
 import { generateFontsCss } from '@core/fonts'
 import { generateClassCSS } from './classCss'
+import { VISITOR_PREFERENCES_DOCUMENT_CSS } from '@core/visitor-preferences'
 
 export function buildSiteFrameworkCss(site: SiteDocument): string {
   const { fonts } = site.settings
@@ -34,7 +35,7 @@ export function buildSiteFrameworkCss(site: SiteDocument): string {
   // Google).
   const fontsCss = generateFontsCss(fonts)
   const frameworkCss = generateFrameworkCss(site)
-  return [fontsCss, frameworkCss]
+  return [fontsCss, frameworkCss, site.settings.visitorPreferences ? VISITOR_PREFERENCES_DOCUMENT_CSS : '']
     .filter(Boolean)
     .join('\n')
 }

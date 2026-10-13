@@ -5,7 +5,7 @@
  * Composed the way the branch preview composes a page (template chain,
  * draft loops, inlined CSS), with two differences: every node's root
  * element carries `uid="<nodeId>"`, so the review can outline the nodes
- * the plan says changed, and no runtime scripts are bundled — the frame
+ * the plan says changed, and no authored runtime scripts are bundled — the frame
  * is sandboxed without scripts, so bundling would be wasted work.
  */
 import { REVIEW_VIEWPORT } from '@core/branches'
@@ -57,6 +57,7 @@ export async function renderBranchReviewPage(
   const loopData = await prefetchLoopData(merged, site, db, url, { branchId: scope.branchId, request, drafts: true })
   const mediaAssets = await prefetchMediaAssets(merged, site, registry, db, { templateContext, loopData })
   const rendered = publishPage(merged, site, registry, {
+    visitorPreferencesStorage: 'memory',
     templateContext,
     loopData,
     mediaAssets,

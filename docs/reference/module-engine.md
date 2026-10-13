@@ -93,6 +93,10 @@ render: (props: TProps, renderedChildren: string[]) => RenderOutput
 
 ### `props` is trusted (after escaping)
 
+`parseModuleProps` is the common hard TypeBox boundary after binding resolution. It fills missing fields from schema defaults and performs the normal coercions, but raises `ModulePropsValidationError` with its cause and page/node/schema path if parsing fails. It never replaces invalid authored props with all module defaults.
+
+Modules may declare `publishSchema`, a TypeBox schema over `{ props, settings }`. The publisher runs this hard check after bindings and normal `propsSchema` defaulting, before escaping/rendering. Use it for cross-field behavior or required site configuration. Failure raises `ModulePublishValidationError` with its page/node/schema path; it never repairs a failing value. Use the same schema for all resolved render surfaces. Do not validate editorial binding fallbacks as resolved output. Plugin packs transport declarative schemas across QuickJS; executable TypeBox transforms cannot cross that boundary.
+
 By the time `render` is called:
 
 - String props have been HTML-escaped.

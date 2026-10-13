@@ -42,6 +42,7 @@ docs/
 │   ├── site-import.md              ← Super Import (static sites → CMS)
 │   ├── html-import.md              ← paste / import HTML into the page tree
 │   ├── editor-preferences.md       ← catalog-driven editor prefs
+│   ├── visitor-preferences.md      ← native public appearance, motion and media controls
 │   └── canvas-iframe-per-frame.md  ← per-breakpoint iframe rendering
 │
 ├── reference/                  ← short cookbook pages for primitives + patterns

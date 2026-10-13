@@ -125,11 +125,13 @@ export interface PluginModuleDefinition {
   schema: PluginPropertySchema
   /**
    * Optional TypeBox schema for publisher-boundary prop coercion. When set,
-   * `validateNodeProps` coerces and default-fills props before calling
+   * `parseModuleProps` parses and default-fills props before calling
    * `render()`. Absence is tolerated — the publisher passes rawProps through
    * unchanged for modules with no schema.
    */
   propsSchema?: TSchema
+  /** Hard TypeBox validation of resolved `{ props, settings }` before rendering. */
+  publishSchema?: TSchema
   /** Whether the module can hold child modules. */
   canHaveChildren?: boolean
   /**

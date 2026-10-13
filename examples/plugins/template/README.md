@@ -90,6 +90,28 @@ api.editor.palette.registerProvider({
 
 Both `registerCommand` and `registerProvider` require the `editor.commands` permission in `plugin.json`.
 
+## Module publish requirements
+
+For a TypeScript module pack built by `bun instatic-plugin build`, define normal prop defaults with `propsSchema` and cross-field output requirements with `publishSchema`. Both use declarative TypeBox schemas and survive the QuickJS metadata boundary; transforms with executable encode/decode functions are rejected.
+
+```ts
+import { Type } from '@sinclair/typebox'
+import { defineModule, control } from '@instatic/plugin-sdk'
+
+const propsSchema = Type.Object({ count: Type.Integer({ default: 1 }) })
+const publishSchema = Type.Object({
+  props: Type.Object({ count: Type.Integer({ minimum: 1 }) }),
+})
+export default [defineModule({
+  id: 'acme.template.count', name: 'Count', category: 'Template',
+  defaults: { count: 1 }, propsSchema, publishSchema,
+  schema: { count: control.number('Count') },
+  render: ({ props }) => ({ html: '<p>' + props.count + '</p>' }),
+})]
+```
+
+`publishSchema` sees resolved bindings rather than editorial fallback values. A failure is a typed publish error with a page/node/schema path. Add the module entrypoint and `modules.register` permission to a module-pack manifest as described in [the plugin system](../../../docs/features/plugin-system.md).
+
 ## Permissions
 
 The template requests:

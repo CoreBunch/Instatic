@@ -1,0 +1,34 @@
+.facade {
+  position: relative;
+  display: block;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  background-color: var(--editor-surface);
+  overflow: hidden;
+}
+
+.poster,
+.frame,
+.shield {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  border: 0;
+}
+
+.poster {
+  object-fit: cover;
+}
+
+.frame {
+  background: transparent;
+  z-index: 1;
+}
+
+.shield {
+  z-index: 2;
+  background: transparent;
+  cursor: pointer;
+}

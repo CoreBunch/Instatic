@@ -40,6 +40,7 @@ import type {
   PluginPropertyControl,
   PluginRenderOutput,
 } from '../modules'
+import type { TSchema } from '@core/utils/typeboxHelpers'
 
 interface DefineModuleConfig<TDefaults extends Record<string, unknown>> {
   id: string
@@ -50,6 +51,9 @@ interface DefineModuleConfig<TDefaults extends Record<string, unknown>> {
   defaults: TDefaults
   /** Property controls — keys must match `defaults`. */
   schema: { [K in keyof TDefaults]: PluginPropertyControl }
+  /** Declarative TypeBox props/defaulting and resolved publish requirements. */
+  propsSchema?: TSchema
+  publishSchema?: TSchema
   /** Whether the module can hold child modules. */
   canHaveChildren?: boolean
   /** Optional concrete root tag for layer/DOM tree display. */
@@ -99,6 +103,8 @@ export function defineModule<const TDefaults extends Record<string, unknown>>(
     version: config.version ?? '1.0.0',
     defaults: config.defaults as Record<string, unknown>,
     schema: config.schema as Record<string, PluginPropertyControl>,
+    ...(config.propsSchema ? { propsSchema: config.propsSchema } : {}),
+    ...(config.publishSchema ? { publishSchema: config.publishSchema } : {}),
     canHaveChildren: config.canHaveChildren,
     htmlTag: config.htmlTag,
     ...(config.dependencies ? { dependencies: config.dependencies } : {}),

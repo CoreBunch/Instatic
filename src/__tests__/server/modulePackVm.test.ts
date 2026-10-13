@@ -8,6 +8,8 @@
  */
 import { describe, expect, it } from 'bun:test'
 import { createModulePackVm } from '../../../server/plugins/modulePackVm'
+import { deserializeTypeBoxSchema } from '@core/utils/typeboxDeserialize'
+import { compiledCheck } from '@core/utils/typeboxCompiler'
 import {
   DEFAULT_EVAL_TIMEOUT_MS,
   DEFAULT_MEMORY_LIMIT_BYTES,
@@ -30,6 +32,23 @@ var __modules_facade_default = [counter];
 `
 
 describe('modulePackVm — source shim', () => {
+  it('transports declarative TypeBox props and publish schemas through real QuickJS metadata', async () => {
+    const source = `
+      const kind = Symbol.for('TypeBox.Kind');
+      const count = { [kind]: 'Integer', type: 'integer', minimum: 1, default: 1 };
+      const props = { [kind]: 'Object', type: 'object', properties: { count }, required: ['count'] };
+      const publish = { [kind]: 'Object', type: 'object', properties: { props }, required: ['props'] };
+      export default [{ id: 'acme.canvas.strict', name: 'Strict', category: 'Acme', version: '1.0.0', defaults: { count: 1 }, schema: {}, propsSchema: props, publishSchema: publish, render: () => ({ html: '<p>ok</p>' }) }];
+    `
+    const vm = await createModulePackVm({ pluginId: 'acme.canvas', packSource: source })
+    try {
+      const props = deserializeTypeBoxSchema(vm.modules[0]!.propsSchema)!
+      const publish = deserializeTypeBoxSchema(vm.modules[0]!.publishSchema)!
+      expect(compiledCheck(props, { count: 1 })).toBe(true)
+      expect(compiledCheck(publish, { props: { count: 0 }, settings: {} })).toBe(false)
+      expect(compiledCheck(publish, { props: { count: 2 }, settings: {} })).toBe(true)
+    } finally { vm.dispose() }
+  })
   it('accepts `export default <expr>` bundles', async () => {
     const source = `${PACK_BODY}\nexport default __modules_facade_default;\n`
     const vm = await createModulePackVm({ pluginId: 'acme.canvas', packSource: source })

@@ -42,6 +42,7 @@ import type { PublishedPageRuntimeAssets } from '@core/site-runtime/schemas'
 import { hasPublishedRuntimeScripts, scriptTagsForRuntimeAssets } from '@core/site-runtime'
 import { renderNode } from './renderNode'
 import { findDynamicNodeIds } from './dynamicDetection'
+import { buildVisitorPreferencesHead } from './visitorPreferencesHead'
 import { collectHoleSubtreeModuleIds } from './holeSubtreeModules'
 import type {
   RenderConfig,
@@ -65,6 +66,8 @@ interface PublishedPage {
 }
 
 interface PublishPageOptions {
+  /** Draft/runtime previews keep visitor choices in their own document only. */
+  visitorPreferencesStorage?: 'persistent' | 'memory'
   breakpointId?: string
   templateContext?: TemplateRenderDataContext
   runtimeAssets?: PublishedPageRuntimeAssets
@@ -485,6 +488,8 @@ function lineOrEmpty(content: string): string {
 }
 
 interface AssembledDocumentParts {
+  htmlAttributes: string
+  visitorPreferencesScript: string
   langAttr: string
   csp: string
   pageTitle: string
@@ -504,10 +509,11 @@ interface AssembledDocumentParts {
 function assembleHtmlDocument(parts: AssembledDocumentParts): string {
   return (
     `<!DOCTYPE html>\n` +
-    `<html lang="${parts.langAttr}">\n` +
+    `<html lang="${parts.langAttr}"${parts.htmlAttributes}>\n` +
     `<head>\n` +
     `  <meta charset="UTF-8">\n` +
     `  <meta name="viewport" content="width=device-width, initial-scale=1.0">${parts.csp}\n` +
+    lineOrEmpty(parts.visitorPreferencesScript) +
     `  <title>${parts.pageTitle}</title>${parts.metaDesc}${parts.favicon}\n` +
     parts.styleHeadHtml +
     lineOrEmpty(parts.importmapTag) +
@@ -614,9 +620,12 @@ export function publishPage(
 
   const meta = buildDocumentMetaTags(site, page, templateContext, options.documentMeta)
   const runtime = buildRuntimeAssetsBlock(options, acc)
-  const csp = buildContentSecurityPolicy(runtime.anyScriptTag, runtime.importmap, acc.cspSources)
+  const preferences = buildVisitorPreferencesHead(site.settings, options.visitorPreferencesStorage ?? 'persistent')
+  const csp = buildContentSecurityPolicy(runtime.anyScriptTag || !!preferences.script, runtime.importmap, acc.cspSources)
 
   const html = assembleHtmlDocument({
+    htmlAttributes: preferences.htmlAttributes,
+    visitorPreferencesScript: preferences.script,
     langAttr: meta.langAttr,
     csp,
     pageTitle: meta.pageTitle,

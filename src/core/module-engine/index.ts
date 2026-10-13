@@ -49,6 +49,7 @@ export {
 
 export { registry } from './registry'
 
-export { validateNodeProps } from './validateNodeProps'
+export { parseModuleProps, ModulePropsValidationError } from './parseModuleProps'
+export { validateModulePublishInput, ModulePublishValidationError } from './validatePublishInput'
 
 export { resolveHtmlTagBadge } from './htmlTagBadge'

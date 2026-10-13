@@ -217,6 +217,7 @@ export async function renderBranchPreview(
   const loopData = await prefetchLoopData(merged, site, db, url, { branchId, request })
   const mediaAssets = await prefetchMediaAssets(merged, site, registry, db, { templateContext, loopData })
   const rendered = publishPage(merged, site, registry, {
+    visitorPreferencesStorage: 'memory',
     templateContext,
     ...(documentMeta ? { documentMeta } : {}),
     runtimeAssets,

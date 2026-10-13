@@ -17,6 +17,8 @@ Catalog of every `localStorage` / `sessionStorage` key the admin app writes, and
 
 ### localStorage
 
+Published sites separately own `instatic.site-preferences` for TypeBox-validated partial appearance/motion/media selections (`src/core/visitor-preferences/runtime.ts`). It is not an admin preference key. Canvas/private previews use memory-only state. Corrupt and inaccessible storage show authored status feedback; see [visitor preferences](../features/visitor-preferences.md).
+
 | Key                                       | Owner                                                                 | Source-of-truth file                                            |
 |-------------------------------------------|-----------------------------------------------------------------------|-----------------------------------------------------------------|
 | `instatic-editor-prefs`                         | All editor preferences (auto-save, hover-preview, admin theme, UI text size, density, layers options) — see [docs/features/editor-preferences.md](../features/editor-preferences.md) | `src/admin/pages/site/preferences/editorPreferences.ts` → `EDITOR_PREFS_KEY` |

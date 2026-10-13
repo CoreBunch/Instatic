@@ -1153,6 +1153,10 @@ export default definePlugin({
 
 ---
 
+## Module schemas
+
+Module definitions and `defineModule` accept `propsSchema` for normal prop defaulting and `publishSchema` for hard validation of resolved `{ props, settings }`. The browser adapter and QuickJS metadata preserve both; the sandbox transport restores declarative TypeBox symbols, and rejects executable transforms. A failed publish requirement raises `ModulePublishValidationError` before the module render thunk runs. See [module engine](../reference/module-engine.md) and [visitor preferences](visitor-preferences.md).
+
 ## Related
 
 - [docs/architecture.md](../architecture.md) — system overview

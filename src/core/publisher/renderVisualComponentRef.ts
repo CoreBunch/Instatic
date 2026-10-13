@@ -2,7 +2,7 @@
  * Publisher — `base.visual-component-ref` inlining.
  *
  * Specialised renderer for VC ref nodes. Instead of the standard
- * "render children → resolve props → call module.render()" flow, a VC ref
+ * "render children → call module.render()" flow after common prop parsing, a VC ref
  * is materialised into a synthetic Page from the live VC definition and
  * walked recursively. Slot fills (the ref node's `base.slot-instance`
  * children) become the slot-outlet contents inside the instantiated tree.

@@ -76,6 +76,8 @@ interface SerializedModuleDefinition {
   version: string
   defaults: Record<string, unknown>
   schema: Record<string, unknown>
+  propsSchema?: string
+  publishSchema?: string
   canHaveChildren?: boolean
   htmlTag?: string
   hasPreview: boolean

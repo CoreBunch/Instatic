@@ -54,6 +54,7 @@ import { bumpPublishVersion, getPublishVersion, withPublishLock } from './publis
 import { runPublishFlush } from './publishFlush'
 import { sweepStalePluginVersionAssets } from './stalePluginAssets'
 import { MAIN_SCOPE } from '../branches/scope'
+import { VISITOR_PREFERENCES_RUNTIME_JS, VISITOR_PREFERENCES_RUNTIME_PATH } from '@core/visitor-preferences'
 
 interface PublishResult {
   publishedPages: number
@@ -216,6 +217,9 @@ async function publishDraftSiteLocked(
   if (uploadsDir) {
     try {
       const { slot, slotDir } = await prepareInactiveSlot(uploadsDir)
+      if (site.settings.visitorPreferences) {
+        await writeStaticAsset(slotDir, VISITOR_PREFERENCES_RUNTIME_PATH, new TextEncoder().encode(VISITOR_PREFERENCES_RUNTIME_JS))
+      }
 
       // Every distinct static asset referenced by ANY baked artefact.
       // Content-hashed filenames dedupe identical bytes across pages to a

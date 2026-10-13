@@ -28,6 +28,8 @@ import { registry } from '@core/module-engine'
 import type { CssBundleFile, SiteCssBundleId } from '@core/publisher'
 import { buildPublishedSiteCssBundle } from './publish/siteCssBundle'
 import { mediaStorageRegistry } from '@core/plugins/mediaStorageRegistry'
+import { VISITOR_PREFERENCES_RUNTIME_PATH } from '@core/visitor-preferences'
+import { serveVisitorPreferencesRuntime } from './publish/visitorPreferencesRuntime'
 
 const VITE_DEV_URL = 'http://localhost:5173'
 
@@ -61,6 +63,7 @@ const routes: readonly RouteHandler[] = [
   // cookie, `/_instatic/preview/exit` clears it. Public GETs below then
   // render the branch's draft while the cookie names a live link.
   tryServeBranchPreviewLink,
+  tryServeVisitorPreferencesRuntime,
   tryServeLoopRuntimeAsset,
   tryServeLoop,
   tryServeHoleRuntimeAsset,
@@ -185,6 +188,12 @@ function tryServeCmsApi(req: Request, runtime: ServerRuntime, _url: URL, pathnam
 function tryServeLoopRuntimeAsset(req: Request, _runtime: ServerRuntime, _url: URL, pathname: string): Response | null {
   if (req.method !== 'GET' || !isLoopRuntimeAssetPath(pathname)) return null
   return serveLoopRuntimeAsset()
+}
+
+function tryServeVisitorPreferencesRuntime(req: Request, _runtime: ServerRuntime, _url: URL, pathname: string): Response | null {
+  if (pathname !== VISITOR_PREFERENCES_RUNTIME_PATH) return null
+  if (req.method !== 'GET') return new Response('Method not allowed', { status: 405, headers: { allow: 'GET, HEAD' } })
+  return serveVisitorPreferencesRuntime()
 }
 
 function tryServeLoop(req: Request, runtime: ServerRuntime, url: URL, pathname: string): Promise<Response> | null {

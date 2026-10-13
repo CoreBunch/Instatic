@@ -127,6 +127,7 @@ export async function handleRowPreview(
   const cssBundle = buildSiteCssBundle(snapshot.site, registry, merged, { mediaAssets })
 
   const published = publishPage(merged, snapshot.site, registry, {
+    visitorPreferencesStorage: 'memory',
     templateContext,
     documentMeta: readEntrySeoOverride(draftCells),
     runtimeAssets: snapshot.runtimeAssets,

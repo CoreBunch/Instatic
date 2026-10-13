@@ -326,22 +326,26 @@ than falling through.
 
 ## `<head>` assembly
 
+When `settings.visitorPreferences` is configured, `visitorPreferencesHead.ts` adds the typed configuration on `<html>` and a synchronous self-hosted preference owner before authored styles. It applies the existing framework palette before body content can paint, even when the page has no visible preference control. Canvas and private previews use memory-only persistence. See [visitor preferences](visitor-preferences.md).
+
 The publisher emits `<head>` in this order:
 
 1. `<meta charset="utf-8">`
 2. `<meta name="viewport" content="width=device-width, initial-scale=1">`
-3. `<title>` — the entry's `seoTitle` (post-type entries only) → `settings.metaTitle` → `page.title` → site name, then token-interpolated against the render context before escaping, so `{currentEntry.*}` resolves per-entry on entry routes (e.g. `{currentEntry.name} | Acme`) and `{page.*}` / `{site.*}` / `{route.*}` work everywhere
-4. `<meta name="description">` — the entry's `seoDescription` (post-type entries only) → `settings.metaDescription`; omitted when neither is set, and token-interpolated the same way
-5. `<link rel="icon">` if a favicon is configured
-6. `<script type="importmap">` mapping bare specifiers (e.g. `three`) to `/_instatic/runtime/cache/<hash>/...` URLs
-7. Runtime asset `<script>` tags (`scriptTagsForRuntimeAssets`)
-8. `<link rel="stylesheet" href="/_instatic/css/<bundle>-<hash>.css">` per bundle
-9. **`head` placement** plugin-injected tags (after the publisher's own head, before custom user head content)
-10. `<meta http-equiv="Content-Security-Policy" content="...">` — assembled based on what's actually in the page
+3. `<meta http-equiv="Content-Security-Policy" content="...">` — assembled from the scripts and resources actually emitted
+4. Synchronous `/_instatic/visitor-preferences.js` when authored visitor defaults are enabled
+5. `<title>` — the entry's `seoTitle` (post-type entries only) → `settings.metaTitle` → `page.title` → site name, then token-interpolated against the render context before escaping, so `{currentEntry.*}` resolves per-entry on entry routes (e.g. `{currentEntry.name} | Acme`) and `{page.*}` / `{site.*}` / `{route.*}` work everywhere
+6. `<meta name="description">` — the entry's `seoDescription` (post-type entries only) → `settings.metaDescription`; omitted when neither is set, and token-interpolated the same way
+7. `<link rel="icon">` if a favicon is configured
+8. Styles: inline `<style>` or `<link rel="stylesheet" href="/_instatic/css/<bundle>-<hash>.css">` per bundle
+9. `<script type="importmap">` mapping bare specifiers (e.g. `three`) to `/_instatic/runtime/cache/<hash>/...` URLs
+10. Runtime asset `<script>` tags with `head` placement (`scriptTagsForRuntimeAssets`)
+11. Hole runtime when the document contains request-dependent fragments
+12. **`head` placement** plugin-injected tags (after the publisher's own head, before custom user head content)
 
 ### `documentMeta` — per-render `<head>` overrides
 
-Rows 3 and 4 above take their most specific value from `PublishPageOptions.documentMeta`, a `{ title?, description? }` the caller supplies for this render only. A post-type entry's authored `seoTitle` / `seoDescription` are row cells, not fields of the composed template `Page`, so both entry render paths read them with `readEntrySeoOverride(cells)` (`src/core/data/cells.ts`) and pass them here:
+Rows 5 and 6 above take their most specific value from `PublishPageOptions.documentMeta`, a `{ title?, description? }` the caller supplies for this render only. A post-type entry's authored `seoTitle` / `seoDescription` are row cells, not fields of the composed template `Page`, so both entry render paths read them with `readEntrySeoOverride(cells)` (`src/core/data/cells.ts`) and pass them here:
 
 | Path | File |
 |---|---|

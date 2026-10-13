@@ -369,9 +369,9 @@ export interface ModuleDefinition<
 
   /**
    * Optional TypeBox schema that declares the full shape and per-field
-   * defaults for this module's props. When present, `validateNodeProps`
-   * coerces and default-fills props at the publisher boundary (soft — never
-   * throws). The schema is the single source of truth for shape + defaults;
+   * defaults for this module's props. When present, `parseModuleProps`
+   * coerces and default-fills props at the publisher boundary, throwing a
+   * typed error if coercion cannot produce valid props. The schema owns defaults;
    * `defaults` should be derived from it via `Value.Create(propsSchema)`.
    *
    * Publisher-injected render-time fields (`_resolvedMediaByKey`,
@@ -379,6 +379,15 @@ export interface ModuleDefinition<
    * injected after the coercion step and survive through the merge.
    */
   propsSchema?: TSchema
+
+  /**
+   * Hard publish boundary for the complete `{ props, settings }` input.
+   * Props have already passed normal module coercion. This schema declares
+   * cross-field requirements and authored site settings required by a module.
+   * Props are resolved (including dynamic bindings) before this check.
+   * Validation never supplies defaults or repairs a failing value.
+   */
+  publishSchema?: TSchema
 
   /** Default property values matching the schema */
   defaults: TProps

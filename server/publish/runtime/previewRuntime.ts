@@ -88,6 +88,7 @@ export async function buildRuntimePreviewDocument(
       })
     : undefined
   const baseHtml = publishPage(input.page, input.site, input.registry, {
+    visitorPreferencesStorage: 'memory',
     breakpointId: input.breakpointId,
     templateContext: input.templateContext,
     runtimeAssets: runtimeBuild.runtimeAssets,
