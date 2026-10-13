@@ -13,12 +13,19 @@ import {
   shellMap,
   MAIN_SITE_DOC_ID,
   treeMap,
+  dataMap,
 } from '@core/collab'
+import { cssToStyleRules } from '@core/siteImport'
+import { generateClassCSS } from '@core/publisher'
+import type { StyleRule } from '@core/page-tree'
+import { savedLayoutFromRow } from '@core/data/layoutFromRow'
+import { makeNode } from '../fixtures'
 import { createCollabRelay, type CollabRelay } from '../../../server/collab/relay'
 import type { DbClient } from '../../../server/db'
 import { getCollabDocumentState } from '../../../server/repositories/collabDocuments'
 import {
   createDataRow,
+  getDataRow,
   createDataTable,
   listDataRows,
   saveDataRowDraft,
@@ -389,6 +396,57 @@ describe('collab relay', () => {
     `
     const body = rows[0].cells_json.body as { nodes: Record<string, { label?: string }>; rootNodeId: string }
     expect(body.nodes[body.rootNodeId].label).toBe('Hero section')
+  })
+
+  it('persists native layout CSS dependencies and clears conditions removed from the snapshot', async () => {
+    const { harness, relay } = await setup()
+    const parsed = cssToStyleRules(
+      '@layer cards { @media (min-width:500px) { .card {color:red} } } @property --size {syntax:"<length>"; inherits:false; initial-value:12px}',
+    )
+    const classes: Record<string, StyleRule> = Object.fromEntries(
+      parsed.rules.map((rule, index) => {
+        const id = `layout-rule-${index}`
+        return [id, { ...rule, id, createdAt: 1, updatedAt: 1 }]
+      }),
+    )
+    const root = makeNode({
+      id: 'layout-root',
+      classIds: Object.values(classes)
+        .filter((rule) => rule.kind === 'class')
+        .map((rule) => rule.id),
+    })
+    const row = await createDataRow(harness.db, MAIN_SCOPE, {
+      tableId: 'layouts',
+      slug: 'native-css-layout',
+      cells: {
+        name: 'Native CSS layout',
+        body: { rootNodeId: root.id, nodes: { [root.id]: root } },
+        classes,
+        conditions: parsed.conditions,
+        pluginField: 'Preserved',
+      },
+    })
+    const { doc } = await relay.openDoc(`layout:main:${row.id}`)
+    const snapshot = dataMap(doc).get('snapshot') as Record<string, unknown>
+    doc.transact(() => dataMap(doc).set('snapshot', structuredClone(snapshot)), LOCAL_ORIGIN)
+    await relay.flushAll()
+    const persisted = await getDataRow(harness.db, MAIN_SCOPE, row.id)
+    const layout = savedLayoutFromRow(persisted!)!
+    expect(layout.conditions).toEqual(parsed.conditions)
+    expect(generateClassCSS(layout.classes, [], layout.conditions)).toBe(
+      generateClassCSS(classes, [], parsed.conditions),
+    )
+    expect(persisted!.cells.pluginField).toBe('Preserved')
+    const { conditions: _conditions, ...withoutConditions } = snapshot
+    doc.transact(
+      () => dataMap(doc).set('snapshot', { ...withoutConditions, classes: {} }),
+      LOCAL_ORIGIN,
+    )
+    await relay.flushAll()
+    const cleared = await getDataRow(harness.db, MAIN_SCOPE, row.id)
+    expect(cleared!.cells.conditions).toBeUndefined()
+    expect(cleared!.cells.pluginField).toBe('Preserved')
+    expect(savedLayoutFromRow(cleared!)!.conditions).toBeUndefined()
   })
 
   it('keeps a dirty doc resident and retries when the final persist fails', async () => {

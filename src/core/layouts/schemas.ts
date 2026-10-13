@@ -21,6 +21,8 @@ import { Type, type Static } from '@core/utils/typeboxHelpers'
 import {
   PageNodeSchema,
   StyleRuleSchema,
+  ConditionDefSchema,
+  parseConditions,
   parsePageNode,
   parseStyleRule,
   reindexNodeParents,
@@ -45,6 +47,8 @@ export const SavedLayoutSchema = Type.Object({
    * from the site.
    */
   classes: Type.Record(Type.String(), StyleRuleSchema),
+  /** Conditions referenced by the saved rules, including captured viewport queries. */
+  conditions: Type.Optional(Type.Array(ConditionDefSchema)),
   /** Falls back to Date.now() for missing or non-numeric values — handled by parser */
   createdAt: Type.Number(),
 })
@@ -105,6 +109,7 @@ export function parseSavedLayout(raw: unknown): SavedLayout | null {
     rootNodeId: r.rootNodeId,
     nodes,
     classes,
+    ...(r.conditions !== undefined ? { conditions: parseConditions(r.conditions) } : {}),
     createdAt,
   }
 }

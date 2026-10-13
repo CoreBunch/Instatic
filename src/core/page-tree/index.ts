@@ -55,6 +55,8 @@ export type {
   StyleRuleOrigin,
 } from './styleRule'
 export type { Condition, ConditionDef } from './condition'
+export { CSSRuleGroupSchema, CSSAtRuleSchema, isValidCssLayerName } from './cssGrouping'
+export type { CSSRuleGroup, CSSAtRule } from './cssGrouping'
 export type { SiteSettings } from './siteSettings'
 export type { SiteShell, SiteDocument } from './siteDocument'
 export type {

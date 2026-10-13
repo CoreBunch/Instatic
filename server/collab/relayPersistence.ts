@@ -62,7 +62,7 @@ const KIND_TABLE: Record<Exclude<CollabDocKind, 'site'>, string> = {
 const OWNED_CELLS: Record<Exclude<CollabDocKind, 'site'>, readonly string[]> = {
   page: ['title', 'slug', 'body', 'templateEnabled', 'templateTarget', 'templatePriority'],
   component: ['name', 'slug', 'body', 'params', 'classIds'],
-  layout: ['name', 'slug', 'body', 'classes'],
+  layout: ['name', 'slug', 'body', 'classes', 'conditions'],
 }
 
 /** The row's stored cells with the doc-owned ones replaced by what the doc derives. */

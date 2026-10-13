@@ -32,6 +32,9 @@ export {
 } from '../page-tree/styleRule'
 export type { StyleRule } from '../page-tree/styleRule'
 
+export { ConditionDefSchema, parseConditions } from '../page-tree/condition'
+export type { ConditionDef } from '../page-tree/condition'
+
 export { reindexNodeParents } from '../page-tree/parentIndex'
 export {
   collectSubtreeIds,

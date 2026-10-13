@@ -9,17 +9,16 @@
  * changes; `safeParseJson` will fall back to "no clipboard" on mismatch):
  *
  *   {
- *     version: 2,
+ *     version: 3,
  *     rootNodeIds: string[],              // ordered roots (multi-select copy)
  *     nodes: Record<string, PageNode>,    // every node reachable from any root
  *     classes: Record<string, StyleRule>,  // style rules referenced by the nodes
+ *     conditions: ConditionDef[],        // complete CSS context dependencies
  *     copiedAt: number
  *   }
  *
- * Version 2 (this file) — multi-root copy/paste. A single-node copy is
- * persisted as `rootNodeIds: [id]`. The previous v1 shape (single
- * `rootNodeId`) is intentionally NOT supported on read; safeParseJson
- * silently drops v1 payloads (the user's local clipboard is disposable).
+ * Version 3 includes the condition dependencies needed by copied CSS groups.
+ * Earlier local clipboard payloads are disposable and rejected on read.
  *
  * Any read failure (missing JSON, schema mismatch, unsupported version) is
  * treated as "no clipboard available" — never throws into UI.
@@ -27,10 +26,11 @@
 
 import { Type, type Static } from '@core/utils/typeboxHelpers'
 import { StyleRuleSchema, PageNodeSchema } from '@core/page-tree'
+import { ConditionDefSchema } from '@core/page-tree-schema'
 import { safeParseJson } from '@core/utils/jsonValidate'
 
 export const CLIPBOARD_STORAGE_KEY = 'instatic-clipboard-v1'
-export const CLIPBOARD_VERSION = 2
+export const CLIPBOARD_VERSION = 3
 
 const ClipboardPayloadSchema = Type.Object({
   version: Type.Literal(CLIPBOARD_VERSION),
@@ -48,6 +48,7 @@ const ClipboardPayloadSchema = Type.Object({
    * the referenced class definitions.
    */
   classes: Type.Record(Type.String(), StyleRuleSchema),
+  conditions: Type.Array(ConditionDefSchema),
   copiedAt: Type.Number(),
 })
 

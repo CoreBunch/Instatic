@@ -49,8 +49,9 @@ export type NewStyleRule = Omit<StyleRule, 'id' | 'createdAt' | 'updatedAt'>
  *   declaration value. Assets are collected in `assetRefs` (not warnings) by
  *   the Phase 1 parser; this kind is reserved for Phase 2's use.
  * - `duplicate-class`: two `.foo { ... }` rules with the same class selector
- *   appeared in the same file. The later rule's declarations win (CSS cascade
- *   semantics). One warning is emitted per duplicated class.
+ *   appeared in the same file. Each occurrence keeps its source position;
+ *   the browser resolves declaration priority and source order. One warning
+ *   is emitted per repeated occurrence.
  *
  * Phase 2 (site import pipeline) kinds:
  * - `missing-stylesheet`: a stylesheet referenced from an HTML `<link>` or a

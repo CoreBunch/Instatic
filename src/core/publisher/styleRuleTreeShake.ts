@@ -148,7 +148,7 @@ export function treeShakeStyleRules(
     }
 
     if (
-      rule.rawCss
+      rule.rawCss || rule.atRule
       || selectorCanMatch(rule.selector, knownClassNames, usedClassNames)
     ) {
       selected[rule.id] = rule
