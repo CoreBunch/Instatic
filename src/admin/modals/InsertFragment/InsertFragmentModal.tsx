@@ -17,12 +17,20 @@ import { FileUpload } from '@ui/components/FileUpload'
 import { pushToast } from '@ui/components/Toast'
 import { UploadIcon } from 'pixel-art-icons/icons/upload'
 import type { FragmentInsertPlan, FragmentInsertResult } from '@core/fragments'
-import { isAbortError } from '@core/http'
 import { getErrorMessage } from '@core/utils/errorMessage'
 import { useEditorStore } from '@site/store/store'
-import { StepUpCancelledMessage, useStepUp } from '@admin/shared/StepUp'
+import { useStepUp } from '@admin/shared/StepUp'
 import { FragmentReport } from './FragmentReport'
-import { loadFragmentFile, planLoadedFragment, runFragmentInsert, type LoadedFragment } from './fragmentInsertFlow'
+import {
+  commitFragmentForEditor,
+  fragmentProgressLine,
+  isFragmentInsertCancel,
+  loadFragmentFile,
+  planFragmentForEditor,
+  toastFragmentInsertFailed,
+  toastFragmentInserted,
+  type LoadedFragment,
+} from './fragmentInsertFlow'
 import styles from './InsertFragmentModal.module.css'
 
 type Step =
@@ -40,19 +48,13 @@ async function readAndPlan(file: File, setStep: SetStep): Promise<void> {
   setStep({ kind: 'reading', fileName: file.name })
   try {
     const loaded = await loadFragmentFile(file)
-    const plan = await planLoadedFragment(loaded)
+    const plan = await planFragmentForEditor(loaded.fragment)
     setStep({ kind: 'review', loaded, plan })
   } catch (err) {
     console.error('[InsertFragmentModal] reading the fragment failed:', err)
     pushToast({ kind: 'error', title: 'Could not insert this fragment', body: getErrorMessage(err, 'Unknown fragment error') })
     setStep({ kind: 'pick' })
   }
-}
-
-/** The user closed the password prompt a table write asked for. */
-function isStepUpCancel(err: unknown): boolean {
-  const cause = err instanceof Error ? err.cause : undefined
-  return cause instanceof Error && cause.message === StepUpCancelledMessage
 }
 
 async function insert(
@@ -64,25 +66,20 @@ async function insert(
 ): Promise<void> {
   setStep({ kind: 'running', loaded, plan, line: 'Starting' })
   try {
-    const result = await runFragmentInsert(loaded, plan, runStepUp, controller.signal, (line) =>
-      setStep((current) => (current.kind === 'running' ? { ...current, line } : current)),
-    )
-    setStep({ kind: 'done', loaded, result })
-    pushToast({
-      kind: result.report.warnings.length > 0 ? 'warning' : 'success',
-      title: result.pageId ? 'Page added' : 'Fragment inserted',
-      body: result.report.warnings.length > 0
-        ? `${result.report.warnings.length} note${result.report.warnings.length === 1 ? '' : 's'} in the report.`
-        : 'One undo removes it.',
-      location: 'site-editor',
+    const result = await commitFragmentForEditor(plan, {
+      readMediaBytes: loaded.readMedia,
+      runStepUp,
+      signal: controller.signal,
+      onProgress: (progress) => {
+        const line = fragmentProgressLine(progress)
+        setStep((current) => (current.kind === 'running' ? { ...current, line } : current))
+      },
     })
+    setStep({ kind: 'done', loaded, result })
+    toastFragmentInserted(result)
   } catch (err) {
-    if (isAbortError(err) || isStepUpCancel(err)) {
-      pushToast({ kind: 'info', title: 'Insert cancelled', body: 'Files already uploaded stay in the media library.' })
-    } else {
-      console.error('[InsertFragmentModal] insert failed:', err)
-      pushToast({ kind: 'error', title: 'Insert failed', body: getErrorMessage(err, 'Unknown insert error') })
-    }
+    if (!isFragmentInsertCancel(err)) console.error('[InsertFragmentModal] insert failed:', err)
+    toastFragmentInsertFailed(err)
     setStep({ kind: 'review', loaded, plan })
   }
 }

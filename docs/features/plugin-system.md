@@ -473,7 +473,41 @@ Editor surfaces are permission-split:
 | `api.editor.canvas.registerOverlay` | `editor.canvas` |
 | `api.editor.store.read` | `editor.store.read` |
 | `api.editor.store.transaction` | `editor.store.write` |
+| `api.editor.fragments.insert`, `api.editor.fragments.plan` | `editor.fragments` |
 | `api.cms.storage.collection(...)` from browser plugin code | `cms.storage` |
+
+#### Inserting site fragments (`editor.fragments`)
+
+`api.editor.fragments` inserts a [site fragment](fragments.md) into the document open in the site editor, through the same flow as Spotlight **Insert fragment from file…**: the plan runs against the open document, the site's own classes, components, tokens and tables win, media and table writes go through the step-up prompt, and the whole insert is one undo step with the inserted root selected. Types (`FragmentInsertInput`, `FragmentInsertOutcome`, `FragmentPlanOutcome`, `FragmentInsertReport`, `FragmentMedia`, `FragmentInsertPlacement`) come from the SDK (`src/core/plugin-sdk/types/fragments.ts`).
+
+```js
+export function activate(api) {
+  api.editor.commands.register({
+    id: 'acme.sections.insert-hero',
+    label: 'Insert hero section',
+    run: async () => {
+      const fragment = await fetch(api.plugin.assetUrl('hero/fragment.json')).then((r) => r.json())
+      const preview = await api.editor.fragments.plan({ fragment })   // dry run: { ok, report }
+      if (!preview.ok) return
+      const outcome = await api.editor.fragments.insert({
+        fragment,
+        placement: 'after-selection',             // or 'inside-selection', 'end'
+        readMediaBytes: async (media) => {
+          const res = await fetch(api.plugin.assetUrl(`hero/${media.src}`))
+          return res.ok ? new Uint8Array(await res.arrayBuffer()) : null
+        },
+      })
+      if (!outcome.ok) console.warn(outcome.stage, outcome.message)
+    },
+  })
+}
+```
+
+- `placement`: `after-selection` (default) puts it after the selected element, or at the end of the document when nothing is selected; `inside-selection` puts it inside the selected container, like a paste; `end` appends it to the document. A page fragment adds its own page.
+- `readMediaBytes` is called only for media the plan adds that the media library does not already hold (same filename, size and MIME type). Returning null stops the insert with `stage: 'media'` before the document changes.
+- `insert` resolves `{ ok: true, report, insertedRootIds, pageId? }` or `{ ok: false, stage, message }` with `stage` one of `unavailable` (no editable document open), `plan`, `media`, `tables`, `commit`, `cancelled`. It rejects only for a malformed input, including a fragment `parseSiteFragment` refuses; `plan` resolves `{ ok: false, message }` for that.
+- The editor shows its usual result toast; pass `silent: true` to show your own. `signal` and `onProgress` behave as in `commitFragmentPlan`.
+- The site editor binds the host while it is open for a user who can edit the draft site (`useBindPluginFragmentsApi`); `src/core/plugins/runtime.ts` checks the permission and the input shape, `src/admin/modals/InsertFragment/pluginFragmentsHost.ts` runs the insert.
 
 Dashboard widgets are registered from the same unsandboxed browser entrypoint through `api.dashboard.widgets.register(...)` and require `dashboard.widgets.register`:
 
@@ -979,6 +1013,7 @@ Risk levels:
 | `editor.commands`           | Editor               | Medium    | Register editor commands + Spotlight palette commands / providers       |
 | `editor.store.read`         | Editor               | Medium    | Read editor store state                                                 |
 | `editor.store.write`        | Editor               | High      | Mutate editor store state through a host transaction                    |
+| `editor.fragments`          | Editor               | High      | Insert site fragments into the open document; may add classes, tokens, components, media and data tables |
 | `editor.canvas`             | Editor               | High      | Register canvas overlay React components                                |
 | `editor.panels`             | Editor               | Medium    | Register left-sidebar panels. Use `definePluginPanel({ id, label, iconName, accent? })` from the SDK — `accent` pins a specific rail tint; omit it to let the host derive one automatically from the panel identity. |
 | `modules.register`          | Editor / manifest    | High      | Ship new modules to the canvas module library                           |
