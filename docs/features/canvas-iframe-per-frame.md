@@ -124,7 +124,7 @@ Five `<style>` elements are injected per iframe (three from `ClassStyleInjector`
 | Injector | `id` attribute | Cascade layer | Purpose |
 |---|---|---|---|
 | `EditorChromeInjector` | `instatic-editor-chrome` | **unlayered** | Editor chrome: placeholder, slot-instance, unknown-module styles. Copies the admin tokens the chrome reads from parent `:root` onto iframe `:root`, every one under the **chrome namespace** (`--radius` → `--chrome-radius`, `--text` → `--chrome-text`, `--font-sans` → `--chrome-font-sans`, `--space-s` → `--chrome-space-s`). It never declares an admin token under its own name, because the injector is unlayered and would otherwise override any site custom property with the same name. |
-| `ClassStyleInjector` | `mc-classes` | `@layer user-authored` | Publisher reset + framework CSS + class registry CSS |
+| `ClassStyleInjector` | `mc-classes` | `@layer user-authored` | Publisher reset + framework CSS (incl. the opt-in `html { font-size }` rule) + class registry CSS |
 | `ClassStyleInjector` | `mc-classes-preview` | `@layer user-authored` | Higher-specificity preview rule (doubled selector) while a property control is hovered. Empty for state-pseudo rules — those use `mc-classes-force-state` instead. |
 | `ClassStyleInjector` | `mc-classes-force-state` | `@layer user-authored` | Force-paints the active state-pseudo rule (`.btn:hover`, `.card:focus`, etc.) onto the selected node via a doubled `[data-node-id]` selector so the state is visible/editable without physically triggering it. Mirrors the full `contextStyles` emission per breakpoint and condition. |
 | `UserStylesheetInjector` | `mc-user-styles` | `@layer user-authored` | User-uploaded stylesheets (verbatim, unscoped) |

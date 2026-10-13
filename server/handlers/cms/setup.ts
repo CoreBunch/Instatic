@@ -18,7 +18,7 @@
 import { nanoid } from 'nanoid'
 import type { DbClient } from '../../db/client'
 import { hashPassword } from '../../auth/tokens'
-import { createSite, getSetupStatus } from '../../repositories/setup'
+import { createSite, getSetupStatus, newSiteShellStorage } from '../../repositories/setup'
 import { createUser } from '../../repositories/users'
 import { createAuditEvent } from '../../repositories/audit'
 import { createDataRow } from '../../repositories/data'
@@ -80,7 +80,7 @@ export async function handleSetupRoutes(req: Request, db: DbClient): Promise<Res
     return serializeCollabAwareWrite(async () => {
       let homePageId = ''
       const response = await db.transaction(async (tx) => {
-        await createSite(tx, siteName, {})
+        await createSite(tx, siteName, newSiteShellStorage())
         const owner = await createUser(tx, {
           id: nanoid(),
           email,
@@ -142,7 +142,7 @@ interface PublicSiteIdentity {
  * favicon resolve to null. TypeBox objects allow extra properties by default,
  * so validating only `faviconUrl` still type-checks it with zero `as` casts
  * while staying immune to unrelated settings fields. Every level is optional
- * so a freshly-created site (`settings_json = {}`) yields a null favicon
+ * so a shell without stored settings (`settings_json = {}`) yields a null favicon
  * instead of throwing.
  */
 const StoredSiteIdentitySchema = Type.Object({
