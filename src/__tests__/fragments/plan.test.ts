@@ -13,6 +13,7 @@ import {
   type SiteFragment,
 } from '@core/fragments'
 import { generateFrameworkUtilityClasses } from '@core/framework'
+import { buildFontRoleTokens } from '@core/fonts'
 import type { PageNode } from '@core/page-tree'
 import { makeNode, makePage, makeSite } from '../fixtures'
 import {
@@ -147,6 +148,21 @@ describe('planFragmentInsert — tokens', () => {
     expect(plan.fontFamilies.map((f) => f.entry.family)).toEqual(['Inter'])
     // Bound to the family being installed until the commit knows its real id.
     expect(plan.fontTokens[0].familyId).toBe(plan.fontFamilies[0].fragmentFamilyId)
+  })
+
+  it("keeps a new site's seeded font roles and installs nothing for them", async () => {
+    const target = makeTargetSite()
+    target.settings.fonts = { items: [], tokens: buildFontRoleTokens() }
+    const plan = planFragmentInsert(
+      { site: target, tables: TARGET_TABLES, document: { kind: 'page', pageId: 't-home' } },
+      await sectionFragment(),
+    )
+    expect(plan.report.fonts.tokensKept).toEqual(['font-heading'])
+    expect(plan.fontTokens).toEqual([])
+    // The fragment bound Inter to font-heading; the site's role wins, so Inter
+    // and its file are not needed.
+    expect(plan.fontFamilies).toEqual([])
+    expect(plan.media.map((m) => m.id)).not.toContain('media-font')
   })
 
   it('puts root custom properties the site lacks into one engine-owned :root rule', async () => {

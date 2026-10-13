@@ -94,10 +94,32 @@ export function planTokens(
     : undefined
 
   // ── Fonts ──────────────────────────────────────────────────────────────────
+  // Tokens first: a token the site already has (a seeded `font-heading` role,
+  // say) is kept, so the family the fragment bound to it is not needed.
+  const existingTokens = site.settings.fonts?.tokens ?? []
+  const variables = new Set(existingTokens.map((t) => normalizeFontTokenVariable(t.variable)))
+  const addedTokens: FontToken[] = []
+  for (const token of fragment.tokens.fontTokens) {
+    const variable = normalizeFontTokenVariable(token.variable)
+    if (variables.has(variable)) {
+      report.fonts.tokensKept.push(variable)
+      continue
+    }
+    variables.add(variable)
+    addedTokens.push({ ...token, variable })
+    report.fonts.tokensAdded.push(variable)
+  }
+
+  // Families: the ones an added token binds to, and the ones a carried rule
+  // names literally in `font-family`. An existing family of the same name is
+  // reused; the rest are installed.
+  const declared = declaredFontFamilies(fragment)
   const families = site.settings.fonts?.items ?? []
   const fontFamilies: PlannedFontFamily[] = []
   const reusedFamilyIds = new Map<string, string>()
   for (const family of fragment.tokens.fontFamilies) {
+    const needed = addedTokens.some((t) => t.familyId === family.id) || declared.has(family.family.toLowerCase())
+    if (!needed) continue
     const match = families.find((f) => f.family.toLowerCase() === family.family.toLowerCase())
     if (match) {
       reusedFamilyIds.set(family.id, match.id)
@@ -107,17 +129,9 @@ export function planTokens(
       report.fonts.familiesAdded.push(family.family)
     }
   }
-  const existingTokens = site.settings.fonts?.tokens ?? []
-  const variables = new Set(existingTokens.map((t) => normalizeFontTokenVariable(t.variable)))
+
   let fontOrder = existingTokens.reduce((max, t) => Math.max(max, t.order), -1)
-  const fontTokens: FontToken[] = []
-  for (const token of fragment.tokens.fontTokens) {
-    const variable = normalizeFontTokenVariable(token.variable)
-    if (variables.has(variable)) {
-      report.fonts.tokensKept.push(variable)
-      continue
-    }
-    variables.add(variable)
+  const fontTokens: FontToken[] = addedTokens.map((token) => {
     fontOrder += 1
     // A family being installed keeps its fragment id here; resolve swaps in
     // the installed entry's id.
@@ -126,9 +140,8 @@ export function planTokens(
         ?? (fontFamilies.some((f) => f.fragmentFamilyId === token.familyId) ? token.familyId : undefined)
       : undefined
     const { familyId: _sourceFamilyId, ...rest } = token
-    fontTokens.push({ ...rest, id: nanoid(), variable, ...(familyId ? { familyId } : {}), order: fontOrder, createdAt: now, updatedAt: now })
-    report.fonts.tokensAdded.push(variable)
-  }
+    return { ...rest, id: nanoid(), ...(familyId ? { familyId } : {}), order: fontOrder, createdAt: now, updatedAt: now }
+  })
 
   return { colorTokens, scaleSteps, nextFramework, fontFamilies, reusedFamilyIds, fontTokens }
 }
@@ -260,4 +273,17 @@ export function findFragmentPropertiesRule(rules: Record<string, StyleRule>): St
   return Object.values(rules).find(
     (rule) => rule.kind === 'ambient' && rule.selector === ':root' && rule.origin?.source === FRAGMENT_PROPERTIES_ORIGIN,
   )
+}
+
+/** Lowercased family names the fragment's rules declare in `font-family`. */
+function declaredFontFamilies(fragment: SiteFragment): Set<string> {
+  const names = new Set<string>()
+  for (const rule of fragment.styleRules) {
+    for (const bag of [rule.styles, ...Object.values(rule.contextStyles)]) {
+      const value = bag.fontFamily
+      if (typeof value !== 'string') continue
+      for (const part of value.split(',')) names.add(part.trim().replace(/^["']|["']$/g, '').toLowerCase())
+    }
+  }
+  return names
 }
