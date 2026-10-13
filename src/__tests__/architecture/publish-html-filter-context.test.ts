@@ -2,9 +2,9 @@
  * Architecture gate: every `applyFilter('publish.html', ...)` call in the
  * server must pass a third argument (the context object).
  *
- * This ensures that plugin filter handlers for `publish.html` always receive
- * `{ siteId, pageId, slug }` in their context — without this, plugins that
- * destructure those fields would silently receive `undefined`.
+ * This gate ensures that plugin filter handlers receive a context object.
+ * Runtime rendering tests verify its `{ siteId, pageId, slug, path }` contract
+ * and the route-specific values supplied for those fields.
  */
 
 import { describe, expect, it } from 'bun:test'
