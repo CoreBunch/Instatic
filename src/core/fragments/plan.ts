@@ -50,6 +50,7 @@ import type {
   FragmentInsertPlan,
   FragmentInsertReport,
   FragmentInsertTarget,
+  FragmentPlanOptions,
 } from './planTypes'
 import type { FragmentWarning } from './warnings'
 
@@ -71,14 +72,14 @@ export class FragmentInsertError extends Error {
 
 const VC_REF = 'base.visual-component-ref'
 
-export function planFragmentInsert(target: FragmentInsertTarget, fragment: SiteFragment): FragmentInsertPlan {
+export function planFragmentInsert(target: FragmentInsertTarget, fragment: SiteFragment, options: FragmentPlanOptions = {}): FragmentInsertPlan {
   const { site } = target
   const warnings: FragmentWarning[] = []
   const report = emptyReport(fragment)
   const hostTree = resolveHostTree(target, fragment)
 
   // ── Tokens first: framework utilities resolve against the merged settings ──
-  const tokens = planTokens(site, fragment, report, warnings)
+  const tokens = planTokens(site, fragment, report, warnings, options.colorSources)
   const allocateOrder = createStyleRuleOrderAllocator(site.styleRules)
   const customProperties = planCustomProperties(site, fragment, tokens, allocateOrder, report, warnings)
 
@@ -264,7 +265,7 @@ function emptyReport(fragment: SiteFragment): FragmentInsertReport {
   return {
     kind: fragment.kind,
     nodes: 0,
-    colors: { added: [], kept: [] },
+    colors: { added: [], kept: [], filled: [] },
     fonts: { tokensAdded: [], tokensKept: [], familiesAdded: [], familiesKept: [] },
     steps: { added: [] },
     customProperties: { added: [], kept: [] },

@@ -102,13 +102,38 @@ describe('planFragmentInsert — classes and rules', () => {
 describe('planFragmentInsert — tokens', () => {
   it('adds a missing colour with its full definition and keeps the existing one', () => {
     const { plan } = planIntoTarget()
-    expect(plan.report.colors).toEqual({ added: ['accent'], kept: ['primary'] })
+    expect(plan.report.colors).toEqual({ added: ['accent'], kept: ['primary'], filled: [] })
     const accent = plan.colorTokens[0]
     expect(accent.slug).toBe('accent')
     expect(accent.lightValue).toBe('#ff8800')
     expect(accent.generateTransparent).toBe(true)
     expect(accent.generateUtilities).toEqual({ text: true, background: true, border: false, fill: false })
     expect(accent.id).not.toBe('col-accent')
+  })
+
+  it("fills a missing colour from one of the site's own when the caller asks", () => {
+    const target = makeTargetSite()
+    const primary = target.settings.framework!.colors.tokens.find((t) => t.slug === 'primary')!
+    const plan = planFragmentInsert(
+      { site: target, tables: TARGET_TABLES, document: { kind: 'page', pageId: 't-home' } },
+      fragment,
+      { colorSources: { accent: 'primary', primary: 'accent' } },
+    )
+    const accent = plan.colorTokens.find((t) => t.slug === 'accent')!
+    // The site's values, the fragment's generation flags; a colour the site
+    // already has is untouched whatever the caller asks.
+    expect(accent.lightValue).toBe(primary.lightValue)
+    expect(accent.darkValue).toBe(primary.darkValue)
+    expect(accent.generateTransparent).toBe(true)
+    expect(plan.report.colors).toEqual({ added: ['accent'], kept: ['primary'], filled: [{ slug: 'accent', from: 'primary' }] })
+
+    const unknown = planFragmentInsert(
+      { site: makeTargetSite(), tables: TARGET_TABLES, document: { kind: 'page', pageId: 't-home' } },
+      fragment,
+      { colorSources: { accent: 'no-such-colour' } },
+    )
+    expect(unknown.colorTokens.find((t) => t.slug === 'accent')!.lightValue).toBe('#ff8800')
+    expect(unknown.report.colors.filled).toEqual([])
   })
 
   it("warns about colour variants the site's colour does not generate", () => {

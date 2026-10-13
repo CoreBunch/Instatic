@@ -18,6 +18,7 @@ import {
   type FragmentInsertPlan,
   type FragmentInsertResult,
   type FragmentMedia,
+  type FragmentPlanOptions,
   type SiteFragment,
 } from '@core/fragments'
 import { isAbortError } from '@core/http'
@@ -63,13 +64,14 @@ export async function loadFragmentFile(file: File): Promise<LoadedFragment> {
 }
 
 /** Plan an insert against the open document and the site's data tables. */
-export async function planFragmentForEditor(fragment: SiteFragment): Promise<FragmentInsertPlan> {
+export async function planFragmentForEditor(fragment: SiteFragment, options: FragmentPlanOptions = {}): Promise<FragmentInsertPlan> {
   const tables = await listCmsDataTables()
   const state = useEditorStore.getState()
   if (!state.site) throw new Error('The site is still loading.')
   return planFragmentInsert(
     { site: state.site, tables, document: fragmentInsertDocument(state) ?? undefined },
     fragment,
+    options,
   )
 }
 

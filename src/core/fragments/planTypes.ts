@@ -90,13 +90,25 @@ export interface PlannedCustomProperties {
   properties: Record<string, string>
 }
 
+/** Choices the caller makes about an insert; the defaults follow the fragment. */
+export interface FragmentPlanOptions {
+  /**
+   * For a colour the fragment adds (the site lacks its slug), the slug of one
+   * of the site's own colours to take its values from instead of the
+   * fragment's: `{ 'bg-alt': 'bg-surface' }`. Ignored for colours the site
+   * already has and for source slugs the site does not have.
+   */
+  colorSources?: Record<string, string>
+}
+
 export interface FragmentInsertReport {
   kind: FragmentKind
   /** The page a page fragment adds, with its final (possibly suffixed) slug. */
   page?: { title: string; slug: string }
   /** Nodes placed in the document (component trees not counted). */
   nodes: number
-  colors: { added: string[]; kept: string[] }
+  /** `filled`: added colours whose value was taken from one of the site's own (`colorSources`). */
+  colors: { added: string[]; kept: string[]; filled: { slug: string; from: string }[] }
   fonts: { tokensAdded: string[]; tokensKept: string[]; familiesAdded: string[]; familiesKept: string[] }
   steps: { added: { family: ScaleFamily; convention: string; step: string }[] }
   customProperties: { added: string[]; kept: string[] }

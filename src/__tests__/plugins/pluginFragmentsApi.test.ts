@@ -223,6 +223,8 @@ describe('api.editor.fragments', () => {
     await expect(api().editor.fragments.insert({ fragment } as never)).rejects.toThrow('readMediaBytes must be a function')
     await expect(api().editor.fragments.insert({ fragment, readMediaBytes: () => null, placement: 'top' as never }))
       .rejects.toThrow('placement must be one of')
+    await expect(api().editor.fragments.plan({ fragment, colorSources: { 'bg-alt': 3 } as never }))
+      .rejects.toThrow('colorSources must map colour slugs to colour slugs')
   })
 
   it('a media failure resolves with its stage and leaves the document untouched', async () => {

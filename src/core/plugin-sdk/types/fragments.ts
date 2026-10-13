@@ -30,6 +30,8 @@ export interface FragmentInsertInput {
   readMediaBytes: (media: FragmentMedia) => Uint8Array | null | Promise<Uint8Array | null>
   /** Where a section or component lands. Default `after-selection`. */
   placement?: FragmentInsertPlacement
+  /** See `FragmentPlanInput.colorSources`. */
+  colorSources?: Record<string, string>
   /** Aborts at the next step boundary; never after the store write started. */
   signal?: AbortSignal
   onProgress?: (progress: FragmentInsertProgress) => void
@@ -55,6 +57,12 @@ export type FragmentInsertOutcome =
 
 export interface FragmentPlanInput {
   fragment: unknown
+  /**
+   * Fill a colour the fragment adds from one of the site's own colours:
+   * `{ 'bg-alt': 'bg-surface' }` gives the new `bg-alt` token the site's
+   * `bg-surface` values. Same option on `insert`.
+   */
+  colorSources?: Record<string, string>
 }
 
 export type FragmentPlanOutcome =

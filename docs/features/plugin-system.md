@@ -504,6 +504,7 @@ export function activate(api) {
 ```
 
 - `placement`: `after-selection` (default) puts it after the selected element, or at the end of the document when nothing is selected; `inside-selection` puts it inside the selected container, like a paste; `end` appends it to the document. A page fragment adds its own page.
+- `colorSources` (on `plan` and `insert`) fills a colour the fragment adds from one of the site's own: `{ 'bg-alt': 'bg-surface' }` gives the new `bg-alt` token the site's `bg-surface` light value, dark value and dark-mode flag, so a section's band follows the site's palette. Colours the site already has are never touched; the report lists what was filled in `colors.filled`.
 - `readMediaBytes` is called only for media the plan adds that the media library does not already hold (same filename, size and MIME type). Returning null stops the insert with `stage: 'media'` before the document changes.
 - `insert` resolves `{ ok: true, report, insertedRootIds, pageId? }` or `{ ok: false, stage, message }` with `stage` one of `unavailable` (no editable document open), `plan`, `media`, `tables`, `commit`, `cancelled`. It rejects only for a malformed input, including a fragment `parseSiteFragment` refuses; `plan` resolves `{ ok: false, message }` for that.
 - The editor shows its usual result toast; pass `silent: true` to show your own. `signal` and `onProgress` behave as in `commitFragmentPlan`.
