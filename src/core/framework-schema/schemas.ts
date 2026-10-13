@@ -116,7 +116,7 @@ const FrameworkColorVariantOptionsSchema = withFallback(
   { enabled: true, count: 4 },
 )
 
-const FrameworkColorTokenSchema = Type.Object({
+export const FrameworkColorTokenSchema = Type.Object({
   id: Type.String(),
   /**
    * Free-form category label. Empty string means "uncategorized".

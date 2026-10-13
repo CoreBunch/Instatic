@@ -239,6 +239,7 @@ The importer preserves CSS across two layers, both gated by `isEmittableProperty
 
 - [docs/features/modules.md](modules.md) — module definitions, `base.text`, `base.button`, `base.image`, `base.container`
 - [docs/features/agent.md](agent.md) — AI agent feature; `insertHtml` and `replaceNodeHtml` run through this pipeline
+- [docs/features/fragments.md](fragments.md) — inserting a section from another Instatic site with its rules, tokens and media (no HTML round-trip)
 - [docs/reference/page-tree.md](../reference/page-tree.md) — `NodeTree<PageNode>`, `createNode`, `ImportFragment` shape
 - Source-of-truth files:
   - `src/core/htmlImport/index.ts` — public barrel + API documentation

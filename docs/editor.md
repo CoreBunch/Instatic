@@ -329,7 +329,7 @@ Organization is persisted in `site.explorer` on the site shell. Folders are deco
 
 **Undo/redo** uses patch-based history: every undoable mutation captures Mutative `[next, forward, inverse]` patch pairs scoped to the `SiteDocument`. Undo applies `entry.inverse`, redo applies `entry.forward` — O(change) in both time and memory, not O(site). A 50-deep history holds kilobytes of patches instead of hundreds of megabytes of full-site clones. See [`docs/reference/editor-history.md`](reference/editor-history.md).
 
-The store is composed of **12 slices**, each created by a factory in `store/slices/`:
+The store is composed of **14 slices**, each created by a factory in `store/slices/`:
 
 | Slice                  | Owns                                                                       |
 |------------------------|----------------------------------------------------------------------------|
@@ -345,6 +345,8 @@ The store is composed of **12 slices**, each created by a factory in `store/slic
 | `sitePanelSlice`       | Dependency manifest + site runtime settings                                |
 | `clipboardSlice`       | Copy / cut / paste of layer subtrees, persisted editor-wide                |
 | `inlineEditSlice`      | `activeInlineEdit` — the canvas inline text-edit session (double-click to edit) |
+| `layoutsSlice`         | Saved layouts: save / insert / rename / delete                             |
+| `fragmentsSlice`       | Insert fragment dialog flag + `insertFragment` (one undo step) — see [`features/fragments.md`](features/fragments.md) |
 
 The combined `EditorStore` type lives at `store/types.ts` so each slice can import it without going through `store.ts` (this eliminates the historical store ↔ slice cycles).
 
@@ -648,7 +650,7 @@ The modal uses the tile-card pattern from `docs/design.md`: `--bg-surface` paren
 
 ### Saved layouts
 
-Right-clicking a layer (DOM panel or canvas) offers **Save as layout…** — page mode only, disabled with an inline reason on the page root. The action opens `LayoutNameDialog` (`src/admin/pages/site/dialogs/`), then `saveNodeAsLayout` captures the node + its whole subtree **and every referenced style rule** into a `SavedLayout` (`@core/layouts`) on `site.layouts`. The snapshot shape deliberately mirrors the clipboard payload, and both flows share one engine (`@site/store/subtreeSnapshot`): collecting a subtree + its classes, and restoring a snapshot with fresh node ids, scoped classes cloned with remapped `scope.nodeId`, framework classes re-matched by name, and regular classes reused-or-reimported. Inserting a saved layout therefore reproduces the original selection exactly, the same way paste would.
+Right-clicking a layer (DOM panel or canvas) offers **Save as layout…** — page mode only, disabled with an inline reason on the page root. The action opens `LayoutNameDialog` (`src/admin/pages/site/dialogs/`), then `saveNodeAsLayout` captures the node + its whole subtree **and every referenced style rule** into a `SavedLayout` (`@core/layouts`) on `site.layouts`. The snapshot shape deliberately mirrors the clipboard payload, and both flows share one engine (`@site/store/subtreeSnapshot`): collecting a subtree + its classes, and restoring a snapshot with fresh node ids, scoped classes cloned with remapped `scope.nodeId`, framework classes re-matched by name, and regular classes reused-or-reimported. Inserting a saved layout therefore reproduces the original selection exactly, the same way paste would. Layouts are same-site snapshots that match regular classes by id; to move a section between sites use a fragment ([`features/fragments.md`](features/fragments.md)), which matches classes, components and tokens by name and brings the rules, tokens, tables and media they need.
 
 Saved layouts persist as rows in the `layouts` system table (`savedLayoutFromRow` / `savedLayoutToCells` in `@core/data/layoutFromRow`) through the same transactional site-document save as pages and components (`PUT /admin/api/cms/site-document`, dirty-tracked per layout id with explicit deleted-layout ids). Plugins can ship layouts too — `definePack({ layouts: [{ id, name, html, css? }] })` entries are authored as clean HTML (+ CSS) and compiled to snapshot form at plugin build time (`compilePackLayout`, using the same HTML-import pipeline as "Paste HTML here…"); they install into the same table with ids namespaced `<pluginId>/<id>` and are replaced on pack re-sync (see [`docs/features/plugin-system.md`](features/plugin-system.md)). The inserter's Layouts section groups them accordingly: the user's **Saved** layouts first, then one group per plugin labelled with the plugin's display name (`composeLayoutsSection` + `pluginRuntime.getPluginName`). In the inserter, snapshot-borne hazards disable items inline instead of failing on click: a snapshot carrying a `base.outlet` follows the outlet module's own placement rules, and in VC mode a snapshot whose component refs would create a dependency cycle is disabled. Refs to since-deleted Visual Components are stripped at insertion time. Right-clicking a saved layout in the inserter offers Rename… (closes the inserter and reopens `LayoutNameDialog`) and Delete (immediate — it's an undoable site mutation — confirmed via toast).
 
@@ -667,6 +669,8 @@ Architecture:
 - **`recentStore.ts`** — recently-used hits.
 - **`keybindings.ts`** — declarative keybinding registry.
 - **`state.ts`, `stateHandlers.ts`** — palette state machine.
+
+**Insert fragment from file…** (`editor.insertFragment`, `commands/fragments.ts`) opens `InsertFragmentModal` (`src/admin/modals/InsertFragment/`), lazily mounted by `AdminCanvasEditorBody` while `insertFragmentModalOpen`; see [`features/fragments.md`](features/fragments.md).
 
 The palette is wired so that **plugin-registered commands work the same as built-in ones**. Spotlight is the editor's keyboard surface.
 
