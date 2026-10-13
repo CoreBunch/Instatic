@@ -25,6 +25,7 @@ import { resolveSiblingInsertLocation } from '@site/store/insertLocation'
 import type { EditorStore, EditorStoreSliceCreator } from '@site/store/types'
 import { reconcileFrameworkClasses } from './site/framework/reconcile'
 import { buildSiteHelpers, resolveActiveTreeTarget } from './site/helpers'
+import { isSameActiveDocument } from './uiSlice'
 
 interface FragmentsSlice {
   /** Whether the Insert fragment dialog is open. */
@@ -59,12 +60,6 @@ export function fragmentInsertDocument(
   return pageId ? { kind: 'page', pageId } : null
 }
 
-function sameDocument(a: FragmentInsertDocument | null, b: FragmentInsertDocument | undefined): boolean {
-  if (!a || !b) return false
-  if (a.kind === 'page') return b.kind === 'page' && a.pageId === b.pageId
-  return b.kind === 'visualComponent' && a.vcId === b.vcId
-}
-
 export const createFragmentsSlice: EditorStoreSliceCreator<FragmentsSlice> = (set, get) => {
   const { mutateSite, mutateActiveTreeAndSite } = buildSiteHelpers(set, get)
 
@@ -88,7 +83,7 @@ export const createFragmentsSlice: EditorStoreSliceCreator<FragmentsSlice> = (se
       }
 
       // The plan was made for one document; never drop it into another.
-      if (!sameDocument(fragmentInsertDocument(state), plan.document)) return null
+      if (!plan.document || !isSameActiveDocument(fragmentInsertDocument(state), plan.document)) return null
       const target = resolveActiveTreeTarget(state)
       if (!target) return null
       const location = resolveSiblingInsertLocation(target.tree, state.selectedNodeId ?? target.tree.rootNodeId)
