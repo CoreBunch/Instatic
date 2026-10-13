@@ -7,7 +7,6 @@ import {
   FRAGMENT_PROPERTIES_ORIGIN,
   FragmentInsertError,
   extractFragment,
-  fragmentSourceFromSite,
   planFragmentInsert,
   type FragmentInsertPlan,
   type SiteFragment,
@@ -16,29 +15,15 @@ import { generateFrameworkUtilityClasses } from '@core/framework'
 import { buildFontRoleTokens } from '@core/fonts'
 import type { PageNode } from '@core/page-tree'
 import { makeNode, makePage, makeSite } from '../fixtures'
-import {
-  SOURCE_ROWS,
-  SOURCE_TABLES,
-  TARGET_TABLES,
-  makeSourceSite,
-  makeTargetSite,
-  sourceMediaWithBytes,
-} from './fixtures'
+import { TARGET_TABLES, extractFromSource, makeSourceSite, makeTargetSite, sourceWithBytes } from './fixtures'
 
-async function sectionFragment(): Promise<SiteFragment> {
-  const source = fragmentSourceFromSite(makeSourceSite(), {
-    tables: SOURCE_TABLES,
-    rows: SOURCE_ROWS,
-    media: sourceMediaWithBytes(),
-  })
-  return (await extractFragment(source, { pageId: 'page-home', rootNodeIds: ['hero'] })).fragment
-}
+// Planning is pure, so every test can read the same extracted section.
+const { fragment } = await extractFromSource()
 
-async function planIntoTarget(): Promise<{ plan: FragmentInsertPlan; target: ReturnType<typeof makeTargetSite> }> {
-  const target = makeTargetSite()
+function planIntoTarget(target = makeTargetSite(), section: SiteFragment = fragment) {
   const plan = planFragmentInsert(
     { site: target, tables: TARGET_TABLES, document: { kind: 'page', pageId: 't-home' } },
-    await sectionFragment(),
+    section,
   )
   return { plan, target }
 }
@@ -50,16 +35,15 @@ function nodeByModule(plan: FragmentInsertPlan, moduleId: string): PageNode {
 }
 
 describe('planFragmentInsert — classes and rules', () => {
-  it('mints fresh node ids for everything', async () => {
-    const { plan } = await planIntoTarget()
-    const fragment = await sectionFragment()
+  it('mints fresh node ids for everything', () => {
+    const { plan } = planIntoTarget()
     for (const id of Object.keys(plan.nodes)) expect(fragment.nodes[id]).toBeUndefined()
     expect(plan.roots).toHaveLength(1)
     expect(plan.nodes[plan.roots[0]].parentId).toBeNull()
   })
 
-  it("reuses the site's class of the same name, even when its styles differ", async () => {
-    const { plan, target } = await planIntoTarget()
+  it("reuses the site's class of the same name, even when its styles differ", () => {
+    const { plan, target } = planIntoTarget()
     const hero = plan.nodes[plan.roots[0]]
     expect(hero.classIds).toContain('t-hero')
     expect(plan.styleRules.find((r) => r.name === 'hero')).toBeUndefined()
@@ -67,8 +51,8 @@ describe('planFragmentInsert — classes and rules', () => {
     expect(plan.report.rules.reused).toContain('hero')
   })
 
-  it('adds missing classes after the existing cascade, in the fragment order', async () => {
-    const { plan, target } = await planIntoTarget()
+  it('adds missing classes after the existing cascade, in the fragment order', () => {
+    const { plan, target } = planIntoTarget()
     const maxExisting = Math.max(...Object.values(target.styleRules).map((r) => r.order))
     const added = plan.styleRules
     for (const rule of added) {
@@ -83,22 +67,22 @@ describe('planFragmentInsert — classes and rules', () => {
     expect(plan.report.rules.added).toEqual(['hero-title'])
   })
 
-  it('keeps an ambient rule whose selector the site has, adds the others', async () => {
-    const { plan } = await planIntoTarget()
+  it('keeps an ambient rule whose selector the site has, adds the others', () => {
+    const { plan } = planIntoTarget()
     expect(plan.report.rules.ambientKept).toEqual(['.hero .hero-title:hover'])
     expect(plan.report.rules.ambientAdded).toEqual(['.page-wrap .hero-title', '@keyframes fade'])
   })
 
-  it('clones scoped module-style rules onto the new node ids', async () => {
-    const { plan } = await planIntoTarget()
+  it('clones scoped module-style rules onto the new node ids', () => {
+    const { plan } = planIntoTarget()
     const scoped = plan.styleRules.find((r) => r.scope)
     const hero = plan.nodes[plan.roots[0]]
     expect(scoped?.scope?.nodeId).toBe(hero.id)
     expect(hero.classIds).toContain(scoped!.id)
   })
 
-  it('matches framework utilities by name after the token merge', async () => {
-    const { plan, target } = await planIntoTarget()
+  it('matches framework utilities by name after the token merge', () => {
+    const { plan, target } = planIntoTarget()
     const title = nodeByModule(plan, 'base.text')
     // text-xl exists only because the insert adds the xl step to the site's scale.
     const after = generateFrameworkUtilityClasses({
@@ -116,8 +100,8 @@ describe('planFragmentInsert — classes and rules', () => {
 })
 
 describe('planFragmentInsert — tokens', () => {
-  it('adds a missing colour with its full definition and keeps the existing one', async () => {
-    const { plan } = await planIntoTarget()
+  it('adds a missing colour with its full definition and keeps the existing one', () => {
+    const { plan } = planIntoTarget()
     expect(plan.report.colors).toEqual({ added: ['accent'], kept: ['primary'] })
     const accent = plan.colorTokens[0]
     expect(accent.slug).toBe('accent')
@@ -127,14 +111,14 @@ describe('planFragmentInsert — tokens', () => {
     expect(accent.id).not.toBe('col-accent')
   })
 
-  it("warns about colour variants the site's colour does not generate", async () => {
-    const { plan } = await planIntoTarget()
+  it("warns about colour variants the site's colour does not generate", () => {
+    const { plan } = planIntoTarget()
     const subjects = plan.report.warnings.filter((w) => w.code === 'color-variant-missing').map((w) => w.subject)
     expect(subjects).toEqual(['--primary-d-2'])
   })
 
-  it("inserts missing steps into the site's own scale and keeps its base step", async () => {
-    const { plan } = await planIntoTarget()
+  it("inserts missing steps into the site's own scale and keeps its base step", () => {
+    const { plan } = planIntoTarget()
     const typography = plan.scaleSteps.find((s) => s.family === 'typography')
     const spacing = plan.scaleSteps.find((s) => s.family === 'spacing')
     expect(typography).toEqual({ family: 'typography', groupId: 't-type', steps: 'xs,s,m,l,xl', baseScaleIndex: 2 })
@@ -142,21 +126,18 @@ describe('planFragmentInsert — tokens', () => {
     expect(spacing).toEqual({ family: 'spacing', groupId: 't-space', steps: 's,m,l', baseScaleIndex: 1 })
   })
 
-  it('adds the missing font token with its family', async () => {
-    const { plan } = await planIntoTarget()
+  it('adds the missing font token with its family', () => {
+    const { plan } = planIntoTarget()
     expect(plan.report.fonts.tokensAdded).toEqual(['font-heading'])
     expect(plan.fontFamilies.map((f) => f.entry.family)).toEqual(['Inter'])
     // Bound to the family being installed until the commit knows its real id.
     expect(plan.fontTokens[0].familyId).toBe(plan.fontFamilies[0].fragmentFamilyId)
   })
 
-  it("keeps a new site's seeded font roles and installs nothing for them", async () => {
+  it("keeps a new site's seeded font roles and installs nothing for them", () => {
     const target = makeTargetSite()
     target.settings.fonts = { items: [], tokens: buildFontRoleTokens() }
-    const plan = planFragmentInsert(
-      { site: target, tables: TARGET_TABLES, document: { kind: 'page', pageId: 't-home' } },
-      await sectionFragment(),
-    )
+    const { plan } = planIntoTarget(target)
     expect(plan.report.fonts.tokensKept).toEqual(['font-heading'])
     expect(plan.fontTokens).toEqual([])
     // The fragment bound Inter to font-heading; the site's role wins, so Inter
@@ -165,14 +146,14 @@ describe('planFragmentInsert — tokens', () => {
     expect(plan.media.map((m) => m.id)).not.toContain('media-font')
   })
 
-  it('puts root custom properties the site lacks into one engine-owned :root rule', async () => {
-    const { plan, target } = await planIntoTarget()
+  it('puts root custom properties the site lacks into one engine-owned :root rule', () => {
+    const { plan, target } = planIntoTarget()
     expect(plan.report.customProperties).toEqual({ added: ['--shadow'], kept: ['--radius'] })
     expect(target.styleRules[plan.customProperties!.ruleId]).toBeUndefined()
     expect(plan.customProperties?.properties).toEqual({ '--shadow': '0 0 4px var(--primary-50)' })
   })
 
-  it('reuses the engine-owned :root rule on a second insert', async () => {
+  it('reuses the engine-owned :root rule on a second insert', () => {
     const target = makeTargetSite()
     target.styleRules['owned'] = {
       id: 'owned', name: ':root', kind: 'ambient', selector: ':root', order: 50,
@@ -180,29 +161,23 @@ describe('planFragmentInsert — tokens', () => {
       origin: { source: FRAGMENT_PROPERTIES_ORIGIN, ordinal: 0 },
       createdAt: 1, updatedAt: 1,
     }
-    const plan = planFragmentInsert(
-      { site: target, tables: TARGET_TABLES, document: { kind: 'page', pageId: 't-home' } },
-      await sectionFragment(),
-    )
+    const { plan } = planIntoTarget(target)
     expect(plan.customProperties).toEqual({ ruleId: 'owned', order: 50, properties: { '--shadow': '0 0 4px var(--primary-50)' } })
   })
 })
 
 describe('planFragmentInsert — components, tables, links, media', () => {
-  it("points instances at the site's component of the same name and skips its nested ones", async () => {
-    const { plan } = await planIntoTarget()
+  it("points instances at the site's component of the same name and skips its nested ones", () => {
+    const { plan } = planIntoTarget()
     expect(nodeByModule(plan, 'base.visual-component-ref').props.componentId).toBe('t-vc-card')
     expect(plan.report.components).toEqual({ added: [], reused: ['Card'] })
     expect(plan.components).toEqual([])
   })
 
-  it('adds components the site lacks, nested ones included, with fresh ids', async () => {
+  it('adds components the site lacks, nested ones included, with fresh ids', () => {
     const target = makeTargetSite()
     target.visualComponents = []
-    const plan = planFragmentInsert(
-      { site: target, tables: TARGET_TABLES, document: { kind: 'page', pageId: 't-home' } },
-      await sectionFragment(),
-    )
+    const { plan } = planIntoTarget(target)
     expect(plan.components.map((c) => c.name).sort()).toEqual(['Badge', 'Card'])
     const card = plan.components.find((c) => c.name === 'Card')!
     const badge = plan.components.find((c) => c.name === 'Badge')!
@@ -214,8 +189,8 @@ describe('planFragmentInsert — components, tables, links, media', () => {
     expect(plan.styleRules.find((r) => r.id === cardRoot.classIds[0])?.name).toBe('card')
   })
 
-  it('reuses a table by slug, adds its missing fields, creates the missing one', async () => {
-    const { plan } = await planIntoTarget()
+  it('reuses a table by slug, adds its missing fields, creates the missing one', () => {
+    const { plan } = planIntoTarget()
     expect(plan.report.tables).toEqual({ created: ['contact'], reused: ['projects'], fieldsAdded: ['projects.cover'], rows: 0 })
     const reuse = plan.tables.find((t) => t.action === 'reuse')!
     expect(reuse.action === 'reuse' && reuse.addFields.map((f) => f.id)).toEqual(['cover'])
@@ -226,40 +201,37 @@ describe('planFragmentInsert — components, tables, links, media', () => {
     expect(nodeByModule(plan, 'base.form').props.targetTableId).toBe('tbl-contact')
   })
 
-  it('remaps a link to a page the site has by slug, and turns the rest into #', async () => {
-    const { plan } = await planIntoTarget()
+  it('remaps a link to a page the site has by slug, and turns the rest into #', () => {
+    const { plan } = planIntoTarget()
     expect(nodeByModule(plan, 'base.link').props.href).toBe('cms:page:t-about#team')
     expect(plan.report.links).toEqual({ remapped: ['about'], unresolved: [] })
 
     const target = makeTargetSite()
     target.pages = target.pages.filter((p) => p.slug !== 'about')
-    const plan2 = planFragmentInsert(
-      { site: target, tables: TARGET_TABLES, document: { kind: 'page', pageId: 't-home' } },
-      await sectionFragment(),
-    )
+    const { plan: plan2 } = planIntoTarget(target)
     expect(nodeByModule(plan2, 'base.link').props.href).toBe('#')
     expect(plan2.report.links.unresolved).toEqual(['about'])
   })
 
-  it('plans only the media the inserted content uses', async () => {
-    const { plan } = await planIntoTarget()
+  it('plans only the media the inserted content uses', () => {
+    const { plan } = planIntoTarget()
     // cover.jpg is only used by rows of the reused projects table, which are
     // not added; bg.jpg only by the fragment's `hero`, and the site's wins.
     expect(plan.media.map((m) => m.id).sort()).toEqual(['media-font', 'media-photo'])
   })
 
-  it('repeats the outside dependencies the extractor found', async () => {
-    const { plan } = await planIntoTarget()
+  it('repeats the outside dependencies the extractor found', () => {
+    const { plan } = planIntoTarget()
     expect(plan.report.outsideDependencies).toEqual([{ selector: '.page-wrap .hero-title', classes: ['page-wrap'] }])
   })
 })
 
 describe('planFragmentInsert — empty site, pages and guards', () => {
-  it('into an empty site: everything is added', async () => {
+  it('into an empty site: everything is added', () => {
     const empty = makeSite({ pages: [makePage({ id: 'e-home' })] })
     const plan = planFragmentInsert(
       { site: empty, tables: [], document: { kind: 'page', pageId: 'e-home' } },
-      await sectionFragment(),
+      fragment,
     )
     expect(plan.report.colors.added.sort()).toEqual(['accent', 'primary'])
     expect(plan.report.rules.added).toEqual(['hero', 'hero-title', 'card', 'badge'])
@@ -273,35 +245,28 @@ describe('planFragmentInsert — empty site, pages and guards', () => {
   it('a page fragment adds its own page with a unique slug and links to itself', async () => {
     const source = makeSourceSite()
     source.pages[0].nodes.link.props.href = 'cms:page:page-home'
-    const { fragment } = await extractFragment(
-      fragmentSourceFromSite(source, { tables: SOURCE_TABLES, rows: SOURCE_ROWS, media: sourceMediaWithBytes() }),
-      { pageId: 'page-home' },
-    )
-    const plan = planFragmentInsert({ site: makeTargetSite(), tables: TARGET_TABLES }, fragment)
+    const { fragment: page } = await extractFragment(sourceWithBytes(source), { pageId: 'page-home' })
+    const plan = planFragmentInsert({ site: makeTargetSite(), tables: TARGET_TABLES }, page)
     expect(plan.page?.slug).toBe('index-2')
     expect(plan.nodes[plan.roots[0]].moduleId).toBe('base.body')
     expect(nodeByModule(plan, 'base.link').props.href).toBe(`cms:page:${plan.page!.id}`)
   })
 
-  it('refuses a second content outlet', async () => {
-    const fragment = await sectionFragment()
-    fragment.nodes.outlet = makeNode({ id: 'outlet', moduleId: 'base.outlet' })
-    fragment.nodes.hero.children.push('outlet')
+  it('refuses a second content outlet', () => {
+    const withOutlet = structuredClone(fragment)
+    withOutlet.nodes.outlet = makeNode({ id: 'outlet', moduleId: 'base.outlet' })
+    withOutlet.nodes.hero.children.push('outlet')
     const target = makeTargetSite()
     target.pages[0].nodes['t-outlet'] = makeNode({ id: 't-outlet', moduleId: 'base.outlet' })
-    expect(() => planFragmentInsert(
-      { site: target, tables: TARGET_TABLES, document: { kind: 'page', pageId: 't-home' } },
-      fragment,
-    )).toThrow(FragmentInsertError)
+    expect(() => planIntoTarget(target, withOutlet)).toThrow(FragmentInsertError)
   })
 
-  it('refuses to put a component inside itself', async () => {
-    const target = makeTargetSite()
+  it('refuses to put a component inside itself', () => {
     let caught: unknown
     try {
       planFragmentInsert(
-        { site: target, tables: TARGET_TABLES, document: { kind: 'visualComponent', vcId: 't-vc-card' } },
-        await sectionFragment(),
+        { site: makeTargetSite(), tables: TARGET_TABLES, document: { kind: 'visualComponent', vcId: 't-vc-card' } },
+        fragment,
       )
     } catch (err) {
       caught = err
@@ -310,9 +275,7 @@ describe('planFragmentInsert — empty site, pages and guards', () => {
     expect((caught as FragmentInsertError).code).toBe('component-cycle')
   })
 
-  it('needs a document for a section', async () => {
-    expect(() => planFragmentInsert({ site: makeTargetSite(), tables: [] }, structuredClone(sectionFragmentSync))).toThrow(FragmentInsertError)
+  it('needs a document for a section', () => {
+    expect(() => planFragmentInsert({ site: makeTargetSite(), tables: [] }, fragment)).toThrow(FragmentInsertError)
   })
 })
-
-const sectionFragmentSync = await sectionFragment()

@@ -19,7 +19,7 @@ import type { DataRow, DataTable } from '@core/data/schemas'
 import type { FrameworkSettings } from '@core/framework-schema'
 import { generateFrameworkUtilityClasses } from '@core/framework'
 import type { PageNode, SiteDocument, StyleRule } from '@core/page-tree'
-import type { FragmentSourceMedia } from '@core/fragments'
+import { extractFragment, fragmentSourceFromSite, type FragmentSelection, type FragmentSourceMedia } from '@core/fragments'
 import { makeNode, makePage, makeSite, makeVC, makeVCNode, makeVCTree } from '../fixtures'
 
 const T = 1_700_000_000_000
@@ -332,6 +332,16 @@ export function makeSourceSite(): SiteDocument {
   })
   site.conditions = [{ id: 'media:(hover: hover)', label: 'Hover', condition: { kind: 'media', query: '(hover: hover)' } }]
   return site
+}
+
+/** The source site as an extraction source, media bytes included. */
+export function sourceWithBytes(site: SiteDocument = makeSourceSite()) {
+  return fragmentSourceFromSite(site, { tables: SOURCE_TABLES, rows: SOURCE_ROWS, media: sourceMediaWithBytes() })
+}
+
+/** Extract from the source site; by default the `hero` section. */
+export function extractFromSource(selection: FragmentSelection = { pageId: 'page-home', rootNodeIds: ['hero'] }) {
+  return extractFragment(sourceWithBytes(), selection)
 }
 
 // ---------------------------------------------------------------------------

@@ -7,7 +7,6 @@ import {
   FragmentExtractError,
   extractFragment,
   fragmentSourceFromBundle,
-  fragmentSourceFromSite,
   readFragmentPackage,
   sha256Hex,
   writeFragmentPackage,
@@ -20,23 +19,19 @@ import {
   SOURCE_FRAMEWORK,
   SOURCE_ROWS,
   SOURCE_TABLES,
+  extractFromSource,
   frameworkClassId,
   makeSourceSite,
   mediaBytesFor,
   sourceMediaWithBytes,
 } from './fixtures'
 
-function source() {
-  return fragmentSourceFromSite(makeSourceSite(), {
-    tables: SOURCE_TABLES,
-    rows: SOURCE_ROWS,
-    media: sourceMediaWithBytes(),
-  })
-}
+// Extraction does not mutate its result, so the section tests share one.
+const section = await extractFromSource()
 
 describe('extractFragment — section closure', () => {
   it('carries the subtree, its classes and the ambient rules built on them', async () => {
-    const { fragment } = await extractFragment(source(), { pageId: 'page-home', rootNodeIds: ['hero'] })
+    const { fragment } = section
 
     expect(fragment.kind).toBe('section')
     expect(fragment.roots).toEqual(['hero'])
@@ -62,7 +57,7 @@ describe('extractFragment — section closure', () => {
   })
 
   it('carries framework utilities by name only', async () => {
-    const { fragment } = await extractFragment(source(), { pageId: 'page-home', rootNodeIds: ['hero'] })
+    const { fragment } = section
     const textXl = fragment.styleRules.find((r) => r.id === frameworkClassId(SOURCE_FRAMEWORK, 'text-xl'))
     expect(textXl?.name).toBe('text-xl')
     expect(textXl?.styles).toEqual({})
@@ -70,14 +65,14 @@ describe('extractFragment — section closure', () => {
   })
 
   it('reports rules that depend on an ancestor-only class', async () => {
-    const { fragment } = await extractFragment(source(), { pageId: 'page-home', rootNodeIds: ['hero'] })
+    const { fragment } = section
     expect(fragment.outsideDependencies).toEqual([
       { selector: '.page-wrap .hero-title', classes: ['page-wrap'] },
     ])
   })
 
   it('collects conditions, components, tokens, tables, media and links', async () => {
-    const { fragment, warnings } = await extractFragment(source(), { pageId: 'page-home', rootNodeIds: ['hero'] })
+    const { fragment, warnings } = section
 
     expect(fragment.conditions.map((c) => c.id)).toEqual(['media:(hover: hover)'])
     expect(fragment.components.map((c) => c.id).sort()).toEqual(['vc-badge', 'vc-card'])
@@ -114,20 +109,20 @@ describe('extractFragment — section closure', () => {
   })
 
   it('keeps dynamic bindings verbatim', async () => {
-    const { fragment } = await extractFragment(source(), { pageId: 'page-home', rootNodeIds: ['hero'] })
+    const { fragment } = section
     expect(fragment.nodes['loop-item'].props.text).toBe('{currentEntry.title}')
     expect(fragment.nodes['loop-item'].dynamicBindings).toEqual({ text: { source: 'currentEntry', field: 'title' } })
   })
 
   it('throws a typed error for a selection that does not resolve', async () => {
-    await expect(extractFragment(source(), { pageId: 'nope' })).rejects.toBeInstanceOf(FragmentExtractError)
-    await expect(extractFragment(source(), { pageId: 'page-home', rootNodeIds: ['ghost'] })).rejects.toBeInstanceOf(FragmentExtractError)
+    await expect(extractFromSource({ pageId: 'nope' })).rejects.toBeInstanceOf(FragmentExtractError)
+    await expect(extractFromSource({ pageId: 'page-home', rootNodeIds: ['ghost'] })).rejects.toBeInstanceOf(FragmentExtractError)
   })
 })
 
 describe('extractFragment — page and component', () => {
   it('a whole page carries its body and title/slug', async () => {
-    const { fragment } = await extractFragment(source(), { pageId: 'page-home' })
+    const { fragment } = await extractFromSource({ pageId: 'page-home' })
     expect(fragment.kind).toBe('page')
     expect(fragment.roots).toEqual(['body'])
     expect(fragment.page).toEqual({ title: 'Home', slug: 'index' })
@@ -137,7 +132,7 @@ describe('extractFragment — page and component', () => {
   })
 
   it('a component becomes one instance of it plus the component closure', async () => {
-    const { fragment } = await extractFragment(source(), { componentId: 'vc-card' })
+    const { fragment } = await extractFromSource({ componentId: 'vc-card' })
     expect(fragment.kind).toBe('component')
     expect(fragment.component).toEqual({ id: 'vc-card', name: 'Card' })
     const root = fragment.nodes[fragment.roots[0]]
@@ -197,7 +192,7 @@ describe('extractFragment — bundle source', () => {
 
   it('extracts the same closure from a site-transfer bundle', async () => {
     const fromBundle = await extractFragment(fragmentSourceFromBundle(bundle()), { pageId: 'page-home', rootNodeIds: ['hero'] })
-    const fromSite = await extractFragment(source(), { pageId: 'page-home', rootNodeIds: ['hero'] })
+    const fromSite = section
     expect(fromBundle.fragment.styleRules.map((r) => r.id)).toEqual(fromSite.fragment.styleRules.map((r) => r.id))
     expect(fromBundle.fragment.components.map((c) => c.id).sort()).toEqual(['vc-badge', 'vc-card'])
     expect(fromBundle.fragment.tables.map((t) => t.slug).sort()).toEqual(['contact', 'projects'])
@@ -207,7 +202,7 @@ describe('extractFragment — bundle source', () => {
 
 describe('fragment packages', () => {
   it('round-trips a fragment and its media through a zip', async () => {
-    const { fragment, mediaBytes } = await extractFragment(source(), { pageId: 'page-home', rootNodeIds: ['hero'] })
+    const { fragment, mediaBytes } = section
     const pkg = readFragmentPackage(writeFragmentPackage(fragment, mediaBytes))
     expect(pkg.fragment).toEqual(fragment)
     const photo = fragment.media.find((m) => m.id === 'media-photo')!
