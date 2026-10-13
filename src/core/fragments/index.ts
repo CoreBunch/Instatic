@@ -60,3 +60,11 @@ export type {
   PlannedTableCreate,
   PlannedTableReuse,
 } from './planTypes'
+
+export { resolveFragmentPlan } from './resolve'
+export type { FragmentApplyResult, FragmentResolution, ResolvedFragmentPlan } from './resolve'
+export { applyResolvedFragment } from './apply'
+export type { FragmentPlacement } from './apply'
+export type { FragmentInsertAdapter, FragmentMediaRef } from './adapter'
+export { FragmentCommitError, commitFragmentPlan } from './commit'
+export type { CommitFragmentPlanOptions, FragmentCommitErrorStage, FragmentInsertResult } from './commit'

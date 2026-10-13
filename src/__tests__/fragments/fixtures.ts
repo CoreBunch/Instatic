@@ -138,7 +138,7 @@ export function mediaBytesFor(id: string): Uint8Array {
 }
 
 export function sourceMediaWithBytes(): FragmentSourceMedia[] {
-  return SOURCE_MEDIA.map((m) => ({ ...m, readBytes: () => mediaBytesFor(m.id) }))
+  return SOURCE_MEDIA.map((m) => ({ ...m, sizeBytes: mediaBytesFor(m.id).byteLength, readBytes: () => mediaBytesFor(m.id) }))
 }
 
 export const SOURCE_TABLES: DataTable[] = [

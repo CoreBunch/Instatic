@@ -17,6 +17,7 @@ import { createSitePanelSlice } from './slices/sitePanelSlice'
 import { createClipboardSlice } from './slices/clipboardSlice'
 import { createInlineEditSlice } from './slices/inlineEditSlice'
 import { createLayoutsSlice } from './slices/layoutsSlice'
+import { createFragmentsSlice } from './slices/fragmentsSlice'
 import { initCollabBinding } from './slices/site/collabBinding'
 import { bindPluginRuntimeStoreApi } from '@core/plugins/runtime'
 import { useAdminUi } from '@admin/state/adminUi'
@@ -75,6 +76,7 @@ export const useEditorStore = create<EditorStore>()(
         ...createClipboardSlice(...args),
         ...createInlineEditSlice(...args),
         ...createLayoutsSlice(...args),
+        ...createFragmentsSlice(...args),
       }),
       { enableAutoFreeze: true },
     )
