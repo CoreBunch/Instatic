@@ -2,15 +2,16 @@ import type {
   FragmentInsertPlacement,
   FragmentInsertReport,
   FragmentMedia,
+  ThemeApplyReport,
 } from '@core/fragments'
 
-export type { FragmentInsertPlacement, FragmentInsertReport, FragmentMedia }
+export type { FragmentInsertPlacement, FragmentInsertReport, FragmentMedia, ThemeApplyReport }
 
 // ---------------------------------------------------------------------------
 // api.editor.fragments: insert a site fragment into the open document
 // ---------------------------------------------------------------------------
 
-/** One step of an insert's server work, for a progress line. */
+/** One step of an insert's (or a theme's) server work, for a progress line. */
 export interface FragmentInsertProgress {
   phase: 'media' | 'fonts' | 'tables' | 'commit'
   done: number
@@ -79,6 +80,49 @@ export interface FragmentPreviewStyles {
 
 export type FragmentPreviewStylesListener = (styles: FragmentPreviewStyles | null) => void
 
+// ---------------------------------------------------------------------------
+// api.editor.fragments: apply a site theme (design variables, no content)
+// ---------------------------------------------------------------------------
+
+export interface ThemePlanInput {
+  /** A theme object (`theme.json`, parsed). Checked with `parseSiteTheme`. */
+  theme: unknown
+}
+
+export interface ThemeApplyInput extends ThemePlanInput {
+  /**
+   * The bytes of one media item the theme needs (a custom font file the site
+   * lacks). Only called for media the media library does not already hold.
+   * Return null when the bytes are unavailable; the theme then stops before
+   * touching the site.
+   */
+  readMediaBytes: (media: FragmentMedia) => Uint8Array | null | Promise<Uint8Array | null>
+  /** Aborts at the next step boundary; never after the store write started. */
+  signal?: AbortSignal
+  /** Phases `media`, `fonts`, `commit`. */
+  onProgress?: (progress: FragmentInsertProgress) => void
+  /** Skip the editor's result toast (the plugin shows its own). */
+  silent?: boolean
+}
+
+/**
+ * Why a theme was not applied:
+ * - `unavailable`: the site editor is not open;
+ * - `plan`: the theme could not be planned against the site;
+ * - `media`: an upload failed; the site is untouched;
+ * - `commit`: the editor refused the write;
+ * - `cancelled`: `signal` aborted, or the user closed the password prompt.
+ */
+export type ThemeApplyFailureStage = 'unavailable' | 'plan' | 'media' | 'commit' | 'cancelled'
+
+export type ThemeApplyOutcome =
+  | { ok: true; report: ThemeApplyReport }
+  | { ok: false; stage: ThemeApplyFailureStage; message: string }
+
+export type ThemePlanOutcome =
+  | { ok: true; report: ThemeApplyReport }
+  | { ok: false; message: string }
+
 export interface EditorFragmentsApi {
   /**
    * Observe the destination's saved styles for a preview. Emits null when the
@@ -95,4 +139,15 @@ export interface EditorFragmentsApi {
   insert: (input: FragmentInsertInput) => Promise<FragmentInsertOutcome>
   /** Dry run against the open document: what an insert would add. Never changes anything. */
   plan: (input: FragmentPlanInput) => Promise<FragmentPlanOutcome>
+  /**
+   * Apply a theme to the site: unlike an insert, the theme's colours, font
+   * tokens, scale groups and root custom properties REPLACE the site's
+   * values (missing ones are added). Nodes, classes, pages, components and
+   * tables are never touched. One undo step reverts it. Resolves with an
+   * outcome; rejects only for a malformed `input` (including a theme
+   * `parseSiteTheme` refuses).
+   */
+  applyTheme: (input: ThemeApplyInput) => Promise<ThemeApplyOutcome>
+  /** Dry run: what applying the theme would change, with before → after values. Never changes anything. */
+  planTheme: (input: ThemePlanInput) => Promise<ThemePlanOutcome>
 }

@@ -15,8 +15,8 @@ A fragment is one versioned file that carries a section (one or more sibling sub
 - Pipeline: `extractFragment` → `parseSiteFragment` (or `readFragmentPackage`) → `planFragmentInsert` (pure) → `commitFragmentPlan` (server work, then ONE store transaction).
 - Merge rule: the site always wins. Classes, components and tables match by name/slug and the site's version is reused untouched; tokens match by name and are only added when missing; everything added gets fresh ids.
 - Editor entry point: Spotlight **Insert fragment from file…** (`editor.insertFragment`) opens `InsertFragmentModal`: pick a package, review the plan, Insert, read what was added. One Cmd+Z removes the whole insert.
-- Plugin entry point: `api.editor.fragments.insert` / `.plan` (permission `editor.fragments`), the same plan and commit as the dialog with a caller-supplied `readMediaBytes` and a `placement`. See [plugin-system.md](plugin-system.md#inserting-site-fragments-editorfragments).
-- Themes: `extractTheme` → `parseSiteTheme` (or `readThemePackage`) → `planThemeApply` (pure) → `commitThemePlan`. The one place the engine overwrites: the theme's colours, font tokens, scale groups and root custom properties replace the site's.
+- Plugin entry point: `api.editor.fragments.insert` / `.plan` (permission `editor.fragments`), the same plan and commit as the dialog with a caller-supplied `readMediaBytes` and a `placement`. See [plugin-system.md](plugin-system.md#inserting-site-fragments-and-applying-themes-editorfragments).
+- Themes: `extractTheme` → `parseSiteTheme` (or `readThemePackage`) → `planThemeApply` (pure) → `commitThemePlan`. The one place the engine overwrites: the theme's colours, font tokens, scale groups and root custom properties replace the site's. Plugin entry point: `api.editor.fragments.applyTheme` / `.planTheme`.
 - Paste, saved layouts, HTML import and site import do not use fragments and behave exactly as before.
 
 ---
@@ -55,11 +55,12 @@ src/admin/modals/InsertFragment/
 ├── InsertFragmentModal.tsx         pick → review → insert → report
 ├── FragmentReport.tsx              the review / result report
 ├── fragmentInsertFlow.ts           load file, plan against the open document, commit, toasts
-├── createFragmentInsertAdapter.ts  CMS API + editor store implementation of the adapter
-├── pluginFragmentsHost.ts          api.editor.fragments (insert / plan / watchPreviewStyles) on the same flow
+├── themeApplyFlow.ts               plan a theme against the open site, commit, toasts
+├── createFragmentInsertAdapter.ts  CMS API + editor store implementation of both adapters
+├── pluginFragmentsHost.ts          fragment insert, preview styles and theme APIs
 └── useBindPluginFragmentsApi.ts    binds that host into the plugin runtime while the editor is open
 
-src/admin/pages/site/store/slices/fragmentsSlice.ts   insertFragment + dialog flag
+src/admin/pages/site/store/slices/fragmentsSlice.ts   insertFragment, applyTheme + dialog flag
 src/admin/spotlight/commands/fragments.ts             editor.insertFragment
 ```
 
@@ -165,7 +166,7 @@ E. adapter.commit(resolved)   ONE store transaction
 
 ## Inserting from a plugin
 
-A plugin with `editor.fragments` calls `api.editor.fragments.insert({ fragment, readMediaBytes, placement?, signal?, onProgress?, silent? })` or the dry run `api.editor.fragments.plan({ fragment })`. Both run on the dialog's own functions (`planFragmentForEditor`, `commitFragmentForEditor` in `fragmentInsertFlow.ts`), so the merge rules, step-up prompt, undo step and result toast are the same. The plugin supplies the bytes (`readMediaBytes`), which is only called for media the plan adds that the library lacks. Failures resolve as `{ ok: false, stage, message }`; a fragment `parseSiteFragment` refuses rejects `insert`. Full API: [plugin-system.md](plugin-system.md#inserting-site-fragments-editorfragments).
+A plugin with `editor.fragments` calls `api.editor.fragments.insert({ fragment, readMediaBytes, placement?, signal?, onProgress?, silent? })` or the dry run `api.editor.fragments.plan({ fragment })`. Both run on the dialog's own functions (`planFragmentForEditor`, `commitFragmentForEditor` in `fragmentInsertFlow.ts`), so the merge rules, step-up prompt, undo step and result toast are the same. The plugin supplies the bytes (`readMediaBytes`), which is only called for media the plan adds that the library lacks. Failures resolve as `{ ok: false, stage, message }`; a fragment `parseSiteFragment` refuses rejects `insert`. Full API: [plugin-system.md](plugin-system.md#inserting-site-fragments-and-applying-themes-editorfragments).
 
 `watchPreviewStyles` lets a plugin preview a fragment with the destination’s current shared styles, including classes that no page uses yet. The preview receives both the stylesheet and its exact selector bindings.
 
@@ -204,7 +205,9 @@ SiteTheme = {
 
 Nodes, classes, pages, components and tables are never touched.
 
-**Commit.** `commitThemePlan(plan, adapter, { readMediaBytes, signal?, onProgress? })` runs the fragment commit's own `resolveMedia` and `installFonts` (a `ThemeApplyAdapter` is the `FragmentAssetAdapter` plus `commit`), then `resolveThemePlan` (media URLs into property values, installed family ids into tokens), then ONE `adapter.commit(resolved)`. A failed upload throws `FragmentCommitError('media')` before the commit: the site is untouched. A family that fails to install is a `font-install-failed` warning: a rebound token keeps its current family, an added one falls back to its stack. `applyResolvedTheme` writes the resolved theme into a `SiteDocument`, matching colours, tokens and groups again by slug, variable and convention; the caller regenerates framework classes when it reports `frameworkChanged`.
+**Commit.** `commitThemePlan(plan, adapter, { readMediaBytes, signal?, onProgress? })` runs the fragment commit's own `resolveMedia` and `installFonts` (a `ThemeApplyAdapter` is the `FragmentAssetAdapter` plus `commit`), then `resolveThemePlan` (media URLs into property values, installed family ids into tokens), then ONE `adapter.commit(resolved)`. A failed upload throws `FragmentCommitError('media')` before the commit: the site is untouched. A family that fails to install is a `font-install-failed` warning: a rebound token keeps its current family, an added one falls back to its stack. The editor's commit is `applyTheme(resolved)` (`fragmentsSlice.ts`): `applyResolvedTheme` inside `mutateSite`, matching colours, tokens and groups again by slug, variable and convention, plus `reconcileFrameworkClasses` when a colour or scale group changed. One undo step reverts the whole theme.
+
+Themes have no editor dialog: plugins apply them through `api.editor.fragments.applyTheme` ([plugin-system.md](plugin-system.md#inserting-site-fragments-and-applying-themes-editorfragments)).
 
 ---
 
@@ -246,5 +249,5 @@ Bun resolves the `@core/*` aliases from the repo's `tsconfig.json`. `planFragmen
 - [site-transfer.md](site-transfer.md) — the export archive `fragmentSourceFromBundleArchive` reads
 - [visual-components.md](visual-components.md), [loops.md](loops.md), [cms-native-forms.md](cms-native-forms.md), [media.md](media.md)
 - Source of truth: `src/core/fragments/schema.ts`, `src/core/fragments/plan.ts`, `src/core/fragments/commit.ts`, `src/core/fragments/themeSchema.ts`, `src/core/fragments/planTheme.ts`
-- Tests: `src/__tests__/fragments/` (`theme.test.ts` for themes), `src/__tests__/editor-store/insertFragment.test.ts`, `src/__tests__/admin/insertFragmentModal.test.tsx`, `src/__tests__/plugins/pluginFragmentsApi.test.ts`
+- Tests: `src/__tests__/fragments/` (`theme.test.ts` for themes), `src/__tests__/editor-store/insertFragment.test.ts`, `src/__tests__/editor-store/applyTheme.test.ts`, `src/__tests__/admin/insertFragmentModal.test.tsx`, `src/__tests__/plugins/pluginFragmentsApi.test.ts`
 - Gate: `src/__tests__/architecture/fragments-headless.test.ts`
