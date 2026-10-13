@@ -180,10 +180,11 @@ All mutations live in `src/core/page-tree/mutations.ts`. They take a `NodeTree<P
 - `createUniquePageSlug(title, pages)` — generates a collision-free slug from a page title (normalises + reserved-slug guard + uniqueness).
 - `uniquePageSlug(desired, pages, excludePageId?)` — the auto-suffixing (`-2`, `-3`, …) `addPage` uses; exported so planners can report the final slug before committing.
 
-`src/core/page-tree/styleRuleRegistry.ts`:
+Shared by HTML paste, site import and fragment inserts:
 
-- `createStyleRuleOrderAllocator(rules)` — cascade positions after every existing rule, O(1) per append; shared by HTML paste, site import and fragment inserts.
-- `indexStyleRulesByName(rules)` — name → id, first wins.
+- `createStyleRuleOrderAllocator(rules)` (`styleRuleRegistry.ts`) — cascade positions after every existing rule, O(1) per append.
+- `isRootScopeSelector(selector)` (`styleRule.ts`) — `:root`, `html`, `body` or a comma group of them; where root custom properties live.
+- `addMissingConditions(site, defs)` (`condition.ts`) — registers condition definitions the site lacks, by id.
 
 ---
 
