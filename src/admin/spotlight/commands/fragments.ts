@@ -7,13 +7,7 @@
  */
 
 import type { Command } from '../types'
-
-/** Mirrors `SITE_WRITE_CAPABILITIES` in editor.ts. */
-const SITE_WRITE_CAPABILITIES = [
-  'site.structure.edit',
-  'site.content.edit',
-  'site.style.edit',
-] as const
+import { SITE_WRITE_CAPABILITIES } from './editor'
 
 export function getFragmentsCommands(): Command[] {
   return [
@@ -23,7 +17,7 @@ export function getFragmentsCommands(): Command[] {
       subtitle: 'Insert a section, page or component with its styles, tokens and media',
       group: 'editor',
       iconName: 'layout-solid',
-      keywords: ['fragment', 'insert', 'section', 'import', 'package', 'zip', 'template', 'library'],
+      keywords: ['fragment', 'insert', 'section', 'import', 'package', 'zip', 'template'],
       workspaces: ['site'],
       capability: SITE_WRITE_CAPABILITIES,
       run: async (ctx) => {

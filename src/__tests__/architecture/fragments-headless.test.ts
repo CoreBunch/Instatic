@@ -1,8 +1,7 @@
 /**
  * Architecture Gate — `src/core/fragments/` is importable outside the app.
  *
- * Build scripts (the private template pipeline among them) import the
- * fragment engine by path under Bun:
+ * Build scripts import the fragment engine by path under Bun:
  *
  *   import { extractFragment } from '<instatic>/src/core/fragments'
  *

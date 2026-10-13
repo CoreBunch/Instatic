@@ -185,7 +185,7 @@ export function InsertFragmentModal() {
               <strong>{step.loaded.fileName}</strong>
               {' '}
               <span className={styles.meta}>
-                {step.plan.kind === 'page' ? 'page' : step.plan.kind === 'component' ? 'component' : 'section'}
+                {step.plan.kind}
                 {step.loaded.fragment.origin?.item ? ` · ${step.loaded.fragment.origin.item}` : ''}
               </span>
             </p>
