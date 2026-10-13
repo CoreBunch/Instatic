@@ -11,7 +11,15 @@
 import { nanoid } from 'nanoid'
 import type { StoreApi } from 'zustand'
 import type { NodeTree, PageNode, StyleRule, SiteDocument } from '@core/page-tree'
-import { addPage, createNode, reconcileSiteExplorerInPlace, reindexNodeParents } from '@core/page-tree'
+import {
+  addPage,
+  createNode,
+  createStyleRuleOrderAllocator,
+  indexStyleRulesByName,
+  reconcileSiteExplorerInPlace,
+  reindexNodeParents,
+  type StyleRuleOrderAllocator,
+} from '@core/page-tree'
 import type { VisualComponent } from '@core/visualComponents'
 import { syncAllVCRefSlotInstances, allTreeNodeMaps } from '../vcSlotReconcile'
 import { collectSlotOutletNames } from '@core/visualComponents'
@@ -24,10 +32,7 @@ import { applyLocalSitePatches, notifyCollabBlocked } from './collabBinding'
 import type { EditorStore } from '@site/store/types'
 import { reconcileFrameworkClasses } from './framework/reconcile'
 import {
-  createStyleRuleOrderAllocator,
-  indexStyleRulesByName,
   linkImportedClassNames,
-  type StyleRuleOrderAllocator,
   findReimportedStyleRule,
   indexStyleRulesByOrigin,
   registerStyleRuleOrigin,

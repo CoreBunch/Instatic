@@ -30,6 +30,8 @@ import {
   wrapNode,
   wrapNodes,
   reindexNodeParents,
+  createStyleRuleOrderAllocator,
+  indexStyleRulesByName,
 } from '@core/page-tree'
 import type { NodeTree, PageNode, SiteDocument } from '@core/page-tree'
 import { subtreeHasOutlet, treeHasOutlet } from '@core/templates'
@@ -37,12 +39,7 @@ import { wouldCreateCycle, syncSlotInstances, applySlotSyncResult } from '@core/
 import { pushToast } from '@ui/components/Toast'
 import { depthInTree, resolveActiveTreeTarget } from './helpers'
 import { pruneCanvasSelectionDraft } from '../selectionSlice'
-import {
-  createStyleRuleOrderAllocator,
-  indexStyleRulesByName,
-  linkImportedClassNames,
-  mergeImportedStyleRules,
-} from './importLinking'
+import { linkImportedClassNames, mergeImportedStyleRules } from './importLinking'
 import type { SiteSlice, SiteSliceHelpers } from './types'
 
 type NodeActions = Pick<
