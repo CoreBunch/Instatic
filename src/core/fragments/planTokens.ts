@@ -46,8 +46,6 @@ export interface TokenPlan {
   /** The site's framework settings as they will be after the insert. */
   nextFramework: FrameworkSettings | undefined
   fontFamilies: PlannedFontFamily[]
-  /** fragment family id → site family id, for families the site already has. */
-  reusedFamilyIds: Map<string, string>
   fontTokens: FontToken[]
 }
 
@@ -116,6 +114,7 @@ export function planTokens(
   const declared = declaredFontFamilies(fragment.styleRules)
   const families = site.settings.fonts?.items ?? []
   const fontFamilies: PlannedFontFamily[] = []
+  // Fragment family id → the site's family of the same name.
   const reusedFamilyIds = new Map<string, string>()
   for (const family of fragment.tokens.fontFamilies) {
     const needed = addedTokens.some((t) => t.familyId === family.id) || declared.has(family.family.toLowerCase())
@@ -143,7 +142,7 @@ export function planTokens(
     return { ...rest, id: nanoid(), ...(familyId ? { familyId } : {}), order: fontOrder, createdAt: now, updatedAt: now }
   })
 
-  return { colorTokens, scaleSteps, nextFramework, fontFamilies, reusedFamilyIds, fontTokens }
+  return { colorTokens, scaleSteps, nextFramework, fontFamilies, fontTokens }
 }
 
 function addSteps(

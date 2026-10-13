@@ -23,7 +23,6 @@ export type FragmentWarningCode =
   | 'component-ref-dropped'
   | 'relation-field-dropped'
   | 'field-type-mismatch'
-  | 'link-unresolved'
   // commit
   | 'font-install-failed'
 
