@@ -5,8 +5,8 @@
 
 import type { PageNode, StyleRule } from '@core/page-tree'
 import type { FontEntry } from '@core/fonts'
-import type { DataField, DataRow, DataTable } from '@core/data/schemas'
-import { createPathFinder, forEachString, nodeContent, ruleContent } from './references'
+import type { DataRow, DataTable } from '@core/data/schemas'
+import { createPathFinder, forEachString, mediaIdsInCells, nodeContent, ruleContent } from './references'
 import type { FragmentMedia, FragmentTable, FragmentTableRow } from './schema'
 import type { FragmentSource, FragmentSourceMedia } from './source'
 import type { FragmentWarning } from './warnings'
@@ -98,26 +98,6 @@ function toFragmentTable(table: DataTable, rows: FragmentTableRow[] | undefined)
     primaryFieldId: table.primaryFieldId,
     fields: structuredClone(table.fields),
     ...(rows ? { rows } : {}),
-  }
-}
-
-/** Media ids a row's media cells hold (repeater items included). */
-function mediaIdsInCells(fields: DataField[], cells: Record<string, unknown>, into: Set<string>): void {
-  for (const field of fields) {
-    const value = cells[field.id]
-    if (field.type === 'media') {
-      if (typeof value === 'string') into.add(value)
-      else if (Array.isArray(value)) for (const id of value) if (typeof id === 'string') into.add(id)
-    } else if (field.type === 'repeater' && Array.isArray(value)) {
-      for (const item of value) {
-        if (item && typeof item === 'object' && 'cells' in item) {
-          const itemCells = (item as { cells: unknown }).cells
-          if (itemCells && typeof itemCells === 'object') {
-            mediaIdsInCells(field.fields, itemCells as Record<string, unknown>, into)
-          }
-        }
-      }
-    }
   }
 }
 

@@ -266,3 +266,40 @@ export function prependStep(steps: string): string {
   const first = arr[0] ?? 'm'
   return [nextSizeBefore(first), ...arr].join(',')
 }
+
+/**
+ * Insert `step` into a comma-separated step list at its canonical position on
+ * the t-shirt-size ring (`3xs,2xs,xs,s,m,l,xl,2xl,…`), keeping the step that
+ * `baseScaleIndex` points at as the base: inserting before it shifts the index
+ * by one so the scale's base size, ratio and every existing step's value stay
+ * exactly as they were.
+ *
+ * Returns the list unchanged when it already holds `step`, and `null` when the
+ * position is undefined — `step` is not on the ring, or the list holds a
+ * custom step the ring cannot order against.
+ */
+export function insertScaleStep(
+  steps: string,
+  baseScaleIndex: number,
+  step: string,
+): { steps: string; baseScaleIndex: number } | null {
+  const labels = steps.split(',').map((label) => label.trim()).filter(Boolean)
+  if (labels.includes(step)) return { steps: labels.join(','), baseScaleIndex }
+  const rank = SIZE_RING.indexOf(step)
+  if (rank === -1) return null
+
+  let insertAt = labels.length
+  for (let index = 0; index < labels.length; index += 1) {
+    const labelRank = SIZE_RING.indexOf(labels[index])
+    if (labelRank === -1) return null
+    if (labelRank > rank) {
+      insertAt = index
+      break
+    }
+  }
+  labels.splice(insertAt, 0, step)
+  return {
+    steps: labels.join(','),
+    baseScaleIndex: insertAt <= baseScaleIndex ? baseScaleIndex + 1 : baseScaleIndex,
+  }
+}

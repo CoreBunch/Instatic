@@ -11,6 +11,7 @@
  */
 
 import type { PageNode, StyleRule } from '@core/page-tree'
+import type { DataField } from '@core/data/schemas'
 
 /** Visit every string inside a JSON-like value. */
 export function forEachString(value: unknown, visit: (text: string) => void): void {
@@ -153,5 +154,25 @@ export function createPathFinder(paths: Iterable<string>): (text: string, into: 
   const pattern = new RegExp(sorted.map(escapeRegExp).join('|'), 'g')
   return (text, into) => {
     for (const match of text.matchAll(pattern)) into.add(match[0])
+  }
+}
+
+/** Media ids a row's media cells hold (repeater items included). */
+export function mediaIdsInCells(fields: DataField[], cells: Record<string, unknown>, into: Set<string>): void {
+  for (const field of fields) {
+    const value = cells[field.id]
+    if (field.type === 'media') {
+      if (typeof value === 'string') into.add(value)
+      else if (Array.isArray(value)) for (const id of value) if (typeof id === 'string') into.add(id)
+    } else if (field.type === 'repeater' && Array.isArray(value)) {
+      for (const item of value) {
+        if (item && typeof item === 'object' && 'cells' in item) {
+          const itemCells = (item as { cells: unknown }).cells
+          if (itemCells && typeof itemCells === 'object') {
+            mediaIdsInCells(field.fields, itemCells as Record<string, unknown>, into)
+          }
+        }
+      }
+    }
   }
 }
