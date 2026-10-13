@@ -214,6 +214,13 @@ function createPublishFakeDb() {
         .filter(Boolean)
       return { rows, rowCount: rows.length }
     }
+    // prunePublishHistory — covered against real SQLite in publishHistoryPrune.test.ts
+    if (sql.startsWith('delete from published_runtime_assets where data_row_version_id in')) {
+      return { rows: [], rowCount: 0 }
+    }
+    if (sql.startsWith('select site_snapshots.id from site_snapshots')) {
+      return { rows: [], rowCount: 0 }
+    }
     throw new Error(`Unhandled SQL: ${rawSql}`)
   })
 

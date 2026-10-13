@@ -453,6 +453,9 @@ publishDraftSite (server/publish/publishSite.ts)
     │     data_row_versions row references it via site_snapshot_id + carries
     │     its runtime_assets_json
     ├─→ flip data_rows.status = 'published', set active_version_id
+    ├─→ same transaction: prunePublishHistory — drop snapshots older than
+    │     the newest 20 (unless an active version still points at one) and
+    │     the runtime scripts of inactive versions outside them
     │
     ├─→ Layer A bake — the 404 page (when a notFound template exists):
     │     renderPublishedNotFound (notFound template wrapped in the everywhere

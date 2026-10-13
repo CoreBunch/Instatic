@@ -16,6 +16,7 @@
  * Public API:
  *   getDraftSiteDocument      — assemble the draft SiteDocument from rows
  *   persistSitePublish        — transactional write of one publish
+ *   prunePublishHistory       — drop old snapshots + inactive runtime scripts
  *   getPublishedPageBySlug    — look up a published page snapshot by slug
  *   getPublishedPageSnapshotById — same, by page row id
  *   getLatestPublishedSiteSnapshot — first published page snapshot (for 404s etc.)
@@ -278,7 +279,72 @@ export async function persistSitePublish(
         await tx`delete from data_row_versions where id = ${page.versionId}`
       }
     }
+
+    await prunePublishHistory(tx)
   })
+}
+
+/**
+ * How many full publishes keep their site document and runtime scripts.
+ * Older ones are pruned by `prunePublishHistory`.
+ */
+export const PUBLISH_HISTORY_KEEP = 20
+
+/**
+ * Bound the storage cost of repeated publishing. Every full publish stores a
+ * new site document plus a fresh copy of every page's runtime scripts, so the
+ * database grows by the whole site on each publish and never shrinks.
+ *
+ * Kept: the newest `keep` site snapshots, every snapshot an active page
+ * version still points at, and the runtime scripts of all versions in those
+ * snapshots. The recent inactive ones stay so HTML already cached by a
+ * browser or proxy can still load the scripts it names.
+ *
+ * Pruned: older snapshots and the runtime scripts of versions that are no
+ * longer active. The `data_row_versions` rows themselves stay, so version
+ * history still lists them; their `site_snapshot_id` is cleared first, which
+ * is what the `on delete set null` FK would do if SQLite enforced it here.
+ */
+export async function prunePublishHistory(
+  db: DbClient,
+  keep: number = PUBLISH_HISTORY_KEEP,
+): Promise<void> {
+  const limit = Math.max(1, Math.floor(keep))
+  await db`
+    delete from published_runtime_assets
+    where data_row_version_id in (
+      select data_row_versions.id
+      from data_row_versions
+      where not exists (
+          select 1 from data_rows
+          where data_rows.active_version_id = data_row_versions.id
+        )
+        and (
+          data_row_versions.site_snapshot_id is null
+          or data_row_versions.site_snapshot_id not in (
+            select id from site_snapshots order by created_at desc, id desc limit ${limit}
+          )
+        )
+    )
+  `
+
+  const { rows: stale } = await db<{ id: string }>`
+    select site_snapshots.id
+    from site_snapshots
+    where site_snapshots.id not in (
+        select id from site_snapshots order by created_at desc, id desc limit ${limit}
+      )
+      and not exists (
+        select 1
+        from data_rows
+        join data_row_versions on data_row_versions.id = data_rows.active_version_id
+        where data_row_versions.site_snapshot_id = site_snapshots.id
+      )
+  `
+  for (const { id } of stale) {
+    await db`update data_row_versions set site_snapshot_id = null where site_snapshot_id = ${id}`
+    await db`delete from site_snapshots where id = ${id}`
+  }
 }
 
 export async function getPublishedPageBySlug(
