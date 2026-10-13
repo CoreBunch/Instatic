@@ -8,6 +8,7 @@ import {
   FONT_ROLES,
   buildFontRoleTokens,
   generateFontTokenVariablesCss,
+  isUntouchedFontRoleToken,
   mergeFontRoleTokens,
   parseSiteFontsSettings,
   suggestFontTokenName,
@@ -77,6 +78,15 @@ describe('font role tokens', () => {
     const complete: SiteFontsSettings = { items: [], tokens: buildFontRoleTokens() }
     expect(mergeFontRoleTokens(complete)).toBe(complete)
     expect(variables(mergeFontRoleTokens(undefined))).toEqual(ROLE_VARIABLES)
+  })
+
+  it('recognises an untouched seed and rejects any edit to it', () => {
+    const [heading] = buildFontRoleTokens()
+    expect(isUntouchedFontRoleToken(heading)).toBe(true)
+    expect(isUntouchedFontRoleToken({ ...heading, familyId: 'fam-1' })).toBe(false)
+    expect(isUntouchedFontRoleToken({ ...heading, fallback: 'serif' })).toBe(false)
+    expect(isUntouchedFontRoleToken({ ...heading, name: 'Display' })).toBe(false)
+    expect(isUntouchedFontRoleToken({ ...heading, variable: 'font-display' })).toBe(false)
   })
 
   it('suggests the first missing role name for a new token', () => {

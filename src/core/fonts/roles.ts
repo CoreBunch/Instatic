@@ -13,12 +13,13 @@
  *
  * Seeded by `createNewSiteSettings` (`@core/page-tree`) for brand-new sites and
  * added by the Core Framework preset (`applyFrameworkPreset`) to sites that
- * lack them. Existing sites are never migrated.
+ * lack them. Existing sites are never migrated. Site import overwrites a role
+ * token that is still an untouched seed (`isUntouchedFontRoleToken`).
  */
 
 import { nanoid } from 'nanoid'
 import type { FontToken, SiteFontsSettings } from './schemas'
-import { normalizeFontTokenVariable } from './tokenStrings'
+import { normalizeFontTokenVariable, sanitizeFontFallbackStack } from './tokenStrings'
 
 /** System sans-serif stack, stored in its sanitized (unquoted) form. */
 const SYSTEM_SANS_STACK = 'system-ui, -apple-system, Segoe UI, Roboto, sans-serif'
@@ -72,6 +73,22 @@ export function mergeFontRoleTokens(fonts: SiteFontsSettings | undefined): SiteF
     items: fonts?.items ?? [],
     tokens: [...existing, ...missing.map((role) => roleToken(role, order++, now))],
   }
+}
+
+/**
+ * True when `token` is a role token exactly as it was seeded: a `FONT_ROLES`
+ * variable with the seeded name and fallback stack and no bound family. A role
+ * token the user has bound, renamed or re-stacked is no longer a seed. Site
+ * import overwrites an untouched seed instead of renaming the imported token.
+ */
+export function isUntouchedFontRoleToken(
+  token: Pick<FontToken, 'name' | 'variable' | 'familyId' | 'fallback'>,
+): boolean {
+  if (token.familyId) return false
+  const variable = normalizeFontTokenVariable(token.variable)
+  const role = FONT_ROLES.find((r) => r.variable === variable)
+  if (!role) return false
+  return token.name === role.name && sanitizeFontFallbackStack(token.fallback) === role.fallback
 }
 
 /**
