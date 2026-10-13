@@ -145,7 +145,7 @@ The Colors / Framework Scale / Typography panels write to these sub-trees. All v
 
 `fonts` is the installed font library and font-token contract (`src/core/fonts/`). `fonts.items` is the installed self-hosted font asset library (Google downloads and custom media-backed font files). `fonts.tokens` is the editable builder-facing contract: each token owns a stable CSS variable such as `font-heading`, an optional assigned `FontEntry` id, and a fallback stack. The publisher emits those as `:root { --font-heading: "Family", sans-serif; }`; editor controls should prefer `font-family: var(--font-heading)` over raw family names when the design should follow future font swaps.
 
-**Font role tokens** (`src/core/fonts/roles.ts`). Three role variables are the shared contract that templates, copied sections and the AI agent write against, so content made for one site renders in another:
+**Font role tokens** (`src/core/fonts/roles.ts`). Three role variables are the shared contract that imported pages, copied sections and the AI agent write against, so content made for one site renders in another:
 
 | Token | Name | Use | Seeded fallback |
 |-------|------|-----|-----------------|

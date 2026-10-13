@@ -5,8 +5,8 @@
  *   • `font-body`    ("Body"): running text
  *   • `font-mono`    ("Mono"): code, data and mono labels
  *
- * Content written against these variables (templates, copied sections, AI
- * output) renders in any site, because every site that has them binds the
+ * Content written against these variables (imported pages, copied sections,
+ * AI output) renders in any site, because every site that has them binds the
  * same names. They are seeded fallback-only (no `familyId`) with system
  * stacks, so a new site renders without downloading anything; the user binds
  * real families later in the Fonts panel.
