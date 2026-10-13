@@ -604,6 +604,15 @@ frames before any decode work, and every awareness frame is decoded and
 checked against the session — a state claiming another user's identity
 (`state.user.id !== session user`) is dropped, so presence can't be spoofed.
 
+Stored snapshots can exceed a socket's outbound buffer. The server sends
+these through `collabFramePackets` in 256 KiB packets, waiting for drain
+between buffered direct sends. Broadcast updates use the same packet format.
+The client reconstructs each complete frame before applying it to Yjs;
+interleaved transfers are bounded to four documents and 64 MiB total and
+discarded on disconnect. Incoming write and awareness caps remain unchanged.
+The shared framing code lives in `src/core/collab/frameTransfer.ts`;
+real-socket coverage lives in `collabLargeDelivery.test.ts`.
+
 **Client transport** (`src/admin/pages/site/collab/collabProvider.ts`): one
 socket, every bound doc multiplexed; local transactions send updates the
 moment they commit (no flush window to lose on unload); reconnect uses
