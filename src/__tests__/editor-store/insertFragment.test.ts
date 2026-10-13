@@ -72,6 +72,15 @@ describe('insertFragment', () => {
     expect(image.props.src).toBe('/uploads/copied-photo.jpg')
   })
 
+  it("never duplicates the seeded font role tokens of a new site", async () => {
+    useEditorStore.getState().createSite('Target')
+    const before = useEditorStore.getState().site!.settings.fonts?.tokens?.map((t) => t.variable) ?? []
+    expect(before).toContain('font-heading')
+    useEditorStore.getState().insertFragment(resolvedPlanForStore(await sectionFragment()))
+    const after = useEditorStore.getState().site!.settings.fonts?.tokens?.map((t) => t.variable) ?? []
+    expect(after).toEqual(before)
+  })
+
   it('one undo removes the whole insert', async () => {
     const site = useEditorStore.getState().createSite('Target')
     const before = useEditorStore.getState().site!
