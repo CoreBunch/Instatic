@@ -482,15 +482,22 @@ function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value))
 }
 
+// Theme scopes. The page is in the default theme unless `<html>` carries
+// `theme-alt`. Nothing adds a class for the default case, so a section marked
+// `theme-inverted` (or `theme-always-alt`) takes the alt values on published
+// pages and in canvas frames alike, neither of which puts a theme class on
+// `<html>`. Keying the default branch on `:not(.theme-alt)` rather than a
+// `theme-default` root class also keeps a runtime toggle to one class: adding
+// `theme-alt` flips the page, and every inverted section back to default.
 const DEFAULT_THEME_OVERRIDE_SELECTOR = [
   ':root.theme-alt .theme-inverted',
   ':root.theme-alt .theme-always-default',
-  ':root.theme-default .theme-inverted .theme-always-default',
+  ':root:not(.theme-alt) .theme-inverted .theme-always-default',
 ].join(',\n')
 
 const ALT_THEME_SELECTOR = [
   ':root.theme-alt',
-  ':root.theme-default .theme-inverted',
-  ':root.theme-default .theme-always-alt',
+  ':root:not(.theme-alt) .theme-inverted',
+  ':root:not(.theme-alt) .theme-always-alt',
   ':root.theme-alt .theme-inverted .theme-always-alt',
 ].join(',\n')
