@@ -138,7 +138,9 @@ export function OnboardingPanel({ facts, onDismiss, onFrameworkImported }: Onboa
       const loaded = await cmsAdapter.loadSite('default')
       if (!loaded) throw new Error('Site is not ready yet — finish setup first.')
       const { site, shellSeq } = loaded
-      site.settings.framework = applyFrameworkPreset(site.settings.framework, target)
+      const next = applyFrameworkPreset(site.settings, target)
+      site.settings.framework = next.framework
+      site.settings.fonts = next.fonts
       // Regenerate / prune the generated `framework:` utility classes (and strip
       // stale classIds off nodes) to match the new settings — the same reconcile
       // the in-editor store runs. Without it, removing the framework here would

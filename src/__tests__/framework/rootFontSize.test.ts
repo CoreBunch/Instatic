@@ -53,7 +53,7 @@ function canvasCss(framework: FrameworkSettings) {
 
 describe('framework root font size', () => {
   it('a new Core framework sets html font-size to 62.5% in the published CSS and the canvas', () => {
-    const framework = applyFrameworkPreset(undefined, 'full')!
+    const framework = applyFrameworkPreset({}, 'full').framework!
     expect(framework.preferences?.emitRootFontSize).toBe(true)
 
     const published = buildSiteFrameworkCss(siteWithFramework(framework))
@@ -66,7 +66,7 @@ describe('framework root font size', () => {
   })
 
   it('the variables-only preset opts in too', () => {
-    const framework = applyFrameworkPreset(undefined, 'variables')!
+    const framework = applyFrameworkPreset({}, 'variables').framework!
     expect(generateFrameworkRootCss(framework)).toStartWith(ROOT_62_5)
   })
 
@@ -90,7 +90,7 @@ describe('framework root font size', () => {
   it('re-applying the preset keeps an existing site off', () => {
     const withLegacyPreferences = buildCoreFrameworkSettings({ includeUtilities: false })
     withLegacyPreferences.preferences = { ...LEGACY_PREFERENCES }
-    const reapplied = applyFrameworkPreset(withLegacyPreferences, 'full')!
+    const reapplied = applyFrameworkPreset({ framework: withLegacyPreferences }, 'full').framework!
     expect(reapplied.preferences?.emitRootFontSize).toBeUndefined()
     expect(generateFrameworkRootCss(reapplied)).not.toMatch(/^html\s*\{/m)
 

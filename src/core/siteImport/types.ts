@@ -243,7 +243,7 @@ export interface ImportColorToken {
 
 /**
  * A root-scope `--font-*` custom property pulled from imported CSS. Committed
- * into `site.settings.fonts.tokens` so `font-family: var(--font-primary)` keeps
+ * into `site.settings.fonts.tokens` so `font-family: var(--font-body)` keeps
  * resolving through the builder's editable font-token model.
  */
 export interface ImportFontToken {
@@ -549,7 +549,7 @@ export interface CrossSheetClassConflict {
 }
 
 /**
- * A design-token CSS custom property (`--bg`, `--font-primary`) extracted from
+ * A design-token CSS custom property (`--bg`, `--font-body`) extracted from
  * the import that collides with an existing token in the site.
  *
  * Both colour tokens (keyed by `--<slug>`) and font tokens (keyed by
@@ -567,7 +567,7 @@ export interface TokenConflict {
   kind: 'color' | 'font'
   /**
    * The CSS custom-property name without the leading `--` the importer wanted
-   * (e.g. `bg` for `--bg`, `font-primary` for `--font-primary`).
+   * (e.g. `bg` for `--bg`, `font-body` for `--font-body`).
    */
   desiredVariable: string
   /** ID of the existing token (framework colour / font token) that owns the name. */
