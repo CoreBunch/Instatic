@@ -14,7 +14,7 @@
  *
  *   Bug B — `makeSite()` helper missing `classes: {}` default
  *     Projects created via `makeSite()` have `site.styleRules = undefined` unless
- *     overridden.  In `collectClassCSS(site)`, if any node has classIds AND
+ *     overridden.  In `collectClassCSS(site, page)`, if any node has classIds AND
  *     `site.styleRules` is undefined, the `site.styleRules[id]` read throws:
  *       TypeError: Cannot read properties of undefined (reading '<classId>')
  *     This turns any legitimate "preview with classes" scenario into an unhandled
@@ -222,8 +222,8 @@ describe('Gate 3 — collectClassCSS is defensive against missing site.styleRule
       createdAt: 0, updatedAt: 0,
     }
     // Should NOT throw — should return '' gracefully
-    expect(() => collectClassCSS(brokenSite)).not.toThrow()
-    expect(collectClassCSS(brokenSite)).toBe('')
+    expect(() => collectClassCSS(brokenSite, page)).not.toThrow()
+    expect(collectClassCSS(brokenSite, page)).toBe('')
   })
 })
 

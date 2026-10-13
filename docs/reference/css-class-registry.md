@@ -14,7 +14,7 @@ Three forms of rules:
 
 - Stored on `SiteShell.styleRules: Record<string, StyleRule>`.
 - Source-of-truth schema: `StyleRuleSchema` in `src/core/page-tree/styleRule.ts`.
-- Compiled to CSS by `classCss.ts` in the publisher; collected via `collectClassCSS(site)`.
+- Compiled to CSS by `classCss.ts` in the publisher; collected via `collectClassCSS(site, page, options)`.
 - Each node references class-kind rules by id (`node.classIds: string[]`). Later ids in the array win in cascade order.
 - Selector UI surfaces display the rule's CSS selector (`styleRuleSelector(rule)`): canonical classes appear as `.<name>`, imported class rules retain their verbatim selector, and ambient rules also use their verbatim `selector` text.
 - Rule **name** is the class token for class-kind rules. For ambient rules, `selector` is the source of truth; user edits keep `name` aligned to the selector so old class-name-only UI paths cannot add an extra dot.
@@ -176,7 +176,9 @@ All usage logic lives in `src/admin/pages/site/panels/selectorUsage.ts`.
 
 ## Compiling rules to CSS
 
-`collectClassCSS(site)` walks the style rule registry and emits CSS for each entry. Rules are sorted by `order` ascending so later, more-specific overrides appear later in source and win on equal specificity.
+`collectClassCSS(site, page, options)` emits the effective page's reachable class rules. It walks from the page root, materializes referenced Visual Components and their slots, and includes modifiers named by the exact emitted runtime manifest and local imported helpers. Other pages, unused components, orphan/hidden subtrees and scripts that did not emit do not contribute.
+
+The canvas shares `collectPageStyleRuleIds` for its active page or VC virtual page, supplying only scripts selected for canvas execution while **Run scripts** is on. `collectUsedStyleRuleIds(site)` remains the editor's all-site inventory collector. Ambient CSS, raw blocks and functional-pseudo arguments stay conservative; known positive class dependencies outside functions can prune unrelated selectors. Selected rules are sorted by `order` ascending so later overrides win on equal specificity.
 
 ```text
 For each rule in registry (sorted by order):

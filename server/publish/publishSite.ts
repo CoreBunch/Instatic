@@ -219,9 +219,9 @@ async function publishDraftSiteLocked(
 
       // Every distinct static asset referenced by ANY baked artefact.
       // Content-hashed filenames dedupe identical bytes across pages to a
-      // single write. The page-invariant CSS trio (reset/framework/style) is
+      // single write. The page-invariant CSS pair (reset/framework) is
       // computed ONCE per publish via the version-keyed memo — the all-pages
-      // walk no longer repeats per page. Only `userStyles` is page-scoped.
+      // walk no longer repeats per page. Both authored layers are page-scoped.
       const assetsByPath = new Map<string, Uint8Array>()
       const encoder = new TextEncoder()
       const collectCssFiles = (cssBundle: SiteCssBundle): void => {
@@ -235,7 +235,7 @@ async function publishDraftSiteLocked(
         const page = snapshot.site.pages.find((p) => p.id === snapshot.pageRowId)
         if (!page || isTemplatePage(page)) continue // template pages only ever wrap; never baked at their own slug
         const mediaAssets = await prefetchMediaAssets(page, snapshot.site, registry, db)
-        collectCssFiles(buildPublishedSiteCssBundle(snapshot.site, registry, page, nextPublishVersion, { mediaAssets }))
+        collectCssFiles(buildPublishedSiteCssBundle(snapshot.site, registry, page, nextPublishVersion, { mediaAssets, runtimeAssets: snapshot.runtimeAssets }))
       }
       for (const asset of runtimeAssetFiles) {
         if (!assetsByPath.has(asset.publicPath)) assetsByPath.set(asset.publicPath, asset.bytes)

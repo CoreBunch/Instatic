@@ -60,11 +60,13 @@ export {
 export type { ResponsiveCssOptions } from './responsiveBackground'
 
 export { collectClassCSS, CssCollector, sanitizeModuleCSS } from './cssCollector'
+export type { ClassCssOptions } from './cssCollector'
+export { collectPageStyleRuleIds } from './pageStyleUsage'
+export type { StyleRuleScriptSource } from './pageStyleUsage'
 export {
   collectUsedStyleRuleIds,
   treeShakeStyleRules,
   treeShakeStyleRulesBySignature,
-  usedStyleRuleIdSignature,
 } from './styleRuleTreeShake'
 
 export { buildSiteFrameworkCss, generateFrameworkCss } from './frameworkCss'

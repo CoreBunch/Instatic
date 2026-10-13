@@ -202,24 +202,34 @@ class registry, which wins over framework, which wins over reset.
 reset-<hash>.css       = PUBLISHER_RESET_CSS                       ← reset.ts (cross-browser baseline)
 framework-<hash>.css   = buildSiteFrameworkCss(site)               ← frameworkCss.ts (spacing, typography, …)
                        + collectModuleCSS(via CssCollector)        ← deduped per-moduleId CSS
-style-<hash>.css       = collectClassCSS(site)                     ← user-defined StyleRule entries, incl. raw @keyframes
+style-<hash>.css       = collectClassCSS(site, page, options)      ← page-reachable StyleRules, incl. raw @keyframes
 userStyles-<hash>.css  = collectUserStylesheetCss(site, page)      ← author stylesheets, scoped to this page
 ```
 
-`styleRuleTreeShake.ts` computes the site-wide used class-id set once across
-page and Visual Component trees, plus every class rule whose name appears
-literally in a `type: 'script'` site file (a modifier a script toggles is never
-assigned to a node; see `docs/features/site-import.md`). A class rule emits
-only when its id is used and every known class dependency in its preserved
-selector is used. Ambient
-selector fragments emit when at least one selector-list alternative has all of
-its known class dependencies in use; class-free selectors and supported raw
-blocks stay conservative. The editor canvas calls the same selector and
-memoizes the filtered registry by immutable registry identity + used-id
-signature, so large imported utility catalogs do not become large iframe
-stylesheets. A full precompiled Tailwind catalog can therefore remain
-picker-addressable while the `style` bundle contains only selected utilities
-plus global preflight.
+`pageStyleUsage.ts` shares usage analysis between publisher and canvas. It walks
+the effective page from its root, including referenced
+Visual Components, nested references, filled/default slots and component-level
+class ids. Component cycles are guarded. Other pages, unused definitions and
+orphan/hidden subtrees do not contribute. Runtime modifiers come from scripts in
+the exact manifest this render emits, plus their local module imports. The
+manifest already reflects enable flags, page/template scopes and build success;
+the native tag emitter's self-hosted URL filter is shared with the collector.
+
+`styleRuleTreeShake.ts` then selects rules by those ids and known positive class
+dependencies outside functional pseudos. Arguments inside `:not()`, `:is()`,
+`:where()` and other functions stay conservative because they are not simple
+conjunctive requirements. Ambient selector lists emit when one alternative can
+match; class-free selectors and raw blocks are kept. The editor retains its
+all-site `collectUsedStyleRuleIds` for inventory and usage views.
+
+`ClassStyleInjector` selects only the active canvas page or VC virtual page,
+including the same reachable references and slots. With **Run scripts** enabled,
+it supplies `collectRuntimeScripts(target: 'canvas')` to the shared usage walker,
+honoring enable flags, `runInCanvas` and page/template scope. It does not fabricate
+a published manifest. A selector memo keys the relevant immutable page,
+components, registry, files/runtime and script-toggle inputs; all breakpoint
+frames reuse its primitive usage signature and filtered registry. Newly assigned
+classes, switched documents, script edits and previews update immediately.
 
 Media-library background images are optimized in the same publish pass as
 `<img srcset>`. `mediaPrefetch.ts` collects `/uploads/...` URLs from
@@ -236,8 +246,9 @@ a background does not become the selectable source for modern browsers. CSS
 DPR-oriented mirror of the same variant policy rather than a literal copy of
 the `<img sizes>` algorithm.
 
-`reset` / `framework` / `style` are page-invariant — every page on the site
-shares the same hash. `userStyles` is **page-scoped**: each author stylesheet
+`reset` and `framework` are page-invariant. `style` is **page-scoped** and its
+hash reflects the selected rules, emitted scripts and media variants.
+`userStyles` is also **page-scoped**: each author stylesheet
 (`site.files[type === 'style']`) carries a `SiteStyleRuntimeConfig` (in
 `site.runtime.styles[fileId]`) with an enable flag, a page/template scope, and
 a cascade priority. `collectUserStylesheetCss(site, page)` selects the
@@ -250,16 +261,19 @@ both.
 Because `framework` is built by walking **every** page's node tree to harvest
 module CSS — O(all nodes across the whole site), not the rendered page — the
 published-snapshot renderer uses `buildPublishedSiteCssBundle`, which memoises
-the three page-invariant files by `publishVersion` + site object. The all-pages
-walk then runs **once per published snapshot object** instead of once per render,
-so a Layer-B cache miss or a background republish no longer repays it per page.
-The site-object guard matters during a full publish: HTML is baked before
-`bumpPublishVersion()`, so a new snapshot at the still-current version must not
-reuse CSS from the previous published site. `userStyles` is still rebuilt per
-call (page-scoped). `bumpPublishVersion()` invalidates the memo, so a content
-change can never serve stale framework/style CSS. Callers that pass draft or
-arbitrary sites at the live version (preview, AI render, the CSS-route fallback)
-keep using the un-memoised `buildSiteCssBundle`.
+two platform files by `publishVersion`. The all-pages walk runs **once per
+publish version**. The bake passes the next version explicitly, preventing
+reuse of the previous publish's platform CSS before the version bump.
+Both authored layers are rebuilt per call, so page, runtime and media inputs
+cannot cross-contaminate a shared cache. Draft/preview callers use the
+un-memoised `buildSiteCssBundle(site, registry, page, options)`.
+
+`siteCssAssets.ts` serves baked CSS from disk first. Its DB fallback matches
+every raw and template-composed page/entry bundle, using a lightweight per-page
+runtime-manifest index rather than copying the entire site snapshot per page.
+The fallback caches positive/negative hash results and coalesces concurrent
+requests; publish invalidation prevents older in-flight results from populating
+the new version's cache. It never reconstructs an all-site union stylesheet.
 
 ### CSS dedup via `CssCollector`
 
@@ -472,7 +486,7 @@ publishDraftSite (server/publish/publishSite.ts)
     │     (without this, the slot swap would strand every row artefact)
     │
     ├─→ Layer A bake — CSS bundles + runtime JS → writeStaticAsset(<slot>)
-    │     (page-invariant CSS trio computed once per publish via the
+    │     (page-invariant platform CSS pair computed once per publish via the
     │      version-keyed memo in siteCssBundle.ts; userStyles per page)
     │         (atomic per-file: tmp + rename; per-page try/catch)
     │

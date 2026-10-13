@@ -100,7 +100,7 @@ async function renderMergedTemplate(
     templateContext,
     loopData,
   })
-  const cssBundle = buildPublishedSiteCssBundle(snapshot.site, registry, merged, publishVersion, { mediaAssets })
+  const cssBundle = buildPublishedSiteCssBundle(snapshot.site, registry, merged, publishVersion, { mediaAssets, runtimeAssets: snapshot.runtimeAssets })
   const published = publishPage(merged, snapshot.site, registry, {
     templateContext,
     ...(documentMeta ? { documentMeta } : {}),

@@ -1,6 +1,6 @@
 /**
  * buildPublishedSiteCssBundle — version-keyed memoisation of the page-invariant
- * CSS bundles (reset / framework / style).
+ * CSS bundles (reset / framework). Authored CSS is page-scoped.
  *
  * The `framework` file is built by walking EVERY page's node tree to harvest
  * module CSS — work that scales with whole-site size, not the rendered page,
@@ -11,10 +11,10 @@
  *      publish version (the page-invariant files are reused by reference, and
  *      the module-render walk is not repeated);
  *  (b) `bumpPublishVersion()` invalidates the memo so a content change can never
- *      serve stale framework/style CSS;
+ *      serve stale framework CSS;
  *  (c) the EMITTED CSS is byte-identical to the un-memoised `buildSiteCssBundle`
  *      — memoisation changes cost, never bytes;
- *  (d) `userStyles` (page-scoped) is rebuilt per call, never memoised.
+ *  (d) `style` and `userStyles` are rebuilt per call, never memoised.
  */
 
 import { describe, it, expect, beforeEach } from 'bun:test'
@@ -67,7 +67,7 @@ describe('buildPublishedSiteCssBundle — page-invariant memo', () => {
     buildPublishedSiteCssBundle(site, registry, site.pages[1])
     buildPublishedSiteCssBundle(site, registry, site.pages[2])
 
-    // The expensive walk did not run again — the framework/style files came
+    // The expensive walk did not run again — the framework files came
     // from the memo, not a fresh O(all-pages) traversal.
     expect(renderCalls).toBe(callsAfterFirst)
 
@@ -75,16 +75,17 @@ describe('buildPublishedSiteCssBundle — page-invariant memo', () => {
     const second = buildPublishedSiteCssBundle(site, registry, site.pages[1])
     expect(second.reset).toBe(first.reset)
     expect(second.framework).toBe(first.framework)
-    expect(second.style).toBe(first.style)
+    expect(second.style).not.toBe(first.style)
   })
 
-  it('rebuilds userStyles per call — never memoised (page-scoped)', () => {
+  it('rebuilds both authored layers per call — never memoised (page-scoped)', () => {
     const site = makeMultiPageSite()
     const a = buildPublishedSiteCssBundle(site, registry, site.pages[0])
     const b = buildPublishedSiteCssBundle(site, registry, site.pages[1])
     // Fresh object each call (page-scoped), even though these fixture pages
     // carry no user stylesheets so the content/hash coincide.
     expect(b.userStyles).not.toBe(a.userStyles)
+    expect(b.style).not.toBe(a.style)
   })
 
   it('recomputes after bumpPublishVersion (no stale CSS after publish)', () => {
@@ -119,7 +120,7 @@ describe('buildPublishedSiteCssBundle — page-invariant memo', () => {
 
     expect(renderCalls).toBe(callsAfterFirstSite)
     expect(second.framework).toBe(first.framework)
-    expect(second.style).toBe(first.style)
+    expect(second.style).not.toBe(first.style)
   })
 
   it('an explicit publishVersion argument (publish-time bake) gets its own memo slot', () => {

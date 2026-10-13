@@ -1,12 +1,12 @@
 /**
  * Site CSS bundle — server-side builder.
  *
- * Builds the three external CSS files served at `/_instatic/css/<filename>` for
+ * Builds the four external CSS files served at `/_instatic/css/<filename>` for
  * every published page. See `src/core/publisher/siteCssBundle.ts` for the type
  * definitions and the cache strategy rationale (hashed filenames + immutable
  * cache headers).
  *
- * This file lives under `server/cms/` because it depends on `node:crypto` for
+ * This file lives under `server/publish/` because it depends on `node:crypto` for
  * content hashing — that import is unavailable in the editor's app build, so
  * the implementation is server-only.
  *
@@ -15,17 +15,17 @@
  * - `buildSiteCssBundle` rebuilds all four files from scratch. The `framework`
  *   file requires walking EVERY page's node tree (`collectSiteModuleAssets` in
  *   `siteModuleAssets.ts`) to harvest module CSS — work that scales with
- *   whole-site size, not the rendered page. Callers that pass draft / arbitrary sites at the live
- *   publish version (preview, AI render, the CSS-route fallback) use this:
+ *   whole-site size, not the rendered page. Callers that pass draft / arbitrary
+ *   sites at the live publish version (preview, AI render) use this:
  *   memoising across them would cross-contaminate unpublished content.
  *
  * - `buildPublishedSiteCssBundle` is the hot path for the published-snapshot
- *   renderer (`publicRenderer.ts`). There the site content is fixed for a
- *   given publish version, so the three page-invariant files (reset /
- *   framework / style) are memoised by `publishVersion` and reused across
+ *   renderer (`publicRenderer.ts`) and CSS-route fallback. There the site content is fixed for a
+ *   given publish version, so the page-invariant files (reset / framework)
+ *   are memoised by `publishVersion` and reused across
  *   every render at that version — the expensive all-pages walk runs once per
- *   publish, not once per request. Only `userStyles` (page-scoped) is rebuilt
- *   per call. The memo is invalidated automatically by `bumpPublishVersion()`.
+ *   publish, not once per request. `style` and `userStyles` are rebuilt for the
+ *   effective page, media variants and emitted scripts on every call.
  */
 
 import { createHash } from 'node:crypto'
@@ -34,13 +34,12 @@ import type { IModuleRegistry } from '@core/module-engine'
 import {
   PUBLISHER_RESET_CSS,
   collectClassCSS,
-  collectSiteStyleBackgroundImagePaths,
   buildSiteFrameworkCss,
   collectUserStylesheetCss,
 } from '@core/publisher'
 import type {
   CssBundleFile,
-  ResponsiveCssOptions,
+  ClassCssOptions,
   SiteCssBundle,
   SiteCssBundleId,
 } from '@core/publisher'
@@ -48,43 +47,40 @@ import { collectSiteModuleAssets } from './siteModuleAssets'
 import { getPublishVersion, registerVersionedCacheReset } from './publishState'
 
 /**
- * The three page-invariant bundle files: they depend only on `site` + registry,
- * never on the page being rendered. `userStyles` is excluded — it is page-scoped.
+ * Platform bundles depend only on `site` + registry. Both authored layers are
+ * page-scoped and deliberately excluded from the version-wide memo.
  */
-type PageInvariantBundles = Pick<SiteCssBundle, 'reset' | 'framework' | 'style'>
+type PageInvariantBundles = Pick<SiteCssBundle, 'reset' | 'framework'>
 
 /**
  * Build the four site CSS files from a `SiteDocument`.
  *
- * `reset`, `framework`, and `style` are page-invariant — they depend only on
- * the site + registry. `userStyles` is page-scoped: each stylesheet's
- * `SiteStyleRuntimeConfig` decides whether it targets `page`, and `priority`
- * orders the cascade. Passing different pages therefore yields different
- * `userStyles` content (and hash); omitting `page` includes every enabled
- * stylesheet (authoring/export view).
+ * `reset` and `framework` are site-wide. `style` collects the effective page's
+ * reachable class rules; `userStyles` selects enabled, scoped stylesheets.
  *
  * Determinism + content-hashed filenames mean two calls with the same inputs
  * always return identical filenames. This rebuilds all four files every call;
  * the published-render hot path uses `buildPublishedSiteCssBundle` instead,
- * which memoises the page-invariant trio by publish version + site object.
+ * which memoises the platform pair by publish version.
  */
 export function buildSiteCssBundle(
   site: SiteDocument,
   registry: IModuleRegistry,
-  page?: Page,
-  options: ResponsiveCssOptions = {},
+  page: Page,
+  options: ClassCssOptions = {},
 ): SiteCssBundle {
   return {
-    ...computePageInvariantBundles(site, registry, options),
+    ...computePageInvariantBundles(site, registry),
+    style: makeBundleFile('style', collectClassCSS(site, page, options)),
     userStyles: makeBundleFile('userStyles', collectUserStylesheetCss(site, page)),
   }
 }
 
 /**
- * Published-render variant of `buildSiteCssBundle`. Memoises the three
- * page-invariant files (reset / framework / style) by `publishVersion`, so
+ * Published-render variant of `buildSiteCssBundle`. Memoises the two
+ * page-invariant files (reset / framework) by `publishVersion`, so
  * the O(all-pages) module-CSS walk runs once per publish version instead of
- * once per render. Only `userStyles` is rebuilt per call (it is page-scoped).
+ * once per render. Both authored layers are rebuilt per page and per call.
  *
  * Memo key = publish version ALONE. The published site content is fixed for a
  * given version: `publishDraftSite` is the only snapshot writer and it bumps
@@ -101,37 +97,36 @@ export function buildSiteCssBundle(
 export function buildPublishedSiteCssBundle(
   site: SiteDocument,
   registry: IModuleRegistry,
-  page?: Page,
+  page: Page,
   publishVersion: number = getPublishVersion(),
-  options: ResponsiveCssOptions = {},
+  options: ClassCssOptions = {},
 ): SiteCssBundle {
   return {
-    ...memoizedPageInvariantBundles(site, registry, publishVersion, options),
+    ...memoizedPageInvariantBundles(site, registry, publishVersion),
+    style: makeBundleFile('style', collectClassCSS(site, page, options)),
     userStyles: makeBundleFile('userStyles', collectUserStylesheetCss(site, page)),
   }
 }
 
-/** Build the three page-invariant bundle files from scratch. */
+/** Build the two page-invariant bundle files from scratch. */
 function computePageInvariantBundles(
   site: SiteDocument,
   registry: IModuleRegistry,
-  options: ResponsiveCssOptions,
 ): PageInvariantBundles {
   return {
     reset: makeBundleFile('reset', PUBLISHER_RESET_CSS),
     framework: makeBundleFile('framework', buildFrameworkCss(site, registry)),
-    style: makeBundleFile('style', collectClassCSS(site, options)),
   }
 }
 
 // Page-invariant bundle memo, keyed by publish version. A bump invalidates it
 // (the next read sees a new version → recompute), so a content change can never
-// serve stale framework/style CSS. Registered with the shared test-reset hook.
+// serve stale platform CSS. Registered with the shared test-reset hook.
 //
 // Deliberately NOT keyed on the site object: every consumer loads the snapshot
 // fresh (DB JSON parse per query), so an identity key would never hit — that
 // was exactly the bug that made every Layer B miss re-walk the whole site.
-let pageInvariantCache: { version: number; mediaSignature: string; bundles: PageInvariantBundles } | null = null
+let pageInvariantCache: { version: number; bundles: PageInvariantBundles } | null = null
 registerVersionedCacheReset(() => {
   pageInvariantCache = null
 })
@@ -144,29 +139,13 @@ function memoizedPageInvariantBundles(
   site: SiteDocument,
   registry: IModuleRegistry,
   version: number,
-  options: ResponsiveCssOptions,
 ): PageInvariantBundles {
-  const mediaSignature = styleMediaSignature(site, options)
-  if (pageInvariantCache && pageInvariantCache.version === version && pageInvariantCache.mediaSignature === mediaSignature) {
+  if (pageInvariantCache && pageInvariantCache.version === version) {
     return pageInvariantCache.bundles
   }
-  const bundles = computePageInvariantBundles(site, registry, options)
-  pageInvariantCache = { version, mediaSignature, bundles }
+  const bundles = computePageInvariantBundles(site, registry)
+  pageInvariantCache = { version, bundles }
   return bundles
-}
-
-function styleMediaSignature(site: SiteDocument, options: ResponsiveCssOptions): string {
-  if (!options.mediaAssets || options.mediaAssets.size === 0) return ''
-  const paths = collectSiteStyleBackgroundImagePaths(site)
-  if (paths.size === 0) return ''
-
-  const parts: string[] = []
-  for (const path of [...paths].sort()) {
-    const media = options.mediaAssets.get(path)
-    if (!media || media.variants.length === 0) continue
-    parts.push(`${path}=${media.variants.map((v) => `${v.width}:${v.path}`).join('|')}`)
-  }
-  return parts.join(';')
 }
 
 /**

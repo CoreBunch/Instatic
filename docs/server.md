@@ -548,7 +548,8 @@ Server-side publishing helpers live in `server/publish/`:
 | `publishRow.ts`                   | Per-row publish orchestrator (`publishDataRow`) + `removeDataRowArtefact`: persist via the data repository, in-place artefact update, Layer B bump. |
 | `publicRenderer.ts`               | `renderPublishedSnapshot`, `renderPublishedDataRowTemplate` — snapshot-aware wrappers around `publishPage`. |
 | `publishedHtmlPipeline.ts`        | Plugin frontend-asset injection + `publish.html` filter chain. Runs at publish time for every baked page (complete doc or hole shell); also runs in the Layer B factory for query-string / live renders (cached). |
-| `siteCssBundle.ts`                | Per-site reset / framework / style CSS bundles (hashed filenames).  |
+| `siteCssBundle.ts`                | Hashed CSS bundles: site-wide reset/framework and page-scoped style/userStyles. |
+| `siteCssAssets.ts`                | Disk-first CSS serving and versioned hash fallback across raw/composed page bundles. |
 | `republish.ts`                    | Bulk re-publish (after a settings change touches all pages).        |
 | `publishScheduler.ts`             | Scheduled publish jobs.                                             |
 | `frontendInjections.ts`           | Plugin-contributed frontend scripts injected into published HTML.   |

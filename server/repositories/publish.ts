@@ -25,6 +25,8 @@ import { contentHash } from '../branches/contentHash'
 import type { DataRow } from '@core/data/schemas'
 import type { SiteDocument } from '@core/page-tree'
 import type { PublishedPageRuntimeAssets } from '@core/site-runtime'
+import { PublishedPageRuntimeAssetsSchema } from '@core/site-runtime'
+import { compiledCheck } from '@core/utils/typeboxCompiler'
 import type { PublishedRuntimePackageImportmap } from '@core/publisher'
 import type { DbClient } from '../db/client'
 import { MAIN_SCOPE, type BranchScope } from '../branches/scope'
@@ -323,6 +325,27 @@ export async function getPublishedPageSnapshotById(
     limit 1
   `
   return rows[0] ? snapshotFromQueryRow(rows[0]) : null
+}
+
+/** Per-page manifests without repeatedly loading the whole site document. */
+export async function listPublishedPageRuntimeAssets(db: DbClient): Promise<Map<string, PublishedPageRuntimeAssets>> {
+  const { rows } = await db<{ row_id: string; runtime_assets_json: unknown }>`
+    select data_rows.id as row_id, data_row_versions.runtime_assets_json
+    from data_rows
+    join data_row_versions on data_row_versions.id = data_rows.active_version_id
+    where data_rows.table_id = 'pages'
+      and data_rows.status = 'published'
+      and data_rows.deleted_at is null
+  `
+  const manifests = new Map<string, PublishedPageRuntimeAssets>()
+  for (const row of rows) {
+    if (row.runtime_assets_json === null) continue
+    if (!compiledCheck(PublishedPageRuntimeAssetsSchema, row.runtime_assets_json)) {
+      throw new Error(`Invalid published runtime manifest for page "${row.row_id}"`)
+    }
+    manifests.set(row.row_id, row.runtime_assets_json)
+  }
+  return manifests
 }
 
 /**
