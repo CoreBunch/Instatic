@@ -15,6 +15,7 @@ A fragment is one versioned file that carries a section (one or more sibling sub
 - Pipeline: `extractFragment` → `parseSiteFragment` (or `readFragmentPackage`) → `planFragmentInsert` (pure) → `commitFragmentPlan` (server work, then ONE store transaction).
 - Merge rule: the site always wins. Classes, components and tables match by name/slug and the site's version is reused untouched; tokens match by name and are only added when missing; everything added gets fresh ids.
 - Editor entry point: Spotlight **Insert fragment from file…** (`editor.insertFragment`) opens `InsertFragmentModal`: pick a package, review the plan, Insert, read what was added. One Cmd+Z removes the whole insert.
+- Plugin entry point: `api.editor.fragments.insert` / `.plan` (permission `editor.fragments`), the same plan and commit as the dialog with a caller-supplied `readMediaBytes` and a `placement`. See [plugin-system.md](plugin-system.md#inserting-site-fragments-editorfragments).
 - Paste, saved layouts, HTML import and site import do not use fragments and behave exactly as before.
 
 ---
@@ -47,8 +48,10 @@ src/core/fragments/
 src/admin/modals/InsertFragment/
 ├── InsertFragmentModal.tsx         pick → review → insert → report
 ├── FragmentReport.tsx              the review / result report
-├── fragmentInsertFlow.ts           load file, plan against the open document, commit
-└── createFragmentInsertAdapter.ts  CMS API + editor store implementation of the adapter
+├── fragmentInsertFlow.ts           load file, plan against the open document, commit, toasts
+├── createFragmentInsertAdapter.ts  CMS API + editor store implementation of the adapter
+├── pluginFragmentsHost.ts          api.editor.fragments (insert / plan) on the same flow
+└── useBindPluginFragmentsApi.ts    binds that host into the plugin runtime while the editor is open
 
 src/admin/pages/site/store/slices/fragmentsSlice.ts   insertFragment + dialog flag
 src/admin/spotlight/commands/fragments.ts             editor.insertFragment
@@ -121,7 +124,7 @@ Every id is a SOURCE id. `media[].path` is the exact string the content uses (`/
 | Framework utilities | Matched by name against the site's framework AFTER the token merge (`generateFrameworkUtilityClasses` on the merged settings), so a colour the insert adds brings its utilities. A name the site does not generate is dropped (warning). |
 | Ambient rules | Matched by exact selector; the site's rule wins. Only rules naming a landing class (or no class, like `@keyframes`) are added. |
 | Conditions | Matched by id; missing ones added. |
-| Colours | Matched by normalised slug; existing never changes. A missing colour is added with the fragment's full definition. A variant the fragment reads that the site's colour does not generate is a warning. |
+| Colours | Matched by normalised slug; existing never changes. A missing colour is added with the fragment's full definition, or, when the caller passes `colorSources` (`planFragmentInsert(target, fragment, { colorSources })`), with the values of the site colour it names (`report.colors.filled`). A variant the fragment reads that the site's colour does not generate is a warning. |
 | Type / space steps | A step the site's group (same `namingConvention`) lacks is inserted at its canonical position (`insertScaleStep`, `@core/framework`), shifting `baseScaleIndex` so the base step, ratio and sizes are unchanged. No group, a disabled scale or a manual group: warning, nothing invented. |
 | Font tokens | Matched by variable; existing wins (a new site's seeded `font-heading`/`font-body`/`font-mono` roles are kept). A missing token is added; its family is reused by name or installed. Families are only installed when an added token binds to them or a carried rule names them. |
 | Custom properties | Added only when the site defines no such variable (root rules, colours, scales, font tokens). They go into ONE engine-owned ambient `:root` rule (`origin.source === FRAGMENT_PROPERTIES_ORIGIN`); later inserts add to it. A user-authored `:root` rule is never edited. |
@@ -148,8 +151,15 @@ E. adapter.commit(resolved)   ONE store transaction
 
 - A media or table failure throws `FragmentCommitError` before E: the document is untouched; uploads and tables already made stay (Media and Data workspaces show them). A font install failure is a warning; the token falls back to its stack.
 - `signal` aborts at the next boundary, never after E started.
-- The editor's E is `insertFragment` (`fragmentsSlice.ts`): `applyResolvedFragment` inside `mutateActiveTreeAndSite` (sections, components: placed right after the selected element by `resolveSiblingInsertLocation`, or at the end of the document when nothing or the root is selected; never inside a selected container, unlike a paste; first root selected) or `mutateSite` (pages), plus `reconcileFrameworkClasses` when a colour or step was added. One undo step; the change syncs through collab like any edit. The plan's `document` must still be the active one.
+- The editor's E is `insertFragment(plan, placement?)` (`fragmentsSlice.ts`): `applyResolvedFragment` inside `mutateActiveTreeAndSite` (sections, components; first root selected) or `mutateSite` (pages), plus `reconcileFrameworkClasses` when a colour or step was added. One undo step; the change syncs through collab like any edit. The plan's `document` must still be the active one.
+- Placement (`FragmentInsertPlacement`): `after-selection`, the default and the dialog's only mode, places it right after the selected element (`resolveSiblingInsertLocation`), or at the end of the document when nothing or the root is selected, never inside a selected container; `inside-selection` places it inside the selected container like a paste (`resolveInsertLocation`); `end` appends it to the document whatever is selected.
 - The editor adapter runs every server write through `runStepUp` (creating a table needs a recent password).
+
+---
+
+## Inserting from a plugin
+
+A plugin with `editor.fragments` calls `api.editor.fragments.insert({ fragment, readMediaBytes, placement?, signal?, onProgress?, silent? })` or the dry run `api.editor.fragments.plan({ fragment })`. Both run on the dialog's own functions (`planFragmentForEditor`, `commitFragmentForEditor` in `fragmentInsertFlow.ts`), so the merge rules, step-up prompt, undo step and result toast are the same. The plugin supplies the bytes (`readMediaBytes`), which is only called for media the plan adds that the library lacks. Failures resolve as `{ ok: false, stage, message }`; a fragment `parseSiteFragment` refuses rejects `insert`. Full API: [plugin-system.md](plugin-system.md#inserting-site-fragments-editorfragments).
 
 ---
 
@@ -191,5 +201,5 @@ Bun resolves the `@core/*` aliases from the repo's `tsconfig.json`. `planFragmen
 - [site-transfer.md](site-transfer.md) — the export archive `fragmentSourceFromBundleArchive` reads
 - [visual-components.md](visual-components.md), [loops.md](loops.md), [cms-native-forms.md](cms-native-forms.md), [media.md](media.md)
 - Source of truth: `src/core/fragments/schema.ts`, `src/core/fragments/plan.ts`, `src/core/fragments/commit.ts`
-- Tests: `src/__tests__/fragments/`, `src/__tests__/editor-store/insertFragment.test.ts`, `src/__tests__/admin/insertFragmentModal.test.tsx`
+- Tests: `src/__tests__/fragments/`, `src/__tests__/editor-store/insertFragment.test.ts`, `src/__tests__/admin/insertFragmentModal.test.tsx`, `src/__tests__/plugins/pluginFragmentsApi.test.ts`
 - Gate: `src/__tests__/architecture/fragments-headless.test.ts`

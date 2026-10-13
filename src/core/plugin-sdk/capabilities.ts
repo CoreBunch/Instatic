@@ -83,6 +83,13 @@ export const PLUGIN_CAPABILITIES: PluginCapability[] = [
     surfaces: ['editor'],
   },
   {
+    permission: 'editor.fragments',
+    label: 'Insert site fragments',
+    description: 'Allows the plugin to insert sections, pages and components into the open document from fragment files it supplies. An insert can add classes, colours, fonts and components to the site, upload media files and create data tables; anything the site already has stays as it is. One undo removes the inserted content; uploaded files and created tables stay.',
+    risk: 'high',
+    surfaces: ['editor'],
+  },
+  {
     permission: 'editor.canvas',
     label: 'Add canvas overlays',
     description: 'Allows the plugin to register canvas overlay React components — annotation pins, custom selection adornments, measurement tools — that mount on top of the rendered canvas via `editor.canvas.registerOverlay`.',

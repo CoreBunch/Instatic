@@ -28,6 +28,7 @@ export const permissions = {
   editorCommands: 'editor.commands',
   editorStoreRead: 'editor.store.read',
   editorStoreWrite: 'editor.store.write',
+  editorFragments: 'editor.fragments',
   editorCanvas: 'editor.canvas',
   editorPanels: 'editor.panels',
   dashboardWidgetsRegister: 'dashboard.widgets.register',

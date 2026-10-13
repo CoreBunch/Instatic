@@ -9,14 +9,15 @@
  * Fonts: Google families through the Typography panel's installer, custom
  * families registered from the uploaded files.
  * Tables and rows: the Data API; a published fragment row is published.
- * Commit: `insertFragment` on the editor store — one undo step.
+ * Commit: `insertFragment` on the editor store at the caller's placement,
+ * one undo step.
  *
  * Every server write runs through `runStepUp`: creating a table is a
  * sensitive action, and a `step_up_required` answer opens the password
  * prompt and retries instead of failing the insert.
  */
 
-import type { FragmentInsertAdapter } from '@core/fragments'
+import type { FragmentInsertAdapter, FragmentInsertPlacement } from '@core/fragments'
 import { installCmsGoogleFont, registerCustomFont } from '@core/persistence/cmsFonts'
 import { listCmsMediaAssets, uploadCmsMediaAsset, type CmsMediaAsset } from '@core/persistence/cmsMedia'
 import {
@@ -29,7 +30,10 @@ import { useEditorStore } from '@site/store/store'
 
 type RunStepUp = <T>(action: () => Promise<T>) => Promise<T>
 
-export function createFragmentInsertAdapter(runStepUp: RunStepUp): FragmentInsertAdapter {
+export function createFragmentInsertAdapter(
+  runStepUp: RunStepUp,
+  placement: FragmentInsertPlacement = 'after-selection',
+): FragmentInsertAdapter {
   let library: Promise<CmsMediaAsset[]> | null = null
 
   return {
@@ -72,7 +76,7 @@ export function createFragmentInsertAdapter(runStepUp: RunStepUp): FragmentInser
     },
 
     async commit(plan) {
-      const result = useEditorStore.getState().insertFragment(plan)
+      const result = useEditorStore.getState().insertFragment(plan, placement)
       if (!result) {
         throw new Error('The editor could not place the fragment here. Select where it should go and try again.')
       }
