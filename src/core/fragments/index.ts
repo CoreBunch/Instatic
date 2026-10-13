@@ -44,3 +44,19 @@ export { FRAGMENT_PACKAGE_MANIFEST, readFragmentPackage, writeFragmentPackage } 
 export type { FragmentPackage } from './package'
 
 export { mediaPackagePath, sha256Hex } from './mediaKeys'
+
+export { FragmentInsertError, planFragmentInsert } from './plan'
+export type { FragmentInsertErrorCode } from './plan'
+export { FRAGMENT_PROPERTIES_ORIGIN } from './planTokens'
+export type {
+  FragmentInsertDocument,
+  FragmentInsertPlan,
+  FragmentInsertReport,
+  FragmentInsertTarget,
+  PlannedCustomProperties,
+  PlannedFontFamily,
+  PlannedScaleSteps,
+  PlannedTable,
+  PlannedTableCreate,
+  PlannedTableReuse,
+} from './planTypes'
