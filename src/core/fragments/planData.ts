@@ -97,37 +97,38 @@ function portableRow(row: FragmentTableRow, allFields: DataField[], kept: DataFi
 }
 
 /**
- * The media the inserted content actually references: paths in placed nodes,
- * added component trees and added rules; files of font families being
- * installed; and media cells / inline paths of rows in created tables.
- * Assets only rows of a REUSED table use are not needed and not uploaded.
+ * The media the landing content actually references: paths in placed nodes,
+ * added component trees, added rules and other values (a theme's custom
+ * properties); files of font families being installed; and media cells /
+ * inline paths of rows in created tables. Assets only rows of a REUSED table
+ * use are not needed and not uploaded.
  */
 export function referencedMedia(
-  fragment: SiteFragment,
+  media: readonly FragmentMedia[],
   parts: {
-    nodes: PageNode[]
-    components: VisualComponent[]
-    rules: StyleRule[]
-    customProperties?: Record<string, string>
-    fontFamilies: PlannedFontFamily[]
-    tables: PlannedTable[]
+    nodes?: PageNode[]
+    components?: VisualComponent[]
+    rules?: StyleRule[]
+    customProperties?: Record<string, string>[]
+    fontFamilies?: PlannedFontFamily[]
+    tables?: PlannedTable[]
   },
 ): FragmentMedia[] {
-  const byPath = new Map(fragment.media.map((m) => [m.path, m]))
+  const byPath = new Map(media.map((m) => [m.path, m]))
   const found = new Set<string>()
   const find = createPathFinder(byPath.keys())
   const scan = (text: string) => find(text, found)
-  for (const node of parts.nodes) forEachString(nodeContent(node), scan)
-  for (const vc of parts.components) {
+  for (const node of parts.nodes ?? []) forEachString(nodeContent(node), scan)
+  for (const vc of parts.components ?? []) {
     forEachString(vc.params, scan)
     for (const node of Object.values(vc.tree.nodes)) forEachString(nodeContent(node), scan)
   }
   forEachString(parts.customProperties, scan)
-  for (const rule of parts.rules) forEachString(ruleContent(rule), scan)
+  for (const rule of parts.rules ?? []) forEachString(ruleContent(rule), scan)
 
   const ids = new Set<string>()
   for (const path of found) ids.add(byPath.get(path)!.id)
-  for (const family of parts.fontFamilies) {
+  for (const family of parts.fontFamilies ?? []) {
     if (family.entry.source !== 'custom') continue
     for (const file of family.entry.files) {
       if (file.mediaAssetId) ids.add(file.mediaAssetId)
@@ -135,7 +136,7 @@ export function referencedMedia(
       if (byFilePath) ids.add(byFilePath.id)
     }
   }
-  for (const table of parts.tables) {
+  for (const table of parts.tables ?? []) {
     if (table.action !== 'create') continue
     for (const row of table.rows) {
       for (const id of collectCellMediaIds(row.cells, table.input.fields)) ids.add(id)
@@ -144,5 +145,5 @@ export function referencedMedia(
       for (const path of rowPaths) ids.add(byPath.get(path)!.id)
     }
   }
-  return fragment.media.filter((m) => ids.has(m.id))
+  return media.filter((m) => ids.has(m.id))
 }

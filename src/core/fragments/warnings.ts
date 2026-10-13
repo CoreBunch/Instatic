@@ -1,9 +1,10 @@
 /**
- * Notes the fragment engine raises while extracting, planning or committing.
+ * Notes the fragment engine raises while extracting, planning or committing
+ * a fragment insert or a theme.
  * None of them stop the operation — anything that must stop it throws a typed
  * error instead (`FragmentExtractError`, `FragmentInsertError`,
- * `FragmentCommitError`). Each note is something the insert report shows the
- * user so nothing changes silently.
+ * `FragmentCommitError`). Each note is something the insert or theme report
+ * shows the user so nothing changes silently.
  */
 export type FragmentWarningCode =
   // extract
@@ -14,6 +15,7 @@ export type FragmentWarningCode =
   | 'unsupported-loop-source'
   | 'missing-page-link'
   | 'missing-media-bytes'
+  | 'missing-font-family'
   // plan
   | 'framework-class-dropped'
   | 'color-variant-missing'
@@ -23,6 +25,7 @@ export type FragmentWarningCode =
   | 'component-ref-dropped'
   | 'relation-field-dropped'
   | 'field-type-mismatch'
+  | 'scale-step-removed'
   // commit
   | 'font-install-failed'
 

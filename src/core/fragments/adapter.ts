@@ -1,13 +1,16 @@
 /**
- * FragmentInsertAdapter — the I/O `commitFragmentPlan` needs, as an interface.
+ * The I/O `commitFragmentPlan` and `commitThemePlan` need, as interfaces.
  *
- * The engine stays headless; the editor implements this against the CMS API
- * and its store (`src/admin/modals/InsertFragment/createFragmentInsertAdapter.ts`,
- * shared by the Insert fragment dialog and `api.editor.fragments`; the caller
- * supplies media bytes through `readMediaBytes`), and tests implement it in
+ * Both share the media library and font installer (`FragmentAssetAdapter`);
+ * a fragment insert also writes data tables and commits a resolved insert,
+ * a theme commits a resolved theme. The engine stays headless; the editor
+ * implements these against the CMS API and its store
+ * (`src/admin/modals/InsertFragment/createFragmentInsertAdapter.ts`, shared
+ * by the Insert fragment dialog and `api.editor.fragments`; the caller
+ * supplies media bytes through `readMediaBytes`), and tests implement them in
  * memory.
  *
- * Interface only — no implementation here.
+ * Interfaces only — no implementation here.
  */
 
 import type { DataField } from '@core/data/schemas'
@@ -15,6 +18,7 @@ import type { FontEntry } from '@core/fonts'
 import type { FragmentMedia, FragmentTableRow } from './schema'
 import type { PlannedTableCreate } from './planTypes'
 import type { FragmentApplyResult, ResolvedFragmentPlan } from './resolve'
+import type { ResolvedThemePlan } from './applyTheme'
 
 export interface FragmentMediaRef {
   /** Media library id (what media cells hold). */
@@ -23,7 +27,8 @@ export interface FragmentMediaRef {
   url: string
 }
 
-export interface FragmentInsertAdapter {
+/** Media library and font installer: what both fragments and themes upload through. */
+export interface FragmentAssetAdapter {
   /**
    * An asset already in the site's library that is the same file, or null.
    * The editor reuses an asset only when its content hash matches.
@@ -44,7 +49,9 @@ export interface FragmentInsertAdapter {
 
   /** Register a custom family from uploaded media files. */
   registerCustomFont(request: { family: string; files: { mediaAssetId: string; variant: string }[] }): Promise<FontEntry>
+}
 
+export interface FragmentInsertAdapter extends FragmentAssetAdapter {
   /** Create a data table. Returns the server-minted id. */
   createTable(input: PlannedTableCreate['input']): Promise<{ id: string }>
 
@@ -63,4 +70,12 @@ export interface FragmentInsertAdapter {
    * the transaction needs is already resolved.
    */
   commit(plan: ResolvedFragmentPlan): Promise<FragmentApplyResult>
+}
+
+export interface ThemeApplyAdapter extends FragmentAssetAdapter {
+  /**
+   * Apply the resolved theme in ONE store transaction, so one undo step
+   * reverts it. Rejects when the editor refused the write.
+   */
+  commit(plan: ResolvedThemePlan): Promise<void>
 }

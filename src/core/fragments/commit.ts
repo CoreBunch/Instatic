@@ -22,7 +22,7 @@ import type { DataField } from '@core/data/schemas'
 import type { FontEntry } from '@core/fonts'
 import { createPathReplacer, mapStrings } from './references'
 import { resolveFragmentPlan, type FragmentApplyResult } from './resolve'
-import type { FragmentInsertAdapter, FragmentMediaRef } from './adapter'
+import type { FragmentAssetAdapter, FragmentInsertAdapter, FragmentMediaRef } from './adapter'
 import type { FragmentInsertPlan, FragmentInsertReport, PlannedFontFamily } from './planTypes'
 import type { FragmentMedia } from './schema'
 import type { FragmentWarning } from './warnings'
@@ -84,19 +84,19 @@ export async function commitFragmentPlan(
 }
 
 // ---------------------------------------------------------------------------
-// A. Media
+// A. Media (shared with `commitThemePlan`)
 // ---------------------------------------------------------------------------
 
-interface ResolvedMedia {
+export interface ResolvedMedia {
   urlByPath: Map<string, string>
   idById: Map<string, string>
   uploaded: number
   reused: number
 }
 
-async function resolveMedia(
+export async function resolveMedia(
   items: FragmentMedia[],
-  adapter: FragmentInsertAdapter,
+  adapter: FragmentAssetAdapter,
   options: CommitFragmentPlanOptions,
 ): Promise<ResolvedMedia> {
   const out: ResolvedMedia = { urlByPath: new Map(), idById: new Map(), uploaded: 0, reused: 0 }
@@ -136,13 +136,13 @@ async function resolveMedia(
 }
 
 // ---------------------------------------------------------------------------
-// B. Fonts
+// B. Fonts (shared with `commitThemePlan`)
 // ---------------------------------------------------------------------------
 
-async function installFonts(
+export async function installFonts(
   families: PlannedFontFamily[],
   mediaIdById: Map<string, string>,
-  adapter: FragmentInsertAdapter,
+  adapter: FragmentAssetAdapter,
   options: CommitFragmentPlanOptions,
   warnings: FragmentWarning[],
 ): Promise<Map<string, FontEntry>> {

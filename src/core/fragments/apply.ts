@@ -26,6 +26,7 @@ import { normalizeFrameworkColorSlug } from '@core/framework'
 import { normalizeFontTokenVariable } from '@core/fonts'
 import { applySlotSyncResult, syncSlotInstances } from '@core/visualComponents'
 import { FRAGMENT_PROPERTIES_ORIGIN } from './planTokens'
+import type { PlannedCustomProperties } from './planTypes'
 import type { FragmentApplyResult, ResolvedFragmentPlan } from './resolve'
 
 /** Where a section or component lands: under `parentId`, at `index` (append when omitted). */
@@ -76,31 +77,7 @@ export function applyResolvedFragment(
   }
 
   // ── Rules ──────────────────────────────────────────────────────────────────
-  const custom = plan.customProperties
-  if (custom) {
-    const existing = site.styleRules[custom.ruleId]
-    if (existing) {
-      for (const [name, value] of Object.entries(custom.properties)) {
-        if (!(name in existing.styles)) existing.styles[name] = value
-      }
-      existing.updatedAt = now
-    } else {
-      const rule: StyleRule = {
-        id: custom.ruleId,
-        name: ':root',
-        kind: 'ambient',
-        selector: ':root',
-        order: custom.order,
-        description: 'Custom properties added by inserted fragments',
-        styles: { ...custom.properties },
-        contextStyles: {},
-        origin: { source: FRAGMENT_PROPERTIES_ORIGIN, ordinal: 0 },
-        createdAt: now,
-        updatedAt: now,
-      }
-      site.styleRules[rule.id] = rule
-    }
-  }
+  if (plan.customProperties) writeRootProperties(site, plan.customProperties, 'add-missing', now)
   for (const rule of plan.styleRules) site.styleRules[rule.id] = rule
 
   // ── Components ─────────────────────────────────────────────────────────────
@@ -156,4 +133,42 @@ function syncSlotInstancesIn(site: SiteDocument, nodes: Record<string, PageNode>
     const vc = site.visualComponents.find((v) => v.id === node.props.componentId)
     if (vc) applySlotSyncResult(nodes, syncSlotInstances(node, vc, nodes), id)
   }
+}
+
+/**
+ * Write root custom properties into the rule `planned.ruleId` names. An
+ * existing rule (the engine-owned one, or for a theme a user's root rule that
+ * already declares the property) gets the values: only the missing ones for
+ * a fragment insert (`add-missing`), every one for a theme (`overwrite`). A
+ * rule that does not exist yet is created as the engine-owned `:root` rule
+ * (`origin.source === FRAGMENT_PROPERTIES_ORIGIN`).
+ */
+export function writeRootProperties(
+  site: SiteDocument,
+  planned: PlannedCustomProperties,
+  mode: 'add-missing' | 'overwrite',
+  now: number,
+): void {
+  const existing = site.styleRules[planned.ruleId]
+  if (existing) {
+    for (const [name, value] of Object.entries(planned.properties)) {
+      if (mode === 'overwrite' || !(name in existing.styles)) existing.styles[name] = value
+    }
+    existing.updatedAt = now
+    return
+  }
+  const rule: StyleRule = {
+    id: planned.ruleId,
+    name: ':root',
+    kind: 'ambient',
+    selector: ':root',
+    order: planned.order,
+    description: 'Custom properties added by inserted fragments and applied themes',
+    styles: { ...planned.properties },
+    contextStyles: {},
+    origin: { source: FRAGMENT_PROPERTIES_ORIGIN, ordinal: 0 },
+    createdAt: now,
+    updatedAt: now,
+  }
+  site.styleRules[rule.id] = rule
 }

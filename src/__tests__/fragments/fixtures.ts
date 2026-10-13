@@ -16,6 +16,9 @@
  */
 
 import type { DataRow, DataTable } from '@core/data/schemas'
+import type { SiteBundle } from '@core/data/bundleSchema'
+import { pageToCells } from '@core/data/pageFromRow'
+import { visualComponentToCells } from '@core/data/componentFromRow'
 import type { FrameworkSettings } from '@core/framework-schema'
 import { generateFrameworkUtilityClasses } from '@core/framework'
 import type { PageNode, SiteDocument, StyleRule } from '@core/page-tree'
@@ -342,6 +345,53 @@ export function sourceWithBytes(site: SiteDocument = makeSourceSite()) {
 /** Extract from the source site; by default the `hero` section. */
 export function extractFromSource(selection: FragmentSelection = { pageId: 'page-home', rootNodeIds: ['hero'] }) {
   return extractFragment(sourceWithBytes(), selection)
+}
+
+/** The source site as a site-transfer bundle (JSON form, media bytes embedded). */
+export function makeSourceBundle(): SiteBundle {
+  const site = makeSourceSite()
+  const { pages, visualComponents, layouts: _layouts, ...shell } = site
+  const asRow = (id: string, tableId: string, slug: string, cells: Record<string, unknown>): DataRow => ({
+    ...SOURCE_ROWS[0],
+    id,
+    tableId,
+    slug,
+    cells,
+  })
+  return {
+    schemaVersion: 1,
+    exportedAt: '2026-10-13T00:00:00.000Z',
+    site: shell,
+    tables: [
+      { ...SOURCE_TABLES[0], id: 'pages', slug: 'pages', name: 'Pages', kind: 'page', system: true },
+      { ...SOURCE_TABLES[0], id: 'components', slug: 'components', name: 'Components', kind: 'component', system: true },
+      ...SOURCE_TABLES,
+    ],
+    rows: [
+      ...pages.map((p) => asRow(p.id, 'pages', p.slug, pageToCells(p))),
+      ...visualComponents.map((vc) => asRow(vc.id, 'components', vc.id, visualComponentToCells(vc))),
+      ...SOURCE_ROWS,
+    ],
+    media: sourceMediaWithBytes().map((m) => ({
+      id: m.id,
+      filename: m.filename,
+      mimeType: m.mimeType,
+      sizeBytes: m.sizeBytes ?? 0,
+      altText: m.alt ?? '',
+      caption: '',
+      title: '',
+      tags: [],
+      width: m.width ?? null,
+      height: m.height ?? null,
+      durationMs: null,
+      dominantColor: null,
+      blurHash: null,
+      storagePath: m.path.replace('/uploads/', ''),
+      posterPath: null,
+      folderIds: [],
+      bytesBase64: btoa(new TextDecoder().decode(mediaBytesFor(m.id))),
+    })),
+  }
 }
 
 // ---------------------------------------------------------------------------
