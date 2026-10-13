@@ -90,7 +90,7 @@ export { DEFAULT_BREAKPOINTS, breakpointMediaQuery, defaultBreakpointMediaQuery 
 export { DEFAULT_SITE_SETTINGS, createNewSiteSettings } from './siteSettings'
 
 // Condition helpers
-export { conditionId, conditionLabel, makeConditionDef, parseConditions } from './condition'
+export { ConditionDefSchema, conditionId, conditionLabel, makeConditionDef, parseConditions } from './condition'
 
 // Tolerant parsers — boundary helpers for persisted data.
 export { parseBreakpoint } from './breakpoint'
@@ -128,6 +128,7 @@ export {
   pagePublicPath,
   isHomePage,
   findHomePage,
+  uniquePageSlug,
 } from './slugs'
 export {
   makePageRef,
@@ -178,6 +179,9 @@ export { removeNodeSubtrees, deleteSubtree } from './subtreeRemoval'
 export { cloneNodeWithRemap } from './cloneNode'
 
 export { cloneScopedClassesForNodeMap } from './scopedClassClone'
+
+export { createStyleRuleOrderAllocator, indexStyleRulesByName } from './styleRuleRegistry'
+export type { StyleRuleOrderAllocator } from './styleRuleRegistry'
 
 export {
   getNode,
