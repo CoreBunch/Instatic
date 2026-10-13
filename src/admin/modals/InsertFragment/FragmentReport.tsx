@@ -22,9 +22,12 @@ function list(values: string[]): string {
 }
 
 function addedRows(report: FragmentInsertReport, done: boolean): ReportRow[] {
-  const mediaLine = done
-    ? [`${report.media.uploaded} uploaded`, `${report.media.reused} already in the library`]
-    : report.media.total > 0 ? [`${report.media.total} file${report.media.total === 1 ? '' : 's'}`] : []
+  const files = `${report.media.total} file${report.media.total === 1 ? '' : 's'}`
+  const mediaLine = report.media.total === 0
+    ? []
+    : done
+      ? [`${report.media.uploaded} uploaded`, `${report.media.reused} already in the library`]
+      : [files]
   return [
     { label: 'Page', values: report.page ? [`${report.page.title} (/${report.page.slug === 'index' ? '' : report.page.slug})`] : [] },
     { label: 'Classes', values: report.rules.added },

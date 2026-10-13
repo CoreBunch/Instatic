@@ -10,6 +10,10 @@
  * families registered from the uploaded files.
  * Tables and rows: the Data API; a published fragment row is published.
  * Commit: `insertFragment` on the editor store — one undo step.
+ *
+ * Every server write runs through `runStepUp`: creating a table is a
+ * sensitive action, and a `step_up_required` answer opens the password
+ * prompt and retries instead of failing the insert.
  */
 
 import type { FragmentInsertAdapter } from '@core/fragments'
@@ -23,7 +27,9 @@ import {
 } from '@core/persistence/cmsData'
 import { useEditorStore } from '@site/store/store'
 
-export function createFragmentInsertAdapter(): FragmentInsertAdapter {
+type RunStepUp = <T>(action: () => Promise<T>) => Promise<T>
+
+export function createFragmentInsertAdapter(runStepUp: RunStepUp): FragmentInsertAdapter {
   let library: Promise<CmsMediaAsset[]> | null = null
 
   return {
@@ -42,26 +48,26 @@ export function createFragmentInsertAdapter(): FragmentInsertAdapter {
     async uploadMedia({ filename, mimeType, bytes, altText, signal }) {
       // Bytes come from fflate / File APIs — always a plain ArrayBuffer.
       const file = new File([bytes.slice().buffer as ArrayBuffer], filename, { type: mimeType })
-      const asset = await uploadCmsMediaAsset(file, { signal, altText })
+      const asset = await runStepUp(() => uploadCmsMediaAsset(file, { signal, altText }))
       return { id: asset.id, url: asset.publicPath }
     },
 
-    installGoogleFont: (request) => installCmsGoogleFont(request),
+    installGoogleFont: (request) => runStepUp(() => installCmsGoogleFont(request)),
 
-    registerCustomFont: (request) => registerCustomFont(request),
+    registerCustomFont: (request) => runStepUp(() => registerCustomFont(request)),
 
     async createTable(input) {
-      const table = await createCmsDataTable(input)
+      const table = await runStepUp(() => createCmsDataTable(input))
       return { id: table.id }
     },
 
     async updateTableFields(tableId, fields) {
-      await updateCmsDataTable(tableId, { fields })
+      await runStepUp(() => updateCmsDataTable(tableId, { fields }))
     },
 
     async createRow(tableId, row) {
-      const created = await createCmsDataRow(tableId, { cells: row.cells })
-      if (row.status === 'published') await publishCmsDataRow(created.id)
+      const created = await runStepUp(() => createCmsDataRow(tableId, { cells: row.cells }))
+      if (row.status === 'published') await runStepUp(() => publishCmsDataRow(created.id))
       return { id: created.id }
     },
 
