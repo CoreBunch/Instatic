@@ -129,6 +129,27 @@ describe('cssToStyleRules — selector classification', () => {
 // @media policy — matched breakpoint
 // ---------------------------------------------------------------------------
 
+describe('cssToStyleRules — custom property names (#616)', () => {
+  it('keeps custom properties with underscores or a leading --_ as authored', () => {
+    const css = `.card {
+      --card_bg: #0575d6;
+      --_accent: #fc834b;
+      --plain-ok: #161617;
+      background: var(--card_bg);
+      border-color: var(--_accent);
+      color: var(--plain-ok);
+    }`
+    const { rules, warnings } = cssToStyleRules(css)
+    expect(rules).toHaveLength(1)
+    expect(rules[0].styles).toMatchObject({
+      '--card_bg': '#0575d6',
+      '--_accent': '#fc834b',
+      '--plain-ok': '#161617',
+    })
+    expect(warnings).toHaveLength(0)
+  })
+})
+
 describe('cssToStyleRules — @media → contextStyles (matched)', () => {
   it('base + matched @media → 1 rule, base styles + contextStyles', () => {
     const css = '.foo { color: red }\n@media (max-width: 768px) { .foo { color: blue } }'
