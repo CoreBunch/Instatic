@@ -183,9 +183,9 @@ async function fetchPage(
   db: LoopSourceDb,
   orderBy: OrderColumn,
   direction: 'asc' | 'desc',
-  opts: { tableId: string; limit: number; offset: number; filter: CellFilter | null; orderCellField: string | null },
+  opts: { tableId: string; limit: number; offset: number; filter: CellFilter | null; orderCell: { field: string; numeric: boolean } | null },
 ): Promise<PublishedDataRowSqlRow[]> {
-  const { tableId, limit, offset, filter, orderCellField } = opts
+  const { tableId, limit, offset, filter, orderCell } = opts
   const column = 'data_row_versions.cells_json'
   // SQLite binds `?` by POSITION IN THE TEXT, so the parameter list must follow
   // the clause order: tableId, the cell condition (WHERE), the ordering cell
@@ -194,8 +194,8 @@ async function fetchPage(
     ? cellFilterSql({ filter, dialect: db.dialect, column, nextParamIndex: 2 })
     : null
   const cellParams = cell?.params ?? []
-  const order = orderCellField
-    ? cellOrderSql({ field: orderCellField, dialect: db.dialect, column, paramIndex: 2 + cellParams.length })
+  const order = orderCell
+    ? cellOrderSql({ ...orderCell, dialect: db.dialect, column, paramIndex: 2 + cellParams.length })
     : null
   const orderColumn = order ? order.sql : POST_TYPE_ORDER_COLUMN[orderBy]
   const orderParams = order?.params ?? []
@@ -346,12 +346,12 @@ async function fetchDataKindPage(
     limit: number
     offset: number
     filter: CellFilter | null
-    orderCellField: string | null
+    orderCell: { field: string; numeric: boolean } | null
     /** Post-type drafts (a branch): skip rows explicitly taken offline. */
     excludeUnpublished: boolean
   },
 ): Promise<DataKindRowSqlRow[]> {
-  const { tableId, limit, offset, filter, orderCellField, excludeUnpublished } = opts
+  const { tableId, limit, offset, filter, orderCell, excludeUnpublished } = opts
   const sortKey: 'createdAt' | 'updatedAt' | 'slug' =
     orderBy === 'updatedAt' ? 'updatedAt' : orderBy === 'slug' ? 'slug' : 'createdAt'
   const column = 'data_rows.cells_json'
@@ -360,8 +360,8 @@ async function fetchDataKindPage(
     ? cellFilterSql({ filter, dialect: db.dialect, column, nextParamIndex: 2 })
     : null
   const cellParams = cell?.params ?? []
-  const order = orderCellField
-    ? cellOrderSql({ field: orderCellField, dialect: db.dialect, column, paramIndex: 2 + cellParams.length })
+  const order = orderCell
+    ? cellOrderSql({ ...orderCell, dialect: db.dialect, column, paramIndex: 2 + cellParams.length })
     : null
   const orderColumn = order ? order.sql : DATA_KIND_ORDER_COLUMN[sortKey]
   const orderParams = order?.params ?? []
@@ -450,7 +450,10 @@ export async function fetchPublishedDataRowItems(
   // in which case the sort runs on the row's own cell (the field name binds
   // as a parameter, so nothing reaches the SQL text).
   const cellOrder = parseCellOrder(opts.orderBy)
-  const orderCellField = cellOrder?.field ?? null
+  const orderCell = cellOrder ? {
+    field: cellOrder.field,
+    numeric: fields.some((field) => field.id === cellOrder.field && field.type === 'number'),
+  } : null
   const orderBy: OrderColumn = ALLOWED_ORDER_BY.has(opts.orderBy as OrderColumn)
     ? (opts.orderBy as OrderColumn)
     : 'publishedAt'
@@ -480,7 +483,7 @@ export async function fetchPublishedDataRowItems(
       limit: opts.limit,
       offset: opts.offset,
       filter: cellFilter,
-      orderCellField,
+      orderCell,
       excludeUnpublished,
     })
     const mediaPathMap = await resolveMediaIdsToPaths(db, collectMediaIds(sqlRows, fields))
@@ -512,7 +515,7 @@ export async function fetchPublishedDataRowItems(
     limit: opts.limit,
     offset: opts.offset,
     filter: cellFilter,
-    orderCellField,
+    orderCell,
   })
   const mediaPathMap = await resolveMediaIdsToPaths(db, collectMediaIds(sqlRows, fields))
 
