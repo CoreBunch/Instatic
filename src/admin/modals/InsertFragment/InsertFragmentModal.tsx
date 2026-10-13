@@ -51,7 +51,7 @@ async function readAndPlan(file: File, setStep: SetStep): Promise<void> {
   try {
     const assertCurrentTarget = captureFragmentTarget()
     const loaded = await loadFragmentFile(file)
-    const plan = await planFragmentForEditor(loaded.fragment, assertCurrentTarget)
+    const plan = await planFragmentForEditor(loaded.fragment, {}, assertCurrentTarget)
     setStep({ kind: 'review', loaded, plan })
   } catch (err) {
     console.error('[InsertFragmentModal] reading the fragment failed:', err)

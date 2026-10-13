@@ -54,6 +54,7 @@ export type {
   FragmentInsertPlan,
   FragmentInsertReport,
   FragmentInsertTarget,
+  FragmentPlanOptions,
   PlannedCustomProperties,
   PlannedFontFamily,
   PlannedScaleSteps,

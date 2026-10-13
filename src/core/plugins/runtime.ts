@@ -106,6 +106,11 @@ function assertFragmentPlanInput(input: unknown, method: string): asserts input 
   if (!('fragment' in input) || input.fragment === undefined || input.fragment === null) {
     throw new TypeError(`editor.fragments.${method}: input.fragment is required`)
   }
+  const sources = (input as { colorSources?: unknown }).colorSources
+  if (sources !== undefined && (!sources || typeof sources !== 'object' || Array.isArray(sources)
+    || Object.values(sources).some((v) => typeof v !== 'string'))) {
+    throw new TypeError(`editor.fragments.${method}: input.colorSources must map colour slugs to colour slugs`)
+  }
 }
 
 function assertFragmentInsertInput(input: unknown): asserts input is FragmentInsertInput {

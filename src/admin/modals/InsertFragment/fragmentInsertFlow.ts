@@ -18,6 +18,7 @@ import {
   type FragmentInsertPlan,
   type FragmentInsertResult,
   type FragmentMedia,
+  type FragmentPlanOptions,
   type SiteFragment,
 } from '@core/fragments'
 import { isAbortError } from '@core/http'
@@ -71,6 +72,7 @@ export type EditorFragmentPlan = FragmentInsertPlan & {
 /** Plan against the destination as it was when the editor started this operation. */
 export async function planFragmentForEditor(
   fragment: SiteFragment,
+  options: FragmentPlanOptions = {},
   assertCurrentTarget = captureFragmentTarget(),
 ): Promise<EditorFragmentPlan> {
   assertCurrentTarget()
@@ -79,7 +81,7 @@ export async function planFragmentForEditor(
   const tables = fragment.tables.length > 0 ? await listCmsDataTables() : []
   assertCurrentTarget()
   return {
-    ...planFragmentInsert({ site: state.site, tables, document: fragmentInsertDocument(state) ?? undefined }, fragment),
+    ...planFragmentInsert({ site: state.site, tables, document: fragmentInsertDocument(state) ?? undefined }, fragment, options),
     assertCurrentTarget,
   }
 }
