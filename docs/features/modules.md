@@ -32,7 +32,7 @@ src/core/module-engine/
 ├── dependencies.ts      — module dependency normalization + checks
 ├── runtimeResolver.ts   — bare-specifier → runtime URL mapping for ESM modules
 ├── htmlTagBadge.ts      — resolveHtmlTagBadge (shared dispatch for htmlTag field)
-└── validateNodeProps.ts — coerce + default-fill authored props against propsSchema
+└── parseModuleProps.ts — hard parsing + declared defaults against propsSchema
 
 src/modules/base/
 ├── body/                — base.body (root container)
@@ -277,12 +277,12 @@ A plugin canvas module is rendered inside the editor's sandboxed iframe just lik
 The publisher's per-node flow (see [docs/features/publisher.md](publisher.md)):
 
 ```text
-For each node, bottom-up:
-  1. renderedChildren = node.children.map(renderNode)
-  2. effectiveProps  = resolveProps(node, breakpoint, def.schema)  ← merge breakpoint overrides
-  3. dynamicProps    = resolveDynamicProps(effectiveProps, ...)     ← template bindings
-  4. resolvedProps   = resolvePageRefProps(dynamicProps, pages)     ← cms:page:<id> → /path
-  5. validatedProps  = validateNodeProps(def, resolvedProps)        ← coerce + default-fill
+For each node, with common preparation before standard/special dispatch:
+  1. effectiveProps  = resolveProps(node, breakpoint, def.schema)   ← merge breakpoint overrides
+  2. dynamicProps    = resolveDynamicProps(effectiveProps, ...)     ← template bindings
+  3. resolvedProps   = resolvePageRefProps(dynamicProps, pages)     ← cms:page:<id> → /path
+  4. validatedProps  = parseModuleProps(def, resolvedProps, path)   ← hard parse + declared defaults
+  5. renderedChildren = node.children.map(renderNode)              ← standard path; special renderers expand VC/loop children
   6. safeProps       = escapeProps(validatedProps, schema)          ← HTML-escape string props
   7. attachResolvedMediaByKey(safeProps, ...)                       ← prefetched media assets
   8. { html, css }  = def.render(safeProps, renderedChildren)
@@ -292,6 +292,8 @@ For each node, bottom-up:
 ```
 
 A module's CSS is **collected and deduped by `moduleId`** — emitting the same CSS for every instance is fine; it appears once in the published page bundle.
+
+Missing fields use defaults declared by `propsSchema`; unrecoverable values raise `ModulePropsValidationError` with their cause and page/node/schema path. Publishing never replaces invalid authored props with all module defaults.
 
 `renderedChildren` is a `string[]` of already-rendered child HTML. Leaf modules (text, input, image) receive an empty array. Container-like modules join it: `renderedChildren.join('')`.
 

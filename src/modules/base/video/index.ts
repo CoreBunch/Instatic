@@ -36,15 +36,15 @@ import { VideoPropsSchema, type VideoStoredProps } from './props'
 
 // ---------------------------------------------------------------------------
 // Props schema — authored fields only. The publisher-injected field
-// (_resolvedMediaByKey) is NOT declared here; validateNodeProps merges it
+// (_resolvedMediaByKey) is NOT declared here; parseModuleProps merges it
 // over the cleaned props so it survives the coercion step untouched.
 // ---------------------------------------------------------------------------
 
 /**
  * Full render-time props. Intersects the authored schema shape with the
- * publisher-injected field that arrives after validateNodeProps runs.
+ * publisher-injected field that arrives after parseModuleProps runs.
  * `_resolvedMediaByKey` is NOT in VideoPropsSchema — it bypasses schema
- * cleaning via the `{ ...rawProps, ...cleaned }` merge in validateNodeProps.
+ * cleaning via the `{ ...rawProps, ...cleaned }` merge in parseModuleProps.
  * The `& Record<string, unknown>` satisfies the
  * ModuleDefinition<TProps extends Record<string, unknown>> constraint.
  */
