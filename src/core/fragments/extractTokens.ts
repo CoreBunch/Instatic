@@ -6,7 +6,7 @@
 import type { PageNode, StyleRule } from '@core/page-tree'
 import type { FontEntry, FontToken } from '@core/fonts'
 import type { FrameworkColorToken } from '@core/framework-schema'
-import { collectVarNames, forEachString, nodeContent, ruleContent } from './references'
+import { collectVarNames, declaredFontFamilies, forEachString, nodeContent, ruleContent } from './references'
 import { indexSiteVariables, type ScaleFamily } from './siteVariables'
 import type { FragmentScaleStep, SiteFragment } from './schema'
 import type { FragmentSource } from './source'
@@ -34,8 +34,8 @@ export function collectTokens(
 
   const pending = new Set<string>()
   const scan = (text: string) => collectVarNames(text, pending)
-  for (const rule of rules) for (const part of ruleContent(rule)) forEachString(part, scan)
-  for (const node of allNodes) for (const part of nodeContent(node)) forEachString(part, scan)
+  for (const rule of rules) forEachString(ruleContent(rule), scan)
+  for (const node of allNodes) forEachString(nodeContent(node), scan)
 
   // Properties the fragment declares itself (`.card { --pad: 1rem }`) resolve
   // wherever it lands.
@@ -98,15 +98,7 @@ export function collectTokens(
   const familyIds = new Set([...fontTokens.values()].flatMap((t) => (t.familyId ? [t.familyId] : [])))
   // Families named literally in a carried `font-family` declaration travel too,
   // so a section that never went through a token still finds its face.
-  const declaredFamilies = new Set<string>()
-  for (const rule of rules) {
-    for (const bag of [rule.styles, ...Object.values(rule.contextStyles)]) {
-      const value = bag.fontFamily
-      if (typeof value === 'string') {
-        for (const part of value.split(',')) declaredFamilies.add(part.trim().replace(/^["']|["']$/g, '').toLowerCase())
-      }
-    }
-  }
+  const declaredFamilies = declaredFontFamilies(rules)
   const fontFamilies: FontEntry[] = (site.settings.fonts?.items ?? [])
     .filter((entry) => familyIds.has(entry.id) || declaredFamilies.has(entry.family.toLowerCase()))
     .map((entry) => structuredClone(entry))

@@ -12,6 +12,7 @@
  */
 
 import {
+  addMissingConditions,
   addPage,
   collectSubtreeIds,
   reconcileSiteExplorerInPlace,
@@ -42,11 +43,7 @@ export function applyResolvedFragment(
   const now = Date.now()
 
   // ── Conditions, tokens, fonts ──────────────────────────────────────────────
-  if (plan.conditions.length > 0) {
-    site.conditions ??= []
-    const ids = new Set(site.conditions.map((c) => c.id))
-    for (const def of plan.conditions) if (!ids.has(def.id)) site.conditions.push(def)
-  }
+  addMissingConditions(site, plan.conditions)
 
   if (plan.colorTokens.length > 0) {
     site.settings.framework ??= { colors: { tokens: [] } }

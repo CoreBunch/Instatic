@@ -10,8 +10,7 @@
  * one in `src`.
  */
 
-import type { PageNode, StyleRule } from '@core/page-tree'
-import type { DataField } from '@core/data/schemas'
+import { makePageRef, type PageNode, type StyleRule } from '@core/page-tree'
 
 /** Visit every string inside a JSON-like value. */
 export function forEachString(value: unknown, visit: (text: string) => void): void {
@@ -97,6 +96,19 @@ export function mapRuleStrings(rule: StyleRule, map: (text: string) => string): 
   return { ...rule, styles, contextStyles, ...(rawCss !== undefined ? { rawCss } : {}) }
 }
 
+/** Lowercased family names the rules declare literally in `font-family`. */
+export function declaredFontFamilies(rules: Iterable<StyleRule>): Set<string> {
+  const names = new Set<string>()
+  for (const rule of rules) {
+    for (const bag of [rule.styles, ...Object.values(rule.contextStyles)]) {
+      const value = bag.fontFamily
+      if (typeof value !== 'string') continue
+      for (const part of value.split(',')) names.add(part.trim().replace(/^["']|["']$/g, '').toLowerCase())
+    }
+  }
+  return names
+}
+
 const VAR_RE = /var\(\s*(--[A-Za-z0-9_-]+)/g
 
 /** Every `--name` a CSS value reads through `var()`, fallbacks included. */
@@ -112,18 +124,16 @@ export function collectPageRefIds(text: string, into: Set<string>): void {
 }
 
 /**
- * Rewrite `cms:page:<id>` references. `resolve` returns the target page id to
- * link to, or `null` for a page the target site does not have: a value that
- * IS the reference becomes `#` (a safe no-op link, like an unresolvable ref at
- * publish time), and a reference inside longer text (a rich-text `href`)
- * becomes `#` in place.
+ * Rewrite `cms:page:<id>` references, inside longer text too (a rich-text
+ * `href`). `resolve` returns the target page id, or `null` for a page the
+ * target site lacks: that reference becomes `#`, the same safe no-op an
+ * unresolvable ref publishes as.
  */
 export function rewritePageRefs(text: string, resolve: (pageId: string) => string | null): string {
   if (!text.includes('cms:page:')) return text
   return text.replace(PAGE_REF_RE, (_match, pageId: string, fragment: string | undefined) => {
     const next = resolve(pageId)
-    if (next === null) return '#'
-    return `cms:page:${next}${fragment ?? ''}`
+    return next === null ? '#' : makePageRef(next, fragment)
   })
 }
 
@@ -154,26 +164,6 @@ export function createPathFinder(paths: Iterable<string>): (text: string, into: 
   const pattern = new RegExp(sorted.map(escapeRegExp).join('|'), 'g')
   return (text, into) => {
     for (const match of text.matchAll(pattern)) into.add(match[0])
-  }
-}
-
-/** Media ids a row's media cells hold (repeater items included). */
-export function mediaIdsInCells(fields: DataField[], cells: Record<string, unknown>, into: Set<string>): void {
-  for (const field of fields) {
-    const value = cells[field.id]
-    if (field.type === 'media') {
-      if (typeof value === 'string') into.add(value)
-      else if (Array.isArray(value)) for (const id of value) if (typeof id === 'string') into.add(id)
-    } else if (field.type === 'repeater' && Array.isArray(value)) {
-      for (const item of value) {
-        if (item && typeof item === 'object' && 'cells' in item) {
-          const itemCells = (item as { cells: unknown }).cells
-          if (itemCells && typeof itemCells === 'object') {
-            mediaIdsInCells(field.fields, itemCells as Record<string, unknown>, into)
-          }
-        }
-      }
-    }
   }
 }
 

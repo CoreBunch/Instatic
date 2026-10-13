@@ -12,6 +12,19 @@ import type { StyleRule, StyleRuleOrderAllocator, StyleRuleOrigin } from '@core/
 import type { NewStyleRule } from '@core/siteImport'
 
 /**
+ * Index a StyleRule registry by name → id.
+ * First id wins on duplicates (createClass enforces name uniqueness, so
+ * duplicates only occur in corrupted data — first-wins is a defensive tiebreak).
+ */
+export function indexStyleRulesByName(rules: Record<string, StyleRule>): Map<string, string> {
+  const byName = new Map<string, string>()
+  for (const cls of Object.values(rules)) {
+    if (!byName.has(cls.name)) byName.set(cls.name, cls.id)
+  }
+  return byName
+}
+
+/**
  * The identity a re-import reconciles against: import origin (stylesheet +
  * ordinal) AND selector. Origin alone is not unique in the registry — a class
  * rule the user let the Conflicts step rename (`hero` → `hero-2`) keeps the

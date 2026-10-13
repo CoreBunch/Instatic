@@ -13,7 +13,7 @@
  */
 
 import { nanoid } from 'nanoid'
-import type { SiteDocument, StyleRule } from '@core/page-tree'
+import type { SiteDocument } from '@core/page-tree'
 import {
   generateFrameworkColorVariableSets,
   insertScaleStep,
@@ -26,7 +26,7 @@ import type {
   FrameworkTypographyGroup,
 } from '@core/framework-schema'
 import { normalizeFontTokenVariable, type FontToken } from '@core/fonts'
-import { collectVarNames, forEachString, nodeContent, ruleContent } from './references'
+import { collectVarNames, declaredFontFamilies, forEachString, nodeContent, ruleContent } from './references'
 import { indexSiteVariables, type ScaleFamily } from './siteVariables'
 import type { FragmentScaleStep, SiteFragment } from './schema'
 import type {
@@ -113,7 +113,7 @@ export function planTokens(
   // Families: the ones an added token binds to, and the ones a carried rule
   // names literally in `font-family`. An existing family of the same name is
   // reused; the rest are installed.
-  const declared = declaredFontFamilies(fragment)
+  const declared = declaredFontFamilies(fragment.styleRules)
   const families = site.settings.fonts?.items ?? []
   const fontFamilies: PlannedFontFamily[] = []
   const reusedFamilyIds = new Map<string, string>()
@@ -234,11 +234,10 @@ export function planCustomProperties(
     generateFrameworkColorVariableSets({ tokens: fragment.tokens.colors }).light.map((v) => v.name),
   )
   const used = new Set<string>()
-  for (const rule of fragment.styleRules) for (const part of ruleContent(rule)) forEachString(part, (t) => collectVarNames(t, used))
-  for (const node of Object.values(fragment.nodes)) for (const part of nodeContent(node)) forEachString(part, (t) => collectVarNames(t, used))
-  for (const vc of fragment.components) {
-    for (const node of Object.values(vc.tree.nodes)) for (const part of nodeContent(node)) forEachString(part, (t) => collectVarNames(t, used))
-  }
+  const scan = (text: string) => collectVarNames(text, used)
+  for (const rule of fragment.styleRules) forEachString(ruleContent(rule), scan)
+  for (const node of Object.values(fragment.nodes)) forEachString(nodeContent(node), scan)
+  for (const vc of fragment.components) for (const node of Object.values(vc.tree.nodes)) forEachString(nodeContent(node), scan)
   for (const value of Object.values(fragment.tokens.customProperties)) collectVarNames(value, used)
   for (const name of used) {
     if (fragmentColorVars.has(name) && !after.colorTokenIdByVar.has(name)) {
@@ -264,26 +263,9 @@ export function planCustomProperties(
   }
   if (Object.keys(missing).length === 0) return null
 
-  const owned = findFragmentPropertiesRule(site.styleRules)
-  if (owned) return { ruleId: owned.id, create: false, order: owned.order, properties: missing }
-  return { ruleId: nanoid(), create: true, order: allocateOrder(), properties: missing }
-}
-
-export function findFragmentPropertiesRule(rules: Record<string, StyleRule>): StyleRule | undefined {
-  return Object.values(rules).find(
+  const owned = Object.values(site.styleRules).find(
     (rule) => rule.kind === 'ambient' && rule.selector === ':root' && rule.origin?.source === FRAGMENT_PROPERTIES_ORIGIN,
   )
-}
-
-/** Lowercased family names the fragment's rules declare in `font-family`. */
-function declaredFontFamilies(fragment: SiteFragment): Set<string> {
-  const names = new Set<string>()
-  for (const rule of fragment.styleRules) {
-    for (const bag of [rule.styles, ...Object.values(rule.contextStyles)]) {
-      const value = bag.fontFamily
-      if (typeof value !== 'string') continue
-      for (const part of value.split(',')) names.add(part.trim().replace(/^["']|["']$/g, '').toLowerCase())
-    }
-  }
-  return names
+  if (owned) return { ruleId: owned.id, order: owned.order, properties: missing }
+  return { ruleId: nanoid(), order: allocateOrder(), properties: missing }
 }

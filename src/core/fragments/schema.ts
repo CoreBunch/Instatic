@@ -27,6 +27,7 @@
 
 import { Type, type Static } from '@core/utils/typeboxHelpers'
 import { compiledSafeParseValue } from '@core/utils/typeboxCompiler'
+import { getErrorMessage } from '@core/utils/errorMessage'
 import {
   ConditionDefSchema,
   PageNodeSchema,
@@ -233,13 +234,14 @@ function assertFragmentTree(fragment: SiteFragment): void {
     children: [...fragment.roots],
     classIds: [],
   }
+  assertTree({ nodes: { ...fragment.nodes, [VIRTUAL_ROOT_ID]: virtualRoot }, rootNodeId: VIRTUAL_ROOT_ID }, 'nodes')
+}
+
+function assertTree(tree: Parameters<typeof assertValidNodeTree>[0], path: string): void {
   try {
-    assertValidNodeTree(
-      { nodes: { ...fragment.nodes, [VIRTUAL_ROOT_ID]: virtualRoot }, rootNodeId: VIRTUAL_ROOT_ID },
-      'nodes',
-    )
+    assertValidNodeTree(tree, path)
   } catch (err) {
-    throw new FragmentParseError('nodes', err instanceof Error ? err.message : String(err))
+    throw new FragmentParseError(path, getErrorMessage(err, String(err)))
   }
 }
 
@@ -269,13 +271,7 @@ function assertKindPayload(fragment: SiteFragment): void {
 }
 
 function assertComponentTrees(fragment: SiteFragment): void {
-  fragment.components.forEach((vc, index) => {
-    try {
-      assertValidNodeTree(vc.tree, `components.${index}.tree`)
-    } catch (err) {
-      throw new FragmentParseError(`components.${index}.tree`, err instanceof Error ? err.message : String(err))
-    }
-  })
+  fragment.components.forEach((vc, index) => assertTree(vc.tree, `components.${index}.tree`))
 }
 
 function assertUniqueIds(fragment: SiteFragment): void {

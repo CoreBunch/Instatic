@@ -2,29 +2,12 @@
  * extractFragment — cut a section, a page, or a Visual Component out of a
  * source site together with its closure, as a portable `SiteFragment`.
  *
- * The closure, in the order it is collected:
- *
- *   1. Nodes — the selected subtrees, deep-copied (a component selection
- *      becomes one instance of the component, slot instances materialised).
- *   2. Visual Components — every `base.visual-component-ref` target,
- *      transitively; their trees feed every later step.
- *   3. Class rules — every class a carried node (or component) uses. Framework
- *      utilities are carried by NAME only (styles stripped; the target
- *      regenerates its own), scoped module-style rules and regular rules whole.
- *   4. Ambient rules — every ambient rule whose selector names a carried class,
- *      plus each `@keyframes` block a carried declaration animates with.
- *      Rules that style the selection through a class on one of its
- *      ANCESTORS are not carried; they are reported as outside dependencies.
- *   5. Conditions — every non-viewport context id a carried rule keys on.
- *   6. Tokens — every `var(--x)` the content reads, classified by the
- *      framework's own generators: colour (full token definition), type or
- *      space scale step (by name), font token (+ its library entry), or any
- *      other custom property (valued from the source root rules).
- *   7. Tables — loops over `data.rows` carry their table and rows; CMS forms
- *      carry their target table's schema.
- *   8. Media — every library asset a string in the closure references by
- *      path, every custom font file, every media cell of a carried row.
- *   9. Links — every `cms:page:<id>` target with the source page's slug.
+ * The closure (docs/features/fragments.md has the full table): nodes, the
+ * Visual Component closure, the classes they use (framework utilities by NAME
+ * only: the target regenerates their styles), ambient rules and `@keyframes`
+ * built on those classes, conditions, tokens, tables, media and page links.
+ * Rules that style the selection through a class only its ANCESTORS have are
+ * reported as outside dependencies, not carried.
  *
  * Pure apart from reading media bytes through the source (and hashing them);
  * returns a fragment that has passed `parseSiteFragment`.
@@ -50,15 +33,10 @@ import {
 } from './schema'
 import type { FragmentSource } from './source'
 import type { FragmentWarning } from './warnings'
-import {
-  FRAMEWORK_ID_PREFIX,
-  carryKeyframes,
-  collectConditions,
-  findOutsideDependencies,
-  frameworkStub,
-} from './extractStyles'
+import { FRAMEWORK_ID_PREFIX } from '@core/framework'
+import { carryKeyframes, collectConditions, findOutsideDependencies, frameworkStub } from './extractStyles'
 import { collectTokens, type FrameworkStepUse } from './extractTokens'
-import { collectMedia, collectTables, type MediaSrcOption } from './extractData'
+import { collectMedia, collectTables } from './extractData'
 
 /**
  * What to extract: part of a page (`rootNodeIds`, siblings in document
@@ -71,11 +49,6 @@ export type FragmentSelection =
 
 export interface ExtractFragmentOptions {
   origin?: SiteFragment['origin']
-  /**
-   * How `media[].src` is written. Default: the package path
-   * (`media/<key>.<ext>`) when the bytes were read, else the source path.
-   */
-  mediaSrc?: MediaSrcOption
 }
 
 export interface ExtractFragmentResult {
@@ -161,7 +134,6 @@ export async function extractFragment(
   const { media, mediaBytes } = await collectMedia(
     source,
     { styleRules, allNodes, tables, fontFamilies: tokens.fontFamilies },
-    options.mediaSrc,
     warnings,
   )
 
@@ -313,7 +285,7 @@ function collectLinks(
 ): FragmentLink[] {
   const ids = new Set<string>()
   const scan = (text: string) => collectPageRefIds(text, ids)
-  for (const node of allNodes) for (const part of nodeContent(node)) forEachString(part, scan)
+  for (const node of allNodes) forEachString(nodeContent(node), scan)
   for (const table of tables) for (const row of table.rows ?? []) forEachString(row.cells, scan)
 
   const links: FragmentLink[] = []

@@ -11,9 +11,9 @@ import {
   type Page,
   type StyleRule,
 } from '@core/page-tree'
+import { FRAMEWORK_ID_PREFIX } from '@core/framework'
 import type { FragmentOutsideDependency } from './schema'
 
-export const FRAMEWORK_ID_PREFIX = 'framework:'
 const KEYFRAMES_PREFIX = '@keyframes '
 
 // ---------------------------------------------------------------------------

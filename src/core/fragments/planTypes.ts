@@ -7,11 +7,12 @@ import type { ConditionDef, PageNode, SiteDocument, StyleRule } from '@core/page
 import type { FrameworkColorToken } from '@core/framework-schema'
 import type { FontEntry, FontToken } from '@core/fonts'
 import type { VisualComponent } from '@core/visualComponents'
-import type { DataField, DataTable, DataTableKind } from '@core/data/schemas'
+import type { DataField, DataTable } from '@core/data/schemas'
 import type {
   FragmentKind,
   FragmentMedia,
   FragmentOutsideDependency,
+  FragmentTable,
   FragmentTableRow,
 } from './schema'
 import type { ScaleFamily } from './siteVariables'
@@ -46,16 +47,7 @@ export interface PlannedTableCreate {
   action: 'create'
   fragmentTableId: string
   slug: string
-  input: {
-    name: string
-    slug: string
-    kind: Extract<DataTableKind, 'postType' | 'data'>
-    singularLabel: string
-    pluralLabel: string
-    routeBase: string
-    primaryFieldId: string
-    fields: DataField[]
-  }
+  input: Omit<FragmentTable, 'id' | 'rows'>
   rows: FragmentTableRow[]
 }
 
@@ -83,8 +75,6 @@ export interface PlannedScaleSteps {
  */
 export interface PlannedCustomProperties {
   ruleId: string
-  /** True when the rule does not exist yet. */
-  create: boolean
   order: number
   properties: Record<string, string>
 }
