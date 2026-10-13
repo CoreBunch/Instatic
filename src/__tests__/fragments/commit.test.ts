@@ -9,8 +9,6 @@ import {
   FragmentCommitError,
   applyResolvedFragment,
   commitFragmentPlan,
-  extractFragment,
-  fragmentSourceFromSite,
   planFragmentInsert,
   type FragmentInsertAdapter,
   type FragmentMedia,
@@ -21,22 +19,7 @@ import type { FontEntry } from '@core/fonts'
 import type { PageNode, SiteDocument } from '@core/page-tree'
 import { reconcileFrameworkClasses } from '@site/store/slices/site/framework/reconcile'
 import { makePage, makeSite } from '../fixtures'
-import {
-  SOURCE_ROWS,
-  SOURCE_TABLES,
-  TARGET_TABLES,
-  makeSourceSite,
-  makeTargetSite,
-  mediaBytesFor,
-  sourceMediaWithBytes,
-} from './fixtures'
-
-async function extracted(selection: Parameters<typeof extractFragment>[1]) {
-  return extractFragment(
-    fragmentSourceFromSite(makeSourceSite(), { tables: SOURCE_TABLES, rows: SOURCE_ROWS, media: sourceMediaWithBytes() }),
-    selection,
-  )
-}
+import { TARGET_TABLES, extractFromSource, makeTargetSite, mediaBytesFor } from './fixtures'
 
 interface MemoryServer {
   library: { id: string; url: string; filename: string; mimeType: string; sizeBytes: number }[]
@@ -110,12 +93,17 @@ const readBytes = (fragment: SiteFragment) => (media: FragmentMedia) => {
   return source ? mediaBytesFor(source.id) : null
 }
 
+/** Plan `fragment` into the populated target's home page, with a memory adapter. */
+function intoTarget(fragment: SiteFragment, fail?: 'upload') {
+  const site = makeTargetSite()
+  const plan = planFragmentInsert({ site, tables: TARGET_TABLES, document: { kind: 'page', pageId: 't-home' } }, fragment)
+  return { site, plan, ...memoryAdapter(site, TARGET_TABLES, { pageId: 't-home', parentId: 't-body' }, fail) }
+}
+
 describe('commitFragmentPlan — into a populated site', () => {
   it('lands the section with styles, tokens, media, tables and links resolved', async () => {
-    const { fragment } = await extracted({ pageId: 'page-home', rootNodeIds: ['hero'] })
-    const site = makeTargetSite()
-    const plan = planFragmentInsert({ site, tables: TARGET_TABLES, document: { kind: 'page', pageId: 't-home' } }, fragment)
-    const { adapter, server } = memoryAdapter(site, TARGET_TABLES, { pageId: 't-home', parentId: 't-body' })
+    const { fragment } = await extractFromSource()
+    const { site, plan, adapter, server } = intoTarget(fragment)
 
     const result = await commitFragmentPlan(plan, adapter, { readMediaBytes: readBytes(fragment) })
     const page = site.pages.find((p) => p.id === 't-home')!
@@ -166,10 +154,8 @@ describe('commitFragmentPlan — into a populated site', () => {
   })
 
   it('a second insert of the same fragment reuses the uploaded media and adds no rules', async () => {
-    const { fragment } = await extracted({ pageId: 'page-home', rootNodeIds: ['hero'] })
-    const site = makeTargetSite()
-    const { adapter } = memoryAdapter(site, TARGET_TABLES, { pageId: 't-home', parentId: 't-body' })
-    const first = planFragmentInsert({ site, tables: TARGET_TABLES, document: { kind: 'page', pageId: 't-home' } }, fragment)
+    const { fragment } = await extractFromSource()
+    const { site, plan: first, adapter } = intoTarget(fragment)
     await commitFragmentPlan(first, adapter, { readMediaBytes: readBytes(fragment) })
     const rulesAfterFirst = Object.keys(site.styleRules).length
 
@@ -185,21 +171,17 @@ describe('commitFragmentPlan — into a populated site', () => {
   })
 
   it('stops before touching the document when an upload fails', async () => {
-    const { fragment } = await extracted({ pageId: 'page-home', rootNodeIds: ['hero'] })
-    const site = makeTargetSite()
+    const { fragment } = await extractFromSource()
+    const { site, plan, adapter } = intoTarget(fragment, 'upload')
     const before = structuredClone(site)
-    const plan = planFragmentInsert({ site, tables: TARGET_TABLES, document: { kind: 'page', pageId: 't-home' } }, fragment)
-    const { adapter } = memoryAdapter(site, TARGET_TABLES, { pageId: 't-home', parentId: 't-body' }, 'upload')
     await expect(commitFragmentPlan(plan, adapter, { readMediaBytes: readBytes(fragment) })).rejects.toBeInstanceOf(FragmentCommitError)
     expect(site).toEqual(before)
   })
 
   it('honours cancellation before the transaction', async () => {
-    const { fragment } = await extracted({ pageId: 'page-home', rootNodeIds: ['hero'] })
-    const site = makeTargetSite()
+    const { fragment } = await extractFromSource()
+    const { site, plan, adapter } = intoTarget(fragment)
     const before = structuredClone(site)
-    const plan = planFragmentInsert({ site, tables: TARGET_TABLES, document: { kind: 'page', pageId: 't-home' } }, fragment)
-    const { adapter } = memoryAdapter(site, TARGET_TABLES, { pageId: 't-home', parentId: 't-body' })
     const controller = new AbortController()
     controller.abort()
     await expect(commitFragmentPlan(plan, adapter, { readMediaBytes: readBytes(fragment), signal: controller.signal })).rejects.toThrow()
@@ -209,7 +191,7 @@ describe('commitFragmentPlan — into a populated site', () => {
 
 describe('commitFragmentPlan — into an empty site', () => {
   it('creates everything, rows and media cells included', async () => {
-    const { fragment } = await extracted({ pageId: 'page-home', rootNodeIds: ['hero'] })
+    const { fragment } = await extractFromSource()
     const site = makeSite({ pages: [makePage({ id: 'e-home', rootNodeId: 'e-body' })] })
     const plan = planFragmentInsert({ site, tables: [], document: { kind: 'page', pageId: 'e-home' } }, fragment)
     const { adapter, server } = memoryAdapter(site, [], { pageId: 'e-home', parentId: 'e-body' })
@@ -236,7 +218,7 @@ describe('commitFragmentPlan — into an empty site', () => {
   })
 
   it('a page fragment becomes a new page', async () => {
-    const { fragment } = await extracted({ pageId: 'page-home' })
+    const { fragment } = await extractFromSource({ pageId: 'page-home' })
     const site = makeTargetSite()
     const plan = planFragmentInsert({ site, tables: TARGET_TABLES }, fragment)
     const { adapter } = memoryAdapter(site, TARGET_TABLES, { pageId: 't-home', parentId: 't-body' })

@@ -6,14 +6,8 @@
 import { beforeEach, describe, expect, it } from 'bun:test'
 import { useEditorStore } from '@site/store/store'
 import { fragmentInsertDocument } from '@site/store/slices/fragmentsSlice'
-import {
-  extractFragment,
-  fragmentSourceFromSite,
-  planFragmentInsert,
-  resolveFragmentPlan,
-  type SiteFragment,
-} from '@core/fragments'
-import { SOURCE_ROWS, SOURCE_TABLES, makeSourceSite, sourceMediaWithBytes } from '../fragments/fixtures'
+import { planFragmentInsert, resolveFragmentPlan, type SiteFragment } from '@core/fragments'
+import { extractFromSource } from '../fragments/fixtures'
 import '@modules/base/index'
 
 function freshStore(): void {
@@ -34,10 +28,7 @@ function freshStore(): void {
 
 beforeEach(freshStore)
 
-async function sectionFragment(): Promise<SiteFragment> {
-  const source = fragmentSourceFromSite(makeSourceSite(), { tables: SOURCE_TABLES, rows: SOURCE_ROWS, media: sourceMediaWithBytes() })
-  return (await extractFragment(source, { pageId: 'page-home', rootNodeIds: ['hero'] })).fragment
-}
+const { fragment: section } = await extractFromSource()
 
 function resolvedPlanForStore(fragment: SiteFragment) {
   const state = useEditorStore.getState()
@@ -53,10 +44,10 @@ function resolvedPlanForStore(fragment: SiteFragment) {
 }
 
 describe('insertFragment', () => {
-  it('inserts the section, its rules, tokens and components, and selects it', async () => {
+  it('inserts the section, its rules, tokens and components, and selects it', () => {
     const site = useEditorStore.getState().createSite('Target')
     const rootId = site.pages[0].rootNodeId
-    const resolved = resolvedPlanForStore(await sectionFragment())
+    const resolved = resolvedPlanForStore(section)
 
     const result = useEditorStore.getState().insertFragment(resolved)
     expect(result?.rootIds).toHaveLength(1)
@@ -72,13 +63,13 @@ describe('insertFragment', () => {
     expect(image.props.src).toBe('/uploads/copied-photo.jpg')
   })
 
-  it('a second insert lands after the still-selected first section, not inside it', async () => {
+  it('a second insert lands after the still-selected first section, not inside it', () => {
     const site = useEditorStore.getState().createSite('Target')
     const rootId = site.pages[0].rootNodeId
 
-    const first = useEditorStore.getState().insertFragment(resolvedPlanForStore(await sectionFragment()))
+    const first = useEditorStore.getState().insertFragment(resolvedPlanForStore(section))
     expect(useEditorStore.getState().selectedNodeId).toBe(first!.rootIds[0])
-    const second = useEditorStore.getState().insertFragment(resolvedPlanForStore(await sectionFragment()))
+    const second = useEditorStore.getState().insertFragment(resolvedPlanForStore(section))
 
     const nodes = useEditorStore.getState().site!.pages[0].nodes
     const rootChildren = nodes[rootId].children
@@ -86,19 +77,19 @@ describe('insertFragment', () => {
     expect(nodes[first!.rootIds[0]].children).not.toContain(second!.rootIds[0])
   })
 
-  it("never duplicates the seeded font role tokens of a new site", async () => {
+  it("never duplicates the seeded font role tokens of a new site", () => {
     useEditorStore.getState().createSite('Target')
     const before = useEditorStore.getState().site!.settings.fonts?.tokens?.map((t) => t.variable) ?? []
     expect(before).toContain('font-heading')
-    useEditorStore.getState().insertFragment(resolvedPlanForStore(await sectionFragment()))
+    useEditorStore.getState().insertFragment(resolvedPlanForStore(section))
     const after = useEditorStore.getState().site!.settings.fonts?.tokens?.map((t) => t.variable) ?? []
     expect(after).toEqual(before)
   })
 
-  it('one undo removes the whole insert', async () => {
+  it('one undo removes the whole insert', () => {
     const site = useEditorStore.getState().createSite('Target')
     const before = useEditorStore.getState().site!
-    const resolved = resolvedPlanForStore(await sectionFragment())
+    const resolved = resolvedPlanForStore(section)
     useEditorStore.getState().insertFragment(resolved)
 
     useEditorStore.getState().undo()
@@ -110,16 +101,15 @@ describe('insertFragment', () => {
     expect(undone.pages[0].nodes[site.pages[0].rootNodeId].children).toEqual([])
   })
 
-  it('refuses a plan made for another document', async () => {
+  it('refuses a plan made for another document', () => {
     useEditorStore.getState().createSite('Target')
-    const resolved = resolvedPlanForStore(await sectionFragment())
+    const resolved = resolvedPlanForStore(section)
     expect(useEditorStore.getState().insertFragment({ ...resolved, document: { kind: 'page', pageId: 'elsewhere' } })).toBeNull()
   })
 
   it('a page fragment adds a page', async () => {
     useEditorStore.getState().createSite('Target')
-    const source = fragmentSourceFromSite(makeSourceSite(), { tables: SOURCE_TABLES, rows: SOURCE_ROWS, media: sourceMediaWithBytes() })
-    const { fragment } = await extractFragment(source, { pageId: 'page-about' })
+    const { fragment } = await extractFromSource({ pageId: 'page-about' })
     const result = useEditorStore.getState().insertFragment(resolvedPlanForStore(fragment))
     const page = useEditorStore.getState().site!.pages.find((p) => p.id === result?.pageId)
     expect(page?.slug).toBe('about')
