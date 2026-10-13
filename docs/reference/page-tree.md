@@ -178,6 +178,12 @@ All mutations live in `src/core/page-tree/mutations.ts`. They take a `NodeTree<P
 - `pageSlugError(slug)` — returns a validation error message or `null` if the slug is valid. Valid page slugs are lowercase hyphenated segments separated by single slashes; the first segment cannot be a reserved public route (`admin`, `api`, `assets`, `health`).
 - `pageSlugDuplicateError(slug, pages, currentPageId?)` — checks for slug collisions across the page list.
 - `createUniquePageSlug(title, pages)` — generates a collision-free slug from a page title (normalises + reserved-slug guard + uniqueness).
+- `uniquePageSlug(desired, pages, excludePageId?)` — the auto-suffixing (`-2`, `-3`, …) `addPage` uses; exported so planners can report the final slug before committing.
+
+`src/core/page-tree/styleRuleRegistry.ts`:
+
+- `createStyleRuleOrderAllocator(rules)` — cascade positions after every existing rule, O(1) per append; shared by HTML paste, site import and fragment inserts.
+- `indexStyleRulesByName(rules)` — name → id, first wins.
 
 ---
 

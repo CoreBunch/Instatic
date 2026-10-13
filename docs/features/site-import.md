@@ -429,6 +429,7 @@ outside the archive are normal and would bury the real misses.
 
 - [docs/features/html-import.md](html-import.md) — `@core/htmlImport` is used by `htmlPagePlan.ts` to parse each HTML file's body into a `PageNode` fragment
 - [docs/features/site-transfer.md](site-transfer.md) — CMS bundle export/import archive format and server endpoints used by the CMS branch of this modal
+- [docs/features/fragments.md](fragments.md) — inserting one section, page or component from another site; shares the cascade-order allocator (`createStyleRuleOrderAllocator`, `@core/page-tree`)
 - [docs/reference/page-tree.md](../reference/page-tree.md) — `NodeTree<PageNode>`, `ImportFragment` shape
 - [docs/reference/typebox-patterns.md](../reference/typebox-patterns.md) — boundary validation
 - Source-of-truth files:
