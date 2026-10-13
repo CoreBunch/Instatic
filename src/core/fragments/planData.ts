@@ -12,7 +12,8 @@
 import type { DataField } from '@core/data/schemas'
 import type { PageNode, StyleRule } from '@core/page-tree'
 import type { VisualComponent } from '@core/visualComponents'
-import { createPathFinder, forEachString, mediaIdsInCells, nodeContent, ruleContent } from './references'
+import { collectCellMediaIds } from '@core/data/cells'
+import { createPathFinder, forEachString, nodeContent, ruleContent } from './references'
 import type { FragmentMedia, FragmentTable, FragmentTableRow, SiteFragment } from './schema'
 import type { FragmentInsertReport, FragmentInsertTarget, PlannedFontFamily, PlannedTable } from './planTypes'
 import type { FragmentWarning } from './warnings'
@@ -59,22 +60,10 @@ export function planTables(
     }
 
     const rows = (table.rows ?? []).map((row) => portableRow(row, table.fields, fields))
-    tables.push({
-      action: 'create',
-      fragmentTableId: table.id,
-      slug: table.slug,
-      input: {
-        name: table.name,
-        slug: table.slug,
-        kind: table.kind,
-        singularLabel: table.singularLabel,
-        pluralLabel: table.pluralLabel,
-        routeBase: table.routeBase,
-        primaryFieldId: table.primaryFieldId,
-        fields,
-      },
-      rows,
-    })
+    // Named fields only: unknown keys a fragment file carries never reach the server.
+    const { name, slug, kind, singularLabel, pluralLabel, routeBase, primaryFieldId } = table
+    const input = { name, slug, kind, singularLabel, pluralLabel, routeBase, primaryFieldId, fields }
+    tables.push({ action: 'create', fragmentTableId: table.id, slug, input, rows })
     report.tables.created.push(table.slug)
     report.tables.rows += rows.length
   }
@@ -128,11 +117,9 @@ export function referencedMedia(
   const found = new Set<string>()
   const find = createPathFinder(byPath.keys())
   const scan = (text: string) => find(text, found)
-  for (const node of parts.nodes) for (const part of nodeContent(node)) forEachString(part, scan)
-  for (const vc of parts.components) {
-    for (const node of Object.values(vc.tree.nodes)) for (const part of nodeContent(node)) forEachString(part, scan)
-  }
-  for (const rule of parts.rules) for (const part of ruleContent(rule)) forEachString(part, scan)
+  for (const node of parts.nodes) forEachString(nodeContent(node), scan)
+  for (const vc of parts.components) for (const node of Object.values(vc.tree.nodes)) forEachString(nodeContent(node), scan)
+  for (const rule of parts.rules) forEachString(ruleContent(rule), scan)
 
   const ids = new Set<string>()
   for (const path of found) ids.add(byPath.get(path)!.id)
@@ -147,7 +134,7 @@ export function referencedMedia(
   for (const table of parts.tables) {
     if (table.action !== 'create') continue
     for (const row of table.rows) {
-      mediaIdsInCells(table.input.fields, row.cells, ids)
+      for (const id of collectCellMediaIds(row.cells, table.input.fields)) ids.add(id)
       const rowPaths = new Set<string>()
       forEachString(row.cells, (text) => find(text, rowPaths))
       for (const path of rowPaths) ids.add(byPath.get(path)!.id)

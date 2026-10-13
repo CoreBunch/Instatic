@@ -1,11 +1,8 @@
 /**
- * Style rule registry helpers shared by every flow that merges foreign rules
- * into a site: HTML paste (`insertImportedNodes`), the whole-site import
+ * Cascade order allocation shared by every flow that merges foreign rules into
+ * a site: HTML paste (`insertImportedNodes`), the whole-site import
  * (`mutateAllPagesAndSite`), and the fragment insert planner
  * (`@core/fragments`).
- *
- * Pure: operates on a plain `Record<string, StyleRule>` (or a Mutative draft of
- * one) and never touches editor state.
  */
 
 import type { StyleRule } from './styleRule'
@@ -27,17 +24,4 @@ export function createStyleRuleOrderAllocator(
     }
   }
   return () => nextOrder++
-}
-
-/**
- * Index a StyleRule registry by name → id.
- * First id wins on duplicates (createClass enforces name uniqueness, so
- * duplicates only occur in corrupted data — first-wins is a defensive tiebreak).
- */
-export function indexStyleRulesByName(rules: Record<string, StyleRule>): Map<string, string> {
-  const byName = new Map<string, string>()
-  for (const cls of Object.values(rules)) {
-    if (!byName.has(cls.name)) byName.set(cls.name, cls.id)
-  }
-  return byName
 }

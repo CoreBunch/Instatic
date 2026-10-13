@@ -30,8 +30,8 @@ import {
   wrapNode,
   wrapNodes,
   reindexNodeParents,
+  addMissingConditions,
   createStyleRuleOrderAllocator,
-  indexStyleRulesByName,
 } from '@core/page-tree'
 import type { NodeTree, PageNode, SiteDocument } from '@core/page-tree'
 import { subtreeHasOutlet, treeHasOutlet } from '@core/templates'
@@ -39,7 +39,7 @@ import { wouldCreateCycle, syncSlotInstances, applySlotSyncResult } from '@core/
 import { pushToast } from '@ui/components/Toast'
 import { depthInTree, resolveActiveTreeTarget } from './helpers'
 import { pruneCanvasSelectionDraft } from '../selectionSlice'
-import { linkImportedClassNames, mergeImportedStyleRules } from './importLinking'
+import { indexStyleRulesByName, linkImportedClassNames, mergeImportedStyleRules } from './importLinking'
 import type { SiteSlice, SiteSliceHelpers } from './types'
 
 type NodeActions = Pick<
@@ -229,15 +229,7 @@ export function createNodeActions(helpers: SiteSliceHelpers): NodeActions {
         }
         // Register any reusable conditions (custom @media / @container /
         // @supports) the <style> rules reference via contextStyles keys.
-        if (opts?.conditions?.length) {
-          if (!site.conditions) site.conditions = []
-          const existing = new Set(site.conditions.map((c) => c.id))
-          for (const def of opts.conditions) {
-            if (existing.has(def.id)) continue
-            existing.add(def.id)
-            site.conditions.push(def)
-          }
-        }
+        addMissingConditions(site, opts?.conditions ?? [])
 
         for (const [id, node] of Object.entries(fragment.nodes)) {
           // `node.inlineStyles` (imported inline `style="…"`) rides along on

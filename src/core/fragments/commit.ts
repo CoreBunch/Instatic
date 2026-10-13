@@ -17,6 +17,7 @@
  */
 
 import { isAbortError } from '@core/http'
+import { getErrorMessage } from '@core/utils/errorMessage'
 import type { DataField } from '@core/data/schemas'
 import type { FontEntry } from '@core/fonts'
 import { createPathReplacer, mapStrings } from './references'
@@ -123,7 +124,7 @@ async function resolveMedia(
         }
       } catch (err) {
         if (isAbortError(err)) throw err
-        throw new FragmentCommitError('media', `Could not add ${item.filename} to the media library: ${errorText(err)}`, { cause: err })
+        throw new FragmentCommitError('media', `Could not add ${item.filename} to the media library: ${getErrorMessage(err, String(err))}`, { cause: err })
       }
       if (item.key) byKey.set(item.key, ref)
     }
@@ -169,7 +170,7 @@ async function installFonts(
       if (isAbortError(err)) throw err
       warnings.push({
         code: 'font-install-failed',
-        message: `${entry.family} could not be installed (${errorText(err)}); text using it falls back.`,
+        message: `${entry.family} could not be installed (${getErrorMessage(err, String(err))}); text using it falls back.`,
         subject: entry.family,
       })
     }
@@ -232,7 +233,7 @@ async function writeTables(
     }
   } catch (err) {
     if (isAbortError(err)) throw err
-    throw new FragmentCommitError('tables', `Could not write the fragment's tables: ${errorText(err)}`, { cause: err })
+    throw new FragmentCommitError('tables', `Could not write the fragment's tables: ${getErrorMessage(err, String(err))}`, { cause: err })
   }
   return tableIdMap
 }
@@ -281,8 +282,4 @@ function remapMediaIds(field: DataField, value: unknown, mediaIdById: Map<string
     })
   }
   return value
-}
-
-function errorText(err: unknown): string {
-  return err instanceof Error && err.message ? err.message : String(err)
 }

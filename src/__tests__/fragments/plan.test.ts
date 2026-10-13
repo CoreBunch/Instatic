@@ -166,9 +166,9 @@ describe('planFragmentInsert — tokens', () => {
   })
 
   it('puts root custom properties the site lacks into one engine-owned :root rule', async () => {
-    const { plan } = await planIntoTarget()
+    const { plan, target } = await planIntoTarget()
     expect(plan.report.customProperties).toEqual({ added: ['--shadow'], kept: ['--radius'] })
-    expect(plan.customProperties?.create).toBe(true)
+    expect(target.styleRules[plan.customProperties!.ruleId]).toBeUndefined()
     expect(plan.customProperties?.properties).toEqual({ '--shadow': '0 0 4px var(--primary-50)' })
   })
 
@@ -184,7 +184,7 @@ describe('planFragmentInsert — tokens', () => {
       { site: target, tables: TARGET_TABLES, document: { kind: 'page', pageId: 't-home' } },
       await sectionFragment(),
     )
-    expect(plan.customProperties).toEqual({ ruleId: 'owned', create: false, order: 50, properties: { '--shadow': '0 0 4px var(--primary-50)' } })
+    expect(plan.customProperties).toEqual({ ruleId: 'owned', order: 50, properties: { '--shadow': '0 0 4px var(--primary-50)' } })
   })
 })
 

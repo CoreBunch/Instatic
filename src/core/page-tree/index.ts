@@ -27,6 +27,7 @@ export {
   StyleRuleSchema,
   classKindSelector,
   classifySelectorCreateInput,
+  isRootScopeSelector,
   parseStyleRule,
 } from './styleRule'
 export {
@@ -72,7 +73,14 @@ export { DEFAULT_BREAKPOINTS, breakpointMediaQuery, defaultBreakpointMediaQuery 
 export { DEFAULT_SITE_SETTINGS, createNewSiteSettings } from './siteSettings'
 
 // Condition helpers
-export { ConditionDefSchema, conditionId, conditionLabel, makeConditionDef, parseConditions } from './condition'
+export {
+  ConditionDefSchema,
+  addMissingConditions,
+  conditionId,
+  conditionLabel,
+  makeConditionDef,
+  parseConditions,
+} from './condition'
 
 // Tolerant parsers — boundary helpers for persisted data.
 export { parseBreakpoint } from './breakpoint'
@@ -162,7 +170,7 @@ export { cloneNodeWithRemap } from './cloneNode'
 
 export { cloneScopedClassesForNodeMap } from './scopedClassClone'
 
-export { createStyleRuleOrderAllocator, indexStyleRulesByName } from './styleRuleRegistry'
+export { createStyleRuleOrderAllocator } from './styleRuleRegistry'
 export type { StyleRuleOrderAllocator } from './styleRuleRegistry'
 
 export {

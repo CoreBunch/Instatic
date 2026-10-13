@@ -8,7 +8,7 @@
  * that could drift from it.
  */
 
-import type { SiteSettings, StyleRule } from '@core/page-tree'
+import { isRootScopeSelector, type SiteSettings, type StyleRule } from '@core/page-tree'
 import {
   generateFrameworkColorVariableSets,
   generateFrameworkSpacingVariables,
@@ -34,18 +34,6 @@ export interface SiteVariableIndex {
   fontTokenByVar: Map<string, FontToken>
   /** `--name` → value declared on a root-scope ambient rule (last in cascade wins). */
   rootCustomProperties: Map<string, string>
-}
-
-const ROOT_SCOPE_SELECTORS = new Set([':root', 'html', 'body'])
-
-/**
- * A selector that targets only the document root: `:root`, `html`, `body`, or
- * a comma group of those. Qualified selectors (`:root.theme-alt`) are not root
- * scope — their variables apply conditionally.
- */
-export function isRootScopeSelector(selector: string): boolean {
-  const parts = selector.split(',').map((part) => part.trim().toLowerCase())
-  return parts.length > 0 && parts.every((part) => ROOT_SCOPE_SELECTORS.has(part))
 }
 
 export function indexSiteVariables(site: {

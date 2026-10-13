@@ -12,10 +12,10 @@ import { nanoid } from 'nanoid'
 import type { StoreApi } from 'zustand'
 import type { NodeTree, PageNode, StyleRule, SiteDocument } from '@core/page-tree'
 import {
+  addMissingConditions,
   addPage,
   createNode,
   createStyleRuleOrderAllocator,
-  indexStyleRulesByName,
   reconcileSiteExplorerInPlace,
   reindexNodeParents,
   type StyleRuleOrderAllocator,
@@ -32,6 +32,7 @@ import { applyLocalSitePatches, notifyCollabBlocked } from './collabBinding'
 import type { EditorStore } from '@site/store/types'
 import { reconcileFrameworkClasses } from './framework/reconcile'
 import {
+  indexStyleRulesByName,
   linkImportedClassNames,
   findReimportedStyleRule,
   indexStyleRulesByOrigin,
@@ -477,15 +478,7 @@ export function buildSiteHelpers(
         },
 
         addConditions(conditions): void {
-          if (conditions.length === 0) return
-          if (!site.conditions) site.conditions = []
-          const existing = new Set(site.conditions.map((c) => c.id))
-          for (const def of conditions) {
-            if (existing.has(def.id)) continue
-            existing.add(def.id)
-            site.conditions.push(def)
-            didMutate = true
-          }
+          if (addMissingConditions(site, conditions) > 0) didMutate = true
         },
 
         addFonts(fonts): { id: string; family: string }[] {

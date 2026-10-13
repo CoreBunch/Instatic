@@ -6,14 +6,12 @@
 import type { PageNode, StyleRule } from '@core/page-tree'
 import type { FontEntry } from '@core/fonts'
 import type { DataRow, DataTable } from '@core/data/schemas'
-import { createPathFinder, forEachString, mediaIdsInCells, nodeContent, ruleContent } from './references'
+import { collectCellMediaIds } from '@core/data/cells'
+import { createPathFinder, forEachString, nodeContent, ruleContent } from './references'
 import type { FragmentMedia, FragmentTable, FragmentTableRow } from './schema'
 import type { FragmentSource, FragmentSourceMedia } from './source'
 import type { FragmentWarning } from './warnings'
 import { mediaPackagePath, sha256Hex } from './mediaKeys'
-
-/** How `media[].src` is written (see `ExtractFragmentOptions.mediaSrc`). */
-export type MediaSrcOption = (media: { id: string; key?: string; filename: string; mimeType: string; path: string }) => string
 
 // ---------------------------------------------------------------------------
 // 7. Tables
@@ -113,7 +111,6 @@ export async function collectMedia(
     tables: FragmentTable[]
     fontFamilies: FontEntry[]
   },
-  mediaSrc: MediaSrcOption | undefined,
   warnings: FragmentWarning[],
 ): Promise<{ media: FragmentMedia[]; mediaBytes: Map<string, Uint8Array> }> {
   const byPath = new Map(source.media.map((m) => [m.path, m]))
@@ -122,8 +119,8 @@ export async function collectMedia(
   const find = createPathFinder(byPath.keys())
   const scan = (text: string) => find(text, foundPaths)
 
-  for (const rule of closure.styleRules) for (const part of ruleContent(rule)) forEachString(part, scan)
-  for (const node of closure.allNodes) for (const part of nodeContent(node)) forEachString(part, scan)
+  for (const rule of closure.styleRules) forEachString(ruleContent(rule), scan)
+  for (const node of closure.allNodes) forEachString(nodeContent(node), scan)
 
   const ids = new Set<string>()
   for (const path of foundPaths) {
@@ -138,9 +135,7 @@ export async function collectMedia(
   }
   for (const table of closure.tables) {
     for (const row of table.rows ?? []) {
-      const cellIds = new Set<string>()
-      mediaIdsInCells(table.fields, row.cells, cellIds)
-      for (const id of cellIds) if (byId.has(id)) ids.add(id)
+      for (const id of collectCellMediaIds(row.cells, table.fields)) if (byId.has(id)) ids.add(id)
       forEachString(row.cells, scan)
     }
   }
@@ -166,19 +161,12 @@ export async function collectMedia(
         subject: asset.path,
       })
     }
-    media.push(toFragmentMedia(asset, key, mediaSrc))
+    media.push(toFragmentMedia(asset, key))
   }
   return { media, mediaBytes }
 }
 
-function toFragmentMedia(
-  asset: FragmentSourceMedia,
-  key: string | undefined,
-  mediaSrc: MediaSrcOption | undefined,
-): FragmentMedia {
-  const describe = { id: asset.id, ...(key ? { key } : {}), filename: asset.filename, mimeType: asset.mimeType, path: asset.path }
-  const src = mediaSrc?.(describe)
-    ?? (key ? mediaPackagePath(key, asset.filename, asset.mimeType) : asset.path)
+function toFragmentMedia(asset: FragmentSourceMedia, key: string | undefined): FragmentMedia {
   return {
     id: asset.id,
     ...(key ? { key } : {}),
@@ -189,6 +177,6 @@ function toFragmentMedia(
     ...(typeof asset.width === 'number' ? { width: asset.width } : {}),
     ...(typeof asset.height === 'number' ? { height: asset.height } : {}),
     ...(asset.alt ? { alt: asset.alt } : {}),
-    src,
+    src: key ? mediaPackagePath(key, asset.filename, asset.mimeType) : asset.path,
   }
 }

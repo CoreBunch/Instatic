@@ -26,6 +26,7 @@
 
 import { nanoid } from 'nanoid'
 import {
+  buildSubtreeNodeIdMap,
   cloneNodeWithRemap,
   collectSubtreeIds,
   createStyleRuleOrderAllocator,
@@ -38,7 +39,7 @@ import {
   type SiteDocument,
   type StyleRule,
 } from '@core/page-tree'
-import { generateFrameworkUtilityClasses } from '@core/framework'
+import { FRAMEWORK_ID_PREFIX, generateFrameworkUtilityClasses } from '@core/framework'
 import { firstOutletId, treeHasOutlet } from '@core/templates'
 import { forEachVCRef, vcSlugFromName, wouldCreateCycle, type VisualComponent } from '@core/visualComponents'
 import { mapNodeStrings, mapStrings, remapTableRefs, rewritePageRefs } from './references'
@@ -68,7 +69,6 @@ export class FragmentInsertError extends Error {
   }
 }
 
-const FRAMEWORK_ID_PREFIX = 'framework:'
 const VC_REF = 'base.visual-component-ref'
 
 export function planFragmentInsert(target: FragmentInsertTarget, fragment: SiteFragment): FragmentInsertPlan {
@@ -88,7 +88,7 @@ export function planFragmentInsert(target: FragmentInsertTarget, fragment: SiteF
   // ── Node ids for everything that lands: placed nodes + added trees ─────────
   const nodeIdMap = new Map<string, string>()
   for (const rootId of fragment.roots) {
-    for (const id of collectSubtreeIds(fragment.nodes, rootId)) nodeIdMap.set(id, nanoid())
+    for (const [id, newId] of buildSubtreeNodeIdMap(rootId, fragment.nodes)) nodeIdMap.set(id, newId)
   }
   const vcNodeIdMaps = new Map<string, Map<string, string>>()
   for (const vc of addedVcs) {
