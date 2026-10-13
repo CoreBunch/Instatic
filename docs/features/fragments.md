@@ -187,7 +187,7 @@ Bun resolves the `@core/*` aliases from the repo's `tsconfig.json`. `planFragmen
 ## Related
 
 - [editor.md](../editor.md) — Saved layouts (same-site snapshots, class match by id) and Spotlight
-- [site-import.md](site-import.md) — whole-site imports; shares `createStyleRuleOrderAllocator` / `indexStyleRulesByName`
+- [site-import.md](site-import.md) — whole-site imports; shares `createStyleRuleOrderAllocator`, `isRootScopeSelector` and `addMissingConditions` (`@core/page-tree`)
 - [site-transfer.md](site-transfer.md) — the export archive `fragmentSourceFromBundleArchive` reads
 - [visual-components.md](visual-components.md), [loops.md](loops.md), [cms-native-forms.md](cms-native-forms.md), [media.md](media.md)
 - Source of truth: `src/core/fragments/schema.ts`, `src/core/fragments/plan.ts`, `src/core/fragments/commit.ts`
