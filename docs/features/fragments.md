@@ -148,7 +148,7 @@ E. adapter.commit(resolved)   ONE store transaction
 
 - A media or table failure throws `FragmentCommitError` before E: the document is untouched; uploads and tables already made stay (Media and Data workspaces show them). A font install failure is a warning; the token falls back to its stack.
 - `signal` aborts at the next boundary, never after E started.
-- The editor's E is `insertFragment` (`fragmentsSlice.ts`): `applyResolvedFragment` inside `mutateActiveTreeAndSite` (sections, components: placed where `resolveInsertLocation` puts a paste, first root selected) or `mutateSite` (pages), plus `reconcileFrameworkClasses` when a colour or step was added. One undo step; the change syncs through collab like any edit. The plan's `document` must still be the active one.
+- The editor's E is `insertFragment` (`fragmentsSlice.ts`): `applyResolvedFragment` inside `mutateActiveTreeAndSite` (sections, components: placed right after the selected element by `resolveSiblingInsertLocation`, or at the end of the document when nothing or the root is selected; never inside a selected container, unlike a paste; first root selected) or `mutateSite` (pages), plus `reconcileFrameworkClasses` when a colour or step was added. One undo step; the change syncs through collab like any edit. The plan's `document` must still be the active one.
 - The editor adapter runs every server write through `runStepUp` (creating a table needs a recent password).
 
 ---

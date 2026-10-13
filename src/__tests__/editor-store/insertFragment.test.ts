@@ -72,6 +72,20 @@ describe('insertFragment', () => {
     expect(image.props.src).toBe('/uploads/copied-photo.jpg')
   })
 
+  it('a second insert lands after the still-selected first section, not inside it', async () => {
+    const site = useEditorStore.getState().createSite('Target')
+    const rootId = site.pages[0].rootNodeId
+
+    const first = useEditorStore.getState().insertFragment(resolvedPlanForStore(await sectionFragment()))
+    expect(useEditorStore.getState().selectedNodeId).toBe(first!.rootIds[0])
+    const second = useEditorStore.getState().insertFragment(resolvedPlanForStore(await sectionFragment()))
+
+    const nodes = useEditorStore.getState().site!.pages[0].nodes
+    const rootChildren = nodes[rootId].children
+    expect(rootChildren.indexOf(second!.rootIds[0])).toBe(rootChildren.indexOf(first!.rootIds[0]) + 1)
+    expect(nodes[first!.rootIds[0]].children).not.toContain(second!.rootIds[0])
+  })
+
   it("never duplicates the seeded font role tokens of a new site", async () => {
     useEditorStore.getState().createSite('Target')
     const before = useEditorStore.getState().site!.settings.fonts?.tokens?.map((t) => t.variable) ?? []

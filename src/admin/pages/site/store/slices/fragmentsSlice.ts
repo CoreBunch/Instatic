@@ -8,9 +8,11 @@
  * framework utility classes are regenerated in the same recipe when the
  * insert added a colour or a scale step.
  *
- * Placement mirrors saved layouts: a section or component lands at the
- * location resolved from the current selection (inside a container, else
- * after it), in the document the plan was made for.
+ * Placement: a section or component lands right after the selected element
+ * (`resolveSiblingInsertLocation`), or at the end of the document when nothing
+ * or the root is selected, in the document the plan was made for. Unlike a
+ * paste it never goes INSIDE a selected container, so a second section
+ * inserted while the first is still selected lands below it.
  */
 
 import {
@@ -19,7 +21,7 @@ import {
   type FragmentInsertDocument,
   type ResolvedFragmentPlan,
 } from '@core/fragments'
-import { resolveInsertLocation } from '@site/store/insertLocation'
+import { resolveSiblingInsertLocation } from '@site/store/insertLocation'
 import type { EditorStore, EditorStoreSliceCreator } from '@site/store/types'
 import { reconcileFrameworkClasses } from './site/framework/reconcile'
 import { buildSiteHelpers, resolveActiveTreeTarget } from './site/helpers'
@@ -89,7 +91,7 @@ export const createFragmentsSlice: EditorStoreSliceCreator<FragmentsSlice> = (se
       if (!sameDocument(fragmentInsertDocument(state), plan.document)) return null
       const target = resolveActiveTreeTarget(state)
       if (!target) return null
-      const location = resolveInsertLocation(target.tree, state.selectedNodeId ?? target.tree.rootNodeId)
+      const location = resolveSiblingInsertLocation(target.tree, state.selectedNodeId ?? target.tree.rootNodeId)
       if (!location) return null
 
       const accepted = mutateActiveTreeAndSite((tree, site) => {
