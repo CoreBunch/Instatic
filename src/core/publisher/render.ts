@@ -38,8 +38,8 @@ import { buildSiteFrameworkCss } from './frameworkCss'
 import type { SiteCssBundle } from './siteCssBundle'
 import { escapeHtml, isSafeUrl } from './utils'
 import { addCspSources, createBaseCspPlan, cspMetaTag } from './cspPlan'
-import type { PublishedPageRuntimeAssets } from '@core/site-runtime/schemas'
-import { hasPublishedRuntimeScripts, scriptTagsForRuntimeAssets } from '@core/site-runtime'
+import type { PublishedPageRuntimeAssets } from '@core/site-runtime-schema'
+import { hasPublishedRuntimeScripts, scriptTagsForRuntimeAssets, publishedRuntimeResourceOrigins } from '@core/site-runtime'
 import { renderNode } from './renderNode'
 import { findDynamicNodeIds } from './dynamicDetection'
 import { collectHoleSubtreeModuleIds } from './holeSubtreeModules'
@@ -462,8 +462,18 @@ function buildContentSecurityPolicy(
   anyScriptTag: boolean,
   importmap: PublishedRuntimePackageImportmap | undefined,
   moduleCspSources: ReadonlyMap<string, ReadonlySet<string>>,
+  runtimeAssets: PublishedPageRuntimeAssets | undefined,
 ): string {
   const plan = createBaseCspPlan({ anyScriptTag, importmapSha: importmap?.sha256 })
+  for (const origins of publishedRuntimeResourceOrigins(runtimeAssets)) {
+    if (origins.scripts.length) addCspSources(plan, 'script-src', origins.scripts)
+    if (origins.styles?.length) addCspSources(plan, 'style-src', ["'self'", ...origins.styles])
+    if (origins.fonts?.length) addCspSources(plan, 'font-src', ["'self'", ...origins.fonts])
+    if (origins.frames.length) addCspSources(plan, 'frame-src', origins.frames)
+    if (origins.connections.length) {
+      addCspSources(plan, 'connect-src', ["'self'", ...origins.connections])
+    }
+  }
   // Merge per-page CSP requirements declared by module render() outputs.
   // addCspSources automatically drops the lone 'none' when real sources are
   // added, so frame-src 'none' becomes frame-src <origins> on pages that
@@ -614,7 +624,7 @@ export function publishPage(
 
   const meta = buildDocumentMetaTags(site, page, templateContext, options.documentMeta)
   const runtime = buildRuntimeAssetsBlock(options, acc)
-  const csp = buildContentSecurityPolicy(runtime.anyScriptTag, runtime.importmap, acc.cspSources)
+  const csp = buildContentSecurityPolicy(runtime.anyScriptTag, runtime.importmap, acc.cspSources, options.runtimeAssets)
 
   const html = assembleHtmlDocument({
     langAttr: meta.langAttr,

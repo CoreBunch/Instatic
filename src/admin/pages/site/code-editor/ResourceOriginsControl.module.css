@@ -1,0 +1,18 @@
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3xs);
+}
+
+.label {
+  color: var(--text-subtle);
+  font-size: var(--text-2xs);
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.validationError {
+  color: var(--danger-light);
+  font-size: var(--text-2xs);
+  line-height: 1.35;
+}
