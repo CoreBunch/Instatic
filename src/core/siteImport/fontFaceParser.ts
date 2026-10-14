@@ -1,4 +1,4 @@
-import { formatVariant } from '@core/fonts'
+import { formatVariant, parseFontDisplay } from '@core/fonts'
 import type { ParsedFontFace } from './types'
 
 /**
@@ -63,12 +63,14 @@ export function parseFontFaceRule(rule: CSSFontFaceRule): ParsedFontFaceRule | n
   if (!family || srcUrls.length === 0) return { srcValue, fontFace: null }
 
   const unicodeRange = (declarations.getPropertyValue('unicode-range') || '').trim()
+  const fontDisplay = parseFontDisplay(declarations.getPropertyValue('font-display').trim()) ?? 'auto'
   return {
     srcValue,
     fontFace: {
       family,
       variant: fontFaceVariant(declarations),
       srcUrls,
+      fontDisplay,
       ...(unicodeRange ? { unicodeRange } : {}),
     },
   }
