@@ -1,4 +1,10 @@
-export type ProviderId = 'anthropic' | 'openai' | 'openrouter' | 'ollama' | 'openai-compatible'
+export type ProviderId =
+  | 'anthropic'
+  | 'claude-code'
+  | 'openai'
+  | 'openrouter'
+  | 'ollama'
+  | 'openai-compatible'
 export type ProviderAuthMode = 'apiKey' | 'baseUrl'
 
 export interface ProviderSpec {
@@ -8,6 +14,22 @@ export interface ProviderSpec {
   description: string
   authMode: ProviderAuthMode
   endpointLabel: string
+  /**
+   * The provider authenticates by some means outside Instatic, so the connect
+   * form collects no secret at all. The credential row still exists (a
+   * conversation must reference one) but carries only the inert sentinel below.
+   */
+  credentialLess?: boolean
+  /**
+   * Shown in place of the credential fields when `credentialLess` — it has to
+   * explain where the auth actually comes from, since the form asks for nothing.
+   */
+  credentialLessHint?: string
+  /**
+   * Stored as the credential's `baseUrl` when `credentialLess`. Never dialed —
+   * it exists only so the row satisfies the API's auth-shape check.
+   */
+  sentinelBaseUrl?: string
 }
 
 export const PROVIDER_SPECS: ProviderSpec[] = [
@@ -18,6 +40,20 @@ export const PROVIDER_SPECS: ProviderSpec[] = [
     description: 'Claude models with strong tool use and long-context reasoning.',
     authMode: 'apiKey',
     endpointLabel: 'api.anthropic.com',
+  },
+  {
+    id: 'claude-code',
+    label: 'Claude Code',
+    shortLabel: 'Your Claude subscription',
+    description:
+      'Run the agent on this server’s Claude subscription instead of metered API credits.',
+    authMode: 'baseUrl',
+    endpointLabel: 'Local Claude Code CLI',
+    credentialLess: true,
+    credentialLessHint:
+      'Claude Code runs on the Claude subscription this server is signed in to — no API key, '
+      + 'and no metered API credits. Make sure the `claude` CLI is installed and signed in on the server.',
+    sentinelBaseUrl: 'claude-code://local',
   },
   {
     id: 'openai',

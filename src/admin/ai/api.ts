@@ -39,6 +39,7 @@ const ProviderId = Type.Union([
   Type.Literal('ollama'),
   Type.Literal('openrouter'),
   Type.Literal('openai-compatible'),
+  Type.Literal('claude-code'),
 ])
 
 const AuthMode = Type.Union([
@@ -182,13 +183,13 @@ export async function listCredentials(signal?: AbortSignal): Promise<CredentialV
 
 export type CreateCredentialBody =
   | {
-      providerId: 'anthropic' | 'openai' | 'ollama' | 'openrouter' | 'openai-compatible'
+      providerId: 'anthropic' | 'openai' | 'ollama' | 'openrouter' | 'openai-compatible' | 'claude-code'
       authMode: 'apiKey'
       displayLabel: string
       apiKey: string
     }
   | {
-      providerId: 'anthropic' | 'openai' | 'ollama' | 'openrouter' | 'openai-compatible'
+      providerId: 'anthropic' | 'openai' | 'ollama' | 'openrouter' | 'openai-compatible' | 'claude-code'
       authMode: 'baseUrl'
       displayLabel: string
       baseUrl: string
@@ -253,7 +254,7 @@ export function clearModelListCache(credentialId?: string): void {
 }
 
 export async function listModels(
-  providerId: 'anthropic' | 'openai' | 'ollama' | 'openrouter' | 'openai-compatible',
+  providerId: 'anthropic' | 'openai' | 'ollama' | 'openrouter' | 'openai-compatible' | 'claude-code',
   credentialId?: string,
 ): Promise<AiModel[]> {
   const key = `${providerId}\0${credentialId ?? ''}`

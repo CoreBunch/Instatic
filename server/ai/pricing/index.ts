@@ -55,7 +55,9 @@ export async function resolveCostUsd(
   modelId: string,
   usage: UsageTokens,
 ): Promise<number> {
-  if (providerId === 'ollama') return 0
+  // Ollama is self-hosted; Claude Code bills the flat-rate subscription, not
+  // per token — neither has a per-usage USD cost.
+  if (providerId === 'ollama' || providerId === 'claude-code') return 0
 
   const catalogue = await ensureCatalogue(db)
   const entry = catalogue.get(pricingKey(modelId))
