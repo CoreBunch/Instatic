@@ -22,6 +22,20 @@ describe('current-entry-field loop items', () => {
     expect(result.items[0]?.fields.value).toEqual(object)
   })
 
+  it('exposes repeater item cells as the item fields', () => {
+    const block = { id: 'block-1', cells: { layout: '2-col', images: ['m1', 'm2'] } }
+    const result = resolveEntryFieldItems([block])
+
+    expect(result.items[0]?.id).toBe('block-1')
+    expect(result.items[0]?.fields).toMatchObject({
+      id: 'block-1',
+      layout: '2-col',
+      images: ['m1', 'm2'],
+      index: 0,
+    })
+    expect(result.items[0]?.fields.value).toEqual(block)
+  })
+
   it('enriches media ids with renderable media fields', () => {
     const result = resolveEntryFieldItems(['media-1'], {
       mediaByReference: new Map([
