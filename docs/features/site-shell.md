@@ -628,6 +628,10 @@ exponential backoff, and each (re)connect re-runs syncStep1 so Yjs state
 vectors pull exactly the missed delta. `usePersistence` HTTP-loads the
 document once for first paint, then connects the provider — edits gate on
 each doc's first sync so an unseeded doc can never receive local ops.
+Before connection, `detachedCollabDocs.ts` retains row JSON and creates each
+local Y doc on first access. Seeds precede undo tracking; unused row seeds
+remain available for roster undo after deletion. Connecting replaces these
+local docs with server-seeded provider documents.
 Because every committed edit is a frame, burst-prone inputs coalesce before
 they commit: the `ColorInput` primitive throttles picker-drag change events
 (leading fire for instant clicks, one trailing fire with the final value),
