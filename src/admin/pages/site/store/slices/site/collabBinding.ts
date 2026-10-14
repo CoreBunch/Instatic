@@ -31,9 +31,7 @@
  */
 import * as Y from 'yjs'
 import type { Patches } from 'mutative'
-import type { Page, SiteDocument, SiteShell } from '@core/page-tree'
-import type { VisualComponent } from '@core/visualComponents'
-import type { SavedLayout } from '@core/layouts'
+import type { SiteDocument } from '@core/page-tree'
 import {
   applySitePatchesToDocs,
   createCollabDocSet,
@@ -43,10 +41,6 @@ import {
   LOCAL_ORIGIN,
   metaMap,
   parseCollabDocId,
-  projectComponentDoc,
-  projectLayoutDoc,
-  projectPageDoc,
-  projectSiteDoc,
   rostersMap,
   seedComponentDoc,
   seedLayoutDoc,
@@ -58,14 +52,12 @@ import {
   treeMap,
   type CollabDocSet,
 } from '@core/collab'
+import { projectCollabDocument } from './collabProjection'
 import { allDocIdsForSite, collabBranchId, notifyCollabBranchGone } from './collabBranch'
-import { clonePackageJson } from '@core/site-dependencies/manifest'
-import { cloneSiteRuntimeConfig } from '@core/site-runtime'
-import { validateSite } from '@core/persistence/validate'
 import type { EditorStoreApi } from '@site/store/types'
 import { pruneCanvasSelectionDraft } from '../selectionSlice'
 import type { Awareness } from 'y-protocols/awareness'
-import type { CollabProvider } from '@site/collab/collabProvider'
+import type { BoundCollabDoc, CollabProvider } from '@site/collab/collabProvider'
 import {
   collabBlockToast,
   clearCollabBlockNotice,
@@ -100,6 +92,7 @@ let provider: CollabProvider | null = null
 let detachProviderReset: (() => void) | null = null
 let detachProviderStatus: (() => void) | null = null
 const pendingProjections = new Set<string>()
+const pendingSyncCompletions = new Map<string, () => void>()
 let projectionFlushScheduled = false
 /**
  * The exact store `site` object the doc world currently mirrors. Every path
@@ -395,157 +388,53 @@ export function collabClearHistory(): void {
 function flushProjections(): void {
   const batch = [...pendingProjections]
   pendingProjections.clear()
+  const api = storeApi
+  const site = api?.getState().site
+  if (batch.length === 0) return
+  const completeSync = () => {
+    for (const id of batch) {
+      pendingSyncCompletions.get(id)?.()
+      pendingSyncCompletions.delete(id)
+    }
+  }
+  if (!api || !site) { completeSync(); return }
   // Site doc last — it assembles rows the row projections just refreshed.
   batch.sort((a, b) => (isSiteDocId(a) ? 1 : 0) - (isSiteDocId(b) ? 1 : 0))
-  for (const id of batch) projectDocIntoStore(id)
+  let nextSite = site
+  const context = {
+    getDoc: (docId: string) => docs.get(docId),
+    branchId: collabBranchId(),
+    bindDoc: bindDocThroughProvider,
+  }
+  for (const id of batch) nextSite = projectCollabDocument(nextSite, id, context)
+  if (nextSite === site) { completeSync(); return }
+  alignedSiteRef = nextSite
+  api.setState((draft) => {
+    draft.site = nextSite
+    if (nextSite.packageJson !== site.packageJson) draft.packageJson = nextSite.packageJson
+    if (nextSite.runtime !== site.runtime) draft.siteRuntime = nextSite.runtime
+    if (!nextSite.pages.some((p) => p.id === draft.activePageId)) {
+      draft.activePageId = nextSite.pages[0]?.id ?? null
+    }
+    // Project rows and their roster atomically before pruning selections.
+    pruneCanvasSelectionDraft(draft)
+  })
+  completeSync()
 }
 
 function scheduleProjection(docId: string): void {
   pendingProjections.add(docId)
   if (projectionFlushScheduled) return
   projectionFlushScheduled = true
-  queueMicrotask(() => {
+  const flush = () => {
     projectionFlushScheduled = false
     flushProjections()
-  })
-}
-
-function rowFromDoc(docId: string): Page | VisualComponent | SavedLayout | null {
-  const parsed = parseCollabDocId(docId)
-  if (!parsed || parsed.kind === 'site') return null
-  const doc = docs.get(docId)
-  if (!doc) return null
-  if (parsed.kind === 'page') {
-    const page = projectPageDoc(doc, parsed.rowId)
-    return page.rootNodeId ? page : null
   }
-  if (parsed.kind === 'component') {
-    const vc = projectComponentDoc(doc, parsed.rowId)
-    return vc.tree.rootNodeId ? vc : null
-  }
-  const layout = projectLayoutDoc(doc, parsed.rowId)
-  return layout.rootNodeId ? layout : null
-}
-
-function projectDocIntoStore(docId: string): void {
-  const api = storeApi
-  if (!api) return
-  const state = api.getState()
-  const site = state.site
-  if (!site) return
-  const parsed = parseCollabDocId(docId)
-  if (!parsed) return
-
-  if (parsed.kind === 'site') {
-    const doc = docs.get(docId)
-    if (!doc) return
-    const projected = projectSiteDoc(doc)
-    if (Object.keys(projected.shell).length === 0) return
-    // The projected shell is untyped wire data — validate it before it enters
-    // the store, exactly like the HTTP load path (validateSite) and the relay's
-    // persist path both do. `validateSite` is tolerant of individual malformed
-    // entries (drops bad style rules / conditions / files rather than
-    // rejecting the whole shell), so one corrupt rule from any source can't
-    // crash a panel. `id`/`updatedAt` are non-collaborative — inject them like
-    // the persist path. If the shell is not yet coherent (mid-sync), skip this
-    // tick; the next projection re-runs once it is.
-    let shell: SiteShell
-    try {
-      shell = validateSite({
-        ...projected.shell,
-        id: 'default',
-        updatedAt:
-          typeof projected.shell.updatedAt === 'number' ? projected.shell.updatedAt : Date.now(),
-      })
-    } catch (err) {
-      console.warn('[collabBinding] projected shell failed validation — projection skipped:', err)
-      return
-    }
-    const byId = {
-      pages: new Map(site.pages.map((p) => [p.id, p])),
-      components: new Map(site.visualComponents.map((vc) => [vc.id, vc])),
-      layouts: new Map(site.layouts.map((l) => [l.id, l])),
-    }
-    const assemble = <T extends { id: string }>(
-      ids: readonly string[],
-      existing: Map<string, T>,
-      kind: 'page' | 'component' | 'layout',
-    ): T[] => {
-      const rows: T[] = []
-      for (const id of ids) {
-        const known = existing.get(id)
-        if (known) {
-          rows.push(known)
-          continue
-        }
-        const rowDocId = encodeCollabDocId({ kind, branchId: collabBranchId(), rowId: id })
-        const fresh = rowFromDoc(rowDocId) as T | null
-        if (fresh) {
-          rows.push(fresh)
-          continue
-        }
-        // A peer created this row — its doc isn't bound here yet. Bind it;
-        // the whenSynced hook re-projects the site once content arrives.
-        bindDocThroughProvider(rowDocId)
-      }
-      return rows
-    }
-    const nextSite: SiteDocument = {
-      ...site,
-      ...shell,
-      pages: assemble(projected.rosters.pages, byId.pages, 'page'),
-      visualComponents: assemble(projected.rosters.components, byId.components, 'component'),
-      layouts: assemble(projected.rosters.layouts, byId.layouts, 'layout'),
-    }
-    if (projected.shell.conditions === undefined) delete nextSite.conditions
-    const packageJson = clonePackageJson(nextSite.packageJson)
-    const siteRuntime = cloneSiteRuntimeConfig(nextSite.runtime)
-    const alignedSite = { ...nextSite, packageJson, runtime: siteRuntime }
-    alignedSiteRef = alignedSite
-    api.setState((draft) => {
-      draft.site = alignedSite
-      draft.packageJson = packageJson
-      draft.siteRuntime = siteRuntime
-      if (!nextSite.pages.some((p) => p.id === draft.activePageId)) {
-        draft.activePageId = nextSite.pages[0]?.id ?? null
-      }
-      // A roster change can drop the whole document the selection lives in (a
-      // peer deleted the page, or an undo removed it). Prune AFTER site +
-      // activePageId land, since the pruner resolves the active tree from them.
-      pruneCanvasSelectionDraft(draft)
-    })
-    return
-  }
-
-  const row = rowFromDoc(docId)
-  const collection =
-    parsed.kind === 'page' ? 'pages' : parsed.kind === 'component' ? 'visualComponents' : 'layouts'
-  const rows = site[collection] as Array<{ id: string }>
-  const index = rows.findIndex((r) => r.id === parsed.rowId)
-  if (!row) {
-    if (index === -1) return
-    const nextRows = rows.filter((r) => r.id !== parsed.rowId)
-    const nextSite = { ...site, [collection]: nextRows } as SiteDocument
-    alignedSiteRef = nextSite
-    api.setState((draft) => {
-      draft.site = nextSite
-      pruneCanvasSelectionDraft(draft)
-    })
-    return
-  }
-  const nextRows = index === -1 ? [...rows, row] : rows.map((r, i) => (i === index ? row : r))
-  const nextSite = { ...site, [collection]: nextRows } as SiteDocument
-  alignedSiteRef = nextSite
-  api.setState((draft) => {
-    draft.site = nextSite
-    // The freshly projected row may have lost nodes — a peer deleted them, or a
-    // Y.UndoManager undo reverted their creation. Prune by tree-membership, the
-    // same way a local delete does: survivors keep their selection, dead ids
-    // (including descendants swept with a subtree) drop out, and an inline-edit
-    // session on a vanished node is closed. `pruneCanvasSelectionDraft` reads
-    // the ACTIVE tree, so it self-limits to the doc the user is looking at.
-    pruneCanvasSelectionDraft(draft)
-  })
+  // Initial sync spans thousands of socket tasks on large sites. Group those
+  // tasks over a frame while writes are gated; live edits retain microtask
+  // projection so the next local mutation reads the latest remote content.
+  if (provider && anyGateUnsynced()) setTimeout(flush, 16)
+  else queueMicrotask(flush)
 }
 
 // ---------------------------------------------------------------------------
@@ -574,6 +463,8 @@ export function resetCollabDocsFromSite(site: SiteDocument | null): void {
   // Drop any projection still queued for the OLD docs — flushing it against
   // the fresh doc set would project empty rows into the just-loaded site.
   pendingProjections.clear()
+  for (const complete of pendingSyncCompletions.values()) complete()
+  pendingSyncCompletions.clear()
   syncUndoFlags()
 
   if (!site) return
@@ -615,15 +506,25 @@ function bindDocThroughProvider(docId: string): void {
   const binding = provider.bind(docId)
   docs.set(docId, binding.doc)
   ensureManaged(docId, binding.doc)
-  const gate = registerProviderGate(docId, binding.whenSynced)
-  gate.synced = binding.synced
+  registerProjectionGate(docId, binding, true)
+}
+
+/** Writes open only after the server seed has also reached the store. */
+function registerProjectionGate(docId: string, binding: BoundCollabDoc, assembleRoster: boolean): void {
+  let resolveProjection!: () => void
+  const projected = new Promise<void>((resolve) => { resolveProjection = resolve })
+  const gate = registerProviderGate(docId, projected)
   void binding.whenSynced.then(() => {
-    gate.synced = true
+    if (docs.get(docId) !== binding.doc) { resolveProjection(); return }
+    pendingSyncCompletions.set(docId, () => {
+      gate.synced = true
+      resolveProjection()
+    })
     scheduleProjection(docId)
     // A row doc bound on demand (a peer created the row) re-assembles the
     // site once its content arrives — the roster projection skipped it
     // while it was empty.
-    if (!isSiteDocId(docId)) scheduleProjection(siteDocId(collabBranchId()))
+    if (assembleRoster && !isSiteDocId(docId)) scheduleProjection(siteDocId(collabBranchId()))
   })
 }
 
@@ -673,12 +574,7 @@ export function connectCollabProvider(next: CollabProvider): void {
     const rebound = next.bind(docId)
     docs.set(docId, rebound.doc)
     ensureManaged(docId, rebound.doc)
-    const gate = registerProviderGate(docId, rebound.whenSynced)
-    gate.synced = rebound.synced
-    void rebound.whenSynced.then(() => {
-      gate.synced = true
-      scheduleProjection(docId)
-    })
+    registerProjectionGate(docId, rebound, false)
   })
   const site = storeApi?.getState().site ?? null
   resetCollabDocsFromSite(site)

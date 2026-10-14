@@ -24,6 +24,7 @@ import type {
   CollabResetListener,
 } from '@site/collab/collabProvider'
 import { clearCollabBlockNotice } from '@site/store/slices/site/collabNotices'
+import { whenCollabWritable } from '@site/store/slices/site/collabWriteGate'
 import { useEditorStore } from '@site/store/store'
 import { runSetColorTokens } from '@site/agent/tokenRunners'
 import '@modules/base/index'
@@ -102,8 +103,7 @@ describe('installing a colour palette in one call', () => {
     const provider = deferredProvider()
     connectCollabProvider(provider)
     provider.releaseAll()
-    // Let the whenSynced promises settle so the gates are open.
-    await new Promise((resolve) => setTimeout(resolve, 10))
+    expect(await whenCollabWritable()).toBe(true)
 
     const result = useEditorStore.getState().upsertFrameworkColorTokens(PALETTE)
 
@@ -117,7 +117,7 @@ describe('installing a colour palette in one call', () => {
     const provider = deferredProvider()
     connectCollabProvider(provider)
     provider.releaseAll()
-    await new Promise((resolve) => setTimeout(resolve, 10))
+    expect(await whenCollabWritable()).toBe(true)
 
     // Two DIFFERENT entries normalizing to the same slug must not collapse:
     // the second is a distinct token and gets a suffixed slug, exactly as a
@@ -135,7 +135,7 @@ describe('installing a colour palette in one call', () => {
     const provider = deferredProvider()
     connectCollabProvider(provider)
     provider.releaseAll()
-    await new Promise((resolve) => setTimeout(resolve, 10))
+    expect(await whenCollabWritable()).toBe(true)
 
     useEditorStore.getState().upsertFrameworkColorTokens(PALETTE)
     const second = useEditorStore.getState().upsertFrameworkColorTokens(PALETTE)

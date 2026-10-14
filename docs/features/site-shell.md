@@ -628,6 +628,10 @@ exponential backoff, and each (re)connect re-runs syncStep1 so Yjs state
 vectors pull exactly the missed delta. `usePersistence` HTTP-loads the
 document once for first paint, then connects the provider — edits gate on
 each doc's first sync so an unseeded doc can never receive local ops.
+Initial sync projections collect socket tasks over a 16 ms frame and commit
+rows plus their roster to the store together. Write gates open after that
+projection, so tools never edit a stale HTTP snapshot. Live remote updates
+retain microtask projection; undo/redo project synchronously.
 Because every committed edit is a frame, burst-prone inputs coalesce before
 they commit: the `ColorInput` primitive throttles picker-drag change events
 (leading fire for instant clicks, one trailing fire with the final value),
