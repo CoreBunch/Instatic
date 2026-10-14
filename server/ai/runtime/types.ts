@@ -24,7 +24,7 @@ export type { AiContentBlock, AiToolImage, AiToolOutput } from '@core/ai'
 // Provider identity + auth modes
 // ---------------------------------------------------------------------------
 
-export type AiProviderId = 'anthropic' | 'openai' | 'ollama' | 'openrouter' | 'openai-compatible'
+export type AiProviderId = 'anthropic' | 'openai' | 'minimax' | 'ollama' | 'openrouter' | 'openai-compatible'
 /**
  * Credential auth modes.
  *
@@ -212,4 +212,3 @@ export interface AiBrowserBridge {
 // Aggregated usage — drivers report token counts so the handler can persist
 // per-message + per-conversation totals and compute cost from pricing.ts.
 // ---------------------------------------------------------------------------
-

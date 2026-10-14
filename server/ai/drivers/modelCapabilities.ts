@@ -52,10 +52,10 @@ export async function resolveModelCapabilities(
       return value
     } catch (err) {
       console.error(`[ai/${driver.id}] model capability lookup failed:`, err)
-      // A provider-specific lookup exists because its static vision flag is not
-      // authoritative. Network/schema failures therefore fail closed for image
+      // A provider-specific lookup exists because its static input flags are not
+      // authoritative. Network/schema failures therefore fail closed for media
       // input while retaining the driver's safe defaults for other features.
-      return { ...fallback, visionInput: false }
+      return { ...fallback, visionInput: false, videoInput: false }
     } finally {
       lookups.delete(key)
     }
