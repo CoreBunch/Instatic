@@ -39,7 +39,7 @@ interface PreviewDocumentProps {
 
 function PreviewDocument({ site, page, templatePreviewContext }: PreviewDocumentProps) {
   const reportedErrorRef = useRef<string | null>(null)
-  const { html, loading, error, refresh } = useRuntimePreviewDocument(
+  const { html, error, refresh } = useRuntimePreviewDocument(
     site,
     page,
     templatePreviewContext,
@@ -73,7 +73,7 @@ function PreviewDocument({ site, page, templatePreviewContext }: PreviewDocument
     )
   }
 
-  if (loading || !html) {
+  if (!html) {
     return (
       <EmptyState
         variant="centered"
