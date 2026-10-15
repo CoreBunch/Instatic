@@ -461,9 +461,10 @@ export const HTML_TO_MODULE_RULES: ImportRule[] = [
   // base.button is `canHaveChildren: false` and would keep only the text.
   // Submit buttons stay on base.submit even when compound: `core/forms`
   // identifies a form's submit control by that module id, so re-tagging one as
-  // a container would leave the form without a submit. A compound submit button
-  // therefore still keeps only its label — lifting that needs base.submit to
-  // accept children, which is a module change rather than an importer one.
+  // a container would leave the form without a submit. base.submit accepts
+  // children, so a compound submit recurses too and its content (an icon-only
+  // `<svg>`, an icon-font `<i>`, an `<img>`) survives as child nodes; `label`
+  // stays as the childless fallback, the base.link contract.
   {
     match: 'button',
     map: (el) => {
@@ -494,7 +495,7 @@ export const HTML_TO_MODULE_RULES: ImportRule[] = [
         },
       }
     },
-    recurse: (el) => !isSubmitButton(el) && hasElementChild(el),
+    recurse: hasElementChild,
   },
 
   // ul / ol are BUILTIN_HTML_TAGS for base.container → container + RECURSE.

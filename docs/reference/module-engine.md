@@ -260,6 +260,7 @@ Name the leaf after what it owns, not generically:
 |------------------|-----------------|-------------------------------------------------------|
 | `base.button`    | `anchor.ts`     | `resolveButtonAnchor()` — element decision (`<a>` vs `<button>`) |
 | `base.link`      | `content.ts`    | `linkUsesChildren()` — children/text fallback rule    |
+| `base.submit`    | `forms/content.ts` | `submitUsesChildren()` — children/label fallback rule |
 | `base.list`      | `items.ts`      | `parseItems()` — textarea → trimmed non-empty array   |
 | `base.video`     | `youtube.ts`    | `parseYoutubeId()`, `youtubeEmbedUrl()` — embed URL  |
 | `base.text`      | `tags.ts`       | `normalizeTag()`, `TextTag` — semantic tag coercion   |
@@ -424,6 +425,7 @@ The publisher emits a `<script type="importmap">` entry. `getMissingModuleDepend
   - `src/modules/base/shared/anchorTarget.ts` — `AnchorTargetSchema`, `anchorRel()` (cross-module shared vocabulary)
   - `src/modules/base/button/anchor.ts` — `resolveButtonAnchor()` (per-module shared leaf)
   - `src/modules/base/link/content.ts` — `linkUsesChildren()` (per-module shared leaf)
+  - `src/modules/base/forms/content.ts` — `submitUsesChildren()` (per-module shared leaf)
   - `src/modules/base/list/items.ts` — `parseItems()` (per-module shared leaf)
   - `src/modules/base/video/youtube.ts` — `parseYoutubeId()`, `youtubeEmbedUrl()` (per-module shared leaf)
   - `src/core/htmlAttributes/tags.ts` — `resolveHtmlTag`, `BUILTIN_HTML_TAGS`, `VOID_HTML_ELEMENTS`
