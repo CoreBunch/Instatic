@@ -30,7 +30,7 @@ import { renderMarkdownToHtml } from '@core/markdown/renderMarkdown'
 import { isRichtextPropKey, sanitizeRichtext } from '@core/sanitize'
 import type { TemplateRenderDataContext } from './renderDataContext'
 
-export type { TemplateRenderDataContext } from './renderDataContext'
+export type { TemplateMediaAsset, TemplateRenderDataContext } from './renderDataContext'
 import {
   containsTokens,
   interpolateTokens,
@@ -60,6 +60,7 @@ import {
  * — both live in `./tokenInterpolation.ts` to avoid duplication.
  */
 function resolveBindingValue(
+  propKey: string,
   binding: DynamicPropBinding,
   context: TemplateRenderDataContext,
 ): unknown {
@@ -68,17 +69,33 @@ function resolveBindingValue(
 
   const value = walkFieldPath(frame, binding.field)
 
-  // Markdown shim: when a binding targets the `body` cell (post-type rows)
-  // or any `richText` field stored as markdown and the binding requests
-  // `format: 'html'`, render markdown to HTML here so the module receives
-  // ready-to-embed HTML rather than raw markdown. Tokens embedded inside
-  // the body markdown are interpolated FIRST so authors can write
-  // `Hello {currentEntry.title|untitled}` directly in a blog post body and
-  // have it resolve against the same render context as page props.
+  // Media shim: a `format: 'media'` binding promises the destination prop a
+  // served URL, but a custom media cell stores the bare ASSET ID. Values that
+  // already carry a path or URL (the pre-materialised aliases like
+  // `featuredMediaPath`, or an external URL) pass through untouched; a bare
+  // reference is translated through the context's media lookup. A miss
+  // (deleted asset, or a surface without a lookup) resolves as "missing" so
+  // the caller's fallback strategy applies instead of the raw id leaking
+  // into `src` attributes.
+  if (binding.format === 'media' && typeof value === 'string' && value !== '') {
+    if (value.includes('/') || value.includes(':')) return value
+    return context.media?.get(value)?.publicPath
+  }
+
+  // Markdown shim: when a `format: 'html'` binding targets the `body` cell
+  // (post-type rows) or lands in a richtext-typed prop (`html`, `*richtext`,
+  // …) — the outlet bound to any custom rich field — render the value
+  // through the markdown pipeline so the module receives ready-to-embed
+  // HTML. richText cells stored as HTML survive unchanged (block HTML passes
+  // through the GFM renderer verbatim), so one code path serves both storage
+  // formats. Tokens embedded inside the value are interpolated FIRST so
+  // authors can write `Hello {currentEntry.title|untitled}` directly in a
+  // blog post body and have it resolve against the same render context as
+  // page props.
   if (
     binding.format === 'html' &&
     typeof value === 'string' &&
-    (binding.field === 'body' || binding.field === 'bodyMarkdown')
+    (binding.field === 'body' || binding.field === 'bodyMarkdown' || isRichtextPropKey(propKey))
   ) {
     const interpolated = containsTokens(value) ? interpolateTokens(value, context) : value
     return renderMarkdownToHtml(interpolated)
@@ -88,15 +105,15 @@ function resolveBindingValue(
 }
 
 /**
- * The implicit binding every `base.outlet` carries: its `html` prop is filled
+ * The DEFAULT binding every `base.outlet` carries: its `html` prop is filled
  * with the current entry's markdown body, rendered to HTML. An outlet is, by
- * definition, the hole the current entry's body flows into — there is no UI to
- * set this and it is never persisted on the node. Resolving it here means ANY
- * outlet renders the body, including one a user drags onto a custom template by
- * hand (which carries no `dynamicBindings` overlay). Outside an entry route the
- * entry stack is empty, so `currentEntry.body` resolves to nothing and the
- * outlet stays empty — an `everywhere` layout's outlet then hosts a whole page
- * instead.
+ * definition, the hole the current entry's content flows into — there is no UI
+ * to set this default and it is never persisted on the node. Resolving it here
+ * means ANY outlet renders the body, including one a user drags onto a custom
+ * template by hand (which carries no `dynamicBindings` overlay). Outside an
+ * entry route the entry stack is empty, so `currentEntry.body` resolves to
+ * nothing and the outlet stays empty — an `everywhere` layout's outlet then
+ * hosts a whole page instead.
  */
 const OUTLET_BODY_BINDING: DynamicPropBinding = {
   source: 'currentEntry',
@@ -105,17 +122,21 @@ const OUTLET_BODY_BINDING: DynamicPropBinding = {
 }
 
 /**
- * The bindings that actually apply to a node at render time: its persisted
- * `dynamicBindings` overlay plus the implicit outlet body binding for
- * `base.outlet`. Both the publisher (`renderNode`) and the editor canvas
- * (`NodeRenderer`) resolve through this so the two surfaces render identically.
+ * The bindings that actually apply to a node at render time: the implicit
+ * outlet body binding for `base.outlet` overlaid with the node's persisted
+ * `dynamicBindings`. Persisted bindings win — an author or plugin can point
+ * an outlet's `html` at ANY rich field (a custom table's richText cell, not
+ * just `body`); the implicit binding is only the default for outlets that
+ * carry no overlay of their own. Both the publisher (`renderNode`) and the
+ * editor canvas (`NodeRenderer`) resolve through this so the two surfaces
+ * render identically.
  */
 export function effectiveNodeBindings(node: {
   moduleId: string
   dynamicBindings?: Record<string, DynamicPropBinding>
 }): Record<string, DynamicPropBinding> | undefined {
   if (node.moduleId === 'base.outlet') {
-    return { ...node.dynamicBindings, html: OUTLET_BODY_BINDING }
+    return { html: OUTLET_BODY_BINDING, ...node.dynamicBindings }
   }
   return node.dynamicBindings
 }
@@ -137,7 +158,7 @@ export function resolveDynamicProps(
   if (bindings) {
     resolved = { ...staticProps }
     for (const [propKey, binding] of Object.entries(bindings)) {
-      const value = resolveBindingValue(binding, context)
+      const value = resolveBindingValue(propKey, binding, context)
       if (value === undefined || value === null) {
         if (binding.fallback === 'empty') resolved[propKey] = ''
         continue
