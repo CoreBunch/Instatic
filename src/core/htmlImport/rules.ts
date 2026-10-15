@@ -20,6 +20,7 @@
 
 import { normalizeImportedText } from './text'
 import { normalizeIdentifierValue } from '@core/utils/identifier'
+import { normalizeAnchorTarget } from '@core/htmlAttributes'
 
 export interface ImportRule {
   /** CSS selector tested via `el.matches()`. */
@@ -388,12 +389,17 @@ export const HTML_TO_MODULE_RULES: ImportRule[] = [
   // treatment the plain anchor rule below gives a compound `<a>` — which keeps
   // href and target. The `btn` class rides along as a classId, so the swap does
   // not change how the element is styled.
+  //
+  // `target` is normalised, not copied: an empty attribute, `_top` or a named
+  // frame is not in `AnchorTargetSchema`, and a value outside the schema makes
+  // the publisher discard the node's props wholesale. `normalizeAnchorTarget`
+  // maps each onto the stored value that navigates the same way.
   {
     match: 'a.btn',
     map: (el) => {
       const text = normalizeImportedText(el.textContent ?? '')
       const href = el.getAttribute('href') ?? ''
-      const target = el.getAttribute('target') ?? '_self'
+      const target = normalizeAnchorTarget(el.getAttribute('target'))
 
       return hasElementChild(el)
         ? { moduleId: 'base.link', props: { text, href, target } }
@@ -413,7 +419,7 @@ export const HTML_TO_MODULE_RULES: ImportRule[] = [
       props: {
         text: normalizeImportedText(el.textContent ?? ''),
         href: el.getAttribute('href') ?? '',
-        target: el.getAttribute('target') ?? '_self',
+        target: normalizeAnchorTarget(el.getAttribute('target')),
       },
     }),
     recurse: hasElementChild,

@@ -1,29 +1,23 @@
 /**
- * Shared anchor-`target` vocabulary for the base modules that emit `<a>`
- * elements (`base.link` and `base.button`).
+ * Shared anchor-`target` UI and `rel` logic for the base modules that emit
+ * `<a>` elements (`base.link` and `base.button`). The persisted vocabulary
+ * itself (`AnchorTargetSchema`, `normalizeAnchorTarget`) lives in
+ * `@core/htmlAttributes` so the HTML importer can share it without a
+ * core→modules import.
  *
- * Both modules used to redeclare an identical `Type.Union([_self, _blank,
- * _parent])` schema, an identical select-options array, AND an identical
- * `rel="noopener noreferrer"` rule — once in the publisher `render()` path and
- * again in the canvas `*Editor.tsx`. Four copies of the rel logic meant four
- * places for the canvas and the published page to drift apart. They now share
- * this one leaf:
+ * Both modules used to redeclare an identical select-options array AND an
+ * identical `rel="noopener noreferrer"` rule — once in the publisher
+ * `render()` path and again in the canvas `*Editor.tsx`. Four copies of the
+ * rel logic meant four places for the canvas and the published page to drift
+ * apart. They now share this one leaf:
  *
- *   - `AnchorTargetSchema` / `AnchorTarget`  — the persisted prop shape.
  *   - `ANCHOR_TARGET_OPTIONS`                — the Properties-panel select.
  *   - `anchorRel(target)`                    — the single rel decision.
  *
  * Lives in a non-component `.ts` so the editor components can import it without
  * breaking React Fast Refresh (Constraint #309).
  */
-import { Type, type Static } from '@core/utils/typeboxHelpers'
-
-export const AnchorTargetSchema = Type.Union(
-  [Type.Literal('_self'), Type.Literal('_blank'), Type.Literal('_parent')],
-  { default: '_self' },
-)
-
-type AnchorTarget = Static<typeof AnchorTargetSchema>
+import type { AnchorTarget } from '@core/htmlAttributes'
 
 /** Select options for the Properties-panel `target` control. */
 export const ANCHOR_TARGET_OPTIONS: ReadonlyArray<{ label: string; value: AnchorTarget }> = [
