@@ -12,6 +12,7 @@ import { anthropicDriver } from './anthropic'
 import { openaiDriver } from './openai'
 import { ollamaDriver } from './ollama'
 import { openrouterDriver } from './openrouter'
+import { requestyDriver } from './requesty'
 import { openaiCompatibleDriver } from './openaiCompatible'
 
 const DRIVERS: Record<AiProviderId, AiProvider> = {
@@ -19,6 +20,7 @@ const DRIVERS: Record<AiProviderId, AiProvider> = {
   openai: openaiDriver,
   ollama: ollamaDriver,
   openrouter: openrouterDriver,
+  requesty: requestyDriver,
   'openai-compatible': openaiCompatibleDriver,
 }
 
