@@ -535,7 +535,7 @@ The visitor-facing artefacts are:
 2. **In-memory LRU entries** — for dynamic routes (loops, request-dependent bindings). Filled lazily, evicted on every publish.
 3. **`<instatic-hole>` fragment responses** at `/_instatic/hole/<nodeId>?v=<publishVersion>&u=<page-url>` — for dynamic nodes inside otherwise-cacheable pages. Fetched lazily by the IntersectionObserver runtime; shared responses are cached in Layer B, while per-visitor holes bypass it.
 
-The published `SiteDocument` is stored once per publish in `site_snapshots` and referenced by `data_row_versions.site_snapshot_id`; the `PublishedPageSnapshot` reassembled from that join remains the canonical audit record — all three layers derive from it. At request time it is memoised per publish version (`server/publish/publishedSnapshotCache.ts`, shared by the public router's row resolution, the hole endpoint, and the loop endpoint), and `renderPublicResolution` serves a warm Layer B entry *before* any route resolution — a cache hit does zero DB work.
+The published `SiteDocument` is stored once per publish in `site_snapshots` and referenced by `data_row_versions.site_snapshot_id`; the `PublishedPageSnapshot` reassembled from that join remains the canonical audit record — all three layers derive from it. Snapshots no active page version references are pruned in the same publish transaction, so the table holds one site document per distinct active publish. At request time it is memoised per publish version (`server/publish/publishedSnapshotCache.ts`, shared by the public router's row resolution, the hole endpoint, and the loop endpoint), and `renderPublicResolution` serves a warm Layer B entry *before* any route resolution — a cache hit does zero DB work.
 
 ---
 
