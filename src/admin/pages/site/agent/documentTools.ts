@@ -166,3 +166,30 @@ function resolveAgentDocument(
   if (!descriptor) return null
   return { descriptor, page }
 }
+
+/**
+ * Resolve a node by ID **within the active document only** — never across other
+ * pages, templates, or VCs. Write tools mutate the active tree, so resolving an
+ * id that lives in a different document would silently target the wrong tree
+ * (or fail with a misleading "does not accept children"). Returns the node when
+ * it belongs to the active doc, else undefined.
+ */
+export function findNodeInActiveDoc(store: EditorStore, nodeId: string): BaseNode | undefined {
+  return activeDocumentNodes(store)?.[nodeId]
+}
+
+/**
+ * Shared "node not found in the active doc" error: distinguishes a node that
+ * lives in another document (actionable — switch docs) from one that exists
+ * nowhere (a bad id).
+ */
+export function nodeNotInActiveDocError(store: EditorStore, nodeId: string): AiToolOutput {
+  const documentIdError = describeDocumentId(store, nodeId)
+  if (documentIdError) return aiToolError(documentIdError)
+  const foreign = describeForeignNode(store, nodeId)
+  return aiToolError(
+    foreign
+      ? `Node ${nodeId} lives in ${foreign} and could not be activated automatically.`
+      : `Node not found: ${nodeId}`,
+  )
+}

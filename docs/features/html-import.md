@@ -8,7 +8,7 @@ The module has two consumers: the paste-HTML UI and the AI agent's `insertHtml` 
 
 ## TL;DR
 
-- Single entry point: `importHtml(source)` → `{ nodes, rootIds, body?, stripped, styleCss }`.
+- Single entry point: `importHtml(source)` → `{ nodes, rootIds, body?, stripped, headOnly, styleCss }`.
 - Pipeline: `parseHtml` → `harvestInlineStyles` + `collectStyleCss` → `stripUnsafe` → `walkAndMap`.
 - Mapping is rule-driven (`HTML_TO_MODULE_RULES`). The catch-all `*` rule guarantees every element produces a node — nothing falls through.
 - Every produced node is a real `PageNode`: selectable, draggable, deletable, and re-styleable in the canvas.
@@ -58,7 +58,7 @@ importHtml(source: string)
   4. walkAndMap(doc, inlineStyles)— maps doc.body element children to PageNodes,
                                     attaching each harvested inline bag to its
                                     node's `inlineStyles`. Returns { nodes, rootIds }
-→ { nodes, rootIds, body?, stripped, styleCss }   (ImportResult)
+→ { nodes, rootIds, body?, stripped, headOnly, styleCss }   (ImportResult)
 ```
 
 ### Return type
@@ -78,6 +78,10 @@ interface ImportResult {
   }
   /** Counts of constructs removed by stripUnsafe (scripts, inline handlers). */
   stripped: StripReport
+  /** Tag names the parser placed in <head> (link, meta, title, base, …), which the
+   *  walker never sees. Deduplicated, document order. A bare `<link rel="icon">` at
+   *  the top of a payload lands here in every browser. */
+  headOnly: string[]
   /** Raw concatenated CSS from <style> blocks. Empty when the source had none. */
   styleCss: string
 }
@@ -142,10 +146,11 @@ Callers splice the fragment into the page tree via `insertImportedNodes(parentId
 | `<style>` elements | CSS harvested into `result.styleCss` (then parsed into registry rules); the element is removed |
 | `style="…"` attributes | Declarations harvested onto `node.inlineStyles`; the attribute is removed |
 | HTML comments and processing instructions | Stripped silently — no count |
+| `<link>`, `<meta>`, `<title>`, `<base>` and anything else the parser puts in `<head>` | Never walked (the walker maps `doc.body`); reported by tag name as `headOnly` |
 
 The AI agent should not use stripped constructs for behavior. If an edit needs JavaScript, it writes a real runtime script with `write_code_asset({ type: "script", ... })` and verifies targeting with `inspect_code_runtime` instead of embedding `<script>` or `onclick` in an HTML import. Module scripts import npm packages with bare specifiers and declare them in the same `write_code_asset` call's `dependencies` map.
 
-After insert, `ImportHtmlModal` builds a toast body from the added-selector count plus the non-zero stripped counts, e.g. `"3 CSS selectors, stripped 2 <script>"`. If nothing notable happened, the toast shows only the node count.
+Both consumers tell the author what was dropped. The agent tools (`site_insert_html`, `site_replace_node_html`) return the stripped counts and the head-only tags as sentences in `warnings` next to the importer's own reference warnings, and fold the same sentences into the error when nothing was importable, so a bare `<link rel="icon">` is rejected as "Ignored `<link>`: these belong in the document `<head>`…" rather than a bare "no importable elements". `ImportHtmlModal` builds its toast body from the added-selector count plus the same notices, e.g. `"3 CSS selectors, stripped 2 <script>, ignored <link> from <head>"`. If nothing notable happened, the toast shows only the node count.
 
 **Inline `style="…"` → `node.inlineStyles`.** Before `stripUnsafe` removes a `style` attribute, `harvestInlineStyles` (`inlineStyle.ts`) reads the element's parsed CSSOM declaration and copies **every** declaration into a camelCase bag, dropping only property names rejected by `isEmittableProperty` (the publisher's security denylist — the same gate `cssToStyleRules` uses). A `url(…)` background is canonicalised to `url('payload')` form so the Super Import asset rewriter and the editor's `BackgroundImageControl` recognise it. The bag is attached to the produced node as `node.inlineStyles` — the editor's first-class per-node `style=""` layer — which the publisher emits verbatim and the user edits via the Properties panel's inline-style mode. In Super Import any `url(…)` is uploaded to the media library and rewritten to its media URL.
 

@@ -95,6 +95,15 @@ export interface ImportResult extends WalkResult {
   /** Counts of constructs stripped by stripUnsafe(). */
   stripped: StripReport
   /**
+   * Tag names (deduplicated, document order) of elements the HTML parser
+   * placed in `<head>` and the walker therefore never saw: `link`, `meta`,
+   * `title`, `base`, … A bare `<link rel="icon">` at the top of a payload
+   * lands here in every browser, so a caller that only checks `rootIds`
+   * would report "nothing importable" without saying why (#490). `<script>`
+   * and `<style>` are already stripped / harvested before this is read.
+   */
+  headOnly: string[]
+  /**
    * Raw concatenated CSS harvested from `<style>` blocks in the source. Empty
    * when the source had none. The consumer parses it via `cssToStyleRules`
    * (where the site's breakpoints are available) and commits the resulting
@@ -429,9 +438,10 @@ export function walkAndMap(
  * 5. walkAndMap  — maps every element to a PageNode via HTML_TO_MODULE_RULES,
  *    attaching the harvested inline styles to its node's `inlineStyles`
  *
- * Returns an ImportResult that merges the fragment with the StripReport and the
- * raw `<style>` CSS, so callers can parse the CSS into registry rules and
- * surface a "Stripped: N scripts, M handlers" toast.
+ * Returns an ImportResult that merges the fragment with the StripReport, the
+ * head-only elements the walk never saw, and the raw `<style>` CSS, so callers
+ * can parse the CSS into registry rules and tell the author what was stripped
+ * or ignored.
  */
 export function importHtml(source: string): ImportResult {
   const doc = parseHtml(source)
@@ -439,6 +449,11 @@ export function importHtml(source: string): ImportResult {
   const inlineStyles = harvestInlineStyles(doc)
   const styleCss = collectStyleCss(doc)
   const stripped = stripUnsafe(doc)
+  // Read after the strip so scripts and styles, which have their own report,
+  // are not listed twice.
+  const headOnly = [...new Set(
+    Array.from(doc.head?.children ?? []).map((el) => el.tagName.toLowerCase()),
+  )]
   const fragment = walkAndMap(doc, inlineStyles)
-  return { ...fragment, stripped, styleCss }
+  return { ...fragment, stripped, headOnly, styleCss }
 }
