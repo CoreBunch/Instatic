@@ -31,9 +31,70 @@ export function collectStyleCss(doc: Document): string {
   const parts: string[] = []
   for (const el of Array.from(doc.querySelectorAll('style'))) {
     const css = el.textContent ?? ''
-    if (css.trim().length > 0) parts.push(css)
+    if (css.trim().length > 0) parts.push(closeOpenConstructs(css))
   }
   return parts.join('\n')
+}
+
+/**
+ * Terminate whatever a `<style>` block left open so it cannot swallow the
+ * blocks concatenated after it.
+ *
+ * A browser parses each `<style>` element as its own stylesheet: an unclosed
+ * `@media { ... ` or comment at the end of one block is closed at that
+ * block's EOF and never reaches the next element. Concatenating the blocks
+ * into one source loses that boundary, so a theme customizer block with one
+ * missing `}` would drag every later block of the page inside its `@media`.
+ * Appending the missing terminators per block restores the per-element EOF
+ * semantics. Stray extra `}` are left alone, as the parser already ignores
+ * them at the top level.
+ */
+export function closeOpenConstructs(css: string): string {
+  let depth = 0
+  let i = 0
+  const n = css.length
+  let suffix = ''
+  while (i < n) {
+    const ch = css[i]!
+    if (ch === '/' && css[i + 1] === '*') {
+      const end = css.indexOf('*/', i + 2)
+      if (end === -1) {
+        suffix = '*/'
+        break
+      }
+      i = end + 2
+      continue
+    }
+    if (ch === '"' || ch === "'") {
+      let j = i + 1
+      let closed = false
+      while (j < n) {
+        const c = css[j]!
+        if (c === '\\') {
+          j += 2
+          continue
+        }
+        if (c === ch) {
+          closed = true
+          break
+        }
+        // An unescaped newline ends a bad string; the parser recovers there.
+        if (c === '\n') break
+        j++
+      }
+      if (!closed && j >= n) {
+        suffix = ch
+        break
+      }
+      i = j + 1
+      continue
+    }
+    if (ch === '{') depth++
+    else if (ch === '}' && depth > 0) depth--
+    i++
+  }
+  if (suffix === '' && depth === 0) return css
+  return css + suffix + '}'.repeat(depth)
 }
 
 /**

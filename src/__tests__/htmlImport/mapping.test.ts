@@ -830,6 +830,33 @@ describe('collectStyleCss — <style> elements', () => {
     const result = imported('<p>No styles here</p>')
     expect(result.styleCss).toBe('')
   })
+
+  // A browser parses each <style> element as its own stylesheet, so one
+  // block's unclosed @media cannot capture the next block. The concatenated
+  // styleCss has to keep that boundary or a theme customizer block missing a
+  // single `}` would demote every later block to its media context.
+  it('closes an unclosed @media in one <style> block before the next block is appended', () => {
+    const result = imported(
+      '<style>.nav a{color:#fff}@media only screen and (max-width:600px){.nav{display:none}</style>'
+      + '<style>.nav a{color:#1e1e1e}</style><p>Text</p>',
+    )
+    const blocks = result.styleCss.split('\n')
+    expect(blocks).toHaveLength(2)
+    expect(blocks[0]!.endsWith('}}')).toBe(true)
+    expect(blocks[1]).toBe('.nav a{color:#1e1e1e}')
+  })
+
+  it('closes an unterminated comment or string so the next block stays live CSS', () => {
+    expect(imported('<style>.a{color:red}/* open</style><style>.b{color:blue}</style>').styleCss)
+      .toBe('.a{color:red}/* open*/\n.b{color:blue}')
+    expect(imported('<style>.a{content:"x</style><style>.b{color:blue}</style>').styleCss)
+      .toBe('.a{content:"x"}\n.b{color:blue}')
+  })
+
+  it('leaves balanced blocks untouched, braces inside comments and strings ignored', () => {
+    const css = '.a{content:"{"}/* { */.b{color:blue}'
+    expect(imported(`<style>${css}</style>`).styleCss).toBe(css)
+  })
 })
 
 describe('stripUnsafe — inline event handlers (on*)', () => {
