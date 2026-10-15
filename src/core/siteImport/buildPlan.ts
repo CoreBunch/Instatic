@@ -25,7 +25,7 @@ import { buildAssetPlan, type CssFileResult } from './assetPlan'
 import { partitionLinkedStylesheets } from './stylesheetPlan'
 import { detectCrossSheetClassConflicts } from './classCascades'
 import { detectConflicts } from './conflicts'
-import { createCssPlanState, parseCssSourceIntoPlan } from './planCss'
+import { createCssPlanState, dedupeRepeatedInlineRules, parseCssSourceIntoPlan } from './planCss'
 import { rewriteNpmCdnModuleImports } from './scriptDependencies'
 import { mergeScriptOrder, type PageScriptSequence } from './scriptOrder'
 import type {
@@ -131,11 +131,18 @@ export function buildImportPlan({ fileMap, currentSite, options }: BuildImportPl
     if (!cssSource) continue
     parseCssSourceIntoPlan(cssPath, cssSource, cssPlan, parseOptions)
   }
+  //    A site-wide block every page prints (theme customizer output, block
+  //    supports) would otherwise land once per page; the later copies are
+  //    dropped so a page's own override is not outranked by other pages'
+  //    repeats of the rule it overrides (see dedupeRepeatedInlineRules).
+  const seenInlineRuleKeys = new Set<string>()
   for (const plan of rawPagePlans) {
     const inlineCss = inlineCssByPage.get(plan.source)
     if (!inlineCss) continue
     const syntheticPath = `${plan.source}::inline`
     parseCssSourceIntoPlan(syntheticPath, inlineCss, cssPlan, parseOptions)
+    const last = cssPlan.cssFileResults.length - 1
+    cssPlan.cssFileResults[last] = dedupeRepeatedInlineRules(cssPlan.cssFileResults[last], seenInlineRuleKeys)
     plan.linkedCssPaths = [...plan.linkedCssPaths, syntheticPath]
   }
   warnings.push(...cssPlan.warnings)

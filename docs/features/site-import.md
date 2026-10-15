@@ -48,7 +48,7 @@ src/core/siteImport/
 ├── conflicts.ts         — detect page-slug + class-name + design-token collisions; apply resolutions (incl. var(--x) rewrites)
 ├── adapter.ts           — SiteImportAdapter + SiteImportTransaction interfaces (the ONE transaction contract; the editor store implements it directly)
 ├── paths.ts             — dirname/joinPaths for FileMap-relative path resolution
-├── planCss.ts           — single CSS-source parse path (external sheets + per-page inline <style>) feeding shared plan accumulators
+├── planCss.ts           — single CSS-source parse path (external sheets + per-page inline <style>) feeding shared plan accumulators; drops a page's inline rules that an earlier page's inline source already contributed byte-for-byte (site-wide blocks printed into every head), so one page's override is not outranked by other pages' repeats
 ├── buildPlan.ts         — buildImportPlan: pure analysis orchestrator, one named function per phase
 └── commitPlan.ts        — commitImportPlan: upload → rewrite → one atomic adapter.commit, one named function per entity kind
 

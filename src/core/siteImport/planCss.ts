@@ -18,7 +18,8 @@ import { extractRootColorTokens } from './colorTokens'
 import { extractRootFontTokens } from './fontTokens'
 import { stripGoogleFontImportRules } from './fontImports'
 import type { CssFileResult } from './assetPlan'
-import type { ImportColorToken, ImportFontToken, ImportWarning } from './types'
+import type { AssetRef, ImportColorToken, ImportFontToken, ImportWarning, NewStyleRule } from './types'
+import { dirname } from './paths'
 
 /**
  * Accumulators threaded through every `parseCssSourceIntoPlan` call of one
@@ -93,4 +94,63 @@ export function parseCssSourceIntoPlan(
   }
 
   state.cssFileResults.push({ cssPath, rules: rulesAfterFontTokens, assetRefs, fontFaces })
+}
+
+/**
+ * Drop the rules of one page's inline source that an earlier page's inline
+ * source already contributed byte-for-byte.
+ *
+ * CMS themes print customizer CSS, block-support CSS and similar site-wide
+ * blocks into every page's head. Each page's `<style>` CSS is parsed as its
+ * own source, so a site-wide block became one copy of every rule per page,
+ * interleaved through the global sheet in page order. Each copy is harmless on
+ * its own, but together they outrank any single page's override of the same
+ * element at equal specificity: when one page sets `.menu a { color:#1e1e1e }`
+ * after the site-wide `.nav a { color:#fff }`, every later page's copy of the
+ * white rule comes after it in the flattened sheet, so that page's link
+ * renders white. A browser sees one copy per page, and the page's own override
+ * last. Keeping the first copy and dropping the rest gives the flattened
+ * sheet the same shape.
+ *
+ * Only inline page sources are compared, and only against earlier inline
+ * sources: a linked sheet that repeats a rule is left alone, and a page that
+ * repeats its own rule keeps both, because the cascade inside one source is
+ * the author's. A rule that references assets by relative url() is keyed with
+ * its page directory, so two pages in different directories that print the
+ * same `url(../x.png)` stay distinct. Surviving rules are renumbered and their
+ * asset refs re-pointed so indices still line up.
+ */
+export function dedupeRepeatedInlineRules(
+  file: CssFileResult,
+  seenRuleKeys: Set<string>,
+): CssFileResult {
+  const refsByRule = new Map<number, AssetRef[]>()
+  for (const ref of file.assetRefs) {
+    const bucket = refsByRule.get(ref.ruleIndex) ?? []
+    bucket.push(ref)
+    refsByRule.set(ref.ruleIndex, bucket)
+  }
+  const directory = dirname(file.cssPath)
+  const keysThisSource: string[] = []
+  const kept: NewStyleRule[] = []
+  const keptRefs: AssetRef[] = []
+  let changed = false
+  file.rules.forEach((rule, index) => {
+    const { order: _order, ...identity } = rule
+    const scope = refsByRule.has(index) ? directory : ''
+    const key = `${scope}\u0000${JSON.stringify(identity)}`
+    keysThisSource.push(key)
+    if (seenRuleKeys.has(key)) {
+      changed = true
+      return
+    }
+    const newIndex = kept.length
+    kept.push(newIndex === index ? rule : { ...rule, order: newIndex })
+    for (const ref of refsByRule.get(index) ?? []) {
+      keptRefs.push(ref.ruleIndex === newIndex ? ref : { ...ref, ruleIndex: newIndex })
+    }
+  })
+  for (const key of keysThisSource) seenRuleKeys.add(key)
+  if (!changed) return file
+  return { ...file, rules: kept, assetRefs: keptRefs }
 }
