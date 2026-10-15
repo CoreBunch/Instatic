@@ -1032,9 +1032,29 @@ describe('HTML attribute preservation — props.htmlAttributes for ordinary base
 
     const children = container.children.map((id) => result.nodes[id]!)
     expect(children[0]!.moduleId).toBe('base.link')
-    expect(children[0]!.props.htmlAttributes).toEqual({ 'data-track': 'jump' })
+    expect(children[0]!.props.htmlAttributes).toEqual({ rel: 'nofollow', 'data-track': 'jump' })
     expect(children[1]!.moduleId).toBe('base.image')
     expect(children[1]!.props.htmlAttributes).toEqual({ 'data-lazy': 'logo' })
+  })
+
+  it('keeps an authored rel on links and button anchors', () => {
+    // The modules regenerate only the security rel for target="_blank", so a
+    // source rel (nofollow, next/prev, sponsored) has no other home. A theme
+    // styling `a[rel="next"]` needs it to survive import.
+    const result = imported(`
+      <nav>
+        <a href="/page/2/" rel="next">Next</a>
+        <a class="btn" href="https://sponsor.example" target="_blank" rel="sponsored nofollow">Sponsor</a>
+      </nav>
+    `)
+
+    const nav = result.nodes[result.rootIds[0]!]!
+    const children = nav.children.map((id) => result.nodes[id]!)
+    expect(children[0]!.moduleId).toBe('base.link')
+    expect(children[0]!.props.htmlAttributes).toEqual({ rel: 'next' })
+    expect(children[1]!.moduleId).toBe('base.button')
+    expect(children[1]!.props.target).toBe('_blank')
+    expect(children[1]!.props.htmlAttributes).toEqual({ rel: 'sponsored nofollow' })
   })
 })
 

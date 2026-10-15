@@ -51,7 +51,7 @@ src/modules/base/
 ├── slotOutlet/          — base.slot-outlet (VC author side)
 ├── slotInstance/        — base.slot-instance (VC consumer side)
 ├── shared/
-│   └── anchorTarget.ts  — AnchorTargetSchema, ANCHOR_TARGET_OPTIONS, anchorRel() (button + link)
+│   └── anchorTarget.ts  — AnchorTargetSchema, ANCHOR_TARGET_OPTIONS, anchorRel(), mergeAnchorRel(), anchorHtmlAttributes() (button + link)
 ├── utils/
 │   ├── escape.ts        — escapeHtml, safeUrl, sanitiseCssValue, buildStyle (re-exports publisher utils)
 │   ├── htmlTag.ts       — htmlTagControl, customHtmlTagControl (resolution lives in @core/htmlAttributes)

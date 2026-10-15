@@ -25,7 +25,7 @@ import { ButtonModule } from '@modules/base/button'
 import { ListModule } from '@modules/base/list'
 import { VideoModule } from '@modules/base/video'
 
-import { anchorRel, ANCHOR_TARGET_OPTIONS } from '@modules/base/shared/anchorTarget'
+import { anchorRel, mergeAnchorRel, ANCHOR_TARGET_OPTIONS } from '@modules/base/shared/anchorTarget'
 import { linkUsesChildren } from '@modules/base/link/content'
 import { resolveButtonAnchor } from '@modules/base/button/anchor'
 import { parseItems } from '@modules/base/list/items'
@@ -59,6 +59,52 @@ describe('anchorRel — single source for the noopener rule', () => {
     expect(values).toEqual(['_self', '_blank', '_parent'])
     expect(LinkModule.schema.target).toMatchObject({ type: 'select', options: ANCHOR_TARGET_OPTIONS as never })
     expect(ButtonModule.schema.target).toMatchObject({ type: 'select', options: ANCHOR_TARGET_OPTIONS as never })
+  })
+})
+
+describe('mergeAnchorRel — one rel attribute, authored tokens plus the security rel', () => {
+  it('keeps authored tokens, always adds the _blank guard, and emits each token once', () => {
+    expect(mergeAnchorRel(undefined, '_self')).toBeNull()
+    expect(mergeAnchorRel('', '_self')).toBeNull()
+    expect(mergeAnchorRel('nofollow', '_self')).toBe('nofollow')
+    expect(mergeAnchorRel(' next  prev ', '_parent')).toBe('next prev')
+    expect(mergeAnchorRel(undefined, '_blank')).toBe(anchorRel('_blank'))
+    expect(mergeAnchorRel('nofollow', '_blank')).toBe('nofollow noopener noreferrer')
+    expect(mergeAnchorRel('noopener', '_blank')).toBe('noopener noreferrer')
+    expect(mergeAnchorRel('noreferrer sponsored', '_blank')).toBe('noreferrer sponsored noopener')
+    expect(mergeAnchorRel(42, '_blank')).toBe('noopener noreferrer')
+  })
+
+  const relAttributes = (html: string): string[] => [...html.matchAll(/\brel="([^"]*)"/g)].map((m) => m[1]!)
+
+  it('link and button render() emit exactly one rel, keeping the authored tokens', () => {
+    const cases = [
+      LinkModule.render({ ...LinkModule.defaults, href: '/page/2/', target: '_self', htmlAttributes: { rel: 'next' } }, []).html,
+      ButtonModule.render({ ...ButtonModule.defaults, href: '/page/2/', target: '_self', htmlAttributes: { rel: 'next' } }, []).html,
+    ]
+    for (const html of cases) expect(relAttributes(html)).toEqual(['next'])
+  })
+
+  it('an authored rel never removes the noopener guard on a new-tab link or button', () => {
+    // Two rel attributes on one element is a parse error: the browser keeps
+    // the first. Before the merge the author's rel was emitted before the
+    // module's, so a nofollow new-tab link published without noopener.
+    const link = LinkModule.render({ ...LinkModule.defaults, href: 'https://e.com', target: '_blank', htmlAttributes: { rel: 'nofollow' } }, []).html
+    const button = ButtonModule.render({ ...ButtonModule.defaults, href: 'https://e.com', target: '_blank', htmlAttributes: { rel: 'nofollow' } }, []).html
+    for (const html of [link, button]) {
+      expect(relAttributes(html)).toEqual(['nofollow noopener noreferrer'])
+    }
+    const authoredGuard = LinkModule.render({ ...LinkModule.defaults, href: 'https://e.com', target: '_blank', htmlAttributes: { rel: 'noopener noreferrer' } }, []).html
+    expect(relAttributes(authoredGuard)).toEqual(['noopener noreferrer'])
+  })
+
+  it('escapes the authored rel and leaves the other bag attributes alone', () => {
+    const html = LinkModule.render(
+      { ...LinkModule.defaults, href: 'https://e.com', target: '_self', htmlAttributes: { rel: 'a"b', 'data-track': 'x' } },
+      [],
+    ).html
+    expect(html).toContain('rel="a&quot;b"')
+    expect(html).toContain('data-track="x"')
   })
 })
 
