@@ -50,6 +50,7 @@ import {
   readDashboardGridGap,
   type DashboardItem,
 } from '../hooks/useDashboardLayout'
+import { DashboardWidgetMount } from './DashboardWidgetMount'
 
 /**
  * Extra empty rows reserved below the lowest widget while in customize
@@ -192,7 +193,6 @@ export function DashboardGrid({
             />
           )
         }
-        const Render = def.render
         return (
           <div
             key={item.id}
@@ -208,7 +208,7 @@ export function DashboardGrid({
               ['--row' as string]: String(item.row),
             }}
           >
-            <Render span={item.size} editing={false} />
+            <DashboardWidgetMount definition={def} span={item.size} editing={false} />
           </div>
         )
       })}
@@ -346,7 +346,6 @@ interface DraggableCellProps {
 
 function DraggableCell({ item, definition, onResize, onResizeRows }: DraggableCellProps) {
   const draggable = useDraggable({ id: item.id })
-  const Render = definition.render
 
   const containerRef = useRef<HTMLDivElement | null>(null)
   const resizeStateRef = useRef<{
@@ -442,7 +441,7 @@ function DraggableCell({ item, definition, onResize, onResizeRows }: DraggableCe
       {...draggable.listeners}
       {...draggable.attributes}
     >
-      <Render span={item.size} editing />
+      <DashboardWidgetMount definition={definition} span={item.size} editing />
 
       {/* 4 edge handles + 1 corner handle. The corner is stacked above
           the edges (z-index: 11 vs 10) so the small overlap area
