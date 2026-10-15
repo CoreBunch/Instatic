@@ -188,7 +188,7 @@ function bagToDeclarations(
     const kebab = toKebab(prop)
     const important = priorities[prop] === 'important'
     if (prop === 'backgroundImage') {
-      const responsive = responsiveBackgroundImage(sanitised, options.mediaAssets)
+      const responsive = responsiveBackgroundImage(sanitised, options.mediaAssets, bag.backgroundSize)
       const fallback = sanitiseCssValue(responsive.fallback)
       if (fallback !== null) decls.push([kebab, fallback, important])
       if (responsive.imageSet) {

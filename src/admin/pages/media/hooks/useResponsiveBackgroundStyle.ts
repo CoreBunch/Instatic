@@ -66,7 +66,7 @@ export function responsiveBackgroundReactStyle(
     return bagToReactStyle(bag)
   }
 
-  const responsive = responsiveBackgroundImage(bag.backgroundImage, mediaAssets)
+  const responsive = responsiveBackgroundImage(bag.backgroundImage, mediaAssets, bag.backgroundSize)
   return bagToReactStyle({
     ...bag,
     backgroundImage: responsive.imageSet ?? responsive.fallback,

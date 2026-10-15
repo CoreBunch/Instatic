@@ -234,7 +234,9 @@ a background does not become the selectable source for modern browsers. CSS
 `image-set()` supports density descriptors (`1x`, `2x`, etc.), not HTML
 `srcset` width descriptors (`640w` + `sizes`), so the background ladder is a
 DPR-oriented mirror of the same variant policy rather than a literal copy of
-the `<img sizes>` algorithm.
+the `<img sizes>` algorithm. Descriptors are relative to a 1024px reference,
+except under `background-size: auto` (or unset), where they are relative to the
+original's recorded width so the background keeps the original's size.
 
 `reset` / `framework` / `style` are page-invariant — every page on the site
 shares the same hash. `userStyles` is **page-scoped**: each author stylesheet

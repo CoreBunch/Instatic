@@ -190,7 +190,7 @@ describe('bagToCSS', () => {
 
   it('rewrites media background images to optimized fallback plus image-set declarations', () => {
     const css = bagToCSS(
-      { backgroundImage: "url('/uploads/hero.png')" },
+      { backgroundImage: "url('/uploads/hero.png')", backgroundSize: 'cover' },
       { mediaAssets: new Map([['/uploads/hero.png', resolvedMedia()]]) },
     )
 
@@ -200,6 +200,44 @@ describe('bagToCSS', () => {
     expect(css).toContain('url("/uploads/hero-w1024.webp") 1x')
     expect(css).toContain('url("/uploads/hero-w2048.webp") 2x')
     expect(css).not.toContain('/uploads/hero.png')
+  })
+
+  it.each([undefined, 'auto', 'auto auto', 'auto, auto'])(
+    'makes image-set descriptors relative to the original width when background-size is %p',
+    (backgroundSize) => {
+      const css = bagToCSS(
+        { backgroundImage: "url('/uploads/hero.png')", backgroundSize },
+        { mediaAssets: new Map([['/uploads/hero.png', resolvedMedia()]]) },
+      )
+
+      expect(css).toContain('url("/uploads/hero-w320.webp") 0.13x')
+      expect(css).toContain('url("/uploads/hero-w1024.webp") 0.43x')
+      expect(css).toContain('url("/uploads/hero-w2048.webp") 0.85x')
+    },
+  )
+
+  it.each(['cover', 'contain', '100% auto', 'auto 50%', 'cover, auto'])(
+    'keeps the 1024px descriptor reference when background-size is %p',
+    (backgroundSize) => {
+      const css = bagToCSS(
+        { backgroundImage: "url('/uploads/hero.png')", backgroundSize },
+        { mediaAssets: new Map([['/uploads/hero.png', resolvedMedia()]]) },
+      )
+
+      expect(css).toContain('url("/uploads/hero-w320.webp") 0.31x')
+      expect(css).toContain('url("/uploads/hero-w1024.webp") 1x')
+      expect(css).toContain('url("/uploads/hero-w2048.webp") 2x')
+    },
+  )
+
+  it('falls back to a 1024px reference under background-size auto when the original width is unknown', () => {
+    const css = bagToCSS(
+      { backgroundImage: "url('/uploads/hero.png')" },
+      { mediaAssets: new Map([['/uploads/hero.png', { ...resolvedMedia(), width: null }]]) },
+    )
+
+    expect(css).toContain('url("/uploads/hero-w1024.webp") 1x')
+    expect(css).toContain('url("/uploads/hero-w2048.webp") 2x')
   })
 
   it('rewrites media background images inside inline style strings without selecting the original', () => {
