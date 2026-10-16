@@ -58,6 +58,10 @@ Boot is sequential and fail-fast. If migrations fail, the process exits. If a pl
 
 ---
 
+The HTTP server accepts request bodies up to 1 GiB, matching Site Import's
+archive input limit. CMS archive imports stream media entries to disk; their
+manifest has a separate 256 MiB limit.
+
 ## Routing
 
 `server/router.ts` exposes one function:
