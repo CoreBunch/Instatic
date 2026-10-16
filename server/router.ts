@@ -2,13 +2,19 @@ import { tryHandleAi } from './ai/handlers'
 import { handleMcpHttp, MCP_ENDPOINT_PATH } from './ai/mcp'
 import { tryHandleMcpOAuth } from './ai/mcp/oauth/handler'
 import { handleCmsRequest } from './handlers/cms'
+import { readPreviewAsset } from './publish/branchPreviewAssets'
+import {
+  tryServeBranchPreviewLink,
+  tryServeNotFoundPage,
+  tryServePublicRoute,
+  trySetupRedirect,
+} from './publish/publicRoutes'
 import type { DbClient } from './db/client'
-import { renderNotFoundResponse, renderPublicResolution } from './publish/publicRouter'
+import type { RouteHandler, ServerRuntime } from './serverRuntime'
 import { readStaticAsset } from './publish/staticArtefact'
 import { getLatestSnapshotForVersion } from './publish/publishedSnapshotCache'
 import { getPublishVersion, registerVersionedCacheReset } from './publish/publishState'
 import { prefetchMediaAssets } from './publish/mediaPrefetch'
-import { getSetupStatusCached } from './repositories/setup'
 import { getPublishedRuntimeAsset } from './repositories/runtimeAsset'
 import { handleLoopRequest, isLoopRuntimeAssetPath, serveLoopRuntimeAsset } from './handlers/cms/loop'
 import { handleHoleRequest, isHoleRuntimeAssetPath, serveHoleRuntimeAsset } from './handlers/cms/hole'
@@ -24,33 +30,6 @@ import { buildPublishedSiteCssBundle } from './publish/siteCssBundle'
 import { mediaStorageRegistry } from '@core/plugins/mediaStorageRegistry'
 
 const VITE_DEV_URL = 'http://localhost:5173'
-
-interface ServerRuntime {
-  db: DbClient
-  staticDir?: string
-  uploadsDir?: string
-  /**
-   * The raw `DATABASE_URL` the server booted with — forwarded down to
-   * CMS handlers that need to resolve the on-disk SQLite file (e.g. the
-   * storage dashboard widget).
-   */
-  databaseUrl?: string
-}
-
-/**
- * A route handler returns a `Response` if it owns the request, or `null` if
- * the URL/method doesn't match — the dispatcher walks the `routes` table and
- * returns the first non-null response. Prefix-namespaced handlers (e.g.
- * `/_instatic/css/`, `/_instatic/runtime/cache/`) absorb their entire namespace and emit
- * a 404 themselves rather than falling through, so unknown paths under a
- * known prefix can't accidentally match a later route.
- */
-type RouteHandler = (
-  req: Request,
-  runtime: ServerRuntime,
-  url: URL,
-  pathname: string,
-) => Promise<Response | null> | Response | null
 
 // ---------------------------------------------------------------------------
 // Dispatcher
@@ -78,6 +57,10 @@ const routes: readonly RouteHandler[] = [
   // runtime rewrite. The site editor now POSTs `/admin/api/ai/chat/site`.
   tryServeAi,
   tryServeCmsApi,
+  // Branch preview links — `/_instatic/preview/<token>` sets the preview
+  // cookie, `/_instatic/preview/exit` clears it. Public GETs below then
+  // render the branch's draft while the cookie names a live link.
+  tryServeBranchPreviewLink,
   tryServeLoopRuntimeAsset,
   tryServeLoop,
   tryServeHoleRuntimeAsset,
@@ -191,6 +174,7 @@ function tryServeCmsApi(req: Request, runtime: ServerRuntime, _url: URL, pathnam
   return handleCmsRequest(req, runtime.db, {
     uploadsDir: runtime.uploadsDir,
     databaseUrl: runtime.databaseUrl,
+    collabRelay: runtime.collabRelay,
   })
 }
 
@@ -256,6 +240,15 @@ async function tryServeRuntimeAsset(req: Request, runtime: ServerRuntime, _url: 
   const hardening = {
     'x-content-type-options': 'nosniff',
     'content-security-policy': "default-src 'none'",
+  }
+
+  // Branch preview bundles live in memory and are never cached by the
+  // browser beyond their content-derived build id.
+  const previewAsset = readPreviewAsset(pathname)
+  if (previewAsset) {
+    return binaryResponse(previewAsset.bytes, {
+      headers: { 'content-type': previewAsset.contentType, 'cache-control': 'no-store', ...hardening },
+    })
   }
 
   // Disk-first: a full publish bakes the runtime JS into the active slot, so
@@ -487,48 +480,6 @@ async function tryServeAdminApp(
   // Admin SPA isn't served from this port (dev mode, or production missing a
   // build). Tell the developer where to actually find it.
   return adminUiNotBuiltResponse(pathname)
-}
-
-/**
- * Single entry for every visitor-facing HTML URL — stand-alone published
- * pages (`/about`), content rows rendered through their postType's entry
- * template (`/posts/hello-world`), and row-slug redirects.
- *
- * Resolution + render live in `server/publish/publicRouter.ts`.
- * `renderPublicResolution` handles the full request: Layer A disk
- * fast-path (pre-rendered static artefacts via `readArtefact`), then
- * `resolvePublicRoute`, then the live renderer + `applyPublishedHtmlPipeline`.
- */
-async function tryServePublicRoute(req: Request, runtime: ServerRuntime, url: URL, _pathname: string): Promise<Response | null> {
-  if (req.method !== 'GET') return null
-  return await renderPublicResolution(runtime.db, url, runtime.uploadsDir)
-}
-
-/**
- * On a fresh install with no admin user yet, bounce the visitor to /admin so
- * they land in the setup wizard instead of seeing a confusing 404. Returns
- * null when the install is already past setup.
- */
-async function trySetupRedirect(req: Request, runtime: ServerRuntime, _url: URL, _pathname: string): Promise<Response | null> {
-  if (req.method !== 'GET') return null
-  // Sticky memo: once setup completes, this stops querying. Without it every
-  // unmatched GET (bot probes, 404s) paid two COUNT queries forever.
-  const setupStatus = await getSetupStatusCached(runtime.db)
-  return setupStatus.needsSetup
-    ? new Response(null, { status: 302, headers: { location: '/admin' } })
-    : null
-}
-
-/**
- * Last route before the dispatcher's bare JSON 404: serve the site's designed
- * 404 page (the `notFound` template) for any GET no other route claimed.
- * Namespaced prefixes (`/admin/api/*`, `/_instatic/*`, `/uploads/*`) never
- * reach here — they absorb their namespace and emit their own 404s. Returns
- * null (→ JSON 404) when the published site has no notFound template.
- */
-async function tryServeNotFoundPage(req: Request, runtime: ServerRuntime, url: URL, _pathname: string): Promise<Response | null> {
-  if (req.method !== 'GET') return null
-  return await renderNotFoundResponse(runtime.db, url, runtime.uploadsDir)
 }
 
 // ---------------------------------------------------------------------------

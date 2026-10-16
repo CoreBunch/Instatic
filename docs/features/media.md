@@ -50,7 +50,7 @@ src/admin/pages/media/
 └── utils/
     ├── filters.ts                      — type/date/folder filter predicates
     ├── folderTree.ts                   — folder utilities: tree build, descent check, child listing
-    ├── formatBytes.ts                  — binary-unit file-size formatter (B/KB/MB/GB) shared by canvas tiles, viewer, upload queue, replace dialog
+│   (byte formatting lives in `src/admin/lib/formatBytes.ts`, shared with the Dependencies panel)
     ├── mediaDnd.ts                     — drop-legality rules: canMoveFolderTo, canAcceptDrop, commitDropPayload, MediaDndTarget
     ├── mediaDragDrop.ts                — TypeBox-validated drag/drop payload helpers
     ├── smartFolders.ts                 — smart folder IDs, type guard, per-ID predicates
@@ -350,7 +350,7 @@ The redirect handler is `tryServeMediaRedirect` in `server/router.ts`. The redir
 
 ### Register a plugin storage adapter
 
-See [docs/features/plugin-system.md](plugin-system.md). The plugin SDK's `api.cms.media.registerStorageAdapter(adapter)` provides the registration surface and requires `media.storage.adapter`. Adapters declare a `servingMode` and either return public URLs, implement `getReadUrl(storagePath, ttlSeconds)` for signed redirects, or implement `readStream(storagePath)` for proxy reads. The host streams upload bytes to adapter-provided upload plans; ordinary writes do not move media bytes through the QuickJS heap.
+See [docs/features/plugin-system.md](plugin-system.md). The plugin SDK's `api.cms.media.registerStorageAdapter(adapter)` provides the registration surface and requires `media.storage.adapter`. Adapters declare a `servingMode` and either return public URLs, implement `getReadUrl(storagePath, ttlSeconds)` for signed redirects, or implement `readStream(storagePath)` for proxy reads. The host streams upload bytes to adapter-provided upload plans through the DNS-pinned SSRF guard (internal addresses refused on both the read and the write side); ordinary writes do not move media bytes through the QuickJS heap.
 
 ---
 

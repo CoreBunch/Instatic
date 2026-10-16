@@ -4,6 +4,62 @@ All notable changes to Instatic will be documented here.
 
 This project is pre-1.0. Breaking changes may appear in minor or patch releases until a stable release line exists.
 
+## 0.0.21 - 2026-10-12
+
+### Features
+
+- Plugins can now keep access to the content tables they create. A plugin that creates a table at runtime, such as an importer, declares `@own-created` in its manifest instead of a table name it cannot know in advance, and the install dialog shows that grant to the operator.
+
+### Bug fixes
+
+- Applying or removing a class from the Selectors panel now affects every selected element, not only the last one clicked, and the whole change undoes in one step.
+- The `Esc` keycap at the bottom of the Settings panel closes it when clicked. It used to animate and do nothing.
+- Importing a site whose stylesheet, script, and image links carry a cache-busting query such as `?v=8f3a1c` now finds those files. They were reported missing and their styles and colour tokens were dropped.
+- The dashboard checklist's page step now follows the seeded Home page: it reads "In progress" until a page is published and completes on publish, so a one-page site can finish the checklist and editing Home no longer shows next to "Not started".
+
+### Security
+
+- Closed an authorization gap in author reassignment ([GHSA-m425-wmrc-4v4v](https://github.com/CoreBunch/Instatic/security/advisories/GHSA-m425-wmrc-4v4v)). An editor holding `content.edit.any` but not `data.system.tables.read` could read the full contents of any page or post row, including unpublished drafts and author identity, and change its author through `PATCH /admin/api/cms/data/rows/:id/author`, while reading the same row directly was correctly refused. The endpoint now applies the same table and ownership check as every other row read and write. Reported by [@sriman0707](https://github.com/sriman0707).
+- Closed an authorization gap in the AI and MCP content read tools ([GHSA-x5cc-8486-8qqx](https://github.com/CoreBunch/Instatic/security/advisories/GHSA-x5cc-8486-8qqx)). A user or MCP connection holding `ai.chat` and `content.edit.own` could read every other user's drafts and any page or post row through `content_get_document`, `content_list_documents`, and `content_search_documents`, although the same rows were refused on the normal API. The tools now decide access with the same table and ownership rules as the HTTP routes, and the MCP relay enforces the table boundary it was missing. Reported by [@sriman0707](https://github.com/sriman0707) and [@btarr-vc](https://github.com/btarr-vc).
+- MCP OAuth discovery no longer trusts the request's `Host` header ([GHSA-hgjv-q732-4phj](https://github.com/CoreBunch/Instatic/security/advisories/GHSA-hgjv-q732-4phj)). On a deployment without `PUBLIC_ORIGIN`, the authorization server, resource, and token URLs in the discovery documents and the `WWW-Authenticate` challenge were built from whatever `Host` an unauthenticated client sent. The issuer now comes only from the configured public origin; without one, OAuth discovery answers 503 and personal access tokens keep working, with loopback development exempt. Set `PUBLIC_ORIGIN` to use remote OAuth connectors (Render and Railway set it automatically). Reported by [@KadirArslan](https://github.com/KadirArslan).
+
+## 0.0.20 - 2026-09-13
+
+### Features
+
+- Added site branches: fork the whole site into a private copy, edit it in the normal editor, and share a preview link with someone who has no admin account. Merging goes through a review page that shows each change with the page rendered before and after, and an editor without merge rights can request a merge instead of making one.
+- Added version history for pages and content entries. Every published version is listed with who published it and when, and any one can be restored into the draft.
+- The Dependencies panel now browses npm: search for a package, read its README, versions, and known advisories, and install the version you pick.
+- Publish errors now name the file. Each code error that blocks a publish is listed with its file and position, and the Explorer badges the scripts and stylesheets at fault instead of only showing a count.
+
+### Bug fixes
+
+- Editing a page no longer wipes its SEO fields, featured image, or plugin data, which were lost on the first edit after they were set.
+- Upgrading a plugin no longer breaks the JavaScript on every published page. The old plugin files now stay in place until the next publish rewrites the links to them.
+- Publishing keeps CSS classes that only a script switches on, such as an open mobile menu. They were dropped as unused, so the menu worked in the editor and did nothing on the live site.
+- Responsive styles no longer invert at publish on sites that mix min-width and max-width breakpoints, where a narrow rule could end up winning on wide screens.
+- Imported sites keep their `min()`, `max()`, and `clamp()` sizing instead of losing fluid spacing and typography.
+- Times in the admin are correct on SQLite installs running outside UTC, where a device that signed in seconds ago could read as hours old.
+- Content lists sort correctly again on SQLite, and the dashboard no longer drops a day from its window.
+- Re-uploading a plugin at the same version is treated as a reinstall instead of a first install, so its hooks run in the right order and a failed upload no longer leaves it stuck in an error state.
+- The downloadable server builds now start on machines other than the one that built them. Every 0.0.19 artifact exited immediately, so Instatic Desktop could not run that release.
+- Sites with runtime scripts can be published from those server builds, which previously could not start the bundler.
+- `bun run dev` refuses a Bun older than 1.4.1 with a clear message instead of starting up and leaving the editor unable to connect.
+
+### Other changes
+
+- Instatic runs on Bun 1.4.2. Installing from source needs Bun 1.4.x.
+
+## 0.0.19 - 2026-09-10
+
+### Security
+
+- Closed a server-side request forgery in the media storage write path ([GHSA-9pq7-m5wf-r7f6](https://github.com/CoreBunch/Instatic/security/advisories/GHSA-9pq7-m5wf-r7f6)). A plugin holding only `media.storage.adapter` supplies the step URLs in an upload plan, and the executor streamed the bytes to them with an unguarded `fetch()`, so the grant carried the network reach of `network.outbound` without asking for it: arbitrary `PUT` and `POST` at loopback, private, link-local, and cloud-metadata addresses, with plugin-chosen headers and the validated media bytes as the body. This is the write-side sibling of the media migration SSRF fixed in 0.0.18, which closed the read path and left this one open. Upload plan steps now go through the same SSRF-safe guard as the read path: internal addresses are refused before a connection opens, the connection is pinned to the checked IP, and every redirect hop is re-validated. Reported by [@skeletonsec](https://github.com/skeletonsec).
+
+### Publishing and runtime
+
+- Fixed the runtime dependency package server returning 404 for every package asset on Windows hosts ([GHSA-hwp9-vc7h-gvvf](https://github.com/CoreBunch/Instatic/security/advisories/GHSA-hwp9-vc7h-gvvf)). The containment check that keeps a resolved path inside the cache directory compared against a hard-coded forward slash, but `path.resolve` produces backslashes on Windows, so the check was false for every legitimate path and the endpoint refused all runtime package assets. It fails closed, so nothing was exposed. Containment is now decided with `path.relative()`, which is correct on both separators, and the same helper replaced a prefix comparison in the site-script workspace that carried no separator at all and would have accepted a sibling directory whose name merely began with the root. Reported by [@uziii2208](https://github.com/uziii2208).
+
 ## 0.0.18 - 2026-09-01
 
 ### Security

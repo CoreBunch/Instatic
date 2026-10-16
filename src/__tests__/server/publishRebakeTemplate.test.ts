@@ -26,6 +26,7 @@ function rowDate(value: string) {
 function pageRow(page: Page, extraCells: Record<string, unknown> = {}) {
   return {
     id: page.id,
+    logical_id: page.id,
     table_id: 'pages',
     slug: page.slug,
     status: 'draft',
@@ -68,7 +69,7 @@ function buildFakeDb(layout: Page, about: Page) {
       }
     }
 
-    if (s.includes('select data_rows.id') && s.includes('from data_rows') && s.includes('order by')) {
+    if (s.includes('select data_rows.logical_id') && s.includes('from data_rows') && s.includes('order by')) {
       if (params[0] === 'pages') {
         return {
           rows: [

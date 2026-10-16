@@ -4,6 +4,8 @@
 
 The static-site pipeline has two parts: a pure analysis function (`buildImportPlan`) that produces an `ImportPlan` preview, and an async commit function (`commitImportPlan`) that uploads assets and writes to the store. CMS bundle imports keep their native semantics: validate the `SiteBundle`, preview against `/admin/api/cms/import/preview`, resolve any row slug conflicts in the shared Conflicts step, then apply through `/admin/api/cms/import` or `/admin/api/cms/import/archive`. The modal uses the same Review category navigator and Import progress surface for CMS bundles, so tables, media, folders, redirects, conflict resolution, and completion all live in the same picker pattern as HTML/CSS/media imports.
 
+CSS declarations containing `var()`, `env()`, `clamp()`, `min()`, or `max()` pass through the shared CSS substitution encoder before CSSOM parsing. This preserves their authored values in both browser and headless imports, including centered section padding and responsive wrapper widths. The decoder restores the original property names before storage.
+
 ---
 
 ## TL;DR
@@ -271,10 +273,18 @@ Class-free ambient selectors and supported raw blocks such as `@keyframes`
 remain conservative and global. This retains framework cascades such as `.row`
 plus `.row > *` without shipping thousands of unused utilities.
 
-Runtime code that constructs class names dynamically cannot be inferred from a
-static page tree. Those classes must be assigned in the editor (including to a
-hidden structural node) or the stylesheet should use `mode:'file'`, which is
-the explicit non-tree-shaken escape hatch for runtime-owned CSS.
+A class that only exists at runtime — a modifier a script toggles, such as
+`.nav--open` — is never assigned to a node, so node class ids alone would
+prune it. `collectUsedStyleRuleIds` therefore also keeps every class whose
+name appears literally in a `type: 'script'` site file: the script source is
+split on every character a class name cannot contain, and a class rule whose
+name is among the surviving runs counts as used. This over-collects on purpose
+(`add`, `length` and every other identifier in the script also land in the
+set) — a false positive costs a few bytes of CSS, a false negative drops a rule
+that is correct everywhere until publish. Only literal names are seen: a class
+built by concatenation at runtime still cannot be inferred and must be assigned
+in the editor (including to a hidden structural node) or shipped in a
+`mode:'file'` stylesheet, the explicit non-tree-shaken escape hatch.
 
 The escape hatch for "this sheet's resets/styles must not leak into other pages at all" is no longer a generated scope class — it is keeping that sheet as a file (`mode: 'file'`), page-scoped via runtime config.
 
@@ -286,7 +296,7 @@ The escape hatch for "this sheet's resets/styles must not leak into other pages 
 
 - **`PageConflict`** — a desired slug collides with an existing page slug or with another slug in the same import batch.
 - **`RuleConflict`** — a `kind:'class'` rule's name collides with an existing class name. Ambient rules never conflict. One row per name even when the name arrives as several cascade fragments (they rename together).
-- **`TokenConflict`** — a design-token CSS custom property collides with an existing token. One type covers both colour tokens (keyed by `--<slug>`, against `framework.colors.tokens`) and font tokens (keyed by `--font-*`, against `fonts.tokens`), since both are just a `--var` contract referenced by `var(--x)` in the imported CSS. Imported tokens are deduped per kind upstream, so only site-vs-import collisions occur.
+- **`TokenConflict`** — a design-token CSS custom property collides with an existing token. One type covers both colour tokens (keyed by `--<slug>`, against `framework.colors.tokens`) and font tokens (keyed by `--font-*`, against `fonts.tokens`), since both are just a `--var` contract referenced by `var(--x)` in the imported CSS. Imported tokens are deduped per kind upstream, so only site-vs-import collisions occur. Token conflicts default to auto-rename, with one exception: when the existing font token is an untouched seeded role token (`font-heading`, `font-body` or `font-mono` with its seeded name and fallback and no bound family, checked by `isUntouchedFontRoleToken` in `src/core/fonts/roles.ts`), the default is overwrite. The imported family and fallback land on the role token and imported rules keep `var(--font-body)`, so importing into a new site behaves as if the token were absent. A role token the user has edited keeps the rename default.
 - **`CrossSheetClassConflict`** — two imported page cascades define the same class differently (see "Cross-sheet class conflicts" above). Keyed by `(desiredName, definitionId)`; resolutions apply FIRST in `applyConflictResolutions` so a renamed definition no longer participates in the site-vs-import conflict on the original name.
 
 Page slugs can be slash-delimited public paths. Root `index.html` stays the homepage slug `index`; nested `index.html` files use their directory route, so `documentation/index.html` imports as `/documentation` and does not collide with `download-version/index.html`.
@@ -364,12 +374,21 @@ On success the same step switches to its **complete** state — a success mark, 
 | `invalid-rule` | A CSS rule caused `replaceSync` to throw (sheet-level parse error) |
 | `blocked-property` | A CSS property name is on the security denylist (`behavior`, `-moz-binding`, …) — declaration dropped |
 | `duplicate-class` | Two `.foo {}` rules in the same file; later declarations win |
-| `missing-stylesheet` | A `<link rel="stylesheet">` href was not found in the FileMap |
+| `missing-stylesheet` | A `<link rel="stylesheet">` href was not found in the FileMap (a cache-busting `?v=…` query is stripped before the lookup, so it is not a cause) |
 | `asset-upload-failed` | An individual asset upload was rejected by the server; the original FileMap path remains in the import |
 | `asset-folder-failed` | The asset uploaded and its URL was rewritten, but filing it under the folder mirroring its bundle path failed; it sits at the media root |
 | `script-order-conflict` | Two pages link the same scripts in contradictory orders; the order from the page that links them first wins |
 | `external-font` | An `@font-face` with no bundled file (all `src` entries are external URLs) — skipped |
 | `unresolved-asset` | An HTML/CSS reference to a media file the archive does not contain under that path — one warning per distinct path |
+
+### Cache-busted URLs
+
+Reference resolution strips any query string or fragment before looking a path up in the FileMap:
+`assets/site.css?v=8f3a1c` and `assets/site.css` address the same file. This applies to
+`<link rel="stylesheet">`, `<script src>`, CSS `@import`, CSS `url()`, and node `src` / `href` / `srcset` —
+static site generators commonly emit a content hash on all of them.
+
+The original URL is preserved for the in-place CSS rewrite; only the lookup is affected.
 
 The import log shows the first 12 warnings, ordered so the kinds that name a
 missing file come first and the CSS interpretation notes last

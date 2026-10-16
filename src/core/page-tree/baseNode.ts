@@ -165,15 +165,18 @@ function parsePropBindings(
 
 /**
  * Parse the shared BaseNode fields from an already-narrowed record `r`.
- * Throws `Error('<path>.<field>: …')` when a required field (id, moduleId,
- * children) is absent or the wrong type; returns the normalised BaseNode
- * otherwise. `parentId` is intentionally omitted — it is recomputed by
+ * Throws `Error('<path>.<field>: …')` when a required field (id, moduleId)
+ * is absent or when `children` is present but not a list; returns the
+ * normalised BaseNode otherwise. A missing `children` is an empty list: a
+ * leaf written outside the editor (data API, import, plugin) may carry none,
+ * and dropping the node for it would lose it for good once the relay
+ * persists the parsed tree. `parentId` is intentionally omitted — it is recomputed by
  * `reindexNodeParents` after the whole tree is parsed.
  */
 export function parseBaseNodeFields(r: Record<string, unknown>, path: string): BaseNode {
   const id = requireStringField(r, 'id', path)
   const moduleId = requireStringField(r, 'moduleId', path)
-  const rawChildren = requireArrayField(r, 'children', path)
+  const rawChildren = r.children === undefined ? [] : requireArrayField(r, 'children', path)
 
   const propBindings = parsePropBindings(r.propBindings)
   // Inline styles — same tolerant bag parser as props/class styles. Dropped

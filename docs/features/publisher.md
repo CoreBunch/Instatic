@@ -200,15 +200,18 @@ class registry, which wins over framework, which wins over reset.
 
 ```text
 reset-<hash>.css       = PUBLISHER_RESET_CSS                       ← reset.ts (cross-browser baseline)
-framework-<hash>.css   = buildSiteFrameworkCss(site)               ← frameworkCss.ts (spacing, typography, …)
+framework-<hash>.css   = buildSiteFrameworkCss(site)               ← frameworkCss.ts (root font size when opted in, spacing, typography, …)
                        + collectModuleCSS(via CssCollector)        ← deduped per-moduleId CSS
 style-<hash>.css       = collectClassCSS(site)                     ← user-defined StyleRule entries, incl. raw @keyframes
 userStyles-<hash>.css  = collectUserStylesheetCss(site, page)      ← author stylesheets, scoped to this page
 ```
 
 `styleRuleTreeShake.ts` computes the site-wide used class-id set once across
-page and Visual Component trees. A class rule emits only when its id is used
-and every known class dependency in its preserved selector is used. Ambient
+page and Visual Component trees, plus every class rule whose name appears
+literally in a `type: 'script'` site file (a modifier a script toggles is never
+assigned to a node; see `docs/features/site-import.md`). A class rule emits
+only when its id is used and every known class dependency in its preserved
+selector is used. Ambient
 selector fragments emit when at least one selector-list alternative has all of
 its known class dependencies in use; class-free selectors and supported raw
 blocks stay conservative. The editor canvas calls the same selector and
@@ -352,7 +355,7 @@ Two invariants:
 
 Both call sites read through the one helper so publish and Live preview can't drift.
 
-Installed fonts are emitted through the CSS bundle, not external `<link>` tags. The font CSS includes self-hosted `@font-face` rules for `site.settings.fonts.items` plus `:root` declarations for editable tokens such as `--font-primary`. A page rule can therefore keep `font-family: var(--font-primary)` while the token assignment changes site-wide.
+Installed fonts are emitted through the CSS bundle, not external `<link>` tags. The font CSS includes self-hosted `@font-face` rules for `site.settings.fonts.items` plus `:root` declarations for editable tokens such as `--font-heading`. A page rule can therefore keep `font-family: var(--font-heading)` while the token assignment changes site-wide.
 
 Plugins inject at four anchors. The order matters — see [docs/features/plugin-system.md](plugin-system.md) for the splicing rules.
 
@@ -382,6 +385,8 @@ Because `serializeCsp` sorts, the same plugins + adapters always emit a **byte-i
 | File                                            | Role                                                                |
 |-------------------------------------------------|---------------------------------------------------------------------|
 | `server/publish/publicRouter.ts`                | Gateway: Layer A disk fast-path → Layer B LRU → live `resolvePublicRoute` + `renderPublicResolution`. |
+| `server/publish/publicRoutes.ts`                | Dispatcher tail: `tryServeBranchPreviewLink` (preview cookie in/out), `tryServePublicRoute` (a live preview cookie → `renderBranchPreview`, otherwise `renderPublicResolution`), setup redirect, 404 page. |
+| `server/publish/branchPreview.ts`               | Render a public URL from a branch's DRAFT for preview-link visitors: same composition as the editor's runtime preview (inline CSS, loops on the branch, on-demand runtime bundles kept in `branchPreviewAssets.ts`, plugin frontend injections, no publish hooks), `no-store` + `noindex`, with a banner. |
 | `server/publish/staticArtefact.ts`              | Two-slot pointer-file swap (`swapSlot`), per-file atomic writes (`writeArtefact`, `updateArtefactInPlace`), and reads (`readArtefact`). Layer A. |
 | `server/publish/renderCache.ts`                 | In-memory LRU keyed by `(urlPath, canonicalQuery)`, entries versioned. `getOrRender` (single-flight). Reads the version from `publishState`; version captured at render start — a publish landing mid-render discards the result rather than caching stale HTML. Layer B. |
 | `server/publish/publishState.ts`                | Publish-time process state: `publishVersion` (`bumpPublishVersion`/`getPublishVersion`), `withPublishLock` (ISS-038 publish serializer), and `createVersionedSingleFlight` — the generalized version-keyed single-flight memo the hole endpoint reuses. Repositories import the version + lock from here (not from the cache). |

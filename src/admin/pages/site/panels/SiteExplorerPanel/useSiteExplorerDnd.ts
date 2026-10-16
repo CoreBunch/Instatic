@@ -20,6 +20,7 @@ import {
   compareStructuralRows,
   structuralRowsForSection,
 } from '@core/page-tree'
+import { isRecord } from '@core/utils/isRecord'
 import { useEditorStore } from '@site/store/store'
 import { getDragPoint, getEventPoint } from '@admin/lib/dndPointer'
 
@@ -83,10 +84,6 @@ export interface SiteExplorerDropTarget {
 interface UseSiteExplorerDndOptions {
   enabled: boolean
   onStructuralPathPlan: (plan: ExplorerPathChangePlan) => void
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
 }
 
 function isSectionId(value: unknown): value is SiteExplorerSectionId {

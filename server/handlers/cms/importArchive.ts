@@ -7,7 +7,10 @@
  * The manifest is the first stored entry, so the handler can validate the
  * selected media stream before applying site data. Selected media bytes are
  * staged in temporary files first, then moved into uploads after the data
- * import succeeds.
+ * import succeeds. The data half (capability gates, the transaction, a
+ * `replace` media wipe) is the JSON endpoint's, shared through
+ * `authorizeImportStrategy`, `authorizeImportedShell`, and `applySiteBundle`
+ * in `./import.ts`.
  */
 
 import { createWriteStream } from 'node:fs'
@@ -39,7 +42,13 @@ import {
 } from '@core/data/bundleArchive'
 import { createCrc32 } from '../../archive/storedZip'
 import { CMS_API_PREFIX, type CmsHandlerOptions } from './shared'
-import { handleImportRoute } from './import'
+import type { BranchScope } from '../../branches/scope'
+import {
+  applySiteBundle,
+  authorizeImportedShell,
+  authorizeImportStrategy,
+  removeDeletedMediaFiles,
+} from './import'
 
 const IMPORT_ARCHIVE_PATH = `${CMS_API_PREFIX}/import/archive`
 const ZIP_LOCAL_FILE_HEADER = 0x04034b50
@@ -77,6 +86,7 @@ interface StagedArchiveMediaEntry {
 export async function handleImportArchiveRoute(
   req: Request,
   db: DbClient,
+  scope: BranchScope,
   options: CmsHandlerOptions = {},
 ): Promise<Response | null> {
   const url = new URL(req.url)
@@ -97,12 +107,17 @@ export async function handleImportArchiveRoute(
 
   const strategy = parseImportStrategy(url)
   if (strategy instanceof Response) return strategy
+  const strategyDenied = await authorizeImportStrategy(req, db, user, strategy)
+  if (strategyDenied) return strategyDenied
   const selection = parseImportSelection(url)
   if (selection instanceof Response) return selection
 
   const selectedManifest = selection
     ? filterArchiveManifestForSelection(manifest, selection)
     : manifest
+
+  const shellDenied = authorizeImportedShell(user, selectedManifest.site !== undefined)
+  if (shellDenied) return shellDenied
 
   let stagedMedia: StagedArchiveMedia | null = null
   if (selectedManifest.media && selectedManifest.media.length > 0 && options.uploadsDir) {
@@ -118,19 +133,14 @@ export async function handleImportArchiveRoute(
   }
 
   try {
-    const dataBundle = siteBundleWithoutMediaBytes(selectedManifest)
-    const dataImportReq = makeInternalImportRequest(req, strategy, dataBundle)
-    const dataImportRes = await handleImportRoute(dataImportReq, db, options)
-    if (!dataImportRes || !dataImportRes.ok) {
-      return dataImportRes ?? jsonResponse({ error: 'Import route did not handle archive manifest' }, { status: 500 })
-    }
-
-    const baseResult = parseValue(ImportResultSchema, await dataImportRes.json())
-    const importedFolderIds = new Set(
-      strategy === 'replace'
-        ? selectedManifest.mediaFolders?.map((folder) => folder.id) ?? []
-        : [],
-    )
+    const applied = await applySiteBundle(db, scope, {
+      bundle: siteBundleWithoutMediaBytes(selectedManifest),
+      strategy,
+      carriesMedia: selectedManifest.media !== undefined,
+    })
+    // After commit, before staged media moves in: a bundle file at a deleted
+    // asset's storage path must land after the old bytes are removed.
+    await removeDeletedMediaFiles(applied.deletedMedia)
 
     let mediaImported = 0
     if (stagedMedia && options.uploadsDir) {
@@ -139,7 +149,7 @@ export async function handleImportArchiveRoute(
           stagedMedia,
           db,
           uploadsDir: options.uploadsDir,
-          importedFolderIds,
+          importedFolderIds: applied.importedFolderIds,
         })
       } catch (err) {
         return badRequest(err instanceof Error ? err.message : 'Invalid CMS bundle archive')
@@ -147,8 +157,15 @@ export async function handleImportArchiveRoute(
     }
 
     const result: ImportResult = {
-      ...baseResult,
+      ok: true,
+      strategy,
+      tablesAffected: applied.tablesAffected,
+      rowsInserted: applied.rowsInserted,
+      rowsReplaced: applied.rowsReplaced,
+      rowsSkipped: applied.rowsSkipped,
       mediaImported,
+      mediaFoldersImported: applied.mediaFoldersImported,
+      redirectsImported: applied.redirectsImported,
     }
     parseValue(ImportResultSchema, result)
     return jsonResponse(result)
@@ -378,22 +395,6 @@ function parseImportSelection(url: URL): BundleImportSelection | null | Response
       { status: 400 },
     )
   }
-}
-
-function makeInternalImportRequest(req: Request, strategy: ImportStrategy, bundle: SiteBundle): Request {
-  const url = new URL(`${CMS_API_PREFIX}/import`, req.url)
-  url.searchParams.set('strategy', strategy)
-  const headers = new Headers(req.headers)
-  headers.set('content-type', 'application/json')
-  headers.delete('content-length')
-  const internalReq = new Request(url, {
-    method: 'POST',
-    headers,
-    body: JSON.stringify(bundle),
-  })
-  const cookie = req.headers.get('cookie')
-  if (cookie) internalReq.headers.set('cookie', cookie)
-  return internalReq
 }
 
 function siteBundleWithoutMediaBytes(manifest: SiteBundleArchiveManifest): SiteBundle {

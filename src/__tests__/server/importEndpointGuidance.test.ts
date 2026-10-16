@@ -17,6 +17,7 @@ import { createSqliteClient } from '../../../server/db/sqlite'
 import { runMigrations } from '../../../server/db/runMigrations'
 import { sqliteMigrations } from '../../../server/db/migrations-sqlite'
 import type { DbClient } from '../../../server/db/client'
+import { MAIN_SCOPE } from '../../../server/branches/scope'
 import { handleImportRoute } from '../../../server/handlers/cms/import'
 
 async function setupDb(): Promise<{ db: DbClient; cleanup: () => Promise<void> }> {
@@ -49,7 +50,7 @@ describe('POST /admin/api/cms/import with a ZIP body', () => {
   it('points the caller at the archive endpoint instead of blaming the schema', async () => {
     const { db, cleanup } = await setupDb()
     try {
-      const res = await handleImportRoute(importRequest(zipBytes()), db)
+      const res = await handleImportRoute(importRequest(zipBytes()), db, MAIN_SCOPE)
       // Unauthenticated callers are rejected before body parsing; the guidance
       // only has to hold once the request reaches validation.
       if (!res || res.status === 401 || res.status === 403) return
@@ -71,6 +72,7 @@ describe('ZIP detection', () => {
       const res = await handleImportRoute(
         importRequest(JSON.stringify({ schemaVersion: 1, exportedAt: '', tables: [], rows: [] })),
         db,
+        MAIN_SCOPE,
       )
       if (!res || res.status === 401 || res.status === 403) return
       const body = (await res.json().catch(() => ({}))) as { error?: string }

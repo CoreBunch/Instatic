@@ -113,14 +113,14 @@ function makeFakeDb() {
       return { rows: [row as Row], rowCount: 1 }
     }
     if (normalized.includes('update installed_plugins') && normalized.includes('set settings_json')) {
-      const row = plugins.find((plugin) => plugin.id === values[1])
+      const row = plugins.find((plugin) => plugin.id === values[2])
       if (!row) return { rows: [], rowCount: 0 }
       row.settings_json = values[0]
       row.updated_at = new Date().toISOString()
       return { rows: [row as Row], rowCount: 1 }
     }
     if (normalized.includes('update installed_plugins set lifecycle_status')) {
-      const row = plugins.find((plugin) => plugin.id === values[2])
+      const row = plugins.find((plugin) => plugin.id === values[3])
       if (!row) return { rows: [], rowCount: 0 }
       row.lifecycle_status = values[0]
       row.last_error = values[1] ?? null

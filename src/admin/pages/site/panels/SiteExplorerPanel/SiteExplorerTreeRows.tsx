@@ -4,6 +4,7 @@ import { FolderGlyphIcon } from 'pixel-art-icons/icons/folder-glyph'
 import { Button } from '@ui/components/Button'
 import { Input } from '@ui/components/Input'
 import { cn } from '@ui/cn'
+import { ProblemBadge } from '@site/diagnostics'
 import {
   TreeChevron,
   TreeIconSlot,
@@ -331,6 +332,7 @@ export function ExplorerItemRow<TTarget>({
               <TreeLabel>{item.label}</TreeLabel>
               {item.meta && <TreeMeta>{item.meta}</TreeMeta>}
             </TreeLabelGroup>
+            {item.problems && <ProblemBadge file={item.problems} />}
           </Button>
         )}
       </TreeRow>

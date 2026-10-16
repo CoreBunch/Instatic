@@ -14,7 +14,8 @@
  *   • Spacing     — `data/defaults.ts` (SPACING_CALCULATOR_INITIAL_STATE) —
  *                   already mirrored by `buildDefaultSpacingSettings`.
  *   • Preferences — `data/defaults.ts` (DEFAULT_PREFERENCES): rootFontSize 10,
- *                   screen 320–1400, rem.
+ *                   screen 320–1400, rem. Instatic adds `emitRootFontSize`
+ *                   so the 10px root is actually set on `<html>`.
  *
  * Two import modes (`includeUtilities`):
  *   • `true`  — the FULL framework: every token's utility classes
@@ -203,6 +204,9 @@ function buildCoreFrameworkPreferences(
     // utility class, not just the ones already assigned in the tree. Variables-
     // only has no utility classes, so the flag is moot — keep it on (default).
     treeShakeGeneratedFrameworkUtilities: !options.includeUtilities,
+    // The scale above converts px to rem against a 10px root, so the framework
+    // also sets `html { font-size: 62.5% }` to make that true in the browser.
+    emitRootFontSize: true,
   }
 }
 

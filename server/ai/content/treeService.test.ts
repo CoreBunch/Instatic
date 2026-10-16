@@ -4,6 +4,7 @@ import { sqliteMigrations } from '../../db/migrations-sqlite'
 import { runMigrations } from '../../db/runMigrations'
 import type { DbClient } from '../../db/client'
 import { readPageTree, mutatePageTree } from './treeService'
+import { MAIN_SCOPE } from '../../branches/scope'
 
 const ENTRY_ID = 'page1'
 
@@ -36,7 +37,7 @@ beforeEach(async () => { db = await freshDb() })
 
 describe('content tree service', () => {
   it('reads a page tree', async () => {
-    const tree = await readPageTree(db, ENTRY_ID, 'body')
+    const tree = await readPageTree(db, MAIN_SCOPE, ENTRY_ID, 'body')
     expect(tree).toBeTruthy()
     expect((tree as { rootNodeId: string }).rootNodeId).toBe('root')
   })
@@ -44,6 +45,7 @@ describe('content tree service', () => {
   it('applies a node insert and persists', async () => {
     const result = await mutatePageTree(
       db,
+     MAIN_SCOPE,
       ENTRY_ID,
       'body',
       [
@@ -58,7 +60,7 @@ describe('content tree service', () => {
     )
     expect(result.affectedNodeIds).toContain('n_test')
 
-    const after = await readPageTree(db, ENTRY_ID, 'body')
+    const after = await readPageTree(db, MAIN_SCOPE, ENTRY_ID, 'body')
     expect(JSON.stringify(after)).toContain('n_test')
     expect((after as { nodes: Record<string, unknown> }).nodes.n_test).toBeTruthy()
   })
@@ -67,6 +69,7 @@ describe('content tree service', () => {
     await expect(
       mutatePageTree(
         db,
+       MAIN_SCOPE,
         ENTRY_ID,
         'body',
         [{ kind: 'deleteNode', nodeId: 'root' }],
@@ -77,6 +80,6 @@ describe('content tree service', () => {
   })
 
   it('rejects a non-pageTree field', async () => {
-    await expect(readPageTree(db, ENTRY_ID, 'title')).rejects.toThrow(/not a pageTree field/)
+    await expect(readPageTree(db, MAIN_SCOPE, ENTRY_ID, 'title')).rejects.toThrow(/not a pageTree field/)
   })
 })

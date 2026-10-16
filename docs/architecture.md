@@ -152,7 +152,7 @@ server/router.ts         ← match path
                                   → 301 redirect / 200 HTML / 404
 ```
 
-Handlers validate request bodies with TypeBox before doing work, talk to repositories for persistence, and return `{ error: string }` envelopes on failure. Validation helpers live in `server/http.ts`. Per-handler logging uses the prefix `console.error('[<module>]', err)`.
+Handlers validate request bodies with TypeBox before doing work, talk to repositories for persistence, and return `{ error: string }` envelopes on failure. CMS requests carry the site branch they address in the `X-Instatic-Branch` header; the dispatcher resolves it once into a `BranchScope` and public routes always read main (or a branch draft behind a preview cookie). Validation helpers live in `server/http.ts`. Per-handler logging uses the prefix `console.error('[<module>]', err)`.
 
 ---
 
@@ -183,6 +183,7 @@ The shape and cell types are defined by the `data_tables` schema. There is no se
 ### Storage conventions
 
 - JSON columns end in `_json`. The SQLite adapter auto-parses any `*_json` string on read and auto-stringifies any plain object on write. Gated by `db-json-column-naming.test.ts`.
+- `site`, `data_tables`, and `data_rows` carry `branch_id` (default `main`) and a generated `logical_id`. Every row keeps its logical id on every site branch; the physical primary key is `physicalId(branchId, logicalId)` from `src/core/branches/ids.ts` — the logical id itself on main. Repositories on these tables take an explicit `BranchScope`. See [features/branches.md](features/branches.md).
 - Migrations are split per dialect with identical IDs. PG uses `jsonb`, `timestamptz`, `bigint`, `distinct on`; SQLite uses `text`, `text`, `integer`, window-function rewrites. Parity gated by `migration-parity.test.ts`.
 - Repositories use only ANSI-standard SQL. The five Postgres-isms — `now()` in DML, `::int`, `::jsonb`, `any($N::...)`, `distinct on` — are banned in any `DbClient`-importing file. Gated by `db-postgres-isms.test.ts`.
 

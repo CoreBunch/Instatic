@@ -57,6 +57,7 @@ import { parseSiteBundleArchive } from '@core/persistence/cmsTransfer'
 import type { DataRow, DataTable } from '@core/data/schemas'
 import type { DbClient } from '../../../server/db/client'
 import type { SiteShell } from '@core/page-tree'
+import { MAIN_SCOPE } from '../../../server/branches/scope'
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -75,7 +76,7 @@ beforeAll(async () => {
   await runMigrations(db, sqliteMigrations)
 
   // Add a few rows to the `pages` system table
-  await createDataRow(db, {
+  await createDataRow(db, MAIN_SCOPE, {
     tableId: 'pages',
     cells: {
       title: 'Home',
@@ -86,7 +87,7 @@ beforeAll(async () => {
     slug: 'home',
   })
 
-  await createDataRow(db, {
+  await createDataRow(db, MAIN_SCOPE, {
     tableId: 'pages',
     cells: {
       title: 'Blog Post Template',
@@ -100,15 +101,15 @@ beforeAll(async () => {
   })
 
   // Add a row to the `posts` system table
-  await createDataRow(db, {
+  await createDataRow(db, MAIN_SCOPE, {
     tableId: 'posts',
     cells: { title: 'Hello World', slug: 'hello-world', body: '' },
     slug: 'hello-world',
   })
 
   // --- Capture the "export" snapshot ---
-  tables = await listDataTables(db)
-  const rowsPerTable = await Promise.all(tables.map((t) => listDataRows(db, t.id)))
+  tables = await listDataTables(db, MAIN_SCOPE)
+  const rowsPerTable = await Promise.all(tables.map((t) => listDataRows(db, MAIN_SCOPE, t.id)))
   exportedRows = rowsPerTable.flat()
 
   // --- Wipe all data rows ---
@@ -120,7 +121,7 @@ beforeAll(async () => {
 
   // --- Simulate import: re-insert rows preserving ids, status, timestamps ---
   for (const row of exportedRows) {
-    await upsertDataRow(db, {
+    await upsertDataRow(db, MAIN_SCOPE, {
       id: row.id,
       tableId: row.tableId,
       cells: row.cells,
@@ -133,7 +134,7 @@ beforeAll(async () => {
   }
 
   // Refresh from DB after import
-  const reimportedRowsPerTable = await Promise.all(tables.map((t) => listDataRows(db, t.id)))
+  const reimportedRowsPerTable = await Promise.all(tables.map((t) => listDataRows(db, MAIN_SCOPE, t.id)))
   const reimportedRows = reimportedRowsPerTable.flat()
 
   // Store for assertions
@@ -211,7 +212,7 @@ describe('import/export round-trip — site shell', () => {
     // A separate fresh DB to confirm the null case without touching the seeded one
     const freshDb = createSqliteClient(':memory:')
     await runMigrations(freshDb, sqliteMigrations)
-    const shell = await getDraftSite(freshDb)
+    const shell = await getDraftSite(freshDb, MAIN_SCOPE)
     expect(shell).toBeNull()
   })
 
@@ -249,8 +250,8 @@ describe('import/export round-trip — site shell', () => {
       updatedAt: Date.now(),
     }
 
-    await saveDraftSite(db, mockShell as Parameters<typeof saveDraftSite>[1])
-    const loaded = await getDraftSite(db)
+    await saveDraftSite(db, MAIN_SCOPE, mockShell as Parameters<typeof saveDraftSite>[1])
+    const loaded = await getDraftSite(db, MAIN_SCOPE)
     expect(loaded).not.toBeNull()
     expect(loaded!.name).toBe('Test Site')
     expect(loaded!.id).toBe('default')
@@ -284,7 +285,7 @@ const ROUNDTRIP_SHELL: SiteShell = {
  * Seed a site + owner user + session into `db`, return the auth cookie.
  */
 async function seedRoundtripAuth(db: DbClient, email: string): Promise<string> {
-  await saveDraftSite(db, ROUNDTRIP_SHELL)
+  await saveDraftSite(db, MAIN_SCOPE, ROUNDTRIP_SHELL)
   await createUser(db, {
     id: `owner-${email}`,
     email,
@@ -319,7 +320,7 @@ async function exportBundle(
 ): Promise<SiteBundle> {
   const req = new Request('http://localhost/admin/api/cms/export', { method: 'GET' })
   req.headers.set('cookie', sourceCookie)
-  const res = await handleExportRoute(req, sourceDb)
+  const res = await handleExportRoute(req, sourceDb, MAIN_SCOPE)
   expect(res).not.toBeNull()
   expect(res!.status).toBe(200)
   const bundle = parseSiteBundleArchive(new Uint8Array(await res!.arrayBuffer()))
@@ -339,29 +340,29 @@ describe('with strategies — handler-level roundtrip', () => {
     await runMigrations(sourceDb, sqliteMigrations)
     const sourceCookie = await seedRoundtripAuth(sourceDb, 'source@roundtrip.test')
 
-    await createDataRow(sourceDb, {
+    await createDataRow(sourceDb, MAIN_SCOPE, {
       tableId: 'posts',
       cells: { title: 'Post A', slug: 'post-a' },
       slug: 'post-a',
     })
-    await createDataRow(sourceDb, {
+    await createDataRow(sourceDb, MAIN_SCOPE, {
       tableId: 'posts',
       cells: { title: 'Post B', slug: 'post-b' },
       slug: 'post-b',
     })
-    await createDataRow(sourceDb, {
+    await createDataRow(sourceDb, MAIN_SCOPE, {
       tableId: 'posts',
       cells: { title: 'Post C', slug: 'post-c' },
       slug: 'post-c',
     })
-    await createDataRow(sourceDb, {
+    await createDataRow(sourceDb, MAIN_SCOPE, {
       tableId: 'pages',
       cells: { title: 'Home', slug: 'home', body: { nodes: {}, rootNodeId: 'root' } },
       slug: 'home',
     })
     // A saved layout — rides the same generic table/row pipeline; the
     // replace strategy must restore it into the seeded system table.
-    await createDataRow(sourceDb, {
+    await createDataRow(sourceDb, MAIN_SCOPE, {
       tableId: 'layouts',
       cells: {
         name: 'Hero',
@@ -396,7 +397,7 @@ describe('with strategies — handler-level roundtrip', () => {
         body: JSON.stringify(sourceBundle),
       })
       req.headers.set('cookie', targetCookie)
-      const res = await handleImportRoute(req, targetDb)
+      const res = await handleImportRoute(req, targetDb, MAIN_SCOPE)
       expect(res!.status).toBe(200)
       const body = JSON.parse(await res!.text())
       result = parseValue(ImportResultSchema, body)
@@ -417,10 +418,10 @@ describe('with strategies — handler-level roundtrip', () => {
     })
 
     test('target DB has same row ids as source bundle', async () => {
-      const tables = await listDataTables(targetDb)
+      const tables = await listDataTables(targetDb, MAIN_SCOPE)
       const allRows: DataRow[] = []
       for (const t of tables) {
-        const rows = await listDataRows(targetDb, t.id)
+        const rows = await listDataRows(targetDb, MAIN_SCOPE, t.id)
         allRows.push(...rows)
       }
       const targetIds = new Set(allRows.map((r) => r.id))
@@ -431,10 +432,10 @@ describe('with strategies — handler-level roundtrip', () => {
     })
 
     test('target DB has no rows beyond the bundle', async () => {
-      const tables = await listDataTables(targetDb)
+      const tables = await listDataTables(targetDb, MAIN_SCOPE)
       const allRows: DataRow[] = []
       for (const t of tables) {
-        const rows = await listDataRows(targetDb, t.id)
+        const rows = await listDataRows(targetDb, MAIN_SCOPE, t.id)
         allRows.push(...rows)
       }
       const bundleIds = new Set(sourceBundle.rows.map((r) => r.id))
@@ -460,7 +461,7 @@ describe('with strategies — handler-level roundtrip', () => {
         body: JSON.stringify(sourceBundle),
       })
       req.headers.set('cookie', targetCookie)
-      const res = await handleImportRoute(req, targetDb)
+      const res = await handleImportRoute(req, targetDb, MAIN_SCOPE)
       expect(res!.status).toBe(200)
       const body = JSON.parse(await res!.text())
       result = parseValue(ImportResultSchema, body)
@@ -478,10 +479,10 @@ describe('with strategies — handler-level roundtrip', () => {
     })
 
     test('target DB contains all bundle rows', async () => {
-      const tables = await listDataTables(targetDb)
+      const tables = await listDataTables(targetDb, MAIN_SCOPE)
       const allRows: DataRow[] = []
       for (const t of tables) {
-        const rows = await listDataRows(targetDb, t.id)
+        const rows = await listDataRows(targetDb, MAIN_SCOPE, t.id)
         allRows.push(...rows)
       }
       const targetIds = new Set(allRows.map((r) => r.id))
@@ -507,7 +508,7 @@ describe('with strategies — handler-level roundtrip', () => {
         body: JSON.stringify(sourceBundle),
       })
       req.headers.set('cookie', targetCookie)
-      const res = await handleImportRoute(req, targetDb)
+      const res = await handleImportRoute(req, targetDb, MAIN_SCOPE)
       expect(res!.status).toBe(200)
       const body = JSON.parse(await res!.text())
       result = parseValue(ImportResultSchema, body)
@@ -526,10 +527,10 @@ describe('with strategies — handler-level roundtrip', () => {
     })
 
     test('target DB contains all bundle rows', async () => {
-      const tables = await listDataTables(targetDb)
+      const tables = await listDataTables(targetDb, MAIN_SCOPE)
       const allRows: DataRow[] = []
       for (const t of tables) {
-        const rows = await listDataRows(targetDb, t.id)
+        const rows = await listDataRows(targetDb, MAIN_SCOPE, t.id)
         allRows.push(...rows)
       }
       const targetIds = new Set(allRows.map((r) => r.id))
@@ -551,7 +552,7 @@ describe('with strategies — handler-level roundtrip', () => {
       targetCookie = await seedRoundtripAuth(targetDb, 'target-mo-collision@roundtrip.test')
 
       // Pre-seed: add a local-only row + one row that will collide with bundle
-      const localOnly = await createDataRow(targetDb, {
+      const localOnly = await createDataRow(targetDb, MAIN_SCOPE, {
         tableId: 'posts',
         cells: { title: 'Local Only Row', slug: 'local-only' },
         slug: 'local-only',
@@ -559,7 +560,7 @@ describe('with strategies — handler-level roundtrip', () => {
       localOnlyRowId = localOnly.id
 
       // Plant one bundle row already in the target (so it becomes a "replace" hit)
-      await upsertDataRow(targetDb, {
+      await upsertDataRow(targetDb, MAIN_SCOPE, {
         id: sourceBundle.rows[0].id,
         tableId: sourceBundle.rows[0].tableId,
         cells: { title: 'Old Local Version' },
@@ -576,7 +577,7 @@ describe('with strategies — handler-level roundtrip', () => {
         body: JSON.stringify(sourceBundle),
       })
       req.headers.set('cookie', targetCookie)
-      const res = await handleImportRoute(req, targetDb)
+      const res = await handleImportRoute(req, targetDb, MAIN_SCOPE)
       expect(res!.status).toBe(200)
       const body = JSON.parse(await res!.text())
       result = parseValue(ImportResultSchema, body)
@@ -591,13 +592,13 @@ describe('with strategies — handler-level roundtrip', () => {
     })
 
     test('local-only row is still present (merge-overwrite leaves untouched rows)', async () => {
-      const posts = await listDataRows(targetDb, 'posts')
+      const posts = await listDataRows(targetDb, MAIN_SCOPE, 'posts')
       const ids = posts.map((r) => r.id)
       expect(ids).toContain(localOnlyRowId)
     })
 
     test('collided row now has the bundle version of its cells', async () => {
-      const posts = await listDataRows(targetDb, 'posts')
+      const posts = await listDataRows(targetDb, MAIN_SCOPE, 'posts')
       const bundleFirst = sourceBundle.rows.find((r) => r.tableId === 'posts')
       expect(bundleFirst).toBeDefined()
       const localRow = posts.find((r) => r.id === bundleFirst!.id)
@@ -634,7 +635,7 @@ describe('full-site round-trip — folders, membership, redirects', () => {
     await runMigrations(sourceDb, sqliteMigrations)
     const sourceCookie = await seedRoundtripAuth(sourceDb, 'fullsite@roundtrip.test')
 
-    const targetRow = await createDataRow(sourceDb, {
+    const targetRow = await createDataRow(sourceDb, MAIN_SCOPE, {
       tableId: 'posts',
       cells: { title: 'Renamed Post', slug: 'renamed' },
       slug: 'renamed',
@@ -683,7 +684,7 @@ describe('full-site round-trip — folders, membership, redirects', () => {
     // --- Export the full bundle (media included so folderIds travel) ---
     const exportReq = new Request('http://localhost/admin/api/cms/export?includeMedia=1', { method: 'GET' })
     exportReq.headers.set('cookie', sourceCookie)
-    const exportRes = await handleExportRoute(exportReq, sourceDb, { uploadsDir: sourceDir })
+    const exportRes = await handleExportRoute(exportReq, sourceDb, MAIN_SCOPE, { uploadsDir: sourceDir })
     expect(exportRes!.status).toBe(200)
     const archiveBytes = new Uint8Array(await exportRes!.arrayBuffer())
     const bundle = parseSiteBundleArchive(archiveBytes)
@@ -705,7 +706,7 @@ describe('full-site round-trip — folders, membership, redirects', () => {
       body: archiveBytes,
     })
     importReq.headers.set('cookie', targetCookie)
-    const importRes = await handleImportArchiveRoute(importReq, targetDb, { uploadsDir: targetDir })
+    const importRes = await handleImportArchiveRoute(importReq, targetDb, MAIN_SCOPE, { uploadsDir: targetDir })
     expect(importRes!.status).toBe(200)
     const result = parseValue(ImportResultSchema, JSON.parse(await importRes!.text()))
     expect(result.mediaFoldersImported).toBe(1)
@@ -738,7 +739,7 @@ describe('full-site round-trip — folders, membership, redirects', () => {
     expect(redirects[0]?.fromSlug).toBe('old-slug')
     expect(redirects[0]?.targetRowId).toBe(redirectTargetRowId)
     // The target row really exists in the fresh instance.
-    expect(await getDataRow(targetDb, redirectTargetRowId)).not.toBeNull()
+    expect(await getDataRow(targetDb, MAIN_SCOPE, redirectTargetRowId)).not.toBeNull()
   })
 })
 
@@ -785,7 +786,7 @@ describe('archive import validation', () => {
         body: archiveBytes,
       })
       req.headers.set('cookie', cookie)
-      const res = await handleImportArchiveRoute(req, db, { uploadsDir })
+      const res = await handleImportArchiveRoute(req, db, MAIN_SCOPE, { uploadsDir })
       expect(res!.status).toBe(400)
       const body = JSON.parse(await res!.text())
       expect(body.error).toBe('Archive is missing media file "media/missing.png"')
@@ -800,7 +801,7 @@ describe('archive import validation', () => {
       const db = createSqliteClient(':memory:')
       await runMigrations(db, sqliteMigrations)
       const cookie = await seedRoundtripAuth(db, 'atomic-media@roundtrip.test')
-      const existingRow = await createDataRow(db, {
+      const existingRow = await createDataRow(db, MAIN_SCOPE, {
         tableId: 'posts',
         cells: { title: 'Keep me', slug: 'keep-me' },
         slug: 'keep-me',
@@ -841,9 +842,9 @@ describe('archive import validation', () => {
         body: archiveBytes,
       })
       req.headers.set('cookie', cookie)
-      const res = await handleImportArchiveRoute(req, db, { uploadsDir })
+      const res = await handleImportArchiveRoute(req, db, MAIN_SCOPE, { uploadsDir })
       expect(res!.status).toBe(400)
-      expect(await getDataRow(db, existingRow.id)).not.toBeNull()
+      expect(await getDataRow(db, MAIN_SCOPE, existingRow.id)).not.toBeNull()
     } finally {
       await rm(uploadsDir, { recursive: true, force: true })
     }
@@ -855,13 +856,13 @@ describe('archive import validation', () => {
       const db = createSqliteClient(':memory:')
       await runMigrations(db, sqliteMigrations)
       const cookie = await seedRoundtripAuth(db, 'slug-conflict@roundtrip.test')
-      await createDataRow(db, {
+      await createDataRow(db, MAIN_SCOPE, {
         id: 'local-existing-row',
         tableId: 'posts',
         cells: { title: 'Local row', slug: 'shared-slug' },
         slug: 'shared-slug',
       })
-      const postsTable = (await listDataTables(db)).find((table) => table.id === 'posts')
+      const postsTable = (await listDataTables(db, MAIN_SCOPE)).find((table) => table.id === 'posts')
       expect(postsTable).toBeDefined()
       const manifest = {
         schemaVersion: 1,
@@ -900,13 +901,13 @@ describe('archive import validation', () => {
         body: archiveBytes,
       })
       req.headers.set('cookie', cookie)
-      const res = await handleImportArchiveRoute(req, db, { uploadsDir })
+      const res = await handleImportArchiveRoute(req, db, MAIN_SCOPE, { uploadsDir })
       expect(res!.status).toBe(200)
       const body = parseValue(ImportResultSchema, JSON.parse(await res!.text()))
       expect(body.rowsInserted).toBe(0)
       expect(body.rowsSkipped).toBe(1)
-      expect(await getDataRow(db, 'bundle-conflicting-row')).toBeNull()
-      expect(await getDataRow(db, 'local-existing-row')).not.toBeNull()
+      expect(await getDataRow(db, MAIN_SCOPE, 'bundle-conflicting-row')).toBeNull()
+      expect(await getDataRow(db, MAIN_SCOPE, 'local-existing-row')).not.toBeNull()
     } finally {
       await rm(uploadsDir, { recursive: true, force: true })
     }
@@ -995,7 +996,7 @@ describe('archive import validation', () => {
         body: archiveBytes,
       })
       req.headers.set('cookie', cookie)
-      const res = await handleImportArchiveRoute(req, db, { uploadsDir })
+      const res = await handleImportArchiveRoute(req, db, MAIN_SCOPE, { uploadsDir })
       expect(res!.status).toBe(200)
       const body = parseValue(ImportResultSchema, JSON.parse(await res!.text()))
       expect(body.mediaImported).toBe(1)

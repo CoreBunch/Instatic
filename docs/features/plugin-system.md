@@ -218,6 +218,10 @@ Upgrade to v2:    (old) deactivate → (new) migrate({fromVersion}) → (new) ac
 Uninstall:        (if active) deactivate → uninstall
 ```
 
+**An upgrade does not delete the previous version's files.** Published pages link a plugin's frontend assets by version (`/uploads/plugins/<id>/<version>/frontend/…`, which is what makes the URL cache-bustable), and those artefacts are only rewritten by a **publish**. Deleting on upgrade therefore 404'd every page already baked to disk — on a real site an upgrade took out jQuery, GSAP, Lenis, Splide and the boot script across every page at once, with no warning and no prompt to re-publish.
+
+The old directory is retired by the next publish instead, which is the exact moment those URLs stop pointing at it (`sweepStalePluginVersionAssets`, `server/publish/stalePluginAssets.ts`, called after the slot swap). Between an upgrade and the next publish both versions sit on disk: the installed one for new renders, the previous one for pages not yet re-baked. A plugin with no installed record is never swept — uninstall already removes its tree, so anything left is unexplained, and a publish is a bad moment to act on that.
+
 Each hook receives the `api` object (see below). All hooks may be sync or async. If any hook throws, the host:
 
 1. Rolls back to the previous lifecycle state.
@@ -688,14 +692,17 @@ Plugins read and write CMS content (pages, posts, custom tables) through `api.cm
 | `cms.content.delete`          | High      | Soft-delete entries                                                          |
 | `cms.content.tables.manage`   | Dangerous | Create user-managed tables (never system tables)                            |
 
-The manifest's `contentAccess[]` lists every table whose entries the plugin can touch, with per-table modes. The host fails closed without both the permission and the allowlist entry for entry reads/writes/publishes/deletes. `content.tables.create(...)` is different: it requires `cms.content.tables.manage`, creates a new user-managed table, and does not require a pre-existing `contentAccess[]` row for that table.
+The manifest's `contentAccess[]` lists every table whose entries the plugin can touch, with per-table modes. The host fails closed without both the permission and a covering allowlist entry for entry reads/writes/publishes/deletes. `content.tables.create(...)` is different: it requires `cms.content.tables.manage`, creates a new user-managed table, and does not require a pre-existing `contentAccess[]` row for that table.
+
+An entry's `table` is a concrete slug, or the **`@own-created` marker** (`OWN_CREATED_TABLES_MARKER` in the SDK): it covers every table this plugin itself created through `content.tables.create(...)`. The create handler stamps the host-authenticated plugin id on the table row (`data_tables.created_by_plugin_id`), and the marker resolves against that stored creator — never against the slug — so it is durable across restarts and admin-side slug renames, and one plugin's marker never reaches another plugin's (or a user's) tables. This is the shape importer/migration plugins need: their table names are chosen by the operator at runtime and can't be pre-declared. Entries combine as a union — an operation is allowed when any matching entry declares the mode — and marker modes go through the same install-time modes↔permissions coherence check as slug entries.
 
 ```jsonc
 {
-  "permissions": ["cms.content.read", "cms.content.write"],
+  "permissions": ["cms.content.read", "cms.content.write", "cms.content.tables.manage"],
   "contentAccess": [
     { "table": "pages", "modes": ["read", "write"] },
-    { "table": "posts", "modes": ["read"] }
+    { "table": "posts", "modes": ["read"] },
+    { "table": "@own-created", "modes": ["read", "write"] }
   ]
 }
 ```
@@ -750,7 +757,7 @@ const snap = await api.cms.content.getPublishedSnapshot(entryId)
 const { count } = await api.cms.content.republishAll()
 ```
 
-`tables.create(input)` accepts the plugin-facing field projection, then maps it to the host's canonical `DataField` schema before storage. `richText` fields default to Markdown format, `select` / `multiSelect` option `value`s become stable option IDs, and `relation.targetTableSlug` must resolve to an existing table slug. `repeater` accepts a one-level `fields` schema made from ordinary authorable fields; nested relation slugs are resolved through the same gate, while recursive repeaters, `pageTree`, and `fieldSchema` item fields are rejected by the boundary schema.
+`tables.create(input)` accepts the plugin-facing field projection, then maps it to the host's canonical `DataField` schema before storage. The created table records the calling plugin as `createdByPluginId`, which the `@own-created` contentAccess marker resolves against for all subsequent entry access; the table slug is restricted to kebab-case (leading letter), reserving the `@` namespace for markers. `richText` fields default to Markdown format, `select` / `multiSelect` option `value`s become stable option IDs, and `relation.targetTableSlug` must resolve to an existing table slug. `repeater` accepts a one-level `fields` schema made from ordinary authorable fields; nested relation slugs are resolved through the same gate, while recursive repeaters, `pageTree`, and `fieldSchema` item fields are rejected by the boundary schema.
 
 `republishAll` fires the full publish pipeline (`publish.before` → `publish.html` → `publish.after`), so other plugins' filters and listeners participate.
 
@@ -858,7 +865,7 @@ api.cms.media.registerStorageAdapter({
 })
 ```
 
-Writes are two-phase. The adapter returns a signed upload plan from `beginWrite`; the **host** streams the bytes to the plan URLs; then the adapter confirms with `finalizeWrite`. Media bytes do not cross the QuickJS boundary for ordinary writes, which keeps large uploads out of the VM heap. `servingMode` controls reads: `public-url` emits the adapter URL directly, `signed-redirect` lets the host 302 to a short-lived URL, and `proxy` streams chunks through the host via `readStream`.
+Writes are two-phase. The adapter returns a signed upload plan from `beginWrite`; the **host** streams the bytes to the plan URLs; then the adapter confirms with `finalizeWrite`. The plan URLs are plugin-controlled, so the host streams them through the same DNS-pinned SSRF guard it uses for adapter reads — internal addresses are refused and every redirect hop is re-validated, so `media.storage.adapter` cannot be used as `network.outbound` reach. There is no host allowlist on either side: an object-store endpoint is an arbitrary operator-chosen public host. Media bytes do not cross the QuickJS boundary for ordinary writes, which keeps large uploads out of the VM heap. `servingMode` controls reads: `public-url` emits the adapter URL directly, `signed-redirect` lets the host 302 to a short-lived URL, and `proxy` streams chunks through the host via `readStream`.
 
 #### URL transformers — requires `media.url.transform`
 

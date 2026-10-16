@@ -66,12 +66,17 @@ export async function requireCapability(
   return user
 }
 
-export function userHasCapability(user: Pick<AuthUser, 'capabilities'>, capability: CoreCapability): boolean {
+// Any principal that carries a capability set qualifies: the session user, or the
+// connector identity behind an AI tool call (`DataPrincipal`).
+export function userHasCapability(
+  user: { capabilities: readonly CoreCapability[] },
+  capability: CoreCapability,
+): boolean {
   return roleHasCapability(user.capabilities, capability)
 }
 
 export function userHasAnyCapability(
-  user: Pick<AuthUser, 'capabilities'>,
+  user: { capabilities: readonly CoreCapability[] },
   capabilities: readonly CoreCapability[],
 ): boolean {
   return capabilities.some((capability) => userHasCapability(user, capability))

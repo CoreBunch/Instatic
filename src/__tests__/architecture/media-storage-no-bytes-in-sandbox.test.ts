@@ -53,9 +53,11 @@ describe('media storage — no bytes in sandbox', () => {
 
   it('the host-side executor is the only fetch-with-body site for storage uploads', async () => {
     const executor = await read('server/handlers/cms/mediaUploadExecutor.ts')
-    // The executor must use Bun's native fetch — NOT route through the
-    // QuickJS sandbox bridge.
-    expect(executor).toContain('await fetch(step.url')
+    // The executor must upload host-side — NOT route through the QuickJS
+    // sandbox bridge. The host call goes through `guardedFetch`, the SSRF-safe
+    // wrapper over Bun's native fetch: the plan URL is plugin-controlled, so it
+    // must not be able to reach internal addresses (GHSA-9pq7).
+    expect(executor).toMatch(/await guardedFetch\(\s*step\.url/)
     // No hostCall / QuickJS bridge usage in this file.
     expect(executor).not.toMatch(/__hostCall|callHostApi|quickjsHost/)
   })

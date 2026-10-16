@@ -6,6 +6,7 @@ import {
   createCapabilityTestHarness,
   readJson,
 } from '../helpers/capabilityHarness'
+import { MAIN_SCOPE } from '../../../server/branches/scope'
 
 describe('publish runtime validation response', () => {
   it('returns live compiler diagnostics without attempting a publish', async () => {
@@ -68,7 +69,7 @@ describe('publish runtime validation response', () => {
       expect(siteResponse.status).toBe(200)
       const { site } = await readJson<{ site: SiteShell }>(siteResponse)
 
-      await saveDraftSite(harness.db, {
+      await saveDraftSite(harness.db, MAIN_SCOPE, {
         ...site,
         files: [
           ...site.files,

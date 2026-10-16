@@ -5,6 +5,7 @@
  *   - SpotlightRoot (Cmd+K palette) + its keybinding listener
  *   - AdminSessionProvider (session context for authenticated children)
  *   - StepUpProvider (auth re-verification for sensitive actions)
+ *   - ConfirmDeleteProvider (the one confirm dialog every admin route asks through)
  *   - The 10 workspace page components (DashboardPage, SitePage, …)
  *   - installPluginRuntime() (populates globalThis.__instatic for plugins)
  *
@@ -54,11 +55,13 @@ import { AppLoadingScreen } from './AppLoadingScreen'
 import type { AdminWorkspace } from './workspace'
 import { AdminSessionProvider } from './session'
 import { StepUpProvider } from './shared/StepUp'
+import { ConfirmDeleteProvider } from './shared/dialogs/ConfirmDeleteDialog'
 import { canAccessWorkspace, firstAccessibleWorkspace, workspacePath } from './access'
 import { Navigate, useInRouterContext } from './lib/routing'
 import { SpotlightRoot } from './spotlight'
 import { prewarmedLazy } from './lib/prewarmedLazy'
 import { useAdminUi } from './state/adminUi'
+import { useBranchWorkspaceKey } from './state/branchStore'
 import styles from './AdminEntry.module.css'
 
 // The 10 workspace pages — pre-warmed AND synchronously-renderable once
@@ -108,6 +111,9 @@ const SiteImportModal = lazy(() =>
   import('./modals/SiteImport').then((m) => ({ default: m.SiteImportModal })),
 )
 
+const BranchReviewPage = lazy(() =>
+  import('./pages/branches/BranchReviewPage').then((m) => ({ default: m.BranchReviewPage })),
+)
 const SiteExportModal = lazy(() =>
   import('./modals/SiteExport').then((m) => ({ default: m.SiteExportModal })),
 )
@@ -196,6 +202,7 @@ function pageForSection(section: AdminWorkspace) {
     section === 'plugins' ? PluginsPage :
     section === 'users' ? UsersPage :
     section === 'ai' ? AiPage :
+    section === 'branchReview' ? SitePage :
     section === 'pluginPage' ? PluginPage :
     section === 'account' ? AccountPage :
     DashboardPage
@@ -207,6 +214,10 @@ export default function AuthenticatedAdmin({ section, currentUser }: Authenticat
   const fallbackWorkspace = firstAccessibleWorkspace(currentUser)
   const siteImportOpen = useAdminUi((s) => s.siteImportOpen)
   const siteExportOpen = useAdminUi((s) => s.siteExport !== null)
+  // Branch-scoped workspaces remount on a branch switch — and after a merge
+  // or update rewrote the branch in place — so every hook inside them reloads
+  // against the current content (the site store, entry lists, grids).
+  const branchKey = useBranchWorkspaceKey()
 
   // Schedule background preloads for non-active workspace pages AFTER
   // the active page has rendered + painted. `useEffect` fires after
@@ -297,40 +308,43 @@ export default function AuthenticatedAdmin({ section, currentUser }: Authenticat
           palette and the step-up dialog are available across every
           workspace. */}
       <StepUpProvider>
-        <SpotlightRoot>
-          {/* Suspense catches:
-                - First-visit cold-path of a prewarmedLazy page (it throws
-                  the pending import promise the first time). On subsequent
-                  visits the prewarmedLazy renders synchronously and this
-                  boundary never fires.
-                - Downstream `React.lazy()` inside pages (e.g. content body
-                  editor / LiveCanvas / CodeMirrorEditor). Those remain
-                  legitimately lazy because the editor surfaces are large and
-                  shouldn't ship until needed. */}
-          <Suspense fallback={<AppLoadingScreen />}>
-            {section === 'dashboard' ? <DashboardPage /> :
-              section === 'site' ? <SitePage /> :
-              section === 'content' ? <ContentPage /> :
-              section === 'data' ? <DataPage /> :
-              section === 'media' ? <MediaPage /> :
-              section === 'plugins' ? <PluginsPage /> :
-              section === 'users' ? <UsersPage /> :
-              section === 'ai' ? <AiPage /> :
-              section === 'pluginPage' ? <PluginPage /> :
-              section === 'account' ? <AccountPage /> :
-              <DashboardPage />}
-          </Suspense>
-          {siteImportOpen && (
-            <Suspense fallback={null}>
-              <SiteImportModal />
+        <ConfirmDeleteProvider>
+          <SpotlightRoot>
+            {/* Suspense catches:
+                  - First-visit cold-path of a prewarmedLazy page (it throws
+                    the pending import promise the first time). On subsequent
+                    visits the prewarmedLazy renders synchronously and this
+                    boundary never fires.
+                  - Downstream `React.lazy()` inside pages (e.g. content body
+                    editor / LiveCanvas / CodeMirrorEditor). Those remain
+                    legitimately lazy because the editor surfaces are large and
+                    shouldn't ship until needed. */}
+            <Suspense fallback={<AppLoadingScreen />}>
+              {section === 'dashboard' ? <DashboardPage /> :
+                section === 'site' ? <SitePage key={branchKey} /> :
+                section === 'content' ? <ContentPage key={branchKey} /> :
+                section === 'data' ? <DataPage key={branchKey} /> :
+                section === 'media' ? <MediaPage /> :
+                section === 'plugins' ? <PluginsPage /> :
+                section === 'users' ? <UsersPage /> :
+                section === 'ai' ? <AiPage /> :
+                section === 'branchReview' ? <BranchReviewPage /> :
+                section === 'pluginPage' ? <PluginPage /> :
+                section === 'account' ? <AccountPage /> :
+                <DashboardPage />}
             </Suspense>
-          )}
-          {siteExportOpen && (
-            <Suspense fallback={null}>
-              <SiteExportModal />
-            </Suspense>
-          )}
-        </SpotlightRoot>
+            {siteImportOpen && (
+              <Suspense fallback={null}>
+                <SiteImportModal />
+              </Suspense>
+            )}
+            {siteExportOpen && (
+              <Suspense fallback={null}>
+                <SiteExportModal />
+              </Suspense>
+            )}
+          </SpotlightRoot>
+        </ConfirmDeleteProvider>
       </StepUpProvider>
     </AdminSessionProvider>
   )
