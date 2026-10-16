@@ -696,6 +696,8 @@ The manifest's `contentAccess[]` lists every table whose entries the plugin can 
 
 An entry's `table` is a concrete slug, or the **`@own-created` marker** (`OWN_CREATED_TABLES_MARKER` in the SDK): it covers every table this plugin itself created through `content.tables.create(...)`. The create handler stamps the host-authenticated plugin id on the table row (`data_tables.created_by_plugin_id`), and the marker resolves against that stored creator — never against the slug — so it is durable across restarts and admin-side slug renames, and one plugin's marker never reaches another plugin's (or a user's) tables. This is the shape importer/migration plugins need: their table names are chosen by the operator at runtime and can't be pre-declared. Entries combine as a union — an operation is allowed when any matching entry declares the mode — and marker modes go through the same install-time modes↔permissions coherence check as slug entries.
 
+The install/upgrade consent screen renders `contentAccess[]` in its own "Content tables" section, mirroring the "External hosts" section: every entry is listed with its modes (an `@own-created` entry renders as "Tables this plugin creates"), and on upgrade entries are diffed against the previously-installed manifest — a new table, or a new mode on an already-approved table, is badged as new; entries the update no longer requests show as dropped.
+
 ```jsonc
 {
   "permissions": ["cms.content.read", "cms.content.write", "cms.content.tables.manage"],
@@ -929,7 +931,7 @@ The DNS SSRF guard in `performGatedFetch` remains the load-bearing defense; the 
 
 Permissions are requested in `plugin.json` and approved by the site owner at install time. Granted permissions are stored on the plugin row. Every SDK call checks the **granted** permission set, not just the request.
 
-The install endpoints enforce **grants = declared**, in both directions: every declared permission must be granted (install is all-or-nothing — there is no optional-permissions concept), and every granted permission must be declared (`assertPluginPermissionGrants` in `server/handlers/cms/plugins/shared.ts` rejects a tampered client that grants capabilities the manifest never disclosed). The install review dialog is shown for **every** install and upgrade — a zero-permission plugin renders "No permissions requested" rather than installing silently.
+The install endpoints enforce **grants = declared**, in both directions: every declared permission must be granted (install is all-or-nothing — there is no optional-permissions concept), and every granted permission must be declared (`assertPluginPermissionGrants` in `server/handlers/cms/plugins/shared.ts` rejects a tampered client that grants capabilities the manifest never disclosed). The install review dialog is shown for **every** install and upgrade — a zero-permission plugin renders "No permissions requested" rather than installing silently. Alongside the requested permissions, the dialog renders the manifest's `contentAccess[]` (per-table content allowlist, with modes) and `networkAllowedHosts` (outbound-host allowlist), and on upgrade diffs all three against the prior install so new access is impossible to miss.
 
 **One authority, three checkpoints.** The declared `permissions` array (what the
 plugin *asked for*) is used only by the install/consent UI. Enforcement always
