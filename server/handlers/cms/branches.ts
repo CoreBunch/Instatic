@@ -54,7 +54,7 @@ import {
 import { renderBranchReviewPage } from '../../publish/branchReviewRender'
 import { getOpenMergeRequest, reopenMergedRequest } from '../../repositories/branchReviews'
 import { requireAuthenticatedUser, userHasCapability } from '../../auth/authz'
-import { canReadTable } from './data/access'
+import { canReadTable } from '../../auth/dataAccess'
 import { listDataTables } from '../../repositories/data'
 import { MAIN_SCOPE } from '../../branches/scope'
 import type { AuthUser } from '../../repositories/users'

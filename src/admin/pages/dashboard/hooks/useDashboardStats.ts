@@ -116,7 +116,7 @@ const DashboardActivityEntrySchema = looseObject({
 })
 export type DashboardActivityEntry = Static<typeof DashboardActivityEntrySchema>
 
-const DashboardPagesStatsSchema = looseObject({
+export const DashboardPagesStatsSchema = looseObject({
   total: Type.Number(),
   published: Type.Number(),
   drafts: Type.Number(),
@@ -195,16 +195,28 @@ type DashboardActivityStats = Static<typeof DashboardActivityStatsSchema>
  * that bin timestamps per calendar day (the Posts histogram) bucket into the
  * operator's local day rather than UTC. Endpoints that don't bucket ignore it.
  */
-function useDashboardEndpoint<S extends TSchema>(endpoint: string, schema: S): Static<S> | null {
+/**
+ * One validated read of a dashboard endpoint. `useDashboardEndpoint` wraps it
+ * for the widgets; `useOnboardingState` calls it directly inside its own
+ * `Promise.allSettled` so the onboarding facts land in one round trip.
+ */
+export function fetchDashboardEndpoint<S extends TSchema>(
+  endpoint: string,
+  schema: S,
+  signal?: AbortSignal,
+): Promise<Static<S>> {
   const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone
+  return apiRequest(`/admin/api/cms/dashboard/${endpoint}`, {
+    schema,
+    signal,
+    query: { tz: timeZone },
+  })
+}
+
+function useDashboardEndpoint<S extends TSchema>(endpoint: string, schema: S): Static<S> | null {
   return useAsyncResource(
-    (signal) =>
-      apiRequest(`/admin/api/cms/dashboard/${endpoint}`, {
-        schema,
-        signal,
-        query: { tz: timeZone },
-      }),
-    [endpoint, schema, timeZone],
+    (signal) => fetchDashboardEndpoint(endpoint, schema, signal),
+    [endpoint, schema],
     { swallowErrors: true },
   ).data
 }

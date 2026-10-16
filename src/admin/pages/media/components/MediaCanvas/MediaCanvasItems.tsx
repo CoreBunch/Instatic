@@ -15,7 +15,7 @@ import type { CmsMediaAsset, CmsMediaFolder } from '@core/persistence/cmsMedia'
 import type { FolderSelection } from '../../hooks/useMediaWorkspace'
 import { bucketForMime } from '../../utils/filters'
 import { blurHashToDataUrl, pickVariantUrl } from '../../utils/variants'
-import { formatBytes } from '../../utils/formatBytes'
+import { formatBytes } from '@admin/lib/formatBytes'
 import styles from './MediaCanvas.module.css'
 
 export interface ParentFolderEntry {

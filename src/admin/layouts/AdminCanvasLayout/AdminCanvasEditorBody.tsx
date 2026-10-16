@@ -13,6 +13,8 @@ import { useAutoResolveDependencies } from '@admin/pages/site/hooks/useAutoResol
 import { LayoutNameDialog } from '@admin/pages/site/dialogs/LayoutNameDialog'
 import { PropertiesPanel } from '@admin/pages/site/panels/PropertiesPanel'
 import { LeftSidebar } from '@admin/pages/site/sidebars/LeftSidebar'
+import { RuntimeDiagnosticsContext } from '@site/diagnostics'
+import { summarizeRuntimeDiagnostics } from '@core/site-runtime'
 import { RightSidebar } from '@admin/pages/site/sidebars/RightSidebar'
 import { selectRightSidebarExpanded, useEditorStore } from '@admin/pages/site/store/store'
 import { useNarrowEditorChrome } from '@site/layout/responsiveChrome'
@@ -70,8 +72,11 @@ export function AdminCanvasEditorBody({
     }),
   )
 
+  // One summary per build, shared by the publish gate and the Explorer rows.
+  const diagnosticsSummary = summarizeRuntimeDiagnostics(runtimeValidation.diagnostics)
+
   return (
-    <>
+    <RuntimeDiagnosticsContext.Provider value={diagnosticsSummary}>
       {/* ── Canvas + floating overlay panels ──────────────────────────────── */}
       {/*
         position: relative makes this the containing block for absolutely
@@ -136,7 +141,7 @@ export function AdminCanvasEditorBody({
           <ImportHtmlModal />
         </Suspense>
       )}
-    </>
+    </RuntimeDiagnosticsContext.Provider>
   )
 }
 

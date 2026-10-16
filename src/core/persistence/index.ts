@@ -115,3 +115,11 @@ export {
   addCmsBranchReviewComment,
   cmsBranchReviewRenderUrl,
 } from './cmsBranches'
+export {
+  getCmsRegistryLatestVersion,
+  getCmsRegistryPackage,
+  getCmsRegistryPackageAdvisories,
+  getCmsRegistryPackageDownloads,
+  getCmsRegistryProfile,
+  searchCmsRegistry,
+} from './cmsRegistry'

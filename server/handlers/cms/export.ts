@@ -54,7 +54,7 @@ import {
   mediaArchivePath,
   type SiteBundleArchiveManifest,
 } from '@core/data/bundleArchive'
-import { canSeeAllDataRows } from './data/access'
+import { canSeeAllDataRows } from '../../auth/dataAccess'
 import { createStoredZipStream, estimateStoredZipSize, type StoredZipEntry } from '../../archive/storedZip'
 import { resolveBranchScopeById, type BranchScope } from '../../branches/scope'
 

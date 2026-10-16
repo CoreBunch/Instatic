@@ -1516,6 +1516,17 @@ export const sqliteMigrations: Migration[] = [
     sql: isoTimestampRewrite030(),
   },
   {
+    // Which plugin created this table via `cms.content.tables.create` (null
+    // for user/import-created tables). The plugin host's `@own-created`
+    // contentAccess marker resolves against this column, so a plugin keeps
+    // access to tables it created at runtime — durable across restarts and
+    // admin-side slug renames. Nullable, no default: purely additive.
+    id: '031_data_tables_created_by_plugin',
+    sql: `
+      alter table data_tables add column created_by_plugin_id text;
+    `,
+  },
+  {
     // Existing avatars predate anything writing `media_usage_refs`, so the
     // first build that warns before a delete would still have said nothing
     // about the avatar already set — the one case the feature exists for.
@@ -1526,9 +1537,9 @@ export const sqliteMigrations: Migration[] = [
     // what makes the id itself safe to change: an installation that recorded
     // it under another number runs it again and inserts nothing.
     //
-    // `032` sits between two ids other open PRs claim: `031` (#495) and `033`
-    // (#335). Ids are only ever sorted, so the gaps cost nothing, and
-    // whichever lands first, nobody has to renumber.
+    // `032` follows `031_data_tables_created_by_plugin` (#335, v0.0.21).
+    // Being idempotent, it can still be renumbered if an id ahead of it is
+    // ever claimed first.
     id: '032_backfill_avatar_usage_refs',
     sql: `
       insert into media_usage_refs (asset_id, ref_kind, ref_id, ref_path)

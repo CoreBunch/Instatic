@@ -21,6 +21,11 @@
  *   - `isStateChangingMethod`  — POST/PUT/PATCH/DELETE
  *   - `expectedOrigin`         — the configured canonical public origin, or a
  *                                Host/req.url fallback when none is configured.
+ *   - `configuredPublicOrigin`: the configured canonical public origin, or
+ *                                null when none is configured. For callers
+ *                                that must never fall back to the Host header
+ *                                (the MCP OAuth issuer, which unauthenticated
+ *                                clients read back).
  *   - `originAllowed`          — true when the request's Origin matches a
  *                                configured public origin / expectedOrigin, or
  *                                is on the dev allowlist.
@@ -86,7 +91,7 @@ export function resetPublicOrigins(): void {
  * inbound `Host` header with the scheme from `req.url`.
  */
 export function expectedOrigin(req: Request): string {
-  const configured = publicOrigins[0]
+  const configured = configuredPublicOrigin()
   if (configured) return configured
   const fallback = new URL(req.url)
   const proto = fallback.protocol.replace(':', '').toLowerCase()
@@ -94,10 +99,21 @@ export function expectedOrigin(req: Request): string {
   return `${proto}://${host}`
 }
 
+/**
+ * The canonical configured public origin, or null when none is configured.
+ *
+ * Unlike `expectedOrigin` this never falls back to the inbound Host header.
+ * Anything that echoes an origin back to unauthenticated clients (the MCP
+ * OAuth issuer and its discovery documents) branches on this so a spoofed
+ * Host can never become a URL the server vouches for.
+ */
+export function configuredPublicOrigin(): string | null {
+  return publicOrigins[0] ?? null
+}
+
 /** True when the canonical configured public origin uses https. */
 export function publicOriginIsHttps(): boolean {
-  const configured = publicOrigins[0]
-  return configured?.startsWith('https://') ?? false
+  return configuredPublicOrigin()?.startsWith('https://') ?? false
 }
 
 /**

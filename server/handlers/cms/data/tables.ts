@@ -50,16 +50,18 @@ import {
   type TablePatchBody,
 } from './schemas'
 import {
-  canManageTable,
-  canReadTable,
-  canSeeAllDataRows,
   forbidden,
-  hasContentRowAccess,
   requireCustomTablesManager,
   requireDataAccess,
   requireDataCreator,
   requireDataTablesRead,
 } from './access'
+import {
+  canManageTable,
+  canReadTable,
+  hasContentRowAccess,
+  rowVisibilityFor,
+} from '../../../auth/dataAccess'
 import {
   assertSystemTableUpdateAllowed,
   protectedBuiltInCreateCellKey,
@@ -312,8 +314,7 @@ async function handleTableRows(
     // A broad content.* capability satisfies requireDataAccess, but reading a
     // system table's rows still needs data.system.tables.read (GHSA-x69h).
     if (!canReadTable(user, table)) return jsonResponse({ error: 'Table not found' }, { status: 404 })
-    const visibility = canSeeAllDataRows(user) ? {} : { ownerUserId: user.id }
-    return jsonResponse({ rows: await listDataRows(db, scope, tableId, visibility) })
+    return jsonResponse({ rows: await listDataRows(db, scope, tableId, rowVisibilityFor(user)) })
   }
 
   if (req.method === 'POST') {
