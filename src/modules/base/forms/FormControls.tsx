@@ -1,3 +1,4 @@
+import type { InputProps } from './inputProps'
 import type { ModuleComponentProps } from '@core/module-engine'
 import { normalizeIdentifierValue } from '@core/utils/identifier'
 
@@ -10,18 +11,6 @@ type LabelProps = Record<string, unknown> & {
   text: string
   targetMode: 'auto' | 'explicit'
   targetId: string
-}
-
-type InputProps = Record<string, unknown> & {
-  inputType: string
-  name: string
-  id: string
-  placeholder: string
-  value: string
-  required: boolean
-  disabled: boolean
-  readOnly: boolean
-  autocomplete: string
 }
 
 type TextareaProps = Record<string, unknown> & {
@@ -121,6 +110,12 @@ export function InputEditor({ mcClassName, nodeWrapperProps, props }: ModuleComp
       disabled={props.disabled}
       readOnly={props.readOnly}
       autoComplete={props.autocomplete || undefined}
+      min={props.min || undefined}
+      max={props.max || undefined}
+      step={props.step || undefined}
+      minLength={props.minLength > 0 ? props.minLength : undefined}
+      maxLength={props.maxLength > 0 ? props.maxLength : undefined}
+      pattern={props.pattern || undefined}
     />
   )
 }

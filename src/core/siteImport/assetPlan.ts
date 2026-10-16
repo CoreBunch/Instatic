@@ -4,7 +4,7 @@
  * `applyAssetRewrites` can do exact-string replacement.
  *
  * Two sources of asset references:
- *   1. PageNode props — `src`, `href`, `srcset` values set by the HTML
+ *   1. PageNode props — source, link, srcset, video and poster URLs set by the HTML
  *      importer from element attributes, plus imported `htmlAttributes` bags
  *      such as `data-bg-src`.
  *   2. CSS rule styles — `url(...)` payloads recorded by Phase 1's
@@ -39,12 +39,7 @@ import type {
   ImportAsset,
 } from './types'
 import { guessMimeType, isImportUploadableMimeType } from './mimeTypes'
-
-// ---------------------------------------------------------------------------
-// Props that may contain relative asset URLs in page nodes
-// ---------------------------------------------------------------------------
-
-const URL_BEARING_PROPS: ReadonlySet<string> = new Set(['src', 'href', 'srcset'])
+import { URL_BEARING_PROPS } from './assetProps'
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -683,4 +678,3 @@ function replaceRawUrlInValue(value: string, rawUrl: string, fileMapKey: string)
   const re = new RegExp(`url\\(\\s*(['"]?)${escaped}\\1\\s*\\)`, 'g')
   return value.replace(re, `url('${fileMapKey}')`)
 }
-

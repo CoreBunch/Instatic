@@ -6,6 +6,7 @@
  */
 import type { ModuleDefinition } from '@core/module-engine'
 import { registry } from '@core/module-engine'
+import { InputPropsSchema, type InputProps } from './inputProps'
 import { Type, Value, type Static } from '@core/utils/typeboxHelpers'
 import { normalizeIdentifierValue } from '@core/utils/identifier'
 import { safeUrl } from '@modules/base/utils/escape'
@@ -58,38 +59,7 @@ const LabelPropsSchema = Type.Object({
 
 type LabelProps = Static<typeof LabelPropsSchema>
 
-const InputPropsSchema = Type.Object({
-  inputType: Type.Union([
-    Type.Literal('text'),
-    Type.Literal('email'),
-    Type.Literal('password'),
-    Type.Literal('search'),
-    Type.Literal('tel'),
-    Type.Literal('url'),
-    Type.Literal('number'),
-    Type.Literal('date'),
-    Type.Literal('time'),
-    Type.Literal('datetime-local'),
-    Type.Literal('file'),
-    Type.Literal('hidden'),
-  ], { default: 'text' }),
-  fieldId: Type.String({ default: '' }),
-  name: Type.String({ default: '' }),
-  id: Type.String({ default: '' }),
-  placeholder: Type.String({ default: '' }),
-  value: Type.String({ default: '' }),
-  required: Type.Boolean({ default: false }),
-  disabled: Type.Boolean({ default: false }),
-  readOnly: Type.Boolean({ default: false }),
-  autocomplete: Type.String({ default: '' }),
-  min: Type.String({ default: '' }),
-  max: Type.String({ default: '' }),
-  minLength: Type.Number({ default: 0 }),
-  maxLength: Type.Number({ default: 0 }),
-  pattern: Type.String({ default: '' }),
-})
 
-type InputProps = Static<typeof InputPropsSchema>
 
 const TextareaPropsSchema = Type.Object({
   fieldId: Type.String({ default: '' }),
@@ -278,6 +248,7 @@ export const InputModule: ModuleDefinition<InputProps> = {
     ['autocomplete', props.autocomplete],
     ['min', props.min],
     ['max', props.max],
+    ['step', props.step],
     ['minlength', positiveNumber(props.minLength)],
     ['maxlength', positiveNumber(props.maxLength)],
     ['pattern', props.pattern],
@@ -474,6 +445,7 @@ function inputLikeSchema(typeLabel: string): ModuleDefinition<InputProps>['schem
       'tel',
       'url',
       'number',
+      'range',
       'date',
       'time',
       'datetime-local',
@@ -491,6 +463,7 @@ function inputLikeSchema(typeLabel: string): ModuleDefinition<InputProps>['schem
     autocomplete: { type: 'text', label: 'Autocomplete' },
     min: { type: 'text', label: 'Min' },
     max: { type: 'text', label: 'Max' },
+    step: { type: 'text', label: 'Step' },
     minLength: { type: 'number', label: 'Minimum length' },
     maxLength: { type: 'number', label: 'Maximum length' },
     pattern: { type: 'text', label: 'Pattern' },
