@@ -19,7 +19,7 @@ Catalog of every test in `src/__tests__/architecture/`. These are structural gat
 
 | Test                                          | What it enforces                                                                 |
 |-----------------------------------------------|----------------------------------------------------------------------------------|
-| `no-core-barrel-deep-imports.test.ts`         | External callers import through the barrel, never through a concrete internal path (`@core/<module>/<file>`). Files inside a module are exempt — they use relative paths. Enforced for: `@core/page-tree`, `@core/module-engine`, `@core/visualComponents`, `@core/publisher`, `@core/framework`, `@core/framework-schema`, `@core/fonts`. |
+| `no-core-barrel-deep-imports.test.ts`         | External callers import through the barrel, never through a concrete internal path (`@core/<module>/<file>`). Files inside a module are exempt — they use relative paths. Enforced for: `@core/page-tree`, `@core/module-engine`, `@core/visualComponents`, `@core/publisher`, `@core/framework`, `@core/framework-schema`, `@core/fonts`, `@core/collab`, `@core/registry`. |
 
 See [CLAUDE.md → Barrel imports](../../CLAUDE.md) and [docs/reference/page-tree.md](page-tree.md).
 
@@ -150,7 +150,7 @@ See [docs/features/spotlight.md](../features/spotlight.md).
 | `plugin-sandbox-invariants.test.ts`           | No `node:`, `bun:`, `require(`, `process.binding` in plugin bundles; network permission gate is centralized in `apiDispatch.ts` and driven by `TARGET_PERMISSIONS`. |
 | `plugin-boot-resilience.test.ts`              | One bad plugin doesn't bring the server down. Crashes are isolated.              |
 | `plugin-cms-content-surface.test.ts`          | All five `cms.content.*` permissions are wired across all sync-points (permission values, capability matrix, permission alias builder, SDK type surface, host-side dispatch). |
-| `plugin-content-access-enforced.test.ts`      | `cms.content.*` permission grant is enforced centrally in `apiDispatch.ts` (driven by `TARGET_PERMISSIONS`); per-table handlers additionally call `assertContentTableAccess` (manifest `contentAccess[]` allowlist). |
+| `plugin-content-access-enforced.test.ts`      | `cms.content.*` permission grant is enforced centrally in `apiDispatch.ts` (driven by `TARGET_PERMISSIONS`); per-table handlers additionally call `assertContentTableAccess` (manifest `contentAccess[]` allowlist — slug entries + the `@own-created` marker); `tables.create` records `createdByPluginId`, which the marker resolves against. |
 | `plugin-content-tree-via-engine.test.ts`      | Plugin content handlers reach page-tree mutations through `applyTreeOperation` from `@core/page-tree`, not by deep-importing `mutations.ts` directly. |
 | `plugin-host-import-boundaries.test.ts`       | Worker transport (`server/plugins/host/`) does not import `apiDispatch` — prevents circular dependency between the pool and the dispatch layer. |
 | `plugin-host-ui-runtime-parity.test.ts`       | Plugin host UI surfaces match the SDK's declared shape.                          |

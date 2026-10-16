@@ -1,4 +1,5 @@
-import { describe, expect, it, beforeEach } from 'bun:test'
+import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
+import { configurePublicOrigins, resetPublicOrigins } from '../../auth/security'
 import { createSqliteClient } from '../../db/sqlite'
 import { sqliteMigrations } from '../../db/migrations-sqlite'
 import { runMigrations } from '../../db/runMigrations'
@@ -27,8 +28,32 @@ async function freshDb(): Promise<DbClient> {
   return db
 }
 
+/**
+ * The existing cases talk to `http://x`, a non-loopback host, so the MCP
+ * issuer only exists for them while that origin is the configured one.
+ */
+const PUBLIC_ORIGIN = 'http://x'
+const HOSTILE_HOST = 'attacker.example:18020'
+
+/**
+ * happy-dom (loaded by the test setup) strips the Fetch-spec forbidden `Host`
+ * header from the Request constructor's `headers` init, so it is set on the
+ * Headers object afterwards, the same way a real Bun.serve request carries it.
+ */
+function hostileRequest(headers: Record<string, string> = {}): Request {
+  const req = new Request(`http://${HOSTILE_HOST}/_instatic/mcp`, { headers })
+  req.headers.set('host', HOSTILE_HOST)
+  return req
+}
+
 let db: DbClient
-beforeEach(async () => { db = await freshDb() })
+beforeEach(async () => {
+  db = await freshDb()
+  configurePublicOrigins([PUBLIC_ORIGIN])
+})
+afterEach(() => {
+  resetPublicOrigins()
+})
 
 describe('mcp auth', () => {
   it('resolves a valid bearer token to a connector + capabilities', async () => {
@@ -134,5 +159,80 @@ describe('mcp auth', () => {
     expect(wwwAuth).toContain('Bearer')
     expect(wwwAuth).toContain('resource_metadata')
     expect(wwwAuth).toContain('/.well-known/oauth-protected-resource')
+  })
+})
+
+describe('mcp auth issuer trust', () => {
+  it('omits resource_metadata from the 401 challenge when no trustworthy issuer exists', async () => {
+    resetPublicOrigins()
+    const r = unauthorizedResponse(hostileRequest())
+    expect(r.status).toBe(401)
+    const wwwAuth = r.headers.get('WWW-Authenticate') ?? ''
+    expect(wwwAuth).toContain('Bearer')
+    expect(wwwAuth).toContain('scope="mcp"')
+    expect(wwwAuth).not.toContain('resource_metadata')
+    expect(wwwAuth).not.toContain('attacker.example')
+    expect(await r.text()).not.toContain('attacker.example')
+  })
+
+  it('points the 401 challenge at the configured public origin, never the Host header', () => {
+    configurePublicOrigins(['https://cms.example.com'])
+    const wwwAuth = unauthorizedResponse(hostileRequest()).headers.get('WWW-Authenticate') ?? ''
+    expect(wwwAuth).toContain(
+      'resource_metadata="https://cms.example.com/.well-known/oauth-protected-resource"',
+    )
+    expect(wwwAuth).not.toContain('attacker.example')
+  })
+
+  it('keeps the resource_metadata pointer for loopback development without a configured origin', () => {
+    resetPublicOrigins()
+    const wwwAuth = unauthorizedResponse(new Request('http://localhost:3001/_instatic/mcp'))
+      .headers.get('WWW-Authenticate') ?? ''
+    expect(wwwAuth).toContain(
+      'resource_metadata="http://localhost:3001/.well-known/oauth-protected-resource"',
+    )
+  })
+
+  it('skips the OAuth grant lookup without a trustworthy resource while personal tokens keep working', async () => {
+    resetPublicOrigins()
+    const verifier = 'q'.repeat(64)
+    const hostileResource = `http://${HOSTILE_HOST}/_instatic/mcp`
+    const client = await registerOAuthClient(db, {
+      clientName: 'Claude',
+      redirectUris: ['https://claude.ai/api/mcp/auth_callback'],
+    })
+    const { code } = await createOAuthAuthorizationGrant(db, {
+      userId: 'u1',
+      clientName: client.clientName,
+      capabilities: ['ai.chat'],
+      request: {
+        responseType: 'code',
+        clientId: client.clientId,
+        redirectUri: client.redirectUris[0]!,
+        codeChallenge: await pkceChallengeForVerifier(verifier),
+        codeChallengeMethod: 'S256',
+        scope: 'mcp',
+        resource: hostileResource,
+      },
+    })
+    const tokens = await exchangeAuthorizationCode(db, {
+      code,
+      clientId: client.clientId,
+      redirectUri: client.redirectUris[0]!,
+      codeVerifier: verifier,
+      resource: hostileResource,
+    })
+    const oauth = await resolveMcpAuth(
+      hostileRequest({ Authorization: `Bearer ${tokens!.accessToken}` }),
+      db,
+    )
+    expect(oauth.ok).toBe(false)
+
+    const personal = generatePersonalAccessToken()
+    await createBearerConnection(db, {
+      userId: 'u1', label: 'Local', capabilities: ['ai.chat'], tokenHash: await hashMcpSecret(personal),
+    })
+    const pat = await resolveMcpAuth(hostileRequest({ Authorization: `Bearer ${personal}` }), db)
+    expect(pat.ok).toBe(true)
   })
 })

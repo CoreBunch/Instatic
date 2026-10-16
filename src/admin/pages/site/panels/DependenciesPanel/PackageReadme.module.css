@@ -1,0 +1,126 @@
+.wrap {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-s);
+    align-items: flex-start;
+}
+
+.empty {
+    margin: 0;
+    color: var(--text-disabled);
+    font-size: var(--text-2xs);
+}
+
+.clamped {
+    max-height: 900px;
+    overflow: hidden;
+    mask-image: linear-gradient(to bottom, var(--bg-body) calc(100% - 48px), transparent);
+}
+
+.readme {
+    font-size: var(--text-2xs);
+    line-height: 1.55;
+    color: var(--text-muted);
+    max-width: 100%;
+    overflow-wrap: anywhere;
+}
+
+.readme h1,
+.readme h2,
+.readme h3,
+.readme h4,
+.readme h5,
+.readme h6 {
+    color: var(--text);
+    font-size: var(--text-xs);
+    font-weight: 700;
+    margin: var(--space-l) 0 var(--space-2xs);
+    line-height: 1.3;
+}
+
+.readme h1 {
+    font-size: var(--text-s);
+}
+
+.readme > :first-child {
+    margin-top: 0;
+}
+
+.readme p {
+    margin: 0 0 var(--space-s);
+}
+
+.readme a {
+    color: var(--info-text);
+    text-decoration: underline;
+    text-decoration-color: color-mix(in srgb, var(--info-text) 40%, transparent);
+}
+
+.readme code {
+    font-family: var(--font-mono);
+    font-size: 0.92em;
+    padding: 0 var(--space-4xs);
+    border-radius: var(--radius-sm);
+    background: var(--overlay-10);
+    color: var(--text);
+}
+
+.readme pre {
+    margin: 0 0 var(--space-s);
+    padding: var(--space-s);
+    border-radius: var(--radius);
+    background: var(--bg-surface-3);
+    overflow-x: auto;
+    max-width: 100%;
+}
+
+.readme pre code {
+    padding: 0;
+    background: transparent;
+}
+
+.readme img {
+    max-width: 100%;
+    height: auto;
+    vertical-align: middle;
+}
+
+.readme p > img {
+    margin-right: var(--space-3xs);
+}
+
+.readme ul,
+.readme ol {
+    padding-left: var(--space-xl);
+    margin: 0 0 var(--space-s);
+}
+
+.readme blockquote {
+    margin: 0 0 var(--space-s);
+    padding: var(--space-3xs) var(--space-s);
+    border-left: 2px solid var(--border-strong);
+    color: var(--text-subtle);
+}
+
+.readme table {
+    border-collapse: collapse;
+    margin: 0 0 var(--space-s);
+    max-width: 100%;
+    display: block;
+    overflow-x: auto;
+}
+
+.readme th,
+.readme td {
+    border: 1px solid var(--border-muted);
+    padding: var(--space-3xs) var(--space-xs);
+    text-align: left;
+    white-space: nowrap;
+}
+
+.readme hr {
+    border: 0;
+    border-top: 1px solid var(--border-muted);
+    margin: var(--space-l) 0;
+}
+

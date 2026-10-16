@@ -118,18 +118,24 @@ export const tableAdapter: BranchEntityAdapter<'table', TableContent> = {
   },
 
   async copy(source, to) {
-    // The physical key is minted per row in TS (the single scheme).
+    // The physical key is minted per row in TS (the single scheme). Every
+    // other column is carried as-is — including `created_by_plugin_id`, which
+    // is ownership rather than content: the `@own-created` contentAccess
+    // marker resolves against it, so a copy without it would hold a table
+    // that no longer belongs to the plugin that made it.
     const from = source.scope
     for (const table of await source.tables()) {
       await source.db`
         insert into data_tables (
           id, branch_id, name, slug, kind, route_base, singular_label,
           plural_label, primary_field_id, fields_json, system,
-          created_by_user_id, updated_by_user_id, created_at, updated_at
+          created_by_user_id, created_by_plugin_id, updated_by_user_id,
+          created_at, updated_at
         )
         select ${physicalId(to.branchId, table.id)}, ${to.branchId}, name, slug, kind, route_base,
                singular_label, plural_label, primary_field_id, fields_json, system,
-               created_by_user_id, updated_by_user_id, created_at, updated_at
+               created_by_user_id, created_by_plugin_id, updated_by_user_id,
+               created_at, updated_at
         from data_tables
         where id = ${physicalId(from.branchId, table.id)}
       `
