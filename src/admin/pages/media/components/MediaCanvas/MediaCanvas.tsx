@@ -19,6 +19,7 @@ import { FilterBar, type FilterBarItem } from '@ui/components/FilterBar'
 import { Select } from '@ui/components/Select'
 import { Skeleton } from '@ui/components/Skeleton'
 import { canDeleteMedia, canWriteMedia } from '@admin/access'
+import { useConfirmDelete } from '@admin/shared/dialogs/ConfirmDeleteDialog'
 import { useCurrentAdminUser } from '@admin/sessionContext'
 import {
   ExplorerItemContextMenu,
@@ -48,6 +49,7 @@ import {
   type UseMediaWorkspaceResult,
 } from '../../hooks/useMediaWorkspace'
 import { childFoldersForParent } from '../../utils/folderTree'
+import { actionTargets } from '../../utils/actionTargets'
 import {
   writeMediaAssetDragData,
   writeMediaFolderDragData,
@@ -122,6 +124,7 @@ function folderMatchesQuery(folder: CmsMediaFolder, query: string): boolean {
 
 export function MediaCanvas({ workspace, selectionMode = 'standard' }: MediaCanvasProps) {
   const currentUser = useCurrentAdminUser()
+  const confirmDelete = useConfirmDelete()
   const [viewMode, setViewModeState] = useState<MediaViewMode>(readStoredMediaViewMode)
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null)
   const [renameTarget, setRenameTarget] = useState<CmsMediaAsset | null>(null)
@@ -189,11 +192,7 @@ export function MediaCanvas({ workspace, selectionMode = 'standard' }: MediaCanv
       event.preventDefault()
       return
     }
-    const selectedIds = Array.from(workspace.selectedAssetIds)
-    const dragIds = workspace.selectedAssetIds.has(asset.id) && selectedIds.length > 0
-      ? selectedIds
-      : [asset.id]
-    writeMediaAssetDragData(event.dataTransfer, dragIds)
+    writeMediaAssetDragData(event.dataTransfer, actionTargets(asset.id, workspace.selectedAssetIds))
   }
 
   function handleFolderDragStart(folder: CmsMediaFolder, event: DragEvent<HTMLButtonElement>) {
@@ -517,27 +516,67 @@ export function MediaCanvas({ workspace, selectionMode = 'standard' }: MediaCanv
         )}
       </div>
 
-      {contextMenu && (
-        <ExplorerItemContextMenu
-          x={contextMenu.x}
-          y={contextMenu.y}
-          ariaLabel="Media item options"
-          onClose={() => setContextMenu(null)}
-          onRename={() => {
-            setRenameTarget(contextMenu.asset)
-            setContextMenu(null)
-          }}
-          onDelete={() => {
-            const target = contextMenu.asset
-            setContextMenu(null)
-            if (trashView) void workspace.purgeAsset(target.id)
-            else void workspace.trashAsset(target.id)
-          }}
-          showRename={canWrite}
-          showDelete={canDelete}
-          extraItems={buildExtraMenuItems(contextMenu.asset)}
-        />
-      )}
+      {contextMenu && (() => {
+        // `actionTargets`, not the clicked asset: the menu used to ignore the
+        // selection, so right-clicking one of five selected files and choosing
+        // Delete trashed exactly one. It deliberately does NOT adopt the clicked
+        // asset into the selection the way the site explorer does — Media's
+        // floating windows derive from the selection during render (viewer at
+        // <= 1, bulk edit at >= 2, MediaPage.tsx), so writing it here would pop
+        // a window open underneath the menu.
+        const targets = actionTargets(contextMenu.asset.id, workspace.selectedAssetIds)
+        const many = targets.length > 1
+        return (
+          <ExplorerItemContextMenu
+            x={contextMenu.x}
+            y={contextMenu.y}
+            ariaLabel="Media item options"
+            onClose={() => setContextMenu(null)}
+            {...(many ? { headerLabel: `${targets.length} files` } : {})}
+            onRename={() => {
+              setRenameTarget(contextMenu.asset)
+              setContextMenu(null)
+            }}
+            onDelete={() => {
+              const target = contextMenu.asset
+              setContextMenu(null)
+              if (!trashView) {
+                for (const id of targets) void workspace.trashAsset(id)
+                return
+              }
+              // Purging is the one media action nothing can undo: it removes
+              // the original and every generated size from the storage
+              // adapter, not just the row — and from here it can reach a
+              // whole selection at once. `alwaysConfirm` because the
+              // `confirmBeforeDelete` preference defaults off, and an operator
+              // who turned it off was opting out of confirming a TRASH, which
+              // is reversible.
+              confirmDelete({
+                title: many
+                  ? `Delete ${targets.length} files permanently?`
+                  : `Delete "${target.filename}" permanently?`,
+                description: many
+                  ? 'This removes every one of these files and all their generated sizes from disk. It cannot be undone.'
+                  : 'This removes the file and every generated size from disk. It cannot be undone.',
+                confirmLabel: many ? `Delete ${targets.length} files` : 'Delete permanently',
+                alwaysConfirm: true,
+                commit: () => {
+                  for (const id of targets) void workspace.purgeAsset(id)
+                },
+              })
+            }}
+            deleteLabel={
+              many
+                ? `${trashView ? 'Delete' : 'Trash'} ${targets.length} files`
+                : trashView ? 'Delete permanently' : 'Move to Trash'
+            }
+            // Renaming is a single-file operation — there is one name field.
+            showRename={canWrite && !many}
+            showDelete={canDelete}
+            extraItems={buildExtraMenuItems(contextMenu.asset)}
+          />
+        )
+      })()}
 
       {renameTarget && (
         <ExplorerRenameDialog
