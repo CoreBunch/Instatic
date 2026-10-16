@@ -27,7 +27,7 @@ let lastScriptRuns: Set<string> = new Set()
  * live site with nothing to point at.
  */
 function scriptIdentifierRuns(files: SiteDocument['files']): Set<string> {
-  // `usedStyleRuleIdSignature` runs inside a canvas store selector, so this is
+  // Canvas class usage runs inside a store selector, so this is
   // hit on every store change. The store snapshot is immutable, so identity on
   // the files array is enough to skip re-splitting unchanged sources.
   if (files === lastScriptFiles) return lastScriptRuns
@@ -68,24 +68,61 @@ export function collectUsedStyleRuleIds(
     }
   }
 
+  addScriptStyleRuleIds(usedIds, site)
+  return usedIds
+}
+
+function addScriptStyleRuleIds(
+  usedIds: Set<string>,
+  site: Pick<SiteDocument, 'files' | 'styleRules'>,
+): void {
   const runs = scriptIdentifierRuns(site.files ?? [])
   if (runs.size > 0) {
     for (const rule of Object.values(site.styleRules ?? {})) {
       if (rule.kind === 'class' && runs.has(rule.name)) usedIds.add(rule.id)
     }
   }
-
-  return usedIds
 }
 
 /**
  * A stable primitive signature suitable for store subscriptions. It changes
  * only when the set of assigned class ids changes, not for unrelated edits.
+ * Inputs must be immutable snapshots; direct publisher callers use the
+ * uncached collector so in-place construction is never mistaken for a hit.
  */
-export function usedStyleRuleIdSignature(
+export function createUsedStyleRuleIdSelector(): (
   site: Pick<SiteDocument, 'pages' | 'visualComponents' | 'files' | 'styleRules'>,
-): string {
-  return [...collectUsedStyleRuleIds(site)].sort().join('\0')
+) => string {
+  // Store snapshots preserve unchanged tree maps. Cache per tree, rather than
+  // per site: projecting one collaborative row must not rescan every other row.
+  const trees = new WeakMap<object, Set<string>>()
+  let previousSite: Pick<SiteDocument, 'pages' | 'visualComponents' | 'files' | 'styleRules'> | null = null
+  let signature = ''
+  function collect(nodes: SiteDocument['pages'][number]['nodes']): Set<string> {
+    const cached = trees.get(nodes)
+    if (cached) return cached
+    const ids = new Set<string>()
+    for (const node of Object.values(nodes)) {
+      for (const id of node.classIds ?? []) ids.add(id)
+    }
+    trees.set(nodes, ids)
+    return ids
+  }
+  return (site) => {
+    if (site === previousSite) return signature
+    const ids = new Set<string>()
+    for (const page of site.pages) {
+      for (const id of collect(page.nodes)) ids.add(id)
+    }
+    for (const component of site.visualComponents ?? []) {
+      for (const id of component.classIds ?? []) ids.add(id)
+      for (const id of collect(component.tree.nodes)) ids.add(id)
+    }
+    addScriptStyleRuleIds(ids, site)
+    signature = [...ids].sort().join('\0')
+    previousSite = site
+    return signature
+  }
 }
 
 function selectorPartCanMatch(

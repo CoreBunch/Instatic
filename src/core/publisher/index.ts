@@ -64,7 +64,7 @@ export {
   collectUsedStyleRuleIds,
   treeShakeStyleRules,
   treeShakeStyleRulesBySignature,
-  usedStyleRuleIdSignature,
+  createUsedStyleRuleIdSelector,
 } from './styleRuleTreeShake'
 
 export { buildSiteFrameworkCss, generateFrameworkCss } from './frameworkCss'
