@@ -114,6 +114,36 @@ export async function openCodePanel(page: Page): Promise<void> {
   ).toBeVisible()
 }
 
+/**
+ * Create a site stylesheet from the Code Explorer and type `css` into it.
+ * Returns once the Code Editor shows the text and the store has synced it.
+ */
+export async function createStylesheet(page: Page, name: string, css: string): Promise<void> {
+  await openCodePanel(page)
+  const newStylesheet = page.getByRole('button', { name: 'New stylesheet', exact: true })
+  await newStylesheet.scrollIntoViewIfNeeded()
+  await newStylesheet.click()
+
+  const dialog = page.getByRole('dialog', { name: 'New stylesheet' })
+  await expect(dialog).toBeVisible()
+  await dialog.getByLabel('Name').fill(name)
+  await dialog.getByRole('button', { name: 'Create' }).click()
+  await expect(dialog).toBeHidden()
+
+  await expect(page.getByRole('complementary', { name: 'Code Editor' })).toBeVisible()
+  await expect(page.getByLabel('Stylesheet settings')).toBeVisible()
+
+  const editor = page.locator('[data-codemirror-container] .cm-content')
+  await expect(editor).toBeVisible({ timeout: 15_000 })
+  await editor.click()
+  const text = css.trim()
+  await page.keyboard.insertText(text)
+
+  // CodeMirror syncs into the editor store through a short debounce.
+  await expect(editor).toContainText(text.split('\n')[0]!)
+  await page.waitForTimeout(300)
+}
+
 /** Select a layer in the DOM/layers tree by its display name. */
 export async function selectTreeLayer(page: Page, name: string): Promise<void> {
   await page.getByRole('treeitem', { name }).first().click()

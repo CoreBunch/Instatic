@@ -234,17 +234,33 @@ describe('executeAgentTool — set_font_tokens', () => {
   it('creates a fallback-only token with no install', async () => {
     freshStore()
     const result = await executeAgentTool('site_set_font_tokens', {
-      tokens: [{ name: 'Body', variable: 'font-body', fallback: 'sans-serif' }],
+      tokens: [{ name: 'Accent', variable: 'font-accent', fallback: 'serif' }],
     })
 
     const { tokens } = expectData<{ tokens: Array<{ variable: string; ref: string; action: string }> }>(result)
-    expect(tokens[0].variable).toBe('font-body')
-    expect(tokens[0].ref).toBe('var(--font-body)')
+    expect(tokens[0].variable).toBe('font-accent')
+    expect(tokens[0].ref).toBe('var(--font-accent)')
     expect(tokens[0].action).toBe('created')
 
+    // Added beside the three role tokens a new site starts with.
     const stored = site().settings.fonts!.tokens!
-    expect(stored).toHaveLength(1)
-    expect(stored[0].familyId).toBeUndefined()
+    expect(stored.map((t) => t.variable)).toEqual(['font-heading', 'font-body', 'font-mono', 'font-accent'])
+    expect(stored[3].familyId).toBeUndefined()
+  })
+
+  it('updates a seeded role token in place instead of adding a new one', async () => {
+    freshStore()
+    const result = await executeAgentTool('site_set_font_tokens', {
+      tokens: [{ name: 'Body', fallback: 'Georgia, serif' }],
+    })
+
+    const { tokens } = expectData<{ tokens: Array<{ variable: string; action: string }> }>(result)
+    expect(tokens[0].variable).toBe('font-body')
+    expect(tokens[0].action).toBe('updated')
+
+    const stored = site().settings.fonts!.tokens!
+    expect(stored).toHaveLength(3)
+    expect(stored.find((t) => t.variable === 'font-body')!.fallback).toBe('Georgia, serif')
   })
 
   it('installs a Google web font and binds the token to it', async () => {
@@ -310,7 +326,9 @@ describe('executeAgentTool — set_font_tokens', () => {
     })
     expect(result.ok).toBe(false)
     expect(result.error).toContain('Unknown font family')
-    // No token created on failure.
-    expect(site().settings.fonts?.tokens ?? []).toHaveLength(0)
+    // The seeded Heading role token is left as it was on failure.
+    const tokens = site().settings.fonts?.tokens ?? []
+    expect(tokens).toHaveLength(3)
+    expect(tokens.find((t) => t.variable === 'font-heading')!.familyId).toBeUndefined()
   })
 })

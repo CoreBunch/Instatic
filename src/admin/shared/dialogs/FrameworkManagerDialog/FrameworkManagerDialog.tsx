@@ -155,7 +155,9 @@ export function FrameworkManagerDialog({
     confirmFrameworkChange({
       actionLabel: confirmActionLabel(),
       applyChange: (draft) => {
-        draft.settings.framework = applyFrameworkPreset(draft.settings.framework, target)
+        const next = applyFrameworkPreset(draft.settings, target)
+        draft.settings.framework = next.framework
+        draft.settings.fonts = next.fonts
       },
       commit: runApply,
     })
@@ -205,10 +207,10 @@ export function FrameworkManagerDialog({
       }
     >
       <p className={styles.lede}>
-        Seed your design tokens from the Core Framework defaults — colors, a
-        fluid type scale, a spacing scale, and their utility classes. Pick the
-        state you want; switching adds what's missing and strips what the new
-        state drops.
+        Seed your design tokens from the Core Framework defaults: colors, a
+        fluid type scale, a spacing scale, heading / body / mono font tokens,
+        and their utility classes. Pick the state you want; switching adds
+        what's missing and strips what the new state drops.
       </p>
 
       <div

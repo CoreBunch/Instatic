@@ -14,6 +14,8 @@ import { useBranchPublishGate } from '@admin/state/branchStore'
 import { SchedulePublishDialog } from '@admin/modals/SchedulePublishDialog'
 import type { PersistenceSaveStatus } from '@site/hooks/usePersistence'
 import { pushToast } from '@ui/components/Toast'
+import { summarizeRuntimeDiagnostics } from '@core/site-runtime'
+import { SiteDiagnosticsList } from '@site/diagnostics'
 import { PublishActionGroup, type PublishActionMenuItem } from './PublishActionGroup'
 import { getErrorMessage } from '@core/utils/errorMessage'
 import type { SiteRuntimeDiagnostic } from '@core/site-runtime'
@@ -60,8 +62,20 @@ export function PublishButton({
    */
   const publishedSiteRef = useRef<SiteDocument | null>(null)
   const syncError = saveStatus?.state === 'error' ? saveStatus.message ?? 'Sync failed' : null
-  const runtimeErrorCount = runtimeDiagnostics.filter((diagnostic) => diagnostic.severity === 'error').length
+  const diagnosticsSummary = summarizeRuntimeDiagnostics(runtimeDiagnostics)
+  const runtimeErrorCount = diagnosticsSummary.errors
   const runtimeErrorLabel = `${runtimeErrorCount} code error${runtimeErrorCount === 1 ? '' : 's'}`
+  // A count alone is not actionable. The same breakdown hangs off both the
+  // status text and the publish button, because a blocked publish disables
+  // the button and the status is then the only thing left to hover.
+  const diagnosticsDetail = (
+    <SiteDiagnosticsList
+      files={diagnosticsSummary.files}
+      siteWide={diagnosticsSummary.siteWide}
+      errors={diagnosticsSummary.errors}
+      warnings={diagnosticsSummary.warnings}
+    />
+  )
 
   useEffect(() => {
     const timer = statusTimerRef
@@ -260,6 +274,7 @@ export function PublishButton({
         statusLabel={state === 'published' ? null : status.label}
         statusTone={status.tone}
         statusAriaLabel={status.ariaLabel}
+        statusTooltip={runtimeErrorCount > 0 ? diagnosticsDetail : undefined}
         publishLabel={label}
         publishAriaLabel={
           branchGate.reason
@@ -275,7 +290,7 @@ export function PublishButton({
             ?? (state === 'published'
               ? 'Published'
               : runtimeErrorCount > 0
-                ? `Resolve ${runtimeErrorLabel} before publishing`
+                ? diagnosticsDetail
                 : 'Publish site')
         }
         publishState={state === 'publishing' ? 'busy' : state === 'published' ? 'success' : state}

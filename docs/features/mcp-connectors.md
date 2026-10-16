@@ -53,6 +53,8 @@ Instatic implements the MCP authorization-server surface directly:
 | `/admin/ai/oauth/authorize` | Signed-in consent screen. |
 | `/_instatic/oauth/token` | Form-encoded authorization-code and refresh-token exchange. |
 
+The issuer, the `resource` value, and every URL in these documents come from the configured public origin (`PUBLIC_ORIGIN`, auto-detected from `RENDER_EXTERNAL_URL` / `RAILWAY_PUBLIC_DOMAIN` on Render and Railway), never from the inbound `Host` header. Remote OAuth connectors therefore require `PUBLIC_ORIGIN`. Without it, both discovery endpoints answer `503` with `{ "error": "MCP OAuth needs PUBLIC_ORIGIN to be configured for this deployment." }`, the token endpoint answers `503` with `temporarily_unavailable`, the `401` challenge on `/_instatic/mcp` carries `scope="mcp"` but no `resource_metadata`, and OAuth access tokens do not authenticate. Personal access tokens keep working. Requests addressed to a loopback host (`localhost`, `127.0.0.1`, `::1`) are exempt and use their own origin so local development keeps working; the server warns at boot when no public origin is configured.
+
 The authorization sequence is:
 
 ```text
@@ -81,7 +83,7 @@ Security properties:
 
 ### Claude Desktop / Claude custom connector
 
-1. Deploy Instatic at a public HTTPS origin and configure that origin through the normal server public-origin configuration.
+1. Deploy Instatic at a public HTTPS origin and set `PUBLIC_ORIGIN` to it (auto-detected on Render and Railway). The OAuth issuer is built only from this value.
 2. In Instatic, open **AI → MCP** and copy the **Remote MCP URL**.
 3. In Claude, open **Settings → Connectors**, add a custom connector, choose a name, and paste the URL.
 4. Leave **OAuth Client ID** and **OAuth Client Secret** empty. Claude can dynamically register as a public PKCE client.
@@ -130,7 +132,7 @@ executeAiTool(...) / live editor bridge
 | Module | Responsibility |
 |---|---|
 | `paths.ts` | Canonical MCP, OAuth, metadata, and consent paths. |
-| `oauth/protocol.ts` | Issuer/resource construction, supported scopes, redirect validation, PKCE validation, safe callback generation. |
+| `oauth/protocol.ts` | Issuer/resource construction (configured public origin, loopback fallback, otherwise none), the 503 issuer-unavailable response, supported scopes, redirect validation, PKCE validation, safe callback generation. |
 | `oauth/schemas.ts` | TypeBox schemas for dynamic registration and form/query parsing. |
 | `oauth/handler.ts` | Public metadata, dynamic registration, and token endpoints with protocol-shaped errors and rate limits. |
 | `oauth/store.ts` | Registered clients, hashed one-time codes, token issue/rotation, resource-bound access lookup. |
@@ -139,6 +141,7 @@ executeAiTool(...) / live editor bridge
 | `connectors/store.ts` | Persistent connection grant and the token-free `toConnectionView` projection. |
 | `connectors/token.ts` | Opaque secret generation, hashing, and PKCE challenge calculation. |
 | `auth.ts` | Resolves OAuth access tokens or personal tokens to `{ connectorId, userId, capabilities }`; returns a discovery-aware 401 otherwise. |
+| `contentAuthorization.ts` | Before a document tool is relayed to the browser, resolves the target row through `server/auth/dataAccess.ts` with the connection's own identity and capabilities (table family plus own-vs-any ownership), so the owner's admin cookie cannot widen the delegated grant. |
 | `transports/http.ts` | Authenticated, Origin-validated `createMcpHandler` entry for MCP 2026-07-28 plus the stateless 2025 fallback. |
 | `server.ts` / `registry.ts` | Low-level SDK server, TypeBox input schemas, catalog deduplication, and capability filtering. |
 | `editorBridge.ts` | Per-user, per-scope live workspace bridge. The stream carries an **idle lease** (120s, re-armed by every relayed tool request) so an active batch is never cut mid-flight; only quiet streams recycle. The workspace's reconnect loop (`useMcpWorkspaceBridge`) reopens a recycled healthy stream immediately off the stream-end network event — deliberately timer-free, because hidden webviews (backgrounded browser tabs) clamp timers to minutes while network events still fire — and a tab becoming visible short-circuits any pending retry delay. |
@@ -194,9 +197,10 @@ Create and manual revoke actions retain the existing `ai.mcp_connector.created` 
 
 ## Tests
 
-- `server/ai/mcp/oauth/handler.test.ts` covers discovery metadata, public dynamic registration, and callback policy.
+- `server/ai/mcp/oauth/protocol.test.ts` covers issuer trust: the configured public origin wins over the `Host` header, loopback requests fall back to their own origin, and any other request has no issuer.
+- `server/ai/mcp/oauth/handler.test.ts` covers discovery metadata, the 503 answer without a configured public origin, public dynamic registration, and callback policy.
 - `server/ai/mcp/oauth/store.test.ts` covers PKCE exchange, exact binding, one-time codes, access lookup, refresh rotation/reuse, and revocation.
-- `server/ai/mcp/auth.test.ts` covers personal and OAuth bearer resolution plus the protected-resource challenge.
+- `server/ai/mcp/auth.test.ts` covers personal and OAuth bearer resolution plus the protected-resource challenge with and without a trustworthy issuer.
 - `src/__tests__/ai/mcpOAuthAuthorizationHandler.test.ts` covers signed-in consent, capability selection, exact callback redirects, denial, and privilege floors.
 - `src/__tests__/ai/mcpConnectorsHandler.test.ts` covers connection listing, personal-token creation, step-up, revoke, and privilege floors.
 - `server/ai/mcp/e2e.test.ts`, `transports/http.test.ts`, and `publishTool.test.ts` cover the real MCP request flow and publish path.

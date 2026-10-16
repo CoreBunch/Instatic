@@ -37,7 +37,7 @@ import {
 } from '@core/page-tree'
 import type { ImportFragment } from '@core/htmlImport'
 import { normalizeFrameworkColorSlug } from '@core/framework'
-import { normalizeFontTokenVariable } from '@core/fonts'
+import { isUntouchedFontRoleToken, normalizeFontTokenVariable, type FontToken } from '@core/fonts'
 import { applyCrossSheetClassResolutions, normalizeBindableClassRules } from './classCascades'
 
 // ---------------------------------------------------------------------------
@@ -185,6 +185,8 @@ function detectRuleConflicts(
  * A colour token conflicts when its `--<slug>` (normalised) already exists in
  * `site.settings.framework.colors.tokens`; a font token conflicts when its
  * `--font-*` variable (normalised) already exists in `site.settings.fonts.tokens`.
+ * Conflicts default to auto-rename, except a font conflict against an untouched
+ * seeded role token (`isUntouchedFontRoleToken`), which defaults to overwrite.
  * Imported tokens are deduped per kind upstream, so only site-vs-import
  * collisions are possible here (no intra-batch case).
  */
@@ -215,19 +217,31 @@ function detectTokenConflicts(
   }
 
   // ── Font tokens — keyed by normalised variable ────────────────────────────
-  const existingFontIds = new Map<string, string>()
+  const existingFonts = new Map<string, FontToken>()
   for (const token of site.settings.fonts?.tokens ?? []) {
-    existingFontIds.set(normalizeFontTokenVariable(token.variable), token.id)
+    existingFonts.set(normalizeFontTokenVariable(token.variable), token)
   }
-  const claimedFonts = new Set(existingFontIds.keys())
+  const claimedFonts = new Set(existingFonts.keys())
   for (const token of fontTokens) {
-    const existingId = existingFontIds.get(normalizeFontTokenVariable(token.variable))
-    if (!existingId) continue
+    const existing = existingFonts.get(normalizeFontTokenVariable(token.variable))
+    if (!existing) continue
+    // A role token still exactly as a new site seeded it (`font-body`, …) is a
+    // placeholder, not a user choice: the import fills it in place so
+    // `var(--font-body)` keeps its name. An edited role token keeps the rename.
+    if (isUntouchedFontRoleToken(existing)) {
+      conflicts.push({
+        kind: 'font',
+        desiredVariable: token.variable,
+        existingTokenId: existing.id,
+        defaultResolution: { action: 'overwrite' },
+      })
+      continue
+    }
     const resolved = nextAvailableVariable(token.variable, claimedFonts, normalizeFontTokenVariable)
     conflicts.push({
       kind: 'font',
       desiredVariable: token.variable,
-      existingTokenId: existingId,
+      existingTokenId: existing.id,
       defaultResolution: { action: 'auto-rename', resolvedVariable: resolved },
     })
     claimedFonts.add(normalizeFontTokenVariable(resolved))

@@ -65,8 +65,7 @@ import {
   acceptUploadedMedia,
   readUploadForm,
 } from './mediaUpload'
-import { removeVariantFiles } from './mediaVariants'
-import { dispatchDelete } from './mediaUploadDispatch'
+import { removeMediaAssetFiles } from './mediaVariants'
 import { materializeAssetListForClient } from '../../publish/mediaPresentation'
 
 const MEDIA_LIBRARY_MIMES = Object.keys(EXTENSION_FOR_MIME) as Array<
@@ -279,17 +278,10 @@ async function handleDeleteMedia(
   if (!existing) return notFound()
   if (!existing.deletedAt) return badRequest('Asset must be soft-deleted before purge')
 
-  // Snapshot the variant list BEFORE the row delete so we know which
-  // extra bytes to sweep from each variant's adapter alongside the original.
-  const variants = existing.variants
-  const adapterId = existing.storageAdapterId
   const deleted = await deleteMediaAsset(db, params.id)
   if (!deleted) return notFound()
 
-  await dispatchDelete(adapterId, deleted.storagePath).catch((err) => {
-    console.error('[media] hard-delete original byte sweep failed (orphaned bytes):', err)
-  })
-  await removeVariantFiles(variants)
+  await removeMediaAssetFiles(deleted)
   return jsonResponse({ ok: true })
 }
 

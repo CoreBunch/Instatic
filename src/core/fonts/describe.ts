@@ -1,7 +1,7 @@
 /**
  * Token digest for the site's font library — the fonts counterpart to
  * `describeFrameworkTokens`. Each font token is reported with the CSS variable
- * the stylesheet emits (`--font-primary`), the `var(--…)` reference to drop
+ * the stylesheet emits (`--font-heading`), the `var(--…)` reference to drop
  * into a style value, and the resolved family + fallback so the agent can pick
  * a token by appearance.
  */
@@ -10,9 +10,9 @@ import type { SiteFontsSettings } from './schemas'
 import { fontTokenCssVariable, fontTokenValueExpr, resolveFontTokenStack, sortFontTokens } from './tokens'
 
 interface FontTokenDescriptor {
-  /** Display name, e.g. "Primary". */
+  /** Display name, e.g. "Heading". */
   name: string
-  /** CSS custom property incl. leading dashes, e.g. "--font-primary". */
+  /** CSS custom property incl. leading dashes, e.g. "--font-heading". */
   cssVar: string
   /** `var(--…)` expression ready to drop into a `font-family` value. */
   ref: string

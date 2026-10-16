@@ -190,6 +190,10 @@
     height: 28px;
 }
 
+.publishActionStatus[data-has-detail='true'] {
+    cursor: help;
+}
+
 .publishActionStatus {
     display: inline-flex;
     align-items: center;

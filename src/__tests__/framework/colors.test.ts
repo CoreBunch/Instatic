@@ -35,6 +35,26 @@ function makeColorSettings(overrides: Partial<FrameworkColorSettings> = {}): Fra
   }
 }
 
+/** The selector list of every rule in `css` whose body declares `declaration`. */
+function selectorsDeclaring(css: string, declaration: string): string {
+  const selectors: string[] = []
+  for (const match of css.matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
+    if (match[2].includes(declaration)) selectors.push(match[1].trim())
+  }
+  if (selectors.length === 0) throw new Error(`No rule declares ${declaration}`)
+  return selectors.join(',\n')
+}
+
+function parseDocument(html: string): Document {
+  return new DOMParser().parseFromString(`<!DOCTYPE html>${html}`, 'text/html')
+}
+
+function element(doc: Document, selector: string): Element {
+  const found = doc.querySelector(selector)
+  if (!found) throw new Error(`No element matches ${selector}`)
+  return found
+}
+
 describe('framework color generation', () => {
   it('normalizes color slugs to Core Framework-compatible names', () => {
     expect(normalizeFrameworkColorSlug(' Primary Color ')).toBe('primary-color')
@@ -149,17 +169,48 @@ describe('framework color generation', () => {
     expect(sets.light.some((variable) => variable.name === '--fancy-d-1')).toBe(false)
   })
 
-  it('emits theme scopes with theme-default and theme-alt class names', () => {
+  it('emits theme scopes keyed on the theme-alt root class', () => {
     const css = generateFrameworkRootCss({ colors: makeColorSettings() })
     expect(css).toContain(':root.theme-alt')
-    expect(css).toContain(':root.theme-default .theme-inverted')
+    expect(css).toContain(':root:not(.theme-alt) .theme-inverted')
     expect(css).toContain(':root.theme-alt .theme-inverted .theme-always-alt')
+    expect(css).not.toContain(':root.theme-default')
     expect(css).not.toContain('theme-dark')
     expect(css).not.toContain('theme-light')
     expect(css).not.toContain('color-scheme: dark')
     expect(css).not.toContain('cf-theme')
     expect(css).toContain('--primary: hsla(238, 100%, 62%, 1);')
     expect(css).toContain('--primary: hsla(238, 100%, 42%, 1);')
+  })
+
+  // The theme scopes must resolve against a document whose `<html>` carries no
+  // theme class, which is what every published page and every canvas frame is.
+  // They used to hang the default branch off `:root.theme-default`, a class
+  // nothing ever set, so `theme-inverted` sections never switched.
+  describe('theme scopes against a real document', () => {
+    const css = generateFrameworkRootCss({ colors: makeColorSettings() })
+    const altScope = selectorsDeclaring(css, '--primary: hsla(238, 100%, 42%, 1);')
+    const defaultScope = selectorsDeclaring(css, '--primary: hsla(238, 100%, 62%, 1);')
+    const body =
+      '<section class="theme-inverted"><div class="theme-always-default"></div></section>' +
+      '<p class="plain"></p><aside class="theme-always-alt"></aside>'
+
+    it('switches theme-inverted and theme-always-alt to alt values when <html> has no theme class', () => {
+      const doc = parseDocument(`<html lang="en"><body>${body}</body></html>`)
+      expect(element(doc, '.theme-inverted').matches(altScope)).toBe(true)
+      expect(element(doc, '.theme-always-alt').matches(altScope)).toBe(true)
+      expect(element(doc, '.theme-inverted .theme-always-default').matches(defaultScope)).toBe(true)
+      expect(doc.documentElement.matches(altScope)).toBe(false)
+      expect(element(doc, '.plain').matches(altScope)).toBe(false)
+    })
+
+    it('flips the page to alt values and inverted sections back to default under theme-alt', () => {
+      const doc = parseDocument(`<html lang="en" class="theme-alt"><body>${body}</body></html>`)
+      expect(doc.documentElement.matches(altScope)).toBe(true)
+      expect(element(doc, '.theme-inverted').matches(defaultScope)).toBe(true)
+      expect(element(doc, '.theme-inverted').matches(altScope)).toBe(false)
+      expect(element(doc, '.theme-always-default').matches(defaultScope)).toBe(true)
+    })
   })
 
   it('generates locked utility classes with stable ids and variant names', () => {
