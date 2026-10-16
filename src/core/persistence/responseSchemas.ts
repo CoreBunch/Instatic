@@ -140,6 +140,23 @@ export const CmsMediaAssetEnvelopeSchema = Type.Object({
   asset: CmsMediaAssetSchema,
 })
 
+/**
+ * Something that depends on a media asset. `label` is already resolved for
+ * display — a person's name for an avatar — because the caller renders it
+ * into a confirmation and has no way to look an id up.
+ */
+export const CmsMediaUsageRefSchema = Type.Object({
+  assetId: Type.String(),
+  refKind: Type.String(),
+  refId: Type.String(),
+  label: Type.String(),
+})
+export type CmsMediaUsageRef = Static<typeof CmsMediaUsageRefSchema>
+
+export const CmsMediaUsageEnvelopeSchema = Type.Object({
+  usage: Type.Array(CmsMediaUsageRefSchema),
+})
+
 const CmsMediaFolderSchema = Type.Object({
   id: Type.String(),
   parentId: Type.Union([Type.String(), Type.Null()]),
