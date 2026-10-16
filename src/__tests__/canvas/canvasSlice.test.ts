@@ -6,7 +6,7 @@
  *   - setPan clamps to [±MAX_PAN]
  *   - zoomTo clamps both zoom and the resulting pan values
  *   - zoomIn / zoomOut step through ZOOM_STEPS
- *   - resetView restores defaults
+ *   - zoomTo restores 100% around the requested viewport origin
  *
  * Security note (Contribution #435, Security Auditor review message #1270):
  * Clamping MUST happen inside the setter, not at call sites. The agent tool
@@ -22,7 +22,6 @@ import { useEditorStore } from '@site/store/store'
 import {
   MIN_ZOOM,
   MAX_ZOOM,
-  INITIAL_ZOOM,
   RESET_ZOOM,
   MAX_PAN,
   clampZoom,
@@ -320,35 +319,5 @@ describe('zoomIn / zoomOut', () => {
     // One more zoomIn should stay at MAX_ZOOM
     useEditorStore.getState().zoomIn()
     expect(canvas().zoom).toBe(MAX_ZOOM)
-  })
-})
-
-// ---------------------------------------------------------------------------
-// resetView
-// ---------------------------------------------------------------------------
-
-describe('resetView', () => {
-  it('resets zoom to RESET_ZOOM (100%), not the 50% initial design zoom', () => {
-    useEditorStore.setState({ zoom: 2.5 })
-    useEditorStore.getState().resetView()
-    expect(canvas().zoom).toBe(RESET_ZOOM)
-    expect(INITIAL_ZOOM).toBe(0.5)
-  })
-
-  it('resets pan to (0, 0)', () => {
-    useEditorStore.setState({ panX: 3000, panY: -1500 })
-    useEditorStore.getState().resetView()
-    const { panX, panY } = canvas()
-    expect(panX).toBe(0)
-    expect(panY).toBe(0)
-  })
-
-  it('resets from extreme (clamped) values', () => {
-    useEditorStore.setState({ zoom: MAX_ZOOM, panX: MAX_PAN, panY: -MAX_PAN })
-    useEditorStore.getState().resetView()
-    const { zoom, panX, panY } = canvas()
-    expect(zoom).toBe(RESET_ZOOM)
-    expect(panX).toBe(0)
-    expect(panY).toBe(0)
   })
 })

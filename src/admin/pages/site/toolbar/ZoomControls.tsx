@@ -22,6 +22,7 @@
  */
 
 import { useEditorStore } from '@site/store/store'
+import { CANVAS_RESET_ZOOM_EVENT } from '@site/canvas/canvasEvents'
 import { MinusIcon } from 'pixel-art-icons/icons/minus'
 import { PlusIcon } from 'pixel-art-icons/icons/plus'
 import { Button } from '@ui/components/Button'
@@ -51,7 +52,6 @@ export function ZoomControls() {
   const isLive = useEditorStore((s) => s.canvasView === 'live')
   const zoomIn = useEditorStore((s) => s.zoomIn)
   const zoomOut = useEditorStore((s) => s.zoomOut)
-  const resetView = useEditorStore((s) => s.resetView)
 
   const handleZoomIn = () => {
     const center = getCanvasCenter()
@@ -63,6 +63,10 @@ export function ZoomControls() {
     const center = getCanvasCenter()
     if (center) zoomOut(center.x, center.y)
     else zoomOut()
+  }
+
+  const handleResetZoom = () => {
+    document.dispatchEvent(new Event(CANVAS_RESET_ZOOM_EVENT))
   }
 
   // The live frame renders real-size regardless of the stored design-canvas
@@ -97,7 +101,7 @@ export function ZoomControls() {
         aria-label={isLive ? LIVE_ZOOM_REASON : `Current zoom ${pct}%. Click to reset to 100%.`}
         tooltip={isLive ? LIVE_ZOOM_REASON : 'Reset to 100% (Cmd/Ctrl+0)'}
         disabled={isLive}
-        onClick={resetView}
+        onClick={handleResetZoom}
         numeric
         className={styles.zoomPct}
       >

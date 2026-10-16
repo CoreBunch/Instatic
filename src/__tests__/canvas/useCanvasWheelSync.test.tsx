@@ -3,6 +3,7 @@ import { useRef } from 'react'
 import { act, cleanup as cleanupRender, fireEvent, render, screen } from '@testing-library/react'
 import { useEditorStore } from '@site/store/store'
 import { RESET_ZOOM } from '@site/canvas/math'
+import { CANVAS_RESET_ZOOM_EVENT } from '@site/canvas/canvasEvents'
 import {
   isCanvasPointerPanActive,
   isCanvasSpacePanActive,
@@ -72,6 +73,66 @@ afterEach(() => {
 })
 
 describe('useCanvas wheel pan sync', () => {
+  it('resets zoom around the visible canvas center without jumping to the page top', () => {
+    useEditorStore.setState({ zoom: 2, panX: -800, panY: -1200 })
+    render(<TestCanvas />)
+
+    const root = screen.getByTestId('test-canvas-root')
+    const layer = screen.getByTestId('test-transform-layer')
+    Object.defineProperty(root, 'getBoundingClientRect', {
+      configurable: true,
+      value: () => ({ width: 800, height: 600, top: 0, left: 0 }),
+    })
+
+    fireEvent.keyDown(document, { metaKey: true, key: '0' })
+
+    expect(useEditorStore.getState()).toMatchObject({
+      zoom: RESET_ZOOM,
+      panX: -200,
+      panY: -450,
+    })
+    expect(layer.style.transform).toBe('translate(-200px, -450px) scale(1)')
+  })
+
+  it('resets from the live transform when the toolbar is clicked during a pending gesture commit', async () => {
+    render(<TestCanvas />)
+
+    const root = screen.getByTestId('test-canvas-root')
+    const layer = screen.getByTestId('test-transform-layer')
+    Object.defineProperty(root, 'getBoundingClientRect', {
+      configurable: true,
+      value: () => ({ width: 800, height: 600, top: 0, left: 0 }),
+    })
+
+    dispatchWheel(root, {
+      ctrlKey: true,
+      deltaY: -100,
+      clientX: 400,
+      clientY: 300,
+    })
+    await act(async () => {
+      await nextAnimationFrame()
+    })
+
+    expect(useEditorStore.getState().zoom).toBe(RESET_ZOOM)
+    expect(layer.style.transform).not.toBe('translate(0px, 0px) scale(1)')
+
+    document.dispatchEvent(new Event(CANVAS_RESET_ZOOM_EVENT))
+
+    expect(useEditorStore.getState()).toMatchObject({
+      zoom: RESET_ZOOM,
+      panX: 0,
+      panY: 0,
+    })
+    expect(layer.style.transform).toBe('translate(0px, 0px) scale(1)')
+
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 120))
+    })
+
+    expect(useEditorStore.getState().zoom).toBe(RESET_ZOOM)
+  })
+
   it('maps shift-wheel mouse scrolling to horizontal canvas pan', async () => {
     render(<TestCanvas />)
 
