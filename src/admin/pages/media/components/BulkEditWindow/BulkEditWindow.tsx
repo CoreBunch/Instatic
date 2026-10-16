@@ -210,18 +210,20 @@ export function BulkEditWindow({ workspace, open, onClose }: BulkEditWindowProps
     await runRestoreAll(assets, workspace, setBusy, setProgress)
   }
 
-  async function purgeAll() {
-    if (!canDelete || busy) return
-    setBusy(true)
-    setProgress({ done: 0, total: count })
-    await runPurgeAll(assets, workspace, setBusy, setProgress)
-  }
-
   const anyTrashed = assets.some((a) => a.deletedAt !== null)
   // Only the trashed members are purgeable — `purgeAsset` 400s on an asset
-  // that has not been soft-deleted — so the confirmation counts those, not
-  // the whole selection.
-  const trashedCount = assets.filter((a) => a.deletedAt !== null).length
+  // that has not been soft-deleted. The confirmation counts these AND the
+  // purge runs on these, so a mixed selection deletes exactly what the
+  // dialog promised and never fires a request bound to fail.
+  const purgeable = assets.filter((a) => a.deletedAt !== null)
+  const trashedCount = purgeable.length
+
+  async function purgeAll() {
+    if (!canDelete || busy || trashedCount === 0) return
+    setBusy(true)
+    setProgress({ done: 0, total: trashedCount })
+    await runPurgeAll(purgeable, workspace, setBusy, setProgress)
+  }
   const anyActive = assets.some((a) => a.deletedAt === null)
 
   return (
