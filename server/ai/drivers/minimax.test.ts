@@ -96,7 +96,11 @@ describe('minimax driver', () => {
         expect(calledUrl).toBe(`${baseUrl}${anthropic ? '/v1/messages' : '/chat/completions'}`)
         expect(body.model).toBe(modelId)
         expect(body.stream).toBe(true)
-        expect(body.thinking).toBeUndefined()
+        if (modelId === 'MiniMax-M3') {
+          expect(body.thinking).toEqual({ type: anthropic ? 'disabled' : 'adaptive' })
+        } else {
+          expect(body.thinking).toBeUndefined()
+        }
         expect(body.reasoning_effort).toBeUndefined()
         expect(body.output_config).toBeUndefined()
         expect(body.service_tier).toBeUndefined()

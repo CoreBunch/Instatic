@@ -103,9 +103,15 @@ function minimaxOpenAiAdapter(baseUrl: string, apiKey: string) {
     apiKey,
     label: 'MiniMax',
     preserveReasoning: true,
-    requestBodyExtras() {
-      // Use the API defaults: adaptive thinking, and max effort for Flash.
-      return { reasoning_split: true }
+    requestBodyExtras(req) {
+      // MiniMax-M3 defaults to adaptive thinking on Chat Completions. Keep
+      // that selection explicit so the protocol supports the model's
+      // disabled-thinking alternative on the Anthropic route below without
+      // changing Flash's always-on behavior.
+      return {
+        reasoning_split: true,
+        ...(req.modelId === 'MiniMax-M3' ? { thinking: { type: 'adaptive' } } : {}),
+      }
     },
   })
 }
@@ -114,6 +120,11 @@ function minimaxAnthropicAdapter(baseUrl: string, apiKey: string) {
   return makeAnthropicMessagesAdapter({
     label: 'MiniMax',
     preserveReasoning: true,
+    requestBodyExtras(req) {
+      // MiniMax-M3 defaults to thinking disabled on Messages. The OpenAI
+      // route uses the documented adaptive default; Flash remains always-on.
+      return req.modelId === 'MiniMax-M3' ? { thinking: { type: 'disabled' } } : {}
+    },
     endpoint: `${normalizeAnthropicBaseUrl(baseUrl)}/v1/messages`,
     buildHeaders() {
       return {

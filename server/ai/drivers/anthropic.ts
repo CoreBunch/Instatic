@@ -226,9 +226,10 @@ export function makeAnthropicMessagesAdapter(opts: {
   label: string
   endpoint: string
   buildHeaders: (req: AiStreamRequest) => Record<string, string>
+  requestBodyExtras?: (req: AiStreamRequest) => Record<string, unknown>
   preserveReasoning?: boolean
 }): ProviderAdapter<AnthropicMessage> {
-  const { label, endpoint, buildHeaders, preserveReasoning } = opts
+  const { label, endpoint, buildHeaders, requestBodyExtras, preserveReasoning } = opts
   return {
     label,
     endpoint,
@@ -255,6 +256,8 @@ export function makeAnthropicMessagesAdapter(opts: {
           input_schema: t.inputSchema,
         }))
       }
+      const extra = requestBodyExtras?.(req)
+      if (extra) Object.assign(body, extra)
       return body
     },
 
