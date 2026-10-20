@@ -147,6 +147,21 @@ describe('minimax driver', () => {
     })
   }
 
+  it('sends the first discovered model for a newly selected credential', async () => {
+    let sentModel = ''
+    globalThis.fetch = (async (input, init) => {
+      if (String(input).endsWith('/models')) {
+        return Response.json({ data: [{ id: 'MiniMax-M3' }, { id: 'MiniMax-M3.1-Flash' }] })
+      }
+      sentModel = JSON.parse(String(init?.body)).model
+      return sse([{ choices: [{ delta: { content: 'ok' }, finish_reason: 'stop' }] }])
+    }) as typeof fetch
+    const models = await minimaxDriver.listModels(creds(endpoints[0]!))
+    const preferred = models.find((model) => model.tier === 'smartest') ?? models[0]!
+    await consume(request(endpoints[0]!, preferred.id))
+    expect(sentModel).toBe('MiniMax-M3.1-Flash')
+  })
+
   it('does not invent availability when Flash is absent or the endpoint fails', async () => {
     globalThis.fetch = (async () => Response.json({ data: [{ id: 'MiniMax-M3' }, { id: 'MiniMax-M2.7' }] })) as typeof fetch
     expect((await minimaxDriver.listModels(creds(endpoints[0]!))).map((model) => model.id)).toEqual(['MiniMax-M3'])
