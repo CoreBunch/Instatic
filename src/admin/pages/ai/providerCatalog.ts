@@ -32,7 +32,7 @@ export const PROVIDER_SPECS: ProviderSpec[] = [
   {
     id: 'minimax',
     label: 'MiniMax',
-    shortLabel: 'M3 / M2.7',
+    shortLabel: 'M3.1 Flash / M3',
     description: 'MiniMax text models with the documented API endpoint.',
     authMode: 'baseUrl',
     endpointLabel: 'Global / China endpoints',

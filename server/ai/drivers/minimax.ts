@@ -28,6 +28,26 @@ const SUPPORTED_AUTH_MODES: AiAuthMode[] = ['baseUrl']
 
 const MINIMAX_MODELS: AiProviderModel[] = [
   {
+    id: 'MiniMax-M3.1-Flash',
+    label: 'MiniMax M3.1 Flash',
+    capabilities: {
+      toolCalling: true,
+      visionInput: true,
+      videoInput: true,
+      toolResultImages: false,
+      promptCache: false,
+      streaming: true,
+    },
+    pricing: {
+      inputPerMTok: 0.15,
+      outputPerMTok: 0.6,
+      cacheReadPerMTok: 0.015,
+      cacheWritePerMTok: null,
+    },
+    contextWindow: 1_000_000,
+    catalogueSource: 'live',
+  },
+  {
     id: 'MiniMax-M3',
     label: 'MiniMax M3',
     capabilities: {
@@ -39,32 +59,12 @@ const MINIMAX_MODELS: AiProviderModel[] = [
       streaming: true,
     },
     pricing: {
-      inputPerMTok: 0.6,
-      outputPerMTok: 2.4,
-      cacheReadPerMTok: 0.12,
-      cacheWritePerMTok: null,
-    },
-    contextWindow: 1_000_000,
-    catalogueSource: 'live',
-  },
-  {
-    id: 'MiniMax-M2.7',
-    label: 'MiniMax M2.7',
-    capabilities: {
-      toolCalling: true,
-      visionInput: false,
-      videoInput: false,
-      toolResultImages: false,
-      promptCache: false,
-      streaming: true,
-    },
-    pricing: {
       inputPerMTok: 0.3,
       outputPerMTok: 1.2,
       cacheReadPerMTok: 0.06,
-      cacheWritePerMTok: 0.375,
+      cacheWritePerMTok: null,
     },
-    contextWindow: 204_800,
+    contextWindow: 1_000_000,
     catalogueSource: 'live',
   },
 ]
@@ -79,7 +79,7 @@ const DEFAULT_CAPABILITIES: AiProviderCapabilities = {
 }
 
 function staticCapabilities(modelId: string): AiProviderCapabilities {
-  if (modelId === 'MiniMax-M3') {
+  if (modelId === 'MiniMax-M3.1-Flash' || modelId === 'MiniMax-M3') {
     return { ...DEFAULT_CAPABILITIES, visionInput: true, videoInput: true }
   }
   return { ...DEFAULT_CAPABILITIES }
@@ -102,10 +102,10 @@ function minimaxOpenAiAdapter(baseUrl: string, apiKey: string) {
     baseUrl,
     apiKey,
     label: 'MiniMax',
-    requestBodyExtras(req) {
-      return req.modelId === 'MiniMax-M3'
-        ? { reasoning_split: true, thinking: { type: 'adaptive' } }
-        : { reasoning_split: true }
+    preserveReasoning: true,
+    requestBodyExtras() {
+      // Use the API defaults: adaptive thinking, and max effort for Flash.
+      return { reasoning_split: true }
     },
   })
 }
@@ -113,6 +113,7 @@ function minimaxOpenAiAdapter(baseUrl: string, apiKey: string) {
 function minimaxAnthropicAdapter(baseUrl: string, apiKey: string) {
   return makeAnthropicMessagesAdapter({
     label: 'MiniMax',
+    preserveReasoning: true,
     endpoint: `${normalizeAnthropicBaseUrl(baseUrl)}/v1/messages`,
     buildHeaders() {
       return {

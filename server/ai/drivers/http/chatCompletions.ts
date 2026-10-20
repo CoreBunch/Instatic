@@ -45,7 +45,7 @@ export type ChatToolCall = {
 export type ChatMessage =
   | { role: 'system'; content: string }
   | { role: 'user'; content: string | ChatContentPart[] }
-  | { role: 'assistant'; content: string; tool_calls?: ChatToolCall[] }
+  | { role: 'assistant'; content: string; tool_calls?: ChatToolCall[]; reasoning_content?: string }
   | { role: 'tool'; tool_call_id: string; content: string }
 
 // Each canonical `AiMessage` maps to one or more chat messages (an assistant
@@ -193,6 +193,7 @@ const ChatChunkSchema = Type.Object(
               Type.Object(
                 {
                   content: nullable(Type.String()),
+                  reasoning_content: nullable(Type.String()),
                   tool_calls: nullable(Type.Array(ChatToolCallDeltaSchema)),
                 },
                 { additionalProperties: true },
@@ -225,7 +226,14 @@ interface MutableToolCall {
 }
 
 export class ChatCompletionsTurnTranslator implements TurnTranslator<ChatTurn> {
+  private readonly preserveReasoning: boolean
+
+  constructor(preserveReasoning = false) {
+    this.preserveReasoning = preserveReasoning
+  }
+
   private text = ''
+  private reasoning = ''
   // Tool calls accumulate by their streamed `index`; fragments arrive across
   // chunks (id + name on the first, arguments piecemeal after).
   private readonly toolsByIndex = new Map<number, MutableToolCall>()
@@ -255,6 +263,9 @@ export class ChatCompletionsTurnTranslator implements TurnTranslator<ChatTurn> {
     const events: AiStreamEvent[] = []
     const delta = choice.delta
     if (delta) {
+      if (this.preserveReasoning && typeof delta.reasoning_content === 'string') {
+        this.reasoning += delta.reasoning_content
+      }
       if (typeof delta.content === 'string' && delta.content.length > 0) {
         this.text += delta.content
         events.push({ type: 'text', text: delta.content })
@@ -313,10 +324,12 @@ export class ChatCompletionsTurnTranslator implements TurnTranslator<ChatTurn> {
         ? { role: 'assistant', content: this.text, tool_calls: chatToolCalls }
         : { role: 'assistant', content: this.text }
 
+    if (this.reasoning) assistant.reasoning_content = this.reasoning
+
     return {
       stop: toolCalls.length === 0,
       toolCalls,
-      assistantMessage: this.text || chatToolCalls.length > 0 ? [assistant] : null,
+      assistantMessage: this.text || this.reasoning || chatToolCalls.length > 0 ? [assistant] : null,
       usage: this.usage,
     }
   }
@@ -331,8 +344,9 @@ export function makeChatCompletionsAdapter(opts: {
   apiKey: string | null
   label: string
   requestBodyExtras?: (req: AiStreamRequest) => Record<string, unknown>
+  preserveReasoning?: boolean
 }): ProviderAdapter<ChatTurn> {
-  const { baseUrl, apiKey, label, requestBodyExtras } = opts
+  const { baseUrl, apiKey, label, requestBodyExtras, preserveReasoning } = opts
   return {
     label,
     endpoint: `${normalizeOpenAiBaseUrl(baseUrl)}/v1/chat/completions`,
@@ -369,7 +383,7 @@ export function makeChatCompletionsAdapter(opts: {
       }))
     },
     createTurnTranslator() {
-      return new ChatCompletionsTurnTranslator()
+      return new ChatCompletionsTurnTranslator(preserveReasoning)
     },
   }
 }

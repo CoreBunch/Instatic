@@ -60,7 +60,7 @@ describe('ProvidersTab', () => {
     render(<ProvidersTab onNavigateToDefaults={() => {}} />)
     await waitFor(() => expect(screen.getByRole('heading', { name: 'Connect Anthropic' })).toBeDefined())
 
-    fireEvent.click(screen.getByRole('button', { name: 'MiniMax M3 / M2.7' }))
+    fireEvent.click(screen.getByRole('button', { name: 'MiniMax M3.1 Flash / M3' }))
 
     expect(screen.getByRole('heading', { name: 'Connect MiniMax' })).toBeDefined()
     const endpoint = screen.getByRole('combobox', { name: 'Base URL' }) as HTMLInputElement

@@ -201,7 +201,13 @@ interface AnthropicToolResultBlock {
   content: string | (AnthropicTextBlock | AnthropicImageBlock)[]
   is_error?: boolean
 }
+interface AnthropicThinkingBlock {
+  type: 'thinking'
+  thinking: string
+  signature?: string
+}
 type AnthropicContentBlock =
+  | AnthropicThinkingBlock
   | AnthropicTextBlock
   | AnthropicImageBlock
   | AnthropicToolUseBlock
@@ -220,8 +226,9 @@ export function makeAnthropicMessagesAdapter(opts: {
   label: string
   endpoint: string
   buildHeaders: (req: AiStreamRequest) => Record<string, string>
+  preserveReasoning?: boolean
 }): ProviderAdapter<AnthropicMessage> {
-  const { label, endpoint, buildHeaders } = opts
+  const { label, endpoint, buildHeaders, preserveReasoning } = opts
   return {
     label,
     endpoint,
@@ -256,7 +263,7 @@ export function makeAnthropicMessagesAdapter(opts: {
     },
 
     createTurnTranslator() {
-      return new AnthropicTurnTranslator(label)
+      return new AnthropicTurnTranslator(label, preserveReasoning)
     },
   }
 }
@@ -445,6 +452,8 @@ const AnthropicSseEventSchema = Type.Object(
           id: Type.Optional(Type.String()),
           name: Type.Optional(Type.String()),
           input: Type.Optional(Type.Unknown()),
+          thinking: Type.Optional(Type.String()),
+          signature: Type.Optional(Type.String()),
         },
         { additionalProperties: true },
       ),
@@ -454,6 +463,8 @@ const AnthropicSseEventSchema = Type.Object(
         {
           type: Type.Optional(Type.String()),
           text: Type.Optional(Type.String()),
+          thinking: Type.Optional(Type.String()),
+          signature: Type.Optional(Type.String()),
           partial_json: Type.Optional(Type.String()),
           stop_reason: Type.Optional(Type.Union([Type.String(), Type.Null()])),
         },
@@ -490,15 +501,18 @@ interface MutableUsage {
 
 export class AnthropicTurnTranslator implements TurnTranslator<AnthropicMessage> {
   private readonly label: string
+  private readonly preserveReasoning: boolean
 
-  constructor(label = 'Anthropic') {
+  constructor(label = 'Anthropic', preserveReasoning = false) {
     this.label = label
+    this.preserveReasoning = preserveReasoning
   }
 
   // Block order as it streams, so the assistant turn rebuilds text/tool_use
   // blocks in the sequence the model emitted them.
   private readonly order: number[] = []
   private readonly textByIndex = new Map<number, string>()
+  private readonly thinkingByIndex = new Map<number, AnthropicThinkingBlock>()
   private readonly toolByIndex = new Map<number, { id: string; name: string; json: string }>()
   private readonly toolCalls: TurnToolCall[] = []
   private usage: MutableUsage = {}
@@ -529,6 +543,13 @@ export class AnthropicTurnTranslator implements TurnTranslator<AnthropicMessage>
             name: typeof block.name === 'string' ? block.name : 'tool',
             json: '',
           })
+        } else if (this.preserveReasoning && block?.type === 'thinking') {
+          this.order.push(index)
+          this.thinkingByIndex.set(index, {
+            type: 'thinking',
+            thinking: block.thinking ?? '',
+            ...(block.signature !== undefined ? { signature: block.signature } : {}),
+          })
         } else if (block?.type === 'text') {
           this.order.push(index)
           this.textByIndex.set(index, '')
@@ -539,6 +560,13 @@ export class AnthropicTurnTranslator implements TurnTranslator<AnthropicMessage>
       case 'content_block_delta': {
         const index = event.index ?? 0
         const delta = event.delta
+        const thinking = this.thinkingByIndex.get(index)
+        if (thinking && delta?.type === 'thinking_delta' && typeof delta.thinking === 'string') {
+          thinking.thinking += delta.thinking
+        }
+        if (thinking && delta?.type === 'signature_delta' && typeof delta.signature === 'string') {
+          thinking.signature = (thinking.signature ?? '') + delta.signature
+        }
         if (delta?.type === 'text_delta' && typeof delta.text === 'string') {
           this.textByIndex.set(index, (this.textByIndex.get(index) ?? '') + delta.text)
           return [{ type: 'text', text: delta.text }]
@@ -590,6 +618,11 @@ export class AnthropicTurnTranslator implements TurnTranslator<AnthropicMessage>
   finish(): TurnResult<AnthropicMessage> {
     const content: AnthropicContentBlock[] = []
     for (const index of this.order) {
+      const thinking = this.thinkingByIndex.get(index)
+      if (thinking) {
+        content.push(thinking)
+        continue
+      }
       const text = this.textByIndex.get(index)
       if (text !== undefined) {
         if (text) content.push({ type: 'text', text })
