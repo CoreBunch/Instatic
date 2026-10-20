@@ -19,6 +19,11 @@ type QueryHandler = (sql: string, params: unknown[]) => DbResult | undefined
 function makeTemplateRouteFakeDb(handlers: QueryHandler[]) {
   return createFakeDb(async (rawSql, params): Promise<DbResult> => {
     const sql = rawSql.replace(/\s+/g, ' ').trim().toLowerCase()
+    // Entry routes read the table schema to resolve media cells; these
+    // fixtures have no table rows, so no media fields are resolved.
+    if (sql.startsWith('select logical_id, name, slug, kind') && sql.includes('from data_tables')) {
+      return { rows: [], rowCount: 0 } as unknown as DbResult
+    }
     for (const handler of handlers) {
       const result = handler(sql, params)
       if (result) return result
