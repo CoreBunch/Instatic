@@ -30,6 +30,7 @@ import {
 } from '@admin/pages/plugins/utils/pluginIssuesStore'
 import { CMS_PLUGINS_CHANGED_EVENT } from '@admin/pages/plugins/utils/pluginEvents'
 import type { AdminWorkspace } from '@admin/workspace'
+import { UpdatesBadge } from '@admin/updates/UpdatesBadge'
 import toolbarStyles from '@site/toolbar/Toolbar.module.css'
 
 /**
@@ -195,6 +196,16 @@ export function AdminSectionNavigation({
           onNavigateStart={onWorkspaceNavigateStart}
         />
       )}
+      {canAccess('updates') && (
+        <NavItem
+          to="/admin/updates"
+          icon={<PackageSolidIcon size={NAV_ICON_SIZE} aria-hidden="true" />}
+          label="Updates"
+          active={section === 'updates'}
+          onNavigateStart={onWorkspaceNavigateStart}
+          status={<UpdatesBadge />}
+        />
+      )}
       {canAccessPlugins && pluginPages.map((page) => (
         <AdminRouteLink
           key={`${page.pluginId}:${page.id}`}
@@ -220,18 +231,21 @@ function NavItem({
   label,
   active,
   onNavigateStart,
+  status,
 }: {
   to: string
   icon: ReactNode
   label: string
   active: boolean
   onNavigateStart?: () => unknown
+  status?: ReactNode
 }) {
   if (active) {
     return (
       <span className={toolbarStyles.activeSection}>
         {icon}
         <span>{label}</span>
+        {status}
       </span>
     )
   }
@@ -239,6 +253,7 @@ function NavItem({
     <AdminRouteLink to={to} onNavigateStart={onNavigateStart}>
       {icon}
       <span>{label}</span>
+      {status}
     </AdminRouteLink>
   )
 }
