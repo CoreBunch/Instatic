@@ -385,7 +385,7 @@ On success the same step switches to its **complete** state — a success mark, 
 
 Reference resolution strips any query string or fragment before looking a path up in the FileMap:
 `assets/site.css?v=8f3a1c` and `assets/site.css` address the same file. This applies to
-`<link rel="stylesheet">`, `<script src>`, CSS `@import`, CSS `url()`, and node `src` / `href` / `srcset` —
+`<link rel="stylesheet">`, `<script src>`, CSS `@import`, CSS `url()`, and node `src` / `href` / `srcset` / `videoUrl` —
 static site generators commonly emit a content hash on all of them.
 
 The original URL is preserved for the in-place CSS rewrite; only the lookup is affected.

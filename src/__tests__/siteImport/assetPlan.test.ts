@@ -68,6 +68,21 @@ describe('buildAssetPlan — img src normalisation', () => {
   })
 })
 
+describe('buildAssetPlan — video normalisation', () => {
+  it('normalises a <video><source> URL to a FileMap key and records the asset', () => {
+    const fileMap = makeFileMap({
+      'pages/index.html': { bytes: txt('<html><body><video autoplay muted loop><source src="../videos/bg.mp4"></video></body></html>') },
+      'videos/bg.mp4': { bytes: txt('mp4'), mimeType: 'video/mp4' },
+    })
+    const { pagePlan } = makeHtmlPagePlan('pages/index.html', new TextDecoder().decode(fileMap.files['pages/index.html']!.bytes), fileMap)
+    const { normalizedPagePlans, assets } = buildAssetPlan([pagePlan], [], fileMap)
+
+    const videoNode = Object.values(normalizedPagePlans[0].nodeFragment.nodes).find((n) => n.moduleId === 'base.video')
+    expect(videoNode?.props['videoUrl']).toBe('videos/bg.mp4')
+    expect(assets.some((a) => a.sourcePath === 'videos/bg.mp4')).toBe(true)
+  })
+})
+
 // ---------------------------------------------------------------------------
 // HTML attribute asset normalisation
 // ---------------------------------------------------------------------------
