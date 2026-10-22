@@ -58,6 +58,7 @@ Railway is the fastest way to get Instatic live. Pick a template, hit the button
 |---|---|---|---|
 | **Railway** · *Recommended* | SQLite | A single site — blog, portfolio, small business | [Deploy →](https://railway.com/deploy/instatic-cms-sqlite?referralCode=Zm9bVJ&utm_medium=integration&utm_source=template&utm_campaign=generic) |
 | **Railway** | Postgres | Multiple authors, managed backups, room to grow | [Deploy →](https://railway.com/deploy/instatic-cms-postgres?referralCode=Zm9bVJ&utm_medium=integration&utm_source=template&utm_campaign=generic) |
+| **RepoCloud** | SQLite or Postgres | Dedicated VPS with one-click setup | [Deploy →](https://repocloud.io/details/Instatic/) |
 | **Render** | SQLite or Postgres | Teams that prefer Render services, disks, and managed Postgres | [Guide →](docs/deployment/render.md) |
 | **Docker / VPS** | SQLite or Postgres | Bring-your-own server, Caddy TLS, custom backup policy | [Guide →](docs/deployment/vps.md) |
 
