@@ -87,10 +87,15 @@ describe('cssToStyleRules — selector classification', () => {
     expect(rules[0].selector).toContain('data-state')
   })
 
-  it('.foo.bar binds the rightmost compound class', () => {
+  it('.foo.bar → ambient (multi-class compound has no unambiguous binding)', () => {
+    // Binding this to `bar` was actively harmful: assigning the rule to a node
+    // writes class="bar", which alone never matches `.foo.bar`, and the
+    // publisher's tree-shaker then dropped the rule because no node could ever
+    // carry its id — silently deleting runtime state rules such as
+    // `.drawer.is-open` from published CSS.
     const { rules } = cssToStyleRules('.foo.bar { color: red }')
-    expect(rules[0].kind).toBe('class')
-    expect(rules[0].name).toBe('bar')
+    expect(rules[0].kind).toBe('ambient')
+    expect(rules[0].selector).toBe('.foo.bar')
   })
 
   it('decodes and binds escaped Tailwind variant class names', () => {
