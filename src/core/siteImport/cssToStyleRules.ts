@@ -31,10 +31,12 @@
  *
  * ## duplicate class names
  *
- * When the same `.class-name` selector appears more than once in the file,
- * the later rule wins (later-in-source = higher cascade priority). One
- * `duplicate-class` warning is emitted per duplicated class. The rule's
- * order is kept as the FIRST occurrence.
+ * When the same bare `.class-name` selector appears more than once in the
+ * file, every occurrence stays its own `class` rule at its own source
+ * position, so a later one still cascades after whatever sits between them,
+ * as in a browser. One `duplicate-class` warning per repeat. Later,
+ * `normalizeBindableClassRules` (classCascades) keeps the first occurrence
+ * bindable and demotes the rest to ambient fragments, as for cross-file repeats.
  */
 
 import type { StyleRuleKind, Condition, ConditionDef } from '@core/page-tree'
@@ -49,7 +51,6 @@ import { processKeyframesRule } from './keyframesToStyleRule'
 import { encodeSubstitutionDeclarations } from '@core/css-substitution'
 import { matchMediaQueryToViewport } from './mediaQueryMatch'
 import {
-  mergeRuleBaseDeclarations,
   mergeRuleContextDeclarations,
   sparsePriorities,
 } from './declarationCascade'
@@ -311,6 +312,9 @@ function normalizeParsedBindableClassRules(rules: NewStyleRule[]): void {
 
     const primary = rules[primaryIndex]
     const canonicalSelector = classKindSelector(rule.name)
+    // A repeated bare `.name` is a cascade fragment, not a variant: keep it
+    // bindable so cross-sheet conflict detection counts it in the file's definition.
+    if (rule.selector === canonicalSelector && primary.selector === canonicalSelector) continue
     if (
       rule.selector === canonicalSelector
       && primary.selector !== canonicalSelector
@@ -540,39 +544,35 @@ function processBaseSelector(
   seenClassSelectors: Set<string>,
 ): void {
   const classified = classifySelector(selector)
-  if (classified.kind === 'class') {
+  const lastIdx = selectorToLastIndex.get(selector)
+  // An earlier @media/@supports block may have opened this class's rule with
+  // only context styles; its first base occurrence fills that rule in place.
+  const opened = lastIdx === undefined ? undefined : rules[lastIdx]
+  const fillIdx = classified.kind === 'class' && opened && Object.keys(opened.styles).length === 0
+    && Object.keys(opened.contextStyles).length > 0 ? lastIdx : undefined
+  if (classified.kind === 'class' && fillIdx === undefined) {
     if (seenClassSelectors.has(selector)) {
-      // Duplicate class: later-in-source wins. Update existing rule's styles.
+      // Duplicate class: its own rule at its own position, so it still
+      // cascades after whatever sits between the two occurrences.
       warnings.push({
         kind: 'duplicate-class',
-        message: `Class "${classified.name}" (${selector}) appears more than once; later declaration wins`,
+        message: `Class "${classified.name}" (${selector}) appears more than once; each occurrence keeps its own position`,
         selector,
       })
-      const existingIdx = selectorToLastIndex.get(selector)!
-      mergeRuleBaseDeclarations(rules[existingIdx], declarations)
-      // Collect any new asset refs from the updated declarations
-      collectAssetRefsFromDecls(declarations.styles, existingIdx, undefined, assetRefs)
-      return
     }
     seenClassSelectors.add(selector)
   }
 
-  const idx = rules.length
-  rules.push({
-    name: classified.name,
-    kind: classified.kind,
-    selector,
-    order: idx,
-    // A selector list is split into independently editable rules. Do not let
-    // those rules share the parser's declaration objects: a later duplicate
-    // of one selector merges in place, and shared bags would leak that update
-    // into every sibling from the original list.
-    styles: { ...declarations.styles },
-    ...(sparsePriorities(declarations.priorities)
-      ? { stylePriorities: { ...declarations.priorities } }
-      : {}),
-    contextStyles: {},
-  })
+  const idx = fillIdx ?? rules.length
+  if (fillIdx === undefined) {
+    const { name, kind } = classified
+    rules.push({ name, kind, selector, order: idx, styles: {}, contextStyles: {} })
+  }
+  // Copy the parser's declaration objects: a selector list splits into
+  // independently editable rules that must not share them.
+  rules[idx].styles = { ...declarations.styles }
+  const priorities = sparsePriorities(declarations.priorities)
+  if (priorities) rules[idx].stylePriorities = { ...priorities }
   selectorToLastIndex.set(selector, idx)
   collectAssetRefsFromDecls(declarations.styles, idx, undefined, assetRefs)
 }
