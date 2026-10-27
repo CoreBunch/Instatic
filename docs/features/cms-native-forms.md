@@ -54,7 +54,7 @@ CMS-native submission is a two-step public flow:
 
 The submit handler reloads the latest published site snapshot, derives the form snapshot from the published page tree, requires the target `DataTable` to be a non-system `data` table, validates fields against that table, and creates a `data_rows` record with `createDataRow`. After persistence, `server/forms/handler.ts` calls `emitContentEntryCreated` from `server/publish/contentEvents.ts` with the `system` actor, so plugins can react to successful submissions through the standard `content.entry.created` channel.
 
-Validation lives in `src/core/forms/validation.ts`. It rejects unknown fields, enforces required fields, coerces table field types, applies email/url/number/select checks, applies control min/max/pattern constraints, and caps payload size.
+Validation lives in `src/core/forms/validation.ts`. It rejects unknown fields, enforces required fields, coerces table field types, applies email/url/number/select checks, applies control min/max/pattern constraints, and caps payload size. A `select` or `multiSelect` submission may carry an option's `value` (what `base.option` nodes inserted from the table hold) or its `id`; the stored cell is always the option id.
 
 ## Security
 
