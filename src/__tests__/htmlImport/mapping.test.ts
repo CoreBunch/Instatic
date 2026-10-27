@@ -200,6 +200,38 @@ describe('base.link — plain <a> elements', () => {
     expect(node.props.target).toBe('_self')
   })
 
+  it('plain anchor with target="" → "_self", href and text kept', () => {
+    const node = single('<a href="/contact/" target="">Contact us</a>')
+    expect(node.props.target).toBe('_self')
+    expect(node.props.href).toBe('/contact/')
+    expect(node.props.text).toBe('Contact us')
+  })
+
+  it('plain anchor with a bare target attribute → "_self"', () => {
+    const node = single('<a href="/contact/" target>Contact us</a>')
+    expect(node.props.target).toBe('_self')
+  })
+
+  it('plain anchor with target="_top" → "_self"', () => {
+    const node = single('<a href="/" target="_top">Home</a>')
+    expect(node.props.target).toBe('_self')
+  })
+
+  it('plain anchor with a named target → "_blank" (a new tab when no frame has that name)', () => {
+    const node = single('<a href="/" target="content-frame">Home</a>')
+    expect(node.props.target).toBe('_blank')
+  })
+
+  it('plain anchor keeps target="_parent"', () => {
+    const node = single('<a href="/" target="_parent">Up</a>')
+    expect(node.props.target).toBe('_parent')
+  })
+
+  it('plain anchor reads target keywords case-insensitively', () => {
+    const node = single('<a href="/" target="_BLANK">Open</a>')
+    expect(node.props.target).toBe('_blank')
+  })
+
   it('plain anchor with empty href → href is empty string', () => {
     const node = single('<a href="">Empty</a>')
     expect(node.props.href).toBe('')
@@ -236,6 +268,24 @@ describe('base.button — <a class="btn"> elements', () => {
 
   it('<a class="btn"> with no target → defaults to "_self"', () => {
     const node = single('<a class="btn" href="/try">Try it</a>')
+    expect(node.props.target).toBe('_self')
+  })
+
+  it('<a class="btn"> with target="" → "_self", href and label kept', () => {
+    const node = single('<a class="btn" href="/buy" target="">Buy now</a>')
+    expect(node.props.target).toBe('_self')
+    expect(node.props.href).toBe('/buy')
+    expect(node.props.label).toBe('Buy now')
+  })
+
+  it('<a class="btn"> with target="_top" → "_self", a named target → "_blank"', () => {
+    expect(single('<a class="btn" href="/x" target="_top">X</a>').props.target).toBe('_self')
+    expect(single('<a class="btn" href="/x" target="_new">X</a>').props.target).toBe('_blank')
+  })
+
+  it('compound <a class="btn"> (→ base.link) normalises target too', () => {
+    const node = single('<a class="btn" href="/x" target=""><span>X</span></a>')
+    expect(node.moduleId).toBe('base.link')
     expect(node.props.target).toBe('_self')
   })
 
