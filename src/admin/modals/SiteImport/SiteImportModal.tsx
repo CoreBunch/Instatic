@@ -42,6 +42,7 @@ import {
   type StylesheetImportMode,
 } from '@core/siteImport'
 import { useAdminUi } from '@admin/state/adminUi'
+import { useAdminNavigate } from '@admin/lib/useAdminNavigate'
 import { useEditorStore } from '@site/store/store'
 import { DropStep } from './steps/DropStep'
 import { AnalyzeStep } from './steps/AnalyzeStep'
@@ -105,6 +106,7 @@ interface SiteImportModalProps {
 // ---------------------------------------------------------------------------
 
 export function SiteImportModal({ onCmsBundleImportComplete }: SiteImportModalProps = {}) {
+  const navigate = useAdminNavigate()
   const closeAdminSiteImportModal = useAdminUi((s) => s.closeSiteImport)
   function closeModal() {
     closeAdminSiteImportModal()
@@ -494,7 +496,10 @@ export function SiteImportModal({ onCmsBundleImportComplete }: SiteImportModalPr
   // imported (e.g. a styles-only import).
   function handleOpenSite() {
     const firstPage = result?.pages[0]
-    if (firstPage) useEditorStore.getState().openPageInCanvas(firstPage.id)
+    if (firstPage) {
+      useEditorStore.getState().openPageInCanvas(firstPage.id)
+      navigate('/admin/site?table=pages&row=' + encodeURIComponent(firstPage.id))
+    }
     closeModal()
   }
 
