@@ -27,7 +27,7 @@ import { publishPage } from '@core/publisher'
 import { buildSiteCssBundle } from '../../../publish/siteCssBundle'
 import { buildPublishedSiteModuleJsMap } from '../../../publish/moduleJsBundle'
 import { getPublishVersion } from '../../../publish/publishState'
-import { prefetchLoopData, publishedDataRowToLoopItem } from '../../../publish/loopPrefetch'
+import { prefetchLoopData, publishedDataRowToEntryItem } from '../../../publish/loopPrefetch'
 import { prefetchMediaAssets } from '../../../publish/mediaPrefetch'
 import { registry } from '@core/module-engine'
 import { getLatestPublishedSiteSnapshot } from '../../../repositories/publish'
@@ -114,7 +114,7 @@ export async function handleRowPreview(
   const publicPath = buildEntryPublicPath(table.routeBase, draftPublishedRow.slug)
   const syntheticUrl = new URL(`http://localhost${publicPath}`)
   const templateContext = {
-    entryStack: [publishedDataRowToLoopItem(draftPublishedRow)],
+    entryStack: [await publishedDataRowToEntryItem(db, draftPublishedRow, table.fields)],
     route: buildRouteFrame(syntheticUrl.toString()),
   }
   const loopData = await prefetchLoopData(merged, snapshot.site, db, undefined, {
