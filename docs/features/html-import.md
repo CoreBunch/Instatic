@@ -100,7 +100,6 @@ Callers splice the fragment into the page tree via `insertImportedNodes(parentId
 | `h1`–`h6`, `p`, `span`, `small`, `strong`, `em` | `base.text` | `text` = `el.textContent`, `tag` = tag name | No |
 | `a` with class `btn` | `base.button`, or `base.link` when it wraps element children | `label` (`text` on `base.link`) = `el.textContent`, `href`, `target` | No for text-only; yes when it wraps elements |
 | `a` (no `btn` class) | `base.link` | `text` = `el.textContent`, `href`, `target` | No for text-only; yes when it wraps elements |
-| `video` | `base.video` | `videoUrl` from `src` or the first `<source>`, `poster`, and playback flags; source and poster URLs are resolved through the site-import asset plan | No |
 | `img` | `base.image` | `src`, plus `loading` / `decoding` / `fetchPriority` when the attribute holds a value the module offers; `alt` is reported in `imageAlts` for the media record, not stored as a prop | No |
 | `form` | `base.form` | `mode`, `formId`, CMS data attrs, custom `action` / `method` | Yes |
 | `label` | `base.label` unless wrapping elements, then `base.container` | `text`, `targetMode`, `targetId` | No for plain labels; yes for wrapper labels |
@@ -113,6 +112,7 @@ Callers splice the fragment into the page tree via `insertImportedNodes(parentId
 | `ul`, `ol` | `base.container` | `tag` = tag name | Yes |
 | `div`, `section`, `article`, `main`, `header`, `footer`, `nav`, `aside` | `base.container` | `tag` = tag name | Yes |
 | `area`, `base`, `br`, `col`, `embed`, `hr`, `link`, `meta`, `param`, `source`, `track`, `wbr` (void elements) | `base.container` | `tag: 'custom'`, `customTag` = tag name | **No** |
+| `video` | `base.video` | `videoUrl` from `src` or the first `<source>`, `poster`, and playback flags; source and poster URLs are resolved through the site-import asset plan | No |
 | `*` (catch-all) | `base.container` | `tag: 'custom'`, `customTag` = tag name | Yes |
 
 **Key details:**
