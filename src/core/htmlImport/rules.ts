@@ -613,6 +613,7 @@ export const HTML_TO_MODULE_RULES: ImportRule[] = [
         moduleId: 'base.video',
         props: {
           videoUrl,
+          poster: attr(el, 'poster'),
           autoplay: el.hasAttribute('autoplay'),
           loop: el.hasAttribute('loop'),
           muted: el.hasAttribute('muted'),

@@ -112,6 +112,7 @@ Callers splice the fragment into the page tree via `insertImportedNodes(parentId
 | `ul`, `ol` | `base.container` | `tag` = tag name | Yes |
 | `div`, `section`, `article`, `main`, `header`, `footer`, `nav`, `aside` | `base.container` | `tag` = tag name | Yes |
 | `area`, `base`, `br`, `col`, `embed`, `hr`, `link`, `meta`, `param`, `source`, `track`, `wbr` (void elements) | `base.container` | `tag: 'custom'`, `customTag` = tag name | **No** |
+| `video` | `base.video` | `videoUrl` from `src` or the first `<source>`, `poster`, and playback flags; source and poster URLs are resolved through the site-import asset plan | No |
 | `*` (catch-all) | `base.container` | `tag: 'custom'`, `customTag` = tag name | Yes |
 
 **Key details:**
