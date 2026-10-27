@@ -144,6 +144,9 @@ export async function serveStaticFile(
     return new Response(null, {
       status: 304,
       headers: {
+        // Upload hardening needs the MIME even without a response body;
+        // otherwise revalidation turns inert images into attachments.
+        'content-type': mime,
         'cache-control': cacheControl,
         ...validators,
         // Same `vary` as the 200 this revalidates (compressed bodies only).

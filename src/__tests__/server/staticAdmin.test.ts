@@ -235,6 +235,9 @@ describe('self-hosted admin static serving', () => {
       expect(revalidated.status).toBe(304)
       expect(await revalidated.text()).toBe('')
       expect(revalidated.headers.get('etag')).toBe(etag)
+      expect(revalidated.headers.get('content-type')).toBe('image/png')
+      expect(revalidated.headers.has('content-disposition')).toBe(false)
+      expect(revalidated.headers.get('content-security-policy')).toBe("default-src 'none'")
       expect(revalidated.headers.get('x-content-type-options')).toBe('nosniff')
 
       expect((await get({ 'if-none-match': `"other", ${etag}` })).status).toBe(304)
@@ -249,6 +252,31 @@ describe('self-hosted admin static serving', () => {
       expect(changed.status).toBe(200)
       expect(changed.headers.get('etag')).not.toBe(etag)
       expect(await changed.text()).toBe('new-image-bytes')
+    } finally {
+      rmSync(uploadsDir, { recursive: true, force: true })
+    }
+  })
+
+  it('keeps attachment and CORS protection when a plugin upload is revalidated', async () => {
+    const uploadsDir = mkdtempSync(join(tmpdir(), 'instatic-uploads-'))
+    const assetDir = join(uploadsDir, 'plugins', 'review', '1')
+    mkdirSync(assetDir, { recursive: true })
+    const get = (headers: Record<string, string> = {}) =>
+      handleServerRequest(new Request('http://localhost/uploads/plugins/review/1/icon.svg', { headers }), {
+        db: fakeDb,
+        uploadsDir,
+      })
+    try {
+      writeFileSync(join(assetDir, 'icon.svg'), '<svg xmlns="http://www.w3.org/2000/svg"/>')
+      const first = await get()
+      const revalidated = await get({ 'if-none-match': first.headers.get('etag')! })
+      expect(revalidated.status).toBe(304)
+      expect(await revalidated.text()).toBe('')
+      expect(revalidated.headers.get('content-disposition')).toBe('attachment')
+      expect(revalidated.headers.get('x-content-type-options')).toBe('nosniff')
+      expect(revalidated.headers.get('content-security-policy')).toBe("default-src 'none'")
+      expect(revalidated.headers.get('access-control-allow-origin')).toBe('*')
+      expect(revalidated.headers.get('cross-origin-resource-policy')).toBe('cross-origin')
     } finally {
       rmSync(uploadsDir, { recursive: true, force: true })
     }
