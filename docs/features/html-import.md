@@ -53,7 +53,11 @@ importHtml(source: string)
                                     (camelCase, security-gated) BEFORE step 4 removes
                                     the style attribute. Keyed by Element.
      collectStyleCss(doc)         — concatenates every <style> block's CSS BEFORE
-                                    step 4 removes the <style> elements.
+                                    step 4 removes the <style> elements. Each block
+                                    first has its open constructs closed (unclosed
+                                    @media/rule braces, comment, string), matching the
+                                    per-element EOF a browser gives every <style>, so
+                                    one block's missing `}` cannot swallow the next.
   3. stripUnsafe(doc)             — mutates doc in place; returns StripReport
   4. walkAndMap(doc, inlineStyles)— maps doc.body element children to PageNodes,
                                     attaching each harvested inline bag to its
