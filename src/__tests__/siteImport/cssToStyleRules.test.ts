@@ -852,3 +852,19 @@ describe('cssToStyleRules — shorthand expansion into colour longhands', () => 
     expect(rules[0].styles['--my-color']).toBe('none')
   })
 })
+
+
+describe('cssToStyleRules — empty base followed by conditional declarations', () => {
+  it('keeps the later base at its own position after an authored empty base', () => {
+    const { rules } = cssToStyleRules('.x {} @media (max-width: 600px) { .x { color: pink } } .y { color: green } .x { color: blue }')
+    expect(rules.map((rule) => [rule.selector, rule.styles.color])).toEqual([
+      ['.x', undefined], ['.y', 'green'], ['.x', 'blue'],
+    ])
+  })
+  it('does not repeatedly fill a conditional rule after its first empty base', () => {
+    const { rules } = cssToStyleRules('@media (max-width: 600px) { .x { color: pink } } .x {} .y { color: green } .x { color: blue }')
+    expect(rules.map((rule) => [rule.selector, rule.styles.color])).toEqual([
+      ['.x', undefined], ['.y', 'green'], ['.x', 'blue'],
+    ])
+  })
+})

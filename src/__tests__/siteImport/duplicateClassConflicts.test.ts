@@ -1,47 +1,31 @@
-/**
- * A stylesheet that restates a bare class later in the file keeps both
- * occurrences as class-kind rules through Phase 1. Cross-sheet conflict
- * detection merges every class-kind fragment of a page cascade in source
- * order, so the late restatement must still count toward that page's
- * effective definition.
- */
-
+/** Repeated class fragments must participate in cross-page conflict detection. */
 import { describe, it, expect } from 'bun:test'
-import { cssToStyleRules } from '@core/siteImport/cssToStyleRules'
-import { detectCrossSheetClassConflicts } from '@core/siteImport/classCascades'
-import type { PagePlan } from '@core/siteImport/types'
+import '@modules/base'
+import { makeSite } from '../fixtures'
+import { buildImportPlan } from '@core/siteImport'
 
-function cssFile(cssPath: string, css: string) {
-  const { rules } = cssToStyleRules(css)
-  return { cssPath, rules, assetRefs: [] }
-}
-
-function page(source: string, ...linkedCssPaths: string[]): PagePlan {
-  return { source, linkedCssPaths } as unknown as PagePlan
+function conflictsFor(a: string, b: string) {
+  const encode = (value: string) => ({ bytes: new TextEncoder().encode(value) })
+  const fileMap = { files: {
+    'a.html': encode('<link rel="stylesheet" href="a.css"><body><div class="btn other">A</div></body>'),
+    'b.html': encode('<link rel="stylesheet" href="b.css"><body><div class="btn other">B</div></body>'),
+    'a.css': encode(a),
+    'b.css': encode(b),
+  } }
+  return buildImportPlan({ fileMap, currentSite: makeSite() }).conflicts.crossSheetClasses
 }
 
 describe('classCascades — in-file duplicate class rules', () => {
   it('a late restatement still makes the file diverge from another cascade', () => {
-    const files = [
-      cssFile('a.css', '.btn { border-radius: 0 } .other { color: red } .btn { border-radius: 999px }'),
-      cssFile('b.css', '.btn { border-radius: 0 }'),
-    ]
-    const conflicts = detectCrossSheetClassConflicts(
-      [page('a.html', 'a.css'), page('b.html', 'b.css')],
-      files,
-      [],
+    const conflicts = conflictsFor(
+      '.btn { border-radius: 0 } .other { color: red } .btn { border-radius: 999px }',
+      '.btn { border-radius: 0 }',
     )
     expect(conflicts.map((conflict) => conflict.desiredName)).toEqual(['btn'])
   })
 
   it('identical restatements in both cascades do not conflict', () => {
     const css = '.btn { border-radius: 0 } .other { color: red } .btn { border-radius: 999px }'
-    const files = [cssFile('a.css', css), cssFile('b.css', css)]
-    const conflicts = detectCrossSheetClassConflicts(
-      [page('a.html', 'a.css'), page('b.html', 'b.css')],
-      files,
-      [],
-    )
-    expect(conflicts).toEqual([])
+    expect(conflictsFor(css, css)).toEqual([])
   })
 })

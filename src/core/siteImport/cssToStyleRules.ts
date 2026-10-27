@@ -391,7 +391,6 @@ function processTopLevelRule(
         breakpoints,
         mediaTolerance,
         selectorToLastIndex,
-        seenClassSelectors,
       )
       return
 
@@ -406,7 +405,6 @@ function processTopLevelRule(
         assetRefs,
         conditionsById,
         selectorToLastIndex,
-        seenClassSelectors,
         { kind: 'supports', query },
       )
       return
@@ -456,7 +454,6 @@ function processTopLevelRule(
             assetRefs,
             conditionsById,
             selectorToLastIndex,
-            seenClassSelectors,
             { kind: 'container', query, ...(name ? { name } : {}) },
           )
           return
@@ -548,7 +545,8 @@ function processBaseSelector(
   // An earlier @media/@supports block may have opened this class's rule with
   // only context styles; its first base occurrence fills that rule in place.
   const opened = lastIdx === undefined ? undefined : rules[lastIdx]
-  const fillIdx = classified.kind === 'class' && opened && Object.keys(opened.styles).length === 0
+  const fillIdx = classified.kind === 'class' && !seenClassSelectors.has(selector)
+    && opened && Object.keys(opened.styles).length === 0
     && Object.keys(opened.contextStyles).length > 0 ? lastIdx : undefined
   if (classified.kind === 'class' && fillIdx === undefined) {
     if (seenClassSelectors.has(selector)) {
@@ -560,8 +558,8 @@ function processBaseSelector(
         selector,
       })
     }
-    seenClassSelectors.add(selector)
   }
+  if (classified.kind === 'class') seenClassSelectors.add(selector)
 
   const idx = fillIdx ?? rules.length
   if (fillIdx === undefined) {
@@ -590,7 +588,6 @@ function processMediaRule(
   breakpoints: BreakpointHint[],
   mediaTolerance: number,
   selectorToLastIndex: Map<string, number>,
-  seenClassSelectors: Set<string>,
 ): void {
   // conditionText is on CSSConditionRule (parent of CSSMediaRule) per CSSOM spec.
   // Fallback to mediaText for environments that don't expose conditionText.
@@ -609,7 +606,6 @@ function processMediaRule(
       assetRefs,
       conditionsById,
       selectorToLastIndex,
-      seenClassSelectors,
       { kind: 'breakpoint', breakpointId: matched.id },
     )
   } else {
@@ -624,7 +620,6 @@ function processMediaRule(
       assetRefs,
       conditionsById,
       selectorToLastIndex,
-      seenClassSelectors,
       { kind: 'media', query: conditionText },
     )
   }
@@ -655,7 +650,6 @@ function processConditionInner(
   assetRefs: AssetRef[],
   conditionsById: Map<string, ConditionDef>,
   selectorToLastIndex: Map<string, number>,
-  seenClassSelectors: Set<string>,
   target: ConditionTarget,
 ): void {
   const contextId = targetContextId(target)
@@ -690,7 +684,6 @@ function processConditionInner(
           contextStyles: {},
         })
         selectorToLastIndex.set(selector, idx)
-        if (classified.kind === 'class') seenClassSelectors.add(selector)
       }
 
       mergeRuleContextDeclarations(rules[idx], contextId, declarations)
