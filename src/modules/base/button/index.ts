@@ -9,11 +9,12 @@ import type { ModuleDefinition } from '@core/module-engine'
 import { registry } from '@core/module-engine'
 import { CursorClickSolidIcon } from 'pixel-art-icons/icons/cursor-click-solid'
 import { Value } from '@core/utils/typeboxHelpers'
-import { ANCHOR_TARGET_OPTIONS, anchorRel } from '@modules/base/shared/anchorTarget'
+import { ANCHOR_TARGET_OPTIONS, anchorHtmlAttributes } from '@modules/base/shared/anchorTarget'
 import {
   htmlAttributesControl,
 } from '@modules/base/shared/htmlAttributes'
 import { htmlAttributesAttr } from '@core/publisher'
+import { escapeHtml } from '@modules/base/utils/escape'
 import { resolveButtonAnchor } from './anchor'
 import { ButtonEditor } from './ButtonEditor'
 import { ButtonPropsSchema, type ButtonStoredProps } from './props'
@@ -64,13 +65,13 @@ export const ButtonModule: ModuleDefinition<ButtonStoredProps> = {
 
   render: (props) => {
     const label = String(props.label ?? '')
-    const attrs = htmlAttributesAttr(props.htmlAttributes)
     const anchor = resolveButtonAnchor(props.href)
     if (anchor) {
-      const rel = anchorRel(props.target)
-      const relAttr = rel ? ` rel="${rel}"` : ''
-      return { html: `<a${attrs} href="${anchor.href}" target="${String(props.target)}"${relAttr}>${label}</a>` }
+      const { attributes, rel } = anchorHtmlAttributes(props.htmlAttributes, props.target)
+      const relAttr = rel ? ` rel="${escapeHtml(rel)}"` : ''
+      return { html: `<a${htmlAttributesAttr(attributes)} href="${anchor.href}" target="${String(props.target)}"${relAttr}>${label}</a>` }
     }
+    const attrs = htmlAttributesAttr(props.htmlAttributes)
     const disabledAttr = props.disabled ? ' disabled aria-disabled="true"' : ''
     const buttonType = props.buttonType === 'reset' ? 'reset' : 'button'
     return { html: `<button${attrs} type="${buttonType}"${disabledAttr}>${label}</button>` }
