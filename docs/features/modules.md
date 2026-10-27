@@ -46,7 +46,7 @@ src/modules/base/
 ├── video/               — base.video (youtube.ts — ID parse + embed URL leaf)
 ├── list/                — base.list (items.ts — textarea item-splitting leaf)
 ├── loop/                — base.loop
-├── forms/               — base.form and form-control primitives
+├── forms/               — base.form and form-control primitives (content.ts: submit children/label rule)
 ├── visualComponentRef/  — base.visual-component-ref
 ├── slotOutlet/          — base.slot-outlet (VC author side)
 ├── slotInstance/        — base.slot-instance (VC consumer side)
