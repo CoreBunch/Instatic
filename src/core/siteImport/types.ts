@@ -460,7 +460,7 @@ export interface PagePlan {
   /**
    * The body content as a flat node fragment.
    *
-   * URL-shaped props (`src`, `href`, `srcset`) are normalized to FileMap keys
+   * URL-shaped props (`src`, `href`, `srcset`, `videoUrl`) are normalized to FileMap keys
    * (relative paths) so that `applyAssetRewrites` can do exact-string
    * replacement without needing the original base path.
    */
