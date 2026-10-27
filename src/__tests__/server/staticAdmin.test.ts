@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test'
-import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from 'node:fs'
+import { mkdtempSync, rmSync, writeFileSync, mkdirSync, utimesSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { handleServerRequest } from '../../../server/router'
@@ -207,6 +207,99 @@ describe('self-hosted admin static serving', () => {
       expect(res.headers.get('x-content-type-options')).toBe('nosniff')
     } finally {
       rmSync(uploadsDir, { recursive: true, force: true })
+    }
+  })
+
+  // `no-cache` uploads must carry a validator, or every editor preview reload
+  // re-downloads every image and font in full.
+  it('answers conditional /uploads requests with 304 until the file changes', async () => {
+    const uploadsDir = mkdtempSync(join(tmpdir(), 'instatic-uploads-'))
+    const get = (headers: Record<string, string> = {}) =>
+      handleServerRequest(new Request('http://localhost/uploads/hero.png', { headers }), {
+        db: fakeDb,
+        uploadsDir,
+      })
+    try {
+      writeFileSync(join(uploadsDir, 'hero.png'), 'image-bytes')
+      utimesSync(join(uploadsDir, 'hero.png'), 1_700_000_000, 1_700_000_000)
+
+      const first = await get()
+      expect(first.status).toBe(200)
+      expect(first.headers.get('cache-control')).toBe('no-cache')
+      const etag = first.headers.get('etag')
+      const lastModified = first.headers.get('last-modified')
+      expect(etag).toMatch(/^W\/".+"$/)
+      expect(lastModified).toBe(new Date(1_700_000_000_000).toUTCString())
+
+      const revalidated = await get({ 'if-none-match': etag! })
+      expect(revalidated.status).toBe(304)
+      expect(await revalidated.text()).toBe('')
+      expect(revalidated.headers.get('etag')).toBe(etag)
+      expect(revalidated.headers.get('content-type')).toBe('image/png')
+      expect(revalidated.headers.has('content-disposition')).toBe(false)
+      expect(revalidated.headers.get('content-security-policy')).toBe("default-src 'none'")
+      expect(revalidated.headers.get('x-content-type-options')).toBe('nosniff')
+
+      expect((await get({ 'if-none-match': `"other", ${etag}` })).status).toBe(304)
+      expect((await get({ 'if-modified-since': lastModified! })).status).toBe(304)
+      expect((await get({ 'if-modified-since': new Date(1_600_000_000_000).toUTCString() })).status).toBe(200)
+      // If-None-Match takes precedence over If-Modified-Since.
+      expect((await get({ 'if-none-match': '"stale"', 'if-modified-since': lastModified! })).status).toBe(200)
+
+      // A replace that keeps the path changes the validator.
+      writeFileSync(join(uploadsDir, 'hero.png'), 'new-image-bytes')
+      const changed = await get({ 'if-none-match': etag! })
+      expect(changed.status).toBe(200)
+      expect(changed.headers.get('etag')).not.toBe(etag)
+      expect(await changed.text()).toBe('new-image-bytes')
+    } finally {
+      rmSync(uploadsDir, { recursive: true, force: true })
+    }
+  })
+
+  it('keeps attachment and CORS protection when a plugin upload is revalidated', async () => {
+    const uploadsDir = mkdtempSync(join(tmpdir(), 'instatic-uploads-'))
+    const assetDir = join(uploadsDir, 'plugins', 'review', '1')
+    mkdirSync(assetDir, { recursive: true })
+    const get = (headers: Record<string, string> = {}) =>
+      handleServerRequest(new Request('http://localhost/uploads/plugins/review/1/icon.svg', { headers }), {
+        db: fakeDb,
+        uploadsDir,
+      })
+    try {
+      writeFileSync(join(assetDir, 'icon.svg'), '<svg xmlns="http://www.w3.org/2000/svg"/>')
+      const first = await get()
+      const revalidated = await get({ 'if-none-match': first.headers.get('etag')! })
+      expect(revalidated.status).toBe(304)
+      expect(await revalidated.text()).toBe('')
+      expect(revalidated.headers.get('content-disposition')).toBe('attachment')
+      expect(revalidated.headers.get('x-content-type-options')).toBe('nosniff')
+      expect(revalidated.headers.get('content-security-policy')).toBe("default-src 'none'")
+      expect(revalidated.headers.get('access-control-allow-origin')).toBe('*')
+      expect(revalidated.headers.get('cross-origin-resource-policy')).toBe('cross-origin')
+    } finally {
+      rmSync(uploadsDir, { recursive: true, force: true })
+    }
+  })
+
+  it('sends validators on immutable admin assets too', async () => {
+    const staticDir = createStaticDir()
+    try {
+      const first = await handleServerRequest(new Request('http://localhost/assets/app.js'), {
+        db: fakeDb,
+        staticDir,
+      })
+      expect(first.headers.get('cache-control')).toBe('public, max-age=31536000, immutable')
+      const etag = first.headers.get('etag')
+      expect(etag).toBeTruthy()
+
+      const revalidated = await handleServerRequest(
+        new Request('http://localhost/assets/app.js', { headers: { 'if-none-match': etag! } }),
+        { db: fakeDb, staticDir },
+      )
+      expect(revalidated.status).toBe(304)
+    } finally {
+      rmSync(staticDir, { recursive: true, force: true })
     }
   })
 })
