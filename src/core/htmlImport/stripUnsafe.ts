@@ -49,7 +49,7 @@ export function collectStyleCss(doc: Document): string {
  * semantics. Stray extra `}` are left alone, as the parser already ignores
  * them at the top level.
  */
-export function closeOpenConstructs(css: string): string {
+function closeOpenConstructs(css: string): string {
   let depth = 0
   let i = 0
   const n = css.length
@@ -83,7 +83,9 @@ export function closeOpenConstructs(css: string): string {
         j++
       }
       if (!closed && j >= n) {
-        suffix = ch
+        // A trailing backslash would escape the quote we append. An escaped
+        // newline consumes that backslash first, preserving the EOF boundary.
+        suffix = (j > n ? '\n' : '') + ch
         break
       }
       i = j + 1

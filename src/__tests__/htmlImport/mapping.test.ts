@@ -1556,3 +1556,13 @@ describe('edge cases', () => {
     expect(result.styleCss).toBe('')
   })
 })
+
+
+describe('collectStyleCss — trailing string escape', () => {
+  it('keeps the next stylesheet outside a string ending with a backslash', () => {
+    const result = imported('<style>.a{content:"x\\</style><style>.b{color:blue}</style>')
+    // Without the escaped newline, the appended quote is itself escaped;
+    // Chromium consumes the following .b rule as part of .a.
+    expect(result.styleCss).toBe('.a{content:"x\\\n"}\n.b{color:blue}')
+  })
+})
