@@ -501,6 +501,18 @@ describe('detectConflicts — rename targets avoid the import\'s own names', () 
     expect(tokens.map((t) => t.defaultResolution.resolvedVariable)).toEqual(['bg-3', 'font-primary-3'])
   })
 
+  it('detects an authored font variable against an existing token by its emitted name (#619)', () => {
+    const html = `<!doctype html><html><head><link rel="stylesheet" href="style.css"></head><body><p class="u">x</p></body></html>`
+    const css = `:root { --font-Primary: "Acme Grotesk", serif; } .u { font-family: var(--font-Primary); }`
+    const plan = buildImportPlan({ fileMap: makeSinglePageFileMap(html, css), currentSite: siteWithTokens() })
+
+    expect(plan.conflicts.tokens.map((t) => [t.kind, t.desiredVariable, t.defaultResolution.resolvedVariable]))
+      .toEqual([['font', 'font-primary', 'font-primary-2']])
+    const result = applyConflictResolutions(plan, [], [], plan.conflicts.tokens)
+    expect(result.fontTokens.map((t) => t.variable)).toEqual(['font-primary-2'])
+    expect(result.styleRules.find((r) => r.selector === '.u')?.styles.fontFamily).toBe('var(--font-primary-2)')
+  })
+
   it('keeps both colours when a normalised name and a conflict rename meet (#615)', () => {
     // `--BG` normalises to `bg-2`, so the conflict rename of `--bg` must not
     // take `bg-2` too, or one colour is lost at commit.

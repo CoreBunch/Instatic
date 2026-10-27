@@ -17,7 +17,6 @@
  * rule) and drops the rule entirely when nothing else remains.
  */
 
-import { normalizeFrameworkColorSlug } from '@core/framework'
 import type { NewStyleRule, ImportColorToken } from './types'
 import { isRootScopeSelector } from './rootScope'
 
@@ -126,55 +125,4 @@ export function extractRootColorTokens(
   }
 
   return { rules: out, colorTokens }
-}
-
-// ---------------------------------------------------------------------------
-// Emitted names
-// ---------------------------------------------------------------------------
-
-/**
- * Give each extracted colour token the slug the framework will emit for it.
- *
- * The framework normalises every colour slug (`normalizeFrameworkColorSlug`:
- * lowercase, every run of non-alphanumerics collapsed to one `-`), so an
- * authored `--brand---neutral--700` is emitted as `--brand-neutral-700`. The
- * returned `renames` map (`authored → emitted`, both without `--`) lists every
- * name that changed, for rewriting the imported `var()` references.
- *
- * Two authored names can normalise to the same slug (`--Brand` and `--brand`).
- * A name that is already in emitted form keeps it; the others take the first
- * free `-2`, `-3`, ... suffix, so neither token is lost at commit. A new name
- * also avoids `declared`, the other custom properties the imported CSS
- * declares, so a renamed token never takes over an unrelated variable.
- */
-export function normalizeImportedColorTokens(
-  tokens: ImportColorToken[],
-  declared: Set<string> = new Set(),
-): { colorTokens: ImportColorToken[]; renames: Map<string, string> } {
-  const slugs = new Map<ImportColorToken, string>()
-  const ownNames = new Set(tokens.map((token) => token.slug))
-  // A token's own name may be redeclared by an override (`.dark { --bg: … }`);
-  // only the names of other variables are off limits.
-  const claimed = new Set([...declared].filter((name) => !ownNames.has(name)))
-  for (const token of tokens) {
-    if (normalizeFrameworkColorSlug(token.slug) === token.slug) {
-      slugs.set(token, token.slug)
-      claimed.add(token.slug)
-    }
-  }
-
-  const renames = new Map<string, string>()
-  const colorTokens = tokens.map((token) => {
-    let slug = slugs.get(token)
-    if (slug === undefined) {
-      const base = normalizeFrameworkColorSlug(token.slug)
-      slug = base
-      for (let suffix = 2; claimed.has(slug); suffix++) slug = `${base}-${suffix}`
-      claimed.add(slug)
-      renames.set(token.slug, slug)
-    }
-    return slug === token.slug ? token : { ...token, slug }
-  })
-
-  return { colorTokens, renames }
 }
