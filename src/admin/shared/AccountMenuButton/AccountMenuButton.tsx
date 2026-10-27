@@ -42,6 +42,7 @@ import { UserAvatar } from '@admin/shared/UserAvatar'
 import { logoutAllOtherCmsSessions, logoutCms } from '@core/persistence'
 import styles from './AccountMenuButton.module.css'
 import { getErrorMessage } from '@core/utils/errorMessage'
+import { userDisplayLabel } from '@core/users/displayName'
 
 const ACCOUNT_ROUTE = '/admin/account'
 
@@ -54,7 +55,7 @@ export function AccountMenuButton(): ReactNode {
   const [status, setStatus] = useState<{ tone: 'info' | 'error'; message: string } | null>(null)
   const triggerRef = useRef<HTMLButtonElement>(null)
 
-  const displayName = user.displayName.trim() || user.email
+  const displayName = userDisplayLabel(user)
   const roleLabel = user.role.name
 
   function close(): void {

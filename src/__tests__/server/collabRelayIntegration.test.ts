@@ -14,6 +14,7 @@
  *   - `runPublishFlush` drains the persist debounce, so publish bakes the
  *     edit an admin made seconds earlier instead of losing it.
  */
+import { userDisplayLabel } from '@core/users/displayName'
 import { afterEach, describe, expect, it } from 'bun:test'
 import * as Y from 'yjs'
 import * as awarenessProtocol from 'y-protocols/awareness'
@@ -349,7 +350,7 @@ describe('collab relay integration (real server, real sockets)', () => {
     const viewerUserId = viewerUser!.id
     const realIdentity = {
       id: viewerUserId,
-      name: viewerUser!.displayName,
+      name: userDisplayLabel(viewerUser!),
       color: peerColor(viewerUserId),
       avatarUrl: viewerUser!.avatarUrl,
       gravatarHash: viewerUser!.gravatarHash,
@@ -369,7 +370,7 @@ describe('collab relay integration (real server, real sockets)', () => {
     for (const [, state] of owner.awareness.getStates()) {
       const s = state as { user?: { id?: string; name?: string } }
       expect(s.user?.id).not.toBe('someone-else')
-      if (s.user?.id === viewerUserId) expect(s.user?.name).toBe(viewerUser!.displayName)
+      if (s.user?.id === viewerUserId) expect(s.user?.name).toBe(userDisplayLabel(viewerUser!))
     }
   })
 
@@ -431,7 +432,7 @@ describe('collab relay integration (real server, real sockets)', () => {
       const user = (await findUserByEmail(stack.harness.db, email))!
       return {
         id: user.id,
-        name: user.displayName,
+        name: userDisplayLabel(user),
         color: peerColor(user.id),
         avatarUrl: user.avatarUrl,
         gravatarHash: user.gravatarHash,
