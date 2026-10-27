@@ -7,6 +7,7 @@
 import type { ModuleDefinition } from '@core/module-engine'
 import { registry } from '@core/module-engine'
 import { Type, Value, type Static } from '@core/utils/typeboxHelpers'
+import { submitUsesChildren } from './content'
 import { normalizeIdentifierValue } from '@core/utils/identifier'
 import { safeUrl } from '@modules/base/utils/escape'
 import { FORM_RUNTIME_JS } from './formRuntimeJs'
@@ -422,9 +423,12 @@ export const SubmitModule: ModuleDefinition<SubmitProps> = {
   version: '1.0.0',
   icon: SendSolidIcon,
   trusted: true,
-  canHaveChildren: false,
+  // Children carry imported icon-only submit content (an inline `<svg>`,
+  // an icon-font `<i>`, an `<img>`) as real nodes; `label` is the childless
+  // fallback. Same children-vs-text contract as base.link.
+  canHaveChildren: true,
   schema: {
-    label: { type: 'text', label: 'Label' },
+    label: { type: 'text', label: 'Label', placeholder: 'Displayed when no children' },
     disabled: { type: 'toggle', label: 'Disabled' },
     formId: { type: 'text', label: 'Form ID override', normalize: 'identifier' },
   },
@@ -432,9 +436,14 @@ export const SubmitModule: ModuleDefinition<SubmitProps> = {
   defaults: Value.Create(SubmitPropsSchema),
   component: SubmitEditor,
   htmlTag: 'button',
-  render: (props) => ({
-    html: `<button type="submit"${attrs([['form', normalizeIdentifierValue(props.formId)]])}${booleanAttrs(props, ['disabled'])}>${props.label}</button>`,
-  }),
+  render: (props, renderedChildren) => {
+    const content = submitUsesChildren(renderedChildren.length)
+      ? renderedChildren.join('')
+      : props.label
+    return {
+      html: `<button type="submit"${attrs([['form', normalizeIdentifierValue(props.formId)]])}${booleanAttrs(props, ['disabled'])}>${content}</button>`,
+    }
+  },
 }
 
 export const FormMessageModule: ModuleDefinition<FormMessageProps> = {
