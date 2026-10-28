@@ -68,6 +68,21 @@ describe('buildAssetPlan — img src normalisation', () => {
   })
 })
 
+describe('buildAssetPlan — video normalisation', () => {
+  it('normalises a <video><source> URL to a FileMap key and records the asset', () => {
+    const fileMap = makeFileMap({
+      'pages/index.html': { bytes: txt('<html><body><video autoplay muted loop><source src="../videos/bg.mp4"></video></body></html>') },
+      'videos/bg.mp4': { bytes: txt('mp4'), mimeType: 'video/mp4' },
+    })
+    const { pagePlan } = makeHtmlPagePlan('pages/index.html', new TextDecoder().decode(fileMap.files['pages/index.html']!.bytes), fileMap)
+    const { normalizedPagePlans, assets } = buildAssetPlan([pagePlan], [], fileMap)
+
+    const videoNode = Object.values(normalizedPagePlans[0].nodeFragment.nodes).find((n) => n.moduleId === 'base.video')
+    expect(videoNode?.props['videoUrl']).toBe('videos/bg.mp4')
+    expect(assets.some((a) => a.sourcePath === 'videos/bg.mp4')).toBe(true)
+  })
+})
+
 // ---------------------------------------------------------------------------
 // HTML attribute asset normalisation
 // ---------------------------------------------------------------------------
@@ -455,5 +470,23 @@ describe('buildAssetPlan — references the archive cannot satisfy', () => {
     const { warnings } = buildAssetPlan([pagePlan], [], fileMap)
 
     expect(warnings.filter((w) => w.kind === 'unresolved-asset')).toHaveLength(0)
+  })
+})
+
+
+describe('buildAssetPlan — native video poster', () => {
+  it('collects and normalises the poster along with a direct video URL', () => {
+    const html = '<video src="../media/clip.mp4" poster="../media/poster.png" controls></video>'
+    const fileMap = makeFileMap({
+      'pages/index.html': { bytes: txt(html) },
+      'media/clip.mp4': { bytes: txt('mp4'), mimeType: 'video/mp4' },
+      'media/poster.png': { bytes: MINIMAL_PNG, mimeType: 'image/png' },
+    })
+    const { pagePlan } = makeHtmlPagePlan('pages/index.html', html, fileMap)
+    const { normalizedPagePlans, assets } = buildAssetPlan([pagePlan], [], fileMap)
+    const video = Object.values(normalizedPagePlans[0].nodeFragment.nodes).find((node) => node.moduleId === 'base.video')!
+    expect(video.props.videoUrl).toBe('media/clip.mp4')
+    expect(video.props.poster).toBe('media/poster.png')
+    expect(assets.map((asset) => asset.sourcePath)).toContain('media/poster.png')
   })
 })

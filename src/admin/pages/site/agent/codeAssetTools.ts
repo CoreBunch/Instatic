@@ -20,6 +20,7 @@ import {
   normalizeStyleRuntimeConfig,
 } from '@core/site-runtime'
 import { isSafePackageName } from '@core/site-dependencies/packageNames'
+import { sha256Hex } from '@core/utils/sha256'
 import type { EditorStore } from '@site/store/types'
 import { activeRenderPage } from './documentTools'
 import { getAgentStoreApi } from './storeRef'
@@ -46,11 +47,13 @@ function contentForCodeAsset(file: CodeAssetFile): string {
   return file.content ?? ''
 }
 
-async function hashCodeAssetContent(content: string): Promise<string> {
-  const digest = await crypto.subtle.digest('SHA-256', textEncoder.encode(content))
-  return Array.from(new Uint8Array(digest))
-    .map((byte) => byte.toString(16).padStart(2, '0'))
-    .join('')
+// SHA-256 content fingerprint used for read→patch optimistic concurrency. The
+// agent's tools run in the browser, and the CMS is often reached over Tailscale
+// on plain http:// (a non-secure context where `crypto.subtle` is undefined),
+// so this must NOT depend on Web Crypto. `sha256Hex` produces the identical
+// 64-char digest in any context.
+function hashCodeAssetContent(content: string): string {
+  return sha256Hex(content)
 }
 
 function normalizeCodeAssetPath(path: string): string | null {
@@ -65,7 +68,7 @@ function codeAssetRuntime(store: EditorStore, file: CodeAssetFile) {
     : (runtime.styles[file.id] ?? { ...DEFAULT_STYLE_RUNTIME_CONFIG })
 }
 
-async function describeCodeAsset(store: EditorStore, file: CodeAssetFile) {
+function describeCodeAsset(store: EditorStore, file: CodeAssetFile) {
   const content = contentForCodeAsset(file)
   return {
     fileId: file.id,
@@ -73,7 +76,7 @@ async function describeCodeAsset(store: EditorStore, file: CodeAssetFile) {
     type: file.type,
     contentChars: content.length,
     bytes: textEncoder.encode(content).byteLength,
-    hash: await hashCodeAssetContent(content),
+    hash: hashCodeAssetContent(content),
     createdAt: file.createdAt,
     updatedAt: file.updatedAt,
     generated: file.generated === true,
@@ -209,7 +212,7 @@ export async function runListCodeAssets(input: ListCodeAssetsInput): Promise<AiT
 
   const assets = []
   for (const file of files) {
-    assets.push(await describeCodeAsset(store, file))
+    assets.push(describeCodeAsset(store, file))
   }
   return aiToolOk({ assets })
 }
@@ -234,7 +237,7 @@ export async function runReadCodeAsset(input: ReadCodeAssetInput): Promise<AiToo
     path: resolved.file.path,
     type: resolved.file.type,
     content: content.slice(start, end),
-    hash: await hashCodeAssetContent(content),
+    hash: hashCodeAssetContent(content),
     runtime: codeAssetRuntime(store, resolved.file),
     pageInfo: {
       part,
@@ -293,7 +296,7 @@ export async function runWriteCodeAsset(input: WriteCodeAssetInput): Promise<AiT
     return aiToolError(`Code asset write failed for ${path}.`)
   }
   return aiToolOk({
-    ...(await describeCodeAsset(afterRuntimeStore, finalFile)),
+    ...describeCodeAsset(afterRuntimeStore, finalFile),
     action,
     dependencies: requestedDependencies.dependencies,
   })
@@ -305,7 +308,7 @@ export async function runPatchCodeAsset(input: PatchCodeAssetInput): Promise<AiT
   if (!resolved.ok) return aiToolError(resolved.error)
 
   const currentContent = contentForCodeAsset(resolved.file)
-  const currentHash = await hashCodeAssetContent(currentContent)
+  const currentHash = hashCodeAssetContent(currentContent)
   if (currentHash !== input.expectedHash) {
     return aiToolError(
       `Code asset hash mismatch for ${resolved.file.path}; read_code_asset again before patching.`,
@@ -342,7 +345,7 @@ export async function runPatchCodeAsset(input: PatchCodeAssetInput): Promise<AiT
     return aiToolError(`Code asset patch failed for ${resolved.file.path}.`)
   }
   return aiToolOk({
-    ...(await describeCodeAsset(afterStore, file)),
+    ...describeCodeAsset(afterStore, file),
     replacements: replacementCount,
   })
 }

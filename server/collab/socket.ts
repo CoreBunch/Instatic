@@ -54,7 +54,10 @@ import { originAllowed } from '../auth/security'
 import type { DbClient } from '../db/client'
 import { jsonResponse } from '../http'
 import { BranchGoneError } from './relayBranches'
+import { userDisplayLabel } from '@core/users/displayName'
 import type { CollabRelay, RelayDoc } from './relay'
+import { createSocketFlow } from './socketFlow'
+import { collabFramePackets } from '@core/collab'
 
 export { SITE_SOCKET_PATH }
 
@@ -215,7 +218,7 @@ export async function handleCollabSocketUpgrade(
       userId: user.id,
       identity: {
         id: user.id,
-        name: user.displayName,
+        name: userDisplayLabel(user),
         avatarUrl: user.avatarUrl,
         gravatarHash: user.gravatarHash,
       },
@@ -244,6 +247,12 @@ interface CollabPublisher {
  * awareness instance.
  */
 export function createCollabSocketLayer(relay: CollabRelay) {
+  const flows = new WeakMap<ServerWebSocket<CollabSocketData>, ReturnType<typeof createSocketFlow>>()
+  function flowFor(ws: ServerWebSocket<CollabSocketData>) {
+    let flow = flows.get(ws)
+    if (!flow) { flow = createSocketFlow(ws); flows.set(ws, flow) }
+    return flow
+  }
   let publisher: CollabPublisher | null = null
   const presenceDoc = new Y.Doc()
   const awareness = new awarenessProtocol.Awareness(presenceDoc)
@@ -254,10 +263,8 @@ export function createCollabSocketLayer(relay: CollabRelay) {
     if (!publisher) return
     const encoder = encoding.createEncoder()
     syncProtocol.writeUpdate(encoder, update)
-    publisher.publish(
-      docTopic(docId),
-      encodeCollabFrame(docId, generation, FRAME_SYNC, encoding.toUint8Array(encoder)),
-    )
+    const frame = encodeCollabFrame(docId, generation, FRAME_SYNC, encoding.toUint8Array(encoder))
+    for (const packet of collabFramePackets(frame)) publisher.publish(docTopic(docId), packet)
   })
   relay.onReset((docId) => {
     // The lineage this frame refers to is already gone, so it carries none.
@@ -268,12 +275,12 @@ export function createCollabSocketLayer(relay: CollabRelay) {
   })
 
   /** Tell one connection its doc was dropped, and why. */
-  function sendReset(
+  async function sendReset(
     ws: ServerWebSocket<CollabSocketData>,
     docId: string,
     reason: ResetReason,
-  ): void {
-    ws.send(encodeCollabFrame(docId, '', FRAME_RESET, encodeResetPayload(reason)))
+  ): Promise<void> {
+    await flowFor(ws).send(encodeCollabFrame(docId, '', FRAME_RESET, encodeResetPayload(reason)))
   }
 
   /**
@@ -289,7 +296,7 @@ export function createCollabSocketLayer(relay: CollabRelay) {
       // parseCollabDocId or the relay. Deliberately ungated — a read-only
       // viewer needs to know its socket is alive exactly as much as a writer.
       if (frame.frameType === FRAME_PING) {
-        ws.send(encodeCollabFrame(PRESENCE_DOC_ID, '', FRAME_PONG, new Uint8Array()))
+        await flowFor(ws).send(encodeCollabFrame(PRESENCE_DOC_ID, '', FRAME_PONG, new Uint8Array()))
         return
       }
 
@@ -318,7 +325,7 @@ export function createCollabSocketLayer(relay: CollabRelay) {
         )
         // publish() excludes nobody server-side; the sender's own state is
         // already local — awareness re-application is idempotent.
-        ws.send(encodeCollabFrame(PRESENCE_DOC_ID, '', FRAME_AWARENESS, frame.payload))
+        await flowFor(ws).send(encodeCollabFrame(PRESENCE_DOC_ID, '', FRAME_AWARENESS, frame.payload))
         return
       }
 
@@ -332,7 +339,7 @@ export function createCollabSocketLayer(relay: CollabRelay) {
         // structs the server will never receive, every later update queues
         // behind them as pending, and the screen shows edits that can never
         // publish. A visible revert is strictly better.
-        sendReset(ws, frame.docId, 'oversize')
+        await sendReset(ws, frame.docId, 'oversize')
         return
       }
 
@@ -372,14 +379,14 @@ export function createCollabSocketLayer(relay: CollabRelay) {
         // before any inbound frame has taught it a generation.
         const serverIsEmpty = Y.encodeStateVector(doc).byteLength === 1
         if (messageType !== SYNC_STEP_1 && !serverIsEmpty) {
-          sendReset(ws, frame.docId, 'stale')
+          await sendReset(ws, frame.docId, 'stale')
           return
         }
       } else if (frame.generation !== generation) {
         console.warn(
           `[collab] stale generation for ${frame.docId} from ${ws.data.userId}`,
         )
-        sendReset(ws, frame.docId, 'stale')
+        await sendReset(ws, frame.docId, 'stale')
         return
       }
 
@@ -402,7 +409,7 @@ export function createCollabSocketLayer(relay: CollabRelay) {
           // The sender's local doc holds the forbidden change — a TARGETED
           // reset makes their client rebind and reseed from the server,
           // reverting it everywhere (including their own screen).
-          sendReset(ws, frame.docId, 'refused')
+          await sendReset(ws, frame.docId, 'refused')
           return
         }
         Y.applyUpdate(doc, update, ws)
@@ -428,14 +435,14 @@ export function createCollabSocketLayer(relay: CollabRelay) {
         ws.data.probedDocs.add(frame.docId)
         const probe = encoding.createEncoder()
         syncProtocol.writeSyncStep1(probe, doc)
-        ws.send(encodeCollabFrame(frame.docId, generation, FRAME_SYNC, encoding.toUint8Array(probe)))
+        await flowFor(ws).send(encodeCollabFrame(frame.docId, generation, FRAME_SYNC, encoding.toUint8Array(probe)))
       }
 
       const decoder = decoding.createDecoder(frame.payload)
       const encoder = encoding.createEncoder()
       syncProtocol.readSyncMessage(decoder, encoder, doc, ws)
       if (encoding.length(encoder) > 0) {
-        ws.send(encodeCollabFrame(frame.docId, generation, FRAME_SYNC, encoding.toUint8Array(encoder)))
+        await flowFor(ws).send(encodeCollabFrame(frame.docId, generation, FRAME_SYNC, encoding.toUint8Array(encoder)))
       }
   }
 
@@ -443,49 +450,58 @@ export function createCollabSocketLayer(relay: CollabRelay) {
     // Transport-level ceiling — the per-frame-type caps in `message` are the
     // fine-grained guards; this stops oversized frames before they buffer.
     maxPayloadLength: MAX_SYNC_PAYLOAD_BYTES + 1024,
+    // Pub/sub frames also need recovery rather than silent delivery loss.
+    closeOnBackpressureLimit: true,
 
-    open(ws: ServerWebSocket<CollabSocketData>) {
-      ws.subscribe(docTopic(PRESENCE_DOC_ID))
-      // Late joiners need the current presence roster.
-      const known = [...awareness.getStates().keys()]
-      if (known.length > 0) {
-        const update = awarenessProtocol.encodeAwarenessUpdate(awareness, known)
-        ws.send(encodeCollabFrame(PRESENCE_DOC_ID, '', FRAME_AWARENESS, update))
-      }
+    async open(ws: ServerWebSocket<CollabSocketData>) {
+      await flowFor(ws).run(async () => {
+        ws.subscribe(docTopic(PRESENCE_DOC_ID))
+        // Late joiners need the current presence roster.
+        const known = [...awareness.getStates().keys()]
+        if (known.length > 0) {
+          const update = awarenessProtocol.encodeAwarenessUpdate(awareness, known)
+          await flowFor(ws).send(encodeCollabFrame(PRESENCE_DOC_ID, '', FRAME_AWARENESS, update))
+        }
+      })
     },
+
+    drain(ws) { flowFor(ws).drain() },
 
     async message(ws: ServerWebSocket<CollabSocketData>, raw: string | Buffer) {
       if (typeof raw === 'string') return // binary protocol only
-      let frame: CollabFrame | null = null
-      try {
-        frame = decodeCollabFrame(new Uint8Array(raw))
-        await dispatchFrame(ws, frame)
-      } catch (err) {
-        if (err instanceof BranchGoneError && frame) {
-          // The doc's branch was deleted. The client must leave the branch,
-          // not rebind — rebinding would loop through this refusal forever.
-          try {
-            sendReset(ws, frame.docId, 'gone')
-          } catch (_sendErr) {
-            // Socket already closing — nothing to recover.
+      await flowFor(ws).run(async () => {
+        let frame: CollabFrame | null = null
+        try {
+          frame = decodeCollabFrame(new Uint8Array(raw))
+          await dispatchFrame(ws, frame)
+        } catch (err) {
+          if (err instanceof BranchGoneError && frame) {
+            // The doc's branch was deleted. The client must leave the branch,
+            // not rebind — rebinding would loop through this refusal forever.
+            try {
+              await sendReset(ws, frame.docId, 'gone')
+            } catch (_sendErr) {
+              // Socket already closing — nothing to recover.
+            }
+            return
           }
-          return
-        }
-        console.error('[collab] socket message handler failed:', err)
-        // A sync-write frame whose guard/apply threw left the sender's local
-        // doc diverged from the authoritative one — reset it so their client
-        // rebinds and reseeds. Awareness/malformed frames just get dropped.
-        if (frame && frame.frameType === FRAME_SYNC && parseCollabDocId(frame.docId)) {
-          try {
-            sendReset(ws, frame.docId, 'refused')
-          } catch (_sendErr) {
-            // Socket already closing — nothing to recover.
+          console.error('[collab] socket message handler failed:', err)
+          // A sync-write frame whose guard/apply threw left the sender's local
+          // doc diverged from the authoritative one — reset it so their client
+          // rebinds and reseeds. Awareness/malformed frames just get dropped.
+          if (frame && frame.frameType === FRAME_SYNC && parseCollabDocId(frame.docId)) {
+            try {
+              await sendReset(ws, frame.docId, 'refused')
+            } catch (_sendErr) {
+              // Socket already closing — nothing to recover.
+            }
           }
         }
-      }
+      })
     },
 
     close(ws: ServerWebSocket<CollabSocketData>) {
+      flowFor(ws).close()
       for (const docId of ws.data.boundDocs) relay.release(docId)
       ws.data.boundDocs.clear()
       if (ws.data.awarenessClients.size > 0) {

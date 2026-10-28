@@ -7,7 +7,7 @@ import { describe, expect, it } from 'bun:test'
 import {
   collectLoopNodes,
   prefetchLoopData,
-  publishedDataRowToLoopItem,
+  publishedDataRowToEntryItem,
   readLoopProps,
 } from '../../../server/publish/loopPrefetch'
 import type { DbResult } from '../../../server/db'
@@ -18,8 +18,9 @@ import { makePage, makeSite } from '../publisher/helpers'
 import '@core/loops/sources'
 
 describe('loopPrefetch', () => {
-  it('maps published data row authorship into public loop fields', () => {
-    const item = publishedDataRowToLoopItem({
+  it('maps published data row authorship into public loop fields', async () => {
+    const db = createFakeDb(async () => ({ rows: [] }) as unknown as DbResult)
+    const item = await publishedDataRowToEntryItem(db, {
       id: 'version_1',
       rowId: 'row_1',
       tableId: 'posts',
@@ -47,7 +48,7 @@ describe('loopPrefetch', () => {
       publishedByRoleName: 'Admin',
       publishedAt: '2026-05-01T10:02:00.000Z',
       createdAt: '2026-05-01T10:02:00.000Z',
-    })
+    }, [])
 
     // Every people key is a LEAF. `author` used to be the reference object,
     // so a template binding it published `{"displayName":…,"roleSlug":…}`
@@ -69,6 +70,44 @@ describe('loopPrefetch', () => {
     expect('authorId' in item.fields).toBe(false)
     expect('publishedByUserId' in item.fields).toBe(false)
     expect('publishedById' in item.fields).toBe(false)
+  })
+
+  it('resolves schema-declared media cells to public paths like the loop source', async () => {
+    const db = createFakeDb(async () => ({
+      rows: [
+        { id: 'media_hero', public_path: '/uploads/hero.jpg' },
+        { id: 'media_a', public_path: '/uploads/a.jpg' },
+      ],
+    }) as unknown as DbResult)
+    const item = await publishedDataRowToEntryItem(db, {
+      id: 'version_1',
+      rowId: 'row_1',
+      tableId: 'projects',
+      tableSlug: 'projects',
+      tableKind: 'postType',
+      tableRouteBase: '/projects',
+      versionNumber: 1,
+      cells: { title: 'Project', slug: 'project', hero: 'media_hero', gallery: ['media_a', 'media_gone'] },
+      slug: 'project',
+      featuredMediaId: null,
+      featuredMediaPath: null,
+      authorUserId: null,
+      authorName: null,
+      authorRoleSlug: null,
+      authorRoleName: null,
+      publishedByUserId: null,
+      publishedByName: null,
+      publishedByRoleSlug: null,
+      publishedByRoleName: null,
+      publishedAt: '2026-05-01T10:02:00.000Z',
+      createdAt: '2026-05-01T10:02:00.000Z',
+    }, [
+      { id: 'gallery', label: 'Gallery', type: 'media', allowMultiple: true },
+      { id: 'hero', label: 'Hero', type: 'media', mediaKind: 'image' },
+    ])
+    expect(item.fields.hero).toBe('/uploads/hero.jpg')
+    expect(item.fields.gallery).toEqual(['/uploads/a.jpg'])
+    expect(item.fields.title).toBe('Project')
   })
 
   it('readLoopProps coerces missing/invalid props into safe defaults', () => {

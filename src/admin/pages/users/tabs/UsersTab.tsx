@@ -40,7 +40,8 @@ import { UserAvatar } from '@admin/shared/UserAvatar'
 import { Badge } from '../components/Badge'
 import { RowActionMenu } from '../components/RowActionMenu'
 import { UserDialog } from '../components/UserDialog'
-import { displayUserName, formatDateTime, isOwnerUser, statusLabel } from '../utils/format'
+import { userDisplayLabel } from '@core/users/displayName'
+import { formatDateTime, isOwnerUser, statusLabel } from '../utils/format'
 import {
   emptyUserForm,
   type UserDialogMode,
@@ -330,7 +331,7 @@ export function UsersTab({ data, canManageUsers }: UsersTabProps) {
           <DataTableBody>
             {users.map((user) => {
               const owner = isOwnerUser(user)
-              const label = displayUserName(user)
+              const label = userDisplayLabel(user)
               return (
                 <DataTableRow key={user.id} aria-label={`User ${user.email}`}>
                   <DataTableCell>

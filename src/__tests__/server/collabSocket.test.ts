@@ -115,6 +115,23 @@ describe('collab socket — upgrade gating', () => {
     expect(readOnlyServer.data()?.fullSiteWriter).toBe(false)
   })
 
+  // "Your name" is optional: without a display name the session identity (the
+  // only presence name the relay forwards) must still be non-empty and match
+  // what the editor publishes (userDisplayLabel) — otherwise that admin's
+  // presence never reaches anyone.
+  it('names an admin without a display name by email in the presence identity', async () => {
+    const { harness } = await setup()
+    const nameless = await harness.createRoleUser({
+      name: 'Nameless',
+      slug: 'site-nameless',
+      displayName: '',
+      capabilities: ['site.read'],
+    })
+    const server = fakeServer(true)
+    expect(await handleCollabSocketUpgrade(socketRequest({ cookie: nameless.cookie }), harness.db, server)).toBeNull()
+    expect(server.data()?.identity.name).toBe(nameless.email)
+  })
+
   it('returns 426 when the request is not an upgradable WebSocket handshake', async () => {
     const { harness, cookie } = await setup()
     const res = await handleCollabSocketUpgrade(socketRequest({ cookie }), harness.db, fakeServer(false))

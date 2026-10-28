@@ -108,3 +108,87 @@ describe('bridge snapshot refresh', () => {
     destroy()
   })
 })
+
+/**
+ * The MCP editor runs relayed tools one at a time. Pushing a whole batch at
+ * once started every call's timeout at push time, so calls queued behind slow
+ * ones timed out before the editor even reached them. A serial bridge emits
+ * the next request only after the previous one settles.
+ */
+describe('serial bridge delivery', () => {
+  function serialBridge(timeoutMs = 1000, signal?: AbortSignal) {
+    const requests: string[] = []
+    const created = createBridge(
+      (ev: AiStreamEvent) => {
+        if (ev.type === 'toolRequest') requests.push(ev.requestId)
+      },
+      signal,
+      timeoutMs,
+      undefined,
+      { serial: true },
+    )
+    return { ...created, requests }
+  }
+
+  test('emits the next request only after the previous one settles', async () => {
+    const { bridgeId, bridge, destroy, requests } = serialBridge()
+    const first = bridge.callBrowser('a', {})
+    const second = bridge.callBrowser('b', {})
+    expect(requests).toHaveLength(1)
+
+    expect(resolveBridgeToolResult(bridgeId, requests[0], { ok: true, data: 1 })).toBe(true)
+    await expect(first).resolves.toMatchObject({ ok: true })
+    expect(requests).toHaveLength(2)
+
+    expect(resolveBridgeToolResult(bridgeId, requests[1], { ok: true, data: 2 })).toBe(true)
+    await expect(second).resolves.toMatchObject({ ok: true })
+    destroy()
+  })
+
+  test('a queued call’s timeout starts when it is emitted, not when it is queued', async () => {
+    const { bridgeId, bridge, destroy, requests } = serialBridge(60)
+    const first = bridge.callBrowser('slow', {})
+    const second = bridge.callBrowser('fast', {})
+    // The first call takes most of the timeout; the second must not expire
+    // while it waits its turn.
+    await new Promise((r) => setTimeout(r, 45))
+    resolveBridgeToolResult(bridgeId, requests[0], { ok: true, data: 1 })
+    await first
+    await new Promise((r) => setTimeout(r, 30))
+    expect(resolveBridgeToolResult(bridgeId, requests[1], { ok: true, data: 2 })).toBe(true)
+    await expect(second).resolves.toMatchObject({ ok: true })
+    destroy()
+  })
+
+  test('a timed-out call releases the slot to the next one', async () => {
+    const { bridge, destroy, requests } = serialBridge(20)
+    const first = bridge.callBrowser('stuck', {})
+    const second = bridge.callBrowser('next', {})
+    await expect(first).rejects.toThrow(/timed out/i)
+    expect(requests).toHaveLength(2)
+    await expect(second).rejects.toThrow(/timed out/i)
+    destroy()
+  })
+
+  test('destroy rejects queued calls without emitting them', async () => {
+    const { bridge, destroy, requests } = serialBridge()
+    const first = bridge.callBrowser('a', {})
+    const second = bridge.callBrowser('b', {})
+    destroy()
+    await expect(first).rejects.toThrow(/ended/)
+    await expect(second).rejects.toThrow(/ended/)
+    expect(requests).toHaveLength(1)
+  })
+
+  test('abort rejects queued calls without emitting them', async () => {
+    const controller = new AbortController()
+    const { bridge, destroy, requests } = serialBridge(1000, controller.signal)
+    const first = bridge.callBrowser('a', {})
+    const second = bridge.callBrowser('b', {})
+    controller.abort()
+    await expect(first).rejects.toThrow(/abort/i)
+    await expect(second).rejects.toThrow(/abort/i)
+    expect(requests).toHaveLength(1)
+    destroy()
+  })
+})

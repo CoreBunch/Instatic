@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test'
-import { MARKDOWN_DOCUMENT_CONFIG, sanitizeRichtext, type SanitizerConfig } from '@core/sanitize'
+import { MARKDOWN_DOCUMENT_CONFIG, RICHTEXT_CONTENT_CONFIG, sanitizeRichtext, type SanitizerConfig } from '@core/sanitize'
 import { renderReadmeHtml } from '@site/panels/DependenciesPanel/readmeHtml'
 
 describe('MARKDOWN_DOCUMENT_CONFIG (package README rendering)', () => {
@@ -66,6 +66,22 @@ describe('MARKDOWN_DOCUMENT_CONFIG (package README rendering)', () => {
     const html = sanitizeRichtext('<img src="/uploads/a.png" alt="site image">', permissive)
     expect(html).toContain('src="/uploads/a.png"')
     expect(html).not.toContain('referrerpolicy')
+  })
+
+  it('isolates content site images from the stricter README policy across alternating calls', () => {
+    const input = '<img src="/uploads/a.png"><img src="https://example.com/badge.png"><img src="data:image/png;base64,AAAA">'
+    for (let i = 0; i < 2; i++) {
+      const site = sanitizeRichtext(input, RICHTEXT_CONTENT_CONFIG)
+      expect(site).toContain('src="/uploads/a.png"')
+      expect(site).not.toContain('referrerpolicy')
+      expect(site).not.toContain('data:image')
+      const readme = sanitizeRichtext(input, MARKDOWN_DOCUMENT_CONFIG)
+      expect(readme).not.toContain('/uploads/a.png')
+      expect(readme).not.toContain('data:image')
+      expect(readme).toContain('src="https://example.com/badge.png"')
+      expect(readme).toContain('referrerpolicy="no-referrer"')
+      expect(readme).toContain('loading="lazy"')
+    }
   })
 
   it('renders GFM markdown through the same sanitizer', () => {
