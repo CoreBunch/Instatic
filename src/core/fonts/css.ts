@@ -150,7 +150,7 @@ export function familySlug(family: string): string {
 }
 
 /**
- * Generate the `:root { --font-primary: "Family", fallback; }` block from the
+ * Generate the `:root { --font-heading: "Family", fallback; }` block from the
  * site's editable font tokens. Installed families do not emit direct variables;
  * authored styles should bind to tokens so family swaps preserve declarations.
  */

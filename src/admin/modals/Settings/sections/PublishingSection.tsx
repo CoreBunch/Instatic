@@ -20,6 +20,9 @@ export function PublishingSection() {
 
   const frameworkPreferences = resolveFrameworkPreferences(site.settings.framework?.preferences)
   const treeShakeId = 'publishing-tree-shake-framework-utilities'
+  const rootFontSizeId = 'publishing-emit-root-font-size'
+  const { rootFontSize } = frameworkPreferences
+  const rootFontSizePercent = Number(((rootFontSize / 16) * 100).toFixed(4))
 
   return (
     <div>
@@ -71,6 +74,24 @@ export function PublishingSection() {
               onCheckedChange={(value) =>
                 updateFrameworkPreferences({ treeShakeGeneratedFrameworkUtilities: value })
               }
+            />
+          </div>
+          <div className={s.toggleRow}>
+            <div className={s.toggleRowContent}>
+              <label htmlFor={rootFontSizeId} className={s.toggleRowLabel}>
+                Set the root font size
+              </label>
+              <p className={s.toggleRowDesc}>
+                Sets <code>html {'{'} font-size: {rootFontSizePercent}% {'}'}</code> so 1rem is{' '}
+                {rootFontSize}px and framework type and spacing render at the sizes the scale
+                shows, in the editor and on the published site. Turning this on for an existing
+                site makes every rem size smaller, so review your pages after switching.
+              </p>
+            </div>
+            <Switch
+              id={rootFontSizeId}
+              checked={frameworkPreferences.emitRootFontSize}
+              onCheckedChange={(value) => updateFrameworkPreferences({ emitRootFontSize: value })}
             />
           </div>
         </div>

@@ -260,6 +260,7 @@ Name the leaf after what it owns, not generically:
 |------------------|-----------------|-------------------------------------------------------|
 | `base.button`    | `anchor.ts`     | `resolveButtonAnchor()` — element decision (`<a>` vs `<button>`) |
 | `base.link`      | `content.ts`    | `linkUsesChildren()` — children/text fallback rule    |
+| `base.submit`    | `forms/content.ts` | `submitUsesChildren()` — children/label fallback rule |
 | `base.list`      | `items.ts`      | `parseItems()` — textarea → trimmed non-empty array   |
 | `base.video`     | `youtube.ts`    | `parseYoutubeId()`, `youtubeEmbedUrl()` — embed URL  |
 | `base.text`      | `tags.ts`       | `normalizeTag()`, `TextTag` — semantic tag coercion   |
@@ -268,7 +269,7 @@ Name the leaf after what it owns, not generically:
 
 | File                       | Exports                                                      | Used by            |
 |----------------------------|--------------------------------------------------------------|--------------------|
-| `shared/anchorTarget.ts`   | `AnchorTargetSchema`, `AnchorTarget`, `ANCHOR_TARGET_OPTIONS`, `anchorRel()` | button, link |
+| `shared/anchorTarget.ts`   | `ANCHOR_TARGET_OPTIONS`, `anchorRel()`                       | button, link       |
 
 ```ts
 // anchor.ts — leaf file for base.button
@@ -421,9 +422,11 @@ The publisher emits a `<script type="importmap">` entry. `getMissingModuleDepend
   - `src/core/publisher/renderConfig.ts` — `RenderResolvedMedia` shape
   - `src/modules/base/*` — first-party modules (read these for real examples)
   - `src/modules/base/container/ContainerEditor.tsx` — canonical editor component pattern
-  - `src/modules/base/shared/anchorTarget.ts` — `AnchorTargetSchema`, `anchorRel()` (cross-module shared vocabulary)
+  - `src/modules/base/shared/anchorTarget.ts` — `ANCHOR_TARGET_OPTIONS`, `anchorRel()` (cross-module shared vocabulary)
+  - `src/core/htmlAttributes/anchorTarget.ts` — `AnchorTargetSchema`, `normalizeAnchorTarget()` (persisted `target` vocabulary, shared with the HTML importer)
   - `src/modules/base/button/anchor.ts` — `resolveButtonAnchor()` (per-module shared leaf)
   - `src/modules/base/link/content.ts` — `linkUsesChildren()` (per-module shared leaf)
+  - `src/modules/base/forms/content.ts` — `submitUsesChildren()` (per-module shared leaf)
   - `src/modules/base/list/items.ts` — `parseItems()` (per-module shared leaf)
   - `src/modules/base/video/youtube.ts` — `parseYoutubeId()`, `youtubeEmbedUrl()` (per-module shared leaf)
   - `src/core/htmlAttributes/tags.ts` — `resolveHtmlTag`, `BUILTIN_HTML_TAGS`, `VOID_HTML_ELEMENTS`

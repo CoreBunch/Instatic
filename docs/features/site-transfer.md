@@ -26,6 +26,7 @@ The **Export site** dialog (`src/admin/pages/data/components/ExportDialog`) is a
 - Three import strategies: `replace` (destructive — the full-restore path), `merge-add` (insert if new), `merge-overwrite` (upsert).
 - Media bytes are stored as raw files under `media/`. Export and archive import stream media bytes; the browser and server do not assemble a media-heavy archive as a JSON/base64 payload.
 - Media folders + redirects are restored by the **`replace`** strategy (the full-restore path); merge strategies leave the local folder tree and redirects untouched.
+- A `replace` that carries media and the shell on main (with no other branch) removes the previous media library, rows and files, before the bundle's media lands. See "Replace and the media library" below.
 
 ---
 
@@ -229,20 +230,31 @@ type ImportStrategy = 'replace' | 'merge-add' | 'merge-overwrite'
 
 | Strategy           | Tables                            | Rows                              | Media                              | Folders + redirects          |
 |--------------------|-----------------------------------|-----------------------------------|------------------------------------|------------------------------|
-| `replace`          | Wipe + recreate from bundle       | Wipe + recreate                   | Wipe + write all bytes             | Wipe + recreate from bundle  |
+| `replace`          | Wipe + recreate from bundle       | Wipe + recreate                   | Wipe + write all bytes (conditions below) | Wipe + recreate from bundle  |
 | `merge-add`        | Skip if exists; add if new        | Skip if id or active slug exists; add if new | Skip if exists; add if new         | Left untouched               |
 | `merge-overwrite`  | Upsert (incoming wins)            | Upsert (incoming wins)            | Upsert (incoming bytes win)        | Left untouched               |
 
 Folder membership (`media_asset_folders`) is restored **after** the media bytes land, and only into folders the bundle actually carried. Redirect rows are inserted after their target rows exist (in `replace`, the rows' cascade-delete clears the old redirects first). Folders + redirects ride only the `replace` (full-restore) path because merging a folder tree or redirect set into a populated instance risks unique-key collisions — the same reason the site shell is `replace`/`merge-overwrite`-only.
 
+### Replace and the media library
+
+Media is not branch-scoped, and records outside an import can reference it, so `replace` wipes the library only when nothing that survives the replace can (`replacesMediaLibrary` in `server/handlers/cms/import.ts`):
+
+- the import carries the media category (`media` present in the bundle or the selected archive manifest, even empty). A bundle exported without media leaves the library alone, like folders and redirects;
+- it carries the site shell. A kept shell can reference media (favicon, `@font-face` sources, style-rule backgrounds);
+- it runs on main and no other branch exists. Branches share main's library and their rows and shells reference it.
+
+When it applies, `deleteSiteMediaAssets` (`server/repositories/media.ts`) deletes every `media_assets` row, trashed ones included, inside the import transaction; folder memberships and usage refs cascade. It spares assets owned by records that survive a replace: user avatars (`users.avatar_media_id`) and plugin-managed media (`plugin_media_sources`). After the transaction commits, and before the bundle's media is written, `removeDeletedMediaFiles` sweeps each deleted asset's original and variants through its pinned storage adapter (`removeMediaAssetFiles`, the same sweep a single purge uses). A rolled-back import therefore never loses a file, and a bundle file at a deleted asset's storage path is written after the old bytes are gone. When the conditions do not hold, a bundle asset whose path is already taken by a kept asset still fails on `media_assets.public_path`.
+
 The JSON handler:
 
-1. Validates the bundle against `SiteBundleSchema`.
-2. Runs the same preview logic to compute the change set.
-3. Wraps the apply in a **single DB transaction**:
+1. Checks the strategy gate (`authorizeImportStrategy`), validates the bundle against `SiteBundleSchema`, then checks the shell gate (`authorizeImportedShell`); see the capability gates below.
+2. Calls `applySiteBundle`, which wraps the apply in a **single DB transaction** on the collab-aware write lane:
    - Tables: insert / update / delete per strategy.
    - Rows: insert / update / soft-delete per strategy.
    - Site shell: if the bundle carries `site`, overwrite the `site` row.
+   - `replace` only: the media library (see above), folders, and redirects.
+3. Removes the bytes of media rows a `replace` deleted.
 4. **Outside the transaction**, writes media bytes to `uploads/<storagePath>`. Before writing, the handler calls `assertPathWithin(uploadsDir, target)` (from `server/util/pathWithin.ts`) as a defense-in-depth check — the schema already forbids traversal, but the sink re-asserts containment after `path.join()` resolves symlinks. Media writes are best-effort — if a disk write fails, the row import has already committed and the asset is skipped with a log entry.
 5. Returns `ImportResult` with counts.
 
@@ -251,10 +263,11 @@ The archive handler:
 1. Capability-gates on `data.import`.
 2. Reads and validates the first ZIP entry as `.instatic/site-bundle.json`.
 3. Applies the optional selection filter and row slug overrides to the manifest.
-4. Streams selected media entries into temporary files, validating declared size, CRC descriptors, missing selected entries, and unexpected archive entries before data is mutated.
-5. Delegates the manifest's site/data/folder/redirect content to the JSON import handler without media bytes.
-6. Moves staged media into `uploads/<storagePath>` and upserts the matching media row.
-7. Returns the same `ImportResult` shape with `mediaImported` from the staged entries.
+4. Runs the same two capability gates (`authorizeImportStrategy`, then `authorizeImportedShell` for whether the selection carries the shell).
+5. Streams selected media entries into temporary files, validating declared size, CRC descriptors, missing selected entries, and unexpected archive entries before data is mutated.
+6. Applies the manifest's site/data/folder/redirect content through `applySiteBundle` (the JSON handler's transaction), stating whether the selection carries media, then removes the bytes of media rows a `replace` deleted.
+7. Moves staged media into `uploads/<storagePath>` and upserts the matching media row.
+8. Returns the same `ImportResult` shape with `mediaImported` from the staged entries.
 
 The transaction is **all-or-nothing** for the DB side — if any insert fails, the DB rolls back. Malformed archive media is rejected before the DB transaction starts. A disk failure while moving already-validated staged media can still leave media partially written after the data import, matching the JSON import handler's best-effort filesystem semantics.
 
@@ -262,7 +275,7 @@ The transaction is **all-or-nothing** for the DB side — if any insert fails, t
 
 Per strategy:
 
-- **`replace`**: incoming bundle wins for everything.
+- **`replace`**: incoming bundle wins for everything (media under the conditions in "Replace and the media library").
 - **`merge-add`**: existing rows / tables / media are untouched. Incoming-only items added.
 - **`merge-overwrite`**: matching ids upsert. Items not in the bundle are **kept** (vs. `replace` which deletes them).
 
@@ -375,7 +388,7 @@ A nightly cron can hit `/admin/api/cms/export` with an admin session cookie and 
 - Source-of-truth files:
   - `src/core/data/bundleSchema.ts` — `SiteBundleSchema`, `ImportStrategySchema`, `BundlePreviewSchema`, `ImportResultSchema`
   - `server/handlers/cms/export.ts` — `GET+POST /export`
-  - `server/handlers/cms/import.ts` — `POST /import`
+  - `server/handlers/cms/import.ts` — `POST /import`, plus `authorizeImportStrategy`, `authorizeImportedShell`, and `applySiteBundle` shared with the archive endpoint
   - `server/handlers/cms/importArchive.ts` — `POST /import/archive`
   - `server/handlers/cms/importPreview.ts` — `POST /import/preview`
   - `src/core/persistence/cmsTransfer.ts` — client-side transfer helpers, including native export form submission
@@ -385,3 +398,4 @@ A nightly cron can hit `/admin/api/cms/export` with an admin session cookie and 
   - `src/__tests__/architecture/cmsTransferPreview.test.ts`
   - `src/__tests__/architecture/cmsTransferImport.test.ts`
   - `src/__tests__/architecture/import-export-roundtrip.test.ts`
+  - `src/__tests__/server/importReplaceMedia.test.ts`: `replace` media wipe, same-path re-import, rollback keeps files, spared avatars, conditions, merge strategies untouched

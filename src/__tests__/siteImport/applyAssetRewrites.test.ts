@@ -97,6 +97,13 @@ describe('applyAssetRewrites — node props', () => {
     expect(node.props['href']).toBe('/media/abc123.png')
   })
 
+  it('rewrites videoUrl prop', () => {
+    const plan = planWith({ videoUrl: 'images/hero.png' })
+    const result = applyAssetRewrites(plan, REWRITE_MAP)
+    const node = Object.values(result.pages[0].nodeFragment.nodes)[0]
+    expect(node.props['videoUrl']).toBe('/media/abc123.png')
+  })
+
   it('rewrites srcset tokens', () => {
     const plan = planWith({ srcset: 'images/hero.png 1x, images/hero.png 2x' })
     const result = applyAssetRewrites(plan, REWRITE_MAP)
@@ -339,5 +346,13 @@ describe('applyAssetRewrites — end-to-end via buildImportPlan', () => {
         }
       }
     }
+  })
+})
+
+
+describe('applyAssetRewrites — native video poster', () => {
+  it('rewrites the poster to the uploaded URL', () => {
+    const result = applyAssetRewrites(planWith({ poster: 'images/hero.png' }), REWRITE_MAP)
+    expect(Object.values(result.pages[0].nodeFragment.nodes)[0].props.poster).toBe('/media/abc123.png')
   })
 })
