@@ -8,6 +8,7 @@
 import { describe, it, expect, beforeEach, afterEach } from 'bun:test'
 import { render, screen, cleanup, fireEvent, waitFor } from '@testing-library/react'
 import { useSiteSettingsController } from '@admin/modals/Settings/useSiteSettingsController'
+import { GeneralSection } from '@admin/modals/Settings/sections/GeneralSection'
 import { requestCmsSiteReload } from '@admin/state/adminEvents'
 import { cmsAdapter } from '@core/persistence/cms'
 import type { SiteDocument } from '@core/page-tree'
@@ -146,5 +147,20 @@ describe('Settings outside the Site editor after an out-of-modal site write', ()
     fireEvent.click(screen.getByRole('button', { name: 'Rename' }))
     await waitFor(() => expect(seqs.length).toBe(2))
     expect(seqs[1]).toBeGreaterThanOrEqual(500)
+  })
+})
+
+
+it('refreshes the real General settings inputs after an outside write', async () => {
+  render(<GeneralSection />)
+  const siteName = await screen.findByLabelText('Site Name')
+  await waitFor(() => expect((siteName as HTMLInputElement).value).toBe('Before import'))
+  served = { ...after, settings: { ...after.settings, metaTitle: 'Imported title', metaDescription: 'Imported description', language: 'fr' } }
+  requestCmsSiteReload()
+  await waitFor(() => {
+    expect((screen.getByLabelText('Site Name') as HTMLInputElement).value).toBe('Imported site')
+    expect((screen.getByLabelText('Meta Title') as HTMLInputElement).value).toBe('Imported title')
+    expect((screen.getByLabelText('Meta Description') as HTMLTextAreaElement).value).toBe('Imported description')
+    expect((screen.getByLabelText('Language') as HTMLInputElement).value).toBe('fr')
   })
 })
