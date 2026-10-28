@@ -34,6 +34,7 @@ import * as decoding from 'lib0/decoding'
 import * as syncProtocol from 'y-protocols/sync'
 import * as awarenessProtocol from 'y-protocols/awareness'
 import {
+  createCollabFrameReader,
   decodeCollabFrame,
   encodeCollabFrame,
   FRAME_AWARENESS,
@@ -154,6 +155,7 @@ export function createCollabProvider(
   let reconnectTimer: ReturnType<typeof setTimeout> | undefined
   let pingTimer: ReturnType<typeof setInterval> | undefined
   let lastInboundAt = 0
+  const frameReader = createCollabFrameReader()
 
   const presenceDoc = new Y.Doc()
   const awareness = new awarenessProtocol.Awareness(presenceDoc)
@@ -343,14 +345,24 @@ export function createCollabProvider(
     socket.onmessage = (event) => {
       lastInboundAt = Date.now()
       const { data } = event
-      if (data instanceof ArrayBuffer) handleFrame(new Uint8Array(data))
-      else if (data instanceof Uint8Array) handleFrame(data)
+      try {
+        const packet = data instanceof ArrayBuffer ? new Uint8Array(data) : data instanceof Uint8Array ? data : null
+        if (!packet) return
+        const frame = frameReader.read(packet)
+        if (frame) handleFrame(frame)
+      } catch (err) {
+        console.error('[collab] Invalid server frame:', err)
+        frameReader.clear()
+        setStatus('offline')
+        socket?.close()
+      }
     }
 
     // Errors always surface as a close — reconnect is scheduled there.
     socket.onerror = () => {}
 
     socket.onclose = () => {
+      frameReader.clear()
       socket = null
       clearInterval(pingTimer)
       pingTimer = undefined
@@ -421,6 +433,7 @@ export function createCollabProvider(
       return () => resetListeners.delete(listener)
     },
     destroy: () => {
+      frameReader.clear()
       destroyed = true
       clearTimeout(reconnectTimer)
       clearInterval(pingTimer)

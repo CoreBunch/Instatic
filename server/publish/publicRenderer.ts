@@ -7,7 +7,7 @@ import { buildPublishedSiteCssBundle } from './siteCssBundle'
 import { buildPublishedSiteModuleJsMap } from './moduleJsBundle'
 import { resolveTemplateChain, resolveNotFoundTemplate, composeTemplateChain } from '@core/templates'
 import type { TemplateRenderDataContext } from '@core/templates/dynamicBindings'
-import { prefetchLoopData, publishedDataRowToLoopItem } from './loopPrefetch'
+import { prefetchLoopData, publishedDataRowToEntryItem } from './loopPrefetch'
 import { prefetchMediaAssets } from './mediaPrefetch'
 import { getPublishVersion } from './publishState'
 import type { Page } from '@core/page-tree'
@@ -16,6 +16,8 @@ import type { PublishedDataRow } from '@core/data/schemas'
 import { readEntrySeoOverride } from '@core/data/cells'
 import type { DbClient } from '../db/client'
 import type { PublishedPageSnapshot } from '../repositories/publish'
+import { getDataTable } from '../repositories/data'
+import { MAIN_SCOPE } from '../branches/scope'
 
 /**
  * URL prefix where the Bun server exposes the per-site CSS bundle. Mirrors
@@ -187,12 +189,14 @@ export async function renderPublishedDataRowTemplate(
   // through `documentMeta` and only reaches the `<head>`.
   if (typeof row.cells.title === 'string') merged.title = row.cells.title
 
+  const table = await getDataTable(ctx.db, MAIN_SCOPE, row.tableId)
+
   // Seed the entry stack with the published row + route frame from the request
   // URL. Loop interceptors push/pop iteration items on top of this stack;
   // nodes outside any loop resolve their `currentEntry` bindings against this
   // seed. page/site/viewer frames are filled by `publishPage` from the document.
   const templateContext: TemplateRenderDataContext = {
-    entryStack: [publishedDataRowToLoopItem(row)],
+    entryStack: [await publishedDataRowToEntryItem(ctx.db, row, table?.fields ?? [])],
     ...(ctx.url ? { route: buildRouteFrame(ctx.url.toString()) } : {}),
   }
 

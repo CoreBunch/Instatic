@@ -88,13 +88,147 @@ export function usedStyleRuleIdSignature(
   return [...collectUsedStyleRuleIds(site)].sort().join('\0')
 }
 
+const NEGATION_PSEUDOS: ReadonlySet<string> = new Set(['not'])
+const ALTERNATION_PSEUDOS: ReadonlySet<string> = new Set([
+  'is',
+  'where',
+  'matches',
+  '-webkit-any',
+  '-moz-any',
+])
+
+interface SelectorPartShape {
+  /**
+   * The selector text outside negation and alternation pseudos. Every class
+   * token here must be present for the part to match (conjunction), which also
+   * covers `:has(.x)` and `:nth-child(n of .x)`: their arguments are kept in
+   * place because they demand the class just like a plain compound does.
+   */
+  conjunctive: string
+  /** One entry per `:is()`/`:where()` group: the part matches only if SOME alternative can. */
+  alternations: string[][]
+}
+
+function readFunctionalPseudoName(selector: string, colonIndex: number): string | null {
+  let index = colonIndex + 1
+  if (selector[index] === ':') return null
+  let name = ''
+  while (index < selector.length && /[\w-]/.test(selector[index])) {
+    name += selector[index]
+    index += 1
+  }
+  if (!name || selector[index] !== '(') return null
+  return name.toLowerCase()
+}
+
+function findClosingParen(selector: string, openIndex: number): number {
+  let depth = 0
+  let bracketDepth = 0
+  let quote: '"' | "'" | null = null
+  for (let index = openIndex; index < selector.length; index += 1) {
+    const char = selector[index]
+    if (quote) {
+      if (char === '\\') index += 1
+      else if (char === quote) quote = null
+      continue
+    }
+    if (char === '"' || char === "'") quote = char
+    else if (char === '\\') index += 1
+    else if (char === '[') bracketDepth += 1
+    else if (char === ']') bracketDepth = Math.max(0, bracketDepth - 1)
+    else if (bracketDepth > 0) continue
+    else if (char === '(') depth += 1
+    else if (char === ')') {
+      depth -= 1
+      if (depth === 0) return index
+    }
+  }
+  return selector.length - 1
+}
+
+/**
+ * Split one selector-list part into the text whose classes are all required
+ * and the `:is()`/`:where()` groups whose alternatives are each sufficient.
+ *
+ * `:not(...)` is removed outright. A negated class is not a dependency: the
+ * selector matches MORE elements when that class is absent, so a class no node
+ * carries can never be grounds for dropping the rule. The shape that forced
+ * this is a theme padding every nav link with `.nav > li > a:not(.cart-button)`:
+ * nothing on the site carries `.cart-button`, the rule was dropped, and every
+ * nav link lost its padding.
+ *
+ * `extractCssSelectorClasses` reports each token's `functionalDepth`, but depth
+ * alone cannot tell `:not(.x)` (never required) from `:has(.x)` or
+ * `:nth-child(n of .x)` (required), so the pseudo name has to be read here.
+ */
+function splitSelectorPartShape(part: string): SelectorPartShape {
+  let conjunctive = ''
+  const alternations: string[][] = []
+  let quote: '"' | "'" | null = null
+  let attributeDepth = 0
+
+  for (let index = 0; index < part.length; index += 1) {
+    const char = part[index]
+    if (quote) {
+      conjunctive += char
+      if (char === '\\' && index + 1 < part.length) {
+        index += 1
+        conjunctive += part[index]
+      } else if (char === quote) quote = null
+      continue
+    }
+    if (char === '"' || char === "'") {
+      quote = char
+      conjunctive += char
+      continue
+    }
+    if (char === '\\') {
+      conjunctive += char
+      if (index + 1 < part.length) {
+        index += 1
+        conjunctive += part[index]
+      }
+      continue
+    }
+    if (char === '[') attributeDepth += 1
+    else if (char === ']') attributeDepth = Math.max(0, attributeDepth - 1)
+    if (char === ':' && attributeDepth === 0) {
+      const name = readFunctionalPseudoName(part, index)
+      if (name && (NEGATION_PSEUDOS.has(name) || ALTERNATION_PSEUDOS.has(name))) {
+        const openIndex = index + 1 + name.length
+        const closeIndex = findClosingParen(part, openIndex)
+        if (ALTERNATION_PSEUDOS.has(name)) {
+          const inner = part.slice(openIndex + 1, closeIndex)
+          const alternatives = splitCssSelectorList(inner)
+          if (alternatives.length > 0) alternations.push(alternatives)
+        }
+        index = closeIndex
+        continue
+      }
+    }
+    conjunctive += char
+  }
+
+  return { conjunctive, alternations }
+}
+
 function selectorPartCanMatch(
   selector: string,
   knownClassNames: ReadonlySet<string>,
   usedClassNames: ReadonlySet<string>,
 ): boolean {
-  for (const token of extractCssSelectorClasses(selector)) {
+  const { conjunctive, alternations } = splitSelectorPartShape(selector)
+  for (const token of extractCssSelectorClasses(conjunctive)) {
     if (knownClassNames.has(token.name) && !usedClassNames.has(token.name)) {
+      return false
+    }
+  }
+  for (const alternatives of alternations) {
+    if (
+      !alternatives.some((alternative) =>
+        selectorPartCanMatch(alternative, knownClassNames, usedClassNames),
+      )
+    ) {
       return false
     }
   }
@@ -119,6 +253,10 @@ function selectorCanMatch(
  * in at least one selector-list alternative. Class-free selectors and raw
  * stylesheet blocks stay conservative because their reach cannot be inferred
  * from node class ids alone.
+ *
+ * "Dependency" follows selector semantics: a class inside `:not()` is never
+ * one (the rule matches more when it is absent), and the alternatives of
+ * `:is()`/`:where()` are each sufficient rather than all required.
  */
 export function treeShakeStyleRules(
   styleRules: Record<string, StyleRule>,

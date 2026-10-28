@@ -25,6 +25,12 @@ const { SITE_SOCKET_PATH, createCollabSocketLayer, handleCollabSocketUpgrade } =
 const config = readServerConfig()
 configureTrustedProxyCidrs(config.trustedProxyCidrs)
 configurePublicOrigins(config.publicOrigins)
+// The MCP OAuth issuer is built only from a configured public origin (never
+// the inbound Host header), so without one remote OAuth connectors cannot
+// discover this server. Loopback development is exempt; see mcpIssuer().
+if (config.publicOrigins.length === 0) {
+  console.warn('[server] PUBLIC_ORIGIN is not set; MCP OAuth connectors work only from loopback until it is configured. Personal access tokens still work.')
+}
 configureNpmRegistryUrl(config.npmRegistryUrl)
 const { db, migrations } = createDbClient(config.databaseUrl)
 await runMigrations(db, migrations)

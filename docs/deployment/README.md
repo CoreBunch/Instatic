@@ -30,7 +30,7 @@ DATABASE_URL  sqlite:/path/to/cms.db, file:/path/to/cms.db, postgres://..., or p
 UPLOADS_DIR   directory for media, plugin packs, fonts, and published disk artefacts
 STATIC_DIR    built admin SPA directory; /app/dist in the Docker image
 INSTATIC_SECRET_KEY  base64 32-byte key for encrypted server secrets
-PUBLIC_ORIGIN        comma-separated public origin(s) the CSRF check trusts; auto-detected from RENDER_EXTERNAL_URL / RAILWAY_PUBLIC_DOMAIN on those platforms
+PUBLIC_ORIGIN        comma-separated public origin(s) the CSRF check trusts and the MCP OAuth issuer is built from; auto-detected from RENDER_EXTERNAL_URL / RAILWAY_PUBLIC_DOMAIN on those platforms; without it MCP OAuth discovery answers 503 (loopback development excepted)
 TRUSTED_PROXY_CIDRS  optional; trusts proxy socket peers for forwarded client-IP attribution only (audit logs, rate-limit keys) — NOT used for CSRF
 NPM_REGISTRY_URL     optional; registry for the Dependencies panel, the dependency resolver and runtime installs (default https://registry.npmjs.org); set it for a private registry or corporate mirror
 ```
@@ -58,7 +58,7 @@ INSTATIC_IMAGE=ghcr.io/corebunch/instatic:latest docker compose -f compose.prod.
 Pin a semver tag for predictable upgrades:
 
 ```sh
-INSTATIC_IMAGE=ghcr.io/corebunch/instatic:0.0.20 docker compose -f compose.prod.yml -f compose.sqlite.yml up -d
+INSTATIC_IMAGE=ghcr.io/corebunch/instatic:0.0.21 docker compose -f compose.prod.yml -f compose.sqlite.yml up -d
 ```
 
 Source builds remain supported for contributors and release-candidate testing:

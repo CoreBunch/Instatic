@@ -214,7 +214,11 @@ function parseFontEntry(raw: unknown): FontEntry | null {
 const FontTokenSchema = Type.Object({
   id: Type.String({ minLength: 1 }),
   name: Type.String({ minLength: 1 }),
-  /** CSS custom-property slug without the leading dashes, e.g. `font-primary`. */
+  /**
+   * CSS custom-property slug without the leading dashes, e.g. `font-heading`.
+   * New sites start with the role tokens `font-heading`, `font-body` and
+   * `font-mono` (see `./roles`).
+   */
   variable: Type.String({ minLength: 1 }),
   /** Optional installed FontEntry id. Missing means fallback-only/system token. */
   familyId: Type.Optional(Type.String({ minLength: 1 })),

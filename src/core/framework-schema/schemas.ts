@@ -370,6 +370,17 @@ export const FrameworkPreferencesSettingsSchema = Type.Object({
   isRem: withFallback(Type.Boolean(), true),
   /** Whether generated framework utility CSS is tree-shaken to used class IDs. */
   treeShakeGeneratedFrameworkUtilities: withFallback(Type.Boolean(), true),
+  /**
+   * Whether framework CSS sets `html { font-size }` to `rootFontSize` (as a
+   * percentage of the browser default) so rem tokens render at the size the
+   * scale says. Only acts when `isRem` is on and `rootFontSize` is not 16.
+   *
+   * Optional with NO fallback on purpose: sites created before this field
+   * existed never emitted the rule, and their pages were tuned to the larger
+   * rem rendering. Absent means off, so those sites keep rendering exactly as
+   * before. The Core preset sets it to `true` for new frameworks.
+   */
+  emitRootFontSize: Type.Optional(Type.Boolean()),
 })
 
 export type FrameworkPreferencesSettings = Static<typeof FrameworkPreferencesSettingsSchema>

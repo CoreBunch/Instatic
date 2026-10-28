@@ -1,6 +1,8 @@
 import { MAIN_BRANCH_ID } from '@core/branches'
+import { createNewSiteSettings, type SiteShell } from '@core/page-tree'
 import type { DbClient } from '../db/client'
 import { nowIso } from '@core/utils/isoDate'
+import { CMS_SITE_SCHEMA_VERSION } from './site'
 
 interface SetupStatus {
   hasSite: boolean
@@ -57,6 +59,21 @@ export async function getSetupStatusCached(db: DbClient): Promise<SetupStatus> {
 /** Drop all memoized statuses — for tests that rewind setup state out-of-band (raw SQL deletes). */
 export function resetSetupStatusCacheForTests(): void {
   settledStatusByDb = new WeakMap()
+}
+
+/**
+ * The `settings_json` payload first-run setup writes for a brand-new site. It
+ * carries only the new-site settings (font role tokens); every other shell
+ * field takes its read-time default in `readStoredShell` (`./site`).
+ */
+export function newSiteShellStorage(): {
+  cmsSiteSchemaVersion: typeof CMS_SITE_SCHEMA_VERSION
+  site: Pick<SiteShell, 'settings'>
+} {
+  return {
+    cmsSiteSchemaVersion: CMS_SITE_SCHEMA_VERSION,
+    site: { settings: createNewSiteSettings() },
+  }
 }
 
 export async function createSite(
