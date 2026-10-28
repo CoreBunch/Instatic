@@ -90,7 +90,7 @@ export async function publishDraftSite(
   // Intrinsic to publishing now, not bolted onto the HTTP route.
   await runPublishFlush()
   // Serialize against every other publish so the version read→bake→bump window
-  // can't interleave and mis-stamp baked hole shells (ISS-038).
+  // can't interleave cache generations and artefact swaps (ISS-038).
   return withPublishLock(() => publishDraftSiteLocked(db, adminUserId, uploadsDir))
 }
 
@@ -208,10 +208,8 @@ async function publishDraftSiteLocked(
   // with dynamic nodes bake their static SHELL with `<instatic-hole>` placeholders
   // (the hole runtime lazy-fetches each fragment from `/_instatic/hole/`). Either way
   // the HTML + CSS + JS are served from disk — only the hole fragment touches
-  // the server. The shells are stamped with `nextPublishVersion` (the version
-  // that becomes current the instant `bumpPublishVersion()` runs after the
-  // swap) so their `<instatic-hole data-instatic-version>` matches what the hole endpoint
-  // expects; otherwise every baked hole would be rejected as stale.
+  // the server. Hole placeholders use the frozen site's fingerprint. The next
+  // cache generation pre-warms snapshot/CSS caches and versions module JS.
   const nextPublishVersion = getPublishVersion() + 1
   if (uploadsDir) {
     try {

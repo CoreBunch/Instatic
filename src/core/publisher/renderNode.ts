@@ -225,7 +225,7 @@ function renderHolePlaceholder(
   const sanitized = rawPlaceholder ? sanitizeRichtext(rawPlaceholder, RICHTEXT_CONTENT_CONFIG) : ''
 
   const safeId = escapeHtml(node.id)
-  const version = config.publishVersion ?? 0
+  const version = escapeHtml(config.snapshotHash ?? '')
 
   return (
     `<instatic-hole id="hole-${safeId}" data-instatic-hole="${safeId}" data-instatic-version="${version}" style="display:contents">` +

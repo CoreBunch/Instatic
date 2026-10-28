@@ -139,15 +139,11 @@ interface PublishPageOptions {
    */
   runtimePackageImportmap?: PublishedRuntimePackageImportmap
   /**
-   * Monotonic publish version from `server/publish/publishState.ts`.
-   * Stamped into every `<instatic-hole data-instatic-version>` attribute so the hole
-   * runtime can detect stale placeholders after a re-publish. Pass
-   * `getPublishVersion()` from `publishState.ts` at the call site — this
-   * keeps `src/core/publisher/` free of imports from `server/`.
-   * Defaults to `0` when omitted (holes will always get a stale response
-   * on first fetch, which is safe — the next page load sees the real version).
+   * Fingerprint of the frozen published site, supplied by the server. Stamped
+   * into hole placeholders so cache invalidation cannot make unchanged pages
+   * stale. An omitted hash cannot hydrate from the public fragment endpoint.
    */
-  publishVersion?: number
+  snapshotHash?: string
   /**
    * Editor-only: annotate each node's outermost emitted element with
    * `uid="<id>"`. Default off — real publishes emit clean, id-less
@@ -421,11 +417,10 @@ function buildRuntimeAssetsBlock(
   // was actually rendered during the walk (tracked via acc.holeNodeIds) — no
   // idle JS for fully-static pages.
   const hasHoles = acc.holeNodeIds.size > 0
-  // Version the runtime URL with publishVersion so a CMS update busts the
-  // browser cache (the asset is served `max-age=3600`); the runtime endpoint
-  // ignores the query string.
+  // Refresh the runtime URL when the frozen site changes; the endpoint
+  // ignores the query string and serves the asset with max-age=3600.
   const holeRuntimeScript = hasHoles
-    ? `  <script type="module" src="/_instatic/hole-runtime.js?v=${options.publishVersion ?? 0}" defer></script>`
+    ? `  <script type="module" src="/_instatic/hole-runtime.js?v=${encodeURIComponent(options.snapshotHash ?? '')}" defer></script>`
     : ''
 
   // Site-dependency importmap. When present we emit a `<script type="importmap">`
@@ -568,7 +563,7 @@ export function publishPage(
     loopData: options.loopData,
     mediaAssets: options.mediaAssets,
     dynamicNodeIds: dynamicNodeIds.size > 0 ? dynamicNodeIds : undefined,
-    publishVersion: options.publishVersion ?? 0,
+    snapshotHash: options.snapshotHash ?? '',
     annotateNodeIds: options.annotateNodeIds,
   }
 
