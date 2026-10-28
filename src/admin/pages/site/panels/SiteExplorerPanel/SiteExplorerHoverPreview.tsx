@@ -121,7 +121,7 @@ function HoverPreviewDocument({
   templatePreviewContext,
 }: HoverPreviewDocumentProps) {
   const iframeRef = useRef<HTMLIFrameElement>(null)
-  const { html, loading, error, refresh } = useRuntimePreviewDocument(
+  const { html, error, refresh } = useRuntimePreviewDocument(
     site,
     preview.page,
     templatePreviewContext,
@@ -138,7 +138,7 @@ function HoverPreviewDocument({
     )
   }
 
-  if (loading || !html) return <HoverPreviewStatus label="Building desktop preview…" />
+  if (!html) return <HoverPreviewStatus label="Building desktop preview…" />
 
   function handlePreviewWheel(event: WheelEvent<HTMLDivElement>) {
     const previewWindow = iframeRef.current?.contentWindow

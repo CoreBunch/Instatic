@@ -49,8 +49,8 @@ export type NewStyleRule = Omit<StyleRule, 'id' | 'createdAt' | 'updatedAt'>
  *   declaration value. Assets are collected in `assetRefs` (not warnings) by
  *   the Phase 1 parser; this kind is reserved for Phase 2's use.
  * - `duplicate-class`: two `.foo { ... }` rules with the same class selector
- *   appeared in the same file. The later rule's declarations win (CSS cascade
- *   semantics). One warning is emitted per duplicated class.
+ *   appeared in the same file. Each occurrence stays its own rule at its own
+ *   source position (CSS cascade semantics). One warning per repeat.
  *
  * Phase 2 (site import pipeline) kinds:
  * - `missing-stylesheet`: a stylesheet referenced from an HTML `<link>` or a
@@ -460,7 +460,7 @@ export interface PagePlan {
   /**
    * The body content as a flat node fragment.
    *
-   * URL-shaped props (`src`, `href`, `srcset`) are normalized to FileMap keys
+   * URL-shaped props (`src`, `href`, `srcset`, `videoUrl`, `poster`) are normalized to FileMap keys
    * (relative paths) so that `applyAssetRewrites` can do exact-string
    * replacement without needing the original base path.
    */

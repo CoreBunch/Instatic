@@ -618,8 +618,24 @@ inbound frame names the lineage, then sends them as one update — so a row
 created and placed inside the bind round trip is never refused. Two more socket-level defenses: per-frame payload caps (64 KB
 awareness / 4 MB sync, plus the transport `maxPayloadLength`) drop oversized
 frames before any decode work, and every awareness frame is decoded and
-checked against the session — a state claiming another user's identity
-(`state.user.id !== session user`) is dropped, so presence can't be spoofed.
+checked against the session — a state whose identity (id, name, avatar,
+Gravatar hash) differs from the session's is dropped, so presence can't be
+spoofed. The session name is `userDisplayLabel(user)`
+(`src/core/users/displayName.ts`): the display name, or the email address
+when the admin has none ("Your name" is optional at setup). The editor
+publishes the same label, so collaborators see the **email address** of an
+admin without a display name. Before, such an admin published no presence
+at all: no cursor, no selection ring, and no "someone else is editing"
+guard.
+
+Stored snapshots can exceed a socket's outbound buffer. The server sends
+these through `collabFramePackets` in 256 KiB packets, waiting for drain
+between buffered direct sends. Broadcast updates use the same packet format.
+The client reconstructs each complete frame before applying it to Yjs;
+interleaved transfers are bounded to four documents and 64 MiB total and
+discarded on disconnect. Incoming write and awareness caps remain unchanged.
+The shared framing code lives in `src/core/collab/frameTransfer.ts`;
+real-socket coverage lives in `collabLargeDelivery.test.ts`.
 
 **Client transport** (`src/admin/pages/site/collab/collabProvider.ts`): one
 socket, every bound doc multiplexed; local transactions send updates the

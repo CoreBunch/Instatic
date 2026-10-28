@@ -1,5 +1,6 @@
 import type {
   DataField,
+  DataSelectOption,
   DataTable,
 } from '@core/data/schemas'
 import { isValidEmail } from '../utils/email'
@@ -115,8 +116,11 @@ function coerceFieldValue(field: DataField, value: unknown): CoerceResult {
     case 'email':
     case 'date':
     case 'dateTime':
-    case 'select':
       return { ok: true, value: String(value) }
+    case 'select': {
+      const optionId = resolveOptionId(field.options, String(value))
+      return optionId === null ? invalidOption() : { ok: true, value: optionId }
+    }
     case 'number': {
       const numberValue = typeof value === 'number' ? value : Number(value)
       return Number.isFinite(numberValue)
@@ -125,10 +129,15 @@ function coerceFieldValue(field: DataField, value: unknown): CoerceResult {
     }
     case 'boolean':
       return { ok: true, value: coerceBoolean(value) }
-    case 'multiSelect':
-      return Array.isArray(value)
-        ? { ok: true, value: value.map(String) }
-        : { ok: true, value: [String(value)] }
+    case 'multiSelect': {
+      const optionIds: string[] = []
+      for (const item of Array.isArray(value) ? value : [value]) {
+        const optionId = resolveOptionId(field.options, String(item))
+        if (optionId === null) return invalidOption()
+        optionIds.push(optionId)
+      }
+      return { ok: true, value: optionIds }
+    }
     case 'media':
       if (field.allowMultiple) {
         return Array.isArray(value)
@@ -148,6 +157,18 @@ function coerceFieldValue(field: DataField, value: unknown): CoerceResult {
     case 'repeater':
       return { ok: false, code: 'unsupported_field', message: 'This field cannot be submitted by a form.' }
   }
+}
+
+function invalidOption(): CoerceResult {
+  return { ok: false, code: 'invalid_option', message: 'Choose one of the allowed options.' }
+}
+
+// Form controls submit the option `value` authors see in the Data tab, while
+// the stored cell is the option `id` (see src/core/data/schemas.ts). Accept
+// either and store the id.
+function resolveOptionId(options: DataSelectOption[], raw: string): string | null {
+  const option = options.find((candidate) => candidate.id === raw || candidate.value === raw)
+  return option ? option.id : null
 }
 
 function coerceBoolean(value: unknown): boolean {
@@ -216,20 +237,6 @@ function validateCoercedValue(
     }
     if (max !== undefined && value > max) {
       return { fieldId: field.id, code: 'too_large', message: `Must be ${max} or less.` }
-    }
-  }
-
-  if (field.type === 'select' && typeof value === 'string') {
-    const allowed = new Set(field.options.map((option) => option.id))
-    if (!allowed.has(value)) {
-      return { fieldId: field.id, code: 'invalid_option', message: 'Choose one of the allowed options.' }
-    }
-  }
-
-  if (field.type === 'multiSelect' && Array.isArray(value)) {
-    const allowed = new Set(field.options.map((option) => option.id))
-    if (value.some((item) => !allowed.has(String(item)))) {
-      return { fieldId: field.id, code: 'invalid_option', message: 'Choose one of the allowed options.' }
     }
   }
 

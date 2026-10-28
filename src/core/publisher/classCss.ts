@@ -11,8 +11,11 @@ import { responsiveBackgroundImage, type ResponsiveCssOptions } from './responsi
 /**
  * Convert a camelCase CSS property name to kebab-case.
  * "backgroundColor" -> "background-color", "zIndex" -> "z-index"
+ * Custom properties are case-sensitive and pass through as authored, so
+ * `--brandColor` keeps matching `var(--brandColor)`.
  */
 function toKebab(camel: string): string {
+  if (camel.startsWith('--')) return camel
   return camel.replace(/([A-Z])/g, (_, c: string) => `-${c.toLowerCase()}`)
 }
 
@@ -49,12 +52,19 @@ const DENIED_PROPS = new Set<string>([
 ])
 
 /**
- * A syntactically valid CSS property name. `-{0,2}` allows an optional leading
- * `-` (vendor prefix, e.g. `-webkit-...`) or `--` (custom property), then a
- * letter, then letters / digits / hyphens. Zero dashes covers the camelCase
- * keys our editor writes (`fontSize`) AND plain kebab-case keys (`flex-grow`).
+ * A syntactically valid CSS property name. `-?` allows an optional leading `-`
+ * (vendor prefix, e.g. `-webkit-...`), then a letter, then letters / digits /
+ * hyphens. No dash covers the camelCase keys our editor writes (`fontSize`)
+ * AND plain kebab-case keys (`flex-grow`).
  */
-const VALID_PROPERTY_RE = /^-{0,2}[a-zA-Z][a-zA-Z0-9-]*$/
+const VALID_PROPERTY_RE = /^-?[a-zA-Z][a-zA-Z0-9-]*$/
+
+/**
+ * A custom property name. The spec allows any identifier after `--`, so
+ * underscores and a leading `--_` are valid; Webflow exports generate both
+ * (`--brand---ds_mapped---bg`, `--_mapped---button--fill`).
+ */
+const CUSTOM_PROPERTY_RE = /^--[a-zA-Z0-9_-]+$/
 
 /**
  * Whether a property may be emitted into published CSS. Permissive: valid CSS
@@ -62,7 +72,8 @@ const VALID_PROPERTY_RE = /^-{0,2}[a-zA-Z][a-zA-Z0-9-]*$/
  * the same gate (no second source of truth).
  */
 export function isEmittableProperty(prop: string): boolean {
-  return VALID_PROPERTY_RE.test(prop) && !DENIED_PROPS.has(prop.toLowerCase())
+  const valid = prop.startsWith('--') ? CUSTOM_PROPERTY_RE.test(prop) : VALID_PROPERTY_RE.test(prop)
+  return valid && !DENIED_PROPS.has(prop.toLowerCase())
 }
 
 // ---------------------------------------------------------------------------

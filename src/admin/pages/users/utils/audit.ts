@@ -9,7 +9,8 @@
  * sentence-case title rendering.
  */
 import type { CmsAuditEvent, CmsCurrentUser, CmsRole } from '@core/persistence'
-import { displayUserName, statusLabel } from './format'
+import { userDisplayLabel } from '@core/users/displayName'
+import { statusLabel } from './format'
 
 function metadataString(metadata: Record<string, unknown>, key: string): string | null {
   const value = metadata[key]
@@ -52,7 +53,7 @@ function auditUserLabel(
 ): string | null {
   if (!userId) return fallback
   const user = usersById.get(userId)
-  return user ? displayUserName(user) : fallback ?? userId
+  return user ? userDisplayLabel(user) : fallback ?? userId
 }
 
 export function auditActor(event: CmsAuditEvent, usersById: Map<string, CmsCurrentUser>): string {

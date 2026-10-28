@@ -167,3 +167,70 @@ describe('validateFormSubmission', () => {
     }
   })
 })
+
+// Options created in the Data workspace get a generated id and a slug value.
+// Form controls submit the value; the stored cell is the id.
+const optionTable: DataTable = {
+  ...table,
+  id: 'contact_requests',
+  primaryFieldId: 'topic',
+  fields: [
+    { id: 'topic', label: 'Topic', type: 'select', options: [
+      { id: 'o1x9kq2v', label: 'General request', value: 'general_request' },
+      { id: 'p4m2zt7w', label: 'Billing', value: 'billing' },
+    ] },
+    { id: 'channels', label: 'Channels', type: 'multiSelect', options: [
+      { id: 'c8a1', label: 'Email', value: 'email' },
+      { id: 'c8a2', label: 'Phone', value: 'phone' },
+    ] },
+  ],
+}
+
+const optionControls = [
+  { nodeId: 'topic-select', fieldId: 'topic' },
+  { nodeId: 'channels-select', fieldId: 'channels' },
+]
+
+describe('validateFormSubmission select options', () => {
+  it('accepts the option value a form control submits and stores the option id', () => {
+    const result = validateFormSubmission({
+      table: optionTable,
+      controls: optionControls,
+      values: { topic: 'general_request', channels: ['email', 'phone'] },
+    })
+
+    expect(result.ok).toBe(true)
+    if (result.ok) {
+      expect(result.cells).toEqual({ topic: 'o1x9kq2v', channels: ['c8a1', 'c8a2'] })
+    }
+  })
+
+  it('still accepts option ids, mixed with values for multiSelect', () => {
+    const result = validateFormSubmission({
+      table: optionTable,
+      controls: optionControls,
+      values: { topic: 'p4m2zt7w', channels: ['c8a1', 'phone'] },
+    })
+
+    expect(result.ok).toBe(true)
+    if (result.ok) {
+      expect(result.cells).toEqual({ topic: 'p4m2zt7w', channels: ['c8a1', 'c8a2'] })
+    }
+  })
+
+  it('rejects options that match neither an id nor a value', () => {
+    const result = validateFormSubmission({
+      table: optionTable,
+      controls: optionControls,
+      values: { topic: 'General request', channels: ['email', 'fax'] },
+    })
+
+    expect(result.ok).toBe(false)
+    if (!result.ok) {
+      expect(result.errors).toEqual([
+        { fieldId: 'topic', code: 'invalid_option', message: 'Choose one of the allowed options.' },
+        { fieldId: 'channels', code: 'invalid_option', message: 'Choose one of the allowed options.' },
+      ])
+    }
+  })
+})

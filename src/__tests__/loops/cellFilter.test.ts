@@ -146,22 +146,40 @@ describe('parseCellOrder', () => {
 })
 
 describe('cellOrderSql', () => {
+  test('numeric ordering binds every dialect-specific occurrence and keeps untyped cells last', () => {
+    const field = "rank'); DROP TABLE data_rows; --"
+    for (const dialect of ['postgres', 'sqlite'] as const) {
+      const { sql, params } = cellOrderSql({ field, dialect, column: 'c', paramIndex: 3, numeric: true })
+      expect(sql).not.toContain(field)
+      expect(sql).toContain('is null then 1 else 0 end asc,')
+      expect(params).toEqual(dialect === 'postgres' ? [field] : [field, field, field, field])
+      if (dialect === 'postgres') {
+        expect(sql).toContain('jsonb_typeof')
+        expect(sql).toContain('as numeric')
+        expect(sql).toContain('$3')
+        expect(sql).not.toContain('$4')
+      } else {
+        expect(sql.match(/\?/g)).toHaveLength(params.length)
+        expect(sql).toContain("in ('integer', 'real')")
+      }
+    }
+  })
   test('binds the field name and never writes it into the SQL', () => {
     for (const dialect of ['postgres', 'sqlite'] as const) {
-      const { sql, params } = cellOrderSql({ field: 'published-on', dialect, column: 'c', paramIndex: 2 })
+      const { sql, params } = cellOrderSql({ field: 'published-on', dialect, column: 'c', paramIndex: 2, numeric: false })
       expect(sql).not.toContain('published-on')
       expect(params).toEqual(['published-on'])
     }
   })
 
   test('rows without the field get a defined sort position', () => {
-    const { sql } = cellOrderSql({ field: 'f', dialect: 'sqlite', column: 'c', paramIndex: 1 })
+    const { sql } = cellOrderSql({ field: 'f', dialect: 'sqlite', column: 'c', paramIndex: 1, numeric: false })
     expect(sql).toContain('coalesce')
   })
 
   test('placeholder style follows the dialect', () => {
-    expect(cellOrderSql({ field: 'f', dialect: 'postgres', column: 'c', paramIndex: 3 }).sql).toContain('$3')
-    expect(cellOrderSql({ field: 'f', dialect: 'sqlite', column: 'c', paramIndex: 3 }).sql).toContain('?')
+    expect(cellOrderSql({ field: 'f', dialect: 'postgres', column: 'c', paramIndex: 3, numeric: false }).sql).toContain('$3')
+    expect(cellOrderSql({ field: 'f', dialect: 'sqlite', column: 'c', paramIndex: 3, numeric: false }).sql).toContain('?')
   })
 })
 
