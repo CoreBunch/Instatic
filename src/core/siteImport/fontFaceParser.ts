@@ -63,7 +63,7 @@ export function parseFontFaceRule(rule: CSSFontFaceRule): ParsedFontFaceRule | n
   if (!family || srcUrls.length === 0) return { srcValue, fontFace: null }
 
   const unicodeRange = (declarations.getPropertyValue('unicode-range') || '').trim()
-  const fontDisplay = parseFontDisplay(declarations.getPropertyValue('font-display').trim()) ?? 'auto'
+  const fontDisplay = parseFontDisplay(declarations.getPropertyValue('font-display').trim().toLowerCase()) ?? 'auto'
   return {
     srcValue,
     fontFace: {

@@ -37,3 +37,8 @@ describe('imported font-display', () => {
     expect(() => parseValue(FontEntrySchema, entry)).toThrow()
   })
 })
+
+it('normalizes case-insensitive CSS font-display keywords', () => {
+  const { fontFaces } = cssToStyleRules('@font-face { font-family: Icons; font-display: BLOCK; src: url("icons.woff2"); }')
+  expect(fontFaces[0].fontDisplay).toBe('block')
+})
