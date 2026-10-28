@@ -34,9 +34,13 @@ Use this matrix to choose agent-browser audit scope. Rows are user goals. Keep s
 | PUB-003 | P1 | ✅ | Draft Safety | Make an unpublished draft change | Published page exists | Edit draft, do not publish, open public route | Public page still shows last published version | draft/public mismatch |
 | PUBLISH-002 | P1 | ✅ | Scheduled Publish | Schedule an active page for future publication | Draft page exists | Site toolbar publish menu, Schedule, dashboard | Dashboard shows the scheduled page count and Publish lineup route; scheduler publishes due scheduled rows | wrong active row, timezone conversion, stale dashboard state |
 
+| PUBLISH-004 | P0 | ✅ | Dynamic publishing | Publish a post without blanking other pages | Published page with query-bound text | Publish unrelated post, reload anonymous page | Dynamic text remains visible | cache bump, restart, replaced snapshot, visitor isolation |
+
 Core owner lifecycle note: `core-owner-lifecycle.e2e.ts` logs in from a clean context, signs out and back in, inserts homepage text, saves and reloads the draft, publishes with step-up, verifies the anonymous public page, then saves a later unpublished draft and verifies the public route still shows the last published text. SAVE-001 mobile coverage in `page-management.e2e.ts` saves an isolated page, switches to 390x844, reloads, reopens the saved page, verifies the saved text, and verifies the narrow toolbar keeps publish actions reachable without document-level horizontal overflow.
 
 PUBLISH-002 note: `page-management.e2e.ts` schedules a newly-created active page from the Site toolbar, then verifies the dashboard Pages widget reports a scheduled page and the Publish lineup lists the scheduled route. `src/__tests__/server/publishScheduler.test.ts` covers the due-row scheduler tick that promotes a scheduled page row to published as the system actor.
+
+PUBLISH-004 note: `hole-publication.e2e.ts` creates and publishes query-bound text through the editor, publishes an unrelated post through the authenticated row API, and reloads the page in a fresh visitor context. The text must remain visible after the fragment response. `holePublication.test.ts` covers the same failure with real SQLite/PostgreSQL storage, cache bumps, and process-state reset.
 
 ## Admin Shell And Account
 

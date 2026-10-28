@@ -10,6 +10,7 @@ import type { TemplateRenderDataContext } from '@core/templates/dynamicBindings'
 import { prefetchLoopData, publishedDataRowToEntryItem } from './loopPrefetch'
 import { prefetchMediaAssets } from './mediaPrefetch'
 import { getPublishVersion } from './publishState'
+import { getPublishedSnapshotHash } from './publishedSnapshotCache'
 import type { Page } from '@core/page-tree'
 import type { DocumentMetaOverride, SiteCssBundle } from '@core/publisher'
 import type { PublishedDataRow } from '@core/data/schemas'
@@ -53,7 +54,7 @@ export interface RendererOutput {
   /**
    * Publish version this page was rendered at (the bake passes the NEXT
    * version, live renders the current one) — stamped into module-js `?v=`
-   * URLs so they cache-bust in lockstep with hole placeholders.
+   * URLs so they cache-bust when published content changes.
    */
   publishVersion: number
   /**
@@ -70,13 +71,7 @@ interface RenderPublishedSnapshotContext {
   db: DbClient
   /** Optional request URL — when present, drives per-loop pagination. */
   url?: URL
-  /**
-   * Publish version to stamp into `<instatic-hole data-instatic-version>` placeholders.
-   * Defaults to the live `getPublishVersion()`. The full/incremental publish
-   * bakes shells BEFORE bumping the version, so it passes the next version
-   * (`getPublishVersion() + 1`) here — otherwise every baked hole would carry
-   * a stale version and the hole endpoint would refuse to hydrate it.
-   */
+  /** Cache generation used for CSS bundles and module-JS URLs during the bake. */
   publishVersion?: number
 }
 
@@ -114,7 +109,7 @@ async function renderMergedTemplate(
     loopData,
     mediaAssets,
     loopEndpointBaseUrl: LOOP_ENDPOINT_BASE_URL,
-    publishVersion,
+    snapshotHash: getPublishedSnapshotHash(snapshot.site),
   })
   // Per-page injection set = candidates from the render (emitted ∪ hole
   // subtrees) ∩ the site module-JS map — over-inclusive candidates from

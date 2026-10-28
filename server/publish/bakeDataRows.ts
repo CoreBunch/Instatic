@@ -56,9 +56,9 @@ function publicRowPath(routeBase: string, slug: string): string {
  * the freshly-committed publish) and BEFORE the slot swap.
  *
  * `publishVersion` is the NEXT publish version — the bake runs before
- * `bumpPublishVersion()`, so baked hole shells must carry the version that
- * becomes current at the swap. Passing it to the versioned snapshot memo
- * also pre-warms the cache visitors are about to read.
+ * `bumpPublishVersion()`. Passing it to the versioned snapshot memo pre-warms
+ * the cache visitors are about to read. Hole validity uses the frozen site
+ * fingerprint independently of this cache generation.
  */
 export async function bakePublishedDataRowArtefacts(
   db: DbClient,

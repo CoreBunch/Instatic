@@ -224,7 +224,6 @@ export async function renderBranchPreview(
     loopData,
     mediaAssets,
     dynamicNodes: 'inline',
-    publishVersion: getPublishVersion(),
   })
   // The same pipeline as a published page (plugin frontend assets, form
   // tokens, module scripts, the `publish.*` hooks), so a form or a plugin's

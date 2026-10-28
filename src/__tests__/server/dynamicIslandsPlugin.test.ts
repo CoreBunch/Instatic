@@ -23,7 +23,8 @@ import { Value } from '@sinclair/typebox/value'
 import type { DbClient, DbResult } from '../../../server/db'
 import { handleHoleRequest } from '../../../server/handlers/cms/hole'
 import { resetForTests } from '../../../server/publish/renderCache'
-import { getPublishVersion } from '../../../server/publish/publishState'
+import { getPublishedSnapshotHash } from '../../../server/publish/publishedSnapshotCache'
+import { bumpPublishVersion } from '../../../server/publish/publishState'
 import { LoopSourceDescriptorSchema } from '../../../server/plugins/protocol/schemas/loops'
 import { registry } from '../../core/module-engine/registry'
 import type { AnyModuleDefinition } from '../../core/module-engine'
@@ -287,7 +288,7 @@ describe('hole endpoint — shared (requestDependent) hole', () => {
   it('renders request-time data from route.query and does NOT expose cookies', async () => {
     const snap = makeSnapshotWithLoop('hole-loop', LIVE_SOURCE_ID)
     const db = makeFakeDb(snap)
-    const v = getPublishVersion()
+    const v = getPublishedSnapshotHash(snap.site)
     const u = encodeURIComponent('/search?q=shoes')
     const url = new URL(`http://localhost/_instatic/hole/hole-loop?v=${v}&u=${u}`)
     const res = await handleHoleRequest(makeReq('sid=secret'), url, { db })
@@ -302,7 +303,7 @@ describe('hole endpoint — shared (requestDependent) hole', () => {
   it('caches per query: same query reuses the render, different query re-fetches', async () => {
     const snap = makeSnapshotWithLoop('hole-loop', LIVE_SOURCE_ID)
     const db = makeFakeDb(snap)
-    const v = getPublishVersion()
+    const v = getPublishedSnapshotHash(snap.site)
 
     const hit = async (q: string) => {
       const url = new URL(`http://localhost/_instatic/hole/hole-loop?v=${v}&u=${encodeURIComponent(`/search?q=${q}`)}`)
@@ -317,6 +318,12 @@ describe('hole endpoint — shared (requestDependent) hole', () => {
     const b1 = await hit('hats')
     expect(b1).toContain('q=hats')
     expect(liveCalls).toBe(2) // distinct query → distinct cache slot → re-fetch
+
+    // A post publish invalidates live data, not the baked placeholder.
+    bumpPublishVersion()
+    const refreshed = await hit('shoes')
+    expect(refreshed).toContain('q=shoes')
+    expect(liveCalls).toBe(3)
   })
 })
 
@@ -328,7 +335,7 @@ describe('hole endpoint — per-visitor hole', () => {
   it('reads cookies, bypasses the cache (no-store), and re-renders every request', async () => {
     const snap = makeSnapshotWithLoop('hole-loop', VISITOR_SOURCE_ID)
     const db = makeFakeDb(snap)
-    const v = getPublishVersion()
+    const v = getPublishedSnapshotHash(snap.site)
     const url = new URL(`http://localhost/_instatic/hole/hole-loop?v=${v}&u=${encodeURIComponent('/')}`)
 
     const res1 = await handleHoleRequest(makeReq('sid=alice'), url, { db })
@@ -356,7 +363,7 @@ describe('hole endpoint — versioned snapshot cache', () => {
     const snap = makeSnapshotWithLoop('hole-loop', LIVE_SOURCE_ID)
     const counters = { snapshotLoads: 0 }
     const db = makeFakeDb(snap, counters)
-    const v = getPublishVersion()
+    const v = getPublishedSnapshotHash(snap.site)
 
     for (const q of ['a', 'b', 'c']) {
       const url = new URL(`http://localhost/_instatic/hole/hole-loop?v=${v}&u=${encodeURIComponent(`/s?q=${q}`)}`)
