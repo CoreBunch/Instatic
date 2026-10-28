@@ -550,6 +550,8 @@ Content-scope tools are registered under `server/ai/tools/content/`. They use th
 
 The content system prompt is markdown-native: it tells the model to exchange body content as standard markdown, to read schemas before writing unfamiliar fields, and to prefer `content_set_document_fields` for whole-post generation. The prompt is built with the same `[staticPrefix, SYSTEM_PROMPT_DYNAMIC_BOUNDARY, dynamicSuffix]` shape as the Site prompt so provider prompt caching works the same way.
 
+Snapshot frame readiness is event-driven: `waitForAgentRenderFrame` observes canvas mounts and readiness markers, with a 250 ms fallback poll. It retains the five-second deadline and rejects frames that become ready after it, including when background-tab timers are throttled.
+
 ### Heavy evidence — image channel + vision gating + elision
 
 `site_render_snapshot` (and `site_read_document` / `site_get_node_html`) return large payloads. Five rules keep them from exploding context (a screenshot inlined as base64 JSON text once pushed a single turn past 1M tokens):

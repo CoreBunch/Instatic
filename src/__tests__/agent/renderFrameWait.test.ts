@@ -52,3 +52,18 @@ describe('waitForAgentRenderFrame', () => {
     expect(await waitForAgentRenderFrame({ breakpointId: 'mobile', source: 'visible' }, 60)).toBeNull()
   })
 })
+
+it('rejects a frame that becomes ready after the deadline', async () => {
+  const originalNow = Date.now
+  let now = 0
+  Date.now = () => now
+  try {
+    const iframe = mountFrame('desktop')
+    const waiting = waitForAgentRenderFrame({ breakpointId: 'desktop', source: 'visible' }, 50)
+    now = 100
+    iframe.dataset.instaticCanvasDocumentLoaded = 'true'
+    expect(await waiting).toBeNull()
+  } finally {
+    Date.now = originalNow
+  }
+})

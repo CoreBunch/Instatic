@@ -199,6 +199,7 @@ export async function waitForAgentRenderFrame(
   })
   try {
     for (;;) {
+      if (Date.now() > deadline) return null
       const frame = findAgentRenderFrame({ ...query, requireReady: true })
       if (frame) return frame
       const remaining = deadline - Date.now()
