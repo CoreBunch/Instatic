@@ -96,7 +96,9 @@ export interface PersistSitePublishInput {
   site: SiteDocument
   serializedImportmap: { body: string; sha256: string } | null
   pages: PublishedPageVersionWrite[]
-  publishedByUserId: string
+  publishedByUserId: string | null
+  /** On a page-only publish, other rows retain their draft/status metadata. */
+  editedPageId?: string
 }
 
 // ---------------------------------------------------------------------------
@@ -160,6 +162,52 @@ export async function getDraftSiteDocument(
     pages: orderSiteDocumentRows(pageRows).map(pageFromRow),
     visualComponents,
     layouts: [],
+  }
+}
+
+/** A page-only publish needs an existing frozen shell, even when that page is scheduled. */
+export class PagePublishError extends Error {
+  readonly pageId: string
+
+  constructor(pageId: string, message: string) {
+    super(message)
+    this.name = 'PagePublishError'
+    this.pageId = pageId
+  }
+}
+
+/** Replace just the selected page; shared resources and all other pages stay published. */
+export async function getPagePublishDocument(db: DbClient, row: DataRow): Promise<SiteDocument> {
+  const { rows } = await db<{ site_json: SiteDocument }>`
+    select site_snapshots.site_json
+    from data_rows
+    join data_row_versions on data_row_versions.id = data_rows.active_version_id
+    join site_snapshots on site_snapshots.id = data_row_versions.site_snapshot_id
+    where data_rows.table_id = 'pages'
+      and data_rows.deleted_at is null
+      and (data_rows.status = 'published' or data_rows.id = ${row.id})
+    order by data_rows.created_at asc
+    limit 1
+  `
+  const site = rows[0]?.site_json
+  if (!site) throw new PagePublishError(row.id, 'Publish the site first before publishing an individual page.')
+  const pageRows = await listDataRows(db, MAIN_SCOPE, 'pages')
+  const publicIds = new Set(pageRows.filter((page) => page.status === 'published').map((page) => page.id))
+  const page = pageFromRow(row)
+  const pages = site.pages.filter((other) => other.id === row.id || publicIds.has(other.id))
+  if (pages.some((other) => other.id !== row.id && other.slug === page.slug)) {
+    throw new PagePublishError(row.id, `The published route "${page.slug}" belongs to another page. Publish the site to apply both route changes together.`)
+  }
+  for (const node of Object.values(page.nodes)) {
+    if (node.moduleId === 'base.visual-component-ref' && !site.visualComponents.some((vc) => vc.id === node.props.componentId)) {
+      throw new PagePublishError(row.id, 'This page uses an unpublished component. Publish the site first.')
+    }
+  }
+  return {
+    ...site,
+    pages: pages.some((other) => other.id === row.id)
+      ? pages.map((other) => other.id === row.id ? page : other)
+      : [...pages, page],
   }
 }
 
@@ -245,9 +293,22 @@ export async function persistSitePublish(
     `
 
     for (const page of input.pages) {
+      const refreshOnly = input.editedPageId !== undefined && input.editedPageId !== page.pageId
+      const { rows: previousRows } = await tx<{
+        active_version_id: string | null
+        published_by_user_id: string | null
+        published_at: string | Date | null
+      }>`
+        select active_version_id, published_by_user_id, published_at
+        from data_rows where id = ${page.pageId}
+      `
+      const previous = previousRows[0]
+      const previousVersionId = previous?.active_version_id ?? null
+      const publisherUserId = refreshOnly ? previous?.published_by_user_id ?? null : input.publishedByUserId
+      const publishedAt = refreshOnly ? previous?.published_at ?? nowIso() : nowIso()
       await tx`
         insert into data_row_versions
-          (id, row_id, version_number, cells_json, slug, site_snapshot_id, runtime_assets_json, published_by_user_id)
+          (id, row_id, version_number, cells_json, slug, site_snapshot_id, runtime_assets_json, published_by_user_id, published_at)
         values (
           ${page.versionId},
           ${page.pageId},
@@ -256,16 +317,16 @@ export async function persistSitePublish(
           ${page.slug},
           ${input.siteSnapshotId},
           ${page.runtimeAssets},
-          ${input.publishedByUserId}
+          ${publisherUserId},
+          ${publishedAt}
         )
       `
       await savePublishedRuntimeAssets(tx, page.versionId, page.runtimeFiles)
-      const { rows: previousRows } = await tx<{ active_version_id: string | null }>`
-        select active_version_id from data_rows where id = ${page.pageId}
-      `
-      const previousVersionId = previousRows[0]?.active_version_id ?? null
       const now = nowIso()
-      const { rowCount } = await tx`
+      const { rowCount } = refreshOnly
+        ? await tx`update data_rows set active_version_id = ${page.versionId}
+            where id = ${page.pageId} and deleted_at is null`
+        : await tx`
         update data_rows
         set active_version_id = ${page.versionId},
             status = 'published',
@@ -327,7 +388,7 @@ export async function getPublishedPageBySlug(
     join data_row_versions on data_row_versions.id = data_rows.active_version_id
     join site_snapshots on site_snapshots.id = data_row_versions.site_snapshot_id
     where data_rows.table_id = 'pages'
-      and data_rows.slug = ${slug}
+      and data_row_versions.slug = ${slug}
       and data_rows.status = 'published'
       and data_rows.deleted_at is null
     limit 1

@@ -33,10 +33,11 @@ Use this matrix to choose agent-browser audit scope. Rows are user goals. Keep s
 | PUB-002 | P0 | ✅ | Public Site | Visit published homepage as a visitor | Published site | Open public route | Public page shows published content without admin chrome | draft leakage, missing CSS, broken assets |
 | PUB-003 | P1 | ✅ | Draft Safety | Make an unpublished draft change | Published page exists | Edit draft, do not publish, open public route | Public page still shows last published version | draft/public mismatch |
 | PUBLISH-002 | P1 | ✅ | Scheduled Publish | Schedule an active page for future publication | Draft page exists | Site toolbar publish menu, Schedule, dashboard | Dashboard shows the scheduled page count and Publish lineup route; scheduler publishes due scheduled rows | wrong active row, timezone conversion, stale dashboard state |
+| PUBLISH-003 | P1 | ✅ | Individual page publish | Publish an edited page without taking its route offline | Site already published | Edit page, row-publish endpoint, fresh visitor | Visitor sees the new page content | stale disk output, missing snapshot, unrelated draft leakage |
 
 Core owner lifecycle note: `core-owner-lifecycle.e2e.ts` logs in from a clean context, signs out and back in, inserts homepage text, saves and reloads the draft, publishes with step-up, verifies the anonymous public page, then saves a later unpublished draft and verifies the public route still shows the last published text. SAVE-001 mobile coverage in `page-management.e2e.ts` saves an isolated page, switches to 390x844, reloads, reopens the saved page, verifies the saved text, and verifies the narrow toolbar keeps publish actions reachable without document-level horizontal overflow.
 
-PUBLISH-002 note: `page-management.e2e.ts` schedules a newly-created active page from the Site toolbar, then verifies the dashboard Pages widget reports a scheduled page and the Publish lineup lists the scheduled route. `src/__tests__/server/publishScheduler.test.ts` covers the due-row scheduler tick that promotes a scheduled page row to published as the system actor.
+PUBLISH-002 note: `page-management.e2e.ts` schedules a newly-created active page from the Site toolbar, then verifies the dashboard Pages widget reports a scheduled page and the Publish lineup lists the scheduled route. `src/__tests__/server/pageRowPublish.test.ts` verifies that a due page schedule produces routable content using published shared resources, including when it is the only page. `publishScheduler.test.ts` covers ordinary scheduled post publication. A page needs an existing published site when its schedule fires.
 
 ## Admin Shell And Account
 
@@ -434,3 +435,5 @@ SECURITY-001 note: focused Bun coverage verifies CMS/AI invalid-origin mutations
 ADMIN-011 note: `site-import.e2e.ts` imports a real HTML file from Data, completes the wizard, clicks Open site, and verifies the Site URL and imported heading in the canvas.
 
 ADMIN-012 note: `settings-reload.e2e.ts` primes the Settings cache on Data, imports a real CMS JSON bundle through the modal, and checks the visible site name and meta title after reopening Settings.
+
+PUBLISH-003 note: `page-row-publish.e2e.ts` creates and edits a page through the UI, performs a full publish, edits again, calls the authenticated row-publish endpoint, and checks the new text in a fresh visitor browser. Bun coverage checks frozen shared resources, other drafts and draft slugs, route conflicts, new pages, scheduled pages, and the first-publish prerequisite.
