@@ -7,7 +7,7 @@
 
 import type { StyleRule, ConditionDef } from '@core/page-tree'
 import type { ImportFragment } from '@core/htmlImport'
-import type { FontFileFormat } from '@core/fonts'
+import type { FontDisplay, FontFileFormat } from '@core/fonts'
 import type { SiteScriptFormat } from '@core/site-runtime'
 
 // ---------------------------------------------------------------------------
@@ -196,6 +196,7 @@ export interface ParsedFontFace {
   /** Raw `url(...)` payloads from the `src` descriptor, in source order. */
   srcUrls: string[]
   unicodeRange?: string
+  fontDisplay?: FontDisplay
 }
 
 /**
@@ -208,6 +209,7 @@ export interface ImportFontFile {
   /** FileMap key (pre-rewrite) → media public URL (post-rewrite). */
   src: string
   unicodeRange?: string
+  fontDisplay?: FontDisplay
 }
 
 /** A custom font family synthesized from imported `@font-face` blocks. */

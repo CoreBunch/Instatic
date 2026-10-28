@@ -304,6 +304,7 @@ function buildFontFamilies(
         variant: face.variant,
         format: best.format,
         src: best.src,
+        ...(face.fontDisplay ? { fontDisplay: face.fontDisplay } : {}),
         ...(face.unicodeRange ? { unicodeRange: face.unicodeRange } : {}),
       })
     }
@@ -690,4 +691,3 @@ function replaceRawUrlInValue(value: string, rawUrl: string, fileMapKey: string)
   const re = new RegExp(`url\\(\\s*(['"]?)${escaped}\\1\\s*\\)`, 'g')
   return value.replace(re, `url('${fileMapKey}')`)
 }
-
