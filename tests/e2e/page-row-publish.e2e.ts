@@ -6,7 +6,7 @@ import {
 
 test.use({ storageState: ANONYMOUS_STATE })
 
-test('an individual page publish reaches visitors (PUBLISH-003)', async ({ page, browser }) => {
+test('an individual page publish reaches visitors (PUBLISH-005)', async ({ page, browser }) => {
   await login(page)
   await openSiteEditor(page)
   await createPage(page, 'Individual publish', 'individual-publish')

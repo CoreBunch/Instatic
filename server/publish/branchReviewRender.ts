@@ -21,7 +21,6 @@ import { getDraftSiteDocument } from '../repositories/publish'
 import { resolveViewportUnitsInHtml } from '@core/utils/viewportUnits'
 import { prefetchLoopData } from './loopPrefetch'
 import { prefetchMediaAssets } from './mediaPrefetch'
-import { getPublishVersion } from './publishState'
 
 export type ReviewRenderSide = 'main' | 'branch'
 
@@ -62,7 +61,6 @@ export async function renderBranchReviewPage(
     mediaAssets,
     dynamicNodes: 'inline',
     annotateNodeIds: true,
-    publishVersion: getPublishVersion(),
   })
   // Viewport units against a desktop screen, not against the document-tall
   // frame: the same scanner the canvas frames use.
