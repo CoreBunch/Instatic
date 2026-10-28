@@ -268,24 +268,13 @@ function cmsRequest(
   url: string,
   init: { method?: string; formData?: FormData; headers?: Record<string, string>; body?: string } = {},
 ): Request {
-  const headers = new Map(
-    Object.entries(init.headers ?? {}).map(([key, value]) => [key.toLowerCase(), value]),
-  )
-  return {
-    url,
+  const req = new Request(url, {
     method: init.method ?? 'GET',
-    headers: {
-      get(name: string) {
-        return headers.get(name.toLowerCase()) ?? null
-      },
-    },
-    async formData() {
-      return init.formData ?? new FormData()
-    },
-    async json() {
-      return init.body ? JSON.parse(init.body) : {}
-    },
-  } as Request
+    body: init.formData ?? init.body,
+  })
+  // happy-dom strips fetch-forbidden headers passed to the constructor.
+  for (const [name, value] of Object.entries(init.headers ?? {})) req.headers.set(name, value)
+  return req
 }
 
 describe('CMS media repository', () => {

@@ -1,4 +1,5 @@
 import { timingSafeEqual } from 'node:crypto'
+import { RequestBodyTooLargeError } from './http'
 import { createDbClient } from './db'
 import { runMigrations } from './db/runMigrations'
 import { syncSystemRoles } from './repositories/roles'
@@ -84,6 +85,9 @@ function corsHeaders(origin: string | null): Record<string, string> {
 const server = Bun.serve({
   port: config.port,
   hostname: config.host,
+  // Site Import accepts archives up to 1 GiB. Bun's default 128 MiB limit
+  // otherwise rejects media-heavy bundles before the streaming importer runs.
+  maxRequestBodySize: 1024 * 1024 * 1024,
 
   // Disable Bun's default 10-second idle timeout. The agent endpoint streams
   // NDJSON for as long as Claude's loop is running — Claude's "thinking"
@@ -156,6 +160,12 @@ const server = Bun.serve({
       }
       return applySecurityHeaders(res, pathname)
     } catch (err) {
+      if (err instanceof RequestBodyTooLargeError) {
+        return applySecurityHeaders(new Response(JSON.stringify({ error: 'Request body too large' }), {
+          status: 413,
+          headers: { 'Content-Type': 'application/json', ...cors },
+        }), pathname)
+      }
       // Never echo `err.message` to the client — inner handlers already return
       // structured error bodies for the failure modes they expect; anything
       // that escapes to here is an unexpected crash whose message can leak
