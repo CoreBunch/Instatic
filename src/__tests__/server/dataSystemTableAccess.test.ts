@@ -206,3 +206,75 @@ describe('data system-table visibility + lockdown', () => {
     }
   })
 })
+
+describe('row author reassignment honours the row-access boundary (GHSA-m425)', () => {
+  it('refuses to read or reassign a system-table row for a persona without data.system.tables.read', async () => {
+    const harness = await createCapabilityTestHarness()
+    try {
+      await harness.setupOwner() // seeds the system tables and the home page row
+      const { rows: [home] } = await harness.db<{ id: string; author_user_id: string | null }>`
+        select id, author_user_id from data_rows where table_id = 'pages' and deleted_at is null
+      `
+      if (!home) throw new Error('setup did not seed a home page row')
+
+      // content.edit.any satisfies the reassign floor, but the persona holds no
+      // system-table read cap, so the row must stay invisible, exactly as it
+      // does on GET /data/rows/:id.
+      const editor = await harness.createRoleUser({
+        name: 'Author Manager',
+        slug: 'author-manager',
+        capabilities: ['content.create', 'content.edit.any', 'data.custom.tables.read'],
+      })
+      const { rows: [editorUser] } = await harness.db<{ id: string }>`
+        select id from users where email = ${editor.email}
+      `
+
+      const read = await harness.cms(`/admin/api/cms/data/rows/${home.id}`, { method: 'GET', cookie: editor.cookie })
+      expect(read.status).toBe(404)
+
+      const reassign = await harness.cms(`/admin/api/cms/data/rows/${home.id}/author`, {
+        method: 'PATCH',
+        cookie: editor.cookie,
+        json: { authorUserId: editorUser!.id },
+      })
+      expect(reassign.status).toBe(404)
+      const body = await reassign.text()
+      expect(body).not.toContain('"cells"')
+
+      const { rows: [after] } = await harness.db<{ author_user_id: string | null }>`
+        select author_user_id from data_rows where id = ${home.id}
+      `
+      expect(after?.author_user_id ?? null).toBe(home.author_user_id ?? null)
+    } finally {
+      await harness.cleanup()
+    }
+  })
+
+  it('still lets a persona with system-table read reassign the author', async () => {
+    const harness = await createCapabilityTestHarness()
+    try {
+      await harness.setupOwner()
+      const { rows: [home] } = await harness.db<{ id: string }>`
+        select id from data_rows where table_id = 'pages' and deleted_at is null
+      `
+      const manager = await harness.createRoleUser({
+        name: 'System Author Manager',
+        slug: 'system-author-manager',
+        capabilities: ['content.create', 'content.edit.any', 'data.system.tables.read'],
+      })
+      const { rows: [managerUser] } = await harness.db<{ id: string }>`
+        select id from users where email = ${manager.email}
+      `
+      const reassign = await harness.cms(`/admin/api/cms/data/rows/${home!.id}/author`, {
+        method: 'PATCH',
+        cookie: manager.cookie,
+        json: { authorUserId: managerUser!.id },
+      })
+      expect(reassign.status).toBe(200)
+      const { row } = await readJson<{ row: { authorUserId: string | null } }>(reassign)
+      expect(row.authorUserId).toBe(managerUser!.id)
+    } finally {
+      await harness.cleanup()
+    }
+  })
+})

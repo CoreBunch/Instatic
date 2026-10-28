@@ -200,7 +200,7 @@ class registry, which wins over framework, which wins over reset.
 
 ```text
 reset-<hash>.css       = PUBLISHER_RESET_CSS                       ← reset.ts (cross-browser baseline)
-framework-<hash>.css   = buildSiteFrameworkCss(site)               ← frameworkCss.ts (spacing, typography, …)
+framework-<hash>.css   = buildSiteFrameworkCss(site)               ← frameworkCss.ts (root font size when opted in, spacing, typography, …)
                        + collectModuleCSS(via CssCollector)        ← deduped per-moduleId CSS
 style-<hash>.css       = collectClassCSS(site)                     ← user-defined StyleRule entries, incl. raw @keyframes
 userStyles-<hash>.css  = collectUserStylesheetCss(site, page)      ← author stylesheets, scoped to this page
@@ -214,9 +214,11 @@ only when its id is used and every known class dependency in its preserved
 selector is used. Ambient
 selector fragments emit when at least one selector-list alternative has all of
 its known class dependencies in use; class-free selectors and supported raw
-blocks stay conservative. The editor canvas calls the same selector and
-memoizes the filtered registry by immutable registry identity + used-id
-signature, so large imported utility catalogs do not become large iframe
+blocks stay conservative. Dependencies follow selector semantics: a class
+inside `:not()` is never one, and the alternatives of `:is()`/`:where()` are
+each sufficient rather than all required. The editor canvas calls the same
+selector and memoizes the filtered registry by immutable registry identity +
+used-id signature, so large imported utility catalogs do not become large iframe
 stylesheets. A full precompiled Tailwind catalog can therefore remain
 picker-addressable while the `style` bundle contains only selected utilities
 plus global preflight.
@@ -320,7 +322,10 @@ The exclusive namespaces `/_instatic/css/*` (`serveSiteCss`) and `/_instatic/ass
 (`tryServeRuntimeAsset`) are served **disk-first**, falling back to a rebuild
 (`serveSiteCss`) or the DB (`published_runtime_assets`) only for preview or a
 publish whose disk write failed. Unknown paths under either prefix 404 rather
-than falling through.
+than falling through. Each full publish prunes the stored
+`published_runtime_assets` of every page version except the one it activates
+and the one it supersedes (`pruneSupersededRuntimeAssets` in
+`server/repositories/publish.ts`); version rows themselves are kept.
 
 ---
 
@@ -355,7 +360,7 @@ Two invariants:
 
 Both call sites read through the one helper so publish and Live preview can't drift.
 
-Installed fonts are emitted through the CSS bundle, not external `<link>` tags. The font CSS includes self-hosted `@font-face` rules for `site.settings.fonts.items` plus `:root` declarations for editable tokens such as `--font-primary`. A page rule can therefore keep `font-family: var(--font-primary)` while the token assignment changes site-wide.
+Installed fonts are emitted through the CSS bundle, not external `<link>` tags. The font CSS includes self-hosted `@font-face` rules for `site.settings.fonts.items` plus `:root` declarations for editable tokens such as `--font-heading`. A page rule can therefore keep `font-family: var(--font-heading)` while the token assignment changes site-wide.
 
 Plugins inject at four anchors. The order matters — see [docs/features/plugin-system.md](plugin-system.md) for the splicing rules.
 

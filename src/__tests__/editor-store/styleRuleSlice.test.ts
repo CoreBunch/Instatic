@@ -4,7 +4,8 @@
  * Covers:
  * - createClass / renameClass / deleteClass CRUD
  * - updateClassStyles / setClassContextStyles patch semantics
- * - addNodeClass / removeNodeClass / reorderNodeClasses node assignment
+ * - addNodeClass / setNodeClassAssignments / removeNodeClass /
+ *   reorderNodeClasses node assignment
  * - activeClassId state management
  * - deleteClass cascade (removes from all nodes, clears activeClassId)
  * - Uniqueness guards (duplicate class names throw)
@@ -525,6 +526,40 @@ describe('styleRuleSlice — node class assignment', () => {
     const { childId } = setupSite()
     const cls = getStore().createClass('btn')
     expect(() => getStore().removeNodeClass(childId, cls.id)).not.toThrow()
+  })
+
+  it('assigns one class to multiple nodes in one undo step, without duplicates or reordering', () => {
+    const { rootId, childId } = setupSite()
+    const secondNodeId = getStore().insertNode('base.button', {}, rootId)
+    const existing = getStore().createClass('existing')
+    const target = getStore().createClass('target')
+    getStore().addNodeClass(childId, existing.id)
+    getStore().addNodeClass(secondNodeId, existing.id)
+
+    getStore().setNodeClassAssignments([childId, secondNodeId, childId], target.id, true)
+
+    const page = useEditorStore.getState().site!.pages[0]
+    expect(page.nodes[childId].classIds).toEqual([existing.id, target.id])
+    expect(page.nodes[secondNodeId].classIds).toEqual([existing.id, target.id])
+
+    getStore().setNodeClassAssignments([childId, secondNodeId], target.id, false)
+    const pageAfterRemove = useEditorStore.getState().site!.pages[0]
+    expect(pageAfterRemove.nodes[childId].classIds).toEqual([existing.id])
+    expect(pageAfterRemove.nodes[secondNodeId].classIds).toEqual([existing.id])
+
+    // Each batch is one undo step: removal first, then the original apply.
+    getStore().undo()
+    expect(useEditorStore.getState().site!.pages[0].nodes[childId].classIds).toEqual([
+      existing.id,
+      target.id,
+    ])
+    expect(useEditorStore.getState().site!.pages[0].nodes[secondNodeId].classIds).toEqual([
+      existing.id,
+      target.id,
+    ])
+    getStore().undo()
+    expect(useEditorStore.getState().site!.pages[0].nodes[childId].classIds).toEqual([existing.id])
+    expect(useEditorStore.getState().site!.pages[0].nodes[secondNodeId].classIds).toEqual([existing.id])
   })
 
   it('reorderNodeClasses swaps positions by index', () => {

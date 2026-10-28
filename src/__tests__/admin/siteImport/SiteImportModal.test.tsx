@@ -19,6 +19,7 @@ import React, { type ReactNode } from 'react'
 import { render, screen, cleanup, fireEvent, act, waitFor, within } from '@testing-library/react'
 import { strToU8, zipSync } from 'fflate'
 import { AdminSessionProvider } from '@admin/session'
+import { MemoryRouter } from '@admin/lib/routing'
 import { StepUpProvider } from '@admin/shared/StepUp'
 import { useEditorStore } from '@site/store/store'
 import { useAdminUi } from '@admin/state/adminUi'
@@ -353,9 +354,11 @@ function adminUser(): CmsCurrentUser {
 
 function StepUpHarness({ children }: { children: ReactNode }) {
   return (
-    <AdminSessionProvider user={adminUser()}>
-      <StepUpProvider>{children}</StepUpProvider>
-    </AdminSessionProvider>
+    <MemoryRouter initialEntries={['/admin/data']}>
+      <AdminSessionProvider user={adminUser()}>
+        <StepUpProvider>{children}</StepUpProvider>
+      </AdminSessionProvider>
+    </MemoryRouter>
   )
 }
 

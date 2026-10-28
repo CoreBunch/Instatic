@@ -260,6 +260,10 @@ export async function persistSitePublish(
         )
       `
       await savePublishedRuntimeAssets(tx, page.versionId, page.runtimeFiles)
+      const { rows: previousRows } = await tx<{ active_version_id: string | null }>`
+        select active_version_id from data_rows where id = ${page.pageId}
+      `
+      const previousVersionId = previousRows[0]?.active_version_id ?? null
       const now = nowIso()
       const { rowCount } = await tx`
         update data_rows
@@ -276,9 +280,37 @@ export async function persistSitePublish(
       // reaped it in between, don't leave an orphan version pointing at it.
       if (rowCount === 0) {
         await tx`delete from data_row_versions where id = ${page.versionId}`
+        continue
       }
+      await pruneSupersededRuntimeAssets(tx, page.pageId, page.versionId, previousVersionId)
     }
   })
+}
+
+/**
+ * Drop the stored runtime assets of a page's versions older than the one just
+ * superseded. Every full publish stores each page's bundled runtime files
+ * again under a fresh version path, and nothing re-activates an old version,
+ * so without this the table grew by the whole site's bundles on every publish
+ * (hundreds of MB a day on a busy site). The previous version's assets are
+ * kept so visitors still holding its HTML can load its scripts — the same
+ * window the disk's two-slot swap covers. The version rows themselves stay.
+ */
+async function pruneSupersededRuntimeAssets(
+  tx: DbClient,
+  pageId: string,
+  activeVersionId: string,
+  previousVersionId: string | null,
+): Promise<void> {
+  await tx`
+    delete from published_runtime_assets
+    where data_row_version_id in (
+      select id from data_row_versions
+      where row_id = ${pageId}
+        and id <> ${activeVersionId}
+        and id <> ${previousVersionId ?? ''}
+    )
+  `
 }
 
 export async function getPublishedPageBySlug(

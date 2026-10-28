@@ -12,6 +12,8 @@
  *       rawProps for them); Ref/recursive/cyclic schemas degrade safely to
  *       the slow path.
  *   (f) Every base module's propsSchema is fast-path eligible.
+ *   (g) Per-prop repair: when one prop cannot be coerced, only that prop
+ *       takes the module default; every other authored prop survives.
  */
 
 import { describe, it, expect } from 'bun:test'
@@ -86,8 +88,7 @@ describe('validateNodeProps — (a) coerce to schema defaults', () => {
     expect(result.visible).toBe(false)
   })
 
-  it('falls back to module defaults when coercion fails catastrophically', () => {
-    // Provide a deeply invalid value that Value.Parse cannot recover.
+  it('falls back to the module default for a prop coercion cannot fix', () => {
     // We force a failure by using a schema whose type can't be coerced.
     const strictSchema = Type.Object({
       id: Type.String({ pattern: '^[a-z]+$', default: 'fallback' }),
@@ -98,8 +99,118 @@ describe('validateNodeProps — (a) coerce to schema defaults', () => {
     })
     // "123" fails the /^[a-z]+$/ pattern — coercion cannot fix it.
     const result = validateNodeProps(strictDef, { id: '123' })
-    // Should fall back to defaults
     expect(result.id).toBe('fallback')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// (g) Per-prop repair — one bad prop never resets the whole node
+// ---------------------------------------------------------------------------
+
+describe('validateNodeProps — (g) per-prop repair', () => {
+  const RepairSchema = Type.Object({
+    href: Type.String({ default: '#' }),
+    text: Type.String({ default: 'Click here' }),
+    target: Type.Union([Type.Literal('_self'), Type.Literal('_blank')], { default: '_self' }),
+    htmlAttributes: Type.Record(Type.String(), Type.String(), { default: {} }),
+    note: Type.Optional(Type.String()),
+  })
+  const def = stubDef({
+    propsSchema: RepairSchema,
+    defaults: Value.Create(RepairSchema) as Record<string, unknown>,
+  })
+
+  it('a bad enum value takes its default while sibling props keep their authored values', () => {
+    const result = validateNodeProps(def, {
+      href: '/contact/',
+      text: 'Contact us',
+      target: '',
+      htmlAttributes: { id: 'cta' },
+    })
+    expect(result.target).toBe('_self')
+    expect(result.href).toBe('/contact/')
+    expect(result.text).toBe('Contact us')
+    expect(result.htmlAttributes).toEqual({ id: 'cta' })
+  })
+
+  it('a bad nested object resets only that prop', () => {
+    const result = validateNodeProps(def, {
+      href: '/contact/',
+      text: 'Contact us',
+      target: '_blank',
+      htmlAttributes: { id: { nested: true } },
+    })
+    expect(result.htmlAttributes).toEqual({})
+    expect(result.href).toBe('/contact/')
+    expect(result.text).toBe('Contact us')
+    expect(result.target).toBe('_blank')
+  })
+
+  it('still coerces and default-fills the props that can be repaired', () => {
+    const CountSchema = Type.Object({
+      count: Type.Number({ default: 1 }),
+      mode: Type.Union([Type.Literal('a'), Type.Literal('b')], { default: 'a' }),
+      label: Type.String({ default: 'x' }),
+    })
+    const countDef = stubDef({
+      propsSchema: CountSchema,
+      defaults: Value.Create(CountSchema) as Record<string, unknown>,
+    })
+    const result = validateNodeProps(countDef, { count: '7', mode: 'zzz' })
+    expect(result.count).toBe(7)
+    expect(result.mode).toBe('a')
+    expect(result.label).toBe('x')
+  })
+
+  it('an absent optional prop stays absent during repair', () => {
+    const result = validateNodeProps(def, { href: '/x', text: 'X', target: 'nope' })
+    expect('note' in result).toBe(false)
+    expect(result.target).toBe('_self')
+  })
+
+  it('an absent optional prop with a default is filled during repair', () => {
+    const OptSchema = Type.Object({
+      mode: Type.Union([Type.Literal('a'), Type.Literal('b')], { default: 'a' }),
+      opt: Type.Optional(Type.String({ default: 'OPT' })),
+    })
+    const optDef = stubDef({ propsSchema: OptSchema, defaults: { mode: 'a' } })
+    expect(validateNodeProps(optDef, { mode: 'zzz' }).opt).toBe('OPT')
+  })
+
+  it('repair does not throw when a plugin module ships non-object defaults', () => {
+    const badDef = stubDef({
+      propsSchema: RepairSchema,
+      defaults: undefined as unknown as Record<string, unknown>,
+    })
+    expect(() => validateNodeProps(badDef, { href: '/x', text: 'X', target: 'nope' })).not.toThrow()
+  })
+
+  it('injected unknown keys survive repair', () => {
+    const media = { img: { url: 'https://example.com/a.jpg' } }
+    const result = validateNodeProps(def, { target: 'nope', _resolvedMediaByKey: media })
+    expect(result._resolvedMediaByKey).toBe(media)
+  })
+
+  it('base.link: an unsupported target keeps href and text at publish time', () => {
+    const link = registry.getOrThrow('base.link')
+    const result = validateNodeProps(link, {
+      href: '/contact/',
+      text: 'Contact us',
+      target: '',
+      htmlAttributes: {},
+    })
+    expect(result.target).toBe('_self')
+    expect(result.href).toBe('/contact/')
+    expect(result.text).toBe('Contact us')
+  })
+
+  it('a non-object props schema still falls back to the module defaults wholesale', () => {
+    const arrDef = stubDef({
+      propsSchema: Type.Array(Type.Number()),
+      defaults: { items: [1] },
+    })
+    const result = validateNodeProps(arrDef, { items: ['x'] })
+    expect(result.items).toEqual([1])
   })
 })
 

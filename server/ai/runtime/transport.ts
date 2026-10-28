@@ -79,15 +79,54 @@ export function createBridge(
   signal?: AbortSignal,
   timeoutMs: number = BROWSER_TOOL_TIMEOUT_MS,
   onSnapshot?: (snapshot: unknown) => void,
+  options: {
+    /**
+     * Deliver one tool request at a time: the next queued call is emitted only
+     * once the previous one settles, and each call's timeout starts when it is
+     * emitted. For consumers that execute requests strictly in order (the MCP
+     * editor bridge) this makes the timeout measure the browser's actual work
+     * instead of time spent queued behind slower calls.
+     */
+    serial?: boolean
+  } = {},
 ): {
   bridgeId: string
   bridge: AiBrowserBridge
   destroy: () => void
+  /** Calls awaiting a result, queued or emitted. */
+  pendingCount: () => number
 } {
   const bridgeId = nanoid()
   const entry: BridgeEntry = { pending: new Map(), emit, onSnapshot }
   activeBridges.set(bridgeId, entry)
   let destroyed = false
+
+  // Serial delivery: `busy` while an emitted call is outstanding; queued calls
+  // wait in `waiting` until it settles.
+  const waiting: Array<() => void> = []
+  let busy = false
+  const acquire = (start: () => void): void => {
+    if (!options.serial) return start()
+    if (busy) {
+      waiting.push(start)
+      return
+    }
+    busy = true
+    start()
+  }
+  const release = (): void => {
+    if (!options.serial) return
+    busy = false
+    if (destroyed || signal?.aborted) {
+      waiting.length = 0
+      return
+    }
+    const next = waiting.shift()
+    if (next) {
+      busy = true
+      next()
+    }
+  }
 
   const bridge: AiBrowserBridge = {
     callBrowser(toolName, input) {
@@ -96,6 +135,12 @@ export function createBridge(
       }
       const requestId = nanoid()
       return new Promise<AiToolOutput>((resolve, reject) => {
+        if (signal?.aborted) {
+          reject(new Error('AI chat stream aborted before tool result arrived.'))
+          return
+        }
+        let timer: ReturnType<typeof setTimeout> | null = null
+        let started = false
         // Settle (and remove) the pending wait on timeout or client disconnect
         // so a non-responding browser can never hang the SDK stream or leak the
         // bridge entry (ISS-030).
@@ -106,24 +151,28 @@ export function createBridge(
           live.cleanup()
           reject(err)
         }
-        const timer = setTimeout(
-          () => settle(new Error(`Browser tool "${toolName}" result timed out.`)),
-          timeoutMs,
-        )
         const onAbort = () => settle(new Error('AI chat stream aborted before tool result arrived.'))
+        const start = () => {
+          started = true
+          timer = setTimeout(
+            () => settle(new Error(`Browser tool "${toolName}" result timed out.`)),
+            timeoutMs,
+          )
+          emit({ type: 'toolRequest', requestId, toolName, input })
+        }
         const cleanup = () => {
-          clearTimeout(timer)
+          if (timer) clearTimeout(timer)
           signal?.removeEventListener('abort', onAbort)
+          if (started) release()
+          else {
+            const queued = waiting.indexOf(start)
+            if (queued !== -1) waiting.splice(queued, 1)
+          }
         }
 
-        if (signal?.aborted) {
-          clearTimeout(timer)
-          reject(new Error('AI chat stream aborted before tool result arrived.'))
-          return
-        }
         signal?.addEventListener('abort', onAbort, { once: true })
         entry.pending.set(requestId, { resolve, reject, cleanup })
-        emit({ type: 'toolRequest', requestId, toolName, input })
+        acquire(start)
       })
     },
   }
@@ -149,7 +198,7 @@ export function createBridge(
     activeBridges.delete(bridgeId)
   }
 
-  return { bridgeId, bridge, destroy }
+  return { bridgeId, bridge, destroy, pendingCount: () => entry.pending.size }
 }
 
 /**
