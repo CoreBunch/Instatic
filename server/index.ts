@@ -1,4 +1,5 @@
 import { timingSafeEqual } from 'node:crypto'
+import { RequestBodyTooLargeError } from './http'
 import { createDbClient } from './db'
 import { runMigrations } from './db/runMigrations'
 import { syncSystemRoles } from './repositories/roles'
@@ -159,6 +160,12 @@ const server = Bun.serve({
       }
       return applySecurityHeaders(res, pathname)
     } catch (err) {
+      if (err instanceof RequestBodyTooLargeError) {
+        return applySecurityHeaders(new Response(JSON.stringify({ error: 'Request body too large' }), {
+          status: 413,
+          headers: { 'Content-Type': 'application/json', ...cors },
+        }), pathname)
+      }
       // Never echo `err.message` to the client — inner handlers already return
       // structured error bodies for the failure modes they expect; anything
       // that escapes to here is an unexpected crash whose message can leak
