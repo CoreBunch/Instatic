@@ -12,11 +12,16 @@
  * shell + pages + components + layouts atomically.
  */
 import type { DbClient } from '../../db/client'
+import type { BranchScope } from '../../branches/scope'
 import { requireCapability } from '../../auth/authz'
 import { getDraftSite, getDraftSiteSeq } from '../../repositories/site'
 import { jsonResponse, methodNotAllowed } from '../../http'
 
-export async function handleSiteRoutes(req: Request, db: DbClient): Promise<Response | null> {
+export async function handleSiteRoutes(
+  req: Request,
+  db: DbClient,
+  scope: BranchScope,
+): Promise<Response | null> {
   const url = new URL(req.url)
   if (url.pathname !== '/admin/api/cms/site') return null
   if (req.method !== 'GET') return methodNotAllowed()
@@ -24,7 +29,7 @@ export async function handleSiteRoutes(req: Request, db: DbClient): Promise<Resp
   const user = await requireCapability(req, db, 'site.read')
   if (user instanceof Response) return user
 
-  const shell = await getDraftSite(db)
+  const shell = await getDraftSite(db, scope)
   if (!shell) return jsonResponse({ error: 'draft site not found' }, { status: 404 })
-  return jsonResponse({ site: shell, seq: await getDraftSiteSeq(db) })
+  return jsonResponse({ site: shell, seq: await getDraftSiteSeq(db, scope) })
 }

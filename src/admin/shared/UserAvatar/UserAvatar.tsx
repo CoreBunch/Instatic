@@ -20,6 +20,7 @@ import { useState, type CSSProperties, type ReactNode } from 'react'
 import type { CmsCurrentUser } from '@core/persistence'
 import { resolveAvatarUrl } from '@core/users/avatar'
 import { cn } from '@ui/cn'
+import { userDisplayLabel } from '@core/users/displayName'
 import styles from './UserAvatar.module.css'
 
 interface UserAvatarProps {
@@ -36,7 +37,7 @@ interface UserAvatarProps {
 }
 
 function deriveInitial(user: { displayName: string; email: string }): string {
-  const source = (user.displayName.trim() || user.email).trim()
+  const source = userDisplayLabel(user).trim()
   if (!source) return '?'
   return source[0]?.toUpperCase() ?? '?'
 }
@@ -45,7 +46,7 @@ export function UserAvatar({ user, size, alt, className }: UserAvatarProps): Rea
   const [imageFailed, setImageFailed] = useState(false)
   const url = resolveAvatarUrl(user, { size })
   const showImage = url !== null && !imageFailed
-  const displayName = user.displayName.trim() || user.email
+  const displayName = userDisplayLabel(user)
   const altText = alt === null ? '' : alt ?? `Avatar for ${displayName}`
 
   const style: CSSProperties = { '--avatar-size': `${size}px` } as CSSProperties

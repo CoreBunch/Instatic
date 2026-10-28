@@ -17,7 +17,7 @@
  * to lazily reveal, so it is fetched eagerly on load.
  *
  * The fragment fetch URL is
- * `/_instatic/hole/<nodeId>?v=<publishVersion>&u=<originating-page-url>`. The
+ * `/_instatic/hole/<nodeId>?v=<snapshotHash>&u=<originating-page-url>`. The
  * version parameter lets the hole endpoint detect stale placeholders after a
  * re-publish and return a lightweight sentinel instead of cached stale HTML.
  * The `u` parameter carries the visitor's actual page path + query string so

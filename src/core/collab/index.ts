@@ -9,8 +9,10 @@
  */
 export {
   encodeCollabDocId,
+  isSiteDocId,
+  MAIN_SITE_DOC_ID,
   parseCollabDocId,
-  SITE_DOC_ID,
+  siteDocId,
   type CollabDocId,
   type CollabDocKind,
 } from './docIds'
@@ -44,6 +46,7 @@ export {
   type ResetReason,
 } from './protocol'
 export { createCollabDocSet, type CollabDocSet } from './docSet'
+export { collabFramePackets, createCollabFrameReader } from './frameTransfer'
 export { applySitePatchesToDocs } from './applyPatches'
 export {
   populateComponentDoc,

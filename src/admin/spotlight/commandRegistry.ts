@@ -102,6 +102,16 @@ export function filterCommands(commands: Command[], ctx: CommandContext): Comman
       }
     }
 
+    // available() — does this command exist in this environment at all?
+    // Unlike when(), it carries no relevance claim and never scores.
+    if (cmd.available) {
+      try {
+        if (!cmd.available(ctx)) return false
+      } catch (_err) {
+        return false
+      }
+    }
+
     // when() predicate — false (or thrown) means "hide this command."
     if (cmd.when) {
       try {

@@ -1,0 +1,25 @@
+.badge {
+    display: inline-grid;
+    place-items: center;
+    min-width: 15px;
+    height: 15px;
+    flex-shrink: 0;
+    padding: 0 var(--space-4xs);
+    border-radius: var(--input-radius);
+    font-size: var(--text-3xs);
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: 0;
+}
+
+.badge[data-tone='error'] {
+    color: var(--danger-text);
+    background: var(--danger-10);
+    border: 1px solid var(--danger-20);
+}
+
+.badge[data-tone='warning'] {
+    color: var(--warning-text);
+    background: var(--warning-10);
+    border: 1px solid var(--warning-20);
+}

@@ -10,6 +10,8 @@
  *   - `@core/framework`
  *   - `@core/framework-schema`
  *   - `@core/fonts`
+ *   - `@core/collab`
+ *   - `@core/registry`
  *
  * Per the barrel convention (CLAUDE.md → "Barrel imports"): everything OUTSIDE
  * a module imports through its barrel; files INSIDE the module import each
@@ -37,6 +39,7 @@ const BARRELLED_MODULES = [
   'framework-schema',
   'fonts',
   'collab',
+  'registry',
 ]
 
 // Scan production + test sources in both the app and the server.

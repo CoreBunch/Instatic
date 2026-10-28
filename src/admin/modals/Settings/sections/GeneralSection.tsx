@@ -9,7 +9,8 @@
  * Inputs use onBlur + onKeyDown(Enter) so intermediate keystrokes don't
  * push undo-history entries on every keystroke (performance pattern). The
  * favicon doesn't have intermediate states (single click → commit), so it
- * skips that pattern.
+ * skips that pattern. Uncontrolled fields are keyed by their persisted value
+ * so an outside import refreshes their displayed value after the store reloads.
  */
 import { Suspense, lazy, useState } from 'react'
 import { useSiteSettingsController } from '../useSiteSettingsController'
@@ -61,6 +62,7 @@ export function GeneralSection() {
           Site Name
         </label>
         <Input
+          key={site.name}
           id="gen-proj-name"
           type="text"
           defaultValue={site.name}
@@ -78,6 +80,7 @@ export function GeneralSection() {
           Meta Title
         </label>
         <Input
+          key={settings.metaTitle ?? ''}
           id="gen-meta-title"
           type="text"
           defaultValue={settings.metaTitle ?? ''}
@@ -95,6 +98,7 @@ export function GeneralSection() {
           Meta Description
         </label>
         <Textarea
+          key={settings.metaDescription ?? ''}
           id="gen-meta-desc"
           defaultValue={settings.metaDescription ?? ''}
           placeholder="A short description of your website."
@@ -111,6 +115,7 @@ export function GeneralSection() {
           Language
         </label>
         <Input
+          key={settings.language ?? 'en'}
           id="gen-lang"
           type="text"
           defaultValue={settings.language ?? 'en'}

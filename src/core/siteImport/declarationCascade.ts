@@ -83,17 +83,6 @@ export function sparseContextPriorities(
   return Object.keys(sparse).length > 0 ? sparse : undefined
 }
 
-export function mergeRuleBaseDeclarations(
-  rule: NewStyleRule,
-  incoming: DeclarationLayer,
-): void {
-  const priorities = { ...(rule.stylePriorities ?? {}) }
-  mergeDeclarationCascade({ styles: rule.styles, priorities }, incoming)
-  const sparse = sparsePriorities(priorities)
-  if (sparse) rule.stylePriorities = sparse
-  else delete rule.stylePriorities
-}
-
 export function mergeRuleContextDeclarations(
   rule: NewStyleRule,
   contextId: string,

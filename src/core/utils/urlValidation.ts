@@ -77,3 +77,8 @@ export function isValidImageUrl(v: string): boolean {
   if (scheme === 'data:') return v.trimStart().toLowerCase().startsWith('data:image/')
   return false
 }
+
+/** Strip trailing slashes so a base URL can be joined with `/<path>` without doubling. */
+export function stripTrailingSlashes(url: string): string {
+  return url.replace(/\/+$/, '')
+}

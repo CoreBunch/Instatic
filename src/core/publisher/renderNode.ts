@@ -34,7 +34,7 @@ import { injectNodeClassIds, injectNodeId, injectNodeInlineStyles } from './clas
 import { renderVisualComponentRef } from './renderVisualComponentRef'
 import { renderLoop } from './renderLoop'
 import { resolveAutoSizes } from './sizesResolver'
-import { sanitizeRichtext } from '@core/sanitize'
+import { RICHTEXT_CONTENT_CONFIG, sanitizeRichtext } from '@core/sanitize'
 import type {
   RenderConfig,
   RenderAccumulators,
@@ -222,10 +222,10 @@ function renderHolePlaceholder(
   acc.holeNodeIds.add(node.id)
 
   const rawPlaceholder = def.staticPlaceholder?.(node.props as never) ?? ''
-  const sanitized = rawPlaceholder ? sanitizeRichtext(rawPlaceholder) : ''
+  const sanitized = rawPlaceholder ? sanitizeRichtext(rawPlaceholder, RICHTEXT_CONTENT_CONFIG) : ''
 
   const safeId = escapeHtml(node.id)
-  const version = config.publishVersion ?? 0
+  const version = escapeHtml(config.snapshotHash ?? '')
 
   return (
     `<instatic-hole id="hole-${safeId}" data-instatic-hole="${safeId}" data-instatic-version="${version}" style="display:contents">` +

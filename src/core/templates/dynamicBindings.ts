@@ -27,7 +27,7 @@
 
 import type { DynamicPropBinding } from '@core/page-tree'
 import { renderMarkdownToHtml } from '@core/markdown/renderMarkdown'
-import { isRichtextPropKey, sanitizeRichtext } from '@core/sanitize'
+import { isRichtextPropKey, RICHTEXT_CONTENT_CONFIG, sanitizeRichtext } from '@core/sanitize'
 import type { TemplateRenderDataContext } from './renderDataContext'
 
 export type { TemplateMediaAsset, TemplateRenderDataContext } from './renderDataContext'
@@ -233,7 +233,7 @@ export function resolveDynamicProps(
     for (const key of Object.keys(resolved)) {
       const value = resolved[key]
       if (typeof value === 'string' && isRichtextPropKey(key)) {
-        resolved[key] = sanitizeRichtext(value)
+        resolved[key] = sanitizeRichtext(value, RICHTEXT_CONTENT_CONFIG)
       }
     }
   }

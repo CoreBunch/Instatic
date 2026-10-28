@@ -4,7 +4,7 @@
  * `applyAssetRewrites` can do exact-string replacement.
  *
  * Two sources of asset references:
- *   1. PageNode props — `src`, `href`, `srcset` values set by the HTML
+ *   1. PageNode props — `src`, `href`, `srcset`, `videoUrl`, `poster` values set by the HTML
  *      importer from element attributes, plus imported `htmlAttributes` bags
  *      such as `data-bg-src`.
  *   2. CSS rule styles — `url(...)` payloads recorded by Phase 1's
@@ -44,7 +44,14 @@ import { guessMimeType, isImportUploadableMimeType } from './mimeTypes'
 // Props that may contain relative asset URLs in page nodes
 // ---------------------------------------------------------------------------
 
-const URL_BEARING_PROPS: ReadonlySet<string> = new Set(['src', 'href', 'srcset'])
+/**
+ * Node props that carry an asset URL. `videoUrl` is where the HTML importer
+ * stores a `<video src>` / first `<source src>`; without it an imported video
+ * kept its relative path. `poster` carries the native preview image.
+ * Shared with `applyAssetRewrites`
+ * so normalisation and rewrite always agree on the same props.
+ */
+export const URL_BEARING_PROPS: ReadonlySet<string> = new Set(['src', 'href', 'srcset', 'videoUrl', 'poster'])
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -126,7 +133,7 @@ const FONT_FORMAT_RANK: Record<FontFileFormat, number> = {
 
 /** Map a FileMap key's extension to a font format, or null if not a font. */
 function fontFormatForPath(path: string): FontFileFormat | null {
-  const lower = path.split('?')[0].toLowerCase()
+  const lower = path.toLowerCase()
   if (lower.endsWith('.woff2')) return 'woff2'
   if (lower.endsWith('.woff')) return 'woff'
   if (lower.endsWith('.ttf')) return 'ttf'
@@ -297,6 +304,7 @@ function buildFontFamilies(
         variant: face.variant,
         format: best.format,
         src: best.src,
+        ...(face.fontDisplay ? { fontDisplay: face.fontDisplay } : {}),
         ...(face.unicodeRange ? { unicodeRange: face.unicodeRange } : {}),
       })
     }
@@ -652,13 +660,22 @@ function normalizeAssetPath(path: string): string {
 /**
  * Resolve a raw URL against a base file path to produce a FileMap key.
  * Returns null for traversal-escaping paths or empty strings.
+ *
+ * As in `resolveHref`, a query string or fragment is stripped before the
+ * lookup — it addresses a file, it does not identify one. Callers keep the
+ * original `rawUrl` for the in-place CSS string replacement
+ * (`replaceRawUrlInValue`), so stripping here affects only which FileMap entry
+ * is found.
  */
 function resolveRelativePath(rawUrl: string, basePath: string): string | null {
   const baseDir = dirname(basePath)
 
-  const resolved = rawUrl.startsWith('/')
-    ? rawUrl.slice(1) // root-relative: strip leading /
-    : joinPaths(baseDir, rawUrl)
+  const pathOnly = rawUrl.split(/[?#]/)[0]
+  if (!pathOnly) return null
+
+  const resolved = pathOnly.startsWith('/')
+    ? pathOnly.slice(1) // root-relative: strip leading /
+    : joinPaths(baseDir, pathOnly)
 
   // Reject escaped or empty results
   if (!resolved || resolved.startsWith('../')) return null
@@ -674,4 +691,3 @@ function replaceRawUrlInValue(value: string, rawUrl: string, fileMapKey: string)
   const re = new RegExp(`url\\(\\s*(['"]?)${escaped}\\1\\s*\\)`, 'g')
   return value.replace(re, `url('${fileMapKey}')`)
 }
-

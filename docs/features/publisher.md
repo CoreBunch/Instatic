@@ -6,6 +6,8 @@ The published output has **no framework runtime**, **no client-side hydration of
 
 ---
 
+Published module scripts are minified by `server/publish/runtime/bundleScripts.ts`. Canvas bundles remain readable with inline source maps; classic scripts retain their original bytes.
+
 ## TL;DR
 
 - Entry point: `publishPage(page, site, registry, options?)` in `src/core/publisher/render.ts`. Returns `{ filename, html, jsModuleIds }`, where `html` is the full document string and `jsModuleIds` are per-page module-JS candidates for the server injection pass.
@@ -16,10 +18,16 @@ The published output has **no framework runtime**, **no client-side hydration of
 - Module `render()` is a **pure function**: no DOM, no React, no side effects (Constraint #179).
 - Every node's props pass through `escapeProps` before `render()` (Constraint #211).
 - Server-side wrappers (`server/publish/publicRouter.ts` → `publicRenderer.ts` → `publishedHtmlPipeline.ts`) call `publishPage`, run plugin filters, and return the HTML in the visitor response.
-- Output is routed through a three-layer publishing pipeline: **Layer A** bakes pages to `uploads/published/current/<route>.html` at publish time (complete documents for fully-static pages, static shells with holes for dynamic pages, atomic two-slot pointer-file swap). **Layer B** memoises dynamic page renders in an in-memory LRU keyed by `(urlPath, canonicalQuery)` with per-entry version tracking; `canonicalQuery` is the output of `canonicalRenderQuery()` (in `loopPrefetch.ts`), which keeps only `loop_<nodeId>_page` pagination params — arbitrary junk params collapse to `''` so they never mint new cache slots; `bumpPublishVersion()` evicts lazily and version capture at render start discards results from mid-flight publishes. **Layer C** emits `<instatic-hole>` placeholders for nodes auto-classified as request-dependent; a ~1.1 KB `IntersectionObserver` runtime lazy-loads each fragment via `/_instatic/hole/<nodeId>?v=<publishVersion>&u=<page-url>`.
+- Output is routed through a three-layer publishing pipeline: **Layer A** bakes pages to `uploads/published/current/<route>.html` at publish time (complete documents for fully-static pages, static shells with holes for dynamic pages, atomic two-slot pointer-file swap). **Layer B** memoises dynamic page renders in an in-memory LRU keyed by `(urlPath, canonicalQuery)` with per-entry version tracking; `canonicalQuery` is the output of `canonicalRenderQuery()` (in `loopPrefetch.ts`), which keeps only `loop_<nodeId>_page` pagination params — arbitrary junk params collapse to `''` so they never mint new cache slots; `bumpPublishVersion()` evicts lazily and version capture at render start discards results from mid-flight publishes. **Layer C** emits `<instatic-hole>` placeholders for nodes auto-classified as request-dependent; a ~1.1 KB `IntersectionObserver` runtime lazy-loads each fragment via `/_instatic/hole/<nodeId>?v=<snapshotHash>&u=<page-url>`.
 - Auto-classification lives in `src/core/publisher/dynamicDetection.ts:findDynamicNodeIds` — one walker, four detection rules plus a loop body promotion step (Rule 3.5), used by `render.ts`'s empty-set static check (Layer A) and `renderNode`'s placeholder emission (Layer C). Authors don't toggle anything.
 
 ---
+
+## Publishing one page
+
+`publishDataRow` routes `pages` rows through the site snapshot publisher, including scheduled publishes. It combines the selected row's draft with the last published shared settings, files, styles, components and other published pages. Other draft edits and never-published pages stay private. A first full-site publish is required; a missing published component or a slug still owned by another published page returns a conflict without changing the publication.
+
+The existing site pipeline rebuilds runtime assets and swaps a complete disk slot, including other pages' dynamic shells and entry routes. It creates refreshed page versions referencing one coherent snapshot; unrelated rows retain their draft cells, status, timestamps and publisher attribution. Public page routing reads the active version's slug, so another page's draft rename cannot change its live URL. Shared-resource changes require a full-site publish.
 
 ## Where the code lives
 
@@ -200,20 +208,25 @@ class registry, which wins over framework, which wins over reset.
 
 ```text
 reset-<hash>.css       = PUBLISHER_RESET_CSS                       ← reset.ts (cross-browser baseline)
-framework-<hash>.css   = buildSiteFrameworkCss(site)               ← frameworkCss.ts (spacing, typography, …)
+framework-<hash>.css   = buildSiteFrameworkCss(site)               ← frameworkCss.ts (root font size when opted in, spacing, typography, …)
                        + collectModuleCSS(via CssCollector)        ← deduped per-moduleId CSS
 style-<hash>.css       = collectClassCSS(site)                     ← user-defined StyleRule entries, incl. raw @keyframes
 userStyles-<hash>.css  = collectUserStylesheetCss(site, page)      ← author stylesheets, scoped to this page
 ```
 
 `styleRuleTreeShake.ts` computes the site-wide used class-id set once across
-page and Visual Component trees. A class rule emits only when its id is used
-and every known class dependency in its preserved selector is used. Ambient
+page and Visual Component trees, plus every class rule whose name appears
+literally in a `type: 'script'` site file (a modifier a script toggles is never
+assigned to a node; see `docs/features/site-import.md`). A class rule emits
+only when its id is used and every known class dependency in its preserved
+selector is used. Ambient
 selector fragments emit when at least one selector-list alternative has all of
 its known class dependencies in use; class-free selectors and supported raw
-blocks stay conservative. The editor canvas calls the same selector and
-memoizes the filtered registry by immutable registry identity + used-id
-signature, so large imported utility catalogs do not become large iframe
+blocks stay conservative. Dependencies follow selector semantics: a class
+inside `:not()` is never one, and the alternatives of `:is()`/`:where()` are
+each sufficient rather than all required. The editor canvas calls the same
+selector and memoizes the filtered registry by immutable registry identity +
+used-id signature, so large imported utility catalogs do not become large iframe
 stylesheets. A full precompiled Tailwind catalog can therefore remain
 picker-addressable while the `style` bundle contains only selected utilities
 plus global preflight.
@@ -315,17 +328,25 @@ self-contained static export: **a published page never hits the server to
 generate its HTML, CSS, or JS. The only request that touches the DB is the
 `/_instatic/hole/` fragment fetch** for a page's dynamic islands.
 
-Hole shells are stamped with the *next* publish version (`getPublishVersion() +
-1`) at bake time, because `bumpPublishVersion()` runs as the synchronous
-statement right after the slot swap — so a baked `<instatic-hole data-instatic-version>`
-always matches what the hole endpoint expects (a mismatch would make the
-endpoint refuse to hydrate).
+Hole shells carry a SHA-256 fingerprint of the frozen published `SiteDocument`
+in `data-instatic-version`. The fragment endpoint compares that fingerprint
+with the current published snapshot. A post publish, unpublish, delete, or
+process restart therefore cannot invalidate an unchanged page's fragments.
+`publishVersion` remains the process-local cache generation: bumping it still
+refreshes live fragment data and snapshot indexes. A genuinely different site
+snapshot rejects old fingerprints with an uncached stale sentinel.
+
+After upgrading from counter-based hole versions, run a full-site publish once
+to regenerate existing baked HTML with snapshot fingerprints.
 
 The exclusive namespaces `/_instatic/css/*` (`serveSiteCss`) and `/_instatic/assets/*`
 (`tryServeRuntimeAsset`) are served **disk-first**, falling back to a rebuild
 (`serveSiteCss`) or the DB (`published_runtime_assets`) only for preview or a
 publish whose disk write failed. Unknown paths under either prefix 404 rather
-than falling through.
+than falling through. Each full publish prunes the stored
+`published_runtime_assets` of every page version except the one it activates
+and the one it supersedes (`pruneSupersededRuntimeAssets` in
+`server/repositories/publish.ts`); version rows themselves are kept.
 
 ---
 
@@ -360,7 +381,7 @@ Two invariants:
 
 Both call sites read through the one helper so publish and Live preview can't drift.
 
-Installed fonts are emitted through the CSS bundle, not external `<link>` tags. The font CSS includes self-hosted `@font-face` rules for `site.settings.fonts.items` plus `:root` declarations for editable tokens such as `--font-primary`. A page rule can therefore keep `font-family: var(--font-primary)` while the token assignment changes site-wide.
+Installed fonts are emitted through the CSS bundle, not external `<link>` tags. The font CSS includes self-hosted `@font-face` rules for `site.settings.fonts.items` plus `:root` declarations for editable tokens such as `--font-heading`. A page rule can therefore keep `font-family: var(--font-heading)` while the token assignment changes site-wide.
 
 Plugins inject at four anchors. The order matters — see [docs/features/plugin-system.md](plugin-system.md) for the splicing rules.
 
@@ -390,6 +411,8 @@ Because `serializeCsp` sorts, the same plugins + adapters always emit a **byte-i
 | File                                            | Role                                                                |
 |-------------------------------------------------|---------------------------------------------------------------------|
 | `server/publish/publicRouter.ts`                | Gateway: Layer A disk fast-path → Layer B LRU → live `resolvePublicRoute` + `renderPublicResolution`. |
+| `server/publish/publicRoutes.ts`                | Dispatcher tail: `tryServeBranchPreviewLink` (preview cookie in/out), `tryServePublicRoute` (a live preview cookie → `renderBranchPreview`, otherwise `renderPublicResolution`), setup redirect, 404 page. |
+| `server/publish/branchPreview.ts`               | Render a public URL from a branch's DRAFT for preview-link visitors: same composition as the editor's runtime preview (inline CSS, loops on the branch, on-demand runtime bundles kept in `branchPreviewAssets.ts`, plugin frontend injections, no publish hooks), `no-store` + `noindex`, with a banner. |
 | `server/publish/staticArtefact.ts`              | Two-slot pointer-file swap (`swapSlot`), per-file atomic writes (`writeArtefact`, `updateArtefactInPlace`), and reads (`readArtefact`). Layer A. |
 | `server/publish/renderCache.ts`                 | In-memory LRU keyed by `(urlPath, canonicalQuery)`, entries versioned. `getOrRender` (single-flight). Reads the version from `publishState`; version captured at render start — a publish landing mid-render discards the result rather than caching stale HTML. Layer B. |
 | `server/publish/publishState.ts`                | Publish-time process state: `publishVersion` (`bumpPublishVersion`/`getPublishVersion`), `withPublishLock` (ISS-038 publish serializer), and `createVersionedSingleFlight` — the generalized version-keyed single-flight memo the hole endpoint reuses. Repositories import the version + lock from here (not from the cache). |
@@ -409,7 +432,7 @@ Because `serializeCsp` sorts, the same plugins + adapters always emit a **byte-i
 | `server/publish/renderTreeWalk.ts`              | `walkRenderTree(nodes, rootNodeId, site, onNode)` — visits every node that contributes to a rendered page: all page-tree nodes reachable from `rootNodeId`, plus all nodes inside each referenced VC's definition tree (recursively, cycle-guarded by a `Set<vcId>`). Used by both `mediaPrefetch.ts` and `loopPrefetch.ts` so their traversal logic can't drift apart. |
 | `server/publish/runtime/packageServer.ts`       | Serve per-site `bun install` workspace under `/_instatic/runtime/cache/`. |
 | `server/publish/loopRuntime.ts`                 | The loop runtime asset (small JS shim used by certain loop variants).|
-| `server/handlers/cms/hole.ts`                   | `GET /_instatic/hole-runtime.js` (serves `HOLE_RUNTIME_JS`) and `GET /_instatic/hole/<nodeId>?v=<publishVersion>&u=<page-url>` (renders a node subtree at request time for Layer C islands). |
+| `server/handlers/cms/hole.ts`                   | `GET /_instatic/hole-runtime.js` (serves `HOLE_RUNTIME_JS`) and `GET /_instatic/hole/<nodeId>?v=<snapshotHash>&u=<page-url>` (renders a node subtree at request time for Layer C islands). |
 | `server/handlers/cms/moduleJs.ts`               | `GET /_instatic/module-js/<moduleId>.js?v=<publishVersion>` — serves a module's render-emitted JS from the memoised site map; validates the untrusted moduleId segment; 404 unknown; `text/javascript`; `cache-control: public, max-age=3600`. |
 | `server/richtextSanitizer.ts`                   | Installs the server's jsdom-backed DOMPurify runtime without global DOM objects. |
 
@@ -536,7 +559,7 @@ tryServePublicRoute (server/router.ts)
 The visitor-facing artefacts are:
 1. **Disk files in the active slot** (`uploads/published/current/<route>.html`) — for fully-static routes. Final HTML, post-filter, frontend assets baked in. Rebuilt on each full publish.
 2. **In-memory LRU entries** — for dynamic routes (loops, request-dependent bindings). Filled lazily, evicted on every publish.
-3. **`<instatic-hole>` fragment responses** at `/_instatic/hole/<nodeId>?v=<publishVersion>&u=<page-url>` — for dynamic nodes inside otherwise-cacheable pages. Fetched lazily by the IntersectionObserver runtime; shared responses are cached in Layer B, while per-visitor holes bypass it.
+3. **`<instatic-hole>` fragment responses** at `/_instatic/hole/<nodeId>?v=<snapshotHash>&u=<page-url>` — for dynamic nodes inside otherwise-cacheable pages. Fetched lazily by the IntersectionObserver runtime; shared responses are cached in Layer B, while per-visitor holes bypass it.
 
 The published `SiteDocument` is stored once per publish in `site_snapshots` and referenced by `data_row_versions.site_snapshot_id`; the `PublishedPageSnapshot` reassembled from that join remains the canonical audit record — all three layers derive from it. At request time it is memoised per publish version (`server/publish/publishedSnapshotCache.ts`, shared by the public router's row resolution, the hole endpoint, and the loop endpoint), and `renderPublicResolution` serves a warm Layer B entry *before* any route resolution — a cache hit does zero DB work.
 

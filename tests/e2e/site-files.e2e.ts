@@ -1,10 +1,10 @@
-import { expect, test, type Page } from '@playwright/test'
+import { expect, test } from '@playwright/test'
 import {
   ANONYMOUS_STATE,
   PUBLIC_BASE_URL,
   createPage,
+  createStylesheet,
   login,
-  openCodePanel,
   openSiteEditor,
   publishDraft,
 } from './helpers'
@@ -49,28 +49,3 @@ html body {
     }
   })
 })
-
-async function createStylesheet(page: Page, name: string, css: string): Promise<void> {
-  await openCodePanel(page)
-  const newStylesheet = page.getByRole('button', { name: 'New stylesheet', exact: true })
-  await newStylesheet.scrollIntoViewIfNeeded()
-  await newStylesheet.click()
-
-  const dialog = page.getByRole('dialog', { name: 'New stylesheet' })
-  await expect(dialog).toBeVisible()
-  await dialog.getByLabel('Name').fill(name)
-  await dialog.getByRole('button', { name: 'Create' }).click()
-  await expect(dialog).toBeHidden()
-
-  await expect(page.getByRole('complementary', { name: 'Code Editor' })).toBeVisible()
-  await expect(page.getByLabel('Stylesheet settings')).toBeVisible()
-
-  const editor = page.locator('[data-codemirror-container] .cm-content')
-  await expect(editor).toBeVisible({ timeout: 15_000 })
-  await editor.click()
-  await page.keyboard.insertText(css.trim())
-
-  // CodeMirror syncs into the editor store through a short debounce.
-  await expect(editor).toContainText('background-color')
-  await page.waitForTimeout(300)
-}

@@ -15,12 +15,19 @@ import { Type, type Static } from '@core/utils/typeboxHelpers'
 import type { CoreCapability } from '@core/capabilities'
 import type { AiTool } from '../types'
 import {
-  getDataRow,
+  getDataTable,
   listDataAuthorOptions,
   listDataRows,
   listDataTablesWithCounts,
   searchDataRows,
 } from '../../../repositories/data'
+import {
+  canReadDataRow,
+  canReadTable,
+  resolveRowAccess,
+  rowVisibilityFor,
+  type DataPrincipal,
+} from '../../../auth/dataAccess'
 import { listMediaAssets } from '../../../repositories/media'
 import {
   readSlugCell,
@@ -33,8 +40,11 @@ import type { DataField, DataRow, DataTableListItem } from '@core/data/schemas'
 // Capability requirements (ANY-OF) — each tool mirrors its HTTP-route gate.
 // ---------------------------------------------------------------------------
 
-// Document (data-row) content read — mirrors `requireDataAccess`
-// (DATA_ACCESS_CAPABILITIES in server/handlers/cms/data/access.ts).
+// Document (data-row) content read: the capability floor mirrors
+// `requireDataAccess`; which tables and rows are then visible is decided per
+// call by the shared row-access rules in server/auth/dataAccess.ts, exactly as
+// the HTTP data routes decide it. The floor alone is not authorization: a
+// content.edit.own caller must only ever see its own rows (GHSA-x5cc).
 const DOCUMENT_READ_CAPS: readonly CoreCapability[] = [
   'content.create',
   'content.edit.own',
@@ -106,6 +116,11 @@ function projectField(field: DataField) {
   return base
 }
 
+/** The caller's identity for the shared row-access rules: the connector or session user behind the tool call. */
+function principalOf(ctx: { userId: string; capabilities: readonly CoreCapability[] }): DataPrincipal {
+  return { id: ctx.userId, capabilities: ctx.capabilities }
+}
+
 function projectRow(row: DataRow) {
   return {
     id: row.id,
@@ -133,7 +148,7 @@ const listCollectionsTool: AiTool = {
     'List every Content-workspace collection (routable post types only) with id, slug, label, kind, row count, and primary field id. Pages are edited through Site tools; reusable tables through Data tools.',
   inputSchema: ListCollectionsInput,
   handler: async (_input, ctx) => {
-    const tables = await listDataTablesWithCounts(ctx.db)
+    const tables = await listDataTablesWithCounts(ctx.db, ctx.branch)
     return {
       collections: tables
         .filter((t) => CONTENT_KIND_VISIBLE.has(t.kind))
@@ -160,7 +175,7 @@ const getCollectionSchemaTool: AiTool = {
   inputSchema: GetCollectionSchemaInput,
   handler: async (input, ctx) => {
     const { tableId } = input as Static<typeof GetCollectionSchemaInput>
-    const tables = await listDataTablesWithCounts(ctx.db)
+    const tables = await listDataTablesWithCounts(ctx.db, ctx.branch)
     const table = tables.find((t) => t.id === tableId)
     if (!table) {
       return { ok: false, error: `Collection ${tableId} not found.` }
@@ -202,8 +217,15 @@ const listDocumentsTool: AiTool = {
   inputSchema: ListDocumentsInput,
   handler: async (input, ctx) => {
     const args = input as Static<typeof ListDocumentsInput>
-    const all = await listDataRows(ctx.db, args.tableId)
-    let filtered = all
+    const principal = principalOf(ctx)
+    // Table family first (a content persona without data.system.tables.read
+    // must not list posts), then only the rows this principal may read.
+    const table = await getDataTable(ctx.db, ctx.branch, args.tableId)
+    if (!table || !canReadTable(principal, table)) {
+      return { ok: false, error: `Collection ${args.tableId} not found.` }
+    }
+    const all = await listDataRows(ctx.db, ctx.branch, args.tableId, rowVisibilityFor(principal))
+    let filtered = all.filter((r) => canReadDataRow(principal, r))
     if (args.status) filtered = filtered.filter((r) => r.status === args.status)
     if (args.authorUserId) filtered = filtered.filter((r) => r.authorUserId === args.authorUserId)
     const offset = args.offset ?? 0
@@ -236,10 +258,14 @@ const getDocumentTool: AiTool = {
   inputSchema: GetDocumentInput,
   handler: async (input, ctx) => {
     const { documentId } = input as Static<typeof GetDocumentInput>
-    const row = await getDataRow(ctx.db, documentId)
-    if (!row) {
+    const access = await resolveRowAccess(ctx.db, ctx.branch, documentId, principalOf(ctx), canReadDataRow)
+    if (access.kind === 'not-found') {
       return { ok: false, error: `Document ${documentId} not found.` }
     }
+    if (access.kind === 'forbidden') {
+      return { ok: false, error: `Document ${documentId} is not readable with the caller's permissions.` }
+    }
+    const { row } = access
     return {
       document: {
         id: row.id,
@@ -277,11 +303,15 @@ const searchDocumentsTool: AiTool = {
   inputSchema: SearchDocumentsInput,
   handler: async (input, ctx) => {
     const { query, limit } = input as Static<typeof SearchDocumentsInput>
-    const results = await searchDataRows(ctx.db, query, limit ?? 25)
-    // Only surface Content-workspace post-type rows.
-    const tables = await listDataTablesWithCounts(ctx.db)
+    const principal = principalOf(ctx)
+    const results = await searchDataRows(ctx.db, ctx.branch, query, limit ?? 25, rowVisibilityFor(principal))
+    // Only surface Content-workspace post-type rows, and only from table
+    // families this principal may read.
+    const tables = await listDataTablesWithCounts(ctx.db, ctx.branch)
     const visibleTableIds = new Set(
-      tables.filter((t) => CONTENT_KIND_VISIBLE.has(t.kind)).map((t) => t.id),
+      tables
+        .filter((t) => CONTENT_KIND_VISIBLE.has(t.kind) && canReadTable(principal, t))
+        .map((t) => t.id),
     )
     return {
       query,

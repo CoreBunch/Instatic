@@ -3,7 +3,8 @@
  */
 
 import { describe, it, expect } from 'bun:test'
-import { detectConflicts, applyConflictResolutions } from '@core/siteImport'
+import { detectConflicts, applyConflictResolutions, buildImportPlan } from '@core/siteImport'
+import { makeSinglePageFileMap } from './fixtures'
 import type {
   ImportPlan,
   PagePlan,
@@ -482,6 +483,53 @@ describe('detectConflicts — design tokens', () => {
   })
 })
 
+describe('detectConflicts — rename targets avoid the import\'s own names', () => {
+  it('does not auto-rename onto another imported token\'s slug', () => {
+    const { tokens } = detectConflicts(siteWithTokens(), [], [], [makeColorToken('bg'), makeColorToken('bg-2')], [])
+    expect(tokens).toHaveLength(1)
+    expect(tokens[0].defaultResolution.resolvedVariable).toBe('bg-3')
+  })
+
+  it('does not auto-rename onto a custom property the imported CSS declares', () => {
+    const rule: NewStyleRule = {
+      name: 'x', kind: 'class', selector: '.x', order: 0,
+      styles: { '--bg-2': '4px', '--font-primary-2': 'serif' }, contextStyles: {},
+    }
+    const { tokens } = detectConflicts(
+      siteWithTokens(), [], [rule], [makeColorToken('bg')], [makeFontToken('font-primary')],
+    )
+    expect(tokens.map((t) => t.defaultResolution.resolvedVariable)).toEqual(['bg-3', 'font-primary-3'])
+  })
+
+  it('detects an authored font variable against an existing token by its emitted name (#619)', () => {
+    const html = `<!doctype html><html><head><link rel="stylesheet" href="style.css"></head><body><p class="u">x</p></body></html>`
+    const css = `:root { --font-Primary: "Acme Grotesk", serif; } .u { font-family: var(--font-Primary); }`
+    const plan = buildImportPlan({ fileMap: makeSinglePageFileMap(html, css), currentSite: siteWithTokens() })
+
+    expect(plan.conflicts.tokens.map((t) => [t.kind, t.desiredVariable, t.defaultResolution.resolvedVariable]))
+      .toEqual([['font', 'font-primary', 'font-primary-2']])
+    const result = applyConflictResolutions(plan, [], [], plan.conflicts.tokens)
+    expect(result.fontTokens.map((t) => t.variable)).toEqual(['font-primary-2'])
+    expect(result.styleRules.find((r) => r.selector === '.u')?.styles.fontFamily).toBe('var(--font-primary-2)')
+  })
+
+  it('keeps both colours when a normalised name and a conflict rename meet (#615)', () => {
+    // `--BG` normalises to `bg-2`, so the conflict rename of `--bg` must not
+    // take `bg-2` too, or one colour is lost at commit.
+    const html = `<!doctype html><html><head><link rel="stylesheet" href="style.css"></head><body><p class="u">x</p></body></html>`
+    const css = `:root { --bg: #111; --BG: #222; } .u { color: var(--BG); background: var(--bg); }`
+    const plan = buildImportPlan({ fileMap: makeSinglePageFileMap(html, css), currentSite: siteWithTokens() })
+    const result = applyConflictResolutions(plan, [], [], plan.conflicts.tokens)
+
+    expect(result.colors).toEqual([
+      { slug: 'bg-3', value: '#111' },
+      { slug: 'bg-2', value: '#222' },
+    ])
+    const u = result.styleRules.find((r) => r.selector === '.u')
+    expect(u?.styles).toMatchObject({ color: 'var(--bg-2)', background: 'var(--bg-3)' })
+  })
+})
+
 describe('applyConflictResolutions — design tokens', () => {
   it('rename: renames the imported colour token AND rewrites var(--bg) refs in style rules', () => {
     const rule: NewStyleRule = {
@@ -505,6 +553,86 @@ describe('applyConflictResolutions — design tokens', () => {
     expect(result.styleRules[0].styles.backgroundColor).toBe('var(--bg-2)')
     // An unrelated var reference is left untouched.
     expect(result.styleRules[0].styles.color).toBe('var(--ink)')
+  })
+
+  it('custom rename: renames a colour token to its emitted slug and rewrites refs to it', () => {
+    const rule: NewStyleRule = {
+      name: 'hero',
+      kind: 'class',
+      selector: '.hero',
+      order: 0,
+      styles: { color: 'var(--bg)' },
+      contextStyles: {},
+    }
+    const plan = makeTokenPlan({ colors: [makeColorToken('bg')], styleRules: [rule] })
+    const res: TokenConflict = {
+      kind: 'color',
+      desiredVariable: 'bg',
+      existingTokenId: 'existing-color-id',
+      defaultResolution: { action: 'custom-rename', resolvedVariable: 'Hero BG' },
+    }
+    const result = applyConflictResolutions(plan, [], [], [res])
+
+    expect(result.colors[0].slug).toBe('hero-bg')
+    expect(result.styleRules[0].styles.color).toBe('var(--hero-bg)')
+  })
+
+  it('rename: renames a declaration of the token in a non-root rule, with its priority', () => {
+    const rule: NewStyleRule = {
+      name: 'dark',
+      kind: 'class',
+      selector: '.dark',
+      order: 0,
+      styles: { '--bg': '#000', '--other': '#111' },
+      stylePriorities: { '--bg': 'important' },
+      contextStyles: { 'bp-mobile': { '--bg': '#222' } },
+      contextStylePriorities: { 'bp-mobile': { '--bg': 'important' } },
+    }
+    const plan = makeTokenPlan({ colors: [makeColorToken('bg')], styleRules: [rule] })
+    const res: TokenConflict = {
+      kind: 'color',
+      desiredVariable: 'bg',
+      existingTokenId: 'existing-color-id',
+      defaultResolution: { action: 'auto-rename', resolvedVariable: 'bg-2' },
+    }
+    const [result] = applyConflictResolutions(plan, [], [], [res]).styleRules
+
+    expect(result.styles).toEqual({ '--bg-2': '#000', '--other': '#111' })
+    expect(result.stylePriorities).toEqual({ '--bg-2': 'important' })
+    expect(result.contextStyles).toEqual({ 'bp-mobile': { '--bg-2': '#222' } })
+    expect(result.contextStylePriorities).toEqual({ 'bp-mobile': { '--bg-2': 'important' } })
+  })
+
+  it('rename: renames a font token\'s declaration in another rule', () => {
+    const rule: NewStyleRule = {
+      name: 'serif', kind: 'class', selector: '.serif', order: 0,
+      styles: { '--font-primary': 'Georgia, serif', fontFamily: 'var(--font-primary)' }, contextStyles: {},
+    }
+    const plan = makeTokenPlan({ fontTokens: [makeFontToken('font-primary')], styleRules: [rule] })
+    const res: TokenConflict = {
+      kind: 'font',
+      desiredVariable: 'font-primary',
+      existingTokenId: 'existing-font-id',
+      defaultResolution: { action: 'auto-rename', resolvedVariable: 'font-primary-2' },
+    }
+    const [result] = applyConflictResolutions(plan, [], [], [res]).styleRules
+    expect(result.styles).toEqual({ '--font-primary-2': 'Georgia, serif', fontFamily: 'var(--font-primary-2)' })
+  })
+
+  it('rename: renames declarations and references inside raw @keyframes CSS', () => {
+    const rule: NewStyleRule = {
+      name: 'pulse', kind: 'ambient', selector: '@keyframes pulse', order: 0, styles: {}, contextStyles: {},
+      rawCss: '@keyframes pulse {\nfrom { --bg: #000; color: var(--bg); --bgx: #111; }\n}',
+    }
+    const plan = makeTokenPlan({ colors: [makeColorToken('bg')], styleRules: [rule] })
+    const res: TokenConflict = {
+      kind: 'color',
+      desiredVariable: 'bg',
+      existingTokenId: 'existing-color-id',
+      defaultResolution: { action: 'auto-rename', resolvedVariable: 'bg-2' },
+    }
+    const [result] = applyConflictResolutions(plan, [], [], [res]).styleRules
+    expect(result.rawCss).toBe('@keyframes pulse {\nfrom { --bg-2: #000; color: var(--bg-2); --bgx: #111; }\n}')
   })
 
   it('rename: rewrites var refs inside node inlineStyles, preserving fallbacks', () => {

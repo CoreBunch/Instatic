@@ -15,6 +15,7 @@ import { describe, expect, it } from 'bun:test'
 import { makeModule, makePage, makeRegistry, makeSite } from './helpers'
 import { publishPage } from '@core/publisher'
 import { effectiveNodeBindings, resolveDynamicProps } from '@core/templates/dynamicBindings'
+import type { DynamicPropBinding } from '@core/page-tree'
 import type { LoopItem } from '@core/loops/types'
 
 const bodyModule = makeModule('base.body', {
@@ -77,6 +78,39 @@ describe('entry outlet body binding', () => {
 
     expect(html).toContain('<h2>Summary heading</h2>')
     expect(html).not.toContain('must not render')
+  })
+
+  it('preserves safe body images through canvas resolution and publishing for every binding path', () => {
+    const boundModule = makeModule('test.richtext', { ...outletModule, id: 'test.richtext' })
+    const imageRegistry = makeRegistry({ 'base.body': bodyModule, 'base.outlet': outletModule, 'test.richtext': boundModule })
+    const explicit: Record<string, DynamicPropBinding> = { html: { source: 'currentEntry', field: 'body', format: 'html' } }
+    for (const body of [
+      '## Heading\n\nBefore [link](https://example.com).\n\n![Alt text](/uploads/photo.jpg "Photo title")\n\nAfter.',
+      '## Heading\n\nBefore [link](https://example.com).\n\n<img src="/uploads/photo.jpg" alt="Alt text" title="Photo title" loading="lazy" onerror="alert(1)"><img src="data:image/png;base64,AAAA"><img src="//evil.example/a">\n\nAfter.',
+    ]) {
+      for (const node of [
+        { moduleId: 'base.outlet', props: { html: '' } },
+        { moduleId: 'test.richtext', props: { html: '' }, dynamicBindings: explicit },
+        { moduleId: 'test.richtext', props: { html: '{currentEntry.body}' } },
+      ]) {
+        const context = { entryStack: [entry(body)] }
+        const resolved = resolveDynamicProps(node.props, effectiveNodeBindings(node), context)
+        const page = makePage({ root: { moduleId: 'base.body', children: ['outlet'] }, outlet: node })
+        const { html } = publishPage(page, makeSite(), imageRegistry, { templateContext: context })
+        const content = html.match(/<section data-instatic-content-region>([\s\S]*?)<\/section>/)?.[1]
+        expect(content).toBeDefined()
+        for (const output of [String(resolved.html), content ?? '']) {
+          expect(output).toContain('<img src="/uploads/photo.jpg"')
+          expect(output).toContain('alt="Alt text"')
+          expect(output).toContain('title="Photo title"')
+          expect(output).toContain('loading="lazy"')
+          expect(output).toContain('<h2>Heading</h2>')
+          expect(output).toContain('href="https://example.com"')
+          expect(output).toContain('After.')
+          expect(output).not.toMatch(/onerror|data:image|evil\.example/)
+        }
+      }
+    }
   })
 
   it('leaves the outlet empty on a non-entry render (no current entry in scope)', () => {

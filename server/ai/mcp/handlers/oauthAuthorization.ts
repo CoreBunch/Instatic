@@ -12,6 +12,7 @@ import { createOAuthAuthorizationGrant, findOAuthClient } from '../oauth/store'
 import { OAUTH_GRANT_TTL_DAYS } from '../connectors/store'
 import {
   isValidPkceChallenge,
+  mcpIssuerUnavailableResponse,
   mcpResource,
   normalizeMcpScope,
   oauthRedirect,
@@ -34,9 +35,11 @@ export function tryHandleMcpOAuthAuthorization(
 async function handleRead(req: Request, db: DbClient, url: URL): Promise<Response> {
   const userOrResponse = await requireCapability(req, db, 'ai.providers.manage')
   if (userOrResponse instanceof Response) return userOrResponse
+  const resource = mcpResource(req)
+  if (!resource) return mcpIssuerUnavailableResponse()
   const request = parseOAuthAuthorizationRequest(url.searchParams)
   if (!request) return badRequest('Invalid OAuth authorization request.')
-  const resolved = await resolveAuthorizationRequest(req, db, request)
+  const resolved = await resolveAuthorizationRequest(db, request, resource)
   if (!resolved) return badRequest('The OAuth client, callback, scope, or PKCE challenge is invalid.')
   return jsonResponse({
     clientName: resolved.clientName,
@@ -49,9 +52,11 @@ async function handleRead(req: Request, db: DbClient, url: URL): Promise<Respons
 async function handleDecision(req: Request, db: DbClient): Promise<Response> {
   const userOrResponse = await requireCapability(req, db, 'ai.providers.manage')
   if (userOrResponse instanceof Response) return userOrResponse
+  const resource = mcpResource(req)
+  if (!resource) return mcpIssuerUnavailableResponse()
   const body = await readValidatedBody(req, DecideMcpOAuthAuthorizationBodySchema)
   if (!body) return badRequest('Invalid authorization decision.')
-  const resolved = await resolveAuthorizationRequest(req, db, body.request)
+  const resolved = await resolveAuthorizationRequest(db, body.request, resource)
   if (!resolved) return badRequest('The OAuth authorization request is no longer valid.')
 
   if (body.decision === 'deny') {
@@ -115,16 +120,16 @@ async function handleDecision(req: Request, db: DbClient): Promise<Response> {
 }
 
 async function resolveAuthorizationRequest(
-  req: Request,
   db: DbClient,
   request: McpOAuthAuthorizationRequest,
+  resource: string,
 ): Promise<{ clientName: string; request: McpOAuthAuthorizationRequest } | null> {
   const client = await findOAuthClient(db, request.clientId)
   const scope = normalizeMcpScope(request.scope)
   if (
     !client || !scope || !client.redirectUris.includes(request.redirectUri) ||
     !isValidPkceChallenge(request.codeChallenge) ||
-    request.resource !== mcpResource(req)
+    request.resource !== resource
   ) {
     return null
   }

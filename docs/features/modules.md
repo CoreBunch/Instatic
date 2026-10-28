@@ -46,12 +46,12 @@ src/modules/base/
 ├── video/               — base.video (youtube.ts — ID parse + embed URL leaf)
 ├── list/                — base.list (items.ts — textarea item-splitting leaf)
 ├── loop/                — base.loop
-├── forms/               — base.form and form-control primitives
+├── forms/               — base.form and form-control primitives (content.ts: submit children/label rule)
 ├── visualComponentRef/  — base.visual-component-ref
 ├── slotOutlet/          — base.slot-outlet (VC author side)
 ├── slotInstance/        — base.slot-instance (VC consumer side)
 ├── shared/
-│   └── anchorTarget.ts  — AnchorTargetSchema, ANCHOR_TARGET_OPTIONS, anchorRel() (button + link)
+│   └── anchorTarget.ts  — ANCHOR_TARGET_OPTIONS, anchorRel(), mergeAnchorRel(), anchorHtmlAttributes() (button + link; schema in @core/htmlAttributes)
 ├── utils/
 │   ├── escape.ts        — escapeHtml, safeUrl, sanitiseCssValue, buildStyle (re-exports publisher utils)
 │   ├── htmlTag.ts       — htmlTagControl, customHtmlTagControl (resolution lives in @core/htmlAttributes)

@@ -18,8 +18,8 @@
  *     every page load, and responds with `Cache-Control: no-store`.
  *
  * Version-awareness: the hole runtime stamps `data-instatic-version` on each
- * placeholder. The endpoint compares `?v=` to the current `publishVersion`; a
- * mismatch returns a lightweight stale sentinel so the next page load picks up
+ * placeholder. The endpoint compares `?v=` to the frozen site's content hash;
+ * a mismatch returns a lightweight stale sentinel so the next page load picks up
  * the new version.
  *
  * Inside the hole endpoint the RenderConfig has no `dynamicNodeIds` — the node
@@ -191,26 +191,22 @@ export async function handleHoleRequest(
     })
   }
 
-  // Version check — if the ?v= param doesn't match the current publish version,
-  // return a lightweight stale sentinel without caching. The next full page load
-  // will carry the correct version in its placeholder attributes.
-  const requestVersion = url.searchParams.get('v') ?? ''
+  // Cache generations change on row publishes, unpublishes and deletes too.
+  // Fragment validity instead follows the frozen site that produced its shell.
   const currentVersion = getPublishVersion()
-  if (requestVersion !== String(currentVersion)) {
-    return new Response('<instatic-hole-stale data-instatic-stale="true"></instatic-hole-stale>', {
-      headers: {
-        'content-type': 'text/html; charset=utf-8',
-        'cache-control': 'no-store',
-      },
-    })
-  }
-
-  // Load (memoised) snapshot for this version and find the node's page in O(1).
   const snap = await getPublishedNodeIndexForVersion(ctx.db, currentVersion)
   if (!snap) {
     return new Response('Site not published', {
       status: 404,
       headers: { 'content-type': 'text/plain; charset=utf-8' },
+    })
+  }
+  if (url.searchParams.get('v') !== snap.snapshotHash) {
+    return new Response('<instatic-hole-stale data-instatic-stale="true"></instatic-hole-stale>', {
+      headers: {
+        'content-type': 'text/html; charset=utf-8',
+        'cache-control': 'no-store',
+      },
     })
   }
   const foundPage = snap.nodeIndex.get(nodeId)

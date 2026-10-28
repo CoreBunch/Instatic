@@ -42,7 +42,7 @@ function fakeSite(): SiteDocument {
 const FACTS: OnboardingFacts = {
   identity: 'active',
   framework: 'active',
-  firstPage: 'active',
+  homePage: 'active',
   plugin: 'active',
   team: 'active',
 }

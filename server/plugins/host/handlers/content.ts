@@ -6,9 +6,11 @@
  * `cms.content.*` permission family is enforced CENTRALLY in `apiDispatch.ts`
  * (driven by `TARGET_PERMISSIONS`) before any handler runs, so each handler:
  *
- *   1. Calls `assertContentTableAccess` — enforces the manifest's
- *      `contentAccess[]` allowlist for the targeted table + mode (this is the
- *      per-table check the central permission gate cannot express).
+ *   1. Resolves the targeted table, then calls `assertContentTableAccess` —
+ *      enforces the manifest's `contentAccess[]` allowlist for that table +
+ *      mode (this is the per-table check the central permission gate cannot
+ *      express). An entry matches by exact slug, or via the `@own-created`
+ *      marker when the table's `createdByPluginId` is this plugin.
  *   2. Delegates to a repository function in `server/repositories/data/`.
  *   3. Emits the matching `content.entry.*` hook event so plugins can react.
  *   4. Replies via `replyApiOk` / lets the dispatcher's try/catch reply
@@ -25,6 +27,7 @@ import { parsePageNodeTree } from '@core/page-tree'
 import { readPageTree, mutatePageTree } from '../../../ai/content/treeService'
 import { hookBus } from '@core/plugins/hookBus'
 import {
+  listDataTables,
   listDataTablesWithCounts,
   getDataTable,
   createDataTable,
@@ -48,7 +51,7 @@ import { republishAllPages } from '../../../publish/republish'
 import { bumpPublishVersionSerialized } from '../../../publish/publishState'
 import { applyContentEntryCellsFilter } from '../../../publish/contentEvents'
 import type { DbClient } from '../../../db/client'
-import { assertContentTableAccess } from '../registry'
+import { assertContentTableAccess, hasContentTableAccess } from '../registry'
 import { buildContentTableIdLookup, pluginContentFieldsToDataFields } from '../contentFieldMapping'
 import {
   buildTableSlugLookup,
@@ -60,6 +63,7 @@ import {
 } from './contentProjection'
 import { replyApiOk } from '../apiReplies'
 import type { HostPluginRecord } from '../types'
+import { MAIN_SCOPE } from '../../../branches/scope'
 
 // Projection helpers (DB → wire shapes) live in `contentProjection.ts`.
 
@@ -122,10 +126,9 @@ export async function handleContentTablesList(
   entry: HostPluginRecord,
   db: DbClient,
 ): Promise<void> {
-  const allowedSlugs = new Set((entry.manifest.contentAccess ?? []).map((e) => e.table))
-  const tables = await listDataTablesWithCounts(db)
+  const tables = await listDataTablesWithCounts(db, MAIN_SCOPE)
   const summaries: ContentTableSummary[] = tables
-    .filter((t) => allowedSlugs.has(t.slug))
+    .filter((t) => hasContentTableAccess(entry.manifest, t))
     .map((t) => tableSummary(t, t.rowCount))
   replyApiOk(msg.pluginId, msg.correlationId, summaries)
 }
@@ -136,17 +139,17 @@ export async function handleContentTablesGet(
   db: DbClient,
 ): Promise<void> {
   const [slug] = msg.args
-  assertContentTableAccess(entry, slug, 'read')
   const table = await resolveTableBySlug(db, slug).catch(() => null)
   if (!table) {
     replyApiOk(msg.pluginId, msg.correlationId, null)
     return
   }
+  assertContentTableAccess(entry, table, 'read')
   // One COUNT for this table + the id→slug lookup the relation-field
   // projection needs — no per-table COUNT subselects for tables we don't
   // return.
   const [rowCount, slugLookup] = await Promise.all([
-    countDataRows(db, table.id),
+    countDataRows(db, MAIN_SCOPE, table.id),
     buildTableSlugLookup(db),
   ])
   replyApiOk(
@@ -171,7 +174,10 @@ export async function handleContentTablesCreate(
     ? await buildContentTableIdLookup(db)
     : new Map<string, string>()
   const fields = pluginContentFieldsToDataFields(input.fields ?? [], tableIdBySlug)
-  const created = await createDataTable(db, {
+  // Record the creator so the manifest's `@own-created` contentAccess marker
+  // can grant this plugin entry access to the table afterwards. The id comes
+  // from the host-authenticated worker identity, never from plugin input.
+  const created = await createDataTable(db, MAIN_SCOPE, {
     name: input.name,
     slug: input.slug,
     kind: input.kind ?? 'data',
@@ -180,6 +186,7 @@ export async function handleContentTablesCreate(
     pluralLabel: input.pluralLabel,
     primaryFieldId: input.primaryFieldId ?? 'title',
     fields,
+    createdByPluginId: msg.pluginId,
   })
   const slugLookup = await buildTableSlugLookup(db)
   replyApiOk(msg.pluginId, msg.correlationId, tableSchema(created, 0, slugLookup))
@@ -195,9 +202,9 @@ export async function handleContentEntriesList(
   db: DbClient,
 ): Promise<void> {
   const [tableSlug, options] = msg.args
-  assertContentTableAccess(entry, tableSlug, 'read')
   const table = await resolveTableBySlug(db, tableSlug)
-  const result = await listDataRowsWithFilter(db, table.id, options)
+  assertContentTableAccess(entry, table, 'read')
+  const result = await listDataRowsWithFilter(db, MAIN_SCOPE, table.id, options)
   replyApiOk(msg.pluginId, msg.correlationId, {
     entries: result.rows.map((r) => rowToEntry(r, tableSlug)),
     totalCount: result.totalCount,
@@ -210,9 +217,9 @@ export async function handleContentEntriesGet(
   db: DbClient,
 ): Promise<void> {
   const [tableSlug, entryId] = msg.args
-  assertContentTableAccess(entry, tableSlug, 'read')
   const table = await resolveTableBySlug(db, tableSlug)
-  const row = await getDataRow(db, entryId)
+  assertContentTableAccess(entry, table, 'read')
+  const row = await getDataRow(db, MAIN_SCOPE, entryId)
   if (!row || row.tableId !== table.id) {
     replyApiOk(msg.pluginId, msg.correlationId, null)
     return
@@ -226,9 +233,9 @@ export async function handleContentEntriesGetBySlug(
   db: DbClient,
 ): Promise<void> {
   const [tableSlug, slug] = msg.args
-  assertContentTableAccess(entry, tableSlug, 'read')
   const table = await resolveTableBySlug(db, tableSlug)
-  const row = await getDataRowBySlug(db, table.id, slug)
+  assertContentTableAccess(entry, table, 'read')
+  const row = await getDataRowBySlug(db, MAIN_SCOPE, table.id, slug)
   replyApiOk(msg.pluginId, msg.correlationId, row ? rowToEntry(row, tableSlug) : null)
 }
 
@@ -238,8 +245,8 @@ export async function handleContentEntriesCreate(
   db: DbClient,
 ): Promise<void> {
   const [tableSlug, input] = msg.args
-  assertContentTableAccess(entry, tableSlug, 'write')
   const table = await resolveTableBySlug(db, tableSlug)
+  assertContentTableAccess(entry, table, 'write')
   const actor: PluginActor = { kind: 'plugin', pluginId: msg.pluginId }
   const cells = await applyContentEntryCellsFilter(input.cells, {
     tableSlug,
@@ -249,6 +256,7 @@ export async function handleContentEntriesCreate(
   const slug = input.slug ?? denormalizeSlug(table, cells)
   const created = await createDataRow(
     db,
+    MAIN_SCOPE,
     { tableId: table.id, cells, slug },
     null,
     msg.pluginId,
@@ -263,9 +271,9 @@ export async function handleContentEntriesUpdate(
   db: DbClient,
 ): Promise<void> {
   const [tableSlug, entryId, patch] = msg.args
-  assertContentTableAccess(entry, tableSlug, 'write')
   const table = await resolveTableBySlug(db, tableSlug)
-  const existing = await getDataRow(db, entryId)
+  assertContentTableAccess(entry, table, 'write')
+  const existing = await getDataRow(db, MAIN_SCOPE, entryId)
   if (!existing || existing.tableId !== table.id) {
     throw new Error(`Entry "${entryId}" not found in table "${tableSlug}"`)
   }
@@ -283,6 +291,7 @@ export async function handleContentEntriesUpdate(
   const nextSlug = patch.slug ?? denormalizeSlug(table, filteredCells)
   const updated = await saveDataRowDraft(
     db,
+    MAIN_SCOPE,
     entryId,
     { cells: filteredCells, slug: nextSlug || existing.slug },
     null,
@@ -301,13 +310,13 @@ export async function handleContentEntriesDelete(
   db: DbClient,
 ): Promise<void> {
   const [tableSlug, entryId] = msg.args
-  assertContentTableAccess(entry, tableSlug, 'delete')
   const table = await resolveTableBySlug(db, tableSlug)
-  const existing = await getDataRow(db, entryId)
+  assertContentTableAccess(entry, table, 'delete')
+  const existing = await getDataRow(db, MAIN_SCOPE, entryId)
   if (!existing || existing.tableId !== table.id) {
     throw new Error(`Entry "${entryId}" not found in table "${tableSlug}"`)
   }
-  const deleted = await softDeleteDataRow(db, entryId)
+  const deleted = await softDeleteDataRow(db, MAIN_SCOPE, entryId)
   if (deleted) {
     // A published row's route is retracted — invalidate the render cache.
     if (deleted.status === 'published') await bumpPublishVersionSerialized()
@@ -322,16 +331,16 @@ export async function handleContentEntriesPublish(
   db: DbClient,
 ): Promise<void> {
   const [tableSlug, entryId, options] = msg.args
-  assertContentTableAccess(entry, tableSlug, 'publish')
   const table = await resolveTableBySlug(db, tableSlug)
-  const existing = await getDataRow(db, entryId)
+  assertContentTableAccess(entry, table, 'publish')
+  const existing = await getDataRow(db, MAIN_SCOPE, entryId)
   if (!existing || existing.tableId !== table.id) {
     throw new Error(`Entry "${entryId}" not found in table "${tableSlug}"`)
   }
   const actor: PluginActor = { kind: 'plugin', pluginId: msg.pluginId }
 
   if (options.scheduledFor) {
-    const scheduled = await scheduleDataRowPublish(db, entryId, options.scheduledFor, null)
+    const scheduled = await scheduleDataRowPublish(db, MAIN_SCOPE, entryId, options.scheduledFor, null)
     if (!scheduled) throw new Error(`Entry "${entryId}" could not be scheduled`)
     await emitEntryUpdated(tableSlug, entryId, ['status'], actor)
     replyApiOk(msg.pluginId, msg.correlationId, rowToEntry(scheduled, tableSlug))
@@ -349,15 +358,15 @@ export async function handleContentEntriesMoveTable(
   db: DbClient,
 ): Promise<void> {
   const [tableSlug, entryId, targetSlug] = msg.args
-  assertContentTableAccess(entry, tableSlug, 'write')
-  assertContentTableAccess(entry, targetSlug, 'write')
   const source = await resolveTableBySlug(db, tableSlug)
   const target = await resolveTableBySlug(db, targetSlug)
-  const existing = await getDataRow(db, entryId)
+  assertContentTableAccess(entry, source, 'write')
+  assertContentTableAccess(entry, target, 'write')
+  const existing = await getDataRow(db, MAIN_SCOPE, entryId)
   if (!existing || existing.tableId !== source.id) {
     throw new Error(`Entry "${entryId}" not found in table "${tableSlug}"`)
   }
-  const result = await updateDataRowTable(db, entryId, target.id, null)
+  const result = await updateDataRowTable(db, MAIN_SCOPE, entryId, target.id, null)
   if (!result.ok) throw new Error(`moveToTable failed: ${result.reason}`)
   const actor: PluginActor = { kind: 'plugin', pluginId: msg.pluginId }
   await emitEntryUpdated(tableSlug, entryId, ['tableId'], actor)
@@ -372,8 +381,8 @@ export async function handleContentEntriesCreateMany(
   db: DbClient,
 ): Promise<void> {
   const [tableSlug, inputs] = msg.args
-  assertContentTableAccess(entry, tableSlug, 'write')
   const table = await resolveTableBySlug(db, tableSlug)
+  assertContentTableAccess(entry, table, 'write')
   const actor: PluginActor = { kind: 'plugin', pluginId: msg.pluginId }
   // Apply the cells filter per-input before the transaction. The filter
   // runs INSIDE the same plugin's worker; running it inside the per-row
@@ -383,7 +392,7 @@ export async function handleContentEntriesCreateMany(
     const slug = input.slug ?? denormalizeSlug(table, cells)
     return { tableId: table.id, cells, slug }
   }))
-  const created = await createDataRowMany(db, prepared, null, msg.pluginId)
+  const created = await createDataRowMany(db, MAIN_SCOPE, prepared, null, msg.pluginId)
   for (const row of created) {
     await emitEntryCreated(tableSlug, row.id, actor)
   }
@@ -396,14 +405,14 @@ export async function handleContentEntriesUpdateMany(
   db: DbClient,
 ): Promise<void> {
   const [tableSlug, updates] = msg.args
-  assertContentTableAccess(entry, tableSlug, 'write')
   const table = await resolveTableBySlug(db, tableSlug)
+  assertContentTableAccess(entry, table, 'write')
   const actor: PluginActor = { kind: 'plugin', pluginId: msg.pluginId }
 
   // Read every targeted row in ONE IN-list query, then apply filter + diff
   // per-row before the transaction. Iterating `updates` in input order
   // preserves the first-bad-id error semantics of the old per-row reads.
-  const existingRows = await getDataRowMany(db, updates.map((u) => u.id))
+  const existingRows = await getDataRowMany(db, MAIN_SCOPE, updates.map((u) => u.id))
   const existingById = new Map(existingRows.map((row) => [row.id, row]))
   const prepared: Array<{ id: string; input: { cells: Record<string, unknown>; slug: string }; changedIds: string[] }> = []
   for (const { id, patch } of updates) {
@@ -427,6 +436,7 @@ export async function handleContentEntriesUpdateMany(
   }
   const updated = await saveDataRowDraftMany(
     db,
+    MAIN_SCOPE,
     prepared.map((p) => ({ id: p.id, input: p.input })),
     null,
     msg.pluginId,
@@ -445,12 +455,12 @@ export async function handleContentEntriesDeleteMany(
   db: DbClient,
 ): Promise<void> {
   const [tableSlug, ids] = msg.args
-  assertContentTableAccess(entry, tableSlug, 'delete')
   const table = await resolveTableBySlug(db, tableSlug)
+  assertContentTableAccess(entry, table, 'delete')
   // Validate every id belongs to this table BEFORE the transaction so a
   // bad id aborts cleanly without partially-applied deletes. One IN-list
   // read for the whole batch; input order preserves first-bad-id errors.
-  const rows = await getDataRowMany(db, ids)
+  const rows = await getDataRowMany(db, MAIN_SCOPE, ids)
   const rowsById = new Map(rows.map((row) => [row.id, row]))
   for (const id of ids) {
     const row = rowsById.get(id)
@@ -458,7 +468,7 @@ export async function handleContentEntriesDeleteMany(
       throw new Error(`Entry "${id}" not found in table "${tableSlug}"`)
     }
   }
-  const result = await softDeleteDataRowMany(db, ids, null)
+  const result = await softDeleteDataRowMany(db, MAIN_SCOPE, ids, null)
   // Published rows' routes were retracted — one cache invalidation per batch.
   if (result.publishedDeleted > 0) await bumpPublishVersionSerialized()
   const actor: PluginActor = { kind: 'plugin', pluginId: msg.pluginId }
@@ -483,9 +493,9 @@ async function resolvePageTreeField(
   entryId: string,
   fieldId: string,
 ): Promise<{ row: DataRow; table: DataTable }> {
-  const row = await getDataRow(db, entryId)
+  const row = await getDataRow(db, MAIN_SCOPE, entryId)
   if (!row) throw new Error(`Entry "${entryId}" not found`)
-  const table = await getDataTable(db, row.tableId)
+  const table = await getDataTable(db, MAIN_SCOPE, row.tableId)
   if (!table) throw new Error(`Table for entry "${entryId}" missing`)
   const field = table.fields.find((f) => f.id === fieldId)
   if (!field) throw new Error(`Field "${fieldId}" not found on table "${table.slug}"`)
@@ -501,8 +511,8 @@ export async function handleContentTreeRead(
   db: DbClient,
 ): Promise<void> {
   const [entryId, fieldId] = msg.args
-  const tree = await readPageTree(db, entryId, fieldId, {
-    assertAccess: (table) => assertContentTableAccess(entry, table.slug, 'read'),
+  const tree = await readPageTree(db, MAIN_SCOPE, entryId, fieldId, {
+    assertAccess: (table) => assertContentTableAccess(entry, table, 'read'),
   })
   replyApiOk(msg.pluginId, msg.correlationId, tree)
 }
@@ -518,11 +528,12 @@ export async function handleContentTreeMutate(
   // via `assertAccess`.
   const { tree, affectedNodeIds } = await mutatePageTree(
     db,
+    MAIN_SCOPE,
     entryId,
     fieldId,
     operations,
     { kind: 'plugin', pluginId: msg.pluginId },
-    { assertAccess: (table) => assertContentTableAccess(entry, table.slug, 'write') },
+    { assertAccess: (table) => assertContentTableAccess(entry, table, 'write') },
   )
   replyApiOk(msg.pluginId, msg.correlationId, { tree, affectedNodeIds })
 }
@@ -534,7 +545,7 @@ export async function handleContentTreeReplace(
 ): Promise<void> {
   const [entryId, fieldId, replacement] = msg.args
   const { row, table } = await resolvePageTreeField(db, entryId, fieldId)
-  assertContentTableAccess(entry, table.slug, 'write')
+  assertContentTableAccess(entry, table, 'write')
 
   const replacementTree = parsePageNodeTree(
     replacement,
@@ -548,6 +559,7 @@ export async function handleContentTreeReplace(
   )
   const updated = await saveDataRowDraft(
     db,
+    MAIN_SCOPE,
     entryId,
     { cells: nextCells, slug: row.slug },
     null,
@@ -568,10 +580,17 @@ export async function handleContentSearch(
   db: DbClient,
 ): Promise<void> {
   const [query, limit] = msg.args
-  const allowedSlugs = new Set((entry.manifest.contentAccess ?? []).map((e) => e.table))
-  const all = await searchDataRows(db, query, limit)
+  // Search results carry only `tableSlug`, so resolve the accessible set
+  // (declared slugs + own-created tables) against the table list — tiny,
+  // and the only way to honor the `@own-created` marker here.
+  const accessibleSlugs = new Set(
+    (await listDataTables(db, MAIN_SCOPE))
+      .filter((t) => hasContentTableAccess(entry.manifest, t))
+      .map((t) => t.slug),
+  )
+  const all = await searchDataRows(db, MAIN_SCOPE, query, limit)
   const filtered = all
-    .filter((r) => allowedSlugs.has(r.tableSlug))
+    .filter((r) => accessibleSlugs.has(r.tableSlug))
     .map((r) => ({
       id: r.id,
       tableSlug: r.tableSlug,
@@ -589,17 +608,17 @@ export async function handleContentSnapshot(
   db: DbClient,
 ): Promise<void> {
   const [entryId] = msg.args
-  const row = await getDataRow(db, entryId)
+  const row = await getDataRow(db, MAIN_SCOPE, entryId)
   if (!row) {
     replyApiOk(msg.pluginId, msg.correlationId, null)
     return
   }
-  const table = await getDataTable(db, row.tableId)
+  const table = await getDataTable(db, MAIN_SCOPE, row.tableId)
   if (!table) {
     replyApiOk(msg.pluginId, msg.correlationId, null)
     return
   }
-  assertContentTableAccess(entry, table.slug, 'read')
+  assertContentTableAccess(entry, table, 'read')
 
   const { rows } = await db<{
     version_number: number
@@ -614,6 +633,7 @@ export async function handleContentSnapshot(
     from data_rows
     join data_row_versions on data_row_versions.id = data_rows.active_version_id
     where data_rows.id = ${entryId}
+      and data_rows.branch_id = 'main'
       and data_rows.deleted_at is null
     limit 1
   `

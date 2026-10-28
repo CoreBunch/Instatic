@@ -17,6 +17,7 @@
  * one-way: publish → repositories, never back.
  */
 import { nanoid } from 'nanoid'
+import type { DataRow, DataRowVersion } from '@core/data/schemas'
 import type { SiteDocument } from '@core/page-tree'
 import type { PublishedPageRuntimeAssets } from '@core/site-runtime'
 import type { PublishedRuntimePackageImportmap, SiteCssBundle } from '@core/publisher'
@@ -24,9 +25,10 @@ import { normalizeSiteRuntimeConfig } from '@core/site-runtime'
 import { registry } from '@core/module-engine'
 import { isTemplatePage, resolveNotFoundTemplate } from '@core/templates'
 import type { DbClient } from '../db/client'
-import { nextDataRowVersionNumber } from '../repositories/data'
+import { nextDataRowVersionNumber, getDataRow } from '../repositories/data'
 import {
   getDraftSiteDocument,
+  getPagePublishDocument,
   persistSitePublish,
   type PublishedPageSnapshot,
   type PublishedPageVersionWrite,
@@ -52,6 +54,8 @@ import { buildPublishedSiteCssBundle } from './siteCssBundle'
 import { bakePublishedDataRowArtefacts } from './bakeDataRows'
 import { bumpPublishVersion, getPublishVersion, withPublishLock } from './publishState'
 import { runPublishFlush } from './publishFlush'
+import { sweepStalePluginVersionAssets } from './stalePluginAssets'
+import { MAIN_SCOPE } from '../branches/scope'
 
 interface PublishResult {
   publishedPages: number
@@ -88,15 +92,22 @@ export async function publishDraftSite(
   // Intrinsic to publishing now, not bolted onto the HTTP route.
   await runPublishFlush()
   // Serialize against every other publish so the version read→bake→bump window
-  // can't interleave and mis-stamp baked hole shells (ISS-038).
-  return withPublishLock(() => publishDraftSiteLocked(db, adminUserId, uploadsDir))
+  // can't interleave cache generations and artefact swaps (ISS-038).
+  return withPublishLock(async () => {
+    const site = await getDraftSiteDocument(db, MAIN_SCOPE)
+    if (!site) throw new Error('draft site not found')
+    const result = await publishSiteDocumentLocked(db, site, adminUserId, uploadsDir)
+    return { publishedPages: result.publishedPages }
+  })
 }
 
-async function publishDraftSiteLocked(
+async function publishSiteDocumentLocked(
   db: DbClient,
-  adminUserId: string,
+  site: SiteDocument,
+  adminUserId: string | null,
   uploadsDir?: string,
-): Promise<PublishResult> {
+  editedPageId?: string,
+) {
   // ── Phase 1: read inputs + run every expensive non-DB build ──────────────
   // Dependency installs (`bun install` on a cold cache) and per-page esbuild
   // runs take seconds; the SQLite adapter serializes ALL transactions through
@@ -104,9 +115,6 @@ async function publishDraftSiteLocked(
   // write (autosaves, row publishes) behind it. `withPublishLock` already
   // serializes publishes, and version numbers are only allocated by publish
   // paths under that same lock, so reading outside the transaction is stable.
-  const site = await getDraftSiteDocument(db)
-  if (!site) throw new Error('draft site not found')
-
   const runtime = normalizeSiteRuntimeConfig(site.runtime)
   const dependencyCache = Object.keys(runtime.dependencyLock.packages).length > 0
     ? await ensureRuntimeDependencyCache(runtime.dependencyLock)
@@ -129,7 +137,7 @@ async function publishDraftSiteLocked(
     ...site,
     pages: site.pages.map((page) => ({
       ...page,
-      updatedByUserId: adminUserId,
+      updatedByUserId: !editedPageId || page.id === editedPageId ? adminUserId : page.updatedByUserId,
     })),
   }
 
@@ -184,6 +192,7 @@ async function publishDraftSiteLocked(
       : null,
     pages: pageWrites,
     publishedByUserId: adminUserId,
+    editedPageId,
   })
 
   const publishedPages = publishedSite.pages.length
@@ -197,16 +206,17 @@ async function publishDraftSiteLocked(
   // bundles and runtime JS into the same slot under their public paths
   // (`/_instatic/css/...`, `/_instatic/assets/...`). The visitor router serves these off
   // disk, so a published page never hits the server to (re)generate its CSS
-  // or JS — the slot is a self-contained static export.
+  // or JS — the slot is a self-contained static export. The one thing it
+  // references from outside is plugin frontend assets
+  // (`/uploads/plugins/<id>/<version>/…`), which is why the stale-version
+  // sweep below runs only after a publish has rewritten those links.
   //
   // EVERY page is baked: fully-static pages bake to a complete document; pages
   // with dynamic nodes bake their static SHELL with `<instatic-hole>` placeholders
   // (the hole runtime lazy-fetches each fragment from `/_instatic/hole/`). Either way
   // the HTML + CSS + JS are served from disk — only the hole fragment touches
-  // the server. The shells are stamped with `nextPublishVersion` (the version
-  // that becomes current the instant `bumpPublishVersion()` runs after the
-  // swap) so their `<instatic-hole data-instatic-version>` matches what the hole endpoint
-  // expects; otherwise every baked hole would be rejected as stale.
+  // the server. Hole placeholders use the frozen site's fingerprint. The next
+  // cache generation pre-warms snapshot/CSS caches and versions module JS.
   const nextPublishVersion = getPublishVersion() + 1
   if (uploadsDir) {
     try {
@@ -299,6 +309,18 @@ async function publishDraftSiteLocked(
     } catch (err) {
       console.error('[publish:site] static artefact write failed (live renderer remains active):', err)
     }
+
+    // The artefacts just written link the CURRENTLY installed plugin versions,
+    // so any older version's files are now referenced by nothing. This is the
+    // only moment that is true — which is why an upgrade must not delete them
+    // itself. Leftovers are wasted disk, never a broken page, so a failure
+    // here is logged and the publish still succeeds.
+    try {
+      const { removed } = await sweepStalePluginVersionAssets(db, uploadsDir)
+      if (removed > 0) console.warn(`[publish:site] retired ${removed} stale plugin version dir(s)`)
+    } catch (err) {
+      console.error('[publish:site] stale plugin asset sweep failed (harmless, retries next publish):', err)
+    }
   }
 
   // Layer B: invalidate the in-memory render cache so the next visitor request
@@ -308,5 +330,32 @@ async function publishDraftSiteLocked(
   // live while the version counter still reads the old value.
   bumpPublishVersion()
 
-  return { publishedPages }
+  return { publishedPages, pageWrites }
+}
+
+/** Caller holds the publish lock and has flushed collab, just as for a full publish. */
+export async function publishPageRowLocked(
+  db: DbClient,
+  row: DataRow,
+  publisherUserId: string | null,
+  uploadsDir?: string,
+): Promise<{ row: DataRow; version: DataRowVersion }> {
+  const site = await getPagePublishDocument(db, row)
+  const { pageWrites } = await publishSiteDocumentLocked(db, site, publisherUserId, uploadsDir, row.id)
+  const write = pageWrites.find((page) => page.pageId === row.id)
+  const publishedRow = await getDataRow(db, MAIN_SCOPE, row.id)
+  if (!write || !publishedRow?.publishedAt) throw new Error('page could not be re-read after publish')
+  return {
+    row: publishedRow,
+    version: {
+      id: write.versionId,
+      rowId: row.id,
+      versionNumber: write.versionNumber,
+      cells: row.cells,
+      slug: row.slug,
+      publishedByUserId: publisherUserId,
+      publishedAt: publishedRow.publishedAt,
+      createdAt: publishedRow.publishedAt,
+    },
+  }
 }
