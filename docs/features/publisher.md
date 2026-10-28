@@ -23,6 +23,12 @@ Published module scripts are minified by `server/publish/runtime/bundleScripts.t
 
 ---
 
+## Publishing one page
+
+`publishDataRow` routes `pages` rows through the site snapshot publisher, including scheduled publishes. It combines the selected row's draft with the last published shared settings, files, styles, components and other published pages. Other draft edits and never-published pages stay private. A first full-site publish is required; a missing published component or a slug still owned by another published page returns a conflict without changing the publication.
+
+The existing site pipeline rebuilds runtime assets and swaps a complete disk slot, including other pages' dynamic shells and entry routes. It creates refreshed page versions referencing one coherent snapshot; unrelated rows retain their draft cells, status, timestamps and publisher attribution. Public page routing reads the active version's slug, so another page's draft rename cannot change its live URL. Shared-resource changes require a full-site publish.
+
 ## Where the code lives
 
 ```text

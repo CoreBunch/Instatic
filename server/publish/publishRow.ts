@@ -32,6 +32,9 @@ import { applyPublishedHtmlPipeline } from './publishedHtmlPipeline'
 import { removeArtefactInPlace, updateArtefactInPlace } from './staticArtefact'
 import { bumpPublishVersion, getPublishVersion, withPublishLock } from './publishState'
 import { runPublishFlush } from './publishFlush'
+import { getDataRow } from '../repositories/data'
+import { MAIN_SCOPE } from '../branches/scope'
+import { publishPageRowLocked } from './publishSite'
 
 export interface PublishDataRowResult {
   row: DataRow
@@ -64,6 +67,10 @@ async function publishDataRowLocked(
   publisherUserId: string | null,
   uploadsDir?: string,
 ): Promise<PublishDataRowResult> {
+  const draft = await getDataRow(db, MAIN_SCOPE, rowId)
+  if (!draft) throw new Error('data row not found')
+  if (draft.tableId === 'pages') return publishPageRowLocked(db, draft, publisherUserId, uploadsDir)
+
   const { row, version, previousRoute } = await persistDataRowPublish(db, rowId, publisherUserId)
 
   // Layer A: incremental artefact update outside the transaction.

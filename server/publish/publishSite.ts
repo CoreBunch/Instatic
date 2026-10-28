@@ -17,6 +17,7 @@
  * one-way: publish → repositories, never back.
  */
 import { nanoid } from 'nanoid'
+import type { DataRow, DataRowVersion } from '@core/data/schemas'
 import type { SiteDocument } from '@core/page-tree'
 import type { PublishedPageRuntimeAssets } from '@core/site-runtime'
 import type { PublishedRuntimePackageImportmap, SiteCssBundle } from '@core/publisher'
@@ -24,9 +25,10 @@ import { normalizeSiteRuntimeConfig } from '@core/site-runtime'
 import { registry } from '@core/module-engine'
 import { isTemplatePage, resolveNotFoundTemplate } from '@core/templates'
 import type { DbClient } from '../db/client'
-import { nextDataRowVersionNumber } from '../repositories/data'
+import { nextDataRowVersionNumber, getDataRow } from '../repositories/data'
 import {
   getDraftSiteDocument,
+  getPagePublishDocument,
   persistSitePublish,
   type PublishedPageSnapshot,
   type PublishedPageVersionWrite,
@@ -91,14 +93,21 @@ export async function publishDraftSite(
   await runPublishFlush()
   // Serialize against every other publish so the version read→bake→bump window
   // can't interleave cache generations and artefact swaps (ISS-038).
-  return withPublishLock(() => publishDraftSiteLocked(db, adminUserId, uploadsDir))
+  return withPublishLock(async () => {
+    const site = await getDraftSiteDocument(db, MAIN_SCOPE)
+    if (!site) throw new Error('draft site not found')
+    const result = await publishSiteDocumentLocked(db, site, adminUserId, uploadsDir)
+    return { publishedPages: result.publishedPages }
+  })
 }
 
-async function publishDraftSiteLocked(
+async function publishSiteDocumentLocked(
   db: DbClient,
-  adminUserId: string,
+  site: SiteDocument,
+  adminUserId: string | null,
   uploadsDir?: string,
-): Promise<PublishResult> {
+  editedPageId?: string,
+) {
   // ── Phase 1: read inputs + run every expensive non-DB build ──────────────
   // Dependency installs (`bun install` on a cold cache) and per-page esbuild
   // runs take seconds; the SQLite adapter serializes ALL transactions through
@@ -106,9 +115,6 @@ async function publishDraftSiteLocked(
   // write (autosaves, row publishes) behind it. `withPublishLock` already
   // serializes publishes, and version numbers are only allocated by publish
   // paths under that same lock, so reading outside the transaction is stable.
-  const site = await getDraftSiteDocument(db, MAIN_SCOPE)
-  if (!site) throw new Error('draft site not found')
-
   const runtime = normalizeSiteRuntimeConfig(site.runtime)
   const dependencyCache = Object.keys(runtime.dependencyLock.packages).length > 0
     ? await ensureRuntimeDependencyCache(runtime.dependencyLock)
@@ -131,7 +137,7 @@ async function publishDraftSiteLocked(
     ...site,
     pages: site.pages.map((page) => ({
       ...page,
-      updatedByUserId: adminUserId,
+      updatedByUserId: !editedPageId || page.id === editedPageId ? adminUserId : page.updatedByUserId,
     })),
   }
 
@@ -186,6 +192,7 @@ async function publishDraftSiteLocked(
       : null,
     pages: pageWrites,
     publishedByUserId: adminUserId,
+    editedPageId,
   })
 
   const publishedPages = publishedSite.pages.length
@@ -323,5 +330,32 @@ async function publishDraftSiteLocked(
   // live while the version counter still reads the old value.
   bumpPublishVersion()
 
-  return { publishedPages }
+  return { publishedPages, pageWrites }
+}
+
+/** Caller holds the publish lock and has flushed collab, just as for a full publish. */
+export async function publishPageRowLocked(
+  db: DbClient,
+  row: DataRow,
+  publisherUserId: string | null,
+  uploadsDir?: string,
+): Promise<{ row: DataRow; version: DataRowVersion }> {
+  const site = await getPagePublishDocument(db, row)
+  const { pageWrites } = await publishSiteDocumentLocked(db, site, publisherUserId, uploadsDir, row.id)
+  const write = pageWrites.find((page) => page.pageId === row.id)
+  const publishedRow = await getDataRow(db, MAIN_SCOPE, row.id)
+  if (!write || !publishedRow?.publishedAt) throw new Error('page could not be re-read after publish')
+  return {
+    row: publishedRow,
+    version: {
+      id: write.versionId,
+      rowId: row.id,
+      versionNumber: write.versionNumber,
+      cells: row.cells,
+      slug: row.slug,
+      publishedByUserId: publisherUserId,
+      publishedAt: publishedRow.publishedAt,
+      createdAt: publishedRow.publishedAt,
+    },
+  }
 }

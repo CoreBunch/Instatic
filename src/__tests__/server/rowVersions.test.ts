@@ -3,6 +3,7 @@
  * into the draft on the request's branch.
  */
 import { afterEach, describe, expect, it } from 'bun:test'
+import { publishDraftSite } from '../../../server/publish/publishSite'
 import { MAIN_SCOPE } from '../../../server/branches/scope'
 import { getDataRow, listDataRows, saveDataRowDraft } from '../../../server/repositories/data'
 import {
@@ -33,7 +34,7 @@ describe('row version history', () => {
     expect(empty.versions).toEqual([])
 
     await saveDataRowDraft(harness.db, MAIN_SCOPE, home!.id, { cells: { ...home!.cells, title: 'First' }, slug: home!.slug })
-    expect((await harness.cms(`${ROWS}/${home!.id}/publish`, { method: 'POST', cookie: owner })).status).toBe(200)
+    await publishDraftSite(harness.db, (await getDataRow(harness.db, MAIN_SCOPE, home!.id))!.createdByUserId!)
     await saveDataRowDraft(harness.db, MAIN_SCOPE, home!.id, { cells: { ...home!.cells, title: 'Second' }, slug: home!.slug })
     expect((await harness.cms(`${ROWS}/${home!.id}/publish`, { method: 'POST', cookie: owner })).status).toBe(200)
 
