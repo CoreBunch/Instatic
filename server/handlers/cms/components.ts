@@ -19,11 +19,16 @@
  * shell + pages + components + layouts atomically.
  */
 import type { DbClient } from '../../db/client'
+import type { BranchScope } from '../../branches/scope'
 import { requireCapability } from '../../auth/authz'
 import { methodNotAllowed } from '../../http'
 import { CMS_API_PREFIX, siteCollectionRowsResponse } from './shared'
 
-export async function handleComponentsRoutes(req: Request, db: DbClient): Promise<Response | null> {
+export async function handleComponentsRoutes(
+  req: Request,
+  db: DbClient,
+  scope: BranchScope,
+): Promise<Response | null> {
   const url = new URL(req.url)
   if (url.pathname !== `${CMS_API_PREFIX}/components`) return null
   if (req.method !== 'GET') return methodNotAllowed()
@@ -31,5 +36,5 @@ export async function handleComponentsRoutes(req: Request, db: DbClient): Promis
   const user = await requireCapability(req, db, 'site.read')
   if (user instanceof Response) return user
 
-  return siteCollectionRowsResponse(db, 'components')
+  return siteCollectionRowsResponse(db, scope, 'components')
 }

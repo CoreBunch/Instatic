@@ -55,6 +55,8 @@ interface HostMediaTransformerEntry {
 
 export interface HostPluginRecord {
   manifest: PluginManifest
+  /** Absolute, host-validated root for files shipped in this plugin package. */
+  assetRootPath: string
   routes: Map<string, HostRouteEntry>
   hookListeners: HostHookListenerEntry[]
   hookFilters: HostHookFilterEntry[]

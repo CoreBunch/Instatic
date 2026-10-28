@@ -31,10 +31,12 @@ import {
 } from '@core/data/bundleSchema'
 import type { DataRow, DataTable } from '@core/data/schemas'
 import { CMS_API_PREFIX } from './shared'
+import type { BranchScope } from '../../branches/scope'
 
 export async function handleImportPreviewRoute(
   req: Request,
   db: DbClient,
+  scope: BranchScope,
 ): Promise<Response | null> {
   const url = new URL(req.url)
   if (url.pathname !== `${CMS_API_PREFIX}/import/preview`) return null
@@ -49,7 +51,7 @@ export async function handleImportPreviewRoute(
   }
 
   // Fetch current local tables to know which ones exist
-  const localTables = await listDataTables(db)
+  const localTables = await listDataTables(db, scope)
   const localTableIds = new Set(localTables.map((t) => t.id))
 
   const rowConflicts: BundleRowConflict[] = []
@@ -65,7 +67,7 @@ export async function handleImportPreviewRoute(
       // Local rows for this table (0 if the table doesn't exist locally yet)
       let localRows: DataRow[]
       if (localTableIds.has(table.id)) {
-        localRows = await listDataRows(db, table.id)
+        localRows = await listDataRows(db, scope, table.id)
       } else {
         localRows = []
       }

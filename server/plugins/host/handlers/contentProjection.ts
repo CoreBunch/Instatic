@@ -20,6 +20,7 @@ import type {
 } from '@core/data/schemas'
 import type { DbClient } from '../../../db/client'
 import { getDataTableBySlug, listDataTables } from '../../../repositories/data'
+import { MAIN_SCOPE } from '../../../branches/scope'
 
 /**
  * Project the host's full `DataField` union onto the narrowed
@@ -180,7 +181,7 @@ export function tableSchema(
 }
 
 export async function buildTableSlugLookup(db: DbClient): Promise<Map<string, string>> {
-  const tables = await listDataTables(db)
+  const tables = await listDataTables(db, MAIN_SCOPE)
   return new Map(tables.map((t) => [t.id, t.slug]))
 }
 
@@ -208,7 +209,7 @@ export async function resolveTableBySlug(
   db: DbClient,
   slug: string,
 ): Promise<DataTable> {
-  const found = await getDataTableBySlug(db, slug)
+  const found = await getDataTableBySlug(db, MAIN_SCOPE, slug)
   if (!found) throw new Error(`Content table "${slug}" not found`)
   return found
 }

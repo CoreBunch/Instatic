@@ -5,7 +5,8 @@
  * ## The problem
  *
  * A declaration whose value contains `var()`/`env()` cannot be expanded at
- * parse time, and engines disagree about what their CSSOM then exposes:
+ * parse time. Headless CSSOM also drops valid `clamp()`, `min()`, and `max()`
+ * declarations. Engines disagree about what their CSSOM exposes:
  *
  * - **Chromium** stores a "pending-substitution value": `style.length`
  *   enumerates the shorthand's longhands, but `getPropertyValue(longhand)`
@@ -44,8 +45,8 @@ import type { CSSDeclarationPriorityBag } from '@core/page-tree'
 /** Prefix for encoded substitution declarations. */
 export const SUBSTITUTION_PROP_MARKER = '--instatic-sub-'
 
-/** A value that contains a `var(` or `env(` substitution function. */
-export const SUBSTITUTION_FN_RE = /\b(?:var|env)\(/
+/** CSS functions whose declarations must survive differing CSSOM implementations. */
+export const SUBSTITUTION_FN_RE = /\b(?:var|env|clamp|min|max)\(/i
 
 /** At-rule blocks whose contents must pass through unencoded. */
 const SKIPPED_AT_RULES = new Set(['keyframes', 'font-face'])

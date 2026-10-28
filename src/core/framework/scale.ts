@@ -36,6 +36,9 @@ const DEFAULT_MIN_SCREEN_WIDTH = 320
 const DEFAULT_MAX_SCREEN_WIDTH = 1400
 const DEFAULT_IS_REM = true
 const DEFAULT_TREE_SHAKE_GENERATED_FRAMEWORK_UTILITIES = true
+// Off by default: a site whose stored preferences predate the field must keep
+// rendering as it always has. New frameworks opt in through the Core preset.
+const DEFAULT_EMIT_ROOT_FONT_SIZE = false
 
 export interface FrameworkPreferences {
   rootFontSize: number
@@ -43,6 +46,7 @@ export interface FrameworkPreferences {
   maxScreenWidth: number
   isRem: boolean
   treeShakeGeneratedFrameworkUtilities: boolean
+  emitRootFontSize: boolean
 }
 
 export const DEFAULT_FRAMEWORK_PREFERENCES: FrameworkPreferences = {
@@ -51,6 +55,7 @@ export const DEFAULT_FRAMEWORK_PREFERENCES: FrameworkPreferences = {
   maxScreenWidth: DEFAULT_MAX_SCREEN_WIDTH,
   isRem: DEFAULT_IS_REM,
   treeShakeGeneratedFrameworkUtilities: DEFAULT_TREE_SHAKE_GENERATED_FRAMEWORK_UTILITIES,
+  emitRootFontSize: DEFAULT_EMIT_ROOT_FONT_SIZE,
 }
 
 /**

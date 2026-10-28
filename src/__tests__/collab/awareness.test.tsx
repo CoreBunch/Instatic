@@ -107,8 +107,8 @@ describe('activeEditorDocId', () => {
   it('routes VC mode to the component doc and page mode to the page doc', () => {
     expect(
       activeEditorDocId({ activeDocument: { kind: 'visualComponent', vcId: 'vc-1' }, activePageId: 'p1' }),
-    ).toBe('component:vc-1')
-    expect(activeEditorDocId({ activeDocument: null, activePageId: 'p1' })).toBe('page:p1')
+    ).toBe('component:main:vc-1')
+    expect(activeEditorDocId({ activeDocument: null, activePageId: 'p1' })).toBe('page:main:p1')
     expect(activeEditorDocId({ activeDocument: null, activePageId: null })).toBeNull()
   })
 })
@@ -127,10 +127,10 @@ describe('collab reset during inline editing', () => {
 
     const provider = fakeProvider()
     connectCollabProvider(provider)
-    provider.triggerReset('page:another-page')
+    provider.triggerReset('page:main:another-page')
     expect(useEditorStore.getState().activeInlineEdit).not.toBeNull()
 
-    provider.triggerReset(`page:${pageId}`)
+    provider.triggerReset(`page:main:${pageId}`)
     expect(useEditorStore.getState().activeInlineEdit).toBeNull()
   })
 })
@@ -140,12 +140,12 @@ describe('usePeerPresences', () => {
     const provider = fakeProvider()
     connectCollabProvider(provider)
 
-    render(<PeerList docId="page:p1" />)
+    render(<PeerList docId="page:main:p1" />)
 
     await act(async () => {
       injectPeerState(provider.awareness, {
         user: { id: 'u2', name: 'Ada', color: peerColor('u2'), avatarUrl: null, gravatarHash: null },
-        docId: 'page:p1',
+        docId: 'page:main:p1',
         selectedNodeIds: ['n1'],
         editingNodeId: null,
         pointer: null,
@@ -153,14 +153,14 @@ describe('usePeerPresences', () => {
       })
       injectPeerState(provider.awareness, {
         user: { id: 'u3', name: 'Grace', color: peerColor('u3'), avatarUrl: null, gravatarHash: null },
-        docId: 'page:OTHER',
+        docId: 'page:main:OTHER',
         selectedNodeIds: [],
         editingNodeId: null,
         pointer: null,
         textCaret: null,
       })
       // Malformed wire state — must be dropped by validation, not crash.
-      injectPeerState(provider.awareness, { user: { id: 42 }, docId: 'page:p1' })
+      injectPeerState(provider.awareness, { user: { id: 42 }, docId: 'page:main:p1' })
     })
 
     expect(screen.getByText('Ada')).toBeTruthy()
@@ -200,7 +200,7 @@ describe('PeerPresenceOverlay', () => {
     await act(async () => {
       injectPeerState(provider.awareness, {
         user: { id: 'u9', name: 'Marge', color: peerColor('u9'), avatarUrl: null, gravatarHash: null },
-        docId: `page:${pageId}`,
+        docId: `page:main:${pageId}`,
         selectedNodeIds: [site.pages[0].rootNodeId],
         editingNodeId: site.pages[0].rootNodeId,
         pointer: { x: 10, y: 20, breakpointId: 'bp-desktop' },

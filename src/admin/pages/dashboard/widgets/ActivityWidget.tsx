@@ -20,6 +20,7 @@ import {
   type DashboardActivityEntry,
 } from '../hooks/useDashboardStats'
 import styles from './widgets.module.css'
+import { userDisplayLabel } from '@core/users/displayName'
 
 /**
  * Diameter of the actor avatar in the feed row. Picked to fit the
@@ -187,7 +188,7 @@ export function ActivityWidget({ span, editing }: DashboardWidgetRendererProps) 
               <UserAvatar
                 user={r.actor}
                 size={AVATAR_SIZE}
-                alt={`Avatar for ${r.actor.displayName || r.actor.email}`}
+                alt={`Avatar for ${userDisplayLabel(r.actor)}`}
               />
             ) : (
               <span className={styles.feedSystemAvatar} title="System" aria-hidden="true">

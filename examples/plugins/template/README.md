@@ -105,6 +105,44 @@ Remove permissions you don't need — users see the full permission list before 
 A plugin that drops its editor entrypoint (and any app-kind admin pages) can drop
 `editor.code` too; everything else then runs inside the QuickJS sandbox.
 
+## Managed media ingestion
+
+A plugin can import source images into managed media without moving bytes through QuickJS. For allowlisted HTTPS images, request both permissions and allow the upstream hosts:
+
+```json
+{
+  "permissions": ["cms.schedule", "media.import", "network.outbound"],
+  "networkAllowedHosts": ["images.example-crm.com"]
+}
+```
+
+Then upsert each source by a stable identity:
+
+```js
+const result = await api.cms.media.upsert({
+  sourceKey: `listing:${listing.id}:photo:${photo.id}`,
+  source: { kind: 'remote', url: photo.url },
+  sourceVersion: photo.updatedAt,
+  filename: photo.filename,
+  altText: listing.address,
+})
+```
+
+The first call creates a media asset, an unchanged version returns it without downloading, and a changed version replaces its binary while preserving `result.asset.id`.
+
+Bundled plugin assets need only `media.import`:
+
+```js
+await api.cms.media.upsert({
+  sourceKey: 'starter:default-hero',
+  source: { kind: 'pluginAsset', path: 'assets/default-hero.jpg' },
+  sourceVersion: api.plugin.version,
+  filename: 'default-hero.jpg',
+})
+```
+
+The path is package-relative. Plugins cannot read arbitrary host filesystem paths through this API.
+
 ## Further reading
 
 - [Plugin system docs](../../../docs/features/plugin-system.md)

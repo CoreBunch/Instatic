@@ -142,8 +142,9 @@ export interface ServerPluginApi {
      * out the surface.
      *
      * Each method asserts both the granted permission (`cms.content.*`)
-     * AND the table allowlist entry in the manifest's `contentAccess[]`.
-     * Plugins fail closed on either gap.
+     * AND the table allowlist entry in the manifest's `contentAccess[]` —
+     * a slug entry, or the `@own-created` marker for tables this plugin
+     * created via `tables.create`. Plugins fail closed on either gap.
      */
     content: {
       tables: {
@@ -178,7 +179,10 @@ export interface ServerPluginApi {
       republishAll: () => Promise<{ count: number }>
     }
     /**
-     * Media subsystem extension points. Three independent tiers:
+     * Host-mediated media ingestion plus three independent extension tiers:
+     *
+     *   • upsert                   — ingest an allowlisted HTTPS image or a
+     *                                contained package asset into managed media.
      *
      *   • registerStorageAdapter   — handle WRITE/DELETE bytes (S3, R2, …).
      *                                Two-phase: adapter signs upload plan,
@@ -187,7 +191,8 @@ export interface ServerPluginApi {
      *   • registerVariantDelegate  — replace local variant ladder with
      *                                a URL template (image-transform CDN).
      *
-     * Each call requires its own permission — see PLUGIN_PERMISSION_VALUES.
+     * Each call requires its own permission. A remote upsert also requires
+     * `network.outbound` and a matching `networkAllowedHosts` entry.
      */
     media: ServerPluginMediaApi
   }

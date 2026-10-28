@@ -292,14 +292,24 @@ function attrValue(attrs: string, name: string): string | null {
  *
  * Returns a normalized FileMap key, or null when the href is external,
  * a fragment, a data URL, or cannot be resolved to a safe relative path.
+ *
+ * A query string or fragment is stripped first: `site.css?v=8f3a1c` addresses
+ * the same file as `site.css`, and the FileMap is keyed by path. Static site
+ * generators routinely emit cache-busting queries on stylesheet and script
+ * URLs, and without this every one of them resolves to a key that cannot
+ * exist — reported as `missing-stylesheet` / `missing-script` while the file
+ * sits in the archive.
  */
 export function resolveHref(href: string, htmlFilePath: string): string | null {
   // Skip external, protocol-relative, data, fragment, mailto, tel
   if (/^https?:\/\/|^\/\/|^data:|^mailto:|^tel:|^#/.test(href)) return null
 
-  const normalized = href.startsWith('/')
-    ? href.slice(1) // root-relative: strip leading /
-    : joinPaths(dirname(htmlFilePath), href)
+  const pathOnly = href.split(/[?#]/)[0]
+  if (!pathOnly) return null
+
+  const normalized = pathOnly.startsWith('/')
+    ? pathOnly.slice(1) // root-relative: strip leading /
+    : joinPaths(dirname(htmlFilePath), pathOnly)
 
   // Must not escape to a parent-of-root path
   if (!normalized || normalized.startsWith('../') || normalized.includes('/../')) return null

@@ -20,6 +20,7 @@ import {
   collabAwareness,
   onCollabProviderChange,
 } from '@site/store/slices/site/collabBinding'
+import { collabBranchId } from '@site/store/slices/site/collabBranch'
 
 const PointerSchema = Type.Object({
   /** Iframe-viewport coordinates inside the breakpoint frame. */
@@ -76,11 +77,12 @@ export function activeEditorDocId(state: {
   activeDocument: { kind: string; vcId?: string } | null
   activePageId: string | null
 }): string | null {
+  const branchId = collabBranchId()
   if (state.activeDocument?.kind === 'visualComponent' && state.activeDocument.vcId) {
-    return encodeCollabDocId({ kind: 'component', rowId: state.activeDocument.vcId })
+    return encodeCollabDocId({ kind: 'component', branchId, rowId: state.activeDocument.vcId })
   }
   return state.activePageId
-    ? encodeCollabDocId({ kind: 'page', rowId: state.activePageId })
+    ? encodeCollabDocId({ kind: 'page', branchId, rowId: state.activePageId })
     : null
 }
 

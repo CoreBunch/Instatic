@@ -1,4 +1,4 @@
-import { readStringCell } from './cells'
+import { UNTITLED_ROW_TITLE, readStringCell } from './cells'
 import { dataTableHasField } from './fields'
 import type { DataRow, DataRowCells, DataTable } from './schemas'
 
@@ -33,7 +33,7 @@ export function buildDuplicateRowCells(
 
   if (dataTableHasField(table, 'title') || hasCell(row.cells, 'title')) {
     const title = readStringCell(row.cells, 'title')
-    cells.title = title ? `${title} (copy)` : 'Untitled (copy)'
+    cells.title = `${title || UNTITLED_ROW_TITLE} (copy)`
   }
 
   if (dataTableHasField(table, 'slug')) {

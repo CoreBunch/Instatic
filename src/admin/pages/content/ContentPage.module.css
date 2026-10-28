@@ -299,3 +299,12 @@
         font-size: var(--text-6xl);
     }
 }
+
+/* Inline reason under a control whose action is unavailable in this context
+ * (e.g. publishing while a branch is active). */
+.fieldHint {
+    margin: 0;
+    color: var(--text-muted);
+    font-size: var(--text-2xs);
+    line-height: 1.4;
+}

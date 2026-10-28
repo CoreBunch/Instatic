@@ -4,6 +4,7 @@ import { sqliteMigrations } from '../../../../db/migrations-sqlite'
 import { runMigrations } from '../../../../db/runMigrations'
 import type { DbClient } from '../../../../db/client'
 import { listDataRowsWithFilter } from '../filter'
+import { MAIN_SCOPE } from '../../../../branches/scope'
 
 /**
  * Wrap a DbClient so every `db.unsafe()` call is counted. The hydrated SELECT
@@ -77,13 +78,13 @@ describe('listDataRowsWithFilter', () => {
   })
 
   it('returns live rows in default updated_at-desc order, excluding soft-deleted', async () => {
-    const { rows, totalCount } = await listDataRowsWithFilter(db, 'posts')
+    const { rows, totalCount } = await listDataRowsWithFilter(db, MAIN_SCOPE, 'posts')
     expect(rows.map((r) => r.id)).toEqual(['delta', 'gamma', 'beta', 'alpha'])
     expect(totalCount).toBe(4)
   })
 
   it('hydrates the author user reference', async () => {
-    const { rows } = await listDataRowsWithFilter(db, 'posts', { filter: { title: 'Alpha' } })
+    const { rows } = await listDataRowsWithFilter(db, MAIN_SCOPE, 'posts', { filter: { title: 'Alpha' } })
     expect(rows).toHaveLength(1)
     expect(rows[0].id).toBe('alpha')
     expect(rows[0].authorUserId).toBe(USER_ID)
@@ -93,38 +94,38 @@ describe('listDataRowsWithFilter', () => {
   })
 
   it('paginates with limit + offset while preserving order', async () => {
-    const { rows, totalCount } = await listDataRowsWithFilter(db, 'posts', { limit: 2, offset: 1 })
+    const { rows, totalCount } = await listDataRowsWithFilter(db, MAIN_SCOPE, 'posts', { limit: 2, offset: 1 })
     expect(rows.map((r) => r.id)).toEqual(['gamma', 'beta'])
     expect(totalCount).toBe(4)
   })
 
   it('filters by status', async () => {
-    const { rows, totalCount } = await listDataRowsWithFilter(db, 'posts', { status: 'published' })
+    const { rows, totalCount } = await listDataRowsWithFilter(db, MAIN_SCOPE, 'posts', { status: 'published' })
     expect(rows.map((r) => r.id)).toEqual(['delta', 'gamma', 'alpha'])
     expect(totalCount).toBe(3)
   })
 
   it('filters by a cells_json field (where condition)', async () => {
-    const { rows, totalCount } = await listDataRowsWithFilter(db, 'posts', { filter: { title: 'Gamma' } })
+    const { rows, totalCount } = await listDataRowsWithFilter(db, MAIN_SCOPE, 'posts', { filter: { title: 'Gamma' } })
     expect(rows.map((r) => r.id)).toEqual(['gamma'])
     expect(totalCount).toBe(1)
   })
 
   it('returns an empty result set without error', async () => {
-    const { rows, totalCount } = await listDataRowsWithFilter(db, 'posts', { filter: { title: 'Nonexistent' } })
+    const { rows, totalCount } = await listDataRowsWithFilter(db, MAIN_SCOPE, 'posts', { filter: { title: 'Nonexistent' } })
     expect(rows).toEqual([])
     expect(totalCount).toBe(0)
   })
 
   it('honors custom orderBy on row-level columns', async () => {
-    const { rows } = await listDataRowsWithFilter(db, 'posts', { orderBy: { created_at: 'asc' } })
+    const { rows } = await listDataRowsWithFilter(db, MAIN_SCOPE, 'posts', { orderBy: { created_at: 'asc' } })
     expect(rows.map((r) => r.id)).toEqual(['alpha', 'beta', 'gamma', 'delta'])
   })
 
   it('issues a bounded number of queries that does NOT scale with row count', async () => {
     // Small dataset.
     const small = countingDb(db)
-    const smallResult = await listDataRowsWithFilter(small.db, 'posts', { limit: 500 })
+    const smallResult = await listDataRowsWithFilter(small.db, MAIN_SCOPE, 'posts', { limit: 500 })
     expect(smallResult.rows).toHaveLength(4)
 
     // Large dataset — many more matching rows.
@@ -138,7 +139,7 @@ describe('listDataRowsWithFilter', () => {
       })
     }
     const big = countingDb(bigDb)
-    const bigResult = await listDataRowsWithFilter(big.db, 'posts', { limit: 500 })
+    const bigResult = await listDataRowsWithFilter(big.db, MAIN_SCOPE, 'posts', { limit: 500 })
     expect(bigResult.rows).toHaveLength(50)
 
     // Two queries total: one hydrated data page + one count. Crucially the

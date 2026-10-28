@@ -5,7 +5,7 @@ import {
   useAutoFocusPanel,
   type DockablePanelProps,
 } from '@admin/shared/Panel'
-import { DepsSection } from './DepsSection'
+import { RegistryPanel } from './RegistryPanel'
 
 export function DependenciesPanel({
   mode = 'docked',
@@ -31,8 +31,9 @@ export function DependenciesPanel({
       dragHandleProps={dragHandleProps}
       onToggleMode={onToggleMode}
       dockLocation="left sidebar"
+      body="bare"
     >
-      <DepsSection />
+      <RegistryPanel />
     </Panel>
   )
 }

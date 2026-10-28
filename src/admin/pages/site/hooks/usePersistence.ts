@@ -36,10 +36,19 @@ import {
   connectCollabProvider,
   disconnectCollabProvider,
 } from '@site/store/slices/site/collabBinding'
+import { setCollabBranchGoneHandler, setCollabBranchId } from '@site/store/slices/site/collabBranch'
 import {
   consumePendingCmsSiteReload,
   hasPendingCmsSiteReload,
 } from '@admin/state/adminEvents'
+import { fallBackToMain, useBranchStore } from '@admin/state/branchStore'
+
+/**
+ * Branch the in-memory site document was loaded from. A remount on another
+ * branch must reload rather than reuse the store's site, which still holds
+ * the previous branch's content.
+ */
+let loadedBranchId: string | null = null
 
 export interface PersistenceSaveStatus {
   state: 'loading' | 'synced' | 'connecting' | 'offline' | 'error'
@@ -108,17 +117,28 @@ export function usePersistence(
 
     async function load(): Promise<void> {
       // Read actions point-in-time — no React subscription needed.
-      const { site: existingSite, loadSite, createSite } = useEditorStore.getState()
+      const { site: loadedSite, loadSite, createSite, clearSite } = useEditorStore.getState()
+
+      // Every doc id the editor mints from here on carries this branch.
+      const activeBranchId = useBranchStore.getState().activeBranchId
+      setCollabBranchId(activeBranchId)
+      const branchChanged = loadedBranchId !== null && loadedBranchId !== activeBranchId
+      // A different branch: the in-memory site (and the detached docs seeded
+      // from it under the old branch's ids) must not stay on screen or accept
+      // edits while the new branch loads. Clearing drops both at once.
+      if (branchChanged && loadedSite) clearSite()
+      const existingSite = branchChanged ? null : loadedSite
 
       const pendingCmsSiteReload = hasPendingCmsSiteReload()
       const shouldReloadExistingSite = existingSite
-        ? pendingCmsSiteReload || siteMissesEditorDataDeepLink(existingSite)
+        ? pendingCmsSiteReload || branchChanged || siteMissesEditorDataDeepLink(existingSite)
         : false
 
       if (existingSite && !shouldReloadExistingSite) {
         // In-memory document from an earlier editor mount. The provider
         // connect below re-syncs every doc against the server, so any drift
         // (writes from other admins / plugins while we were away) projects in.
+        loadedBranchId = activeBranchId
         setLoadState({ phase: 'ready' })
         return
       }
@@ -133,6 +153,7 @@ export function usePersistence(
         if (result) {
           if (pendingCmsSiteReload) consumePendingCmsSiteReload()
           loadSite(result.site)
+          loadedBranchId = activeBranchId
           applyDefaultBreakpointPreference(result.site.breakpoints)
           setLoadState({ phase: 'ready' })
           return
@@ -164,6 +185,7 @@ export function usePersistence(
       // storage rows; the provider connect below then binds the server-seeded
       // docs for them.
       const created = createSite('My Site')
+      loadedBranchId = activeBranchId
       applyDefaultBreakpointPreference(created.breakpoints)
       try {
         await adapterRef.current.saveSite(created)
@@ -199,7 +221,10 @@ export function usePersistence(
         // the error. When a stale in-memory site survived a transient reload
         // failure, we DO connect — live sync recovers against those docs and the
         // connected state then supersedes the stale load error in saveStatus.
+        // A site that belongs to another branch (its load failed after a
+        // switch) is never bound under this branch's ids.
         if (useEditorStore.getState().site === null) return
+        if (loadedBranchId !== useBranchStore.getState().activeBranchId) return
         const { createCollabProvider } = await providerModule
         if (cancelled) return
         provider = createCollabProvider()
@@ -226,10 +251,14 @@ export function usePersistence(
         })
       }
     }
+    // The server says this branch is gone (deleted while the tab was on it):
+    // leave it rather than rebind — the store's fallback toasts once.
+    setCollabBranchGoneHandler((branchId) => fallBackToMain(branchId))
     void boot()
 
     return () => {
       cancelled = true
+      setCollabBranchGoneHandler(null)
       offStatus?.()
       if (connected) {
         // Tears the provider down AND resets the binding to detached docs

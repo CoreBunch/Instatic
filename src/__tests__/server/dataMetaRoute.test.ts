@@ -17,6 +17,7 @@ import { createFakeDb } from './dbTestFake'
 
 const fakeDataTableRow = {
   id: 'posts',
+  logical_id: 'posts',
   name: 'Posts',
   slug: 'posts',
   kind: 'postType',
@@ -91,7 +92,7 @@ function makeAuthDb(sessionIdHash: string) {
     }
 
     // listDataTables
-    if (normalized.startsWith('select id, name, slug, kind, route_base')) {
+    if (normalized.startsWith('select logical_id, name, slug, kind, route_base')) {
       return { rows: [fakeDataTableRow], rowCount: 1 }
     }
 

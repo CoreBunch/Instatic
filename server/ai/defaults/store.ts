@@ -11,7 +11,7 @@
  */
 
 import type { DbClient } from '../../db/client'
-import { isoDateOrNull } from '@core/utils/isoDate'
+import { isoDateOrNull, nowIso } from '@core/utils/isoDate'
 import type { ToolScope } from '../runtime/types'
 
 // ---------------------------------------------------------------------------
@@ -74,7 +74,7 @@ export async function setDefaultForScope(
       set credential_id = excluded.credential_id,
           model_id = excluded.model_id,
           updated_by = excluded.updated_by,
-          updated_at = current_timestamp
+          updated_at = ${nowIso()}
     returning scope, credential_id, model_id, updated_at, updated_by
   `
   return rowToRecord(rows[0]!)

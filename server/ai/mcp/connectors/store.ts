@@ -12,6 +12,7 @@ import type { DbClient } from '../../../db/client'
 import type { CoreCapability } from '@core/capabilities'
 import type { McpConnectionView, McpAuthMode } from '@core/ai'
 import type { McpConnectorRecord } from './types'
+import { nowIso } from '@core/utils/isoDate'
 
 const DEFAULT_TTL_DAYS = 90
 export const OAUTH_GRANT_TTL_DAYS = 90
@@ -175,7 +176,7 @@ export async function findConnectionByTokenHash(
 export async function revokeConnector(db: DbClient, id: string, userId: string): Promise<boolean> {
   const { rowCount } = await db`
     update ai_mcp_connectors
-    set revoked_at = current_timestamp
+    set revoked_at = ${nowIso()}
     where id = ${id} and user_id = ${userId} and revoked_at is null
   `
   return rowCount > 0
@@ -184,7 +185,7 @@ export async function revokeConnector(db: DbClient, id: string, userId: string):
 export async function touchConnectorLastUsed(db: DbClient, id: string): Promise<void> {
   await db`
     update ai_mcp_connectors
-    set last_used_at = current_timestamp
+    set last_used_at = ${nowIso()}
     where id = ${id}
   `
 }

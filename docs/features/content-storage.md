@@ -26,7 +26,9 @@ The schema for a collection. One row per collection.
 
 | Column            | Type      | Notes                                                            |
 |-------------------|-----------|------------------------------------------------------------------|
-| `id`              | text PK   |                                                                  |
+| `id`              | text PK   | Physical key: the logical id on main, `<branch>:<logical>` on a branch |
+| `branch_id`       | text      | `main` by default; see [`branches.md`](branches.md)                 |
+| `logical_id`      | text      | Generated from `id` + `branch_id` — the id content code uses      |
 | `name`            | text      | Human-readable                                                   |
 | `slug`            | text      | URL-safe (kebab-case)                                            |
 | `kind`            | text      | `'postType' \| 'data' \| 'page' \| 'component' \| 'layout'`      |
@@ -36,6 +38,7 @@ The schema for a collection. One row per collection.
 | `primary_field_id`| text      | Field id used as the row's display name in grids / pickers      |
 | `fields_json`     | jsonb     | `DataField[]` — the schema                                       |
 | `system`          | boolean   | `true` for seeded tables (`posts`, `pages`, `components`, `layouts`) |
+| `created_by_plugin_id` | text | Plugin that created the table via `cms.content.tables.create`; null for user/import-created tables. The plugin host's `@own-created` contentAccess marker resolves against it. |
 | `created_*`, `updated_*` | -  | Standard audit fields                                            |
 
 ### `data_rows`
@@ -44,8 +47,10 @@ One row per content row.
 
 | Column                  | Type       | Notes                                                           |
 |-------------------------|------------|-----------------------------------------------------------------|
-| `id`                    | text PK    |                                                                 |
-| `table_id`              | text FK    | → `data_tables.id`                                              |
+| `id`                    | text PK    | Physical key: the logical id on main, `<branch>:<logical>` on a branch |
+| `branch_id`             | text       | `main` by default; repositories read and write one branch per `BranchScope` |
+| `logical_id`            | text       | Generated from `id` + `branch_id`; the id every API and tree carries |
+| `table_id`              | text FK    | → `data_tables.id` (physical — a branch row points at the branch's table) |
 | `cells_json`            | jsonb      | `Record<fieldId, cellValue>`                                    |
 | `slug`                  | text       | Denormalized from `cells_json.slug` for fast route lookup       |
 | `status`                | text       | `'draft' \| 'published' \| 'unpublished' \| 'scheduled'`        |
@@ -237,7 +242,7 @@ For postType rows, `publishDataRow` does the same but incrementally: writes the 
 
 See [docs/features/publisher.md](publisher.md) for the full pipeline.
 
-For **post-types**, public row routes require an explicitly authored entry template (a `pages` row with `template.target = { kind: 'postTypes', tableSlugs: [table.slug] }`). When you publish a post, the renderer resolves the template chain for the entry route (`resolveTemplateChain`) and renders the merged tree with the post row pushed onto the entry stack as `currentEntry`. Dynamic bindings on the template nodes resolve `currentEntry.title`, `currentEntry.body`, etc. Without a matching entry template, the published row exists in the CMS but its public detail URL returns 404. See [docs/features/templates.md](templates.md) for the full template model.
+For **post-types**, public row routes require an explicitly authored entry template (a `pages` row with `template.target = { kind: 'postTypes', tableSlugs: [table.slug] }`). When you publish a post, the renderer resolves the template chain for the entry route (`resolveTemplateChain`) and renders the merged tree with the post row pushed onto the entry stack as `currentEntry`. Dynamic bindings on the template nodes resolve `currentEntry.title`, `currentEntry.body`, etc. Media cells — `featuredMedia` and every schema-declared `media` field, including repeater media — resolve to public `/uploads/…` paths exactly as they do inside a `data.rows` loop (`publishedDataRowToEntryItem` in `server/publish/loopPrefetch.ts`), so the same binding renders the same URL on a detail page and in a list. Without a matching entry template, the published row exists in the CMS but its public detail URL returns 404. See [docs/features/templates.md](templates.md) for the full template model.
 
 ### Scheduled publishing
 

@@ -71,7 +71,7 @@ export type {
 
 // Defaults
 export { DEFAULT_BREAKPOINTS, breakpointMediaQuery, defaultBreakpointMediaQuery } from './breakpoint'
-export { DEFAULT_SITE_SETTINGS } from './siteSettings'
+export { DEFAULT_SITE_SETTINGS, createNewSiteSettings } from './siteSettings'
 
 // Condition helpers
 export { conditionId, conditionLabel, makeConditionDef, parseConditions } from './condition'

@@ -1,11 +1,19 @@
 import { timingSafeEqual } from 'node:crypto'
+import { RequestBodyTooLargeError } from './http'
 import { createDbClient } from './db'
 import { runMigrations } from './db/runMigrations'
 import { syncSystemRoles } from './repositories/roles'
 import { readServerConfig } from './config'
+import { configureNpmRegistryUrl } from './registry/config'
 import { DEV_ORIGIN_ALLOWLIST, configurePublicOrigins, configureTrustedProxyCidrs, stampSocketIp } from './auth/security'
 import { applySecurityHeaders } from './securityHeaders'
 import { startConversationPurgeTick } from './ai/boot'
+import { unsupportedBunWarning } from './bunVersion'
+
+// Before anything that could fail for a version-related reason, say which
+// Bun this is when it is not one a release was tested on. Boot continues.
+const bunWarning = unsupportedBunWarning(Bun.version)
+if (bunWarning) console.warn(bunWarning)
 
 await import('./richtextSanitizer')
 const { handleServerRequest } = await import('./router')
@@ -18,6 +26,13 @@ const { SITE_SOCKET_PATH, createCollabSocketLayer, handleCollabSocketUpgrade } =
 const config = readServerConfig()
 configureTrustedProxyCidrs(config.trustedProxyCidrs)
 configurePublicOrigins(config.publicOrigins)
+// The MCP OAuth issuer is built only from a configured public origin (never
+// the inbound Host header), so without one remote OAuth connectors cannot
+// discover this server. Loopback development is exempt; see mcpIssuer().
+if (config.publicOrigins.length === 0) {
+  console.warn('[server] PUBLIC_ORIGIN is not set; MCP OAuth connectors work only from loopback until it is configured. Personal access tokens still work.')
+}
+configureNpmRegistryUrl(config.npmRegistryUrl)
 const { db, migrations } = createDbClient(config.databaseUrl)
 await runMigrations(db, migrations)
 // System role sync runs after migrations on every boot — the Owner row's
@@ -70,6 +85,9 @@ function corsHeaders(origin: string | null): Record<string, string> {
 const server = Bun.serve({
   port: config.port,
   hostname: config.host,
+  // Site Import accepts archives up to 1 GiB. Bun's default 128 MiB limit
+  // otherwise rejects media-heavy bundles before the streaming importer runs.
+  maxRequestBodySize: 1024 * 1024 * 1024,
 
   // Disable Bun's default 10-second idle timeout. The agent endpoint streams
   // NDJSON for as long as Claude's loop is running — Claude's "thinking"
@@ -135,12 +153,19 @@ const server = Bun.serve({
         staticDir: config.staticDir,
         uploadsDir: config.uploadsDir,
         databaseUrl: config.databaseUrl,
+        collabRelay,
       })
       for (const [k, v] of Object.entries(cors)) {
         res.headers.set(k, v)
       }
       return applySecurityHeaders(res, pathname)
     } catch (err) {
+      if (err instanceof RequestBodyTooLargeError) {
+        return applySecurityHeaders(new Response(JSON.stringify({ error: 'Request body too large' }), {
+          status: 413,
+          headers: { 'Content-Type': 'application/json', ...cors },
+        }), pathname)
+      }
       // Never echo `err.message` to the client — inner handlers already return
       // structured error bodies for the failure modes they expect; anything
       // that escapes to here is an unexpected crash whose message can leak

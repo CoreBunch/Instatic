@@ -8,7 +8,8 @@
  *                                       to a `/_instatic/runtime/cache/<hash>/...`
  *                                       URL the host serves.
  *
- * Resolution rules per package:
+ * Resolution rules per package (`pickEsmEntry` in `@core/registry`, shared
+ * with the Dependencies panel's pre-install compatibility badge):
  *   1. If `package.json` has `exports['.']`, prefer the `import` / `module` /
  *      `default` condition (in that order).
  *   2. Else fall back to the `module` field, then `main`, then `index.js`.
@@ -25,6 +26,7 @@ import { existsSync } from 'node:fs'
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { SiteDependencyLock } from '@core/site-runtime'
+import { packageEntryUrlPath, pickEsmEntry } from '@core/registry'
 import {
   nodeModulesDirForHash,
   runtimeDependencyLockHash,
@@ -37,55 +39,6 @@ interface RuntimePackageImportmap {
   importmap: { imports: Record<string, string> }
   /** Stable cache-lock hash — same value the URL paths embed. */
   lockHash: string
-}
-
-interface NormalizedExportsEntry {
-  /** Module-relative path (starts with `./`) selected by export-condition order. */
-  modulePath: string
-}
-
-/**
- * Pull the ESM-friendly entry from a package's `exports['.']` field. Handles
- * the four common shapes:
- *
- *   exports: "./build/foo.js"                   — string shorthand
- *   exports: { ".": "./build/foo.js" }          — root-only string
- *   exports: { ".": { "import": "..." }}        — conditional record
- *   exports: { ".": { "module": "..." }}        — same idea, "module" key
- *
- * Returns null for anything we don't recognise so the caller can fall back to
- * the legacy `module` / `main` fields.
- */
-function pickFromExports(exportsValue: unknown): NormalizedExportsEntry | null {
-  if (typeof exportsValue === 'string') {
-    return exportsValue.startsWith('./') ? { modulePath: exportsValue } : null
-  }
-  if (!exportsValue || typeof exportsValue !== 'object' || Array.isArray(exportsValue)) return null
-  const root = (exportsValue as Record<string, unknown>)['.']
-  if (typeof root === 'string') {
-    return root.startsWith('./') ? { modulePath: root } : null
-  }
-  if (root && typeof root === 'object' && !Array.isArray(root)) {
-    const conditional = root as Record<string, unknown>
-    for (const condition of ['import', 'module', 'default'] as const) {
-      const candidate = conditional[condition]
-      if (typeof candidate === 'string' && candidate.startsWith('./')) {
-        return { modulePath: candidate }
-      }
-      // Nested condition (`browser` → `import` etc.) — one level of recursion
-      // is plenty for the packages we ship today.
-      if (candidate && typeof candidate === 'object' && !Array.isArray(candidate)) {
-        const nested = candidate as Record<string, unknown>
-        for (const inner of ['import', 'module', 'default'] as const) {
-          const innerValue = nested[inner]
-          if (typeof innerValue === 'string' && innerValue.startsWith('./')) {
-            return { modulePath: innerValue }
-          }
-        }
-      }
-    }
-  }
-  return null
 }
 
 async function readPackageJson(packageDir: string): Promise<Record<string, unknown> | null> {
@@ -111,18 +64,8 @@ async function resolvePackageEntry(packageDir: string): Promise<string | null> {
   const manifest = await readPackageJson(packageDir)
   if (!manifest) return null
 
-  const fromExports = pickFromExports(manifest.exports)
-  if (fromExports) return fromExports.modulePath.replace(/^\.\//, '/')
-
-  const moduleField = manifest.module
-  if (typeof moduleField === 'string') {
-    return moduleField.startsWith('./') ? moduleField.replace(/^\.\//, '/') : `/${moduleField}`
-  }
-
-  const mainField = manifest.main
-  if (typeof mainField === 'string') {
-    return mainField.startsWith('./') ? mainField.replace(/^\.\//, '/') : `/${mainField}`
-  }
+  const entry = pickEsmEntry(manifest)
+  if (entry) return packageEntryUrlPath(entry)
 
   // Final fallback — CommonJS index. Browsers won't load CJS as ESM but it's
   // the lowest-noise default; the user will see a runtime error pointing at

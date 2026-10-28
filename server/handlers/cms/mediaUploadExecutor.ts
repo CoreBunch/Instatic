@@ -8,7 +8,12 @@
  *
  *   • `method: 'LOCAL'` (sentinel from `mediaStorageRegistry.LOCAL_DISK_STEP_METHOD`)
  *     → `writeFile` on the local filesystem. The "URL" carries `file://<absolute>`.
- *   • `method: 'PUT' | 'POST'` → `fetch(url, { method, headers, body })`.
+ *   • `method: 'PUT' | 'POST'` → `guardedFetch(url, …)`. The step URL is
+ *     plugin-controlled, so it goes through the SSRF guard exactly like the
+ *     read side (`mediaStorageReader`): internal addresses are refused, the
+ *     connection is pinned to the checked IP, and every redirect hop is
+ *     re-validated. Without this, `media.storage.adapter` would convey
+ *     `network.outbound` reach it never asked for (GHSA-9pq7).
  *     The body is the byte range declared by `step.range` (or the full
  *     buffer when `range` is omitted).
  *
@@ -21,6 +26,7 @@ import { mkdir, writeFile } from 'node:fs/promises'
 import { dirname } from 'node:path'
 import type { MediaStorageUploadPlan } from '@core/plugin-sdk'
 import { LOCAL_DISK_STEP_METHOD } from '@core/plugins/mediaStorageRegistry'
+import { guardedFetch } from '../../plugins/host/network'
 import { toArrayBuffer } from '../../binary'
 
 export interface StepReceipt {
@@ -70,12 +76,18 @@ async function executeStep(
   // Materialise a fresh ArrayBuffer (not SharedArrayBuffer; not a Uint8Array
   // view past byteLength) so the body slot accepts the value without TS
   // narrowing complaints.
-  const body = toArrayBuffer(bytes)
-  const response = await fetch(step.url, {
-    method: step.method,
-    headers,
-    body,
-  })
+  const body = new Uint8Array(toArrayBuffer(bytes))
+  // `step.url` comes from a storage-adapter plugin's `beginWrite` plan and is
+  // validated for SHAPE only. Route it through the SSRF-safe guard so the
+  // write path cannot reach loopback / private / link-local / metadata
+  // addresses — the read path's sibling gate (GHSA-rmm7, GHSA-9pq7). No host
+  // allowlist: an object-store endpoint is an arbitrary operator-chosen public
+  // host, same as the read side.
+  const response = await guardedFetch(
+    step.url,
+    { method: step.method, headers, body },
+    { label: 'Media storage upload' },
+  )
   if (!response.ok) {
     const text = await response.text().catch(() => '<no body>')
     throw new Error(

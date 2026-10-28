@@ -8,6 +8,8 @@
  *     existing / customized tokens. Empty input ⇒ a fresh full preset.
  *   • setFrameworkUtilities — flip utility-class generation on/off without
  *     touching the `:root` variables (the 'full' ⇄ 'variables' switch).
+ *   • applyFrameworkPreset: the declarative target state, which also adds the
+ *     font role tokens (`font-heading`, `font-body`, `font-mono`) a site lacks.
  *
  * All are pure: they compute a new `FrameworkSettings`; the store action assigns
  * it onto the draft and runs `reconcileFrameworkClasses`.
@@ -17,6 +19,7 @@ import type {
   FrameworkSpacingGroup,
   FrameworkTypographyGroup,
 } from '@core/framework-schema'
+import { mergeFontRoleTokens, type SiteFontsSettings } from '@core/fonts'
 import {
   buildCoreFrameworkSettings,
   coreFrameworkColorUtilitiesForSlug,
@@ -88,22 +91,39 @@ export function setFrameworkUtilities(
   return next
 }
 
+/** The slice of `SiteSettings` the Core preset owns. */
+export interface FrameworkPresetSettings {
+  framework?: FrameworkSettings
+  fonts?: SiteFontsSettings
+}
+
 /**
- * Compute the framework settings for a declarative target state — the single
- * source of truth shared by the store action, the onboarding importer, and the
- * dialog's change-preview. 'none' clears the framework; 'full' / 'variables'
- * merge the preset (add-missing) and flip utility generation to match.
+ * Compute the settings for a declarative target state: the single source of
+ * truth shared by the store action, the onboarding importer, and the dialog's
+ * change-preview.
+ *
+ *   • 'none' clears the framework. Font tokens are site content, not framework
+ *     output, so they are returned untouched.
+ *   • 'full' / 'variables' merge the preset (add-missing), flip utility
+ *     generation to match, and add any font role token the site lacks (matched
+ *     by variable; existing tokens are never changed).
+ *
+ * `fonts` in the result is the input object itself when no role token was
+ * missing, so callers can skip a no-op write by reference comparison.
  */
 export function applyFrameworkPreset(
-  existing: FrameworkSettings | undefined,
+  settings: FrameworkPresetSettings,
   target: FrameworkPreset,
-): FrameworkSettings | undefined {
-  if (target === 'none') return undefined
+): FrameworkPresetSettings {
+  if (target === 'none') return { framework: undefined, fonts: settings.fonts }
   const includeUtilities = target === 'full'
-  return setFrameworkUtilities(
-    mergeCoreFrameworkSettings(existing, { includeUtilities }),
-    includeUtilities,
-  )
+  return {
+    framework: setFrameworkUtilities(
+      mergeCoreFrameworkSettings(settings.framework, { includeUtilities }),
+      includeUtilities,
+    ),
+    fonts: mergeFontRoleTokens(settings.fonts),
+  }
 }
 
 /**
@@ -135,8 +155,13 @@ export function mergeCoreFrameworkSettings(
   next.spacing = mergeScaleFamily(next.spacing, preset.spacing)
 
   // Preferences — existing wins wholesale when present (it is fully populated
-  // after schema parse); otherwise adopt the preset's.
-  next.preferences = existing.preferences ?? preset.preferences
+  // after schema parse); otherwise adopt the preset's. An existing framework
+  // without stored preferences has been rendering with the defaults, which
+  // never set the root font size, so adopting the preset must not switch
+  // `emitRootFontSize` on: that would resize every rem token on a live site.
+  if (!existing.preferences && preset.preferences) {
+    next.preferences = { ...preset.preferences, emitRootFontSize: false }
+  }
 
   return next
 }

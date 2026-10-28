@@ -36,14 +36,16 @@ Catalog of every `localStorage` / `sessionStorage` key the admin app writes, and
 | Key                                       | Owner                                                                 | Source-of-truth file                                            |
 |-------------------------------------------|-----------------------------------------------------------------------|-----------------------------------------------------------------|
 | `instatic-spotlight-pending-action`             | The cross-page-reload action a Spotlight command is waiting for (e.g. step-up then resume) | `src/admin/spotlight/pendingAction.ts`             |
+| `instatic-active-branch`                       | The site branch this tab edits (absent = main); a `?branch=` URL param seeds it once and is then stripped from the URL | `src/admin/state/activeBranch.ts`                  |
 
 ### Cookies (HttpOnly — not directly readable)
 
 | Cookie                                    | Owner                                                                 | Source-of-truth file                                            |
 |-------------------------------------------|-----------------------------------------------------------------------|-----------------------------------------------------------------|
 | `instatic_admin_session`                        | Admin session token (raw; hashed before lookup)                       | `server/auth/tokens.ts` → `SESSION_COOKIE_NAME`                 |
+| `instatic_branch_preview`                       | Branch preview token (raw; hashed before lookup) — public visitors see that branch's draft while it names a live link | `server/branches/previewLinks.ts` → `BRANCH_PREVIEW_COOKIE` |
 
-The session cookie is `HttpOnly`, `Secure` (in production behind TLS), `SameSite=Lax`, `Path=/admin`. The client never reads it directly.
+The session cookie is `HttpOnly`, `Secure` (in production behind TLS), `SameSite=Lax`, `Path=/admin`. The client never reads it directly. The preview cookie uses the same attributes with `Path=/` and a 30-day `Max-Age`; revoking the link is what actually ends access.
 
 ---
 

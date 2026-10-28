@@ -88,9 +88,14 @@ export interface PluginManifest {
   networkAllowedHosts?: string[]
   /**
    * Per-table allowlist for the `api.cms.content.*` surface. Required when
-   * ANY of the `cms.content.*` permissions are granted. The install consent
-   * screen renders this verbatim so the operator approves the exact set of
-   * tables the plugin can touch before granting the permission.
+   * ANY of the `cms.content.*` permissions are granted. Ships in the
+   * manifest so the operator can review the exact set of tables the plugin
+   * can touch before installing.
+   *
+   * `table` is a concrete slug, or the `@own-created` marker
+   * (`OWN_CREATED_TABLES_MARKER`) covering every table the plugin itself
+   * creates at runtime via `cms.content.tables.create` — the shape
+   * importer/migration plugins need when the operator picks table names.
    *
    * Modes are checked AGAINST the granted permissions at install time: a
    * `mode: "publish"` entry requires `cms.content.publish`, etc. — and the

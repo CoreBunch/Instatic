@@ -24,19 +24,30 @@
  * underscores), and it avoids any risk of the table/:id pattern eating it.
  */
 import type { DbClient } from '../../../db/client'
+import type { BranchScope } from '../../../branches/scope'
 import type { CmsHandlerOptions } from '../shared'
 import { handleDataMetaRoutes } from './meta'
 import { handleDataSearchRoute } from './search'
 import { handleDataTableRoutes } from './tables'
 import { handleDataRowRoutes } from './rows'
+import { RuntimeScriptBuildError } from '../../../publish/runtime/buildError'
+import { PagePublishError } from '../../../repositories/publish'
+import { jsonResponse } from '../../../http'
 
 export async function handleDataRoutes(
   req: Request,
   db: DbClient,
+  scope: BranchScope,
   options: CmsHandlerOptions = {},
 ): Promise<Response | null> {
-  return (await handleDataMetaRoutes(req, db))
-    ?? (await handleDataSearchRoute(req, db))
-    ?? (await handleDataTableRoutes(req, db))
-    ?? (await handleDataRowRoutes(req, db, options))
+  try {
+    return (await handleDataMetaRoutes(req, db, scope))
+      ?? (await handleDataSearchRoute(req, db, scope))
+      ?? (await handleDataTableRoutes(req, db, scope))
+      ?? (await handleDataRowRoutes(req, db, scope, options))
+  } catch (err) {
+    if (err instanceof PagePublishError) return jsonResponse({ error: err.message }, { status: 409 })
+    if (err instanceof RuntimeScriptBuildError) return jsonResponse({ error: err.message }, { status: 422 })
+    throw err
+  }
 }

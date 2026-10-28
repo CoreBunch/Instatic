@@ -24,7 +24,9 @@ import { makeHtmlPagePlan } from './htmlPagePlan'
 import { buildAssetPlan, type CssFileResult } from './assetPlan'
 import { partitionLinkedStylesheets } from './stylesheetPlan'
 import { detectCrossSheetClassConflicts } from './classCascades'
-import { detectConflicts } from './conflicts'
+import { detectConflicts, rewriteImportVarRefs } from './conflicts'
+import { declaredCustomProperties } from './varRefs'
+import { normalizeImportedTokens } from './tokenNames'
 import { createCssPlanState, parseCssSourceIntoPlan } from './planCss'
 import { rewriteNpmCdnModuleImports } from './scriptDependencies'
 import { mergeScriptOrder, type PageScriptSequence } from './scriptOrder'
@@ -166,26 +168,38 @@ export function buildImportPlan({ fileMap, currentSite, options }: BuildImportPl
     buildAssetPlan(rawPagePlans, publishableCssFileResults, fileMap, rawStylesheetSources)
   warnings.push(...assetWarnings)
 
+  // 5b. Colour and font tokens are emitted under their normalised name
+  //     (`--brand---neutral--700` → `--brand-neutral-700`, `--font-Heading` →
+  //     `--font-heading`). Settle those names now and rewrite the imported
+  //     `var()` references to match, so the conflict step and the commit both
+  //     see the name that is emitted. Both kinds share one CSS namespace and
+  //     are settled together.
+  const { colors, fonts: fontTokens, renames } = normalizeImportedTokens(
+    { colors: [...cssPlan.colorsBySlug.values()], fonts: [...cssPlan.fontTokensByVariable.values()] },
+    declaredCustomProperties(normalizedPagePlans, normalizedStyleRules),
+  )
+  const { pages, styleRules } = rewriteImportVarRefs(normalizedPagePlans, normalizedStyleRules, renames)
+
   // 6. Detect conflicts against the current site — pages, class rules, and
   //    design tokens (colour + font) all flow through one resolution model.
   const conflicts = detectConflicts(
     currentSite,
-    normalizedPagePlans,
-    normalizedStyleRules,
-    [...cssPlan.colorsBySlug.values()],
-    [...cssPlan.fontTokensByVariable.values()],
+    pages,
+    styleRules,
+    colors,
+    fontTokens,
   )
 
   return {
-    pages: normalizedPagePlans,
-    styleRules: normalizedStyleRules,
+    pages,
+    styleRules,
     styleRuleSources,
     fonts,
     googleFonts: [...googleFontsByFamily.values()],
     conditions: [...cssPlan.conditionsById.values()],
     assets,
-    colors: [...cssPlan.colorsBySlug.values()],
-    fontTokens: [...cssPlan.fontTokensByVariable.values()],
+    colors,
+    fontTokens,
     scripts,
     linkedStylesheets,
     stylesheets,

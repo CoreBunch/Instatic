@@ -198,6 +198,7 @@
     --card-radius: 16px;
     --panel-radius: 12px;
     --input-radius: 1em;
+    --radius-pill: 999px;
     --tooltip-radius: 6px;
 
     /* Scrollbars */

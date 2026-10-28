@@ -69,18 +69,13 @@ function makeFakeDb(): DbClient {
 }
 
 function runtimeRequest(url: string, body: unknown): Request {
-  return {
+  const req = new Request(url, {
     method: 'POST',
-    url,
-    headers: {
-      get: (name: string) => {
-        if (name.toLowerCase() === 'cookie') return `${SESSION_COOKIE_NAME}=session-token`
-        if (name.toLowerCase() === 'content-type') return 'application/json'
-        return null
-      },
-    },
-    json: async () => body,
-  } as unknown as Request
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+  req.headers.set('cookie', `${SESSION_COOKIE_NAME}=session-token`)
+  return req
 }
 
 function site(): SiteDocument {

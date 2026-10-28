@@ -32,7 +32,7 @@ export interface CssPlanState {
   conditionsById: Map<string, ConditionDef>
   /** Colour tokens pulled from root-scope rules, deduped by slug. */
   colorsBySlug: Map<string, ImportColorToken>
-  /** Font tokens pulled from root-scope rules, deduped by normalized variable. */
+  /** Font tokens pulled from root-scope rules, deduped by authored variable. */
   fontTokensByVariable: Map<string, ImportFontToken>
   cssFileResults: CssFileResult[]
 }

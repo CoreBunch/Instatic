@@ -15,9 +15,11 @@
  * Two-phase upload contract:
  *
  *   1. `adapter.beginWrite(input)` — adapter issues a signed `MediaStorageUploadPlan`.
- *   2. Host streams bytes directly to the URLs in the plan via Bun's
- *      native `fetch` (gated by the same `networkAllowedHosts` allowlist
- *      the sandbox already enforces).
+ *   2. Host streams bytes directly to the URLs in the plan via `guardedFetch`
+ *      — the plan URL is plugin-controlled, so it gets the same SSRF gate the
+ *      read path uses: internal addresses refused, connection pinned to the
+ *      checked IP, every redirect hop re-validated. There is deliberately no
+ *      host allowlist (an object-store endpoint is an arbitrary public host).
  *   3. `adapter.finalizeWrite({ storagePath, uploadReceipts })` — adapter
  *      confirms the upload landed and returns the final shape persisted
  *      on the DB row.

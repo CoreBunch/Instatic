@@ -46,7 +46,8 @@ export async function readStatusCounts(
   const { rows } = await db<{ status: string; count: number | string }>`
     select status, count(*) as count
     from data_rows
-    where table_id = ${tableId}
+    where branch_id = 'main'
+      and table_id = ${tableId}
       and deleted_at is null
     group by status
   `
@@ -79,7 +80,8 @@ export async function readPublishedSinceCount(
   const { rows } = await db<{ count: number | string }>`
     select count(*) as count
     from data_rows
-    where table_id = ${tableId}
+    where branch_id = 'main'
+      and table_id = ${tableId}
       and deleted_at is null
       and status = 'published'
       and published_at is not null

@@ -37,6 +37,7 @@ const GROUP_ORDER: CommandGroup[] = [
   'account',
   'settings',
   'preview',
+  'branches',
   'ai',
   'help',
   'results',

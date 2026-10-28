@@ -116,7 +116,7 @@ Iterates rows in any `data_table`. The user picks the table in the Properties pa
 
 **Filtering by a cell.** Three `filters` keys carry the condition: `cellField` (a field id from the selected table), `cellOperator`, and `cellValue`. The operator set is closed — `is`, `isNot`, `isTrue`, `isFalse`, `isSet`, `isEmpty` — and `parseCellFilter` in `src/core/loops/cellFilter.ts` returns `null` for anything absent or half-configured, so a loop mid-edit keeps listing everything rather than silently emptying.
 
-**Sorting by a cell.** `orderBy` also accepts `cell:<fieldId>`, read by `parseCellOrder`. Riding on `orderBy` rather than a separate prop means every caller that already threads it — the publisher, the canvas preview endpoint, imported `data-order-by` attributes — supports cell sorting without further plumbing. Values compare as text in both dialects: ISO dates sort chronologically, numbers sort lexicographically (`'10' < '9'`).
+**Sorting by a cell.** `orderBy` also accepts `cell:<fieldId>`, read by `parseCellOrder`. Riding on `orderBy` rather than a separate prop means every caller that already threads it — the publisher, the canvas preview endpoint, imported `data-order-by` attributes — supports cell sorting without further plumbing. Number fields use numeric comparison in both dialects; missing, null and non-number values sort last in either direction. Other scalar fields compare as text, so ISO dates sort chronologically. Field metadata selects the comparison type: authors keep actual numbers in their cells rather than formatting values to influence ordering.
 
 Both read `cells_json`, the one place the two dialects genuinely differ (`#>> array[$n]` on Postgres, `json_extract` on SQLite). **The field name binds as a parameter, never as SQL text.** `cellFilterSql` and `cellOrderSql` own that switch; `loop-source-sql-safety.test.ts` scans the whole `src/core/loops/` tree for Postgres-isms.
 
@@ -337,7 +337,7 @@ In the editor, `useLoopPreviewItems` (`src/admin/pages/site/canvas/useLoopPrevie
 
 | Source | Canvas path |
 |---|---|
-| `data.rows` | GETs `/data/tables/:id/loop-preview` — same projection as the publisher, and takes `cellField` / `cellOperator` / `cellValue` plus a `cell:<fieldId>` `orderBy` so the canvas shows the rows the published page will emit. Falls back to synthetic items from the table's field definitions when no published rows exist yet. |
+| `data.rows` | GETs `/data/tables/:id/loop-preview` — same projection as the publisher, and takes `cellField` / `cellOperator` / `cellValue` plus a `cell:<fieldId>` `orderBy` so the canvas shows the rows the published page will emit. On a site branch the preview reads the branch's draft rows (the branch has nothing published), mirroring `renderBranchPreview`. Falls back to synthetic items from the table's field definitions when no rows exist yet. |
 | `site.pages` | Reads pages from the in-memory site document via `selectSitePagesLoopItems`. Applies `filterPagesForLoop` + `pageToLoopItem` imported from `@core/loops` — identical to the publisher path. |
 | `site.media` | Fetches via `listCmsMediaAssets()`, filters by MIME prefix, sorts + slices client-side. |
 | Plugin sources | Calls `source.preview(ctx)` synchronously. |
