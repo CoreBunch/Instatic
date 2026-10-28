@@ -14,7 +14,10 @@ const MAX_COMPUTED_BACKGROUND_IMAGE_LENGTH = 500
 const COMPUTED_STYLE_TRUNCATION_SUFFIX = '...[truncated]'
 const OVERFLOW_TOLERANCE_PX = 2
 const FRAME_WAIT_TIMEOUT_MS = 5_000
-const FRAME_WAIT_POLL_MS = 16
+// Fallback only: frame readiness normally arrives through the MutationObserver
+// in `waitForAgentRenderFrame`, which background-tab timer throttling (down to
+// one chained timer per minute in Chrome) does not delay.
+const FRAME_WAIT_FALLBACK_POLL_MS = 250
 
 // Anthropic rejects any image dimension > 8000px outright (400), and internally
 // downsizes the long edge to ~1568px before the model ever sees it. So we cap
@@ -167,18 +170,53 @@ export function findAgentRenderFrame({
   return null
 }
 
-/** Wait for React to mount and commit an exact canvas iframe. */
+/**
+ * Wait for React to mount and commit an exact canvas iframe.
+ *
+ * Event-driven: re-checks whenever the canvas DOM or a readiness marker
+ * (`data-instatic-canvas-document-loaded`, `data-agent-snapshot-ready`)
+ * changes. A tight timer poll here stalled MCP render snapshots for minutes in
+ * a background tab, where chained timers are throttled.
+ */
 export async function waitForAgentRenderFrame(
   query: AgentRenderFrameQuery,
   timeoutMs: number = FRAME_WAIT_TIMEOUT_MS,
 ): Promise<HTMLElement | null> {
   const deadline = Date.now() + timeoutMs
-  while (Date.now() <= deadline) {
-    const frame = findAgentRenderFrame({ ...query, requireReady: true })
-    if (frame) return frame
-    await new Promise<void>((resolve) => setTimeout(resolve, FRAME_WAIT_POLL_MS))
+  let wake: (() => void) | null = null
+  const observer = new MutationObserver(() => wake?.())
+  observer.observe(document.body, {
+    subtree: true,
+    childList: true,
+    attributes: true,
+    attributeFilter: [
+      'data-instatic-canvas-document-loaded',
+      'data-agent-snapshot-ready',
+      'data-breakpoint-id',
+      'data-agent-snapshot-breakpoint-id',
+      'data-agent-snapshot-request-id',
+    ],
+  })
+  try {
+    for (;;) {
+      if (Date.now() > deadline) return null
+      const frame = findAgentRenderFrame({ ...query, requireReady: true })
+      if (frame) return frame
+      const remaining = deadline - Date.now()
+      if (remaining <= 0) return null
+      await new Promise<void>((resolve) => {
+        const timer = setTimeout(done, Math.min(FRAME_WAIT_FALLBACK_POLL_MS, remaining))
+        function done(): void {
+          clearTimeout(timer)
+          wake = null
+          resolve()
+        }
+        wake = done
+      })
+    }
+  } finally {
+    observer.disconnect()
   }
-  return null
 }
 
 function isAgentRenderFrameReady(frame: HTMLElement, requestId?: string): boolean {
