@@ -6,6 +6,8 @@ The published output has **no framework runtime**, **no client-side hydration of
 
 ---
 
+Published module scripts are minified by `server/publish/runtime/bundleScripts.ts`. Canvas bundles remain readable with inline source maps; classic scripts retain their original bytes.
+
 ## TL;DR
 
 - Entry point: `publishPage(page, site, registry, options?)` in `src/core/publisher/render.ts`. Returns `{ filename, html, jsModuleIds }`, where `html` is the full document string and `jsModuleIds` are per-page module-JS candidates for the server injection pass.
