@@ -1,3 +1,5 @@
+import { exportRowAttachments } from '../../repositories/rowAttachments'
+import { attachmentArchivePath, type BundleAttachment } from '@core/data/attachments'
 /**
  * Site bundle export endpoint.
  *
@@ -108,6 +110,8 @@ interface ExportSelection {
   rows: Awaited<ReturnType<typeof listDataRows>>
   publication: BundlePublication
   runtimeBytes: Uint8Array[]
+  attachments: BundleAttachment[]
+  attachmentBytes: Uint8Array[]
   includeMedia: boolean
   includeSite: boolean
   /** Folder tree, or undefined when folders weren't requested. */
@@ -234,7 +238,9 @@ export async function handleExportRoute(
     }
 
     const { publication, bytes: runtimeBytes } = await exportBundlePublication(db, exportScope, rows.map((row) => row.id))
+    const { attachments, bytes: attachmentBytes } = await exportRowAttachments(db, exportScope, rows.map((row) => row.id))
     const selection: ExportSelection = {
+      attachments, attachmentBytes,
       shell,
       publication,
       runtimeBytes,
@@ -287,6 +293,7 @@ function estimateResponse(
       sizeBytes: manifestBytes.byteLength,
       usesDataDescriptor: false,
     },
+    ...selection.attachments.map((file, index) => ({ path: attachmentArchivePath(index), sizeBytes: file.sizeBytes })),
     ...selection.publication.files.map((file, index) => ({ path: runtimeArchivePath(index), sizeBytes: file.sizeBytes })),
     ...(wantMedia
       ? assets.map(({ asset, sizeBytes }) => ({
@@ -317,6 +324,7 @@ async function downloadResponse(
       sizeBytes: manifestBytes.byteLength,
       source: manifestBytes,
     },
+    ...selection.attachments.map((file, index) => ({ path: attachmentArchivePath(index), sizeBytes: file.sizeBytes, source: selection.attachmentBytes[index]! })),
     ...selection.publication.files.map((file, index) => ({ path: runtimeArchivePath(index), sizeBytes: file.sizeBytes, source: selection.runtimeBytes[index]! })),
     ...assets.map(({ asset, filePath, sizeBytes }) => ({
       path: mediaArchivePath(asset.storagePath),
@@ -366,6 +374,7 @@ function buildArchiveManifest(
     sourceSiteName: selection.shell.name,
     ...(selection.includeSite ? { site: selection.shell } : {}),
     publication: selection.publication,
+    attachments: selection.attachments,
     tables: selection.tables,
     rows: selection.rows,
     ...(media !== undefined ? { media } : {}),

@@ -15,8 +15,6 @@
  *     `stampFormPageTokens` (server/forms/formRuntime.ts) for baked pages
  *     AND hole fragments.
  */
-import { UNSUPPORTED_FORM_FILE_MESSAGE } from '@core/forms'
-
 export const FORM_RUNTIME_JS = `(() => {
   if (window.__instaticFormRuntimeLoaded) return;
   window.__instaticFormRuntimeLoaded = true;
@@ -50,6 +48,9 @@ export const FORM_RUNTIME_JS = `(() => {
   function attachForm(form) {
     if (form.__instaticFormRuntimeAttached) return;
     form.__instaticFormRuntimeAttached = true;
+    for (const control of form.elements) {
+      if (control.type === 'file') control.accept = '.pdf,.txt,.png,.jpg,.jpeg,.gif,.webp';
+    }
     connectLabels(form);
     prepareMessages(form);
     prefetchChallenge(form);
@@ -68,15 +69,15 @@ export const FORM_RUNTIME_JS = `(() => {
     setState(form, 'pending', 'Sending...');
 
     try {
-      const values = collectValues(form);
+      const submission = collectValues(form);
       const challenge = await takeChallenge(form);
-      await postJson('/_instatic/form/submit', {
+      await postSubmission({
         pageId,
         formId,
         token: challenge.token,
         challenge: challenge.challenge,
-        values,
-      });
+        values: submission.values,
+      }, submission.files);
 
       const redirectUrl = form.getAttribute('data-instatic-success-redirect') || '';
       if (redirectUrl) {
@@ -141,14 +142,25 @@ export const FORM_RUNTIME_JS = `(() => {
   }
 
   async function postJson(path, payload) {
+    return postBody(path, JSON.stringify(payload), 'application/json');
+  }
+
+  async function postSubmission(payload, files) {
+    if (!files.length) return postJson('/_instatic/form/submit', payload);
+    const data = new FormData();
+    data.append('payload', JSON.stringify(payload));
+    for (const [name, file] of files) data.append('file.' + name, file);
+    return postBody('/_instatic/form/submit', data);
+  }
+
+  async function postBody(path, payload, contentType) {
+    const headers = { 'accept': 'application/json' };
+    if (contentType) headers['content-type'] = contentType;
     const response = await fetch(path, {
       method: 'POST',
       credentials: 'same-origin',
-      headers: {
-        'accept': 'application/json',
-        'content-type': 'application/json',
-      },
-      body: JSON.stringify(payload),
+      headers,
+      body: payload,
     });
     const body = await readJson(response);
     if (!response.ok) throw new Error(errorMessage(body));
@@ -173,14 +185,19 @@ export const FORM_RUNTIME_JS = `(() => {
   }
 
   function collectValues(form) {
-    // FormData omits unnamed controls, but selecting a file must never look successful.
-    if (Array.from(form.elements).some((control) => control.type === 'file')) {
-      throw new Error(${JSON.stringify(UNSUPPORTED_FORM_FILE_MESSAGE)});
+    const values = Object.create(null);
+    const files = [];
+    for (const control of form.elements) {
+      if (control.type === 'file' && !control.disabled && !control.name && control.files?.length) {
+        throw new Error('This file input is missing its field name. Please contact the site owner.');
+      }
     }
-    const values = {};
     const data = new FormData(form);
     for (const [name, value] of data.entries()) {
-      if (typeof value !== 'string') throw new Error(${JSON.stringify(UNSUPPORTED_FORM_FILE_MESSAGE)});
+      if (typeof value !== 'string') {
+        if (value.name || value.size) files.push([name, value]);
+        continue;
+      }
       if (values[name] === undefined) {
         values[name] = value;
       } else if (Array.isArray(values[name])) {
@@ -189,7 +206,7 @@ export const FORM_RUNTIME_JS = `(() => {
         values[name] = [values[name], value];
       }
     }
-    return values;
+    return { values, files };
   }
 
   function connectLabels(form) {

@@ -1,3 +1,4 @@
+import { RowAttachments } from './RowAttachments'
 import { useEffect, useEffectEvent, useState, type ReactElement, type ReactNode } from 'react'
 import { Button } from '@ui/components/Button'
 import { ExternalLinkSolidIcon } from 'pixel-art-icons/icons/external-link-solid'
@@ -356,6 +357,7 @@ export function RowDetail({
           <RowMetaBlock row={row} />
         </div>
       )}
+      <RowAttachments key={row.id} rowId={row.id} />
       <DataRowForm
         row={row}
         table={table}

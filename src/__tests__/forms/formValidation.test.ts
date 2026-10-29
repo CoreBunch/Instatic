@@ -35,32 +35,6 @@ const controls = [
 ]
 
 describe('validateFormSubmission', () => {
-  it('rejects file controls even when the client omits or replaces their values', () => {
-    for (const values of [{ name: 'invoice.pdf' }, { name: '' }, {}]) {
-      const result = validateFormSubmission({
-        table,
-        controls: [{ nodeId: 'upload', fieldId: 'name', inputType: 'file' }],
-        values,
-      })
-      expect(result).toEqual({ ok: false, errors: [{
-        fieldId: 'name', code: 'unsupported_file', message: 'File uploads are not supported by CMS forms.',
-      }] })
-    }
-  })
-
-  it('rejects unverified media values even when the bound control is not a file input', () => {
-    for (const allowMultiple of [false, true]) {
-      for (const value of ['invoice.pdf', 'existing-asset-id', ['invoice.pdf'], null]) {
-        const result = validateFormSubmission({
-          table: { ...table, fields: [{ id: 'attachment', label: 'Attachment', type: 'media', allowMultiple }] },
-          controls: [{ nodeId: 'upload', fieldId: 'attachment', inputType: 'text' }],
-          values: { attachment: value },
-        })
-        expect(result.ok).toBe(false)
-      }
-    }
-  })
-
   it('coerces valid submitted values into data row cells', () => {
     const result = validateFormSubmission({
       table,

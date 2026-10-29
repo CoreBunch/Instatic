@@ -66,6 +66,7 @@ export function filterSiteBundleForImportSelection(
     ...(selection.includeSite && bundle.site ? { site: bundle.site } : {}),
     tables,
     rows,
+    ...(bundle.attachments ? { attachments: bundle.attachments.filter((file) => selectedRowIds.has(file.rowId)) } : {}),
     ...(bundle.publication ? { publication: selectBundlePublication(bundle.publication, selectedRowIds) } : {}),
     ...(media ? { media } : {}),
     ...(selection.includeMediaFolders && bundle.mediaFolders ? { mediaFolders: bundle.mediaFolders } : {}),

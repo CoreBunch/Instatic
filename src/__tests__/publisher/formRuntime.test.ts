@@ -50,6 +50,7 @@ describe('form runtime browser behaviour', () => {
     `
 
     const calls: Array<{ path: string; payload: Record<string, unknown> }> = []
+    const uploadedFiles: File[] = []
     const originalFetch = globalThis.fetch
 
     ;(globalThis as Record<string, unknown>).fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -58,7 +59,12 @@ describe('form runtime browser behaviour', () => {
         : input instanceof URL
           ? input.pathname
           : input.url
-      const payload = JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>
+      const multipart = init?.body instanceof FormData ? init.body : null
+      const payload = JSON.parse(String(multipart?.get('payload') ?? init?.body ?? '{}')) as Record<string, unknown>
+      if (multipart) {
+        const file = multipart.get('file.attachment')
+        if (file instanceof File) uploadedFiles.push(file)
+      }
       calls.push({ path, payload })
 
       if (path === '/_instatic/form/challenge') {
@@ -97,14 +103,20 @@ describe('form runtime browser behaviour', () => {
       expect(calls[1].payload.token).toBe('prefetched-token')
       expect(calls[1].payload.challenge).toBe('prefetched-challenge')
 
-      // An unnamed file is omitted from FormData, but must still block CMS submission.
-      form!.innerHTML = `<input type="file"><p data-instatic-form-message="status"></p>`
-      const submissions = calls.filter((call) => call.path === '/_instatic/form/submit').length
+      for (let i = 0; i < 20; i++) await flushRuntime()
+      const input = document.createElement('input')
+      input.type = 'file'
+      input.name = 'attachment'
+      const bytes = new Uint8Array([0, 255, 128, 10])
+      Reflect.set(input, 'files', [new File([bytes], 'invoice.pdf', { type: 'application/pdf' })])
+      form!.append(input)
       form!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
-      expect(form!.getAttribute('data-instatic-form-state')).toBe('error')
-      expect(form!.textContent).toContain('File uploads are not supported by CMS forms.')
-      await flushRuntime()
-      expect(calls.filter((call) => call.path === '/_instatic/form/submit')).toHaveLength(submissions)
+      for (let i = 0; i < 20; i++) await flushRuntime()
+      expect(uploadedFiles).toHaveLength(1)
+      expect(uploadedFiles[0].name).toBe('invoice.pdf')
+      expect(new Uint8Array(await uploadedFiles[0].arrayBuffer())).toEqual(bytes)
+      expect(calls.filter((call) => call.path === '/_instatic/form/submit').at(-1)?.payload.values)
+        .not.toHaveProperty('attachment')
     } finally {
       ;(globalThis as Record<string, unknown>).fetch = originalFetch
       document.body.innerHTML = ''

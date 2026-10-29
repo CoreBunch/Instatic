@@ -84,22 +84,6 @@ function withParentIndex(page: Page): Page {
 }
 
 describe('analyzeFormSettings', () => {
-  it('warns about file controls on CMS forms and controls, but leaves custom forms alone', () => {
-    const page = makePage()
-    page.nodes['input-email']!.props.inputType = 'file'
-    for (const nodeId of ['form', 'input-email']) {
-      expect(analyzeFormSettings({ page, nodeId, table }).warnings).toContainEqual({
-        code: 'unsupported_file',
-        message: 'File uploads are not supported by CMS forms.',
-        tone: 'danger',
-      })
-    }
-    page.nodes.form!.props.mode = 'custom'
-    for (const nodeId of ['form', 'input-email']) {
-      expect(analyzeFormSettings({ page, nodeId, table }).warnings.some((warning) => warning.code === 'unsupported_file')).toBe(false)
-    }
-  })
-
   it('summarizes the selected form and warns about duplicate control names', () => {
     const page = makePage()
     const analysis = analyzeFormSettings({ page, nodeId: 'form', table })

@@ -1,6 +1,5 @@
 import type { CreateDataTableInput, DataField, DataTable, DataSelectOption } from '@core/data/schemas'
 import type { ImportFragment } from '@core/htmlImport'
-import { UNSUPPORTED_FORM_FILE_MESSAGE } from '@core/forms'
 import { createNode, flattenSubtree, getParent, type Page, type PageNode } from '@core/page-tree'
 import { formDisplayName, humanizeIdentifier, slugifyFormTableName } from './formSettingsNaming'
 
@@ -66,7 +65,6 @@ interface FormSettingsWarning {
     | 'label_without_target'
     | 'submit_without_form'
     | 'incompatible_field'
-    | 'unsupported_file'
   message: string
   tone: 'warning' | 'danger'
 }
@@ -133,13 +131,6 @@ export function analyzeFormSettings(input: {
     warnings.push(...duplicateNameWarnings(page, formNode))
   }
 
-  if (form?.mode === 'cms') {
-    const controls = kind === 'form' ? flattenSubtree(page, selectedNode.id).map((id) => page.nodes[id]) : [selectedNode]
-    if (controls.some((node) => node?.moduleId === 'base.input' && node.props.inputType === 'file')) {
-      warnings.push({ code: 'unsupported_file', message: UNSUPPORTED_FORM_FILE_MESSAGE, tone: 'danger' })
-    }
-  }
-
   if (kind === 'control' && !form) {
     warnings.push({
       code: 'outside_form',
@@ -148,11 +139,12 @@ export function analyzeFormSettings(input: {
     })
   }
 
-  const fieldId = stringProp(selectedNode, 'fieldId', '')
+  const isAttachment = selectedNode.moduleId === 'base.input' && selectedNode.props.inputType === 'file'
+  const fieldId = isAttachment ? '' : stringProp(selectedNode, 'fieldId', '')
   const field = table && fieldId ? table.fields.find((candidate) => candidate.id === fieldId) ?? null : null
   const compatibleFields = table ? table.fields.filter((candidate) => fieldCompatibleWithNode(candidate, selectedNode.moduleId)) : []
 
-  if (kind === 'control' && form?.mode === 'cms' && !fieldId) {
+  if (kind === 'control' && !isAttachment && form?.mode === 'cms' && !fieldId) {
     warnings.push({
       code: 'unbound_control',
       message: 'Bind this control to a table field.',
@@ -470,7 +462,7 @@ function fieldsMissingFromForm(page: Page, formNode: PageNode, table: DataTable)
   for (const nodeId of flattenSubtree(page, formNode.id)) {
     if (nodeId === formNode.id) continue
     const node = page.nodes[nodeId]
-    if (!node || !FORM_CONTROL_MODULES.has(node.moduleId)) continue
+    if (!node || !FORM_CONTROL_MODULES.has(node.moduleId) || (node.moduleId === 'base.input' && node.props.inputType === 'file')) continue
     const representedId = stringProp(node, 'fieldId', '') || stringProp(node, 'name', '')
     if (representedId) representedFieldIds.add(representedId)
   }

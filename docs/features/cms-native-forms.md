@@ -23,15 +23,13 @@ Primitives are the source of truth. A label is a `base.label` node, an input is 
 - `cms` submits to a selected data table.
 - `custom` renders a semantic form shell with `action` / `method` for external adapters or traditional form targets.
 
-CMS-native forms accept scalar field values, not file uploads or media references. The Input type picker hides `file` inside CMS forms; custom-action forms retain it. Existing or imported file controls remain visible and produce a setup warning on both the control and its CMS form. Switching a custom form to CMS mode does not discard its controls.
-
 Form-related nodes get a contextual setup block rendered at the top of Module settings by `FormSettingsPanel` in `src/admin/pages/site/panels/PropertiesPanel/FormSettingsPanel.tsx`. The analysis that drives it lives in `src/admin/pages/site/panels/PropertiesPanel/formSettingsAnalysis.ts`. The block summarizes the nearest form, target table, bound field, inferred label/submit/message relationship, and warnings for missing tables, unbound controls, duplicate names, missing fields, controls outside forms, labels without targets, and submit buttons without forms.
 
 For a selected `base.form` node, the setup block promotes three props — mode, Form ID, and target table — out of the generic property-control list. `renderModuleTabContent.tsx` suppresses them from the schema-driven rows via `PROMOTED_FORM_PROPERTY_KEYS`; the setup block renders them instead as a segmented mode selector and a stacked Form ID input. The target table is a live-loaded select backed by the CMS tables API. Only non-system `data` tables are eligible targets; seeded system tables such as Pages, Posts, and Components are hidden because public forms collect submissions, not site structure or core content records. Authors can also create a new `data` table from the current form controls: a dialog opens with an editable table name prefilled from a human-readable form name (generated id suffixes are stripped by `formSettingsNaming.ts` so names stay author-facing), then fields are inferred from the authored primitive nodes — ids, labels, types, required flags, and compatible validation defaults. If the selected table has fields not represented in the form, the block offers one-click insertion of label + compatible control primitives before the submit/message area.
 
 The `Form ID` property is a machine identifier, not the author-facing table or form name. Authors use clean ids such as `contact`, `contact-2`, and `newsletter` instead of long node ids. The editor normalizes typed spaces to identifier-safe separators, and the publisher/snapshot path normalizes the same way so form messages, external submit buttons, public tokens, and submission handlers all agree on one id.
 
-For a selected control inside a CMS-native form, the setup block exposes a field picker for compatible fields in the form's target table. Selecting a field patches the node's `fieldId`, `name`, `id`, input/control type, required state, and compatible validation defaults in one edit.
+For a selected non-file control inside a CMS-native form, the setup block exposes a field picker for compatible fields in the form's target table. Selecting a field patches the node's `fieldId`, `name`, `id`, input/control type, required state, and compatible validation defaults in one edit.
 
 The design canvas treats authored form controls as non-interactive editor content. Inputs, textareas, selects, and buttons render as real semantic elements, but pointer/focus activation is suppressed in canvas mode so browser autofill, native select menus, and typing do not appear while designing. Clicking the element still selects the corresponding canvas node. Live preview and published pages keep normal browser form behavior.
 
@@ -58,7 +56,19 @@ The submit handler reloads the latest published site snapshot, derives the form 
 
 Validation lives in `src/core/forms/validation.ts`. It rejects unknown fields, enforces required fields, coerces table field types, applies email/url/number/select checks, applies control min/max/pattern constraints, and caps payload size. A `select` or `multiSelect` submission may carry an option's `value` (what `base.option` nodes inserted from the table hold) or its `id`; the stored cell is always the option id.
 
-The browser rejects file values before submitting, shows the unsupported-upload error through the form's message node, and retains the selected file. The server independently rejects published file controls (including omitted values) and controls bound to media fields. It never accepts a filename or an unverified asset ID as a successful upload, and rejected submissions create no row. Custom-action forms are not intercepted by the CMS runtime.
+## Private file attachments
+
+A CMS file input uses its unique `name` and optional `required` / `multiple` properties. It does not bind to a table column: uploaded files belong to the submission row. Authors see this distinction and the limits in the form setup panel. Ordinary text inputs still bind to table fields.
+
+The runtime submits selected `File` bytes in multipart parts named `file.<name>`, with validated JSON metadata in `payload`. Forms without files retain JSON transport. A successful response means the row and all attachment bytes committed in one database transaction; invalid files or fields create neither. Failure keeps the selection so visitors can correct it and retry.
+
+Accepted formats are PDF, UTF-8 text, PNG, JPEG, GIF, and WebP. The server checks contents against the filename extension, ignoring browser-reported MIME. Limits are 10 MiB per file, 20 MiB total, and five files per submission. These are server limits; the file chooser's `accept` attribute is only guidance. Unpublished, duplicate, or unknown input names, missing required files, and filenames/IDs sent instead of bytes are rejected.
+
+Staff open the submission in the Data workspace and download files under **Private attachments**. Both metadata and bytes require the existing table and row read permissions. `GET /admin/api/cms/data/rows/:id/attachments` lists metadata; appending `/:attachmentId` downloads an authorized attachment with `Content-Disposition: attachment`, `application/octet-stream`, `nosniff`, and `private, no-store`. Files never enter the Media Library or public uploads directory.
+
+Immutable bytes live in `data_attachments`; `data_row_attachments` links them to branch-scoped rows. Branch copies share binaries and merges carry the reference set. Unlinked bytes remain with the logical row to support merge undo; deleting the last physical row copy removes its binaries. Soft deletion denies downloads and preserves undo data. Migration 032 adds the tables on both database dialects without modifying existing content.
+
+ZIP exports include the selected, authorized rows' attachment metadata and raw bytes under `attachments/`, even when public media is excluded. Restore validates file bytes and row ownership before applying them in the row import transaction. Partial imports keep only selected rows' files; merge-add does not replace skipped rows' files. Attachment IDs are immutable: importing different bytes under an ID held by another branch is rejected, preserving that branch's data.
 
 ## Security
 
@@ -67,7 +77,7 @@ The endpoint is public by necessity, so it is layered:
 - Same-origin `Origin` and Fetch Metadata checks reject ordinary cross-site browser posts.
 - Published-page tokens are HMAC-signed by the server and stamped into each rendered CMS form. The challenge endpoint rejects requests without the token.
 - Challenges are short-lived, single-use, and bound to `pageId` + `formId`. The minimum-submit-time check is measured from challenge issue time, so the runtime prefetches challenges on form attach rather than on click.
-- Challenge requests are capped at 8 KiB, submission requests at 1 MiB, before JSON validation or persistence work. Oversized payloads return `413`.
+- Challenge requests are capped at 8 KiB and JSON submissions at 1 MiB. Multipart requests have a streaming cap of 21 MiB plus 64 KiB of framing overhead, with separate per-file and aggregate limits. The IP rate limit runs before the upload body is read. Oversized payloads return `413`.
 - Challenge issuance is rate-limited per IP and per IP/form pair, and the in-memory challenge store is capped to evict oldest entries under sustained pressure.
 - The server trusts the published page snapshot, not client-declared fields or target tables.
 - Honeypot and minimum-submit-time checks run before validation.

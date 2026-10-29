@@ -247,7 +247,10 @@ export function FormSettingsPanelView({
         </>
       )}
 
-      {analysis.kind === 'control' && analysis.table && (
+      {analysis.node?.moduleId === 'base.input' && analysis.node.props.inputType === 'file' && analysis.form?.mode === 'cms' && (
+        <p>Files become private submission attachments. Set a unique Name. PDF, text, PNG, JPEG, GIF, and WebP are accepted: 10 MB per file, 20 MB and five files per submission.</p>
+      )}
+      {analysis.kind === 'control' && analysis.table && analysis.node?.props.inputType !== 'file' && (
         <FieldBindingRow
           analysis={analysis}
           onPatchProps={onPatchProps}

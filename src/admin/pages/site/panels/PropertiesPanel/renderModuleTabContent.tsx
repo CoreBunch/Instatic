@@ -36,7 +36,7 @@ import type { ActiveDocument } from '../../store/slices/uiSlice'
 import { LoopPropertiesView } from './LoopPropertiesView'
 import { ParamPromotableRow } from './ParamPromotableRow'
 import { FormSettingsPanel } from './FormSettingsPanel'
-import { analyzeFormSettings, isFormSettingsModule } from './formSettingsAnalysis'
+import { isFormSettingsModule } from './formSettingsAnalysis'
 
 const PROMOTED_FORM_PROPERTY_KEYS = new Set(['mode', 'formId', 'targetTableId'])
 
@@ -96,8 +96,6 @@ export function renderModuleTabContent(args: ModuleTabContentArgs): React.ReactN
     activePage !== null &&
     selectedNodeId !== null &&
     isFormSettingsModule(selectedNode.moduleId)
-  const isCmsInput = selectedNode.moduleId === 'base.input'
-    && analyzeFormSettings({ page: activePage, nodeId: selectedNodeId }).form?.mode === 'cms'
 
   return (
     <>
@@ -109,10 +107,7 @@ export function renderModuleTabContent(args: ModuleTabContentArgs): React.ReactN
         />
       )}
 
-      {Object.entries(definition.schema).map(([key, originalControl]: [string, PropertyControl]) => {
-        const control = isCmsInput && key === 'inputType' && originalControl.type === 'select'
-          ? { ...originalControl, options: originalControl.options.filter((option) => option.value !== 'file') }
-          : originalControl
+      {Object.entries(definition.schema).map(([key, control]: [string, PropertyControl]) => {
         // Hidden controls carry a type for the engine (escaping dispatch) but
         // render no editor surface — e.g. base.outlet.html, a publisher-filled
         // binding target the author never edits.
@@ -161,5 +156,6 @@ export function renderModuleTabContent(args: ModuleTabContentArgs): React.ReactN
 }
 
 function isPromotedFormProperty(selectedNode: PageNode, key: string): boolean {
+  if (selectedNode.moduleId === 'base.input' && selectedNode.props.inputType === 'file' && ['fieldId', 'value', 'pattern', 'min', 'max', 'minLength', 'maxLength', 'placeholder', 'readOnly', 'autocomplete'].includes(key)) return true
   return selectedNode.moduleId === 'base.form' && PROMOTED_FORM_PROPERTY_KEYS.has(key)
 }

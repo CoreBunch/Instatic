@@ -74,6 +74,7 @@ const InputPropsSchema = Type.Object({
     Type.Literal('file'),
     Type.Literal('hidden'),
   ], { default: 'text' }),
+  multiple: Type.Boolean({ default: false }),
   fieldId: Type.String({ default: '' }),
   name: Type.String({ default: '' }),
   id: Type.String({ default: '' }),
@@ -275,14 +276,14 @@ export const InputModule: ModuleDefinition<InputProps> = {
     ['name', props.name || props.fieldId],
     ['id', props.id],
     ['placeholder', props.placeholder],
-    ['value', props.value],
+    ['value', props.inputType === 'file' ? '' : props.value],
     ['autocomplete', props.autocomplete],
     ['min', props.min],
     ['max', props.max],
     ['minlength', positiveNumber(props.minLength)],
     ['maxlength', positiveNumber(props.maxLength)],
     ['pattern', props.pattern],
-  ])}${booleanAttrs(props, ['required', 'disabled', 'readOnly'])}>` }),
+  ])}${booleanAttrs(props, ['required', 'disabled', 'readOnly', ...(props.inputType === 'file' && props.multiple ? ['multiple'] : [])])}>` }),
 }
 
 export const TextareaModule: ModuleDefinition<TextareaProps> = {
@@ -494,6 +495,7 @@ function inputLikeSchema(typeLabel: string): ModuleDefinition<InputProps>['schem
     id: { type: 'text', label: 'ID' },
     placeholder: { type: 'text', label: 'Placeholder' },
     value: { type: 'text', label: 'Default value' },
+    multiple: { type: 'toggle', label: 'Multiple files', condition: { field: 'inputType', eq: 'file' } },
     required: { type: 'toggle', label: 'Required' },
     disabled: { type: 'toggle', label: 'Disabled' },
     readOnly: { type: 'toggle', label: 'Read-only' },
