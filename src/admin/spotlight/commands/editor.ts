@@ -18,7 +18,7 @@ import { isOnMainBranch } from '@admin/state/branchStore'
 import type { Command } from '../types'
 
 /** Mirrors `SITE_WRITE_CAPABILITIES` — any holder can save a draft. */
-const SITE_WRITE_CAPABILITIES = [
+export const SITE_WRITE_CAPABILITIES = [
   'site.structure.edit',
   'site.content.edit',
   'site.style.edit',

@@ -380,6 +380,7 @@ A nightly cron can hit `/admin/api/cms/export` with an admin session cookie and 
 ## Related
 
 - [docs/architecture.md](../architecture.md) — system overview
+- [docs/features/fragments.md](fragments.md) — `fragmentSourceFromBundleArchive` reads the export archive to extract fragments
 - [docs/server.md](../server.md) — handler patterns + transactions
 - [docs/features/content-storage.md](content-storage.md) — `data_tables` + `data_rows` schemas
 - [docs/features/media.md](media.md) — imported media falls back to originals when variants are absent
