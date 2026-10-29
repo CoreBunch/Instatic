@@ -1,5 +1,6 @@
 import type { CreateDataTableInput, DataField, DataTable, DataSelectOption } from '@core/data/schemas'
 import type { ImportFragment } from '@core/htmlImport'
+import { UNSUPPORTED_FORM_FILE_MESSAGE } from '@core/forms'
 import { createNode, flattenSubtree, getParent, type Page, type PageNode } from '@core/page-tree'
 import { formDisplayName, humanizeIdentifier, slugifyFormTableName } from './formSettingsNaming'
 
@@ -65,6 +66,7 @@ interface FormSettingsWarning {
     | 'label_without_target'
     | 'submit_without_form'
     | 'incompatible_field'
+    | 'unsupported_file'
   message: string
   tone: 'warning' | 'danger'
 }
@@ -129,6 +131,13 @@ export function analyzeFormSettings(input: {
 
   if (kind === 'form' && formNode) {
     warnings.push(...duplicateNameWarnings(page, formNode))
+  }
+
+  if (form?.mode === 'cms') {
+    const controls = kind === 'form' ? flattenSubtree(page, selectedNode.id).map((id) => page.nodes[id]) : [selectedNode]
+    if (controls.some((node) => node?.moduleId === 'base.input' && node.props.inputType === 'file')) {
+      warnings.push({ code: 'unsupported_file', message: UNSUPPORTED_FORM_FILE_MESSAGE, tone: 'danger' })
+    }
   }
 
   if (kind === 'control' && !form) {

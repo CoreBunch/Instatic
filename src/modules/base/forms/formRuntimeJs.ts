@@ -15,6 +15,8 @@
  *     `stampFormPageTokens` (server/forms/formRuntime.ts) for baked pages
  *     AND hole fragments.
  */
+import { UNSUPPORTED_FORM_FILE_MESSAGE } from '@core/forms'
+
 export const FORM_RUNTIME_JS = `(() => {
   if (window.__instaticFormRuntimeLoaded) return;
   window.__instaticFormRuntimeLoaded = true;
@@ -66,13 +68,14 @@ export const FORM_RUNTIME_JS = `(() => {
     setState(form, 'pending', 'Sending...');
 
     try {
+      const values = collectValues(form);
       const challenge = await takeChallenge(form);
       await postJson('/_instatic/form/submit', {
         pageId,
         formId,
         token: challenge.token,
         challenge: challenge.challenge,
-        values: collectValues(form),
+        values,
       });
 
       const redirectUrl = form.getAttribute('data-instatic-success-redirect') || '';
@@ -170,16 +173,20 @@ export const FORM_RUNTIME_JS = `(() => {
   }
 
   function collectValues(form) {
+    // FormData omits unnamed controls, but selecting a file must never look successful.
+    if (Array.from(form.elements).some((control) => control.type === 'file')) {
+      throw new Error(${JSON.stringify(UNSUPPORTED_FORM_FILE_MESSAGE)});
+    }
     const values = {};
     const data = new FormData(form);
     for (const [name, value] of data.entries()) {
-      const normalized = typeof value === 'string' ? value : value.name;
+      if (typeof value !== 'string') throw new Error(${JSON.stringify(UNSUPPORTED_FORM_FILE_MESSAGE)});
       if (values[name] === undefined) {
-        values[name] = normalized;
+        values[name] = value;
       } else if (Array.isArray(values[name])) {
-        values[name].push(normalized);
+        values[name].push(value);
       } else {
-        values[name] = [values[name], normalized];
+        values[name] = [values[name], value];
       }
     }
     return values;

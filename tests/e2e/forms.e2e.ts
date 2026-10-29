@@ -8,6 +8,7 @@ import {
   login,
   openSiteEditor,
   openSitePanel,
+  openLayersPanel,
   publishDraft,
   setPropValue,
 } from './helpers'
@@ -18,6 +19,67 @@ import {
  */
 test.describe('forms', () => {
   test.use({ storageState: ANONYMOUS_STATE })
+
+  test('never reports filename-only file submissions as successful (FORM-003)', async ({ page, browser }) => {
+    await login(page)
+    const tableName = 'File submission evidence'
+    await createCustomDataTable(page, tableName)
+    const { slug } = await openBlankPage(page, 'File submission')
+    await insertModuleViaPicker(page, 'base.form')
+    await page.getByLabel('Form ID').fill('file-submission')
+    await selectLabeledOption(page, 'Target table', tableName)
+    await setPropValue(page, 'minSubmitSeconds', '0')
+    // Custom forms may use file controls; switching to CMS must not silently lose them.
+    await page.getByTestId('form-mode').getByRole('button', { name: 'Custom action' }).click()
+    await insertModuleViaPicker(page, 'base.input')
+    await setPropValue(page, 'fieldId', 'name')
+    await setPropValue(page, 'name', 'name')
+    await selectPropertyOption(page, 'inputType', 'file')
+    await insertModuleViaPicker(page, 'base.submit')
+    await setPropValue(page, 'label', 'Send file')
+    await openLayersPanel(page)
+    await page.getByRole('tree', { name: 'Page element tree' }).getByRole('treeitem', { name: 'Form', exact: true }).click()
+    await insertModuleViaPicker(page, 'base.form-message')
+    await openLayersPanel(page)
+    await page.getByRole('tree', { name: 'Page element tree' }).getByRole('treeitem', { name: 'Form', exact: true }).click()
+    await page.getByTestId('form-mode').getByRole('button', { name: 'CMS-native' }).click()
+    await publishDraft(page)
+
+    const visitor = await browser.newPage()
+    try {
+      await visitor.goto(`${PUBLIC_BASE_URL}/${slug}`)
+      await visitor.locator('input[type="file"]').setInputFiles({
+        name: 'invoice.pdf', mimeType: 'application/pdf', buffer: Buffer.from('%PDF-1.4\nActual invoice bytes\n%%EOF'),
+      })
+      await visitor.getByRole('button', { name: 'Send file' }).click()
+      const form = visitor.locator('form[data-instatic-form-id="file-submission"]')
+      await expect(form).toHaveAttribute('data-instatic-form-state', /success|error/)
+      await visitor.screenshot({ path: '.tmp/evidence/file-submission.png', fullPage: true })
+      await expect(form).toHaveAttribute('data-instatic-form-state', 'error')
+      await expect(visitor.getByText('File uploads are not supported by CMS forms.')).toBeVisible()
+      await expect(visitor.locator('input[type="file"]')).toHaveJSProperty('value', 'C:\\fakepath\\invoice.pdf')
+
+      // CMS authors cannot add another file control, and ordinary fields still submit.
+      const formRow = page.getByRole('tree', { name: 'Page element tree' }).getByRole('treeitem', { name: 'Form', exact: true })
+      if ((await formRow.getAttribute('aria-expanded')) !== 'true') await formRow.click()
+      await page.getByRole('tree', { name: 'Page element tree' }).getByRole('treeitem', { name: 'Input', exact: true }).click()
+      await expect(page.getByRole('alert').filter({ hasText: 'File uploads are not supported by CMS forms.' })).toBeVisible()
+      await page.locator('#ctrl-inputType').click()
+      await expect(page.getByRole('option', { name: 'file', exact: true })).toHaveCount(0)
+      await page.getByRole('option', { name: 'text', exact: true }).click()
+      await publishDraft(page)
+      await visitor.reload()
+      await visitor.locator('input[name="name"]').fill('Normal text submission')
+      await visitor.getByRole('button', { name: 'Send file' }).click()
+      await expect(form).toHaveAttribute('data-instatic-form-state', 'success')
+      await page.goto('/admin/data')
+      await openCustomTable(page, tableName)
+      await expect(page.getByRole('row').filter({ hasText: 'invoice.pdf' })).toHaveCount(0)
+      await expect(page.getByRole('row').filter({ hasText: 'Normal text submission' })).toBeVisible()
+    } finally {
+      await visitor.close()
+    }
+  })
 
   test('publishes a CMS-native form and stores a visitor submission (FORM-001, FORM-002)', async ({
     page,

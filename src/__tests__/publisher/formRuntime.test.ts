@@ -96,6 +96,15 @@ describe('form runtime browser behaviour', () => {
       expect(calls[1].payload.pageId).toBe('page-home')
       expect(calls[1].payload.token).toBe('prefetched-token')
       expect(calls[1].payload.challenge).toBe('prefetched-challenge')
+
+      // An unnamed file is omitted from FormData, but must still block CMS submission.
+      form!.innerHTML = `<input type="file"><p data-instatic-form-message="status"></p>`
+      const submissions = calls.filter((call) => call.path === '/_instatic/form/submit').length
+      form!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+      expect(form!.getAttribute('data-instatic-form-state')).toBe('error')
+      expect(form!.textContent).toContain('File uploads are not supported by CMS forms.')
+      await flushRuntime()
+      expect(calls.filter((call) => call.path === '/_instatic/form/submit')).toHaveLength(submissions)
     } finally {
       ;(globalThis as Record<string, unknown>).fetch = originalFetch
       document.body.innerHTML = ''

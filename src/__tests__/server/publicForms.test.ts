@@ -14,6 +14,31 @@ import { hookBus } from '@core/plugins/hookBus'
 import { createFakeDb } from './dbTestFake'
 import type { PublishedPageSnapshot } from '../../../server/repositories/publish'
 
+it('rejects filename-only file submissions without creating a row', async () => {
+  resetPublicFormChallenges()
+  const snapshot = makeSnapshot()
+  snapshot.site.pages[0]!.nodes.input!.props.inputType = 'file'
+  const { db, createdRows } = makeDb({
+    snapshot,
+    tableRows: { newsletter_submissions: {
+      ...newsletterTableRow,
+      fields_json: [{ id: 'email', label: 'Attachment', type: 'media', allowMultiple: false }],
+    } },
+  })
+  const challenge = issuePublicFormChallenge({ pageId: 'page-home', formId: 'newsletter' })
+  const response = await handlePublicFormRequest(
+    makeRequest('/_instatic/form/submit', {
+      formId: 'newsletter', pageId: 'page-home', token: challenge.token,
+      challenge: challenge.challenge, values: { email: 'invoice.pdf' },
+    }), db, new URL('http://cms.test/_instatic/form/submit'),
+  )
+  expect(response?.status).toBe(400)
+  expect(await readJson(response!)).toMatchObject({ errors: [{
+    fieldId: 'email', code: 'unsupported_file', message: 'File uploads are not supported by CMS forms.',
+  }] })
+  expect(createdRows).toHaveLength(0)
+})
+
 function makeRequest(
   path: string,
   body: unknown,

@@ -12,6 +12,7 @@ import type {
 
 const DEFAULT_MAX_FIELDS = 100
 const DEFAULT_MAX_STRING_LENGTH = 10_000
+export const UNSUPPORTED_FORM_FILE_MESSAGE = 'File uploads are not supported by CMS forms.'
 
 type FormValidationResult =
   | { ok: true; cells: Record<string, unknown> }
@@ -33,7 +34,13 @@ export function validateFormSubmission(input: {
   const fieldById = new Map(input.table.fields.map((field) => [field.id, field]))
   for (const control of input.controls) {
     controlByName.set(control.name ?? control.fieldId, control)
+    if (control.inputType?.toLowerCase() === 'file') {
+      errors.push({ fieldId: control.fieldId, code: 'unsupported_file', message: UNSUPPORTED_FORM_FILE_MESSAGE })
+    } else if (fieldById.get(control.fieldId)?.type === 'media') {
+      errors.push({ fieldId: control.fieldId, code: 'unsupported_field', message: 'Media fields cannot be submitted by CMS forms.' })
+    }
   }
+  if (errors.length > 0) return { ok: false, errors }
 
   const entries = Object.entries(input.values)
   if (entries.length > maxFields) {
@@ -138,13 +145,6 @@ function coerceFieldValue(field: DataField, value: unknown): CoerceResult {
       }
       return { ok: true, value: optionIds }
     }
-    case 'media':
-      if (field.allowMultiple) {
-        return Array.isArray(value)
-          ? { ok: true, value: value.map(String) }
-          : { ok: true, value: [String(value)] }
-      }
-      return { ok: true, value: String(value) }
     case 'relation':
       if (field.allowMultiple) {
         return Array.isArray(value)
@@ -155,6 +155,7 @@ function coerceFieldValue(field: DataField, value: unknown): CoerceResult {
     case 'pageTree':
     case 'fieldSchema':
     case 'repeater':
+    case 'media':
       return { ok: false, code: 'unsupported_field', message: 'This field cannot be submitted by a form.' }
   }
 }
