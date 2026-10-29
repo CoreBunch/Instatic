@@ -73,3 +73,16 @@ describe('base.image sizes resolution', () => {
     expect(m![1]).not.toContain('.png')
   })
 })
+
+describe('base.image src', () => {
+  it('uses the resolved asset path when src holds a bound media id', () => {
+    const html = renderImage({ src: 'asset-id-123' })
+    expect(html).toContain('src="/uploads/hero.png"')
+    expect(html).not.toContain('asset-id-123')
+  })
+
+  it('keeps an authored URL when no asset resolved', () => {
+    const html = renderImage({ src: 'https://example.com/a.jpg', _resolvedMediaByKey: undefined })
+    expect(html).toContain('src="https://example.com/a.jpg"')
+  })
+})

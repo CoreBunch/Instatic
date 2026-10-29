@@ -24,10 +24,10 @@ import {
   withoutCellFilter,
 } from '@core/loops/cellFilter'
 import type { LoopEntitySource } from '@core/loops/types'
-import type { DataRow, DataTableListItem } from '@core/data/schemas'
+import type { DataField, DataRow, DataTableListItem, RepeaterItemField } from '@core/data/schemas'
 import type { PropertyControl, PropertySchema } from '@core/module-engine'
 import { listCmsDataRows, listCmsDataTables } from '@core/persistence/cmsData'
-import { getAncestors, type Page } from '@core/page-tree'
+import { getAncestors, type Page, type PageNode } from '@core/page-tree'
 import { PropertyControlRenderer } from '@site/property-controls/PropertyControlRenderer'
 import { CUSTOM_HTML_TAG_VALUE } from '@core/htmlAttributes'
 import { customHtmlTagControl, htmlTagControl } from '@modules/base/utils/htmlTag'
@@ -348,34 +348,40 @@ function entryCollectionFieldOptions(
 ): Array<{ label: string; value: string }> {
   if (!activePage) return []
 
-  const enclosingDataRowsLoop = [...getAncestors(activePage, nodeId)]
+  // Nearest loop first: the closest enclosing loop decides what "the current
+  // entry" is for this one.
+  const enclosingLoops = [...getAncestors(activePage, nodeId)]
     .reverse()
-    .find((node) => node.moduleId === 'base.loop' && node.props.sourceId === 'data.rows')
-  const filters = enclosingDataRowsLoop?.props.filters
-  const enclosingTableId =
-    filters && typeof filters === 'object' && !Array.isArray(filters)
-      ? (filters as Record<string, unknown>).tableId
-      : null
+    .filter((node) => node.moduleId === 'base.loop')
+  const nearestLoop = enclosingLoops[0]
+  const nearestFilters = loopFilters(nearestLoop)
 
-  let contextTables: DataTableListItem[]
-  if (typeof enclosingTableId === 'string' && enclosingTableId) {
-    contextTables = tables.filter((table) => table.id === enclosingTableId)
-  } else if (activePage.template?.target.kind === 'postTypes') {
-    const slugs = new Set(activePage.template.target.tableSlugs)
-    contextTables = tables.filter((table) => slugs.has(table.slug))
-  } else {
-    contextTables = []
+  // Inside a loop over a repeater, the current entry is one repeater item,
+  // so the choices are that repeater's own multi-value sub-fields.
+  if (nearestLoop?.props.sourceId === ENTRY_FIELD_SOURCE_ID) {
+    const repeaterFieldId = nearestFilters[ENTRY_FIELD_FILTER_KEY]
+    const outerTables = contextTablesFor(activePage, enclosingLoops.slice(1), tables)
+    const options: Array<{ label: string; value: string }> = []
+    const seen = new Set<string>()
+    for (const table of outerTables) {
+      const repeater = table.fields.find((field) => field.id === repeaterFieldId)
+      if (repeater?.type !== 'repeater') continue
+      for (const field of repeater.fields) {
+        if (!isCollectionField(field) || seen.has(field.id)) continue
+        seen.add(field.id)
+        options.push({ label: field.label, value: field.id })
+      }
+    }
+    return options
   }
 
+  const contextTables = contextTablesFor(activePage, enclosingLoops, tables)
   const showTableName = contextTables.length > 1
   const seen = new Set<string>()
   const options: Array<{ label: string; value: string }> = []
   for (const table of contextTables) {
     for (const field of table.fields) {
-      const isCollection =
-        field.type === 'multiSelect' ||
-        ((field.type === 'media' || field.type === 'relation') && field.allowMultiple === true)
-      if (!isCollection || seen.has(field.id)) continue
+      if (!isCollectionField(field) || seen.has(field.id)) continue
       seen.add(field.id)
       options.push({
         label: showTableName ? `${table.name} → ${field.label}` : field.label,
@@ -384,4 +390,41 @@ function entryCollectionFieldOptions(
     }
   }
   return options
+}
+
+/** Fields an `entry.field` loop can iterate: multi-value fields and repeaters. */
+function isCollectionField(field: DataField | RepeaterItemField): boolean {
+  return (
+    field.type === 'multiSelect' ||
+    field.type === 'repeater' ||
+    ((field.type === 'media' || field.type === 'relation') && field.allowMultiple === true)
+  )
+}
+
+function loopFilters(loop: PageNode | undefined): Record<string, unknown> {
+  const filters = loop?.props.filters
+  return filters && typeof filters === 'object' && !Array.isArray(filters)
+    ? (filters as Record<string, unknown>)
+    : {}
+}
+
+/**
+ * The tables whose rows can be the current entry: the nearest enclosing
+ * `data.rows` loop's table, else the post types the template targets.
+ */
+function contextTablesFor(
+  activePage: Page,
+  enclosingLoops: PageNode[],
+  tables: DataTableListItem[],
+): DataTableListItem[] {
+  const dataRowsLoop = enclosingLoops.find((node) => node.props.sourceId === 'data.rows')
+  const enclosingTableId = loopFilters(dataRowsLoop).tableId
+  if (typeof enclosingTableId === 'string' && enclosingTableId) {
+    return tables.filter((table) => table.id === enclosingTableId)
+  }
+  if (activePage.template?.target.kind === 'postTypes') {
+    const slugs = new Set(activePage.template.target.tableSlugs)
+    return tables.filter((table) => slugs.has(table.slug))
+  }
+  return []
 }
