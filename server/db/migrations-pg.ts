@@ -1370,4 +1370,33 @@ export const pgMigrations: Migration[] = [
       alter table data_tables add column created_by_plugin_id text;
     `,
   },
+  {
+    // Existing avatars predate anything writing `media_usage_refs`, so the
+    // first build that warns before a delete would still have said nothing
+    // about the avatar already set — the one case the feature exists for.
+    //
+    // Idempotent by construction: `not exists` on the same key
+    // `setMediaUsageRef` writes, so re-running inserts nothing and the row a
+    // later avatar change moves is the row this created. Re-running is also
+    // what makes the id itself safe to change: an installation that recorded
+    // it under another number runs it again and inserts nothing.
+    //
+    // `032` follows `031_data_tables_created_by_plugin` (#335, v0.0.21).
+    // Being idempotent, it can still be renumbered if an id ahead of it is
+    // ever claimed first.
+    id: '032_backfill_avatar_usage_refs',
+    sql: `
+      insert into media_usage_refs (asset_id, ref_kind, ref_id, ref_path)
+      select u.avatar_media_id, 'user.avatar', u.id, ''
+        from users u
+       where u.avatar_media_id is not null
+         and not exists (
+           select 1 from media_usage_refs r
+            where r.asset_id = u.avatar_media_id
+              and r.ref_kind = 'user.avatar'
+              and r.ref_id = u.id
+              and r.ref_path = ''
+         );
+    `,
+  },
 ]
