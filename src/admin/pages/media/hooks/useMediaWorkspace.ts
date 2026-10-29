@@ -24,6 +24,7 @@ import {
   listCmsMediaAssets,
   listCmsMediaFolders,
   normalizeCmsMediaAsset,
+  listCmsMediaUsage,
   purgeCmsMediaAsset,
   renameCmsMediaAsset,
   replaceCmsMediaAssetFile,
@@ -33,6 +34,7 @@ import {
   updateCmsMediaFolder,
   type CmsMediaAsset,
   type CmsMediaFolder,
+  type CmsMediaUsageRef,
   type UpdateCmsMediaAssetInput,
 } from '@core/persistence/cmsMedia'
 import { buildFolderTree, type MediaFolderNode } from '../utils/folderTree'
@@ -107,6 +109,11 @@ export interface UseMediaWorkspaceResult extends WorkspaceLoadState {
   trashAsset: (assetId: string) => Promise<void>
   restoreAsset: (assetId: string) => Promise<CmsMediaAsset | null>
   purgeAsset: (assetId: string) => Promise<void>
+  /**
+   * Which of these assets something still depends on. Asked before a
+   * destructive action so the confirmation can name what breaks.
+   */
+  lookupUsage: (assetIds: string[]) => Promise<CmsMediaUsageRef[]>
   setAssetFolders: (
     assetId: string,
     input: { add?: string[]; remove?: string[] },
@@ -417,6 +424,11 @@ export function useMediaWorkspace(): UseMediaWorkspaceResult {
       return null
     })
 
+  // Failure is absorbed by `resolveUsageWarning`, the one door every
+  // confirmation goes through — see the note there.
+  const lookupUsage = (assetIds: string[]): Promise<CmsMediaUsageRef[]> =>
+    listCmsMediaUsage(assetIds)
+
   const purgeAsset = async (assetId: string): Promise<void> => {
     await assetMut('Could not delete asset permanently', async () => {
       await purgeCmsMediaAsset(assetId)
@@ -549,6 +561,7 @@ export function useMediaWorkspace(): UseMediaWorkspaceResult {
     trashAsset,
     restoreAsset,
     purgeAsset,
+    lookupUsage,
     setAssetFolders,
     moveAssetsToFolder,
     createFolder,
