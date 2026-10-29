@@ -60,6 +60,7 @@ const ALLOWLIST: ReadonlyMap<string, string> = new Map([
   // for imported media. Called by both import.ts and importArchive.ts, which
   // gate their routes via requireCapability; this file contains no request
   // handler itself.
+  ['importApply.ts', 'Bundle transaction helper; no request handler. import.ts and importArchive.ts enforce import, shell, publication and step-up gates before calling it.'],
   ['importMediaValidation.ts', 'Validation/sanitisation helper called by import.ts + importArchive.ts (which gate via requireCapability); no handlers.'],
   ['mediaUploadDispatch.ts', 'Storage adapter dispatch called by gated parent handlers.'],
   ['mediaUploadExecutor.ts', 'Filesystem write helper called by gated parent handlers.'],

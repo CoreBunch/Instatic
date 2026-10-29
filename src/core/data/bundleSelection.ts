@@ -1,3 +1,4 @@
+import { selectBundlePublication } from './bundlePublication'
 import { parseValue } from '@core/utils/typeboxHelpers'
 import {
   SiteBundleSchema,
@@ -65,6 +66,7 @@ export function filterSiteBundleForImportSelection(
     ...(selection.includeSite && bundle.site ? { site: bundle.site } : {}),
     tables,
     rows,
+    ...(bundle.publication ? { publication: selectBundlePublication(bundle.publication, selectedRowIds) } : {}),
     ...(media ? { media } : {}),
     ...(selection.includeMediaFolders && bundle.mediaFolders ? { mediaFolders: bundle.mediaFolders } : {}),
     ...(redirects ? { redirects } : {}),
