@@ -31,7 +31,7 @@
  * original bytes and metadata; the publisher falls back to the original until a
  * later upload/replace path regenerates variants.
  */
-
+import { BundlePublicationSchema } from './bundlePublication'
 import { Type, type Static } from '@core/utils/typeboxHelpers'
 import { BRANCH_ID_PATTERN } from '@core/branches'
 import { DataTableSchema, DataRowSchema, DataTableKindSchema } from './schemas'
@@ -376,6 +376,7 @@ export const SiteBundleSchema = Type.Object({
   tables: Type.Array(DataTableSchema),
   /** All (or selected) non-deleted data rows. */
   rows: Type.Array(DataRowSchema),
+  publication: Type.Optional(BundlePublicationSchema),
   /** Non-deleted media assets with embedded bytes (optional — may be omitted to keep bundle small). */
   media: Type.Optional(Type.Array(MediaAssetExportSchema)),
   /** Media-library folder tree (optional). Asset membership rides on `media[].folderIds`. */
