@@ -17,7 +17,7 @@
  *     transparently picks up the new variant list.
  */
 
-import type { Page, SiteDocument } from '@core/page-tree'
+import type { Page, PageNode, SiteDocument } from '@core/page-tree'
 import type { IModuleRegistry } from '@core/module-engine'
 import {
   collectNodeBackgroundImagePaths,
@@ -25,6 +25,7 @@ import {
   type ResolvedLoopRenderData,
 } from '@core/publisher'
 import type { TemplateRenderDataContext } from '@core/templates/dynamicBindings'
+import { walkFieldPath } from '@core/templates/tokenInterpolation'
 import { walkRenderTree } from './renderTreeWalk'
 import type { DbClient } from '../db/client'
 import type { MediaAsset } from '../repositories/media'
@@ -41,17 +42,28 @@ type MediaAssetMap = Map<string, MediaAsset>
 interface MediaPrefetchOptions {
   templateContext?: TemplateRenderDataContext
   loopData?: ReadonlyMap<string, ResolvedLoopRenderData>
+  /**
+   * Limit the tree walk to a subtree — the hole and loop fragment endpoints
+   * pass their fragment root so only assets that fragment can reference are
+   * fetched. Defaults to the page root (mirrors `prefetchLoopData`).
+   */
+  rootNodeId?: string
 }
 
 /**
  * Collect every `/uploads/...` path referenced by an image/media-typed prop
  * across the page tree.
  */
-function collectMediaPaths(page: Page, site: SiteDocument, registry: IModuleRegistry): Set<string> {
+function collectMediaPaths(
+  page: Page,
+  site: SiteDocument,
+  registry: IModuleRegistry,
+  rootNodeId: string,
+): Set<string> {
   const paths = new Set<string>()
   // Descend into referenced VC definition trees so an image/media prop inside a
   // VC body is resolved too (ISS-022).
-  walkRenderTree(page.nodes, page.rootNodeId, site, (node) => {
+  walkRenderTree(page.nodes, rootNodeId, site, (node) => {
     const def = registry.get(node.moduleId)
     if (!def) return
     collectNodeBackgroundImagePaths(node, paths)
@@ -85,8 +97,12 @@ export async function prefetchMediaAssets(
   options: MediaPrefetchOptions = {},
 ): Promise<MediaAssetMap> {
   const map = new Map<string, MediaAsset>()
-  const paths = collectMediaPaths(page, site, registry)
+  const rootNodeId = options.rootNodeId ?? page.rootNodeId
+  const paths = collectMediaPaths(page, site, registry, rootNodeId)
   const entryReferences = collectEntryMediaReferences(options)
+  for (const reference of collectMediaBindingReferences(page, site, rootNodeId, options)) {
+    entryReferences.add(reference)
+  }
   if (paths.size === 0 && entryReferences.size === 0) return map
 
   // `collectMediaPaths` and `collectEntryMediaReferences` both return Sets,
@@ -144,7 +160,16 @@ export async function prefetchMediaAssets(
   // stored token so the renderer's O(1) lookup still works; the VALUE is
   // rewritten so transformer plugins (passive CDN, image-CDN) take effect
   // on the published page AND the editor preview iframe in one place.
-  return materializeAssetMapForClient(map)
+  const materialized = await materializeAssetMapForClient(map)
+  // ALSO key each asset by its (possibly transformed) publicPath: a media
+  // binding resolves an asset id to that URL, and `attachResolvedMediaByKey`
+  // looks the resolved prop value back up in this map — without this key the
+  // enrichment (srcset / alt / dimensions) would miss whenever a transformer
+  // rewrote the URL.
+  for (const asset of [...new Set(materialized.values())]) {
+    materialized.set(asset.publicPath, asset)
+  }
+  return materialized
 }
 
 /**
@@ -195,6 +220,65 @@ function collectEntryMediaReferences(options: MediaPrefetchOptions): Set<string>
   }
   for (const data of options.loopData?.values() ?? []) {
     for (const item of data.items) visit(item.fields, false)
+  }
+  return references
+}
+
+/**
+ * Bare asset ids referenced by `format: 'media'` bindings.
+ *
+ * A CUSTOM media cell stores the asset id as a scalar string — no `/uploads/`
+ * prefix, not inside an array — so neither collector above can see it. The
+ * bindings tell us exactly which entry fields hold media references; the
+ * entry stack and the pre-fetched loop items hold the values. Collecting the
+ * two together (values of media-bound fields across every candidate frame)
+ * puts the ids into the batched id-or-path query, which is what lets
+ * `resolveBindingValue` translate id → public path during the render walk.
+ *
+ * Values that already look like a path or URL are skipped — the generic
+ * collectors and the render pipeline handle those without a lookup.
+ */
+function collectMediaBindingReferences(
+  page: Page,
+  site: SiteDocument,
+  rootNodeId: string,
+  options: MediaPrefetchOptions,
+): Set<string> {
+  const fieldPaths = new Set<string>()
+  walkRenderTree(page.nodes, rootNodeId, site, (node) => {
+    // Page trees carry PageNode (BaseNode + dynamicBindings); VC definition
+    // trees carry plain BaseNode. Reading through the PageNode view of the
+    // same object yields `undefined` for VC nodes, which is exactly right.
+    const bindings = (node as PageNode).dynamicBindings
+    if (!bindings) return
+    for (const binding of Object.values(bindings)) {
+      if (binding.format !== 'media') continue
+      if (binding.source !== 'currentEntry' && binding.source !== 'parentEntry') continue
+      fieldPaths.add(binding.field)
+    }
+  })
+
+  const references = new Set<string>()
+  if (fieldPaths.size === 0) return references
+
+  const collectFrom = (fields: Record<string, unknown>): void => {
+    for (const fieldPath of fieldPaths) {
+      const value = walkFieldPath(fields, fieldPath)
+      if (
+        typeof value === 'string' &&
+        value !== '' &&
+        !value.includes('/') &&
+        !value.includes(':')
+      ) {
+        references.add(value)
+      }
+    }
+  }
+  for (const entry of options.templateContext?.entryStack ?? []) {
+    collectFrom(entry.fields)
+  }
+  for (const data of options.loopData?.values() ?? []) {
+    for (const item of data.items) collectFrom(item.fields)
   }
   return references
 }

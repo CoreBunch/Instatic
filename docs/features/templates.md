@@ -119,7 +119,7 @@ Result: one merged `Page` consumed by `publishPage` unchanged — one CSS collec
 
 - **Tag:** the outlet renders as an author-chosen semantic element (`tag` / `customTag` props, default `<main>`), sharing `htmlTagControl` / `customHtmlTagControl` with `base.container` / `base.loop`. The Properties panel exposes the tag dropdown.
 - **Render:** emits `<{tag} data-instatic-content-region>{props.html}</{tag}>`. When `props.html` is empty, the empty element is the live-edit anchor for the Content workspace.
-- **Binding (entry route):** the seed attaches `dynamicBindings: { html: { source: 'currentEntry', field: 'body', format: 'html' } }` to the outlet node so the entry's body flows in at render time. The `html` prop is a binding target ONLY — it carries no panel control (you never hand-edit it). This keeps the Content workspace's Tiptap mount working via the `data-instatic-content-region` marker.
+- **Binding (entry route):** every outlet carries an IMPLICIT `html: { source: 'currentEntry', field: 'body', format: 'html' }` binding (applied by `effectiveNodeBindings`, never persisted), so even a hand-dropped outlet renders the entry body. A **persisted** `html` binding on the node wins over the implicit default — authors and plugins can point the outlet at any rich field (e.g. a custom table's richText cell) instead of `body`. The `html` prop is a binding target ONLY — it carries no panel control (you never hand-edit it). This keeps the Content workspace's Tiptap mount working via the `data-instatic-content-region` marker.
 - **Splice (page route):** `composeTemplateChain` removes the `base.outlet` node and inserts the page's content in its place before `publishPage` is called. No outlet node reaches the renderer on page routes.
 - **Canvas preview:** `OutletEditor` renders the matched content READ-ONLY so the author sees what flows in — the first non-template page (`everywhere` target) via `ReadOnlyNodeTree`, or the entry body (`postTypes` target, resolved into `props.html`). It carries the editor wrapper bag so the outlet has a proper selection overlay; an empty match falls back to the shared placeholder.
 
@@ -201,6 +201,7 @@ interface TemplateRenderDataContext {
   site?:        SiteFrame       // site name, settings, breakpoints
   route?:       RouteFrame      // URL path, slug, segments, and query params
   entryStack:   LoopItem[]      // pushed by loops + entry route render
+  media?:       ReadonlyMap<string, TemplateMediaAsset>  // asset id + path → { publicPath }
 }
 ```
 
@@ -217,6 +218,17 @@ See the "Dynamic bindings" section below for the full source table.
 | `site`         | `ctx.site`                | Anywhere — site name, primary color                     |
 | `route`        | `ctx.route`               | URL-driven (`route.segments`, `route.slug`, `route.query.*`) |
 | `page`         | `ctx.page`                | Current page metadata                                   |
+
+### Binding formats
+
+A binding's optional `format` tag tells the resolver how to coerce the raw field value:
+
+- **`plain`** (and unset) — the value passes through as-is; the publisher escapes it like any string prop.
+- **`html`** — the value renders through the markdown pipeline (tokens interpolated first) when the binding targets `body`/`bodyMarkdown` OR the destination prop is richtext-typed (`html`, `*richtext`). richText cells stored as HTML survive unchanged — block HTML passes through the GFM renderer verbatim — so one path serves both storage formats.
+- **`url`** — the value is expected to be a URL; emission runs the publisher's URL safety checks.
+- **`media`** — the value references a media asset. Values already carrying a path or URL (`featuredMediaPath`, external URLs) pass through; a **bare asset id** (what a custom media cell stores) is translated to the asset's served URL through `ctx.media`. A reference that cannot be resolved counts as "missing", so the binding's fallback strategy applies instead of the raw id leaking into `src`.
+
+`ctx.media` is attached per surface: `publishPage` wires in the server's `prefetchMediaAssets` map (which also collects the bare ids referenced by `format: 'media'` bindings), the hole/loop fragment endpoints build their own, and the canvas attaches the admin media-library cache (`useCmsMediaAssetLookup`). It is a live `Map` and never travels the runtime-preview JSON boundary — the server strips whatever arrived on the wire and substitutes its own prefetch.
 
 ---
 
