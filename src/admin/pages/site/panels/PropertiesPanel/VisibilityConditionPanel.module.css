@@ -1,0 +1,28 @@
+/* VisibilityConditionPanel — node-level editor for the visibleWhen condition. */
+
+.panel {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-s);
+    padding: var(--space-l) var(--space-xl);
+}
+
+.row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr) minmax(0, 1fr);
+    gap: var(--space-xs);
+    align-items: center;
+}
+
+.hint,
+.summary {
+    margin: 0;
+    font-size: var(--text-xs);
+    line-height: 1.5;
+    color: var(--text-muted);
+}
+
+.summary strong {
+    color: var(--text);
+    font-weight: 500;
+}

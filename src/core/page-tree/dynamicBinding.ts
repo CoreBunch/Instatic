@@ -59,6 +59,68 @@ export const DynamicPropBindingSchema = Type.Object({
 export type DynamicPropBinding = Static<typeof DynamicPropBindingSchema>
 
 // ---------------------------------------------------------------------------
+// VisibilityCondition
+// ---------------------------------------------------------------------------
+
+/**
+ * Show or hide a node based on the data it is rendered against.
+ *
+ * `hidden` on the node is the author's own switch and never changes; this is
+ * the per-render one. Both are checked in the same place, and either one
+ * hiding a node removes it and its subtree from the output.
+ *
+ * The point is a list whose items are not uniform. Two nodes sit in one card —
+ * a video player and a "Coming soon" caption — and exactly one belongs on any
+ * given row, decided by whether that row's video field is filled. Without this
+ * the card can only be built one way, so every row gets a player (blank for the
+ * rows with no video) or every row gets the caption.
+ *
+ * `isSet` is true when the field resolves to something a reader would see: a
+ * non-blank string, a non-empty list, any number including zero, `true`. It is
+ * false for absent, null, `""`, whitespace, `[]`, `{}` and `false` — an unset
+ * checkbox reads as unset, which is what an author picking "is set" means.
+ *
+ * The source is the same set the prop bindings use, so `currentEntry` inside a
+ * loop is that iteration's row and `page` / `site` / `route` work on any page.
+ * Deliberately only two tests: comparisons against a value need an operand and
+ * a type model, and every case met so far is "does this row have one".
+ */
+export const VisibilityConditionSchema = Type.Object({
+  source: DynamicBindingSourceSchema,
+  field: Type.String({ minLength: 1 }),
+  test: Type.Union([Type.Literal('isSet'), Type.Literal('isNotSet')]),
+})
+
+export type VisibilityCondition = Static<typeof VisibilityConditionSchema>
+
+/** Parse a VisibilityCondition; anything malformed becomes `undefined`. */
+export function parseVisibilityCondition(raw: unknown): VisibilityCondition | undefined {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return undefined
+  const r = raw as Record<string, unknown>
+  const VALID_SOURCES: DynamicBindingSource[] = ['currentEntry', 'parentEntry', 'page', 'site', 'route']
+  if (!VALID_SOURCES.includes(r.source as DynamicBindingSource)) return undefined
+  if (typeof r.field !== 'string' || r.field.length === 0) return undefined
+  if (r.test !== 'isSet' && r.test !== 'isNotSet') return undefined
+  return { source: r.source as DynamicBindingSource, field: r.field, test: r.test }
+}
+
+/**
+ * Does this value count as "set"?
+ *
+ * Exported because the publisher and the editor canvas must agree exactly —
+ * a node that vanishes on the published page while staying put on the canvas
+ * is worse than either behaviour alone.
+ */
+export function isValueSet(value: unknown): boolean {
+  if (value === undefined || value === null) return false
+  if (typeof value === 'string') return value.trim().length > 0
+  if (typeof value === 'boolean') return value
+  if (Array.isArray(value)) return value.length > 0
+  if (typeof value === 'object') return Object.keys(value as object).length > 0
+  return true
+}
+
+// ---------------------------------------------------------------------------
 // Tolerant parsing
 // ---------------------------------------------------------------------------
 
