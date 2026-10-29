@@ -287,6 +287,7 @@ MEDIA-007 note: unsafe SVG upload sanitization and public `/uploads` serving are
 | CONTENT-008 | P1 | ✅ | Custom fields | Edit custom post fields and use them in Site templates | Logged in | Data Posts fields → Content settings → Site binding picker → publish post route | Custom field appears in the Content entry settings panel, persists after reload, is offered as a scoped currentEntry binding, resolves in canvas preview, and renders on the public post route | stale table metadata, unresolved custom tokens, save/publish ordering |
 | CONTENT-009 | P1 | ✅ | Entries | Keep the stored title in the sidebar when an entries list load resolves after a create | Logged in | Content page → New post while the entries list request is still in flight | Sidebar row shows the stored "Untitled" while the editor keeps its blank title field | request ordering, editor-only row views leaking into the list |
 | CONTENT-010 | P1 | ✅ | Entries | Publish an entry whose SEO title and SEO description differ from its title | Posts entry template published | Content settings panel → SEO title / SEO description → publish post → public `/posts/<slug>` | Served `<head>` carries the authored `<title>` and `<meta name="description">` while the on-page H1 keeps the entry's own title | site-level Meta Title shadowing the entry, SEO override leaking into `{page.title}`, blank SEO field overriding with an empty value |
+| CONTENT-011 | P1 | ✅ | Entries | Edit and republish imported HTML with an uploaded image | Published Posts entry template and imported HTML post | Content body → append text → Publish post → anonymous public route | Image URL and stored HTML remain intact; original image still loads | Underscores in paths and attributes, raw HTML escaping, broken published media |
 
 CONTENT-003 note: slash-menu Heading 2 and Data token placeholder insertion with save/reload persistence are automated in `content.e2e.ts`; media picker insertion and sanitization edge cases remain lower-level or future browser coverage.
 
@@ -301,6 +302,8 @@ CONTENT-008 note: `content.e2e.ts` adds a custom text field to the system Posts 
 CONTENT-009 note: `content-create-race.e2e.ts` holds the first entries-list GET until the create POST has landed, forcing the ordering that previously merged the editor's blank-title view into the sidebar and rendered a nameless row. Verified to fail without the fix and pass with it; `contentAdmin.test.tsx` pins the same path at unit level.
 
 CONTENT-010 note: `content-seo-meta.e2e.ts` authors and publishes a Posts entry template, fills the Content settings panel's SEO title and SEO description with values distinct from the entry title, publishes the post, and reads the served HTML on the anonymous public route. Verified to fail on the pre-fix build (`<title>` showed the plain entry title and no description tag was emitted). Entry-vs-site-setting precedence and the `{page.title}` binding guard are pinned at render level in `publicRendering.test.ts`.
+
+CONTENT-011 note: `content-html-roundtrip.e2e.ts` creates and publishes a Posts template, seeds an imported HTML post with a real local image upload, edits its body through the Content workspace, republishes, and checks both the stored source and anonymous image URL/natural width. The unchanged test fails before the fix because the image loses its source URL.
 
 ## AI Workspace
 

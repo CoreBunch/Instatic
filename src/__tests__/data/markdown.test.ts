@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'bun:test'
+import { sanitizeRichtext, RICHTEXT_CONTENT_CONFIG } from '@core/sanitize'
 import {
   firstMediaPathFromMarkdown,
   markdownToProseMirrorDoc,
@@ -153,4 +154,49 @@ describe('firstMediaPathFromMarkdown', () => {
   it('returns null when no media is present', () => {
     expect(firstMediaPathFromMarkdown('just text')).toBeNull()
   })
+})
+
+describe('raw HTML survives content editing (#407)', () => {
+  const htmlCases = [
+    '<figure class="w-richtext-align-fullwidth">\n  <div><img src="/uploads/hero_image.avif" alt=""></div>\n</figure>',
+    '<div class="a_b">literal *stars*, [brackets], and \\slashes</div>',
+    'Before <a href="/some_path?q=a_b" target="_blank" class="p_medium">link</a> after.',
+    'Before <span title="a > b_`*~[]" data-label=some_value>text</span> after.',
+    "Before <span title='a > b_value'>text</span> after.",
+    'Before <!-- keep_this [comment] --> text.',
+    '<svg><path clip-path="url(#clip0_2674_9364)" d="M0 0"></path></svg>',
+  ]
+  for (const source of htmlCases) {
+    it(`preserves HTML source across repeated edits: ${source.slice(0, 55)}`, () => {
+      let current = source
+      for (let save = 0; save < 3; save++) {
+        current = proseMirrorDocToMarkdown(markdownToProseMirrorDoc(current))
+        expect(current).toBe(source)
+      }
+    })
+  }
+
+  it('still escapes Markdown in text between inline HTML tags', () => {
+    const source = 'Before <span class="a_b">literal \\*stars\\* and an\\_underscore</span> after.'
+    const saved = proseMirrorDocToMarkdown(markdownToProseMirrorDoc(source))
+    expect(saved).toBe(source)
+    expect(renderMarkdownToHtml(saved)).toContain('<span class="a_b">literal *stars* and an_underscore</span>')
+  })
+
+  it('leaves code and literal Markdown punctuation under their existing rules', () => {
+    const source = '`<span class="a_b">` and literal \\[brackets\\] and \\*stars\\*.'
+    expect(proseMirrorDocToMarkdown(markdownToProseMirrorDoc(source))).toBe(source)
+    const incomplete = 'Text < unfinished_tag'
+    expect(renderMarkdownToHtml(proseMirrorDocToMarkdown(markdownToProseMirrorDoc(incomplete)))).toBe(renderMarkdownToHtml(incomplete))
+  })
+})
+
+it('keeps publisher sanitization effective after an HTML editing round-trip', () => {
+  const source = '<div><img src="/uploads/hero_image.svg" onerror="alert(1)"><a href="javascript:alert(2)">bad link</a><script>alert(3)</script></div>'
+  const saved = proseMirrorDocToMarkdown(markdownToProseMirrorDoc(source))
+  const published = sanitizeRichtext(renderMarkdownToHtml(saved), RICHTEXT_CONTENT_CONFIG)
+  expect(published).toContain('src="/uploads/hero_image.svg"')
+  expect(published).not.toContain('onerror')
+  expect(published).not.toContain('javascript:')
+  expect(published).not.toContain('<script')
 })
