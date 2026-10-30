@@ -35,6 +35,19 @@ function buildCanvasClassCSS(
 ): string {
   const blocks: string[] = []
 
+  // Baseline layer order, mirroring the published bundle (see
+  // `server/publish/siteCssBundle.ts`). Everything this function returns is
+  // wrapped in `@layer user-authored` by ClassStyleInjector, and the imported
+  // stylesheets land in that same layer via UserStylesheetInjector. Rules
+  // sitting DIRECTLY in `user-authored` outrank rules in its nested sublayers,
+  // so an unlayered reset here beat every rule of an imported Tailwind sheet
+  // (whose output is entirely `@layer theme/base/utilities`, nested one level
+  // deeper once wrapped). The canvas then previewed CMS defaults —
+  // `:where(body) { font-family: system-ui }` winning over the site's own
+  // font — while the published page, which layers these correctly, did not.
+  // Naming the sublayers restores the published cascade inside the iframe.
+  blocks.push('@layer instatic-reset, instatic-framework;')
+
   // Publisher reset, identical to what `publishPage()` ships. Each canvas
   // breakpoint frame is its own iframe with its own `<body>`, so we use the
   // unscoped reset (low-specificity `:where(body) { ... }` rules) rather
@@ -43,20 +56,25 @@ function buildCanvasClassCSS(
   // `body { color: var(--color-fg) }` wins over the reset's `:where(body)`
   // baseline, the way it does on the live site. Editor chrome lives outside
   // the iframe so the reset can't leak into the toolbars / panels.
-  blocks.push(PUBLISHER_RESET_CSS)
+  blocks.push(`@layer instatic-reset {\n${PUBLISHER_RESET_CSS}\n}`)
 
   // Fonts go first (after the reset) so `@font-face` declarations exist before
   // any rule that references the family — browsers tolerate the reverse order,
   // but the ordering keeps generated CSS easier to inspect.
+  //
+  // `@font-face` is layer-neutral (it registers a family rather than matching
+  // an element), so grouping it with the framework costs nothing.
+  const baseline: string[] = []
   const fontsCss = generateFontsCss(fonts)
-  if (fontsCss) blocks.push(fontsCss)
+  if (fontsCss) baseline.push(fontsCss)
   const frameworkCss = generateFrameworkRootCss({
     colors: frameworkColors,
     typography: frameworkTypography,
     spacing: frameworkSpacing,
     preferences: frameworkPreferences,
   })
-  if (frameworkCss) blocks.push(frameworkCss)
+  if (frameworkCss) baseline.push(frameworkCss)
+  if (baseline.length) blocks.push(`@layer instatic-framework {\n${baseline.join('\n\n')}\n}`)
 
   // The registry CSS is the publisher's own generator — the canvas ships the
   // exact bytes a publish would (rule order, condition/viewport cascade, and
