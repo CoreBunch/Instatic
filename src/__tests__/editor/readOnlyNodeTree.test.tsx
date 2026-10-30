@@ -159,6 +159,7 @@ describe('responsiveBackgroundReactStyle', () => {
     const style = responsiveBackgroundReactStyle(
       {
         backgroundImage: 'linear-gradient(red, blue), url("/uploads/hero.png")',
+        backgroundSize: 'cover',
         color: 'red',
       },
       new Map([['/uploads/hero.png', resolvedMedia()]]),

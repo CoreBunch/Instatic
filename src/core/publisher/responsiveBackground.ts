@@ -19,8 +19,8 @@ function cssUrl(url: string): string {
   return `url(${JSON.stringify(url)})`
 }
 
-function formatResolution(width: number): string {
-  return `${parseFloat((width / BACKGROUND_IMAGE_SET_REFERENCE_WIDTH).toFixed(2))}x`
+function formatResolution(width: number, referenceWidth: number): string {
+  return `${parseFloat((width / referenceWidth).toFixed(2))}x`
 }
 
 function sortedVariants(media: RenderResolvedMedia): RenderResolvedMedia['variants'] {
@@ -32,15 +32,32 @@ function largestVariantUrl(media: RenderResolvedMedia): string | null {
   return variants.length > 0 ? variants[variants.length - 1].path : null
 }
 
-function buildImageSet(media: RenderResolvedMedia): string | null {
+/**
+ * True when the background is drawn at the image's own size, i.e. every
+ * `background-size` layer is `auto` (the initial value, so unset counts too).
+ */
+function drawsAtIntrinsicSize(backgroundSize: unknown): boolean {
+  const value = typeof backgroundSize === 'string' ? backgroundSize.trim() : ''
+  if (value === '') return true
+  return value.split(',').every((layer) => /^auto(?:\s+auto)?$/i.test(layer.trim()))
+}
+
+function buildImageSet(media: RenderResolvedMedia, intrinsicSize: boolean): string | null {
   const variants = sortedVariants(media)
   if (variants.length === 0) return null
 
+  // A resolution descriptor sets the image's intrinsic CSS size
+  // (pixelWidth / density). Under `background-size: auto` that is the drawn
+  // size, so descriptors must be relative to the original's width or a 400px
+  // image draws about 1024px wide. Other sizes (cover, contain, lengths) do not
+  // depend on it and keep the fixed reference, which also covers unknown widths.
+  const referenceWidth =
+    intrinsicSize && media.width && media.width > 0 ? media.width : BACKGROUND_IMAGE_SET_REFERENCE_WIDTH
   const seenDescriptors = new Set<string>()
   const options: string[] = []
   for (const variant of variants) {
-    const descriptor = formatResolution(variant.width)
-    if (seenDescriptors.has(descriptor)) continue
+    const descriptor = formatResolution(variant.width, referenceWidth)
+    if (descriptor === '0x' || seenDescriptors.has(descriptor)) continue
     seenDescriptors.add(descriptor)
     options.push(`${cssUrl(variant.path)} ${descriptor}`)
   }
@@ -108,6 +125,7 @@ export function collectNodeBackgroundImagePaths(node: Pick<BaseNode, 'inlineStyl
 export function responsiveBackgroundImage(
   value: string,
   mediaAssets: ReadonlyMap<string, RenderResolvedMedia> | undefined,
+  backgroundSize?: unknown,
 ): ResponsiveBackgroundImage {
   if (!mediaAssets || mediaAssets.size === 0 || IMAGE_SET_RE.test(value)) {
     return { fallback: value, imageSet: null }
@@ -120,9 +138,10 @@ export function responsiveBackgroundImage(
   })
   if (!fallback.replaced) return { fallback: value, imageSet: null }
 
+  const intrinsicSize = drawsAtIntrinsicSize(backgroundSize)
   const imageSet = rewriteCssUrls(value, (path) => {
     const media = mediaAssets.get(path)
-    return media ? buildImageSet(media) : null
+    return media ? buildImageSet(media, intrinsicSize) : null
   })
 
   return {
