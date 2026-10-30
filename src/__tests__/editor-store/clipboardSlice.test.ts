@@ -226,6 +226,53 @@ describe('clipboardSlice.pasteNode — class handling', () => {
   })
 })
 
+describe('clipboardSlice — cross-document (Visual Component) support', () => {
+  it('pastes into a Visual Component tree when it is the active document', () => {
+    const store = useEditorStore.getState()
+    const site = store.createSite('Clip Site')
+    const rootId = site.pages[0].rootNodeId
+    const sourceText = useEditorStore.getState().insertNode('base.text', {}, rootId)
+    useEditorStore.getState().copyNode(sourceText)
+
+    const vcId = useEditorStore.getState().createVisualComponent('Widget')
+    const vc = useEditorStore.getState().site!.visualComponents.find((v) => v.id === vcId)!
+    useEditorStore.getState().setActiveDocument({ kind: 'visualComponent', vcId })
+
+    const newIds = useEditorStore.getState().pasteNode(vc.tree.rootNodeId)
+    expect(newIds).not.toBeNull()
+    expect(newIds!.length).toBe(1)
+
+    const pastedVc = useEditorStore
+      .getState()
+      .site!.visualComponents.find((v) => v.id === vcId)!
+    expect(pastedVc.tree.nodes[newIds![0]].moduleId).toBe('base.text')
+    // The source page is untouched — this was a copy, not a cut.
+    expect(useEditorStore.getState().site!.pages[0].nodes[sourceText]).toBeDefined()
+  })
+
+  it('copies from a Visual Component tree and pastes into a page', () => {
+    const store = useEditorStore.getState()
+    store.createSite('Clip Site')
+
+    const vcId = useEditorStore.getState().createVisualComponent('Widget')
+    const vc = useEditorStore.getState().site!.visualComponents.find((v) => v.id === vcId)!
+    useEditorStore.getState().setActiveDocument({ kind: 'visualComponent', vcId })
+    const vcText = useEditorStore.getState().insertNode('base.text', {}, vc.tree.rootNodeId)
+
+    const ok = useEditorStore.getState().copyNode(vcText)
+    expect(ok).toBe(true)
+
+    useEditorStore.getState().setActiveDocument(null)
+    const pageRootId = useEditorStore.getState().site!.pages[0].rootNodeId
+    const newIds = useEditorStore.getState().pasteNode(pageRootId)
+
+    expect(newIds).not.toBeNull()
+    expect(newIds!.length).toBe(1)
+    const pastedPage = useEditorStore.getState().site!.pages[0]
+    expect(pastedPage.nodes[newIds![0]].moduleId).toBe('base.text')
+  })
+})
+
 describe('clipboardSlice — persistence', () => {
   it('rehydrates clipboardEntry from localStorage on a fresh setState', () => {
     const store = useEditorStore.getState()
