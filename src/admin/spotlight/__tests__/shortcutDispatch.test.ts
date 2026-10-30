@@ -1,10 +1,18 @@
-import { describe, expect, it } from 'bun:test'
+import { afterEach, describe, expect, it } from 'bun:test'
 import { readFileSync } from 'fs'
 import { getKeybindingForCommand } from '../keybindings'
 import { findMatchingShortcutCommand } from '../shortcutDispatch'
 import type { CommandContext } from '../types'
+import {
+  EDITOR_PREFS_KEY,
+  setEditorPreference,
+} from '@site/preferences/editorPreferences'
 
 const SPOTLIGHT_ROOT = new URL('../SpotlightRoot.tsx', import.meta.url)
+
+afterEach(() => {
+  localStorage.removeItem(EDITOR_PREFS_KEY)
+})
 
 function eventLike(key: string, overrides: Partial<KeyboardEvent> = {}) {
   return {
@@ -132,6 +140,43 @@ describe('command shortcut dispatch', () => {
     expect(binding?.shortcut).toEqual({ mac: '⌘⌫', win: 'Ctrl+Backspace' })
     expect(binding?.match(eventLike('Backspace', { metaKey: true }))).toBe(true)
     expect(binding?.match(eventLike('Backspace', { ctrlKey: true }))).toBe(true)
+  })
+
+  it('registers optional ArrowUp/ArrowDown shortcuts for moving layers', () => {
+    const moveUp = getKeybindingForCommand('layers.moveUp')
+    const moveDown = getKeybindingForCommand('layers.moveDown')
+
+    expect(moveUp?.shortcut).toEqual({ mac: '↑', win: '↑' })
+    expect(moveDown?.shortcut).toEqual({ mac: '↓', win: '↓' })
+    expect(moveUp?.match(eventLike('ArrowUp'))).toBe(true)
+    expect(moveDown?.match(eventLike('ArrowDown'))).toBe(true)
+    expect(moveUp?.match(eventLike('ArrowUp', { altKey: true }))).toBe(false)
+    expect(moveDown?.match(eventLike('ArrowDown', { shiftKey: true }))).toBe(false)
+  })
+
+  it('dispatches layer movement only when the Arrow-key preference is enabled', () => {
+    const ctx = context(['site.read', 'site.structure.edit'], {
+      selectedNodeIds: ['node-1'],
+      activePageId: 'page-1',
+      activeDocument: { kind: 'page', pageId: 'page-1' },
+      canUndo: false,
+      canRedo: false,
+      activeBreakpointId: 'desktop',
+      activeInlineEdit: false,
+    })
+    const event = () =>
+      eventLike('ArrowUp', { target: canvasTarget() as EventTarget }) as KeyboardEvent
+
+    expect(findMatchingShortcutCommand(event(), ctx)).toBeNull()
+
+    setEditorPreference('layersArrowKeyReorder', true)
+    expect(findMatchingShortcutCommand(event(), ctx)?.id).toBe('layers.moveUp')
+    expect(
+      findMatchingShortcutCommand(
+        eventLike('ArrowDown', { target: layerTreeTarget() as EventTarget }) as KeyboardEvent,
+        ctx,
+      )?.id,
+    ).toBe('layers.moveDown')
   })
 
   it('matches browser-uppercase canvas clipboard shortcut keys', () => {
