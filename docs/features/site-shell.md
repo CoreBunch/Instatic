@@ -359,6 +359,7 @@ type SiteRuntimeConfig = {
     timing: 'immediate' | 'dom-ready' | 'idle'
     scope: SiteAssetScope
     priority: number
+    resourceOrigins?: { scripts: string[]; frames: string[]; connections: string[]; styles?: string[]; fonts?: string[] }
   }>
   // Per-stylesheet targeting + cascade, keyed by SiteFile id.
   styles: Record<string, {
@@ -372,6 +373,8 @@ type SiteRuntimeConfig = {
 `dependencyLock` is the resolved snapshot from the last successful `bun install` — the publisher uses it to build the `<script type="importmap">` entries that map bare specifiers (`three`) to `/_instatic/runtime/cache/<hash>/...` URLs.
 
 `scripts` and `styles` share the `SiteAssetScope` shape and the `assetScopeAppliesToPage` helper, so a script and a stylesheet target pages identically. Scripts additionally carry `placement`/`timing`/`runInCanvas` (a `<link>` has no execution model, so stylesheets omit those). Both are edited from the floating code editor's left rail (`ScriptSettingsPane` / `StyleSettingsPane`).
+
+The script settings rail also accepts comma-separated HTTP(S) origins for external scripts, stylesheets, frames, fonts and connections. `resourceOrigins` grants those origins in the published page's matching CSP directives, only when that script emits a tag on the page. Disabled, out-of-scope and failed builds grant nothing. Paths, credentials, wildcards and CSP keywords are rejected; origins are normalized and deduplicated. Stylesheet, font and connection declarations retain same-origin access. Canvas execution remains governed by its own iframe policy; these declarations control published-page CSP.
 
 ---
 
