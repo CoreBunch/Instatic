@@ -243,6 +243,17 @@
     background: var(--warning);
 }
 
+.pendingDot {
+    display: inline-block;
+    flex: none;
+    width: 6px;
+    height: 6px;
+    margin-left: var(--space-xs);
+    border-radius: 50%;
+    background: var(--accent-1);
+    vertical-align: middle;
+}
+
 .settingsDetailCanvas {
     min-width: 0;
 }
@@ -715,13 +726,6 @@
     line-height: 1.4;
 }
 
-.defaultSaveStatus {
-    flex-basis: 100%;
-    color: var(--success-text);
-    font-size: var(--text-xs);
-    text-align: right;
-}
-
 @media (max-width: 1180px) {
     .workspace {
         grid-template-columns: 168px minmax(0, 1fr);
@@ -844,10 +848,6 @@
 
     .settingsDetailActions {
         justify-content: flex-start;
-    }
-
-    .defaultSaveStatus {
-        text-align: left;
     }
 
     .modelsTableHeader,
