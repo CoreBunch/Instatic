@@ -1,4 +1,5 @@
 import { exportRowAttachments } from '../../repositories/rowAttachments'
+import { PrivateArchiveFiles } from '../../archive/privateFiles'
 import { attachmentArchivePath, type BundleAttachment } from '@core/data/attachments'
 /**
  * Site bundle export endpoint.
@@ -32,11 +33,9 @@ import { attachmentArchivePath, type BundleAttachment } from '@core/data/attachm
  * B8 because the bundle bytes include every author's drafts, which
  * `site.read` (held by Client) should not imply.
  *
- * Additionally: row visibility is filtered via `canSeeAllDataRows`.
- * A caller without `content.edit.any` / `content.publish.any` /
- * `content.manage` only exports their own rows. This closes the G5
- * leak (the previous implementation returned every row regardless of
- * the caller's content visibility scope).
+ * Additionally: table and row visibility use the same predicates as direct
+ * row/attachment reads. The transfer capability never grants access to
+ * otherwise unreadable content or private attachments.
  */
 import { exportBundlePublication } from '../../repositories/bundlePublication'
 import { runtimeArchivePath, type BundlePublication } from '@core/data/bundlePublication'
@@ -61,7 +60,7 @@ import {
   mediaArchivePath,
   type SiteBundleArchiveManifest,
 } from '@core/data/bundleArchive'
-import { canSeeAllDataRows } from '../../auth/dataAccess'
+import { canReadTable, canReadDataRow, rowVisibilityFor } from '../../auth/dataAccess'
 import { createStoredZipStream, estimateStoredZipSize, type StoredZipEntry } from '../../archive/storedZip'
 import { isMainScope, resolveBranchScopeById, type BranchScope } from '../../branches/scope'
 
@@ -111,7 +110,7 @@ interface ExportSelection {
   publication: BundlePublication
   runtimeBytes: Uint8Array[]
   attachments: BundleAttachment[]
-  attachmentBytes: Uint8Array[]
+  attachmentPaths: string[]
   includeMedia: boolean
   includeSite: boolean
   /** Folder tree, or undefined when folders weren't requested. */
@@ -189,86 +188,89 @@ export async function handleExportRoute(
     includeRedirects = url.searchParams.get('includeRedirects') !== '0'
   }
 
-  await runPublishFlush()
-  const selection = await withPublishLock(() => serializeCollabAwareWrite(() => db.transaction(async (db): Promise<ExportSelection | Response> => {
-    // Always load the site shell — needed for sourceSiteName even when includeSite=false
-    const shell = await getDraftSite(db, exportScope)
-    if (!shell) {
-      return jsonResponse({ error: 'Site not initialised — run setup before exporting' }, { status: 404 })
-    }
+  const privateFiles = new PrivateArchiveFiles()
+  try {
+    await runPublishFlush()
+    const selection = await withPublishLock(() => serializeCollabAwareWrite(() => db.transaction(async (db): Promise<ExportSelection | Response> => {
+      // Always load the site shell — needed for sourceSiteName even when includeSite=false
+      const shell = await getDraftSite(db, exportScope)
+      if (!shell) {
+        return jsonResponse({ error: 'Site not initialised — run setup before exporting' }, { status: 404 })
+      }
 
-    // Resolve the table set: all tables for a full export, or just the named ones.
-    const selectionByTable = selections ? new Map(selections.map((s) => [s.tableId, s])) : null
-    let tables = await listDataTables(db, exportScope)
-    if (selectionByTable) {
-      tables = tables.filter((t) => selectionByTable.has(t.id))
-    }
+      // Resolve the table set: all tables for a full export, or just the named ones.
+      const selectionByTable = selections ? new Map(selections.map((s) => [s.tableId, s])) : null
+      let tables = (await listDataTables(db, exportScope)).filter((table) => canReadTable(user, table))
+      if (selectionByTable) {
+        tables = tables.filter((t) => selectionByTable.has(t.id))
+      }
 
-    // Load rows per table (parallel), applying each table's row subset if one was
-    // given. Visibility filtering: a caller without `content.edit.any` /
-    // `content.publish.any` / `content.manage` only sees their own rows in the
-    // bundle, so a Client with `data.export` can't download every author's drafts
-    // (G5 fix — see capabilities review).
-    const visibility = canSeeAllDataRows(user) ? {} : { ownerUserId: user.id }
-    const rowsPerTable = await Promise.all(
-      tables.map(async (table) => {
-        const all = await listDataRows(db, exportScope, table.id, visibility)
-        const sel = selectionByTable?.get(table.id)
-        if (!sel?.rowIds) return all
-        const want = new Set(sel.rowIds)
-        return all.filter((r) => want.has(r.id))
-      }),
-    )
-    const rows = rowsPerTable.flat().map((row) => isMainScope(exportScope) ? row : { ...row, status: 'draft' as const, publishedAt: null, scheduledPublishAt: null })
-
-    // Media folder tree — cheap; gather whenever requested.
-    const mediaFolders = includeMediaFolders ? await listExportableMediaFolders(db) : undefined
-
-    // Redirects — keep the bundle self-consistent: only include redirects whose
-    // table AND target row are part of this export, so the import can restore
-    // them without dangling foreign keys (both FKs cascade-delete in the schema).
-    let redirects: SiteBundle['redirects']
-    if (includeRedirects) {
-      const selectedTableIds = new Set(tables.map((t) => t.id))
-      const selectedRowIds = new Set(rows.map((r) => r.id))
-      const all = await listExportableRedirects(db)
-      redirects = all.filter(
-        (r) => selectedTableIds.has(r.tableId) && selectedRowIds.has(r.targetRowId),
+      // Apply the same table and row gates as direct downloads before collecting
+      // publication snapshots or private bytes. Export is not a read capability.
+      const visibility = rowVisibilityFor(user)
+      const rowsPerTable = await Promise.all(
+        tables.map(async (table) => {
+          const all = (await listDataRows(db, exportScope, table.id, visibility)).filter((row) => canReadDataRow(user, row))
+          const sel = selectionByTable?.get(table.id)
+          if (!sel?.rowIds) return all
+          const want = new Set(sel.rowIds)
+          return all.filter((r) => want.has(r.id))
+        }),
       )
+      const rows = rowsPerTable.flat().map((row) => isMainScope(exportScope) ? row : { ...row, status: 'draft' as const, publishedAt: null, scheduledPublishAt: null })
+
+      // Media folder tree — cheap; gather whenever requested.
+      const mediaFolders = includeMediaFolders ? await listExportableMediaFolders(db) : undefined
+
+      // Redirects — keep the bundle self-consistent: only include redirects whose
+      // table AND target row are part of this export, so the import can restore
+      // them without dangling foreign keys (both FKs cascade-delete in the schema).
+      let redirects: SiteBundle['redirects']
+      if (includeRedirects) {
+        const selectedTableIds = new Set(tables.map((t) => t.id))
+        const selectedRowIds = new Set(rows.map((r) => r.id))
+        const all = await listExportableRedirects(db)
+        redirects = all.filter(
+          (r) => selectedTableIds.has(r.tableId) && selectedRowIds.has(r.targetRowId),
+        )
+      }
+
+      const { publication, bytes: runtimeBytes } = await exportBundlePublication(db, exportScope, rows.map((row) => row.id))
+      const { attachments, paths: attachmentPaths } = await exportRowAttachments(db, exportScope, rows.map((row) => row.id), isEstimate ? undefined : (bytes) => privateFiles.add(bytes))
+      const selection: ExportSelection = {
+        attachments, attachmentPaths,
+        shell,
+        publication,
+        runtimeBytes,
+        tables,
+        rows,
+        includeMedia,
+        includeSite,
+        mediaFolders,
+        redirects,
+      }
+
+      return selection
+    })))
+    if (selection instanceof Response) return selection
+
+    // Media is embedded only when requested AND an uploads dir is configured —
+    // both the estimate and the real export gate on this so they stay in sync.
+    const wantMedia = includeMedia && Boolean(options.uploadsDir)
+    const assets = wantMedia ? await listMediaAssetsForExport(db) : []
+    const archiveAssets = wantMedia && options.uploadsDir
+      ? await resolveArchiveAssets(assets, options.uploadsDir)
+      : []
+
+    if (isEstimate) {
+      return estimateResponse(selection, wantMedia, archiveAssets)
     }
 
-    const { publication, bytes: runtimeBytes } = await exportBundlePublication(db, exportScope, rows.map((row) => row.id))
-    const { attachments, bytes: attachmentBytes } = await exportRowAttachments(db, exportScope, rows.map((row) => row.id))
-    const selection: ExportSelection = {
-      attachments, attachmentBytes,
-      shell,
-      publication,
-      runtimeBytes,
-      tables,
-      rows,
-      includeMedia,
-      includeSite,
-      mediaFolders,
-      redirects,
-    }
-
-    return selection
-  })))
-  if (selection instanceof Response) return selection
-
-  // Media is embedded only when requested AND an uploads dir is configured —
-  // both the estimate and the real export gate on this so they stay in sync.
-  const wantMedia = includeMedia && Boolean(options.uploadsDir)
-  const assets = wantMedia ? await listMediaAssetsForExport(db) : []
-  const archiveAssets = wantMedia && options.uploadsDir
-    ? await resolveArchiveAssets(assets, options.uploadsDir)
-    : []
-
-  if (isEstimate) {
-    return estimateResponse(selection, wantMedia, archiveAssets)
+    return await downloadResponse(selection, wantMedia, archiveAssets, privateFiles)
+  } catch (err) {
+    await privateFiles.cleanup()
+    throw err
   }
-
-  return downloadResponse(selection, wantMedia, archiveAssets)
 }
 
 /**
@@ -311,6 +313,7 @@ async function downloadResponse(
   selection: ExportSelection,
   wantMedia: boolean,
   assets: ExportArchiveAsset[],
+  privateFiles: PrivateArchiveFiles,
 ): Promise<Response> {
   const media: SiteBundleArchiveManifest['media'] = wantMedia
     ? assets.map(({ asset, sizeBytes }) => mediaEntryMetadata(asset, sizeBytes))
@@ -324,7 +327,7 @@ async function downloadResponse(
       sizeBytes: manifestBytes.byteLength,
       source: manifestBytes,
     },
-    ...selection.attachments.map((file, index) => ({ path: attachmentArchivePath(index), sizeBytes: file.sizeBytes, source: selection.attachmentBytes[index]! })),
+    ...selection.attachments.map((file, index) => ({ path: attachmentArchivePath(index), sizeBytes: file.sizeBytes, source: selection.attachmentPaths[index]! })),
     ...selection.publication.files.map((file, index) => ({ path: runtimeArchivePath(index), sizeBytes: file.sizeBytes, source: selection.runtimeBytes[index]! })),
     ...assets.map(({ asset, filePath, sizeBytes }) => ({
       path: mediaArchivePath(asset.storagePath),
@@ -334,10 +337,12 @@ async function downloadResponse(
   ]
 
   const timestamp = new Date().toISOString().slice(0, 19).replace(/[:.]/g, '-')
-  return new Response(createStoredZipStream(archiveEntries), {
+  return new Response(privateFiles.stream(createStoredZipStream(archiveEntries)), {
     headers: {
       'content-type': 'application/zip',
       'content-disposition': `attachment; filename="site-bundle-${timestamp}.zip"`,
+      'cache-control': 'private, no-store',
+      'x-content-type-options': 'nosniff',
     },
   })
 }

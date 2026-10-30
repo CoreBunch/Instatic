@@ -64,16 +64,19 @@ export async function copyRowAttachments(db: DbClient, from: BranchScope, to: Br
     from data_row_attachments where row_id = ${physicalId(from.branchId, rowId)}`
 }
 
-export async function exportRowAttachments(db: DbClient, scope: BranchScope, rowIds: readonly string[]): Promise<{ attachments: BundleAttachment[]; bytes: Uint8Array[] }> {
+/** The callback consumes one binary at a time inside the export's snapshot transaction. */
+export async function exportRowAttachments(db: DbClient, scope: BranchScope, rowIds: readonly string[], stage?: (bytes: Uint8Array) => Promise<string>): Promise<{ attachments: BundleAttachment[]; paths: string[] }> {
   const attachments: BundleAttachment[] = []
-  const bytes: Uint8Array[] = []
+  const paths: string[] = []
   for (const rowId of rowIds) {
     for (const metadata of await listRowAttachments(db, scope, rowId)) {
-      const file = await getRowAttachment(db, scope, rowId, metadata.id)
-      if (!file) throw new Error('Attachment disappeared during export')
       attachments.push({ rowId, ...metadata })
-      bytes.push(file.bytes)
+      if (stage) {
+        const file = await getRowAttachment(db, scope, rowId, metadata.id)
+        if (!file) throw new Error('Attachment disappeared during export')
+        paths.push(await stage(file.bytes))
+      }
     }
   }
-  return { attachments, bytes }
+  return { attachments, paths }
 }

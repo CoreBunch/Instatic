@@ -1,4 +1,4 @@
-import { prepareBundleAttachments, restoreBundleAttachments } from '../../repositories/bundleAttachments'
+import { prepareBundleAttachments, restoreBundleAttachments, type AttachmentSource } from '../../repositories/bundleAttachments'
 /** Transactional site-bundle application shared by JSON and ZIP imports. */
 import type { DbClient } from '../../db/client'
 import type { ImportStrategy, SiteBundle } from '@core/data/bundleSchema'
@@ -50,7 +50,7 @@ export interface ApplySiteBundleInput {
   /** The bundle's data. Media bytes, when present, are not read here. */
   bundle: SiteBundle
   runtimeFiles?: ReadonlyMap<string, Uint8Array>
-  attachmentFiles?: ReadonlyMap<string, Uint8Array>
+  attachmentFiles?: ReadonlyMap<string, AttachmentSource>
   uploadsDir?: string
   strategy: ImportStrategy
   /**
@@ -159,7 +159,7 @@ async function applySiteBundleLocked(
   input: ApplySiteBundleInput,
 ): Promise<AppliedSiteBundle> {
   const { bundle, strategy } = input
-  const attachments = prepareBundleAttachments(bundle.attachments ?? [], new Set(bundle.rows.map((row) => row.id)), input.attachmentFiles ?? new Map())
+  const attachments = await prepareBundleAttachments(bundle.attachments ?? [], new Set(bundle.rows.map((row) => row.id)), input.attachmentFiles ?? new Map())
   let tablesAffected = 0
   let rowsInserted = 0
   let rowsReplaced = 0

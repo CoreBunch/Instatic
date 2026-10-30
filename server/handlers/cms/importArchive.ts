@@ -70,7 +70,7 @@ interface StagedArchiveMedia {
 
 interface StagedArchiveFiles extends StagedArchiveMedia {
   runtimeFiles: Map<string, Uint8Array>
-  attachmentFiles: Map<string, Uint8Array>
+  attachmentFiles: Map<string, string>
 }
 
 interface StagedArchiveMediaEntry {
@@ -296,7 +296,7 @@ async function stageArchiveEntries(input: {
         const path = join(stagedMedia.stagingDir, `attachment-${stagedMedia.attachmentFiles.size}.bin`)
         const crc = createCrc32()
         await writeEntryToFile(reader, path, file.sizeBytes, crc)
-        stagedMedia.attachmentFiles.set(attachmentKey(file.rowId, file.id), new Uint8Array(await Bun.file(path).arrayBuffer()))
+        stagedMedia.attachmentFiles.set(attachmentKey(file.rowId, file.id), path)
         return crc.digest()
       },
       async onRuntimeFile(asset, reader) {

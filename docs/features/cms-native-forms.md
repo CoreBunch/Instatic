@@ -68,7 +68,11 @@ Staff open the submission in the Data workspace and download files under **Priva
 
 Immutable bytes live in `data_attachments`; `data_row_attachments` links them to branch-scoped rows. Branch copies share binaries and merges carry the reference set. Unlinked bytes remain with the logical row to support merge undo; deleting the last physical row copy removes its binaries. Soft deletion denies downloads and preserves undo data. Migration 032 adds the tables on both database dialects without modifying existing content.
 
-ZIP exports include the selected, authorized rows' attachment metadata and raw bytes under `attachments/`, even when public media is excluded. Restore validates file bytes and row ownership before applying them in the row import transaction. Partial imports keep only selected rows' files; merge-add does not replace skipped rows' files. Attachment IDs are immutable: importing different bytes under an ID held by another branch is rejected, preserving that branch's data.
+ZIP exports apply the same table and row read predicates as direct downloads, then include the selected, authorized rows' attachment metadata and raw bytes under `attachments/`, even when public media is excluded. Restore validates file bytes and row ownership before applying them in the row import transaction. Partial imports keep only selected rows' files; merge-add does not replace skipped rows' files. Attachment IDs are immutable: importing different bytes under an ID held by another branch is rejected, preserving that branch's data.
+
+Exports snapshot one attachment at a time into request-owned temporary files outside public uploads (owner-only directory and file permissions); ZIP streaming removes them on completion, cancellation, or error. Size estimates read metadata only. Archive restores keep staged paths and validate/persist one file at a time, rather than retaining all attachment bytes in memory.
+
+Private storage is an application access boundary, not encryption at rest or malware scanning. Database files, WALs, and downloaded backups contain the original bytes and must be protected by the operator. Type checks identify allowed formats; they do not certify a PDF or image as harmless. Public upload limits and IP throttles bound individual submissions, not total retained storage.
 
 ## Security
 
