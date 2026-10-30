@@ -75,7 +75,17 @@ export const openrouterDriver: AiProvider = {
   },
 
   async listModels(creds: AiResolvedCredential, signal?: AbortSignal) {
-    return fetchOpenRouterModels(creds, signal)
+    const models = await fetchOpenRouterModels(creds, signal)
+    const currentMiniMaxIds = ['minimax/minimax-m3.1-flash:free', 'minimax/minimax-m3']
+    const currentMiniMax = currentMiniMaxIds.flatMap((id) => models.filter((model) => model.id === id))
+    let inserted = false
+    return models.flatMap((model) => {
+      // Scope the picker policy to MiniMax's text families, preserving media routes.
+      if (!/^minimax\/minimax-(?:m\d|01)/.test(model.id)) return [model]
+      if (inserted) return []
+      inserted = true
+      return currentMiniMax
+    })
   },
 
   async *stream(req: AiStreamRequest): AsyncIterable<AiStreamEvent> {
