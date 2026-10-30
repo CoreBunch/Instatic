@@ -1,8 +1,7 @@
 /**
  * `PluginContext` — shared React context populated by the host's mount
- * components (`PluginEditorPanel`, `PluginPageRenderer`,
- * `PluginCanvasOverlayLayer`) so plugin code can resolve plugin-scoped
- * APIs through hooks.
+ * `PluginContextProvider` wherever plugin React code is mounted so that
+ * every surface resolves the same plugin-scoped APIs through hooks.
  *
  * The context value is built per-mount and includes:
  *   • Plugin identity (id, version, surface name)

@@ -15,7 +15,6 @@ import type {
   PluginResourceField,
 } from '@core/plugin-sdk'
 import {
-  buildPluginRoutesHelper,
   loadPluginAdminAppComponent,
   type PluginAdminAppImport,
 } from '@core/plugins/adminRuntime'
@@ -25,11 +24,7 @@ import {
   deleteCmsPluginResourceRecord,
   getCmsPluginResource,
 } from '@core/persistence'
-import { pluginRuntime } from '@core/plugins/runtime'
-import {
-  PluginContext,
-  type PluginContextValue,
-} from '@admin/plugin-host-hooks'
+import { PluginContextProvider } from '@admin/plugin-host-hooks'
 import { ensurePluginRuntime } from '@admin/pluginRuntimeBootstrap'
 import { SkeletonBlock, SkeletonRows } from '@ui/components/Skeleton'
 import styles from '../../PluginsPage.module.css'
@@ -178,7 +173,7 @@ function PluginPageContent({ page, importModule }: PluginPageRendererProps) {
 
 /**
  * Inner component — wraps the plugin's React component in a
- * `PluginContext.Provider` so hooks like `usePluginSettings`,
+ * `PluginContextProvider` so hooks like `usePluginSettings`,
  * `usePluginRoutes`, and `usePluginContext` resolve to this plugin's
  * scoped values.
  */
@@ -189,21 +184,17 @@ function PluginReactSubtree({
   Component: PluginAdminAppComponent
   page: AppPluginPageRoute
 }) {
-  const contextValue: PluginContextValue = {
-    pluginId: page.pluginId,
-    pluginVersion: page.pluginVersion,
-    surfaceId: page.id,
-    surfaceLabel: page.title,
-    grantedPermissions: page.pluginGrantedPermissions,
-    settings: page.pluginSettings,
-    routes: buildPluginRoutesHelper(page.pluginId),
-    runCommand: (commandId) => pluginRuntime.runCommand(commandId),
-  }
-
   return (
-    <PluginContext.Provider value={contextValue}>
+    <PluginContextProvider
+      pluginId={page.pluginId}
+      pluginVersion={page.pluginVersion}
+      surfaceId={page.id}
+      surfaceLabel={page.title}
+      grantedPermissions={page.pluginGrantedPermissions}
+      settings={page.pluginSettings}
+    >
       <Component page={page} />
-    </PluginContext.Provider>
+    </PluginContextProvider>
   )
 }
 
