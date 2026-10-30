@@ -24,7 +24,7 @@ export type { AiContentBlock, AiToolImage, AiToolOutput } from '@core/ai'
 // Provider identity + auth modes
 // ---------------------------------------------------------------------------
 
-export type AiProviderId = 'anthropic' | 'openai' | 'ollama' | 'openrouter' | 'openai-compatible'
+export type AiProviderId = 'anthropic' | 'openai' | 'ollama' | 'openrouter' | 'requesty' | 'openai-compatible'
 /**
  * Credential auth modes.
  *
