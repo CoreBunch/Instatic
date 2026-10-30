@@ -156,5 +156,6 @@ export function renderModuleTabContent(args: ModuleTabContentArgs): React.ReactN
 }
 
 function isPromotedFormProperty(selectedNode: PageNode, key: string): boolean {
+  if (selectedNode.moduleId === 'base.input' && selectedNode.props.inputType === 'file' && ['fieldId', 'value', 'pattern', 'min', 'max', 'minLength', 'maxLength', 'placeholder', 'readOnly', 'autocomplete'].includes(key)) return true
   return selectedNode.moduleId === 'base.form' && PROMOTED_FORM_PROPERTY_KEYS.has(key)
 }

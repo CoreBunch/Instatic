@@ -1,3 +1,6 @@
+import { AttachmentConflictError } from '../../repositories/rowAttachments'
+import { BundleAttachmentError } from '../../repositories/bundleAttachments'
+import { attachmentArchivePath, attachmentKey, type BundleAttachment } from '@core/data/attachments'
 /**
  * Site bundle archive import endpoint.
  *
@@ -67,6 +70,7 @@ interface StagedArchiveMedia {
 
 interface StagedArchiveFiles extends StagedArchiveMedia {
   runtimeFiles: Map<string, Uint8Array>
+  attachmentFiles: Map<string, string>
 }
 
 interface StagedArchiveMediaEntry {
@@ -116,7 +120,7 @@ export async function handleImportArchiveRoute(
   if (publicationDenied) return publicationDenied
 
   let stagedMedia: StagedArchiveFiles | null = null
-  if ((manifest.media?.length ?? 0) > 0 || (manifest.publication?.files.length ?? 0) > 0) {
+  if ((manifest.media?.length ?? 0) > 0 || (manifest.publication?.files.length ?? 0) > 0 || (manifest.attachments?.length ?? 0) > 0) {
     try {
       stagedMedia = await stageArchiveEntries({
         reader,
@@ -134,6 +138,7 @@ export async function handleImportArchiveRoute(
       strategy,
       carriesMedia: selectedManifest.media !== undefined,
       runtimeFiles: stagedMedia?.runtimeFiles,
+      attachmentFiles: stagedMedia?.attachmentFiles,
       uploadsDir: options.uploadsDir,
     })
     // After commit, before staged media moves in: a bundle file at a deleted
@@ -168,7 +173,7 @@ export async function handleImportArchiveRoute(
     parseValue(ImportResultSchema, result)
     return jsonResponse(result)
   } catch (err) {
-    if (err instanceof BundlePublicationError) return badRequest(err.message)
+    if (err instanceof BundlePublicationError || err instanceof BundleAttachmentError || err instanceof AttachmentConflictError) return badRequest(err.message)
     throw err
   } finally {
     if (stagedMedia) {
@@ -281,11 +286,19 @@ async function stageArchiveEntries(input: {
     stagingDir: await mkdtemp(join(tmpdir(), 'instatic-import-media-')),
     entries: [],
     runtimeFiles: new Map(),
+    attachmentFiles: new Map(),
   }
 
   try {
     await readArchiveEntries({
       ...input,
+      async onAttachment(file, reader) {
+        const path = join(stagedMedia.stagingDir, `attachment-${stagedMedia.attachmentFiles.size}.bin`)
+        const crc = createCrc32()
+        await writeEntryToFile(reader, path, file.sizeBytes, crc)
+        stagedMedia.attachmentFiles.set(attachmentKey(file.rowId, file.id), path)
+        return crc.digest()
+      },
       async onRuntimeFile(asset, reader) {
         const stagedPath = join(stagedMedia.stagingDir, `runtime-${stagedMedia.runtimeFiles.size}.bin`)
         const crc = createCrc32()
@@ -317,6 +330,7 @@ async function readArchiveEntries(input: {
   reader: ZipBodyReader
   archiveManifest: SiteBundleArchiveManifest
   selectedManifest: SiteBundleArchiveManifest
+  onAttachment: (asset: BundleAttachment, reader: ZipBodyReader) => Promise<number>
   onRuntimeFile: (asset: BundlePublication['files'][number], reader: ZipBodyReader) => Promise<number>
   onSelectedMedia: (
     asset: NonNullable<SiteBundleArchiveManifest['media']>[number],
@@ -334,12 +348,15 @@ async function readArchiveEntries(input: {
     (input.selectedManifest.media ?? []).map((asset) => [mediaArchivePath(asset.storagePath), asset]),
   )
 
+  const attachmentsByPath = new Map((input.archiveManifest.attachments ?? []).map((file, index) => [attachmentArchivePath(index), file]))
+  const selectedAttachments = new Set((input.selectedManifest.attachments ?? []).map((file) => attachmentKey(file.rowId, file.id)))
   const runtimeByPath = new Map((input.archiveManifest.publication?.files ?? []).map((file, index) => [runtimeArchivePath(index), file]))
   const selectedRuntime = new Set(input.selectedManifest.publication?.files.map((file) => file.publicPath) ?? [])
 
   while (true) {
     const header = await input.reader.readLocalHeader()
     if (!header) {
+      if (selectedAttachments.size > 0) throw new Error('Archive is missing a private attachment')
       if (selectedRuntime.size > 0) throw new Error('Archive is missing a published runtime file')
       const missingPath = selectedMediaByArchivePath.keys().next().value
       if (typeof missingPath === 'string') {
@@ -351,6 +368,20 @@ async function readArchiveEntries(input: {
       throw new Error(`Archive entry "${header.path}" is compressed; CMS bundle media must be stored`)
     }
 
+    const attachment = attachmentsByPath.get(header.path)
+    if (attachment) {
+      if ((header.flags & ZIP_DATA_DESCRIPTOR_FLAG) === 0 && (header.compressedSize !== attachment.sizeBytes || header.uncompressedSize !== attachment.sizeBytes)) throw new Error('Attachment size does not match the manifest')
+      const key = attachmentKey(attachment.rowId, attachment.id)
+      const crc = createCrc32()
+      const crc32 = selectedAttachments.has(key)
+        ? await input.onAttachment(attachment, input.reader)
+        : (await drainEntry(input.reader, attachment.sizeBytes, crc), crc.digest())
+      if ((header.flags & ZIP_DATA_DESCRIPTOR_FLAG) !== 0) await input.reader.readAndValidateDataDescriptor({ crc32, sizeBytes: attachment.sizeBytes })
+      if ((header.flags & ZIP_DATA_DESCRIPTOR_FLAG) === 0 && header.crc32 !== crc32) throw new Error('Attachment CRC does not match')
+      attachmentsByPath.delete(header.path)
+      selectedAttachments.delete(key)
+      continue
+    }
     const runtimeFile = runtimeByPath.get(header.path)
     if (runtimeFile) {
       if ((header.flags & ZIP_DATA_DESCRIPTOR_FLAG) === 0 && (header.compressedSize !== runtimeFile.sizeBytes || header.uncompressedSize !== runtimeFile.sizeBytes)) {
@@ -462,6 +493,7 @@ function filterArchiveManifestForSelection(
     ...(selection.includeSite && manifest.site ? { site: manifest.site } : {}),
     tables,
     rows,
+    ...(manifest.attachments ? { attachments: manifest.attachments.filter((file) => selectedRowIds.has(file.rowId)) } : {}),
     ...(manifest.publication ? { publication: selectBundlePublication(manifest.publication, selectedRowIds) } : {}),
     ...(media ? { media } : {}),
     ...(selection.includeMediaFolders && manifest.mediaFolders ? { mediaFolders: manifest.mediaFolders } : {}),

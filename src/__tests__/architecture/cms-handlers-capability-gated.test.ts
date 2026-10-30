@@ -94,6 +94,7 @@ const ALLOWLIST: ReadonlyMap<string, string> = new Map([
   // but the gates are present.
   ['data/meta.ts', 'Uses requireDataAccess (access helper that wraps requireCapability).'],
   ['data/search.ts', 'Uses requireDataAccess (access helper that wraps requireCapability).'],
+  ['data/attachments.ts', 'Uses requireDataAccess and resolveRowAccess to enforce data capability, table visibility and row read access.'],
   ['data/rows.ts', 'Uses requireData* helpers from data/access.ts (which call requireCapability).'],
   ['data/preview.ts', 'Uses requireDataAccess helper that wraps requireCapability.'],
   ['data/schemas.ts', 'TypeBox schema definitions; no handlers.'],

@@ -1526,4 +1526,31 @@ export const sqliteMigrations: Migration[] = [
       alter table data_tables add column created_by_plugin_id text;
     `,
   },
+  {
+    id: '032_private_row_attachments',
+    sql: `
+      create table data_attachments (
+        id text primary key,
+        owner_row_id text not null,
+        name text not null,
+        filename text not null,
+        mime_type text not null,
+        size_bytes integer not null,
+        content_bytes blob not null
+      );
+      create index data_attachments_owner_idx on data_attachments (owner_row_id);
+      create table data_row_attachments (
+        row_id text not null references data_rows(id) on delete cascade,
+        attachment_id text not null references data_attachments(id),
+        primary key (row_id, attachment_id)
+      );
+      create index data_row_attachments_file_idx on data_row_attachments (attachment_id);
+
+      create trigger delete_owned_attachments after delete on data_rows
+      begin
+        delete from data_attachments where owner_row_id = old.logical_id
+          and not exists (select 1 from data_rows where logical_id = old.logical_id);
+      end;
+    `,
+  },
 ]
