@@ -26,6 +26,7 @@ export type AdminWorkspace =
   | 'media'
   | 'plugins'
   | 'users'
+  | 'updates'
   | 'ai'
   | 'pluginPage'
   /** The merge review of one branch (`/admin/branches/:branchId/review`). */

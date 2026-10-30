@@ -211,6 +211,10 @@ async function compileBinary(target: ArtifactTarget, outfile: string): Promise<v
 
   const result = await Bun.build({
     entrypoints: [entryPath],
+    define: {
+      __INSTATIC_BUILD_VERSION__: JSON.stringify(resolvedVersion),
+      __INSTATIC_BUILD_REVISION__: JSON.stringify(process.env.GITHUB_SHA ?? ''),
+    },
     external,
     compile: { outfile, target: `bun-${target}` },
     plugins: serverArtifactPlugins(ROOT),
