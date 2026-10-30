@@ -1526,4 +1526,15 @@ export const sqliteMigrations: Migration[] = [
       alter table data_tables add column created_by_plugin_id text;
     `,
   },
+  {
+    // Each full publish prunes the site snapshots no active page version
+    // references. Deleting one sets `site_snapshot_id` to null on the older
+    // version rows that pointed at it (`on delete set null`); without this
+    // index every deleted snapshot scanned the whole versions table.
+    id: '032_data_row_versions_site_snapshot_idx',
+    sql: `
+      create index if not exists data_row_versions_site_snapshot_idx
+        on data_row_versions (site_snapshot_id);
+    `,
+  },
 ]
