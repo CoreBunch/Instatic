@@ -272,6 +272,7 @@ describe('ContextMenu', () => {
         <>
           <iframe
             title="canvas"
+            sandbox="allow-same-origin"
             srcDoc="<body></body>"
             ref={(el) => setDoc(el?.contentDocument ?? null)}
           />
