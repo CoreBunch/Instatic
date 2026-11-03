@@ -31,7 +31,8 @@
  *   `border-left: 1px solid var(--rule)`
  *     → `--instatic-sub-border-left: 1px solid var(--rule)`
  *
- * and decoded back to its real property after the engine parse
+ * WebKit-prefixed declarations use the same encoding because Happy DOM drops
+ * them when compiling plugin layouts. Both are decoded after the engine parse
  * (`decodeSubstitutionProperty`). The output is identical across engines BY
  * CONSTRUCTION — no per-engine recovery paths.
  *
@@ -46,7 +47,7 @@ import type { CSSDeclarationPriorityBag } from '@core/page-tree'
 export const SUBSTITUTION_PROP_MARKER = '--instatic-sub-'
 
 /** CSS functions whose declarations must survive differing CSSOM implementations. */
-export const SUBSTITUTION_FN_RE = /\b(?:var|env|clamp|min|max)\(/i
+const SUBSTITUTION_FN_RE = /\b(?:var|env|clamp|min|max)\(/i
 
 /** At-rule blocks whose contents must pass through unencoded. */
 const SKIPPED_AT_RULES = new Set(['keyframes', 'font-face'])
@@ -55,7 +56,7 @@ const SKIPPED_AT_RULES = new Set(['keyframes', 'font-face'])
 const PLAIN_PROPERTY_RE = /^-?[a-zA-Z][a-zA-Z-]*$/
 
 /**
- * Encode every substitution declaration in a full stylesheet. Everything else
+ * Encode substitution and WebKit declarations in a full stylesheet. Everything else
  * is copied byte-for-byte (comments, whitespace, selectors, at-rules).
  */
 export function encodeSubstitutionDeclarations(css: string): string {
@@ -158,15 +159,16 @@ export function decodeSubstitutionProperty(kebab: string): string | null {
 
 /**
  * Rewrite one `prop: value` chunk to its marker form when the value uses a
- * substitution function. Custom properties and anything that doesn't parse as
- * a plain declaration pass through verbatim.
+ * substitution function or the property has a WebKit prefix. Custom properties
+ * and anything that doesn't parse as a plain declaration pass through verbatim.
  */
 function encodeDeclarationChunk(chunk: string): string {
   const colon = chunk.indexOf(':')
   if (colon === -1) return chunk
   const prop = chunk.slice(0, colon).trim()
   const value = chunk.slice(colon + 1)
-  if (!PLAIN_PROPERTY_RE.test(prop) || !SUBSTITUTION_FN_RE.test(value)) return chunk
+  if (!PLAIN_PROPERTY_RE.test(prop)) return chunk
+  if (!SUBSTITUTION_FN_RE.test(value) && !/^-webkit-/i.test(prop)) return chunk
   const leading = chunk.slice(0, chunk.length - chunk.trimStart().length)
   return `${leading}${SUBSTITUTION_PROP_MARKER}${prop}:${value}`
 }

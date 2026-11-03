@@ -41,6 +41,7 @@ function setUpCanvas(nodeId: string) {
   document.body.appendChild(layer)
 
   const frame = document.createElement('iframe')
+  frame.srcdoc = '<body></body>'
   document.body.appendChild(frame)
   const frameDoc = frame.contentDocument!
   frameDoc.body.setAttribute('data-breakpoint-id', 'bp-desktop')
