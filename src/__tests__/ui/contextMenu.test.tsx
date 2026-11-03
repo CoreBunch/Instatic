@@ -272,6 +272,7 @@ describe('ContextMenu', () => {
         <>
           <iframe
             title="canvas"
+            srcDoc="<body></body>"
             ref={(el) => setDoc(el?.contentDocument ?? null)}
           />
           {open && (
@@ -307,7 +308,7 @@ describe('ContextMenu', () => {
 
     const iframe = container.querySelector('iframe') as HTMLIFrameElement
     await waitFor(() => {
-      expect(iframe.contentDocument?.getElementById('inside')).not.toBeNull()
+      expect(iframe.contentDocument?.getElementById('inside')).toBeTruthy()
     })
 
     const insideButton = iframe.contentDocument!.getElementById('inside')!
