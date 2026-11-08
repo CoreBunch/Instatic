@@ -57,6 +57,8 @@ Round-trip functions live in `src/core/markdown/markdownDocument.ts`:
 - `markdownToProseMirrorDoc(md)` — parse markdown → ProseMirror node tree
 - `proseMirrorDocToMarkdown(doc)` — serialize ProseMirror node tree → markdown
 
+The inline serializer (`src/core/markdown/inlineMarkdown.ts`) emits mark delimiters between text runs. Whitespace at the edge of a bold, italic or strike span is moved outside its delimiters (`**word** `, never `**word **`), since CommonMark ignores a delimiter next to whitespace.
+
 The serializer produces stable, idempotent output. Existing entries load with no migration; the grammar is a strict superset of what was stored before.
 
 ### Supported grammar
@@ -194,4 +196,5 @@ Body content is exchanged with the model as markdown. The browser bridge convert
   - `src/admin/pages/content/hooks/useContentWorkspace.ts` — collection/entry state
   - `src/admin/pages/content/hooks/useContentEntryDraft.ts` — field draft state
   - `src/core/markdown/markdownDocument.ts` — markdown ↔ ProseMirror round-trip
+  - `src/core/markdown/inlineMarkdown.ts` — inline mark serializer (delimiters, edge whitespace)
   - `src/admin/layouts/AdminWorkspaceCanvasLayout/AdminWorkspaceCanvasLayout.tsx` — workspace shell + notch

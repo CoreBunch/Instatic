@@ -26,24 +26,8 @@
  */
 
 import { Marked, type Tokens, type Token } from 'marked'
-
-// ---------------------------------------------------------------------------
-// ProseMirror JSON shape (just enough — we don't pull in @tiptap/pm here so
-// this module stays usable from non-DOM contexts like Bun tests)
-// ---------------------------------------------------------------------------
-
-interface JSONMark {
-  type: string
-  attrs?: Record<string, unknown>
-}
-
-export interface JSONNode {
-  type: string
-  attrs?: Record<string, unknown>
-  content?: JSONNode[]
-  marks?: JSONMark[]
-  text?: string
-}
+import { inlineToMarkdown } from './inlineMarkdown'
+import { sameMark, type JSONMark, type JSONNode } from './proseMirrorJson'
 
 type DocNode = JSONNode & { type: 'doc' }
 
@@ -439,17 +423,6 @@ function addMark(marks: JSONMark[], mark: JSONMark): JSONMark[] {
   return [...marks, mark]
 }
 
-function sameMark(a: JSONMark, b: JSONMark): boolean {
-  if (a.type !== b.type) return false
-  const aAttrs = a.attrs ?? {}
-  const bAttrs = b.attrs ?? {}
-  const keys = new Set([...Object.keys(aAttrs), ...Object.keys(bAttrs)])
-  for (const key of keys) {
-    if (aAttrs[key] !== bAttrs[key]) return false
-  }
-  return true
-}
-
 function cloneMark(mark: JSONMark): JSONMark {
   return mark.attrs ? { type: mark.type, attrs: { ...mark.attrs } } : { type: mark.type }
 }
@@ -572,103 +545,6 @@ function tableToMarkdown(node: JSONNode): string {
 function cellToInline(cell: JSONNode): string {
   const paragraphs = (cell.content ?? []).filter((c) => c.type === 'paragraph')
   return paragraphs.map((p) => inlineToMarkdown(p.content ?? [])).join(' ')
-}
-
-// ---------------------------------------------------------------------------
-// Inline serializer — emits mark deltas
-// ---------------------------------------------------------------------------
-
-interface InlineRun {
-  text: string
-  marks: JSONMark[]
-}
-
-function inlineToMarkdown(nodes: JSONNode[]): string {
-  const runs: InlineRun[] = []
-  collectInlineRuns(nodes, runs)
-  return runsToMarkdown(runs)
-}
-
-function collectInlineRuns(nodes: JSONNode[], runs: InlineRun[]): void {
-  for (const node of nodes) {
-    if (node.type === 'text') {
-      runs.push({ text: node.text ?? '', marks: node.marks ?? [] })
-    } else if (node.type === 'hardBreak') {
-      runs.push({ text: '\n', marks: [] })
-    }
-    // Other inline node types (none today) would slot in here.
-  }
-}
-
-const MARK_OPEN: Record<string, string> = {
-  bold: '**',
-  italic: '*',
-  strike: '~~',
-  code: '`',
-}
-
-// Marks with asymmetric open/close (link, underline) are handled
-// explicitly in `openMark` / `closeMark`. Listed here purely so the
-// mark-sort below has a stable ordering for them.
-const MARK_ORDER = ['link', 'underline', 'code', 'bold', 'italic', 'strike']
-
-function runsToMarkdown(runs: InlineRun[]): string {
-  // Normalise mark order so identical mark sets produce identical
-  // open/close sequences. Code is the innermost mark by convention.
-  const normalised = runs.map((run) => ({
-    text: run.text,
-    marks: [...run.marks].sort((a, b) => MARK_ORDER.indexOf(a.type) - MARK_ORDER.indexOf(b.type)),
-  }))
-
-  let out = ''
-  const active: JSONMark[] = []
-  for (const run of normalised) {
-    const next = run.marks
-    // Close marks that aren't in `next` (in reverse open order).
-    while (active.length > 0 && !marksContain(next, active[active.length - 1])) {
-      const closed = active.pop()
-      if (closed) out += closeMark(closed)
-    }
-    // Open marks that aren't in `active`.
-    for (const mark of next) {
-      if (!marksContain(active, mark)) {
-        out += openMark(mark)
-        active.push(mark)
-      }
-    }
-    out += escapeInline(run.text, active)
-  }
-  while (active.length > 0) {
-    const closed = active.pop()
-    if (closed) out += closeMark(closed)
-  }
-  return out
-}
-
-function marksContain(list: JSONMark[], mark: JSONMark): boolean {
-  return list.some((m) => sameMark(m, mark))
-}
-
-function openMark(mark: JSONMark): string {
-  if (mark.type === 'link') return '['
-  if (mark.type === 'underline') return '<u>'
-  return MARK_OPEN[mark.type] ?? ''
-}
-
-function closeMark(mark: JSONMark): string {
-  if (mark.type === 'link') {
-    const href = (mark.attrs?.href ?? '') as string
-    return `](${href})`
-  }
-  if (mark.type === 'underline') return '</u>'
-  return MARK_OPEN[mark.type] ?? ''
-}
-
-function escapeInline(text: string, marks: JSONMark[]): string {
-  // Inside a code mark, no escaping (and no marks inside it anyway).
-  if (marks.some((m) => m.type === 'code')) return text
-  // Escape characters that would otherwise be parsed as markdown.
-  return text.replace(/([\\`*_~[\]])/g, '\\$1')
 }
 
 // ---------------------------------------------------------------------------
