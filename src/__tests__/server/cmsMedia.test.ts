@@ -185,6 +185,21 @@ function makeFakeDb() {
       return { rows: [row as Row], rowCount: 1 }
     }
 
+    // replaceMediaAssetBinary — values[0..7] = filename, mimeType, sizeBytes, storagePath, publicPath, storageAdapterId, externallyHosted, replacedAt, values[8] = id
+    if (normalized.startsWith('update media_assets set filename =') && normalized.includes('mime_type =')) {
+      const row = media.find((asset) => asset.id === values[8])
+      if (!row) return { rows: [], rowCount: 0 }
+      row.filename = values[0]
+      row.mime_type = values[1]
+      row.size_bytes = values[2]
+      row.storage_path = values[3]
+      row.public_path = values[4]
+      row.storage_adapter_id = values[5]
+      row.externally_hosted = values[6]
+      row.replaced_at = values[7]
+      return { rows: [row as Row], rowCount: 1 }
+    }
+
     // renameMediaAsset — values[0] = filename, values[1] = id
     if (normalized.startsWith('update media_assets set filename =')) {
       const row = media.find((asset) => asset.id === values[1])
@@ -220,6 +235,12 @@ function makeFakeDb() {
       if (!row) return { rows: [], rowCount: 0 }
       row.deleted_at = values[0]
       return { rows: [row as Row], rowCount: 1 }
+    }
+
+    // getMediaAssetVariants
+    if (normalized.startsWith('select variants_json from media_assets')) {
+      const row = media.find((asset) => asset.id === values[0])
+      return { rows: row ? [{ variants_json: row.variants_json ?? '[]' } as Row] : [], rowCount: row ? 1 : 0 }
     }
 
     // getMediaAssetStoragePath — bare storage_path lookup used by the purge
@@ -727,6 +748,60 @@ describe('CMS media handlers', () => {
       expect(await purge.json()).toEqual({ ok: true })
       expect(db.media).toHaveLength(0)
       await expect(readFile(join(uploadsDir, 'asset_1-hero.png'), 'utf-8')).rejects.toThrow()
+    } finally {
+      rmSync(uploadsDir, { recursive: true, force: true })
+    }
+  })
+
+  it('replaces media asset file preserving the public URL', async () => {
+    const db = makeFakeDb()
+    const cookie = await createCookie(db)
+    const uploadsDir = mkdtempSync(join(tmpdir(), 'instatic-uploads-'))
+    mediaStorageRegistry.configureLocalDisk({ uploadsDir })
+    await createMediaAsset(db, {
+      id: 'asset_1',
+      filename: 'hero.png',
+      mimeType: 'image/png',
+      sizeBytes: 12,
+      storagePath: 'asset_1-hero.png',
+      publicPath: '/uploads/asset_1-hero.png',
+      uploadedByUserId: 'user_1',
+      storageAdapterId: '',
+      externallyHosted: false,
+    })
+    await writeFile(join(uploadsDir, 'asset_1-hero.png'), 'old-image-bytes')
+
+    try {
+      const pngBytes = new Uint8Array([
+        0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a,
+        0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44, 0x52,
+        0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01,
+        0x08, 0x06, 0x00, 0x00, 0x00, 0x1f, 0x15, 0xc4,
+        0x89, 0x00, 0x00, 0x00, 0x0a, 0x49, 0x44, 0x41,
+        0x54, 0x78, 0x9c, 0x63, 0x00, 0x01, 0x00, 0x00,
+        0x05, 0x00, 0x01, 0x0d, 0x0a, 0x2d, 0xb4, 0x00,
+        0x00, 0x00, 0x00, 0x49, 0x45, 0x4e, 0x44, 0xae,
+        0x42, 0x60, 0x82,
+      ])
+      const formData = new FormData()
+      formData.append('file', new File([pngBytes], 'hero-new.png', { type: 'image/png' }))
+
+      const res = await handleCmsRequest(
+        cmsRequest('http://localhost/admin/api/cms/media/asset_1/replace', {
+          method: 'POST',
+          headers: { cookie },
+          formData,
+        }),
+        db,
+        { uploadsDir },
+      )
+
+      expect(res.status).toBe(200)
+      const data = (await res.json()) as { asset: { filename: string; publicPath: string } }
+      expect(data.asset.publicPath).toBe('/uploads/asset_1-hero.png')
+      expect(data.asset.filename).toBe('hero-new.png')
+      const stored = await readFile(join(uploadsDir, 'asset_1-hero.png'))
+      expect(stored).toEqual(Buffer.from(pngBytes))
     } finally {
       rmSync(uploadsDir, { recursive: true, force: true })
     }

@@ -18,7 +18,7 @@
  * byte-level checks in one place is a security-critical invariant — any
  * handler that uploads media MUST go through `acceptUploadedMedia`.
  */
-import { basename } from 'node:path'
+import { basename, extname } from 'node:path'
 import { nanoid } from 'nanoid'
 import type { DbClient } from '../../db/client'
 import {
@@ -404,7 +404,20 @@ export async function acceptReplacementMedia(
   const previousVariants = await getMediaAssetVariants(db, assetId)
 
   const storageName = `${safeStorageStem(input.file.name)}${EXTENSION_FOR_MIME[validated.detectedMime]}`
-  const suggestedStoragePath = buildSuggestedStoragePath(safeStorageStem(input.file.name), EXTENSION_FOR_MIME[validated.detectedMime])
+  const newExtension = EXTENSION_FOR_MIME[validated.detectedMime]
+  const previousExt = extname(previousStoragePath).toLowerCase()
+  const isPreviousJpeg = previousExt === '.jpg' || previousExt === '.jpeg'
+  const isNewJpeg = newExtension === '.jpg' || newExtension === '.jpeg'
+  const extensionMatches = previousExt === newExtension || (isPreviousJpeg && isNewJpeg)
+  // Preserve the existing storage path so the public URL remains stable across
+  // replacements — every page and content entry referencing the asset continues
+  // to resolve without broken references. If the MIME extension changed, preserve
+  // the existing nanoid prefix and stem with the new extension.
+  const suggestedStoragePath = extensionMatches
+    ? previousStoragePath
+    : (previousExt
+      ? `${previousStoragePath.slice(0, previousStoragePath.length - previousExt.length)}${newExtension}`
+      : `${previousStoragePath}${newExtension}`)
 
   let dispatched
   try {
@@ -480,10 +493,22 @@ export async function acceptReplacementMedia(
 
   // Sweep the previous bytes via THEIR adapter (not the currently elected
   // one — the asset may have lived on a different backend before this
-  // replace). Variant cleanup honours each variant's own adapter id too.
-  await dispatchDelete(previous.storageAdapterId, previousStoragePath).catch((err) => {
-    console.error('[mediaUpload] previous-binary cleanup failed (orphaned bytes):', err)
-  })
-  await removeVariantFiles(previousVariants)
+  // replace). Only delete if the storage path or adapter changed; when the
+  // path is reused the newly written binary already occupies it.
+  if (previousStoragePath !== dispatched.storagePath || previous.storageAdapterId !== dispatched.storageAdapterId) {
+    await dispatchDelete(previous.storageAdapterId, previousStoragePath).catch((err) => {
+      console.error('[mediaUpload] previous-binary cleanup failed (orphaned bytes):', err)
+    })
+  }
+
+  // Clean up any old variants that were NOT overwritten by the new variant ladder
+  // (e.g. higher-resolution widths no longer generated for a smaller replacement).
+  const newVariantKeys = new Set(
+    finalAsset.variants.map((v) => `${v.storageAdapterId}:${v.storagePath}`),
+  )
+  const orphanedVariants = previousVariants.filter(
+    (v) => !newVariantKeys.has(`${v.storageAdapterId}:${v.storagePath}`),
+  )
+  await removeVariantFiles(orphanedVariants)
   return finalAsset
 }
