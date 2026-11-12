@@ -98,6 +98,7 @@ export const FORM_RUNTIME_JS = `(() => {
       .then((challenge) => {
         form.__instaticFormChallenge = challenge;
         form.__instaticFormChallengePromise = null;
+        scheduleChallengeRefresh(form, challenge);
         return challenge;
       })
       .catch((err) => {
@@ -110,15 +111,49 @@ export const FORM_RUNTIME_JS = `(() => {
     return request;
   }
 
+  function scheduleChallengeRefresh(form, challenge) {
+    if (form.__instaticChallengeTimer) {
+      clearTimeout(form.__instaticChallengeTimer);
+      form.__instaticChallengeTimer = null;
+    }
+    const expiresAt = Date.parse(challenge && challenge.expiresAt ? challenge.expiresAt : '');
+    if (!Number.isFinite(expiresAt)) return;
+    // Refresh 30 seconds before expiration so visitors who spend minutes on the
+    // page always hold a fresh challenge that passes the server time trap.
+    const calculated = expiresAt - Date.now() - 30000;
+    const delay = Math.min(2147483647, Math.max(1000, calculated));
+    form.__instaticChallengeTimer = setTimeout(() => {
+      form.__instaticChallengeTimer = null;
+      if (!form.isConnected) return;
+      form.__instaticFormChallenge = null;
+      prefetchChallenge(form);
+    }, delay);
+  }
+
   async function takeChallenge(form) {
+    if (form.__instaticChallengeTimer) {
+      clearTimeout(form.__instaticChallengeTimer);
+      form.__instaticChallengeTimer = null;
+    }
     const existing = form.__instaticFormChallenge;
     if (existing && challengeIsFresh(existing)) {
       form.__instaticFormChallenge = null;
       return existing;
     }
     form.__instaticFormChallenge = null;
+    const requestStart = Date.now();
     const challenge = await prefetchChallenge(form);
     form.__instaticFormChallenge = null;
+    // When a fresh challenge must be fetched on submit (e.g. background tab wake-up
+    // or failed prefetch), wait out the server's minSubmitSeconds before posting so
+    // legitimate human visitors who were filling the form are not rejected by the time trap.
+    const minSeconds = Number(challenge && challenge.minSubmitSeconds) || 0;
+    if (minSeconds > 0) {
+      const remainingMs = (minSeconds * 1000) - (Date.now() - requestStart);
+      if (remainingMs > 0) {
+        await new Promise((resolve) => setTimeout(resolve, remainingMs + 50));
+      }
+    }
     return challenge;
   }
 

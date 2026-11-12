@@ -79,6 +79,7 @@ async function handleChallenge(req: Request, db: DbClient): Promise<Response> {
     token: challenge.token,
     challenge: challenge.challenge,
     expiresAt: new Date(challenge.expiresAt).toISOString(),
+    minSubmitSeconds: snapshot.minSubmitSeconds,
   })
 }
 
