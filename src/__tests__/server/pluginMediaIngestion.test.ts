@@ -127,6 +127,7 @@ describe('plugin media ingestion', () => {
 
     expect(replaced.status).toBe('replaced')
     expect(replaced.asset.id).toBe(first.asset.id)
+    expect(replaced.asset.publicPath).toBe(first.asset.publicPath)
     expect(replaced.asset.width).toBe(8)
     expect(fetchCount).toBe(2)
   })
