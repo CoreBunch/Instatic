@@ -71,6 +71,9 @@ async function handleList(req: Request, db: DbClient): Promise<Response> {
 async function handleCreateAccessToken(req: Request, db: DbClient): Promise<Response> {
   const userOrResponse = await requireCapability(req, db, 'ai.providers.manage')
   if (userOrResponse instanceof Response) return userOrResponse
+  if (!userHasCapability(userOrResponse, 'ai.chat')) {
+    return jsonResponse({ error: 'AI access is required to create an MCP connection.' }, { status: 403 })
+  }
 
   const body = await readValidatedBody(req, CreateMcpAccessTokenBodySchema)
   if (!body) return badRequest('Invalid request body.')
@@ -78,7 +81,7 @@ async function handleCreateAccessToken(req: Request, db: DbClient): Promise<Resp
   if (!label) return badRequest('Label is required.')
 
   const capabilities = [...new Set(body.capabilities)]
-  if (userHasCapability(userOrResponse, 'ai.chat') && !capabilities.includes('ai.chat')) {
+  if (!capabilities.includes('ai.chat')) {
     capabilities.push('ai.chat')
   }
   const overreach = capabilitiesUserCannotGrant(userOrResponse, capabilities)

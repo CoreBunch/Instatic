@@ -110,6 +110,22 @@ describe('MCP connection management handler', () => {
     expect(res.status).toBe(403)
   })
 
+  it('refuses to create an unusable token for a manager without AI access', async () => {
+    await harness.setupOwner()
+    const user = await harness.createRoleUser({
+      name: 'Provider Manager', slug: 'provider-manager',
+      capabilities: ['ai.providers.manage', 'site.read'],
+    })
+    const cookie = await harness.stepUp(user.cookie)
+    const res = await harness.ai(ACCESS_TOKENS, {
+      method: 'POST', cookie, json: { label: 'Read site', capabilities: ['site.read'] },
+    })
+    expect(res.status).toBe(403)
+    expect((await res.json()).error).toBe('AI access is required to create an MCP connection.')
+    const overview = await readJson<McpConnectionOverview>(await harness.ai(CONNECTIONS, { cookie }))
+    expect(overview.connections).toHaveLength(0)
+  })
+
   it('rejects an invalid access-token body', async () => {
     const cookie = await harness.setupOwner()
     const res = await harness.ai(ACCESS_TOKENS, {

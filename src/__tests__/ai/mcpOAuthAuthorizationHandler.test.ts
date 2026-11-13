@@ -142,4 +142,26 @@ describe('MCP OAuth authorization consent handler', () => {
     })
     expect(response.status).toBe(403)
   })
+
+  it('refuses OAuth approval without AI access while still allowing denial', async () => {
+    await harness.setupOwner()
+    const user = await harness.createRoleUser({
+      name: 'Provider Manager', slug: 'oauth-provider-manager',
+      capabilities: ['ai.providers.manage', 'site.read'],
+    })
+    const cookie = await harness.stepUp(user.cookie)
+    const response = await harness.ai(AUTHORIZATION, {
+      method: 'POST', cookie, json: { decision: 'approve', request, capabilities: ['site.read'] },
+    })
+    expect(response.status).toBe(403)
+    expect((await response.json()).error).toBe('AI access is required to create an MCP connection.')
+    const denied = await harness.ai(AUTHORIZATION, {
+      method: 'POST', cookie, json: { decision: 'deny', request },
+    })
+    expect(denied.status).toBe(200)
+    const redirect = new URL((await readJson<DecideMcpOAuthAuthorizationResult>(denied)).redirectUrl)
+    expect(redirect.searchParams.get('error')).toBe('access_denied')
+    const overview = await readJson<McpConnectionOverview>(await harness.ai(CONNECTIONS, { cookie }))
+    expect(overview.connections).toHaveLength(0)
+  })
 })
