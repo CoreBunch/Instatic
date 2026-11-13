@@ -26,6 +26,7 @@
  */
 
 import { Marked, type Tokens, type Token } from 'marked'
+import { escapeMarkdownText, isRawHtmlBlock } from './htmlPassthrough'
 
 // ---------------------------------------------------------------------------
 // ProseMirror JSON shape (just enough — we don't pull in @tiptap/pm here so
@@ -498,8 +499,12 @@ function blockNodeToMarkdown(node: JSONNode): string {
     // round-trip parser + a publisher CSS rule, both of which are a
     // separate follow-up. Authors using alignment today will see it
     // visually while editing; it resets after save+reload.
-    case 'paragraph':
-      return inlineToMarkdown(node.content ?? [])
+    case 'paragraph': {
+      const content = node.content ?? []
+      const raw = content.every((child) => child.type === 'text' && !child.marks?.length)
+        ? content.map((child) => child.text ?? '').join('') : ''
+      return isRawHtmlBlock(raw) ? raw : inlineToMarkdown(content)
+    }
     case 'heading': {
       const level = clampHeadingLevel(numberAttr(node, 'level', 2))
       return `${'#'.repeat(level)} ${inlineToMarkdown(node.content ?? [])}`
@@ -636,7 +641,7 @@ function runsToMarkdown(runs: InlineRun[]): string {
         active.push(mark)
       }
     }
-    out += escapeInline(run.text, active)
+    out += active.some((mark) => mark.type === 'code') ? run.text : escapeMarkdownText(run.text)
   }
   while (active.length > 0) {
     const closed = active.pop()
@@ -662,13 +667,6 @@ function closeMark(mark: JSONMark): string {
   }
   if (mark.type === 'underline') return '</u>'
   return MARK_OPEN[mark.type] ?? ''
-}
-
-function escapeInline(text: string, marks: JSONMark[]): string {
-  // Inside a code mark, no escaping (and no marks inside it anyway).
-  if (marks.some((m) => m.type === 'code')) return text
-  // Escape characters that would otherwise be parsed as markdown.
-  return text.replace(/([\\`*_~[\]])/g, '\\$1')
 }
 
 // ---------------------------------------------------------------------------

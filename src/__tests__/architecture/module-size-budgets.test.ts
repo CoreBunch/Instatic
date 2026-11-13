@@ -110,7 +110,7 @@ const GRANDFATHERED: Record<string, number> = {
   // server/plugins/host/handlers/content.ts graduated (786 → 661) when the
   // DB→wire projection helpers moved to contentProjection.ts.
   'src/admin/pages/site/panels/TypographyPanel/FontsSection/AddGoogleFontDialog.tsx': 751,
-  'src/core/markdown/markdownDocument.ts': 748,
+  'src/core/markdown/markdownDocument.ts': 746,
   'src/admin/pages/dashboard/DashboardPage.tsx': 732,
 }
 

@@ -59,6 +59,8 @@ Round-trip functions live in `src/core/markdown/markdownDocument.ts`:
 
 The serializer produces stable, idempotent output. Existing entries load with no migration; the grammar is a strict superset of what was stored before.
 
+Raw HTML is editable source text. Serialization preserves complete HTML blocks and inline tag syntax, including image URLs and attribute values, using the same `marked` grammar as parsing. Ordinary text outside inline tags still receives Markdown escaping. Published HTML continues through the publisher's sanitizer; preserving source does not bypass sanitization.
+
 ### Supported grammar
 
 | Category | Examples |
@@ -71,6 +73,7 @@ The serializer produces stable, idempotent output. Existing entries load with no
 | Horizontal rule | `---` |
 | Tables | GFM pipe-table syntax |
 | Media | `![alt](src)` for images, `@[video](src)` for videos |
+| Raw HTML | HTML blocks and inline tags retain their source syntax through edits |
 | Data tokens | `{source.field}` — plain inline text in the editor; resolved by the publisher at render time |
 
 ### Insertion surfaces
@@ -194,4 +197,5 @@ Body content is exchanged with the model as markdown. The browser bridge convert
   - `src/admin/pages/content/hooks/useContentWorkspace.ts` — collection/entry state
   - `src/admin/pages/content/hooks/useContentEntryDraft.ts` — field draft state
   - `src/core/markdown/markdownDocument.ts` — markdown ↔ ProseMirror round-trip
+  - `src/core/markdown/htmlPassthrough.ts` — preserve HTML syntax while escaping Markdown text
   - `src/admin/layouts/AdminWorkspaceCanvasLayout/AdminWorkspaceCanvasLayout.tsx` — workspace shell + notch
