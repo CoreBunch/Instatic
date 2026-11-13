@@ -40,6 +40,11 @@ const baseManifest: PluginManifest = {
   adminPages: [],
 }
 
+const pluginContext = {
+  version: baseManifest.version,
+  grantedPermissions: baseManifest.grantedPermissions ?? [],
+}
+
 beforeEach(() => {
   dashboardWidgetRegistry.reset()
   pluginRuntime.reset()
@@ -76,6 +81,7 @@ describe('dashboardWidgetRegistry — namespace + lifecycle', () => {
       dashboardWidgetRegistry.register({
         id: 'pageviews',
         ownerId: 'acme.analytics',
+        pluginContext,
         name: 'Pageviews',
         description: 'Bad — no namespace',
         icon: NoopIcon,
@@ -90,6 +96,7 @@ describe('dashboardWidgetRegistry — namespace + lifecycle', () => {
     dashboardWidgetRegistry.register({
       id: 'acme.analytics.pageviews',
       ownerId: 'acme.analytics',
+      pluginContext,
       name: 'Pageviews',
       description: 'Site-wide pageview chart',
       icon: NoopIcon,
@@ -99,6 +106,21 @@ describe('dashboardWidgetRegistry — namespace + lifecycle', () => {
     })
 
     expect(dashboardWidgetRegistry.get('acme.analytics.pageviews')?.tint).toBe('lilac')
+  })
+
+  it('rejects a plugin widget without host context metadata', () => {
+    expect(() =>
+      dashboardWidgetRegistry.register({
+        id: 'acme.analytics.pageviews',
+        ownerId: 'acme.analytics',
+        name: 'Pageviews',
+        description: 'Missing plugin context',
+        icon: NoopIcon,
+        defaultSize: 6,
+        tint: 'lilac',
+        render: NoopBody,
+      }),
+    ).toThrow(/must include its host context metadata/)
   })
 
   it('drops every widget for a given owner via unregisterByOwner', () => {
@@ -115,6 +137,7 @@ describe('dashboardWidgetRegistry — namespace + lifecycle', () => {
     dashboardWidgetRegistry.register({
       id: 'acme.analytics.first',
       ownerId: 'acme.analytics',
+      pluginContext,
       name: 'First',
       description: 'one',
       icon: NoopIcon,
@@ -125,6 +148,7 @@ describe('dashboardWidgetRegistry — namespace + lifecycle', () => {
     dashboardWidgetRegistry.register({
       id: 'acme.analytics.second',
       ownerId: 'acme.analytics',
+      pluginContext,
       name: 'Second',
       description: 'two',
       icon: NoopIcon,
@@ -188,6 +212,10 @@ describe('plugin runtime — dashboard.widgets.register', () => {
     expect(captured).not.toBeNull()
     const def = dashboardWidgetRegistry.get('acme.analytics.pageviews')
     expect(def?.ownerId).toBe('acme.analytics')
+    expect(def?.pluginContext).toEqual({
+      version: '1.0.0',
+      grantedPermissions: ['dashboard.widgets.register'],
+    })
     expect(def?.tint).toBe('mint')
     expect(def?.icon).toBe(NoopIcon)
   })

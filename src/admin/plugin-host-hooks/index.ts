@@ -15,8 +15,8 @@
  * mount time through the host's import map.
  *
  * Permission-gated hooks resolve the calling plugin from `PluginContext`
- * (populated per-mount by `PluginEditorPanel`, `PluginPageRenderer`, and
- * `PluginCanvasOverlayLayer`) and throw when the operator did not grant
+ * (populated by the host wherever a plugin React surface is mounted) and
+ * throw when the operator did not grant
  * the required permission: `useEditorStore` requires `editor.store.read`.
  * There is NO write-capable store accessor in this package — editor-store
  * mutations go through `api.editor.store.transaction` in the plugin's
@@ -301,3 +301,4 @@ export function useCanvasViewport(): CanvasViewport | null {
 
 export { PluginContext } from './pluginContext'
 export type { PluginContextValue } from './pluginContext'
+export { PluginContextProvider } from './PluginContextProvider'
