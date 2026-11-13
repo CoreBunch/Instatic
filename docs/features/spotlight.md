@@ -154,7 +154,7 @@ The subscription is **dropped on close** to avoid spurious re-renders.
 
 | Group              | Examples                                                             |
 |--------------------|----------------------------------------------------------------------|
-| `editor`           | Publish, Save, Undo, Redo, Wrap in container, Toggle preview         |
+| `editor`           | Publish, Save, Undo, Redo, Wrap in container, Toggle preview, Import HTML, Insert fragment from file… (`commands/fragments.ts`, see [fragments.md](fragments.md)) |
 | `pages`            | Add page, Open page settings                                         |
 | `content`          | New post, Edit post                                                  |
 | `navigation`       | Go to dashboard, Go to site, Go to media, Go to plugins, …           |
@@ -472,6 +472,7 @@ run: async (ctx) => {
 
 - [docs/architecture.md](../architecture.md) — admin shell mount points
 - [docs/editor.md](../editor.md) — `SpotlightRoot` placement
+- [docs/features/fragments.md](fragments.md) — the Insert fragment command's dialog and engine
 - [docs/features/plugin-system.md](plugin-system.md) — plugin commands + providers
 - [docs/reference/design-tokens.md](../reference/design-tokens.md) — global UI token reference
 - Source-of-truth files:

@@ -1,0 +1,98 @@
+/* InsertFragmentModal — pick a fragment file, review the plan, read the result. */
+
+.pick,
+.review {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-m);
+}
+
+.body {
+  margin: 0;
+  font-size: var(--text-m);
+  color: var(--text);
+  line-height: 1.4;
+}
+
+.fileRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-s);
+}
+
+.fileName {
+  margin: 0;
+  font-size: var(--text-m);
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+
+.meta {
+  color: var(--text-subtle);
+  font-size: var(--text-s);
+}
+
+.progress {
+  margin: 0;
+  font-size: var(--text-s);
+  color: var(--text-subtle);
+}
+
+.report {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-m);
+}
+
+.reportHeading {
+  margin: 0 0 var(--space-xs) 0;
+  font-size: var(--text-2xs);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-subtle);
+}
+
+.reportEmpty {
+  margin: 0;
+  font-size: var(--text-s);
+  color: var(--text-subtle);
+}
+
+.reportList {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-px);
+  background: var(--bg-surface);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.reportRow {
+  display: grid;
+  grid-template-columns: minmax(8rem, max-content) 1fr;
+  column-gap: var(--space-m);
+  padding: var(--space-xs) var(--space-s);
+  background: var(--bg-surface-2);
+  font-size: var(--text-s);
+}
+
+.reportRow dt {
+  color: var(--text-subtle);
+}
+
+.reportRow dd {
+  margin: 0;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+
+.warningList {
+  margin: 0;
+  padding-left: var(--space-m);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4xs);
+}

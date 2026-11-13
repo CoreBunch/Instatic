@@ -8,27 +8,8 @@
 
 import { nanoid } from 'nanoid'
 import { classKindSelector } from '@core/page-tree'
-import type { StyleRule, StyleRuleOrigin } from '@core/page-tree'
+import type { StyleRule, StyleRuleOrderAllocator, StyleRuleOrigin } from '@core/page-tree'
 import type { NewStyleRule } from '@core/siteImport'
-
-export type StyleRuleOrderAllocator = () => number
-
-/**
- * Allocate monotonically increasing cascade positions for one import
- * transaction. The existing registry is scanned once; every subsequent rule
- * append is O(1), even when a stylesheet contains tens of thousands of rules.
- */
-export function createStyleRuleOrderAllocator(
-  rules: Record<string, StyleRule>,
-): StyleRuleOrderAllocator {
-  let nextOrder = 0
-  for (const rule of Object.values(rules)) {
-    if (typeof rule.order === 'number' && rule.order >= nextOrder) {
-      nextOrder = rule.order + 1
-    }
-  }
-  return () => nextOrder++
-}
 
 /**
  * Index a StyleRule registry by name → id.

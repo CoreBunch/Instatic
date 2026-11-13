@@ -15,6 +15,7 @@ import {
   type DataField,
   type DataRowCells,
   type DataTable,
+  type RepeaterItemField,
   type RepeaterValue,
   POST_TYPE_FIELD_TITLE,
 } from './schemas'
@@ -70,6 +71,28 @@ export function readMediaCellIds(cells: DataRowCells, fieldId: string): string[]
 export function readRepeaterCell(cells: DataRowCells, fieldId: string): RepeaterValue {
   const result = safeParseValue(RepeaterValueSchema, cells[fieldId])
   return result.ok ? result.value : []
+}
+
+/**
+ * Every media-asset id a row's cells hold: each `media` field, and the media
+ * fields inside repeater items, recursively. Appends to `ids` and returns it.
+ */
+export function collectCellMediaIds(
+  cells: DataRowCells,
+  fields: readonly (DataField | RepeaterItemField)[],
+  ids: string[] = [],
+): string[] {
+  for (const field of fields) {
+    if (field.type === 'media') {
+      ids.push(...readMediaCellIds(cells, field.id))
+      continue
+    }
+    if (field.type !== 'repeater') continue
+    for (const item of readRepeaterCell(cells, field.id)) {
+      collectCellMediaIds(item.cells, field.fields, ids)
+    }
+  }
+  return ids
 }
 
 /**

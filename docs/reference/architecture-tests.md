@@ -6,7 +6,7 @@ Catalog of every test in `src/__tests__/architecture/`. These are structural gat
 
 ## TL;DR
 
-- 95 gate files across structural domains: SQL, JSON columns, migrations, CSS, icons, primitives, page tree, sandbox, agent, router, content storage, boundary validation, module size, AI, auth, error handling, etc.
+- 104 gate files across structural domains: SQL, JSON columns, migrations, CSS, icons, primitives, page tree, sandbox, agent, router, content storage, boundary validation, module size, AI, auth, error handling, etc.
 - Naming convention: `<topic>.test.ts` (kebab-case) or `<group>-<topic>.test.ts`. A few legacy `task<N>-*` ids remain for live invariants; new gates should use topic names.
 - Run them all: `bun test src/__tests__/architecture/`.
 - Most are **import / source scans** — they parse the files in scope and assert / reject patterns. Some are unit-style (a small in-test database, a synthesized page tree).
@@ -221,6 +221,14 @@ See [docs/features/publisher.md](../features/publisher.md).
 | `siteImport-headless.test.ts`                 | `src/core/siteImport/` imports no `src/admin/`, `server/`, or `react`/`react-dom` modules and contains no `.tsx` files — keeps the Super Import pipeline framework-agnostic and runnable in headless environments. |
 
 See [docs/features/site-import.md](../features/site-import.md).
+
+### Fragments
+
+| Test                                          | What it enforces                                                                 |
+|-----------------------------------------------|----------------------------------------------------------------------------------|
+| `fragments-headless.test.ts`                  | The runtime import graph reachable from `src/core/fragments/index.ts` (following `@core/*` and relative imports, transitively) contains no `.tsx`, no admin/UI/module/server code, and no npm package besides TypeBox, nanoid and fflate — so build scripts can import the engine by path under Bun. |
+
+See [docs/features/fragments.md](../features/fragments.md).
 
 ### Site transfer (export / import)
 

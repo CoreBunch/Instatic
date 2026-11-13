@@ -150,3 +150,24 @@ export function parseConditions(raw: unknown): ConditionDef[] {
   }
   return out
 }
+
+/**
+ * Register the definitions a site does not have yet (matched by id) on a plain
+ * site or a draft. Returns how many were added.
+ */
+export function addMissingConditions(
+  site: { conditions?: ConditionDef[] },
+  defs: readonly ConditionDef[],
+): number {
+  if (defs.length === 0) return 0
+  site.conditions ??= []
+  const existing = new Set(site.conditions.map((c) => c.id))
+  let added = 0
+  for (const def of defs) {
+    if (existing.has(def.id)) continue
+    existing.add(def.id)
+    site.conditions.push(def)
+    added += 1
+  }
+  return added
+}

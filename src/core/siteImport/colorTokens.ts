@@ -18,7 +18,7 @@
  */
 
 import type { NewStyleRule, ImportColorToken } from './types'
-import { isRootScopeSelector } from './rootScope'
+import { isRootScopeSelector } from '@core/page-tree'
 
 // ---------------------------------------------------------------------------
 // Colour-value detection

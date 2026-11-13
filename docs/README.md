@@ -41,6 +41,7 @@ docs/
 │   ├── site-transfer.md            ← export / import CMS bundles
 │   ├── site-import.md              ← Super Import (static sites → CMS)
 │   ├── html-import.md              ← paste / import HTML into the page tree
+│   ├── fragments.md                ← portable sections/pages/components: extract, plan, insert
 │   ├── editor-preferences.md       ← catalog-driven editor prefs
 │   └── canvas-iframe-per-frame.md  ← per-breakpoint iframe rendering
 │
@@ -160,6 +161,7 @@ Three categories, three voices:
 | [features/site-transfer.md](features/site-transfer.md)           | Export / import CMS bundle (JSON round-trip between instances)      |
 | [features/site-import.md](features/site-import.md)               | Super Import — static-site files / ZIP → pages, style rules, media |
 | [features/html-import.md](features/html-import.md)               | HTML string → `PageNode` fragment (paste HTML, AI `insertHtml` tool) |
+| [features/fragments.md](features/fragments.md)                   | Site fragments — a section, page or component with its styles, tokens, components, tables and media; extract, plan and insert |
 | [features/editor-preferences.md](features/editor-preferences.md) | Catalog-driven local UI preferences for the editor                   |
 | [features/canvas-iframe-per-frame.md](features/canvas-iframe-per-frame.md) | Per-breakpoint iframe rendering in the visual editor canvas |
 

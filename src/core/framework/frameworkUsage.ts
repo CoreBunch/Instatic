@@ -10,7 +10,7 @@
  */
 import type { SiteDocument } from '@core/page-tree'
 
-const FRAMEWORK_ID_PREFIX = 'framework:'
+export const FRAMEWORK_ID_PREFIX = 'framework:'
 
 function addFrameworkClassIds(target: Set<string>, classIds: string[] | undefined): void {
   if (!classIds) return
