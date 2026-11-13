@@ -41,6 +41,7 @@ src/modules/base/
 ├── outlet/              — base.outlet (Content Outlet — template content slot)
 ├── button/              — base.button (anchor.ts — element-decision leaf)
 ├── link/                — base.link (content.ts — children/text fallback leaf)
+├── disclosure/          — base.disclosure (native details/summary + shared dismissal behavior)
 ├── image/               — base.image
 ├── svg/                 — base.svg (inline sanitized SVG)
 ├── video/               — base.video (youtube.ts — ID parse + embed URL leaf)
@@ -160,6 +161,34 @@ Constraint #179: **`render()` is pure** — no DOM, no React, no side effects. I
 `render()` may also return `js` next to `html`/`css` — an optional vanilla-JS runtime for the module TYPE, deduplicated per moduleId (like CSS) and served as an external file at `/_instatic/module-js/<moduleId>.js` on published pages. Authoring contract: a self-contained IIFE; bind via document-level event delegation (hole fragments insert into the DOM after load); idempotent; no load-order assumptions; no framework runtimes. Size discipline in the spirit of the ~1 KB hole runtime — the ~8 KB form runtime is the ceiling, not the norm. Module JS never executes in the admin canvas: the canvas renders React editor components, never published render() output.
 
 ---
+
+## Native disclosures
+
+`base.disclosure` emits a semantic `<details>` around its authored child nodes.
+Author its first child as `base.container` with `tag: 'custom'` and
+`customTag: 'summary'`. Its text, icons and images are ordinary nested nodes;
+they use the same classes, attributes, language-file bindings and editing as
+the rest of the document. The summary itself can have its own classes and
+attributes. The module generates no implicit summary or label and adds no
+default visual CSS, ARIA menu roles, focus trap, or arrow-key navigation.
+
+`initiallyOpen` controls authored initial state. A nonempty `group` maps to the
+native HTML `name` attribute, so one related disclosure is open at a time. Keep
+members together and do not nest members of the same group. Only one member of
+a group should be initially open.
+
+`closeOnEscape` defaults to true; outside-click/tap and focus-leave dismissal
+default to false and are opt-in for navigation disclosures. Escape closes the
+innermost open disclosure and focuses its summary. Outside dismissal does not
+prevent the pointer's default action; closing restores focus only when it would
+remain in concealed content. Focus-leave dismissal preserves the new external
+focus. Native/scripted closing also moves any concealed focus back to summary.
+
+`disclosure/behavior.ts` owns one typed, self-contained document installer. The
+canvas leases that installer per mounted component; published pages receive its
+compiled function body via the existing external module-JS channel. Delegation
+handles dynamically inserted holes and installation is idempotent. Browser
+native summary activation and group exclusivity work without the enhancement.
 
 ## Property schema
 

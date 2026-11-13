@@ -32,6 +32,7 @@ import { CanvasDocumentContext } from '@site/canvas/CanvasContexts'
 import { TextModule } from '@modules/base/text'
 import { ButtonModule } from '@modules/base/button'
 import { ContainerModule } from '@modules/base/container'
+import { DisclosureModule } from '@modules/base/disclosure'
 import { LoopModule } from '@modules/base/loop'
 import { ImageModule } from '@modules/base/image'
 import { SvgModule } from '@modules/base/svg'
@@ -51,6 +52,7 @@ import { SlotOutletModule } from '@modules/base/slotOutlet'
 runModuleConformanceSuite(TextModule)
 runModuleConformanceSuite(ButtonModule)
 runModuleConformanceSuite(ContainerModule)
+runModuleConformanceSuite(DisclosureModule)
 runModuleConformanceSuite(LoopModule)
 runModuleConformanceSuite(ImageModule)
 runModuleConformanceSuite(SvgModule)

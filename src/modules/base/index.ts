@@ -30,6 +30,7 @@ import './svg'
 // Interactive modules
 import './button'
 import './link'
+import './disclosure'
 
 // Form modules
 import './forms'
