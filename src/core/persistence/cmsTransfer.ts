@@ -1,3 +1,4 @@
+import { attachmentArchivePath } from '@core/data/attachments'
 /**
  * Client-side persistence layer for site-transfer endpoints:
  *   POST /admin/api/cms/export
@@ -309,6 +310,11 @@ export function parseSiteBundleArchive(bytes: Uint8Array): SiteBundle | null {
     }
   })
 
+  const attachments = manifest.attachments?.map((file, index) => {
+    const bytes = entries[attachmentArchivePath(index)]
+    if (!bytes || bytes.byteLength !== file.sizeBytes) throw new SiteBundleParseError('Missing private attachment', `/attachments/${index}`)
+    return { ...file, bytesBase64: bytesToBase64(bytes) }
+  })
   const publication = manifest.publication ? {
     ...manifest.publication,
     files: manifest.publication.files.map((file, index) => {
@@ -320,6 +326,7 @@ export function parseSiteBundleArchive(bytes: Uint8Array): SiteBundle | null {
   return parseValue(SiteBundleSchema, {
     ...manifest,
     ...(publication ? { publication } : {}),
+    ...(attachments ? { attachments } : {}),
     ...(media ? { media } : {}),
   })
 }

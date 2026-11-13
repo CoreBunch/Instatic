@@ -139,11 +139,12 @@ export function analyzeFormSettings(input: {
     })
   }
 
-  const fieldId = stringProp(selectedNode, 'fieldId', '')
+  const isAttachment = selectedNode.moduleId === 'base.input' && selectedNode.props.inputType === 'file'
+  const fieldId = isAttachment ? '' : stringProp(selectedNode, 'fieldId', '')
   const field = table && fieldId ? table.fields.find((candidate) => candidate.id === fieldId) ?? null : null
   const compatibleFields = table ? table.fields.filter((candidate) => fieldCompatibleWithNode(candidate, selectedNode.moduleId)) : []
 
-  if (kind === 'control' && form?.mode === 'cms' && !fieldId) {
+  if (kind === 'control' && !isAttachment && form?.mode === 'cms' && !fieldId) {
     warnings.push({
       code: 'unbound_control',
       message: 'Bind this control to a table field.',
@@ -461,7 +462,7 @@ function fieldsMissingFromForm(page: Page, formNode: PageNode, table: DataTable)
   for (const nodeId of flattenSubtree(page, formNode.id)) {
     if (nodeId === formNode.id) continue
     const node = page.nodes[nodeId]
-    if (!node || !FORM_CONTROL_MODULES.has(node.moduleId)) continue
+    if (!node || !FORM_CONTROL_MODULES.has(node.moduleId) || (node.moduleId === 'base.input' && node.props.inputType === 'file')) continue
     const representedId = stringProp(node, 'fieldId', '') || stringProp(node, 'name', '')
     if (representedId) representedFieldIds.add(representedId)
   }

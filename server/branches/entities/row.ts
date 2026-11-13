@@ -2,6 +2,7 @@
  * A data row as a branch entity: its table, cells, and slug. Publish status
  * is never part of the content: a merge changes drafts, never what is live.
  */
+import { copyRowAttachments, listRowAttachments, replaceRowAttachmentLinks } from '../../repositories/rowAttachments'
 import { physicalId } from '@core/branches'
 import { encodeCollabDocId } from '@core/collab'
 import { readDisplayTitle } from '@core/data/cells'
@@ -21,6 +22,7 @@ import { fieldChanges, treeDiff } from '../changeDetail'
 import type { BranchEntityAdapter, BranchEntityOf } from './adapter'
 
 const RowContentSchema = Type.Object({
+  attachmentIds: Type.Optional(Type.Array(Type.String())),
   tableId: Type.String(),
   cells: Type.Record(Type.String(), Type.Unknown()),
   slug: Type.String(),
@@ -93,13 +95,14 @@ export const rowAdapter: BranchEntityAdapter<'row', RowContent> = {
     const entities: RowEntity[] = []
     for (const table of await source.tables()) {
       for (const row of await listDataRows(source.db, source.scope, table.id)) {
+        const files = await listRowAttachments(source.db, source.scope, row.id)
         entities.push({
           kind: 'row',
           logicalId: row.id,
           label: readDisplayTitle(row.cells, table),
           tableId: table.id,
           tableName: table.singularLabel,
-          content: rowContent(row),
+          content: { ...rowContent(row), ...(files.length ? { attachmentIds: files.map((file) => file.id) } : {}) },
         })
       }
     }
@@ -112,13 +115,13 @@ export const rowAdapter: BranchEntityAdapter<'row', RowContent> = {
     const hasTree = tableId !== null && TREE_TABLES.has(tableId)
     const conflictSet = new Set(conflicts)
     const fields = fieldChanges(
-      { ...(before?.cells ?? {}), slug: before?.slug },
-      { ...(after?.cells ?? {}), slug: after?.slug },
+      { ...(before?.cells ?? {}), slug: before?.slug, attachmentIds: before?.attachmentIds },
+      { ...(after?.cells ?? {}), slug: after?.slug, attachmentIds: after?.attachmentIds },
       {
         prefix: 'cells.',
         conflicts: new Set([...conflictSet, ...(conflictSet.has('slug') ? ['cells.slug'] : [])]),
         skip: hasTree ? new Set(['body']) : undefined,
-        labels: ROW_LABELS,
+        labels: { ...ROW_LABELS, attachmentIds: 'Private attachments' },
       },
     )
     return {
@@ -142,6 +145,7 @@ export const rowAdapter: BranchEntityAdapter<'row', RowContent> = {
         ctx.notices.rows.push({ kind: 'delete', tableId: existing.tableId, rowId, changedFieldIds: [] })
       }
       await saveDataRowDraft(tx, scope, rowId, { cells: content.cells, slug: content.slug }, ctx.actorUserId, null, { collabInternal: true })
+      await replaceRowAttachmentLinks(tx, scope, rowId, content.attachmentIds ?? [])
       ctx.notices.rows.push({
         kind: 'update',
         tableId: content.tableId,
@@ -157,6 +161,7 @@ export const rowAdapter: BranchEntityAdapter<'row', RowContent> = {
       ctx.actorUserId,
       { collabInternal: true },
     )
+    await replaceRowAttachmentLinks(tx, scope, rowId, content.attachmentIds ?? [])
     ctx.notices.rows.push({ kind: 'create', tableId: content.tableId, rowId, changedFieldIds: [] })
   },
 
@@ -193,6 +198,7 @@ export const rowAdapter: BranchEntityAdapter<'row', RowContent> = {
           ${row.created_at}, ${row.updated_at}, ${row.published_at}
         )
       `
+      await copyRowAttachments(tx, from, to, row.logical_id)
     }
   },
 

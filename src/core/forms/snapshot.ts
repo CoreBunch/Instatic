@@ -102,7 +102,9 @@ function deriveFormSnapshot(
 }
 
 function controlBindingFromNode(node: PageNode): FormControlBinding | null {
-  const fieldId = stringProp(node, 'fieldId', '')
+  const isFile = node.moduleId === 'base.input' && node.props.inputType === 'file'
+  if (isFile && booleanProp(node, 'disabled')) return null
+  const fieldId = stringProp(node, 'fieldId', '') || (isFile ? node.id : '')
   if (!fieldId) return null
   const name = stringProp(node, 'name', fieldId) || fieldId
   return {
@@ -110,6 +112,7 @@ function controlBindingFromNode(node: PageNode): FormControlBinding | null {
     fieldId,
     name,
     ...(node.moduleId === 'base.input' ? { inputType: stringProp(node, 'inputType', 'text') } : {}),
+    ...(isFile ? { multiple: booleanProp(node, 'multiple') } : {}),
     ...(booleanProp(node, 'required') ? { required: true } : {}),
     ...(positiveNumberProp(node, 'minLength') !== undefined ? { minLength: positiveNumberProp(node, 'minLength') } : {}),
     ...(positiveNumberProp(node, 'maxLength') !== undefined ? { maxLength: positiveNumberProp(node, 'maxLength') } : {}),

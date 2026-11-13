@@ -1,3 +1,4 @@
+import { EXTENSION_FOR_MIME } from '../../media/fileTypes'
 /**
  * Media library endpoints — capabilities split per-operation.
  *
@@ -53,7 +54,6 @@ import { Type } from '@core/utils/typeboxHelpers'
 import { CMS_API_PREFIX } from './shared'
 import { runRouteTable, type Route, type RouteParams } from './routeTable'
 import {
-  EXTENSION_FOR_MIME,
   MAX_MEDIA_BYTES,
   acceptReplacementMedia,
   acceptUploadedMedia,

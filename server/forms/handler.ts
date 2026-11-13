@@ -1,3 +1,8 @@
+import { readFormSubmissionBody } from './body'
+import { prepareFormAttachments } from './attachments'
+import { FormAttachmentError } from '../media/attachmentValidation'
+import { insertRowAttachments } from '../repositories/rowAttachments'
+import { notifyRowWrite, serializeCollabAwareWrite } from '../repositories/rowWriteEvents'
 import type { DbClient } from '../db/client'
 import type { Static, TSchema } from '@sinclair/typebox'
 import { clientIp, originAllowed } from '../auth/security'
@@ -14,7 +19,6 @@ import { getLatestPublishedSiteSnapshot } from '../repositories/publish'
 import { emitContentEntryCreated } from '../publish/contentEvents'
 import {
   PublicFormChallengeBodySchema,
-  PublicFormSubmitBodySchema,
   derivePageFormSnapshots,
   isFormSubmissionTargetTable,
   validateFormSubmission,
@@ -36,7 +40,6 @@ import { MAIN_SCOPE } from '../branches/scope'
 type PublicFormRoute = 'challenge' | 'submit'
 
 const PUBLIC_FORM_CHALLENGE_MAX_BODY_BYTES = 8 * 1024
-const PUBLIC_FORM_SUBMIT_MAX_BODY_BYTES = 1024 * 1024
 
 export async function handlePublicFormRequest(
   req: Request,
@@ -83,18 +86,18 @@ async function handleChallenge(req: Request, db: DbClient): Promise<Response> {
 }
 
 async function handleSubmit(req: Request, db: DbClient): Promise<Response> {
-  const parsed = await readPublicFormBody(
-    req,
-    PublicFormSubmitBodySchema,
-    PUBLIC_FORM_SUBMIT_MAX_BODY_BYTES,
-    'Invalid form submission payload',
-  )
-  if (parsed instanceof Response) return parsed
-  const body = parsed
-
   const ipKey = clientIp(req) ?? 'unknown'
   const ipDecision = publicFormPerIpRateLimit.consume(ipKey)
   if (!ipDecision.ok) return rateLimited(ipDecision.retryAfterMs)
+  let parsed
+  try {
+    parsed = await readFormSubmissionBody(req)
+  } catch (err) {
+    if (err instanceof RequestBodyTooLargeError) return payloadTooLarge('Form uploads exceed the size limit.')
+    throw err
+  }
+  if (!parsed) return badRequest('Invalid form submission payload')
+  const { body, files } = parsed
   const formDecision = publicFormPerFormRateLimit.consume(`${ipKey}|${body.formId}`)
   if (!formDecision.ok) return rateLimited(formDecision.retryAfterMs)
 
@@ -126,19 +129,32 @@ async function handleSubmit(req: Request, db: DbClient): Promise<Response> {
     return jsonResponse({ error: 'Form target not found' }, { status: 404 })
   }
 
+  let attachments
+  try {
+    attachments = await prepareFormAttachments(snapshot, files, values)
+  } catch (err) {
+    if (err instanceof FormAttachmentError) return badRequest(err.message)
+    throw err
+  }
   const validation = validateFormSubmission({
     table,
-    controls: snapshot.controls,
+    controls: snapshot.controls.filter((control) => control.inputType !== 'file'),
     values,
   })
   if (!validation.ok) {
     return jsonResponse({ error: 'Invalid form values', errors: validation.errors }, { status: 400 })
   }
 
-  const row = await createDataRow(db, MAIN_SCOPE, {
-    tableId: table.id,
-    cells: validation.cells,
-    slug: '',
+  const row = await serializeCollabAwareWrite(async () => {
+    const created = await db.transaction(async (tx) => {
+      const row = await createDataRow(tx, MAIN_SCOPE, {
+        tableId: table.id, cells: validation.cells, slug: '',
+      }, null, null, { collabInternal: true })
+      await insertRowAttachments(tx, MAIN_SCOPE, row.id, attachments)
+      return row
+    })
+    notifyRowWrite({ branchId: MAIN_SCOPE.branchId, tableId: table.id, rowIds: [created.id], kind: 'create' })
+    return created
   })
   await emitContentEntryCreated(db, MAIN_SCOPE, row.id, { kind: 'system' })
   return jsonResponse({ ok: true, rowId: row.id })

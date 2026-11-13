@@ -457,7 +457,7 @@ describe('public CMS-native form endpoint', () => {
     }])
   })
 
-  it('rejects oversized submit payloads before consuming form rate-limit quota', async () => {
+  it('charges the IP rate limit before reading oversized submit payloads', async () => {
     resetPublicFormChallenges()
     publicFormPerIpRateLimit.reset('203.0.113.22')
     publicFormPerFormRateLimit.reset('203.0.113.22|newsletter')
@@ -478,7 +478,7 @@ describe('public CMS-native form endpoint', () => {
     expect(response?.status).toBe(413)
 
     const allowedAfterOversize = publicFormPerIpRateLimit.consume('203.0.113.22')
-    expect(allowedAfterOversize.remaining).toBe(59)
+    expect(allowedAfterOversize.remaining).toBe(58)
     publicFormPerIpRateLimit.reset('203.0.113.22')
   })
 

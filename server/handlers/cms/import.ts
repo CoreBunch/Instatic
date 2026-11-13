@@ -1,3 +1,5 @@
+import { AttachmentConflictError } from '../../repositories/rowAttachments'
+import { BundleAttachmentError } from '../../repositories/bundleAttachments'
 /**
  * Site bundle import endpoint.
  *
@@ -123,7 +125,7 @@ export async function handleImportRoute(
     carriesMedia: bundle.media !== undefined,
     uploadsDir: options.uploadsDir,
   }).catch((err: unknown) => {
-    if (err instanceof BundlePublicationError) return jsonResponse({ error: err.message }, { status: 400 })
+    if (err instanceof BundlePublicationError || err instanceof BundleAttachmentError || err instanceof AttachmentConflictError) return jsonResponse({ error: err.message }, { status: 400 })
     throw err
   })
   if (applied instanceof Response) return applied

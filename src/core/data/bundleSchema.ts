@@ -1,3 +1,4 @@
+import { BundleAttachmentSchema } from './attachments'
 /**
  * SiteBundle — the portable export/import format for a complete site snapshot.
  *
@@ -377,6 +378,7 @@ export const SiteBundleSchema = Type.Object({
   /** All (or selected) non-deleted data rows. */
   rows: Type.Array(DataRowSchema),
   publication: Type.Optional(BundlePublicationSchema),
+  attachments: Type.Optional(Type.Array(BundleAttachmentSchema)),
   /** Non-deleted media assets with embedded bytes (optional — may be omitted to keep bundle small). */
   media: Type.Optional(Type.Array(MediaAssetExportSchema)),
   /** Media-library folder tree (optional). Asset membership rides on `media[].folderIds`. */

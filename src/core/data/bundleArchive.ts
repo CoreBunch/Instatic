@@ -1,3 +1,4 @@
+import { BundleAttachmentSchema } from './attachments'
 /**
  * CMS site-transfer archive format.
  *
@@ -35,6 +36,7 @@ export const SiteBundleArchiveManifestSchema = Type.Object({
   tables: Type.Array(DataTableSchema),
   rows: Type.Array(DataRowSchema),
   publication: Type.Optional(BundlePublicationSchema),
+  attachments: Type.Optional(Type.Array(BundleAttachmentSchema)),
   media: Type.Optional(Type.Array(MediaAssetMetadataSchema)),
   mediaFolders: Type.Optional(Type.Array(BundleMediaFolderSchema)),
   redirects: Type.Optional(Type.Array(BundleRedirectSchema)),

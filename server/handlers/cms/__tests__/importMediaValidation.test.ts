@@ -16,7 +16,8 @@ import {
   resolveMediaWriteTarget,
   validateAndSanitizeMediaBytes,
 } from '../importMediaValidation'
-import { detectAcceptedMime, EXTENSION_FOR_MIME, IMAGE_MIMES } from '../mediaUpload'
+import { detectAcceptedMime, EXTENSION_FOR_MIME } from '../../../media/fileTypes'
+import { IMAGE_MIMES } from '../mediaUpload'
 
 const enc = new TextEncoder()
 
