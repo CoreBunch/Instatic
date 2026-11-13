@@ -266,6 +266,28 @@ export async function getDraftPublishStatus(db: DbClient): Promise<DraftPublishS
 }
 
 /**
+ * Drop every site snapshot no page row's active version points at. Readers
+ * only ever reach a snapshot through `data_rows.active_version_id`, and
+ * version history reads `data_row_versions` alone, so a superseded snapshot
+ * is dead weight: a full copy of the site per publish, never deleted. Older
+ * version rows keep their history; `on delete set null` clears their
+ * `site_snapshot_id`. The snapshot just written is kept even when no page
+ * landed on it (every page reaped mid-publish).
+ */
+async function pruneUnreferencedSiteSnapshots(tx: DbClient, keepSnapshotId: string): Promise<void> {
+  await tx`
+    delete from site_snapshots
+    where id <> ${keepSnapshotId}
+      and id not in (
+        select data_row_versions.site_snapshot_id
+        from data_rows
+        join data_row_versions on data_row_versions.id = data_rows.active_version_id
+        where data_row_versions.site_snapshot_id is not null
+      )
+  `
+}
+
+/**
  * Transactional write of one full publish: the site snapshot row plus one
  * `data_row_versions` row (and its runtime asset files) per page, flipping
  * each page row to `published`. DB writes only — every expensive non-DB
@@ -345,6 +367,7 @@ export async function persistSitePublish(
       }
       await pruneSupersededRuntimeAssets(tx, page.pageId, page.versionId, previousVersionId)
     }
+    await pruneUnreferencedSiteSnapshots(tx, input.siteSnapshotId)
   })
 }
 
