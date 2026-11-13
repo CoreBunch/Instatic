@@ -54,6 +54,7 @@ import {
   acceptUploadedMedia,
   readUploadForm,
 } from './mediaUpload'
+import { setMediaUsageRef } from '../../repositories/media'
 import { Type } from '@core/utils/typeboxHelpers'
 import { isValidEmail } from '@core/utils/email'
 import { MIN_PASSWORD_LENGTH, PASSWORD_TOO_SHORT_MESSAGE } from '@core/utils/passwordPolicy'
@@ -328,6 +329,15 @@ export async function handleMeRoutes(
     if (asset instanceof Response) return asset
 
     const updated = await setUserAvatarMediaId(db, user.id, asset.id)
+    // Register the dependency so the media library stops treating a profile
+    // picture as an anonymous upload. Without it the asset is indistinguishable
+    // from a decorative one, and purging it nulls `avatar_media_id` through
+    // the column's `on delete set null` — silently, from the operator's side.
+    await setMediaUsageRef(db, {
+      assetId: asset.id,
+      refKind: 'user.avatar',
+      refId: user.id,
+    })
     if (!updated) {
       // The user row vanished between auth and the update (e.g. concurrent
       // soft-delete). The uploaded asset stays in the media library — it's
@@ -350,6 +360,10 @@ export async function handleMeRoutes(
   if (req.method === 'DELETE') {
     const updated = await setUserAvatarMediaId(db, user.id, null)
     if (!updated) return jsonResponse({ error: 'User not found' }, { status: 404 })
+
+    // The asset stays in the library on purpose (see the file header), but it
+    // is no longer depended on — so the warning has to stop firing for it.
+    await setMediaUsageRef(db, { assetId: null, refKind: 'user.avatar', refId: user.id })
 
     await createAuditEvent(db, {
       actorUserId: user.id,
