@@ -255,6 +255,19 @@ Folder routes (`/admin/api/cms/media/folders/...`) are matched **before** asset 
 | `server/repositories/mediaMigration.ts`           | Migrating assets between storage adapters                                      |
 | `server/repositories/mediaStorageAdapters.ts`     | Adapter registry persistence                                                   |
 
+### What still uses a file
+
+Permanently deleting an asset asks `POST /admin/api/cms/media/usage` first, so the confirmation can say which files in the selection something still depends on, and where. The answer merges two sources that are deliberately built differently:
+
+| Source | How it is known | Why |
+|---|---|---|
+| **Settings** — a user's avatar | Recorded in `media_usage_refs` when the setting is written (`setMediaUsageRef` in `server/repositories/media.ts`) | One writer and an explicit set/unset, and nothing to walk. Setting a new value MOVES the reference instead of adding a second one. |
+| **Page content** — image/media props, background images, Visual Component bodies, site-wide style backgrounds | Computed on request from each branch's draft site document (`collectContentUsageRefs` in `server/media/contentUsage.ts`) | Content is written continuously by the collab relay and removing an image emits no event, so a stored index would drift and the warning would start naming pages that are fine. |
+
+The content walk reuses `collectPageMediaPaths` from the publisher's prefetch, so it recognises exactly the props the publisher resolves. It reads drafts, not published artefacts, and it reads every branch: media is shared across branches while pages are not, so a purge removes a file from all of them. A use on main is reported plainly; a branch is named only when the use exists on that branch and not on main.
+
+The cost — O(branches × site) — lands only on a permanent delete, never on a page load or a trash. `buildUsageWarning` (`src/admin/pages/media/utils/usageWarning.ts`) turns the refs into the confirmation's copy: it counts per asset ("1 of 11 is still in use") but names per place, and it never blocks the delete.
+
 ### Upload pipeline
 
 Uploads initiated outside the Media page use the same pipeline. In particular, the Agent Panel's explicit **Save to Media** image action resolves the private chat image, wraps it in a MIME-correct `File`, and calls `uploadCmsMediaAsset`; it does not create an AI-specific storage route. On success, `mediaAssetEvents.ts` upserts the new row into an already-mounted Site → Media explorer while the normal media cache is primed for canvas consumers.
@@ -364,6 +377,7 @@ See [docs/features/plugin-system.md](plugin-system.md). The plugin SDK's `api.cm
 | Adding a docked panel to the Media page                              | Use a floating window — Media is canvas-style by design     |
 | Calling `api.cms.media.*` from a plugin without the matching media permission | Declare `media.import`, `media.storage.adapter`, `media.url.transform`, or `media.variant.delegate` as appropriate |
 | Treating `deleted_at IS NOT NULL` rows as gone                       | They're in Trash; restore is supported until purge          |
+| Recording page-content usage in `media_usage_refs`                   | Compute it (`collectContentUsageRefs`); the table is for single-writer settings |
 | Skipping `parent_id, slug` uniqueness when creating folders          | The unique constraint enforces it — handle the error path   |
 
 ---

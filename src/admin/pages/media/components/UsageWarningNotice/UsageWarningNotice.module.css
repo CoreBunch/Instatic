@@ -1,0 +1,46 @@
+/* The warning that appears inside a destructive confirmation when part of the
+   selection is still depended on. Warning tone, not danger: the dialog around
+   it is already danger, and repeating that here would say "this is dangerous"
+   twice while saying "and this part in particular" nowhere. */
+
+.notice {
+  display: flex;
+  gap: var(--space-l);
+  padding: var(--space-l);
+  margin-top: var(--space-l);
+  border-radius: var(--radius);
+  background: var(--warning-10);
+  color: var(--warning-text);
+  font-size: var(--text-s);
+}
+
+.icon {
+  flex: none;
+  color: var(--warning);
+}
+
+.body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+  min-width: 0;
+}
+
+.heading {
+  margin: 0;
+  font-weight: 600;
+}
+
+.list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2xs);
+}
+
+.item {
+  /* A long filename or display name must not push the dialog wider. */
+  overflow-wrap: anywhere;
+}
