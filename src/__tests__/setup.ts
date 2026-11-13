@@ -10,23 +10,11 @@
  */
 import { GlobalWindow } from 'happy-dom'
 
-// happy-dom auto-fetches and parses every `<link rel="stylesheet">` inserted
-// into the document — including the Google Fonts CSS that
-// `loadFontPreview()` injects from `src/core/fonts/preview.ts`. The fetched
-// CSS contains selectors happy-dom's parser can't represent, and the
-// internal SyntaxError it throws crashes on `new this.window.SyntaxError(...)`
-// in deno-style noise between test files (the link load is async and outlives
-// the test that triggered it). Disabling CSS file loading silences the noise
-// without affecting any assertion — no test actually inspects the parsed
-// CSSRules from a `<link>` tag.
-//
-// Equivalent: `disableJavaScriptFileLoading: true` also disables the
-// JavaScript loader that would otherwise fetch `<script src>` URLs from
-// canvas previews.
+// Keep canvas preview scripts and linked stylesheets from fetching external
+// resources during tests. Happy DOM disables stylesheet loading by default.
 const happyWindow = new GlobalWindow({
   url: 'http://localhost/',
   settings: {
-    disableCSSFileLoading: true,
     disableJavaScriptFileLoading: true,
   },
 })
