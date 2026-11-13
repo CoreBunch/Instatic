@@ -112,7 +112,8 @@
     font-size: var(--text-m);
 }
 
-.row[data-status="dropped"] .label strong {
+.row[data-status="dropped"] .label strong,
+.row[data-status="dropped"] .label code {
     text-decoration: line-through;
 }
 
@@ -153,12 +154,13 @@
 }
 
 /*
- * External-host allowlist section — surfaces `networkAllowedHosts` from
- * the manifest separately from CMS permissions. The two are
+ * Manifest-allowlist sections — surface `contentAccess` (which CMS tables
+ * the plugin can touch, per mode) and `networkAllowedHosts` (which remote
+ * origins it can talk to) separately from CMS permissions. The three are
  * complementary: permissions answer "what CMS surface can the plugin
- * touch?", hosts answer "what remote origins can it talk to?".
+ * touch?", the allowlists answer "which concrete tables and origins?".
  */
-.networkSection {
+.allowlistSection {
     display: flex;
     flex-direction: column;
     gap: var(--space-s);
@@ -166,13 +168,13 @@
     border-top: 1px solid var(--border);
 }
 
-.networkHeader {
+.allowlistHeader {
     display: flex;
     flex-direction: column;
     gap: var(--space-4xs);
 }
 
-.networkHeader strong {
+.allowlistHeader strong {
     color: var(--text-bright);
     font-size: var(--text-m);
     font-weight: 600;
