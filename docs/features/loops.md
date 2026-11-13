@@ -167,8 +167,12 @@ Projects loop
 ```
 
 The Properties panel offers collection fields from the current entry table:
-multi-media, multi-relation, and multi-select fields. Primitive items are
-available as `currentEntry.value`; object-array members are exposed by key.
+multi-media, multi-relation, multi-select, and repeater fields. Inside a loop
+over a repeater, it offers that repeater's own multi-value sub-fields instead.
+Primitive items are available as `currentEntry.value`; object-array members are
+exposed by key. Repeater items (`{ id, cells }`) expose their cells directly, so
+a block reads as `currentEntry.layout` and a loop nested inside the repeater loop
+can iterate the block's `images`.
 Media ids are resolved through the publisher's batched media prefetch and
 provide `currentEntry.src`, `url`, `path`, `altText`, `mimeType`, `width`, and
 `height`.
@@ -372,6 +376,18 @@ Subscription granularity: the hook never subscribes to the whole `site` document
    optionally, its alt text to **Alt text**.
 6. Publish the site and a Project entry. Each project route renders only that
    project's gallery items, in the field's authored order.
+
+### Build case-study blocks from a repeater
+
+1. Add a Repeater field named `blocks` with a `layout` select and a multi-media
+   `images` sub-field.
+2. On the entry template, insert a Loop with Source **Current entry field** and
+   Field **Blocks**. Give its child container an HTML attribute
+   `data-layout="{currentEntry.layout}"`.
+3. Inside that container, insert a second Loop with Field **Images** and an
+   Image child bound to **Current entry field → Media source**.
+4. Style the grid from `[data-layout]` and `:has()` in a site stylesheet. Each
+   block renders only its own images.
 
 ### Build a loop with the AI agent
 

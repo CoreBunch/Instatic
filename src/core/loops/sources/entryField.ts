@@ -7,6 +7,8 @@
  * `data.rows` project listing resolves the gallery belonging to each project.
  */
 
+import { RepeaterItemSchema } from '@core/data/schemas'
+import { safeParseValue } from '@core/utils/typeboxHelpers'
 import type {
   ContextualLoopEntitySource,
   LoopFetchResult,
@@ -69,6 +71,23 @@ function projectItem(
     return { id, fields: { id, value, index } }
   }
 
+  // A repeater item stores its sub-field values under `cells`. Exposing the
+  // cells directly makes the item read like any other entry: bindings say
+  // `currentEntry.heading`, and a nested `entry.field` loop can iterate the
+  // item's own multi-value fields (a block's `images`).
+  const repeaterItem = safeParseValue(RepeaterItemSchema, value)
+  if (repeaterItem.ok) {
+    return {
+      id,
+      fields: {
+        ...repeaterItem.value.cells,
+        id,
+        value,
+        index,
+      },
+    }
+  }
+
   if (value && typeof value === 'object' && !Array.isArray(value)) {
     return {
       id,
@@ -90,6 +109,8 @@ function projectItem(
  * Media ids are enriched when the caller supplies the publisher/canvas media
  * map. Other primitives remain available as `currentEntry.value`; object
  * members are exposed directly while the original object remains at `value`.
+ * Repeater items (`{ id, cells }`) expose their cells, so a loop nested in a
+ * repeater loop can iterate an item's own multi-value sub-field.
  */
 export function resolveEntryFieldItems(
   value: unknown,
