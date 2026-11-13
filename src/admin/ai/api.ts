@@ -36,6 +36,7 @@ import {
 const ProviderId = Type.Union([
   Type.Literal('anthropic'),
   Type.Literal('openai'),
+  Type.Literal('minimax'),
   Type.Literal('ollama'),
   Type.Literal('openrouter'),
   Type.Literal('openai-compatible'),
@@ -86,6 +87,7 @@ const ModelSchema = Type.Object({
   capabilities: Type.Object({
     toolCalling: Type.Boolean(),
     visionInput: Type.Boolean(),
+    videoInput: Type.Optional(Type.Boolean()),
     toolResultImages: Type.Boolean(),
     promptCache: Type.Boolean(),
     streaming: Type.Boolean(),
@@ -95,6 +97,8 @@ const ModelSchema = Type.Object({
   pricing: Type.Optional(Type.Object({
     inputPerMTok: Type.Number(),
     outputPerMTok: Type.Number(),
+    cacheReadPerMTok: Type.Optional(Type.Union([Type.Number(), Type.Null()])),
+    cacheWritePerMTok: Type.Optional(Type.Union([Type.Number(), Type.Null()])),
   })),
   /** Max context window (total tokens) — feeds the composer context meter. */
   contextWindow: Type.Optional(Type.Number()),
@@ -182,13 +186,13 @@ export async function listCredentials(signal?: AbortSignal): Promise<CredentialV
 
 export type CreateCredentialBody =
   | {
-      providerId: 'anthropic' | 'openai' | 'ollama' | 'openrouter' | 'openai-compatible'
+      providerId: 'anthropic' | 'openai' | 'minimax' | 'ollama' | 'openrouter' | 'openai-compatible'
       authMode: 'apiKey'
       displayLabel: string
       apiKey: string
     }
   | {
-      providerId: 'anthropic' | 'openai' | 'ollama' | 'openrouter' | 'openai-compatible'
+      providerId: 'anthropic' | 'openai' | 'minimax' | 'ollama' | 'openrouter' | 'openai-compatible'
       authMode: 'baseUrl'
       displayLabel: string
       baseUrl: string
@@ -253,7 +257,7 @@ export function clearModelListCache(credentialId?: string): void {
 }
 
 export async function listModels(
-  providerId: 'anthropic' | 'openai' | 'ollama' | 'openrouter' | 'openai-compatible',
+  providerId: 'anthropic' | 'openai' | 'minimax' | 'ollama' | 'openrouter' | 'openai-compatible',
   credentialId?: string,
 ): Promise<AiModel[]> {
   const key = `${providerId}\0${credentialId ?? ''}`

@@ -39,6 +39,7 @@ const ALL_SCOPES: ToolScope[] = ['site', 'content', 'data', 'plugin']
 const ProviderId = Type.Union([
   Type.Literal('anthropic'),
   Type.Literal('openai'),
+  Type.Literal('minimax'),
   Type.Literal('ollama'),
   Type.Literal('openrouter'),
   Type.Literal('openai-compatible'),
@@ -160,6 +161,12 @@ async function handleCreate(req: Request, db: DbClient): Promise<Response> {
 
   const body = await readValidatedBody(req, CreateBodySchema)
   if (!body) return badRequest('Invalid request body.')
+  if (
+    body.providerId === 'minimax'
+    && (body.authMode !== 'baseUrl' || !body.apiKey?.trim())
+  ) {
+    return badRequest('MiniMax requires a base URL and API key.')
+  }
 
   const baseUrlGate = await guardOperatorBaseUrl(
     body.authMode === 'baseUrl' ? body.baseUrl : undefined,
