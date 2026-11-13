@@ -32,20 +32,13 @@
  */
 
 import { useEffect, useState, type ReactNode } from 'react'
-import { ArticleSolidIcon } from 'pixel-art-icons/icons/article-solid'
-import { AiBoxSolidIcon } from 'pixel-art-icons/icons/ai-box-solid'
-import { DashboardSolidIcon } from 'pixel-art-icons/icons/dashboard-solid'
-import { DatabaseSolidIcon } from 'pixel-art-icons/icons/database-solid'
-import { ImagesSolidIcon } from 'pixel-art-icons/icons/images-solid'
-import { LayoutSolidIcon } from 'pixel-art-icons/icons/layout-solid'
-import { PackageSolidIcon } from 'pixel-art-icons/icons/package-solid'
 import { pluginRuntime } from '@core/plugins/runtime'
 import type { RegisteredPluginToolbarButton } from '@core/plugin-sdk'
 import { AccountMenuButton } from '@admin/shared/AccountMenuButton'
 import { BranchChip, BranchContextStrip } from '@admin/shared/BranchSwitcher'
 import { OpenLivePageButton } from '@admin/shared/OpenLivePageButton'
 import { SettingsButton } from './SettingsButton'
-import { Link } from '@admin/lib/routing'
+import { AdminSectionNavigation } from '@admin/shared/AdminSectionNavigation'
 import { Button } from '@ui/components/Button'
 import { Skeleton } from '@ui/components/Skeleton'
 import { Tooltip } from '@ui/components/Tooltip'
@@ -53,8 +46,6 @@ import { cn } from '@ui/cn'
 import type { AdminWorkspace } from '@admin/workspace'
 import styles from './Toolbar.module.css'
 import { getErrorMessage } from '@core/utils/errorMessage'
-
-const NAV_ICON_SIZE = 13
 
 interface ToolbarProps {
   /** Site name shown in the brand position. Null renders the loading skeleton. */
@@ -206,7 +197,7 @@ export function Toolbar({
           </Tooltip>
         )}
         <BranchChip />
-        {adminNavigationSlot ?? <DefaultAdminNavigation section={section} />}
+        {adminNavigationSlot ?? <AdminSectionNavigation section={section} />}
 
         <div className={styles.workspaceToolbarItems}>
           {pluginButtons.map((button) => {
@@ -266,81 +257,5 @@ export function Toolbar({
         </div>
       </header>
     </>
-  )
-}
-
-function DefaultAdminNavigation({ section }: { section: AdminWorkspace }) {
-  return (
-    <>
-      <DefaultNavSlot
-        to="/admin/dashboard"
-        icon={<DashboardSolidIcon size={NAV_ICON_SIZE} aria-hidden="true" />}
-        label="Dashboard"
-        active={section === 'dashboard'}
-      />
-      <DefaultNavSlot
-        to="/admin/site"
-        icon={<LayoutSolidIcon size={NAV_ICON_SIZE} aria-hidden="true" />}
-        label="Site"
-        active={section === 'site'}
-      />
-      <DefaultNavSlot
-        to="/admin/content"
-        icon={<ArticleSolidIcon size={NAV_ICON_SIZE} aria-hidden="true" />}
-        label="Content"
-        active={section === 'content'}
-      />
-      <DefaultNavSlot
-        to="/admin/data"
-        icon={<DatabaseSolidIcon size={NAV_ICON_SIZE} aria-hidden="true" />}
-        label="Data"
-        active={section === 'data'}
-      />
-      <DefaultNavSlot
-        to="/admin/media"
-        icon={<ImagesSolidIcon size={NAV_ICON_SIZE} aria-hidden="true" />}
-        label="Media"
-        active={section === 'media'}
-      />
-      <DefaultNavSlot
-        to="/admin/plugins"
-        icon={<PackageSolidIcon size={NAV_ICON_SIZE} aria-hidden="true" />}
-        label="Plugins"
-        active={section === 'plugins'}
-      />
-      <DefaultNavSlot
-        to="/admin/ai"
-        icon={<AiBoxSolidIcon size={NAV_ICON_SIZE} aria-hidden="true" />}
-        label="AI"
-        active={section === 'ai'}
-      />
-    </>
-  )
-}
-
-function DefaultNavSlot({
-  to,
-  icon,
-  label,
-  active,
-}: {
-  to: string
-  icon: ReactNode
-  label: string
-  active: boolean
-}) {
-  if (active) {
-    return (
-      <span className={styles.activeSection}>
-        {icon}
-        <span>{label}</span>
-      </span>
-    )
-  }
-  return (
-    <Link className={styles.adminLink} to={to}>
-      {icon}
-      <span>{label}</span>
-    </Link>
   )
 }

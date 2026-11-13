@@ -287,6 +287,7 @@ export function canAccessWorkspace(user: CmsCurrentUser | null, workspace: Admin
     case 'media':
       return canReadMedia(user)
     case 'branchReview':
+    case 'updates':
       return hasCapability(user, 'site.read')
     case 'plugins':
     case 'pluginPage':
@@ -334,5 +335,7 @@ export function workspacePath(workspace: AdminWorkspace): string {
       return '/admin/plugins'
     case 'account':
       return '/admin/account'
+    case 'updates':
+      return '/admin/updates'
   }
 }
