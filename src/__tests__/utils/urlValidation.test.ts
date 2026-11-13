@@ -28,6 +28,16 @@ describe('isValidUrl', () => {
     it('accepts mailto:', () => {
       expect(isValidUrl('mailto:user@example.com')).toBe(true)
     })
+
+    it('accepts tel:', () => {
+      expect(isValidUrl('tel:+4912345678')).toBe(true)
+      expect(isValidUrl('tel:123-456-7890')).toBe(true)
+    })
+
+    it('accepts sms:', () => {
+      expect(isValidUrl('sms:+4912345678')).toBe(true)
+      expect(isValidUrl('sms:+15551234567?body=hello')).toBe(true)
+    })
   })
 
   describe('rejected protocols', () => {
@@ -169,6 +179,16 @@ describe('isValidImageUrl', () => {
       const url = 'mailto:user@example.com'
       expect(isValidUrl(url)).toBe(true)
       expect(isValidImageUrl(url)).toBe(false)
+    })
+
+    it('tel: and sms: are valid for isValidUrl but not isValidImageUrl', () => {
+      const tel = 'tel:+4912345678'
+      expect(isValidUrl(tel)).toBe(true)
+      expect(isValidImageUrl(tel)).toBe(false)
+
+      const sms = 'sms:+4912345678'
+      expect(isValidUrl(sms)).toBe(true)
+      expect(isValidImageUrl(sms)).toBe(false)
     })
 
     it('data:image/* is valid for isValidImageUrl but not isValidUrl', () => {
