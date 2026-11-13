@@ -42,6 +42,7 @@ import { loopSourceRegistry } from '@core/loops/registry'
 import { renderNode, type RenderConfig, type RenderAccumulators } from '@core/publisher'
 import { buildPageFrame, buildRouteFrame, buildSiteFrame } from '@core/templates/contextFrames'
 import { prefetchLoopData } from '../../publish/loopPrefetch'
+import { prefetchMediaAssets } from '../../publish/mediaPrefetch'
 import { getOrRender } from '../../publish/renderCache'
 import { getPublishedNodeIndexForVersion } from '../../publish/publishedSnapshotCache'
 import { getPublishVersion } from '../../publish/publishState'
@@ -129,17 +130,26 @@ async function renderHoleFragment(
     request,
     rootNodeId: nodeId,
   })
+  // Media assets for the fragment subtree — request-time loops carry entry
+  // items whose media references (custom cells, multi-media arrays) resolve
+  // through this map, and image modules read it for srcset/alt enrichment.
+  const mediaAssets = await prefetchMediaAssets(page, site, registry, db, {
+    loopData,
+    rootNodeId: nodeId,
+  })
   const config: RenderConfig = {
     page,
     site,
     registry,
     breakpointId: undefined,
     loopData,
+    mediaAssets,
     templateContext: {
       entryStack: [],
       page: buildPageFrame(page),
       site: buildSiteFrame(site),
       route,
+      media: mediaAssets,
     },
     // No dynamicNodeIds: inside a hole endpoint we render the full subtree.
   }
