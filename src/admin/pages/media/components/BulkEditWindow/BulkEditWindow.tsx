@@ -186,6 +186,7 @@ export function BulkEditWindow({ workspace, open, onClose }: BulkEditWindowProps
   return (
     <FloatingWindow
       panelId="mediaBulkEdit"
+      minimizable
       open={open}
       onClose={onClose}
       title={`Bulk edit · ${count} selected`}

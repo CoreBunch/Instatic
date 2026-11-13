@@ -46,6 +46,7 @@ export function UploadQueueWindow({ queue, open, onClose, onRevealAsset }: Uploa
   return (
     <FloatingWindow
       panelId="mediaUploadQueue"
+      minimizable
       open={open}
       onClose={onClose}
       title={`Uploads (${succeeded}/${total})`}
