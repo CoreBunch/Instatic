@@ -49,7 +49,9 @@ describe('row version history', () => {
     const restored = await harness.cms(`${ROWS}/${home!.id}/versions/${first.id}/restore`, { method: 'POST', cookie: owner })
     expect(restored.status).toBe(200)
     expect((await readJson<{ row: { cells: Record<string, unknown> } }>(restored)).row.cells.title).toBe('First')
-    expect((await getDataRow(harness.db, MAIN_SCOPE, home!.id))!.cells.title).toBe('First')
+    const restoredRow = await getDataRow(harness.db, MAIN_SCOPE, home!.id)
+    expect(restoredRow!.cells.title).toBe('First')
+    expect(restoredRow!.cells.body).toBeTruthy()
 
     // Restore v2 into a branch's draft without touching main.
     const fork = await harness.cms('/admin/api/cms/branches', { method: 'POST', cookie: owner, json: { name: 'History' } })
@@ -61,7 +63,9 @@ describe('row version history', () => {
       headers: { 'x-instatic-branch': 'history' },
     })
     expect(onBranch.status).toBe(200)
-    expect((await getDataRow(harness.db, { branchId: 'history' }, home!.id))!.cells.title).toBe('Second')
+    const branchRow = await getDataRow(harness.db, { branchId: 'history' }, home!.id)
+    expect(branchRow!.cells.title).toBe('Second')
+    expect(branchRow!.cells.body).toBeTruthy()
     expect((await getDataRow(harness.db, MAIN_SCOPE, home!.id))!.cells.title).toBe('First')
 
     // An unknown or foreign version id is a 404.

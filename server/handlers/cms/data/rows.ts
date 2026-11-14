@@ -502,7 +502,13 @@ async function handleRowVersionRestore(
   // The restored cells go through the same pipeline as a draft save: the
   // `content.entry.cells` filter, then the slug derived from the cells —
   // the version's stored slug may since have been taken by another row.
-  const cells = await applyContentEntryCellsFilter(version.cells, {
+  // We keep unversioned cells on the draft so non-versioned metadata
+  // (or custom fields) is not erased on version rollback.
+  const restoredCells = {
+    ...current.cells,
+    ...version.cells,
+  }
+  const cells = await applyContentEntryCellsFilter(restoredCells, {
     tableSlug: table.slug,
     entryId: current.id,
     actor: { kind: 'user', userId: user.id },
