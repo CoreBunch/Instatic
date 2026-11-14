@@ -26,7 +26,9 @@ export function normalizeContextTokens(
   providerId: AiProviderId,
   usage: ContextUsageTokens,
 ): number {
-  if (providerId === 'anthropic') {
+  // Claude Code reports usage in the native Anthropic shape (input_tokens
+  // excludes the cache buckets), so it normalises the same way.
+  if (providerId === 'anthropic' || providerId === 'claude-code') {
     return usage.promptTokens + (usage.cacheReadTokens ?? 0) + (usage.cacheCreationTokens ?? 0)
   }
   return usage.promptTokens

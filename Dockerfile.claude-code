@@ -1,0 +1,33 @@
+# syntax=docker/dockerfile:1
+#
+# Overlay image: the base Instatic app + the Claude Code CLI, so the
+# `claude-code` AI provider works inside the container. Kept separate from the
+# main Dockerfile so the base image tracks upstream cleanly.
+#
+# Build:
+#   docker build -t instatic:local .                                   # base (main Dockerfile)
+#   docker build -f Dockerfile.claude-code -t instatic-cc:local .      # this overlay
+#
+# Auth is NOT baked in. At run time provide the machine's Claude SUBSCRIPTION
+# via CLAUDE_CODE_OAUTH_TOKEN (from `claude setup-token`) — see
+# docs/features/claude-code-provider.md and compose.claude-code.yml.
+
+ARG BASE_IMAGE=instatic:local
+FROM ${BASE_IMAGE}
+
+USER root
+# The base `oven/bun` image has no curl; add it just to fetch the installer,
+# then drop the apt lists. The installer drops a self-contained binary under
+# /root/.local; copy it to a world-readable path and discard the rest.
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends curl ca-certificates \
+ && rm -rf /var/lib/apt/lists/* \
+ && curl -fsSL https://claude.ai/install.sh | bash \
+ && mkdir -p /opt/claude \
+ && cp "$(readlink -f /root/.local/bin/claude)" /opt/claude/claude \
+ && chmod 0755 /opt/claude/claude \
+ && rm -rf /root/.local \
+ && /opt/claude/claude --version
+
+ENV INSTATIC_CLAUDE_BIN=/opt/claude/claude
+USER bun

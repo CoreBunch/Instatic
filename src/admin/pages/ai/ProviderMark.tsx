@@ -5,6 +5,8 @@ import styles from './AiPage.module.css'
 
 const LOGO_CLASS: Partial<Record<ProviderId, string>> = {
   anthropic: styles.logoAnthropic,
+  // Same models, same mark — only the billing path differs.
+  'claude-code': styles.logoAnthropic,
   openai: styles.logoOpenai,
   openrouter: styles.logoOpenrouter,
   ollama: styles.logoOllama,
