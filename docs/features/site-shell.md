@@ -603,7 +603,20 @@ bounded debounce window (at most ~800 ms with the default).
 frames `docId | frameType | payload` multiplex every doc over ONE WebSocket
 at `/admin/api/cms/site-socket` (y-protocols sync + awareness + reset).
 Upgrade is gated by a session with `site.read` and `originAllowed` (CSWSH
-defense). A read-only connection's update frames are dropped server-side
+defense). The socket keeps the original session hash and revalidates that
+session and current role for every incoming frame, again after asynchronous
+document loading before applying an update, and before every outgoing packet.
+Suspension, deletion, session revocation/expiry, or loss of `site.read` closes
+the connection on its next incoming or outgoing traffic (including heartbeat
+pings); idle sockets cannot receive new document or presence data after access
+is revoked. Write-only capability reductions keep read access, but every update
+and recovery step2 uses current grants, including the full-writer fast path.
+Checks fail closed if the authorization query fails. Already authorized work
+and bytes already handed to the transport are not recalled retroactively.
+Passive deliveries do not refresh the session's idle lifetime.
+Document ownership is registered after loading completes. If the socket closes
+during that load, the acquired reference is released immediately.
+A read-only connection's update frames are dropped server-side
 (its awareness/presence frames still relay — viewers are visible peers),
 and PARTIAL writers' update frames run through the per-category guard
 (`server/collab/updateGuard.ts`): fork the doc, apply, project both sides,
@@ -630,7 +643,11 @@ guard.
 
 Stored snapshots can exceed a socket's outbound buffer. The server sends
 these through `collabFramePackets` in 256 KiB packets, waiting for drain
-between buffered direct sends. Broadcast updates use the same packet format.
+between buffered sends. Broadcast updates use the same packet format and each
+recipient's authorized queue, not unchecked transport pub/sub. Authorization
+is rechecked after a drain wait before another packet is sent. A recipient
+with more than 16 MiB of queued broadcast frames is disconnected for normal
+state-vector recovery, so one slow reader cannot grow an unbounded backlog.
 The client reconstructs each complete frame before applying it to Yjs;
 interleaved transfers are bounded to four documents and 64 MiB total and
 discarded on disconnect. Incoming write and awareness caps remain unchanged.

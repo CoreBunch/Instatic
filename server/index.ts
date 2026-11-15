@@ -52,7 +52,7 @@ startConversationPurgeTick(db)
 // and the reset protocol for out-of-relay writes. The socket layer speaks
 // the multiplexed y-protocols wire (see server/collab/socket.ts).
 const collabRelay = createCollabRelay(db)
-const collabSocket = createCollabSocketLayer(collabRelay)
+const collabSocket = createCollabSocketLayer(collabRelay, db)
 
 /**
  * Build the CORS response headers for an incoming request.
@@ -189,10 +189,6 @@ const server = Bun.serve({
     return new Response('Internal Server Error', { status: 500 })
   },
 })
-
-// The collab fan-out publishes through Bun pub/sub — register the live
-// server handle now that `Bun.serve` returned.
-collabSocket.setPublisher(server)
 
 // Graceful shutdown: the relay persists on an 800 ms debounce, so a redeploy
 // (SIGTERM) or Ctrl-C (SIGINT) mid-window would drop the un-persisted edits

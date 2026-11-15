@@ -43,15 +43,13 @@ server/index.ts
     │
     ├─→ createCollabRelay(db)                ← server/collab/relay.ts: live Y docs,
     │                                           debounced persistence, reset protocol
-    ├─→ createCollabSocketLayer(relay)       ← server/collab/socket.ts: multiplexed
-    │                                           y-protocols wire + awareness
-    ├─→ Bun.serve({ fetch: req => handleServerRequest(req, runtime),
-    │               websocket: collabSocket.handlers })
-    │     (the co-editing socket `/admin/api/cms/site-socket` upgrades at this
-    │      boundary — see server/collab/socket.ts; everything else goes
-    │      through the router)
-    │
-    └─→ collabSocket.setPublisher(server)    ← wire the collab fan-out to Bun pub/sub
+    ├─→ createCollabSocketLayer(relay, db)   ← server/collab/socket.ts: multiplexed
+    │                                           authorized y-protocols wire + awareness
+    └─→ Bun.serve({ fetch: req => handleServerRequest(req, runtime),
+                    websocket: collabSocket.handlers })
+          (the co-editing socket `/admin/api/cms/site-socket` upgrades at this
+           boundary — see server/collab/socket.ts; everything else goes
+           through the router)
 ```
 
 Boot is sequential and fail-fast. If migrations fail, the process exits. If a plugin's `activate` throws, the host logs `[plugin:<id>]` and continues — one bad plugin doesn't bring the server down.
