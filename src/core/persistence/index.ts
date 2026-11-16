@@ -124,9 +124,15 @@ export {
   searchCmsRegistry,
 } from './cmsRegistry'
 export {
-  deleteCmsMailSettings,
-  getCmsMailSettings,
-  listCmsMailOutbox,
-  saveCmsMailSettings,
-  sendCmsTestMail,
+  createCmsMailConnector,
+  deleteCmsMailConnector,
+  getCmsMailActivity,
+  getCmsMailOverview,
+  listCmsMailTemplates,
+  resetCmsMailTemplate,
+  saveCmsMailDefaults,
+  saveCmsMailTemplate,
+  setCmsMailConnectorSecret,
+  testCmsMailConnector,
+  testCmsMailTemplate,
 } from './cmsMail'

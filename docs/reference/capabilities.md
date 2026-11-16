@@ -137,7 +137,7 @@ This applies to both creating users and changing an existing user's role.
 
 | Capability       | Grants                                                              | Roles         |
 |------------------|---------------------------------------------------------------------|---------------|
-| `mail.manage`    | Read and change the site's SMTP account (`/admin/api/cms/mail/*`), send test messages, read the delivery log. Saving and removing the account also need step-up. | Owner, Admin |
+| `mail.manage`    | The Email workspace (`/admin/api/cms/mail/*`): connectors, defaults, templates, test sends, activity. Adding or removing a connector, replacing its secret and changing the defaults also need step-up. | Owner, Admin |
 
 ### AI runtime
 

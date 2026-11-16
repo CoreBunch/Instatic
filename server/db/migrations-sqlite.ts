@@ -1527,23 +1527,44 @@ export const sqliteMigrations: Migration[] = [
     `,
   },
   {
-    // Site-wide outgoing mail. `mail_settings` holds the one SMTP account the
-    // server sends through (password encrypted with the master key, like
-    // plugin secrets). `mail_outbox` is the delivery log; `body_text` is
-    // filled only in development, where mail is captured instead of sent,
-    // because bodies carry live sign-in and reset links.
+    // Outgoing mail. `mail_connectors` are the accounts the server can send
+    // through (SMTP, Amazon SES); each secret is encrypted with the master
+    // key. `mail_settings` is one row: which connector sends, and as whom.
+    // `mail_templates` holds only the templates an owner has edited; the
+    // defaults live in code. `mail_outbox` is the delivery log; `body_text`
+    // is filled only in development, where mail is captured instead of
+    // sent, because bodies carry live sign-in and reset links.
     id: '032_mail',
     sql: `
+      create table if not exists mail_connectors (
+        id text primary key,
+        kind text not null,
+        label text not null,
+        config_json text not null default '{}',
+        secret_ciphertext blob,
+        secret_iv blob,
+        key_fingerprint text,
+        last_used_at text,
+        last_error text,
+        created_by_user_id text references users(id) on delete set null,
+        created_at text not null default (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+        updated_at text not null default (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+      );
+
       create table if not exists mail_settings (
         id text primary key,
-        host text not null,
-        port integer not null,
-        username text not null,
-        password_ciphertext blob,
-        password_iv blob,
-        key_fingerprint text,
-        from_address text not null,
+        default_connector_id text references mail_connectors(id) on delete set null,
+        from_address text not null default '',
         from_name text not null default '',
+        reply_to text not null default '',
+        updated_by_user_id text references users(id) on delete set null,
+        updated_at text not null default (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+      );
+
+      create table if not exists mail_templates (
+        template_key text primary key,
+        subject text not null,
+        body_markdown text not null,
         updated_by_user_id text references users(id) on delete set null,
         updated_at text not null default (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
       );
@@ -1554,6 +1575,8 @@ export const sqliteMigrations: Migration[] = [
         to_address text not null,
         subject text not null,
         status text not null,
+        connector_id text,
+        connector_label text,
         error text,
         body_text text,
         created_at text not null default (strftime('%Y-%m-%dT%H:%M:%fZ','now'))

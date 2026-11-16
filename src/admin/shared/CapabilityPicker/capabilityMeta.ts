@@ -144,7 +144,7 @@ export const CAPABILITY_META: Record<CoreCapability, CapabilityMeta> = {
   },
   'mail.manage': {
     label: 'Manage email',
-    description: 'Set the SMTP account the site sends email through, send test messages, and read the delivery log.',
+    description: 'Open the Email workspace: add connectors, choose the sender, edit email templates, and read the delivery activity.',
   },
   // ---------------------------------------------------------------------
   // Data workspace — split from `content.manage`

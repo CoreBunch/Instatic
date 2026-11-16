@@ -1,127 +1,290 @@
 /**
- * Outgoing mail settings (all gated by `mail.manage`).
+ * Email workspace API (all gated by `mail.manage`).
  *
- *   GET    /admin/api/cms/mail/settings — delivery mode + the saved account (never the password)
- *   PUT    /admin/api/cms/mail/settings — save the SMTP account (step-up)
- *   DELETE /admin/api/cms/mail/settings — remove the SMTP account (step-up)
- *   POST   /admin/api/cms/mail/test     — send a test message through the current delivery mode
- *   GET    /admin/api/cms/mail/outbox   — the delivery log, newest first
+ *   GET    /admin/api/cms/mail                          — delivery mode, connectors, defaults
+ *   POST   /admin/api/cms/mail/connectors               — add a connector (step-up)
+ *   DELETE /admin/api/cms/mail/connectors/:id           — remove a connector (step-up)
+ *   PUT    /admin/api/cms/mail/connectors/:id/secret    — replace its secret (step-up)
+ *   POST   /admin/api/cms/mail/connectors/:id/test      — send a test through it
+ *   PUT    /admin/api/cms/mail/defaults                 — default connector and sender (step-up)
+ *   GET    /admin/api/cms/mail/templates                — every template, with edits applied
+ *   PUT    /admin/api/cms/mail/templates/:key           — save a template's wording
+ *   DELETE /admin/api/cms/mail/templates/:key           — back to the built-in wording
+ *   POST   /admin/api/cms/mail/templates/:key/test      — send it with sample values
+ *   GET    /admin/api/cms/mail/activity?status=         — the delivery log
  *
- * Saving and removing ask for step-up: the account decides where every
- * sign-in and reset link is sent, so a hijacked session must not be able to
- * repoint it.
+ * Connectors and defaults decide where every sign-in and reset link is sent,
+ * so changing them asks for step-up: a hijacked session must not be able to
+ * repoint the site's mail.
  */
 import type { DbClient } from '../../db/client'
+import type { AuthUser } from '../../repositories/users'
 import { requireCapability, requireStepUp } from '../../auth/authz'
 import { configuredPublicOrigin } from '../../auth/security'
 import { badRequest, jsonResponse, readValidatedBody } from '../../http'
 import { createAuditEvent } from '../../repositories/audit'
-import { MailSettingsInputSchema, MailTestInputSchema, type MailSettingsView } from '@core/mail'
-import { getErrorMessage } from '@core/utils/errorMessage'
-import { listMailOutbox } from '../../mail/outbox'
-import { mailDeliveryMode, MailNotConfiguredError, sendSiteMail } from '../../mail/send'
 import {
-  deleteMailSettings,
-  getMailAccountView,
-  MailPasswordUnreadableError,
-  saveMailSettings,
-} from '../../mail/settings'
-import { MailDeliveryError, privateMailHostsAllowed } from '../../mail/transport'
+  MailConnectorInputSchema,
+  MailConnectorSecretInputSchema,
+  MailDefaultsSchema,
+  MailTemplateInputSchema,
+  MailTestInputSchema,
+  TEST_MAIL_TEMPLATE_KEY,
+  getMailTemplateDefinition,
+  sampleMailVariables,
+  type MailActivityStatus,
+  type MailOverview,
+} from '@core/mail'
+import { getErrorMessage } from '@core/utils/errorMessage'
+import { listMailActivity } from '../../mail/activity'
+import {
+  createMailConnector,
+  deleteMailConnector,
+  getMailConnector,
+  listMailConnectors,
+  MailSecretUnreadableError,
+  setMailConnectorSecret,
+} from '../../mail/connectors'
+import { getMailDefaults, saveMailDefaults } from '../../mail/defaults'
+import {
+  buildTemplateMail,
+  mailDeliveryMode,
+  MailNotConfiguredError,
+  sendConnectorTest,
+  sendSiteMail,
+} from '../../mail/send'
+import { MailDeliveryError, privateMailHostsAllowed } from '../../mail/smtpDriver'
+import { getMailTemplate, listMailTemplates, resetMailTemplate, saveMailTemplate } from '../../mail/templates'
 import { CMS_API_PREFIX, requestAuditContext } from './shared'
-import { runRouteTable, type Route } from './routeTable'
+import { runRouteTable, type Route, type RouteParams } from './routeTable'
 
 const MAIL_PREFIX = `${CMS_API_PREFIX}/mail`
 
-async function readSettingsView(db: DbClient): Promise<MailSettingsView> {
-  const account = await getMailAccountView(db)
+function notFound(what: string): Response {
+  return jsonResponse({ error: `${what} not found` }, { status: 404 })
+}
+
+async function readOverview(db: DbClient): Promise<MailOverview> {
+  const defaults = await getMailDefaults(db)
   return {
-    mode: mailDeliveryMode(account !== null),
-    account,
+    mode: mailDeliveryMode(defaults),
+    connectors: await listMailConnectors(db),
+    defaults,
     publicOrigin: configuredPublicOrigin(),
     privateHostsAllowed: privateMailHostsAllowed(),
   }
 }
 
-async function handleGetSettings(req: Request, db: DbClient): Promise<Response> {
+/** Gate on `mail.manage`, and on step-up for the changes that repoint mail. */
+async function gate(req: Request, db: DbClient, stepUp: boolean): Promise<AuthUser | Response> {
   const user = await requireCapability(req, db, 'mail.manage')
-  if (user instanceof Response) return user
-  return jsonResponse({ settings: await readSettingsView(db) })
+  if (user instanceof Response || !stepUp) return user
+  return (await requireStepUp(req, db, user)) ?? user
 }
 
-async function handleSaveSettings(req: Request, db: DbClient): Promise<Response> {
-  const user = await requireCapability(req, db, 'mail.manage')
-  if (user instanceof Response) return user
-  const stepUp = await requireStepUp(req, db, user)
-  if (stepUp) return stepUp
+/** A delivery failure as a response: a safe sentence for the ones we understand. */
+function deliveryFailure(err: unknown): Response {
+  if (
+    err instanceof MailDeliveryError ||
+    err instanceof MailNotConfiguredError ||
+    err instanceof MailSecretUnreadableError
+  ) {
+    return jsonResponse({ error: err.message }, { status: 422 })
+  }
+  console.error('[mail]', getErrorMessage(err, 'Test email failed'))
+  return jsonResponse({ error: 'The test email could not be sent.' }, { status: 500 })
+}
 
-  const input = await readValidatedBody(req, MailSettingsInputSchema)
-  if (!input) return badRequest('Invalid mail settings')
-  await saveMailSettings(db, input, user.id)
+// ─── Overview, connectors, defaults ────────────────────────────────────────
+
+async function handleOverview(req: Request, db: DbClient): Promise<Response> {
+  const user = await gate(req, db, false)
+  if (user instanceof Response) return user
+  return jsonResponse({ overview: await readOverview(db) })
+}
+
+async function handleCreateConnector(req: Request, db: DbClient): Promise<Response> {
+  const user = await gate(req, db, true)
+  if (user instanceof Response) return user
+  const input = await readValidatedBody(req, MailConnectorInputSchema)
+  if (!input) return badRequest('Invalid connector')
+  const connector = await createMailConnector(db, input, user.id)
+  // The first connector becomes the one the site sends through, so adding
+  // one is enough to get going; the owner can pick another under Defaults.
+  const defaults = await getMailDefaults(db)
+  if (defaults.defaultConnectorId === null) {
+    await saveMailDefaults(db, { ...defaults, defaultConnectorId: connector.id }, user.id)
+  }
   await createAuditEvent(db, {
     actorUserId: user.id,
-    action: 'mail.settings.update',
-    targetType: 'mail',
-    metadata: { host: input.host.toLowerCase(), port: input.port, fromAddress: input.fromAddress },
+    action: 'mail.connector.create',
+    targetType: 'mail_connector',
+    targetId: connector.id,
+    metadata: { label: connector.label, kind: connector.kind },
     ...requestAuditContext(req),
   })
-  return jsonResponse({ settings: await readSettingsView(db) })
+  return jsonResponse({ connector }, { status: 201 })
 }
 
-async function handleDeleteSettings(req: Request, db: DbClient): Promise<Response> {
-  const user = await requireCapability(req, db, 'mail.manage')
+async function handleDeleteConnector(req: Request, db: DbClient, params: RouteParams): Promise<Response> {
+  const user = await gate(req, db, true)
   if (user instanceof Response) return user
-  const stepUp = await requireStepUp(req, db, user)
-  if (stepUp) return stepUp
-
-  await deleteMailSettings(db)
+  const connector = await getMailConnector(db, params.id)
+  if (!connector || !(await deleteMailConnector(db, params.id))) return notFound('Connector')
   await createAuditEvent(db, {
     actorUserId: user.id,
-    action: 'mail.settings.delete',
-    targetType: 'mail',
+    action: 'mail.connector.delete',
+    targetType: 'mail_connector',
+    targetId: params.id,
+    metadata: { label: connector.label, kind: connector.kind },
     ...requestAuditContext(req),
   })
-  return jsonResponse({ settings: await readSettingsView(db) })
+  return jsonResponse({ overview: await readOverview(db) })
 }
 
-async function handleSendTest(req: Request, db: DbClient): Promise<Response> {
-  const user = await requireCapability(req, db, 'mail.manage')
+async function handleSetSecret(req: Request, db: DbClient, params: RouteParams): Promise<Response> {
+  const user = await gate(req, db, true)
+  if (user instanceof Response) return user
+  const input = await readValidatedBody(req, MailConnectorSecretInputSchema)
+  if (!input) return badRequest('Invalid secret')
+  if (!(await setMailConnectorSecret(db, params.id, input.secret))) return notFound('Connector')
+  const connector = await getMailConnector(db, params.id)
+  if (!connector) return notFound('Connector')
+  await createAuditEvent(db, {
+    actorUserId: user.id,
+    action: 'mail.connector.secret',
+    targetType: 'mail_connector',
+    targetId: params.id,
+    metadata: { label: connector.label },
+    ...requestAuditContext(req),
+  })
+  return jsonResponse({ connector })
+}
+
+async function handleTestConnector(req: Request, db: DbClient, params: RouteParams): Promise<Response> {
+  const user = await gate(req, db, false)
   if (user instanceof Response) return user
   const input = await readValidatedBody(req, MailTestInputSchema)
   if (!input) return badRequest('Enter a valid email address')
-
+  if (!(await getMailConnector(db, params.id))) return notFound('Connector')
   try {
-    const status = await sendSiteMail(db, {
-      kind: 'test',
-      to: input.to,
-      subject: 'Instatic test email',
-      text: 'This is a test message from your Instatic site. If you are reading it, outgoing email works.',
-    })
-    return jsonResponse({ status })
+    const mail = await buildTemplateMail(db, { key: TEST_MAIL_TEMPLATE_KEY, to: input.to, variables: {} })
+    await sendConnectorTest(db, params.id, { ...mail, kind: 'test' })
+    return jsonResponse({ status: 'sent' })
   } catch (err) {
-    if (
-      err instanceof MailDeliveryError ||
-      err instanceof MailNotConfiguredError ||
-      err instanceof MailPasswordUnreadableError
-    ) {
-      return jsonResponse({ error: err.message }, { status: 422 })
-    }
-    console.error('[mail]', getErrorMessage(err, 'Test email failed'))
-    return jsonResponse({ error: 'The test email could not be sent.' }, { status: 500 })
+    return deliveryFailure(err)
   }
 }
 
-async function handleListOutbox(req: Request, db: DbClient): Promise<Response> {
-  const user = await requireCapability(req, db, 'mail.manage')
+async function handleSaveDefaults(req: Request, db: DbClient): Promise<Response> {
+  const user = await gate(req, db, true)
   if (user instanceof Response) return user
-  return jsonResponse({ entries: await listMailOutbox(db) })
+  const input = await readValidatedBody(req, MailDefaultsSchema)
+  if (!input) return badRequest('Invalid mail defaults')
+  if (input.defaultConnectorId !== null && !(await getMailConnector(db, input.defaultConnectorId))) {
+    return badRequest('That connector no longer exists')
+  }
+  await saveMailDefaults(db, input, user.id)
+  await createAuditEvent(db, {
+    actorUserId: user.id,
+    action: 'mail.defaults.update',
+    targetType: 'mail',
+    metadata: { fromAddress: input.fromAddress, connectorId: input.defaultConnectorId },
+    ...requestAuditContext(req),
+  })
+  return jsonResponse({ overview: await readOverview(db) })
 }
 
+// ─── Templates ─────────────────────────────────────────────────────────────
+
+async function handleListTemplates(req: Request, db: DbClient): Promise<Response> {
+  const user = await gate(req, db, false)
+  if (user instanceof Response) return user
+  return jsonResponse({ templates: await listMailTemplates(db) })
+}
+
+async function handleSaveTemplate(req: Request, db: DbClient, params: RouteParams): Promise<Response> {
+  const user = await gate(req, db, false)
+  if (user instanceof Response) return user
+  if (!getMailTemplateDefinition(params.key)) return notFound('Template')
+  const input = await readValidatedBody(req, MailTemplateInputSchema)
+  if (!input) return badRequest('A template needs a subject and a body')
+  await saveMailTemplate(db, params.key, input, user.id)
+  await createAuditEvent(db, {
+    actorUserId: user.id,
+    action: 'mail.template.update',
+    targetType: 'mail_template',
+    targetId: params.key,
+    ...requestAuditContext(req),
+  })
+  return jsonResponse({ template: await getMailTemplate(db, params.key) })
+}
+
+async function handleResetTemplate(req: Request, db: DbClient, params: RouteParams): Promise<Response> {
+  const user = await gate(req, db, false)
+  if (user instanceof Response) return user
+  if (!getMailTemplateDefinition(params.key)) return notFound('Template')
+  await resetMailTemplate(db, params.key)
+  await createAuditEvent(db, {
+    actorUserId: user.id,
+    action: 'mail.template.reset',
+    targetType: 'mail_template',
+    targetId: params.key,
+    ...requestAuditContext(req),
+  })
+  return jsonResponse({ template: await getMailTemplate(db, params.key) })
+}
+
+async function handleTestTemplate(req: Request, db: DbClient, params: RouteParams): Promise<Response> {
+  const user = await gate(req, db, false)
+  if (user instanceof Response) return user
+  const definition = getMailTemplateDefinition(params.key)
+  if (!definition) return notFound('Template')
+  const input = await readValidatedBody(req, MailTestInputSchema)
+  if (!input) return badRequest('Enter a valid email address')
+  try {
+    // Sample values, never real ones: a test must not mint a working link.
+    const mail = await buildTemplateMail(db, {
+      key: params.key,
+      to: input.to,
+      variables: sampleMailVariables(definition.variables.filter((variable) => !variable.name.startsWith('site.'))),
+    })
+    return jsonResponse({ status: await sendSiteMail(db, mail) })
+  } catch (err) {
+    return deliveryFailure(err)
+  }
+}
+
+// ─── Activity ──────────────────────────────────────────────────────────────
+
+const STATUSES: readonly MailActivityStatus[] = ['sent', 'failed', 'captured']
+
+async function handleActivity(req: Request, db: DbClient): Promise<Response> {
+  const user = await gate(req, db, false)
+  if (user instanceof Response) return user
+  const requested = new URL(req.url).searchParams.get('status')
+  const status = STATUSES.find((candidate) => candidate === requested)
+  return jsonResponse(await listMailActivity(db, status ? { status } : {}))
+}
+
+const CONNECTOR = new RegExp(`^${MAIL_PREFIX}/connectors/(?<id>[^/]+)$`)
+const CONNECTOR_SECRET = new RegExp(`^${MAIL_PREFIX}/connectors/(?<id>[^/]+)/secret$`)
+const CONNECTOR_TEST = new RegExp(`^${MAIL_PREFIX}/connectors/(?<id>[^/]+)/test$`)
+const TEMPLATE = new RegExp(`^${MAIL_PREFIX}/templates/(?<key>[^/]+)$`)
+const TEMPLATE_TEST = new RegExp(`^${MAIL_PREFIX}/templates/(?<key>[^/]+)/test$`)
+
 const ROUTES: Route<[]>[] = [
-  { method: 'GET', pattern: `${MAIL_PREFIX}/settings`, handler: handleGetSettings },
-  { method: 'PUT', pattern: `${MAIL_PREFIX}/settings`, handler: handleSaveSettings },
-  { method: 'DELETE', pattern: `${MAIL_PREFIX}/settings`, handler: handleDeleteSettings },
-  { method: 'POST', pattern: `${MAIL_PREFIX}/test`, handler: handleSendTest },
-  { method: 'GET', pattern: `${MAIL_PREFIX}/outbox`, handler: handleListOutbox },
+  { method: 'GET', pattern: MAIL_PREFIX, handler: handleOverview },
+  { method: 'POST', pattern: `${MAIL_PREFIX}/connectors`, handler: handleCreateConnector },
+  { method: 'DELETE', pattern: CONNECTOR, handler: handleDeleteConnector },
+  { method: 'PUT', pattern: CONNECTOR_SECRET, handler: handleSetSecret },
+  { method: 'POST', pattern: CONNECTOR_TEST, handler: handleTestConnector },
+  { method: 'PUT', pattern: `${MAIL_PREFIX}/defaults`, handler: handleSaveDefaults },
+  { method: 'GET', pattern: `${MAIL_PREFIX}/templates`, handler: handleListTemplates },
+  { method: 'PUT', pattern: TEMPLATE, handler: handleSaveTemplate },
+  { method: 'DELETE', pattern: TEMPLATE, handler: handleResetTemplate },
+  { method: 'POST', pattern: TEMPLATE_TEST, handler: handleTestTemplate },
+  { method: 'GET', pattern: `${MAIL_PREFIX}/activity`, handler: handleActivity },
 ]
 
 export function handleMailRoutes(req: Request, db: DbClient): Promise<Response | null> {

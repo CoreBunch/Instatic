@@ -1,16 +1,17 @@
 /**
- * Wire shapes for the site's outgoing mail settings, shared by the server
- * handlers (`server/handlers/cms/mail.ts`) and the admin Email settings.
+ * Wire shapes for outgoing mail, shared by the server (`server/mail/`,
+ * `server/handlers/cms/mail.ts`) and the admin Email workspace.
  *
- * The SMTP password only ever travels browser → server. No response shape in
- * this file carries it: the view reports `hasPassword` instead.
+ * Secrets (an SMTP password, an AWS secret key) only ever travel browser →
+ * server. No response shape here carries one: a connector reports
+ * `hasSecret` instead.
  */
 import { Type, type Static } from '@sinclair/typebox'
 
 /** Header-safe single line: no CR or LF, so a value can never add a header. */
 const SINGLE_LINE = '^[^\\r\\n]*$'
 
-/** Deliberately loose: one `@`, no spaces or line breaks. SMTP is the real judge. */
+/** Deliberately loose: one `@`, no spaces or line breaks. The provider is the real judge. */
 export const MAIL_ADDRESS_PATTERN = '^[^\\s@]+@[^\\s@]+$'
 
 export const MailAddressSchema = Type.String({
@@ -19,36 +20,113 @@ export const MailAddressSchema = Type.String({
   pattern: MAIL_ADDRESS_PATTERN,
 })
 
+// ─── Connectors ────────────────────────────────────────────────────────────
+
+export const MAIL_CONNECTOR_KINDS = ['smtp', 'ses'] as const
+export const MailConnectorKindSchema = Type.Union([Type.Literal('smtp'), Type.Literal('ses')])
+export type MailConnectorKind = Static<typeof MailConnectorKindSchema>
+
+export const SmtpConnectorConfigSchema = Type.Object(
+  {
+    host: Type.String({ minLength: 1, maxLength: 253, pattern: '^[a-zA-Z0-9.-]+$' }),
+    port: Type.Integer({ minimum: 1, maximum: 65535 }),
+    username: Type.String({ maxLength: 320, pattern: SINGLE_LINE }),
+  },
+  { additionalProperties: false },
+)
+export type SmtpConnectorConfig = Static<typeof SmtpConnectorConfigSchema>
+
+export const SesConnectorConfigSchema = Type.Object(
+  {
+    /** An AWS region id such as `eu-central-1`; it becomes part of the API host. */
+    region: Type.String({ pattern: '^[a-z]{2}(-[a-z]+)+-\\d$', maxLength: 30 }),
+    accessKeyId: Type.String({ minLength: 16, maxLength: 128, pattern: '^[A-Z0-9]+$' }),
+  },
+  { additionalProperties: false },
+)
+export type SesConnectorConfig = Static<typeof SesConnectorConfigSchema>
+
+const ConnectorLabelSchema = Type.String({ minLength: 1, maxLength: 80, pattern: SINGLE_LINE })
+/** An SMTP password or an AWS secret access key. Empty is allowed for an open local relay. */
+const ConnectorSecretSchema = Type.String({ maxLength: 1024 })
+
+export const MailConnectorInputSchema = Type.Union([
+  Type.Object(
+    {
+      kind: Type.Literal('smtp'),
+      label: ConnectorLabelSchema,
+      config: SmtpConnectorConfigSchema,
+      secret: ConnectorSecretSchema,
+    },
+    { additionalProperties: false },
+  ),
+  Type.Object(
+    {
+      kind: Type.Literal('ses'),
+      label: ConnectorLabelSchema,
+      config: SesConnectorConfigSchema,
+      secret: Type.String({ minLength: 1, maxLength: 1024 }),
+    },
+    { additionalProperties: false },
+  ),
+])
+export type MailConnectorInput = Static<typeof MailConnectorInputSchema>
+
+export const MailConnectorSecretInputSchema = Type.Object(
+  { secret: ConnectorSecretSchema },
+  { additionalProperties: false },
+)
+
+const ConnectorCommon = {
+  id: Type.String(),
+  label: Type.String(),
+  hasSecret: Type.Boolean(),
+  /** The stored secret was encrypted with a different server secret key. */
+  secretNeedsReentry: Type.Boolean(),
+  lastUsedAt: Type.Union([Type.String(), Type.Null()]),
+  /** What went wrong the last time this connector was used, if it failed. */
+  lastError: Type.Union([Type.String(), Type.Null()]),
+  createdAt: Type.String(),
+}
+
+export const MailConnectorSchema = Type.Union([
+  Type.Object({ ...ConnectorCommon, kind: Type.Literal('smtp'), config: SmtpConnectorConfigSchema }),
+  Type.Object({ ...ConnectorCommon, kind: Type.Literal('ses'), config: SesConnectorConfigSchema }),
+])
+export type MailConnector = Static<typeof MailConnectorSchema>
+
+// ─── Defaults ──────────────────────────────────────────────────────────────
+
+export const MailDefaultsSchema = Type.Object(
+  {
+    /** The connector every email goes through, or null when none is chosen. */
+    defaultConnectorId: Type.Union([Type.String(), Type.Null()]),
+    fromAddress: Type.Union([MailAddressSchema, Type.Literal('')]),
+    fromName: Type.String({ maxLength: 120, pattern: SINGLE_LINE }),
+    replyTo: Type.Union([MailAddressSchema, Type.Literal('')]),
+  },
+  { additionalProperties: false },
+)
+export type MailDefaults = Static<typeof MailDefaultsSchema>
+
 /**
  * How the server delivers mail right now.
- *  - `smtp`: an account is saved; mail is sent through it.
- *  - `capture`: nothing is saved and this is a development server; mail is
- *    written to the outbox (with its body) instead of leaving the machine.
- *  - `off`: nothing is saved on a production server; sending fails.
+ *  - `send`: a default connector and a sender address are set.
+ *  - `capture`: they are not, and this is a development server; mail is
+ *    written to the activity log (with its body) instead of leaving the machine.
+ *  - `off`: they are not, on a production server; sending fails.
  */
 export const MailDeliveryModeSchema = Type.Union([
-  Type.Literal('smtp'),
+  Type.Literal('send'),
   Type.Literal('capture'),
   Type.Literal('off'),
 ])
 export type MailDeliveryMode = Static<typeof MailDeliveryModeSchema>
 
-export const MailAccountSchema = Type.Object({
-  host: Type.String(),
-  port: Type.Integer(),
-  username: Type.String(),
-  hasPassword: Type.Boolean(),
-  /** The stored password was encrypted with a different server secret key. */
-  passwordNeedsReentry: Type.Boolean(),
-  fromAddress: Type.String(),
-  fromName: Type.String(),
-  updatedAt: Type.String(),
-})
-export type MailAccount = Static<typeof MailAccountSchema>
-
-export const MailSettingsViewSchema = Type.Object({
+export const MailOverviewSchema = Type.Object({
   mode: MailDeliveryModeSchema,
-  account: Type.Union([MailAccountSchema, Type.Null()]),
+  connectors: Type.Array(MailConnectorSchema),
+  defaults: MailDefaultsSchema,
   /**
    * The configured public origin links in emails are built from, or null when
    * none is configured (links cannot be built safely from the Host header).
@@ -57,53 +135,81 @@ export const MailSettingsViewSchema = Type.Object({
   /** The operator allowed private-network SMTP relays (`MAIL_ALLOW_PRIVATE_HOSTS`). */
   privateHostsAllowed: Type.Boolean(),
 })
-export type MailSettingsView = Static<typeof MailSettingsViewSchema>
+export type MailOverview = Static<typeof MailOverviewSchema>
 
-export const MailSettingsInputSchema = Type.Object(
+export const MailOverviewResponseSchema = Type.Object({ overview: MailOverviewSchema })
+export const MailConnectorResponseSchema = Type.Object({ connector: MailConnectorSchema })
+
+// ─── Templates ─────────────────────────────────────────────────────────────
+
+export const MailTemplateVariableSchema = Type.Object({
+  /** The token name, written `{name}` in a subject or body. */
+  name: Type.String(),
+  label: Type.String(),
+  /** A realistic value for the preview. */
+  sample: Type.String(),
+})
+export type MailTemplateVariable = Static<typeof MailTemplateVariableSchema>
+
+export const MailTemplateSchema = Type.Object({
+  key: Type.String(),
+  label: Type.String(),
+  description: Type.String(),
+  group: Type.String(),
+  variables: Type.Array(MailTemplateVariableSchema),
+  subject: Type.String(),
+  body: Type.String(),
+  /** False while the template still has its built-in wording. */
+  customised: Type.Boolean(),
+})
+export type MailTemplate = Static<typeof MailTemplateSchema>
+
+export const MailTemplateInputSchema = Type.Object(
   {
-    host: Type.String({ minLength: 1, maxLength: 253, pattern: '^[a-zA-Z0-9.-]+$' }),
-    port: Type.Integer({ minimum: 1, maximum: 65535 }),
-    username: Type.String({ maxLength: 320, pattern: SINGLE_LINE }),
-    /** Omitted keeps the stored password; an empty string clears it. */
-    password: Type.Optional(Type.String({ maxLength: 1024 })),
-    fromAddress: MailAddressSchema,
-    fromName: Type.String({ maxLength: 120, pattern: SINGLE_LINE }),
+    subject: Type.String({ minLength: 1, maxLength: 200, pattern: SINGLE_LINE }),
+    body: Type.String({ minLength: 1, maxLength: 20000 }),
   },
   { additionalProperties: false },
 )
-export type MailSettingsInput = Static<typeof MailSettingsInputSchema>
+export type MailTemplateInput = Static<typeof MailTemplateInputSchema>
+
+export const MailTemplatesResponseSchema = Type.Object({ templates: Type.Array(MailTemplateSchema) })
+export const MailTemplateResponseSchema = Type.Object({ template: MailTemplateSchema })
+
+// ─── Sending and activity ──────────────────────────────────────────────────
 
 export const MailTestInputSchema = Type.Object(
   { to: MailAddressSchema },
   { additionalProperties: false },
 )
 
-export const MailOutboxStatusSchema = Type.Union([
+export const MailActivityStatusSchema = Type.Union([
   Type.Literal('sent'),
   Type.Literal('failed'),
   Type.Literal('captured'),
 ])
-export type MailOutboxStatus = Static<typeof MailOutboxStatusSchema>
+export type MailActivityStatus = Static<typeof MailActivityStatusSchema>
 
-export const MailOutboxEntrySchema = Type.Object({
+export const MailTestResponseSchema = Type.Object({ status: MailActivityStatusSchema })
+
+export const MailActivityEntrySchema = Type.Object({
   id: Type.String(),
+  /** The template key, or `test` for a connector test. */
   kind: Type.String(),
   to: Type.String(),
   subject: Type.String(),
-  status: MailOutboxStatusSchema,
+  status: MailActivityStatusSchema,
+  connectorLabel: Type.Union([Type.String(), Type.Null()]),
   error: Type.Union([Type.String(), Type.Null()]),
   /** Present only for mail captured on a development server. */
   body: Type.Union([Type.String(), Type.Null()]),
   createdAt: Type.String(),
 })
-export type MailOutboxEntry = Static<typeof MailOutboxEntrySchema>
+export type MailActivityEntry = Static<typeof MailActivityEntrySchema>
 
-export const MailOutboxResponseSchema = Type.Object({
-  entries: Type.Array(MailOutboxEntrySchema),
+export const MailActivityResponseSchema = Type.Object({
+  entries: Type.Array(MailActivityEntrySchema),
+  /** Counts over the last 30 days. */
+  totals: Type.Object({ sent: Type.Integer(), failed: Type.Integer(), captured: Type.Integer() }),
 })
-
-export const MailSettingsResponseSchema = Type.Object({ settings: MailSettingsViewSchema })
-
-export const MailTestResponseSchema = Type.Object({
-  status: MailOutboxStatusSchema,
-})
+export type MailActivityResponse = Static<typeof MailActivityResponseSchema>

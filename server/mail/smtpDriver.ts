@@ -1,5 +1,5 @@
 /**
- * SMTP delivery for the site's own mail account.
+ * SMTP delivery for an SMTP connector.
  *
  * The connection rules follow the plugin network guard (and PR #559's SMTP
  * handling by 7heMech, which this builds on):
@@ -21,7 +21,7 @@ import { lookup } from 'node:dns/promises'
 import { isIP } from 'node:net'
 import nodemailer from 'nodemailer'
 import { isBlockedAddress } from '../plugins/host/network'
-import type { ResolvedMailAccount } from './settings'
+import type { SmtpConnectorConfig } from '@core/mail'
 
 export interface OutgoingMail {
   to: string
@@ -98,9 +98,18 @@ function describeSmtpFailure(err: unknown): string {
   return responseCode ? `The SMTP server refused the message (code ${responseCode}).` : 'The SMTP server refused the message.'
 }
 
-export type SmtpSender = (account: ResolvedMailAccount, mail: OutgoingMail) => Promise<void>
+/** Who a message is from, already formatted for a header. */
+export interface SmtpEnvelope {
+  fromHeader: string
+  replyTo: string
+}
 
-export const sendViaSmtp: SmtpSender = async (account, mail) => {
+export async function sendViaSmtp(
+  account: SmtpConnectorConfig,
+  password: string,
+  envelope: SmtpEnvelope,
+  mail: OutgoingMail,
+): Promise<void> {
   const allowPrivate = privateMailHostsAllowed()
   const address = await resolveSmtpAddress(account.host, allowPrivate)
   const implicitTls = account.port === 465
@@ -111,7 +120,7 @@ export const sendViaSmtp: SmtpSender = async (account, mail) => {
     requireTLS: !implicitTls && !allowPrivate,
     // SNI and certificate checks use the hostname, never the pinned IP.
     ...(isIP(account.host) ? {} : { tls: { servername: account.host } }),
-    ...(account.username ? { auth: { user: account.username, pass: account.password } } : {}),
+    ...(account.username ? { auth: { user: account.username, pass: password } } : {}),
     connectionTimeout: 5_000,
     greetingTimeout: 5_000,
     socketTimeout: 10_000,
@@ -120,7 +129,8 @@ export const sendViaSmtp: SmtpSender = async (account, mail) => {
   })
   try {
     await smtp.sendMail({
-      from: formatFromHeader(account.fromName, account.fromAddress),
+      from: envelope.fromHeader,
+      ...(envelope.replyTo ? { replyTo: envelope.replyTo } : {}),
       to: mail.to,
       subject: mail.subject,
       text: mail.text,

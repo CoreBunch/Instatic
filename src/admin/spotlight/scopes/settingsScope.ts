@@ -36,21 +36,6 @@ const SETTINGS_COMMANDS: Command[] = [
     },
   },
   {
-    id: 'scope.settings.email',
-    title: 'Email',
-    subtitle: 'The SMTP account the site sends email through',
-    group: 'settings',
-    iconName: 'mail-solid',
-    keywords: ['email', 'mail', 'smtp', 'sender', 'outbox'],
-    workspaces: ['site'],
-    capability: 'mail.manage',
-    run: async (ctx) => {
-      ctx.closeSpotlight()
-      const { useEditorStore } = await import('@site/store/store')
-      useEditorStore.getState().openSettings('email')
-    },
-  },
-  {
     id: 'scope.settings.preferences',
     title: 'Preferences',
     subtitle: 'Editor preferences and auto-save settings',

@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
 import { createServer, type Server } from 'node:net'
 import type { AddressInfo } from 'node:net'
-import { MailDeliveryError, sendViaSmtp } from '../../../server/mail/transport'
+import { formatFromHeader, MailDeliveryError, sendViaSmtp } from '../../../server/mail/smtpDriver'
 
 /** A minimal plaintext SMTP sink: accepts one message and records the wire data. */
 function startSmtpSink(options: { rejectAuth?: boolean } = {}): Promise<{ server: Server; port: number; received: string[] }> {
@@ -42,13 +42,11 @@ function startSmtpSink(options: { rejectAuth?: boolean } = {}): Promise<{ server
   })
 }
 
-const ACCOUNT = {
-  host: '127.0.0.1',
-  username: 'mailer',
-  password: 'smtp-secret-value',
-  fromAddress: 'hello@example.com',
-  fromName: 'Ex "Site"',
-}
+const HOST = '127.0.0.1'
+const USERNAME = 'mailer'
+const PASSWORD = 'smtp-secret-value'
+const ENVELOPE = { fromHeader: formatFromHeader('Ex "Site"', 'hello@example.com'), replyTo: 'help@example.com' }
+const send = (port: number) => sendViaSmtp({ host: HOST, port, username: USERNAME }, PASSWORD, ENVELOPE, MAIL)
 const MAIL = { to: 'reader@example.com', subject: 'Hello there', text: 'First line\r\n.leading dot line' }
 
 describe('SMTP transport against a local sink', () => {
@@ -69,11 +67,12 @@ describe('SMTP transport against a local sink', () => {
   it('delivers a message with the quoted sender name when private hosts are allowed', async () => {
     process.env.MAIL_ALLOW_PRIVATE_HOSTS = '1'
     sink = await startSmtpSink()
-    await sendViaSmtp({ ...ACCOUNT, port: sink.port }, MAIL)
+    await send(sink.port)
     expect(sink.received).toHaveLength(1)
     const wire = sink.received[0]
     expect(wire).toContain('From: "Ex \\"Site\\"" <hello@example.com>')
     expect(wire).toContain('To: reader@example.com')
+    expect(wire).toContain('Reply-To: help@example.com')
     expect(wire).toContain('Subject: Hello there')
     expect(wire).toContain('First line')
   })
@@ -81,16 +80,16 @@ describe('SMTP transport against a local sink', () => {
   it('refuses a private host by default, before any connection is made', async () => {
     delete process.env.MAIL_ALLOW_PRIVATE_HOSTS
     sink = await startSmtpSink()
-    await expect(sendViaSmtp({ ...ACCOUNT, port: sink.port }, MAIL)).rejects.toBeInstanceOf(MailDeliveryError)
+    await expect(send(sink.port)).rejects.toBeInstanceOf(MailDeliveryError)
     expect(sink.received).toHaveLength(0)
   })
 
   it('reports rejected credentials without echoing the password', async () => {
     process.env.MAIL_ALLOW_PRIVATE_HOSTS = '1'
     sink = await startSmtpSink({ rejectAuth: true })
-    const failure = await sendViaSmtp({ ...ACCOUNT, port: sink.port }, MAIL).catch((err: unknown) => err)
+    const failure = await send(sink.port).catch((err: unknown) => err)
     expect(failure).toBeInstanceOf(MailDeliveryError)
     expect((failure as Error).message).toBe('The SMTP server rejected the username or password.')
-    expect((failure as Error).message).not.toContain(ACCOUNT.password)
+    expect((failure as Error).message).not.toContain(PASSWORD)
   })
 })

@@ -5,33 +5,58 @@ import {
   readJson,
   type CapabilityTestHarness,
 } from '../helpers/capabilityHarness'
-import type { MailOutboxEntry, MailSettingsView } from '@core/mail'
-import { listMailOutbox } from '../../../server/mail/outbox'
-import { MailNotConfiguredError, sendSiteMail } from '../../../server/mail/send'
-import { resolveMailAccount, saveMailSettings } from '../../../server/mail/settings'
 import {
-  formatFromHeader,
-  MailDeliveryError,
-  resolveSmtpAddress,
-  type OutgoingMail,
-} from '../../../server/mail/transport'
-import type { ResolvedMailAccount } from '../../../server/mail/settings'
+  registerMailTemplate,
+  renderMailTemplate,
+  unknownMailVariables,
+  type MailActivityResponse,
+  type MailConnector,
+  type MailOverview,
+  type MailTemplate,
+} from '@core/mail'
+import { listMailActivity } from '../../../server/mail/activity'
+import { createMailConnector, resolveConnector } from '../../../server/mail/connectors'
+import { saveMailDefaults } from '../../../server/mail/defaults'
+import {
+  MailNotConfiguredError,
+  sendSiteMail,
+  sendTemplateMail,
+  type MailCarrier,
+} from '../../../server/mail/send'
+import { signAwsRequest, sendViaSes } from '../../../server/mail/sesDriver'
+import { formatFromHeader, MailDeliveryError, resolveSmtpAddress } from '../../../server/mail/smtpDriver'
 
-const ACCOUNT = {
-  host: 'SMTP.Example.com',
-  port: 587,
-  username: 'mailer',
-  password: 'smtp-secret-value',
-  fromAddress: 'hello@example.com',
-  fromName: 'Example',
+const SMTP = {
+  kind: 'smtp' as const,
+  label: 'Main relay',
+  config: { host: 'SMTP.Example.com', port: 587, username: 'mailer' },
+  secret: 'smtp-secret-value',
 }
-
+const SES = {
+  kind: 'ses' as const,
+  label: 'AWS',
+  config: { region: 'eu-central-1', accessKeyId: 'AKIAIOSFODNN7EXAMPLE' },
+  secret: 'ses-secret-value',
+}
 const MESSAGE = {
   kind: 'test',
   to: 'reader@example.com',
   subject: 'Hello',
   text: 'Body with a secret link https://example.com/reset?token=abc',
 }
+
+registerMailTemplate({
+  key: 'test.welcome',
+  label: 'Welcome',
+  description: 'Test fixture.',
+  group: 'Test',
+  variables: [
+    { name: 'member.name', label: 'Name', sample: 'Ada' },
+    { name: 'link', label: 'Link', sample: 'https://example.com/confirm?token=sample' },
+  ],
+  defaultSubject: 'Welcome to {site.name}, {member.name}',
+  defaultBody: 'Hello **{member.name}**,\n\n[Confirm your address]({link})\n\nOr paste this: {link}',
+})
 
 describe('site mail', () => {
   let h: CapabilityTestHarness
@@ -51,75 +76,166 @@ describe('site mail', () => {
     return rows[0].id
   }
 
+  /** A connector that is the default, with a sender address: ready to send. */
+  async function readyConnector(): Promise<MailConnector> {
+    const userId = await ownerUserId()
+    const connector = await createMailConnector(h.db, SMTP, userId)
+    await saveMailDefaults(
+      h.db,
+      { defaultConnectorId: connector.id, fromAddress: 'hello@example.com', fromName: 'Example', replyTo: '' },
+      userId,
+    )
+    return connector
+  }
+
   describe('delivery', () => {
-    it('captures the message with its body on a development server with no account', async () => {
-      const status = await sendSiteMail(h.db, MESSAGE, { env: { NODE_ENV: 'development' } })
-      expect(status).toBe('captured')
-      const [entry] = await listMailOutbox(h.db)
-      expect(entry).toMatchObject({ status: 'captured', to: MESSAGE.to, body: MESSAGE.text })
+    it('captures the message with its body on a development server with nothing set up', async () => {
+      expect(await sendSiteMail(h.db, MESSAGE, { env: { NODE_ENV: 'development' } })).toBe('captured')
+      const { entries } = await listMailActivity(h.db)
+      expect(entries[0]).toMatchObject({ status: 'captured', to: MESSAGE.to, body: MESSAGE.text, connectorLabel: null })
     })
 
-    it('refuses on a production server with no account and records nothing', async () => {
-      await expect(
-        sendSiteMail(h.db, MESSAGE, { env: { NODE_ENV: 'production' } }),
-      ).rejects.toBeInstanceOf(MailNotConfiguredError)
-      expect(await listMailOutbox(h.db)).toEqual([])
+    it('refuses on a production server with nothing set up and records nothing', async () => {
+      await expect(sendSiteMail(h.db, MESSAGE, { env: { NODE_ENV: 'production' } }))
+        .rejects.toBeInstanceOf(MailNotConfiguredError)
+      expect((await listMailActivity(h.db)).entries).toEqual([])
     })
 
-    it('sends through the saved account and never stores the body', async () => {
-      await saveMailSettings(h.db, ACCOUNT, await ownerUserId())
-      const seen: Array<{ account: ResolvedMailAccount; mail: OutgoingMail }> = []
-      const status = await sendSiteMail(h.db, MESSAGE, {
-        smtp: async (account, mail) => { seen.push({ account, mail }) },
-      })
-      expect(status).toBe('sent')
-      expect(seen[0].account).toMatchObject({ host: 'smtp.example.com', password: ACCOUNT.password })
-      const [entry] = await listMailOutbox(h.db)
-      expect(entry).toMatchObject({ status: 'sent', body: null, error: null })
+    it('needs both a connector and a sender address before it sends', async () => {
+      const userId = await ownerUserId()
+      const connector = await createMailConnector(h.db, SMTP, userId)
+      await saveMailDefaults(h.db, { defaultConnectorId: connector.id, fromAddress: '', fromName: '', replyTo: '' }, userId)
+      const carrier: MailCarrier = async () => { throw new Error('must not be called') }
+      expect(await sendSiteMail(h.db, MESSAGE, { carrier, env: { NODE_ENV: 'development' } })).toBe('captured')
     })
 
-    it('logs a failed delivery without the body and rethrows', async () => {
-      await saveMailSettings(h.db, ACCOUNT, await ownerUserId())
-      await expect(
-        sendSiteMail(h.db, MESSAGE, {
-          smtp: async () => { throw new MailDeliveryError('The SMTP server rejected the username or password.') },
-        }),
-      ).rejects.toBeInstanceOf(MailDeliveryError)
-      const [entry] = await listMailOutbox(h.db)
-      expect(entry).toMatchObject({
-        status: 'failed',
-        body: null,
-        error: 'The SMTP server rejected the username or password.',
-      })
+    it('sends through the default connector, as the configured sender, and never stores the body', async () => {
+      const connector = await readyConnector()
+      const seen: Array<Parameters<MailCarrier>> = []
+      const carrier: MailCarrier = async (...args) => { seen.push(args) }
+      expect(await sendSiteMail(h.db, MESSAGE, { carrier })).toBe('sent')
+
+      const [used, sender] = seen[0]
+      expect(used).toMatchObject({ id: connector.id, kind: 'smtp', secret: SMTP.secret })
+      expect(used.kind === 'smtp' && used.config.host).toBe('smtp.example.com')
+      expect(sender).toEqual({ fromAddress: 'hello@example.com', fromHeader: '"Example" <hello@example.com>', replyTo: '' })
+      const { entries, totals } = await listMailActivity(h.db)
+      expect(entries[0]).toMatchObject({ status: 'sent', body: null, error: null, connectorLabel: 'Main relay' })
+      expect(totals).toEqual({ sent: 1, failed: 0, captured: 0 })
+    })
+
+    it('logs a failed delivery on the connector and in the activity, without the body', async () => {
+      const connector = await readyConnector()
+      const carrier: MailCarrier = async () => {
+        throw new MailDeliveryError('The SMTP server rejected the username or password.')
+      }
+      await expect(sendSiteMail(h.db, MESSAGE, { carrier })).rejects.toBeInstanceOf(MailDeliveryError)
+      const { entries } = await listMailActivity(h.db, { status: 'failed' })
+      expect(entries[0]).toMatchObject({ body: null, error: 'The SMTP server rejected the username or password.' })
+      const overview = await readJson<{ overview: MailOverview }>(await h.cms('/admin/api/cms/mail', { cookie: owner }))
+      expect(overview.overview.connectors.find((c) => c.id === connector.id)?.lastError)
+        .toBe('The SMTP server rejected the username or password.')
     })
 
     it('rejects a recipient or subject that could add headers', async () => {
       const env = { NODE_ENV: 'development' }
-      await expect(
-        sendSiteMail(h.db, { ...MESSAGE, subject: 'Hi\r\nBcc: attacker@example.com' }, { env }),
-      ).rejects.toBeInstanceOf(MailDeliveryError)
-      await expect(
-        sendSiteMail(h.db, { ...MESSAGE, to: 'reader@example.com\nBcc: attacker@example.com' }, { env }),
-      ).rejects.toBeInstanceOf(MailDeliveryError)
-      expect(await listMailOutbox(h.db)).toEqual([])
+      await expect(sendSiteMail(h.db, { ...MESSAGE, subject: 'Hi\r\nBcc: attacker@example.com' }, { env }))
+        .rejects.toBeInstanceOf(MailDeliveryError)
+      await expect(sendSiteMail(h.db, { ...MESSAGE, to: 'reader@example.com\nBcc: attacker@example.com' }, { env }))
+        .rejects.toBeInstanceOf(MailDeliveryError)
+      expect((await listMailActivity(h.db)).entries).toEqual([])
     })
   })
 
-  describe('account storage', () => {
-    it('stores the password encrypted and keeps it when a save omits it', async () => {
+  describe('connector storage', () => {
+    it('stores each secret encrypted and resolves it only for sending', async () => {
       const userId = await ownerUserId()
-      await saveMailSettings(h.db, ACCOUNT, userId)
-      const { rows } = await h.db<{ password_ciphertext: Uint8Array }>`
-        select password_ciphertext from mail_settings
-      `
-      expect(Buffer.from(rows[0].password_ciphertext).toString('utf8')).not.toContain(ACCOUNT.password)
+      const smtp = await createMailConnector(h.db, SMTP, userId)
+      const ses = await createMailConnector(h.db, SES, userId)
+      const { rows } = await h.db<{ secret_ciphertext: Uint8Array }>`select secret_ciphertext from mail_connectors`
+      for (const row of rows) {
+        const stored = Buffer.from(row.secret_ciphertext).toString('utf8')
+        expect(stored).not.toContain(SMTP.secret)
+        expect(stored).not.toContain(SES.secret)
+      }
+      expect(JSON.stringify([smtp, ses])).not.toContain('secret-value')
+      expect(await resolveConnector(h.db, ses.id)).toMatchObject({ kind: 'ses', secret: SES.secret })
+    })
+  })
 
-      const { password: _omitted, ...withoutPassword } = ACCOUNT
-      await saveMailSettings(h.db, { ...withoutPassword, port: 465 }, userId)
-      expect(await resolveMailAccount(h.db)).toMatchObject({ port: 465, password: ACCOUNT.password })
+  describe('templates', () => {
+    it('fills variables as text: a value can never add markup or a link', () => {
+      const rendered = renderMailTemplate(
+        { subject: 'Hi {member.name}', body: 'Hello **{member.name}**, [open]({link})' },
+        {
+          'member.name': '<img src=x onerror=alert(1)> [evil](https://evil.example)\r\nBcc: x@example.com',
+          link: 'javascript:alert(1)',
+          'site.name': 'Acme',
+        },
+      )
+      expect(rendered.html).not.toContain('<img')
+      expect(rendered.html).toContain('&lt;img src=x onerror=alert(1)&gt;')
+      expect(rendered.html).not.toContain('href="https://evil.example"')
+      expect(rendered.html).not.toContain('javascript:')
+      expect(rendered.html).toContain('href="#"')
+      expect(rendered.subject).not.toMatch(/[\r\n]/)
+    })
 
-      await saveMailSettings(h.db, { ...ACCOUNT, password: '' }, userId)
-      expect((await resolveMailAccount(h.db))?.password).toBe('')
+    it('keeps a real link working and leaves unknown variables visible', () => {
+      const rendered = renderMailTemplate(
+        { subject: 'S', body: '[Confirm]({link}) {not.a.variable}' },
+        { link: 'https://example.com/confirm?token=abc&x=1' },
+      )
+      expect(rendered.html).toContain('href="https://example.com/confirm?token=abc&amp;x=1"')
+      expect(rendered.html).toContain('{not.a.variable}')
+      expect(rendered.text).toContain('https://example.com/confirm?token=abc&x=1')
+      expect(unknownMailVariables('{link} {nope}', [{ name: 'link', label: 'Link', sample: '' }])).toEqual(['nope'])
+    })
+
+    it('sends the built-in wording until an owner edits it, then the edit, then the built-in again', async () => {
+      const env = { NODE_ENV: 'development' }
+      const send = () => sendTemplateMail(
+        h.db,
+        { key: 'test.welcome', to: MESSAGE.to, variables: { 'member.name': 'Grace', link: 'https://example.com/c' } },
+        { env },
+      )
+      await send()
+      expect((await listMailActivity(h.db)).entries[0]).toMatchObject({
+        kind: 'test.welcome',
+        subject: 'Welcome to Capability Matrix, Grace',
+      })
+
+      const put = await h.cms('/admin/api/cms/mail/templates/test.welcome', {
+        method: 'PUT', cookie: owner, json: { subject: 'Hey {member.name}', body: 'Custom body for {member.name}' },
+      })
+      expect((await readJson<{ template: MailTemplate }>(put)).template.customised).toBe(true)
+      await send()
+      expect((await listMailActivity(h.db)).entries[0]).toMatchObject({ subject: 'Hey Grace', body: 'Custom body for Grace' })
+
+      const reset = await h.cms('/admin/api/cms/mail/templates/test.welcome', { method: 'DELETE', cookie: owner })
+      expect((await readJson<{ template: MailTemplate }>(reset)).template).toMatchObject({
+        customised: false,
+        subject: 'Welcome to {site.name}, {member.name}',
+      })
+    })
+
+    it('refuses to save a template that is not in the catalogue, or an empty one', async () => {
+      const unknown = await h.cms('/admin/api/cms/mail/templates/nope', {
+        method: 'PUT', cookie: owner, json: { subject: 'S', body: 'B' },
+      })
+      expect(unknown.status).toBe(404)
+      const empty = await h.cms('/admin/api/cms/mail/templates/test.welcome', {
+        method: 'PUT', cookie: owner, json: { subject: '', body: 'B' },
+      })
+      expect(empty.status).toBe(400)
+    })
+
+    it('sends a template test with sample values, never real ones', async () => {
+      const res = await h.cms('/admin/api/cms/mail/templates/test.welcome/test', {
+        method: 'POST', cookie: owner, json: { to: MESSAGE.to },
+      })
+      expect((await readJson<{ status: string }>(res)).status).toBe('captured')
+      expect((await listMailActivity(h.db)).entries[0].body).toContain('https://example.com/confirm?token=sample')
     })
   })
 
@@ -127,12 +243,10 @@ describe('site mail', () => {
     const answers = (...addresses: string[]) => async () => addresses.map((address) => ({ address }))
 
     it('rejects a host with any private answer, even beside a public one', async () => {
-      await expect(
-        resolveSmtpAddress('mail.example.com', false, answers('8.8.8.8', '127.0.0.1')),
-      ).rejects.toBeInstanceOf(MailDeliveryError)
-      await expect(
-        resolveSmtpAddress('mail.example.com', false, answers('169.254.169.254')),
-      ).rejects.toBeInstanceOf(MailDeliveryError)
+      await expect(resolveSmtpAddress('mail.example.com', false, answers('8.8.8.8', '127.0.0.1')))
+        .rejects.toBeInstanceOf(MailDeliveryError)
+      await expect(resolveSmtpAddress('mail.example.com', false, answers('169.254.169.254')))
+        .rejects.toBeInstanceOf(MailDeliveryError)
     })
 
     it('rejects an IP literal unless private hosts are allowed', async () => {
@@ -141,86 +255,176 @@ describe('site mail', () => {
     })
 
     it('pins to a public IPv4 answer and allows private answers only when opted in', async () => {
-      expect(
-        await resolveSmtpAddress('mail.example.com', false, answers('2606:4700:4700::1111', '8.8.8.8')),
-      ).toBe('8.8.8.8')
+      expect(await resolveSmtpAddress('mail.example.com', false, answers('2606:4700:4700::1111', '8.8.8.8')))
+        .toBe('8.8.8.8')
       expect(await resolveSmtpAddress('mailpit', true, answers('10.0.0.5'))).toBe('10.0.0.5')
     })
 
     it('quotes the sender name so it cannot break out of the From header', () => {
       expect(formatFromHeader('', 'a@example.com')).toBe('a@example.com')
-      expect(formatFromHeader('Ex "Quoted" \\ Co', 'a@example.com'))
-        .toBe('"Ex \\"Quoted\\" \\\\ Co" <a@example.com>')
+      expect(formatFromHeader('Ex "Quoted" \\ Co', 'a@example.com')).toBe('"Ex \\"Quoted\\" \\\\ Co" <a@example.com>')
+    })
+  })
+
+  describe('Amazon SES', () => {
+    it('signs a request exactly as AWS documents (Signature Version 4 example)', () => {
+      const authorization = signAwsRequest({
+        method: 'GET',
+        host: 'iam.amazonaws.com',
+        path: '/',
+        query: 'Action=ListUsers&Version=2010-05-08',
+        headers: { 'content-type': 'application/x-www-form-urlencoded; charset=utf-8' },
+        body: '',
+        region: 'us-east-1',
+        service: 'iam',
+        accessKeyId: 'AKIDEXAMPLE',
+        secretAccessKey: 'wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY',
+        amzDate: '20150830T123600Z',
+      })
+      expect(authorization).toBe(
+        'AWS4-HMAC-SHA256 Credential=AKIDEXAMPLE/20150830/us-east-1/iam/aws4_request, ' +
+          'SignedHeaders=content-type;host;x-amz-date, ' +
+          'Signature=5d672d79c15b13162d9279b0855cfba6789a8edb4c82c400e06b5924a6f2b5d7',
+      )
+    })
+
+    it('posts one signed SendEmail call to the region’s own host', async () => {
+      const calls: Array<{ url: string; init: RequestInit }> = []
+      const fetchImpl = (async (url: string | URL | Request, init?: RequestInit) => {
+        calls.push({ url: String(url), init: init ?? {} })
+        return new Response('{"MessageId":"abc"}', { status: 200 })
+      }) as typeof fetch
+      await sendViaSes(
+        SES.config,
+        SES.secret,
+        { fromAddress: 'hello@example.com', fromHeader: '"Example" <hello@example.com>', replyTo: 'help@example.com' },
+        { to: 'reader@example.com', subject: 'Hello', text: 'Text', html: '<p>Html</p>' },
+        { fetchImpl, now: () => new Date('2026-01-02T03:04:05.678Z') },
+      )
+      expect(calls).toHaveLength(1)
+      expect(calls[0].url).toBe('https://email.eu-central-1.amazonaws.com/v2/email/outbound-emails')
+      const headers = new Headers(calls[0].init.headers)
+      expect(headers.get('x-amz-date')).toBe('20260102T030405Z')
+      expect(headers.get('authorization')).toContain('Credential=AKIAIOSFODNN7EXAMPLE/20260102/eu-central-1/ses/aws4_request')
+      expect(headers.get('authorization')).not.toContain(SES.secret)
+      const body = JSON.parse(String(calls[0].init.body)) as Record<string, unknown>
+      expect(body).toMatchObject({
+        FromEmailAddress: '"Example" <hello@example.com>',
+        Destination: { ToAddresses: ['reader@example.com'] },
+        ReplyToAddresses: ['help@example.com'],
+      })
+    })
+
+    it('turns a refusal into a safe sentence, never AWS’s own text or the key', async () => {
+      const fetchImpl = (async () =>
+        new Response('{"message":"The security token included in the request is invalid: ses-secret-value"}', { status: 403 })
+      ) as unknown as typeof fetch
+      const failure = await sendViaSes(
+        SES.config, SES.secret,
+        { fromAddress: 'a@example.com', fromHeader: 'a@example.com', replyTo: '' },
+        { to: 'r@example.com', subject: 'S', text: 'T' },
+        { fetchImpl },
+      ).catch((err: unknown) => err)
+      expect(failure).toBeInstanceOf(MailDeliveryError)
+      expect((failure as Error).message).toBe('Amazon SES rejected the access key or its permissions.')
     })
   })
 
   describe('admin API', () => {
     it('is closed to a user without mail.manage', async () => {
       const editor = await h.createRoleUser({ name: 'Editor', slug: 'editor', capabilities: ['site.read'] })
-      await expectForbidden(await h.cms('/admin/api/cms/mail/settings', { cookie: editor.cookie }))
-      await expectForbidden(await h.cms('/admin/api/cms/mail/outbox', { cookie: editor.cookie }))
-      await expectForbidden(
-        await h.cms('/admin/api/cms/mail/settings', { method: 'PUT', cookie: editor.cookie, json: ACCOUNT }),
-      )
-      await expectForbidden(
-        await h.cms('/admin/api/cms/mail/test', { method: 'POST', cookie: editor.cookie, json: { to: MESSAGE.to } }),
-      )
+      for (const [method, path, json] of [
+        ['GET', '/admin/api/cms/mail', undefined],
+        ['GET', '/admin/api/cms/mail/templates', undefined],
+        ['GET', '/admin/api/cms/mail/activity', undefined],
+        ['POST', '/admin/api/cms/mail/connectors', SMTP],
+        ['PUT', '/admin/api/cms/mail/defaults', { defaultConnectorId: null, fromAddress: '', fromName: '', replyTo: '' }],
+        ['PUT', '/admin/api/cms/mail/templates/test.welcome', { subject: 'S', body: 'B' }],
+      ] as const) {
+        await expectForbidden(await h.cms(path, { method, cookie: editor.cookie, ...(json ? { json } : {}) }))
+      }
     })
 
-    it('asks for step-up before saving or removing the account', async () => {
-      const { cookie: fresh } = await h.createRoleUser({
-        name: 'Mailer',
-        slug: 'mailer',
-        capabilities: ['mail.manage'],
+    it('asks for step-up before adding or removing a connector or changing the defaults', async () => {
+      const { cookie } = await h.createRoleUser({ name: 'Mailer', slug: 'mailer', capabilities: ['mail.manage'] })
+      const add = await h.cms('/admin/api/cms/mail/connectors', { method: 'POST', cookie, json: SMTP })
+      expect(add.status).toBe(401)
+      expect((await readJson<{ error: string }>(add)).error).toBe('step_up_required')
+      const defaults = await h.cms('/admin/api/cms/mail/defaults', {
+        method: 'PUT', cookie, json: { defaultConnectorId: null, fromAddress: '', fromName: '', replyTo: '' },
       })
-      const save = await h.cms('/admin/api/cms/mail/settings', { method: 'PUT', cookie: fresh, json: ACCOUNT })
-      expect(save.status).toBe(401)
-      expect((await readJson<{ error: string }>(save)).error).toBe('step_up_required')
-      const remove = await h.cms('/admin/api/cms/mail/settings', { method: 'DELETE', cookie: fresh })
-      expect(remove.status).toBe(401)
+      expect(defaults.status).toBe(401)
+      expect((await h.cms('/admin/api/cms/mail/connectors/x', { method: 'DELETE', cookie })).status).toBe(401)
     })
 
-    it('saves the account, never returns the password, and audits the change', async () => {
-      const res = await h.cms('/admin/api/cms/mail/settings', { method: 'PUT', cookie: owner, json: ACCOUNT })
-      expect(res.status).toBe(200)
+    it('adds a connector, makes the first one the default, never returns its secret, and audits it', async () => {
+      const res = await h.cms('/admin/api/cms/mail/connectors', { method: 'POST', cookie: owner, json: SMTP })
+      expect(res.status).toBe(201)
       const raw = await res.text()
-      expect(raw).not.toContain(ACCOUNT.password)
-      const { settings } = JSON.parse(raw) as { settings: MailSettingsView }
-      expect(settings.mode).toBe('smtp')
-      expect(settings.account).toMatchObject({
-        host: 'smtp.example.com',
-        hasPassword: true,
-        passwordNeedsReentry: false,
-      })
+      expect(raw).not.toContain(SMTP.secret)
+      const { connector } = JSON.parse(raw) as { connector: MailConnector }
+      expect(connector).toMatchObject({ kind: 'smtp', hasSecret: true, secretNeedsReentry: false })
 
-      const audit = await h.cms('/admin/api/cms/audit', { cookie: owner })
-      const { events } = await readJson<{ events: Array<{ action: string }> }>(audit)
-      expect(events.some((event) => event.action === 'mail.settings.update')).toBe(true)
+      const overviewRes = await h.cms('/admin/api/cms/mail', { cookie: owner })
+      const overviewRaw = await overviewRes.text()
+      expect(overviewRaw).not.toContain(SMTP.secret)
+      const { overview } = JSON.parse(overviewRaw) as { overview: MailOverview }
+      expect(overview.defaults.defaultConnectorId).toBe(connector.id)
+      // A connector alone is not enough: there is no sender address yet.
+      expect(overview.mode).toBe('capture')
 
-      const removed = await h.cms('/admin/api/cms/mail/settings', { method: 'DELETE', cookie: owner })
-      expect((await readJson<{ settings: MailSettingsView }>(removed)).settings.account).toBeNull()
+      const audit = await readJson<{ events: Array<{ action: string }> }>(await h.cms('/admin/api/cms/audit', { cookie: owner }))
+      expect(audit.events.some((event) => event.action === 'mail.connector.create')).toBe(true)
+
+      const removed = await h.cms(`/admin/api/cms/mail/connectors/${connector.id}`, { method: 'DELETE', cookie: owner })
+      const after = (await readJson<{ overview: MailOverview }>(removed)).overview
+      expect(after.connectors).toEqual([])
+      expect(after.defaults.defaultConnectorId).toBeNull()
     })
 
-    it('rejects a malformed account', async () => {
+    it('rejects malformed connectors and defaults', async () => {
       for (const bad of [
-        { ...ACCOUNT, host: 'smtp.example.com/evil' },
-        { ...ACCOUNT, port: 0 },
-        { ...ACCOUNT, fromAddress: 'not-an-address' },
-        { ...ACCOUNT, fromName: 'A\r\nBcc: x@example.com' },
-        { ...ACCOUNT, extra: true },
+        { ...SMTP, config: { ...SMTP.config, host: 'smtp.example.com/evil' } },
+        { ...SMTP, config: { ...SMTP.config, port: 0 } },
+        { ...SMTP, label: 'A\r\nB' },
+        { ...SES, config: { ...SES.config, region: 'evil.example.com/' } },
+        { ...SES, secret: '' },
+        { ...SMTP, kind: 'sendmail' },
       ]) {
-        const res = await h.cms('/admin/api/cms/mail/settings', { method: 'PUT', cookie: owner, json: bad })
+        const res = await h.cms('/admin/api/cms/mail/connectors', { method: 'POST', cookie: owner, json: bad })
+        expect(res.status).toBe(400)
+      }
+      for (const bad of [
+        { defaultConnectorId: null, fromAddress: 'not-an-address', fromName: '', replyTo: '' },
+        { defaultConnectorId: null, fromAddress: '', fromName: 'A\r\nBcc: x@example.com', replyTo: '' },
+        { defaultConnectorId: 'no-such-connector', fromAddress: '', fromName: '', replyTo: '' },
+      ]) {
+        const res = await h.cms('/admin/api/cms/mail/defaults', { method: 'PUT', cookie: owner, json: bad })
         expect(res.status).toBe(400)
       }
     })
 
-    it('captures a test email on a development server and lists it', async () => {
-      const res = await h.cms('/admin/api/cms/mail/test', { method: 'POST', cookie: owner, json: { to: MESSAGE.to } })
-      expect(res.status).toBe(200)
-      expect((await readJson<{ status: string }>(res)).status).toBe('captured')
-      const log = await h.cms('/admin/api/cms/mail/outbox', { cookie: owner })
-      const { entries } = await readJson<{ entries: MailOutboxEntry[] }>(log)
-      expect(entries[0]).toMatchObject({ kind: 'test', to: MESSAGE.to, status: 'captured' })
+    it('needs a sender address before a connector can be tested', async () => {
+      const created = await h.cms('/admin/api/cms/mail/connectors', { method: 'POST', cookie: owner, json: SMTP })
+      const { connector } = await readJson<{ connector: MailConnector }>(created)
+      const res = await h.cms(`/admin/api/cms/mail/connectors/${connector.id}/test`, {
+        method: 'POST', cookie: owner, json: { to: MESSAGE.to },
+      })
+      expect(res.status).toBe(422)
+      expect((await readJson<{ error: string }>(res)).error).toContain('sender address')
+    })
+
+    it('filters the activity by status', async () => {
+      await sendSiteMail(h.db, MESSAGE, { env: { NODE_ENV: 'development' } })
+      const captured = await readJson<MailActivityResponse>(
+        await h.cms('/admin/api/cms/mail/activity?status=captured', { cookie: owner }),
+      )
+      expect(captured.entries).toHaveLength(1)
+      const sent = await readJson<MailActivityResponse>(
+        await h.cms('/admin/api/cms/mail/activity?status=sent', { cookie: owner }),
+      )
+      expect(sent.entries).toEqual([])
+      expect(sent.totals.captured).toBe(1)
     })
   })
 })
