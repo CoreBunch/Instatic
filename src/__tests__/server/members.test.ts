@@ -315,6 +315,70 @@ describe('site members', () => {
       expect((await new Browser(t.db).post('link/confirm', { token: link!.token })).status).toBe(200)
     })
 
+    it('lets the owner in with the right password after a stranger ran the email’s limit out', async () => {
+      await register(browser, 'm@example.com')
+      // 20 wrong guesses from many addresses exhaust the per-email allowance.
+      for (let i = 0; i < 20; i++) {
+        const res = await new Browser(t.db).post(
+          'login',
+          { email: 'm@example.com', password: `wrong-guess-${i}00` },
+          { headers: { 'x-bun-socket-ip': `203.0.113.${i + 1}` } },
+        )
+        expect(res.status).toBe(401)
+      }
+      const stranger = await new Browser(t.db).post(
+        'login',
+        { email: 'm@example.com', password: 'another-wrong-guess' },
+        { headers: { 'x-bun-socket-ip': '203.0.113.200' } },
+      )
+      expect(stranger.status).toBe(429)
+
+      const owner = await new Browser(t.db).post(
+        'login',
+        { email: 'm@example.com', password: PASSWORD },
+        { headers: { 'x-bun-socket-ip': '198.51.100.7' } },
+      )
+      expect(owner.status).toBe(200)
+
+      // An address that already failed against this email does not get that pass.
+      const guesser = await new Browser(t.db).post(
+        'login',
+        { email: 'm@example.com', password: PASSWORD },
+        { headers: { 'x-bun-socket-ip': '203.0.113.200' } },
+      )
+      expect(guesser.status).toBe(429)
+    })
+
+    it('reads the sign-up marker only from its own cookie, and not when it appears twice', async () => {
+      const attacker = new Browser(t.db)
+      await attacker.post('signup', { email: 'v@example.com', password: OTHER_PASSWORD })
+      const attackerMarker = attacker.cookie.split('; ').find((c) => c.startsWith('instatic_member_signup='))!
+      const mail = await lastMail('verify', 'v@example.com')
+
+      // A planted second copy of the marker beside the victim's own: refused.
+      const res = await new Browser(t.db).post(
+        'verify',
+        { token: mail!.token },
+        { cookie: `${attackerMarker}; instatic_member_signup=${crypto.randomUUID()}` },
+      )
+      expect(res.status).toBe(200)
+      const member = await findMemberByEmail(t.db, 'v@example.com')
+      expect(member).toMatchObject({ passwordHash: null })
+    })
+
+    it('uses a __Host- sign-up marker on an https site', async () => {
+      configurePublicOrigins(['https://example.com'])
+      const res = await new Browser(t.db).post(
+        'signup',
+        { email: 'a@example.com', password: PASSWORD },
+        { base: 'https://example.com' },
+      )
+      const marker = res.headers.getSetCookie().find((line) => line.includes('instatic_member_signup='))
+      expect(marker).toStartWith('__Host-instatic_member_signup=')
+      expect(marker).toContain('Path=/;')
+      expect(marker).toContain('Secure')
+    })
+
     it('signs out for real: the old cookie stops working', async () => {
       await register(browser, 'm@example.com')
       const stolen = browser.cookie
@@ -387,6 +451,24 @@ describe('site members', () => {
       expect(await errorCode(await new Browser(t.db).post('link/confirm', { token: reset.token }))).toBe('invalid_token')
     })
 
+    it('still delivers a sign-in link after a stranger used up the reset emails', async () => {
+      await register(browser, 'm@example.com')
+      // Remote callers only get links when the site's public origin is configured.
+      configurePublicOrigins([ORIGIN])
+      for (let i = 0; i < 6; i++) {
+        await new Browser(t.db).post('password/forgot', { email: 'm@example.com' }, {
+          headers: { 'x-bun-socket-ip': `203.0.113.${i + 1}` },
+        })
+      }
+      expect(await mailCount('reset')).toBe(4)
+      // The newest reset link is still valid, and other kinds still arrive.
+      const reset = await lastMail('reset')
+      await new Browser(t.db).post('link/request', { email: 'm@example.com' })
+      expect(await mailCount('magic')).toBe(1)
+      const ok = await new Browser(t.db).post('password/reset', { token: reset!.token, password: 'a-brand-new-password' })
+      expect(ok.status).toBe(200)
+    })
+
     it('does not mail one recipient more than a few times an hour', async () => {
       await register(browser, 'm@example.com')
       for (let i = 0; i < 8; i++) {
@@ -397,7 +479,7 @@ describe('site members', () => {
         )
         expect([200, 429]).toContain(res.status)
       }
-      expect(await mailCount('reset')).toBeLessThanOrEqual(3)
+      expect(await mailCount('reset')).toBeLessThanOrEqual(4)
     })
 
     it('shows the fallback page without using up the link', async () => {

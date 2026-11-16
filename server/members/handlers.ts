@@ -41,7 +41,7 @@
 import type { DbClient } from '../db/client'
 import type { MemberErrorCode } from '@core/members'
 import { Type, safeParseValue } from '@core/utils/typeboxHelpers'
-import { clientIp, isSiteOrigin, originAllowed, publicOriginIsHttps } from '../auth/security'
+import { clientIp, isSiteOrigin, originAllowed } from '../auth/security'
 import { jsonResponse, readTextBodyWithLimit, RequestBodyTooLargeError, setCookieHeader } from '../http'
 import { renderMemberLinkPage } from './linkPage'
 import { MEMBER_LINK_PATH_PREFIX, memberLinkOrigin, memberMailAvailable } from './mail'
@@ -67,10 +67,12 @@ import {
 } from './service'
 import {
   clearMemberSessionCookie,
+  clearSignupNonceCookie,
   findMemberSession,
-  MEMBER_SIGNUP_NONCE_COOKIE,
   memberSessionCookie,
   readMemberSessionToken,
+  readSignupNonce,
+  signupNonceCookie,
 } from './sessions'
 
 export const MEMBERS_PATH_PREFIX = '/_instatic/members/'
@@ -124,14 +126,6 @@ function originOk(req: Request): boolean {
   if (!originAllowed(req)) return false
   const fetchSite = req.headers.get('sec-fetch-site')
   return !fetchSite || fetchSite === 'same-origin' || fetchSite === 'none'
-}
-
-function readCookie(req: Request, name: string): string | null {
-  for (const part of (req.headers.get('cookie') ?? '').split(';')) {
-    const eq = part.indexOf('=')
-    if (eq > 0 && part.slice(0, eq).trim() === name) return part.slice(eq + 1).trim()
-  }
-  return null
 }
 
 /** The signed-in member behind this request, or null. */
@@ -217,21 +211,13 @@ const ERROR_STATUS: Partial<Record<MemberErrorCode, number>> = {
   email_unavailable: 503,
 }
 
-function cookieSecuritySuffix(req: Request): string {
-  return publicOriginIsHttps() || req.url.startsWith('https://') ? '; Secure' : ''
-}
-
 function outcomeCookies(req: Request, outcome: MemberOutcome, clearNonce: boolean): string[] {
   const cookies: string[] = []
   const session = outcome.ok ? outcome.session : undefined
   if (session === 'clear') cookies.push(clearMemberSessionCookie(req))
   else if (session) cookies.push(memberSessionCookie(req, session.token, session.expiresAt))
-  const nonceBase = `Path=${MEMBERS_PATH_PREFIX}; HttpOnly; SameSite=Lax${cookieSecuritySuffix(req)}`
-  if (outcome.ok && outcome.signupNonce) {
-    cookies.push(`${MEMBER_SIGNUP_NONCE_COOKIE}=${outcome.signupNonce}; ${nonceBase}; Max-Age=86400`)
-  } else if (clearNonce && outcome.ok) {
-    cookies.push(`${MEMBER_SIGNUP_NONCE_COOKIE}=; ${nonceBase}; Max-Age=0`)
-  }
+  if (outcome.ok && outcome.signupNonce) cookies.push(signupNonceCookie(req, outcome.signupNonce))
+  else if (clearNonce && outcome.ok) cookies.push(clearSignupNonceCookie(req))
   return cookies
 }
 
@@ -326,7 +312,7 @@ async function runAction(
       }))
     case 'verify':
       return respond(req, fields, await confirmEmail(ctx, {
-        token: field('token'), signupNonce: readCookie(req, MEMBER_SIGNUP_NONCE_COOKIE), ip,
+        token: field('token'), signupNonce: readSignupNonce(req), ip,
       }), { clearNonce: true })
     case 'login':
       return respond(req, fields, await logIn(ctx, { email: field('email'), password: field('password'), ip }))

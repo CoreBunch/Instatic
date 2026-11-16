@@ -92,9 +92,9 @@ Error codes are the `MEMBER_ERROR_CODES` list in `@core/members`.
 
 **Enumeration.** A sign-in for an unknown address still pays one argon2 verification. Requests that send email decide their answer first and send in the background (`queueMemberMail`), so timing does not differ.
 
-**Sign-up and pre-hijacking.** The member row is created with no password. The hash travels in the confirmation token and applies only when the link is opened in the browser that signed up (matched by the `instatic_member_signup` cookie). Opened anywhere else, the link still confirms the address and signs in, with no password set. So a stranger who signs up with someone else's address never gets their password onto the account, even if the owner opens the email.
+**Sign-up and pre-hijacking.** The member row is created with no password. The hash travels in the confirmation token and applies only when the link is opened in the browser that signed up (matched by the `instatic_member_signup` cookie, `__Host-` prefixed on https so a sibling subdomain cannot plant one, and ignored when it appears twice). Opened anywhere else, the link still confirms the address and signs in, with no password set. So a stranger who signs up with someone else's address never gets their password onto the account, even if the owner opens the email.
 
-**No hard lockout.** Limits are sliding windows per IP, per IP+email, per email and per recipient (`limits.ts`). An account is never locked, because anyone who knows the address could lock its owner out.
+**No hard lockout, and no lockout by a stranger.** Limits are sliding windows per IP, per IP+email, per email and per recipient (`limits.ts`). An account is never locked. The per-email sign-in limit counts failures from everywhere, so anyone can run it out; a correct password from an address with no failed attempt against that email still gets in. Email limits are counted per recipient and per kind of email, and a refused request issues no new token, so the last link sent stays valid.
 
 **Links in emails** are built from `configuredPublicOrigin()`. With none configured they are built only for a request from this machine (loopback peer and loopback host); otherwise the action fails with `email_unavailable`. The `Host` header is never used.
 

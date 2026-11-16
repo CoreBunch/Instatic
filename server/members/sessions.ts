@@ -30,9 +30,39 @@ const PLAIN_COOKIE_NAME = 'instatic_member'
 
 /**
  * Short-lived cookie naming the browser that submitted a sign-up, so a
- * contested confirmation link only applies its password there (`signUp`).
+ * confirmation link only applies its password there (`signUp`). Same naming
+ * rule as the session cookie: `__Host-` on https, so a sibling subdomain
+ * cannot plant its own marker in a visitor's browser and have its sign-up's
+ * password accepted there.
  */
-export const MEMBER_SIGNUP_NONCE_COOKIE = 'instatic_member_signup'
+const SECURE_SIGNUP_NONCE_COOKIE = '__Host-instatic_member_signup'
+const PLAIN_SIGNUP_NONCE_COOKIE = 'instatic_member_signup'
+
+function signupNonceCookieName(req: Request): string {
+  return requestIsSecure(req) ? SECURE_SIGNUP_NONCE_COOKIE : PLAIN_SIGNUP_NONCE_COOKIE
+}
+
+export function signupNonceCookie(req: Request, nonce: string): string {
+  return `${signupNonceCookieName(req)}=${nonce}; ${cookieAttributes(req)}; Max-Age=86400`
+}
+
+export function clearSignupNonceCookie(req: Request): string {
+  return `${signupNonceCookieName(req)}=; ${cookieAttributes(req)}; Max-Age=0`
+}
+
+/**
+ * The sign-up marker from the request, or null. Null too when the cookie
+ * appears more than once: two values means someone else set one of them.
+ */
+export function readSignupNonce(req: Request): string | null {
+  const wanted = signupNonceCookieName(req)
+  const values: string[] = []
+  for (const part of (req.headers.get('cookie') ?? '').split(';')) {
+    const eq = part.indexOf('=')
+    if (eq > 0 && part.slice(0, eq).trim() === wanted) values.push(part.slice(eq + 1).trim())
+  }
+  return values.length === 1 && /^[A-Za-z0-9-]{20,60}$/.test(values[0]) ? values[0] : null
+}
 
 function requestIsSecure(req: Request): boolean {
   return publicOriginIsHttps() || req.url.startsWith('https://')

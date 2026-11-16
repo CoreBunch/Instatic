@@ -107,6 +107,17 @@ function limited(retryAfterMs: number): MemberOutcome {
   return { ok: false, code: 'rate_limited', retryAfterMs }
 }
 
+/**
+ * May another email of this kind go to this address? Counted per recipient
+ * AND per kind, so filling one kind's allowance (anyone can request a reset
+ * for any address) cannot stop another kind from arriving. Within one kind
+ * the owner is not locked out either: the last link sent is still in their
+ * inbox and still valid, because a refused request issues no new token.
+ */
+function mailAllowedTo(email: string, kind: string): boolean {
+  return memberLimits.mailPerRecipient.consume(`${kind}|${normalizeMemberEmail(email)}`).ok
+}
+
 function emailProblem(email: string): MemberOutcome | null {
   const trimmed = email.trim()
   if (!trimmed || trimmed.length > MEMBER_EMAIL_MAX_LENGTH || !ADDRESS_RE.test(trimmed)) {
@@ -240,8 +251,8 @@ export async function signUp(ctx: MemberActionContext, input: SignUpInput): Prom
   const nonce = crypto.randomUUID()
   const outcome: MemberOutcome = { ok: true, code: 'check_email', signupNonce: nonce }
 
-  // One recipient can only be mailed a few times an hour, whoever asks.
-  if (!memberLimits.mailPerRecipient.consume(normalizeMemberEmail(email)).ok) return outcome
+  // One recipient gets only a few sign-up emails an hour, whoever asks.
+  if (!mailAllowedTo(email, 'signup')) return outcome
 
   let member = await findMemberByEmail(ctx.db, email)
   if (member && (member.emailVerifiedAt !== null || member.status !== 'active')) {
@@ -299,25 +310,32 @@ export async function logIn(
   input: { email: string; password: string; ip: string },
 ): Promise<MemberOutcome> {
   const emailKey = normalizeMemberEmail(input.email).slice(0, MEMBER_EMAIL_MAX_LENGTH)
-  for (const decision of [
-    memberLimits.loginPerIp.consume(input.ip),
-    memberLimits.loginPerIpEmail.consume(`${input.ip}|${emailKey}`),
-    memberLimits.loginPerEmail.consume(emailKey),
-  ]) {
-    if (!decision.ok) return limited(decision.retryAfterMs)
-  }
+  const ipEmailKey = `${input.ip}|${emailKey}`
+  // Limits that only ever slow the caller's own address are checked up front.
+  const perIp = memberLimits.loginPerIp.consume(input.ip)
+  if (!perIp.ok) return limited(perIp.retryAfterMs)
+  if (memberLimits.loginPerIpEmail.isExhausted(ipEmailKey)) return limited(15 * 60 * 1000)
+  // The per-email limit counts failures from everywhere, so a stranger can
+  // run it out. It must not then lock the owner out: a correct password from
+  // an address with no failed attempt against this email still gets in.
+  const emailExhausted = memberLimits.loginPerEmail.isExhausted(emailKey)
+  const cleanAddress = memberLimits.loginPerIpEmail.isUntouched(ipEmailKey)
 
   const member = emailProblem(input.email) ? null : await findMemberByEmail(ctx.db, input.email)
   const password = input.password.slice(0, MEMBER_PASSWORD_MAX_LENGTH)
   // Always verify once, against a hash nothing matches when there is no
   // usable account, so timing says nothing about the address.
   const matches = await verifyPassword(password, member?.passwordHash ?? (await getDummyHash()))
-  if (!member || !member.passwordHash || !matches || member.status !== 'active' || !member.emailVerifiedAt) {
+  const accepted =
+    member !== null && member.passwordHash !== null && matches && member.status === 'active' && member.emailVerifiedAt !== null
+  if (!accepted || (emailExhausted && !cleanAddress)) {
+    memberLimits.loginPerIpEmail.consume(ipEmailKey)
+    memberLimits.loginPerEmail.consume(emailKey)
     if (member) await recordMemberEvent(ctx.db, member.id, 'login_failed', ctx)
-    return fail('invalid_credentials')
+    return emailExhausted ? limited(60 * 60 * 1000) : fail('invalid_credentials')
   }
 
-  memberLimits.loginPerIpEmail.reset(`${input.ip}|${emailKey}`)
+  memberLimits.loginPerIpEmail.reset(ipEmailKey)
   await recordMemberEvent(ctx.db, member.id, 'login', ctx)
   return startSession(ctx, member)
 }
@@ -348,7 +366,7 @@ async function requestLink(
   if (!perIp.ok) return limited(perIp.retryAfterMs)
 
   const outcome: MemberOutcome = { ok: true, code: 'check_email' }
-  if (!memberLimits.mailPerRecipient.consume(normalizeMemberEmail(input.email)).ok) return outcome
+  if (!mailAllowedTo(input.email, kind)) return outcome
   const member = await findMemberByEmail(ctx.db, input.email)
   if (!member || member.status !== 'active') return outcome
 
@@ -482,7 +500,7 @@ export async function requestEmailChange(
   const email = input.email.trim()
   const outcome: MemberOutcome = { ok: true, code: 'check_email' }
   if (normalizeMemberEmail(email) === member.emailNormalized) return outcome
-  if (!memberLimits.mailPerRecipient.consume(normalizeMemberEmail(email)).ok) return outcome
+  if (!mailAllowedTo(email, 'email_change')) return outcome
   // An address that belongs to someone else gets no mail and the same answer.
   if (await findMemberByEmail(ctx.db, email)) return outcome
 
