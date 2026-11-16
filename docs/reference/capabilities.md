@@ -22,7 +22,7 @@ For the broader auth flow (sessions, MFA, step-up), see [docs/features/auth-and-
 
 | Capability         | Grants                                                              | Roles            |
 |--------------------|---------------------------------------------------------------------|------------------|
-| `dashboard.read`   | Open the Dashboard workspace                                        | Owner, Admin, Client |
+| `dashboard.read`   | Open the Dashboard workspace and read its capability-filtered widgets                                        | Owner, Admin, Client |
 | `site.read`        | Open the Site workspace; view pages, VCs, classes. Also gates `/runtime/preview` (preview HTML rendering of the posted draft). | Owner, Admin, Client |
 
 ### Site editing (three-way split)
@@ -99,7 +99,7 @@ Was a single `runtime.manage`. Split because adapter election (bytes go to a plu
 | Capability             | Grants                                                              | Roles         |
 |------------------------|---------------------------------------------------------------------|---------------|
 | `runtime.dependencies` | Edit site `package.json` dependencies; trigger `POST /runtime/dependencies/resolve`. | Owner, Admin |
-| `storage.elect`        | Elect a media storage adapter per asset role (originals / variants / avatars / fonts); elect/clear the variant delegate; verify adapter credentials. | Owner, Admin |
+| `storage.elect`        | Read dashboard storage usage; elect a media storage adapter per asset role (originals / variants / avatars / fonts); elect/clear the variant delegate; verify adapter credentials. | Owner, Admin |
 | `storage.migrate`      | Run the migration SSE that moves bytes between adapters after an election change. | Owner, Admin |
 
 ### Plugins (granular split)
