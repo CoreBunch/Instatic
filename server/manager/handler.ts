@@ -606,6 +606,17 @@ async function handleCommit(ctx: Context, id: string): Promise<Response> {
       if (refusal) return refusal
       if (revokeSessions) revokeStagedSessions(staged)
 
+      // The uploaded files were just read in full to verify them. Remember
+      // their hashes under the paths they are about to be moved to, so the
+      // next push does not start by re-reading every one of them.
+      const declared = new Map(state.files.map((file) => [file.path, file.sha256]))
+      for (const path of state.missing) {
+        const sha256 = declared.get(path)
+        const info = await stat(resolveRelative(stagedFilesDir(ctx.managerDir), path)).catch(() => null)
+        if (sha256 && info) hashes.seed(resolveRelative(ctx.uploadsDir, path), info.size, info.mtimeMs, sha256)
+      }
+      await hashes.save(hashCachePath(ctx.managerDir))
+
       await writePendingRestore(ctx.managerDir, {
         kind: 'transfer',
         createdAt: new Date().toISOString(),

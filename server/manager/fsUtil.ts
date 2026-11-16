@@ -161,6 +161,17 @@ export class FileHashCache {
     return sha256
   }
 
+  /**
+   * Record a hash that is already known, for a file that will have exactly
+   * this size and modification time. Used when a transfer is committed: the
+   * uploaded files were just verified, and a rename keeps their modification
+   * time, so the files they become need not be read again after the restart.
+   */
+  seed(absPath: string, sizeBytes: number, mtimeMs: number, sha256: string): void {
+    this.entries.set(absPath, { sizeBytes, mtimeMs, sha256 })
+    this.dirty = true
+  }
+
   /** Keep only entries under `root` that are in `present`; other roots are untouched. */
   retain(root: string, present: ReadonlySet<string>): void {
     const prefix = resolve(root) + sep

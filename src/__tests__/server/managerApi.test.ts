@@ -16,7 +16,9 @@ import { runMigrations } from '../../../server/db/runMigrations'
 import { tryServeManager } from '../../../server/manager/handler'
 import { readManagerConfig } from '../../../server/manager/config'
 import { applyPendingRestore, hasPendingRestore, type ApplyOutcome } from '../../../server/manager/pending'
-import { pendingMarkerPath, preRestorePath, restoreStagingPath, transferStatePath } from '../../../server/manager/paths'
+import { hashCachePath, pendingMarkerPath, preRestorePath, restoreStagingPath, transferStatePath } from '../../../server/manager/paths'
+import { FileHashCache } from '../../../server/manager/fsUtil'
+import { stat } from 'node:fs/promises'
 import { dropTransferCache } from '../../../server/manager/transfers'
 import { LOGIN_LINK_TTL_MS, createLoginLink, redeemLoginLink } from '../../../server/manager/loginLinks'
 import { createUser } from '../../../server/repositories/users'
@@ -768,5 +770,48 @@ describe('Manager API: one-time sign-in links', () => {
     const fresh = createLoginLink('user-1', now)
     expect(redeemLoginLink(fresh.token, now + 1000)).toBe('user-1')
     expect(redeemLoginLink(fresh.token, now + 1000)).toBeNull()
+  })
+})
+
+describe('Manager API: hashes of pushed files are remembered', () => {
+  it('answers from a seeded entry without reading the file', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'manager-hash-'))
+    try {
+      const file = join(dir, 'a.txt')
+      await writeFile(file, 'the real content')
+      const info = await stat(file)
+      const cache = new FileHashCache()
+      // A deliberately wrong hash: getting it back proves the file was not read.
+      cache.seed(file, info.size, info.mtimeMs, 'seeded-not-computed')
+      expect(await cache.hash(file, info.size, info.mtimeMs)).toBe('seeded-not-computed')
+      // A different size or modification time is a different file: it is read.
+      expect(await cache.hash(file, info.size, info.mtimeMs + 1)).toBe(sha256('the real content'))
+    } finally {
+      await rm(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('records pushed files under their final paths, valid after the restart', async () => {
+    const source = await instance()
+    const target = await instance()
+    await writeUpload(source, 'media/new.txt', 'pushed content')
+    const push = await buildPush(source)
+    const transfer = await (await target.call('POST', '/transfers', { body: JSON.stringify(push.manifest) })).json()
+    await target.call('PUT', `/transfers/${transfer.id}/database?offset=0`, { body: push.database })
+    const bytes = push.files.get('media/new.txt')
+    if (!bytes) throw new Error('fixture file missing')
+    await target.call('PUT', `/transfers/${transfer.id}/files/media/new.txt?offset=0`, { body: bytes })
+    expect((await target.call('POST', `/transfers/${transfer.id}/commit`)).status).toBe(202)
+    expect(await target.reboot()).toEqual({ status: 'applied', kind: 'transfer' })
+
+    // What a restarted server loads: the persisted cache must describe the
+    // moved file exactly, or the next push would read it again.
+    const finalPath = join(target.uploadsDir, 'media/new.txt')
+    const info = await stat(finalPath)
+    const persisted = JSON.parse(await readFile(hashCachePath(target.managerDir), 'utf-8')) as Record<
+      string,
+      { sizeBytes: number; mtimeMs: number; sha256: string }
+    >
+    expect(persisted[finalPath]).toEqual({ sizeBytes: info.size, mtimeMs: info.mtimeMs, sha256: sha256('pushed content') })
   })
 })
