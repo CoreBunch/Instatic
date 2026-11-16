@@ -267,6 +267,53 @@ describe('member forms', () => {
   it('ships a runtime that parses', () => {
     expect(() => new Function(FORM_RUNTIME_JS)).not.toThrow()
   })
+
+  it('follows ?next= after sign-in only to a path on the same site', async () => {
+    // Run the runtime against a minimal page: one member form, a sign-in that succeeds.
+    const visit = async (next: string): Promise<string> => {
+      const assigned: string[] = []
+      const listeners: Record<string, (event: unknown) => void> = {}
+      const form = {
+        tagName: 'FORM',
+        isConnected: true,
+        matches: () => true,
+        getAttribute: (name: string) =>
+          ({ 'data-instatic-form-mode': 'member', 'data-instatic-form-id': 'f', action: '/_instatic/members/login' })[name] ?? null,
+        setAttribute: () => {},
+        querySelector: () => null,
+        querySelectorAll: () => [],
+        contains: () => false,
+        reset: () => {},
+      }
+      const windowStub = {
+        location: {
+          search: `?next=${encodeURIComponent(next)}`,
+          origin: 'https://site.example',
+          pathname: '/sign-in',
+          assign: (url: string) => assigned.push(url),
+        },
+      }
+      const documentStub = {
+        querySelectorAll: () => [],
+        addEventListener: (type: string, fn: (event: unknown) => void) => { listeners[type] = fn },
+        documentElement: {},
+      }
+      const fetchStub = async () => ({ ok: true, text: async () => JSON.stringify({ ok: true, code: 'signed_in' }) })
+      class FormDataStub { entries() { return [] } }
+      new Function('window', 'document', 'fetch', 'FormData', 'MutationObserver', FORM_RUNTIME_JS)(
+        windowStub, documentStub, fetchStub, FormDataStub, undefined,
+      )
+      listeners.submit({ target: form, preventDefault: () => {} })
+      await new Promise((resolve) => setTimeout(resolve, 10))
+      return assigned[0] ?? ''
+    }
+
+    expect(await visit('/account?tab=billing')).toBe('/account?tab=billing')
+    // Each of these would leave the site; the form falls back to reloading its own page.
+    for (const hostile of ['//evil.example/', '/\\evil.example/', '/\t/evil.example/', '/\n/evil.example', 'https://evil.example/']) {
+      expect(await visit(hostile)).toBe('/sign-in')
+    }
+  })
 })
 
 describe('saving access from the editor', () => {

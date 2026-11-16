@@ -119,6 +119,20 @@ export const FORM_RUNTIME_JS = `(() => {
     }
   }
 
+  // A ?next= value as a path on this site, or '' when it points anywhere
+  // else. The address is resolved the way the browser will resolve it (which
+  // drops tabs and newlines, so "/<tab>/host" is really "//host") and kept
+  // only if it stays on this origin.
+  function sameSitePath(value) {
+    if (!value || value.charAt(0) !== '/') return '';
+    try {
+      const url = new URL(value, window.location.origin);
+      return url.origin === window.location.origin ? url.pathname + url.search + url.hash : '';
+    } catch (_err) {
+      return '';
+    }
+  }
+
   // Flat text values, as the member endpoints read them. An unticked checkbox
   // sends nothing, so each checkbox also says it was on the form.
   function memberValues(form) {
@@ -140,8 +154,8 @@ export const FORM_RUNTIME_JS = `(() => {
   function memberDestination(form, code) {
     const changesVisitor = code === 'signed_in' || code === 'signed_out' || code === 'deleted';
     if (code === 'signed_in') {
-      const next = new URLSearchParams(window.location.search).get('next') || '';
-      if (next.charAt(0) === '/' && next.charAt(1) !== '/' && next.charAt(1) !== '\\\\') return next;
+      const next = sameSitePath(new URLSearchParams(window.location.search).get('next') || '');
+      if (next) return next;
     }
     const redirectUrl = form.getAttribute('data-instatic-success-redirect') || '';
     if (redirectUrl) return redirectUrl;
