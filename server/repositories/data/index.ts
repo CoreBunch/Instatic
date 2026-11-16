@@ -39,6 +39,7 @@ export {
   getDataRow,
   getDataRowMany,
   getDataRowBySlug,
+  nextFreeDataRowSlug,
   countDataRows,
   listDataAuthorOptions,
   createDataRow,

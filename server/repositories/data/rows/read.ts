@@ -224,6 +224,30 @@ export async function getDataRowBySlug(
   return rows[0] ? getDataRow(db, scope, rows[0].id) : null
 }
 
+/**
+ * The first of `slug-2`, `slug-3`, … that no live row in the table uses.
+ * Call it once `slug` itself is known to be taken.
+ */
+export async function nextFreeDataRowSlug(
+  db: DbClient,
+  scope: BranchScope,
+  tableId: string,
+  slug: string,
+): Promise<string> {
+  const prefix = `${slug}-`
+  const { rows } = await db<{ slug: string }>`
+    select slug from data_rows
+    where table_id = ${physicalId(scope.branchId, tableId)}
+      and branch_id = ${scope.branchId}
+      and deleted_at is null
+      and substr(slug, 1, ${prefix.length}) = ${prefix}
+  `
+  const taken = new Set(rows.map((row) => row.slug))
+  let suffix = 2
+  while (taken.has(`${prefix}${suffix}`)) suffix += 1
+  return `${prefix}${suffix}`
+}
+
 /** Count non-deleted rows in a table — one indexed COUNT. */
 export async function countDataRows(db: DbClient, scope: BranchScope, tableId: string): Promise<number> {
   const { rows } = await db<{ count: number | string }>`
