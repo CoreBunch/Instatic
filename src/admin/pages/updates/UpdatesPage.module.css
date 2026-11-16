@@ -1,0 +1,37 @@
+.panel {
+    display: grid;
+    gap: var(--space-m);
+    padding: var(--space-l);
+    background: var(--bg-surface-2);
+    border-radius: var(--card-radius);
+    overflow-wrap: anywhere;
+}
+
+.versions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-l);
+    margin: 0;
+}
+
+.panel h2 {
+    margin: 0;
+    font-size: var(--text-2xl);
+}
+
+.versions dt, .muted {
+    color: var(--text-subtle);
+    font-size: var(--text-s);
+}
+
+.versions dd {
+    margin: var(--space-s) 0 0;
+    font-size: var(--text-xl);
+    font-weight: 600;
+}
+
+.notes pre {
+    white-space: pre-wrap;
+    font: inherit;
+    line-height: 1.6;
+}

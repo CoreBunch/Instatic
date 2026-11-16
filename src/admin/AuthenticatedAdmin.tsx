@@ -56,7 +56,8 @@ import type { AdminWorkspace } from './workspace'
 import { AdminSessionProvider } from './session'
 import { StepUpProvider } from './shared/StepUp'
 import { ConfirmDeleteProvider } from './shared/dialogs/ConfirmDeleteDialog'
-import { canAccessWorkspace, firstAccessibleWorkspace, workspacePath } from './access'
+import { canAccessWorkspace, firstAccessibleWorkspace, workspacePath, hasCapability } from './access'
+import { UpdatesProvider } from './updates/UpdatesProvider'
 import { Navigate, useInRouterContext } from './lib/routing'
 import { SpotlightRoot } from './spotlight'
 import { prewarmedLazy } from './lib/prewarmedLazy'
@@ -101,6 +102,10 @@ const AiPage = prewarmedLazy(
 const AccountPage = prewarmedLazy(
   () => import('./pages/account/AccountPage').then((m) => ({ default: m.AccountPage })),
   { displayName: 'AccountPage' },
+)
+const UpdatesPage = prewarmedLazy(
+  () => import('./pages/updates/UpdatesPage').then((m) => ({ default: m.UpdatesPage })),
+  { displayName: 'UpdatesPage' },
 )
 const DataPage = prewarmedLazy(
   () => import('./pages/data/DataPage').then((m) => ({ default: m.DataPage })),
@@ -162,6 +167,7 @@ if (typeof window !== 'undefined') {
     pathname.startsWith('/admin/users') ? UsersPage :
     pathname.startsWith('/admin/ai') ? AiPage :
     pathname.startsWith('/admin/account') ? AccountPage :
+    pathname.startsWith('/admin/updates') ? UpdatesPage :
     DashboardPage
   void activePage.preload().catch(() => {
     // Cold-render retry will re-fire preload via prewarmedLazy's throw.
@@ -191,6 +197,7 @@ const ALL_WORKSPACE_PAGES = [
   AiPage,
   AccountPage,
   PluginPage,
+  UpdatesPage,
 ]
 
 function pageForSection(section: AdminWorkspace) {
@@ -205,6 +212,7 @@ function pageForSection(section: AdminWorkspace) {
     section === 'branchReview' ? SitePage :
     section === 'pluginPage' ? PluginPage :
     section === 'account' ? AccountPage :
+    section === 'updates' ? UpdatesPage :
     DashboardPage
   )
 }
@@ -300,6 +308,7 @@ export default function AuthenticatedAdmin({ section, currentUser }: Authenticat
 
   return (
     <AdminSessionProvider user={currentUser}>
+      <UpdatesProvider key={currentUser.id} enabled={hasCapability(currentUser, 'site.read')}>
       {/* StepUpProvider wraps SpotlightRoot so spotlight commands can
           consume `useStepUp()` — required by step-up-gated actions invoked
           from the palette (e.g. `editor.publish`). Both providers stay
@@ -331,6 +340,7 @@ export default function AuthenticatedAdmin({ section, currentUser }: Authenticat
                 section === 'branchReview' ? <BranchReviewPage /> :
                 section === 'pluginPage' ? <PluginPage /> :
                 section === 'account' ? <AccountPage /> :
+                section === 'updates' ? <UpdatesPage /> :
                 <DashboardPage />}
             </Suspense>
             {siteImportOpen && (
@@ -346,6 +356,7 @@ export default function AuthenticatedAdmin({ section, currentUser }: Authenticat
           </SpotlightRoot>
         </ConfirmDeleteProvider>
       </StepUpProvider>
+      </UpdatesProvider>
     </AdminSessionProvider>
   )
 }

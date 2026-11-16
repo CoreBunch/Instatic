@@ -46,6 +46,7 @@ import { handleComponentsRoutes } from './components'
 import { handleLayoutsRoutes } from './layouts'
 import { handleRuntimeRoutes } from './runtime'
 import { handleRegistryRoutes } from './registry'
+import { handleUpdatesRoutes } from './updates'
 import { handleMediaRoutes } from './media'
 import { handleMediaFolderRoutes } from './mediaFolders'
 import { handleMediaStorageAdminRoutes } from './mediaStorageAdmin'
@@ -99,6 +100,8 @@ export async function handleCmsRequest(
     ?? (await handleUsersRoutes(req, db))
     ?? (await handleRolesRoutes(req, db))
     ?? (await handleAuditRoutes(req, db))
+    // Installation-wide release status is independent of the content branch.
+    ?? (await handleUpdatesRoutes(req, db))
   if (accountResponse) return accountResponse
 
   // Branch scope — resolved ONCE per request from the `X-Instatic-Branch`
