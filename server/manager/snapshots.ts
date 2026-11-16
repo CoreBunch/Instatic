@@ -1,13 +1,15 @@
 /**
- * Database snapshots: consistent copies of the live SQLite database kept in
+ * Database snapshots: consistent copies of the live database kept in
  * `<manager dir>/snapshots/<version>-<unixts>.db`. The file name is the id.
- * A snapshot holds the database only, never uploads, matching the snapshots
- * Instatic Desktop takes of local sites.
+ * A snapshot is always a SQLite file, whichever engine the instance runs on
+ * (a Postgres instance writes one through `postgresBridge`), so a snapshot
+ * can be restored on, or pulled to, either engine. It holds the database
+ * only, never uploads, matching the snapshots Instatic Desktop takes of
+ * local sites.
  */
 import { copyFile, mkdir, readdir, rm, stat } from 'node:fs/promises'
 import { join } from 'node:path'
 import { SERVER_VERSION } from '../version'
-import { vacuumInto } from './database'
 import type { FileHashCache } from './fsUtil'
 import { restoreStagingPath, snapshotsDir } from './paths'
 
@@ -61,7 +63,12 @@ export function snapshotPath(managerDir: string, id: string): string {
   return join(snapshotsDir(managerDir), id)
 }
 
-export async function createSnapshot(managerDir: string, dbPath: string, hashes: FileHashCache): Promise<SnapshotEntry> {
+/** `writeCopy` writes a consistent copy of the live database to the given path. */
+export async function createSnapshot(
+  managerDir: string,
+  writeCopy: (dest: string) => void | Promise<void>,
+  hashes: FileHashCache,
+): Promise<SnapshotEntry> {
   const dir = snapshotsDir(managerDir)
   await mkdir(dir, { recursive: true })
   // Two snapshots inside the same second would collide on the name.
@@ -71,9 +78,9 @@ export async function createSnapshot(managerDir: string, dbPath: string, hashes:
     unixSeconds += 1
     id = `${SERVER_VERSION}-${unixSeconds}.db`
   }
-  vacuumInto(dbPath, join(dir, id))
+  await writeCopy(join(dir, id))
   const entry = await describe(managerDir, id, hashes)
-  if (!entry) throw new Error('[manager] snapshot file missing after VACUUM INTO')
+  if (!entry) throw new Error('[manager] the snapshot file is missing after it was written')
   return entry
 }
 

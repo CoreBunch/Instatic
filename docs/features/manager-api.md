@@ -24,8 +24,6 @@ both together.
 
 ## Non-goals (v1)
 
-- Postgres database transfer or snapshots. Database operations return
-  `501 unsupported-database` on Postgres; file operations and `/info` work.
 - Provisioning, version switching, domains, logs. Those are the host's job
   (Railway GraphQL API), driven by the desktop app.
 - Site-bundle (ZIP export/import) transfer. That is a separate, existing
@@ -115,7 +113,7 @@ uploads, exactly like local snapshots. Files live in
 | `POST /snapshots/:id/restore` | Stage the snapshot as the next database, then restart (see Apply). Body `{ "restart"?: boolean, "revokeSessions"?: boolean }`, both default `true`. Returns `202`. |
 
 Errors: `404 unknown-snapshot`, `409 busy`, `507 no-space` (free space is
-checked before `VACUUM INTO`), `501 unsupported-database`. Restore also
+checked before the copy is written). Restore also
 answers `409 schema-newer` for a snapshot taken on a newer release than the
 running server, and `422 bad-database` for one that fails its integrity
 check.
@@ -309,10 +307,41 @@ restart-on-failure policy does: Railway's default, and Docker's `on-failure`,
 `always` or `unless-stopped`. Without a restart, the staged restore waits for
 the next manual start.
 
+## SQLite and Postgres
+
+The interchange format is a SQLite database file on both engines: it is what
+a snapshot is, what a transfer uploads as its database, and what a manager
+downloads to pull a site. A manager therefore never needs to know which
+engine the server runs; `/info` reports it (`database.kind`) for display.
+
+A Postgres server converts on its own side (`server/manager/postgresBridge.ts`):
+
+- **Snapshot, and the undo copy before a restore**: the database is read in
+  one `repeatable read` transaction and written out as a SQLite file with the
+  same migrations applied.
+- **Restore, and a pushed transfer**: the staged SQLite file replaces the
+  database in **one transaction**, schema changes included. The tables are
+  rebuilt at the migration level the file carries, the rows are copied with
+  foreign keys checked once at the end, and the next boot runs any newer
+  migrations as usual. A failure leaves the database exactly as it was.
+
+This rests on both engines running the same migrations under the same ids
+and ending up with the same tables and stored columns. Only column types
+differ, so every value crosses as text and is cast in SQL. So a local SQLite
+site can be pushed to a Postgres server and pulled back, and a snapshot taken
+on one engine restores on the other.
+
+The undo copy on Postgres is `<manager dir>/pre-restore.db`.
+
 ## Limits to know
 
-- SQLite only for database operations (`501 unsupported-database` on
-  Postgres).
+- On Postgres a snapshot, a restore and the undo copy each read or write
+  the whole database through the server, row by row. That is fine for the
+  sites Instatic targets and slow for a database of many gigabytes; use the
+  host's own Postgres backups there.
+- A Postgres restore drops and recreates only the tables Instatic owns. It
+  needs the rights to do that in the schema the connection uses, which the
+  owner of the database has.
 - Taking a snapshot, checking a staged database and hashing files that are
   not in the cache are done inside the request. On very large instances the
   first listing after a cold start can take long; the persisted hash cache

@@ -24,7 +24,8 @@ import { getMasterKeyFingerprint } from '../secrets/masterKey'
 import { SERVER_VERSION } from '../version'
 import { safeParseValue, type Static, type TSchema } from '@core/utils/typeboxHelpers'
 import { MANAGER_API_PREFIX, MANAGER_API_VERSION, MANAGER_NAMESPACE, managerLayoutProblem } from './config'
-import { inspectStagedDatabase, revokeStagedSessions, sqlitePathOf } from './database'
+import { inspectStagedDatabase, revokeStagedSessions, sqlitePathOf, vacuumInto } from './database'
+import { exportPostgresToSqlite, postgresDatabaseSize } from './postgresBridge'
 import {
   FileHashCache,
   fileRangeResponse,
@@ -125,8 +126,9 @@ interface Context {
   manager: ManagerRuntime
   managerDir: string
   uploadsDir: string
-  /** Null on a Postgres instance: database operations are SQLite-only. */
+  /** Path of the live SQLite file; null on a Postgres instance. */
   dbPath: string | null
+  databaseUrl: string
 }
 
 export const tryServeManager: RouteHandler = async (req, runtime, url, pathname) => {
@@ -149,6 +151,7 @@ export const tryServeManager: RouteHandler = async (req, runtime, url, pathname)
     managerDir: manager.config.dir,
     uploadsDir: resolve(runtime.uploadsDir ?? './uploads'),
     dbPath: runtime.databaseUrl ? sqlitePathOf(runtime.databaseUrl) : null,
+    databaseUrl: runtime.databaseUrl ?? '',
   }
   const layoutProblem = managerLayoutProblem(ctx.managerDir, ctx.uploadsDir, ctx.dbPath)
   if (layoutProblem) return managerError(503, 'misconfigured', layoutProblem)
@@ -308,8 +311,10 @@ function unknownSnapshot(id: string): Response {
   return managerError(404, 'unknown-snapshot', `No such snapshot: ${id}`)
 }
 
-function unsupportedDatabase(): Response {
-  return managerError(501, 'unsupported-database', 'This operation needs a SQLite database; this instance runs on Postgres.')
+/** Size of the live database in bytes, on either engine. */
+async function databaseSize(ctx: Context): Promise<number> {
+  if (ctx.dbPath) return (await stat(ctx.dbPath).catch(() => null))?.size ?? 0
+  return postgresDatabaseSize(ctx.databaseUrl).catch(() => 0)
 }
 
 function transferSummary(state: TransferState): Record<string, unknown> {
@@ -318,16 +323,13 @@ function transferSummary(state: TransferState): Record<string, unknown> {
 
 async function handleInfo(ctx: Context): Promise<Response> {
   const { db } = ctx.runtime
-  const dbInfo = ctx.dbPath ? await stat(ctx.dbPath).catch(() => null) : null
   const migrations = await db<{ id: string }>`select id from schema_migrations order by id`
   const files = await walkFiles(ctx.uploadsDir, ctx.managerDir)
   const transfer = await loadTransfer(ctx.managerDir)
   return jsonResponse({
     apiVersion: MANAGER_API_VERSION,
     version: SERVER_VERSION,
-    database: ctx.dbPath
-      ? { kind: 'sqlite', sizeBytes: dbInfo?.size ?? 0 }
-      : { kind: 'postgres', sizeBytes: null },
+    database: { kind: ctx.dbPath ? 'sqlite' : 'postgres', sizeBytes: await databaseSize(ctx) },
     migrations: migrations.rows.map((row) => row.id),
     uploads: {
       sizeBytes: files.reduce((sum, file) => sum + file.sizeBytes, 0),
@@ -363,12 +365,17 @@ function schemaNewer(sourceVersion: string | null, unknownMigrations: string[]):
 
 async function handleCreateSnapshot(ctx: Context): Promise<Response> {
   const dbPath = ctx.dbPath
-  if (!dbPath) return unsupportedDatabase()
   return (
     exclusive(async () => {
-      const size = (await stat(dbPath).catch(() => null))?.size ?? 0
-      if (!(await hasSpaceFor(ctx.managerDir, size))) return noSpace()
-      const snapshot = await createSnapshot(ctx.managerDir, dbPath, hashes)
+      if (!(await hasSpaceFor(ctx.managerDir, await databaseSize(ctx)))) return noSpace()
+      // A snapshot is a SQLite file on either engine: SQLite copies its own
+      // file, Postgres writes its data out as one.
+      const writeCopy = dbPath
+        ? (dest: string) => vacuumInto(dbPath, dest)
+        : async (dest: string) => {
+            await exportPostgresToSqlite(ctx.databaseUrl, dest)
+          }
+      const snapshot = await createSnapshot(ctx.managerDir, writeCopy, hashes)
       await hashes.save(hashCachePath(ctx.managerDir))
       return jsonResponse(snapshot, { status: 201 })
     }) ?? busy()
@@ -376,7 +383,6 @@ async function handleCreateSnapshot(ctx: Context): Promise<Response> {
 }
 
 async function handleRestoreSnapshot(ctx: Context, id: string): Promise<Response> {
-  if (!ctx.dbPath) return unsupportedDatabase()
   const body = await readJsonBody(ctx.req, RestoreSnapshotSchema, MAX_OPTIONS_BYTES)
   if (body === null) return badBody()
   const restart = body?.restart ?? true
@@ -478,7 +484,6 @@ async function manifestProblem(ctx: Context, body: OpenTransferBody): Promise<st
 }
 
 async function handleOpenTransfer(ctx: Context): Promise<Response> {
-  if (!ctx.dbPath) return unsupportedDatabase()
   const body = await readJsonBody(ctx.req, OpenTransferSchema, MAX_MANIFEST_BYTES)
   if (!body) return managerError(400, 'bad-request', 'Invalid transfer manifest.')
   const problem = await manifestProblem(ctx, body)

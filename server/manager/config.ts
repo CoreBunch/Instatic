@@ -42,7 +42,8 @@ export interface ManagerConfig {
  * swap is a same-filesystem rename. It must never sit inside `UPLOADS_DIR`:
  * that tree is served publicly at `/uploads/*`, and snapshots are full copies
  * of the database. Postgres instances have no database file; they fall back
- * to a sibling of the uploads directory (only file listing uses it there).
+ * to a sibling of the uploads directory, which is on persistent storage
+ * wherever uploads are.
  */
 export function readManagerConfig(
   env: Record<string, string | undefined>,

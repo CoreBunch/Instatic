@@ -20,6 +20,9 @@
  *    crash at any point resumes on the next boot. That includes the database
  *    swap itself: the new file moves staged -> `<db>.incoming` -> live, and
  *    the marker records when that swap has begun.
+ *  - On Postgres the database step is one transaction instead of a file
+ *    swap: the staged SQLite file is imported by `postgresBridge`, and the
+ *    undo copy is the previous database written out as a SQLite file.
  *  - A failure never aborts boot. It is recorded for `/info`, the marker
  *    stays, and the server starts: an unreachable server in a restart loop
  *    cannot be repaired by its manager, a reachable one can.
@@ -29,10 +32,12 @@ import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { dirname } from 'node:path'
 import { Type, safeParseValue, type Static } from '@core/utils/typeboxHelpers'
 import { checkpointDatabase, sqlitePathOf } from './database'
+import { exportPostgresToSqlite, importSqliteIntoPostgres } from './postgresBridge'
 import { managerLayoutProblem } from './config'
 import { isSafeRelativePath, moveFile, passesThroughSymlink, pruneEmptyDirs, resolveRelative, walkFiles } from './fsUtil'
 import {
   pendingMarkerPath,
+  postgresPreRestorePath,
   preRestorePath,
   restoreErrorPath,
   restoreStagingPath,
@@ -139,10 +144,6 @@ async function apply(options: ApplyPendingOptions): Promise<ApplyOutcome> {
   }
 
   const dbPath = sqlitePathOf(options.databaseUrl)
-  if (!dbPath) {
-    await discardPendingRestore(managerDir)
-    return { status: 'discarded', reason: 'DATABASE_URL is not SQLite' }
-  }
   const layoutProblem = managerLayoutProblem(managerDir, uploadsDir, dbPath)
   if (layoutProblem) {
     await discardPendingRestore(managerDir)
@@ -150,7 +151,26 @@ async function apply(options: ApplyPendingOptions): Promise<ApplyOutcome> {
   }
 
   // 1. Database.
-  if (!pending.databaseApplied) {
+  if (!pending.databaseApplied && !dbPath) {
+    // Postgres: the staged SQLite file is imported in one transaction, so
+    // there is no half-swapped state to resume. A run killed before the
+    // marker was updated imports the same file again, to the same result;
+    // the staged file stays until the marker is dropped in step 3.
+    const staged = pending.kind === 'snapshot' ? restoreStagingPath(managerDir) : stagedDatabasePath(managerDir)
+    if (!existsSync(staged)) {
+      await discardPendingRestore(managerDir)
+      return { status: 'discarded', reason: 'the staged database was missing' }
+    }
+    // The undo copy. Best effort: a database too broken to read is exactly
+    // the one a restore is meant to replace.
+    await exportPostgresToSqlite(options.databaseUrl, postgresPreRestorePath(managerDir)).catch((err: unknown) => {
+      console.warn('[manager] no undo copy was kept:', err instanceof Error ? err.message : err)
+    })
+    await importSqliteIntoPostgres(options.databaseUrl, staged)
+    pending.databaseApplied = true
+    await writePendingRestore(managerDir, pending)
+  }
+  if (!pending.databaseApplied && dbPath) {
     const staged = pending.kind === 'snapshot' ? restoreStagingPath(managerDir) : stagedDatabasePath(managerDir)
     // The new database travels staged -> `<db>.incoming` -> live. A run that
     // was killed after the first hop left it at `.incoming`, possibly with the
