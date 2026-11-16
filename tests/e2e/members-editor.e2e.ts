@@ -20,8 +20,9 @@ import {
  * An owner protects a page from Page settings, builds a sign-up form from the
  * form module's Members mode (the setup panel adds the fields), limits it to
  * signed-out visitors, publishes, and opens sign-up in the member settings.
- * A visitor is then turned away from the protected page and signs up through
- * the published form.
+ * A visitor is then turned away from the protected page, signs up through
+ * the published form, confirms with the emailed link, and opens the
+ * protected page as a member.
  */
 test.describe('member pages in the editor', () => {
   // Publishing asks for step-up, which rotates the session token.
@@ -127,7 +128,26 @@ test.describe('member pages in the editor', () => {
         // The confirmation email was produced (captured on this development server).
         await page.goto('/admin/email')
         await page.getByTestId('email-nav-activity').click()
-        await expect(page.getByRole('list', { name: 'Email activity' }).getByText(email).first()).toBeVisible()
+        const activity = page.getByRole('list', { name: 'Email activity' })
+        await expect(activity.getByText(email).first()).toBeVisible()
+
+        // The link in that email finishes the sign-up, in the browser that started it.
+        await activity.getByRole('button').filter({ hasText: email }).first().click()
+        const message = await page.getByRole('article', { name: 'Email details' }).locator('pre').innerText()
+        const link = message.match(/https?:\/\/\S*token=[\w-]+/)?.[0]
+        expect(link, 'the confirmation email carries a link').toBeTruthy()
+        await visitor.goto(link!)
+        await visitor.locator('button[type="submit"]').click()
+        // The confirmation posts to the member endpoint, which redirects back into the site.
+        await visitor.waitForURL((url) => !url.pathname.startsWith('/_instatic/members/'))
+
+        // Signed in now: the protected page opens, and the sign-up form is no longer part of its page.
+        await visitor.goto(`${PUBLIC_BASE_URL}/${club.slug}`)
+        await expect(visitor).toHaveURL(new RegExp(`/${club.slug}$`))
+        await expect(visitor.getByText('Add your text here.')).toBeVisible()
+        await visitor.goto(`${PUBLIC_BASE_URL}/${join.slug}`)
+        await visitor.waitForLoadState('networkidle')
+        await expect(visitor.locator('form')).toHaveCount(0)
       } finally {
         await context.close()
       }

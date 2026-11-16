@@ -11,8 +11,8 @@ test.use({ storageState: ANONYMOUS_STATE })
  * captured into Activity instead of leaving the machine. That lets the spec
  * walk the whole loop an owner does without a real mail server: send a
  * template test and read it back in the activity log, add a connector behind step-up (its secret
- * is never handed back), set the sender, and edit a template in the post
- * editor while the preview follows.
+ * is never handed back), set the sender, edit a template in the post editor
+ * while the preview follows, and remove the connector again.
  */
 test('owner sets up outgoing email and edits a template (ADMIN-013)', async ({ page }) => {
   await login(page)
@@ -130,4 +130,15 @@ test('owner sets up outgoing email and edits a template (ADMIN-013)', async ({ p
   await completeStepUp(page)
   await expect(page.getByRole('article').getByLabel('Subject')).toHaveValue('Test email from {site.name}')
   await expect(page.getByRole('article').getByRole('button', { name: 'Reset to built-in' })).toHaveCount(0)
+
+  // ── Remove the connector: the site goes back to capturing ────────────────
+  // The suite shares one site. Leaving a made-up mail server configured would
+  // make every later spec's emails fail to send instead of being captured.
+  await page.getByTestId('email-nav-connectors').click()
+  await page.getByRole('article').getByRole('button', { name: 'Remove connector' }).click()
+  await page.getByRole('dialog', { name: 'Remove connector?' }).getByRole('button', { name: 'Remove connector' }).click()
+  await completeStepUp(page)
+  await expect(page.getByRole('heading', { name: 'Connect SMTP' })).toBeVisible()
+  await page.getByTestId('email-nav-defaults').click()
+  await expect(page.getByText('Development mode: emails are captured, not sent')).toBeVisible()
 })
