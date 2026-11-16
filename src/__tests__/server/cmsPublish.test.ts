@@ -146,6 +146,20 @@ function createPublishFakeDb() {
       })
       return { rows: [], rowCount: 1 }
     }
+    // pruneUnreferencedSiteSnapshots — params: $1=keepSnapshotId
+    if (sql.startsWith('delete from site_snapshots')) {
+      const referenced = new Set(
+        state.dataRows
+          .map((r) => state.dataRowVersions.find((v) => v.id === r.active_version_id)?.site_snapshot_id)
+          .filter(Boolean),
+      )
+      const before = state.siteSnapshots.length
+      state.siteSnapshots = state.siteSnapshots.filter((s) => s.id === params[0] || referenced.has(s.id))
+      for (const v of state.dataRowVersions) {
+        if (!state.siteSnapshots.some((s) => s.id === v.site_snapshot_id)) v.site_snapshot_id = null
+      }
+      return { rows: [], rowCount: before - state.siteSnapshots.length }
+    }
     // savePublishedRuntimeAssets — insert into published_runtime_assets
     if (sql.startsWith('insert into published_runtime_assets')) {
       state.runtimeAssets.push({
