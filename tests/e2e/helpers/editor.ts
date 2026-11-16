@@ -217,3 +217,16 @@ export async function publishDraft(page: Page): Promise<void> {
 
   await expect(publishButton).toHaveText(/Published/, { timeout: 30_000 })
 }
+
+/**
+ * A template priority higher than any template created earlier in the suite.
+ *
+ * The whole suite shares one site, and a Posts entry route is rendered through
+ * the highest-priority matching template. A spec that authors its own Posts
+ * template must therefore outrank every template an earlier spec left behind,
+ * or its post renders through someone else's template. Seconds since a fixed
+ * epoch grow with creation order, whatever order the spec files run in.
+ */
+export function newestTemplatePriority(): number {
+  return Math.floor((Date.now() - Date.UTC(2026, 0, 1)) / 1000)
+}

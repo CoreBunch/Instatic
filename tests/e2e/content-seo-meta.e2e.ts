@@ -6,6 +6,7 @@ import {
   insertModuleViaPicker,
   insertNotchModule,
   login,
+  newestTemplatePriority,
   openSiteEditor,
   openSitePanel,
   publishDraft,
@@ -42,7 +43,7 @@ test.describe('entry SEO meta', () => {
       await dialog.getByLabel('Applies to').click()
       await page.getByRole('option', { name: 'Post types' }).click()
       await dialog.getByLabel('Posts').setChecked(true)
-      await dialog.getByLabel('Priority').fill('300')
+      await dialog.getByLabel('Priority').fill(String(newestTemplatePriority()))
       await dialog.getByRole('button', { name: 'Save' }).click()
       await expect(dialog).toBeHidden()
 
