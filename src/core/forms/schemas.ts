@@ -6,6 +6,7 @@ const FormControlBindingSchema = Type.Object({
   name: Type.Optional(Type.String({ minLength: 1 })),
   inputType: Type.Optional(Type.String()),
   required: Type.Optional(Type.Boolean()),
+  multiple: Type.Optional(Type.Boolean()),
   min: Type.Optional(Type.Number()),
   max: Type.Optional(Type.Number()),
   minLength: Type.Optional(Type.Number()),

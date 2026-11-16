@@ -15,7 +15,7 @@
  */
 import { extname, join, relative, sep } from 'node:path'
 import { assertPathWithin } from '../../util/pathWithin'
-import { detectAcceptedMime, EXTENSION_FOR_MIME } from './mediaUpload'
+import { detectAcceptedMime, EXTENSION_FOR_MIME } from '../../media/fileTypes'
 import { sanitizeSvgBytes } from './svgSanitize'
 
 /**

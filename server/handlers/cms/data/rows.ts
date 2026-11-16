@@ -14,6 +14,7 @@
  * `runRouteTable` dispatcher (`../routeTable.ts`); one handler below per
  * `(method, pattern)` owns its own body-parsing and audit emission.
  */
+import { handleRowAttachments } from './attachments'
 import type { DbClient } from '../../../db/client'
 import type { AuthUser } from '../../../repositories/users'
 import type { DataRow } from '@core/data/schemas'
@@ -541,6 +542,7 @@ async function handleRowVersionRestore(
 const ROW_ITEM = `${CMS_API_PREFIX}/data/rows/(?<id>[^/]+)`
 
 const DATA_ROW_ROUTES: readonly Route<[BranchScope, CmsHandlerOptions]>[] = [
+  { method: 'GET', pattern: new RegExp(`^${ROW_ITEM}/attachments(?:/(?<attachmentId>[^/]+))?$`), handler: handleRowAttachments },
   { method: 'GET', pattern: `${CMS_API_PREFIX}/data/authors`, handler: handleListAuthors },
   { method: 'POST', pattern: new RegExp(`^${ROW_ITEM}/publish$`), handler: handleRowPublish },
   { method: 'POST', pattern: new RegExp(`^${ROW_ITEM}/schedule$`), handler: handleRowSchedulePost },

@@ -14,6 +14,7 @@ type LabelProps = Record<string, unknown> & {
 }
 
 type InputProps = Record<string, unknown> & {
+  multiple: boolean
   inputType: string
   name: string
   id: string
@@ -117,7 +118,8 @@ export function InputEditor({ mcClassName, nodeWrapperProps, props }: ModuleComp
       name={props.name}
       id={props.id || undefined}
       placeholder={props.placeholder || undefined}
-      defaultValue={props.value || undefined}
+      defaultValue={props.inputType === 'file' ? undefined : props.value || undefined}
+      multiple={props.inputType === 'file' && props.multiple}
       required={props.required}
       disabled={props.disabled}
       readOnly={props.readOnly}

@@ -1,3 +1,4 @@
+import { readFile } from 'node:fs/promises'
 import { expect, test, type Browser, type Page } from '@playwright/test'
 import {
   ANONYMOUS_STATE,
@@ -8,6 +9,7 @@ import {
   login,
   openSiteEditor,
   openSitePanel,
+  openLayersPanel,
   publishDraft,
   setPropValue,
 } from './helpers'
@@ -18,6 +20,64 @@ import {
  */
 test.describe('forms', () => {
   test.use({ storageState: ANONYMOUS_STATE })
+
+  test('stores private file bytes and downloads them from the submission (FORM-003)', async ({ page, browser }) => {
+    await login(page)
+    const tableName = 'File submission evidence'
+    await createCustomDataTable(page, tableName)
+    const { slug } = await openBlankPage(page, 'File submission')
+    await insertModuleViaPicker(page, 'base.form')
+    await page.getByLabel('Form ID').fill('file-submission')
+    await selectLabeledOption(page, 'Target table', tableName)
+    await setPropValue(page, 'minSubmitSeconds', '0')
+    await insertModuleViaPicker(page, 'base.input')
+    await setPropValue(page, 'fieldId', 'name')
+    await setPropValue(page, 'name', 'name')
+    await insertModuleViaPicker(page, 'base.input')
+    await setPropValue(page, 'name', 'attachment')
+    await selectPropertyOption(page, 'inputType', 'file')
+    await expect(page.getByText('Files become private submission attachments.', { exact: false })).toBeVisible()
+    await insertModuleViaPicker(page, 'base.submit')
+    await setPropValue(page, 'label', 'Send file')
+    await openLayersPanel(page)
+    await page.getByRole('tree', { name: 'Page element tree' }).getByRole('treeitem', { name: 'Form', exact: true }).click()
+    await insertModuleViaPicker(page, 'base.form-message')
+    await publishDraft(page)
+
+    const visitor = await browser.newPage()
+    try {
+      await visitor.goto(`${PUBLIC_BASE_URL}/${slug}`)
+      await visitor.locator('input[name="name"]').fill('Private file visitor')
+      const picker = visitor.locator('input[type="file"]')
+      await picker.setInputFiles({ name: 'fake.pdf', mimeType: 'application/pdf', buffer: Buffer.from('<script>not a PDF</script>') })
+      await visitor.getByRole('button', { name: 'Send file' }).click()
+      const form = visitor.locator('form[data-instatic-form-id="file-submission"]')
+      await expect(form).toHaveAttribute('data-instatic-form-state', 'error')
+      await expect(picker).toHaveJSProperty('value', 'C:\\fakepath\\fake.pdf')
+      const bytes = Buffer.from('%PDF-1.4\nActual invoice bytes\n%%EOF')
+      await picker.setInputFiles({ name: 'invoice.pdf', mimeType: 'application/pdf', buffer: bytes })
+      await visitor.getByRole('button', { name: 'Send file' }).click()
+      await expect(form).toHaveAttribute('data-instatic-form-state', 'success')
+      await visitor.screenshot({ path: '.tmp/evidence/after-private-upload.png', fullPage: true })
+      await page.goto('/admin/data')
+      await openCustomTable(page, tableName)
+      await page.getByRole('row').filter({ hasText: 'Private file visitor' }).getByRole('button', { name: 'Open', exact: true }).click()
+      const button = page.getByRole('button', { name: 'Download invoice.pdf' })
+      await expect(button).toBeVisible()
+      const responsePromise = page.waitForResponse((response) => /\/attachments\/[^/]+$/.test(new URL(response.url()).pathname))
+      const downloadPromise = page.waitForEvent('download')
+      await button.click()
+      const download = await downloadPromise
+      await download.saveAs('.tmp/evidence/downloaded-invoice.pdf')
+      expect(await readFile('.tmp/evidence/downloaded-invoice.pdf')).toEqual(bytes)
+      const response = await responsePromise
+      const unauthorized = await visitor.request.get(response.url())
+      expect(unauthorized.status()).toBe(401)
+      await page.screenshot({ path: '.tmp/evidence/after-private-attachment.png', fullPage: true })
+    } finally {
+      await visitor.close()
+    }
+  })
 
   test('publishes a CMS-native form and stores a visitor submission (FORM-001, FORM-002)', async ({
     page,

@@ -369,6 +369,7 @@ export const HTML_TO_MODULE_RULES: ImportRule[] = [
         props: {
           ...common,
           inputType: normalizeInputType(el),
+          multiple: el.hasAttribute('multiple'),
           placeholder: attr(el, 'placeholder'),
           readOnly: el.hasAttribute('readonly'),
           autocomplete: attr(el, 'autocomplete'),
