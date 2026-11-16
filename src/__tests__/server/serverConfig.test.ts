@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'bun:test'
+import { resolve } from 'node:path'
 import { normalizeOrigin, readServerConfig, resolvePublicOrigins } from '../../../server/config'
 
 describe('normalizeOrigin', () => {
@@ -129,6 +130,7 @@ describe('readServerConfig', () => {
       trustedProxyCidrs: [],
       publicOrigins: [],
       npmRegistryUrl: 'https://registry.npmjs.org',
+      manager: { token: null, tokenRejected: false, dir: resolve('.tmp/manager') },
     })
   })
 
@@ -157,6 +159,7 @@ describe('readServerConfig', () => {
       trustedProxyCidrs: ['10.0.0.0/8', '192.168.0.0/16'],
       publicOrigins: ['https://cms.example.com', 'http://localhost:5173'],
       npmRegistryUrl: 'https://npm.example.com/registry',
+      manager: { token: null, tokenRejected: false, dir: resolve('/srv/instatic/manager') },
     })
   })
 })

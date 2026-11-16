@@ -1,4 +1,5 @@
 import { parseNpmRegistryUrl } from './registry/config'
+import { readManagerConfig, type ManagerConfig } from './manager/config'
 
 interface ServerConfig {
   port: number
@@ -17,6 +18,8 @@ interface ServerConfig {
   publicOrigins: string[]
   /** Registry every package read and install goes to; see `server/registry/config.ts`. */
   npmRegistryUrl: string
+  /** Manager API token + working directory; see `server/manager/config.ts`. */
+  manager: ManagerConfig
 }
 
 function readCsvList(value: string | undefined): string[] {
@@ -100,15 +103,18 @@ export function resolvePublicOrigins(env: Record<string, string | undefined>): s
 export function readServerConfig(
   env: Record<string, string | undefined> = process.env,
 ): ServerConfig {
+  const uploadsDir = env.UPLOADS_DIR ?? './uploads'
+  const databaseUrl = env.DATABASE_URL ?? 'sqlite:./.tmp/dev.db'
   return {
     port: Number(env.PORT ?? 3001),
     host: env.HOST ?? '0.0.0.0',
     shutdownToken: env.INSTATIC_SHUTDOWN_TOKEN ?? null,
-    databaseUrl: env.DATABASE_URL ?? 'sqlite:./.tmp/dev.db',
-    uploadsDir: env.UPLOADS_DIR ?? './uploads',
+    databaseUrl,
+    uploadsDir,
     staticDir: env.STATIC_DIR ?? './dist',
     trustedProxyCidrs: readCsvList(env.TRUSTED_PROXY_CIDRS),
     publicOrigins: resolvePublicOrigins(env),
     npmRegistryUrl: parseNpmRegistryUrl(env.NPM_REGISTRY_URL),
+    manager: readManagerConfig(env, uploadsDir, databaseUrl),
   }
 }

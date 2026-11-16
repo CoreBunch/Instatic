@@ -30,6 +30,8 @@ DATABASE_URL  sqlite:/path/to/cms.db, file:/path/to/cms.db, postgres://..., or p
 UPLOADS_DIR   directory for media, plugin packs, fonts, and published disk artefacts
 STATIC_DIR    built admin SPA directory; /app/dist in the Docker image
 INSTATIC_SECRET_KEY  base64 32-byte key for encrypted server secrets
+INSTATIC_MANAGER_TOKEN  optional; enables the Manager API for a supervising manager (32+ characters)
+INSTATIC_MANAGER_DIR    optional; Manager API working directory (default: manager/ beside the SQLite file)
 PUBLIC_ORIGIN        comma-separated public origin(s) the CSRF check trusts and the MCP OAuth issuer is built from; auto-detected from RENDER_EXTERNAL_URL / RAILWAY_PUBLIC_DOMAIN on those platforms; without it MCP OAuth discovery answers 503 (loopback development excepted)
 TRUSTED_PROXY_CIDRS  optional; trusts proxy socket peers for forwarded client-IP attribution only (audit logs, rate-limit keys) — NOT used for CSRF
 NPM_REGISTRY_URL     optional; registry for the Dependencies panel, the dependency resolver and runtime installs (default https://registry.npmjs.org); set it for a private registry or corporate mirror
@@ -46,6 +48,21 @@ UPLOADS_DIR=/app/uploads
 ```
 
 Managed platforms often override `PORT`. That is fine; the server uses `process.env.PORT`. When a managed platform terminates HTTPS before forwarding HTTP to the container, the CSRF origin check derives the site's public origin from `PUBLIC_ORIGIN` — auto-detected from `RENDER_EXTERNAL_URL` / `RAILWAY_PUBLIC_DOMAIN` on Render and Railway, so one-click deploys need no manual value. Set `PUBLIC_ORIGIN` explicitly (a comma-separated list) when adding a custom domain. `TRUSTED_PROXY_CIDRS` is independent of CSRF and only attributes the real client IP for audit logs and rate-limit keys.
+
+### Manager API (optional)
+
+Setting `INSTATIC_MANAGER_TOKEN` enables the token-gated
+[Manager API](../features/manager-api.md), which Instatic Desktop uses to push
+a site to the server, pull it back, and manage database snapshots. The token
+is equivalent to owning the instance: generate a long random value and treat
+it like a password. Leave it unset and the API does not exist.
+
+Its working directory holds snapshots (full copies of the database), so it
+must be on persistent storage and must not be inside `UPLOADS_DIR`, which is
+served publicly. The default, `manager/` beside the SQLite file, satisfies
+both wherever the database itself is persistent. A restore makes the server
+exit with code 75 to be restarted; any restart-on-failure policy handles
+that.
 
 ## Image Availability
 
