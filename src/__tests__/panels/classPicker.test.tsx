@@ -89,6 +89,7 @@ function createAmbient(selector: string) {
  */
 function addRenderedCanvasFrame(html: string) {
   const frame = document.createElement('iframe')
+  frame.srcdoc = '<body></body>'
   document.body.appendChild(frame)
   if (!frame.contentDocument) throw new Error('Test iframe did not create a contentDocument')
   frame.contentDocument.body.setAttribute('data-breakpoint-id', 'bp-desktop')

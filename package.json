@@ -92,7 +92,7 @@
     "dompurify": "^3.4.2",
     "esbuild": "^0.28.0",
     "fflate": "^0.8.2",
-    "happy-dom": "^20.9.0",
+    "happy-dom": "^21.0.4",
     "html-to-image": "^1.11.13",
     "ipaddr.js": "^2.5.0",
     "jsdom": "^30.0.1",
