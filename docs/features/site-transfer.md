@@ -246,7 +246,7 @@ On main, `applySiteBundle` validates references and runtime bytes before mutatio
 
 After commit, an empty static slot replaces the previous baked output and the render cache generation changes. The existing public renderer serves restored snapshots immediately; no draft republish or script rebuild is needed. Runtime dependency caches for active snapshots are prepared before the transaction. Import into a branch changes drafts only and never activates published versions on main.
 
-Malformed references, missing runtime files, size mismatches and CRC failures are rejected before replace can delete target data. Publication restore requires publishing capabilities and step-up authentication in addition to the normal import gates. This format preserves future exports; it does not reconstruct publication data absent from older bundles.
+Malformed references, missing runtime files, size mismatches and CRC failures are rejected before replace can delete target data. Publication restore requires publishing capabilities and step-up authentication in addition to the normal import gates. So does a bundle that carries a `scheduled` row into main: the scheduler publishes that row when it falls due, so importing it is a publish (`authorizeImportedPublication` in `server/handlers/cms/import.ts`). This format preserves future exports; it does not reconstruct publication data absent from older bundles.
 
 #### Rows the import cannot publish
 
@@ -259,7 +259,7 @@ On main a row is served through its published version, and `status = 'published'
 | `published`, and the import restores a live version for it | any | `published`, as the bundle says |
 | `published`, no live version restored | new row | `draft`, `publishedAt` cleared |
 | `published`, no live version restored | row already on main (`merge-overwrite`) | the publication state the row already has; only its draft content is replaced |
-| `draft`, `unpublished`, `scheduled` | any | as the bundle says |
+| `draft`, `unpublished`, `scheduled` | any | as the bundle says (a `scheduled` row on main needs publishing rights, see "Capability gates") |
 
 So the import never creates a row that reads Published with nothing public, and never puts a row that was taken offline back up on its old version. A row that is live stays live on its local version while the bundle replaces its draft. `ImportResult.rowsImportedAsDraft` counts the new rows that landed as drafts for this reason; the Site Import completion step reports it and tells the operator to publish, and the success toast carries the count. Importing such a bundle with `replace` therefore leaves the public site unpublished until the operator publishes again.
 
@@ -320,7 +320,7 @@ Primary merge identity is **id**: a row in the bundle with the same id as an exi
 | Apply (any strategy)                  | `data.import`                                       |
 | Apply with `replace` strategy         | `data.import` AND `content.manage` AND step-up      |
 | Apply bundle that carries `site` shell| ALSO `site.structure.edit`                          |
-| Apply bundle containing publication history | ALSO `pages.publish`, `content.publish.any` and step-up |
+| Apply bundle that publishes: published versions, or a `scheduled` row imported into main | ALSO `pages.publish`, `content.publish.any` and step-up |
 
 ---
 
@@ -328,7 +328,7 @@ Primary merge identity is **id**: a row in the bundle with the same id as an exi
 
 The export → import path round-trips losslessly for everything in the bundle. This is verified by:
 
-- `src/__tests__/server/bundlePublishedState.test.ts` — published/draft separation, collection loops, schedules, history, runtime bytes, selected rows, permissions and invalid-archive rollback on SQLite and PostgreSQL. Also bundles without a `publication` section: published rows land as drafts under every strategy and both endpoints, a live row stays live, and a retracted row stays offline.
+- `src/__tests__/server/bundlePublishedState.test.ts` — published/draft separation, collection loops, schedules, history, runtime bytes, selected rows, permissions and invalid-archive rollback on SQLite and PostgreSQL. Also bundles without a `publication` section: published rows land as drafts under every strategy and both endpoints, a live row stays live, and a retracted row stays offline. And scheduled rows: importing one into main needs publishing rights on both endpoints.
 - `tests/e2e/backup-published-state.e2e.ts` — UI backup restore replaces later published content while retaining the backed-up unfinished draft.
 
 - `src/__tests__/architecture/cmsTransferExport.test.ts` — export produces a valid bundle.

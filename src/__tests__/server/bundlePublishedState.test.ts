@@ -17,6 +17,7 @@ import { getPublishedDataRowByRoute } from '../../../server/repositories/data/pu
 import { getPublishedPageBySlug } from '../../../server/repositories/publish'
 import { publishDraftSite } from '../../../server/publish/publishSite'
 import { publishDataRow } from '../../../server/publish/publishRow'
+import { tickPublishScheduler } from '../../../server/publish/publishScheduler'
 import { handleExportRoute } from '../../../server/handlers/cms/export'
 import { handleImportArchiveRoute } from '../../../server/handlers/cms/importArchive'
 import { handleImportRoute } from '../../../server/handlers/cms/import'
@@ -446,5 +447,61 @@ test('the JSON import endpoint applies the same rule to a bundle without publica
     expect((await getDataRow(target.db, MAIN_SCOPE, 'post'))?.status).toBe('draft')
     expect(await getPublishedDataRowByRoute(target.db, '/posts', 'post')).toBeNull()
     expect((await response!.json()).rowsImportedAsDraft).toBe(1)
+  } finally { await target.cleanup() }
+})
+
+// ---------------------------------------------------------------------------
+// A `scheduled` row is a pending publish: on main the scheduler publishes its
+// cells when it falls due. Importing one is therefore a publish, with the same
+// rights a restore of published versions needs.
+// ---------------------------------------------------------------------------
+
+/** A bundle whose only post is scheduled for a moment that has already passed. */
+async function scheduledPostBundle(): Promise<Uint8Array> {
+  const source = await createTransferTestDb()
+  try {
+    const headers = await owner(source.db)
+    await saveDraftSite(source.db, MAIN_SCOPE, makeSite())
+    await createDataRow(source.db, MAIN_SCOPE, { id: 'later', tableId: 'posts', slug: 'later', cells: { title: 'Never approved' } })
+    await scheduleDataRowPublish(source.db, MAIN_SCOPE, 'later', '2020-01-01T00:00:00.000Z')
+    const req = new Request('http://localhost/admin/api/cms/export')
+    req.headers.set('cookie', headers.cookie)
+    const response = await handleExportRoute(req, source.db, MAIN_SCOPE)
+    return new Uint8Array(await response!.arrayBuffer())
+  } finally { await source.cleanup() }
+}
+
+for (const endpoint of ['archive', 'json'] as const) {
+  test(`importing a scheduled row through the ${endpoint} endpoint requires publishing rights`, async () => {
+    const archive = await scheduledPostBundle()
+    const harness = await createCapabilityTestHarness()
+    try {
+      await harness.setupOwner()
+      const importer = await harness.createRoleUser({ name: 'Importer', slug: `schedule-importer-${endpoint}`, capabilities: ['data.import', 'site.structure.edit'] })
+      const manifest = parseSiteBundleArchive(archive)
+      delete manifest.media
+      const response = endpoint === 'archive'
+        ? await harness.cms('/admin/api/cms/import/archive?strategy=merge-add', { method: 'POST', cookie: importer.cookie, body: archive })
+        : await harness.cms('/admin/api/cms/import?strategy=merge-add', { method: 'POST', cookie: importer.cookie, body: JSON.stringify(manifest), headers: { 'content-type': 'application/json' } })
+
+      // Whatever the import answered, the scheduler must find nothing of the importer's to publish.
+      await tickPublishScheduler(harness.db)
+      expect((await getPublishedDataRowByRoute(harness.db, '/posts', 'later'))?.cells.title).toBeUndefined()
+      expect(response.status, await response.clone().text()).toBe(403)
+      expect(await getDataRow(harness.db, MAIN_SCOPE, 'later')).toBeNull()
+    } finally { await harness.cleanup() }
+  })
+}
+
+test('an importer who may publish keeps the schedule of an imported row', async () => {
+  const archive = await scheduledPostBundle()
+  const target = await createTransferTestDb()
+  try {
+    const headers = await owner(target.db)
+    const response = await importArchive(target.db, headers.cookie, 'merge-add', archive)
+    expect(response.status, await response.clone().text()).toBe(200)
+    const row = await getDataRow(target.db, MAIN_SCOPE, 'later')
+    expect(row?.status).toBe('scheduled')
+    expect(row?.scheduledPublishAt).toBe('2020-01-01T00:00:00.000Z')
   } finally { await target.cleanup() }
 })

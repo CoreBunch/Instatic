@@ -36,6 +36,9 @@
  *                                  radius operation in the CMS)
  *   bundles carrying a `site`:     ALSO `site.structure.edit` (the site
  *                                  shell replace is a structural edit)
+ *   bundles that publish:          ALSO `pages.publish`, `content.publish.any`
+ *                                  AND step-up (published versions, or a
+ *                                  `scheduled` row on main)
  */
 import { validateBundlePublication, BundlePublicationError } from '../../repositories/bundlePublication'
 import { applySiteBundle, removeDeletedMediaFiles } from './importApply'
@@ -50,7 +53,7 @@ import { jsonResponse, readValidatedBody } from '../../http'
 import { parseValue } from '@core/utils/typeboxHelpers'
 import { SiteBundleSchema, ImportStrategySchema, ImportResultSchema, type ImportStrategy, type SiteBundle } from '@core/data/bundleSchema'
 import { CMS_API_PREFIX, type CmsHandlerOptions } from './shared'
-import type { BranchScope } from '../../branches/scope'
+import { isMainScope, type BranchScope } from '../../branches/scope'
 
 /** ZIP local-file-header magic (`PK\x03\x04`) — enough to tell an archive from JSON. */
 function looksLikeZipArchive(body: ArrayBuffer): boolean {
@@ -114,7 +117,7 @@ export async function handleImportRoute(
 
   const publicationInvalid = validateImportedPublication(bundle)
   if (publicationInvalid) return publicationInvalid
-  const publicationDenied = await authorizeImportedPublication(req, db, user, bundle)
+  const publicationDenied = await authorizeImportedPublication(req, db, user, scope, bundle)
   if (publicationDenied) return publicationDenied
 
   const applied = await applySiteBundle(db, scope, {
@@ -259,11 +262,25 @@ export function validateImportedPublication(bundle: SiteBundle): Response | null
   }
 }
 
-/** Restoring public content is a publish operation, including scripts and shared resources. */
-export async function authorizeImportedPublication(req: Request, db: DbClient, user: AuthUser, bundle: SiteBundle): Promise<Response | null> {
-  if (!bundle.publication?.rows.some((row) => row.versions.length > 0)) return null
+/**
+ * Making imported content public is a publish operation. A bundle does that
+ * in two ways: it restores published versions (with their scripts and shared
+ * resources), or it carries a `scheduled` row, which on main the scheduler
+ * publishes when it falls due. A branch has no scheduler, so a schedule
+ * imported into one publishes nothing.
+ */
+export async function authorizeImportedPublication(
+  req: Request,
+  db: DbClient,
+  user: AuthUser,
+  scope: BranchScope,
+  bundle: SiteBundle,
+): Promise<Response | null> {
+  const restoresVersions = bundle.publication?.rows.some((row) => row.versions.length > 0) ?? false
+  const schedulesPublish = isMainScope(scope) && bundle.rows.some((row) => row.status === 'scheduled')
+  if (!restoresVersions && !schedulesPublish) return null
   if (!userHasCapability(user, 'pages.publish') || !userHasCapability(user, 'content.publish.any')) {
-    return jsonResponse({ error: 'Restoring published content requires page and content publishing permissions' }, { status: 403 })
+    return jsonResponse({ error: 'Importing published or scheduled content requires page and content publishing permissions' }, { status: 403 })
   }
   return requireStepUp(req, db, user)
 }
