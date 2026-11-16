@@ -119,7 +119,7 @@ export const FORM_RUNTIME_JS = `(() => {
     }
   }
 
-  // A ?next= value as a path on this site, or '' when it points anywhere
+  // A ?next= value as a full address on this site, or '' when it points anywhere
   // else. The address is resolved the way the browser will resolve it (which
   // drops tabs and newlines, so "/<tab>/host" is really "//host") and kept
   // only if it stays on this origin.
@@ -127,7 +127,9 @@ export const FORM_RUNTIME_JS = `(() => {
     if (!value || value.charAt(0) !== '/') return '';
     try {
       const url = new URL(value, window.location.origin);
-      return url.origin === window.location.origin ? url.pathname + url.search + url.hash : '';
+      // The whole address, never the bare path: a path such as "//host" (from
+      // "/.//host") would be read as another site when navigated to on its own.
+      return url.origin === window.location.origin ? url.href : '';
     } catch (_err) {
       return '';
     }

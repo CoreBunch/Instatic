@@ -308,7 +308,10 @@ describe('member forms', () => {
       return assigned[0] ?? ''
     }
 
-    expect(await visit('/account?tab=billing')).toBe('/account?tab=billing')
+    expect(await visit('/account?tab=billing')).toBe('https://site.example/account?tab=billing')
+    // Dot segments that collapse to a double slash stay on this site, spelled out in full.
+    expect(await visit('/.//evil.example')).toBe('https://site.example//evil.example')
+    expect(await visit('/..//evil.example')).toBe('https://site.example//evil.example')
     // Each of these would leave the site; the form falls back to reloading its own page.
     for (const hostile of ['//evil.example/', '/\\evil.example/', '/\t/evil.example/', '/\n/evil.example', 'https://evil.example/']) {
       expect(await visit(hostile)).toBe('/sign-in')
