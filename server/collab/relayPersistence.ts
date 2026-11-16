@@ -60,7 +60,8 @@ const KIND_TABLE: Record<Exclude<CollabDocKind, 'site'>, string> = {
  * is cleared.
  */
 const OWNED_CELLS: Record<Exclude<CollabDocKind, 'site'>, readonly string[]> = {
-  page: ['title', 'slug', 'body', 'templateEnabled', 'templateTarget', 'templatePriority'],
+  // `access` is owned so that a page set back to public loses its stored rule.
+  page: ['title', 'slug', 'body', 'templateEnabled', 'templateTarget', 'templatePriority', 'access'],
   component: ['name', 'slug', 'body', 'params', 'classIds'],
   layout: ['name', 'slug', 'body', 'classes'],
 }
