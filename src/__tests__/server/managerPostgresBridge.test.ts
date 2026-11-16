@@ -9,7 +9,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'bun:test'
 import { Database } from 'bun:sqlite'
 import { SQL } from 'bun'
-import { mkdtemp, rm } from 'node:fs/promises'
+import { copyFile, mkdir, mkdtemp, rm } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -18,6 +18,8 @@ import { pgMigrations } from '../../../server/db/migrations-pg'
 import { sqliteMigrations } from '../../../server/db/migrations-sqlite'
 import { runMigrations } from '../../../server/db/runMigrations'
 import { exportPostgresToSqlite, importSqliteIntoPostgres } from '../../../server/manager/postgresBridge'
+import { applyPendingRestore, writePendingRestore } from '../../../server/manager/pending'
+import { postgresPreRestorePath, restoreStagingPath } from '../../../server/manager/paths'
 
 const POSTGRES_URL = process.env.INSTATIC_TEST_POSTGRES_URL
 
@@ -43,6 +45,8 @@ async function seededSqlite(name: string, migrations = sqliteMigrations): Promis
   raw.exec("insert into media_folders (id, name, slug, parent_id, created_at) values ('child', 'Child', 'child', 'parent', '2026-01-02 03:04:05')")
   raw.exec("insert into media_folders (id, name, slug, parent_id, created_at) values ('parent', 'Parent', 'parent', null, '2026-01-02 03:04:05')")
   raw.query('insert into collab_documents (doc_id, state_blob) values (?, ?)').run('doc', new Uint8Array([0, 1, 2, 254, 255]))
+  // A 64-bit integer no JavaScript number holds, and a stamp with milliseconds.
+  raw.exec("insert into collab_documents (doc_id, state_blob, seq, updated_at) values ('big', x'', 9007199254740993, '2026-03-04T05:06:07.089Z')")
   raw.exec('PRAGMA wal_checkpoint(TRUNCATE)')
   raw.close()
   return file
@@ -53,6 +57,41 @@ function tableNames(db: Database): string[] {
     .query<{ name: string }, []>("select name from sqlite_master where type = 'table' and name not like 'sqlite_%' order by name")
     .all()
     .map((row) => row.name)
+}
+
+/**
+ * Every row of a table in a form that is the same before and after the trip:
+ * Postgres hands back a zone-less stamp as ISO 8601 and a JSON document with
+ * its keys reordered, and neither is a change to the data.
+ */
+function tableRows(db: Database, table: string): string[] {
+  const canonical = (value: unknown): unknown => {
+    if (Array.isArray(value)) return value.map(canonical)
+    if (value && typeof value === 'object') {
+      return Object.fromEntries(Object.entries(value).sort(([a], [b]) => (a < b ? -1 : 1)).map(([k, v]) => [k, canonical(v)]))
+    }
+    return value
+  }
+  const normalize = (value: unknown): unknown => {
+    if (typeof value === 'bigint') return `int:${value}`
+    if (value instanceof Uint8Array) return `blob:${Buffer.from(value).toString('hex')}`
+    if (typeof value !== 'string') return value
+    const stamp = /^(\d{4}-\d{2}-\d{2}) (\d{2}:\d{2}:\d{2})$/.exec(value)
+    if (stamp) return `${stamp[1]}T${stamp[2]}.000Z`
+    if (value.startsWith('{') || value.startsWith('[')) {
+      try {
+        return JSON.stringify(canonical(JSON.parse(value)))
+      } catch {
+        return value
+      }
+    }
+    return value
+  }
+  return db
+    .query<Record<string, unknown>, []>(`select * from "${table}"`)
+    .all()
+    .map((row) => JSON.stringify(Object.entries(row).map(([column, value]) => [column, normalize(value)])))
+    .sort()
 }
 
 async function wipePostgres(url: string): Promise<void> {
@@ -97,13 +136,16 @@ describe.skipIf(!POSTGRES_URL)('Manager API: SQLite and Postgres', () => {
     expect(existsSync(`${back}-wal`)).toBe(false)
     expect(existsSync(`${back}.build`)).toBe(false)
 
-    const a = new Database(source, { readonly: true })
-    const b = new Database(back, { readonly: true })
+    const a = new Database(source, { readonly: true, safeIntegers: true })
+    const b = new Database(back, { readonly: true, safeIntegers: true })
     expect(tableNames(b)).toEqual(tableNames(a))
+    // Every row of every table, the rows the migrations seed included
+    // (booleans both ways, nulls, numbers).
     for (const table of tableNames(a)) {
-      const count = (db: Database) => db.query<{ n: number }, []>(`select count(*) as n from "${table}"`).get()?.n
-      expect(`${table}:${count(b)}`).toBe(`${table}:${count(a)}`)
+      expect({ table, rows: tableRows(b, table) }).toEqual({ table, rows: tableRows(a, table) })
     }
+    const big = b.query<{ seq: bigint; updated_at: string }, []>("select seq, updated_at from collab_documents where doc_id = 'big'").get()
+    expect(big).toEqual({ seq: 9007199254740993n, updated_at: '2026-03-04T05:06:07.089Z' })
     const folders = b.query<{ id: string; parent_id: string | null; created_at: string }, []>('select id, parent_id, created_at from media_folders order by id').all()
     expect(folders).toEqual([
       // The zone-less stamp meant UTC and comes back as ISO 8601.
@@ -162,5 +204,43 @@ describe.skipIf(!POSTGRES_URL)('Manager API: SQLite and Postgres', () => {
     expect(kept.map((row) => row.id)).toEqual([7])
     await sql.unsafe('drop table not_instatic')
     await sql.close()
+  })
+
+  it('a restore applied at boot keeps one undo copy of the old data, even when it runs twice', async () => {
+    await wipePostgres(url)
+    await importSqliteIntoPostgres(url, await seededSqlite('before.db'))
+    const incoming = await seededSqlite('incoming.db')
+    const raw = new Database(incoming)
+    raw.exec("update site set name = 'Restored'")
+    raw.exec('PRAGMA wal_checkpoint(TRUNCATE)')
+    raw.close()
+
+    const managerDir = join(root, 'manager')
+    const uploadsDir = join(root, 'uploads')
+    await mkdir(managerDir, { recursive: true })
+    await mkdir(uploadsDir, { recursive: true })
+    const siteName = (file: string) => {
+      const db = new Database(file, { readonly: true })
+      const name = db.query<{ name: string }, []>('select name from site').get()?.name
+      db.close()
+      return name
+    }
+    const stage = async (marker: { undoCopyTaken?: boolean }) => {
+      await copyFile(incoming, restoreStagingPath(managerDir))
+      await writePendingRestore(managerDir, { kind: 'snapshot', createdAt: new Date().toISOString(), databaseApplied: false, ...marker })
+    }
+
+    await stage({})
+    expect(await applyPendingRestore({ managerDir, databaseUrl: url, uploadsDir })).toEqual({ status: 'applied', kind: 'snapshot' })
+    const sql = new SQL(url)
+    expect((await sql.unsafe<{ name: string }[]>('select name from site'))[0]?.name).toBe('Restored')
+    await sql.close()
+    expect(siteName(postgresPreRestorePath(managerDir))).toBe('Bridge')
+
+    // Killed after the import, before the marker recorded it: the next boot
+    // imports again and must not replace the undo copy with restored data.
+    await stage({ undoCopyTaken: true })
+    expect((await applyPendingRestore({ managerDir, databaseUrl: url, uploadsDir })).status).toBe('applied')
+    expect(siteName(postgresPreRestorePath(managerDir))).toBe('Bridge')
   })
 })

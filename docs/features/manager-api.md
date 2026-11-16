@@ -36,7 +36,7 @@ both together.
 | Env var | Meaning |
 |---|---|
 | `INSTATIC_MANAGER_TOKEN` | Enables the API. Must be at least 32 characters; shorter values disable it with a boot warning. |
-| `INSTATIC_MANAGER_DIR` | Working directory for snapshots and staging. Default: `manager/` beside the SQLite database file (for Postgres: beside `UPLOADS_DIR`). It must be on persistent storage and must **not** be inside `UPLOADS_DIR`, which is served publicly. |
+| `INSTATIC_MANAGER_DIR` | Working directory for snapshots and staging. Default: `manager/` beside the SQLite database file (for Postgres: beside `UPLOADS_DIR`, so set it explicitly when the volume is mounted on `UPLOADS_DIR` itself rather than on its parent). It must be on persistent storage and must **not** be inside `UPLOADS_DIR`, which is served publicly. |
 
 The API refuses to operate (`503 misconfigured`) when the layout could expose
 or destroy data: the manager directory inside `UPLOADS_DIR` or the reverse,
@@ -331,7 +331,12 @@ differ, so every value crosses as text and is cast in SQL. So a local SQLite
 site can be pushed to a Postgres server and pulled back, and a snapshot taken
 on one engine restores on the other.
 
-The undo copy on Postgres is `<manager dir>/pre-restore.db`.
+The undo copy on Postgres is `<manager dir>/pre-restore.db`. It is taken
+once per restore and is best effort: if the old database cannot be written
+out (it is unreadable, or the disk is full), the restore still runs and no
+undo copy is kept. An import waits at most 30 seconds for another session
+holding a lock on a table (an open `psql`, a running `pg_dump`); past that it
+fails, the server boots on the old data, and the next boot tries again.
 
 ## Limits to know
 

@@ -55,6 +55,12 @@ const PendingRestoreSchema = Type.Object({
    * already finished, not that there was nothing to swap.
    */
   databaseSwapStarted: Type.Optional(Type.Boolean()),
+  /**
+   * Postgres only: set once the undo copy of the previous database has been
+   * taken (or found impossible). A run killed right after the import must
+   * not take it again, or the undo copy would hold the restored data.
+   */
+  undoCopyTaken: Type.Optional(Type.Boolean()),
   /** Set once the staged database has become the live one. */
   databaseApplied: Type.Boolean(),
   /**
@@ -161,11 +167,23 @@ async function apply(options: ApplyPendingOptions): Promise<ApplyOutcome> {
       await discardPendingRestore(managerDir)
       return { status: 'discarded', reason: 'the staged database was missing' }
     }
-    // The undo copy. Best effort: a database too broken to read is exactly
-    // the one a restore is meant to replace.
-    await exportPostgresToSqlite(options.databaseUrl, postgresPreRestorePath(managerDir)).catch((err: unknown) => {
-      console.warn('[manager] no undo copy was kept:', err instanceof Error ? err.message : err)
-    })
+    // The undo copy, taken once per restore. Best effort: a database too
+    // broken to read is exactly the one a restore is meant to replace. It is
+    // written beside its final name, so a copy that fails halfway never
+    // stands in for a whole one, and an older undo copy is not kept as if it
+    // belonged to this restore.
+    if (!pending.undoCopyTaken) {
+      const undo = postgresPreRestorePath(managerDir)
+      const incoming = `${undo}.incoming`
+      await rm(undo, { force: true })
+      try {
+        if (await exportPostgresToSqlite(options.databaseUrl, incoming)) await rename(incoming, undo)
+      } catch (err) {
+        console.warn('[manager] no undo copy was kept:', err instanceof Error ? err.message : err)
+      }
+      pending.undoCopyTaken = true
+      await writePendingRestore(managerDir, pending)
+    }
     await importSqliteIntoPostgres(options.databaseUrl, staged)
     pending.databaseApplied = true
     await writePendingRestore(managerDir, pending)

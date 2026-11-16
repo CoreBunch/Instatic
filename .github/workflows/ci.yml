@@ -53,6 +53,22 @@ jobs:
   test:
     name: Test
     runs-on: ubuntu-latest
+    # The SQLite and Postgres bridge tests need a real Postgres they may wipe.
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: instatic_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      INSTATIC_TEST_POSTGRES_URL: postgres://postgres:postgres@localhost:5432/instatic_test
     steps:
       - name: Checkout
         uses: actions/checkout@v7

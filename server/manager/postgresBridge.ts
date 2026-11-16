@@ -12,7 +12,7 @@
  *
  * This works because both engines run the same migrations under the same
  * ids and end up with the same tables and columns (pinned by
- * `postgresBridge.test.ts`). Only the column types differ, so every value
+ * `managerPostgresBridge.test.ts`). Only the column types differ, so every value
  * crosses as text and is cast on the Postgres side. Nothing here depends on
  * how the driver would map a JavaScript value to a Postgres type.
  *
@@ -33,6 +33,11 @@ import { vacuumInto } from './database'
 const BATCH_ROWS = 200
 /** Postgres caps a statement at 65535 parameters; stay far below it. */
 const MAX_PARAMS_PER_INSERT = 8000
+/**
+ * How long an import waits for another session to let go of a table. Without
+ * a limit, one open `psql` or a running `pg_dump` would hold boot forever.
+ */
+const IMPORT_LOCK_TIMEOUT = '30s'
 
 const MIGRATIONS_TABLE = 'schema_migrations'
 
@@ -132,9 +137,9 @@ function sqliteTables(db: Database): string[] {
 /** Columns that hold stored data: generated and hidden columns are left out. */
 function sqliteColumns(db: Database, table: string): string[] {
   return db
-    .query<{ name: string; hidden: number }, []>(`pragma table_xinfo(${quoteIdent(table)})`)
+    .query<{ name: string; hidden: number | bigint }, []>(`pragma table_xinfo(${quoteIdent(table)})`)
     .all()
-    .filter((column) => column.hidden === 0)
+    .filter((column) => Number(column.hidden) === 0)
     .map((column) => column.name)
 }
 
@@ -156,9 +161,18 @@ async function ownedTables(): Promise<string[]> {
   }
 }
 
+/**
+ * The migrations a database has applied. Throws when it carries one this
+ * release does not know: its schema cannot be rebuilt here, and copying what
+ * fits would quietly drop the rest.
+ */
 function migrationsUpTo(all: Migration[], appliedIds: string[]): Migration[] {
   const applied = new Set(appliedIds)
-  return all.filter((migration) => applied.has(migration.id))
+  const known = all.filter((migration) => applied.has(migration.id))
+  if (known.length !== applied.size) {
+    throw new Error('[manager] the database carries migrations this release does not know')
+  }
+  return known
 }
 
 // ---------------------------------------------------------------------------
@@ -176,7 +190,11 @@ function migrationsUpTo(all: Migration[], appliedIds: string[]): Migration[] {
  * fails instead.
  */
 export async function importSqliteIntoPostgres(databaseUrl: string, sqliteFile: string): Promise<void> {
-  const source = new Database(sqliteFile, { readonly: true })
+  // Integers are read as bigint so a 64-bit value crosses without rounding.
+  // Not opened read-only: a file whose header says WAL (a plain copy of a
+  // live database) cannot be read by a connection that may not create the
+  // `-shm` file beside it. Nothing here writes to it.
+  const source = new Database(sqliteFile, { readwrite: true, safeIntegers: true })
   const sql = new SQL(databaseUrl)
   try {
     const sourceMigrationIds = source
@@ -184,14 +202,12 @@ export async function importSqliteIntoPostgres(databaseUrl: string, sqliteFile: 
       .all()
       .map((row) => row.id)
     const migrations = migrationsUpTo(pgMigrations, sourceMigrationIds)
-    if (migrations.length !== sourceMigrationIds.length) {
-      throw new Error('[manager] the database carries migrations this release does not know')
-    }
     const owned = await ownedTables()
 
     await sql.begin(async (tx) => {
       // SQLite's `current_timestamp` shape has no zone marker and means UTC.
       await tx.unsafe("set local timezone = 'UTC'")
+      await tx.unsafe(`set local lock_timeout = '${IMPORT_LOCK_TIMEOUT}'`)
 
       // No CASCADE: if another application's table or view depends on one of
       // ours, the import stops here rather than taking that object with it.
