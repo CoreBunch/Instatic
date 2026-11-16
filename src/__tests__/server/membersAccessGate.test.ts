@@ -293,6 +293,19 @@ describe('members access gate', () => {
       expect((await get('/posts/lesson-one')).status).toBe(404)
     })
 
+    it('gates fragments of its entry template whatever route the caller claims', async () => {
+      await setTableAccess(t.db, 'posts', { level: 'tags', tags: ['student'], onDeny: 'hide' }, uploadsDir)
+      const index = await getPublishedNodeIndexForVersion(t.db, getPublishVersion())
+      const student = await signedInMember('s@example.com', ['student'])
+      for (const claimed of ['/', '/posts/lesson-one', '/Posts/lesson-one', '/no-such-page']) {
+        const path = `/_instatic/hole/page_lesson_tpl_text?v=${index!.snapshotHash}&u=${encodeURIComponent(claimed)}`
+        expect({ claimed, status: (await get(path)).status }).toEqual({ claimed, status: 404 })
+        const allowed = await get(path, student.cookie)
+        expect(allowed.status).toBe(200)
+        expect(allowed.headers.get('cache-control')).toBe('private, no-store')
+      }
+    })
+
     it('opens again when the rule is removed', async () => {
       await setTableAccess(t.db, 'posts', { level: 'members', onDeny: 'hide' }, uploadsDir)
       await setTableAccess(t.db, 'posts', { level: 'public' }, uploadsDir)

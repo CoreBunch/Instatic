@@ -14,14 +14,15 @@ import { normalizeRouteBase } from '@core/templates'
 import { nowIso } from '@core/utils/isoDate'
 
 export interface ProtectedTableRoute {
+  slug: string
   routeBase: string
   rule: AccessRule
 }
 
 /** Every routable main-branch table whose entries are not open to anyone. */
 export async function listProtectedTableRoutes(db: DbClient): Promise<ProtectedTableRoute[]> {
-  const { rows } = await db<{ route_base: string; access_json: unknown }>`
-    select route_base, access_json
+  const { rows } = await db<{ slug: string; route_base: string; access_json: unknown }>`
+    select slug, route_base, access_json
       from data_tables
      where branch_id = ${MAIN_BRANCH_ID}
        and deleted_at is null
@@ -29,7 +30,11 @@ export async function listProtectedTableRoutes(db: DbClient): Promise<ProtectedT
        and route_base <> ''
   `
   return rows
-    .map((row) => ({ routeBase: normalizeRouteBase(row.route_base), rule: parseAccessRule(row.access_json) }))
+    .map((row) => ({
+      slug: row.slug,
+      routeBase: normalizeRouteBase(row.route_base),
+      rule: parseAccessRule(row.access_json),
+    }))
     .filter((entry) => entry.rule.level !== 'public')
 }
 

@@ -28,8 +28,10 @@ import { createVersionedSingleFlight } from './publishState'
 interface AccessIndex {
   /** Published page slug → rule, protected pages only. */
   pages: Map<string, AccessRule>
-  /** Normalised table route base → rule, protected tables only. */
+  /** Normalised, lower-cased table route base → rule, protected tables only. */
   routeBases: Map<string, AccessRule>
+  /** Table slug → rule, protected tables only. */
+  tableSlugs: Map<string, AccessRule>
 }
 
 const indexMemo = createVersionedSingleFlight<AccessIndex>()
@@ -41,8 +43,12 @@ async function loadAccessIndex(db: DbClient): Promise<AccessIndex> {
     if (rule.level !== 'public') pages.set(row.slug, rule)
   }
   const routeBases = new Map<string, AccessRule>()
-  for (const entry of await listProtectedTableRoutes(db)) routeBases.set(entry.routeBase, entry.rule)
-  return { pages, routeBases }
+  const tableSlugs = new Map<string, AccessRule>()
+  for (const entry of await listProtectedTableRoutes(db)) {
+    routeBases.set(entry.routeBase.toLowerCase(), entry.rule)
+    tableSlugs.set(entry.slug, entry.rule)
+  }
+  return { pages, routeBases, tableSlugs }
 }
 
 /**
@@ -73,17 +79,31 @@ export function indexedRuleForPath(index: AccessIndex, pathname: string): Access
   if (pageRule) return pageRule
   const parts = decoded.replace(/^\/+|\/+$/g, '').split('/').filter(Boolean)
   if (parts.length < 2) return PUBLIC_ACCESS
-  return index.routeBases.get(`/${parts.slice(0, -1).join('/')}`) ?? PUBLIC_ACCESS
+  return index.routeBases.get(`/${parts.slice(0, -1).join('/')}`.toLowerCase()) ?? PUBLIC_ACCESS
 }
 
 export function tableRuleForRouteBase(index: AccessIndex, routeBase: string): AccessRule {
-  return index.routeBases.get(normalizeRouteBase(routeBase)) ?? PUBLIC_ACCESS
+  return index.routeBases.get(normalizeRouteBase(routeBase).toLowerCase()) ?? PUBLIC_ACCESS
 }
 
-/** A page's own rule: the published one from the index, or the one on the page object. */
+/**
+ * The rule that goes with a page object, for anything served on its behalf
+ * (hole and loop fragments).
+ *
+ * A routable page: its own rule. An entry template: the rule of the tables
+ * it renders, so a fragment of a protected table's template is protected
+ * whatever route the caller claims to be on. Any other template (a layout,
+ * the 404 page) only wraps and has no rule of its own.
+ */
 export function pageRule(index: AccessIndex, page: Page): AccessRule {
-  if (isTemplatePage(page)) return PUBLIC_ACCESS // templates only wrap; the route they wrap decides
-  return index.pages.get(page.slug) ?? page.access ?? PUBLIC_ACCESS
+  if (!isTemplatePage(page)) return index.pages.get(page.slug) ?? page.access ?? PUBLIC_ACCESS
+  const target = page.template?.target
+  if (target?.kind !== 'postTypes') return PUBLIC_ACCESS
+  for (const slug of target.tableSlugs) {
+    const rule = index.tableSlugs.get(slug)
+    if (rule) return rule
+  }
+  return PUBLIC_ACCESS
 }
 
 /** Of two rules for the same route, the one that is not public (the first wins a tie). */
