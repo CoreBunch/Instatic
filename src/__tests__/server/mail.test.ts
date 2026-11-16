@@ -240,6 +240,15 @@ describe('site mail', () => {
       })
     })
 
+    it('previews the site variables with the real site name, and the rest with samples', async () => {
+      const res = await h.cms('/admin/api/cms/mail/templates', { cookie: owner })
+      const { templates } = await readJson<{ templates: MailTemplate[] }>(res)
+      const variables = templates.find((template) => template.key === 'test.welcome')?.variables ?? []
+      const sample = (name: string) => variables.find((variable) => variable.name === name)?.sample
+      expect(sample('site.name')).toBe('Capability Matrix')
+      expect(sample('member.name')).toBe('Ada')
+    })
+
     it('refuses to save a template that is not in the catalogue, or an empty one', async () => {
       const unknown = await h.cms('/admin/api/cms/mail/templates/nope', {
         method: 'PUT', cookie: owner, json: { subject: 'S', body: 'B' },

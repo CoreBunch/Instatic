@@ -34,10 +34,14 @@ export interface MailTemplateDefinition {
   defaultBody: string
 }
 
-/** Variables every template can use. */
+/**
+ * Variables every template can use. They carry no made-up sample: the server
+ * fills `sample` with the site's real name and address when it hands a
+ * template to the admin.
+ */
 export const COMMON_MAIL_VARIABLES: readonly MailTemplateVariable[] = [
-  { name: 'site.name', label: 'Site name', sample: 'Acme Studio' },
-  { name: 'site.url', label: 'Site address', sample: 'https://example.com' },
+  { name: 'site.name', label: 'Site name', sample: '' },
+  { name: 'site.url', label: 'Site address', sample: '' },
 ]
 
 const definitions = new Map<string, MailTemplateDefinition>()
@@ -169,7 +173,7 @@ export function renderMailTemplate(
   }
 }
 
-/** The sample values of a template's variables, for the preview. */
+/** The preview values of a template's variables. */
 export function sampleMailVariables(variables: readonly MailTemplateVariable[]): Record<string, string> {
   return Object.fromEntries(variables.map((variable) => [variable.name, variable.sample]))
 }

@@ -13,6 +13,9 @@ import {
   type MailTemplateInput,
 } from '@core/mail'
 import { nowIso } from '@core/utils/isoDate'
+import { configuredPublicOrigin } from '../auth/security'
+import { MAIN_SCOPE } from '../branches/scope'
+import { getDraftSite } from '../repositories/site'
 
 interface TemplateRow {
   template_key: string
@@ -20,13 +23,33 @@ interface TemplateRow {
   body_markdown: string
 }
 
-function toTemplate(definition: MailTemplateDefinition, row: TemplateRow | undefined): MailTemplate {
+/** The values every template can use: the site's name and address. */
+export async function siteMailVariables(db: DbClient): Promise<Record<string, string>> {
+  const site = await getDraftSite(db, MAIN_SCOPE)
+  return {
+    'site.name': site?.name?.trim() || 'this site',
+    'site.url': configuredPublicOrigin() ?? '',
+  }
+}
+
+/**
+ * The site's own variables preview with their real values, so the editor
+ * shows the name and address an email will actually carry. Only the
+ * per-recipient variables keep the definition's made-up sample.
+ */
+function toTemplate(
+  definition: MailTemplateDefinition,
+  row: TemplateRow | undefined,
+  site: Record<string, string>,
+): MailTemplate {
   return {
     key: definition.key,
     label: definition.label,
     description: definition.description,
     group: definition.group,
-    variables: [...definition.variables],
+    variables: definition.variables.map((variable) =>
+      variable.name in site ? { ...variable, sample: site[variable.name] } : variable,
+    ),
     subject: row?.subject ?? definition.defaultSubject,
     body: row?.body_markdown ?? definition.defaultBody,
     customised: row !== undefined,
@@ -36,7 +59,8 @@ function toTemplate(definition: MailTemplateDefinition, row: TemplateRow | undef
 export async function listMailTemplates(db: DbClient): Promise<MailTemplate[]> {
   const { rows } = await db<TemplateRow>`select template_key, subject, body_markdown from mail_templates`
   const byKey = new Map(rows.map((row) => [row.template_key, row]))
-  return listMailTemplateDefinitions().map((definition) => toTemplate(definition, byKey.get(definition.key)))
+  const site = await siteMailVariables(db)
+  return listMailTemplateDefinitions().map((definition) => toTemplate(definition, byKey.get(definition.key), site))
 }
 
 /** A template by key, with the owner's edits applied. Null for a key not in the catalogue. */
@@ -46,7 +70,7 @@ export async function getMailTemplate(db: DbClient, key: string): Promise<MailTe
   const { rows } = await db<TemplateRow>`
     select template_key, subject, body_markdown from mail_templates where template_key = ${key}
   `
-  return toTemplate(definition, rows[0])
+  return toTemplate(definition, rows[0], await siteMailVariables(db))
 }
 
 export async function saveMailTemplate(

@@ -20,15 +20,12 @@ import {
   type MailDeliveryMode,
 } from '@core/mail'
 import { getErrorMessage } from '@core/utils/errorMessage'
-import { configuredPublicOrigin } from '../auth/security'
-import { MAIN_SCOPE } from '../branches/scope'
-import { getDraftSite } from '../repositories/site'
 import { recordMail } from './activity'
 import { noteConnectorUse, resolveConnector, type ResolvedConnector } from './connectors'
 import { getMailDefaults } from './defaults'
 import { sendViaSes } from './sesDriver'
 import { formatFromHeader, MailDeliveryError, sendViaSmtp, type OutgoingMail } from './smtpDriver'
-import { getMailTemplate } from './templates'
+import { getMailTemplate, siteMailVariables } from './templates'
 
 export class MailNotConfiguredError extends Error {
   constructor() {
@@ -156,15 +153,6 @@ export async function sendConnectorTest(
     throw new MailDeliveryError('Set a sender address under Defaults before testing a connector.')
   }
   await deliver(db, connectorId, defaults, mail, deps.carrier ?? carryMail)
-}
-
-/** The values every template can use: the site's name and address. */
-async function siteMailVariables(db: DbClient): Promise<Record<string, string>> {
-  const site = await getDraftSite(db, MAIN_SCOPE)
-  return {
-    'site.name': site?.name?.trim() || 'this site',
-    'site.url': configuredPublicOrigin() ?? '',
-  }
 }
 
 /** Render a template (with the owner's edits) into a finished message. */

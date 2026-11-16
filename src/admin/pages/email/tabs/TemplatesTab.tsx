@@ -369,7 +369,7 @@ function TemplateEditor({
               <p className={styles.hint}>
                 {dirty
                   ? 'Save the template first: a test sends the saved version.'
-                  : 'Sent with the sample values shown below, so its links do not work.'}
+                  : 'Sent as shown below. Links use sample values, so they do not work.'}
               </p>
             </div>
             <div className={styles.previewFrame}>

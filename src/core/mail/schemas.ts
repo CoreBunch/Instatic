@@ -146,7 +146,7 @@ export const MailTemplateVariableSchema = Type.Object({
   /** The token name, written `{name}` in a subject or body. */
   name: Type.String(),
   label: Type.String(),
-  /** A realistic value for the preview. */
+  /** The value the preview shows: the site's real one for `site.*`, a realistic made-up one otherwise. */
   sample: Type.String(),
 })
 export type MailTemplateVariable = Static<typeof MailTemplateVariableSchema>

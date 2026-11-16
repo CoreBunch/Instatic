@@ -71,7 +71,7 @@ Delivery errors reach the admin as a fixed set of sentences (`describeSmtpFailur
 
 ## Templates
 
-A template definition (`MailTemplateDefinition`) has a `key`, a label, a group, its variables with sample values, and the built-in subject and body. Features add theirs with `registerMailTemplate` at module load; `mail.test` is the only one this module registers.
+A template definition (`MailTemplateDefinition`) has a `key`, a label, a group, its variables with sample values (the two site variables, `site.name` and `site.url`, carry none), and the built-in subject and body. Features add theirs with `registerMailTemplate` at module load; `mail.test` is the only one this module registers.
 
 `renderMailTemplate(template, variables)` returns `{ subject, text, html }`:
 
@@ -82,7 +82,7 @@ A template definition (`MailTemplateDefinition`) has a `key`, a label, a group, 
 
 In the admin (`tabs/TemplatesTab.tsx`) a template opens in **Live** mode: the subject and body are edited inside a card styled like the sent email (`.emailCard`, coloured by the `--email-preview-*` tokens), so there is no separate preview pane. **Write** is the bare editor surface. The switch is the post editor's `ContentModeToggle`; "Insert variable" puts a `{name}` into whichever of the two fields was focused last. The editor runs without media (`onPickMedia` omitted), which hides the image options of the floating and slash menus.
 
-"Send test" in the header opens a dialog that shows the email rendered by the same `renderMailTemplate` with each variable's `sample`, so the dialog is what is sent. Sending is disabled until unsaved edits are saved, because the server sends the stored template. On a connector the test send and the secret replacement are dialogs too. A template test (`POST …/templates/:key/test`) also uses sample values, never real ones, so a test cannot mint a working link.
+"Send test" in the header opens a dialog that shows the email rendered by the same `renderMailTemplate` with each variable's `sample`, so the dialog is what is sent. For `site.name` and `site.url` the server puts the site's real name and public address into `sample` when it reads a template (`toTemplate` in `server/mail/templates.ts`, from the same `siteMailVariables` a send uses), so the editor, the footer and the dialog show the real ones; only per-recipient variables preview with made-up values. Sending is disabled until unsaved edits are saved, because the server sends the stored template. On a connector the test send and the secret replacement are dialogs too. A template test (`POST …/templates/:key/test`) also uses sample values for per-recipient variables, never real ones, so a test cannot mint a working link.
 
 ## Links in emails
 

@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test'
-import { ANONYMOUS_STATE, completeStepUp, login } from './helpers'
+import { ANONYMOUS_STATE, OWNER, PUBLIC_BASE_URL, completeStepUp, login } from './helpers'
 
 // Adding a connector and saving the defaults ask for step-up, which rotates the session token.
 test.use({ storageState: ANONYMOUS_STATE })
@@ -25,7 +25,7 @@ test('owner sets up outgoing email and edits a template (ADMIN-013)', async ({ p
   await expect(template.getByRole('heading', { name: 'Test email', exact: true })).toBeVisible()
   await template.getByRole('button', { name: 'Send test' }).click()
   const testDialog = page.getByRole('dialog', { name: 'Send a test email' })
-  // The dialog shows the email as it will be sent, with sample values.
+  // The dialog shows the email as it will be sent.
   await expect(testDialog.frameLocator('iframe[title="Email preview"]').getByText('outgoing email works')).toBeVisible()
   await testDialog.getByLabel('Send to').fill('reader@example.com')
   await testDialog.getByRole('button', { name: 'Send test' }).click()
@@ -101,12 +101,12 @@ test('owner sets up outgoing email and edits a template (ADMIN-013)', async ({ p
   await editor.getByTestId('content-mode-toggle-live').click()
   await expect(editor.getByLabel('Email body')).toContainText('Hello from the editor. {site.url}')
 
-  // The test dialog previews the unsaved edit with sample values, and asks to save first.
+  // The test dialog previews the unsaved edit with the site's real name and address, and asks to save first.
   await editor.getByRole('button', { name: 'Send test' }).click()
   const previewDialog = page.getByRole('dialog', { name: 'Send a test email' })
-  await expect(previewDialog.getByText('Checking Acme Studio')).toBeVisible()
+  await expect(previewDialog.getByText(`Checking ${OWNER.siteName}`)).toBeVisible()
   await expect(
-    previewDialog.frameLocator('iframe[title="Email preview"]').getByText('Hello from the editor. https://example.com'),
+    previewDialog.frameLocator('iframe[title="Email preview"]').getByText(`Hello from the editor. ${PUBLIC_BASE_URL}`),
   ).toBeVisible()
   await expect(previewDialog.getByText('Save the template first')).toBeVisible()
   await expect(previewDialog.getByRole('button', { name: 'Send test' })).toBeDisabled()
