@@ -1,7 +1,8 @@
-import { defineConfig, type Plugin } from 'vite'
+import { defineConfig, searchForWorkspaceRoot, type Plugin } from 'vite'
 import react, { reactCompilerPreset } from '@vitejs/plugin-react'
 import babel from '@rolldown/plugin-babel'
 import path from 'path'
+import { existsSync, realpathSync } from 'node:fs'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 
 const CMS_DEV_SERVER_ORIGIN = `http://localhost:${process.env.PORT ?? '3001'}`
@@ -164,6 +165,11 @@ function vendorChunkName(moduleId: string): string | null {
 // add the `"use no memo"` directive at the top of the function body.
 
 // https://vite.dev/config/
+function realNodeModulesDir(): string[] {
+  const nodeModules = path.resolve(__dirname, 'node_modules')
+  return existsSync(nodeModules) ? [realpathSync(nodeModules)] : []
+}
+
 export default defineConfig({
   plugins: [
     publicSiteDevProxyPlugin(),
@@ -222,6 +228,13 @@ export default defineConfig({
     },
   },
   server: {
+    fs: {
+      // A git worktree normally symlinks `node_modules` to the main checkout.
+      // Vite resolves the symlink, then refuses the real path as outside the
+      // workspace root (403 on, e.g., the bundled Inter font files). Allow
+      // wherever `node_modules` really lives, alongside the default root.
+      allow: [searchForWorkspaceRoot(process.cwd()), ...realNodeModulesDir()],
+    },
     watch: {
       // Runtime-written paths: the publish pipeline bakes HTML into the uploads
       // dir, the SQLite DB and E2E artefacts live under .tmp, and dist holds the
