@@ -326,7 +326,8 @@ describe('public CMS-native form endpoint', () => {
     const challengeBody = await readJson(challenge!)
     expect(typeof challengeBody.token).toBe('string')
     expect(typeof challengeBody.challenge).toBe('string')
-    expect(typeof challengeBody.minSubmitSeconds).toBe('number')
+    expect(challengeBody.minSubmitSeconds).toBe(0)
+    expect(challengeBody.expiresInSeconds).toBe(300)
 
     const submit = await handlePublicFormRequest(
       makeRequest('/_instatic/form/submit', {

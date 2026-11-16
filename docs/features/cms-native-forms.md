@@ -52,6 +52,12 @@ CMS-native submission is a two-step public flow:
 1. The runtime requests a short-lived challenge from `/_instatic/form/challenge` when the form attaches in the browser.
 2. The runtime posts values plus the challenge to `/_instatic/form/submit`.
 
+The challenge response carries `expiresInSeconds` and the form's `minSubmitSeconds`. The runtime (`src/modules/base/forms/formRuntimeJs.ts`) uses them so a visitor who lingers is not turned away:
+
+- It measures the challenge lifetime from the moment the response arrived, on the browser's own clock. The absolute `expiresAt` is never compared with the browser clock, so a visitor clock that disagrees with the server's changes nothing.
+- It replaces the held challenge 30 seconds before it expires, for as long as the form stays in the page.
+- The server's time trap counts from the challenge's issue time. When the visitor has had the form for at least `minSubmitSeconds` but the challenge in hand is younger than that (just refreshed, or fetched at submit because the earlier one expired or never arrived), the runtime waits out the difference before posting. A submit made sooner than `minSubmitSeconds` after the form attached is posted immediately and the server rejects it with `Form submitted too quickly`.
+
 The submit handler reloads the latest published site snapshot, derives the form snapshot from the published page tree, requires the target `DataTable` to be a non-system `data` table, validates fields against that table, and creates a `data_rows` record with `createDataRow`. After persistence, `server/forms/handler.ts` calls `emitContentEntryCreated` from `server/publish/contentEvents.ts` with the `system` actor, so plugins can react to successful submissions through the standard `content.entry.created` channel.
 
 Validation lives in `src/core/forms/validation.ts`. It rejects unknown fields, enforces required fields, coerces table field types, applies email/url/number/select checks, applies control min/max/pattern constraints, and caps payload size. A `select` or `multiSelect` submission may carry an option's `value` (what `base.option` nodes inserted from the table hold) or its `id`; the stored cell is always the option id.
