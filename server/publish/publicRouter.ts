@@ -63,7 +63,7 @@
  */
 
 import type { DbClient } from '../db/client'
-import { LOCKED_ACCESS, type AccessRule } from '@core/members'
+import { LOCKED_ACCESS, type AccessRule, type CurrentMember } from '@core/members'
 import {
   decideAccess,
   denyResponse,
@@ -302,10 +302,12 @@ export async function renderPublicResolution(
     })
   }
 
-  const render = async (visitorTags: readonly string[] | null = null): Promise<string | null> => {
+  // `forVisitor` is passed only on a protected route; a shared render leaves it out.
+  const render = async (forVisitor?: CurrentMember | null): Promise<string | null> => {
+    const context = forVisitor === undefined ? { db, url } : { db, url, visitor: forVisitor }
     const rendered = resolution.kind === 'page'
-      ? await renderPublishedSnapshot(resolution.snapshot, { db, url, visitorTags })
-      : await renderPublishedDataRowTemplate(resolution.snapshot, resolution.row, { db, url, visitorTags })
+      ? await renderPublishedSnapshot(resolution.snapshot, context)
+      : await renderPublishedDataRowTemplate(resolution.snapshot, resolution.row, context)
     return rendered ? await applyPublishedHtmlPipeline(rendered, db) : null
   }
 

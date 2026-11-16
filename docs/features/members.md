@@ -131,6 +131,32 @@ Everything rendered behind a rule is sent `Cache-Control: private, no-store`.
 
 **Lists follow the same rules.** A loop never shows what the visitor could not open by its address. Every public render hands loop sources a `closed` set (`ClosedContent` in `@core/loops/types`, built by `closedContentFor`): `data.rows` returns nothing for a closed table and, when aimed at the Pages table, leaves closed pages out; `site.pages` leaves closed pages out. A baked page, a cached render and a shared fragment are rendered as for a signed-out visitor. Only a protected route, rendered per request, is rendered with the member's tags, so a members page can list what that member may open. Admin previews pass no `closed` set and show everything. Plugin loop sources do not receive it; a plugin that lists its own protected data must check access itself.
 
+## Building member pages in the editor
+
+Four primitives; none of them needs custom code.
+
+**Member forms.** `base.form` has a third mode, `member`, with a `memberAction` prop. The catalogue is `MEMBER_FORM_ACTIONS` in `src/core/members/formActions.ts`: one entry per action with its endpoint path, fields, whether it needs an emailed token and whether it needs a signed-in member. The form setup panel offers the action and an "Add …" button that inserts the missing labelled inputs, messages and submit button (`memberFormFragment`).
+
+- Published, it is a real `<form method="post" action="/_instatic/members/<action>">`, so it works with scripts off (the endpoint answers a form post with a redirect). An unknown action falls back to `login`, never to another path (`memberFormActionPath`).
+- With scripts on, the form runtime (`formRuntimeJs.ts`, one script for CMS and member forms) submits in place as JSON. An error about one field marks that control `aria-invalid` and goes to a `base.form-message` with `kind: error` and `fieldName` set to that field, or to the form's general error message.
+- A token action (`password/reset`, `invite/accept`, `verify`, `link/confirm`, `email/confirm`) carries a hidden `token` input that the runtime fills from the page's `?token=`.
+- After signing in, `?next=` (a site-relative path only) wins, then the form's redirect. Signing in, out or deleting with no redirect reloads the page.
+
+**Member bindings.** The `member` binding source: `{member.email}`, `{member.profile.<fieldId>}`, `{member.tagList}`. Empty for a signed-out visitor, so `{member.profile.name|there}` reads well for both. Values are data: they go through the same escaping as every other binding.
+
+**Show-when rules.** Any element can be limited to signed-in members, signed-out visitors, or members holding a tag (the "Show to" control in the element's Attributes view). The rule is the `showWhen` prop (`ShowWhenSchema`, `readShowWhen`, `showWhenAllows` in `@core/members`). It is applied on the server: an element a visitor may not see is not in their HTML. A rule that cannot be read shows the element to nobody. It hides one element and protects nothing else; protecting a page is the access rule.
+
+**Access controls.** Page settings has an Access group (`AccessRuleEditor`), and a protected page carries a lock in the Site explorer. Changing a page's rule needs `site.structure.edit` (`pageDiff.ts`). A table's rule is edited in the Data workspace (Access section of a post type's settings) through `GET` / `PUT /admin/api/cms/data/tables/:id/access`: main branch only, `canManageTable`, step-up, audited as `data.table.access`.
+
+### How member-dependent content is rendered
+
+A node that uses a member binding or a show-when rule is different for every visitor, so it never reaches the static slot or the shared cache:
+
+- On a **public page** it becomes a hole (detection Rule 5 in [publisher](publisher.md)). `/_instatic/hole/<id>` sees that the fragment depends on the member (`subtreeDependsOnMember`), resolves the visitor, renders with the member in the context and answers `private, no-store`. The loop endpoint does the same for a list whose items show member data.
+- On a **protected page**, which is rendered per request anyway, the member is put in the render context (`TemplateRenderDataContext.member`) and these nodes render in place, with no fragment round trip.
+
+`member` in the context has three states: a frame (signed in), `null` (signed out) and absent (a render for nobody in particular: a baked page, a shared-cache render, a branch preview). Absent behaves as signed out.
+
 ## Deleting and exporting
 
 `delete` anonymises: the row stays with a placeholder address and `status = 'deleted'`, and sessions, tokens, tags, profile and event IP/user-agent are removed. The address is free to register again. `GET export` returns the account, profile, tags, live sessions and activity.

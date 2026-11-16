@@ -172,6 +172,52 @@ export function accessAllows(rule: AccessRule, memberTags: readonly string[] | n
   return rule.tags.some((tag) => memberTags.includes(tag))
 }
 
+// ─── Show-when rules ───────────────────────────────────────────────────────
+
+/**
+ * Which visitors an element is rendered for. Unlike an access rule this
+ * protects nothing on its own: it only decides whether one element is part
+ * of the page a visitor receives. It is evaluated on the server, so an
+ * element a visitor may not see is never in their HTML.
+ */
+export const ShowWhenSchema = Type.Union([
+  Type.Object({ visitor: Type.Literal('signedIn') }, { additionalProperties: false }),
+  Type.Object({ visitor: Type.Literal('signedOut') }, { additionalProperties: false }),
+  Type.Object(
+    {
+      visitor: Type.Literal('tags'),
+      tags: Type.Array(Type.String({ pattern: MEMBER_TAG_PATTERN }), { minItems: 1, maxItems: 20 }),
+    },
+    { additionalProperties: false },
+  ),
+])
+export type ShowWhen = Static<typeof ShowWhenSchema>
+
+/** The node prop a show-when rule is stored under. */
+export const SHOW_WHEN_PROP_KEY = 'showWhen'
+
+/**
+ * Read the show-when rule off a node's props. Absent means "everyone".
+ * Present but unreadable means "nobody": a rule that cannot be understood
+ * must never quietly show the element to all visitors.
+ */
+export function readShowWhen(props: Record<string, unknown>): ShowWhen | 'nobody' | null {
+  const raw = props[SHOW_WHEN_PROP_KEY]
+  if (raw === undefined || raw === null) return null
+  const parsed = safeParseValue(ShowWhenSchema, raw)
+  return parsed.ok ? parsed.value : 'nobody'
+}
+
+/** Is an element with `rule` rendered for a visitor with these tags (`null` when signed out)? */
+export function showWhenAllows(rule: ShowWhen | 'nobody' | null, memberTags: readonly string[] | null): boolean {
+  if (rule === null) return true
+  if (rule === 'nobody') return false
+  if (rule.visitor === 'signedOut') return memberTags === null
+  if (memberTags === null) return false
+  if (rule.visitor === 'signedIn') return true
+  return rule.tags.some((tag) => memberTags.includes(tag))
+}
+
 // ─── Action results (JSON mode) ────────────────────────────────────────────
 
 /**

@@ -134,6 +134,8 @@ export function auditTitle(
       return `Data table ${dataTable} was updated`
     case 'data.table.delete':
       return `Data table ${dataTable} was deleted`
+    case 'data.table.access':
+      return `Who can open the entries of data table ${dataTable} was changed`
     case 'data.row.create':
       return `Data row ${dataRow} was created`
     case 'data.row.update':

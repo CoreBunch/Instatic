@@ -344,11 +344,14 @@ describe('members access gate', () => {
     })
 
     it('keeps both rules when two tables differ only by the case of their route base', async () => {
+      const memberWith = (tags: string[]) => ({
+        id: 'm1', email: 'm@example.com', emailVerified: true, profile: {}, tags, hasPassword: true, createdAt: '',
+      })
       const student: AccessRule = { level: 'tags', tags: ['student'], onDeny: 'login' }
       const staff: AccessRule = { level: 'tags', tags: ['staff'], onDeny: 'hide' }
-      expect(await decideAccess([student, staff], async () => ['student'])).toBe('hide')
-      expect(await decideAccess([student, staff], async () => ['staff'])).toBe('forbidden')
-      expect(await decideAccess([student, staff], async () => ['student', 'staff'])).toBe('allow')
+      expect(await decideAccess([student, staff], async () => memberWith(['student']))).toBe('hide')
+      expect(await decideAccess([student, staff], async () => memberWith(['staff']))).toBe('forbidden')
+      expect(await decideAccess([student, staff], async () => memberWith(['student', 'staff']))).toBe('allow')
       expect(await decideAccess([student, staff], async () => null)).toBe('hide')
       expect(await decideAccess([student], async () => null)).toBe('login')
       expect(await decideAccess([])).toBe('allow')

@@ -35,6 +35,12 @@ The design canvas treats authored form controls as non-interactive editor conten
 
 The form setup block also exposes an editor-only preview state switch (`default`, `submitting`, `success`, `error`). It annotates the canvas form and message nodes with the same state shape the public runtime uses, without changing saved props or published HTML.
 
+## Member mode
+
+`mode: 'member'` turns the form into a member action (sign up, sign in, reset password, update profile, …) instead of a table submission. It posts to `/_instatic/members/<action>` and has no target table, honeypot or challenge: the member endpoints carry their own origin checks and rate limits. See [members](members.md) → "Building member pages in the editor".
+
+`base.form-message` with `kind: error` can name one field (`fieldName`); it then shows only errors about that field.
+
 ## Auto Wiring
 
 Auto wiring is structural:

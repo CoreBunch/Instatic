@@ -16,11 +16,11 @@
  * outright; the per-request check after resolution is the one that decides.
  */
 import type { DbClient } from '../db/client'
-import { accessAllows, parseAccessRule, type AccessRule } from '@core/members'
+import { accessAllows, parseAccessRule, type AccessRule, type CurrentMember } from '@core/members'
 import type { Page } from '@core/page-tree'
-import { isTemplatePage, normalizeRouteBase } from '@core/templates'
+import { buildMemberFrame, isTemplatePage, normalizeRouteBase, type MemberFrame } from '@core/templates'
 import { resolveSignedInMember } from '../members/handlers'
-import { getMemberSettings, listActiveMemberTags } from '../members/repository'
+import { getMemberSettings, toCurrentMember } from '../members/repository'
 import { listProtectedTables } from '../repositories/data/tableAccess'
 import { listPublishedPageAccess } from '../repositories/publish'
 import type { ClosedContent } from '@core/loops/types'
@@ -139,21 +139,31 @@ export function closedContentFor(index: AccessIndex, tags: readonly string[] | n
 // ─── The visitor ───────────────────────────────────────────────────────────
 
 /**
- * The signed-in member's tags, or null when signed out. Resolved at most
- * once per request, and only when a protected route is actually hit: public
- * pages never read a session.
+ * The signed-in member, or null when signed out. Resolved at most once per
+ * request, and only when something actually depends on the visitor (a
+ * protected route, or a fragment that shows member data): plain public pages
+ * never read a session.
  */
-export type Visitor = () => Promise<string[] | null>
+export type Visitor = () => Promise<CurrentMember | null>
 
 export function visitorFromRequest(db: DbClient, req: Request): Visitor {
-  let resolved: Promise<string[] | null> | null = null
+  let resolved: Promise<CurrentMember | null> | null = null
   return () => {
     resolved ??= (async () => {
       const current = await resolveSignedInMember(db, req)
-      return current ? listActiveMemberTags(db, current.member.id) : null
+      return current ? toCurrentMember(db, current.member) : null
     })()
     return resolved
   }
+}
+
+/**
+ * The `member` slot of a render context for one visitor: the member's frame,
+ * or null for a signed-out visitor. (Leaving the slot out altogether means
+ * the render is for nobody in particular; see `TemplateRenderDataContext`.)
+ */
+export function memberFrameFor(member: CurrentMember | null): MemberFrame | null {
+  return member ? buildMemberFrame(member) : null
 }
 
 const SIGNED_OUT: Visitor = () => Promise.resolve(null)
@@ -168,7 +178,7 @@ export type AccessDecision = 'allow' | 'login' | 'forbidden' | 'hide'
 export async function decideAccess(rules: readonly AccessRule[], visitor: Visitor = SIGNED_OUT): Promise<AccessDecision> {
   const protecting = rules.filter((rule) => rule.level !== 'public')
   if (protecting.length === 0) return 'allow'
-  const tags = await visitor()
+  const tags = (await visitor())?.tags ?? null
   const denying = protecting.filter((rule) => !accessAllows(rule, tags))
   if (denying.length === 0) return 'allow'
   if (denying.some((rule) => rule.onDeny === 'hide')) return 'hide'

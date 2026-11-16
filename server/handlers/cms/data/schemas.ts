@@ -12,6 +12,7 @@
  * definitions in sync.
  */
 import { Type, type Static } from '@core/utils/typeboxHelpers'
+import { AccessRuleSchema } from '@core/members'
 
 export const TableCreateBodySchema = Type.Object({
   name: Type.String(),
@@ -33,6 +34,8 @@ export const TablePatchBodySchema = Type.Partial(Type.Object({
   primaryFieldId: Type.String(),
   fields: Type.Unknown(),
 }))
+
+export const TableAccessBodySchema = Type.Object({ access: AccessRuleSchema })
 
 export const RowUpsertBodySchema = Type.Object({
   cells: Type.Optional(Type.Record(Type.String(), Type.Unknown())),

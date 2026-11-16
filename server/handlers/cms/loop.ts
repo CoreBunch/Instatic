@@ -25,6 +25,7 @@ import { registry } from '@core/module-engine'
 import { loopSourceRegistry } from '@core/loops/registry'
 import {
   renderNode,
+  subtreeDependsOnMember,
   type RenderConfig,
   type RenderAccumulators,
   type ResolvedLoopRenderData,
@@ -38,6 +39,7 @@ import {
   closedContentFor,
   decideAccess,
   getAccessIndex,
+  memberFrameFor,
   pageRules,
   PRIVATE_HEADERS,
   visitorFromRequest,
@@ -106,7 +108,10 @@ export async function handleLoopRequest(
     return jsonResponse({ error: 'Loop not found' }, { status: 404, headers: PRIVATE_HEADERS })
   }
   // The list leaves out what the visitor may not open (see `closedContentFor`).
-  const closed = closedContentFor(accessIndex, isProtected ? await visitor() : null)
+  const closed = closedContentFor(accessIndex, isProtected ? ((await visitor())?.tags ?? null) : null)
+  // Items that show member data are rendered for this visitor alone.
+  const showsMember = subtreeDependsOnMember(containingPage, site, registry, loopNode.id)
+  const forVisitor = isProtected || showsMember
 
   const props = readLoopProps(loopNode)
   if (props.pagination !== 'infinite') {
@@ -155,7 +160,9 @@ export async function handleLoopRequest(
     site,
     registry,
     breakpointId: undefined,
-    templateContext: { entryStack: [] },
+    templateContext: forVisitor
+      ? { entryStack: [], member: memberFrameFor(await visitor()) }
+      : { entryStack: [] },
     loopData: new Map<string, ResolvedLoopRenderData>([
       [loopId, { items: result.items, totalItems: result.totalItems, pageNumber, hasMore }],
     ]),
@@ -186,5 +193,5 @@ export async function handleLoopRequest(
     html += renderNode(variantId, iterationConfig, acc)
   })
 
-  return jsonResponse({ html, hasMore, pageNumber }, isProtected ? { headers: PRIVATE_HEADERS } : {})
+  return jsonResponse({ html, hasMore, pageNumber }, forVisitor ? { headers: PRIVATE_HEADERS } : {})
 }

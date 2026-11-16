@@ -24,6 +24,7 @@ import {
 import type { LoopItem } from '@core/loops/types'
 import { LoopItemSchema } from '@core/loops/types'
 import { apiRequest, assertOk, ApiError, withAmbientHeaders, type FetchLike } from '@core/http'
+import { AccessRuleSchema, type AccessRule } from '@core/members'
 
 // ---------------------------------------------------------------------------
 // Envelope schemas
@@ -116,6 +117,29 @@ export async function createCmsDataTable(
   })
   if (!body.table) throw new Error('CMS data table create response was missing table')
   return body.table
+}
+
+const TableAccessEnvelope = Type.Object({ access: AccessRuleSchema })
+
+/** Who may open a table's entry routes on the published site. */
+export async function getCmsDataTableAccess(tableId: string, signal?: AbortSignal): Promise<AccessRule> {
+  const body = await apiRequest(`/admin/api/cms/data/tables/${encodeURIComponent(tableId)}/access`, {
+    schema: TableAccessEnvelope,
+    signal,
+    fallbackMessage: 'Could not load who can open this table',
+  })
+  return body.access
+}
+
+/** Change it. Takes effect on the published site at once. */
+export async function setCmsDataTableAccess(tableId: string, access: AccessRule): Promise<AccessRule> {
+  const body = await apiRequest(`/admin/api/cms/data/tables/${encodeURIComponent(tableId)}/access`, {
+    method: 'PUT',
+    body: { access },
+    schema: TableAccessEnvelope,
+    fallbackMessage: 'Could not change who can open this table',
+  })
+  return body.access
 }
 
 export async function updateCmsDataTable(

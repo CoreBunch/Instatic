@@ -22,6 +22,7 @@ const AuditActionSchema = Type.Union([
   Type.Literal('data.table.create'),
   Type.Literal('data.table.update'),
   Type.Literal('data.table.delete'),
+  Type.Literal('data.table.access'),
   Type.Literal('data.row.create'),
   Type.Literal('data.row.update'),
   Type.Literal('data.row.delete'),

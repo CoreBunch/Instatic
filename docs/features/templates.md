@@ -217,6 +217,7 @@ See the "Dynamic bindings" section below for the full source table.
 | `site`         | `ctx.site`                | Anywhere — site name, primary color                     |
 | `route`        | `ctx.route`               | URL-driven (`route.segments`, `route.slug`, `route.query.*`) |
 | `page`         | `ctx.page`                | Current page metadata                                   |
+| `member`       | `ctx.member`              | The signed-in member: `member.email`, `member.profile.<fieldId>`, `member.tagList`. Empty when signed out. Rendered per visitor, see [members](members.md) |
 
 ---
 

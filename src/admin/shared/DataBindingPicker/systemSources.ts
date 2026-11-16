@@ -16,7 +16,7 @@
 
 import type { LoopSourceField } from '@core/loops/types'
 
-export type SystemSourceId = 'page' | 'site' | 'route'
+export type SystemSourceId = 'page' | 'site' | 'route' | 'member'
 
 interface SystemSource {
   id: SystemSourceId
@@ -69,6 +69,29 @@ const ROUTE_SOURCE: SystemSource = {
 }
 
 // ---------------------------------------------------------------------------
+// member — the signed-in visitor
+// ---------------------------------------------------------------------------
+
+/**
+ * Empty for a signed-out visitor. A value from here is different for every
+ * visitor, so the publisher renders the element per visitor.
+ *
+ * `profile.name` is the profile field every site starts with. A field the
+ * owner adds under member settings is bound the same way, by its id:
+ * `{member.profile.<id>}`.
+ */
+const MEMBER_SOURCE: SystemSource = {
+  id: 'member',
+  label: 'Member',
+  description: 'The signed-in member. Empty when the visitor is signed out.',
+  fields: [
+    { id: 'email', label: 'Email address' },
+    { id: 'profile.name', label: 'Name' },
+    { id: 'tagList', label: 'Tags' },
+  ],
+}
+
+// ---------------------------------------------------------------------------
 // Registry
 // ---------------------------------------------------------------------------
 
@@ -76,4 +99,5 @@ export const SYSTEM_SOURCES: readonly SystemSource[] = [
   PAGE_SOURCE,
   SITE_SOURCE,
   ROUTE_SOURCE,
+  MEMBER_SOURCE,
 ]

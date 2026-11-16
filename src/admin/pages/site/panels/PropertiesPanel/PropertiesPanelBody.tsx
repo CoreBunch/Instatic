@@ -28,6 +28,7 @@ import type { ActiveDocument } from '../../store/slices/uiSlice'
 import { Button } from '@ui/components/Button'
 import { ClassPicker, type ClassPickerHandle } from './ClassPicker'
 import { StyleSurface } from './StyleSurface'
+import { ShowWhenControl } from './ShowWhenControl'
 import { HtmlAttributesPanel } from './HtmlAttributesPanel'
 import { ComponentRefView } from './ComponentRefView'
 import { ComponentParamsOverview } from './ComponentParamsOverview'
@@ -194,11 +195,18 @@ export function PropertiesPanelBody(props: PropertiesPanelBodyProps): React.Reac
           onFocusClassPicker={onFocusClassPicker}
         />
       ) : (
-        <HtmlAttributesPanel
-          nodeId={selectedNode.id}
-          htmlAttributes={selectedNode.props.htmlAttributes}
-          readOnly={!permissions.canEditStructure}
-        />
+        <>
+          <ShowWhenControl
+            nodeId={selectedNode.id}
+            props={selectedNode.props}
+            readOnly={!permissions.canEditStructure}
+          />
+          <HtmlAttributesPanel
+            nodeId={selectedNode.id}
+            htmlAttributes={selectedNode.props.htmlAttributes}
+            readOnly={!permissions.canEditStructure}
+          />
+        </>
       )}
     </div>
   )
