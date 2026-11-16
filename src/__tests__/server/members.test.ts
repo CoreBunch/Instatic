@@ -317,36 +317,44 @@ describe('site members', () => {
 
     it('lets the owner in with the right password after a stranger ran the email’s limit out', async () => {
       await register(browser, 'm@example.com')
-      // 20 wrong guesses from many addresses exhaust the per-email allowance.
-      for (let i = 0; i < 20; i++) {
-        const res = await new Browser(t.db).post(
-          'login',
-          { email: 'm@example.com', password: `wrong-guess-${i}00` },
-          { headers: { 'x-bun-socket-ip': `203.0.113.${i + 1}` } },
-        )
-        expect(res.status).toBe(401)
-      }
-      const stranger = await new Browser(t.db).post(
-        'login',
-        { email: 'm@example.com', password: 'another-wrong-guess' },
-        { headers: { 'x-bun-socket-ip': '203.0.113.200' } },
-      )
-      expect(stranger.status).toBe(429)
+      const from = (ip: string, password: string) =>
+        new Browser(t.db).post('login', { email: 'm@example.com', password }, { headers: { 'x-bun-socket-ip': ip } })
 
-      const owner = await new Browser(t.db).post(
-        'login',
-        { email: 'm@example.com', password: PASSWORD },
-        { headers: { 'x-bun-socket-ip': '198.51.100.7' } },
-      )
-      expect(owner.status).toBe(200)
+      // 20 wrong guesses from 20 addresses use up the per-email allowance.
+      for (let i = 1; i <= 20; i++) expect((await from(`203.0.113.${i}`, `wrong-guess-${i}00`)).status).toBe(401)
+      // Those addresses are now refused outright, even with the right password.
+      expect((await from('203.0.113.1', PASSWORD)).status).toBe(429)
+      // The owner, from an address that never tried, still gets in.
+      expect((await from('198.51.100.7', PASSWORD)).status).toBe(200)
+    })
 
-      // An address that already failed against this email does not get that pass.
-      const guesser = await new Browser(t.db).post(
-        'login',
-        { email: 'm@example.com', password: PASSWORD },
-        { headers: { 'x-bun-socket-ip': '203.0.113.200' } },
+    it('caps what a guesser with many addresses gains, and leaves the owner the emailed link', async () => {
+      await register(browser, 'm@example.com')
+      const from = (ip: string, password: string) =>
+        new Browser(t.db).post('login', { email: 'm@example.com', password }, { headers: { 'x-bun-socket-ip': ip } })
+
+      for (let i = 1; i <= 20; i++) await from(`203.0.113.${i}`, `wrong-guess-${i}00`)
+      // Five further tries from new addresses, then nothing more for anyone.
+      for (let i = 21; i <= 25; i++) expect((await from(`203.0.113.${i}`, `wrong-guess-${i}00`)).status).toBe(401)
+      expect((await from('203.0.113.26', 'wrong-guess-2600')).status).toBe(429)
+      expect((await from('198.51.100.7', PASSWORD)).status).toBe(429)
+
+      // The password is closed for now; the sign-in link is not.
+      await new Browser(t.db).post('link/request', { email: 'm@example.com' })
+      const link = await lastMail('magic')
+      expect((await new Browser(t.db).post('link/confirm', { token: link!.token })).status).toBe(200)
+    })
+
+    it('reserves an attempt before checking the password, so a burst cannot slip under the limit', async () => {
+      await register(browser, 'm@example.com')
+      const burst = await Promise.all(
+        Array.from({ length: 12 }, (_, i) =>
+          new Browser(t.db).post('login', { email: 'm@example.com', password: `wrong-guess-${i}00` }),
+        ),
       )
-      expect(guesser.status).toBe(429)
+      const statuses = burst.map((res) => res.status)
+      expect(statuses.filter((status) => status === 401)).toHaveLength(5)
+      expect(statuses.filter((status) => status === 429)).toHaveLength(7)
     })
 
     it('reads the sign-up marker only from its own cookie, and not when it appears twice', async () => {
@@ -465,6 +473,13 @@ describe('site members', () => {
       const reset = await lastMail('reset')
       await new Browser(t.db).post('link/request', { email: 'm@example.com' })
       expect(await mailCount('magic')).toBe(1)
+      // Across every kind, one inbox gets at most eight an hour.
+      for (let i = 0; i < 8; i++) {
+        await new Browser(t.db).post('link/request', { email: 'm@example.com' }, {
+          headers: { 'x-bun-socket-ip': `198.51.100.${i + 1}` },
+        })
+      }
+      expect((await mailCount('reset')) + (await mailCount('magic')) + (await mailCount('verify'))).toBeLessThanOrEqual(8)
       const ok = await new Browser(t.db).post('password/reset', { token: reset!.token, password: 'a-brand-new-password' })
       expect(ok.status).toBe(200)
     })

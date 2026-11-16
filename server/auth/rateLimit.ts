@@ -112,23 +112,22 @@ export class RateLimiter {
     }
   }
 
-  /**
-   * Would an attempt against `key` be allowed right now? Records nothing, so
-   * a caller can decide first and only count the attempts that failed.
-   */
-  isExhausted(key: string, now: number = Date.now()): boolean {
-    const bucket = this.buckets.get(key)
-    if (!bucket) return false
-    const cutoff = now - this.options.windowMs
-    return bucket.attempts.filter((t) => t > cutoff).length >= this.options.limit
-  }
-
   /** True when `key` has no attempt recorded inside the window. */
   isUntouched(key: string, now: number = Date.now()): boolean {
     const bucket = this.buckets.get(key)
     if (!bucket) return true
     const cutoff = now - this.options.windowMs
     return !bucket.attempts.some((t) => t > cutoff)
+  }
+
+  /**
+   * Give back the most recent attempt recorded against `key`. For a caller
+   * that reserves a slot before it knows the outcome (so concurrent requests
+   * cannot all slip under the limit) and returns it when the attempt turns
+   * out not to be one that should count.
+   */
+  refund(key: string): void {
+    this.buckets.get(key)?.attempts.pop()
   }
 
   /** Reset the bucket for `key` — call on successful login to give the user a fresh quota. */

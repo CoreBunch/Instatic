@@ -108,14 +108,17 @@ function limited(retryAfterMs: number): MemberOutcome {
 }
 
 /**
- * May another email of this kind go to this address? Counted per recipient
- * AND per kind, so filling one kind's allowance (anyone can request a reset
- * for any address) cannot stop another kind from arriving. Within one kind
- * the owner is not locked out either: the last link sent is still in their
- * inbox and still valid, because a refused request issues no new token.
+ * May another email of this kind go to this address? Two windows: one per
+ * kind, so a stranger filling the reset allowance (anyone can request a
+ * reset for any address) does not stop a sign-in link, and one across every
+ * kind, so splitting requests over kinds cannot flood an inbox. The owner is
+ * never left without a way in: the last link sent is still in their inbox
+ * and still valid, because a refused request issues no new token.
  */
 function mailAllowedTo(email: string, kind: string): boolean {
-  return memberLimits.mailPerRecipient.consume(`${kind}|${normalizeMemberEmail(email)}`).ok
+  const recipient = normalizeMemberEmail(email)
+  if (!memberLimits.mailPerRecipientKind.consume(`${kind}|${recipient}`).ok) return false
+  return memberLimits.mailPerRecipient.consume(recipient).ok
 }
 
 function emailProblem(email: string): MemberOutcome | null {
@@ -311,15 +314,23 @@ export async function logIn(
 ): Promise<MemberOutcome> {
   const emailKey = normalizeMemberEmail(input.email).slice(0, MEMBER_EMAIL_MAX_LENGTH)
   const ipEmailKey = `${input.ip}|${emailKey}`
-  // Limits that only ever slow the caller's own address are checked up front.
+  // Every limit is reserved here, before the first `await`, so requests
+  // arriving together cannot all slip under a limit while one is verifying.
   const perIp = memberLimits.loginPerIp.consume(input.ip)
   if (!perIp.ok) return limited(perIp.retryAfterMs)
-  if (memberLimits.loginPerIpEmail.isExhausted(ipEmailKey)) return limited(15 * 60 * 1000)
+  const newAddress = memberLimits.loginPerIpEmail.isUntouched(ipEmailKey)
+  const perIpEmail = memberLimits.loginPerIpEmail.consume(ipEmailKey)
+  if (!perIpEmail.ok) return limited(perIpEmail.retryAfterMs)
   // The per-email limit counts failures from everywhere, so a stranger can
-  // run it out. It must not then lock the owner out: a correct password from
-  // an address with no failed attempt against this email still gets in.
-  const emailExhausted = memberLimits.loginPerEmail.isExhausted(emailKey)
-  const cleanAddress = memberLimits.loginPerIpEmail.isUntouched(ipEmailKey)
+  // run it out. To keep that from locking the owner out of their password,
+  // an address that has not tried this email before gets one of a small,
+  // capped number of further attempts.
+  const perEmail = memberLimits.loginPerEmail.consume(emailKey)
+  if (!perEmail.ok) {
+    if (!newAddress) return limited(perEmail.retryAfterMs)
+    const extra = memberLimits.loginPerEmailFromNewAddress.consume(emailKey)
+    if (!extra.ok) return limited(extra.retryAfterMs)
+  }
 
   const member = emailProblem(input.email) ? null : await findMemberByEmail(ctx.db, input.email)
   const password = input.password.slice(0, MEMBER_PASSWORD_MAX_LENGTH)
@@ -328,14 +339,14 @@ export async function logIn(
   const matches = await verifyPassword(password, member?.passwordHash ?? (await getDummyHash()))
   const accepted =
     member !== null && member.passwordHash !== null && matches && member.status === 'active' && member.emailVerifiedAt !== null
-  if (!accepted || (emailExhausted && !cleanAddress)) {
-    memberLimits.loginPerIpEmail.consume(ipEmailKey)
-    memberLimits.loginPerEmail.consume(emailKey)
+  if (!accepted) {
     if (member) await recordMemberEvent(ctx.db, member.id, 'login_failed', ctx)
-    return emailExhausted ? limited(60 * 60 * 1000) : fail('invalid_credentials')
+    return fail('invalid_credentials')
   }
 
+  // A sign-in that worked is not a failed attempt: give the slots back.
   memberLimits.loginPerIpEmail.reset(ipEmailKey)
+  if (perEmail.ok) memberLimits.loginPerEmail.refund(emailKey)
   await recordMemberEvent(ctx.db, member.id, 'login', ctx)
   return startSession(ctx, member)
 }
