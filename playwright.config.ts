@@ -1,8 +1,11 @@
 import { defineConfig } from '@playwright/test'
 import { OWNER_STATE_FILE } from './tests/e2e/helpers/constants'
 
-const ADMIN_BASE_URL = process.env.E2E_ADMIN_BASE_URL ?? 'http://127.0.0.1:5174'
-process.env.E2E_PUBLIC_BASE_URL ??= 'http://127.0.0.1:3002'
+// One origin. The suite runs against the built SPA served by the same Bun
+// process that serves the published site (`scripts/e2e-server.ts`), so the
+// admin and the public site share a base URL.
+const ADMIN_BASE_URL = process.env.E2E_ADMIN_BASE_URL ?? 'http://127.0.0.1:3002'
+process.env.E2E_PUBLIC_BASE_URL ??= ADMIN_BASE_URL
 const LOCAL_TRACE = process.env.E2E_TRACE === '1'
 const LOCAL_VIDEO = process.env.E2E_VIDEO === '1'
 
@@ -16,6 +19,9 @@ export default defineConfig({
   expect: {
     timeout: 10_000,
   },
+  // A stray `.only` would otherwise green the whole suite in CI by running
+  // one test.
+  forbidOnly: Boolean(process.env.CI),
   retries: process.env.CI ? 1 : 0,
   reporter: [
     ['list'],
@@ -61,10 +67,12 @@ export default defineConfig({
     },
   ],
   webServer: {
-    command: 'bun run e2e:dev',
+    command: 'bun run e2e:serve',
     url: ADMIN_BASE_URL,
     reuseExistingServer: process.env.E2E_REUSE_SERVER === '1',
-    timeout: 120_000,
+    // The command builds the SPA before it serves it, so this budget covers
+    // `tsc -b && vite build` on a cold runner, not just process startup.
+    timeout: 300_000,
     gracefulShutdown: { signal: 'SIGTERM', timeout: 500 },
     stdout: 'pipe',
     stderr: 'pipe',

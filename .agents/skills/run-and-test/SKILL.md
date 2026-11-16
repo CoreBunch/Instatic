@@ -1,6 +1,6 @@
 ---
 name: run-and-test
-description: How an agent boots, drives, and end-to-end tests Instatic, including the parts that are not obvious and cost a session to rediscover. Covers the two dev stacks (bun run dev for manual testing, bun run e2e:dev for automation), the first-run owner account and saved storage state, how to run a single Playwright spec and read its output honestly, how to capture before-and-after screenshots as evidence, and the git worktree setup that Instatic needs before it will run at all (node_modules symlink, isolated .tmp database, never hand-start a server Playwright wants to own). Use this skill before running, previewing, screenshotting, or E2E-testing Instatic, whenever verifying a fix in a worktree, and whenever another skill asks for this project's run-and-test instructions.
+description: How an agent boots, drives, and end-to-end tests Instatic, including the parts that are not obvious and cost a session to rediscover. Covers the two dev stacks (bun run dev for manual testing, bun run e2e:serve for automation), the first-run owner account and saved storage state, how to run a single Playwright spec and read its output honestly, how to capture before-and-after screenshots as evidence, and the git worktree setup that Instatic needs before it will run at all (node_modules symlink, isolated .tmp database, never hand-start a server Playwright wants to own). Use this skill before running, previewing, screenshotting, or E2E-testing Instatic, whenever verifying a fix in a worktree, and whenever another skill asks for this project's run-and-test instructions.
 ---
 
 # Running and testing Instatic
@@ -10,16 +10,16 @@ Instatic is a Bun server plus a Vite admin app, backed by SQLite in development.
 | Stack | Command | Ports | Database | Use for |
 |---|---|---|---|---|
 | Dev | `bun run dev` | 3000 / 5173 | `.tmp/dev.db`, persistent | Manual testing in a browser |
-| E2E | `bun run e2e:dev` | 3002 / 5174 | `.tmp/e2e-agent.db`, **wiped each start** | Automated testing |
+| E2E | `bun run e2e:serve` | 3002 | `.tmp/e2e-agent.db`, **wiped each start** | Automated testing |
 
-The E2E stack deliberately runs the CMS without `--watch`: publishing writes baked HTML and churns SQLite, which under watch reloads the server mid-test and tears the run down.
+The E2E stack builds the admin (`bun run build`) and serves it from the Bun server on one origin, so the suite exercises the bundle users get and has no Vite dev server in it. Every run starts with that build (about 10 to 30 s). It deliberately runs without `--watch`: publishing writes baked HTML and churns SQLite, which under watch reloads the server mid-test and tears the run down.
 
 ## Do not hand-start the E2E server
 
-`playwright.config.ts` declares a `webServer` running `bun run e2e:dev`. Playwright starts and stops it itself. Starting it manually first produces:
+`playwright.config.ts` declares a `webServer` running `bun run e2e:serve`. Playwright starts and stops it itself. Starting it manually first produces:
 
 ```
-Error: http://127.0.0.1:5174 is already used, make sure that nothing is
+Error: http://127.0.0.1:3002 is already used, make sure that nothing is
 running on the port/url or set reuseExistingServer:true
 ```
 
@@ -33,7 +33,7 @@ Identities live in `tests/e2e/helpers/constants.ts`:
 
 ```
 owner.e2e@example.com / qwerty123456     site: "Automated E2E Site"
-admin  http://127.0.0.1:5174             public  http://127.0.0.1:3002
+admin and public  http://127.0.0.1:3002  (one origin)
 ```
 
 Two cases must opt out of the saved state and log in fresh: specs that **publish** (publishing triggers a step-up challenge) and specs that **sign out**. Use `ANONYMOUS_STATE` for those.
@@ -107,8 +107,8 @@ ln -s "$PWD/node_modules" .worktrees/pr-<N>/node_modules   # run from the main c
 
 - **Symlink `node_modules`.** A fresh `bun install` per worktree is minutes wasted; the symlink works.
 - **`.tmp/` is per-worktree**, so the E2E database is naturally isolated. Nothing to clean up between worktrees.
-- Run one Playwright run at a time. Two worktrees both want ports 3002/5174.
-- Free the ports if a run died mid-way: `lsof -ti :5174 -ti :3002 | sort -u | xargs -r kill -9`.
+- Run one Playwright run at a time. Two worktrees both want port 3002.
+- Free the port if a run died mid-way: `lsof -ti :3002 | xargs -r kill -9`.
 
 ## The verify gate
 
