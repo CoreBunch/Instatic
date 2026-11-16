@@ -424,6 +424,16 @@ test.describe.serial('packaged plugin surfaces', () => {
     await recordsRegion.getByRole('button', { name: `Delete ${recordTitle}` }).click()
     await expect(recordsRegion.getByText(recordTitle)).toHaveCount(0)
     await expect(page.getByText('No records yet.')).toBeVisible()
+
+    await test.step('the plugin\'s nav entries do not push the editor toolbar out of the window', async () => {
+      await openSiteEditor(page)
+      const toolbar = page.getByTestId('toolbar')
+      await expect(toolbar.getByRole('link', { name: 'Approvals' })).toBeAttached()
+      await expect
+        .poll(() => toolbar.evaluate((el) => el.scrollWidth - el.clientWidth))
+        .toBe(0)
+      await expect(page.getByTestId('account-menu-trigger')).toBeInViewport({ ratio: 1 })
+    })
   })
 })
 

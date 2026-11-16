@@ -206,7 +206,11 @@ export function Toolbar({
           </Tooltip>
         )}
         <BranchChip />
-        {adminNavigationSlot ?? <DefaultAdminNavigation section={section} />}
+        {/* Plugins add their own entries here, so the list has no upper bound:
+            it is the one part of the bar that gives way when space runs out. */}
+        <nav aria-label="Admin sections" className={styles.adminNavigation}>
+          {adminNavigationSlot ?? <DefaultAdminNavigation section={section} />}
+        </nav>
 
         <div className={styles.workspaceToolbarItems}>
           {pluginButtons.map((button) => {

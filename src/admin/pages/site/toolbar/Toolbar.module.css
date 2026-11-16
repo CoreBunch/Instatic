@@ -51,6 +51,24 @@
     user-select: none;
 }
 
+/* The section links. Plugins contribute entries, so this row can outgrow the
+   bar; it then scrolls sideways inside itself instead of widening the toolbar,
+   which would push the publish and account controls out of the window and
+   leave the whole editor shell scrolled off to one side. */
+.adminNavigation {
+    display: flex;
+    align-items: center;
+    gap: var(--space-4xs);
+    flex: 0 1 auto;
+    min-width: 0;
+    overflow-x: auto;
+    scrollbar-width: none;
+}
+
+.adminNavigation > * {
+    flex-shrink: 0;
+}
+
 .adminLink {
     display: inline-flex;
     align-items: center;
@@ -99,8 +117,8 @@
 .workspaceToolbarItems {
     display: flex;
     align-items: center;
-    flex: 1;
-    min-width: 0;
+    /* Never narrower than its controls: the section links give way instead. */
+    flex: 1 0 auto;
     gap: var(--space-4xs);
 }
 
