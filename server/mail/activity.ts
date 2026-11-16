@@ -8,8 +8,19 @@
  */
 import { nanoid } from 'nanoid'
 import type { DbClient } from '../db/client'
-import { isoDate, nowIso } from '@core/utils/isoDate'
+import { isoDate } from '@core/utils/isoDate'
 import type { MailActivityEntry, MailActivityResponse, MailActivityStatus } from '@core/mail'
+
+/**
+ * Row ids sort in the order rows were written. Two emails are easily logged
+ * within the same millisecond, and `created_at` alone would then list them
+ * in an arbitrary order; the id breaks that tie the way it happened.
+ */
+let sequence = 0
+function orderedId(now: number): string {
+  sequence = (sequence + 1) % 1_679_616 // 36^4
+  return `${now.toString(36).padStart(9, '0')}${sequence.toString(36).padStart(4, '0')}${nanoid(8)}`
+}
 
 /** Rows kept; older ones are pruned on every insert. */
 const RETENTION = 2000
@@ -39,13 +50,14 @@ interface RecordMailInput {
 }
 
 export async function recordMail(db: DbClient, input: RecordMailInput): Promise<void> {
+  const now = Date.now()
   await db`
     insert into mail_outbox (
       id, kind, to_address, subject, status, connector_id, connector_label, error, body_text, created_at
     ) values (
-      ${nanoid()}, ${input.kind}, ${input.to}, ${input.subject}, ${input.status},
+      ${orderedId(now)}, ${input.kind}, ${input.to}, ${input.subject}, ${input.status},
       ${input.connector?.id ?? null}, ${input.connector?.label ?? null}, ${input.error ?? null},
-      ${input.status === 'captured' ? (input.body ?? null) : null}, ${nowIso()}
+      ${input.status === 'captured' ? (input.body ?? null) : null}, ${new Date(now).toISOString()}
     )
   `
   await db`
