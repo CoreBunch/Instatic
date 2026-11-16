@@ -245,6 +245,10 @@ export async function handleServerPluginRuntimeRequest(
     case 'public':
       user = null
       break
+    case 'member':
+      // Member routes live on the public plugin mount (`publicRoutes.ts`),
+      // where the host can resolve the site member. Here it does not exist.
+      return jsonResponse({ error: 'Plugin route not found' }, { status: 404 })
   }
 
   return await runRouteInWorker({
@@ -255,6 +259,8 @@ export async function handleServerPluginRuntimeRequest(
     user: user
       ? { id: user.id, email: user.email, capabilities: user.capabilities }
       : null,
+    // The admin mount never identifies a site member.
+    member: null,
   })
 }
 

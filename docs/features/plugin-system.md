@@ -528,6 +528,37 @@ Route handlers never receive Instatic's own cookies. The host removes every `ins
 
 Custom responses (status, headers, non-JSON bodies) use the raw-response escape hatch: return `{ __response: true, status, headers, body }` instead of a plain object. `body` accepts a string (sent as UTF-8 text) or an `ArrayBuffer` / TypedArray / `DataView` (sent byte-exactly — serve images, zips, PDFs directly); anything else throws a `TypeError`.
 
+### Site members — requires `members.read` / `members.write` / `members.tags`
+
+Site members are the people with an account on the published site (see [members](members.md)). They are not admin users: `ctx.user` is an admin, `ctx.member` is a member.
+
+**The public mount.** Routes for the published site are served at `/_instatic/plugins/<pluginId>/<path>` (`server/plugins/publicRoutes.ts`), outside `/admin`. It serves a plugin's `routes.public.*` and `routes.member.*` routes; capability-gated and `authenticated` routes answer 404 there. Public routes are still reachable on the admin mount too; member routes are only on the public one. Bodies over 1 MiB are refused.
+
+```js
+// Only a signed-in member reaches the handler; ctx.member is always set.
+api.cms.routes.member.get('/orders', (ctx) => listOrders(ctx.member.id))
+// Only a member holding the tag; others get 403.
+api.cms.routes.member.post('/download', { tag: 'pro' }, handler)
+// A public route sees ctx.member too when the plugin holds members.read.
+api.cms.routes.public.get('/price', (ctx) => priceFor(ctx.member))
+```
+
+- `ctx.member` is `{ id, email, tags, profile }` or `null`. The host resolves it; the member's session cookie is still stripped from `req.headers`.
+- A signed-out visitor gets 401 from a member route. A member-route write (POST, PATCH, DELETE) must name this site's origin, as the member endpoints require; a public-route write may omit it (webhooks) but may not name another site.
+- A response for a member is sent `Cache-Control: private, no-store` unless the handler sets its own.
+
+```js
+const member = await api.cms.members.get({ email })            // or { id }; null when there is none
+await api.cms.members.invite({ email, tags: ['pro'] })         // members.write (+ members.tags for tags)
+await api.cms.members.tags.grant(member.id, 'pro', { expiresAt })  // members.tags
+await api.cms.members.tags.revoke(member.id, 'pro')            // only this plugin's own grant
+```
+
+- A tag a plugin grants is recorded with the plugin id as its source. `revoke` withdraws that grant only: a tag an administrator or another plugin gave stays. Tags starting with `instatic:` cannot be granted.
+- `invite` sends the site's invitation email. It rejects when the address already has an account, and when the site has no configured public address or no outgoing email (there is no request to take a link address from).
+
+**Member events** (need `cms.hooks` and `members.read`): `member.created`, `member.verified`, `member.signedIn` (`{ memberId, email }`), `member.tagged` (`{ memberId, tag, source, expiresAt }`), `member.deleted` (`{ memberId }`). They are sent without waiting, so a listener cannot delay or cancel a sign-in.
+
 ### Plugin-owned records — requires `cms.storage`
 
 ```js
@@ -549,7 +580,7 @@ const name = await api.cms.hooks.emit('sync.done', { /* … */ })
 // name === 'plugin.<your-plugin-id>.sync.done'
 ```
 
-**Host-emitted events** (the reserved core list, `CORE_HOOK_EVENTS` in `src/core/plugins/hookBus.ts`): `publish.before`, `publish.after`, `content.entry.created`, `content.entry.updated`, `content.entry.deleted`, `settings.changed`. **Filters**: `publish.html`, `publish.headers`, `content.entry.cells`.
+**Host-emitted events** (the reserved core list, `CoreHookEvent` in `src/core/plugins/hookBus.ts`): the `member.*` events (see "Site members" above), `publish.before`, `publish.after`, `content.entry.created`, `content.entry.updated`, `content.entry.deleted`, `settings.changed`. **Filters**: `publish.html`, `publish.headers`, `content.entry.cells`.
 
 Every filter handler returns the same runtime value type it received. `src/core/plugins/hookBus.ts` checks each result before passing it to the next handler; a mismatched result keeps the previous value and logs the offending plugin ID. For example, `publish.html` returns a string and `content.entry.cells` returns an object, never `null`.
 
@@ -946,7 +977,7 @@ independent layers that agree on that single authority:
 
 Both the VM layer and the host layer drive from the same `TARGET_PERMISSIONS` map in `server/plugins/protocol/targets.ts`. This single table is the source of truth for which permission each RPC target requires — the VM and host can never silently assert different permissions for the same target.
 
-Targets intentionally absent from `TARGET_PERMISSIONS` require no permission and are explicitly ungated: `cms.settings.replace` (any active plugin may update its own settings), `network.abort` (no active id without `network.outbound`), `crypto.digest` and `crypto.signHmac` (pure computation, no I/O — same model as `Math`/`JSON`). Two conditional checks that a static map cannot express remain in their handlers: `cms.routes.register` with `access.kind === 'public'` additionally requires `cms.routes.public`, and every `cms.content.*` handler additionally calls `assertContentTableAccess` for the per-table manifest allowlist.
+Targets intentionally absent from `TARGET_PERMISSIONS` require no permission and are explicitly ungated: `cms.settings.replace` (any active plugin may update its own settings), `network.abort` (no active id without `network.outbound`), `crypto.digest` and `crypto.signHmac` (pure computation, no I/O — same model as `Math`/`JSON`). Two conditional checks that a static map cannot express remain in their handlers: `cms.routes.register` with `access.kind === 'public'` additionally requires `cms.routes.public` and with `access.kind === 'member'` requires `members.read`, `cms.hooks.on` for a `member.*` event requires `members.read`, `cms.members.invite` with tags requires `members.tags`, and every `cms.content.*` handler additionally calls `assertContentTableAccess` for the per-table manifest allowlist.
 
 The VM-side check throws **synchronously** inside the sandbox, so a plugin that
 declares a permission it was denied is rejected before any host dispatch is even
@@ -970,6 +1001,9 @@ Risk levels:
 | `cms.storage`               | Admin / editor / server| Medium  | Read/write plugin-owned records                                         |
 | `cms.routes`                | Server               | High      | Register authenticated backend routes                                   |
 | `cms.routes.public`         | Server               | Dangerous | Register anonymously-callable routes; requires `cms.routes` too          |
+| `members.read`              | Server               | High      | See the signed-in member on its routes, register member routes, look members up, hear member events |
+| `members.write`             | Server               | High      | Invite site members                                                      |
+| `members.tags`              | Server               | Dangerous | Grant and withdraw member access tags (what a member may open)           |
 | `cms.hooks`                 | Server               | High      | Listen to CMS events / filter values                                    |
 | `cms.schedule`              | Server               | High      | Register cadence-driven handlers                                        |
 | `cms.content.read`          | Server               | Low       | List / read entries; read trees; search; published snapshots             |

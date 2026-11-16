@@ -59,6 +59,24 @@ export interface ServerPluginRouteContext {
     email: string
     capabilities: string[]
   } | null
+  /**
+   * The signed-in site member (someone with an account on the published
+   * site), or null. Always set in a `routes.member.*` handler. In a public
+   * route served on the public mount it is set only when the plugin holds
+   * `members.read` and the visitor is signed in. Never set on the admin
+   * mount.
+   */
+  member: ServerPluginMember | null
+}
+
+/** A site member as plugin code sees them. */
+export interface ServerPluginMember {
+  id: string
+  email: string
+  /** Tags the member holds right now, from every source. */
+  tags: string[]
+  /** The profile fields the site defines, by field id. */
+  profile: Record<string, string | boolean>
 }
 
 /**

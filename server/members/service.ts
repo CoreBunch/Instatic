@@ -31,6 +31,7 @@ import { MAIL_ADDRESS_PATTERN } from '@core/mail'
 import { MIN_PASSWORD_LENGTH } from '@core/utils/passwordPolicy'
 import { hashPassword, hashSessionToken, verifyPassword } from '../auth/tokens'
 import { memberLimits } from './limits'
+import { emitMemberHook } from './hooks'
 import { memberTokenLink, queueMemberMail } from './mail'
 import {
   anonymizeMember,
@@ -149,6 +150,7 @@ function getDummyHash(): Promise<string> {
 async function startSession(ctx: MemberActionContext, member: MemberRecord): Promise<MemberOutcome> {
   const session = await createMemberSession(ctx.db, member.id, ctx)
   await markMemberLoggedIn(ctx.db, member.id)
+  emitMemberHook('member.signedIn', { memberId: member.id, email: member.email })
   const fresh = (await findMemberById(ctx.db, member.id)) ?? member
   return { ok: true, code: 'signed_in', session, member: await toCurrentMember(ctx.db, fresh) }
 }

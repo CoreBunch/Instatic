@@ -183,6 +183,14 @@ The API is `server/handlers/cms/members.ts` under `/admin/api/cms/members`. It d
 
 The binding picker lists one `member.profile.<id>` entry per profile field (`loadMemberProfileFields`); an editor who may not read member settings gets the built-in list.
 
+## Plugins
+
+A plugin reaches members through `api.cms.members`, member routes and member events, each behind its own permission (`members.read`, `members.write`, `members.tags`). The plugin-facing contract is in [plugin-system](plugin-system.md) → "Site members". What matters on this side:
+
+- **Who the member is, is resolved by the host** on the public plugin mount (`server/plugins/publicRoutes.ts`) and handed to the plugin as a plain record. A plugin never holds a session cookie, and the admin mount never identifies a member.
+- **Tags a plugin grants carry its id as the source**, and it can withdraw only those. This is how a shop grants paid access without being able to remove what an administrator gave.
+- **Events** are emitted from the functions every path goes through (`createMember`, `markMemberVerified`, `startSession`, `grantMemberTag`, `anonymizeMember`) by `emitMemberHook` in `server/members/hooks.ts`, without waiting for listeners.
+
 ## Deleting and exporting
 
 `delete` anonymises: the row stays with a placeholder address and `status = 'deleted'`, and sessions, tokens, tags, profile and event IP/user-agent are removed. The address is free to register again. `GET export` returns the account, profile, tags, live sessions and activity.
@@ -191,6 +199,7 @@ The binding picker lists one `member.profile.<id>` entry per profile field (`loa
 
 - `src/__tests__/server/members.test.ts` — every flow, on SQLite and (with `DB=postgres`) Postgres.
 - `src/__tests__/server/membersAdmin.test.ts` — the admin API: capability and step-up gates and every route (SQLite). The queries behind it run on Postgres too through the `admin queries` cases in `members.test.ts`.
+- `src/__tests__/server/pluginMembers.test.ts` — plugins: the public mount, member routes, `cms.members`, member events, and the permission each needs.
 - `src/__tests__/architecture/members-admin-split.test.ts` — the split.
 - `src/__tests__/server/pluginRouteCookies.test.ts` — cookie stripping.
 - `src/__tests__/server/membersAccessGate.test.ts` — the gate: static slot, render cache, path spellings, the uploads route, fragments, table rules.
