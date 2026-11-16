@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'bun:test'
+import { isSafeUrl } from '@core/html-sanitize'
 import { isValidUrl, isValidImageUrl } from '@core/utils/urlValidation'
 
 // ---------------------------------------------------------------------------
@@ -38,6 +39,26 @@ describe('isValidUrl', () => {
       expect(isValidUrl('sms:+4912345678')).toBe(true)
       expect(isValidUrl('sms:+15551234567?body=hello')).toBe(true)
     })
+  })
+
+  it('accepts exactly the absolute schemes the publisher keeps (#689)', () => {
+    const samples = [
+      'https://example.com',
+      'http://example.com',
+      'mailto:user@example.com',
+      'tel:+4912345678',
+      'sms:+4912345678',
+      'javascript:alert(1)',
+      'vbscript:msgbox(1)',
+      'data:text/html,hi',
+      'ftp://example.com',
+      'blob:https://example.com/x',
+      'file:///etc/passwd',
+      'skype:someone',
+    ]
+    for (const url of samples) {
+      expect([url, isValidUrl(url)]).toEqual([url, isSafeUrl(url)])
+    }
   })
 
   describe('rejected protocols', () => {
