@@ -505,3 +505,26 @@ test('an importer who may publish keeps the schedule of an imported row', async 
     expect(row?.scheduledPublishAt).toBe('2020-01-01T00:00:00.000Z')
   } finally { await target.cleanup() }
 })
+
+test('merge-overwrite of a bundle without publication cancels the pending schedule of a row it replaces', async () => {
+  const archive = await publishedPostsBundle(['soon'])
+  const harness = await createCapabilityTestHarness()
+  try {
+    await harness.setupOwner()
+    await createDataRow(harness.db, MAIN_SCOPE, { id: 'soon', tableId: 'posts', slug: 'soon', cells: { title: 'Approved for release' } })
+    await scheduleDataRowPublish(harness.db, MAIN_SCOPE, 'soon', '2020-01-01T00:00:00.000Z')
+
+    const importer = await harness.createRoleUser({ name: 'Importer', slug: 'schedule-overwriter', capabilities: ['data.import', 'site.structure.edit'] })
+    const response = await harness.cms('/admin/api/cms/import/archive?strategy=merge-overwrite', { method: 'POST', cookie: importer.cookie, body: archive })
+    expect(response.status, await response.clone().text()).toBe(200)
+
+    // The schedule was for the content the import replaced, so nothing is left for the scheduler.
+    await tickPublishScheduler(harness.db)
+    expect((await getPublishedDataRowByRoute(harness.db, '/posts', 'soon'))?.cells.title).toBeUndefined()
+    const row = await getDataRow(harness.db, MAIN_SCOPE, 'soon')
+    expect(row?.cells.title).toBe('Backup soon')
+    expect(row?.status).toBe('draft')
+    expect(row?.scheduledPublishAt).toBeNull()
+    expect((await response.json()).rowsImportedAsDraft).toBe(1)
+  } finally { await harness.cleanup() }
+})

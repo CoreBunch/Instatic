@@ -66,8 +66,9 @@ export interface AppliedSiteBundle {
   rowsReplaced: number
   rowsSkipped: number
   /**
-   * New rows the bundle marks `published` that landed as drafts, because the
-   * import restored no published version for them (`landingPublication`).
+   * Rows the bundle marks `published` that landed as drafts, because the
+   * import restored no published version for them (`landingPublication`):
+   * new rows, and rows whose pending schedule the import cancelled.
    */
   rowsImportedAsDraft: number
   mediaFoldersImported: number
@@ -131,8 +132,13 @@ function rowsRestoredLive(scope: BranchScope, bundle: SiteBundle): ReadonlySet<s
  *
  * So the claim holds only when this import restores a live version for the
  * row. Without one it is dropped: a row already on main keeps the publication
- * state it has, and a new row lands as a draft. A branch serves nothing, so
- * its rows keep the status the bundle gives them.
+ * state it has, and a new row lands as a draft. The one state a row does not
+ * keep is a pending schedule: the scheduler would publish the content this
+ * import just put in its place, so the schedule is cancelled and the row
+ * lands as a draft too. A `scheduled` status can then only come from the
+ * bundle itself, which `authorizeImportedPublication` treats as a publish.
+ *
+ * A branch serves nothing, so its rows keep the status the bundle gives them.
  */
 function landingPublication(
   scope: BranchScope,
@@ -146,7 +152,7 @@ function landingPublication(
       importedAsDraft: false,
     }
   }
-  if (existing) {
+  if (existing && existing.status !== 'scheduled') {
     return {
       publication: { status: existing.status, publishedAt: existing.publishedAt, scheduledPublishAt: existing.scheduledPublishAt },
       importedAsDraft: false,

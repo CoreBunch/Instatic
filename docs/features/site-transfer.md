@@ -259,9 +259,10 @@ On main a row is served through its published version, and `status = 'published'
 | `published`, and the import restores a live version for it | any | `published`, as the bundle says |
 | `published`, no live version restored | new row | `draft`, `publishedAt` cleared |
 | `published`, no live version restored | row already on main (`merge-overwrite`) | the publication state the row already has; only its draft content is replaced |
+| `published`, no live version restored | row already on main with a pending schedule | `draft`, schedule cancelled: the scheduler would otherwise publish the content the import just put in its place |
 | `draft`, `unpublished`, `scheduled` | any | as the bundle says (a `scheduled` row on main needs publishing rights, see "Capability gates") |
 
-So the import never creates a row that reads Published with nothing public, and never puts a row that was taken offline back up on its old version. A row that is live stays live on its local version while the bundle replaces its draft. `ImportResult.rowsImportedAsDraft` counts the new rows that landed as drafts for this reason; the Site Import completion step reports it and tells the operator to publish, and the success toast carries the count. Importing such a bundle with `replace` therefore leaves the public site unpublished until the operator publishes again.
+So the import never creates a row that reads Published with nothing public, and never puts a row that was taken offline back up on its old version. A row that is live stays live on its local version while the bundle replaces its draft. `ImportResult.rowsImportedAsDraft` counts the rows that landed as drafts for this reason (new rows and cancelled schedules); the Site Import completion step reports it and tells the operator to publish, and the success toast carries the count. Importing such a bundle with `replace` therefore leaves the public site unpublished until the operator publishes again.
 
 A branch serves nothing, so rows imported into a branch keep the status the bundle gives them.
 
@@ -328,7 +329,7 @@ Primary merge identity is **id**: a row in the bundle with the same id as an exi
 
 The export → import path round-trips losslessly for everything in the bundle. This is verified by:
 
-- `src/__tests__/server/bundlePublishedState.test.ts` — published/draft separation, collection loops, schedules, history, runtime bytes, selected rows, permissions and invalid-archive rollback on SQLite and PostgreSQL. Also bundles without a `publication` section: published rows land as drafts under every strategy and both endpoints, a live row stays live, and a retracted row stays offline. And scheduled rows: importing one into main needs publishing rights on both endpoints.
+- `src/__tests__/server/bundlePublishedState.test.ts` — published/draft separation, collection loops, schedules, history, runtime bytes, selected rows, permissions and invalid-archive rollback on SQLite and PostgreSQL. Also bundles without a `publication` section: published rows land as drafts under every strategy and both endpoints, a live row stays live, and a retracted row stays offline. And scheduled rows: importing one into main needs publishing rights on both endpoints, and an overwrite cancels the pending schedule of the row it replaces.
 - `tests/e2e/backup-published-state.e2e.ts` — UI backup restore replaces later published content while retaining the backed-up unfinished draft.
 
 - `src/__tests__/architecture/cmsTransferExport.test.ts` — export produces a valid bundle.
