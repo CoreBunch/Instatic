@@ -440,7 +440,12 @@ async function handleListFiles(ctx: Context): Promise<Response> {
         : null,
     })
   }
-  hashes.retain(ctx.uploadsDir, new Set(walked.map((file) => resolveRelative(ctx.uploadsDir, file.path))))
+  // Entries for files that are gone are dropped, except while a restore is
+  // staged: its files are recorded under the paths they are about to get,
+  // and are not on disk there yet.
+  if (!hasPendingRestore(ctx.managerDir)) {
+    hashes.retain(ctx.uploadsDir, new Set(walked.map((file) => resolveRelative(ctx.uploadsDir, file.path))))
+  }
   await hashes.save(hashCachePath(ctx.managerDir))
   return jsonResponse({ files })
 }
@@ -605,6 +610,17 @@ async function handleCommit(ctx: Context, id: string): Promise<Response> {
       const refusal = inspectForRestore(staged, ctx.manager.knownMigrationIds, null)
       if (refusal) return refusal
       if (revokeSessions) revokeStagedSessions(staged)
+
+      // The uploaded files were just read in full to verify them. Remember
+      // their hashes under the paths they are about to be moved to, so the
+      // next push does not start by re-reading every one of them.
+      const declared = new Map(state.files.map((file) => [file.path, file.sha256]))
+      for (const path of state.missing) {
+        const sha256 = declared.get(path)
+        const info = await stat(resolveRelative(stagedFilesDir(ctx.managerDir), path)).catch(() => null)
+        if (sha256 && info) hashes.seed(resolveRelative(ctx.uploadsDir, path), info.size, info.mtimeMs, sha256)
+      }
+      await hashes.save(hashCachePath(ctx.managerDir))
 
       await writePendingRestore(ctx.managerDir, {
         kind: 'transfer',

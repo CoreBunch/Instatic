@@ -154,7 +154,7 @@ protect nothing here. The sign-in is recorded as `login.success` with
 
 | Method and path | Purpose |
 |---|---|
-| `GET /files` | List every file under the uploads root: `{ files: [{ path, sizeBytes, sha256 }] }`. Hashes are computed streaming and cached by `(path, size, mtime)`; the cache is persisted in the manager directory so it survives the restart every push ends in. `?hash=0` skips hashing for a quick listing. |
+| `GET /files` | List every file under the uploads root: `{ files: [{ path, sizeBytes, sha256 }] }`. Hashes are computed streaming and cached by `(path, size, mtime)`; the cache is persisted in the manager directory so it survives the restart every push ends in. Committing a transfer records the verified hashes of the uploaded files under the paths they are about to be moved to, so the next push does not begin by re-reading them. `?hash=0` skips hashing for a quick listing. |
 | `GET /files/<path>` | Download one file. Supports `Range`. `404 unknown-file` if it has gone. |
 
 ### Transfers (write side: push a full instance)
