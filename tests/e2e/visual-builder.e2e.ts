@@ -8,6 +8,7 @@ import {
   insertModuleViaPicker,
   insertNotchModule,
   login,
+  newestTemplatePriority,
   openLayersPanel,
   openSitePanel,
   openSiteEditor,
@@ -509,7 +510,7 @@ test.describe('visual builder', () => {
         ).toBeDisabled({ timeout: 20_000 })
       })
 
-      await test.step('create a high-priority Posts template from the Site panel', async () => {
+      await test.step('create the newest-priority Posts template from the Site panel', async () => {
         await openSiteEditor(page)
         await openSitePanel(page)
         await page.getByRole('button', { name: 'New template', exact: true }).click()
@@ -521,7 +522,7 @@ test.describe('visual builder', () => {
         await dialog.getByLabel('Applies to').click()
         await page.getByRole('option', { name: 'Post types' }).click()
         await dialog.getByLabel('Posts').setChecked(true)
-        await dialog.getByLabel('Priority').fill('300')
+        await dialog.getByLabel('Priority').fill(String(newestTemplatePriority()))
         await dialog.getByRole('button', { name: 'Save' }).click()
 
         await expect(dialog).toBeHidden()

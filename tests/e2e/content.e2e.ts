@@ -10,6 +10,7 @@ import {
   insertModuleViaPicker,
   insertNotchModule,
   login,
+  newestTemplatePriority,
   openSiteEditor,
   openSitePanel,
   publishDraft,
@@ -117,7 +118,7 @@ test.describe('content', () => {
       const suffix = Date.now().toString(36)
 
       await test.step('author and publish the Posts template live preview renders through', async () => {
-        await createPublishedPostsTemplate(page, suffix, 10)
+        await createPublishedPostsTemplate(page, suffix)
       })
 
       const savedTitle = `E2E Live Preview ${suffix}`
@@ -220,7 +221,7 @@ test.describe('content', () => {
       const suffix = Date.now().toString(36)
 
       await test.step('author and publish the Posts template for the public entry route', async () => {
-        await createPublishedPostsTemplate(page, suffix, 20)
+        await createPublishedPostsTemplate(page, suffix)
       })
 
       const title = `E2E Formatted ${suffix}`
@@ -534,7 +535,7 @@ async function createPostsTemplate(
   await dialog.getByLabel('Applies to').click()
   await page.getByRole('option', { name: 'Post types' }).click()
   await dialog.getByLabel('Posts').setChecked(true)
-  await dialog.getByLabel('Priority').fill('150')
+  await dialog.getByLabel('Priority').fill(String(newestTemplatePriority()))
   await dialog.getByRole('button', { name: 'Save' }).click()
 
   await expect(dialog).toBeHidden()
@@ -544,7 +545,6 @@ async function createPostsTemplate(
 async function createPublishedPostsTemplate(
   page: Page,
   suffix: string,
-  priority: number,
 ): Promise<void> {
   await openSiteEditor(page)
   await openSitePanel(page)
@@ -557,7 +557,7 @@ async function createPublishedPostsTemplate(
   await dialog.getByLabel('Applies to').click()
   await page.getByRole('option', { name: 'Post types' }).click()
   await dialog.getByLabel('Posts').setChecked(true)
-  await dialog.getByLabel('Priority').fill(String(priority))
+  await dialog.getByLabel('Priority').fill(String(newestTemplatePriority()))
   await dialog.getByRole('button', { name: 'Save' }).click()
   await expect(dialog).toBeHidden()
 
