@@ -170,8 +170,10 @@ function migrationsUpTo(all: Migration[], appliedIds: string[]): Migration[] {
  * SQLite file. Runs in ONE transaction, schema changes included, so a
  * failure leaves the database exactly as it was.
  *
- * Only tables this server owns are dropped: a database shared with another
- * application keeps that application's tables.
+ * Only tables this server owns are dropped, emptied or altered: a database
+ * shared with another application keeps that application's tables, rows and
+ * constraints, and an import that would break something depending on ours
+ * fails instead.
  */
 export async function importSqliteIntoPostgres(databaseUrl: string, sqliteFile: string): Promise<void> {
   const source = new Database(sqliteFile, { readonly: true })
@@ -191,24 +193,31 @@ export async function importSqliteIntoPostgres(databaseUrl: string, sqliteFile: 
       // SQLite's `current_timestamp` shape has no zone marker and means UTC.
       await tx.unsafe("set local timezone = 'UTC'")
 
-      await tx.unsafe(`drop table if exists ${owned.map(quoteIdent).join(', ')} cascade`)
+      // No CASCADE: if another application's table or view depends on one of
+      // ours, the import stops here rather than taking that object with it.
+      await tx.unsafe(`drop table if exists ${owned.map(quoteIdent).join(', ')}`)
       await tx.unsafe(`create table ${MIGRATIONS_TABLE} (id text primary key, applied_at text not null default current_timestamp)`)
       for (const migration of migrations) await tx.unsafe(migration.sql)
 
-      const targets = await pgTables(tx)
+      // Everything below touches owned tables only: the schema may hold
+      // another application's tables, and those are not ours to change.
+      const ownedSet = new Set(owned)
+      const targets = new Map([...(await pgTables(tx))].filter(([table]) => ownedSet.has(table)))
       const sourceTables = sqliteTables(source)
       const missing = sourceTables.filter((table) => !targets.has(table))
-      if (missing.length > 0) throw new Error(`[manager] the database has tables Postgres does not: ${missing.join(', ')}`)
+      if (missing.length > 0) throw new Error(`[manager] the database has tables this release does not own: ${missing.join(', ')}`)
 
       // Rows reference each other in cycles (a row and its versions, a user
       // and their avatar), so the foreign keys are checked once, at the end.
-      const foreignKeys = await tx.unsafe<{ table: string; name: string }[]>(`
-        select c.relname as "table", k.conname as "name"
-        from pg_constraint k
-        join pg_class c on c.oid = k.conrelid
-        join pg_namespace n on n.oid = c.relnamespace
-        where k.contype = 'f' and n.nspname = current_schema()
-      `)
+      const foreignKeys = (
+        await tx.unsafe<{ table: string; name: string; deferrable: boolean; deferred: boolean }[]>(`
+          select c.relname as "table", k.conname as "name", k.condeferrable as "deferrable", k.condeferred as "deferred"
+          from pg_constraint k
+          join pg_class c on c.oid = k.conrelid
+          join pg_namespace n on n.oid = c.relnamespace
+          where k.contype = 'f' and n.nspname = current_schema()
+        `)
+      ).filter((key) => ownedSet.has(key.table))
       for (const key of foreignKeys) {
         await tx.unsafe(`alter table ${quoteIdent(key.table)} alter constraint ${quoteIdent(key.name)} deferrable initially deferred`)
       }
@@ -257,8 +266,10 @@ export async function importSqliteIntoPostgres(databaseUrl: string, sqliteFile: 
       }
 
       await tx.unsafe('set constraints all immediate')
+      // Put every constraint back exactly as its migration declared it.
       for (const key of foreignKeys) {
-        await tx.unsafe(`alter table ${quoteIdent(key.table)} alter constraint ${quoteIdent(key.name)} not deferrable`)
+        const mode = !key.deferrable ? 'not deferrable' : key.deferred ? 'deferrable initially deferred' : 'deferrable initially immediate'
+        await tx.unsafe(`alter table ${quoteIdent(key.table)} alter constraint ${quoteIdent(key.name)} ${mode}`)
       }
     })
   } finally {

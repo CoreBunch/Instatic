@@ -138,12 +138,13 @@ describe.skipIf(!POSTGRES_URL)('Manager API: SQLite and Postgres', () => {
     await target.db.close()
   })
 
-  it('a failed import leaves Postgres as it was, and other tables alone', async () => {
+  it('a failed import leaves Postgres as it was, and other tables are never touched', async () => {
     await wipePostgres(url)
     const good = await seededSqlite('good.db')
     await importSqliteIntoPostgres(url, good)
     const sql = new SQL(url)
     await sql.unsafe('create table not_instatic (id integer primary key)')
+    await sql.unsafe('insert into not_instatic (id) values (7)')
 
     // A row that points at a folder that does not exist.
     const bad = await seededSqlite('bad.db')
@@ -155,8 +156,10 @@ describe.skipIf(!POSTGRES_URL)('Manager API: SQLite and Postgres', () => {
 
     const folders = await sql.unsafe<{ id: string }[]>('select id from media_folders order by id')
     expect(folders.map((row) => row.id)).toEqual(['child', 'parent'])
-    const kept = await sql.unsafe("select 1 from pg_tables where tablename = 'not_instatic'")
-    expect(kept).toHaveLength(1)
+    // Another application's table keeps its rows through a good import too.
+    await importSqliteIntoPostgres(url, good)
+    const kept = await sql.unsafe<{ id: number }[]>('select id from not_instatic')
+    expect(kept.map((row) => row.id)).toEqual([7])
     await sql.unsafe('drop table not_instatic')
     await sql.close()
   })
