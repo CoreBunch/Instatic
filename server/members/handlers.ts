@@ -42,9 +42,7 @@ import type { DbClient } from '../db/client'
 import type { MemberErrorCode } from '@core/members'
 import { Type, safeParseValue } from '@core/utils/typeboxHelpers'
 import { clientIp, isSiteOrigin, originAllowed, publicOriginIsHttps } from '../auth/security'
-import { MAIN_SCOPE } from '../branches/scope'
 import { jsonResponse, readTextBodyWithLimit, RequestBodyTooLargeError, setCookieHeader } from '../http'
-import { getDraftSite } from '../repositories/site'
 import { renderMemberLinkPage } from './linkPage'
 import { MEMBER_LINK_PATH_PREFIX, memberLinkOrigin, memberMailAvailable } from './mail'
 import { findMemberById, toCurrentMember } from './repository'
@@ -292,14 +290,12 @@ function buildResponse(req: Request, fields: Fields, outcome: MemberOutcome): Re
 // ─── Dispatch ──────────────────────────────────────────────────────────────
 
 async function buildContext(db: DbClient, req: Request): Promise<MemberActionContext> {
-  const site = await getDraftSite(db, MAIN_SCOPE)
   return {
     db,
     ipAddress: clientIp(req),
     userAgent: req.headers.get('user-agent'),
     linkOrigin: memberLinkOrigin(req),
     mailAvailable: await memberMailAvailable(db, req),
-    siteName: site?.name ?? '',
   }
 }
 

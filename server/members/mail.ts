@@ -1,6 +1,7 @@
 /**
- * Account emails for members: the wording, the links, and sending them
- * without making the request wait.
+ * Account emails for members: the links, and sending them without making
+ * the request wait. The wording lives in `mailTemplates.ts` and can be
+ * edited in the Email workspace.
  *
  * Two rules protect the people these go to:
  *
@@ -16,8 +17,9 @@ import type { DbClient } from '../db/client'
 import type { MemberPages } from '@core/members'
 import { getErrorMessage } from '@core/utils/errorMessage'
 import { clientIp, configuredPublicOrigin } from '../auth/security'
-import { getMailAccountView } from '../mail/settings'
-import { mailDeliveryMode, sendSiteMail, type SiteMail } from '../mail/send'
+import { getMailDefaults } from '../mail/defaults'
+import { mailDeliveryMode, sendTemplateMail } from '../mail/send'
+import { MEMBER_MAIL_KEYS, type MemberMailKind } from './mailTemplates'
 import type { MemberTokenKind } from './tokens'
 
 const LOOPBACK_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]'])
@@ -39,7 +41,7 @@ export function memberLinkOrigin(req: Request): string | null {
 /** Can this server get an email with a link to a member right now? */
 export async function memberMailAvailable(db: DbClient, req: Request): Promise<boolean> {
   if (!memberLinkOrigin(req)) return false
-  return mailDeliveryMode((await getMailAccountView(db)) !== null) !== 'off'
+  return mailDeliveryMode(await getMailDefaults(db)) !== 'off'
 }
 
 const PAGE_FOR_KIND: Record<MemberTokenKind, keyof MemberPages> = {
@@ -65,92 +67,11 @@ export function memberTokenLink(
   return url.toString()
 }
 
-type MemberMailKind =
-  | 'verify'
-  | 'already_registered'
-  | 'reset'
-  | 'magic'
-  | 'invite'
-  | 'email_change'
-  | 'email_change_notice'
-  | 'password_changed'
-
 interface MemberMailInput {
   kind: MemberMailKind
   to: string
-  siteName: string
   /** The action link; absent for pure notices. */
   link?: string
-  /** Extra detail for notices (the new address, for an email change). */
-  detail?: string
-}
-
-const COPY: Record<MemberMailKind, { subject: string; lines: string[]; linkLabel?: string }> = {
-  verify: {
-    subject: 'Confirm your email address',
-    lines: ['Confirm your email address to finish creating your account.'],
-    linkLabel: 'This link works once and expires in 24 hours:',
-  },
-  already_registered: {
-    subject: 'You already have an account',
-    lines: [
-      'Someone tried to create an account with this email address, but one already exists.',
-      'If that was you, sign in instead, or reset your password if you have forgotten it.',
-      'If it was not you, you can ignore this email. Nothing has changed.',
-    ],
-  },
-  reset: {
-    subject: 'Reset your password',
-    lines: ['Use the link below to choose a new password.'],
-    linkLabel: 'This link works once and expires in 1 hour:',
-  },
-  magic: {
-    subject: 'Your sign-in link',
-    lines: ['Use the link below to sign in.'],
-    linkLabel: 'This link works once and expires in 15 minutes:',
-  },
-  invite: {
-    subject: 'You have been invited',
-    lines: ['You have been invited to create an account. Use the link below to choose a password.'],
-    linkLabel: 'This link works once and expires in 7 days:',
-  },
-  email_change: {
-    subject: 'Confirm your new email address',
-    lines: ['Confirm this address to use it for your account.'],
-    linkLabel: 'This link works once and expires in 1 hour:',
-  },
-  email_change_notice: {
-    subject: 'A change to your email address was requested',
-    lines: [
-      'Someone signed in to your account asked to change its email address.',
-      'If that was not you, change your password now.',
-    ],
-  },
-  password_changed: {
-    subject: 'Your password was changed',
-    lines: [
-      'The password for your account was just changed.',
-      'If that was not you, reset your password now.',
-    ],
-  },
-}
-
-const IGNORE_LINE = 'If you did not ask for this, you can ignore this email.'
-
-export function buildMemberMail(input: MemberMailInput): SiteMail {
-  const copy = COPY[input.kind]
-  const siteName = input.siteName.replace(/[\r\n]+/g, ' ').trim() || 'this site'
-  const lines = [...copy.lines]
-  if (input.detail) lines.push(input.detail)
-  if (input.link && copy.linkLabel) {
-    lines.push(copy.linkLabel, input.link, IGNORE_LINE)
-  }
-  return {
-    kind: `member.${input.kind}`,
-    to: input.to,
-    subject: `${copy.subject} (${siteName})`,
-    text: `${lines.join('\n\n')}\n\n${siteName}\n`,
-  }
 }
 
 const pending = new Set<Promise<void>>()
@@ -158,10 +79,14 @@ const pending = new Set<Promise<void>>()
 /**
  * Send in the background. The caller has already decided its response, so a
  * slow or failing SMTP server never changes what, or how fast, the visitor
- * is told. Failures land in the delivery log (`sendSiteMail` records them).
+ * is told. Failures land in the mail activity log.
  */
 export function queueMemberMail(db: DbClient, input: MemberMailInput): void {
-  const task = sendSiteMail(db, buildMemberMail(input))
+  const task = sendTemplateMail(db, {
+    key: MEMBER_MAIL_KEYS[input.kind],
+    to: input.to,
+    variables: { 'member.email': input.to, ...(input.link ? { link: input.link } : {}) },
+  })
     .then(() => undefined)
     .catch((err: unknown) => {
       console.error(`[members] ${input.kind} email was not sent:`, getErrorMessage(err, 'unknown error'))

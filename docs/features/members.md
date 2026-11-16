@@ -27,7 +27,8 @@ server/members/
 ├── sessions.ts            — member_sessions + the cookie
 ├── tokens.ts              — single-use emailed-link tokens
 ├── limits.ts              — rate limits
-├── mail.ts                — account emails, link building, background send
+├── mail.ts                — link building, background send
+├── mailTemplates.ts       — the member emails as templates (reworded in Email → Templates)
 ├── service.ts             — the flows; no HTTP
 ├── handlers.ts            — /_instatic/members/* : request parsing, redirects, JSON, cookies
 └── linkPage.ts            — the bare fallback page for emailed links

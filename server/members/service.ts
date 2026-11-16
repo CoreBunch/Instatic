@@ -68,7 +68,6 @@ export interface MemberActionContext extends MemberEventContext {
   linkOrigin: string | null
   /** Can an email with a link be delivered at all right now? */
   mailAvailable: boolean
-  siteName: string
 }
 
 /** A signed-in caller: the member and the session they came in on. */
@@ -151,7 +150,6 @@ function sendLink(
   queueMemberMail(ctx.db, {
     kind,
     to,
-    siteName: ctx.siteName,
     link: memberTokenLink(ctx.linkOrigin, pages, kind, token),
   })
 }
@@ -248,7 +246,7 @@ export async function signUp(ctx: MemberActionContext, input: SignUpInput): Prom
   let member = await findMemberByEmail(ctx.db, email)
   if (member && (member.emailVerifiedAt !== null || member.status !== 'active')) {
     if (member.status === 'active') {
-      queueMemberMail(ctx.db, { kind: 'already_registered', to: member.email, siteName: ctx.siteName })
+      queueMemberMail(ctx.db, { kind: 'already_registered', to: member.email })
     }
     return outcome
   }
@@ -416,7 +414,7 @@ export async function setPasswordWithLink(
   await withdrawMemberTokens(ctx.db, member.id)
   await recordMemberEvent(ctx.db, member.id, 'password_reset', ctx)
   if (kind === 'reset') {
-    queueMemberMail(ctx.db, { kind: 'password_changed', to: member.email, siteName: ctx.siteName })
+    queueMemberMail(ctx.db, { kind: 'password_changed', to: member.email })
   }
   return startSession(ctx, member)
 }
@@ -462,7 +460,7 @@ export async function changePassword(
   await revokeAllMemberSessions(ctx.db, member.id)
   await withdrawMemberTokens(ctx.db, member.id)
   await recordMemberEvent(ctx.db, member.id, 'password_changed', ctx)
-  queueMemberMail(ctx.db, { kind: 'password_changed', to: member.email, siteName: ctx.siteName })
+  queueMemberMail(ctx.db, { kind: 'password_changed', to: member.email })
   const fresh = await createMemberSession(ctx.db, member.id, ctx)
   return { ok: true, code: 'updated', session: fresh }
 }
@@ -491,7 +489,7 @@ export async function requestEmailChange(
   const settings = await getMemberSettings(ctx.db)
   const { token } = await issueMemberToken(ctx.db, member.id, 'email_change', { email })
   sendLink(ctx, 'email_change', email, token, settings.pages)
-  queueMemberMail(ctx.db, { kind: 'email_change_notice', to: member.email, siteName: ctx.siteName })
+  queueMemberMail(ctx.db, { kind: 'email_change_notice', to: member.email })
   await recordMemberEvent(ctx.db, member.id, 'email_change_requested', ctx)
   return outcome
 }
