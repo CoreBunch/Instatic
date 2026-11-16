@@ -29,6 +29,23 @@ Published module scripts are minified by `server/publish/runtime/bundleScripts.t
 
 The existing site pipeline rebuilds runtime assets and swaps a complete disk slot, including other pages' dynamic shells and entry routes. It creates refreshed page versions referencing one coherent snapshot; unrelated rows retain their draft cells, status, timestamps and publisher attribution. Public page routing reads the active version's slug, so another page's draft rename cannot change its live URL. Shared-resource changes require a full-site publish.
 
+## Publishing one row, and the pages that list it
+
+A row of any other table (`publishDataRow` → `publishDataRowLocked`) does not rebuild the slot. It commits the row version, then works on the ACTIVE slot in place and bumps `publishVersion`:
+
+1. **Drop the baked pages that loop over the row's table** — `removeArtefactsLoopingOverTable` (`server/publish/loopArtefacts.ts`).
+2. Write the row's own entry-route artefact (and remove the old path when the slug changed).
+
+Step 1 exists because a full publish bakes the output of static `base.loop` nodes into each page, and Layer A serves a baked file with no knowledge of `publishVersion`. Without it a blog index keeps the rows it was baked with: a new post is missing, an unpublished one still shows a card that links to a 404. Once the file is gone the route falls through to Layer B, which every row change already evicts, so it renders live against the current rows until the next full publish bakes it again.
+
+The files are removed, not re-baked, so a row publish costs the same whether one page lists the table or an `everywhere` layout puts the loop on every route.
+
+Which artefacts go is decided against the published site, along the same render tree the publisher walks (`collectLoopNodes`): a `data.rows` loop on the table in the page itself, in any template of its chain, or in a Visual Component any of them reference. That covers pages, the `404` artefact, and the entry routes of every table whose template chain holds such a loop. Routes with no loop over the table stay on disk.
+
+Retraction takes the same step. The row status route and the row delete route call `retractDataRowArtefacts` (`publishRow.ts`), which removes the row's own artefact and, when the row was published, the pages that listed it. Scheduled publishes go through `publishDataRow` with the uploads dir and behave like a manual publish.
+
+A caller that changes a table's public rows on main and holds an uploads dir must take this step. Bumping `publishVersion` alone leaves Layer A stale.
+
 ## Where the code lives
 
 ```text
@@ -54,6 +71,7 @@ src/core/publisher/
 server/publish/
 ├── publicRouter.ts                 — gateway: Layer A disk fast-path → Layer B LRU → live resolver
 ├── staticArtefact.ts               — two-slot pointer-file swap + read/write/purge artefacts (Layer A); all URL-derived paths are validated by `resolveArtefactPath` (URL-decode + `..`-rejection + containment check after `path.join`)
+├── loopArtefacts.ts                — drop baked pages whose render tree loops over a table when its public rows change
 ├── renderCache.ts                  — in-memory LRU (Layer B); reads publishVersion from publishState
 ├── publishState.ts                 — publishVersion (bump/get) + withPublishLock + createVersionedSingleFlight
 ├── holeRuntime.ts                  — Layer C client runtime; exports runInstaticHoleRuntime (TS source) + HOLE_RUNTIME_JS (IIFE-serialized, ~1.1 KB)
@@ -412,7 +430,8 @@ Because `serializeCsp` sorts, the same plugins + adapters always emit a **byte-i
 | `server/publish/publicRouter.ts`                | Gateway: Layer A disk fast-path → Layer B LRU → live `resolvePublicRoute` + `renderPublicResolution`. |
 | `server/publish/publicRoutes.ts`                | Dispatcher tail: `tryServeBranchPreviewLink` (preview cookie in/out), `tryServePublicRoute` (a live preview cookie → `renderBranchPreview`, otherwise `renderPublicResolution`), setup redirect, 404 page. |
 | `server/publish/branchPreview.ts`               | Render a public URL from a branch's DRAFT for preview-link visitors: same composition as the editor's runtime preview (inline CSS, loops on the branch, on-demand runtime bundles kept in `branchPreviewAssets.ts`, plugin frontend injections, no publish hooks), `no-store` + `noindex`, with a banner. |
-| `server/publish/staticArtefact.ts`              | Two-slot pointer-file swap (`swapSlot`), per-file atomic writes (`writeArtefact`, `updateArtefactInPlace`), and reads (`readArtefact`). Layer A. |
+| `server/publish/staticArtefact.ts`              | Two-slot pointer-file swap (`swapSlot`), per-file atomic writes (`writeArtefact`, `updateArtefactInPlace`), in-place removal (`removeArtefactInPlace`, `removeArtefactsInPlace`), and reads (`readArtefact`). Layer A. |
+| `server/publish/loopArtefacts.ts`               | `removeArtefactsLoopingOverTable(db, uploadsDir, tableId)` — removes from the active slot every baked page, 404 page and entry route whose render tree (page, template chain, Visual Components) holds a `data.rows` loop over the table. Called on row publish and row retraction; see "Publishing one row, and the pages that list it". |
 | `server/publish/renderCache.ts`                 | In-memory LRU keyed by `(urlPath, canonicalQuery)`, entries versioned. `getOrRender` (single-flight). Reads the version from `publishState`; version captured at render start — a publish landing mid-render discards the result rather than caching stale HTML. Layer B. |
 | `server/publish/publishState.ts`                | Publish-time process state: `publishVersion` (`bumpPublishVersion`/`getPublishVersion`), `withPublishLock` (ISS-038 publish serializer), and `createVersionedSingleFlight` — the generalized version-keyed single-flight memo the hole endpoint reuses. Repositories import the version + lock from here (not from the cache). |
 | `server/publish/holeRuntime.ts`                 | Exports `runInstaticHoleRuntime` (the TypeScript source of the Layer C runtime) and `HOLE_RUNTIME_JS` (IIFE-serialized string, ~1.1 KB, served to browsers). Tests call `runInstaticHoleRuntime()` directly to avoid dynamic eval. |
@@ -556,8 +575,8 @@ tryServePublicRoute (server/router.ts)
 ```
 
 The visitor-facing artefacts are:
-1. **Disk files in the active slot** (`uploads/published/current/<route>.html`) — for fully-static routes. Final HTML, post-filter, frontend assets baked in. Rebuilt on each full publish.
-2. **In-memory LRU entries** — for dynamic routes (loops, request-dependent bindings). Filled lazily, evicted on every publish.
+1. **Disk files in the active slot** (`uploads/published/current/<route>.html`) — every route, as a complete document or a hole shell. Final HTML, post-filter, frontend assets baked in. Rebuilt on each full publish; a row publish rewrites the row's own file and removes the files that loop over its table.
+2. **In-memory LRU entries** — for requests Layer A does not answer: loop pagination, a route whose bake failed, and a route removed from the slot because a table it loops over changed. Filled lazily, evicted on every publish.
 3. **`<instatic-hole>` fragment responses** at `/_instatic/hole/<nodeId>?v=<snapshotHash>&u=<page-url>` — for dynamic nodes inside otherwise-cacheable pages. Fetched lazily by the IntersectionObserver runtime; shared responses are cached in Layer B, while per-visitor holes bypass it.
 
 The published `SiteDocument` is stored once per publish in `site_snapshots` and referenced by `data_row_versions.site_snapshot_id`; the `PublishedPageSnapshot` reassembled from that join remains the canonical audit record — all three layers derive from it. At request time it is memoised per publish version (`server/publish/publishedSnapshotCache.ts`, shared by the public router's row resolution, the hole endpoint, and the loop endpoint), and `renderPublicResolution` serves a warm Layer B entry *before* any route resolution — a cache hit does zero DB work.

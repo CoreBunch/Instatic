@@ -322,6 +322,8 @@ async function prefetchLoops(page, site, db) {
 
 The map is passed into `RenderConfig.loopData`. The walker reads from it; no async at render time.
 
+A full publish bakes each page with the items its loops resolved at that moment. When a row of a table is later published, unpublished or deleted, the baked pages that hold a `data.rows` loop over that table are removed from the active slot and render live until the next full publish, so a listing follows its rows without a site publish. See [publisher.md](publisher.md) → "Publishing one row, and the pages that list it".
+
 The public renderer and the editor's full-page **Preview page** overlay both
 use this server-side prefetch path. Preview sends the current in-memory draft
 to `/admin/api/cms/runtime/preview`; the server resolves loop and media data
