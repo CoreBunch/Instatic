@@ -168,6 +168,10 @@ export function auditTitle(
       return `${pluginId} pack was installed`
     case 'plugin.settings.update':
       return `${pluginId} settings were updated`
+    case 'mail.settings.update':
+      return 'Email settings were updated'
+    case 'mail.settings.delete':
+      return 'The email account was removed'
     case 'ai.credential.created':
       return `AI credential ${aiCredential} was created`
     case 'ai.credential.updated':

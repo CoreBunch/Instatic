@@ -123,3 +123,10 @@ export {
   getCmsRegistryProfile,
   searchCmsRegistry,
 } from './cmsRegistry'
+export {
+  deleteCmsMailSettings,
+  getCmsMailSettings,
+  listCmsMailOutbox,
+  saveCmsMailSettings,
+  sendCmsTestMail,
+} from './cmsMail'

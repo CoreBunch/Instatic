@@ -1526,4 +1526,51 @@ export const sqliteMigrations: Migration[] = [
       alter table data_tables add column created_by_plugin_id text;
     `,
   },
+  {
+    // Site-wide outgoing mail. `mail_settings` holds the one SMTP account the
+    // server sends through (password encrypted with the master key, like
+    // plugin secrets). `mail_outbox` is the delivery log; `body_text` is
+    // filled only in development, where mail is captured instead of sent,
+    // because bodies carry live sign-in and reset links.
+    id: '032_mail',
+    sql: `
+      create table if not exists mail_settings (
+        id text primary key,
+        host text not null,
+        port integer not null,
+        username text not null,
+        password_ciphertext blob,
+        password_iv blob,
+        key_fingerprint text,
+        from_address text not null,
+        from_name text not null default '',
+        updated_by_user_id text references users(id) on delete set null,
+        updated_at text not null default (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+      );
+
+      create table if not exists mail_outbox (
+        id text primary key,
+        kind text not null,
+        to_address text not null,
+        subject text not null,
+        status text not null,
+        error text,
+        body_text text,
+        created_at text not null default (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+      );
+
+      create index if not exists mail_outbox_created_idx
+        on mail_outbox (created_at desc);
+
+      update roles
+         set capabilities_json = json_insert(capabilities_json, '$[#]', 'mail.manage'),
+             updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now')
+       where id in ('owner', 'admin')
+         and not exists (
+               select 1
+                 from json_each(roles.capabilities_json)
+                where value = 'mail.manage'
+             );
+    `,
+  },
 ]

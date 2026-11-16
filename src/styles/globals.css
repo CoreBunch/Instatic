@@ -295,6 +295,11 @@
     /* Spotlight */
     --backdrop-blur: 8px;
     --spotlight-z-index: 9000;
+
+    /* The password re-entry (step-up) dialog gates an action started from any
+     * surface, including the spotlight-layer modals (Settings), so it sits
+     * above them and below toasts. */
+    --step-up-z-index: 9500;
     --spotlight-width: 640px;
     --progress-shimmer: var(--overlay-40);
 

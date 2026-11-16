@@ -26,10 +26,14 @@ import { SettingsCogSolidIcon } from 'pixel-art-icons/icons/settings-cog-solid'
 import { CommandIcon } from 'pixel-art-icons/icons/command'
 import { UploadIcon } from 'pixel-art-icons/icons/upload'
 import { SlidersHorizontalIcon } from 'pixel-art-icons/icons/sliders-horizontal'
+import { MailSolidIcon } from 'pixel-art-icons/icons/mail-solid'
+import type { CoreCapability } from '@core/capabilities'
+import { useCurrentAdminUser } from '@admin/sessionContext'
 import { GeneralSection } from './sections/GeneralSection'
 import { PublishingSection } from './sections/PublishingSection'
 import { ShortcutsSection } from './sections/ShortcutsSection'
 import { PreferencesSection } from './sections/PreferencesSection'
+import { EmailSection } from './sections/EmailSection'
 import s from './SettingsModal.module.css'
 
 // ─── Nav items ────────────────────────────────────────────────────────────────
@@ -37,12 +41,22 @@ import s from './SettingsModal.module.css'
 // module's `[data-accent]` rules — the same identity system the Module
 // Inserter rail uses for its section icons.
 
+// `capability` hides a section from anyone who cannot use it: the Email
+// section is server-only state behind `mail.manage`, not part of the site.
+
 const NAV_ITEMS = [
-  { id: 'general',     label: 'General',     icon: SettingsCogSolidIcon,  accent: 'lilac' },
-  { id: 'shortcuts',   label: 'Shortcuts',   icon: CommandIcon,           accent: 'sky'   },
-  { id: 'publishing',  label: 'Publishing',  icon: UploadIcon,            accent: 'mint'  },
-  { id: 'preferences', label: 'Preferences', icon: SlidersHorizontalIcon, accent: 'peach' },
-] as const
+  { id: 'general',     label: 'General',     icon: SettingsCogSolidIcon,  accent: 'lilac', capability: null },
+  { id: 'shortcuts',   label: 'Shortcuts',   icon: CommandIcon,           accent: 'sky',   capability: null },
+  { id: 'publishing',  label: 'Publishing',  icon: UploadIcon,            accent: 'mint',  capability: null },
+  { id: 'email',       label: 'Email',       icon: MailSolidIcon,         accent: 'sky',   capability: 'mail.manage' },
+  { id: 'preferences', label: 'Preferences', icon: SlidersHorizontalIcon, accent: 'peach', capability: null },
+] as const satisfies ReadonlyArray<{
+  id: string
+  label: string
+  icon: unknown
+  accent: string
+  capability: CoreCapability | null
+}>
 
 type SectionId = typeof NAV_ITEMS[number]['id']
 
@@ -64,8 +78,12 @@ export function SettingsModal() {
   // user actually opens settings, never on first paint.
   const setSectionStore = useEditorStore((state) => state.setSettingsSection)
 
-  const activeSection = normalizeSection(adminUiSection)
-  const activeItem = NAV_ITEMS.find((n) => n.id === activeSection) ?? NAV_ITEMS[0]
+  const user = useCurrentAdminUser()
+  const navItems = NAV_ITEMS.filter(
+    (item) => item.capability === null || Boolean(user?.capabilities.includes(item.capability)),
+  )
+  const activeItem = navItems.find((n) => n.id === adminUiSection) ?? navItems[0]
+  const activeSection: SectionId = activeItem.id
   const dialogRef = useRef<HTMLDivElement>(null)
   const navRef = useRef<HTMLElement>(null)
 
@@ -137,7 +155,7 @@ export function SettingsModal() {
   // editor's settingsSlice for downstream readers (spotlight commands).
   const openAdminUi = useAdminUi((state) => state.openSettings)
   const handleSetSection = (id: SectionId) => {
-    setSectionStore(id as Parameters<typeof setSectionStore>[0])
+    setSectionStore(id)
     openAdminUi(id)
   }
 
@@ -218,7 +236,7 @@ export function SettingsModal() {
               aria-label="Settings sections"
               className={s.sectionList}
             >
-              {NAV_ITEMS.map((item) => (
+              {navItems.map((item) => (
                 <SettingsNavButton
                   key={item.id}
                   item={item}
@@ -266,6 +284,7 @@ export function SettingsModal() {
               {activeSection === 'general'     && <GeneralSection />}
               {activeSection === 'shortcuts'   && <ShortcutsSection />}
               {activeSection === 'publishing'  && <PublishingSection />}
+              {activeSection === 'email'       && <EmailSection />}
               {activeSection === 'preferences' && <PreferencesSection />}
             </div>
           </div>
@@ -273,10 +292,6 @@ export function SettingsModal() {
       </div>
     </>
   )
-}
-
-function normalizeSection(section: string | null | undefined): SectionId {
-  return NAV_ITEMS.some((item) => item.id === section) ? (section as SectionId) : 'general'
 }
 
 function SettingsNavButton({

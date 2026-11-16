@@ -83,6 +83,10 @@ function actionVerb(action: string): string {
       return 'installed plugin pack'
     case 'plugin.settings.update':
       return 'updated settings for'
+    case 'mail.settings.update':
+      return 'updated the email settings'
+    case 'mail.settings.delete':
+      return 'removed the email account'
     case 'user.create':
       return 'added user'
     case 'user.update':
