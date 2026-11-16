@@ -121,6 +121,20 @@ The `Postgres` prefix is the Railway service name. If the database service is re
 
 Use `DATABASE_URL`, not `DATABASE_PUBLIC_URL`, for app-to-database traffic inside the same Railway project. `DATABASE_PUBLIC_URL` goes through Railway's public TCP proxy and is for external clients such as local admin tools.
 
+## Manager API (Instatic Desktop)
+
+To manage the service from Instatic Desktop, add one variable:
+
+```txt
+INSTATIC_MANAGER_TOKEN=<long random value, 32+ characters>
+```
+
+Nothing else changes. Snapshots and staging go to `/app/storage/data/manager`
+on the app volume, next to the SQLite file. When a push or a snapshot restore
+is applied, the server exits with code 75 and Railway's default restart
+policy (on failure) starts it again; do not set the policy to "never". See
+[Manager API](../features/manager-api.md).
+
 ## Backups
 
 Back up both data stores:

@@ -39,6 +39,7 @@ docs/
 │   ├── media.md                    ← Media workspace + storage adapters
 │   ├── audit-log.md                ← audit_events catalog
 │   ├── site-transfer.md            ← export / import CMS bundles
+│   ├── manager-api.md              ← token-gated push / pull / snapshot API for managers
 │   ├── site-import.md              ← Super Import (static sites → CMS)
 │   ├── html-import.md              ← paste / import HTML into the page tree
 │   ├── editor-preferences.md       ← catalog-driven editor prefs
@@ -158,6 +159,7 @@ Three categories, three voices:
 | [features/media.md](features/media.md)                           | Media workspace, upload pipeline, storage adapters                  |
 | [features/audit-log.md](features/audit-log.md)                   | Audit event catalog + recording new actions                         |
 | [features/site-transfer.md](features/site-transfer.md)           | Export / import CMS bundle (JSON round-trip between instances)      |
+| [features/manager-api.md](features/manager-api.md)               | Token-gated API for a supervising manager: full-instance push/pull, DB snapshots |
 | [features/site-import.md](features/site-import.md)               | Super Import — static-site files / ZIP → pages, style rules, media |
 | [features/html-import.md](features/html-import.md)               | HTML string → `PageNode` fragment (paste HTML, AI `insertHtml` tool) |
 | [features/editor-preferences.md](features/editor-preferences.md) | Catalog-driven local UI preferences for the editor                   |

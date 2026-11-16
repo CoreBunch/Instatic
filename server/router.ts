@@ -22,6 +22,7 @@ import { handleModuleJsAssetRequest, isModuleJsAssetPath } from './handlers/cms/
 import { handlePublicFormRequest } from './forms/handler'
 import { isRuntimePackagePath, tryServeRuntimePackage } from './publish/runtime/packageServer'
 import { jsonResponse } from './http'
+import { tryServeManager } from './manager/handler'
 import { binaryResponse, toArrayBuffer } from './binary'
 import { hardenUploadResponse, serveAdminApp, serveStaticFile } from './static'
 import { registry } from '@core/module-engine'
@@ -43,6 +44,10 @@ const VITE_DEV_URL = 'http://localhost:5173'
  */
 const routes: readonly RouteHandler[] = [
   tryServeHealth,
+  // Manager API — `/_instatic/manager/v1/*`. Bearer-token gated and invisible
+  // (404) unless INSTATIC_MANAGER_TOKEN is set. Matched early: it never uses
+  // the admin session and owns its namespace exclusively.
+  tryServeManager,
   // OAuth discovery, dynamic client registration, and token exchange for
   // hosted MCP clients. These endpoints are public protocol surfaces; the
   // interactive consent step remains admin-session + step-up gated.

@@ -26,7 +26,8 @@ The server is a single `Bun.serve` process that boots the DB, runs migrations, a
 ```text
 server/index.ts
     │
-    ├─→ readServerConfig()                   ← env vars: PORT, DATABASE_URL, UPLOADS_DIR, STATIC_DIR, PUBLIC_ORIGIN, TRUSTED_PROXY_CIDRS, NPM_REGISTRY_URL
+    ├─→ readServerConfig()                   ← env vars: PORT, DATABASE_URL, UPLOADS_DIR, STATIC_DIR, PUBLIC_ORIGIN, TRUSTED_PROXY_CIDRS, NPM_REGISTRY_URL, INSTATIC_MANAGER_TOKEN, INSTATIC_MANAGER_DIR
+    ├─→ applyPendingRestore(...)             ← server/manager/pending.ts: a restore staged through the Manager API takes effect here, before the DB opens
     ├─→ configureNpmRegistryUrl(...)         ← server/registry/config.ts: one registry for browsing, resolving and bun install
     │
     ├─→ createDbClient(DATABASE_URL)         ← server/db/index.ts
