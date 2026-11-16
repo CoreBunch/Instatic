@@ -1,6 +1,7 @@
 /** Transactional site-bundle application shared by JSON and ZIP imports. */
 import type { DbClient } from '../../db/client'
 import type { ImportStrategy, SiteBundle } from '@core/data/bundleSchema'
+import type { DataRow } from '@core/data/schemas'
 import { MAIN_BRANCH_ID } from '@core/branches'
 import { isMainScope, type BranchScope } from '../../branches/scope'
 import { restoreBundlePublication, validateBundlePublication, BundlePublicationError } from '../../repositories/bundlePublication'
@@ -64,6 +65,11 @@ export interface AppliedSiteBundle {
   rowsInserted: number
   rowsReplaced: number
   rowsSkipped: number
+  /**
+   * New rows the bundle marks `published` that landed as drafts, because the
+   * import restored no published version for them (`landingPublication`).
+   */
+  rowsImportedAsDraft: number
   mediaFoldersImported: number
   redirectsImported: number
   /**
@@ -100,6 +106,65 @@ async function replacesMediaLibrary(
   if (!isMainScope(scope)) return false
   const branches = await listBranches(db)
   return branches.every((branch) => branch.id === MAIN_BRANCH_ID)
+}
+
+type RowPublication = Pick<DataRowImportInput, 'status' | 'publishedAt' | 'scheduledPublishAt'>
+
+/**
+ * Rows this import leaves with a live published version. Publication only
+ * exists on main, and only a bundle that carries it can restore one.
+ */
+function rowsRestoredLive(scope: BranchScope, bundle: SiteBundle): ReadonlySet<string> {
+  if (!isMainScope(scope) || !bundle.publication) return new Set()
+  return new Set(bundle.publication.rows.filter((row) => row.activeVersionId !== null).map((row) => row.rowId))
+}
+
+/**
+ * The publication state a bundle row lands with.
+ *
+ * On main a row is public through its published version, and `status` is the
+ * switch that serves it. A bundle row's `published` status is therefore only
+ * a claim: a bundle exported before publication travelled with it brings no
+ * version to serve. Written as it stands, the claim leaves a new row reading
+ * Published with nothing public (and no way to publish it), and puts a row
+ * that was taken offline back up on its old version.
+ *
+ * So the claim holds only when this import restores a live version for the
+ * row. Without one it is dropped: a row already on main keeps the publication
+ * state it has, and a new row lands as a draft. A branch serves nothing, so
+ * its rows keep the status the bundle gives them.
+ */
+function landingPublication(
+  scope: BranchScope,
+  row: DataRow,
+  restoredLive: ReadonlySet<string>,
+  existing: DataRow | undefined,
+): { publication: RowPublication; importedAsDraft: boolean } {
+  if (!isMainScope(scope) || row.status !== 'published' || restoredLive.has(row.id)) {
+    return {
+      publication: { status: row.status, publishedAt: row.publishedAt, scheduledPublishAt: row.scheduledPublishAt },
+      importedAsDraft: false,
+    }
+  }
+  if (existing) {
+    return {
+      publication: { status: existing.status, publishedAt: existing.publishedAt, scheduledPublishAt: existing.scheduledPublishAt },
+      importedAsDraft: false,
+    }
+  }
+  return { publication: { status: 'draft', publishedAt: null, scheduledPublishAt: null }, importedAsDraft: true }
+}
+
+function rowImportInput(row: DataRow, publication: RowPublication): DataRowImportInput {
+  return {
+    id: row.id,
+    tableId: row.tableId,
+    cells: row.cells,
+    slug: row.slug,
+    ...publication,
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
+  }
 }
 
 /**
@@ -161,11 +226,13 @@ async function applySiteBundleLocked(
   let rowsInserted = 0
   let rowsReplaced = 0
   let rowsSkipped = 0
+  let rowsImportedAsDraft = 0
   let mediaFoldersImported = 0
   let redirectsImported = 0
   let deletedMedia: DeletedMediaAsset[] = []
   const importedFolderIds = new Set<string>()
   const importedRowIds = new Set<string>()
+  const restoredLive = rowsRestoredLive(scope, bundle)
   const transaction = (operation: (tx: DbClient) => Promise<void>) => db.transaction(async (tx) => {
     await operation(tx)
     if (isMainScope(scope) && bundle.publication) {
@@ -251,21 +318,12 @@ async function applySiteBundleLocked(
 
         // 5. Insert all rows (plain insert — table was just wiped)
         for (const row of bundle.rows) {
-          const input: DataRowImportInput = {
-            id: row.id,
-            tableId: row.tableId,
-            cells: row.cells,
-            slug: row.slug,
-            status: row.status,
-            publishedAt: row.publishedAt,
-            scheduledPublishAt: row.scheduledPublishAt,
-            createdAt: row.createdAt,
-            updatedAt: row.updatedAt,
-          }
-          await replaceDataRow(tx, scope, input)
+          const landing = landingPublication(scope, row, restoredLive, undefined)
+          await replaceDataRow(tx, scope, rowImportInput(row, landing.publication))
           importedRowIds.add(row.id)
           affectedCollabRows.get(row.tableId)?.add(row.id)
           rowsInserted++
+          if (landing.importedAsDraft) rowsImportedAsDraft++
         }
 
         // 6. Replace the site shell (only when the bundle carries one)
@@ -327,22 +385,13 @@ async function applySiteBundleLocked(
 
         // Rows: insert if absent, skip if the id already exists
         for (const row of bundle.rows) {
-          const input: DataRowImportInput = {
-            id: row.id,
-            tableId: row.tableId,
-            cells: row.cells,
-            slug: row.slug,
-            status: row.status,
-            publishedAt: row.publishedAt,
-            scheduledPublishAt: row.scheduledPublishAt,
-            createdAt: row.createdAt,
-            updatedAt: row.updatedAt,
-          }
-          const inserted = await insertDataRowIfAbsent(tx, scope, input)
+          const landing = landingPublication(scope, row, restoredLive, undefined)
+          const inserted = await insertDataRowIfAbsent(tx, scope, rowImportInput(row, landing.publication))
           if (inserted) {
             importedRowIds.add(row.id)
             affectedCollabRows.get(row.tableId)?.add(row.id)
             rowsInserted++
+            if (landing.importedAsDraft) rowsImportedAsDraft++
           } else {
             rowsSkipped++
           }
@@ -356,11 +405,11 @@ async function applySiteBundleLocked(
       await transaction(async (tx) => {
         // Pre-fetch all existing rows. An upsert can move an id from a table the
         // bundle does not mention, and both its old and new collab docs/rosters
-        // must be invalidated after commit.
-        const existingRowTables = new Map<string, string>()
+        // must be invalidated after commit. A row the import cannot publish
+        // also keeps the publication state it has here (`landingPublication`).
+        const existingRows = new Map<string, DataRow>()
         for (const table of await listDataTables(tx, scope)) {
-          const existing = await listDataRows(tx, scope, table.id)
-          for (const row of existing) existingRowTables.set(row.id, row.tableId)
+          for (const row of await listDataRows(tx, scope, table.id)) existingRows.set(row.id, row)
         }
 
         // Tables: insert if absent, update if already present
@@ -393,20 +442,11 @@ async function applySiteBundleLocked(
 
         // Rows: upsert all; track inserted vs replaced via the pre-fetched set
         for (const row of bundle.rows) {
-          const input: DataRowImportInput = {
-            id: row.id,
-            tableId: row.tableId,
-            cells: row.cells,
-            slug: row.slug,
-            status: row.status,
-            publishedAt: row.publishedAt,
-            scheduledPublishAt: row.scheduledPublishAt,
-            createdAt: row.createdAt,
-            updatedAt: row.updatedAt,
-          }
-          await upsertDataRow(tx, scope, input)
+          const landing = landingPublication(scope, row, restoredLive, existingRows.get(row.id))
+          await upsertDataRow(tx, scope, rowImportInput(row, landing.publication))
           importedRowIds.add(row.id)
-          const previousTableId = existingRowTables.get(row.id)
+          if (landing.importedAsDraft) rowsImportedAsDraft++
+          const previousTableId = existingRows.get(row.id)?.tableId
           if (previousTableId === undefined) {
             createdCollabRows.get(row.tableId)?.add(row.id)
           } else if (previousTableId !== row.tableId) {
@@ -455,6 +495,7 @@ async function applySiteBundleLocked(
     rowsInserted,
     rowsReplaced,
     rowsSkipped,
+    rowsImportedAsDraft,
     mediaFoldersImported,
     redirectsImported,
     importedFolderIds,

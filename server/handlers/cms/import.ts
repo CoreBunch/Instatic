@@ -200,6 +200,7 @@ export async function handleImportRoute(
     rowsInserted: applied.rowsInserted,
     rowsReplaced: applied.rowsReplaced,
     rowsSkipped: applied.rowsSkipped,
+    rowsImportedAsDraft: applied.rowsImportedAsDraft,
     mediaImported,
     mediaFoldersImported: applied.mediaFoldersImported,
     redirectsImported: applied.redirectsImported,

@@ -1,8 +1,11 @@
 /**
  * Bundle-import upserts for data rows. These bypass the normal CRUD path to
- * preserve the source instance's original id, status, and timestamps.
+ * preserve the source instance's original id and timestamps, and to write the
+ * publication state the import decided for the row (`landingPublication` in
+ * `server/handlers/cms/importApply.ts`): a bundle's `published` status is kept
+ * only when the import restores a live version.
  *
- *   upsertDataRow         — id-preserving upsert (merge-overwrite / replace)
+ *   upsertDataRow         — id-preserving upsert (merge-overwrite)
  *   insertDataRowIfAbsent — insert only if id absent (merge-add)
  *   replaceDataRow        — plain insert after wipe (replace strategy)
  *
@@ -30,8 +33,8 @@ export interface DataRowImportInput {
 }
 
 /**
- * Upsert a row preserving its original id, status, and timestamps. Used by
- * the `merge-overwrite` and `replace` import strategies.
+ * Upsert a row preserving its original id and timestamps, with the publication
+ * state the caller decided. Used by the `merge-overwrite` import strategy.
  */
 export async function upsertDataRow(
   db: DbClient,

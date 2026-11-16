@@ -348,6 +348,11 @@ export const ImportResultSchema = Type.Object({
   rowsInserted: Type.Number(),
   rowsReplaced: Type.Number(),
   rowsSkipped: Type.Number(),
+  /**
+   * New rows the bundle marks `published` that landed as drafts on main: the
+   * import restored no published version for them, so nothing would serve.
+   */
+  rowsImportedAsDraft: Type.Number(),
   mediaImported: Type.Number(),
   mediaFoldersImported: Type.Number(),
   redirectsImported: Type.Number(),

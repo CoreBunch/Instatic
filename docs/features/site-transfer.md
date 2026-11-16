@@ -248,6 +248,23 @@ After commit, an empty static slot replaces the previous baked output and the re
 
 Malformed references, missing runtime files, size mismatches and CRC failures are rejected before replace can delete target data. Publication restore requires publishing capabilities and step-up authentication in addition to the normal import gates. This format preserves future exports; it does not reconstruct publication data absent from older bundles.
 
+#### Rows the import cannot publish
+
+On main a row is served through its published version, and `status = 'published'` is the switch that serves it. A bundle row's `published` status is therefore a claim the import can only honour by restoring a live version. A bundle exported before publication travelled in it has no `publication` section, so it brings none.
+
+`landingPublication` (`server/handlers/cms/importApply.ts`) decides the state each row lands with, for both import endpoints and every strategy:
+
+| Bundle row | Target | Lands as |
+|---|---|---|
+| `published`, and the import restores a live version for it | any | `published`, as the bundle says |
+| `published`, no live version restored | new row | `draft`, `publishedAt` cleared |
+| `published`, no live version restored | row already on main (`merge-overwrite`) | the publication state the row already has; only its draft content is replaced |
+| `draft`, `unpublished`, `scheduled` | any | as the bundle says |
+
+So the import never creates a row that reads Published with nothing public, and never puts a row that was taken offline back up on its old version. A row that is live stays live on its local version while the bundle replaces its draft. `ImportResult.rowsImportedAsDraft` counts the new rows that landed as drafts for this reason; the Site Import completion step reports it and tells the operator to publish, and the success toast carries the count. Importing such a bundle with `replace` therefore leaves the public site unpublished until the operator publishes again.
+
+A branch serves nothing, so rows imported into a branch keep the status the bundle gives them.
+
 ### Replace and the media library
 
 Media is not branch-scoped, and records outside an import can reference it, so `replace` wipes the library only when nothing that survives the replace can (`replacesMediaLibrary` in `server/handlers/cms/importApply.ts`):
@@ -263,13 +280,13 @@ The JSON handler:
 1. Checks the strategy gate (`authorizeImportStrategy`), validates the bundle against `SiteBundleSchema`, then checks the shell gate (`authorizeImportedShell`); see the capability gates below.
 2. Calls `applySiteBundle`, which wraps the apply in a **single DB transaction** on the collab-aware write lane:
    - Tables: insert / update / delete per strategy.
-   - Rows: insert / update / soft-delete per strategy, preserving schedules.
+   - Rows: insert / update / soft-delete per strategy, preserving schedules. A `published` row lands published only when a live version is restored for it (see "Rows the import cannot publish").
    - Publication: restore versions, frozen snapshots, runtime files and active pointers for imported rows on main.
    - Site shell: if the bundle carries `site`, overwrite the `site` row.
    - `replace` only: the media library (see above), folders, and redirects.
 3. Removes the bytes of media rows a `replace` deleted.
 4. **Outside the transaction**, writes media bytes to `uploads/<storagePath>`. Before writing, the handler calls `assertPathWithin(uploadsDir, target)` (from `server/util/pathWithin.ts`) as a defense-in-depth check — the schema already forbids traversal, but the sink re-asserts containment after `path.join()` resolves symlinks. Media writes are best-effort — if a disk write fails, the row import has already committed and the asset is skipped with a log entry.
-5. Returns `ImportResult` with counts.
+5. Returns `ImportResult` with counts, including `rowsImportedAsDraft`.
 
 The archive handler:
 
@@ -311,7 +328,7 @@ Primary merge identity is **id**: a row in the bundle with the same id as an exi
 
 The export → import path round-trips losslessly for everything in the bundle. This is verified by:
 
-- `src/__tests__/server/bundlePublishedState.test.ts` — published/draft separation, collection loops, schedules, history, runtime bytes, selected rows, permissions and invalid-archive rollback on SQLite and PostgreSQL.
+- `src/__tests__/server/bundlePublishedState.test.ts` — published/draft separation, collection loops, schedules, history, runtime bytes, selected rows, permissions and invalid-archive rollback on SQLite and PostgreSQL. Also bundles without a `publication` section: published rows land as drafts under every strategy and both endpoints, a live row stays live, and a retracted row stays offline.
 - `tests/e2e/backup-published-state.e2e.ts` — UI backup restore replaces later published content while retaining the backed-up unfinished draft.
 
 - `src/__tests__/architecture/cmsTransferExport.test.ts` — export produces a valid bundle.
@@ -349,6 +366,8 @@ Save the response ZIP to disk (browser handles the download automatically).
 3. On the destination host: open **Import Site** from Spotlight or the Data workspace, then drop the exported ZIP bundle.
 4. Review the preview and import with `strategy: replace`.
 5. Visitors immediately see the backed-up published state; newer unfinished edits remain drafts. Do not republish to finish restoration: publishing would intentionally replace the restored public content with those drafts.
+
+A bundle exported before publication travelled in it is the exception: it restores drafts only. The completion step says how many rows it marked published arrived as drafts; publish the site and those rows to put them live.
 
 ### Selective export (one table only)
 
