@@ -70,6 +70,11 @@ function withLists(page: Page): Page {
   page.nodes[`${p}_pages`] = node(`${p}_pages`, 'base.loop', { sourceId: 'site.pages', limit: 50 }, [`${p}_page`])
   page.nodes[`${p}_page`] = node(`${p}_page`, 'base.text', { text: 'page', tag: 'p' })
   page.nodes[`${p}_page`].dynamicBindings = { text: { source: 'currentEntry', field: 'title' } }
+  // The same pages again, through the generic rows source aimed at the Pages table.
+  page.nodes.root.children.push(`${p}_rows`)
+  page.nodes[`${p}_rows`] = node(`${p}_rows`, 'base.loop', { sourceId: 'data.rows', filters: { tableId: 'pages' }, limit: 50 }, [`${p}_row`])
+  page.nodes[`${p}_row`] = node(`${p}_row`, 'base.text', { text: 'row', tag: 'h3' })
+  page.nodes[`${p}_row`].dynamicBindings = { text: { source: 'currentEntry', field: 'title' } }
   return page
 }
 
@@ -407,6 +412,9 @@ describe('members access gate', () => {
       const html = await (await get('/catalog')).text()
       expect(html).toContain('T-index')
       for (const closed of ['T-account', 'T-vault', 'T-library']) expect(html).not.toContain(closed)
+      // The rows source lists pages too, and follows the same rule.
+      expect(html).toContain('<h3>T-index</h3>')
+      expect(html).not.toContain('<h3>T-vault</h3>')
       const baked = await readArtefact(uploadsDir, '/catalog')
       expect(baked).toContain('T-index')
       expect(baked).not.toContain('T-vault')
@@ -446,6 +454,8 @@ describe('members access gate', () => {
       expect(await (await get('/library', student.cookie)).text()).toContain(SECRET_LESSON)
       const forPro = await (await get('/library', pro.cookie)).text()
       expect(forPro).toContain('T-vault')
+      expect(forPro).toContain('<h3>T-vault</h3>')
+      expect(forPlain).not.toContain('<h3>T-vault</h3>')
       expect(forPro).not.toContain(SECRET_LESSON)
     })
   })
