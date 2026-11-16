@@ -40,6 +40,8 @@ const SECTION_ICONS = {
 
 export function EmailPage() {
   const [section, setSection] = useState<Section>('connectors')
+  // Set when Activity opens a template, so the Templates tab lands on it.
+  const [templateKey, setTemplateKey] = useState<string | null>(null)
   // Connectors and Defaults both read the same overview; load it once here
   // so moving between them is instant and they never disagree.
   const overview = useAsyncResource((signal) => getCmsMailOverview(signal), [], {
@@ -98,8 +100,17 @@ export function EmailPage() {
               onNavigateToConnectors={() => setSection('connectors')}
             />
           )}
-          {section === 'templates' && <TemplatesTab />}
-          {section === 'activity' && <ActivityTab />}
+          {section === 'templates' && <TemplatesTab initialKey={templateKey} />}
+          {section === 'activity' && (
+            <ActivityTab
+              capturing={overview.data?.mode === 'capture'}
+              onOpenConnectors={() => setSection('connectors')}
+              onOpenTemplate={(key) => {
+                setTemplateKey(key)
+                setSection('templates')
+              }}
+            />
+          )}
         </div>
       </div>
     </AdminPageLayout>

@@ -1579,6 +1579,8 @@ export const sqliteMigrations: Migration[] = [
         connector_label text,
         error text,
         body_text text,
+        provider_message_id text,
+        duration_ms integer,
         created_at text not null default (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
       );
 

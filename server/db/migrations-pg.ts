@@ -1423,6 +1423,8 @@ export const pgMigrations: Migration[] = [
         connector_label text,
         error text,
         body_text text,
+        provider_message_id text,
+        duration_ms integer,
         created_at timestamptz not null default now()
       );
 

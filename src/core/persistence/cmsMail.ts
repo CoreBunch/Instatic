@@ -10,6 +10,7 @@ import {
   MailTemplateResponseSchema,
   MailTemplatesResponseSchema,
   MailTestResponseSchema,
+  type MailActivityPeriod,
   type MailActivityResponse,
   type MailActivityStatus,
   type MailConnector,
@@ -118,12 +119,30 @@ export async function testCmsMailTemplate(key: string, to: string): Promise<Mail
   return body.status
 }
 
+export interface CmsMailActivityQuery {
+  period: MailActivityPeriod
+  status: MailActivityStatus | null
+  kind: string | null
+  connector: string | null
+  search: string
+  /** The id of the last entry already shown, to read the next page. */
+  before?: string
+}
+
 export async function getCmsMailActivity(
-  status: MailActivityStatus | null,
+  query: CmsMailActivityQuery,
   signal?: AbortSignal,
 ): Promise<MailActivityResponse> {
   return apiRequest(`${MAIL_PATH}/activity`, {
-    query: status ? { status } : undefined,
+    query: {
+      period: query.period,
+      tz: Intl.DateTimeFormat().resolvedOptions().timeZone,
+      ...(query.status ? { status: query.status } : {}),
+      ...(query.kind ? { kind: query.kind } : {}),
+      ...(query.connector ? { connector: query.connector } : {}),
+      ...(query.search.trim() ? { q: query.search.trim() } : {}),
+      ...(query.before ? { before: query.before } : {}),
+    },
     schema: MailActivityResponseSchema,
     signal,
     fallbackMessage: 'Could not load the activity',

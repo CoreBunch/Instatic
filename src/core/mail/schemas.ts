@@ -196,20 +196,65 @@ export const MailActivityEntrySchema = Type.Object({
   id: Type.String(),
   /** The template key, or `test` for a connector test. */
   kind: Type.String(),
+  /** The template's name, for people. */
+  kindLabel: Type.String(),
+  /** True when `kind` is a template in the catalogue, so the admin can open it. */
+  template: Type.Boolean(),
   to: Type.String(),
   subject: Type.String(),
   status: MailActivityStatusSchema,
   connectorLabel: Type.Union([Type.String(), Type.Null()]),
   error: Type.Union([Type.String(), Type.Null()]),
+  /** The id the provider gave the message, to find it in the provider's own logs. */
+  providerMessageId: Type.Union([Type.String(), Type.Null()]),
+  /** How long the hand-over to the provider took. */
+  durationMs: Type.Union([Type.Integer(), Type.Null()]),
   /** Present only for mail captured on a development server. */
   body: Type.Union([Type.String(), Type.Null()]),
   createdAt: Type.String(),
 })
 export type MailActivityEntry = Static<typeof MailActivityEntrySchema>
 
+const MailActivityCountsSchema = Type.Object({
+  sent: Type.Integer(),
+  failed: Type.Integer(),
+  captured: Type.Integer(),
+})
+export type MailActivityCounts = Static<typeof MailActivityCountsSchema>
+
+export const MailActivityPeriodSchema = Type.Union([
+  Type.Literal('24h'),
+  Type.Literal('7d'),
+  Type.Literal('30d'),
+  Type.Literal('all'),
+])
+export type MailActivityPeriod = Static<typeof MailActivityPeriodSchema>
+
+const MailActivityFacetSchema = Type.Object({
+  value: Type.String(),
+  label: Type.String(),
+  count: Type.Integer(),
+})
+
 export const MailActivityResponseSchema = Type.Object({
+  /** One page of the emails that match every filter, newest first. */
   entries: Type.Array(MailActivityEntrySchema),
-  /** Counts over the last 30 days. */
-  totals: Type.Object({ sent: Type.Integer(), failed: Type.Integer(), captured: Type.Integer() }),
+  /** Pass as `before` to read the next page. Null on the last one. */
+  nextCursor: Type.Union([Type.String(), Type.Null()]),
+  /** How many emails match every filter. */
+  matching: Type.Integer(),
+  /** Counts over the period, before the status, template, connector and search filters. */
+  totals: MailActivityCountsSchema,
+  /** The period one bucket at a time, oldest first: hours for `24h`, days otherwise. */
+  buckets: Type.Array(
+    Type.Object({ start: Type.String(), sent: Type.Integer(), failed: Type.Integer(), captured: Type.Integer() }),
+  ),
+  /** The newest failure in the period, whatever the filters. */
+  lastFailure: Type.Union([Type.Object({ at: Type.String(), error: Type.String() }), Type.Null()]),
+  /** The templates and connectors seen in the period, for the filter menus. */
+  kinds: Type.Array(MailActivityFacetSchema),
+  connectors: Type.Array(MailActivityFacetSchema),
+  /** The log keeps this many emails; older ones are dropped. */
+  retention: Type.Integer(),
 })
 export type MailActivityResponse = Static<typeof MailActivityResponseSchema>

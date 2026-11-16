@@ -11,7 +11,7 @@ This is the path for mail the core sends itself (account emails, tests). It is b
 - **Connectors** are accounts mail is sent through. Two kinds: **SMTP** and **Amazon SES**. No provider SDKs: SMTP goes through `nodemailer`, SES is one signed HTTPS request.
 - **Defaults** choose the one connector the site sends through, plus the sender name, sender address and reply-to.
 - **Templates** are a subject and a Markdown body with `{variables}`, edited in place in the post editor (`TiptapBodyEditor`) with the same Write / Live switch as a post. Only edited templates are stored; the built-in wording lives in code.
-- **Activity** is the delivery log.
+- **Activity** is the delivery log: per-period totals and a volume chart, search and filters, and a detail panel for each email.
 - **Two entry points:** `sendTemplateMail(db, { key, to, variables })` and `sendSiteMail(db, mail)` in `server/mail/send.ts`.
 - **Three delivery modes**, decided per send:
 
@@ -84,6 +84,20 @@ In the admin (`tabs/TemplatesTab.tsx`) a template opens in **Live** mode: the su
 
 "Send test" in the header opens a dialog that shows the email rendered by the same `renderMailTemplate` with each variable's `sample`, so the dialog is what is sent. For `site.name` and `site.url` the server puts the site's real name and public address into `sample` when it reads a template (`toTemplate` in `server/mail/templates.ts`, from the same `siteMailVariables` a send uses), so the editor, the footer and the dialog show the real ones; only per-recipient variables preview with made-up values. Sending is disabled until unsaved edits are saved, because the server sends the stored template. On a connector the test send and the secret replacement are dialogs too. A template test (`POST …/templates/:key/test`) also uses sample values for per-recipient variables, never real ones, so a test cannot mint a working link.
 
+## Activity
+
+`recordMail` (`server/mail/activity.ts`) writes one `mail_outbox` row per attempt: template key (`kind`), recipient, subject, status, the connector's label at the time, the safe error sentence, how long the hand-over took (`duration_ms`) and the id the provider answered with (`provider_message_id`: the SES `MessageId`, or nodemailer's `messageId` for SMTP). The newest 2000 rows are kept.
+
+`listMailActivity(db, filter)` reads the whole log without bodies and does the work in memory, so search, day buckets and totals are identical on both dialects:
+
+- **Period** (`24h`, `7d`, `30d`, `all`). `24h` is the last 24 hours in hourly buckets. The others are whole calendar days in the viewer's time zone (`tz`), so "7 days" is today and the six days before.
+- **`totals`, `buckets`, `lastFailure`, `kinds`, `connectors`** describe the whole period. `status`, `kind`, `connector` and `q` (recipient or subject) only narrow `entries` and `matching`.
+- **Paging:** 50 entries a page; pass the last entry's id as `before`.
+
+`sent` means the provider accepted the message. Bounces and spam filtering happen after that and are not known here; the detail panel says so. A failure is not retried.
+
+The tab (`tabs/ActivityTab.tsx`) shows the totals and chart, then the filters, then the list beside the selected email's details. From a failure it links to Connectors; from a template's email it opens that template.
+
 ## Links in emails
 
 Anything that puts a link in an email must build it from `configuredPublicOrigin()` (`PUBLIC_ORIGIN`), never from the request's `Host` header. The overview reports `publicOrigin` so the admin can warn when it is unset.
@@ -104,7 +118,7 @@ All under `/admin/api/cms/mail`, all gated by `mail.manage`. "Step-up" marks the
 | PUT | `/templates/:key` | Step-up. Audited `mail.template.update` |
 | DELETE | `/templates/:key` | back to the built-in wording. Step-up. Audited `mail.template.reset` |
 | POST | `/templates/:key/test` | send with sample values |
-| GET | `/activity?status=` | the 100 newest rows, plus 30-day totals |
+| GET | `/activity?period=&tz=&status=&kind=&connector=&q=&before=` | one page of matching emails plus the period's totals, chart buckets and filter menus |
 
 ## Tests
 

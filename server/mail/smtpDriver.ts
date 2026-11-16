@@ -109,7 +109,7 @@ export async function sendViaSmtp(
   password: string,
   envelope: SmtpEnvelope,
   mail: OutgoingMail,
-): Promise<void> {
+): Promise<string | null> {
   const allowPrivate = privateMailHostsAllowed()
   const address = await resolveSmtpAddress(account.host, allowPrivate)
   const implicitTls = account.port === 465
@@ -128,7 +128,7 @@ export async function sendViaSmtp(
     disableUrlAccess: true,
   })
   try {
-    await smtp.sendMail({
+    const info = await smtp.sendMail({
       from: envelope.fromHeader,
       ...(envelope.replyTo ? { replyTo: envelope.replyTo } : {}),
       to: mail.to,
@@ -136,6 +136,7 @@ export async function sendViaSmtp(
       text: mail.text,
       ...(mail.html ? { html: mail.html } : {}),
     })
+    return typeof info.messageId === 'string' && info.messageId !== '' ? info.messageId : null
   } catch (err) {
     const code = err instanceof Error && 'code' in err ? String(err.code) : 'unknown'
     console.error(`[mail] SMTP delivery failed (${code})`)

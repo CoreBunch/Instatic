@@ -33,11 +33,12 @@ import {
   TEST_MAIL_TEMPLATE_KEY,
   getMailTemplateDefinition,
   sampleMailVariables,
+  type MailActivityPeriod,
   type MailActivityStatus,
   type MailOverview,
 } from '@core/mail'
 import { getErrorMessage } from '@core/utils/errorMessage'
-import { listMailActivity } from '../../mail/activity'
+import { CONNECTOR_TEST_KIND, listMailActivity } from '../../mail/activity'
 import {
   createMailConnector,
   deleteMailConnector,
@@ -170,7 +171,7 @@ async function handleTestConnector(req: Request, db: DbClient, params: RoutePara
   if (!(await getMailConnector(db, params.id))) return notFound('Connector')
   try {
     const mail = await buildTemplateMail(db, { key: TEST_MAIL_TEMPLATE_KEY, to: input.to, variables: {} })
-    await sendConnectorTest(db, params.id, { ...mail, kind: 'test' })
+    await sendConnectorTest(db, params.id, { ...mail, kind: CONNECTOR_TEST_KIND })
     return jsonResponse({ status: 'sent' })
   } catch (err) {
     return deliveryFailure(err)
@@ -259,13 +260,24 @@ async function handleTestTemplate(req: Request, db: DbClient, params: RouteParam
 // ─── Activity ──────────────────────────────────────────────────────────────
 
 const STATUSES: readonly MailActivityStatus[] = ['sent', 'failed', 'captured']
+const PERIODS: readonly MailActivityPeriod[] = ['24h', '7d', '30d', 'all']
 
 async function handleActivity(req: Request, db: DbClient): Promise<Response> {
   const user = await gate(req, db, false)
   if (user instanceof Response) return user
-  const requested = new URL(req.url).searchParams.get('status')
-  const status = STATUSES.find((candidate) => candidate === requested)
-  return jsonResponse(await listMailActivity(db, status ? { status } : {}))
+  const query = new URL(req.url).searchParams
+  const text = (name: string) => query.get(name)?.slice(0, 200) || undefined
+  return jsonResponse(
+    await listMailActivity(db, {
+      period: PERIODS.find((candidate) => candidate === query.get('period')) ?? '30d',
+      timeZone: text('tz'),
+      status: STATUSES.find((candidate) => candidate === query.get('status')),
+      kind: text('kind'),
+      connector: text('connector'),
+      search: text('q'),
+      before: text('before'),
+    }),
+  )
 }
 
 const CONNECTOR = new RegExp(`^${MAIL_PREFIX}/connectors/(?<id>[^/]+)$`)

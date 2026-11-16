@@ -135,4 +135,5 @@ export {
   setCmsMailConnectorSecret,
   testCmsMailConnector,
   testCmsMailTemplate,
+  type CmsMailActivityQuery,
 } from './cmsMail'

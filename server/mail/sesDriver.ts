@@ -68,6 +68,7 @@ function amzDateNow(now: Date): string {
 }
 
 const SesErrorSchema = Type.Object({ message: Type.Optional(Type.String()) })
+const SesSentSchema = Type.Object({ MessageId: Type.Optional(Type.String()) })
 
 /** A failure sentence safe to show an admin: never the key, never the message body. */
 function describeSesFailure(status: number, awsMessage: string): string {
@@ -92,7 +93,7 @@ export async function sendViaSes(
   sender: SesSender,
   mail: OutgoingMail,
   deps: { fetchImpl?: typeof fetch; now?: () => Date } = {},
-): Promise<void> {
+): Promise<string | null> {
   const host = `email.${config.region}.amazonaws.com`
   const path = '/v2/email/outbound-emails'
   const body = JSON.stringify({
@@ -137,7 +138,15 @@ export async function sendViaSes(
     console.error('[mail] SES request failed to complete')
     throw new MailDeliveryError('Could not reach Amazon SES. Check the region and the server\'s network.', { cause: err })
   }
-  if (res.ok) return
+  if (res.ok) {
+    try {
+      const sent = safeParseValue(SesSentSchema, JSON.parse(await res.text()))
+      return sent.ok ? (sent.value.MessageId ?? null) : null
+    } catch (_err) {
+      // SES accepted the message; an unreadable answer only costs the id.
+      return null
+    }
+  }
 
   let awsMessage = ''
   try {

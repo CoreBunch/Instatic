@@ -10,7 +10,7 @@ test.use({ storageState: ANONYMOUS_STATE })
  * The E2E server has no connector and is not a production server, so mail is
  * captured into Activity instead of leaving the machine. That lets the spec
  * walk the whole loop an owner does without a real mail server: send a
- * template test and read it back, add a connector behind step-up (its secret
+ * template test and read it back in the activity log, add a connector behind step-up (its secret
  * is never handed back), set the sender, and edit a template in the post
  * editor while the preview follows.
  */
@@ -33,11 +33,17 @@ test('owner sets up outgoing email and edits a template (ADMIN-013)', async ({ p
   await expect(testDialog).toBeHidden()
 
   await page.getByTestId('email-nav-activity').click()
-  const activity = page.getByRole('table', { name: 'Email activity' })
-  await expect(activity.getByText('Captured')).toBeVisible()
+  const activity = page.getByRole('list', { name: 'Email activity' })
   await expect(activity.getByText('reader@example.com')).toBeVisible()
-  await activity.getByText('Read the message').click()
-  await expect(activity.getByText('outgoing email works')).toBeVisible()
+  // The newest email is selected; its details show how it left and, on a development server, the message.
+  const details = page.getByRole('article', { name: 'Email details' })
+  await expect(details.getByText('Captured, not sent')).toBeVisible()
+  await expect(details.getByText('outgoing email works')).toBeVisible()
+  // A search with no match says so and offers the way back.
+  await page.getByLabel('Search recipient or subject').fill('nobody-by-this-name')
+  await expect(page.getByText('No email matches these filters')).toBeVisible()
+  await page.getByRole('button', { name: 'Clear filters' }).click()
+  await expect(activity.getByText('reader@example.com')).toBeVisible()
   await page.screenshot({ path: '.tmp/evidence/email-activity.png' })
 
   // ── Connectors: add one; its password never comes back ───────────────────

@@ -47,13 +47,13 @@ function isCancelledStepUp(err: unknown): boolean {
   return err instanceof Error && err.message === StepUpCancelledMessage
 }
 
-export function TemplatesTab() {
+export function TemplatesTab({ initialKey }: { initialKey: string | null }) {
   const { data, loading, error, refresh } = useAsyncResource(
     (signal) => listCmsMailTemplates(signal),
     [],
     { fallbackError: 'Could not load the email templates.' },
   )
-  const [selectedKey, setSelectedKey] = useState<string | null>(null)
+  const [selectedKey, setSelectedKey] = useState<string | null>(initialKey)
   // A save or reset returns the fresh template; keep it so the list and the
   // editor agree without waiting for a reload.
   const [updated, setUpdated] = useState<Record<string, MailTemplate>>({})

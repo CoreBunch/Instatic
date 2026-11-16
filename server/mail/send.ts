@@ -44,7 +44,7 @@ export type MailCarrier = (
   connector: ResolvedConnector,
   sender: { fromAddress: string; fromHeader: string; replyTo: string },
   mail: OutgoingMail,
-) => Promise<void>
+) => Promise<string | null>
 
 const carryMail: MailCarrier = (connector, sender, mail) =>
   connector.kind === 'smtp'
@@ -107,15 +107,17 @@ async function deliver(
     replyTo: defaults.replyTo,
   }
   const used = { id: connector.id, label: connector.label }
+  const startedAt = Date.now()
+  let providerMessageId: string | null
   try {
-    await carrier(connector, sender, mail)
+    providerMessageId = await carrier(connector, sender, mail)
   } catch (err) {
     const message = getErrorMessage(err, 'Delivery failed')
-    await recordMail(db, { ...log, status: 'failed', connector: used, error: message })
+    await recordMail(db, { ...log, status: 'failed', connector: used, error: message, durationMs: Date.now() - startedAt })
     await noteConnectorUse(db, connector.id, message)
     throw err
   }
-  await recordMail(db, { ...log, status: 'sent', connector: used })
+  await recordMail(db, { ...log, status: 'sent', connector: used, providerMessageId, durationMs: Date.now() - startedAt })
   await noteConnectorUse(db, connector.id, null)
 }
 

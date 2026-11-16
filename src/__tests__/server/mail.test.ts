@@ -14,7 +14,7 @@ import {
   type MailOverview,
   type MailTemplate,
 } from '@core/mail'
-import { listMailActivity } from '../../../server/mail/activity'
+import { listMailActivity, recordMail } from '../../../server/mail/activity'
 import { createMailConnector, resolveConnector } from '../../../server/mail/connectors'
 import { saveMailDefaults } from '../../../server/mail/defaults'
 import {
@@ -112,7 +112,10 @@ describe('site mail', () => {
     it('sends through the default connector, as the configured sender, and never stores the body', async () => {
       const connector = await readyConnector()
       const seen: Array<Parameters<MailCarrier>> = []
-      const carrier: MailCarrier = async (...args) => { seen.push(args) }
+      const carrier: MailCarrier = async (...args) => {
+        seen.push(args)
+        return '<provider-id-1>'
+      }
       expect(await sendSiteMail(h.db, MESSAGE, { carrier })).toBe('sent')
 
       const [used, sender] = seen[0]
@@ -120,7 +123,10 @@ describe('site mail', () => {
       expect(used.kind === 'smtp' && used.config.host).toBe('smtp.example.com')
       expect(sender).toEqual({ fromAddress: 'hello@example.com', fromHeader: '"Example" <hello@example.com>', replyTo: '' })
       const { entries, totals } = await listMailActivity(h.db)
-      expect(entries[0]).toMatchObject({ status: 'sent', body: null, error: null, connectorLabel: 'Main relay' })
+      expect(entries[0]).toMatchObject({
+        status: 'sent', body: null, error: null, connectorLabel: 'Main relay', providerMessageId: '<provider-id-1>',
+      })
+      expect(entries[0].durationMs).toBeGreaterThanOrEqual(0)
       expect(totals).toEqual({ sent: 1, failed: 0, captured: 0 })
     })
 
@@ -324,13 +330,14 @@ describe('site mail', () => {
         calls.push({ url: String(url), init: init ?? {} })
         return new Response('{"MessageId":"abc"}', { status: 200 })
       }) as typeof fetch
-      await sendViaSes(
+      const messageId = await sendViaSes(
         SES.config,
         SES.secret,
         { fromAddress: 'hello@example.com', fromHeader: '"Example" <hello@example.com>', replyTo: 'help@example.com' },
         { to: 'reader@example.com', subject: 'Hello', text: 'Text', html: '<p>Html</p>' },
         { fetchImpl, now: () => new Date('2026-01-02T03:04:05.678Z') },
       )
+      expect(messageId).toBe('abc')
       expect(calls).toHaveLength(1)
       expect(calls[0].url).toBe('https://email.eu-central-1.amazonaws.com/v2/email/outbound-emails')
       const headers = new Headers(calls[0].init.headers)
@@ -447,6 +454,72 @@ describe('site mail', () => {
       })
       expect(res.status).toBe(422)
       expect((await readJson<{ error: string }>(res)).error).toContain('sender address')
+    })
+
+    it('narrows the list by search, template and connector while the totals keep describing the period', async () => {
+      await recordMail(h.db, { kind: 'test.welcome', to: 'ada@example.com', subject: 'Welcome Ada', status: 'sent', connector: { id: 'c1', label: 'Main relay' } })
+      await recordMail(h.db, { kind: 'test', to: 'bob@example.com', subject: 'Test email', status: 'failed', connector: { id: 'c2', label: 'Backup' }, error: 'Rejected' })
+      await recordMail(h.db, { kind: 'test.welcome', to: 'cy@example.com', subject: 'Welcome Cy', status: 'captured', body: 'Hi Cy' })
+
+      const read = async (query: string) =>
+        readJson<MailActivityResponse>(await h.cms(`/admin/api/cms/mail/activity?${query}`, { cookie: owner }))
+
+      const searched = await read('q=ADA')
+      expect(searched.entries.map((entry) => entry.to)).toEqual(['ada@example.com'])
+      expect(searched.matching).toBe(1)
+      expect(searched.totals).toEqual({ sent: 1, failed: 1, captured: 1 })
+      expect(searched.lastFailure?.error).toBe('Rejected')
+
+      const welcome = await read('kind=test.welcome')
+      expect(welcome.entries.map((entry) => entry.to)).toEqual(['cy@example.com', 'ada@example.com'])
+      expect(welcome.entries[0]).toMatchObject({ kindLabel: 'Welcome', template: true, body: 'Hi Cy' })
+      expect(welcome.kinds).toEqual([
+        { value: 'test.welcome', label: 'Welcome', count: 2 },
+        { value: 'test', label: 'Connector test', count: 1 },
+      ])
+
+      const backup = await read('connector=Backup')
+      expect(backup.entries.map((entry) => entry.to)).toEqual(['bob@example.com'])
+      expect(backup.entries[0]).toMatchObject({ kindLabel: 'Connector test', template: false })
+      expect(backup.connectors.map((facet) => facet.value).sort()).toEqual(['Backup', 'Main relay'])
+    })
+
+    it('reads the log a page at a time', async () => {
+      for (let index = 0; index < 5; index += 1) {
+        await recordMail(h.db, { kind: 'test', to: `r${index}@example.com`, subject: `S${index}`, status: 'sent' })
+      }
+      const first = await listMailActivity(h.db, { limit: 2 })
+      expect(first.entries.map((entry) => entry.subject)).toEqual(['S4', 'S3'])
+      expect(first.matching).toBe(5)
+      const second = await listMailActivity(h.db, { limit: 2, before: first.nextCursor ?? undefined })
+      expect(second.entries.map((entry) => entry.subject)).toEqual(['S2', 'S1'])
+      const last = await listMailActivity(h.db, { limit: 2, before: second.nextCursor ?? undefined })
+      expect(last.entries.map((entry) => entry.subject)).toEqual(['S0'])
+      expect(last.nextCursor).toBeNull()
+    })
+
+    it('buckets a period into the viewer\'s calendar days and leaves older mail out of it', async () => {
+      const now = Date.parse('2026-03-10T23:30:00Z') // already 11 March in Prague
+      const at = async (iso: string, status: 'sent' | 'failed') => {
+        await recordMail(h.db, { kind: 'test', to: 'r@example.com', subject: iso, status })
+        await h.db`update mail_outbox set created_at = ${iso} where subject = ${iso}`
+      }
+      await at('2026-03-10T23:10:00Z', 'sent')
+      await at('2026-03-10T12:00:00Z', 'failed')
+      await at('2026-03-01T12:00:00Z', 'sent')
+
+      const week = await listMailActivity(h.db, { period: '7d', timeZone: 'Europe/Prague' }, now)
+      expect(week.buckets.map((bucket) => bucket.start)).toEqual([
+        '2026-03-05', '2026-03-06', '2026-03-07', '2026-03-08', '2026-03-09', '2026-03-10', '2026-03-11',
+      ])
+      expect(week.buckets[5]).toMatchObject({ sent: 0, failed: 1 })
+      expect(week.buckets[6]).toMatchObject({ sent: 1, failed: 0 })
+      expect(week.totals).toEqual({ sent: 1, failed: 1, captured: 0 })
+      expect(week.matching).toBe(2)
+
+      const day = await listMailActivity(h.db, { period: '24h', timeZone: 'not/a-zone' }, now)
+      expect(day.buckets).toHaveLength(24)
+      expect(day.totals).toEqual({ sent: 1, failed: 1, captured: 0 })
     })
 
     it('filters the activity by status', async () => {
