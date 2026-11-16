@@ -9,8 +9,8 @@ import { Dialog } from '@ui/components/Dialog'
 import { Input } from '@ui/components/Input'
 import { pushToast } from '@ui/components/Toast'
 import { ArrowRightIcon } from 'pixel-art-icons/icons/arrow-right'
-import { CheckIcon } from 'pixel-art-icons/icons/check'
 import { PlusIcon } from 'pixel-art-icons/icons/plus'
+import { SendSolidIcon } from 'pixel-art-icons/icons/send-solid'
 import { TrashSolidIcon } from 'pixel-art-icons/icons/trash-solid'
 import {
   MAIL_ADDRESS_PATTERN,
@@ -28,6 +28,7 @@ import {
 import { getErrorMessage } from '@core/utils/errorMessage'
 import { ConnectorMark } from '../ConnectorMark'
 import { CONNECTOR_SPECS, getConnectorSpec, type ConnectorSpec } from '../connectorCatalog'
+import styles from '../EmailPage.module.css'
 
 const ADDRESS_RE = new RegExp(MAIL_ADDRESS_PATTERN)
 
@@ -226,52 +227,52 @@ function ConnectorDetail({
   const user = useCurrentAdminUser()
   const { runStepUp } = useStepUp()
   const spec = getConnectorSpec(connector.kind)
+  const secretName = spec.secretLabel.toLowerCase()
   const testInputId = useId()
   const secretInputId = useId()
+  const [dialog, setDialog] = useState<'test' | 'secret' | null>(null)
   const [testTo, setTestTo] = useState(user?.email ?? '')
   const [testing, setTesting] = useState(false)
-  const [testResult, setTestResult] = useState<{ ok: boolean; message: string } | null>(null)
+  const [testError, setTestError] = useState<string | null>(null)
   const [secret, setSecret] = useState('')
   const [savingSecret, setSavingSecret] = useState(false)
 
   const isDefault = overview.defaults.defaultConnectorId === connector.id
+  const hasSender = overview.defaults.fromAddress !== ''
   const status = connector.secretNeedsReentry
-    ? `Re-enter ${spec.secretLabel.toLowerCase()}`
+    ? `Re-enter ${secretName}`
     : connector.lastError
       ? 'Last send failed'
       : isDefault ? 'Sending through this' : 'Connected'
   const healthy = !connector.secretNeedsReentry && connector.lastError === null
 
-  const testProblem = overview.defaults.fromAddress === ''
-    ? 'A test needs a sender address.'
-    : ADDRESS_RE.test(testTo.trim()) ? null : 'Enter the address to send the test to.'
-
   async function handleTest() {
     setTesting(true)
-    setTestResult(null)
+    setTestError(null)
     try {
       await testCmsMailConnector(connector.id, testTo.trim())
-      setTestResult({ ok: true, message: `Sent. Check the inbox of ${testTo.trim()}.` })
+      setDialog(null)
+      pushToast({ kind: 'success', title: 'Test email sent', body: `Check the inbox of ${testTo.trim()}.` })
     } catch (err) {
-      setTestResult({ ok: false, message: getErrorMessage(err, 'The test email was not sent.') })
+      setTestError(getErrorMessage(err, 'The test email was not sent.'))
     } finally {
       setTesting(false)
       onChanged()
     }
   }
 
-  async function handleSaveSecret(event: React.FormEvent) {
-    event.preventDefault()
+  async function handleSaveSecret() {
     setSavingSecret(true)
     try {
       await runStepUp(() => setCmsMailConnectorSecret(connector.id, secret))
       setSecret('')
+      setDialog(null)
       onChanged()
       pushToast({ kind: 'success', title: `${spec.secretLabel} saved` })
     } catch (err) {
       if (isCancelledStepUp(err)) return
       console.error('[ConnectorsTab] secret save failed:', err)
-      pushToast({ kind: 'error', title: `Could not save the ${spec.secretLabel.toLowerCase()}`, body: getErrorMessage(err, 'Unknown error') })
+      pushToast({ kind: 'error', title: `Could not save the ${secretName}`, body: getErrorMessage(err, 'Unknown error') })
     } finally {
       setSavingSecret(false)
     }
@@ -293,65 +294,39 @@ function ConnectorDetail({
             <p>{spec.label}</p>
           </div>
         </div>
-        {!isDefault && (
-          <Button type="button" variant="secondary" size="md" onClick={onNavigateToDefaults}>
-            <span>Use for sending</span>
-            <ArrowRightIcon size={13} aria-hidden="true" />
-          </Button>
-        )}
+        <div className={styles.headerActions}>
+          {!isDefault && (
+            <Button type="button" variant="ghost" size="md" onClick={onNavigateToDefaults}>
+              Use for sending
+            </Button>
+          )}
+          {hasSender ? (
+            <Button type="button" variant="secondary" size="md" onClick={() => { setTestError(null); setDialog('test') }}>
+              <SendSolidIcon size={14} aria-hidden="true" />
+              <span>Send test</span>
+            </Button>
+          ) : (
+            <Button type="button" variant="secondary" size="md" onClick={onNavigateToDefaults} tooltip="A test needs a sender address">
+              <span>Set a sender address</span>
+              <ArrowRightIcon size={13} aria-hidden="true" />
+            </Button>
+          )}
+        </div>
       </header>
 
-      {connector.lastError && !testResult && (
-        <p role="status" className={ws.connectionResultError}>{connector.lastError}</p>
+      {connector.secretNeedsReentry && (
+        <p role="status" className={ws.connectionResultError}>
+          The server secret key changed, so the stored {secretName} can no longer be read. Enter it again.
+        </p>
       )}
-
-      <section className={ws.detailSection}>
-        <div className={ws.detailSectionHeader}>
-          <div>
-            <h3>Send a test email</h3>
-            <p>Goes through this connector, whether or not it is the one the site sends through.</p>
-          </div>
-        </div>
-        <form
-          className={ws.providerSetupForm}
-          onSubmit={(event) => { event.preventDefault(); void handleTest() }}
-        >
-          <div className={ws.providerSetupField}>
-            <label htmlFor={testInputId}>Send to</label>
-            <div>
-              <Input
-                id={testInputId}
-                type="email"
-                value={testTo}
-                onChange={(event) => setTestTo(event.currentTarget.value)}
-                placeholder="you@example.com"
-              />
-              {testProblem && <p>{testProblem}</p>}
-            </div>
-          </div>
-          <div className={ws.providerSetupActions}>
-            <Button type="submit" variant="secondary" size="md" disabled={testProblem !== null} busy={testing}>
-              <CheckIcon size={14} aria-hidden="true" />
-              <span>Send test email</span>
-            </Button>
-            {overview.defaults.fromAddress === '' && (
-              <Button type="button" variant="ghost" size="md" onClick={onNavigateToDefaults}>
-                <span>Set a sender address</span>
-                <ArrowRightIcon size={12} aria-hidden="true" />
-              </Button>
-            )}
-          </div>
-        </form>
-        {testResult && (
-          <p role="status" className={testResult.ok ? ws.connectionResultSuccess : ws.connectionResultError}>
-            {testResult.message}
-          </p>
-        )}
-      </section>
+      {connector.lastError && <p role="status" className={ws.connectionResultError}>{connector.lastError}</p>}
 
       <section className={ws.detailSection}>
         <div className={ws.detailSectionHeader}>
           <div><h3>Connection</h3></div>
+          <Button type="button" variant="ghost" size="sm" onClick={() => setDialog('secret')}>
+            {connector.secretNeedsReentry ? `Enter ${secretName}` : `Replace ${secretName}`}
+          </Button>
         </div>
         <dl className={ws.connectionDetails}>
           {connector.kind === 'smtp' ? (
@@ -375,41 +350,6 @@ function ConnectorDetail({
         </dl>
       </section>
 
-      <section className={ws.detailSection}>
-        <div className={ws.detailSectionHeader}>
-          <div>
-            <h3>{connector.secretNeedsReentry ? `Enter the ${spec.secretLabel.toLowerCase()} again` : `Replace the ${spec.secretLabel.toLowerCase()}`}</h3>
-            <p>
-              {connector.secretNeedsReentry
-                ? 'The server secret key changed, so the stored value can no longer be read.'
-                : 'For when the value was rotated at the provider. It is never shown again after saving.'}
-            </p>
-          </div>
-        </div>
-        <form className={ws.providerSetupForm} onSubmit={(event) => void handleSaveSecret(event)}>
-          <div className={ws.providerSetupField}>
-            <label htmlFor={secretInputId}>{spec.secretLabel}</label>
-            <div>
-              <Input
-                id={secretInputId}
-                type="password"
-                value={secret}
-                onChange={(event) => setSecret(event.currentTarget.value)}
-                autoComplete="new-password"
-                data-1p-ignore="true"
-                data-lpignore="true"
-                data-form-type="other"
-              />
-            </div>
-          </div>
-          <div className={ws.providerSetupActions}>
-            <Button type="submit" variant="secondary" size="md" disabled={secret === ''} busy={savingSecret}>
-              Save {spec.secretLabel.toLowerCase()}
-            </Button>
-          </div>
-        </form>
-      </section>
-
       <div className={ws.credentialDangerZone}>
         <Button type="button" variant="ghost" tone="danger" size="sm" onClick={onRemove}>
           <TrashSolidIcon size={14} aria-hidden="true" />
@@ -417,6 +357,64 @@ function ConnectorDetail({
         </Button>
         <p>This permanently deletes the connector and its stored secret.</p>
       </div>
+
+      {dialog === 'test' && (
+        <Dialog
+          open
+          onClose={() => setDialog(null)}
+          title="Send a test email"
+          size="sm"
+          footer={(
+            <>
+              <Button type="button" variant="secondary" size="sm" onClick={() => setDialog(null)} disabled={testing}>Cancel</Button>
+              <Button type="button" variant="primary" size="sm" onClick={() => void handleTest()} disabled={!ADDRESS_RE.test(testTo.trim())} busy={testing}>
+                Send test
+              </Button>
+            </>
+          )}
+        >
+          <div className={styles.testDialog}>
+            <div className={styles.field}>
+              <label htmlFor={testInputId}>Send to</label>
+              <Input id={testInputId} type="email" value={testTo} onChange={(event) => setTestTo(event.currentTarget.value)} placeholder="you@example.com" />
+              <p className={styles.hint}>Goes through {connector.label}, whether or not it is the connector the site sends through.</p>
+            </div>
+            {testError && <p role="alert" className={ws.connectionResultError}>{testError}</p>}
+          </div>
+        </Dialog>
+      )}
+
+      {dialog === 'secret' && (
+        <Dialog
+          open
+          onClose={() => setDialog(null)}
+          title={connector.secretNeedsReentry ? `Enter the ${secretName} again` : `Replace the ${secretName}`}
+          size="sm"
+          footer={(
+            <>
+              <Button type="button" variant="secondary" size="sm" onClick={() => setDialog(null)} disabled={savingSecret}>Cancel</Button>
+              <Button type="button" variant="primary" size="sm" onClick={() => void handleSaveSecret()} disabled={secret === ''} busy={savingSecret}>
+                Save {secretName}
+              </Button>
+            </>
+          )}
+        >
+          <div className={styles.field}>
+            <label htmlFor={secretInputId}>{spec.secretLabel}</label>
+            <Input
+              id={secretInputId}
+              type="password"
+              value={secret}
+              onChange={(event) => setSecret(event.currentTarget.value)}
+              autoComplete="new-password"
+              data-1p-ignore="true"
+              data-lpignore="true"
+              data-form-type="other"
+            />
+            <p className={styles.hint}>Stored encrypted and never shown again.</p>
+          </div>
+        </Dialog>
+      )}
     </article>
   )
 }

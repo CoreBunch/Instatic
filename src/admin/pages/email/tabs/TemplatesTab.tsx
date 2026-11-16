@@ -1,22 +1,30 @@
 /**
  * Templates: the wording of each email the site sends. A template is a
- * subject and a body written in the same editor as posts, with `{variables}`
- * filled in at send time. The preview beside it is rendered by the same code
- * the server sends with, using sample values.
+ * subject and a body, with `{variables}` filled in at send time.
+ *
+ * It is edited the way a post is: the same TipTap editor, with the same
+ * Write / Live switch in the top-left corner. Live edits the email in place
+ * inside the layout it is sent in; Write is the bare writing surface. "Send
+ * test" shows the email with sample values, rendered by the same code the
+ * server sends with.
  */
 import { useId, useRef, useState } from 'react'
 import { useAsyncResource } from '@admin/lib/useAsyncResource'
 import { useCurrentAdminUser } from '@admin/sessionContext'
+import { ContentModeToggle } from '@admin/pages/content/components/ContentModeToggle/ContentModeToggle'
 import { TiptapBodyEditor, type TiptapBodyEditorHandle } from '@admin/pages/content/TiptapBodyEditor'
 import { StepUpCancelledMessage, useStepUp } from '@admin/shared/StepUp'
 import { SettingsListSection } from '@admin/shared/SettingsWorkspace/SettingsListSection'
 import ws from '@admin/shared/SettingsWorkspace/SettingsWorkspace.module.css'
 import { Button } from '@ui/components/Button'
+import { ContextMenu, ContextMenuItem } from '@ui/components/ContextMenu'
 import { Dialog } from '@ui/components/Dialog'
 import { Input } from '@ui/components/Input'
 import { pushToast } from '@ui/components/Toast'
 import { ArrowRightIcon } from 'pixel-art-icons/icons/arrow-right'
+import { BracesIcon } from 'pixel-art-icons/icons/braces'
 import { FileTextSolidIcon } from 'pixel-art-icons/icons/file-text-solid'
+import { SendSolidIcon } from 'pixel-art-icons/icons/send-solid'
 import {
   MAIL_ADDRESS_PATTERN,
   renderMailTemplate,
@@ -86,7 +94,7 @@ export function TemplatesTab() {
                     </span>
                     <span className={ws.settingsListIdentity}>
                       <span className={ws.settingsListLabel}>{template.label}</span>
-                      <span className={ws.settingsListMeta}>{template.customised ? 'Edited' : 'Built-in wording'}</span>
+                      {template.customised && <span className={ws.settingsListMeta}>Edited</span>}
                     </span>
                     {!active && <ArrowRightIcon size={13} aria-hidden="true" />}
                   </Button>
@@ -113,6 +121,8 @@ export function TemplatesTab() {
   )
 }
 
+type Mode = 'write' | 'live'
+
 function TemplateEditor({
   template,
   onSaved,
@@ -128,21 +138,23 @@ function TemplateEditor({
   const subjectRef = useRef<HTMLInputElement>(null)
   const [subject, setSubject] = useState(template.subject)
   const [body, setBody] = useState(template.body)
+  // The editor is remounted when the mode changes; `mounted.markdown` is the
+  // body it starts from, so nothing typed in one mode is lost in the other.
+  const [mounted, setMounted] = useState<{ mode: Mode; markdown: string }>({ mode: 'live', markdown: template.body })
   const [lastFocus, setLastFocus] = useState<'subject' | 'body'>('body')
-  const [variablePickerOpen, setVariablePickerOpen] = useState(false)
+  const [variableMenu, setVariableMenu] = useState<DOMRect | null>(null)
+  const [testOpen, setTestOpen] = useState(false)
   const [busy, setBusy] = useState<'save' | 'reset' | 'test' | null>(null)
   const [testTo, setTestTo] = useState(user?.email ?? '')
 
+  const mode = mounted.mode
   const dirty = subject !== template.subject || body !== template.body
   const unknown = unknownMailVariables(`${subject}\n${body}`, template.variables)
   const saveProblem = !subject.trim()
     ? 'Write a subject.'
     : !body.trim() ? 'Write a body.' : dirty ? null : 'No changes to save.'
-  const testProblem = dirty
-    ? 'Save your changes first.'
-    : ADDRESS_RE.test(testTo.trim()) ? null : 'Enter the address to send the test to.'
-
-  const preview = renderMailTemplate({ subject, body }, sampleMailVariables(template.variables))
+  const samples = sampleMailVariables(template.variables)
+  const preview = renderMailTemplate({ subject, body }, samples)
 
   function insertVariable(name: string) {
     const token = `{${name}}`
@@ -154,7 +166,7 @@ function TemplateEditor({
     } else {
       editorRef.current?.insertText(token)
     }
-    setVariablePickerOpen(false)
+    setVariableMenu(null)
   }
 
   async function handleSave() {
@@ -189,6 +201,7 @@ function TemplateEditor({
     setBusy('test')
     try {
       const status = await testCmsMailTemplate(template.key, testTo.trim())
+      setTestOpen(false)
       pushToast(
         status === 'captured'
           ? { kind: 'success', title: 'Test email captured', body: 'Nothing was sent. Read it under Activity.' }
@@ -202,6 +215,32 @@ function TemplateEditor({
     }
   }
 
+  const subjectField = (
+    <input
+      ref={subjectRef}
+      id={subjectId}
+      className={styles.subjectInput}
+      value={subject}
+      onChange={(event) => setSubject(event.currentTarget.value)}
+      onFocus={() => setLastFocus('subject')}
+      maxLength={200}
+      placeholder="Subject"
+      aria-label="Subject"
+    />
+  )
+  const bodyEditor = (
+    <div onFocusCapture={() => setLastFocus('body')}>
+      <TiptapBodyEditor
+        key={mode}
+        markdown={mounted.markdown}
+        editorRef={editorRef}
+        onChange={setBody}
+        onInsertDataToken={() => setVariableMenu(subjectRef.current?.getBoundingClientRect() ?? null)}
+        ariaLabel="Email body"
+      />
+    </div>
+  )
+
   return (
     <article className={ws.credentialDetail} aria-labelledby="template-detail-title">
       <header className={ws.credentialDetailHeader}>
@@ -212,10 +251,6 @@ function TemplateEditor({
           <div>
             <div className={ws.credentialTitleRow}>
               <h2 id="template-detail-title">{template.label}</h2>
-              <span className={ws.connectionStatus}>
-                <span className={ws.healthDot} />
-                {template.customised ? 'Edited' : 'Built-in wording'}
-              </span>
             </div>
             <p>{template.description}</p>
           </div>
@@ -226,6 +261,10 @@ function TemplateEditor({
               Reset to built-in
             </Button>
           )}
+          <Button type="button" variant="secondary" size="md" onClick={() => setTestOpen(true)} disabled={busy !== null}>
+            <SendSolidIcon size={14} aria-hidden="true" />
+            <span>Send test</span>
+          </Button>
           <Button
             type="button"
             variant="primary"
@@ -240,108 +279,103 @@ function TemplateEditor({
         </div>
       </header>
 
-      <div className={styles.templateGrid}>
-        <div className={styles.templateEdit}>
-          <div className={styles.field}>
-            <label htmlFor={subjectId}>Subject</label>
-            <Input
-              ref={subjectRef}
-              id={subjectId}
-              value={subject}
-              onChange={(event) => setSubject(event.currentTarget.value)}
-              onFocus={() => setLastFocus('subject')}
-              maxLength={200}
-            />
-          </div>
-
-          <div className={styles.field}>
-            <span className={styles.fieldLabel}>Variables</span>
-            <div className={styles.variables}>
-              {template.variables.map((variable) => (
-                <Button
-                  key={variable.name}
-                  type="button"
-                  variant="secondary"
-                  size="xs"
-                  shape="pill"
-                  onClick={() => insertVariable(variable.name)}
-                  tooltip={`${variable.label}. Inserts into the ${lastFocus}.`}
-                >
-                  {`{${variable.name}}`}
-                </Button>
-              ))}
-            </div>
-            {unknown.length > 0 && (
-              <p className={styles.warning} role="status">
-                {unknown.map((name) => `{${name}}`).join(', ')} {unknown.length === 1 ? 'is not a variable' : 'are not variables'} of
-                this email and will be sent as written.
-              </p>
-            )}
-          </div>
-
-          <div className={styles.field}>
-            <span className={styles.fieldLabel}>Body</span>
-            <div className={styles.editorShell} onFocusCapture={() => setLastFocus('body')}>
-              <TiptapBodyEditor
-                markdown={template.body}
-                editorRef={editorRef}
-                onChange={setBody}
-                onInsertDataToken={() => setVariablePickerOpen(true)}
-                ariaLabel="Email body"
-              />
-            </div>
-          </div>
+      <div className={styles.canvas} data-mode={mode}>
+        <ContentModeToggle
+          mode={mode}
+          onChange={(next) => setMounted({ mode: next, markdown: body })}
+        />
+        <div className={styles.canvasTools}>
+          <Button
+            type="button"
+            variant="ghost"
+            size="xs"
+            onClick={(event) => setVariableMenu(event.currentTarget.getBoundingClientRect())}
+            tooltip={`Inserts into the ${lastFocus}`}
+          >
+            <BracesIcon size={13} aria-hidden="true" />
+            <span>Insert variable</span>
+          </Button>
         </div>
 
-        <div className={styles.templatePreview} aria-label="Preview">
-          <span className={styles.fieldLabel}>Preview, with sample values</span>
-          <div className={styles.previewFrame}>
-            <p className={styles.previewSubject}>{preview.subject}</p>
-            <iframe className={styles.previewBody} title="Email preview" sandbox="" srcDoc={preview.html} />
+        {mode === 'live' ? (
+          <div className={styles.emailStage}>
+            <div className={styles.emailCard}>
+              <div className={styles.emailSubjectRow}>{subjectField}</div>
+              {bodyEditor}
+            </div>
+            <p className={styles.emailFooter}>{samples['site.name']}</p>
           </div>
-        </div>
+        ) : (
+          <div className={styles.writeStage}>
+            {subjectField}
+            {bodyEditor}
+          </div>
+        )}
       </div>
 
-      <section className={ws.detailSection}>
-        <div className={ws.detailSectionHeader}>
-          <div>
-            <h3>Send a test email</h3>
-            <p>Sends this template with the sample values. Links in it do not work.</p>
-          </div>
-        </div>
-        <form className={ws.providerSetupForm} onSubmit={(event) => { event.preventDefault(); void handleTest() }}>
-          <div className={ws.providerSetupField}>
-            <label htmlFor={testId}>Send to</label>
-            <div>
-              <Input id={testId} type="email" value={testTo} onChange={(event) => setTestTo(event.currentTarget.value)} placeholder="you@example.com" />
-              {testProblem && <p>{testProblem}</p>}
-            </div>
-          </div>
-          <div className={ws.providerSetupActions}>
-            <Button type="submit" variant="secondary" size="md" disabled={testProblem !== null || busy !== null} busy={busy === 'test'}>
-              Send test email
-            </Button>
-          </div>
-        </form>
-      </section>
+      {unknown.length > 0 && (
+        <p className={styles.warning} role="status">
+          {unknown.map((name) => `{${name}}`).join(', ')} {unknown.length === 1 ? 'is not a variable' : 'are not variables'} of
+          this email and will be sent as written.
+        </p>
+      )}
 
-      {variablePickerOpen && (
-        <Dialog open onClose={() => setVariablePickerOpen(false)} title="Insert a variable" size="sm">
-          <div className={styles.variableList}>
-            {template.variables.map((variable) => (
-              <Button
-                key={variable.name}
-                type="button"
-                variant="ghost"
-                size="md"
-                align="between"
-                fullWidth
-                onClick={() => insertVariable(variable.name)}
-              >
-                <span>{variable.label}</span>
-                <code>{`{${variable.name}}`}</code>
+      {variableMenu && (
+        <ContextMenu
+          x={variableMenu.left}
+          y={variableMenu.bottom + 6}
+          width={300}
+          minWidth={300}
+          ariaLabel="Insert a variable"
+          onClose={() => setVariableMenu(null)}
+        >
+          {template.variables.map((variable) => (
+            <ContextMenuItem key={variable.name} onClick={() => insertVariable(variable.name)}>
+              <span className={styles.variableLabel}>{variable.label}</span>
+              <code className={styles.variableToken}>{`{${variable.name}}`}</code>
+            </ContextMenuItem>
+          ))}
+        </ContextMenu>
+      )}
+
+      {testOpen && (
+        <Dialog
+          open
+          onClose={() => setTestOpen(false)}
+          title="Send a test email"
+          size="lg"
+          footer={(
+            <>
+              <Button type="button" variant="secondary" size="sm" onClick={() => setTestOpen(false)} disabled={busy === 'test'}>
+                Cancel
               </Button>
-            ))}
+              <Button
+                type="button"
+                variant="primary"
+                size="sm"
+                onClick={() => void handleTest()}
+                disabled={dirty || !ADDRESS_RE.test(testTo.trim())}
+                busy={busy === 'test'}
+              >
+                Send test
+              </Button>
+            </>
+          )}
+        >
+          <div className={styles.testDialog}>
+            <div className={styles.field}>
+              <label htmlFor={testId}>Send to</label>
+              <Input id={testId} type="email" value={testTo} onChange={(event) => setTestTo(event.currentTarget.value)} placeholder="you@example.com" />
+              <p className={styles.hint}>
+                {dirty
+                  ? 'Save the template first: a test sends the saved version.'
+                  : 'Sent with the sample values shown below, so its links do not work.'}
+              </p>
+            </div>
+            <div className={styles.previewFrame}>
+              <p className={styles.previewSubject}>{preview.subject}</p>
+              <iframe className={styles.previewBody} title="Email preview" sandbox="" srcDoc={preview.html} />
+            </div>
           </div>
         </Dialog>
       )}

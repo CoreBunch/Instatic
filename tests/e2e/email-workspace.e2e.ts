@@ -23,10 +23,14 @@ test('owner sets up outgoing email and edits a template (ADMIN-013)', async ({ p
   await page.getByTestId('email-nav-templates').click()
   const template = page.getByRole('article')
   await expect(template.getByRole('heading', { name: 'Test email', exact: true })).toBeVisible()
-  await expect(template.getByText('Built-in wording')).toBeVisible()
-  await template.getByLabel('Send to').fill('reader@example.com')
-  await template.getByRole('button', { name: 'Send test email' }).click()
+  await template.getByRole('button', { name: 'Send test' }).click()
+  const testDialog = page.getByRole('dialog', { name: 'Send a test email' })
+  // The dialog shows the email as it will be sent, with sample values.
+  await expect(testDialog.frameLocator('iframe[title="Email preview"]').getByText('outgoing email works')).toBeVisible()
+  await testDialog.getByLabel('Send to').fill('reader@example.com')
+  await testDialog.getByRole('button', { name: 'Send test' }).click()
   await expect(page.getByText('Test email captured')).toBeVisible()
+  await expect(testDialog).toBeHidden()
 
   await page.getByTestId('email-nav-activity').click()
   const activity = page.getByRole('table', { name: 'Email activity' })
@@ -58,9 +62,8 @@ test('owner sets up outgoing email and edits a template (ADMIN-013)', async ({ p
   // The first connector becomes the one the site sends through.
   await expect(connector.getByText('Sending through this')).toBeVisible()
   await expect(connector.getByText('Stored encrypted')).toBeVisible()
-  // No sender address yet, so a test is not offered as if it could work.
-  await expect(connector.getByRole('button', { name: 'Send test email' })).toBeDisabled()
-  await expect(connector.getByText('A test needs a sender address.')).toBeVisible()
+  // No sender address yet, so the header offers to set one instead of a test that cannot work.
+  await expect(connector.getByRole('button', { name: 'Send test' })).toHaveCount(0)
   const overview = await page.request.get('/admin/api/cms/mail')
   expect(await overview.text()).not.toContain('smtp-e2e-secret')
   await page.screenshot({ path: '.tmp/evidence/email-connector.png' })
@@ -76,23 +79,43 @@ test('owner sets up outgoing email and edits a template (ADMIN-013)', async ({ p
   await expect(page.getByText('Email is being sent')).toBeVisible()
   await page.screenshot({ path: '.tmp/evidence/email-defaults.png' })
 
-  // ── Templates: edit in the post editor; the preview follows ──────────────
+  // ── Templates: edit in place in Live mode, like a post ───────────────────
   await page.getByTestId('email-nav-templates').click()
   const editor = page.getByRole('article')
+  await expect(editor.getByTestId('content-mode-toggle-live')).toHaveAttribute('aria-selected', 'true')
   await editor.getByLabel('Subject').fill('Checking {site.name}')
-  await expect(editor.getByText('Checking Acme Studio')).toBeVisible()
   const body = editor.getByLabel('Email body')
   await body.click()
   await page.keyboard.press('ControlOrMeta+A')
   await page.keyboard.type('Hello from the editor. ')
-  await editor.getByRole('button', { name: '{site.url}' }).click()
-  const preview = page.frameLocator('iframe[title="Email preview"]')
-  await expect(preview.getByText('Hello from the editor. https://example.com')).toBeVisible()
-  await page.screenshot({ path: '.tmp/evidence/email-template.png' })
+  await editor.getByRole('button', { name: 'Insert variable' }).click()
+  await page.getByRole('menuitem', { name: /Site address/ }).click()
+  await expect(body).toContainText('Hello from the editor. {site.url}')
+  await page.screenshot({ path: '.tmp/evidence/email-template-live.png' })
+
+  // Write mode is the bare surface; nothing typed in Live is lost.
+  await editor.getByTestId('content-mode-toggle-write').click()
+  await expect(editor.getByLabel('Email body')).toContainText('Hello from the editor. {site.url}')
+  await expect(editor.getByLabel('Subject')).toHaveValue('Checking {site.name}')
+  await page.screenshot({ path: '.tmp/evidence/email-template-write.png' })
+  await editor.getByTestId('content-mode-toggle-live').click()
+  await expect(editor.getByLabel('Email body')).toContainText('Hello from the editor. {site.url}')
+
+  // The test dialog previews the unsaved edit with sample values, and asks to save first.
+  await editor.getByRole('button', { name: 'Send test' }).click()
+  const previewDialog = page.getByRole('dialog', { name: 'Send a test email' })
+  await expect(previewDialog.getByText('Checking Acme Studio')).toBeVisible()
+  await expect(
+    previewDialog.frameLocator('iframe[title="Email preview"]').getByText('Hello from the editor. https://example.com'),
+  ).toBeVisible()
+  await expect(previewDialog.getByText('Save the template first')).toBeVisible()
+  await expect(previewDialog.getByRole('button', { name: 'Send test' })).toBeDisabled()
+  await page.screenshot({ path: '.tmp/evidence/email-template-test.png' })
+  await previewDialog.getByRole('button', { name: 'Cancel' }).click()
 
   await editor.getByRole('button', { name: 'Save template' }).click()
   await completeStepUp(page)
-  await expect(editor.getByText('Edited', { exact: true })).toBeVisible()
+  await expect(editor.getByRole('button', { name: 'Reset to built-in' })).toBeVisible()
   await page.reload()
   await page.getByTestId('email-nav-templates').click()
   await expect(page.getByRole('article').getByLabel('Subject')).toHaveValue('Checking {site.name}')
@@ -100,5 +123,5 @@ test('owner sets up outgoing email and edits a template (ADMIN-013)', async ({ p
   await page.getByRole('article').getByRole('button', { name: 'Reset to built-in' }).click()
   await completeStepUp(page)
   await expect(page.getByRole('article').getByLabel('Subject')).toHaveValue('Test email from {site.name}')
-  await expect(page.getByRole('article').getByText('Built-in wording')).toBeVisible()
+  await expect(page.getByRole('article').getByRole('button', { name: 'Reset to built-in' })).toHaveCount(0)
 })

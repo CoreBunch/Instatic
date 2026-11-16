@@ -78,8 +78,8 @@ export interface TiptapBodyEditorProps {
    * editor via `editorRef.insertMedia`.
    *
    * Omit it for a document that cannot hold media (an email template): the
-   * "Media" item leaves the slash menu and pasted or dropped files are not
-   * uploaded.
+   * media items leave the slash and "+" menus and pasted or dropped files
+   * are not uploaded.
    */
   onPickMedia?: () => void
   /** Accessible name of the editing surface. Defaults to the post body's. */
@@ -318,12 +318,8 @@ export function TiptapBodyEditor({
       {editor && !readOnly && (
         <>
           <BodyBubbleMenu editor={editor} />
-          {onPickMedia && (
-            <>
-              <BodyFloatingMenu editor={editor} onPickMedia={onPickMedia} />
-              <MediaNodeToolbar editor={editor} onPickMedia={onPickMedia} />
-            </>
-          )}
+          <BodyFloatingMenu editor={editor} onPickMedia={onPickMedia} />
+          {onPickMedia && <MediaNodeToolbar editor={editor} onPickMedia={onPickMedia} />}
         </>
       )}
       <BodySlashMenu handleRef={slashHandleRef} />

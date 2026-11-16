@@ -10,7 +10,7 @@ This is the path for mail the core sends itself (account emails, tests). It is b
 
 - **Connectors** are accounts mail is sent through. Two kinds: **SMTP** and **Amazon SES**. No provider SDKs: SMTP goes through `nodemailer`, SES is one signed HTTPS request.
 - **Defaults** choose the one connector the site sends through, plus the sender name, sender address and reply-to.
-- **Templates** are a subject and a Markdown body with `{variables}`, edited in the post editor (`TiptapBodyEditor`). Only edited templates are stored; the built-in wording lives in code.
+- **Templates** are a subject and a Markdown body with `{variables}`, edited in place in the post editor (`TiptapBodyEditor`) with the same Write / Live switch as a post. Only edited templates are stored; the built-in wording lives in code.
 - **Activity** is the delivery log.
 - **Two entry points:** `sendTemplateMail(db, { key, to, variables })` and `sendSiteMail(db, mail)` in `server/mail/send.ts`.
 - **Three delivery modes**, decided per send:
@@ -80,7 +80,9 @@ A template definition (`MailTemplateDefinition`) has a `key`, a label, a group, 
 - Subject values are forced onto one line.
 - A `{name}` with no value is left as written, so a typo is visible in the preview.
 
-The admin preview calls the same function with each variable's `sample`, so the preview is what is sent. A template test (`POST …/templates/:key/test`) also uses sample values, never real ones, so a test cannot mint a working link.
+In the admin (`tabs/TemplatesTab.tsx`) a template opens in **Live** mode: the subject and body are edited inside a card styled like the sent email (`.emailCard`, coloured by the `--email-preview-*` tokens), so there is no separate preview pane. **Write** is the bare editor surface. The switch is the post editor's `ContentModeToggle`; "Insert variable" puts a `{name}` into whichever of the two fields was focused last. The editor runs without media (`onPickMedia` omitted), which hides the image options of the floating and slash menus.
+
+"Send test" in the header opens a dialog that shows the email rendered by the same `renderMailTemplate` with each variable's `sample`, so the dialog is what is sent. Sending is disabled until unsaved edits are saved, because the server sends the stored template. On a connector the test send and the secret replacement are dialogs too. A template test (`POST …/templates/:key/test`) also uses sample values, never real ones, so a test cannot mint a working link.
 
 ## Links in emails
 
