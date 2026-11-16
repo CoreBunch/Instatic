@@ -21,8 +21,9 @@ import type { Page } from '@core/page-tree'
 import { isTemplatePage, normalizeRouteBase } from '@core/templates'
 import { resolveSignedInMember } from '../members/handlers'
 import { getMemberSettings, listActiveMemberTags } from '../members/repository'
-import { listProtectedTableRoutes } from '../repositories/data/tableAccess'
+import { listProtectedTables } from '../repositories/data/tableAccess'
 import { listPublishedPageAccess } from '../repositories/publish'
+import type { ClosedContent } from '@core/loops/types'
 import { createVersionedSingleFlight } from './publishState'
 
 interface AccessIndex {
@@ -36,6 +37,8 @@ interface AccessIndex {
   routeBases: Map<string, AccessRule[]>
   /** Table slug → rule, protected tables only. */
   tableSlugs: Map<string, AccessRule>
+  /** Table logical id → rule, protected tables only (routable or not). */
+  tableIds: Map<string, AccessRule>
 }
 
 const indexMemo = createVersionedSingleFlight<AccessIndex>()
@@ -48,12 +51,16 @@ async function loadAccessIndex(db: DbClient): Promise<AccessIndex> {
   }
   const routeBases = new Map<string, AccessRule[]>()
   const tableSlugs = new Map<string, AccessRule>()
-  for (const entry of await listProtectedTableRoutes(db)) {
-    const key = entry.routeBase.toLowerCase()
-    routeBases.set(key, [...(routeBases.get(key) ?? []), entry.rule])
-    tableSlugs.set(entry.slug, entry.rule)
+  const tableIds = new Map<string, AccessRule>()
+  for (const table of await listProtectedTables(db)) {
+    if (table.routeBase !== null) {
+      const key = table.routeBase.toLowerCase()
+      routeBases.set(key, [...(routeBases.get(key) ?? []), table.rule])
+    }
+    tableSlugs.set(table.slug, table.rule)
+    tableIds.set(table.id, table.rule)
   }
-  return { pages, routeBases, tableSlugs }
+  return { pages, routeBases, tableSlugs, tableIds }
 }
 
 /**
@@ -117,6 +124,16 @@ export function pageRules(index: AccessIndex, page: Page): AccessRule[] {
   const target = page.template?.target
   if (target?.kind !== 'postTypes') return []
   return target.tableSlugs.flatMap((slug) => index.tableSlugs.get(slug) ?? [])
+}
+
+/**
+ * What a visitor with these tags (null = signed out) may not open: the
+ * tables and pages a listing must leave out for them.
+ */
+export function closedContentFor(index: AccessIndex, tags: readonly string[] | null): ClosedContent {
+  const closedIds = (rules: Map<string, AccessRule>): Set<string> =>
+    new Set([...rules].filter(([, rule]) => !accessAllows(rule, tags)).map(([key]) => key))
+  return { tableIds: closedIds(index.tableIds), pageSlugs: closedIds(index.pages) }
 }
 
 // ─── The visitor ───────────────────────────────────────────────────────────

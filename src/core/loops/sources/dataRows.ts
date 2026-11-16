@@ -599,6 +599,9 @@ export const DataRowsSource: LoopEntitySource = {
     // The loop stores the table's logical id; the SQL below addresses the
     // physical table row of the branch being rendered.
     const logicalTableId = typeof ctx.filters.tableId === 'string' ? ctx.filters.tableId : ''
+    // A table's access rule covers all of its rows: a visitor who may not
+    // open its entries does not get them listed either.
+    if (ctx.closed?.tableIds.has(logicalTableId)) return { items: [], totalItems: 0 }
     return fetchPublishedDataRowItems(ctx.db, {
       tableId: logicalTableId ? physicalId(ctx.branchId ?? MAIN_BRANCH_ID, logicalTableId) : '',
       drafts: ctx.drafts ?? (ctx.branchId ?? MAIN_BRANCH_ID) !== MAIN_BRANCH_ID,

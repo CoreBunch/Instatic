@@ -127,9 +127,9 @@ Everything rendered behind a rule is sent `Cache-Control: private, no-store`.
 
 **Fail closed.** A stored rule that cannot be read becomes `LOCKED_ACCESS` (nobody, hidden), never public (`parseAccessRule`).
 
-**When a rule takes effect.** A page's rule is page content: it applies on publish. A table's rule is a live setting: `setTableAccess` (`server/publish/tableAccess.ts`) removes the table's baked pages and bumps the publish version, so it applies on the next request.
+**When a rule takes effect.** A page's rule is page content: it applies on publish. A table's rule is a live setting: `setTableAccess` (`server/publish/tableAccess.ts`) removes every baked page from the static slot (the table's rows may be listed anywhere) and bumps the publish version, so it applies on the next request. Pages render live until the next publish bakes them again.
 
-**What a table rule does not cover.** It protects the table's entry routes. A loop on a public page that lists rows of that table still shows what the loop renders.
+**Lists follow the same rules.** A loop never shows what the visitor could not open by its address. Every public render hands loop sources a `closed` set (`ClosedContent` in `@core/loops/types`, built by `closedContentFor`): `data.rows` returns nothing for a closed table, `site.pages` leaves closed pages out. A baked page, a cached render and a shared fragment are rendered as for a signed-out visitor. Only a protected route, rendered per request, is rendered with the member's tags, so a members page can list what that member may open. Admin previews pass no `closed` set and show everything. Plugin loop sources do not receive it; a plugin that lists its own protected data must check access itself.
 
 ## Deleting and exporting
 

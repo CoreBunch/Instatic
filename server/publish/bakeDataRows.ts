@@ -20,7 +20,7 @@
  * per-page bake behaviour in `publishDraftSite`.
  */
 
-import { listProtectedTableRoutes } from '../repositories/data/tableAccess'
+import { listProtectedTables } from '../repositories/data/tableAccess'
 import type { DbClient } from '../db/client'
 import type { SiteCssBundle } from '@core/publisher'
 import { resolveTemplateChain } from '@core/templates'
@@ -71,7 +71,7 @@ export async function bakePublishedDataRowArtefacts(
   const routes = await listPublishedRowRoutes(db)
   if (routes.length === 0) return result
   // Entries of a protected table never go to disk (see `accessGate.ts`).
-  const protectedRouteBases = new Set((await listProtectedTableRoutes(db)).map((entry) => entry.routeBase))
+  const protectedRouteBases = new Set((await listProtectedTables(db)).map((table) => table.routeBase))
 
   const siteSnapshot = await getLatestSnapshotForVersion(db, publishVersion)
   if (!siteSnapshot) return result

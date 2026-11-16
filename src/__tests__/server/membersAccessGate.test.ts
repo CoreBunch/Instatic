@@ -47,7 +47,7 @@ function makeShell(): SiteShell {
 function makePage(id: string, slug: string, text: string, access?: AccessRule): Page {
   return {
     id,
-    title: slug,
+    title: `T-${slug}`,
     slug,
     rootNodeId: 'root',
     nodes: {
@@ -56,6 +56,21 @@ function makePage(id: string, slug: string, text: string, access?: AccessRule): 
     },
     ...(access ? { access } : {}),
   } as Page
+}
+
+/** Add two lists to a page: the rows of the posts table, and the site's pages. */
+function withLists(page: Page): Page {
+  const node = (id: string, moduleId: string, props: Record<string, unknown>, children: string[] = []) =>
+    ({ id, moduleId, props, breakpointOverrides: {}, children, classIds: [] }) as Page['nodes'][string]
+  const p = page.id
+  page.nodes.root.children.push(`${p}_posts`, `${p}_pages`)
+  page.nodes[`${p}_posts`] = node(`${p}_posts`, 'base.loop', { sourceId: 'data.rows', filters: { tableId: 'posts' } }, [`${p}_post`])
+  page.nodes[`${p}_post`] = node(`${p}_post`, 'base.text', { text: 'post', tag: 'p' })
+  page.nodes[`${p}_post`].dynamicBindings = { text: { source: 'currentEntry', field: 'title' } }
+  page.nodes[`${p}_pages`] = node(`${p}_pages`, 'base.loop', { sourceId: 'site.pages', limit: 50 }, [`${p}_page`])
+  page.nodes[`${p}_page`] = node(`${p}_page`, 'base.text', { text: 'page', tag: 'p' })
+  page.nodes[`${p}_page`].dynamicBindings = { text: { source: 'currentEntry', field: 'title' } }
+  return page
 }
 
 describe('members access gate', () => {
@@ -78,6 +93,8 @@ describe('members access gate', () => {
       makePage('page_home', 'index', 'Home is public'),
       makePage('page_account', 'account', SECRET_ACCOUNT, { level: 'members', onDeny: 'login' }),
       makePage('page_vault', 'vault', SECRET_VAULT, { level: 'tags', tags: ['pro'], onDeny: 'hide' }),
+      withLists(makePage('page_catalog', 'catalog', 'Catalog is public')),
+      withLists(makePage('page_library', 'library', 'Library for members', { level: 'members', onDeny: 'login' })),
       template,
     ]) {
       await createDataRow(t.db, MAIN_SCOPE, { id: page.id, tableId: 'pages', cells: pageToCells(page), slug: page.slug }, 'admin_1')
@@ -382,6 +399,54 @@ describe('members access gate', () => {
       const anonymous = await get(path)
       expect(anonymous.status).toBe(404)
       expect(await anonymous.text()).not.toContain(SECRET_FRAGMENT)
+    })
+  })
+
+  describe('lists', () => {
+    it('leave protected pages out for a signed-out visitor, in the baked page too', async () => {
+      const html = await (await get('/catalog')).text()
+      expect(html).toContain('T-index')
+      for (const closed of ['T-account', 'T-vault', 'T-library']) expect(html).not.toContain(closed)
+      const baked = await readArtefact(uploadsDir, '/catalog')
+      expect(baked).toContain('T-index')
+      expect(baked).not.toContain('T-vault')
+    })
+
+    it('leave a protected table’s rows out at once, and stay that way after a publish', async () => {
+      // Bake the catalog with the still-public rows listed on it.
+      await publishDraftSite(t.db, 'admin_1', uploadsDir)
+      expect(await readArtefact(uploadsDir, '/catalog')).toContain(SECRET_LESSON)
+
+      await setTableAccess(t.db, 'posts', { level: 'tags', tags: ['student'], onDeny: 'hide' }, uploadsDir)
+      // The page that listed the rows is no longer served from disk.
+      expect(await readArtefact(uploadsDir, '/catalog')).toBeNull()
+      expect(await everythingOnDisk()).not.toContain(SECRET_LESSON)
+      const live = await get('/catalog')
+      expect(live.status).toBe(200)
+      expect(await live.text()).not.toContain(SECRET_LESSON)
+
+      await publishDraftSite(t.db, 'admin_1', uploadsDir)
+      expect(await readArtefact(uploadsDir, '/catalog')).toContain('Catalog is public')
+      expect(await everythingOnDisk()).not.toContain(SECRET_LESSON)
+      expect(await (await get('/catalog')).text()).not.toContain(SECRET_LESSON)
+    })
+
+    it('show a member, on a members page, exactly what that member may open', async () => {
+      await setTableAccess(t.db, 'posts', { level: 'tags', tags: ['student'], onDeny: 'hide' }, uploadsDir)
+      const plain = await signedInMember('m@example.com')
+      const student = await signedInMember('s@example.com', ['student'])
+      const pro = await signedInMember('p@example.com', ['pro'])
+
+      const forPlain = await (await get('/library', plain.cookie)).text()
+      expect(forPlain).toContain('Library for members')
+      expect(forPlain).toContain('T-account') // any member may open it
+      expect(forPlain).not.toContain(SECRET_LESSON)
+      expect(forPlain).not.toContain('T-vault')
+
+      expect(await (await get('/library', student.cookie)).text()).toContain(SECRET_LESSON)
+      const forPro = await (await get('/library', pro.cookie)).text()
+      expect(forPro).toContain('T-vault')
+      expect(forPro).not.toContain(SECRET_LESSON)
     })
   })
 

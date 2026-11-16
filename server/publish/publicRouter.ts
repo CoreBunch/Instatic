@@ -302,10 +302,10 @@ export async function renderPublicResolution(
     })
   }
 
-  const render = async (): Promise<string | null> => {
+  const render = async (visitorTags: readonly string[] | null = null): Promise<string | null> => {
     const rendered = resolution.kind === 'page'
-      ? await renderPublishedSnapshot(resolution.snapshot, { db, url })
-      : await renderPublishedDataRowTemplate(resolution.snapshot, resolution.row, { db, url })
+      ? await renderPublishedSnapshot(resolution.snapshot, { db, url, visitorTags })
+      : await renderPublishedDataRowTemplate(resolution.snapshot, resolution.row, { db, url, visitorTags })
     return rendered ? await applyPublishedHtmlPipeline(rendered, db) : null
   }
 
@@ -317,8 +317,9 @@ export async function renderPublicResolution(
     const decision = await decideAccess(rules, visitor)
     if (decision === 'hide') return null // answered exactly like a route that does not exist
     if (decision !== 'allow') return denyResponse(db, url, decision)
-    // Rendered for this visitor alone: never through the shared cache.
-    const html = await render()
+    // Rendered for this visitor alone: never through the shared cache. Lists
+    // on the page show what this member may open.
+    const html = await render(visitor ? await visitor() : null)
     if (html === null) return null
     return new Response(html, {
       headers: { 'content-type': 'text/html; charset=utf-8', ...PRIVATE_HEADERS },

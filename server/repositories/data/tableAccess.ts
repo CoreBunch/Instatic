@@ -13,26 +13,28 @@ import { parseAccessRule, type AccessRule } from '@core/members'
 import { normalizeRouteBase } from '@core/templates'
 import { nowIso } from '@core/utils/isoDate'
 
-export interface ProtectedTableRoute {
+export interface ProtectedTable {
+  id: string
   slug: string
-  routeBase: string
+  /** Normalised route base, or null for a table with no entry routes. */
+  routeBase: string | null
   rule: AccessRule
 }
 
-/** Every routable main-branch table whose entries are not open to anyone. */
-export async function listProtectedTableRoutes(db: DbClient): Promise<ProtectedTableRoute[]> {
-  const { rows } = await db<{ slug: string; route_base: string; access_json: unknown }>`
-    select slug, route_base, access_json
+/** Every main-branch table whose rows are not open to anyone. */
+export async function listProtectedTables(db: DbClient): Promise<ProtectedTable[]> {
+  const { rows } = await db<{ logical_id: string; slug: string; route_base: string; access_json: unknown }>`
+    select logical_id, slug, route_base, access_json
       from data_tables
      where branch_id = ${MAIN_BRANCH_ID}
        and deleted_at is null
        and access_json is not null
-       and route_base <> ''
   `
   return rows
     .map((row) => ({
+      id: row.logical_id,
       slug: row.slug,
-      routeBase: normalizeRouteBase(row.route_base),
+      routeBase: row.route_base.trim() === '' ? null : normalizeRouteBase(row.route_base),
       rule: parseAccessRule(row.access_json),
     }))
     .filter((entry) => entry.rule.level !== 'public')
@@ -46,17 +48,17 @@ export async function getTableAccess(db: DbClient, tableId: string): Promise<Acc
   return rows[0] ? parseAccessRule(rows[0].access_json) : null
 }
 
-/** Store the rule. Returns the table's route base, or null when there is no such table. */
+/** Store the rule. Returns false when there is no such table. */
 export async function writeTableAccess(
   db: DbClient,
   tableId: string,
   rule: AccessRule,
-): Promise<string | null> {
+): Promise<boolean> {
   const { rows } = await db<{ route_base: string }>`
     update data_tables
        set access_json = ${rule.level === 'public' ? null : rule}, updated_at = ${nowIso()}
      where branch_id = ${MAIN_BRANCH_ID} and logical_id = ${tableId} and deleted_at is null
     returning route_base
   `
-  return rows[0] ? normalizeRouteBase(rows[0].route_base) : null
+  return rows.length > 0
 }
