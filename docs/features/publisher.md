@@ -328,6 +328,13 @@ process restart therefore cannot invalidate an unchanged page's fragments.
 refreshes live fragment data and snapshot indexes. A genuinely different site
 snapshot rejects old fingerprints with an uncached stale sentinel.
 
+The published `SiteDocument` held by `server/publish/publishedSnapshotCache.ts`
+is shared by every render in the process and is the object that fingerprint is
+computed from, so it is **read-only**. Anything that needs a changed tree
+copies first: `composeTemplateChain` (`src/core/templates/templateCompose.ts`)
+copies each node before it recomputes `parentId`. Writing to a cached page's
+nodes changes the fingerprint and turns every baked page's fragments stale.
+
 After upgrading from counter-based hole versions, run a full-site publish once
 to regenerate existing baked HTML with snapshot fingerprints.
 

@@ -77,3 +77,42 @@ test('an unrelated post publish keeps baked page fragments usable', async () => 
     await rm(dir, { recursive: true, force: true })
   }
 })
+
+test('baking entry routes through a template leaves page fragments usable', async () => {
+  resetPublishStateForTests()
+  const { db, cleanup } = await createTestDb()
+  const dir = await mkdtemp(join(tmpdir(), 'hole-publication-'))
+  try {
+    await db`insert into users (id,email,email_normalized,display_name,password_hash,role_id)
+      values ('owner','owner@example.test','owner@example.test','Owner','x','owner')`
+    await saveDraftSite(db, MAIN_SCOPE, makeShell())
+    const page = makePage('home', 'index', 'Home', 'Hello {route.query.q}')
+    // An entry template WITH an outlet: rendering a post composes the template
+    // chain, which is what used to rewrite the cached published site.
+    const template = {
+      id: 'post-template', title: 'Post template', slug: 'post-template', rootNodeId: 'tpl_root',
+      template: { enabled: true, target: { kind: 'postTypes' as const, tableSlugs: ['posts'] }, priority: 0 },
+      nodes: {
+        tpl_root: { id: 'tpl_root', moduleId: 'base.body', props: {}, breakpointOverrides: {}, children: ['tpl_outlet'], classIds: [] },
+        tpl_outlet: { id: 'tpl_outlet', moduleId: 'base.outlet', props: {}, breakpointOverrides: {}, children: [], classIds: [] },
+      },
+    }
+    await createDataRow(db, MAIN_SCOPE, { id: 'home', tableId: 'pages', slug: 'index', cells: pageToCells(page) })
+    await createDataRow(db, MAIN_SCOPE, { id: 'post-template', tableId: 'pages', slug: 'post-template', cells: pageToCells(template) })
+    await createDataRow(db, MAIN_SCOPE, { id: 'post', tableId: 'posts', slug: 'test', cells: { title: 'Post', body: 'Hello' } })
+    await publishDraftSite(db, 'owner', dir)
+    await publishDataRow(db, 'post', 'owner', dir)
+    // This publish bakes the post route alongside the pages.
+    await publishDraftSite(db, 'owner', dir)
+    expect(await readArtefact(dir, '/posts/test')).not.toBeNull()
+
+    const shell = await readArtefact(dir, '/')
+    const version = shell!.match(/data-instatic-version="([^"]+)"/)![1]
+    const url = new URL(`http://localhost/_instatic/hole/text_1?v=${version}&u=${encodeURIComponent('/?q=world')}`)
+    const fragment = await (await handleHoleRequest(new Request(url), url, { db })).text()
+    expect(fragment).toContain('Hello world')
+  } finally {
+    await cleanup()
+    await rm(dir, { recursive: true, force: true })
+  }
+})
