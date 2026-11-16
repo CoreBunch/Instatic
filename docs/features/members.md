@@ -176,7 +176,7 @@ The API is `server/handlers/cms/members.ts` under `/admin/api/cms/members`. It d
 
 - **Status** for the admin is `active`, `invited` (no password and address not confirmed) or `suspended`. A deleted member is not listed.
 - **Invitations** need outgoing email and a known public address (`memberMailAvailable`); without them the route answers 409 and the button is disabled with the reason. Inviting an address with a pending invitation sends a fresh link; an address that already has an account is refused. The link opens the `invite` page (or the built-in one) and lasts 7 days.
-- **Suspension** takes effect on the next request without touching session rows (`findMemberSession` requires an active member). Unused tokens are withdrawn.
+- **Suspension** takes effect on the next request (`findMemberSession` requires an active member). Sessions and unused tokens are also ended for good, so restoring a member does not bring an old session back.
 - **Search** matches the address and the profile text. `%` and `_` are plain characters.
 - **Settings** are validated beyond the schema: field ids must be unique and must not be a name the member forms use (`email`, `password`, `token`, `currentPassword`, `newPassword`). A link page must be a site path.
 - **Audit:** `member.invite`, `member.suspend`, `member.unsuspend`, `member.signout`, `member.delete`, `member.tag.grant`, `member.tag.revoke`, `member.settings.update`, each with the member's address in the metadata, since the audit trail cannot look a member up by id.

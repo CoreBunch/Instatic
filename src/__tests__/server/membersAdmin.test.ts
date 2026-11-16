@@ -145,7 +145,7 @@ describe('members admin API', () => {
   })
 
   describe('one member', () => {
-    it('suspends: sign-in sessions stop working at once, and restoring brings access back', async () => {
+    it('suspends: sessions end for good, and restoring lets the member sign in again', async () => {
       const ada = await member('ada@example.com')
       const session = await createMemberSession(h.db, ada.id, { ipAddress: null, userAgent: null })
       expect(await findMemberSession(h.db, session.token)).not.toBeNull()
@@ -156,6 +156,9 @@ describe('members admin API', () => {
 
       await h.cms(`${BASE}/${ada.id}/unsuspend`, { method: 'POST', cookie: owner })
       expect((await detailOf(ada.id)).member.status).toBe('active')
+      // Restoring does not revive what was open before: the member signs in again.
+      expect(await findMemberSession(h.db, session.token)).toBeNull()
+      expect(await listMemberSessions(h.db, ada.id)).toEqual([])
     })
 
     it('signs a member out everywhere', async () => {

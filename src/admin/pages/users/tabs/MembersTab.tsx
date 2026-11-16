@@ -205,7 +205,7 @@ export function MembersTab({
       suspend: () =>
         confirmAction({
           title: `Suspend ${who}?`,
-          description: 'They cannot sign in, and anything they have open stops working at once. You can restore access later.',
+          description: 'They are signed out everywhere and cannot sign in. You can restore access later; they will have to sign in again.',
           confirmLabel: 'Suspend',
           commit: () => void run(() => suspendCmsMember(member.id), 'The member could not be suspended', `${who} is suspended`),
         }),

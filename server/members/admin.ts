@@ -297,7 +297,9 @@ export async function inviteMember(
 /**
  * Suspend or restore a member. A suspended member cannot sign in, and every
  * open session stops working on its next request (`findMemberSession`
- * requires an active member), so no session row has to be touched.
+ * requires an active member). The sessions and unused links are also ended
+ * for good, so restoring the member later does not bring them back: they
+ * sign in again.
  */
 export async function setMemberSuspended(db: DbClient, memberId: string, suspended: boolean): Promise<boolean> {
   const member = await findMemberById(db, memberId)
@@ -306,7 +308,10 @@ export async function setMemberSuspended(db: DbClient, memberId: string, suspend
     update members set status = ${suspended ? 'suspended' : 'active'}, updated_at = ${nowIso()}
      where id = ${memberId} and deleted_at is null
   `
-  if (suspended) await withdrawMemberTokens(db, memberId)
+  if (suspended) {
+    await revokeAllMemberSessions(db, memberId)
+    await withdrawMemberTokens(db, memberId)
+  }
   await recordMemberEvent(db, memberId, suspended ? 'suspended' : 'unsuspended', NO_REQUEST)
   return true
 }
