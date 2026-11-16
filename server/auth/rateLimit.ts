@@ -117,6 +117,11 @@ export class RateLimiter {
     this.buckets.delete(key)
   }
 
+  /** Forget every bucket. For tests that share one process-wide limiter. */
+  clear(): void {
+    this.buckets.clear()
+  }
+
   /**
    * Drop empty / fully-aged-out buckets. Invoked opportunistically from
    * `consume()`; the per-call filter there already prevents stale data from

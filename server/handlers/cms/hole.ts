@@ -47,6 +47,7 @@ import { getPublishedNodeIndexForVersion } from '../../publish/publishedSnapshot
 import { getPublishVersion } from '../../publish/publishState'
 import { HOLE_RUNTIME_JS } from '../../publish/holeRuntime'
 import { stampFormPageTokens } from '../../forms/formRuntime'
+import { isSessionCookieName } from '../../sessionCookies'
 
 const HOLE_RUNTIME_PATH = '/_instatic/hole-runtime.js'
 const HOLE_PATH_PREFIX = '/_instatic/hole/'
@@ -79,7 +80,11 @@ interface HoleHandlerContext {
 // Request helpers
 // ---------------------------------------------------------------------------
 
-/** Parse a `Cookie` header into a flat map. Returns `{}` when absent. */
+/**
+ * Parse a `Cookie` header into a flat map for a per-visitor loop source.
+ * Session cookies are left out: sources can be plugin code. Returns `{}`
+ * when absent.
+ */
 function parseCookies(header: string | null): Record<string, string> {
   if (!header) return {}
   const out: Record<string, string> = {}
@@ -87,7 +92,7 @@ function parseCookies(header: string | null): Record<string, string> {
     const eq = part.indexOf('=')
     if (eq < 0) continue
     const name = part.slice(0, eq).trim()
-    if (!name) continue
+    if (!name || isSessionCookieName(name)) continue
     out[name] = decodeURIComponent(part.slice(eq + 1).trim())
   }
   return out

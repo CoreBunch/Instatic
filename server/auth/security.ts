@@ -135,6 +135,14 @@ export function publicOriginIsHttps(): boolean {
 export function originAllowed(req: Request): boolean {
   const rawOrigin = req.headers.get('origin')
   if (!rawOrigin) return true
+  return isSiteOrigin(req, rawOrigin)
+}
+
+/**
+ * True when `rawOrigin` is one of this site's own origins for `req`: the
+ * expected origin, any configured public origin, or a dev allowlist entry.
+ */
+export function isSiteOrigin(req: Request, rawOrigin: string): boolean {
   const origin = normalizeOrigin(rawOrigin)
   if (!origin) return false
   if (origin === normalizeOrigin(expectedOrigin(req))) return true

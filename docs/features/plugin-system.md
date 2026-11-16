@@ -524,6 +524,8 @@ Routes mount under `/admin/api/cms/plugins/<id>/runtime/*`. The host enforces th
 
 Request bodies are **byte-safe end to end**. The host reads the incoming body once as raw bytes and carries it to the sandbox tagged `utf8` (text verbatim) or `base64` (binary), so `req.text()` / `req.json()` decode correctly (including multibyte UTF-8) and `req.arrayBuffer()` returns the exact payload bytes. Pre-parsed `body` fields cover `application/json`, `application/x-www-form-urlencoded` (repeated keys become arrays), and `multipart/form-data` — text fields arrive as strings, file fields as uploaded-file facades (`{ name, type, size, arrayBuffer(), text() }`) whose bytes are uncorrupted, so plugins can accept image/PDF uploads. (De)serialization lives in `server/plugins/host/routeIo.ts`; the wire codec in `server/plugins/protocol/bodyEncoding.ts`.
 
+Route handlers never receive session cookies. The host removes the admin session cookie and the site-member session cookies from `req.headers.cookie` before the request reaches the sandbox (`server/sessionCookies.ts`); who the caller is arrives as `ctx.user`. Other cookies pass through.
+
 Custom responses (status, headers, non-JSON bodies) use the raw-response escape hatch: return `{ __response: true, status, headers, body }` instead of a plain object. `body` accepts a string (sent as UTF-8 text) or an `ArrayBuffer` / TypedArray / `DataView` (sent byte-exactly — serve images, zips, PDFs directly); anything else throws a `TypeError`.
 
 ### Plugin-owned records — requires `cms.storage`
@@ -590,7 +592,7 @@ ctx.request: {
   query: Record<string, string>   // parsed page query string (?q=shoes → { q: 'shoes' })
   path: string                    // originating page path (e.g. '/search')
   slug: string | null
-  cookies: Record<string, string> // populated ONLY for perVisitor sources
+  cookies: Record<string, string> // populated ONLY for perVisitor sources; session cookies are removed
 }
 ```
 
