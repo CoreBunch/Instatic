@@ -48,6 +48,7 @@ export const FORM_RUNTIME_JS = `(() => {
   function attachForm(form) {
     if (form.__instaticFormRuntimeAttached) return;
     form.__instaticFormRuntimeAttached = true;
+    form.__instaticFormAttachedAt = Date.now();
     connectLabels(form);
     prepareMessages(form);
     prefetchChallenge(form);
@@ -96,8 +97,13 @@ export const FORM_RUNTIME_JS = `(() => {
     if (form.__instaticFormChallenge || form.__instaticFormChallengePromise) return form.__instaticFormChallengePromise;
     const request = requestChallenge(form)
       .then((challenge) => {
+        // Stamp the arrival time with this browser's own clock: every later
+        // lifetime check is then relative, so a visitor clock that disagrees
+        // with the server's cannot make a live challenge look expired.
+        challenge.receivedAt = Date.now();
         form.__instaticFormChallenge = challenge;
         form.__instaticFormChallengePromise = null;
+        scheduleChallengeRefresh(form, challenge);
         return challenge;
       })
       .catch((err) => {
@@ -110,16 +116,52 @@ export const FORM_RUNTIME_JS = `(() => {
     return request;
   }
 
-  async function takeChallenge(form) {
-    const existing = form.__instaticFormChallenge;
-    if (existing && challengeIsFresh(existing)) {
+  // Replace the held challenge 30 seconds before it expires, so a visitor who
+  // spends minutes on the page still submits with one the server accepts.
+  function scheduleChallengeRefresh(form, challenge) {
+    clearChallengeRefresh(form);
+    const lifetimeMs = challengeLifetimeMs(challenge);
+    if (!Number.isFinite(lifetimeMs)) return;
+    const delay = Math.min(2147483647, Math.max(lifetimeMs - 30000, lifetimeMs / 2));
+    form.__instaticChallengeTimer = setTimeout(() => {
+      form.__instaticChallengeTimer = null;
+      if (!form.isConnected) return;
       form.__instaticFormChallenge = null;
-      return existing;
-    }
+      prefetchChallenge(form);
+    }, delay);
+  }
+
+  function clearChallengeRefresh(form) {
+    if (!form.__instaticChallengeTimer) return;
+    clearTimeout(form.__instaticChallengeTimer);
+    form.__instaticChallengeTimer = null;
+  }
+
+  async function takeChallenge(form) {
+    clearChallengeRefresh(form);
+    const existing = form.__instaticFormChallenge;
     form.__instaticFormChallenge = null;
-    const challenge = await prefetchChallenge(form);
+    const challenge = existing && challengeIsFresh(existing) ? existing : await prefetchChallenge(form);
     form.__instaticFormChallenge = null;
+    clearChallengeRefresh(form);
+    await waitOutMinSubmitTime(form, challenge);
     return challenge;
+  }
+
+  // The server's time trap measures from the challenge's issue time. A visitor
+  // who has already had the form for the minimum fill time can still be
+  // holding a challenge younger than that (it was refreshed in the background,
+  // or fetched at submit because the earlier one expired or never arrived), so
+  // wait out the difference instead of posting into a certain rejection. A
+  // submit sooner than the minimum after the form appeared is posted as-is and
+  // the server rejects it, as the time trap intends.
+  async function waitOutMinSubmitTime(form, challenge) {
+    const minMs = Number(challenge.minSubmitSeconds) * 1000;
+    if (!(minMs > 0)) return;
+    const now = Date.now();
+    if (now - form.__instaticFormAttachedAt < minMs) return;
+    const remainingMs = challenge.receivedAt + minMs - now;
+    if (remainingMs > 0) await new Promise((resolve) => setTimeout(resolve, remainingMs + 50));
   }
 
   function requestChallenge(form) {
@@ -132,9 +174,13 @@ export const FORM_RUNTIME_JS = `(() => {
     return postJson('/_instatic/form/challenge', { pageId, formId, pageToken });
   }
 
+  function challengeLifetimeMs(challenge) {
+    return Number(challenge.expiresInSeconds) * 1000;
+  }
+
   function challengeIsFresh(challenge) {
-    const expiresAt = Date.parse(challenge && challenge.expiresAt ? challenge.expiresAt : '');
-    return !Number.isFinite(expiresAt) || Date.now() < expiresAt - 10000;
+    const lifetimeMs = challengeLifetimeMs(challenge);
+    return !Number.isFinite(lifetimeMs) || Date.now() < challenge.receivedAt + lifetimeMs - 10000;
   }
 
   async function postJson(path, payload) {
