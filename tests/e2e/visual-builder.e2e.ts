@@ -167,6 +167,34 @@ test.describe('visual builder', () => {
     await expect(canvasFrame(page).getByText(headline)).toHaveCount(0)
   })
 
+  test('keeps the class picker inside the sidebar when a selector is very long (SITE-006)', async ({
+    page,
+  }) => {
+    // A ten-part grouped selector whose every part matches the selected Text node.
+    // Its chip's intrinsic width is far wider than the right sidebar.
+    const longSelector = Array.from(
+      { length: 10 },
+      (_, i) => `:where(body) p:not(.long-selector-guard-${i})`,
+    ).join(', ')
+
+    await openBlankPage(page, 'Builder long selector')
+    await insertNotchModule(page, 'text')
+    await setPropValue(page, 'text', 'Long selector headline')
+
+    const input = page.getByTestId('class-picker-input')
+    await input.fill(longSelector)
+    await page.getByTestId('class-picker-submit').click()
+    await expect(
+      page.getByRole('button', { name: `Deselect selector ${longSelector}` }),
+    ).toBeVisible()
+
+    const sidebarBox = await page.getByTestId('right-sidebar').boundingBox()
+    const inputBox = await input.boundingBox()
+    expect(sidebarBox).not.toBeNull()
+    expect(inputBox).not.toBeNull()
+    expect(inputBox!.x + inputBox!.width).toBeLessThanOrEqual(sidebarBox!.x + sidebarBox!.width)
+  })
+
   test('undoes and redoes edits with buttons and shortcuts (BUILDER-005 / SITE-009)', async ({
     page,
   }) => {
