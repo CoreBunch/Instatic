@@ -34,6 +34,13 @@ import { readLoopProps } from '../../publish/loopPrefetch'
 import { getPublishedLoopIndexForVersion } from '../../publish/publishedSnapshotCache'
 import { getPublishVersion } from '../../publish/publishState'
 import { LOOP_RUNTIME_JS } from '../../publish/loopRuntime'
+import {
+  decideAccess,
+  getAccessIndex,
+  pageRule,
+  PRIVATE_HEADERS,
+  visitorFromRequest,
+} from '../../publish/accessGate'
 
 const LOOP_RUNTIME_PATH = '/_instatic/assets/loop-runtime.js'
 
@@ -88,6 +95,13 @@ export async function handleLoopRequest(
   }
   const { page: containingPage, node: loopNode } = indexed
   const site = loopIndex.site
+
+  // More items of a loop on a protected page are part of that page.
+  const rule = pageRule(await getAccessIndex(ctx.db, getPublishVersion()), containingPage)
+  const isProtected = rule.level !== 'public'
+  if (isProtected && (await decideAccess(rule, visitorFromRequest(ctx.db, req))) !== 'allow') {
+    return jsonResponse({ error: 'Loop not found' }, { status: 404, headers: PRIVATE_HEADERS })
+  }
 
   const props = readLoopProps(loopNode)
   if (props.pagination !== 'infinite') {
@@ -166,5 +180,5 @@ export async function handleLoopRequest(
     html += renderNode(variantId, iterationConfig, acc)
   })
 
-  return jsonResponse({ html, hasMore, pageNumber })
+  return jsonResponse({ html, hasMore, pageNumber }, isProtected ? { headers: PRIVATE_HEADERS } : {})
 }

@@ -48,6 +48,15 @@ import { getPublishVersion } from '../../publish/publishState'
 import { HOLE_RUNTIME_JS } from '../../publish/holeRuntime'
 import { stampFormPageTokens } from '../../forms/formRuntime'
 import { isSessionCookieName } from '../../sessionCookies'
+import {
+  decideAccess,
+  getAccessIndex,
+  indexedRuleForPath,
+  pageRule,
+  PRIVATE_HEADERS,
+  strictest,
+  visitorFromRequest,
+} from '../../publish/accessGate'
 
 const HOLE_RUNTIME_PATH = '/_instatic/hole-runtime.js'
 const HOLE_PATH_PREFIX = '/_instatic/hole/'
@@ -223,26 +232,40 @@ export async function handleHoleRequest(
     pageUrl = new URL(buildPageFrame(foundPage).permalink, url.origin)
   }
 
+  // A fragment is part of a page and is gated like one: by the page that owns
+  // the node, and (for a node in a template) by the route it is rendered on.
+  // `u` is chosen by the caller, so it can only ever add a restriction.
+  const accessIndex = await getAccessIndex(ctx.db, currentVersion)
+  const rule = strictest(pageRule(accessIndex, foundPage), indexedRuleForPath(accessIndex, pageUrl.pathname))
+  const isProtected = rule.level !== 'public'
+  if (isProtected && (await decideAccess(rule, visitorFromRequest(ctx.db, req))) !== 'allow') {
+    return new Response('Node not found', {
+      status: 404,
+      headers: { 'content-type': 'text/plain; charset=utf-8', ...PRIVATE_HEADERS },
+    })
+  }
+
   const perVisitor = isPerVisitorHole(node)
   const route = buildRouteFrame(pageUrl.toString())
   // Parsed query params of the originating page request — handed to a
   // request-dependent loop source's `fetch()` via `ctx.request.query`.
   const query: Record<string, string> = Object.fromEntries(pageUrl.searchParams)
 
-  // Per-visitor hole: bypass Layer B entirely, expose cookies, never cache.
-  if (perVisitor) {
+  // Per-visitor hole, or any hole of a protected page: bypass Layer B
+  // entirely and never cache. Only per-visitor sources get the cookies.
+  if (perVisitor || isProtected) {
     const request: SourceRequestContext = {
       query,
       path: route.path,
       slug: route.slug,
-      cookies: parseCookies(req.headers.get('cookie')),
+      cookies: perVisitor ? parseCookies(req.headers.get('cookie')) : {},
     }
     const html = await renderHoleFragment(nodeId, foundPage, snap.site, ctx.db, pageUrl, request)
     return new Response(html, {
       status: 200,
       headers: {
         'content-type': 'text/html; charset=utf-8',
-        'cache-control': 'no-store',
+        ...(isProtected ? PRIVATE_HEADERS : { 'cache-control': 'no-store' }),
       },
     })
   }

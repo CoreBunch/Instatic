@@ -1,3 +1,4 @@
+import { join as joinPath, resolve as resolvePath, sep as pathSeparator } from 'node:path'
 import { tryHandleAi } from './ai/handlers'
 import { handleMcpHttp, MCP_ENDPOINT_PATH } from './ai/mcp'
 import { tryHandleMcpOAuth } from './ai/mcp/oauth/handler'
@@ -449,6 +450,12 @@ async function tryServeUpload(
   pathname: string,
 ): Promise<Response | null> {
   if (!runtime.uploadsDir || !pathname.startsWith('/uploads/')) return null
+  // The published slot lives under the uploads folder but is not an upload.
+  // Its pages are served through the public router, which knows who may see
+  // them; reading the baked files by path would walk around that.
+  if (isPublishedSlotUploadPath(runtime.uploadsDir, pathname)) {
+    return new Response('Not found', { status: 404, headers: { 'content-type': 'text/plain; charset=utf-8' } })
+  }
   const upload = await serveStaticFile(runtime.uploadsDir, pathname.slice('/uploads'.length), req)
   if (!upload) return null
   // Defense-in-depth: even though the upload handler now writes only
@@ -475,6 +482,24 @@ async function tryServeUpload(
     })
   }
   return hardened
+}
+
+/**
+ * True when an `/uploads/…` URL would read from the published slot. Judged on
+ * the file it resolves to (the same decode-and-resolve the static handler
+ * does), so `..` segments, encoded slashes and letter case cannot dodge it.
+ */
+export function isPublishedSlotUploadPath(uploadsDir: string, pathname: string): boolean {
+  let decoded: string
+  try {
+    decoded = decodeURIComponent(pathname.slice('/uploads'.length))
+  } catch {
+    return true // the static handler rejects a malformed path too
+  }
+  const root = resolvePath(uploadsDir)
+  const target = resolvePath(root, `.${decoded}`).toLowerCase()
+  const slot = joinPath(root, 'published').toLowerCase()
+  return target === slot || target.startsWith(`${slot}${pathSeparator}`)
 }
 
 async function tryServeAdminApp(

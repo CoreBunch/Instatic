@@ -11,6 +11,7 @@ import { isoDate, isoDateOrNull, nowIso } from '@core/utils/isoDate'
 import { Type, safeParseValue, type Static, type TSchema } from '@core/utils/typeboxHelpers'
 import {
   DEFAULT_MEMBER_SETTINGS,
+  isGrantableMemberTag,
   MemberPagesSchema,
   MemberProfileFieldSchema,
   MemberProfileSchema,
@@ -219,6 +220,7 @@ export async function grantMemberTag(
   db: DbClient,
   input: { memberId: string; tag: string; source: string; expiresAt: string | null },
 ): Promise<void> {
+  if (!isGrantableMemberTag(input.tag)) throw new Error(`"${input.tag}" is not a tag a member can be given`)
   await db`
     insert into member_tags (member_id, tag, source, expires_at, created_at)
     values (${input.memberId}, ${input.tag}, ${input.source}, ${input.expiresAt}, ${nowIso()})

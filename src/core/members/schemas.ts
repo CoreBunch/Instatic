@@ -6,6 +6,7 @@
  * not admin users: different tables, different cookie, no capabilities.
  */
 import { Type, type Static } from '@sinclair/typebox'
+import { safeParseValue } from '@core/utils/typeboxHelpers'
 
 // ─── Limits ────────────────────────────────────────────────────────────────
 
@@ -134,6 +135,34 @@ export const AccessRuleSchema = Type.Union([
 export type AccessRule = Static<typeof AccessRuleSchema>
 
 export const PUBLIC_ACCESS: AccessRule = { level: 'public' }
+
+/** Tags under this prefix are the system's own; nobody can be granted one. */
+const RESERVED_TAG_PREFIX = 'instatic:'
+
+export function isGrantableMemberTag(tag: string): boolean {
+  return new RegExp(MEMBER_TAG_PATTERN).test(tag) && !tag.startsWith(RESERVED_TAG_PREFIX)
+}
+
+/**
+ * The rule a stored value falls back to when it is present but unreadable:
+ * nobody gets in, and the route answers "not found". An access rule that
+ * cannot be understood must never quietly become "anyone".
+ */
+export const LOCKED_ACCESS: AccessRule = {
+  level: 'tags',
+  tags: [`${RESERVED_TAG_PREFIX}locked`],
+  onDeny: 'hide',
+}
+
+/**
+ * Read a stored access rule. Absent means public. Present but invalid means
+ * locked (see `LOCKED_ACCESS`), never public.
+ */
+export function parseAccessRule(raw: unknown): AccessRule {
+  if (raw === undefined || raw === null) return PUBLIC_ACCESS
+  const parsed = safeParseValue(AccessRuleSchema, raw)
+  return parsed.ok ? parsed.value : LOCKED_ACCESS
+}
 
 /** Does a visitor with these tags (or `null` when signed out) pass `rule`? */
 export function accessAllows(rule: AccessRule, memberTags: readonly string[] | null): boolean {

@@ -321,6 +321,8 @@ Four bundles per page (each hashed independently): `reset`, `framework`,
 
 ### Static publishing — everything baked to disk
 
+**One exception: protected routes.** A page with an `access` rule, and every entry of a table with one, is rendered at publish (its CSS is collected) but its HTML is never written to the slot and never enters Layer B. Those routes render per request behind the access gate. The slot therefore stays safe to serve without asking who is asking, and safe to copy as a static export. See [`members.md`](members.md) → "Protected pages and tables".
+
 A full publish (`publishDraftSite`) bakes **every page** plus all of its assets
 into the publish slot:
 

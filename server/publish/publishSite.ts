@@ -286,11 +286,15 @@ async function publishSiteDocumentLocked(
             url: syntheticUrl,
             publishVersion: nextPublishVersion,
           })
-          const html = await applyPublishedHtmlPipeline(rendered, db)
-          await writeArtefact(slotDir, urlPath, html)
           // The render's own bundle covers template-composed hashes the raw
           // page bundle above cannot (the merged page's userStyles).
           collectCssFiles(rendered.cssBundle)
+          // A protected page's HTML never goes to disk: the slot is served
+          // without asking who is asking, and can be copied as a static
+          // export. Its CSS is not secret and is still collected above.
+          if (page.access && page.access.level !== 'public') continue
+          const html = await applyPublishedHtmlPipeline(rendered, db)
+          await writeArtefact(slotDir, urlPath, html)
         } catch (err) {
           console.error('[publish:site] failed to bake artefact for', urlPath, '(falls through to live renderer):', err)
         }

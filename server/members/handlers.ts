@@ -32,6 +32,7 @@
  *   GET  me                { member } or { member: null }
  *   GET  export            the member's own data as a JSON download
  *   GET  link/<kind>       bare fallback page for a link in an email
+ *   GET  sign-in           bare fallback sign-in page (`?next=`)
  *
  * CSRF: every POST must carry an allowed `Origin` and, when the browser
  * sends it, a same-origin `Sec-Fetch-Site`. Together with the `SameSite=Lax`
@@ -43,7 +44,7 @@ import type { MemberErrorCode } from '@core/members'
 import { Type, safeParseValue } from '@core/utils/typeboxHelpers'
 import { clientIp, isSiteOrigin, originAllowed } from '../auth/security'
 import { jsonResponse, readTextBodyWithLimit, RequestBodyTooLargeError, setCookieHeader } from '../http'
-import { renderMemberLinkPage } from './linkPage'
+import { renderMemberLinkPage, renderMemberSignInPage } from './linkPage'
 import { MEMBER_LINK_PATH_PREFIX, memberLinkOrigin, memberMailAvailable } from './mail'
 import { findMemberById, toCurrentMember } from './repository'
 import {
@@ -382,6 +383,7 @@ export async function handleMemberRequest(req: Request, db: DbClient, url: URL):
       })
     }
     if (url.pathname.startsWith(MEMBER_LINK_PATH_PREFIX)) return renderMemberLinkPage(db, url)
+    if (action === 'sign-in') return renderMemberSignInPage(db, url, safeRedirectPath)
     return notFound()
   }
 

@@ -79,6 +79,7 @@ server/members/
 | `delete` | `currentPassword` | signed in; anonymises |
 | `GET me` | | `{ member }` or `{ member: null }`, `no-store` |
 | `GET export` | | the member's own data as a download |
+| `GET sign-in` | `next` | bare fallback sign-in page, used when no login page is assigned |
 
 Error codes are the `MEMBER_ERROR_CODES` list in `@core/members`.
 
@@ -102,6 +103,34 @@ Error codes are the `MEMBER_ERROR_CODES` list in `@core/members`.
 
 **Plugins never see Instatic's cookies.** `server/sessionCookies.ts` removes every `instatic_` cookie (admin session, member session, sign-up nonce, branch preview); plugin route handlers (`routeIo.ts`) and per-visitor loop sources (`handlers/cms/hole.ts`) get the visitor's cookies with those removed.
 
+## Protected pages and tables
+
+A page carries an optional `access` rule (`AccessRuleSchema` in `@core/members`, stored as the page row's `access` cell). A data table carries one in `data_tables.access_json`, covering all of its entry routes. Templates are not protectable: the route they wrap decides.
+
+| Level | Who gets in | `onDeny` |
+|---|---|---|
+| `public` (no rule) | anyone | |
+| `members` | any signed-in member | `login` or `hide` |
+| `tags` | a signed-in member holding any one of `tags` | `login` or `hide` |
+
+`login` sends a signed-out visitor to the assigned login page (or the bare `/_instatic/members/sign-in`) with `?next=`; a signed-in member without the tag gets a `403`. `hide` answers exactly like a route that does not exist.
+
+How it is enforced (`server/publish/accessGate.ts`):
+
+1. **A protected route is never stored where a request is answered without asking.** It is not baked to the static slot (`publishSite.ts`, `bakeDataRows.ts`, `publishRow.ts`) and never enters the render cache.
+2. **The publish-time access index** (`getAccessIndex`, one load per publish version) lists protected page slugs and table route bases. `renderPublicResolution` consults it first, so a protected path skips both cache layers.
+3. **The rule is checked again on the route that actually resolved**, before rendering. That check decides; it does not depend on how the path was spelled.
+4. **Fragments are gated like their page.** `/_instatic/hole/<id>` and `/_instatic/loop/<id>` apply the owning page's rule (and, for a hole, the rule of the route in `u`), and are never cached for a protected page.
+5. **`/uploads/published/…` is never served.** The static slot lives under the uploads folder; `isPublishedSlotUploadPath` in `server/router.ts` blocks it on the resolved file path.
+
+Everything rendered behind a rule is sent `Cache-Control: private, no-store`.
+
+**Fail closed.** A stored rule that cannot be read becomes `LOCKED_ACCESS` (nobody, hidden), never public (`parseAccessRule`).
+
+**When a rule takes effect.** A page's rule is page content: it applies on publish. A table's rule is a live setting: `setTableAccess` (`server/publish/tableAccess.ts`) removes the table's baked pages and bumps the publish version, so it applies on the next request.
+
+**What a table rule does not cover.** It protects the table's entry routes. A loop on a public page that lists rows of that table still shows what the loop renders.
+
 ## Deleting and exporting
 
 `delete` anonymises: the row stays with a placeholder address and `status = 'deleted'`, and sessions, tokens, tags, profile and event IP/user-agent are removed. The address is free to register again. `GET export` returns the account, profile, tags, live sessions and activity.
@@ -111,3 +140,4 @@ Error codes are the `MEMBER_ERROR_CODES` list in `@core/members`.
 - `src/__tests__/server/members.test.ts` — every flow, on SQLite and (with `DB=postgres`) Postgres.
 - `src/__tests__/architecture/members-admin-split.test.ts` — the split.
 - `src/__tests__/server/pluginRouteCookies.test.ts` — cookie stripping.
+- `src/__tests__/server/membersAccessGate.test.ts` — the gate: static slot, render cache, path spellings, the uploads route, fragments, table rules.
