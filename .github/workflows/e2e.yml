@@ -31,10 +31,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      # No pinned version here: setup-bun reads `packageManager` from
+      # package.json, the same source ci.yml and the Dockerfile follow.
       - name: Set up Bun
         uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: 1.3.11
 
       - name: Install dependencies
         run: bun install --frozen-lockfile
