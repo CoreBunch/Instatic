@@ -38,6 +38,16 @@ export const RowUpsertBodySchema = Type.Object({
   cells: Type.Optional(Type.Record(Type.String(), Type.Unknown())),
 })
 
+export const RowCreateBodySchema = Type.Object({
+  cells: Type.Optional(Type.Record(Type.String(), Type.Unknown())),
+  /**
+   * When the requested slug is taken, store the row under the next free
+   * `<slug>-N` instead of answering 409. For callers that want "a new row"
+   * rather than "this exact slug" — the admin's New and Duplicate actions.
+   */
+  allocateSlug: Type.Optional(Type.Boolean()),
+})
+
 export const RowStatusBodySchema = Type.Object({
   status: Type.Union([Type.Literal('draft'), Type.Literal('unpublished')]),
 })
