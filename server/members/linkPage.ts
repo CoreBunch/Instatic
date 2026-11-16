@@ -22,6 +22,17 @@ interface LinkPageCopy {
   needsPassword: boolean
 }
 
+/**
+ * The referrer policy of a page whose address holds a live link token.
+ *
+ * `same-origin` keeps the address out of every request to another site,
+ * which is what matters. It is deliberately not `no-referrer`: under that
+ * policy a browser sends `Origin: null` when the page's own form is
+ * submitted, and the member endpoints, which require the site's origin on a
+ * POST, would refuse the very form this page exists to submit.
+ */
+export const TOKEN_PAGE_REFERRER_POLICY = 'same-origin'
+
 const COPY: Record<MemberTokenKind, LinkPageCopy> = {
   verify: {
     title: 'Confirm your email address',
@@ -89,8 +100,7 @@ function page(title: string, body: string): Response {
     headers: {
       'content-type': 'text/html; charset=utf-8',
       'cache-control': 'no-store',
-      // The address bar holds a live token: never hand it to another page.
-      'referrer-policy': 'no-referrer',
+      'referrer-policy': TOKEN_PAGE_REFERRER_POLICY,
       'x-robots-tag': 'noindex',
     },
   })

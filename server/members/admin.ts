@@ -24,6 +24,7 @@ import {
   getMemberSettings,
   grantMemberTag,
   listMemberEvents,
+  setMemberProfile,
   recordMemberEvent,
   type MemberRecord,
 } from './repository'
@@ -38,20 +39,25 @@ const NO_REQUEST = { ipAddress: null, userAgent: null }
 
 // ─── Status ────────────────────────────────────────────────────────────────
 
-/** A member who was invited and has not accepted yet: no password, address not confirmed. */
-function isInvited(member: Pick<MemberRecord, 'passwordHash' | 'emailVerifiedAt'>): boolean {
+/**
+ * A member whose account is not usable yet: no password and an unconfirmed
+ * address. That is someone invited who has not accepted, and equally someone
+ * who signed up and has not opened the confirmation link (their password
+ * waits in that link).
+ */
+function isPending(member: Pick<MemberRecord, 'passwordHash' | 'emailVerifiedAt'>): boolean {
   return member.passwordHash === null && member.emailVerifiedAt === null
 }
 
 function adminStatus(member: Pick<MemberRecord, 'status' | 'passwordHash' | 'emailVerifiedAt'>): MemberAdminStatus {
   if (member.status === 'suspended') return 'suspended'
-  return isInvited(member) ? 'invited' : 'active'
+  return isPending(member) ? 'pending' : 'active'
 }
 
 /** The SQL condition for each admin status, over the `members` table aliased `m`. */
 const STATUS_SQL: Record<MemberAdminStatus, string> = {
   suspended: `m.status = 'suspended'`,
-  invited: `m.status = 'active' and m.password_hash is null and m.email_verified_at is null`,
+  pending: `m.status = 'active' and m.password_hash is null and m.email_verified_at is null`,
   active: `m.status = 'active' and not (m.password_hash is null and m.email_verified_at is null)`,
 }
 
@@ -128,9 +134,9 @@ export interface MemberListFilter {
   offset?: number
 }
 
-/** `%` and `_` are wildcards in LIKE; a search is plain text, so they are dropped. */
+/** `%`, `_` and the backslash mean something in LIKE; a search is plain text, so they are dropped. */
 function likePattern(search: string): string {
-  return `%${search.toLowerCase().replace(/[%_]/g, '')}%`
+  return `%${search.toLowerCase().replace(/[%_\\]/g, '')}%`
 }
 
 export async function listMembersForAdmin(db: DbClient, filter: MemberListFilter = {}): Promise<MemberListResponse> {
@@ -199,7 +205,7 @@ export async function listMembersForAdmin(db: DbClient, filter: MemberListFilter
     counts: {
       all: await count(),
       active: await count('active'),
-      invited: await count('invited'),
+      pending: await count('pending'),
       suspended: await count('suspended'),
     },
     tags: tagRows.map((row) => ({ tag: row.tag, count: Number(row.total) })),
@@ -268,7 +274,8 @@ export type InviteOutcome =
 /**
  * Invite an address: create the member (no password, address unconfirmed),
  * give them the tags, and email a single-use link to choose a password. An
- * address with a pending invitation gets a fresh link; an address that
+ * address whose account is still pending (invited, or signed up and never
+ * confirmed) gets a fresh link; an address that
  * already has an account is refused.
  */
 export async function inviteMember(
@@ -282,12 +289,19 @@ export async function inviteMember(
   },
 ): Promise<InviteOutcome> {
   const existing = await findMemberByEmail(db, input.email)
-  if (existing && (existing.status !== 'active' || !isInvited(existing))) return { ok: false, reason: 'exists' }
+  if (existing && (existing.status !== 'active' || !isPending(existing))) return { ok: false, reason: 'exists' }
 
   const member = existing ?? (await createMember(db, { email: input.email.trim(), passwordHash: null, profile: {}, verified: false }))
   // Lost a race with another invitation or a sign-up for the same address.
   if (!member) return { ok: false, reason: 'exists' }
 
+  if (existing) {
+    // The row may be a sign-up somebody else started with this address and
+    // never confirmed. An invitation must not inherit what they typed: drop
+    // their profile and their unused confirmation link.
+    await setMemberProfile(db, existing.id, {})
+    await withdrawMemberTokens(db, existing.id)
+  }
   for (const tag of input.tags) {
     await grantMemberTag(db, { memberId: member.id, tag, source: input.tagSource ?? ADMIN_TAG_SOURCE, expiresAt: null })
   }

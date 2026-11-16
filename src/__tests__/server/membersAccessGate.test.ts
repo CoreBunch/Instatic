@@ -466,9 +466,9 @@ describe('members access gate', () => {
     })
   })
 
-  it('adds no-referrer to a page opened with a link token', async () => {
+  it('keeps the address of a page opened with a link token away from other sites', async () => {
     const res = await get('/?token=abc')
-    expect(res.headers.get('referrer-policy')).toBe('no-referrer')
-    expect((await get('/')).headers.get('referrer-policy')).not.toBe('no-referrer')
+    expect(res.headers.get('referrer-policy')).toBe('same-origin')
+    expect((await get('/')).headers.get('referrer-policy')).not.toBe('same-origin')
   })
 })

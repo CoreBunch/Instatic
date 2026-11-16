@@ -52,9 +52,10 @@ export function MemberDetailPanel({
         {member.name && <p className={ld.selectable}>{member.email}</p>}
       </header>
 
-      {member.status === 'invited' && (
+      {member.status === 'pending' && (
         <p className={ld.notice} data-tone="warning">
-          Invited, and has not chosen a password yet. The link in the invitation lasts 7 days.
+          Not finished yet: this person was invited and has not accepted, or signed up and has not confirmed their
+          address. They cannot sign in until they do.
         </p>
       )}
       {member.status === 'suspended' && (
@@ -64,7 +65,7 @@ export function MemberDetailPanel({
       )}
 
       <div className={styles.detailActions}>
-        {member.status === 'invited' && (
+        {member.status === 'pending' && (
           <Button
             type="button"
             variant="secondary"
@@ -73,7 +74,7 @@ export function MemberDetailPanel({
             disabled={busy || !canManage || !mailAvailable}
             tooltip={blocked ?? (mailAvailable ? undefined : 'Set up outgoing email first (Email → Connectors)')}
           >
-            Send the invitation again
+            Send an invitation link
           </Button>
         )}
         {member.status === 'suspended' ? (

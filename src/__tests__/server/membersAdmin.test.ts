@@ -117,7 +117,7 @@ describe('members admin API', () => {
       await h.cms(`${BASE}/${suspended.id}/suspend`, { method: 'POST', cookie: owner })
 
       const all = await list()
-      expect(all.counts).toEqual({ all: 4, active: 2, invited: 1, suspended: 1 })
+      expect(all.counts).toEqual({ all: 4, active: 2, pending: 1, suspended: 1 })
       expect(all.tags).toEqual([{ tag: 'pro', count: 1 }])
       expect(all.matching).toBe(4)
 
@@ -125,7 +125,7 @@ describe('members admin API', () => {
       expect((await list('?q=lovelace')).members.map((m) => m.email)).toEqual(['ada@example.com'])
       // A wildcard is plain text, not "match everything".
       expect((await list('?q=%25')).matching).toBe(4)
-      expect((await list('?status=invited')).members.map((m) => m.email)).toEqual(['pending@example.com'])
+      expect((await list('?status=pending')).members.map((m) => m.email)).toEqual(['pending@example.com'])
       expect((await list('?status=suspended')).members.map((m) => m.email)).toEqual(['linus@example.com'])
       expect((await list('?status=active')).matching).toBe(2)
       const pro = await list('?tag=pro')
@@ -232,7 +232,7 @@ describe('members admin API', () => {
       const created = await findMemberByEmail(h.db, 'new@example.com')
       expect(created).toMatchObject({ passwordHash: null, emailVerifiedAt: null, status: 'active' })
       expect(await listActiveMemberTags(h.db, created!.id)).toEqual(['student'])
-      expect((await list('?status=invited')).members.map((m) => m.email)).toEqual(['New@Example.com'])
+      expect((await list('?status=pending')).members.map((m) => m.email)).toEqual(['New@Example.com'])
 
       const mails = await inviteMails()
       expect(mails).toHaveLength(1)

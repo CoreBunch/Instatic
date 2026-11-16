@@ -293,7 +293,7 @@ export function MembersTab({
               options={[
                 { value: 'all', label: `All ${counts.all.toLocaleString()}` },
                 { value: 'active', label: `Active ${counts.active.toLocaleString()}` },
-                { value: 'invited', label: `Invited ${counts.invited.toLocaleString()}` },
+                { value: 'pending', label: `Pending ${counts.pending.toLocaleString()}` },
                 { value: 'suspended', label: `Suspended ${counts.suspended.toLocaleString()}` },
               ]}
               onChange={setStatus}

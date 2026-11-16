@@ -39,7 +39,14 @@ import type { Page, PageNode, SiteDocument } from '@core/page-tree'
 import type { ClosedContent, SourceRequestContext } from '@core/loops/types'
 import { registry } from '@core/module-engine'
 import { loopSourceRegistry } from '@core/loops/registry'
-import { renderNode, subtreeDependsOnMember, type RenderConfig, type RenderAccumulators } from '@core/publisher'
+import {
+  enclosingShowWhenRules,
+  renderNode,
+  subtreeDependsOnMember,
+  type RenderConfig,
+  type RenderAccumulators,
+} from '@core/publisher'
+import { showWhenAllows } from '@core/members'
 import { buildPageFrame, buildRouteFrame, buildSiteFrame, type MemberFrame } from '@core/templates/contextFrames'
 import { prefetchLoopData } from '../../publish/loopPrefetch'
 import { getOrRender } from '../../publish/renderCache'
@@ -260,7 +267,17 @@ export async function handleHoleRequest(
   const perVisitor = isPerVisitorHole(node)
   // A fragment that shows member data or has a show-when rule is rendered
   // for this visitor alone, on a public page as much as on a protected one.
-  const showsMember = subtreeDependsOnMember(foundPage, snap.site, registry, nodeId)
+  // So is a fragment that sits inside an element with a show-when rule: the
+  // rules above it are checked here, because rendering starts at this node.
+  const enclosing = enclosingShowWhenRules(foundPage, nodeId, { includeSelf: false })
+  const showsMember = enclosing.length > 0 || subtreeDependsOnMember(foundPage, snap.site, registry, nodeId)
+  if (enclosing.length > 0) {
+    const tags = (await visitor())?.tags ?? null
+    if (!enclosing.every((rule) => showWhenAllows(rule, tags))) {
+      // Exactly what the page render gives this visitor for the enclosing element: nothing.
+      return new Response('', { status: 200, headers: { 'content-type': 'text/html; charset=utf-8', ...PRIVATE_HEADERS } })
+    }
+  }
   const route = buildRouteFrame(pageUrl.toString())
   // Parsed query params of the originating page request — handed to a
   // request-dependent loop source's `fetch()` via `ctx.request.query`.

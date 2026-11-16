@@ -13,12 +13,13 @@ import {
 /**
  * How a member stands, for the admin:
  *  - `active`: can sign in
- *  - `invited`: was invited and has not set a password yet
+ *  - `pending`: has an account that is not usable yet: invited and not
+ *    accepted, or signed up and not confirmed
  *  - `suspended`: blocked from signing in; any open session is ended
  */
 export const MemberAdminStatusSchema = Type.Union([
   Type.Literal('active'),
-  Type.Literal('invited'),
+  Type.Literal('pending'),
   Type.Literal('suspended'),
 ])
 export type MemberAdminStatus = Static<typeof MemberAdminStatusSchema>
@@ -46,7 +47,7 @@ export const MemberListResponseSchema = Type.Object({
   counts: Type.Object({
     all: Type.Integer(),
     active: Type.Integer(),
-    invited: Type.Integer(),
+    pending: Type.Integer(),
     suspended: Type.Integer(),
   }),
   /** Every tag at least one member holds, most used first. */

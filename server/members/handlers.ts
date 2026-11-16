@@ -159,6 +159,9 @@ export function safeRedirectPath(value: string | undefined | null): string | nul
     return null
   }
   if (url.origin !== base) return null
+  // Dot segments can collapse to a path that starts with two slashes
+  // (`/.//host`), which a browser reads as another site.
+  if (url.pathname.startsWith('//')) return null
   return `${url.pathname}${url.search}${url.hash}`
 }
 

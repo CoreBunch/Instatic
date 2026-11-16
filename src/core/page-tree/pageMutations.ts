@@ -129,6 +129,9 @@ export function duplicatePage(
     slug: uniquePageSlug(slug ?? title, site.pages),
     rootNodeId: newRootId,
     nodes: newNodes,
+    // A copy of a protected page is protected the same way. Dropping the rule
+    // would publish the copy to everyone.
+    ...(source.access ? { access: source.access } : {}),
   }
   site.pages.push(newPage)
   return newPage

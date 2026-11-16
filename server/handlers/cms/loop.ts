@@ -21,9 +21,11 @@
  */
 
 import type { DbClient } from '../../db/client'
+import { showWhenAllows } from '@core/members'
 import { registry } from '@core/module-engine'
 import { loopSourceRegistry } from '@core/loops/registry'
 import {
+  enclosingShowWhenRules,
   renderNode,
   subtreeDependsOnMember,
   type RenderConfig,
@@ -110,8 +112,17 @@ export async function handleLoopRequest(
   // The list leaves out what the visitor may not open (see `closedContentFor`).
   const closed = closedContentFor(accessIndex, isProtected ? ((await visitor())?.tags ?? null) : null)
   // Items that show member data are rendered for this visitor alone.
-  const showsMember = subtreeDependsOnMember(containingPage, site, registry, loopNode.id)
+  // The items are rendered here without the loop element itself, so its own
+  // show-when rule and those of everything around it are checked here.
+  const enclosing = enclosingShowWhenRules(containingPage, loopNode.id, { includeSelf: true })
+  const showsMember = enclosing.length > 0 || subtreeDependsOnMember(containingPage, site, registry, loopNode.id)
   const forVisitor = isProtected || showsMember
+  if (enclosing.length > 0) {
+    const tags = (await visitor())?.tags ?? null
+    if (!enclosing.every((rule) => showWhenAllows(rule, tags))) {
+      return jsonResponse({ html: '', hasMore: false, pageNumber }, { headers: PRIVATE_HEADERS })
+    }
+  }
 
   const props = readLoopProps(loopNode)
   if (props.pagination !== 'infinite') {

@@ -95,6 +95,8 @@ Error codes are the `MEMBER_ERROR_CODES` list in `@core/members`.
 
 **Sign-up and pre-hijacking.** The member row is created with no password. The hash travels in the confirmation token and applies only when the link is opened in the browser that signed up (matched by the `instatic_member_signup` cookie, `__Host-` prefixed on https so a sibling subdomain cannot plant one, and ignored when it appears twice). Opened anywhere else, the link still confirms the address and signs in, with no password set. So a stranger who signs up with someone else's address never gets their password onto the account, even if the owner opens the email.
 
+**Token pages.** A page opened from an emailed link has a live token in its address. It is sent `Referrer-Policy: same-origin` (`TOKEN_PAGE_REFERRER_POLICY`), so no request to another site carries the address. `no-referrer` would be wrong here: a browser then submits the page's own form with `Origin: null`, and the member endpoints refuse a POST that does not name the site's origin.
+
 **No hard lockout.** Limits are sliding windows per IP, per IP+email, per email and per recipient (`limits.ts`); an account is never locked. Sign-in limits are reserved before the password is checked, so a burst of requests cannot slip under them, and given back when the sign-in works. The per-email limit counts failures from everywhere, so anyone can run it out; after that, an address that has not tried the email before gets one of five further attempts an hour, which keeps the owner's password usable without giving a guesser with many addresses more than those five. Emails are limited per recipient both per kind and overall. Whatever a stranger uses up, the owner keeps a way in: the last sign-in or reset link sent stays valid, because a refused request issues no new token.
 
 **Links in emails** are built from `configuredPublicOrigin()`. With none configured they are built only for a request from this machine (loopback peer and loopback host); otherwise the action fails with `email_unavailable`. The `Host` header is never used.
@@ -144,9 +146,9 @@ Four primitives; none of them needs custom code.
 
 **Member bindings.** The `member` binding source: `{member.email}`, `{member.profile.<fieldId>}`, `{member.tagList}`. Empty for a signed-out visitor, so `{member.profile.name|there}` reads well for both. Values are data: they go through the same escaping as every other binding.
 
-**Show-when rules.** Any element can be limited to signed-in members, signed-out visitors, or members holding a tag (the "Show to" control in the element's Attributes view). The rule is the `showWhen` prop (`ShowWhenSchema`, `readShowWhen`, `showWhenAllows` in `@core/members`). It is applied on the server: an element a visitor may not see is not in their HTML. A rule that cannot be read shows the element to nobody. It hides one element and protects nothing else; protecting a page is the access rule.
+**Show-when rules.** Any element can be limited to signed-in members, signed-out visitors, or members holding a tag (the "Show to" control in the element's Attributes view). The rule is the `showWhen` prop (`ShowWhenSchema`, `readShowWhen`, `showWhenAllows` in `@core/members`). It is applied on the server: an element a visitor may not see is not in their HTML. A rule that cannot be read shows the element to nobody. It hides one element and protects nothing else; protecting a page is the access rule. The fragment and list endpoints, which render one node on request, check the rules of everything that encloses that node in its page (`enclosingShowWhenRules`), so a child of a limited element cannot be fetched on its own. A rule on a layout template's wrapper is not seen from a page composed into that layout: limit the page's own elements, or protect the page.
 
-**Access controls.** Page settings has an Access group (`AccessRuleEditor`), and a protected page carries a lock in the Site explorer. Changing a page's rule needs `site.structure.edit` (`pageDiff.ts`). A table's rule is edited in the Data workspace (Access section of a post type's settings) through `GET` / `PUT /admin/api/cms/data/tables/:id/access`: main branch only, `canManageTable`, step-up, audited as `data.table.access`.
+**Access controls.** Page settings has an Access group (`AccessRuleEditor`), and a protected page carries a lock in the Site explorer. Changing a page's rule needs `site.structure.edit` (`pageDiff.ts`). A page is also a row, so the generic row paths (Data and Content workspaces, version restore, plugin content calls, AI content tools) put the stored rule back through `keepPageAccess` (`server/writePolicy/pageAccessCell.ts`): leaving `access` out of a row save does not open the page. Duplicating a page copies its rule. A table's rule is edited in the Data workspace (Access section of a post type's settings) through `GET` / `PUT /admin/api/cms/data/tables/:id/access`: main branch only, `canManageTable`, step-up, audited as `data.table.access`.
 
 ### How member-dependent content is rendered
 
@@ -174,7 +176,7 @@ The API is `server/handlers/cms/members.ts` under `/admin/api/cms/members`. It d
 | DELETE | `/members/:id` | Anonymise, as the member's own delete does | manage + step-up |
 | GET / PUT | `/members/settings` | Sign-up mode, profile fields, link pages | read / manage + step-up |
 
-- **Status** for the admin is `active`, `invited` (no password and address not confirmed) or `suspended`. A deleted member is not listed.
+- **Status** for the admin is `active`, `pending` or `suspended`. `pending` is an account that is not usable yet (no password and an unconfirmed address): someone invited who has not accepted, or someone who signed up and has not opened the confirmation link. A deleted member is not listed.
 - **Invitations** need outgoing email and a known public address (`memberMailAvailable`); without them the route answers 409 and the button is disabled with the reason. Inviting an address with a pending invitation sends a fresh link; an address that already has an account is refused. The link opens the `invite` page (or the built-in one) and lasts 7 days.
 - **Suspension** takes effect on the next request (`findMemberSession` requires an active member). Sessions and unused tokens are also ended for good, so restoring a member does not bring an old session back.
 - **Search** matches the address and the profile text. `%` and `_` are plain characters.
@@ -189,17 +191,31 @@ A plugin reaches members through `api.cms.members`, member routes and member eve
 
 - **Who the member is, is resolved by the host** on the public plugin mount (`server/plugins/publicRoutes.ts`) and handed to the plugin as a plain record. A plugin never holds a session cookie, and the admin mount never identifies a member.
 - **Tags a plugin grants carry its id as the source**, and it can withdraw only those. This is how a shop grants paid access without being able to remove what an administrator gave.
+- **`cms.hooks` sees rendered pages.** The `publish.html` filter runs on every page as it is sent, including a protected page rendered for one member with their data in it. A plugin holding `cms.hooks` can therefore read what such a page shows without holding `members.read`. That permission is already rated high (a filter can add script to any page); its install text says so.
 - **Events** are emitted from the functions every path goes through (`createMember`, `markMemberVerified`, `startSession`, `grantMemberTag`, `anonymizeMember`) by `emitMemberHook` in `server/members/hooks.ts`, without waiting for listeners.
 
 ## Deleting and exporting
 
 `delete` anonymises: the row stays with a placeholder address and `status = 'deleted'`, and sessions, tokens, tags, profile and event IP/user-agent are removed. The address is free to register again. `GET export` returns the account, profile, tags, live sessions and activity.
 
+## Try it: the demo site
+
+```sh
+bun run demo:members        # add `-- --skip-build` to reuse the last admin build
+```
+
+`scripts/members-demo.ts` builds the admin, creates a fresh SQLite database under `.tmp/`, seeds and publishes a small site, and serves it on `http://127.0.0.1:3040` (`DEMO_PORT` changes the port). It prints the owner and member accounts it created. Emails are captured: read them under Email → Activity.
+
+The site (`scripts/lib/membersDemoSite.ts`) is ten ordinary editor pages: home, join, sign in, forgot password, the pages the emailed links open (confirm, new password, invitation), an account page, a members area and a pro lounge. Every form is a `base.form` in Members mode completed by `memberFormFragment`, the function behind the editor's "Add …" button; the header's links use show-when rules; the account page prefills from member bindings. Open any page in the editor to see how it is put together.
+
+It is a development tool: fixed passwords, loopback only, and a database that is wiped on every start. `membersDemoSite.test.ts` keeps the pages publishable and correctly gated.
+
 ## Tests
 
 - `src/__tests__/server/members.test.ts` — every flow, on SQLite and (with `DB=postgres`) Postgres.
 - `src/__tests__/server/membersAdmin.test.ts` — the admin API: capability and step-up gates and every route (SQLite). The queries behind it run on Postgres too through the `admin queries` cases in `members.test.ts`.
 - `src/__tests__/server/pluginMembers.test.ts` — plugins: the public mount, member routes, `cms.members`, member events, and the permission each needs.
+- `src/__tests__/server/membersDemoSite.test.ts` — the demo site: its pages parse, publish, and are open or closed to the right visitors.
 - `src/__tests__/architecture/members-admin-split.test.ts` — the split.
 - `src/__tests__/server/pluginRouteCookies.test.ts` — cookie stripping.
 - `src/__tests__/server/membersAccessGate.test.ts` — the gate: static slot, render cache, path spellings, the uploads route, fragments, table rules.

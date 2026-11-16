@@ -510,7 +510,8 @@ describe('site members', () => {
       await new Browser(t.db).post('password/forgot', { email: 'm@example.com' })
       const mail = await lastMail('reset')
       const page = await browser.get(`link/reset?token=${mail!.token}`)
-      expect(page.headers.get('referrer-policy')).toBe('no-referrer')
+      // Not `no-referrer`: that makes a browser post the page's form with `Origin: null`.
+      expect(page.headers.get('referrer-policy')).toBe('same-origin')
       expect(page.headers.get('cache-control')).toBe('no-store')
       const html = await page.text()
       expect(html).toContain('action="/_instatic/members/password/reset"')
@@ -626,7 +627,7 @@ describe('site members', () => {
 
     it('accepts only site-relative redirect paths', () => {
       expect(safeRedirectPath('/account?tab=1#top')).toBe('/account?tab=1#top')
-      for (const bad of ['', 'account', '//x.example', '/\\x.example', 'https://x.example', '/a\nb', '/a\\b']) {
+      for (const bad of ['', 'account', '//x.example', '/\\x.example', 'https://x.example', '/a\nb', '/a\\b', '/.//x.example', '/%2e//x.example']) {
         expect(safeRedirectPath(bad)).toBeNull()
       }
     })
@@ -757,7 +758,7 @@ describe('site members', () => {
       await setMemberSuspended(t.db, linus.id, true)
 
       const all = await listMembersForAdmin(t.db)
-      expect(all.counts).toEqual({ all: 4, active: 2, invited: 1, suspended: 1 })
+      expect(all.counts).toEqual({ all: 4, active: 2, pending: 1, suspended: 1 })
       expect(all.matching).toBe(4)
       expect(all.nextOffset).toBeNull()
       // One member holding a tag from two sources is one member.
@@ -766,7 +767,7 @@ describe('site members', () => {
       expect((await listMembersForAdmin(t.db, { search: 'LOVELACE' })).members.map((m) => m.email)).toEqual(['ada@example.com'])
       expect((await listMembersForAdmin(t.db, { search: 'grace@' })).members.map((m) => m.email)).toEqual(['grace@example.com'])
       expect((await listMembersForAdmin(t.db, { search: '%' })).matching).toBe(4)
-      expect((await listMembersForAdmin(t.db, { status: 'invited' })).members.map((m) => m.email)).toEqual(['pending@example.com'])
+      expect((await listMembersForAdmin(t.db, { status: 'pending' })).members.map((m) => m.email)).toEqual(['pending@example.com'])
       expect((await listMembersForAdmin(t.db, { status: 'suspended' })).members.map((m) => m.email)).toEqual(['linus@example.com'])
       expect((await listMembersForAdmin(t.db, { tag: 'pro', search: 'ada' })).members[0]).toMatchObject({
         name: 'Ada Lovelace', status: 'active', tags: ['pro'],
@@ -788,6 +789,20 @@ describe('site members', () => {
       expect(second.nextOffset).toBeNull()
       const seen = new Set([...first.members, ...second.members].map((m) => m.id))
       expect(seen.size).toBe(55)
+    })
+
+    it('does not let an invitation inherit a sign-up someone else started for the address', async () => {
+      // A stranger starts a sign-up with the victim's address and never confirms it.
+      const stranger = new Browser(t.db)
+      await stranger.post('signup', { email: 'victim@example.com', password: 'a-long-enough-password', name: 'Mallory' })
+      const before = await findMemberByEmail(t.db, 'victim@example.com')
+      expect(before?.profile).toEqual({ name: 'Mallory' })
+      const strangerLink = (await lastMail('verify', 'victim@example.com'))!.token
+
+      expect(await inviteMember(t.db, { email: 'victim@example.com', tags: ['pro'], linkOrigin: 'http://localhost' })).toMatchObject({ ok: true, outcome: 'resent' })
+      expect((await findMemberByEmail(t.db, 'victim@example.com'))?.profile).toEqual({})
+      // The stranger's confirmation link no longer works.
+      expect((await stranger.post('verify', { token: strangerLink })).status).toBe(400)
     })
 
     it('invites, re-invites and deletes', async () => {

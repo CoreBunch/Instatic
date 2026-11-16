@@ -57,7 +57,7 @@ import { runRouteTable, type Route, type RouteParams } from './routeTable'
 
 const MEMBERS_PREFIX = `${CMS_API_PREFIX}/members`
 const ADDRESS_RE = new RegExp(MAIL_ADDRESS_PATTERN)
-const STATUSES: readonly MemberAdminStatus[] = ['active', 'invited', 'suspended']
+const STATUSES: readonly MemberAdminStatus[] = ['active', 'pending', 'suspended']
 const NO_REQUEST = { ipAddress: null, userAgent: null }
 
 function notFound(): Response {
