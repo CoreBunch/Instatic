@@ -35,6 +35,8 @@
  * Incremental publish protocol (e.g. `publishDataRow`):
  *   - `updateArtefactInPlace` — tmp + rename into the ACTIVE slot
  *   - `removeArtefactInPlace` — unlink from the ACTIVE slot (slug change / deletion)
+ *   - `removeArtefactsInPlace` — the same for a batch (pages whose loops went
+ *     stale, see `loopArtefacts.ts`)
  *
  * Path safety: every on-disk path derived from a URL is validated by the
  * private `resolveArtefactPath` helper, which matches the style of
@@ -68,6 +70,11 @@ type Slot = 'a' | 'b'
  * with status 404.
  */
 export const NOT_FOUND_ARTEFACT_URL_PATH = '/404'
+
+/** Artefact URL path a page bakes to: the `index` slug is the site root. */
+export function pageArtefactUrlPath(slug: string): string {
+  return slug === 'index' ? '/' : `/${slug}`
+}
 
 // ---------------------------------------------------------------------------
 // Private path helpers
@@ -444,19 +451,33 @@ export async function removeArtefactInPlace(
   uploadsDir: string,
   urlPath: string,
 ): Promise<void> {
+  await removeArtefactsInPlace(uploadsDir, [urlPath])
+}
+
+/**
+ * Remove several artefacts from the ACTIVE slot in-place, resolving the slot
+ * once. Same contract as `removeArtefactInPlace` per path: a missing file is a
+ * no-op and an unsafe path is skipped.
+ */
+export async function removeArtefactsInPlace(
+  uploadsDir: string,
+  urlPaths: readonly string[],
+): Promise<void> {
+  if (urlPaths.length === 0) return
   const slot = await getActiveSlot(uploadsDir)
   const dir = getSlotDir(uploadsDir, slot)
 
-  let filePath: string
-  try {
-    filePath = resolveArtefactPath(dir, urlPath)
-  } catch {
-    // Unsafe path — ignore silently
-    return
+  for (const urlPath of urlPaths) {
+    let filePath: string
+    try {
+      filePath = resolveArtefactPath(dir, urlPath)
+    } catch {
+      // Unsafe path — ignore silently
+      continue
+    }
+    // force: true makes this a no-op if the file doesn't exist
+    await rm(filePath, { force: true })
   }
-
-  // force: true makes this a no-op if the file doesn't exist
-  await rm(filePath, { force: true })
 }
 
 // ---------------------------------------------------------------------------
