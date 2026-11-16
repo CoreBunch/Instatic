@@ -51,10 +51,9 @@ import { isSessionCookieName } from '../../sessionCookies'
 import {
   decideAccess,
   getAccessIndex,
-  indexedRuleForPath,
-  pageRule,
+  indexedRulesForPath,
+  pageRules,
   PRIVATE_HEADERS,
-  strictest,
   visitorFromRequest,
 } from '../../publish/accessGate'
 
@@ -236,9 +235,9 @@ export async function handleHoleRequest(
   // the node, and (for a node in a template) by the route it is rendered on.
   // `u` is chosen by the caller, so it can only ever add a restriction.
   const accessIndex = await getAccessIndex(ctx.db, currentVersion)
-  const rule = strictest(pageRule(accessIndex, foundPage), indexedRuleForPath(accessIndex, pageUrl.pathname))
-  const isProtected = rule.level !== 'public'
-  if (isProtected && (await decideAccess(rule, visitorFromRequest(ctx.db, req))) !== 'allow') {
+  const rules = [...pageRules(accessIndex, foundPage), ...indexedRulesForPath(accessIndex, pageUrl.pathname)]
+  const isProtected = rules.length > 0
+  if (isProtected && (await decideAccess(rules, visitorFromRequest(ctx.db, req))) !== 'allow') {
     return new Response('Node not found', {
       status: 404,
       headers: { 'content-type': 'text/plain; charset=utf-8', ...PRIVATE_HEADERS },

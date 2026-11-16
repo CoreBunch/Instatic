@@ -37,7 +37,7 @@ import { LOOP_RUNTIME_JS } from '../../publish/loopRuntime'
 import {
   decideAccess,
   getAccessIndex,
-  pageRule,
+  pageRules,
   PRIVATE_HEADERS,
   visitorFromRequest,
 } from '../../publish/accessGate'
@@ -97,9 +97,9 @@ export async function handleLoopRequest(
   const site = loopIndex.site
 
   // More items of a loop on a protected page are part of that page.
-  const rule = pageRule(await getAccessIndex(ctx.db, getPublishVersion()), containingPage)
-  const isProtected = rule.level !== 'public'
-  if (isProtected && (await decideAccess(rule, visitorFromRequest(ctx.db, req))) !== 'allow') {
+  const rules = pageRules(await getAccessIndex(ctx.db, getPublishVersion()), containingPage)
+  const isProtected = rules.length > 0
+  if (isProtected && (await decideAccess(rules, visitorFromRequest(ctx.db, req))) !== 'allow') {
     return jsonResponse({ error: 'Loop not found' }, { status: 404, headers: PRIVATE_HEADERS })
   }
 

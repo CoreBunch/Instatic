@@ -10,6 +10,7 @@ import { pageToCells } from '../../core/data/pageFromRow'
 import { MAIN_SCOPE } from '../../../server/branches/scope'
 import { createMember, grantMemberTag } from '../../../server/members/repository'
 import { createMemberSession } from '../../../server/members/sessions'
+import { decideAccess } from '../../../server/publish/accessGate'
 import { publishDataRow } from '../../../server/publish/publishRow'
 import { getPublishedNodeIndexForVersion } from '../../../server/publish/publishedSnapshotCache'
 import { getPublishVersion } from '../../../server/publish/publishState'
@@ -304,6 +305,31 @@ describe('members access gate', () => {
         expect(allowed.status).toBe(200)
         expect(allowed.headers.get('cache-control')).toBe('private, no-store')
       }
+    })
+
+    it('requires every rule that applies, not just the first', async () => {
+      await setTableAccess(t.db, 'posts', { level: 'tags', tags: ['student'], onDeny: 'hide' }, uploadsDir)
+      const index = await getPublishedNodeIndexForVersion(t.db, getPublishVersion())
+      const hole = (claimed: string) =>
+        `/_instatic/hole/page_lesson_tpl_text?v=${index!.snapshotHash}&u=${encodeURIComponent(claimed)}`
+      // The template's table wants `student`; the claimed route (/vault) wants `pro`.
+      const studentOnly = await signedInMember('s@example.com', ['student'])
+      const proOnly = await signedInMember('p@example.com', ['pro'])
+      const both = await signedInMember('b@example.com', ['student', 'pro'])
+      expect((await get(hole('/vault'), studentOnly.cookie)).status).toBe(404)
+      expect((await get(hole('/vault'), proOnly.cookie)).status).toBe(404)
+      expect((await get(hole('/vault'), both.cookie)).status).toBe(200)
+    })
+
+    it('keeps both rules when two tables differ only by the case of their route base', async () => {
+      const student: AccessRule = { level: 'tags', tags: ['student'], onDeny: 'login' }
+      const staff: AccessRule = { level: 'tags', tags: ['staff'], onDeny: 'hide' }
+      expect(await decideAccess([student, staff], async () => ['student'])).toBe('hide')
+      expect(await decideAccess([student, staff], async () => ['staff'])).toBe('forbidden')
+      expect(await decideAccess([student, staff], async () => ['student', 'staff'])).toBe('allow')
+      expect(await decideAccess([student, staff], async () => null)).toBe('hide')
+      expect(await decideAccess([student], async () => null)).toBe('login')
+      expect(await decideAccess([])).toBe('allow')
     })
 
     it('opens again when the rule is removed', async () => {

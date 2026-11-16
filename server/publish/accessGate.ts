@@ -16,7 +16,7 @@
  * outright; the per-request check after resolution is the one that decides.
  */
 import type { DbClient } from '../db/client'
-import { accessAllows, parseAccessRule, PUBLIC_ACCESS, type AccessRule } from '@core/members'
+import { accessAllows, parseAccessRule, type AccessRule } from '@core/members'
 import type { Page } from '@core/page-tree'
 import { isTemplatePage, normalizeRouteBase } from '@core/templates'
 import { resolveSignedInMember } from '../members/handlers'
@@ -28,8 +28,12 @@ import { createVersionedSingleFlight } from './publishState'
 interface AccessIndex {
   /** Published page slug → rule, protected pages only. */
   pages: Map<string, AccessRule>
-  /** Normalised, lower-cased table route base → rule, protected tables only. */
-  routeBases: Map<string, AccessRule>
+  /**
+   * Normalised, lower-cased table route base → rules, protected tables only.
+   * A list, because two tables can have route bases that differ only by
+   * letter case: neither rule may replace the other.
+   */
+  routeBases: Map<string, AccessRule[]>
   /** Table slug → rule, protected tables only. */
   tableSlugs: Map<string, AccessRule>
 }
@@ -42,10 +46,11 @@ async function loadAccessIndex(db: DbClient): Promise<AccessIndex> {
     const rule = parseAccessRule(row.access)
     if (rule.level !== 'public') pages.set(row.slug, rule)
   }
-  const routeBases = new Map<string, AccessRule>()
+  const routeBases = new Map<string, AccessRule[]>()
   const tableSlugs = new Map<string, AccessRule>()
   for (const entry of await listProtectedTableRoutes(db)) {
-    routeBases.set(entry.routeBase.toLowerCase(), entry.rule)
+    const key = entry.routeBase.toLowerCase()
+    routeBases.set(key, [...(routeBases.get(key) ?? []), entry.rule])
     tableSlugs.set(entry.slug, entry.rule)
   }
   return { pages, routeBases, tableSlugs }
@@ -66,49 +71,52 @@ function slugFromPath(pathname: string): string {
   return trimmed === '' ? 'index' : trimmed
 }
 
-/** The rule the index holds for a URL path: a page at that slug, else its table. */
-export function indexedRuleForPath(index: AccessIndex, pathname: string): AccessRule {
-  if (index.pages.size === 0 && index.routeBases.size === 0) return PUBLIC_ACCESS
+/*
+ * Every function below returns the LIST of rules that apply, protected rules
+ * only (an empty list means public). Rules are never merged into one: when
+ * several apply to a request, `decideAccess` requires every one to pass.
+ */
+
+/** Rules the index holds for a URL path: a page at that slug, and its table. */
+export function indexedRulesForPath(index: AccessIndex, pathname: string): AccessRule[] {
+  if (index.pages.size === 0 && index.routeBases.size === 0) return []
   let decoded: string
   try {
     decoded = decodeURIComponent(pathname)
   } catch {
     decoded = pathname
   }
+  const rules: AccessRule[] = []
   const pageRule = index.pages.get(slugFromPath(pathname)) ?? index.pages.get(slugFromPath(decoded))
-  if (pageRule) return pageRule
+  if (pageRule) rules.push(pageRule)
   const parts = decoded.replace(/^\/+|\/+$/g, '').split('/').filter(Boolean)
-  if (parts.length < 2) return PUBLIC_ACCESS
-  return index.routeBases.get(`/${parts.slice(0, -1).join('/')}`.toLowerCase()) ?? PUBLIC_ACCESS
+  if (parts.length >= 2) {
+    rules.push(...(index.routeBases.get(`/${parts.slice(0, -1).join('/')}`.toLowerCase()) ?? []))
+  }
+  return rules
 }
 
-export function tableRuleForRouteBase(index: AccessIndex, routeBase: string): AccessRule {
-  return index.routeBases.get(normalizeRouteBase(routeBase).toLowerCase()) ?? PUBLIC_ACCESS
+export function tableRulesForRouteBase(index: AccessIndex, routeBase: string): AccessRule[] {
+  return index.routeBases.get(normalizeRouteBase(routeBase).toLowerCase()) ?? []
 }
 
 /**
- * The rule that goes with a page object, for anything served on its behalf
- * (hole and loop fragments).
+ * The rules that go with a page object, for the page itself and for anything
+ * served on its behalf (hole and loop fragments).
  *
- * A routable page: its own rule. An entry template: the rule of the tables
+ * A routable page: its own rule. An entry template: the rule of every table
  * it renders, so a fragment of a protected table's template is protected
  * whatever route the caller claims to be on. Any other template (a layout,
  * the 404 page) only wraps and has no rule of its own.
  */
-export function pageRule(index: AccessIndex, page: Page): AccessRule {
-  if (!isTemplatePage(page)) return index.pages.get(page.slug) ?? page.access ?? PUBLIC_ACCESS
-  const target = page.template?.target
-  if (target?.kind !== 'postTypes') return PUBLIC_ACCESS
-  for (const slug of target.tableSlugs) {
-    const rule = index.tableSlugs.get(slug)
-    if (rule) return rule
+export function pageRules(index: AccessIndex, page: Page): AccessRule[] {
+  if (!isTemplatePage(page)) {
+    const rule = index.pages.get(page.slug) ?? page.access
+    return rule && rule.level !== 'public' ? [rule] : []
   }
-  return PUBLIC_ACCESS
-}
-
-/** Of two rules for the same route, the one that is not public (the first wins a tie). */
-export function strictest(first: AccessRule, second: AccessRule): AccessRule {
-  return first.level !== 'public' ? first : second
+  const target = page.template?.target
+  if (target?.kind !== 'postTypes') return []
+  return target.tableSlugs.flatMap((slug) => index.tableSlugs.get(slug) ?? [])
 }
 
 // ─── The visitor ───────────────────────────────────────────────────────────
@@ -135,11 +143,18 @@ const SIGNED_OUT: Visitor = () => Promise.resolve(null)
 
 export type AccessDecision = 'allow' | 'login' | 'forbidden' | 'hide'
 
-export async function decideAccess(rule: AccessRule, visitor: Visitor = SIGNED_OUT): Promise<AccessDecision> {
-  if (rule.level === 'public') return 'allow'
+/**
+ * Decide for a request that `rules` apply to. Every rule must let the
+ * visitor in. When one does not, a hiding rule wins over a telling one, so a
+ * route is never confirmed to exist to someone a rule hides it from.
+ */
+export async function decideAccess(rules: readonly AccessRule[], visitor: Visitor = SIGNED_OUT): Promise<AccessDecision> {
+  const protecting = rules.filter((rule) => rule.level !== 'public')
+  if (protecting.length === 0) return 'allow'
   const tags = await visitor()
-  if (accessAllows(rule, tags)) return 'allow'
-  if (rule.onDeny === 'hide') return 'hide'
+  const denying = protecting.filter((rule) => !accessAllows(rule, tags))
+  if (denying.length === 0) return 'allow'
+  if (denying.some((rule) => rule.onDeny === 'hide')) return 'hide'
   return tags === null ? 'login' : 'forbidden'
 }
 

@@ -68,11 +68,10 @@ import {
   decideAccess,
   denyResponse,
   getAccessIndex,
-  indexedRuleForPath,
-  pageRule,
+  indexedRulesForPath,
+  pageRules,
   PRIVATE_HEADERS,
-  strictest,
-  tableRuleForRouteBase,
+  tableRulesForRouteBase,
   type Visitor,
 } from './accessGate'
 import type { PublishedPageSnapshot } from '../repositories/publish'
@@ -204,14 +203,14 @@ async function resolvePublicRoute(
   return { kind: 'not-found' }
 }
 
-/** The access rule of a resolved route: the page's own, or its table's for an entry. */
-function resolvedRouteRule(
+/** The access rules of a resolved route: the page's own, or its table's for an entry. */
+function resolvedRouteRules(
   index: Awaited<ReturnType<typeof getAccessIndex>>,
   resolution: Extract<PublicRouteResolution, { kind: 'page' | 'row' }>,
-): AccessRule {
-  if (resolution.kind === 'row') return tableRuleForRouteBase(index, resolution.row.tableRouteBase)
+): AccessRule[] {
+  if (resolution.kind === 'row') return tableRulesForRouteBase(index, resolution.row.tableRouteBase)
   const page = resolution.snapshot.site.pages.find((p) => p.id === resolution.snapshot.pageRowId)
-  return page ? pageRule(index, page) : LOCKED_ACCESS
+  return page ? pageRules(index, page) : [LOCKED_ACCESS]
 }
 
 // ---------------------------------------------------------------------------
@@ -253,8 +252,8 @@ export async function renderPublicResolution(
   // baked and not cached), so this is the outer of two locks; the inner one
   // is the check on the resolved route below.
   const accessIndex = await getAccessIndex(db, getPublishVersion())
-  const indexedRule = indexedRuleForPath(accessIndex, url.pathname)
-  const mayUseCaches = indexedRule.level === 'public'
+  const indexedRules = indexedRulesForPath(accessIndex, url.pathname)
+  const mayUseCaches = indexedRules.length === 0
 
   // Canonicalise the query to the loop-pagination params the renderer actually
   // consumes. Junk params collapse to '' (so they never mint cache slots), and
@@ -293,7 +292,7 @@ export async function renderPublicResolution(
     // An old address of an entry in a protected table: do not confirm it
     // ever existed to someone who may not see the table.
     if (!mayUseCaches) {
-      const decision = await decideAccess(indexedRule, visitor)
+      const decision = await decideAccess(indexedRules, visitor)
       if (decision === 'hide') return null
       if (decision !== 'allow') return denyResponse(db, url, decision)
     }
@@ -311,9 +310,11 @@ export async function renderPublicResolution(
   }
 
   // ── Access: decided from the route that actually resolved ────────────────
-  const rule = strictest(resolvedRouteRule(accessIndex, resolution), indexedRule)
-  if (rule.level !== 'public') {
-    const decision = await decideAccess(rule, visitor)
+  // Every rule that applies must pass: the resolved route's own, and whatever
+  // the index holds for the path as it was spelled.
+  const rules = [...resolvedRouteRules(accessIndex, resolution), ...indexedRules]
+  if (rules.length > 0) {
+    const decision = await decideAccess(rules, visitor)
     if (decision === 'hide') return null // answered exactly like a route that does not exist
     if (decision !== 'allow') return denyResponse(db, url, decision)
     // Rendered for this visitor alone: never through the shared cache.

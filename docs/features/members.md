@@ -118,8 +118,8 @@ A page carries an optional `access` rule (`AccessRuleSchema` in `@core/members`,
 How it is enforced (`server/publish/accessGate.ts`):
 
 1. **A protected route is never stored where a request is answered without asking.** It is not baked to the static slot (`publishSite.ts`, `bakeDataRows.ts`, `publishRow.ts`) and never enters the render cache.
-2. **The publish-time access index** (`getAccessIndex`, one load per publish version) lists protected page slugs and table route bases. `renderPublicResolution` consults it first, so a protected path skips both cache layers.
-3. **The rule is checked again on the route that actually resolved**, before rendering. That check decides; it does not depend on how the path was spelled.
+2. **The publish-time access index** (`getAccessIndex`, one load per publish version) lists protected page slugs and table route bases. A page's rule is written into its published version's cells for this (`persistSitePublish`). `renderPublicResolution` consults it first, so a protected path skips both cache layers.
+3. **The rule is checked again on the route that actually resolved**, before rendering. That check decides; it does not depend on how the path was spelled. When several rules apply to one request (a page and its table, a template's table and the route a fragment claims), every one must pass (`decideAccess`), and a hiding rule wins over a telling one.
 4. **Fragments are gated like their page.** `/_instatic/hole/<id>` and `/_instatic/loop/<id>` apply the owning page's rule (and, for a hole, the rule of the route in `u`), and are never cached for a protected page.
 5. **`/uploads/published/…` is never served.** The static slot lives under the uploads folder; `isPublishedSlotUploadPath` in `server/router.ts` blocks it on the resolved file path.
 

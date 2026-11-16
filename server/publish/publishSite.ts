@@ -174,6 +174,7 @@ async function publishSiteDocumentLocked(
       pageId: page.id,
       title: page.title,
       slug: page.slug,
+      ...(page.access && page.access.level !== 'public' ? { access: page.access } : {}),
       versionId,
       versionNumber,
       runtimeAssets: snapshot.runtimeAssets ?? null,
