@@ -96,6 +96,14 @@ export interface CollabProvider {
   canSend(): boolean
   /** Escape the backoff (which reaches 30s) when the user says the network is back. */
   reconnectNow(): void
+  /**
+   * Drop the current socket and open a new one at once, with no backoff. For
+   * when the session cookie was replaced (password re-confirmation rotates the
+   * session token): the server refuses the old socket on its next frame, so
+   * waiting for that close and then backing off leaves edits refused for over
+   * a second.
+   */
+  reopen(): void
   onStatus(listener: (status: CollabStatus) => void): () => void
   onReset(listener: CollabResetListener): () => void
   destroy(): void
@@ -295,6 +303,27 @@ export function createCollabProvider(
     }
   }
 
+  /** Forget the current socket and everything scoped to it. */
+  function releaseSocket(): void {
+    frameReader.clear()
+    socket = null
+    clearInterval(pingTimer)
+    pingTimer = undefined
+  }
+
+  /**
+   * Close a socket whose events must no longer reach this provider. Callbacks
+   * are detached first, so a late browser event cannot restart the heartbeat,
+   * schedule a reconnect, or notify listeners.
+   */
+  function discardSocket(discarded: CollabSocketLike): void {
+    discarded.onopen = null
+    discarded.onmessage = null
+    discarded.onclose = null
+    discarded.onerror = null
+    discarded.close()
+  }
+
   function connect(): void {
     if (destroyed) return
     setStatus('connecting')
@@ -362,10 +391,7 @@ export function createCollabProvider(
     socket.onerror = () => {}
 
     socket.onclose = () => {
-      frameReader.clear()
-      socket = null
-      clearInterval(pingTimer)
-      pingTimer = undefined
+      releaseSocket()
       if (destroyed) return
       setStatus('offline')
       const delay =
@@ -424,6 +450,15 @@ export function createCollabProvider(
       attempts = 0
       connect()
     },
+    reopen: () => {
+      if (destroyed) return
+      clearTimeout(reconnectTimer)
+      attempts = 0
+      const previous = socket
+      releaseSocket()
+      if (previous) discardSocket(previous)
+      connect()
+    },
     onStatus: (listener) => {
       statusListeners.add(listener)
       return () => statusListeners.delete(listener)
@@ -442,18 +477,10 @@ export function createCollabProvider(
       awarenessProtocol.removeAwarenessStates(awareness, [awareness.clientID], 'destroy')
       awareness.destroy()
       for (const docId of [...bound.keys()]) unbind(docId)
+      // A socket can finish opening after the editor has already unmounted.
       const closingSocket = socket
       socket = null
-      if (closingSocket) {
-        // A socket can finish opening after the editor has already unmounted.
-        // Detach every callback before close so that late browser events cannot
-        // resurrect the heartbeat or notify listeners on a destroyed provider.
-        closingSocket.onopen = null
-        closingSocket.onmessage = null
-        closingSocket.onclose = null
-        closingSocket.onerror = null
-        closingSocket.close()
-      }
+      if (closingSocket) discardSocket(closingSocket)
       statusListeners.clear()
       resetListeners.clear()
     },
