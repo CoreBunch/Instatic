@@ -13,7 +13,7 @@
  */
 import type { DbClient } from '../db/client'
 import { isStateChangingMethod, originAllowed } from '../auth/security'
-import { jsonResponse } from '../http'
+import { jsonResponse, readBytesWithLimit, RequestBodyTooLargeError } from '../http'
 import { originOk, resolveSignedInMember } from '../members/handlers'
 import { toCurrentMember } from '../members/repository'
 import { findPluginRouteAccess, runRouteInWorker } from './host/rpc'
@@ -61,9 +61,18 @@ export async function handlePublicPluginRouteRequest(req: Request, db: DbClient,
     return refuse(404, 'Plugin route not found')
   }
 
-  const declaredLength = Number(req.headers.get('content-length') ?? '0')
-  if (Number.isFinite(declaredLength) && declaredLength > MAX_BODY_BYTES) {
-    return refuse(413, 'Request body too large')
+  // Read the body here, counting the bytes that actually arrive, and hand
+  // the route a request that holds exactly those bytes.
+  let request = req
+  if (req.method !== 'GET' && req.method !== 'HEAD') {
+    let bytes: Uint8Array<ArrayBuffer>
+    try {
+      bytes = await readBytesWithLimit(req, MAX_BODY_BYTES)
+    } catch (err) {
+      if (err instanceof RequestBodyTooLargeError) return refuse(413, 'Request body too large')
+      throw err
+    }
+    request = new Request(req.url, { method: req.method, headers: req.headers, body: bytes })
   }
 
   let member: SerializedMember | null
@@ -83,7 +92,7 @@ export async function handlePublicPluginRouteRequest(req: Request, db: DbClient,
     member = pluginMayReadMembers(pluginId) ? await signedInMember(db, req) : null
   }
 
-  const response = await runRouteInWorker({ pluginId, method: req.method, path: routePath, request: req, user: null, member })
+  const response = await runRouteInWorker({ pluginId, method: req.method, path: routePath, request, user: null, member })
   // What a plugin answers for one member must not be kept by a shared cache.
   if (member && !response.headers.has('cache-control')) response.headers.set('cache-control', PRIVATE['cache-control'])
   return response

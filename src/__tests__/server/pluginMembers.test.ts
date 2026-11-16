@@ -227,6 +227,21 @@ describe('site members for plugins', () => {
       expect((await visit(`${MOUNT}/hook`, { method: 'POST', json: {}, origin: 'https://evil.example' })).status).toBe(403)
     })
 
+    it('refuse a body over the limit, whatever length it declares', async () => {
+      await install(ALL)
+      const big = 'x'.repeat(1024 * 1024 + 10)
+      const send = (declared: string | null) => {
+        const req = new Request(`${ORIGIN}${MOUNT}/hook`, { method: 'POST', body: big })
+        // A missing or false Content-Length must not get a large body through.
+        if (declared === null) req.headers.delete('content-length')
+        else req.headers.set('content-length', declared)
+        return handleServerRequest(req, { db: h.db, uploadsDir })
+      }
+      expect((await send(null)).status).toBe(413)
+      expect((await send('10')).status).toBe(413)
+      expect((await send(String(big.length))).status).toBe(413)
+    })
+
     it('answer 404 for a plugin or a path that does not exist', async () => {
       await install(ALL)
       expect((await visit('/_instatic/plugins/nope/who')).status).toBe(404)
