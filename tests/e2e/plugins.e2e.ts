@@ -424,6 +424,25 @@ test.describe.serial('packaged plugin surfaces', () => {
     await recordsRegion.getByRole('button', { name: `Delete ${recordTitle}` }).click()
     await expect(recordsRegion.getByText(recordTitle)).toHaveCount(0)
     await expect(page.getByText('No records yet.')).toBeVisible()
+
+    await test.step('nav entries that do not fit the toolbar move into a More menu', async () => {
+      await openSiteEditor(page)
+      const toolbar = page.getByTestId('toolbar')
+      const more = toolbar.getByTestId('admin-nav-more')
+      await expect(more).toBeVisible()
+      // The toolbar stays inside the window, with its trailing controls on screen.
+      await expect
+        .poll(() => toolbar.evaluate((el) => el.scrollWidth - el.clientWidth))
+        .toBe(0)
+      await expect(page.getByTestId('account-menu-trigger')).toBeInViewport({ ratio: 1 })
+
+      // The entry with no room in the row is reachable from the menu.
+      await expect(toolbar.getByRole('link', { name: 'Approvals' })).toBeHidden()
+      await more.click()
+      const menu = page.getByRole('menu', { name: 'More admin sections' })
+      await menu.getByRole('menuitem', { name: 'Approvals' }).click()
+      await expect(page).toHaveURL(new RegExp(`/admin/plugins/${escapeRegExp(pluginId)}/approvals$`))
+    })
   })
 })
 

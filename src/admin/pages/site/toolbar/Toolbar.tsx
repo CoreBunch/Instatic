@@ -206,7 +206,11 @@ export function Toolbar({
           </Tooltip>
         )}
         <BranchChip />
-        {adminNavigationSlot ?? <DefaultAdminNavigation section={section} />}
+        {adminNavigationSlot ?? (
+          <nav aria-label="Admin sections" className={styles.adminNavigation}>
+            <DefaultAdminNavigation section={section} />
+          </nav>
+        )}
 
         <div className={styles.workspaceToolbarItems}>
           {pluginButtons.map((button) => {
