@@ -8,7 +8,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
 import { createHash } from 'node:crypto'
 import { existsSync } from 'node:fs'
-import { mkdir, mkdtemp, readFile, rename, rm, symlink, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rename, rm, stat, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { createDbClient, type DbClient } from '../../../server/db'
@@ -17,8 +17,7 @@ import { tryServeManager } from '../../../server/manager/handler'
 import { readManagerConfig } from '../../../server/manager/config'
 import { applyPendingRestore, hasPendingRestore, type ApplyOutcome } from '../../../server/manager/pending'
 import { hashCachePath, pendingMarkerPath, preRestorePath, restoreStagingPath, transferStatePath } from '../../../server/manager/paths'
-import { FileHashCache } from '../../../server/manager/fsUtil'
-import { stat } from 'node:fs/promises'
+import { FileHashCache, moveFile } from '../../../server/manager/fsUtil'
 import { dropTransferCache } from '../../../server/manager/transfers'
 import { LOGIN_LINK_TTL_MS, createLoginLink, redeemLoginLink } from '../../../server/manager/loginLinks'
 import { createUser } from '../../../server/repositories/users'
@@ -813,5 +812,44 @@ describe('Manager API: hashes of pushed files are remembered', () => {
       { sizeBytes: number; mtimeMs: number; sha256: string }
     >
     expect(persisted[finalPath]).toEqual({ sizeBytes: info.size, mtimeMs: info.mtimeMs, sha256: sha256('pushed content') })
+  })
+
+  it('never answers with a pushed file\'s hash for the old file when the push is cancelled', async () => {
+    const source = await instance()
+    const target = await instance()
+    // Same path and same size on both sides, different content.
+    await writeUpload(source, 'media/page.txt', 'NEW content!')
+    await writeUpload(target, 'media/page.txt', 'old content.')
+    const push = await buildPush(source)
+    const transfer = await (await target.call('POST', '/transfers', { body: JSON.stringify(push.manifest) })).json()
+    await target.call('PUT', `/transfers/${transfer.id}/database?offset=0`, { body: push.database })
+    const bytes = push.files.get('media/page.txt')
+    if (!bytes) throw new Error('fixture file missing')
+    await target.call('PUT', `/transfers/${transfer.id}/files/media/page.txt?offset=0`, { body: bytes })
+    const commit = await target.call('POST', `/transfers/${transfer.id}/commit`, { body: JSON.stringify({ restart: false }) })
+    expect(commit.status).toBe(202)
+
+    // Cancelled: the old file stays. Its hash must be its own, not the one
+    // recorded for the file that was going to replace it.
+    expect((await target.call('DELETE', '/pending-restore')).status).toBe(200)
+    const { files } = await (await target.call('GET', '/files')).json()
+    expect(files).toEqual([{ path: 'media/page.txt', sizeBytes: 12, sha256: sha256('old content.') }])
+  })
+
+  // The cross-filesystem copy path cannot be forced here; this covers the
+  // contract both paths share, which the hash cache relies on.
+  it('keeps the modification time of a moved file', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'manager-move-'))
+    try {
+      const from = join(dir, 'a.txt')
+      await writeFile(from, 'moved')
+      const before = await stat(from)
+      await moveFile(from, join(dir, 'sub', 'b.txt'))
+      const after = await stat(join(dir, 'sub', 'b.txt'))
+      expect(after.mtimeMs).toBe(before.mtimeMs)
+      expect(existsSync(from)).toBe(false)
+    } finally {
+      await rm(dir, { recursive: true, force: true })
+    }
   })
 })

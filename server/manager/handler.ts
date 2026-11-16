@@ -440,7 +440,12 @@ async function handleListFiles(ctx: Context): Promise<Response> {
         : null,
     })
   }
-  hashes.retain(ctx.uploadsDir, new Set(walked.map((file) => resolveRelative(ctx.uploadsDir, file.path))))
+  // Entries for files that are gone are dropped, except while a restore is
+  // staged: its files are recorded under the paths they are about to get,
+  // and are not on disk there yet.
+  if (!hasPendingRestore(ctx.managerDir)) {
+    hashes.retain(ctx.uploadsDir, new Set(walked.map((file) => resolveRelative(ctx.uploadsDir, file.path))))
+  }
   await hashes.save(hashCachePath(ctx.managerDir))
   return jsonResponse({ files })
 }
