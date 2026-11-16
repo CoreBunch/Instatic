@@ -34,6 +34,7 @@ import {
   updateDataTable,
   createDataRow,
   getDataRowBySlug,
+  nextFreeDataRowSlug,
   listDataRows,
 } from '../../../repositories/data'
 import { normalizeDataTableFields } from '@core/data/fields'
@@ -46,7 +47,7 @@ import { CMS_API_PREFIX, requestAuditContext } from '../shared'
 import {
   TableCreateBodySchema,
   TablePatchBodySchema,
-  RowUpsertBodySchema,
+  RowCreateBodySchema,
   type TablePatchBody,
 } from './schemas'
 import {
@@ -318,7 +319,7 @@ async function handleTableRows(
   }
 
   if (req.method === 'POST') {
-    const body = await readValidatedBody(req, RowUpsertBodySchema)
+    const body = await readValidatedBody(req, RowCreateBodySchema)
     if (!body) return badRequest('Invalid row payload')
 
     // Editor-managed built-in values can't be set through the Data grid.
@@ -332,12 +333,12 @@ async function handleTableRows(
     // Run the `content.entry.cells` filter pipeline before persistence so
     // plugins can validate / normalize / auto-fill cells — the same shared
     // helper the plugin `cms.content.*` surface applies.
-    const cells = await applyContentEntryCellsFilter(body.cells ?? {}, {
+    let cells = await applyContentEntryCellsFilter(body.cells ?? {}, {
       tableSlug: table.slug,
       entryId: 'new',
       actor: { kind: 'user', userId: user.id },
     })
-    const slug = slugForTable(table, cells)
+    let slug = slugForTable(table, cells)
 
     // A slug collision is an ordinary, recoverable authoring conflict, but the
     // unique index raises a driver error that would otherwise surface as an
@@ -345,7 +346,13 @@ async function handleTableRows(
     // guess whether it hit a bug or a duplicate. Name it instead.
     if (slug) {
       const clash = await getDataRowBySlug(db, scope, tableId, slug)
-      if (clash) {
+      if (clash && body.allocateSlug) {
+        // The caller asked for a new row, not for this exact slug: the list it
+        // derived the slug from can be stale or still loading, so the free
+        // name is picked here, against the table itself.
+        slug = await nextFreeDataRowSlug(db, scope, tableId, slug)
+        cells = { ...cells, slug }
+      } else if (clash) {
         return jsonResponse(
           { error: `A row with slug "${slug}" already exists in this table.`, conflictRowId: clash.id },
           { status: 409 },
