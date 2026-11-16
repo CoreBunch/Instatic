@@ -133,6 +133,23 @@ valid again; with the default, everyone signs in again after a restore.
 the downgrade path: stage the old snapshot, then let the host redeploy the
 older image; the older server applies it on boot.
 
+### Sign-in links
+
+Lets a manager open the site's admin without a password, and without keeping
+one.
+
+| Method and path | Purpose |
+|---|---|
+| `POST /login-links` | Mint a one-time sign-in link for the site owner. No body. Returns `201 { "path": "/_instatic/manager/v1/login/<token>", "expiresAt": "…" }`. `409 needs-setup` when the site has no owner yet. |
+| `GET /login/<token>` | Opened by a **browser**, so it carries no bearer token: the link token is its credential. Starts a session for the owner and answers `302` to `/admin`. A wrong, used or expired link is `404`. |
+
+The link works once and for 60 seconds. Tokens are held in memory only, as
+hashes, so a restart forgets them. The owner is the earliest active user with
+the owner role. The session is fully signed in, MFA included: the manager
+token already allows replacing the whole database, so a second factor would
+protect nothing here. The sign-in is recorded as `login.success` with
+`method: "manager-link"` in the audit log.
+
 ### Files (read side, used by pull and by incremental push)
 
 | Method and path | Purpose |
@@ -309,6 +326,7 @@ server/manager/
   pending.ts     Pending-restore marker and boot-time apply
   paths.ts       Every path inside the manager directory
   lock.ts        The one lock for state-changing operations
+  loginLinks.ts  One-time sign-in links for the site owner
   database.ts    SQLite copy / inspect helpers (bun:sqlite)
   fsUtil.ts      Safe paths, file walk, hashing, ranged responses
 server/version.ts  Server version reported by /info

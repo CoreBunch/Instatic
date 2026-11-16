@@ -12,7 +12,13 @@ import { timingSafeEqual } from 'node:crypto'
 import { mkdir, rm, stat } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import type { RouteHandler, ServerRuntime, ManagerRuntime } from '../serverRuntime'
-import { RequestBodyTooLargeError, jsonResponse, readTextBodyWithLimit } from '../http'
+import { RequestBodyTooLargeError, jsonResponse, readTextBodyWithLimit, setCookieHeader } from '../http'
+import { createSession } from '../auth/sessions'
+import { createSessionToken, hashSessionToken, sessionExpiry } from '../auth/tokens'
+import { createAuditEvent } from '../repositories/audit'
+import { findUserById, markUserLoggedIn } from '../repositories/users'
+import { sessionCookie } from '../handlers/cms/session'
+import { requestAuditContext } from '../handlers/cms/shared'
 import { getSetupStatus } from '../repositories/setup'
 import { getMasterKeyFingerprint } from '../secrets/masterKey'
 import { SERVER_VERSION } from '../version'
@@ -29,6 +35,7 @@ import {
   walkFiles,
 } from './fsUtil'
 import { exclusive, serialized } from './lock'
+import { createLoginLink, findOwnerUserId, redeemLoginLink } from './loginLinks'
 import { hashCachePath, restoreStagingPath, stagedDatabasePath, stagedFilesDir } from './paths'
 import { discardPendingRestore, hasPendingRestore, readRestoreError, writePendingRestore } from './pending'
 import { CommitTransferSchema, OpenTransferSchema, RestoreSnapshotSchema, type OpenTransferBody } from './schema'
@@ -56,6 +63,7 @@ import {
 } from './transfers'
 
 const MAX_MANIFEST_BYTES = 64 * 1024 * 1024
+const LOGIN_LINK_PREFIX = `${MANAGER_API_PREFIX}/login/`
 const MAX_OPTIONS_BYTES = 64 * 1024
 
 const hashes = new FileHashCache()
@@ -124,7 +132,13 @@ interface Context {
 export const tryServeManager: RouteHandler = async (req, runtime, url, pathname) => {
   if (!pathname.startsWith(MANAGER_NAMESPACE)) return null
   const manager = runtime.manager
-  if (!manager?.config.token || !tokenMatches(req, manager.config.token)) return notFound()
+  if (!manager?.config.token) return notFound()
+  // Redeeming a sign-in link is the one request a browser makes here, so it
+  // carries no bearer token: the single-use link token is its credential.
+  if (req.method === 'GET' && pathname.startsWith(LOGIN_LINK_PREFIX)) {
+    return handleRedeemLoginLink(req, runtime, pathname.slice(LOGIN_LINK_PREFIX.length))
+  }
+  if (!tokenMatches(req, manager.config.token)) return notFound()
   if (pathname !== MANAGER_API_PREFIX && !pathname.startsWith(`${MANAGER_API_PREFIX}/`)) return notFound()
 
   const ctx: Context = {
@@ -150,6 +164,8 @@ export const tryServeManager: RouteHandler = async (req, runtime, url, pathname)
   await hashes.load(hashCachePath(ctx.managerDir))
 
   if (resource === 'info' && rest.length === 0 && method === 'GET') return handleInfo(ctx)
+
+  if (resource === 'login-links' && rest.length === 0 && method === 'POST') return handleCreateLoginLink(ctx)
 
   if (resource === 'pending-restore' && rest.length === 0 && method === 'DELETE') {
     return serialized(async () => {
@@ -218,6 +234,64 @@ export const tryServeManager: RouteHandler = async (req, runtime, url, pathname)
   }
 
   return notFound()
+}
+
+/**
+ * Mint a one-time sign-in link for the site owner. The manager token already
+ * grants full control of the instance (it can replace the whole database),
+ * so signing in as the owner adds no privilege; it removes the need to keep
+ * a password anywhere.
+ */
+async function handleCreateLoginLink(ctx: Context): Promise<Response> {
+  const ownerId = await findOwnerUserId(ctx.runtime.db)
+  if (!ownerId) {
+    return managerError(409, 'needs-setup', 'This site has no owner account yet. Finish setup first.')
+  }
+  const link = createLoginLink(ownerId)
+  return jsonResponse({ path: `${LOGIN_LINK_PREFIX}${link.token}`, expiresAt: link.expiresAt.toISOString() }, { status: 201 })
+}
+
+/**
+ * Spend a sign-in link: start a session for its user and send the browser to
+ * the admin. Every failure is the same 404, so a link that was wrong, used
+ * or expired cannot be told apart.
+ */
+async function handleRedeemLoginLink(req: Request, runtime: ServerRuntime, token: string): Promise<Response> {
+  const userId = token.length > 0 && token.length <= 128 ? redeemLoginLink(token) : null
+  const user = userId ? await findUserById(runtime.db, userId) : null
+  if (!user || user.status !== 'active') return notFound()
+
+  const sessionToken = createSessionToken()
+  const expiresAt = sessionExpiry()
+  await createSession(runtime.db, {
+    idHash: await hashSessionToken(sessionToken),
+    userId: user.id,
+    expiresAt,
+    // The manager token outranks a second factor: its holder can already
+    // replace the database. The session is therefore fully signed in.
+    mfaPassedAt: new Date(),
+    ...requestAuditContext(req),
+  })
+  await markUserLoggedIn(runtime.db, user.id)
+  await createAuditEvent(runtime.db, {
+    actorUserId: user.id,
+    action: 'login.success',
+    targetType: 'user',
+    targetId: user.id,
+    metadata: { method: 'manager-link' },
+    ...requestAuditContext(req),
+  })
+
+  const response = new Response(null, {
+    status: 302,
+    headers: {
+      location: '/admin',
+      'cache-control': 'no-store',
+      // The link token is in this request's URL: never pass it on.
+      'referrer-policy': 'no-referrer',
+    },
+  })
+  return setCookieHeader(response, sessionCookie(req, sessionToken, expiresAt))
 }
 
 /** The active transfer when `id` names it; null for any other id. */

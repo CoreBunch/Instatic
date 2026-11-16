@@ -18,6 +18,10 @@ import { readManagerConfig } from '../../../server/manager/config'
 import { applyPendingRestore, hasPendingRestore, type ApplyOutcome } from '../../../server/manager/pending'
 import { pendingMarkerPath, preRestorePath, restoreStagingPath, transferStatePath } from '../../../server/manager/paths'
 import { dropTransferCache } from '../../../server/manager/transfers'
+import { LOGIN_LINK_TTL_MS, createLoginLink, redeemLoginLink } from '../../../server/manager/loginLinks'
+import { createUser } from '../../../server/repositories/users'
+import { listAuditEvents } from '../../../server/repositories/audit'
+import { SESSION_COOKIE_NAME, hashPassword } from '../../../server/auth/tokens'
 import type { ServerRuntime } from '../../../server/serverRuntime'
 import { SERVER_VERSION } from '../../../server/version'
 
@@ -629,5 +633,71 @@ describe('Manager API: symlinks at apply time', () => {
     } finally {
       await rm(outside, { recursive: true, force: true })
     }
+  })
+})
+
+describe('Manager API: one-time sign-in links', () => {
+  async function addOwner(site: Instance): Promise<string> {
+    const owner = await createUser(site.db, {
+      email: 'owner@example.com',
+      displayName: 'Owner',
+      passwordHash: await hashPassword('a-long-enough-password'),
+      roleId: 'owner',
+      allowOwnerRole: true,
+    })
+    return owner.id
+  }
+
+  it('signs the owner in once, without a password, and redirects to the admin', async () => {
+    const site = await instance()
+    const ownerId = await addOwner(site)
+    const created = await site.call('POST', '/login-links')
+    expect(created.status).toBe(201)
+    const link = await created.json()
+    expect(link.path.startsWith('/_instatic/manager/v1/login/')).toBe(true)
+    const linkPath = link.path.slice('/_instatic/manager/v1'.length)
+
+    // The browser opens the link with no bearer token.
+    const redeemed = await site.call('GET', linkPath, { token: null })
+    expect(redeemed.status).toBe(302)
+    expect(redeemed.headers.get('location')).toBe('/admin')
+    expect(redeemed.headers.get('cache-control')).toBe('no-store')
+    const cookie = redeemed.headers.get('set-cookie') ?? ''
+    expect(cookie.startsWith(`${SESSION_COOKIE_NAME}=`)).toBe(true)
+    expect(cookie).toContain('HttpOnly')
+
+    const { rows } = await site.db<{ user_id: string; mfa_passed_at: string | null }>`select user_id, mfa_passed_at from sessions`
+    expect(rows.length).toBe(1)
+    expect(rows[0]?.user_id).toBe(ownerId)
+    expect(rows[0]?.mfa_passed_at).not.toBeNull()
+    const events = await listAuditEvents(site.db, 5)
+    expect(events.some((event) => event.action === 'login.success' && event.metadata.method === 'manager-link')).toBe(true)
+
+    // A link works once.
+    expect((await site.call('GET', linkPath, { token: null })).status).toBe(404)
+  })
+
+  it('needs the manager token to mint a link and an owner to sign in', async () => {
+    const site = await instance()
+    expect((await site.call('POST', '/login-links', { token: null })).status).toBe(404)
+    const noOwner = await site.call('POST', '/login-links')
+    expect(noOwner.status).toBe(409)
+    expect((await noOwner.json()).error).toBe('needs-setup')
+    expect((await site.call('GET', '/login/not-a-real-token', { token: null })).status).toBe(404)
+    expect((await site.call('GET', '/login/', { token: null })).status).toBe(404)
+  })
+
+  it('does not exist when the Manager API is disabled', async () => {
+    const disabled = await instance('')
+    expect((await disabled.call('GET', '/login/anything', { token: null })).status).toBe(404)
+  })
+
+  it('expires a link after its short lifetime', () => {
+    const now = Date.now()
+    const link = createLoginLink('user-1', now)
+    expect(redeemLoginLink(link.token, now + LOGIN_LINK_TTL_MS + 1)).toBeNull()
+    const fresh = createLoginLink('user-1', now)
+    expect(redeemLoginLink(fresh.token, now + 1000)).toBe('user-1')
+    expect(redeemLoginLink(fresh.token, now + 1000)).toBeNull()
   })
 })
