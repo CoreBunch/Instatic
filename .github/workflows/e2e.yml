@@ -18,7 +18,11 @@ concurrency:
 jobs:
   e2e:
     name: Playwright (shard ${{ matrix.shard }}/4)
-    runs-on: ubuntu-latest
+    # Pinned, not `ubuntu-latest`: Playwright only installs its browser on the
+    # Ubuntu releases it supports, and `latest` moved to 26.04 before the
+    # Playwright version in package.json did. Raise this together with a
+    # Playwright upgrade.
+    runs-on: ubuntu-24.04
     # A shard is ~4-6 min of tests plus the per-shard setup projects; the cap is
     # slack for a slow runner, not a target.
     timeout-minutes: 30
