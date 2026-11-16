@@ -40,6 +40,7 @@ import { handleUsersRoutes } from './users'
 import { handleRolesRoutes } from './roles'
 import { handleAuditRoutes } from './audit'
 import { handleMailRoutes } from './mail'
+import { handleMembersRoutes } from './members'
 import { handleSiteRoutes } from './site'
 import { handleSiteDocumentRoutes } from './siteDocument'
 import { handlePagesRoutes } from './pages'
@@ -102,6 +103,8 @@ export async function handleCmsRequest(
     ?? (await handleAuditRoutes(req, db))
     // Outgoing mail is installation-wide, not branched.
     ?? (await handleMailRoutes(req, db))
+    // Site members belong to the live site, not to a branch.
+    ?? (await handleMembersRoutes(req, db))
   if (accountResponse) return accountResponse
 
   // Branch scope — resolved ONCE per request from the `X-Instatic-Branch`

@@ -61,6 +61,15 @@ const AuditActionSchema = Type.Union([
   Type.Literal('mail.defaults.update'),
   Type.Literal('mail.template.update'),
   Type.Literal('mail.template.reset'),
+  // Site members — see docs/features/members.md.
+  Type.Literal('member.invite'),
+  Type.Literal('member.suspend'),
+  Type.Literal('member.unsuspend'),
+  Type.Literal('member.signout'),
+  Type.Literal('member.delete'),
+  Type.Literal('member.tag.grant'),
+  Type.Literal('member.tag.revoke'),
+  Type.Literal('member.settings.update'),
   // AI runtime — see `docs/plans/2026-05-26-ai-runtime-rewrite.md` § Audit.
   Type.Literal('ai.credential.created'),
   Type.Literal('ai.credential.updated'),

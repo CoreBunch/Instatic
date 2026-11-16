@@ -3,6 +3,7 @@ import {
   ANONYMOUS_STATE,
   PUBLIC_BASE_URL,
   canvasFrame,
+  completeStepUp,
   createPage,
   insertModuleViaPicker,
   insertNotchModule,
@@ -18,18 +19,15 @@ import {
  *
  * An owner protects a page from Page settings, builds a sign-up form from the
  * form module's Members mode (the setup panel adds the fields), limits it to
- * signed-out visitors, and publishes. A visitor is then turned away from the
- * protected page, and the published form talks to the member endpoint.
- *
- * Sign-up is closed on a new site and the switch for it arrives with the
- * member settings, so this spec stops at the endpoint's answer; a completed
- * sign-up is covered by `members.test.ts`.
+ * signed-out visitors, publishes, and opens sign-up in the member settings.
+ * A visitor is then turned away from the protected page and signs up through
+ * the published form.
  */
 test.describe('member pages in the editor', () => {
   // Publishing asks for step-up, which rotates the session token.
   test.use({ storageState: ANONYMOUS_STATE })
 
-  test('owner protects a page and publishes a member form (MEMBER-001)', async ({ page, browser }) => {
+  test('owner protects a page and publishes a working sign-up form (MEMBER-001)', async ({ page, browser }) => {
     await login(page)
     await openSiteEditor(page)
 
@@ -86,7 +84,18 @@ test.describe('member pages in the editor', () => {
       await publishDraft(page)
     })
 
-    await test.step('a visitor is turned away from the protected page and reaches the member endpoint', async () => {
+    await test.step('open sign-up in the member settings', async () => {
+      await page.goto('/admin/users')
+      await page.getByRole('tab', { name: 'Site members', exact: true }).click()
+      await page.getByRole('button', { name: 'Member settings' }).click()
+      const dialog = page.getByRole('dialog', { name: 'Member settings' })
+      await pickOption(page, dialog.getByLabel('Who can sign up'), 'Open: anyone can sign up')
+      await dialog.getByRole('button', { name: 'Save settings' }).click()
+      await completeStepUp(page)
+      await expect(dialog).toBeHidden()
+    })
+
+    await test.step('a visitor is turned away from the protected page and signs up', async () => {
       const context = await browser.newContext()
       const visitor = await context.newPage()
       try {
@@ -94,20 +103,31 @@ test.describe('member pages in the editor', () => {
         await expect(visitor).toHaveURL(new RegExp(`/_instatic/members/sign-in\\?next=%2F${club.slug}`))
 
         await visitor.goto(`${PUBLIC_BASE_URL}/${join.slug}`)
+        const email = `visitor-${suffix}@example.com`
         await visitor.getByLabel('Name').fill('Visitor')
-        await visitor.getByLabel('Email').fill(`visitor-${suffix}@example.com`)
+        await visitor.getByLabel('Email').fill(email)
 
         // Before anything is submitted the success message is not on screen.
         await expect(visitor.getByText('Check your email to confirm your address.')).toBeHidden()
 
-        // A new site keeps sign-up closed until the owner opens it, so the
-        // published form reaches the member endpoint and shows its answer in
-        // the form's own error message, without leaving the page.
+        // A weak password comes back as an error, and the field is marked.
+        await visitor.getByLabel('Password').fill('short')
+        await visitor.getByRole('button', { name: 'Create account' }).click()
+        await expect(visitor.getByRole('alert')).toContainText(/password/i)
+        await expect(visitor.getByLabel('Password')).toHaveAttribute('aria-invalid', 'true')
+
         await visitor.getByLabel('Password').fill('a-long-enough-password')
         await visitor.getByRole('button', { name: 'Create account' }).click()
-        await expect(visitor.getByRole('alert')).toHaveText('Sign-up is closed.')
+        await expect(
+          visitor.getByRole('status').filter({ hasText: 'Check your email to confirm your address.' }),
+        ).toBeVisible({ timeout: 20_000 })
         await expect(visitor).toHaveURL(new RegExp(`/${join.slug}$`))
         await visitor.screenshot({ path: '.tmp/evidence/members-signup-published.png' })
+
+        // The confirmation email was produced (captured on this development server).
+        await page.goto('/admin/email')
+        await page.getByTestId('email-nav-activity').click()
+        await expect(page.getByRole('list', { name: 'Email activity' }).getByText(email).first()).toBeVisible()
       } finally {
         await context.close()
       }

@@ -267,6 +267,13 @@ export type MemberEventKind =
   | 'email_changed'
   | 'profile_updated'
   | 'deleted'
+  // Done by an administrator, not by the member.
+  | 'invited'
+  | 'suspended'
+  | 'unsuspended'
+  | 'signed_out_by_admin'
+  | 'tag_granted'
+  | 'tag_revoked'
 
 export interface MemberEventContext {
   ipAddress: string | null
