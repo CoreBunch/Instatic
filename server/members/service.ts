@@ -209,13 +209,15 @@ interface SignUpInput {
  * Create an account, or rather: start proving the address.
  *
  * The member row is created without a password. The password hash travels in
- * the confirmation link's token and is only applied when the link is opened.
- * That closes account pre-hijacking: if two people sign up with the same
- * unproven address (the owner and someone who wants in), the later sign-up's
- * link is marked `contested` and its password applies only in the browser
- * that requested it (matched by the sign-up nonce cookie). Whoever opens a
- * link in another browser still proves the address and is signed in, but
- * with no password set, so nobody else's password ever lands on the account.
+ * the confirmation link's token and is applied only when the link is opened
+ * in the browser that signed up (matched by the sign-up nonce cookie).
+ *
+ * That closes account pre-hijacking. Anyone can type someone else's address
+ * into a sign-up form; the real owner then gets a confirmation email. If
+ * they open it, in their own browser, the address is proven and they are
+ * signed in, but the stranger's password is thrown away: the account has no
+ * password until its owner sets one. Opening the link on another device
+ * than the one you signed up on has the same harmless result.
  *
  * An address that already has a confirmed account gets an "you already have
  * an account" email instead; the visitor sees the same `check_email` answer.
@@ -251,7 +253,6 @@ export async function signUp(ctx: MemberActionContext, input: SignUpInput): Prom
     return outcome
   }
 
-  const contested = member !== null
   if (!member) {
     member = await createMember(ctx.db, { email, passwordHash: null, profile: read.profile, verified: false })
     if (!member) return outcome // lost a race with another sign-up for the same address
@@ -261,7 +262,6 @@ export async function signUp(ctx: MemberActionContext, input: SignUpInput): Prom
   const { token } = await issueMemberToken(ctx.db, member.id, 'verify', {
     passwordHash,
     nonceHash: await hashSessionToken(nonce),
-    contested,
     profile: read.profile,
   })
   sendLink(ctx, 'verify', member.email, token, settings.pages)
@@ -285,7 +285,7 @@ export async function confirmEmail(
     input.signupNonce !== null &&
     consumed.payload.nonceHash !== undefined &&
     (await hashSessionToken(input.signupNonce)) === consumed.payload.nonceHash
-  if (consumed.payload.passwordHash && (sameBrowser || !consumed.payload.contested)) {
+  if (consumed.payload.passwordHash && sameBrowser) {
     await setMemberPasswordHash(ctx.db, member.id, consumed.payload.passwordHash)
     if (consumed.payload.profile) await setMemberProfile(ctx.db, member.id, consumed.payload.profile)
   }

@@ -212,6 +212,23 @@ describe('site members', () => {
       expect((await attacker.post('login', { email: 'v@example.com', password: OTHER_PASSWORD })).status).toBe(401)
     })
 
+    it('throws away a stranger’s password when the address owner opens their link', async () => {
+      const attacker = new Browser(t.db)
+      const victim = new Browser(t.db)
+      await attacker.post('signup', { email: 'v@example.com', password: OTHER_PASSWORD })
+      const mail = await lastMail('verify', 'v@example.com')
+
+      // The owner of the address never signed up; they just open the email.
+      expect((await victim.post('verify', { token: mail!.token })).status).toBe(200)
+      expect(await victim.me()).toMatchObject({ emailVerified: true, hasPassword: false })
+      expect((await attacker.post('login', { email: 'v@example.com', password: OTHER_PASSWORD })).status).toBe(401)
+
+      // Passwordless and just signed in: they can set their own password.
+      const set = await victim.post('password/change', { newPassword: PASSWORD })
+      expect(set.status).toBe(200)
+      expect((await new Browser(t.db).post('login', { email: 'v@example.com', password: PASSWORD })).status).toBe(200)
+    })
+
     it('never applies an attacker’s password when they signed up second', async () => {
       const attacker = new Browser(t.db)
       const victim = new Browser(t.db)

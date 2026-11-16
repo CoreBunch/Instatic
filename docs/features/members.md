@@ -91,7 +91,7 @@ Error codes are the `MEMBER_ERROR_CODES` list in `@core/members`.
 
 **Enumeration.** A sign-in for an unknown address still pays one argon2 verification. Requests that send email decide their answer first and send in the background (`queueMemberMail`), so timing does not differ.
 
-**Sign-up and pre-hijacking.** The member row is created with no password. The hash travels in the confirmation token. If a second sign-up arrives for an address that is still unconfirmed, its link is marked `contested`: its password applies only in the browser that requested it (matched by the `instatic_member_signup` cookie). Opening a contested link elsewhere still confirms the address and signs in, with no password set. Nobody else's password can end up on an account.
+**Sign-up and pre-hijacking.** The member row is created with no password. The hash travels in the confirmation token and applies only when the link is opened in the browser that signed up (matched by the `instatic_member_signup` cookie). Opened anywhere else, the link still confirms the address and signs in, with no password set. So a stranger who signs up with someone else's address never gets their password onto the account, even if the owner opens the email.
 
 **No hard lockout.** Limits are sliding windows per IP, per IP+email, per email and per recipient (`limits.ts`). An account is never locked, because anyone who knows the address could lock its owner out.
 
@@ -99,7 +99,7 @@ Error codes are the `MEMBER_ERROR_CODES` list in `@core/members`.
 
 **Emailed links never act on GET.** They open a page (the owner's, from `member_settings.pages`, or `linkPage.ts`) whose button POSTs the token. Mail scanners that follow links do not use them up.
 
-**Plugins never see session cookies.** `server/sessionCookies.ts` names the credential cookies; plugin route handlers (`routeIo.ts`) and per-visitor loop sources (`handlers/cms/hole.ts`) get the visitor's cookies with those removed.
+**Plugins never see Instatic's cookies.** `server/sessionCookies.ts` removes every `instatic_` cookie (admin session, member session, sign-up nonce, branch preview); plugin route handlers (`routeIo.ts`) and per-visitor loop sources (`handlers/cms/hole.ts`) get the visitor's cookies with those removed.
 
 ## Deleting and exporting
 

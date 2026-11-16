@@ -30,14 +30,13 @@ const TOKEN_LIFETIME_MS: Record<MemberTokenKind, number> = {
 /**
  * What a token carries besides who it is for.
  *  - `email`: the new address, for `email_change`.
- *  - `passwordHash`, `nonceHash`, `contested`, `profile`: a pending sign-up,
+ *  - `passwordHash`, `nonceHash`, `profile`: a pending sign-up,
  *    for `verify` (see `signUp` in `service.ts`).
  */
 const TokenPayloadSchema = Type.Object({
   email: Type.Optional(Type.String()),
   passwordHash: Type.Optional(Type.String()),
   nonceHash: Type.Optional(Type.String()),
-  contested: Type.Optional(Type.Boolean()),
   profile: Type.Optional(MemberProfileSchema),
 })
 type TokenPayload = Static<typeof TokenPayloadSchema>

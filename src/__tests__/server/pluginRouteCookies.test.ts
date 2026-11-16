@@ -6,7 +6,7 @@ describe('plugin routes never receive session cookies', () => {
   it('removes the admin and member session cookies and keeps the rest', () => {
     expect(
       withoutSessionCookies(
-        'theme=dark; instatic_admin_session=ADMIN; __Host-instatic_member=M1; instatic_member=M2; instatic_member_signup=N; cart=42',
+        'theme=dark; instatic_admin_session=ADMIN; __Host-instatic_member=M1; instatic_member=M2; instatic_member_signup=N; instatic_branch_preview=P; cart=42',
       ),
     ).toBe('theme=dark; cart=42')
     expect(withoutSessionCookies('instatic_admin_session=ADMIN')).toBe('')

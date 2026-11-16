@@ -1,24 +1,20 @@
 /**
- * The cookies that are credentials: the admin session, the member session,
- * and the member sign-up nonce. Anything that passes a visitor's cookies to
- * code outside the core (plugin route handlers, per-visitor plugin loop
- * sources) removes these first. The host has already decided who the caller
- * is; a session token in plugin hands could be replayed.
+ * Cookies that are credentials never reach code outside the core.
+ *
+ * Every cookie Instatic sets is one: the admin session, the member session,
+ * the member sign-up nonce, the branch-preview token. They all carry the
+ * `instatic_` name (with or without the `__Host-` prefix), so the rule is by
+ * name prefix rather than a list a new cookie could be forgotten from.
+ * Plugin route handlers and per-visitor plugin loop sources get the
+ * visitor's other cookies; the host has already decided who the caller is.
  */
-import { SESSION_COOKIE_NAME } from './auth/tokens'
-import { MEMBER_COOKIE_NAMES, MEMBER_SIGNUP_NONCE_COOKIE } from './members/sessions'
-
-const SESSION_COOKIE_NAMES = new Set<string>([
-  SESSION_COOKIE_NAME,
-  ...MEMBER_COOKIE_NAMES,
-  MEMBER_SIGNUP_NONCE_COOKIE,
-])
+const OWN_COOKIE = /^(__Host-|__Secure-)?instatic_/i
 
 export function isSessionCookieName(name: string): boolean {
-  return SESSION_COOKIE_NAMES.has(name)
+  return OWN_COOKIE.test(name)
 }
 
-/** A `Cookie` header with every session cookie removed. */
+/** A `Cookie` header with every Instatic cookie removed. */
 export function withoutSessionCookies(cookieHeader: string): string {
   return cookieHeader
     .split(';')

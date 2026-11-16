@@ -28,9 +28,6 @@ const TOUCH_INTERVAL_MS = 60 * 1000
 const SECURE_COOKIE_NAME = '__Host-instatic_member'
 const PLAIN_COOKIE_NAME = 'instatic_member'
 
-/** Every name a member session cookie can have (for stripping it elsewhere). */
-export const MEMBER_COOKIE_NAMES = [SECURE_COOKIE_NAME, PLAIN_COOKIE_NAME] as const
-
 /**
  * Short-lived cookie naming the browser that submitted a sign-up, so a
  * contested confirmation link only applies its password there (`signUp`).
