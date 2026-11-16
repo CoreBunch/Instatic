@@ -262,11 +262,13 @@ process. Instead:
    restart-on-failure policy (Railway's default, Docker's `on-failure` or
    `unless-stopped`) is enough.
 3. On boot, **before** the database is opened, the server applies the marker:
-   - database: the staged file is brought into the database's own directory,
-     the live file is set aside as `<database file>.pre-restore` (one
-     generation, the undo for a bad push), `-wal`, `-shm` and `-journal`
-     siblings are removed, and the new file is renamed into place. The marker
-     is then rewritten with `databaseApplied: true`;
+   - database: the staged file is brought into the database's own directory
+     as `<database file>.incoming` and the marker is rewritten with
+     `databaseSwapStarted: true`. The live file is then set aside as
+     `<database file>.pre-restore` (one generation, the undo for a bad push),
+     `-wal`, `-shm` and `-journal` siblings are removed, and the new file is
+     renamed into place. The marker is then rewritten with
+     `databaseApplied: true`;
    - uploads (transfers only): files not in the transfer's manifest are
      removed, then the staged files are moved into place;
    - the marker and the staging area are deleted.
@@ -274,9 +276,12 @@ process. Instead:
    the data.
 
 Every step is idempotent and progress is recorded in the marker, so a crash
-mid-apply resumes on the next boot. Nothing in the uploads tree is touched
-before the database swap is recorded: a marker whose staged database is
-missing is discarded, not resumed.
+mid-apply resumes on the next boot. That covers the swap itself: a run killed
+with the new database at `.incoming` finishes from that file, even when the
+live database was already set aside, and a run killed after the final rename
+but before recording it carries on with the uploads. Nothing in the uploads
+tree is touched before the database swap is recorded. A marker with no staged
+database, no `.incoming` file and no started swap is discarded, not resumed.
 
 A failure never aborts boot. The reason is kept for `/info.restoreError`, the
 marker stays so the next start retries, and the server comes up on the data

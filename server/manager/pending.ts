@@ -17,7 +17,9 @@
  *    recorded as done. A marker whose staged database is missing is discarded
  *    untouched, never "resumed" into deleting uploads.
  *  - Every step is idempotent and progress is recorded in the marker, so a
- *    crash at any point resumes on the next boot.
+ *    crash at any point resumes on the next boot. That includes the database
+ *    swap itself: the new file moves staged -> `<db>.incoming` -> live, and
+ *    the marker records when that swap has begun.
  *  - A failure never aborts boot. It is recorded for `/info`, the marker
  *    stays, and the server starts: an unreachable server in a restart loop
  *    cannot be repaired by its manager, a reachable one can.
@@ -42,6 +44,12 @@ import {
 const PendingRestoreSchema = Type.Object({
   kind: Type.Union([Type.Literal('snapshot'), Type.Literal('transfer')]),
   createdAt: Type.String(),
+  /**
+   * Set once the new database sits beside the live one and the swap is about
+   * to begin. From here on, a missing intermediate file means the swap
+   * already finished, not that there was nothing to swap.
+   */
+  databaseSwapStarted: Type.Optional(Type.Boolean()),
   /** Set once the staged database has become the live one. */
   databaseApplied: Type.Boolean(),
   /**
@@ -144,28 +152,44 @@ async function apply(options: ApplyPendingOptions): Promise<ApplyOutcome> {
   // 1. Database.
   if (!pending.databaseApplied) {
     const staged = pending.kind === 'snapshot' ? restoreStagingPath(managerDir) : stagedDatabasePath(managerDir)
-    if (!existsSync(staged)) {
-      // Nothing was swapped and there is nothing to swap in. Touching the
-      // uploads now would pair new files with the old database.
-      await discardPendingRestore(managerDir)
-      return { status: 'discarded', reason: 'the staged database was missing' }
-    }
-    // Bring the new file into the database's own directory first (a copy when
-    // the manager directory is another filesystem). Only then are the live
-    // file set aside and the new one renamed in: two same-directory renames.
+    // The new database travels staged -> `<db>.incoming` -> live. A run that
+    // was killed after the first hop left it at `.incoming`, possibly with the
+    // live database already set aside, so that file is the restore to finish.
+    // Discarding here instead would boot a server whose database is gone.
     const incoming = `${dbPath}.incoming`
-    await rm(incoming, { force: true })
-    await moveFile(staged, incoming)
-    if (existsSync(dbPath)) {
-      // Fold the write-ahead log into the file so the undo copy is complete.
-      checkpointDatabase(dbPath)
-      await rename(dbPath, preRestorePath(dbPath))
+    let swapFinished = false
+    if (existsSync(staged)) {
+      // Bring the new file into the database's own directory first (a copy
+      // when the manager directory is another filesystem). Only then are the
+      // live file set aside and the new one renamed in: two same-directory
+      // renames.
+      await rm(incoming, { force: true })
+      await moveFile(staged, incoming)
+    } else if (!existsSync(incoming)) {
+      if (!pending.databaseSwapStarted) {
+        // Nothing was swapped and there is nothing to swap in. Touching the
+        // uploads now would pair new files with the old database.
+        await discardPendingRestore(managerDir)
+        return { status: 'discarded', reason: 'the staged database was missing' }
+      }
+      // The swap began and its intermediate file is gone: the final rename
+      // happened and only recording it was cut short.
+      swapFinished = true
     }
-    for (const suffix of ['-wal', '-shm', '-journal']) {
-      await rm(`${dbPath}${suffix}`, { force: true })
+    if (!swapFinished) {
+      pending.databaseSwapStarted = true
+      await writePendingRestore(managerDir, pending)
+      if (existsSync(dbPath)) {
+        // Fold the write-ahead log into the file so the undo copy is complete.
+        checkpointDatabase(dbPath)
+        await rename(dbPath, preRestorePath(dbPath))
+      }
+      for (const suffix of ['-wal', '-shm', '-journal']) {
+        await rm(`${dbPath}${suffix}`, { force: true })
+      }
+      await mkdir(dirname(dbPath), { recursive: true })
+      await rename(incoming, dbPath)
     }
-    await mkdir(dirname(dbPath), { recursive: true })
-    await rename(incoming, dbPath)
     pending.databaseApplied = true
     await writePendingRestore(managerDir, pending)
   }

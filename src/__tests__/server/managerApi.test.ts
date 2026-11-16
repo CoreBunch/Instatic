@@ -8,7 +8,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
 import { createHash } from 'node:crypto'
 import { existsSync } from 'node:fs'
-import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rename, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { createDbClient, type DbClient } from '../../../server/db'
@@ -396,6 +396,75 @@ describe('Manager API — review hardening', () => {
 
     expect(await site.reboot()).toEqual({ status: 'discarded', reason: 'the staged database was missing' })
     expect(await readFile(join(site.uploadsDir, 'media/keep-me.txt'), 'utf-8')).toBe('still here')
+    expect(await readMarker(site)).toBe('live')
+    expect(hasPendingRestore(site.managerDir)).toBe(false)
+  })
+
+  it('finishes a database swap that was interrupted between its two renames', async () => {
+    const site = await instance()
+    await setMarker(site, 'live')
+    const snapshot = await (await site.call('POST', '/snapshots')).json()
+    await setMarker(site, 'newer')
+    await site.call('POST', `/snapshots/${snapshot.id}/restore`, { body: JSON.stringify({ restart: false }) })
+    // The state a kill leaves behind after the live database was set aside
+    // and before the new one was renamed into place: the staged file has
+    // already moved beside the database, and no live database exists.
+    await site.db.close()
+    await rename(restoreStagingPath(site.managerDir), `${site.dbFile}.incoming`)
+    await rename(site.dbFile, preRestorePath(site.dbFile))
+    await rm(`${site.dbFile}-wal`, { force: true })
+    await rm(`${site.dbFile}-shm`, { force: true })
+
+    const outcome = await applyPendingRestore({
+      managerDir: site.managerDir,
+      databaseUrl: site.databaseUrl,
+      uploadsDir: site.uploadsDir,
+    })
+    await site.reboot().catch(() => undefined)
+
+    expect(outcome).toEqual({ status: 'applied', kind: 'snapshot' })
+    // The restore completed: the server is not left to boot an empty database.
+    expect(await readMarker(site)).toBe('live')
+    expect(existsSync(`${site.dbFile}.incoming`)).toBe(false)
+  })
+
+  it('finishes a database swap that was interrupted before the live database was set aside', async () => {
+    const site = await instance()
+    await setMarker(site, 'live')
+    const snapshot = await (await site.call('POST', '/snapshots')).json()
+    await setMarker(site, 'newer')
+    await site.call('POST', `/snapshots/${snapshot.id}/restore`, { body: JSON.stringify({ restart: false }) })
+    // Killed right after the staged file moved beside the database.
+    await rename(restoreStagingPath(site.managerDir), `${site.dbFile}.incoming`)
+
+    expect(await site.reboot()).toEqual({ status: 'applied', kind: 'snapshot' })
+    expect(await readMarker(site)).toBe('live')
+  })
+
+  it('carries on after a swap that finished but was never recorded', async () => {
+    const site = await instance()
+    await setMarker(site, 'live')
+    const snapshot = await (await site.call('POST', '/snapshots')).json()
+    await setMarker(site, 'newer')
+    await site.call('POST', `/snapshots/${snapshot.id}/restore`, { body: JSON.stringify({ restart: false }) })
+    // Killed after the new database was renamed into place and before the
+    // marker said so: the swap is done, nothing is staged, the marker remains.
+    await site.db.close()
+    await rename(site.dbFile, preRestorePath(site.dbFile))
+    await rename(restoreStagingPath(site.managerDir), site.dbFile)
+    await writeFile(
+      pendingMarkerPath(site.managerDir),
+      JSON.stringify({ kind: 'snapshot', createdAt: new Date().toISOString(), databaseSwapStarted: true, databaseApplied: false }),
+    )
+
+    const outcome = await applyPendingRestore({
+      managerDir: site.managerDir,
+      databaseUrl: site.databaseUrl,
+      uploadsDir: site.uploadsDir,
+    })
+    await site.reboot().catch(() => undefined)
+
+    expect(outcome).toEqual({ status: 'applied', kind: 'snapshot' })
     expect(await readMarker(site)).toBe('live')
     expect(hasPendingRestore(site.managerDir)).toBe(false)
   })
