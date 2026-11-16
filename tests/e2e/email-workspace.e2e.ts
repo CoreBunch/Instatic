@@ -91,12 +91,14 @@ test('owner sets up outgoing email and edits a template (ADMIN-013)', async ({ p
   await page.screenshot({ path: '.tmp/evidence/email-template.png' })
 
   await editor.getByRole('button', { name: 'Save template' }).click()
+  await completeStepUp(page)
   await expect(editor.getByText('Edited', { exact: true })).toBeVisible()
   await page.reload()
   await page.getByTestId('email-nav-templates').click()
   await expect(page.getByRole('article').getByLabel('Subject')).toHaveValue('Checking {site.name}')
 
   await page.getByRole('article').getByRole('button', { name: 'Reset to built-in' }).click()
+  await completeStepUp(page)
   await expect(page.getByRole('article').getByLabel('Subject')).toHaveValue('Test email from {site.name}')
   await expect(page.getByRole('article').getByText('Built-in wording')).toBeVisible()
 })

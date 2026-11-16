@@ -11,6 +11,9 @@
  * first, with the variables still in place, and only then are the values
  * put in, HTML-escaped. A value therefore cannot add formatting, a link or
  * an element, whatever a member typed into their profile.
+ *
+ * A template is also not trusted to carry a secret value somewhere else: see
+ * `fillHtml` for how variables in link and image addresses are confined.
  */
 import { escapeHtml, isSafeUrl } from '@core/publisher'
 import { renderMarkdownToHtml } from '@core/markdown/renderMarkdown'
@@ -101,17 +104,27 @@ export function unknownMailVariables(source: string, known: readonly MailTemplat
   return [...unknown]
 }
 
+const WHOLE_VARIABLE = /^\{([a-zA-Z][a-zA-Z0-9_.]{0,60})\}$/
+
 /**
- * Put values into rendered HTML. Inside a link target the result must be an
- * http(s) address, or the link goes nowhere; everywhere else a value is text.
+ * Put values into rendered HTML.
+ *
+ * In a link or image address a variable is honoured only when it is the
+ * WHOLE address (`[Confirm]({link})`), and only if its value is an http(s)
+ * address. An address that merely contains a variable
+ * (`https://elsewhere.example/?t={link}`) is neutralised: that shape would
+ * hand a member's single-use link to another server, on click for a link
+ * and on open for an image. Everywhere else a value is text.
  */
 function fillHtml(html: string, variables: MailVariables): string {
-  const withLinks = html.replace(/href="([^"]*)"/g, (_whole, target: string) => {
-    const resolved = fill(target, variables, (value) => value.trim())
-    const safe = /^https?:\/\//i.test(resolved) && isSafeUrl(resolved) ? escapeHtml(resolved) : '#'
-    return `href="${safe}"`
+  const withAddresses = html.replace(/\b(href|src)="([^"]*)"/g, (whole, attribute: string, target: string) => {
+    if (!target.includes('{')) return whole
+    const single = WHOLE_VARIABLE.exec(target)
+    const value = single && single[1] in variables ? variables[single[1]].trim() : null
+    const safe = value !== null && /^https?:\/\//i.test(value) && isSafeUrl(value) ? escapeHtml(value) : '#'
+    return `${attribute}="${safe}"`
   })
-  return fill(withLinks, variables, (value) => escapeHtml(value))
+  return fill(withAddresses, variables, (value) => escapeHtml(value))
 }
 
 const LAYOUT_STYLE = {

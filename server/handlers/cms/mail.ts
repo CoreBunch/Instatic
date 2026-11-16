@@ -8,14 +8,15 @@
  *   POST   /admin/api/cms/mail/connectors/:id/test      — send a test through it
  *   PUT    /admin/api/cms/mail/defaults                 — default connector and sender (step-up)
  *   GET    /admin/api/cms/mail/templates                — every template, with edits applied
- *   PUT    /admin/api/cms/mail/templates/:key           — save a template's wording
- *   DELETE /admin/api/cms/mail/templates/:key           — back to the built-in wording
+ *   PUT    /admin/api/cms/mail/templates/:key           — save a template's wording (step-up)
+ *   DELETE /admin/api/cms/mail/templates/:key           — back to the built-in wording (step-up)
  *   POST   /admin/api/cms/mail/templates/:key/test      — send it with sample values
  *   GET    /admin/api/cms/mail/activity?status=         — the delivery log
  *
  * Connectors and defaults decide where every sign-in and reset link is sent,
- * so changing them asks for step-up: a hijacked session must not be able to
- * repoint the site's mail.
+ * and templates decide what surrounds it, so changing any of them asks for
+ * step-up: a hijacked session must not be able to repoint or reword the
+ * site's mail.
  */
 import type { DbClient } from '../../db/client'
 import type { AuthUser } from '../../repositories/users'
@@ -204,7 +205,7 @@ async function handleListTemplates(req: Request, db: DbClient): Promise<Response
 }
 
 async function handleSaveTemplate(req: Request, db: DbClient, params: RouteParams): Promise<Response> {
-  const user = await gate(req, db, false)
+  const user = await gate(req, db, true)
   if (user instanceof Response) return user
   if (!getMailTemplateDefinition(params.key)) return notFound('Template')
   const input = await readValidatedBody(req, MailTemplateInputSchema)
@@ -221,7 +222,7 @@ async function handleSaveTemplate(req: Request, db: DbClient, params: RouteParam
 }
 
 async function handleResetTemplate(req: Request, db: DbClient, params: RouteParams): Promise<Response> {
-  const user = await gate(req, db, false)
+  const user = await gate(req, db, true)
   if (user instanceof Response) return user
   if (!getMailTemplateDefinition(params.key)) return notFound('Template')
   await resetMailTemplate(db, params.key)

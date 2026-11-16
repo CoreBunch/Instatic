@@ -8,6 +8,7 @@ import { useId, useRef, useState } from 'react'
 import { useAsyncResource } from '@admin/lib/useAsyncResource'
 import { useCurrentAdminUser } from '@admin/sessionContext'
 import { TiptapBodyEditor, type TiptapBodyEditorHandle } from '@admin/pages/content/TiptapBodyEditor'
+import { StepUpCancelledMessage, useStepUp } from '@admin/shared/StepUp'
 import { SettingsListSection } from '@admin/shared/SettingsWorkspace/SettingsListSection'
 import ws from '@admin/shared/SettingsWorkspace/SettingsWorkspace.module.css'
 import { Button } from '@ui/components/Button'
@@ -33,6 +34,10 @@ import { getErrorMessage } from '@core/utils/errorMessage'
 import styles from '../EmailPage.module.css'
 
 const ADDRESS_RE = new RegExp(MAIL_ADDRESS_PATTERN)
+
+function isCancelledStepUp(err: unknown): boolean {
+  return err instanceof Error && err.message === StepUpCancelledMessage
+}
 
 export function TemplatesTab() {
   const { data, loading, error, refresh } = useAsyncResource(
@@ -116,6 +121,7 @@ function TemplateEditor({
   onSaved: (template: MailTemplate) => void
 }) {
   const user = useCurrentAdminUser()
+  const { runStepUp } = useStepUp()
   const subjectId = useId()
   const testId = useId()
   const editorRef = useRef<TiptapBodyEditorHandle>(null)
@@ -154,9 +160,10 @@ function TemplateEditor({
   async function handleSave() {
     setBusy('save')
     try {
-      onSaved(await saveCmsMailTemplate(template.key, { subject: subject.trim(), body }))
+      onSaved(await runStepUp(() => saveCmsMailTemplate(template.key, { subject: subject.trim(), body })))
       pushToast({ kind: 'success', title: `${template.label} saved` })
     } catch (err) {
+      if (isCancelledStepUp(err)) return
       console.error('[TemplatesTab] save failed:', err)
       pushToast({ kind: 'error', title: 'Could not save the template', body: getErrorMessage(err, 'Unknown error') })
     } finally {
@@ -167,9 +174,10 @@ function TemplateEditor({
   async function handleReset() {
     setBusy('reset')
     try {
-      onSaved(await resetCmsMailTemplate(template.key))
+      onSaved(await runStepUp(() => resetCmsMailTemplate(template.key)))
       pushToast({ kind: 'success', title: `${template.label} is back to the built-in wording` })
     } catch (err) {
+      if (isCancelledStepUp(err)) return
       console.error('[TemplatesTab] reset failed:', err)
       pushToast({ kind: 'error', title: 'Could not reset the template', body: getErrorMessage(err, 'Unknown error') })
     } finally {

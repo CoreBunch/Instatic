@@ -23,7 +23,7 @@ This is the path for mail the core sends itself (account emails, tests). It is b
 
 - **Secrets are write-only.** An SMTP password or AWS secret key is encrypted with the master key (`server/secrets/`) and never returned by any endpoint.
 - **Message bodies are never logged.** `mail_outbox.body_text` is filled only for `captured` rows, which only a development server writes. Bodies carry live sign-in and reset links.
-- **Capability:** `mail.manage` (Owner, Admin). Adding or removing a connector, replacing its secret, and changing the defaults also need step-up.
+- **Capability:** `mail.manage` (Owner, Admin). Adding or removing a connector, replacing its secret, changing the defaults and editing a template also need step-up.
 
 ---
 
@@ -76,7 +76,7 @@ A template definition (`MailTemplateDefinition`) has a `key`, a label, a group, 
 `renderMailTemplate(template, variables)` returns `{ subject, text, html }`:
 
 - The body is rendered from Markdown to HTML **first**, with variables still in place, and only then are values put in, HTML-escaped. A value cannot add formatting, a link or an element.
-- Inside a link target the filled-in value must be an `http(s)` address, or the link becomes `#`.
+- In a link or image address a variable is honoured only when it is the **whole** address (`[Confirm]({link})`) and its value is an `http(s)` address. An address that merely contains a variable (`https://elsewhere.example/?t={link}`) becomes `#`: that shape would hand a member's single-use link to another server.
 - Subject values are forced onto one line.
 - A `{name}` with no value is left as written, so a typo is visible in the preview.
 
@@ -99,8 +99,8 @@ All under `/admin/api/cms/mail`, all gated by `mail.manage`. "Step-up" marks the
 | POST | `/connectors/:id/test` | send the test template through this connector; `422` with a safe message on failure |
 | PUT | `/defaults` | Step-up. Audited `mail.defaults.update` |
 | GET | `/templates` | every template with the owner's edits applied |
-| PUT | `/templates/:key` | Audited `mail.template.update` |
-| DELETE | `/templates/:key` | back to the built-in wording. Audited `mail.template.reset` |
+| PUT | `/templates/:key` | Step-up. Audited `mail.template.update` |
+| DELETE | `/templates/:key` | back to the built-in wording. Step-up. Audited `mail.template.reset` |
 | POST | `/templates/:key/test` | send with sample values |
 | GET | `/activity?status=` | the 100 newest rows, plus 30-day totals |
 
