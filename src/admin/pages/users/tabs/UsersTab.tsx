@@ -50,6 +50,8 @@ import {
 import type { UsersPageData } from '../hooks/useUsersPageData'
 import styles from '../UsersPage.module.css'
 import { getErrorMessage } from '@core/utils/errorMessage'
+import { EmptyState } from '@ui/components/EmptyState'
+import { UsersSolidIcon } from 'pixel-art-icons/icons/users-solid'
 
 interface UsersTabProps {
   data: UsersPageData
@@ -393,7 +395,12 @@ export function UsersTab({ data, canManageUsers }: UsersTabProps) {
           </DataTableBody>
         </DataTable>
       ) : (
-        <p className={styles.emptyState}>No users yet.</p>
+        <EmptyState
+          variant="centered"
+          icon={<UsersSolidIcon size={28} />}
+          title="No users yet"
+          description="People you add get their own sign-in to this admin."
+        />
       )}
 
       {canManageUsers && dialogMode && (
