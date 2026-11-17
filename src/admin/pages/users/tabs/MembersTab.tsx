@@ -186,7 +186,10 @@ export function MembersTab({
   async function invite(email: string, tags: string[], delivery: 'email' | 'link') {
     let created: { email: string; link: string } | null = null
     const ok = await run(async () => {
-      const result = await inviteCmsMember(email, tags, delivery)
+      // Handing the link to the admin asks for the password again.
+      const result = delivery === 'link'
+        ? await runStepUp(() => inviteCmsMember(email, tags, delivery))
+        : await inviteCmsMember(email, tags, delivery)
       setSelectedId(result.member.id)
       if (result.link) {
         created = { email: result.member.email, link: result.link }

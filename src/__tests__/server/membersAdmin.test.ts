@@ -274,6 +274,17 @@ describe('members admin API', () => {
       expect(audit.events.find((event) => event.action === 'member.invite')?.metadata).toMatchObject({ delivery: 'link' })
     })
 
+    it('asks for the password again before handing over a link, but not before emailing one', async () => {
+      const manager = await h.createRoleUser({ name: 'Members', slug: 'members-manager', capabilities: ['members.read', 'members.manage'] })
+      const call = (json: unknown, cookie: string) => h.cms(`${BASE}/invite`, { method: 'POST', cookie, json })
+      const asked = await call({ email: 'step@example.com', delivery: 'link' }, manager.cookie)
+      expect(asked.status).toBe(401)
+      expect((await readJson<{ error: string }>(asked)).error).toBe('step_up_required')
+      expect((await list()).counts.all).toBe(0)
+      expect((await call({ email: 'step@example.com' }, manager.cookie)).status).toBe(201)
+      expect((await call({ email: 'step@example.com', delivery: 'link' }, await h.stepUp(manager.cookie))).status).toBe(200)
+    })
+
     it('still invites by link on a live server with no outgoing email, where an emailed invitation is refused', async () => {
       const before = process.env.NODE_ENV
       process.env.NODE_ENV = 'production'

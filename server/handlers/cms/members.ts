@@ -136,6 +136,14 @@ async function handleInvite(req: Request, db: DbClient): Promise<Response> {
   // link at all; without outgoing email it can still be handed to the admin
   // to pass on, which is what `delivery: 'link'` asks for.
   const delivery = input.delivery ?? 'email'
+  // The link sets the password of an account for that address, and here it
+  // goes to the admin, not to the address. That is the admin vouching for
+  // who they give it to, so it asks for step-up like the other actions that
+  // cannot be taken back.
+  if (delivery === 'link') {
+    const stepUp = await requireStepUp(req, db, user)
+    if (stepUp) return stepUp
+  }
   const linkOrigin = memberLinkOrigin(req)
   if (!linkOrigin) {
     return jsonResponse(
