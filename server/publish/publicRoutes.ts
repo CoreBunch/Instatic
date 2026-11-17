@@ -14,7 +14,7 @@ import {
 } from '../branches/previewLinks'
 import { getSetupStatusCached } from '../repositories/setup'
 import { setCookieHeader } from '../http'
-import { TOKEN_PAGE_REFERRER_POLICY } from '../members/linkPage'
+import { TOKEN_PAGE_REFERRER_POLICY } from '../members/mail'
 import { visitorFromRequest } from './accessGate'
 import { renderBranchPreview } from './branchPreview'
 import { renderNotFoundResponse, renderPublicResolution } from './publicRouter'

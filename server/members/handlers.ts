@@ -31,8 +31,9 @@
  *   POST delete            currentPassword                       (signed in)
  *   GET  me                { member } or { member: null }
  *   GET  export            the member's own data as a JSON download
- *   GET  link/<kind>       bare fallback page for a link in an email
- *   GET  sign-in           bare fallback sign-in page (`?next=`)
+ *
+ * There is no page here. Sign-in, and every page an emailed link opens, is a
+ * page of the site that the owner built and assigned in the member settings.
  *
  * CSRF: every POST must carry an allowed `Origin` and, when the browser
  * sends it, a same-origin `Sec-Fetch-Site`. Together with the `SameSite=Lax`
@@ -44,8 +45,7 @@ import type { MemberErrorCode } from '@core/members'
 import { Type, safeParseValue } from '@core/utils/typeboxHelpers'
 import { clientIp, isSiteOrigin, originAllowed } from '../auth/security'
 import { jsonResponse, readTextBodyWithLimit, RequestBodyTooLargeError, setCookieHeader } from '../http'
-import { renderMemberLinkPage, renderMemberSignInPage } from './linkPage'
-import { MEMBER_LINK_PATH_PREFIX, memberLinkOrigin, memberMailAvailable } from './mail'
+import { memberLinkOrigin, memberMailAvailable } from './mail'
 import { findMemberById, toCurrentMember } from './repository'
 import {
   changePassword,
@@ -201,6 +201,7 @@ const ERROR_MESSAGES: Record<MemberErrorCode, string> = {
   not_signed_in: 'Sign in first.',
   rate_limited: 'Too many attempts. Try again later.',
   email_unavailable: 'This site cannot send email right now.',
+  not_available: 'This is not available on this site.',
   forbidden_origin: 'This request did not come from this site.',
 }
 
@@ -213,6 +214,7 @@ const ERROR_STATUS: Partial<Record<MemberErrorCode, number>> = {
   forbidden_origin: 403,
   rate_limited: 429,
   email_unavailable: 503,
+  not_available: 404,
 }
 
 function outcomeCookies(req: Request, outcome: MemberOutcome, clearNonce: boolean): string[] {
@@ -244,7 +246,12 @@ function buildResponse(req: Request, fields: Fields, outcome: MemberOutcome): Re
     headers.set('content-type', 'application/json; charset=utf-8')
     if (outcome.ok) {
       return new Response(
-        JSON.stringify({ ok: true, code: outcome.code, ...(outcome.member ? { member: outcome.member } : {}) }),
+        JSON.stringify({
+          ok: true,
+          code: outcome.code,
+          ...(outcome.member ? { member: outcome.member } : {}),
+          ...(outcome.landing ? { landing: outcome.landing } : {}),
+        }),
         { status: 200, headers },
       )
     }
@@ -265,7 +272,7 @@ function buildResponse(req: Request, fields: Fields, outcome: MemberOutcome): Re
   const back = refererPath(req) ?? '/'
   let location: string
   if (outcome.ok) {
-    const chosen = safeRedirectPath(fields._success)
+    const chosen = safeRedirectPath(fields._success) ?? safeRedirectPath(outcome.landing)
     location = chosen ? withParams(chosen, {}) : withParams(back, { member_ok: outcome.code })
   } else {
     location = withParams(safeRedirectPath(fields._error) ?? back, {
@@ -385,8 +392,6 @@ export async function handleMemberRequest(req: Request, db: DbClient, url: URL):
         headers: { ...NO_STORE, 'content-disposition': 'attachment; filename="my-account-data.json"' },
       })
     }
-    if (url.pathname.startsWith(MEMBER_LINK_PATH_PREFIX)) return renderMemberLinkPage(db, url)
-    if (action === 'sign-in') return renderMemberSignInPage(db, url, safeRedirectPath)
     return notFound()
   }
 

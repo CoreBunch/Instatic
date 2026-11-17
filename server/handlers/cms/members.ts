@@ -160,7 +160,10 @@ async function handleInvite(req: Request, db: DbClient): Promise<Response> {
 
   const result = await inviteMember(db, { email: input.email, tags, linkOrigin, delivery })
   if (!result.ok) {
-    return jsonResponse({ error: 'That address already has an account.' }, { status: 409 })
+    const error = result.reason === 'no_page'
+      ? 'The site has no page that accepts an invitation. Set the invitation page in Member settings first.'
+      : 'That address already has an account.'
+    return jsonResponse({ error }, { status: 409 })
   }
   await audit(db, req, user, 'member.invite', result.member.id, { email: result.member.email, delivery })
   return jsonResponse(

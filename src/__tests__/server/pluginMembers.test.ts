@@ -16,7 +16,8 @@ import { hookBus } from '@core/plugins/hookBus'
 import { configurePublicOrigins, resetPublicOrigins } from '../../../server/auth/security'
 import { handleCmsRequest } from '../../../server/handlers/cms'
 import { flushMemberMail } from '../../../server/members/mail'
-import { createMember, findMemberByEmail, grantMemberTag, listActiveMemberTags } from '../../../server/members/repository'
+import { DEFAULT_MEMBER_SETTINGS } from '@core/members'
+import { createMember, findMemberByEmail, grantMemberTag, listActiveMemberTags, saveMemberSettings } from '../../../server/members/repository'
 import { createMemberSession } from '../../../server/members/sessions'
 import { handleServerRequest } from '../../../server/router'
 import { createCapabilityTestHarness, type CapabilityTestHarness } from '../helpers/capabilityHarness'
@@ -289,6 +290,10 @@ describe('site members for plugins', () => {
       expect(await findMemberByEmail(h.db, 'new@example.com')).toBeNull()
 
       configurePublicOrigins(['http://localhost'])
+      // And there is nothing to invite anyone to until the site has a page for it.
+      expect((await call({ action: 'invite', email: 'new@example.com' })).error).toContain('invitation page')
+      expect(await findMemberByEmail(h.db, 'new@example.com')).toBeNull()
+      await saveMemberSettings(h.db, { ...DEFAULT_MEMBER_SETTINGS, pages: { invite: '/invitation' } })
       const invited = await call({ action: 'invite', email: 'new@example.com', tags: ['student'] })
       expect(invited.result).toMatchObject({ outcome: 'invited' })
       const created = await findMemberByEmail(h.db, 'new@example.com')

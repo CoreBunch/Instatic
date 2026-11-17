@@ -9,6 +9,7 @@ Core is headless here. It provides accounts, sessions and actions; the site owne
 ## TL;DR
 
 - **Endpoints** live under `/_instatic/members/*` (`server/members/handlers.ts`). Every action is one POST that answers a plain HTML form with a `303` redirect and a script with JSON.
+- **No built-in pages.** Core serves no sign-in page and no page for an emailed link. Each is a page the owner builds and names in the member settings; a feature whose page is not set is not there.
 - **Sign-up is closed by default.** `member_settings.signup_mode` is `closed`, `invite` or `open`.
 - **Email confirmation is not optional.** A password only becomes the account's password when the address is proven.
 - **Nothing reveals whether an address has an account.** Sign-up, reset and sign-in-link requests all answer `check_email`.
@@ -31,7 +32,6 @@ server/members/
 ├── mailTemplates.ts       — the member emails as templates (reworded in Email → Templates)
 ├── service.ts             — the flows; no HTTP
 ├── handlers.ts            — /_instatic/members/* : request parsing, redirects, JSON, cookies
-└── linkPage.ts            — the bare fallback page for emailed links
 ```
 
 ## Tables (migration `033_members`)
@@ -79,7 +79,6 @@ server/members/
 | `delete` | `currentPassword` | signed in; anonymises |
 | `GET me` | | `{ member }` or `{ member: null }`, `no-store` |
 | `GET export` | | the member's own data as a download |
-| `GET sign-in` | `next` | bare fallback sign-in page, used when no login page is assigned |
 
 Error codes are the `MEMBER_ERROR_CODES` list in `@core/members`.
 
@@ -101,7 +100,22 @@ Error codes are the `MEMBER_ERROR_CODES` list in `@core/members`.
 
 **Links in emails** are built from `configuredPublicOrigin()`. With none configured they are built only for a request from this machine (loopback peer and loopback host); otherwise the action fails with `email_unavailable`. The `Host` header is never used.
 
-**Emailed links never act on GET.** They open a page (the owner's, from `member_settings.pages`, or `linkPage.ts`) whose button POSTs the token. Mail scanners that follow links do not use them up.
+**No built-in member pages.** Core serves no sign-in page and no page for an emailed link. Every one is a page the owner builds in the editor and names in `member_settings.pages` (`login`, `afterLogin`, `verify`, `reset`, `magic`, `invite`, `emailChange`). A feature whose page is not set is simply not there:
+
+| Page not set | What does not happen |
+|---|---|
+| `login` | a protected page with `onDeny: login` answers "not found" to a signed-out visitor (`denyResponse` returns null) |
+| `verify` | `signup` answers `not_available` (404) |
+| `reset` | `password/forgot` answers `not_available` |
+| `magic` | `link/request` answers `not_available` |
+| `emailChange` | `email/change` answers `not_available` |
+| `invite` | the admin and plugin invite calls are refused (409 / an error naming the missing page); the Invite button is disabled with the reason |
+
+`not_available` is decided from the settings alone, before any address is looked up, so it is the same answer for every address (`linkPageMissing` in `service.ts`, `memberLinkPage` in `mail.ts`). Signing in with a password needs no emailed link and works on any page that holds a sign-in form.
+
+`afterLogin` is where a member who just signed in goes when nothing else says where: the `signed_in` answer carries it as `landing`. The form runtime uses `?next=` first, then the form's own redirect, then `landing`, and otherwise reloads the page; a plain form with no `_success` is redirected to it.
+
+**Emailed links never act on GET.** They open the owner's page for that link, whose form POSTs the token (`?token=` is filled in by the form runtime). Mail scanners that follow links do not use them up. A page whose address carries a token is sent `Referrer-Policy: same-origin` (`TOKEN_PAGE_REFERRER_POLICY`).
 
 **Plugins never see Instatic's cookies.** `server/sessionCookies.ts` removes every `instatic_` cookie (admin session, member session, sign-up nonce, branch preview); plugin route handlers (`routeIo.ts`) and per-visitor loop sources (`handlers/cms/hole.ts`) get the visitor's cookies with those removed.
 
@@ -115,7 +129,7 @@ A page carries an optional `access` rule (`AccessRuleSchema` in `@core/members`,
 | `members` | any signed-in member | `login` or `hide` |
 | `tags` | a signed-in member holding any one of `tags` | `login` or `hide` |
 
-`login` sends a signed-out visitor to the assigned login page (or the bare `/_instatic/members/sign-in`) with `?next=`; a signed-in member without the tag gets a `403`. `hide` answers exactly like a route that does not exist.
+`login` sends a signed-out visitor to the owner's sign-in page (`pages.login`) with `?next=`. With no sign-in page set there is nowhere to send them, and the route answers like one that does not exist. A signed-in member who lacks the tag also gets "not found": signing in again would not help, and core has no page of its own to say so. `hide` answers "not found" to everyone who may not open the route.
 
 How it is enforced (`server/publish/accessGate.ts`):
 
@@ -179,7 +193,7 @@ The API is `server/handlers/cms/members.ts` under `/admin/api/cms/members`. It d
 | GET / PUT | `/members/settings` | Sign-up mode, profile fields, link pages | read / manage + step-up |
 
 - **Status** for the admin is `active`, `pending` or `suspended`. `pending` is an account that is not usable yet (no password and an unconfirmed address): someone invited who has not accepted, or someone who signed up and has not opened the confirmation link. A deleted member is not listed.
-- **Invitations** are a single-use link, delivered one of two ways (`delivery` in the request). `email` (the default) mails it and needs outgoing email (`memberMailAvailable`). `link` mails nothing and returns the link in the response for the admin to pass on by hand; it needs only a known public address (`linkAvailable` in the settings response). So a site with no connector can still invite: the dialog's button becomes "Create invitation link" and the link is shown once in `InvitationLinkDialog`, never stored and sent `no-store`. With email set up, "Create a link instead" is offered beside "Send invitation". Only a site that does not know its public address has the button disabled, with the reason. A link handed over this way proves nothing about who owns the address: whoever opens it sets the password, and the account then counts as confirmed on the admin's word. That is why asking for the link needs step-up, the dialog says to send it only to that person, and the audit entry records `delivery`. Inviting an address with a pending invitation makes a fresh link; an address that already has an account is refused. The link opens the `invite` page (or the built-in one) and lasts 7 days.
+- **Invitations** are a single-use link, delivered one of two ways (`delivery` in the request). `email` (the default) mails it and needs outgoing email (`memberMailAvailable`). `link` mails nothing and returns the link in the response for the admin to pass on by hand; it needs only a known public address (`linkAvailable` in the settings response). So a site with no connector can still invite: the dialog's button becomes "Create invitation link" and the link is shown once in `InvitationLinkDialog`, never stored and sent `no-store`. With email set up, "Create a link instead" is offered beside "Send invitation". Only a site that does not know its public address has the button disabled, with the reason. A link handed over this way proves nothing about who owns the address: whoever opens it sets the password, and the account then counts as confirmed on the admin's word. That is why asking for the link needs step-up, the dialog says to send it only to that person, and the audit entry records `delivery`. Inviting an address with a pending invitation makes a fresh link; an address that already has an account is refused. The link opens the owner's `invite` page and lasts 7 days; with no such page set, invitations are off (see "No built-in member pages").
 - **Suspension** takes effect on the next request (`findMemberSession` requires an active member). Sessions and unused tokens are also ended for good, so restoring a member does not bring an old session back.
 - **Search** matches the address and the profile text. `%` and `_` are plain characters.
 - **Settings** are validated beyond the schema: field ids must be unique and must not be a name the member forms use (`email`, `password`, `token`, `currentPassword`, `newPassword`). A link page must be a site path.
@@ -208,7 +222,7 @@ bun run demo:members        # add `-- --skip-build` to reuse the last admin buil
 
 `scripts/members-demo.ts` builds the admin, creates a fresh SQLite database under `.tmp/`, seeds and publishes a small site, and serves it on `http://127.0.0.1:3040` (`DEMO_PORT` changes the port). It prints the owner and member accounts it created. Emails are captured: read them under Email → Activity.
 
-The site (`scripts/lib/membersDemoSite.ts`) is ten ordinary editor pages: home, join, sign in, forgot password, the pages the emailed links open (confirm, new password, invitation), an account page, a members area and a pro lounge. Every form is a `base.form` in Members mode completed by `memberFormFragment`, the function behind the editor's "Add …" button; the header's links use show-when rules; the account page prefills from member bindings. Open any page in the editor to see how it is put together.
+The site (`scripts/lib/membersDemoSite.ts`) is twelve ordinary editor pages: home, join, sign in, forgot password, the pages the emailed links open (confirm, new password, sign-in link, new address, invitation), an account page, a members area and a pro lounge. `MEMBERS_DEMO_SETTINGS` names each of them in the member settings, which is what switches the features on. Every form is a `base.form` in Members mode completed by `memberFormFragment`, the function behind the editor's "Add …" button; the header's links use show-when rules; the account page prefills from member bindings. Open any page in the editor to see how it is put together.
 
 It is a development tool: fixed passwords, loopback only, and a database that is wiped on every start. `membersDemoSite.test.ts` keeps the pages publishable and correctly gated. The sign-in page also carries the "Email me a link" form. The E2E suite seeds the same pages under an address prefix of its own (`buildMembersDemoPages(prefix)`, printed by `scripts/e2e-members-seed.ts`).
 

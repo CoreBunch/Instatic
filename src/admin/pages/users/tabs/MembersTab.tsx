@@ -137,9 +137,11 @@ export function MembersTab({
   const linkAvailable = settings.data?.linkAvailable ?? false
   const inviteBlocked = !canManage
     ? 'Your role cannot invite members'
-    : !linkAvailable
-      ? 'The site does not know its public address yet, so it cannot make invitation links. Set PUBLIC_ORIGIN on the server.'
-      : undefined
+    : !settings.data?.settings.pages.invite
+      ? 'Invitations need a page that accepts them. Set "Accept an invitation" under Member settings.'
+      : !linkAvailable
+        ? 'The site does not know its public address yet, so it cannot make invitation links. Set PUBLIC_ORIGIN on the server.'
+        : undefined
 
   function clearFilters() {
     setStatus('all')
@@ -284,7 +286,9 @@ export function MembersTab({
 
       {settings.data && (
         <p className={memberStyles.signupNotice}>
-          {SIGNUP_SUMMARY[settings.data.settings.signupMode]}
+          {settings.data.settings.signupMode === 'open' && !settings.data.settings.pages.verify
+            ? 'Sign-up is set to open, but no "Confirm email" page is set, so nobody can sign up yet.'
+            : SIGNUP_SUMMARY[settings.data.settings.signupMode]}
           <Button type="button" variant="ghost" size="xs" onClick={() => setDialog('settings')}>
             {canManage ? 'Change' : 'View settings'}
           </Button>
@@ -416,7 +420,7 @@ export function MembersTab({
                   detail={detail}
                   canManage={canManage}
                   mailAvailable={mailAvailable}
-                  linkAvailable={linkAvailable}
+                  inviteBlocked={inviteBlocked}
                   busy={busy}
                   actions={actionsFor(selected)}
                 />

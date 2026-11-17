@@ -243,6 +243,18 @@ export function buildMembersDemoPages(prefix = ''): Page[] {
     b.memberForm('verify', 'confirm', { redirectUrl: '/account' }),
   ])
 
+  const signInLink = formPage('demo_sign_in_link', 'Finish signing in', 'sign-in-link', (b) => [
+    b.text('Finish signing in', 'h1'),
+    b.text('This page is opened by the link in the sign-in email.', 'p'),
+    b.memberForm('link/confirm', 'sign-in-link-confirm', { redirectUrl: '/account' }),
+  ])
+
+  const confirmEmail = formPage('demo_confirm_email', 'Confirm your new address', 'confirm-email', (b) => [
+    b.text('Confirm your new address', 'h1'),
+    b.text('This page is opened by the link we sent to your new address.', 'p'),
+    b.memberForm('email/confirm', 'confirm-new-email', { redirectUrl: '/account' }),
+  ])
+
   const invitation = formPage('demo_invitation', 'Accept your invitation', 'invitation', (b) => [
     b.text('You have been invited', 'h1'),
     b.text('Choose a password to create your account.', 'p'),
@@ -308,7 +320,7 @@ export function buildMembersDemoPages(prefix = ''): Page[] {
     PRO,
   )
 
-  const pages = [homePage, join, signIn, forgot, reset, welcome, invitation, accountPage, members, pro]
+  const pages = [homePage, join, signIn, forgot, reset, welcome, signInLink, confirmEmail, invitation, accountPage, members, pro]
   return prefix === '' ? pages : withPrefix(pages, prefix)
 }
 
@@ -333,7 +345,9 @@ export const MEMBERS_DEMO_SETTINGS: MemberSettings = {
     afterLogin: '/account',
     verify: '/welcome',
     reset: '/reset-password',
+    magic: '/sign-in-link',
     invite: '/invitation',
+    emailChange: '/confirm-email',
   },
 }
 

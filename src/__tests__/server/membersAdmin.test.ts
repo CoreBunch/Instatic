@@ -17,7 +17,7 @@ import {
   findMemberByEmail,
   grantMemberTag,
   listActiveMemberTags,
-} from '../../../server/members/repository'
+ saveMemberSettings } from '../../../server/members/repository'
 import { createMemberSession, findMemberSession, listMemberSessions } from '../../../server/members/sessions'
 import {
   createCapabilityTestHarness,
@@ -217,6 +217,22 @@ describe('members admin API', () => {
   })
 
   describe('invitations', () => {
+    // An invitation opens a page of the site; the owner's is set here.
+    beforeEach(async () => {
+      await saveMemberSettings(h.db, { ...DEFAULT_MEMBER_SETTINGS, pages: { invite: '/invitation' } })
+    })
+
+    it('are off, with nobody created, while the site has no invitation page', async () => {
+      await saveMemberSettings(h.db, DEFAULT_MEMBER_SETTINGS)
+      for (const delivery of ['email', 'link']) {
+        const res = await invite({ email: 'early@example.com', delivery })
+        expect(res.status).toBe(409)
+        expect((await readJson<{ error: string }>(res)).error).toContain('no page that accepts an invitation')
+      }
+      expect((await list()).counts.all).toBe(0)
+      expect(await inviteMails()).toHaveLength(0)
+    })
+
     const invite = (json: unknown) => h.cms(`${BASE}/invite`, { method: 'POST', cookie: owner, json })
     const inviteMails = async () => {
       await flushMemberMail()
@@ -259,11 +275,9 @@ describe('members admin API', () => {
       expect(res.headers.get('cache-control')).toBe('no-store')
       const body = await readJson<{ member: MemberListItem; link?: string }>(res)
       expect(body.member).toMatchObject({ email: 'byhand@example.com', status: 'pending', tags: ['student'] })
-      expect(body.link).toMatch(/^http:\/\/localhost\/.*token=[\w-]+$/)
+      expect(body.link).toMatch(/^http:\/\/localhost\/invitation\?token=[\w-]+$/)
       expect(await inviteMails()).toHaveLength(0)
 
-      // It leads to the site's own page for accepting an invitation.
-      expect(new URL(body.link!).pathname.startsWith('/_instatic/members/')).toBe(true)
 
       // Asking again makes a fresh link, and the first one stops working.
       const again = await readJson<{ link?: string; outcome: string }>(await invite({ email: 'byhand@example.com', delivery: 'link' }))

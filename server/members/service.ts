@@ -32,7 +32,7 @@ import { MIN_PASSWORD_LENGTH } from '@core/utils/passwordPolicy'
 import { hashPassword, hashSessionToken, verifyPassword } from '../auth/tokens'
 import { memberLimits } from './limits'
 import { emitMemberHook } from './hooks'
-import { memberTokenLink, queueMemberMail } from './mail'
+import { memberLinkPage, memberTokenLink, queueMemberMail } from './mail'
 import {
   anonymizeMember,
   createMember,
@@ -93,6 +93,11 @@ export type MemberOutcome =
       /** Remember the browser that signed up (see `signUp`). */
       signupNonce?: string
       member?: CurrentMember
+      /**
+       * Where a member who just signed in goes when neither the page they came
+       * from (`?next=`) nor the form says: the owner's "after signing in" page.
+       */
+      landing?: string
     }
   | { ok: false; code: MemberErrorCode; field?: string; retryAfterMs?: number }
 
@@ -152,7 +157,14 @@ async function startSession(ctx: MemberActionContext, member: MemberRecord): Pro
   await markMemberLoggedIn(ctx.db, member.id)
   emitMemberHook('member.signedIn', { memberId: member.id, email: member.email })
   const fresh = (await findMemberById(ctx.db, member.id)) ?? member
-  return { ok: true, code: 'signed_in', session, member: await toCurrentMember(ctx.db, fresh) }
+  const landing = (await getMemberSettings(ctx.db)).pages.afterLogin
+  return {
+    ok: true,
+    code: 'signed_in',
+    session,
+    member: await toCurrentMember(ctx.db, fresh),
+    ...(landing ? { landing } : {}),
+  }
 }
 
 function sendLink(
@@ -163,11 +175,22 @@ function sendLink(
   pages: Awaited<ReturnType<typeof getMemberSettings>>['pages'],
 ): void {
   if (!ctx.linkOrigin) return
-  queueMemberMail(ctx.db, {
-    kind,
-    to,
-    link: memberTokenLink(ctx.linkOrigin, pages, kind, token),
-  })
+  // Callers check the page first (`linkPageMissing`); with none there is no link to send.
+  const link = memberTokenLink(ctx.linkOrigin, pages, kind, token)
+  if (!link) return
+  queueMemberMail(ctx.db, { kind, to, link })
+}
+
+/**
+ * A flow that ends in an emailed link needs a page of the site for the link
+ * to open. Without one the flow is not offered at all: this is the answer,
+ * the same for every address, before anything is looked up or sent.
+ */
+function linkPageMissing(
+  pages: Awaited<ReturnType<typeof getMemberSettings>>['pages'],
+  kind: 'verify' | 'reset' | 'magic' | 'email_change',
+): MemberOutcome | null {
+  return memberLinkPage(pages, kind) ? null : fail('not_available')
 }
 
 // ─── Profile fields ────────────────────────────────────────────────────────
@@ -240,6 +263,8 @@ export async function signUp(ctx: MemberActionContext, input: SignUpInput): Prom
   const settings = await getMemberSettings(ctx.db)
   if (settings.signupMode === 'closed') return fail('signup_closed')
   if (settings.signupMode === 'invite') return fail('invite_required')
+  const noPage = linkPageMissing(settings.pages, 'verify')
+  if (noPage) return noPage
 
   const invalid = emailProblem(input.email) ?? passwordProblem(input.password)
   if (invalid) return invalid
@@ -372,6 +397,9 @@ async function requestLink(
   input: { email: string; ip: string },
   kind: 'magic' | 'reset',
 ): Promise<MemberOutcome> {
+  const settings = await getMemberSettings(ctx.db)
+  const noPage = linkPageMissing(settings.pages, kind)
+  if (noPage) return noPage
   const invalid = emailProblem(input.email)
   if (invalid) return invalid
   if (!ctx.mailAvailable) return fail('email_unavailable')
@@ -383,7 +411,6 @@ async function requestLink(
   const member = await findMemberByEmail(ctx.db, input.email)
   if (!member || member.status !== 'active') return outcome
 
-  const settings = await getMemberSettings(ctx.db)
   const { token } = await issueMemberToken(ctx.db, member.id, kind)
   sendLink(ctx, kind, member.email, token, settings.pages)
   await recordMemberEvent(
@@ -501,6 +528,9 @@ export async function requestEmailChange(
   current: SignedInMember,
   input: { email: string; currentPassword?: string; ip: string },
 ): Promise<MemberOutcome> {
+  const settings = await getMemberSettings(ctx.db)
+  const noPage = linkPageMissing(settings.pages, 'email_change')
+  if (noPage) return noPage
   const invalid = emailProblem(input.email)
   if (invalid) return invalid
   if (!ctx.mailAvailable) return fail('email_unavailable')
@@ -517,7 +547,6 @@ export async function requestEmailChange(
   // An address that belongs to someone else gets no mail and the same answer.
   if (await findMemberByEmail(ctx.db, email)) return outcome
 
-  const settings = await getMemberSettings(ctx.db)
   const { token } = await issueMemberToken(ctx.db, member.id, 'email_change', { email })
   sendLink(ctx, 'email_change', email, token, settings.pages)
   queueMemberMail(ctx.db, { kind: 'email_change_notice', to: member.email })

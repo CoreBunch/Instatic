@@ -48,7 +48,22 @@ test('owner sets up outgoing email and edits a template (ADMIN-013)', async ({ p
 
   // ── Connectors: add one; its password never comes back ───────────────────
   await page.getByTestId('email-nav-connectors').click()
+  // The shortest setup comes first: a provider that needs one API key and a name that is already filled in.
+  await expect(page.getByRole('heading', { name: 'Connect Resend' })).toBeVisible()
+  await expect(page.getByLabel('Display label')).toHaveValue('Resend')
+  await expect(page.getByLabel('API key')).toBeVisible()
+  await expect(page.getByLabel('Host')).toHaveCount(0)
+
+  // SMTP starts from a picker of well-known services that fills in the server.
+  await page.getByRole('button', { name: /^SMTP/ }).click()
   await expect(page.getByRole('heading', { name: 'Connect SMTP' })).toBeVisible()
+  const services = page.getByRole('group', { name: 'Mail service' })
+  await services.getByRole('button', { name: 'Google' }).click()
+  await expect(page.getByLabel('Host')).toHaveValue('smtp.gmail.com')
+  await expect(page.getByLabel('Port')).toHaveValue('587')
+  await expect(page.getByText('An app password, not your Google password.')).toBeVisible()
+  await services.getByRole('button', { name: 'Other server' }).click()
+  await expect(page.getByLabel('Host')).toHaveValue('')
   await page.getByLabel('Display label').fill('Main relay')
   await page.getByLabel('Host').fill('smtp.example.com')
   await page.getByLabel('Username').fill('mailer')
@@ -138,7 +153,8 @@ test('owner sets up outgoing email and edits a template (ADMIN-013)', async ({ p
   await page.getByRole('article').getByRole('button', { name: 'Remove connector' }).click()
   await page.getByRole('dialog', { name: 'Remove connector?' }).getByRole('button', { name: 'Remove connector' }).click()
   await completeStepUp(page)
-  await expect(page.getByRole('heading', { name: 'Connect SMTP' })).toBeVisible()
+  // With no connector left, the setup panel is back.
+  await expect(page.getByRole('heading', { name: 'Connect Resend' })).toBeVisible()
   await page.getByTestId('email-nav-defaults').click()
   await expect(page.getByText('Development mode: emails are captured, not sent')).toBeVisible()
 })

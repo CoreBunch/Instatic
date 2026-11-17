@@ -103,7 +103,7 @@ export const FORM_RUNTIME_JS = `(() => {
         setState(form, 'error', typeof error.message === 'string' && error.message ? error.message : 'Something went wrong. Try again.', field);
         return;
       }
-      const next = memberDestination(form, body.code);
+      const next = memberDestination(form, body.code, body.landing);
       if (next) {
         window.location.assign(next);
         return;
@@ -150,10 +150,11 @@ export const FORM_RUNTIME_JS = `(() => {
   }
 
   // Where to go after a member action. Signing in honours ?next= (set when a
-  // protected page sent the visitor here), then the form's own redirect. A
-  // change of who is signed in with no redirect reloads the page, so
-  // everything on it reflects the new state.
-  function memberDestination(form, code) {
+  // protected page sent the visitor here), then the form's own redirect, then
+  // the site's "after signing in" page (landing). A change of who is signed in
+  // with none of those reloads the page, so everything on it reflects the new
+  // state.
+  function memberDestination(form, code, landing) {
     const changesVisitor = code === 'signed_in' || code === 'signed_out' || code === 'deleted';
     if (code === 'signed_in') {
       const next = sameSitePath(new URLSearchParams(window.location.search).get('next') || '');
@@ -161,6 +162,10 @@ export const FORM_RUNTIME_JS = `(() => {
     }
     const redirectUrl = form.getAttribute('data-instatic-success-redirect') || '';
     if (redirectUrl) return redirectUrl;
+    if (code === 'signed_in') {
+      const home = sameSitePath(typeof landing === 'string' ? landing : '');
+      if (home) return home;
+    }
     return changesVisitor ? window.location.pathname : '';
   }
 

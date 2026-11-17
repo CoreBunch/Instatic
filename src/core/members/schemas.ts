@@ -50,7 +50,8 @@ const SitePathSchema = Type.String({ maxLength: 300, pattern: '^/(?![/\\\\])[^\\
 /**
  * Owner-assigned pages. `login` is where a protected page sends a signed-out
  * visitor. The rest receive the links in account emails (`?token=…`); when
- * one is unset the link goes to the bare core page instead.
+ * one is unset there is no page for that link, and the feature that would
+ * send it is switched off. Core serves no member page of its own.
  */
 export const MemberPagesSchema = Type.Object(
   {
@@ -236,6 +237,7 @@ export const MEMBER_ERROR_CODES = [
   'not_signed_in',
   'rate_limited',
   'email_unavailable',
+  'not_available',
   'forbidden_origin',
 ] as const
 export type MemberErrorCode = (typeof MEMBER_ERROR_CODES)[number]

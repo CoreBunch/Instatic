@@ -25,7 +25,10 @@ test('owner manages site members from the Users page (MEMBER-002)', async ({ pag
   const suffix = Date.now().toString(36)
   const email = `member-${suffix}@example.com`
 
-  await test.step('open sign-up and add a profile field', async () => {
+  await test.step('open sign-up, add a profile field and name the member pages', async () => {
+    // Member features run on pages the owner builds. Until the site has an
+    // invitation page there is nothing to invite anyone to.
+    await expect(tab.getByRole('button', { name: 'Invite member' })).toBeDisabled()
     await tab.getByRole('button', { name: 'Member settings' }).click()
     const dialog = page.getByRole('dialog', { name: 'Member settings' })
     await pickOption(page, dialog.getByLabel('Who can sign up'), 'Open: anyone can sign up')
@@ -37,8 +40,14 @@ test('owner manages site members from the Users page (MEMBER-002)', async ({ pag
     await dialog.getByLabel('Sign-in page').fill('sign-in')
     await expect(dialog.getByText('A page address starts with one slash')).toBeVisible()
     await expect(dialog.getByRole('button', { name: 'Save settings' })).toBeDisabled()
-    // Left empty again: the suite shares one site, and other specs rely on the built-in sign-in page.
+    // Left empty again: the suite shares one site, and another spec checks a site with no sign-in page.
     await dialog.getByLabel('Sign-in page').fill('')
+    // Open sign-up does nothing without a page for the confirmation link, and the dialog says so.
+    await expect(dialog.getByText('Sign-up stays off until a "Confirm email" page is set below.')).toBeVisible()
+    await expect(dialog.getByText('Not set: invitations are off.')).toBeVisible()
+    await dialog.getByLabel('Confirm email').fill('/welcome')
+    await dialog.getByLabel('Accept an invitation').fill('/invitation')
+    await expect(dialog.getByText('Sign-up stays off until')).toHaveCount(0)
     await page.screenshot({ path: '.tmp/evidence/members-settings.png' })
     await dialog.getByRole('button', { name: 'Save settings' }).click()
     await completeStepUp(page)

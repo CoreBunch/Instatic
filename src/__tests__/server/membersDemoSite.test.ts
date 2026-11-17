@@ -116,7 +116,8 @@ describe('members demo site', () => {
     expect(account).toMatch(/name="name"[^>]*value="Mia"|value="Mia"[^>]*name="name"/)
     expect(account).not.toContain('paul@example.com')
 
-    expect((await get('/pro', mia)).status).toBe(403)
+    // Without the tag the page is not there for her.
+    expect((await get('/pro', mia)).status).toBe(404)
     const pro = await get('/pro', paul)
     expect(pro.status).toBe(200)
     expect(await pro.text()).toContain('You hold the tag')

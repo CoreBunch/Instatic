@@ -1,6 +1,5 @@
-import { execFileSync } from 'node:child_process'
 import { expect, test, type BrowserContext, type Locator, type Page } from '@playwright/test'
-import { ANONYMOUS_STATE, OWNER, PUBLIC_BASE_URL, login } from './helpers'
+import { ANONYMOUS_STATE, PUBLIC_BASE_URL, login, seedMemberSite } from './helpers'
 
 /**
  * MEMBER-003 — a member's whole account life on published pages.
@@ -20,11 +19,6 @@ import { ANONYMOUS_STATE, OWNER, PUBLIC_BASE_URL, login } from './helpers'
 // Saving member settings asks for step-up, which rotates the session token.
 test.use({ storageState: ANONYMOUS_STATE })
 
-interface SeededSite {
-  pages: Array<{ id: string; slug: string; cells: Record<string, unknown> }>
-  settings: Record<string, unknown>
-}
-
 const FIRST_PASSWORD = 'first-long-password'
 const SECOND_PASSWORD = 'second-long-password'
 const THIRD_PASSWORD = 'third-long-password'
@@ -38,67 +32,11 @@ test('a member signs up, manages the account and leaves (MEMBER-003)', async ({ 
   const newEmail = `ada-new-${suffix}@example.com`
 
   await login(page)
-  const headers = { origin: new URL(page.url()).origin }
   const admin = page.request
-  const stepUp = async () => {
-    const res = await admin.post('/admin/api/cms/auth/step-up', { headers, data: { password: OWNER.password } })
-    expect(res.ok(), await res.text()).toBe(true)
-  }
-
-  // The suite shares one site: put back whatever the member settings were.
-  const settingsBefore = await (await admin.get('/admin/api/cms/members/settings')).json()
-  const seenMail = new Set<string>()
-  let seededPageIds: string[] = []
-
-  /** The link in the newest captured email to `to` that this test has not used yet. */
-  async function emailedLink(to: string): Promise<string> {
-    let link: string | undefined
-    await expect
-      .poll(async () => {
-        const res = await admin.get(`/admin/api/cms/mail/activity?period=24h&q=${encodeURIComponent(to)}`)
-        const { entries } = (await res.json()) as { entries: Array<{ id: string; to: string; body: string | null }> }
-        const entry = entries.find((candidate) => candidate.to === to && !seenMail.has(candidate.id))
-        link = entry?.body?.match(/https?:\/\/\S*token=[\w-]+/)?.[0]
-        if (entry && link) seenMail.add(entry.id)
-        return link
-      }, { message: `an email with a link reaches ${to}`, timeout: 20_000 })
-      .toBeTruthy()
-    return link!
-  }
+  const site = await seedMemberSite(page, prefix)
+  const { headers, emailedLink } = site
 
   try {
-    await test.step('seed and publish the member pages', async () => {
-      const seeded = JSON.parse(
-        execFileSync('bun', ['scripts/e2e-members-seed.ts', prefix], { encoding: 'utf8', maxBuffer: 16 * 1024 * 1024 }),
-      ) as SeededSite
-      await stepUp()
-      // Pages are editor documents, so they arrive the way a site transfer brings them: as an import.
-      const { tables } = (await (await admin.get('/admin/api/cms/data/tables')).json()) as { tables: Array<{ id: string }> }
-      const now = new Date().toISOString()
-      const imported = await admin.post('/admin/api/cms/import?strategy=merge-add', {
-        headers,
-        data: {
-          schemaVersion: 1,
-          exportedAt: now,
-          tables: tables.filter((table) => table.id === 'pages'),
-          rows: seeded.pages.map((seededPage) => ({
-            ...seededPage,
-            tableId: 'pages',
-            status: 'draft',
-            authorUserId: null, createdByUserId: null, updatedByUserId: null, publishedByUserId: null,
-            author: null, createdBy: null, updatedBy: null, publishedBy: null,
-            createdAt: now, updatedAt: now, publishedAt: null, scheduledPublishAt: null, deletedAt: null,
-          })),
-        },
-      })
-      expect(imported.ok(), await imported.text()).toBe(true)
-      seededPageIds = seeded.pages.map((seededPage) => seededPage.id)
-      const published = await admin.post('/admin/api/cms/publish', { headers })
-      expect(published.ok(), await published.text()).toBe(true)
-      const saved = await admin.put('/admin/api/cms/members/settings', { headers, data: seeded.settings })
-      expect(saved.ok(), await saved.text()).toBe(true)
-    })
-
     const context = await browser.newContext()
     const visitor = await context.newPage()
     try {
@@ -138,8 +76,9 @@ test('a member signs up, manages the account and leaves (MEMBER-003)', async ({ 
       })
 
       await test.step('open a tag-limited page only once the tag is granted', async () => {
+        // Without the tag the page is not there for this member.
         const refused = await visitor.goto(at('pro'))
-        expect(refused?.status()).toBe(403)
+        expect(refused?.status()).toBe(404)
         await expect(visitor.getByText('Pro lounge')).toHaveCount(0)
 
         const found = await admin.get(`/admin/api/cms/members?q=${encodeURIComponent(email)}`)
@@ -201,9 +140,10 @@ test('a member signs up, manages the account and leaves (MEMBER-003)', async ({ 
         await form.getByRole('button', { name: 'Email me a link' }).click()
         await expect(form.getByRole('status').filter({ hasText: 'a sign-in link is on its way' })).toBeVisible()
 
-        // No page is assigned for this link, so the site's plain page finishes it.
+        // The link opens the site's own page for it, which finishes the sign-in.
         await visitor.goto(await emailedLink(email))
-        await visitor.locator('button[type="submit"]').click()
+        await expect(visitor).toHaveURL(new RegExp(`/${prefix}sign-in-link\\?`))
+        await formWith(visitor, 'Sign in').getByRole('button', { name: 'Sign in' }).click()
         await expect(visitor).toHaveURL(new RegExp(`/${prefix}account$`))
         await expect(visitor.getByText(`Signed in as ${email}.`)).toBeVisible()
       })
@@ -247,7 +187,9 @@ test('a member signs up, manages the account and leaves (MEMBER-003)', async ({ 
         await expect(visitor.getByText(`Signed in as ${email}.`)).toBeVisible()
 
         await visitor.goto(await emailedLink(newEmail))
-        await visitor.locator('button[type="submit"]').click()
+        await expect(visitor).toHaveURL(new RegExp(`/${prefix}confirm-email\\?`))
+        await visitor.getByRole('button', { name: 'Confirm my new address' }).click()
+        await expect(visitor).toHaveURL(new RegExp(`/${prefix}account$`))
         await visitor.goto(at('account'))
         await expect(visitor.getByText(`Signed in as ${newEmail}.`)).toBeVisible()
       })
@@ -273,14 +215,7 @@ test('a member signs up, manages the account and leaves (MEMBER-003)', async ({ 
       await context.close()
     }
   } finally {
-    await stepUp()
-    // The suite shares one site: take the seeded pages off it again.
-    for (const pageId of seededPageIds) {
-      const removed = await admin.delete(`/admin/api/cms/data/rows/${pageId}`, { headers })
-      expect(removed.ok(), await removed.text()).toBe(true)
-    }
-    const restored = await admin.put('/admin/api/cms/members/settings', { headers, data: settingsBefore.settings })
-    expect(restored.ok(), await restored.text()).toBe(true)
+    await site.remove()
   }
 })
 

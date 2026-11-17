@@ -1,13 +1,13 @@
 import { strToU8, zipSync } from 'fflate'
 import { expect, test } from '@playwright/test'
-import { ANONYMOUS_STATE, OWNER, PUBLIC_BASE_URL, login } from './helpers'
+import { ANONYMOUS_STATE, PUBLIC_BASE_URL, login, seedMemberSite } from './helpers'
 
 /**
  * MEMBER-004 — a plugin's routes for site members, from a real browser.
  *
  * The owner installs a plugin that registers a route for signed-in members,
  * one that also needs a tag, and a public one. A visitor is refused while
- * signed out, accepts an invitation on the site's own plain page, reaches
+ * signed out, accepts an invitation on the site's invitation page, reaches
  * the member route as themselves, and reaches the tag route only once the
  * owner grants the tag. The plugin never sees the member's session cookie.
  */
@@ -37,12 +37,10 @@ test('a plugin serves routes only signed-in members reach (MEMBER-004)', async (
   const permissions = ['cms.routes', 'cms.routes.public', 'members.read']
 
   await login(page)
-  const headers = { origin: new URL(page.url()).origin }
   const admin = page.request
-  const stepUp = async () => {
-    const res = await admin.post('/admin/api/cms/auth/step-up', { headers, data: { password: OWNER.password } })
-    expect(res.ok(), await res.text()).toBe(true)
-  }
+  // An invitation opens a page of the site, so the site needs its member pages.
+  const site = await seedMemberSite(page, `p${suffix}-`)
+  const { headers, stepUp, emailedLink } = site
   let memberId: string | null = null
 
   try {
@@ -94,19 +92,12 @@ test('a plugin serves routes only signed-in members reach (MEMBER-004)', async (
         expect(invited.ok(), await invited.text()).toBe(true)
         memberId = ((await invited.json()) as { member: { id: string } }).member.id
 
-        let link: string | undefined
-        await expect.poll(async () => {
-          const res = await admin.get(`/admin/api/cms/mail/activity?period=24h&q=${encodeURIComponent(email)}`)
-          const { entries } = (await res.json()) as { entries: Array<{ to: string; body: string | null }> }
-          link = entries.find((entry) => entry.to === email)?.body?.match(/https?:\/\/\S*token=[\w-]+/)?.[0]
-          return link
-        }, { message: 'the invitation is emailed', timeout: 20_000 }).toBeTruthy()
-
-        // No page is assigned for invitations here, so the site's plain page takes the password.
-        await visitor.goto(link!)
+        // The link opens the site's invitation page, where the visitor chooses a password.
+        await visitor.goto(await emailedLink(email))
+        await expect(visitor).toHaveURL(new RegExp(`${site.path('invitation')}\\?`))
         await visitor.getByLabel('New password').fill('a-long-enough-password')
-        await visitor.locator('button[type="submit"]').click()
-        await visitor.waitForURL((url) => !url.pathname.startsWith('/_instatic/members/'))
+        await visitor.getByRole('button', { name: 'Create account' }).click()
+        await expect(visitor).toHaveURL(new RegExp(`${site.path('account')}$`))
       })
 
       await test.step('the member reaches the route as themselves', async () => {
@@ -149,5 +140,6 @@ test('a plugin serves routes only signed-in members reach (MEMBER-004)', async (
     if (memberId) await admin.delete(`/admin/api/cms/members/${memberId}`, { headers })
     const removed = await admin.delete(`/admin/api/cms/plugins/${pluginId}?force=true`, { headers })
     expect(removed.ok(), await removed.text()).toBe(true)
+    await site.remove()
   }
 })

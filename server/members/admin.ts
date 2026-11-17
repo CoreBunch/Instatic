@@ -15,7 +15,7 @@ import type {
   MemberTagGrant,
 } from '@core/members'
 import { isoDate, nowIso } from '@core/utils/isoDate'
-import { queueMemberMail, memberTokenLink } from './mail'
+import { memberLinkPage, memberTokenLink, queueMemberMail } from './mail'
 import {
   anonymizeMember,
   createMember,
@@ -269,7 +269,7 @@ export async function getMemberForAdmin(db: DbClient, memberId: string): Promise
 
 export type InviteOutcome =
   | { ok: true; outcome: 'invited' | 'resent'; member: MemberListItem; link?: string }
-  | { ok: false; reason: 'exists' }
+  | { ok: false; reason: 'exists' | 'no_page' }
 
 /**
  * Invite an address: create the member (no password, address unconfirmed),
@@ -293,6 +293,11 @@ export async function inviteMember(
     delivery?: 'email' | 'link'
   },
 ): Promise<InviteOutcome> {
+  // An invitation is a link to a page of the site that accepts it. With no
+  // such page there is nothing to invite anyone to.
+  const { pages } = await getMemberSettings(db)
+  if (!memberLinkPage(pages, 'invite')) return { ok: false, reason: 'no_page' }
+
   const existing = await findMemberByEmail(db, input.email)
   if (existing && (existing.status !== 'active' || !isPending(existing))) return { ok: false, reason: 'exists' }
 
@@ -311,8 +316,8 @@ export async function inviteMember(
     await grantMemberTag(db, { memberId: member.id, tag, source: input.tagSource ?? ADMIN_TAG_SOURCE, expiresAt: null })
   }
   const { token } = await issueMemberToken(db, member.id, 'invite')
-  const { pages } = await getMemberSettings(db)
   const link = memberTokenLink(input.linkOrigin, pages, 'invite', token)
+  if (!link) return { ok: false, reason: 'no_page' }
   const byHand = input.delivery === 'link'
   if (!byHand) queueMemberMail(db, { kind: 'invite', to: member.email, link })
   await recordMemberEvent(db, member.id, 'invited', NO_REQUEST)
