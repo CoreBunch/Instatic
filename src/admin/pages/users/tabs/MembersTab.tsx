@@ -53,6 +53,7 @@ import { MemberSettingsDialog } from '../members/MemberSettingsDialog'
 import { STATUS_LABEL, STATUS_TONE } from '../members/memberText'
 import memberStyles from '../members/Members.module.css'
 import styles from '../UsersPage.module.css'
+import { UsersSolidIcon } from 'pixel-art-icons/icons/users-solid'
 
 type StatusFilter = 'all' | MemberAdminStatus
 
@@ -342,6 +343,8 @@ export function MembersTab({
 
           {members.length === 0 ? (
             <EmptyState
+              variant="centered"
+              icon={<UsersSolidIcon size={28} />}
               title={filtered ? 'No member matches these filters' : 'No members yet'}
               description={
                 filtered

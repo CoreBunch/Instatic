@@ -26,6 +26,7 @@ import { getErrorMessage } from '@core/utils/errorMessage'
 import { formatRelativeTimeAgo } from '@core/utils/relativeTime'
 import ld from '@admin/shared/ListDetail/ListDetail.module.css'
 import styles from './ActivityTab.module.css'
+import { MailSolidIcon } from 'pixel-art-icons/icons/mail-solid'
 
 type StatusFilter = 'all' | MailActivityStatus
 
@@ -228,6 +229,8 @@ export function ActivityTab({
 
           {entries.length === 0 ? (
             <EmptyState
+              variant="centered"
+              icon={<MailSolidIcon size={28} />}
               title={filtered ? 'No email matches these filters' : `No email ${PERIOD_PHRASE[period]}`}
               description={
                 filtered

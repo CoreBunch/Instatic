@@ -58,6 +58,8 @@ Every interactive control in `src/admin/` goes through one of these. Bare `<butt
 | `WidgetList`       | List layout for rows inside a widget                                 | `children`; `WidgetListRow` takes `primary`, `meta`        |
 | `EmptyState`       | Empty list / page placeholder                                        | `icon`, `title`, `description`, `action`                   |
 
+A page-level empty state (a workspace list, table or canvas with nothing in it) is always `<EmptyState variant="centered" icon={<XIcon size={28} />} title description />`, with an `action` when the user can fix it from there. The Media library's "No media yet" is the reference. Do not style a bare `<p>` or a bordered box for this. `variant="card"`, `compact` and `plain` are for small empties inside a panel or a section.
+
 ### Overlay / feedback
 
 | Primitive          | When to use                                                          | Key props                                                  |
