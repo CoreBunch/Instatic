@@ -18,7 +18,7 @@
  *
  * Returns null when:
  *   • the lock is empty
- *   • the cache directory or sentinel is missing — caller should
+ *   • the cache entry is missing or not intact — caller should
  *     `ensureRuntimeDependencyCache(lock)` first
  *   • a declared package has no resolvable ESM entry (we log + skip)
  */
@@ -30,7 +30,7 @@ import { packageEntryUrlPath, pickEsmEntry } from '@core/registry'
 import {
   nodeModulesDirForHash,
   runtimeDependencyLockHash,
-  sentinelPathForHash,
+  isRuntimeDependencyCacheIntact,
   type RuntimeDependencyCache,
 } from './dependencyCache'
 
@@ -147,14 +147,15 @@ function base64FromArrayBuffer(buffer: ArrayBuffer): string {
 /**
  * Convenience wrapper for callers that have the lock but no cache handle —
  * computes the hash and assumes the standard cache dir layout. The on-disk
- * cache must exist (and have its sentinel file); otherwise returns null.
+ * cache entry must be intact (see `isRuntimeDependencyCacheIntact`); otherwise
+ * returns null.
  */
 export async function buildRuntimePackageImportmapFromLock(
   lock: SiteDependencyLock,
   options: BuildPackageImportmapOptions & { cacheRoot?: string } = {},
 ): Promise<RuntimePackageImportmap | null> {
   const hash = runtimeDependencyLockHash(lock)
-  if (!existsSync(sentinelPathForHash(hash, options.cacheRoot))) return null
+  if (!isRuntimeDependencyCacheIntact(lock, options.cacheRoot)) return null
 
   return buildRuntimePackageImportmap(
     lock,

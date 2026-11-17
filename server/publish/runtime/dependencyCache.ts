@@ -35,10 +35,16 @@ interface EnsureRuntimeDependencyCacheOptions {
 
 /**
  * Sentinel file written inside the workspace dir AFTER a successful install.
- * The cache is considered valid only when this file exists — `existsSync` on
- * the bare `node_modules/` directory is unreliable because a partial install
- * (interrupted child process, watcher reload, pipe deadlock) can leave the
- * directory created but only sparsely populated.
+ * It proves the install finished: `existsSync` on the bare `node_modules/`
+ * directory is unreliable because a partial install (interrupted child
+ * process, watcher reload, pipe deadlock) can leave the directory created but
+ * only sparsely populated.
+ *
+ * The sentinel alone does NOT prove the entry is still usable. The default
+ * cache root is the OS temp folder, and temp cleaners (macOS periodic cleanup,
+ * `systemd-tmpfiles`) delete the installed files while leaving the directories
+ * and this marker behind. `isRuntimeDependencyCacheIntact` is the check that
+ * decides whether an entry may be trusted.
  */
 const INSTALL_SENTINEL_FILE = '.instatic-install-complete'
 
@@ -103,6 +109,31 @@ export function nodeModulesDirForHash(hash: string, cacheRoot: string = cacheRoo
 /** Path to the install-complete sentinel for a given lock hash. */
 export function sentinelPathForHash(hash: string, cacheRoot: string = cacheRootDir()): string {
   return join(workspaceDirForHash(hash, cacheRoot), INSTALL_SENTINEL_FILE)
+}
+
+/**
+ * Locked packages whose `package.json` is missing from an entry's
+ * `node_modules`. Empty means every locked package is still installed.
+ */
+function missingLockedPackages(lock: SiteDependencyLock, nodeModulesDir: string): string[] {
+  return Object.keys(sortedExactDependencies(lock)).filter(
+    (name) => !existsSync(join(nodeModulesDir, name, 'package.json')),
+  )
+}
+
+/**
+ * Whether the cache entry for `lock` can be trusted: the install finished
+ * (sentinel present) and every locked package still has its `package.json`
+ * under `node_modules`. An entry that fails this is reinstalled by
+ * `ensureRuntimeDependencyCache`.
+ */
+export function isRuntimeDependencyCacheIntact(
+  lock: SiteDependencyLock,
+  cacheRoot: string = cacheRootDir(),
+): boolean {
+  const hash = runtimeDependencyLockHash(lock)
+  if (!existsSync(sentinelPathForHash(hash, cacheRoot))) return false
+  return missingLockedPackages(lock, nodeModulesDirForHash(hash, cacheRoot)).length === 0
 }
 
 async function defaultRunInstall(command: string[], options: RuntimeInstallOptions): Promise<void> {
@@ -176,11 +207,9 @@ async function performInstall(
   const cacheRoot = options.cacheRoot ?? cacheRootDir()
   const workspaceDir = workspaceDirForHash(hash, cacheRoot)
   const nodeModulesDir = nodeModulesDirForHash(hash, cacheRoot)
-  const sentinelPath = sentinelPathForHash(hash, cacheRoot)
 
-  // Fast path: cache is intact — install completed and the sentinel marker
-  // proves it.
-  if (existsSync(sentinelPath)) {
+  // Fast path: the install completed and its packages are still on disk.
+  if (isRuntimeDependencyCacheIntact(lock, cacheRoot)) {
     return { hash, workspaceDir, nodeModulesDir }
   }
 
@@ -188,7 +217,9 @@ async function performInstall(
   // sibling dir, run `bun install`, write the sentinel marker, and only then
   // rename the temp dir into its final hash-based slot. A partial install
   // therefore never appears as a valid cache entry — the next request will
-  // simply re-attempt the install.
+  // simply re-attempt the install. An existing entry that failed the check
+  // above (never finished, or hollowed out by a temp cleaner) is replaced by
+  // the same rename.
   const exactDependencies = sortedExactDependencies(lock)
   const maxPackages = options.maxPackages ?? DEFAULT_MAX_RUNTIME_PACKAGES
   if (Object.keys(exactDependencies).length > maxPackages) {
@@ -232,6 +263,15 @@ async function performInstall(
       clearTimeout(timer)
     }
 
+    // An install that exits 0 without the locked packages on disk would be
+    // reinstalled on every request; fail it here with the reason instead.
+    const missing = missingLockedPackages(lock, join(tempDir, 'node_modules'))
+    if (missing.length > 0) {
+      throw new Error(
+        `[runtime dependency cache] install finished without ${missing.join(', ')}`,
+      )
+    }
+
     // Sentinel goes inside the temp dir at the location it will live after the
     // rename, so the renamed directory is already a "valid" cache from the
     // first instant it is observable at the final path.
@@ -248,9 +288,9 @@ async function performInstall(
       // sub-cases:
       //   1. Another process won the race and produced a valid cache. Drop
       //      our temp and use theirs.
-      //   2. The target is a stale broken cache (no sentinel). Remove it and
-      //      retry once.
-      if (existsSync(sentinelPath)) {
+      //   2. The target is a broken cache (no sentinel, or its packages are
+      //      gone). Remove it and retry once.
+      if (isRuntimeDependencyCacheIntact(lock, cacheRoot)) {
         await removeIfExists(tempDir)
       } else {
         await removeIfExists(workspaceDir)
