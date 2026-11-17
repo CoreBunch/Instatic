@@ -419,6 +419,36 @@ export async function getPublishedPageSnapshotById(
 }
 
 /**
+ * The site document of a publish that is live right now (some published row's
+ * active version references it) and whose importmap mentions `urlFragment`,
+ * newest first. This is how a runtime package URL is traced back to the
+ * dependency lock that produced it: the importmap is the only place those
+ * URLs are published. `urlFragment` is matched with `like`, so callers must
+ * confirm the match themselves.
+ */
+export async function getLivePublishedSiteByImportmapFragment(
+  db: DbClient,
+  urlFragment: string,
+): Promise<SiteDocument | null> {
+  const { rows } = await db<{ site_json: SiteDocument }>`
+    select site_snapshots.site_json
+    from site_snapshots
+    where site_snapshots.importmap_body like ${`%${urlFragment}%`}
+      and exists (
+        select 1
+        from data_row_versions
+        join data_rows on data_rows.active_version_id = data_row_versions.id
+        where data_row_versions.site_snapshot_id = site_snapshots.id
+          and data_rows.status = 'published'
+          and data_rows.deleted_at is null
+      )
+    order by site_snapshots.created_at desc
+    limit 1
+  `
+  return rows[0]?.site_json ?? null
+}
+
+/**
  * Any published page's snapshot, used purely as a carrier for `site_json` —
  * routes that are not themselves pages (entry routes, the 404) need the site
  * document to resolve their template chain.

@@ -11,6 +11,7 @@ import { startConversationPurgeTick } from './ai/boot'
 import { unsupportedBunWarning } from './bunVersion'
 import { MANAGER_RESTART_EXIT_CODE, MANAGER_TOKEN_MIN_LENGTH } from './manager/config'
 import { applyPendingRestore } from './manager/pending'
+import { isSameOrInside } from './manager/fsUtil'
 
 // Before anything that could fail for a version-related reason, say which
 // Bun this is when it is not one a release was tested on. Boot continues.
@@ -35,6 +36,9 @@ if (config.publicOrigins.length === 0) {
   console.warn('[server] PUBLIC_ORIGIN is not set; MCP OAuth connectors work only from loopback until it is configured. Personal access tokens still work.')
 }
 configureNpmRegistryUrl(config.npmRegistryUrl)
+if (isSameOrInside(config.uploadsDir, config.runtimeCacheDir)) {
+  console.warn('[server] RUNTIME_CACHE_DIR is inside UPLOADS_DIR, which is served publicly and copied by site transfers. Move it outside.')
+}
 if (config.manager.tokenRejected) {
   console.warn(`[server] INSTATIC_MANAGER_TOKEN is shorter than ${MANAGER_TOKEN_MIN_LENGTH} characters; the Manager API stays disabled.`)
 }

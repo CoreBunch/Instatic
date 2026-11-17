@@ -29,6 +29,9 @@ import { devStackBunError } from '../server/bunVersion'
 
 const DATABASE_PATH = './.tmp/e2e-agent.db'
 const UPLOADS_DIR = './.tmp/e2e-uploads'
+// Named explicitly (the default would be `.tmp/runtime-cache`, shared with
+// `bun run dev`) so SITE-014 can delete it and watch the server restore it.
+const RUNTIME_CACHE_DIR = './.tmp/e2e-runtime-cache'
 const PORT = process.env.E2E_CMS_PORT ?? '3002'
 
 function log(msg: string): void {
@@ -51,6 +54,7 @@ await rm(DATABASE_PATH, { force: true })
 await rm(`${DATABASE_PATH}-shm`, { force: true })
 await rm(`${DATABASE_PATH}-wal`, { force: true })
 await rm(UPLOADS_DIR, { force: true, recursive: true })
+await rm(RUNTIME_CACHE_DIR, { force: true, recursive: true })
 
 // `bun run build` is `tsc -b && vite build`. Building here rather than in a
 // separate CI step keeps one path: whatever a developer runs locally is what
@@ -72,6 +76,7 @@ const server = Bun.spawn(bunCommand('server/index.ts'), {
     HOST: '127.0.0.1',
     DATABASE_URL: `sqlite:${DATABASE_PATH}`,
     UPLOADS_DIR,
+    RUNTIME_CACHE_DIR,
     STATIC_DIR: './dist',
     // Pin the CSRF origin to the one the suite drives, so the check compares a
     // configured value instead of falling back to the inbound Host header.

@@ -34,6 +34,7 @@ INSTATIC_MANAGER_TOKEN  optional; enables the Manager API for a supervising mana
 INSTATIC_MANAGER_DIR    optional; Manager API working directory (default: manager/ beside the SQLite file)
 PUBLIC_ORIGIN        comma-separated public origin(s) the CSRF check trusts and the MCP OAuth issuer is built from; auto-detected from RENDER_EXTERNAL_URL / RAILWAY_PUBLIC_DOMAIN on those platforms; without it MCP OAuth discovery answers 503 (loopback development excepted)
 TRUSTED_PROXY_CIDRS  optional; trusts proxy socket peers for forwarded client-IP attribution only (audit logs, rate-limit keys) — NOT used for CSRF
+RUNTIME_CACHE_DIR    optional; where runtime npm packages are installed (default: runtime-cache/ beside the SQLite file, or beside UPLOADS_DIR for Postgres)
 NPM_REGISTRY_URL     optional; registry for the Dependencies panel, the dependency resolver and runtime installs (default https://registry.npmjs.org); set it for a private registry or corporate mirror
 ```
 
@@ -110,6 +111,8 @@ SQLite is the default for single-site installs. Postgres is for multiple simulta
 - published static artefacts under `published/current`
 
 SQLite installs also need the SQLite database file on persistent storage. On platforms with only one app volume, put both the SQLite file and uploads under the same mounted root.
+
+Runtime npm packages (Site → Dependencies) are installed into `RUNTIME_CACHE_DIR` and published pages load them from there. The default is `runtime-cache/` beside the SQLite file, or beside `UPLOADS_DIR` for Postgres, so every layout in these docs keeps it on the volume that already exists and no template needs a new value. It must not be inside `UPLOADS_DIR`. It needs no backup: when the directory is missing, the server reinstalls a published site's packages from the registry on the first request for them. Details: [Dependencies](../features/dependencies.md) → "The install cache".
 
 ## Docs Inventory
 
