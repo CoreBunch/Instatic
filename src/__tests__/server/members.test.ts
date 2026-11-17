@@ -81,9 +81,13 @@ class Browser {
     return res
   }
 
-  async get(path: string): Promise<Response> {
+  async get(path: string, headers: Record<string, string> = {}): Promise<Response> {
     const url = new URL(`/_instatic/members/${path}`, ORIGIN)
-    return handleMemberRequest(requestWithCookie(url, this.cookie), this.db, url)
+    const req = requestWithCookie(url, this.cookie)
+    for (const [name, value] of Object.entries(headers)) req.headers.set(name, value)
+    const res = await handleMemberRequest(req, this.db, url)
+    this.remember(res)
+    return res
   }
 
   async me(): Promise<CurrentMember | null> {
@@ -598,6 +602,29 @@ describe('site members', () => {
       })
       await browser.post('signup', { email: 'a@example.com', password: PASSWORD })
       expect((await lastMail('verify'))!.body).toContain(`${ORIGIN}/thanks?token=`)
+    })
+  })
+
+  describe('sign-out link', () => {
+    it('signs out on a click from this site and lands on the named page', async () => {
+      await register(browser, 'm@example.com')
+      const res = await browser.get('logout?to=/bye', { 'sec-fetch-site': 'same-origin' })
+      expect(res.status).toBe(303)
+      expect(res.headers.get('location')).toBe('/bye')
+      expect(await browser.me()).toBeNull()
+    })
+
+    it('lands on the home page when the target is another site', async () => {
+      const res = await browser.get('logout?to=https://evil.example/', { 'sec-fetch-site': 'same-origin' })
+      expect(res.headers.get('location')).toBe('/')
+    })
+
+    it('leaves the member signed in when another site sends them there', async () => {
+      await register(browser, 'm@example.com')
+      const crossSite = await browser.get('logout', { 'sec-fetch-site': 'cross-site' })
+      const foreignReferer = await browser.get('logout', { referer: 'https://evil.example/page' })
+      for (const res of [crossSite, foreignReferer]) expect(res.status).toBe(303)
+      expect(await browser.me()).not.toBeNull()
     })
   })
 

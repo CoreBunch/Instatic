@@ -4,7 +4,7 @@
  * lacks for it.
  */
 import { useId } from 'react'
-import { MEMBER_FORM_ACTIONS, memberFormAction } from '@core/members'
+import { MEMBER_FORM_ACTIONS, MEMBER_FORM_GROUP_LABELS, memberFormAction, type MemberFormGroup } from '@core/members'
 import { Button } from '@ui/components/Button'
 import { ControlRow } from '@ui/components/ControlRow'
 import { Select } from '@ui/components/Select'
@@ -12,6 +12,8 @@ import { PlusIcon } from 'pixel-art-icons/icons/plus'
 import type { FormContextSummary } from './formSettingsAnalysis'
 import type { MemberFormMissing } from './memberFormParts'
 import styles from './FormSettingsPanel.module.css'
+
+const MEMBER_FORM_GROUPS: readonly MemberFormGroup[] = ['entry', 'emailLink', 'account']
 
 /** What the member form still needs, in words, or '' when it is complete. */
 function memberMissingText(missing: MemberFormMissing): string {
@@ -45,14 +47,21 @@ export function MemberActionRow({
           id={selectId}
           fieldSize="sm"
           value={action?.action ?? ''}
-          options={MEMBER_FORM_ACTIONS.map((entry) => ({ value: entry.action, label: entry.label }))}
           onChange={(event) => {
             const next = memberFormAction(event.currentTarget.value)
             // The success message follows the action until the author writes their own.
             if (next) onPatchProps({ memberAction: next.action, successMessage: next.successMessage })
           }}
           data-testid="member-form-action"
-        />
+        >
+          {MEMBER_FORM_GROUPS.map((group) => (
+            <optgroup key={group} label={MEMBER_FORM_GROUP_LABELS[group]}>
+              {MEMBER_FORM_ACTIONS.filter((entry) => entry.group === group).map((entry) => (
+                <option key={entry.action} value={entry.action}>{entry.label}</option>
+              ))}
+            </optgroup>
+          ))}
+        </Select>
       </ControlRow>
       {action && (
         <p className={styles.relationship}>

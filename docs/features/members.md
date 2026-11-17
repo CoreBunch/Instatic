@@ -66,7 +66,7 @@ server/members/
 | `signup` | `email`, `password`, profile fields | answers `check_email` |
 | `verify` | `token` | confirmation link; signs in |
 | `login` | `email`, `password` | |
-| `logout` | | |
+| `logout` | | for scripts; a page uses the sign-out link below |
 | `link/request` | `email` | email a sign-in link |
 | `link/confirm` | `token` | signs in; also confirms the address |
 | `password/forgot` | `email` | |
@@ -77,6 +77,7 @@ server/members/
 | `email/confirm` | `token` | |
 | `profile` | profile fields | signed in |
 | `delete` | `currentPassword` | signed in; anonymises |
+| `GET logout` | `?to=<site path>` | the sign-out link: signs out, then `303` to `to` (default `/`) |
 | `GET me` | | `{ member }` or `{ member: null }`, `no-store` |
 | `GET export` | | the member's own data as a download |
 
@@ -88,7 +89,7 @@ Error codes are the `MEMBER_ERROR_CODES` list in `@core/members`.
 
 **Sessions.** 32 random bytes, stored as SHA-256. 90 days absolute, 30 days idle, both checked in the lookup query together with "not revoked" and "member is active". Suspending a member or signing out ends access on the next request.
 
-**CSRF.** Every POST needs an `Origin` that is one of the site's origins, and a same-origin `Sec-Fetch-Site` when the browser sends one. Changing a password or email and deleting the account also need the current password (or, for a passwordless member, a sign-in within the last 15 minutes).
+**CSRF.** Every POST needs an `Origin` that is one of the site's origins, and a same-origin `Sec-Fetch-Site` when the browser sends one. The sign-out link is the one GET that changes anything; it carries no `Origin`, so it acts only on a click from this site (`Sec-Fetch-Site` `same-origin` or `none`, or a same-site `Referer` when that header is missing) and otherwise only redirects. Changing a password or email and deleting the account also need the current password (or, for a passwordless member, a sign-in within the last 15 minutes).
 
 **Enumeration.** A sign-in for an unknown address still pays one argon2 verification. Requests that send email decide their answer first and send in the background (`queueMemberMail`), so timing does not differ.
 
@@ -224,7 +225,7 @@ bun run demo:members        # add `-- --skip-build` to reuse the last admin buil
 
 `scripts/members-demo.ts` builds the admin, creates a fresh SQLite database under `.tmp/`, seeds and publishes a small site, and serves it on `http://127.0.0.1:3040` (`DEMO_PORT` changes the port). It prints the owner and member accounts it created. Emails are captured: read them under Email → Activity.
 
-The site (`scripts/lib/membersDemoSite.ts`) is twelve ordinary editor pages: home, join, sign in, forgot password, the pages the emailed links open (confirm, new password, sign-in link, new address, invitation), an account page, a members area and a pro lounge. `membersDemoSettings()` names each of them, by page id, in the member settings, which is what switches the features on. Every form is a `base.form` in Members mode completed by `memberFormFragment`, the function behind the editor's "Add …" button; the header's links use show-when rules; the account page prefills from member bindings. Open any page in the editor to see how it is put together.
+The site (`scripts/lib/membersDemoSite.ts`) is twelve ordinary editor pages: home, join, sign in, forgot password, the pages the emailed links open (confirm, new password, sign-in link, new address, invitation), an account page, a members area and a pro lounge. `membersDemoSettings()` names each of them, by page id, in the member settings, which is what switches the features on. Every form is a `base.form` in Members mode completed by `memberFormFragment`, the function behind the editor's "Add …" button; the header's links use show-when rules, and its sign-out is a `base.link` with On click set to "Sign the member out" (`memberSignOutHref`), since signing out needs no form; the account page prefills from member bindings. Open any page in the editor to see how it is put together.
 
 It is a development tool: fixed passwords, loopback only, and a database that is wiped on every start. `membersDemoSite.test.ts` keeps the pages publishable and correctly gated. The sign-in page also carries the "Email me a link" form. The E2E suite seeds the same pages under an address prefix of its own (`buildMembersDemoPages(prefix)`, printed by `scripts/e2e-members-seed.ts`).
 

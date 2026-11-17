@@ -103,7 +103,9 @@ class PageBuilder {
             this.link('Sign in', '/sign-in', { visitor: 'signedOut' }),
             this.link('Join', '/join', { visitor: 'signedOut' }),
             this.link('Account', '/account', { visitor: 'signedIn' }),
-            this.memberForm('logout', 'sign-out', { redirectUrl: '/', showWhen: { visitor: 'signedIn' } }),
+            this.add(createNode('base.link', {
+              action: 'memberSignOut', text: 'Sign out', signOutRedirect: '/', showWhen: { visitor: 'signedIn' },
+            })),
           ],
           { tag: 'nav' },
         ),
@@ -160,7 +162,7 @@ function withPrefix(pages: Page[], prefix: string): Page[] {
     nodes: Object.fromEntries(
       Object.entries(page.nodes).map(([id, node]) => {
         const props = { ...node.props }
-        for (const key of ['href', 'redirectUrl']) {
+        for (const key of ['href', 'redirectUrl', 'signOutRedirect']) {
           const value = props[key]
           if (typeof value === 'string' && value.startsWith('/')) props[key] = move(value)
         }
