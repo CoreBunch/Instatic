@@ -324,31 +324,33 @@ export function buildMembersDemoPages(prefix = ''): Page[] {
   return prefix === '' ? pages : withPrefix(pages, prefix)
 }
 
-/** Where the member emails' links lead, and who can join. */
-export function membersDemoSettings(prefix = ''): MemberSettings {
-  return {
-    ...MEMBERS_DEMO_SETTINGS,
-    pages: Object.fromEntries(
-      Object.entries(MEMBERS_DEMO_SETTINGS.pages).map(([key, path]) => [key, `/${prefix}${path.slice(1)}`]),
-    ) as MemberSettings['pages'],
-  }
-}
+/** The demo page behind each member setting, by slug. */
+const MEMBER_PAGE_SLUGS = {
+  login: 'sign-in',
+  afterLogin: 'account',
+  verify: 'welcome',
+  reset: 'reset-password',
+  magic: 'sign-in-link',
+  invite: 'invitation',
+  emailChange: 'confirm-email',
+} as const
 
-export const MEMBERS_DEMO_SETTINGS: MemberSettings = {
-  signupMode: 'open',
-  profileFields: [
-    { id: 'name', label: 'Name', type: 'text', required: true },
-    { id: 'company', label: 'Company', type: 'text', required: false },
-  ],
-  pages: {
-    login: '/sign-in',
-    afterLogin: '/account',
-    verify: '/welcome',
-    reset: '/reset-password',
-    magic: '/sign-in-link',
-    invite: '/invitation',
-    emailChange: '/confirm-email',
-  },
+/** Who can join, and which of the demo pages each member link opens. Settings name a page by id. */
+export function membersDemoSettings(prefix = ''): MemberSettings {
+  const idBySlug = new Map(buildMembersDemoPages(prefix).map((page) => [page.slug, page.id]))
+  const pages: MemberSettings['pages'] = {}
+  for (const [key, slug] of Object.entries(MEMBER_PAGE_SLUGS)) {
+    const id = idBySlug.get(`${prefix}${slug}`)
+    if (id) pages[key as keyof typeof MEMBER_PAGE_SLUGS] = id
+  }
+  return {
+    signupMode: 'open',
+    profileFields: [
+      { id: 'name', label: 'Name', type: 'text', required: true },
+      { id: 'company', label: 'Company', type: 'text', required: false },
+    ],
+    pages,
+  }
 }
 
 /** One stylesheet for the whole demo. Elements are marked with `data-demo`, set in the editor's Attributes view. */

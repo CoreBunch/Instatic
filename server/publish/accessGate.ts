@@ -20,7 +20,8 @@ import { accessAllows, parseAccessRule, type AccessRule, type CurrentMember } fr
 import type { Page } from '@core/page-tree'
 import { buildMemberFrame, isTemplatePage, normalizeRouteBase, type MemberFrame } from '@core/templates'
 import { resolveSignedInMember } from '../members/handlers'
-import { getMemberSettings, toCurrentMember } from '../members/repository'
+import { getMemberPagePaths } from '../members/pages'
+import { toCurrentMember } from '../members/repository'
 import { listProtectedTables } from '../repositories/data/tableAccess'
 import { listPublishedPageAccess } from '../repositories/publish'
 import type { ClosedContent } from '@core/loops/types'
@@ -194,7 +195,8 @@ export const PRIVATE_HEADERS = { 'cache-control': 'private, no-store' } as const
  *
  * Returns null when there is nothing to send them to, and the caller then
  * answers as if the route did not exist:
- *  - the owner has not assigned a sign-in page (core has none of its own);
+ *  - the owner has not assigned a sign-in page, or it is not published
+ *    (core has none of its own);
  *  - the visitor is signed in but lacks the tag (`forbidden`): signing in
  *    again would not help, and the site has no page for that either.
  */
@@ -204,7 +206,7 @@ export async function denyResponse(
   decision: 'login' | 'forbidden',
 ): Promise<Response | null> {
   if (decision === 'forbidden') return null
-  const { pages } = await getMemberSettings(db)
+  const pages = await getMemberPagePaths(db)
   if (!pages.login) return null
   const target = new URL(pages.login, url.origin)
   target.searchParams.set('next', `${url.pathname}${url.search}`)

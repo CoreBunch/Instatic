@@ -9,7 +9,7 @@ Core is headless here. It provides accounts, sessions and actions; the site owne
 ## TL;DR
 
 - **Endpoints** live under `/_instatic/members/*` (`server/members/handlers.ts`). Every action is one POST that answers a plain HTML form with a `303` redirect and a script with JSON.
-- **No built-in pages.** Core serves no sign-in page and no page for an emailed link. Each is a page the owner builds and names in the member settings; a feature whose page is not set is not there.
+- **No built-in pages.** Core serves no sign-in page and no page for an emailed link. Each is a page the owner builds and chooses in the member settings; a feature whose page is not set, or not published, is not there.
 - **Sign-up is closed by default.** `member_settings.signup_mode` is `closed`, `invite` or `open`.
 - **Email confirmation is not optional.** A password only becomes the account's password when the address is proven.
 - **Nothing reveals whether an address has an account.** Sign-up, reset and sign-in-link requests all answer `check_email`.
@@ -100,7 +100,7 @@ Error codes are the `MEMBER_ERROR_CODES` list in `@core/members`.
 
 **Links in emails** are built from `configuredPublicOrigin()`. With none configured they are built only for a request from this machine (loopback peer and loopback host); otherwise the action fails with `email_unavailable`. The `Host` header is never used.
 
-**No built-in member pages.** Core serves no sign-in page and no page for an emailed link. Every one is a page the owner builds in the editor and names in `member_settings.pages` (`login`, `afterLogin`, `verify`, `reset`, `magic`, `invite`, `emailChange`). A feature whose page is not set is simply not there:
+**No built-in member pages.** Core serves no sign-in page and no page for an emailed link. Every one is a page the owner builds in the editor and chooses in `member_settings.pages` (`login`, `afterLogin`, `verify`, `reset`, `magic`, `invite`, `emailChange`). A setting holds the page's **id**, not its address, so renaming a page never breaks a link. `server/members/pages.ts` turns the ids into live addresses (`resolveMemberPagePaths`, `getMemberPagePaths`): only a published page has one, and it is the published slug, not the draft's. A feature whose page is not set, deleted or not published is simply not there:
 
 | Page not set | What does not happen |
 |---|---|
@@ -111,7 +111,9 @@ Error codes are the `MEMBER_ERROR_CODES` list in `@core/members`.
 | `emailChange` | `email/change` answers `not_available` |
 | `invite` | the admin and plugin invite calls are refused (409 / an error naming the missing page); the Invite button is disabled with the reason |
 
-`not_available` is decided from the settings alone, before any address is looked up, so it is the same answer for every address (`linkPageMissing` in `service.ts`, `memberLinkPage` in `mail.ts`). Signing in with a password needs no emailed link and works on any page that holds a sign-in form.
+`not_available` is decided from the settings and the published pages alone, before any address is looked up, so it is the same answer for every address (`linkPageMissing` in `service.ts`, `memberLinkPage` in `mail.ts`). Signing in with a password needs no emailed link and works on any page that holds a sign-in form.
+
+**Page pickers.** The settings response carries `pageOptions` (`listMemberPageOptions`): every ordinary page with its draft address, its live address (null while unpublished) and the member form actions found on it. Member settings shows one page picker per setting, and `memberPageState` (`@core/members`) reads how the chosen page stands: `unset`, `missing` (deleted), `unpublished`, `no_form` (the form in `MEMBER_PAGE_FORM_ACTIONS` for that setting was not found on the page itself) or `ready`. `missing` blocks saving, and the server refuses an id that is not a page; `unpublished` and `no_form` are warnings. The Members tab uses `memberPageIsLive` for the Invite button and the sign-up notice, the same rule the server applies.
 
 `afterLogin` is where a member who just signed in goes when nothing else says where: the `signed_in` answer carries it as `landing`. The form runtime uses `?next=` first, then the form's own redirect, then `landing`, and otherwise reloads the page; a plain form with no `_success` is redirected to it.
 
@@ -222,7 +224,7 @@ bun run demo:members        # add `-- --skip-build` to reuse the last admin buil
 
 `scripts/members-demo.ts` builds the admin, creates a fresh SQLite database under `.tmp/`, seeds and publishes a small site, and serves it on `http://127.0.0.1:3040` (`DEMO_PORT` changes the port). It prints the owner and member accounts it created. Emails are captured: read them under Email → Activity.
 
-The site (`scripts/lib/membersDemoSite.ts`) is twelve ordinary editor pages: home, join, sign in, forgot password, the pages the emailed links open (confirm, new password, sign-in link, new address, invitation), an account page, a members area and a pro lounge. `MEMBERS_DEMO_SETTINGS` names each of them in the member settings, which is what switches the features on. Every form is a `base.form` in Members mode completed by `memberFormFragment`, the function behind the editor's "Add …" button; the header's links use show-when rules; the account page prefills from member bindings. Open any page in the editor to see how it is put together.
+The site (`scripts/lib/membersDemoSite.ts`) is twelve ordinary editor pages: home, join, sign in, forgot password, the pages the emailed links open (confirm, new password, sign-in link, new address, invitation), an account page, a members area and a pro lounge. `membersDemoSettings()` names each of them, by page id, in the member settings, which is what switches the features on. Every form is a `base.form` in Members mode completed by `memberFormFragment`, the function behind the editor's "Add …" button; the header's links use show-when rules; the account page prefills from member bindings. Open any page in the editor to see how it is put together.
 
 It is a development tool: fixed passwords, loopback only, and a database that is wiped on every start. `membersDemoSite.test.ts` keeps the pages publishable and correctly gated. The sign-in page also carries the "Email me a link" form. The E2E suite seeds the same pages under an address prefix of its own (`buildMembersDemoPages(prefix)`, printed by `scripts/e2e-members-seed.ts`).
 

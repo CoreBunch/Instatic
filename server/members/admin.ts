@@ -16,12 +16,12 @@ import type {
 } from '@core/members'
 import { isoDate, nowIso } from '@core/utils/isoDate'
 import { memberLinkPage, memberTokenLink, queueMemberMail } from './mail'
+import { getMemberPagePaths } from './pages'
 import {
   anonymizeMember,
   createMember,
   findMemberByEmail,
   findMemberById,
-  getMemberSettings,
   grantMemberTag,
   listMemberEvents,
   setMemberProfile,
@@ -295,7 +295,7 @@ export async function inviteMember(
 ): Promise<InviteOutcome> {
   // An invitation is a link to a page of the site that accepts it. With no
   // such page there is nothing to invite anyone to.
-  const { pages } = await getMemberSettings(db)
+  const pages = await getMemberPagePaths(db)
   if (!memberLinkPage(pages, 'invite')) return { ok: false, reason: 'no_page' }
 
   const existing = await findMemberByEmail(db, input.email)

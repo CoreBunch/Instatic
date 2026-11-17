@@ -11,7 +11,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { parsePage, type SiteShell } from '@core/page-tree'
 import { normalizeSiteRuntimeConfig } from '@core/site-runtime'
-import { buildMembersDemoPages, MEMBERS_DEMO_CSS, MEMBERS_DEMO_SETTINGS } from '../../../scripts/lib/membersDemoSite'
+import { buildMembersDemoPages, MEMBERS_DEMO_CSS, membersDemoSettings } from '../../../scripts/lib/membersDemoSite'
 import { pageToCells } from '../../core/data/pageFromRow'
 import { MAIN_SCOPE } from '../../../server/branches/scope'
 import { createMember, grantMemberTag, saveMemberSettings } from '../../../server/members/repository'
@@ -57,7 +57,7 @@ describe('members demo site', () => {
     for (const page of buildMembersDemoPages()) {
       await createDataRow(t.db, MAIN_SCOPE, { id: page.id, tableId: 'pages', cells: pageToCells(page), slug: page.slug }, 'admin_1')
     }
-    await saveMemberSettings(t.db, MEMBERS_DEMO_SETTINGS)
+    await saveMemberSettings(t.db, membersDemoSettings())
     await publishDraftSite(t.db, 'admin_1', uploadsDir)
   })
 

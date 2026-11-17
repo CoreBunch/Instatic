@@ -14,7 +14,7 @@
  *    address.
  */
 import type { DbClient } from '../db/client'
-import type { MemberPages } from '@core/members'
+import type { MemberPageKey, MemberPagePaths } from '@core/members'
 import { getErrorMessage } from '@core/utils/errorMessage'
 import { clientIp, configuredPublicOrigin } from '../auth/security'
 import { getMailDefaults } from '../mail/defaults'
@@ -44,7 +44,7 @@ export async function memberMailAvailable(db: DbClient, req: Request): Promise<b
   return mailDeliveryMode(await getMailDefaults(db)) !== 'off'
 }
 
-const PAGE_FOR_KIND: Record<MemberTokenKind, keyof MemberPages> = {
+const PAGE_FOR_KIND: Record<MemberTokenKind, MemberPageKey> = {
   verify: 'verify',
   reset: 'reset',
   magic: 'magic',
@@ -64,19 +64,19 @@ const PAGE_FOR_KIND: Record<MemberTokenKind, keyof MemberPages> = {
 export const TOKEN_PAGE_REFERRER_POLICY = 'same-origin'
 
 /**
- * The page of the site that a link of this kind opens, or undefined when the
- * owner has not assigned one. Core has no page of its own for any of them: a
+ * The live address of the page that a link of this kind opens, or undefined
+ * when the owner has not assigned one or it is not published. Core has no page of its own for any of them: a
  * link can only lead to a page the owner built, so without one the feature
  * that would send the link is not available.
  */
-export function memberLinkPage(pages: MemberPages, kind: MemberTokenKind): string | undefined {
+export function memberLinkPage(pages: MemberPagePaths, kind: MemberTokenKind): string | undefined {
   return pages[PAGE_FOR_KIND[kind]]
 }
 
 /** The link for a token, or null when no page is assigned for its kind. */
 export function memberTokenLink(
   origin: string,
-  pages: MemberPages,
+  pages: MemberPagePaths,
   kind: MemberTokenKind,
   token: string,
 ): string | null {

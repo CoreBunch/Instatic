@@ -110,11 +110,11 @@ test.describe('member pages in the editor', () => {
       await expect(dialog).toBeHidden()
     }
 
-    await test.step('open sign-up and name the confirmation page', async () => {
+    await test.step('open sign-up and choose the confirmation page', async () => {
       await changeMemberSettings(async (dialog) => {
         await pickOption(page, dialog.getByLabel('Who can sign up'), 'Open: anyone can sign up')
-        await dialog.getByLabel('Sign-in page').fill('')
-        await dialog.getByLabel('Confirm email').fill(`/${welcome.slug}`)
+        await pickOption(page, dialog.getByLabel('Sign-in page'), 'Not set')
+        await pickOption(page, dialog.getByLabel('Confirm email'), `${welcome.name} (/${welcome.slug})`)
       })
     })
 
@@ -130,9 +130,9 @@ test.describe('member pages in the editor', () => {
       }
     })
 
-    await test.step('name the sign-in page', async () => {
+    await test.step('choose the sign-in page', async () => {
       await changeMemberSettings(async (dialog) => {
-        await dialog.getByLabel('Sign-in page').fill(`/${join.slug}`)
+        await pickOption(page, dialog.getByLabel('Sign-in page'), `${join.name} (/${join.slug})`)
       })
     })
 
@@ -197,10 +197,10 @@ test.describe('member pages in the editor', () => {
     })
 
     // The suite shares one site: do not leave it pointing at this run's pages.
-    await test.step('take the page names out of the member settings again', async () => {
+    await test.step('take the pages out of the member settings again', async () => {
       await changeMemberSettings(async (dialog) => {
-        await dialog.getByLabel('Sign-in page').fill('')
-        await dialog.getByLabel('Confirm email').fill('')
+        await pickOption(page, dialog.getByLabel('Sign-in page'), 'Not set')
+        await pickOption(page, dialog.getByLabel('Confirm email'), 'Not set')
       })
     })
   })

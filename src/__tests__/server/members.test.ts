@@ -21,6 +21,7 @@ import {
   listMembersForAdmin,
   setMemberSuspended,
 } from '../../../server/members/admin'
+import { publishMemberPages } from '../helpers/memberPages'
 
 const ORIGIN = 'http://localhost'
 const PASSWORD = 'correct-horse-battery'
@@ -128,7 +129,7 @@ describe('site members', () => {
     }
     resetMemberLimits()
     resetPublicOrigins()
-    await saveMemberSettings(t.db, { ...DEFAULT_MEMBER_SETTINGS, signupMode: 'open', pages: PAGES })
+    await saveMemberSettings(t.db, { ...DEFAULT_MEMBER_SETTINGS, signupMode: 'open', pages: await publishMemberPages(t.db, PAGES) })
     browser = new Browser(t.db)
   })
 
@@ -269,7 +270,7 @@ describe('site members', () => {
 
       await saveMemberSettings(t.db, {
         signupMode: 'open',
-        pages: PAGES,
+        pages: await publishMemberPages(t.db, PAGES),
         profileFields: [{ id: 'company', label: 'Company', type: 'text', required: true }],
       })
       const missing = await browser.post('signup', { email: 'a@example.com', password: PASSWORD })
@@ -593,7 +594,7 @@ describe('site members', () => {
       await saveMemberSettings(t.db, {
         ...DEFAULT_MEMBER_SETTINGS,
         signupMode: 'open',
-        pages: { verify: '/thanks' },
+        pages: await publishMemberPages(t.db, { verify: '/thanks' }),
       })
       await browser.post('signup', { email: 'a@example.com', password: PASSWORD })
       expect((await lastMail('verify'))!.body).toContain(`${ORIGIN}/thanks?token=`)
@@ -640,7 +641,7 @@ describe('site members', () => {
 
     it('sends a member who just signed in to the owner\'s "after signing in" page when nothing else says where', async () => {
       await register(browser, 'm@example.com')
-      await saveMemberSettings(t.db, { ...DEFAULT_MEMBER_SETTINGS, signupMode: 'open', pages: { ...PAGES, afterLogin: '/account' } })
+      await saveMemberSettings(t.db, { ...DEFAULT_MEMBER_SETTINGS, signupMode: 'open', pages: await publishMemberPages(t.db, { ...PAGES, afterLogin: '/account' }) })
 
       // A script-driven form is told the page and decides itself (`?next=` and the form's own redirect come first).
       const json = await new Browser(t.db).post('login', { email: 'm@example.com', password: PASSWORD })

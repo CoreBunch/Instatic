@@ -1,5 +1,6 @@
 import { expect, test, type Page } from '@playwright/test'
 import { ANONYMOUS_STATE, completeStepUp, login } from './helpers'
+import { seedMemberSite } from './helpers/members'
 
 // Saving member settings and deleting a member ask for step-up, which rotates the session token.
 test.use({ storageState: ANONYMOUS_STATE })
@@ -25,9 +26,16 @@ test('owner manages site members from the Users page (MEMBER-002)', async ({ pag
   const suffix = Date.now().toString(36)
   const email = `member-${suffix}@example.com`
 
-  await test.step('open sign-up, add a profile field and name the member pages', async () => {
-    // Member features run on pages the owner builds. Until the site has an
-    // invitation page there is nothing to invite anyone to.
+  // Member features run on pages the owner builds. Until the site has an
+  // invitation page there is nothing to invite anyone to.
+  await expect(tab.getByRole('button', { name: 'Invite member' })).toBeDisabled()
+  // The pages to choose from: the members demo site, published, and not yet named in the settings.
+  const prefix = `a${suffix}-`
+  const site = await seedMemberSite(page, prefix, { assignPages: false })
+  await page.reload()
+  await page.getByRole('tab', { name: 'Site members', exact: true }).click()
+
+  await test.step('open sign-up, add a profile field and choose the member pages', async () => {
     await expect(tab.getByRole('button', { name: 'Invite member' })).toBeDisabled()
     await tab.getByRole('button', { name: 'Member settings' }).click()
     const dialog = page.getByRole('dialog', { name: 'Member settings' })
@@ -37,16 +45,15 @@ test('owner manages site members from the Users page (MEMBER-002)', async ({ pag
     await field.getByLabel('Label').fill('Company name')
     // The id follows the label; it is what forms and bindings use.
     await expect(field.getByLabel('Id')).toHaveValue('companyName')
-    await dialog.getByLabel('Sign-in page').fill('sign-in')
-    await expect(dialog.getByText('A page address starts with one slash')).toBeVisible()
-    await expect(dialog.getByRole('button', { name: 'Save settings' })).toBeDisabled()
-    // Left empty again: the suite shares one site, and another spec checks a site with no sign-in page.
-    await dialog.getByLabel('Sign-in page').fill('')
     // Open sign-up does nothing without a page for the confirmation link, and the dialog says so.
-    await expect(dialog.getByText('Sign-up stays off until a "Confirm email" page is set below.')).toBeVisible()
+    await expect(dialog.getByText('Sign-up stays off until a published "Confirm email" page is chosen below.')).toBeVisible()
     await expect(dialog.getByText('Not set: invitations are off.')).toBeVisible()
-    await dialog.getByLabel('Confirm email').fill('/welcome')
-    await dialog.getByLabel('Accept an invitation').fill('/invitation')
+    // Each page is a picker of the site's pages. A page without the form its job needs is pointed out.
+    await pickOption(page, dialog.getByLabel('Confirm email'), `Join (${site.path('join')})`)
+    await expect(dialog.getByText('No "Confirm email address" form was found on "Join".')).toBeVisible()
+    await pickOption(page, dialog.getByLabel('Confirm email'), `Confirm your address (${site.path('welcome')})`)
+    await expect(dialog.getByText(`Opens ${site.path('welcome')}.`)).toBeVisible()
+    await pickOption(page, dialog.getByLabel('Accept an invitation'), `Accept your invitation (${site.path('invitation')})`)
     await expect(dialog.getByText('Sign-up stays off until')).toHaveCount(0)
     await page.screenshot({ path: '.tmp/evidence/members-settings.png' })
     await dialog.getByRole('button', { name: 'Save settings' }).click()
@@ -122,6 +129,9 @@ test('owner manages site members from the Users page (MEMBER-002)', async ({ pag
     await completeStepUp(page)
     await expect(tab.getByText('No member matches these filters')).toBeVisible()
   })
+
+  // The suite shares one site: take this run's pages and settings out again.
+  await site.remove()
 })
 
 /** Pick an option of a Select primitive. */

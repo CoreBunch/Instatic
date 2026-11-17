@@ -43,6 +43,7 @@ import {
   signOutMemberEverywhere,
 } from '../../members/admin'
 import { memberLinkOrigin, memberMailAvailable } from '../../members/mail'
+import { listMemberPageOptions } from '../../members/pages'
 import {
   getMemberSettings,
   grantMemberTag,
@@ -240,6 +241,7 @@ async function handleRevokeTag(req: Request, db: DbClient, params: RouteParams):
 async function settingsResponse(req: Request, db: DbClient, settings: MemberSettings): Promise<Response> {
   return jsonResponse({
     settings,
+    pageOptions: await listMemberPageOptions(db),
     mailAvailable: await memberMailAvailable(db, req),
     linkAvailable: memberLinkOrigin(req) !== null,
   })
@@ -267,6 +269,10 @@ async function handleSaveSettings(req: Request, db: DbClient): Promise<Response>
   if (!settings) return badRequest('Those member settings are not valid')
   const problem = settingsProblem(settings)
   if (problem) return badRequest(problem)
+  const known = new Set((await listMemberPageOptions(db)).map((page) => page.id))
+  if (Object.values(settings.pages).some((pageId) => pageId && !known.has(pageId))) {
+    return badRequest('One of the chosen pages no longer exists. Pick a page from the list.')
+  }
   await saveMemberSettings(db, settings)
   await audit(db, req, user, 'member.settings.update', null, { signupMode: settings.signupMode })
   return settingsResponse(req, db, settings)

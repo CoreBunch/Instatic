@@ -162,6 +162,14 @@
     gap: var(--space-l) var(--space-2xl);
 }
 
+/* A problem with the page chosen in a picker: it works, but not yet. */
+.pageProblem {
+    margin: 0;
+    color: var(--warning-text);
+    font-size: var(--text-xs);
+    line-height: 1.3;
+}
+
 @media (max-width: 760px) {
     .fieldRow,
     .pageGrid,

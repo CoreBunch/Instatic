@@ -124,8 +124,23 @@ export const MemberTagRemoveInputSchema = Type.Object(
   { additionalProperties: false },
 )
 
+/** A page of the site, as the Member settings page pickers offer it. */
+export const MemberPageOptionSchema = Type.Object({
+  id: Type.String(),
+  title: Type.String(),
+  /** The page's address in the editor's draft. */
+  path: Type.String(),
+  /** Its live address, or null while the page is not published. */
+  publishedPath: Type.Union([Type.String(), Type.Null()]),
+  /** The member form actions found on the page. */
+  formActions: Type.Array(Type.String()),
+})
+export type MemberPageOption = Static<typeof MemberPageOptionSchema>
+
 export const MemberSettingsResponseSchema = Type.Object({
   settings: MemberSettingsSchema,
+  /** Every ordinary page of the site, for the page pickers. */
+  pageOptions: Type.Array(MemberPageOptionSchema),
   /**
    * Can the site email a link to a member right now? False until Email has a
    * connector and sender (or the server is a development one) and the site's

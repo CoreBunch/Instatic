@@ -15,7 +15,7 @@ import { mkdir, rm } from 'node:fs/promises'
 import { nanoid } from 'nanoid'
 import { bunCommand, bunRunCommand } from './lib/bunCommand'
 import { ensureDependencies } from './lib/ensureDependencies'
-import { buildMembersDemoPages, MEMBERS_DEMO_CSS, MEMBERS_DEMO_SETTINGS } from './lib/membersDemoSite'
+import { buildMembersDemoPages, MEMBERS_DEMO_CSS, membersDemoSettings } from './lib/membersDemoSite'
 import { pageToCells } from '../src/core/data/pageFromRow'
 import { hashPassword } from '../server/auth/tokens'
 import { MAIN_SCOPE } from '../server/branches/scope'
@@ -102,7 +102,7 @@ for (const page of buildMembersDemoPages()) {
   }
 }
 
-await saveMemberSettings(db, MEMBERS_DEMO_SETTINGS)
+await saveMemberSettings(db, membersDemoSettings())
 const passwordHash = await hashPassword(MEMBER_PASSWORD)
 for (const member of MEMBERS) {
   const created = await createMember(db, { email: member.email, passwordHash, profile: { name: member.name }, verified: true })

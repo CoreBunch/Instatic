@@ -26,6 +26,7 @@ import {
   readJson,
   type CapabilityTestHarness,
 } from '../helpers/capabilityHarness'
+import { publishMemberPages } from '../helpers/memberPages'
 
 const BASE = '/admin/api/cms/members'
 
@@ -219,7 +220,7 @@ describe('members admin API', () => {
   describe('invitations', () => {
     // An invitation opens a page of the site; the owner's is set here.
     beforeEach(async () => {
-      await saveMemberSettings(h.db, { ...DEFAULT_MEMBER_SETTINGS, pages: { invite: '/invitation' } })
+      await saveMemberSettings(h.db, { ...DEFAULT_MEMBER_SETTINGS, pages: await publishMemberPages(h.db, { invite: '/invitation' }) })
     })
 
     it('are off, with nobody created, while the site has no invitation page', async () => {
@@ -336,22 +337,27 @@ describe('members admin API', () => {
           { id: 'name', label: 'Name', type: 'text', required: true },
           { id: 'company', label: 'Company', type: 'text', required: false },
         ],
-        pages: { login: '/sign-in', reset: '/new-password' },
+        pages: await publishMemberPages(h.db, { login: '/sign-in', reset: '/new-password' }),
       }
       expect((await save(next)).status).toBe(200)
       const after = await readJson<MemberSettingsResponse>(await h.cms(`${BASE}/settings`, { cookie: owner }))
       expect(after.settings).toEqual(next as MemberSettingsResponse['settings'])
+      // The pickers get every page, with its live address.
+      expect(after.pageOptions).toContainEqual({
+        id: next.pages.login!, title: 'sign-in', path: '/sign-in', publishedPath: '/sign-in', formActions: [],
+      })
 
       const { events } = await readJson<{ events: Array<{ action: string }> }>(await h.cms('/admin/api/cms/audit', { cookie: owner }))
       expect(events.some((event) => event.action === 'member.settings.update')).toBe(true)
     })
 
-    it('refuses duplicate field ids, a field named like a form field, an off-site page and an unknown mode', async () => {
+    it('refuses duplicate field ids, a field named like a form field, a page that does not exist and an unknown mode', async () => {
       const field = (id: string) => ({ id, label: 'L', type: 'text', required: false })
       const base = { signupMode: 'open', profileFields: [field('name')], pages: {} }
       expect((await save({ ...base, profileFields: [field('name'), field('name')] })).status).toBe(400)
       expect((await save({ ...base, profileFields: [field('password')] })).status).toBe(400)
-      expect((await save({ ...base, pages: { login: '//evil.example/' } })).status).toBe(400)
+      // A setting names a page of the site by id; an address, on this site or another, is not one.
+      expect((await save({ ...base, pages: { login: '/sign-in' } })).status).toBe(400)
       expect((await save({ ...base, pages: { login: 'https://evil.example/' } })).status).toBe(400)
       expect((await save({ ...base, signupMode: 'everyone' })).status).toBe(400)
       const still = await readJson<MemberSettingsResponse>(await h.cms(`${BASE}/settings`, { cookie: owner }))

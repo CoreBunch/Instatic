@@ -11,6 +11,7 @@ import { useAsyncResource } from '@admin/lib/useAsyncResource'
 import ld from '@admin/shared/ListDetail/ListDetail.module.css'
 import { useConfirmAction, useConfirmDelete } from '@admin/shared/dialogs/ConfirmDeleteDialog'
 import { StepUpCancelledMessage, useStepUp } from '@admin/shared/StepUp'
+import { memberPageIsLive } from '@core/members'
 import type {
   MemberAdminStatus,
   MemberDetail,
@@ -137,8 +138,8 @@ export function MembersTab({
   const linkAvailable = settings.data?.linkAvailable ?? false
   const inviteBlocked = !canManage
     ? 'Your role cannot invite members'
-    : !settings.data?.settings.pages.invite
-      ? 'Invitations need a page that accepts them. Set "Accept an invitation" under Member settings.'
+    : !settings.data || !memberPageIsLive('invite', settings.data.settings.pages, settings.data.pageOptions)
+      ? 'Invitations need a published page that accepts them. Choose "Accept an invitation" under Member settings.'
       : !linkAvailable
         ? 'The site does not know its public address yet, so it cannot make invitation links. Set PUBLIC_ORIGIN on the server.'
         : undefined
@@ -286,8 +287,8 @@ export function MembersTab({
 
       {settings.data && (
         <p className={memberStyles.signupNotice}>
-          {settings.data.settings.signupMode === 'open' && !settings.data.settings.pages.verify
-            ? 'Sign-up is set to open, but no "Confirm email" page is set, so nobody can sign up yet.'
+          {settings.data.settings.signupMode === 'open' && !memberPageIsLive('verify', settings.data.settings.pages, settings.data.pageOptions)
+            ? 'Sign-up is set to open, but no published "Confirm email" page is chosen, so nobody can sign up yet.'
             : SIGNUP_SUMMARY[settings.data.settings.signupMode]}
           <Button type="button" variant="ghost" size="xs" onClick={() => setDialog('settings')}>
             {canManage ? 'Change' : 'View settings'}
@@ -448,6 +449,7 @@ export function MembersTab({
       {dialog === 'settings' && settings.data && (
         <MemberSettingsDialog
           settings={settings.data.settings}
+          pageOptions={settings.data.pageOptions}
           canEdit={canManage}
           busy={busy}
           onClose={() => setDialog(null)}

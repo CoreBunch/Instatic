@@ -178,6 +178,21 @@ export const MEMBER_FORM_ACTIONS: readonly MemberFormAction[] = [
   },
 ]
 
+/**
+ * The form a page needs to do its job in each Member settings slot. A page
+ * without one still opens, and then does nothing. `afterLogin` is only a
+ * place to land, so it needs none.
+ */
+export const MEMBER_PAGE_FORM_ACTIONS = {
+  login: ['login', 'link/request'],
+  afterLogin: [],
+  verify: ['verify'],
+  reset: ['password/reset'],
+  magic: ['link/confirm'],
+  invite: ['invite/accept'],
+  emailChange: ['email/confirm'],
+} as const satisfies Record<string, readonly string[]>
+
 export const DEFAULT_MEMBER_FORM_ACTION = 'login'
 
 export function memberFormAction(action: string): MemberFormAction | undefined {

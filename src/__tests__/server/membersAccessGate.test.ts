@@ -24,6 +24,7 @@ import { createDataRow, saveDataRowDraft } from '../../../server/repositories/da
 import { saveDraftSite } from '../../../server/repositories/site'
 import { handleServerRequest, isPublishedSlotUploadPath } from '../../../server/router'
 import { createTestDb, type TestDb } from '../helpers/createTestDb'
+import { publishMemberPages } from '../helpers/memberPages'
 
 const ORIGIN = 'http://localhost'
 const SECRET_ACCOUNT = 'ACCOUNT-ONLY-MEMBERS-SEE'
@@ -94,7 +95,7 @@ describe('members access gate', () => {
     `
     await saveDraftSite(t.db, MAIN_SCOPE, makeShell())
     // The owner's own sign-in page. Without one a protected page has nowhere to send anyone.
-    await saveMemberSettings(t.db, { ...DEFAULT_MEMBER_SETTINGS, pages: { login: '/sign-in' } })
+    await saveMemberSettings(t.db, { ...DEFAULT_MEMBER_SETTINGS, pages: await publishMemberPages(t.db, { login: '/sign-in' }) })
     const template = makePage('page_lesson_tpl', 'lesson-template', 'Lesson template')
     template.nodes.page_lesson_tpl_text.dynamicBindings = { text: { source: 'currentEntry', field: 'title' } }
     template.template = { enabled: true, target: { kind: 'postTypes', tableSlugs: ['posts'] }, priority: 100 }

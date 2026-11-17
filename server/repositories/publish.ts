@@ -402,6 +402,39 @@ export async function listPublishedPageAccess(
   return out
 }
 
+export interface PageAddressRow {
+  id: string
+  /** The draft's slug. */
+  slug: string
+  /** The slug of the live version, or null while the page is not published. */
+  publishedSlug: string | null
+  /** The draft's cells, unparsed. */
+  cells: unknown
+}
+
+/**
+ * Every page of the main site with its draft slug and, when it is published,
+ * the slug it is live at. The two differ after a rename that has not been
+ * published yet.
+ */
+export async function listPageAddresses(db: DbClient): Promise<PageAddressRow[]> {
+  const { rows } = await db<{ id: string; slug: string; status: string; cells_json: unknown; published_slug: string | null }>`
+    select data_rows.id, data_rows.slug, data_rows.status, data_rows.cells_json,
+           data_row_versions.slug as published_slug
+      from data_rows
+      left join data_row_versions on data_row_versions.id = data_rows.active_version_id
+     where data_rows.table_id = 'pages'
+       and data_rows.deleted_at is null
+     order by data_rows.slug
+  `
+  return rows.map((row) => ({
+    id: row.id,
+    slug: row.slug,
+    publishedSlug: row.status === 'published' ? row.published_slug : null,
+    cells: row.cells_json,
+  }))
+}
+
 export async function getPublishedPageBySlug(
   db: DbClient,
   slug: string,

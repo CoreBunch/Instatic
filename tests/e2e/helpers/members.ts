@@ -33,7 +33,12 @@ interface SeededSite {
 }
 
 /** `page` must be signed in to the admin as the owner. */
-export async function seedMemberSite(page: Page, prefix: string): Promise<MemberSite> {
+export async function seedMemberSite(
+  page: Page,
+  prefix: string,
+  /** `assignPages: false` publishes the pages and leaves the member settings alone. */
+  { assignPages = true }: { assignPages?: boolean } = {},
+): Promise<MemberSite> {
   const headers = { origin: new URL(page.url()).origin }
   const admin = page.request
   const stepUp = async () => {
@@ -41,7 +46,16 @@ export async function seedMemberSite(page: Page, prefix: string): Promise<Member
     expect(res.ok(), await res.text()).toBe(true)
   }
 
-  const settingsBefore = (await (await admin.get('/admin/api/cms/members/settings')).json()) as { settings: unknown }
+  const before = (await (await admin.get('/admin/api/cms/members/settings')).json()) as {
+    settings: { pages: Record<string, string> }
+    pageOptions: Array<{ id: string }>
+  }
+  // A run that died may have left a setting on a page that is gone; such a setting cannot be saved back.
+  const existing = new Set(before.pageOptions.map((option) => option.id))
+  const settingsBefore = {
+    ...before.settings,
+    pages: Object.fromEntries(Object.entries(before.settings.pages).filter(([, pageId]) => existing.has(pageId))),
+  }
   const seeded = JSON.parse(
     execFileSync('bun', ['scripts/e2e-members-seed.ts', prefix], { encoding: 'utf8', maxBuffer: 16 * 1024 * 1024 }),
   ) as SeededSite
@@ -69,8 +83,10 @@ export async function seedMemberSite(page: Page, prefix: string): Promise<Member
   expect(imported.ok(), await imported.text()).toBe(true)
   const published = await admin.post('/admin/api/cms/publish', { headers })
   expect(published.ok(), await published.text()).toBe(true)
-  const saved = await admin.put('/admin/api/cms/members/settings', { headers, data: seeded.settings })
-  expect(saved.ok(), await saved.text()).toBe(true)
+  if (assignPages) {
+    const saved = await admin.put('/admin/api/cms/members/settings', { headers, data: seeded.settings })
+    expect(saved.ok(), await saved.text()).toBe(true)
+  }
 
   const seenMail = new Set<string>()
   async function emailedLink(to: string): Promise<string> {
@@ -94,7 +110,7 @@ export async function seedMemberSite(page: Page, prefix: string): Promise<Member
       const removed = await admin.delete(`/admin/api/cms/data/rows/${seededPage.id}`, { headers })
       expect(removed.ok(), await removed.text()).toBe(true)
     }
-    const restored = await admin.put('/admin/api/cms/members/settings', { headers, data: settingsBefore.settings })
+    const restored = await admin.put('/admin/api/cms/members/settings', { headers, data: settingsBefore })
     expect(restored.ok(), await restored.text()).toBe(true)
   }
 
