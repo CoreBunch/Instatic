@@ -50,7 +50,7 @@ export const PLUGIN_CAPABILITIES: PluginCapability[] = [
   {
     permission: 'members.read',
     label: 'See site members',
-    description: 'Allows the plugin to know which site member is signed in on its routes, to register routes only signed-in members reach, to look a member up by id or email (address, profile and tags), and to receive member events such as sign-up and sign-in.',
+    description: 'Allows the plugin to know which site member is signed in on its routes, to register routes only signed-in members reach, to look a member up by id or email (address, profile and tags), and to receive member events such as sign-up and sign-in. With the hooks permission, its filter on published HTML also receives members-only pages as they are sent to a member.',
     risk: 'high',
     surfaces: ['server', 'cms'],
   },
@@ -71,7 +71,7 @@ export const PLUGIN_CAPABILITIES: PluginCapability[] = [
   {
     permission: 'cms.hooks',
     label: 'Subscribe to CMS lifecycle events and filters',
-    description: 'Allows the plugin server entrypoint to listen to CMS events (publish, content changes, page updates) and to register filters that transform values before they leave the CMS. A filter on published HTML sees every page as it is sent, including a members-only page rendered for the member looking at it.',
+    description: 'Allows the plugin server entrypoint to listen to CMS events (publish, content changes, page updates) and to register filters that transform values before they leave the CMS. A filter on published HTML sees public pages as they are sent. A members-only page rendered for a member reaches the filter only if the plugin may also read site members.',
     risk: 'high',
     surfaces: ['server', 'cms'],
   },

@@ -181,16 +181,21 @@ class HookBus {
    * @param contextExtras  Additional context fields forwarded to every
    *   handler alongside `{ pluginId }`. Used by `publish.html` and
    *   `publish.headers` to pass `{ siteId, pageId, slug }`.
+   * @param mayReceive  When given, only the plugins it accepts get the value;
+   *   the others are skipped. Used when the value is not for every plugin
+   *   that registered the filter (a members-only page).
    */
   async applyFilter<T>(
     name: string,
     value: T,
     contextExtras?: Record<string, unknown>,
+    mayReceive?: (pluginId: string) => boolean,
   ): Promise<T> {
     const entries = this.filters.get(name)
     if (!entries) return value
     let current = value as unknown
     for (const entry of entries) {
+      if (mayReceive && !mayReceive(entry.pluginId)) continue
       try {
         const context = contextExtras
           ? { pluginId: entry.pluginId, ...contextExtras }

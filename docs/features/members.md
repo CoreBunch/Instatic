@@ -193,7 +193,7 @@ A plugin reaches members through `api.cms.members`, member routes and member eve
 
 - **Who the member is, is resolved by the host** on the public plugin mount (`server/plugins/publicRoutes.ts`) and handed to the plugin as a plain record. A plugin never holds a session cookie, and the admin mount never identifies a member.
 - **Tags a plugin grants carry its id as the source**, and it can withdraw only those. This is how a shop grants paid access without being able to remove what an administrator gave.
-- **`cms.hooks` sees rendered pages.** The `publish.html` filter runs on every page as it is sent, including a protected page rendered for one member with their data in it. A plugin holding `cms.hooks` can therefore read what such a page shows without holding `members.read`. That permission is already rated high (a filter can add script to any page); its install text says so.
+- **A member's page reaches only plugins that may read members.** The `publish.html` filter runs on public pages as before. A page rendered for one member on a protected route can hold that member's data, so `applyPublishedHtmlPipeline` passes it (`forMember`) only to filters of plugins granted `members.read`; a plugin holding `cms.hooks` alone is passed over for that render. Declared frontend assets are still added to every page.
 - **Events** are emitted from the functions every path goes through (`createMember`, `markMemberVerified`, `startSession`, `grantMemberTag`, `anonymizeMember`) by `emitMemberHook` in `server/members/hooks.ts`, without waiting for listeners.
 
 ## Deleting and exporting

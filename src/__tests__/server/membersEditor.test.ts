@@ -13,6 +13,8 @@ import { mkdtemp, readdir, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { registry } from '@core/module-engine'
+import { hookBus } from '@core/plugins/hookBus'
+import { hostPlugins } from '../../../server/plugins/host/registry'
 import { memberFormActionPath, readShowWhen, showWhenAllows, type AccessRule } from '@core/members'
 import { duplicatePage, type Page, type SiteDocument, type SiteShell } from '@core/page-tree'
 import {
@@ -307,6 +309,23 @@ describe('member bindings and show-when rules', () => {
       const index = await getPublishedNodeIndexForVersion(t.db, getPublishVersion())
       return get(`/_instatic/hole/${nodeId}?v=${index!.snapshotHash}&u=${encodeURIComponent('/')}`, cookie)
     }
+
+    it('hands a page rendered for a member only to plugins that may read members', async () => {
+      const ada = await signedIn('ada@example.com', 'Ada')
+      hookBus.filter('test.reader', 'publish.html', (html) => `${String(html)}<!--seen:${String(html).includes('Hello Ada')}-->`)
+      try {
+        // The member's own page does not reach a plugin without the permission.
+        const withheld = await (await get('/account', ada)).text()
+        expect(withheld).toContain('Hello Ada')
+        expect(withheld).not.toContain('<!--seen:')
+
+        hostPlugins.set('test.reader', { manifest: { id: 'test.reader', grantedPermissions: ['members.read'] } } as never)
+        expect(await (await get('/account', ada)).text()).toContain('<!--seen:true-->')
+      } finally {
+        hookBus.unregisterPlugin('test.reader')
+        hostPlugins.delete('test.reader')
+      }
+    })
 
     it('keeps member data out of the baked public page and serves it per visitor', async () => {
       const ada = await signedIn('ada@example.com', 'Ada', ['pro'])
