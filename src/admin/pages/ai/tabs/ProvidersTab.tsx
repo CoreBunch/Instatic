@@ -350,9 +350,22 @@ function CredentialDetail({
 
       <DetailSection title="Connection">
         <dl className={styles.connectionDetails}>
-          <DetailRow label="Authentication" value={credential.authMode === 'apiKey' ? 'API key' : 'Endpoint URL'} />
-          <DetailRow label="Credential" value="Encrypted credential" />
-          <DetailRow label="Endpoint" value={credential.baseUrl ?? provider.endpointLabel} code={Boolean(credential.baseUrl)} />
+          <DetailRow
+            label="Authentication"
+            value={provider.credentialLess
+              ? 'Subscription on this server'
+              : credential.authMode === 'apiKey' ? 'API key' : 'Endpoint URL'}
+          />
+          {!provider.credentialLess && (
+            <DetailRow label="Credential" value="Encrypted credential" />
+          )}
+          <DetailRow
+            label="Endpoint"
+            value={provider.credentialLess
+              ? provider.endpointLabel
+              : credential.baseUrl ?? provider.endpointLabel}
+            code={!provider.credentialLess && Boolean(credential.baseUrl)}
+          />
           <DetailRow
             label="Last used"
             value={credential.lastUsedAt ? new Date(credential.lastUsedAt).toLocaleString() : 'Not used yet'}
@@ -492,7 +505,11 @@ function ProviderSetupPanel({
         <div className={styles.detailSectionHeader}>
           <div>
             <h3>Connection details</h3>
-            <p>Instatic validates and encrypts the credential before storing it.</p>
+            <p>
+              {provider.credentialLess
+                ? 'This provider brings its own authentication, so there is nothing to enter but a name.'
+                : 'Instatic validates and encrypts the credential before storing it.'}
+            </p>
           </div>
         </div>
         <AddCredentialForm provider={provider} onCreated={onCreated} />
@@ -525,7 +542,16 @@ function AddCredentialForm({
     event.preventDefault()
     setBusy(true)
     try {
-      const body: CreateCredentialBody = provider.authMode === 'apiKey'
+      const body: CreateCredentialBody = provider.credentialLess
+        ? {
+            // Nothing was collected: the provider authenticates elsewhere. The
+            // row exists only so a conversation has a credential to reference.
+            providerId: provider.id,
+            authMode: 'baseUrl',
+            displayLabel,
+            baseUrl: provider.sentinelBaseUrl ?? '',
+          }
+        : provider.authMode === 'apiKey'
         ? {
             providerId: provider.id,
             authMode: 'apiKey',
@@ -569,46 +595,52 @@ function AddCredentialForm({
         </div>
       </div>
 
-      {provider.authMode === 'baseUrl' && (
-        <div className={styles.providerSetupField}>
-          <label htmlFor={baseUrlInputId}>Base URL</label>
-          <div>
-            <Input
-              id={baseUrlInputId}
-              value={baseUrl}
-              onChange={(event) => setBaseUrl(event.currentTarget.value)}
-              placeholder={baseUrlPlaceholder}
-              required
-            />
-            <p>The root URL of the compatible API.</p>
-          </div>
-        </div>
-      )}
+      {provider.credentialLess ? (
+        <p role="note" className={styles.providerSetupNote}>{provider.credentialLessHint}</p>
+      ) : (
+        <>
+          {provider.authMode === 'baseUrl' && (
+            <div className={styles.providerSetupField}>
+              <label htmlFor={baseUrlInputId}>Base URL</label>
+              <div>
+                <Input
+                  id={baseUrlInputId}
+                  value={baseUrl}
+                  onChange={(event) => setBaseUrl(event.currentTarget.value)}
+                  placeholder={baseUrlPlaceholder}
+                  required
+                />
+                <p>The root URL of the compatible API.</p>
+              </div>
+            </div>
+          )}
 
-      <div className={styles.providerSetupField}>
-        <label htmlFor={apiKeyInputId}>
-          {provider.authMode === 'apiKey'
-            ? 'API key'
-            : provider.id === 'ollama' ? 'Bearer token' : 'API key'}
-          {provider.authMode === 'baseUrl' && <span>Optional</span>}
-        </label>
-        <div>
-          <Input
-            id={apiKeyInputId}
-            type="password"
-            value={apiKey}
-            onChange={(event) => setApiKey(event.currentTarget.value)}
-            placeholder={API_KEY_PLACEHOLDER[provider.id] ?? 'Leave blank if no auth'}
-            autoComplete="new-password"
-            data-1p-ignore="true"
-            data-lpignore="true"
-            data-bwignore="true"
-            data-form-type="other"
-            required={provider.authMode === 'apiKey'}
-          />
-          <p>{provider.authMode === 'apiKey' ? 'Stored encrypted and never displayed again.' : 'Leave blank when the endpoint does not require authentication.'}</p>
-        </div>
-      </div>
+          <div className={styles.providerSetupField}>
+            <label htmlFor={apiKeyInputId}>
+              {provider.authMode === 'apiKey'
+                ? 'API key'
+                : provider.id === 'ollama' ? 'Bearer token' : 'API key'}
+              {provider.authMode === 'baseUrl' && <span>Optional</span>}
+            </label>
+            <div>
+              <Input
+                id={apiKeyInputId}
+                type="password"
+                value={apiKey}
+                onChange={(event) => setApiKey(event.currentTarget.value)}
+                placeholder={API_KEY_PLACEHOLDER[provider.id] ?? 'Leave blank if no auth'}
+                autoComplete="new-password"
+                data-1p-ignore="true"
+                data-lpignore="true"
+                data-bwignore="true"
+                data-form-type="other"
+                required={provider.authMode === 'apiKey'}
+              />
+              <p>{provider.authMode === 'apiKey' ? 'Stored encrypted and never displayed again.' : 'Leave blank when the endpoint does not require authentication.'}</p>
+            </div>
+          </div>
+        </>
+      )}
 
       <div className={styles.providerSetupActions}>
         <Button type="submit" variant="primary" size="md" disabled={busy}>

@@ -583,6 +583,19 @@
     gap: var(--space-2xl);
 }
 
+/* Stands in for the credential fields when a provider brings its own auth, so
+   the form still has something to say where the inputs would have been. */
+.providerSetupNote {
+    margin: 0;
+    padding: var(--space-m) var(--space-l);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-m);
+    background: var(--surface-subtle);
+    color: var(--text-subtle);
+    font-size: var(--text-m);
+    line-height: 1.5;
+}
+
 .providerSetupField {
     display: grid;
     grid-template-columns: 150px minmax(0, 1fr);

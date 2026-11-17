@@ -1,0 +1,32 @@
+# compose.claude-code.yml
+# Overlay that enables the Claude Code (subscription) AI provider in the
+# container. Layer it LAST, on top of the prod (and sqlite) compose files.
+#
+# Usage:
+#   docker compose -f compose.prod.yml -f compose.sqlite.yml -f compose.claude-code.yml up -d
+#
+# Prerequisites (one-time):
+#   1. Build the image WITH the Claude Code CLI:
+#        docker build -t instatic:local .
+#        docker build -f Dockerfile.claude-code -t instatic-cc:local .
+#      then set in .env:   INSTATIC_IMAGE=instatic-cc:local
+#
+#   2. Mint a long-lived SUBSCRIPTION token on the host (interactive, one-time):
+#        claude setup-token
+#      then put it in .env:  CLAUDE_CODE_OAUTH_TOKEN=<the token>
+#      This bills your flat-rate Claude subscription — it is NOT an API key and
+#      spends no metered API credits. Revoke/rotate it anytime by re-running
+#      `claude setup-token`.
+#
+# Note: no ~/.claude mount is needed — the token is the only auth input.
+
+services:
+  app:
+    environment:
+      # Subscription auth for the spawned `claude` CLI. The driver never strips
+      # this var (unlike ANTHROPIC_API_KEY), so the CLI authenticates on the
+      # subscription. Empty → the Claude Code provider will report it can't sign
+      # in; every other provider keeps working.
+      CLAUDE_CODE_OAUTH_TOKEN: ${CLAUDE_CODE_OAUTH_TOKEN:-}
+      # Baked into the overlay image already; set explicitly for clarity.
+      INSTATIC_CLAUDE_BIN: /opt/claude/claude
