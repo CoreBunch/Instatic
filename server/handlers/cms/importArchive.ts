@@ -48,6 +48,7 @@ import { CMS_API_PREFIX, type CmsHandlerOptions } from './shared'
 import type { BranchScope } from '../../branches/scope'
 import {
   authorizeImportedShell,
+  authorizeImportedTableAccess,
   authorizeImportedPublication,
   validateImportedPublication,
   authorizeImportStrategy,
@@ -109,6 +110,9 @@ export async function handleImportArchiveRoute(
 
   const shellDenied = authorizeImportedShell(user, selectedManifest.site !== undefined)
   if (shellDenied) return shellDenied
+
+  const tableAccessDenied = await authorizeImportedTableAccess(req, db, user, selectedManifest)
+  if (tableAccessDenied) return tableAccessDenied
 
   const publicationInvalid = validateImportedPublication(siteBundleWithoutMediaBytes(selectedManifest))
   if (publicationInvalid) return publicationInvalid

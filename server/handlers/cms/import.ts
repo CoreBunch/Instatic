@@ -38,7 +38,9 @@
  *                                  shell replace is a structural edit)
  */
 import { validateBundlePublication, BundlePublicationError } from '../../repositories/bundlePublication'
-import { applySiteBundle, removeDeletedMediaFiles } from './importApply'
+import { applySiteBundle, removeDeletedMediaFiles, SYSTEM_TABLE_IDS } from './importApply'
+import { canManageTable } from '../../auth/dataAccess'
+import { isGrantableMemberTag } from '@core/members'
 import { mkdir, writeFile } from 'node:fs/promises'
 import { dirname } from 'node:path'
 import type { DbClient } from '../../db/client'
@@ -111,6 +113,9 @@ export async function handleImportRoute(
 
   const shellDenied = authorizeImportedShell(user, bundle.site !== undefined)
   if (shellDenied) return shellDenied
+
+  const tableAccessDenied = await authorizeImportedTableAccess(req, db, user, bundle)
+  if (tableAccessDenied) return tableAccessDenied
 
   const publicationInvalid = validateImportedPublication(bundle)
   if (publicationInvalid) return publicationInvalid
@@ -247,6 +252,32 @@ export function authorizeImportedShell(user: AuthUser, carriesSite: boolean): Re
     return jsonResponse({ error: 'Forbidden' }, { status: 403 })
   }
   return null
+}
+
+/**
+ * A bundle that limits a table to members sets who may open it, which is what
+ * the table access endpoint does. It asks for the same: the right to manage
+ * each such table, tags a member can be granted, and step-up.
+ */
+export async function authorizeImportedTableAccess(
+  req: Request,
+  db: DbClient,
+  user: AuthUser,
+  bundle: Pick<SiteBundle, 'tables' | 'tableAccess'>,
+): Promise<Response | null> {
+  const limited = bundle.tables.flatMap((table) => {
+    const rule = bundle.tableAccess?.[table.id]
+    return rule && rule.level !== 'public' ? [{ table, rule }] : []
+  })
+  if (limited.length === 0) return null
+  if (limited.some(({ rule }) => rule.level === 'tags' && !rule.tags.every(isGrantableMemberTag))) {
+    return jsonResponse({ error: 'A tag in a table access rule cannot be granted to a member' }, { status: 400 })
+  }
+  const mayManage = limited.every(({ table }) => canManageTable(user, { system: table.system || SYSTEM_TABLE_IDS.has(table.id) }))
+  if (!mayManage) {
+    return jsonResponse({ error: 'Importing table access rules requires permission to manage those tables' }, { status: 403 })
+  }
+  return requireStepUp(req, db, user)
 }
 
 export function validateImportedPublication(bundle: SiteBundle): Response | null {

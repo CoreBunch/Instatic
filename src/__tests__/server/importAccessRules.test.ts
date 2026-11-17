@@ -14,7 +14,9 @@ import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
 import type { SiteBundle, ImportStrategy } from '@core/data/bundleSchema'
 import type { AccessRule } from '@core/members'
 import { MAIN_SCOPE } from '../../../server/branches/scope'
+import { authorizeImportedTableAccess } from '../../../server/handlers/cms/import'
 import { applySiteBundle } from '../../../server/handlers/cms/importApply'
+import type { AuthUser } from '../../../server/repositories/users'
 import { resetForTests } from '../../../server/publish/renderCache'
 import { createDataRow, getDataRow, listDataRows } from '../../../server/repositories/data'
 import { getTableAccess, writeTableAccess } from '../../../server/repositories/data/tableAccess'
@@ -146,5 +148,83 @@ describe('a page limited to members', () => {
     expect(await getDataRow(t.db, MAIN_SCOPE, 'page_club')).toBeNull()
     await apply(bundle, 'merge-add')
     expect(await pageAccess()).toEqual(MEMBERS)
+  })
+})
+
+describe('a protected address', () => {
+  it('keeps its rule when a different page takes the address', async () => {
+    const bundle = await currentBundle()
+    const club = bundle.rows.find((row) => row.id === 'page_club')!
+    const { access: _dropped, ...cells } = club.cells
+    await apply({ ...bundle, rows: [...bundle.rows.filter((row) => row !== club), { ...club, id: 'page_other', cells }] }, 'replace')
+    expect((await getDataRow(t.db, MAIN_SCOPE, 'page_other'))?.cells.access).toEqual(MEMBERS)
+  })
+
+  it('keeps its rule when a different table takes the route', async () => {
+    await writeTableAccess(t.db, 'guides', MEMBERS)
+    const bundle = await currentBundle()
+    await apply(
+      {
+        ...bundle,
+        tables: bundle.tables.map((table) => (table.id === 'guides' ? { ...table, id: 'guides_new', slug: 'guides-new' } : table)),
+        rows: bundle.rows.filter((row) => row.tableId !== 'guides'),
+      },
+      'replace',
+    )
+    expect(await getTableAccess(t.db, 'guides_new')).toEqual(MEMBERS)
+  })
+
+  it('keeps its rule in the published versions a bundle restores', async () => {
+    const bundle = withoutPageAccess(await currentBundle())
+    const stamp = new Date(0).toISOString()
+    const publication = {
+      snapshots: [{
+        id: 'snap_1',
+        site: { pages: [{ id: 'page_club', slug: 'club' }], visualComponents: [], layouts: [] },
+        importmapBody: null,
+        importmapSha256: null,
+        createdAt: stamp,
+      }],
+      files: [],
+      rows: [...bundle.rows.filter((row) => row.id !== 'page_club').map((row) => ({ rowId: row.id, activeVersionId: null, versions: [] })), {
+        rowId: 'page_club',
+        activeVersionId: 'ver_1',
+        versions: [{
+          id: 'ver_1', versionNumber: 1, cells: { title: 'Club', slug: 'club' }, slug: 'club',
+          siteSnapshotId: 'snap_1', runtimeAssets: null, publishedAt: stamp, createdAt: stamp,
+        }],
+      }],
+    }
+    const published = {
+      ...bundle,
+      rows: bundle.rows.map((row) => (row.id === 'page_club' ? { ...row, status: 'published' as const, publishedAt: stamp } : row)),
+      publication,
+    } as unknown as SiteBundle
+    await apply(published, 'merge-overwrite')
+    const { rows } = await t.db<{ cells_json: Record<string, unknown> }>`select cells_json from data_row_versions where id = 'ver_1'`
+    expect(rows[0]?.cells_json.access).toEqual(MEMBERS)
+  })
+})
+
+describe('importing table rules', () => {
+  const request = new Request('http://localhost/admin/api/cms/import', { method: 'POST' })
+  const user = (capabilities: string[]) => ({ id: 'u', capabilities }) as unknown as AuthUser
+
+  it('asks for the right to manage each limited table', async () => {
+    const bundle = { ...(await currentBundle()), tableAccess: { guides: MEMBERS } }
+    const denied = await authorizeImportedTableAccess(request, t.db, user(['data.import']), bundle)
+    expect(denied?.status).toBe(403)
+    const system = await authorizeImportedTableAccess(request, t.db, user(['data.import', 'data.custom.tables.manage']), { ...bundle, tableAccess: { posts: MEMBERS } })
+    expect(system?.status).toBe(403)
+  })
+
+  it('refuses a tag nobody can be granted, and asks nothing of a bundle without rules', async () => {
+    const bundle = await currentBundle()
+    const reserved = await authorizeImportedTableAccess(request, t.db, user(['data.custom.tables.manage']), {
+      ...bundle,
+      tableAccess: { guides: { level: 'tags', tags: ['instatic:x'], onDeny: 'login' } },
+    })
+    expect(reserved?.status).toBe(400)
+    expect(await authorizeImportedTableAccess(request, t.db, user([]), bundle)).toBeNull()
   })
 })

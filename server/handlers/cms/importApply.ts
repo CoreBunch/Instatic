@@ -1,6 +1,9 @@
 /** Transactional site-bundle application shared by JSON and ZIP imports. */
 import type { DbClient } from '../../db/client'
 import type { ImportStrategy, SiteBundle } from '@core/data/bundleSchema'
+import type { BundlePublication } from '@core/data/bundlePublication'
+import { normalizeRouteBase } from '@core/templates'
+import { listPublishedPageAccess } from '../../repositories/publish'
 import { MAIN_BRANCH_ID } from '@core/branches'
 import { isMainScope, type BranchScope } from '../../branches/scope'
 import { restoreBundlePublication, validateBundlePublication, BundlePublicationError } from '../../repositories/bundlePublication'
@@ -21,7 +24,7 @@ import type { AccessRule } from '@core/members'
 import { notifyRowWrite, notifyShellWrite, serializeCollabAwareWrite, type RowWriteKind } from '../../repositories/rowWriteEvents'
 
 // The four system table ids that are always seeded and never deleted.
-const SYSTEM_TABLE_IDS = new Set(['posts', 'pages', 'components', 'layouts'])
+export const SYSTEM_TABLE_IDS = new Set(['posts', 'pages', 'components', 'layouts'])
 
 /**
  * Order folders so every parent precedes its children — `media_folders.parent_id`
@@ -174,10 +177,11 @@ async function applySiteBundleLocked(
   let deletedMedia: DeletedMediaAsset[] = []
   const importedFolderIds = new Set<string>()
   const importedRowIds = new Set<string>()
+  let guardPublication = (publication: BundlePublication): BundlePublication => publication
   const transaction = (operation: (tx: DbClient) => Promise<void>) => db.transaction(async (tx) => {
     await operation(tx)
     if (isMainScope(scope) && bundle.publication) {
-      await restoreBundlePublication(tx, bundle.publication, importedRowIds, input.runtimeFiles ?? new Map())
+      await restoreBundlePublication(tx, guardPublication(bundle.publication), importedRowIds, input.runtimeFiles ?? new Map())
     }
   })
 
@@ -198,17 +202,53 @@ async function applySiteBundleLocked(
     // `replace` deletes and recreates custom tables. A page's rule is a cell
     // the bundle's row replaces. Both are read here, before anything changes.
     const tablesBefore = new Set((await listDataTables(db, scope)).map((table) => table.id))
-    const storedTableRules = new Map<string, AccessRule>(
-      isMainScope(scope) ? (await listProtectedTables(db)).map((entry) => [entry.id, entry.rule]) : [],
-    )
+    const protectedTables = isMainScope(scope) ? await listProtectedTables(db) : []
+    const storedTableRules = new Map<string, AccessRule>(protectedTables.map((entry) => [entry.id, entry.rule]))
     const storedPages = new Map(
       input.mayChangePageAccess || strategy === 'merge-add'
         ? []
         : (await listDataRows(db, scope, 'pages')).map((row) => [row.id, row] as const),
     )
-    const guardedCells = (row: { id: string; tableId: string; cells: Record<string, unknown> }) => {
-      const stored = storedPages.get(row.id)
-      return stored && row.tableId === 'pages' ? keepPageAccess(stored, row.cells) : row.cells
+    // Protection is matched on the address as well as the id: a different
+    // page or table that ends up at a protected address takes its rule.
+    const storedPageRuleBySlug = new Map(
+      [...storedPages.values()].flatMap((row) => (row.cells.access === undefined ? [] : [[row.slug, row.cells.access] as const])),
+    )
+    const publishedPageRuleBySlug = new Map(
+      storedPages.size > 0 && isMainScope(scope)
+        ? (await listPublishedPageAccess(db)).map((entry) => [entry.slug, entry.access] as const)
+        : [],
+    )
+    const storedTableRuleByRoute = new Map(
+      [...protectedTables].flatMap((entry) => (entry.routeBase === null ? [] : [[entry.routeBase, entry.rule] as const])),
+    )
+    const guardedCells = (row: { id: string; tableId: string; slug: string; cells: Record<string, unknown> }) => {
+      if (row.tableId !== 'pages') return row.cells
+      const sameRow = storedPages.get(row.id)
+      const cells = sameRow ? keepPageAccess(sameRow, row.cells) : row.cells
+      const atAddress = storedPageRuleBySlug.get(row.slug)
+      return cells.access === undefined && atAddress !== undefined ? { ...cells, access: atAddress } : cells
+    }
+    /**
+     * Published versions are what the public site serves, so they get the
+     * same treatment: the rule the address was published with (or the draft's
+     * rule) is put back into every restored version of a page.
+     */
+    const bundlePageIds = new Set(bundle.rows.filter((row) => row.tableId === 'pages').map((row) => row.id))
+    guardPublication = (publication) => {
+      if (storedPages.size === 0) return publication
+      return {
+        ...publication,
+        rows: publication.rows.map((row) => !bundlePageIds.has(row.rowId) ? row : {
+          ...row,
+          versions: row.versions.map((version) => {
+            const rule = publishedPageRuleBySlug.get(version.slug)
+              ?? storedPages.get(row.rowId)?.cells.access
+              ?? storedPageRuleBySlug.get(version.slug)
+            return rule === undefined ? version : { ...version, cells: { ...version.cells, access: rule } }
+          }),
+        }),
+      }
     }
     /** A stored rule always stays. The bundle's rule is only added where there is none. */
     const applyTableAccess = async (tx: DbClient): Promise<void> => {
@@ -219,10 +259,11 @@ async function applySiteBundleLocked(
           if (strategy === 'replace') await writeTableAccess(tx, table.id, stored)
           continue
         }
-        const carried = bundle.tableAccess?.[table.id]
-        if (!carried || carried.level === 'public') continue
         if (strategy === 'merge-add' && tablesBefore.has(table.id)) continue
-        await writeTableAccess(tx, table.id, carried)
+        const atAddress = table.routeBase.trim() === '' ? undefined : storedTableRuleByRoute.get(normalizeRouteBase(table.routeBase))
+        const carried = bundle.tableAccess?.[table.id]
+        const rule = atAddress ?? (carried && carried.level !== 'public' ? carried : undefined)
+        if (rule) await writeTableAccess(tx, table.id, rule)
       }
     }
 
