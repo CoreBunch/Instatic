@@ -10,6 +10,7 @@ import type { CmsCurrentUser } from '@core/persistence'
 import { makeSite } from '../fixtures'
 
 const originalFetch = globalThis.fetch
+const originalWindowOpen = window.open
 
 const mapManifest = {
   id: 'local.map',
@@ -152,10 +153,43 @@ beforeEach(() => {
 
 afterEach(() => {
   globalThis.fetch = originalFetch
+  window.open = originalWindowOpen
   cleanup()
 })
 
 describe('PluginsPage', () => {
+  it('opens the community plugin directory from the empty state', async () => {
+    const opened: unknown[][] = []
+    window.open = ((...args: unknown[]) => {
+      opened.push(args)
+      return null
+    }) as typeof window.open
+    globalThis.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+      if (url === '/admin/api/cms/plugins' && init?.method === 'GET') {
+        return json({ plugins: [], adminPages: [] })
+      }
+      const ambient = ambientFetchFallback(url)
+      if (ambient) return ambient
+      return json({ error: `Unhandled ${url}` }, 500)
+    }
+
+    render(
+      <Wrapper>
+        <PluginsPage />
+      </Wrapper>,
+    )
+
+    expect(await screen.findByText('No plugins installed yet.')).toBeDefined()
+    fireEvent.click(screen.getByRole('button', { name: 'Find Community Plugins' }))
+
+    expect(opened).toEqual([[
+      'https://github.com/topics/instatic-plugin',
+      '_blank',
+      'noopener,noreferrer',
+    ]])
+  })
+
   it('lists active plugins and can disable or remove them', async () => {
     const calls: Array<{ input: RequestInfo | URL; init?: RequestInit }> = []
     globalThis.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {

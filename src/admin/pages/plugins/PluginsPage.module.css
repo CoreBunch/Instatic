@@ -17,8 +17,7 @@
     white-space: nowrap;
 }
 
-.error,
-.emptyState {
+.error {
     margin: 0;
     font-size: var(--text-s);
     line-height: 1.5;
@@ -56,11 +55,31 @@
 }
 
 .emptyState {
+    display: grid;
+    justify-items: center;
+    gap: var(--space-m);
     padding: var(--space-6xl);
     border: 1px dashed var(--overlay-10);
-    border-radius: 8px;
+    border-radius: var(--editor-radius);
     color: var(--text-subtle);
     text-align: center;
+}
+
+.emptyState h2,
+.emptyState p {
+    margin: 0;
+}
+
+.emptyState h2 {
+    color: var(--text);
+    font-size: var(--text-l);
+    line-height: 1.35;
+}
+
+.emptyState p {
+    max-width: 560px;
+    font-size: var(--text-s);
+    line-height: 1.5;
 }
 
 .pluginsList {
