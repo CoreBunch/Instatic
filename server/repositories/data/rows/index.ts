@@ -39,6 +39,7 @@ export {
   createDataRow,
   saveDataRowDraft,
   upsertDataRowDraft,
+  findDataRowSlot,
   updateDataRowDraftCells,
   softDeleteDataRow,
   updateDataRowTable,

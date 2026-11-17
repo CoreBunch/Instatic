@@ -13,7 +13,7 @@ import { join } from 'node:path'
 import { strToU8, zipSync } from 'fflate'
 import { MAIN_SCOPE } from '../../../server/branches/scope'
 import { handleCmsRequest } from '../../../server/handlers/cms'
-import { getDataRow, listDataRows, softDeleteDataRow } from '../../../server/repositories/data'
+import { createDataRow, getDataRow, listDataRows, softDeleteDataRow } from '../../../server/repositories/data'
 import { createCapabilityTestHarness, type CapabilityTestHarness } from '../helpers/capabilityHarness'
 
 const ORIGIN = 'http://localhost'
@@ -86,6 +86,25 @@ describe('plugin pack re-sync', () => {
     expect(res.status).toBe(200)
     expect(await livePackPages()).toHaveLength(1)
     expect(JSON.stringify((await getDataRow(h.db, MAIN_SCOPE, PAGE_ID))?.cells.body)).toContain('From the pack')
+  })
+
+  it('brings a page that was live before the delete back as a draft, not onto the site', async () => {
+    expect((await install()).status).toBe(201)
+    await h.db`update data_rows set status = 'published' where id = ${PAGE_ID}`
+    await softDeleteDataRow(h.db, MAIN_SCOPE, PAGE_ID, null)
+    expect((await resync()).status).toBe(200)
+    expect((await getDataRow(h.db, MAIN_SCOPE, PAGE_ID))?.status).toBe('draft')
+  })
+
+  it('refuses a pack whose page id belongs to a row of another table, and leaves that row alone', async () => {
+    // A post that happens to hold the id the pack wants for its page.
+    await createDataRow(h.db, MAIN_SCOPE, { id: PAGE_ID, tableId: 'posts', cells: { title: 'A post', slug: 'a-post' }, slug: 'a-post' }, null)
+    await install()
+    const res = await resync()
+    expect(res.status).toBe(400)
+    const post = await getDataRow(h.db, MAIN_SCOPE, PAGE_ID)
+    expect(post).toMatchObject({ tableId: 'posts' })
+    expect(post?.cells.title).toBe('A post')
   })
 
   it('still replaces a pack page that is there, and can be run twice', async () => {
