@@ -327,9 +327,11 @@ export interface LinkedStylesheet {
 }
 
 /**
- * A stylesheet kept as a file (`mode: 'file'`). Committed as a `SiteFile`
- * (`type: 'style'`) plus a page-scoped `site.runtime.styles` entry, exactly
- * like imported scripts. `content` is the flattened CSS: the sheet's
+ * A stylesheet imported as a file: a linked sheet kept with `mode: 'file'`,
+ * or a sheet no imported page links. Committed as a `SiteFile`
+ * (`type: 'style'`) plus a `site.runtime.styles` entry, exactly like imported
+ * scripts. A linked sheet is scoped to the pages that linked it; an unlinked
+ * one has no `pageSources` and applies to every page. `content` is the flattened CSS: the sheet's
  * unconditional local `@import` graph inlined in cascade order, trusted
  * Google-font `@import`s stripped (they install as self-hosted fonts), and
  * `url(...)` payloads normalised to FileMap keys for asset rewriting.
@@ -339,7 +341,7 @@ export interface ImportStylesheet {
   path: string
   /** Flattened CSS text. */
   content: string
-  /** HTML FileMap sources that linked this stylesheet. */
+  /** HTML FileMap sources that linked this stylesheet. Empty: no page linked it, so it is site-wide. */
   pageSources: string[]
   /** Final committed page IDs. Filled by `commitImportPlan` before adapter call. */
   pageIds?: string[]
@@ -643,7 +645,10 @@ export interface ImportPlan {
    * mode this plan was built with. Drives the wizard's per-sheet mode picker.
    */
   linkedStylesheets: LinkedStylesheet[]
-  /** Stylesheets kept as files (`mode: 'file'`), ready to commit as SiteFiles. */
+  /**
+   * Stylesheets that import as SiteFiles: linked sheets kept as files
+   * (`mode: 'file'`, page-scoped) and sheets no page links (site-wide).
+   */
   stylesheets: ImportStylesheet[]
   conflicts: {
     pages: PageConflict[]
@@ -658,8 +663,6 @@ export interface ImportPlan {
    * (from `dropped-at-rule` warnings in the CSS parser).
    */
   droppedAtRules: string[]
-  /** CSS files present in the FileMap but not linked by any imported page. */
-  unusedCss: string[]
 }
 
 /**
@@ -680,7 +683,7 @@ export interface ImportResult {
   fontTokens: { id: string; name: string; variable: string }[]
   /** Site scripts committed from imported JS files. */
   scripts: { id: string; path: string }[]
-  /** Stylesheets committed as page-scoped SiteFiles (`mode: 'file'`). */
+  /** Stylesheets committed as SiteFiles: kept linked sheets and unlinked site-wide ones. */
   stylesheets: { id: string; path: string }[]
   /** Resolved conflicts (mirrors ImportPlan.conflicts with final actions). */
   conflicts: ImportPlan['conflicts']

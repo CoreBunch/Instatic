@@ -57,6 +57,8 @@ PUBLISH-004 note: `hole-publication.e2e.ts` creates and publishes query-bound te
 | ADMIN-010 | P2 | ✅ | Navigation | Reach the AI workspace from the admin section navigation | Owner logged in | Admin section navigation | A gated AI entry renders for capability holders and routes to `/admin/ai` on click | missing nav entry, wrong href, capability leak |
 | ADMIN-011 | P2 | ✅ | Site import | Open an imported page from another workspace | Owner logged in | Data → Import site → HTML file → Open site | Navigates to the Site workspace and renders the imported page | modal closes without navigation, wrong selected page |
 | ADMIN-012 | P1 | ✅ | Settings | Refresh settings after a CMS import | Owner logged in | Data → Settings → import CMS bundle with overwrite → Settings | Site name and metadata reflect the imported shell | stale cached document, stale input values |
+| ADMIN-013 | P2 | ✅ | Site import | Import a stylesheet that no page links | Owner logged in | Data → Import site → single CSS file → Open site | Review offers the file as a site stylesheet; after import it is listed in the Site workspace Code panel | file listed under Can't import, Continue disabled, file missing from Code panel |
+| ADMIN-014 | P2 | ✅ | Site import | Drop a plugin package into the importer | Owner logged in | Data → Import site → zip with root plugin.json | The Drop step says it is a plugin and Go to Plugins opens the Plugins page; nothing is imported | package analysed as a static site, stylesheet reported as dropped |
 | ACCOUNT-003 | P2 | partial | Security | Change account password and verify old credentials stop working | Logged in | Account security plus login | Form validation is specific; password change requires step-up; old password is rejected and new password works | shared credential restoration, other-session revocation, autocomplete |
 | AUTH-002 | P1 | partial | Auth | Complete MFA challenge after password login | MFA enabled owner | Login, enter authenticator or recovery code | Session reaches admin; recovery-code login consumes one code | pending-session escalation |
 | AUTH-004 | P2 | partial | Auth | Review active devices and sign out other sessions | Two owner browser sessions | Account Active devices | Current session remains active; other sessions are revoked and redirected to login on next request | stale devices, step-up copy, individual revoke errors |
@@ -443,6 +445,10 @@ SECURITY-001 note: focused Bun coverage verifies CMS/AI invalid-origin mutations
 ADMIN-011 note: `site-import.e2e.ts` imports a real HTML file from Data, completes the wizard, clicks Open site, and verifies the Site URL and imported heading in the canvas.
 
 ADMIN-012 note: `settings-reload.e2e.ts` primes the Settings cache on Data, imports a real CMS JSON bundle through the modal, and checks the visible site name and meta title after reopening Settings.
+
+ADMIN-013 note: `site-import.e2e.ts` uploads one real CSS file from Data, checks the Review step's site-stylesheet row and the absence of the old "not linked" refusal, completes the wizard, clicks Open site, and finds the file in the Explorer's Code tab. It does not publish.
+
+ADMIN-014 note: `site-import.e2e.ts` uploads a real zip holding `plugin.json`, `pack/site.json` and a CSS file, checks the plugin notice on the Drop step and that no Review step opens, then clicks Go to Plugins and asserts the Plugins route with the modal closed. It does not install the plugin.
 
 PUBLISH-005 note: `page-row-publish.e2e.ts` creates and edits a page through the UI, performs a full publish, edits again, calls the authenticated row-publish endpoint, and checks the new text in a fresh visitor browser. Bun coverage checks frozen shared resources, other drafts and draft slugs, route conflicts, new pages, scheduled pages, and the first-publish prerequisite.
 

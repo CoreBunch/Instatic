@@ -231,9 +231,10 @@ export interface SiteImportTransaction {
   addScripts(scripts: ImportScript[]): { id: string; path: string }[]
 
   /**
-   * Add stylesheets kept as files (`mode: 'file'`): one `SiteFile`
-   * (`type: 'style'`) per sheet plus a page-scoped `site.runtime.styles`
-   * entry so each applies exactly where the source HTML linked it.
+   * Add stylesheets that import as files: one `SiteFile` (`type: 'style'`)
+   * per sheet plus a `site.runtime.styles` entry. A kept linked sheet
+   * (`mode: 'file'`) is scoped to the pages that linked it; a sheet no page
+   * linked carries no `pageIds` and applies to every page.
    *
    * @returns The committed `{ id, path }` for each added stylesheet.
    */

@@ -10,6 +10,7 @@
 import {
   applyConflictResolutions,
   type ImportPlan,
+  type ImportStylesheet,
   type ConflictResolution,
   type PageConflict,
   type RuleConflict,
@@ -46,10 +47,23 @@ export interface ImportSelection {
   assetsIncluded: Set<string>      // by sourcePath
   fontsIncluded: Set<string>       // by font family
   scriptsIncluded: Set<string>     // by script path
-  stylesheetsIncluded: Set<string> // by kept-stylesheet path (mode 'file')
+  stylesheetsIncluded: Set<string> // by stylesheet-file path (kept or site-wide)
 }
 
-/** Everything selected by default — the user opts OUT in the Review step. */
+/** A stylesheet no imported page links: it imports as a site-wide file. */
+export function isSiteWideStylesheet(sheet: Pick<ImportStylesheet, 'pageSources'>): boolean {
+  return sheet.pageSources.length === 0
+}
+
+/**
+ * Everything selected by default — the user opts OUT in the Review step.
+ *
+ * One exception: a stylesheet no page links, in an import that has pages.
+ * Those pages never loaded it (a template's unminified copy, an RTL sheet, an
+ * alternate skin), so applying it to every page would change how they look.
+ * It is offered switched off. With no pages in the import the stylesheet is
+ * what the owner came to import, so it stays on.
+ */
 export function makeDefaultSelection(plan: ImportPlan): ImportSelection {
   return {
     pagesIncluded: new Set(plan.pages.map((p) => p.source)),
@@ -60,8 +74,23 @@ export function makeDefaultSelection(plan: ImportPlan): ImportSelection {
       ...plan.googleFonts.map((f) => f.family),
     ]),
     scriptsIncluded: new Set(plan.scripts.map((s) => s.path)),
-    stylesheetsIncluded: new Set(plan.stylesheets.map((s) => s.path)),
+    stylesheetsIncluded: new Set(
+      plan.stylesheets
+        .filter((s) => !isSiteWideStylesheet(s) || plan.pages.length === 0)
+        .map((s) => s.path),
+    ),
   }
+}
+
+/** How many things the selection would import. Zero means there is nothing to continue with. */
+export function selectedImportCount(selection: ImportSelection): number {
+  return (
+    selection.pagesIncluded.size +
+    selection.styleRulesIncluded.size +
+    selection.stylesheetsIncluded.size +
+    selection.assetsIncluded.size +
+    selection.fontsIncluded.size
+  )
 }
 
 /** Narrow a plan to only the categories the user kept selected. */
@@ -90,11 +119,12 @@ export function filterPlanBySelection(plan: ImportPlan, selection: ImportSelecti
       .filter((script) => script.pageSources.length > 0),
     stylesheets: plan.stylesheets
       .filter((s) => selection.stylesheetsIncluded.has(s.path))
-      .map((sheet) => ({
-        ...sheet,
-        pageSources: sheet.pageSources.filter((source) => selection.pagesIncluded.has(source)),
-      }))
-      .filter((sheet) => sheet.pageSources.length > 0),
+      .flatMap((sheet) => {
+        // A site-wide sheet has no page scope to narrow; it stands on its own.
+        if (isSiteWideStylesheet(sheet)) return [sheet]
+        const pageSources = sheet.pageSources.filter((source) => selection.pagesIncluded.has(source))
+        return pageSources.length > 0 ? [{ ...sheet, pageSources }] : []
+      }),
     conflicts: {
       ...plan.conflicts,
       tokens: plan.conflicts.tokens.filter(

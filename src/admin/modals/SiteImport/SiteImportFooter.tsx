@@ -1,6 +1,6 @@
 import { Button } from '@ui/components/Button'
 import type { ImportResult as CmsImportResult } from '@core/data/bundleSchema'
-import type { ImportSelection } from './shared/importPlanning'
+import { selectedImportCount, type ImportSelection } from './shared/importPlanning'
 import type { RunProgress } from './shared/importProgress'
 import type { CmsBundleState } from './shared/useCmsBundleImport'
 import {
@@ -84,10 +84,19 @@ export function SiteImportFooter({
     const pageCount = selection ? selection.pagesIncluded.size : 0
     const ruleCount = selection ? selection.styleRulesIncluded.size : 0
     const mediaCount = selection ? selection.assetsIncluded.size : 0
+    const sheetCount = selection ? selection.stylesheetsIncluded.size : 0
+    // An import needs no page: stylesheets, rules, media or fonts alone are valid.
+    const nothingSelected = !selection || selectedImportCount(selection) === 0
     return (
       <>
         <span className={styles.footNote}>
-          {pageCount} {pageCount === 1 ? 'page' : 'pages'} · {ruleCount} rules · {mediaCount} media selected
+          {nothingSelected
+            ? 'Nothing is selected to import'
+            : <>
+                {pageCount} {pageCount === 1 ? 'page' : 'pages'} · {ruleCount} rules
+                {sheetCount > 0 && ` · ${sheetCount} ${sheetCount === 1 ? 'stylesheet' : 'stylesheets'}`}
+                {' '}· {mediaCount} media selected
+              </>}
         </span>
         <Button variant="secondary" type="button" onClick={onClose}>
           Cancel
@@ -95,7 +104,7 @@ export function SiteImportFooter({
         <Button
           variant="primary"
           type="button"
-          disabled={pageCount === 0}
+          disabled={nothingSelected}
           onClick={onAnalyzeNext}
         >
           Continue →

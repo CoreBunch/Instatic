@@ -164,7 +164,6 @@ describe('applyConflictResolutions', () => {
       fontTokens: [],
       scripts: [],
       droppedAtRules: [],
-      unusedCss: [],
     }
   }
 
@@ -441,7 +440,6 @@ function makeTokenPlan(
     fontTokens: overrides.fontTokens ?? [],
     scripts: [],
     droppedAtRules: [],
-    unusedCss: [],
   }
 }
 

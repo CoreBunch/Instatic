@@ -64,7 +64,6 @@ function planWith(
     fontTokens: [],
     scripts: [],
     droppedAtRules: [],
-    unusedCss: [],
   }
 }
 
@@ -192,7 +191,6 @@ describe('applyAssetRewrites — CSS styles', () => {
       fontTokens: [],
       scripts: [],
       droppedAtRules: [],
-      unusedCss: [],
     }
     const result = applyAssetRewrites(basePlan, REWRITE_MAP)
     const mobileStyle = result.styleRules[0].contextStyles['mobile'] as Record<string, string>
@@ -237,7 +235,6 @@ describe('applyAssetRewrites — CSS styles', () => {
       fontTokens: [],
       scripts: [],
       droppedAtRules: [],
-      unusedCss: [],
     }
     const result = applyAssetRewrites(basePlan, REWRITE_MAP)
     expect(result.styleRules[0].rawCss).toContain("url('/media/abc123.png')")
@@ -287,7 +284,6 @@ describe('applyAssetRewrites — inline background node.inlineStyles', () => {
       fontTokens: [],
       scripts: [],
       droppedAtRules: [],
-      unusedCss: [],
     }
     const result = applyAssetRewrites(plan, REWRITE_MAP)
     const bag = result.pages[0].nodeFragment.nodes['n1']!.inlineStyles!
