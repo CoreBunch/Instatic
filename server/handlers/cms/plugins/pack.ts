@@ -23,11 +23,7 @@ import {
   PluginPackError,
 } from '../../../plugins/pack'
 import { getDraftSite, saveDraftSite } from '../../../repositories/site'
-import {
-  listDataRows,
-  createDataRow,
-  saveDataRowDraft,
-} from '../../../repositories/data'
+import { listDataRows, upsertDataRowDraft } from '../../../repositories/data'
 import { pageFromRow, pageToCells } from '../../../../src/core/data/pageFromRow'
 import { visualComponentToCells } from '../../../../src/core/data/componentFromRow'
 import { savedLayoutFromRow, savedLayoutToCells } from '../../../../src/core/data/layoutFromRow'
@@ -100,39 +96,28 @@ async function installPluginPackToSite(
   const { pages: packPages, visualComponents: _vcs, layouts: _layouts, ...nextShell } = nextSiteDoc
   await saveDraftSite(db, MAIN_SCOPE, nextShell, actorUserId)
 
-  // Upsert pack pages as data_rows
-  const existingPagesById = new Map(pageRows.map((r) => [r.id, r]))
+  // Write the pack's pages, Visual Components and layouts as data rows.
+  // `upsertDataRowDraft` updates a live row, brings back one the owner
+  // deleted (a deleted row still holds its id, so inserting it again would
+  // fail), or creates it.
   for (const page of packPages) {
-    const cells = pageToCells(page)
-    if (existingPagesById.has(page.id)) {
-      await saveDataRowDraft(db, MAIN_SCOPE, page.id, { cells, slug: page.slug }, actorUserId)
-    } else {
-      await createDataRow(db, MAIN_SCOPE, { id: page.id, tableId: 'pages', cells, slug: page.slug }, actorUserId)
-    }
+    await upsertDataRowDraft(db, MAIN_SCOPE, { id: page.id, tableId: 'pages', cells: pageToCells(page), slug: page.slug }, actorUserId)
   }
-
-  // Upsert pack VCs as data_rows
-  const existingVCsById = new Map(vcRows.map((r) => [r.id, r]))
   for (const vc of pack.visualComponents) {
-    const cells = visualComponentToCells(vc)
-    const slug = vcSlugFromName(vc.name)
-    if (existingVCsById.has(vc.id)) {
-      await saveDataRowDraft(db, MAIN_SCOPE, vc.id, { cells, slug }, actorUserId)
-    } else {
-      await createDataRow(db, MAIN_SCOPE, { id: vc.id, tableId: 'components', cells, slug }, actorUserId)
-    }
+    await upsertDataRowDraft(
+      db,
+      MAIN_SCOPE,
+      { id: vc.id, tableId: 'components', cells: visualComponentToCells(vc), slug: vcSlugFromName(vc.name) },
+      actorUserId,
+    )
   }
-
-  // Upsert pack layouts as data_rows
-  const existingLayoutRowsById = new Map(layoutRows.map((r) => [r.id, r]))
   for (const layout of pack.layouts) {
-    const cells = savedLayoutToCells(layout)
-    const slug = layoutSlugFromName(layout.name)
-    if (existingLayoutRowsById.has(layout.id)) {
-      await saveDataRowDraft(db, MAIN_SCOPE, layout.id, { cells, slug }, actorUserId)
-    } else {
-      await createDataRow(db, MAIN_SCOPE, { id: layout.id, tableId: 'layouts', cells, slug }, actorUserId)
-    }
+    await upsertDataRowDraft(
+      db,
+      MAIN_SCOPE,
+      { id: layout.id, tableId: 'layouts', cells: savedLayoutToCells(layout), slug: layoutSlugFromName(layout.name) },
+      actorUserId,
+    )
   }
 
   await createAuditEvent(db, {
