@@ -23,7 +23,7 @@ import {
   PluginPackError,
 } from '../../../plugins/pack'
 import { getDraftSite, saveDraftSite } from '../../../repositories/site'
-import { listDataRows, upsertDataRowDraft } from '../../../repositories/data'
+import { findDataRowSlot, listDataRows, updateDataRowStatus, upsertDataRowDraft } from '../../../repositories/data'
 import { pageFromRow, pageToCells } from '../../../../src/core/data/pageFromRow'
 import { visualComponentToCells } from '../../../../src/core/data/componentFromRow'
 import { savedLayoutFromRow, savedLayoutToCells } from '../../../../src/core/data/layoutFromRow'
@@ -42,6 +42,34 @@ export interface PluginPackSummary {
     layouts: { id: string; name: string }[]
   }
   replaced: { visualComponents: string[]; pages: string[]; classes: string[]; layouts: string[] }
+}
+
+/**
+ * Write one pack row under the id the pack names.
+ *
+ *  - The id is the pack's choice, so it may already belong to a row of
+ *    another table. That row is never written: the sync is refused.
+ *  - A row the owner deleted still holds its id (inserting it again would
+ *    fail), so it is brought back. It comes back as a draft: a re-sync is
+ *    not a publish, and what was live before the delete stays off the site
+ *    until someone publishes it.
+ */
+async function writePackRow(
+  db: DbClient,
+  pluginId: string,
+  row: { id: string; tableId: 'pages' | 'components' | 'layouts'; cells: Record<string, unknown>; slug: string },
+  actorUserId: string,
+): Promise<void> {
+  const slot = await findDataRowSlot(db, MAIN_SCOPE, row.id)
+  if (slot && slot.tableId !== row.tableId) {
+    throw new PluginPackError(
+      `Plugin "${pluginId}" pack entry "${row.id}" uses an id that already belongs to something else on this site.`,
+    )
+  }
+  await upsertDataRowDraft(db, MAIN_SCOPE, row, actorUserId)
+  if (slot?.deleted && slot.status !== 'draft') {
+    await updateDataRowStatus(db, MAIN_SCOPE, row.id, 'draft', actorUserId)
+  }
 }
 
 /**
@@ -97,24 +125,21 @@ async function installPluginPackToSite(
   await saveDraftSite(db, MAIN_SCOPE, nextShell, actorUserId)
 
   // Write the pack's pages, Visual Components and layouts as data rows.
-  // `upsertDataRowDraft` updates a live row, brings back one the owner
-  // deleted (a deleted row still holds its id, so inserting it again would
-  // fail), or creates it.
   for (const page of packPages) {
-    await upsertDataRowDraft(db, MAIN_SCOPE, { id: page.id, tableId: 'pages', cells: pageToCells(page), slug: page.slug }, actorUserId)
+    await writePackRow(db, plugin.id, { id: page.id, tableId: 'pages', cells: pageToCells(page), slug: page.slug }, actorUserId)
   }
   for (const vc of pack.visualComponents) {
-    await upsertDataRowDraft(
+    await writePackRow(
       db,
-      MAIN_SCOPE,
+      plugin.id,
       { id: vc.id, tableId: 'components', cells: visualComponentToCells(vc), slug: vcSlugFromName(vc.name) },
       actorUserId,
     )
   }
   for (const layout of pack.layouts) {
-    await upsertDataRowDraft(
+    await writePackRow(
       db,
-      MAIN_SCOPE,
+      plugin.id,
       { id: layout.id, tableId: 'layouts', cells: savedLayoutToCells(layout), slug: layoutSlugFromName(layout.name) },
       actorUserId,
     )
