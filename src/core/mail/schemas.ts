@@ -22,9 +22,14 @@ export const MailAddressSchema = Type.String({
 
 // ─── Connectors ────────────────────────────────────────────────────────────
 
-export const MAIL_CONNECTOR_KINDS = ['smtp', 'ses'] as const
-export const MailConnectorKindSchema = Type.Union([Type.Literal('smtp'), Type.Literal('ses')])
-export type MailConnectorKind = Static<typeof MailConnectorKindSchema>
+/**
+ * `smtp` and `ses` take several values. The rest are "one-key" connectors:
+ * a provider's own HTTP API, set up with a single API key, sent over HTTPS
+ * (so they also work where a host blocks the SMTP ports).
+ */
+export const MAIL_CONNECTOR_KINDS = ['smtp', 'ses', 'resend', 'postmark', 'mailgun', 'brevo'] as const
+export const MailConnectorKindSchema = Type.Union(MAIL_CONNECTOR_KINDS.map((kind) => Type.Literal(kind)))
+export type MailConnectorKind = (typeof MAIL_CONNECTOR_KINDS)[number]
 
 export const SmtpConnectorConfigSchema = Type.Object(
   {
@@ -46,9 +51,36 @@ export const SesConnectorConfigSchema = Type.Object(
 )
 export type SesConnectorConfig = Static<typeof SesConnectorConfigSchema>
 
+/** A provider that needs nothing but its API key. */
+export const KeyOnlyConnectorConfigSchema = Type.Object({}, { additionalProperties: false })
+export type KeyOnlyConnectorConfig = Static<typeof KeyOnlyConnectorConfigSchema>
+
+export const MailgunConnectorConfigSchema = Type.Object(
+  {
+    /** The sending domain set up in Mailgun; it becomes part of the API path. */
+    domain: Type.String({ minLength: 3, maxLength: 253, pattern: '^[a-zA-Z0-9]([a-zA-Z0-9.-]*[a-zA-Z0-9])?$' }),
+    /** Mailgun keeps EU accounts on a separate API host. */
+    region: Type.Union([Type.Literal('us'), Type.Literal('eu')]),
+  },
+  { additionalProperties: false },
+)
+export type MailgunConnectorConfig = Static<typeof MailgunConnectorConfigSchema>
+
+/** The config schema of each connector kind: the one place a kind's stored shape is named. */
+export const MAIL_CONNECTOR_CONFIG_SCHEMAS = {
+  smtp: SmtpConnectorConfigSchema,
+  ses: SesConnectorConfigSchema,
+  resend: KeyOnlyConnectorConfigSchema,
+  postmark: KeyOnlyConnectorConfigSchema,
+  mailgun: MailgunConnectorConfigSchema,
+  brevo: KeyOnlyConnectorConfigSchema,
+} as const
+
 const ConnectorLabelSchema = Type.String({ minLength: 1, maxLength: 80, pattern: SINGLE_LINE })
 /** An SMTP password or an AWS secret access key. Empty is allowed for an open local relay. */
 const ConnectorSecretSchema = Type.String({ maxLength: 1024 })
+/** An API key goes into a request header, so it is one line and never empty. */
+const ApiKeySchema = Type.String({ minLength: 1, maxLength: 1024, pattern: SINGLE_LINE })
 
 export const MailConnectorInputSchema = Type.Union([
   Type.Object(
@@ -66,6 +98,26 @@ export const MailConnectorInputSchema = Type.Union([
       label: ConnectorLabelSchema,
       config: SesConnectorConfigSchema,
       secret: Type.String({ minLength: 1, maxLength: 1024 }),
+    },
+    { additionalProperties: false },
+  ),
+  ...(['resend', 'postmark', 'brevo'] as const).map((kind) =>
+    Type.Object(
+      {
+        kind: Type.Literal(kind),
+        label: ConnectorLabelSchema,
+        config: KeyOnlyConnectorConfigSchema,
+        secret: ApiKeySchema,
+      },
+      { additionalProperties: false },
+    ),
+  ),
+  Type.Object(
+    {
+      kind: Type.Literal('mailgun'),
+      label: ConnectorLabelSchema,
+      config: MailgunConnectorConfigSchema,
+      secret: ApiKeySchema,
     },
     { additionalProperties: false },
   ),
@@ -92,6 +144,10 @@ const ConnectorCommon = {
 export const MailConnectorSchema = Type.Union([
   Type.Object({ ...ConnectorCommon, kind: Type.Literal('smtp'), config: SmtpConnectorConfigSchema }),
   Type.Object({ ...ConnectorCommon, kind: Type.Literal('ses'), config: SesConnectorConfigSchema }),
+  Type.Object({ ...ConnectorCommon, kind: Type.Literal('resend'), config: KeyOnlyConnectorConfigSchema }),
+  Type.Object({ ...ConnectorCommon, kind: Type.Literal('postmark'), config: KeyOnlyConnectorConfigSchema }),
+  Type.Object({ ...ConnectorCommon, kind: Type.Literal('brevo'), config: KeyOnlyConnectorConfigSchema }),
+  Type.Object({ ...ConnectorCommon, kind: Type.Literal('mailgun'), config: MailgunConnectorConfigSchema }),
 ])
 export type MailConnector = Static<typeof MailConnectorSchema>
 

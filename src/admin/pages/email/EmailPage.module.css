@@ -234,3 +234,14 @@
   border: 0;
   background: var(--email-preview-surface);
 }
+
+/* SMTP service picker: one button per well-known mail service. */
+.presetRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-s);
+}
+
+.presetButton {
+  gap: var(--space-s);
+}
