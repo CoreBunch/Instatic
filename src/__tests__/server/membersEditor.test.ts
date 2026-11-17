@@ -391,6 +391,75 @@ describe('member bindings and show-when rules', () => {
   })
 })
 
+describe('a page inside a site-wide layout', () => {
+  let t: TestDb
+  let uploadsDir: string
+
+  /** A layout whose content area is for signed-in members only, with a greeting in its header. */
+  function layout(): Page {
+    return {
+      ...makePage('page_layout', 'layout', [
+        node('lay_hello', 'base.text', { text: 'Header for {member.profile.name|nobody}', tag: 'p' }),
+        node('lay_box', 'base.container', { showWhen: { visitor: 'signedIn' } }, ['lay__outlet']),
+        node('lay__outlet', 'base.outlet', {}),
+      ]),
+      template: { enabled: true, target: { kind: 'everywhere' }, priority: 0 },
+    } as Page
+  }
+
+  beforeEach(async () => {
+    resetForTests()
+    t = await createTestDb()
+    uploadsDir = await mkdtemp(join(tmpdir(), 'members-layout-'))
+    await t.db`
+      insert into users (id, email, email_normalized, display_name, password_hash, role_id)
+      values ('admin_1', 'admin@example.test', 'admin@example.test', 'Admin', 'x', 'owner')
+    `
+    await saveDraftSite(t.db, MAIN_SCOPE, makeShell())
+    for (const page of [layout(), makePage('page_home', 'index', memberNodes('home'))]) {
+      await createDataRow(t.db, MAIN_SCOPE, { id: page.id, tableId: 'pages', cells: pageToCells(page), slug: page.slug }, 'admin_1')
+    }
+    await publishDraftSite(t.db, 'admin_1', uploadsDir)
+  })
+
+  afterEach(async () => {
+    await t.cleanup()
+    await rm(uploadsDir, { recursive: true, force: true })
+  })
+
+  function get(path: string, cookie?: string): Promise<Response> {
+    const req = new Request(`${ORIGIN}${path}`, { redirect: 'manual' })
+    if (cookie) req.headers.set('cookie', cookie)
+    return handleServerRequest(req, { db: t.db, uploadsDir })
+  }
+
+  it('does not hand a signed-out visitor page content the layout limits to members', async () => {
+    const index = await getPublishedNodeIndexForVersion(t.db, getPublishVersion())
+    const hole = (id: string, cookie?: string) =>
+      get(`/_instatic/hole/${id}?v=${index!.snapshotHash}&u=${encodeURIComponent('/')}`, cookie)
+
+    // The page as baked: the limited box is a per-visitor fragment, and none of the page is in it.
+    const html = await (await get('/')).text()
+    expect(html).toContain('data-instatic-hole="lay_box"')
+    expect(html).not.toContain('Open to all')
+
+    // Asking for a page element by its id is still under the layout's rule.
+    const anonymous = await hole('home_plain')
+    expect(await anonymous.text()).toBe('')
+    expect(anonymous.headers.get('cache-control')).toBe('private, no-store')
+    expect(await (await hole('home_hello')).text()).toBe('')
+
+    const member = await createMember(t.db, { email: 'ada@example.com', passwordHash: null, profile: { name: 'Ada' }, verified: true })
+    const session = await createMemberSession(t.db, member!.id, { ipAddress: null, userAgent: null })
+    const cookie = `instatic_member=${session.token}`
+    expect(await (await hole('home_plain', cookie)).text()).toContain('Open to all')
+    expect(await (await hole('home_hello', cookie)).text()).toContain('Hello Ada')
+
+    // The layout's own header is under nothing.
+    expect(await (await hole('lay_hello')).text()).toContain('Header for nobody')
+  })
+})
+
 describe('member forms', () => {
   const render = (props: Record<string, unknown>) => {
     const form = makePage('f', 'f', [node('f_form', 'base.form', { mode: 'member', formId: 'join', ...props })])

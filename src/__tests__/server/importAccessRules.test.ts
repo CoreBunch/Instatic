@@ -21,6 +21,7 @@ import { resetForTests } from '../../../server/publish/renderCache'
 import { createDataRow, getDataRow, listDataRows } from '../../../server/repositories/data'
 import { getTableAccess, writeTableAccess } from '../../../server/repositories/data/tableAccess'
 import { createDataTable, listDataTables } from '../../../server/repositories/data/tables'
+import { createCapabilityTestHarness } from '../helpers/capabilityHarness'
 import { createTestDb, type TestDb } from '../helpers/createTestDb'
 
 const MEMBERS: AccessRule = { level: 'members', onDeny: 'login' }
@@ -236,5 +237,42 @@ describe('importing table rules', () => {
     })
     expect(reserved?.status).toBe(400)
     expect(await authorizeImportedTableAccess(request, t.db, user([]), bundle)).toBeNull()
+  })
+})
+
+describe('the import endpoint and a bundle that limits a table', () => {
+  it('refuses an importer who may not manage the table, and asks the one who may to confirm', async () => {
+    const harness = await createCapabilityTestHarness()
+    try {
+      await harness.setupOwner()
+      const [posts] = (await listDataTables(harness.db, MAIN_SCOPE)).filter((table) => table.id === 'posts')
+      const notes = { ...posts!, id: 'notes', name: 'Notes', slug: 'notes', routeBase: '/notes', system: false }
+      const bundle = {
+        schemaVersion: 1, exportedAt: new Date(0).toISOString(), tables: [notes], rows: [],
+        tableAccess: { notes: MEMBERS },
+      }
+      const send = (cookie: string) =>
+        harness.cms('/admin/api/cms/import?strategy=merge-add', { method: 'POST', cookie, json: bundle })
+
+      const importer = await harness.createRoleUser({ name: 'Importer', slug: 'importer', capabilities: ['data.import'] })
+      const refused = await send(importer.cookie)
+      expect(refused.status).toBe(403)
+      expect(((await refused.json()) as { error: string }).error).toBe('Importing table access rules requires permission to manage those tables')
+
+      const manager = await harness.createRoleUser({
+        name: 'Table manager', slug: 'table-manager', capabilities: ['data.import', 'data.custom.tables.manage'],
+      })
+      const asked = await send(manager.cookie)
+      expect(asked.status).toBe(401)
+      expect(((await asked.json()) as { error: string }).error).toBe('step_up_required')
+      expect(await getTableAccess(harness.db, 'notes')).toBeNull()
+
+      expect((await send(await harness.stepUp(manager.cookie))).status).toBe(200)
+      expect(await getTableAccess(harness.db, 'notes')).toEqual(MEMBERS)
+      const { rows } = await harness.db<{ target_id: string }>`select target_id from audit_events where action = 'data.table.access'`
+      expect(rows.map((row) => row.target_id)).toEqual(['notes'])
+    } finally {
+      await harness.cleanup()
+    }
   })
 })

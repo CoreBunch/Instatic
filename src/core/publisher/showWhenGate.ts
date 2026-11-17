@@ -13,12 +13,15 @@
  *    under the reference that placed it on the page;
  *  - content dropped into a component's slot is under the slot outlet's
  *    ancestors inside the component.
+ *  - a page is rendered inside the site-wide layouts, at their outlet, so it
+ *    is under whatever is above the outlet there.
  * A node can be reached by several paths (a component used twice). Each path
  * is returned separately: the node is rendered for a visitor if at least one
  * path lets them through, which is exactly where they would see it.
  */
 import { readShowWhen, showWhenAllows, type ShowWhen } from '@core/members'
 import { selectVisualComponentById, type Page, type SiteDocument } from '@core/page-tree'
+import { firstOutletId, resolveTemplateChain } from '@core/templates'
 
 type Rule = ShowWhen | 'nobody'
 
@@ -102,8 +105,26 @@ export function showWhenPathsTo(
     for (const childId of node.children) visit(nodes, childId, withOwn, seenComponents, outlets)
   }
 
-  visit(page.nodes as Record<string, WalkNode>, page.rootNodeId, [], new Set(), null)
+  visit(page.nodes as Record<string, WalkNode>, page.rootNodeId, layoutRulesAbove(page, site), new Set(), null)
   return paths
+}
+
+/**
+ * The rules a page's whole content sits under: those above the outlet of
+ * each site-wide layout it is rendered inside. A site-wide layout itself is
+ * the outermost tree and sits under nothing.
+ */
+function layoutRulesAbove(page: Page, site: SiteDocument): Rule[] {
+  if (page.template?.enabled && page.template.target.kind === 'everywhere') return []
+  const rules: Rule[] = []
+  for (const layout of resolveTemplateChain(site, { kind: 'page' })) {
+    const outletId = firstOutletId(layout.nodes)
+    if (outletId === null || layout.id === page.id) continue
+    const toOutlet = showWhenPathsTo(layout, site, outletId, { includeSelf: true })
+    // An outlet the layout's own tree does not reach is never rendered.
+    rules.push(...(toOutlet[0] ?? ['nobody']))
+  }
+  return rules
 }
 
 /** Does any render path to the node carry a show-when rule? Then it is rendered per visitor. */
