@@ -80,7 +80,7 @@ test.describe('member pages in the editor', () => {
         .getByRole('tree', { name: 'Page element tree' })
         .getByRole('treeitem', { name: 'Form', exact: true })
         .click()
-      await page.getByRole('button', { name: 'Attributes', exact: true }).click()
+      await page.getByRole('button', { name: 'Visibility', exact: true }).click()
       const showTo = page.getByTestId('show-when-control')
       await pickOption(page, showTo.getByLabel('Show to'), 'Signed-out visitors')
       await expect(showTo.getByText('Left out of the page for signed-in members.')).toBeVisible()
