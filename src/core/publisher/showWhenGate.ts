@@ -27,6 +27,7 @@ interface WalkNode {
   moduleId: string
   props: Record<string, unknown>
   children: string[]
+  propBindings?: Record<string, unknown>
 }
 
 const VC_REF = 'base.visual-component-ref'
@@ -61,7 +62,10 @@ export function showWhenPathsTo(
   ): void => {
     const node = nodes[currentId]
     if (!node) return
-    const own = readShowWhen(node.props)
+    // A rule bound to a component parameter takes its value per placement,
+    // which this walk does not work out. Such a node is given to nobody here
+    // rather than read with the unbound value.
+    const own = node.propBindings && 'showWhen' in node.propBindings ? 'nobody' : readShowWhen(node.props)
     const withOwn = own === null ? above : [...above, own]
     if (node.id === nodeId) paths.push(options.includeSelf ? [...withOwn] : [...above])
 

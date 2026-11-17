@@ -202,6 +202,14 @@ describe('member bindings and show-when rules', () => {
         expect(showWhenPathsAreGated(showWhenPathsTo(refPage, site, 'plain', { includeSelf: true }))).toBe(false)
       })
 
+      it('gives a node whose rule is bound to a component parameter to nobody', () => {
+        const bound = { ...node('vc_root', 'base.loop', {}), propBindings: { showWhen: { paramId: 'p1' } } } as Node
+        const { refPage, site } = siteOf([node('ref', 'base.visual-component-ref', { componentId: 'vc' })], [bound])
+        const paths = showWhenPathsTo(refPage, site, 'vc_root', { includeSelf: true })
+        expect(showWhenPathsAreGated(paths)).toBe(true)
+        expect(showWhenPathsAllow(paths, ['pro'])).toBe(false)
+      })
+
       it('lets a visitor in through any one placement of a component used twice', () => {
         const { refPage, site } = siteOf(
           [
