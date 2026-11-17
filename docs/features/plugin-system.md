@@ -765,6 +765,8 @@ Tree mutation and replacement payloads are validated against the canonical `@cor
 
 The host protocol names the per-table entry calls as `cms.content.entries.list`, `cms.content.entries.get`, `cms.content.entries.getBySlug`, `cms.content.entries.create`, `cms.content.entries.update`, `cms.content.entries.delete`, `cms.content.entries.publish`, `cms.content.entries.moveTable`, `cms.content.entries.createMany`, `cms.content.entries.updateMany`, and `cms.content.entries.deleteMany`. Tree calls dispatch as `cms.content.tree.read`, `cms.content.tree.mutate`, and `cms.content.tree.replace`; `getPublishedSnapshot(...)` dispatches as `cms.content.snapshot`.
 
+`publish`, `delete` and `deleteMany` keep the baked publish slot in step, exactly as the Content workspace does: the entry's own page is written or removed, and baked pages that list its table through a loop are refreshed. See [publisher.md](publisher.md) → "Publishing one row, and the pages that list it".
+
 #### Content events
 
 Three event channels fire alongside every content write. Plugins use `actor` to skip their own writes (avoid feedback loops):

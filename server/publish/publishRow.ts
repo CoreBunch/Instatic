@@ -30,7 +30,7 @@ import { getLatestPublishedSiteSnapshot } from '../repositories/publish'
 import { snapshotForEntryRoute } from './entryTemplateSnapshot'
 import { renderPublishedDataRowTemplate } from './publicRenderer'
 import { applyPublishedHtmlPipeline } from './publishedHtmlPipeline'
-import { removeArtefactInPlace, updateArtefactInPlace } from './staticArtefact'
+import { removeArtefactInPlace, removeArtefactsInPlace, updateArtefactInPlace } from './staticArtefact'
 import { removeArtefactsLoopingOverTable } from './loopArtefacts'
 import { bumpPublishVersion, getPublishVersion, withPublishLock } from './publishState'
 import { runPublishFlush } from './publishFlush'
@@ -184,9 +184,29 @@ export function retractDataRowArtefacts(
   row: Pick<DataRow, 'id' | 'tableId' | 'slug'>,
   options: { wasPublished: boolean },
 ): Promise<void> {
+  return retractDataRowArtefactsMany(db, uploadsDir, [{ ...row, wasPublished: options.wasPublished }])
+}
+
+/**
+ * Batch form of `retractDataRowArtefacts`: one publish-lock hold for the whole
+ * batch, and the listing pages of each table are removed once however many of
+ * its published rows left.
+ */
+export function retractDataRowArtefactsMany(
+  db: DbClient,
+  uploadsDir: string,
+  rows: ReadonlyArray<Pick<DataRow, 'id' | 'tableId' | 'slug'> & { wasPublished: boolean }>,
+): Promise<void> {
   return withPublishLock(async () => {
-    const routeBase = await getRowTableRouteBase(db, row.id)
-    if (routeBase !== null) await removeArtefactInPlace(uploadsDir, publicDataPath(routeBase, row.slug))
-    if (options.wasPublished) await removeArtefactsLoopingOverTable(db, uploadsDir, row.tableId)
+    const ownPaths: string[] = []
+    for (const row of rows) {
+      const routeBase = await getRowTableRouteBase(db, row.id)
+      if (routeBase !== null) ownPaths.push(publicDataPath(routeBase, row.slug))
+    }
+    await removeArtefactsInPlace(uploadsDir, ownPaths)
+    const listedTableIds = new Set(rows.filter((row) => row.wasPublished).map((row) => row.tableId))
+    for (const tableId of listedTableIds) {
+      await removeArtefactsLoopingOverTable(db, uploadsDir, tableId)
+    }
   })
 }
