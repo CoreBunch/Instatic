@@ -12,10 +12,10 @@
  * `ensureRuntimeDependencyCache` reinstalls it.
  *
  * Only a lock that is published right now can be restored. An unknown hash
- * costs one query and installs nothing, so the public URL cannot be used to
+ * costs one query per `LOCK_LOOKUP_TTL_MS` and installs nothing, so the public URL cannot be used to
  * make the server install arbitrary packages.
  */
-import { normalizeSiteRuntimeConfig } from '@core/site-runtime'
+import { normalizeSiteRuntimeConfig, type SiteDependencyLock } from '@core/site-runtime'
 import type { DbClient } from '../../db'
 import { getLivePublishedSiteByImportmapFragment } from '../../repositories/publish'
 import {
@@ -31,10 +31,42 @@ import { RUNTIME_PACKAGE_PREFIX } from './packageServer'
  */
 const FAILED_RESTORE_RETRY_MS = 30_000
 
-/** Bounds the failure memory; hashes come from request URLs. */
-const MAX_REMEMBERED_FAILURES = 256
+/**
+ * How long the answer to "which live lock owns this hash" is remembered,
+ * including "none". The URL is public, so without this every request for a
+ * missing file (an unknown hash, or a wrong path under a live one) would run
+ * the lookup query again.
+ */
+const LOCK_LOOKUP_TTL_MS = 30_000
+
+/** Bounds both memories; hashes come from request URLs. */
+const MAX_REMEMBERED_HASHES = 256
 
 const failedRestores = new Map<string, number>()
+const lockLookups = new Map<string, { lock: SiteDependencyLock | null; at: number }>()
+
+function remember<V>(memory: Map<string, V>, hash: string, value: V): void {
+  if (memory.size >= MAX_REMEMBERED_HASHES) memory.clear()
+  memory.set(hash, value)
+}
+
+/** The lock of a live publish whose cache entry is `hash`, or null. */
+async function livePublishedLock(
+  db: DbClient,
+  hash: string,
+  clock: () => number,
+): Promise<SiteDependencyLock | null> {
+  const remembered = lockLookups.get(hash)
+  if (remembered && clock() - remembered.at < LOCK_LOOKUP_TTL_MS) return remembered.lock
+
+  const site = await getLivePublishedSiteByImportmapFragment(db, `${RUNTIME_PACKAGE_PREFIX}${hash}/`)
+  const candidate = site ? normalizeSiteRuntimeConfig(site.runtime).dependencyLock : null
+  // The lookup is a `like` match on the importmap text; the lock itself has
+  // the final word on whether this is the entry the URL names.
+  const lock = candidate && runtimeDependencyLockHash(candidate) === hash ? candidate : null
+  remember(lockLookups, hash, { lock, at: clock() })
+  return lock
+}
 
 interface RestorePublishedRuntimeCacheOptions {
   cacheRoot?: string
@@ -58,12 +90,8 @@ export async function restorePublishedRuntimeCache(
   const failedAt = failedRestores.get(hash)
   if (failedAt !== undefined && clock() - failedAt < FAILED_RESTORE_RETRY_MS) return false
 
-  const site = await getLivePublishedSiteByImportmapFragment(db, `${RUNTIME_PACKAGE_PREFIX}${hash}/`)
-  if (!site) return false
-  const lock = normalizeSiteRuntimeConfig(site.runtime).dependencyLock
-  // The lookup is a `like` match on the importmap text; the lock itself has
-  // the final word on whether this is the entry the URL names.
-  if (runtimeDependencyLockHash(lock) !== hash) return false
+  const lock = await livePublishedLock(db, hash, clock)
+  if (!lock) return false
 
   try {
     await ensureRuntimeDependencyCache(lock, {
@@ -74,8 +102,7 @@ export async function restorePublishedRuntimeCache(
     return true
   } catch (err) {
     console.error('[runtime dependency cache] restoring a published entry failed:', err)
-    if (failedRestores.size >= MAX_REMEMBERED_FAILURES) failedRestores.clear()
-    failedRestores.set(hash, clock())
+    remember(failedRestores, hash, clock())
     return false
   }
 }

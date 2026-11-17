@@ -163,6 +163,29 @@ describe('a published runtime package after its cache is lost', () => {
     expect(installs).toBe(1)
   })
 
+  it('asks the database once for repeated misses on the same hash', async () => {
+    const lock = lockFor('0.167.0')
+    await ensureRuntimeDependencyCache(lock, { runInstall: fakeInstall })
+    await publishWithLock(testDb, 'home', lock)
+    let queries = 0
+    const counting = new Proxy(testDb.db, {
+      apply(target, thisArg, args) {
+        queries += 1
+        return Reflect.apply(target, thisArg, args)
+      },
+    })
+    const counted = { ...testDb, db: counting }
+
+    // A wrong path under a live hash, and a hash nothing published.
+    const wrongPath = `/_instatic/runtime/cache/${runtimeDependencyLockHash(lock)}/three/nope.js`
+    const unknown = packageUrl(lockFor('0.168.0'))
+    for (const url of [wrongPath, wrongPath, wrongPath, unknown, unknown, unknown]) {
+      expect((await serve(counted, url))?.status).toBe(404)
+    }
+    expect(queries).toBe(2)
+    expect(installs).toBe(1)
+  })
+
   it('remembers a failed reinstall instead of retrying on every request', async () => {
     const lock = lockFor('0.166.0')
     await publishWithLock(testDb, 'home', lock)
