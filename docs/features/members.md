@@ -89,7 +89,7 @@ Error codes are the `MEMBER_ERROR_CODES` list in `@core/members`.
 
 **Sessions.** 32 random bytes, stored as SHA-256. 90 days absolute, 30 days idle, both checked in the lookup query together with "not revoked" and "member is active". Suspending a member or signing out ends access on the next request.
 
-**CSRF.** Every POST needs an `Origin` that is one of the site's origins, and a same-origin `Sec-Fetch-Site` when the browser sends one. The sign-out link is the one GET that changes anything; it carries no `Origin`, so it acts only on a click from this site (`Sec-Fetch-Site` `same-origin` or `none`, or a same-site `Referer` when that header is missing) and otherwise only redirects. Changing a password or email and deleting the account also need the current password (or, for a passwordless member, a sign-in within the last 15 minutes).
+**CSRF.** Every POST needs an `Origin` that is one of the site's origins, and a same-origin `Sec-Fetch-Site` when the browser sends one. The sign-out link is the one GET that changes anything; it carries no `Origin`, so it acts only on a click from this site (`Sec-Fetch-Site` `same-origin` or `none`, or a same-site `Referer` when that header is missing) and otherwise only redirects, including when both headers are missing. Changing a password or email and deleting the account also need the current password (or, for a passwordless member, a sign-in within the last 15 minutes).
 
 **Enumeration.** A sign-in for an unknown address still pays one argon2 verification. Requests that send email decide their answer first and send in the background (`queueMemberMail`), so timing does not differ.
 

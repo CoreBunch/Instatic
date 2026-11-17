@@ -379,8 +379,9 @@ async function runAction(
 function linkFromThisSite(req: Request): boolean {
   const fetchSite = req.headers.get('sec-fetch-site')
   if (fetchSite) return fetchSite === 'same-origin' || fetchSite === 'none'
+  // Neither header: nothing says where the click came from, so do nothing.
   const referer = req.headers.get('referer')
-  if (!referer) return true
+  if (!referer) return false
   try {
     return isSiteOrigin(req, new URL(referer).origin)
   } catch {
