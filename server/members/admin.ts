@@ -268,7 +268,7 @@ export async function getMemberForAdmin(db: DbClient, memberId: string): Promise
 // ─── Invite ────────────────────────────────────────────────────────────────
 
 export type InviteOutcome =
-  | { ok: true; outcome: 'invited' | 'resent'; member: MemberListItem }
+  | { ok: true; outcome: 'invited' | 'resent'; member: MemberListItem; link?: string }
   | { ok: false; reason: 'exists' }
 
 /**
@@ -286,6 +286,11 @@ export async function inviteMember(
     linkOrigin: string
     /** Who the tags come from: `admin` (the default), or the id of the inviting plugin. */
     tagSource?: string
+    /**
+     * `email` (the default) mails the link. `link` mails nothing and returns
+     * the link to the caller, for an admin to pass on by hand.
+     */
+    delivery?: 'email' | 'link'
   },
 ): Promise<InviteOutcome> {
   const existing = await findMemberByEmail(db, input.email)
@@ -307,9 +312,16 @@ export async function inviteMember(
   }
   const { token } = await issueMemberToken(db, member.id, 'invite')
   const { pages } = await getMemberSettings(db)
-  queueMemberMail(db, { kind: 'invite', to: member.email, link: memberTokenLink(input.linkOrigin, pages, 'invite', token) })
+  const link = memberTokenLink(input.linkOrigin, pages, 'invite', token)
+  const byHand = input.delivery === 'link'
+  if (!byHand) queueMemberMail(db, { kind: 'invite', to: member.email, link })
   await recordMemberEvent(db, member.id, 'invited', NO_REQUEST)
-  return { ok: true, outcome: existing ? 'resent' : 'invited', member: await listItemFor(db, member) }
+  return {
+    ok: true,
+    outcome: existing ? 'resent' : 'invited',
+    member: await listItemFor(db, member),
+    ...(byHand ? { link } : {}),
+  }
 }
 
 // ─── Changes to one member ─────────────────────────────────────────────────

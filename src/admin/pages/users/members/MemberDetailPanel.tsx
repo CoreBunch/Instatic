@@ -27,6 +27,7 @@ export function MemberDetailPanel({
   detail,
   canManage,
   mailAvailable,
+  linkAvailable,
   busy,
   actions,
 }: {
@@ -34,6 +35,8 @@ export function MemberDetailPanel({
   canManage: boolean
   /** Whether the site can email a link right now; an invitation needs it. */
   mailAvailable: boolean
+  /** Whether the site can make a link at all; without email the link is handed to the admin. */
+  linkAvailable: boolean
   busy: boolean
   actions: MemberActions
 }) {
@@ -71,10 +74,12 @@ export function MemberDetailPanel({
             variant="secondary"
             size="sm"
             onClick={actions.resendInvitation}
-            disabled={busy || !canManage || !mailAvailable}
-            tooltip={blocked ?? (mailAvailable ? undefined : 'Set up outgoing email first (Email → Connectors)')}
+            disabled={busy || !canManage || !linkAvailable}
+            tooltip={blocked ?? (linkAvailable
+              ? (mailAvailable ? undefined : 'Outgoing email is not set up, so you get the link to pass on yourself')
+              : 'The site does not know its public address yet (PUBLIC_ORIGIN)')}
           >
-            Send an invitation link
+            {mailAvailable ? 'Send an invitation link' : 'Create an invitation link'}
           </Button>
         )}
         {member.status === 'suspended' ? (

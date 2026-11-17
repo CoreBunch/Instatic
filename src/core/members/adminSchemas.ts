@@ -98,6 +98,12 @@ export const MemberInviteInputSchema = Type.Object(
     email: Type.String({ minLength: 3, maxLength: MEMBER_EMAIL_MAX_LENGTH }),
     /** Tags the member holds from the moment they accept. */
     tags: Type.Optional(Type.Array(TagSchema, { maxItems: 20 })),
+    /**
+     * How the single-use link reaches the person: emailed by the site (the
+     * default), or handed back to the admin to pass on themselves. `link`
+     * is what makes an invitation possible before outgoing email is set up.
+     */
+    delivery: Type.Optional(Type.Union([Type.Literal('email'), Type.Literal('link')])),
   },
   { additionalProperties: false },
 )
@@ -126,6 +132,12 @@ export const MemberSettingsResponseSchema = Type.Object({
    * public address is known. Invitations need it.
    */
   mailAvailable: Type.Boolean(),
+  /**
+   * Can the site build a link into itself? False only when its public
+   * address is unknown. An invitation link for the admin to pass on needs
+   * this and nothing else.
+   */
+  linkAvailable: Type.Boolean(),
 })
 export type MemberSettingsResponse = Static<typeof MemberSettingsResponseSchema>
 
@@ -134,4 +146,6 @@ export const MemberInviteResponseSchema = Type.Object({
   member: MemberListItemSchema,
   /** `invited` for a new member, `resent` when the address already had a pending invitation. */
   outcome: Type.Union([Type.Literal('invited'), Type.Literal('resent')]),
+  /** The invitation link, only when it was asked for with `delivery: 'link'`. It is not stored and not shown again. */
+  link: Type.Optional(Type.String()),
 })

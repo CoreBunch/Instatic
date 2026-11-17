@@ -45,6 +45,7 @@ import { pushToast } from '@ui/components/Toast'
 import { PlusIcon } from 'pixel-art-icons/icons/plus'
 import { Settings2SolidIcon } from 'pixel-art-icons/icons/settings-2-solid'
 import { forgetMemberProfileFields } from '@admin/shared/DataBindingPicker/cache'
+import { InvitationLinkDialog } from '../members/InvitationLinkDialog'
 import { InviteMemberDialog } from '../members/InviteMemberDialog'
 import { MemberDetailPanel, type MemberActions } from '../members/MemberDetailPanel'
 import { MemberSettingsDialog } from '../members/MemberSettingsDialog'
@@ -89,6 +90,8 @@ export function MembersTab({
   const [loadingMore, setLoadingMore] = useState(false)
   const [busy, setBusy] = useState(false)
   const [dialog, setDialog] = useState<'invite' | 'settings' | null>(null)
+  // A link the admin asked for, shown once so they can pass it on.
+  const [invitationLink, setInvitationLink] = useState<{ email: string; link: string } | null>(null)
   // A change to the selected member answers with the member as it now stands.
   const [changed, setChanged] = useState<MemberDetail | null>(null)
 
@@ -129,10 +132,13 @@ export function MembersTab({
         : null
 
   const mailAvailable = settings.data?.mailAvailable ?? false
+  // Without outgoing email an invitation is still possible as a link to pass
+  // on; only a site that does not know its own address cannot make one.
+  const linkAvailable = settings.data?.linkAvailable ?? false
   const inviteBlocked = !canManage
     ? 'Your role cannot invite members'
-    : !mailAvailable
-      ? 'Invitations are sent by email. Set up a connector and a sender under Email first.'
+    : !linkAvailable
+      ? 'The site does not know its public address yet, so it cannot make invitation links. Set PUBLIC_ORIGIN on the server.'
       : undefined
 
   function clearFilters() {
@@ -177,17 +183,24 @@ export function MembersTab({
     }
   }
 
-  async function invite(email: string, tags: string[]) {
+  async function invite(email: string, tags: string[], delivery: 'email' | 'link') {
+    let created: { email: string; link: string } | null = null
     const ok = await run(async () => {
-      const result = await inviteCmsMember(email, tags)
+      const result = await inviteCmsMember(email, tags, delivery)
       setSelectedId(result.member.id)
+      if (result.link) {
+        created = { email: result.member.email, link: result.link }
+        return
+      }
       pushToast({
         kind: 'success',
         title: result.outcome === 'resent' ? 'Invitation sent again' : 'Invitation sent',
         body: `To ${result.member.email}.`,
       })
-    }, 'The invitation could not be sent')
-    if (ok) setDialog(null)
+    }, delivery === 'link' ? 'The invitation link could not be created' : 'The invitation could not be sent')
+    if (!ok) return
+    setDialog(null)
+    setInvitationLink(created)
   }
 
   async function saveSettings(next: MemberSettings) {
@@ -223,7 +236,7 @@ export function MembersTab({
               setSelectedId(null)
             }, 'The member could not be deleted', `${who} is deleted`),
         }),
-      resendInvitation: () => void invite(member.email, []),
+      resendInvitation: () => void invite(member.email, [], mailAvailable ? 'email' : 'link'),
       grantTag: (name, expiresAt) => void run(() => grantCmsMemberTag(member.id, name, expiresAt), 'The tag could not be added'),
       revokeTag: (grant: MemberTagGrant) =>
         void run(() => revokeCmsMemberTag(member.id, grant.tag, grant.source), 'The tag could not be removed'),
@@ -400,6 +413,7 @@ export function MembersTab({
                   detail={detail}
                   canManage={canManage}
                   mailAvailable={mailAvailable}
+                  linkAvailable={linkAvailable}
                   busy={busy}
                   actions={actionsFor(selected)}
                 />
@@ -413,7 +427,17 @@ export function MembersTab({
         </>
       )}
 
-      {dialog === 'invite' && <InviteMemberDialog busy={busy} onClose={() => setDialog(null)} onInvite={(email, tags) => void invite(email, tags)} />}
+      {dialog === 'invite' && (
+        <InviteMemberDialog
+          busy={busy}
+          mailAvailable={mailAvailable}
+          onClose={() => setDialog(null)}
+          onInvite={(email, tags, delivery) => void invite(email, tags, delivery)}
+        />
+      )}
+      {invitationLink && (
+        <InvitationLinkDialog email={invitationLink.email} link={invitationLink.link} onClose={() => setInvitationLink(null)} />
+      )}
       {dialog === 'settings' && settings.data && (
         <MemberSettingsDialog
           settings={settings.data.settings}

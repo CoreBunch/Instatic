@@ -253,6 +253,44 @@ describe('members admin API', () => {
       expect(await inviteMails()).toHaveLength(2)
     })
 
+    it('hands the link to the admin when asked, and emails nothing', async () => {
+      const res = await invite({ email: 'byhand@example.com', tags: ['student'], delivery: 'link' })
+      expect(res.status).toBe(201)
+      expect(res.headers.get('cache-control')).toBe('no-store')
+      const body = await readJson<{ member: MemberListItem; link?: string }>(res)
+      expect(body.member).toMatchObject({ email: 'byhand@example.com', status: 'pending', tags: ['student'] })
+      expect(body.link).toMatch(/^http:\/\/localhost\/.*token=[\w-]+$/)
+      expect(await inviteMails()).toHaveLength(0)
+
+      // It leads to the site's own page for accepting an invitation.
+      expect(new URL(body.link!).pathname.startsWith('/_instatic/members/')).toBe(true)
+
+      // Asking again makes a fresh link, and the first one stops working.
+      const again = await readJson<{ link?: string; outcome: string }>(await invite({ email: 'byhand@example.com', delivery: 'link' }))
+      expect(again.outcome).toBe('resent')
+      expect(again.link).not.toBe(body.link)
+
+      const audit = await readJson<{ events: Array<{ action: string; metadata?: Record<string, unknown> }> }>(await h.cms('/admin/api/cms/audit', { cookie: owner }))
+      expect(audit.events.find((event) => event.action === 'member.invite')?.metadata).toMatchObject({ delivery: 'link' })
+    })
+
+    it('still invites by link on a live server with no outgoing email, where an emailed invitation is refused', async () => {
+      const before = process.env.NODE_ENV
+      process.env.NODE_ENV = 'production'
+      try {
+        const settings = await readJson<MemberSettingsResponse>(await h.cms(`${BASE}/settings`, { cookie: owner }))
+        expect(settings).toMatchObject({ mailAvailable: false, linkAvailable: true })
+        const emailed = await invite({ email: 'live@example.com' })
+        expect(emailed.status).toBe(409)
+        expect((await list()).counts.all).toBe(0)
+        const byHand = await invite({ email: 'live@example.com', delivery: 'link' })
+        expect(byHand.status).toBe(201)
+        expect((await readJson<{ link?: string }>(byHand)).link).toContain('token=')
+      } finally {
+        process.env.NODE_ENV = before
+      }
+    })
+
     it('refuses a malformed address and a reserved tag without creating anyone', async () => {
       expect((await invite({ email: 'not-an-address' })).status).toBe(400)
       expect((await invite({ email: 'ok@example.com', tags: ['instatic:locked'] })).status).toBe(400)

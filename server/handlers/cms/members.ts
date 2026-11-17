@@ -132,22 +132,34 @@ async function handleInvite(req: Request, db: DbClient): Promise<Response> {
   const tags = input.tags ?? []
   if (!tags.every(isGrantableMemberTag)) return badRequest('A tag in the invitation cannot be given to a member')
 
-  // An invitation is a link in an email: without both, it would create a
-  // member nobody can ever reach.
+  // An invitation is a link. Without the site's public address there is no
+  // link at all; without outgoing email it can still be handed to the admin
+  // to pass on, which is what `delivery: 'link'` asks for.
+  const delivery = input.delivery ?? 'email'
   const linkOrigin = memberLinkOrigin(req)
-  if (!linkOrigin || !(await memberMailAvailable(db, req))) {
+  if (!linkOrigin) {
     return jsonResponse(
-      { error: 'Invitations need outgoing email. Set up a connector and a sender under Email first.' },
+      { error: 'The site does not know its public address, so it cannot make an invitation link. Set PUBLIC_ORIGIN on the server.' },
+      { status: 409 },
+    )
+  }
+  if (delivery === 'email' && !(await memberMailAvailable(db, req))) {
+    return jsonResponse(
+      { error: 'Outgoing email is not set up. Create an invitation link to pass on yourself, or set up a connector and a sender under Email.' },
       { status: 409 },
     )
   }
 
-  const result = await inviteMember(db, { email: input.email, tags, linkOrigin })
+  const result = await inviteMember(db, { email: input.email, tags, linkOrigin, delivery })
   if (!result.ok) {
     return jsonResponse({ error: 'That address already has an account.' }, { status: 409 })
   }
-  await audit(db, req, user, 'member.invite', result.member.id, { email: result.member.email })
-  return jsonResponse({ member: result.member, outcome: result.outcome }, { status: result.outcome === 'invited' ? 201 : 200 })
+  await audit(db, req, user, 'member.invite', result.member.id, { email: result.member.email, delivery })
+  return jsonResponse(
+    { member: result.member, outcome: result.outcome, ...(result.link ? { link: result.link } : {}) },
+    // The link signs someone in: it must not be kept by anything between the server and the admin.
+    { status: result.outcome === 'invited' ? 201 : 200, headers: { 'cache-control': 'no-store' } },
+  )
 }
 
 // ─── One member ────────────────────────────────────────────────────────────
@@ -215,7 +227,11 @@ async function handleRevokeTag(req: Request, db: DbClient, params: RouteParams):
 // ─── Settings ──────────────────────────────────────────────────────────────
 
 async function settingsResponse(req: Request, db: DbClient, settings: MemberSettings): Promise<Response> {
-  return jsonResponse({ settings, mailAvailable: await memberMailAvailable(db, req) })
+  return jsonResponse({
+    settings,
+    mailAvailable: await memberMailAvailable(db, req),
+    linkAvailable: memberLinkOrigin(req) !== null,
+  })
 }
 
 async function handleGetSettings(req: Request, db: DbClient): Promise<Response> {
