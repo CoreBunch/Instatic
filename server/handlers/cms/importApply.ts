@@ -15,6 +15,9 @@ import { listBranches } from '../../repositories/branches'
 import { removeMediaAssetFiles } from './mediaVariants'
 import { deleteAllDataRowRedirects, importDataRowRedirect } from '../../repositories/data/publish'
 import { deleteAllMediaFolders, importMediaFolder } from '../../repositories/mediaFolders'
+import { listProtectedTables, writeTableAccess } from '../../repositories/data/tableAccess'
+import { keepPageAccess } from '../../writePolicy/pageAccessCell'
+import type { AccessRule } from '@core/members'
 import { notifyRowWrite, notifyShellWrite, serializeCollabAwareWrite, type RowWriteKind } from '../../repositories/rowWriteEvents'
 
 // The four system table ids that are always seeded and never deleted.
@@ -57,6 +60,11 @@ export interface ApplySiteBundleInput {
    * bytes itself, so it states this separately.
    */
   carriesMedia: boolean
+  /**
+   * The importer may change who can open a page (`site.structure.edit`).
+   * Without it, a page the import overwrites keeps its stored access rule.
+   */
+  mayChangePageAccess: boolean
 }
 
 export interface AppliedSiteBundle {
@@ -184,6 +192,40 @@ async function applySiteBundleLocked(
       ['pages', 'components', 'layouts'].map((tableId) => [tableId, new Set<string>()]),
     )
     let shellWasWritten = false
+
+    // ── Access rules must survive the import ────────────────────────────────
+    // A table's rule is a column the bundle's table writes never set, and a
+    // `replace` deletes and recreates custom tables. A page's rule is a cell
+    // the bundle's row replaces. Both are read here, before anything changes.
+    const tablesBefore = new Set((await listDataTables(db, scope)).map((table) => table.id))
+    const storedTableRules = new Map<string, AccessRule>(
+      isMainScope(scope) ? (await listProtectedTables(db)).map((entry) => [entry.id, entry.rule]) : [],
+    )
+    const storedPages = new Map(
+      input.mayChangePageAccess || strategy === 'merge-add'
+        ? []
+        : (await listDataRows(db, scope, 'pages')).map((row) => [row.id, row] as const),
+    )
+    const guardedCells = (row: { id: string; tableId: string; cells: Record<string, unknown> }) => {
+      const stored = storedPages.get(row.id)
+      return stored && row.tableId === 'pages' ? keepPageAccess(stored, row.cells) : row.cells
+    }
+    /** A stored rule always stays. The bundle's rule is only added where there is none. */
+    const applyTableAccess = async (tx: DbClient): Promise<void> => {
+      if (!isMainScope(scope)) return
+      for (const table of bundle.tables) {
+        const stored = storedTableRules.get(table.id)
+        if (stored) {
+          if (strategy === 'replace') await writeTableAccess(tx, table.id, stored)
+          continue
+        }
+        const carried = bundle.tableAccess?.[table.id]
+        if (!carried || carried.level === 'public') continue
+        if (strategy === 'merge-add' && tablesBefore.has(table.id)) continue
+        await writeTableAccess(tx, table.id, carried)
+      }
+    }
+
     if (strategy === 'replace') {
       for (const tableId of affectedCollabRows.keys()) {
         for (const row of await listDataRows(db, scope, tableId)) {
@@ -254,7 +296,7 @@ async function applySiteBundleLocked(
           const input: DataRowImportInput = {
             id: row.id,
             tableId: row.tableId,
-            cells: row.cells,
+            cells: guardedCells(row),
             slug: row.slug,
             status: row.status,
             publishedAt: row.publishedAt,
@@ -267,6 +309,8 @@ async function applySiteBundleLocked(
           affectedCollabRows.get(row.tableId)?.add(row.id)
           rowsInserted++
         }
+
+        await applyTableAccess(tx)
 
         // 6. Replace the site shell (only when the bundle carries one)
         if (bundle.site) {
@@ -348,6 +392,8 @@ async function applySiteBundleLocked(
           }
         }
 
+        await applyTableAccess(tx)
+
         // Site shell: merge-add never overwrites the site shell — the local site
         // has existing content that must not be destroyed by an additive import.
       })
@@ -396,7 +442,7 @@ async function applySiteBundleLocked(
           const input: DataRowImportInput = {
             id: row.id,
             tableId: row.tableId,
-            cells: row.cells,
+            cells: guardedCells(row),
             slug: row.slug,
             status: row.status,
             publishedAt: row.publishedAt,
@@ -421,6 +467,8 @@ async function applySiteBundleLocked(
             rowsInserted++
           }
         }
+
+        await applyTableAccess(tx)
 
         // Site shell: overwrite if the bundle carries one
         if (bundle.site) {

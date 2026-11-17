@@ -22,7 +22,7 @@ import { dirname, join } from 'node:path'
 import { once } from 'node:events'
 import { tmpdir } from 'node:os'
 import type { DbClient } from '../../db/client'
-import { requireCapability } from '../../auth/authz'
+import { requireCapability, userHasCapability } from '../../auth/authz'
 import { jsonResponse, badRequest } from '../../http'
 import { importMediaAsset, assignAssetToFolders } from '../../repositories/media'
 import { parseValue, formatValueErrors, compiled } from '@core/utils/typeboxHelpers'
@@ -133,6 +133,7 @@ export async function handleImportArchiveRoute(
       bundle: siteBundleWithoutMediaBytes(selectedManifest),
       strategy,
       carriesMedia: selectedManifest.media !== undefined,
+      mayChangePageAccess: userHasCapability(user, 'site.structure.edit'),
       runtimeFiles: stagedMedia?.runtimeFiles,
       uploadsDir: options.uploadsDir,
     })

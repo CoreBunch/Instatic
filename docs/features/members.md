@@ -131,6 +131,8 @@ Everything rendered behind a rule is sent `Cache-Control: private, no-store`.
 
 **When a rule takes effect.** A page's rule is page content: it applies on publish. A table's rule is a live setting: `setTableAccess` (`server/publish/tableAccess.ts`) removes every baked page from the static slot (the table's rows may be listed anywhere) and bumps the publish version, so it applies on the next request. Pages render live until the next publish bakes them again.
 
+**Other ways a rule is written.** A page's rule is a cell, so it is forked, compared and merged with the rest of the page on a branch, and seeded into the page's co-editing document with the other page fields. A table's rule exists on the main branch only and is not part of a branch. Site export and import carry both; an import keeps stored rules and only adds (see [site-transfer.md](site-transfer.md) → "Access rules").
+
 **Lists follow the same rules.** A loop never shows what the visitor could not open by its address. Every public render hands loop sources a `closed` set (`ClosedContent` in `@core/loops/types`, built by `closedContentFor`): `data.rows` returns nothing for a closed table and, when aimed at the Pages table, leaves closed pages out; `site.pages` leaves closed pages out. A baked page, a cached render and a shared fragment are rendered as for a signed-out visitor. Only a protected route, rendered per request, is rendered with the member's tags, so a members page can list what that member may open. Admin previews pass no `closed` set and show everything. Plugin loop sources do not receive it; a plugin that lists its own protected data must check access itself.
 
 ## Building member pages in the editor

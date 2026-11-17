@@ -86,6 +86,9 @@ interface SiteBundleArchiveManifest {
   /** All (or selected) data tables — `data_tables` rows */
   tables: DataTable[]
 
+  /** Access rules of exported tables that are not open to anyone, by table id (main branch only) */
+  tableAccess?: Record<string, AccessRule>
+
   /** All (or selected) data rows — `data_rows` rows. Cells included verbatim. */
   rows:   DataRow[]
 
@@ -293,6 +296,13 @@ Per strategy:
 - **`merge-overwrite`**: matching ids upsert. Items not in the bundle are **kept** (vs. `replace` which deletes them).
 
 Primary merge identity is **id**: a row in the bundle with the same id as an existing row is the same row. Row slugs still have a table-scoped uniqueness constraint for active rows, so a new incoming row can collide with an unrelated local row's slug. Preview reports those collisions as `rowConflicts`; Super Import lets the operator rename or skip them. The `merge-add` repository path also uses `on conflict do nothing`, so a missed slug collision is skipped instead of surfacing as a 500.
+
+### Access rules
+
+An import never opens something that was limited to members (`applySiteBundle` in `server/handlers/cms/importApply.ts`, tested in `importAccessRules.test.ts`):
+
+- **Tables.** A table's rule is the `data_tables.access_json` column, which the bundle's table writes do not set. A stored rule always stays, including through `replace`, which deletes and recreates custom tables. The bundle's `tableAccess` is only used to add a rule to a table that has none: on `replace` and `merge-overwrite` for every table in the bundle, on `merge-add` only for tables it creates.
+- **Pages.** A page's rule is the `access` cell of its row, so it travels with the row. On `replace` and `merge-overwrite`, a page that already exists keeps its stored rule unless the importer holds `site.structure.edit` (`keepPageAccess`). Published versions restored from the bundle's publication history are not adjusted.
 
 ### Capability gates
 
