@@ -96,7 +96,8 @@ test('owner manages site members from the Users page (MEMBER-002)', async ({ pag
     const audit = page.getByRole('table', { name: 'Audit events' })
     await expect(audit.getByText(`Member ${email} was invited`)).toBeVisible()
     await expect(audit.getByText(`Member ${email} was suspended`)).toBeVisible()
-    await expect(audit.getByText('Member settings were changed')).toBeVisible()
+    // Other member specs change the settings too; one such row is enough here.
+    await expect(audit.getByText('Member settings were changed').first()).toBeVisible()
 
     await page.goto('/admin/email')
     await page.getByTestId('email-nav-activity').click()

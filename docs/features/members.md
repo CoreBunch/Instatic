@@ -210,7 +210,7 @@ bun run demo:members        # add `-- --skip-build` to reuse the last admin buil
 
 The site (`scripts/lib/membersDemoSite.ts`) is ten ordinary editor pages: home, join, sign in, forgot password, the pages the emailed links open (confirm, new password, invitation), an account page, a members area and a pro lounge. Every form is a `base.form` in Members mode completed by `memberFormFragment`, the function behind the editor's "Add …" button; the header's links use show-when rules; the account page prefills from member bindings. Open any page in the editor to see how it is put together.
 
-It is a development tool: fixed passwords, loopback only, and a database that is wiped on every start. `membersDemoSite.test.ts` keeps the pages publishable and correctly gated.
+It is a development tool: fixed passwords, loopback only, and a database that is wiped on every start. `membersDemoSite.test.ts` keeps the pages publishable and correctly gated. The sign-in page also carries the "Email me a link" form. The E2E suite seeds the same pages under an address prefix of its own (`buildMembersDemoPages(prefix)`, printed by `scripts/e2e-members-seed.ts`).
 
 ## Tests
 
@@ -220,4 +220,5 @@ It is a development tool: fixed passwords, loopback only, and a database that is
 - `src/__tests__/server/membersDemoSite.test.ts` — the demo site: its pages parse, publish, and are open or closed to the right visitors.
 - `src/__tests__/architecture/members-admin-split.test.ts` — the split.
 - `src/__tests__/server/pluginRouteCookies.test.ts` — cookie stripping.
+- `tests/e2e/members-editor.e2e.ts` (MEMBER-001), `members-admin.e2e.ts` (MEMBER-002), `members-account.e2e.ts` (MEMBER-003: sign-up, profile, tag page, export, password change, emailed sign-in link, reset, email change, deletion) and `members-plugin.e2e.ts` (MEMBER-004: a plugin's member routes) — the same flows in a browser, against published pages.
 - `src/__tests__/server/membersAccessGate.test.ts` — the gate: static slot, render cache, path spellings, the uploads route, fragments, table rules.

@@ -145,7 +145,32 @@ function formPage(
   return b.page(id, title, slug, [b.box('card', build(b))], access)
 }
 
-export function buildMembersDemoPages(): Page[] {
+/**
+ * Move every page under a prefix: `join` becomes `<prefix>join`, the home page
+ * `<prefix>home`, and every link and form redirect follows. The E2E suite
+ * shares one site between its specs, so it seeds these pages under a prefix
+ * of its own and never takes another spec's address.
+ */
+function withPrefix(pages: Page[], prefix: string): Page[] {
+  const move = (path: string) => (path === '/' ? `/${prefix}home` : `/${prefix}${path.slice(1)}`)
+  return pages.map((page) => ({
+    ...page,
+    id: `${prefix}${page.id}`,
+    slug: page.slug === 'index' ? `${prefix}home` : `${prefix}${page.slug}`,
+    nodes: Object.fromEntries(
+      Object.entries(page.nodes).map(([id, node]) => {
+        const props = { ...node.props }
+        for (const key of ['href', 'redirectUrl']) {
+          const value = props[key]
+          if (typeof value === 'string' && value.startsWith('/')) props[key] = move(value)
+        }
+        return [id, { ...node, props }]
+      }),
+    ),
+  }))
+}
+
+export function buildMembersDemoPages(prefix = ''): Page[] {
   const home = new PageBuilder()
   const homePage = home.page('demo_home', 'Home', 'index', [
     home.box('hero', [
@@ -192,6 +217,8 @@ export function buildMembersDemoPages(): Page[] {
     b.text('Sign in', 'h1'),
     b.memberForm('login', 'sign-in-form', { redirectUrl: '/account', showWhen: SIGNED_OUT }),
     b.link('Forgot your password?', '/forgot-password', SIGNED_OUT),
+    b.text('Or get a sign-in link by email', 'h2', SIGNED_OUT),
+    b.memberForm('link/request', 'sign-in-link', { showWhen: SIGNED_OUT }),
     b.link('Create an account', '/join', SIGNED_OUT),
     b.text('You are signed in as {member.email}.', 'p', SIGNED_IN),
     b.link('Go to your account', '/account', SIGNED_IN),
@@ -281,10 +308,20 @@ export function buildMembersDemoPages(): Page[] {
     PRO,
   )
 
-  return [homePage, join, signIn, forgot, reset, welcome, invitation, accountPage, members, pro]
+  const pages = [homePage, join, signIn, forgot, reset, welcome, invitation, accountPage, members, pro]
+  return prefix === '' ? pages : withPrefix(pages, prefix)
 }
 
 /** Where the member emails' links lead, and who can join. */
+export function membersDemoSettings(prefix = ''): MemberSettings {
+  return {
+    ...MEMBERS_DEMO_SETTINGS,
+    pages: Object.fromEntries(
+      Object.entries(MEMBERS_DEMO_SETTINGS.pages).map(([key, path]) => [key, `/${prefix}${path.slice(1)}`]),
+    ) as MemberSettings['pages'],
+  }
+}
+
 export const MEMBERS_DEMO_SETTINGS: MemberSettings = {
   signupMode: 'open',
   profileFields: [

@@ -53,7 +53,7 @@ test.describe('member pages in the editor', () => {
       await expect(dialog).toBeHidden()
 
       // The explorer marks the page, so a protected page is visible at a glance.
-      await expect(page.getByRole('img', { name: 'Signed-in members only' })).toBeVisible()
+      await expect(row.getByRole('img', { name: 'Signed-in members only' })).toBeVisible()
     })
 
     await test.step('build a sign-up form from the Members mode', async () => {
