@@ -15,7 +15,13 @@ import { join } from 'node:path'
 import { registry } from '@core/module-engine'
 import { memberFormActionPath, readShowWhen, showWhenAllows, type AccessRule } from '@core/members'
 import { duplicatePage, type Page, type SiteDocument, type SiteShell } from '@core/page-tree'
-import { publishPage, subtreeDependsOnMember } from '@core/publisher'
+import {
+  publishPage,
+  showWhenPathsAllow,
+  showWhenPathsAreGated,
+  showWhenPathsTo,
+  subtreeDependsOnMember,
+} from '@core/publisher'
 import { findDynamicNodeIds } from '../../core/publisher/dynamicDetection'
 import { normalizeSiteRuntimeConfig } from '@core/site-runtime'
 import { pageToCells } from '../../core/data/pageFromRow'
@@ -128,6 +134,86 @@ describe('member bindings and show-when rules', () => {
       expect(findDynamicNodeIds(page, site, registry, { visitorKnown: true }).size).toBe(0)
       expect(subtreeDependsOnMember(page, site, registry, 'p_hello')).toBe(true)
       expect(subtreeDependsOnMember(page, site, registry, 'p_plain')).toBe(false)
+    })
+
+    describe('rules above a node, along the render path', () => {
+      const pro = { visitor: 'tags', tags: ['pro'] } as const
+      const component = (id: string, nodes: Node[]) =>
+        ({ id, name: id, tree: { rootNodeId: 'vc_root', nodes: Object.fromEntries(nodes.map((n) => [n.id, n])) } }) as unknown as SiteDocument['visualComponents'][number]
+      const siteOf = (pageNodes: Node[], componentNodes: Node[]) => {
+        const refPage = makePage('r', 'r', pageNodes)
+        return { refPage, site: { ...siteWith([refPage]), visualComponents: [component('vc', componentNodes)] } as SiteDocument }
+      }
+
+      it('puts a list inside a component under the reference that placed it', () => {
+        const { refPage, site } = siteOf(
+          [node('ref', 'base.visual-component-ref', { componentId: 'vc', showWhen: pro })],
+          [node('vc_root', 'base.container', {}, ['vc_loop']), node('vc_loop', 'base.loop', {})],
+        )
+        const paths = showWhenPathsTo(refPage, site, 'vc_loop', { includeSelf: true })
+        expect(paths).toEqual([[pro]])
+        expect(showWhenPathsAreGated(paths)).toBe(true)
+        expect(showWhenPathsAllow(paths, null)).toBe(false)
+        expect(showWhenPathsAllow(paths, [])).toBe(false)
+        expect(showWhenPathsAllow(paths, ['pro'])).toBe(true)
+      })
+
+      it('puts a list inside a component under the component\'s own limited elements', () => {
+        const { refPage, site } = siteOf(
+          [node('ref', 'base.visual-component-ref', { componentId: 'vc' })],
+          [
+            node('vc_root', 'base.container', { showWhen: { visitor: 'signedIn' } }, ['vc_loop']),
+            node('vc_loop', 'base.loop', {}),
+          ],
+        )
+        const paths = showWhenPathsTo(refPage, site, 'vc_loop', { includeSelf: true })
+        expect(showWhenPathsAllow(paths, null)).toBe(false)
+        expect(showWhenPathsAllow(paths, [])).toBe(true)
+      })
+
+      it('puts slot content under the outlet it fills, and gives unplaced content to nobody', () => {
+        const { refPage, site } = siteOf(
+          [
+            node('ref', 'base.visual-component-ref', { componentId: 'vc' }, ['ref__fill', 'ref__lost']),
+            node('ref__fill', 'base.slot-instance', { slotName: 'body' }, ['ref__fill_text']),
+            node('ref__fill_text', 'base.text', { text: 'x', tag: 'p' }),
+            node('ref__lost', 'base.slot-instance', { slotName: 'gone' }, ['ref__lost_text']),
+            node('ref__lost_text', 'base.text', { text: 'y', tag: 'p' }),
+          ],
+          [
+            node('vc_root', 'base.container', {}, ['vc_box']),
+            node('vc_box', 'base.container', { showWhen: pro }, ['vc_outlet']),
+            node('vc_outlet', 'base.slot-outlet', { slotName: 'body' }),
+          ],
+        )
+        const filled = showWhenPathsTo(refPage, site, 'ref__fill_text', { includeSelf: false })
+        expect(showWhenPathsAllow(filled, [])).toBe(false)
+        expect(showWhenPathsAllow(filled, ['pro'])).toBe(true)
+        const lost = showWhenPathsTo(refPage, site, 'ref__lost_text', { includeSelf: false })
+        expect(showWhenPathsAllow(lost, ['pro'])).toBe(false)
+      })
+
+      it('treats a node on no render path as limited, and open to nobody', () => {
+        const { refPage, site } = siteOf([node('plain', 'base.text', { text: 'x', tag: 'p' })], [node('vc_root', 'base.loop', {})])
+        const paths = showWhenPathsTo(refPage, site, 'vc_root', { includeSelf: true })
+        expect(paths).toEqual([])
+        expect(showWhenPathsAreGated(paths)).toBe(true)
+        expect(showWhenPathsAllow(paths, ['pro'])).toBe(false)
+        expect(showWhenPathsAreGated(showWhenPathsTo(refPage, site, 'plain', { includeSelf: true }))).toBe(false)
+      })
+
+      it('lets a visitor in through any one placement of a component used twice', () => {
+        const { refPage, site } = siteOf(
+          [
+            node('open_ref', 'base.visual-component-ref', { componentId: 'vc' }),
+            node('pro_ref', 'base.visual-component-ref', { componentId: 'vc', showWhen: pro }),
+          ],
+          [node('vc_root', 'base.loop', {})],
+        )
+        const paths = showWhenPathsTo(refPage, site, 'vc_root', { includeSelf: true })
+        expect(paths).toHaveLength(2)
+        expect(showWhenPathsAllow(paths, null)).toBe(true)
+      })
     })
 
     it('finds a member token inside an authored HTML attribute', () => {

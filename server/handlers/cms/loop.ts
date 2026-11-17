@@ -21,12 +21,13 @@
  */
 
 import type { DbClient } from '../../db/client'
-import { showWhenAllows } from '@core/members'
 import { registry } from '@core/module-engine'
 import { loopSourceRegistry } from '@core/loops/registry'
 import {
-  enclosingShowWhenRules,
   renderNode,
+  showWhenPathsAllow,
+  showWhenPathsAreGated,
+  showWhenPathsTo,
   subtreeDependsOnMember,
   type RenderConfig,
   type RenderAccumulators,
@@ -114,12 +115,19 @@ export async function handleLoopRequest(
   // Items that show member data are rendered for this visitor alone.
   // The items are rendered here without the loop element itself, so its own
   // show-when rule and those of everything around it are checked here.
-  const enclosing = enclosingShowWhenRules(containingPage, loopNode.id, { includeSelf: true })
-  const showsMember = enclosing.length > 0 || subtreeDependsOnMember(containingPage, site, registry, loopNode.id)
+  // The loop may live inside a Visual Component, so the rules are followed
+  // along the render path, through the component and the reference that
+  // placed it. A loop on no render path is given to nobody.
+  const paths = showWhenPathsTo(containingPage, site, loopNode.id, { includeSelf: true })
+  const gated = showWhenPathsAreGated(paths)
+  // A loop inside a component is not in the page's own node map, where
+  // `subtreeDependsOnMember` looks; treat it as per-visitor rather than guess.
+  const inComponent = containingPage.nodes[loopNode.id] === undefined
+  const showsMember = gated || inComponent || subtreeDependsOnMember(containingPage, site, registry, loopNode.id)
   const forVisitor = isProtected || showsMember
-  if (enclosing.length > 0) {
+  if (gated) {
     const tags = (await visitor())?.tags ?? null
-    if (!enclosing.every((rule) => showWhenAllows(rule, tags))) {
+    if (!showWhenPathsAllow(paths, tags)) {
       return jsonResponse({ html: '', hasMore: false, pageNumber }, { headers: PRIVATE_HEADERS })
     }
   }

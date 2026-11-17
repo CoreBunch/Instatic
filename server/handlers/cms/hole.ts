@@ -40,13 +40,14 @@ import type { ClosedContent, SourceRequestContext } from '@core/loops/types'
 import { registry } from '@core/module-engine'
 import { loopSourceRegistry } from '@core/loops/registry'
 import {
-  enclosingShowWhenRules,
   renderNode,
+  showWhenPathsAllow,
+  showWhenPathsAreGated,
+  showWhenPathsTo,
   subtreeDependsOnMember,
   type RenderConfig,
   type RenderAccumulators,
 } from '@core/publisher'
-import { showWhenAllows } from '@core/members'
 import { buildPageFrame, buildRouteFrame, buildSiteFrame, type MemberFrame } from '@core/templates/contextFrames'
 import { prefetchLoopData } from '../../publish/loopPrefetch'
 import { getOrRender } from '../../publish/renderCache'
@@ -269,11 +270,13 @@ export async function handleHoleRequest(
   // for this visitor alone, on a public page as much as on a protected one.
   // So is a fragment that sits inside an element with a show-when rule: the
   // rules above it are checked here, because rendering starts at this node.
-  const enclosing = enclosingShowWhenRules(foundPage, nodeId, { includeSelf: false })
-  const showsMember = enclosing.length > 0 || subtreeDependsOnMember(foundPage, snap.site, registry, nodeId)
-  if (enclosing.length > 0) {
+  // A node that is not on any render path of its page is given to nobody.
+  const paths = showWhenPathsTo(foundPage, snap.site, nodeId, { includeSelf: false })
+  const gated = showWhenPathsAreGated(paths)
+  const showsMember = gated || subtreeDependsOnMember(foundPage, snap.site, registry, nodeId)
+  if (gated) {
     const tags = (await visitor())?.tags ?? null
-    if (!enclosing.every((rule) => showWhenAllows(rule, tags))) {
+    if (!showWhenPathsAllow(paths, tags)) {
       // Exactly what the page render gives this visitor for the enclosing element: nothing.
       return new Response('', { status: 200, headers: { 'content-type': 'text/html; charset=utf-8', ...PRIVATE_HEADERS } })
     }
