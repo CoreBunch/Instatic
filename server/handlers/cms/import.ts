@@ -51,7 +51,8 @@ import { importMediaAsset, assignAssetToFolders } from '../../repositories/media
 import { jsonResponse, readValidatedBody } from '../../http'
 import { parseValue } from '@core/utils/typeboxHelpers'
 import { SiteBundleSchema, ImportStrategySchema, ImportResultSchema, type ImportStrategy, type SiteBundle } from '@core/data/bundleSchema'
-import { CMS_API_PREFIX, type CmsHandlerOptions } from './shared'
+import { CMS_API_PREFIX, requestAuditContext, type CmsHandlerOptions } from './shared'
+import { createAuditEvent } from '../../repositories/audit'
 import type { BranchScope } from '../../branches/scope'
 
 /** ZIP local-file-header magic (`PK\x03\x04`) — enough to tell an archive from JSON. */
@@ -133,6 +134,7 @@ export async function handleImportRoute(
     throw err
   })
   if (applied instanceof Response) return applied
+  await recordImportedTableAccess(req, db, user, applied.tableAccessAdded)
   // After commit, before the bundle's media lands: a bundle file at a deleted
   // asset's storage path must be written after the old bytes are removed.
   await removeDeletedMediaFiles(applied.deletedMedia)
@@ -278,6 +280,25 @@ export async function authorizeImportedTableAccess(
     return jsonResponse({ error: 'Importing table access rules requires permission to manage those tables' }, { status: 403 })
   }
   return requireStepUp(req, db, user)
+}
+
+/** An import that limited a table changed who may open it; the audit log says so. */
+export async function recordImportedTableAccess(
+  req: Request,
+  db: DbClient,
+  user: AuthUser,
+  added: ReadonlyArray<{ tableId: string; slug: string }>,
+): Promise<void> {
+  for (const table of added) {
+    await createAuditEvent(db, {
+      actorUserId: user.id,
+      action: 'data.table.access',
+      targetType: 'data_table',
+      targetId: table.tableId,
+      metadata: { slug: table.slug, source: 'import' },
+      ...requestAuditContext(req),
+    })
+  }
 }
 
 export function validateImportedPublication(bundle: SiteBundle): Response | null {

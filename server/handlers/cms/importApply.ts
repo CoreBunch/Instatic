@@ -77,6 +77,8 @@ export interface AppliedSiteBundle {
   rowsSkipped: number
   mediaFoldersImported: number
   redirectsImported: number
+  /** Tables the import gave an access rule they did not have, for the audit log. */
+  tableAccessAdded: Array<{ tableId: string; slug: string }>
   /**
    * Folder ids that actually landed — asset memberships are restored only for
    * these, so an asset's `folderIds` pointing at a folder we didn't import is
@@ -177,6 +179,7 @@ async function applySiteBundleLocked(
   let deletedMedia: DeletedMediaAsset[] = []
   const importedFolderIds = new Set<string>()
   const importedRowIds = new Set<string>()
+  let tableAccessAdded: AppliedSiteBundle['tableAccessAdded'] = []
   let guardPublication = (publication: BundlePublication): BundlePublication => publication
   const transaction = (operation: (tx: DbClient) => Promise<void>) => db.transaction(async (tx) => {
     await operation(tx)
@@ -253,6 +256,7 @@ async function applySiteBundleLocked(
     /** A stored rule always stays. The bundle's rule is only added where there is none. */
     const applyTableAccess = async (tx: DbClient): Promise<void> => {
       if (!isMainScope(scope)) return
+      const added: AppliedSiteBundle['tableAccessAdded'] = []
       for (const table of bundle.tables) {
         const stored = storedTableRules.get(table.id)
         if (stored) {
@@ -263,8 +267,9 @@ async function applySiteBundleLocked(
         const atAddress = table.routeBase.trim() === '' ? undefined : storedTableRuleByRoute.get(normalizeRouteBase(table.routeBase))
         const carried = bundle.tableAccess?.[table.id]
         const rule = atAddress ?? (carried && carried.level !== 'public' ? carried : undefined)
-        if (rule) await writeTableAccess(tx, table.id, rule)
+        if (rule && (await writeTableAccess(tx, table.id, rule))) added.push({ tableId: table.id, slug: table.slug })
       }
+      tableAccessAdded = added
     }
 
     if (strategy === 'replace') {
@@ -544,6 +549,7 @@ async function applySiteBundleLocked(
     rowsInserted,
     rowsReplaced,
     rowsSkipped,
+    tableAccessAdded,
     mediaFoldersImported,
     redirectsImported,
     importedFolderIds,

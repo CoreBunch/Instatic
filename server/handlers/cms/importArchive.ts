@@ -49,6 +49,7 @@ import type { BranchScope } from '../../branches/scope'
 import {
   authorizeImportedShell,
   authorizeImportedTableAccess,
+  recordImportedTableAccess,
   authorizeImportedPublication,
   validateImportedPublication,
   authorizeImportStrategy,
@@ -143,6 +144,7 @@ export async function handleImportArchiveRoute(
     })
     // After commit, before staged media moves in: a bundle file at a deleted
     // asset's storage path must land after the old bytes are removed.
+    await recordImportedTableAccess(req, db, user, applied.tableAccessAdded)
     await removeDeletedMediaFiles(applied.deletedMedia)
 
     let mediaImported = 0

@@ -14,7 +14,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
 import type { SiteBundle, ImportStrategy } from '@core/data/bundleSchema'
 import type { AccessRule } from '@core/members'
 import { MAIN_SCOPE } from '../../../server/branches/scope'
-import { authorizeImportedTableAccess } from '../../../server/handlers/cms/import'
+import { authorizeImportedTableAccess, recordImportedTableAccess } from '../../../server/handlers/cms/import'
 import { applySiteBundle } from '../../../server/handlers/cms/importApply'
 import type { AuthUser } from '../../../server/repositories/users'
 import { resetForTests } from '../../../server/publish/renderCache'
@@ -60,6 +60,7 @@ beforeEach(async () => {
   await t.db`delete from data_rows`
   await t.db`delete from data_tables where system = ${false}`
   await t.db`update data_tables set access_json = ${null}`
+  await t.db`delete from audit_events`
   await t.db`delete from users where id = 'admin_1'`
   await t.db`
     insert into users (id, email, email_normalized, display_name, password_hash, role_id)
@@ -114,8 +115,17 @@ describe('a bundle that carries table rules', () => {
     const bundle: SiteBundle = { ...(await currentBundle()), tableAccess: { guides: MEMBERS } }
     await apply(bundle, 'merge-add')
     expect((await getTableAccess(t.db, 'guides'))?.level).toBe('public')
-    await apply(bundle, 'merge-overwrite')
+    const applied = await apply(bundle, 'merge-overwrite')
     expect(await getTableAccess(t.db, 'guides')).toEqual(MEMBERS)
+    expect(applied.tableAccessAdded).toEqual([{ tableId: 'guides', slug: 'guides' }])
+
+    // The handlers write one audit event per table the import limited.
+    await recordImportedTableAccess(new Request('http://localhost/admin/api/cms/import'), t.db, { id: 'admin_1' } as AuthUser, applied.tableAccessAdded)
+    const { rows } = await t.db<{ action: string; target_id: string; metadata_json: Record<string, unknown> }>`
+      select action, target_id, metadata_json from audit_events where action = 'data.table.access'
+    `
+    expect(rows.map((row) => [row.action, row.target_id, row.metadata_json.source])).toEqual([['data.table.access', 'guides', 'import']])
+    expect((await apply(bundle, 'merge-overwrite')).tableAccessAdded).toEqual([])
   })
 
   it('limits a table that merge-add creates', async () => {
