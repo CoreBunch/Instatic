@@ -51,3 +51,25 @@
 .mark[data-logo="sendgrid"] {
     --provider-accent: var(--accent-2);
 }
+
+/* The logo alone, sized to sit beside a button label. */
+.glyph {
+    --provider-accent: var(--accent-3);
+
+    display: inline-flex;
+    flex: none;
+    align-items: center;
+    justify-content: center;
+    width: 16px;
+    height: 16px;
+    color: var(--provider-accent);
+}
+
+.glyphLogo {
+    width: 100%;
+    height: 100%;
+    background: var(--provider-accent);
+    mask-position: center;
+    mask-repeat: no-repeat;
+    mask-size: contain;
+}

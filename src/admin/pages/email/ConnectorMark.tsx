@@ -18,6 +18,18 @@ const LOGO_CLASS: Record<ConnectorLogo, string> = {
 }
 
 /**
+ * A mail service's logo on its own, at text size, for use inside a button or
+ * a line of text where the boxed mark would be too heavy.
+ */
+export function ConnectorGlyph({ logo }: { logo: ConnectorLogo | null }) {
+  return (
+    <span className={cn(styles.mark, styles.glyph)} data-logo={logo ?? 'none'} aria-hidden="true">
+      {logo ? <span className={cn(styles.glyphLogo, LOGO_CLASS[logo])} /> : <SendSolidIcon size={14} />}
+    </span>
+  )
+}
+
+/**
  * The identity chip of a mail service, in the workspace's service-mark
  * style: the provider's logo when there is one, a send icon otherwise.
  */

@@ -242,6 +242,8 @@
   gap: var(--space-s);
 }
 
-.presetButton {
+/* Logo, then name: the gap is the only thing this changes on the button. */
+.presetRow .presetButton {
   gap: var(--space-s);
+  padding-inline: var(--space-l);
 }

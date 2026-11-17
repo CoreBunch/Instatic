@@ -16,7 +16,7 @@ import { PlusIcon } from 'pixel-art-icons/icons/plus'
 import type { MailConnector, MailConnectorInput } from '@core/mail'
 import { createCmsMailConnector } from '@core/persistence'
 import { getErrorMessage } from '@core/utils/errorMessage'
-import { ConnectorMark } from '../ConnectorMark'
+import { ConnectorGlyph, ConnectorMark } from '../ConnectorMark'
 import { SMTP_PRESETS, type ConnectorSpec, type SmtpPreset } from '../connectorCatalog'
 import styles from '../EmailPage.module.css'
 
@@ -151,7 +151,7 @@ function AddConnectorForm({
                   className={styles.presetButton}
                   onClick={() => pickPreset(option)}
                 >
-                  <ConnectorMark logo={option.logo} size="sm" />
+                  <ConnectorGlyph logo={option.logo} />
                   <span>{option.label}</span>
                 </Button>
               ))}
@@ -164,7 +164,7 @@ function AddConnectorForm({
                 className={styles.presetButton}
                 onClick={() => pickPreset(null)}
               >
-                <ConnectorMark logo={null} size="sm" />
+                <ConnectorGlyph logo={null} />
                 <span>Other server</span>
               </Button>
             </div>
