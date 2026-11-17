@@ -624,7 +624,14 @@ describe('site members', () => {
       const crossSite = await browser.get('logout', { 'sec-fetch-site': 'cross-site' })
       const foreignReferer = await browser.get('logout', { referer: 'https://evil.example/page' })
       const unknownSource = await browser.get('logout')
-      for (const res of [crossSite, foreignReferer, unknownSource]) expect(res.status).toBe(303)
+      const fromEmail = await browser.get('logout', { 'sec-fetch-site': 'none' })
+      const asImage = await browser.get('logout', {
+        'sec-fetch-site': 'same-origin', 'sec-fetch-mode': 'no-cors', 'sec-fetch-dest': 'image',
+      })
+      const prefetch = await browser.get('logout', { 'sec-fetch-site': 'same-origin', 'sec-purpose': 'prefetch' })
+      for (const res of [crossSite, foreignReferer, unknownSource, fromEmail, asImage, prefetch]) {
+        expect(res.status).toBe(303)
+      }
       expect(await browser.me()).not.toBeNull()
     })
   })

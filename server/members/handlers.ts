@@ -372,13 +372,21 @@ async function runAction(
 }
 
 /**
- * A sign-out link. A GET carries no `Origin`, so the check is that the click
- * came from this site: another site that links or embeds this address does
- * not sign anyone out. The answer is always a redirect to a page of the site.
+ * A sign-out link. A GET carries no `Origin`, so the check is that a visitor
+ * clicked it on a page of this site. A link in an email or on another site,
+ * an image or script that points here, and a prefetch do not sign anyone out.
+ * The answer is always a redirect to a page of the site.
  */
 function linkFromThisSite(req: Request): boolean {
+  const purpose = req.headers.get('sec-purpose') ?? req.headers.get('purpose')
+  if (purpose?.includes('prefetch')) return false
   const fetchSite = req.headers.get('sec-fetch-site')
-  if (fetchSite) return fetchSite === 'same-origin' || fetchSite === 'none'
+  if (fetchSite) {
+    if (fetchSite !== 'same-origin') return false
+    const mode = req.headers.get('sec-fetch-mode')
+    const dest = req.headers.get('sec-fetch-dest')
+    return (!mode || mode === 'navigate') && (!dest || dest === 'document')
+  }
   // Neither header: nothing says where the click came from, so do nothing.
   const referer = req.headers.get('referer')
   if (!referer) return false
