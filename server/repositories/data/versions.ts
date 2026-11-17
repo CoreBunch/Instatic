@@ -9,6 +9,8 @@
 
 import type { DbClient } from '../../db/client'
 import { isoDate } from '@core/utils/isoDate'
+import type { SiteDocument } from '@core/page-tree'
+import { pageToCells } from '@core/data/pageFromRow'
 
 /**
  * Next `version_number` for a row: `max(existing) + 1`, or `1` when the row has
@@ -89,20 +91,51 @@ export async function getDataRowVersion(
   rowId: string,
   versionId: string,
 ): Promise<DataRowVersionContent | null> {
-  const { rows } = await db<{ id: string; row_id: string; version_number: number; cells_json: Record<string, unknown>; slug: string }>`
-    select id, row_id, version_number, cells_json, slug
+  const { rows } = await db<{
+    id: string
+    row_id: string
+    version_number: number
+    cells_json: Record<string, unknown>
+    slug: string
+    site_json: SiteDocument | string | null
+  }>`
+    select data_row_versions.id,
+           data_row_versions.row_id,
+           data_row_versions.version_number,
+           data_row_versions.cells_json,
+           data_row_versions.slug,
+           site_snapshots.site_json
     from data_row_versions
-    where id = ${versionId}
-      and row_id = ${rowId}
+    left join site_snapshots on site_snapshots.id = data_row_versions.site_snapshot_id
+    where data_row_versions.id = ${versionId}
+      and data_row_versions.row_id = ${rowId}
     limit 1
   `
   const row = rows[0]
   if (!row) return null
+
+  let cells = row.cells_json ?? {}
+  if (row.site_json) {
+    const site = (typeof row.site_json === 'string'
+      ? JSON.parse(row.site_json)
+      : row.site_json) as SiteDocument
+    const page = site.pages?.find((p) => p.id === rowId)
+    if (page) {
+      cells = {
+        ...pageToCells(page),
+        ...cells,
+        templateEnabled: page.template ? true : false,
+        templateTarget: page.template?.target ?? null,
+        templatePriority: page.template?.priority ?? null,
+      }
+    }
+  }
+
   return {
     id: row.id,
     rowId: row.row_id,
     versionNumber: Number(row.version_number),
-    cells: row.cells_json,
+    cells,
     slug: row.slug,
   }
 }
