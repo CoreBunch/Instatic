@@ -415,6 +415,9 @@ describe('members access gate', () => {
       // The rows source lists pages too, and follows the same rule.
       expect(html).toContain('<h3>T-index</h3>')
       expect(html).not.toContain('<h3>T-vault</h3>')
+      // The row published during setup took the catalog off disk (it lists that
+      // table); a full publish bakes it again.
+      await publishDraftSite(t.db, 'admin_1', uploadsDir)
       const baked = await readArtefact(uploadsDir, '/catalog')
       expect(baked).toContain('T-index')
       expect(baked).not.toContain('T-vault')
