@@ -154,7 +154,14 @@ describe('collectCanvasPluginStylesheets', () => {
       '/* zeta body-end */',
     ])
     // Parity: every canvas stylesheet appears in the published plan, in the same order.
-    expect(publishedOrder.map((tag) => tag.replace(/<[^>]+>/g, ''))).toEqual(
+    // Each published tag is parsed as markup and its text read back, so the
+    // comparison is on the stylesheet body, not on a string-munged tag.
+    const publishedCss = publishedOrder.map((tag) => {
+      const template = document.createElement('template')
+      template.innerHTML = tag
+      return template.content.textContent
+    })
+    expect(publishedCss).toEqual(
       stylesheets.map((stylesheet) => stylesheet.css),
     )
     expect(stylesheets.map((stylesheet) => stylesheet.position)).toEqual([

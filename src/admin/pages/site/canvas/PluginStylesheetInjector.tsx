@@ -43,6 +43,11 @@ interface PluginStylesheetInjectorProps {
 
 export function PluginStylesheetInjector({ targetDocument, viewport }: PluginStylesheetInjectorProps) {
   const stylesheets = useCanvasPluginStylesheets()
+  // The effect keys on the viewport's numbers, not the object: callers build
+  // `viewport` inline, and a new-but-equal object must not tear down and
+  // re-add every plugin <style> tag.
+  const viewportWidth = viewport?.width
+  const viewportHeight = viewport?.height
 
   useEffect(() => {
     const head = targetDocument.head
@@ -51,7 +56,10 @@ export function PluginStylesheetInjector({ targetDocument, viewport }: PluginSty
     const siteStylesStart = head.firstChild
 
     for (const stylesheet of stylesheets) {
-      const css = viewport ? resolveViewportUnits(stylesheet.css, viewport) : stylesheet.css
+      const css =
+        viewportWidth !== undefined && viewportHeight !== undefined
+          ? resolveViewportUnits(stylesheet.css, { width: viewportWidth, height: viewportHeight })
+          : stylesheet.css
       const styleEl = targetDocument.createElement('style')
       styleEl.setAttribute('data-source', STYLE_SOURCE)
       styleEl.setAttribute('data-plugin-id', stylesheet.pluginId)
@@ -64,7 +72,7 @@ export function PluginStylesheetInjector({ targetDocument, viewport }: PluginSty
     return () => {
       for (const styleEl of targetDocument.querySelectorAll(STYLE_SELECTOR)) styleEl.remove()
     }
-  }, [targetDocument, stylesheets, viewport])
+  }, [targetDocument, stylesheets, viewportWidth, viewportHeight])
 
   return null
 }

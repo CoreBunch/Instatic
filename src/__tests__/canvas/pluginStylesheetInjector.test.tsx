@@ -66,6 +66,21 @@ describe('PluginStylesheetInjector', () => {
     expect(document.head.querySelector('script, link')).toBeNull()
   })
 
+  it('keeps its tags when re-rendered with an equal but new viewport object', async () => {
+    served = [{ pluginId: 'acme.theme', position: 'after-site', css: '.hero { min-height: 100vh; }' }]
+    const view = render(<PluginStylesheetInjector targetDocument={document} viewport={{ width: 1440, height: 900 }} />)
+    await waitFor(() => expect(pluginStyles()).toHaveLength(1))
+    const [mounted] = pluginStyles()
+
+    view.rerender(<PluginStylesheetInjector targetDocument={document} viewport={{ width: 1440, height: 900 }} />)
+    expect(pluginStyles()).toHaveLength(1)
+    expect(pluginStyles()[0]).toBe(mounted!)
+
+    // A real viewport change still re-resolves the units.
+    view.rerender(<PluginStylesheetInjector targetDocument={document} viewport={{ width: 1440, height: 600 }} />)
+    expect(pluginStyles()[0]?.textContent).toBe('@layer user-authored {\n.hero { min-height: 600px; }\n}')
+  })
+
   it('reloads when plugins change and removes its tags on unmount', async () => {
     served = [{ pluginId: 'acme.theme', position: 'after-site', css: 'p { color: red; }' }]
     const view = render(<PluginStylesheetInjector targetDocument={document} />)
