@@ -333,7 +333,7 @@ type SitePackageJson = {
 }
 ```
 
-The CMS supports plugins that ship their own npm deps and runtime imports (e.g. `three`). When a site declares a dependency, `bun install` runs against a per-site workspace under `uploads/sites/<siteId>/runtime/`, producing a hashed cache directory the server serves at `/_instatic/runtime/cache/<hash>/...`. The runtime cache layout is owned by `src/core/site-runtime/` and served by `server/publish/runtime/`.
+The CMS supports plugins that ship their own npm deps and runtime imports (e.g. `three`). When a site declares a dependency, `bun install` runs in a workspace keyed by the lock's hash under the runtime cache directory (`RUNTIME_CACHE_DIR`, outside `UPLOADS_DIR`), which the server serves at `/_instatic/runtime/cache/<hash>/...`. The cache layout, its location and its restore-on-miss behaviour are owned by `server/publish/runtime/` and described in [`dependencies.md`](dependencies.md) → "The install cache".
 
 The Site → Dependencies panel edits this `package.json`: it browses the npm registry through the server proxy and installs into `dependencies` (or `devDependencies`) with a caret range. Every manifest change is picked up by `useAutoResolveDependencies`, which resolves the lock and runs `bun install`. Panel and proxy: [`dependencies.md`](dependencies.md).
 

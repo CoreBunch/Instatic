@@ -1,12 +1,12 @@
 import { createHash, randomBytes } from 'node:crypto'
 import { existsSync, readFileSync } from 'node:fs'
 import { mkdir, rename, rm, writeFile } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
-import { join, resolve } from 'node:path'
+import { join } from 'node:path'
 import { Type, type Static } from '@sinclair/typebox'
 import { packageEntryUrlPath, pickEsmEntry } from '@core/registry'
 import type { SiteDependencyLock } from '@core/site-runtime'
 import { safeParseJson } from '@core/utils/jsonValidate'
+import { readRuntimeCacheDir } from '../../config'
 import { isPublicNpmRegistry, npmRegistryUrl } from '../../registry/config'
 
 export interface RuntimeDependencyCache {
@@ -43,11 +43,12 @@ interface EnsureRuntimeDependencyCacheOptions {
  * process, watcher reload, pipe deadlock) can leave the directory created but
  * only sparsely populated.
  *
- * The sentinel alone does NOT prove the entry is still usable. The default
- * cache root is the OS temp folder, and temp cleaners (macOS periodic cleanup,
- * `systemd-tmpfiles`) delete the installed files while leaving the directories
- * and this marker behind. `isRuntimeDependencyCacheIntact` is the check that
- * decides whether an entry may be trusted.
+ * The sentinel alone does NOT prove the entry is still usable. A cache root
+ * that an operator pointed at a temp folder is swept by temp cleaners (macOS
+ * periodic cleanup, `systemd-tmpfiles`), which delete the installed files
+ * while leaving the directories and this marker behind.
+ * `isRuntimeDependencyCacheIntact` is the check that decides whether an entry
+ * may be trusted.
  *
  * The marker records, per locked package, the entry file the importmap serves
  * (`entries`), so the integrity check can confirm those files without parsing
@@ -101,9 +102,13 @@ export function runtimeDependencyLockHash(lock: SiteDependencyLock): string {
 // filename here updates writer and readers together — they can never disagree.
 // ---------------------------------------------------------------------------
 
-/** Root of the runtime dependency cache. Overridable via `RUNTIME_CACHE_DIR`. */
+/**
+ * Root of the runtime dependency cache: `RUNTIME_CACHE_DIR`, or `runtime-cache/`
+ * in the instance state directory. Read from the environment on every call;
+ * `readRuntimeCacheDir` in `server/config.ts` owns the rule.
+ */
 export function cacheRootDir(): string {
-  return resolve(process.env.RUNTIME_CACHE_DIR || join(tmpdir(), 'instatic-runtime-cache'))
+  return readRuntimeCacheDir()
 }
 
 /** Directory holding all per-hash workspaces under a cache root. */
