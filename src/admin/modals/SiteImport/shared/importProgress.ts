@@ -174,3 +174,14 @@ export function makeCmsRunDoneProgress(totals: CmsRunTotals, result: CmsImportRe
   progress.categories.redirects = { done: result.redirectsImported, total: totals.redirects }
   return progress
 }
+
+/** One-line "what landed" summary for the completion toast of a static run. */
+export function describeStaticImportResult(result: ImportResult, mediaSummary: string): string {
+  const sheets = result.stylesheets.length
+  return [
+    `${result.pages.length} pages`,
+    `${result.styleRules.length} style rules`,
+    ...(sheets > 0 ? [`${sheets} ${sheets === 1 ? 'stylesheet' : 'stylesheets'}`] : []),
+    mediaSummary,
+  ].join(' · ')
+}

@@ -213,7 +213,7 @@ describe('buildImportPlan — structure', () => {
     expect(hero!.styles.backgroundImage).toContain(`url('css/img/hero.png')`)
     expect(p.styleRuleSources[p.styleRules.indexOf(hero!)]).toBe('css/components/hero.css')
     expect(p.assets.some((asset) => asset.sourcePath === 'css/img/hero.png')).toBe(true)
-    expect(p.unusedCss).not.toContain('css/components/hero.css')
+    expect(p.stylesheets.map((sheet) => sheet.path)).not.toContain('css/components/hero.css')
   })
 
   it('folds a body <style> block into the plan as a per-page CSS source', () => {
@@ -471,7 +471,7 @@ describe('buildImportPlan — structure', () => {
     expect(plan.conflicts.rules).toHaveLength(0)
   })
 
-  it('detects unused CSS — CSS not linked by any page', () => {
+  it('plans CSS no page links as a site-wide stylesheet file', () => {
     const withUnused: FileMap = {
       files: {
         ...fileMap.files,
@@ -479,7 +479,9 @@ describe('buildImportPlan — structure', () => {
       },
     }
     const p = buildImportPlan({ fileMap: withUnused, currentSite })
-    expect(p.unusedCss).toContain('styles/unused.css')
+    expect(p.stylesheets).toEqual([
+      expect.objectContaining({ path: 'styles/unused.css', pageSources: [], content: '.u { display: none }' }),
+    ])
   })
 
   it('rewrites var() references to the slug a root colour token is emitted under (#615)', () => {
@@ -640,6 +642,8 @@ describe('buildImportPlan — structure', () => {
         family: 'Manrope',
         variants: ['200', '300', '400', '500', '600', '700', '800'],
         subsets: ['latin'],
+        requestedByConvertedCss: true,
+        stylesheetPaths: [],
       },
       {
         family: 'Plus Jakarta Sans',
@@ -660,6 +664,8 @@ describe('buildImportPlan — structure', () => {
           '800italic',
         ],
         subsets: ['latin'],
+        requestedByConvertedCss: true,
+        stylesheetPaths: [],
       },
     ])
     expect('fontImportUrl' in p).toBe(false)
@@ -822,6 +828,39 @@ describe('commitImportPlan — happy path', () => {
       { path: 'scripts/vendor.js', format: 'classic', pageIds: [indexPageId], priority: 100 },
       { path: 'scripts/app.js', format: 'module', pageIds: [indexPageId], priority: 101 },
     ])
+  })
+
+  it('commits a stylesheet-only import as a site-wide stylesheet with no page scope', async () => {
+    const encoder = new TextEncoder()
+    const plan = buildImportPlan({
+      fileMap: {
+        files: {
+          'members-starter.css': {
+            bytes: encoder.encode(`.members-card { background-image: url('img/bg.png'); }`),
+            mimeType: 'text/css',
+          },
+          'img/bg.png': { bytes: new Uint8Array([1, 2, 3]), mimeType: 'image/png' },
+        },
+      },
+      currentSite: makeEmptySiteDocument(),
+    })
+    const adapter = makeMockAdapter()
+    const result = await commitImportPlan(plan, adapter)
+
+    expect(adapter.ops.some((o) => o.type === 'addPage')).toBe(false)
+    const addStylesheetsOp = adapter.ops.find((o) => o.type === 'addStylesheets')
+    const stylesheets = (addStylesheetsOp!.args as { stylesheets: Array<{
+      path: string
+      content: string
+      pageIds?: string[]
+    }> }).stylesheets
+    expect(stylesheets).toHaveLength(1)
+    expect(stylesheets[0].path).toBe('members-starter.css')
+    expect(stylesheets[0].content).toContain(`url('/uploads/media/img_bg.png')`)
+    // No page ids: the store registers it with the default all-pages scope.
+    expect(stylesheets[0].pageIds).toBeUndefined()
+    expect(result.stylesheets).toEqual([expect.objectContaining({ path: 'members-starter.css' })])
+    expect(result.pages).toHaveLength(0)
   })
 
   it('commits kept stylesheets (mode: file) with resolved page scope and rewritten asset URLs', async () => {
@@ -1078,26 +1117,6 @@ describe('commitImportPlan — per-asset upload failure recovery', () => {
     expect(result.assets).toEqual([]) // all uploads failed → no successful assets
     const uploadFailures = result.warnings.filter((w) => w.kind === 'asset-upload-failed')
     expect(uploadFailures.length).toBe(plan.assets.length)
-  })
-})
-
-// ---------------------------------------------------------------------------
-// Unused CSS
-// ---------------------------------------------------------------------------
-
-describe('buildImportPlan — unused CSS', () => {
-  it('marks CSS files not linked by any page as unusedCss', () => {
-    const enc = new TextEncoder()
-    const fileMapWithOrphan: FileMap = {
-      files: {
-        'index.html': { bytes: enc.encode('<html><head></head><body><p>Hi</p></body></html>'), mimeType: 'text/html' },
-        'styles/orphan.css': { bytes: enc.encode('.foo { color: red }'), mimeType: 'text/css' },
-      },
-    }
-    const plan = buildImportPlan({ fileMap: fileMapWithOrphan, currentSite: makeEmptySiteDocument() })
-    expect(plan.unusedCss).toContain('styles/orphan.css')
-    // orphan CSS rules should NOT appear in styleRules
-    expect(plan.styleRules.find((r) => r.name === 'foo')).toBeUndefined()
   })
 })
 
