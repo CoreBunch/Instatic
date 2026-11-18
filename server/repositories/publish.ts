@@ -446,6 +446,47 @@ export async function getPublishedPageSnapshotById(
   return rows[0] ? snapshotFromQueryRow(rows[0]) : null
 }
 
+/** A live publish's snapshot id and the importmap it baked. */
+export interface LivePublishedImportmap {
+  snapshotId: string
+  importmapBody: string
+}
+
+/**
+ * The importmap of every publish that is live right now (some published row's
+ * active version references its snapshot), newest first. The importmap is the
+ * only place runtime package URLs are published, so this is the full set of
+ * `/_instatic/runtime/cache/<hash>/` entries a visitor can legitimately ask for.
+ */
+export async function listLivePublishedImportmaps(db: DbClient): Promise<LivePublishedImportmap[]> {
+  const { rows } = await db<{ id: string; importmap_body: string }>`
+    select site_snapshots.id, site_snapshots.importmap_body
+    from site_snapshots
+    where site_snapshots.importmap_body is not null
+      and exists (
+        select 1
+        from data_row_versions
+        join data_rows on data_rows.active_version_id = data_row_versions.id
+        where data_row_versions.site_snapshot_id = site_snapshots.id
+          and data_rows.status = 'published'
+          and data_rows.deleted_at is null
+      )
+    order by site_snapshots.created_at desc
+  `
+  return rows.map((row) => ({ snapshotId: row.id, importmapBody: row.importmap_body }))
+}
+
+/** The site document a snapshot froze, or null when the snapshot is gone. */
+export async function getSiteSnapshotDocument(
+  db: DbClient,
+  snapshotId: string,
+): Promise<SiteDocument | null> {
+  const { rows } = await db<{ site_json: SiteDocument }>`
+    select site_json from site_snapshots where id = ${snapshotId} limit 1
+  `
+  return rows[0]?.site_json ?? null
+}
+
 /**
  * Any published page's snapshot, used purely as a carrier for `site_json` —
  * routes that are not themselves pages (entry routes, the 404) need the site

@@ -10,8 +10,8 @@
  * The working directory is resolved even when the API is disabled, because a
  * restore staged by a previous run must still be applied on the next boot.
  */
-import { dirname, join, resolve } from 'node:path'
-import { isSqliteUrl, parseSqlitePath } from '../db'
+import { join, resolve } from 'node:path'
+import { instanceStateDir } from '../instanceDir'
 import { isSameOrInside } from './fsUtil'
 
 export const MANAGER_NAMESPACE = '/_instatic/manager/'
@@ -56,9 +56,7 @@ export function readManagerConfig(
   const override = env.INSTATIC_MANAGER_DIR?.trim()
   const dir = override
     ? resolve(override)
-    : isSqliteUrl(databaseUrl)
-      ? join(dirname(resolve(parseSqlitePath(databaseUrl))), 'manager')
-      : join(dirname(resolve(uploadsDir)), 'manager')
+    : join(instanceStateDir(uploadsDir, databaseUrl), 'manager')
   return {
     token: accepted ? raw : null,
     tokenRejected: raw.length > 0 && !accepted,

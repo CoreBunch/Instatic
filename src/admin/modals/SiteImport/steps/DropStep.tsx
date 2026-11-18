@@ -6,6 +6,9 @@
  * handed off as a File so the parent can route Instatic archives before static-
  * site ingestion; everything else is passed as a File array.
  *
+ * A dropped plugin package is not imported: `pluginPackage` renders a notice
+ * that says so and sends the owner to the Plugins page.
+ *
  * Validation errors (oversized, zip-bomb, traversal) are shown via the
  * `errorMessage` prop — the MODAL catches them from ingestInput() and passes
  * them back here so the drop zone can display them inline.
@@ -15,20 +18,43 @@ import { Button } from '@ui/components/Button'
 import { UploadIcon } from 'pixel-art-icons/icons/upload'
 import { FilePlusSolidIcon } from 'pixel-art-icons/icons/file-plus-solid'
 import { FolderGlyphIcon } from 'pixel-art-icons/icons/folder-glyph'
+import { PackageSolidIcon } from 'pixel-art-icons/icons/package-solid'
 import styles from './DropStep.module.css'
+
+/** A plugin package (root `plugin.json`) the owner dropped into the importer. */
+export interface DroppedPluginPackage {
+  /** The dropped zip's file name; null for a dropped folder or loose files. */
+  fileName: string | null
+  /** The plugin's name from its manifest, when readable. */
+  name: string | null
+}
 
 interface DropStepProps {
   /** True while the modal is ingesting + analyzing the dropped files. */
   busy: boolean
   /** Error message from the last ingest attempt, or null. Shown with role="alert". */
   errorMessage: string | null
+  /** Set when the last drop was a plugin package rather than a site. */
+  pluginPackage?: DroppedPluginPackage | null
+  /** Whether the current user can install plugins (gates the Plugins button). */
+  canInstallPlugins?: boolean
+  /** Navigates to the Plugins page and closes the importer. */
+  onOpenPlugins?: () => void
   /** Called when the user drops/picks loose files (non-zip). */
   onFilesReady: (files: File[]) => void
   /** Called when a single .zip was dropped or picked. */
   onZipReady: (zipFile: File) => void
 }
 
-export function DropStep({ busy, errorMessage, onFilesReady, onZipReady }: DropStepProps) {
+export function DropStep({
+  busy,
+  errorMessage,
+  pluginPackage = null,
+  canInstallPlugins = false,
+  onOpenPlugins,
+  onFilesReady,
+  onZipReady,
+}: DropStepProps) {
   const fileInputRef = useRef<HTMLInputElement | null>(null)
   const folderInputRef = useRef<HTMLInputElement | null>(null)
   const [dragging, setDragging] = useState(false)
@@ -123,6 +149,31 @@ export function DropStep({ busy, errorMessage, onFilesReady, onZipReady }: DropS
         <p className={styles.status} aria-live="polite">
           Ingesting files and analyzing…
         </p>
+      )}
+
+      {pluginPackage && (
+        <div className={styles.pluginNotice} role="status">
+          <PackageSolidIcon size={18} aria-hidden="true" className={styles.pluginNoticeIcon} />
+          <div className={styles.pluginNoticeText}>
+            <p className={styles.pluginNoticeTitle}>
+              {pluginPackage.name ?? pluginPackage.fileName ?? 'This folder'} is a plugin, not a site
+            </p>
+            <p className={styles.pluginNoticeBody}>
+              {canInstallPlugins
+                ? 'Nothing was imported. Plugins are installed from the Plugins page.'
+                : 'Nothing was imported. Plugins are installed from the Plugins page, and your role can’t install them. Ask an administrator.'}
+            </p>
+          </div>
+          <Button
+            variant="primary"
+            size="sm"
+            type="button"
+            disabled={!canInstallPlugins}
+            onClick={onOpenPlugins}
+          >
+            Go to Plugins
+          </Button>
+        </div>
       )}
 
       {errorMessage && (

@@ -23,6 +23,7 @@ import { handleModuleJsAssetRequest, isModuleJsAssetPath } from './handlers/cms/
 import { handlePublicFormRequest } from './forms/handler'
 import { handleMemberRequest, MEMBERS_PATH_PREFIX } from './members/handlers'
 import { isRuntimePackagePath, tryServeRuntimePackage } from './publish/runtime/packageServer'
+import { restorePublishedRuntimeCache } from './publish/runtime/publishedCacheRestore'
 import { jsonResponse } from './http'
 import { tryServeManager } from './manager/handler'
 import { binaryResponse, toArrayBuffer } from './binary'
@@ -327,9 +328,10 @@ function contentTypeForAssetPath(pathname: string): string | null {
  * The /_instatic/runtime/cache/ namespace is exclusive: unknown paths under it
  * 404 here rather than falling through to a later matcher.
  */
-async function tryServeRuntimePackageNamespace(req: Request, _runtime: ServerRuntime, _url: URL, pathname: string): Promise<Response | null> {
+async function tryServeRuntimePackageNamespace(req: Request, runtime: ServerRuntime, _url: URL, pathname: string): Promise<Response | null> {
   if (!isRuntimePackagePath(pathname)) return null
-  return (await tryServeRuntimePackage(req, pathname)) ?? new Response('not found', { status: 404 })
+  const restore = (hash: string) => restorePublishedRuntimeCache(runtime.db, hash)
+  return (await tryServeRuntimePackage(req, pathname, restore)) ?? new Response('not found', { status: 404 })
 }
 
 /**
