@@ -155,7 +155,14 @@ export function composeTemplateChain(chain: Page[], terminal: TerminalContent): 
   // outlets, so any parentId copied from the source pages is now stale. Derive
   // it fresh from the composed children arrays before the page is rendered
   // (the publisher's sizes resolver reads parentId).
-  reindexNodeParents(acc.nodes)
+  //
+  // The composed map still shares node OBJECTS with the source pages wherever a
+  // node was not rekeyed, and those pages belong to the caller — on the public
+  // path, to the cached published site whose fingerprint validates every baked
+  // hole placeholder. Reindex copies, never the caller's nodes.
+  const nodes: Nodes = {}
+  for (const id in acc.nodes) nodes[id] = { ...acc.nodes[id] }
+  reindexNodeParents(nodes)
 
   return {
     id: innermost.id, // identifies "what was rendered" for the publish.html filter
@@ -171,6 +178,6 @@ export function composeTemplateChain(chain: Page[], terminal: TerminalContent): 
     // template's own routes — the one place it was meant to.
     ...(innermost.template ? { template: innermost.template } : {}),
     rootNodeId: acc.rootId,
-    nodes: acc.nodes,
+    nodes,
   }
 }

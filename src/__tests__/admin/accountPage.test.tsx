@@ -506,7 +506,7 @@ describe('AccountPage', () => {
     fireEvent.click(screen.getByTestId('account-tab-activity'))
 
     await waitFor(() => {
-      expect(screen.getByText('No login activity yet.')).toBeTruthy()
+      expect(screen.getByText('No login activity yet')).toBeTruthy()
     })
   })
 

@@ -103,7 +103,10 @@ export const SitePagesSource: LoopEntitySource = {
   ],
 
   async fetch(ctx): Promise<LoopFetchResult> {
-    const filtered = filterPagesForLoop(ctx.site.pages, ctx.filters)
+    const closedSlugs = ctx.closed?.pageSlugs
+    const filtered = filterPagesForLoop(ctx.site.pages, ctx.filters).filter(
+      (page) => !closedSlugs?.has(page.slug),
+    )
     const sorted =
       ctx.orderBy === 'title' || ctx.orderBy === 'slug'
         ? [...filtered].sort((a, b) => compare(a, b, ctx.orderBy, ctx.direction))

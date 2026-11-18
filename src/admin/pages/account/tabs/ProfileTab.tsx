@@ -23,6 +23,7 @@ import { UserAvatar } from '@admin/shared/UserAvatar'
 import styles from '../AccountPage.module.css'
 import { getErrorMessage } from '@core/utils/errorMessage'
 import { isStepUpCancelled } from './securityErrors'
+import { userDisplayLabel } from '@core/users/displayName'
 
 interface ProfileTabProps {
   user: CmsCurrentUser
@@ -86,7 +87,7 @@ export function ProfileTab({ user }: ProfileTabProps) {
   const displayNameId = useId()
   const emailId = useId()
 
-  const displayName = user.displayName.trim() || user.email
+  const displayName = userDisplayLabel(user)
   const hasUploadedAvatar = user.avatarUrl !== null
   const profileDirty =
     profileForm.displayName.trim() !== user.displayName ||

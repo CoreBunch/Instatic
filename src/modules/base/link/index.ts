@@ -7,9 +7,9 @@
 import type { ModuleDefinition } from '@core/module-engine'
 import { registry } from '@core/module-engine'
 import { LinkIcon } from 'pixel-art-icons/icons/link'
-import { safeUrl } from '@modules/base/utils/escape'
+import { escapeHtml, safeUrl } from '@modules/base/utils/escape'
 import { Value } from '@core/utils/typeboxHelpers'
-import { ANCHOR_TARGET_OPTIONS, anchorRel } from '@modules/base/shared/anchorTarget'
+import { ANCHOR_TARGET_OPTIONS, anchorHtmlAttributes } from '@modules/base/shared/anchorTarget'
 import {
   htmlAttributesControl,
 } from '@modules/base/shared/htmlAttributes'
@@ -52,9 +52,9 @@ export const LinkModule: ModuleDefinition<LinkStoredProps> = {
 
   render: (props, renderedChildren) => {
     const href = safeUrl(props.href)
-    const attrs = htmlAttributesAttr(props.htmlAttributes)
-    const rel = anchorRel(props.target)
-    const relAttr = rel ? ` rel="${rel}"` : ''
+    const { attributes, rel } = anchorHtmlAttributes(props.htmlAttributes, props.target)
+    const attrs = htmlAttributesAttr(attributes)
+    const relAttr = rel ? ` rel="${escapeHtml(rel)}"` : ''
     const targetAttr = ` target="${String(props.target)}"`
     const content = linkUsesChildren(renderedChildren.length)
       ? renderedChildren.join('')

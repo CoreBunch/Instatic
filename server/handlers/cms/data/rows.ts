@@ -37,7 +37,7 @@ import {
   getDataRowVersion,
   listDataRowVersions,
 } from '../../../repositories/data'
-import { publishDataRow, removeDataRowArtefact } from '../../../publish/publishRow'
+import { publishDataRow, retractDataRowArtefacts } from '../../../publish/publishRow'
 import { runPublishFlush } from '../../../publish/publishFlush'
 import { findUserById } from '../../../repositories/users'
 import { slugForTable } from '@core/data/cells'
@@ -234,10 +234,11 @@ async function handleRowItemDelete(
   const row = await softDeleteDataRow(db, scope, rowId, user.id)
   if (!row) return rowNotFound()
   // Prune the baked public artefact — a deleted row must stop being served
-  // by Layer A, which reads the disk slot with no DB awareness (ISS-039).
+  // by Layer A, which reads the disk slot with no DB awareness (ISS-039) —
+  // along with the baked pages that list it through a loop over its table.
   // Only main is served: a branch row never had an artefact or a cached route.
   if (options.uploadsDir && isMainScope(scope)) {
-    await removeDataRowArtefact(db, options.uploadsDir, rowId, row.slug).catch((err) => {
+    await retractDataRowArtefacts(db, options.uploadsDir, row, { wasPublished: row.status === 'published' }).catch((err) => {
       console.error('[publish:row] failed to remove artefact for deleted row', rowId, err)
     })
   }
@@ -362,10 +363,11 @@ async function handleRowStatus(
   const row = await updateDataRowStatus(db, scope, rowId, body.status, user.id)
   if (!row) return rowNotFound()
   // draft and unpublished both leave public visibility — prune the baked
-  // artefact so Layer A stops serving the retracted content (ISS-039).
+  // artefact so Layer A stops serving the retracted content (ISS-039), and
+  // the baked pages that listed the row while it was published.
   // Only main has artefacts.
   if (options.uploadsDir && isMainScope(scope)) {
-    await removeDataRowArtefact(db, options.uploadsDir, rowId, row.slug).catch((err) => {
+    await retractDataRowArtefacts(db, options.uploadsDir, row, { wasPublished: currentRow.status === 'published' }).catch((err) => {
       console.error('[publish:row] failed to remove artefact for retracted row', rowId, err)
     })
   }

@@ -295,6 +295,20 @@
     /* Spotlight */
     --backdrop-blur: 8px;
     --spotlight-z-index: 9000;
+
+    /* The password re-entry (step-up) dialog gates an action started from any
+     * surface, including the spotlight-layer modals (Settings), so it sits
+     * above them and below toasts. */
+    --step-up-z-index: 9500;
+
+    /* The email template preview shows the message on the light ground an
+     * inbox gives it, in both admin themes. */
+    --email-preview-surface: #f4f4f5;
+    --email-preview-card: #ffffff;
+    --email-preview-text: #18181b;
+    --email-preview-muted: #71717a;
+    --email-preview-rule: #e4e4e7;
+    --email-preview-link: #1d4ed8;
     --spotlight-width: 640px;
     --progress-shimmer: var(--overlay-40);
 

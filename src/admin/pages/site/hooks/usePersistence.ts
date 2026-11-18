@@ -22,6 +22,7 @@
  * `useEditorStore(selector)` hooks, so this hook never subscribes its host
  * component to store changes.
  */
+import { onSessionTokenRotated } from '@admin/shared/StepUp'
 import { useEffect, useRef, useState } from 'react'
 import { useEditorStore } from '@site/store/store'
 import type { SiteDocument } from '@core/page-tree'
@@ -207,6 +208,7 @@ export function usePersistence(
 
     let provider: CollabProvider | null = null
     let offStatus: (() => void) | null = null
+    let offSessionRotation: (() => void) | null = null
 
     async function boot(): Promise<void> {
       try {
@@ -232,6 +234,9 @@ export function usePersistence(
           setCollabState(status === 'connected' ? 'connected' : status)
         })
         setCollabState(provider.status() === 'connected' ? 'connected' : provider.status())
+        // Password re-confirmation rotates the session token; the socket was
+        // authenticated by the old one, so reopen it on the new cookie now.
+        offSessionRotation = onSessionTokenRotated(() => provider?.reopen())
         // Connect AFTER the HTTP load hydrated the store: connectCollabProvider
         // rebinds every doc for the loaded site through the provider
         // (server-seeded), and the HTTP-loaded projection keeps the canvas
@@ -260,6 +265,7 @@ export function usePersistence(
       cancelled = true
       setCollabBranchGoneHandler(null)
       offStatus?.()
+      offSessionRotation?.()
       if (connected) {
         // Tears the provider down AND resets the binding to detached docs
         // seeded from whatever site the store still holds.

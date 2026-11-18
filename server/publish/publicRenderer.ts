@@ -7,15 +7,20 @@ import { buildPublishedSiteCssBundle } from './siteCssBundle'
 import { buildPublishedSiteModuleJsMap } from './moduleJsBundle'
 import { resolveTemplateChain, resolveNotFoundTemplate, composeTemplateChain } from '@core/templates'
 import type { TemplateRenderDataContext } from '@core/templates/dynamicBindings'
-import { prefetchLoopData, publishedDataRowToLoopItem } from './loopPrefetch'
+import { closedContentFor, getAccessIndex, memberFrameFor } from './accessGate'
+import type { CurrentMember } from '@core/members'
+import { prefetchLoopData, publishedDataRowToEntryItem } from './loopPrefetch'
 import { prefetchMediaAssets } from './mediaPrefetch'
 import { getPublishVersion } from './publishState'
+import { getPublishedSnapshotHash } from './publishedSnapshotCache'
 import type { Page } from '@core/page-tree'
 import type { DocumentMetaOverride, SiteCssBundle } from '@core/publisher'
 import type { PublishedDataRow } from '@core/data/schemas'
 import { readEntrySeoOverride } from '@core/data/cells'
 import type { DbClient } from '../db/client'
 import type { PublishedPageSnapshot } from '../repositories/publish'
+import { getDataTable } from '../repositories/data'
+import { MAIN_SCOPE } from '../branches/scope'
 
 /**
  * URL prefix where the Bun server exposes the per-site CSS bundle. Mirrors
@@ -51,7 +56,7 @@ export interface RendererOutput {
   /**
    * Publish version this page was rendered at (the bake passes the NEXT
    * version, live renders the current one) — stamped into module-js `?v=`
-   * URLs so they cache-bust in lockstep with hole placeholders.
+   * URLs so they cache-bust when published content changes.
    */
   publishVersion: number
   /**
@@ -68,14 +73,16 @@ interface RenderPublishedSnapshotContext {
   db: DbClient
   /** Optional request URL — when present, drives per-loop pagination. */
   url?: URL
-  /**
-   * Publish version to stamp into `<instatic-hole data-instatic-version>` placeholders.
-   * Defaults to the live `getPublishVersion()`. The full/incremental publish
-   * bakes shells BEFORE bumping the version, so it passes the next version
-   * (`getPublishVersion() + 1`) here — otherwise every baked hole would carry
-   * a stale version and the hole endpoint would refuse to hydrate it.
-   */
+  /** Cache generation used for CSS bundles and module-JS URLs during the bake. */
   publishVersion?: number
+  /**
+   * The visitor this render is for, on a protected route: the member, or
+   * null when signed out. Absent means the render is for nobody in
+   * particular, which is every baked and every shared-cache render: lists
+   * then leave out whatever a signed-out visitor may not open, and anything
+   * that depends on the member is deferred to a per-visitor fragment.
+   */
+  visitor?: CurrentMember | null
 }
 
 /**
@@ -95,14 +102,24 @@ async function renderMergedTemplate(
 ): Promise<{ html: string; jsModuleIds: string[]; publishVersion: number; cssBundle: SiteCssBundle }> {
   const publishVersion = ctx.publishVersion ?? getPublishVersion()
   const moduleJsMap = buildPublishedSiteModuleJsMap(snapshot.site, registry)
-  const loopData = await prefetchLoopData(merged, snapshot.site, ctx.db, ctx.url)
+  // The index for the version being rendered: during a publish that is the
+  // NEXT version, loaded after the publish committed, so a page protected by
+  // this very publish is already left out of the lists being baked.
+  const closed = closedContentFor(await getAccessIndex(ctx.db, publishVersion), ctx.visitor?.tags ?? null)
+  const loopData = await prefetchLoopData(merged, snapshot.site, ctx.db, ctx.url, { closed })
   const mediaAssets = await prefetchMediaAssets(merged, snapshot.site, registry, ctx.db, {
     templateContext,
     loopData,
   })
   const cssBundle = buildPublishedSiteCssBundle(snapshot.site, registry, merged, publishVersion, { mediaAssets })
+  // A render for one visitor carries the member, so member bindings and
+  // show-when rules resolve in place instead of becoming fragments.
+  const visitorContext: TemplateRenderDataContext | undefined =
+    ctx.visitor === undefined
+      ? templateContext
+      : { ...(templateContext ?? { entryStack: [] }), member: memberFrameFor(ctx.visitor) }
   const published = publishPage(merged, snapshot.site, registry, {
-    templateContext,
+    templateContext: visitorContext,
     ...(documentMeta ? { documentMeta } : {}),
     runtimeAssets: snapshot.runtimeAssets,
     runtimePackageImportmap: snapshot.runtimePackageImportmap,
@@ -112,7 +129,7 @@ async function renderMergedTemplate(
     loopData,
     mediaAssets,
     loopEndpointBaseUrl: LOOP_ENDPOINT_BASE_URL,
-    publishVersion,
+    snapshotHash: getPublishedSnapshotHash(snapshot.site),
   })
   // Per-page injection set = candidates from the render (emitted ∪ hole
   // subtrees) ∩ the site module-JS map — over-inclusive candidates from
@@ -187,12 +204,14 @@ export async function renderPublishedDataRowTemplate(
   // through `documentMeta` and only reaches the `<head>`.
   if (typeof row.cells.title === 'string') merged.title = row.cells.title
 
+  const table = await getDataTable(ctx.db, MAIN_SCOPE, row.tableId)
+
   // Seed the entry stack with the published row + route frame from the request
   // URL. Loop interceptors push/pop iteration items on top of this stack;
   // nodes outside any loop resolve their `currentEntry` bindings against this
   // seed. page/site/viewer frames are filled by `publishPage` from the document.
   const templateContext: TemplateRenderDataContext = {
-    entryStack: [publishedDataRowToLoopItem(row)],
+    entryStack: [await publishedDataRowToEntryItem(ctx.db, row, table?.fields ?? [])],
     ...(ctx.url ? { route: buildRouteFrame(ctx.url.toString()) } : {}),
   }
 

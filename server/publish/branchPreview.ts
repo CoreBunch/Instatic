@@ -40,7 +40,7 @@ import { getDataRowBySlug, listDataTables } from '../repositories/data'
 import { getDraftSiteDocument } from '../repositories/publish'
 import { buildPublishedSiteModuleJsMap } from './moduleJsBundle'
 import { applyPublishedHtmlPipeline } from './publishedHtmlPipeline'
-import { prefetchLoopData, publishedDataRowToLoopItem } from './loopPrefetch'
+import { prefetchLoopData, publishedDataRowToEntryItem } from './loopPrefetch'
 import { prefetchMediaAssets } from './mediaPrefetch'
 import { contentRouteFromPath, publicSlugFromPath } from './publicRouter'
 import { getPublishVersion } from './publishState'
@@ -133,7 +133,7 @@ async function resolvePreview(
     merged,
     scriptPage: chain[chain.length - 1] ?? merged,
     templateContext: {
-      entryStack: [publishedDataRowToLoopItem(published)],
+      entryStack: [await publishedDataRowToEntryItem(db, published, table.fields)],
       route: buildRouteFrame(url.toString()),
     },
     documentMeta: readEntrySeoOverride(row.cells),
@@ -224,7 +224,6 @@ export async function renderBranchPreview(
     loopData,
     mediaAssets,
     dynamicNodes: 'inline',
-    publishVersion: getPublishVersion(),
   })
   // The same pipeline as a published page (plugin frontend assets, form
   // tokens, module scripts, the `publish.*` hooks), so a form or a plugin's

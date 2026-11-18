@@ -130,7 +130,7 @@ src/admin/pages/site/panels/AgentPanel/
 
 src/admin/pages/ai/
 ├── AiPage.tsx              — /admin/ai workspace; three tabs gated by ai.providers.manage + ai.audit.read
-├── AiPage.module.css
+├── ProviderMark.module.css     (provider logos; layout styles live in @admin/shared/SettingsWorkspace)
 └── tabs/
     ├── ProvidersTab.tsx    — CRUD for ai_credentials rows (provider-derived API key or endpoint credential shape)
     ├── DefaultsTab.tsx     — per-scope model defaults editor
@@ -549,6 +549,8 @@ Content-scope tools are registered under `server/ai/tools/content/`. They use th
 | `content_set_active_collection` | Switches the sidebar focus to a collection |
 
 The content system prompt is markdown-native: it tells the model to exchange body content as standard markdown, to read schemas before writing unfamiliar fields, and to prefer `content_set_document_fields` for whole-post generation. The prompt is built with the same `[staticPrefix, SYSTEM_PROMPT_DYNAMIC_BOUNDARY, dynamicSuffix]` shape as the Site prompt so provider prompt caching works the same way.
+
+Snapshot frame readiness is event-driven: `waitForAgentRenderFrame` observes canvas mounts and readiness markers, with a 250 ms fallback poll. It retains the five-second deadline and rejects frames that become ready after it, including when background-tab timers are throttled.
 
 ### Heavy evidence — image channel + vision gating + elision
 

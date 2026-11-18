@@ -23,7 +23,8 @@
  *
  * Validation: each response is validated at the JSON boundary against the
  * TypeBox schema below via the canonical `apiRequest` (`@core/http`).
- * On any failure — non-OK status, abort, or a payload that doesn't match —
+ * Storage exposes loading/error state, including an explicit permission message.
+ * Other hooks keep the existing behavior: on non-OK status or an invalid payload,
  * the hook keeps `null` (the widget keeps showing its skeleton, which is
  * better than throwing and blanking the dashboard). That swallow-on-failure
  * behaviour is `useAsyncResource`'s `swallowErrors` mode.
@@ -39,7 +40,7 @@
  */
 import type { TSchema, TProperties } from '@sinclair/typebox'
 import { Type, type Static } from '@core/utils/typeboxHelpers'
-import { apiRequest } from '@core/http'
+import { ApiError, apiRequest } from '@core/http'
 import { useAsyncResource } from '@admin/lib/useAsyncResource'
 
 // ---------------------------------------------------------------------------
@@ -250,8 +251,17 @@ export function usePluginsStats(): DashboardPluginsStats | null {
  * (image / video / other) + an `fs.stat` walk of `<uploadsDir>/plugins/`
  * + a dialect-aware database size query.
  */
-export function useStorageStats(): DashboardStorageStats | null {
-  return useDashboardEndpoint('storage', DashboardStorageStatsSchema)
+export function useStorageStats() {
+  return useAsyncResource<DashboardStorageStats>(async (signal) => {
+    try {
+      return await fetchDashboardEndpoint('storage', DashboardStorageStatsSchema, signal)
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 403) {
+        throw new Error("You don't have permission to view storage usage.", { cause: err })
+      }
+      throw err
+    }
+  }, [], { fallbackError: 'Unable to load storage usage.' })
 }
 
 /** Publish Lineup widget. Three small queries against `data_rows`. */

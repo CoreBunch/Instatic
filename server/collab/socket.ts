@@ -7,9 +7,9 @@
  * with `site.read`, and the Origin header must pass `originAllowed` — the
  * browser always sends Origin on WebSocket handshakes, so this closes
  * cross-origin WebSocket hijacking (CSWSH): cookies ride the handshake, but
- * a foreign origin is rejected before the socket opens. Whether the user may
- * WRITE is resolved once at upgrade (any site-write capability) — update
- * frames from read-only connections are dropped server-side.
+ * a foreign origin is rejected before the socket opens. The original session
+ * and current capabilities are revalidated for incoming frames, again after
+ * loading a doc before applying updates, and before every outgoing packet.
  *
  * One socket multiplexes many docs (frames in @core/collab/protocol):
  *   - FRAME_SYNC: y-protocols sync messages per doc. A connection's first
@@ -21,9 +21,8 @@
  *   - FRAME_RESET: server → client only; broadcast when the relay drops a
  *     doc whose backing JSON was rewritten out-of-relay.
  *
- * NOTE on fan-out: relay updates publish to every topic subscriber including
- * the originator — Yjs update application is idempotent, so the echo is a
- * cheap no-op and the code stays free of per-connection exclusion plumbing.
+ * Fan-out uses each recipient's authorized, backpressure-aware send queue.
+ * The originator also receives updates: Yjs update application is idempotent.
  */
 import type { ServerWebSocket, WebSocketHandler } from 'bun'
 import * as Y from 'yjs'
@@ -46,15 +45,17 @@ import {
   type CollabFrame,
   type ResetReason,
 } from '@core/collab'
-import { requireCapability, userHasCapability } from '../auth/authz'
+import { getSessionHash, requireCapability, userHasCapability } from '../auth/authz'
 import { safeParseValue, Type } from '@core/utils/typeboxHelpers'
-import type { CoreCapability } from '@core/capabilities'
+import { findUserBySessionHash } from '../auth/sessions'
 import { validateGuardedUpdate } from './updateGuard'
 import { originAllowed } from '../auth/security'
 import type { DbClient } from '../db/client'
 import { jsonResponse } from '../http'
 import { BranchGoneError } from './relayBranches'
+import { userDisplayLabel } from '@core/users/displayName'
 import type { CollabRelay, RelayDoc } from './relay'
+import { createSocketFlow } from './socketFlow'
 
 export { SITE_SOCKET_PATH }
 
@@ -164,18 +165,8 @@ export interface CollabSocketData {
   userId: string
   /** The session identity this connection may publish over presence. */
   identity: CollabPresenceIdentity
-  /**
-   * True when the user holds ALL of SITE_WRITE_CAPABILITIES — the common
-   * case, which skips the per-update capability guard entirely. Every other
-   * connection — partial writers (e.g. content-only editors) AND read-only
-   * viewers (zero write capabilities) — pays a fork+diff validation per
-   * update frame instead (see ./updateGuard.ts). A viewer's edit has no
-   * matching capability for any category, so the guard refuses it and resets
-   * the sender, exactly like a partial writer straying out of its lane.
-   */
-  fullSiteWriter: boolean
-  /** The user's granted capabilities — the guard's validation input. */
-  capabilities: readonly CoreCapability[]
+  /** Hash of the original cookie; session rotation/revocation invalidates it. */
+  sessionHash: string
   /** Doc ids this connection retained in the relay (released on close). */
   boundDocs: Set<string>
   /**
@@ -209,18 +200,18 @@ export async function handleCollabSocketUpgrade(
   }
   const user = await requireCapability(req, db, 'site.read')
   if (user instanceof Response) return user
-  const fullSiteWriter = SITE_WRITE_CAPABILITIES.every((cap) => userHasCapability(user, cap))
+  const sessionHash = await getSessionHash(req)
+  if (!sessionHash) return jsonResponse({ error: 'Unauthorized' }, { status: 401 })
   const upgraded = server.upgrade(req, {
     data: {
       userId: user.id,
       identity: {
         id: user.id,
-        name: user.displayName,
+        name: userDisplayLabel(user),
         avatarUrl: user.avatarUrl,
         gravatarHash: user.gravatarHash,
       },
-      fullSiteWriter,
-      capabilities: user.capabilities,
+      sessionHash,
       boundDocs: new Set(),
       probedDocs: new Set(),
       awarenessClients: new Set(),
@@ -232,48 +223,82 @@ export async function handleCollabSocketUpgrade(
   return null
 }
 
-const docTopic = (docId: string): string => `collab:${docId}`
+/** Owns session-authorized fan-out and the site-wide presence roster. */
+export function createCollabSocketLayer(relay: CollabRelay, db: DbClient) {
+  const connections = new Set<ServerWebSocket<CollabSocketData>>()
+  const flows = new WeakMap<ServerWebSocket<CollabSocketData>, ReturnType<typeof createSocketFlow>>()
 
-interface CollabPublisher {
-  publish(topic: string, data: Uint8Array): number
-}
+  function disconnect(ws: ServerWebSocket<CollabSocketData>, code: number, reason: string): void {
+    connections.delete(ws)
+    flows.get(ws)?.close()
+    ws.close(code, reason)
+  }
 
-/**
- * Wire the relay's fan-out to Bun pub/sub. Call once after `Bun.serve`
- * returns (the server handle is the publisher). Also owns the site-wide
- * awareness instance.
- */
-export function createCollabSocketLayer(relay: CollabRelay) {
-  let publisher: CollabPublisher | null = null
+  async function authorize(ws: ServerWebSocket<CollabSocketData>, touchLastSeen = false) {
+    if (!connections.has(ws)) return null
+    try {
+      const user = await findUserBySessionHash(db, ws.data.sessionHash, { touchLastSeen })
+      if (!connections.has(ws)) return null
+      if (!user || user.id !== ws.data.userId || !userHasCapability(user, 'site.read')) {
+        disconnect(ws, 1008, 'Collaboration access revoked')
+        return null
+      }
+      return user
+    } catch (err) {
+      console.error('[collab] session validation failed:', err)
+      disconnect(ws, 1011, 'Collaboration authorization unavailable')
+      return null
+    }
+  }
+
+  function flowFor(ws: ServerWebSocket<CollabSocketData>) {
+    let flow = flows.get(ws)
+    if (!flow) {
+      flow = createSocketFlow(ws, async () => (await authorize(ws)) !== null)
+      flows.set(ws, flow)
+    }
+    return flow
+  }
+
+  function broadcast(docId: string, frame: Uint8Array): void {
+    for (const ws of connections) {
+      if (docId !== PRESENCE_DOC_ID && !ws.data.boundDocs.has(docId)) continue
+      const flow = flowFor(ws)
+      // Do not await recipients here: a slow peer must not block an editor's
+      // write or deadlock by queuing a broadcast behind its own current frame.
+      void flow.enqueue(frame).catch((err: unknown) => {
+        console.error('[collab] broadcast failed:', err)
+        disconnect(ws, 1011, 'Collaboration delivery failed')
+      })
+    }
+  }
+
   const presenceDoc = new Y.Doc()
   const awareness = new awarenessProtocol.Awareness(presenceDoc)
   // The server never contributes its own presence state.
   awareness.setLocalState(null)
 
   relay.subscribeUpdates((docId, update, _origin, generation) => {
-    if (!publisher) return
     const encoder = encoding.createEncoder()
     syncProtocol.writeUpdate(encoder, update)
-    publisher.publish(
-      docTopic(docId),
-      encodeCollabFrame(docId, generation, FRAME_SYNC, encoding.toUint8Array(encoder)),
-    )
+    const frame = encodeCollabFrame(docId, generation, FRAME_SYNC, encoding.toUint8Array(encoder))
+    broadcast(docId, frame)
   })
   relay.onReset((docId) => {
     // The lineage this frame refers to is already gone, so it carries none.
-    publisher?.publish(
-      docTopic(docId),
+    broadcast(
+      docId,
       encodeCollabFrame(docId, '', FRAME_RESET, encodeResetPayload('rewritten')),
     )
   })
 
   /** Tell one connection its doc was dropped, and why. */
-  function sendReset(
+  async function sendReset(
     ws: ServerWebSocket<CollabSocketData>,
     docId: string,
     reason: ResetReason,
-  ): void {
-    ws.send(encodeCollabFrame(docId, '', FRAME_RESET, encodeResetPayload(reason)))
+  ): Promise<void> {
+    await flowFor(ws).send(encodeCollabFrame(docId, '', FRAME_RESET, encodeResetPayload(reason)))
   }
 
   /**
@@ -285,11 +310,13 @@ export function createCollabSocketLayer(relay: CollabRelay) {
     ws: ServerWebSocket<CollabSocketData>,
     frame: CollabFrame,
   ): Promise<void> {
+      if (!(await authorize(ws, true))) return
+
       // Liveness first: a ping carries no doc and must never reach
-      // parseCollabDocId or the relay. Deliberately ungated — a read-only
+      // parseCollabDocId or the relay. A read-only
       // viewer needs to know its socket is alive exactly as much as a writer.
       if (frame.frameType === FRAME_PING) {
-        ws.send(encodeCollabFrame(PRESENCE_DOC_ID, '', FRAME_PONG, new Uint8Array()))
+        await flowFor(ws).send(encodeCollabFrame(PRESENCE_DOC_ID, '', FRAME_PONG, new Uint8Array()))
         return
       }
 
@@ -312,13 +339,10 @@ export function createCollabSocketLayer(relay: CollabRelay) {
         for (const clientId of awareness.getStates().keys()) {
           if (!before.has(clientId)) ws.data.awarenessClients.add(clientId)
         }
-        publisher?.publish(
-          docTopic(PRESENCE_DOC_ID),
+        broadcast(
+          PRESENCE_DOC_ID,
           encodeCollabFrame(PRESENCE_DOC_ID, '', FRAME_AWARENESS, frame.payload),
         )
-        // publish() excludes nobody server-side; the sender's own state is
-        // already local — awareness re-application is idempotent.
-        ws.send(encodeCollabFrame(PRESENCE_DOC_ID, '', FRAME_AWARENESS, frame.payload))
         return
       }
 
@@ -332,7 +356,7 @@ export function createCollabSocketLayer(relay: CollabRelay) {
         // structs the server will never receive, every later update queues
         // behind them as pending, and the screen shows edits that can never
         // publish. A visible revert is strictly better.
-        sendReset(ws, frame.docId, 'oversize')
+        await sendReset(ws, frame.docId, 'oversize')
         return
       }
 
@@ -342,20 +366,20 @@ export function createCollabSocketLayer(relay: CollabRelay) {
       if (ws.data.boundDocs.has(frame.docId)) {
         bound = await relay.openDoc(frame.docId)
       } else {
-        // Claim the doc SYNCHRONOUSLY before awaiting retain — otherwise two
-        // concurrent frames for the same not-yet-bound doc both take this
-        // branch and double-increment refs (close releases only once, leaking
-        // the entry). A racing frame now sees boundDocs and takes openDoc.
-        ws.data.boundDocs.add(frame.docId)
-        ws.subscribe(docTopic(frame.docId))
-        try {
-          bound = await relay.retain(frame.docId)
-        } catch (err) {
-          ws.data.boundDocs.delete(frame.docId)
-          ws.unsubscribe(docTopic(frame.docId))
-          throw err
+        // Incoming frames are serialized by the socket flow. Register only
+        // an acquired reference: close must not release a still-pending load.
+        bound = await relay.retain(frame.docId)
+        if (!connections.has(ws)) {
+          relay.release(frame.docId)
+          return
         }
+        ws.data.boundDocs.add(frame.docId)
       }
+      // Doc hydration can await storage. Recheck after that wait so queued
+      // frames cannot keep privileges from before a suspension or role edit.
+      const user = await authorize(ws)
+      if (!user) return
+      const fullSiteWriter = SITE_WRITE_CAPABILITIES.every((cap) => userHasCapability(user, cap))
       const { doc, generation } = bound
 
       // LINEAGE CHECK — before readSyncMessage, before the guard, before any
@@ -372,14 +396,14 @@ export function createCollabSocketLayer(relay: CollabRelay) {
         // before any inbound frame has taught it a generation.
         const serverIsEmpty = Y.encodeStateVector(doc).byteLength === 1
         if (messageType !== SYNC_STEP_1 && !serverIsEmpty) {
-          sendReset(ws, frame.docId, 'stale')
+          await sendReset(ws, frame.docId, 'stale')
           return
         }
       } else if (frame.generation !== generation) {
         console.warn(
           `[collab] stale generation for ${frame.docId} from ${ws.data.userId}`,
         )
-        sendReset(ws, frame.docId, 'stale')
+        await sendReset(ws, frame.docId, 'stale')
         return
       }
 
@@ -392,17 +416,17 @@ export function createCollabSocketLayer(relay: CollabRelay) {
       // nothing and passes as a no-op. Both non-step1 message types (step2
       // replies and updates) carry `varUint8Array update` after the type
       // varUint, so one extraction covers whatever a client might send.
-      if (messageType !== SYNC_STEP_1 && !ws.data.fullSiteWriter) {
+      if (messageType !== SYNC_STEP_1 && !fullSiteWriter) {
         const guardDecoder = decoding.createDecoder(frame.payload)
         decoding.readVarUint(guardDecoder)
         const update = decoding.readVarUint8Array(guardDecoder)
-        const verdict = validateGuardedUpdate(frame.docId, doc, update, ws.data.capabilities)
+        const verdict = validateGuardedUpdate(frame.docId, doc, update, user.capabilities)
         if (!verdict.ok) {
           console.warn(`[collab] rejected ${frame.docId} update from ${ws.data.userId}: ${verdict.reason}`)
           // The sender's local doc holds the forbidden change — a TARGETED
           // reset makes their client rebind and reseed from the server,
           // reverting it everywhere (including their own screen).
-          sendReset(ws, frame.docId, 'refused')
+          await sendReset(ws, frame.docId, 'refused')
           return
         }
         Y.applyUpdate(doc, update, ws)
@@ -424,18 +448,18 @@ export function createCollabSocketLayer(relay: CollabRelay) {
       // forbidden op inside it would discard every legitimate edit alongside.
       // Losing their recovery window is bad; silently destroying the rest of
       // their session to attempt it is worse.
-      if (messageType === SYNC_STEP_1 && ws.data.fullSiteWriter && !ws.data.probedDocs.has(frame.docId)) {
+      if (messageType === SYNC_STEP_1 && fullSiteWriter && !ws.data.probedDocs.has(frame.docId)) {
         ws.data.probedDocs.add(frame.docId)
         const probe = encoding.createEncoder()
         syncProtocol.writeSyncStep1(probe, doc)
-        ws.send(encodeCollabFrame(frame.docId, generation, FRAME_SYNC, encoding.toUint8Array(probe)))
+        await flowFor(ws).send(encodeCollabFrame(frame.docId, generation, FRAME_SYNC, encoding.toUint8Array(probe)))
       }
 
       const decoder = decoding.createDecoder(frame.payload)
       const encoder = encoding.createEncoder()
       syncProtocol.readSyncMessage(decoder, encoder, doc, ws)
       if (encoding.length(encoder) > 0) {
-        ws.send(encodeCollabFrame(frame.docId, generation, FRAME_SYNC, encoding.toUint8Array(encoder)))
+        await flowFor(ws).send(encodeCollabFrame(frame.docId, generation, FRAME_SYNC, encoding.toUint8Array(encoder)))
       }
   }
 
@@ -443,56 +467,67 @@ export function createCollabSocketLayer(relay: CollabRelay) {
     // Transport-level ceiling — the per-frame-type caps in `message` are the
     // fine-grained guards; this stops oversized frames before they buffer.
     maxPayloadLength: MAX_SYNC_PAYLOAD_BYTES + 1024,
+    // Buffered frames need recovery rather than silent delivery loss.
+    closeOnBackpressureLimit: true,
 
-    open(ws: ServerWebSocket<CollabSocketData>) {
-      ws.subscribe(docTopic(PRESENCE_DOC_ID))
-      // Late joiners need the current presence roster.
-      const known = [...awareness.getStates().keys()]
-      if (known.length > 0) {
-        const update = awarenessProtocol.encodeAwarenessUpdate(awareness, known)
-        ws.send(encodeCollabFrame(PRESENCE_DOC_ID, '', FRAME_AWARENESS, update))
-      }
+    async open(ws: ServerWebSocket<CollabSocketData>) {
+      connections.add(ws)
+      await flowFor(ws).run(async () => {
+        if (!(await authorize(ws))) return
+        // Late joiners need the current presence roster.
+        const known = [...awareness.getStates().keys()]
+        if (known.length > 0) {
+          const update = awarenessProtocol.encodeAwarenessUpdate(awareness, known)
+          await flowFor(ws).send(encodeCollabFrame(PRESENCE_DOC_ID, '', FRAME_AWARENESS, update))
+        }
+      })
     },
+
+    drain(ws) { flowFor(ws).drain() },
 
     async message(ws: ServerWebSocket<CollabSocketData>, raw: string | Buffer) {
       if (typeof raw === 'string') return // binary protocol only
-      let frame: CollabFrame | null = null
-      try {
-        frame = decodeCollabFrame(new Uint8Array(raw))
-        await dispatchFrame(ws, frame)
-      } catch (err) {
-        if (err instanceof BranchGoneError && frame) {
-          // The doc's branch was deleted. The client must leave the branch,
-          // not rebind — rebinding would loop through this refusal forever.
-          try {
-            sendReset(ws, frame.docId, 'gone')
-          } catch (_sendErr) {
-            // Socket already closing — nothing to recover.
+      await flowFor(ws).run(async () => {
+        let frame: CollabFrame | null = null
+        try {
+          frame = decodeCollabFrame(new Uint8Array(raw))
+          await dispatchFrame(ws, frame)
+        } catch (err) {
+          if (err instanceof BranchGoneError && frame) {
+            // The doc's branch was deleted. The client must leave the branch,
+            // not rebind — rebinding would loop through this refusal forever.
+            try {
+              await sendReset(ws, frame.docId, 'gone')
+            } catch (_sendErr) {
+              // Socket already closing — nothing to recover.
+            }
+            return
           }
-          return
-        }
-        console.error('[collab] socket message handler failed:', err)
-        // A sync-write frame whose guard/apply threw left the sender's local
-        // doc diverged from the authoritative one — reset it so their client
-        // rebinds and reseeds. Awareness/malformed frames just get dropped.
-        if (frame && frame.frameType === FRAME_SYNC && parseCollabDocId(frame.docId)) {
-          try {
-            sendReset(ws, frame.docId, 'refused')
-          } catch (_sendErr) {
-            // Socket already closing — nothing to recover.
+          console.error('[collab] socket message handler failed:', err)
+          // A sync-write frame whose guard/apply threw left the sender's local
+          // doc diverged from the authoritative one — reset it so their client
+          // rebinds and reseeds. Awareness/malformed frames just get dropped.
+          if (frame && frame.frameType === FRAME_SYNC && parseCollabDocId(frame.docId)) {
+            try {
+              await sendReset(ws, frame.docId, 'refused')
+            } catch (_sendErr) {
+              // Socket already closing — nothing to recover.
+            }
           }
         }
-      }
+      })
     },
 
     close(ws: ServerWebSocket<CollabSocketData>) {
+      connections.delete(ws)
+      flowFor(ws).close()
       for (const docId of ws.data.boundDocs) relay.release(docId)
       ws.data.boundDocs.clear()
       if (ws.data.awarenessClients.size > 0) {
         awarenessProtocol.removeAwarenessStates(awareness, [...ws.data.awarenessClients], 'disconnect')
         const update = awarenessProtocol.encodeAwarenessUpdate(awareness, [...ws.data.awarenessClients])
-        publisher?.publish(
-          docTopic(PRESENCE_DOC_ID),
+        broadcast(
+          PRESENCE_DOC_ID,
           encodeCollabFrame(PRESENCE_DOC_ID, '', FRAME_AWARENESS, update),
         )
       }
@@ -501,9 +536,6 @@ export function createCollabSocketLayer(relay: CollabRelay) {
 
   return {
     handlers,
-    setPublisher(next: CollabPublisher): void {
-      publisher = next
-    },
     awareness,
   }
 }
