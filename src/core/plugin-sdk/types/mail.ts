@@ -34,6 +34,17 @@ export interface PluginMailDeclarations {
 /** Who an email goes to: a site member (the host looks the address up), or an address. */
 export type PluginMailRecipient = { member: string } | { address: string }
 
+/**
+ * Why an email was given up on (`mail.failed`). The site owner sees the full
+ * explanation under Email → Activity; a plugin gets one of these codes:
+ *
+ *  - `recipient_rejected`: the mail provider refused the message or the recipient.
+ *  - `gave_up`: a day of retries ran out.
+ *  - `template_removed`: the template no longer exists.
+ *  - `unreadable`: the queued email could not be read any more.
+ */
+export type PluginMailFailureReason = 'recipient_rejected' | 'gave_up' | 'template_removed' | 'unreadable'
+
 export interface PluginMailSendInput {
   /** A `key` from this plugin's `mail.templates[]`. */
   template: string

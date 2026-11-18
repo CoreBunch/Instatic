@@ -448,12 +448,12 @@ describe('email for plugins', () => {
       const { heard } = await call('/heard')
       expect(heard).toEqual([
         { event: 'mail.delivered', template: 'ticket.opened', to: { address: 'ok@example.com' }, reference: 'r-ok' },
-        {
-          event: 'mail.failed', template: 'ticket.opened', to: { address: 'bad@example.com' }, reference: 'r-bad',
-          error: 'The SMTP server rejected the recipient address.',
-        },
+        // A fixed code: the provider's sentence stays in the admin's Activity.
+        { event: 'mail.failed', template: 'ticket.opened', to: { address: 'bad@example.com' }, reference: 'r-bad', reason: 'recipient_rejected' },
       ])
       expect(elsewhere).toEqual([])
+      expect((await listMailActivity(h.db, { status: 'failed' })).entries[0].error)
+        .toBe('The SMTP server rejected the recipient address.')
     })
 
     it('never hands a member\'s address to the plugin that emailed them by id', async () => {
@@ -477,11 +477,11 @@ describe('email for plugins', () => {
       const { heard } = await call('/heard')
       expect(heard).toEqual([
         { event: 'mail.delivered', template: 'ticket.reply', to: { member: reached }, reference: 'r1' },
-        {
-          event: 'mail.failed', template: 'ticket.reply', to: { member: bounced }, reference: 'r2',
-          error: 'Resend refused the message (HTTP 422). Invalid `to` field: the member\'s address',
-        },
+        { event: 'mail.failed', template: 'ticket.reply', to: { member: bounced }, reference: 'r2', reason: 'recipient_rejected' },
       ])
+      // No part of the provider's sentence reaches the plugin: not the address, its local part or its domain.
+      expect(JSON.stringify(heard)).not.toContain('Resend')
+      expect(JSON.stringify(heard).toLowerCase()).not.toContain('bounces')
       expect(JSON.stringify(heard).toLowerCase()).not.toContain('example.com')
 
       // Refusals do not carry it either.
@@ -494,6 +494,51 @@ describe('email for plugins', () => {
       const limited = await send({ template: 'ticket.reply', to: { member: bounced }, variables })
       expect(String(limited.error)).toContain('this hour')
       expect(JSON.stringify(limited)).not.toContain('bounces')
+    })
+
+    it('counts a member and an address apart, so a refusal cannot tell which address a member has', async () => {
+      await install(BOTH)
+      const memberId = await activeMember('secret.inbox@example.com')
+      const toMember = { template: 'ticket.reply', to: { member: memberId }, variables: { subject: 'a', link: 'https://example.com/t' } }
+      const toAddress = { template: 'ticket.opened', to: { address: 'secret.inbox@example.com' }, variables: { subject: 'a' } }
+      for (let index = 0; index < 20; index += 1) expect(await send(toMember)).toEqual({ status: 'captured' })
+      expect(String((await send(toMember)).error)).toContain('this hour')
+
+      // The member's places are used up; the address's are untouched, as for any other address.
+      expect(await send(toAddress)).toEqual({ status: 'captured' })
+      expect(await send({ ...toAddress, to: { address: 'someone.else@example.com' } })).toEqual({ status: 'captured' })
+      const { rows } = await h.db<{ scope: string; count: number }>`
+        select scope, count from mail_counters where source = ${PLUGIN_ID} order by scope
+      `
+      expect(rows.map((row) => `${row.scope}=${Number(row.count)}`)).toEqual([
+        `member:${memberId}=20`,
+        'to:secret.inbox@example.com=1',
+        'to:someone.else@example.com=1',
+      ])
+    })
+
+    it('reports a day of failed retries as gave_up and a removed template as template_removed', async () => {
+      await install(BOTH)
+      await readyConnector()
+      await send({ template: 'ticket.opened', to: { address: 'slow@example.com' }, variables: { subject: 'a' }, reference: 'slow' })
+      const down: MailCarrier = async () => {
+        throw new MailDeliveryError('Could not reach the provider at smtp.example.com.', { retry: 'later' })
+      }
+      for (let round = 0; round < 40 && (await h.db`select id from mail_queue`).rows.length > 0; round += 1) {
+        await drain(down)
+        now += 8 * 60 * 60 * 1000
+      }
+      await send({ template: 'ticket.opened', to: { address: 'gone@example.com' }, variables: { subject: 'a' }, reference: 'gone' })
+      await h.db`update mail_queue set kind = ${`plugin.${PLUGIN_ID}~no.longer.declared`}`
+      now += 10_000
+      await drain(async () => null)
+      await new Promise((resolve) => setTimeout(resolve, 50))
+
+      const { heard } = await call('/heard')
+      expect(heard).toEqual([
+        { event: 'mail.failed', template: 'ticket.opened', to: { address: 'slow@example.com' }, reference: 'slow', reason: 'gave_up' },
+        { event: 'mail.failed', template: 'no.longer.declared', to: { address: 'gone@example.com' }, reference: 'gone', reason: 'template_removed' },
+      ])
     })
   })
 

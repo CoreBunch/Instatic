@@ -15,6 +15,9 @@ import { hookBus } from '@core/plugins/hookBus'
 import { pluginMailTemplateKey, pluginMailTemplatePrefix } from '@core/plugins/manifestMail'
 import { configuredPublicOrigin } from '../../../auth/security'
 import { queueTemplateMail, type QueuedMailOutcome } from '../../../mail/delivery'
+import { MailLimitError } from '../../../mail/limits'
+import { MailNotConfiguredError } from '../../../mail/send'
+import { MailDeliveryError } from '../../../mail/smtpDriver'
 import { findMemberById } from '../../../members/repository'
 import type { ApiCallFor } from '../../protocol/apiCallSchema'
 import { replyApiOk } from '../apiReplies'
@@ -37,14 +40,25 @@ async function queuePluginMail(db: DbClient, entry: HostPluginRecord, mail: Plug
   if (unknown.length > 0) {
     throw new Error(`The "${mail.template}" template has no variable named ${unknown.map((name) => `"${name}"`).join(', ')}`)
   }
-  return queueTemplateMail(db, {
-    key: pluginMailTemplateKey(entry.manifest.id, mail.template),
-    to: mail.to,
-    variables: mail.variables,
-    source: entry.manifest.id,
-    reference: mail.reference,
-    memberId: mail.memberId,
-  })
+  try {
+    return await queueTemplateMail(db, {
+      key: pluginMailTemplateKey(entry.manifest.id, mail.template),
+      to: mail.to,
+      variables: mail.variables,
+      source: entry.manifest.id,
+      reference: mail.reference,
+      memberId: mail.memberId,
+    })
+  } catch (err) {
+    // These three are written for the caller and name no address. Anything
+    // else (a database error, a bug) might: the plugin gets a plain sentence
+    // and the detail goes to the server log.
+    if (err instanceof MailLimitError || err instanceof MailNotConfiguredError || err instanceof MailDeliveryError) {
+      throw err
+    }
+    console.error(`[plugin:${entry.manifest.id}] mail.send failed:`, err)
+    throw new Error('The email could not be queued', { cause: err })
+  }
 }
 
 export async function handleMailSend(
@@ -93,7 +107,8 @@ export function announcePluginMailOutcome(outcome: QueuedMailOutcome): void {
     template: outcome.kind.startsWith(prefix) ? outcome.kind.slice(prefix.length) : outcome.kind,
     to: outcome.recipient,
     reference: outcome.reference,
-    ...(outcome.status === 'failed' ? { error: outcome.error ?? 'Delivery failed' } : {}),
+    // A code, never the provider's sentence, which can quote an address.
+    ...(outcome.status === 'failed' ? { reason: outcome.reason ?? 'gave_up' } : {}),
   }
   const event = outcome.status === 'sent' ? 'mail.delivered' : 'mail.failed'
   void hookBus.emitTo(outcome.source, event, payload).catch((err: unknown) => {

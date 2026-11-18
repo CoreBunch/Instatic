@@ -33,9 +33,17 @@ function hourBucket(at: number): string {
   return new Date(at).toISOString().slice(0, 13)
 }
 
-/** `A@x.example` and `a@x.example` are one inbox. */
-function recipientScope(to: string): string {
-  return `to:${to.trim().toLowerCase()}`
+/** A recipient the way the sender named it: a site member, or an address. */
+export type MailRecipient = { member: string } | { address: string }
+
+/**
+ * The counter a recipient is counted under. A member is counted by id and an
+ * address by itself (`A@x.example` and `a@x.example` are one inbox), and the
+ * two are never merged: if emailing member X used up the places of X's
+ * address, a sender could learn that address by watching which one is refused.
+ */
+function recipientScope(recipient: MailRecipient): string {
+  return 'member' in recipient ? `member:${recipient.member}` : `to:${recipient.address.trim().toLowerCase()}`
 }
 
 /** Take one place in a counter, or report that it is full. */
@@ -58,14 +66,14 @@ async function takePlace(
 }
 
 /**
- * Count one more email from `source` to `to` in this clock hour. Throws
+ * Count one more email from `source` to `recipient` in this clock hour. Throws
  * `MailLimitError` when the hour's places are taken. Call inside the
  * transaction that accepts the email.
  */
 export async function reserveRecipientSlot(
   tx: DbClient,
   source: string,
-  to: string,
+  recipient: MailRecipient,
   now: number = Date.now(),
 ): Promise<void> {
   // Hours that are over count for nothing any more.
@@ -73,7 +81,7 @@ export async function reserveRecipientSlot(
     delete from mail_counters
      where source = ${source} and scope <> ${BACKLOG_SCOPE} and bucket < ${hourBucket(now - HOUR_MS)}
   `
-  const taken = await takePlace(tx, { source, scope: recipientScope(to), bucket: hourBucket(now) }, MAIL_PER_RECIPIENT_HOURLY_LIMIT)
+  const taken = await takePlace(tx, { source, scope: recipientScope(recipient), bucket: hourBucket(now) }, MAIL_PER_RECIPIENT_HOURLY_LIMIT)
   if (!taken) {
     throw new MailLimitError(
       `This plugin has already sent ${MAIL_PER_RECIPIENT_HOURLY_LIMIT} emails to that recipient this hour.`,
