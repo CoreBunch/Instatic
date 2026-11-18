@@ -22,6 +22,8 @@ describe('redirect URIs a client may register', () => {
 
   it.each([
     'http://app.example.com/callback',
+    'http://127.example.com/callback',
+    'http://127.0.0.1.example.com/callback',
     'https://user:pass@app.example.com/callback',
     'https://app.example.com/callback#fragment',
     'myapp://callback',
