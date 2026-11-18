@@ -36,7 +36,8 @@
 
 import type { DbClient } from '../../db/client'
 import type { Page, PageNode, SiteDocument } from '@core/page-tree'
-import type { ClosedContent, SourceRequestContext } from '@core/loops/types'
+import type { ClosedContent, SourceRequestContext, SourceRequestMember } from '@core/loops/types'
+import type { CurrentMember } from '@core/members'
 import { registry } from '@core/module-engine'
 import { loopSourceRegistry } from '@core/loops/registry'
 import {
@@ -114,6 +115,11 @@ function parseCookies(header: string | null): Record<string, string> {
     out[name] = decodeURIComponent(part.slice(eq + 1).trim())
   }
   return out
+}
+
+/** The part of the signed-in member a per-visitor loop source is given. */
+function sourceMemberFor(member: CurrentMember | null): SourceRequestMember | null {
+  return member ? { id: member.id, email: member.email, tags: member.tags, profile: member.profile } : null
 }
 
 /** Sorted, stable serialisation of a query string for cache keys. */
@@ -296,13 +302,16 @@ export async function handleHoleRequest(
       slug: route.slug,
       cookies: perVisitor ? parseCookies(req.headers.get('cookie')) : {},
     }
+    // Like the cookies, the member goes only to a per-visitor source: its
+    // fragment is this visitor's alone, on a public page as on a protected one.
+    if (perVisitor) request.member = sourceMemberFor(await visitor())
     const member = isProtected || showsMember ? memberFrameFor(await visitor()) : undefined
     const html = await renderHoleFragment(nodeId, foundPage, snap.site, ctx.db, pageUrl, request, closed, member)
     return new Response(html, {
       status: 200,
       headers: {
         'content-type': 'text/html; charset=utf-8',
-        ...(isProtected || showsMember ? PRIVATE_HEADERS : { 'cache-control': 'no-store' }),
+        ...PRIVATE_HEADERS,
       },
     })
   }

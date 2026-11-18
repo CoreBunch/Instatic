@@ -81,8 +81,11 @@ interface LoopEntitySource {
 
   /**
    * Default `false`. Implies `requestDependent`. Output varies per individual
-   * visitor (cookies, randomization). Bypasses the Layer B cache; `fetch()`
-   * runs on every page load. Use sparingly.
+   * visitor (cookies, the signed-in member, randomization). Bypasses the
+   * Layer B cache; `fetch()` runs on every page load. Use sparingly.
+   * `ctx.request.member` is the signed-in site member or `null`, and is
+   * present only for these sources (a plugin's source also needs
+   * `members.read`).
    */
   perVisitor?: boolean
 }

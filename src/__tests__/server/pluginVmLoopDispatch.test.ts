@@ -27,6 +27,16 @@ const LOOP_PLUGIN_SOURCE = `
         preview: function () { return [{ id: 'a' }]; },
       });
       await api.cms.loops.registerSource({
+        id: 'acme.loop.member',
+        label: 'Member',
+        perVisitor: true,
+        fetch: function (ctx) {
+          var member = ctx.request && ctx.request.member;
+          return { items: [{ id: member ? member.id : 'nobody', fields: { email: member ? member.email : '' } }], totalItems: 1 };
+        },
+        preview: function () { return []; },
+      });
+      await api.cms.loops.registerSource({
         id: 'acme.loop.noreturn',
         label: 'No return',
         fetch: function () { /* author forgot to return */ },
@@ -73,6 +83,24 @@ describe('VM loop-source dispatch fallbacks', () => {
     try {
       const result = await vm.runLoopFetch('acme.loop.ok', {})
       expect(result).toEqual({ items: [{ id: 'a' }], totalItems: 1 })
+    } finally {
+      vm.dispose()
+    }
+  })
+
+  it('runLoopFetch: the signed-in member the host sends arrives on ctx.request.member', async () => {
+    const vm = await makeLoopVm()
+    try {
+      const request = { query: {}, path: '/', slug: null, cookies: {} }
+      const member = { id: 'm1', email: 'ada@example.com', tags: ['pro'], profile: { name: 'Ada' } }
+      expect(await vm.runLoopFetch('acme.loop.member', { request: { ...request, member } })).toEqual({
+        items: [{ id: 'm1', fields: { email: 'ada@example.com' } }],
+        totalItems: 1,
+      })
+      expect(await vm.runLoopFetch('acme.loop.member', { request: { ...request, member: null } })).toEqual({
+        items: [{ id: 'nobody', fields: { email: '' } }],
+        totalItems: 1,
+      })
     } finally {
       vm.dispose()
     }

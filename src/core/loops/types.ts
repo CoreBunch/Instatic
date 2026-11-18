@@ -23,6 +23,7 @@
 import { Type, type Static } from '@core/utils/typeboxHelpers'
 import type { PropertySchema } from '@core/module-engine'
 import type { SiteDocument } from '@core/page-tree'
+import type { CurrentMember } from '@core/members'
 
 // ---------------------------------------------------------------------------
 // Field metadata
@@ -176,7 +177,17 @@ export interface SourceRequestContext {
    * for shared-cache `requestDependent` sources.
    */
   cookies: Record<string, string>
+  /**
+   * The signed-in site member, or null for a signed-out visitor. Present
+   * ONLY for `perVisitor` sources, whose fragment is rendered for one visitor
+   * and never cached. Left out of every shared render, so nothing about a
+   * member can reach a fragment another visitor is given.
+   */
+  member?: SourceRequestMember | null
 }
+
+/** A site member as a per-visitor loop source sees them: the same record a plugin route gets. */
+export type SourceRequestMember = Pick<CurrentMember, 'id' | 'email' | 'tags' | 'profile'>
 
 /**
  * Context handed to `LoopEntitySource.preview()` editor-side. No DB

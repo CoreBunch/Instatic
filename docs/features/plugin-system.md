@@ -628,8 +628,11 @@ ctx.request: {
   path: string                    // originating page path (e.g. '/search')
   slug: string | null
   cookies: Record<string, string> // populated ONLY for perVisitor sources; session cookies are removed
+  member?: { id, email, tags, profile } | null // perVisitor sources of a plugin holding members.read
 }
 ```
+
+**The signed-in member.** A `perVisitor` source of a plugin that holds `members.read` also gets `ctx.request.member`: the same record a route's `ctx.member` carries, or `null` for a signed-out visitor. It is set on any page, protected or not, so an account menu on a public page works. Suspended and deleted members have no session, so they arrive as `null`. Every other source gets no `member` field at all: a `requestDependent` source's fragment is cached and shared, and a per-visitor loop nested inside a shared fragment is rendered with that shared request. The host decides this on each fetch (`requestForPluginSource` in `server/plugins/host/handlers/loops.ts`), so withdrawing the permission takes effect at once. A per-visitor fragment is always sent `Cache-Control: private, no-store`.
 
 At publish time (built-in, non-dynamic loops) `ctx.request` is `undefined` and the source must be deterministic. `ctx.db` and the full `site` are NOT sent to the worker — reach data via `api.cms.storage.*` or a gated `fetch(...)`.
 
@@ -1060,7 +1063,7 @@ Risk levels:
 | `cms.storage`               | Admin / editor / server| Medium  | Read/write plugin-owned records                                         |
 | `cms.routes`                | Server               | High      | Register authenticated backend routes                                   |
 | `cms.routes.public`         | Server               | Dangerous | Register anonymously-callable routes; requires `cms.routes` too          |
-| `members.read`              | Server               | High      | See the signed-in member on its routes, register member routes, look members up, hear member events |
+| `members.read`              | Server               | High      | See the signed-in member on its routes and per-visitor loop sources, register member routes, look members up, hear member events |
 | `members.write`             | Server               | High      | Invite site members                                                      |
 | `members.tags`              | Server               | Dangerous | Grant and withdraw member access tags (what a member may open)           |
 | `cms.hooks`                 | Server               | High      | Listen to CMS events / filter values                                    |
