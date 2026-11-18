@@ -764,7 +764,7 @@ See [docs/features/plugin-system.md](features/plugin-system.md) for the plugin S
   - `src/admin/pages/site/store/slices/site/nodeActions.ts` — tree mutation actions that call `mutateActiveTree`
   - `src/admin/pages/site/canvas/CanvasRoot.tsx` — canvas mount
   - `src/admin/spotlight/SpotlightRoot.tsx` — Cmd+K palette
-  - `src/admin/pages/site/panels/PropertiesPanel/PropertiesPanelBody.tsx` — branch router for selector, multi-select, VC, and selected-node inspector surfaces; owns the node-level Styles/Attributes switch
+  - `src/admin/pages/site/panels/PropertiesPanel/PropertiesPanelBody.tsx` — branch router for selector, multi-select, VC, and selected-node inspector surfaces; owns the node-level Styles/Attributes/Visibility switch (Visibility holds `ShowWhenControl`; its tab shows a dot while the node has a show-when rule)
   - `src/admin/pages/site/panels/PropertiesPanel/ClassPicker.tsx` — unified selector picker UI (entry point: pill strip, input, creation flow)
   - `src/admin/pages/site/panels/PropertiesPanel/HtmlAttributesPanel.tsx` — selected-node Attributes view for editing safe `props.htmlAttributes`
   - `src/admin/pages/site/panels/PropertiesPanel/htmlAttributesModel.ts` — pure row normalization, validation, and dirty-key helpers for the Attributes view

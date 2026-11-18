@@ -20,7 +20,8 @@ import { accessAllows, parseAccessRule, type AccessRule, type CurrentMember } fr
 import type { Page } from '@core/page-tree'
 import { buildMemberFrame, isTemplatePage, normalizeRouteBase, type MemberFrame } from '@core/templates'
 import { resolveSignedInMember } from '../members/handlers'
-import { getMemberSettings, toCurrentMember } from '../members/repository'
+import { getMemberPagePaths } from '../members/pages'
+import { toCurrentMember } from '../members/repository'
 import { listProtectedTables } from '../repositories/data/tableAccess'
 import { listPublishedPageAccess } from '../repositories/publish'
 import type { ClosedContent } from '@core/loops/types'
@@ -188,29 +189,26 @@ export async function decideAccess(rules: readonly AccessRule[], visitor: Visito
 /** Headers for anything rendered for one visitor: no shared or browser cache may keep it. */
 export const PRIVATE_HEADERS = { 'cache-control': 'private, no-store' } as const
 
-export const MEMBER_SIGN_IN_PATH = '/_instatic/members/sign-in'
-
 /**
- * The response for a visitor who may not open a route and should be told so.
- * `login`: send them to the sign-in page, remembering where they were going.
- * `forbidden`: they are signed in but lack the tag.
- * (`hide` has no response here: the caller answers as if nothing existed.)
+ * The response for a signed-out visitor who should be asked to sign in: a
+ * redirect to the site's sign-in page, remembering where they were going.
+ *
+ * Returns null when there is nothing to send them to, and the caller then
+ * answers as if the route did not exist:
+ *  - the owner has not assigned a sign-in page, or it is not published
+ *    (core has none of its own);
+ *  - the visitor is signed in but lacks the tag (`forbidden`): signing in
+ *    again would not help, and the site has no page for that either.
  */
 export async function denyResponse(
   db: DbClient,
   url: URL,
   decision: 'login' | 'forbidden',
-): Promise<Response> {
-  if (decision === 'forbidden') {
-    return new Response(
-      '<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="robots" content="noindex">' +
-        '<title>No access</title></head><body><h1>No access</h1>' +
-        '<p>Your account does not include this page.</p><p><a href="/">Back to the home page</a></p></body></html>',
-      { status: 403, headers: { 'content-type': 'text/html; charset=utf-8', ...PRIVATE_HEADERS } },
-    )
-  }
-  const settings = await getMemberSettings(db)
-  const target = new URL(settings.pages.login ?? MEMBER_SIGN_IN_PATH, url.origin)
+): Promise<Response | null> {
+  if (decision === 'forbidden') return null
+  const pages = await getMemberPagePaths(db)
+  if (!pages.login) return null
+  const target = new URL(pages.login, url.origin)
   target.searchParams.set('next', `${url.pathname}${url.search}`)
   return new Response(null, {
     status: 302,

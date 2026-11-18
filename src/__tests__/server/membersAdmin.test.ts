@@ -17,7 +17,7 @@ import {
   findMemberByEmail,
   grantMemberTag,
   listActiveMemberTags,
-} from '../../../server/members/repository'
+ saveMemberSettings } from '../../../server/members/repository'
 import { createMemberSession, findMemberSession, listMemberSessions } from '../../../server/members/sessions'
 import {
   createCapabilityTestHarness,
@@ -26,6 +26,7 @@ import {
   readJson,
   type CapabilityTestHarness,
 } from '../helpers/capabilityHarness'
+import { publishMemberPages } from '../helpers/memberPages'
 
 const BASE = '/admin/api/cms/members'
 
@@ -117,7 +118,7 @@ describe('members admin API', () => {
       await h.cms(`${BASE}/${suspended.id}/suspend`, { method: 'POST', cookie: owner })
 
       const all = await list()
-      expect(all.counts).toEqual({ all: 4, active: 2, invited: 1, suspended: 1 })
+      expect(all.counts).toEqual({ all: 4, active: 2, pending: 1, suspended: 1 })
       expect(all.tags).toEqual([{ tag: 'pro', count: 1 }])
       expect(all.matching).toBe(4)
 
@@ -125,7 +126,7 @@ describe('members admin API', () => {
       expect((await list('?q=lovelace')).members.map((m) => m.email)).toEqual(['ada@example.com'])
       // A wildcard is plain text, not "match everything".
       expect((await list('?q=%25')).matching).toBe(4)
-      expect((await list('?status=invited')).members.map((m) => m.email)).toEqual(['pending@example.com'])
+      expect((await list('?status=pending')).members.map((m) => m.email)).toEqual(['pending@example.com'])
       expect((await list('?status=suspended')).members.map((m) => m.email)).toEqual(['linus@example.com'])
       expect((await list('?status=active')).matching).toBe(2)
       const pro = await list('?tag=pro')
@@ -217,6 +218,22 @@ describe('members admin API', () => {
   })
 
   describe('invitations', () => {
+    // An invitation opens a page of the site; the owner's is set here.
+    beforeEach(async () => {
+      await saveMemberSettings(h.db, { ...DEFAULT_MEMBER_SETTINGS, pages: await publishMemberPages(h.db, { invite: '/invitation' }) })
+    })
+
+    it('are off, with nobody created, while the site has no invitation page', async () => {
+      await saveMemberSettings(h.db, DEFAULT_MEMBER_SETTINGS)
+      for (const delivery of ['email', 'link']) {
+        const res = await invite({ email: 'early@example.com', delivery })
+        expect(res.status).toBe(409)
+        expect((await readJson<{ error: string }>(res)).error).toContain('no page that accepts an invitation')
+      }
+      expect((await list()).counts.all).toBe(0)
+      expect(await inviteMails()).toHaveLength(0)
+    })
+
     const invite = (json: unknown) => h.cms(`${BASE}/invite`, { method: 'POST', cookie: owner, json })
     const inviteMails = async () => {
       await flushMemberMail()
@@ -232,7 +249,7 @@ describe('members admin API', () => {
       const created = await findMemberByEmail(h.db, 'new@example.com')
       expect(created).toMatchObject({ passwordHash: null, emailVerifiedAt: null, status: 'active' })
       expect(await listActiveMemberTags(h.db, created!.id)).toEqual(['student'])
-      expect((await list('?status=invited')).members.map((m) => m.email)).toEqual(['New@Example.com'])
+      expect((await list('?status=pending')).members.map((m) => m.email)).toEqual(['New@Example.com'])
 
       const mails = await inviteMails()
       expect(mails).toHaveLength(1)
@@ -251,6 +268,53 @@ describe('members admin API', () => {
       const taken = await invite({ email: 'ada@example.com' })
       expect(taken.status).toBe(409)
       expect(await inviteMails()).toHaveLength(2)
+    })
+
+    it('hands the link to the admin when asked, and emails nothing', async () => {
+      const res = await invite({ email: 'byhand@example.com', tags: ['student'], delivery: 'link' })
+      expect(res.status).toBe(201)
+      expect(res.headers.get('cache-control')).toBe('no-store')
+      const body = await readJson<{ member: MemberListItem; link?: string }>(res)
+      expect(body.member).toMatchObject({ email: 'byhand@example.com', status: 'pending', tags: ['student'] })
+      expect(body.link).toMatch(/^http:\/\/localhost\/invitation\?token=[\w-]+$/)
+      expect(await inviteMails()).toHaveLength(0)
+
+
+      // Asking again makes a fresh link, and the first one stops working.
+      const again = await readJson<{ link?: string; outcome: string }>(await invite({ email: 'byhand@example.com', delivery: 'link' }))
+      expect(again.outcome).toBe('resent')
+      expect(again.link).not.toBe(body.link)
+
+      const audit = await readJson<{ events: Array<{ action: string; metadata?: Record<string, unknown> }> }>(await h.cms('/admin/api/cms/audit', { cookie: owner }))
+      expect(audit.events.find((event) => event.action === 'member.invite')?.metadata).toMatchObject({ delivery: 'link' })
+    })
+
+    it('asks for the password again before handing over a link, but not before emailing one', async () => {
+      const manager = await h.createRoleUser({ name: 'Members', slug: 'members-manager', capabilities: ['members.read', 'members.manage'] })
+      const call = (json: unknown, cookie: string) => h.cms(`${BASE}/invite`, { method: 'POST', cookie, json })
+      const asked = await call({ email: 'step@example.com', delivery: 'link' }, manager.cookie)
+      expect(asked.status).toBe(401)
+      expect((await readJson<{ error: string }>(asked)).error).toBe('step_up_required')
+      expect((await list()).counts.all).toBe(0)
+      expect((await call({ email: 'step@example.com' }, manager.cookie)).status).toBe(201)
+      expect((await call({ email: 'step@example.com', delivery: 'link' }, await h.stepUp(manager.cookie))).status).toBe(200)
+    })
+
+    it('still invites by link on a live server with no outgoing email, where an emailed invitation is refused', async () => {
+      const before = process.env.NODE_ENV
+      process.env.NODE_ENV = 'production'
+      try {
+        const settings = await readJson<MemberSettingsResponse>(await h.cms(`${BASE}/settings`, { cookie: owner }))
+        expect(settings).toMatchObject({ mailAvailable: false, linkAvailable: true })
+        const emailed = await invite({ email: 'live@example.com' })
+        expect(emailed.status).toBe(409)
+        expect((await list()).counts.all).toBe(0)
+        const byHand = await invite({ email: 'live@example.com', delivery: 'link' })
+        expect(byHand.status).toBe(201)
+        expect((await readJson<{ link?: string }>(byHand)).link).toContain('token=')
+      } finally {
+        process.env.NODE_ENV = before
+      }
     })
 
     it('refuses a malformed address and a reserved tag without creating anyone', async () => {
@@ -273,22 +337,27 @@ describe('members admin API', () => {
           { id: 'name', label: 'Name', type: 'text', required: true },
           { id: 'company', label: 'Company', type: 'text', required: false },
         ],
-        pages: { login: '/sign-in', reset: '/new-password' },
+        pages: await publishMemberPages(h.db, { login: '/sign-in', reset: '/new-password' }),
       }
       expect((await save(next)).status).toBe(200)
       const after = await readJson<MemberSettingsResponse>(await h.cms(`${BASE}/settings`, { cookie: owner }))
       expect(after.settings).toEqual(next as MemberSettingsResponse['settings'])
+      // The pickers get every page, with its live address.
+      expect(after.pageOptions).toContainEqual({
+        id: next.pages.login!, title: 'sign-in', path: '/sign-in', publishedPath: '/sign-in', formActions: [],
+      })
 
       const { events } = await readJson<{ events: Array<{ action: string }> }>(await h.cms('/admin/api/cms/audit', { cookie: owner }))
       expect(events.some((event) => event.action === 'member.settings.update')).toBe(true)
     })
 
-    it('refuses duplicate field ids, a field named like a form field, an off-site page and an unknown mode', async () => {
+    it('refuses duplicate field ids, a field named like a form field, a page that does not exist and an unknown mode', async () => {
       const field = (id: string) => ({ id, label: 'L', type: 'text', required: false })
       const base = { signupMode: 'open', profileFields: [field('name')], pages: {} }
       expect((await save({ ...base, profileFields: [field('name'), field('name')] })).status).toBe(400)
       expect((await save({ ...base, profileFields: [field('password')] })).status).toBe(400)
-      expect((await save({ ...base, pages: { login: '//evil.example/' } })).status).toBe(400)
+      // A setting names a page of the site by id; an address, on this site or another, is not one.
+      expect((await save({ ...base, pages: { login: '/sign-in' } })).status).toBe(400)
       expect((await save({ ...base, pages: { login: 'https://evil.example/' } })).status).toBe(400)
       expect((await save({ ...base, signupMode: 'everyone' })).status).toBe(400)
       const still = await readJson<MemberSettingsResponse>(await h.cms(`${BASE}/settings`, { cookie: owner }))

@@ -73,7 +73,13 @@ export async function handleMembersInvite(
     throw new Error('Outgoing email is not set up, so an invitation cannot be emailed')
   }
   const result = await inviteMember(db, { email, tags, linkOrigin, tagSource: msg.pluginId })
-  if (!result.ok) throw new Error('That address already has an account')
+  if (!result.ok) {
+    throw new Error(
+      result.reason === 'no_page'
+        ? 'The site has no invitation page yet; its owner sets one in the member settings'
+        : 'That address already has an account',
+    )
+  }
   replyApiOk(msg.pluginId, msg.correlationId, { memberId: result.member.id, outcome: result.outcome })
 }
 

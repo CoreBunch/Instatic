@@ -43,6 +43,7 @@ import {
   signOutMemberEverywhere,
 } from '../../members/admin'
 import { memberLinkOrigin, memberMailAvailable } from '../../members/mail'
+import { listMemberPageOptions } from '../../members/pages'
 import {
   getMemberSettings,
   grantMemberTag,
@@ -57,7 +58,7 @@ import { runRouteTable, type Route, type RouteParams } from './routeTable'
 
 const MEMBERS_PREFIX = `${CMS_API_PREFIX}/members`
 const ADDRESS_RE = new RegExp(MAIL_ADDRESS_PATTERN)
-const STATUSES: readonly MemberAdminStatus[] = ['active', 'invited', 'suspended']
+const STATUSES: readonly MemberAdminStatus[] = ['active', 'pending', 'suspended']
 const NO_REQUEST = { ipAddress: null, userAgent: null }
 
 function notFound(): Response {
@@ -132,22 +133,45 @@ async function handleInvite(req: Request, db: DbClient): Promise<Response> {
   const tags = input.tags ?? []
   if (!tags.every(isGrantableMemberTag)) return badRequest('A tag in the invitation cannot be given to a member')
 
-  // An invitation is a link in an email: without both, it would create a
-  // member nobody can ever reach.
+  // An invitation is a link. Without the site's public address there is no
+  // link at all; without outgoing email it can still be handed to the admin
+  // to pass on, which is what `delivery: 'link'` asks for.
+  const delivery = input.delivery ?? 'email'
+  // The link sets the password of an account for that address, and here it
+  // goes to the admin, not to the address. That is the admin vouching for
+  // who they give it to, so it asks for step-up like the other actions that
+  // cannot be taken back.
+  if (delivery === 'link') {
+    const stepUp = await requireStepUp(req, db, user)
+    if (stepUp) return stepUp
+  }
   const linkOrigin = memberLinkOrigin(req)
-  if (!linkOrigin || !(await memberMailAvailable(db, req))) {
+  if (!linkOrigin) {
     return jsonResponse(
-      { error: 'Invitations need outgoing email. Set up a connector and a sender under Email first.' },
+      { error: 'The site does not know its public address, so it cannot make an invitation link. Set PUBLIC_ORIGIN on the server.' },
+      { status: 409 },
+    )
+  }
+  if (delivery === 'email' && !(await memberMailAvailable(db, req))) {
+    return jsonResponse(
+      { error: 'Outgoing email is not set up. Create an invitation link to pass on yourself, or set up a connector and a sender under Email.' },
       { status: 409 },
     )
   }
 
-  const result = await inviteMember(db, { email: input.email, tags, linkOrigin })
+  const result = await inviteMember(db, { email: input.email, tags, linkOrigin, delivery })
   if (!result.ok) {
-    return jsonResponse({ error: 'That address already has an account.' }, { status: 409 })
+    const error = result.reason === 'no_page'
+      ? 'The site has no page that accepts an invitation. Set the invitation page in Member settings first.'
+      : 'That address already has an account.'
+    return jsonResponse({ error }, { status: 409 })
   }
-  await audit(db, req, user, 'member.invite', result.member.id, { email: result.member.email })
-  return jsonResponse({ member: result.member, outcome: result.outcome }, { status: result.outcome === 'invited' ? 201 : 200 })
+  await audit(db, req, user, 'member.invite', result.member.id, { email: result.member.email, delivery })
+  return jsonResponse(
+    { member: result.member, outcome: result.outcome, ...(result.link ? { link: result.link } : {}) },
+    // The link signs someone in: it must not be kept by anything between the server and the admin.
+    { status: result.outcome === 'invited' ? 201 : 200, headers: { 'cache-control': 'no-store' } },
+  )
 }
 
 // ─── One member ────────────────────────────────────────────────────────────
@@ -215,7 +239,12 @@ async function handleRevokeTag(req: Request, db: DbClient, params: RouteParams):
 // ─── Settings ──────────────────────────────────────────────────────────────
 
 async function settingsResponse(req: Request, db: DbClient, settings: MemberSettings): Promise<Response> {
-  return jsonResponse({ settings, mailAvailable: await memberMailAvailable(db, req) })
+  return jsonResponse({
+    settings,
+    pageOptions: await listMemberPageOptions(db),
+    mailAvailable: await memberMailAvailable(db, req),
+    linkAvailable: memberLinkOrigin(req) !== null,
+  })
 }
 
 async function handleGetSettings(req: Request, db: DbClient): Promise<Response> {
@@ -240,6 +269,10 @@ async function handleSaveSettings(req: Request, db: DbClient): Promise<Response>
   if (!settings) return badRequest('Those member settings are not valid')
   const problem = settingsProblem(settings)
   if (problem) return badRequest(problem)
+  const known = new Set((await listMemberPageOptions(db)).map((page) => page.id))
+  if (Object.values(settings.pages).some((pageId) => pageId && !known.has(pageId))) {
+    return badRequest('One of the chosen pages no longer exists. Pick a page from the list.')
+  }
   await saveMemberSettings(db, settings)
   await audit(db, req, user, 'member.settings.update', null, { signupMode: settings.signupMode })
   return settingsResponse(req, db, settings)

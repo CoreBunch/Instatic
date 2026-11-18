@@ -4,7 +4,16 @@
  */
 import { useId, useState, type FormEvent } from 'react'
 import dialogStyles from '@admin/shared/dialogs/SiteCreateDialog/SiteCreateDialog.module.css'
-import type { MemberPages, MemberProfileField, MemberSettings, MemberSignupMode } from '@core/members'
+import {
+  memberPageIsLive,
+  memberPageState,
+  type MemberPageKey,
+  type MemberPageOption,
+  type MemberPages,
+  type MemberProfileField,
+  type MemberSettings,
+  type MemberSignupMode,
+} from '@core/members'
 import { Button } from '@ui/components/Button'
 import { Dialog } from '@ui/components/Dialog'
 import { Input } from '@ui/components/Input'
@@ -34,19 +43,97 @@ const FIELD_TYPE_OPTIONS: Array<{ value: MemberProfileField['type']; label: stri
   { value: 'checkbox', label: 'Checkbox' },
 ]
 
-const PAGE_FIELDS: Array<{ key: keyof MemberPages; label: string; hint: string }> = [
-  { key: 'login', label: 'Sign-in page', hint: 'Where a visitor is sent when a page needs them to sign in.' },
-  { key: 'afterLogin', label: 'After signing in', hint: 'Where a member lands when nothing else says where to go.' },
-  { key: 'verify', label: 'Confirm email', hint: 'Opened by the link in the confirmation email.' },
-  { key: 'reset', label: 'Choose a new password', hint: 'Opened by the link in the password reset email.' },
-  { key: 'magic', label: 'Sign-in link', hint: 'Opened by the link in the sign-in email.' },
-  { key: 'invite', label: 'Accept an invitation', hint: 'Opened by the link in the invitation email.' },
-  { key: 'emailChange', label: 'Confirm a new email', hint: 'Opened by the link sent to a new address.' },
+/**
+ * Member features run on pages the owner builds; there are no built-in ones.
+ * `hint` says what the page is for, `off` what does not happen while no
+ * page is chosen.
+ */
+const PAGE_FIELDS: Array<{ key: MemberPageKey; label: string; hint: string; off: string }> = [
+  {
+    key: 'login',
+    label: 'Sign-in page',
+    hint: 'Where a signed-out visitor is sent when a page is for members.',
+    off: 'Not set: a members page answers "not found" to a signed-out visitor.',
+  },
+  {
+    key: 'afterLogin',
+    label: 'After signing in',
+    hint: 'Where a member lands when nothing else says where to go.',
+    off: 'Not set: the home page.',
+  },
+  {
+    key: 'verify',
+    label: 'Confirm email',
+    hint: 'Opened by the link in the confirmation email. Sign-up needs it.',
+    off: 'Not set: sign-up is off.',
+  },
+  {
+    key: 'reset',
+    label: 'Choose a new password',
+    hint: 'Opened by the link in the password reset email.',
+    off: 'Not set: password reset is off.',
+  },
+  {
+    key: 'magic',
+    label: 'Sign-in link',
+    hint: 'Opened by the link in the sign-in email.',
+    off: 'Not set: signing in by emailed link is off.',
+  },
+  {
+    key: 'invite',
+    label: 'Accept an invitation',
+    hint: 'Opened by an invitation link. Invitations need it.',
+    off: 'Not set: invitations are off.',
+  },
+  {
+    key: 'emailChange',
+    label: 'Confirm a new email',
+    hint: 'Opened by the link sent to a new address.',
+    off: 'Not set: members cannot change their address.',
+  },
 ]
+
+/** Why sign-up does not work yet in a mode that needs a page, or null when it does. */
+function signupBlocker(mode: MemberSignupMode, pages: MemberPages, options: readonly MemberPageOption[]): string | null {
+  if (mode === 'open' && !memberPageIsLive('verify', pages, options)) {
+    return 'Sign-up stays off until a published "Confirm email" page is chosen below.'
+  }
+  if (mode === 'invite' && !memberPageIsLive('invite', pages, options)) {
+    return 'Nobody can be invited until a published "Accept an invitation" page is chosen below.'
+  }
+  return null
+}
+
+const NOT_SET = ''
+
+/** What to say under a page picker: a problem with the chosen page, or what the slot is for. */
+function pageNote(
+  key: MemberPageKey,
+  pages: MemberPages,
+  options: readonly MemberPageOption[],
+  hint: string,
+  off: string,
+): { text: string; problem: boolean } {
+  const state = memberPageState(key, pages, options)
+  switch (state.kind) {
+    case 'unset':
+      return { text: `${hint} ${off}`, problem: false }
+    case 'missing':
+      return { text: 'The page chosen here was deleted. Choose another.', problem: true }
+    case 'unpublished':
+      return { text: `"${state.page.title}" is not published yet. This stays off until you publish the site.`, problem: true }
+    case 'no_form':
+      return {
+        text: `No "${state.formLabel}" form was found on "${state.page.title}". Add one in the editor, unless it sits in a component or layout the page uses.`,
+        problem: true,
+      }
+    case 'ready':
+      return { text: `${hint} Opens ${state.page.publishedPath}.`, problem: false }
+  }
+}
 
 const FIELD_ID_RE = /^[a-z][a-zA-Z0-9_]{0,39}$/
 const RESERVED_FIELD_IDS = ['email', 'password', 'token', 'currentPassword', 'newPassword']
-const PAGE_PATH_RE = /^\/(?![/\\])[^\s]*$/
 
 /** A field id from its label: "Company name" becomes `companyName`. */
 function fieldIdFromLabel(label: string): string {
@@ -67,12 +154,14 @@ function fieldProblem(field: MemberProfileField, all: readonly MemberProfileFiel
 
 export function MemberSettingsDialog({
   settings,
+  pageOptions,
   canEdit,
   busy,
   onClose,
   onSave,
 }: {
   settings: MemberSettings
+  pageOptions: readonly MemberPageOption[]
   canEdit: boolean
   busy: boolean
   onClose: () => void
@@ -85,22 +174,23 @@ export function MemberSettingsDialog({
   const idPrefix = useId()
 
   const fieldProblems = fields.map((field) => fieldProblem(field, fields))
-  const pageProblems = PAGE_FIELDS.map(({ key }) => {
-    const value = pages[key]
-    return value !== undefined && value !== '' && !PAGE_PATH_RE.test(value)
-  })
-  const valid = fieldProblems.every((problem) => problem === null) && pageProblems.every((problem) => !problem)
+  const pageMissing = PAGE_FIELDS.some(({ key }) => memberPageState(key, pages, pageOptions).kind === 'missing')
+  const valid = fieldProblems.every((problem) => problem === null) && !pageMissing
+  const pageSelectOptions = [
+    { value: NOT_SET, label: 'Not set' },
+    ...pageOptions.map((page) => ({ value: page.id, label: `${page.title} (${page.path})` })),
+  ]
   const disabled = !canEdit || busy
 
   function patchField(index: number, patch: Partial<MemberProfileField>) {
     setFields((current) => current.map((field, at) => (at === index ? { ...field, ...patch } : field)))
   }
 
-  function setPage(key: keyof MemberPages, value: string) {
+  function setPage(key: MemberPageKey, pageId: string) {
     setPages((current) => {
       const next = { ...current }
-      if (value.trim() === '') delete next[key]
-      else next[key] = value.trim()
+      if (pageId === NOT_SET) delete next[key]
+      else next[key] = pageId
       return next
     })
   }
@@ -149,6 +239,9 @@ export function MemberSettingsDialog({
             }}
           />
           <p className={dialogStyles.hint}>{SIGNUP_HINT[signupMode]}</p>
+          {signupBlocker(signupMode, pages, pageOptions) && (
+            <p role="status" className={dialogStyles.errorText}>{signupBlocker(signupMode, pages, pageOptions)}</p>
+          )}
         </div>
 
         <fieldset className={dialogStyles.group}>
@@ -244,31 +337,38 @@ export function MemberSettingsDialog({
         </fieldset>
 
         <fieldset className={dialogStyles.group}>
-          <legend className={dialogStyles.groupTitle}>Pages for member emails</legend>
+          <legend className={dialogStyles.groupTitle}>Member pages</legend>
           <p className={dialogStyles.hint}>
-            The address of the page on your site that each link opens, such as <code>/sign-in</code>. Leave one empty
-            and the link opens a plain built-in page instead.
+            Member features run on pages you build in the editor. Choose the page for each one. A feature whose
+            page is not set, or not published, is switched off.
           </p>
+          {pageOptions.length === 0 && (
+            <p className={dialogStyles.hint}>This site has no pages yet. Build them in the Site editor first.</p>
+          )}
           <div className={styles.pageGrid}>
-            {PAGE_FIELDS.map(({ key, label, hint }, index) => (
-              <div key={key} className={dialogStyles.field}>
-                <label htmlFor={`${idPrefix}-page-${key}`} className={dialogStyles.label}>{label}</label>
-                <Input
-                  id={`${idPrefix}-page-${key}`}
-                  fieldSize="sm"
-                  value={pages[key] ?? ''}
-                  placeholder="Built-in page"
-                  disabled={disabled}
-                  invalid={pageProblems[index]}
-                  onChange={(event) => setPage(key, event.target.value)}
-                  autoCapitalize="none"
-                  spellCheck={false}
-                />
-                <p className={pageProblems[index] ? dialogStyles.errorText : dialogStyles.hint}>
-                  {pageProblems[index] ? 'A page address starts with one slash, like /sign-in.' : hint}
-                </p>
-              </div>
-            ))}
+            {PAGE_FIELDS.map(({ key, label, hint, off }) => {
+              const note = pageNote(key, pages, pageOptions, hint, off)
+              const deleted = memberPageState(key, pages, pageOptions).kind === 'missing'
+              return (
+                <div key={key} className={dialogStyles.field}>
+                  <label htmlFor={`${idPrefix}-page-${key}`} className={dialogStyles.label}>{label}</label>
+                  <Select
+                    id={`${idPrefix}-page-${key}`}
+                    fieldSize="sm"
+                    value={pages[key] ?? NOT_SET}
+                    options={deleted
+                      ? [...pageSelectOptions, { value: pages[key] ?? NOT_SET, label: 'Deleted page' }]
+                      : pageSelectOptions}
+                    disabled={disabled}
+                    invalid={deleted}
+                    onChange={(event) => setPage(key, event.currentTarget.value)}
+                  />
+                  <p role={note.problem ? 'status' : undefined} className={note.problem ? styles.pageProblem : dialogStyles.hint}>
+                    {note.text}
+                  </p>
+                </div>
+              )
+            })}
           </div>
         </fieldset>
       </form>

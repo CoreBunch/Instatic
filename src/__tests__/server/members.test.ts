@@ -21,6 +21,7 @@ import {
   listMembersForAdmin,
   setMemberSuspended,
 } from '../../../server/members/admin'
+import { publishMemberPages } from '../helpers/memberPages'
 
 const ORIGIN = 'http://localhost'
 const PASSWORD = 'correct-horse-battery'
@@ -80,9 +81,13 @@ class Browser {
     return res
   }
 
-  async get(path: string): Promise<Response> {
+  async get(path: string, headers: Record<string, string> = {}): Promise<Response> {
     const url = new URL(`/_instatic/members/${path}`, ORIGIN)
-    return handleMemberRequest(requestWithCookie(url, this.cookie), this.db, url)
+    const req = requestWithCookie(url, this.cookie)
+    for (const [name, value] of Object.entries(headers)) req.headers.set(name, value)
+    const res = await handleMemberRequest(req, this.db, url)
+    this.remember(res)
+    return res
   }
 
   async me(): Promise<CurrentMember | null> {
@@ -106,6 +111,16 @@ async function errorCode(res: Response): Promise<string> {
   return ((await res.json()) as ErrorBody).error.code
 }
 
+/** The owner's own page for every member link; without one, that link's feature is off. */
+const PAGES = {
+  login: '/sign-in',
+  verify: '/welcome',
+  reset: '/new-password',
+  magic: '/sign-in-link',
+  invite: '/invitation',
+  emailChange: '/confirm-email',
+}
+
 describe('site members', () => {
   let t: TestDb
   let browser: Browser
@@ -118,7 +133,7 @@ describe('site members', () => {
     }
     resetMemberLimits()
     resetPublicOrigins()
-    await saveMemberSettings(t.db, { ...DEFAULT_MEMBER_SETTINGS, signupMode: 'open' })
+    await saveMemberSettings(t.db, { ...DEFAULT_MEMBER_SETTINGS, signupMode: 'open', pages: await publishMemberPages(t.db, PAGES) })
     browser = new Browser(t.db)
   })
 
@@ -177,7 +192,7 @@ describe('site members', () => {
       expect(await errorCode(early)).toBe('invalid_credentials')
 
       const mail = await lastMail('verify')
-      expect(mail!.body).toContain(`${ORIGIN}/_instatic/members/link/verify?token=`)
+      expect(mail!.body).toContain(`${ORIGIN}/welcome?token=`)
       const confirmed = await browser.post('verify', { token: mail!.token })
       expect(confirmed.status).toBe(200)
       expect(await browser.me()).toMatchObject({
@@ -259,7 +274,7 @@ describe('site members', () => {
 
       await saveMemberSettings(t.db, {
         signupMode: 'open',
-        pages: {},
+        pages: await publishMemberPages(t.db, PAGES),
         profileFields: [{ id: 'company', label: 'Company', type: 'text', required: true }],
       })
       const missing = await browser.post('signup', { email: 'a@example.com', password: PASSWORD })
@@ -505,23 +520,39 @@ describe('site members', () => {
       expect(await mailCount('reset')).toBeLessThanOrEqual(4)
     })
 
-    it('shows the fallback page without using up the link', async () => {
+    it('serves no page of its own for a link or for signing in', async () => {
       await register(browser, 'm@example.com')
       await new Browser(t.db).post('password/forgot', { email: 'm@example.com' })
       const mail = await lastMail('reset')
-      const page = await browser.get(`link/reset?token=${mail!.token}`)
-      expect(page.headers.get('referrer-policy')).toBe('no-referrer')
-      expect(page.headers.get('cache-control')).toBe('no-store')
-      const html = await page.text()
-      expect(html).toContain('action="/_instatic/members/password/reset"')
-      expect(html).toContain('name="password"')
-
-      // Opening the page (a mail scanner would) left the token usable.
+      expect(mail!.body).toContain(`${ORIGIN}/new-password?token=`)
+      for (const path of [`link/reset?token=${mail!.token}`, 'link/verify', 'sign-in', 'sign-in?next=%2Faccount']) {
+        expect((await browser.get(path)).status).toBe(404)
+      }
+      // Asking for those addresses used nothing up.
       const ok = await new Browser(t.db).post('password/reset', { token: mail!.token, password: 'a-brand-new-password' })
       expect(ok.status).toBe(200)
-      const after = await (await browser.get(`link/reset?token=${mail!.token}`)).text()
-      expect(after).toContain('expired or was already used')
-      expect(after).not.toContain('<form')
+    })
+
+    it('switches a feature off, for every address alike, while its page is not set', async () => {
+      await register(browser, 'm@example.com')
+      await saveMemberSettings(t.db, { ...DEFAULT_MEMBER_SETTINGS, signupMode: 'open', pages: {} })
+      const visitor = new Browser(t.db)
+      for (const [action, body] of [
+        ['signup', { email: 'new@example.com', password: PASSWORD }],
+        ['password/forgot', { email: 'm@example.com' }],
+        ['password/forgot', { email: 'nobody@example.com' }],
+        ['link/request', { email: 'm@example.com' }],
+      ] as const) {
+        const res = await visitor.post(action, body)
+        expect(res.status).toBe(404)
+        expect(await errorCode(res)).toBe('not_available')
+      }
+      const change = await browser.post('email/change', { email: 'next@example.com', currentPassword: PASSWORD })
+      expect(await errorCode(change)).toBe('not_available')
+      expect(await findMemberByEmail(t.db, 'new@example.com')).toBeNull()
+      expect((await mailCount('reset')) + (await mailCount('magic')) + (await mailCount('email_change'))).toBe(0)
+      // Signing in with a password needs no emailed link, so it still works.
+      expect((await visitor.post('login', { email: 'm@example.com', password: PASSWORD })).status).toBe(200)
     })
   })
 
@@ -535,7 +566,7 @@ describe('site members', () => {
       )
       expect(res.status).toBe(200)
       const mail = await lastMail('verify')
-      expect(mail!.body).toContain('https://real.example/_instatic/members/link/verify?token=')
+      expect(mail!.body).toContain('https://real.example/welcome?token=')
       expect(mail!.body).not.toContain('evil.example')
     })
 
@@ -567,10 +598,41 @@ describe('site members', () => {
       await saveMemberSettings(t.db, {
         ...DEFAULT_MEMBER_SETTINGS,
         signupMode: 'open',
-        pages: { verify: '/welcome' },
+        pages: await publishMemberPages(t.db, { verify: '/thanks' }),
       })
       await browser.post('signup', { email: 'a@example.com', password: PASSWORD })
-      expect((await lastMail('verify'))!.body).toContain(`${ORIGIN}/welcome?token=`)
+      expect((await lastMail('verify'))!.body).toContain(`${ORIGIN}/thanks?token=`)
+    })
+  })
+
+  describe('sign-out link', () => {
+    it('signs out on a click from this site and lands on the named page', async () => {
+      await register(browser, 'm@example.com')
+      const res = await browser.get('logout?to=/bye', { 'sec-fetch-site': 'same-origin' })
+      expect(res.status).toBe(303)
+      expect(res.headers.get('location')).toBe('/bye')
+      expect(await browser.me()).toBeNull()
+    })
+
+    it('lands on the home page when the target is another site', async () => {
+      const res = await browser.get('logout?to=https://evil.example/', { 'sec-fetch-site': 'same-origin' })
+      expect(res.headers.get('location')).toBe('/')
+    })
+
+    it('leaves the member signed in when another site sends them there', async () => {
+      await register(browser, 'm@example.com')
+      const crossSite = await browser.get('logout', { 'sec-fetch-site': 'cross-site' })
+      const foreignReferer = await browser.get('logout', { referer: 'https://evil.example/page' })
+      const unknownSource = await browser.get('logout')
+      const fromEmail = await browser.get('logout', { 'sec-fetch-site': 'none' })
+      const asImage = await browser.get('logout', {
+        'sec-fetch-site': 'same-origin', 'sec-fetch-mode': 'no-cors', 'sec-fetch-dest': 'image',
+      })
+      const prefetch = await browser.get('logout', { 'sec-fetch-site': 'same-origin', 'sec-purpose': 'prefetch' })
+      for (const res of [crossSite, foreignReferer, unknownSource, fromEmail, asImage, prefetch]) {
+        expect(res.status).toBe(303)
+      }
+      expect(await browser.me()).not.toBeNull()
     })
   })
 
@@ -612,6 +674,25 @@ describe('site members', () => {
       expect(res.headers.get('location')).toBe('/join?plan=pro&member_error=weak_password&member_field=password')
     })
 
+    it('sends a member who just signed in to the owner\'s "after signing in" page when nothing else says where', async () => {
+      await register(browser, 'm@example.com')
+      await saveMemberSettings(t.db, { ...DEFAULT_MEMBER_SETTINGS, signupMode: 'open', pages: await publishMemberPages(t.db, { ...PAGES, afterLogin: '/account' }) })
+
+      // A script-driven form is told the page and decides itself (`?next=` and the form's own redirect come first).
+      const json = await new Browser(t.db).post('login', { email: 'm@example.com', password: PASSWORD })
+      expect(await json.json()).toMatchObject({ ok: true, code: 'signed_in', landing: '/account' })
+      // An action that signs nobody in names no page.
+      expect(await (await browser.post('profile', { name: 'M' })).json()).not.toHaveProperty('landing')
+
+      // A plain form with no redirect of its own is sent there.
+      const plain = await new Browser(t.db).post('login', { email: 'm@example.com', password: PASSWORD }, { json: false })
+      expect(plain.status).toBe(303)
+      expect(plain.headers.get('location')).toBe('/account')
+      // The form's own choice still wins.
+      const chosen = await new Browser(t.db).post('login', { email: 'm@example.com', password: PASSWORD, _success: '/hello' }, { json: false })
+      expect(chosen.headers.get('location')).toBe('/hello')
+    })
+
     it('never redirects off the site', async () => {
       await register(browser, 'm@example.com')
       for (const target of ['https://evil.example/', '//evil.example', '/\\evil.example', 'javascript:alert(1)']) {
@@ -626,7 +707,7 @@ describe('site members', () => {
 
     it('accepts only site-relative redirect paths', () => {
       expect(safeRedirectPath('/account?tab=1#top')).toBe('/account?tab=1#top')
-      for (const bad of ['', 'account', '//x.example', '/\\x.example', 'https://x.example', '/a\nb', '/a\\b']) {
+      for (const bad of ['', 'account', '//x.example', '/\\x.example', 'https://x.example', '/a\nb', '/a\\b', '/.//x.example', '/%2e//x.example']) {
         expect(safeRedirectPath(bad)).toBeNull()
       }
     })
@@ -757,7 +838,7 @@ describe('site members', () => {
       await setMemberSuspended(t.db, linus.id, true)
 
       const all = await listMembersForAdmin(t.db)
-      expect(all.counts).toEqual({ all: 4, active: 2, invited: 1, suspended: 1 })
+      expect(all.counts).toEqual({ all: 4, active: 2, pending: 1, suspended: 1 })
       expect(all.matching).toBe(4)
       expect(all.nextOffset).toBeNull()
       // One member holding a tag from two sources is one member.
@@ -766,7 +847,7 @@ describe('site members', () => {
       expect((await listMembersForAdmin(t.db, { search: 'LOVELACE' })).members.map((m) => m.email)).toEqual(['ada@example.com'])
       expect((await listMembersForAdmin(t.db, { search: 'grace@' })).members.map((m) => m.email)).toEqual(['grace@example.com'])
       expect((await listMembersForAdmin(t.db, { search: '%' })).matching).toBe(4)
-      expect((await listMembersForAdmin(t.db, { status: 'invited' })).members.map((m) => m.email)).toEqual(['pending@example.com'])
+      expect((await listMembersForAdmin(t.db, { status: 'pending' })).members.map((m) => m.email)).toEqual(['pending@example.com'])
       expect((await listMembersForAdmin(t.db, { status: 'suspended' })).members.map((m) => m.email)).toEqual(['linus@example.com'])
       expect((await listMembersForAdmin(t.db, { tag: 'pro', search: 'ada' })).members[0]).toMatchObject({
         name: 'Ada Lovelace', status: 'active', tags: ['pro'],
@@ -788,6 +869,20 @@ describe('site members', () => {
       expect(second.nextOffset).toBeNull()
       const seen = new Set([...first.members, ...second.members].map((m) => m.id))
       expect(seen.size).toBe(55)
+    })
+
+    it('does not let an invitation inherit a sign-up someone else started for the address', async () => {
+      // A stranger starts a sign-up with the victim's address and never confirms it.
+      const stranger = new Browser(t.db)
+      await stranger.post('signup', { email: 'victim@example.com', password: 'a-long-enough-password', name: 'Mallory' })
+      const before = await findMemberByEmail(t.db, 'victim@example.com')
+      expect(before?.profile).toEqual({ name: 'Mallory' })
+      const strangerLink = (await lastMail('verify', 'victim@example.com'))!.token
+
+      expect(await inviteMember(t.db, { email: 'victim@example.com', tags: ['pro'], linkOrigin: 'http://localhost' })).toMatchObject({ ok: true, outcome: 'resent' })
+      expect((await findMemberByEmail(t.db, 'victim@example.com'))?.profile).toEqual({})
+      // The stranger's confirmation link no longer works.
+      expect((await stranger.post('verify', { token: strangerLink })).status).toBe(400)
     })
 
     it('invites, re-invites and deletes', async () => {

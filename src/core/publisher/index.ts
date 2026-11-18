@@ -12,6 +12,7 @@ export { renderNode, resolveSpecialRenderer, getSpecialRendererModuleIds } from 
 
 export { collectHoleSubtreeModuleIds } from './holeSubtreeModules'
 export { subtreeDependsOnMember } from './dynamicDetection'
+export { showWhenPathsAllow, showWhenPathsAreGated, showWhenPathsTo } from './showWhenGate'
 
 export type {
   RenderConfig,

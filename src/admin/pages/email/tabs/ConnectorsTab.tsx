@@ -9,25 +9,23 @@ import { Dialog } from '@ui/components/Dialog'
 import { Input } from '@ui/components/Input'
 import { pushToast } from '@ui/components/Toast'
 import { ArrowRightIcon } from 'pixel-art-icons/icons/arrow-right'
-import { PlusIcon } from 'pixel-art-icons/icons/plus'
 import { SendSolidIcon } from 'pixel-art-icons/icons/send-solid'
 import { TrashSolidIcon } from 'pixel-art-icons/icons/trash-solid'
 import {
   MAIL_ADDRESS_PATTERN,
   type MailConnector,
-  type MailConnectorInput,
   type MailConnectorKind,
   type MailOverview,
 } from '@core/mail'
 import {
-  createCmsMailConnector,
   deleteCmsMailConnector,
   setCmsMailConnectorSecret,
   testCmsMailConnector,
 } from '@core/persistence'
 import { getErrorMessage } from '@core/utils/errorMessage'
 import { ConnectorMark } from '../ConnectorMark'
-import { CONNECTOR_SPECS, getConnectorSpec, type ConnectorSpec } from '../connectorCatalog'
+import { CONNECTOR_SPECS, connectorLogo, getConnectorSpec } from '../connectorCatalog'
+import { ConnectorSetupPanel } from './ConnectorSetup'
 import styles from '../EmailPage.module.css'
 
 const ADDRESS_RE = new RegExp(MAIL_ADDRESS_PATTERN)
@@ -58,12 +56,12 @@ export function ConnectorsTab({
 
   const connectors = overview?.connectors ?? []
   const effective: Selection =
-    selection ?? (connectors[0] ? { kind: 'connector', id: connectors[0].id } : { kind: 'add', connectorKind: 'smtp' })
+    selection ?? (connectors[0] ? { kind: 'connector', id: connectors[0].id } : { kind: 'add', connectorKind: CONNECTOR_SPECS[0].kind })
   const selected = effective.kind === 'connector'
     ? connectors.find((connector) => connector.id === effective.id)
     : undefined
   // A selected connector that has since been removed falls back to the setup panel.
-  const addKind = effective.kind === 'add' ? effective.connectorKind : selected ? null : 'smtp'
+  const addKind = effective.kind === 'add' ? effective.connectorKind : selected ? null : CONNECTOR_SPECS[0].kind
 
   async function handleRemove(connector: MailConnector) {
     setRemoving(true)
@@ -114,7 +112,7 @@ export function ConnectorsTab({
                       onClick={() => setSelection({ kind: 'connector', id: connector.id })}
                       aria-current={active ? 'true' : undefined}
                     >
-                      <ConnectorMark kind={connector.kind} size="sm" />
+                      <ConnectorMark logo={connectorLogo(connector)} size="sm" />
                       <span className={ws.settingsListIdentity}>
                         <span className={ws.settingsListLabel}>{connector.label}</span>
                         <span className={ws.settingsListMeta}>
@@ -146,7 +144,7 @@ export function ConnectorsTab({
                   onClick={() => setSelection({ kind: 'add', connectorKind: spec.kind })}
                   aria-current={active ? 'true' : undefined}
                 >
-                  <ConnectorMark kind={spec.kind} size="sm" />
+                  <ConnectorMark logo={spec.logo} size="sm" />
                   <span className={ws.settingsListIdentity}>
                     <span className={ws.settingsListLabel}>{spec.label}</span>
                     <span className={ws.settingsListMeta}>{spec.shortLabel}</span>
@@ -227,7 +225,7 @@ function ConnectorDetail({
   const user = useCurrentAdminUser()
   const { runStepUp } = useStepUp()
   const spec = getConnectorSpec(connector.kind)
-  const secretName = spec.secretLabel.toLowerCase()
+  const secretName = spec.secretName
   const testInputId = useId()
   const secretInputId = useId()
   const [dialog, setDialog] = useState<'test' | 'secret' | null>(null)
@@ -282,7 +280,7 @@ function ConnectorDetail({
     <article className={ws.credentialDetail} aria-labelledby="connector-detail-title">
       <header className={ws.credentialDetailHeader}>
         <div className={ws.credentialDetailIdentity}>
-          <ConnectorMark kind={connector.kind} size="lg" />
+          <ConnectorMark logo={connectorLogo(connector)} size="lg" />
           <div>
             <div className={ws.credentialTitleRow}>
               <h2 id="connector-detail-title">{connector.label}</h2>
@@ -336,11 +334,19 @@ function ConnectorDetail({
               <DetailRow label="Security" value={connector.config.port === 465 ? 'TLS from the start' : 'STARTTLS before signing in'} />
               <DetailRow label="Username" value={connector.config.username || 'None (open relay)'} />
             </>
-          ) : (
+          ) : connector.kind === 'ses' ? (
             <>
               <DetailRow label="Region" value={connector.config.region} code />
               <DetailRow label="Access key ID" value={connector.config.accessKeyId} code />
             </>
+          ) : connector.kind === 'mailgun' ? (
+            <>
+              <DetailRow label="Sending domain" value={connector.config.domain} code />
+              <DetailRow label="Region" value={connector.config.region === 'eu' ? 'EU' : 'US'} />
+              <DetailRow label="Sent over" value="HTTPS, to Mailgun's API" />
+            </>
+          ) : (
+            <DetailRow label="Sent over" value={`HTTPS, to ${spec.label}'s API`} />
           )}
           <DetailRow label={spec.secretLabel} value={connector.hasSecret ? 'Stored encrypted' : 'None'} />
           <DetailRow
@@ -425,164 +431,5 @@ function DetailRow({ label, value, code = false }: { label: string; value: strin
       <dt>{label}</dt>
       <dd>{code ? <code>{value}</code> : value}</dd>
     </div>
-  )
-}
-
-function ConnectorSetupPanel({
-  spec,
-  privateHostsAllowed,
-  onCreated,
-}: {
-  spec: ConnectorSpec
-  privateHostsAllowed: boolean
-  onCreated: (connector: MailConnector) => void
-}) {
-  return (
-    <article className={ws.providerSetup} aria-labelledby="connector-setup-title">
-      <header className={ws.providerSetupHeader}>
-        <ConnectorMark kind={spec.kind} size="lg" />
-        <div>
-          <span className={ws.detailEyebrow}>Add connector</span>
-          <h2 id="connector-setup-title">Connect {spec.label}</h2>
-          <p>{spec.description}</p>
-        </div>
-      </header>
-
-      <section className={ws.providerSetupFormSection}>
-        <div className={ws.detailSectionHeader}>
-          <div>
-            <h3>Connection details</h3>
-            <p>The {spec.secretLabel.toLowerCase()} is encrypted before it is stored and never shown again.</p>
-          </div>
-        </div>
-        <AddConnectorForm spec={spec} privateHostsAllowed={privateHostsAllowed} onCreated={onCreated} />
-      </section>
-    </article>
-  )
-}
-
-function AddConnectorForm({
-  spec,
-  privateHostsAllowed,
-  onCreated,
-}: {
-  spec: ConnectorSpec
-  privateHostsAllowed: boolean
-  onCreated: (connector: MailConnector) => void
-}) {
-  const { runStepUp } = useStepUp()
-  const ids = { label: useId(), host: useId(), port: useId(), username: useId(), region: useId(), key: useId(), secret: useId() }
-  const [label, setLabel] = useState('')
-  const [host, setHost] = useState('')
-  const [port, setPort] = useState('587')
-  const [username, setUsername] = useState('')
-  const [region, setRegion] = useState('')
-  const [accessKeyId, setAccessKeyId] = useState('')
-  const [secret, setSecret] = useState('')
-  const [busy, setBusy] = useState(false)
-
-  async function handleSubmit(event: React.FormEvent) {
-    event.preventDefault()
-    const input: MailConnectorInput = spec.kind === 'smtp'
-      ? { kind: 'smtp', label: label.trim(), config: { host: host.trim(), port: Number(port), username: username.trim() }, secret }
-      : { kind: 'ses', label: label.trim(), config: { region: region.trim(), accessKeyId: accessKeyId.trim() }, secret }
-    setBusy(true)
-    try {
-      const connector = await runStepUp(() => createCmsMailConnector(input))
-      onCreated(connector)
-      pushToast({ kind: 'success', title: `${spec.label} connected`, body: 'Send a test email to check it works.' })
-    } catch (err) {
-      if (isCancelledStepUp(err)) return
-      console.error('[ConnectorsTab] create failed:', err)
-      pushToast({ kind: 'error', title: `Could not connect ${spec.label}`, body: getErrorMessage(err, 'Check the details and try again.') })
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  return (
-    <form className={ws.providerSetupForm} onSubmit={(event) => void handleSubmit(event)}>
-      <div className={ws.providerSetupField}>
-        <label htmlFor={ids.label}>Display label</label>
-        <div>
-          <Input id={ids.label} value={label} onChange={(event) => setLabel(event.currentTarget.value)} placeholder={`e.g. ${spec.label} production`} required />
-          <p>A name teammates will recognise.</p>
-        </div>
-      </div>
-
-      {spec.kind === 'smtp' ? (
-        <>
-          <div className={ws.providerSetupField}>
-            <label htmlFor={ids.host}>Host</label>
-            <div>
-              <Input id={ids.host} value={host} onChange={(event) => setHost(event.currentTarget.value)} placeholder="smtp.example.com" pattern="[a-zA-Z0-9.\-]+" spellCheck={false} required />
-              <p>
-                {privateHostsAllowed
-                  ? 'The mail server’s name. Private and local relays are allowed on this server.'
-                  : 'The mail server’s public name. A relay on this machine or network needs MAIL_ALLOW_PRIVATE_HOSTS=1 on the server.'}
-              </p>
-            </div>
-          </div>
-          <div className={ws.providerSetupField}>
-            <label htmlFor={ids.port}>Port</label>
-            <div>
-              <Input id={ids.port} value={port} onChange={(event) => setPort(event.currentTarget.value)} inputMode="numeric" pattern="[0-9]{1,5}" required />
-              <p>465 connects over TLS. Any other port must upgrade with STARTTLS before signing in.</p>
-            </div>
-          </div>
-          <div className={ws.providerSetupField}>
-            <label htmlFor={ids.username}>Username<span>Optional</span></label>
-            <div>
-              <Input id={ids.username} value={username} onChange={(event) => setUsername(event.currentTarget.value)} autoComplete="off" spellCheck={false} />
-            </div>
-          </div>
-        </>
-      ) : (
-        <>
-          <div className={ws.providerSetupField}>
-            <label htmlFor={ids.region}>Region</label>
-            <div>
-              <Input id={ids.region} value={region} onChange={(event) => setRegion(event.currentTarget.value)} placeholder="eu-central-1" pattern="[a-z]{2}(-[a-z]+)+-[0-9]" spellCheck={false} required />
-              <p>The AWS region where your sender address or domain is verified.</p>
-            </div>
-          </div>
-          <div className={ws.providerSetupField}>
-            <label htmlFor={ids.key}>Access key ID</label>
-            <div>
-              <Input id={ids.key} value={accessKeyId} onChange={(event) => setAccessKeyId(event.currentTarget.value)} placeholder="AKIA…" pattern="[A-Z0-9]{16,128}" autoComplete="off" spellCheck={false} required />
-              <p>Of an IAM user or role allowed to call ses:SendEmail.</p>
-            </div>
-          </div>
-        </>
-      )}
-
-      <div className={ws.providerSetupField}>
-        <label htmlFor={ids.secret}>
-          {spec.secretLabel}
-          {spec.kind === 'smtp' && <span>Optional</span>}
-        </label>
-        <div>
-          <Input
-            id={ids.secret}
-            type="password"
-            value={secret}
-            onChange={(event) => setSecret(event.currentTarget.value)}
-            autoComplete="new-password"
-            data-1p-ignore="true"
-            data-lpignore="true"
-            data-form-type="other"
-            required={spec.kind === 'ses'}
-          />
-          <p>Stored encrypted and never displayed again.</p>
-        </div>
-      </div>
-
-      <div className={ws.providerSetupActions}>
-        <Button type="submit" variant="primary" size="md" busy={busy}>
-          <PlusIcon size={14} aria-hidden="true" />
-          <span>Connect {spec.label}</span>
-        </Button>
-      </div>
-    </form>
   )
 }

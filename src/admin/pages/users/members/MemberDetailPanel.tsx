@@ -27,6 +27,7 @@ export function MemberDetailPanel({
   detail,
   canManage,
   mailAvailable,
+  inviteBlocked,
   busy,
   actions,
 }: {
@@ -34,6 +35,8 @@ export function MemberDetailPanel({
   canManage: boolean
   /** Whether the site can email a link right now; an invitation needs it. */
   mailAvailable: boolean
+  /** Why an invitation cannot be made right now (no invitation page, no public address), if it cannot. */
+  inviteBlocked: string | undefined
   busy: boolean
   actions: MemberActions
 }) {
@@ -52,9 +55,10 @@ export function MemberDetailPanel({
         {member.name && <p className={ld.selectable}>{member.email}</p>}
       </header>
 
-      {member.status === 'invited' && (
+      {member.status === 'pending' && (
         <p className={ld.notice} data-tone="warning">
-          Invited, and has not chosen a password yet. The link in the invitation lasts 7 days.
+          Not finished yet: this person was invited and has not accepted, or signed up and has not confirmed their
+          address. They cannot sign in until they do.
         </p>
       )}
       {member.status === 'suspended' && (
@@ -64,16 +68,17 @@ export function MemberDetailPanel({
       )}
 
       <div className={styles.detailActions}>
-        {member.status === 'invited' && (
+        {member.status === 'pending' && (
           <Button
             type="button"
             variant="secondary"
             size="sm"
             onClick={actions.resendInvitation}
-            disabled={busy || !canManage || !mailAvailable}
-            tooltip={blocked ?? (mailAvailable ? undefined : 'Set up outgoing email first (Email → Connectors)')}
+            disabled={busy || inviteBlocked !== undefined}
+            tooltip={inviteBlocked
+              ?? (mailAvailable ? undefined : 'Outgoing email is not set up, so you get the link to pass on yourself')}
           >
-            Send the invitation again
+            {mailAvailable ? 'Send an invitation link' : 'Create an invitation link'}
           </Button>
         )}
         {member.status === 'suspended' ? (

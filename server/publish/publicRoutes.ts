@@ -14,6 +14,7 @@ import {
 } from '../branches/previewLinks'
 import { getSetupStatusCached } from '../repositories/setup'
 import { setCookieHeader } from '../http'
+import { TOKEN_PAGE_REFERRER_POLICY } from '../members/mail'
 import { visitorFromRequest } from './accessGate'
 import { renderBranchPreview } from './branchPreview'
 import { renderNotFoundResponse, renderPublicResolution } from './publicRouter'
@@ -42,8 +43,9 @@ export async function tryServePublicRoute(req: Request, runtime: ServerRuntime, 
     visitorFromRequest(runtime.db, req),
   )
   // A link from an account email lands here with a live token in the address
-  // bar. Keep it out of the Referer header of everything the page loads.
-  if (res && url.searchParams.has('token')) res.headers.set('referrer-policy', 'no-referrer')
+  // bar. Keep it out of the Referer header of everything the page loads from
+  // another site (see `TOKEN_PAGE_REFERRER_POLICY` for why not `no-referrer`).
+  if (res && url.searchParams.has('token')) res.headers.set('referrer-policy', TOKEN_PAGE_REFERRER_POLICY)
   return res
 }
 

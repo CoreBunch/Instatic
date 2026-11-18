@@ -56,10 +56,12 @@ export async function getCmsMember(id: string, signal?: AbortSignal): Promise<Me
 export async function inviteCmsMember(
   email: string,
   tags: readonly string[],
-): Promise<{ member: MemberListItem; outcome: 'invited' | 'resent' }> {
+  /** `link` mails nothing and answers with the link, for the admin to pass on. */
+  delivery: 'email' | 'link' = 'email',
+): Promise<{ member: MemberListItem; outcome: 'invited' | 'resent'; link?: string }> {
   return apiRequest(`${MEMBERS_PATH}/invite`, {
     method: 'POST',
-    body: { email, tags },
+    body: { email, tags, delivery },
     schema: MemberInviteResponseSchema,
     fallbackMessage: 'The invitation could not be sent',
   })

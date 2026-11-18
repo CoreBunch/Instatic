@@ -17,7 +17,7 @@ import { jsonResponse, readBytesWithLimit, RequestBodyTooLargeError } from '../h
 import { originOk, resolveSignedInMember } from '../members/handlers'
 import { toCurrentMember } from '../members/repository'
 import { findPluginRouteAccess, runRouteInWorker } from './host/rpc'
-import { hostPlugins } from './host/registry'
+import { hostPluginHasPermission } from './host/registry'
 import type { SerializedMember } from './protocol/messages'
 
 export const PUBLIC_PLUGIN_PATH_PREFIX = '/_instatic/plugins/'
@@ -39,7 +39,7 @@ async function signedInMember(db: DbClient, req: Request): Promise<SerializedMem
 }
 
 function pluginMayReadMembers(pluginId: string): boolean {
-  return (hostPlugins.get(pluginId)?.manifest.grantedPermissions ?? []).includes('members.read')
+  return hostPluginHasPermission(pluginId, 'members.read')
 }
 
 export async function handlePublicPluginRouteRequest(req: Request, db: DbClient, url: URL): Promise<Response> {

@@ -3,13 +3,13 @@ import type { MemberAdminStatus } from '@core/members'
 
 export const STATUS_LABEL: Record<MemberAdminStatus, string> = {
   active: 'Active',
-  invited: 'Invited',
+  pending: 'Pending',
   suspended: 'Suspended',
 }
 
 export const STATUS_TONE: Record<MemberAdminStatus, 'success' | 'warning' | 'danger'> = {
   active: 'success',
-  invited: 'warning',
+  pending: 'warning',
   suspended: 'danger',
 }
 

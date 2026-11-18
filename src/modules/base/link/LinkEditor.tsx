@@ -12,7 +12,7 @@ import type { ModuleComponentProps } from '@core/module-engine'
 import { anchorHtmlAttributes } from '@modules/base/shared/anchorTarget'
 import { inlineEditableElementProps } from '@modules/base/shared/inlineText'
 import { linkUsesChildren } from './content'
-import type { LinkStoredProps } from './props'
+import { linkHref, type LinkStoredProps } from './props'
 
 export const LinkEditor: React.FC<ModuleComponentProps<LinkStoredProps>> = ({ props, children, mcClassName, nodeWrapperProps, inlineEdit }) => {
   const childCount = Array.isArray(children) ? children.length : children != null ? 1 : 0
@@ -25,7 +25,7 @@ export const LinkEditor: React.FC<ModuleComponentProps<LinkStoredProps>> = ({ pr
     {
       ...nodeWrapperProps,
       ...attributes,
-      href: props.href || '#',
+      href: linkHref(props) || '#',
       target: props.target,
       rel: rel ?? undefined,
       className: mcClassName,
