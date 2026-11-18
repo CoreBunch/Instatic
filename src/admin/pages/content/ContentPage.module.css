@@ -59,30 +59,14 @@
 }
 
 .emptyState {
-    display: grid;
-    justify-items: center;
-    gap: var(--space-l);
-    width: min(520px, 100%);
-    margin: 18vh auto 0;
-    color: var(--text);
-    text-align: center;
+    flex: none;
+    margin-top: 12vh;
 }
 
-.emptyState h2 {
-    margin: 0;
-    font-size: var(--text-4xl);
-    letter-spacing: 0;
-}
-
-.emptyState p,
 .error {
     margin: 0;
     font-size: var(--text-s);
     line-height: 1.5;
-}
-
-.emptyState p {
-    color: var(--text-subtle);
 }
 
 .canvasLoading {
