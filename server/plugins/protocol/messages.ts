@@ -296,7 +296,6 @@ export type WorkerToMainMessage =
   | ApiCall
   | WorkerLogEvent
 
-
 export interface LoadPluginResult {
   kind: 'load-plugin-result'
   correlationId: string
