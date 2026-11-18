@@ -51,17 +51,22 @@ async function signedInMember(db: DbClient, req: Request): Promise<SerializedMem
 const APP_TOKEN_PREFIX = memberAppRealm.accessTokenPrefix
 
 /**
- * The access token of a request made by an app, or null when the request is
- * not an app's. Only a `Bearer` header counts: a site behind HTTP Basic auth
- * sends `Authorization: Basic …` with every request, and those are the
- * member's browser. A `Bearer` header is the app's attempt whether or not it
- * is well-formed ('' is a token nobody holds), and is never answered from
- * the session cookie that may ride along.
+ * What a request's `Authorization` header says about who is calling.
+ *
+ * Only the `Bearer` scheme (any letter case) is an app's attempt: a site
+ * behind HTTP Basic auth sends `Authorization: Basic …` with every request,
+ * and those are the member's browser (null). For a Bearer header, `token` is
+ * the credential when it has the shape of a token and '' otherwise: a token
+ * nobody holds, so the request is refused rather than answered from the
+ * session cookie that may ride along. One parser decides both, so there is
+ * no header that one place reads as a token and another does not.
  */
-function bearerToken(req: Request): string | null {
+function bearerCredential(req: Request): { token: string; raw: string } | null {
   const header = req.headers.get('authorization')
-  if (header === null || !/^bearer(\s|$)/i.test(header)) return null
-  return /^Bearer ([A-Za-z0-9_-]{20,200})$/.exec(header)?.[1] ?? ''
+  const match = header === null ? null : /^bearer(?:\s+([\s\S]*))?$/i.exec(header)
+  if (!match) return null
+  const raw = (match[1] ?? '').trim()
+  return { token: /^[A-Za-z0-9_-]{20,200}$/.test(raw) ? raw : '', raw }
 }
 
 type AppCaller = { member: SerializedMember; app: SerializedApp; grantId: string }
@@ -150,7 +155,7 @@ export async function handlePublicPluginRouteRequest(req: Request, db: DbClient,
   let member: SerializedMember | null
   let app: SerializedApp | null = null
   if (route.access.kind === 'member') {
-    const token = bearerToken(req)
+    const token = bearerCredential(req)?.token ?? null
     if (token !== null) {
       // An app is calling. Only a route the plugin opened to apps answers
       // one, and only under the scope it named.
@@ -179,7 +184,9 @@ export async function handlePublicPluginRouteRequest(req: Request, db: DbClient,
     // it to a public route's handler: the token also opens other plugins'
     // routes and the member's profile. A plugin's own secrets (a webhook
     // signature, say) do not look like one and pass through.
-    if (bearerToken(req)?.startsWith(APP_TOKEN_PREFIX)) {
+    // Judged on the raw credential, however it is spaced or cased: anything
+    // that names a member app token goes, well-formed or not.
+    if (bearerCredential(req)?.raw.includes(APP_TOKEN_PREFIX)) {
       const headers = new Headers(request.headers)
       headers.delete('authorization')
       request = new Request(request, { headers })

@@ -255,6 +255,30 @@ describe('apps on plugin member routes', () => {
       expect(frame!.access).toBe('Your name and email address, See your purchases and plan (Shop)')
     })
 
+    it('does not count an Allow for a scope that went away while the member was deciding', async () => {
+      await install()
+      const client = await appId(['profile', READ])
+      const ada = await member('ada@example.com')
+      const started = await authorize(client, `profile ${READ}`, ada.cookie)
+      const marker = /instatic_member_app=([A-Za-z0-9-]+)/.exec(started.headers.get('set-cookie') ?? '')![1]
+      const request = new URL(started.headers.get('location')!, ORIGIN).searchParams.get('request')!
+
+      // The owner removes the plugin while the approval page is open.
+      owner = await h.stepUp(owner)
+      expect((await h.cms(`/admin/api/cms/plugins/${PLUGIN_ID}`, { method: 'DELETE', cookie: owner })).ok).toBe(true)
+
+      const answered = await visit('/_instatic/members/apps/approve', {
+        method: 'POST',
+        headers: { cookie: `${ada.cookie}; instatic_member_app=${marker}`, origin: ORIGIN },
+        json: { request, decision: 'allow' },
+      })
+      const back = new URL(((await answered.json()) as { appRedirect: string }).appRedirect)
+      expect(back.searchParams.get('error')).toBe('invalid_scope')
+      expect(back.searchParams.has('code')).toBe(false)
+      const { rows } = await h.db<{ id: string }>`select id from member_app_grants where member_id = ${ada.id}`
+      expect(rows).toEqual([])
+    })
+
     it('refuses a sign-in that asks for more than the app was given, or for a scope no longer on offer', async () => {
       await install()
       const client = await appId(['profile', READ])
@@ -336,10 +360,12 @@ describe('apps on plugin member routes', () => {
 
     it('is refused with a token that is wrong, of another kind, or no longer live', async () => {
       const token = await signIn(client, READ, ada.cookie)
-      for (const bad of ['Bearer imem_at_' + 'x'.repeat(40), 'Bearer short', `bearer ${token}`, 'Bearer ', 'Bearer']) {
+      for (const bad of ['Bearer imem_at_' + 'x'.repeat(40), 'Bearer short', `Bearer ${token} extra`, 'Bearer ', 'Bearer']) {
         const res = await visit(`${MOUNT}/orders`, { headers: { authorization: bad } })
         expect(`${bad.slice(0, 12)} ${res.status}`).toBe(`${bad.slice(0, 12)} 401`)
       }
+      // The scheme is not case-sensitive (RFC 9110), so this is the same token.
+      expect((await visit(`${MOUNT}/orders`, { headers: { authorization: `bearer ${token}` } })).status).toBe(200)
       // The member disconnects the app.
       const { rows } = await h.db<{ id: string }>`select id from member_app_grants where member_id = ${ada.id}`
       await visit('/_instatic/members/apps/disconnect', {
@@ -363,6 +389,11 @@ describe('apps on plugin member routes', () => {
       const token = await signIn(client, `profile ${READ}`, ada.cookie)
       const withToken = await visit(`${MOUNT}/echo`, { headers: asApp(token) })
       expect(await withToken.json()).toEqual({ authorization: null })
+      // However the header is written: another letter case, extra spaces, something after the token.
+      for (const header of [`bearer ${token}`, `BEARER   ${token}`, `Bearer ${token} extra`, `Bearer x ${token}`]) {
+        const res = await visit(`${MOUNT}/echo`, { headers: { authorization: header } })
+        expect(await res.json()).toEqual({ authorization: null })
+      }
     })
 
     it('still answers the member\'s browser on a site behind HTTP Basic auth', async () => {
