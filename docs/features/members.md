@@ -120,7 +120,7 @@ Error codes are the `MEMBER_ERROR_CODES` list in `@core/members`.
 
 **Emailed links never act on GET.** They open the owner's page for that link, whose form POSTs the token (`?token=` is filled in by the form runtime). Mail scanners that follow links do not use them up. A page whose address carries a token is sent `Referrer-Policy: same-origin` (`TOKEN_PAGE_REFERRER_POLICY`).
 
-**Plugins never see Instatic's cookies.** `server/sessionCookies.ts` removes every `instatic_` cookie (admin session, member session, sign-up nonce, branch preview); plugin route handlers (`routeIo.ts`) and per-visitor loop sources (`handlers/cms/hole.ts`) get the visitor's cookies with those removed.
+**Plugins never see Instatic's cookies.** `server/sessionCookies.ts` removes every `instatic_` cookie (admin session, member session, sign-up nonce, branch preview); plugin route handlers (`routeIo.ts`) and per-visitor loop sources (`handlers/cms/hole.ts`) get the visitor's cookies with those removed. Who the member is reaches plugin code only as a plain record resolved by the host: `ctx.member` on a route, and `ctx.request.member` on a per-visitor loop source, both only for a plugin holding `members.read`. A source that is not per-visitor is never told, and gets no cookies either; the request is built per source in `server/publish/loopSourceRequest.ts`.
 
 ## Protected pages and tables
 
@@ -234,6 +234,7 @@ It is a development tool: fixed passwords, loopback only, and a database that is
 - `src/__tests__/server/members.test.ts` — every flow, on SQLite and (with `DB=postgres`) Postgres.
 - `src/__tests__/server/membersAdmin.test.ts` — the admin API: capability and step-up gates and every route (SQLite). The queries behind it run on Postgres too through the `admin queries` cases in `members.test.ts`.
 - `src/__tests__/server/pluginMembers.test.ts` — plugins: the public mount, member routes, `cms.members`, member events, and the permission each needs.
+- `src/__tests__/server/loopSourceMember.test.ts` — the member a per-visitor loop source is given on first and later pages, inside components and nested lists, through a real plugin; and that a shared source, a shared fragment and the static slot never carry a member.
 - `src/__tests__/server/membersDemoSite.test.ts` — the demo site: its pages parse, publish, and are open or closed to the right visitors.
 - `src/__tests__/architecture/members-admin-split.test.ts` — the split.
 - `src/__tests__/server/pluginRouteCookies.test.ts` — cookie stripping.
