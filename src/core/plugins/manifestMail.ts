@@ -120,7 +120,7 @@ export function assertMailCoherent(mail: MailRaw, permissions: readonly PluginPe
     const glued = gluedMailVariables(template)
     if (glued.length > 0) {
       throw new Error(
-        `Invalid plugin manifest: in mail template "${template.key}" ${glued.map((name) => `{${name}}`).join(', ')} must stand alone. A \`link\` variable needs a space or a line break around it, or to be the whole address of a link (\`[Open]({${glued[0]}})\`).`,
+        `Invalid plugin manifest: in mail template "${template.key}" ${glued.map((name) => `{${name}}`).join(', ')} must stand alone. A \`link\` variable needs a space or a line break around it, or to be the whole address of a link (\`[Open]({${glued[0]}})\`); a \`text\` variable may not touch another variable or text that reads as an address.`,
       )
     }
   }

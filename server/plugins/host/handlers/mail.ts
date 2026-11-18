@@ -11,7 +11,7 @@
  * the plugin's id, so the limits and the activity log are per plugin.
  */
 import type { DbClient } from '../../../db/client'
-import { mailValueProblem } from '@core/mail'
+import { cleanMailValue, mailValueProblem } from '@core/mail'
 import { hookBus, type MailHookEvent } from '@core/plugins/hookBus'
 import { pluginMailTemplateKey, pluginMailTemplatePrefix } from '@core/plugins/manifestMail'
 import { configuredPublicOrigin } from '../../../auth/security'
@@ -42,7 +42,7 @@ interface PluginMail {
  * before a member is looked up, so a refused request says the same thing
  * whether or not the member exists.
  */
-function assertDeclaredTemplate(entry: HostPluginRecord, template: string, variables: Record<string, string>): void {
+function checkedVariables(entry: HostPluginRecord, template: string, variables: Record<string, string>): Record<string, string> {
   const declaration = entry.manifest.mail?.templates.find((candidate) => candidate.key === template)
   if (!declaration) throw new Error(`"${template}" is not an email template this plugin declares`)
   const declared = new Set(declaration.variables.map((variable) => variable.name))
@@ -52,11 +52,16 @@ function assertDeclaredTemplate(entry: HostPluginRecord, template: string, varia
   }
   // A value is data of the kind its variable declares, nothing more: the
   // owner approved the template's wording, not whatever a value brings along.
+  const checked: Record<string, string> = {}
   for (const variable of declaration.variables) {
     const value = variables[variable.name]
-    const problem = value === undefined ? null : mailValueProblem(variable.kind, value)
+    if (value === undefined) continue
+    const problem = mailValueProblem(variable.kind, value)
     if (problem) throw new Error(`variable_not_allowed: the value of "${variable.name}" ${problem}`)
+    // What was checked is what is sent.
+    checked[variable.name] = cleanMailValue(value)
   }
+  return checked
 }
 
 async function queuePluginMail(db: DbClient, entry: HostPluginRecord, mail: PluginMail): Promise<'queued' | 'captured'> {
@@ -92,7 +97,7 @@ export async function handleMailSend(
   db: DbClient,
 ): Promise<void> {
   const [{ template, member: memberId, variables, reference }] = msg.args
-  assertDeclaredTemplate(entry, template, variables)
+  const checked = checkedVariables(entry, template, variables)
   // `findMemberById` leaves deleted members out; a suspended one is not
   // written to either. One answer for an id that was never a member, a
   // deleted member and a suspended one: `mail.send` does not tell them apart.
@@ -100,7 +105,7 @@ export async function handleMailSend(
   if (!member || member.status !== 'active') throw new Error(MEMBER_REFUSAL)
   // The address is the host's to know. Nothing sent back to the plugin, now
   // or with the outcome, carries it: `mail.send` is not a way to read members.
-  const status = await queuePluginMail(db, entry, { template, to: member.email, variables, reference, memberId })
+  const status = await queuePluginMail(db, entry, { template, to: member.email, variables: checked, reference, memberId })
   replyApiOk(msg.pluginId, msg.correlationId, status)
 }
 
@@ -110,8 +115,8 @@ export async function handleMailSendExternal(
   db: DbClient,
 ): Promise<void> {
   const [{ template, address, variables, reference }] = msg.args
-  assertDeclaredTemplate(entry, template, variables)
-  const status = await queuePluginMail(db, entry, { template, to: address.trim(), variables, reference })
+  const checked = checkedVariables(entry, template, variables)
+  const status = await queuePluginMail(db, entry, { template, to: address.trim(), variables: checked, reference })
   replyApiOk(msg.pluginId, msg.correlationId, status)
 }
 

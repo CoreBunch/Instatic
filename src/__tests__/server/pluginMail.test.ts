@@ -233,12 +233,24 @@ describe('email for plugins', () => {
       for (const body of ['Open:{link}', 'See example.com/?next={link}', '<{link}>', '[x](https://example.com/?to={link}) {link}x']) {
         expect(() => parsePluginManifest(withBody(body))).toThrow('{link} must stand alone')
       }
+      // A text variable may not help spell an address: next to another variable, or to text that reads as one.
+      const TWO = { ...TEMPLATES[1], variables: [
+        { name: 'subject', label: 'S', sample: 'a' },
+        { name: 'other', label: 'O', sample: 'b' },
+      ] }
+      const two = (body: string) => manifest(BOTH, { mail: { templates: [{ ...TWO, subject: 'S', body }] } })
+      for (const body of ['{subject}.{other}', '{subject}{other}', '{subject}-{other}', 'www.{subject}', '{subject}@corp', 'shop.example/{subject}', 'x:{subject}', '{site.url}/t/{subject}']) {
+        expect(() => parsePluginManifest(two(body))).toThrow('must stand alone')
+      }
+      for (const body of ['{subject}, {other}', '{subject} {other}', '({subject}) "{other}"', '#{subject}: {other}.', "{subject}'s, {other}!"]) {
+        expect(() => parsePluginManifest(two(body))).not.toThrow()
+      }
       // Text may be glued; that is what text is for.
       expect(() => parsePluginManifest(withBody("Ticket #{subject}, {subject}'s. [Open]({link})"))).not.toThrow()
       // A sample is held to its variable's kind.
       const sample = (variable: Record<string, unknown>) =>
         manifest(BOTH, { mail: { templates: [{ ...TEMPLATES[1], variables: [{ name: 'subject', label: 'S', ...variable }] }] } })
-      expect(() => parsePluginManifest(sample({ sample: 'https://example.com/' }))).toThrow('contains an address')
+      expect(() => parsePluginManifest(sample({ sample: 'https://example.com/' }))).toThrow('contains a web address')
       expect(() => parsePluginManifest(sample({ sample: 'not a link', kind: 'link' }))).toThrow('is not an http(s) address')
     })
   })
@@ -441,14 +453,31 @@ describe('email for plugins', () => {
       for (const subject of [
         'Go to https://evil.example/login',
         'see www.evil.example',
+        'WWW.evil',
         'evil.example/login',
         'write to boss@evil.example',
         'evil.example',
-        'hidden\u200bword',
-        'right\u202eto left',
+        'a.b',
+        'node.js',
+        'xn--vil-9la.example',
+        'evil\u3002example',
+        'evil\uff0eexample',
+        'evil\uff61example',
+        'ｅｖｉｌ．ｅｘａｍｐｌｅ',
+        'evil\u200b.\u200bexample',
+        '10.0.0.1',
+        'fe80::1',
+        '[2001:db8::1]',
+        'localhost:8080',
+        'evil:pass',
+        'path/to',
+        'evil\\share',
+        'and/or',
         'bell\u0007',
+        'line\u2028separator',
       ]) {
-        expect(String((await attempt({ subject })).error)).toStartWith('variable_not_allowed: the value of "subject"')
+        expect({ subject, error: String((await attempt({ subject })).error).slice(0, 45) })
+          .toEqual({ subject, error: 'variable_not_allowed: the value of "subject" ' })
       }
       // A link must be an http(s) address.
       for (const link of ['javascript:alert(1)', 'evil.example/x', 'mailto:a@example.com', 'data:text/html,x', '']) {
@@ -456,10 +485,18 @@ describe('email for plugins', () => {
       }
       expect((await h.db`select id from mail_queue`).rows).toHaveLength(0)
       expect((await listMailActivity(h.db)).entries).toHaveLength(0)
-      // Ordinary text is fine, numbers, dots and all.
-      for (const subject of ['Invoice no. 12 is 3.50 EUR (v1.2)', "Ada's ticket #42", 'Done. Thanks!']) {
-        expect(await attempt({ subject })).toEqual({ status: 'queued' })
+      // Ordinary text is fine: names, numbers, prices, times, a sentence.
+      for (const subject of [
+        "O'Brien", 'Anne-Marie', 'Dr. Smith', '#1042', '€12.50', 'v1.2', '3.5', '12:30', 'etc.', 'Done. Thanks!',
+        "Ada's ticket (no. 42): closed", 'Re: your order',
+      ]) {
+        expect({ subject, answer: await attempt({ subject }) }).toEqual({ subject, answer: { status: 'queued' } })
       }
+      // Invisible characters are taken out; what was checked is what is sent.
+      expect(await attempt({ subject: 'hid\u200bden \u202eword' })).toEqual({ status: 'queued' })
+      const sent: string[] = []
+      await drain(async (_c, _s, mail) => { sent.push(mail.subject); return null })
+      expect(sent).toContain('Re: hidden word')
     })
 
     it('says so when email is not set up on a production server', async () => {

@@ -205,33 +205,93 @@ function mustStandAlone(name: string, value: string, filling: Filling): boolean 
   return filling.links.has(name) || ADDRESS_VALUE.test(value)
 }
 
-/** Invisible characters that hide or reorder text: soft hyphen, zero-width and direction marks, separators. */
-const INVISIBLE_CHARACTERS = /[\u00ad\u200b-\u200f\u2028-\u202e\u2060-\u2064\ufeff]/
+/** Zero-width characters and the marks that reorder text. They show nothing and are taken out of a value. */
+const INVISIBLE_CHARACTERS = /[\u00ad\u200b-\u200f\u202a-\u202e\u2060-\u2064\u2066-\u2069\ufeff]/g
 
-/** Whether a value holds a character that has no business in one: a control (tab and line breaks aside) or an invisible one. */
+/**
+ * A value as it is checked and sent: compatibility forms folded (NFKC), the
+ * ideographic and full-width full stops made a plain `.`, and invisible
+ * characters removed. One reading, so what is checked is what a mail client
+ * is given.
+ */
+export function cleanMailValue(value: string): string {
+  return value.normalize('NFKC').replace(/[\u3002\uff0e\uff61]/g, '.').replace(INVISIBLE_CHARACTERS, '')
+}
+
+/** Whether a value holds a control character (tab and line breaks aside) or a line or paragraph separator. */
 function hasControlCharacter(value: string): boolean {
-  if (INVISIBLE_CHARACTERS.test(value)) return true
   for (let index = 0; index < value.length; index += 1) {
     const code = value.charCodeAt(index)
-    if (code === 0x7f || (code < 0x20 && code !== 0x09 && code !== 0x0a && code !== 0x0d)) return true
+    if (code === 0x7f || code === 0x2028 || code === 0x2029) return true
+    if (code < 0x20 && code !== 0x09 && code !== 0x0a && code !== 0x0d) return true
+    if (code >= 0x80 && code <= 0x9f) return true
   }
   return false
 }
 
-/** What a mail client would make a link of in running text: a scheme, `www.`, `x@y`, or a bare domain. */
-const ADDRESS_IN_TEXT = /:\/\/|www\.|\S@\S|(?:^|[^a-z0-9-])(?:[a-z0-9-]+\.)+[a-z]{2,24}(?![a-z0-9-])/i
+/**
+ * What in a piece of text could become a clickable address, or null. One
+ * simple, conservative rule rather than a guess at what each mail client
+ * links: a scheme, `www.`, an `@`, a `.` or `:` or `/` or `\` that joins two
+ * things (digits on both sides of a `.` or `:` aside, so `3.5` and `12:30`
+ * are fine), or four dotted numbers. It refuses honest text too (`node.js`,
+ * `and/or`): that is the price of the rule being simple.
+ */
+function addressInText(text: string): string | null {
+  if (text.includes('://') || /www\./i.test(text)) return 'a web address'
+  if (/\S@\S/.test(text)) return 'an `@` between two words'
+  if (/\d+\.\d+\.\d+\.\d+/.test(text) || text.includes('::')) return 'a numeric address'
+  for (let index = 1; index < text.length - 1; index += 1) {
+    if (text[index] !== '.' && text[index] !== ':') continue
+    const before = text[index - 1]
+    const after = text[index + 1]
+    if (/\s/.test(before) || /\s/.test(after)) continue
+    if (!(/\d/.test(before) && /\d/.test(after))) return 'a `.` or `:` that joins two words'
+  }
+  if (/\S[/\\]\S/.test(text)) return 'a `/` or `\\` that joins two words'
+  return null
+}
 
 /**
  * Why a value may not be sent in a variable of this kind, or null when it
- * may. A `link` must be an `http(s)` address. A `text` value must not be or
- * contain an address: the owner approved a template's wording, and a value
- * must not be a way to put a link into it that the owner never saw.
+ * may. Checked on the cleaned value (`cleanMailValue`). A `link` must be an
+ * `http(s)` address. A `text` value must not contain what could become a
+ * clickable address (`addressInText`): the owner approved a template's
+ * wording, and a value must not be a way to put a link into it that the
+ * owner never saw. A best-effort barrier, not a guarantee: see the threat
+ * model in `docs/features/email.md`.
  */
 export function mailValueProblem(kind: 'text' | 'link' | undefined, value: string): string | null {
-  if (hasControlCharacter(value)) return 'contains a control or invisible character'
-  if (kind === 'link') return isWebAddress(value.trim(), false) ? null : 'is not an http(s) address'
-  return ADDRESS_IN_TEXT.test(value) ? 'contains an address; only a variable declared `kind: "link"` may carry one' : null
+  const cleaned = cleanMailValue(value)
+  if (hasControlCharacter(cleaned)) return 'contains a control character'
+  if (kind === 'link') return isWebAddress(cleaned.trim(), false) ? null : 'is not an http(s) address'
+  const found = addressInText(cleaned)
+  return found ? `contains ${found}; only a variable declared \`kind: "link"\` may carry an address` : null
 }
+
+/**
+ * Whether a `text` variable in a plugin's template sits where its value
+ * could become part of an address: in the same run of characters as
+ * another variable with no sentence punctuation between them
+ * (`{host}.{domain}`), or as text the value rule itself would refuse
+ * (`www.{name}`, `{user}@corp`, `shop.example/{id}`).
+ */
+function composesAddress(text: string, start: number, end: number): boolean {
+  let from = start
+  let to = end
+  while (from > 0 && !SPACE.test(text[from - 1])) from -= 1
+  while (to < text.length && !SPACE.test(text[to])) to += 1
+  // The stretch between sentence punctuation (a `.` or `:` is not a break here: they join).
+  let left = start
+  let right = end
+  while (left > from && !/[,;!?()"']/.test(text[left - 1])) left -= 1
+  while (right < to && !/[,;!?()"']/.test(text[right])) right += 1
+  const beside = text.slice(left, start) + text.slice(end, right)
+  if (beside.includes('{') || beside.includes(VALUE_OPEN)) return true
+  const run = text.slice(from, start) + 'x' + text.slice(end, to)
+  return addressInText(run.replace(VARIABLE, 'x')) !== null
+}
+
 
 /**
  * Put values into text. Each reading is a text `source` is a part of (the
@@ -246,8 +306,17 @@ function fill(
 ): string {
   return source.replace(VARIABLE, (whole, name: string, at: number) => {
     if (!(name in filling.variables)) return whole
-    const value = filling.variables[name].replace(MARKS, '')
-    if (!mustStandAlone(name, value, filling)) return value
+    const value = cleanMailValue(filling.variables[name]).replace(MARKS, '')
+    if (!mustStandAlone(name, value, filling)) {
+      // In a plugin's template a text value may sit in a sentence, but not where it would help spell an address.
+      const composes =
+        filling.strict &&
+        !name.startsWith('site.') &&
+        readings.some(({ flat, offset }) => composesAddress(flat, offset + at, offset + at + whole.length))
+      if (!composes) return value
+      filling.refused.add(name)
+      return whole
+    }
     const alone = readings.every(({ flat, offset }) => standsAlone(flat, offset + at, offset + at + whole.length))
     if (!alone) {
       filling.refused.add(name)

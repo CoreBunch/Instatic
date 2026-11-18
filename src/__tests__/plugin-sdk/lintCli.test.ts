@@ -305,7 +305,7 @@ describe('instatic-plugin lint', () => {
     }
     // A link's sample must be a link, and a text sample must not be one.
     const badSample = await lint({ variables: [{ name: 'link', label: 'Link', sample: 'https://example.com/start' }] })
-    expect(badSample.findings[0].message).toContain('contains an address')
+    expect(badSample.findings[0].message).toContain('contains a web address')
   })
 
   it('warns about a mail permission with nothing to send, and refuses templates without one', async () => {
