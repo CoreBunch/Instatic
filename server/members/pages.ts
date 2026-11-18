@@ -6,7 +6,13 @@
 import type { DbClient } from '../db/client'
 import { pagePublicPath } from '@core/page-tree'
 import { Type, safeParseValue } from '@core/utils/typeboxHelpers'
-import type { MemberPageKey, MemberPageOption, MemberPagePaths, MemberPages } from '@core/members'
+import {
+  parseAccessRule,
+  type MemberPageKey,
+  type MemberPageOption,
+  type MemberPagePaths,
+  type MemberPages,
+} from '@core/members'
 import { listPageAddresses, type PageAddressRow } from '../repositories/publish'
 import { getMemberSettings } from './repository'
 
@@ -14,6 +20,7 @@ import { getMemberSettings } from './repository'
 const PageCellsSchema = Type.Object({
   title: Type.Optional(Type.String()),
   templateEnabled: Type.Optional(Type.Boolean()),
+  access: Type.Optional(Type.Unknown()),
   body: Type.Optional(
     Type.Object({
       nodes: Type.Record(
@@ -48,6 +55,7 @@ export async function listMemberPageOptions(db: DbClient): Promise<MemberPageOpt
       path: pagePublicPath(row.slug),
       publishedPath: publishedPath(row),
       formActions: [...formActions],
+      membersOnly: parseAccessRule(cells.access).level !== 'public',
     })
   }
   return options

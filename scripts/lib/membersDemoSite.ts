@@ -55,7 +55,9 @@ class PageBuilder {
   ): PageNode {
     const definition = memberFormAction(action)
     if (!definition) throw new Error(`Unknown member form action "${action}"`)
-    const fragment = memberFormFragment(definition, formId, { fields: [...definition.fields], submit: true, messages: true })
+    const fragment = memberFormFragment(definition, formId, {
+      fields: [...definition.fields], submit: true, messages: true, secondary: definition.choice !== undefined,
+    })
     const form = createNode('base.form', {
       mode: 'member',
       memberAction: action,
@@ -333,7 +335,6 @@ export function buildMembersDemoPages(prefix = ''): Page[] {
       b.text('It runs on {member.appRequest.returnsTo|your device} and will see: {member.appRequest.access|your account}.', 'p'),
       b.text('You are signed in as {member.email|a member}.', 'p'),
       b.memberForm('apps/approve', 'approve-app'),
-      b.memberForm('apps/deny', 'refuse-app'),
     ],
     MEMBERS,
   )

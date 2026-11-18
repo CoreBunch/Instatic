@@ -135,6 +135,8 @@ export const MemberPageOptionSchema = Type.Object({
   publishedPath: Type.Union([Type.String(), Type.Null()]),
   /** The member form actions found on the page. */
   formActions: Type.Array(Type.String()),
+  /** The page's Access lets only signed-in members in (all of them, or those with a tag). */
+  membersOnly: Type.Boolean(),
 })
 export type MemberPageOption = Static<typeof MemberPageOptionSchema>
 

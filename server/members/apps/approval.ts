@@ -16,14 +16,19 @@ import { decideMemberAppRequest, findPendingMemberAppRequest } from './store'
 export async function answerAppSignIn(
   ctx: MemberActionContext,
   current: SignedInMember,
-  input: { requestId: string; browserMarker: string | null; approve: boolean },
+  input: { requestId: string; browserMarker: string | null; decision: string },
 ): Promise<MemberOutcome> {
+  // The answer is the button that was pressed. Without it there is no answer,
+  // and no answer is never an approval.
+  if (input.decision !== 'allow' && input.decision !== 'deny') {
+    return { ok: false, code: 'invalid_input', field: 'decision' }
+  }
   if (!input.requestId || !input.browserMarker) return { ok: false, code: 'invalid_token' }
   const decided = await decideMemberAppRequest(ctx.db, {
     requestId: input.requestId,
     browserMarker: input.browserMarker,
     memberId: current.member.id,
-    approve: input.approve,
+    approve: input.decision === 'allow',
   })
   // Answered already, run out, never issued, or opened in another browser:
   // there is no app to go back to.

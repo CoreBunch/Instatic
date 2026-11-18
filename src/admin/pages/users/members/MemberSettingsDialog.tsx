@@ -134,6 +134,14 @@ function pageNote(
         problem: true,
       }
     case 'ready':
+      // A signed-out visitor an app sends to an open page can do nothing
+      // there; on a members page they are sent to sign in and come back.
+      if (key === 'appSignIn' && !state.page.membersOnly) {
+        return {
+          text: `"${state.page.title}" is open to everyone. Set its Access to signed-in members in the page settings, so a signed-out visitor is sent to sign in first.`,
+          problem: true,
+        }
+      }
       return { text: `${hint} Opens ${state.page.publishedPath}.`, problem: false }
   }
 }

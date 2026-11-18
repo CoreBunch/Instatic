@@ -344,7 +344,7 @@ describe('members admin API', () => {
       expect(after.settings).toEqual(next as MemberSettingsResponse['settings'])
       // The pickers get every page, with its live address.
       expect(after.pageOptions).toContainEqual({
-        id: next.pages.login!, title: 'sign-in', path: '/sign-in', publishedPath: '/sign-in', formActions: [],
+        id: next.pages.login!, title: 'sign-in', path: '/sign-in', publishedPath: '/sign-in', formActions: [], membersOnly: false,
       })
 
       const { events } = await readJson<{ events: Array<{ action: string }> }>(await h.cms('/admin/api/cms/audit', { cookie: owner }))

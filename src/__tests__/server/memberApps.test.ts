@@ -110,11 +110,12 @@ describe('sign-in for apps', () => {
     return location.searchParams.get('request')!
   }
 
+  /** Press Allow or Cancel on the approval page: the button carries the decision. */
   function answer(action: 'approve' | 'deny', request: string, headers: Record<string, string> = {}): Promise<Response> {
-    return call(`/_instatic/members/apps/${action}`, {
+    return call('/_instatic/members/apps/approve', {
       method: 'POST',
       headers: { cookie, origin: ORIGIN, 'content-type': 'application/json', ...headers },
-      body: JSON.stringify({ request }),
+      body: JSON.stringify({ request, decision: action === 'approve' ? 'allow' : 'deny' }),
     })
   }
 
@@ -218,7 +219,7 @@ describe('sign-in for apps', () => {
       const res = await call('/_instatic/members/apps/approve', {
         method: 'POST',
         headers: { cookie, origin: ORIGIN, 'content-type': 'application/x-www-form-urlencoded' },
-        body: new URLSearchParams({ request }).toString(),
+        body: new URLSearchParams({ request, decision: 'allow' }).toString(),
       })
       expect(res.status).toBe(303)
       expect(res.headers.get('location')).toStartWith(`${LISTENING}?code=imem_ac_`)
@@ -231,6 +232,26 @@ describe('sign-in for apps', () => {
       expect(redirect.searchParams.has('code')).toBe(false)
       const { rows } = await t.db`select id from member_app_grants`
       expect(rows).toHaveLength(0)
+    })
+
+    it('never takes a post without a decision as an approval', async () => {
+      const request = await startRequest()
+      // What a script that does not send the pressed button would post.
+      for (const body of [{ request }, { request, decision: '' }, { request, decision: 'yes' }]) {
+        const res = await call('/_instatic/members/apps/approve', {
+          method: 'POST',
+          headers: { cookie, origin: ORIGIN, 'content-type': 'application/json' },
+          body: JSON.stringify(body),
+        })
+        expect(res.status).toBe(400)
+        expect(((await res.json()) as { error: { code: string; field?: string } }).error).toMatchObject({
+          code: 'invalid_input', field: 'decision',
+        })
+      }
+      const { rows } = await t.db`select id from member_app_grants`
+      expect(rows).toHaveLength(0)
+      // The request is still open for a real answer.
+      expect((await answer('deny', request)).status).toBe(200)
     })
 
     it('takes one answer per request', async () => {

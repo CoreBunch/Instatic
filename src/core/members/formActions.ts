@@ -44,6 +44,13 @@ export interface MemberFormAction {
   submitLabel: string
   /** A sensible message for a form that shows one instead of redirecting. */
   successMessage: string
+  /**
+   * The form asks a yes-or-no question, so it has two buttons and each one
+   * carries its answer as the button's own `name` and `value`. The endpoint
+   * refuses a post without the answer: a form whose button was not sent
+   * (an old script, a stripped button) must never count as "yes".
+   */
+  choice?: { name: string; submitValue: string; other: { label: string; value: string } }
 }
 
 const EMAIL: MemberFormField = { name: 'email', label: 'Email', inputType: 'email', autocomplete: 'email' }
@@ -200,23 +207,13 @@ export const MEMBER_FORM_ACTIONS: readonly MemberFormAction[] = [
     action: 'apps/approve',
     label: 'Approve an app',
     group: 'account',
-    description: 'For the page an app sends a member to: lets that app sign the member in.',
+    description: 'For the page an app sends a member to: Allow lets that app sign the member in, Cancel sends them back without.',
     fields: [],
     linkParam: 'request',
     signedIn: true,
     submitLabel: 'Allow',
     successMessage: 'The app is signed in. You can close this page.',
-  },
-  {
-    action: 'apps/deny',
-    label: 'Refuse an app',
-    group: 'account',
-    description: 'For the same page: sends the member back to the app without signing it in.',
-    fields: [],
-    linkParam: 'request',
-    signedIn: true,
-    submitLabel: 'Cancel',
-    successMessage: 'The app was not signed in.',
+    choice: { name: 'decision', submitValue: 'allow', other: { label: 'Cancel', value: 'deny' } },
   },
 ]
 

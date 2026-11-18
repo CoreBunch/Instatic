@@ -240,12 +240,18 @@ An app (Instatic Desktop, later a premium plugin) signs a member in with OAuth 2
 | Endpoint | What it does |
 |---|---|
 | `GET /_instatic/members/oauth/authorize` | Checks the app, its redirect address, PKCE (S256 only) and scopes, stores the request, and sends the browser to the owner's approval page with `?request=<id>`; a signed-out visitor goes through the sign-in page first (`?next=`). An unregistered app or address gets a plain 400 in the browser, never a redirect. |
-| `POST /_instatic/members/apps/approve`, `apps/deny` | The member's answer: ordinary member form actions (cookie, same-origin). The answer goes back to the app's address with a one-time `code` or `error=access_denied`, plus `state` and `iss`. |
+| `POST /_instatic/members/apps/approve` | The member's answer: an ordinary member form action (cookie, same-origin) with `request` and `decision` (`allow` or `deny`). The answer goes back to the app's address with a one-time `code` or `error=access_denied`, plus `state` and `iss`. A post without a decision is refused with `invalid_input`, never taken as an approval. |
 | `POST /_instatic/members/oauth/token` | Code exchange and refresh. Form-encoded, needs `client_id` and `resource`. |
 | `POST /_instatic/members/oauth/revoke` | The app signs out: revokes the grant behind an access or refresh token of that app. |
 | `GET /_instatic/members/oauth/userinfo` | By access token: `{ id, serverTime }`, with `email`, `emailVerified`, `name` under the `profile` scope and `tags: [{ tag, expiresAt }]` under `access`. A tag held from several sources lasts as long as its longest grant. |
 
-**The approval screen is the owner's page.** Member settings has a slot "Approve an app" (`appSignIn`); without a published page there, `authorize` answers `temporarily_unavailable`. The page uses the form actions "Approve an app" and "Refuse an app", and the bindings `{member.appRequest.name}`, `{member.appRequest.access}` and `{member.appRequest.returnsTo}`. Those values are read from the stored request named in the page address (`memberAppRequestFrame`), never from the address itself.
+**The approval screen is the owner's page.** Member settings has a slot "Approve an app" (`appSignIn`); without a published page there, `authorize` answers `temporarily_unavailable`. The page uses the form action "Approve an app" and the bindings `{member.appRequest.name}`, `{member.appRequest.access}` and `{member.appRequest.returnsTo}`. Those values are read from the stored request named in the page address (`memberAppRequestFrame`), never from the address itself.
+
+The form asks a yes-or-no question, so it has two buttons, Allow and Cancel, and each carries its answer as the button's own `name` and `value` (`decision=allow`, `decision=deny`; `choice` in `MEMBER_FORM_ACTIONS`). A browser sends a button's value only when that button is pressed, with or without scripts, and the form runtime adds the pressed button the same way. The setup panel's Add button inserts both, and counts a button without the answer as missing. `base.submit` has `name` and `value` props for this.
+
+Two show-when rules exist for this page: "Members an app is asking to sign in" (`appAsking`) and "Members no app is asking for" (`noAppAsking`), so the form can be hidden and an explanation shown when the page is opened without a request. A later page of a list is fetched without its page's address, so both read as "no app is asking" there.
+
+Member settings warns when the chosen page is open to everyone (`membersOnly` on the page option): on a members page a signed-out visitor is sent to sign in and comes back; on an open page they can do nothing.
 
 **Rules.**
 - Redirect addresses match exactly, except that a loopback IP literal matches on any port (a native app listens on whatever port it gets).

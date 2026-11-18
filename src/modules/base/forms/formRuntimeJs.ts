@@ -33,7 +33,7 @@ export const FORM_RUNTIME_JS = `(() => {
     if (!form || form.tagName !== 'FORM' || !form.matches(FORM_SELECTOR)) return;
     event.preventDefault();
     attachForm(form);
-    if (isMemberForm(form)) submitMemberForm(form);
+    if (isMemberForm(form)) submitMemberForm(form, event.submitter);
     else submitForm(form);
   });
 
@@ -85,7 +85,10 @@ export const FORM_RUNTIME_JS = `(() => {
     input.value = new URLSearchParams(window.location.search).get(name) || '';
   }
 
-  async function submitMemberForm(form) {
+  // submitter is the button that was pressed. A button with a name sends its
+  // value with the form, which is how a two-button form (Allow, Cancel)
+  // says which one it was.
+  async function submitMemberForm(form, submitter) {
     const tokenInput = form.querySelector('input[data-instatic-member-link-param]');
     if (tokenInput && !tokenInput.value) {
       setState(form, 'error', tokenInput.name === 'request'
@@ -100,7 +103,7 @@ export const FORM_RUNTIME_JS = `(() => {
         method: 'POST',
         credentials: 'same-origin',
         headers: { 'accept': 'application/json', 'content-type': 'application/json' },
-        body: JSON.stringify(memberValues(form)),
+        body: JSON.stringify(memberValues(form, submitter)),
       });
       const body = await readJson(response);
       if (!response.ok || !body.ok) {
@@ -149,8 +152,9 @@ export const FORM_RUNTIME_JS = `(() => {
 
   // Flat text values, as the member endpoints read them. An unticked checkbox
   // sends nothing, so each checkbox also says it was on the form.
-  function memberValues(form) {
+  function memberValues(form, submitter) {
     const values = {};
+    if (submitter && submitter.name) values[submitter.name] = submitter.value;
     for (const [name, value] of new FormData(form).entries()) {
       if (typeof value !== 'string' || name === '_success' || name === '_error') continue;
       if (values[name] === undefined) values[name] = value;

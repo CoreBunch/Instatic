@@ -276,8 +276,9 @@ export async function handleHoleRequest(
   const gated = showWhenPathsAreGated(paths)
   const showsMember = gated || subtreeDependsOnMember(foundPage, snap.site, registry, nodeId)
   if (gated) {
-    const tags = (await visitor())?.tags ?? null
-    if (!showWhenPathsAllow(paths, tags)) {
+    const who = await visitor()
+    const asking = who ? (await memberAppRequestFrame(ctx.db, pageUrl)) !== null : false
+    if (!showWhenPathsAllow(paths, who ? { tags: who.tags, appAsking: asking } : null)) {
       // Exactly what the page render gives this visitor for the enclosing element: nothing.
       return new Response('', { status: 200, headers: { 'content-type': 'text/html; charset=utf-8', ...PRIVATE_HEADERS } })
     }

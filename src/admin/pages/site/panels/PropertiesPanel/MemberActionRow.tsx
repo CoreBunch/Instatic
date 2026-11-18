@@ -21,6 +21,7 @@ function memberMissingText(missing: MemberFormMissing): string {
     ...missing.fields.map((field) => field.label.toLowerCase()),
     ...(missing.messages ? ['messages'] : []),
     ...(missing.submit ? ['a submit button'] : []),
+    ...(missing.secondary ? ['a cancel button'] : []),
   ]
   return parts.join(', ')
 }

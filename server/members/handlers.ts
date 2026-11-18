@@ -29,8 +29,9 @@
  *   POST email/confirm     token
  *   POST profile           profile fields                        (signed in)
  *   POST delete            currentPassword                       (signed in)
- *   POST apps/approve      request          (signed in; answers an app's sign-in request)
- *   POST apps/deny         request          (signed in)
+ *   POST apps/approve      request, decision          (signed in; answers an app's
+ *                          sign-in request: decision is `allow` or `deny`, and a post
+ *                          without one is refused, never taken as yes)
  *   *    oauth/*           sign-in for apps, see `apps/handler.ts`
  *   GET  logout            ?to=<site path>            (a sign-out link; same-site clicks only)
  *   GET  me                { member } or { member: null }
@@ -310,7 +311,7 @@ async function buildContext(db: DbClient, req: Request): Promise<MemberActionCon
 
 /** Fields that are part of the protocol, not of a member's profile. */
 const RESERVED_FIELDS = new Set([
-  'email', 'password', 'token', 'request', 'currentPassword', 'newPassword', '_success', '_error',
+  'email', 'password', 'token', 'request', 'decision', 'currentPassword', 'newPassword', '_success', '_error',
 ])
 
 function profileFieldsOf(fields: Fields): Fields {
@@ -360,7 +361,7 @@ async function runAction(
   }
 
   // Everything below needs a signed-in member.
-  if (!['password/change', 'email/change', 'profile', 'delete', 'apps/approve', 'apps/deny'].includes(action)) {
+  if (!['password/change', 'email/change', 'profile', 'delete', 'apps/approve'].includes(action)) {
     return null
   }
   const current = await resolveSignedInMember(db, req)
@@ -378,9 +379,8 @@ async function runAction(
     case 'profile':
       return respond(req, fields, await updateProfile(ctx, current, profileFieldsOf(fields)))
     case 'apps/approve':
-    case 'apps/deny':
       return respond(req, fields, await answerAppSignIn(ctx, current, {
-        requestId: field('request'), browserMarker: readAppRequestMarker(req), approve: action === 'apps/approve',
+        requestId: field('request'), browserMarker: readAppRequestMarker(req), decision: field('decision'),
       }))
     default:
       return respond(req, fields, await deleteAccount(ctx, current, {
