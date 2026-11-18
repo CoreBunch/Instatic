@@ -234,7 +234,7 @@ describe('PluginsPage', () => {
       </Wrapper>,
     )
 
-    expect(await screen.findByText('No plugins installed yet.')).toBeDefined()
+    expect(await screen.findByText('No plugins installed yet')).toBeDefined()
 
     const input = screen.getByLabelText('Plugin file')
     fireEvent.change(input, {
@@ -293,7 +293,7 @@ describe('PluginsPage', () => {
       </Wrapper>,
     )
 
-    expect(await screen.findByText('No plugins installed yet.')).toBeDefined()
+    expect(await screen.findByText('No plugins installed yet')).toBeDefined()
 
     fireEvent.change(screen.getByLabelText('Plugin file'), {
       target: {
