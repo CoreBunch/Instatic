@@ -33,7 +33,6 @@ function planWithAssets(count: number): ImportPlan {
     conflicts: { pages: [], rules: [], tokens: [], crossSheetClasses: [] },
     warnings: [],
     droppedAtRules: [],
-    unusedCss: [],
   }
 }
 

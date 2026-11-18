@@ -9,7 +9,9 @@
 
 import {
   applyConflictResolutions,
+  type ImportGoogleFont,
   type ImportPlan,
+  type ImportStylesheet,
   type ConflictResolution,
   type PageConflict,
   type RuleConflict,
@@ -46,10 +48,27 @@ export interface ImportSelection {
   assetsIncluded: Set<string>      // by sourcePath
   fontsIncluded: Set<string>       // by font family
   scriptsIncluded: Set<string>     // by script path
-  stylesheetsIncluded: Set<string> // by kept-stylesheet path (mode 'file')
+  stylesheetsIncluded: Set<string> // by stylesheet-file path (kept or site-wide)
 }
 
-/** Everything selected by default — the user opts OUT in the Review step. */
+/** A stylesheet no imported page links: it imports as a site-wide file. */
+export function isSiteWideStylesheet(sheet: Pick<ImportStylesheet, 'pageSources'>): boolean {
+  return sheet.pageSources.length === 0
+}
+
+/**
+ * Everything selected by default — the user opts OUT in the Review step.
+ *
+ * One exception: a stylesheet no page links, in an import that has pages.
+ * Those pages never loaded it (a template's unminified copy, an RTL sheet, an
+ * alternate skin), so applying it to every page would change how they look.
+ * It is offered switched off. With no pages in the import the stylesheet is
+ * what the owner came to import, so it stays on.
+ *
+ * Every font family starts switched on, including a Google font only an
+ * off sheet `@import`s. `isGoogleFontRequested` keeps that one out of the
+ * import and shows it off; it follows the sheet if the user switches it on.
+ */
 export function makeDefaultSelection(plan: ImportPlan): ImportSelection {
   return {
     pagesIncluded: new Set(plan.pages.map((p) => p.source)),
@@ -60,8 +79,65 @@ export function makeDefaultSelection(plan: ImportPlan): ImportSelection {
       ...plan.googleFonts.map((f) => f.family),
     ]),
     scriptsIncluded: new Set(plan.scripts.map((s) => s.path)),
-    stylesheetsIncluded: new Set(plan.stylesheets.map((s) => s.path)),
+    stylesheetsIncluded: new Set(
+      plan.stylesheets
+        .filter((s) => !isSiteWideStylesheet(s) || plan.pages.length === 0)
+        .map((s) => s.path),
+    ),
   }
+}
+
+/** How many things the selection would import. Zero means there is nothing to continue with. */
+export function selectedImportCount(plan: ImportPlan, selection: ImportSelection): number {
+  return (
+    selection.pagesIncluded.size +
+    selection.styleRulesIncluded.size +
+    selection.stylesheetsIncluded.size +
+    selection.assetsIncluded.size +
+    plan.fonts.filter((font) => selection.fontsIncluded.has(font.family)).length +
+    selectedGoogleFonts(plan, selection).length
+  )
+}
+
+/**
+ * The stylesheet files the selection imports. A kept linked sheet follows its
+ * pages: it is narrowed to the selected ones and dropped when none is left.
+ * A site-wide sheet has no page scope to narrow; it stands on its own.
+ */
+function selectedStylesheets(plan: ImportPlan, selection: ImportSelection): ImportStylesheet[] {
+  return plan.stylesheets
+    .filter((s) => selection.stylesheetsIncluded.has(s.path))
+    .flatMap((sheet) => {
+      if (isSiteWideStylesheet(sheet)) return [sheet]
+      const pageSources = sheet.pageSources.filter((source) => selection.pagesIncluded.has(source))
+      return pageSources.length > 0 ? [{ ...sheet, pageSources }] : []
+    })
+}
+
+/**
+ * Whether anything the selection imports still asks for this Google font.
+ *
+ * Converted CSS always does. A family only stylesheet files `@import` is
+ * wanted only while one of those sheets imports; when the user switched them
+ * all off, installing it would leave a self-hosted font nothing uses. This is
+ * the one place that rule lives: the Review step shows such a font switched
+ * off and the filtered plan leaves it out.
+ */
+export function isGoogleFontRequested(
+  plan: ImportPlan,
+  selection: ImportSelection,
+  font: Pick<ImportGoogleFont, 'requestedByConvertedCss' | 'stylesheetPaths'>,
+): boolean {
+  if (font.requestedByConvertedCss) return true
+  const importedSheets = new Set(selectedStylesheets(plan, selection).map((sheet) => sheet.path))
+  return font.stylesheetPaths.some((path) => importedSheets.has(path))
+}
+
+/** The Google fonts the selection installs: switched on, and still requested. */
+export function selectedGoogleFonts(plan: ImportPlan, selection: ImportSelection): ImportGoogleFont[] {
+  return plan.googleFonts.filter(
+    (font) => selection.fontsIncluded.has(font.family) && isGoogleFontRequested(plan, selection, font),
+  )
 }
 
 /** Narrow a plan to only the categories the user kept selected. */
@@ -79,7 +155,7 @@ export function filterPlanBySelection(plan: ImportPlan, selection: ImportSelecti
     styleRuleSources: plan.styleRuleSources.filter((_, i) => selection.styleRulesIncluded.has(i)),
     assets: plan.assets.filter((a) => selection.assetsIncluded.has(a.sourcePath)),
     fonts: plan.fonts.filter((f) => selection.fontsIncluded.has(f.family)),
-    googleFonts: plan.googleFonts.filter((f) => selection.fontsIncluded.has(f.family)),
+    googleFonts: selectedGoogleFonts(plan, selection),
     fontTokens,
     scripts: plan.scripts
       .filter((s) => selection.scriptsIncluded.has(s.path))
@@ -88,13 +164,7 @@ export function filterPlanBySelection(plan: ImportPlan, selection: ImportSelecti
         pageSources: script.pageSources.filter((source) => selection.pagesIncluded.has(source)),
       }))
       .filter((script) => script.pageSources.length > 0),
-    stylesheets: plan.stylesheets
-      .filter((s) => selection.stylesheetsIncluded.has(s.path))
-      .map((sheet) => ({
-        ...sheet,
-        pageSources: sheet.pageSources.filter((source) => selection.pagesIncluded.has(source)),
-      }))
-      .filter((sheet) => sheet.pageSources.length > 0),
+    stylesheets: selectedStylesheets(plan, selection),
     conflicts: {
       ...plan.conflicts,
       tokens: plan.conflicts.tokens.filter(

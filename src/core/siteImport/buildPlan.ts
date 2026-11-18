@@ -18,11 +18,11 @@ import {
 } from '@core/page-tree'
 import { compareVariants } from '@core/fonts'
 import { expandLinkedCssImports } from './cssImports'
-import { extractGoogleFontImports } from './fontImports'
+import { extractGoogleFontImports, type GoogleFontCollector } from './fontImports'
 import { classifyFiles } from './classifyFiles'
 import { makeHtmlPagePlan } from './htmlPagePlan'
 import { buildAssetPlan, type CssFileResult } from './assetPlan'
-import { partitionLinkedStylesheets } from './stylesheetPlan'
+import { collectUnlinkedStylesheets, partitionLinkedStylesheets } from './stylesheetPlan'
 import { detectCrossSheetClassConflicts } from './classCascades'
 import { detectConflicts, rewriteImportVarRefs } from './conflicts'
 import { declaredCustomProperties } from './varRefs'
@@ -76,18 +76,24 @@ export function buildImportPlan({ fileMap, currentSite, options }: BuildImportPl
   const { rawPagePlans, inlineCssByPage, scripts } = htmlPhase
 
   // Google fonts are harvested from every CSS source (linked, kept, inline) —
-  // one shared collector dedupes by family and merges variants/subsets.
+  // one shared collector dedupes by family and merges variants/subsets. Each
+  // request records where it came from: a stylesheet file (by its path) or
+  // converted CSS (`null`), so selection can leave out a family only
+  // switched-off stylesheets ask for.
   const googleFontsByFamily = new Map<string, ImportGoogleFont>()
-  const collectGoogleFonts = (cssSource: string): void => {
+  const collectGoogleFonts: GoogleFontCollector = (cssSource, stylesheetPath) => {
     for (const font of extractGoogleFontImports(cssSource)) {
       const key = font.family.toLowerCase()
-      const existing = googleFontsByFamily.get(key)
+      let existing = googleFontsByFamily.get(key)
       if (!existing) {
-        googleFontsByFamily.set(key, font)
-        continue
+        existing = { ...font, requestedByConvertedCss: false, stylesheetPaths: [] }
+        googleFontsByFamily.set(key, existing)
+      } else {
+        existing.variants = [...new Set([...existing.variants, ...font.variants])].sort(compareVariants)
+        existing.subsets = [...new Set([...existing.subsets, ...font.subsets])]
       }
-      existing.variants = [...new Set([...existing.variants, ...font.variants])].sort(compareVariants)
-      existing.subsets = [...new Set([...existing.subsets, ...font.subsets])]
+      if (stylesheetPath === null) existing.requestedByConvertedCss = true
+      else if (!existing.stylesheetPaths.includes(stylesheetPath)) existing.stylesheetPaths.push(stylesheetPath)
     }
   }
 
@@ -101,7 +107,7 @@ export function buildImportPlan({ fileMap, currentSite, options }: BuildImportPl
   )
   warnings.push(...partition.warnings)
   droppedAtRules.push(...partition.droppedAtRules)
-  const { linkedStylesheets, keptStylesheetPaths, rawStylesheetSources } = partition
+  const { linkedStylesheets, keptStylesheetPaths } = partition
 
   // 2c. Expand @imports of the CONVERTED sheets into a flat, ordered list of
   //     CSS sources (kept sheets bypass conversion entirely).
@@ -110,10 +116,17 @@ export function buildImportPlan({ fileMap, currentSite, options }: BuildImportPl
   droppedAtRules.push(...cssExpansion.droppedAtRules)
   const { cssSourcesByPath, orderedCssPaths, allLinkedCssPaths } = cssExpansion
 
-  // 3. Record CSS files no page links to.
-  const unusedCss = classified
-    .filter((f) => f.role === 'css' && !allLinkedCssPaths.has(f.path))
-    .map((f) => f.path)
+  // 3. CSS files no page links have no cascade to convert into. They import
+  //    as site-wide stylesheet files, after the kept sheets in priority.
+  const unlinked = collectUnlinkedStylesheets(
+    classified.filter((f) => f.role === 'css' && !allLinkedCssPaths.has(f.path)).map((f) => f.path),
+    fileMap,
+    collectGoogleFonts,
+    partition.nextPriority,
+  )
+  warnings.push(...unlinked.warnings)
+  droppedAtRules.push(...unlinked.droppedAtRules)
+  const rawStylesheetSources = [...partition.rawStylesheetSources, ...unlinked.rawStylesheetSources]
 
   // 4. Parse every converted CSS source — external sheets first, then each
   //    page's `<style>` CSS as a synthetic per-page source. The synthetic
@@ -206,7 +219,6 @@ export function buildImportPlan({ fileMap, currentSite, options }: BuildImportPl
     conflicts: { ...conflicts, crossSheetClasses },
     warnings,
     droppedAtRules,
-    unusedCss,
   }
 }
 
