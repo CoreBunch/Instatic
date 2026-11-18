@@ -25,7 +25,7 @@ describe('DPoP proofs', () => {
   it('ignores the query of the address, and refuses another address or method', async () => {
     const key = await createDeviceKey()
     expect(await verifyDpopProof(await key.proof('POST', `${URL_}?x=1`), POST)).toBe(key.thumbprint)
-    expect(await verifyDpopProof(await key.proof('POST', 'https://site.example/_instatic/members/oauth/statement'), POST)).toBeNull()
+    expect(await verifyDpopProof(await key.proof('POST', 'https://site.example/_instatic/members/oauth/revoke'), POST)).toBeNull()
     expect(await verifyDpopProof(await key.proof('POST', 'https://other.example/_instatic/members/oauth/token'), POST)).toBeNull()
     expect(await verifyDpopProof(await key.proof('GET', URL_), POST)).toBeNull()
   })

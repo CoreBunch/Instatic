@@ -84,7 +84,6 @@ export {
   listCmsMemberApps,
   listCmsMembers,
   revokeCmsMemberTag,
-  rotateCmsMemberSigningKey,
   saveCmsMemberSettings,
   signOutCmsMember,
   suspendCmsMember,

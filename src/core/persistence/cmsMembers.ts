@@ -11,17 +11,14 @@ import {
   MemberInviteResponseSchema,
   MemberListResponseSchema,
   MemberSettingsResponseSchema,
-  MemberSigningKeyResponseSchema,
   type CreateMemberAppBody,
   type MemberAdminStatus,
   type MemberApp,
-  type MemberAppListResponse,
   type MemberDetail,
   type MemberListItem,
   type MemberListResponse,
   type MemberSettings,
   type MemberSettingsResponse,
-  type MemberSigningKey,
 } from '@core/members'
 
 const MEMBERS_PATH = '/admin/api/cms/members'
@@ -141,13 +138,13 @@ export async function saveCmsMemberSettings(settings: MemberSettings): Promise<M
 
 const APPS_PATH = `${MEMBERS_PATH}/apps`
 
-/** The registered apps, and the key the site signs their offline statements with. */
-export function listCmsMemberApps(signal?: AbortSignal): Promise<MemberAppListResponse> {
-  return apiRequest(APPS_PATH, {
+export async function listCmsMemberApps(signal?: AbortSignal): Promise<MemberApp[]> {
+  const body = await apiRequest(APPS_PATH, {
     schema: MemberAppListResponseSchema,
     signal,
     fallbackMessage: 'Could not load the apps',
   })
+  return body.apps
 }
 
 export async function createCmsMemberApp(body: CreateMemberAppBody): Promise<MemberApp> {
@@ -166,14 +163,4 @@ export async function deleteCmsMemberApp(id: string): Promise<void> {
     schema: OkSchema,
     fallbackMessage: 'The app could not be removed',
   })
-}
-
-/** Makes a new signing key current. The old one stays published until its statements have run out. */
-export async function rotateCmsMemberSigningKey(): Promise<MemberSigningKey> {
-  const body = await apiRequest(`${APPS_PATH}/signing-key/rotate`, {
-    method: 'POST',
-    schema: MemberSigningKeyResponseSchema,
-    fallbackMessage: 'The signing key could not be rotated',
-  })
-  return body.signingKey
 }

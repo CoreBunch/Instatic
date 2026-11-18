@@ -1,4 +1,4 @@
-import { createHash, generateKeyPairSync, randomBytes, sign, verify, createPublicKey, type KeyObject } from 'node:crypto'
+import { createHash, generateKeyPairSync, randomBytes, sign } from 'node:crypto'
 import { createServer, type Server } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { expect, test, type Page } from '@playwright/test'
@@ -352,13 +352,13 @@ test('a member and an administrator disconnect a connected app (MEMBER-006)', as
 })
 
 /**
- * MEMBER-007 — an app that works offline signs in on a device.
+ * MEMBER-007 — an app binds its sign-in to a device.
  *
  * The app keeps a device key. Its sign-in is bound to that key, so the code
- * and the refresh token are useless without it, and the site hands it a
- * signed statement it can check with no connection for 7 days.
+ * and the refresh token are useless without it, and nobody without it can
+ * sign the device out.
  */
-test('an app binds its sign-in to a device and takes an offline statement (MEMBER-007)', async ({ page, browser }) => {
+test('an app binds its sign-in to a device (MEMBER-007)', async ({ page, browser }) => {
   test.setTimeout(240_000)
   const suffix = Date.now().toString(36)
   const prefix = `r${suffix}-`
@@ -378,17 +378,17 @@ test('an app binds its sign-in to a device and takes an offline statement (MEMBE
     await site.stepUp()
     const created = await admin.post('/admin/api/cms/members/apps', {
       headers,
-      data: { name: appName, redirectUris: ['http://127.0.0.1/callback'], scopes: ['profile', 'access', 'offline'] },
+      data: { name: appName, redirectUris: ['http://127.0.0.1/callback'], scopes: ['profile', 'access'] },
     })
     expect(created.status(), await created.text()).toBe(201)
     appId = ((await created.json()) as { id: string }).id
     const oauth = (await (
       await admin.get(`${PUBLIC_BASE_URL}/.well-known/oauth-authorization-server/_instatic/members`)
-    ).json()) as Discovery & { jwks_uri: string; statement_endpoint: string }
+    ).json()) as Discovery
 
     const device = createDeviceKey()
     const { authorize, verifier } = signInAddress(oauth, appId, app.redirectUri, {
-      scope: 'profile access offline', dpop_jkt: device.thumbprint, device_name: deviceName,
+      dpop_jkt: device.thumbprint, device_name: deviceName,
     })
     const context = await browser.newContext()
     const visitor = await context.newPage()
@@ -397,11 +397,10 @@ test('an app binds its sign-in to a device and takes an offline statement (MEMBE
       await becomeMember(visitor, at, emailedLink, email)
       await expect(visitor).toHaveURL(new RegExp(`/${prefix}account$`))
 
-      await test.step('the approval page names the device and the offline access', async () => {
+      await test.step('the approval page names the device', async () => {
         await visitor.goto(authorize.toString())
         await expect(visitor).toHaveURL(new RegExp(`/${prefix}approve-app\\?request=`))
         await expect(visitor.getByText(`It runs on ${deviceName}`)).toBeVisible()
-        await expect(visitor.getByText('Keep working for up to 7 days without a connection')).toBeVisible()
         await visitor.getByRole('button', { name: 'Allow', exact: true }).click()
       })
       const code = (await app.answer).searchParams.get('code') ?? ''
@@ -433,36 +432,21 @@ test('an app binds its sign-in to a device and takes an offline statement (MEMBE
         tokens = (await mine.json()) as { access_token: string; refresh_token: string }
       })
 
-      await test.step('the app takes a statement and checks it on its own', async () => {
-        const refused = await appRequest.request.post(oauth.statement_endpoint, {
+      await test.step('only the device can sign itself out', async () => {
+        const userinfo = () => appRequest.request.get(oauth.userinfo_endpoint, {
           headers: { authorization: `Bearer ${tokens.access_token}` },
         })
-        expect(refused.status()).toBe(401)
-        const res = await appRequest.request.post(oauth.statement_endpoint, {
-          headers: { authorization: `Bearer ${tokens.access_token}`, dpop: device.proof('POST', oauth.statement_endpoint) },
+        const revoke = (proof?: string) => appRequest.request.post(oauth.revocation_endpoint, {
+          headers: proof ? { dpop: proof } : {},
+          form: { token: tokens.refresh_token, client_id: appId },
         })
-        expect(res.ok(), await res.text()).toBe(true)
-        const { statement } = (await res.json()) as { statement: string }
-        const [headerPart, claimsPart, signaturePart] = statement.split('.') as [string, string, string]
-        const header = JSON.parse(Buffer.from(headerPart, 'base64url').toString()) as { kid: string; typ: string }
-        const claims = JSON.parse(Buffer.from(claimsPart, 'base64url').toString()) as {
-          iss: string; aud: string; email: string; iat: number; exp: number; cnf: { jkt: string }
-        }
-        const { keys } = (await (await appRequest.request.get(oauth.jwks_uri)).json()) as {
-          keys: Array<{ kid: string; kty: string; crv: string; x: string }>
-        }
-        const jwk = keys.find((key) => key.kid === header.kid)
-        expect(jwk).toBeTruthy()
-        const publicKey: KeyObject = createPublicKey({ key: { kty: jwk!.kty, crv: jwk!.crv, x: jwk!.x }, format: 'jwk' })
-        expect(verify(null, Buffer.from(`${headerPart}.${claimsPart}`), publicKey, Buffer.from(signaturePart, 'base64url'))).toBe(true)
-        expect(header.typ).toBe('instatic-member-statement+jwt')
-        expect(claims).toMatchObject({ iss: oauth.issuer, aud: appId, email, cnf: { jkt: device.thumbprint } })
-        expect(claims.exp - claims.iat).toBe(7 * 24 * 60 * 60)
-      })
-
-      await test.step('the account page shows the device', async () => {
+        // A copy of the token is not enough; the answer does not say so.
+        expect((await revoke()).status()).toBe(200)
+        expect((await userinfo()).status()).toBe(200)
         await visitor.goto(at('account'))
         await expect(visitor.getByRole('heading', { name: `${appName} on ${deviceName}` })).toBeVisible()
+        expect((await revoke(device.proof('POST', oauth.revocation_endpoint))).status()).toBe(200)
+        expect((await userinfo()).status()).toBe(401)
       })
     } finally {
       await appRequest.close()

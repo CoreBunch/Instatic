@@ -1638,19 +1638,6 @@ export const pgMigrations: Migration[] = [
       alter table member_app_requests add column if not exists device_name text;
       alter table member_app_grants add column if not exists device_jkt text;
       alter table member_app_grants add column if not exists device_name text;
-
-      -- The keys this site signs offline statements with. The private half
-      -- is encrypted with the master key; a retired key stays listed until
-      -- every statement it signed has run out.
-      create table if not exists member_signing_keys (
-        id text primary key,
-        public_jwk_json jsonb not null,
-        private_ciphertext bytea not null,
-        private_iv bytea not null,
-        key_fingerprint text not null,
-        created_at timestamptz not null default now(),
-        retired_at timestamptz
-      );
     `,
   },
 ]

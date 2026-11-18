@@ -1806,19 +1806,6 @@ export const sqliteMigrations: Migration[] = [
       alter table member_app_requests add column device_name text;
       alter table member_app_grants add column device_jkt text;
       alter table member_app_grants add column device_name text;
-
-      -- The keys this site signs offline statements with. The private half
-      -- is encrypted with the master key; a retired key stays listed until
-      -- every statement it signed has run out.
-      create table if not exists member_signing_keys (
-        id text primary key,
-        public_jwk_json text not null,
-        private_ciphertext blob not null,
-        private_iv blob not null,
-        key_fingerprint text not null,
-        created_at text not null default (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
-        retired_at text
-      );
     `,
   },
 ]

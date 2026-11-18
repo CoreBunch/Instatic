@@ -115,7 +115,7 @@ for (const member of MEMBERS) {
 const demoApp = await createMemberApp(db, {
   name: 'Demo terminal app',
   redirectUris: ['http://127.0.0.1/callback'],
-  scopes: ['profile', 'access', 'offline'],
+  scopes: ['profile', 'access'],
   createdByUserId: owner.id,
 })
 

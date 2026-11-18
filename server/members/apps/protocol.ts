@@ -12,10 +12,6 @@ export const MEMBER_OAUTH_AUTHORIZE_PATH = `${MEMBER_OAUTH_PATH_PREFIX}authorize
 export const MEMBER_OAUTH_TOKEN_PATH = `${MEMBER_OAUTH_PATH_PREFIX}token`
 export const MEMBER_OAUTH_REVOKE_PATH = `${MEMBER_OAUTH_PATH_PREFIX}revoke`
 export const MEMBER_OAUTH_USERINFO_PATH = `${MEMBER_OAUTH_PATH_PREFIX}userinfo`
-export const MEMBER_OAUTH_KEYS_PATH = `${MEMBER_OAUTH_PATH_PREFIX}keys`
-export const MEMBER_OAUTH_STATEMENT_PATH = `${MEMBER_OAUTH_PATH_PREFIX}statement`
-/** The `typ` of an offline statement, so it cannot be mistaken for any other signed token. */
-export const MEMBER_STATEMENT_TYPE = 'instatic-member-statement+jwt'
 /** RFC 8414: an issuer with a path publishes its metadata under the path-suffixed well-known URL. */
 export const MEMBER_OAUTH_METADATA_PATH = `/.well-known/oauth-authorization-server${ISSUER_PATH}`
 

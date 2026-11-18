@@ -261,8 +261,6 @@ export interface MemberAppAccess {
   memberId: string
   appId: string
   scope: string
-  /** Thumbprint of the device key the grant is bound to, or null. */
-  deviceKey: string | null
 }
 
 /** The grant behind a live access token, or null. */
@@ -273,8 +271,8 @@ export async function findMemberAppAccess(
   now: Date = new Date(),
 ): Promise<MemberAppAccess | null> {
   const iso = now.toISOString()
-  const { rows } = await db<{ grant_id: string; member_id: string; app_id: string; scope: string; device_jkt: string | null }>`
-    select t.grant_id, g.member_id, t.app_id, t.scope, g.device_jkt
+  const { rows } = await db<{ grant_id: string; member_id: string; app_id: string; scope: string }>`
+    select t.grant_id, g.member_id, t.app_id, t.scope
       from member_app_tokens t
       join member_app_grants g on g.id = t.grant_id
       join members m on m.id = g.member_id
@@ -287,9 +285,7 @@ export async function findMemberAppAccess(
      limit 1
   `
   const row = rows[0]
-  return row
-    ? { grantId: row.grant_id, memberId: row.member_id, appId: row.app_id, scope: row.scope, deviceKey: row.device_jkt }
-    : null
+  return row ? { grantId: row.grant_id, memberId: row.member_id, appId: row.app_id, scope: row.scope } : null
 }
 
 export async function touchMemberAppGrant(db: DbClient, grantId: string): Promise<void> {

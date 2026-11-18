@@ -8,19 +8,8 @@ import { useId, useState, type FormEvent } from 'react'
 import { useAsyncResource } from '@admin/lib/useAsyncResource'
 import dialogStyles from '@admin/shared/dialogs/SiteCreateDialog/SiteCreateDialog.module.css'
 import { StepUpCancelledMessage, useStepUp } from '@admin/shared/StepUp'
-import {
-  MEMBER_APP_SCOPES,
-  MEMBER_APP_SCOPE_TEXT,
-  type MemberApp,
-  type MemberAppScope,
-  type MemberSigningKey,
-} from '@core/members'
-import {
-  createCmsMemberApp,
-  deleteCmsMemberApp,
-  listCmsMemberApps,
-  rotateCmsMemberSigningKey,
-} from '@core/persistence'
+import { MEMBER_APP_SCOPES, MEMBER_APP_SCOPE_TEXT, type MemberApp, type MemberAppScope } from '@core/members'
+import { createCmsMemberApp, deleteCmsMemberApp, listCmsMemberApps } from '@core/persistence'
 import { getErrorMessage } from '@core/utils/errorMessage'
 import { Button } from '@ui/components/Button'
 import { Checkbox } from '@ui/components/Checkbox'
@@ -30,13 +19,10 @@ import { Input, Textarea } from '@ui/components/Input'
 import { pushToast } from '@ui/components/Toast'
 import { CopySolidIcon } from 'pixel-art-icons/icons/copy-solid'
 import { PlugSolidIcon } from 'pixel-art-icons/icons/plug-solid'
-import { formatDate } from './memberText'
 import styles from './Members.module.css'
 
 const FORM_ID = 'member-app-form'
 const MAX_REDIRECTS = 10
-/** A new app starts without `offline`: only an app that keeps a device key can use it. */
-const DEFAULT_SCOPES: readonly MemberAppScope[] = MEMBER_APP_SCOPES.filter((scope) => scope !== 'offline')
 
 function isScope(value: string): value is MemberAppScope {
   return (MEMBER_APP_SCOPES as readonly string[]).includes(value)
@@ -139,81 +125,6 @@ function AppRow({
   )
 }
 
-/** The key offline statements are signed with, and the way to replace it. */
-function SigningKeySection({
-  signingKey,
-  canManage,
-  busy,
-  onRotate,
-}: {
-  signingKey: MemberSigningKey
-  canManage: boolean
-  busy: boolean
-  /** Resolves to whether the key was rotated. */
-  onRotate: () => Promise<boolean>
-}) {
-  const [confirming, setConfirming] = useState(false)
-
-  async function rotate() {
-    if (await onRotate()) setConfirming(false)
-  }
-
-  return (
-    <fieldset className={dialogStyles.group}>
-      <legend className={dialogStyles.groupTitle}>Offline signing key</legend>
-      <p className={dialogStyles.hint}>
-        Apps that work offline check a signed statement from this site against this key.
-      </p>
-      <dl className={styles.appFacts}>
-        <dt>Key id</dt>
-        <dd>
-          <code>{signingKey.id}</code>
-        </dd>
-        <dt>Created</dt>
-        <dd>
-          <time dateTime={signingKey.createdAt}>{formatDate(signingKey.createdAt)}</time>
-        </dd>
-      </dl>
-      {!signingKey.usable && (
-        <p role="alert" className={dialogStyles.errorText}>
-          This key can no longer be read, because the server&apos;s secret key changed. Apps cannot get a new
-          statement until you rotate it.
-        </p>
-      )}
-      {!confirming && (
-        <div className={styles.appSubmit}>
-          <Button
-            type="button"
-            variant="secondary"
-            size="sm"
-            disabled={!canManage || busy}
-            onClick={() => setConfirming(true)}
-          >
-            Rotate key
-          </Button>
-          {!canManage && (
-            <p className={dialogStyles.hint} role="status">Someone who manages members can rotate the key.</p>
-          )}
-        </div>
-      )}
-      {confirming && (
-        <div className={styles.appConfirm} role="group" aria-label="Rotate the signing key">
-          <p>
-            Rotate the signing key? Apps keep working: the old key stays valid for 7 days, and each app picks up the
-            new one the next time it is online.
-          </p>
-          <Button type="button" variant="secondary" size="xs" disabled={busy} onClick={() => setConfirming(false)}>
-            Keep
-          </Button>
-          <Button type="button" variant="destructive" size="xs" busy={busy} onClick={() => void rotate()}>
-            Rotate key
-          </Button>
-        </div>
-      )}
-    </fieldset>
-  )
-}
-
 export function MemberAppsDialog({
   canManage,
   approvalPageLive,
@@ -224,17 +135,16 @@ export function MemberAppsDialog({
   /** Whether Member settings names a published "Approve an app" page. */
   approvalPageLive: boolean
   onClose: () => void
-  /** Called after an app is added or removed or the key is rotated, so the Audit tab shows it. */
+  /** Called after an app is added or removed, so the Audit tab shows it. */
   onChanged: () => void
 }) {
   const { runStepUp } = useStepUp()
-  const registry = useAsyncResource((signal) => listCmsMemberApps(signal), [], { fallbackError: 'Could not load the apps.' })
+  const apps = useAsyncResource((signal) => listCmsMemberApps(signal), [], { fallbackError: 'Could not load the apps.' })
   const [busy, setBusy] = useState(false)
   const [name, setName] = useState('')
   const [redirectText, setRedirectText] = useState('')
-  const [scopes, setScopes] = useState<readonly MemberAppScope[]>(DEFAULT_SCOPES)
+  const [scopes, setScopes] = useState<readonly MemberAppScope[]>(MEMBER_APP_SCOPES)
   const idPrefix = useId()
-  const apps = registry.data?.apps
 
   const redirects = [...new Set(redirectText.split('\n').map((line) => line.trim()).filter(Boolean))]
   const blocker = formBlocker(name, redirects, scopes)
@@ -244,7 +154,7 @@ export function MemberAppsDialog({
     setBusy(true)
     try {
       await runStepUp(action)
-      registry.refresh()
+      apps.refresh()
       onChanged()
       pushToast({ kind: 'success', title: done })
       return true
@@ -270,7 +180,7 @@ export function MemberAppsDialog({
     if (!added) return
     setName('')
     setRedirectText('')
-    setScopes(DEFAULT_SCOPES)
+    setScopes(MEMBER_APP_SCOPES)
   }
 
   return (
@@ -292,9 +202,9 @@ export function MemberAppsDialog({
           </p>
         )}
 
-        {registry.error && <p role="alert" className={dialogStyles.errorText}>{registry.error}</p>}
-        {registry.loading && !registry.data && <p className={dialogStyles.hint}>Loading apps…</p>}
-        {apps && apps.length === 0 && (
+        {apps.error && <p role="alert" className={dialogStyles.errorText}>{apps.error}</p>}
+        {apps.loading && !apps.data && <p className={dialogStyles.hint}>Loading apps…</p>}
+        {apps.data && apps.data.length === 0 && (
           <EmptyState
             variant="centered"
             icon={<PlugSolidIcon size={28} />}
@@ -306,9 +216,9 @@ export function MemberAppsDialog({
             }
           />
         )}
-        {apps && apps.length > 0 && (
+        {apps.data && apps.data.length > 0 && (
           <ul className={styles.apps} aria-label="Apps that can sign members in">
-            {apps.map((app) => (
+            {apps.data.map((app) => (
               <AppRow
                 key={app.id}
                 app={app}
@@ -372,7 +282,6 @@ export function MemberAppsDialog({
                     <span>{MEMBER_APP_SCOPE_TEXT[scope]}</span>
                   </label>
                 ))}
-                <p className={dialogStyles.hint}>Offline needs the app to keep a device key.</p>
               </div>
               <div className={styles.appSubmit}>
                 <Button variant="primary" size="sm" type="submit" disabled={blocker !== null} busy={busy}>
@@ -382,15 +291,6 @@ export function MemberAppsDialog({
               </div>
             </fieldset>
           </form>
-        )}
-
-        {registry.data && (
-          <SigningKeySection
-            signingKey={registry.data.signingKey}
-            canManage={canManage}
-            busy={busy}
-            onRotate={() => change(rotateCmsMemberSigningKey, 'The signing key could not be rotated', 'Signing key rotated')}
-          />
         )}
       </div>
     </Dialog>

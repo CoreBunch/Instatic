@@ -5,10 +5,9 @@
  * browser, listens on a loopback port for the answer, exchanges the code for
  * tokens (PKCE, no client secret), then reads who the member is and which
  * tags they hold. It also keeps a device key: the sign-in is bound to it, so
- * every refresh carries a proof signed with that key (DPoP, RFC 9449), and
- * the site hands it a signed statement it could check for 7 days without a
- * connection. Nothing is stored; the app signs out again at the end. A real
- * app keeps the device key in the OS keychain and the statement on disk.
+ * the code exchange, every refresh and signing out carry a proof signed with
+ * that key (DPoP, RFC 9449). Nothing is stored; the app signs out again at
+ * the end. A real app keeps the device key in the OS keychain.
  *
  *   bun run demo:member-app -- --site http://127.0.0.1:3040 --app imem_app_…
  *
@@ -51,41 +50,8 @@ const UserinfoSchema = Type.Object({
   }))),
 })
 
-const StatementResponseSchema = Type.Object({
-  statement: Type.String(),
-  expiresAt: Type.String(),
-  serverTime: Type.String(),
-})
-
-const KeySetSchema = Type.Object({
-  keys: Type.Array(Type.Object({
-    kid: Type.String(),
-    kty: Type.Literal('OKP'),
-    crv: Type.Literal('Ed25519'),
-    x: Type.String(),
-  })),
-})
-
-const StatementHeaderSchema = Type.Object({ alg: Type.Literal('EdDSA'), typ: Type.String(), kid: Type.String() })
-
-const StatementClaimsSchema = Type.Object({
-  iss: Type.String(),
-  sub: Type.String(),
-  aud: Type.String(),
-  exp: Type.Number(),
-  cnf: Type.Object({ jkt: Type.String() }),
-  tags: Type.Optional(Type.Array(Type.Object({
-    tag: Type.String(),
-    expiresAt: Type.Union([Type.String(), Type.Null()]),
-  }))),
-})
-
 function base64Url(bytes: Uint8Array | ArrayBuffer | string): string {
   return Buffer.from(typeof bytes === 'string' ? new TextEncoder().encode(bytes) : new Uint8Array(bytes)).toString('base64url')
-}
-
-function jsonPart(part: string | undefined): unknown {
-  return JSON.parse(Buffer.from(part ?? '', 'base64url').toString('utf8'))
 }
 
 // ── The device key ──────────────────────────────────────────────────────────
@@ -160,7 +126,7 @@ authorize.search = new URLSearchParams({
   redirect_uri: redirectUri,
   code_challenge: challenge,
   code_challenge_method: 'S256',
-  scope: 'profile access offline',
+  scope: 'profile access',
   state,
   // Bind the sign-in to this device's key, and say what to call the device.
   dpop_jkt: deviceThumbprint,
@@ -216,43 +182,7 @@ log(tags.length === 0
   : `Tags:    ${tags.map((entry) => `${entry.tag} (${entry.expiresAt ? `until ${entry.expiresAt}` : 'no end date'})`).join(', ')}`)
 log(`An app gating on the tag "pro" would ${tags.some((entry) => entry.tag === 'pro') ? 'open' : 'show its renew screen'}.`)
 
-// ── 4. Take a statement for working offline, and check it as if offline ─────
-const statementUrl = `${ISSUER}/oauth/statement`
-const statementResponse = await fetch(statementUrl, {
-  method: 'POST',
-  headers: { authorization: `Bearer ${tokens.access_token}`, dpop: await dpopProof('POST', statementUrl) },
-})
-const statement = safeParseValue(StatementResponseSchema, await statementResponse.json())
-const keySet = safeParseValue(KeySetSchema, await (await fetch(`${ISSUER}/oauth/keys`)).json())
-if (!statementResponse.ok || !statement.ok || !keySet.ok) {
-  console.error(`[member-app-demo] getting the offline statement failed (${statementResponse.status}).`)
-  process.exit(1)
-}
-const [headerPart, claimsPart, signaturePart] = statement.value.statement.split('.')
-const statementHeader = safeParseValue(StatementHeaderSchema, jsonPart(headerPart))
-const statementClaims = safeParseValue(StatementClaimsSchema, jsonPart(claimsPart))
-const signingKey = statementHeader.ok ? keySet.value.keys.find((key) => key.kid === statementHeader.value.kid) : undefined
-const signatureIsGood = signingKey !== undefined && await crypto.subtle.verify(
-  { name: 'Ed25519' },
-  await crypto.subtle.importKey('jwk', { kty: signingKey.kty, crv: signingKey.crv, x: signingKey.x }, { name: 'Ed25519' }, false, ['verify']),
-  Buffer.from(signaturePart ?? '', 'base64url'),
-  new TextEncoder().encode(`${headerPart}.${claimsPart}`),
-)
-// What an app checks before trusting a statement with no connection: the
-// site's signature, that it is for this app on this device, and its end.
-// (It also remembers `serverTime` and refuses to run if the clock goes back.)
-if (
-  !signatureIsGood || !statementHeader.ok || !statementClaims.ok ||
-  statementHeader.value.typ !== 'instatic-member-statement+jwt' ||
-  statementClaims.value.iss !== ISSUER || statementClaims.value.aud !== APP_ID ||
-  statementClaims.value.cnf.jkt !== deviceThumbprint || statementClaims.value.exp * 1000 <= Date.now()
-) {
-  console.error('[member-app-demo] the offline statement did not check out. Stopping.')
-  process.exit(1)
-}
-log(`Offline: a statement signed by the site, good until ${statement.value.expiresAt} on this device only.`)
-
-// ── 5. Refresh once, then sign out ──────────────────────────────────────────
+// ── 4. Refresh once, then sign out ──────────────────────────────────────────
 const refreshed = await readTokens(await postForm('token', {
   grant_type: 'refresh_token',
   refresh_token: tokens.refresh_token,

@@ -11,10 +11,6 @@
  *   POST revoke      the app signs out (RFC 7009); a sign-in bound to a
  *                    device needs a proof from its key
  *   GET  userinfo    who the member is and what they hold, by access token
- *   GET  keys        the public keys offline statements are signed with
- *   POST statement   a signed statement of who the member is and what they
- *                    hold, good for 7 days without a connection; only for a
- *                    sign-in bound to a device key, and only to that key
  *
  * The member's answer on the approval page is an ordinary member form action
  * (`apps/approve` in `../handlers.ts`), so it rides the same
@@ -51,18 +47,14 @@ import {
 import {
   MEMBER_OAUTH_AUTHORIZE_PATH,
   MEMBER_OAUTH_ISSUER_UNAVAILABLE_MESSAGE,
-  MEMBER_OAUTH_KEYS_PATH,
   MEMBER_OAUTH_METADATA_PATH,
   MEMBER_OAUTH_REVOKE_PATH,
-  MEMBER_OAUTH_STATEMENT_PATH,
   MEMBER_OAUTH_TOKEN_PATH,
   MEMBER_OAUTH_USERINFO_PATH,
-  MEMBER_STATEMENT_TYPE,
   cleanDeviceName,
   memberAppIssuer,
   parseMemberAppScope,
 } from './protocol'
-import { listPublishedSigningKeys, SigningKeyUnreadableError, signWithCurrentKey, STATEMENT_TTL_MS } from './signingKeys'
 import {
   createMemberAppRequest,
   findMemberApp,
@@ -80,7 +72,6 @@ export const memberAppLimits = {
   authorize: new RateLimiter({ limit: 30, windowMs: 10 * MINUTE }),
   token: new RateLimiter({ limit: 60, windowMs: 10 * MINUTE }),
   revoke: new RateLimiter({ limit: 30, windowMs: 10 * MINUTE }),
-  statement: new RateLimiter({ limit: 30, windowMs: 10 * MINUTE }),
 }
 
 /** Test seam: forget every recorded attempt. */
@@ -107,10 +98,6 @@ export function handleMemberOAuthRequest(
       return req.method === 'POST' ? revoke(req, db) : methodNotAllowed()
     case MEMBER_OAUTH_USERINFO_PATH:
       return req.method === 'GET' ? userinfo(req, db) : methodNotAllowed()
-    case MEMBER_OAUTH_KEYS_PATH:
-      return req.method === 'GET' ? keys(db) : methodNotAllowed()
-    case MEMBER_OAUTH_STATEMENT_PATH:
-      return req.method === 'POST' ? statement(req, db) : methodNotAllowed()
     default:
       return jsonResponse({ error: 'Not found' }, { status: 404, headers: NO_STORE })
   }
@@ -127,8 +114,6 @@ function metadata(req: Request): Response {
       token_endpoint: `${origin}${MEMBER_OAUTH_TOKEN_PATH}`,
       revocation_endpoint: `${origin}${MEMBER_OAUTH_REVOKE_PATH}`,
       userinfo_endpoint: `${origin}${MEMBER_OAUTH_USERINFO_PATH}`,
-      jwks_uri: `${origin}${MEMBER_OAUTH_KEYS_PATH}`,
-      statement_endpoint: `${origin}${MEMBER_OAUTH_STATEMENT_PATH}`,
       dpop_signing_alg_values_supported: [...DPOP_ALGORITHMS],
       response_types_supported: ['code'],
       grant_types_supported: ['authorization_code', 'refresh_token'],
@@ -188,14 +173,10 @@ async function authorize(req: Request, db: DbClient, url: URL): Promise<Response
     return refuse('invalid_scope', 'The app asked for access it is not registered for.')
   }
 
-  // The device key the sign-in is bound to, named by its thumbprint. Working
-  // offline rests on that key, so an app that asks for it must bring one.
+  // The device key the sign-in is bound to, named by its thumbprint.
   const deviceKey = params.get('dpop_jkt')
   if (deviceKey !== null && !isKeyThumbprint(deviceKey)) {
     return refuse('invalid_request', 'dpop_jkt is not a key thumbprint.')
-  }
-  if (scopes.includes('offline') && deviceKey === null) {
-    return refuse('invalid_request', 'The offline scope needs a device key (dpop_jkt).')
   }
 
   const pages = await getMemberPagePaths(db)
@@ -307,70 +288,4 @@ async function userinfo(req: Request, db: DbClient): Promise<Response> {
   if (scopes.has('access')) body.tags = await listActiveMemberTagExpiries(db, member.id)
   await touchMemberAppGrant(db, access.grantId)
   return privateJsonResponse(body)
-}
-
-// ─── keys, statement ───────────────────────────────────────────────────────
-
-async function keys(db: DbClient): Promise<Response> {
-  // Short enough that an app picks up a rotated key well inside a statement's life.
-  return jsonResponse({ keys: await listPublishedSigningKeys(db) }, { headers: { 'Cache-Control': 'public, max-age=300' } })
-}
-
-/**
- * The offline statement: who the member is and what they hold, signed by
- * this site, for an app to trust for 7 days without asking again. It names
- * the device key it was issued to (`cnf.jkt`), so a copy on another machine
- * proves nothing there.
- *
- * A tag withdrawn early stays in a statement already handed out until that
- * statement runs out. Each tag carries its own end, and the app must honour
- * whichever comes first.
- */
-async function statement(req: Request, db: DbClient): Promise<Response> {
-  const limited = consumeOAuthRateLimit(req, memberAppLimits.statement)
-  if (limited) return limited
-  const resource = memberAppIssuer(req)
-  const bearer = readBearer(req)
-  if (!resource || !bearer) return unauthorized()
-  const access = await findMemberAppAccess(db, bearer, resource)
-  const member = access ? await findMemberById(db, access.memberId) : null
-  if (!access || !member) return unauthorized()
-
-  const scopes = new Set(access.scope.split(' '))
-  if (!scopes.has('offline') || !access.deviceKey) {
-    return oauthError('insufficient_scope', 'This sign-in was not allowed to work offline.', 403)
-  }
-  const proof = req.headers.get('dpop')
-  const endpoint = endpointAddress(req, MEMBER_OAUTH_STATEMENT_PATH)
-  const proofKey = proof && endpoint ? await verifyDpopProof(proof, { method: 'POST', url: endpoint }) : null
-  if (proofKey !== access.deviceKey) {
-    return oauthError('invalid_dpop_proof', 'A DPoP proof from the device this sign-in belongs to is required.', 401)
-  }
-
-  const now = new Date()
-  const expiresAt = new Date(now.getTime() + STATEMENT_TTL_MS)
-  const claims: Record<string, unknown> = {
-    iss: resource,
-    sub: member.id,
-    aud: access.appId,
-    iat: Math.floor(now.getTime() / 1000),
-    exp: Math.floor(expiresAt.getTime() / 1000),
-    cnf: { jkt: access.deviceKey },
-  }
-  if (scopes.has('profile')) {
-    claims.email = member.email
-    claims.name = typeof member.profile.name === 'string' ? member.profile.name : ''
-  }
-  if (scopes.has('access')) claims.tags = await listActiveMemberTagExpiries(db, member.id)
-  let signed: string
-  try {
-    signed = await signWithCurrentKey(db, MEMBER_STATEMENT_TYPE, claims)
-  } catch (err) {
-    if (!(err instanceof SigningKeyUnreadableError)) throw err
-    // The owner has to rotate the key (the Apps dialog says so). The app keeps its last statement.
-    console.error('[members:apps]', err.message)
-    return oauthError('temporarily_unavailable', 'This site cannot sign statements right now.', 503)
-  }
-  await touchMemberAppGrant(db, access.grantId)
-  return privateJsonResponse({ statement: signed, expiresAt: expiresAt.toISOString(), serverTime: now.toISOString() })
 }
