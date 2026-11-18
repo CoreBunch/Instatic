@@ -16,7 +16,7 @@ import type { ConditionDef } from '@core/page-tree'
 import { cssToStyleRules } from './cssToStyleRules'
 import { extractRootColorTokens } from './colorTokens'
 import { extractRootFontTokens } from './fontTokens'
-import { stripGoogleFontImportRules } from './fontImports'
+import { stripGoogleFontImportRules, type GoogleFontCollector } from './fontImports'
 import type { CssFileResult } from './assetPlan'
 import type { ImportColorToken, ImportFontToken, ImportWarning } from './types'
 
@@ -52,7 +52,7 @@ export interface ParseCssSourceOptions {
   breakpoints: Array<{ id: string; width: number; mediaQuery?: string }>
   mediaTolerance: number
   /** Harvests Google-font `@import` requests before they are stripped. */
-  collectGoogleFonts: (cssSource: string) => void
+  collectGoogleFonts: GoogleFontCollector
 }
 
 /**
@@ -69,7 +69,7 @@ export function parseCssSourceIntoPlan(
   state: CssPlanState,
   options: ParseCssSourceOptions,
 ): void {
-  options.collectGoogleFonts(cssSource)
+  options.collectGoogleFonts(cssSource, null)
   const cssForStyleRules = stripGoogleFontImportRules(cssSource)
   const { rules, warnings, assetRefs, conditions, fontFaces } = cssToStyleRules(cssForStyleRules, {
     breakpoints: options.breakpoints,

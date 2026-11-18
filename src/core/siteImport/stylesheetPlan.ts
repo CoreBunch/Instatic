@@ -1,6 +1,7 @@
 /**
  * stylesheetPlan — catalogue the top-level linked stylesheets and flatten the
- * ones kept as files (`mode: 'file'`).
+ * ones kept as files (`mode: 'file'`), then pick up the stylesheets no page
+ * links as site-wide files.
  *
  * A kept stylesheet bypasses conversion entirely: its unconditional local
  * `@import` graph is inlined in cascade order, trusted Google-font `@import`s
@@ -11,7 +12,7 @@
  */
 
 import { expandLinkedCssImports } from './cssImports'
-import { stripGoogleFontImportRules } from './fontImports'
+import { stripGoogleFontImportRules, type GoogleFontCollector } from './fontImports'
 import type { RawStylesheetSource } from './assetPlan'
 import type {
   FileMap,
@@ -30,6 +31,8 @@ interface StylesheetPartition {
   rawStylesheetSources: RawStylesheetSource[]
   /** Expanded CSS paths consumed by kept sheets — they count as "used". */
   usedCssPaths: Set<string>
+  /** First free cascade priority after the kept sheets. */
+  nextPriority: number
   warnings: ImportWarning[]
   droppedAtRules: string[]
 }
@@ -38,7 +41,7 @@ export function partitionLinkedStylesheets(
   pagePlans: readonly PagePlan[],
   fileMap: FileMap,
   stylesheetModes: Record<string, StylesheetImportMode>,
-  collectGoogleFonts: (cssSource: string) => void,
+  collectGoogleFonts: GoogleFontCollector,
 ): StylesheetPartition {
   const warnings: ImportWarning[] = []
   const droppedAtRules: string[] = []
@@ -63,24 +66,18 @@ export function partitionLinkedStylesheets(
   }
 
   const rawStylesheetSources: RawStylesheetSource[] = []
-  let nextPriority = 100
+  let nextPriority = FIRST_STYLESHEET_PRIORITY
   for (const entry of linkedStylesheets) {
     if (entry.mode !== 'file') continue
-    const expanded = expandLinkedCssImports([entry.path], fileMap)
-    warnings.push(...expanded.warnings)
-    for (const w of expanded.warnings) {
-      if (w.kind === 'dropped-at-rule' && w.source) droppedAtRules.push(w.source)
-    }
-    for (const cssPath of expanded.cssPaths) usedCssPaths.add(cssPath)
-    const parts = expanded.sources.map((source) => {
-      collectGoogleFonts(source.cssSource)
-      return { cssPath: source.cssPath, cssText: stripGoogleFontImportRules(source.cssSource) }
-    })
+    const flattened = flattenStylesheet(entry.path, fileMap, collectGoogleFonts)
+    warnings.push(...flattened.warnings)
+    droppedAtRules.push(...flattened.droppedAtRules)
+    for (const cssPath of flattened.cssPaths) usedCssPaths.add(cssPath)
     rawStylesheetSources.push({
       path: entry.path,
       pageSources: entry.pageSources,
       priority: nextPriority,
-      parts,
+      parts: flattened.parts,
     })
     nextPriority += 1
   }
@@ -90,7 +87,101 @@ export function partitionLinkedStylesheets(
     keptStylesheetPaths: new Set(rawStylesheetSources.map((sheet) => sheet.path)),
     rawStylesheetSources,
     usedCssPaths,
+    nextPriority,
     warnings,
     droppedAtRules,
   }
+}
+
+interface UnlinkedStylesheets {
+  /** One site-wide sheet per unlinked root, flattened like a kept sheet. */
+  rawStylesheetSources: RawStylesheetSource[]
+  warnings: ImportWarning[]
+  droppedAtRules: string[]
+}
+
+/**
+ * Plan the CSS files no imported page links as stylesheet files for the whole site.
+ *
+ * Such a file has no page cascade to convert into, so it imports verbatim as
+ * a `SiteFile` applied to every page (`pageSources: []`), flattened exactly
+ * like a kept linked sheet. A file that another unlinked file `@import`s is
+ * part of that file, not a sheet of its own. Roots are taken in FileMap order
+ * so an `@import` cycle among unlinked files still yields one sheet.
+ */
+export function collectUnlinkedStylesheets(
+  unlinkedCssPaths: readonly string[],
+  fileMap: FileMap,
+  collectGoogleFonts: GoogleFontCollector,
+  firstPriority: number,
+): UnlinkedStylesheets {
+  const warnings: ImportWarning[] = []
+  const droppedAtRules: string[] = []
+
+  const importedByAnother = new Set<string>()
+  for (const cssPath of unlinkedCssPaths) {
+    for (const part of expandLinkedCssImports([cssPath], fileMap).cssPaths) {
+      if (part !== cssPath) importedByAnother.add(part)
+    }
+  }
+  // Uncontested roots first, then whatever a cycle left without one.
+  const candidates = [
+    ...unlinkedCssPaths.filter((cssPath) => !importedByAnother.has(cssPath)),
+    ...unlinkedCssPaths.filter((cssPath) => importedByAnother.has(cssPath)),
+  ]
+
+  const covered = new Set<string>()
+  const roots: Array<{ path: string; parts: RawStylesheetSource['parts'] }> = []
+  for (const cssPath of candidates) {
+    if (covered.has(cssPath)) continue
+    const flattened = flattenStylesheet(cssPath, fileMap, collectGoogleFonts)
+    warnings.push(...flattened.warnings)
+    droppedAtRules.push(...flattened.droppedAtRules)
+    for (const part of flattened.cssPaths) covered.add(part)
+    roots.push({ path: cssPath, parts: flattened.parts })
+  }
+
+  // Cascade priority follows FileMap order, not the order roots were found in.
+  const fileOrder = new Map(unlinkedCssPaths.map((cssPath, index) => [cssPath, index]))
+  roots.sort((a, b) => (fileOrder.get(a.path) ?? 0) - (fileOrder.get(b.path) ?? 0))
+
+  return {
+    rawStylesheetSources: roots.map((root, index) => ({
+      path: root.path,
+      pageSources: [],
+      priority: firstPriority + index,
+      parts: root.parts,
+    })),
+    warnings,
+    droppedAtRules,
+  }
+}
+
+/** Priorities start here so hand-added stylesheets (default 100) sort alongside imported ones. */
+const FIRST_STYLESHEET_PRIORITY = 100
+
+interface FlattenedStylesheet {
+  /** Every CSS path the sheet consumes: itself plus its local `@import` graph. */
+  cssPaths: string[]
+  parts: RawStylesheetSource['parts']
+  warnings: ImportWarning[]
+  droppedAtRules: string[]
+}
+
+/** Expand one sheet's local `@import` graph into verbatim per-source parts. */
+function flattenStylesheet(
+  cssPath: string,
+  fileMap: FileMap,
+  collectGoogleFonts: GoogleFontCollector,
+): FlattenedStylesheet {
+  const expanded = expandLinkedCssImports([cssPath], fileMap)
+  const droppedAtRules: string[] = []
+  for (const w of expanded.warnings) {
+    if (w.kind === 'dropped-at-rule' && w.source) droppedAtRules.push(w.source)
+  }
+  const parts = expanded.sources.map((source) => {
+    collectGoogleFonts(source.cssSource, cssPath)
+    return { cssPath: source.cssPath, cssText: stripGoogleFontImportRules(source.cssSource) }
+  })
+  return { cssPaths: expanded.cssPaths, parts, warnings: expanded.warnings, droppedAtRules }
 }

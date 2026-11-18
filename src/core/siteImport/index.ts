@@ -17,6 +17,7 @@ export { cssToStyleRules } from './cssToStyleRules'
 // ── Phase 2 — input ingestion ─────────────────────────────────────────────────
 
 export { ingestInput } from './ingestInput'
+export { detectPluginPackage } from './pluginPackage'
 
 
 // ── Phase 2 — file classification ────────────────────────────────────────────
@@ -87,6 +88,7 @@ export type {
   ImportStylesheet,
   // @font-face import
   ImportFontFamily,
+  ImportGoogleFont,
   // colour tokens + scripts
   ImportColorToken,
   ImportFontToken,
