@@ -11,6 +11,7 @@ export type { DocumentMetaOverride, PublishedRuntimePackageImportmap } from './r
 export { renderNode, resolveSpecialRenderer, getSpecialRendererModuleIds } from './renderNode'
 
 export { collectHoleSubtreeModuleIds } from './holeSubtreeModules'
+export { subtreeDependsOnMember } from './dynamicDetection'
 
 export type {
   RenderConfig,

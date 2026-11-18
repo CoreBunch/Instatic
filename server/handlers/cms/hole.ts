@@ -39,8 +39,8 @@ import type { Page, PageNode, SiteDocument } from '@core/page-tree'
 import type { ClosedContent, SourceRequestContext } from '@core/loops/types'
 import { registry } from '@core/module-engine'
 import { loopSourceRegistry } from '@core/loops/registry'
-import { renderNode, type RenderConfig, type RenderAccumulators } from '@core/publisher'
-import { buildPageFrame, buildRouteFrame, buildSiteFrame } from '@core/templates/contextFrames'
+import { renderNode, subtreeDependsOnMember, type RenderConfig, type RenderAccumulators } from '@core/publisher'
+import { buildPageFrame, buildRouteFrame, buildSiteFrame, type MemberFrame } from '@core/templates/contextFrames'
 import { prefetchLoopData } from '../../publish/loopPrefetch'
 import { getOrRender } from '../../publish/renderCache'
 import { getPublishedNodeIndexForVersion } from '../../publish/publishedSnapshotCache'
@@ -53,6 +53,7 @@ import {
   decideAccess,
   getAccessIndex,
   indexedRulesForPath,
+  memberFrameFor,
   pageRules,
   PRIVATE_HEADERS,
   visitorFromRequest,
@@ -138,6 +139,8 @@ async function renderHoleFragment(
   pageUrl: URL,
   request: SourceRequestContext,
   closed: ClosedContent,
+  /** The visitor's member frame (null when signed out); undefined for a shared render. */
+  member: MemberFrame | null | undefined,
 ): Promise<string> {
   const route = buildRouteFrame(pageUrl.toString())
   const loopData = await prefetchLoopData(page, site, db, pageUrl, {
@@ -156,6 +159,7 @@ async function renderHoleFragment(
       page: buildPageFrame(page),
       site: buildSiteFrame(site),
       route,
+      ...(member !== undefined ? { member } : {}),
     },
     // No dynamicNodeIds: inside a hole endpoint we render the full subtree.
   }
@@ -251,29 +255,34 @@ export async function handleHoleRequest(
   // Lists in the fragment leave out what the visitor may not open. Only a
   // protected page's fragment is rendered for a known member; every other
   // fragment is shared, so it is rendered as for a signed-out visitor.
-  const closed = closedContentFor(accessIndex, isProtected ? await visitor() : null)
+  const closed = closedContentFor(accessIndex, isProtected ? ((await visitor())?.tags ?? null) : null)
 
   const perVisitor = isPerVisitorHole(node)
+  // A fragment that shows member data or has a show-when rule is rendered
+  // for this visitor alone, on a public page as much as on a protected one.
+  const showsMember = subtreeDependsOnMember(foundPage, snap.site, registry, nodeId)
   const route = buildRouteFrame(pageUrl.toString())
   // Parsed query params of the originating page request — handed to a
   // request-dependent loop source's `fetch()` via `ctx.request.query`.
   const query: Record<string, string> = Object.fromEntries(pageUrl.searchParams)
 
-  // Per-visitor hole, or any hole of a protected page: bypass Layer B
-  // entirely and never cache. Only per-visitor sources get the cookies.
-  if (perVisitor || isProtected) {
+  // Per-visitor hole, any hole of a protected page, or one that depends on
+  // the member: bypass Layer B entirely and never cache. Only per-visitor
+  // sources get the cookies.
+  if (perVisitor || isProtected || showsMember) {
     const request: SourceRequestContext = {
       query,
       path: route.path,
       slug: route.slug,
       cookies: perVisitor ? parseCookies(req.headers.get('cookie')) : {},
     }
-    const html = await renderHoleFragment(nodeId, foundPage, snap.site, ctx.db, pageUrl, request, closed)
+    const member = isProtected || showsMember ? memberFrameFor(await visitor()) : undefined
+    const html = await renderHoleFragment(nodeId, foundPage, snap.site, ctx.db, pageUrl, request, closed, member)
     return new Response(html, {
       status: 200,
       headers: {
         'content-type': 'text/html; charset=utf-8',
-        ...(isProtected ? PRIVATE_HEADERS : { 'cache-control': 'no-store' }),
+        ...(isProtected || showsMember ? PRIVATE_HEADERS : { 'cache-control': 'no-store' }),
       },
     })
   }
@@ -298,7 +307,7 @@ export async function handleHoleRequest(
       queryString: `v=${currentVersion}&u=${encodeURIComponent(pageUrl.pathname)}&${normalizeQuery(pageUrl.searchParams)}`,
     },
     async () => {
-      const html = await renderHoleFragment(nodeId, foundPage, snap.site, ctx.db, pageUrl, request, closed)
+      const html = await renderHoleFragment(nodeId, foundPage, snap.site, ctx.db, pageUrl, request, closed, undefined)
       return {
         body: html,
         headers: { 'content-type': 'text/html; charset=utf-8' },

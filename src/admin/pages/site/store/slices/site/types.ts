@@ -26,6 +26,7 @@ import type {
   StructuralSiteExplorerSectionId,
 } from '@core/page-tree'
 import type { FontEntry, FontToken } from '@core/fonts'
+import type { AccessRule } from '@core/members'
 import type { ImportFragment } from '@core/htmlImport'
 import type { NewStyleRule, SiteImportTransaction } from '@core/siteImport'
 import type { FrameworkChangeImpact, FrameworkPreset } from '@core/framework'
@@ -116,6 +117,8 @@ export interface SiteSlice {
   addPage: (title: string, slug?: string) => Page
   deletePage: (pageId: string) => void
   renamePage: (pageId: string, title: string, slug?: string) => void
+  /** Who may open the published page. A public rule removes the stored one. */
+  setPageAccess: (pageId: string, access: AccessRule) => void
   duplicatePage: (sourcePageId: string, title: string, slug?: string) => Page
   reorderPages: (fromIndex: number, toIndex: number) => void
   convertPageToTemplate: (pageId: string, config: PageTemplateConfig) => void

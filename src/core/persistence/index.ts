@@ -26,6 +26,8 @@ export {
   updateCmsDataRowStatus,
   updateCmsDataRowTable,
   updateCmsDataTable,
+  getCmsDataTableAccess,
+  setCmsDataTableAccess,
   listCmsDataRowVersions,
   restoreCmsDataRowVersion,
 } from './cmsData'
