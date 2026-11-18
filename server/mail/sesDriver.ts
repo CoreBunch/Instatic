@@ -9,7 +9,7 @@
 import { createHash, createHmac } from 'node:crypto'
 import type { SesConnectorConfig } from '@core/mail'
 import { Type, safeParseValue } from '@core/utils/typeboxHelpers'
-import { MailDeliveryError, retryForHttpStatus, type OutgoingMail } from './smtpDriver'
+import { MailDeliveryError, retryForHttpStatus, type MailRetry, type OutgoingMail } from './smtpDriver'
 
 function sha256Hex(data: string): string {
   return createHash('sha256').update(data, 'utf8').digest('hex')
@@ -67,7 +67,43 @@ function amzDateNow(now: Date): string {
   return now.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '')
 }
 
-const SesErrorSchema = Type.Object({ message: Type.Optional(Type.String()) })
+const SesErrorSchema = Type.Object({
+  message: Type.Optional(Type.String()),
+  Message: Type.Optional(Type.String()),
+  __type: Type.Optional(Type.String()),
+})
+
+/**
+ * AWS error types that are about the credentials or the account, so every
+ * email would get them. A 403 of any other type is left to the status.
+ */
+const SES_ACCOUNT_ERRORS = new Set([
+  'AccessDeniedException',
+  'AccessDenied',
+  'InvalidClientTokenId',
+  'UnrecognizedClientException',
+  'SignatureDoesNotMatch',
+  'InvalidSignatureException',
+  'IncompleteSignature',
+  'IncompleteSignatureException',
+  'ExpiredTokenException',
+  'AccountSuspendedException',
+  'SendingPausedException',
+  'MailFromDomainNotVerifiedException',
+])
+
+/**
+ * How an SES refusal should be retried. `errorType` is the `x-amzn-errortype`
+ * header or the body's `__type`, which may carry a namespace before `#` and
+ * a suffix after `:`.
+ */
+export function retryForSesError(status: number, errorType: string): MailRetry {
+  const name = errorType.split(':')[0].split('#').pop() ?? ''
+  if (SES_ACCOUNT_ERRORS.has(name)) return 'connector'
+  // `MessageRejected` is this message: in the sandbox, a recipient that is not verified.
+  if (name === 'MessageRejected') return 'never'
+  return retryForHttpStatus(status)
+}
 const SesSentSchema = Type.Object({ MessageId: Type.Optional(Type.String()) })
 
 /** A failure sentence safe to show an admin: never the key, never the message body. */
@@ -149,12 +185,16 @@ export async function sendViaSes(
   }
 
   let awsMessage = ''
+  let errorType = res.headers.get('x-amzn-errortype') ?? ''
   try {
     const parsed = safeParseValue(SesErrorSchema, JSON.parse(await res.text()))
-    if (parsed.ok) awsMessage = parsed.value.message ?? ''
+    if (parsed.ok) {
+      awsMessage = parsed.value.message ?? parsed.value.Message ?? ''
+      errorType = errorType || (parsed.value.__type ?? '')
+    }
   } catch (_err) {
     // A non-JSON error body: the status alone decides the sentence.
   }
   console.error(`[mail] SES delivery failed (HTTP ${res.status})`)
-  throw new MailDeliveryError(describeSesFailure(res.status, awsMessage), { retry: retryForHttpStatus(res.status) })
+  throw new MailDeliveryError(describeSesFailure(res.status, awsMessage), { retry: retryForSesError(res.status, errorType) })
 }
