@@ -145,6 +145,12 @@ interface PublishPageOptions {
    */
   snapshotHash?: string
   /**
+   * Content hash of the hole runtime script, supplied by the server. Stamped
+   * as `?v=` on the runtime's script tag so the URL changes exactly when the
+   * runtime does.
+   */
+  holeRuntimeVersion?: string
+  /**
    * Editor-only: annotate each node's outermost emitted element with
    * `uid="<id>"`. Default off — real publishes emit clean, id-less
    * HTML. Used by the agent read-surface (read_document) to produce an
@@ -418,10 +424,10 @@ function buildRuntimeAssetsBlock(
   // was actually rendered during the walk (tracked via acc.holeNodeIds) — no
   // idle JS for fully-static pages.
   const hasHoles = acc.holeNodeIds.size > 0
-  // Refresh the runtime URL when the frozen site changes; the endpoint
-  // ignores the query string and serves the asset with max-age=3600.
+  // The URL carries the runtime's content hash, so it changes exactly when
+  // the runtime does; the endpoint serves the asset with max-age=3600.
   const holeRuntimeScript = hasHoles
-    ? `  <script type="module" src="/_instatic/hole-runtime.js?v=${encodeURIComponent(options.snapshotHash ?? '')}" defer></script>`
+    ? `  <script type="module" src="/_instatic/hole-runtime.js?v=${encodeURIComponent(options.holeRuntimeVersion ?? '')}" defer></script>`
     : ''
 
   // Site-dependency importmap. When present we emit a `<script type="importmap">`

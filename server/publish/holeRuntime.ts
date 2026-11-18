@@ -30,6 +30,7 @@
  * A fetch failure is silently swallowed — the author's skeleton content in the
  * placeholder continues to show as a meaningful fallback.
  */
+import { assetContentVersion } from './assetVersion'
 
 export function runInstaticHoleRuntime(): void {
   function instaticFetchHole(el: HTMLElement): void {
@@ -61,3 +62,9 @@ export function runInstaticHoleRuntime(): void {
 }
 
 export const HOLE_RUNTIME_JS = `(${runInstaticHoleRuntime.toString()})();`
+
+/**
+ * Content hash of the runtime, stamped as `?v=` on its script tag so a CMS
+ * upgrade that changes the runtime changes the URL browsers have cached.
+ */
+export const HOLE_RUNTIME_VERSION = assetContentVersion(HOLE_RUNTIME_JS)

@@ -38,12 +38,11 @@ import { BRANCH_PREVIEW_EXIT_PATH } from '../branches/previewLinks'
 import { getBranch } from '../repositories/branches'
 import { getDataRowBySlug, listDataTables } from '../repositories/data'
 import { getDraftSiteDocument } from '../repositories/publish'
-import { buildPublishedSiteModuleJsMap } from './moduleJsBundle'
+import { buildPublishedSiteModuleJsMap, resolveModuleScripts } from './moduleJsBundle'
 import { applyPublishedHtmlPipeline } from './publishedHtmlPipeline'
 import { prefetchLoopData, publishedDataRowToEntryItem } from './loopPrefetch'
 import { prefetchMediaAssets } from './mediaPrefetch'
 import { contentRouteFromPath, publicSlugFromPath } from './publicRouter'
-import { getPublishVersion } from './publishState'
 import { buildSiteRuntimeScripts } from './runtime/bundleScripts'
 import { ensureRuntimeDependencyCache } from './runtime/dependencyCache'
 import { buildRuntimePackageImportmap, serializeImportmapForCsp } from './runtime/packageImportmap'
@@ -236,8 +235,7 @@ export async function renderBranchPreview(
       pageId: merged.id,
       slug: merged.slug,
       siteId: site.id,
-      jsModuleIds: rendered.jsModuleIds.filter((id) => moduleJsMap.has(id)),
-      publishVersion: getPublishVersion(),
+      moduleScripts: resolveModuleScripts(rendered.jsModuleIds, moduleJsMap),
     },
     db,
   )
