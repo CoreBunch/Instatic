@@ -61,6 +61,8 @@ describe('canvas form controls', () => {
     const input = await waitForCanvasNodeInFrame<HTMLInputElement>('desktop', inputId)
     const select = await waitForCanvasNodeInFrame<HTMLSelectElement>('desktop', selectId)
     const submit = await waitForCanvasNodeInFrame<HTMLButtonElement>('desktop', submitId)
+    // Same markup as the published button, so `button[type="submit"]` styles apply in the canvas.
+    expect(submit.type).toBe('submit')
     let submitted = false
     form.addEventListener('submit', (event) => {
       submitted = true
