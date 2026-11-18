@@ -268,4 +268,47 @@ describe('instatic-plugin lint', () => {
     expect(errors).toHaveLength(1)
     expect(errors[0].message).toContain('frontend.origins.scripts')
   })
+
+  const WELCOME = {
+    key: 'welcome',
+    label: 'Welcome',
+    description: 'Sent after sign-up.',
+    variables: [{ name: 'link', label: 'Link', sample: 'https://example.com/start' }],
+    subject: 'Welcome to {site.name}',
+    body: '[Start]({link})',
+  }
+
+  it('carries mail.templates through definePlugin and lints a complete declaration clean', async () => {
+    const result = await withTempPlugin(async (dir) => {
+      await writeConfig(dir, { permissions: ['mail.send'], mail: { templates: [WELCOME] } })
+      const definition = await readPluginDefinition(dir)
+      expect(definition.manifest.mail?.templates[0]).toMatchObject({ key: 'welcome', subject: 'Welcome to {site.name}' })
+    })
+    expect(result.findings).toEqual([])
+  })
+
+  it('warns about a variable a mail template uses without declaring it', async () => {
+    const result = await withTempPlugin(async (dir) => {
+      await writeConfig(dir, {
+        permissions: ['mail.send'],
+        mail: { templates: [{ ...WELCOME, body: 'Hello {memebr.name}, [start]({link})' }] },
+      })
+    })
+    expect(result.findings).toHaveLength(1)
+    expect(result.findings[0]).toMatchObject({ severity: 'warning' })
+    expect(result.findings[0].message).toContain('{memebr.name}')
+  })
+
+  it('warns about a mail permission with nothing to send, and refuses templates without one', async () => {
+    const unused = await withTempPlugin(async (dir) => {
+      await writeConfig(dir, { permissions: ['mail.send.external'] })
+    })
+    expect(unused.findings.map((f) => f.severity)).toEqual(['warning'])
+    expect(unused.findings[0].message).toContain('mail.templates[]')
+
+    const unpermitted = await withTempPlugin(async (dir) => {
+      await writeConfig(dir, { permissions: [], mail: { templates: [WELCOME] } })
+    })
+    expect(unpermitted.findings.some((f) => f.severity === 'error' && f.message.includes('mail.send'))).toBe(true)
+  })
 })

@@ -41,6 +41,7 @@ type CoreHookEvent =
   | 'publish.before'
   | 'publish.after'
   | MemberHookEvent
+  | MailHookEvent
 
 /**
  * Site member events. Their payloads name members, so only a plugin holding
@@ -54,6 +55,12 @@ export type MemberHookEvent =
   | 'member.deleted'
 
 export const MEMBER_HOOK_PREFIX = 'member.'
+
+/**
+ * What became of an email a plugin queued. Sent with `emitTo`, so only the
+ * plugin that queued the email hears it.
+ */
+export type MailHookEvent = 'mail.delivered' | 'mail.failed'
 
 /** A plugin-emitted event name, always of the form `plugin.<pluginId>.<name>`. */
 type PluginScopedHookEvent = `plugin.${string}`
@@ -147,6 +154,21 @@ class HookBus {
       const remaining = entries.filter((entry) => entry.pluginId !== pluginId)
       if (remaining.length === 0) this.filters.delete(name)
       else this.filters.set(name, remaining)
+    }
+  }
+
+  /**
+   * Fire an event for one plugin only: news about something that plugin
+   * did (an email it queued). No other plugin's listener runs.
+   */
+  async emitTo(pluginId: string, event: MailHookEvent, payload: unknown): Promise<void> {
+    for (const entry of this.listeners.get(event) ?? []) {
+      if (entry.pluginId !== pluginId) continue
+      try {
+        await entry.listener(payload)
+      } catch (err) {
+        console.error(`[plugin:${entry.pluginId}] listener for "${event}" threw:`, err)
+      }
     }
   }
 

@@ -69,6 +69,20 @@ export const PLUGIN_CAPABILITIES: PluginCapability[] = [
     surfaces: ['server', 'cms'],
   },
   {
+    permission: 'mail.send',
+    label: 'Email site members',
+    description: 'Allows the plugin to send its own email templates to site members, through the site\'s email connector and sender address. The templates are listed under Email → Templates, where you can reword them. The plugin cannot write a free-form email.',
+    risk: 'high',
+    surfaces: ['server', 'cms'],
+  },
+  {
+    permission: 'mail.send.external',
+    label: 'Email any address',
+    description: 'Allows the plugin to send its own email templates to any email address, not only to site members, through the site\'s email connector and sender address. A plugin that misuses this can send unwanted mail in your site\'s name.',
+    risk: 'dangerous',
+    surfaces: ['server', 'cms'],
+  },
+  {
     permission: 'cms.hooks',
     label: 'Subscribe to CMS lifecycle events and filters',
     description: 'Allows the plugin server entrypoint to listen to CMS events (publish, content changes, page updates) and to register filters that transform values before they leave the CMS. A filter on published HTML sees public pages as they are sent. A members-only page rendered for a member reaches the filter only if the plugin may also read site members.',

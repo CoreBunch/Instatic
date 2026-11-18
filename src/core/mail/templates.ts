@@ -54,6 +54,11 @@ export function registerMailTemplate(definition: MailTemplateDefinition): void {
   })
 }
 
+/** Take a template out of the catalogue: its feature (a plugin) is no longer loaded. */
+export function unregisterMailTemplate(key: string): void {
+  definitions.delete(key)
+}
+
 export function getMailTemplateDefinition(key: string): MailTemplateDefinition | undefined {
   return definitions.get(key)
 }

@@ -168,6 +168,7 @@ export function PermissionReviewSection({
       ),
     },
   ] as const
+  const mailTemplates = pending.manifest.mail?.templates ?? []
   const originRowCount = originGroups.reduce((count, group) => count + group.rows.length, 0)
   const newOriginCount = isUpgrade
     ? originGroups.reduce((count, group) => count + group.rows.filter((row) => row.status === 'new').length, 0)
@@ -363,6 +364,30 @@ export function PermissionReviewSection({
                 </li>
               )),
             )}
+          </ul>
+        </div>
+      )}
+
+      {mailTemplates.length > 0 && (
+        <div className={styles.networkSection} data-testid="permission-review-mail-templates">
+          <div className={styles.networkHeader}>
+            <strong>
+              Adds {mailTemplates.length} email template{mailTemplates.length === 1 ? '' : 's'}
+            </strong>
+            <span className={styles.description}>
+              These are the only emails the plugin can send. They are sent from your site's address, and you
+              can reword each one under Email → Templates.
+            </span>
+          </div>
+          <ul className={styles.list}>
+            {mailTemplates.map((template) => (
+              <li key={template.key} className={styles.row} data-mail-template={template.key}>
+                <div className={styles.label}>
+                  <span>{template.label}</span>
+                </div>
+                <span className={styles.description}>{template.description}</span>
+              </li>
+            ))}
           </ul>
         </div>
       )}

@@ -48,6 +48,13 @@ import {
 } from '@core/plugins/modulePackLoader'
 import { jsonResponse } from '../http'
 import { hookBus } from '@core/plugins/hookBus'
+import { setQueuedMailOutcomeHandler } from '../mail/delivery'
+import {
+  registerPluginMailTemplates,
+  unregisterAllPluginMailTemplates,
+  unregisterPluginMailTemplates,
+} from '../mail/pluginTemplates'
+import { announcePluginMailOutcome } from './host/handlers/mail'
 import { requireAuthenticatedUser, requireCapability } from '../auth/authz'
 import { clearPluginCrashCounter, setCrashRecoveryHandler } from './host/crashRecovery'
 import { setPluginHostContext } from './host/registry'
@@ -132,6 +139,9 @@ export async function loadPluginServerEntrypoint(
   if (!result.ok) {
     throw workerCallError(result.error ?? `Failed to load plugin "${manifest.id}" in worker`, result.stack)
   }
+  // The plugin can send email only while it is loaded, so that is when its
+  // templates are in the catalogue.
+  registerPluginMailTemplates(manifest)
   return true
 }
 
@@ -176,6 +186,7 @@ export async function runPluginMigrate(
  */
 export async function unloadPlugin(pluginId: string): Promise<void> {
   dropCachedPluginSettings(pluginId)
+  unregisterPluginMailTemplates(pluginId)
   await unloadPluginInWorker(pluginId)
 }
 
@@ -396,6 +407,9 @@ export async function activateInstalledServerPlugins(
   await resetPluginWorker()
   resetPluginModulePacks()
   hookBus.reset()
+  unregisterAllPluginMailTemplates()
+  // A plugin hears what became of the email it queued, and only its own.
+  setQueuedMailOutcomeHandler(announcePluginMailOutcome)
 
   // Start the scheduler tick. Idempotent — a re-bind with the same
   // process keeps the existing interval pointed at the same DbClient.

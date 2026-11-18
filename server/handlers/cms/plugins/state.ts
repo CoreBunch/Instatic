@@ -35,6 +35,7 @@ import { badRequest, jsonResponse, methodNotAllowed, readValidatedBody } from '.
 import { Type } from '@core/utils/typeboxHelpers'
 import { deactivatePluginModulePack } from '@core/plugins/modulePackLoader'
 import { clearPluginScheduleRuns } from '../../../repositories/pluginSchedules'
+import { removePluginMail } from '../../../mail/pluginTemplates'
 import { type CmsHandlerOptions } from '../shared'
 import {
   lifecycleErrorMessage,
@@ -199,6 +200,7 @@ async function removePluginCompletely(
   clearPluginCrashCounter(pluginId)
   await clearPluginCrashes(db, pluginId)
   await clearPluginScheduleRuns(db, pluginId)
+  await removePluginMail(db, pluginId)
   if (options.uploadsDir) {
     await removeAllPluginAssets(options.uploadsDir, pluginId)
   }

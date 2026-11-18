@@ -29,6 +29,7 @@ import { readFile } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import { findSandboxLiterals } from '@core/plugins/sandboxScan'
 import { isExternalFrontendScriptSrc, parsePluginManifest } from '@core/plugins/manifest'
+import { undeclaredMailVariables } from '@core/plugins/manifestMail'
 import { readPluginDefinition } from './build'
 import type { PluginDefinition } from '../builders/definePlugin'
 import { CONTENT_ACCESS_MODE_PERMISSIONS, type ContentAccessMode } from '../contentSchemas'
@@ -191,6 +192,37 @@ export async function lintPlugin(sourceDir: string): Promise<LintResult> {
         'Add `permissions.frontendAssets` to the plugin permissions list.',
     })
   }
+  // ---- mail coherence ---------------------------------------------------
+  //
+  //  - A mail permission with no template has nothing it could send.
+  //  - A `{name}` a template uses but does not declare is left as written in
+  //    the email (the renderer never guesses), so it is almost always a typo.
+  //  (Templates without a mail permission are refused by the manifest parser.)
+  const mailTemplates = manifest.mail?.templates ?? []
+  const hasMailPermission =
+    manifest.permissions.includes('mail.send') || manifest.permissions.includes('mail.send.external')
+  if (hasMailPermission && mailTemplates.length === 0) {
+    findings.push({
+      severity: 'warning',
+      scope: 'manifest',
+      message:
+        'A mail permission is requested but `mail.templates[]` is empty. ' +
+        'A plugin can only send templates it declares: declare one or drop the permission.',
+    })
+  }
+  for (const template of mailTemplates) {
+    const undeclared = undeclaredMailVariables(template)
+    if (undeclared.length > 0) {
+      findings.push({
+        severity: 'warning',
+        scope: 'manifest',
+        message:
+          `mail template "${template.key}" uses ${undeclared.map((name) => `{${name}}`).join(', ')} ` +
+          'but does not declare it under `variables`. It will appear in the email as written.',
+      })
+    }
+  }
+
   // Every declared `script` / `style` references a file under `frontend/`;
   // make sure the source exists. The build CLI bundles every `.ts`/`.tsx`
   // file in `frontend/` to `dist/frontend/<name>.js`, so the source we

@@ -18,6 +18,7 @@ import {
 } from '@core/plugin-sdk'
 import { collectEnabledAdminPages, pluginAdminPageRoute } from './manifestAdminPages'
 import { assertFrontendCoherent, frontendDeclarations, frontendSchema } from './manifestFrontend'
+import { assertMailCoherent, mailDeclarations, mailSchema } from './manifestMail'
 import { SAFE_ASSET_PATH_PATTERN } from './manifestPatterns'
 
 // Admin-page route helpers and resource-record helpers live in sibling
@@ -288,6 +289,8 @@ const manifestSchema = Type.Object({
   })),
   // Published-page tags and third-party origins: see `./manifestFrontend`.
   frontend: Type.Optional(frontendSchema),
+  // Email templates the plugin can send: see `./manifestMail`.
+  mail: Type.Optional(mailSchema),
   assetBasePath: Type.Optional(Type.String({ pattern: ASSET_BASE_PATH_PATTERN.source })),
   resources: Type.Array(resourceSchema, { maxItems: 20, default: [] }),
   adminPages: Type.Array(adminPageSchema, { maxItems: 20, default: [] }),
@@ -463,6 +466,7 @@ export function parsePluginManifest(input: unknown): PluginManifest {
   // would silently inject tags onto every published page with no consent
   // screen ever showing the grant.
   if (data.frontend) assertFrontendCoherent(data.frontend, data.permissions)
+  if (data.mail) assertMailCoherent(data.mail, data.permissions)
 
   // Content access coherence — required when any `cms.content.*` permission
   // is granted; each mode in `modes[]` requires the matching permission.
@@ -572,6 +576,7 @@ export function parsePluginManifest(input: unknown): PluginManifest {
     adminPages,
     pack: data.pack,
     frontend: data.frontend ? frontendDeclarations(data.frontend) : undefined,
+    mail: data.mail ? mailDeclarations(data.mail) : undefined,
     settings: data.settings,
     author: data.author,
     license: data.license,

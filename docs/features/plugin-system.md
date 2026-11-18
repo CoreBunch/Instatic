@@ -179,6 +179,15 @@ Authors normally write `instatic-plugin.config.ts` with `definePlugin(...)`; the
     "origins": { "scripts": ["js.example.com"], "frames": ["widgets.example.com"] }
   },
 
+  // Optional: the emails the plugin can send (needs `mail.send` or `mail.send.external`).
+  "mail": {
+    "templates": [
+      { "key": "welcome", "label": "Welcome", "description": "Sent after sign-up.",
+        "variables": [{ "name": "link", "label": "Link", "sample": "https://example.com/start" }],
+        "subject": "Welcome to {site.name}", "body": "[Get started]({link})" }
+    ]
+  },
+
   "networkAllowedHosts": [
     "api.weather.example.com",
     "*.cdn.weather.example.com"
@@ -204,6 +213,7 @@ Authors normally write `instatic-plugin.config.ts` with `definePlugin(...)`; the
 - `entrypoints.modules` requires `modules.register`.
 - Any `adminPages[]` entry requires `admin.navigation`.
 - `frontend.assets[]` and `frontend.origins` require `frontend.assets`.
+- `mail.templates[]` requires `mail.send` or `mail.send.external`; template keys and variable names are unique, and a template may not declare a `site.*` variable.
 - Public routes require both `cms.routes` and `cms.routes.public`.
 - Server `fetch()` requires `network.outbound` and a matching `networkAllowedHosts[]` entry.
 - Any `cms.content.*` permission requires a non-empty `contentAccess[]`, and every mode an entry declares requires its permission (`CONTENT_ACCESS_MODE_PERMISSIONS` in `src/core/plugin-sdk/contentSchemas.ts` is the one mode-to-permission table both checks read). `instatic-plugin lint` additionally warns when a `cms.content.*` permission is requested but no entry declares its mode, since the host fails closed per table and mode and every call under it would be rejected.
@@ -560,6 +570,51 @@ await api.cms.members.tags.revoke(member.id, 'pro')            // only this plug
 - `invite` sends the site's invitation email. It rejects when the address already has an account, and when the site has no configured public address or no outgoing email (there is no request to take a link address from).
 
 **Member events** (need `cms.hooks` and `members.read`): `member.created`, `member.verified`, `member.signedIn` (`{ memberId, email }`), `member.tagged` (`{ memberId, tag, source, expiresAt }`), `member.deleted` (`{ memberId }`). They are sent without waiting, so a listener cannot delay or cancel a sign-in.
+
+### Email — requires `mail.send` / `mail.send.external`
+
+A plugin sends only email it declared. The manifest lists its templates; each is a subject and a Markdown body with `{variables}`:
+
+```jsonc
+{
+  "permissions": ["mail.send"],
+  "mail": {
+    "templates": [
+      {
+        "key": "ticket.reply",
+        "label": "Ticket reply",
+        "description": "Sent to the customer when the team answers a ticket.",
+        "variables": [
+          { "name": "subject", "label": "Ticket subject", "sample": "Publishing stops at 80%" },
+          { "name": "link", "label": "Link to the ticket", "sample": "https://example.com/account/support/1042" }
+        ],
+        "subject": "Re: {subject}",
+        "body": "We answered **{subject}**.\n\n[Open the ticket]({link})"
+      }
+    ]
+  }
+}
+```
+
+```js
+await api.cms.mail.send({
+  template: 'ticket.reply',
+  to: { member: memberId },              // mail.send: the host looks the address up
+  variables: { subject, link },
+  reference: `ticket-${id}`,             // optional, handed back with the outcome
+})
+await api.cms.mail.send({ template: 'ticket.opened', to: { address: 'support@example.com' }, variables })  // mail.send.external
+
+const site = await api.cms.site.publicUrl()   // 'https://example.com' or null; no permission
+```
+
+- **Templates only.** There is no free-form subject, body, sender, cc, attachment or header. While the plugin is loaded its templates are in the mail catalogue as `plugin.<pluginId>~<key>`, grouped under the plugin's name in Email → Templates, where the owner can reword them, preview them and send a test. The owner's wording survives an upgrade and is deleted on uninstall. (`server/mail/pluginTemplates.ts`, `src/core/plugins/manifestMail.ts`.)
+- **Values are text.** `variables` may only name variables the template declares; `site.name` and `site.url` are the site's and cannot be set. The renderer escapes every value, and a value becomes a link only when it is the whole address and `http(s)` (see [email](email.md) → Templates). Build links from `api.cms.site.publicUrl()`, never from a request's `Host` header.
+- **Two permissions, two RPC targets.** `{ member }` goes through `cms.mail.send` (`mail.send`); a deleted or suspended member is refused. `{ address }` goes through `cms.mail.sendExternal` (`mail.send.external`) and takes exactly one address. Holding one permission does not imply the other.
+- **Queued, not sent.** `send` resolves `queued` once the site's mail queue holds the email (or `captured` on a development server with no connector), and rejects when email is not set up in production. The queue sends in the background, after the core's own mail, and retries temporary failures for a day ([email](email.md) → The queue). The outcome arrives as an event.
+- **Limits** (`server/mail/limits.ts`). Load is never refused: mail waits its turn. Two things are: more than 20 emails from one plugin to one recipient in an hour, and more than 10,000 of one plugin's emails waiting.
+- **Outcome events** (need `cms.hooks`): `mail.delivered` (`{ template, to, reference }`) and `mail.failed` (`{ template, to, reference, error }`). Only the plugin that queued the email hears them (`hookBus.emitTo`).
+- **When the plugin goes away.** A disabled plugin's templates leave the catalogue, so what it still had waiting fails at its next attempt with that reason. Uninstalling removes its waiting email from the queue at once.
 
 ### Plugin-owned records — requires `cms.storage`
 
@@ -1036,7 +1091,7 @@ independent layers that agree on that single authority:
 
 Both the VM layer and the host layer drive from the same `TARGET_PERMISSIONS` map in `server/plugins/protocol/targets.ts`. This single table is the source of truth for which permission each RPC target requires — the VM and host can never silently assert different permissions for the same target.
 
-Targets intentionally absent from `TARGET_PERMISSIONS` require no permission and are explicitly ungated: `cms.settings.replace` (any active plugin may update its own settings), `network.abort` (no active id without `network.outbound`), `crypto.digest` and `crypto.signHmac` (pure computation, no I/O — same model as `Math`/`JSON`). Two conditional checks that a static map cannot express remain in their handlers: `cms.routes.register` with `access.kind === 'public'` additionally requires `cms.routes.public` and with `access.kind === 'member'` requires `members.read`, `cms.hooks.on` for a `member.*` event requires `members.read`, `cms.members.invite` with tags requires `members.tags`, and every `cms.content.*` handler additionally calls `assertContentTableAccess` for the per-table manifest allowlist.
+Targets intentionally absent from `TARGET_PERMISSIONS` require no permission and are explicitly ungated: `cms.settings.replace` (any active plugin may update its own settings), `network.abort` (no active id without `network.outbound`), `crypto.digest` and `crypto.signHmac` (pure computation, no I/O — same model as `Math`/`JSON`), and `cms.site.publicUrl` (the site's public address). Two conditional checks that a static map cannot express remain in their handlers: `cms.routes.register` with `access.kind === 'public'` additionally requires `cms.routes.public` and with `access.kind === 'member'` requires `members.read`, `cms.hooks.on` for a `member.*` event requires `members.read`, `cms.members.invite` with tags requires `members.tags`, and every `cms.content.*` handler additionally calls `assertContentTableAccess` for the per-table manifest allowlist.
 
 The VM-side check throws **synchronously** inside the sandbox, so a plugin that
 declares a permission it was denied is rejected before any host dispatch is even
@@ -1063,6 +1118,8 @@ Risk levels:
 | `members.read`              | Server               | High      | See the signed-in member on its routes, register member routes, look members up, hear member events |
 | `members.write`             | Server               | High      | Invite site members                                                      |
 | `members.tags`              | Server               | Dangerous | Grant and withdraw member access tags (what a member may open)           |
+| `mail.send`                 | Server               | High      | Send the plugin's own email templates to site members                    |
+| `mail.send.external`        | Server               | Dangerous | Send the plugin's own email templates to any address                     |
 | `cms.hooks`                 | Server               | High      | Listen to CMS events / filter values                                    |
 | `cms.schedule`              | Server               | High      | Register cadence-driven handlers                                        |
 | `cms.content.read`          | Server               | Low       | List / read entries; read trees; search; published snapshots             |
@@ -1259,6 +1316,9 @@ export default definePlugin({
   - `src/core/plugin-sdk/types/editorApi.ts` — editor / dashboard browser API
   - `src/core/plugin-sdk/types/frontend.ts` — published-page frontend asset declarations
   - `src/core/plugins/manifestFrontend.ts` — `frontend` manifest schema, coherence rules, third-party origin matching
+  - `src/core/plugins/manifestMail.ts` — `mail` manifest schema, coherence rules, catalogue keys of a plugin's templates
+  - `server/plugins/host/handlers/mail.ts` — `cms.mail.*` and `cms.site.publicUrl`, outcome events
+  - `server/mail/pluginTemplates.ts`, `server/mail/limits.ts` — a plugin's templates in the mail catalogue, the per-plugin limits
   - `src/core/plugin-sdk/types/media.ts` — media storage / URL / variant plugin API
   - `src/core/plugin-sdk/builders/definePlugin.ts` — typed config builder
   - `src/core/plugin-sdk/builders/permissions.ts` — permission aliases for plugin authors

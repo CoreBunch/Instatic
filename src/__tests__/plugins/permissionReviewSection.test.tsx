@@ -355,3 +355,42 @@ describe('PermissionReviewSection — third-party origins on published pages', (
     expect(screen.queryByTestId('permission-review-frontend-origins')).toBeNull()
   })
 })
+
+describe('PermissionReviewSection — email templates', () => {
+  it('names the emails a plugin can send and says they can be reworded', () => {
+    render(
+      <PermissionReviewSection
+        pending={{
+          manifest: {
+            ...baseManifest,
+            permissions: ['mail.send', 'mail.send.external'] satisfies PluginPermission[],
+            mail: {
+              templates: [
+                { key: 'reply', label: 'Ticket reply', description: 'Sent when the team answers.', variables: [], subject: 'S', body: 'B' },
+                { key: 'opened', label: 'New ticket', description: 'Sent to the support inbox.', variables: [], subject: 'S', body: 'B' },
+              ],
+            },
+          },
+        }}
+        uploading={false}
+        onCancel={() => {}}
+        onConfirm={() => {}}
+      />,
+    )
+    const section = screen.getByTestId('permission-review-mail-templates')
+    expect(section.textContent).toContain('Adds 2 email templates')
+    expect(section.textContent).toContain('Ticket reply')
+    expect(section.textContent).toContain('Sent to the support inbox.')
+    expect(section.textContent).toContain('Email → Templates')
+    // Both permissions are listed with what they allow.
+    expect(document.body.textContent).toContain('Email site members')
+    expect(document.body.textContent).toContain('Email any address')
+  })
+
+  it('renders no section when the plugin declares no templates', () => {
+    render(
+      <PermissionReviewSection pending={{ manifest: baseManifest }} uploading={false} onCancel={() => {}} onConfirm={() => {}} />,
+    )
+    expect(screen.queryByTestId('permission-review-mail-templates')).toBeNull()
+  })
+})

@@ -46,6 +46,10 @@ export interface CmsServerEvents {
   'member.signedIn': { memberId: string; email: string }
   'member.tagged': { memberId: string; tag: string; source: string; expiresAt: string | null }
   'member.deleted': { memberId: string }
+  // What became of an email this plugin queued. Only the plugin that sent it
+  // hears about it. `reference` is the one given to `api.cms.mail.send`.
+  'mail.delivered': { template: string; to: string; reference: string | null }
+  'mail.failed': { template: string; to: string; reference: string | null; error: string }
   // Plugin-defined events fall through. The host does not pre-define any
   // frontend-specific event channels — plugins that ingest events from
   // their own published-page bundles register their own `routes.public.post`

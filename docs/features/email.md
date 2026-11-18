@@ -80,7 +80,7 @@ Delivery errors reach the admin as a sentence built here (`describeSmtpFailure`,
 
 ## Templates
 
-A template definition (`MailTemplateDefinition`) has a `key`, a label, a group, its variables with sample values (the two site variables, `site.name` and `site.url`, carry none), and the built-in subject and body. Features add theirs with `registerMailTemplate` at module load; `mail.test` is the only one this module registers.
+A template definition (`MailTemplateDefinition`) has a `key`, a label, a group, its variables with sample values (the two site variables, `site.name` and `site.url`, carry none), and the built-in subject and body. Features add theirs with `registerMailTemplate` at module load, and a loaded plugin's are added and removed with it (below); `mail.test` is the only one this module registers.
 
 `renderMailTemplate(template, variables)` returns `{ subject, text, html }`:
 
@@ -106,6 +106,12 @@ In the admin (`tabs/TemplatesTab.tsx`) a template opens in **Live** mode: the su
 `queued` is an email that has not left: `attempts` is 0 while it waits for its first try, and above 0 while it waits for the next one after a temporary failure, with the last error and `nextAttemptAt`. `sent` means the provider accepted the message. Bounces and spam filtering happen after that and are not known here; the detail panel says so. `failed` is final: the provider judged the message, or a day of retries ran out.
 
 The tab (`tabs/ActivityTab.tsx`) shows the totals and chart, then the filters, then the list beside the selected email's details. From a failure it links to Connectors; from a template's email it opens that template.
+
+## Plugin templates
+
+A plugin declares its emails in its manifest (`mail.templates[]`) and can send nothing else; see [plugin system](plugin-system.md) → Email. `registerPluginMailTemplates` (`server/mail/pluginTemplates.ts`) puts them in the catalogue as `plugin.<pluginId>~<key>` when the plugin's server code loads and `unregisterPluginMailTemplates` takes them out when it unloads, so the Templates tab lists them, under the plugin's name, exactly while the plugin can send. They are edited, previewed and tested like any other template; the edit is stored under the same key, survives an upgrade and is deleted by `removePluginMail` on uninstall.
+
+A plugin's email is queued with `source` set to the plugin's id and `lane` 1. `assertWithinMailLimits` (`server/mail/limits.ts`) refuses a twenty-first email from one plugin to one recipient within an hour, and an email from a plugin that already has 10,000 waiting. `setQueuedMailOutcomeHandler` tells the plugin host what became of each such email, which it passes to that plugin alone as `mail.delivered` or `mail.failed`.
 
 ## The queue
 
@@ -151,6 +157,7 @@ All under `/admin/api/cms/mail`, all gated by `mail.manage`. "Step-up" marks the
 ## Tests
 
 - `src/__tests__/server/mailQueue.test.ts` — accepting (capture, refusal, encryption at rest), delivery, the retry schedule and which refusals are retried, giving up, the rate-limit pause, lane order, claims and two drains at once, a member email end to end.
+- `src/__tests__/server/pluginMail.test.ts` — a real plugin in its sandbox: declared templates in the workspace, sending to a member and to an address, the permission each needs, hostile values, the limits, outcome events, edits across an upgrade, disable and uninstall.
 - `src/__tests__/server/mail.test.ts` — delivery modes, connector storage, template rendering and injection, the address guard, SES signing and request shape, the request each one-key provider receives and how its refusals read, capability and step-up gates.
 - `src/__tests__/server/mailSmtp.test.ts` — a real SMTP round trip against a local sink.
 - `tests/e2e/email-workspace.e2e.ts` — ADMIN-013.

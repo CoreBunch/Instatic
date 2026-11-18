@@ -20,9 +20,11 @@
  */
 import type { DbClient } from '../db/client'
 import { withSchedulerLeaderLock } from '../db/advisoryLock'
+import { getMailTemplateDefinition } from '@core/mail'
 import { getErrorMessage } from '@core/utils/errorMessage'
-import { recordMail, updateMailProgress } from './activity'
+import { CORE_MAIL_SOURCE, recordMail, updateMailProgress } from './activity'
 import { getMailDefaults } from './defaults'
+import { assertWithinMailLimits } from './limits'
 import {
   claimNextDueMail,
   enqueueMail,
@@ -63,6 +65,40 @@ export interface QueueTemplateMailInput {
   key: string
   to: string
   variables: Record<string, string>
+  /** Who asks: omitted for the core's own mail, a plugin's id otherwise. */
+  source?: string
+  /** The sender's own name for this email, handed back with the outcome. */
+  reference?: string
+}
+
+/** What became of a queued email that was not the core's own. */
+export interface QueuedMailOutcome {
+  source: string
+  /** The template key. */
+  kind: string
+  to: string
+  reference: string | null
+  status: 'sent' | 'failed'
+  error: string | null
+}
+
+let outcomeHandler: ((outcome: QueuedMailOutcome) => void) | null = null
+
+/**
+ * Hear what becomes of every queued email that has a `source` other than
+ * the core. The plugin host uses this to tell a plugin about its own mail.
+ */
+export function setQueuedMailOutcomeHandler(handler: ((outcome: QueuedMailOutcome) => void) | null): void {
+  outcomeHandler = handler
+}
+
+function announceOutcome(mail: QueuedMail, status: 'sent' | 'failed', error: string | null): void {
+  if (mail.source === CORE_MAIL_SOURCE || !outcomeHandler) return
+  try {
+    outcomeHandler({ source: mail.source, kind: mail.kind, to: mail.to, reference: mail.reference, status, error })
+  } catch (err) {
+    console.error('[mail] outcome handler threw:', getErrorMessage(err, 'unknown error'))
+  }
 }
 
 /**
@@ -81,7 +117,10 @@ export async function queueTemplateMail(
   // The email is rendered again when it is sent, with the wording of then.
   const mail = await buildTemplateMail(db, input)
   assertSendable(mail)
-  const log = { kind: mail.kind, to: mail.to, subject: mail.subject }
+  const log = { kind: mail.kind, to: mail.to, subject: mail.subject, source: input.source }
+  if (input.source !== undefined && input.source !== CORE_MAIL_SOURCE) {
+    await assertWithinMailLimits(db, input.source, input.to)
+  }
   if (!readyToSend(await getMailDefaults(db))) {
     if (!captureAllowed(deps.env ?? process.env)) throw new MailNotConfiguredError()
     await recordMail(db, { ...log, status: 'captured', body: mail.text })
@@ -90,7 +129,14 @@ export async function queueTemplateMail(
   // One transaction: the log never shows a waiting email the queue does not hold.
   await db.transaction(async (tx) => {
     const outboxId = await recordMail(tx, { ...log, status: 'queued' })
-    await enqueueMail(tx, { outboxId, kind: input.key, to: input.to, variables: input.variables })
+    await enqueueMail(tx, {
+      outboxId,
+      kind: input.key,
+      to: input.to,
+      variables: input.variables,
+      source: input.source,
+      reference: input.reference,
+    })
   })
   wakeMailQueue()
   return 'queued'
@@ -137,9 +183,12 @@ async function attemptQueuedMail(db: DbClient, mail: QueuedMail, deps: DrainDeps
     rendered = await buildTemplateMail(db, { key: mail.kind, to: mail.to, variables })
     assertSendable(rendered)
   } catch (err) {
-    // The template was removed (its plugin is gone) or no longer renders a
-    // sendable message. Another try would end the same way.
-    return { sent: false, message: getErrorMessage(err, 'The email could not be prepared.'), retry: 'never' }
+    // The template was removed (its plugin was disabled or uninstalled) or
+    // no longer renders a sendable message. Another try would end the same way.
+    const message = getMailTemplateDefinition(mail.kind)
+      ? getErrorMessage(err, 'The email could not be prepared.')
+      : 'The template of this email no longer exists: the plugin it belongs to was disabled or removed.'
+    return { sent: false, message, retry: 'never' }
   }
   const outcome = await carryThroughConnector(db, defaults.defaultConnectorId, defaults, rendered, deps.carrier)
   return outcome.ok ? { sent: true, outcome } : { sent: false, message: outcome.message, retry: outcome.retry, outcome }
@@ -158,6 +207,7 @@ async function settleQueuedMail(db: DbClient, mail: QueuedMail, attempt: Attempt
       durationMs: attempt.outcome.durationMs,
     })
     await removeQueuedMail(db, mail.id)
+    announceOutcome(mail, 'sent', null)
     return
   }
   const failure = {
@@ -172,6 +222,7 @@ async function settleQueuedMail(db: DbClient, mail: QueuedMail, attempt: Attempt
     await updateMailProgress(db, mail.outboxId, { ...failure, status: 'failed' })
     await removeQueuedMail(db, mail.id)
     console.error(`[mail] gave up on a "${mail.kind}" email after ${attempts} attempt(s)`)
+    announceOutcome(mail, 'failed', attempt.message)
     return
   }
   const nextAttemptAt = new Date(now + delay).toISOString()
