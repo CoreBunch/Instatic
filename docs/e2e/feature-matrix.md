@@ -344,6 +344,7 @@ AI-002 note: Data-scope default selection, save feedback, reload persistence, cl
 | PLUGIN-005 | P2 | partial | Plugins | Inspect and control plugin schedules | Active plugin with schedules | Plugin schedule dialog | Schedules list and mutating controls respect permissions | stale paused state, duplicate runs |
 | PLUGIN-006 | P2 | partial | Plugins | Install a plugin-provided site pack | Active plugin with pack | Plugins page | Pack content imports with clear feedback | conflicts, partial imports |
 | PLUGIN-008 | P2 | ✅ | Plugins | Upload invalid plugin package | Logged in | Plugins page | Error is specific and recoverable | generic failure, stuck upload |
+| PLUGIN-009 | P2 | partial | Plugins | See plugin stylesheets on the editing canvas | Active plugin with `frontend.assets` stylesheets and a pack page | Site editor canvas | Canvas matches the published styling; plugin scripts do not run | unstyled canvas, plugin script running in the editor |
 
 PLUGIN-001 note: JSON manifest review/install step-up is automated in `capabilities.e2e.ts`; ZIP package review/install and activation are exercised by the packaged lifecycle/surfaces fixtures in `plugins.e2e.ts`; malformed ZIP/path-traversal/package-edge coverage remains lower-level or future browser expansion.
 
@@ -358,6 +359,8 @@ PLUGIN-005 note: packaged schedule fixture install, permission review, schedule 
 PLUGIN-006 note: packaged site-pack fixture install, permission review, auto-imported page visibility in the Site Explorer/canvas, re-sync, and success feedback are automated in `plugins.e2e.ts`; conflict/error, missing/invalid pack, Visual Component/layout-heavy packs, and mobile variants remain agent-run or lower-level.
 
 PLUGIN-008 note: invalid JSON-manifest upload and recovery with a subsequent valid review are automated in `plugins.e2e.ts`; invalid zip/package fixtures remain covered by lower-level package tests and future fixture-backed browser expansion.
+
+PLUGIN-009 note: `plugins.e2e.ts` installs a packaged plugin with a pack page, an external `style` asset, a `style-inline` asset, and a `script-inline` asset; it opens the pack page in the site editor and checks the canvas text takes both plugin styles while the script's marker attribute is absent, then disables the plugin and checks the styles are gone. Published-page parity, placement ordering, permission gating, and URL rebasing are covered by `canvasStylesheets.test.ts`; live restyle on a plugin event by `pluginStylesheetInjector.test.tsx`; upgrade/remove and mobile variants remain lower-level or agent-run.
 
 ## Responsive And Accessibility Passes
 

@@ -561,6 +561,7 @@ Server-side publishing helpers live in `server/publish/`:
 | `republish.ts`                    | Bulk re-publish (after a settings change touches all pages).        |
 | `publishScheduler.ts`             | Scheduled publish jobs.                                             |
 | `frontendInjections.ts`           | Plugin-contributed frontend scripts injected into published HTML.   |
+| `canvasStylesheets.ts`            | The stylesheet share of that plan, as CSS text for the editor canvas. |
 | `mediaPresentation.ts`            | `<picture>` / `<img srcset>` materialization at publish time.       |
 | `mediaPrefetch.ts`, `loopPrefetch.ts` | Pre-warm caches needed by published pages.                      |
 | `runtime/packageServer.ts`        | Serve per-site `bun install` workspace under `/_instatic/runtime/cache/`. |

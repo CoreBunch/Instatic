@@ -81,6 +81,7 @@ server/publish/
 ├── publishedHtmlPipeline.ts        — post-process (sanitize + plugin filters + injections)
 ├── siteCssBundle.ts                — server-side hashing + file emission
 ├── frontendInjections.ts           — splice plugin <script>/<link>/<meta> into HTML
+├── canvasStylesheets.ts            — plugin stylesheets as CSS text for the editor canvas
 ├── mediaPresentation.ts            — media URL materialization for originals + responsive variants
 ├── renderTreeWalk.ts               — walkRenderTree: visits every node that contributes to a rendered page (page nodes + VC definition trees, cycle-guarded); single source of truth for loop-prefetch and media-prefetch
 ├── mediaPrefetch.ts, loopPrefetch.ts — pre-warm caches needed by the renderer
