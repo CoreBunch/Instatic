@@ -8,8 +8,10 @@
  *                                       to a `/_instatic/runtime/cache/<hash>/...`
  *                                       URL the host serves.
  *
- * Resolution rules per package (`pickEsmEntry` in `@core/registry`, shared
- * with the Dependencies panel's pre-install compatibility badge):
+ * Resolution rules per package (`resolveInstalledPackageEntry` in
+ * `dependencyCache.ts`, built on `pickEsmEntry` from `@core/registry`, which
+ * the Dependencies panel's pre-install compatibility badge shares; the cache
+ * integrity check confirms the same entry files):
  *   1. If `package.json` has `exports['.']`, prefer the `import` / `module` /
  *      `default` condition (in that order).
  *   2. Else fall back to the `module` field, then `main`, then `index.js`.
@@ -23,12 +25,11 @@
  *   • a declared package has no resolvable ESM entry (we log + skip)
  */
 import { existsSync } from 'node:fs'
-import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { SiteDependencyLock } from '@core/site-runtime'
-import { packageEntryUrlPath, pickEsmEntry } from '@core/registry'
 import {
   nodeModulesDirForHash,
+  resolveInstalledPackageEntry,
   runtimeDependencyLockHash,
   isRuntimeDependencyCacheIntact,
   type RuntimeDependencyCache,
@@ -39,38 +40,6 @@ interface RuntimePackageImportmap {
   importmap: { imports: Record<string, string> }
   /** Stable cache-lock hash — same value the URL paths embed. */
   lockHash: string
-}
-
-async function readPackageJson(packageDir: string): Promise<Record<string, unknown> | null> {
-  const manifestPath = join(packageDir, 'package.json')
-  if (!existsSync(manifestPath)) return null
-  try {
-    const raw = await readFile(manifestPath, 'utf-8')
-    const parsed = JSON.parse(raw)
-    return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
-      ? (parsed as Record<string, unknown>)
-      : null
-  } catch (err) {
-    console.warn('[runtime importmap] failed to parse', manifestPath, err)
-    return null
-  }
-}
-
-/**
- * Resolve a package's main ESM entry to a path relative to the package root.
- * Returns `'/index.js'` only if nothing in `package.json` indicates otherwise.
- */
-async function resolvePackageEntry(packageDir: string): Promise<string | null> {
-  const manifest = await readPackageJson(packageDir)
-  if (!manifest) return null
-
-  const entry = pickEsmEntry(manifest)
-  if (entry) return packageEntryUrlPath(entry)
-
-  // Final fallback — CommonJS index. Browsers won't load CJS as ESM but it's
-  // the lowest-noise default; the user will see a runtime error pointing at
-  // the missing package rather than a silent 404 here.
-  return '/index.js'
 }
 
 interface BuildPackageImportmapOptions {
@@ -101,7 +70,7 @@ export async function buildRuntimePackageImportmap(
       console.warn(`[runtime importmap] cache missing "${name}" — skipping`)
       continue
     }
-    const entry = await resolvePackageEntry(packageDir)
+    const entry = resolveInstalledPackageEntry(packageDir)
     if (!entry) continue
     imports[name] = `${baseUrl}${name}${entry}`
     // Subpath entry: `import { OrbitControls } from 'three/examples/jsm/...'`

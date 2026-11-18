@@ -1,9 +1,12 @@
 import { createHash, randomBytes } from 'node:crypto'
-import { existsSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { mkdir, rename, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
+import { Type, type Static } from '@sinclair/typebox'
+import { packageEntryUrlPath, pickEsmEntry } from '@core/registry'
 import type { SiteDependencyLock } from '@core/site-runtime'
+import { safeParseJson } from '@core/utils/jsonValidate'
 import { isPublicNpmRegistry, npmRegistryUrl } from '../../registry/config'
 
 export interface RuntimeDependencyCache {
@@ -45,8 +48,20 @@ interface EnsureRuntimeDependencyCacheOptions {
  * `systemd-tmpfiles`) delete the installed files while leaving the directories
  * and this marker behind. `isRuntimeDependencyCacheIntact` is the check that
  * decides whether an entry may be trusted.
+ *
+ * The marker records, per locked package, the entry file the importmap serves
+ * (`entries`), so the integrity check can confirm those files without parsing
+ * every package manifest on each publish or serve.
  */
 const INSTALL_SENTINEL_FILE = '.instatic-install-complete'
+
+const InstallSentinelSchema = Type.Object({
+  hash: Type.String(),
+  completedAt: Type.Number(),
+  packageCount: Type.Number(),
+  /** Locked package name → served entry path (`/dist/index.js`), recorded only when that file existed at install. */
+  entries: Type.Record(Type.String(), Type.String()),
+})
 
 /**
  * Hard upper bound on packages declared in a single dependency lock. A site
@@ -111,6 +126,35 @@ export function sentinelPathForHash(hash: string, cacheRoot: string = cacheRootD
   return join(workspaceDirForHash(hash, cacheRoot), INSTALL_SENTINEL_FILE)
 }
 
+/** Only the top-level object shape matters; `pickEsmEntry` reads the fields it needs defensively. */
+const PackageManifestSchema = Type.Record(Type.String(), Type.Unknown())
+
+/**
+ * Resolve the entry file the importmap serves for an installed package, as a
+ * `/relative/path.js` under the package root. Returns null when the package
+ * has no readable `package.json`. Uses `pickEsmEntry` (shared with the
+ * Dependencies panel) and falls back to `/index.js` when the manifest names no
+ * entry at all: browsers will not load a CommonJS index as ESM, but a runtime
+ * error naming the package is clearer than a silent gap in the importmap.
+ */
+export function resolveInstalledPackageEntry(packageDir: string): string | null {
+  const manifestPath = join(packageDir, 'package.json')
+  let raw: string
+  try {
+    raw = readFileSync(manifestPath, 'utf8')
+  } catch (_err) {
+    // Missing or unreadable manifest: the package is not usable from the cache.
+    return null
+  }
+  const parsed = safeParseJson(raw, PackageManifestSchema)
+  if (!parsed.ok) {
+    console.warn('[runtime dependency cache] failed to parse', manifestPath)
+    return null
+  }
+  const entry = pickEsmEntry(parsed.value)
+  return entry ? packageEntryUrlPath(entry) : '/index.js'
+}
+
 /**
  * Locked packages whose `package.json` is missing from an entry's
  * `node_modules`. Empty means every locked package is still installed.
@@ -122,18 +166,55 @@ function missingLockedPackages(lock: SiteDependencyLock, nodeModulesDir: string)
 }
 
 /**
+ * The served entry of every locked package whose entry file exists right
+ * after install. A package whose resolved entry is not on disk (a CSS-only
+ * package, an extensionless `main`) is left out rather than failing the
+ * install, so it cannot make a fresh entry look broken forever.
+ */
+function servedEntries(lock: SiteDependencyLock, nodeModulesDir: string): Record<string, string> {
+  const entries: Record<string, string> = {}
+  for (const name of Object.keys(sortedExactDependencies(lock))) {
+    const packageDir = join(nodeModulesDir, name)
+    const entry = resolveInstalledPackageEntry(packageDir)
+    if (entry && existsSync(join(packageDir, entry))) entries[name] = entry
+  }
+  return entries
+}
+
+/**
  * Whether the cache entry for `lock` can be trusted: the install finished
- * (sentinel present) and every locked package still has its `package.json`
- * under `node_modules`. An entry that fails this is reinstalled by
- * `ensureRuntimeDependencyCache`.
+ * (marker present and readable), and every locked package still has its
+ * `package.json` and the entry file it serves under `node_modules`. A temp
+ * cleaner that ages files out by access time removes the rarely read build
+ * files (`dist/index.js`) before the `package.json` the importmap reads on
+ * every build, so the manifest alone does not prove the package still works.
+ * An entry that fails this is reinstalled by `ensureRuntimeDependencyCache`.
+ *
+ * Cheap enough for publish and serve paths: one small marker read plus two
+ * `existsSync` calls per locked package, no manifest parsing.
  */
 export function isRuntimeDependencyCacheIntact(
   lock: SiteDependencyLock,
   cacheRoot: string = cacheRootDir(),
 ): boolean {
   const hash = runtimeDependencyLockHash(lock)
-  if (!existsSync(sentinelPathForHash(hash, cacheRoot))) return false
-  return missingLockedPackages(lock, nodeModulesDirForHash(hash, cacheRoot)).length === 0
+  let raw: string
+  try {
+    raw = readFileSync(sentinelPathForHash(hash, cacheRoot), 'utf8')
+  } catch (_err) {
+    // No marker: the install never finished, or the marker was cleaned away.
+    return false
+  }
+  // A marker from before `entries` was recorded fails the schema, so that
+  // entry is reinstalled once and gains the per-package entry list.
+  const sentinel = safeParseJson(raw, InstallSentinelSchema)
+  if (!sentinel.ok || sentinel.value.hash !== hash) return false
+
+  const nodeModulesDir = nodeModulesDirForHash(hash, cacheRoot)
+  if (missingLockedPackages(lock, nodeModulesDir).length > 0) return false
+  return Object.entries(sentinel.value.entries).every(
+    ([name, entry]) => existsSync(join(nodeModulesDir, name, entry)),
+  )
 }
 
 async function defaultRunInstall(command: string[], options: RuntimeInstallOptions): Promise<void> {
@@ -275,11 +356,13 @@ async function performInstall(
     // Sentinel goes inside the temp dir at the location it will live after the
     // rename, so the renamed directory is already a "valid" cache from the
     // first instant it is observable at the final path.
-    await writeFile(join(tempDir, INSTALL_SENTINEL_FILE), JSON.stringify({
+    const sentinel: Static<typeof InstallSentinelSchema> = {
       hash,
       completedAt: Date.now(),
       packageCount: Object.keys(exactDependencies).length,
-    }), 'utf8')
+      entries: servedEntries(lock, join(tempDir, 'node_modules')),
+    }
+    await writeFile(join(tempDir, INSTALL_SENTINEL_FILE), JSON.stringify(sentinel), 'utf8')
 
     try {
       await rename(tempDir, workspaceDir)
