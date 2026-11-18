@@ -22,8 +22,8 @@ test('opens the imported page in the Site workspace from Data (ADMIN-011)', asyn
   await page.screenshot({ path: testInfo.outputPath('after-open-site.png') })
 })
 
-// ADMIN-013: a stylesheet with no page imports as a site stylesheet.
-test('imports a lone stylesheet as a site stylesheet in the Code panel (ADMIN-013)', async ({ page }) => {
+// ADMIN-014: a stylesheet with no page imports as a site stylesheet.
+test('imports a lone stylesheet as a site stylesheet in the Code panel (ADMIN-014)', async ({ page }) => {
   const name = `lone-sheet-${Date.now().toString(36)}.css`
   await page.goto('/admin/data')
   await page.getByRole('button', { name: 'Import site', exact: true }).click()
@@ -49,8 +49,8 @@ test('imports a lone stylesheet as a site stylesheet in the Code panel (ADMIN-01
   await page.screenshot({ path: '.tmp/evidence/after-lone-css-code-panel.png' })
 })
 
-// ADMIN-014: a plugin package is recognised at the Drop step, not imported.
-test('recognises a plugin package and sends the owner to Plugins (ADMIN-014)', async ({ page }) => {
+// ADMIN-015: a plugin package is recognised at the Drop step, not imported.
+test('recognises a plugin package and sends the owner to Plugins (ADMIN-015)', async ({ page }) => {
   const zip = zipSync({
     'plugin.json': strToU8(JSON.stringify({ id: 'acme.members-starter', name: 'Members Starter', version: '1.0.0' })),
     'pack/site.json': strToU8('{}'),

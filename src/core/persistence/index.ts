@@ -123,3 +123,17 @@ export {
   getCmsRegistryProfile,
   searchCmsRegistry,
 } from './cmsRegistry'
+export {
+  createCmsMailConnector,
+  deleteCmsMailConnector,
+  getCmsMailActivity,
+  getCmsMailOverview,
+  listCmsMailTemplates,
+  resetCmsMailTemplate,
+  saveCmsMailDefaults,
+  saveCmsMailTemplate,
+  setCmsMailConnectorSecret,
+  testCmsMailConnector,
+  testCmsMailTemplate,
+  type CmsMailActivityQuery,
+} from './cmsMail'

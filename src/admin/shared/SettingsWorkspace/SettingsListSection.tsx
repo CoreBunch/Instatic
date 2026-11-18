@@ -1,7 +1,8 @@
 import type { ReactNode } from 'react'
-import styles from './AiPage.module.css'
+import styles from './SettingsWorkspace.module.css'
 
-export function AiSettingsListSection({
+/** One labelled group of rows in a settings workspace browser column. */
+export function SettingsListSection({
   label,
   children,
 }: {

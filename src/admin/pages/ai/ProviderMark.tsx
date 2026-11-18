@@ -1,7 +1,8 @@
 import { CodeIcon } from 'pixel-art-icons/icons/code'
 import type { ProviderId } from './providerCatalog'
 import { cn } from '@ui/cn'
-import styles from './AiPage.module.css'
+import ws from '@admin/shared/SettingsWorkspace/SettingsWorkspace.module.css'
+import styles from './ProviderMark.module.css'
 
 const LOGO_CLASS: Partial<Record<ProviderId, string>> = {
   anthropic: styles.logoAnthropic,
@@ -21,13 +22,13 @@ export function ProviderMark({
 
   return (
     <span
-      className={styles.providerMark}
+      className={cn(ws.providerMark, styles.mark)}
       data-provider={providerId}
       data-size={size}
       aria-hidden="true"
     >
       {logoClass ? (
-        <span className={cn(styles.providerLogo, logoClass)} />
+        <span className={cn(ws.providerLogo, logoClass)} />
       ) : (
         <CodeIcon size={size === 'lg' ? 22 : size === 'md' ? 18 : 14} />
       )}
