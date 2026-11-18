@@ -102,6 +102,15 @@
     line-height: 1.4;
 }
 
+.nodeViewDot {
+    width: 5px;
+    height: 5px;
+    /* Sits close to its label: the button's own gap is wider than a marker needs. */
+    margin-left: calc(-1 * var(--space-2xs));
+    border-radius: 50%;
+    background: var(--info-text);
+}
+
 .nodeViewSwitcher .nodeViewButton:hover {
     background: transparent;
     color: var(--text-muted);

@@ -20,6 +20,8 @@ export interface SiteExplorerTreeItem<TTarget> {
   ariaLabel: string
   target: TTarget
   preview?: SiteExplorerItemPreview
+  /** Who may open the published page, when it is not everyone. Pages only. */
+  access?: string
   /** Build problems for this file, badged on the row. Code files only. */
   problems?: FileRuntimeDiagnostics
 }

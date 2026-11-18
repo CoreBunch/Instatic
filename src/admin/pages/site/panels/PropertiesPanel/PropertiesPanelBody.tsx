@@ -28,6 +28,8 @@ import type { ActiveDocument } from '../../store/slices/uiSlice'
 import { Button } from '@ui/components/Button'
 import { ClassPicker, type ClassPickerHandle } from './ClassPicker'
 import { StyleSurface } from './StyleSurface'
+import { readShowWhen } from '@core/members'
+import { ShowWhenControl } from './ShowWhenControl'
 import { HtmlAttributesPanel } from './HtmlAttributesPanel'
 import { ComponentRefView } from './ComponentRefView'
 import { ComponentParamsOverview } from './ComponentParamsOverview'
@@ -58,7 +60,7 @@ interface PropertiesPanelBodyProps {
   onFocusClassPicker: () => void
 }
 
-type NodeInspectorView = 'styles' | 'attributes'
+type NodeInspectorView = 'styles' | 'attributes' | 'visibility'
 
 export function PropertiesPanelBody(props: PropertiesPanelBodyProps): React.ReactNode {
   const {
@@ -138,6 +140,9 @@ export function PropertiesPanelBody(props: PropertiesPanelBodyProps): React.Reac
   const showConvertToComponent =
     permissions.canEditStructure && canComponentizeNode(activeDocument, selectedNode)
 
+  // Any stored rule counts, a broken one too: it hides the element from everyone.
+  const hasVisibilityRule = readShowWhen(selectedNode.props) !== null
+
   return (
     <div className={styles.nodeArea}>
       <nav className={styles.nodeViewSwitcher} aria-label="Element options">
@@ -158,6 +163,18 @@ export function PropertiesPanelBody(props: PropertiesPanelBodyProps): React.Reac
           onClick={() => setActiveNodeView('attributes')}
         >
           Attributes
+        </Button>
+        <Button
+          variant="ghost"
+          size="xs"
+          className={styles.nodeViewButton}
+          active={activeNodeView === 'visibility'}
+          onClick={() => setActiveNodeView('visibility')}
+        >
+          Visibility
+          {hasVisibilityRule && (
+            <span className={styles.nodeViewDot} role="img" aria-label="A rule is set" />
+          )}
         </Button>
       </nav>
 
@@ -193,10 +210,16 @@ export function PropertiesPanelBody(props: PropertiesPanelBodyProps): React.Reac
           moduleContent={moduleTabContent}
           onFocusClassPicker={onFocusClassPicker}
         />
-      ) : (
+      ) : activeNodeView === 'attributes' ? (
         <HtmlAttributesPanel
           nodeId={selectedNode.id}
           htmlAttributes={selectedNode.props.htmlAttributes}
+          readOnly={!permissions.canEditStructure}
+        />
+      ) : (
+        <ShowWhenControl
+          nodeId={selectedNode.id}
+          props={selectedNode.props}
           readOnly={!permissions.canEditStructure}
         />
       )}

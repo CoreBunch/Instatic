@@ -113,9 +113,35 @@ globalThis.__buildApi = function buildApi() {
       }])
     }
   }
+  // api.cms.routes.member.get(path, handler)
+  // api.cms.routes.member.get(path, { tag: 'pro' }, handler)
+  //     Only a signed-in site member reaches the handler (optionally one
+  //     holding the tag). Served on the public plugin mount.
+  function registerMember(method: string) {
+    return function (path: unknown, optionsOrHandler: unknown, maybeHandler?: unknown) {
+      assertTargetPermission('cms.routes.register')
+      assertPermission('members.read')
+      const handler = typeof optionsOrHandler === 'function' ? optionsOrHandler : maybeHandler
+      if (typeof handler !== 'function') throw new TypeError('Route handler must be a function')
+      const options = typeof optionsOrHandler === 'function' || !optionsOrHandler ? {} : optionsOrHandler as { tag?: unknown }
+      const access: { kind: 'member'; tag?: string } = { kind: 'member' }
+      if (options.tag !== undefined && options.tag !== null) access.tag = String(options.tag)
+      const routeKey = method + ':' + normalizePath(path)
+      globalThis.__plugin_handlers.routes[routeKey] = handler as BootstrapFn
+      return call('cms.routes.register', [{
+        method: method,
+        path: normalizePath(path),
+        access: access,
+        routeKey: routeKey,
+      }])
+    }
+  }
 
   function on(event: unknown, listener: unknown) {
     assertTargetPermission('cms.hooks.on')
+    // Member events name members: hearing them needs the right to read members.
+    // (The host enforces the same rule; this makes the denial immediate.)
+    if (String(event).indexOf('member.') === 0) assertPermission('members.read')
     if (typeof listener !== 'function') throw new TypeError('Hook listener must be a function')
     const listenerId = __nextId('listener')
     globalThis.__plugin_handlers.listeners[listenerId] = listener as BootstrapFn
@@ -396,6 +422,40 @@ globalThis.__buildApi = function buildApi() {
           post: registerPublic('POST'),
           patch: registerPublic('PATCH'),
           delete: registerPublic('DELETE'),
+        },
+        // Member routes — only a signed-in site member reaches the handler.
+        // Plugin must hold members.read. Served on the public plugin mount.
+        // Usage: api.cms.routes.member.get('/path', handler)
+        //        api.cms.routes.member.post('/path', { tag: 'pro' }, handler)
+        member: {
+          get: registerMember('GET'),
+          post: registerMember('POST'),
+          patch: registerMember('PATCH'),
+          delete: registerMember('DELETE'),
+        },
+      },
+      // Site members — the people with an account on the published site.
+      members: {
+        // api.cms.members.get({ id }) / get({ email }) → member or null
+        get: function (by: unknown) {
+          assertTargetPermission('cms.members.get')
+          return call('cms.members.get', [by])
+        },
+        // api.cms.members.invite({ email, tags? }) → { memberId, outcome }
+        invite: function (input: unknown) {
+          assertTargetPermission('cms.members.invite')
+          return call('cms.members.invite', [input])
+        },
+        tags: {
+          // The tag's source is this plugin; `revoke` withdraws only this plugin's grant.
+          grant: function (memberId: unknown, tag: unknown, options?: unknown) {
+            assertTargetPermission('cms.members.tags.grant')
+            return call('cms.members.tags.grant', [String(memberId), String(tag), options || {}])
+          },
+          revoke: function (memberId: unknown, tag: unknown) {
+            assertTargetPermission('cms.members.tags.revoke')
+            return call('cms.members.tags.revoke', [String(memberId), String(tag)])
+          },
         },
       },
       storage: { collection: collection },

@@ -101,6 +101,11 @@ function diffPage(capabilities: readonly CoreCapability[], previous: Page, next:
   if (!deepEqual(previous.template, next.template)) {
     requireChange(capabilities, 'structure', `${pagePath}.template`, 'template settings changed')
   }
+  // Who may open the page. A content-only or style-only editor must not be
+  // able to open a protected page to everyone, or lock one.
+  if (!deepEqual(previous.access, next.access)) {
+    requireChange(capabilities, 'structure', `${pagePath}.access`, 'page access changed')
+  }
 
   diffNodes(capabilities, pagePath, previous.nodes, next.nodes)
 }

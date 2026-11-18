@@ -524,7 +524,40 @@ Routes mount under `/admin/api/cms/plugins/<id>/runtime/*`. The host enforces th
 
 Request bodies are **byte-safe end to end**. The host reads the incoming body once as raw bytes and carries it to the sandbox tagged `utf8` (text verbatim) or `base64` (binary), so `req.text()` / `req.json()` decode correctly (including multibyte UTF-8) and `req.arrayBuffer()` returns the exact payload bytes. Pre-parsed `body` fields cover `application/json`, `application/x-www-form-urlencoded` (repeated keys become arrays), and `multipart/form-data` — text fields arrive as strings, file fields as uploaded-file facades (`{ name, type, size, arrayBuffer(), text() }`) whose bytes are uncorrupted, so plugins can accept image/PDF uploads. (De)serialization lives in `server/plugins/host/routeIo.ts`; the wire codec in `server/plugins/protocol/bodyEncoding.ts`.
 
+Route handlers never receive Instatic's own cookies. The host removes every `instatic_` cookie (admin session, member session, branch preview) from `req.headers.cookie` before the request reaches the sandbox (`server/sessionCookies.ts`); who the caller is arrives as `ctx.user`. Other cookies pass through.
+
 Custom responses (status, headers, non-JSON bodies) use the raw-response escape hatch: return `{ __response: true, status, headers, body }` instead of a plain object. `body` accepts a string (sent as UTF-8 text) or an `ArrayBuffer` / TypedArray / `DataView` (sent byte-exactly — serve images, zips, PDFs directly); anything else throws a `TypeError`.
+
+### Site members — requires `members.read` / `members.write` / `members.tags`
+
+Site members are the people with an account on the published site (see [members](members.md)). They are not admin users: `ctx.user` is an admin, `ctx.member` is a member.
+
+**The public mount.** Routes for the published site are served at `/_instatic/plugins/<pluginId>/<path>` (`server/plugins/publicRoutes.ts`), outside `/admin`. It serves a plugin's `routes.public.*` and `routes.member.*` routes; capability-gated and `authenticated` routes answer 404 there. Public routes are still reachable on the admin mount too; member routes are only on the public one. Bodies over 1 MiB are refused.
+
+```js
+// Only a signed-in member reaches the handler; ctx.member is always set.
+api.cms.routes.member.get('/orders', (ctx) => listOrders(ctx.member.id))
+// Only a member holding the tag; others get 403.
+api.cms.routes.member.post('/download', { tag: 'pro' }, handler)
+// A public route sees ctx.member too when the plugin holds members.read.
+api.cms.routes.public.get('/price', (ctx) => priceFor(ctx.member))
+```
+
+- `ctx.member` is `{ id, email, tags, profile }` or `null`. The host resolves it; the member's session cookie is still stripped from `req.headers`.
+- A signed-out visitor gets 401 from a member route. A member-route write (POST, PATCH, DELETE) must name this site's origin, as the member endpoints require; a public-route write may omit it (webhooks) but may not name another site.
+- A response for a member is sent `Cache-Control: private, no-store` unless the handler sets its own.
+
+```js
+const member = await api.cms.members.get({ email })            // or { id }; null when there is none
+await api.cms.members.invite({ email, tags: ['pro'] })         // members.write (+ members.tags for tags)
+await api.cms.members.tags.grant(member.id, 'pro', { expiresAt })  // members.tags
+await api.cms.members.tags.revoke(member.id, 'pro')            // only this plugin's own grant
+```
+
+- A tag a plugin grants is recorded with the plugin id as its source. `revoke` withdraws that grant only: a tag an administrator or another plugin gave stays. Tags starting with `instatic:` cannot be granted.
+- `invite` sends the site's invitation email. It rejects when the address already has an account, and when the site has no configured public address or no outgoing email (there is no request to take a link address from).
+
+**Member events** (need `cms.hooks` and `members.read`): `member.created`, `member.verified`, `member.signedIn` (`{ memberId, email }`), `member.tagged` (`{ memberId, tag, source, expiresAt }`), `member.deleted` (`{ memberId }`). They are sent without waiting, so a listener cannot delay or cancel a sign-in.
 
 ### Plugin-owned records — requires `cms.storage`
 
@@ -547,7 +580,9 @@ const name = await api.cms.hooks.emit('sync.done', { /* … */ })
 // name === 'plugin.<your-plugin-id>.sync.done'
 ```
 
-**Host-emitted events** (the reserved core list, `CORE_HOOK_EVENTS` in `src/core/plugins/hookBus.ts`): `publish.before`, `publish.after`, `content.entry.created`, `content.entry.updated`, `content.entry.deleted`, `settings.changed`. **Filters**: `publish.html`, `publish.headers`, `content.entry.cells`.
+**Host-emitted events** (the reserved core list, `CoreHookEvent` in `src/core/plugins/hookBus.ts`): the `member.*` events (see "Site members" above), `publish.before`, `publish.after`, `content.entry.created`, `content.entry.updated`, `content.entry.deleted`, `settings.changed`. **Filters**: `publish.html`, `publish.headers`, `content.entry.cells`.
+
+A page rendered for a signed-in member on a protected route is passed to a plugin's `publish.html` filter only when the plugin also holds `members.read`; without it the filter is skipped for that render and the page is sent as it is.
 
 Every filter handler returns the same runtime value type it received. `src/core/plugins/hookBus.ts` checks each result before passing it to the next handler; a mismatched result keeps the previous value and logs the offending plugin ID. For example, `publish.html` returns a string and `content.entry.cells` returns an object, never `null`.
 
@@ -590,7 +625,7 @@ ctx.request: {
   query: Record<string, string>   // parsed page query string (?q=shoes → { q: 'shoes' })
   path: string                    // originating page path (e.g. '/search')
   slug: string | null
-  cookies: Record<string, string> // populated ONLY for perVisitor sources
+  cookies: Record<string, string> // populated ONLY for perVisitor sources; session cookies are removed
 }
 ```
 
@@ -629,6 +664,10 @@ Supported `kind` values are `script`, `script-inline`, `style`, `style-inline`, 
 `attrs` passes through to the emitted tag except where `server/publish/frontendInjections.ts` owns the value: `data-plugin-id` on every tag, `src` on every script, strategy attributes on external scripts, and `href` plus `rel` on stylesheet assets. Bare `link` and `meta` declarations rely entirely on `attrs`. Inline JSON-LD uses `{ "kind": "script-inline", "attrs": { "type": "application/ld+json" }, "content": "..." }`.
 
 The injection pipeline derives CSP changes from the plan. Inline scripts/styles add the matching `'unsafe-inline'` directive. `networkAllowedHosts[]` contributes published-page `connect-src` origins for plugins with frontend assets, which is why frontend trackers that call their own or third-party ingest endpoints must list those hosts as well as declare `frontend.assets`.
+
+**The editing canvas loads the stylesheets, and only the stylesheets.** A page styled by a plugin stylesheet has to look the same while editing as it does published, so the site editor's canvas loads every `style` and `style-inline` asset, in the published order (placement anchor, then plugin id, then manifest order). `script`, `script-inline`, `link` and `meta` assets never load in the canvas: it shares the admin origin and is an editing surface, so plugin frontend scripts must not run there. (The runtime preview is built by `buildRuntimePreviewDocument`, which runs the full `injectFrontendAssets` pass, so it gets every tag.)
+
+Both surfaces start from one eligibility rule, `listFrontendAssetPlugins` in `server/publish/frontendInjections.ts`: the plugin is enabled, not in the error state, and was **granted** `frontend.assets`. `collectFrontendInjections` builds the published tags from it; `collectCanvasPluginStylesheets` (`server/publish/canvasStylesheets.ts`) builds the canvas list, served by `GET /admin/api/cms/runtime/canvas-stylesheets` (`site.read`). The canvas receives CSS text, not URLs: external files are read from the plugin's upload directory and their relative `url(...)` / `@import` references rebased onto the stylesheet URL, so the canvas can pin viewport units and keep plugin CSS in the author cascade layer. The `media` attribute is kept; an `@import` inside a plugin stylesheet is not followed in the canvas. Canvas side: [`docs/editor.md`](../editor.md) → "CSS injection into the iframe".
 
 ### Settings — declared in `instatic-plugin.config.ts` / `plugin.json`
 
@@ -764,6 +803,8 @@ const { count } = await api.cms.content.republishAll()
 Tree mutation and replacement payloads are validated against the canonical `@core/page-tree` TypeBox schemas before host dispatch. `insertNode.node` must be a complete `PageNode`, and `replace(tree)` must receive a complete `NodeTree` with a valid `rootNodeId`, matching node-map keys, resolvable child IDs, and no reachable cycles.
 
 The host protocol names the per-table entry calls as `cms.content.entries.list`, `cms.content.entries.get`, `cms.content.entries.getBySlug`, `cms.content.entries.create`, `cms.content.entries.update`, `cms.content.entries.delete`, `cms.content.entries.publish`, `cms.content.entries.moveTable`, `cms.content.entries.createMany`, `cms.content.entries.updateMany`, and `cms.content.entries.deleteMany`. Tree calls dispatch as `cms.content.tree.read`, `cms.content.tree.mutate`, and `cms.content.tree.replace`; `getPublishedSnapshot(...)` dispatches as `cms.content.snapshot`.
+
+`publish`, `delete` and `deleteMany` keep the baked publish slot in step, exactly as the Content workspace does: the entry's own page is written or removed, and baked pages that list its table through a loop are refreshed. See [publisher.md](publisher.md) → "Publishing one row, and the pages that list it".
 
 #### Content events
 
@@ -944,7 +985,7 @@ independent layers that agree on that single authority:
 
 Both the VM layer and the host layer drive from the same `TARGET_PERMISSIONS` map in `server/plugins/protocol/targets.ts`. This single table is the source of truth for which permission each RPC target requires — the VM and host can never silently assert different permissions for the same target.
 
-Targets intentionally absent from `TARGET_PERMISSIONS` require no permission and are explicitly ungated: `cms.settings.replace` (any active plugin may update its own settings), `network.abort` (no active id without `network.outbound`), `crypto.digest` and `crypto.signHmac` (pure computation, no I/O — same model as `Math`/`JSON`). Two conditional checks that a static map cannot express remain in their handlers: `cms.routes.register` with `access.kind === 'public'` additionally requires `cms.routes.public`, and every `cms.content.*` handler additionally calls `assertContentTableAccess` for the per-table manifest allowlist.
+Targets intentionally absent from `TARGET_PERMISSIONS` require no permission and are explicitly ungated: `cms.settings.replace` (any active plugin may update its own settings), `network.abort` (no active id without `network.outbound`), `crypto.digest` and `crypto.signHmac` (pure computation, no I/O — same model as `Math`/`JSON`). Two conditional checks that a static map cannot express remain in their handlers: `cms.routes.register` with `access.kind === 'public'` additionally requires `cms.routes.public` and with `access.kind === 'member'` requires `members.read`, `cms.hooks.on` for a `member.*` event requires `members.read`, `cms.members.invite` with tags requires `members.tags`, and every `cms.content.*` handler additionally calls `assertContentTableAccess` for the per-table manifest allowlist.
 
 The VM-side check throws **synchronously** inside the sandbox, so a plugin that
 declares a permission it was denied is rejected before any host dispatch is even
@@ -968,6 +1009,9 @@ Risk levels:
 | `cms.storage`               | Admin / editor / server| Medium  | Read/write plugin-owned records                                         |
 | `cms.routes`                | Server               | High      | Register authenticated backend routes                                   |
 | `cms.routes.public`         | Server               | Dangerous | Register anonymously-callable routes; requires `cms.routes` too          |
+| `members.read`              | Server               | High      | See the signed-in member on its routes, register member routes, look members up, hear member events |
+| `members.write`             | Server               | High      | Invite site members                                                      |
+| `members.tags`              | Server               | Dangerous | Grant and withdraw member access tags (what a member may open)           |
 | `cms.hooks`                 | Server               | High      | Listen to CMS events / filter values                                    |
 | `cms.schedule`              | Server               | High      | Register cadence-driven handlers                                        |
 | `cms.content.read`          | Server               | Low       | List / read entries; read trees; search; published snapshots             |

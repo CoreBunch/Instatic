@@ -35,6 +35,8 @@ import {
   type CmsLoginActivityResult,
 } from '@core/persistence'
 import styles from '../AccountPage.module.css'
+import { EmptyState } from '@ui/components/EmptyState'
+import { LockSolidIcon } from 'pixel-art-icons/icons/lock-solid'
 
 const LOOKBACK_24H_MS = 24 * 60 * 60 * 1000
 
@@ -128,7 +130,12 @@ export function ActivityTab() {
       {loading ? (
         <SkeletonRows count={6} rowHeight={32} ariaLabel="Loading activity" />
       ) : events.length === 0 ? (
-        <p className={styles.emptyState}>No login activity yet.</p>
+        <EmptyState
+          variant="centered"
+          icon={<LockSolidIcon size={28} />}
+          title="No login activity yet"
+          description="Sign-ins to your account appear here."
+        />
       ) : (
         <DataTable aria-label="Login activity" density="compact">
           <DataTableHead>

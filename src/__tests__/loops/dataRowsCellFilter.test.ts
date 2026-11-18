@@ -28,10 +28,11 @@ async function seedPost(
   slug: string,
   cells: Record<string, unknown>,
   publishedAt: string,
+  tableId = 'posts',
 ): Promise<void> {
   await db`
     insert into data_rows (id, table_id, cells_json, slug, status, updated_at)
-    values (${rowId}, ${'posts'}, ${cells}, ${slug}, ${'published'}, ${publishedAt})
+    values (${rowId}, ${tableId}, ${cells}, ${slug}, ${'published'}, ${publishedAt})
   `
   await db`
     insert into data_row_versions (id, row_id, version_number, cells_json, slug, published_at, created_at)
@@ -84,6 +85,26 @@ beforeAll(async () => {
   await seedDataRow('logos', 'l-a', 'acme', { name: 'Acme', member: true })
   await seedDataRow('logos', 'l-b', 'globex', { name: 'Globex', member: false })
   await seedDataRow('logos', 'l-c', 'initech', { name: 'Initech' })
+
+  for (const kind of ['data', 'postType'] as const) {
+    const tableId = `numeric-${kind}`
+    const fields = [{ id: 'rank', label: 'Rank', type: 'number' }, { id: 'included', label: 'Included', type: 'boolean' }]
+    await db`
+      insert into data_tables (id, name, slug, kind, route_base, singular_label, plural_label, fields_json, system)
+      values (${tableId}, ${tableId}, ${tableId}, ${kind}, ${''}, ${'Item'}, ${'Items'}, ${fields}, ${false})
+    `
+    const values = [
+      { slug: 'negative', rank: -2.5 }, { slug: 'zero', rank: 0 },
+      { slug: 'nine', rank: 9 }, { slug: 'ten', rank: 10 }, { slug: 'fraction', rank: 2.25 },
+      { slug: 'null', rank: null }, { slug: 'missing' }, { slug: 'string', rank: '100' },
+    ]
+    for (const [index, value] of values.entries()) {
+      const cells = { ...value, included: index % 2 === 0 }
+      const rowId = tableId + '-' + index
+      if (kind === 'data') await seedDataRow(tableId, rowId, value.slug, cells)
+      else await seedPost(rowId, value.slug, cells, '2024-01-01T00:00:00Z', tableId)
+    }
+  }
 })
 
 afterAll(async () => {
@@ -153,6 +174,28 @@ describe('data.rows cell filter — post-type tables', () => {
 })
 
 describe('data.rows ordering by a cell', () => {
+  for (const kind of ['data', 'postType'] as const) {
+    it(`orders numeric ${kind} cells by their value, with untyped cells last in either direction`, async () => {
+      for (const direction of ['asc', 'desc'] as const) {
+        const { items, totalItems } = await fetchPublishedDataRowItems(db, {
+          tableId: `numeric-${kind}`, orderBy: 'cell:rank', direction, limit: 50, offset: 0,
+        })
+        expect(items.map((item) => String(item.fields.slug))).toEqual(direction === 'asc'
+          ? ['negative', 'zero', 'fraction', 'nine', 'ten', 'null', 'missing', 'string']
+          : ['ten', 'nine', 'fraction', 'zero', 'negative', 'string', 'missing', 'null'])
+        expect(totalItems).toBe(8)
+      }
+    })
+
+    it(`keeps numeric ${kind} filtering and pagination parameter positions correct`, async () => {
+      const { items, totalItems } = await fetchPublishedDataRowItems(db, {
+        tableId: `numeric-${kind}`, orderBy: 'cell:rank', direction: 'asc', limit: 2, offset: 1,
+        cellFilter: { field: 'included', operator: 'isTrue', value: '' },
+      })
+      expect(items.map((item) => String(item.fields.slug))).toEqual(['fraction', 'nine'])
+      expect(totalItems).toBe(4)
+    })
+  }
   it('sorts by the cell, not by the row columns', async () => {
     // Seed order is alpha, bravo, charlie, delta; the dates deliberately
     // disagree with it so a column sort cannot produce this result.

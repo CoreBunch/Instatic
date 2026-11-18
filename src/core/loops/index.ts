@@ -17,3 +17,7 @@ export {
   resolveEntryFieldItems,
   type EntryFieldMedia,
 } from './sources/entryField'
+
+// Media projection shared by the `data.rows` source and the publisher's
+// entry-route frame, so `{currentEntry.<mediaField>}` resolves identically.
+export { collectMediaIds, resolveMediaIdsToPaths, resolvedMediaOverlay } from './sources/dataRowsMedia'

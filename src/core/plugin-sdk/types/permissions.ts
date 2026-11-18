@@ -16,6 +16,13 @@ export const PLUGIN_PERMISSION_VALUES = [
   // before they approve installation.
   'cms.routes.public',
   'cms.hooks',
+  // Site members — the people with an account on the published site.
+  // `read` sees who is signed in on the plugin's routes, looks members up and
+  // receives member events; `write` invites members; `tags` grants and
+  // withdraws the plugin's own access tags (what a member may open).
+  'members.read',
+  'members.write',
+  'members.tags',
   // CMS content — read/write/publish/delete the host's content tables
   // (`data_tables` + `data_rows`) through the `api.cms.content.*` surface.
   // Each mode is split so a typical plugin (SEO assistant, translator)

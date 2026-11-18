@@ -31,11 +31,12 @@
  * original bytes and metadata; the publisher falls back to the original until a
  * later upload/replace path regenerates variants.
  */
-
+import { BundlePublicationSchema } from './bundlePublication'
 import { Type, type Static } from '@core/utils/typeboxHelpers'
 import { BRANCH_ID_PATTERN } from '@core/branches'
 import { DataTableSchema, DataRowSchema, DataTableKindSchema } from './schemas'
 import { SiteShellSchema } from '@core/page-tree'
+import { AccessRuleSchema } from '@core/members'
 
 // ---------------------------------------------------------------------------
 // MediaAssetExport
@@ -374,8 +375,15 @@ export const SiteBundleSchema = Type.Object({
   site: Type.Optional(SiteShellSchema),
   /** All (or selected) data tables including system tables. */
   tables: Type.Array(DataTableSchema),
+  /**
+   * Who may open each table's entries on the published site, by table id.
+   * Only tables that are not open to anyone are listed. An import uses it to
+   * add a rule to a table that has none; it never loosens a stored rule.
+   */
+  tableAccess: Type.Optional(Type.Record(Type.String(), AccessRuleSchema)),
   /** All (or selected) non-deleted data rows. */
   rows: Type.Array(DataRowSchema),
+  publication: Type.Optional(BundlePublicationSchema),
   /** Non-deleted media assets with embedded bytes (optional — may be omitted to keep bundle small). */
   media: Type.Optional(Type.Array(MediaAssetExportSchema)),
   /** Media-library folder tree (optional). Asset membership rides on `media[].folderIds`. */

@@ -12,7 +12,7 @@ Each viewport frame runs in its own `<iframe>` with its own `<html><body>`. The 
 - **Design mode** renders one `IframeFrameSurface` per framed viewport context inside `CanvasTransformLayer` (pan/zoom). All frames mount as soon as the page document is in the store — the tree is already in memory, so there is nothing to stagger; `CanvasTransformLayer` renders skeleton frames only while the document itself hasn't loaded yet (`page === null`). **Live mode** renders a single real-size `IframeFrameSurface` inside `CanvasLiveSurface` (normal scroll).
 - Both modes are fully editable — click-to-select, properties panel, structural edits all work. Neither is a read-only preview.
 - Agent evidence can request any configured viewport. Each capture renders once through an offscreen `AgentSnapshotFrame` at the configured width, then removes it without changing the visible canvas state.
-- CSS arrives in each iframe via three injectors: `EditorChromeInjector` (unlayered), `ClassStyleInjector` (`@layer user-authored`), `UserStylesheetInjector` (`@layer user-authored`).
+- CSS arrives in each iframe via four injectors: `EditorChromeInjector` (unlayered), `ClassStyleInjector` (`@layer user-authored`), `UserStylesheetInjector` (`@layer user-authored`), `PluginStylesheetInjector` (`@layer user-authored`, the stylesheets plugins add to published pages; plugin scripts never load in the canvas).
 - Wheel, pointer, and keyboard events are forwarded from inside the iframe to the parent's gesture / reorder-drag / shortcut handlers. `Tab` is blocked to prevent tab-walking inside the design preview.
 - Plugin canvas modules use a separate, sandboxed `ModuleSandboxFrame` (not `IframeFrameSurface`).
 
@@ -40,6 +40,7 @@ IframeFrameSurface
     ├── EditorChromeInjector   (head: unlayered editor chrome CSS)
     ├── ClassStyleInjector     (head: @layer user-authored — publisher reset + class registry)
     ├── UserStylesheetInjector (head: @layer user-authored — user-uploaded stylesheets)
+    ├── PluginStylesheetInjector (head: @layer user-authored — plugin frontend stylesheets, styles only)
     ├── {children}             (body: React node tree via NodeRenderer)
     └── RuntimeScriptInjector (body: opt-in runtime scripts when "Run scripts" is on)
 ```
@@ -119,7 +120,7 @@ Because the live frame sits flush against the top of the surface, both top-edge 
 
 ## CSS injection into iframes
 
-Five `<style>` elements are injected per iframe (three from `ClassStyleInjector`, one each from the other two injectors):
+Five `<style>` elements are injected per iframe (three from `ClassStyleInjector`, one each from `EditorChromeInjector` and `UserStylesheetInjector`), plus one per plugin stylesheet:
 
 | Injector | `id` attribute | Cascade layer | Purpose |
 |---|---|---|---|
@@ -128,6 +129,7 @@ Five `<style>` elements are injected per iframe (three from `ClassStyleInjector`
 | `ClassStyleInjector` | `mc-classes-preview` | `@layer user-authored` | Higher-specificity preview rule (doubled selector) while a property control is hovered. Empty for state-pseudo rules — those use `mc-classes-force-state` instead. |
 | `ClassStyleInjector` | `mc-classes-force-state` | `@layer user-authored` | Force-paints the active state-pseudo rule (`.btn:hover`, `.card:focus`, etc.) onto the selected node via a doubled `[data-node-id]` selector so the state is visible/editable without physically triggering it. Mirrors the full `contextStyles` emission per breakpoint and condition. |
 | `UserStylesheetInjector` | `mc-user-styles` | `@layer user-authored` | User-uploaded stylesheets (verbatim, unscoped) |
+| `PluginStylesheetInjector` | none (`data-plugin-id`, 0..n) | `@layer user-authored` | Stylesheets enabled plugins add to published pages. `head`-placement sheets are inserted before the site's style tags, all others after `mc-user-styles`, matching published document order. Styles only: plugin scripts, `link` and `meta` assets are never loaded. Details in [`docs/editor.md`](../editor.md) → "CSS injection into the iframe". |
 
 Unlayered rules always beat `@layer`-d rules regardless of specificity. User CSS can never override editor chrome even with a high-specificity selector.
 
@@ -219,6 +221,7 @@ Tests that render the canvas and query nodes must use the `iframeCanvasQuery.ts`
   - `src/admin/pages/site/canvas/EditorChromeInjector.tsx` — unlayered chrome CSS
   - `src/admin/pages/site/canvas/ClassStyleInjector.tsx` — class registry CSS
   - `src/admin/pages/site/canvas/UserStylesheetInjector.tsx` — user stylesheet CSS
+  - `src/admin/pages/site/canvas/PluginStylesheetInjector.tsx` — plugin frontend stylesheets (list from `canvasPluginStylesheets.ts`)
   - `src/admin/pages/site/canvas/RuntimeScriptInjector.tsx` — opt-in runtime scripts
   - `src/admin/pages/site/canvas/useRuntimeScriptBuild.ts` — script bundle builder
   - `src/admin/pages/site/store/slices/canvasSlice.ts` — `canvasView`, `runScripts`

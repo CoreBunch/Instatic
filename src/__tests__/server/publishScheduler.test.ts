@@ -5,7 +5,7 @@ import { getDataRow, listDuePublishSchedules } from '../../../server/repositorie
 import { createTestDb, type TestDb } from '../helpers/createTestDb'
 import { MAIN_SCOPE } from '../../../server/branches/scope'
 
-async function seedScheduledPageRow(
+async function seedScheduledPostRow(
   db: DbClient,
   input: { rowId: string; slug: string; scheduledAt: string },
 ): Promise<void> {
@@ -13,8 +13,8 @@ async function seedScheduledPageRow(
     insert into data_rows (id, table_id, cells_json, slug, status, scheduled_publish_at)
     values (
       ${input.rowId},
-      ${'pages'},
-      ${{ title: 'Scheduled page', page: { id: input.rowId } }},
+      ${'posts'},
+      ${{ title: 'Scheduled post', body: 'Scheduled content' }},
       ${input.slug},
       ${'scheduled'},
       ${input.scheduledAt}
@@ -35,13 +35,13 @@ describe('publish scheduler', () => {
     return testDb
   }
 
-  it('publishes due scheduled page rows as system publishes (PUBLISH-002)', async () => {
+  it('publishes due scheduled post rows as system publishes (PUBLISH-002)', async () => {
     const { db } = await makeDb()
-    const rowId = 'scheduled-page-row'
+    const rowId = 'scheduled-post-row'
     const scheduledAt = new Date(Date.now() - 60_000).toISOString()
-    await seedScheduledPageRow(db, {
+    await seedScheduledPostRow(db, {
       rowId,
-      slug: 'scheduled-page',
+      slug: 'scheduled-post',
       scheduledAt,
     })
 
@@ -52,8 +52,8 @@ describe('publish scheduler', () => {
     const row = await getDataRow(db, MAIN_SCOPE, rowId)
     expect(row).toMatchObject({
       id: rowId,
-      tableId: 'pages',
-      slug: 'scheduled-page',
+      tableId: 'posts',
+      slug: 'scheduled-post',
       status: 'published',
       publishedByUserId: null,
       updatedByUserId: null,
@@ -77,7 +77,7 @@ describe('publish scheduler', () => {
     expect(versions).toEqual([
       {
         row_id: rowId,
-        slug: 'scheduled-page',
+        slug: 'scheduled-post',
         published_by_user_id: null,
       },
     ])

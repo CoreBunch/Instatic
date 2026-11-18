@@ -18,8 +18,8 @@
  *     every page load, and responds with `Cache-Control: no-store`.
  *
  * Version-awareness: the hole runtime stamps `data-instatic-version` on each
- * placeholder. The endpoint compares `?v=` to the current `publishVersion`; a
- * mismatch returns a lightweight stale sentinel so the next page load picks up
+ * placeholder. The endpoint compares `?v=` to the frozen site's content hash;
+ * a mismatch returns a lightweight stale sentinel so the next page load picks up
  * the new version.
  *
  * Inside the hole endpoint the RenderConfig has no `dynamicNodeIds` — the node
@@ -36,17 +36,36 @@
 
 import type { DbClient } from '../../db/client'
 import type { Page, PageNode, SiteDocument } from '@core/page-tree'
-import type { SourceRequestContext } from '@core/loops/types'
+import type { ClosedContent, SourceRequestContext } from '@core/loops/types'
 import { registry } from '@core/module-engine'
 import { loopSourceRegistry } from '@core/loops/registry'
-import { renderNode, type RenderConfig, type RenderAccumulators } from '@core/publisher'
-import { buildPageFrame, buildRouteFrame, buildSiteFrame } from '@core/templates/contextFrames'
+import {
+  renderNode,
+  showWhenPathsAllow,
+  showWhenPathsAreGated,
+  showWhenPathsTo,
+  subtreeDependsOnMember,
+  type RenderConfig,
+  type RenderAccumulators,
+} from '@core/publisher'
+import { buildPageFrame, buildRouteFrame, buildSiteFrame, type MemberFrame } from '@core/templates/contextFrames'
 import { prefetchLoopData } from '../../publish/loopPrefetch'
 import { getOrRender } from '../../publish/renderCache'
 import { getPublishedNodeIndexForVersion } from '../../publish/publishedSnapshotCache'
 import { getPublishVersion } from '../../publish/publishState'
 import { HOLE_RUNTIME_JS } from '../../publish/holeRuntime'
 import { stampFormPageTokens } from '../../forms/formRuntime'
+import { isSessionCookieName } from '../../sessionCookies'
+import {
+  closedContentFor,
+  decideAccess,
+  getAccessIndex,
+  indexedRulesForPath,
+  memberFrameFor,
+  pageRules,
+  PRIVATE_HEADERS,
+  visitorFromRequest,
+} from '../../publish/accessGate'
 
 const HOLE_RUNTIME_PATH = '/_instatic/hole-runtime.js'
 const HOLE_PATH_PREFIX = '/_instatic/hole/'
@@ -79,7 +98,11 @@ interface HoleHandlerContext {
 // Request helpers
 // ---------------------------------------------------------------------------
 
-/** Parse a `Cookie` header into a flat map. Returns `{}` when absent. */
+/**
+ * Parse a `Cookie` header into a flat map for a per-visitor loop source.
+ * Session cookies are left out: sources can be plugin code. Returns `{}`
+ * when absent.
+ */
 function parseCookies(header: string | null): Record<string, string> {
   if (!header) return {}
   const out: Record<string, string> = {}
@@ -87,7 +110,7 @@ function parseCookies(header: string | null): Record<string, string> {
     const eq = part.indexOf('=')
     if (eq < 0) continue
     const name = part.slice(0, eq).trim()
-    if (!name) continue
+    if (!name || isSessionCookieName(name)) continue
     out[name] = decodeURIComponent(part.slice(eq + 1).trim())
   }
   return out
@@ -123,11 +146,15 @@ async function renderHoleFragment(
   db: DbClient,
   pageUrl: URL,
   request: SourceRequestContext,
+  closed: ClosedContent,
+  /** The visitor's member frame (null when signed out); undefined for a shared render. */
+  member: MemberFrame | null | undefined,
 ): Promise<string> {
   const route = buildRouteFrame(pageUrl.toString())
   const loopData = await prefetchLoopData(page, site, db, pageUrl, {
     request,
     rootNodeId: nodeId,
+    closed,
   })
   const config: RenderConfig = {
     page,
@@ -140,6 +167,7 @@ async function renderHoleFragment(
       page: buildPageFrame(page),
       site: buildSiteFrame(site),
       route,
+      ...(member !== undefined ? { member } : {}),
     },
     // No dynamicNodeIds: inside a hole endpoint we render the full subtree.
   }
@@ -181,26 +209,22 @@ export async function handleHoleRequest(
     })
   }
 
-  // Version check — if the ?v= param doesn't match the current publish version,
-  // return a lightweight stale sentinel without caching. The next full page load
-  // will carry the correct version in its placeholder attributes.
-  const requestVersion = url.searchParams.get('v') ?? ''
+  // Cache generations change on row publishes, unpublishes and deletes too.
+  // Fragment validity instead follows the frozen site that produced its shell.
   const currentVersion = getPublishVersion()
-  if (requestVersion !== String(currentVersion)) {
-    return new Response('<instatic-hole-stale data-instatic-stale="true"></instatic-hole-stale>', {
-      headers: {
-        'content-type': 'text/html; charset=utf-8',
-        'cache-control': 'no-store',
-      },
-    })
-  }
-
-  // Load (memoised) snapshot for this version and find the node's page in O(1).
   const snap = await getPublishedNodeIndexForVersion(ctx.db, currentVersion)
   if (!snap) {
     return new Response('Site not published', {
       status: 404,
       headers: { 'content-type': 'text/plain; charset=utf-8' },
+    })
+  }
+  if (url.searchParams.get('v') !== snap.snapshotHash) {
+    return new Response('<instatic-hole-stale data-instatic-stale="true"></instatic-hole-stale>', {
+      headers: {
+        'content-type': 'text/html; charset=utf-8',
+        'cache-control': 'no-store',
+      },
     })
   }
   const foundPage = snap.nodeIndex.get(nodeId)
@@ -222,26 +246,63 @@ export async function handleHoleRequest(
     pageUrl = new URL(buildPageFrame(foundPage).permalink, url.origin)
   }
 
+  // A fragment is part of a page and is gated like one: by the page that owns
+  // the node, and (for a node in a template) by the route it is rendered on.
+  // `u` is chosen by the caller, so it can only ever add a restriction.
+  const accessIndex = await getAccessIndex(ctx.db, currentVersion)
+  const rules = [...pageRules(accessIndex, foundPage), ...indexedRulesForPath(accessIndex, pageUrl.pathname)]
+  const isProtected = rules.length > 0
+  const visitor = visitorFromRequest(ctx.db, req)
+  if (isProtected && (await decideAccess(rules, visitor)) !== 'allow') {
+    return new Response('Node not found', {
+      status: 404,
+      headers: { 'content-type': 'text/plain; charset=utf-8', ...PRIVATE_HEADERS },
+    })
+  }
+
+  // Lists in the fragment leave out what the visitor may not open. Only a
+  // protected page's fragment is rendered for a known member; every other
+  // fragment is shared, so it is rendered as for a signed-out visitor.
+  const closed = closedContentFor(accessIndex, isProtected ? ((await visitor())?.tags ?? null) : null)
+
   const perVisitor = isPerVisitorHole(node)
+  // A fragment that shows member data or has a show-when rule is rendered
+  // for this visitor alone, on a public page as much as on a protected one.
+  // So is a fragment that sits inside an element with a show-when rule: the
+  // rules above it are checked here, because rendering starts at this node.
+  // A node that is not on any render path of its page is given to nobody.
+  const paths = showWhenPathsTo(foundPage, snap.site, nodeId, { includeSelf: false })
+  const gated = showWhenPathsAreGated(paths)
+  const showsMember = gated || subtreeDependsOnMember(foundPage, snap.site, registry, nodeId)
+  if (gated) {
+    const tags = (await visitor())?.tags ?? null
+    if (!showWhenPathsAllow(paths, tags)) {
+      // Exactly what the page render gives this visitor for the enclosing element: nothing.
+      return new Response('', { status: 200, headers: { 'content-type': 'text/html; charset=utf-8', ...PRIVATE_HEADERS } })
+    }
+  }
   const route = buildRouteFrame(pageUrl.toString())
   // Parsed query params of the originating page request — handed to a
   // request-dependent loop source's `fetch()` via `ctx.request.query`.
   const query: Record<string, string> = Object.fromEntries(pageUrl.searchParams)
 
-  // Per-visitor hole: bypass Layer B entirely, expose cookies, never cache.
-  if (perVisitor) {
+  // Per-visitor hole, any hole of a protected page, or one that depends on
+  // the member: bypass Layer B entirely and never cache. Only per-visitor
+  // sources get the cookies.
+  if (perVisitor || isProtected || showsMember) {
     const request: SourceRequestContext = {
       query,
       path: route.path,
       slug: route.slug,
-      cookies: parseCookies(req.headers.get('cookie')),
+      cookies: perVisitor ? parseCookies(req.headers.get('cookie')) : {},
     }
-    const html = await renderHoleFragment(nodeId, foundPage, snap.site, ctx.db, pageUrl, request)
+    const member = isProtected || showsMember ? memberFrameFor(await visitor()) : undefined
+    const html = await renderHoleFragment(nodeId, foundPage, snap.site, ctx.db, pageUrl, request, closed, member)
     return new Response(html, {
       status: 200,
       headers: {
         'content-type': 'text/html; charset=utf-8',
-        'cache-control': 'no-store',
+        ...(isProtected || showsMember ? PRIVATE_HEADERS : { 'cache-control': 'no-store' }),
       },
     })
   }
@@ -266,7 +327,7 @@ export async function handleHoleRequest(
       queryString: `v=${currentVersion}&u=${encodeURIComponent(pageUrl.pathname)}&${normalizeQuery(pageUrl.searchParams)}`,
     },
     async () => {
-      const html = await renderHoleFragment(nodeId, foundPage, snap.site, ctx.db, pageUrl, request)
+      const html = await renderHoleFragment(nodeId, foundPage, snap.site, ctx.db, pageUrl, request, closed, undefined)
       return {
         body: html,
         headers: { 'content-type': 'text/html; charset=utf-8' },

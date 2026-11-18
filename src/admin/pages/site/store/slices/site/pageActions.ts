@@ -12,6 +12,7 @@ import {
   duplicatePage,
   reconcileSiteExplorerInPlace,
 } from '@core/page-tree'
+import { PUBLIC_ACCESS } from '@core/members'
 import type { SiteSlice, SiteSliceHelpers } from './types'
 import { clearCanvasSelectionDraft } from '../selectionSlice'
 
@@ -20,6 +21,7 @@ type PageActions = Pick<
   | 'addPage'
   | 'deletePage'
   | 'renamePage'
+  | 'setPageAccess'
   | 'duplicatePage'
   | 'reorderPages'
   | 'convertPageToTemplate'
@@ -64,6 +66,18 @@ export function createPageActions({
         const page = p.pages.find((candidate) => candidate.id === pageId)
         if (!page) return false
         renamePage(p, pageId, title, slug)
+        return true
+      })
+    },
+
+    setPageAccess: (pageId, access) => {
+      mutateSite((p) => {
+        const page = p.pages.find((candidate) => candidate.id === pageId)
+        if (!page) return false
+        const current = page.access ?? PUBLIC_ACCESS
+        if (JSON.stringify(current) === JSON.stringify(access)) return false
+        if (access.level === 'public') delete page.access
+        else page.access = access
         return true
       })
     },

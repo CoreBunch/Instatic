@@ -4,7 +4,7 @@
  * `applyAssetRewrites` can do exact-string replacement.
  *
  * Two sources of asset references:
- *   1. PageNode props — `src`, `href`, `srcset` values set by the HTML
+ *   1. PageNode props — `src`, `href`, `srcset`, `videoUrl`, `poster` values set by the HTML
  *      importer from element attributes, plus imported `htmlAttributes` bags
  *      such as `data-bg-src`.
  *   2. CSS rule styles — `url(...)` payloads recorded by Phase 1's
@@ -44,7 +44,14 @@ import { guessMimeType, isImportUploadableMimeType } from './mimeTypes'
 // Props that may contain relative asset URLs in page nodes
 // ---------------------------------------------------------------------------
 
-const URL_BEARING_PROPS: ReadonlySet<string> = new Set(['src', 'href', 'srcset'])
+/**
+ * Node props that carry an asset URL. `videoUrl` is where the HTML importer
+ * stores a `<video src>` / first `<source src>`; without it an imported video
+ * kept its relative path. `poster` carries the native preview image.
+ * Shared with `applyAssetRewrites`
+ * so normalisation and rewrite always agree on the same props.
+ */
+export const URL_BEARING_PROPS: ReadonlySet<string> = new Set(['src', 'href', 'srcset', 'videoUrl', 'poster'])
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -62,15 +69,16 @@ export interface CssFileResult {
 }
 
 /**
- * A stylesheet kept as a file (`mode: 'file'`), pre-flattening. Each part is
+ * A stylesheet imported as a file (kept `mode: 'file'`, or unlinked and
+ * site-wide), pre-flattening. Each part is
  * one source file of the sheet's expanded `@import` graph, in cascade order —
  * kept separate until url() normalisation because relative `url(...)` paths
  * resolve against the PART's own directory, not the top-level sheet's.
  */
 export interface RawStylesheetSource {
-  /** FileMap key of the top-level linked CSS file. */
+  /** FileMap key of the top-level CSS file. */
   path: string
-  /** HTML FileMap sources that linked this stylesheet. */
+  /** HTML FileMap sources that linked this stylesheet. Empty for an unlinked, site-wide sheet. */
   pageSources: string[]
   /** Cascade ordering within the user-stylesheet bundle. */
   priority: number
@@ -297,6 +305,7 @@ function buildFontFamilies(
         variant: face.variant,
         format: best.format,
         src: best.src,
+        ...(face.fontDisplay ? { fontDisplay: face.fontDisplay } : {}),
         ...(face.unicodeRange ? { unicodeRange: face.unicodeRange } : {}),
       })
     }
@@ -683,4 +692,3 @@ function replaceRawUrlInValue(value: string, rawUrl: string, fileMapKey: string)
   const re = new RegExp(`url\\(\\s*(['"]?)${escaped}\\1\\s*\\)`, 'g')
   return value.replace(re, `url('${fileMapKey}')`)
 }
-

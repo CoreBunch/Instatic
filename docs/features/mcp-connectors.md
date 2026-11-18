@@ -17,6 +17,10 @@ The UI exposes two credential lifecycles instead of a cosmetic local/remote swit
 
 Both modes resolve to the same persistent connection grant and the same `toolAllowedForCapabilities` gate. OAuth does not create a wider tool path.
 
+Every MCP request re-reads the connection owner's account in `server/ai/mcp/auth.ts`. The owner must be active, not deleted, and still hold `ai.chat`. Effective tool permissions are the intersection of the stored connection grant and the owner's current role capabilities. Role changes cannot preserve removed permissions or expand the connection beyond its original grant.
+
+Suspended or deleted accounts also cannot exchange pending authorization codes or rotate refresh tokens (`server/ai/mcp/oauth/store.ts`); the token endpoint returns `invalid_grant`. Account suspension is an access block, not permanent credential revocation: reactivating the account permits otherwise valid credentials again. Revoke/disconnect the connection when permanent invalidation is required. Requests already authorized before suspension are not cancelled.
+
 The MCP endpoint is always:
 
 ```text
@@ -144,7 +148,7 @@ executeAiTool(...) / live editor bridge
 | `contentAuthorization.ts` | Before a document tool is relayed to the browser, resolves the target row through `server/auth/dataAccess.ts` with the connection's own identity and capabilities (table family plus own-vs-any ownership), so the owner's admin cookie cannot widen the delegated grant. |
 | `transports/http.ts` | Authenticated, Origin-validated `createMcpHandler` entry for MCP 2026-07-28 plus the stateless 2025 fallback. |
 | `server.ts` / `registry.ts` | Low-level SDK server, TypeBox input schemas, catalog deduplication, and capability filtering. |
-| `editorBridge.ts` | Per-user, per-scope live workspace bridge. The stream carries an **idle lease** (120s, re-armed by every relayed tool request) so an active batch is never cut mid-flight; only quiet streams recycle. The workspace's reconnect loop (`useMcpWorkspaceBridge`) reopens a recycled healthy stream immediately off the stream-end network event — deliberately timer-free, because hidden webviews (backgrounded browser tabs) clamp timers to minutes while network events still fire — and a tab becoming visible short-circuits any pending retry delay. |
+| `editorBridge.ts` | Per-user, per-scope live workspace bridge. Tool requests are delivered **serially** (the next is pushed only once the previous settles, matching the editor's one-at-a-time execution), so each call's 90s timeout measures the editor's actual work, not time queued behind slower calls. The stream carries an **idle lease** (120s, re-armed by every relayed tool request and never expiring while a call is pending) so an active batch is never cut mid-flight; only quiet streams recycle. The workspace's reconnect loop (`useMcpWorkspaceBridge`) reopens a recycled healthy stream immediately off the stream-end network event — deliberately timer-free, because hidden webviews (backgrounded browser tabs) clamp timers to minutes while network events still fire — and a tab becoming visible short-circuits any pending retry delay. |
 | `tools/publishTool.ts` | Explicit canonical full-site publish with MCP audit metadata. |
 | `tools/uploadMediaTool.ts` | Server-resolved image upload (`media_upload`) — inline base64 or SSRF-guarded `sourceUrl` download, through the shared media pipeline. |
 
@@ -188,7 +192,7 @@ Create and manual revoke actions retain the existing `ai.mcp_connector.created` 
 ## Capability enforcement
 
 - Management and consent require `ai.providers.manage`.
-- Token creation and OAuth approval require step-up authentication.
+- Token creation and OAuth approval additionally require `ai.chat` and step-up authentication. A manager without AI access can still list/revoke connections or deny OAuth consent, but cannot create credentials that would fail the MCP authentication gate.
 - Mutating tools require `ai.tools.write`.
 - Page-tree edits require the matching site/page edit capabilities.
 - Full-site deployment additionally requires `pages.publish`.
@@ -201,6 +205,7 @@ Create and manual revoke actions retain the existing `ai.mcp_connector.created` 
 - `server/ai/mcp/oauth/handler.test.ts` covers discovery metadata, the 503 answer without a configured public origin, public dynamic registration, and callback policy.
 - `server/ai/mcp/oauth/store.test.ts` covers PKCE exchange, exact binding, one-time codes, access lookup, refresh rotation/reuse, and revocation.
 - `server/ai/mcp/auth.test.ts` covers personal and OAuth bearer resolution plus the protected-resource challenge with and without a trustworthy issuer.
+- `server/ai/mcp/accountAccess.test.ts` exercises real MCP tool calls and OAuth token endpoints before and after suspension/deletion, permission reduction, and loss of AI access; it also verifies active-account refresh rotation.
 - `src/__tests__/ai/mcpOAuthAuthorizationHandler.test.ts` covers signed-in consent, capability selection, exact callback redirects, denial, and privilege floors.
 - `src/__tests__/ai/mcpConnectorsHandler.test.ts` covers connection listing, personal-token creation, step-up, revoke, and privilege floors.
 - `server/ai/mcp/e2e.test.ts`, `transports/http.test.ts`, and `publishTool.test.ts` cover the real MCP request flow and publish path.

@@ -7,7 +7,7 @@
 
 import type { StyleRule, ConditionDef } from '@core/page-tree'
 import type { ImportFragment } from '@core/htmlImport'
-import type { FontFileFormat } from '@core/fonts'
+import type { FontDisplay, FontFileFormat } from '@core/fonts'
 import type { SiteScriptFormat } from '@core/site-runtime'
 
 // ---------------------------------------------------------------------------
@@ -49,8 +49,8 @@ export type NewStyleRule = Omit<StyleRule, 'id' | 'createdAt' | 'updatedAt'>
  *   declaration value. Assets are collected in `assetRefs` (not warnings) by
  *   the Phase 1 parser; this kind is reserved for Phase 2's use.
  * - `duplicate-class`: two `.foo { ... }` rules with the same class selector
- *   appeared in the same file. The later rule's declarations win (CSS cascade
- *   semantics). One warning is emitted per duplicated class.
+ *   appeared in the same file. Each occurrence stays its own rule at its own
+ *   source position (CSS cascade semantics). One warning per repeat.
  *
  * Phase 2 (site import pipeline) kinds:
  * - `missing-stylesheet`: a stylesheet referenced from an HTML `<link>` or a
@@ -196,6 +196,7 @@ export interface ParsedFontFace {
   /** Raw `url(...)` payloads from the `src` descriptor, in source order. */
   srcUrls: string[]
   unicodeRange?: string
+  fontDisplay?: FontDisplay
 }
 
 /**
@@ -208,6 +209,7 @@ export interface ImportFontFile {
   /** FileMap key (pre-rewrite) → media public URL (post-rewrite). */
   src: string
   unicodeRange?: string
+  fontDisplay?: FontDisplay
 }
 
 /** A custom font family synthesized from imported `@font-face` blocks. */
@@ -222,10 +224,18 @@ export interface ImportFontFamily {
  * CMS Google-font installer used by the Typography panel, producing self-hosted
  * font entries instead of leaving an external stylesheet in the site.
  */
-export interface ImportGoogleFont {
+export interface GoogleFontRequest {
   family: string
   variants: string[]
   subsets: string[]
+}
+
+/** A planned Google font: the install request plus where the import asked for it. */
+export interface ImportGoogleFont extends GoogleFontRequest {
+  /** Converted CSS (rules from linked sheets, inline `<style>`) requests it. */
+  requestedByConvertedCss: boolean
+  /** `ImportStylesheet.path` of every stylesheet file whose `@import` requests it. */
+  stylesheetPaths: string[]
 }
 
 /**
@@ -325,9 +335,11 @@ export interface LinkedStylesheet {
 }
 
 /**
- * A stylesheet kept as a file (`mode: 'file'`). Committed as a `SiteFile`
- * (`type: 'style'`) plus a page-scoped `site.runtime.styles` entry, exactly
- * like imported scripts. `content` is the flattened CSS: the sheet's
+ * A stylesheet imported as a file: a linked sheet kept with `mode: 'file'`,
+ * or a sheet no imported page links. Committed as a `SiteFile`
+ * (`type: 'style'`) plus a `site.runtime.styles` entry, exactly like imported
+ * scripts. A linked sheet is scoped to the pages that linked it; an unlinked
+ * one has no `pageSources` and applies to every page. `content` is the flattened CSS: the sheet's
  * unconditional local `@import` graph inlined in cascade order, trusted
  * Google-font `@import`s stripped (they install as self-hosted fonts), and
  * `url(...)` payloads normalised to FileMap keys for asset rewriting.
@@ -337,7 +349,7 @@ export interface ImportStylesheet {
   path: string
   /** Flattened CSS text. */
   content: string
-  /** HTML FileMap sources that linked this stylesheet. */
+  /** HTML FileMap sources that linked this stylesheet. Empty: no page linked it, so it is site-wide. */
   pageSources: string[]
   /** Final committed page IDs. Filled by `commitImportPlan` before adapter call. */
   pageIds?: string[]
@@ -460,7 +472,7 @@ export interface PagePlan {
   /**
    * The body content as a flat node fragment.
    *
-   * URL-shaped props (`src`, `href`, `srcset`) are normalized to FileMap keys
+   * URL-shaped props (`src`, `href`, `srcset`, `videoUrl`, `poster`) are normalized to FileMap keys
    * (relative paths) so that `applyAssetRewrites` can do exact-string
    * replacement without needing the original base path.
    */
@@ -641,7 +653,10 @@ export interface ImportPlan {
    * mode this plan was built with. Drives the wizard's per-sheet mode picker.
    */
   linkedStylesheets: LinkedStylesheet[]
-  /** Stylesheets kept as files (`mode: 'file'`), ready to commit as SiteFiles. */
+  /**
+   * Stylesheets that import as SiteFiles: linked sheets kept as files
+   * (`mode: 'file'`, page-scoped) and sheets no page links (site-wide).
+   */
   stylesheets: ImportStylesheet[]
   conflicts: {
     pages: PageConflict[]
@@ -656,8 +671,6 @@ export interface ImportPlan {
    * (from `dropped-at-rule` warnings in the CSS parser).
    */
   droppedAtRules: string[]
-  /** CSS files present in the FileMap but not linked by any imported page. */
-  unusedCss: string[]
 }
 
 /**
@@ -678,7 +691,7 @@ export interface ImportResult {
   fontTokens: { id: string; name: string; variable: string }[]
   /** Site scripts committed from imported JS files. */
   scripts: { id: string; path: string }[]
-  /** Stylesheets committed as page-scoped SiteFiles (`mode: 'file'`). */
+  /** Stylesheets committed as SiteFiles: kept linked sheets and unlinked site-wide ones. */
   stylesheets: { id: string; path: string }[]
   /** Resolved conflicts (mirrors ImportPlan.conflicts with final actions). */
   conflicts: ImportPlan['conflicts']

@@ -251,8 +251,8 @@ describe('stylesheet mode: file', () => {
     expect(plan.conflicts.crossSheetClasses).toHaveLength(0)
     // The page no longer treats the sheet as a converted cascade…
     expect(plan.pages[0].linkedCssPaths).toEqual([])
-    // …but the sheet is used, not "unused CSS".
-    expect(plan.unusedCss).toHaveLength(0)
+    // …and it is the one kept sheet, not also an unlinked site-wide one.
+    expect(plan.stylesheets.filter((sheet) => sheet.pageSources.length === 0)).toHaveLength(0)
     // Node class tokens stay — commit auto-creates bare classes for them.
     const tokens = Object.values(plan.pages[0].nodeFragment.nodes).flatMap((n) => n.classIds ?? [])
     expect(tokens).toContain('spec-cell')
@@ -287,7 +287,8 @@ describe('stylesheet mode: file', () => {
     expect(content.indexOf('margin: 0')).toBeLessThan(content.indexOf('.spec-cell'))
     expect(content).not.toContain('@import')
     expect(plan.googleFonts.map((f) => f.family)).toEqual(['Manrope'])
-    expect(plan.unusedCss).toHaveLength(0)
+    // The @imported file is part of the kept sheet, not a sheet of its own.
+    expect(plan.stylesheets.map((sheet) => sheet.path)).toEqual(['css/style.css'])
   })
 
   it('converted sheets are unaffected by another sheet being kept', () => {

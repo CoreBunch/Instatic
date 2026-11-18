@@ -432,8 +432,9 @@ export async function appendMessage(
     const cacheReadTokens = input.cacheReadTokens ?? 0
     const cacheCreationTokens = input.cacheCreationTokens ?? 0
 
-    // Pass content as a plain array; the DB boundary handles JSON
-    // encoding/decoding for `_json` columns.
+    // Serialize content explicitly: on Postgres `content_json` is `text`, and
+    // Bun binds a plain array to a text parameter via String(), storing
+    // '[object Object]'. Reads JSON.parse `_json` strings on both dialects.
     const { rows: msgRows } = await tx<MessageRow>`
       insert into ai_messages (
         id, conversation_id, position, role, content_json,
@@ -442,7 +443,7 @@ export async function appendMessage(
         cache_read_tokens, cache_creation_tokens
       )
       values (
-        ${id}, ${conversationId}, ${position}, ${input.role}, ${input.content},
+        ${id}, ${conversationId}, ${position}, ${input.role}, ${JSON.stringify(input.content)},
         ${input.toolCallId ?? null}, ${input.toolName ?? null},
         ${promptTokens}, ${completionTokens}, ${costUsd},
         ${cacheReadTokens}, ${cacheCreationTokens}

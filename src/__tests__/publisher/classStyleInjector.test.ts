@@ -130,6 +130,37 @@ describe('bagToCSS', () => {
     expect(css).toBe('')
   })
 
+  it('emits custom properties with underscores or a leading --_ as authored (#616)', () => {
+    // Webflow exports generate both forms; dropping them breaks every var().
+    const css = bagToCSS({
+      '--card_bg': '#0575d6',
+      '--_accent': '#fc834b',
+      '--brand---ds_mapped---background--page': '#fff',
+      '--plain-ok': '#161617',
+    } as never)
+    expect(css).toContain('--card_bg: #0575d6;')
+    expect(css).toContain('--_accent: #fc834b;')
+    expect(css).toContain('--brand---ds_mapped---background--page: #fff;')
+    expect(css).toContain('--plain-ok: #161617;')
+  })
+
+  it('keeps the case of a custom property name', () => {
+    // Custom properties are case-sensitive: `--brandColor` must not become
+    // `--brand-color`, or `var(--brandColor)` stops resolving.
+    const css = bagToCSS({ '--brandColor': 'red' } as never)
+    expect(css).toBe('  --brandColor: red;')
+  })
+
+  it('drops an invalid custom property name', () => {
+    const css = bagToCSS({ '--': 'a', '--has space': 'b', '--x;y': 'c', '--a:b': 'd' } as never)
+    expect(css).toBe('')
+  })
+
+  it('still rejects underscores in a standard property name', () => {
+    const css = bagToCSS({ font_size: '12px', '-_x': '1' } as never)
+    expect(css).toBe('')
+  })
+
   it('drops undefined and null and empty-string values', () => {
     const css = bagToCSS({ fontSize: undefined, color: '' } as never)
     expect(css).toBe('')

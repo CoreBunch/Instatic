@@ -23,7 +23,7 @@
 import type { AllowedApiTarget, ValidatedApiCall } from '../protocol/apiCallSchema'
 import { TARGET_PERMISSIONS } from '../protocol/targets'
 import type { DbClient } from '../../db/client'
-import { hostPlugins, getDbForApi, assertHostPluginPermission } from './registry'
+import { hostPlugins, getPluginHostContext, assertHostPluginPermission } from './registry'
 import { replyApiError } from './apiReplies'
 import type { HostPluginRecord } from './types'
 import { handleRoutesRegister } from './handlers/routes'
@@ -62,11 +62,18 @@ import {
   handleContentTreeRead,
   handleContentTreeReplace,
 } from './handlers/content'
+import {
+  handleMembersGet,
+  handleMembersInvite,
+  handleMembersTagsGrant,
+  handleMembersTagsRevoke,
+} from './handlers/members'
 
 type HostApiHandler<TTarget extends AllowedApiTarget> = (
   msg: Extract<ValidatedApiCall, { target: TTarget }>,
   entry: HostPluginRecord,
   db: DbClient,
+  uploadsDir: string | undefined,
 ) => Promise<void>
 /**
  * One handler per target, keyed by the SSOT target union. Because
@@ -80,6 +87,7 @@ type AnyHostApiHandler = (
   msg: ValidatedApiCall,
   entry: HostPluginRecord,
   db: DbClient,
+  uploadsDir: string | undefined,
 ) => Promise<void>
 
 const apiHandlers = {
@@ -123,11 +131,15 @@ const apiHandlers = {
   'cms.content.search': handleContentSearch,
   'cms.content.snapshot': handleContentSnapshot,
   'cms.content.republishAll': handleContentRepublishAll,
+  'cms.members.get': handleMembersGet,
+  'cms.members.invite': handleMembersInvite,
+  'cms.members.tags.grant': handleMembersTagsGrant,
+  'cms.members.tags.revoke': handleMembersTagsRevoke,
 } satisfies HostApiHandlerTable
 
 export async function dispatchApiCall(msg: ValidatedApiCall): Promise<void> {
-  const db = getDbForApi()
-  if (!db) {
+  const context = getPluginHostContext()
+  if (!context) {
     replyApiError(msg.pluginId, msg.correlationId, 'Plugin worker host has no DbClient configured')
     return
   }
@@ -151,7 +163,7 @@ export async function dispatchApiCall(msg: ValidatedApiCall): Promise<void> {
     // limitation (it can't tie `apiHandlers[msg.target]` to `msg`'s narrowed
     // shape), it does NOT mask a missing handler.
     const handler = apiHandlers[msg.target] as AnyHostApiHandler
-    await handler(msg, entry, db)
+    await handler(msg, entry, context.db, context.uploadsDir)
   } catch (err) {
     replyApiError(msg.pluginId, msg.correlationId, err instanceof Error ? err.message : String(err))
   }

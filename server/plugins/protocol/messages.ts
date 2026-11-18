@@ -132,6 +132,14 @@ export interface RunMigrateRequest {
   fromVersion: string
 }
 
+/** A site member as a plugin route sees them. No password, no session. */
+export interface SerializedMember {
+  id: string
+  email: string
+  tags: string[]
+  profile: Record<string, string | boolean>
+}
+
 export interface RunRouteRequest {
   kind: 'run-route'
   correlationId: string
@@ -139,6 +147,8 @@ export interface RunRouteRequest {
   routeKey: string
   request: SerializedRequest
   user: SerializedUser | null
+  /** The signed-in site member, on a member route or for a plugin that may read members. */
+  member: SerializedMember | null
   body: Record<string, unknown>
 }
 

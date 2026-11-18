@@ -153,7 +153,7 @@ Each floating window has a unique `FloatingPanelId` (`'mediaDetachedInspector' |
 |-----------------|-------------------------------------------------------------------------------------------------|
 | `MediaViewerWindow` | Derived during render: `selectedAssetId !== null && selectedAssetIds.size <= 1`. Closing clears the selection. No `useState`. |
 | `BulkEditWindow`    | Derived during render: `selectedAssetIds.size >= 2`. Mutually exclusive with the viewer. No `useState`. |
-| `UploadQueueWindow` | `uploadQueueOpen` in local `useState`. Auto-opens via `useEffect` when uploads start; stays open after completion until the user dismisses it. Toolbar button toggles it. |
+| `UploadQueueWindow` | `useUploadQueueWindow(active)` — local state. Opens on the transition INTO an active upload (detected during render, not in an effect) and nothing reopens it after that, so a user can close it mid-transfer; it stays open after completion until dismissed. Toolbar button toggles it. |
 
 The viewer and bulk-edit are derived rather than stored because "closed" is identical to "no selection" — every close path calls `workspace.clearSelection()`. Deriving avoids an extra render commit and the one-frame open lag that appeared with the old `setState`-in-effect approach.
 
