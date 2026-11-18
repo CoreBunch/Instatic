@@ -45,7 +45,7 @@ import {
 // Payload + DB helpers
 // ---------------------------------------------------------------------------
 
-const BACKDATED = '2000-01-01 00:00:00'
+const BACKDATED = '2000-01-01T00:00:00.000Z'
 
 function pagePayload(id: string, slug: string, title = slug): Record<string, unknown> {
   const rootId = `root-${id}`

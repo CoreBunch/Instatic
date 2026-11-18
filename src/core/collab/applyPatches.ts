@@ -26,7 +26,7 @@ import type { Patches } from 'mutative'
 import type { BaseNode, Page, SiteDocument } from '@core/page-tree'
 import type { VisualComponent } from '@core/visualComponents'
 import type { SavedLayout } from '@core/layouts'
-import { encodeCollabDocId, SITE_DOC_ID } from './docIds'
+import { encodeCollabDocId, siteDocId } from './docIds'
 import { dataMap, inlineTextPropOf, metaMap, rostersMap, SHELL_PER_ENTRY_KEYS, shellMap, treeMap } from './schema'
 import { buildBreakpointOverridesMap, buildNodeMap, buildPropsMap } from './nodeY'
 import { populateComponentDoc, populateLayoutDoc, populatePageDoc } from './seed'
@@ -360,6 +360,8 @@ export function applySitePatchesToDocs(
   nextSite: SiteDocument,
   docs: CollabDocSet,
   origin: unknown,
+  /** Branch the site document belongs to — every touched doc id carries it. */
+  branchId: string,
 ): string[] {
   const touchedDocs: string[] = []
   const touch = (docId: string): void => {
@@ -395,8 +397,8 @@ export function applySitePatchesToDocs(
   }
 
   if (shellHeads.size > 0 || shellEntryTargets.size > 0 || collectionsWithMembershipOps.length > 0) {
-    const siteDoc = docs.ensure(SITE_DOC_ID)
-    touch(SITE_DOC_ID)
+    const siteDoc = docs.ensure(siteDocId(branchId))
+    touch(siteDocId(branchId))
     siteDoc.transact(() => {
       const shell = shellMap(siteDoc)
       for (const head of shellHeads) {
@@ -443,8 +445,8 @@ export function applySitePatchesToDocs(
             // Client-created row: populate a fresh doc (single author — safe).
             const kind = COLLECTION_KIND[col]
             rosterWork.push(() => {
-              const rowDoc = docs.ensure(encodeCollabDocId({ kind, rowId: id }))
-              touch(encodeCollabDocId({ kind, rowId: id }))
+              const rowDoc = docs.ensure(encodeCollabDocId({ kind, branchId, rowId: id }))
+              touch(encodeCollabDocId({ kind, branchId, rowId: id }))
               rowDoc.transact(() => repopulateRowDoc(rowDoc, kind, nextById.get(id)!), origin)
             })
           }
@@ -478,8 +480,8 @@ export function applySitePatchesToDocs(
     // Wholesale collection replacement (imports) → repopulate every row doc.
     if (colPatches.some((p) => patchPath(p).length === 1)) {
       for (const [id, row] of nextById) {
-        const rowDoc = docs.ensure(encodeCollabDocId({ kind, rowId: id }))
-        touch(encodeCollabDocId({ kind, rowId: id }))
+        const rowDoc = docs.ensure(encodeCollabDocId({ kind, branchId, rowId: id }))
+        touch(encodeCollabDocId({ kind, branchId, rowId: id }))
         rowDoc.transact(() => repopulateRowDoc(rowDoc, kind, row), origin)
       }
       continue
@@ -500,8 +502,8 @@ export function applySitePatchesToDocs(
       const id = (row as Row).id
       if (rest.length === 0) {
         if (preById.get(id) !== nextById.get(id)) {
-          const rowDoc = docs.ensure(encodeCollabDocId({ kind, rowId: id }))
-          touch(encodeCollabDocId({ kind, rowId: id }))
+          const rowDoc = docs.ensure(encodeCollabDocId({ kind, branchId, rowId: id }))
+          touch(encodeCollabDocId({ kind, branchId, rowId: id }))
           rowDoc.transact(() => repopulateRowDoc(rowDoc, kind, row as Row), origin)
         }
         continue
@@ -514,8 +516,8 @@ export function applySitePatchesToDocs(
     for (const [id, subPaths] of rowSubPaths) {
       const nextRow = nextById.get(id)
       if (!nextRow) continue
-      const rowDoc = docs.ensure(encodeCollabDocId({ kind, rowId: id }))
-      touch(encodeCollabDocId({ kind, rowId: id }))
+      const rowDoc = docs.ensure(encodeCollabDocId({ kind, branchId, rowId: id }))
+      touch(encodeCollabDocId({ kind, branchId, rowId: id }))
       if (kind === 'layout') {
         // Whole-snapshot LWW — any layout content change rewrites the snapshot.
         rowDoc.transact(() => repopulateRowDoc(rowDoc, 'layout', nextRow), origin)

@@ -1,6 +1,7 @@
 import { expect, test, type Locator, type Page } from '@playwright/test'
 import { Type, type Static } from '@sinclair/typebox'
 import { Value } from '@sinclair/typebox/value'
+import { ADMIN_BASE_URL } from './helpers'
 
 const DashboardLayoutSaveItemSchema = Type.Object({
   id: Type.String(),
@@ -121,6 +122,15 @@ test.describe('dashboard', () => {
   test('customizes the widget grid and persists changes (DASH-002)', async ({
     page,
   }) => {
+    // Start from the default layout. A previous attempt of this test that
+    // failed partway leaves its widget on the dashboard, and the retry would
+    // then fail on its first assertion instead of testing anything.
+    const reset = await page.request.delete(
+      `${ADMIN_BASE_URL}/admin/api/cms/me/preferences/dashboard-layout`,
+      { headers: { origin: ADMIN_BASE_URL } },
+    )
+    expect(reset.status(), 'reset the saved dashboard layout').toBe(204)
+
     await page.goto('/admin/dashboard')
     await expect(page).toHaveURL(/\/admin\/dashboard$/)
     await expect(page.getByText('09 blocks')).toBeVisible()
@@ -212,7 +222,7 @@ test.describe('dashboard', () => {
 
     await expectOnboardingStep(panel, 'Set site identity', 'Completed', 'Open settings')
     await expectOnboardingStep(panel, 'Choose Core Framework import', 'In progress', 'Import')
-    await expectOnboardingStep(panel, 'Create your first page', 'Not started', 'New page')
+    await expectOnboardingStep(panel, 'Edit the Home page', 'In progress', 'Open editor')
     await expectOnboardingStep(panel, 'Install a plugin', 'Not started', 'Browse plugins')
     await expectOnboardingStep(panel, 'Invite your team', 'Not started', 'Add members')
 
@@ -222,7 +232,7 @@ test.describe('dashboard', () => {
       await page.keyboard.press('Escape')
       await expect(page.getByRole('dialog', { name: 'Settings' })).toBeHidden()
 
-      await panel.getByRole('button', { name: 'New page' }).click()
+      await panel.getByRole('button', { name: 'Open editor' }).click()
       await expect(page).toHaveURL(/\/admin\/site$/)
       await page.goto('/admin/dashboard')
       await expect(panel).toBeVisible({ timeout: 20_000 })
@@ -340,8 +350,7 @@ async function dragLocatorBy(
   deltaX: number,
   deltaY: number,
 ): Promise<void> {
-  const box = await locator.boundingBox()
-  if (!box) throw new Error('Cannot drag locator without a bounding box')
+  const box = await settledBoundingBox(locator)
   const startX = box.x + box.width / 2
   const startY = box.y + box.height / 2
   await page.mouse.move(startX, startY)
@@ -350,9 +359,33 @@ async function dragLocatorBy(
   await page.mouse.up()
 }
 
+type Box = NonNullable<Awaited<ReturnType<Locator['boundingBox']>>>
+
+/**
+ * The element's box once it has stopped moving. Entering customize mode
+ * reflows the grid, and a drag whose start point was read mid-reflow begins
+ * somewhere else than the widget: the drop then lands in the column it
+ * started from. Two identical consecutive readings mean the layout is at rest.
+ */
+async function settledBoundingBox(locator: Locator): Promise<Box> {
+  let previous: Box | null = null
+  let settled: Box | null = null
+  await expect(async () => {
+    const box = await locator.boundingBox()
+    const unchanged =
+      box !== null && previous !== null &&
+      box.x === previous.x && box.y === previous.y &&
+      box.width === previous.width && box.height === previous.height
+    previous = box
+    expect(unchanged, 'element is still moving').toBe(true)
+    settled = box
+  }).toPass({ intervals: [50], timeout: 5_000 })
+  if (!settled) throw new Error('Cannot drag locator without a bounding box')
+  return settled
+}
+
 async function dragWidgetToLibrary(page: Page, widgetCell: Locator): Promise<void> {
-  const box = await widgetCell.boundingBox()
-  if (!box) throw new Error('Cannot remove widget without a bounding box')
+  const box = await settledBoundingBox(widgetCell)
   const startX = box.x + box.width / 2
   const startY = box.y + box.height / 2
   await page.mouse.move(startX, startY)

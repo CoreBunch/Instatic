@@ -11,6 +11,7 @@ afterEach(() => {
 /** Append an iframe whose body is tagged as a canvas breakpoint frame. */
 function addCanvasFrame(html: string, breakpointId = 'bp-desktop'): HTMLIFrameElement {
   const frame = document.createElement('iframe')
+  frame.srcdoc = '<body></body>'
   document.body.appendChild(frame)
   const frameDoc = frame.contentDocument
   if (!frameDoc) throw new Error('Test iframe did not create a contentDocument')
@@ -48,6 +49,7 @@ describe('findRenderedCanvasNodeElement', () => {
 
   it('ignores iframes that are not canvas breakpoint frames', () => {
     const frame = document.createElement('iframe')
+    frame.srcdoc = '<body></body>'
     document.body.appendChild(frame)
     const frameDoc = frame.contentDocument
     if (!frameDoc) throw new Error('Test iframe did not create a contentDocument')

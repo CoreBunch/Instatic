@@ -5,6 +5,9 @@
  * installs, HTTP site saves, data-workspace edits) WITHOUT repositories
  * importing upward into server/collab.
  *
+ * Every event names the branch it happened on: collab documents are
+ * per-branch, so a write on one branch must never reset another's docs.
+ *
  * The relay's own persistence passes `collabInternal: true` through the
  * repository write functions, which then skip the notification — otherwise
  * every relay persist would reset the very documents it just persisted.
@@ -13,7 +16,10 @@
 export type RowWriteKind = 'create' | 'update' | 'delete'
 
 export interface RowWriteEvent {
+  branchId: string
+  /** Logical table id (`pages`, `components`, …). */
   tableId: string
+  /** Logical row ids. */
   rowIds: readonly string[]
   kind: RowWriteKind
 }
@@ -59,8 +65,8 @@ export function notifyRowWrite(event: RowWriteEvent): void {
   }
 }
 
-/** The shell (site row) equivalent — same seam, no table id. */
-type ShellWriteListener = () => void
+/** The shell (site row) equivalent — same seam, keyed by branch. */
+type ShellWriteListener = (branchId: string) => void
 const shellListeners = new Set<ShellWriteListener>()
 
 export function registerShellWriteListener(listener: ShellWriteListener): () => void {
@@ -68,10 +74,10 @@ export function registerShellWriteListener(listener: ShellWriteListener): () => 
   return () => shellListeners.delete(listener)
 }
 
-export function notifyShellWrite(): void {
+export function notifyShellWrite(branchId: string): void {
   for (const listener of shellListeners) {
     try {
-      listener()
+      listener(branchId)
     } catch (err) {
       console.error('[rowWriteEvents] shell listener failed:', err)
     }

@@ -14,7 +14,6 @@ dist
 dist-ssr
 .worktrees/
 .superpowers/
-.claude/
 .tmp/
 .tmp-lint/
 .coverage/
@@ -49,15 +48,23 @@ data/*.db-wal
 *.njsproj
 *.sln
 *.sw?
+# Agent skills specific to this repo. Each lives once in .agents/skills/ (read by
+# Codex and other agents) and is symlinked into .claude/skills/ for Claude Code.
+# Everything else in these folders is local tooling.
 .agents/*
 !.agents/skills/
 .agents/skills/*
-!.agents/skills/agent-browser/
-!.agents/skills/agent-browser/**
-!.agents/skills/skill-creator/
-!.agents/skills/skill-creator/**
 !.agents/skills/instatic-user-e2e/
-!.agents/skills/instatic-user-e2e/**
+!.agents/skills/maintain/
+!.agents/skills/release/
+!.agents/skills/run-and-test/
+.claude/*
+!.claude/skills/
+.claude/skills/*
+!.claude/skills/instatic-user-e2e
+!.claude/skills/maintain
+!.claude/skills/release
+!.claude/skills/run-and-test
 .skills/
 
 # User uploads — runtime data, never commit

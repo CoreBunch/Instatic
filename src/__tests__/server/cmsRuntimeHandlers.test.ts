@@ -6,7 +6,9 @@ import type { SiteDocument } from '@core/page-tree'
 import '@core/loops/sources'
 import '@modules/base'
 
-function makeFakeDb(): DbClient {
+function makeFakeDb(
+  capabilities: string[] = ['runtime.dependencies', 'site.read', 'pages.edit'],
+): DbClient {
   const handle = async <Row extends Record<string, unknown> = Record<string, unknown>>(
     strings: TemplateStringsArray,
     ...values: unknown[]
@@ -31,7 +33,7 @@ function makeFakeDb(): DbClient {
           role_name: 'Owner',
           role_description: '',
           role_is_system: true,
-          role_capabilities_json: ['runtime.dependencies', 'site.read', 'pages.edit'],
+          role_capabilities_json: capabilities,
         } as Row],
         rowCount: 1,
       }
@@ -69,18 +71,13 @@ function makeFakeDb(): DbClient {
 }
 
 function runtimeRequest(url: string, body: unknown): Request {
-  return {
+  const req = new Request(url, {
     method: 'POST',
-    url,
-    headers: {
-      get: (name: string) => {
-        if (name.toLowerCase() === 'cookie') return `${SESSION_COOKIE_NAME}=session-token`
-        if (name.toLowerCase() === 'content-type') return 'application/json'
-        return null
-      },
-    },
-    json: async () => body,
-  } as unknown as Request
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+  req.headers.set('cookie', `${SESSION_COOKIE_NAME}=session-token`)
+  return req
 }
 
 function site(): SiteDocument {
@@ -249,6 +246,25 @@ describe('CMS runtime handlers', () => {
         updatedAt: expect.any(Number),
       },
     })
+  })
+
+  it('serves the canvas plugin stylesheet plan to anyone who can read the site', async () => {
+    const req = new Request('http://localhost/admin/api/cms/runtime/canvas-stylesheets')
+    req.headers.set('cookie', `${SESSION_COOKIE_NAME}=session-token`)
+
+    const res = await handleCmsRequest(req, makeFakeDb(['site.read']))
+
+    expect(res.status).toBe(200)
+    await expect(res.json()).resolves.toEqual({ stylesheets: [] })
+  })
+
+  it('refuses the canvas plugin stylesheet plan without site.read', async () => {
+    const req = new Request('http://localhost/admin/api/cms/runtime/canvas-stylesheets')
+    req.headers.set('cookie', `${SESSION_COOKIE_NAME}=session-token`)
+
+    const res = await handleCmsRequest(req, makeFakeDb(['plugins.read']))
+
+    expect(res.status).toBe(403)
   })
 
   it('builds a runtime preview document for a provided site and page', async () => {

@@ -46,6 +46,27 @@ export interface UpdateMediaAssetMetadataInput {
 
 interface DeletedMediaAssetRow {
   storage_path: string
+  storage_adapter_id: string
+  variants_json: unknown
+}
+
+/**
+ * What a hard delete leaves for the caller to sweep from storage once the row
+ * delete has committed: the original through the adapter pinned on the row,
+ * plus every responsive variant (each pins its own adapter).
+ */
+export interface DeletedMediaAsset {
+  storagePath: string
+  storageAdapterId: string
+  variants: MediaVariant[]
+}
+
+function mapDeletedMediaAssetRow(row: DeletedMediaAssetRow): DeletedMediaAsset {
+  return {
+    storagePath: row.storage_path,
+    storageAdapterId: row.storage_adapter_id,
+    variants: parseVariants(row.variants_json),
+  }
 }
 
 /**
@@ -297,20 +318,47 @@ export async function restoreMediaAsset(
 }
 
 /**
- * Hard delete — removes the row. Caller is responsible for removing the
- * on-disk file using the returned `storagePath`.
+ * Hard delete — removes the row (folder memberships cascade). Caller is
+ * responsible for removing the stored bytes the returned value names, after
+ * the delete commits.
  */
 export async function deleteMediaAsset(
   db: DbClient,
   id: string,
-): Promise<{ storagePath: string } | null> {
+): Promise<DeletedMediaAsset | null> {
   const { rows } = await db<DeletedMediaAssetRow>`
     delete from media_assets
     where id = ${id}
-    returning storage_path
+    returning storage_path, storage_adapter_id, variants_json
   `
   const row = rows[0]
-  return row ? { storagePath: row.storage_path } : null
+  return row ? mapDeletedMediaAssetRow(row) : null
+}
+
+/**
+ * Hard-delete the site's media library (every asset, trashed ones included)
+ * for a `replace` import. Spares the assets that records surviving a replace
+ * own: a user's avatar (`users.avatar_media_id`) and plugin-managed media
+ * (`plugin_media_sources`, whose provenance row would cascade away with it).
+ * Folder memberships and usage refs cascade with the deleted rows.
+ *
+ * Runs inside the import transaction; the caller removes the returned bytes
+ * only after it commits, so a rolled-back import never loses a file.
+ * `not exists` rather than `not in`: `avatar_media_id` is nullable, and
+ * `not in` over a set holding NULL matches nothing on either dialect.
+ */
+export async function deleteSiteMediaAssets(db: DbClient): Promise<DeletedMediaAsset[]> {
+  const { rows } = await db<DeletedMediaAssetRow>`
+    delete from media_assets
+    where not exists (
+        select 1 from users where users.avatar_media_id = media_assets.id
+      )
+      and not exists (
+        select 1 from plugin_media_sources where plugin_media_sources.asset_id = media_assets.id
+      )
+    returning storage_path, storage_adapter_id, variants_json
+  `
+  return rows.map(mapDeletedMediaAssetRow)
 }
 
 /**

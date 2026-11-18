@@ -38,6 +38,7 @@ import type { SiteBundle } from '@core/data/bundleSchema'
 import { BUNDLE_ARCHIVE_MANIFEST_PATH } from '@core/data/bundleArchive'
 import type { DbClient } from '../../../server/db/client'
 import type { SiteShell } from '@core/page-tree'
+import { MAIN_SCOPE } from '../../../server/branches/scope'
 
 // ---------------------------------------------------------------------------
 // Minimal valid site shell for seeding
@@ -64,7 +65,7 @@ const TEST_SHELL: SiteShell = {
 // ---------------------------------------------------------------------------
 
 async function seedAuth(db: DbClient): Promise<string> {
-  await saveDraftSite(db, TEST_SHELL)
+  await saveDraftSite(db, MAIN_SCOPE, TEST_SHELL)
   await createUser(db, {
     id: 'test-owner',
     email: 'owner@export.test',
@@ -159,7 +160,7 @@ beforeAll(async () => {
   cookie = await seedAuth(db)
 
   // Create 1 custom table ("My Data")
-  await createDataTable(db, {
+  await createDataTable(db, MAIN_SCOPE, {
     id: CUSTOM_TABLE_ID,
     name: 'My Data',
     slug: 'my-data-test',
@@ -169,12 +170,12 @@ beforeAll(async () => {
   })
 
   // Seed 2 rows in posts
-  const p1 = await createDataRow(db, {
+  const p1 = await createDataRow(db, MAIN_SCOPE, {
     tableId: 'posts',
     cells: { title: 'Post One', slug: 'post-one' },
     slug: 'post-one',
   })
-  const p2 = await createDataRow(db, {
+  const p2 = await createDataRow(db, MAIN_SCOPE, {
     tableId: 'posts',
     cells: { title: 'Post Two', slug: 'post-two' },
     slug: 'post-two',
@@ -183,7 +184,7 @@ beforeAll(async () => {
   post2Id = p2.id
 
   // Seed 1 row in pages
-  const pg = await createDataRow(db, {
+  const pg = await createDataRow(db, MAIN_SCOPE, {
     tableId: 'pages',
     cells: { title: 'Home Page', slug: 'home', body: { nodes: {}, rootNodeId: 'root' } },
     slug: 'home',
@@ -191,7 +192,7 @@ beforeAll(async () => {
   pageId = pg.id
 
   // Seed 1 row in My Data
-  const cr = await createDataRow(db, {
+  const cr = await createDataRow(db, MAIN_SCOPE, {
     tableId: CUSTOM_TABLE_ID,
     cells: { name: 'Custom Item One' },
     slug: '',
@@ -206,7 +207,7 @@ beforeAll(async () => {
 describe('handleExportRoute — GET no filters', () => {
   test('returns all 4 rows across all tables', async () => {
     const req = makeGetRequest('/admin/api/cms/export', cookie)
-    const res = await handleExportRoute(req, db)
+    const res = await handleExportRoute(req, db, MAIN_SCOPE)
     expect(res).not.toBeNull()
 
     const { bundle } = await readExportArchive(res!)
@@ -216,7 +217,7 @@ describe('handleExportRoute — GET no filters', () => {
 
   test('includes all tables (system + custom)', async () => {
     const req = makeGetRequest('/admin/api/cms/export', cookie)
-    const res = await handleExportRoute(req, db)
+    const res = await handleExportRoute(req, db, MAIN_SCOPE)
     const { bundle } = await readExportArchive(res!)
 
     const tableIds = bundle.tables.map((t) => t.id)
@@ -228,7 +229,7 @@ describe('handleExportRoute — GET no filters', () => {
 
   test('site shell is present by default', async () => {
     const req = makeGetRequest('/admin/api/cms/export', cookie)
-    const res = await handleExportRoute(req, db)
+    const res = await handleExportRoute(req, db, MAIN_SCOPE)
     const { bundle } = await readExportArchive(res!)
 
     expect(bundle.site).toBeDefined()
@@ -237,7 +238,7 @@ describe('handleExportRoute — GET no filters', () => {
 
   test('sourceSiteName is set from the site shell name', async () => {
     const req = makeGetRequest('/admin/api/cms/export', cookie)
-    const res = await handleExportRoute(req, db)
+    const res = await handleExportRoute(req, db, MAIN_SCOPE)
     const { bundle } = await readExportArchive(res!)
 
     expect(bundle.sourceSiteName).toBe('Transfer Test Site')
@@ -245,7 +246,7 @@ describe('handleExportRoute — GET no filters', () => {
 
   test('media is absent (not requested)', async () => {
     const req = makeGetRequest('/admin/api/cms/export', cookie)
-    const res = await handleExportRoute(req, db)
+    const res = await handleExportRoute(req, db, MAIN_SCOPE)
     const { bundle } = await readExportArchive(res!)
 
     expect(bundle.media).toBeUndefined()
@@ -255,7 +256,7 @@ describe('handleExportRoute — GET no filters', () => {
 describe('handleExportRoute — GET ?tables=posts', () => {
   test('returns only the posts table', async () => {
     const req = makeGetRequest('/admin/api/cms/export?tables=posts', cookie)
-    const res = await handleExportRoute(req, db)
+    const res = await handleExportRoute(req, db, MAIN_SCOPE)
     const { bundle } = await readExportArchive(res!)
 
     expect(bundle.tables.length).toBe(1)
@@ -264,7 +265,7 @@ describe('handleExportRoute — GET ?tables=posts', () => {
 
   test('returns only the 2 posts rows', async () => {
     const req = makeGetRequest('/admin/api/cms/export?tables=posts', cookie)
-    const res = await handleExportRoute(req, db)
+    const res = await handleExportRoute(req, db, MAIN_SCOPE)
     const { bundle } = await readExportArchive(res!)
 
     expect(bundle.rows.length).toBe(2)
@@ -273,7 +274,7 @@ describe('handleExportRoute — GET ?tables=posts', () => {
 
   test('site is still present when only tables are filtered', async () => {
     const req = makeGetRequest('/admin/api/cms/export?tables=posts', cookie)
-    const res = await handleExportRoute(req, db)
+    const res = await handleExportRoute(req, db, MAIN_SCOPE)
     const { bundle } = await readExportArchive(res!)
 
     expect(bundle.site).toBeDefined()
@@ -285,7 +286,7 @@ describe('handleExportRoute — POST { tables: [{ tableId: "posts", rowIds: [id1
     const req = makePostRequest('/admin/api/cms/export', cookie, {
       tables: [{ tableId: 'posts', rowIds: [post1Id, post2Id] }],
     })
-    const res = await handleExportRoute(req, db)
+    const res = await handleExportRoute(req, db, MAIN_SCOPE)
     const { bundle } = await readExportArchive(res!)
 
     const returnedIds = bundle.rows.map((r) => r.id)
@@ -300,7 +301,7 @@ describe('handleExportRoute — POST { tables: [{ tableId: "posts", rowIds: [id1
     const req = makePostRequest('/admin/api/cms/export', cookie, {
       tables: [{ tableId: 'posts', rowIds: [post1Id, post2Id] }],
     })
-    const res = await handleExportRoute(req, db)
+    const res = await handleExportRoute(req, db, MAIN_SCOPE)
     const { bundle } = await readExportArchive(res!)
 
     const tableIds = bundle.tables.map((t) => t.id)
@@ -317,7 +318,7 @@ describe('handleExportRoute — POST { tables: [{ tableId: "posts", rowIds: [id1
       includeMediaFolders: false,
       includeRedirects: false,
     })
-    const res = await handleExportRoute(req, db, { uploadsDir: '/tmp/test-uploads-export' })
+    const res = await handleExportRoute(req, db, MAIN_SCOPE, { uploadsDir: '/tmp/test-uploads-export' })
     const { bundle } = await readExportArchive(res!)
 
     expect(bundle.site).toBeUndefined()
@@ -359,7 +360,7 @@ describe('handleExportRoute — GET ?includeMedia=1', () => {
       })
 
       const req = makeGetRequest('/admin/api/cms/export?includeMedia=1', mediaCookie)
-      const res = await handleExportRoute(req, mediaDb, { uploadsDir })
+      const res = await handleExportRoute(req, mediaDb, MAIN_SCOPE, { uploadsDir })
       const { bundle, entries } = await readExportArchive(res!)
 
       expect(bundle.media?.map((asset) => asset.id)).toEqual(['asset-logo'])
@@ -374,7 +375,7 @@ describe('handleExportRoute — GET ?includeMedia=1', () => {
 describe('handleExportRoute — GET ?includeSite=0', () => {
   test('site shell is absent', async () => {
     const req = makeGetRequest('/admin/api/cms/export?includeSite=0', cookie)
-    const res = await handleExportRoute(req, db)
+    const res = await handleExportRoute(req, db, MAIN_SCOPE)
     const { bundle } = await readExportArchive(res!)
 
     expect(bundle.site).toBeUndefined()
@@ -382,7 +383,7 @@ describe('handleExportRoute — GET ?includeSite=0', () => {
 
   test('sourceSiteName is still set even when includeSite=0', async () => {
     const req = makeGetRequest('/admin/api/cms/export?includeSite=0', cookie)
-    const res = await handleExportRoute(req, db)
+    const res = await handleExportRoute(req, db, MAIN_SCOPE)
     const { bundle } = await readExportArchive(res!)
 
     expect(bundle.sourceSiteName).toBe('Transfer Test Site')
@@ -395,7 +396,7 @@ describe('handleExportRoute — POST { tables: ["pages"], includeSite: false }',
       tables: [{ tableId: 'pages' }],
       includeSite: false,
     })
-    const res = await handleExportRoute(req, db)
+    const res = await handleExportRoute(req, db, MAIN_SCOPE)
     const { bundle } = await readExportArchive(res!)
 
     expect(bundle.tables.length).toBe(1)
@@ -407,7 +408,7 @@ describe('handleExportRoute — POST { tables: ["pages"], includeSite: false }',
       tables: [{ tableId: 'pages' }],
       includeSite: false,
     })
-    const res = await handleExportRoute(req, db)
+    const res = await handleExportRoute(req, db, MAIN_SCOPE)
     const { bundle } = await readExportArchive(res!)
 
     expect(bundle.rows.length).toBe(1)
@@ -420,7 +421,7 @@ describe('handleExportRoute — POST { tables: ["pages"], includeSite: false }',
       tables: [{ tableId: 'pages' }],
       includeSite: false,
     })
-    const res = await handleExportRoute(req, db)
+    const res = await handleExportRoute(req, db, MAIN_SCOPE)
     const { bundle } = await readExportArchive(res!)
 
     expect(bundle.site).toBeUndefined()
@@ -432,7 +433,7 @@ describe('handleExportRoute — POST { tables: [{ tableId: "pages", rowIds: [bog
     const req = makePostRequest('/admin/api/cms/export', cookie, {
       tables: [{ tableId: 'pages', rowIds: ['completely-bogus-row-id-that-does-not-exist'] }],
     })
-    const res = await handleExportRoute(req, db)
+    const res = await handleExportRoute(req, db, MAIN_SCOPE)
     const { bundle } = await readExportArchive(res!)
 
     expect(bundle.rows.length).toBe(0)
@@ -442,7 +443,7 @@ describe('handleExportRoute — POST { tables: [{ tableId: "pages", rowIds: [bog
     const req = makePostRequest('/admin/api/cms/export', cookie, {
       tables: [{ tableId: 'pages', rowIds: ['completely-bogus-row-id-that-does-not-exist'] }],
     })
-    const res = await handleExportRoute(req, db)
+    const res = await handleExportRoute(req, db, MAIN_SCOPE)
     const { bundle } = await readExportArchive(res!)
 
     // New model: a table named in `tables` is exported (its structure) even
@@ -456,7 +457,7 @@ describe('handleExportRoute — auth', () => {
   test('returns 401 when no session cookie', async () => {
     // Deliberately no cookie set
     const req = new Request('http://localhost/admin/api/cms/export', { method: 'GET' })
-    const res = await handleExportRoute(req, db)
+    const res = await handleExportRoute(req, db, MAIN_SCOPE)
     expect(res!.status).toBe(401)
   })
 })
@@ -468,7 +469,7 @@ describe('handleExportRoute — auth', () => {
 // ---------------------------------------------------------------------------
 
 async function estimateBytes(path: string, body: unknown, cookieStr: string, opts?: { uploadsDir?: string }): Promise<number> {
-  const res = await handleExportRoute(makePostRequest(path, cookieStr, body), db, opts)
+  const res = await handleExportRoute(makePostRequest(path, cookieStr, body), db, MAIN_SCOPE, opts)
   expect(res!.status).toBe(200)
   const parsed = JSON.parse(await res!.text()) as { bytes: number }
   return parsed.bytes
@@ -476,7 +477,7 @@ async function estimateBytes(path: string, body: unknown, cookieStr: string, opt
 
 describe('handleExportRoute — POST /export/estimate', () => {
   test('estimate equals the real download byte length exactly (no media)', async () => {
-    const dl = await handleExportRoute(makePostRequest('/admin/api/cms/export', cookie, {}), db)
+    const dl = await handleExportRoute(makePostRequest('/admin/api/cms/export', cookie, {}), db, MAIN_SCOPE)
     const realBytes = (await dl!.arrayBuffer()).byteLength
 
     const bytes = await estimateBytes('/admin/api/cms/export/estimate', {}, cookie)
@@ -491,6 +492,7 @@ describe('handleExportRoute — POST /export/estimate', () => {
     const realNoSite = await handleExportRoute(
       makePostRequest('/admin/api/cms/export', cookie, { includeSite: false }),
       db,
+      MAIN_SCOPE,
     )
     expect(withoutSite).toBe((await realNoSite!.arrayBuffer()).byteLength)
   })
@@ -501,7 +503,7 @@ describe('handleExportRoute — POST /export/estimate', () => {
       headers: { 'content-type': 'application/json' },
       body: '{}',
     })
-    const res = await handleExportRoute(req, db)
+    const res = await handleExportRoute(req, db, MAIN_SCOPE)
     expect(res!.status).toBe(401)
   })
 })
@@ -533,6 +535,7 @@ describe('handleExportRoute — POST /export/estimate with embedded media', () =
       const dl = await handleExportRoute(
         makePostRequest('/admin/api/cms/export', mediaCookie, { includeMedia: true }),
         mediaDb,
+        MAIN_SCOPE,
         { uploadsDir },
       )
       const realBytes = (await dl!.arrayBuffer()).byteLength
@@ -540,6 +543,7 @@ describe('handleExportRoute — POST /export/estimate with embedded media', () =
       const estRes = await handleExportRoute(
         makePostRequest('/admin/api/cms/export/estimate', mediaCookie, { includeMedia: true }),
         mediaDb,
+        MAIN_SCOPE,
         { uploadsDir },
       )
       const { bytes } = JSON.parse(await estRes!.text()) as { bytes: number }

@@ -95,6 +95,42 @@ describe('resolveHref', () => {
     expect(resolveHref('style.css', 'index.html')).toBe('style.css')
   })
 
+  // Static site generators routinely cache-bust stylesheet and script URLs. The FileMap is keyed by path, so
+  // a query has to be stripped before the lookup or the reference resolves to a key that cannot exist and is
+  // reported missing while the file sits in the archive.
+  it('strips a cache-busting query string', () => {
+    expect(resolveHref('assets/site.css?v=8f3a1c', 'index.html')).toBe('assets/site.css')
+  })
+
+  it('strips a query string on a root-relative href', () => {
+    expect(resolveHref('/assets/site.css?v=8f3a1c', 'pages/about.html')).toBe('assets/site.css')
+  })
+
+  it('strips a query string before resolving a parent-relative href', () => {
+    expect(resolveHref('../css/main.css?ver=2', 'pages/about.html')).toBe('css/main.css')
+  })
+
+  it('strips a trailing fragment', () => {
+    expect(resolveHref('assets/icons.svg#arrow', 'index.html')).toBe('assets/icons.svg')
+  })
+
+  it('strips both a query and a fragment', () => {
+    expect(resolveHref('assets/icons.svg?v=2#arrow', 'index.html')).toBe('assets/icons.svg')
+  })
+
+  it('returns null when nothing remains after stripping', () => {
+    expect(resolveHref('?v=8f3a1c', 'index.html')).toBeNull()
+  })
+
+  // The point is not what traversal resolves TO — `joinPaths` clamps an escaping `..` to the root by design,
+  // which is pre-existing behaviour. The point is that stripping a query must not CHANGE that handling.
+  it('a query string does not alter traversal handling', () => {
+    for (const href of ['../../secrets.css', '../secrets.css', 'a/../../secrets.css', '/../secrets.css']) {
+      expect(resolveHref(`${href}?v=1`, 'index.html')).toBe(resolveHref(href, 'index.html'))
+      expect(resolveHref(`${href}#frag`, 'pages/about.html')).toBe(resolveHref(href, 'pages/about.html'))
+    }
+  })
+
   it('resolves nested relative href', () => {
     expect(resolveHref('./main.css', 'styles/base.css')).toBe('styles/main.css')
   })

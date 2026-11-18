@@ -39,12 +39,6 @@ const PLUGIN_READ_CAPABILITIES: CoreCapability[] = [
   'plugins.lifecycle',
 ]
 
-const RUNTIME_STORAGE_CAPABILITIES: CoreCapability[] = [
-  'runtime.dependencies',
-  'storage.elect',
-  'storage.migrate',
-]
-
 export function hasCapability(user: CmsCurrentUser | null, capability: CoreCapability): boolean {
   return Boolean(user?.capabilities.includes(capability))
 }
@@ -86,6 +80,16 @@ export function canEditContent(user: CmsCurrentUser | null): boolean {
 export function canEditStyle(user: CmsCurrentUser | null): boolean {
   if (!user) return true
   return hasCapability(user, 'site.style.edit')
+}
+
+/**
+ * Install, remove and re-declare the site's npm dependencies (Dependencies
+ * panel, runtime-import fixes). Browsing the registry only needs `site.read`.
+ * Null session = unrestricted, like every other editor gate here.
+ */
+export function canManageRuntimeDependencies(user: CmsCurrentUser | null): boolean {
+  if (!user) return true
+  return hasCapability(user, 'runtime.dependencies')
 }
 
 /** Caller can save the draft site in any form (structure + content + style). */
@@ -245,7 +249,7 @@ export function canUseAiChat(user: CmsCurrentUser | null): boolean {
 // ---------------------------------------------------------------------------
 
 function canAccessUsersWorkspace(user: CmsCurrentUser | null): boolean {
-  return hasAnyCapability(user, ['users.manage', 'roles.manage', 'audit.read'])
+  return hasAnyCapability(user, ['users.manage', 'members.read', 'members.manage', 'roles.manage', 'audit.read'])
 }
 
 function canAccessAiWorkspace(user: CmsCurrentUser | null): boolean {
@@ -282,6 +286,8 @@ export function canAccessWorkspace(user: CmsCurrentUser | null, workspace: Admin
       return canAccessDataWorkspace(user)
     case 'media':
       return canReadMedia(user)
+    case 'branchReview':
+      return hasCapability(user, 'site.read')
     case 'plugins':
     case 'pluginPage':
       return canAccessPluginsWorkspace(user)
@@ -289,6 +295,8 @@ export function canAccessWorkspace(user: CmsCurrentUser | null, workspace: Admin
       return canAccessUsersWorkspace(user)
     case 'ai':
       return canAccessAiWorkspace(user)
+    case 'email':
+      return hasCapability(user, 'mail.manage')
     case 'account':
       // Self-targeted page — every authenticated user can manage their own
       // profile + devices. Anonymous visitors fall through to false.
@@ -300,7 +308,7 @@ export function firstAccessibleWorkspace(user: CmsCurrentUser | null): AdminWork
   // Dashboard comes first — it's the canonical admin home. Falls through to
   // the next accessible workspace for users whose role doesn't grant
   // `dashboard.read` (rare; only happens with hand-edited custom roles).
-  const order: AdminWorkspace[] = ['dashboard', 'site', 'content', 'data', 'media', 'plugins', 'users', 'ai']
+  const order: AdminWorkspace[] = ['dashboard', 'site', 'content', 'data', 'media', 'plugins', 'users', 'ai', 'email']
   return order.find((workspace) => canAccessWorkspace(user, workspace)) ?? null
 }
 
@@ -322,15 +330,13 @@ export function workspacePath(workspace: AdminWorkspace): string {
       return '/admin/users'
     case 'ai':
       return '/admin/ai'
+    case 'email':
+      return '/admin/email'
+    case 'branchReview':
+      return '/admin/site'
     case 'pluginPage':
       return '/admin/plugins'
     case 'account':
       return '/admin/account'
   }
 }
-
-// Reference unused imports so the linter doesn't strip them when not consumed
-// downstream yet (RUNTIME_STORAGE_CAPABILITIES is here for symmetry — the
-// runtime workspace doesn't currently have its own canAccess gate because
-// there is no dedicated runtime workspace; storage admin lives under media).
-void RUNTIME_STORAGE_CAPABILITIES

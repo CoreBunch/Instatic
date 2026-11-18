@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import type { AccessRule } from '@core/members'
 import type { Page, PageTemplateConfig } from '@core/page-tree'
 import { TemplateSettingsDialog, type TemplateSettingsPayload } from '@admin/shared/dialogs/TemplateSettingsDialog'
 import { PageSettingsDialog, type PageSettingsPayload } from '@admin/shared/dialogs/PageSettingsDialog'
@@ -6,6 +7,7 @@ import { PageSettingsDialog, type PageSettingsPayload } from '@admin/shared/dial
 interface UsePageSettingsDialogsOptions {
   pages: Page[]
   renamePage: (pageId: string, title: string, slug?: string) => void
+  setPageAccess: (pageId: string, access: AccessRule) => void
   convertPageToTemplate: (pageId: string, config: PageTemplateConfig) => void
   openPageInCanvas: (pageId: string) => void
 }
@@ -19,6 +21,7 @@ interface UsePageSettingsDialogsOptions {
 export function usePageSettingsDialogs({
   pages,
   renamePage,
+  setPageAccess,
   convertPageToTemplate,
   openPageInCanvas,
 }: UsePageSettingsDialogsOptions) {
@@ -36,6 +39,7 @@ export function usePageSettingsDialogs({
   function handleSavePageSettings(payload: PageSettingsPayload) {
     if (!pageSettingsTarget) return
     renamePage(pageSettingsTarget.id, payload.title, payload.slug)
+    setPageAccess(pageSettingsTarget.id, payload.access)
     setPageSettingsTarget(null)
   }
 

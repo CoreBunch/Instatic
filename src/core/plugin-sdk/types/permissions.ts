@@ -16,13 +16,21 @@ export const PLUGIN_PERMISSION_VALUES = [
   // before they approve installation.
   'cms.routes.public',
   'cms.hooks',
+  // Site members — the people with an account on the published site.
+  // `read` sees who is signed in on the plugin's routes, looks members up and
+  // receives member events; `write` invites members; `tags` grants and
+  // withdraws the plugin's own access tags (what a member may open).
+  'members.read',
+  'members.write',
+  'members.tags',
   // CMS content — read/write/publish/delete the host's content tables
   // (`data_tables` + `data_rows`) through the `api.cms.content.*` surface.
   // Each mode is split so a typical plugin (SEO assistant, translator)
-  // doesn't carry the dangerous bits. The manifest must additionally list
-  // the targeted tables in `contentAccess[]`; the host fails closed without
-  // both the permission and the allowlist entry. See
-  // docs/features/plugin-system.md → "Content access".
+  // doesn't carry the dangerous bits. The manifest must additionally cover
+  // the targeted tables in `contentAccess[]` — by slug, or via the
+  // `@own-created` marker for tables the plugin created at runtime; the
+  // host fails closed without both the permission and a covering entry.
+  // See docs/features/plugin-system.md → "Content access".
   'cms.content.read',
   'cms.content.write',
   'cms.content.publish',
@@ -51,7 +59,13 @@ export const PLUGIN_PERMISSION_VALUES = [
   'loops.register',
   'visualComponents.register',
   'dashboard.widgets.register',
-  // Media subsystem — three independent tiers; a plugin can hold any subset.
+  // Media subsystem — managed ingestion plus three independent extension tiers;
+  // a plugin can hold any subset.
+  //
+  //   • 'media.import' — create or replace plugin-owned media from an
+  //     allowlisted remote URL or a contained plugin-package asset. The HOST
+  //     resolves, validates, stores, and processes the bytes; QuickJS sees
+  //     only source metadata and the result.
   //
   //   • 'media.storage.adapter' — register an exclusive backend that intercepts
   //     every media WRITE / DELETE for one or more roles ('original',
@@ -67,6 +81,7 @@ export const PLUGIN_PERMISSION_VALUES = [
   //   • 'media.variant.delegate' — replace the host's local variant ladder
   //     with a URL template. For image-transform CDNs (Cloudflare Images,
   //     Imgix, Bunny Optimizer). One winning plugin per host.
+  'media.import',
   'media.storage.adapter',
   'media.url.transform',
   'media.variant.delegate',

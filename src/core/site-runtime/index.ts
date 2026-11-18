@@ -41,3 +41,5 @@ export {
   hasPublishedRuntimeScripts,
   scriptTagsForRuntimeAssets,
 } from './assetManifest'
+export { summarizeRuntimeDiagnostics, fileDiagnostics } from './diagnosticsSummary'
+export type { RuntimeDiagnosticsSummary, FileRuntimeDiagnostics } from './diagnosticsSummary'

@@ -4,6 +4,7 @@ import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { isAbsolute, join, resolve } from 'node:path'
 import type { DbClient, DbResult } from '../../../db'
+import { readRuntimeCacheDir } from '../../../config'
 import { handleServerRequest } from '../../../router'
 import type { SiteDependencyLock } from '@core/site-runtime'
 import {
@@ -61,6 +62,9 @@ function createThrowingDb(): { db: DbClient; wasQueried: () => boolean } {
   return { db, wasQueried: () => queried }
 }
 
+/** These tests never lose the cache, so nothing is ever restored. */
+const noRestore = async () => false
+
 let cacheRoot: string
 let savedEnv: string | undefined
 
@@ -80,6 +84,17 @@ afterAll(async () => {
 describe('runtime cache layout — reader/writer agreement', () => {
   it('exposes a single env-driven cache root', () => {
     expect(cacheRootDir()).toBe(cacheRoot)
+  })
+
+  it('defaults to a persistent directory, never the OS temp folder', () => {
+    const previous = process.env.RUNTIME_CACHE_DIR
+    delete process.env.RUNTIME_CACHE_DIR
+    try {
+      expect(cacheRootDir()).toBe(readRuntimeCacheDir(process.env))
+      expect(cacheRootDir().startsWith(resolve(tmpdir()))).toBe(false)
+    } finally {
+      process.env.RUNTIME_CACHE_DIR = previous
+    }
   })
 
   it('normalizes a relative env-driven cache root before exposing cache paths', () => {
@@ -126,14 +141,14 @@ describe('runtime cache layout — reader/writer agreement', () => {
     // `Response`, which can't read a BunFile body. Status 200 means the path
     // resolved to a file the writer actually installed.)
     const url = `/_instatic/runtime/cache/${hash}/three/build/three.module.js`
-    const res = await tryServeRuntimePackage(new Request(`http://localhost${url}`), url)
+    const res = await tryServeRuntimePackage(new Request(`http://localhost${url}`), url, noRestore)
     expect(res?.status).toBe(200)
     expect(res?.headers.get('content-type')).toBe('text/javascript; charset=utf-8')
 
     // Negative control: a path the writer never installed must 404, confirming
     // the server resolves inside the writer's node_modules and nowhere else.
     const missingUrl = `/_instatic/runtime/cache/${hash}/three/build/does-not-exist.js`
-    const missing = await tryServeRuntimePackage(new Request(`http://localhost${missingUrl}`), missingUrl)
+    const missing = await tryServeRuntimePackage(new Request(`http://localhost${missingUrl}`), missingUrl, noRestore)
     expect(missing?.status).toBe(404)
   })
 
@@ -170,7 +185,7 @@ describe('runtime cache layout — reader/writer agreement', () => {
     ]
 
     for (const url of malformedUrls) {
-      const res = await tryServeRuntimePackage(new Request(`http://localhost${url}`), url)
+      const res = await tryServeRuntimePackage(new Request(`http://localhost${url}`), url, noRestore)
       expect(res?.status).toBe(404)
     }
   })

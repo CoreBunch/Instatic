@@ -16,6 +16,16 @@
  * the transaction (filesystem); individual media failures log and continue
  * without aborting the import.
  *
+ * `replace` also wipes the media library when the import replaces everything
+ * that can reference it (`replacesMediaLibrary`). The rows go inside the
+ * transaction; their stored bytes are removed after it commits and BEFORE the
+ * bundle's media is written, so a bundle file at a deleted asset's storage
+ * path lands after the old one is gone.
+ *
+ * `applySiteBundle` is the DB half both import endpoints share: this JSON
+ * endpoint and `/import/archive` (`./importArchive.ts`), which streams media
+ * from the ZIP instead of Base64.
+ *
  * Capability matrix (G6 fix — was a single `site.structure.edit` for
  * everything, which let a Designer with structure-edit but no
  * content rights wipe every row via the import endpoint):
@@ -27,77 +37,23 @@
  *   bundles carrying a `site`:     ALSO `site.structure.edit` (the site
  *                                  shell replace is a structural edit)
  */
+import { validateBundlePublication, BundlePublicationError } from '../../repositories/bundlePublication'
+import { applySiteBundle, removeDeletedMediaFiles, SYSTEM_TABLE_IDS } from './importApply'
+import { canManageTable } from '../../auth/dataAccess'
+import { isGrantableMemberTag } from '@core/members'
 import { mkdir, writeFile } from 'node:fs/promises'
 import { dirname } from 'node:path'
 import type { DbClient } from '../../db/client'
-import {
-  validateAndSanitizeMediaBytes,
-  resolveMediaWriteTarget,
-} from './importMediaValidation'
+import { validateAndSanitizeMediaBytes, resolveMediaWriteTarget } from './importMediaValidation'
 import { requireCapability, requireStepUp, userHasCapability } from '../../auth/authz'
-import { saveDraftSite } from '../../repositories/site'
-import {
-  listDataTables,
-  createDataTable,
-  updateDataTable,
-  insertDataTableIfAbsent,
-} from '../../repositories/data/tables'
-import {
-  listDataRows,
-  upsertDataRow,
-  insertDataRowIfAbsent,
-  replaceDataRow,
-  type DataRowImportInput,
-} from '../../repositories/data/rows'
+import type { AuthUser } from '../../repositories/users'
 import { importMediaAsset, assignAssetToFolders } from '../../repositories/media'
-import {
-  deleteAllDataRowRedirects,
-  importDataRowRedirect,
-} from '../../repositories/data/publish'
-import { deleteAllMediaFolders, importMediaFolder } from '../../repositories/mediaFolders'
 import { jsonResponse, readValidatedBody } from '../../http'
 import { parseValue } from '@core/utils/typeboxHelpers'
-import {
-  SiteBundleSchema,
-  ImportStrategySchema,
-  ImportResultSchema,
-  type ImportStrategy,
-} from '@core/data/bundleSchema'
-import { CMS_API_PREFIX, type CmsHandlerOptions } from './shared'
-import {
-  notifyRowWrite,
-  notifyShellWrite,
-  serializeCollabAwareWrite,
-  type RowWriteKind,
-} from '../../repositories/rowWriteEvents'
-
-// The four system table ids that are always seeded and never deleted.
-const SYSTEM_TABLE_IDS = new Set(['posts', 'pages', 'components', 'layouts'])
-
-/**
- * Order folders so every parent precedes its children — `media_folders.parent_id`
- * is a self-referencing foreign key, so inserts must be topological. Any folder
- * whose parent isn't in the set is treated as a root (defensive: a malformed
- * bundle never wedges the import).
- */
-function orderFoldersParentFirst<T extends { id: string; parentId: string | null }>(
-  folders: readonly T[],
-): T[] {
-  const byId = new Map(folders.map((f) => [f.id, f]))
-  const emitted = new Set<string>()
-  const ordered: T[] = []
-
-  const visit = (folder: T): void => {
-    if (emitted.has(folder.id)) return
-    const parent = folder.parentId !== null ? byId.get(folder.parentId) : undefined
-    if (parent) visit(parent)
-    emitted.add(folder.id)
-    ordered.push(folder)
-  }
-
-  for (const folder of folders) visit(folder)
-  return ordered
-}
+import { SiteBundleSchema, ImportStrategySchema, ImportResultSchema, type ImportStrategy, type SiteBundle } from '@core/data/bundleSchema'
+import { CMS_API_PREFIX, requestAuditContext, type CmsHandlerOptions } from './shared'
+import { createAuditEvent } from '../../repositories/audit'
+import type { BranchScope } from '../../branches/scope'
 
 /** ZIP local-file-header magic (`PK\x03\x04`) — enough to tell an archive from JSON. */
 function looksLikeZipArchive(body: ArrayBuffer): boolean {
@@ -109,6 +65,7 @@ function looksLikeZipArchive(body: ArrayBuffer): boolean {
 export async function handleImportRoute(
   req: Request,
   db: DbClient,
+  scope: BranchScope,
   options: CmsHandlerOptions = {},
 ): Promise<Response | null> {
   const url = new URL(req.url)
@@ -131,17 +88,8 @@ export async function handleImportRoute(
     )
   }
 
-  // `replace` strategy = wipe every data row and reinsert. Highest-blast
-  // radius operation in the CMS. Require `content.manage` (so a caller
-  // with `data.import` but no content rights can still merge-add but not
-  // wipe) AND step-up (mirrors users.ts delete / publish.ts publish).
-  if (strategy === 'replace') {
-    if (!userHasCapability(user, 'content.manage')) {
-      return jsonResponse({ error: 'Forbidden' }, { status: 403 })
-    }
-    const stepUp = await requireStepUp(req, db, user)
-    if (stepUp) return stepUp
-  }
+  const strategyDenied = await authorizeImportStrategy(req, db, user, strategy)
+  if (strategyDenied) return strategyDenied
 
   // Parse and validate the bundle body. This endpoint takes the JSON bundle;
   // the ZIP archive the export UI downloads belongs to /import/archive. Sent
@@ -164,284 +112,34 @@ export async function handleImportRoute(
     return jsonResponse({ error: 'Invalid bundle: body does not conform to SiteBundleSchema' }, { status: 400 })
   }
 
-  // Bundles that carry a site shell additionally require
-  // `site.structure.edit` — replacing the shell is a structural site edit
-  // even when the import strategy is merge-overwrite.
-  if (bundle.site) {
-    if (!userHasCapability(user, 'site.structure.edit')) {
-      return jsonResponse({ error: 'Forbidden' }, { status: 403 })
-    }
-  }
+  const shellDenied = authorizeImportedShell(user, bundle.site !== undefined)
+  if (shellDenied) return shellDenied
 
-  // ---------------------------------------------------------------------------
-  // Counters
-  // ---------------------------------------------------------------------------
-  let tablesAffected = 0
-  let rowsInserted = 0
-  let rowsReplaced = 0
-  let rowsSkipped = 0
-  let mediaImported = 0
-  let mediaFoldersImported = 0
-  let redirectsImported = 0
+  const tableAccessDenied = await authorizeImportedTableAccess(req, db, user, bundle)
+  if (tableAccessDenied) return tableAccessDenied
 
-  // Folder ids that actually landed — asset memberships are restored only for
-  // these, so an asset's `folderIds` pointing at a folder we didn't import is
-  // silently skipped rather than violating the membership foreign key.
-  const importedFolderIds = new Set<string>()
+  const publicationInvalid = validateImportedPublication(bundle)
+  if (publicationInvalid) return publicationInvalid
+  const publicationDenied = await authorizeImportedPublication(req, db, user, bundle)
+  if (publicationDenied) return publicationDenied
 
-  // ---------------------------------------------------------------------------
-  // DB transaction
-  // ---------------------------------------------------------------------------
-
-  await serializeCollabAwareWrite(async () => {
-    const affectedCollabRows = new Map(
-      ['pages', 'components', 'layouts'].map((tableId) => [tableId, new Set<string>()]),
-    )
-    const removedCollabRows = new Map(
-      ['pages', 'components', 'layouts'].map((tableId) => [tableId, new Set<string>()]),
-    )
-    const createdCollabRows = new Map(
-      ['pages', 'components', 'layouts'].map((tableId) => [tableId, new Set<string>()]),
-    )
-    let shellWasWritten = false
-    if (strategy === 'replace') {
-      for (const tableId of affectedCollabRows.keys()) {
-        for (const row of await listDataRows(db, tableId)) {
-          affectedCollabRows.get(tableId)?.add(row.id)
-        }
-      }
-    }
-
-  if (strategy === 'replace') {
-    // Wipe-and-replace: delete all rows + custom tables, then reimport.
-    await db.transaction(async (tx) => {
-      // 1. Delete ALL data rows (covers all tables)
-      await tx`delete from data_rows`
-
-      // 2. Delete all non-system data tables
-      await tx`delete from data_tables where system = 0 or system = false`
-
-      // 3. Load remaining system tables so we know which bundle tables to
-      //    update vs insert.
-      const existingTables = await listDataTables(tx)
-      const existingTableIds = new Set(existingTables.map((t) => t.id))
-
-      // 4. Upsert tables from the bundle
-      for (const table of bundle.tables) {
-        if (existingTableIds.has(table.id)) {
-          // System table already present — update its fields
-          await updateDataTable(tx, table.id, {
-            name: table.name,
-            slug: table.slug,
-            routeBase: table.routeBase,
-            singularLabel: table.singularLabel,
-            pluralLabel: table.pluralLabel,
-            primaryFieldId: table.primaryFieldId,
-            fields: table.fields,
-          })
-          tablesAffected++
-        } else if (!SYSTEM_TABLE_IDS.has(table.id)) {
-          // Custom table — insert with original id
-          await createDataTable(tx, {
-            id: table.id,
-            name: table.name,
-            slug: table.slug,
-            kind: table.kind,
-            routeBase: table.routeBase,
-            singularLabel: table.singularLabel,
-            pluralLabel: table.pluralLabel,
-            primaryFieldId: table.primaryFieldId,
-            fields: table.fields,
-          })
-          tablesAffected++
-        }
-        // Bundle tables whose id is a known SYSTEM_TABLE_ID but wasn't seeded
-        // locally are silently skipped — they should never occur in practice.
-      }
-
-      // 5. Insert all rows (plain insert — table was just wiped)
-      for (const row of bundle.rows) {
-        const input: DataRowImportInput = {
-          id: row.id,
-          tableId: row.tableId,
-          cells: row.cells,
-          slug: row.slug,
-          status: row.status,
-          publishedAt: row.publishedAt,
-          createdAt: row.createdAt,
-          updatedAt: row.updatedAt,
-        }
-        await replaceDataRow(tx, input)
-        affectedCollabRows.get(row.tableId)?.add(row.id)
-        rowsInserted++
-      }
-
-      // 6. Replace the site shell (only when the bundle carries one)
-      if (bundle.site) {
-        await saveDraftSite(tx, bundle.site, null, { collabInternal: true })
-        shellWasWritten = true
-      }
-
-      // 7. Media folder tree. `delete from data_rows` above does NOT touch
-      //    media_folders (unrelated FK), so wipe explicitly, then insert
-      //    parent-first to satisfy the self-referencing parent_id FK.
-      if (bundle.mediaFolders) {
-        await deleteAllMediaFolders(tx)
-        for (const folder of orderFoldersParentFirst(bundle.mediaFolders)) {
-          await importMediaFolder(tx, folder)
-          importedFolderIds.add(folder.id)
-          mediaFoldersImported++
-        }
-      }
-
-      // 8. Redirects. Old ones already cascade-deleted with their target rows
-      //    in step 1; wipe explicitly for clarity, then reinsert from the
-      //    bundle now that the target rows exist.
-      if (bundle.redirects) {
-        await deleteAllDataRowRedirects(tx)
-        for (const redirect of bundle.redirects) {
-          await importDataRowRedirect(tx, redirect)
-          redirectsImported++
-        }
-      }
-    })
-  } else if (strategy === 'merge-add') {
-    // Add what's missing; never overwrite existing content.
-    await db.transaction(async (tx) => {
-      // Tables: insert if absent, skip if the id already exists
-      for (const table of bundle.tables) {
-        const inserted = await insertDataTableIfAbsent(tx, {
-          id: table.id,
-          name: table.name,
-          slug: table.slug,
-          kind: table.kind,
-          routeBase: table.routeBase,
-          singularLabel: table.singularLabel,
-          pluralLabel: table.pluralLabel,
-          primaryFieldId: table.primaryFieldId,
-          fields: table.fields,
-        })
-        if (inserted) tablesAffected++
-      }
-
-      // Rows: insert if absent, skip if the id already exists
-      for (const row of bundle.rows) {
-        const input: DataRowImportInput = {
-          id: row.id,
-          tableId: row.tableId,
-          cells: row.cells,
-          slug: row.slug,
-          status: row.status,
-          publishedAt: row.publishedAt,
-          createdAt: row.createdAt,
-          updatedAt: row.updatedAt,
-        }
-        const inserted = await insertDataRowIfAbsent(tx, input)
-        if (inserted) {
-          affectedCollabRows.get(row.tableId)?.add(row.id)
-          rowsInserted++
-        } else {
-          rowsSkipped++
-        }
-      }
-
-      // Site shell: merge-add never overwrites the site shell — the local site
-      // has existing content that must not be destroyed by an additive import.
-    })
-  } else {
-    // merge-overwrite: upsert rows/tables; update existing with bundle values.
-    await db.transaction(async (tx) => {
-      // Pre-fetch all existing rows. An upsert can move an id from a table the
-      // bundle does not mention, and both its old and new collab docs/rosters
-      // must be invalidated after commit.
-      const existingRowTables = new Map<string, string>()
-      for (const table of await listDataTables(tx)) {
-        const existing = await listDataRows(tx, table.id)
-        for (const row of existing) existingRowTables.set(row.id, row.tableId)
-      }
-
-      // Tables: insert if absent, update if already present
-      for (const table of bundle.tables) {
-        const inserted = await insertDataTableIfAbsent(tx, {
-          id: table.id,
-          name: table.name,
-          slug: table.slug,
-          kind: table.kind,
-          routeBase: table.routeBase,
-          singularLabel: table.singularLabel,
-          pluralLabel: table.pluralLabel,
-          primaryFieldId: table.primaryFieldId,
-          fields: table.fields,
-        })
-        if (!inserted) {
-          await updateDataTable(tx, table.id, {
-            name: table.name,
-            slug: table.slug,
-            routeBase: table.routeBase,
-            singularLabel: table.singularLabel,
-            pluralLabel: table.pluralLabel,
-            primaryFieldId: table.primaryFieldId,
-            fields: table.fields,
-          })
-        }
-        tablesAffected++
-      }
-
-      // Rows: upsert all; track inserted vs replaced via the pre-fetched set
-      for (const row of bundle.rows) {
-        const input: DataRowImportInput = {
-          id: row.id,
-          tableId: row.tableId,
-          cells: row.cells,
-          slug: row.slug,
-          status: row.status,
-          publishedAt: row.publishedAt,
-          createdAt: row.createdAt,
-          updatedAt: row.updatedAt,
-        }
-        await upsertDataRow(tx, input)
-        const previousTableId = existingRowTables.get(row.id)
-        if (previousTableId === undefined) {
-          createdCollabRows.get(row.tableId)?.add(row.id)
-        } else if (previousTableId !== row.tableId) {
-          removedCollabRows.get(previousTableId)?.add(row.id)
-          createdCollabRows.get(row.tableId)?.add(row.id)
-        } else {
-          affectedCollabRows.get(row.tableId)?.add(row.id)
-        }
-        if (previousTableId !== undefined) {
-          rowsReplaced++
-        } else {
-          rowsInserted++
-        }
-      }
-
-      // Site shell: overwrite if the bundle carries one
-      if (bundle.site) {
-        await saveDraftSite(tx, bundle.site, null, { collabInternal: true })
-        shellWasWritten = true
-      }
-    })
-  }
-
-    if (shellWasWritten) notifyShellWrite()
-    if (strategy === 'merge-overwrite') {
-      for (const [tableId, ids] of affectedCollabRows) {
-        if (ids.size > 0) notifyRowWrite({ tableId, rowIds: [...ids], kind: 'update' })
-      }
-      for (const [tableId, ids] of removedCollabRows) {
-        if (ids.size > 0) notifyRowWrite({ tableId, rowIds: [...ids], kind: 'delete' })
-      }
-      for (const [tableId, ids] of createdCollabRows) {
-        if (ids.size > 0) notifyRowWrite({ tableId, rowIds: [...ids], kind: 'create' })
-      }
-    } else {
-      const eventKind: RowWriteKind = strategy === 'replace' ? 'delete' : 'create'
-      for (const [tableId, ids] of affectedCollabRows) {
-        if (ids.size > 0) notifyRowWrite({ tableId, rowIds: [...ids], kind: eventKind })
-      }
-    }
+  const applied = await applySiteBundle(db, scope, {
+    bundle,
+    strategy,
+    carriesMedia: bundle.media !== undefined,
+    mayChangePageAccess: userHasCapability(user, 'site.structure.edit'),
+    uploadsDir: options.uploadsDir,
+  }).catch((err: unknown) => {
+    if (err instanceof BundlePublicationError) return jsonResponse({ error: err.message }, { status: 400 })
+    throw err
   })
+  if (applied instanceof Response) return applied
+  await recordImportedTableAccess(req, db, user, applied.tableAccessAdded)
+  // After commit, before the bundle's media lands: a bundle file at a deleted
+  // asset's storage path must be written after the old bytes are removed.
+  await removeDeletedMediaFiles(applied.deletedMedia)
+
+  let mediaImported = 0
 
   // ---------------------------------------------------------------------------
   // Media — outside the DB transaction (filesystem writes)
@@ -489,7 +187,7 @@ export async function handleImportRoute(
 
         // Restore folder membership — but only into folders we actually
         // imported, so a stale folderId can't violate the membership FK.
-        const targetFolders = asset.folderIds.filter((id) => importedFolderIds.has(id))
+        const targetFolders = asset.folderIds.filter((id) => applied.importedFolderIds.has(id))
         if (targetFolders.length > 0) {
           await assignAssetToFolders(db, asset.id, { add: targetFolders })
         }
@@ -506,17 +204,118 @@ export async function handleImportRoute(
   const result = {
     ok: true as const,
     strategy,
-    tablesAffected,
-    rowsInserted,
-    rowsReplaced,
-    rowsSkipped,
+    tablesAffected: applied.tablesAffected,
+    rowsInserted: applied.rowsInserted,
+    rowsReplaced: applied.rowsReplaced,
+    rowsSkipped: applied.rowsSkipped,
     mediaImported,
-    mediaFoldersImported,
-    redirectsImported,
+    mediaFoldersImported: applied.mediaFoldersImported,
+    redirectsImported: applied.redirectsImported,
   }
 
   // Paranoia: validate result shape before returning
   parseValue(ImportResultSchema, result)
 
   return jsonResponse(result)
+}
+
+/**
+ * Strategy gate every bundle import passes on top of `data.import` (G6 fix —
+ * was a single `site.structure.edit` for everything, which let a Designer
+ * with structure-edit but no content rights wipe every row via the import
+ * endpoint). Checked before the body is read. Shared with the archive
+ * endpoint. Returns the error response, or `null` to proceed.
+ *
+ * `replace` = wipe every data row and reinsert, the highest-blast-radius
+ * operation in the CMS. It requires `content.manage` (so a caller with
+ * `data.import` but no content rights can still merge-add but not wipe) AND
+ * step-up (mirrors users.ts delete / publish.ts publish).
+ */
+export async function authorizeImportStrategy(
+  req: Request,
+  db: DbClient,
+  user: AuthUser,
+  strategy: ImportStrategy,
+): Promise<Response | null> {
+  if (strategy !== 'replace') return null
+  if (!userHasCapability(user, 'content.manage')) {
+    return jsonResponse({ error: 'Forbidden' }, { status: 403 })
+  }
+  return requireStepUp(req, db, user)
+}
+
+/**
+ * Bundles that carry a site shell additionally require `site.structure.edit`:
+ * replacing the shell is a structural site edit even when the strategy is
+ * merge-overwrite. Shared with the archive endpoint.
+ */
+export function authorizeImportedShell(user: AuthUser, carriesSite: boolean): Response | null {
+  if (carriesSite && !userHasCapability(user, 'site.structure.edit')) {
+    return jsonResponse({ error: 'Forbidden' }, { status: 403 })
+  }
+  return null
+}
+
+/**
+ * A bundle that limits a table to members sets who may open it, which is what
+ * the table access endpoint does. It asks for the same: the right to manage
+ * each such table, tags a member can be granted, and step-up.
+ */
+export async function authorizeImportedTableAccess(
+  req: Request,
+  db: DbClient,
+  user: AuthUser,
+  bundle: Pick<SiteBundle, 'tables' | 'tableAccess'>,
+): Promise<Response | null> {
+  const limited = bundle.tables.flatMap((table) => {
+    const rule = bundle.tableAccess?.[table.id]
+    return rule && rule.level !== 'public' ? [{ table, rule }] : []
+  })
+  if (limited.length === 0) return null
+  if (limited.some(({ rule }) => rule.level === 'tags' && !rule.tags.every(isGrantableMemberTag))) {
+    return jsonResponse({ error: 'A tag in a table access rule cannot be granted to a member' }, { status: 400 })
+  }
+  const mayManage = limited.every(({ table }) => canManageTable(user, { system: table.system || SYSTEM_TABLE_IDS.has(table.id) }))
+  if (!mayManage) {
+    return jsonResponse({ error: 'Importing table access rules requires permission to manage those tables' }, { status: 403 })
+  }
+  return requireStepUp(req, db, user)
+}
+
+/** An import that limited a table changed who may open it; the audit log says so. */
+export async function recordImportedTableAccess(
+  req: Request,
+  db: DbClient,
+  user: AuthUser,
+  added: ReadonlyArray<{ tableId: string; slug: string }>,
+): Promise<void> {
+  for (const table of added) {
+    await createAuditEvent(db, {
+      actorUserId: user.id,
+      action: 'data.table.access',
+      targetType: 'data_table',
+      targetId: table.tableId,
+      metadata: { slug: table.slug, source: 'import' },
+      ...requestAuditContext(req),
+    })
+  }
+}
+
+export function validateImportedPublication(bundle: SiteBundle): Response | null {
+  try {
+    if (bundle.publication) validateBundlePublication(bundle.publication, bundle.rows)
+    return null
+  } catch (err) {
+    if (err instanceof BundlePublicationError) return jsonResponse({ error: err.message }, { status: 400 })
+    throw err
+  }
+}
+
+/** Restoring public content is a publish operation, including scripts and shared resources. */
+export async function authorizeImportedPublication(req: Request, db: DbClient, user: AuthUser, bundle: SiteBundle): Promise<Response | null> {
+  if (!bundle.publication?.rows.some((row) => row.versions.length > 0)) return null
+  if (!userHasCapability(user, 'pages.publish') || !userHasCapability(user, 'content.publish.any')) {
+    return jsonResponse({ error: 'Restoring published content requires page and content publishing permissions' }, { status: 403 })
+  }
+  return requireStepUp(req, db, user)
 }

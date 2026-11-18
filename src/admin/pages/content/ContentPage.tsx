@@ -473,6 +473,7 @@ export function ContentPage() {
               if (workspace.selectedEntry) void handlePublishEntry(workspace.selectedEntry)
             }}
             onSchedule={handleScheduleEntry}
+            onRestored={handleScheduleEntry}
           />
         )}
         contentSidebar={(

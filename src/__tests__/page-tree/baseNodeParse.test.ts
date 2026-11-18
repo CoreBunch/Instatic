@@ -37,6 +37,18 @@ function rawStoredNode(): Record<string, unknown> {
   }
 }
 
+describe('parseBaseNodeFields — a leaf without a children list', () => {
+  it('reads it as an empty list instead of dropping the node', () => {
+    const leaf = rawStoredNode()
+    delete leaf.children
+    expect(parseBaseNodeFields(leaf, 'nodes.node-1').children).toEqual([])
+  })
+
+  it('still refuses a children value that is not a list', () => {
+    expect(() => parseBaseNodeFields({ ...rawStoredNode(), children: 'child-a' }, 'nodes.node-1')).toThrow(/children/)
+  })
+})
+
 function parsedViaPage(raw: Record<string, unknown>): PageNode {
   const page = parsePage(
     { id: 'p1', slug: 'home', title: 'Home', rootNodeId: NODE_ID, nodes: { [NODE_ID]: raw } },

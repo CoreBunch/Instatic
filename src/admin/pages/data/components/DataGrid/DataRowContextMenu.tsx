@@ -15,6 +15,7 @@ import { LayoutSolidIcon } from 'pixel-art-icons/icons/layout-solid'
 import { OpenSolidIcon } from 'pixel-art-icons/icons/open-solid'
 import { TrashSolidIcon } from 'pixel-art-icons/icons/trash-solid'
 import type { DataRow, DataRowStatus, DataTable } from '@core/data/schemas'
+import { useBranchPublishGate } from '@admin/state/branchStore'
 
 interface DataRowContextMenuProps {
   x: number
@@ -130,6 +131,9 @@ export function DataRowContextMenu({
     onOpenInSiteEditor,
   })
   const publishable = hasPublishWorkflow(table) && onSetRowStatus != null
+  // Publishing only exists on main — the item stays listed but disabled with
+  // the reason while a branch is active.
+  const branchGate = useBranchPublishGate()
 
   useEffect(() => {
     firstItemRef.current?.focus()
@@ -177,7 +181,8 @@ export function DataRowContextMenu({
         <>
           <ContextMenuSeparator />
           <ContextMenuItem
-            disabled={row.status === 'published'}
+            disabled={row.status === 'published' || branchGate.onBranch}
+            tooltip={branchGate.reason ?? undefined}
             onClick={() => {
               void setRowStatusFromMenu(row.id, 'published', onSetRowStatus, onClose)
             }}

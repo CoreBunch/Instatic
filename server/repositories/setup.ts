@@ -1,4 +1,8 @@
+import { MAIN_BRANCH_ID } from '@core/branches'
+import { createNewSiteSettings, type SiteShell } from '@core/page-tree'
 import type { DbClient } from '../db/client'
+import { nowIso } from '@core/utils/isoDate'
+import { CMS_SITE_SCHEMA_VERSION } from './site'
 
 interface SetupStatus {
   hasSite: boolean
@@ -57,17 +61,34 @@ export function resetSetupStatusCacheForTests(): void {
   settledStatusByDb = new WeakMap()
 }
 
+/**
+ * The `settings_json` payload first-run setup writes for a brand-new site. It
+ * carries only the new-site settings (font role tokens); every other shell
+ * field takes its read-time default in `readStoredShell` (`./site`).
+ */
+export function newSiteShellStorage(): {
+  cmsSiteSchemaVersion: typeof CMS_SITE_SCHEMA_VERSION
+  site: Pick<SiteShell, 'settings'>
+} {
+  return {
+    cmsSiteSchemaVersion: CMS_SITE_SCHEMA_VERSION,
+    site: { settings: createNewSiteSettings() },
+  }
+}
+
 export async function createSite(
   db: DbClient,
   name: string,
   settings: Record<string, unknown>,
 ): Promise<void> {
+  // First-run setup creates the `main` shell; every other branch's shell is
+  // forked from it (see server/branches/fork.ts).
   await db`
-    insert into site (id, name, settings_json)
-    values ('default', ${name}, ${settings})
+    insert into site (id, name, settings_json, branch_id)
+    values ('default', ${name}, ${settings}, ${MAIN_BRANCH_ID})
     on conflict (id) do update
       set name = excluded.name,
           settings_json = excluded.settings_json,
-          updated_at = current_timestamp
+          updated_at = ${nowIso()}
   `
 }

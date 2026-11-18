@@ -19,8 +19,9 @@
  */
 
 import type { Page, PageNode, PageTemplateConfig } from '@core/page-tree'
-import { parsePageTemplate } from '@core/page-tree'
+import { parsePageNode, parsePageTemplate } from '@core/page-tree'
 import type { DataRow, DataRowCells } from '@core/data/schemas'
+import { parseAccessRule } from '@core/members'
 
 // ---------------------------------------------------------------------------
 // DataRow → Page
@@ -38,13 +39,20 @@ export function pageFromRow(row: DataRow): Page {
   const cells = row.cells
 
   // body field: NodeTree<PageNode>  { nodes: {...}, rootNodeId: '...' }
-  let nodes: Record<string, PageNode> = {}
+  const nodes: Record<string, PageNode> = {}
   let rootNodeId = ''
   const body = cells.body
   if (body && typeof body === 'object' && !Array.isArray(body)) {
     const b = body as Record<string, unknown>
     if (b.nodes && typeof b.nodes === 'object' && !Array.isArray(b.nodes)) {
-      nodes = b.nodes as Record<string, PageNode>
+      // Rows can be written outside the editor (the data API, an import), so
+      // every node goes through the tolerant parser: missing maps become
+      // empty, a node without an id or module is dropped, and the collab
+      // seeder never meets a shape it cannot build.
+      for (const [id, raw] of Object.entries(b.nodes as Record<string, unknown>)) {
+        const node = parseNode(id, raw)
+        if (node) nodes[id] = node
+      }
     }
     if (typeof b.rootNodeId === 'string') {
       rootNodeId = b.rootNodeId
@@ -55,6 +63,7 @@ export function pageFromRow(row: DataRow): Page {
 
   // Template reconstruction
   const template = readTemplateFromCells(cells)
+  const access = parseAccessRule(cells.access)
 
   return {
     id: row.id,
@@ -63,9 +72,21 @@ export function pageFromRow(row: DataRow): Page {
     nodes,
     rootNodeId,
     ...(template !== null ? { template } : {}),
+    ...(access.level !== 'public' ? { access } : {}),
     ownerUserId: row.authorUserId ?? null,
     createdByUserId: row.createdByUserId ?? null,
     updatedByUserId: row.updatedByUserId ?? null,
+  }
+}
+
+function parseNode(id: string, raw: unknown): PageNode | null {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null
+  try {
+    return parsePageNode({ id, ...(raw as Record<string, unknown>) }, `nodes.${id}`)
+  } catch {
+    // A node the parser cannot make sense of is dropped, not crashed on:
+    // validatePages reports the structural problem where it can be fixed.
+    return null
   }
 }
 
@@ -104,6 +125,7 @@ export function pageToCells(page: Page): DataRowCells {
     cells.templateTarget = page.template.target
     cells.templatePriority = page.template.priority
   }
+  if (page.access && page.access.level !== 'public') cells.access = page.access
 
   return cells
 }

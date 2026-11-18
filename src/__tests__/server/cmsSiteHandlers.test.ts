@@ -56,8 +56,8 @@ function makeFakeDb() {
     if (normalized.includes('insert into site')) {
       siteRow = {
         id: 'default',
-        name: values[0],
-        settings_json: values[1],
+        name: values[1],
+        settings_json: values[2],
         created_at: new Date('2026-01-01').toISOString(),
         updated_at: new Date('2026-01-02').toISOString(),
       }
@@ -143,21 +143,13 @@ function cmsRequest(
   url: string,
   init: { method?: string; body?: string; headers?: Record<string, string> } = {},
 ): Request {
-  const headers = new Map(
-    Object.entries(init.headers ?? {}).map(([key, value]) => [key.toLowerCase(), value]),
-  )
-  return {
-    url,
+  const req = new Request(url, {
     method: init.method ?? 'GET',
-    headers: {
-      get(name: string) {
-        return headers.get(name.toLowerCase()) ?? null
-      },
-    },
-    async json() {
-      return init.body ? JSON.parse(init.body) : {}
-    },
-  } as Request
+    body: init.body,
+  })
+  // happy-dom strips fetch-forbidden headers passed to the constructor.
+  for (const [name, value] of Object.entries(init.headers ?? {})) req.headers.set(name, value)
+  return req
 }
 
 describe('cms site handlers', () => {

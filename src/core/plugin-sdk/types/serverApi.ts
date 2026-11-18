@@ -22,6 +22,7 @@ import type { LoopEntitySource } from './loops'
 import type { ServerPluginMediaApi } from './media'
 import type { PluginMigrationContext } from './lifecycle'
 import type { PluginPermission } from './permissions'
+import type { MemberRouteOptions, ServerPluginMembersApi } from './members'
 import type { ServerPluginRouteHandler } from './routes'
 import type { ServerPluginScheduleApi } from './schedule'
 import type { ServerPluginSettingsApi } from './settings'
@@ -29,6 +30,12 @@ import type { ServerPluginSettingsApi } from './settings'
 // ---------------------------------------------------------------------------
 // ServerPluginApi — full API surface available to server entrypoints
 // ---------------------------------------------------------------------------
+
+/** `member.get(path, handler)` or `member.get(path, { tag }, handler)`. */
+interface MemberRouteRegistrar {
+  (path: string, handler: ServerPluginRouteHandler): void
+  (path: string, options: MemberRouteOptions, handler: ServerPluginRouteHandler): void
+}
 
 export interface ServerPluginApi {
   plugin: {
@@ -92,7 +99,21 @@ export interface ServerPluginApi {
         patch: (path: string, handler: ServerPluginRouteHandler) => void
         delete: (path: string, handler: ServerPluginRouteHandler) => void
       }
+      /**
+       * Routes only a signed-in site member reaches (optionally one holding
+       * `tag`). The handler's `ctx.member` is always set. Requires
+       * `members.read`. Served on the public plugin mount,
+       * `/_instatic/plugins/<pluginId>/<path>`, not under `/admin`.
+       */
+      member: {
+        get: MemberRouteRegistrar
+        post: MemberRouteRegistrar
+        patch: MemberRouteRegistrar
+        delete: MemberRouteRegistrar
+      }
     }
+    /** Site members: look up, invite, and grant or withdraw access tags. */
+    members: ServerPluginMembersApi
     loops: {
       /**
        * Register a loop entity source. Source ID must be `<pluginId>.<name>`.
@@ -142,8 +163,9 @@ export interface ServerPluginApi {
      * out the surface.
      *
      * Each method asserts both the granted permission (`cms.content.*`)
-     * AND the table allowlist entry in the manifest's `contentAccess[]`.
-     * Plugins fail closed on either gap.
+     * AND the table allowlist entry in the manifest's `contentAccess[]` —
+     * a slug entry, or the `@own-created` marker for tables this plugin
+     * created via `tables.create`. Plugins fail closed on either gap.
      */
     content: {
       tables: {
@@ -178,7 +200,10 @@ export interface ServerPluginApi {
       republishAll: () => Promise<{ count: number }>
     }
     /**
-     * Media subsystem extension points. Three independent tiers:
+     * Host-mediated media ingestion plus three independent extension tiers:
+     *
+     *   • upsert                   — ingest an allowlisted HTTPS image or a
+     *                                contained package asset into managed media.
      *
      *   • registerStorageAdapter   — handle WRITE/DELETE bytes (S3, R2, …).
      *                                Two-phase: adapter signs upload plan,
@@ -187,7 +212,8 @@ export interface ServerPluginApi {
      *   • registerVariantDelegate  — replace local variant ladder with
      *                                a URL template (image-transform CDN).
      *
-     * Each call requires its own permission — see PLUGIN_PERMISSION_VALUES.
+     * Each call requires its own permission. A remote upsert also requires
+     * `network.outbound` and a matching `networkAllowedHosts` entry.
      */
     media: ServerPluginMediaApi
   }

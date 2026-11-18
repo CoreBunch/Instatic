@@ -17,6 +17,7 @@ export { cssToStyleRules } from './cssToStyleRules'
 // ── Phase 2 — input ingestion ─────────────────────────────────────────────────
 
 export { ingestInput } from './ingestInput'
+export { detectPluginPackage } from './pluginPackage'
 
 
 // ── Phase 2 — file classification ────────────────────────────────────────────
@@ -46,6 +47,7 @@ export { applyAssetRewrites } from './applyAssetRewrites'
 // ── Phase 2 — colour-token extraction ─────────────────────────────────────────
 
 export { extractRootColorTokens, isCssColorValue } from './colorTokens'
+export { normalizeImportedTokens } from './tokenNames'
 
 // ── Phase 2 — font-token extraction ───────────────────────────────────────────
 
@@ -86,6 +88,7 @@ export type {
   ImportStylesheet,
   // @font-face import
   ImportFontFamily,
+  ImportGoogleFont,
   // colour tokens + scripts
   ImportColorToken,
   ImportFontToken,

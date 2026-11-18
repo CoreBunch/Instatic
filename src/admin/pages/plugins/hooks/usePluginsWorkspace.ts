@@ -302,12 +302,17 @@ export function usePluginsWorkspace(): PluginsWorkspaceVM {
         ? await inspectCmsPluginPackage(file)
         : parsePluginManifest(JSON.parse(await file.text()))
 
-      // Detect upgrade vs. fresh install client-side so we can render the
-      // right copy in the confirmation dialog. The server detects upgrades
-      // independently — this is purely a UX hint.
+      // Detect upgrade vs. reinstall vs. fresh install client-side so the
+      // confirmation dialog can say which one is about to happen. The server
+      // decides independently — this is purely the copy.
+      //
+      // The installed version is carried whenever one exists, INCLUDING when
+      // it equals the incoming one. It used to be dropped in that case, so
+      // re-uploading the same build rendered the first-install screen: no
+      // mention of the plugin already being there, and every permission
+      // badged "new" even though the operator had approved them all.
       const existing = payload.plugins.find((p) => p.id === manifest.id)
-      const upgradeFromVersion =
-        existing && existing.version !== manifest.version ? existing.version : undefined
+      const upgradeFromVersion = existing ? existing.version : undefined
       const previouslyGrantedPermissions = existing
         ? existing.grantedPermissions
         : undefined

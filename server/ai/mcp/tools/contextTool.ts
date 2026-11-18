@@ -15,6 +15,7 @@ import type { CoreCapability } from '@core/capabilities'
 import type { AiTool, ToolContext } from '../../runtime/types'
 import { getDraftSite } from '../../../repositories/site'
 import { hasEditorBridge } from '../editorBridge'
+import { MAIN_SCOPE } from '../../../branches/scope'
 
 const CONTEXT_READ_CAPS: readonly CoreCapability[] = [
   'site.read',
@@ -57,12 +58,12 @@ export const contextMcpTools: AiTool[] = [
     requiredCapabilities: CONTEXT_READ_CAPS,
     handler: async (input, ctx: ToolContext) => {
       const { entryId } = input as { entryId?: string }
-      const site = await getDraftSite(ctx.db)
+      const site = await getDraftSite(ctx.db, MAIN_SCOPE)
 
       const { rows } = await ctx.db<PageRow>`
         select id, table_id, cells_json
         from data_rows
-        where table_id = 'pages' and deleted_at is null
+        where branch_id = 'main' and table_id = 'pages' and deleted_at is null
       `
       const templates = rows
         .filter((r) => r.cells_json?.templateEnabled)

@@ -538,7 +538,7 @@ describe('AdminCanvasLayout — permanent panel rail', () => {
     expect(useEditorStore.getState().explorerPanelOpen).toBe(false)
     expect(useEditorStore.getState().isAgentOpen).toBe(false)
     expect(within(sidebar).getByTestId('dependencies-panel')).toBeDefined()
-    expect(within(sidebar).getByTestId('deps-section')).toBeDefined()
+    expect(within(sidebar).getByTestId('registry-panel')).toBeDefined()
 
     fireEvent.click(within(rail).getByRole('button', { name: /open ai assistant panel/i }))
 

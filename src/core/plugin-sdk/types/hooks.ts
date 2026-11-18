@@ -39,6 +39,13 @@ export interface CmsServerEvents {
     entryId: string
     actor: ContentEntryActor
   }
+  // Site member events. Listening needs `members.read`. They are sent
+  // without waiting: a listener cannot delay or cancel what happened.
+  'member.created': { memberId: string; email: string }
+  'member.verified': { memberId: string; email: string }
+  'member.signedIn': { memberId: string; email: string }
+  'member.tagged': { memberId: string; tag: string; source: string; expiresAt: string | null }
+  'member.deleted': { memberId: string }
   // Plugin-defined events fall through. The host does not pre-define any
   // frontend-specific event channels — plugins that ingest events from
   // their own published-page bundles register their own `routes.public.post`

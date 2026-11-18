@@ -30,6 +30,7 @@
 import { mkdir } from 'node:fs/promises'
 import { dirname } from 'node:path'
 import { isSqliteUrl } from '../server/db'
+import { devStackBunError } from '../server/bunVersion'
 import { bunCommand, viteCommand } from './lib/bunCommand'
 import { ensureDependencies } from './lib/ensureDependencies'
 import { ensurePortFree } from './lib/freePort'
@@ -210,6 +211,11 @@ async function waitForPostgresReady(timeoutMs = 60_000): Promise<void> {
 
 // --- main -----------------------------------------------------------------
 
+// Refuse before touching anything: on a Bun older than the Vite proxy needs,
+// the stack comes up looking healthy and the editor never connects.
+const bunError = devStackBunError(Bun.version)
+if (bunError) fail(bunError)
+
 if (isSqliteUrl(DATABASE_URL)) {
   const dbPath = DATABASE_URL.replace(/^sqlite:|^file:/, '')
   await mkdir(dirname(dbPath), { recursive: true })
@@ -258,10 +264,9 @@ const processes: DevProcess[] = [
   {
     name: 'vite',
     command: viteCommand('--host', '127.0.0.1', '--port', String(VITE_PORT), '--strictPort'),
-    // vite.config.ts reads PORT for both the proxy target and the collab
-    // socket's dev port. Inheriting it from the developer's shell happened to
-    // work only because CMS_PORT's default matches the config's — pass it
-    // explicitly so the two can't drift. `scripts/e2e-dev.ts` already does.
+    // vite.config.ts reads PORT for the proxy target. Inheriting it from the
+    // developer's shell happened to work only because CMS_PORT's default
+    // matches the config's; pass it explicitly so the two can't drift.
     env: { PORT: String(CMS_PORT) },
   },
 ]

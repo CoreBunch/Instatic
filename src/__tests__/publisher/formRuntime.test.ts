@@ -101,7 +101,178 @@ describe('form runtime browser behaviour', () => {
       document.body.innerHTML = ''
     }
   })
+
+  it('waits out the minimum fill time when the challenge has to be fetched at submit', async () => {
+    const harness = installRuntimeHarness({ failFirstChallenge: true })
+    try {
+      const form = await attachTimedForm('contact-late-challenge')
+      expect(harness.challengeResponses.length).toBe(0)
+
+      // The visitor has had the form for longer than the minimum fill time.
+      await sleep(MIN_SUBMIT_SECONDS * 1000 + 50)
+      form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+      await waitFor(() => harness.submits.length === 1)
+
+      expect(harness.submits[0].payload.token).toBe('token-1')
+      expect(harness.submits[0].time - harness.challengeResponses[0].time)
+        .toBeGreaterThanOrEqual(MIN_SUBMIT_SECONDS * 1000)
+    } finally {
+      harness.restore()
+    }
+  })
+
+  it('refreshes the challenge before it expires and waits out the fill time on the replacement', async () => {
+    const harness = installRuntimeHarness({})
+    try {
+      const form = await attachTimedForm('contact-refresh')
+      await waitFor(() => harness.challengeResponses.length === 1)
+      expect(harness.refreshTimers.map((timer) => timer.delay)).toEqual([(CHALLENGE_LIFETIME_SECONDS - 30) * 1000])
+
+      await sleep(MIN_SUBMIT_SECONDS * 1000 + 50)
+      harness.refreshTimers[0].run()
+      await waitFor(() => harness.challengeResponses.length === 2)
+      await sleep(20)
+
+      // Submit just after the replacement has landed: it is younger than the
+      // minimum fill time, the visitor is not.
+      form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+      await waitFor(() => harness.submits.length === 1)
+
+      expect(harness.submits[0].payload.token).toBe('token-2')
+      expect(harness.submits[0].time - harness.challengeResponses[1].time)
+        .toBeGreaterThanOrEqual(MIN_SUBMIT_SECONDS * 1000)
+    } finally {
+      harness.restore()
+    }
+  })
+
+  it('measures the challenge lifetime on its own clock, whatever the server clock says', async () => {
+    // The server's absolute expiry is already in the past by this browser's
+    // clock (visitor clock running fast); the relative lifetime is what counts.
+    const harness = installRuntimeHarness({ expiresAt: '2000-01-01T00:00:00.000Z' })
+    try {
+      const form = await attachTimedForm('contact-skewed-clock')
+      await waitFor(() => harness.challengeResponses.length === 1)
+      expect(harness.refreshTimers.map((timer) => timer.delay)).toEqual([(CHALLENGE_LIFETIME_SECONDS - 30) * 1000])
+
+      await sleep(MIN_SUBMIT_SECONDS * 1000 + 50)
+      form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+      await waitFor(() => harness.submits.length === 1)
+
+      // The prefetched challenge is still live, so no second one was requested.
+      expect(harness.submits[0].payload.token).toBe('token-1')
+      expect(harness.submits[0].challengesIssued).toBe(1)
+    } finally {
+      harness.restore()
+    }
+  })
+
+  it('posts a submit made before the minimum fill time straight away', async () => {
+    const harness = installRuntimeHarness({})
+    try {
+      const form = await attachTimedForm('contact-too-fast')
+      await waitFor(() => harness.challengeResponses.length === 1)
+      const submittedAt = Date.now()
+      form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+      await waitFor(() => harness.submits.length === 1)
+
+      // No client-side wait: the server's time trap gets to reject this one.
+      expect(harness.submits[0].time - submittedAt).toBeLessThan(MIN_SUBMIT_SECONDS * 1000)
+    } finally {
+      harness.restore()
+    }
+  })
 })
+
+const MIN_SUBMIT_SECONDS = 0.2
+const CHALLENGE_LIFETIME_SECONDS = 300
+
+type RuntimeHarness = {
+  challengeResponses: Array<{ time: number }>
+  submits: Array<{ payload: Record<string, unknown>; time: number; challengesIssued: number }>
+  /** Challenge-refresh timers the runtime scheduled, held instead of run. */
+  refreshTimers: Array<{ delay: number; run: () => void }>
+  restore: () => void
+}
+
+/**
+ * Stubs the public form endpoints and holds back the runtime's long
+ * challenge-refresh timer so a test can fire it on demand. Short timers (the
+ * fill-time wait) run for real.
+ */
+function installRuntimeHarness(options: { failFirstChallenge?: boolean; expiresAt?: string }): RuntimeHarness {
+  const originalFetch = globalThis.fetch
+  const originalSetTimeout = globalThis.setTimeout
+  const harness: RuntimeHarness = {
+    challengeResponses: [],
+    submits: [],
+    refreshTimers: [],
+    restore: () => {
+      globalThis.fetch = originalFetch
+      globalThis.setTimeout = originalSetTimeout
+      document.body.innerHTML = ''
+    },
+  }
+  let challengeRequests = 0
+
+  globalThis.setTimeout = ((handler: () => void, delay = 0) => {
+    if (delay < 10_000) return originalSetTimeout(handler, delay)
+    harness.refreshTimers.push({ delay, run: handler })
+    return originalSetTimeout(() => {}, 0)
+  }) as typeof setTimeout
+
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    const path = typeof input === 'string' ? input : input instanceof URL ? input.pathname : input.url
+    if (path === '/_instatic/form/challenge') {
+      challengeRequests += 1
+      if (options.failFirstChallenge && challengeRequests === 1) throw new TypeError('Failed to fetch')
+      harness.challengeResponses.push({ time: Date.now() })
+      const issued = harness.challengeResponses.length
+      return Response.json({
+        token: `token-${issued}`,
+        challenge: `challenge-${issued}`,
+        expiresAt: options.expiresAt ?? new Date(Date.now() + CHALLENGE_LIFETIME_SECONDS * 1000).toISOString(),
+        expiresInSeconds: CHALLENGE_LIFETIME_SECONDS,
+        minSubmitSeconds: MIN_SUBMIT_SECONDS,
+      })
+    }
+    harness.submits.push({
+      payload: JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>,
+      time: Date.now(),
+      challengesIssued: harness.challengeResponses.length,
+    })
+    return Response.json({ ok: true })
+  }) as typeof fetch
+
+  return harness
+}
+
+/** Adds a CMS form and attaches the already-loaded runtime to it via focus. */
+async function attachTimedForm(formId: string): Promise<HTMLFormElement> {
+  document.body.innerHTML = `
+    <form data-instatic-form-mode="cms" data-instatic-form-id="${formId}" data-instatic-page-id="page-home" data-instatic-page-token="page-token">
+      <input name="email" value="human@example.com">
+      <button type="submit">Send</button>
+    </form>
+  `
+  const form = document.querySelector('form')
+  if (!form) throw new Error('form fixture missing')
+  form.querySelector('input')?.dispatchEvent(new Event('focusin', { bubbles: true }))
+  await flushRuntime()
+  return form
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+async function waitFor(condition: () => boolean): Promise<void> {
+  const start = Date.now()
+  while (!condition()) {
+    if (Date.now() - start > 3_000) throw new Error('condition not met within 3 s')
+    await sleep(10)
+  }
+}
 
 async function flushRuntime(): Promise<void> {
   await Promise.resolve()

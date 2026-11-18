@@ -67,12 +67,11 @@ function hrefToPageRef(
 ): string | null {
   if (!href) return null
 
-  // Split off the fragment (kept) and any query (dropped — CMS routes are slugs).
+  // Split off the fragment, which is KEPT and re-attached to the page ref below.
+  // Any query string is dropped by `resolveHref` — CMS routes are slugs.
   const hashIdx = href.indexOf('#')
   const fragment = hashIdx >= 0 ? href.slice(hashIdx) : ''
-  let pathPart = hashIdx >= 0 ? href.slice(0, hashIdx) : href
-  const queryIdx = pathPart.indexOf('?')
-  if (queryIdx >= 0) pathPart = pathPart.slice(0, queryIdx)
+  const pathPart = hashIdx >= 0 ? href.slice(0, hashIdx) : href
 
   // Pure same-page anchor (`#features`) or empty → not an internal page link.
   if (!pathPart) return null

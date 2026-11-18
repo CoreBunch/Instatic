@@ -26,6 +26,7 @@ export {
   createDataTable,
   updateDataTable,
   softDeleteDataTable,
+  restoreDataTable,
 } from './tables'
 
 export {
@@ -38,12 +39,14 @@ export {
   getDataRow,
   getDataRowMany,
   getDataRowBySlug,
+  nextFreeDataRowSlug,
   countDataRows,
   listDataAuthorOptions,
   createDataRow,
   createDataRowMany,
   saveDataRowDraft,
   upsertDataRowDraft,
+  findDataRowSlot,
   updateDataRowDraftCells,
   saveDataRowDraftMany,
   softDeleteDataRow,
@@ -65,4 +68,9 @@ export {
   getDataRowRedirectByRoute,
 } from './publish'
 
-export { nextDataRowVersionNumber } from './versions'
+export {
+  nextDataRowVersionNumber,
+  listDataRowVersions,
+  getDataRowVersion,
+  type DataRowVersionSummary,
+} from './versions'

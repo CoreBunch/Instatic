@@ -1996,8 +1996,8 @@ describe('ContentPage', () => {
 
     expect(src).toContain("'Retry publish'")
     expect(src).toContain("'Published'")
-    expect(src).toContain('statusLabel={isCleanPublished ? null : statusText}')
-    expect(src).toContain('publishDisabled={!selectedEntry || !canPublish || isPublishing || isCleanPublished}')
+    expect(src).toContain('isCleanPublished ? null : statusText}')
+    expect(src).toContain('publishDisabled={!selectedEntry || !canPublish || isPublishing || isCleanPublished || branchGate.onBranch}')
     expect(src).not.toContain("'Live'")
     expect(src).toContain('isCleanPublished ? CheckIcon')
     expect(src).not.toContain("'Publish failed'")

@@ -11,8 +11,7 @@
  *
  * §8 exceptions:
  *   §8.1 Settings nav buttons — full-width left-sidebar navigation (SettingsModal)
- *   §8.2 Full-width disclosure toggles — Section, DepsSection,
- *         PropertyControlRenderer
+ *   §8.2 Full-width disclosure toggles — Section, PropertyControlRenderer
  *   §8.3 Pill micro-remove buttons — ClassPicker (< 20×20px fixed,
  *         Button's 26px min-height would distort pill layout)
  *   §8.4 Toggle switch hit areas — ToggleControl, PreferencesSection
@@ -74,7 +73,6 @@ const ALLOWLIST = new Set([
   // These are collapsible section headers that span the full panel width.
   // Button's inline-flex sizing and padding do not fit a full-width disclosure pattern.
   'admin/pages/site/panels/PropertiesPanel/Section.tsx',
-  'admin/pages/site/panels/DependenciesPanel/DepsSection.tsx',
   'admin/pages/site/property-controls/PropertyControlRenderer.tsx',
 
   // ── §8.4 Toggle switch hit areas ────────────────────────────────────────
@@ -182,6 +180,9 @@ const ALLOWLIST = new Set([
   // • the "All" / "None" bulk text links — 11.5px inline text actions, not
   //   the token-driven Button sizes.
   'admin/modals/SiteImport/steps/AnalyzeStep.tsx',
+  // DetailHead is AnalyzeStep's detail-pane header, split out for the module
+  // size budget. It carries the same "All" / "None" bulk text links.
+  'admin/modals/SiteImport/steps/DetailHead.tsx',
   // CMS transfer bundles reuse the same Super Import review navigator geometry
   // as AnalyzeStep: full-width category rows, dashed choose-file affordance,
   // and inline All / None text actions. Button's inline-flex size tokens

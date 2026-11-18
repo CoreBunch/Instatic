@@ -28,6 +28,7 @@ import { useRef, useState, type ReactNode } from 'react'
 import { isStepUpRequiredError, stepUpCms } from '@core/persistence'
 import { useAdminSessionSetter, useCurrentAdminUser } from '@admin/sessionContext'
 import { StepUpDialog } from './StepUpDialog'
+import { notifySessionTokenRotated } from './sessionTokenRotation'
 import { StepUpCancelledMessage, StepUpContext, type StepUpContextValue } from './StepUpContext'
 import { getErrorMessage } from '@core/utils/errorMessage'
 
@@ -107,6 +108,7 @@ export function StepUpProvider({ children }: { children: ReactNode }) {
       // the account is locked, or the session went away). We surface the
       // server's message inline and let the user retry.
       const result = await stepUpCms(input)
+      notifySessionTokenRotated()
       if (result.user) setSessionUser(result.user)
     } catch (err) {
       setSubmitting(false)

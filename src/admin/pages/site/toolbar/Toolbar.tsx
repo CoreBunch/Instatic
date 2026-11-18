@@ -2,8 +2,12 @@
  * Toolbar — fixed top bar shared by every admin route.
  *
  * Layout (left → right):
- *   [Site brand] [admin nav]
+ *   [Site brand] [Branch chip] [admin nav]
  *   [Plugin buttons] [spacer→] [right slot]    [Account menu]
+ *
+ * While a branch other than main is active, the branch context strip renders
+ * as a sibling ABOVE the header (a full-width band in the workspace surface
+ * colour) — see src/admin/shared/BranchSwitcher.
  *
  * Undo/Redo lives inside the canvas notch (CanvasNotch), not the toolbar —
  * those controls only operate on the visual editor's page tree, so they have
@@ -30,6 +34,7 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import { ArticleSolidIcon } from 'pixel-art-icons/icons/article-solid'
 import { AiBoxSolidIcon } from 'pixel-art-icons/icons/ai-box-solid'
+import { MailSolidIcon } from 'pixel-art-icons/icons/mail-solid'
 import { DashboardSolidIcon } from 'pixel-art-icons/icons/dashboard-solid'
 import { DatabaseSolidIcon } from 'pixel-art-icons/icons/database-solid'
 import { ImagesSolidIcon } from 'pixel-art-icons/icons/images-solid'
@@ -38,6 +43,7 @@ import { PackageSolidIcon } from 'pixel-art-icons/icons/package-solid'
 import { pluginRuntime } from '@core/plugins/runtime'
 import type { RegisteredPluginToolbarButton } from '@core/plugin-sdk'
 import { AccountMenuButton } from '@admin/shared/AccountMenuButton'
+import { BranchChip, BranchContextStrip } from '@admin/shared/BranchSwitcher'
 import { OpenLivePageButton } from '@admin/shared/OpenLivePageButton'
 import { SettingsButton } from './SettingsButton'
 import { Link } from '@admin/lib/routing'
@@ -163,6 +169,7 @@ export function Toolbar({
   return (
     <>
       {overlay}
+      <BranchContextStrip />
       <header
         aria-label="Editor toolbar"
         data-testid="toolbar"
@@ -199,7 +206,12 @@ export function Toolbar({
             </span>
           </Tooltip>
         )}
-        {adminNavigationSlot ?? <DefaultAdminNavigation section={section} />}
+        <BranchChip />
+        {adminNavigationSlot ?? (
+          <nav aria-label="Admin sections" className={styles.adminNavigation}>
+            <DefaultAdminNavigation section={section} />
+          </nav>
+        )}
 
         <div className={styles.workspaceToolbarItems}>
           {pluginButtons.map((button) => {
@@ -306,6 +318,12 @@ function DefaultAdminNavigation({ section }: { section: AdminWorkspace }) {
         icon={<AiBoxSolidIcon size={NAV_ICON_SIZE} aria-hidden="true" />}
         label="AI"
         active={section === 'ai'}
+      />
+      <DefaultNavSlot
+        to="/admin/email"
+        icon={<MailSolidIcon size={NAV_ICON_SIZE} aria-hidden="true" />}
+        label="Email"
+        active={section === 'email'}
       />
     </>
   )

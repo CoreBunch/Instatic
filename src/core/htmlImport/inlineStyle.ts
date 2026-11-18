@@ -21,7 +21,6 @@
 import {
   encodeSubstitutionDeclarationList,
   readCssDeclarationBag,
-  SUBSTITUTION_FN_RE,
 } from '@core/css-substitution'
 
 /** Match the first `url(...)` payload in a CSS value (quoted or bare). */
@@ -65,7 +64,7 @@ export function harvestInlineStyles(doc: Document): Map<Element, Record<string, 
     // hand-rolled CSS parser and matches the engine the publisher trusts.
     const styledEl = el as Element & { style?: CSSStyleDeclaration }
     if (!styledEl.style || !el.hasAttribute('style')) continue
-    // Declarations whose value uses `var()`/`env()` are lossy/engine-divergent
+    // Substitution values and WebKit declarations can be lost
     // through CSSStyleDeclaration (see @core/css-substitution). The authored
     // attribute text is still at hand here — re-set it with those declarations
     // encoded as marker custom properties, which every engine preserves
@@ -73,9 +72,8 @@ export function harvestInlineStyles(doc: Document): Map<Element, Record<string, 
     // importer's own parse artifact and `stripUnsafe` removes the attribute
     // afterwards, so mutating it is safe.
     const authored = el.getAttribute('style') ?? ''
-    if (SUBSTITUTION_FN_RE.test(authored)) {
-      el.setAttribute('style', encodeSubstitutionDeclarationList(authored))
-    }
+    const encoded = encodeSubstitutionDeclarationList(authored)
+    if (encoded !== authored) el.setAttribute('style', encoded)
     const bag = extractInlineStyles(styledEl.style)
     if (Object.keys(bag).length > 0) result.set(el, bag)
   }

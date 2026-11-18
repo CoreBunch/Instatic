@@ -124,7 +124,7 @@ const listPostTypesTool: AiTool = {
     'List the routable post types a `postTypes` template can target. Each entry has { slug, label, routeBase, kind }; pass the `slug` values to site_set_page_template\'s `target.tableSlugs`. System tables, pages, components, layouts, and reusable data tables are excluded.',
   inputSchema: ListPostTypesInput,
   handler: async (_input, ctx) => {
-    const tables = await listDataTablesWithCounts(ctx.db)
+    const tables = await listDataTablesWithCounts(ctx.db, ctx.branch)
     const postTypes = tables
       .filter((t) => t.kind === 'postType' && t.routeBase.trim() !== '')
       .map((t) => ({
@@ -215,7 +215,7 @@ const listLoopSourcesTool: AiTool = {
       filterSchema: source.filterSchema,
       orderByOptions: source.orderByOptions,
     }))
-    const tables = await listDataTablesWithCounts(ctx.db)
+    const tables = await listDataTablesWithCounts(ctx.db, ctx.branch)
     const dataMeta = buildDataMeta(tables)
     const dataRowsSource = loopSourceRegistry.get('data.rows')
     const dataRowsFields = dataRowsSource?.fields.map(loopFieldToAgentField) ?? []

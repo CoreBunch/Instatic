@@ -19,6 +19,8 @@ export type HostRouteAccess =
   | { kind: 'capability'; capability: CoreCapability }
   | { kind: 'authenticated' }
   | { kind: 'public' }
+  /** A signed-in site member, optionally one holding `tag`. Public mount only. */
+  | { kind: 'member'; tag: string | null }
 
 interface HostRouteEntry {
   pluginId: string
@@ -55,6 +57,8 @@ interface HostMediaTransformerEntry {
 
 export interface HostPluginRecord {
   manifest: PluginManifest
+  /** Absolute, host-validated root for files shipped in this plugin package. */
+  assetRootPath: string
   routes: Map<string, HostRouteEntry>
   hookListeners: HostHookListenerEntry[]
   hookFilters: HostHookFilterEntry[]

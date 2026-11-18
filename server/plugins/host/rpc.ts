@@ -15,7 +15,7 @@ import { hookBus } from '@core/plugins/hookBus'
 import { mediaStorageRegistry } from '@core/plugins/mediaStorageRegistry'
 import { mediaVariantDelegateRegistry } from '@core/plugins/mediaVariantDelegateRegistry'
 import type { LoopFetchResult, LoopItem } from '@core/loops/types'
-import type { SerializedUser } from '../protocol/messages'
+import type { SerializedMember, SerializedUser } from '../protocol/messages'
 import type { LoadPluginResult } from '../protocol/messages'
 import { normalizeRoutePath } from '../protocol/parser'
 import { materializeRouteResponse, serializeRouteRequest } from './routeIo'
@@ -37,6 +37,7 @@ const SCHEDULE_RPC_SLACK_MS = 10_000
 export async function loadPluginInWorker(args: {
   manifest: PluginManifest
   entryFileUrl: string
+  assetRootPath: string
   settings: PluginSettingsValues
 }): Promise<LoadPluginResult> {
   // Clear any prior host-side state for this plugin id — hook listeners,
@@ -55,6 +56,7 @@ export async function loadPluginInWorker(args: {
   }
   hostPlugins.set(args.manifest.id, {
     manifest: args.manifest,
+    assetRootPath: args.assetRootPath,
     routes: new Map(),
     hookListeners: [],
     hookFilters: [],
@@ -185,6 +187,7 @@ export async function runRouteInWorker(args: {
   path: string
   request: Request
   user: SerializedUser | null
+  member: SerializedMember | null
 }): Promise<Response> {
   const entry = hostPlugins.get(args.pluginId)
   const routeKey = `${args.method.toUpperCase()}:${normalizeRoutePath(args.path)}`
@@ -206,6 +209,7 @@ export async function runRouteInWorker(args: {
       routeKey,
       request: serializedReq,
       user: args.user,
+      member: args.member,
       body: parsedBody,
     },
     'route-result',

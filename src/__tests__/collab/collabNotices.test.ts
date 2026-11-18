@@ -60,20 +60,20 @@ describe('collab notices', () => {
 
   it('matches resets only to the active page or visual component', () => {
     expect(
-      resetTargetsActiveDocument('page:page-1', { kind: 'page', pageId: 'page-1' }, null),
+      resetTargetsActiveDocument('page:main:page-1', { kind: 'page', pageId: 'page-1' }, null),
     ).toBe(true)
     expect(
-      resetTargetsActiveDocument('page:page-1', { kind: 'visualComponent', vcId: 'vc-1' }, 'page-1'),
+      resetTargetsActiveDocument('page:main:page-1', { kind: 'visualComponent', vcId: 'vc-1' }, 'page-1'),
     ).toBe(true)
     expect(
       resetTargetsActiveDocument(
-        'component:vc-1',
+        'component:main:vc-1',
         { kind: 'visualComponent', vcId: 'vc-1' },
         'page-1',
       ),
     ).toBe(true)
     expect(
-      resetTargetsActiveDocument('component:vc-2', { kind: 'page', pageId: 'page-1' }, 'page-1'),
+      resetTargetsActiveDocument('component:main:vc-2', { kind: 'page', pageId: 'page-1' }, 'page-1'),
     ).toBe(false)
   })
 })

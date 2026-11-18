@@ -3,7 +3,7 @@
 // search/filter over the loaded asset list. No JSX, no React, no store access.
 
 import type { CmsMediaAsset } from '@core/persistence/cmsMedia'
-import { formatBytes } from '@admin/pages/media/utils/formatBytes'
+import { formatBytes } from '@admin/lib/formatBytes'
 import type { MediaBucket, MediaFilter } from './mediaExplorerModel'
 
 const VIEW_MODE_STORAGE_KEY = 'instatic-media-explorer-view-mode'

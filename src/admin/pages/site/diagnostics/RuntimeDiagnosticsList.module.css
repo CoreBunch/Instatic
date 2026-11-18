@@ -1,0 +1,81 @@
+.wrap {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2xs);
+    text-align: left;
+    max-width: 420px;
+}
+
+.title {
+    margin: 0;
+    font-size: var(--text-3xs);
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--danger-text);
+}
+
+.list {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2xs);
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.row {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--space-2xs);
+}
+
+.icon {
+    /* Optical alignment with the first line of the message. */
+    margin-top: var(--space-4xs);
+    flex-shrink: 0;
+    color: var(--danger-text);
+}
+
+.row[data-severity='warning'] .icon,
+.row[data-severity='info'] .icon {
+    color: var(--warning-text);
+}
+
+.body {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-4xs);
+    min-width: 0;
+}
+
+.where {
+    display: flex;
+    align-items: baseline;
+    gap: var(--space-3xs);
+    font-family: var(--font-mono);
+    font-size: var(--text-3xs);
+    color: var(--text-subtle);
+}
+
+.file {
+    overflow-wrap: anywhere;
+}
+
+.at {
+    color: var(--text-disabled);
+}
+
+.message {
+    font-size: var(--text-2xs);
+    line-height: 1.4;
+    color: var(--text);
+    overflow-wrap: anywhere;
+}
+
+.more,
+.hint {
+    margin: 0;
+    font-size: var(--text-3xs);
+    color: var(--text-disabled);
+}

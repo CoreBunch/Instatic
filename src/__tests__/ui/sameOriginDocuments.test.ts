@@ -33,10 +33,10 @@ describe('collectSameOriginDocuments', () => {
 
   it('includes a same-origin iframe document', () => {
     const iframe = document.createElement('iframe')
+    iframe.srcdoc = '<body></body>'
     document.body.appendChild(iframe)
     try {
       const childDoc = iframe.contentDocument
-      // jsdom always exposes a same-origin contentDocument for a srcless frame.
       expect(childDoc).not.toBeNull()
       const docs = collectSameOriginDocuments(document)
       expect(docs).toContain(childDoc as Document)

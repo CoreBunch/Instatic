@@ -14,13 +14,16 @@ import {
 } from '../../../server/repositories/data'
 import { handleServerRequest } from '../../../server/router'
 import { resetForTests } from '../../../server/publish/renderCache'
-import { createFakeDb } from './dbTestFake'
+import { answerAccessIndexRead, createFakeDb } from './dbTestFake'
+import { MAIN_SCOPE } from '../../../server/branches/scope'
 
 type QueryHandler = (sql: string, params: unknown[]) => DbResult | undefined
 
 function makeDataFakeDb(handlers: QueryHandler[]) {
   return createFakeDb(async (rawSql, params): Promise<DbResult> => {
     const sql = rawSql.replace(/\s+/g, ' ').trim().toLowerCase()
+    const accessIndexRead = answerAccessIndexRead(sql)
+    if (accessIndexRead) return accessIndexRead
     for (const handler of handlers) {
       const result = handler(sql, params)
       if (result) return result
@@ -59,10 +62,11 @@ describe('data CMS repository', () => {
   it('lists data tables with frontend field names', async () => {
     const db = makeDataFakeDb([
       (sql) => {
-        if (!sql.startsWith('select id, name, slug, kind, route_base')) return undefined
+        if (!sql.startsWith('select logical_id, name, slug, kind, route_base')) return undefined
         return {
           rows: [{
             id: 'posts',
+            logical_id: 'posts',
             name: 'Posts',
             slug: 'posts',
             kind: 'postType',
@@ -72,6 +76,7 @@ describe('data CMS repository', () => {
             primary_field_id: 'title',
             fields_json: defaultFields,
             created_by_user_id: null,
+            created_by_plugin_id: null,
             updated_by_user_id: null,
             created_at: rowDate('2026-05-01T10:00:00Z'),
             updated_at: rowDate('2026-05-01T10:00:00Z'),
@@ -81,7 +86,7 @@ describe('data CMS repository', () => {
       },
     ])
 
-    await expect(listDataTables(db)).resolves.toEqual([{
+    await expect(listDataTables(db, MAIN_SCOPE)).resolves.toEqual([{
       id: 'posts',
       name: 'Posts',
       slug: 'posts',
@@ -93,6 +98,7 @@ describe('data CMS repository', () => {
       fields: defaultFields,
       system: false,
       createdByUserId: null,
+      createdByPluginId: null,
       updatedByUserId: null,
       createdAt: '2026-05-01T10:00:00.000Z',
       updatedAt: '2026-05-01T10:00:00.000Z',
@@ -103,12 +109,14 @@ describe('data CMS repository', () => {
     const db = makeDataFakeDb([
       (sql, params) => {
         if (!sql.startsWith('insert into data_tables')) return undefined
-        expect(String(params[0])).toBeTruthy() // id (nanoid)
-        expect(params[1]).toBe('Products')
-        expect(params[2]).toBe('products')
+        expect(String(params[0])).toBeTruthy() // physical id (nanoid on main)
+        expect(params[1]).toBe('main')
+        expect(params[2]).toBe('Products')
+        expect(params[3]).toBe('products')
         return {
           rows: [{
             id: 'products',
+            logical_id: 'products',
             name: 'Products',
             slug: 'products',
             kind: 'postType',
@@ -133,7 +141,7 @@ describe('data CMS repository', () => {
       },
     ])
 
-    const table = await createDataTable(db, {
+    const table = await createDataTable(db, MAIN_SCOPE, {
       name: 'Products',
       slug: 'products',
       kind: 'postType',
@@ -157,10 +165,11 @@ describe('data CMS repository', () => {
       // updateDataTable reads the table first, so a patch cannot drop the
       // mandatory `title`/`slug` of a post type by omitting them.
       (sql) => {
-        if (!sql.startsWith('select id, name, slug, kind')) return undefined
+        if (!sql.startsWith('select logical_id, name, slug, kind')) return undefined
         return {
           rows: [{
             id: 'products',
+            logical_id: 'products',
             name: 'Products',
             slug: 'products',
             kind: 'postType',
@@ -184,6 +193,7 @@ describe('data CMS repository', () => {
         return {
           rows: [{
             id: 'products',
+            logical_id: 'products',
             name: 'Catalog',
             slug: 'catalog',
             kind: 'postType',
@@ -202,7 +212,7 @@ describe('data CMS repository', () => {
       },
     ])
 
-    await expect(updateDataTable(db, 'products', {
+    await expect(updateDataTable(db, MAIN_SCOPE, 'products', {
       name: 'Catalog',
       slug: 'catalog',
       routeBase: '/catalog',

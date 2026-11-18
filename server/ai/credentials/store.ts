@@ -19,7 +19,7 @@
 
 import { nanoid } from 'nanoid'
 import type { DbClient } from '../../db/client'
-import { isoDateOrNull } from '@core/utils/isoDate'
+import { isoDateOrNull, nowIso } from '@core/utils/isoDate'
 import {
   decryptSecret,
   encryptSecret,
@@ -358,7 +358,7 @@ export async function updateCredentialForUser(
           iv = ${nextIv},
           base_url = ${nextBaseUrl},
           key_fingerprint = ${nextFingerprint},
-          updated_at = current_timestamp
+          updated_at = ${nowIso()}
       where id = ${credentialId} and user_id = ${userId}
       returning id, user_id, provider_id, auth_mode, display_label,
                 ciphertext, iv, base_url, key_fingerprint,
@@ -416,7 +416,7 @@ export async function touchCredentialLastUsed(
 ): Promise<void> {
   await db`
     update ai_provider_credentials
-    set last_used_at = current_timestamp
+    set last_used_at = ${nowIso()}
     where id = ${credentialId}
   `
 }

@@ -64,7 +64,7 @@ function unquoteFamily(raw: string): string {
   return trimmed
 }
 
-function tokenNameFromVariable(variable: string): string {
+export function tokenNameFromVariable(variable: string): string {
   const base = normalizeFontTokenVariable(variable).replace(/^font-/, '')
   const words = base.split('-').filter(Boolean)
   if (words.length === 0) return 'Font'
@@ -93,7 +93,9 @@ function importTokenFromDeclaration(prop: string, value: string): ImportFontToke
   if (!prop.startsWith('--font-')) return null
   if (!isFontFamilyLike(value)) return null
 
-  const variable = normalizeFontTokenVariable(prop)
+  // The authored name, kept so `normalizeImportedTokens` can map the
+  // imported `var()` references to the name the token is emitted under.
+  const variable = prop.slice(2)
   const parts = splitFontStack(value)
   if (parts.length === 0) return null
 

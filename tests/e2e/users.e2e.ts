@@ -28,7 +28,7 @@ test.describe('users and roles', () => {
       email,
       displayName: 'E2E Member',
       password: 'member-pass-12345',
-      role: 'Member',
+      role: 'No access',
     })
 
     await expect(page.getByText(email)).toBeVisible()
@@ -144,7 +144,7 @@ test.describe('users and roles', () => {
       email,
       displayName: 'Step-Up Guard',
       password: 'step-up-pass-12345',
-      role: 'Member',
+      role: 'No access',
     })
     await page.locator('button[form="users-page-user-form"]').click()
 
@@ -181,7 +181,7 @@ test.describe('users and roles', () => {
       email,
       displayName: 'Mobile Step-Up Guard',
       password: 'step-up-mobile-pass-12345',
-      role: 'Member',
+      role: 'No access',
     })
     await page.locator('button[form="users-page-user-form"]').click()
 
@@ -216,7 +216,7 @@ test.describe('users and roles', () => {
       email: firstEmail,
       displayName: 'Fresh Step-Up Window',
       password: 'step-up-fresh-pass-12345',
-      role: 'Member',
+      role: 'No access',
     })
     await expect(page.getByText(firstEmail)).toBeVisible()
 
@@ -226,7 +226,7 @@ test.describe('users and roles', () => {
       email: staleEmail,
       displayName: 'Expired Step-Up Window',
       password: 'step-up-stale-pass-12345',
-      role: 'Member',
+      role: 'No access',
     })
     await page.locator('button[form="users-page-user-form"]').click()
 
@@ -335,8 +335,15 @@ test.describe('users and roles', () => {
       await dialog.getByLabel('Name', { exact: true }).fill(editedRoleName)
       await dialog.getByLabel('Description').fill('Lifecycle role edited by E2E')
       await dialog.getByText('View site', { exact: true }).click()
-      await dialog.getByText('Manage roles', { exact: true }).click()
+      await dialog.getByText('View dashboard', { exact: true }).click()
       await expect(dialog.getByText('2 of')).toBeVisible()
+
+      // `roles.manage` is an installation-Owner power, never delegable to a
+      // custom role (see OWNER_ONLY_CAPABILITIES) — the picker renders it
+      // disabled so it cannot be granted by editing a role.
+      await expect(
+        dialog.getByRole('checkbox', { name: 'Manage roles' }),
+      ).toBeDisabled()
 
       await page.locator('button[form="users-page-role-form"]').click()
       await completeStepUp(page)
@@ -393,7 +400,7 @@ test.describe('users and roles', () => {
       email,
       displayName,
       password: 'audit-pass-12345',
-      role: 'Member',
+      role: 'No access',
     })
     await expect(page.getByText(email)).toBeVisible()
 
@@ -408,7 +415,7 @@ test.describe('users and roles', () => {
     })
     await expect(createdRow).toBeVisible()
     await expect(createdRow.getByText(`by ${OWNER.email}`)).toBeVisible()
-    await expect(createdRow.getByText('Role: Member')).toBeVisible()
+    await expect(createdRow.getByText('Role: No access')).toBeVisible()
     await expect(auditTable.getByText('user.create')).toHaveCount(0)
   })
 
@@ -426,7 +433,7 @@ test.describe('users and roles', () => {
       email,
       displayName,
       password: 'audit-mobile-pass-12345',
-      role: 'Member',
+      role: 'No access',
     })
     await expect(page.getByText(email)).toBeVisible()
 

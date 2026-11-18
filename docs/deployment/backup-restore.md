@@ -2,6 +2,8 @@
 
 A complete backup includes the database and the uploaded media. The procedure depends on whether you're using Postgres or SQLite as the database engine. Pick the matching section below.
 
+The Data workspace's **Export site** ZIP is a portable content backup: it includes editable drafts, separate published versions and shared snapshots, compiled runtime scripts, and selected media. Import with **Replace everything** restores that published state without publishing unfinished edits. Accounts, secrets, installed plugins and server configuration stay outside the ZIP; the database/filesystem procedures below are the full-instance backup path. Cold runtime npm caches require registry access. See [Site Transfer](../features/site-transfer.md) for the exact bundle boundary.
+
 ---
 
 ## TL;DR

@@ -22,9 +22,10 @@ describe('self-host docker config', () => {
   it('defines a production Docker image that builds assets before runtime startup', () => {
     const dockerfile = readFileSync('Dockerfile', 'utf8')
 
-    expect(dockerfile).toContain('FROM oven/bun:1.3.11 AS build')
+    expect(dockerfile).toContain('ARG BUN_VERSION=1.4.2')
+    expect(dockerfile).toContain('FROM oven/bun:${BUN_VERSION} AS build')
     expect(dockerfile).toContain('RUN bun run build')
-    expect(dockerfile).toContain('FROM oven/bun:1.3.11 AS runtime')
+    expect(dockerfile).toContain('FROM oven/bun:${BUN_VERSION} AS runtime')
     expect(dockerfile).toContain('ARG INSTATIC_VERSION=dev')
     expect(dockerfile).toContain('LABEL org.opencontainers.image.version="${INSTATIC_VERSION}"')
     expect(dockerfile).toContain('CMD ["bun", "run", "server/index.ts"]')
@@ -63,6 +64,10 @@ describe('self-host docker config', () => {
     expect(compose).toContain('condition: service_healthy')
     expect(compose).toContain('postgres_data:')
     expect(compose).toContain('uploads:')
+    // Runtime npm packages live on a volume in both database modes, outside
+    // the publicly served uploads directory.
+    expect(compose).toContain('RUNTIME_CACHE_DIR: /app/data/runtime-cache')
+    expect(compose).toContain('- data:/app/data')
     expect(buildOverride).toContain('build:')
     expect(buildOverride).toContain('dockerfile: Dockerfile')
   })

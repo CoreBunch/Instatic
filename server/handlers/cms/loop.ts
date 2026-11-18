@@ -25,6 +25,10 @@ import { registry } from '@core/module-engine'
 import { loopSourceRegistry } from '@core/loops/registry'
 import {
   renderNode,
+  showWhenPathsAllow,
+  showWhenPathsAreGated,
+  showWhenPathsTo,
+  subtreeDependsOnMember,
   type RenderConfig,
   type RenderAccumulators,
   type ResolvedLoopRenderData,
@@ -34,6 +38,15 @@ import { readLoopProps } from '../../publish/loopPrefetch'
 import { getPublishedLoopIndexForVersion } from '../../publish/publishedSnapshotCache'
 import { getPublishVersion } from '../../publish/publishState'
 import { LOOP_RUNTIME_JS } from '../../publish/loopRuntime'
+import {
+  closedContentFor,
+  decideAccess,
+  getAccessIndex,
+  memberFrameFor,
+  pageRules,
+  PRIVATE_HEADERS,
+  visitorFromRequest,
+} from '../../publish/accessGate'
 
 const LOOP_RUNTIME_PATH = '/_instatic/assets/loop-runtime.js'
 
@@ -89,6 +102,36 @@ export async function handleLoopRequest(
   const { page: containingPage, node: loopNode } = indexed
   const site = loopIndex.site
 
+  // More items of a loop on a protected page are part of that page.
+  const accessIndex = await getAccessIndex(ctx.db, getPublishVersion())
+  const rules = pageRules(accessIndex, containingPage)
+  const isProtected = rules.length > 0
+  const visitor = visitorFromRequest(ctx.db, req)
+  if (isProtected && (await decideAccess(rules, visitor)) !== 'allow') {
+    return jsonResponse({ error: 'Loop not found' }, { status: 404, headers: PRIVATE_HEADERS })
+  }
+  // The list leaves out what the visitor may not open (see `closedContentFor`).
+  const closed = closedContentFor(accessIndex, isProtected ? ((await visitor())?.tags ?? null) : null)
+  // Items that show member data are rendered for this visitor alone.
+  // The items are rendered here without the loop element itself, so its own
+  // show-when rule and those of everything around it are checked here.
+  // The loop may live inside a Visual Component, so the rules are followed
+  // along the render path, through the component and the reference that
+  // placed it. A loop on no render path is given to nobody.
+  const paths = showWhenPathsTo(containingPage, site, loopNode.id, { includeSelf: true })
+  const gated = showWhenPathsAreGated(paths)
+  // A loop inside a component is not in the page's own node map, where
+  // `subtreeDependsOnMember` looks; treat it as per-visitor rather than guess.
+  const inComponent = containingPage.nodes[loopNode.id] === undefined
+  const showsMember = gated || inComponent || subtreeDependsOnMember(containingPage, site, registry, loopNode.id)
+  const forVisitor = isProtected || showsMember
+  if (gated) {
+    const tags = (await visitor())?.tags ?? null
+    if (!showWhenPathsAllow(paths, tags)) {
+      return jsonResponse({ html: '', hasMore: false, pageNumber }, { headers: PRIVATE_HEADERS })
+    }
+  }
+
   const props = readLoopProps(loopNode)
   if (props.pagination !== 'infinite') {
     return jsonResponse({ error: 'Loop is not in infinite mode' }, { status: 400 })
@@ -113,6 +156,7 @@ export async function handleLoopRequest(
       direction: props.direction,
       limit: props.pageSize,
       offset,
+      closed,
     })
   } catch (err) {
     console.error(`[loop] source "${source.id}" failed for "${loopId}":`, err)
@@ -135,7 +179,9 @@ export async function handleLoopRequest(
     site,
     registry,
     breakpointId: undefined,
-    templateContext: { entryStack: [] },
+    templateContext: forVisitor
+      ? { entryStack: [], member: memberFrameFor(await visitor()) }
+      : { entryStack: [] },
     loopData: new Map<string, ResolvedLoopRenderData>([
       [loopId, { items: result.items, totalItems: result.totalItems, pageNumber, hasMore }],
     ]),
@@ -166,5 +212,5 @@ export async function handleLoopRequest(
     html += renderNode(variantId, iterationConfig, acc)
   })
 
-  return jsonResponse({ html, hasMore, pageNumber })
+  return jsonResponse({ html, hasMore, pageNumber }, forVisitor ? { headers: PRIVATE_HEADERS } : {})
 }

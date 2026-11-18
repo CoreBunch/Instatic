@@ -1168,4 +1168,385 @@ export const pgMigrations: Migration[] = [
          and capabilities_json ? 'roles.manage';
     `,
   },
+  {
+    // Stable provenance for plugin-managed media. The mapping lets an
+    // integration converge on one media asset instead of creating a duplicate
+    // on every sync, and keeps replacements on the same asset id.
+    id: '026_plugin_media_sources',
+    sql: `
+      create table if not exists plugin_media_sources (
+        plugin_id text not null references installed_plugins(id) on delete cascade,
+        source_key text not null,
+        asset_id text not null references media_assets(id) on delete cascade,
+        source_version text,
+        content_hash text not null,
+        created_at timestamptz not null default current_timestamp,
+        updated_at timestamptz not null default current_timestamp,
+        primary key (plugin_id, source_key),
+        unique (asset_id)
+      );
+
+      create index if not exists plugin_media_sources_asset_idx
+        on plugin_media_sources (asset_id);
+    `,
+  },
+  {
+    // See migrations-sqlite.ts:026 — site branches. Same semantic effect:
+    // branch registry, `branch_id` + `logical_id` on the three branched
+    // tables backfilled to main, per-branch table-slug uniqueness, collab
+    // doc ids gaining a branch segment, and the base-hash + preview tables.
+    id: '027_site_branches',
+    sql: `
+      create table if not exists site_branches (
+        id text primary key,
+        name text not null,
+        base_branch_id text,
+        created_by_user_id text references users(id) on delete set null,
+        created_at timestamptz not null default now(),
+        updated_at timestamptz not null default now()
+      );
+
+      insert into site_branches (id, name, base_branch_id)
+      values ('main', 'main', null)
+      on conflict (id) do nothing;
+
+      alter table site add column branch_id text not null default 'main';
+      alter table site add column logical_id text generated always as (
+        case when branch_id = 'main' then id else substr(id, length(branch_id) + 2) end
+      ) stored;
+
+      create unique index if not exists site_branch_idx
+        on site (branch_id);
+
+      alter table data_tables add column branch_id text not null default 'main';
+      alter table data_tables add column logical_id text generated always as (
+        case when branch_id = 'main' then id else substr(id, length(branch_id) + 2) end
+      ) stored;
+
+      create index if not exists data_tables_branch_idx
+        on data_tables (branch_id);
+
+      drop index if exists data_tables_slug_active_idx;
+
+      create unique index if not exists data_tables_branch_slug_active_idx
+        on data_tables (branch_id, slug)
+        where deleted_at is null;
+
+      alter table data_rows add column branch_id text not null default 'main';
+      alter table data_rows add column logical_id text generated always as (
+        case when branch_id = 'main' then id else substr(id, length(branch_id) + 2) end
+      ) stored;
+
+      create index if not exists data_rows_branch_idx
+        on data_rows (branch_id);
+
+      update collab_documents
+         set doc_id = 'site:main'
+       where doc_id = 'site:default';
+
+      update collab_documents
+         set doc_id = 'page:main:' || substr(doc_id, 6)
+       where doc_id like 'page:%'
+         and doc_id not like 'page:main:%';
+
+      update collab_documents
+         set doc_id = 'component:main:' || substr(doc_id, 11)
+       where doc_id like 'component:%'
+         and doc_id not like 'component:main:%';
+
+      update collab_documents
+         set doc_id = 'layout:main:' || substr(doc_id, 8)
+       where doc_id like 'layout:%'
+         and doc_id not like 'layout:main:%';
+
+      create table if not exists site_branch_bases (
+        branch_id text not null references site_branches(id) on delete cascade,
+        kind text not null,
+        logical_id text not null,
+        content_hash text not null,
+        content_json jsonb not null default '{}'::jsonb,
+        primary key (branch_id, kind, logical_id)
+      );
+
+      create table if not exists site_branch_previews (
+        id text primary key,
+        branch_id text not null references site_branches(id) on delete cascade,
+        token_hash text not null,
+        expires_at timestamptz,
+        created_by_user_id text references users(id) on delete set null,
+        created_at timestamptz not null default now(),
+        revoked_at timestamptz
+      );
+
+      create unique index if not exists site_branch_previews_token_idx
+        on site_branch_previews (token_hash);
+
+      create index if not exists site_branch_previews_branch_idx
+        on site_branch_previews (branch_id);
+
+      update roles
+         set capabilities_json = capabilities_json || '["site.branches.create"]'::jsonb,
+             updated_at = current_timestamp
+       where id in ('owner', 'admin')
+         and not (capabilities_json ? 'site.branches.create');
+
+      update roles
+         set capabilities_json = capabilities_json || '["site.branches.manage"]'::jsonb,
+             updated_at = current_timestamp
+       where id in ('owner', 'admin')
+         and not (capabilities_json ? 'site.branches.manage');
+    `,
+  },
+  {
+    id: '028_site_branch_reviews',
+    sql: `
+      create table if not exists site_branch_merge_requests (
+        id text primary key,
+        branch_id text not null references site_branches(id) on delete cascade,
+        requested_by_user_id text references users(id) on delete set null,
+        note text not null default '',
+        content_hash text not null default '',
+        status text not null default 'open',
+        resolved_by_user_id text references users(id) on delete set null,
+        resolved_at timestamptz,
+        resolution_note text not null default '',
+        created_at timestamptz not null default now(),
+        updated_at timestamptz not null default now()
+      );
+
+      create index if not exists site_branch_merge_requests_branch_idx
+        on site_branch_merge_requests (branch_id, status, created_at desc);
+
+      create unique index if not exists site_branch_merge_requests_open_idx
+        on site_branch_merge_requests (branch_id)
+        where status = 'open';
+
+      create table if not exists site_branch_review_comments (
+        id text primary key,
+        branch_id text not null references site_branches(id) on delete cascade,
+        request_id text references site_branch_merge_requests(id) on delete set null,
+        entity_key text not null default '',
+        author_user_id text references users(id) on delete set null,
+        body text not null,
+        created_at timestamptz not null default now()
+      );
+
+      create index if not exists site_branch_review_comments_branch_idx
+        on site_branch_review_comments (branch_id, created_at);
+    `,
+  },
+  {
+    id: '029_site_branch_merges',
+    sql: `
+      create table if not exists site_branch_merges (
+        id text primary key,
+        branch_id text not null references site_branches(id) on delete cascade,
+        direction text not null,
+        applied_by_user_id text references users(id) on delete set null,
+        change_count integer not null default 0,
+        entries_json jsonb not null default '[]',
+        undone_at timestamptz,
+        created_at timestamptz not null default now()
+      );
+
+      create index if not exists site_branch_merges_branch_idx
+        on site_branch_merges (branch_id, created_at desc);
+    `,
+  },
+  {
+    // SQLite-only data migration (see migrations-sqlite.ts): `timestamptz`
+    // columns already hold real timestamps, so there is nothing to rewrite.
+    id: '030_iso_timestamps',
+    sql: 'select 1',
+  },
+  {
+    // Which plugin created this table via `cms.content.tables.create` (null
+    // for user/import-created tables). The plugin host's `@own-created`
+    // contentAccess marker resolves against this column, so a plugin keeps
+    // access to tables it created at runtime — durable across restarts and
+    // admin-side slug renames. Nullable, no default: purely additive.
+    id: '031_data_tables_created_by_plugin',
+    sql: `
+      alter table data_tables add column created_by_plugin_id text;
+    `,
+  },
+  {
+    // Outgoing mail. `mail_connectors` are the accounts the server can send
+    // through (SMTP, Amazon SES); each secret is encrypted with the master
+    // key. `mail_settings` is one row: which connector sends, and as whom.
+    // `mail_templates` holds only the templates an owner has edited; the
+    // defaults live in code. `mail_outbox` is the delivery log; `body_text`
+    // is filled only in development, where mail is captured instead of
+    // sent, because bodies carry live sign-in and reset links.
+    id: '032_mail',
+    sql: `
+      create table if not exists mail_connectors (
+        id text primary key,
+        kind text not null,
+        label text not null,
+        config_json jsonb not null default '{}',
+        secret_ciphertext bytea,
+        secret_iv bytea,
+        key_fingerprint text,
+        last_used_at timestamptz,
+        last_error text,
+        created_by_user_id text references users(id) on delete set null,
+        created_at timestamptz not null default now(),
+        updated_at timestamptz not null default now()
+      );
+
+      create table if not exists mail_settings (
+        id text primary key,
+        default_connector_id text references mail_connectors(id) on delete set null,
+        from_address text not null default '',
+        from_name text not null default '',
+        reply_to text not null default '',
+        updated_by_user_id text references users(id) on delete set null,
+        updated_at timestamptz not null default now()
+      );
+
+      create table if not exists mail_templates (
+        template_key text primary key,
+        subject text not null,
+        body_markdown text not null,
+        updated_by_user_id text references users(id) on delete set null,
+        updated_at timestamptz not null default now()
+      );
+
+      create table if not exists mail_outbox (
+        id text primary key,
+        kind text not null,
+        to_address text not null,
+        subject text not null,
+        status text not null,
+        connector_id text,
+        connector_label text,
+        error text,
+        body_text text,
+        provider_message_id text,
+        duration_ms integer,
+        created_at timestamptz not null default now()
+      );
+
+      create index if not exists mail_outbox_created_idx
+        on mail_outbox (created_at desc);
+
+      update roles
+         set capabilities_json = capabilities_json || '["mail.manage"]'::jsonb,
+             updated_at = now()
+       where id in ('owner', 'admin')
+         and not (capabilities_json ? 'mail.manage');
+    `,
+  },
+  {
+    // Site members: people who sign up and log in on the published site,
+    // kept fully apart from admin `users`. Sessions and tokens store only
+    // hashes. `member_tags` is keyed (member, tag, source) so a tag granted
+    // by a plugin and the same tag granted by hand are separate rows.
+    // `member_settings` is one installation-wide row, deliberately outside
+    // the branched, exported site document. `data_tables.access_json` holds
+    // a table's access rule for its entry routes (null = anyone).
+    id: '033_members',
+    sql: `
+      create table if not exists members (
+        id text primary key,
+        email text not null,
+        email_normalized text not null,
+        password_hash text,
+        status text not null default 'active',
+        email_verified_at timestamptz,
+        profile_json jsonb not null default '{}',
+        last_login_at timestamptz,
+        deleted_at timestamptz,
+        created_at timestamptz not null default now(),
+        updated_at timestamptz not null default now()
+      );
+
+      create unique index if not exists members_email_active_idx
+        on members (email_normalized) where deleted_at is null;
+
+      create table if not exists member_sessions (
+        id_hash text primary key,
+        member_id text not null references members(id) on delete cascade,
+        ip_address text,
+        user_agent text,
+        created_at timestamptz not null default now(),
+        last_seen_at timestamptz not null default now(),
+        expires_at timestamptz not null,
+        revoked_at timestamptz
+      );
+
+      create index if not exists member_sessions_member_idx
+        on member_sessions (member_id);
+
+      create table if not exists member_tokens (
+        id_hash text primary key,
+        member_id text not null references members(id) on delete cascade,
+        kind text not null,
+        payload_json jsonb not null default '{}',
+        created_at timestamptz not null default now(),
+        expires_at timestamptz not null,
+        used_at timestamptz
+      );
+
+      create index if not exists member_tokens_member_kind_idx
+        on member_tokens (member_id, kind);
+
+      create table if not exists member_tags (
+        member_id text not null references members(id) on delete cascade,
+        tag text not null,
+        source text not null,
+        expires_at timestamptz,
+        created_at timestamptz not null default now(),
+        primary key (member_id, tag, source)
+      );
+
+      create index if not exists member_tags_tag_idx
+        on member_tags (tag);
+
+      create table if not exists member_events (
+        id text primary key,
+        member_id text references members(id) on delete set null,
+        kind text not null,
+        ip_address text,
+        user_agent text,
+        metadata_json jsonb not null default '{}',
+        created_at timestamptz not null default now()
+      );
+
+      create index if not exists member_events_member_idx
+        on member_events (member_id, created_at desc);
+
+      create table if not exists member_settings (
+        id text primary key,
+        signup_mode text not null default 'closed',
+        profile_fields_json jsonb not null default '[]',
+        pages_json jsonb not null default '{}',
+        updated_at timestamptz not null default now()
+      );
+
+      alter table data_tables add column access_json jsonb;
+
+      -- The capability-less admin role was called "Member", which now reads
+      -- as a site member. Relabel it, unless an owner already renamed it.
+      update roles
+         set name = 'No access',
+             description = 'An admin account that can sign in but do nothing. Not a site member: those sign in on the published site.'
+       where id = 'member'
+         and name = 'Member'
+         and description = 'Public-facing member account — no admin access by default.';
+
+      update roles
+         set capabilities_json = capabilities_json || '["members.read"]'::jsonb,
+             updated_at = now()
+       where id in ('owner', 'admin')
+         and not (capabilities_json ? 'members.read');
+
+      update roles
+         set capabilities_json = capabilities_json || '["members.manage"]'::jsonb,
+             updated_at = now()
+       where id in ('owner', 'admin')
+         and not (capabilities_json ? 'members.manage');
+    `,
+  },
 ]

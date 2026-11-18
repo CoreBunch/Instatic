@@ -15,7 +15,12 @@
  *   POST /admin/api/cms/runtime/validate — compile every enabled draft
  *        script and return file/line diagnostics without publishing.
  *
- * Both endpoints accept the draft site in the request body rather than
+ *   GET  /admin/api/cms/runtime/canvas-stylesheets — the stylesheets that
+ *        plugins add to published pages, resolved to CSS text for the
+ *        editing canvas (gated by `site.read`, like the preview: anyone who
+ *        can open the site editor sees the page the way visitors do).
+ *
+ * The preview and validate endpoints accept the draft site in the request body rather than
  * loading the persisted draft — preview must reflect unsaved edits.
  */
 import type { DbClient } from '../../db/client'
@@ -25,6 +30,7 @@ import { ensureRuntimeDependencyCache } from '../../publish/runtime/dependencyCa
 import { buildRuntimePackageImportmap } from '../../publish/runtime/packageImportmap'
 import { buildRuntimePreviewDocument } from '../../publish/runtime/previewRuntime'
 import { buildSiteRuntimeScripts } from '../../publish/runtime/bundleScripts'
+import { collectCanvasPluginStylesheets } from '../../publish/canvasStylesheets'
 import { validateSite, validatePages, validateVisualComponents, SiteValidationError } from '@core/persistence/validate'
 import { isSafePackageName } from '@core/site-dependencies/packageNames'
 import type { SitePackageJson } from '@core/site-dependencies/manifest'
@@ -40,6 +46,8 @@ import type { Page, SiteDocument, SiteShell } from '@core/page-tree'
 import { badRequest, jsonResponse, methodNotAllowed, readValidatedBody } from '../../http'
 import { Type } from '@core/utils/typeboxHelpers'
 import { getErrorMessage } from '@core/utils/errorMessage'
+import type { BranchScope } from '../../branches/scope'
+import type { CmsHandlerOptions } from './shared'
 
 function runtimeDependencyMap(raw: unknown): Record<string, string> {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {}
@@ -109,8 +117,22 @@ async function runtimeDependencyCache(site: SiteDocument) {
     : undefined
 }
 
-export async function handleRuntimeRoutes(req: Request, db: DbClient): Promise<Response | null> {
+export async function handleRuntimeRoutes(
+  req: Request,
+  db: DbClient,
+  scope: BranchScope,
+  options: CmsHandlerOptions = {},
+): Promise<Response | null> {
   const url = new URL(req.url)
+
+  if (url.pathname === '/admin/api/cms/runtime/canvas-stylesheets') {
+    const user = await requireCapability(req, db, 'site.read')
+    if (user instanceof Response) return user
+    if (req.method !== 'GET') return methodNotAllowed()
+    return jsonResponse({
+      stylesheets: await collectCanvasPluginStylesheets(db, options.uploadsDir),
+    })
+  }
 
   if (url.pathname === '/admin/api/cms/runtime/dependencies/resolve') {
     const user = await requireCapability(req, db, 'runtime.dependencies')
@@ -225,6 +247,8 @@ export async function handleRuntimeRoutes(req: Request, db: DbClient): Promise<R
         breakpointId,
         templateContext,
         db,
+        // Loops on the canvas read the rows of the branch being edited.
+        branchId: scope.branchId,
       })
 
       return jsonResponse({

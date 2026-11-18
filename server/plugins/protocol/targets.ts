@@ -60,7 +60,8 @@ export const TARGET_PERMISSIONS = {
   // Scheduled jobs
   'cms.schedule.register': 'cms.schedule',
   'cms.schedule.cancel': 'cms.schedule',
-  // Media subsystem — three independent surfaces, each its own permission.
+  // Media subsystem — managed ingestion plus three independent extension surfaces.
+  'cms.media.upsert': 'media.import',
   'cms.media.registerStorageAdapter': 'media.storage.adapter',
   'cms.media.registerUrlTransformer': 'media.url.transform',
   'cms.media.registerVariantDelegate': 'media.variant.delegate',
@@ -85,4 +86,8 @@ export const TARGET_PERMISSIONS = {
   'cms.content.search': 'cms.content.read',
   'cms.content.snapshot': 'cms.content.read',
   'cms.content.republishAll': 'cms.content.publish',
+  'cms.members.get': 'members.read',
+  'cms.members.invite': 'members.write',
+  'cms.members.tags.grant': 'members.tags',
+  'cms.members.tags.revoke': 'members.tags',
 } satisfies Partial<Record<AllowedApiTarget, PluginPermission>>

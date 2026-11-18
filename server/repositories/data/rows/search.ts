@@ -2,9 +2,11 @@
  * Cross-table content search (spotlight content provider).
  *
  *   searchDataRows — search non-deleted rows across all non-deleted data
- *                    tables by slug, returning a lightweight summary
+ *                    tables of one branch by slug, returning a lightweight
+ *                    summary
  */
 import type { DbClient } from '../../../db/client'
+import type { BranchScope } from '../../../branches/scope'
 import type { DataRowStatus } from '@core/data/schemas'
 import { isoDate } from '@core/utils/isoDate'
 
@@ -63,14 +65,15 @@ interface SearchDataRowsVisibility {
  */
 export async function searchDataRows(
   db: DbClient,
+  scope: BranchScope,
   query: string,
   limit: number,
   visibility: SearchDataRowsVisibility = {},
 ): Promise<DataRowSearchResult[]> {
   const likePattern = `%${query.toLowerCase()}%`
   const { rows } = await db<DataRowSearchRow>`
-    select data_rows.id,
-           data_rows.table_id,
+    select data_rows.logical_id as id,
+           data_tables.logical_id as table_id,
            data_rows.slug,
            data_rows.status,
            data_rows.author_user_id,
@@ -81,7 +84,8 @@ export async function searchDataRows(
            data_tables.system as table_system
     from data_rows
     join data_tables on data_tables.id = data_rows.table_id
-    where data_rows.deleted_at is null
+    where data_rows.branch_id = ${scope.branchId}
+      and data_rows.deleted_at is null
       and data_tables.deleted_at is null
       and lower(data_rows.slug) like ${likePattern}
     order by data_rows.updated_at desc

@@ -8,6 +8,7 @@ import {
   saveDraftSite,
 } from '../../../server/repositories/site'
 import { createFakeDb } from './dbTestFake'
+import { MAIN_SCOPE } from '../../../server/branches/scope'
 
 function createSiteFakeDb() {
   const state = {
@@ -20,8 +21,8 @@ function createSiteFakeDb() {
     if (sql.startsWith('insert into site')) {
       state.site = {
         id: 'default',
-        name: params[0],
-        settings_json: params[1],
+        name: params[1],
+        settings_json: params[2],
         created_at: new Date('2026-01-01').toISOString(),
         updated_at: new Date('2026-01-02').toISOString(),
       }
@@ -79,7 +80,7 @@ function validShell(overrides: Partial<SiteShell> = {}): SiteShell {
 describe('CMS draft site persistence', () => {
   it('saves the site shell and loads it back', async () => {
     const { state, db } = createSiteFakeDb()
-    await saveDraftSite(db, validShell(), 'user_1')
+    await saveDraftSite(db, MAIN_SCOPE, validShell(), 'user_1')
 
     expect(state.site).toMatchObject({ name: 'Example Site' })
     expect(state.site?.settings_json).toMatchObject({
@@ -94,9 +95,9 @@ describe('CMS draft site persistence', () => {
 
   it('loads a saved draft site without reading pages (shell-only)', async () => {
     const { db } = createSiteFakeDb()
-    await saveDraftSite(db, validShell(), 'user_1')
+    await saveDraftSite(db, MAIN_SCOPE, validShell(), 'user_1')
 
-    const loaded = await getDraftSite(db)
+    const loaded = await getDraftSite(db, MAIN_SCOPE)
 
     expect(loaded).toMatchObject({
       id: 'project_1',
@@ -110,7 +111,7 @@ describe('CMS draft site persistence', () => {
 
   it('round-trips reusable CSS conditions in the site shell', async () => {
     const { db } = createSiteFakeDb()
-    await saveDraftSite(db, validShell({
+    await saveDraftSite(db, MAIN_SCOPE, validShell({
       conditions: [
         {
           id: 'media:(min-width: 1200px)',
@@ -135,7 +136,7 @@ describe('CMS draft site persistence', () => {
       },
     }), 'user_1')
 
-    const loaded = await getDraftSite(db)
+    const loaded = await getDraftSite(db, MAIN_SCOPE)
 
     expect(loaded?.conditions).toEqual([
       {
@@ -149,7 +150,7 @@ describe('CMS draft site persistence', () => {
 
   it('validates the stored shell and throws SiteValidationError on corrupt data', async () => {
     const { state, db } = createSiteFakeDb()
-    await saveDraftSite(db, validShell(), 'user_1')
+    await saveDraftSite(db, MAIN_SCOPE, validShell(), 'user_1')
 
     // Corrupt a breakpoint: inject an invalid width type.
     // readStoredShell passes arrays through as-is, so this reaches validateSite
@@ -158,12 +159,12 @@ describe('CMS draft site persistence', () => {
     const site = payload.site as Record<string, unknown>
     site.breakpoints = [{ id: 'desktop', label: 'Desktop', width: 'not-a-number', icon: 'monitor' }]
 
-    await expect(getDraftSite(db)).rejects.toThrow(SiteValidationError)
+    await expect(getDraftSite(db, MAIN_SCOPE)).rejects.toThrow(SiteValidationError)
   })
 
   it('round-trips site runtime settings in the site shell', async () => {
     const { db } = createSiteFakeDb()
-    await saveDraftSite(db, validShell({
+    await saveDraftSite(db, MAIN_SCOPE, validShell({
       runtime: normalizeSiteRuntimeConfig({
         scripts: {
           script_1: {
@@ -174,7 +175,7 @@ describe('CMS draft site persistence', () => {
       }),
     }))
 
-    const loaded = await getDraftSite(db)
+    const loaded = await getDraftSite(db, MAIN_SCOPE)
 
     expect(loaded?.runtime?.scripts.script_1).toMatchObject({
       placement: 'head',

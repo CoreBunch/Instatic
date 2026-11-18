@@ -3,7 +3,7 @@ import React from 'react'
 import { act, cleanup, render, screen } from '@testing-library/react'
 import { CanvasRoot } from '@site/canvas/CanvasRoot'
 import { CanvasTransformLayer } from '@site/canvas/CanvasTransformLayer'
-import { CANVAS_VIEWPORT_HEIGHT } from '@site/canvas/resolveViewportUnits'
+import { CANVAS_VIEWPORT_HEIGHT } from '@site/canvas/canvasViewport'
 import { DEFAULT_BREAKPOINTS } from '@core/page-tree'
 import { useEditorStore } from '@site/store/store'
 import {

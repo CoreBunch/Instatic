@@ -46,12 +46,12 @@ src/modules/base/
 ├── video/               — base.video (youtube.ts — ID parse + embed URL leaf)
 ├── list/                — base.list (items.ts — textarea item-splitting leaf)
 ├── loop/                — base.loop
-├── forms/               — base.form and form-control primitives
+├── forms/               — base.form and form-control primitives (content.ts: submit children/label rule)
 ├── visualComponentRef/  — base.visual-component-ref
 ├── slotOutlet/          — base.slot-outlet (VC author side)
 ├── slotInstance/        — base.slot-instance (VC consumer side)
 ├── shared/
-│   └── anchorTarget.ts  — AnchorTargetSchema, ANCHOR_TARGET_OPTIONS, anchorRel() (button + link)
+│   └── anchorTarget.ts  — ANCHOR_TARGET_OPTIONS, anchorRel(), mergeAnchorRel(), anchorHtmlAttributes() (button + link; schema in @core/htmlAttributes)
 ├── utils/
 │   ├── escape.ts        — escapeHtml, safeUrl, sanitiseCssValue, buildStyle (re-exports publisher utils)
 │   ├── htmlTag.ts       — htmlTagControl, customHtmlTagControl (resolution lives in @core/htmlAttributes)
@@ -157,7 +157,7 @@ interface ModuleDefinition<TProps extends Record<string, unknown>> {
 
 Constraint #179: **`render()` is pure** — no DOM, no React, no side effects. Inputs in, strings out.
 
-`render()` may also return `js` next to `html`/`css` — an optional vanilla-JS runtime for the module TYPE, deduplicated per moduleId (like CSS) and served as an external file at `/_instatic/module-js/<moduleId>.js` on published pages. Authoring contract: a self-contained IIFE; bind via document-level event delegation (hole fragments insert into the DOM after load); idempotent; no load-order assumptions; no framework runtimes. Size discipline in the spirit of the ~1 KB hole runtime — the ~8 KB form runtime is the ceiling, not the norm. Module JS never executes in the admin canvas: the canvas renders React editor components, never published render() output.
+`render()` may also return `js` next to `html`/`css` — an optional vanilla-JS runtime for the module TYPE, deduplicated per moduleId (like CSS) and served as an external file at `/_instatic/module-js/<moduleId>.js` on published pages. Authoring contract: a self-contained IIFE; bind via document-level event delegation (hole fragments insert into the DOM after load); idempotent; no load-order assumptions; no framework runtimes. Size discipline in the spirit of the ~1 KB hole runtime — the ~16 KB form runtime (CMS and member forms in one script) is the ceiling, not the norm. Module JS never executes in the admin canvas: the canvas renders React editor components, never published render() output.
 
 ---
 

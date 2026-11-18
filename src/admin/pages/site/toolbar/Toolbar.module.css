@@ -51,6 +51,62 @@
     user-select: none;
 }
 
+/* The section links. Plugins contribute entries, so this row can outgrow the
+   bar. It is the one part of the toolbar that gives way: it is clipped to the
+   space left over, and `AdminSectionNavigation` moves the entries that do not
+   fit into a trailing "More" menu. Without this the toolbar grew wider than
+   the window, pushing the publish and account controls out of it. */
+.adminNavigation {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: var(--space-4xs);
+    flex: 0 1 auto;
+    min-width: 0;
+    overflow: hidden;
+}
+
+.adminNavigation > * {
+    flex-shrink: 0;
+}
+
+.adminNavEntry {
+    display: inline-flex;
+}
+
+/* Out of the row but still laid out, so its width stays measurable. Invisible
+   elements are skipped by the tab order and by assistive technology. */
+.adminNavOutOfRow {
+    visibility: hidden;
+}
+
+/* Positioned by `--admin-nav-more-left`, right after the last entry that fits.
+   Absolute so it never adds to the row's own width. */
+.adminNavMore {
+    --admin-nav-more-left: 0px;
+    position: absolute;
+    top: 0;
+    left: var(--admin-nav-more-left);
+    height: 28px;
+    gap: var(--space-xs);
+    padding: 0 var(--space-s);
+    border-radius: var(--input-radius);
+    color: var(--text-subtle);
+    font-size: var(--text-xs);
+    font-weight: 700;
+}
+
+.adminNavMore:hover,
+.adminNavMore[aria-expanded="true"] {
+    background: var(--bg-surface-2);
+    color: var(--text);
+}
+
+/* The section the user is on sits inside the menu. */
+.adminNavMore[data-current="true"] {
+    color: var(--text);
+}
+
 .adminLink {
     display: inline-flex;
     align-items: center;
@@ -99,8 +155,8 @@
 .workspaceToolbarItems {
     display: flex;
     align-items: center;
-    flex: 1;
-    min-width: 0;
+    /* Never narrower than its controls: the section links give way instead. */
+    flex: 1 0 auto;
     gap: var(--space-4xs);
 }
 
@@ -188,6 +244,10 @@
     align-items: center;
     gap: var(--space-s);
     height: 28px;
+}
+
+.publishActionStatus[data-has-detail='true'] {
+    cursor: help;
 }
 
 .publishActionStatus {

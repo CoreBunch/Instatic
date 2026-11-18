@@ -3,6 +3,7 @@ import type { PluginRepeaterItemField } from '@core/plugin-sdk/types/content'
 import type { DataField, RepeaterItemField } from '@core/data/schemas'
 import { listDataTables } from '../../repositories/data'
 import type { DbClient } from '../../db/client'
+import { MAIN_SCOPE } from '../../branches/scope'
 
 function pluginFieldCommon(field: { id: string; label: string; required?: boolean }): {
   id: string
@@ -68,7 +69,7 @@ function pluginRepeaterItemFieldToDataField(
 }
 
 export async function buildContentTableIdLookup(db: DbClient): Promise<Map<string, string>> {
-  const tables = await listDataTables(db)
+  const tables = await listDataTables(db, MAIN_SCOPE)
   return new Map(tables.map((t) => [t.slug, t.id]))
 }
 

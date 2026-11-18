@@ -15,6 +15,8 @@ import {
   MCP_PROTECTED_RESOURCE_METADATA_PATH,
 } from '../paths'
 import {
+  MCP_OAUTH_ISSUER_UNAVAILABLE_MESSAGE,
+  mcpIssuerUnavailableResponse,
   mcpOAuthEndpoints,
   mcpResource,
   MCP_OAUTH_SUPPORTED_SCOPES,
@@ -59,8 +61,9 @@ export function tryHandleMcpOAuth(
 
 function protectedResourceMetadata(req: Request): Response {
   const endpoints = mcpOAuthEndpoints(req)
+  if (!endpoints) return mcpIssuerUnavailableResponse()
   return metadataResponse({
-    resource: mcpResource(req),
+    resource: endpoints.resource,
     resource_name: 'Instatic MCP',
     authorization_servers: [endpoints.issuer],
     scopes_supported: [...MCP_OAUTH_SUPPORTED_SCOPES],
@@ -70,6 +73,7 @@ function protectedResourceMetadata(req: Request): Response {
 
 function authorizationServerMetadata(req: Request): Response {
   const endpoints = mcpOAuthEndpoints(req)
+  if (!endpoints) return mcpIssuerUnavailableResponse()
   return metadataResponse({
     issuer: endpoints.issuer,
     authorization_endpoint: endpoints.authorizationEndpoint,
@@ -142,6 +146,12 @@ async function handleClientRegistration(req: Request, db: DbClient): Promise<Res
 async function handleTokenRequest(req: Request, db: DbClient): Promise<Response> {
   const limited = consumeRateLimit(req, oauthTokenRateLimit)
   if (limited) return limited
+  // Tokens are bound to the exact MCP resource; without a trustworthy issuer
+  // nothing can match, so answer in the token endpoint's own error shape.
+  const resource = mcpResource(req)
+  if (!resource) {
+    return oauthError('temporarily_unavailable', MCP_OAUTH_ISSUER_UNAVAILABLE_MESSAGE, 503)
+  }
 
   const contentType = req.headers.get('content-type')?.toLowerCase() ?? ''
   if (!contentType.startsWith('application/x-www-form-urlencoded')) {
@@ -167,7 +177,7 @@ async function handleTokenRequest(req: Request, db: DbClient): Promise<Response>
       ? oauthError('invalid_request', 'The token request is invalid.', 400)
       : oauthError('unsupported_grant_type', 'The token grant is not supported.', 400)
   }
-  if (body.resource !== mcpResource(req)) {
+  if (body.resource !== resource) {
     return oauthError('invalid_target', 'The requested resource does not match this MCP server.', 400)
   }
 

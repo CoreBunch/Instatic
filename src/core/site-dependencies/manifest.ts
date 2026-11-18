@@ -38,6 +38,32 @@ export const DEFAULT_SITE_PACKAGE_JSON: SitePackageJson = {
   devDependencies: {},
 }
 
+/** Which bucket a package is declared in, and at what range. Null when the manifest does not list it. */
+export interface DeclaredDependency {
+  range: string
+  dev: boolean
+}
+
+/**
+ * Read one declared dependency.
+ *
+ * `Object.hasOwn`, never `in` or a bare bracket read: `isSafePackageName`
+ * accepts names like `constructor` and `toString`, and the dependency maps are
+ * plain objects, so a prototype property would otherwise read as an installed
+ * package with a `Function` for a version.
+ */
+export function readDeclaredDependency(packageJson: SitePackageJson, name: string): DeclaredDependency | null {
+  if (Object.hasOwn(packageJson.dependencies, name)) return { range: packageJson.dependencies[name], dev: false }
+  if (Object.hasOwn(packageJson.devDependencies, name)) return { range: packageJson.devDependencies[name], dev: true }
+  return null
+}
+
+/** Whether the manifest declares `name` in the given bucket. */
+export function hasDeclaredDependency(packageJson: SitePackageJson, name: string, dev: boolean): boolean {
+  const bucket = dev ? packageJson.devDependencies : packageJson.dependencies
+  return Object.hasOwn(bucket, name)
+}
+
 export function clonePackageJson(
   packageJson: SitePackageJson = DEFAULT_SITE_PACKAGE_JSON,
 ): SitePackageJson {

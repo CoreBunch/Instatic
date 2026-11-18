@@ -131,6 +131,32 @@ export interface SourceFetchContext {
    * because cookies would fragment the Layer B cache per visitor.
    */
   request?: SourceRequestContext
+  /**
+   * What this visitor may not open on the published site. A listing leaves
+   * these out, so a loop never shows a row or a page the visitor could not
+   * open by its address. Set on every public render; absent in the admin
+   * (previews show everything).
+   */
+  closed?: ClosedContent
+  /**
+   * Read draft rows instead of published versions. Unset, the source decides
+   * from `branchId` (drafts off main). The merge review sets it on both
+   * sides, because a merge compares drafts with drafts.
+   */
+  drafts?: boolean
+  /**
+   * Branch whose rows the source reads. Publishing and public rendering run
+   * on `main`; the editor's runtime preview and branch previews pass the
+   * branch being viewed so `data.rows` addresses that branch's tables (see
+   * `@core/branches`). Absent means main.
+   */
+  branchId?: string
+}
+
+/** Tables (by logical id) and pages (by slug) a visitor may not open. */
+export interface ClosedContent {
+  tableIds: ReadonlySet<string>
+  pageSlugs: ReadonlySet<string>
 }
 
 /**

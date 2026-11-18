@@ -1,4 +1,5 @@
-import { beforeEach, describe, expect, it } from 'bun:test'
+import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
+import { configurePublicOrigins, resetPublicOrigins } from '../../../auth/security'
 import type { DbClient } from '../../../db/client'
 import { sqliteMigrations } from '../../../db/migrations-sqlite'
 import { runMigrations } from '../../../db/runMigrations'
@@ -8,6 +9,7 @@ import {
   MCP_AUTHORIZATION_SERVER_METADATA_PATH,
   MCP_OAUTH_REGISTER_PATH,
   MCP_OAUTH_TOKEN_PATH,
+  MCP_PATH_PROTECTED_RESOURCE_METADATA_PATH,
   MCP_PROTECTED_RESOURCE_METADATA_PATH,
 } from '../paths'
 import { tryHandleMcpOAuth } from './handler'
@@ -27,8 +29,23 @@ async function freshDb(): Promise<DbClient> {
   return db
 }
 
+const PUBLIC_ORIGIN = 'https://cms.example.com'
+const HOSTILE_HOST = 'attacker.example:18020'
+
 function request(path: string, init?: RequestInit): Request {
-  return new Request(`https://cms.example.com${path}`, init)
+  return new Request(`${PUBLIC_ORIGIN}${path}`, init)
+}
+
+/**
+ * A request whose own URL and `Host` header name a host the operator never
+ * configured. happy-dom (loaded by the test setup) strips the Fetch-spec
+ * forbidden `Host` header from the constructor init, so it is set afterwards,
+ * the same way a real Bun.serve request carries it.
+ */
+function hostileRequest(path: string, init?: RequestInit): Request {
+  const req = new Request(`http://${HOSTILE_HOST}${path}`, init)
+  req.headers.set('host', HOSTILE_HOST)
+  return req
 }
 
 async function handle(req: Request, db: DbClient): Promise<Response> {
@@ -38,7 +55,13 @@ async function handle(req: Request, db: DbClient): Promise<Response> {
 }
 
 let db: DbClient
-beforeEach(async () => { db = await freshDb() })
+beforeEach(async () => {
+  db = await freshDb()
+  configurePublicOrigins([PUBLIC_ORIGIN])
+})
+afterEach(() => {
+  resetPublicOrigins()
+})
 
 describe('MCP OAuth protocol endpoints', () => {
   it('only marks non-local HTTPS endpoints as ready for hosted clients', () => {
@@ -152,5 +175,81 @@ describe('MCP OAuth protocol endpoints', () => {
     }), db)
     expect(response.status).toBe(400)
     expect(await response.json()).toMatchObject({ error: 'invalid_request' })
+  })
+})
+
+describe('MCP OAuth issuer trust', () => {
+  const ISSUER_UNAVAILABLE = 'MCP OAuth needs PUBLIC_ORIGIN to be configured for this deployment.'
+
+  it('answers 503 instead of advertising a Host-derived issuer when no public origin is configured', async () => {
+    resetPublicOrigins()
+    for (const path of [
+      MCP_PROTECTED_RESOURCE_METADATA_PATH,
+      MCP_PATH_PROTECTED_RESOURCE_METADATA_PATH,
+      MCP_AUTHORIZATION_SERVER_METADATA_PATH,
+    ]) {
+      const response = await handle(hostileRequest(path), db)
+      const text = await response.text()
+      expect(response.status).toBe(503)
+      expect(JSON.parse(text)).toEqual({ error: ISSUER_UNAVAILABLE })
+      expect(text).not.toContain('attacker.example')
+    }
+
+    const token = await handle(hostileRequest(MCP_OAUTH_TOKEN_PATH, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        grant_type: 'refresh_token',
+        refresh_token: 'imcp_rt_nope',
+        client_id: 'imcp_client_nope',
+        resource: `http://${HOSTILE_HOST}/_instatic/mcp`,
+      }),
+    }), db)
+    const tokenText = await token.text()
+    expect(token.status).toBe(503)
+    expect(JSON.parse(tokenText)).toMatchObject({
+      error: 'temporarily_unavailable',
+      error_description: ISSUER_UNAVAILABLE,
+    })
+    expect(tokenText).not.toContain('attacker.example')
+  })
+
+  it('derives discovery from the loopback request origin in local development', async () => {
+    resetPublicOrigins()
+    const local = (path: string) => new Request(`http://localhost:3001${path}`)
+
+    const protectedResource = await handle(local(MCP_PROTECTED_RESOURCE_METADATA_PATH), db)
+    expect(protectedResource.status).toBe(200)
+    expect(await protectedResource.json()).toMatchObject({
+      resource: 'http://localhost:3001/_instatic/mcp',
+      authorization_servers: ['http://localhost:3001'],
+    })
+
+    const authorizationServer = await handle(local(MCP_AUTHORIZATION_SERVER_METADATA_PATH), db)
+    expect(authorizationServer.status).toBe(200)
+    expect(await authorizationServer.json()).toMatchObject({
+      issuer: 'http://localhost:3001',
+      token_endpoint: 'http://localhost:3001/_instatic/oauth/token',
+    })
+  })
+
+  it('pins every discovery value to the configured public origin, never the Host header', async () => {
+    const protectedResource = await handle(hostileRequest(MCP_PROTECTED_RESOURCE_METADATA_PATH), db)
+    expect(protectedResource.status).toBe(200)
+    const resourceText = await protectedResource.text()
+    expect(resourceText).not.toContain('attacker.example')
+    expect(JSON.parse(resourceText)).toMatchObject({
+      resource: `${PUBLIC_ORIGIN}/_instatic/mcp`,
+      authorization_servers: [PUBLIC_ORIGIN],
+    })
+
+    const authorizationServer = await handle(hostileRequest(MCP_AUTHORIZATION_SERVER_METADATA_PATH), db)
+    expect(authorizationServer.status).toBe(200)
+    const serverText = await authorizationServer.text()
+    expect(serverText).not.toContain('attacker.example')
+    const serverBody = JSON.parse(serverText) as Record<string, unknown>
+    for (const key of ['issuer', 'authorization_endpoint', 'token_endpoint', 'registration_endpoint']) {
+      expect(new URL(String(serverBody[key])).origin).toBe(PUBLIC_ORIGIN)
+    }
   })
 })

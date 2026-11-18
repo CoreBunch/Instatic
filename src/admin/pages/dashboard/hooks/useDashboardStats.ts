@@ -23,7 +23,8 @@
  *
  * Validation: each response is validated at the JSON boundary against the
  * TypeBox schema below via the canonical `apiRequest` (`@core/http`).
- * On any failure — non-OK status, abort, or a payload that doesn't match —
+ * Storage exposes loading/error state, including an explicit permission message.
+ * Other hooks keep the existing behavior: on non-OK status or an invalid payload,
  * the hook keeps `null` (the widget keeps showing its skeleton, which is
  * better than throwing and blanking the dashboard). That swallow-on-failure
  * behaviour is `useAsyncResource`'s `swallowErrors` mode.
@@ -39,7 +40,7 @@
  */
 import type { TSchema, TProperties } from '@sinclair/typebox'
 import { Type, type Static } from '@core/utils/typeboxHelpers'
-import { apiRequest } from '@core/http'
+import { ApiError, apiRequest } from '@core/http'
 import { useAsyncResource } from '@admin/lib/useAsyncResource'
 
 // ---------------------------------------------------------------------------
@@ -116,7 +117,7 @@ const DashboardActivityEntrySchema = looseObject({
 })
 export type DashboardActivityEntry = Static<typeof DashboardActivityEntrySchema>
 
-const DashboardPagesStatsSchema = looseObject({
+export const DashboardPagesStatsSchema = looseObject({
   total: Type.Number(),
   published: Type.Number(),
   drafts: Type.Number(),
@@ -195,16 +196,28 @@ type DashboardActivityStats = Static<typeof DashboardActivityStatsSchema>
  * that bin timestamps per calendar day (the Posts histogram) bucket into the
  * operator's local day rather than UTC. Endpoints that don't bucket ignore it.
  */
-function useDashboardEndpoint<S extends TSchema>(endpoint: string, schema: S): Static<S> | null {
+/**
+ * One validated read of a dashboard endpoint. `useDashboardEndpoint` wraps it
+ * for the widgets; `useOnboardingState` calls it directly inside its own
+ * `Promise.allSettled` so the onboarding facts land in one round trip.
+ */
+export function fetchDashboardEndpoint<S extends TSchema>(
+  endpoint: string,
+  schema: S,
+  signal?: AbortSignal,
+): Promise<Static<S>> {
   const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone
+  return apiRequest(`/admin/api/cms/dashboard/${endpoint}`, {
+    schema,
+    signal,
+    query: { tz: timeZone },
+  })
+}
+
+function useDashboardEndpoint<S extends TSchema>(endpoint: string, schema: S): Static<S> | null {
   return useAsyncResource(
-    (signal) =>
-      apiRequest(`/admin/api/cms/dashboard/${endpoint}`, {
-        schema,
-        signal,
-        query: { tz: timeZone },
-      }),
-    [endpoint, schema, timeZone],
+    (signal) => fetchDashboardEndpoint(endpoint, schema, signal),
+    [endpoint, schema],
     { swallowErrors: true },
   ).data
 }
@@ -238,8 +251,17 @@ export function usePluginsStats(): DashboardPluginsStats | null {
  * (image / video / other) + an `fs.stat` walk of `<uploadsDir>/plugins/`
  * + a dialect-aware database size query.
  */
-export function useStorageStats(): DashboardStorageStats | null {
-  return useDashboardEndpoint('storage', DashboardStorageStatsSchema)
+export function useStorageStats() {
+  return useAsyncResource<DashboardStorageStats>(async (signal) => {
+    try {
+      return await fetchDashboardEndpoint('storage', DashboardStorageStatsSchema, signal)
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 403) {
+        throw new Error("You don't have permission to view storage usage.", { cause: err })
+      }
+      throw err
+    }
+  }, [], { fallbackError: 'Unable to load storage usage.' })
 }
 
 /** Publish Lineup widget. Three small queries against `data_rows`. */

@@ -8,6 +8,7 @@ import { readArtefact, readStaticAsset } from '../../publish/staticArtefact'
 import { createBearerConnection } from './connectors/store'
 import { generatePersonalAccessToken, hashMcpSecret } from './connectors/token'
 import { handleMcpHttp } from './transports/http'
+import { MAIN_SCOPE } from '../../branches/scope'
 
 interface AuditRow {
   action: string
@@ -71,7 +72,7 @@ describe('site_publish MCP tool', () => {
   })
 
   it('deploys the saved draft through the canonical static publish pipeline', async () => {
-    const site = await getDraftSite(harness.db)
+    const site = await getDraftSite(harness.db, MAIN_SCOPE)
     if (!site) throw new Error('default site was not seeded')
     const now = Date.now()
     site.styleRules.issue195 = {
@@ -85,7 +86,7 @@ describe('site_publish MCP tool', () => {
       createdAt: now,
       updatedAt: now,
     }
-    await saveDraftSite(harness.db, site)
+    await saveDraftSite(harness.db, MAIN_SCOPE, site)
     const { rows: users } = await harness.db<{ id: string }>`select id from users limit 1`
     const userId = users[0]?.id
     if (!userId) throw new Error('owner user was not seeded')

@@ -36,7 +36,9 @@
  *    same-tree events.
  *  - `ClassStyleInjector` and `UserStylesheetInjector` are mounted with
  *    `targetDocument={iframeDoc}` so the class registry CSS and user
- *    stylesheets land in the iframe's `<head>`.
+ *    stylesheets land in the iframe's `<head>`. `PluginStylesheetInjector`
+ *    adds the stylesheets plugins contribute to published pages (styles
+ *    only; plugin frontend scripts never load in the canvas).
  *  - `data-breakpoint-id` is set on the iframe's `<body>` so the
  *    per-breakpoint class CSS (which uses `[data-breakpoint-id="..."]
  *    .myClass` selectors) matches inside the iframe.
@@ -73,13 +75,15 @@ import { createPortal } from 'react-dom'
 import { cn } from '@ui/cn'
 import { ClassStyleInjector } from './ClassStyleInjector'
 import { UserStylesheetInjector } from './UserStylesheetInjector'
+import { PluginStylesheetInjector } from './PluginStylesheetInjector'
 import { EditorChromeInjector } from './EditorChromeInjector'
 import { RuntimeScriptInjector } from './RuntimeScriptInjector'
 import type { InjectableRuntimeScript } from './useRuntimeScriptBuild'
 import { useIframeCursorBridge } from './useIframeCursorBridge'
 import { iframeLocalPointToParentClientPoint } from './iframeEventCoordinates'
 import { useCanvasFormControlSuppression } from './useCanvasFormControlSuppression'
-import { CANVAS_VIEWPORT_HEIGHT, type CanvasViewport } from './resolveViewportUnits'
+import type { Viewport } from '@core/utils/viewportUnits'
+import { CANVAS_VIEWPORT_HEIGHT } from './canvasViewport'
 import { useIframeFrameAutoHeight } from './useIframeFrameAutoHeight'
 import { applyIframeBodyReset, type IframeInteraction } from './iframeBodyReset'
 import {
@@ -630,7 +634,7 @@ export const IframeFrameSurface = forwardRef<IframeFrameSurfaceHandle, IframeFra
     // breakpoint width (the iframe's real width); height is a fixed
     // device-like value. Pinning `vh`/`vmax`/… to this stops authored
     // viewport units from feeding the grow-to-content height loop above.
-    const viewport: CanvasViewport = { width, height: CANVAS_VIEWPORT_HEIGHT }
+    const viewport: Viewport = { width, height: CANVAS_VIEWPORT_HEIGHT }
 
     return (
       <>
@@ -659,6 +663,8 @@ export const IframeFrameSurface = forwardRef<IframeFrameSurfaceHandle, IframeFra
                 {/* Author CSS — both wrapped in @layer user-authored inside the injectors */}
                 <ClassStyleInjector targetDocument={iframeDoc} viewport={viewport} />
                 <UserStylesheetInjector targetDocument={iframeDoc} viewport={viewport} />
+                {/* Stylesheets plugins add to published pages (same layer; scripts never load here) */}
+                <PluginStylesheetInjector targetDocument={iframeDoc} viewport={viewport} />
                 {children}
                 {/* Runtime scripts (opt-in) run against the node tree mounted
                     above. Empty list = no-op, so this is safe to always mount. */}

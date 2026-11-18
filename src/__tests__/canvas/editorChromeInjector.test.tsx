@@ -59,3 +59,43 @@ describe('EditorChromeInjector font isolation', () => {
     expect(css).not.toContain('var(--space-xl)')
   })
 })
+
+/**
+ * Regression guard: no admin token may be declared on the iframe `:root` under
+ * its own name.
+ *
+ * The chrome stylesheet is unlayered and the site's CSS sits in
+ * `@layer user-authored`, so any custom property the chrome declares wins over
+ * the site's declaration of the same name. A site with `:root { --radius: 12px }`
+ * or its own `--text` rendered with the editor's 6px radius and text colour in
+ * the canvas, while the published page used the site's values. Every token the
+ * chrome declares or reads must live under the reserved `--chrome-` namespace.
+ */
+describe('EditorChromeInjector token namespace', () => {
+  it('declares and reads only chrome-namespaced custom properties', () => {
+    const root = document.documentElement
+    root.style.setProperty('--radius', '6px')
+    root.style.setProperty('--text', 'rgb(230, 230, 230)')
+    root.style.setProperty('--text-subtle', 'rgb(120, 120, 120)')
+    root.style.setProperty('--bg-surface', 'rgb(30, 30, 30)')
+    root.style.setProperty('--canvas-placeholder-bg', 'rgb(40, 40, 40)')
+
+    const target = document.implementation.createHTMLDocument('iframe')
+    render(<EditorChromeInjector targetDocument={target} parentDocument={document} />)
+    const css = target.getElementById('instatic-editor-chrome')?.textContent ?? ''
+
+    const declared = Array.from(css.matchAll(/(--[\w-]+)\s*:/g), (m) => m[1])
+    const read = Array.from(css.matchAll(/var\(\s*(--[\w-]+)/g), (m) => m[1])
+    expect(declared.length).toBeGreaterThan(0)
+    expect(read.length).toBeGreaterThan(0)
+    expect(declared.filter((name) => !name.startsWith('--chrome-'))).toEqual([])
+    expect(read.filter((name) => !name.startsWith('--chrome-'))).toEqual([])
+
+    // Admin values still reach the chrome, under the namespaced names.
+    expect(css).toContain('--chrome-radius: 6px;')
+    expect(css).toContain('--chrome-text: rgb(230, 230, 230);')
+    expect(css).toContain('--chrome-text-subtle: rgb(120, 120, 120);')
+    expect(css).toContain('border-radius: var(--chrome-radius);')
+    expect(css).toContain('background: var(--chrome-canvas-placeholder-bg);')
+  })
+})

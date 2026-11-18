@@ -27,7 +27,8 @@ Building:
 Design system first:
 - A consistent design comes from TOKENS, not repeated literals. The dynamic suffix lists the site's current tokens (the "Tokens —" line); if it says "(none …)", there is no design system yet — establish one before/while building.
 - Create tokens with site_set_color_tokens (colors → var(--<slug>)), site_set_type_scale (font sizes → --text-*), site_set_spacing_scale (spacing → --space-*), site_set_font_tokens (typefaces → var(--<font-var>); pass googleFamily to install a web font). These are create-or-update — re-running with the same slug/variable patches in place.
-- Then REFERENCE the tokens in your CSS: color:var(--primary), font-size:var(--text-l), gap:var(--space-m), font-family:var(--font-heading). Don't emit raw hex/rgb, raw px for type/spacing, or a raw font-family when a token exists or should exist — make the token, then reference it. A few well-chosen tokens up front keep every section visually consistent.
+- Fonts use three ROLE tokens: font-heading (headings, display type), font-body (running text), font-mono (code, data, mono labels). New sites already have all three as system-font fallbacks. To change a typeface, update the role token (site_set_font_tokens with variable "font-heading" + googleFamily) instead of inventing a new font variable; add one only for a genuinely extra role.
+- Then REFERENCE the tokens in your CSS: color:var(--primary), font-size:var(--text-l), gap:var(--space-m), font-family:var(--font-heading) on headings and var(--font-body) on running text. Don't emit raw hex/rgb, raw px for type/spacing, or a raw font-family when a token exists or should exist — make the token, then reference it. A few well-chosen tokens up front keep every section visually consistent.
 
 Structure as HTML, styling as CSS:
 - Structure goes in site_insert_html/site_replace_node_html as semantic HTML. Style it with CSS in the SAME call: a <style> block and/or class= attributes (the importer turns these into reusable classes + ambient rules), referencing the design tokens above. This is the clean default; do NOT hand-build classes node-by-node.
@@ -106,6 +107,10 @@ function describeTokenDigest(tokens: SnapshotTokens): string {
   }
   if (parts.length === 0) {
     return 'Tokens: (none — no design system yet; establish one first with site_set_color_tokens / site_set_type_scale / site_set_spacing_scale / site_set_font_tokens)'
+  }
+  // A new site starts with only the font role tokens: still no design system.
+  if (tokens.colors.length === 0 && tokens.typography.length === 0 && tokens.spacing.length === 0) {
+    parts.push('(no colors, type or spacing yet; establish them first with site_set_color_tokens / site_set_type_scale / site_set_spacing_scale)')
   }
   return `Tokens — ${parts.join('; ')}`
 }

@@ -62,6 +62,7 @@ const EXPECTED_TARGET_PERMISSIONS: Record<string, string> = {
   'network.fetch': 'network.outbound',
   'cms.schedule.register': 'cms.schedule',
   'cms.schedule.cancel': 'cms.schedule',
+  'cms.media.upsert': 'media.import',
   'cms.media.registerStorageAdapter': 'media.storage.adapter',
   'cms.media.registerUrlTransformer': 'media.url.transform',
   'cms.media.registerVariantDelegate': 'media.variant.delegate',
@@ -85,6 +86,10 @@ const EXPECTED_TARGET_PERMISSIONS: Record<string, string> = {
   'cms.content.search': 'cms.content.read',
   'cms.content.snapshot': 'cms.content.read',
   'cms.content.republishAll': 'cms.content.publish',
+  'cms.members.get': 'members.read',
+  'cms.members.invite': 'members.write',
+  'cms.members.tags.grant': 'members.tags',
+  'cms.members.tags.revoke': 'members.tags',
 }
 
 /** Targets that intentionally require NO permission (must be absent from map). */

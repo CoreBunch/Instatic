@@ -1,0 +1,38 @@
+/* Layout only — the tile chrome comes from PackageTiles.module.css so the
+   loading and loaded states cannot drift apart. */
+
+.lines {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2xs);
+    flex: 1;
+    min-width: 0;
+}
+
+.inline {
+    display: flex;
+    align-items: center;
+    gap: var(--space-s);
+}
+
+/* ── Package page ───────────────────────────────────────────────────────── */
+.detail {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-m);
+    padding: var(--space-l) var(--space-m) 0;
+}
+
+.hero {
+    display: flex;
+    align-items: center;
+    gap: var(--space-m);
+}
+
+.statTile {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-s);
+    padding: var(--space-l) var(--space-m) var(--space-m);
+    min-height: 84px;
+}

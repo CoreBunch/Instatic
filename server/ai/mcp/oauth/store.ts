@@ -171,7 +171,9 @@ export async function exchangeAuthorizationCode(
              g.revoked_at as connector_revoked_at
       from ai_mcp_oauth_codes c
       join ai_mcp_connectors g on g.id = c.connector_id
+      join users u on u.id = g.user_id
       where c.code_hash = ${codeHash}
+        and u.status = 'active' and u.deleted_at is null
       limit 1
     `
     const code = rows[0]
@@ -187,7 +189,7 @@ export async function exchangeAuthorizationCode(
 
     const consumed = await tx`
       update ai_mcp_oauth_codes
-      set consumed_at = current_timestamp
+      set consumed_at = ${now}
       where code_hash = ${codeHash} and consumed_at is null
     `
     if (consumed.rowCount !== 1) return null
@@ -223,7 +225,9 @@ export async function rotateRefreshToken(
              g.revoked_at as connector_revoked_at
       from ai_mcp_oauth_tokens t
       join ai_mcp_connectors g on g.id = t.connector_id
+      join users u on u.id = g.user_id
       where t.token_hash = ${tokenHash} and t.kind = 'refresh'
+        and u.status = 'active' and u.deleted_at is null
       limit 1
     `
     const token = rows[0]
@@ -235,12 +239,12 @@ export async function rotateRefreshToken(
     if (token?.revoked_at && !token.connector_revoked_at) {
       await tx`
         update ai_mcp_connectors
-        set revoked_at = current_timestamp
+        set revoked_at = ${now}
         where id = ${token.connector_id} and revoked_at is null
       `
       await tx`
         update ai_mcp_oauth_tokens
-        set revoked_at = current_timestamp
+        set revoked_at = ${now}
         where connector_id = ${token.connector_id} and revoked_at is null
       `
       console.warn(`[ai:mcp:oauth] refresh-token reuse revoked connection ${token.connector_id}`)
@@ -258,7 +262,7 @@ export async function rotateRefreshToken(
 
     const revoked = await tx`
       update ai_mcp_oauth_tokens
-      set revoked_at = current_timestamp
+      set revoked_at = ${now}
       where id = ${token.id} and revoked_at is null
     `
     if (revoked.rowCount !== 1) return null
@@ -285,7 +289,9 @@ export async function findOAuthAccessGrant(
     select t.connector_id, g.user_id, g.capabilities_json
     from ai_mcp_oauth_tokens t
     join ai_mcp_connectors g on g.id = t.connector_id
+    join users u on u.id = g.user_id
     where t.token_hash = ${tokenHash}
+      and u.status = 'active' and u.deleted_at is null
       and t.kind = 'access'
       and t.resource = ${resource}
       and t.revoked_at is null

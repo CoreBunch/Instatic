@@ -7,7 +7,7 @@ import type {
 } from './types'
 import { SaveConflictError, SaveConflictsEnvelopeSchema } from './saveConflict'
 import { parseJsonResponse } from '@core/utils/jsonValidate'
-import { assertOk, readEnvelope, type FetchLike } from '@core/http'
+import { assertOk, readEnvelope, withAmbientHeaders, type FetchLike } from '@core/http'
 import {
   CmsSiteEnvelopeSchema,
   CmsSiteDocumentSaveEnvelopeSchema,
@@ -23,7 +23,7 @@ import { savedLayoutFromRow } from '@core/data/layoutFromRow'
 import type { VisualComponent } from '@core/visualComponents'
 import type { SavedLayout } from '@core/layouts'
 
-const defaultFetch: FetchLike = (input, init) => globalThis.fetch(input, init)
+const defaultFetch: FetchLike = (input, init) => globalThis.fetch(input, withAmbientHeaders(init))
 
 export class CmsAdapter implements IPersistenceAdapter {
   private readonly fetchImpl: FetchLike
