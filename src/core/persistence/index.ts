@@ -2,6 +2,7 @@ export { cmsAdapter } from './cms'
 export { getCmsPublishStatus, publishCmsDraft } from './cmsPublish'
 export {
   buildCmsRuntimePreview,
+  listCmsCanvasPluginStylesheets,
   resolveCmsRuntimeDependencies,
   validateCmsRuntimeScripts,
 } from './cmsRuntime'

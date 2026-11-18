@@ -42,7 +42,8 @@ import type {
 // Plan shape
 // ---------------------------------------------------------------------------
 
-const PLACEMENT_ORDER: ReadonlyArray<FrontendAssetPlacement> = [
+/** Placement anchors in the order they appear in a published document. */
+export const FRONTEND_PLACEMENT_ORDER: ReadonlyArray<FrontendAssetPlacement> = [
   'head',
   'head-end',
   'body-start',
@@ -109,18 +110,15 @@ export interface FrontendInjections {
 // Collection — walk installed plugins, build a plan
 // ---------------------------------------------------------------------------
 
-export async function collectFrontendInjections(db: DbClient): Promise<FrontendInjections> {
+/**
+ * The plugins that contribute frontend assets, in emission order. This is the
+ * ONE place that decides whose `frontend.assets[]` reach a page: enabled,
+ * not in the error state, and GRANTED `frontend.assets` (never the declared
+ * `permissions`). The publisher (`collectFrontendInjections`) and the editing
+ * canvas (`./canvasStylesheets.ts`) both start here, so the two cannot drift.
+ */
+export async function listFrontendAssetPlugins(db: DbClient): Promise<InstalledPlugin[]> {
   const results = await listInstalledPlugins(db)
-  const tags: Record<FrontendAssetPlacement, string[]> = {
-    'head': [],
-    'head-end': [],
-    'body-start': [],
-    'body-end': [],
-  }
-  const networkAllowedHostsSet = new Set<string>()
-  let hasInlineScript = false
-  let hasInlineStyle = false
-  let hasExternalScript = false
 
   // Broken plugins (corrupt manifest_json) have no parseable frontend assets —
   // skip them entirely. Only ok-parsed, enabled, non-error plugins contribute.
@@ -131,11 +129,25 @@ export async function collectFrontendInjections(db: DbClient): Promise<FrontendI
   // Sort by plugin id so the emitted tag order is deterministic across
   // re-renders. Two plugins declaring the same placement get a stable
   // top-down emission.
-  const eligible = okPlugins
+  return okPlugins
     .filter((p) => p.enabled && p.lifecycleStatus !== 'error')
     .filter((p) => new Set(p.grantedPermissions).has('frontend.assets'))
     .filter((p) => (p.manifest.frontend?.assets ?? []).length > 0)
     .sort((a, b) => (a.manifest.id < b.manifest.id ? -1 : a.manifest.id > b.manifest.id ? 1 : 0))
+}
+
+export async function collectFrontendInjections(db: DbClient): Promise<FrontendInjections> {
+  const eligible = await listFrontendAssetPlugins(db)
+  const tags: Record<FrontendAssetPlacement, string[]> = {
+    'head': [],
+    'head-end': [],
+    'body-start': [],
+    'body-end': [],
+  }
+  const networkAllowedHostsSet = new Set<string>()
+  let hasInlineScript = false
+  let hasInlineStyle = false
+  let hasExternalScript = false
 
   for (const plugin of eligible) {
     const assets = plugin.manifest.frontend?.assets ?? []
@@ -177,10 +189,10 @@ export async function collectFrontendInjections(db: DbClient): Promise<FrontendI
  * path (the publisher can't form a URL).
  */
 function renderAsset(asset: FrontendAsset, plugin: InstalledPlugin): ResolvedTag | null {
-  const placement = asset.placement ?? defaultPlacement(asset)
+  const placement = frontendAssetPlacement(asset)
 
   if (asset.kind === 'script') {
-    const url = resolveAssetUrl(plugin, asset.src)
+    const url = resolveFrontendAssetUrl(plugin, asset.src)
     if (!url) return null
     const strategy = asset.strategy ?? 'defer'
     const strategyAttrs = scriptStrategyAttrs(strategy)
@@ -207,7 +219,7 @@ function renderAsset(asset: FrontendAsset, plugin: InstalledPlugin): ResolvedTag
   }
 
   if (asset.kind === 'style') {
-    const url = resolveAssetUrl(plugin, asset.href)
+    const url = resolveFrontendAssetUrl(plugin, asset.href)
     if (!url) return null
     const extra = formatAttrs(asset.attrs, STYLESHEET_HOST_OWNED_ATTRS)
     const pluginAttr = ` data-plugin-id="${escapeAttr(plugin.manifest.id)}"`
@@ -250,11 +262,13 @@ function renderAsset(asset: FrontendAsset, plugin: InstalledPlugin): ResolvedTag
 }
 
 /**
- * Per-kind default placement when the asset declaration omits it. Scripts
- * default to `body-end` so they don't block the parser; styles, meta, link
- * default to `head-end` so they're parsed before the body renders.
+ * The anchor an asset is emitted at: its declared placement, else the per-kind
+ * default. Scripts default to `body-end` so they don't block the parser;
+ * styles, meta, link default to `head-end` so they're parsed before the body
+ * renders.
  */
-function defaultPlacement(asset: FrontendAsset): FrontendAssetPlacement {
+export function frontendAssetPlacement(asset: FrontendAsset): FrontendAssetPlacement {
+  if (asset.placement) return asset.placement
   switch (asset.kind) {
     case 'script':
     case 'script-inline':
@@ -280,7 +294,11 @@ function scriptStrategyAttrs(strategy: 'defer' | 'async' | 'module' | 'sync'): s
   }
 }
 
-function resolveAssetUrl(plugin: InstalledPlugin, relativePath: string): string | null {
+/**
+ * Public URL of a package-relative asset path, under the plugin's own upload
+ * directory. `null` when the manifest carries no `assetBasePath`.
+ */
+export function resolveFrontendAssetUrl(plugin: InstalledPlugin, relativePath: string): string | null {
   const base = plugin.manifest.assetBasePath
   if (!base) return null
   return `${base.replace(/\/+$/g, '')}/${relativePath.replace(/^\/+/g, '')}`
@@ -348,7 +366,7 @@ export function injectFrontendAssets(
       : `${next}\n${block}`
   }
 
-  const hasTagWork = PLACEMENT_ORDER.some((p) => injections.tags[p].length > 0)
+  const hasTagWork = FRONTEND_PLACEMENT_ORDER.some((p) => injections.tags[p].length > 0)
   if (hasTagWork || injections.mediaCspOrigins.length > 0) {
     next = relaxCspForPlan(next, injections, hasTagWork)
   }
