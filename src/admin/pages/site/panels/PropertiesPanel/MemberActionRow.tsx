@@ -4,7 +4,7 @@
  * lacks for it.
  */
 import { useId } from 'react'
-import { MEMBER_FORM_ACTIONS, MEMBER_FORM_GROUP_LABELS, memberFormAction, type MemberFormGroup } from '@core/members'
+import { MEMBER_FORM_ACTIONS, MEMBER_FORM_GROUP_LABELS, memberFormAction, type MemberFormAction, type MemberFormGroup } from '@core/members'
 import { Button } from '@ui/components/Button'
 import { ControlRow } from '@ui/components/ControlRow'
 import { Select } from '@ui/components/Select'
@@ -16,10 +16,10 @@ import styles from './FormSettingsPanel.module.css'
 const MEMBER_FORM_GROUPS: readonly MemberFormGroup[] = ['entry', 'emailLink', 'account']
 
 /** What the member form still needs, in words, or '' when it is complete. */
-function memberMissingText(missing: MemberFormMissing): string {
+function memberMissingText(missing: MemberFormMissing, action: MemberFormAction): string {
   const parts = [
     ...missing.fields.map((field) => field.label.toLowerCase()),
-    ...(missing.messages ? ['messages'] : []),
+    ...(missing.messages ? [action.successMessage ? 'messages' : 'an error message'] : []),
     ...(missing.submit ? ['a submit button'] : []),
   ]
   return parts.join(', ')
@@ -38,7 +38,7 @@ export function MemberActionRow({
 }) {
   const selectId = useId()
   const action = memberFormAction(form.memberAction)
-  const missingText = missing ? memberMissingText(missing) : ''
+  const missingText = missing && action ? memberMissingText(missing, action) : ''
 
   return (
     <div className={styles.primaryControls}>
