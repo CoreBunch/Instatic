@@ -120,7 +120,7 @@ export async function handleCmsRequest(
     ?? (await handlePagesRoutes(req, db, scope))
     ?? (await handleComponentsRoutes(req, db, scope))
     ?? (await handleLayoutsRoutes(req, db, scope))
-    ?? (await handleRuntimeRoutes(req, db, scope))
+    ?? (await handleRuntimeRoutes(req, db, scope, options))
     // Read-only npm registry proxy for the Dependencies panel: no branch
     // scope, it never touches site data.
     ?? (await handleRegistryRoutes(req, db))
