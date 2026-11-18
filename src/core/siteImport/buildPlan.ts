@@ -18,7 +18,7 @@ import {
 } from '@core/page-tree'
 import { compareVariants } from '@core/fonts'
 import { expandLinkedCssImports } from './cssImports'
-import { extractGoogleFontImports } from './fontImports'
+import { extractGoogleFontImports, type GoogleFontCollector } from './fontImports'
 import { classifyFiles } from './classifyFiles'
 import { makeHtmlPagePlan } from './htmlPagePlan'
 import { buildAssetPlan, type CssFileResult } from './assetPlan'
@@ -76,18 +76,24 @@ export function buildImportPlan({ fileMap, currentSite, options }: BuildImportPl
   const { rawPagePlans, inlineCssByPage, scripts } = htmlPhase
 
   // Google fonts are harvested from every CSS source (linked, kept, inline) —
-  // one shared collector dedupes by family and merges variants/subsets.
+  // one shared collector dedupes by family and merges variants/subsets. Each
+  // request records where it came from: a stylesheet file (by its path) or
+  // converted CSS (`null`), so selection can leave out a family only
+  // switched-off stylesheets ask for.
   const googleFontsByFamily = new Map<string, ImportGoogleFont>()
-  const collectGoogleFonts = (cssSource: string): void => {
+  const collectGoogleFonts: GoogleFontCollector = (cssSource, stylesheetPath) => {
     for (const font of extractGoogleFontImports(cssSource)) {
       const key = font.family.toLowerCase()
-      const existing = googleFontsByFamily.get(key)
+      let existing = googleFontsByFamily.get(key)
       if (!existing) {
-        googleFontsByFamily.set(key, font)
-        continue
+        existing = { ...font, requestedByConvertedCss: false, stylesheetPaths: [] }
+        googleFontsByFamily.set(key, existing)
+      } else {
+        existing.variants = [...new Set([...existing.variants, ...font.variants])].sort(compareVariants)
+        existing.subsets = [...new Set([...existing.subsets, ...font.subsets])]
       }
-      existing.variants = [...new Set([...existing.variants, ...font.variants])].sort(compareVariants)
-      existing.subsets = [...new Set([...existing.subsets, ...font.subsets])]
+      if (stylesheetPath === null) existing.requestedByConvertedCss = true
+      else if (!existing.stylesheetPaths.includes(stylesheetPath)) existing.stylesheetPaths.push(stylesheetPath)
     }
   }
 

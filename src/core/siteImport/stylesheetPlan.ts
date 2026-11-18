@@ -12,7 +12,7 @@
  */
 
 import { expandLinkedCssImports } from './cssImports'
-import { stripGoogleFontImportRules } from './fontImports'
+import { stripGoogleFontImportRules, type GoogleFontCollector } from './fontImports'
 import type { RawStylesheetSource } from './assetPlan'
 import type {
   FileMap,
@@ -41,7 +41,7 @@ export function partitionLinkedStylesheets(
   pagePlans: readonly PagePlan[],
   fileMap: FileMap,
   stylesheetModes: Record<string, StylesheetImportMode>,
-  collectGoogleFonts: (cssSource: string) => void,
+  collectGoogleFonts: GoogleFontCollector,
 ): StylesheetPartition {
   const warnings: ImportWarning[] = []
   const droppedAtRules: string[] = []
@@ -112,7 +112,7 @@ interface UnlinkedStylesheets {
 export function collectUnlinkedStylesheets(
   unlinkedCssPaths: readonly string[],
   fileMap: FileMap,
-  collectGoogleFonts: (cssSource: string) => void,
+  collectGoogleFonts: GoogleFontCollector,
   firstPriority: number,
 ): UnlinkedStylesheets {
   const warnings: ImportWarning[] = []
@@ -172,7 +172,7 @@ interface FlattenedStylesheet {
 function flattenStylesheet(
   cssPath: string,
   fileMap: FileMap,
-  collectGoogleFonts: (cssSource: string) => void,
+  collectGoogleFonts: GoogleFontCollector,
 ): FlattenedStylesheet {
   const expanded = expandLinkedCssImports([cssPath], fileMap)
   const droppedAtRules: string[] = []
@@ -180,7 +180,7 @@ function flattenStylesheet(
     if (w.kind === 'dropped-at-rule' && w.source) droppedAtRules.push(w.source)
   }
   const parts = expanded.sources.map((source) => {
-    collectGoogleFonts(source.cssSource)
+    collectGoogleFonts(source.cssSource, cssPath)
     return { cssPath: source.cssPath, cssText: stripGoogleFontImportRules(source.cssSource) }
   })
   return { cssPaths: expanded.cssPaths, parts, warnings: expanded.warnings, droppedAtRules }

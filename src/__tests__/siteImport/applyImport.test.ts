@@ -642,6 +642,8 @@ describe('buildImportPlan — structure', () => {
         family: 'Manrope',
         variants: ['200', '300', '400', '500', '600', '700', '800'],
         subsets: ['latin'],
+        requestedByConvertedCss: true,
+        stylesheetPaths: [],
       },
       {
         family: 'Plus Jakarta Sans',
@@ -662,6 +664,8 @@ describe('buildImportPlan — structure', () => {
           '800italic',
         ],
         subsets: ['latin'],
+        requestedByConvertedCss: true,
+        stylesheetPaths: [],
       },
     ])
     expect('fontImportUrl' in p).toBe(false)

@@ -559,6 +559,7 @@ export function SiteImportModal({ onCmsBundleImportComplete }: SiteImportModalPr
         <SiteImportFooter
           step={step}
           cmsBundleState={cmsBundleState}
+          plan={plan}
           selection={selection}
           runProgress={runProgress}
           cmsResult={cmsResult}

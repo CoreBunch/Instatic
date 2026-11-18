@@ -35,10 +35,13 @@ import { AnalyzeStep } from '@admin/modals/SiteImport/steps/AnalyzeStep'
 import { SiteImportModal } from '@admin/modals/SiteImport'
 import {
   filterPlanBySelection as filterPlanByRealSelection,
+  isGoogleFontRequested,
   makeDefaultSelection as makeRealDefaultSelection,
+  selectedImportCount,
 } from '@admin/modals/SiteImport/shared/importPlanning'
 import type { ImportSelection } from '@admin/modals/SiteImport'
-import { commitImportPlan } from '@core/siteImport'
+import { buildImportPlan, commitImportPlan } from '@core/siteImport'
+import { makeEmptySiteDocument } from '../../siteImport/mockSite'
 import { pageToCells } from '@core/data/pageFromRow'
 import { BUNDLE_ARCHIVE_MANIFEST_PATH } from '@core/data/bundleArchive'
 import { CORE_CAPABILITIES } from '@core/capabilities'
@@ -2684,6 +2687,65 @@ describe('makeDefaultSelection — stylesheets no page links', () => {
       stylesheetsIncluded: new Set(['css/rtl.css']),
     })
     expect(filtered.stylesheets).toEqual([unlinkedSheet])
+  })
+})
+
+describe('Google fonts only a switched-off stylesheet requests', () => {
+  const FONT_IMPORT = '@import url("https://fonts.googleapis.com/css2?family=Manrope:wght@400;700&display=swap");'
+  const encoder = new TextEncoder()
+  const text = (source: string, mimeType: string) => ({ bytes: encoder.encode(source), mimeType })
+
+  // A template: one page linking site.css, plus an rtl.css no page links.
+  function templatePlan(siteCss: string, rtlCss: string): ImportPlan {
+    return buildImportPlan({
+      fileMap: {
+        files: {
+          'index.html': text('<html><head><link rel="stylesheet" href="site.css"></head><body><p class="lead">Hi</p></body></html>', 'text/html'),
+          'site.css': text(siteCss, 'text/css'),
+          'rtl.css': text(rtlCss, 'text/css'),
+        },
+      },
+      currentSite: makeEmptySiteDocument(),
+    })
+  }
+
+  it('leaves out a font only the switched-off sheet @imports, and shows it off', () => {
+    const plan = templatePlan('.lead { color: red; }', `${FONT_IMPORT}\n.rtl { direction: rtl; }`)
+    expect(plan.googleFonts.map((f) => [f.family, f.requestedByConvertedCss, f.stylesheetPaths])).toEqual([
+      ['Manrope', false, ['rtl.css']],
+    ])
+
+    const selection = makeRealDefaultSelection(plan)
+    expect(selection.stylesheetsIncluded.has('rtl.css')).toBe(false)
+    expect(isGoogleFontRequested(plan, selection, plan.googleFonts[0])).toBe(false)
+    expect(filterPlanByRealSelection(plan, selection).googleFonts).toEqual([])
+  })
+
+  it('brings the font back when the user switches the sheet on', () => {
+    const plan = templatePlan('.lead { color: red; }', `${FONT_IMPORT}\n.rtl { direction: rtl; }`)
+    const selection = { ...makeRealDefaultSelection(plan), stylesheetsIncluded: new Set(['rtl.css']) }
+
+    expect(filterPlanByRealSelection(plan, selection).googleFonts.map((f) => f.family)).toEqual(['Manrope'])
+  })
+
+  it('keeps a font the page also requests through its own stylesheet', () => {
+    const plan = templatePlan(`${FONT_IMPORT}\n.lead { color: red; }`, `${FONT_IMPORT}\n.rtl { direction: rtl; }`)
+    expect(plan.googleFonts.map((f) => [f.family, f.requestedByConvertedCss, f.stylesheetPaths])).toEqual([
+      ['Manrope', true, ['rtl.css']],
+    ])
+
+    const filtered = filterPlanByRealSelection(plan, makeRealDefaultSelection(plan))
+    expect(filtered.googleFonts.map((f) => f.family)).toEqual(['Manrope'])
+  })
+
+  it('does not count a left-out font as something to import', () => {
+    const plan = buildImportPlan({
+      fileMap: { files: { 'rtl.css': text(`${FONT_IMPORT}\n.rtl { direction: rtl; }`, 'text/css') } },
+      currentSite: makeEmptySiteDocument(),
+    })
+    const selection = { ...makeRealDefaultSelection(plan), stylesheetsIncluded: new Set<string>() }
+
+    expect(selectedImportCount(plan, selection)).toBe(0)
   })
 })
 

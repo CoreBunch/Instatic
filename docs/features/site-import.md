@@ -267,6 +267,8 @@ A CSS file that no imported page links (a lone `.css` drop, or CSS in a bundle w
 
 Selection default (`makeDefaultSelection`): with **no pages** in the import the unlinked sheets are included, because the stylesheet is what the owner came to import. With **pages** in the import they are offered switched off: those pages never loaded the file (a template's unminified copy, an RTL sheet, an alternate skin), so applying it to every page would change how the imported pages look. One switch in the Style rules pane includes it.
 
+What a switched-off sheet asks for follows it out. Each planned Google font records where it was requested (`ImportGoogleFont.requestedByConvertedCss` and `stylesheetPaths`, filled by the shared collector in `buildImportPlan`). `isGoogleFontRequested` (`importPlanning.ts`) is the one rule: converted CSS always requests its fonts, and a family only stylesheet files `@import` is wanted only while one of those sheets imports. `filterPlanBySelection`, the Continue count, and the Fonts pane all go through it, so an RTL sheet's font is neither installed nor shown on while the sheet is off, and comes back on with the sheet. `url()` files the sheet references are not affected: every uploadable file in the drop already imports through the media sweep, so they stay under Media like any other bundled file.
+
 ## Cross-sheet class conflicts (converted sheets)
 
 A multi-page site typically links one stylesheet per page, and those stylesheets routinely use the same class name (`.btn`, `.hero`) with different declarations. The CMS has a single global style rule registry, so a naïve merge would let one page's class clobber another's.
@@ -379,7 +381,7 @@ The modal is mounted once at the authenticated admin shell (`AuthenticatedAdmin.
 - **Style rules** — opens first when the import has stylesheet files but no pages. A per-stylesheet mode picker first (each top-level linked sheet: "Editable style rules" vs "Keep as stylesheet"; flipping a mode synchronously rebuilds the plan), then converted rules grouped by source stylesheet with a search bar and per-rule checkboxes. Groups up to 60 rules expanded; remaining are collapsed into "+N more". Kept sheets show as a single row with an include checkbox and their page scope. Stylesheets no page links are listed under "Site stylesheets" with a Switch each; the row says the file is added to the Code panel as a site stylesheet applied to every page, or that it is left out.
 - **Media** — tiles grouped by MIME class (Images / SVG / GIF / Video / Other) with a per-group Switch.
 - **Color tokens** — read-only swatches; all colors always import.
-- **Fonts** — Switch per font family; extracted root font variables are shown in the same category and follow the selected family when they reference one.
+- **Fonts** — Switch per font family; extracted root font variables are shown in the same category and follow the selected family when they reference one. A Google font only switched-off stylesheets request shows off and disabled, naming those sheets.
 - **Scripts** — Switch per JS file.
 - **Can't import** — list of `droppedAtRules` with reasons.
 

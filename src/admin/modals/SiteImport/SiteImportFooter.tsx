@@ -1,5 +1,6 @@
 import { Button } from '@ui/components/Button'
 import type { ImportResult as CmsImportResult } from '@core/data/bundleSchema'
+import type { ImportPlan } from '@core/siteImport'
 import { selectedImportCount, type ImportSelection } from './shared/importPlanning'
 import type { RunProgress } from './shared/importProgress'
 import type { CmsBundleState } from './shared/useCmsBundleImport'
@@ -14,6 +15,7 @@ type Step = 'drop' | 'analyze' | 'conflicts' | 'run'
 interface SiteImportFooterProps {
   step: Step
   cmsBundleState: CmsBundleState | null
+  plan: ImportPlan | null
   selection: ImportSelection | null
   runProgress: RunProgress
   cmsResult: CmsImportResult | null
@@ -34,6 +36,7 @@ interface SiteImportFooterProps {
 export function SiteImportFooter({
   step,
   cmsBundleState,
+  plan,
   selection,
   runProgress,
   cmsResult,
@@ -86,7 +89,7 @@ export function SiteImportFooter({
     const mediaCount = selection ? selection.assetsIncluded.size : 0
     const sheetCount = selection ? selection.stylesheetsIncluded.size : 0
     // An import needs no page: stylesheets, rules, media or fonts alone are valid.
-    const nothingSelected = !selection || selectedImportCount(selection) === 0
+    const nothingSelected = !plan || !selection || selectedImportCount(plan, selection) === 0
     return (
       <>
         <span className={styles.footNote}>

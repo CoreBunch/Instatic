@@ -27,7 +27,11 @@ import { WarningDiamondSolidIcon } from 'pixel-art-icons/icons/warning-diamond-s
 import { ChevronRightIcon } from 'pixel-art-icons/icons/chevron-right'
 import { DragAndDropSolidIcon } from 'pixel-art-icons/icons/drag-and-drop-solid'
 import type { ImportPlan, StylesheetImportMode } from '@core/siteImport'
-import type { ImportSelection } from '../shared/importPlanning'
+import {
+  isGoogleFontRequested,
+  selectedGoogleFonts,
+  type ImportSelection,
+} from '../shared/importPlanning'
 import { StylesheetModeRows } from './StylesheetModeRows'
 import { SiteStylesheetRows } from './SiteStylesheetRows'
 import { ImportStepper } from '../shared/ImportStepper'
@@ -524,7 +528,7 @@ export function AnalyzeStep({
   function renderFonts() {
     const includedFontCount =
       plan.fonts.filter((font) => selection.fontsIncluded.has(font.family)).length +
-      plan.googleFonts.filter((font) => selection.fontsIncluded.has(font.family)).length
+      selectedGoogleFonts(plan, selection).length
     const includedFontTokenCount = plan.fontTokens.filter(
       (token) => !token.family || selection.fontsIncluded.has(token.family),
     ).length
@@ -567,25 +571,33 @@ export function AnalyzeStep({
                 />
               </div>
             ))}
-            {plan.googleFonts.map((f) => (
-              <div className={styles.listRow} key={`google:${f.family}`}>
-                <span className={styles.listIcon}>
-                  <HeadingIcon size={14} />
-                </span>
-                <div className={styles.info}>
-                  <span className={styles.title}>{f.family}</span>
-                  <span className={styles.meta}>
-                    Google font · {f.variants.length} {f.variants.length === 1 ? 'variant' : 'variants'} · {f.subsets.join(', ')}
+            {plan.googleFonts.map((f) => {
+              // A family only switched-off stylesheets ask for has nothing to
+              // style: it shows off, and follows those sheets back on.
+              const requested = isGoogleFontRequested(plan, selection, f)
+              return (
+                <div className={styles.listRow} key={`google:${f.family}`}>
+                  <span className={styles.listIcon}>
+                    <HeadingIcon size={14} />
                   </span>
+                  <div className={styles.info}>
+                    <span className={styles.title}>{f.family}</span>
+                    <span className={styles.meta}>
+                      {requested
+                        ? <>Google font · {f.variants.length} {f.variants.length === 1 ? 'variant' : 'variants'} · {f.subsets.join(', ')}</>
+                        : `Only used by ${f.stylesheetPaths.join(', ')}, which ${f.stylesheetPaths.length === 1 ? 'is' : 'are'} switched off`}
+                    </span>
+                  </div>
+                  <Switch
+                    checked={requested && selection.fontsIncluded.has(f.family)}
+                    disabled={!requested}
+                    switchSize="sm"
+                    onCheckedChange={() => toggleFont(f.family)}
+                    aria-label={`Include font ${f.family}`}
+                  />
                 </div>
-                <Switch
-                  checked={selection.fontsIncluded.has(f.family)}
-                  switchSize="sm"
-                  onCheckedChange={() => toggleFont(f.family)}
-                  aria-label={`Include font ${f.family}`}
-                />
-              </div>
-            ))}
+              )
+            })}
             <FontTokenRows tokens={plan.fontTokens} />
           </div>
         )}

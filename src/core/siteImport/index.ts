@@ -88,6 +88,7 @@ export type {
   ImportStylesheet,
   // @font-face import
   ImportFontFamily,
+  ImportGoogleFont,
   // colour tokens + scripts
   ImportColorToken,
   ImportFontToken,

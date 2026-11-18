@@ -18,7 +18,7 @@
 import type {
   NewStyleRule,
   ImportFontFamily,
-  ImportGoogleFont,
+  GoogleFontRequest,
   ImportColorToken,
   ImportFontToken,
   ImportScript,
@@ -68,7 +68,7 @@ export interface SiteImportAdapter {
    * mutate the site; the entry is merged by `tx.addInstalledFonts` inside the
    * single import transaction.
    */
-  installGoogleFont(font: ImportGoogleFont): Promise<FontEntry>
+  installGoogleFont(font: GoogleFontRequest): Promise<FontEntry>
 
   /**
    * Execute all page and style-rule mutations in a single atomic step.

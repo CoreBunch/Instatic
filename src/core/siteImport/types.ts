@@ -224,10 +224,18 @@ export interface ImportFontFamily {
  * CMS Google-font installer used by the Typography panel, producing self-hosted
  * font entries instead of leaving an external stylesheet in the site.
  */
-export interface ImportGoogleFont {
+export interface GoogleFontRequest {
   family: string
   variants: string[]
   subsets: string[]
+}
+
+/** A planned Google font: the install request plus where the import asked for it. */
+export interface ImportGoogleFont extends GoogleFontRequest {
+  /** Converted CSS (rules from linked sheets, inline `<style>`) requests it. */
+  requestedByConvertedCss: boolean
+  /** `ImportStylesheet.path` of every stylesheet file whose `@import` requests it. */
+  stylesheetPaths: string[]
 }
 
 /**
