@@ -2,6 +2,8 @@
 // CMS server-side hook event surface
 // ---------------------------------------------------------------------------
 
+import type { PluginMailRecipient } from './mail'
+
 /**
  * Actor that originated a content mutation. Carried on every
  * `content.entry.*` event so listeners can filter their own writes
@@ -47,9 +49,11 @@ export interface CmsServerEvents {
   'member.tagged': { memberId: string; tag: string; source: string; expiresAt: string | null }
   'member.deleted': { memberId: string }
   // What became of an email this plugin queued. Only the plugin that sent it
-  // hears about it. `reference` is the one given to `api.cms.mail.send`.
-  'mail.delivered': { template: string; to: string; reference: string | null }
-  'mail.failed': { template: string; to: string; reference: string | null; error: string }
+  // hears about it. `to` is the recipient as the plugin named it (a member's
+  // address is never handed back); `reference` is the one given to
+  // `api.cms.mail.send`.
+  'mail.delivered': { template: string; to: PluginMailRecipient; reference: string | null }
+  'mail.failed': { template: string; to: PluginMailRecipient; reference: string | null; error: string }
   // Plugin-defined events fall through. The host does not pre-define any
   // frontend-specific event channels — plugins that ingest events from
   // their own published-page bundles register their own `routes.public.post`

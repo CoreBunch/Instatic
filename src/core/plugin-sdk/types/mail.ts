@@ -54,7 +54,10 @@ export interface ServerPluginMailApi {
    *
    * Rejects when email is not set up, the member cannot be emailed, the
    * address is not valid, a value is not a string, or a limit is reached
-   * (20 emails an hour to one recipient, 10,000 waiting).
+   * (20 emails to one recipient within a clock hour, 10,000 waiting).
+   *
+   * Nothing here returns a member's address: the outcome events name the
+   * recipient the way this call did.
    */
   send: (input: PluginMailSendInput) => Promise<'queued' | 'captured'>
 }

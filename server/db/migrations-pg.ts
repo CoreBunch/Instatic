@@ -1586,4 +1586,26 @@ export const pgMigrations: Migration[] = [
       alter table mail_outbox add column source text not null default 'core';
     `,
   },
+  {
+    // Email a plugin asks for. `mail_counters` holds the two limits as rows
+    // that are raised by one conditional UPDATE, so no two concurrent sends,
+    // on one server or several, can both take the last place: `to:<address>`
+    // counts a plugin's emails to one recipient in one clock hour (`bucket`),
+    // and `backlog` counts how many of a plugin's emails are waiting.
+    // `mail_queue.member_id` remembers that the sender named a site member
+    // rather than an address, so the outcome can be reported without ever
+    // handing the member's address back.
+    id: '035_plugin_mail',
+    sql: `
+      create table if not exists mail_counters (
+        source text not null,
+        scope text not null,
+        bucket text not null default '',
+        count integer not null default 0,
+        primary key (source, scope, bucket)
+      );
+
+      alter table mail_queue add column member_id text;
+    `,
+  },
 ]

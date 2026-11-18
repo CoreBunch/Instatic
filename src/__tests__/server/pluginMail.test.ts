@@ -18,10 +18,11 @@ import { parsePluginManifest } from '@core/plugins/manifest'
 import { undeclaredMailVariables } from '@core/plugins/manifestMail'
 import { configurePublicOrigins, resetPublicOrigins } from '../../../server/auth/security'
 import { handleCmsRequest } from '../../../server/handlers/cms'
-import { listMailActivity, recordMail } from '../../../server/mail/activity'
+import { listMailActivity } from '../../../server/mail/activity'
 import { createMailConnector } from '../../../server/mail/connectors'
 import { saveMailDefaults } from '../../../server/mail/defaults'
-import { __resetMailQueuePauseForTesting, drainMailQueue } from '../../../server/mail/delivery'
+import { __resetMailQueuePauseForTesting, drainMailQueue, queueTemplateMail } from '../../../server/mail/delivery'
+import { MAIL_BACKLOG_LIMIT, MailLimitError } from '../../../server/mail/limits'
 import type { MailCarrier } from '../../../server/mail/send'
 import { MailDeliveryError } from '../../../server/mail/smtpDriver'
 import { createMember } from '../../../server/members/repository'
@@ -354,35 +355,77 @@ describe('email for plugins', () => {
   })
 
   describe('limits', () => {
-    it('stops at twenty emails an hour to one recipient, counted per plugin and without regard to case', async () => {
-      await install(BOTH)
-      for (let index = 0; index < 19; index += 1) {
-        await recordMail(h.db, { kind: REPLY_KEY, to: 'Busy@Example.com', subject: 'S', status: 'sent', source: PLUGIN_ID })
-      }
-      // Mail from the core, or from another plugin, to the same address does not count.
-      await recordMail(h.db, { kind: 'member.reset', to: 'busy@example.com', subject: 'S', status: 'sent' })
-      await recordMail(h.db, { kind: 'x', to: 'busy@example.com', subject: 'S', status: 'sent', source: 'other.plugin' })
+    const hour = () => new Date().toISOString().slice(0, 13)
+    const counter = async (scope: string, bucket: string) => {
+      const { rows } = await h.db<{ count: number }>`
+        select count from mail_counters where source = ${PLUGIN_ID} and scope = ${scope} and bucket = ${bucket}
+      `
+      return rows[0] ? Number(rows[0].count) : null
+    }
+    const attempt = (to: string) =>
+      queueTemplateMail(h.db, {
+        key: `plugin.${PLUGIN_ID}~ticket.opened`, to, variables: { subject: 'a' }, source: PLUGIN_ID,
+      }).then((status) => status, (err: unknown) => (err instanceof MailLimitError ? 'refused' : 'error'))
 
-      const mail = { template: 'ticket.opened', to: { address: 'busy@example.com' }, variables: { subject: 'a' } }
-      expect(await send(mail)).toEqual({ status: 'captured' })
-      expect(String((await send(mail)).error)).toContain('20 emails to that recipient in the last hour')
+    it('stops at twenty emails to one recipient in a clock hour, per plugin and without regard to case', async () => {
+      await install(BOTH)
+      const mail = { template: 'ticket.opened', variables: { subject: 'a' } }
+      for (let index = 0; index < 20; index += 1) {
+        const to = { address: index % 2 === 0 ? 'Busy@Example.com' : 'busy@example.com' }
+        expect(await send({ ...mail, to })).toEqual({ status: 'captured' })
+      }
+      expect(String((await send({ ...mail, to: { address: 'busy@example.com' } })).error))
+        .toContain('20 emails to that recipient this hour')
+      expect(await counter('to:busy@example.com', hour())).toBe(20)
       expect(await send({ ...mail, to: { address: 'calm@example.com' } })).toEqual({ status: 'captured' })
+      expect((await listMailActivity(h.db)).matching).toBe(21)
     })
 
-    it('stops when the plugin has ten thousand emails waiting', async () => {
+    it('accepts exactly twenty of forty sends made at once', async () => {
       await install(BOTH)
       await readyConnector()
-      const iso = new Date().toISOString()
-      await h.db.transaction(async (tx) => {
-        for (let index = 0; index < 10_000; index += 1) {
-          await tx`
-            insert into mail_queue (id, outbox_id, kind, to_address, source, lane, payload_ciphertext, payload_iv, next_attempt_at, created_at)
-            values (${`q${index}`}, ${`o${index}`}, ${REPLY_KEY}, ${`r${index}@example.com`}, ${PLUGIN_ID}, 1, ${new Uint8Array([1])}, ${new Uint8Array([1])}, ${iso}, ${iso})
-          `
-        }
-      })
-      expect(String((await send({ template: 'ticket.opened', to: { address: 'a@example.com' }, variables: { subject: 'a' } })).error))
+      const results = await Promise.all(Array.from({ length: 40 }, () => attempt('rush@example.com')))
+      expect(results.filter((result) => result === 'queued')).toHaveLength(20)
+      expect(results.filter((result) => result === 'refused')).toHaveLength(20)
+      expect((await h.db`select id from mail_queue`).rows).toHaveLength(20)
+      // A refused send took no place in the backlog and left no row in the log.
+      expect(await counter('backlog', '')).toBe(20)
+      expect((await listMailActivity(h.db)).matching).toBe(20)
+    })
+
+    it('forgets the hours that are over', async () => {
+      await install(BOTH)
+      await h.db`insert into mail_counters (source, scope, bucket, count) values (${PLUGIN_ID}, 'to:old@example.com', '2020-01-01T00', 20)`
+      expect(await send({ template: 'ticket.opened', to: { address: 'old@example.com' }, variables: { subject: 'a' } }))
+        .toEqual({ status: 'captured' })
+      expect(await counter('to:old@example.com', '2020-01-01T00')).toBeNull()
+    })
+
+    it('stops when the plugin has ten thousand emails waiting, however many arrive at once', async () => {
+      await install(BOTH)
+      await readyConnector()
+      await h.db`insert into mail_counters (source, scope, bucket, count) values (${PLUGIN_ID}, 'backlog', '', ${MAIL_BACKLOG_LIMIT - 10})`
+      const results = await Promise.all(Array.from({ length: 30 }, (_, index) => attempt(`r${index}@example.com`)))
+      expect(results.filter((result) => result === 'queued')).toHaveLength(10)
+      expect(results.filter((result) => result === 'refused')).toHaveLength(20)
+      expect(await counter('backlog', '')).toBe(MAIL_BACKLOG_LIMIT)
+      expect(String((await send({ template: 'ticket.opened', to: { address: 'late@example.com' }, variables: { subject: 'a' } })).error))
         .toContain('10,000 emails waiting')
+      // A refusal for the backlog gives the recipient's place back too: nothing was accepted.
+      expect(await counter('to:late@example.com', hour())).toBeNull()
+    })
+
+    it('gives a place in the backlog back when an email leaves the queue, sent or failed', async () => {
+      await install(BOTH)
+      await readyConnector()
+      await send({ template: 'ticket.opened', to: { address: 'ok@example.com' }, variables: { subject: 'a' } })
+      await send({ template: 'ticket.opened', to: { address: 'bad@example.com' }, variables: { subject: 'a' } })
+      expect(await counter('backlog', '')).toBe(2)
+      await drain(async (_c, _s, mail) => {
+        if (mail.to === 'bad@example.com') throw new MailDeliveryError('Rejected.')
+        return null
+      })
+      expect(await counter('backlog', '')).toBe(0)
     })
   })
 
@@ -404,13 +447,53 @@ describe('email for plugins', () => {
 
       const { heard } = await call('/heard')
       expect(heard).toEqual([
-        { event: 'mail.delivered', template: 'ticket.opened', to: 'ok@example.com', reference: 'r-ok' },
+        { event: 'mail.delivered', template: 'ticket.opened', to: { address: 'ok@example.com' }, reference: 'r-ok' },
         {
-          event: 'mail.failed', template: 'ticket.opened', to: 'bad@example.com', reference: 'r-bad',
+          event: 'mail.failed', template: 'ticket.opened', to: { address: 'bad@example.com' }, reference: 'r-bad',
           error: 'The SMTP server rejected the recipient address.',
         },
       ])
       expect(elsewhere).toEqual([])
+    })
+
+    it('never hands a member\'s address to the plugin that emailed them by id', async () => {
+      // No `members.read`: this plugin was never entitled to the address.
+      await install([...BASE, 'mail.send'])
+      await readyConnector()
+      const reached = await activeMember('private.person@example.com')
+      const bounced = await activeMember('bounces@example.com')
+      const variables = { subject: 'a', link: 'https://example.com/t' }
+      expect(await send({ template: 'ticket.reply', to: { member: reached }, variables, reference: 'r1' })).toEqual({ status: 'queued' })
+      expect(await send({ template: 'ticket.reply', to: { member: bounced }, variables, reference: 'r2' })).toEqual({ status: 'queued' })
+      await drain(async (_c, _s, mail) => {
+        // A provider's own reason can quote the recipient, in any case.
+        if (mail.to === 'bounces@example.com') {
+          throw new MailDeliveryError('Resend refused the message (HTTP 422). Invalid `to` field: Bounces@Example.com')
+        }
+        return null
+      })
+      await new Promise((resolve) => setTimeout(resolve, 50))
+
+      const { heard } = await call('/heard')
+      expect(heard).toEqual([
+        { event: 'mail.delivered', template: 'ticket.reply', to: { member: reached }, reference: 'r1' },
+        {
+          event: 'mail.failed', template: 'ticket.reply', to: { member: bounced }, reference: 'r2',
+          error: 'Resend refused the message (HTTP 422). Invalid `to` field: the member\'s address',
+        },
+      ])
+      expect(JSON.stringify(heard).toLowerCase()).not.toContain('example.com')
+
+      // Refusals do not carry it either.
+      await h.db`update members set status = 'suspended' where id = ${reached}`
+      const refused = await send({ template: 'ticket.reply', to: { member: reached }, variables })
+      expect(JSON.stringify(refused)).not.toContain('private.person')
+      for (let index = 0; index < 19; index += 1) {
+        await send({ template: 'ticket.reply', to: { member: bounced }, variables })
+      }
+      const limited = await send({ template: 'ticket.reply', to: { member: bounced }, variables })
+      expect(String(limited.error)).toContain('this hour')
+      expect(JSON.stringify(limited)).not.toContain('bounces')
     })
   })
 

@@ -18,6 +18,7 @@ import { isoDate, nowIso } from '@core/utils/isoDate'
 import { decryptSecret, encryptSecret } from '../secrets/encryption'
 import { loadMasterKey } from '../secrets/masterKey'
 import { CORE_MAIL_SOURCE } from './activity'
+import { releaseBacklogSlot } from './limits'
 
 const QueuedPayloadSchema = Type.Object({
   variables: Type.Record(Type.String(), Type.String()),
@@ -34,6 +35,7 @@ interface QueueRow {
   to_address: string
   source: string
   reference: string | null
+  member_id: string | null
   payload_ciphertext: Uint8Array
   payload_iv: Uint8Array
   attempts: number
@@ -51,6 +53,8 @@ export interface QueuedMail {
   source: string
   /** The sender's own name for this email, handed back with the outcome. */
   reference: string | null
+  /** Set when the sender named a site member, not an address. */
+  memberId: string | null
   attempts: number
   /** Milliseconds since the epoch. */
   createdAt: number
@@ -64,6 +68,8 @@ export interface EnqueueMailInput {
   variables: Record<string, string>
   source?: string
   reference?: string
+  /** The site member the email is for, when the sender named one rather than an address. */
+  memberId?: string
 }
 
 export async function enqueueMail(db: DbClient, input: EnqueueMailInput): Promise<void> {
@@ -73,11 +79,11 @@ export async function enqueueMail(db: DbClient, input: EnqueueMailInput): Promis
   const now = nowIso()
   await db`
     insert into mail_queue (
-      id, outbox_id, kind, to_address, source, reference, lane,
+      id, outbox_id, kind, to_address, source, reference, member_id, lane,
       payload_ciphertext, payload_iv, attempts, next_attempt_at, created_at
     ) values (
       ${nanoid()}, ${input.outboxId}, ${input.kind}, ${input.to}, ${source}, ${input.reference ?? null},
-      ${source === CORE_MAIL_SOURCE ? 0 : 1},
+      ${input.memberId ?? null}, ${source === CORE_MAIL_SOURCE ? 0 : 1},
       ${encrypted.ciphertext}, ${encrypted.iv}, 0, ${now}, ${now}
     )
   `
@@ -111,7 +117,7 @@ export async function claimNextDueMail(db: DbClient, now: number): Promise<Queue
   const at = new Date(now).toISOString()
   for (;;) {
     const { rows } = await db<QueueRow>`
-      select id, outbox_id, kind, to_address, source, reference,
+      select id, outbox_id, kind, to_address, source, reference, member_id,
              payload_ciphertext, payload_iv, attempts, created_at
         from mail_queue
        where claimed_at is null and next_attempt_at <= ${at}
@@ -134,6 +140,7 @@ export async function claimNextDueMail(db: DbClient, now: number): Promise<Queue
       to: row.to_address,
       source: row.source,
       reference: row.reference,
+      memberId: row.member_id,
       attempts: Number(row.attempts),
       createdAt: Date.parse(isoDate(row.created_at)),
       payload: { ciphertext: row.payload_ciphertext, iv: row.payload_iv },
@@ -141,9 +148,20 @@ export async function claimNextDueMail(db: DbClient, now: number): Promise<Queue
   }
 }
 
-/** The email left, or was given up on: nothing of it stays in the queue. */
-export async function removeQueuedMail(db: DbClient, id: string): Promise<void> {
-  await db`delete from mail_queue where id = ${id}`
+/**
+ * The email left, or was given up on: nothing of it stays in the queue. A
+ * plugin's email also gives its place in that plugin's backlog back, in the
+ * same transaction, so the count never drifts from the rows.
+ */
+export async function removeQueuedMail(db: DbClient, mail: Pick<QueuedMail, 'id' | 'source'>): Promise<void> {
+  if (mail.source === CORE_MAIL_SOURCE) {
+    await db`delete from mail_queue where id = ${mail.id}`
+    return
+  }
+  await db.transaction(async (tx) => {
+    const removed = await tx`delete from mail_queue where id = ${mail.id}`
+    if (removed.rowCount > 0) await releaseBacklogSlot(tx, mail.source)
+  })
 }
 
 /** Put a claimed email back to be tried again at `nextAttemptAt`. */

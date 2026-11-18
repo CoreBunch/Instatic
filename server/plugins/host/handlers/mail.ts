@@ -25,6 +25,8 @@ interface PluginMail {
   to: string
   variables: Record<string, string>
   reference?: string
+  /** Set when the plugin named a member and the host looked the address up. */
+  memberId?: string
 }
 
 async function queuePluginMail(db: DbClient, entry: HostPluginRecord, mail: PluginMail): Promise<'queued' | 'captured'> {
@@ -41,6 +43,7 @@ async function queuePluginMail(db: DbClient, entry: HostPluginRecord, mail: Plug
     variables: mail.variables,
     source: entry.manifest.id,
     reference: mail.reference,
+    memberId: mail.memberId,
   })
 }
 
@@ -53,7 +56,9 @@ export async function handleMailSend(
   // `findMemberById` leaves deleted members out; a suspended one is not written to either.
   const member = await findMemberById(db, memberId)
   if (!member || member.status !== 'active') throw new Error('That member cannot be emailed')
-  const status = await queuePluginMail(db, entry, { template, to: member.email, variables, reference })
+  // The address is the host's to know. Nothing sent back to the plugin, now
+  // or with the outcome, carries it: `mail.send` is not a way to read members.
+  const status = await queuePluginMail(db, entry, { template, to: member.email, variables, reference, memberId })
   replyApiOk(msg.pluginId, msg.correlationId, status)
 }
 
@@ -78,13 +83,15 @@ export async function handleSitePublicUrl(
 /**
  * Tell a plugin what became of an email it queued. Only that plugin's
  * listeners run, and nothing waits for them: a slow listener must not hold
- * up the mail queue.
+ * up the mail queue. `to` is the recipient exactly as the plugin named it:
+ * `{ member }` for a member, whose address it was never given, or the
+ * `{ address }` it supplied itself.
  */
 export function announcePluginMailOutcome(outcome: QueuedMailOutcome): void {
   const prefix = pluginMailTemplatePrefix(outcome.source)
   const payload = {
     template: outcome.kind.startsWith(prefix) ? outcome.kind.slice(prefix.length) : outcome.kind,
-    to: outcome.to,
+    to: outcome.recipient,
     reference: outcome.reference,
     ...(outcome.status === 'failed' ? { error: outcome.error ?? 'Delivery failed' } : {}),
   }

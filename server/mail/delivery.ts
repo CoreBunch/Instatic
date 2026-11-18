@@ -24,7 +24,7 @@ import { getMailTemplateDefinition } from '@core/mail'
 import { getErrorMessage } from '@core/utils/errorMessage'
 import { CORE_MAIL_SOURCE, recordMail, updateMailProgress } from './activity'
 import { getMailDefaults } from './defaults'
-import { assertWithinMailLimits } from './limits'
+import { reserveBacklogSlot, reserveRecipientSlot } from './limits'
 import {
   claimNextDueMail,
   enqueueMail,
@@ -69,6 +69,12 @@ export interface QueueTemplateMailInput {
   source?: string
   /** The sender's own name for this email, handed back with the outcome. */
   reference?: string
+  /**
+   * The site member the email is for, when the sender named a member and
+   * the host looked the address up. The outcome then names the member, never
+   * the address: a sender that was not given the address does not learn it.
+   */
+  memberId?: string
 }
 
 /** What became of a queued email that was not the core's own. */
@@ -76,7 +82,8 @@ export interface QueuedMailOutcome {
   source: string
   /** The template key. */
   kind: string
-  to: string
+  /** The recipient exactly as the sender named it. */
+  recipient: { member: string } | { address: string }
   reference: string | null
   status: 'sent' | 'failed'
   error: string | null
@@ -92,10 +99,26 @@ export function setQueuedMailOutcomeHandler(handler: ((outcome: QueuedMailOutcom
   outcomeHandler = handler
 }
 
+/**
+ * A provider's refusal can quote the recipient ("Invalid `to`: a@b.example").
+ * When the sender named a member, that address is not the sender's to see.
+ */
+function withoutAddress(message: string, address: string): string {
+  return message.split(new RegExp(address.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi')).join('the member\'s address')
+}
+
 function announceOutcome(mail: QueuedMail, status: 'sent' | 'failed', error: string | null): void {
   if (mail.source === CORE_MAIL_SOURCE || !outcomeHandler) return
+  const forMember = mail.memberId !== null
   try {
-    outcomeHandler({ source: mail.source, kind: mail.kind, to: mail.to, reference: mail.reference, status, error })
+    outcomeHandler({
+      source: mail.source,
+      kind: mail.kind,
+      recipient: mail.memberId !== null ? { member: mail.memberId } : { address: mail.to },
+      reference: mail.reference,
+      status,
+      error: error !== null && forMember ? withoutAddress(error, mail.to) : error,
+    })
   } catch (err) {
     console.error('[mail] outcome handler threw:', getErrorMessage(err, 'unknown error'))
   }
@@ -118,16 +141,23 @@ export async function queueTemplateMail(
   const mail = await buildTemplateMail(db, input)
   assertSendable(mail)
   const log = { kind: mail.kind, to: mail.to, subject: mail.subject, source: input.source }
-  if (input.source !== undefined && input.source !== CORE_MAIL_SOURCE) {
-    await assertWithinMailLimits(db, input.source, input.to)
-  }
+  // A plugin's email takes its places in that plugin's limits inside the
+  // transaction that accepts it, so a refusal or a failure gives them back.
+  const limited = input.source !== undefined && input.source !== CORE_MAIL_SOURCE ? input.source : null
   if (!readyToSend(await getMailDefaults(db))) {
     if (!captureAllowed(deps.env ?? process.env)) throw new MailNotConfiguredError()
-    await recordMail(db, { ...log, status: 'captured', body: mail.text })
+    await db.transaction(async (tx) => {
+      if (limited) await reserveRecipientSlot(tx, limited, input.to)
+      await recordMail(tx, { ...log, status: 'captured', body: mail.text })
+    })
     return 'captured'
   }
   // One transaction: the log never shows a waiting email the queue does not hold.
   await db.transaction(async (tx) => {
+    if (limited) {
+      await reserveRecipientSlot(tx, limited, input.to)
+      await reserveBacklogSlot(tx, limited)
+    }
     const outboxId = await recordMail(tx, { ...log, status: 'queued' })
     await enqueueMail(tx, {
       outboxId,
@@ -136,6 +166,7 @@ export async function queueTemplateMail(
       variables: input.variables,
       source: input.source,
       reference: input.reference,
+      memberId: input.memberId,
     })
   })
   wakeMailQueue()
@@ -206,7 +237,7 @@ async function settleQueuedMail(db: DbClient, mail: QueuedMail, attempt: Attempt
       providerMessageId: attempt.outcome.providerMessageId,
       durationMs: attempt.outcome.durationMs,
     })
-    await removeQueuedMail(db, mail.id)
+    await removeQueuedMail(db, mail)
     announceOutcome(mail, 'sent', null)
     return
   }
@@ -220,7 +251,7 @@ async function settleQueuedMail(db: DbClient, mail: QueuedMail, attempt: Attempt
   if (attempt.retry === 'slow-down') pausedUntil = now + SLOW_DOWN_PAUSE_MS
   if (attempt.retry === 'never' || now + delay > mail.createdAt + GIVE_UP_AFTER_MS) {
     await updateMailProgress(db, mail.outboxId, { ...failure, status: 'failed' })
-    await removeQueuedMail(db, mail.id)
+    await removeQueuedMail(db, mail)
     console.error(`[mail] gave up on a "${mail.kind}" email after ${attempts} attempt(s)`)
     announceOutcome(mail, 'failed', attempt.message)
     return

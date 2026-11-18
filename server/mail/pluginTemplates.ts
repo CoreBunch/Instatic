@@ -17,6 +17,7 @@ import type { PluginManifest } from '@core/plugin-sdk'
 import { pluginMailTemplateDefinitions, pluginMailTemplatePrefix } from '@core/plugins/manifestMail'
 import type { DbClient } from '../db/client'
 import { updateMailProgress } from './activity'
+import { clearMailCounters } from './limits'
 
 /** A plugin template key is `plugin.<pluginId>~<key>`; nothing else in the catalogue contains `~`. */
 const PLUGIN_KEY_MARK = '~'
@@ -58,6 +59,7 @@ export async function removePluginMail(db: DbClient, pluginId: string): Promise<
     select outbox_id, attempts from mail_queue where source = ${pluginId}
   `
   await db`delete from mail_queue where source = ${pluginId}`
+  await clearMailCounters(db, pluginId)
   for (const row of rows) {
     await updateMailProgress(db, row.outbox_id, {
       status: 'failed',
