@@ -170,3 +170,22 @@ export function connectorEndpoint(connector: MailConnector): string {
     default: return getConnectorSpec(connector.kind).label
   }
 }
+
+// ─── Local relays ──────────────────────────────────────────────────────────
+
+const PRIVATE_IPV4 = /^(10\.|127\.|192\.168\.|169\.254\.|172\.(1[6-9]|2\d|3[01])\.)/
+const LOCAL_SUFFIXES = ['.localhost', '.local', '.internal', '.lan', '.home.arpa']
+
+/**
+ * Whether a typed SMTP host reads as a relay on this machine or network: a
+ * name without a dot, a local-only suffix, or a private IPv4 address. It only
+ * decides which hint the form shows; the server resolves the name and is the
+ * one that refuses a private address.
+ */
+export function looksLikeLocalMailHost(host: string): boolean {
+  const name = host.trim().toLowerCase().replace(/\.$/, '')
+  if (!name) return false
+  if (!name.includes('.')) return true
+  if (LOCAL_SUFFIXES.some((suffix) => name.endsWith(suffix))) return true
+  return /^[0-9.]+$/.test(name) && PRIVATE_IPV4.test(name)
+}

@@ -17,7 +17,7 @@ import type { MailConnector, MailConnectorInput } from '@core/mail'
 import { createCmsMailConnector } from '@core/persistence'
 import { getErrorMessage } from '@core/utils/errorMessage'
 import { ConnectorGlyph, ConnectorMark } from '../ConnectorMark'
-import { SMTP_PRESETS, type ConnectorSpec, type SmtpPreset } from '../connectorCatalog'
+import { looksLikeLocalMailHost, SMTP_PRESETS, type ConnectorSpec, type SmtpPreset } from '../connectorCatalog'
 import styles from '../EmailPage.module.css'
 
 const MAILGUN_REGIONS = [
@@ -194,9 +194,11 @@ function AddConnectorForm({
             <div>
               <Input id={ids.host} value={host} onChange={(event) => setHost(event.currentTarget.value)} placeholder="smtp.example.com" pattern="[a-zA-Z0-9.\-]+" spellCheck={false} required />
               <p>
-                {privateHostsAllowed
-                  ? 'The mail server’s name. Private and local relays are allowed on this server.'
-                  : 'The mail server’s public name. A relay on this machine or network needs MAIL_ALLOW_PRIVATE_HOSTS=1 on the server.'}
+                {!looksLikeLocalMailHost(host)
+                  ? 'The mail server’s name, for example smtp.example.com.'
+                  : privateHostsAllowed
+                    ? 'A relay on this machine or network. This server allows those.'
+                    : 'This looks like a relay on this machine or network. The server only connects to one when it runs with MAIL_ALLOW_PRIVATE_HOSTS=1.'}
               </p>
             </div>
           </div>
