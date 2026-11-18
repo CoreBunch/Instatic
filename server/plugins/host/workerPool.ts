@@ -37,10 +37,15 @@ function ensureWorkerFor(pluginId: string): Worker {
   if (existing) return existing
   const w = new Worker(new URL('../pluginWorker.ts', import.meta.url).href)
   workers.set(pluginId, w)
+  // A worker the host has already replaced may still have events queued (a
+  // second overrun report, a late error). They belong to a VM that is gone
+  // and must not touch the plugin's new worker.
+  const isCurrent = (): boolean => workers.get(pluginId) === w
   w.addEventListener('message', (event: MessageEvent) => {
-    handleWorkerMessage(pluginId, event.data)
+    if (isCurrent()) handleWorkerMessage(pluginId, event.data)
   })
   w.addEventListener('error', (event: ErrorEvent) => {
+    if (!isCurrent()) return
     console.error(`[plugin:${pluginId}] uncaught error in worker:`, event.message, event.error)
     handleWorkerCrash(pluginId, event.message)
   })
@@ -185,6 +190,18 @@ function handleWorkerMessage(workerPluginId: string, msg: unknown): void {
         return
       }
       dispatchValidatedApiCall(apiCall)
+      return
+    }
+    case 'call-overrun': {
+      // The overrunning call's own failure result was posted first and is
+      // already resolved. Stop the worker so its abandoned handler cannot
+      // resume and act; calls still in flight are rejected as retriable.
+      const reason = (msg as { reason?: unknown }).reason
+      handleWorkerCrash(
+        workerPluginId,
+        typeof reason === 'string' && reason ? reason : 'Plugin call exceeded its time budget',
+        'overrun',
+      )
       return
     }
     default: {

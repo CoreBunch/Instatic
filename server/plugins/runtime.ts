@@ -54,6 +54,7 @@ import { setPluginHostContext } from './host/registry'
 import {
   findPluginRouteAccess,
   loadPluginInWorker,
+  pluginRestartingResponse,
   runLifecycleInWorker,
   runMigrateInWorker,
   runRouteInWorker,
@@ -222,7 +223,8 @@ export async function handleServerPluginRuntimeRequest(
   const routePath = decodeURIComponent(match[2] ?? '/')
 
   const route = findPluginRouteAccess(pluginId, req.method, routePath)
-  if (!route) return jsonResponse({ error: 'Plugin route not found' }, { status: 404 })
+  // A plugin being restarted has no routes for a moment: retry, not "not found".
+  if (!route) return pluginRestartingResponse(pluginId) ?? jsonResponse({ error: 'Plugin route not found' }, { status: 404 })
 
   // Access gate stays host-side. The plugin route handler in the worker
   // still receives the validated user object (or null for public routes)
@@ -307,7 +309,10 @@ export async function reloadAndActivatePlugin(
  * previous handler (idempotent — safe to call on every boot / re-bind).
  */
 function registerCrashRecoveryHandler(db: DbClient, uploadsDir: string): void {
-  setCrashRecoveryHandler(async ({ pluginId, reason, decision }) => {
+  setCrashRecoveryHandler(async ({ pluginId, reason, cause, decision }) => {
+    // What the owner reads in the admin: an overrun is a restart the host
+    // chose, not the plugin falling over.
+    const what = cause === 'overrun' ? 'was restarted after a call ran out of time' : 'crashed'
     const occurredAt = new Date().toISOString()
 
     // Persist the crash event so the admin UI can show it. Best-effort —
@@ -337,13 +342,15 @@ function registerCrashRecoveryHandler(db: DbClient, uploadsDir: string): void {
       // owner has to click "Restart Plugin" in the admin UI to reset the
       // counter and try again.
       console.error(
-        `[plugin:${pluginId}] crashed ${decision.recentCrashCount} times in the last 5 minutes; parking in error state`,
+        `[plugin:${pluginId}] ${what} ${decision.recentCrashCount} times in the last 5 minutes; parking in error state`,
       )
       await setPluginLifecycleStatus(
         db,
         pluginId,
         'error',
-        `Crash budget exceeded (${decision.recentCrashCount} crashes in 5 min). Last reason: ${reason}`,
+        cause === 'overrun'
+          ? `Stopped: calls ran out of time ${decision.recentCrashCount} times in 5 min. Last reason: ${reason}`
+          : `Crash budget exceeded (${decision.recentCrashCount} crashes in 5 min). Last reason: ${reason}`,
       )
       broadcastPluginEvent({
         kind: 'parked',
@@ -358,7 +365,7 @@ function registerCrashRecoveryHandler(db: DbClient, uploadsDir: string): void {
     // Within budget — auto-respawn. The worker host has already torn down
     // the dead worker; reloading spawns a fresh one and re-runs activate.
     console.warn(
-      `[plugin:${pluginId}] crash #${decision.recentCrashCount} in window — auto-respawning. Last reason: ${reason}`,
+      `[plugin:${pluginId}] ${what} (#${decision.recentCrashCount} in window) — auto-respawning. Last reason: ${reason}`,
     )
     try {
       await reloadAndActivatePlugin(db, pluginId, uploadsDir)

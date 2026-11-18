@@ -103,8 +103,13 @@ function handleApiReply(reply: ApiReply): void {
   const pending = pendingApiCalls.get(reply.correlationId)
   if (!pending) return
   pendingApiCalls.delete(reply.correlationId)
-  if (reply.ok) pending.resolve(reply.value)
-  else pending.reject(new Error(reply.error ?? 'plugin api call failed'))
+  if (reply.ok) {
+    pending.resolve(reply.value)
+    return
+  }
+  const failure: Error & { code?: string } = new Error(reply.error ?? 'plugin api call failed')
+  if (reply.code !== undefined) failure.code = reply.code
+  pending.reject(failure)
 }
 
 // ---------------------------------------------------------------------------
@@ -142,6 +147,10 @@ async function handleLoadPlugin(msg: LoadPluginRequest): Promise<void> {
         log: (args) => {
           send({ kind: 'log', pluginId: msg.pluginId, args })
         },
+      },
+      callBudgetMs: msg.callBudgetMs,
+      onCallOverrun: (reason) => {
+        send({ kind: 'call-overrun', pluginId: msg.pluginId, reason })
       },
     })
 

@@ -19,8 +19,9 @@
  * the browser's opaque one; the host never contacts the target.
  *
  * Timeouts: the host cancels a request that takes longer than `init.timeout`
- * milliseconds (default 15 s), redirects and body included, and the call
- * rejects with a `TimeoutError`.
+ * milliseconds (default 15 s), DNS, redirects and body included, and the call
+ * rejects with a `TimeoutError`. The VM cuts the timeout down to the time
+ * left in the call that is running (`clampFetchTimeout` in `vm.ts`).
  *
  * AbortSignal threading: each call mints a unique abortId and, if the
  * plugin's signal aborts, fires network.abort to cancel the host-side
@@ -91,12 +92,10 @@ function __serializeFetchBody(body) {
   );
 }
 
-// The host's rejection for a request it cancelled on time. Only its message
-// crosses the worker boundary, so the name is restored here.
+// The host marks the rejection for a request it cancelled on time with a
+// code; give that error the name callers of fetch expect.
 function __asFetchError(err) {
-  if (err && typeof err.message === 'string' && err.message.indexOf(' fetch timed out after ') !== -1) {
-    err.name = 'TimeoutError';
-  }
+  if (err && err.code === 'fetch_timeout') err.name = 'TimeoutError';
   return err;
 }
 

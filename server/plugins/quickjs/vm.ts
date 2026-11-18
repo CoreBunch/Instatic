@@ -40,13 +40,23 @@ import { BOOTSTRAP_SOURCE } from './bootstrap/index'
 import {
   DEFAULT_EVAL_TIMEOUT_MS,
   DEFAULT_MEMORY_LIMIT_BYTES,
+  DEFAULT_PLUGIN_FETCH_TIMEOUT_MS,
   DEFAULT_STACK_SIZE_BYTES,
   PLUGIN_CALL_BUDGET_MS,
 } from './limits'
 import { jsToHandle } from './marshal'
 import { bytesToBase64 } from '../protocol/bodyEncoding'
 import { CRYPTO_RANDOM_BYTES_MAX } from './bootstrap/crypto'
-import { callString, callVoid, evalJson, notifyVmActivity, withSyncDeadline, type CallLimits } from './eval'
+import {
+  callString,
+  callVoid,
+  evalJson,
+  latestCallBudgetEnd,
+  notifyVmActivity,
+  withSyncDeadline,
+  type CallLimits,
+  type PluginCallBudgetError,
+} from './eval'
 import type { PluginVm, PluginVmEnv } from './types'
 
 export type { PluginVm, PluginVmEnv } from './types'
@@ -115,14 +125,25 @@ export async function createPluginVm(args: {
   evalTimeoutMs?: number
   /** Wall-clock budget per call; tests shorten it. Defaults to `PLUGIN_CALL_BUDGET_MS`. */
   callBudgetMs?: number
+  /**
+   * A call ran out of its wall-clock budget. Reported AFTER the failing
+   * call's own rejection has been delivered (one macrotask later), so its
+   * caller can answer before the host acts on the report.
+   */
+  onCallOverrun?: (reason: string) => void
 }): Promise<PluginVm> {
   const wasm = await getWasmModule()
   const ctx = wasm.newContext()
   const evalTimeoutMs = args.evalTimeoutMs ?? DEFAULT_EVAL_TIMEOUT_MS
   /** Limits for every call except a schedule fire, which brings its own. */
+  const onOverrun = (err: PluginCallBudgetError): void => {
+    const report = args.onCallOverrun
+    if (report) setTimeout(() => report(err.message), 0)
+  }
   const callLimits: CallLimits = {
     evalTimeoutMs,
     budgetMs: args.callBudgetMs ?? PLUGIN_CALL_BUDGET_MS,
+    onOverrun,
   }
 
   // Apply per-plugin resource limits BEFORE evaluating any plugin code.
@@ -216,6 +237,20 @@ export async function createPluginVm(args: {
   }
 
   try {
+    // An outbound request must not outlive the calls that could use its
+    // answer: its timeout is the plugin's (or the default), cut down to the
+    // time left in the longest call in flight. Code running from a timer
+    // with no call in flight keeps the plain timeout.
+    const clampFetchTimeout = (fetchArgs: unknown[]): void => {
+      const init = fetchArgs[1]
+      if (!init || typeof init !== 'object') return
+      const fetchInit = init as { timeoutMs?: unknown }
+      const wanted = typeof fetchInit.timeoutMs === 'number' ? fetchInit.timeoutMs : DEFAULT_PLUGIN_FETCH_TIMEOUT_MS
+      const budgetEndsAt = latestCallBudgetEnd(ctx)
+      const remaining = budgetEndsAt === null ? wanted : Math.max(1, Math.ceil(budgetEndsAt - Date.now()))
+      fetchInit.timeoutMs = Math.min(wanted, remaining)
+    }
+
     // 1. Wire __hostCall as a SYNCHRONOUS VM function. The host returns a
     //    VM-side Promise immediately and resolves it later from JS-land.
     //    `runtime.executePendingJobs()` drives any queued plugin-side .then
@@ -224,6 +259,8 @@ export async function createPluginVm(args: {
       const target = ctx.getString(targetHandle)
       const dumpedArgs = ctx.dump(argsHandle) as unknown
       const argsArray = Array.isArray(dumpedArgs) ? dumpedArgs : []
+
+      if (target === 'network.fetch') clampFetchTimeout(argsArray)
 
       const deferred = ctx.newPromise()
       pendingDeferreds.add(deferred)
@@ -257,6 +294,11 @@ export async function createPluginVm(args: {
           try {
             const message = err instanceof Error ? err.message : String(err)
             const errHandle = ctx.newError(message)
+            // A host failure the sandbox must tell apart carries a code.
+            const code = (err as { code?: unknown } | null)?.code
+            if (typeof code === 'string') {
+              ctx.newString(code).consume((codeHandle) => ctx.setProp(errHandle, 'code', codeHandle))
+            }
             deferred.reject(errHandle)
             errHandle.dispose()
             pumpPendingJobs()
@@ -452,6 +494,7 @@ export async function createPluginVm(args: {
         await callVoid(ctx, dispatcher('__runSchedule'), [scheduleId], {
           evalTimeoutMs: maxDurationMs,
           budgetMs: maxDurationMs,
+          onOverrun,
         })
       },
 

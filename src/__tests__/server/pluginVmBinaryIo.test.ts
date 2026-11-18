@@ -116,7 +116,7 @@ describe('plugin sandbox: fetch — redirect option', () => {
     expect(recorder.find((e) => e.target === 'test.record')?.args[0]).toBe(true)
   })
 
-  it('sends timeout as timeoutMs and omits it by default', async () => {
+  it('sends timeout as timeoutMs, and the default when there is none', async () => {
     const { recorder } = await runFetch(
       `
         await fetch('https://api.example.com/a', { timeout: 2500 });
@@ -126,7 +126,7 @@ describe('plugin sandbox: fetch — redirect option', () => {
     )
     const inits = recorder.filter((e) => e.target === 'network.fetch').map((e) => e.args[1] as Record<string, unknown>)
     expect(inits[0].timeoutMs).toBe(2500)
-    expect('timeoutMs' in inits[1]).toBe(false)
+    expect(inits[1].timeoutMs).toBe(15_000)
   })
 
   it('rejects a timeout that is not a whole number of milliseconds in range', async () => {
@@ -156,13 +156,26 @@ describe('plugin sandbox: fetch — redirect option', () => {
         }
       `,
       () => {
-        throw new Error('Plugin "acme.binary" fetch timed out after 15000ms')
+        throw Object.assign(new Error('Plugin "acme.binary" fetch timed out after 15000ms'), { code: 'fetch_timeout' })
       },
     )
     expect(recorder.find((e) => e.target === 'test.record')?.args[0]).toEqual({
       name: 'TimeoutError',
       message: 'Plugin "acme.binary" fetch timed out after 15000ms',
     })
+  })
+
+  it('does not rename a failure that only mentions a timeout', async () => {
+    const { recorder } = await runFetch(
+      `
+        try { await fetch('https://api.example.com/x'); }
+        catch (e) { await __hostCall('test.record', [e.name]); }
+      `,
+      () => {
+        throw new Error('upstream said: fetch timed out after 3 tries')
+      },
+    )
+    expect(recorder.find((e) => e.target === 'test.record')?.args[0]).toBe('Error')
   })
 
   it("sends redirect: 'error' and surfaces the host's rejection", async () => {

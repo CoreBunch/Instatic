@@ -21,8 +21,7 @@ import { describe, expect, it } from 'bun:test'
 import { createPluginVm, type PluginVmEnv } from '../../../server/plugins/quickjs/vm'
 import { PluginCallBudgetError, PluginVmError, vmStackOf } from '../../../server/plugins/quickjs/eval'
 import { DEFAULT_RPC_TIMEOUT_MS } from '../../../server/plugins/host/workerPool'
-import { DEFAULT_PLUGIN_FETCH_TIMEOUT_MS } from '../../../server/plugins/host/network'
-import { PLUGIN_CALL_BUDGET_MS } from '../../../server/plugins/quickjs/limits'
+import { DEFAULT_PLUGIN_FETCH_TIMEOUT_MS, PLUGIN_CALL_BUDGET_MS } from '../../../server/plugins/quickjs/limits'
 
 function makeEnv(pluginId: string): PluginVmEnv {
   return {
@@ -182,6 +181,52 @@ describe('plugin sandbox: wall-clock call budget', () => {
     } finally {
       vm.dispose()
     }
+  }, 10_000)
+
+  it('cuts an outbound request timeout down to the time left in the call', async () => {
+    const fetches: Array<Record<string, unknown>> = []
+    const env = makeEnv('acme.clamp')
+    env.grantedPermissions = ['cms.schedule', 'network.outbound']
+    env.hostCall = async (target, args) => {
+      if (target === 'network.fetch') {
+        fetches.push(args[1] as Record<string, unknown>)
+        return { status: 200, ok: true, headers: {}, body: 'ok', bodyEncoding: 'utf8' }
+      }
+      return null
+    }
+    const vm = await createPluginVm({
+      env,
+      callBudgetMs: 2_000,
+      pluginSource: `
+        ;(function () {
+          const __plugin_exports = (globalThis.__plugin_exports = {});
+          __plugin_exports.activate = async function activate(api) {
+            api.cms.schedule.every(5, 'job', async function () {
+              await fetch('https://api.example.com/c', { timeout: 250000 });
+            });
+          };
+          __plugin_exports.install = async function install() {
+            await fetch('https://api.example.com/a', { timeout: 60000 });
+            await fetch('https://api.example.com/b', { timeout: 300 });
+          };
+        })();
+      `,
+    })
+    try {
+      await vm.runLifecycle('install')
+      await vm.runLifecycle('activate')
+      await vm.runSchedule('acme.clamp.job', 1_000)
+    } finally {
+      vm.dispose()
+    }
+    const [long, short, scheduled] = fetches.map((init) => init.timeoutMs as number)
+    // Longer than the call may run: cut to what is left of its 2 s.
+    expect(long).toBeGreaterThan(0)
+    expect(long).toBeLessThanOrEqual(2_000)
+    // Shorter than what is left: kept.
+    expect(short).toBe(300)
+    // A schedule's remainder is its own maxDurationMs.
+    expect(scheduled).toBeLessThanOrEqual(1_000)
   }, 10_000)
 
   it('keeps the budget below the worker RPC timeout, with room for one timed-out request', () => {

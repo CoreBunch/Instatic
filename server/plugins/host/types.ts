@@ -94,6 +94,14 @@ export type CrashRecoveryDecision =
   | { kind: 'give-up'; recentCrashCount: number }
 
 /**
+ * Why a plugin's worker was torn down: it died or stopped answering
+ * (`crash`), or one of its calls ran out of its wall-clock budget and the
+ * host stopped the worker so the abandoned handler could not run on
+ * (`overrun`). Each is counted in its own sliding window.
+ */
+export type WorkerTeardownCause = 'crash' | 'overrun'
+
+/**
  * Callback the runtime registers so the worker host can ask it to re-load +
  * re-activate a plugin after an auto-respawn (or a manual restart). The
  * runtime owns the on-disk asset path resolution and lifecycle ordering;
@@ -102,5 +110,6 @@ export type CrashRecoveryDecision =
 export type CrashRecoveryHandler = (args: {
   pluginId: string
   reason: string
+  cause: WorkerTeardownCause
   decision: CrashRecoveryDecision
 }) => Promise<void>

@@ -96,6 +96,8 @@ export interface LoadPluginRequest {
   /** Settings snapshot — populated into the worker's local cache so
    *  `settings.get` can resolve synchronously inside the plugin code. */
   settings: PluginSettingsValues
+  /** Wall-clock budget per call, when not the default. Tests shorten it. */
+  callBudgetMs?: number
 }
 
 export interface UnloadPluginRequest {
@@ -266,6 +268,12 @@ export interface ApiReply {
   ok: boolean
   value?: unknown
   error?: string
+  /**
+   * Set on a failure the sandbox must tell apart from any other (today:
+   * `'fetch_timeout'`). It becomes the `code` of the error the plugin's
+   * awaited call rejects with.
+   */
+  code?: string
 }
 
 // ---------------------------------------------------------------------------
@@ -286,7 +294,19 @@ export type WorkerToMainMessage =
   | MediaAdapterCallResult
   | MediaUrlTransformerResult
   | ApiCall
+  | CallOverrun
   | WorkerLogEvent
+
+/**
+ * A plugin call ran out of its wall-clock budget. Sent after that call's own
+ * failure result. The host restarts the plugin's worker so the abandoned
+ * handler cannot run on (`handleWorkerCrash` with cause `'overrun'`).
+ */
+export interface CallOverrun {
+  kind: 'call-overrun'
+  pluginId: string
+  reason: string
+}
 
 export interface LoadPluginResult {
   kind: 'load-plugin-result'

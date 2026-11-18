@@ -1630,6 +1630,28 @@ describe('CMS plugin handlers', () => {
     clearPluginCrashCounter(id)
   })
 
+  it('overruns are counted apart from crashes and park the plugin at five in 5min', async () => {
+    const { recordCrashAndDecide, clearPluginCrashCounter } = await import(
+      '../../../server/plugins/host/crashRecovery'
+    )
+    const id = `test.overrun.${Date.now()}`
+    const t0 = 1_000_000_000_000
+
+    // Two crashes do not bring an overrun any closer to the limit.
+    recordCrashAndDecide(id, t0, 'crash')
+    recordCrashAndDecide(id, t0 + 1, 'crash')
+    const decisions = [1, 2, 3, 4, 5].map((n) => recordCrashAndDecide(id, t0 + 1000 * n, 'overrun'))
+    expect(decisions.slice(0, 4).map((d) => d.kind)).toEqual(['respawn', 'respawn', 'respawn', 'respawn'])
+    expect(decisions[4]).toEqual({ kind: 'give-up', recentCrashCount: 5 })
+
+    // The crash window is still its own: a third crash is what parks on crashes.
+    expect(recordCrashAndDecide(id, t0 + 7000, 'crash')).toEqual({ kind: 'give-up', recentCrashCount: 3 })
+
+    clearPluginCrashCounter(id)
+    expect(recordCrashAndDecide(id, t0 + 8000, 'overrun')).toEqual({ kind: 'respawn', recentCrashCount: 1 })
+    clearPluginCrashCounter(id)
+  })
+
   // ─── Manual restart endpoint ──────────────────────────────────────────────
 
   it('POST /restart resets crash counter, drops crash events, and re-activates the plugin', async () => {

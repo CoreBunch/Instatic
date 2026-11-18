@@ -20,6 +20,7 @@
  * `protocol/bodyEncoding.ts`).
  */
 
+import { DEFAULT_PLUGIN_FETCH_TIMEOUT_MS } from '../quickjs/limits'
 import { isIP } from 'node:net'
 import { lookup } from 'node:dns/promises'
 import ipaddr from 'ipaddr.js'
@@ -317,12 +318,11 @@ async function guardedFetchWithTrace(
     // connection to the checked IP. Bun is told not to follow redirects, so an
     // allowlisted host can never bounce us to a private/internal target, and
     // the pin closes the check-then-connect DNS-rebinding gap (SSRF).
-    const { url: parsed, pinnedIp } = await assertOutboundAllowed(
-      opts.allowlist,
-      currentUrl,
-      resolveHost,
-      label,
-      opts.requireHttps ?? false,
+    // DNS has no cancellation of its own, so the check is raced against the
+    // caller's signal: a resolver that stalls ends with the request.
+    const { url: parsed, pinnedIp } = await untilAborted(
+      assertOutboundAllowed(opts.allowlist, currentUrl, resolveHost, label, opts.requireHttps ?? false),
+      opts.signal,
     )
     const request = buildPinnedRequest(parsed, pinnedIp, headers)
 
@@ -387,24 +387,37 @@ async function guardedFetchWithTrace(
 }
 
 /**
- * How long one plugin request may take when the plugin sets no `timeout`:
- * every redirect hop and the whole response body included. Without it a
- * stalled upstream held the plugin's call (and a server connection) open
- * until something else gave up. 15 s leaves room inside the 20 s call budget
- * (`PLUGIN_CALL_BUDGET_MS`) for the handler to react to the failure.
- */
-export const DEFAULT_PLUGIN_FETCH_TIMEOUT_MS = 15_000
-
-/**
- * A plugin request that ran out of time. The message reaches the plugin as
- * the rejection of its `fetch`, where the sandbox shim names it
- * `TimeoutError`.
+ * A plugin request that ran out of time. It reaches the plugin as the
+ * rejection of its `fetch`; the sandbox shim names it `TimeoutError` from
+ * the `code`.
  */
 export class PluginFetchTimeoutError extends Error {
+  /** Travels on the api-reply so the sandbox can name the error. */
+  readonly code = 'fetch_timeout'
+
   constructor(pluginId: string, timeoutMs: number, cause: unknown) {
     super(`Plugin "${pluginId}" fetch timed out after ${timeoutMs}ms`, { cause })
     this.name = 'PluginFetchTimeoutError'
   }
+}
+
+function abortError(): DOMException {
+  return new DOMException('The operation was aborted', 'AbortError')
+}
+
+function isAbortError(err: unknown): boolean {
+  return err instanceof Error && err.name === 'AbortError'
+}
+
+/** Settle with `work`, or reject with an `AbortError` as soon as `signal` aborts. */
+function untilAborted<T>(work: Promise<T>, signal: AbortSignal | undefined): Promise<T> {
+  if (!signal) return work
+  if (signal.aborted) return Promise.reject(abortError())
+  return new Promise<T>((resolve, reject) => {
+    const onAbort = (): void => reject(abortError())
+    signal.addEventListener('abort', onAbort, { once: true })
+    work.then(resolve, reject).finally(() => signal.removeEventListener('abort', onAbort))
+  })
 }
 
 /**
@@ -424,13 +437,13 @@ async function readBodyBytes(response: Response, signal: AbortSignal): Promise<U
     const chunks: Uint8Array[] = []
     let total = 0
     for (;;) {
-      if (signal.aborted) throw new DOMException('The operation was aborted', 'AbortError')
+      if (signal.aborted) throw abortError()
       const { done, value } = await reader.read()
       if (done) break
       chunks.push(value)
       total += value.byteLength
     }
-    if (signal.aborted) throw new DOMException('The operation was aborted', 'AbortError')
+    if (signal.aborted) throw abortError()
     const bytes = new Uint8Array(total)
     let offset = 0
     for (const chunk of chunks) {
@@ -513,7 +526,10 @@ export async function performGatedFetch(
       ...encodeBodyBytes(bytes),
     }
   } catch (err) {
-    if (timedOut) throw new PluginFetchTimeoutError(manifest.id, timeoutMs, err)
+    // Only a cancellation is the timeout. A refusal (allowlist, blocked
+    // address) that happens to land after the timer fired is still reported
+    // as the refusal it is.
+    if (timedOut && isAbortError(err)) throw new PluginFetchTimeoutError(manifest.id, timeoutMs, err)
     throw err
   } finally {
     clearTimeout(timeoutTimer)

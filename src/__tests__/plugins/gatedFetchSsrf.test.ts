@@ -2,12 +2,12 @@ import { describe, test, expect } from 'bun:test'
 import { readFileSync } from 'node:fs'
 import { Value } from '@sinclair/typebox/value'
 import {
-  DEFAULT_PLUGIN_FETCH_TIMEOUT_MS,
   PluginFetchTimeoutError,
   guardedFetch,
   performGatedFetch,
   isBlockedAddress,
 } from '../../../server/plugins/host/network'
+import { DEFAULT_PLUGIN_FETCH_TIMEOUT_MS } from '../../../server/plugins/quickjs/limits'
 import { NetworkFetchInitSchema } from '../../../server/plugins/protocol/schemas/network'
 import type { HostPluginRecord } from '../../../server/plugins/host/types'
 
@@ -638,6 +638,41 @@ describe('performGatedFetch — request timeout', () => {
       },
     )
     expect(res.body).toBe('OK')
+  })
+
+  test('times out a DNS lookup that stalls', async () => {
+    let connected = false
+    const failure = await performGatedFetch(
+      makeEntry(['api.example.com']),
+      'https://api.example.com/data',
+      { timeoutMs: 30 },
+      {
+        fetchImpl: (async () => { connected = true; return new Response('late') }) as unknown as typeof fetch,
+        resolveHostAddresses: () => new Promise<string[]>(() => { /* never answers */ }),
+      },
+    ).catch((err: unknown) => err)
+    expect(failure).toBeInstanceOf(PluginFetchTimeoutError)
+    expect((failure as PluginFetchTimeoutError).code).toBe('fetch_timeout')
+    expect(connected).toBe(false)
+  })
+
+  test('reports a refusal as the refusal even when the timer has fired', async () => {
+    // The resolver answers, late, with a blocked address. The timer fires
+    // while it blocks the thread, so both have happened by the time the
+    // request fails: the refusal is the truth.
+    const slowBlocked = async (): Promise<string[]> => {
+      const until = Date.now() + 60
+      while (Date.now() < until) { /* hold the thread past the 20 ms timeout */ }
+      return ['127.0.0.1']
+    }
+    const failure = await performGatedFetch(
+      makeEntry(['api.example.com']),
+      'https://api.example.com/data',
+      { timeoutMs: 20 },
+      { fetchImpl: scriptedFetch({}), resolveHostAddresses: slowBlocked },
+    ).catch((err: unknown) => err)
+    expect(failure).not.toBeInstanceOf(PluginFetchTimeoutError)
+    expect((failure as Error).message).toMatch(/blocked|private|not allowed|internal/i)
   })
 
   test('defaults the timeout to 15 seconds', () => {

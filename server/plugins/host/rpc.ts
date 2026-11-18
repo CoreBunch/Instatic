@@ -19,6 +19,7 @@ import type { SerializedMember, SerializedUser } from '../protocol/messages'
 import type { LoadPluginResult } from '../protocol/messages'
 import { normalizeRoutePath } from '../protocol/parser'
 import { materializeRouteResponse, serializeRouteRequest } from './routeIo'
+import { isPluginRestarting, PluginWorkerRestartedError } from './crashRecovery'
 import { hostPlugins } from './registry'
 import { requestFromWorker } from './workerPool'
 import { describeWorkerError, workerCallError } from './workerErrors'
@@ -39,6 +40,8 @@ export async function loadPluginInWorker(args: {
   entryFileUrl: string
   assetRootPath: string
   settings: PluginSettingsValues
+  /** Wall-clock budget per call, when not the default. Tests shorten it. */
+  callBudgetMs?: number
 }): Promise<LoadPluginResult> {
   // Clear any prior host-side state for this plugin id — hook listeners,
   // loop sources, route entries — so a re-load (e.g. install → activate
@@ -76,6 +79,7 @@ export async function loadPluginInWorker(args: {
       manifest: args.manifest,
       entryFileUrl: args.entryFileUrl,
       settings: args.settings,
+      ...(args.callBudgetMs !== undefined ? { callBudgetMs: args.callBudgetMs } : {}),
     },
     'load-plugin-result',
   )
@@ -192,7 +196,7 @@ export async function runRouteInWorker(args: {
   const entry = hostPlugins.get(args.pluginId)
   const routeKey = `${args.method.toUpperCase()}:${normalizeRoutePath(args.path)}`
   const route = entry?.routes.get(routeKey)
-  if (!route) return new Response('Plugin route not found', { status: 404 })
+  if (!route) return pluginRestartingResponse(args.pluginId) ?? new Response('Plugin route not found', { status: 404 })
 
   // Byte-safe request (de)serialization lives in routeIo.ts — the body is
   // read once as raw bytes, pre-parsed conveniences (JSON / form fields /
@@ -200,31 +204,59 @@ export async function runRouteInWorker(args: {
   // payloads cross the worker boundary base64-encoded.
   const { request: serializedReq, body: parsedBody } = await serializeRouteRequest(args.request)
 
-  const result = await requestFromWorker(
-    args.pluginId,
-    {
-      kind: 'run-route',
-      correlationId: nanoid(),
-      pluginId: args.pluginId,
-      routeKey,
-      request: serializedReq,
-      user: args.user,
-      member: args.member,
-      body: parsedBody,
-    },
-    'route-result',
-  )
+  const requestRoute = () =>
+    requestFromWorker(
+      args.pluginId,
+      {
+        kind: 'run-route',
+        correlationId: nanoid(),
+        pluginId: args.pluginId,
+        routeKey,
+        request: serializedReq,
+        user: args.user,
+        member: args.member,
+        body: parsedBody,
+      },
+      'route-result',
+    )
+  let result: Awaited<ReturnType<typeof requestRoute>>
+  try {
+    result = await requestRoute()
+  } catch (err) {
+    // Another call of this plugin overran its budget and the host restarted
+    // the worker under this one. How far this handler got is unknown.
+    if (err instanceof PluginWorkerRestartedError) return retryLater(err.message)
+    throw err
+  }
   if (!result.ok || !result.response) {
     // VM stacks stay in the server log — the HTTP body carries only the message.
     console.error(
       `[plugin:${args.pluginId}] route "${routeKey}" handler failed:`,
       describeWorkerError(result.error, result.stack, 'Plugin route failed'),
     )
-    // A handler that ran out of its call budget is a gateway timeout, not a
-    // server fault: the worker is healthy and its other calls carried on.
+    // A handler that ran out of its call budget is a gateway timeout: how
+    // far it got is unknown, and the host is restarting the plugin's worker
+    // so it cannot run on. The caller may retry.
     return Response.json({ error: result.error ?? 'Plugin route failed' }, { status: result.timedOut ? 504 : 500 })
   }
   return materializeRouteResponse(result.response)
+}
+
+/** How long a caller should wait before retrying a restarting plugin. */
+const RESTART_RETRY_AFTER_SECONDS = 2
+
+function retryLater(error: string): Response {
+  return Response.json({ error }, { status: 503, headers: { 'retry-after': String(RESTART_RETRY_AFTER_SECONDS) } })
+}
+
+/**
+ * The answer for a route of a plugin whose worker is being restarted, or
+ * `null` when it is not. During the restart the plugin has no registered
+ * routes, and "not found" would tell a retrying caller (a webhook sender)
+ * to give up.
+ */
+export function pluginRestartingResponse(pluginId: string): Response | null {
+  return isPluginRestarting(pluginId) ? retryLater(`Plugin "${pluginId}" is restarting. Try again.`) : null
 }
 
 function getRegisteredRoute(

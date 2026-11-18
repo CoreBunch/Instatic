@@ -48,6 +48,16 @@ export const DEFAULT_EVAL_TIMEOUT_MS = 5_000
 export const PLUGIN_CALL_BUDGET_MS = 20_000
 
 /**
+ * How long one plugin `fetch` may take when the plugin sets no `timeout`:
+ * DNS, every redirect hop and the whole response body included. Below the
+ * call budget, so a handler waiting on one stalled upstream gets the
+ * rejection in time to answer; a call that still overruns its budget is
+ * misbehaving, and the host restarts the plugin's worker (see
+ * `handleWorkerCrash` with cause `'overrun'`).
+ */
+export const DEFAULT_PLUGIN_FETCH_TIMEOUT_MS = 15_000
+
+/**
  * 2 second wall-clock deadline per module-pack eval call. Shorter than the
  * full-plugin budget because canvas `render()` / `preview()` functions are
  * simple synchronous transforms with no host I/O — 2 s is still generous.
