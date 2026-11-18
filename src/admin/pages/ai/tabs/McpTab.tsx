@@ -35,9 +35,9 @@ import {
   availableMcpCapabilityGroups,
   defaultMcpReadCapabilities,
 } from './mcpCapabilities'
-import { AiSettingsListSection } from '../AiSettingsListSection'
+import { SettingsListSection } from '@admin/shared/SettingsWorkspace/SettingsListSection'
 import dialogStyles from '../../../shared/dialogs/SiteCreateDialog/SiteCreateDialog.module.css'
-import styles from '../AiPage.module.css'
+import styles from '@admin/shared/SettingsWorkspace/SettingsWorkspace.module.css'
 import mcpStyles from './McpTab.module.css'
 
 const TTL_OPTIONS: Array<{ value: string; label: string }> = [
@@ -112,7 +112,7 @@ export function McpTab() {
 
         <div className={styles.settingsBrowserSections}>
           {(loading || connections.length > 0) && (
-            <AiSettingsListSection label="Authorized">
+            <SettingsListSection label="Authorized">
               {loading && connections.length === 0 ? (
                 <p className={styles.settingsBrowserEmpty}>Loading connections…</p>
               ) : (
@@ -146,10 +146,10 @@ export function McpTab() {
                   )
                 })
               )}
-            </AiSettingsListSection>
+            </SettingsListSection>
           )}
 
-          <AiSettingsListSection label="Add connection">
+          <SettingsListSection label="Add connection">
             {(['oauth', 'token'] as const).map((mode) => {
               const active = effectiveSelection.kind === 'setup' && effectiveSelection.mode === mode
               const oauth = mode === 'oauth'
@@ -179,7 +179,7 @@ export function McpTab() {
                 </Button>
               )
             })}
-          </AiSettingsListSection>
+          </SettingsListSection>
         </div>
       </aside>
 

@@ -73,6 +73,7 @@ const adminCapabilities: CoreCapability[] = [
   'users.manage',
   // `roles.manage` is owner-only by design — admin cannot grant capabilities.
   'audit.read',
+  'mail.manage',
   'data.custom.tables.read',
   'data.custom.tables.manage',
   'data.system.tables.read',

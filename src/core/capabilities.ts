@@ -60,6 +60,8 @@ export const CORE_CAPABILITIES = [
   'users.manage',
   'roles.manage',
   'audit.read',
+  // Outgoing mail: the SMTP account every account email is sent through.
+  'mail.manage',
   // Data workspace — split from `content.manage`, and further split
   // system-vs-custom so a persona (e.g. "client") can see/manage custom tables
   // without ever seeing the internal system tables (posts/pages/components/
