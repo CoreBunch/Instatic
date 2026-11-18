@@ -33,8 +33,15 @@ import {
 import { ConflictsStep } from '@admin/modals/SiteImport/steps/ConflictsStep'
 import { AnalyzeStep } from '@admin/modals/SiteImport/steps/AnalyzeStep'
 import { SiteImportModal } from '@admin/modals/SiteImport'
+import {
+  filterPlanBySelection as filterPlanByRealSelection,
+  isGoogleFontRequested,
+  makeDefaultSelection as makeRealDefaultSelection,
+  selectedImportCount,
+} from '@admin/modals/SiteImport/shared/importPlanning'
 import type { ImportSelection } from '@admin/modals/SiteImport'
-import { commitImportPlan } from '@core/siteImport'
+import { buildImportPlan, commitImportPlan } from '@core/siteImport'
+import { makeEmptySiteDocument } from '../../siteImport/mockSite'
 import { pageToCells } from '@core/data/pageFromRow'
 import { BUNDLE_ARCHIVE_MANIFEST_PATH } from '@core/data/bundleArchive'
 import { CORE_CAPABILITIES } from '@core/capabilities'
@@ -110,7 +117,6 @@ function makeMinimalPlan(overrides: Partial<ImportPlan> = {}): ImportPlan {
     conflicts: overrides.conflicts ?? { pages: [], rules: [], tokens: [], crossSheetClasses: [] },
     warnings: overrides.warnings ?? [],
     droppedAtRules: overrides.droppedAtRules ?? [],
-    unusedCss: overrides.unusedCss ?? [],
   }
 }
 
@@ -2593,5 +2599,200 @@ describe('SiteImportModal — a static run with a failed upload', () => {
     } finally {
       unsubscribe()
     }
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Stylesheets no page links, and plugin packages
+// ---------------------------------------------------------------------------
+
+describe('SiteImportModal — importing a stylesheet with no page', () => {
+  it('imports a lone stylesheet as a site stylesheet applied to every page', async () => {
+    globalThis.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+      if (url === '/admin/api/cms/site-document' && init?.method === 'PUT') {
+        return jsonResponse({ ok: true, seq: 1 })
+      }
+      return jsonResponse({ error: `Unexpected request: ${url}` }, 500)
+    }
+    useEditorStore.setState({ site: makeSite() } as Parameters<typeof useEditorStore.setState>[0])
+    useAdminUi.getState().openSiteImport()
+    render(<SiteImportHarness />)
+
+    const cssFile = new File(['.members-card { padding: 24px; }'], 'members-starter.css', { type: 'text/css' })
+    fireEvent.drop(screen.getByLabelText(/drop site files/i), { dataTransfer: { files: [cssFile] } })
+
+    expect(await screen.findByText('Review import')).toBeDefined()
+    // The Review step opens on the styles pane and says what happens to the file.
+    expect(screen.getByText('members-starter.css')).toBeDefined()
+    expect(screen.getByText(/added to the code panel as a site stylesheet, applied to every page/i)).toBeDefined()
+    // Nothing is reported as un-importable.
+    expect(screen.queryByText(/isn.t linked by any imported page/i)).toBeNull()
+
+    const continueButton = screen.getByRole('button', { name: /continue/i })
+    expect((continueButton as HTMLButtonElement).disabled).toBe(false)
+    fireEvent.click(continueButton)
+
+    expect(await screen.findByText('Import complete')).toBeDefined()
+    const site = useEditorStore.getState().site!
+    const file = site.files.find((f) => f.path === 'members-starter.css')
+    expect(file?.type).toBe('style')
+    expect(file?.content).toBe('.members-card { padding: 24px; }')
+    expect(site.runtime?.styles[file!.id]).toEqual({ enabled: true, scope: { type: 'all-pages' }, priority: 100 })
+  })
+
+  it('disables Continue with the reason once the only stylesheet is switched off', async () => {
+    useEditorStore.setState({ site: makeSite() } as Parameters<typeof useEditorStore.setState>[0])
+    useAdminUi.getState().openSiteImport()
+    render(<SiteImportHarness />)
+
+    const cssFile = new File(['.members-card { padding: 24px; }'], 'members-starter.css', { type: 'text/css' })
+    fireEvent.drop(screen.getByLabelText(/drop site files/i), { dataTransfer: { files: [cssFile] } })
+    expect(await screen.findByText('Review import')).toBeDefined()
+
+    fireEvent.click(screen.getByRole('switch', { name: 'Import stylesheet members-starter.css' }))
+
+    expect(screen.getByText('Left out of this import')).toBeDefined()
+    expect(screen.getByText('Nothing is selected to import')).toBeDefined()
+    expect((screen.getByRole('button', { name: /continue/i }) as HTMLButtonElement).disabled).toBe(true)
+  })
+})
+
+describe('makeDefaultSelection — stylesheets no page links', () => {
+  const unlinkedSheet = { path: 'css/rtl.css', content: '.rtl { direction: rtl; }', pageSources: [], priority: 100 }
+  const page = {
+    source: 'index.html',
+    title: 'Home',
+    slug: 'index',
+    linkedCssPaths: [],
+    scripts: [],
+    nodeFragment: { nodes: {}, rootIds: [] },
+  }
+
+  it('includes them when the import has no pages', () => {
+    const selection = makeRealDefaultSelection(makeMinimalPlan({ stylesheets: [unlinkedSheet] }))
+    expect([...selection.stylesheetsIncluded]).toEqual(['css/rtl.css'])
+  })
+
+  it('offers them switched off when the import has pages that never loaded them', () => {
+    const selection = makeRealDefaultSelection(makeMinimalPlan({ pages: [page], stylesheets: [unlinkedSheet] }))
+    expect(selection.stylesheetsIncluded.size).toBe(0)
+  })
+
+  it('filterPlanBySelection keeps an included site-wide sheet even with every page deselected', () => {
+    const plan = makeMinimalPlan({ pages: [page], stylesheets: [unlinkedSheet] })
+    const filtered = filterPlanByRealSelection(plan, {
+      ...makeRealDefaultSelection(plan),
+      pagesIncluded: new Set(),
+      stylesheetsIncluded: new Set(['css/rtl.css']),
+    })
+    expect(filtered.stylesheets).toEqual([unlinkedSheet])
+  })
+})
+
+describe('Google fonts only a switched-off stylesheet requests', () => {
+  const FONT_IMPORT = '@import url("https://fonts.googleapis.com/css2?family=Manrope:wght@400;700&display=swap");'
+  const encoder = new TextEncoder()
+  const text = (source: string, mimeType: string) => ({ bytes: encoder.encode(source), mimeType })
+
+  // A template: one page linking site.css, plus an rtl.css no page links.
+  function templatePlan(siteCss: string, rtlCss: string): ImportPlan {
+    return buildImportPlan({
+      fileMap: {
+        files: {
+          'index.html': text('<html><head><link rel="stylesheet" href="site.css"></head><body><p class="lead">Hi</p></body></html>', 'text/html'),
+          'site.css': text(siteCss, 'text/css'),
+          'rtl.css': text(rtlCss, 'text/css'),
+        },
+      },
+      currentSite: makeEmptySiteDocument(),
+    })
+  }
+
+  it('leaves out a font only the switched-off sheet @imports, and shows it off', () => {
+    const plan = templatePlan('.lead { color: red; }', `${FONT_IMPORT}\n.rtl { direction: rtl; }`)
+    expect(plan.googleFonts.map((f) => [f.family, f.requestedByConvertedCss, f.stylesheetPaths])).toEqual([
+      ['Manrope', false, ['rtl.css']],
+    ])
+
+    const selection = makeRealDefaultSelection(plan)
+    expect(selection.stylesheetsIncluded.has('rtl.css')).toBe(false)
+    expect(isGoogleFontRequested(plan, selection, plan.googleFonts[0])).toBe(false)
+    expect(filterPlanByRealSelection(plan, selection).googleFonts).toEqual([])
+  })
+
+  it('brings the font back when the user switches the sheet on', () => {
+    const plan = templatePlan('.lead { color: red; }', `${FONT_IMPORT}\n.rtl { direction: rtl; }`)
+    const selection = { ...makeRealDefaultSelection(plan), stylesheetsIncluded: new Set(['rtl.css']) }
+
+    expect(filterPlanByRealSelection(plan, selection).googleFonts.map((f) => f.family)).toEqual(['Manrope'])
+  })
+
+  it('keeps a font the page also requests through its own stylesheet', () => {
+    const plan = templatePlan(`${FONT_IMPORT}\n.lead { color: red; }`, `${FONT_IMPORT}\n.rtl { direction: rtl; }`)
+    expect(plan.googleFonts.map((f) => [f.family, f.requestedByConvertedCss, f.stylesheetPaths])).toEqual([
+      ['Manrope', true, ['rtl.css']],
+    ])
+
+    const filtered = filterPlanByRealSelection(plan, makeRealDefaultSelection(plan))
+    expect(filtered.googleFonts.map((f) => f.family)).toEqual(['Manrope'])
+  })
+
+  it('does not count a left-out font as something to import', () => {
+    const plan = buildImportPlan({
+      fileMap: { files: { 'rtl.css': text(`${FONT_IMPORT}\n.rtl { direction: rtl; }`, 'text/css') } },
+      currentSite: makeEmptySiteDocument(),
+    })
+    const selection = { ...makeRealDefaultSelection(plan), stylesheetsIncluded: new Set<string>() }
+
+    expect(selectedImportCount(plan, selection)).toBe(0)
+  })
+})
+
+describe('SiteImportModal — a dropped plugin package', () => {
+  function dropPluginZip() {
+    const zip = zipSync({
+      'plugin.json': strToU8(JSON.stringify({ id: 'acme.members-starter', name: 'Members Starter' })),
+      'pack/site.json': strToU8('{}'),
+      'frontend/members-starter.css': strToU8('.members-card { padding: 24px; }'),
+    })
+    const file = new File([zip], 'members-starter.zip', { type: 'application/zip' })
+    fireEvent.drop(screen.getByLabelText(/drop site files/i), { dataTransfer: { files: [file] } })
+  }
+
+  it('stays on the Drop step, says it is a plugin, and offers the Plugins page', async () => {
+    useEditorStore.setState({ site: makeSite() } as Parameters<typeof useEditorStore.setState>[0])
+    useAdminUi.getState().openSiteImport()
+    render(<SiteImportHarness />)
+
+    dropPluginZip()
+
+    expect(await screen.findByText('Members Starter is a plugin, not a site')).toBeDefined()
+    expect(screen.getByText(/plugins are installed from the plugins page/i)).toBeDefined()
+    // Not analysed as a static site: no Review step, no dropped stylesheet.
+    expect(screen.queryByText('Review import')).toBeNull()
+    expect(screen.getByText('Import site')).toBeDefined()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Go to Plugins' }))
+    expect(useAdminUi.getState().siteImportOpen).toBe(false)
+  })
+})
+
+describe('DropStep — plugin package notice', () => {
+  it('disables the Plugins button and says why when the role cannot install plugins', () => {
+    render(
+      <DropStep
+        busy={false}
+        errorMessage={null}
+        pluginPackage={{ fileName: 'members-starter.zip', name: null }}
+        canInstallPlugins={false}
+        onOpenPlugins={() => {}}
+        onFilesReady={() => {}}
+        onZipReady={() => {}}
+      />,
+    )
+    expect(screen.getByText('members-starter.zip is a plugin, not a site')).toBeDefined()
+    expect(screen.getByText(/your role can.t install them/i)).toBeDefined()
+    expect((screen.getByRole('button', { name: 'Go to Plugins' }) as HTMLButtonElement).disabled).toBe(true)
   })
 })

@@ -202,7 +202,9 @@ async function installPlanGoogleFonts(
   for (const font of plan.googleFonts) {
     signal?.throwIfAborted()
     try {
-      installedGoogleFonts.push(await adapter.installGoogleFont(font))
+      // Only the request goes to the installer; provenance is planning-only.
+      const { family, variants, subsets } = font
+      installedGoogleFonts.push(await adapter.installGoogleFont({ family, variants, subsets }))
     } catch (err) {
       if (isAbortError(err)) throw err
       const reason = err instanceof Error ? err.message : 'Unknown font install error'

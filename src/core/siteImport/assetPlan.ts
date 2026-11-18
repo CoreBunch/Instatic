@@ -69,15 +69,16 @@ export interface CssFileResult {
 }
 
 /**
- * A stylesheet kept as a file (`mode: 'file'`), pre-flattening. Each part is
+ * A stylesheet imported as a file (kept `mode: 'file'`, or unlinked and
+ * site-wide), pre-flattening. Each part is
  * one source file of the sheet's expanded `@import` graph, in cascade order —
  * kept separate until url() normalisation because relative `url(...)` paths
  * resolve against the PART's own directory, not the top-level sheet's.
  */
 export interface RawStylesheetSource {
-  /** FileMap key of the top-level linked CSS file. */
+  /** FileMap key of the top-level CSS file. */
   path: string
-  /** HTML FileMap sources that linked this stylesheet. */
+  /** HTML FileMap sources that linked this stylesheet. Empty for an unlinked, site-wide sheet. */
   pageSources: string[]
   /** Cascade ordering within the user-stylesheet bundle. */
   priority: number
