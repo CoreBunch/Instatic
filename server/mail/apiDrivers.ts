@@ -56,6 +56,14 @@ function describeFailure(provider: string, status: number, reason: string): stri
  */
 type Classify = (status: number, json: unknown) => MailRetry | undefined
 
+/**
+ * A 403 whose own text names the recipient is that recipient's: a blocked,
+ * suppressed, unsubscribed or bounced address, or one a testing account may
+ * not write to. It must never count towards pausing the connector.
+ */
+const RECIPIENT_REFUSAL_TEXT =
+  /\b(recipients?|suppress\w*|unsubscrib\w*|bounced?|blocklist\w*|blacklist\w*|testing emails|your own email address|not allowed to send to|inactive)\b/i
+
 /** Send the request and hand back the parsed JSON answer of a success. */
 async function post(
   request: ApiRequest,
@@ -86,8 +94,14 @@ async function post(
   if (res.ok) return json
   console.error(`[mail] ${request.provider} delivery failed (HTTP ${res.status})`)
   throw new MailDeliveryError(describeFailure(request.provider, res.status, shortReason(readError(json))), {
-    retry: classify(res.status, json) ?? retryForHttpStatus(res.status),
+    retry: classify(res.status, json) ?? retryForBareStatus(res.status, readError(json) ?? ''),
   })
+}
+
+/** What the status says when the provider's error code did not settle it. */
+function retryForBareStatus(status: number, message: string): MailRetry {
+  if (status === 403 && RECIPIENT_REFUSAL_TEXT.test(message)) return 'never'
+  return retryForHttpStatus(status)
 }
 
 function field<T extends TSchema>(schema: T, json: unknown, read: (value: Static<T>) => string | undefined): string | undefined {
@@ -109,9 +123,15 @@ const RESEND_KEY_ERRORS = new Set(['missing_api_key', 'invalid_api_key', 'restri
  * verified and "you can only send testing emails to your own address",
  * which is one recipient's.
  */
+/** Resend's rate and quota errors: the account as a whole must slow down. */
+const RESEND_THROTTLE_ERRORS = new Set(['rate_limit_exceeded', 'daily_quota_exceeded', 'monthly_quota_exceeded'])
+
 export const classifyResendError: Classify = (_status, json) => {
   const name = field(ResendErrorSchema, json, (value) => value.name)
-  return name !== undefined && RESEND_KEY_ERRORS.has(name) ? 'connector' : undefined
+  if (name === undefined) return undefined
+  if (RESEND_KEY_ERRORS.has(name)) return 'connector'
+  if (RESEND_THROTTLE_ERRORS.has(name)) return 'slow-down'
+  return undefined
 }
 
 export async function sendViaResend(apiKey: string, sender: ApiSender, mail: OutgoingMail, deps: ApiDeps = {}): Promise<string | null> {
@@ -250,7 +270,10 @@ const BREVO_ACCOUNT_CODES = new Set(['unauthorized', 'account_under_validation',
 
 export const classifyBrevoError: Classify = (_status, json) => {
   const code = field(BrevoErrorSchema, json, (value) => value.code)
-  return code !== undefined && BREVO_ACCOUNT_CODES.has(code) ? 'connector' : undefined
+  if (code === undefined) return undefined
+  if (BREVO_ACCOUNT_CODES.has(code)) return 'connector'
+  if (code === 'too_many_requests') return 'slow-down'
+  return undefined
 }
 
 export async function sendViaBrevo(

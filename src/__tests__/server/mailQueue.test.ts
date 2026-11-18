@@ -324,15 +324,16 @@ describe('mail queue', () => {
         if (!providerUp) throw new MailDeliveryError('Could not connect to the SMTP server.', { retry: 'later' })
         return null
       }
-      // Tried at 0, 30 s, 2.5 min and 12.5 min; the next try would be past the 15 minutes.
+      // Passes two minutes apart: tried at 0, 2 and 4 minutes. The next try, ten
+      // minutes on, would leave the link under a minute of life, so it is not made.
       for (let round = 0; round < 12 && (await queueRows()).length > 0; round += 1) {
         await drain(carrier)
         now += 2 * MINUTE
       }
       expect(await queueRows()).toHaveLength(0)
-      expect(calls).toBe(4)
+      expect(calls).toBe(3)
       const entry = (await listMailActivity(h.db)).entries[0]
-      expect(entry).toMatchObject({ status: 'failed', attempts: 4 })
+      expect(entry).toMatchObject({ status: 'failed', attempts: 3 })
       expect(entry.error).toBe(
         'Not sent: the time in which this email was of use ran out before it could be delivered. Last error: Could not connect to the SMTP server.',
       )
@@ -341,7 +342,18 @@ describe('mail queue', () => {
       providerUp = true
       now += 20 * HOUR
       await drain(carrier)
-      expect(calls).toBe(4)
+      expect(calls).toBe(3)
+    })
+
+    it('does not send a link with less than a minute of life left', async () => {
+      await readyConnector()
+      await queueTemplateMail(h.db, { ...MAIL, deliverBefore: now + 15 * MINUTE })
+      let calls = 0
+      // Fifty seconds before the link stops working: too late to be of use.
+      now += 15 * MINUTE - 50_000
+      await drain(async () => { calls += 1; return null })
+      expect(calls).toBe(0)
+      expect((await listMailActivity(h.db)).entries[0]).toMatchObject({ status: 'failed' })
     })
 
     it('fails an email found past its deadline without handing it to the provider', async () => {
@@ -385,13 +397,57 @@ describe('mail queue', () => {
         status: 'queued', attempts: 0, nextAttemptAt: null, error: 'Resend rejected the API key or its permissions.',
       })
 
-      // Hours of ticks later, still not one more login attempt.
-      for (let tick = 0; tick < 20; tick += 1) {
-        now += 30 * MINUTE
+      // Ticks inside the next two minutes: not one more login attempt.
+      for (let tick = 0; tick < 7; tick += 1) {
+        now += 15_000
         await drain(counting)
       }
       expect(calls).toBe(1)
       expect(await queueRows()).toHaveLength(2)
+    })
+
+    it('probes with one email every two minutes and resumes by itself when one gets through', async () => {
+      const connector = await readyConnector()
+      for (const to of ['a@example.com', 'b@example.com', 'c@example.com']) await queueTemplateMail(h.db, { ...MAIL, to })
+      let healthy = false
+      const seen: string[] = []
+      const carrier: MailCarrier = async (_c, _s, mail) => {
+        seen.push(mail.to)
+        // A server having a bad minute: nothing is wrong with the account.
+        if (!healthy) throw new MailDeliveryError('The SMTP server rejected the username or password.', { retry: 'connector' })
+        return null
+      }
+      await drain(carrier)
+      expect(seen).toHaveLength(1)
+
+      // Ten minutes of 15-second ticks: one probe per two minutes, never a stream of logins.
+      for (let tick = 0; tick < 40; tick += 1) {
+        now += 15_000
+        await drain(carrier)
+      }
+      expect(seen).toHaveLength(6)
+      expect(await getMailConnector(h.db, connector.id)).toMatchObject({ deliveryPaused: true })
+      expect((await queueRows()).map((row) => row.attempts)).toEqual([0, 0, 0])
+
+      // The provider recovers. Nobody touches the connector: the next probe gets through and the rest follows.
+      healthy = true
+      now += 2 * MINUTE
+      await drain(carrier)
+      expect(await queueRows()).toHaveLength(0)
+      expect(await getMailConnector(h.db, connector.id)).toMatchObject({ deliveryPaused: false, lastError: null })
+      expect((await listMailActivity(h.db)).totals).toMatchObject({ queued: 0, sent: 3, failed: 0 })
+    })
+
+    it('says why an email accepted during a pause is waiting', async () => {
+      await readyConnector()
+      await queueTemplateMail(h.db, MAIL)
+      await drain(refusing)
+      await queueTemplateMail(h.db, { ...MAIL, to: 'later@example.com' })
+      expect((await listMailActivity(h.db)).entries.find((entry) => entry.to === 'later@example.com')).toMatchObject({
+        status: 'queued',
+        attempts: 0,
+        error: 'Waiting: the connector is paused. Resend rejected the API key or its permissions.',
+      })
     })
 
     it('sends what was held as soon as the secret is replaced', async () => {
@@ -467,6 +523,22 @@ describe('mail queue', () => {
       expect((await queueRows()).map((row) => row.attempts).sort()).toEqual([0, 0, 1, 1])
     })
 
+    it('forgets a refusal after ten minutes', async () => {
+      const connector = await readyConnector()
+      const carrier = forbidden(() => true)
+      await queueTemplateMail(h.db, { ...MAIL, to: 'a@example.com' })
+      await drain(carrier)
+      await queueTemplateMail(h.db, { ...MAIL, to: 'b@example.com' })
+      await drain(carrier)
+      // The third different recipient comes eleven minutes after the first two.
+      await h.db`delete from mail_queue`
+      now += 11 * MINUTE
+      await queueTemplateMail(h.db, { ...MAIL, to: 'c@example.com' })
+      now = Math.max(now, Date.now() + 5_000)
+      await drain(carrier)
+      expect(await getMailConnector(h.db, connector.id)).toMatchObject({ deliveryPaused: false })
+    })
+
     it('starts counting again after an email gets through', async () => {
       const connector = await readyConnector()
       for (const to of ['a@example.com', 'b@example.com', 'fine@example.com', 'c@example.com', 'd@example.com']) {
@@ -512,28 +584,74 @@ describe('mail queue', () => {
   })
 
   describe('when the outcome cannot be recorded', () => {
-    it('gives the claim back instead of stranding the email', async () => {
-      await readyConnector()
-      await queueTemplateMail(h.db, MAIL)
-      let broken = true
-      const flaky = new Proxy(h.db, {
+    /** A database whose statements matching `broken()` throw. */
+    const failing = (matches: (sql: string) => boolean) =>
+      new Proxy(h.db, {
         apply(target, thisArg, args: [TemplateStringsArray, ...unknown[]]) {
-          if (broken && args[0].join('').includes('update mail_outbox')) throw new Error('the log is unreachable')
+          if (matches(args[0].join(''))) throw new Error('the database refused the write')
           return Reflect.apply(target, thisArg, args)
         },
       }) as DbClient
+
+    it('does not send an accepted email again when the log cannot be updated', async () => {
+      await readyConnector()
+      await queueTemplateMail(h.db, MAIL)
+      let broken = true
+      const flaky = failing((sql) => broken && sql.includes('update mail_outbox'))
       let calls = 0
       const carrier: MailCarrier = async () => { calls += 1; return null }
-      await drainMailQueue(flaky, { carrier, now: clock, random: () => 0.5, paceMs: 0 })
+      // Twenty passes, as five minutes of ticks would make.
+      for (let pass = 0; pass < 20; pass += 1) {
+        now += 15_000
+        await drainMailQueue(flaky, { carrier, now: clock, random: () => 0.5, paceMs: 0 })
+      }
       expect(calls).toBe(1)
-      const [row] = await queueRows()
-      expect(row.claimed_at).toBeNull()
+      expect(await queueRows()).toHaveLength(1)
 
-      // At least once: the provider took it, the record did not, so it goes again.
       broken = false
       await drain(carrier)
-      expect(calls).toBe(2)
+      expect(calls).toBe(1)
       expect(await queueRows()).toHaveLength(0)
+      expect((await listMailActivity(h.db)).entries[0]).toMatchObject({ status: 'sent', attempts: 1 })
+    })
+
+    it('does not send it again even when the acceptance itself cannot be written', async () => {
+      await readyConnector()
+      await queueTemplateMail(h.db, MAIL)
+      let broken = true
+      const flaky = failing((sql) => broken && (sql.includes('set accepted_at') || sql.includes('update mail_outbox')))
+      let calls = 0
+      const carrier: MailCarrier = async () => { calls += 1; return null }
+      for (let pass = 0; pass < 20; pass += 1) {
+        now += 5 * MINUTE
+        await drainMailQueue(flaky, { carrier, now: clock, random: () => 0.5, paceMs: 0 })
+      }
+      expect(calls).toBe(1)
+
+      broken = false
+      now += 9 * HOUR
+      await drain(carrier)
+      expect(calls).toBe(1)
+      expect(await queueRows()).toHaveLength(0)
+      expect((await listMailActivity(h.db)).entries[0]).toMatchObject({ status: 'sent' })
+    })
+
+    it('puts an email whose failed attempt could not be recorded back with a growing wait', async () => {
+      await readyConnector()
+      await queueTemplateMail(h.db, MAIL)
+      const flaky = failing((sql) => sql.includes('update mail_outbox'))
+      let calls = 0
+      const carrier: MailCarrier = async () => {
+        calls += 1
+        throw new MailDeliveryError('Temporary.', { retry: 'later' })
+      }
+      for (let pass = 0; pass < 20; pass += 1) {
+        now += 15_000
+        await drainMailQueue(flaky, { carrier, now: clock, random: () => 0.5, paceMs: 0 })
+      }
+      // Five minutes of passes: tried at 0, 30 s and 2.5 min, not twenty times.
+      expect(calls).toBe(3)
+      expect((await queueRows())[0].claimed_at).toBeNull()
     })
   })
 
@@ -583,8 +701,11 @@ describe('mail queue', () => {
       await drain(carrier)
       expect(calls).toBe(0)
 
-      // A hand-over is cut off after ten seconds, so a claim a minute old is nobody's.
+      // A hand-over is cut off after ten seconds, so a claim two minutes old is nobody's.
       now += 50_000
+      await drain(carrier)
+      expect(calls).toBe(0)
+      now += 60_000
       await drain(carrier)
       expect(calls).toBe(1)
       expect(await queueRows()).toHaveLength(0)
@@ -638,6 +759,11 @@ describe('mail queue', () => {
       expect([450, 451, 452, 454].map((responseCode) => retryForSmtpFailure(smtp({ responseCode }))))
         .toEqual(Array(4).fill('later'))
       expect(retryForSmtpFailure(smtp({ code: 'EAUTH', responseCode: 535 }))).toBe('connector')
+      // A login answered with a temporary code is the server's bad minute, not a wrong password.
+      expect(retryForSmtpFailure(smtp({ code: 'EAUTH', responseCode: 454 }))).toBe('later')
+      expect(retryForSmtpFailure(smtp({ code: 'EAUTH', responseCode: 421 }))).toBe('slow-down')
+      expect(retryForSmtpFailure(Object.assign(new Error('smtp'), { responseCode: 450, response: '450 4.7.0 Too many messages, rate limit exceeded' }))).toBe('slow-down')
+      expect(retryForSmtpFailure(Object.assign(new Error('smtp'), { responseCode: 451, response: '451 4.7.1 Greylisted, please try again later' }))).toBe('later')
       expect(retryForSmtpFailure(smtp({ responseCode: 530 }))).toBe('connector')
       expect(retryForSmtpFailure(smtp({ code: 'ETLS' }))).toBe('connector')
       expect(['ETIMEDOUT', 'ECONNECTION', 'ESOCKET', 'ECONNREFUSED'].map((code) => retryForSmtpFailure(smtp({ code }))))
@@ -682,7 +808,9 @@ describe('mail queue', () => {
         ['a wrong key', 403, { statusCode: 403, name: 'invalid_api_key', message: 'API key is invalid' }, 'connector'],
         ['no key', 401, { statusCode: 401, name: 'missing_api_key', message: 'Missing API key in the authorization header.' }, 'connector'],
         ['a key that may not send', 401, { statusCode: 401, name: 'restricted_api_key', message: 'This API key is restricted to only send emails' }, 'connector'],
-        ['a testing account writing to somebody else', 403, { statusCode: 403, name: 'validation_error', message: 'You can only send testing emails to your own email address (owner@example.com).' }, 'suspect'],
+        ['a testing account writing to somebody else', 403, { statusCode: 403, name: 'validation_error', message: 'You can only send testing emails to your own email address (owner@example.com).' }, 'never'],
+        ['a suppressed recipient', 403, { statusCode: 403, name: 'validation_error', message: 'This recipient is on the suppression list.' }, 'never'],
+        ['the daily quota', 429, { statusCode: 429, name: 'daily_quota_exceeded', message: 'You have reached your daily email sending quota.' }, 'slow-down'],
         ['a domain that is not verified', 403, { statusCode: 403, name: 'validation_error', message: 'The example.com domain is not verified.' }, 'suspect'],
         ['a malformed recipient', 422, { statusCode: 422, name: 'validation_error', message: 'Invalid `to` field.' }, 'never'],
         ['a rate limit', 429, { statusCode: 429, name: 'rate_limit_exceeded', message: 'Too many requests.' }, 'slow-down'],
@@ -729,6 +857,8 @@ describe('mail queue', () => {
         ['an account still under validation', 403, { code: 'account_under_validation', message: 'Your account is under validation.' }, 'connector'],
         ['no credits', 402, { code: 'not_enough_credits', message: 'Not enough credits.' }, 'connector'],
         ['a refusal that names no one', 403, { code: 'permission_denied', message: 'Unable to send email.' }, 'suspect'],
+        ['a refusal that names the recipient', 403, { code: 'permission_denied', message: 'Unable to send email. The recipient is blocklisted.' }, 'never'],
+        ['too many requests', 429, { code: 'too_many_requests', message: 'Rate limit exceeded.' }, 'slow-down'],
         ['a bad recipient', 400, { code: 'invalid_parameter', message: 'email is not valid in to' }, 'never'],
       ]
       for (const [what, status, body, expected] of brevo) {
@@ -746,6 +876,10 @@ describe('mail queue', () => {
         ['a sandbox recipient that is not verified', 400, { message: 'Email address is not verified. The following identities failed the check in region EU-CENTRAL-1: r@example.com' }, { 'x-amzn-errortype': 'MessageRejected' }, 'never'],
         ['a 403 that says nothing', 403, {}, {}, 'suspect'],
         ['throttling', 429, { message: 'Maximum sending rate exceeded.' }, { 'x-amzn-errortype': 'TooManyRequestsException' }, 'slow-down'],
+        ['throttling answered with 400', 400, { message: 'Rate exceeded' }, { 'x-amzn-errortype': 'ThrottlingException' }, 'slow-down'],
+        ['a quota answered with 400', 400, { message: 'Daily message quota exceeded.' }, { 'x-amzn-errortype': 'LimitExceededException' }, 'slow-down'],
+        ['a clock that has drifted', 403, { message: 'Signature expired: 20261118T101500Z is now earlier than 20261118T103000Z' }, { 'x-amzn-errortype': 'InvalidSignatureException' }, 'later'],
+        ['a request that expired', 400, { message: 'Request has expired.' }, { 'x-amzn-errortype': 'RequestExpired' }, 'later'],
       ]
       for (const [what, status, body, headers, expected] of sesCases) {
         it(`Amazon SES: ${what} is ${expected}`, async () => {

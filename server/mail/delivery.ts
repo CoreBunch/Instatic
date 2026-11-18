@@ -21,28 +21,36 @@
  *    expiry of the link it carries, or a day. Past it the email is failed,
  *    not sent: a sign-in link that arrives after it stopped working is worse
  *    than none.
- *  - **A broken connector pauses, it does not retry.** When the provider
- *    refuses the account itself (a wrong key or password), every queued
- *    email is held, the connector shows the error, and delivery resumes when
- *    the secret is replaced or a test send works.
+ *  - **A broken connector trips a breaker, it does not retry everything.**
+ *    When the provider refuses the account itself (a wrong key or
+ *    password), queued email is held and the connector shows the error.
+ *    Every two minutes one email is let through as a probe; the first that
+ *    gets through, or a new secret, or a test send that works, resumes
+ *    delivery. No one has to remember to switch it back on.
+ *  - **An accepted email is not sent twice by a failed record.** The row is
+ *    marked accepted before the outcome is recorded; a marked row is never
+ *    handed to a provider again.
  *  - **Core mail first, new mail before retries.** See `claimNextDueMail`.
  */
 import type { DbClient } from '../db/client'
 import { getMailTemplateDefinition } from '@core/mail'
 import { getErrorMessage } from '@core/utils/errorMessage'
-import { CORE_MAIL_SOURCE, recordMail, updateMailProgress } from './activity'
-import { connectorDeliveryPaused, pauseConnectorDelivery } from './connectors'
+import { CORE_MAIL_SOURCE, markMailSent, recordMail, updateMailProgress } from './activity'
+import { connectorPauseReason, pauseConnectorDelivery, takeConnectorProbe } from './connectors'
 import { getMailDefaults } from './defaults'
 import { reserveBacklogSlot, reserveRecipientSlot } from './limits'
 import {
+  backOffQueuedMail,
   claimExpiredMail,
   claimNextDueMail,
+  DELIVERY_MARGIN_MS,
   encryptQueuedVariables,
   enqueueMail,
   holdQueuedMail,
+  listAcceptedMail,
+  markQueuedMailAccepted,
   QueuedMailUnreadableError,
   readQueuedVariables,
-  releaseMailClaim,
   releaseStaleMailClaims,
   removeQueuedMail,
   rescheduleQueuedMail,
@@ -171,7 +179,8 @@ export async function queueTemplateMail(
   // separate counts even when they are the same inbox: a shared count would
   // tell the sender which address a member has.
   const recipient = input.memberId !== undefined ? { member: input.memberId } : { address: input.to }
-  if (!readyToSend(await getMailDefaults(db))) {
+  const defaults = await getMailDefaults(db)
+  if (!readyToSend(defaults)) {
     if (!captureAllowed(deps.env ?? process.env)) throw new MailNotConfiguredError()
     await db.transaction(async (tx) => {
       if (limited) await reserveRecipientSlot(tx, limited, recipient)
@@ -179,6 +188,10 @@ export async function queueTemplateMail(
     })
     return 'captured'
   }
+  // An email accepted while delivery is paused says so from the start,
+  // rather than looking as if it were about to leave.
+  const paused = await connectorPauseReason(db, defaults.defaultConnectorId)
+  const waitingFor = paused === null ? undefined : pausedMailMessage(paused)
   // Encrypted before the transaction opens: see `encryptQueuedVariables`.
   const payload = await encryptQueuedVariables(input.variables)
   const deliverBefore = input.deliverBefore ?? Date.now() + MAIL_DELIVERY_WINDOW_MS
@@ -188,7 +201,7 @@ export async function queueTemplateMail(
       await reserveRecipientSlot(tx, limited, recipient)
       await reserveBacklogSlot(tx, limited)
     }
-    const outboxId = await recordMail(tx, { ...log, status: 'queued' })
+    const outboxId = await recordMail(tx, { ...log, status: 'queued', error: waitingFor })
     await enqueueMail(tx, {
       outboxId,
       kind: input.key,
@@ -202,6 +215,11 @@ export async function queueTemplateMail(
   })
   wakeMailQueue()
   return 'queued'
+}
+
+/** What the activity log says of an email accepted while its connector is paused. */
+export function pausedMailMessage(reason: string): string {
+  return `Waiting: the connector is paused. ${reason}`
 }
 
 /** The wait before retry number `attempts`, with jitter. `random` is in [0, 1). */
@@ -269,7 +287,14 @@ async function attemptQueuedMail(db: DbClient, mail: QueuedMail, deps: DrainDeps
       : 'The template of this email no longer exists: the plugin it belongs to was disabled or removed.'
     return { sent: false, message, retry: 'never', reason: 'template_removed' }
   }
-  const outcome = await carryThroughConnector(db, defaults.defaultConnectorId, defaults, rendered, deps.carrier)
+  const outcome = await carryThroughConnector(
+    db,
+    defaults.defaultConnectorId,
+    defaults,
+    rendered,
+    deps.carrier,
+    (deps.now ?? Date.now)(),
+  )
   if (outcome.ok) return { sent: true, outcome }
   return {
     sent: false,
@@ -294,6 +319,9 @@ async function settleQueuedMail(
 ): Promise<AfterAttempt> {
   const now = (deps.now ?? Date.now)()
   if (attempt.sent) {
+    // First, and on its own: from here on this row is never sent again,
+    // whatever becomes of the two writes below.
+    await markQueuedMailAccepted(db, mail.id)
     await updateMailProgress(db, mail.outboxId, {
       status: 'sent',
       attempts: mail.attempts + 1,
@@ -313,7 +341,7 @@ async function settleQueuedMail(
     // now, not after a day of silent retries.
     await updateMailProgress(db, mail.outboxId, { ...seen, status: 'queued', attempts: mail.attempts })
     await holdQueuedMail(db, mail.id, attempt.message)
-    if (attempt.connectorId) await pauseConnectorDelivery(db, attempt.connectorId)
+    if (attempt.connectorId) await pauseConnectorDelivery(db, attempt.connectorId, now)
     console.error('[mail] delivery is paused: the connector refuses the account or is not set up')
     return 'stop'
   }
@@ -328,7 +356,7 @@ async function settleQueuedMail(
     announceOutcome(mail, 'failed', attempt.reason)
     return 'continue'
   }
-  if (now + delay >= mail.deliverBefore) {
+  if (now + delay >= mail.deliverBefore - DELIVERY_MARGIN_MS) {
     // The next try would come too late to be of use.
     await failExpiredMail(db, mail, { attempts, lastError: attempt.message, connector: seen.connector })
     return 'continue'
@@ -371,6 +399,33 @@ async function expireOverdueMail(db: DbClient, now: number): Promise<void> {
 }
 
 /**
+ * Emails a provider accepted whose acceptance could not be written to the
+ * database at all. They are not sent again by this process; the bookkeeping
+ * is finished the next time the row comes up.
+ */
+const acceptedUnrecorded = new Set<string>()
+/** How often in a row the outcome of an attempt could not be recorded, per email. */
+const unrecordedAttempts = new Map<string, number>()
+
+/** Finish the bookkeeping of emails that were accepted but not recorded. */
+async function finishAcceptedMail(db: DbClient): Promise<void> {
+  for (const row of await listAcceptedMail(db)) {
+    try {
+      await markMailSent(db, row.outboxId, row.attempts + 1)
+      await removeQueuedMail(db, row)
+      // The sender hears of it now: the pass that sent it never got this far.
+      announceOutcome(row, 'sent', null)
+      acceptedUnrecorded.delete(row.id)
+      unrecordedAttempts.delete(row.id)
+    } catch (err) {
+      // Still not recordable. The row stays marked, so it is not sent, and
+      // the rest of the queue is not held up by it.
+      console.error('[mail] an accepted email could not be recorded yet:', getErrorMessage(err, 'unknown error'))
+    }
+  }
+}
+
+/**
  * Send everything that is due, one email after another, then return.
  * Several drains, in one process or in several, may run at once. Exported
  * for tests; production code calls `startMailQueue` and `wakeMailQueue`.
@@ -378,16 +433,31 @@ async function expireOverdueMail(db: DbClient, now: number): Promise<void> {
 export async function drainMailQueue(db: DbClient, deps: DrainDeps = {}): Promise<void> {
   const clock = deps.now ?? Date.now
   await releaseStaleMailClaims(db, clock())
+  await finishAcceptedMail(db)
   // Expired email is failed even while nothing can be sent.
   await expireOverdueMail(db, clock())
+
+  // A paused connector lets one email through now and then, as a probe.
   const defaults = await getMailDefaults(db)
-  if (readyToSend(defaults) && (await connectorDeliveryPaused(db, defaults.defaultConnectorId))) return
+  let probing = false
+  if (readyToSend(defaults)) {
+    const gate = await takeConnectorProbe(db, defaults.defaultConnectorId, clock())
+    if (gate === 'held') return
+    probing = gate === 'probe'
+  }
 
   while (!stopping && clock() >= pausedUntil) {
     const mail = await claimNextDueMail(db, clock())
     if (!mail) break
     let next: AfterAttempt
+    let accepted = acceptedUnrecorded.has(mail.id)
     try {
+      if (accepted) {
+        // The provider already has this one: record it, do not send it.
+        await markQueuedMailAccepted(db, mail.id)
+        await finishAcceptedMail(db)
+        continue
+      }
       let attempt: Attempt
       try {
         attempt = await attemptQueuedMail(db, mail, deps)
@@ -395,17 +465,27 @@ export async function drainMailQueue(db: DbClient, deps: DrainDeps = {}): Promis
         // Not a delivery answer (the database, a bug): leave the email for a later try.
         attempt = { sent: false, message: getErrorMessage(err, 'Delivery failed'), retry: 'later', reason: 'expired' }
       }
+      accepted = attempt.sent
       next = await settleQueuedMail(db, mail, attempt, deps)
+      unrecordedAttempts.delete(mail.id)
     } catch (err) {
-      // The outcome could not be recorded. Give the claim back now rather
-      // than leave the row to the stale-claim sweep, and stop: whatever
-      // broke will break the next email too.
+      // The outcome could not be recorded. If the provider took the email,
+      // this process must not send it again; either way the row is put back
+      // with a growing wait rather than tried again on every pass. Then
+      // stop: whatever broke will break the next email too.
       console.error('[mail] an attempt could not be recorded:', getErrorMessage(err, 'unknown error'))
-      await releaseMailClaim(db, mail.id).catch(() => {
+      if (accepted) acceptedUnrecorded.add(mail.id)
+      const failures = (unrecordedAttempts.get(mail.id) ?? 0) + 1
+      unrecordedAttempts.set(mail.id, failures)
+      const retryAt = new Date(clock() + mailRetryDelayMs(failures, (deps.random ?? Math.random)())).toISOString()
+      await backOffQueuedMail(db, mail.id, retryAt).catch(() => {
         // The database is unreachable; the stale-claim sweep frees the row later.
       })
       break
     }
+    // A probe that did not get through leaves the connector paused: one email, then wait.
+    if (probing && !accepted) break
+    probing = false
     if (next === 'stop') break
     const pace = deps.paceMs ?? PACE_MS
     if (pace > 0) await new Promise((resolve) => setTimeout(resolve, pace))
@@ -471,4 +551,6 @@ export async function stopMailQueue(): Promise<void> {
 export function __resetMailQueuePauseForTesting(): void {
   pausedUntil = 0
   stopping = false
+  acceptedUnrecorded.clear()
+  unrecordedAttempts.clear()
 }

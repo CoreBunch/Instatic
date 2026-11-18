@@ -509,7 +509,7 @@ function Detail({
               ? 'Accepted and waiting for its turn. It is sent as soon as the connector is free.'
               : entry.nextAttemptAt
                 ? `Tried ${plural(entry.attempts, 'time')}. The next attempt is due ${formatFull(entry.nextAttemptAt)}. The site keeps trying until the email would be of no use any more.`
-                : 'Held, not retried: the connector has to be fixed first. It is sent as soon as a test through the connector works.'}
+                : 'Held while the connector is paused. The site tries one email every two minutes; this one is sent as soon as the connector works again.'}
           </span>
           {entry.error !== null && !entry.nextAttemptAt && (
             <div>

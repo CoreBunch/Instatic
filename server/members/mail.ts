@@ -9,9 +9,9 @@
  *    request's `Host` header, so a forged Host cannot aim a reset link at
  *    someone else's server. Without a configured origin, links are only
  *    built for a loopback request (local development).
- *  - Sending happens after the response is decided, in the background, so a
- *    request for a known address takes the same time as one for an unknown
- *    address.
+ *  - Handing an email to the queue happens after the response is decided
+ *    and is not awaited, so nothing about email delivery shows in how long a
+ *    request takes.
  */
 import type { DbClient } from '../db/client'
 import type { MemberPageKey, MemberPagePaths } from '@core/members'
@@ -105,10 +105,13 @@ function isLinkKind(kind: MemberMailKind): kind is MemberTokenKind {
 
 /**
  * Queue the email without making the request wait for it. The caller has
- * already decided its response, so nothing about email changes what, or how
- * fast, the visitor is told: the handing over is deliberately outside the
- * request's own work, so a request for a known address takes as long as one
- * for an unknown address. The mail queue sends it straight away and retries
+ * already decided its response, so rendering the template and writing to
+ * the queue add nothing to what, or how fast, the visitor is told. (It does
+ * not make the two cases take equal time: a request for a known address has
+ * already issued a token.) For the same reason the email is queued after
+ * the token is committed, in its own transaction, not in the token's: if
+ * that fails the member can ask again, and the failure is logged below.
+ * The mail queue sends it straight away and retries
  * a temporary failure, but never past the life of the link in it: a
  * sign-in link that arrives after it expired is worse than none.
  *

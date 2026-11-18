@@ -83,7 +83,6 @@ const SES_ACCOUNT_ERRORS = new Set([
   'InvalidClientTokenId',
   'UnrecognizedClientException',
   'SignatureDoesNotMatch',
-  'InvalidSignatureException',
   'IncompleteSignature',
   'IncompleteSignatureException',
   'ExpiredTokenException',
@@ -92,13 +91,35 @@ const SES_ACCOUNT_ERRORS = new Set([
   'MailFromDomainNotVerifiedException',
 ])
 
+/** AWS throttling and quota errors. They arrive as HTTP 400 as often as 429. */
+const SES_THROTTLE_ERRORS = new Set([
+  'ThrottlingException',
+  'Throttling',
+  'TooManyRequestsException',
+  'LimitExceededException',
+  'SendingQuotaExceededException',
+])
+
+/**
+ * AWS errors about the request's timestamp or signature freshness. They come
+ * and go with the server's clock, so they are temporary, and the sentence
+ * shown says to check the clock.
+ */
+const SES_CLOCK_ERRORS = new Set(['InvalidSignatureException', 'RequestExpired', 'RequestTimeTooSkewed'])
+
+function sesErrorName(errorType: string): string {
+  return errorType.split(':')[0].split('#').pop() ?? ''
+}
+
 /**
  * How an SES refusal should be retried. `errorType` is the `x-amzn-errortype`
  * header or the body's `__type`, which may carry a namespace before `#` and
  * a suffix after `:`.
  */
 export function retryForSesError(status: number, errorType: string): MailRetry {
-  const name = errorType.split(':')[0].split('#').pop() ?? ''
+  const name = sesErrorName(errorType)
+  if (SES_THROTTLE_ERRORS.has(name)) return 'slow-down'
+  if (SES_CLOCK_ERRORS.has(name)) return 'later'
   if (SES_ACCOUNT_ERRORS.has(name)) return 'connector'
   // `MessageRejected` is this message: in the sandbox, a recipient that is not verified.
   if (name === 'MessageRejected') return 'never'
@@ -107,7 +128,12 @@ export function retryForSesError(status: number, errorType: string): MailRetry {
 const SesSentSchema = Type.Object({ MessageId: Type.Optional(Type.String()) })
 
 /** A failure sentence safe to show an admin: never the key, never the message body. */
-function describeSesFailure(status: number, awsMessage: string): string {
+function describeSesFailure(status: number, awsMessage: string, errorType: string): string {
+  const name = sesErrorName(errorType)
+  if (SES_CLOCK_ERRORS.has(name)) {
+    return 'Amazon SES rejected the request as expired or signed at the wrong time. Check the server\'s clock.'
+  }
+  if (SES_THROTTLE_ERRORS.has(name)) return 'Amazon SES is rate-limiting this account. Try again shortly.'
   if (status === 403) return 'Amazon SES rejected the access key or its permissions.'
   if (status === 400 && /not verified/i.test(awsMessage)) {
     return 'Amazon SES has not verified the sender address or domain for this region.'
@@ -196,5 +222,7 @@ export async function sendViaSes(
     // A non-JSON error body: the status alone decides the sentence.
   }
   console.error(`[mail] SES delivery failed (HTTP ${res.status})`)
-  throw new MailDeliveryError(describeSesFailure(res.status, awsMessage), { retry: retryForSesError(res.status, errorType) })
+  throw new MailDeliveryError(describeSesFailure(res.status, awsMessage, errorType), {
+    retry: retryForSesError(res.status, errorType),
+  })
 }
