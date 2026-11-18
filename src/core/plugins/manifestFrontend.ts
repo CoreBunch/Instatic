@@ -38,8 +38,8 @@ const EXTERNAL_SCRIPT_URL_PATTERN =
 //
 //   1. Private-network and unroutable top-level names are not public hosts.
 //      (`.example` and `.test` stay allowed: documentation and tests use them.)
-//   2. A wildcard must sit under a name one party controls. A country-code
-//      second-level suffix (`co.uk`, `com.au`) or a well-known shared-hosting
+//   2. A wildcard must sit under a name one party controls. A listed
+//      country-code suffix (`co.uk`, `com.au`) or a well-known shared-hosting
 //      domain (`github.io`, `vercel.app`) hands `script-src` to anyone who can
 //      register a subdomain there. Name the exact host instead.
 //
@@ -50,10 +50,21 @@ const NON_PUBLIC_TOP_LEVEL_LABELS = new Set([
   'corp', 'invalid', 'onion',
 ])
 
-// Second-level labels registries use as public suffixes under a two-letter
-// country code: `co.uk`, `com.au`, `org.nz`, `ac.jp`, `gov.br`, `net.cn`.
-const COUNTRY_SECOND_LEVEL_LABELS = new Set([
-  'ac', 'co', 'com', 'edu', 'gov', 'net', 'org', 'or', 'ne', 'go', 'mil', 'nom', 'sch',
+// Country-code public suffixes, spelled out. A heuristic ("a common label
+// under any two-letter code") also catches ordinary registered names such as
+// `ac.me` and `co.de`, so only suffixes known to be registries' are listed.
+const COUNTRY_PUBLIC_SUFFIXES = new Set([
+  'ac.uk', 'co.uk', 'gov.uk', 'ltd.uk', 'me.uk', 'net.uk', 'org.uk', 'plc.uk', 'sch.uk',
+  'com.au', 'edu.au', 'gov.au', 'net.au', 'org.au',
+  'ac.nz', 'co.nz', 'govt.nz', 'net.nz', 'org.nz',
+  'ac.jp', 'co.jp', 'go.jp', 'ne.jp', 'or.jp',
+  'com.br', 'gov.br', 'net.br', 'org.br',
+  'com.cn', 'gov.cn', 'net.cn', 'org.cn',
+  'ac.in', 'co.in', 'gov.in', 'net.in', 'org.in',
+  'co.za', 'gov.za', 'org.za',
+  'co.kr', 'or.kr', 'co.il', 'co.id', 'co.th',
+  'com.ar', 'com.hk', 'com.mx', 'com.my', 'com.ph', 'com.pl', 'com.sg',
+  'com.tr', 'com.tw', 'com.ua', 'com.vn',
 ])
 
 // Domains where each subdomain belongs to a different customer. A wildcard
@@ -80,9 +91,7 @@ function frontendOriginRejection(origin: string): string | null {
   if (NON_PUBLIC_TOP_LEVEL_LABELS.has(topLevel)) {
     return `"${origin}" is not a public host`
   }
-  const isCountrySuffix =
-    labels.length === 2 && topLevel.length === 2 && COUNTRY_SECOND_LEVEL_LABELS.has(labels[0]!)
-  if (isCountrySuffix) {
+  if (COUNTRY_PUBLIC_SUFFIXES.has(name)) {
     return `"${origin}" is a public suffix, not a host`
   }
   const coversSharedHosting =
@@ -93,6 +102,12 @@ function frontendOriginRejection(origin: string): string | null {
   }
   return null
 }
+
+// Inline `<script>` / `<style>` text may hold anything but U+0000. The HTML
+// parser replaces a NUL with U+FFFD, so the text a browser runs (and hashes
+// for the page policy) would differ from the text declared here.
+// eslint-disable-next-line no-control-regex
+const INLINE_CONTENT_PATTERN = /^[^\u0000]+$/
 
 const FrontendOriginHostsSchema = Type.Array(
   Type.String({ pattern: FRONTEND_ORIGIN_HOST_PATTERN.source, maxLength: 253 }),
@@ -150,7 +165,7 @@ export const frontendSchema = Type.Object({
       }, { additionalProperties: false }),
       Type.Object({
         kind: Type.Literal('script-inline'),
-        content: Type.String({ minLength: 1, maxLength: 64 * 1024 }),
+        content: Type.String({ minLength: 1, maxLength: 64 * 1024, pattern: INLINE_CONTENT_PATTERN.source }),
         placement: Type.Optional(FrontendAssetPlacementSchema),
         attrs: Type.Optional(FrontendAssetAttrsSchema),
       }, { additionalProperties: false }),
@@ -162,7 +177,7 @@ export const frontendSchema = Type.Object({
       }, { additionalProperties: false }),
       Type.Object({
         kind: Type.Literal('style-inline'),
-        content: Type.String({ minLength: 1, maxLength: 64 * 1024 }),
+        content: Type.String({ minLength: 1, maxLength: 64 * 1024, pattern: INLINE_CONTENT_PATTERN.source }),
         placement: Type.Optional(FrontendAssetPlacementSchema),
         attrs: Type.Optional(FrontendAssetAttrsSchema),
       }, { additionalProperties: false }),

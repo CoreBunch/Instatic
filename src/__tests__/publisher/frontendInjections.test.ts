@@ -59,6 +59,10 @@ interface PluginFixture {
   assets?: FrontendAsset[]
   origins?: PluginFrontendOrigins
   hosts?: string[]
+  /** Ships a canvas module pack (`entrypoints.modules`). */
+  modulePack?: boolean
+  /** Omit the manifest's `frontend` block entirely. */
+  noFrontend?: boolean
   granted?: string[]
   enabled?: boolean
   lifecycle?: 'active' | 'error'
@@ -68,7 +72,11 @@ interface PluginFixture {
 function pluginsDb(fixtures: PluginFixture[]) {
   const rows = fixtures.map((fixture) => {
     const id = fixture.id ?? 'acme.assets'
-    const permissions = ['frontend.assets', ...(fixture.hosts ? ['network.outbound'] : [])]
+    const permissions = [
+      'frontend.assets',
+      ...(fixture.hosts ? ['network.outbound'] : []),
+      ...(fixture.modulePack ? ['modules.register'] : []),
+    ]
     const manifest = {
       id,
       name: 'Asset fixtures',
@@ -78,7 +86,10 @@ function pluginsDb(fixtures: PluginFixture[]) {
       grantedPermissions: fixture.granted ?? permissions,
       resources: [],
       adminPages: [],
-      frontend: { assets: fixture.assets ?? [], ...(fixture.origins ? { origins: fixture.origins } : {}) },
+      ...(fixture.noFrontend
+        ? {}
+        : { frontend: { assets: fixture.assets ?? [], ...(fixture.origins ? { origins: fixture.origins } : {}) } }),
+      ...(fixture.modulePack ? { entrypoints: { modules: 'modules/index.js' } } : {}),
       ...(fixture.hosts ? { networkAllowedHosts: fixture.hosts } : {}),
       assetBasePath: `/uploads/plugins/${id}/1.0.0`,
     }
@@ -288,14 +299,48 @@ describe('frontend injection — relaxations add to the policy', () => {
     expect(out).toContain("worker-src 'none'")
   })
 
-  it('treats classic, module and importmap inline scripts as executed, whatever the case of `type`', async () => {
-    for (const attrs of [undefined, { type: 'module' }, { TYPE: 'Text/JavaScript; charset=utf-8' }, { type: 'importmap' }, { type: '' }]) {
-      const plan = await collectFrontendInjections(frontendAssetDb([
-        { kind: 'script-inline', content: 'window.a = 1', ...(attrs ? { attrs } : {}) },
-      ]))
-      expect(plan.hasInlineScript).toBe(true)
-      expect(plan.inlineScriptHashes).toHaveLength(1)
-    }
+  // "Prepare the script element" in the HTML standard decides what runs.
+  it.each<[string, Record<string, string> | undefined]>([
+    ['no attributes', undefined],
+    ['an empty type', { type: '' }],
+    ['text/javascript', { type: 'text/javascript' }],
+    ['a JavaScript MIME type in another case', { type: 'Application/JavaScript' }],
+    ['a legacy JavaScript MIME type', { type: 'text/jscript' }],
+    ['ASCII whitespace around the type', { type: ' \t\ntext/javascript\f\r ' }],
+    ['module', { type: 'module' }],
+    ['module in another case, with whitespace', { type: ' MODULE ' }],
+    ['importmap', { type: 'importmap' }],
+    ['speculationrules', { type: 'speculationrules' }],
+    ['an uppercase attribute name', { TYPE: 'module' }],
+    ['a nomodule classic script', { nomodule: '' }],
+    ['no type and an empty language', { language: '' }],
+    ['no type and a JavaScript language', { language: 'JavaScript' }],
+    ['the first of two type attributes', { type: 'module', TYPE: 'text/plain' }],
+  ])('hashes an inline script a browser executes: %s', async (_label, attrs) => {
+    const plan = await collectFrontendInjections(frontendAssetDb([
+      { kind: 'script-inline', content: 'window.a = 1', ...(attrs ? { attrs } : {}) },
+    ]))
+    expect(plan.hasInlineScript).toBe(true)
+    expect(plan.inlineScriptHashes).toHaveLength(1)
+  })
+
+  it.each<[string, Record<string, string>]>([
+    ['JSON-LD', { type: 'application/ld+json' }],
+    ['plain JSON', { type: 'application/json' }],
+    ['a template type', { type: 'text/template' }],
+    ['a JavaScript type with parameters', { type: 'text/javascript; charset=utf-8' }],
+    ['a whitespace-only type', { type: ' ' }],
+    ['module with a non-ASCII space', { type: '\u00a0module' }],
+    ['a misspelt module', { type: 'modules' }],
+    ['no type and a non-JavaScript language', { language: 'vbscript' }],
+    ['the first of two type attributes', { type: 'text/plain', TYPE: 'module' }],
+  ])('leaves a data block unhashed: %s', async (_label, attrs) => {
+    const plan = await collectFrontendInjections(frontendAssetDb([
+      { kind: 'script-inline', content: 'window.a = 1', attrs },
+    ]))
+    expect(plan.hasInlineScript).toBe(false)
+    expect(plan.inlineScriptHashes).toEqual([])
+    expect(injectFrontendAssets(PAGE_WITH_CSP_META, plan)).toContain("script-src 'none'")
   })
 
   it('keeps existing style sources when a plugin ships an inline style', async () => {
@@ -369,11 +414,30 @@ describe('frontend injection — declared third-party origins', () => {
     expect(directive(out, 'connect-src')).toEqual(["'self'", 'https://api.example.com'])
   })
 
-  it('lets a plugin with module JS only (no tag, no origin) reach its own hosts', async () => {
-    const plan = await collectFrontendInjections(frontendAssetDb([], { hosts: ['api.example.com'] }))
+  it('lets a plugin with a module pack only (no tag, no origin) reach its own hosts', async () => {
+    const plan = await collectFrontendInjections(frontendAssetDb([], { hosts: ['api.example.com'], modulePack: true }))
     const out = injectFrontendAssets(PAGE_WITH_CSP_META, plan)
     expect(directive(out, 'connect-src')).toEqual(["'self'", 'https://api.example.com'])
     expect(out).toContain("script-src 'none'")
+  })
+
+  it.each([
+    ['an empty frontend block', {}],
+    ['no frontend block at all', { noFrontend: true }],
+  ])('leaves the page untouched for a plugin with server-side hosts only: %s', async (_label, shape) => {
+    // Granted `frontend.assets`, but nothing of it can run in a browser.
+    const plan = await collectFrontendInjections(frontendAssetDb([], { hosts: ['api.example.com'], ...shape }))
+    expect(plan.networkAllowedHosts).toEqual([])
+    expect(injectFrontendAssets(PAGE_WITH_CSP_META, plan)).toBe(PAGE_WITH_CSP_META)
+    expect(injectFrontendAssets(PAGE_WITH_IMPORTMAP, plan)).toBe(PAGE_WITH_IMPORTMAP)
+  })
+
+  it('does not let a server-only plugin ride on another plugin\'s tag', async () => {
+    const plan = await collectFrontendInjections(pluginsDb([
+      { id: 'acme.tagged', assets: [{ kind: 'script', src: 'frontend/app.js' }] },
+      { id: 'acme.server-only', hosts: ['api.example.com'] },
+    ]))
+    expect(plan.networkAllowedHosts).toEqual([])
   })
 
   it('never lets another plugin\'s tag open connect-src for a plugin without the grant', async () => {

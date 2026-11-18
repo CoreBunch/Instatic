@@ -657,6 +657,8 @@ describe('plugin manifest — frontend.origins', () => {
   })
 
   it.each([
+    'ac.me',
+    '*.co.de',
     'acme.github.io',
     'd111111abcdef8.cloudfront.net',
     '*.acme.vercel.app',
@@ -664,6 +666,12 @@ describe('plugin manifest — frontend.origins', () => {
     'js.example.com',
   ])('still accepts a host one party controls: %s', (origin) => {
     expect(withFrontend({ assets: [], origins: { scripts: [origin] } }).frontend?.origins?.scripts).toEqual([origin])
+  })
+
+  it.each(['script-inline', 'style-inline'])('rejects U+0000 in %s content', (kind) => {
+    // The HTML parser would replace it, so the declared text is not the text that runs.
+    expect(() => withFrontend({ assets: [{ kind, content: 'a\u0000b' }] })).toThrow()
+    expect(withFrontend({ assets: [{ kind, content: 'a\r\n\tb' }] }).frontend?.assets).toHaveLength(1)
   })
 
   it('drops unknown origin kinds and rejects duplicates', () => {

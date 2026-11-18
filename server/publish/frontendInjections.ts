@@ -27,10 +27,10 @@
  *          Data blocks (`type="application/ld+json"` and the like) are not
  *          executed, need no grant, and leave the policy alone.
  *        - inline style  → `style-src`  gains `'unsafe-inline'`
- *        - `networkAllowedHosts` of every contributing plugin → appended to
- *          `connect-src`, whether or not that plugin ships a tag (its module
- *          JS, or third-party code from `frontend.origins`, may be what calls
- *          out)
+ *        - `networkAllowedHosts` of every contributing plugin that can run
+ *          code in the visitor's browser (a declared asset or origin, or a
+ *          canvas module pack) → appended to `connect-src`, whether or not it
+ *          ships a tag. A plugin with server-side hosts only adds nothing.
  *        - plugin-declared `frontend.origins` → `scripts` appended to
  *          `script-src`, `frames` to `frame-src`
  *      A plan with nothing but meta / link / data-block tags and no hosts
@@ -114,8 +114,9 @@ export interface FrontendInjections {
    * (see `listFrontendAssetPlugins`). Appended to the page CSP's
    * `connect-src` so visitor-side `fetch()` from plugin frontend code
    * reaches the hosts the manifest declared. A plugin contributes its own
-   * hosts whether or not it ships a tag; another plugin's tag is never what
-   * lets them through.
+   * hosts once it can run code in the visitor's browser
+   * (`runsCodeInVisitorBrowser`), whether or not it ships a tag; another
+   * plugin's tag is never what lets them through.
    */
   networkAllowedHosts: string[]
   /**
@@ -178,6 +179,24 @@ export async function listFrontendAssetPlugins(db: DbClient): Promise<InstalledP
     .sort((a, b) => (a.manifest.id < b.manifest.id ? -1 : a.manifest.id > b.manifest.id ? 1 : 0))
 }
 
+/**
+ * Whether a plugin from `listFrontendAssetPlugins` can run code in a visitor's
+ * browser, which is what entitles its `networkAllowedHosts` to `connect-src`:
+ * it declares at least one frontend asset or origin, or it ships a canvas
+ * module pack (`entrypoints.modules`), whose modules may render JS. Which
+ * modules actually emit JS is only known per render, so the pack is the
+ * per-plugin stand-in. A plugin whose hosts are for its server code alone
+ * contributes nothing, and its pages stay as the publisher emitted them.
+ */
+function runsCodeInVisitorBrowser(plugin: InstalledPlugin): boolean {
+  const frontend = plugin.manifest.frontend
+  const declared =
+    (frontend?.assets.length ?? 0) +
+    (frontend?.origins?.scripts?.length ?? 0) +
+    (frontend?.origins?.frames?.length ?? 0)
+  return declared > 0 || Boolean(plugin.manifest.entrypoints?.modules)
+}
+
 export async function collectFrontendInjections(db: DbClient): Promise<FrontendInjections> {
   const eligible = await listFrontendAssetPlugins(db)
   const tags: Record<FrontendAssetPlacement, string[]> = {
@@ -216,8 +235,10 @@ export async function collectFrontendInjections(db: DbClient): Promise<FrontendI
           break
       }
     }
-    for (const host of plugin.manifest.networkAllowedHosts ?? []) {
-      if (host) networkAllowedHostsSet.add(host)
+    if (runsCodeInVisitorBrowser(plugin)) {
+      for (const host of plugin.manifest.networkAllowedHosts ?? []) {
+        if (host) networkAllowedHostsSet.add(host)
+      }
     }
     for (const host of plugin.manifest.frontend?.origins?.scripts ?? []) scriptOrigins.add(host)
     for (const host of plugin.manifest.frontend?.origins?.frames ?? []) frameOrigins.add(host)
@@ -330,16 +351,11 @@ function inlineScriptBody(content: string): string {
 }
 
 /**
- * `type` values that make an inline `<script>` something the page policy
- * governs: classic scripts (no type, or a JavaScript MIME type), modules,
- * import maps and speculation rules. Any other type is a data block, which a
- * browser never executes and `script-src` does not apply to.
+ * The JavaScript MIME type essences (WHATWG MIME Sniffing). A `<script>` whose
+ * type string is one of these, compared ASCII case-insensitively, is a
+ * classic script.
  */
-const EXECUTED_SCRIPT_TYPES = new Set([
-  '',
-  'module',
-  'importmap',
-  'speculationrules',
+const JAVASCRIPT_MIME_ESSENCES = new Set([
   'application/ecmascript',
   'application/javascript',
   'application/x-ecmascript',
@@ -358,12 +374,40 @@ const EXECUTED_SCRIPT_TYPES = new Set([
   'text/x-javascript',
 ])
 
+/** Script types that are not JavaScript MIME types but that `script-src` still governs. */
+const POLICY_GOVERNED_SCRIPT_TYPES = new Set(['module', 'importmap', 'speculationrules'])
+
+/**
+ * Whether a browser treats an inline `<script>` with these attributes as
+ * something the page policy governs, following "prepare the script element"
+ * in the HTML standard:
+ *
+ *   - `type=""`, or no `type` and no (or an empty) `language` → classic script.
+ *   - `type` present → its value with leading and trailing ASCII whitespace
+ *     stripped is the type string. No `type` but a non-empty `language` →
+ *     the type string is `text/<language>`.
+ *   - The type string is a classic script when it equals a JavaScript MIME
+ *     type essence, and a module / import map / speculation rules when it
+ *     equals that word, all ASCII case-insensitively. A type with parameters
+ *     (`text/javascript; charset=utf-8`) equals none of them.
+ *   - Anything else is a data block: never executed, not governed.
+ *
+ * `nomodule` is not consulted: a browser without module support runs such a
+ * script, so it is hashed like any other.
+ */
 function isExecutedInlineScript(attrs: Record<string, string> | undefined): boolean {
-  const typeEntry = Object.entries(attrs ?? {}).find(([name]) => name.toLowerCase() === 'type')
-  if (!typeEntry) return true
-  // Parameters (`text/javascript; charset=utf-8`) do not change the essence.
-  const essence = typeEntry[1].split(';')[0]!.trim().toLowerCase()
-  return EXECUTED_SCRIPT_TYPES.has(essence)
+  // A browser keeps the first of two attributes that differ only in case.
+  const attr = (wanted: string): string | undefined =>
+    Object.entries(attrs ?? {}).find(([name]) => name.toLowerCase() === wanted)?.[1]
+  const type = attr('type')
+  if (type === undefined) {
+    const language = attr('language')
+    if (language === undefined || language === '') return true
+    return JAVASCRIPT_MIME_ESSENCES.has(`text/${language}`.toLowerCase())
+  }
+  if (type === '') return true
+  const typeString = type.replace(/^[\t\n\f\r ]+|[\t\n\f\r ]+$/g, '').toLowerCase()
+  return JAVASCRIPT_MIME_ESSENCES.has(typeString) || POLICY_GOVERNED_SCRIPT_TYPES.has(typeString)
 }
 
 /**
