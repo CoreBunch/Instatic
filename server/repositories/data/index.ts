@@ -46,6 +46,7 @@ export {
   createDataRowMany,
   saveDataRowDraft,
   upsertDataRowDraft,
+  findDataRowSlot,
   updateDataRowDraftCells,
   saveDataRowDraftMany,
   softDeleteDataRow,
