@@ -4,26 +4,29 @@
  * app's own address: with a one-time code on approval, with `access_denied`
  * on refusal.
  */
+import { MEMBER_APP_SCOPE_TEXT } from '@core/members'
 import type { MemberAppRequestFrame } from '@core/templates'
 import type { DbClient } from '../../db/client'
 import { oauthRedirect, isLoopbackHostname } from '../../oauth/protocol'
 import { recordMemberEvent } from '../repository'
 import type { MemberActionContext, MemberOutcome, SignedInMember } from '../service'
-import { MEMBER_APP_SCOPE_TEXT, parseMemberAppScope } from './protocol'
+import { parseMemberAppScope } from './protocol'
 import { decideMemberAppRequest, findPendingMemberAppRequest } from './store'
 
 export async function answerAppSignIn(
   ctx: MemberActionContext,
   current: SignedInMember,
-  input: { requestId: string; approve: boolean },
+  input: { requestId: string; browserMarker: string | null; approve: boolean },
 ): Promise<MemberOutcome> {
-  if (!input.requestId) return { ok: false, code: 'invalid_token' }
+  if (!input.requestId || !input.browserMarker) return { ok: false, code: 'invalid_token' }
   const decided = await decideMemberAppRequest(ctx.db, {
     requestId: input.requestId,
+    browserMarker: input.browserMarker,
     memberId: current.member.id,
     approve: input.approve,
   })
-  // Answered already, run out, or never issued: there is no app to go back to.
+  // Answered already, run out, never issued, or opened in another browser:
+  // there is no app to go back to.
   if (!decided) return { ok: false, code: 'invalid_token' }
 
   const { request, code } = decided

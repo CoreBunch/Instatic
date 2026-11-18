@@ -45,7 +45,9 @@ export async function tryServePublicRoute(req: Request, runtime: ServerRuntime, 
   // A link from an account email lands here with a live token in the address
   // bar. Keep it out of the Referer header of everything the page loads from
   // another site (see `TOKEN_PAGE_REFERRER_POLICY` for why not `no-referrer`).
-  if (res && url.searchParams.has('token')) res.headers.set('referrer-policy', TOKEN_PAGE_REFERRER_POLICY)
+  if (res && (url.searchParams.has('token') || url.searchParams.has('request'))) {
+    res.headers.set('referrer-policy', TOKEN_PAGE_REFERRER_POLICY)
+  }
   return res
 }
 

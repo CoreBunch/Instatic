@@ -119,16 +119,17 @@ export interface MemberAppRequest {
 /** Store a checked authorization request and return the id the approval page is opened with. */
 export async function createMemberAppRequest(
   db: DbClient,
-  input: Omit<MemberAppRequest, 'appName'>,
+  input: Omit<MemberAppRequest, 'appName'> & { browserMarker: string },
   now: Date = new Date(),
 ): Promise<string> {
   const id = generateOpaqueToken('imem_rq_')
   await db`
     insert into member_app_requests (
-      id_hash, app_id, redirect_uri, code_challenge, scope, resource, state, created_at, expires_at
+      id_hash, app_id, browser_hash, redirect_uri, code_challenge, scope, resource, state, created_at, expires_at
     )
     values (
-      ${await hashOpaqueToken(id)}, ${input.appId}, ${input.redirectUri}, ${input.codeChallenge},
+      ${await hashOpaqueToken(id)}, ${input.appId}, ${await hashOpaqueToken(input.browserMarker)},
+      ${input.redirectUri}, ${input.codeChallenge},
       ${input.scope}, ${input.resource}, ${input.state}, ${now.toISOString()},
       ${new Date(now.getTime() + REQUEST_TTL_MS).toISOString()}
     )
@@ -179,20 +180,22 @@ export async function findPendingMemberAppRequest(
 /**
  * Answer a waiting request. An approval creates the grant and the one-time
  * code the app exchanges; a refusal only closes the request. Null when the
- * request was already answered or has run out.
+ * request was already answered, has run out, or the answer comes from a
+ * browser other than the one the app opened.
  */
 export async function decideMemberAppRequest(
   db: DbClient,
-  input: { requestId: string; memberId: string; approve: boolean },
+  input: { requestId: string; browserMarker: string; memberId: string; approve: boolean },
   now: Date = new Date(),
 ): Promise<{ request: MemberAppRequest; code: string | null } | null> {
   const idHash = await hashOpaqueToken(input.requestId)
+  const browserHash = await hashOpaqueToken(input.browserMarker)
   return db.transaction(async (tx) => {
     const request = await findPendingMemberAppRequest(tx, input.requestId, now)
     if (!request) return null
     const decided = await tx`
       update member_app_requests set decided_at = ${now.toISOString()}
-       where id_hash = ${idHash} and decided_at is null
+       where id_hash = ${idHash} and decided_at is null and browser_hash = ${browserHash}
     `
     if (decided.rowCount !== 1) return null
     if (!input.approve) return { request, code: null }

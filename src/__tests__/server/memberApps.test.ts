@@ -97,6 +97,9 @@ describe('sign-in for apps', () => {
   async function startRequest(overrides: Record<string, string | null> = {}): Promise<string> {
     const res = await call(await authorizeUrl(overrides), { headers: { cookie } })
     expect(res.status).toBe(302)
+    // The browser keeps the marker the site set, like a cookie jar.
+    const marker = /instatic_member_app=([A-Za-z0-9-]+)/.exec(res.headers.get('set-cookie') ?? '')?.[1]
+    if (marker && !cookie.includes('instatic_member_app=')) cookie = `${cookie}; instatic_member_app=${marker}`
     const location = new URL(res.headers.get('location')!, ORIGIN)
     expect(location.pathname).toBe('/approve-app')
     return location.searchParams.get('request')!
@@ -230,6 +233,16 @@ describe('sign-in for apps', () => {
       expect((await answer('approve', request)).status).toBe(200)
       expect((await answer('approve', request)).status).toBe(400)
       expect((await answer('deny', request)).status).toBe(400)
+    })
+
+    it('counts only from the browser the app opened', async () => {
+      const request = await startRequest()
+      const sessionOnly = cookie.split('; ').filter((part) => !part.startsWith('instatic_member_app=')).join('; ')
+      const otherBrowser = await answer('approve', request, { cookie: sessionOnly })
+      expect(otherBrowser.status).toBe(400)
+      const wrongMarker = await answer('approve', request, { cookie: `${sessionOnly}; instatic_member_app=${'a'.repeat(32)}` })
+      expect(wrongMarker.status).toBe(400)
+      expect((await answer('approve', request)).status).toBe(200)
     })
 
     it('needs a signed-in member and a request from this site', async () => {

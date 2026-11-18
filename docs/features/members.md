@@ -32,6 +32,11 @@ server/members/
 ├── mailTemplates.ts       — the member emails as templates (reworded in Email → Templates)
 ├── service.ts             — the flows; no HTTP
 ├── handlers.ts            — /_instatic/members/* : request parsing, redirects, JSON, cookies
+├── apps/                  — sign-in for apps (see "Sign-in for apps")
+│   ├── protocol.ts        — issuer, paths, scope parsing
+│   ├── store.ts           — apps, requests, grants, codes, tokens (all SQL) and `memberAppRealm`
+│   ├── handler.ts         — /_instatic/members/oauth/* and the discovery document
+│   └── approval.ts        — the member's answer, and what the approval page shows
 ```
 
 ## Tables (migration `033_members`)
@@ -46,6 +51,16 @@ server/members/
 | `member_settings` | one row: sign-up mode, profile fields, assigned pages |
 
 `member_settings` is deliberately not in `site.settings_json`: that document is branched and exported.
+
+Sign-in for apps adds five tables in migration `034_member_apps`:
+
+| Table | Holds |
+|---|---|
+| `member_apps` | the apps the owner registered: name, `redirect_uris_json`, `scopes_json`, `deleted_at` |
+| `member_app_requests` | a sign-in request waiting for the member's answer: SHA-256 of its id and of the browser marker, the checked parameters, `expires_at`, `decided_at` |
+| `member_app_grants` | one approval of one app by one member: `scope`, `expires_at`, `revoked_at`, `last_used_at` |
+| `member_app_codes` | SHA-256 of one-time authorization codes |
+| `member_app_tokens` | SHA-256 of access and refresh tokens, `kind`, `expires_at`, `revoked_at` |
 
 ## Calling an action
 
@@ -110,6 +125,7 @@ Error codes are the `MEMBER_ERROR_CODES` list in `@core/members`.
 | `reset` | `password/forgot` answers `not_available` |
 | `magic` | `link/request` answers `not_available` |
 | `emailChange` | `email/change` answers `not_available` |
+| `appSignIn` | an app's sign-in request is answered `temporarily_unavailable` |
 | `invite` | the admin and plugin invite calls are refused (409 / an error naming the missing page); the Invite button is disabled with the reason |
 
 `not_available` is decided from the settings and the published pages alone, before any address is looked up, so it is the same answer for every address (`linkPageMissing` in `service.ts`, `memberLinkPage` in `mail.ts`). Signing in with a password needs no emailed link and works on any page that holds a sign-in form.
@@ -213,6 +229,35 @@ A plugin reaches members through `api.cms.members`, member routes and member eve
 - **A member's page reaches only plugins that may read members.** The `publish.html` filter runs on public pages as before. A page rendered for one member on a protected route can hold that member's data, so `applyPublishedHtmlPipeline` passes it (`forMember`) only to filters of plugins granted `members.read`; a plugin holding `cms.hooks` alone is passed over for that render. Declared frontend assets are still added to every page.
 - **Events** are emitted from the functions every path goes through (`createMember`, `markMemberVerified`, `startSession`, `grantMemberTag`, `anonymizeMember`) by `emitMemberHook` in `server/members/hooks.ts`, without waiting for listeners.
 
+## Sign-in for apps
+
+An app (Instatic Desktop, later a premium plugin) signs a member in with OAuth 2.1 authorization code + PKCE and learns who they are and which tags they hold. It is a second realm on the shared OAuth engine (`server/oauth/`, see [`mcp-connectors.md`](mcp-connectors.md)), with its own tables and token prefix (`imem_`), so a member token and an admin MCP token can never stand in for each other.
+
+**Apps are registered by the owner** (Users → Site members → Apps: name, redirect addresses, scopes). The dialog (`MemberAppsDialog.tsx`) lists them with their client id and warns while no published "Approve an app" page is chosen. The API is `GET /admin/api/cms/members/apps` (`members.read`), `POST` and `DELETE …/apps/:id` (`members.manage` plus step-up, audited as `member.app.create` and `member.app.delete`); removing an app signs everyone out of it. There is no self-registration: anyone could otherwise register a look-alike and ask members to approve it. Clients are public (no secret). The client id is not a secret.
+
+**Issuer** is `<public origin>/_instatic/members`; it is also the `resource` every token is bound to. Its discovery document is at `/.well-known/oauth-authorization-server/_instatic/members`.
+
+| Endpoint | What it does |
+|---|---|
+| `GET /_instatic/members/oauth/authorize` | Checks the app, its redirect address, PKCE (S256 only) and scopes, stores the request, and sends the browser to the owner's approval page with `?request=<id>`; a signed-out visitor goes through the sign-in page first (`?next=`). An unregistered app or address gets a plain 400 in the browser, never a redirect. |
+| `POST /_instatic/members/apps/approve`, `apps/deny` | The member's answer: ordinary member form actions (cookie, same-origin). The answer goes back to the app's address with a one-time `code` or `error=access_denied`, plus `state` and `iss`. |
+| `POST /_instatic/members/oauth/token` | Code exchange and refresh. Form-encoded, needs `client_id` and `resource`. |
+| `POST /_instatic/members/oauth/revoke` | The app signs out: revokes the grant behind an access or refresh token of that app. |
+| `GET /_instatic/members/oauth/userinfo` | By access token: `{ id, serverTime }`, with `email`, `emailVerified`, `name` under the `profile` scope and `tags: [{ tag, expiresAt }]` under `access`. A tag held from several sources lasts as long as its longest grant. |
+
+**The approval screen is the owner's page.** Member settings has a slot "Approve an app" (`appSignIn`); without a published page there, `authorize` answers `temporarily_unavailable`. The page uses the form actions "Approve an app" and "Refuse an app", and the bindings `{member.appRequest.name}`, `{member.appRequest.access}` and `{member.appRequest.returnsTo}`. Those values are read from the stored request named in the page address (`memberAppRequestFrame`), never from the address itself.
+
+**Rules.**
+- Redirect addresses match exactly, except that a loopback IP literal matches on any port (a native app listens on whatever port it gets).
+- A code lasts 5 minutes and works once. An access token lasts 1 hour. An approval lasts 90 days; the refresh token rotates on every use, and presenting a used one revokes the whole grant.
+- Approval is asked on every sign-in. A native app cannot prove which app it is, so a remembered approval could be reused by another program.
+- A request is answered once, within 10 minutes, and only from the browser the app opened (a marker cookie set by `authorize`, stored hashed with the request). An approval address passed to someone else does nothing in their browser.
+- Tokens stop working on the next request once the member is suspended or deleted. A password reset or change, an email change, a suspension, "sign out everywhere" and removing the app all revoke the grants.
+- An app token only reads. No member action (profile, password, email, delete) accepts one.
+- Rate limits are per IP (`memberAppLimits`).
+
+Try it: `bun run demo:members` registers a demo app and prints the command for `scripts/member-app-demo.ts`, a terminal client that signs in, reads the member, refreshes and signs out.
+
 ## Deleting and exporting
 
 `delete` anonymises: the row stays with a placeholder address and `status = 'deleted'`, and sessions, tokens, tags, profile and event IP/user-agent are removed. The address is free to register again. `GET export` returns the account, profile, tags, live sessions and activity.
@@ -225,12 +270,13 @@ bun run demo:members        # add `-- --skip-build` to reuse the last admin buil
 
 `scripts/members-demo.ts` builds the admin, creates a fresh SQLite database under `.tmp/`, seeds and publishes a small site, and serves it on `http://127.0.0.1:3040` (`DEMO_PORT` changes the port). It prints the owner and member accounts it created. Emails are captured: read them under Email → Activity.
 
-The site (`scripts/lib/membersDemoSite.ts`) is twelve ordinary editor pages: home, join, sign in, forgot password, the pages the emailed links open (confirm, new password, sign-in link, new address, invitation), an account page, a members area and a pro lounge. `membersDemoSettings()` names each of them, by page id, in the member settings, which is what switches the features on. Every form is a `base.form` in Members mode completed by `memberFormFragment`, the function behind the editor's "Add …" button; the header's links use show-when rules, and its sign-out is a `base.link` with On click set to "Sign the member out" (`memberSignOutHref`), since signing out needs no form; the account page prefills from member bindings. Open any page in the editor to see how it is put together.
+The site (`scripts/lib/membersDemoSite.ts`) is thirteen ordinary editor pages: home, join, sign in, forgot password, the pages the emailed links open (confirm, new password, sign-in link, new address, invitation), an account page, a members area, a pro lounge and the page for approving an app. `membersDemoSettings()` names each of them, by page id, in the member settings, which is what switches the features on. Every form is a `base.form` in Members mode completed by `memberFormFragment`, the function behind the editor's "Add …" button; the header's links use show-when rules, and its sign-out is a `base.link` with On click set to "Sign the member out" (`memberSignOutHref`), since signing out needs no form; the account page prefills from member bindings. Open any page in the editor to see how it is put together.
 
 It is a development tool: fixed passwords, loopback only, and a database that is wiped on every start. `membersDemoSite.test.ts` keeps the pages publishable and correctly gated. The sign-in page also carries the "Email me a link" form. The E2E suite seeds the same pages under an address prefix of its own (`buildMembersDemoPages(prefix)`, printed by `scripts/e2e-members-seed.ts`).
 
 ## Tests
 
+- `src/__tests__/server/memberApps.test.ts` — sign-in for apps end to end: the authorize checks, the member's answer and its browser binding, code exchange, refresh rotation and reuse, `userinfo`, and every way access ends. Runs on SQLite and Postgres.
 - `src/__tests__/server/members.test.ts` — every flow, on SQLite and (with `DB=postgres`) Postgres.
 - `src/__tests__/server/membersAdmin.test.ts` — the admin API: capability and step-up gates and every route (SQLite). The queries behind it run on Postgres too through the `admin queries` cases in `members.test.ts`.
 - `src/__tests__/server/pluginMembers.test.ts` — plugins: the public mount, member routes, `cms.members`, member events, and the permission each needs.
@@ -238,4 +284,5 @@ It is a development tool: fixed passwords, loopback only, and a database that is
 - `src/__tests__/architecture/members-admin-split.test.ts` — the split.
 - `src/__tests__/server/pluginRouteCookies.test.ts` — cookie stripping.
 - `tests/e2e/members-editor.e2e.ts` (MEMBER-001), `members-admin.e2e.ts` (MEMBER-002), `members-account.e2e.ts` (MEMBER-003: sign-up, profile, tag page, export, password change, emailed sign-in link, reset, email change, deletion) and `members-plugin.e2e.ts` (MEMBER-004: a plugin's member routes) — the same flows in a browser, against published pages.
+- `tests/e2e/members-apps.e2e.ts` (MEMBER-005) — an app signs a member in: the owner registers it, the member approves on the owner's page, the app exchanges the code, reads the member and signs out.
 - `src/__tests__/server/membersAccessGate.test.ts` — the gate: static slot, render cache, path spellings, the uploads route, fragments, table rules.

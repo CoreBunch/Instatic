@@ -78,6 +78,7 @@ import {
   clearSignupNonceCookie,
   findMemberSession,
   memberSessionCookie,
+  readAppRequestMarker,
   readMemberSessionToken,
   readSignupNonce,
   signupNonceCookie,
@@ -379,7 +380,7 @@ async function runAction(
     case 'apps/approve':
     case 'apps/deny':
       return respond(req, fields, await answerAppSignIn(ctx, current, {
-        requestId: field('request'), approve: action === 'apps/approve',
+        requestId: field('request'), browserMarker: readAppRequestMarker(req), approve: action === 'apps/approve',
       }))
     default:
       return respond(req, fields, await deleteAccount(ctx, current, {

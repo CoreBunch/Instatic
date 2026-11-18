@@ -55,7 +55,30 @@ export function clearSignupNonceCookie(req: Request): string {
  * appears more than once: two values means someone else set one of them.
  */
 export function readSignupNonce(req: Request): string | null {
-  const wanted = signupNonceCookieName(req)
+  return readMarkerCookie(req, signupNonceCookieName(req))
+}
+
+/**
+ * Short-lived cookie naming the browser an app sent to the site to sign a
+ * member in. The member's answer counts only from that browser, so an
+ * approval address passed to someone else does nothing in theirs.
+ */
+const SECURE_APP_REQUEST_COOKIE = '__Host-instatic_member_app'
+const PLAIN_APP_REQUEST_COOKIE = 'instatic_member_app'
+
+function appRequestCookieName(req: Request): string {
+  return requestIsSecure(req) ? SECURE_APP_REQUEST_COOKIE : PLAIN_APP_REQUEST_COOKIE
+}
+
+export function appRequestMarkerCookie(req: Request, marker: string): string {
+  return `${appRequestCookieName(req)}=${marker}; ${cookieAttributes(req)}; Max-Age=3600`
+}
+
+export function readAppRequestMarker(req: Request): string | null {
+  return readMarkerCookie(req, appRequestCookieName(req))
+}
+
+function readMarkerCookie(req: Request, wanted: string): string | null {
   const values: string[] = []
   for (const part of (req.headers.get('cookie') ?? '').split(';')) {
     const eq = part.indexOf('=')

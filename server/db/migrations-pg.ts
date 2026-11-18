@@ -1567,10 +1567,13 @@ export const pgMigrations: Migration[] = [
       );
 
       -- An authorization request waiting for the member's answer on the
-      -- owner's approval page. Short-lived; answered at most once.
+      -- owner's approval page. Short-lived; answered at most once, and only
+      -- from the browser that opened it (browser_hash is that browser's
+      -- marker cookie, hashed).
       create table if not exists member_app_requests (
         id_hash text primary key,
         app_id text not null references member_apps(id) on delete cascade,
+        browser_hash text not null,
         redirect_uri text not null,
         code_challenge text not null,
         scope text not null,

@@ -5,11 +5,15 @@
 import { Type } from '@sinclair/typebox'
 import { apiRequest } from '@core/http'
 import {
+  MemberAppListResponseSchema,
+  MemberAppSchema,
   MemberDetailResponseSchema,
   MemberInviteResponseSchema,
   MemberListResponseSchema,
   MemberSettingsResponseSchema,
+  type CreateMemberAppBody,
   type MemberAdminStatus,
+  type MemberApp,
   type MemberDetail,
   type MemberListItem,
   type MemberListResponse,
@@ -122,5 +126,36 @@ export async function saveCmsMemberSettings(settings: MemberSettings): Promise<M
     body: settings,
     schema: MemberSettingsResponseSchema,
     fallbackMessage: 'The member settings could not be saved',
+  })
+}
+
+// ─── Sign-in for apps ──────────────────────────────────────────────────────
+
+const APPS_PATH = `${MEMBERS_PATH}/apps`
+
+export async function listCmsMemberApps(signal?: AbortSignal): Promise<MemberApp[]> {
+  const body = await apiRequest(APPS_PATH, {
+    schema: MemberAppListResponseSchema,
+    signal,
+    fallbackMessage: 'Could not load the apps',
+  })
+  return body.apps
+}
+
+export async function createCmsMemberApp(body: CreateMemberAppBody): Promise<MemberApp> {
+  return apiRequest(APPS_PATH, {
+    method: 'POST',
+    body,
+    schema: MemberAppSchema,
+    fallbackMessage: 'The app could not be added',
+  })
+}
+
+/** Removes the app and signs out everyone who signed in through it. */
+export async function deleteCmsMemberApp(id: string): Promise<void> {
+  await apiRequest(`${APPS_PATH}/${encodeURIComponent(id)}`, {
+    method: 'DELETE',
+    schema: OkSchema,
+    fallbackMessage: 'The app could not be removed',
   })
 }

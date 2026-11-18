@@ -3,16 +3,8 @@
  * on. Its issuer is the members path of this deployment, so its discovery
  * document does not collide with the MCP issuer on the same origin.
  */
+import { MEMBER_APP_SCOPES, type MemberAppScope } from '@core/members'
 import { oauthIssuerOrigin } from '../../oauth/protocol'
-
-/** What an app may ask for. A plugin's own scopes join this list in a later step. */
-export const MEMBER_APP_SCOPES = ['profile', 'access'] as const
-export type MemberAppScope = (typeof MEMBER_APP_SCOPES)[number]
-
-export const MEMBER_APP_SCOPE_TEXT: Record<MemberAppScope, string> = {
-  profile: 'Your name and email address',
-  access: 'Which memberships and access you hold',
-}
 
 const ISSUER_PATH = '/_instatic/members'
 export const MEMBER_OAUTH_PATH_PREFIX = `${ISSUER_PATH}/oauth/`

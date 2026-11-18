@@ -18,9 +18,10 @@
  * None of these read the member session cookie except `authorize`, and none
  * of them changes the account: an app token can only read.
  */
+import { MEMBER_APP_SCOPES } from '@core/members'
 import type { DbClient } from '../../db/client'
 import { RateLimiter } from '../../auth/rateLimit'
-import { jsonResponse, methodNotAllowed, readTextBodyWithLimit } from '../../http'
+import { jsonResponse, methodNotAllowed, readTextBodyWithLimit, setCookieHeader } from '../../http'
 import {
   hasDuplicateParameters,
   isValidPkceChallenge,
@@ -35,9 +36,13 @@ import {
 } from '../../oauth/tokenEndpoint'
 import { getMemberPagePaths } from '../pages'
 import { findMemberById, listActiveMemberTagExpiries } from '../repository'
-import { findMemberSession, readMemberSessionToken } from '../sessions'
 import {
-  MEMBER_APP_SCOPES,
+  appRequestMarkerCookie,
+  findMemberSession,
+  readAppRequestMarker,
+  readMemberSessionToken,
+} from '../sessions'
+import {
   MEMBER_OAUTH_AUTHORIZE_PATH,
   MEMBER_OAUTH_ISSUER_UNAVAILABLE_MESSAGE,
   MEMBER_OAUTH_METADATA_PATH,
@@ -168,8 +173,11 @@ async function authorize(req: Request, db: DbClient, url: URL): Promise<Response
     return refuse('temporarily_unavailable', 'This site has no page for approving apps yet.')
   }
 
+  // The browser the app opened keeps a marker; the answer counts only from it.
+  const browserMarker = readAppRequestMarker(req) ?? crypto.randomUUID().replaceAll('-', '')
   const requestId = await createMemberAppRequest(db, {
     appId: app.id,
+    browserMarker,
     redirectUri,
     codeChallenge,
     scope: scopes.join(' '),
@@ -180,9 +188,11 @@ async function authorize(req: Request, db: DbClient, url: URL): Promise<Response
   const sessionToken = readMemberSessionToken(req)
   const signedIn = sessionToken ? (await findMemberSession(db, sessionToken)) !== null : false
   // Signed out: go through the owner's sign-in page, which returns to `next`.
-  return redirectTo(
+  const res = redirectTo(
     signedIn || !pages.login ? approval : `${pages.login}?next=${encodeURIComponent(approval)}`,
   )
+  setCookieHeader(res, appRequestMarkerCookie(req, browserMarker))
+  return res
 }
 
 // ─── token, revoke ─────────────────────────────────────────────────────────

@@ -13,6 +13,9 @@
  *   POST   /admin/api/cms/members/:id/sign-out        — end every session
  *   POST   /admin/api/cms/members/:id/tags            — grant a tag
  *   DELETE /admin/api/cms/members/:id/tags            — withdraw one source's grant of a tag
+ *   GET    /admin/api/cms/members/apps                — apps that may sign a member in
+ *   POST   /admin/api/cms/members/apps                — register one (step-up)
+ *   DELETE /admin/api/cms/members/apps/:id            — remove one, signing everyone out of it (step-up)
  *
  * Reading needs `members.read` or `members.manage`; every change needs
  * `members.manage`. All SQL for the member tables lives in `server/members`
@@ -21,6 +24,7 @@
  */
 import type { DbClient } from '../../db/client'
 import {
+  CreateMemberAppBodySchema,
   isGrantableMemberTag,
   MemberInviteInputSchema,
   MemberSettingsSchema,
@@ -43,6 +47,7 @@ import {
   signOutMemberEverywhere,
 } from '../../members/admin'
 import { memberLinkOrigin, memberMailAvailable } from '../../members/mail'
+import { createMemberApp, deleteMemberApp, findMemberApp, listMemberApps } from '../../members/apps/store'
 import { listMemberPageOptions } from '../../members/pages'
 import {
   getMemberSettings,
@@ -51,6 +56,7 @@ import {
   revokeMemberTag,
   saveMemberSettings,
 } from '../../members/repository'
+import { parseAllowedRedirectUri } from '../../oauth/protocol'
 import { createAuditEvent, type AuditAction } from '../../repositories/audit'
 import type { AuthUser } from '../../repositories/users'
 import { CMS_API_PREFIX, requestAuditContext } from './shared'
@@ -278,17 +284,72 @@ async function handleSaveSettings(req: Request, db: DbClient): Promise<Response>
   return settingsResponse(req, db, settings)
 }
 
+// ─── Sign-in for apps ──────────────────────────────────────────────────────
+
+async function auditApp(
+  db: DbClient,
+  req: Request,
+  user: AuthUser,
+  action: 'member.app.create' | 'member.app.delete',
+  app: { id: string; name: string },
+): Promise<void> {
+  await createAuditEvent(db, {
+    actorUserId: user.id,
+    action,
+    targetType: 'member_app',
+    targetId: app.id,
+    metadata: { name: app.name },
+    ...requestAuditContext(req),
+  })
+}
+
+async function handleListApps(req: Request, db: DbClient): Promise<Response> {
+  const user = await reader(req, db)
+  if (user instanceof Response) return user
+  return jsonResponse({ apps: await listMemberApps(db) })
+}
+
+async function handleCreateApp(req: Request, db: DbClient): Promise<Response> {
+  const user = await manager(req, db, true)
+  if (user instanceof Response) return user
+  const input = await readValidatedBody(req, CreateMemberAppBodySchema)
+  if (!input) return badRequest('An app needs a name, at least one redirect address and at least one thing it may ask for')
+  const name = input.name.trim()
+  if (!name) return badRequest('Give the app a name')
+  const redirectUris = [...new Set(input.redirectUris.map((uri) => uri.trim()))]
+  if (!redirectUris.every((uri) => parseAllowedRedirectUri(uri) !== null)) {
+    return badRequest('Redirect addresses must use https, or http on this machine (127.0.0.1).')
+  }
+  if (new Set(input.scopes).size !== input.scopes.length) return badRequest('Name each thing the app may ask for once')
+  const app = await createMemberApp(db, { name, redirectUris, scopes: input.scopes, createdByUserId: user.id })
+  await auditApp(db, req, user, 'member.app.create', app)
+  return jsonResponse(app, { status: 201 })
+}
+
+async function handleDeleteApp(req: Request, db: DbClient, params: RouteParams): Promise<Response> {
+  const user = await manager(req, db, true)
+  if (user instanceof Response) return user
+  const app = await findMemberApp(db, params.id)
+  if (!app || !(await deleteMemberApp(db, app.id))) return jsonResponse({ error: 'App not found' }, { status: 404 })
+  await auditApp(db, req, user, 'member.app.delete', app)
+  return jsonResponse({ ok: true })
+}
+
 // ─── Routes ────────────────────────────────────────────────────────────────
 
 const MEMBER = new RegExp(`^${MEMBERS_PREFIX}/(?<id>[^/]+)$`)
+const APP = new RegExp(`^${MEMBERS_PREFIX}/apps/(?<id>[^/]+)$`)
 const action = (name: string) => new RegExp(`^${MEMBERS_PREFIX}/(?<id>[^/]+)/${name}$`)
 
-// The fixed paths come first: `invite` and `settings` would otherwise match `:id`.
+// The fixed paths come first: `invite`, `settings` and `apps` would otherwise match `:id`.
 const ROUTES: Route<[]>[] = [
   { method: 'GET', pattern: MEMBERS_PREFIX, handler: handleList },
   { method: 'POST', pattern: `${MEMBERS_PREFIX}/invite`, handler: handleInvite },
   { method: 'GET', pattern: `${MEMBERS_PREFIX}/settings`, handler: handleGetSettings },
   { method: 'PUT', pattern: `${MEMBERS_PREFIX}/settings`, handler: handleSaveSettings },
+  { method: 'GET', pattern: `${MEMBERS_PREFIX}/apps`, handler: handleListApps },
+  { method: 'POST', pattern: `${MEMBERS_PREFIX}/apps`, handler: handleCreateApp },
+  { method: 'DELETE', pattern: APP, handler: handleDeleteApp },
   { method: 'GET', pattern: MEMBER, handler: handleDetail },
   { method: 'DELETE', pattern: MEMBER, handler: handleDelete },
   { method: 'POST', pattern: action('suspend'), handler: (req, db, params) => handleSuspend(req, db, params, true) },
