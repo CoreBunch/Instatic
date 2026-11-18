@@ -77,7 +77,7 @@ Security properties:
 - Public clients only: no generated client secret is required or stored.
 - Redirect URIs are registered exactly. HTTPS is required except for HTTP loopback callbacks used by native clients. On a loopback IP literal (`127.0.0.1`, `[::1]`) the port is ignored when a request is matched to the registered callback (RFC 8252 §7.3), since a native app listens on whatever port it is given; host, path and query must still match, and `localhost` gets no such exception.
 - Authorization codes expire after five minutes, are stored only as SHA-256 hashes, and can be consumed once.
-- S256 PKCE, exact client id, callback, and MCP `resource` binding are checked during exchange.
+- S256 PKCE, exact client id, callback, and MCP `resource` binding are checked during exchange. A code works once; presenting it again revokes the connection it created, with every token already issued from it.
 - OAuth access tokens are opaque, stored only as hashes, bound to the exact MCP resource, and expire after at most one hour.
 - Refresh tokens rotate on every use. Reuse of a rotated token revokes the connection and all of its tokens.
 - OAuth grants expire after 90 days. Disconnecting the connection immediately invalidates its access and refresh tokens.

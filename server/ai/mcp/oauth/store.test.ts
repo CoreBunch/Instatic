@@ -94,6 +94,18 @@ describe('MCP OAuth grant store', () => {
     })
     expect(await findOAuthAccessGrant(db, tokens!.accessToken, 'https://other.example/mcp')).toBeNull()
 
+    // Another client presenting the code is refused and changes nothing.
+    expect(await exchangeAuthorizationCode(db, mcpOAuthRealm, {
+      code,
+      clientId: 'different-client',
+      redirectUri: request.redirectUri,
+      codeVerifier: VERIFIER,
+      resource: RESOURCE,
+    })).toBeNull()
+    expect(await findOAuthAccessGrant(db, tokens!.accessToken, RESOURCE)).not.toBeNull()
+
+    // The same client presenting it a second time is a replay: the code is
+    // refused and the tokens it already produced stop working.
     expect(await exchangeAuthorizationCode(db, mcpOAuthRealm, {
       code,
       clientId: request.clientId,
@@ -101,6 +113,7 @@ describe('MCP OAuth grant store', () => {
       codeVerifier: VERIFIER,
       resource: RESOURCE,
     })).toBeNull()
+    expect(await findOAuthAccessGrant(db, tokens!.accessToken, RESOURCE)).toBeNull()
   })
 
   it('rejects a code when the verifier, callback, client, or resource differs', async () => {

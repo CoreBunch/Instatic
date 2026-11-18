@@ -103,6 +103,14 @@ export async function exchangeAuthorizationCode(
   return db.transaction(async (tx) => {
     const store = realm.store(tx)
     const code = await store.findAuthorizationCode(codeHash)
+    // A code is used once. Seeing it again means it leaked or was replayed,
+    // so everything issued from it is withdrawn too (RFC 6749 §4.1.2). Only
+    // the client the code belongs to can trigger this.
+    if (code?.consumedAt && !code.grantRevokedAt && code.clientId === input.clientId) {
+      await store.revokeGrant(code.grantId, now)
+      console.warn(`[${realm.logName}] authorization-code replay revoked grant ${code.grantId}`)
+      return null
+    }
     if (
       !code || code.consumedAt || code.grantRevokedAt ||
       isPast(code.expiresAt, now) || isPast(code.grantExpiresAt, now) ||

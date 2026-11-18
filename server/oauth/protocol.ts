@@ -67,8 +67,11 @@ export function redirectUriRegistered(registered: readonly string[], candidate: 
 function parseLoopbackIpRedirect(raw: string): URL | null {
   const url = parseAllowedRedirectUri(raw)
   if (!url || url.protocol !== 'http:') return null
-  const host = url.hostname.replace(/^\[|\]$/g, '')
-  return /^127\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(host) || host === '::1' ? url : null
+  return isLoopbackIpLiteral(url.hostname.replace(/^\[|\]$/g, '')) ? url : null
+}
+
+function isLoopbackIpLiteral(host: string): boolean {
+  return /^127\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(host) || host === '::1'
 }
 
 /** The client's redirect URI with the authorization response added to it. */
@@ -98,8 +101,12 @@ export function hasDuplicateParameters(params: URLSearchParams): boolean {
   return false
 }
 
+/**
+ * A name for this machine: `localhost`, a `.localhost` name, or a loopback IP
+ * literal. A DNS name that merely starts with `127.` (`127.example.com`) is
+ * somebody else's host and is not one.
+ */
 export function isLoopbackHostname(hostname: string): boolean {
   const normalized = hostname.toLowerCase().replace(/^\[|\]$/g, '')
-  return normalized === 'localhost' || normalized.endsWith('.localhost') ||
-    normalized.startsWith('127.') || normalized === '::1'
+  return normalized === 'localhost' || normalized.endsWith('.localhost') || isLoopbackIpLiteral(normalized)
 }
