@@ -66,7 +66,8 @@ export function MemberActionRow({
       {action && (
         <p className={styles.relationship}>
           {action.description}
-          {action.needsToken && ' Put it on the page you chose for that link in the member settings.'}
+          {action.linkParam === 'token' && ' Put it on the page you chose for that link in the member settings.'}
+          {action.linkParam === 'request' && ' Put it on the page you chose for approving apps in the member settings.'}
           {action.signedIn && ' Show it to signed-in members only.'}
         </p>
       )}

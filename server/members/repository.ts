@@ -220,6 +220,29 @@ export async function listActiveMemberTags(db: DbClient, memberId: string): Prom
 }
 
 /**
+ * The tags a member holds right now, each with the moment it runs out (null
+ * when it does not). A tag granted by several sources lasts as long as its
+ * longest grant.
+ */
+export async function listActiveMemberTagExpiries(
+  db: DbClient,
+  memberId: string,
+): Promise<Array<{ tag: string; expiresAt: string | null }>> {
+  const { rows } = await db<{ tag: string; expires_at: string | null }>`
+    select tag, expires_at from member_tags
+     where member_id = ${memberId} and (expires_at is null or expires_at > ${nowIso()})
+     order by tag
+  `
+  const expiries = new Map<string, string | null>()
+  for (const row of rows) {
+    const known = expiries.get(row.tag)
+    if (known === undefined) expiries.set(row.tag, row.expires_at)
+    else if (known !== null && (row.expires_at === null || row.expires_at > known)) expiries.set(row.tag, row.expires_at)
+  }
+  return [...expiries].map(([tag, expiresAt]) => ({ tag, expiresAt }))
+}
+
+/**
  * Grant (or refresh) one tag from one source. The key is (member, tag,
  * source): granting `pro` from a plugin never touches a `pro` an admin gave.
  */
@@ -280,6 +303,7 @@ export type MemberEventKind =
   | 'email_changed'
   | 'profile_updated'
   | 'deleted'
+  | 'app_connected'
   // Done by an administrator, not by the member.
   | 'invited'
   | 'suspended'

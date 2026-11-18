@@ -246,15 +246,15 @@ export const FormModule: ModuleDefinition<FormProps> = {
 }
 
 /**
- * Hidden inputs a member form carries: the emailed link's token (filled in
- * by the runtime from the page address) and, for a script-less submit, where
+ * Hidden inputs a member form carries: the value from the page address it
+ * posts back (an emailed link's token or an app's sign-in request, filled in
+ * by the runtime) and, for a script-less submit, where
  * to go afterwards.
  */
 function memberHiddenInputs(props: FormProps): string {
   if (props.mode !== 'member') return ''
-  const token = memberFormAction(props.memberAction)?.needsToken
-    ? '<input type="hidden" name="token" data-instatic-member-token>'
-    : ''
+  const linkParam = memberFormAction(props.memberAction)?.linkParam
+  const token = linkParam ? `<input type="hidden" name="${linkParam}" data-instatic-member-link-param="${linkParam}">` : ''
   const success = props.successBehavior === 'redirect' && props.redirectUrl
     ? `<input type="hidden" name="_success" value="${safeUrl(props.redirectUrl)}">`
     : ''

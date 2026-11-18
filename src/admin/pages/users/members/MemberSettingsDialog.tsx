@@ -91,6 +91,12 @@ const PAGE_FIELDS: Array<{ key: MemberPageKey; label: string; hint: string; off:
     hint: 'Opened by the link sent to a new address.',
     off: 'Not set: members cannot change their address.',
   },
+  {
+    key: 'appSignIn',
+    label: 'Approve an app',
+    hint: 'Where a member is sent when an app asks to sign them in.',
+    off: 'Not set: apps cannot sign members in.',
+  },
 ]
 
 /** Why sign-up does not work yet in a mode that needs a page, or null when it does. */

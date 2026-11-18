@@ -28,6 +28,7 @@ import {
   recordMemberEvent,
   type MemberRecord,
 } from './repository'
+import { revokeAllMemberAppGrants } from './apps/store'
 import { listMemberSessions, revokeAllMemberSessions } from './sessions'
 import { issueMemberToken, withdrawMemberTokens } from './tokens'
 
@@ -347,16 +348,18 @@ export async function setMemberSuspended(db: DbClient, memberId: string, suspend
   `
   if (suspended) {
     await revokeAllMemberSessions(db, memberId)
+    await revokeAllMemberAppGrants(db, memberId)
     await withdrawMemberTokens(db, memberId)
   }
   await recordMemberEvent(db, memberId, suspended ? 'suspended' : 'unsuspended', NO_REQUEST)
   return true
 }
 
-/** End every session of a member. They can sign in again. */
+/** End every session of a member, in browsers and in apps. They can sign in again. */
 export async function signOutMemberEverywhere(db: DbClient, memberId: string): Promise<boolean> {
   if (!(await findMemberById(db, memberId))) return false
   await revokeAllMemberSessions(db, memberId)
+  await revokeAllMemberAppGrants(db, memberId)
   await recordMemberEvent(db, memberId, 'signed_out_by_admin', NO_REQUEST)
   return true
 }

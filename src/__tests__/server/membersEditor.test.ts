@@ -495,8 +495,8 @@ describe('member forms', () => {
   })
 
   it('carries the emailed token only on forms that are opened from a link', () => {
-    expect(render({ memberAction: 'password/reset' }).html).toContain('name="token" data-instatic-member-token')
-    expect(render({ memberAction: 'login' }).html).not.toContain('data-instatic-member-token')
+    expect(render({ memberAction: 'password/reset' }).html).toContain('name="token" data-instatic-member-link-param="token"')
+    expect(render({ memberAction: 'login' }).html).not.toContain('data-instatic-member-link-param')
   })
 
   it('never posts to a path the catalogue does not know', () => {

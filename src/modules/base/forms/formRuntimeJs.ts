@@ -75,16 +75,22 @@ export const FORM_RUNTIME_JS = `(() => {
 
   // ── Member forms ─────────────────────────────────────────────────────────
 
-  // Emailed links land on a page with ?token=…; the form posts it back.
+  // Some member pages are opened with a value in their address: ?token=… from
+  // an emailed link, ?request=… from an app that wants to sign the member in.
+  // The form posts it back.
   function fillMemberToken(form) {
-    const input = form.querySelector('input[data-instatic-member-token]');
-    if (input) input.value = new URLSearchParams(window.location.search).get('token') || '';
+    const input = form.querySelector('input[data-instatic-member-link-param]');
+    if (!input) return;
+    const name = input.getAttribute('data-instatic-member-link-param') || '';
+    input.value = new URLSearchParams(window.location.search).get(name) || '';
   }
 
   async function submitMemberForm(form) {
-    const tokenInput = form.querySelector('input[data-instatic-member-token]');
+    const tokenInput = form.querySelector('input[data-instatic-member-link-param]');
     if (tokenInput && !tokenInput.value) {
-      setState(form, 'error', 'This link is incomplete. Open the link from your email again.');
+      setState(form, 'error', tokenInput.name === 'request'
+        ? 'This page was opened without a sign-in request. Start again from the app.'
+        : 'This link is incomplete. Open the link from your email again.');
       return;
     }
     setBusy(form, true);
@@ -101,6 +107,12 @@ export const FORM_RUNTIME_JS = `(() => {
         const error = body && body.error && typeof body.error === 'object' ? body.error : {};
         const field = typeof error.field === 'string' ? error.field : '';
         setState(form, 'error', typeof error.message === 'string' && error.message ? error.message : 'Something went wrong. Try again.', field);
+        return;
+      }
+      // An approved or refused app: the answer goes to the app's own address,
+      // which the server checked against the ones registered for it.
+      if (typeof body.appRedirect === 'string' && body.appRedirect) {
+        window.location.assign(body.appRedirect);
         return;
       }
       const next = memberDestination(form, body.code, body.landing);

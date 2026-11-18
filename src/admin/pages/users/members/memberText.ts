@@ -19,6 +19,7 @@ const EVENT_LABEL: Record<string, string> = {
   login: 'Signed in',
   login_failed: 'Failed to sign in',
   logout: 'Signed out',
+  app_connected: 'Signed an app in',
   magic_link_requested: 'Asked for a sign-in link',
   password_reset_requested: 'Asked to reset their password',
   password_reset: 'Chose a new password',

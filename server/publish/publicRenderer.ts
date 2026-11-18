@@ -7,6 +7,7 @@ import { buildPublishedSiteCssBundle } from './siteCssBundle'
 import { buildPublishedSiteModuleJsMap } from './moduleJsBundle'
 import { resolveTemplateChain, resolveNotFoundTemplate, composeTemplateChain } from '@core/templates'
 import type { TemplateRenderDataContext } from '@core/templates/dynamicBindings'
+import { memberAppRequestFrame } from '../members/apps/approval'
 import { closedContentFor, getAccessIndex, memberFrameFor } from './accessGate'
 import type { CurrentMember } from '@core/members'
 import { prefetchLoopData, publishedDataRowToEntryItem } from './loopPrefetch'
@@ -117,7 +118,10 @@ async function renderMergedTemplate(
   const visitorContext: TemplateRenderDataContext | undefined =
     ctx.visitor === undefined
       ? templateContext
-      : { ...(templateContext ?? { entryStack: [] }), member: memberFrameFor(ctx.visitor) }
+      : {
+          ...(templateContext ?? { entryStack: [] }),
+          member: memberFrameFor(ctx.visitor, ctx.visitor ? await memberAppRequestFrame(ctx.db, ctx.url) : null),
+        }
   const published = publishPage(merged, snapshot.site, registry, {
     templateContext: visitorContext,
     ...(documentMeta ? { documentMeta } : {}),

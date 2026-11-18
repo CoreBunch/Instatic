@@ -257,7 +257,7 @@ async function handleGetSettings(req: Request, db: DbClient): Promise<Response> 
 function settingsProblem(settings: MemberSettings): string | null {
   const ids = settings.profileFields.map((field) => field.id)
   if (new Set(ids).size !== ids.length) return 'Two profile fields share an id.'
-  const reserved = ['email', 'password', 'token', 'currentPassword', 'newPassword']
+  const reserved = ['email', 'password', 'token', 'request', 'currentPassword', 'newPassword']
   const clash = ids.find((id) => reserved.includes(id))
   return clash ? `"${clash}" is used by the member forms and cannot be a profile field id.` : null
 }

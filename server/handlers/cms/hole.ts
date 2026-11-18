@@ -56,6 +56,7 @@ import { getPublishVersion } from '../../publish/publishState'
 import { HOLE_RUNTIME_JS } from '../../publish/holeRuntime'
 import { stampFormPageTokens } from '../../forms/formRuntime'
 import { isSessionCookieName } from '../../sessionCookies'
+import { memberAppRequestFrame } from '../../members/apps/approval'
 import {
   closedContentFor,
   decideAccess,
@@ -296,7 +297,10 @@ export async function handleHoleRequest(
       slug: route.slug,
       cookies: perVisitor ? parseCookies(req.headers.get('cookie')) : {},
     }
-    const member = isProtected || showsMember ? memberFrameFor(await visitor()) : undefined
+    const signedIn = isProtected || showsMember ? await visitor() : undefined
+    const member = signedIn === undefined
+      ? undefined
+      : memberFrameFor(signedIn, signedIn ? await memberAppRequestFrame(ctx.db, pageUrl) : null)
     const html = await renderHoleFragment(nodeId, foundPage, snap.site, ctx.db, pageUrl, request, closed, member)
     return new Response(html, {
       status: 200,

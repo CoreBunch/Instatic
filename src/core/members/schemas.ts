@@ -63,6 +63,8 @@ export const MemberPagesSchema = Type.Object(
     magic: Type.Optional(PageIdSchema),
     invite: Type.Optional(PageIdSchema),
     emailChange: Type.Optional(PageIdSchema),
+    /** Where a member approves an app that wants to sign them in. */
+    appSignIn: Type.Optional(PageIdSchema),
   },
   { additionalProperties: false },
 )
