@@ -8,6 +8,7 @@
  * request without touching these tables.
  */
 import { nanoid } from 'nanoid'
+import { parsePluginAppScope } from '@core/members'
 import { nowIso } from '@core/utils/isoDate'
 import type { DbClient } from '../../db/client'
 import type {
@@ -288,8 +289,43 @@ export async function findMemberAppAccess(
   return row ? { grantId: row.grant_id, memberId: row.member_id, appId: row.app_id, scope: row.scope } : null
 }
 
-export async function touchMemberAppGrant(db: DbClient, grantId: string): Promise<void> {
-  await db`update member_app_grants set last_used_at = ${nowIso()} where id = ${grantId}`
+/** Note that the grant was used. At most one write a minute, however often an app calls. */
+export async function touchMemberAppGrant(db: DbClient, grantId: string, now: Date = new Date()): Promise<void> {
+  await db`
+    update member_app_grants set last_used_at = ${now.toISOString()}
+     where id = ${grantId}
+       and (last_used_at is null or last_used_at < ${new Date(now.getTime() - 60_000).toISOString()})
+  `
+}
+
+/**
+ * A plugin is gone, and with it what its scopes meant. Sign-ins that carry
+ * one of them are ended and the scopes are taken off the registered apps, so
+ * a different package installed later under the same id starts from a fresh
+ * approval instead of inheriting this one's.
+ */
+export async function withdrawPluginAppScopes(db: DbClient, pluginId: string): Promise<void> {
+  const ofPlugin = (scope: string) => parsePluginAppScope(scope)?.pluginId === pluginId
+  const iso = nowIso()
+  await db.transaction(async (tx) => {
+    const { rows: grants } = await tx<{ id: string; scope: string }>`
+      select id, scope from member_app_grants where revoked_at is null
+    `
+    for (const grant of grants) {
+      if (grant.scope.split(' ').some(ofPlugin)) await revokeGrantRows(tx, grant.id, iso)
+    }
+    const { rows: apps } = await tx<{ id: string; scopes_json: string[] }>`
+      select id, scopes_json from member_apps where deleted_at is null
+    `
+    for (const app of apps) {
+      const scopes = Array.isArray(app.scopes_json) ? app.scopes_json : []
+      if (!scopes.some(ofPlugin)) continue
+      await tx`
+        update member_apps set scopes_json = ${JSON.stringify(scopes.filter((scope) => !ofPlugin(scope)))}
+         where id = ${app.id}
+      `
+    }
+  })
 }
 
 async function revokeGrantRows(tx: DbClient, grantId: string, iso: string): Promise<void> {

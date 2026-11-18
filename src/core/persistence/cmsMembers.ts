@@ -14,6 +14,7 @@ import {
   type CreateMemberAppBody,
   type MemberAdminStatus,
   type MemberApp,
+  type MemberAppListResponse,
   type MemberDetail,
   type MemberListItem,
   type MemberListResponse,
@@ -138,13 +139,13 @@ export async function saveCmsMemberSettings(settings: MemberSettings): Promise<M
 
 const APPS_PATH = `${MEMBERS_PATH}/apps`
 
-export async function listCmsMemberApps(signal?: AbortSignal): Promise<MemberApp[]> {
-  const body = await apiRequest(APPS_PATH, {
+/** The registered apps, and what an app can be given on this site right now. */
+export async function listCmsMemberApps(signal?: AbortSignal): Promise<MemberAppListResponse> {
+  return apiRequest(APPS_PATH, {
     schema: MemberAppListResponseSchema,
     signal,
     fallbackMessage: 'Could not load the apps',
   })
-  return body.apps
 }
 
 export async function createCmsMemberApp(body: CreateMemberAppBody): Promise<MemberApp> {

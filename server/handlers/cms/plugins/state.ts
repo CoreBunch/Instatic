@@ -16,6 +16,7 @@
  * surviving plugins so they pick their hooks back up.
  */
 import type { DbClient } from '../../../db/client'
+import { withdrawPluginAppScopes } from '../../../members/apps/store'
 import type { AuthUser } from '../../../repositories/users'
 import {
   deletePlugin,
@@ -199,6 +200,8 @@ async function removePluginCompletely(
   clearPluginCrashCounter(pluginId)
   await clearPluginCrashes(db, pluginId)
   await clearPluginScheduleRuns(db, pluginId)
+  // What its app scopes let an app do went with it.
+  await withdrawPluginAppScopes(db, pluginId)
   if (options.uploadsDir) {
     await removeAllPluginAssets(options.uploadsDir, pluginId)
   }

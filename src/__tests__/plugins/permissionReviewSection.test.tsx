@@ -268,4 +268,28 @@ describe('PermissionReviewSection — upgrade with new permissions', () => {
     expect(droppedRow).not.toBeNull()
     expect(droppedRow?.getAttribute('data-permission')).toBe('cms.storage')
   })
+
+  it('lists what apps may be allowed to do through the plugin, and nothing when it declares none', () => {
+    const view = (manifest: PluginManifest) =>
+      render(
+        <PermissionReviewSection pending={{ manifest }} uploading={false} onCancel={() => {}} onConfirm={() => {}} />,
+      )
+    const { container, unmount } = view({
+      ...baseManifest,
+      permissions: ['cms.routes', 'members.read'] satisfies PluginPermission[],
+      appScopes: [
+        { name: 'read', description: 'See your purchases and plan' },
+        { name: 'manage', description: 'Create licences for you' },
+      ],
+    })
+    const section = container.querySelector('[data-testid="permission-review-app-scopes"]')
+    expect(section?.textContent).toContain('Access for apps')
+    const rows = [...(section?.querySelectorAll('[data-app-scope]') ?? [])]
+    expect(rows.map((row) => row.getAttribute('data-app-scope'))).toEqual(['read', 'manage'])
+    expect(rows[0]?.textContent).toContain('See your purchases and plan')
+    expect(rows[0]?.textContent).toContain('plugin:acme.test:read')
+    unmount()
+
+    expect(view(baseManifest).container.querySelector('[data-testid="permission-review-app-scopes"]')).toBeNull()
+  })
 })

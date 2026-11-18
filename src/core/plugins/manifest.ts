@@ -16,7 +16,9 @@ import {
   PLUGIN_PERMISSION_VALUES,
   permissionLabel as sdkPermissionLabel,
 } from '@core/plugin-sdk'
+import { PLUGIN_APP_SCOPE_NAME_PATTERN } from '@core/members'
 import { collectEnabledAdminPages, pluginAdminPageRoute } from './manifestAdminPages'
+import { settingDefinitionSchema } from './manifestSettings'
 
 // Admin-page route helpers and resource-record helpers live in sibling
 // modules (responsibility split); re-exported here so
@@ -136,80 +138,6 @@ const adminPageSchema = Type.Object({
   content: contentSchema,
 })
 
-// `settings` schema — a discriminated union over the supported types, mirroring
-// `PluginSettingDefinition` in `src/core/plugin-sdk/builders/settings.ts`.
-// The Static type of each variant is assignment-compatible with the
-// corresponding `PluginSettingDefinition` branch (Array<T> extends
-// ReadonlyArray<T>), so parsePluginManifest needs no cast for `settings`.
-const SETTING_ID_PATTERN = /^[a-zA-Z_][a-zA-Z0-9_-]*$/
-
-// Base properties shared by every setting variant.
-const settingBaseProps = {
-  id: Type.String({ pattern: SETTING_ID_PATTERN.source }),
-  label: Type.String({ minLength: 1, maxLength: 80 }),
-  description: Type.Optional(Type.String({ maxLength: 500 })),
-  required: Type.Optional(Type.Boolean()),
-  secret: Type.Optional(Type.Boolean()),
-}
-
-const settingOptionSchema = Type.Object({
-  label: Type.String({ minLength: 1, maxLength: 80 }),
-  value: Type.String({ minLength: 1, maxLength: 80 }),
-})
-
-const settingDefinitionSchema = Type.Union([
-  Type.Object({
-    ...settingBaseProps,
-    type: Type.Literal('text'),
-    placeholder: Type.Optional(Type.String({ maxLength: 120 })),
-    default: Type.Optional(Type.String()),
-  }),
-  Type.Object({
-    ...settingBaseProps,
-    type: Type.Literal('textarea'),
-    placeholder: Type.Optional(Type.String({ maxLength: 120 })),
-    rows: Type.Optional(Type.Number({ minimum: 1 })),
-    default: Type.Optional(Type.String()),
-  }),
-  Type.Object({
-    ...settingBaseProps,
-    type: Type.Literal('number'),
-    min: Type.Optional(Type.Number()),
-    max: Type.Optional(Type.Number()),
-    step: Type.Optional(Type.Number()),
-    unit: Type.Optional(Type.String({ maxLength: 16 })),
-    default: Type.Optional(Type.Number()),
-  }),
-  Type.Object({
-    ...settingBaseProps,
-    type: Type.Literal('toggle'),
-    default: Type.Optional(Type.Boolean()),
-  }),
-  Type.Object({
-    ...settingBaseProps,
-    type: Type.Literal('select'),
-    // Required field — a select setting must declare its options.
-    options: Type.Array(settingOptionSchema, { minItems: 1 }),
-    default: Type.Optional(Type.String()),
-  }),
-  Type.Object({
-    ...settingBaseProps,
-    type: Type.Literal('color'),
-    format: Type.Optional(Type.Union([Type.Literal('hex'), Type.Literal('rgba')])),
-    default: Type.Optional(Type.String()),
-  }),
-  Type.Object({
-    ...settingBaseProps,
-    type: Type.Literal('url'),
-    default: Type.Optional(Type.String()),
-  }),
-  Type.Object({
-    ...settingBaseProps,
-    type: Type.Literal('password'),
-    placeholder: Type.Optional(Type.String({ maxLength: 120 })),
-    default: Type.Optional(Type.String()),
-  }),
-])
 
 // Marketplace metadata — author, license, URLs, keywords, visual icon.
 // Validated at the manifest boundary so a malicious zip can't inject
@@ -295,6 +223,16 @@ const manifestSchema = Type.Object({
       ),
     }, { additionalProperties: false }),
     { maxItems: 50 },
+  )),
+  // What an app a member signed in to may do through this plugin; see
+  // `PluginManifest.appScopes`. Coherence (unique names, `members.read`) is
+  // checked below.
+  appScopes: Type.Optional(Type.Array(
+    Type.Object({
+      name: Type.String({ pattern: PLUGIN_APP_SCOPE_NAME_PATTERN }),
+      description: Type.String({ minLength: 1, maxLength: 120 }),
+    }, { additionalProperties: false }),
+    { maxItems: 20 },
   )),
   entrypoints: Type.Optional(Type.Object({
     server: Type.Optional(Type.String({ pattern: SAFE_ASSET_PATH_PATTERN.source })),
@@ -421,6 +359,28 @@ export function parsePluginManifest(input: unknown): PluginManifest {
     if (normalized !== expected) {
       throw new Error(
         `Invalid plugin manifest: assetBasePath must equal "${expected}"`,
+      )
+    }
+  }
+
+  // App scopes hand an app the signed-in member through this plugin's member
+  // routes, so they need what a member route needs, and each name once.
+  if (data.appScopes && data.appScopes.length > 0) {
+    if (!data.permissions.includes('members.read')) {
+      throw new Error(
+        `Invalid plugin manifest: \`appScopes\` requires the \`members.read\` permission. ` +
+          `Add "members.read" to \`permissions\`.`,
+      )
+    }
+    const names = data.appScopes.map((scope) => scope.name)
+    const repeated = names.find((name, index) => names.indexOf(name) !== index)
+    if (repeated) throw new Error(`Invalid plugin manifest: app scope "${repeated}" is declared twice`)
+    // A member reads the description before allowing an app. Characters that
+    // reorder or hide text have no place in it.
+    const unreadable = data.appScopes.find((scope) => /[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/u.test(scope.description))
+    if (unreadable) {
+      throw new Error(
+        `Invalid plugin manifest: the description of app scope "${unreadable.name}" contains control or invisible characters`,
       )
     }
   }
@@ -657,6 +617,7 @@ export function parsePluginManifest(input: unknown): PluginManifest {
     networkAllowedHosts: data.networkAllowedHosts ? [...data.networkAllowedHosts] : undefined,
     // Per-table allowlist for the `api.cms.content.*` surface — required
     // when any `cms.content.*` permission is granted (coherence checked above).
+    appScopes: data.appScopes ? data.appScopes.map((scope) => ({ name: scope.name, description: scope.description })) : undefined,
     contentAccess: data.contentAccess
       ? data.contentAccess.map((entry) => ({ table: entry.table, modes: [...entry.modes] }))
       : undefined,

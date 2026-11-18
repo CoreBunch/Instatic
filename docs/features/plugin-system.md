@@ -182,6 +182,10 @@ Authors normally write `instatic-plugin.config.ts` with `definePlugin(...)`; the
     "*.cdn.weather.example.com"
   ],
 
+  "appScopes": [
+    { "name": "read", "description": "See your saved forecasts" }
+  ],
+
   "pack": { "path": "pack/site.json" }
 }
 ```
@@ -204,6 +208,7 @@ Authors normally write `instatic-plugin.config.ts` with `definePlugin(...)`; the
 - `frontend.assets[]` requires `frontend.assets`.
 - Public routes require both `cms.routes` and `cms.routes.public`.
 - Server `fetch()` requires `network.outbound` and a matching `networkAllowedHosts[]` entry.
+- `appScopes[]` requires `members.read`, and each `name` (lowercase kebab-case) is declared once.
 - Any `cms.content.*` permission requires a non-empty `contentAccess[]`, and every mode an entry declares requires its permission (`CONTENT_ACCESS_MODE_PERMISSIONS` in `src/core/plugin-sdk/contentSchemas.ts` is the one mode-to-permission table both checks read). `instatic-plugin lint` additionally warns when a `cms.content.*` permission is requested but no entry declares its mode, since the host fails closed per table and mode and every call under it would be rejected.
 
 ---
@@ -546,6 +551,30 @@ api.cms.routes.public.get('/price', (ctx) => priceFor(ctx.member))
 - `ctx.member` is `{ id, email, tags, profile }` or `null`. The host resolves it; the member's session cookie is still stripped from `req.headers`.
 - A signed-out visitor gets 401 from a member route. A member-route write (POST, PATCH, DELETE) must name this site's origin, as the member endpoints require; a public-route write may omit it (webhooks) but may not name another site.
 - A response for a member is sent `Cache-Control: private, no-store` unless the handler sets its own.
+
+**Apps.** A site member can sign in to an app the owner registered (a desktop app, say; see [members](members.md) → "Sign-in for apps"). By default a member route answers only the member's browser. A plugin lets apps in route by route:
+
+```json
+"appScopes": [{ "name": "read", "description": "See your purchases and plan" }]
+```
+
+```js
+// The member's browser, or an app whose sign-in carries plugin:<pluginId>:read.
+api.cms.routes.member.get('/orders', { app: { scope: 'read' } }, (ctx) => {
+  // ctx.app is { id, name, scope } for an app, null for the browser.
+  return listOrders(ctx.member.id)
+})
+// No `app`: an app's token gets 403 here, whatever it carries.
+api.cms.routes.member.post('/cancel', (ctx) => cancel(ctx.member.id))
+```
+
+- Each `appScopes` entry becomes the scope `plugin:<pluginId>:<name>`. The owner sees the list at install, picks from it when registering an app, and the member reads `description` on the approval page before allowing the app.
+- A route can only name a scope the manifest declares; anything else fails activation. A `description` may not contain control or invisible formatting characters.
+- Uninstalling the plugin ends every app sign-in that carried one of its scopes and takes those scopes off the registered apps (`withdrawPluginAppScopes`), so a package installed later under the same id inherits nothing.
+- The app calls with `Authorization: Bearer <access token>`. The host checks the token, the member behind it and the scope, then hands the handler `ctx.member` and `ctx.app`. The token is removed from `req.headers`, as the session cookie is, and it is removed on the plugin's public routes too, so an app that sends its token to everything on the mount does not hand it to a handler. A request with a `Bearer` header is treated as the app's even when a session cookie rides along; any other `Authorization` scheme (a proxy's HTTP Basic auth) is ignored and the cookie decides.
+- An app call needs no `Origin` (no cookie is acting). A `tag` on the route still applies, through the member.
+- 401 means the token is not live; 403 means the route is closed to apps, the sign-in lacks the scope, or the member lacks the tag.
+- Keep writes closed unless an app really needs them: open read routes under one scope and leave anything that changes the account to the browser.
 
 ```js
 const member = await api.cms.members.get({ email })            // or { id }; null when there is none

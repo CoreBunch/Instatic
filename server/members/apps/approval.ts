@@ -4,13 +4,13 @@
  * app's own address: with a one-time code on approval, with `access_denied`
  * on refusal.
  */
-import { MEMBER_APP_SCOPE_TEXT } from '@core/members'
 import type { MemberAppRequestFrame } from '@core/templates'
 import type { DbClient } from '../../db/client'
 import { oauthRedirect, isLoopbackHostname } from '../../oauth/protocol'
 import { recordMemberEvent } from '../repository'
 import type { MemberActionContext, MemberOutcome, SignedInMember } from '../service'
 import { parseMemberAppScope } from './protocol'
+import { memberAppScopeText } from './scopes'
 import { queueMemberMail } from '../mail'
 import { decideMemberAppRequest, findPendingMemberAppRequest, revokeMemberAppGrant } from './store'
 
@@ -92,7 +92,7 @@ export async function memberAppRequestFrame(
   const host = new URL(request.redirectUri).hostname
   return {
     name: request.appName,
-    access: (parseMemberAppScope(request.scope) ?? []).map((scope) => MEMBER_APP_SCOPE_TEXT[scope]).join(', '),
+    access: (parseMemberAppScope(request.scope) ?? []).map(memberAppScopeText).join(', '),
     returnsTo: isLoopbackHostname(host) ? 'this device' : host,
     device: request.deviceName ?? '',
   }

@@ -3,7 +3,7 @@
  * on. Its issuer is the members path of this deployment, so its discovery
  * document does not collide with the MCP issuer on the same origin.
  */
-import { MEMBER_APP_SCOPES, type MemberAppScope } from '@core/members'
+import { MEMBER_APP_SCOPES, isMemberAppScope, parsePluginAppScope } from '@core/members'
 import { oauthIssuerOrigin } from '../../oauth/protocol'
 
 const ISSUER_PATH = '/_instatic/members'
@@ -27,16 +27,23 @@ export function memberAppIssuer(req: Request): string | null {
   return origin ? `${origin}${ISSUER_PATH}` : null
 }
 
-function isMemberAppScope(value: string): value is MemberAppScope {
-  return (MEMBER_APP_SCOPES as readonly string[]).includes(value)
-}
-
-/** The scopes named in a scope string, in canonical order, or null when one is unknown or none is asked for. */
-export function parseMemberAppScope(raw: string | undefined): MemberAppScope[] | null {
+/**
+ * The scopes named in a scope string, in canonical order (built-in ones
+ * first, then plugin scopes by name), or null when one is not a scope at all
+ * or none is asked for. This checks the form only: whether an app may ask
+ * for a scope, and whether a plugin still offers it, is decided where the
+ * scope is used.
+ */
+export function parseMemberAppScope(raw: string | undefined): string[] | null {
   const requested = new Set((raw ?? '').split(/\s+/).filter(Boolean))
   if (requested.size === 0) return null
-  for (const scope of requested) if (!isMemberAppScope(scope)) return null
-  return MEMBER_APP_SCOPES.filter((scope) => requested.has(scope))
+  const plugin: string[] = []
+  for (const scope of requested) {
+    if (isMemberAppScope(scope)) continue
+    if (!parsePluginAppScope(scope)) return null
+    plugin.push(scope)
+  }
+  return [...MEMBER_APP_SCOPES.filter((scope) => requested.has(scope)), ...plugin.sort()]
 }
 
 export function normalizeMemberAppScope(raw: string | undefined): string | null {
@@ -46,12 +53,20 @@ export function normalizeMemberAppScope(raw: string | undefined): string | null 
 const DEVICE_NAME_MAX_LENGTH = 60
 
 /**
- * The name an app gives the device it runs on, made safe to show: one line,
- * no control or invisible formatting characters (which can reorder or hide
- * text beside the Allow button), a bounded length. Null when it gave none.
+ * Text someone else supplied, made safe to show beside the Allow button: one
+ * line, no control or invisible formatting characters (which can reorder or
+ * hide text).
+ */
+export function plainLine(text: string): string {
+  return text.replace(/[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]+/gu, ' ').replace(/\s+/g, ' ').trim()
+}
+
+/**
+ * The name an app gives the device it runs on, made safe to show and cut to
+ * a bounded length. Null when it gave none.
  */
 export function cleanDeviceName(raw: string | null): string | null {
-  const name = (raw ?? '').replace(/[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]+/gu, ' ').replace(/\s+/g, ' ').trim()
+  const name = plainLine(raw ?? '')
   // By code point, so a character outside the basic plane is never cut in half.
   return name ? [...name].slice(0, DEVICE_NAME_MAX_LENGTH).join('').trim() : null
 }

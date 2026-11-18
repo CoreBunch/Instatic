@@ -20,6 +20,9 @@
  * banner ("No new permissions in this update") so the user can confirm
  * with confidence.
  *
+ * Also lists the manifest's `appScopes`: what an app a site member signed in
+ * to may later be allowed to do through the plugin.
+ *
  * Also displays `networkAllowedHosts` from the manifest in its own section.
  * Permissions describe broad CMS capabilities ("inject scripts"); the
  * host list describes the concrete remote origins those scripts will talk
@@ -280,6 +283,30 @@ export function PermissionReviewSection({
           </div>
         )
       })()}
+
+      {(pending.manifest.appScopes ?? []).length > 0 && (
+        <div className={styles.networkSection} data-testid="permission-review-app-scopes">
+          <div className={styles.networkHeader}>
+            <strong>Access for apps</strong>
+            <span className={styles.description}>
+              An app a site member signs in to can be allowed to do these through the plugin. Nothing is
+              allowed until you give it to an app under Users, Site members, Apps, and the member agrees.
+            </span>
+          </div>
+          <ul className={styles.list}>
+            {(pending.manifest.appScopes ?? []).map((scope) => (
+              <li key={scope.name} className={styles.row} data-app-scope={scope.name}>
+                <div className={styles.label}>
+                  <span>{scope.description}</span>
+                </div>
+                <span className={styles.description}>
+                  <code>{`plugin:${pending.manifest.id}:${scope.name}`}</code>
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       <div className={styles.actions}>
         <Button

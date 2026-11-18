@@ -36,6 +36,7 @@ server/members/
 │   ├── protocol.ts        — issuer, paths, scope parsing
 │   ├── store.ts           — apps, requests, grants, codes, tokens (all SQL) and `memberAppRealm`
 │   ├── handler.ts         — /_instatic/members/oauth/* and the discovery document
+│   ├── scopes.ts          — the scopes on offer: built-in ones and those active plugins declare
 │   └── approval.ts        — the member's answer, and what the approval page shows
 ```
 
@@ -267,6 +268,8 @@ Member settings warns when the chosen page is open to everyone (`membersOnly` on
 - Access tokens stay bearer tokens (1 hour, read-only). An app without a device key works as before.
 - There is no offline mode: an app learns what a member holds by asking `userinfo`, and decides for itself how long to trust the last answer.
 
+**Scopes.** The built-in ones are `profile` and `access`. A plugin adds its own by declaring `appScopes` in its manifest; each becomes `plugin:<pluginId>:<name>` and lets an app call that plugin's member routes that name it (see [plugin system](plugin-system.md) → "Apps"). `listAvailableMemberAppScopes()` (`server/members/apps/scopes.ts`) is the one list: the built-in scopes plus those of active plugins granted `members.read`. It feeds the Apps dialog's picker (`availableScopes` in the list response), the check when an app is registered, the check at `authorize` (a scope whose plugin is gone answers `invalid_scope`), and the words on the approval page (`memberAppScopeText`: the plugin's description, followed by the plugin's name, both cleaned by `plainLine`). The discovery document lists the built-in scopes only: which plugins a site runs is not public. Removing a plugin revokes the grants that carried its scopes and takes them off the apps.
+
 **Connected apps.** A member sees and ends their own app sign-ins on a page the owner builds; there is no built-in screen.
 
 - The loop source `members.apps` (`src/core/loops/sources/memberApps.ts`) lists the signed-in member's live approvals: `name`, `device`, `connectedOn` / `lastUsedOn` (a date, `YYYY-MM-DD`), `connectedAt` / `lastUsedAt` (ISO) and `id`. It is `perVisitor`, so the list is a fragment fetched for the member who is looking and never cached; a signed-out visitor gets no items. The member reaches a source through `SourceFetchContext.memberId`, set only for a source that declares `forMember` (a plugin source is handed a fixed subset of the context, without it).
@@ -282,7 +285,7 @@ Member settings warns when the chosen page is open to everyone (`membersOnly` on
 - Approval is asked on every sign-in. A native app cannot prove which app it is, so a remembered approval could be reused by another program.
 - A request is answered once, within 10 minutes, and only from the browser the app opened (a marker cookie set by `authorize`, stored hashed with the request). An approval address passed to someone else does nothing in their browser.
 - Tokens stop working on the next request once the member is suspended or deleted. A password reset or change, an email change, a suspension, "sign out everywhere" and removing the app all revoke the grants.
-- An app token only reads. No member action (profile, password, email, delete) accepts one.
+- Core gives an app token nothing but reads: no member action (profile, password, email, delete) accepts one. A plugin route answers one only when the plugin opened that route to apps.
 - Rate limits are per IP (`memberAppLimits`).
 - The approval page (any page opened with `?request=`) is sent `X-Frame-Options: DENY`, and it and the sign-in hop before it get the token-page referrer policy.
 - Rows that can never be used again are deleted when a sign-in starts (`sweepExpiredMemberAppRows`): expired requests, codes, tokens and grants. A revoked refresh token stays until it would have expired, since seeing it again is how reuse is detected.
@@ -310,6 +313,7 @@ It is a development tool: fixed passwords, loopback only, and a database that is
 - `src/__tests__/server/memberApps.test.ts` — sign-in for apps end to end: the authorize checks, the member's answer and its browser binding, code exchange, refresh rotation and reuse, `userinfo`, device-bound sign-ins, every way access ends, the connected-apps list, disconnecting, and the new-app email. Runs on SQLite and Postgres.
 - `src/__tests__/server/members.test.ts` — every flow, on SQLite and (with `DB=postgres`) Postgres.
 - `src/__tests__/server/membersAdmin.test.ts` — the admin API: capability and step-up gates and every route (SQLite). The queries behind it run on Postgres too through the `admin queries` cases in `members.test.ts`.
+- `src/__tests__/server/pluginAppRoutes.test.ts` — apps on plugin member routes: manifest `appScopes`, a route opening itself to apps, what a token reaches and what the handler is told, the scopes the owner can give and the words the member reads.
 - `src/__tests__/server/pluginMembers.test.ts` — plugins: the public mount, member routes, `cms.members`, member events, and the permission each needs.
 - `src/__tests__/server/membersDemoSite.test.ts` — the demo site: its pages parse, publish, and are open or closed to the right visitors.
 - `src/__tests__/architecture/members-admin-split.test.ts` — the split.

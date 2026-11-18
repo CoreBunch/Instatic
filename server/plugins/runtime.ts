@@ -261,6 +261,7 @@ export async function handleServerPluginRuntimeRequest(
       : null,
     // The admin mount never identifies a site member.
     member: null,
+    app: null,
   })
 }
 

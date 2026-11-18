@@ -236,6 +236,11 @@ function makeFakeDb() {
     if (normalized.includes('update plugin_schedules')) {
       return { rows: [], rowCount: 0 }
     }
+    // Uninstall withdraws the plugin's app scopes (withdrawPluginAppScopes).
+    // No app is registered and no member signed in here, so both lists are empty.
+    if (normalized.includes('from member_app_grants') || normalized.includes('from member_apps')) {
+      return { rows: [], rowCount: 0 }
+    }
     throw new Error(`Unhandled SQL: ${sql}`)
   }
 
