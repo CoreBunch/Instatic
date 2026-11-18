@@ -631,6 +631,19 @@ describe('sign-in for apps', () => {
       expect(new URL(junk.headers.get('location')!).searchParams.get('error')).toBe('invalid_request')
     })
 
+    it('replaces the earlier sign-in only once the new one has shown the key', async () => {
+      const first = await boundSignIn()
+      // A sign-in address naming this device's key, approved, but never
+      // exchanged by anyone who holds the key: the device stays signed in.
+      const code = await codeFor(await boundRequest())
+      expect((await userinfo(first.access_token)).status).toBe(200)
+      expect((await exchange(code, await createDeviceKey())).status).toBe(400)
+      expect((await userinfo(first.access_token)).status).toBe(200)
+      // The device itself finishing the new sign-in is what replaces the old one.
+      expect((await exchange(code, device)).status).toBe(200)
+      expect((await userinfo(first.access_token)).status).toBe(401)
+    })
+
     it('keeps one sign-in per device and shows the device by the name the app gave', async () => {
       const first = await boundSignIn()
       const second = await boundSignIn()

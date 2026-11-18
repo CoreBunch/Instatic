@@ -230,16 +230,6 @@ export async function decideMemberAppRequest(
     if (decided.rowCount !== 1) return null
     if (!input.approve) return { request, code: null }
 
-    // One sign-in per device: signing the same app in again on the same
-    // device replaces the earlier one instead of piling up beside it.
-    if (request.deviceKey) {
-      const { rows: earlier } = await tx<{ id: string }>`
-        select id from member_app_grants
-         where member_id = ${input.memberId} and app_id = ${request.appId}
-           and device_jkt = ${request.deviceKey} and revoked_at is null
-      `
-      for (const grant of earlier) await revokeGrantRows(tx, grant.id, now.toISOString())
-    }
     const grantId = nanoid()
     await tx`
       insert into member_app_grants (id, member_id, app_id, scope, device_jkt, device_name, created_at, expires_at)
@@ -376,6 +366,28 @@ export async function revokeAllMemberAppGrants(db: DbClient, memberId: string): 
 
 // ─── The realm ─────────────────────────────────────────────────────────────
 
+/**
+ * One sign-in per device: once a code is exchanged, the member's earlier
+ * sign-ins of the same app on the same device key are ended.
+ *
+ * This runs at the exchange, not at the approval, because only the exchange
+ * has seen a proof from the key. Anyone can put a key's thumbprint on a
+ * sign-in address; that must not be enough to sign the real device out.
+ */
+async function replaceEarlierSignInOnDevice(tx: DbClient, codeHash: string, iso: string): Promise<void> {
+  const { rows } = await tx<{ id: string }>`
+    select earlier.id
+      from member_app_codes c
+      join member_app_grants g on g.id = c.grant_id
+      join member_app_grants earlier
+        on earlier.member_id = g.member_id and earlier.app_id = g.app_id and earlier.device_jkt = g.device_jkt
+     where c.code_hash = ${codeHash}
+       and g.device_jkt is not null
+       and earlier.id <> g.id and earlier.revoked_at is null
+  `
+  for (const grant of rows) await revokeGrantRows(tx, grant.id, iso)
+}
+
 interface CodeRow {
   grant_id: string
   app_id: string
@@ -442,7 +454,9 @@ function memberAppGrantStore(tx: DbClient): GrantStore {
         update member_app_codes set consumed_at = ${now.toISOString()}
          where code_hash = ${codeHash} and consumed_at is null
       `
-      return consumed.rowCount === 1
+      if (consumed.rowCount !== 1) return false
+      await replaceEarlierSignInOnDevice(tx, codeHash, now.toISOString())
+      return true
     },
 
     async findRefreshToken(tokenHash): Promise<StoredRefreshToken | null> {
