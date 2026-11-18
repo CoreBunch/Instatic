@@ -368,6 +368,21 @@ describe('ClassPicker — ambient selectors', () => {
     ).toBeTruthy()
   })
 
+  it('shows the matching selectors of a node the canvas renders after it is selected', async () => {
+    const { nodeId } = loadSiteWithNode()
+    createAmbient('h1.title')
+
+    // A just-inserted node is selected before its element is on the canvas.
+    render(<ClassPicker nodeId={nodeId} />)
+    expect(screen.queryByRole('button', { name: /selector h1\.title/i })).toBeNull()
+
+    addRenderedCanvasFrame(`<h1 data-node-id="${nodeId}" class="title"></h1>`)
+
+    expect(
+      await screen.findByRole('button', { name: /edit selector h1\.title|deselect selector h1\.title/i }),
+    ).toBeTruthy()
+  })
+
   it('ignores the selection-ring overlay and matches the real canvas element', () => {
     const { nodeId } = loadSiteWithNode()
     // The selection ring duplicates the node id in the admin document but carries

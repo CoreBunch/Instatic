@@ -50,7 +50,7 @@ import { jsonResponse } from '../http'
 import { hookBus } from '@core/plugins/hookBus'
 import { requireAuthenticatedUser, requireCapability } from '../auth/authz'
 import { clearPluginCrashCounter, setCrashRecoveryHandler } from './host/crashRecovery'
-import { setPluginWorkerDbClient } from './host/registry'
+import { setPluginHostContext } from './host/registry'
 import {
   findPluginRouteAccess,
   loadPluginInWorker,
@@ -77,7 +77,7 @@ export { clearPluginCrashCounter }
 
 // Re-export the host's setter so the server entry point can wire in the
 // DbClient at boot before any request arrives.
-export { setPluginWorkerDbClient }
+export { setPluginHostContext }
 
 // Settings cache lives in `settingsCache.ts` — the cached record merges the
 // decrypted secret settings (plugin_secrets) over `plugin.settings`, and is
@@ -381,7 +381,7 @@ export async function activateInstalledServerPlugins(
   // Make sure the worker host can reach the DbClient — required before any
   // worker-initiated `cms.storage.*` round-trip lands. Idempotent; safe to
   // call on every boot.
-  setPluginWorkerDbClient(db)
+  setPluginHostContext({ db, uploadsDir })
   registerCrashRecoveryHandler(db, uploadsDir)
 
   // Reset existing in-process state so a re-bind (from `bun --watch`
