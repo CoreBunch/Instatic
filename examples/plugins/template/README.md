@@ -105,6 +105,22 @@ Remove permissions you don't need — users see the full permission list before 
 A plugin that drops its editor entrypoint (and any app-kind admin pages) can drop
 `editor.code` too; everything else then runs inside the QuickJS sandbox.
 
+## Third-party scripts and frames on published pages
+
+Published pages block scripts and frames from other sites. To load a provider's hosted script, or let it open a frame, request `frontend.assets` and name the hosts:
+
+```json
+{
+  "permissions": ["frontend.assets"],
+  "frontend": {
+    "assets": [{ "kind": "script", "src": "https://js.example.com/v3", "strategy": "async" }],
+    "origins": { "scripts": ["js.example.com"], "frames": ["js.example.com"] }
+  }
+}
+```
+
+Hosts are bare names or `*.example.com`. Whoever installs the plugin sees each one before approving it.
+
 ## Managed media ingestion
 
 A plugin can import source images into managed media without moving bytes through QuickJS. For allowlisted HTTPS images, request both permissions and allow the upstream hosts:

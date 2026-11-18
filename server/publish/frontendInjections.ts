@@ -15,11 +15,16 @@
  *   3. Bucket by placement anchor: `head` / `head-end` / `body-start` / `body-end`.
  *   4. Emit one tag per asset (no dedup beyond identical-attribute tags),
  *      preserving per-plugin declaration order.
- *   5. Relax the page CSP based on what the plan actually contains:
- *        - inline script → `script-src` gets `'unsafe-inline'`
- *        - inline style  → `style-src`  gets `'unsafe-inline'`
- *        - external script/style: no relaxation needed (same-origin / allowlisted)
+ *   5. Relax the page CSP based on what the plan actually contains. Every
+ *      relaxation ADDS to the policy the publisher emitted; none replaces it:
+ *        - any script tag → `script-src` gains `'self'`
+ *        - inline script → `script-src` also gains `'unsafe-inline'` and the
+ *          script's own `'sha256-…'` (a page that already carries a hash,
+ *          such as the importmap's, makes browsers ignore `'unsafe-inline'`)
+ *        - inline style  → `style-src`  gains `'unsafe-inline'`
  *        - plugin-declared `networkAllowedHosts` → appended to `connect-src`
+ *        - plugin-declared `frontend.origins` → `scripts` appended to
+ *          `script-src`, `frames` to `frame-src`
  *      Pure-meta plans get no CSP changes.
  *
  * Pure data assembly — no DOM, no fetch. Called from a single place at the
@@ -27,11 +32,17 @@
  * so every HTML-emitting render path gets the same treatment.
  */
 
+import { createHash } from 'node:crypto'
 import type { DbClient } from '../db/client'
 import { listInstalledPlugins, type InstalledPluginResult } from '../repositories/plugins'
 import { mediaStorageRegistry } from '@core/plugins/mediaStorageRegistry'
 import { listElectedAdapters } from '../repositories/mediaStorageAdapters'
-import { addCspSources, rewriteCspMeta, setCspDirective } from '@core/publisher'
+import { addCspSources, insertAfterCspMeta, rewriteCspMeta } from '@core/publisher'
+import {
+  externalFrontendScriptHost,
+  frontendOriginAllowsHost,
+  isExternalFrontendScriptSrc,
+} from '@core/plugins/manifest'
 import type {
   FrontendAsset,
   FrontendAssetPlacement,
@@ -96,6 +107,22 @@ export interface FrontendInjections {
    */
   networkAllowedHosts: string[]
   /**
+   * `'sha256-…'` source expressions, one per inline `<script>` in the plan.
+   * A page whose policy already carries a hash (the importmap's) ignores
+   * `'unsafe-inline'`, so each inline script is allowed by its own hash.
+   */
+  inlineScriptHashes: string[]
+  /**
+   * Union of `frontend.origins.scripts` across contributing plugins. Appended
+   * to `script-src` so a declared third-party script can load.
+   */
+  scriptOrigins: string[]
+  /**
+   * Union of `frontend.origins.frames` across contributing plugins. Appended
+   * to `frame-src` so a declared third-party frame can be embedded.
+   */
+  frameOrigins: string[]
+  /**
    * CSP origins declared by elected media storage adapters. Appended to
    * `img-src` / `media-src` / `connect-src` so the browser can load assets
    * from the adapter's backend.
@@ -112,9 +139,9 @@ export interface FrontendInjections {
 
 /**
  * The plugins that contribute frontend assets, in emission order. This is the
- * ONE place that decides whose `frontend.assets[]` reach a page: enabled,
- * not in the error state, and GRANTED `frontend.assets` (never the declared
- * `permissions`). The publisher (`collectFrontendInjections`) and the editing
+ * ONE place that decides whose `frontend.assets[]` and `frontend.origins`
+ * reach a page: enabled, not in the error state, and GRANTED `frontend.assets`
+ * (never the declared `permissions`). The publisher (`collectFrontendInjections`) and the editing
  * canvas (`./canvasStylesheets.ts`) both start here, so the two cannot drift.
  */
 export async function listFrontendAssetPlugins(db: DbClient): Promise<InstalledPlugin[]> {
@@ -132,8 +159,13 @@ export async function listFrontendAssetPlugins(db: DbClient): Promise<InstalledP
   return okPlugins
     .filter((p) => p.enabled && p.lifecycleStatus !== 'error')
     .filter((p) => new Set(p.grantedPermissions).has('frontend.assets'))
-    .filter((p) => (p.manifest.frontend?.assets ?? []).length > 0)
+    .filter((p) => (p.manifest.frontend?.assets ?? []).length > 0 || frontendOriginCount(p) > 0)
     .sort((a, b) => (a.manifest.id < b.manifest.id ? -1 : a.manifest.id > b.manifest.id ? 1 : 0))
+}
+
+function frontendOriginCount(plugin: InstalledPlugin): number {
+  const origins = plugin.manifest.frontend?.origins
+  return (origins?.scripts?.length ?? 0) + (origins?.frames?.length ?? 0)
 }
 
 export async function collectFrontendInjections(db: DbClient): Promise<FrontendInjections> {
@@ -145,6 +177,9 @@ export async function collectFrontendInjections(db: DbClient): Promise<FrontendI
     'body-end': [],
   }
   const networkAllowedHostsSet = new Set<string>()
+  const inlineScriptHashes = new Set<string>()
+  const scriptOrigins = new Set<string>()
+  const frameOrigins = new Set<string>()
   let hasInlineScript = false
   let hasInlineStyle = false
   let hasExternalScript = false
@@ -161,6 +196,7 @@ export async function collectFrontendInjections(db: DbClient): Promise<FrontendI
           break
         case 'script-inline':
           hasInlineScript = true
+          inlineScriptHashes.add(`'sha256-${createHash('sha256').update(inlineScriptBody(asset.content)).digest('base64')}'`)
           break
         case 'style-inline':
           hasInlineStyle = true
@@ -170,6 +206,8 @@ export async function collectFrontendInjections(db: DbClient): Promise<FrontendI
     for (const host of plugin.manifest.networkAllowedHosts ?? []) {
       if (host) networkAllowedHostsSet.add(host)
     }
+    for (const host of plugin.manifest.frontend?.origins?.scripts ?? []) scriptOrigins.add(host)
+    for (const host of plugin.manifest.frontend?.origins?.frames ?? []) frameOrigins.add(host)
   }
 
   return {
@@ -178,6 +216,9 @@ export async function collectFrontendInjections(db: DbClient): Promise<FrontendI
     hasInlineStyle,
     hasExternalScript,
     networkAllowedHosts: [...networkAllowedHostsSet].sort(),
+    inlineScriptHashes: [...inlineScriptHashes].sort(),
+    scriptOrigins: [...scriptOrigins].sort(),
+    frameOrigins: [...frameOrigins].sort(),
     mediaCspOrigins: await collectMediaAdapterCspOrigins(db),
   }
 }
@@ -192,7 +233,9 @@ function renderAsset(asset: FrontendAsset, plugin: InstalledPlugin): ResolvedTag
   const placement = frontendAssetPlacement(asset)
 
   if (asset.kind === 'script') {
-    const url = resolveFrontendAssetUrl(plugin, asset.src)
+    const url = isExternalFrontendScriptSrc(asset.src)
+      ? declaredExternalScriptUrl(plugin, asset.src)
+      : resolveFrontendAssetUrl(plugin, asset.src)
     if (!url) return null
     const strategy = asset.strategy ?? 'defer'
     const strategyAttrs = scriptStrategyAttrs(strategy)
@@ -210,8 +253,7 @@ function renderAsset(asset: FrontendAsset, plugin: InstalledPlugin): ResolvedTag
   if (asset.kind === 'script-inline') {
     const extra = formatAttrs(asset.attrs, INLINE_SCRIPT_HOST_OWNED_ATTRS)
     const pluginAttr = ` data-plugin-id="${escapeAttr(plugin.manifest.id)}"`
-    // Inline `</script>` would close the wrapping tag. Standard escape.
-    const body = asset.content.replace(/<\/script/gi, '<\\/script')
+    const body = inlineScriptBody(asset.content)
     return {
       html: `<script${extra}${pluginAttr}>${body}</script>`,
       placement,
@@ -259,6 +301,24 @@ function renderAsset(asset: FrontendAsset, plugin: InstalledPlugin): ResolvedTag
 
   // Defensive: should be unreachable because TypeScript narrows the union.
   return null
+}
+
+/** Inline `</script>` would close the wrapping tag. Standard escape. */
+function inlineScriptBody(content: string): string {
+  return content.replace(/<\/script/gi, '<\\/script')
+}
+
+/**
+ * An absolute script address, but only when its host is one THIS plugin
+ * declared in `frontend.origins.scripts`. The manifest parser enforces the
+ * same rule at install; re-checking here means a stored manifest that
+ * predates or sidesteps the parser still cannot emit a tag for an
+ * undeclared host.
+ */
+function declaredExternalScriptUrl(plugin: InstalledPlugin, src: string): string | null {
+  const host = externalFrontendScriptHost(src)
+  if (!host) return null
+  return frontendOriginAllowsHost(plugin.manifest.frontend?.origins?.scripts ?? [], host) ? src : null
 }
 
 /**
@@ -343,9 +403,12 @@ export function injectFrontendAssets(
   // Splice tags at each anchor in document order.
   if (injections.tags.head.length > 0) {
     const block = injections.tags.head.join('\n')
-    next = next.includes('<head>')
-      ? next.replace('<head>', `<head>\n${block}`)
-      : `${block}\n${next}`
+    // `head` means "as early as possible", which is right below the page's
+    // policy: a `<meta>` policy does not govern what comes before it.
+    next = insertAfterCspMeta(next, block)
+      ?? (next.includes('<head>')
+        ? next.replace('<head>', `<head>\n${block}`)
+        : `${block}\n${next}`)
   }
   if (injections.tags['head-end'].length > 0) {
     const block = injections.tags['head-end'].join('\n')
@@ -367,7 +430,8 @@ export function injectFrontendAssets(
   }
 
   const hasTagWork = FRONTEND_PLACEMENT_ORDER.some((p) => injections.tags[p].length > 0)
-  if (hasTagWork || injections.mediaCspOrigins.length > 0) {
+  const hasOriginWork = injections.scriptOrigins.length > 0 || injections.frameOrigins.length > 0
+  if (hasTagWork || hasOriginWork || injections.mediaCspOrigins.length > 0) {
     next = relaxCspForPlan(next, injections, hasTagWork)
   }
   return next
@@ -385,34 +449,33 @@ export function injectFrontendAssets(
  * output is byte-identical for identical inputs because `serializeCsp` sorts.
  *
  * `hasTags` gates the plugin-tag relaxations (script / style / connect) so a
- * media-only plan touches only the media directives — preserving the original
- * two-function gating.
+ * media-only or origins-only plan touches only its own directives.
  */
 function relaxCspForPlan(html: string, plan: FrontendInjections, hasTags: boolean): string {
   return rewriteCspMeta(html, (csp) => {
     if (hasTags) {
       // Script: the published page's default CSP is `script-src 'none'`
       // (publisher emits clean HTML — visitor pages should run zero
-      // host-supplied JS). Relaxation tiers:
+      // host-supplied JS). Every tier ADDS to what the publisher emitted, so
+      // the importmap hash and any module-JS grant survive:
       //   • External `<script src=…>` from `frontend.assets[]`        → `'self'`
       //     (sources live under `/uploads/plugins/<id>/<version>/…`,
       //     same origin as the page itself)
       //   • Inline `<script>` from `frontend.assets[]: 'script-inline'` → also
-      //     adds `'unsafe-inline'` on top
-      //   • Worker spawn from any plugin script → relax `worker-src`
-      //     to `'self' blob:`
+      //     `'unsafe-inline'` plus the script's own hash, which is what a
+      //     browser honours once the policy carries any hash
+      //   • Worker spawn from any plugin script → `worker-src 'self' blob:`
       if (plan.hasExternalScript || plan.hasInlineScript) {
-        setCspDirective(
-          csp,
-          'script-src',
-          plan.hasInlineScript ? ["'self'", "'unsafe-inline'"] : ["'self'"],
-        )
-        setCspDirective(csp, 'worker-src', ["'self'", 'blob:'])
+        addCspSources(csp, 'script-src', ["'self'"])
+        if (plan.hasInlineScript) {
+          addCspSources(csp, 'script-src', ["'unsafe-inline'", ...plan.inlineScriptHashes])
+        }
+        addCspSources(csp, 'worker-src', ["'self'", 'blob:'])
       }
 
       // Style: relax to `'unsafe-inline'` only when an inline style is present.
       if (plan.hasInlineStyle) {
-        setCspDirective(csp, 'style-src', ["'self'", "'unsafe-inline'"])
+        addCspSources(csp, 'style-src', ["'self'", "'unsafe-inline'"])
       }
 
       // Connect: union per-plugin `networkAllowedHosts`, plus the standard
@@ -421,6 +484,16 @@ function relaxCspForPlan(html: string, plan: FrontendInjections, hasTags: boolea
         addCspSources(csp, 'connect-src', ["'self'", ...toCspHostSources(plan.networkAllowedHosts)])
         addCspSources(csp, 'img-src', ["'self'", 'data:', 'https:'])
       }
+    }
+
+    // Third-party origins: what granted plugins declared in
+    // `frontend.origins`. Independent of tags, because a plugin module's own
+    // script may be what loads the third-party code or opens the frame.
+    if (plan.scriptOrigins.length > 0) {
+      addCspSources(csp, 'script-src', toCspHostSources(plan.scriptOrigins))
+    }
+    if (plan.frameOrigins.length > 0) {
+      addCspSources(csp, 'frame-src', toCspHostSources(plan.frameOrigins))
     }
 
     // Media: union the origins declared by elected media storage adapters.

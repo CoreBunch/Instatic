@@ -37,9 +37,11 @@ export type FrontendAssetPlacement = 'head' | 'head-end' | 'body-start' | 'body-
  */
 export type FrontendAsset =
   /**
-   * External JS file shipped in the plugin zip (resolved against
-   * `assetBasePath`). Emits one `<script>` tag at the given placement.
-   * `strategy` maps to the matching HTML attribute (or `module` for ESM).
+   * External JS file. `src` is either a file shipped in the plugin zip
+   * (resolved against `assetBasePath`) or an absolute `https://` address on a
+   * host declared in `frontend.origins.scripts`. Emits one `<script>` tag at
+   * the given placement. `strategy` maps to the matching HTML attribute (or
+   * `module` for ESM).
    */
   | {
     kind: 'script'
@@ -101,11 +103,21 @@ export type FrontendAsset =
   }
 
 /**
- * Manifest-level `frontend` block. Currently carries only the `assets`
- * array; kept as a nested object so future host-managed runtime declarations
- * (e.g. `runtimePackages`, `importmapExtensions`) can grow alongside it
- * without another manifest-shape migration.
+ * Manifest-level `frontend` block: the `assets` array and the third-party
+ * `origins` those assets may load from.
  */
+/**
+ * Third-party origins a plugin's published-page code may use. Each entry is a
+ * bare hostname (`js.example.com`) or a leading-`*.` wildcard
+ * (`*.example.com`); the host always emits it as `https://<host>`.
+ */
+export interface PluginFrontendOrigins {
+  /** Hosts scripts may be loaded from. Added to the page's `script-src`. */
+  scripts?: string[]
+  /** Hosts frames may be embedded from. Added to the page's `frame-src`. */
+  frames?: string[]
+}
+
 export interface PluginFrontendDeclarations {
   /**
    * Every tag the host should inject into the published page on behalf of
@@ -113,4 +125,9 @@ export interface PluginFrontendDeclarations {
    * with the same placement are emitted in declaration order.
    */
   assets: FrontendAsset[]
+  /**
+   * Third-party script and frame origins, granted with `frontend.assets` and
+   * listed on the install / upgrade review.
+   */
+  origins?: PluginFrontendOrigins
 }

@@ -579,3 +579,96 @@ describe('contentAccess coherence', () => {
     ).toThrow('the matching permission "cms.content.write" is not in `permissions`')
   })
 })
+
+describe('plugin manifest — frontend.origins', () => {
+  function withFrontend(frontend: unknown, permissions: string[] = ['frontend.assets']) {
+    return parsePluginManifest({
+      id: 'acme.pay',
+      name: 'Pay',
+      version: '1.0.0',
+      apiVersion: 1,
+      permissions,
+      frontend,
+    })
+  }
+
+  it('accepts declared script and frame origins and a script on a declared host', () => {
+    const manifest = withFrontend({
+      assets: [{ kind: 'script', src: 'https://js.example.com/v3?x=1', strategy: 'async' }],
+      origins: { scripts: ['js.example.com', '*.js.example.com'], frames: ['pay.example.com'] },
+    })
+    expect(manifest.frontend?.origins).toEqual({
+      scripts: ['js.example.com', '*.js.example.com'],
+      frames: ['pay.example.com'],
+    })
+    expect(manifest.frontend?.assets[0]).toMatchObject({ src: 'https://js.example.com/v3?x=1' })
+  })
+
+  it('accepts origins with no assets', () => {
+    expect(withFrontend({ assets: [], origins: { frames: ['pay.example.com'] } }).frontend?.origins)
+      .toEqual({ frames: ['pay.example.com'] })
+  })
+
+  it('still accepts a package-relative script', () => {
+    expect(() => withFrontend({ assets: [{ kind: 'script', src: 'frontend/app.js' }] })).not.toThrow()
+  })
+
+  it('requires the frontend.assets permission', () => {
+    expect(() => withFrontend({ assets: [], origins: { scripts: ['js.example.com'] } }, []))
+      .toThrow(/frontend\.assets/)
+  })
+
+  it.each([
+    ['a scheme', 'https://js.example.com'],
+    ['a path', 'js.example.com/v3'],
+    ['a port', 'js.example.com:8443'],
+    ['a bare wildcard', '*'],
+    ['a wildcard over a whole TLD', '*.com'],
+    ['a wildcard in the middle', 'js.*.example.com'],
+    ['a single label', 'localhost'],
+    ['an IPv4 literal', '203.0.113.7'],
+    ['a CSP keyword', "'unsafe-inline'"],
+    ['a scheme source', 'https:'],
+    ['a second source smuggled after a space', "js.example.com 'unsafe-eval'"],
+    ['uppercase', 'JS.Example.com'],
+  ])('rejects an origin written as %s', (_label, origin) => {
+    expect(() => withFrontend({ assets: [], origins: { scripts: [origin] } })).toThrow()
+    expect(() => withFrontend({ assets: [], origins: { frames: [origin] } })).toThrow()
+  })
+
+  it('drops unknown origin kinds and rejects duplicates', () => {
+    expect(withFrontend({ assets: [], origins: { styles: ['a.example.com'] } }).frontend?.origins).toEqual({})
+    expect(() => withFrontend({ assets: [], origins: { scripts: ['a.example.com', 'a.example.com'] } }))
+      .toThrow(/duplicate/)
+  })
+
+  it.each([
+    ['an undeclared host', 'https://evil.example.net/x.js'],
+    ['the bare domain of a wildcard', 'https://example.com/x.js'],
+    ['a lookalike suffix', 'https://js.example.com.evil.net/x.js'],
+    ['credentials before the host', 'https://js.example.com@evil.net/x.js'],
+    ['a port', 'https://js.example.com:8443/x.js'],
+    ['plain http', 'http://js.example.com/x.js'],
+    ['a protocol-relative address', '//js.example.com/x.js'],
+    ['a quote in the path', 'https://js.example.com/x.js"onload="alert(1)'],
+  ])('rejects a script loaded from %s', (_label, src) => {
+    expect(() => withFrontend({
+      assets: [{ kind: 'script', src }],
+      origins: { scripts: ['js.example.com', '*.example.com'] },
+    })).toThrow()
+  })
+
+  it('does not let a frame origin authorise a script', () => {
+    expect(() => withFrontend({
+      assets: [{ kind: 'script', src: 'https://pay.example.com/x.js' }],
+      origins: { frames: ['pay.example.com'] },
+    })).toThrow(/frontend\.origins\.scripts/)
+  })
+
+  it('keeps style hrefs package-relative', () => {
+    expect(() => withFrontend({
+      assets: [{ kind: 'style', href: 'https://js.example.com/x.css' }],
+      origins: { scripts: ['js.example.com'] },
+    })).toThrow()
+  })
+})

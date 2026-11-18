@@ -227,4 +227,45 @@ describe('instatic-plugin lint', () => {
       await rm(dir, { recursive: true, force: true })
     }
   })
+
+  it('carries frontend.origins through definePlugin and does not look for an external script on disk', async () => {
+    let origins: unknown
+    const result = await withTempPlugin(async (dir) => {
+      await writeConfig(dir, {
+        permissions: ['frontend.assets'],
+        frontend: {
+          assets: [{ kind: 'script', src: 'https://js.example.com/v3' }],
+          origins: { scripts: ['js.example.com'], frames: ['pay.example.com'] },
+        },
+      })
+      origins = (await readPluginDefinition(dir)).manifest.frontend?.origins
+    })
+    expect(result.findings).toEqual([])
+    expect(origins).toEqual({ scripts: ['js.example.com'], frames: ['pay.example.com'] })
+  })
+
+  it('accepts the frontend.assets permission when only origins are declared', async () => {
+    const result = await withTempPlugin(async (dir) => {
+      await writeConfig(dir, {
+        permissions: ['frontend.assets'],
+        frontend: { assets: [], origins: { frames: ['pay.example.com'] } },
+      })
+    })
+    expect(result.findings).toEqual([])
+  })
+
+  it('reports an external script on an undeclared host', async () => {
+    const result = await withTempPlugin(async (dir) => {
+      await writeConfig(dir, {
+        permissions: ['frontend.assets'],
+        frontend: {
+          assets: [{ kind: 'script', src: 'https://evil.example.net/x.js' }],
+          origins: { scripts: ['js.example.com'] },
+        },
+      })
+    })
+    const errors = result.findings.filter((f) => f.severity === 'error')
+    expect(errors).toHaveLength(1)
+    expect(errors[0].message).toContain('frontend.origins.scripts')
+  })
 })

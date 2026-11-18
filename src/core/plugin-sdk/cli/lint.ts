@@ -28,7 +28,7 @@ import { existsSync, readdirSync } from 'node:fs'
 import { readFile } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import { findSandboxLiterals } from '@core/plugins/sandboxScan'
-import { parsePluginManifest } from '@core/plugins/manifest'
+import { isExternalFrontendScriptSrc, parsePluginManifest } from '@core/plugins/manifest'
 import { readPluginDefinition } from './build'
 import type { PluginDefinition } from '../builders/definePlugin'
 import { CONTENT_ACCESS_MODE_PERMISSIONS, type ContentAccessMode } from '../contentSchemas'
@@ -171,7 +171,9 @@ export async function lintPlugin(sourceDir: string): Promise<LintResult> {
   //    error in their terminal pre-upload).
   const declaredAssets = manifest.frontend?.assets ?? []
   const hasFrontendPermission = manifest.permissions.includes('frontend.assets')
-  if (hasFrontendPermission && declaredAssets.length === 0) {
+  const declaredOrigins = manifest.frontend?.origins
+  const declaredOriginCount = (declaredOrigins?.scripts?.length ?? 0) + (declaredOrigins?.frames?.length ?? 0)
+  if (hasFrontendPermission && declaredAssets.length === 0 && declaredOriginCount === 0) {
     findings.push({
       severity: 'warning',
       scope: 'manifest',
@@ -199,7 +201,9 @@ export async function lintPlugin(sourceDir: string): Promise<LintResult> {
       : asset.kind === 'style'
         ? asset.href
         : null
-    if (!ref) continue
+    // An absolute script address loads from a declared third-party origin
+    // (the manifest parser has already checked the host), not from the zip.
+    if (!ref || isExternalFrontendScriptSrc(ref)) continue
     const sourceTs = join(absoluteSource, ref.replace(/\.js$/, '.ts'))
     const sourceTsx = join(absoluteSource, ref.replace(/\.js$/, '.tsx'))
     const builtFile = join(absoluteSource, 'dist', ref)
