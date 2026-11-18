@@ -131,6 +131,9 @@ const SMTP_CONNECTION_CODES = new Set(['ETIMEDOUT', 'ECONNECTION', 'ESOCKET', 'E
 /** A 4yz reply whose text is the server throttling the account, not deferring one recipient. */
 const SMTP_THROTTLE_TEXT = /\b4\.7\.\d+\b.*\b(rate|too many|throttl|limit|quota)|\b(rate limit|too many (messages|connections|emails)|throttl)/i
 
+/** A reply that speaks of one recipient, whatever else it says. */
+const SMTP_RECIPIENT_TEXT = /\b(recipient|rcpt|mailbox|addressee|user)\b/i
+
 /**
  * SMTP reply classes. The reply code is read before the error's `code`:
  * a server that answers a login with 454 ("temporary authentication
@@ -138,8 +141,8 @@ const SMTP_THROTTLE_TEXT = /\b4\.7\.\d+\b.*\b(rate|too many|throttl|limit|quota)
  * nodemailer still calls that `EAUTH`. So:
  *
  *  - any 4yz is temporary. 421 (the server closing the connection on the
- *    whole account) and a 4yz whose text speaks of rate or quota slow
- *    everything down; every other 4yz, 450 / 451 / 452 greylisting and a
+ *    whole account) and a 4yz whose text speaks of rate or quota, and not
+ *    of a recipient, slow everything down; every other 4yz, 450 / 451 / 452 greylisting and a
  *    full mailbox included, retries that message alone. Anyone can cause
  *    one of those by giving an address, so it never holds other mail back.
  *  - 535 or `EAUTH` (a refused login), 530 (authentication required) and a
@@ -151,7 +154,13 @@ export function retryForSmtpFailure(err: unknown): MailRetry {
   const responseCode = err instanceof Error && 'responseCode' in err ? Number(err.responseCode) : 0
   const response = err instanceof Error && 'response' in err ? String(err.response) : ''
   if (responseCode >= 400 && responseCode < 500) {
-    return responseCode === 421 || SMTP_THROTTLE_TEXT.test(response) ? 'slow-down' : 'later'
+    if (responseCode === 421) return 'slow-down'
+    // A throttle on one recipient ("450 4.7.1 ... Recipient address rejected:
+    // rate limited") is that recipient's: anyone can cause it by giving an
+    // address, so it must not hold everyone else's mail back.
+    const command = err instanceof Error && 'command' in err ? String(err.command) : ''
+    const aboutRecipient = /^RCPT\b/i.test(command) || SMTP_RECIPIENT_TEXT.test(response)
+    return SMTP_THROTTLE_TEXT.test(response) && !aboutRecipient ? 'slow-down' : 'later'
   }
   if (code === 'EAUTH' || responseCode === 535 || responseCode === 530 || code === 'ETLS') return 'connector'
   if (responseCode >= 500) return 'never'

@@ -105,6 +105,8 @@ export type CarryOutcome =
       message: string
       /** Never `suspect`: this function settles that question. */
       retry: Exclude<MailRetry, 'suspect'>
+      /** The provider's refusal was ambiguous: the recipient's fault or the account's. */
+      suspect?: true
       durationMs?: number
     }
 
@@ -162,6 +164,12 @@ export async function carryThroughConnector(
   mail: OutgoingMail,
   carrier: MailCarrier = carryMail,
   now: number = Date.now(),
+  /**
+   * False for an email that already got an ambiguous refusal: it has had its
+   * say about the connector. Trying it again must not add up to a pause, or
+   * a few junk addresses, retried, would pause delivery over and over.
+   */
+  countsTowardsPause = true,
 ): Promise<CarryOutcome> {
   let connector: ResolvedConnector | null
   try {
@@ -197,8 +205,16 @@ export async function carryThroughConnector(
     // A driver says how its refusal should be retried; anything else it
     // throws is not a refusal, and is worth another try.
     const raw = err instanceof MailDeliveryError ? err.retry : 'later'
-    const retry = raw === 'suspect' ? settleSuspect(connector.id, mail.to, now) : raw
-    return { ok: false, connector: used, error: err, message, retry, durationMs: Date.now() - startedAt }
+    const retry = raw !== 'suspect' ? raw : countsTowardsPause ? settleSuspect(connector.id, mail.to, now) : 'later'
+    return {
+      ok: false,
+      connector: used,
+      error: err,
+      message,
+      retry,
+      ...(raw === 'suspect' ? { suspect: true as const } : {}),
+      durationMs: Date.now() - startedAt,
+    }
   }
 }
 

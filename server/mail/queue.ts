@@ -63,6 +63,7 @@ interface QueueRow {
   attempts: number
   last_error: string | null
   deliver_before: Date | string
+  suspect_at: Date | string | null
 }
 
 export interface QueuedMail {
@@ -81,6 +82,8 @@ export interface QueuedMail {
   lastError: string | null
   /** After this moment the email is not sent any more. Milliseconds since the epoch. */
   deliverBefore: number
+  /** An earlier try got an ambiguous refusal (see `markQueuedMailSuspect`). */
+  suspect: boolean
   payload: EncryptedSecret
 }
 
@@ -95,6 +98,7 @@ function toQueuedMail(row: QueueRow): QueuedMail {
     attempts: Number(row.attempts),
     lastError: row.last_error,
     deliverBefore: Date.parse(isoDate(row.deliver_before)),
+    suspect: row.suspect_at !== null,
     payload: { ciphertext: row.payload_ciphertext, iv: row.payload_iv },
   }
 }
@@ -176,7 +180,7 @@ export async function releaseStaleMailClaims(db: DbClient, now: number): Promise
 }
 
 const QUEUE_COLUMNS = `id, outbox_id, kind, to_address, source, reference,
-  payload_ciphertext, payload_iv, attempts, last_error, deliver_before`
+  payload_ciphertext, payload_iv, attempts, last_error, deliver_before, suspect_at`
 
 function placeholder(db: DbClient, index: number): string {
   return db.dialect === 'postgres' ? `$${index}` : '?'
@@ -188,6 +192,56 @@ async function claim(db: DbClient, row: QueueRow, at: string): Promise<QueuedMai
     update mail_queue set claimed_at = ${at} where id = ${row.id} and claimed_at is null
   `
   return claimed.rowCount > 0 ? toQueuedMail(row) : null
+}
+
+/** Whether any email is due and can still be delivered. */
+export async function hasDueMail(db: DbClient, now: number): Promise<boolean> {
+  const { rows } = await db<{ id: string }>`
+    select id from mail_queue
+     where claimed_at is null and accepted_at is null
+       and next_attempt_at <= ${new Date(now).toISOString()}
+       and deliver_before > ${new Date(now + DELIVERY_MARGIN_MS).toISOString()}
+     limit 1
+  `
+  return rows.length > 0
+}
+
+/**
+ * Note that the provider refused this email in a way that may be about its
+ * recipient or about the account (an ambiguous refusal). Such an email is
+ * the last choice for a probe of a paused connector: it would only repeat
+ * the answer that paused it.
+ */
+export async function markQueuedMailSuspect(db: DbClient, id: string, now: number): Promise<void> {
+  await db`update mail_queue set suspect_at = ${new Date(now).toISOString()} where id = ${id}`
+}
+
+/**
+ * Claim the email to try a paused connector with, leaving out those already
+ * tried in this probe (`tried`). The best probe is the one most likely to
+ * say something about the connector and most worth sending: an email with
+ * no ambiguous refusal behind it, the core's before a plugin's, the newest
+ * first (a sign-in link someone is waiting for now). Only when every due
+ * email has such a refusal behind it is the newest of those used.
+ */
+export async function claimProbeMail(db: DbClient, now: number, tried: readonly string[]): Promise<QueuedMail | null> {
+  const at = new Date(now).toISOString()
+  const usefulUntil = new Date(now + DELIVERY_MARGIN_MS).toISOString()
+  for (;;) {
+    const { rows } = await db.unsafe<QueueRow>(
+      `select ${QUEUE_COLUMNS}
+         from mail_queue
+        where claimed_at is null and accepted_at is null
+          and next_attempt_at <= ${placeholder(db, 1)} and deliver_before > ${placeholder(db, 2)}
+        order by case when suspect_at is null then 0 else 1 end asc, lane asc, outbox_id desc
+        limit ${tried.length + 1}`,
+      [at, usefulUntil],
+    )
+    const row = rows.find((candidate) => !tried.includes(candidate.id))
+    if (!row) return null
+    const mail = await claim(db, row, at)
+    if (mail) return mail
+  }
 }
 
 /**

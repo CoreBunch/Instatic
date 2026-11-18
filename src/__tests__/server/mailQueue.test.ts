@@ -6,8 +6,7 @@ import {
   createMailConnector,
   getMailConnector,
   noteConnectorUse,
-  setMailConnectorSecret,
-} from '../../../server/mail/connectors'
+  setMailConnectorSecret, pauseConnectorDelivery } from '../../../server/mail/connectors'
 import { saveMailDefaults } from '../../../server/mail/defaults'
 import type { DbClient } from '../../../server/db/client'
 import {
@@ -489,6 +488,29 @@ describe('mail queue', () => {
     })
   })
 
+  describe('the last try before a deadline', () => {
+    it('is still made when the wait before it would have run past the deadline', async () => {
+      await readyConnector()
+      const start = now
+      const deadline = start + 15 * MINUTE
+      await queueTemplateMail(h.db, { ...MAIL, deliverBefore: deadline })
+      const attempts: number[] = []
+      const down: MailCarrier = async () => {
+        attempts.push(now - start)
+        throw new MailDeliveryError('Could not reach the provider.', { retry: 'later' })
+      }
+      // The longest waits the jitter allows.
+      while (now < deadline) {
+        await drainMailQueue(h.db, { carrier: down, now: clock, random: () => 0.999, paceMs: 0 })
+        now += 5_000
+      }
+      // The last try is at the last useful moment (a minute and five seconds before the deadline), not minutes earlier.
+      expect(attempts.at(-1)).toBe(15 * MINUTE - 65_000)
+      expect(await queueRows()).toHaveLength(0)
+      expect((await listMailActivity(h.db)).entries[0]).toMatchObject({ status: 'failed', attempts: attempts.length })
+    })
+  })
+
   describe('a refusal that could be the account\'s or one recipient\'s', () => {
     const forbidden = (blocked: (to: string) => boolean): MailCarrier => async (_c, _s, mail) => {
       if (blocked(mail.to)) throw new MailDeliveryError('Resend rejected the API key or its permissions.', { retry: 'suspect' })
@@ -521,6 +543,89 @@ describe('mail queue', () => {
       expect(await getMailConnector(h.db, connector.id)).toMatchObject({ deliveryPaused: true })
       // The first two were retried; the third and the rest are held with no attempt counted.
       expect((await queueRows()).map((row) => row.attempts).sort()).toEqual([0, 0, 1, 1])
+    })
+
+    it('probes with an email that was not refused, so junk addresses cannot keep a sign-in link waiting', async () => {
+      const connector = await readyConnector()
+      for (const to of ['junk1@example.com', 'junk2@example.com', 'junk3@example.com', 'junk4@example.com']) {
+        await queueTemplateMail(h.db, { ...MAIL, to })
+      }
+      const carrier = forbidden((to) => to.startsWith('junk'))
+      await drain(carrier)
+      expect(await getMailConnector(h.db, connector.id)).toMatchObject({ deliveryPaused: true })
+
+      // A real member asks for a link while delivery is paused, behind all of those.
+      await queueTemplateMail(h.db, { ...MAIL, to: 'member@example.com' })
+      const tried: string[] = []
+      now += 2 * MINUTE
+      await drain(async (c, s, mail) => { tried.push(mail.to); return carrier(c, s, mail) })
+      // The probe is the member's email: newest, and never refused. It gets through and lifts the pause.
+      expect(tried[0]).toBe('member@example.com')
+      // The junk is tried again after it, and refused again, but an email that
+      // was already counted once does not pause delivery a second time.
+      for (let round = 0; round < 6; round += 1) {
+        now += 10 * MINUTE
+        await drain(carrier)
+      }
+      expect(await getMailConnector(h.db, connector.id)).toMatchObject({ deliveryPaused: false })
+      expect((await listMailActivity(h.db, { status: 'sent' })).entries.map((entry) => entry.to)).toEqual(['member@example.com'])
+    })
+
+    it('probes with the newest refused email when there is no other', async () => {
+      const connector = await readyConnector()
+      for (const to of ['a@example.com', 'b@example.com', 'c@example.com']) await queueTemplateMail(h.db, { ...MAIL, to })
+      await drain(forbidden(() => true))
+      expect(await getMailConnector(h.db, connector.id)).toMatchObject({ deliveryPaused: true })
+      const tried: string[] = []
+      now += 2 * MINUTE
+      await drain(async (_c, _s, mail) => { tried.push(mail.to); return null })
+      expect(tried[0]).toBe('c@example.com')
+      expect(await queueRows()).toHaveLength(0)
+    })
+
+    it('gives a probe\'s turn to the next email when the first is refused for its own recipient, three at most', async () => {
+      const connector = await readyConnector()
+      await queueTemplateMail(h.db, { ...MAIL, to: 'first@example.com' })
+      await drain(async () => { throw new MailDeliveryError('Resend rejected the API key or its permissions.', { retry: 'connector' }) })
+      expect(await getMailConnector(h.db, connector.id)).toMatchObject({ deliveryPaused: true })
+
+      for (const to of ['typo1@example.invalid', 'typo2@example.invalid', 'typo3@example.invalid', 'typo4@example.invalid']) {
+        await queueTemplateMail(h.db, { ...MAIL, to })
+      }
+      const tried: string[] = []
+      const carrier: MailCarrier = async (_c, _s, mail) => {
+        tried.push(mail.to)
+        if (mail.to.endsWith('.invalid')) throw new MailDeliveryError('The SMTP server rejected the recipient address.')
+        return null
+      }
+      // One turn tries three, newest first, and no more: all were the recipients' own refusals.
+      now += 2 * MINUTE
+      await drain(carrier)
+      expect(tried).toEqual(['typo4@example.invalid', 'typo3@example.invalid', 'typo2@example.invalid'])
+      expect(await getMailConnector(h.db, connector.id)).toMatchObject({ deliveryPaused: true })
+
+      // The next turn reaches an email that can be delivered, and delivery resumes.
+      now += 2 * MINUTE
+      await drain(carrier)
+      expect(tried.slice(3)).toEqual(['typo1@example.invalid', 'first@example.com'])
+      expect(await getMailConnector(h.db, connector.id)).toMatchObject({ deliveryPaused: false })
+    })
+
+    it('does not spend a probe\'s turn while nothing is waiting', async () => {
+      const connector = await readyConnector()
+      await pauseConnectorDelivery(h.db, connector.id, now)
+      let calls = 0
+      const carrier: MailCarrier = async () => { calls += 1; return null }
+      // Ticks with an empty queue, past the two minutes.
+      for (let tick = 0; tick < 12; tick += 1) {
+        now += 15_000
+        await drain(carrier)
+      }
+      // The first email to arrive is tried at once, not two minutes later.
+      await queueTemplateMail(h.db, MAIL)
+      await drain(carrier)
+      expect(calls).toBe(1)
+      expect(await getMailConnector(h.db, connector.id)).toMatchObject({ deliveryPaused: false })
     })
 
     it('forgets a refusal after ten minutes', async () => {
@@ -750,6 +855,18 @@ describe('mail queue', () => {
       expect([401, 403].map(retryForHttpStatus)).toEqual(['connector', 'suspect'])
       expect([500, 502, 503, 408].map(retryForHttpStatus)).toEqual(Array(4).fill('later'))
       expect([400, 404, 413, 422].map(retryForHttpStatus)).toEqual(Array(4).fill('never'))
+    })
+
+    it('slows everything down for a throttled account, and only one message for a throttled recipient', () => {
+      const smtp = (fields: { responseCode: number; response: string; command?: string }) => Object.assign(new Error('smtp'), fields)
+      expect(retryForSmtpFailure(smtp({ responseCode: 451, response: '451 4.7.0 Too many messages, slow down' }))).toBe('slow-down')
+      expect(retryForSmtpFailure(smtp({ responseCode: 454, response: '454 4.7.0 Throttling failure: daily quota exceeded' }))).toBe('slow-down')
+      // Anyone can cause these by giving an address: they must not hold other mail back.
+      expect(retryForSmtpFailure(smtp({ responseCode: 450, response: '450 4.7.1 <x@example.com>: Recipient address rejected: rate limited' }))).toBe('later')
+      expect(retryForSmtpFailure(smtp({ responseCode: 450, response: '450 4.2.1 The user you are trying to contact is receiving mail too quickly' }))).toBe('later')
+      expect(retryForSmtpFailure(smtp({ responseCode: 452, response: '452 4.7.1 rate limit exceeded', command: 'RCPT TO' }))).toBe('later')
+      // 421 closes the connection on the account, whatever it says.
+      expect(retryForSmtpFailure(smtp({ responseCode: 421, response: '421 4.7.0 recipient rate limit, try later' }))).toBe('slow-down')
     })
 
     it('reads an SMTP reply code and connection failure', () => {

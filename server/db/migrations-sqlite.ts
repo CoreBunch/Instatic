@@ -1748,6 +1748,7 @@ export const sqliteMigrations: Migration[] = [
         deliver_before text not null,
         claimed_at text,
         accepted_at text,
+        suspect_at text,
         last_error text,
         created_at text not null default (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
       );

@@ -1580,6 +1580,7 @@ export const pgMigrations: Migration[] = [
         deliver_before timestamptz not null,
         claimed_at timestamptz,
         accepted_at timestamptz,
+        suspect_at timestamptz,
         last_error text,
         created_at timestamptz not null default now()
       );
