@@ -44,10 +44,17 @@ export interface OutgoingMail {
  *  - `slow-down`: the provider is throttling the whole account. Retry later
  *    and hold every other message back meanwhile.
  *  - `connector`: the provider refuses the account itself (a wrong key or
- *    password, no permission to send). No message will get through until
- *    the owner fixes the connector, so delivery pauses instead of retrying.
+ *    password, no permission to send, a sender it has not verified). No
+ *    message will get through until the owner fixes the connector, so
+ *    delivery pauses instead of retrying.
+ *  - `suspect`: a refusal that could be either: providers answer 403 both
+ *    for a suspended account and for one blocked, suppressed or
+ *    not-yet-allowed recipient. One such answer never pauses anything, since
+ *    anyone can cause it by giving an address. `carryThroughConnector`
+ *    retries the message and pauses only when several different recipients
+ *    in a row get it.
  */
-export type MailRetry = 'never' | 'later' | 'slow-down' | 'connector'
+export type MailRetry = 'never' | 'later' | 'slow-down' | 'connector' | 'suspect'
 
 export class MailDeliveryError extends Error {
   readonly retry: MailRetry
@@ -58,11 +65,15 @@ export class MailDeliveryError extends Error {
   }
 }
 
-/** How an HTTP provider's refusal should be retried, from its status alone. */
+/**
+ * How an HTTP provider's refusal should be retried when its body says
+ * nothing more specific (each driver looks at the body first). 401 is always
+ * the key. 403 is not: it is also how providers refuse one recipient.
+ */
 export function retryForHttpStatus(status: number): MailRetry {
   if (status === 429) return 'slow-down'
-  // 401/403 are the account's key or its permissions, not the message.
-  if (status === 401 || status === 403) return 'connector'
+  if (status === 401) return 'connector'
+  if (status === 403) return 'suspect'
   if (status >= 500 || status === 408) return 'later'
   return 'never'
 }
@@ -129,7 +140,8 @@ const SMTP_CONNECTION_CODES = new Set(['ETIMEDOUT', 'ECONNECTION', 'ESOCKET', 'E
 export function retryForSmtpFailure(err: unknown): MailRetry {
   const code = err instanceof Error && 'code' in err ? String(err.code) : ''
   const responseCode = err instanceof Error && 'responseCode' in err ? Number(err.responseCode) : 0
-  if (code === 'EAUTH' || responseCode === 535 || code === 'ETLS') return 'connector'
+  // 530 is "authentication required": the server never got as far as the message.
+  if (code === 'EAUTH' || responseCode === 535 || responseCode === 530 || code === 'ETLS') return 'connector'
   if (responseCode === 421) return 'slow-down'
   if (responseCode >= 400 && responseCode < 500) return 'later'
   if (responseCode >= 500) return 'never'

@@ -17,9 +17,9 @@ import {
   queueTemplateMail,
 } from '../../../server/mail/delivery'
 import { __resetMasterKeyCacheForTesting } from '../../../server/secrets/masterKey'
-import { MailNotConfiguredError, type MailCarrier } from '../../../server/mail/send'
-import { sendViaResend } from '../../../server/mail/apiDrivers'
-import { sendViaSes } from '../../../server/mail/sesDriver'
+import { __resetSuspectRecipientsForTesting, MailNotConfiguredError, type MailCarrier } from '../../../server/mail/send'
+import { sendViaBrevo, sendViaMailgun, sendViaPostmark, sendViaResend } from '../../../server/mail/apiDrivers'
+import { retryForSesError, sendViaSes } from '../../../server/mail/sesDriver'
 import { MailDeliveryError, retryForHttpStatus, retryForSmtpFailure } from '../../../server/mail/smtpDriver'
 import { flushMemberMail, queueMemberMail } from '../../../server/members/mail'
 
@@ -56,6 +56,7 @@ describe('mail queue', () => {
     // "now" (by the real clock) is already due.
     now = Date.now() + 5_000
     __resetMailQueuePauseForTesting()
+    __resetSuspectRecipientsForTesting()
   })
 
   afterEach(async () => {
@@ -81,7 +82,7 @@ describe('mail queue', () => {
       claimed_at: string | Date | null
       lane: number
       payload_ciphertext: Uint8Array
-    }>`select id, attempts, next_attempt_at, claimed_at, lane, payload_ciphertext from mail_queue order by created_at, id`
+    }>`select id, attempts, next_attempt_at, claimed_at, lane, payload_ciphertext from mail_queue order by outbox_id`
     return rows
   }
 
@@ -432,6 +433,51 @@ describe('mail queue', () => {
     })
   })
 
+  describe('a refusal that could be the account\'s or one recipient\'s', () => {
+    const forbidden = (blocked: (to: string) => boolean): MailCarrier => async (_c, _s, mail) => {
+      if (blocked(mail.to)) throw new MailDeliveryError('Resend rejected the API key or its permissions.', { retry: 'suspect' })
+      return null
+    }
+
+    it('does not pause for one visitor\'s address, however often it is tried: other mail still flows', async () => {
+      const connector = await readyConnector()
+      // A visitor signs up with an address the provider refuses, again and again.
+      for (let index = 0; index < 5; index += 1) await queueTemplateMail(h.db, { ...MAIL, to: 'blocked@example.com' })
+      await queueTemplateMail(h.db, { ...MAIL, to: 'member@example.com' })
+      const sent: string[] = []
+      const carrier = forbidden((to) => to === 'blocked@example.com')
+      await drain(async (c, s, mail) => { const id = await carrier(c, s, mail); sent.push(mail.to); return id })
+      expect(sent).toEqual(['member@example.com'])
+      expect(await getMailConnector(h.db, connector.id)).toMatchObject({ deliveryPaused: false })
+      // The refused ones are retried like any temporary failure, each on its own.
+      expect((await queueRows()).map((row) => row.attempts)).toEqual([1, 1, 1, 1, 1])
+    })
+
+    it('pauses when three different recipients in a row are refused', async () => {
+      const connector = await readyConnector()
+      for (const to of ['a@example.com', 'b@example.com', 'c@example.com', 'd@example.com']) {
+        await queueTemplateMail(h.db, { ...MAIL, to })
+      }
+      let calls = 0
+      const carrier = forbidden(() => true)
+      await drain(async (c, s, mail) => { calls += 1; return carrier(c, s, mail) })
+      expect(calls).toBe(3)
+      expect(await getMailConnector(h.db, connector.id)).toMatchObject({ deliveryPaused: true })
+      // The first two were retried; the third and the rest are held with no attempt counted.
+      expect((await queueRows()).map((row) => row.attempts).sort()).toEqual([0, 0, 1, 1])
+    })
+
+    it('starts counting again after an email gets through', async () => {
+      const connector = await readyConnector()
+      for (const to of ['a@example.com', 'b@example.com', 'fine@example.com', 'c@example.com', 'd@example.com']) {
+        await queueTemplateMail(h.db, { ...MAIL, to })
+      }
+      await drain(forbidden((to) => to !== 'fine@example.com'))
+      expect(await getMailConnector(h.db, connector.id)).toMatchObject({ deliveryPaused: false })
+      expect(await queueRows()).toHaveLength(4)
+    })
+  })
+
   describe('one recipient\'s trouble', () => {
     it('retries a greylisted recipient alone and sends everyone else\'s email in the same pass', async () => {
       await readyConnector()
@@ -579,7 +625,8 @@ describe('mail queue', () => {
   describe('which refusals are retried', () => {
     it('reads an HTTP provider\'s status', () => {
       expect(retryForHttpStatus(429)).toBe('slow-down')
-      expect([401, 403].map(retryForHttpStatus)).toEqual(['connector', 'connector'])
+      // 401 is always the key. A bare 403 is not: it is also how one recipient is refused.
+      expect([401, 403].map(retryForHttpStatus)).toEqual(['connector', 'suspect'])
       expect([500, 502, 503, 408].map(retryForHttpStatus)).toEqual(Array(4).fill('later'))
       expect([400, 404, 413, 422].map(retryForHttpStatus)).toEqual(Array(4).fill('never'))
     })
@@ -591,6 +638,7 @@ describe('mail queue', () => {
       expect([450, 451, 452, 454].map((responseCode) => retryForSmtpFailure(smtp({ responseCode }))))
         .toEqual(Array(4).fill('later'))
       expect(retryForSmtpFailure(smtp({ code: 'EAUTH', responseCode: 535 }))).toBe('connector')
+      expect(retryForSmtpFailure(smtp({ responseCode: 530 }))).toBe('connector')
       expect(retryForSmtpFailure(smtp({ code: 'ETLS' }))).toBe('connector')
       expect(['ETIMEDOUT', 'ECONNECTION', 'ESOCKET', 'ECONNREFUSED'].map((code) => retryForSmtpFailure(smtp({ code }))))
         .toEqual(Array(4).fill('later'))
@@ -608,7 +656,10 @@ describe('mail queue', () => {
       const retryOf = async (attempt: Promise<unknown>) =>
         ((await attempt.catch((err: unknown) => err)) as MailDeliveryError).retry
 
+      // An empty body: the status alone decides.
       expect(await retryOf(sendViaResend('key', sender, mail, { fetchImpl: answering(429) }))).toBe('slow-down')
+      expect(await retryOf(sendViaResend('key', sender, mail, { fetchImpl: answering(401) }))).toBe('connector')
+      expect(await retryOf(sendViaResend('key', sender, mail, { fetchImpl: answering(403) }))).toBe('suspect')
       expect(await retryOf(sendViaResend('key', sender, mail, { fetchImpl: answering(503) }))).toBe('later')
       expect(await retryOf(sendViaResend('key', sender, mail, { fetchImpl: answering(422) }))).toBe('never')
       expect(await retryOf(sendViaResend('key', sender, mail, { fetchImpl: unreachable }))).toBe('later')
@@ -617,6 +668,96 @@ describe('mail queue', () => {
       expect(await retryOf(sendViaSes(ses, 'secret', sender, mail, { fetchImpl: answering(429) }))).toBe('slow-down')
       expect(await retryOf(sendViaSes(ses, 'secret', sender, mail, { fetchImpl: answering(400) }))).toBe('never')
       expect(await retryOf(sendViaSes(ses, 'secret', sender, mail, { fetchImpl: unreachable }))).toBe('later')
+    })
+
+    describe('from each provider\'s own error body', () => {
+      const sender = { fromAddress: 'a@example.com', fromName: 'A', fromHeader: 'a@example.com', replyTo: '' }
+      const mail = { to: 'r@example.com', subject: 'S', text: 'T' }
+      const answering = (status: number, body: unknown, headers: Record<string, string> = {}) =>
+        (async () => new Response(JSON.stringify(body), { status, headers })) as unknown as typeof fetch
+      const retryOf = async (attempt: Promise<unknown>) =>
+        ((await attempt.catch((err: unknown) => err)) as MailDeliveryError).retry
+
+      const resend: Array<[string, number, unknown, string]> = [
+        ['a wrong key', 403, { statusCode: 403, name: 'invalid_api_key', message: 'API key is invalid' }, 'connector'],
+        ['no key', 401, { statusCode: 401, name: 'missing_api_key', message: 'Missing API key in the authorization header.' }, 'connector'],
+        ['a key that may not send', 401, { statusCode: 401, name: 'restricted_api_key', message: 'This API key is restricted to only send emails' }, 'connector'],
+        ['a testing account writing to somebody else', 403, { statusCode: 403, name: 'validation_error', message: 'You can only send testing emails to your own email address (owner@example.com).' }, 'suspect'],
+        ['a domain that is not verified', 403, { statusCode: 403, name: 'validation_error', message: 'The example.com domain is not verified.' }, 'suspect'],
+        ['a malformed recipient', 422, { statusCode: 422, name: 'validation_error', message: 'Invalid `to` field.' }, 'never'],
+        ['a rate limit', 429, { statusCode: 429, name: 'rate_limit_exceeded', message: 'Too many requests.' }, 'slow-down'],
+        ['trouble at Resend', 500, { statusCode: 500, name: 'internal_server_error', message: 'Unexpected error.' }, 'later'],
+      ]
+      for (const [what, status, body, expected] of resend) {
+        it(`Resend: ${what} is ${expected}`, async () => {
+          expect(await retryOf(sendViaResend('key', sender, mail, { fetchImpl: answering(status, body) }))).toBe(expected)
+        })
+      }
+
+      const postmark: Array<[string, number, unknown, string]> = [
+        ['a wrong server token', 401, { ErrorCode: 10, Message: 'Bad or missing Server API token.' }, 'connector'],
+        ['a sender signature that does not exist', 422, { ErrorCode: 400, Message: 'The \'From\' address you supplied is not a Sender Signature on your account.' }, 'connector'],
+        ['a sender signature that is not confirmed', 422, { ErrorCode: 401, Message: 'Sender signature not confirmed.' }, 'connector'],
+        ['an account that may not send', 422, { ErrorCode: 405, Message: 'You ran out of credits.' }, 'connector'],
+        ['an inactive recipient', 422, { ErrorCode: 406, Message: 'You tried to send to recipient(s) that have been marked as inactive.' }, 'never'],
+        ['a recipient outside the pending account\'s domain', 422, { ErrorCode: 412, Message: 'While your account is pending approval, all recipient addresses must share the same domain as the From address.' }, 'never'],
+        ['an invalid address', 422, { ErrorCode: 300, Message: 'Invalid \'To\' address.' }, 'never'],
+        ['trouble at Postmark', 500, { ErrorCode: 0, Message: 'Internal Server Error' }, 'later'],
+      ]
+      for (const [what, status, body, expected] of postmark) {
+        it(`Postmark: ${what} is ${expected}`, async () => {
+          expect(await retryOf(sendViaPostmark('token', sender, mail, { fetchImpl: answering(status, body) }))).toBe(expected)
+        })
+      }
+
+      const mailgunConfig = { domain: 'mg.example.com', region: 'us' as const }
+      const mailgun: Array<[string, number, unknown, string]> = [
+        ['a wrong key', 401, { message: 'Forbidden' }, 'connector'],
+        ['a sandbox domain writing to an address that is not authorised', 403, { message: 'Domain sandbox123.mailgun.org is not allowed to send: Sandbox subdomains are for test purposes only. Please add your own domain or add the address to authorized recipients in Account Settings.' }, 'never'],
+        ['an account that is disabled', 403, { message: 'Domain mg.example.com is not allowed to send: The domain is unverified and requires DNS configuration.' }, 'suspect'],
+        ['a bad recipient', 400, { message: 'to parameter is not a valid address. please check documentation' }, 'never'],
+        ['a rate limit', 429, { message: 'Too Many Requests' }, 'slow-down'],
+      ]
+      for (const [what, status, body, expected] of mailgun) {
+        it(`Mailgun: ${what} is ${expected}`, async () => {
+          expect(await retryOf(sendViaMailgun(mailgunConfig, 'key', sender, mail, { fetchImpl: answering(status, body) }))).toBe(expected)
+        })
+      }
+
+      const brevo: Array<[string, number, unknown, string]> = [
+        ['a wrong key', 401, { code: 'unauthorized', message: 'Key not found' }, 'connector'],
+        ['an account still under validation', 403, { code: 'account_under_validation', message: 'Your account is under validation.' }, 'connector'],
+        ['no credits', 402, { code: 'not_enough_credits', message: 'Not enough credits.' }, 'connector'],
+        ['a refusal that names no one', 403, { code: 'permission_denied', message: 'Unable to send email.' }, 'suspect'],
+        ['a bad recipient', 400, { code: 'invalid_parameter', message: 'email is not valid in to' }, 'never'],
+      ]
+      for (const [what, status, body, expected] of brevo) {
+        it(`Brevo: ${what} is ${expected}`, async () => {
+          expect(await retryOf(sendViaBrevo('key', sender, mail, { fetchImpl: answering(status, body) }))).toBe(expected)
+        })
+      }
+
+      const ses = { region: 'eu-central-1', accessKeyId: 'AKIAIOSFODNN7EXAMPLE' }
+      const sesCases: Array<[string, number, unknown, Record<string, string>, string]> = [
+        ['a wrong secret key', 403, { message: 'The request signature we calculated does not match the signature you provided.' }, { 'x-amzn-errortype': 'SignatureDoesNotMatch' }, 'connector'],
+        ['an unknown access key', 403, { message: 'The security token included in the request is invalid.' }, { 'x-amzn-errortype': 'UnrecognizedClientException:http://internal.amazon.com/coral/com.amazon.coral.service/' }, 'connector'],
+        ['a key without permission', 403, { __type: 'com.amazon.coral.service#AccessDeniedException', Message: 'User is not authorized to perform ses:SendEmail' }, {}, 'connector'],
+        ['an account whose sending is paused', 400, { message: 'Sending paused for this account.' }, { 'x-amzn-errortype': 'SendingPausedException' }, 'connector'],
+        ['a sandbox recipient that is not verified', 400, { message: 'Email address is not verified. The following identities failed the check in region EU-CENTRAL-1: r@example.com' }, { 'x-amzn-errortype': 'MessageRejected' }, 'never'],
+        ['a 403 that says nothing', 403, {}, {}, 'suspect'],
+        ['throttling', 429, { message: 'Maximum sending rate exceeded.' }, { 'x-amzn-errortype': 'TooManyRequestsException' }, 'slow-down'],
+      ]
+      for (const [what, status, body, headers, expected] of sesCases) {
+        it(`Amazon SES: ${what} is ${expected}`, async () => {
+          expect(await retryOf(sendViaSes(ses, 'secret', sender, mail, { fetchImpl: answering(status, body, headers) }))).toBe(expected)
+        })
+      }
+
+      it('reads an AWS error type with a namespace or a suffix', () => {
+        expect(retryForSesError(403, 'com.amazon.coral.service#AccessDeniedException')).toBe('connector')
+        expect(retryForSesError(403, 'InvalidClientTokenId:http://example/')).toBe('connector')
+        expect(retryForSesError(403, '')).toBe('suspect')
+      })
     })
 
     it('defaults a delivery error to no retry', () => {

@@ -119,14 +119,15 @@ A `mail_queue` row holds the template key, the recipient, `source` (`core`, or a
 
 - One email at a time, 100 ms apart, ordered by `lane` (0 = core, always first), then emails not tried yet before retries, then due time, then acceptance order. A fresh sign-in link is never behind a stack of retries.
 - **No lock between workers.** A row is claimed with one conditional update (`update … set claimed_at … where id = … and claimed_at is null`), so any number of instances on one Postgres database drain side by side and none takes an email another has. The worker deliberately does not use `withSchedulerLeaderLock`: that helper takes a session-scoped advisory lock through a pooled client, so the unlock can run on another connection, leave the lock held and stop a second instance from ever draining. (The helper's other callers are not changed here.)
-- Each driver marks its `MailDeliveryError` with `retry`:
+- Each driver marks its `MailDeliveryError` with `retry`. An HTTP driver reads the provider's own error body first (`classify…Error` in `apiDrivers.ts`, `retryForSesError`) and falls back to the status (`retryForHttpStatus`). A bare status is not trusted to mean the account: one visitor giving an address the provider refuses must never pause everyone's mail.
 
   | `retry` | Means | What the worker does |
   |---|---|---|
-  | `never` | the provider judged this message: SMTP 5xx, an HTTP 4xx | fails it |
+  | `never` | the provider judged this message or this recipient: SMTP 5xx, an HTTP 4xx, Postmark `ErrorCode` 300 / 406 / 412, Mailgun's "authorized recipients" sandbox refusal, SES `MessageRejected` | fails it |
   | `later` | this message's or this moment's trouble: unreachable, a 5xx, a timeout, and every SMTP 4yz but 421, so greylisting and a full mailbox (450 / 451 / 452) | retries this email with backoff; everything else carries on |
   | `slow-down` | the provider throttles the whole account: HTTP 429, SMTP 421 | retries it and sends nothing else from this process for a minute |
-  | `connector` | the provider refuses the account: HTTP 401 / 403, SMTP 535 or `EAUTH`, no TLS offered, an unreadable secret, no connector or sender set | pauses delivery (below) |
+  | `connector` | the provider refuses the account, by a signal that names it: HTTP 401, the provider's own key, permission, credit or unverified-sender error (Resend `invalid_api_key`, Postmark `ErrorCode` 10 / 400 / 401 / 405, Brevo `unauthorized` / `account_under_validation`, SES `AccessDeniedException` / `SignatureDoesNotMatch` / `SendingPausedException` and the like), SMTP 530 / 535 or `EAUTH`, no TLS offered, an unreadable secret, no connector or sender set | pauses delivery (below) |
+  | `suspect` | a refusal that could be the account's or one recipient's: a 403 whose body does not say (providers also answer 403 for a blocked or suppressed recipient, or one a sandbox account may not write to) | retries this email like `later`; pauses only once three different recipients in a row got it with no success in between (`settleSuspect` in `send.ts`) |
 
 - Retries wait 30 s, 2 min, 10 min, 30 min, 1 h, 2 h, 4 h, 6 h, 8 h (`RETRY_DELAYS_MS`; each moved by up to 20% either way), until the deadline.
 - An email whose template no longer exists, or whose payload can no longer be decrypted (`QueuedMailUnreadableError`: the master key changed), is failed at once.

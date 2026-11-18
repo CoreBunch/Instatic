@@ -103,9 +103,46 @@ export type CarryOutcome =
       error: unknown
       /** The safe sentence for the activity log. */
       message: string
-      retry: MailRetry
+      /** Never `suspect`: this function settles that question. */
+      retry: Exclude<MailRetry, 'suspect'>
       durationMs?: number
     }
+
+/**
+ * How many different recipients in a row must get an ambiguous refusal
+ * (`suspect`) before it is taken to be the account's and not theirs.
+ */
+const SUSPECT_RECIPIENTS_TO_PAUSE = 3
+
+/**
+ * Per connector, the recipients whose last attempts ended in an ambiguous
+ * refusal with no success in between. In memory and per process on purpose:
+ * it only decides how soon a pause is called, and a restart or a second
+ * instance merely needs its own three.
+ */
+const suspectRecipients = new Map<string, Set<string>>()
+
+/**
+ * Settle an ambiguous refusal. One recipient, however often, is that
+ * recipient's trouble: retry the message. Several different recipients in a
+ * row is the account's: pause.
+ */
+function settleSuspect(connectorId: string, recipient: string): 'later' | 'connector' {
+  const seen = suspectRecipients.get(connectorId) ?? new Set<string>()
+  seen.add(recipient.toLowerCase())
+  if (seen.size < SUSPECT_RECIPIENTS_TO_PAUSE) {
+    suspectRecipients.set(connectorId, seen)
+    return 'later'
+  }
+  // The pause is called; when it lifts, the count starts again.
+  suspectRecipients.delete(connectorId)
+  return 'connector'
+}
+
+/** Test seam: forget the ambiguous refusals seen so far. */
+export function __resetSuspectRecipientsForTesting(): void {
+  suspectRecipients.clear()
+}
 
 /**
  * Hand one message to a connector, once. Never throws for a delivery
@@ -144,6 +181,8 @@ export async function carryThroughConnector(
   const startedAt = Date.now()
   try {
     const providerMessageId = await carrier(connector, sender, mail)
+    // The account evidently works: earlier ambiguous refusals were their recipients'.
+    suspectRecipients.delete(connector.id)
     await noteConnectorUse(db, connector.id, null)
     return { ok: true, connector: used, providerMessageId, durationMs: Date.now() - startedAt }
   } catch (err) {
@@ -151,7 +190,8 @@ export async function carryThroughConnector(
     await noteConnectorUse(db, connector.id, message)
     // A driver says how its refusal should be retried; anything else it
     // throws is not a refusal, and is worth another try.
-    const retry = err instanceof MailDeliveryError ? err.retry : 'later'
+    const raw = err instanceof MailDeliveryError ? err.retry : 'later'
+    const retry = raw === 'suspect' ? settleSuspect(connector.id, mail.to) : raw
     return { ok: false, connector: used, error: err, message, retry, durationMs: Date.now() - startedAt }
   }
 }
