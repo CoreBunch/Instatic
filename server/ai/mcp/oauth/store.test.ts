@@ -5,15 +5,15 @@ import { sqliteMigrations } from '../../../db/migrations-sqlite'
 import { runMigrations } from '../../../db/runMigrations'
 import { createSqliteClient } from '../../../db/sqlite'
 import { revokeConnector } from '../connectors/store'
-import { pkceChallengeForVerifier } from '../connectors/token'
 import {
   createOAuthAuthorizationGrant,
-  exchangeAuthorizationCode,
   findOAuthAccessGrant,
   findOAuthClient,
+  mcpOAuthRealm,
   registerOAuthClient,
-  rotateRefreshToken,
 } from './store'
+import { pkceChallengeForVerifier } from '../../../oauth/secrets'
+import { exchangeAuthorizationCode, rotateRefreshToken } from '../../../oauth/grants'
 
 const RESOURCE = 'https://cms.example.com/_instatic/mcp'
 const REDIRECT_URI = 'https://claude.ai/api/mcp/auth_callback'
@@ -75,7 +75,7 @@ describe('MCP OAuth grant store', () => {
       request,
     })
 
-    const tokens = await exchangeAuthorizationCode(db, {
+    const tokens = await exchangeAuthorizationCode(db, mcpOAuthRealm, {
       code,
       clientId: request.clientId,
       redirectUri: request.redirectUri,
@@ -94,7 +94,7 @@ describe('MCP OAuth grant store', () => {
     })
     expect(await findOAuthAccessGrant(db, tokens!.accessToken, 'https://other.example/mcp')).toBeNull()
 
-    expect(await exchangeAuthorizationCode(db, {
+    expect(await exchangeAuthorizationCode(db, mcpOAuthRealm, {
       code,
       clientId: request.clientId,
       redirectUri: request.redirectUri,
@@ -111,28 +111,28 @@ describe('MCP OAuth grant store', () => {
       request,
     })
 
-    expect(await exchangeAuthorizationCode(db, {
+    expect(await exchangeAuthorizationCode(db, mcpOAuthRealm, {
       code,
       clientId: request.clientId,
       redirectUri: request.redirectUri,
       codeVerifier: 'b'.repeat(64),
       resource: RESOURCE,
     })).toBeNull()
-    expect(await exchangeAuthorizationCode(db, {
+    expect(await exchangeAuthorizationCode(db, mcpOAuthRealm, {
       code,
       clientId: 'different-client',
       redirectUri: request.redirectUri,
       codeVerifier: VERIFIER,
       resource: RESOURCE,
     })).toBeNull()
-    expect(await exchangeAuthorizationCode(db, {
+    expect(await exchangeAuthorizationCode(db, mcpOAuthRealm, {
       code,
       clientId: request.clientId,
       redirectUri: 'https://attacker.example/callback',
       codeVerifier: VERIFIER,
       resource: RESOURCE,
     })).toBeNull()
-    expect(await exchangeAuthorizationCode(db, {
+    expect(await exchangeAuthorizationCode(db, mcpOAuthRealm, {
       code,
       clientId: request.clientId,
       redirectUri: request.redirectUri,
@@ -149,14 +149,14 @@ describe('MCP OAuth grant store', () => {
       capabilities: ['site.read'],
       request,
     })
-    const initial = await exchangeAuthorizationCode(db, {
+    const initial = await exchangeAuthorizationCode(db, mcpOAuthRealm, {
       code,
       clientId: request.clientId,
       redirectUri: request.redirectUri,
       codeVerifier: VERIFIER,
       resource: RESOURCE,
     })
-    const rotated = await rotateRefreshToken(db, {
+    const rotated = await rotateRefreshToken(db, mcpOAuthRealm, {
       refreshToken: initial!.refreshToken,
       clientId: request.clientId,
       resource: RESOURCE,
@@ -166,7 +166,7 @@ describe('MCP OAuth grant store', () => {
     expect(rotated?.refreshToken).not.toBe(initial?.refreshToken)
     expect(rotated?.scope).toBe('mcp')
 
-    expect(await rotateRefreshToken(db, {
+    expect(await rotateRefreshToken(db, mcpOAuthRealm, {
       refreshToken: initial!.refreshToken,
       clientId: request.clientId,
       resource: RESOURCE,
@@ -183,7 +183,7 @@ describe('MCP OAuth grant store', () => {
       capabilities: ['site.read'],
       request,
     })
-    const tokens = await exchangeAuthorizationCode(db, {
+    const tokens = await exchangeAuthorizationCode(db, mcpOAuthRealm, {
       code,
       clientId: request.clientId,
       redirectUri: request.redirectUri,
