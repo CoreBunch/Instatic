@@ -159,6 +159,7 @@ export async function handleLoopRequest(
       limit: props.pageSize,
       offset,
       closed,
+      ...(source.forMember ? { memberId: (await visitor())?.id ?? null } : {}),
     })
   } catch (err) {
     console.error(`[loop] source "${source.id}" failed for "${loopId}":`, err)

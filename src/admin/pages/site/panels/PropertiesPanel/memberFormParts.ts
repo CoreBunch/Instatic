@@ -75,6 +75,11 @@ export function memberFormFragment(
     return node
   }
   for (const field of missing.fields) {
+    if (field.inputType === 'hidden') {
+      // Sent without asking: no label, and the value comes from where the form sits.
+      add(createNode('base.input', { fieldId: field.name, name: field.name, inputType: 'hidden', value: field.value ?? '' }))
+      continue
+    }
     const wrapper = add(createNode('base.container', { tag: 'div' }))
     // The label names its input outright, so the pair is linked in the
     // published HTML itself and does not wait for the form runtime.

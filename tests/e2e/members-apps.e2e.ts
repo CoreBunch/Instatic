@@ -1,7 +1,7 @@
 import { createHash, randomBytes } from 'node:crypto'
 import { createServer, type Server } from 'node:http'
 import type { AddressInfo } from 'node:net'
-import { expect, test } from '@playwright/test'
+import { expect, test, type Page } from '@playwright/test'
 import { ANONYMOUS_STATE, PUBLIC_BASE_URL, login, seedMemberSite } from './helpers'
 
 /**
@@ -43,6 +43,41 @@ async function listenForCallback(): Promise<{ server: Server; redirectUri: strin
   return { server, redirectUri: `http://127.0.0.1:${port}/callback`, answer }
 }
 
+/** The address the app opens in the member's browser, and what it keeps to finish the sign-in. */
+function signInAddress(oauth: Discovery, appId: string, redirectUri: string): { authorize: URL; verifier: string; state: string } {
+  const verifier = randomBytes(48).toString('base64url')
+  const state = randomBytes(12).toString('base64url')
+  const authorize = new URL(oauth.authorization_endpoint)
+  authorize.search = new URLSearchParams({
+    response_type: 'code',
+    client_id: appId,
+    redirect_uri: redirectUri,
+    code_challenge: createHash('sha256').update(verifier).digest('base64url'),
+    code_challenge_method: 'S256',
+    scope: 'profile access',
+    state,
+  }).toString()
+  return { authorize, verifier, state }
+}
+
+/** Sign up on the seeded Join page and confirm by the emailed link; ends on the account page. */
+async function becomeMember(
+  visitor: Page,
+  at: (slug: string) => string,
+  emailedLink: (to: string) => Promise<string>,
+  email: string,
+): Promise<void> {
+  await visitor.goto(at('join'))
+  const form = visitor.locator('form').filter({ has: visitor.getByRole('button', { name: 'Create account', exact: true }) })
+  await form.getByLabel('Name').fill('Grace')
+  await form.getByLabel('Email').fill(email)
+  await form.getByLabel('Password').fill(PASSWORD)
+  await form.getByRole('button', { name: 'Create account' }).click()
+  await expect(visitor.getByRole('status').filter({ hasText: 'Check your email' })).toBeVisible({ timeout: 20_000 })
+  await visitor.goto(await emailedLink(email))
+  await visitor.getByRole('button', { name: 'Confirm my address' }).click()
+}
+
 test('an app signs a member in and reads their access (MEMBER-005)', async ({ page, browser }) => {
   test.setTimeout(180_000)
   const suffix = Date.now().toString(36)
@@ -74,18 +109,7 @@ test('an app signs a member in and reads their access (MEMBER-005)', async ({ pa
     expect(discovered.ok()).toBe(true)
     const oauth = (await discovered.json()) as Discovery
 
-    const verifier = randomBytes(48).toString('base64url')
-    const state = randomBytes(12).toString('base64url')
-    const authorize = new URL(oauth.authorization_endpoint)
-    authorize.search = new URLSearchParams({
-      response_type: 'code',
-      client_id: appId,
-      redirect_uri: app.redirectUri,
-      code_challenge: createHash('sha256').update(verifier).digest('base64url'),
-      code_challenge_method: 'S256',
-      scope: 'profile access',
-      state,
-    }).toString()
+    const { authorize, verifier, state } = signInAddress(oauth, appId, app.redirectUri)
 
     const context = await browser.newContext()
     const visitor = await context.newPage()
@@ -96,15 +120,7 @@ test('an app signs a member in and reads their access (MEMBER-005)', async ({ pa
       })
 
       await test.step('the visitor becomes a member', async () => {
-        await visitor.goto(at('join'))
-        const form = visitor.locator('form').filter({ has: visitor.getByRole('button', { name: 'Create account', exact: true }) })
-        await form.getByLabel('Name').fill('Grace')
-        await form.getByLabel('Email').fill(email)
-        await form.getByLabel('Password').fill(PASSWORD)
-        await form.getByRole('button', { name: 'Create account' }).click()
-        await expect(visitor.getByRole('status').filter({ hasText: 'Check your email' })).toBeVisible({ timeout: 20_000 })
-        await visitor.goto(await emailedLink(email))
-        await visitor.getByRole('button', { name: 'Confirm my address' }).click()
+        await becomeMember(visitor, at, emailedLink, email)
         await expect(visitor).toHaveURL(new RegExp(`/${prefix}account$`))
       })
 
@@ -179,6 +195,131 @@ test('an app signs a member in and reads their access (MEMBER-005)', async ({ pa
     }
   } finally {
     app.server.close()
+    if (appId) {
+      await site.stepUp()
+      await admin.delete(`/admin/api/cms/members/apps/${appId}`, { headers })
+    }
+    await site.remove()
+  }
+})
+
+/**
+ * MEMBER-006 — a member and an administrator see and end an app's sign-in.
+ *
+ * After a member allows an app, the account page the owner built lists it
+ * (a per-visitor list with a Disconnect form in every row), the member is
+ * emailed, and the admin's member panel lists it too. Disconnecting ends the
+ * app's access at once.
+ */
+test('a member and an administrator disconnect a connected app (MEMBER-006)', async ({ page, browser }) => {
+  test.setTimeout(240_000)
+  const suffix = Date.now().toString(36)
+  const prefix = `q${suffix}-`
+  const at = (slug: string) => `${PUBLIC_BASE_URL}/${prefix}${slug}`
+  const email = `apps-${suffix}@example.com`
+  const appName = `E2E app ${suffix}`
+
+  await login(page)
+  const admin = page.request
+  const site = await seedMemberSite(page, prefix)
+  const { headers, emailedLink } = site
+  let appId = ''
+  const servers: Server[] = []
+
+  try {
+    await site.stepUp()
+    const created = await admin.post('/admin/api/cms/members/apps', {
+      headers,
+      data: { name: appName, redirectUris: ['http://127.0.0.1/callback'], scopes: ['profile', 'access'] },
+    })
+    expect(created.status(), await created.text()).toBe(201)
+    appId = ((await created.json()) as { id: string }).id
+    const oauth = (await (
+      await admin.get(`${PUBLIC_BASE_URL}/.well-known/oauth-authorization-server/_instatic/members`)
+    ).json()) as Discovery
+
+    const context = await browser.newContext()
+    const visitor = await context.newPage()
+    const appRequest = await browser.newContext()
+
+    /** Play the app once: the member allows it and the app ends up with an access token. */
+    async function connect(): Promise<string> {
+      const app = await listenForCallback()
+      servers.push(app.server)
+      const { authorize, verifier } = signInAddress(oauth, appId, app.redirectUri)
+      await visitor.goto(authorize.toString())
+      await visitor.getByRole('button', { name: 'Allow', exact: true }).click()
+      const code = (await app.answer).searchParams.get('code') ?? ''
+      const exchanged = await appRequest.request.post(oauth.token_endpoint, {
+        form: {
+          grant_type: 'authorization_code', code, redirect_uri: app.redirectUri,
+          code_verifier: verifier, client_id: appId, resource: oauth.issuer,
+        },
+      })
+      expect(exchanged.ok(), await exchanged.text()).toBe(true)
+      return ((await exchanged.json()) as { access_token: string }).access_token
+    }
+    const userinfo = (token: string) =>
+      appRequest.request.get(oauth.userinfo_endpoint, { headers: { authorization: `Bearer ${token}` } })
+
+    try {
+      await becomeMember(visitor, at, emailedLink, email)
+      await expect(visitor).toHaveURL(new RegExp(`/${prefix}account$`))
+      const apps = visitor.locator('[data-demo="apps"]')
+
+      await test.step('the account page lists nothing before an app is signed in', async () => {
+        await expect(visitor.getByRole('heading', { name: 'Connected apps' })).toBeVisible()
+        await expect(apps.locator('[data-demo="app"]')).toHaveCount(0)
+      })
+
+      const first = await connect()
+      expect((await userinfo(first)).status()).toBe(200)
+
+      await test.step('the member is told by email', async () => {
+        await expect
+          .poll(async () => {
+            const res = await admin.get(`/admin/api/cms/mail/activity?period=24h&q=${encodeURIComponent(email)}`)
+            const { entries } = (await res.json()) as { entries: Array<{ to: string; body: string | null }> }
+            return entries.some((entry) => entry.to === email && (entry.body ?? '').includes(appName))
+          }, { timeout: 20_000 })
+          .toBe(true)
+      })
+
+      await test.step('the member disconnects the app on the account page', async () => {
+        await visitor.goto(at('account'))
+        const row = apps.locator('[data-demo="app"]')
+        await expect(row).toHaveCount(1)
+        await expect(row.getByRole('heading', { name: appName })).toBeVisible()
+        await expect(row.getByText(/Connected \d{4}-\d{2}-\d{2}\. Last used \d{4}-\d{2}-\d{2}\./)).toBeVisible()
+        await visitor.screenshot({ path: '.tmp/evidence/members-connected-apps.png', fullPage: true })
+        await row.getByRole('button', { name: 'Disconnect', exact: true }).click()
+        await expect(visitor).toHaveURL(new RegExp(`/${prefix}account$`))
+        await expect(apps.locator('[data-demo="app"]')).toHaveCount(0)
+        expect((await userinfo(first)).status()).toBe(401)
+      })
+
+      const second = await connect()
+      expect((await userinfo(second)).status()).toBe(200)
+
+      await test.step('an administrator disconnects it from the member panel', async () => {
+        await page.goto('/admin/users')
+        await page.getByRole('tab', { name: 'Site members', exact: true }).click()
+        const tab = page.getByRole('region', { name: 'Site members' })
+        await tab.getByRole('list', { name: 'Site members' }).getByRole('button').filter({ hasText: email }).click()
+        const details = page.getByRole('article', { name: 'Member details' })
+        const connected = details.getByRole('region', { name: 'Connected apps' })
+        await expect(connected.getByText(appName, { exact: true })).toBeVisible()
+        await page.screenshot({ path: '.tmp/evidence/members-admin-connected-apps.png' })
+        await connected.getByRole('button', { name: `Disconnect ${appName}` }).click()
+        await expect(connected.getByText('No apps are signed in to this account.')).toBeVisible()
+        expect((await userinfo(second)).status()).toBe(401)
+      })
+    } finally {
+      await appRequest.close()
+      await context.close()
+    }
+  } finally {
+    for (const server of servers) server.close()
     if (appId) {
       await site.stepUp()
       await admin.delete(`/admin/api/cms/members/apps/${appId}`, { headers })

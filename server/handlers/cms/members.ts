@@ -13,6 +13,7 @@
  *   POST   /admin/api/cms/members/:id/sign-out        — end every session
  *   POST   /admin/api/cms/members/:id/tags            — grant a tag
  *   DELETE /admin/api/cms/members/:id/tags            — withdraw one source's grant of a tag
+ *   DELETE /admin/api/cms/members/:id/apps/:grantId   — sign the member out of one app
  *   GET    /admin/api/cms/members/apps                — apps that may sign a member in
  *   POST   /admin/api/cms/members/apps                — register one (step-up)
  *   DELETE /admin/api/cms/members/apps/:id            — remove one, signing everyone out of it (step-up)
@@ -40,6 +41,7 @@ import { badRequest, jsonResponse, readValidatedBody } from '../../http'
 import {
   ADMIN_TAG_SOURCE,
   deleteMemberAsAdmin,
+  disconnectMemberAppAsAdmin,
   getMemberForAdmin,
   inviteMember,
   listMembersForAdmin,
@@ -200,6 +202,18 @@ async function handleSignOut(req: Request, db: DbClient, params: RouteParams): P
   return jsonResponse({ detail })
 }
 
+async function handleDisconnectApp(req: Request, db: DbClient, params: RouteParams): Promise<Response> {
+  const user = await manager(req, db)
+  if (user instanceof Response) return user
+  const appName = await disconnectMemberAppAsAdmin(db, params.id, params.grantId)
+  if (appName === null) {
+    return jsonResponse({ error: 'That app is not signed in to this account' }, { status: 404 })
+  }
+  const detail = await getMemberForAdmin(db, params.id)
+  await audit(db, req, user, 'member.app.disconnect', params.id, { ...emailOf(detail), app: appName })
+  return jsonResponse({ detail })
+}
+
 async function handleDelete(req: Request, db: DbClient, params: RouteParams): Promise<Response> {
   const user = await manager(req, db, true)
   if (user instanceof Response) return user
@@ -263,7 +277,7 @@ async function handleGetSettings(req: Request, db: DbClient): Promise<Response> 
 function settingsProblem(settings: MemberSettings): string | null {
   const ids = settings.profileFields.map((field) => field.id)
   if (new Set(ids).size !== ids.length) return 'Two profile fields share an id.'
-  const reserved = ['email', 'password', 'token', 'request', 'decision', 'currentPassword', 'newPassword']
+  const reserved = ['email', 'password', 'token', 'request', 'decision', 'connection', 'currentPassword', 'newPassword']
   const clash = ids.find((id) => reserved.includes(id))
   return clash ? `"${clash}" is used by the member forms and cannot be a profile field id.` : null
 }
@@ -339,6 +353,8 @@ async function handleDeleteApp(req: Request, db: DbClient, params: RouteParams):
 
 const MEMBER = new RegExp(`^${MEMBERS_PREFIX}/(?<id>[^/]+)$`)
 const APP = new RegExp(`^${MEMBERS_PREFIX}/apps/(?<id>[^/]+)$`)
+/** Three segments deep, so it never meets the two-segment registry route `apps/:id` (`APP`). */
+const MEMBER_APP = new RegExp(`^${MEMBERS_PREFIX}/(?<id>[^/]+)/apps/(?<grantId>[^/]+)$`)
 const action = (name: string) => new RegExp(`^${MEMBERS_PREFIX}/(?<id>[^/]+)/${name}$`)
 
 // The fixed paths come first: `invite`, `settings` and `apps` would otherwise match `:id`.
@@ -357,6 +373,7 @@ const ROUTES: Route<[]>[] = [
   { method: 'POST', pattern: action('sign-out'), handler: handleSignOut },
   { method: 'POST', pattern: action('tags'), handler: handleGrantTag },
   { method: 'DELETE', pattern: action('tags'), handler: handleRevokeTag },
+  { method: 'DELETE', pattern: MEMBER_APP, handler: handleDisconnectApp },
 ]
 
 export function handleMembersRoutes(req: Request, db: DbClient): Promise<Response | null> {

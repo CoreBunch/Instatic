@@ -535,6 +535,33 @@ describe('member forms', () => {
     expect(memberFormAction('apps/deny')).toBeUndefined()
   })
 
+  it('gives the disconnect form a hidden field that names the app of its row', () => {
+    const action = memberFormAction('apps/disconnect')!
+    const empty = makePage('d', 'd', [
+      node('d_form', 'base.form', { mode: 'member', formId: 'disconnect', memberAction: 'apps/disconnect' }, []),
+    ])
+    const missing = missingMemberFormParts(empty, 'd_form', action)
+    expect(missing.fields.map((field) => field.name)).toEqual(['connection'])
+
+    const fragment = memberFormFragment(action, 'disconnect', missing)
+    const added = fragment.rootIds.map((id) => fragment.nodes[id]!)
+    // No label and no wrapper: the member is not asked anything.
+    expect(added[0]).toMatchObject({
+      moduleId: 'base.input',
+      props: { name: 'connection', inputType: 'hidden', value: '{currentEntry.id}' },
+    })
+    expect(added.filter((entry) => entry.moduleId === 'base.label')).toEqual([])
+    expect(added.filter((entry) => entry.moduleId === 'base.submit').map((button) => button.props.label)).toEqual(['Disconnect'])
+
+    const complete = makePage('e', 'e', [
+      node('e_form', 'base.form', { mode: 'member', formId: 'disconnect', memberAction: 'apps/disconnect' }, ['e__which', 'e__go', 'e__msg']),
+      node('e__which', 'base.input', { fieldId: 'connection', name: 'connection', inputType: 'hidden', value: '{currentEntry.id}' }),
+      node('e__go', 'base.submit', { label: 'Disconnect' }),
+      node('e__msg', 'base.form-message', { formId: 'disconnect', kind: 'error', text: '' }),
+    ])
+    expect(missingMemberFormParts(complete, 'e_form', action)).toEqual({ fields: [], submit: false, messages: false, secondary: false })
+  })
+
   it('counts a button without the answer as missing on a yes-or-no form', () => {
     const action = memberFormAction('apps/approve')!
     const plain = makePage('b', 'b', [

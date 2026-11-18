@@ -129,10 +129,14 @@ function normalizeQuery(params: URLSearchParams): string {
  * cookies, so module holes are always shared-cacheable.
  */
 function isPerVisitorHole(node: PageNode): boolean {
-  if (node.moduleId !== 'base.loop') return false
+  return holeLoopSource(node)?.perVisitor === true
+}
+
+/** The loop source a hole node is bound to, when the hole is a loop. */
+function holeLoopSource(node: PageNode) {
+  if (node.moduleId !== 'base.loop') return undefined
   const sourceId = typeof node.props.sourceId === 'string' ? node.props.sourceId : ''
-  if (!sourceId) return false
-  return loopSourceRegistry.get(sourceId)?.perVisitor === true
+  return sourceId ? loopSourceRegistry.get(sourceId) : undefined
 }
 
 /**
@@ -150,12 +154,15 @@ async function renderHoleFragment(
   closed: ClosedContent,
   /** The visitor's member frame (null when signed out); undefined for a shared render. */
   member: MemberFrame | null | undefined,
+  /** Who a `forMember` loop source lists for; undefined when no source asks. */
+  memberId: string | null | undefined,
 ): Promise<string> {
   const route = buildRouteFrame(pageUrl.toString())
   const loopData = await prefetchLoopData(page, site, db, pageUrl, {
     request,
     rootNodeId: nodeId,
     closed,
+    memberId,
   })
   const config: RenderConfig = {
     page,
@@ -302,7 +309,8 @@ export async function handleHoleRequest(
     const member = signedIn === undefined
       ? undefined
       : memberFrameFor(signedIn, signedIn ? await memberAppRequestFrame(ctx.db, pageUrl) : null)
-    const html = await renderHoleFragment(nodeId, foundPage, snap.site, ctx.db, pageUrl, request, closed, member)
+    const memberId = holeLoopSource(node)?.forMember ? ((await visitor())?.id ?? null) : undefined
+    const html = await renderHoleFragment(nodeId, foundPage, snap.site, ctx.db, pageUrl, request, closed, member, memberId)
     return new Response(html, {
       status: 200,
       headers: {
@@ -332,7 +340,7 @@ export async function handleHoleRequest(
       queryString: `v=${currentVersion}&u=${encodeURIComponent(pageUrl.pathname)}&${normalizeQuery(pageUrl.searchParams)}`,
     },
     async () => {
-      const html = await renderHoleFragment(nodeId, foundPage, snap.site, ctx.db, pageUrl, request, closed, undefined)
+      const html = await renderHoleFragment(nodeId, foundPage, snap.site, ctx.db, pageUrl, request, closed, undefined, undefined)
       return {
         body: html,
         headers: { 'content-type': 'text/html; charset=utf-8' },

@@ -13,6 +13,10 @@ import {
 } from '../../../server/members/apps/store'
 import { handleMemberRequest } from '../../../server/members/handlers'
 import { resetMemberLimits } from '../../../server/members/limits'
+import { flushMemberMail } from '../../../server/members/mail'
+import { loopSourceRegistry } from '@core/loops/registry'
+import '@core/loops/sources'
+import type { PrefetchedLoopEntitySource } from '@core/loops/types'
 import { createMember, grantMemberTag, saveMemberSettings } from '../../../server/members/repository'
 import { createMemberSession } from '../../../server/members/sessions'
 import { pkceChallengeForVerifier } from '../../../server/oauth/secrets'
@@ -43,7 +47,7 @@ describe('sign-in for apps', () => {
     // `DB=postgres` runs share one database across tests; start each one clean.
     for (const table of [
       'member_app_tokens', 'member_app_codes', 'member_app_grants', 'member_app_requests', 'member_apps',
-      'member_events', 'member_tags', 'member_sessions', 'members', 'member_settings',
+      'member_events', 'member_tags', 'member_sessions', 'members', 'member_settings', 'mail_outbox',
     ]) {
       await t.db.unsafe(`delete from ${table}`)
     }
@@ -69,6 +73,7 @@ describe('sign-in for apps', () => {
   })
 
   afterEach(async () => {
+    await flushMemberMail()
     resetPublicOrigins()
     await t.cleanup()
   })
@@ -417,6 +422,107 @@ describe('sign-in for apps', () => {
       expect((await userinfo(tokens.access_token)).status).toBe(401)
       const res = await call(await authorizeUrl(), { headers: { cookie } })
       expect(res.status).toBe(400)
+    })
+  })
+
+  describe('connected apps', () => {
+    const source = loopSourceRegistry.getOrThrow('members.apps') as PrefetchedLoopEntitySource
+
+    function connected(forMember: string | null | undefined) {
+      return source.fetch({
+        db: t.db, site: { pages: [] } as never, filters: {}, orderBy: 'connectedAt', direction: 'desc', limit: 10, offset: 0,
+        memberId: forMember,
+      })
+    }
+
+    function disconnect(connection: string | undefined, as = cookie): Promise<Response> {
+      return call('/_instatic/members/apps/disconnect', {
+        method: 'POST',
+        headers: { cookie: as, origin: ORIGIN, 'content-type': 'application/json' },
+        body: JSON.stringify(connection === undefined ? {} : { connection }),
+      })
+    }
+
+    async function otherMember(): Promise<{ id: string; cookie: string }> {
+      const other = await createMember(t.db, { email: 'grace@example.com', passwordHash: null, profile: {}, verified: true })
+      const session = await createMemberSession(t.db, other!.id, { ipAddress: null, userAgent: null })
+      return { id: other!.id, cookie: `instatic_member=${session.token}` }
+    }
+
+    it('lists a member their own apps, and nobody else theirs', async () => {
+      expect((await connected(memberId)).items).toEqual([])
+      const tokens = await signIn()
+      await userinfo(tokens.access_token)
+
+      const mine = await connected(memberId)
+      expect(mine.totalItems).toBe(1)
+      expect(mine.items[0].fields).toMatchObject({ name: 'Instatic Desktop' })
+      expect(mine.items[0].fields.connectedOn).toMatch(/^\d{4}-\d{2}-\d{2}$/)
+      expect(mine.items[0].fields.lastUsedOn).toMatch(/^\d{4}-\d{2}-\d{2}$/)
+
+      expect((await connected((await otherMember()).id)).items).toEqual([])
+      // A signed-out visitor, and a render made for nobody, get nothing.
+      expect((await connected(null)).items).toEqual([])
+      expect((await connected(undefined)).items).toEqual([])
+    })
+
+    it('is rendered for each visitor, never cached', () => {
+      expect(source.perVisitor).toBe(true)
+      expect(source.forMember).toBe(true)
+    })
+
+    it('disconnects the app the member chose and ends its access at once', async () => {
+      const tokens = await signIn()
+      const connection = (await connected(memberId)).items[0].id
+
+      const res = await disconnect(connection)
+      expect(res.status).toBe(200)
+      expect((await connected(memberId)).items).toEqual([])
+      expect((await userinfo(tokens.access_token)).status).toBe(401)
+      expect((await tokenRequest({ grant_type: 'refresh_token', refresh_token: tokens.refresh_token })).status).toBe(400)
+      const { rows } = await t.db<{ kind: string }>`select kind from member_events where member_id = ${memberId}`
+      expect(rows.map((row) => row.kind)).toContain('app_disconnected')
+    })
+
+    it('does not let a member disconnect an app from someone else', async () => {
+      const tokens = await signIn()
+      const connection = (await connected(memberId)).items[0].id
+      const other = await otherMember()
+
+      expect((await disconnect(connection, other.cookie)).status).toBe(200)
+      expect((await userinfo(tokens.access_token)).status).toBe(200)
+      expect((await connected(memberId)).items).toHaveLength(1)
+    })
+
+    it('refuses a post that names no app, or comes from nobody', async () => {
+      await signIn()
+      expect((await disconnect(undefined)).status).toBe(400)
+      const connection = (await connected(memberId)).items[0].id
+      expect((await disconnect(connection, '')).status).toBe(401)
+      expect((await connected(memberId)).items).toHaveLength(1)
+    })
+
+    it('leaves out an app the owner removed', async () => {
+      await signIn()
+      await deleteMemberApp(t.db, app.id)
+      expect((await connected(memberId)).items).toEqual([])
+    })
+
+    it('emails the member when an app is signed in, and not when they refuse', async () => {
+      await answer('deny', await startRequest())
+      await flushMemberMail()
+      const before = await t.db<{ n: number }>`select count(*) as n from mail_outbox where kind = 'member.app_connected'`
+      expect(Number(before.rows[0].n)).toBe(0)
+
+      await approvedCode()
+      await flushMemberMail()
+      const { rows } = await t.db<{ to_address: string; subject: string; body_text: string }>`
+        select to_address, subject, body_text from mail_outbox where kind = 'member.app_connected'
+      `
+      expect(rows).toHaveLength(1)
+      expect(rows[0].to_address).toBe('ada@example.com')
+      expect(rows[0].subject).toContain('Instatic Desktop')
+      expect(rows[0].body_text).toContain('Instatic Desktop')
     })
   })
 

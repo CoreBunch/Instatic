@@ -13,8 +13,13 @@ export interface MemberFormField {
   /** The field's `name`, as the endpoint reads it. */
   name: string
   label: string
-  inputType: 'email' | 'password' | 'text'
+  inputType: 'email' | 'password' | 'text' | 'hidden'
   autocomplete: string
+  /**
+   * A value the form sends without asking: the field is hidden and filled
+   * from where the form sits (a token such as `{currentEntry.id}`).
+   */
+  value?: string
 }
 
 /** How the editor's action picker groups the actions. */
@@ -214,6 +219,17 @@ export const MEMBER_FORM_ACTIONS: readonly MemberFormAction[] = [
     submitLabel: 'Allow',
     successMessage: 'The app is signed in. You can close this page.',
     choice: { name: 'decision', submitValue: 'allow', other: { label: 'Cancel', value: 'deny' } },
+  },
+  {
+    action: 'apps/disconnect',
+    label: 'Disconnect an app',
+    group: 'account',
+    description: 'For a list of the member\'s connected apps: signs that app out of the member\'s account. Put the form inside the list, one per app.',
+    fields: [{ name: 'connection', label: 'The app to disconnect', inputType: 'hidden', autocomplete: 'off', value: '{currentEntry.id}' }],
+    linkParam: null,
+    signedIn: true,
+    submitLabel: 'Disconnect',
+    successMessage: 'The app is disconnected.',
   },
 ]
 

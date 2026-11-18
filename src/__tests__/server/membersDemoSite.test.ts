@@ -14,6 +14,7 @@ import { normalizeSiteRuntimeConfig } from '@core/site-runtime'
 import { buildMembersDemoPages, MEMBERS_DEMO_CSS, membersDemoSettings } from '../../../scripts/lib/membersDemoSite'
 import { pageToCells } from '../../core/data/pageFromRow'
 import { MAIN_SCOPE } from '../../../server/branches/scope'
+import { createMemberApp } from '../../../server/members/apps/store'
 import { createMember, grantMemberTag, saveMemberSettings } from '../../../server/members/repository'
 import { createMemberSession } from '../../../server/members/sessions'
 import { publishDraftSite } from '../../../server/publish/publishSite'
@@ -122,6 +123,36 @@ describe('members demo site', () => {
     expect(pro.status).toBe(200)
     expect(await pro.text()).toContain('You hold the tag')
     expect((await get('/members', mia)).status).toBe(200)
+  })
+
+  it('lists a member the apps signed in to their account, each with its own disconnect form', async () => {
+    const mia = await signedIn('mia@example.com', 'Mia')
+    const paul = await signedIn('paul@example.com', 'Paul')
+    const app = await createMemberApp(t.db, { name: 'Northlight Desktop', redirectUris: [], scopes: ['profile'], createdByUserId: null })
+    const { rows } = await t.db<{ id: string }>`select id from members where email = 'mia@example.com'`
+    const now = Date.now()
+    await t.db`
+      insert into member_app_grants (id, member_id, app_id, scope, created_at, expires_at)
+      values ('grant_mia', ${rows[0].id}, ${app.id}, 'profile', ${new Date(now).toISOString()}, ${new Date(now + 86_400_000).toISOString()})
+    `
+
+    // The list is fetched after the page, for the member who is looking.
+    const page = await (await get('/account', mia)).text()
+    const at = page.indexOf('Connected apps')
+    const hole = /data-instatic-hole="([^"]+)" data-instatic-version="([^"]+)"/.exec(page.slice(at))!
+    const fragment = (cookie?: string) =>
+      get(`/_instatic/hole/${hole[1]}?v=${hole[2]}&u=${encodeURIComponent('/account')}`, cookie)
+
+    const mine = await fragment(mia)
+    expect(mine.headers.get('cache-control')).toContain('no-store')
+    const html = await mine.text()
+    expect(html).toContain('Northlight Desktop')
+    expect(html).toContain('Last used not yet')
+    expect(html).toContain('action="/_instatic/members/apps/disconnect"')
+    expect(html).toMatch(/type="hidden"[^>]*name="connection"[^>]*value="grant_mia"/)
+
+    expect(await (await fragment(paul)).text()).not.toContain('Northlight Desktop')
+    expect((await fragment()).status).toBe(404)
   })
 
   it('keeps every member-only line out of what is written to disk', async () => {

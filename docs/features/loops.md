@@ -25,11 +25,12 @@ src/core/loops/
 ├── types.ts                 — LoopItem, LoopEntitySource, LoopSourceField, LoopFetchResult, ...
 ├── registry.ts              — LoopSourceRegistry singleton (`loopSourceRegistry`)
 └── sources/
-    ├── index.ts             — register the three built-ins at boot
+    ├── index.ts             — register the built-ins at boot
     ├── dataRows.ts          — data.rows (any data_table)
     ├── entryField.ts        — entry.field (array field on currentEntry)
     ├── sitePages.ts         — site.pages (+ shared helpers re-exported via barrel)
-    └── siteMedia.ts         — site.media
+    ├── siteMedia.ts         — site.media
+    └── memberApps.ts        — members.apps (the signed-in member's connected apps)
 
 src/modules/base/loop/        — the base.loop module definition
 
@@ -153,6 +154,10 @@ Iterates `media_assets`. Filters by MIME type prefix.
 Used by galleries.
 
 Its author-facing `fields` list exposes filename, path/URL/source URL, MIME type, and upload date. Internal uploader ids stay in `LoopItem.fields` for code that needs them, but they are not binding-picker rows.
+
+### `members.apps`
+
+The apps the signed-in site member has signed in to with their account (see [members](members.md) → "Sign-in for apps"). It is `perVisitor`: each member gets their own list in an uncached fragment, and a signed-out visitor gets none. `fetch()` reads the member from `ctx.memberId`, which the hole and loop endpoints set only for a source that declares `forMember`. Fields: `name`, `connectedOn`, `lastUsedOn`, `connectedAt`, `lastUsedAt`, `id`. The canvas shows two sample apps from `preview()`.
 
 ### `entry.field`
 

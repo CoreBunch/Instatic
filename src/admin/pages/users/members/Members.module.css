@@ -115,6 +115,7 @@
     color: var(--danger-text);
 }
 
+.appName,
 .timeline span {
     color: var(--text-bright);
 }

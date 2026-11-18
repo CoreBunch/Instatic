@@ -250,6 +250,7 @@ async function resolveOneLoop(
     branchId?: string
     drafts?: boolean
     closed?: ClosedContent
+    memberId?: string | null
   },
 ): Promise<ResolvedLoopData> {
   const props = readLoopProps(node)
@@ -276,6 +277,7 @@ async function resolveOneLoop(
     branchId: ctx.branchId,
     drafts: ctx.drafts,
     closed: ctx.closed,
+    ...(source.forMember ? { memberId: ctx.memberId } : {}),
   }
 
   try {
@@ -317,6 +319,8 @@ export async function prefetchLoopData(
     drafts?: boolean
     /** What the visitor may not open; set on every public render. */
     closed?: ClosedContent
+    /** The signed-in member, for sources that list what is theirs (`forMember`). */
+    memberId?: string | null
   },
 ): Promise<LoopDataMap> {
   const nodes = collectLoopNodes(page, site, options?.rootNodeId)
@@ -340,6 +344,7 @@ export async function prefetchLoopData(
         branchId: options?.branchId,
         drafts: options?.drafts,
         closed: options?.closed,
+        memberId: options?.memberId,
       })
       return [node.id, data] as [string, ResolvedLoopData]
     }),

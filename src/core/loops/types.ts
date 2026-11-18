@@ -132,6 +132,13 @@ export interface SourceFetchContext {
    */
   request?: SourceRequestContext
   /**
+   * The signed-in site member this render is for, or null for a signed-out
+   * visitor. Set only for a source that declares `forMember`, rendered at
+   * request time. A plugin source never receives it: the host hands a plugin
+   * a fixed subset of this context.
+   */
+  memberId?: string | null
+  /**
    * What this visitor may not open on the published site. A listing leaves
    * these out, so a loop never shows a row or a page the visitor could not
    * open by its address. Set on every public render; absent in the admin
@@ -241,6 +248,13 @@ interface LoopEntitySourceBase {
    * Use sparingly — every per-visitor hole is an uncached request-time render.
    */
   perVisitor?: boolean
+  /**
+   * The source lists what belongs to the signed-in member, so its `fetch()`
+   * is given `ctx.memberId`. Only meaningful together with `perVisitor`.
+   * Resolving the member costs a session lookup, so it is done only for
+   * sources that ask.
+   */
+  forMember?: boolean
   /**
    * Property controls rendered in the loop's Properties Panel after the
    * source has been picked. Empty schema = no source-specific filters.

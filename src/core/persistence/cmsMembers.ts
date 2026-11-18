@@ -100,6 +100,11 @@ export function signOutCmsMember(id: string): Promise<MemberDetail> {
   return changeMember(id, '/sign-out', 'POST', undefined, 'The member could not be signed out')
 }
 
+/** Signs the member out of one app; `grantId` is the connected app's `id`. */
+export function disconnectCmsMemberApp(id: string, grantId: string): Promise<MemberDetail> {
+  return changeMember(id, `/apps/${encodeURIComponent(grantId)}`, 'DELETE', undefined, 'The app could not be disconnected')
+}
+
 export function grantCmsMemberTag(id: string, tag: string, expiresAt: string | null): Promise<MemberDetail> {
   return changeMember(id, '/tags', 'POST', { tag, expiresAt }, 'The tag could not be added')
 }

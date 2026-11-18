@@ -67,6 +67,17 @@ export const MemberTagGrantSchema = Type.Object({
 })
 export type MemberTagGrant = Static<typeof MemberTagGrantSchema>
 
+/** An app the member is signed in to: one approval that is still live. */
+export const MemberConnectedAppSchema = Type.Object({
+  /** The approval; what a disconnect names. */
+  id: Type.String(),
+  name: Type.String(),
+  connectedAt: Type.String(),
+  /** Null until the app first uses its sign-in. */
+  lastUsedAt: Type.Union([Type.String(), Type.Null()]),
+})
+export type MemberConnectedApp = Static<typeof MemberConnectedAppSchema>
+
 export const MemberDetailSchema = Type.Object({
   member: MemberListItemSchema,
   emailVerified: Type.Boolean(),
@@ -81,6 +92,8 @@ export const MemberDetailSchema = Type.Object({
       userAgent: Type.Union([Type.String(), Type.Null()]),
     }),
   ),
+  /** Apps the member is signed in to, newest first. */
+  connectedApps: Type.Array(MemberConnectedAppSchema),
   /** The newest activity, newest first. */
   events: Type.Array(
     Type.Object({

@@ -36,6 +36,11 @@ class PageBuilder {
     )
   }
 
+  /** A list: `children` are rendered once per item of the source. */
+  loop(sourceId: string, role: string, children: PageNode[]): PageNode {
+    return this.add(createNode('base.loop', { sourceId, limit: 20, htmlAttributes: { 'data-demo': role } }), children)
+  }
+
   text(text: string, tag = 'p', showWhen?: ShowWhen): PageNode {
     return this.add(createNode('base.text', { text, tag, ...(showWhen ? { showWhen } : {}) }))
   }
@@ -290,6 +295,19 @@ export function buildMembersDemoPages(prefix = ''): Page[] {
           account.memberForm('email/change', 'change-email'),
         ]),
         account.box('card', [
+          account.text('Connected apps', 'h2'),
+          account.text('Apps you signed in to with this account. Disconnect one to sign it out.', 'p'),
+          // A list of the member's own apps; every row carries a form that
+          // sends that row's id back.
+          account.loop('members.apps', 'apps', [
+            account.box('app', [
+              account.text('{currentEntry.name}', 'h3'),
+              account.text('Connected {currentEntry.connectedOn}. Last used {currentEntry.lastUsedOn|not yet}.', 'p'),
+              account.memberForm('apps/disconnect', 'disconnect-app', { redirectUrl: '/account' }),
+            ]),
+          ]),
+        ]),
+        account.box('card', [
           account.text('Delete account', 'h2'),
           account.text('This removes your account for good.', 'p'),
           account.memberForm('delete', 'delete-account', { redirectUrl: '/' }),
@@ -401,6 +419,9 @@ a:hover { text-decoration: underline; }
 [data-demo="card"] h1 { margin: 0; font-size: 28px; letter-spacing: -0.01em; }
 [data-demo="card"] h2 { margin: 0; font-size: 18px; }
 [data-demo="card"] p { margin: 0; color: var(--muted); }
+[data-demo="apps"] { display: grid; gap: 12px; }
+[data-demo="app"] { display: grid; gap: 6px; padding: 14px 16px; border: 1px solid var(--line); border-radius: 12px; }
+[data-demo="app"] h3 { margin: 0; font-size: 16px; }
 form { display: grid; gap: 14px; }
 form > div { display: grid; gap: 6px; }
 label { font-size: 14px; font-weight: 600; }
