@@ -39,8 +39,11 @@ interface BodyFloatingMenuProps {
    * Called when the user picks the "Media" item — the host opens its
    * picker modal and, on confirm, inserts a media node at the editor's
    * current selection via the imperative ref it already owns.
+   *
+   * Omit it for a document that cannot hold media (an email template): the
+   * "Image / Video" item is then left out of the menu.
    */
-  onPickMedia: () => void
+  onPickMedia?: () => void
   /**
    * When set, the editor lives inside this iframe and the gutter "+"
    * button needs to render in the host document with viewport-fixed
@@ -58,7 +61,7 @@ interface QuickInsertContext {
    * just add one node-level command and `.run()`.
    */
   chain: ChainedCommands
-  onPickMedia: () => void
+  onPickMedia?: () => void
 }
 
 interface QuickInsertOption {
@@ -70,6 +73,8 @@ interface QuickInsertOption {
    * a divider between groups. Order of sections matches catalog order.
    */
   section: 'turn-into' | 'insert' | 'block'
+  /** Offered only when the host can pick media. */
+  needsMedia?: boolean
   apply: (ctx: QuickInsertContext) => boolean
 }
 
@@ -142,13 +147,14 @@ const QUICK_INSERT: QuickInsertOption[] = [
     label: 'Image / Video',
     description: 'From media library',
     icon: <ImagesSolidIcon size={14} aria-hidden="true" />,
+    needsMedia: true,
     apply: ({ onPickMedia }) => {
       // The host opens the existing media-picker modal and handles
       // insertion via the editor's imperative ref once the user picks
       // an asset. We don't need to position the caret here — the
       // chain's `.focus(snapshotPos)` already restored selection to
       // the block, and `insertMedia` splits at the caret as expected.
-      onPickMedia()
+      onPickMedia?.()
       return true
     },
   },
@@ -220,6 +226,7 @@ interface ButtonPosition {
 }
 
 export function BodyFloatingMenu({ editor, onPickMedia, iframeEl }: BodyFloatingMenuProps) {
+  const options = QUICK_INSERT.filter((option) => !option.needsMedia || onPickMedia !== undefined)
   // The button's vertical position. `null` means "don't render" — the
   // selection isn't on an empty top-level paragraph, or the editor is
   // blurred and we don't want a sticky affordance.
@@ -334,10 +341,10 @@ export function BodyFloatingMenu({ editor, onPickMedia, iframeEl }: BodyFloating
           ariaLabel="Block options"
           onClose={() => setMenuRect(null)}
         >
-          {QUICK_INSERT.map((option, index) => {
+          {options.map((option, index) => {
             // Insert a divider whenever we cross a section boundary.
             // The first item never gets a leading divider.
-            const prev = index > 0 ? QUICK_INSERT[index - 1] : null
+            const prev = index > 0 ? options[index - 1] : null
             const showDivider = prev !== null && prev.section !== option.section
             return (
               <Fragment key={option.label}>

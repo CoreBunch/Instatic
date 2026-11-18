@@ -333,7 +333,7 @@ type SitePackageJson = {
 }
 ```
 
-The CMS supports plugins that ship their own npm deps and runtime imports (e.g. `three`). When a site declares a dependency, `bun install` runs against a per-site workspace under `uploads/sites/<siteId>/runtime/`, producing a hashed cache directory the server serves at `/_instatic/runtime/cache/<hash>/...`. The runtime cache layout is owned by `src/core/site-runtime/` and served by `server/publish/runtime/`.
+The CMS supports plugins that ship their own npm deps and runtime imports (e.g. `three`). When a site declares a dependency, `bun install` runs in a workspace keyed by the lock's hash under the runtime cache directory (`RUNTIME_CACHE_DIR`, outside `UPLOADS_DIR`), which the server serves at `/_instatic/runtime/cache/<hash>/...`. The cache layout, its location and its restore-on-miss behaviour are owned by `server/publish/runtime/` and described in [`dependencies.md`](dependencies.md) → "The install cache".
 
 The Site → Dependencies panel edits this `package.json`: it browses the npm registry through the server proxy and installs into `dependencies` (or `devDependencies`) with a caret range. Every manifest change is picked up by `useAutoResolveDependencies`, which resolves the lock and runs `bun install`. Panel and proxy: [`dependencies.md`](dependencies.md).
 
@@ -586,8 +586,8 @@ seeds them from the stored JSON (the server is the ONLY seeder — fixed seed
 clientID, so two clients can never build divergent initial histories),
 persists each doc's update blob to `collab_documents` AND the derived row
 JSON to `data_rows`/site on a short debounce (~800 ms) — replacing only the
-cells the doc owns (`OWNED_CELLS` in `relayPersistence.ts`: title, slug, body
-and the template cells for pages; name, slug, body, params, classIds for
+cells the doc owns (`OWNED_CELLS` in `relayPersistence.ts`: title, slug, body,
+access and the template cells for pages; name, slug, body, params, classIds for
 components; name, slug, body, classes for layouts), so SEO, featured media,
 and plugin cells edited elsewhere survive every relay write — applies
 roster-driven soft-deletes, and RESETS docs whose row was written outside
@@ -603,7 +603,20 @@ bounded debounce window (at most ~800 ms with the default).
 frames `docId | frameType | payload` multiplex every doc over ONE WebSocket
 at `/admin/api/cms/site-socket` (y-protocols sync + awareness + reset).
 Upgrade is gated by a session with `site.read` and `originAllowed` (CSWSH
-defense). A read-only connection's update frames are dropped server-side
+defense). The socket keeps the original session hash and revalidates that
+session and current role for every incoming frame, again after asynchronous
+document loading before applying an update, and before every outgoing packet.
+Suspension, deletion, session revocation/expiry, or loss of `site.read` closes
+the connection on its next incoming or outgoing traffic (including heartbeat
+pings); idle sockets cannot receive new document or presence data after access
+is revoked. Write-only capability reductions keep read access, but every update
+and recovery step2 uses current grants, including the full-writer fast path.
+Checks fail closed if the authorization query fails. Already authorized work
+and bytes already handed to the transport are not recalled retroactively.
+Passive deliveries do not refresh the session's idle lifetime.
+Document ownership is registered after loading completes. If the socket closes
+during that load, the acquired reference is released immediately.
+A read-only connection's update frames are dropped server-side
 (its awareness/presence frames still relay — viewers are visible peers),
 and PARTIAL writers' update frames run through the per-category guard
 (`server/collab/updateGuard.ts`): fork the doc, apply, project both sides,
@@ -630,7 +643,11 @@ guard.
 
 Stored snapshots can exceed a socket's outbound buffer. The server sends
 these through `collabFramePackets` in 256 KiB packets, waiting for drain
-between buffered direct sends. Broadcast updates use the same packet format.
+between buffered sends. Broadcast updates use the same packet format and each
+recipient's authorized queue, not unchecked transport pub/sub. Authorization
+is rechecked after a drain wait before another packet is sent. A recipient
+with more than 16 MiB of queued broadcast frames is disconnected for normal
+state-vector recovery, so one slow reader cannot grow an unbounded backlog.
 The client reconstructs each complete frame before applying it to Yjs;
 interleaved transfers are bounded to four documents and 64 MiB total and
 discarded on disconnect. Incoming write and awareness caps remain unchanged.
@@ -644,6 +661,12 @@ exponential backoff, and each (re)connect re-runs syncStep1 so Yjs state
 vectors pull exactly the missed delta. `usePersistence` HTTP-loads the
 document once for first paint, then connects the provider — edits gate on
 each doc's first sync so an unseeded doc can never receive local ops.
+The socket is authenticated by the session cookie it was opened with, and
+the server refuses it once that session is rotated. Password re-confirmation
+rotates the session token, so `StepUpProvider` raises
+`onSessionTokenRotated` (`@admin/shared/StepUp`) on success and
+`usePersistence` answers with `provider.reopen()`: the old socket is dropped
+and a new one opens at once on the new cookie, with no backoff.
 Because every committed edit is a frame, burst-prone inputs coalesce before
 they commit: the `ColorInput` primitive throttles picker-drag change events
 (leading fire for instant clicks, one trailing fire with the final value),

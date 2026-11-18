@@ -238,7 +238,7 @@ The published `SiteDocument` is stored ONCE per full publish in `site_snapshots`
 - **Layer B** — the in-memory render cache evicts lazily via `bumpPublishVersion()`.
 - **Layer C** — when a page contains dynamic nodes (auto-detected from binding sources, loop sources, module flags, VC refs), the publisher emits `<instatic-hole>` placeholders in the rendered HTML; the hole runtime fetches each fragment lazily from `/_instatic/hole/<nodeId>?v=<publishVersion>&u=<page-url>`, forwarding the originating page path/query so route bindings and loop pagination resolve inside the fragment.
 
-For postType rows, `publishDataRow` does the same but incrementally: writes the single row's artefact into the ACTIVE slot via `tmp + rename` (no full slot swap), bumps publishVersion, and removes the old slug's artefact if the slug changed.
+For postType rows, `publishDataRow` does the same but incrementally: removes from the ACTIVE slot the baked pages that loop over the row's table (they render live until the next full publish), writes the single row's artefact via `tmp + rename` (no full slot swap), bumps publishVersion, and removes the old slug's artefact if the slug changed. Unpublishing or deleting a published row removes the same listing pages along with the row's own artefact.
 
 See [docs/features/publisher.md](publisher.md) for the full pipeline.
 

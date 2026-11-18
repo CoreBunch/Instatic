@@ -1,8 +1,13 @@
 /**
- * Browser runtime for CMS-native forms — shipped through the module-JS
- * channel: `base.form`'s render() returns this string as `js` when
- * `mode === 'cms'`, the publisher dedupes it per moduleId, and published
- * pages load it from `/_instatic/module-js/base.form.js`.
+ * Browser runtime for CMS-native and member forms — shipped through the
+ * module-JS channel: `base.form`'s render() returns this string as `js` when
+ * `mode` is `cms` or `member`, the publisher dedupes it per moduleId, and
+ * published pages load it from `/_instatic/module-js/base.form.js`. One
+ * string serves both modes because the channel keeps one script per module.
+ *
+ * A member form is a real `<form method="post" action="/_instatic/members/…">`
+ * and still works with scripts off; this runtime upgrades it to an in-place
+ * submit with per-field errors.
  *
  * Channel authoring contract (see RenderOutput.js):
  *   - self-contained vanilla IIFE, no framework runtime;
@@ -19,38 +24,144 @@ export const FORM_RUNTIME_JS = `(() => {
   if (window.__instaticFormRuntimeLoaded) return;
   window.__instaticFormRuntimeLoaded = true;
 
-  const CMS_FORM_SELECTOR = 'form[data-instatic-form-mode="cms"][data-instatic-form-id]';
+  const FORM_SELECTOR = 'form[data-instatic-form-mode="cms"][data-instatic-form-id], form[data-instatic-form-mode="member"][data-instatic-form-id]';
 
-  for (const form of document.querySelectorAll(CMS_FORM_SELECTOR)) attachForm(form);
+  for (const form of document.querySelectorAll(FORM_SELECTOR)) attachForm(form);
 
   document.addEventListener('submit', (event) => {
     const form = event.target;
-    if (!isCmsForm(form)) return;
+    if (!form || form.tagName !== 'FORM' || !form.matches(FORM_SELECTOR)) return;
     event.preventDefault();
     attachForm(form);
-    submitForm(form);
+    if (isMemberForm(form)) submitMemberForm(form);
+    else submitForm(form);
   });
 
-  // Hole fragments insert forms after load — attach on first interaction so
-  // labels/messages/challenge are prepared before the visitor submits.
+  // Hole fragments insert forms after load. Attach them as they arrive, so
+  // their labels are wired and their success/error messages are hidden
+  // before the visitor sees them.
+  if (typeof MutationObserver === 'function') {
+    new MutationObserver((records) => {
+      for (const record of records) {
+        for (const added of record.addedNodes) {
+          if (added.nodeType !== 1) continue;
+          if (added.matches(FORM_SELECTOR)) attachForm(added);
+          for (const form of added.querySelectorAll(FORM_SELECTOR)) attachForm(form);
+        }
+      }
+    }).observe(document.documentElement, { childList: true, subtree: true });
+  }
+
+  // Fallback for a form the observer missed: attach on first interaction.
   document.addEventListener('focusin', (event) => {
     const target = event.target;
-    const form = target && target.closest ? target.closest(CMS_FORM_SELECTOR) : null;
+    const form = target && target.closest ? target.closest(FORM_SELECTOR) : null;
     if (form) attachForm(form);
   });
 
-  function isCmsForm(el) {
-    return !!el && el.tagName === 'FORM'
-      && el.getAttribute('data-instatic-form-mode') === 'cms'
-      && !!el.getAttribute('data-instatic-form-id');
+  function isMemberForm(form) {
+    return form.getAttribute('data-instatic-form-mode') === 'member';
   }
 
   function attachForm(form) {
     if (form.__instaticFormRuntimeAttached) return;
     form.__instaticFormRuntimeAttached = true;
+    form.__instaticFormAttachedAt = Date.now();
     connectLabels(form);
     prepareMessages(form);
-    prefetchChallenge(form);
+    if (isMemberForm(form)) fillMemberToken(form);
+    else prefetchChallenge(form);
+  }
+
+  // ── Member forms ─────────────────────────────────────────────────────────
+
+  // Emailed links land on a page with ?token=…; the form posts it back.
+  function fillMemberToken(form) {
+    const input = form.querySelector('input[data-instatic-member-token]');
+    if (input) input.value = new URLSearchParams(window.location.search).get('token') || '';
+  }
+
+  async function submitMemberForm(form) {
+    const tokenInput = form.querySelector('input[data-instatic-member-token]');
+    if (tokenInput && !tokenInput.value) {
+      setState(form, 'error', 'This link is incomplete. Open the link from your email again.');
+      return;
+    }
+    setBusy(form, true);
+    setState(form, 'pending', 'Sending...');
+    try {
+      const response = await fetch(form.getAttribute('action') || '', {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'accept': 'application/json', 'content-type': 'application/json' },
+        body: JSON.stringify(memberValues(form)),
+      });
+      const body = await readJson(response);
+      if (!response.ok || !body.ok) {
+        const error = body && body.error && typeof body.error === 'object' ? body.error : {};
+        const field = typeof error.field === 'string' ? error.field : '';
+        setState(form, 'error', typeof error.message === 'string' && error.message ? error.message : 'Something went wrong. Try again.', field);
+        return;
+      }
+      const next = memberDestination(form, body.code);
+      if (next) {
+        window.location.assign(next);
+        return;
+      }
+      setState(form, 'success', form.getAttribute('data-instatic-success-message') || 'Done.');
+      // A saved profile keeps its values on screen; everything else clears.
+      if (body.code !== 'updated') form.reset();
+      fillMemberToken(form);
+    } catch (_err) {
+      setState(form, 'error', 'Could not reach the site. Try again.');
+    } finally {
+      setBusy(form, false);
+    }
+  }
+
+  // A ?next= value as a full address on this site, or '' when it points anywhere
+  // else. The address is resolved the way the browser will resolve it (which
+  // drops tabs and newlines, so "/<tab>/host" is really "//host") and kept
+  // only if it stays on this origin.
+  function sameSitePath(value) {
+    if (!value || value.charAt(0) !== '/') return '';
+    try {
+      const url = new URL(value, window.location.origin);
+      // The whole address, never the bare path: a path such as "//host" (from
+      // "/.//host") would be read as another site when navigated to on its own.
+      return url.origin === window.location.origin ? url.href : '';
+    } catch (_err) {
+      return '';
+    }
+  }
+
+  // Flat text values, as the member endpoints read them. An unticked checkbox
+  // sends nothing, so each checkbox also says it was on the form.
+  function memberValues(form) {
+    const values = {};
+    for (const [name, value] of new FormData(form).entries()) {
+      if (typeof value !== 'string' || name === '_success' || name === '_error') continue;
+      if (values[name] === undefined) values[name] = value;
+    }
+    for (const box of form.querySelectorAll('input[type="checkbox"][name]')) {
+      values[box.name + '__present'] = '1';
+    }
+    return values;
+  }
+
+  // Where to go after a member action. Signing in honours ?next= (set when a
+  // protected page sent the visitor here), then the form's own redirect. A
+  // change of who is signed in with no redirect reloads the page, so
+  // everything on it reflects the new state.
+  function memberDestination(form, code) {
+    const changesVisitor = code === 'signed_in' || code === 'signed_out' || code === 'deleted';
+    if (code === 'signed_in') {
+      const next = sameSitePath(new URLSearchParams(window.location.search).get('next') || '');
+      if (next) return next;
+    }
+    const redirectUrl = form.getAttribute('data-instatic-success-redirect') || '';
+    if (redirectUrl) return redirectUrl;
+    return changesVisitor ? window.location.pathname : '';
   }
 
   async function submitForm(form) {
@@ -96,8 +207,13 @@ export const FORM_RUNTIME_JS = `(() => {
     if (form.__instaticFormChallenge || form.__instaticFormChallengePromise) return form.__instaticFormChallengePromise;
     const request = requestChallenge(form)
       .then((challenge) => {
+        // Stamp the arrival time with this browser's own clock: every later
+        // lifetime check is then relative, so a visitor clock that disagrees
+        // with the server's cannot make a live challenge look expired.
+        challenge.receivedAt = Date.now();
         form.__instaticFormChallenge = challenge;
         form.__instaticFormChallengePromise = null;
+        scheduleChallengeRefresh(form, challenge);
         return challenge;
       })
       .catch((err) => {
@@ -110,16 +226,52 @@ export const FORM_RUNTIME_JS = `(() => {
     return request;
   }
 
-  async function takeChallenge(form) {
-    const existing = form.__instaticFormChallenge;
-    if (existing && challengeIsFresh(existing)) {
+  // Replace the held challenge 30 seconds before it expires, so a visitor who
+  // spends minutes on the page still submits with one the server accepts.
+  function scheduleChallengeRefresh(form, challenge) {
+    clearChallengeRefresh(form);
+    const lifetimeMs = challengeLifetimeMs(challenge);
+    if (!Number.isFinite(lifetimeMs)) return;
+    const delay = Math.min(2147483647, Math.max(lifetimeMs - 30000, lifetimeMs / 2));
+    form.__instaticChallengeTimer = setTimeout(() => {
+      form.__instaticChallengeTimer = null;
+      if (!form.isConnected) return;
       form.__instaticFormChallenge = null;
-      return existing;
-    }
+      prefetchChallenge(form);
+    }, delay);
+  }
+
+  function clearChallengeRefresh(form) {
+    if (!form.__instaticChallengeTimer) return;
+    clearTimeout(form.__instaticChallengeTimer);
+    form.__instaticChallengeTimer = null;
+  }
+
+  async function takeChallenge(form) {
+    clearChallengeRefresh(form);
+    const existing = form.__instaticFormChallenge;
     form.__instaticFormChallenge = null;
-    const challenge = await prefetchChallenge(form);
+    const challenge = existing && challengeIsFresh(existing) ? existing : await prefetchChallenge(form);
     form.__instaticFormChallenge = null;
+    clearChallengeRefresh(form);
+    await waitOutMinSubmitTime(form, challenge);
     return challenge;
+  }
+
+  // The server's time trap measures from the challenge's issue time. A visitor
+  // who has already had the form for the minimum fill time can still be
+  // holding a challenge younger than that (it was refreshed in the background,
+  // or fetched at submit because the earlier one expired or never arrived), so
+  // wait out the difference instead of posting into a certain rejection. A
+  // submit sooner than the minimum after the form appeared is posted as-is and
+  // the server rejects it, as the time trap intends.
+  async function waitOutMinSubmitTime(form, challenge) {
+    const minMs = Number(challenge.minSubmitSeconds) * 1000;
+    if (!(minMs > 0)) return;
+    const now = Date.now();
+    if (now - form.__instaticFormAttachedAt < minMs) return;
+    const remainingMs = challenge.receivedAt + minMs - now;
+    if (remainingMs > 0) await new Promise((resolve) => setTimeout(resolve, remainingMs + 50));
   }
 
   function requestChallenge(form) {
@@ -132,9 +284,13 @@ export const FORM_RUNTIME_JS = `(() => {
     return postJson('/_instatic/form/challenge', { pageId, formId, pageToken });
   }
 
+  function challengeLifetimeMs(challenge) {
+    return Number(challenge.expiresInSeconds) * 1000;
+  }
+
   function challengeIsFresh(challenge) {
-    const expiresAt = Date.parse(challenge && challenge.expiresAt ? challenge.expiresAt : '');
-    return !Number.isFinite(expiresAt) || Date.now() < expiresAt - 10000;
+    const lifetimeMs = challengeLifetimeMs(challenge);
+    return !Number.isFinite(lifetimeMs) || Date.now() < challenge.receivedAt + lifetimeMs - 10000;
   }
 
   async function postJson(path, payload) {
@@ -230,15 +386,37 @@ export const FORM_RUNTIME_JS = `(() => {
     }
   }
 
-  function setState(form, state, text) {
+  // \`field\` names the one control an error is about. Its control is marked
+  // invalid, and the error goes to that field's own message when the form has
+  // one (\`data-instatic-form-field\`), otherwise to the form's error message.
+  function setState(form, state, text, field) {
     form.setAttribute('data-instatic-form-state', state);
-    const messages = formMessages(form);
+    for (const control of form.querySelectorAll('[aria-invalid="true"]')) control.removeAttribute('aria-invalid');
+    if (state === 'error' && field) {
+      for (const control of form.querySelectorAll('[name]')) {
+        if (control.name === field) control.setAttribute('aria-invalid', 'true');
+      }
+    }
+    const all = formMessages(form);
+    const fieldMessages = all.filter((message) => message.hasAttribute('data-instatic-form-field'));
+    let shownAtField = false;
+    for (const message of fieldMessages) {
+      const show = state === 'error' && !!field && message.getAttribute('data-instatic-form-field') === field;
+      message.textContent = show ? text : '';
+      message.hidden = !show;
+      if (show) shownAtField = true;
+    }
+    const messages = all.filter((message) => !message.hasAttribute('data-instatic-form-field'));
     const messageKind = state === 'error' ? 'error' : state === 'success' ? 'success' : 'status';
     const hasExactMessage = messages.some((message) => (message.getAttribute('data-instatic-form-message') || 'status') === messageKind);
 
     for (const message of messages) {
       if (!message.hasAttribute('data-instatic-default-text')) {
         message.setAttribute('data-instatic-default-text', message.textContent || '');
+      }
+      if (shownAtField) {
+        message.hidden = true;
+        continue;
       }
       const kind = message.getAttribute('data-instatic-form-message') || 'status';
       const shouldShow = kind === messageKind || (!hasExactMessage && kind === 'status');

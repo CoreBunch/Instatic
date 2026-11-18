@@ -129,6 +129,7 @@ function mountFrame(
   const viewport = document.createElement('div')
   viewport.dataset.breakpointId = breakpointId
   const iframe = document.createElement('iframe')
+  iframe.srcdoc = '<body></body>'
   viewport.appendChild(iframe)
   document.body.appendChild(viewport)
   const doc = iframe.contentDocument
@@ -335,10 +336,18 @@ describe('captureAgentRenderSnapshot — on-demand browser bridge', () => {
     wrapper.textContent = 'Overflowing headline'
     wrapper.style.backgroundImage = 'linear-gradient(red, blue)'
     wrapper.style.backgroundClip = 'text'
-    wrapper.style.setProperty('-webkit-background-clip', 'text')
-    wrapper.style.setProperty('-webkit-text-fill-color', 'transparent')
     setRect(wrapper, { x: 8, y: 16, width: 420, height: 64 })
     body.appendChild(wrapper)
+
+    // Happy DOM omits vendor-prefixed CSS. Supply the two computed values
+    // Chromium exposes for gradient text on this fixture.
+    const computed = getComputedStyle(wrapper)
+    const getPropertyValue = computed.getPropertyValue.bind(computed)
+    computed.getPropertyValue = (name) => {
+      if (name === '-webkit-background-clip') return 'text'
+      if (name === '-webkit-text-fill-color') return 'rgba(0, 0, 0, 0)'
+      return getPropertyValue(name)
+    }
 
     const snapshot = await captureAgentRenderSnapshot({
       breakpointId: 'mobile',
@@ -353,7 +362,7 @@ describe('captureAgentRenderSnapshot — on-demand browser bridge', () => {
       backgroundImage: 'linear-gradient(red, blue)',
       backgroundClip: 'text',
       webkitBackgroundClip: 'text',
-      webkitTextFillColor: 'transparent',
+      webkitTextFillColor: 'rgba(0, 0, 0, 0)',
     })
     expect(snapshot!.layout.warnings.some((warning) =>
       warning.type === 'horizontal-overflow' && warning.nodeId === 'title',

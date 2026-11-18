@@ -22,14 +22,14 @@ import {
   testCredential,
 } from '../../../ai/api'
 import { ProviderMark } from '../ProviderMark'
-import { AiSettingsListSection } from '../AiSettingsListSection'
+import { SettingsListSection } from '@admin/shared/SettingsWorkspace/SettingsListSection'
 import {
   PROVIDER_SPECS,
   getProviderSpec,
   type ProviderId,
   type ProviderSpec,
 } from '../providerCatalog'
-import styles from '../AiPage.module.css'
+import styles from '@admin/shared/SettingsWorkspace/SettingsWorkspace.module.css'
 
 type Selection =
   | { kind: 'credential'; id: string }
@@ -145,7 +145,7 @@ export function ProvidersTab({
 
         <div className={styles.settingsBrowserSections}>
           {(loading || credentials.length > 0) && (
-            <AiSettingsListSection label="Credentials">
+            <SettingsListSection label="Credentials">
               {loading && credentials.length === 0 ? (
                 <p className={styles.settingsBrowserEmpty}>Loading credentials…</p>
               ) : (
@@ -181,10 +181,10 @@ export function ProvidersTab({
                   )
                 })
               )}
-            </AiSettingsListSection>
+            </SettingsListSection>
           )}
 
-          <AiSettingsListSection label="Add provider">
+          <SettingsListSection label="Add provider">
             {PROVIDER_SPECS.map((provider) => {
               const active = effectiveSelection.kind === 'provider'
                 && effectiveSelection.providerId === provider.id
@@ -210,7 +210,7 @@ export function ProvidersTab({
                 </Button>
               )
             })}
-          </AiSettingsListSection>
+          </SettingsListSection>
         </div>
       </aside>
 

@@ -39,6 +39,7 @@ import { handleUserPreferencesRoutes } from './userPreferences'
 import { handleUsersRoutes } from './users'
 import { handleRolesRoutes } from './roles'
 import { handleAuditRoutes } from './audit'
+import { handleMailRoutes } from './mail'
 import { handleSiteRoutes } from './site'
 import { handleSiteDocumentRoutes } from './siteDocument'
 import { handlePagesRoutes } from './pages'
@@ -99,6 +100,8 @@ export async function handleCmsRequest(
     ?? (await handleUsersRoutes(req, db))
     ?? (await handleRolesRoutes(req, db))
     ?? (await handleAuditRoutes(req, db))
+    // Outgoing mail is installation-wide, not branched.
+    ?? (await handleMailRoutes(req, db))
   if (accountResponse) return accountResponse
 
   // Branch scope — resolved ONCE per request from the `X-Instatic-Branch`
@@ -117,7 +120,7 @@ export async function handleCmsRequest(
     ?? (await handlePagesRoutes(req, db, scope))
     ?? (await handleComponentsRoutes(req, db, scope))
     ?? (await handleLayoutsRoutes(req, db, scope))
-    ?? (await handleRuntimeRoutes(req, db, scope))
+    ?? (await handleRuntimeRoutes(req, db, scope, options))
     // Read-only npm registry proxy for the Dependencies panel: no branch
     // scope, it never touches site data.
     ?? (await handleRegistryRoutes(req, db))

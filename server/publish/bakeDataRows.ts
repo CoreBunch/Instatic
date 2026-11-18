@@ -20,6 +20,7 @@
  * per-page bake behaviour in `publishDraftSite`.
  */
 
+import { listProtectedTables } from '../repositories/data/tableAccess'
 import type { DbClient } from '../db/client'
 import type { SiteCssBundle } from '@core/publisher'
 import { resolveTemplateChain } from '@core/templates'
@@ -69,6 +70,8 @@ export async function bakePublishedDataRowArtefacts(
 
   const routes = await listPublishedRowRoutes(db)
   if (routes.length === 0) return result
+  // Entries of a protected table never go to disk (see `accessGate.ts`).
+  const protectedRouteBases = new Set((await listProtectedTables(db)).map((table) => table.routeBase))
 
   const siteSnapshot = await getLatestSnapshotForVersion(db, publishVersion)
   if (!siteSnapshot) return result
@@ -101,9 +104,10 @@ export async function bakePublishedDataRowArtefacts(
         publishVersion,
       })
       if (!rendered) continue
+      result.cssBundles.push(rendered.cssBundle)
+      if (protectedRouteBases.has(route.tableRouteBase)) continue
       const html = await applyPublishedHtmlPipeline(rendered, db)
       await writeArtefact(slotDir, urlPath, html)
-      result.cssBundles.push(rendered.cssBundle)
       result.baked++
     } catch (err) {
       console.error('[publish:site] failed to bake row artefact for', urlPath, '(falls through to live renderer):', err)

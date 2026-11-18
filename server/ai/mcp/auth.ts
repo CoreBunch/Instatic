@@ -5,6 +5,7 @@
  */
 import type { DbClient } from '../../db/client'
 import type { CoreCapability } from '@core/capabilities'
+import { findUserById } from '../../repositories/users'
 import { findConnectionByTokenHash, touchConnectorLastUsed } from './connectors/store'
 import { hashMcpSecret } from './connectors/token'
 import { findOAuthAccessGrant } from './oauth/store'
@@ -25,19 +26,23 @@ export async function resolveMcpAuth(req: Request, db: DbClient): Promise<McpAut
   // personal access tokens (the local-development path) can authenticate.
   const resource = token.startsWith('imcp_at_') ? mcpResource(req) : null
   const oauthGrant = resource ? await findOAuthAccessGrant(db, token, resource) : null
-  if (oauthGrant) {
-    stampLastUsed(db, oauthGrant.connectorId)
-    return { ok: true, ...oauthGrant }
-  }
-
-  const connector = await findConnectionByTokenHash(db, await hashMcpSecret(token))
-  if (!connector || !connector.tokenHash) return { ok: false }
-  stampLastUsed(db, connector.id)
-  return {
-    ok: true,
+  const connector = oauthGrant ? null : await findConnectionByTokenHash(db, await hashMcpSecret(token))
+  const grant = oauthGrant ?? (connector?.tokenHash ? {
     connectorId: connector.id,
     userId: connector.userId,
     capabilities: connector.capabilities,
+  } : null)
+  if (!grant) return { ok: false }
+
+  // A stored grant is an upper bound, not an account-status or role snapshot.
+  // Re-read on every request, including for previously issued OAuth tokens.
+  const user = await findUserById(db, grant.userId)
+  if (!user || user.status !== 'active' || !user.capabilities.includes('ai.chat')) return { ok: false }
+  stampLastUsed(db, grant.connectorId)
+  return {
+    ok: true,
+    ...grant,
+    capabilities: grant.capabilities.filter((capability) => user.capabilities.includes(capability)),
   }
 }
 

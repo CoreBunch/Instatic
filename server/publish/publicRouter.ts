@@ -50,7 +50,11 @@
  *   - `applyPublishedHtmlPipeline` fires at publish time for static
  *     routes — plugin frontend injections and filters are baked into
  *     the artefact. The disk path never calls the pipeline per request.
- *   - For non-static routes (loops, request-dependent bindings), the
+ *   - A baked artefact is served with no knowledge of the publish version, so
+ *     whatever makes one stale must remove or rewrite it. A row publish or
+ *     retraction removes the artefacts that loop over the row's table
+ *     (`loopArtefacts.ts`).
+ *   - For a route with no artefact (never baked, or removed as above), the
  *     live-render fallback runs once per (urlPath, canonicalQuery, publishVersion)
  *     burst and the result is stored in the Layer B LRU.
  *   - Only requests whose canonical query is empty hit the disk path. Junk
@@ -59,6 +63,17 @@
  */
 
 import type { DbClient } from '../db/client'
+import { LOCKED_ACCESS, type AccessRule, type CurrentMember } from '@core/members'
+import {
+  decideAccess,
+  denyResponse,
+  getAccessIndex,
+  indexedRulesForPath,
+  pageRules,
+  PRIVATE_HEADERS,
+  tableRulesForRouteBase,
+  type Visitor,
+} from './accessGate'
 import type { PublishedPageSnapshot } from '../repositories/publish'
 import type { PublishedDataRow } from '@core/data/schemas'
 import { isTemplatePage, resolveNotFoundTemplate } from '@core/templates'
@@ -188,6 +203,16 @@ async function resolvePublicRoute(
   return { kind: 'not-found' }
 }
 
+/** The access rules of a resolved route: the page's own, or its table's for an entry. */
+function resolvedRouteRules(
+  index: Awaited<ReturnType<typeof getAccessIndex>>,
+  resolution: Extract<PublicRouteResolution, { kind: 'page' | 'row' }>,
+): AccessRule[] {
+  if (resolution.kind === 'row') return tableRulesForRouteBase(index, resolution.row.tableRouteBase)
+  const page = resolution.snapshot.site.pages.find((p) => p.id === resolution.snapshot.pageRowId)
+  return page ? pageRules(index, page) : [LOCKED_ACCESS]
+}
+
 // ---------------------------------------------------------------------------
 // Resolution → Response
 // ---------------------------------------------------------------------------
@@ -220,7 +245,16 @@ export async function renderPublicResolution(
   db: DbClient,
   url: URL,
   uploadsDir?: string,
+  visitor?: Visitor,
 ): Promise<Response | null> {
+  // Access first: a path the publish-time index knows to be protected skips
+  // both cache layers. Neither ever holds a protected page (they are not
+  // baked and not cached), so this is the outer of two locks; the inner one
+  // is the check on the resolved route below.
+  const accessIndex = await getAccessIndex(db, getPublishVersion())
+  const indexedRules = indexedRulesForPath(accessIndex, url.pathname)
+  const mayUseCaches = indexedRules.length === 0
+
   // Canonicalise the query to the loop-pagination params the renderer actually
   // consumes. Junk params collapse to '' (so they never mint cache slots), and
   // real pagination keeps a bounded, canonical key (ISS-032).
@@ -230,7 +264,7 @@ export async function renderPublicResolution(
   // Only for requests whose canonical query is empty. Real loop pagination
   // (e.g. `?loop_x_page=2`) falls through to Layer B so it is never served the
   // canonical URL's baked HTML; junk query strings still hit the disk artefact.
-  if (uploadsDir && canonicalQuery === '') {
+  if (mayUseCaches && uploadsDir && canonicalQuery === '') {
     const html = await readArtefact(uploadsDir, url.pathname)
     if (html !== null) {
       return new Response(html, {
@@ -245,7 +279,7 @@ export async function renderPublicResolution(
   // move) bump the publish version, which turns every cached entry into a
   // miss — a deleted route can never be served from a stale entry.
   const cacheKey = { urlPath: url.pathname, queryString: canonicalQuery }
-  const warm = peek(cacheKey)
+  const warm = mayUseCaches ? peek(cacheKey) : null
   if (warm) {
     return new Response(warm.body, { headers: warm.headers, status: warm.status })
   }
@@ -255,9 +289,42 @@ export async function renderPublicResolution(
   const resolution = await resolvePublicRoute(db, url)
   if (resolution.kind === 'not-found') return null
   if (resolution.kind === 'redirect') {
+    // An old address of an entry in a protected table: do not confirm it
+    // ever existed to someone who may not see the table.
+    if (!mayUseCaches) {
+      const decision = await decideAccess(indexedRules, visitor)
+      if (decision === 'hide') return null
+      if (decision !== 'allow') return denyResponse(db, url, decision)
+    }
     return new Response(null, {
       status: 301,
       headers: { location: resolution.location },
+    })
+  }
+
+  // `forVisitor` is passed only on a protected route; a shared render leaves it out.
+  const render = async (forVisitor?: CurrentMember | null): Promise<string | null> => {
+    const context = forVisitor === undefined ? { db, url } : { db, url, visitor: forVisitor }
+    const rendered = resolution.kind === 'page'
+      ? await renderPublishedSnapshot(resolution.snapshot, context)
+      : await renderPublishedDataRowTemplate(resolution.snapshot, resolution.row, context)
+    return rendered ? await applyPublishedHtmlPipeline(rendered, db) : null
+  }
+
+  // ── Access: decided from the route that actually resolved ────────────────
+  // Every rule that applies must pass: the resolved route's own, and whatever
+  // the index holds for the path as it was spelled.
+  const rules = [...resolvedRouteRules(accessIndex, resolution), ...indexedRules]
+  if (rules.length > 0) {
+    const decision = await decideAccess(rules, visitor)
+    if (decision === 'hide') return null // answered exactly like a route that does not exist
+    if (decision !== 'allow') return denyResponse(db, url, decision)
+    // Rendered for this visitor alone: never through the shared cache. Lists
+    // on the page show what this member may open.
+    const html = await render(visitor ? await visitor() : null)
+    if (html === null) return null
+    return new Response(html, {
+      headers: { 'content-type': 'text/html; charset=utf-8', ...PRIVATE_HEADERS },
     })
   }
 
@@ -265,11 +332,8 @@ export async function renderPublicResolution(
   const cached = await getOrRender(
     cacheKey,
     async () => {
-      const rendered = resolution.kind === 'page'
-        ? await renderPublishedSnapshot(resolution.snapshot, { db, url })
-        : await renderPublishedDataRowTemplate(resolution.snapshot, resolution.row, { db, url })
-      if (!rendered) return null
-      const html = await applyPublishedHtmlPipeline(rendered, db)
+      const html = await render()
+      if (html === null) return null
       return { body: html, headers: { 'content-type': 'text/html; charset=utf-8' }, status: 200 }
     },
   )

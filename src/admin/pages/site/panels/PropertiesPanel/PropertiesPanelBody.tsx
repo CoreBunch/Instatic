@@ -28,6 +28,7 @@ import type { ActiveDocument } from '../../store/slices/uiSlice'
 import { Button } from '@ui/components/Button'
 import { ClassPicker, type ClassPickerHandle } from './ClassPicker'
 import { StyleSurface } from './StyleSurface'
+import { ShowWhenControl } from './ShowWhenControl'
 import { HtmlAttributesPanel } from './HtmlAttributesPanel'
 import { VisibilityConditionPanel } from './VisibilityConditionPanel'
 import { ComponentRefView } from './ComponentRefView'
@@ -196,6 +197,11 @@ export function PropertiesPanelBody(props: PropertiesPanelBodyProps): React.Reac
         />
       ) : (
         <>
+          <ShowWhenControl
+            nodeId={selectedNode.id}
+            props={selectedNode.props}
+            readOnly={!permissions.canEditStructure}
+          />
           <VisibilityConditionPanel
             nodeId={selectedNode.id}
             visibleWhen={selectedNode.visibleWhen}

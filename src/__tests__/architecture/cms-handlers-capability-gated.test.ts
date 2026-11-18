@@ -60,6 +60,7 @@ const ALLOWLIST: ReadonlyMap<string, string> = new Map([
   // for imported media. Called by both import.ts and importArchive.ts, which
   // gate their routes via requireCapability; this file contains no request
   // handler itself.
+  ['importApply.ts', 'Bundle transaction helper; no request handler. import.ts and importArchive.ts enforce import, shell, publication and step-up gates before calling it.'],
   ['importMediaValidation.ts', 'Validation/sanitisation helper called by import.ts + importArchive.ts (which gate via requireCapability); no handlers.'],
   ['mediaUploadDispatch.ts', 'Storage adapter dispatch called by gated parent handlers.'],
   ['mediaUploadExecutor.ts', 'Filesystem write helper called by gated parent handlers.'],
@@ -101,14 +102,9 @@ const ALLOWLIST: ReadonlyMap<string, string> = new Map([
   // widget segment to its reader + capability and runs the gate before
   // calling the reader. The per-widget files are pure data readers with no
   // request surface of their own.
-  ['dashboard/index.ts', 'Dispatcher; per-widget capability gates run here before any reader.'],
   ['dashboard/types.ts', 'TypeScript response shape definitions; no handlers.'],
-  ['dashboard/shared.ts', 'SQL + coercion helpers shared by widget readers; no handlers.'],
-  ['dashboard/pages.ts', 'Widget data reader called by gated dashboard/index.ts dispatcher.'],
-  ['dashboard/posts.ts', 'Widget data reader called by gated dashboard/index.ts dispatcher.'],
   ['dashboard/media.ts', 'Widget data reader called by gated dashboard/index.ts dispatcher.'],
   ['dashboard/plugins.ts', 'Widget data reader called by gated dashboard/index.ts dispatcher.'],
-  ['dashboard/publishLineup.ts', 'Widget data reader called by gated dashboard/index.ts dispatcher.'],
   ['dashboard/activity.ts', 'Widget data reader called by gated dashboard/index.ts dispatcher.'],
   ['dashboard/storage.ts', 'Widget data reader called by gated dashboard/index.ts dispatcher.'],
 ])
