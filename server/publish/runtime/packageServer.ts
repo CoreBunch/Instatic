@@ -22,7 +22,10 @@
  * ──────────────
  * Each cache dir has a `.instatic-install-complete` sentinel written after
  * `bun install` succeeds. We refuse to serve when the sentinel is missing —
- * a stale or partial install must complete before responses go out.
+ * a stale or partial install must complete before responses go out. The URL
+ * carries only the hash, not the lock, so the per-package integrity check
+ * (`isRuntimeDependencyCacheIntact`) is not available here: a file removed by
+ * a temp cleaner is a 404 until `ensureRuntimeDependencyCache` reinstalls.
  *
  * Headers
  * ───────

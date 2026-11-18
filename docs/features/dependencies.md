@@ -79,7 +79,22 @@ GET /admin/api/cms/registry/packages/:name/advisories?version=  → { advisories
 
 ---
 
+## The install cache
+
+`server/publish/runtime/dependencyCache.ts` owns the on-disk cache and is the only writer. Publish, preview, branch preview, bundle import and the resolve route all go through `ensureRuntimeDependencyCache(lock)`.
+
+- **Layout:** `<cacheRoot>/deps/<hash>/` holds a generated `package.json`, `node_modules/` and the marker `.instatic-install-complete`. `<hash>` is `runtimeDependencyLockHash(lock)` (names and exact versions only), so the same lock always lands in the same slot and the URLs under `/_instatic/runtime/cache/<hash>/` are immutable.
+- **Location:** `cacheRoot` is `RUNTIME_CACHE_DIR` when set, otherwise `<os tmpdir>/instatic-runtime-cache`. The OS temp folder is not durable: macOS and `systemd-tmpfiles` delete old files in it, and a container loses it when it is recreated. Published pages load packages from this cache, so set `RUNTIME_CACHE_DIR` to a persistent path outside `UPLOADS_DIR` on any install that should survive that.
+- **Install is atomic:** `bun install --ignore-scripts` runs in a `.tmp-<hash>-<pid>-<random>` sibling, the marker is written inside it, and the directory is renamed into the hash slot. An install that exits 0 without every locked package on disk fails with the missing names and leaves no entry.
+- **An entry is trusted only when it is intact:** `isRuntimeDependencyCacheIntact(lock)` requires a readable marker, a `package.json` under `node_modules/` for every locked package, and the entry file each package serves. The marker alone is not enough, because a temp cleaner removes the installed files and leaves the directories and the marker. `package.json` alone is not enough either: the importmap builder reads it on every build, so a cleaner that ages files out by access time removes `dist/index.js` long before it. At install the marker records each package's served entry (`entries`, resolved by `resolveInstalledPackageEntry`, the same resolver the importmap builder uses), so the check is one small read plus `existsSync` calls, with no manifest parsing. A package whose resolved entry does not exist after install (a CSS-only package, for one) is left out of `entries` rather than failing the install. An entry that fails the check, including one whose marker predates `entries`, is replaced by a fresh install through the same rename.
+- **Single-flight:** concurrent calls for one hash share one install promise (`inFlightInstalls`), including the reinstall of a broken entry.
+- **Reading by hash:** `packageServer.ts` only has the hash from the URL, so it checks the marker and answers 404 for a file that is gone. It never installs; the next `ensureRuntimeDependencyCache` call for that lock repairs the entry.
+
+---
+
 ## Forbidden patterns
+
+- **Trusting a cache entry because its marker exists.** Ask `isRuntimeDependencyCacheIntact(lock)` or call `ensureRuntimeDependencyCache(lock)`; `existsSync(sentinelPathForHash(...))` says the install once finished, not that the files are still there.
 
 - **Talking to a registry from the browser.** The panel only calls `/admin/api/cms/registry/*`; the registry host, credentials and caching live on the server. A `fetch('https://registry.npmjs.org…')` in `src/admin` bypasses `NPM_REGISTRY_URL` and the boundary validation.
 - **Reading a package for install from the browsing cache.** `getInstallPackument` is uncached on purpose; only `getPackageDetails` (a projection) is cached. Caching packuments reintroduces stale installs and multi-megabyte cache entries.
@@ -94,6 +109,7 @@ GET /admin/api/cms/registry/packages/:name/advisories?version=  → { advisories
 - `server/registry/__tests__/client.test.ts`, `cache.test.ts` — URL building, public-only qualifiers, sort weights, mapping, loose metadata, abbreviated documents, dangling dist-tags, README truncation, caller-abort, cache bypass under an injected fetch, 404 / timeout / shape errors, TTL sweep + single-flight, profile.
 - `server/handlers/cms/__tests__/registry.test.ts` — auth floor, profile, query validation, scoped names, upstream error mapping, 405.
 - `src/__tests__/panels/dependenciesPanel.test.tsx` — installed rows, runtime issues, resolve status, search → detail → install, latest-first version default, paging reset, removal (confirm dialog, and without the registry), declaring a package the registry cannot describe, a failed registry profile, prototype-named packages, capability gating (install, remove and resolve).
+- `src/__tests__/server/runtimeDependencies.test.ts`, `server/publish/runtime/__tests__/cacheLayout.test.ts` — lock resolution, the install workspace, the marker, reinstall of an unfinished or hollowed-out entry (including one that kept `package.json` but lost its entry file), single-flight, the package cap and timeout, and that writer and readers agree on the cache paths.
 - `tests/e2e/runtime-dependencies.e2e.ts` (SITE-014) — the live browser path, including browsing the registry and installing from a package page.
 - `src/__tests__/core/markdownDocumentSanitize.test.ts` — what a README may and may not render, and that the image policy is profile-scoped.
 
