@@ -24,6 +24,8 @@ export interface StoredAuthorizationCode {
   consumedAt: string | null
   grantExpiresAt: string | null
   grantRevokedAt: string | null
+  /** The grant belongs to the holder of this key (a DPoP thumbprint); null when it is not bound to one. */
+  keyThumbprint: string | null
 }
 
 /** A refresh token as stored, with the state of the grant it belongs to. */
@@ -37,6 +39,8 @@ export interface StoredRefreshToken {
   revokedAt: string | null
   grantExpiresAt: string | null
   grantRevokedAt: string | null
+  /** See `StoredAuthorizationCode.keyThumbprint`. */
+  keyThumbprint: string | null
 }
 
 export interface NewStoredToken {
@@ -80,6 +84,11 @@ export interface OAuthTokenPair {
   expiresIn: number
 }
 
+/** A grant bound to a key is used only with a proof from that key. An unbound grant asks for none. */
+function holdsKey(boundTo: string | null, proofThumbprint: string | null | undefined): boolean {
+  return boundTo === null || boundTo === proofThumbprint
+}
+
 function isPast(timestamp: string | null, now: Date): boolean {
   return !timestamp || new Date(timestamp).getTime() <= now.getTime()
 }
@@ -93,6 +102,8 @@ export async function exchangeAuthorizationCode(
     redirectUri: string
     codeVerifier: string
     resource: string
+    /** The key that signed this request's DPoP proof, when it carried a valid one. */
+    proofThumbprint?: string | null
   },
   now: Date = new Date(),
 ): Promise<OAuthTokenPair | null> {
@@ -105,8 +116,13 @@ export async function exchangeAuthorizationCode(
     const code = await store.findAuthorizationCode(codeHash)
     // A code is used once. Seeing it again means it leaked or was replayed,
     // so everything issued from it is withdrawn too (RFC 6749 §4.1.2). Only
-    // the client the code belongs to can trigger this.
-    if (code?.consumedAt && !code.grantRevokedAt && code.clientId === input.clientId) {
+    // the client the code belongs to can trigger this, and for a grant bound
+    // to a key only the holder of that key: a used code someone came across
+    // must not be enough to sign the device out.
+    if (
+      code?.consumedAt && !code.grantRevokedAt && code.clientId === input.clientId &&
+      holdsKey(code.keyThumbprint, input.proofThumbprint)
+    ) {
       await store.revokeGrant(code.grantId, now)
       console.warn(`[${realm.logName}] authorization-code replay revoked grant ${code.grantId}`)
       return null
@@ -115,7 +131,8 @@ export async function exchangeAuthorizationCode(
       !code || code.consumedAt || code.grantRevokedAt ||
       isPast(code.expiresAt, now) || isPast(code.grantExpiresAt, now) ||
       code.clientId !== input.clientId || code.redirectUri !== input.redirectUri ||
-      code.resource !== input.resource || code.codeChallenge !== challenge
+      code.resource !== input.resource || code.codeChallenge !== challenge ||
+      !holdsKey(code.keyThumbprint, input.proofThumbprint)
     ) {
       return null
     }
@@ -140,6 +157,8 @@ export async function rotateRefreshToken(
     clientId: string
     resource: string
     scope?: string
+    /** The key that signed this request's DPoP proof, when it carried a valid one. */
+    proofThumbprint?: string | null
   },
   now: Date = new Date(),
 ): Promise<OAuthTokenPair | null> {
@@ -149,6 +168,11 @@ export async function rotateRefreshToken(
     const store = realm.store(tx)
     const token = await store.findRefreshToken(tokenHash)
     const requestedScope = realm.normalizeScope(input.scope ?? token?.scope)
+
+    // A grant bound to a key answers only its holder. A refresh token shown
+    // without the key is a copy: refuse it, and leave the grant alone, so
+    // whoever copied it cannot sign the real device out either.
+    if (token && !holdsKey(token.keyThumbprint, input.proofThumbprint)) return null
 
     // A rotated refresh token should never be presented again. Treat reuse as
     // credential theft and revoke the entire grant, including access tokens

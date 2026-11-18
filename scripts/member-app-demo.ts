@@ -4,7 +4,11 @@
  * It does what Instatic Desktop does: opens the site's sign-in address in the
  * browser, listens on a loopback port for the answer, exchanges the code for
  * tokens (PKCE, no client secret), then reads who the member is and which
- * tags they hold. Nothing is stored; the app signs out again at the end.
+ * tags they hold. It also keeps a device key: the sign-in is bound to it, so
+ * every refresh carries a proof signed with that key (DPoP, RFC 9449), and
+ * the site hands it a signed statement it could check for 7 days without a
+ * connection. Nothing is stored; the app signs out again at the end. A real
+ * app keeps the device key in the OS keychain and the statement on disk.
  *
  *   bun run demo:member-app -- --site http://127.0.0.1:3040 --app imem_app_…
  *
@@ -12,6 +16,7 @@
  * the redirect address `http://127.0.0.1/callback`; the port is free to vary.
  * `bun run demo:members` registers one and prints this command.
  */
+import { hostname } from 'node:os'
 import { Type, safeParseValue } from '@core/utils/typeboxHelpers'
 
 function argument(name: string): string {
@@ -46,8 +51,61 @@ const UserinfoSchema = Type.Object({
   }))),
 })
 
-function base64Url(bytes: Uint8Array): string {
-  return Buffer.from(bytes).toString('base64url')
+const StatementResponseSchema = Type.Object({
+  statement: Type.String(),
+  expiresAt: Type.String(),
+  serverTime: Type.String(),
+})
+
+const KeySetSchema = Type.Object({
+  keys: Type.Array(Type.Object({
+    kid: Type.String(),
+    kty: Type.Literal('OKP'),
+    crv: Type.Literal('Ed25519'),
+    x: Type.String(),
+  })),
+})
+
+const StatementHeaderSchema = Type.Object({ alg: Type.Literal('EdDSA'), typ: Type.String(), kid: Type.String() })
+
+const StatementClaimsSchema = Type.Object({
+  iss: Type.String(),
+  sub: Type.String(),
+  aud: Type.String(),
+  exp: Type.Number(),
+  cnf: Type.Object({ jkt: Type.String() }),
+  tags: Type.Optional(Type.Array(Type.Object({
+    tag: Type.String(),
+    expiresAt: Type.Union([Type.String(), Type.Null()]),
+  }))),
+})
+
+function base64Url(bytes: Uint8Array | ArrayBuffer | string): string {
+  return Buffer.from(typeof bytes === 'string' ? new TextEncoder().encode(bytes) : new Uint8Array(bytes)).toString('base64url')
+}
+
+function jsonPart(part: string | undefined): unknown {
+  return JSON.parse(Buffer.from(part ?? '', 'base64url').toString('utf8'))
+}
+
+// ── The device key ──────────────────────────────────────────────────────────
+// Made fresh for this run. Its thumbprint (RFC 7638) is how the site names it.
+const deviceKey = await crypto.subtle.generateKey({ name: 'Ed25519' }, false, ['sign', 'verify'])
+const exportedDeviceKey = await crypto.subtle.exportKey('jwk', deviceKey.publicKey)
+const deviceJwk = { kty: 'OKP', crv: 'Ed25519', x: exportedDeviceKey.x ?? '' }
+const deviceThumbprint = base64Url(await crypto.subtle.digest(
+  'SHA-256',
+  new TextEncoder().encode(`{"crv":"${deviceJwk.crv}","kty":"${deviceJwk.kty}","x":"${deviceJwk.x}"}`),
+))
+
+/** A proof that this request comes from the holder of the device key. One per request. */
+async function dpopProof(method: string, url: string): Promise<string> {
+  const header = base64Url(JSON.stringify({ typ: 'dpop+jwt', alg: 'EdDSA', jwk: deviceJwk }))
+  const claims = base64Url(JSON.stringify({
+    jti: crypto.randomUUID(), htm: method, htu: url, iat: Math.floor(Date.now() / 1000),
+  }))
+  const signature = await crypto.subtle.sign({ name: 'Ed25519' }, deviceKey.privateKey, new TextEncoder().encode(`${header}.${claims}`))
+  return `${header}.${claims}.${base64Url(signature)}`
 }
 
 function log(line: string): void {
@@ -55,9 +113,10 @@ function log(line: string): void {
 }
 
 async function postForm(path: string, fields: Record<string, string>): Promise<Response> {
-  return fetch(`${ISSUER}/oauth/${path}`, {
+  const url = `${ISSUER}/oauth/${path}`
+  return fetch(url, {
     method: 'POST',
-    headers: { 'content-type': 'application/x-www-form-urlencoded' },
+    headers: { 'content-type': 'application/x-www-form-urlencoded', dpop: await dpopProof('POST', url) },
     body: new URLSearchParams(fields).toString(),
   })
 }
@@ -101,8 +160,11 @@ authorize.search = new URLSearchParams({
   redirect_uri: redirectUri,
   code_challenge: challenge,
   code_challenge_method: 'S256',
-  scope: 'profile access',
+  scope: 'profile access offline',
   state,
+  // Bind the sign-in to this device's key, and say what to call the device.
+  dpop_jkt: deviceThumbprint,
+  device_name: hostname(),
 }).toString()
 
 log('Open this address in your browser, sign in as a member and allow the app:')
@@ -154,7 +216,43 @@ log(tags.length === 0
   : `Tags:    ${tags.map((entry) => `${entry.tag} (${entry.expiresAt ? `until ${entry.expiresAt}` : 'no end date'})`).join(', ')}`)
 log(`An app gating on the tag "pro" would ${tags.some((entry) => entry.tag === 'pro') ? 'open' : 'show its renew screen'}.`)
 
-// ── 4. Refresh once, then sign out ──────────────────────────────────────────
+// ── 4. Take a statement for working offline, and check it as if offline ─────
+const statementUrl = `${ISSUER}/oauth/statement`
+const statementResponse = await fetch(statementUrl, {
+  method: 'POST',
+  headers: { authorization: `Bearer ${tokens.access_token}`, dpop: await dpopProof('POST', statementUrl) },
+})
+const statement = safeParseValue(StatementResponseSchema, await statementResponse.json())
+const keySet = safeParseValue(KeySetSchema, await (await fetch(`${ISSUER}/oauth/keys`)).json())
+if (!statementResponse.ok || !statement.ok || !keySet.ok) {
+  console.error(`[member-app-demo] getting the offline statement failed (${statementResponse.status}).`)
+  process.exit(1)
+}
+const [headerPart, claimsPart, signaturePart] = statement.value.statement.split('.')
+const statementHeader = safeParseValue(StatementHeaderSchema, jsonPart(headerPart))
+const statementClaims = safeParseValue(StatementClaimsSchema, jsonPart(claimsPart))
+const signingKey = statementHeader.ok ? keySet.value.keys.find((key) => key.kid === statementHeader.value.kid) : undefined
+const signatureIsGood = signingKey !== undefined && await crypto.subtle.verify(
+  { name: 'Ed25519' },
+  await crypto.subtle.importKey('jwk', { kty: signingKey.kty, crv: signingKey.crv, x: signingKey.x }, { name: 'Ed25519' }, false, ['verify']),
+  Buffer.from(signaturePart ?? '', 'base64url'),
+  new TextEncoder().encode(`${headerPart}.${claimsPart}`),
+)
+// What an app checks before trusting a statement with no connection: the
+// site's signature, that it is for this app on this device, and its end.
+// (It also remembers `serverTime` and refuses to run if the clock goes back.)
+if (
+  !signatureIsGood || !statementHeader.ok || !statementClaims.ok ||
+  statementHeader.value.typ !== 'instatic-member-statement+jwt' ||
+  statementClaims.value.iss !== ISSUER || statementClaims.value.aud !== APP_ID ||
+  statementClaims.value.cnf.jkt !== deviceThumbprint || statementClaims.value.exp * 1000 <= Date.now()
+) {
+  console.error('[member-app-demo] the offline statement did not check out. Stopping.')
+  process.exit(1)
+}
+log(`Offline: a statement signed by the site, good until ${statement.value.expiresAt} on this device only.`)
+
+// ── 5. Refresh once, then sign out ──────────────────────────────────────────
 const refreshed = await readTokens(await postForm('token', {
   grant_type: 'refresh_token',
   refresh_token: tokens.refresh_token,

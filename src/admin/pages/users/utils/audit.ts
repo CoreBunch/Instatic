@@ -205,6 +205,8 @@ export function auditTitle(
       return `App ${metadataString(event.metadata, 'name') ?? 'unknown'} was removed from member sign-in`
     case 'member.app.disconnect':
       return `Member ${member} was signed out of the app ${metadataString(event.metadata, 'app') ?? 'unknown'}`
+    case 'member.app.key.rotate':
+      return 'The signing key for offline apps was rotated'
     case 'ai.credential.created':
       return `AI credential ${aiCredential} was created`
     case 'ai.credential.updated':

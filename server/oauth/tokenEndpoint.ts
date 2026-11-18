@@ -9,6 +9,7 @@ import { clientIp } from '../auth/security'
 import type { DbClient } from '../db/client'
 import { jsonResponse, readTextBodyWithLimit, RequestBodyTooLargeError } from '../http'
 import { exchangeAuthorizationCode, rotateRefreshToken, type OAuthRealm } from './grants'
+import { verifyDpopProof } from './dpop'
 import { hasDuplicateParameters } from './protocol'
 
 const TOKEN_REQUEST_MAX_BYTES = 32 * 1024
@@ -57,6 +58,12 @@ export async function handleOAuthTokenRequest(
     resource: string | null
     issuerUnavailableMessage: string
     resourceMismatchMessage: string
+    /**
+     * This realm's grants can be bound to a key: the address of this token
+     * endpoint, which a DPoP proof must name. Absent, the `DPoP` header is
+     * not read.
+     */
+    dpopEndpoint?: string
   },
 ): Promise<Response> {
   const limited = consumeOAuthRateLimit(req, options.limiter)
@@ -95,6 +102,15 @@ export async function handleOAuthTokenRequest(
     return oauthError('invalid_target', options.resourceMismatchMessage, 400)
   }
 
+  let proofThumbprint: string | null = null
+  const proof = options.dpopEndpoint ? req.headers.get('dpop') : null
+  if (proof !== null && options.dpopEndpoint) {
+    proofThumbprint = await verifyDpopProof(proof, { method: 'POST', url: options.dpopEndpoint })
+    if (!proofThumbprint) {
+      return oauthError('invalid_dpop_proof', 'The DPoP proof is not valid for this request. Check the device clock.', 400)
+    }
+  }
+
   try {
     const tokens = body.grant_type === 'authorization_code'
       ? await exchangeAuthorizationCode(db, options.realm, {
@@ -103,12 +119,14 @@ export async function handleOAuthTokenRequest(
           redirectUri: body.redirect_uri,
           codeVerifier: body.code_verifier,
           resource: body.resource,
+          proofThumbprint,
         })
       : await rotateRefreshToken(db, options.realm, {
           refreshToken: body.refresh_token,
           clientId: body.client_id,
           resource: body.resource,
           scope: body.scope,
+          proofThumbprint,
         })
 
     if (!tokens) return oauthError('invalid_grant', 'The authorization grant is invalid or expired.', 400)

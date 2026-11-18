@@ -133,6 +133,10 @@ export interface MemberAppRequest {
   scope: string
   resource: string
   state: string | null
+  /** Thumbprint of the device key the sign-in is bound to; null for an app that keeps none. */
+  deviceKey: string | null
+  /** What the app calls the device it runs on. The app's word, shown as such. */
+  deviceName: string | null
 }
 
 /** Store a checked authorization request and return the id the approval page is opened with. */
@@ -144,12 +148,14 @@ export async function createMemberAppRequest(
   const id = generateOpaqueToken('imem_rq_')
   await db`
     insert into member_app_requests (
-      id_hash, app_id, browser_hash, redirect_uri, code_challenge, scope, resource, state, created_at, expires_at
+      id_hash, app_id, browser_hash, redirect_uri, code_challenge, scope, resource, state,
+      device_jkt, device_name, created_at, expires_at
     )
     values (
       ${await hashOpaqueToken(id)}, ${input.appId}, ${await hashOpaqueToken(input.browserMarker)},
       ${input.redirectUri}, ${input.codeChallenge},
-      ${input.scope}, ${input.resource}, ${input.state}, ${now.toISOString()},
+      ${input.scope}, ${input.resource}, ${input.state},
+      ${input.deviceKey}, ${input.deviceName}, ${now.toISOString()},
       ${new Date(now.getTime() + REQUEST_TTL_MS).toISOString()}
     )
   `
@@ -164,6 +170,8 @@ interface MemberAppRequestRow {
   scope: string
   resource: string
   state: string | null
+  device_jkt: string | null
+  device_name: string | null
 }
 
 /** A request that is still waiting for its answer, or null. */
@@ -173,7 +181,8 @@ export async function findPendingMemberAppRequest(
   now: Date = new Date(),
 ): Promise<MemberAppRequest | null> {
   const { rows } = await db<MemberAppRequestRow>`
-    select r.app_id, a.name as app_name, r.redirect_uri, r.code_challenge, r.scope, r.resource, r.state
+    select r.app_id, a.name as app_name, r.redirect_uri, r.code_challenge, r.scope, r.resource, r.state,
+           r.device_jkt, r.device_name
       from member_app_requests r
       join member_apps a on a.id = r.app_id
      where r.id_hash = ${await hashOpaqueToken(requestId)}
@@ -192,6 +201,8 @@ export async function findPendingMemberAppRequest(
         scope: row.scope,
         resource: row.resource,
         state: row.state,
+        deviceKey: row.device_jkt,
+        deviceName: row.device_name,
       }
     : null
 }
@@ -219,11 +230,22 @@ export async function decideMemberAppRequest(
     if (decided.rowCount !== 1) return null
     if (!input.approve) return { request, code: null }
 
+    // One sign-in per device: signing the same app in again on the same
+    // device replaces the earlier one instead of piling up beside it.
+    if (request.deviceKey) {
+      const { rows: earlier } = await tx<{ id: string }>`
+        select id from member_app_grants
+         where member_id = ${input.memberId} and app_id = ${request.appId}
+           and device_jkt = ${request.deviceKey} and revoked_at is null
+      `
+      for (const grant of earlier) await revokeGrantRows(tx, grant.id, now.toISOString())
+    }
     const grantId = nanoid()
     await tx`
-      insert into member_app_grants (id, member_id, app_id, scope, created_at, expires_at)
+      insert into member_app_grants (id, member_id, app_id, scope, device_jkt, device_name, created_at, expires_at)
       values (
-        ${grantId}, ${input.memberId}, ${request.appId}, ${request.scope}, ${now.toISOString()},
+        ${grantId}, ${input.memberId}, ${request.appId}, ${request.scope},
+        ${request.deviceKey}, ${request.deviceName}, ${now.toISOString()},
         ${new Date(now.getTime() + GRANT_TTL_MS).toISOString()}
       )
     `
@@ -249,6 +271,8 @@ export interface MemberAppAccess {
   memberId: string
   appId: string
   scope: string
+  /** Thumbprint of the device key the grant is bound to, or null. */
+  deviceKey: string | null
 }
 
 /** The grant behind a live access token, or null. */
@@ -259,8 +283,8 @@ export async function findMemberAppAccess(
   now: Date = new Date(),
 ): Promise<MemberAppAccess | null> {
   const iso = now.toISOString()
-  const { rows } = await db<{ grant_id: string; member_id: string; app_id: string; scope: string }>`
-    select t.grant_id, g.member_id, t.app_id, t.scope
+  const { rows } = await db<{ grant_id: string; member_id: string; app_id: string; scope: string; device_jkt: string | null }>`
+    select t.grant_id, g.member_id, t.app_id, t.scope, g.device_jkt
       from member_app_tokens t
       join member_app_grants g on g.id = t.grant_id
       join members m on m.id = g.member_id
@@ -273,7 +297,9 @@ export async function findMemberAppAccess(
      limit 1
   `
   const row = rows[0]
-  return row ? { grantId: row.grant_id, memberId: row.member_id, appId: row.app_id, scope: row.scope } : null
+  return row
+    ? { grantId: row.grant_id, memberId: row.member_id, appId: row.app_id, scope: row.scope, deviceKey: row.device_jkt }
+    : null
 }
 
 export async function touchMemberAppGrant(db: DbClient, grantId: string): Promise<void> {
@@ -287,16 +313,26 @@ async function revokeGrantRows(tx: DbClient, grantId: string, iso: string): Prom
 
 /**
  * The app signs out: revoke the grant a token belongs to. Works with an
- * access or a refresh token, and only for the app that holds it.
+ * access or a refresh token, and only for the app that holds it. A grant
+ * bound to a device key is ended only by that key (`proofThumbprint`), so a
+ * copied token cannot be used to sign the real device out.
  */
-export async function revokeMemberAppGrantByToken(db: DbClient, token: string, appId: string): Promise<void> {
-  const { rows } = await db<{ grant_id: string }>`
-    select grant_id from member_app_tokens
-     where token_hash = ${await hashOpaqueToken(token)} and app_id = ${appId}
+export async function revokeMemberAppGrantByToken(
+  db: DbClient,
+  token: string,
+  appId: string,
+  proofThumbprint: string | null,
+): Promise<void> {
+  const { rows } = await db<{ grant_id: string; device_jkt: string | null }>`
+    select t.grant_id, g.device_jkt
+      from member_app_tokens t
+      join member_app_grants g on g.id = t.grant_id
+     where t.token_hash = ${await hashOpaqueToken(token)} and t.app_id = ${appId}
      limit 1
   `
-  const grantId = rows[0]?.grant_id
-  if (grantId) await db.transaction((tx) => revokeGrantRows(tx, grantId, nowIso()))
+  const grant = rows[0]
+  if (!grant || (grant.device_jkt !== null && grant.device_jkt !== proofThumbprint)) return
+  await db.transaction((tx) => revokeGrantRows(tx, grant.grant_id, nowIso()))
 }
 
 /**
@@ -351,6 +387,7 @@ interface CodeRow {
   consumed_at: string | null
   grant_expires_at: string | null
   grant_revoked_at: string | null
+  device_jkt: string | null
 }
 
 interface RefreshRow {
@@ -363,6 +400,7 @@ interface RefreshRow {
   revoked_at: string | null
   grant_expires_at: string | null
   grant_revoked_at: string | null
+  device_jkt: string | null
 }
 
 function memberAppGrantStore(tx: DbClient): GrantStore {
@@ -371,7 +409,7 @@ function memberAppGrantStore(tx: DbClient): GrantStore {
       const { rows } = await tx<CodeRow>`
         select c.grant_id, c.app_id, c.redirect_uri, c.code_challenge, c.scope, c.resource,
                c.expires_at, c.consumed_at,
-               g.expires_at as grant_expires_at, g.revoked_at as grant_revoked_at
+               g.expires_at as grant_expires_at, g.revoked_at as grant_revoked_at, g.device_jkt
           from member_app_codes c
           join member_app_grants g on g.id = c.grant_id
           join members m on m.id = g.member_id
@@ -394,6 +432,7 @@ function memberAppGrantStore(tx: DbClient): GrantStore {
             consumedAt: row.consumed_at,
             grantExpiresAt: row.grant_expires_at,
             grantRevokedAt: row.grant_revoked_at,
+            keyThumbprint: row.device_jkt,
           }
         : null
     },
@@ -409,7 +448,7 @@ function memberAppGrantStore(tx: DbClient): GrantStore {
     async findRefreshToken(tokenHash): Promise<StoredRefreshToken | null> {
       const { rows } = await tx<RefreshRow>`
         select t.id, t.grant_id, t.app_id, t.scope, t.resource, t.expires_at, t.revoked_at,
-               g.expires_at as grant_expires_at, g.revoked_at as grant_revoked_at
+               g.expires_at as grant_expires_at, g.revoked_at as grant_revoked_at, g.device_jkt
           from member_app_tokens t
           join member_app_grants g on g.id = t.grant_id
           join members m on m.id = g.member_id
@@ -429,6 +468,7 @@ function memberAppGrantStore(tx: DbClient): GrantStore {
             revokedAt: row.revoked_at,
             grantExpiresAt: row.grant_expires_at,
             grantRevokedAt: row.grant_revoked_at,
+            keyThumbprint: row.device_jkt,
           }
         : null
     },

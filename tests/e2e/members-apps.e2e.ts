@@ -1,4 +1,4 @@
-import { createHash, randomBytes } from 'node:crypto'
+import { createHash, generateKeyPairSync, randomBytes, sign, verify, createPublicKey, type KeyObject } from 'node:crypto'
 import { createServer, type Server } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { expect, test, type Page } from '@playwright/test'
@@ -43,8 +43,30 @@ async function listenForCallback(): Promise<{ server: Server; redirectUri: strin
   return { server, redirectUri: `http://127.0.0.1:${port}/callback`, answer }
 }
 
+/** A device key as an app keeps one, and the proofs it signs with it (DPoP, RFC 9449). */
+function createDeviceKey(): { thumbprint: string; proof: (method: string, url: string) => string } {
+  const { publicKey, privateKey } = generateKeyPairSync('ed25519')
+  const { x } = publicKey.export({ format: 'jwk' })
+  const jwk = { kty: 'OKP', crv: 'Ed25519', x: x ?? '' }
+  const part = (value: unknown) => Buffer.from(JSON.stringify(value)).toString('base64url')
+  return {
+    thumbprint: createHash('sha256').update(`{"crv":"${jwk.crv}","kty":"${jwk.kty}","x":"${jwk.x}"}`).digest('base64url'),
+    proof(method, url) {
+      const signed = `${part({ typ: 'dpop+jwt', alg: 'EdDSA', jwk })}.${part({
+        jti: randomBytes(12).toString('base64url'), htm: method, htu: url, iat: Math.floor(Date.now() / 1000),
+      })}`
+      return `${signed}.${sign(null, Buffer.from(signed), privateKey).toString('base64url')}`
+    },
+  }
+}
+
 /** The address the app opens in the member's browser, and what it keeps to finish the sign-in. */
-function signInAddress(oauth: Discovery, appId: string, redirectUri: string): { authorize: URL; verifier: string; state: string } {
+function signInAddress(
+  oauth: Discovery,
+  appId: string,
+  redirectUri: string,
+  extra: Record<string, string> = {},
+): { authorize: URL; verifier: string; state: string } {
   const verifier = randomBytes(48).toString('base64url')
   const state = randomBytes(12).toString('base64url')
   const authorize = new URL(oauth.authorization_endpoint)
@@ -56,6 +78,7 @@ function signInAddress(oauth: Discovery, appId: string, redirectUri: string): { 
     code_challenge_method: 'S256',
     scope: 'profile access',
     state,
+    ...extra,
   }).toString()
   return { authorize, verifier, state }
 }
@@ -320,6 +343,133 @@ test('a member and an administrator disconnect a connected app (MEMBER-006)', as
     }
   } finally {
     for (const server of servers) server.close()
+    if (appId) {
+      await site.stepUp()
+      await admin.delete(`/admin/api/cms/members/apps/${appId}`, { headers })
+    }
+    await site.remove()
+  }
+})
+
+/**
+ * MEMBER-007 — an app that works offline signs in on a device.
+ *
+ * The app keeps a device key. Its sign-in is bound to that key, so the code
+ * and the refresh token are useless without it, and the site hands it a
+ * signed statement it can check with no connection for 7 days.
+ */
+test('an app binds its sign-in to a device and takes an offline statement (MEMBER-007)', async ({ page, browser }) => {
+  test.setTimeout(240_000)
+  const suffix = Date.now().toString(36)
+  const prefix = `r${suffix}-`
+  const at = (slug: string) => `${PUBLIC_BASE_URL}/${prefix}${slug}`
+  const email = `device-${suffix}@example.com`
+  const appName = `E2E app ${suffix}`
+  const deviceName = `Laptop ${suffix}`
+
+  await login(page)
+  const admin = page.request
+  const site = await seedMemberSite(page, prefix)
+  const { headers, emailedLink } = site
+  let appId = ''
+  const app = await listenForCallback()
+
+  try {
+    await site.stepUp()
+    const created = await admin.post('/admin/api/cms/members/apps', {
+      headers,
+      data: { name: appName, redirectUris: ['http://127.0.0.1/callback'], scopes: ['profile', 'access', 'offline'] },
+    })
+    expect(created.status(), await created.text()).toBe(201)
+    appId = ((await created.json()) as { id: string }).id
+    const oauth = (await (
+      await admin.get(`${PUBLIC_BASE_URL}/.well-known/oauth-authorization-server/_instatic/members`)
+    ).json()) as Discovery & { jwks_uri: string; statement_endpoint: string }
+
+    const device = createDeviceKey()
+    const { authorize, verifier } = signInAddress(oauth, appId, app.redirectUri, {
+      scope: 'profile access offline', dpop_jkt: device.thumbprint, device_name: deviceName,
+    })
+    const context = await browser.newContext()
+    const visitor = await context.newPage()
+    const appRequest = await browser.newContext()
+    try {
+      await becomeMember(visitor, at, emailedLink, email)
+      await expect(visitor).toHaveURL(new RegExp(`/${prefix}account$`))
+
+      await test.step('the approval page names the device and the offline access', async () => {
+        await visitor.goto(authorize.toString())
+        await expect(visitor).toHaveURL(new RegExp(`/${prefix}approve-app\\?request=`))
+        await expect(visitor.getByText(`It runs on ${deviceName}`)).toBeVisible()
+        await expect(visitor.getByText('Keep working for up to 7 days without a connection')).toBeVisible()
+        await visitor.getByRole('button', { name: 'Allow', exact: true }).click()
+      })
+      const code = (await app.answer).searchParams.get('code') ?? ''
+      const exchange = (proof?: string) => appRequest.request.post(oauth.token_endpoint, {
+        headers: proof ? { dpop: proof } : {},
+        form: {
+          grant_type: 'authorization_code', code, redirect_uri: app.redirectUri,
+          code_verifier: verifier, client_id: appId, resource: oauth.issuer,
+        },
+      })
+
+      let tokens = { access_token: '', refresh_token: '' }
+      await test.step('the code works only with a proof from the device key', async () => {
+        expect((await exchange()).status()).toBe(400)
+        expect((await exchange(createDeviceKey().proof('POST', oauth.token_endpoint))).status()).toBe(400)
+        const exchanged = await exchange(device.proof('POST', oauth.token_endpoint))
+        expect(exchanged.ok(), await exchanged.text()).toBe(true)
+        tokens = (await exchanged.json()) as { access_token: string; refresh_token: string }
+      })
+
+      await test.step('a copied refresh token does nothing without the key', async () => {
+        const refresh = (proof?: string) => appRequest.request.post(oauth.token_endpoint, {
+          headers: proof ? { dpop: proof } : {},
+          form: { grant_type: 'refresh_token', refresh_token: tokens.refresh_token, client_id: appId, resource: oauth.issuer },
+        })
+        expect((await refresh()).status()).toBe(400)
+        const mine = await refresh(device.proof('POST', oauth.token_endpoint))
+        expect(mine.ok(), await mine.text()).toBe(true)
+        tokens = (await mine.json()) as { access_token: string; refresh_token: string }
+      })
+
+      await test.step('the app takes a statement and checks it on its own', async () => {
+        const refused = await appRequest.request.post(oauth.statement_endpoint, {
+          headers: { authorization: `Bearer ${tokens.access_token}` },
+        })
+        expect(refused.status()).toBe(401)
+        const res = await appRequest.request.post(oauth.statement_endpoint, {
+          headers: { authorization: `Bearer ${tokens.access_token}`, dpop: device.proof('POST', oauth.statement_endpoint) },
+        })
+        expect(res.ok(), await res.text()).toBe(true)
+        const { statement } = (await res.json()) as { statement: string }
+        const [headerPart, claimsPart, signaturePart] = statement.split('.') as [string, string, string]
+        const header = JSON.parse(Buffer.from(headerPart, 'base64url').toString()) as { kid: string; typ: string }
+        const claims = JSON.parse(Buffer.from(claimsPart, 'base64url').toString()) as {
+          iss: string; aud: string; email: string; iat: number; exp: number; cnf: { jkt: string }
+        }
+        const { keys } = (await (await appRequest.request.get(oauth.jwks_uri)).json()) as {
+          keys: Array<{ kid: string; kty: string; crv: string; x: string }>
+        }
+        const jwk = keys.find((key) => key.kid === header.kid)
+        expect(jwk).toBeTruthy()
+        const publicKey: KeyObject = createPublicKey({ key: { kty: jwk!.kty, crv: jwk!.crv, x: jwk!.x }, format: 'jwk' })
+        expect(verify(null, Buffer.from(`${headerPart}.${claimsPart}`), publicKey, Buffer.from(signaturePart, 'base64url'))).toBe(true)
+        expect(header.typ).toBe('instatic-member-statement+jwt')
+        expect(claims).toMatchObject({ iss: oauth.issuer, aud: appId, email, cnf: { jkt: device.thumbprint } })
+        expect(claims.exp - claims.iat).toBe(7 * 24 * 60 * 60)
+      })
+
+      await test.step('the account page shows the device', async () => {
+        await visitor.goto(at('account'))
+        await expect(visitor.getByRole('heading', { name: `${appName} on ${deviceName}` })).toBeVisible()
+      })
+    } finally {
+      await appRequest.close()
+      await context.close()
+    }
+  } finally {
+    app.server.close()
     if (appId) {
       await site.stepUp()
       await admin.delete(`/admin/api/cms/members/apps/${appId}`, { headers })

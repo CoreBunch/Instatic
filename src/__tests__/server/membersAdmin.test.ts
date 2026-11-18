@@ -7,10 +7,18 @@
  * `listMembersForAdmin` cases in `members.test.ts`.
  */
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
-import type { MemberApp, MemberDetail, MemberListItem, MemberListResponse, MemberSettingsResponse } from '@core/members'
+import type {
+  MemberApp,
+  MemberDetail,
+  MemberListItem,
+  MemberListResponse,
+  MemberSettingsResponse,
+  MemberSigningKey,
+} from '@core/members'
 import { DEFAULT_MEMBER_SETTINGS } from '@core/members'
 import { nowIso } from '@core/utils/isoDate'
 import { resetPublicOrigins } from '../../../server/auth/security'
+import { listPublishedSigningKeys } from '../../../server/members/apps/signingKeys'
 import { createMemberApp } from '../../../server/members/apps/store'
 import { flushMemberMail } from '../../../server/members/mail'
 import { resetMemberLimits } from '../../../server/members/limits'
@@ -85,6 +93,7 @@ describe('members admin API', () => {
         ['POST', `${BASE}/${target.id}/tags`, { tag: 'pro' }],
         ['DELETE', `${BASE}/${target.id}/tags`, { tag: 'pro', source: 'admin' }],
         ['DELETE', `${BASE}/${target.id}/apps/some-grant`],
+        ['POST', `${BASE}/apps/signing-key/rotate`],
         ['DELETE', `${BASE}/${target.id}`],
       ]
       for (const [method, path, json] of calls) {
@@ -541,6 +550,71 @@ describe('members admin API', () => {
         await h.cms('/admin/api/cms/audit', { cookie: owner }),
       )
       expect(events.find((event) => event.action === 'member.app.delete')?.metadata.name).toBe('Instatic Desktop')
+    })
+
+    describe('signing key', () => {
+      const ROTATE = `${APPS}/signing-key/rotate`
+      const currentKey = async (cookie = owner) =>
+        (await readJson<{ signingKey: MemberSigningKey }>(await h.cms(APPS, { cookie }))).signingKey
+      const rotate = (cookie = owner) => h.cms(ROTATE, { method: 'POST', cookie })
+
+      it('comes with the list of apps, and stays the same from one read to the next', async () => {
+        const key = await currentKey()
+        expect(key.id).toMatch(/^imem_key_/)
+        expect(Number.isNaN(Date.parse(key.createdAt))).toBe(false)
+        expect(Object.keys(key).sort()).toEqual(['createdAt', 'id', 'usable'])
+        expect(key.usable).toBe(true)
+        expect(await currentKey()).toEqual(key)
+        const reader = await h.createRoleUser({ name: 'Viewer', slug: 'viewer', capabilities: ['members.read'] })
+        expect(await currentKey(reader.cookie)).toEqual(key)
+      })
+
+      it('is rotated only by someone who manages members, after the password again', async () => {
+        const before = await currentKey()
+        const reader = await h.createRoleUser({ name: 'Viewer', slug: 'viewer', capabilities: ['members.read'] })
+        await expectForbidden(await rotate(reader.cookie))
+        const manager = await h.createRoleUser({ name: 'Manager', slug: 'manager', capabilities: ['members.manage'] })
+        await expectStepUpRequired(await rotate(manager.cookie))
+        expect(await currentKey()).toEqual(before)
+
+        const rotated = await rotate(await h.stepUp(manager.cookie))
+        expect(rotated.status).toBe(200)
+        expect((await readJson<{ signingKey: MemberSigningKey }>(rotated)).signingKey.id).not.toBe(before.id)
+      })
+
+      it('rotates to a new key, records it, and keeps the old key published behind the new one', async () => {
+        const before = await currentKey()
+        const res = await rotate()
+        expect(res.status).toBe(200)
+        const { signingKey } = await readJson<{ signingKey: MemberSigningKey }>(res)
+        expect(signingKey.id).toMatch(/^imem_key_/)
+        expect(signingKey.id).not.toBe(before.id)
+        expect(await currentKey()).toEqual(signingKey)
+
+        expect((await listPublishedSigningKeys(h.db)).map((key) => key.kid)).toEqual([signingKey.id, before.id])
+
+        const { events } = await readJson<{
+          events: Array<{ action: string; targetId: string | null; metadata: Record<string, unknown> }>
+        }>(await h.cms('/admin/api/cms/audit', { cookie: owner }))
+        const event = events.find((each) => each.action === 'member.app.key.rotate')
+        expect(event?.targetId).toBe(signingKey.id)
+        expect(event?.metadata.previousKeyId).toBe(before.id)
+      })
+
+      it('is not mistaken for an app or a member route', async () => {
+        const app = await readJson<MemberApp>(await create(valid))
+        // DELETE on the same path is `apps/:id` territory at most: it removes nothing and rotates nothing.
+        const before = await currentKey()
+        expect((await h.cms(ROTATE, { method: 'DELETE', cookie: owner })).status).not.toBe(200)
+        expect((await h.cms(`${APPS}/signing-key`, { method: 'DELETE', cookie: owner })).status).toBe(404)
+        expect(await currentKey()).toEqual(before)
+        expect((await apps()).map((each) => each.id)).toEqual([app.id])
+
+        // POST reaches the rotation, not a per-member action on a member called "apps".
+        expect((await rotate()).status).toBe(200)
+        expect((await currentKey()).id).not.toBe(before.id)
+        expect((await apps()).map((each) => each.id)).toEqual([app.id])
+      })
     })
   })
 })

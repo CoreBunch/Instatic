@@ -21,6 +21,11 @@ import { createMember, grantMemberTag, saveMemberSettings } from '../../../serve
 import { createMemberSession } from '../../../server/members/sessions'
 import { pkceChallengeForVerifier } from '../../../server/oauth/secrets'
 import { publishMemberPages } from '../helpers/memberPages'
+import { createDeviceKey, type DeviceKey } from '../helpers/deviceKey'
+import { resetDpopReplayCache } from '../../../server/oauth/dpop'
+import { getCurrentSigningKey, listPublishedSigningKeys, rotateSigningKey } from '../../../server/members/apps/signingKeys'
+import { cleanDeviceName } from '../../../server/members/apps/protocol'
+import { __resetMasterKeyCacheForTesting } from '../../../server/secrets/masterKey'
 
 const ORIGIN = 'http://localhost'
 const ISSUER = `${ORIGIN}/_instatic/members`
@@ -48,11 +53,13 @@ describe('sign-in for apps', () => {
     for (const table of [
       'member_app_tokens', 'member_app_codes', 'member_app_grants', 'member_app_requests', 'member_apps',
       'member_events', 'member_tags', 'member_sessions', 'members', 'member_settings', 'mail_outbox',
+      'member_signing_keys',
     ]) {
       await t.db.unsafe(`delete from ${table}`)
     }
     resetMemberLimits()
     resetMemberAppLimits()
+    resetDpopReplayCache()
     resetPublicOrigins()
     await saveMemberSettings(t.db, {
       ...DEFAULT_MEMBER_SETTINGS,
@@ -526,6 +533,280 @@ describe('sign-in for apps', () => {
     })
   })
 
+  describe('a sign-in bound to a device', () => {
+    const TOKEN_URL = `${ISSUER}/oauth/token`
+    const STATEMENT_URL = `${ISSUER}/oauth/statement`
+    let device: DeviceKey
+
+    beforeEach(async () => {
+      device = await createDeviceKey()
+      app = await createMemberApp(t.db, {
+        name: 'Instatic Desktop', redirectUris: [REGISTERED], scopes: ['profile', 'access', 'offline'], createdByUserId: null,
+      })
+    })
+
+    function boundRequest(overrides: Record<string, string | null> = {}): Promise<string> {
+      return startRequest({ scope: 'profile access offline', dpop_jkt: device.thumbprint, device_name: 'Ada\u2019s MacBook', ...overrides })
+    }
+
+    async function codeFor(request: string): Promise<string> {
+      const res = await answer('approve', request)
+      expect(res.status).toBe(200)
+      return new URL(((await res.json()) as { appRedirect: string }).appRedirect).searchParams.get('code')!
+    }
+
+    async function tokenWith(fields: Record<string, string>, key: DeviceKey | null): Promise<Response> {
+      return call('/_instatic/members/oauth/token', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/x-www-form-urlencoded',
+          ...(key ? { dpop: await key.proof('POST', TOKEN_URL) } : {}),
+        },
+        body: new URLSearchParams({ client_id: app.id, resource: ISSUER, ...fields }).toString(),
+      })
+    }
+
+    function exchange(code: string, key: DeviceKey | null): Promise<Response> {
+      return tokenWith({ grant_type: 'authorization_code', code, redirect_uri: LISTENING, code_verifier: VERIFIER }, key)
+    }
+
+    async function boundSignIn(): Promise<Tokens> {
+      const res = await exchange(await codeFor(await boundRequest()), device)
+      expect(res.status).toBe(200)
+      return (await res.json()) as Tokens
+    }
+
+    async function statement(accessToken: string, key: DeviceKey | null): Promise<Response> {
+      return call('/_instatic/members/oauth/statement', {
+        method: 'POST',
+        headers: {
+          authorization: `Bearer ${accessToken}`,
+          ...(key ? { dpop: await key.proof('POST', STATEMENT_URL) } : {}),
+        },
+      })
+    }
+
+    it('gives the code only to the device it was approved for', async () => {
+      const stranger = await createDeviceKey()
+      const code = await codeFor(await boundRequest())
+      expect((await exchange(code, null)).status).toBe(400)
+      expect((await exchange(code, stranger)).status).toBe(400)
+      // Neither attempt used the code up.
+      expect((await exchange(code, device)).status).toBe(200)
+    })
+
+    it('refreshes only for the device, and a copied refresh token does not sign the device out', async () => {
+      const tokens = await boundSignIn()
+      const stranger = await createDeviceKey()
+      const refresh = { grant_type: 'refresh_token', refresh_token: tokens.refresh_token }
+
+      expect((await tokenWith(refresh, null)).status).toBe(400)
+      expect((await tokenWith(refresh, stranger)).status).toBe(400)
+      // The thief got nothing and cost the member nothing: the device carries on.
+      const mine = await tokenWith(refresh, device)
+      expect(mine.status).toBe(200)
+      const next = (await mine.json()) as Tokens
+      expect((await userinfo(next.access_token)).status).toBe(200)
+    })
+
+    it('says so when the proof itself is bad', async () => {
+      const code = await codeFor(await boundRequest())
+      const res = await call('/_instatic/members/oauth/token', {
+        method: 'POST',
+        headers: { 'content-type': 'application/x-www-form-urlencoded', dpop: await device.proof('POST', STATEMENT_URL) },
+        body: new URLSearchParams({
+          client_id: app.id, resource: ISSUER, grant_type: 'authorization_code', code, redirect_uri: LISTENING, code_verifier: VERIFIER,
+        }).toString(),
+      })
+      expect(res.status).toBe(400)
+      expect(((await res.json()) as { error: string }).error).toBe('invalid_dpop_proof')
+    })
+
+    it('refuses to work offline without a device key', async () => {
+      const res = await call(await authorizeUrl({ scope: 'profile offline' }), { headers: { cookie } })
+      expect(res.status).toBe(302)
+      const back = new URL(res.headers.get('location')!)
+      expect(back.searchParams.get('error')).toBe('invalid_request')
+      const junk = await call(await authorizeUrl({ dpop_jkt: 'not-a-thumbprint' }), { headers: { cookie } })
+      expect(new URL(junk.headers.get('location')!).searchParams.get('error')).toBe('invalid_request')
+    })
+
+    it('keeps one sign-in per device and shows the device by the name the app gave', async () => {
+      const first = await boundSignIn()
+      const second = await boundSignIn()
+      // Signing in again on the same device replaced the first sign-in.
+      expect((await userinfo(first.access_token)).status).toBe(401)
+      expect((await userinfo(second.access_token)).status).toBe(200)
+
+      // Another device of the same member is its own sign-in.
+      device = await createDeviceKey()
+      await exchange(await codeFor(await boundRequest({ device_name: '  Studio\n iMac  ' })), device)
+      const source = loopSourceRegistry.getOrThrow('members.apps') as PrefetchedLoopEntitySource
+      const { items } = await source.fetch({
+        db: t.db, site: { pages: [] } as never, filters: {}, orderBy: 'connectedAt', direction: 'desc', limit: 10, offset: 0, memberId,
+      })
+      expect(items.map((item) => item.fields.device).sort()).toEqual(['Ada\u2019s MacBook', 'Studio iMac'])
+    })
+
+    it('names the device on the approval page', async () => {
+      const request = await boundRequest()
+      const frame = await memberAppRequestFrame(t.db, new URL(`/approve-app?request=${request}`, ORIGIN))
+      expect(frame).toMatchObject({ name: 'Instatic Desktop', device: 'Ada\u2019s MacBook' })
+      expect(frame!.access).toContain('7 days')
+    })
+
+    it('hands the device a signed statement that an app can check on its own', async () => {
+      await grantMemberTag(t.db, { memberId, tag: 'pro', source: 'admin', expiresAt: new Date(Date.now() + 3 * 86_400_000).toISOString() })
+      const tokens = await boundSignIn()
+      const before = Date.now()
+      const res = await statement(tokens.access_token, device)
+      expect(res.status).toBe(200)
+      expect(res.headers.get('cache-control')).toBe('no-store')
+      const body = (await res.json()) as { statement: string; expiresAt: string; serverTime: string }
+
+      // What the app does offline: check the signature against the key it fetched earlier.
+      const keysUrl = new URL('/_instatic/members/oauth/keys', ORIGIN)
+      const published = (await (await handleMemberOAuthRequest(new Request(keysUrl), t.db, keysUrl)).json()) as {
+        keys: Array<{ kid: string; kty: string; crv: string; x: string; alg: string }>
+      }
+      const [headerPart, claimsPart, signaturePart] = body.statement.split('.') as [string, string, string]
+      const header = JSON.parse(Buffer.from(headerPart, 'base64url').toString()) as { alg: string; typ: string; kid: string }
+      expect(header).toMatchObject({ alg: 'EdDSA', typ: 'instatic-member-statement+jwt' })
+      const jwk = published.keys.find((key) => key.kid === header.kid)!
+      expect(jwk).toMatchObject({ kty: 'OKP', crv: 'Ed25519', alg: 'EdDSA' })
+      expect(Object.keys(jwk)).not.toContain('d')
+      const key = await crypto.subtle.importKey('jwk', { kty: jwk.kty, crv: jwk.crv, x: jwk.x }, { name: 'Ed25519' }, false, ['verify'])
+      const verify = (signed: string) => crypto.subtle.verify(
+        { name: 'Ed25519' }, key, Buffer.from(signaturePart, 'base64url'), new TextEncoder().encode(signed),
+      )
+      expect(await verify(`${headerPart}.${claimsPart}`)).toBe(true)
+      const tampered = Buffer.from(JSON.stringify({ sub: memberId, tags: [{ tag: 'pro', expiresAt: null }] })).toString('base64url')
+      expect(await verify(`${headerPart}.${tampered}`)).toBe(false)
+
+      const claims = JSON.parse(Buffer.from(claimsPart, 'base64url').toString()) as {
+        iss: string; sub: string; aud: string; iat: number; exp: number; cnf: { jkt: string }
+        email: string; tags: Array<{ tag: string; expiresAt: string | null }>
+      }
+      expect(claims).toMatchObject({ iss: ISSUER, sub: memberId, aud: app.id, cnf: { jkt: device.thumbprint }, email: 'ada@example.com' })
+      expect(claims.exp - claims.iat).toBe(7 * 86_400)
+      expect(claims.iat * 1000).toBeGreaterThanOrEqual(before - 1000)
+      // The tag keeps its own end, which comes before the statement's.
+      expect(claims.tags).toHaveLength(1)
+      expect(claims.tags[0]!.tag).toBe('pro')
+      expect(new Date(claims.tags[0]!.expiresAt!).getTime()).toBeLessThan(claims.exp * 1000)
+    })
+
+    it('gives a statement to nobody but the device, and only to a sign-in allowed offline', async () => {
+      const tokens = await boundSignIn()
+      const stranger = await createDeviceKey()
+      expect((await statement(tokens.access_token, null)).status).toBe(401)
+      expect((await statement(tokens.access_token, stranger)).status).toBe(401)
+      expect((await statement('imem_at_' + 'x'.repeat(40), device)).status).toBe(401)
+
+      // Bound to a device, but never asked to work offline.
+      device = await createDeviceKey()
+      const online = await exchange(await codeFor(await boundRequest({ scope: 'profile access' })), device)
+      const onlineTokens = (await online.json()) as Tokens
+      expect((await statement(onlineTokens.access_token, device)).status).toBe(403)
+
+      // Disconnected: no more statements.
+      await setMemberSuspended(t.db, memberId, true)
+      expect((await statement(tokens.access_token, device)).status).toBe(401)
+    })
+
+    it('keeps a retired key published while its statements can still be valid', async () => {
+      const tokens = await boundSignIn()
+      const old = (await listPublishedSigningKeys(t.db))[0]!.kid
+      const rotated = await rotateSigningKey(t.db)
+      expect(rotated.id).not.toBe(old)
+
+      const published = await listPublishedSigningKeys(t.db)
+      expect(published.map((key) => key.kid)).toEqual([rotated.id, old])
+      // A new statement is signed with the new key.
+      const body = (await (await statement(tokens.access_token, device)).json()) as { statement: string }
+      const header = JSON.parse(Buffer.from(body.statement.split('.')[0]!, 'base64url').toString()) as { kid: string }
+      expect(header.kid).toBe(rotated.id)
+      // Eight days on, the last statement of the old key has run out and the key is gone.
+      const later = await listPublishedSigningKeys(t.db, new Date(Date.now() + 8 * 86_400_000))
+      expect(later.map((key) => key.kid)).toEqual([rotated.id])
+    })
+
+    it('does not let a used code sign the device out without its key', async () => {
+      const code = await codeFor(await boundRequest())
+      const tokens = (await (await exchange(code, device)).json()) as Tokens
+      // Someone who came across the spent code replays it, with no key or with their own.
+      expect((await exchange(code, null)).status).toBe(400)
+      expect((await exchange(code, await createDeviceKey())).status).toBe(400)
+      expect((await userinfo(tokens.access_token)).status).toBe(200)
+      // The device replaying its own code is still a replay, and still ends the sign-in.
+      expect((await exchange(code, device)).status).toBe(400)
+      expect((await userinfo(tokens.access_token)).status).toBe(401)
+    })
+
+    it('signs out only for the device, whoever holds a copy of its tokens', async () => {
+      const REVOKE_URL = `${ISSUER}/oauth/revoke`
+      const tokens = await boundSignIn()
+      const revoke = async (key: DeviceKey | null) => call('/_instatic/members/oauth/revoke', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/x-www-form-urlencoded',
+          ...(key ? { dpop: await key.proof('POST', REVOKE_URL) } : {}),
+        },
+        body: new URLSearchParams({ token: tokens.refresh_token, client_id: app.id }).toString(),
+      })
+      // The answer never says whether it did anything.
+      expect((await revoke(null)).status).toBe(200)
+      expect((await revoke(await createDeviceKey())).status).toBe(200)
+      expect((await userinfo(tokens.access_token)).status).toBe(200)
+      expect((await revoke(device)).status).toBe(200)
+      expect((await userinfo(tokens.access_token)).status).toBe(401)
+    })
+
+    it('answers 503 for a statement when the signing key can no longer be read, and says so to the owner', async () => {
+      const tokens = await boundSignIn()
+      expect((await statement(tokens.access_token, device)).status).toBe(200)
+      expect((await getCurrentSigningKey(t.db)).usable).toBe(true)
+
+      const before = process.env.INSTATIC_SECRET_KEY
+      process.env.INSTATIC_SECRET_KEY = Buffer.from(crypto.getRandomValues(new Uint8Array(32))).toString('base64')
+      __resetMasterKeyCacheForTesting()
+      try {
+        const res = await statement(tokens.access_token, device)
+        expect(res.status).toBe(503)
+        expect(((await res.json()) as { error: string }).error).toBe('temporarily_unavailable')
+        expect((await getCurrentSigningKey(t.db)).usable).toBe(false)
+        // Rotating makes a key under the new secret, and statements flow again.
+        expect((await rotateSigningKey(t.db)).usable).toBe(true)
+        expect((await statement(tokens.access_token, device)).status).toBe(200)
+      } finally {
+        if (before === undefined) delete process.env.INSTATIC_SECRET_KEY
+        else process.env.INSTATIC_SECRET_KEY = before
+        __resetMasterKeyCacheForTesting()
+      }
+    })
+
+    it('cleans the device name an app sends', () => {
+      expect(cleanDeviceName(null)).toBeNull()
+      expect(cleanDeviceName('  \n\t ')).toBeNull()
+      expect(cleanDeviceName('Studio\r\n iMac')).toBe('Studio iMac')
+      // Characters that reorder or hide text are dropped.
+      expect(cleanDeviceName('Safe\u202Edetsurt\u200B \u0085name')).toBe('Safe detsurt name')
+      // Cut by character, never through the middle of one.
+      const long = cleanDeviceName('\u{1F4BB}'.repeat(80))!
+      expect([...long]).toHaveLength(60)
+      expect(long.endsWith('\u{1F4BB}')).toBe(true)
+    })
+
+    it('leaves an app without a device key working as before', async () => {
+      const res = await tokenRequest({
+        grant_type: 'authorization_code', code: await codeFor(await startRequest()), redirect_uri: LISTENING, code_verifier: VERIFIER,
+      })
+      expect(res.status).toBe(200)
+      const tokens = (await res.json()) as Tokens
+      expect((await tokenRequest({ grant_type: 'refresh_token', refresh_token: tokens.refresh_token })).status).toBe(200)
+    })
+  })
+
   it('clears out what can never be used again when a sign-in starts', async () => {
     const tokens = await signIn()
     const count = async (table: string) =>
@@ -567,6 +848,10 @@ describe('sign-in for apps', () => {
     expect(body.token_endpoint).toBe(`${ISSUER}/oauth/token`)
     expect(body.code_challenge_methods_supported).toEqual(['S256'])
     expect(body.token_endpoint_auth_methods_supported).toEqual(['none'])
+    expect(body.jwks_uri).toBe(`${ISSUER}/oauth/keys`)
+    expect(body.statement_endpoint).toBe(`${ISSUER}/oauth/statement`)
+    expect(body.dpop_signing_alg_values_supported).toEqual(['EdDSA', 'ES256'])
+    expect(body.scopes_supported).toEqual(['profile', 'access', 'offline'])
   })
 
   it('shows the approval page the stored app, never what the address claims', async () => {
@@ -576,6 +861,7 @@ describe('sign-in for apps', () => {
       name: 'Instatic Desktop',
       access: 'Your name and email address, Which memberships and access you hold',
       returnsTo: 'this device',
+      device: '',
     })
     expect(await memberAppRequestFrame(t.db, new URL('/approve-app?request=imem_rq_unknown', ORIGIN))).toBeNull()
     expect(await memberAppRequestFrame(t.db, new URL('/approve-app', ORIGIN))).toBeNull()

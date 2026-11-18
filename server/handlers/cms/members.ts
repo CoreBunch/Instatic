@@ -17,6 +17,7 @@
  *   GET    /admin/api/cms/members/apps                — apps that may sign a member in
  *   POST   /admin/api/cms/members/apps                — register one (step-up)
  *   DELETE /admin/api/cms/members/apps/:id            — remove one, signing everyone out of it (step-up)
+ *   POST   /admin/api/cms/members/apps/signing-key/rotate — replace the key offline statements are signed with (step-up)
  *
  * Reading needs `members.read` or `members.manage`; every change needs
  * `members.manage`. All SQL for the member tables lives in `server/members`
@@ -34,6 +35,7 @@ import {
   type MemberAdminStatus,
   type MemberDetail,
   type MemberSettings,
+  type MemberSigningKey,
 } from '@core/members'
 import { MAIL_ADDRESS_PATTERN } from '@core/mail'
 import { requireAnyCapability, requireCapability, requireStepUp } from '../../auth/authz'
@@ -49,6 +51,7 @@ import {
   signOutMemberEverywhere,
 } from '../../members/admin'
 import { memberLinkOrigin, memberMailAvailable } from '../../members/mail'
+import { getCurrentSigningKey, rotateSigningKey, type SigningKeyInfo } from '../../members/apps/signingKeys'
 import { createMemberApp, deleteMemberApp, findMemberApp, listMemberApps } from '../../members/apps/store'
 import { listMemberPageOptions } from '../../members/pages'
 import {
@@ -320,7 +323,27 @@ async function auditApp(
 async function handleListApps(req: Request, db: DbClient): Promise<Response> {
   const user = await reader(req, db)
   if (user instanceof Response) return user
-  return jsonResponse({ apps: await listMemberApps(db) })
+  return jsonResponse({ apps: await listMemberApps(db), signingKey: signingKeyOf(await getCurrentSigningKey(db)) })
+}
+
+function signingKeyOf(key: SigningKeyInfo): MemberSigningKey {
+  return { id: key.id, createdAt: key.createdAt, usable: key.usable }
+}
+
+async function handleRotateSigningKey(req: Request, db: DbClient): Promise<Response> {
+  const user = await manager(req, db, true)
+  if (user instanceof Response) return user
+  const previous = await getCurrentSigningKey(db)
+  const next = await rotateSigningKey(db)
+  await createAuditEvent(db, {
+    actorUserId: user.id,
+    action: 'member.app.key.rotate',
+    targetType: 'member_signing_key',
+    targetId: next.id,
+    metadata: { previousKeyId: previous.id },
+    ...requestAuditContext(req),
+  })
+  return jsonResponse({ signingKey: signingKeyOf(next) })
 }
 
 async function handleCreateApp(req: Request, db: DbClient): Promise<Response> {
@@ -365,6 +388,8 @@ const ROUTES: Route<[]>[] = [
   { method: 'PUT', pattern: `${MEMBERS_PREFIX}/settings`, handler: handleSaveSettings },
   { method: 'GET', pattern: `${MEMBERS_PREFIX}/apps`, handler: handleListApps },
   { method: 'POST', pattern: `${MEMBERS_PREFIX}/apps`, handler: handleCreateApp },
+  // A POST three segments deep: `apps/:id` (`APP`) is two, and `:id/apps/:grantId` needs `apps` in the middle.
+  { method: 'POST', pattern: `${MEMBERS_PREFIX}/apps/signing-key/rotate`, handler: handleRotateSigningKey },
   { method: 'DELETE', pattern: APP, handler: handleDeleteApp },
   { method: 'GET', pattern: MEMBER, handler: handleDetail },
   { method: 'DELETE', pattern: MEMBER, handler: handleDelete },

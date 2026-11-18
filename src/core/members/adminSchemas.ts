@@ -72,6 +72,7 @@ export const MemberConnectedAppSchema = Type.Object({
   /** The approval; what a disconnect names. */
   id: Type.String(),
   name: Type.String(),
+  device: Type.String(),
   connectedAt: Type.String(),
   /** Null until the app first uses its sign-in. */
   lastUsedAt: Type.Union([Type.String(), Type.Null()]),
@@ -197,7 +198,23 @@ export const MemberAppSchema = Type.Object({
 })
 export type MemberApp = Static<typeof MemberAppSchema>
 
-export const MemberAppListResponseSchema = Type.Object({ apps: Type.Array(MemberAppSchema) })
+/** The key this site signs offline statements with. Only the public facts: the private half never leaves the server. */
+export const MemberSigningKeySchema = Type.Object({
+  /** The id a statement names, so an app knows which published key to check it against. */
+  id: Type.String(),
+  createdAt: Type.String(),
+  /** False when the server's secret key changed since this key was made: it signs nothing until it is rotated. */
+  usable: Type.Boolean(),
+})
+export type MemberSigningKey = Static<typeof MemberSigningKeySchema>
+
+export const MemberAppListResponseSchema = Type.Object({
+  apps: Type.Array(MemberAppSchema),
+  signingKey: MemberSigningKeySchema,
+})
+export type MemberAppListResponse = Static<typeof MemberAppListResponseSchema>
+
+export const MemberSigningKeyResponseSchema = Type.Object({ signingKey: MemberSigningKeySchema })
 
 export const CreateMemberAppBodySchema = Type.Object(
   {

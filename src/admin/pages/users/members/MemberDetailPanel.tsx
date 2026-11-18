@@ -196,6 +196,7 @@ export function MemberDetailPanel({
                 <span className={styles.grantMain}>
                   <span className={styles.appName}>{app.name}</span>
                   <span className={styles.grantMeta}>
+                    {app.device && `${app.device} · `}
                     Connected {formatDate(app.connectedAt)}
                     {' · '}
                     {app.lastUsedAt ? `Last used ${formatDate(app.lastUsedAt)}` : 'Not used yet'}

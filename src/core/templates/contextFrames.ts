@@ -83,6 +83,8 @@ export interface MemberAppRequestFrame {
   access: string
   /** The host the answer is sent back to. */
   returnsTo: string
+  /** What the app calls the device it runs on. The app's own word; empty when it gave none. */
+  device: string
 }
 
 // ---------------------------------------------------------------------------
@@ -178,5 +180,5 @@ export const PREVIEW_MEMBER_FRAME: MemberFrame = {
   profile: { name: 'Member name' },
   tags: [],
   tagList: 'tag',
-  appRequest: { name: 'App name', access: 'what the app asks to see', returnsTo: 'this device' },
+  appRequest: { name: 'App name', access: 'what the app asks to see', returnsTo: 'this device', device: 'Device name' },
 }

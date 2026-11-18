@@ -36,6 +36,7 @@ server/members/
 │   ├── protocol.ts        — issuer, paths, scope parsing
 │   ├── store.ts           — apps, requests, grants, codes, tokens (all SQL) and `memberAppRealm`
 │   ├── handler.ts         — /_instatic/members/oauth/* and the discovery document
+│   ├── signingKeys.ts     — the Ed25519 keys offline statements are signed with
 │   └── approval.ts        — the member's answer, and what the approval page shows
 ```
 
@@ -61,6 +62,8 @@ Sign-in for apps adds five tables in migration `034_member_apps`:
 | `member_app_grants` | one approval of one app by one member: `scope`, `expires_at`, `revoked_at`, `last_used_at` |
 | `member_app_codes` | SHA-256 of one-time authorization codes |
 | `member_app_tokens` | SHA-256 of access and refresh tokens, `kind`, `expires_at`, `revoked_at` |
+
+Migration `035_member_app_devices` adds `device_jkt` and `device_name` to `member_app_requests` and `member_app_grants`, and the table `member_signing_keys` (public key as a JWK, the private half encrypted with the master key, `retired_at`).
 
 ## Calling an action
 
@@ -244,11 +247,13 @@ An app (Instatic Desktop, later a premium plugin) signs a member in with OAuth 2
 |---|---|
 | `GET /_instatic/members/oauth/authorize` | Checks the app, its redirect address, PKCE (S256 only) and scopes, stores the request, and sends the browser to the owner's approval page with `?request=<id>`; a signed-out visitor goes through the sign-in page first (`?next=`). An unregistered app or address gets a plain 400 in the browser, never a redirect. |
 | `POST /_instatic/members/apps/approve` | The member's answer: an ordinary member form action (cookie, same-origin) with `request` and `decision` (`allow` or `deny`). The answer goes back to the app's address with a one-time `code` or `error=access_denied`, plus `state` and `iss`. A post without a decision is refused with `invalid_input`, never taken as an approval. |
-| `POST /_instatic/members/oauth/token` | Code exchange and refresh. Form-encoded, needs `client_id` and `resource`. |
-| `POST /_instatic/members/oauth/revoke` | The app signs out: revokes the grant behind an access or refresh token of that app. |
+| `POST /_instatic/members/oauth/token` | Code exchange and refresh. Form-encoded, needs `client_id` and `resource`. A sign-in bound to a device also needs a `DPoP` proof from that device's key. |
+| `POST /_instatic/members/oauth/revoke` | The app signs out: revokes the grant behind an access or refresh token of that app. A sign-in bound to a device also needs a `DPoP` proof from that device's key. |
+| `GET /_instatic/members/oauth/keys` | The public keys statements are signed with, as a JWK set (`kid`, `kty: OKP`, `crv: Ed25519`, `x`). Cacheable for 5 minutes. |
+| `POST /_instatic/members/oauth/statement` | By access token plus a `DPoP` proof from the bound device: `{ statement, expiresAt, serverTime }`. Needs the `offline` scope. |
 | `GET /_instatic/members/oauth/userinfo` | By access token: `{ id, serverTime }`, with `email`, `emailVerified`, `name` under the `profile` scope and `tags: [{ tag, expiresAt }]` under `access`. A tag held from several sources lasts as long as its longest grant. |
 
-**The approval screen is the owner's page.** Member settings has a slot "Approve an app" (`appSignIn`); without a published page there, `authorize` answers `temporarily_unavailable`. The page uses the form action "Approve an app" and the bindings `{member.appRequest.name}`, `{member.appRequest.access}` and `{member.appRequest.returnsTo}`. Those values are read from the stored request named in the page address (`memberAppRequestFrame`), never from the address itself.
+**The approval screen is the owner's page.** Member settings has a slot "Approve an app" (`appSignIn`); without a published page there, `authorize` answers `temporarily_unavailable`. The page uses the form action "Approve an app" and the bindings `{member.appRequest.name}`, `{member.appRequest.access}`, `{member.appRequest.returnsTo}` and `{member.appRequest.device}` (the device name the app gave; the app's own word, so word the page accordingly). Those values are read from the stored request named in the page address (`memberAppRequestFrame`), never from the address itself.
 
 The form asks a yes-or-no question, so it has two buttons, Allow and Cancel, and each carries its answer as the button's own `name` and `value` (`decision=allow`, `decision=deny`; `choice` in `MEMBER_FORM_ACTIONS`). A browser sends a button's value only when that button is pressed, with or without scripts, and the form runtime adds the pressed button the same way. The setup panel's Add button inserts both, and counts a button without the answer as missing. `base.submit` has `name` and `value` props for this.
 
@@ -256,9 +261,25 @@ Two show-when rules exist for this page: "Members an app is asking to sign in" (
 
 Member settings warns when the chosen page is open to everyone (`membersOnly` on the page option): on a members page a signed-out visitor is sent to sign in and comes back; on an open page they can do nothing.
 
+**Device keys.** A native app cannot keep a client secret, so a refresh token is only as safe as the file it sits in. An app can therefore bind its sign-in to a key pair it keeps in the OS keychain (DPoP, RFC 9449; `server/oauth/dpop.ts`):
+
+- The app sends the key's thumbprint as `dpop_jkt` on `authorize` (RFC 7638, base64url SHA-256), and may send `device_name` (`cleanDeviceName`: one line, control and invisible formatting characters removed, at most 60 characters). Both are stored with the request and copied to the grant on approval.
+- A bound grant answers only its key. The code exchange and every refresh must carry a `DPoP` header: a JWT with header `{ typ: "dpop+jwt", alg, jwk }` and claims `{ jti, htm, htu, iat }`, signed with the device key. `alg` is `EdDSA` (Ed25519) or `ES256` (P-256, what hardware keystores offer); key coordinates must be canonical base64url, so one key has one thumbprint. The proof must name this request's method and address, be within 5 minutes of the server clock, and not have been seen before (an in-memory replay cache). A bad proof answers `invalid_dpop_proof`.
+- Nothing ends a bound sign-in without its key. A refresh token shown without the key is refused and the grant is left alone (the check comes before reuse detection); a spent code replayed without the key revokes nothing; and `revoke` acts on a bound grant only with a proof from its key, while answering 200 either way. So a copied token or code neither works nor signs the real device out.
+- One sign-in per device: approving the same app again for the same key revokes the earlier grant. Different devices are separate grants, each listed with its name.
+- Access tokens stay bearer tokens (1 hour, read-only). An app without a device key works as before, but cannot ask for `offline`.
+
+**Working offline.** The scope `offline` lets an app keep working without a connection. It needs a device key.
+
+- `POST …/oauth/statement` returns a compact JWS (`typ: instatic-member-statement+jwt`, `alg: EdDSA`, `kid`) with claims `iss`, `sub` (member id), `aud` (the app's client id), `iat`, `exp` (7 days later), `cnf: { jkt }` (the device key), and, by scope, `email`, `name` and `tags: [{ tag, expiresAt }]`.
+- An app trusts a statement only when the signature checks against a key from `…/oauth/keys`, `iss` and `aud` are right, `cnf.jkt` is its own device key, and `exp` is in the future. It treats a tag as held only while that tag's own `expiresAt` is also in the future. Core adds no grace.
+- Clock rollback is the app's to catch: it keeps the last `serverTime` it saw and refuses to run offline when the local clock is earlier.
+- Accepted limit: a tag withdrawn early stays in a statement already handed out until it runs out, at most 7 days. `userinfo` sees the change at once.
+- The site signs with one current Ed25519 key (`signingKeys.ts`), created on first use; the private half is encrypted with the master key. The Apps dialog shows the key and rotates it (`POST /admin/api/cms/members/apps/signing-key/rotate`, `members.manage` plus step-up, audited as `member.app.key.rotate`). A retired key stays published for 7 days, so an app that is offline during a rotation is not locked out; for the same reason rotating does not withdraw the old key at once. If the master key changes, the stored key cannot be read: the statement endpoint answers 503 `temporarily_unavailable`, the Apps dialog shows a warning (`usable: false`), and rotating fixes it.
+
 **Connected apps.** A member sees and ends their own app sign-ins on a page the owner builds; there is no built-in screen.
 
-- The loop source `members.apps` (`src/core/loops/sources/memberApps.ts`) lists the signed-in member's live approvals: `name`, `connectedOn` / `lastUsedOn` (a date, `YYYY-MM-DD`), `connectedAt` / `lastUsedAt` (ISO) and `id`. It is `perVisitor`, so the list is a fragment fetched for the member who is looking and never cached; a signed-out visitor gets no items. The member reaches a source through `SourceFetchContext.memberId`, set only for a source that declares `forMember` (a plugin source is handed a fixed subset of the context, without it).
+- The loop source `members.apps` (`src/core/loops/sources/memberApps.ts`) lists the signed-in member's live approvals: `name`, `device`, `connectedOn` / `lastUsedOn` (a date, `YYYY-MM-DD`), `connectedAt` / `lastUsedAt` (ISO) and `id`. It is `perVisitor`, so the list is a fragment fetched for the member who is looking and never cached; a signed-out visitor gets no items. The member reaches a source through `SourceFetchContext.memberId`, set only for a source that declares `forMember` (a plugin source is handed a fixed subset of the context, without it).
 - The form action "Disconnect an app" (`apps/disconnect`) goes inside the list, one form per row. Its hidden field `connection` is filled from the row (`{currentEntry.id}`); the setup panel's Add button inserts it. The approval must belong to the member who posts, so an id from someone else's list does nothing. Set the form to redirect to its own page so the list is fresh afterwards.
 - A form's messages are the ones inside it. Messages elsewhere on the page are matched by form id only when the form holds none, since a form repeated in a list shares its id with every row.
 - In the admin, the member detail panel lists the same approvals with a Disconnect button (`members.manage`, audited as `member.app.disconnect`).
@@ -276,7 +297,7 @@ Member settings warns when the chosen page is open to everyone (`membersOnly` on
 - The approval page (any page opened with `?request=`) is sent `X-Frame-Options: DENY`, and it and the sign-in hop before it get the token-page referrer policy.
 - Rows that can never be used again are deleted when a sign-in starts (`sweepExpiredMemberAppRows`): expired requests, codes, tokens and grants. A revoked refresh token stays until it would have expired, since seeing it again is how reuse is detected.
 
-Try it: `bun run demo:members` registers a demo app and prints the command for `scripts/member-app-demo.ts`, a terminal client that signs in, reads the member, refreshes and signs out.
+Try it: `bun run demo:members` registers a demo app and prints the command for `scripts/member-app-demo.ts`, a terminal client that signs in with a device key, reads the member, takes an offline statement and checks it, refreshes and signs out. Read it as the reference for writing an app.
 
 ## Deleting and exporting
 
@@ -296,7 +317,7 @@ It is a development tool: fixed passwords, loopback only, and a database that is
 
 ## Tests
 
-- `src/__tests__/server/memberApps.test.ts` — sign-in for apps end to end: the authorize checks, the member's answer and its browser binding, code exchange, refresh rotation and reuse, `userinfo`, every way access ends, the connected-apps list, disconnecting, and the new-app email. Runs on SQLite and Postgres.
+- `src/__tests__/server/memberApps.test.ts` — sign-in for apps end to end: the authorize checks, the member's answer and its browser binding, code exchange, refresh rotation and reuse, `userinfo`, device-bound sign-ins, the offline statement and key rotation, every way access ends, the connected-apps list, disconnecting, and the new-app email. Runs on SQLite and Postgres.
 - `src/__tests__/server/members.test.ts` — every flow, on SQLite and (with `DB=postgres`) Postgres.
 - `src/__tests__/server/membersAdmin.test.ts` — the admin API: capability and step-up gates and every route (SQLite). The queries behind it run on Postgres too through the `admin queries` cases in `members.test.ts`.
 - `src/__tests__/server/pluginMembers.test.ts` — plugins: the public mount, member routes, `cms.members`, member events, and the permission each needs.

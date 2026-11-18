@@ -73,6 +73,7 @@ const AuditActionSchema = Type.Union([
   Type.Literal('member.app.create'),
   Type.Literal('member.app.delete'),
   Type.Literal('member.app.disconnect'),
+  Type.Literal('member.app.key.rotate'),
   // AI runtime — see `docs/plans/2026-05-26-ai-runtime-rewrite.md` § Audit.
   Type.Literal('ai.credential.created'),
   Type.Literal('ai.credential.updated'),

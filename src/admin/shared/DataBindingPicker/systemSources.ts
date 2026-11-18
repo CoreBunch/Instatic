@@ -91,6 +91,7 @@ const MEMBER_SOURCE: SystemSource = {
     { id: 'appRequest.name', label: 'App asking: name' },
     { id: 'appRequest.access', label: 'App asking: what it sees' },
     { id: 'appRequest.returnsTo', label: 'App asking: where it runs' },
+    { id: 'appRequest.device', label: 'App asking: device name' },
   ],
 }
 
