@@ -45,7 +45,7 @@ import {
   collectBackgroundImagePaths,
   collectSiteStyleBackgroundImagePaths,
   treeShakeStyleRulesBySignature,
-  usedStyleRuleIdSignature,
+  createUsedStyleRuleIdSelector,
 } from '@core/publisher'
 import { useResponsiveEditorMediaAssets } from '@admin/pages/media/hooks/useResponsiveBackgroundStyle'
 import { selectorStatePseudo } from '@site/cssStatePseudo'
@@ -98,6 +98,7 @@ const EMPTY_CONDITIONS: ConditionDef[] = []
  * run, defeating the generator's input-identity memo across frames.
  */
 const EMPTY_STYLE_RULES: Record<string, StyleRule> = {}
+const usedStyleRuleIdSignature = createUsedStyleRuleIdSelector()
 
 export function ClassStyleInjector({ targetDocument, viewport }: ClassStyleInjectorProps = {}) {
   // Subscribe to class registry — shallow equality so we only re-run when
