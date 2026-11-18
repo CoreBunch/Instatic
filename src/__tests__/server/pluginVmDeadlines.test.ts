@@ -183,50 +183,117 @@ describe('plugin sandbox: wall-clock call budget', () => {
     }
   }, 10_000)
 
-  it('cuts an outbound request timeout down to the time left in the call', async () => {
-    const fetches: Array<Record<string, unknown>> = []
-    const env = makeEnv('acme.clamp')
+  /** A VM whose `network.fetch` host call behaves like `handler`, recording each init. */
+  async function fetchVm(
+    pluginId: string,
+    callBudgetMs: number,
+    handler: (init: { timeoutMs: number }) => Promise<unknown>,
+    body: string,
+  ) {
+    const fetches: Array<{ timeoutMs: number; at: number }> = []
+    const env = makeEnv(pluginId)
     env.grantedPermissions = ['cms.schedule', 'network.outbound']
     env.hostCall = async (target, args) => {
-      if (target === 'network.fetch') {
-        fetches.push(args[1] as Record<string, unknown>)
-        return { status: 200, ok: true, headers: {}, body: 'ok', bodyEncoding: 'utf8' }
-      }
-      return null
+      if (target !== 'network.fetch') return null
+      const init = args[1] as { timeoutMs: number }
+      fetches.push({ timeoutMs: init.timeoutMs, at: Date.now() })
+      return handler(init)
     }
     const vm = await createPluginVm({
       env,
-      callBudgetMs: 2_000,
+      callBudgetMs,
       pluginSource: `
         ;(function () {
           const __plugin_exports = (globalThis.__plugin_exports = {});
-          __plugin_exports.activate = async function activate(api) {
-            api.cms.schedule.every(5, 'job', async function () {
-              await fetch('https://api.example.com/c', { timeout: 250000 });
-            });
-          };
-          __plugin_exports.install = async function install() {
-            await fetch('https://api.example.com/a', { timeout: 60000 });
-            await fetch('https://api.example.com/b', { timeout: 300 });
-          };
+          function sleep(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
+          ${body}
         })();
       `,
     })
+    return { vm, fetches }
+  }
+  const answers = async () => ({ status: 200, ok: true, headers: {}, body: 'ok', bodyEncoding: 'utf8' })
+  /** A host that is down: the request runs for its whole timeout, then times out. */
+  const dead = async (init: { timeoutMs: number }) => {
+    await new Promise((res) => setTimeout(res, init.timeoutMs))
+    throw Object.assign(new Error('Plugin "x" fetch timed out'), { code: 'fetch_timeout' })
+  }
+
+  it('gives a request the time left in the call less a handling margin', async () => {
+    const { vm, fetches } = await fetchVm('acme.clamp', 4_000, answers, `
+      __plugin_exports.activate = async function activate(api) {
+        api.cms.schedule.every(5, 'job', async function () {
+          await fetch('https://api.example.com/c', { timeout: 250000 });
+        });
+      };
+      __plugin_exports.install = async function install() {
+        await fetch('https://api.example.com/a', { timeout: 60000 });
+        await fetch('https://api.example.com/b', { timeout: 300 });
+      };
+    `)
     try {
       await vm.runLifecycle('install')
       await vm.runLifecycle('activate')
-      await vm.runSchedule('acme.clamp.job', 1_000)
+      await vm.runSchedule('acme.clamp.job', 1_200)
     } finally {
       vm.dispose()
     }
-    const [long, short, scheduled] = fetches.map((init) => init.timeoutMs as number)
-    // Longer than the call may run: cut to what is left of its 2 s.
-    expect(long).toBeGreaterThan(0)
-    expect(long).toBeLessThanOrEqual(2_000)
+    const [long, short, scheduled] = fetches.map((f) => f.timeoutMs)
+    // 4 s budget keeps a 1 s margin: at most 3 s for the request.
+    expect(long).toBeGreaterThan(2_000)
+    expect(long).toBeLessThanOrEqual(3_000)
     // Shorter than what is left: kept.
     expect(short).toBe(300)
-    // A schedule's remainder is its own maxDurationMs.
-    expect(scheduled).toBeLessThanOrEqual(1_000)
+    // A schedule's remainder is its own maxDurationMs, margin capped at half.
+    expect(scheduled).toBeLessThanOrEqual(600)
+  }, 10_000)
+
+  it('a dead upstream gives the handler catchable timeouts, never an overrun', async () => {
+    const { vm, fetches } = await fetchVm('acme.dead', 1_500, dead, `
+      __plugin_exports.install = async function install() {
+        const seen = [];
+        for (const path of ['/one', '/two']) {
+          try { await fetch('https://down.example.com' + path); seen.push('answered'); }
+          catch (e) { seen.push(e.name); }
+        }
+        if (seen.join() !== 'TimeoutError,TimeoutError') throw new Error('unexpected: ' + seen.join());
+      };
+    `)
+    try {
+      const t0 = Date.now()
+      // Resolves: both failures were caught and handled inside the budget.
+      await vm.runLifecycle('install')
+      expect(Date.now() - t0).toBeLessThan(1_400)
+    } finally {
+      vm.dispose()
+    }
+    // The first request got the budget less the margin; the second had too
+    // little left and was refused without going out.
+    expect(fetches).toHaveLength(1)
+    expect(fetches[0].timeoutMs).toBeLessThanOrEqual(750)
+  }, 10_000)
+
+  it('bounds a request by the tightest call in flight, not the longest', async () => {
+    const { vm, fetches } = await fetchVm('acme.tight', 800, answers, `
+      __plugin_exports.activate = async function activate(api) {
+        api.cms.schedule.every(5, 'long', async function () { await sleep(700); });
+      };
+      __plugin_exports.install = async function install() {
+        await fetch('https://api.example.com/route');
+      };
+    `)
+    try {
+      await vm.runLifecycle('activate')
+      const long = vm.runSchedule('acme.tight.long', 4_000)
+      await new Promise((res) => setTimeout(res, 50))
+      // An 800 ms call starts while a 4 s schedule is in flight.
+      await vm.runLifecycle('install')
+      await long
+    } finally {
+      vm.dispose()
+    }
+    // Bounded by the 800 ms call (400 ms margin), not by the schedule's 4 s.
+    expect(fetches[0].timeoutMs).toBeLessThanOrEqual(400)
   }, 10_000)
 
   it('keeps the budget below the worker RPC timeout, with room for one timed-out request', () => {

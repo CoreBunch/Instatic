@@ -51,6 +51,7 @@ import {
   type PluginSchedule,
   type ScheduleStatus,
 } from '../repositories/pluginSchedules'
+import { PluginWorkerRestartedError } from './host/crashRecovery'
 import { runScheduleInWorker } from './host/rpc'
 import { computeNextRun, registerPluginSchedule } from './pluginScheduleRegistration'
 
@@ -187,6 +188,7 @@ async function fireSchedule(
   await markScheduleRunStarted(db, sched.pluginId, sched.scheduleId, nowIso)
 
   let outcome: { ok: boolean; status: 'ok' | 'error' | 'timeout'; error?: string; durationMs: number }
+  let interrupted = false
   try {
     const result = await runScheduleInWorker({
       pluginId: sched.pluginId,
@@ -203,6 +205,10 @@ async function fireSchedule(
       error: err instanceof Error ? err.message : String(err),
       durationMs: 0,
     }
+    // The host restarted the plugin's worker because ANOTHER call overran.
+    // This run did nothing wrong: it is recorded, does not count toward the
+    // schedule's failure cap, and is due again at once.
+    interrupted = err instanceof PluginWorkerRestartedError
   }
 
   const finishedAt = new Date()
@@ -214,7 +220,7 @@ async function fireSchedule(
     durationMs: outcome.durationMs,
   })
 
-  const nextRunAt = computeNextRun(sched.cadence, finishedAt).toISOString()
+  const nextRunAt = interrupted ? finishedIso : computeNextRun(sched.cadence, finishedAt).toISOString()
   await recordScheduleRunOutcome(db, {
     pluginId: sched.pluginId,
     scheduleId: sched.scheduleId,
@@ -224,10 +230,10 @@ async function fireSchedule(
     error: outcome.error ?? null,
     durationMs: outcome.durationMs,
     nextRunAt,
-    resetFailures: outcome.ok,
+    failures: outcome.ok ? 'reset' : interrupted ? 'keep' : 'count',
   })
 
-  if (!outcome.ok) {
+  if (!outcome.ok && !interrupted) {
     const nextFailures = sched.consecutiveFailures + 1
     if (nextFailures >= FAILURE_CAP) {
       await pauseSchedule(db, sched.pluginId, sched.scheduleId, finishedIso)

@@ -126,6 +126,7 @@ describe('plugin sandbox: fetch — redirect option', () => {
     )
     const inits = recorder.filter((e) => e.target === 'network.fetch').map((e) => e.args[1] as Record<string, unknown>)
     expect(inits[0].timeoutMs).toBe(2500)
+    // The default, as far as the call it runs in allows (20 s less a 2 s margin).
     expect(inits[1].timeoutMs).toBe(15_000)
   })
 

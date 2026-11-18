@@ -21,6 +21,7 @@ import { normalizeRoutePath } from '../protocol/parser'
 import { materializeRouteResponse, serializeRouteRequest } from './routeIo'
 import { isPluginRestarting, PluginWorkerRestartedError } from './crashRecovery'
 import { hostPlugins } from './registry'
+import { routeCoolOffRemainingMs } from './routeCoolOff'
 import { requestFromWorker } from './workerPool'
 import { describeWorkerError, workerCallError } from './workerErrors'
 import { workers } from './workerState'
@@ -198,6 +199,13 @@ export async function runRouteInWorker(args: {
   const route = entry?.routes.get(routeKey)
   if (!route) return pluginRestartingResponse(args.pluginId) ?? new Response('Plugin route not found', { status: 404 })
 
+  // A route that keeps overrunning its budget is held back for a while; it
+  // resumes by itself (`routeCoolOff.ts`). Nothing is dispatched meanwhile.
+  const coolOffMs = routeCoolOffRemainingMs(args.pluginId, routeKey)
+  if (coolOffMs > 0) {
+    return retryLater('This plugin route keeps running out of time and is paused for a moment. Try again.', coolOffMs)
+  }
+
   // Byte-safe request (de)serialization lives in routeIo.ts — the body is
   // read once as raw bytes, pre-parsed conveniences (JSON / form fields /
   // multipart files) are derived from those exact bytes, and binary
@@ -245,8 +253,8 @@ export async function runRouteInWorker(args: {
 /** How long a caller should wait before retrying a restarting plugin. */
 const RESTART_RETRY_AFTER_SECONDS = 2
 
-function retryLater(error: string): Response {
-  return Response.json({ error }, { status: 503, headers: { 'retry-after': String(RESTART_RETRY_AFTER_SECONDS) } })
+function retryLater(error: string, afterMs: number = RESTART_RETRY_AFTER_SECONDS * 1000): Response {
+  return Response.json({ error }, { status: 503, headers: { 'retry-after': String(Math.ceil(afterMs / 1000)) } })
 }
 
 /**

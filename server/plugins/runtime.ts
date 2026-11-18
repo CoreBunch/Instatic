@@ -348,9 +348,7 @@ function registerCrashRecoveryHandler(db: DbClient, uploadsDir: string): void {
         db,
         pluginId,
         'error',
-        cause === 'overrun'
-          ? `Stopped: calls ran out of time ${decision.recentCrashCount} times in 5 min. Last reason: ${reason}`
-          : `Crash budget exceeded (${decision.recentCrashCount} crashes in 5 min). Last reason: ${reason}`,
+        `Crash budget exceeded (${decision.recentCrashCount} crashes in 5 min). Last reason: ${reason}`,
       )
       broadcastPluginEvent({
         kind: 'parked',
@@ -376,11 +374,16 @@ function registerCrashRecoveryHandler(db: DbClient, uploadsDir: string): void {
         occurredAt: new Date().toISOString(),
       })
     } catch (err) {
-      // Re-activation itself failed. The next round-trip will record this
-      // as another crash event via the worker's normal error path; if the
-      // failure is repeatable the budget will be exceeded and the plugin
-      // will park in error state on its own. Log here for ops visibility.
+      // Re-activation itself failed, so the plugin is loaded nowhere: its
+      // routes, hooks and loop sources are gone. Say so in its status, as a
+      // failed activation does, so it is not shown as running.
       console.error(`[plugin:${pluginId}] auto-respawn re-activation failed:`, err)
+      await setPluginLifecycleStatus(
+        db,
+        pluginId,
+        'error',
+        `Could not restart after: ${reason}. ${err instanceof Error ? err.message : String(err)}`,
+      )
     }
   })
 }

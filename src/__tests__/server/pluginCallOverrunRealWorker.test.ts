@@ -11,7 +11,14 @@
  *     handler makes after its await never happens, and a timer loop it
  *     started stops;
  *   - the plugin is re-activated and serves again;
- *   - a schedule that overruns its `maxDurationMs` reports `timeout`.
+ *   - a schedule that overruns its `maxDurationMs` reports `timeout`;
+ *   - overruns never park the plugin: the route that keeps overrunning is
+ *     held back (503) and the rest of the plugin keeps serving;
+ *   - the recovery handler (what the admin's crash events show) is told
+ *     which call it was, with no request data;
+ *   - a lifecycle call that cannot finish is still handled as a crash;
+ *   - a dead upstream is not an overrun: the handler catches the timeouts
+ *     and answers normally.
  *
  * The worker, VM, message protocol and teardown are the production ones. The
  * api-call dispatcher is a recorder (no database), and recovery re-loads the
@@ -23,7 +30,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { PluginManifest } from '@core/plugin-sdk'
 import { dispatchApiCall } from '../../../server/plugins/host/apiDispatch'
-import { replyApiOk } from '../../../server/plugins/host/apiReplies'
+import { replyApiError, replyApiOk } from '../../../server/plugins/host/apiReplies'
 import {
   clearPluginCrashCounter,
   isPluginRestarting,
@@ -58,18 +65,32 @@ const SOURCE = `
       await notes.create({ late: true });
       return { never: true };
     });
+    api.cms.routes.public.get('/dead-upstream', async function () {
+      const seen = [];
+      for (const path of ['/one', '/two']) {
+        try { await fetch('https://down.example.com' + path); seen.push('answered'); }
+        catch (e) { seen.push(e.name); }
+      }
+      return { seen: seen };
+    });
     api.cms.schedule.every(5, 'stuck', async function () { await sleep(60000); });
   };
 })();
 `
 
+const BROKEN_ID = 'acme.cannot-start'
+
 const manifest = {
   id: PLUGIN_ID,
   name: 'Overrun',
   version: '1.0.0',
-  grantedPermissions: ['cms.routes', 'cms.routes.public', 'cms.storage', 'cms.schedule'],
+  grantedPermissions: ['cms.routes', 'cms.routes.public', 'cms.storage', 'cms.schedule', 'network.outbound'],
+  networkAllowedHosts: ['down.example.com'],
   resources: [{ id: 'notes', title: 'Notes', fields: [] }],
 } as unknown as PluginManifest
+
+/** What the recovery handler was told, in order. */
+const teardowns: Array<{ pluginId: string; reason: string; cause: string; decision: string }> = []
 
 /** Every host call the plugin made, in order, with when it arrived. */
 const calls: Array<{ target: string; at: number }> = []
@@ -122,16 +143,28 @@ beforeAll(async () => {
       await handleRoutesRegister(call as ApiCallFor<'cms.routes.register'>, entry, null as never)
       return
     }
+    if (call.target === 'network.fetch') {
+      // A host that is down: the request runs for its whole timeout.
+      const { timeoutMs } = call.args[1] as { timeoutMs: number }
+      await new Promise((res) => setTimeout(res, timeoutMs))
+      replyApiError(call.pluginId, call.correlationId, 'fetch timed out', 'fetch_timeout')
+      return
+    }
     replyApiOk(call.pluginId, call.correlationId, call.target === 'cms.storage.list' ? { records: [], totalCount: 0 } : null)
   })
-  setCrashRecoveryHandler(async () => { await load() })
+  setCrashRecoveryHandler(async ({ pluginId, reason, cause, decision }) => {
+    teardowns.push({ pluginId, reason, cause, decision: decision.kind })
+    if (pluginId === PLUGIN_ID) await load()
+  })
   await load()
 })
 
 afterAll(async () => {
   await resetPluginWorker()
   hostPlugins.delete(PLUGIN_ID)
+  hostPlugins.delete(BROKEN_ID)
   clearPluginCrashCounter(PLUGIN_ID)
+  clearPluginCrashCounter(BROKEN_ID)
   setApiCallDispatcher(dispatchApiCall)
   setCrashRecoveryHandler(async () => { /* the runtime registers its own on activation */ })
   await rm(dir, { recursive: true, force: true })
@@ -185,5 +218,81 @@ describe('plugin call overrun: fail-stop through a real worker', () => {
     expect(run.error).toBe('Plugin call exceeded its 0.3s time budget')
     await untilRestarted(before)
     expect((await get('/ok')).status).toBe(200)
+  }, 60_000)
+
+  it('a dead upstream gives the handler catchable timeouts and a normal answer, never an overrun', async () => {
+    const before = workers.get(PLUGIN_ID)
+    const teardownsBefore = teardowns.length
+    const res = await get('/dead-upstream')
+    expect(res.status).toBe(200)
+    // The first request timed out with room to spare; the second had too
+    // little time left and was refused without going out. Both were caught.
+    expect(await res.json()).toEqual({ seen: ['TimeoutError', 'TimeoutError'] })
+    await new Promise((res2) => setTimeout(res2, 100))
+    expect(workers.get(PLUGIN_ID)).toBe(before)
+    expect(teardowns.length).toBe(teardownsBefore)
+  }, 60_000)
+
+  it('holds back the route that keeps overrunning, without parking the plugin', async () => {
+    // The first test's overrun of /slow was this route's first; this is its second.
+    const before = workers.get(PLUGIN_ID)
+    expect((await get('/slow')).status).toBe(504)
+    await untilRestarted(before)
+
+    const dispatchesBefore = calls.length
+    const held = await get('/slow')
+    expect(held.status).toBe(503)
+    const retryAfter = Number(held.headers.get('retry-after'))
+    expect(retryAfter).toBeGreaterThan(0)
+    expect(retryAfter).toBeLessThanOrEqual(15)
+    // Refused by the host: the handler never ran, so it made no host call.
+    expect(calls.length).toBe(dispatchesBefore)
+
+    // The plugin itself is up: every teardown was a respawn, and it serves.
+    expect((await get('/ok')).status).toBe(200)
+    const mine = teardowns.filter((t) => t.pluginId === PLUGIN_ID)
+    expect(mine.every((t) => t.cause === 'overrun' && t.decision === 'respawn')).toBe(true)
+    // What the admin sees names the call, and nothing of the request.
+    expect(mine[0].reason).toBe(
+      `route "GET:/slow" ran out of time: Plugin call exceeded its ${CALL_BUDGET_MS / 1000}s time budget.`,
+    )
+    expect(mine.at(-1)?.reason).toContain('The route is held back for 15s.')
+    expect(mine.some((t) => t.reason.startsWith('schedule "acme.overrun.stuck" ran out of time'))).toBe(true)
+  }, 60_000)
+
+  it('treats a lifecycle call that cannot finish as a crash', async () => {
+    const source = `
+      ;(function () {
+        const __plugin_exports = (globalThis.__plugin_exports = {});
+        __plugin_exports.activate = async function activate() {
+          await new Promise(function (r) { setTimeout(r, 60000); });
+        };
+      })();
+    `
+    await writeFile(join(dir, 'broken.js'), source)
+    const loaded = await loadPluginInWorker({
+      manifest: { ...manifest, id: BROKEN_ID } as PluginManifest,
+      entryFileUrl: join(dir, 'broken.js'),
+      assetRootPath: dir,
+      settings: {},
+      callBudgetMs: 300,
+    })
+    expect(loaded.ok).toBe(true)
+    // Not `expect(...).rejects`: bun waits for that promise without
+    // delivering worker messages, so the worker's answer would never arrive.
+    const failure = await runLifecycleInWorker(BROKEN_ID, 'activate').catch((err: unknown) => err)
+    expect((failure as Error).message).toBe('Plugin call exceeded its 0.3s time budget')
+
+    const giveUpAt = Date.now() + 10_000
+    while (!teardowns.some((t) => t.pluginId === BROKEN_ID)) {
+      if (Date.now() > giveUpAt) throw new Error('no teardown reported')
+      await new Promise((res) => setTimeout(res, 20))
+    }
+    expect(teardowns.find((t) => t.pluginId === BROKEN_ID)).toEqual({
+      pluginId: BROKEN_ID,
+      reason: 'lifecycle "activate" did not finish: Plugin call exceeded its 0.3s time budget',
+      cause: 'crash',
+      decision: 'respawn',
+    })
   }, 60_000)
 })

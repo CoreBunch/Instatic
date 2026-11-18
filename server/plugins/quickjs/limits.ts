@@ -58,6 +58,23 @@ export const PLUGIN_CALL_BUDGET_MS = 20_000
 export const DEFAULT_PLUGIN_FETCH_TIMEOUT_MS = 15_000
 
 /**
+ * Time a call keeps for itself after its last outbound request: a request
+ * may run until this long before the call's budget ends, never to the end.
+ * Without it a request cut off by the budget would reject at the instant the
+ * call fails, and the handler's own error handling would never run. A tenth
+ * of the budget, at least one second, at most half the budget.
+ */
+export function fetchHandlingMarginMs(budgetMs: number): number {
+  return Math.min(Math.max(1_000, budgetMs / 10), budgetMs / 2)
+}
+
+/**
+ * A request that could run for less than this is not started: it rejects at
+ * once with the same catchable timeout error.
+ */
+export const MIN_PLUGIN_FETCH_WINDOW_MS = 250
+
+/**
  * 2 second wall-clock deadline per module-pack eval call. Shorter than the
  * full-plugin budget because canvas `render()` / `preview()` functions are
  * simple synchronous transforms with no host I/O — 2 s is still generous.

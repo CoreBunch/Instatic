@@ -372,10 +372,15 @@ export async function recordScheduleRunOutcome(
     error: string | null
     durationMs: number
     nextRunAt: string
-    resetFailures: boolean
+    /**
+     * What the run does to the consecutive-failure count: a success resets
+     * it, a failure counts, and a run the host interrupted (the plugin's
+     * worker was restarted under it) leaves it as it was.
+     */
+    failures: 'reset' | 'count' | 'keep'
   },
 ): Promise<void> {
-  if (args.resetFailures) {
+  if (args.failures === 'reset') {
     await db`
       update plugin_schedules
       set running_token = null,
@@ -403,7 +408,7 @@ export async function recordScheduleRunOutcome(
         last_error = ${args.error},
         last_duration_ms = ${args.durationMs},
         next_run_at = ${args.nextRunAt},
-        consecutive_failures = consecutive_failures + ${1},
+        consecutive_failures = consecutive_failures + ${args.failures === 'count' ? 1 : 0},
         updated_at = ${args.nowIso}
     where plugin_id = ${args.pluginId}
       and schedule_id = ${args.scheduleId}

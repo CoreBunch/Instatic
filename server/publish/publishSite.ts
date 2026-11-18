@@ -52,6 +52,7 @@ import {
   writeStaticAsset,
 } from './staticArtefact'
 import { buildPublishedSiteCssBundle } from './siteCssBundle'
+import { pluginTeardownCount } from '../plugins/host/crashRecovery'
 import { bakePublishedDataRowArtefacts } from './bakeDataRows'
 import { bumpPublishVersion, getPublishVersion, withPublishLock } from './publishState'
 import { runPublishFlush } from './publishFlush'
@@ -223,6 +224,10 @@ async function publishSiteDocumentLocked(
   if (uploadsDir) {
     try {
       const { slot, slotDir } = await prepareInactiveSlot(uploadsDir)
+      // Every page below runs plugin hooks, filters and loop sources. If a
+      // plugin's worker is torn down part-way, the pages baked after it lack
+      // that plugin's output, silently. Counted here, checked before the swap.
+      const teardownsBeforeBake = pluginTeardownCount()
 
       // Every distinct static asset referenced by ANY baked artefact.
       // Content-hashed filenames dedupe identical bytes across pages to a
@@ -310,6 +315,11 @@ async function publishSiteDocumentLocked(
 
       for (const [publicPath, bytes] of assetsByPath) {
         await writeStaticAsset(slotDir, publicPath, bytes)
+      }
+      if (pluginTeardownCount() !== teardownsBeforeBake) {
+        throw new Error(
+          'a plugin was restarted while the pages were being baked, so some would be missing its output; the baked set is discarded',
+        )
       }
       await swapSlot(uploadsDir, slot)
     } catch (err) {

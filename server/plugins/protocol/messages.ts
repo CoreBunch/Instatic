@@ -306,6 +306,17 @@ export interface CallOverrun {
   kind: 'call-overrun'
   pluginId: string
   reason: string
+  dispatch: CallDispatch
+}
+
+/**
+ * Which call overran: its kind and, where one exists, the plugin's own name
+ * for it (a route key such as `GET:/orders`, a schedule or loop source id, a
+ * lifecycle hook). Never request data.
+ */
+export interface CallDispatch {
+  kind: 'lifecycle' | 'route' | 'hook' | 'loop' | 'schedule' | 'settings' | 'media'
+  name?: string
 }
 
 export interface LoadPluginResult {

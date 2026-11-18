@@ -105,36 +105,47 @@ export interface CallLimits {
   onOverrun?: (err: PluginCallBudgetError) => void
 }
 
-/** When each call in flight on a context runs out of budget (epoch ms). */
-const activeBudgetEnds = new WeakMap<QuickJSContext, Set<{ endsAt: number }>>()
+/** The budget of each call in flight on a context. */
+interface ActiveBudget {
+  /** When the call runs out of budget (epoch ms). */
+  endsAt: number
+  budgetMs: number
+}
 
-function trackBudget(ctx: QuickJSContext, endsAt: number): () => void {
-  let ends = activeBudgetEnds.get(ctx)
-  if (!ends) {
-    ends = new Set()
-    activeBudgetEnds.set(ctx, ends)
+const activeBudgets = new WeakMap<QuickJSContext, Set<ActiveBudget>>()
+
+function trackBudget(ctx: QuickJSContext, budget: ActiveBudget): () => void {
+  let budgets = activeBudgets.get(ctx)
+  if (!budgets) {
+    budgets = new Set()
+    activeBudgets.set(ctx, budgets)
   }
-  const entry = { endsAt }
-  ends.add(entry)
-  const tracked = ends
-  return () => { tracked.delete(entry) }
+  budgets.add(budget)
+  const tracked = budgets
+  return () => { tracked.delete(budget) }
 }
 
 /**
- * The latest moment any call in flight on this context may still be running,
- * or `null` when none is (code running from a timer after its call returned).
- * Host calls cannot be tied to the call that made them (one VM, interleaved
- * handlers), so this is the tightest bound available for "how long may work
- * started now be useful": used to clamp an outbound request's timeout.
+ * The budget, among the calls in flight on this context, that ends soonest,
+ * or `null` when none is in flight (code running from a timer after its call
+ * returned).
+ *
+ * A host call cannot be tied to the call that made it: handlers interleave
+ * on one VM and QuickJS has no notion of which call a running job belongs
+ * to. So work that must finish inside "its" call is bounded by the tightest
+ * budget in flight. That can cut another call's work short (a schedule's
+ * request while a route is in flight), which fails that request in a way its
+ * handler can catch; bounding by the longest instead let a route's request
+ * outlive the route.
  */
-export function latestCallBudgetEnd(ctx: QuickJSContext): number | null {
-  const ends = activeBudgetEnds.get(ctx)
-  if (!ends || ends.size === 0) return null
-  let latest = 0
-  for (const entry of ends) {
-    if (entry.endsAt > latest) latest = entry.endsAt
+export function tightestCallBudget(ctx: QuickJSContext): ActiveBudget | null {
+  const budgets = activeBudgets.get(ctx)
+  if (!budgets || budgets.size === 0) return null
+  let tightest: ActiveBudget | null = null
+  for (const budget of budgets) {
+    if (!tightest || budget.endsAt < tightest.endsAt) tightest = budget
   }
-  return latest
+  return tightest
 }
 
 /**
@@ -311,7 +322,7 @@ function evalResolved<T>(
   // with a QuickJS `InternalError: interrupted` rather than blocking
   // the worker forever.
   const budgetEndsAt = Date.now() + limits.budgetMs
-  const untrackBudget = trackBudget(ctx, budgetEndsAt)
+  const untrackBudget = trackBudget(ctx, { endsAt: budgetEndsAt, budgetMs: limits.budgetMs })
   return withDeadline(ctx, limits.evalTimeoutMs, async () => {
     const evalHandle = ctx.unwrapResult(ctx.evalCode(code, 'instatic-eval.js'))
     return settleResolved(ctx, evalHandle, read, budgetEndsAt, limits)
@@ -334,7 +345,7 @@ function callResolved<T>(
   limits: CallLimits,
 ): Promise<T> {
   const budgetEndsAt = Date.now() + limits.budgetMs
-  const untrackBudget = trackBudget(ctx, budgetEndsAt)
+  const untrackBudget = trackBudget(ctx, { endsAt: budgetEndsAt, budgetMs: limits.budgetMs })
   return withDeadline(ctx, limits.evalTimeoutMs, async () => {
     const argHandles = args.map((arg) => ctx.newString(arg))
     let callResult: ReturnType<QuickJSContext['callFunction']>

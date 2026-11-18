@@ -149,8 +149,8 @@ async function handleLoadPlugin(msg: LoadPluginRequest): Promise<void> {
         },
       },
       callBudgetMs: msg.callBudgetMs,
-      onCallOverrun: (reason) => {
-        send({ kind: 'call-overrun', pluginId: msg.pluginId, reason })
+      onCallOverrun: ({ reason, dispatch }) => {
+        send({ kind: 'call-overrun', pluginId: msg.pluginId, reason, dispatch })
       },
     })
 

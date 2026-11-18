@@ -94,10 +94,10 @@ export type CrashRecoveryDecision =
   | { kind: 'give-up'; recentCrashCount: number }
 
 /**
- * Why a plugin's worker was torn down: it died or stopped answering
- * (`crash`), or one of its calls ran out of its wall-clock budget and the
- * host stopped the worker so the abandoned handler could not run on
- * (`overrun`). Each is counted in its own sliding window.
+ * Why a plugin's worker was torn down: it died, stopped answering or could
+ * not finish a lifecycle call (`crash`), or one of its other calls ran out of
+ * its wall-clock budget and the host stopped the worker so the abandoned
+ * handler could not run on (`overrun`). Only crashes can park a plugin.
  */
 export type WorkerTeardownCause = 'crash' | 'overrun'
 

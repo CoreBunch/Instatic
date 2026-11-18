@@ -1,17 +1,22 @@
 /**
- * Plugin worker teardown and recovery — sliding-window counters + auto-respawn.
+ * Plugin worker teardown and recovery — auto-respawn, and a sliding-window
+ * crash counter.
  *
  * A worker is torn down for one of two causes (`WorkerTeardownCause`):
- *   - `crash`: it died, or stopped answering within the RPC timeout.
- *   - `overrun`: one of its calls ran out of its wall-clock budget. The
+ *   - `crash`: it died, stopped answering within the RPC timeout, or could
+ *     not finish a lifecycle call (load, activate, migrate) in time.
+ *   - `overrun`: one of its other calls ran out of its wall-clock budget. The
  *     handler cannot be cancelled inside the VM and would resume later and
  *     act after its caller was told it failed, so the host stops the whole
  *     worker instead (fail-stop) and starts a fresh one.
  *
- * Either way the plugin is re-loaded and re-activated, unless the cause has
- * repeated too often inside `TEARDOWN_WINDOW_MS`: then the host stops
- * respawning and parks the plugin in `lifecycle_status='error'`, and the site
- * owner has to click "Restart Plugin" to reset the counters and try again.
+ * Either way the plugin is re-loaded and re-activated. Only crashes can park
+ * a plugin: `CRASH_THRESHOLD` of them inside `CRASH_WINDOW_MS` and the host
+ * stops respawning and sets `lifecycle_status='error'` until the site owner
+ * clicks "Restart Plugin". An overrun never parks: a visitor who can reach a
+ * public route can cause one, and must not be able to switch a plugin off.
+ * A route that keeps overrunning is held back for a while instead
+ * (`routeCoolOff.ts`).
  */
 
 import { loopSourceRegistry } from '@core/loops/registry'
@@ -19,17 +24,18 @@ import { hookBus } from '@core/plugins/hookBus'
 import { mediaStorageRegistry } from '@core/plugins/mediaStorageRegistry'
 import { mediaVariantDelegateRegistry } from '@core/plugins/mediaVariantDelegateRegistry'
 import { hostPlugins } from './registry'
+import { clearRouteCoolOffs } from './routeCoolOff'
 import { workers, pendingRequests } from './workerState'
 import type { CrashRecoveryDecision, CrashRecoveryHandler, WorkerTeardownCause } from './types'
 
 /**
- * How many teardowns of one cause inside the window park the plugin. A crash
- * is a broken plugin: three is enough. An overrun is one slow call on a
- * plugin that otherwise works, and parking it takes every route and hook of
- * the plugin down, so it gets more room before the host gives up.
+ * Crash threshold: if a plugin's worker crashes this many times within
+ * CRASH_WINDOW_MS, the host stops auto-respawning and parks the plugin in
+ * `lifecycle_status='error'`. The site owner has to click "Restart Plugin"
+ * to reset the counter and try again.
  */
-const TEARDOWN_THRESHOLD: Record<WorkerTeardownCause, number> = { crash: 3, overrun: 5 }
-const TEARDOWN_WINDOW_MS = 5 * 60 * 1000
+const CRASH_THRESHOLD = 3
+const CRASH_WINDOW_MS = 5 * 60 * 1000
 
 /** Teardown timestamps within the current sliding window, oldest first, per cause. */
 type TeardownTracker = Record<WorkerTeardownCause, number[]>
@@ -37,16 +43,18 @@ type TeardownTracker = Record<WorkerTeardownCause, number[]>
 const teardownTrackers = new Map<string, TeardownTracker>()
 
 /**
- * Reset a plugin's teardown counters. Called on a successful manual restart
- * and on uninstall.
+ * Reset a plugin's teardown counters and route cool-offs. Called on a
+ * successful manual restart and on uninstall.
  */
 export function clearPluginCrashCounter(pluginId: string): void {
   teardownTrackers.delete(pluginId)
+  clearRouteCoolOffs(pluginId)
 }
 
 /**
  * Record a teardown in the per-plugin sliding window of its cause. Returns
- * whether the host should auto-respawn or give up.
+ * whether the host should auto-respawn or give up. Only a crash can give up;
+ * an overrun is counted (the admin shows the number) and always respawns.
  */
 export function recordCrashAndDecide(
   pluginId: string,
@@ -54,14 +62,14 @@ export function recordCrashAndDecide(
   cause: WorkerTeardownCause = 'crash',
 ): CrashRecoveryDecision {
   const tracker = teardownTrackers.get(pluginId) ?? { crash: [], overrun: [] }
-  const cutoff = now - TEARDOWN_WINDOW_MS
+  const cutoff = now - CRASH_WINDOW_MS
   // Drop expired entries before counting.
   tracker[cause] = tracker[cause].filter((t) => t > cutoff)
   tracker[cause].push(now)
   teardownTrackers.set(pluginId, tracker)
 
   const recentCrashCount = tracker[cause].length
-  if (recentCrashCount >= TEARDOWN_THRESHOLD[cause]) {
+  if (cause === 'crash' && recentCrashCount >= CRASH_THRESHOLD) {
     return { kind: 'give-up', recentCrashCount }
   }
   return { kind: 'respawn', recentCrashCount }
@@ -79,8 +87,12 @@ export class PluginWorkerRestartedError extends Error {
   }
 }
 
-/** Plugins torn down and not yet re-activated (or parked). */
-const restartingPlugins = new Set<string>()
+/**
+ * Recoveries in progress per plugin. A count, not a flag: a second teardown
+ * can start while the first recovery is still running, and the first one
+ * finishing must not report the plugin as back.
+ */
+const recoveriesInProgress = new Map<string, number>()
 
 /**
  * True between a worker teardown and the end of its recovery. A route that
@@ -88,7 +100,19 @@ const restartingPlugins = new Set<string>()
  * to retry, not that the route does not exist.
  */
 export function isPluginRestarting(pluginId: string): boolean {
-  return restartingPlugins.has(pluginId)
+  return (recoveriesInProgress.get(pluginId) ?? 0) > 0
+}
+
+let teardownCount = 0
+
+/**
+ * How many plugin workers this process has torn down so far. A long job that
+ * depends on every plugin staying loaded (baking the site) reads it before
+ * and after: a change means some plugin's hooks, filters and loop sources
+ * were gone for part of the job.
+ */
+export function pluginTeardownCount(): number {
+  return teardownCount
 }
 
 let crashRecoveryHandler: CrashRecoveryHandler | null = null
@@ -110,6 +134,7 @@ export function setCrashRecoveryHandler(handler: CrashRecoveryHandler): void {
  * updating the lifecycle row, re-loading the plugin into a fresh worker.
  */
 export function handleWorkerCrash(pluginId: string, reason: string, cause: WorkerTeardownCause = 'crash'): void {
+  teardownCount += 1
   const w = workers.get(pluginId)
   if (w) {
     try { w.terminate() } catch {/* worker may already be dead */}
@@ -151,13 +176,17 @@ export function handleWorkerCrash(pluginId: string, reason: string, cause: Worke
   // the current crash teardown to fully settle first.
   if (crashRecoveryHandler) {
     const handler = crashRecoveryHandler
-    restartingPlugins.add(pluginId)
+    recoveriesInProgress.set(pluginId, (recoveriesInProgress.get(pluginId) ?? 0) + 1)
     queueMicrotask(() => {
       handler({ pluginId, reason, cause, decision })
         .catch((err: unknown) => {
           console.error(`[plugin:${pluginId}] crash recovery handler failed:`, err)
         })
-        .finally(() => restartingPlugins.delete(pluginId))
+        .finally(() => {
+          const left = (recoveriesInProgress.get(pluginId) ?? 1) - 1
+          if (left > 0) recoveriesInProgress.set(pluginId, left)
+          else recoveriesInProgress.delete(pluginId)
+        })
     })
   }
 }

@@ -16,6 +16,7 @@ import type { MainToWorkerMessage, WorkerToMainMessage } from '../protocol/messa
 import { parseApiCall } from '../protocol/parser'
 import type { ValidatedApiCall } from '../protocol/apiCallSchema'
 import { handleWorkerCrash } from './crashRecovery'
+import { recordRouteOverrun } from './routeCoolOff'
 import { replyApiError } from './apiReplies'
 import { pendingRequests, workers } from './workerState'
 
@@ -163,6 +164,40 @@ function dispatchValidatedApiCall(apiCall: ValidatedApiCall): void {
   }
 }
 
+const OVERRUN_DISPATCH_KINDS = new Set(['lifecycle', 'route', 'hook', 'loop', 'schedule', 'settings', 'media'])
+
+/**
+ * A call ran out of its wall-clock budget. Its own failure result was posted
+ * first and is already resolved. Stop the worker so the abandoned handler
+ * cannot resume and act; calls still in flight are rejected as retriable.
+ *
+ * What happens next depends on which call it was:
+ *   - a lifecycle call: the plugin cannot start, which is a crash, with the
+ *     crash counter's parking;
+ *   - a route: the route's cool-off streak grows (`routeCoolOff.ts`);
+ *   - anything else: restart only.
+ * The reason names the call (kind and the plugin's own name for it, never
+ * request data); it is what the admin's crash events and the server log show.
+ */
+function handleCallOverrun(workerPluginId: string, msg: unknown): void {
+  const { reason, dispatch } = msg as { reason?: unknown; dispatch?: { kind?: unknown; name?: unknown } }
+  const kind = typeof dispatch?.kind === 'string' && OVERRUN_DISPATCH_KINDS.has(dispatch.kind) ? dispatch.kind : 'call'
+  const name = typeof dispatch?.name === 'string' && dispatch.name.length <= 200 ? dispatch.name : ''
+  const what = name ? `${kind} "${name}"` : kind
+  const detail = typeof reason === 'string' && reason ? reason : 'Plugin call exceeded its time budget'
+
+  if (kind === 'lifecycle') {
+    handleWorkerCrash(workerPluginId, `${what} did not finish: ${detail}`)
+    return
+  }
+  let coolOff = ''
+  if (kind === 'route' && name) {
+    const coolOffMs = recordRouteOverrun(workerPluginId, name)
+    if (coolOffMs > 0) coolOff = ` The route is held back for ${coolOffMs / 1000}s.`
+  }
+  handleWorkerCrash(workerPluginId, `${what} ran out of time: ${detail}.${coolOff}`, 'overrun')
+}
+
 function handleWorkerMessage(workerPluginId: string, msg: unknown): void {
   switch (workerMessageKind(msg)) {
     case 'log':
@@ -192,18 +227,9 @@ function handleWorkerMessage(workerPluginId: string, msg: unknown): void {
       dispatchValidatedApiCall(apiCall)
       return
     }
-    case 'call-overrun': {
-      // The overrunning call's own failure result was posted first and is
-      // already resolved. Stop the worker so its abandoned handler cannot
-      // resume and act; calls still in flight are rejected as retriable.
-      const reason = (msg as { reason?: unknown }).reason
-      handleWorkerCrash(
-        workerPluginId,
-        typeof reason === 'string' && reason ? reason : 'Plugin call exceeded its time budget',
-        'overrun',
-      )
+    case 'call-overrun':
+      handleCallOverrun(workerPluginId, msg)
       return
-    }
     default: {
       const correlationId = workerMessageCorrelationId(msg)
       if (!correlationId) return
