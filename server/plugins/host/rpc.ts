@@ -220,7 +220,9 @@ export async function runRouteInWorker(args: {
       `[plugin:${args.pluginId}] route "${routeKey}" handler failed:`,
       describeWorkerError(result.error, result.stack, 'Plugin route failed'),
     )
-    return Response.json({ error: result.error ?? 'Plugin route failed' }, { status: 500 })
+    // A handler that ran out of its call budget is a gateway timeout, not a
+    // server fault: the worker is healthy and its other calls carried on.
+    return Response.json({ error: result.error ?? 'Plugin route failed' }, { status: result.timedOut ? 504 : 500 })
   }
   return materializeRouteResponse(result.response)
 }

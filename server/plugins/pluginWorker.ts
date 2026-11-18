@@ -50,7 +50,7 @@ import type {
   WorkerToMainMessage,
 } from './protocol/messages'
 import { createPluginVm, type PluginVm } from './quickjs/vm'
-import { vmStackOf } from './quickjs/eval'
+import { PluginCallBudgetError, vmStackOf } from './quickjs/eval'
 import { wrapEsmAsGlobal } from './quickjs/esmShim'
 
 // ---------------------------------------------------------------------------
@@ -282,6 +282,7 @@ async function handleRunRoute(msg: RunRouteRequest): Promise<void> {
       correlationId: msg.correlationId,
       ok: false,
       ...errorFields(err),
+      ...(err instanceof PluginCallBudgetError ? { timedOut: true } : {}),
     })
   }
 }
@@ -431,13 +432,16 @@ async function handleRunSchedule(msg: RunScheduleRequest): Promise<void> {
     })
   } catch (err) {
     const fields = errorFields(err)
-    // The QuickJS interrupt handler raises `InternalError: interrupted`
-    // when the per-eval deadline kicks in (see the deadline registry in
-    // quickjs/eval.ts). Surface this as a distinct status so the admin UI
-    // and consecutive-failures logic can treat timeouts separately from
-    // logical errors.
+    // Two ways a fire runs out of `maxDurationMs`: the QuickJS interrupt
+    // raises `InternalError: interrupted` when it spends that long EXECUTING
+    // (the deadline registry in quickjs/eval.ts), and the settle loop throws
+    // `PluginCallBudgetError` when it is still awaiting after that long.
+    // Both surface as a distinct status so the admin UI and the
+    // consecutive-failures logic treat timeouts apart from logical errors.
     const status: 'timeout' | 'error' =
-      fields.error.toLowerCase().includes('interrupted') ? 'timeout' : 'error'
+      err instanceof PluginCallBudgetError || fields.error.toLowerCase().includes('interrupted')
+        ? 'timeout'
+        : 'error'
     send({
       kind: 'schedule-result',
       correlationId: msg.correlationId,

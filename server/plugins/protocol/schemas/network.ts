@@ -30,6 +30,10 @@ export const NetworkFetchInitSchema = Type.Object(
     // What the host does with a redirect response: follow it (default,
     // re-checking every hop), hand it back unfollowed, or reject.
     redirect: Type.Optional(Type.Union([Type.Literal('follow'), Type.Literal('manual'), Type.Literal('error')])),
+    // How long the whole request may take, redirects and body included,
+    // before the host cancels it. Omitted: the host default (15 s). The
+    // ceiling is the longest any plugin call can run (a 5 min schedule).
+    timeoutMs: Type.Optional(Type.Integer({ minimum: 1, maximum: 5 * 60_000 })),
   },
   { additionalProperties: false },
 )

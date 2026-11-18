@@ -19,7 +19,10 @@
  */
 import { describe, expect, it } from 'bun:test'
 import { createPluginVm, type PluginVmEnv } from '../../../server/plugins/quickjs/vm'
-import { PluginVmError, vmStackOf } from '../../../server/plugins/quickjs/eval'
+import { PluginCallBudgetError, PluginVmError, vmStackOf } from '../../../server/plugins/quickjs/eval'
+import { DEFAULT_RPC_TIMEOUT_MS } from '../../../server/plugins/host/workerPool'
+import { DEFAULT_PLUGIN_FETCH_TIMEOUT_MS } from '../../../server/plugins/host/network'
+import { PLUGIN_CALL_BUDGET_MS } from '../../../server/plugins/quickjs/limits'
 
 function makeEnv(pluginId: string): PluginVmEnv {
   return {
@@ -108,6 +111,85 @@ describe('plugin sandbox: eval deadlines', () => {
       vm.dispose()
     }
   }, 10_000)
+})
+
+describe('plugin sandbox: wall-clock call budget', () => {
+  /**
+   * `deactivate` awaits far past any budget used here; `quick` and `steady`
+   * are schedules, which bring their own budget (`maxDurationMs`).
+   */
+  const SOURCE = `
+    ;(function () {
+      const __plugin_exports = (globalThis.__plugin_exports = {});
+      function sleep(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
+      __plugin_exports.activate = async function activate(api) {
+        api.cms.schedule.every(5, 'quick', async function () { await sleep(20); });
+        api.cms.schedule.every(5, 'steady', async function () { await sleep(250); });
+        api.cms.schedule.every(5, 'stuck', async function () { await sleep(60000); });
+      };
+      __plugin_exports.deactivate = async function deactivate() { await sleep(60000); };
+      __plugin_exports.install = async function install() {
+        await sleep(80); await sleep(80); await sleep(80);
+      };
+    })();
+  `
+
+  it('fails a call still awaiting after its budget, alone, and leaves the VM usable', async () => {
+    const vm = await createPluginVm({ env: makeEnv('acme.budget'), callBudgetMs: 150, pluginSource: SOURCE })
+    try {
+      await vm.runLifecycle('activate')
+      const t0 = Date.now()
+      const slow = vm.runLifecycle('deactivate').catch((err: unknown) => err)
+      // A sibling call in flight on the same VM is not taken down with it.
+      await vm.runSchedule('acme.budget.quick', 1_000)
+      const failure = await slow
+      expect(failure).toBeInstanceOf(PluginCallBudgetError)
+      expect((failure as Error).message).toBe('Plugin call exceeded its 0.15s time budget')
+      // Noticed at the budget (plus the re-check interval), not after a hang.
+      expect(Date.now() - t0).toBeLessThan(1_500)
+      // The VM carries on serving calls afterwards.
+      await vm.runSchedule('acme.budget.quick', 1_000)
+    } finally {
+      vm.dispose()
+    }
+  }, 10_000)
+
+  it('does not count awaited time against the execution deadline', async () => {
+    // Three 80 ms awaits outlast the 100 ms execution deadline but fit the budget.
+    const vm = await createPluginVm({
+      env: makeEnv('acme.awaits'),
+      evalTimeoutMs: 100,
+      callBudgetMs: 5_000,
+      pluginSource: SOURCE,
+    })
+    try {
+      await vm.runLifecycle('install')
+    } finally {
+      vm.dispose()
+    }
+  }, 10_000)
+
+  it("bounds a schedule fire by its own maxDurationMs, not the default budget", async () => {
+    const vm = await createPluginVm({ env: makeEnv('acme.sched'), callBudgetMs: 100, pluginSource: SOURCE })
+    try {
+      await vm.runLifecycle('activate')
+      // Longer than the 100 ms default budget, inside its own 2 s.
+      await vm.runSchedule('acme.sched.steady', 2_000)
+      // Still awaiting after its own 150 ms.
+      await expect(vm.runSchedule('acme.sched.stuck', 150)).rejects.toThrow(
+        'Plugin call exceeded its 0.15s time budget',
+      )
+    } finally {
+      vm.dispose()
+    }
+  }, 10_000)
+
+  it('keeps the budget below the worker RPC timeout, with room for one timed-out request', () => {
+    // Above the RPC timeout a slow handler would take the whole worker (and
+    // its sibling calls) down instead of failing on its own.
+    expect(PLUGIN_CALL_BUDGET_MS).toBeLessThan(DEFAULT_RPC_TIMEOUT_MS)
+    expect(DEFAULT_PLUGIN_FETCH_TIMEOUT_MS).toBeLessThan(PLUGIN_CALL_BUDGET_MS)
+  })
 })
 
 describe('plugin sandbox: VM stack preservation', () => {

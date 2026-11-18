@@ -53,9 +53,10 @@ function sendTo(pluginId: string, msg: MainToWorkerMessage): void {
 
 /**
  * Default budget for one host→worker RPC round-trip. Generous compared to
- * the VM's own 5 s eval deadline — its real job is to bound the damage of a
- * *wedged* worker (plugin code spinning past every in-VM guard), not to
- * race healthy calls.
+ * the VM's own limits (5 s of execution, a 20 s wall-clock call budget —
+ * `quickjs/limits.ts`): a slow handler fails alone on those. This one's real
+ * job is to bound the damage of a *wedged* worker (plugin code spinning past
+ * every in-VM guard), not to race healthy calls.
  */
 export const DEFAULT_RPC_TIMEOUT_MS = 30_000
 

@@ -338,6 +338,8 @@ interface RouteResult {
   ok: boolean
   response?: SerializedResponse
   error?: string
+  /** The handler ran out of its wall-clock call budget (answered as 504). */
+  timedOut?: boolean
   /**
    * QuickJS-side stack frames of the failure (plugin sources are evaluated
    * with the filename `plugin:<id>`). For host-side `[plugin:<id>]` logging

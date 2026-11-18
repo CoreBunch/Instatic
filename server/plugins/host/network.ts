@@ -386,6 +386,63 @@ async function guardedFetchWithTrace(
   }
 }
 
+/**
+ * How long one plugin request may take when the plugin sets no `timeout`:
+ * every redirect hop and the whole response body included. Without it a
+ * stalled upstream held the plugin's call (and a server connection) open
+ * until something else gave up. 15 s leaves room inside the 20 s call budget
+ * (`PLUGIN_CALL_BUDGET_MS`) for the handler to react to the failure.
+ */
+export const DEFAULT_PLUGIN_FETCH_TIMEOUT_MS = 15_000
+
+/**
+ * A plugin request that ran out of time. The message reaches the plugin as
+ * the rejection of its `fetch`, where the sandbox shim names it
+ * `TimeoutError`.
+ */
+export class PluginFetchTimeoutError extends Error {
+  constructor(pluginId: string, timeoutMs: number, cause: unknown) {
+    super(`Plugin "${pluginId}" fetch timed out after ${timeoutMs}ms`, { cause })
+    this.name = 'PluginFetchTimeoutError'
+  }
+}
+
+/**
+ * Read a response body to the end as raw bytes, stopping as soon as `signal`
+ * aborts. The read holds the stream's lock, so cancelling goes through the
+ * reader: that releases the connection whether or not the transport ties its
+ * body stream to the signal.
+ */
+async function readBodyBytes(response: Response, signal: AbortSignal): Promise<Uint8Array<ArrayBuffer>> {
+  if (!response.body) return new Uint8Array(0)
+  const reader = response.body.getReader()
+  const onAbort = (): void => {
+    void reader.cancel().catch(() => { /* stream already closed or errored */ })
+  }
+  signal.addEventListener('abort', onAbort, { once: true })
+  try {
+    const chunks: Uint8Array[] = []
+    let total = 0
+    for (;;) {
+      if (signal.aborted) throw new DOMException('The operation was aborted', 'AbortError')
+      const { done, value } = await reader.read()
+      if (done) break
+      chunks.push(value)
+      total += value.byteLength
+    }
+    if (signal.aborted) throw new DOMException('The operation was aborted', 'AbortError')
+    const bytes = new Uint8Array(total)
+    let offset = 0
+    for (const chunk of chunks) {
+      bytes.set(chunk, offset)
+      offset += chunk.byteLength
+    }
+    return bytes
+  } finally {
+    signal.removeEventListener('abort', onAbort)
+  }
+}
+
 export async function performGatedFetch(
   entry: HostPluginRecord,
   urlString: string,
@@ -396,6 +453,7 @@ export async function performGatedFetch(
     bodyEncoding?: BodyEncoding
     abortId?: string
     redirect?: RedirectMode
+    timeoutMs?: number
   },
   deps: GatedFetchDeps = {},
 ): Promise<SerializedNetworkResponse> {
@@ -409,6 +467,15 @@ export async function performGatedFetch(
   const controller = new AbortController()
   const abortId = init.abortId
   if (abortId) entry.inflightFetches.set(abortId, controller)
+
+  // The timeout aborts the same controller, so the upstream request and any
+  // body still streaming are cancelled, not left running.
+  const timeoutMs = init.timeoutMs ?? DEFAULT_PLUGIN_FETCH_TIMEOUT_MS
+  let timedOut = false
+  const timeoutTimer = setTimeout(() => {
+    timedOut = true
+    controller.abort()
+  }, timeoutMs)
 
   // Decode the VM-supplied body once up front: a utf8 body is passed through as
   // the string (fetch UTF-8-encodes it to the same bytes), a base64 body
@@ -437,7 +504,7 @@ export async function performGatedFetch(
     response.headers.forEach((v, k) => { respHeaders[k] = v })
     // Read the upstream body as raw bytes — `response.text()` would lossily
     // UTF-8-decode binary payloads (images, gzip, protobuf).
-    const bytes = new Uint8Array(await response.arrayBuffer())
+    const bytes = await readBodyBytes(response, controller.signal)
     return {
       status: response.status,
       ok: response.ok,
@@ -445,7 +512,11 @@ export async function performGatedFetch(
       redirected,
       ...encodeBodyBytes(bytes),
     }
+  } catch (err) {
+    if (timedOut) throw new PluginFetchTimeoutError(manifest.id, timeoutMs, err)
+    throw err
   } finally {
+    clearTimeout(timeoutTimer)
     if (abortId) entry.inflightFetches.delete(abortId)
   }
 }

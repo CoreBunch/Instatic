@@ -37,11 +37,16 @@ import quickjsWasmPath from '../../../node_modules/@jitl/quickjs-wasmfile-releas
 import { RELEASE_SYNC, type QuickJSContext, type QuickJSHandle, type QuickJSWASMModule } from 'quickjs-emscripten'
 import { newQuickJSWASMModuleFromVariant, newVariant } from 'quickjs-emscripten-core'
 import { BOOTSTRAP_SOURCE } from './bootstrap/index'
-import { DEFAULT_EVAL_TIMEOUT_MS, DEFAULT_MEMORY_LIMIT_BYTES, DEFAULT_STACK_SIZE_BYTES } from './limits'
+import {
+  DEFAULT_EVAL_TIMEOUT_MS,
+  DEFAULT_MEMORY_LIMIT_BYTES,
+  DEFAULT_STACK_SIZE_BYTES,
+  PLUGIN_CALL_BUDGET_MS,
+} from './limits'
 import { jsToHandle } from './marshal'
 import { bytesToBase64 } from '../protocol/bodyEncoding'
 import { CRYPTO_RANDOM_BYTES_MAX } from './bootstrap/crypto'
-import { callString, callVoid, evalJson, withSyncDeadline } from './eval'
+import { callString, callVoid, evalJson, notifyVmActivity, withSyncDeadline, type CallLimits } from './eval'
 import type { PluginVm, PluginVmEnv } from './types'
 
 export type { PluginVm, PluginVmEnv } from './types'
@@ -108,10 +113,17 @@ export async function createPluginVm(args: {
   pluginSource: string
   env: PluginVmEnv
   evalTimeoutMs?: number
+  /** Wall-clock budget per call; tests shorten it. Defaults to `PLUGIN_CALL_BUDGET_MS`. */
+  callBudgetMs?: number
 }): Promise<PluginVm> {
   const wasm = await getWasmModule()
   const ctx = wasm.newContext()
   const evalTimeoutMs = args.evalTimeoutMs ?? DEFAULT_EVAL_TIMEOUT_MS
+  /** Limits for every call except a schedule fire, which brings its own. */
+  const callLimits: CallLimits = {
+    evalTimeoutMs,
+    budgetMs: args.callBudgetMs ?? PLUGIN_CALL_BUDGET_MS,
+  }
 
   // Apply per-plugin resource limits BEFORE evaluating any plugin code.
   // setMemoryLimit / setMaxStackSize live on the runtime, not the context,
@@ -199,6 +211,8 @@ export async function createPluginVm(args: {
         console.error(`[plugin:${args.env.pluginId}] VM job aborted: ${message}${stack}`)
       }
     })
+    // A resolution just advanced the VM: wake calls parked on a pending promise.
+    notifyVmActivity(ctx)
   }
 
   try {
@@ -353,7 +367,7 @@ export async function createPluginVm(args: {
     const exportedHooks = await evalJson<Array<'install' | 'activate' | 'deactivate' | 'uninstall' | 'migrate'>>(
       ctx,
       `__detectExportedHooks()`,
-      evalTimeoutMs,
+      callLimits,
     )
 
     const pluginId = args.env.pluginId
@@ -363,11 +377,11 @@ export async function createPluginVm(args: {
       exportedHooks,
 
       async runLifecycle(hook) {
-        await callVoid(ctx, dispatcher('__runLifecycle'), [hook], evalTimeoutMs)
+        await callVoid(ctx, dispatcher('__runLifecycle'), [hook], callLimits)
       },
 
       async runMigrate(fromVersion) {
-        await callVoid(ctx, dispatcher('__runMigrate'), [fromVersion], evalTimeoutMs)
+        await callVoid(ctx, dispatcher('__runMigrate'), [fromVersion], callLimits)
       },
 
       async runRoute(routeKey, routeCtx) {
@@ -375,7 +389,7 @@ export async function createPluginVm(args: {
           ctx,
           dispatcher('__runRoute'),
           [routeKey, JSON.stringify(routeCtx)],
-          evalTimeoutMs,
+          callLimits,
         )
         return JSON.parse(json) as unknown
       },
@@ -385,7 +399,7 @@ export async function createPluginVm(args: {
           ctx,
           dispatcher('__runHookListener'),
           [listenerId, JSON.stringify(payload ?? null)],
-          evalTimeoutMs,
+          callLimits,
         )
       },
 
@@ -402,7 +416,7 @@ export async function createPluginVm(args: {
           ctx,
           dispatcher('__runHookFilter'),
           [filterId, valueJson, contextJson],
-          evalTimeoutMs,
+          callLimits,
         )
         return JSON.parse(resultJson) as unknown
       },
@@ -412,7 +426,7 @@ export async function createPluginVm(args: {
           ctx,
           dispatcher('__runLoopFetch'),
           [sourceId, JSON.stringify(loopCtx ?? null)],
-          evalTimeoutMs,
+          callLimits,
         )
         const parsed = JSON.parse(json) as { items?: unknown[]; totalItems?: number }
         return {
@@ -426,21 +440,23 @@ export async function createPluginVm(args: {
           ctx,
           dispatcher('__runLoopPreview'),
           [sourceId, JSON.stringify(loopCtx ?? null)],
-          evalTimeoutMs,
+          callLimits,
         )
         const parsed = JSON.parse(json) as unknown
         return Array.isArray(parsed) ? parsed : []
       },
 
       async runSchedule(scheduleId, maxDurationMs) {
-        // Per-schedule deadline replaces the VM's default 5s budget for
-        // this single call only — its registry token is released when the
-        // call settles, so subsequent calls fall back to the default.
-        await callVoid(ctx, dispatcher('__runSchedule'), [scheduleId], maxDurationMs ?? evalTimeoutMs)
+        // A schedule's `maxDurationMs` replaces BOTH default limits for this
+        // single call: it may execute, and it may take, that long in total.
+        await callVoid(ctx, dispatcher('__runSchedule'), [scheduleId], {
+          evalTimeoutMs: maxDurationMs,
+          budgetMs: maxDurationMs,
+        })
       },
 
       async updateSettings(next) {
-        await callVoid(ctx, dispatcher('__updateSettings'), [JSON.stringify(next)], evalTimeoutMs)
+        await callVoid(ctx, dispatcher('__updateSettings'), [JSON.stringify(next)], callLimits)
       },
 
       async runMediaAdapterCall(adapterId, method, callArgs) {
@@ -448,7 +464,7 @@ export async function createPluginVm(args: {
           ctx,
           dispatcher('__runMediaAdapterCall'),
           [adapterId, method, JSON.stringify(callArgs ?? [])],
-          evalTimeoutMs,
+          callLimits,
         )
         return JSON.parse(resultJson) as unknown
       },
@@ -458,7 +474,7 @@ export async function createPluginVm(args: {
           ctx,
           dispatcher('__runMediaUrlTransformer'),
           [transformerId, JSON.stringify(payload)],
-          evalTimeoutMs,
+          callLimits,
         )
         const parsed = JSON.parse(resultJson) as unknown
         return typeof parsed === 'string' ? parsed : null
