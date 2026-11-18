@@ -12,6 +12,7 @@ import { normalizeSiteRuntimeConfig, type SiteDependencyLock } from '@core/site-
 import { createTestDb, type TestDb } from '../../../../src/__tests__/helpers/createTestDb'
 import { makePage, makeSite } from '../../../../src/__tests__/fixtures'
 import { MAIN_SCOPE } from '../../../branches/scope'
+import { bumpPublishVersion, resetPublishStateForTests } from '../../publishState'
 import { createDataRow } from '../../../repositories/data/rows/mutations'
 import { persistSitePublish } from '../../../repositories/publish'
 import { handleServerRequest } from '../../../router'
@@ -46,7 +47,7 @@ const fakeInstall: RuntimeInstallRunner = async (_command, options) => {
   await writeFile(join(pkgRoot, 'build', 'three.module.js'), 'export const three = 1\n')
 }
 
-/** Publish `pageId` with `lock`, the way `publishSite` records it. */
+/** Publish `pageId` with `lock`, the way `publishSite` records it and then bumps the version. */
 async function publishWithLock(
   testDb: TestDb,
   pageId: string,
@@ -75,6 +76,7 @@ async function publishWithLock(
     }],
     publishedByUserId: null,
   })
+  bumpPublishVersion()
 }
 
 function serve(testDb: TestDb, url: string): Promise<Response | null> {
@@ -101,6 +103,7 @@ afterAll(async () => {
 
 beforeEach(async () => {
   installs = 0
+  resetPublishStateForTests()
   testDb = await createTestDb()
   await createDataRow(testDb.db, MAIN_SCOPE, { id: 'home', tableId: 'pages', cells: { title: 'home' }, slug: 'home' })
 })
@@ -163,7 +166,7 @@ describe('a published runtime package after its cache is lost', () => {
     expect(installs).toBe(1)
   })
 
-  it('asks the database once for repeated misses on the same hash', async () => {
+  it('answers unknown hashes from memory after the first lookup', async () => {
     const lock = lockFor('0.167.0')
     await ensureRuntimeDependencyCache(lock, { runInstall: fakeInstall })
     await publishWithLock(testDb, 'home', lock)
@@ -176,14 +179,53 @@ describe('a published runtime package after its cache is lost', () => {
     })
     const counted = { ...testDb, db: counting }
 
-    // A wrong path under a live hash, and a hash nothing published.
+    // A wrong path under a live hash: the index and the lock, read once.
     const wrongPath = `/_instatic/runtime/cache/${runtimeDependencyLockHash(lock)}/three/nope.js`
-    const unknown = packageUrl(lockFor('0.168.0'))
-    for (const url of [wrongPath, wrongPath, wrongPath, unknown, unknown, unknown]) {
+    for (let i = 0; i < 3; i += 1) expect((await serve(counted, wrongPath))?.status).toBe(404)
+    expect(queries).toBe(2)
+
+    // A spray of distinct hashes nothing published costs no query at all.
+    for (let i = 0; i < 50; i += 1) {
+      const url = `/_instatic/runtime/cache/${i.toString(16).padStart(24, '0')}/three/build/three.module.js`
       expect((await serve(counted, url))?.status).toBe(404)
     }
     expect(queries).toBe(2)
     expect(installs).toBe(1)
+
+    // A publish moves the version, so the next miss reads the new set.
+    const next = lockFor('0.168.0')
+    await publishWithLock(testDb, 'home', next, 2)
+    expect((await serve(counted, packageUrl(next)))?.status).toBe(200)
+    expect(installs).toBe(2)
+  })
+
+  it('keeps the backoff for a failing live hash while other hashes are requested', async () => {
+    const lock = lockFor('0.169.0')
+    await publishWithLock(testDb, 'home', lock)
+    const hash = runtimeDependencyLockHash(lock)
+    let attempts = 0
+    const failingInstall: RuntimeInstallRunner = async () => {
+      attempts += 1
+      throw new Error('registry unreachable')
+    }
+    const clock = 1_000_000
+    const options = { runInstall: failingInstall, now: () => clock }
+    const originalError = console.error
+    console.error = () => {}
+    try {
+      expect(await restorePublishedRuntimeCache(testDb.db, hash, options)).toBe(false)
+      expect(attempts).toBe(1)
+
+      for (let i = 0; i < 300; i += 1) {
+        const other = i.toString(16).padStart(24, 'f')
+        expect(await restorePublishedRuntimeCache(testDb.db, other, options)).toBe(false)
+      }
+
+      expect(await restorePublishedRuntimeCache(testDb.db, hash, options)).toBe(false)
+      expect(attempts).toBe(1)
+    } finally {
+      console.error = originalError
+    }
   })
 
   it('remembers a failed reinstall instead of retrying on every request', async () => {

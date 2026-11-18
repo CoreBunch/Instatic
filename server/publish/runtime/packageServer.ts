@@ -45,7 +45,7 @@ import { resolve as resolvePath } from 'node:path'
 import { isPathWithin } from '../../util/pathWithin'
 import { nodeModulesDirForHash, sentinelPathForHash } from './dependencyCache'
 
-export const RUNTIME_PACKAGE_PREFIX = '/_instatic/runtime/cache/'
+const RUNTIME_PACKAGE_PREFIX = '/_instatic/runtime/cache/'
 const HASH_PATTERN = /^[0-9a-f]{24}$/
 
 function contentTypeForPath(path: string): string {

@@ -418,22 +418,23 @@ export async function getPublishedPageSnapshotById(
   return rows[0] ? snapshotFromQueryRow(rows[0]) : null
 }
 
+/** A live publish's snapshot id and the importmap it baked. */
+export interface LivePublishedImportmap {
+  snapshotId: string
+  importmapBody: string
+}
+
 /**
- * The site document of a publish that is live right now (some published row's
- * active version references it) and whose importmap mentions `urlFragment`,
- * newest first. This is how a runtime package URL is traced back to the
- * dependency lock that produced it: the importmap is the only place those
- * URLs are published. `urlFragment` is matched with `like`, so callers must
- * confirm the match themselves.
+ * The importmap of every publish that is live right now (some published row's
+ * active version references its snapshot), newest first. The importmap is the
+ * only place runtime package URLs are published, so this is the full set of
+ * `/_instatic/runtime/cache/<hash>/` entries a visitor can legitimately ask for.
  */
-export async function getLivePublishedSiteByImportmapFragment(
-  db: DbClient,
-  urlFragment: string,
-): Promise<SiteDocument | null> {
-  const { rows } = await db<{ site_json: SiteDocument }>`
-    select site_snapshots.site_json
+export async function listLivePublishedImportmaps(db: DbClient): Promise<LivePublishedImportmap[]> {
+  const { rows } = await db<{ id: string; importmap_body: string }>`
+    select site_snapshots.id, site_snapshots.importmap_body
     from site_snapshots
-    where site_snapshots.importmap_body like ${`%${urlFragment}%`}
+    where site_snapshots.importmap_body is not null
       and exists (
         select 1
         from data_row_versions
@@ -443,7 +444,17 @@ export async function getLivePublishedSiteByImportmapFragment(
           and data_rows.deleted_at is null
       )
     order by site_snapshots.created_at desc
-    limit 1
+  `
+  return rows.map((row) => ({ snapshotId: row.id, importmapBody: row.importmap_body }))
+}
+
+/** The site document a snapshot froze, or null when the snapshot is gone. */
+export async function getSiteSnapshotDocument(
+  db: DbClient,
+  snapshotId: string,
+): Promise<SiteDocument | null> {
+  const { rows } = await db<{ site_json: SiteDocument }>`
+    select site_json from site_snapshots where id = ${snapshotId} limit 1
   `
   return rows[0]?.site_json ?? null
 }
