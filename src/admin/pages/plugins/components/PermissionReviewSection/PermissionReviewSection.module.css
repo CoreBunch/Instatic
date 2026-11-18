@@ -123,6 +123,13 @@
     line-height: 1.5;
 }
 
+/* A wildcard origin covers hosts the reviewer cannot see listed. */
+.wildcardWarning {
+    color: var(--warning-text);
+    font-size: var(--text-s);
+    line-height: 1.5;
+}
+
 .badge {
     display: inline-flex;
     align-items: center;

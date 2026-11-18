@@ -123,8 +123,13 @@ const HTML_ATTRIBUTE_MODULES = new Set([
   'base.form',
 ])
 
+// `rel` is deliberately absent from the anchor modules: base.link and
+// base.button only ever generate the security rel for `target="_blank"`, so a
+// source-declared `rel` (nofollow, sponsored, next/prev, …) has no other home
+// and would be lost outright. It stays in the bag and the modules merge it
+// with the security rel at render time (`anchorHtmlAttributes`).
 const MODULE_GENERATED_ATTRIBUTE_NAMES: Record<string, readonly string[]> = {
-  'base.button': ['aria-disabled', 'disabled', 'href', 'rel', 'target', 'type'],
+  'base.button': ['aria-disabled', 'disabled', 'href', 'target', 'type'],
   'base.form': [
     'action',
     'data-instatic-form-id',
@@ -146,7 +151,7 @@ const MODULE_GENERATED_ATTRIBUTE_NAMES: Record<string, readonly string[]> = {
     'style',
     'width',
   ],
-  'base.link': ['href', 'rel', 'target'],
+  'base.link': ['href', 'target'],
 }
 
 /**

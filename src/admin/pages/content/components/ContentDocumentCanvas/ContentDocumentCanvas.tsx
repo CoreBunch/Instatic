@@ -12,6 +12,8 @@ import canvasStyles from '../../../site/canvas/CanvasRoot.module.css'
 import type { TiptapBodyEditorHandle } from '@content/TiptapBodyEditor'
 import { ContentModeToggle, type ContentMode } from '../ContentModeToggle/ContentModeToggle'
 import styles from '../../ContentPage.module.css'
+import { EmptyState } from '@ui/components/EmptyState'
+import { ArticleSolidIcon } from 'pixel-art-icons/icons/article-solid'
 
 const TiptapBodyEditor = lazy(() =>
   import('@content/TiptapBodyEditor').then((m) => ({ default: m.TiptapBodyEditor })),
@@ -183,14 +185,19 @@ export const ContentDocumentCanvas = forwardRef<TiptapBodyEditorHandle, ContentD
               </article>
             )
           ) : (
-            <div className={styles.emptyState}>
-              <h2>Create the first {singularLabel}</h2>
-              <p>Select a collection and create an entry to start writing.</p>
-              <Button variant="primary" size="md" onClick={onCreateEntry} disabled={!selectedCollection || !canCreateEntry}>
-                <FilePlusSolidIcon size={15} aria-hidden="true" />
-                <span>New {selectedCollection?.singularLabel ?? 'Entry'}</span>
-              </Button>
-            </div>
+            <EmptyState
+              variant="centered"
+              icon={<ArticleSolidIcon size={28} />}
+              title={`Create the first ${singularLabel}`}
+              description="Select a collection and create an entry to start writing."
+              action={
+                <Button variant="primary" size="md" onClick={onCreateEntry} disabled={!selectedCollection || !canCreateEntry}>
+                  <FilePlusSolidIcon size={15} aria-hidden="true" />
+                  <span>New {selectedCollection?.singularLabel ?? 'Entry'}</span>
+                </Button>
+              }
+              className={styles.emptyState}
+            />
           )}
         </div>
       </div>

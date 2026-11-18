@@ -20,22 +20,23 @@
  * banner ("No new permissions in this update") so the user can confirm
  * with confidence.
  *
- * Also displays the manifest's two allowlists, each in its own section:
+ * Also displays three manifest allowlists, each in its own section:
  *
- *   • `networkAllowedHosts` — the concrete remote origins the plugin's
- *     code will talk to (e.g. `threejs.org`, `*.cdn.example.com`).
  *   • `contentAccess` — the CMS tables whose entries the plugin can touch,
  *     with per-table modes. The `@own-created` marker renders as the
  *     human-readable "Tables this plugin creates".
+ *   • `networkAllowedHosts` — the concrete remote origins the plugin's
+ *     code will talk to (e.g. `threejs.org`, `*.cdn.example.com`).
+ *   • `frontend.origins` — each host a plugin may load scripts or embed
+ *     frames from on published pages, listed in plain words.
  *
  * Permissions describe broad CMS capabilities ("inject scripts", "write
- * content"); the allowlists describe the concrete origins and tables those
- * capabilities apply to. All three dimensions are security-relevant: a
- * plugin with `frontend.assets` plus an unexpected host entry can
- * exfiltrate visitor data, and an upgrade adding `write` mode on an
- * already-approved table is a silent privilege expansion. Each section
- * diffs new/existing/dropped rows on upgrade so nothing slips in
- * unreviewed.
+ * content"); the allowlists describe the concrete tables and origins those
+ * capabilities apply to. All of them are security-relevant: a plugin with
+ * `frontend.assets` plus an unexpected host entry can exfiltrate visitor
+ * data, and an upgrade adding `write` mode on an already-approved table is
+ * a silent privilege expansion. Each section diffs new/existing/dropped
+ * rows on upgrade so nothing slips in unreviewed.
  */
 import { lt as semverLt } from 'semver'
 import { Button } from '@ui/components/Button'
@@ -43,6 +44,7 @@ import {
   permissionDescription,
   type ContentAccessEntry,
   type ContentAccessMode,
+  type PluginFrontendOrigins,
   type PluginManifest,
   type PluginPermission,
 } from '@core/plugin-sdk'
@@ -75,6 +77,11 @@ interface PermissionReviewPending {
    * tables — that the upgrade adds, the same way hosts are diffed above.
    */
   previousContentAccess?: ContentAccessEntry[]
+  /**
+   * The previously-installed manifest's `frontend.origins` (when this is an
+   * upgrade), so a script or frame origin the upgrade adds shows as new.
+   */
+  previousFrontendOrigins?: PluginFrontendOrigins
 }
 
 type HostDiffStatus = 'new' | 'existing' | 'dropped'
@@ -84,7 +91,7 @@ interface HostDiffRow {
   status: HostDiffStatus
 }
 
-function diffNetworkAllowedHosts(
+function diffHostList(
   next: readonly string[],
   previous: readonly string[] | undefined,
   isUpgrade: boolean,
@@ -164,6 +171,31 @@ export function PermissionReviewSection({
 
   const newCount = rows.filter((row) => row.status === 'new').length
 
+  const originGroups = [
+    {
+      kind: 'scripts',
+      phrase: 'May load scripts from',
+      rows: diffHostList(
+        pending.manifest.frontend?.origins?.scripts ?? [],
+        pending.previousFrontendOrigins?.scripts,
+        isUpgrade,
+      ),
+    },
+    {
+      kind: 'frames',
+      phrase: 'May embed frames from',
+      rows: diffHostList(
+        pending.manifest.frontend?.origins?.frames ?? [],
+        pending.previousFrontendOrigins?.frames,
+        isUpgrade,
+      ),
+    },
+  ] as const
+  const originRowCount = originGroups.reduce((count, group) => count + group.rows.length, 0)
+  const newOriginCount = isUpgrade
+    ? originGroups.reduce((count, group) => count + group.rows.filter((row) => row.status === 'new').length, 0)
+    : 0
+
   // `editor.code` means the host will dynamically import plugin JavaScript
   // into the admin window — unsandboxed, with full admin-session privileges.
   // That deserves its own unmissable callout on top of the permission row.
@@ -176,7 +208,7 @@ export function PermissionReviewSection({
     pending.previousContentAccess,
     isUpgrade,
   )
-  const hostRows = diffNetworkAllowedHosts(
+  const hostRows = diffHostList(
     pending.manifest.networkAllowedHosts ?? [],
     pending.previousNetworkAllowedHosts,
     isUpgrade,
@@ -350,6 +382,57 @@ export function PermissionReviewSection({
                 </div>
               </li>
             ))}
+          </ul>
+        </div>
+      )}
+
+      {originRowCount > 0 && (
+        <div
+          className={styles.allowlistSection}
+          data-testid="permission-review-frontend-origins"
+        >
+          <div className={styles.allowlistHeader}>
+            <strong>Third-party code on published pages</strong>
+            <span className={styles.description}>
+              Visitors' browsers may load code or frames from these hosts on
+              your published pages. Other hosts stay blocked.
+            </span>
+          </div>
+          {isUpgrade && newOriginCount > 0 && (
+            <div className={styles.alert} role="alert" data-testid="frontend-origins-diff-alert">
+              This update adds <strong>{newOriginCount} new third-party host{newOriginCount === 1 ? '' : 's'}</strong> on
+              published pages.
+            </div>
+          )}
+          <ul className={styles.list}>
+            {originGroups.flatMap((group) =>
+              group.rows.map((row) => (
+                <li
+                  key={`${group.kind}:${row.host}:${row.status}`}
+                  className={styles.row}
+                  data-status={row.status}
+                  data-frontend-origin={row.host}
+                  data-frontend-origin-kind={group.kind}
+                >
+                  <div className={styles.label}>
+                    <span>
+                      {group.phrase} <code>{row.host}</code>
+                    </span>
+                    {isUpgrade && (
+                      <span className={`${styles.badge} ${statusBadgeClass(row.status)}`}>
+                        {statusBadgeLabel(row.status)}
+                      </span>
+                    )}
+                  </div>
+                  {row.host.startsWith('*.') && row.status !== 'dropped' && (
+                    <span className={styles.wildcardWarning} data-testid="frontend-origin-wildcard-warning">
+                      Any subdomain of <code>{row.host.slice(2)}</code>, not one host. Approve it only if a
+                      single company controls every subdomain there.
+                    </span>
+                  )}
+                </li>
+              )),
+            )}
           </ul>
         </div>
       )}

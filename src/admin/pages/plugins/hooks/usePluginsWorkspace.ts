@@ -21,6 +21,7 @@ import type {
   ContentAccessEntry,
   InstalledPlugin,
   PluginManifest,
+  PluginFrontendOrigins,
   PluginPermission,
 } from '@core/plugin-sdk'
 import { requestCmsSiteReload } from '@admin/state/adminEvents'
@@ -69,6 +70,8 @@ interface PendingInstall {
    * them as "New".
    */
   previousContentAccess?: ContentAccessEntry[]
+  /** `frontend.origins` from the existing install, diffed the same way. */
+  previousFrontendOrigins?: PluginFrontendOrigins
 }
 
 /**
@@ -326,6 +329,7 @@ export function usePluginsWorkspace(): PluginsWorkspaceVM {
         : undefined
       const previousNetworkAllowedHosts = existing?.manifest.networkAllowedHosts
       const previousContentAccess = existing?.manifest.contentAccess
+      const previousFrontendOrigins = existing?.manifest.frontend?.origins
 
       // EVERY install and upgrade goes through the review dialog — including
       // a zero-permission declarative plugin, which renders "No permissions
@@ -340,6 +344,7 @@ export function usePluginsWorkspace(): PluginsWorkspaceVM {
           ? { previousNetworkAllowedHosts }
           : {}),
         ...(previousContentAccess !== undefined ? { previousContentAccess } : {}),
+        ...(previousFrontendOrigins !== undefined ? { previousFrontendOrigins } : {}),
       })
     } catch (err) {
       setError(getErrorMessage(err, 'Could not install plugin'))

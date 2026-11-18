@@ -9,25 +9,25 @@
  */
 import React from 'react'
 import type { ModuleComponentProps } from '@core/module-engine'
-import { anchorRel } from '@modules/base/shared/anchorTarget'
-import { htmlAttributesForReact } from '@core/htmlAttributes'
+import { anchorHtmlAttributes } from '@modules/base/shared/anchorTarget'
 import { inlineEditableElementProps } from '@modules/base/shared/inlineText'
 import { linkUsesChildren } from './content'
-import type { LinkStoredProps } from './props'
+import { linkHref, type LinkStoredProps } from './props'
 
 export const LinkEditor: React.FC<ModuleComponentProps<LinkStoredProps>> = ({ props, children, mcClassName, nodeWrapperProps, inlineEdit }) => {
   const childCount = Array.isArray(children) ? children.length : children != null ? 1 : 0
   // Inline editing only starts on a childless link (text mode), so when
   // `inlineEdit` is set the element edits its `text` prop in place.
   const content = linkUsesChildren(childCount) ? children : (props.text ?? 'Link text')
+  const { attributes, rel } = anchorHtmlAttributes(props.htmlAttributes, props.target)
   return React.createElement(
     'a',
     {
       ...nodeWrapperProps,
-      ...htmlAttributesForReact(props.htmlAttributes),
-      href: props.href || '#',
+      ...attributes,
+      href: linkHref(props) || '#',
       target: props.target,
-      rel: anchorRel(props.target) ?? undefined,
+      rel: rel ?? undefined,
       className: mcClassName,
       ...(inlineEdit ? inlineEditableElementProps(inlineEdit) : {}),
     },

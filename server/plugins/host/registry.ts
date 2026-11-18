@@ -5,9 +5,9 @@
  * each active plugin: routes, hook registrations, loop sources, media
  * adapters, and in-flight fetches. All dispatch paths read from here.
  *
- * `dbForApi` is injected by the server startup sequence once the database
- * client is ready, so api-call dispatch can reach repositories without
- * importing the db client at module load time.
+ * `hostContext` (the database client and the uploads directory) is injected by
+ * the server startup sequence, so api-call dispatch can reach repositories and
+ * the baked publish slot without importing either at module load time.
  */
 
 import type { DbClient } from '../../db/client'
@@ -23,6 +23,11 @@ function hasGrantedPermission(
   permission: PluginPermission,
 ): boolean {
   return new Set(manifest.grantedPermissions ?? []).has(permission)
+}
+
+/** Whether the plugin was granted a permission. Unknown plugins hold none. */
+export function hostPluginHasPermission(pluginId: string, permission: PluginPermission): boolean {
+  return (hostPlugins.get(pluginId)?.manifest.grantedPermissions ?? []).includes(permission)
 }
 
 export function assertHostPluginPermission(
@@ -97,12 +102,21 @@ export function assertContentTableAccess(
   }
 }
 
-let dbForApi: DbClient | null = null
-
-export function setPluginWorkerDbClient(db: DbClient): void {
-  dbForApi = db
+export interface PluginHostContext {
+  db: DbClient
+  /**
+   * Root of the uploads tree, where the baked publish slot lives. Absent on a
+   * server that runs without one; content handlers then skip the slot.
+   */
+  uploadsDir: string | undefined
 }
 
-export function getDbForApi(): DbClient | null {
-  return dbForApi
+let hostContext: PluginHostContext | null = null
+
+export function setPluginHostContext(context: PluginHostContext): void {
+  hostContext = context
+}
+
+export function getPluginHostContext(): PluginHostContext | null {
+  return hostContext
 }

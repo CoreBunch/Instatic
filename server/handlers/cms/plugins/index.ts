@@ -40,7 +40,7 @@ import type { AuthUser } from '../../../repositories/users'
 import { requireCapability, requireStepUp } from '../../../auth/authz'
 import {
   handleServerPluginRuntimeRequest,
-  setPluginWorkerDbClient,
+  setPluginHostContext,
 } from '../../../plugins/runtime'
 import { jsonResponse } from '../../../http'
 import { type CmsHandlerOptions } from '../shared'
@@ -237,7 +237,7 @@ export async function handlePluginsRoutes(
   // (the canonical setter) only runs at boot and after disable/enable cycles —
   // without this call, a fresh install or upgrade would see api dispatches
   // fail with "no DbClient configured" until the next boot.
-  setPluginWorkerDbClient(db)
+  setPluginHostContext({ db, uploadsDir: options.uploadsDir })
 
   // Plugin runtime is a pass-through to the plugin's own server module — its
   // capability gating lives inside `handleServerPluginRuntimeRequest` because

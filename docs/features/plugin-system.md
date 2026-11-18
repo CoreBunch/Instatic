@@ -174,7 +174,9 @@ Authors normally write `instatic-plugin.config.ts` with `definePlugin(...)`; the
     "assets": [
       { "kind": "script", "src": "frontend/tracker.js",
         "placement": "body-end", "strategy": "defer" }
-    ]
+    ],
+    // Optional: third-party hosts published pages may load scripts / frames from.
+    "origins": { "scripts": ["js.example.com"], "frames": ["widgets.example.com"] }
   },
 
   "networkAllowedHosts": [
@@ -201,7 +203,7 @@ Authors normally write `instatic-plugin.config.ts` with `definePlugin(...)`; the
 - `entrypoints.editor` and app-kind admin pages require `editor.code`.
 - `entrypoints.modules` requires `modules.register`.
 - Any `adminPages[]` entry requires `admin.navigation`.
-- `frontend.assets[]` requires `frontend.assets`.
+- `frontend.assets[]` and `frontend.origins` require `frontend.assets`.
 - Public routes require both `cms.routes` and `cms.routes.public`.
 - Server `fetch()` requires `network.outbound` and a matching `networkAllowedHosts[]` entry.
 - Any `cms.content.*` permission requires a non-empty `contentAccess[]`, and every mode an entry declares requires its permission (`CONTENT_ACCESS_MODE_PERMISSIONS` in `src/core/plugin-sdk/contentSchemas.ts` is the one mode-to-permission table both checks read). `instatic-plugin lint` additionally warns when a `cms.content.*` permission is requested but no entry declares its mode, since the host fails closed per table and mode and every call under it would be rejected.
@@ -524,7 +526,40 @@ Routes mount under `/admin/api/cms/plugins/<id>/runtime/*`. The host enforces th
 
 Request bodies are **byte-safe end to end**. The host reads the incoming body once as raw bytes and carries it to the sandbox tagged `utf8` (text verbatim) or `base64` (binary), so `req.text()` / `req.json()` decode correctly (including multibyte UTF-8) and `req.arrayBuffer()` returns the exact payload bytes. Pre-parsed `body` fields cover `application/json`, `application/x-www-form-urlencoded` (repeated keys become arrays), and `multipart/form-data` — text fields arrive as strings, file fields as uploaded-file facades (`{ name, type, size, arrayBuffer(), text() }`) whose bytes are uncorrupted, so plugins can accept image/PDF uploads. (De)serialization lives in `server/plugins/host/routeIo.ts`; the wire codec in `server/plugins/protocol/bodyEncoding.ts`.
 
+Route handlers never receive Instatic's own cookies. The host removes every `instatic_` cookie (admin session, member session, branch preview) from `req.headers.cookie` before the request reaches the sandbox (`server/sessionCookies.ts`); who the caller is arrives as `ctx.user`. Other cookies pass through.
+
 Custom responses (status, headers, non-JSON bodies) use the raw-response escape hatch: return `{ __response: true, status, headers, body }` instead of a plain object. `body` accepts a string (sent as UTF-8 text) or an `ArrayBuffer` / TypedArray / `DataView` (sent byte-exactly — serve images, zips, PDFs directly); anything else throws a `TypeError`.
+
+### Site members — requires `members.read` / `members.write` / `members.tags`
+
+Site members are the people with an account on the published site (see [members](members.md)). They are not admin users: `ctx.user` is an admin, `ctx.member` is a member.
+
+**The public mount.** Routes for the published site are served at `/_instatic/plugins/<pluginId>/<path>` (`server/plugins/publicRoutes.ts`), outside `/admin`. It serves a plugin's `routes.public.*` and `routes.member.*` routes; capability-gated and `authenticated` routes answer 404 there. Public routes are still reachable on the admin mount too; member routes are only on the public one. Bodies over 1 MiB are refused.
+
+```js
+// Only a signed-in member reaches the handler; ctx.member is always set.
+api.cms.routes.member.get('/orders', (ctx) => listOrders(ctx.member.id))
+// Only a member holding the tag; others get 403.
+api.cms.routes.member.post('/download', { tag: 'pro' }, handler)
+// A public route sees ctx.member too when the plugin holds members.read.
+api.cms.routes.public.get('/price', (ctx) => priceFor(ctx.member))
+```
+
+- `ctx.member` is `{ id, email, tags, profile }` or `null`. The host resolves it; the member's session cookie is still stripped from `req.headers`.
+- A signed-out visitor gets 401 from a member route. A member-route write (POST, PATCH, DELETE) must name this site's origin, as the member endpoints require; a public-route write may omit it (webhooks) but may not name another site.
+- A response for a member is sent `Cache-Control: private, no-store` unless the handler sets its own.
+
+```js
+const member = await api.cms.members.get({ email })            // or { id }; null when there is none
+await api.cms.members.invite({ email, tags: ['pro'] })         // members.write (+ members.tags for tags)
+await api.cms.members.tags.grant(member.id, 'pro', { expiresAt })  // members.tags
+await api.cms.members.tags.revoke(member.id, 'pro')            // only this plugin's own grant
+```
+
+- A tag a plugin grants is recorded with the plugin id as its source. `revoke` withdraws that grant only: a tag an administrator or another plugin gave stays. Tags starting with `instatic:` cannot be granted.
+- `invite` sends the site's invitation email. It rejects when the address already has an account, and when the site has no configured public address or no outgoing email (there is no request to take a link address from).
+
+**Member events** (need `cms.hooks` and `members.read`): `member.created`, `member.verified`, `member.signedIn` (`{ memberId, email }`), `member.tagged` (`{ memberId, tag, source, expiresAt }`), `member.deleted` (`{ memberId }`). They are sent without waiting, so a listener cannot delay or cancel a sign-in.
 
 ### Plugin-owned records — requires `cms.storage`
 
@@ -547,7 +582,9 @@ const name = await api.cms.hooks.emit('sync.done', { /* … */ })
 // name === 'plugin.<your-plugin-id>.sync.done'
 ```
 
-**Host-emitted events** (the reserved core list, `CORE_HOOK_EVENTS` in `src/core/plugins/hookBus.ts`): `publish.before`, `publish.after`, `content.entry.created`, `content.entry.updated`, `content.entry.deleted`, `settings.changed`. **Filters**: `publish.html`, `publish.headers`, `content.entry.cells`.
+**Host-emitted events** (the reserved core list, `CoreHookEvent` in `src/core/plugins/hookBus.ts`): the `member.*` events (see "Site members" above), `publish.before`, `publish.after`, `content.entry.created`, `content.entry.updated`, `content.entry.deleted`, `settings.changed`. **Filters**: `publish.html`, `publish.headers`, `content.entry.cells`.
+
+A page rendered for a signed-in member on a protected route is passed to a plugin's `publish.html` filter only when the plugin also holds `members.read`; without it the filter is skipped for that render and the page is sent as it is.
 
 Every filter handler returns the same runtime value type it received. `src/core/plugins/hookBus.ts` checks each result before passing it to the next handler; a mismatched result keeps the previous value and logs the offending plugin ID. For example, `publish.html` returns a string and `content.entry.cells` returns an object, never `null`.
 
@@ -590,7 +627,7 @@ ctx.request: {
   query: Record<string, string>   // parsed page query string (?q=shoes → { q: 'shoes' })
   path: string                    // originating page path (e.g. '/search')
   slug: string | null
-  cookies: Record<string, string> // populated ONLY for perVisitor sources
+  cookies: Record<string, string> // populated ONLY for perVisitor sources; session cookies are removed
 }
 ```
 
@@ -624,11 +661,54 @@ Published-page tags are declarative. A plugin declares `frontend.assets[]` in th
 }
 ```
 
-Supported `kind` values are `script`, `script-inline`, `style`, `style-inline`, `link`, and `meta`. Placements are `head`, `head-end`, `body-start`, and `body-end`; defaults are chosen by tag type when omitted. `script.strategy` maps to `defer`, `async`, `module`, or sync script emission. External `src` / `href` paths are plugin-package-relative safe paths resolved under `/uploads/plugins/<id>/<version>/`; arbitrary remote script URLs are not accepted as plugin asset paths.
+Supported `kind` values are `script`, `script-inline`, `style`, `style-inline`, `link`, and `meta`. Placements are `head`, `head-end`, `body-start`, and `body-end`; defaults are chosen by tag type when omitted. `head` lands directly below the page's CSP `<meta>` rather than at the very top, because a `<meta>` policy does not govern anything the parser reaches before it. `script.strategy` maps to `defer`, `async`, `module`, or sync script emission. `src` / `href` paths are plugin-package-relative safe paths resolved under `/uploads/plugins/<id>/<version>/`. The one exception is a `script` whose `src` is an absolute `https://` address on a host the plugin declared in `frontend.origins.scripts` (below); a stylesheet `href` is always package-relative.
 
 `attrs` passes through to the emitted tag except where `server/publish/frontendInjections.ts` owns the value: `data-plugin-id` on every tag, `src` on every script, strategy attributes on external scripts, and `href` plus `rel` on stylesheet assets. Bare `link` and `meta` declarations rely entirely on `attrs`. Inline JSON-LD uses `{ "kind": "script-inline", "attrs": { "type": "application/ld+json" }, "content": "..." }`.
 
-The injection pipeline derives CSP changes from the plan. Inline scripts/styles add the matching `'unsafe-inline'` directive. `networkAllowedHosts[]` contributes published-page `connect-src` origins for plugins with frontend assets, which is why frontend trackers that call their own or third-party ingest endpoints must list those hosts as well as declare `frontend.assets`.
+The injection pipeline derives CSP changes from the plan, and every change adds to the policy the publisher emitted; none replaces a directive, so the importmap hash and the module-JS grant survive. Any script tag adds `'self'` to `script-src`. An inline style adds `'unsafe-inline'` to `style-src`.
+
+**Inline scripts run by hash, never by `'unsafe-inline'`.** A `script-inline` asset a browser executes adds its own `'sha256-…'` to `script-src`. "Executes" follows the HTML standard: no `type` (or `type=""`), a `type` that is exactly a JavaScript MIME type, `module`, `importmap` or `speculationrules` (ASCII case-insensitive, surrounding ASCII whitespace ignored), or no `type` with a JavaScript `language`. A type with parameters (`text/javascript; charset=utf-8`) is a data block, as it is in a browser. The publisher never adds `'unsafe-inline'` for scripts: a policy that carries any hash makes browsers ignore it, so granting it would only describe behaviour that does not exist. What follows for plugin authors:
+
+- The only inline code that runs on a published page is a declared `script-inline` asset. Inline event handlers (`onclick="…"`) and an inline `<script>` added any other way, including through the `publish.html` filter, are blocked by the browser. Attach handlers from a script, and ship code as an asset.
+- The hash covers the text the browser sees: CR LF and lone CR in `content` are emitted as LF, which is what the HTML parser would make of them anyway. Inline `content` (script or style) may not contain U+0000, which the parser would replace; the manifest parser refuses it.
+- A data block (`type="application/ld+json"`, a template, any non-script type) is not executed, needs no grant, and leaves the policy untouched: a page whose only plugin tag is JSON-LD keeps `script-src 'none'`.
+
+**`connect-src` follows the plugin, not its tags.** An enabled plugin granted `frontend.assets` contributes its `networkAllowedHosts[]` to `connect-src` on every published page once it can run code in a visitor's browser: it declares at least one `frontend.assets[]` entry or `frontend.origins` host, or it ships a canvas module pack (`entrypoints.modules`, the per-plugin stand-in for "may render module JS", since which modules emit JS is only known per render). A plugin whose hosts serve its server code alone contributes nothing, and one plugin's tag never opens another plugin's hosts. A frontend tracker that calls its own or a third-party ingest endpoint must list that host as well as hold `frontend.assets`.
+
+**When a change reaches a page.** Tags, origins and hosts are written into the page at render time: baked pages carry them from the publish that baked them. Installing, upgrading, enabling, disabling or removing a plugin does not rebake anything, so a baked page keeps what it had (a disabled plugin's tags and origins included) until the next publish.
+
+#### Third-party origins — `frontend.origins`
+
+A published page blocks every script and frame that is not its own (`script-src 'self'` at most, `frame-src 'none'`). A plugin that needs a third party's hosted code, such as a payment provider's script and the frames it opens, declares the hosts:
+
+```jsonc
+{
+  "permissions": ["frontend.assets"],
+  "networkAllowedHosts": ["api.payments.example"],
+  "frontend": {
+    "assets": [
+      { "kind": "script", "src": "https://js.payments.example/v3", "strategy": "async" },
+      { "kind": "script", "src": "frontend/checkout.js" }
+    ],
+    "origins": {
+      "scripts": ["js.payments.example"],
+      "frames": ["js.payments.example", "hooks.payments.example"]
+    }
+  }
+}
+```
+
+- `scripts` are added to the page's `script-src`, `frames` to `frame-src`, each as `https://<host>`. Calls the page makes (`fetch`, XHR) still go through `networkAllowedHosts` → `connect-src`. Fonts, styles and other directives cannot be widened.
+- An entry is a bare lowercase hostname or a leading-`*.` wildcard (`*.payments.example`, any subdomain depth, never the bare domain). No scheme, port, path, IP literal, single-label name, CSP keyword, or wildcard over a whole TLD (`*.com`); up to 20 per list. `FRONTEND_ORIGIN_HOST_PATTERN` in `src/core/plugins/manifestFrontend.ts` is the grammar.
+- Names nobody owns as a whole are refused on top of the grammar (`frontendOriginRejection`, same file): private-network names (`*.local`, `app.localhost`, `*.internal`), the country-code public suffixes listed in that file (`co.uk`, `com.au`, …), and a wildcard directly under a shared-hosting domain (`*.github.io`, `*.vercel.app`, `*.cloudfront.net`, anything under `amazonaws.com`, and the rest of the list in that file). Name the exact host instead (`acme.github.io`). The list is a floor, not the Public Suffix List, so the review screen also prints a warning under every wildcard origin ("Any subdomain of …").
+- A `script` asset may point at an absolute `https://` address only when its host matches one of the plugin's own `scripts` entries. The manifest parser refuses anything else, and the publisher checks again when it emits the tag. A `frames` entry does not authorise a script.
+- Origins are granted with `frontend.assets` and enforced against the granted set: a plugin that is disabled, errored, or was not granted the permission contributes none to a page rendered from then on (a page baked earlier keeps them until the next publish, as above). A plugin may declare origins with an empty `assets` list when its module JS is what loads the third-party code; its `networkAllowedHosts` still reach `connect-src`.
+- The install and upgrade review lists every origin in plain words ("May load scripts from …", "May embed frames from …"), and an upgrade that adds one flags it as new.
+- There is no `integrity` requirement on an external script. Providers that need this (payment scripts in particular) update the file in place, which a pinned hash would break; the declared host is the control. Add `integrity` through `attrs` when the provider publishes versioned, immutable files.
+
+**The editing canvas loads the stylesheets, and only the stylesheets.** A page styled by a plugin stylesheet has to look the same while editing as it does published, so the site editor's canvas loads every `style` and `style-inline` asset, in the published order (placement anchor, then plugin id, then manifest order). `script`, `script-inline`, `link` and `meta` assets never load in the canvas: it shares the admin origin and is an editing surface, so plugin frontend scripts must not run there. (The runtime preview is built by `buildRuntimePreviewDocument`, which runs the full `injectFrontendAssets` pass, so it gets every tag.)
+
+Both surfaces start from one eligibility rule, `listFrontendAssetPlugins` in `server/publish/frontendInjections.ts`: the plugin is enabled, not in the error state, and was **granted** `frontend.assets`. `collectFrontendInjections` builds the published tags from it; `collectCanvasPluginStylesheets` (`server/publish/canvasStylesheets.ts`) builds the canvas list, served by `GET /admin/api/cms/runtime/canvas-stylesheets` (`site.read`). The canvas receives CSS text, not URLs: external files are read from the plugin's upload directory and their relative `url(...)` / `@import` references rebased onto the stylesheet URL, so the canvas can pin viewport units and keep plugin CSS in the author cascade layer. The `media` attribute is kept; an `@import` inside a plugin stylesheet is not followed in the canvas. Canvas side: [`docs/editor.md`](../editor.md) → "CSS injection into the iframe".
 
 ### Settings — declared in `instatic-plugin.config.ts` / `plugin.json`
 
@@ -766,6 +846,8 @@ const { count } = await api.cms.content.republishAll()
 Tree mutation and replacement payloads are validated against the canonical `@core/page-tree` TypeBox schemas before host dispatch. `insertNode.node` must be a complete `PageNode`, and `replace(tree)` must receive a complete `NodeTree` with a valid `rootNodeId`, matching node-map keys, resolvable child IDs, and no reachable cycles.
 
 The host protocol names the per-table entry calls as `cms.content.entries.list`, `cms.content.entries.get`, `cms.content.entries.getBySlug`, `cms.content.entries.create`, `cms.content.entries.update`, `cms.content.entries.delete`, `cms.content.entries.publish`, `cms.content.entries.moveTable`, `cms.content.entries.createMany`, `cms.content.entries.updateMany`, and `cms.content.entries.deleteMany`. Tree calls dispatch as `cms.content.tree.read`, `cms.content.tree.mutate`, and `cms.content.tree.replace`; `getPublishedSnapshot(...)` dispatches as `cms.content.snapshot`.
+
+`publish`, `delete` and `deleteMany` keep the baked publish slot in step, exactly as the Content workspace does: the entry's own page is written or removed, and baked pages that list its table through a loop are refreshed. See [publisher.md](publisher.md) → "Publishing one row, and the pages that list it".
 
 #### Content events
 
@@ -906,6 +988,10 @@ const data = await res.json()
 const img   = await fetch('https://cdn.example.com/pixel.png')
 const bytes = new Uint8Array(await img.arrayBuffer())   // exact upstream bytes
 await fetch('https://api.example.com/upload', { method: 'POST', body: bytes })
+
+// Ask for a redirect instead of following it (a signed download link, say):
+const hop  = await fetch('https://api.example.com/asset/42', { redirect: 'manual' })
+const link = hop.status === 302 ? hop.headers.get('location') : null
 ```
 
 Bodies are **byte-safe in both directions**. The host reads upstream responses as raw bytes and ships them to the sandbox tagged `utf8` (text verbatim) or `base64` (binary), so `res.text()` / `res.json()` decode correctly (including multibyte UTF-8) and `res.arrayBuffer()` returns the exact bytes — fetching images, gzip, or protobuf works. Request bodies accept `string | ArrayBuffer | TypedArray/DataView`; anything else (`FormData`, `Blob`, `URLSearchParams`, streams) throws a `TypeError` naming the supported types — serialize to a string or bytes first. The VM `fetch(...)` polyfill dispatches through the `network.fetch` host target; aborts use `network.abort`. Wire codec: `server/plugins/protocol/bodyEncoding.ts`.
@@ -916,7 +1002,13 @@ The permission alone is insufficient. `performGatedFetch` in `server/plugins/hos
 
 2. **DNS resolution + SSRF guard.** The hostname is resolved to its addresses via the system DNS resolver **before** the connection is made. If any resolved address falls in a blocked range, the request is rejected — even when the host is allowlisted. Blocked ranges: loopback (`127.0.0.0/8`, `::1`), private (`10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`), link-local (`169.254.0.0/16`, `fe80::/10`), CGNAT (`100.64.0.0/10`), unique-local (`fc00::/7`), unspecified (`0.0.0.0/8`, `::`), and IPv4-mapped IPv6 forms of all of the above. This prevents DNS rebinding attacks (an allowlisted hostname that resolves to an internal IP is blocked).
 
-3. **Manual redirect following with re-validation.** The host does not use transparent redirect following (`redirect: 'manual'` is always set). Each redirect location is validated with both the allowlist and the DNS SSRF guard before the next hop. The chain is capped at 5 hops. Method downgrade (303 → GET; 301/302 non-GET → GET) follows the Fetch spec.
+3. **Manual redirect following with re-validation.** The host does not use transparent redirect following (Bun is always told `redirect: 'manual'`). Each redirect location is validated with both the allowlist and the DNS SSRF guard before the next hop. The chain is capped at 5 hops. Method downgrade (303 → GET; 301/302 non-GET → GET) follows the Fetch spec. A hop to another origin (scheme, host or port) drops exactly three request headers, `Authorization`, `Cookie` and `Proxy-Authorization` (matched case-insensitively), for that hop and every later one. Nothing else is removed: a secret in a custom header (`X-Api-Key`, say) and the request body of a 307 or 308 still travel to the redirect target, which must itself be on the allowlist. A plugin that sends secrets that way should use `redirect: 'manual'` and decide for itself. A redirect status with no `Location` header is returned as the response. This applies to every `guardedFetch` caller, including media uploads and downloads.
+
+**The `redirect` option.** `fetch(url, { redirect })` accepts `'follow'` (default, as above), `'manual'` and `'error'`; any other value throws a `TypeError` in the sandbox.
+
+- `'manual'` returns the redirect response itself for any redirect status (301, 302, 303, 307, 308): `res.status` is the 3xx, `res.ok` is `false`, and `res.headers.get('location')` is the target as the server sent it (it may be relative or absent; several `Location` headers arrive joined with `, `). It is an ordinary response, not the browser's opaque redirect, and it has **no body**: the host drops a redirect's body without reading it. The first hop passes checks 1 and 2 exactly as any request does; the target is never resolved or contacted, so it does **not** need to be in `networkAllowedHosts`. The `Location` value is a string the upstream server chose: treat it as untrusted (it can name any address, internal ones included) and never fetch it from the plugin without it passing the allowlist like any other URL. Handing it to a visitor's browser in a redirect is the intended use.
+- `'error'` rejects on any redirect status, with or without a `Location`.
+- `res.redirected` is `true` when the host followed at least one hop.
 
 **`networkAllowedHosts` entry constraints (checked at manifest parse time).** The manifest parser validates every entry before a plugin can be installed. Only plain or wildcard hostnames are accepted — the entry pattern already rejects IPv6 literals, ports, paths, and query strings. Two additional checks run on top:
 
@@ -946,7 +1038,7 @@ independent layers that agree on that single authority:
 
 Both the VM layer and the host layer drive from the same `TARGET_PERMISSIONS` map in `server/plugins/protocol/targets.ts`. This single table is the source of truth for which permission each RPC target requires — the VM and host can never silently assert different permissions for the same target.
 
-Targets intentionally absent from `TARGET_PERMISSIONS` require no permission and are explicitly ungated: `cms.settings.replace` (any active plugin may update its own settings), `network.abort` (no active id without `network.outbound`), `crypto.digest` and `crypto.signHmac` (pure computation, no I/O — same model as `Math`/`JSON`). Two conditional checks that a static map cannot express remain in their handlers: `cms.routes.register` with `access.kind === 'public'` additionally requires `cms.routes.public`, and every `cms.content.*` handler additionally calls `assertContentTableAccess` for the per-table manifest allowlist.
+Targets intentionally absent from `TARGET_PERMISSIONS` require no permission and are explicitly ungated: `cms.settings.replace` (any active plugin may update its own settings), `network.abort` (no active id without `network.outbound`), `crypto.digest` and `crypto.signHmac` (pure computation, no I/O — same model as `Math`/`JSON`). Two conditional checks that a static map cannot express remain in their handlers: `cms.routes.register` with `access.kind === 'public'` additionally requires `cms.routes.public` and with `access.kind === 'member'` requires `members.read`, `cms.hooks.on` for a `member.*` event requires `members.read`, `cms.members.invite` with tags requires `members.tags`, and every `cms.content.*` handler additionally calls `assertContentTableAccess` for the per-table manifest allowlist.
 
 The VM-side check throws **synchronously** inside the sandbox, so a plugin that
 declares a permission it was denied is rejected before any host dispatch is even
@@ -970,6 +1062,9 @@ Risk levels:
 | `cms.storage`               | Admin / editor / server| Medium  | Read/write plugin-owned records                                         |
 | `cms.routes`                | Server               | High      | Register authenticated backend routes                                   |
 | `cms.routes.public`         | Server               | Dangerous | Register anonymously-callable routes; requires `cms.routes` too          |
+| `members.read`              | Server               | High      | See the signed-in member on its routes, register member routes, look members up, hear member events |
+| `members.write`             | Server               | High      | Invite site members                                                      |
+| `members.tags`              | Server               | Dangerous | Grant and withdraw member access tags (what a member may open)           |
 | `cms.hooks`                 | Server               | High      | Listen to CMS events / filter values                                    |
 | `cms.schedule`              | Server               | High      | Register cadence-driven handlers                                        |
 | `cms.content.read`          | Server               | Low       | List / read entries; read trees; search; published snapshots             |
@@ -987,7 +1082,7 @@ Risk levels:
 | `loops.register`            | Editor / server / manifest | Medium | Register custom `base.loop` sources                                  |
 | `visualComponents.register` | Admin / manifest     | Medium    | Ship VCs / page templates / class / layout packs (via `pack/site.json`) |
 | `dashboard.widgets.register`| Admin                | Medium    | Register cards in the admin dashboard widget grid                       |
-| `frontend.assets`           | Frontend / manifest  | High      | Inject declarative tags into every published page; also gates module render() `js` |
+| `frontend.assets`           | Frontend / manifest  | High      | Inject declarative tags into every published page; also gates module render() `js` and `frontend.origins` (third-party script / frame hosts) |
 | `network.outbound`          | Server               | High      | Make outbound HTTP requests (with `networkAllowedHosts` allowlist)      |
 | `media.import`              | Server / CMS media   | High      | Upsert managed media from a remote URL or contained package asset       |
 | `media.storage.adapter`     | Server / CMS media   | Dangerous | Register an electable media storage backend                             |
@@ -1165,6 +1260,7 @@ export default definePlugin({
   - `src/core/plugin-sdk/capabilities.ts` — permission catalog
   - `src/core/plugin-sdk/types/editorApi.ts` — editor / dashboard browser API
   - `src/core/plugin-sdk/types/frontend.ts` — published-page frontend asset declarations
+  - `src/core/plugins/manifestFrontend.ts` — `frontend` manifest schema, coherence rules, third-party origin matching
   - `src/core/plugin-sdk/types/media.ts` — media storage / URL / variant plugin API
   - `src/core/plugin-sdk/builders/definePlugin.ts` — typed config builder
   - `src/core/plugin-sdk/builders/permissions.ts` — permission aliases for plugin authors
@@ -1220,7 +1316,7 @@ export default definePlugin({
   - `src/__tests__/architecture/media-storage-panel.test.ts`
   - `src/__tests__/architecture/media-signed-redirect-serving.test.ts`
   - `src/__tests__/architecture/media-presentation-pipeline.test.ts`
-  - `src/__tests__/plugins/gatedFetchSsrf.test.ts` — SSRF guards: allowlist, DNS rebinding, redirect re-validation, redirect cap
+  - `src/__tests__/plugins/gatedFetchSsrf.test.ts` — SSRF guards: allowlist, DNS rebinding, redirect re-validation, redirect cap, `redirect: 'manual' | 'error'`, credential headers dropped on a cross-origin hop
   - `src/__tests__/plugins/pluginBinaryIo.test.ts` — host-side byte safety: wire codec round-trips, binary fetch bodies, multipart file fields, binary route responses
   - `src/__tests__/plugins/pluginDashboardWidgets.test.ts` — dashboard widget registration surface
   - `src/__tests__/plugins/pluginSettings.test.ts` — settings rendering and persistence behavior

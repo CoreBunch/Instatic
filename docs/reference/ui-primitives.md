@@ -58,6 +58,8 @@ Every interactive control in `src/admin/` goes through one of these. Bare `<butt
 | `WidgetList`       | List layout for rows inside a widget                                 | `children`; `WidgetListRow` takes `primary`, `meta`        |
 | `EmptyState`       | Empty list / page placeholder                                        | `icon`, `title`, `description`, `action`                   |
 
+A page-level empty state (a workspace list, table or canvas with nothing in it) is always `<EmptyState variant="centered" icon={<XIcon size={28} />} title description />`, with an `action` when the user can fix it from there. The Media library's "No media yet" is the reference. Do not style a bare `<p>` or a bordered box for this. `variant="card"`, `compact` and `plain` are for small empties inside a panel or a section.
+
 ### Overlay / feedback
 
 | Primitive          | When to use                                                          | Key props                                                  |
@@ -75,6 +77,7 @@ Every interactive control in `src/admin/` goes through one of these. Bare `<butt
 | Primitive                  | When to use                                                  | Key props                                                |
 |----------------------------|--------------------------------------------------------------|----------------------------------------------------------|
 | `DataTable`                | Token-backed table shell; caller owns rows, sorting, and selection | `density`, `wrapperClassName`; compose `DataTableHead`, `DataTableBody`, `DataTableRow`, `DataTableHeader`, `DataTableCell` |
+| `TagInput`                 | A short list of text tags: removable pills plus one field. Enter or comma adds, Backspace on an empty field removes the last | `value`, `onChange`, `ariaLabel`, `placeholder`, `disabled`, `normalize`, `validate` (returns why a tag is refused), `maxTags` |
 | `TagPill`                  | Compact tinted labels, selector chips, removable tag pills   | `label`, `active`, `muted`, `size: 'xs' \| 'sm'`, `monospace`, `leading` (ReactNode prefix slot), `colorKey`, `tone: 'success' \| 'warning' \| 'danger'` (a semantic state instead of the label's accent), `onClick`, `onRemove`, `onContextMenu`, `mainAriaLabel`, `removeAriaLabel`, `removeTooltip` |
 | `Heading`                  | Semantic h1-h6 using editor typography tokens                | `level`, `children`                                      |
 | `Text`                     | Body, muted, strong, or monospace text in host/plugin UI     | `variant`, `size`, `children`                            |

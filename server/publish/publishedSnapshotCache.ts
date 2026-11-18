@@ -28,10 +28,25 @@ import type { PublishedPageSnapshot } from '../repositories/publish'
 import { getLatestPublishedSiteSnapshot } from '../repositories/publish'
 import { collectLoopNodes } from './loopPrefetch'
 import { createVersionedSingleFlight } from './publishState'
+import { contentHash } from '../branches/contentHash'
 
 // ---------------------------------------------------------------------------
 // Latest snapshot
 // ---------------------------------------------------------------------------
+
+// Published documents are immutable. Cache the fingerprint by object identity
+// so a full-site bake hashes the document once, not once per rendered page.
+const snapshotHashes = new WeakMap<SiteDocument, string>()
+
+/** Stable across cache invalidations and process restarts; changes with the frozen site. */
+export function getPublishedSnapshotHash(site: SiteDocument): string {
+  let hash = snapshotHashes.get(site)
+  if (hash === undefined) {
+    hash = contentHash(site)
+    snapshotHashes.set(site, hash)
+  }
+  return hash
+}
 
 const snapshotMemo = createVersionedSingleFlight<PublishedPageSnapshot>()
 
@@ -52,6 +67,7 @@ export function getLatestSnapshotForVersion(
 
 interface PublishedNodeIndex {
   site: SiteDocument
+  snapshotHash: string
   /** First page wins on the (extremely unlikely) duplicate node id. */
   nodeIndex: Map<string, Page>
 }
@@ -75,7 +91,7 @@ export function getPublishedNodeIndexForVersion(
         if (!nodeIndex.has(nodeId)) nodeIndex.set(nodeId, page)
       }
     }
-    return { site: snapshot.site, nodeIndex }
+    return { site: snapshot.site, snapshotHash: getPublishedSnapshotHash(snapshot.site), nodeIndex }
   })
 }
 

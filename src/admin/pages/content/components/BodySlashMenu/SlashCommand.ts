@@ -40,6 +40,11 @@ interface SlashCommandOptions {
    */
   onExternal: (action: SlashExternalAction) => void
   /**
+   * Item ids to leave out of the menu, for hosts that cannot offer them
+   * (an email template has no media library to pick from).
+   */
+  hiddenItemIds: readonly string[]
+  /**
    * Renderer plumbing — exposed via the extension's `addOptions` so the
    * React layer can mount its menu. The host attaches the four lifecycle
    * methods that `@tiptap/suggestion` expects (onStart / onUpdate /
@@ -56,6 +61,7 @@ export const SlashCommand = Extension.create<SlashCommandOptions>({
   addOptions() {
     return {
       onExternal: () => undefined,
+      hiddenItemIds: [],
       suggestion: {
         char: '/',
         startOfLine: false,
@@ -69,11 +75,14 @@ export const SlashCommand = Extension.create<SlashCommandOptions>({
 
   addProseMirrorPlugins() {
     const onExternal = this.options.onExternal
+    const hidden = this.options.hiddenItemIds
+    const visibleItems = (): SlashCommandItem[] =>
+      buildSlashItems(onExternal).filter((item) => !hidden.includes(item.id))
     return [
       Suggestion<SlashCommandItem>({
         editor: this.editor,
         ...this.options.suggestion,
-        items: ({ query, editor }) => filterSlashItems(buildSlashItems(onExternal), query, editor),
+        items: ({ query, editor }) => filterSlashItems(visibleItems(), query, editor),
       }),
     ]
   },

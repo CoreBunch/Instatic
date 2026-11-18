@@ -1,5 +1,6 @@
 import type { ModuleComponentProps } from '@core/module-engine'
 import { normalizeIdentifierValue } from '@core/utils/identifier'
+import { submitUsesChildren } from './content'
 
 type FormProps = Record<string, unknown> & {
   formId: string
@@ -206,17 +207,18 @@ export function RadioEditor({ mcClassName, nodeWrapperProps, props }: ModuleComp
   )
 }
 
-export function SubmitEditor({ mcClassName, nodeWrapperProps, props }: ModuleComponentProps<SubmitProps>) {
+export function SubmitEditor({ mcClassName, nodeWrapperProps, props, children }: ModuleComponentProps<SubmitProps>) {
   const formId = normalizeIdentifierValue(props.formId)
+  const childCount = Array.isArray(children) ? children.length : children != null ? 1 : 0
   return (
     <button
       {...nodeWrapperProps}
       className={mcClassName}
-      type="button"
+      type="submit"
       disabled={props.disabled}
       form={formId || undefined}
     >
-      {props.label}
+      {submitUsesChildren(childCount) ? children : props.label}
     </button>
   )
 }

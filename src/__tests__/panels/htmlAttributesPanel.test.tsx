@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
 import React from 'react'
-import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import { PropertiesPanel } from '@site/panels/PropertiesPanel/PropertiesPanel'
 import { useEditorStore } from '@site/store/store'
 import { makeNode, makePage, makeSite } from '../fixtures'
@@ -81,6 +81,25 @@ function loadSiteWithPlainText(): string {
 }
 
 describe('HtmlAttributesPanel', () => {
+  it('keeps the show-to rule in its own Visibility view, marked while a rule is set', () => {
+    const nodeId = loadSiteWithPlainText()
+    render(<PropertiesPanel />)
+
+    fireEvent.click(screen.getByRole('button', { name: /^attributes$/i }))
+    expect(screen.queryByTestId('show-when-control')).toBeNull()
+
+    const tab = screen.getByRole('button', { name: /^visibility$/i })
+    expect(within(tab).queryByRole('img', { name: 'A rule is set' })).toBeNull()
+    fireEvent.click(tab)
+    expect(screen.getByTestId('show-when-control')).toBeDefined()
+    expect(screen.queryByTestId('html-attributes-panel')).toBeNull()
+
+    act(() => {
+      useEditorStore.getState().updateNodeProps(nodeId, { showWhen: { visitor: 'signedIn' } })
+    })
+    expect(within(screen.getByRole('button', { name: /^visibility/i })).getByRole('img', { name: 'A rule is set' })).toBeDefined()
+  })
+
   it('switches from styles to attributes and applies HTML attribute edits immediately', () => {
     const nodeId = loadSiteWithTrackedImage()
     render(<PropertiesPanel />)

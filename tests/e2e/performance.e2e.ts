@@ -35,6 +35,14 @@ test.describe('performance and reliability', () => {
     page.on('console', (message) => {
       if (message.type() === 'error') consoleErrors.push(message.text())
     })
+    // A failed request only reaches the console as "Failed to load resource";
+    // record which one, so a failure here names its cause.
+    const failedResponses: string[] = []
+    page.on('response', (response) => {
+      if (response.status() >= 400) {
+        failedResponses.push(`${response.status()} ${response.request().method()} ${new URL(response.url()).pathname}`)
+      }
+    })
 
     const startedAt = Date.now()
     await page.goto('/admin/site')
@@ -50,7 +58,7 @@ test.describe('performance and reliability', () => {
       description: `Site editor usable in ${usableMs}ms`,
     })
     expect(usableMs).toBeLessThan(STARTUP_USABILITY_BUDGET_MS)
-    expect(consoleErrors).toEqual([])
+    expect({ consoleErrors, failedResponses }).toEqual({ consoleErrors: [], failedResponses: [] })
   })
 
   // Publishing rotates the session through step-up, so this runs fresh.

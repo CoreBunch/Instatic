@@ -3,7 +3,7 @@ import * as os from 'node:os'
 import * as fs from 'node:fs/promises'
 import * as path from 'node:path'
 import { createTestDb } from '../helpers/createTestDb'
-import { removeDataRowArtefact } from '../../../server/publish/publishRow'
+import { retractDataRowArtefacts } from '../../../server/publish/publishRow'
 import {
   getActiveSlot,
   readArtefact,
@@ -17,7 +17,7 @@ import {
  * version but left the file, so retracted content stayed publicly served.
  * Retraction must prune the artefact from the active slot.
  */
-describe('removeDataRowArtefact', () => {
+describe('retractDataRowArtefacts', () => {
   async function withRow(status: string): Promise<{
     db: Awaited<ReturnType<typeof createTestDb>>['db']
     uploadsDir: string
@@ -55,7 +55,7 @@ describe('removeDataRowArtefact', () => {
     const ctx = await withRow('unpublished')
     try {
       expect(await readArtefact(ctx.uploadsDir, ctx.artefactPath)).toContain('ghost content')
-      await removeDataRowArtefact(ctx.db, ctx.uploadsDir, ctx.rowId, ctx.slug)
+      await retractDataRowArtefacts(ctx.db, ctx.uploadsDir, { id: ctx.rowId, tableId: 'pages', slug: ctx.slug }, { wasPublished: false })
       expect(await readArtefact(ctx.uploadsDir, ctx.artefactPath)).toBeNull()
     } finally {
       await ctx.cleanup()
@@ -67,7 +67,7 @@ describe('removeDataRowArtefact', () => {
     try {
       await ctx.db`update data_rows set deleted_at = current_timestamp where id = ${ctx.rowId}`
       expect(await readArtefact(ctx.uploadsDir, ctx.artefactPath)).toContain('ghost content')
-      await removeDataRowArtefact(ctx.db, ctx.uploadsDir, ctx.rowId, ctx.slug)
+      await retractDataRowArtefacts(ctx.db, ctx.uploadsDir, { id: ctx.rowId, tableId: 'pages', slug: ctx.slug }, { wasPublished: true })
       expect(await readArtefact(ctx.uploadsDir, ctx.artefactPath)).toBeNull()
     } finally {
       await ctx.cleanup()

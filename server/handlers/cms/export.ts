@@ -36,12 +36,19 @@
  * leak (the previous implementation returned every row regardless of
  * the caller's content visibility scope).
  */
+import { exportBundlePublication } from '../../repositories/bundlePublication'
+import { runtimeArchivePath, type BundlePublication } from '@core/data/bundlePublication'
+import { serializeCollabAwareWrite } from '../../repositories/rowWriteEvents'
+import { withPublishLock } from '../../publish/publishState'
+import { runPublishFlush } from '../../publish/publishFlush'
 import { stat } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { DbClient } from '../../db/client'
 import { requireCapability } from '../../auth/authz'
 import { getDraftSite } from '../../repositories/site'
 import { listDataTables } from '../../repositories/data/tables'
+import { listProtectedTables } from '../../repositories/data/tableAccess'
+import type { AccessRule } from '@core/members'
 import { listDataRows } from '../../repositories/data/rows'
 import { listExportableRedirects } from '../../repositories/data/publish'
 import { listMediaAssetsForExport, countMediaAssetsForExport } from '../../repositories/media'
@@ -56,7 +63,7 @@ import {
 } from '@core/data/bundleArchive'
 import { canSeeAllDataRows } from '../../auth/dataAccess'
 import { createStoredZipStream, estimateStoredZipSize, type StoredZipEntry } from '../../archive/storedZip'
-import { resolveBranchScopeById, type BranchScope } from '../../branches/scope'
+import { isMainScope, resolveBranchScopeById, type BranchScope } from '../../branches/scope'
 
 const EXPORT_PATH = `${CMS_API_PREFIX}/export`
 const EXPORT_ESTIMATE_PATH = `${CMS_API_PREFIX}/export/estimate`
@@ -100,7 +107,11 @@ function mediaEntryMetadata(asset: ExportableAsset, sizeBytes = asset.sizeBytes)
 interface ExportSelection {
   shell: NonNullable<Awaited<ReturnType<typeof getDraftSite>>>
   tables: Awaited<ReturnType<typeof listDataTables>>
+  /** Access rules of the exported tables that are not open to anyone. */
+  tableAccess: Record<string, AccessRule>
   rows: Awaited<ReturnType<typeof listDataRows>>
+  publication: BundlePublication
+  runtimeBytes: Uint8Array[]
   includeMedia: boolean
   includeSite: boolean
   /** Folder tree, or undefined when folders weren't requested. */
@@ -178,61 +189,79 @@ export async function handleExportRoute(
     includeRedirects = url.searchParams.get('includeRedirects') !== '0'
   }
 
-  // Always load the site shell — needed for sourceSiteName even when includeSite=false
-  const shell = await getDraftSite(db, exportScope)
-  if (!shell) {
-    return jsonResponse({ error: 'Site not initialised — run setup before exporting' }, { status: 404 })
-  }
+  await runPublishFlush()
+  const selection = await withPublishLock(() => serializeCollabAwareWrite(() => db.transaction(async (db): Promise<ExportSelection | Response> => {
+    // Always load the site shell — needed for sourceSiteName even when includeSite=false
+    const shell = await getDraftSite(db, exportScope)
+    if (!shell) {
+      return jsonResponse({ error: 'Site not initialised — run setup before exporting' }, { status: 404 })
+    }
 
-  // Resolve the table set: all tables for a full export, or just the named ones.
-  const selectionByTable = selections ? new Map(selections.map((s) => [s.tableId, s])) : null
-  let tables = await listDataTables(db, exportScope)
-  if (selectionByTable) {
-    tables = tables.filter((t) => selectionByTable.has(t.id))
-  }
+    // Resolve the table set: all tables for a full export, or just the named ones.
+    const selectionByTable = selections ? new Map(selections.map((s) => [s.tableId, s])) : null
+    let tables = await listDataTables(db, exportScope)
+    if (selectionByTable) {
+      tables = tables.filter((t) => selectionByTable.has(t.id))
+    }
 
-  // Load rows per table (parallel), applying each table's row subset if one was
-  // given. Visibility filtering: a caller without `content.edit.any` /
-  // `content.publish.any` / `content.manage` only sees their own rows in the
-  // bundle, so a Client with `data.export` can't download every author's drafts
-  // (G5 fix — see capabilities review).
-  const visibility = canSeeAllDataRows(user) ? {} : { ownerUserId: user.id }
-  const rowsPerTable = await Promise.all(
-    tables.map(async (table) => {
-      const all = await listDataRows(db, exportScope, table.id, visibility)
-      const sel = selectionByTable?.get(table.id)
-      if (!sel?.rowIds) return all
-      const want = new Set(sel.rowIds)
-      return all.filter((r) => want.has(r.id))
-    }),
-  )
-  const rows = rowsPerTable.flat()
-
-  // Media folder tree — cheap; gather whenever requested.
-  const mediaFolders = includeMediaFolders ? await listExportableMediaFolders(db) : undefined
-
-  // Redirects — keep the bundle self-consistent: only include redirects whose
-  // table AND target row are part of this export, so the import can restore
-  // them without dangling foreign keys (both FKs cascade-delete in the schema).
-  let redirects: SiteBundle['redirects']
-  if (includeRedirects) {
-    const selectedTableIds = new Set(tables.map((t) => t.id))
-    const selectedRowIds = new Set(rows.map((r) => r.id))
-    const all = await listExportableRedirects(db)
-    redirects = all.filter(
-      (r) => selectedTableIds.has(r.tableId) && selectedRowIds.has(r.targetRowId),
+    // Load rows per table (parallel), applying each table's row subset if one was
+    // given. Visibility filtering: a caller without `content.edit.any` /
+    // `content.publish.any` / `content.manage` only sees their own rows in the
+    // bundle, so a Client with `data.export` can't download every author's drafts
+    // (G5 fix — see capabilities review).
+    const visibility = canSeeAllDataRows(user) ? {} : { ownerUserId: user.id }
+    const rowsPerTable = await Promise.all(
+      tables.map(async (table) => {
+        const all = await listDataRows(db, exportScope, table.id, visibility)
+        const sel = selectionByTable?.get(table.id)
+        if (!sel?.rowIds) return all
+        const want = new Set(sel.rowIds)
+        return all.filter((r) => want.has(r.id))
+      }),
     )
-  }
+    const rows = rowsPerTable.flat().map((row) => isMainScope(exportScope) ? row : { ...row, status: 'draft' as const, publishedAt: null, scheduledPublishAt: null })
 
-  const selection: ExportSelection = {
-    shell,
-    tables,
-    rows,
-    includeMedia,
-    includeSite,
-    mediaFolders,
-    redirects,
-  }
+    // Media folder tree — cheap; gather whenever requested.
+    const mediaFolders = includeMediaFolders ? await listExportableMediaFolders(db) : undefined
+
+    // Redirects — keep the bundle self-consistent: only include redirects whose
+    // table AND target row are part of this export, so the import can restore
+    // them without dangling foreign keys (both FKs cascade-delete in the schema).
+    let redirects: SiteBundle['redirects']
+    if (includeRedirects) {
+      const selectedTableIds = new Set(tables.map((t) => t.id))
+      const selectedRowIds = new Set(rows.map((r) => r.id))
+      const all = await listExportableRedirects(db)
+      redirects = all.filter(
+        (r) => selectedTableIds.has(r.tableId) && selectedRowIds.has(r.targetRowId),
+      )
+    }
+
+    // A table's access rule is a live setting on the main branch.
+    const exportedTableIds = new Set(tables.map((t) => t.id))
+    const tableAccess = Object.fromEntries(
+      (isMainScope(exportScope) ? await listProtectedTables(db) : [])
+        .filter((entry) => exportedTableIds.has(entry.id))
+        .map((entry) => [entry.id, entry.rule]),
+    )
+
+    const { publication, bytes: runtimeBytes } = await exportBundlePublication(db, exportScope, rows.map((row) => row.id))
+    const selection: ExportSelection = {
+      shell,
+      publication,
+      runtimeBytes,
+      tables,
+      tableAccess,
+      rows,
+      includeMedia,
+      includeSite,
+      mediaFolders,
+      redirects,
+    }
+
+    return selection
+  })))
+  if (selection instanceof Response) return selection
 
   // Media is embedded only when requested AND an uploads dir is configured —
   // both the estimate and the real export gate on this so they stay in sync.
@@ -271,6 +300,7 @@ function estimateResponse(
       sizeBytes: manifestBytes.byteLength,
       usesDataDescriptor: false,
     },
+    ...selection.publication.files.map((file, index) => ({ path: runtimeArchivePath(index), sizeBytes: file.sizeBytes })),
     ...(wantMedia
       ? assets.map(({ asset, sizeBytes }) => ({
           path: mediaArchivePath(asset.storagePath),
@@ -300,6 +330,7 @@ async function downloadResponse(
       sizeBytes: manifestBytes.byteLength,
       source: manifestBytes,
     },
+    ...selection.publication.files.map((file, index) => ({ path: runtimeArchivePath(index), sizeBytes: file.sizeBytes, source: selection.runtimeBytes[index]! })),
     ...assets.map(({ asset, filePath, sizeBytes }) => ({
       path: mediaArchivePath(asset.storagePath),
       sizeBytes,
@@ -347,7 +378,9 @@ function buildArchiveManifest(
     exportedAt: new Date().toISOString(),
     sourceSiteName: selection.shell.name,
     ...(selection.includeSite ? { site: selection.shell } : {}),
+    publication: selection.publication,
     tables: selection.tables,
+    ...(Object.keys(selection.tableAccess).length > 0 ? { tableAccess: selection.tableAccess } : {}),
     rows: selection.rows,
     ...(media !== undefined ? { media } : {}),
     ...(selection.mediaFolders !== undefined ? { mediaFolders: selection.mediaFolders } : {}),

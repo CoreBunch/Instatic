@@ -473,3 +473,13 @@
 .sectionEmpty {
     grid-column: 1 / -1;
 }
+
+/* Lock on a page that is not open to everyone. */
+.accessMarker {
+    display: inline-grid;
+    place-items: center;
+    flex-shrink: 0;
+    width: 15px;
+    height: 15px;
+    color: var(--text-subtle);
+}

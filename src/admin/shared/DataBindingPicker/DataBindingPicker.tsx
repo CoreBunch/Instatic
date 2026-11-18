@@ -34,8 +34,8 @@ import { ImageSolidIcon } from 'pixel-art-icons/icons/image-solid'
 import { VideoSolidIcon } from 'pixel-art-icons/icons/video-solid'
 import { getFieldIcon } from '@admin/pages/data/utils/fieldIcons'
 import { isFieldBindable, type PropertyControlKind } from './bindingCompatibility'
-import { _cachedMeta, loadDataMeta } from './cache'
-import { SYSTEM_SOURCES, type SystemSourceId } from './systemSources'
+import { _cachedMemberFields, _cachedMeta, loadDataMeta, loadMemberProfileFields } from './cache'
+import { memberSourceFields, SYSTEM_SOURCES, type SystemSourceId } from './systemSources'
 import { getCmsDataTable, previewCmsDataLoopItems } from '@core/persistence/cmsData'
 import { dataTablePreviewToLoopItem } from '@core/templates/templatePreviewData'
 import {
@@ -163,6 +163,17 @@ export function DataBindingPicker({
   // ─── Meta fetching ─────────────────────────────────────────────────────
   // Lazy initializer picks up the cached value so already-loaded meta is
   // immediately available without a synchronous setState in the effect.
+  const [memberFields, setMemberFields] = useState(() => _cachedMemberFields)
+  useEffect(() => {
+    if (_cachedMemberFields) return undefined
+    let cancelled = false
+    void loadMemberProfileFields().then((fields) => {
+      if (!cancelled) setMemberFields(fields)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [])
   const [meta, setMeta] = useState<DataMeta | null>(() => _cachedMeta)
   const [metaLoading, setMetaLoading] = useState(() => _cachedMeta === null)
   const [metaError, setMetaError] = useState<string | null>(null)
@@ -322,7 +333,9 @@ export function DataBindingPicker({
     // 3. System sources — Page / Site / Route. Always visible (and always
     // reachable) since the publisher seeds these frames on every render.
     for (const source of SYSTEM_SOURCES) {
-      const entries: FieldEntry[] = source.fields.map((f) => ({
+      // The member source lists the profile fields this site actually has.
+      const fields = source.id === 'member' && memberFields ? memberSourceFields(source.fields, memberFields) : source.fields
+      const entries: FieldEntry[] = fields.map((f) => ({
         kind: 'system' as const,
         source: source.id,
         field: f,

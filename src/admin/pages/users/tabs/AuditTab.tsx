@@ -25,6 +25,8 @@ import { auditActor, auditDetails, auditTitle } from '../utils/audit'
 import { formatDateTime } from '../utils/format'
 import type { UsersPageData } from '../hooks/useUsersPageData'
 import styles from '../UsersPage.module.css'
+import { EmptyState } from '@ui/components/EmptyState'
+import { ListBoxSolidIcon } from 'pixel-art-icons/icons/list-box-solid'
 
 export function AuditTab({ data }: { data: UsersPageData }) {
   const { users, roles, events } = data
@@ -94,7 +96,12 @@ export function AuditTab({ data }: { data: UsersPageData }) {
           </DataTableBody>
         </DataTable>
       ) : (
-        <p className={styles.emptyState}>No audit events yet.</p>
+        <EmptyState
+          variant="centered"
+          icon={<ListBoxSolidIcon size={28} />}
+          title="No audit events yet"
+          description="Sign-ins and changes to users, roles and security settings appear here."
+        />
       )}
     </section>
   )

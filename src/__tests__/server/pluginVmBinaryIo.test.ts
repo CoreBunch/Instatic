@@ -7,7 +7,8 @@
  * lossy `text()` read had already mangled), `text()`/`json()` must decode
  * UTF-8 (including multibyte), binary request bodies must reach the host
  * base64-tagged, and unsupported body types (FormData & co.) must throw a
- * TypeError instead of silently stringifying.
+ * TypeError instead of silently stringifying. The `redirect` option travels
+ * to the host, and an unknown value throws instead of being ignored.
  *
  * route runner: the raw body decodes byte-exactly via `req.arrayBuffer()`,
  * multipart file markers materialize into file facades, and binary
@@ -48,6 +49,120 @@ function makeRecorderEnv(overrides: {
 const PNG_BYTES = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0xff, 0xfe, 0x7f])
 
 const MULTIBYTE_TEXT = 'řeřicha 🌱 — ユニコード'
+
+describe('plugin sandbox: fetch — redirect option', () => {
+  async function runFetch(
+    script: string,
+    onFetch: (init: Record<string, unknown>) => unknown,
+  ): Promise<{ recorder: RecorderEntry[] }> {
+    const { env, recorder } = makeRecorderEnv({
+      onCall: (target, args) => (target === 'network.fetch' ? onFetch(args[1] as Record<string, unknown>) : null),
+    })
+    const vm = await createPluginVm({
+      env,
+      pluginSource: `
+        ;(function () {
+          const __plugin_exports = (globalThis.__plugin_exports = {});
+          __plugin_exports.activate = async function activate() { ${script} };
+        })();
+      `,
+    })
+    try {
+      await vm.runLifecycle('activate')
+    } finally {
+      vm.dispose()
+    }
+    return { recorder }
+  }
+
+  it("sends redirect: 'manual' to the host and exposes the redirect response", async () => {
+    const { recorder } = await runFetch(
+      `
+        const res = await fetch('https://api.example.com/asset', { redirect: 'manual' });
+        await __hostCall('test.record', [{
+          status: res.status, ok: res.ok, redirected: res.redirected,
+          location: res.headers.get('Location'),
+        }]);
+      `,
+      () => ({
+        status: 302,
+        ok: false,
+        redirected: false,
+        headers: { location: 'https://signed.example.net/blob?sig=abc' },
+        body: '',
+        bodyEncoding: 'utf8',
+      }),
+    )
+    const init = recorder.find((e) => e.target === 'network.fetch')?.args[1] as { redirect?: string }
+    expect(init.redirect).toBe('manual')
+    expect(recorder.find((e) => e.target === 'test.record')?.args[0]).toEqual({
+      status: 302,
+      ok: false,
+      redirected: false,
+      location: 'https://signed.example.net/blob?sig=abc',
+    })
+  })
+
+  it('omits redirect by default and reports a followed redirect', async () => {
+    const { recorder } = await runFetch(
+      `
+        const res = await fetch('https://api.example.com/x');
+        await __hostCall('test.record', [res.redirected]);
+      `,
+      () => ({ status: 200, ok: true, redirected: true, headers: {}, body: 'ok', bodyEncoding: 'utf8' }),
+    )
+    const init = recorder.find((e) => e.target === 'network.fetch')?.args[1] as Record<string, unknown>
+    expect('redirect' in init).toBe(false)
+    expect(recorder.find((e) => e.target === 'test.record')?.args[0]).toBe(true)
+  })
+
+  it("sends redirect: 'error' and surfaces the host's rejection", async () => {
+    const { recorder } = await runFetch(
+      `
+        try {
+          await fetch('https://api.example.com/moved', { redirect: 'error' });
+          await __hostCall('test.record', ['no-throw']);
+        } catch (e) {
+          await __hostCall('test.record', [String(e && e.message)]);
+        }
+      `,
+      () => {
+        throw new Error('Plugin "acme.binary" fetch to "api.example.com" was redirected')
+      },
+    )
+    const init = recorder.find((e) => e.target === 'network.fetch')?.args[1] as { redirect?: string }
+    expect(init.redirect).toBe('error')
+    expect(String(recorder.find((e) => e.target === 'test.record')?.args[0])).toContain('was redirected')
+  })
+
+  it('a manual redirect response has no body in the sandbox', async () => {
+    const { recorder } = await runFetch(
+      `
+        const res = await fetch('https://api.example.com/asset', { redirect: 'manual' });
+        const bytes = new Uint8Array(await res.arrayBuffer());
+        await __hostCall('test.record', [bytes.length]);
+      `,
+      () => ({ status: 302, ok: false, redirected: false, headers: { location: '/x' }, body: '', bodyEncoding: 'utf8' }),
+    )
+    expect(recorder.find((e) => e.target === 'test.record')?.args[0]).toBe(0)
+  })
+
+  it('rejects an unknown redirect value before reaching the host', async () => {
+    const { recorder } = await runFetch(
+      `
+        try {
+          await fetch('https://api.example.com/x', { redirect: 'manual-ish' });
+          await __hostCall('test.record', ['no-throw']);
+        } catch (e) {
+          await __hostCall('test.record', [e instanceof TypeError ? 'TypeError' : String(e)]);
+        }
+      `,
+      () => null,
+    )
+    expect(recorder.find((e) => e.target === 'test.record')?.args[0]).toBe('TypeError')
+    expect(recorder.filter((e) => e.target === 'network.fetch')).toHaveLength(0)
+  })
+})
 
 describe('plugin sandbox: fetch — binary bodies', () => {
   it('arrayBuffer() returns the exact upstream bytes for a base64 response', async () => {

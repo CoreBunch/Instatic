@@ -171,7 +171,9 @@ export async function exchangeAuthorizationCode(
              g.revoked_at as connector_revoked_at
       from ai_mcp_oauth_codes c
       join ai_mcp_connectors g on g.id = c.connector_id
+      join users u on u.id = g.user_id
       where c.code_hash = ${codeHash}
+        and u.status = 'active' and u.deleted_at is null
       limit 1
     `
     const code = rows[0]
@@ -223,7 +225,9 @@ export async function rotateRefreshToken(
              g.revoked_at as connector_revoked_at
       from ai_mcp_oauth_tokens t
       join ai_mcp_connectors g on g.id = t.connector_id
+      join users u on u.id = g.user_id
       where t.token_hash = ${tokenHash} and t.kind = 'refresh'
+        and u.status = 'active' and u.deleted_at is null
       limit 1
     `
     const token = rows[0]
@@ -285,7 +289,9 @@ export async function findOAuthAccessGrant(
     select t.connector_id, g.user_id, g.capabilities_json
     from ai_mcp_oauth_tokens t
     join ai_mcp_connectors g on g.id = t.connector_id
+    join users u on u.id = g.user_id
     where t.token_hash = ${tokenHash}
+      and u.status = 'active' and u.deleted_at is null
       and t.kind = 'access'
       and t.resource = ${resource}
       and t.revoked_at is null

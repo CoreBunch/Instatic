@@ -17,6 +17,9 @@
 /**
  * `'ai'` is the AI provider settings + defaults workspace. Gated by
  * `ai.providers.manage` (or `ai.audit.read` for the read-only audit tab).
+ *
+ * `'email'` is the outgoing mail workspace: connectors, defaults, templates
+ * and activity. Gated by `mail.manage`.
  */
 export type AdminWorkspace =
   | 'dashboard'
@@ -27,6 +30,7 @@ export type AdminWorkspace =
   | 'plugins'
   | 'users'
   | 'ai'
+  | 'email'
   | 'pluginPage'
   /** The merge review of one branch (`/admin/branches/:branchId/review`). */
   | 'branchReview'

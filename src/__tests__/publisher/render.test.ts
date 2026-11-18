@@ -326,7 +326,7 @@ describe('renderNode', () => {
     const acc = makeAccumulators()
     const html = render(
       'root',
-      { ...ctx(page), dynamicNodeIds: new Set(['root']), publishVersion: 7 },
+      { ...ctx(page), dynamicNodeIds: new Set(['root']), snapshotHash: '7' },
       acc,
     )
     expect(html).toBe('')
