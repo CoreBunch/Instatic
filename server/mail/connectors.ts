@@ -210,22 +210,43 @@ export async function noteConnectorUse(db: DbClient, id: string, error: string |
 
 /**
  * Stop sending queued email through a connector that refuses the account
- * itself (a wrong key or password, a secret that cannot be read). Trying
- * again changes nothing until the owner fixes it, and a stream of failed
- * logins can get an account locked. The pause lifts when the secret is
- * replaced or a send through the connector works (`noteConnectorUse`), which
- * is what the connector test does.
+ * itself (a wrong key or password, a secret that cannot be read). A stream
+ * of failed logins can get an account locked, so the queue is held. It is a
+ * circuit breaker, not a switch someone has to remember to flip back:
+ * `delivery_paused_at` is the time of the last refusal, and every
+ * `CONNECTOR_PROBE_INTERVAL_MS` one email is let through as a probe
+ * (`takeConnectorProbe`). A send that works, the probe's or the connector
+ * test's, lifts the pause (`noteConnectorUse`); so does a new secret.
  */
-export async function pauseConnectorDelivery(db: DbClient, id: string): Promise<void> {
-  await db`
-    update mail_connectors set delivery_paused_at = ${nowIso()}
-     where id = ${id} and delivery_paused_at is null
-  `
+export async function pauseConnectorDelivery(db: DbClient, id: string, now: number = Date.now()): Promise<void> {
+  await db`update mail_connectors set delivery_paused_at = ${new Date(now).toISOString()} where id = ${id}`
 }
 
-export async function connectorDeliveryPaused(db: DbClient, id: string): Promise<boolean> {
-  const { rows } = await db<{ delivery_paused_at: Date | string | null }>`
-    select delivery_paused_at from mail_connectors where id = ${id}
+/** How often a paused connector is tried with one email. */
+export const CONNECTOR_PROBE_INTERVAL_MS = 2 * 60 * 1000
+
+/** Why queued email is held, when the connector is paused. */
+export async function connectorPauseReason(db: DbClient, id: string): Promise<string | null> {
+  const { rows } = await db<{ delivery_paused_at: Date | string | null; last_error: string | null }>`
+    select delivery_paused_at, last_error from mail_connectors where id = ${id}
   `
-  return rows[0] !== undefined && rows[0].delivery_paused_at !== null
+  const row = rows[0]
+  if (!row || row.delivery_paused_at === null) return null
+  return row.last_error ?? 'The connector refused the account.'
+}
+
+/**
+ * Whether queued email may go through this connector now: `open` when it is
+ * not paused, `probe` when it is paused and this caller has just taken the
+ * one probe that is due, `held` otherwise. Taking the probe is one
+ * conditional update, so of several workers exactly one gets it.
+ */
+export async function takeConnectorProbe(db: DbClient, id: string, now: number): Promise<'open' | 'probe' | 'held'> {
+  if ((await connectorPauseReason(db, id)) === null) return 'open'
+  const taken = await db`
+    update mail_connectors set delivery_paused_at = ${new Date(now).toISOString()}
+     where id = ${id} and delivery_paused_at is not null
+       and delivery_paused_at <= ${new Date(now - CONNECTOR_PROBE_INTERVAL_MS).toISOString()}
+  `
+  return taken.rowCount > 0 ? 'probe' : 'held'
 }

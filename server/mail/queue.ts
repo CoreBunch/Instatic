@@ -33,10 +33,23 @@ type QueuedPayload = Static<typeof QueuedPayloadSchema>
 
 /**
  * A claim older than this belonged to a worker that died mid-send. A
- * hand-over is cut off by its driver after ten seconds, so a minute is
- * several times the longest a live claim can last.
+ * hand-over is cut off by its driver after ten seconds, so two minutes is
+ * many times the longest a live claim can last.
+ *
+ * The claim time is written by one instance's clock and judged by
+ * another's, so the rule tolerates the instances' clocks differing by up to
+ * about 110 seconds. Beyond that a live claim could be taken over, which
+ * costs one duplicate email, never a lost one. Hosts kept on time by NTP
+ * are within milliseconds.
  */
-const STALE_CLAIM_MS = 60 * 1000
+const STALE_CLAIM_MS = 2 * 60 * 1000
+
+/**
+ * An email is not sent with less than this much of its life left: a sign-in
+ * link that stops working a few seconds after it arrives is no better than
+ * one that arrives too late.
+ */
+export const DELIVERY_MARGIN_MS = 60 * 1000
 
 interface QueueRow {
   id: string
@@ -162,11 +175,6 @@ export async function releaseStaleMailClaims(db: DbClient, now: number): Promise
   `
 }
 
-/** Give one claim back at once: its attempt could not be recorded. */
-export async function releaseMailClaim(db: DbClient, id: string): Promise<void> {
-  await db`update mail_queue set claimed_at = null where id = ${id}`
-}
-
 const QUEUE_COLUMNS = `id, outbox_id, kind, to_address, source, reference,
   payload_ciphertext, payload_iv, attempts, last_error, deliver_before`
 
@@ -188,16 +196,18 @@ async function claim(db: DbClient, row: QueueRow, at: string): Promise<QueuedMai
  */
 export async function claimNextDueMail(db: DbClient, now: number): Promise<QueuedMail | null> {
   const at = new Date(now).toISOString()
+  const usefulUntil = new Date(now + DELIVERY_MARGIN_MS).toISOString()
   for (;;) {
     // `outbox_id` sorts in the order emails were accepted, which keeps two
     // emails queued in the same millisecond first in, first out.
     const { rows } = await db.unsafe<QueueRow>(
       `select ${QUEUE_COLUMNS}
          from mail_queue
-        where claimed_at is null and next_attempt_at <= ${placeholder(db, 1)} and deliver_before > ${placeholder(db, 2)}
+        where claimed_at is null and accepted_at is null
+          and next_attempt_at <= ${placeholder(db, 1)} and deliver_before > ${placeholder(db, 2)}
         order by lane asc, case when attempts = 0 then 0 else 1 end asc, next_attempt_at asc, outbox_id asc
         limit 1`,
-      [at, at],
+      [at, usefulUntil],
     )
     const row = rows[0]
     if (!row) return null
@@ -208,26 +218,47 @@ export async function claimNextDueMail(db: DbClient, now: number): Promise<Queue
 }
 
 /**
- * Claim one email whose time to be delivered has run out, or null when none
- * has. The worker fails these without sending them, and does so even while
- * delivery is paused.
+ * Claim one email whose time to be delivered has run out (or is within the
+ * margin of doing so), or null when none has. The worker fails these without
+ * sending them, and does so even while delivery is paused.
  */
 export async function claimExpiredMail(db: DbClient, now: number): Promise<QueuedMail | null> {
   const at = new Date(now).toISOString()
+  const usefulUntil = new Date(now + DELIVERY_MARGIN_MS).toISOString()
   for (;;) {
     const { rows } = await db.unsafe<QueueRow>(
       `select ${QUEUE_COLUMNS}
          from mail_queue
-        where claimed_at is null and deliver_before <= ${placeholder(db, 1)}
+        where claimed_at is null and accepted_at is null and deliver_before <= ${placeholder(db, 1)}
         order by deliver_before asc
         limit 1`,
-      [at],
+      [usefulUntil],
     )
     const row = rows[0]
     if (!row) return null
     const mail = await claim(db, row, at)
     if (mail) return mail
   }
+}
+
+/**
+ * The provider has taken this email. Written first, in one small statement,
+ * before the outcome is recorded and the row deleted: a row so marked is
+ * never handed to a provider again, whatever becomes of those later steps.
+ */
+export async function markQueuedMailAccepted(db: DbClient, id: string): Promise<void> {
+  await db`update mail_queue set accepted_at = ${nowIso()} where id = ${id}`
+}
+
+/**
+ * Rows whose email was accepted but whose bookkeeping did not finish (the
+ * log update or the delete failed, or the worker died in between).
+ */
+export async function listAcceptedMail(db: DbClient): Promise<Array<{ id: string; outboxId: string; attempts: number }>> {
+  const { rows } = await db<{ id: string; outbox_id: string; attempts: number }>`
+    select id, outbox_id, attempts from mail_queue where accepted_at is not null
+  `
+  return rows.map((row) => ({ id: row.id, outboxId: row.outbox_id, attempts: Number(row.attempts) }))
 }
 
 /** The email left, or was given up on: nothing of it stays in the queue. */
@@ -256,4 +287,12 @@ export async function rescheduleQueuedMail(
  */
 export async function holdQueuedMail(db: DbClient, id: string, error: string): Promise<void> {
   await db`update mail_queue set claimed_at = null, last_error = ${error} where id = ${id}`
+}
+
+/**
+ * Put a claimed email back for a later try without recording anything else:
+ * for an attempt whose outcome could not be written down at all.
+ */
+export async function backOffQueuedMail(db: DbClient, id: string, nextAttemptAt: string): Promise<void> {
+  await db`update mail_queue set claimed_at = null, next_attempt_at = ${nextAttemptAt} where id = ${id}`
 }

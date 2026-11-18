@@ -322,8 +322,8 @@ function ConnectorDetail({
       {connector.lastError && <p role="status" className={ws.connectionResultError}>{connector.lastError}</p>}
       {connector.deliveryPaused && (
         <p role="status" className={ws.connectionResultError}>
-          Queued email is held, not retried, until this is fixed. Enter the {secretName} again or send a test: once
-          one goes through, everything waiting is sent.
+          Queued email is held. The site tries one email every two minutes and resumes by itself when one gets
+          through; entering the {secretName} again or a test that works resumes it at once.
         </p>
       )}
 

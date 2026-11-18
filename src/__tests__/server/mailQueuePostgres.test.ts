@@ -1,12 +1,13 @@
 /**
  * The mail queue on Postgres, with two workers on two connection pools, as
- * two server instances have. Runs only when `MAIL_QUEUE_TEST_POSTGRES_URL`
- * names an empty, disposable database:
+ * two server instances have. Runs when `INSTATIC_TEST_POSTGRES_URL` names a
+ * database the tests may wipe, as CI's test job does (`.github/workflows/ci.yml`).
+ * Locally:
  *
  *   initdb -D /tmp/pg -U postgres -A trust
  *   pg_ctl -D /tmp/pg -o "-p 55439 -c unix_socket_directories=''" start
  *   psql -h 127.0.0.1 -p 55439 -U postgres -c 'create database mailq'
- *   MAIL_QUEUE_TEST_POSTGRES_URL=postgres://postgres@127.0.0.1:55439/mailq \
+ *   INSTATIC_TEST_POSTGRES_URL=postgres://postgres@127.0.0.1:55439/mailq \
  *     bun test src/__tests__/server/mailQueuePostgres.test.ts
  *
  * The worker takes no lock between instances: a row's conditional claim is
@@ -21,7 +22,7 @@ import { listMailActivity } from '../../../server/mail/activity'
 import { __resetMailQueuePauseForTesting, drainMailQueue, queueTemplateMail } from '../../../server/mail/delivery'
 import type { MailCarrier } from '../../../server/mail/send'
 
-const url = process.env.MAIL_QUEUE_TEST_POSTGRES_URL
+const url = process.env.INSTATIC_TEST_POSTGRES_URL
 
 registerMailTemplate({
   key: 'queue.pg',

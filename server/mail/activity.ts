@@ -133,6 +133,18 @@ export async function updateMailProgress(db: DbClient, id: string, progress: Mai
   `
 }
 
+/**
+ * Mark an email sent without touching what an earlier, interrupted update
+ * may already have written about how it left.
+ */
+export async function markMailSent(db: DbClient, id: string, attempts: number): Promise<void> {
+  await db`
+    update mail_outbox
+       set status = 'sent', attempts = ${attempts}, next_attempt_at = null, error = null
+     where id = ${id} and status <> 'sent'
+  `
+}
+
 function isStatus(value: string): value is MailActivityStatus {
   return value === 'queued' || value === 'sent' || value === 'failed' || value === 'captured'
 }

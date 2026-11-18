@@ -128,22 +128,32 @@ export function formatFromHeader(fromName: string, fromAddress: string): string 
 
 const SMTP_CONNECTION_CODES = new Set(['ETIMEDOUT', 'ECONNECTION', 'ESOCKET', 'ECONNREFUSED', 'EDNS'])
 
+/** A 4yz reply whose text is the server throttling the account, not deferring one recipient. */
+const SMTP_THROTTLE_TEXT = /\b4\.7\.\d+\b.*\b(rate|too many|throttl|limit|quota)|\b(rate limit|too many (messages|connections|emails)|throttl)/i
+
 /**
- * SMTP reply classes. A failed login (535, `EAUTH`) or a server that offers
- * no TLS is the connector's fault. 421 is the server closing the connection
- * on the whole account ("too many connections", "try later"): slow down.
- * Every other 4yz, 450 / 451 / 452 included, is about this recipient or
- * this message (greylisting, a full mailbox) and anyone can cause one by
- * giving an address, so it retries that message alone and never holds
- * other people's mail back. 5yz is a verdict on the message.
+ * SMTP reply classes. The reply code is read before the error's `code`:
+ * a server that answers a login with 454 ("temporary authentication
+ * failure", "too many login attempts") is having a bad minute, and
+ * nodemailer still calls that `EAUTH`. So:
+ *
+ *  - any 4yz is temporary. 421 (the server closing the connection on the
+ *    whole account) and a 4yz whose text speaks of rate or quota slow
+ *    everything down; every other 4yz, 450 / 451 / 452 greylisting and a
+ *    full mailbox included, retries that message alone. Anyone can cause
+ *    one of those by giving an address, so it never holds other mail back.
+ *  - 535 or `EAUTH` (a refused login), 530 (authentication required) and a
+ *    server that offers no TLS are the connector's fault.
+ *  - any other 5yz is a verdict on the message.
  */
 export function retryForSmtpFailure(err: unknown): MailRetry {
   const code = err instanceof Error && 'code' in err ? String(err.code) : ''
   const responseCode = err instanceof Error && 'responseCode' in err ? Number(err.responseCode) : 0
-  // 530 is "authentication required": the server never got as far as the message.
+  const response = err instanceof Error && 'response' in err ? String(err.response) : ''
+  if (responseCode >= 400 && responseCode < 500) {
+    return responseCode === 421 || SMTP_THROTTLE_TEXT.test(response) ? 'slow-down' : 'later'
+  }
   if (code === 'EAUTH' || responseCode === 535 || responseCode === 530 || code === 'ETLS') return 'connector'
-  if (responseCode === 421) return 'slow-down'
-  if (responseCode >= 400 && responseCode < 500) return 'later'
   if (responseCode >= 500) return 'never'
   return SMTP_CONNECTION_CODES.has(code) ? 'later' : 'never'
 }

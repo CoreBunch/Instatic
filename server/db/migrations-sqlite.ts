@@ -1727,7 +1727,10 @@ export const sqliteMigrations: Migration[] = [
     // the attempt count and the time of the next try, so the activity log
     // can say a message is waiting. `mail_connectors.delivery_paused_at` is
     // set while a connector refuses the account itself (a wrong key or
-    // password): queued email is then held, not retried, until that is fixed.
+    // password): queued email is then held, and one email at a time is let
+    // through as a probe, until one gets through. `accepted_at` marks a row
+    // whose email the provider has taken: such a row is never sent again,
+    // even if recording the outcome and deleting the row failed.
     id: '034_mail_queue',
     sql: `
       create table if not exists mail_queue (
@@ -1744,6 +1747,7 @@ export const sqliteMigrations: Migration[] = [
         next_attempt_at text not null,
         deliver_before text not null,
         claimed_at text,
+        accepted_at text,
         last_error text,
         created_at text not null default (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
       );
