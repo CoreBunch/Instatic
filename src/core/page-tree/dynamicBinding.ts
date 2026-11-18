@@ -23,7 +23,7 @@
  * Constraint #269: no imports from editor / editor-store here.
  */
 
-import { Type, type Static } from '@core/utils/typeboxHelpers'
+import { Type, Value, type Static } from '@core/utils/typeboxHelpers'
 import { asPlainObject } from './parseHelpers'
 
 // ---------------------------------------------------------------------------
@@ -63,6 +63,15 @@ export type DynamicPropBinding = Static<typeof DynamicPropBindingSchema>
 // VisibilityCondition
 // ---------------------------------------------------------------------------
 
+const VisibilityConditionSourceSchema = Type.Union([
+  Type.Literal('currentEntry'),
+  Type.Literal('parentEntry'),
+  Type.Literal('page'),
+  Type.Literal('site'),
+  Type.Literal('route'),
+])
+type VisibilityConditionSource = Static<typeof VisibilityConditionSourceSchema>
+
 /**
  * Show or hide a node based on the data it is rendered against.
  *
@@ -81,13 +90,16 @@ export type DynamicPropBinding = Static<typeof DynamicPropBindingSchema>
  * false for absent, null, `""`, whitespace, `[]`, `{}` and `false` — an unset
  * checkbox reads as unset, which is what an author picking "is set" means.
  *
- * The source is the same set the prop bindings use, so `currentEntry` inside a
- * loop is that iteration's row and `page` / `site` / `route` work on any page.
+ * The sources are the prop bindings' sources minus `member`, so `currentEntry`
+ * inside a loop is that iteration's row and `page` / `site` / `route` work on
+ * any page. Who the visitor is belongs to `showWhen` (`@core/members`), which
+ * already decides by signed-in state and tags; one rule per question keeps the
+ * two from disagreeing about the same element.
  * Deliberately only two tests: comparisons against a value need an operand and
  * a type model, and every case met so far is "does this row have one".
  */
 export const VisibilityConditionSchema = Type.Object({
-  source: DynamicBindingSourceSchema,
+  source: VisibilityConditionSourceSchema,
   field: Type.String({ minLength: 1 }),
   test: Type.Union([Type.Literal('isSet'), Type.Literal('isNotSet')]),
 })
@@ -98,11 +110,10 @@ export type VisibilityCondition = Static<typeof VisibilityConditionSchema>
 export function parseVisibilityCondition(raw: unknown): VisibilityCondition | undefined {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return undefined
   const r = raw as Record<string, unknown>
-  const VALID_SOURCES: DynamicBindingSource[] = ['currentEntry', 'parentEntry', 'page', 'site', 'route']
-  if (!VALID_SOURCES.includes(r.source as DynamicBindingSource)) return undefined
+  if (!Value.Check(VisibilityConditionSourceSchema, r.source)) return undefined
   if (typeof r.field !== 'string' || r.field.length === 0) return undefined
   if (r.test !== 'isSet' && r.test !== 'isNotSet') return undefined
-  return { source: r.source as DynamicBindingSource, field: r.field, test: r.test }
+  return { source: r.source as VisibilityConditionSource, field: r.field, test: r.test }
 }
 
 /**

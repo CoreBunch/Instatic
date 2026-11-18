@@ -14,7 +14,8 @@
 
 import { describe, expect, test } from 'bun:test'
 import { isNodeVisible } from '../dynamicBindings'
-import { parseVisibilityCondition, isValueSet } from '@core/page-tree'
+import { parseVisibilityCondition, isValueSet, VisibilityConditionSchema } from '@core/page-tree'
+import { Value } from '@core/utils/typeboxHelpers'
 import type { TemplateRenderDataContext } from '../renderDataContext'
 
 /** A render context with one entry on the stack, as a loop iteration has. */
@@ -104,5 +105,15 @@ describe('parseVisibilityCondition', () => {
     ]) {
       expect(parseVisibilityCondition(bad)).toBeUndefined()
     }
+  })
+
+  test('a member source is refused: who the visitor is belongs to showWhen', () => {
+    // `member` is a binding source, but a row condition reading it would be a
+    // second, weaker way to say what `showWhen` says. The schema and the
+    // parser must agree on that, or a stored condition validates and then
+    // silently does nothing.
+    const memberCondition = { source: 'member', field: 'email', test: 'isSet' }
+    expect(parseVisibilityCondition(memberCondition)).toBeUndefined()
+    expect(Value.Check(VisibilityConditionSchema, memberCondition)).toBe(false)
   })
 })
