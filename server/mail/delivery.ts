@@ -235,8 +235,13 @@ async function senderStillDeclares(db: DbClient, mail: QueuedMail): Promise<bool
   return pluginMailTemplateDefinitions(sender.plugin.manifest).some((definition) => definition.key === mail.kind)
 }
 
-/** How long before the delivery margin the last try is made, so it is still claimable. */
-const LAST_TRY_LEAD_MS = 5_000
+/**
+ * How long before the delivery margin the last try is due. The worker looks
+ * every `TICK_INTERVAL_MS`, so the try must stay claimable for longer than
+ * one interval whatever the phase of the tick: two intervals, one to be
+ * found in and one of headroom for a drain that is busy with a slow send.
+ */
+const LAST_TRY_LEAD_MS = 2 * TICK_INTERVAL_MS
 
 /** How many emails one probe of a paused connector may try. */
 const PROBE_CANDIDATES = 3
