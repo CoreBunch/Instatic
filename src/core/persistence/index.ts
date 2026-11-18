@@ -2,6 +2,7 @@ export { cmsAdapter } from './cms'
 export { getCmsPublishStatus, publishCmsDraft } from './cmsPublish'
 export {
   buildCmsRuntimePreview,
+  listCmsCanvasPluginStylesheets,
   resolveCmsRuntimeDependencies,
   validateCmsRuntimeScripts,
 } from './cmsRuntime'
@@ -25,6 +26,8 @@ export {
   updateCmsDataRowStatus,
   updateCmsDataRowTable,
   updateCmsDataTable,
+  getCmsDataTableAccess,
+  setCmsDataTableAccess,
   listCmsDataRowVersions,
   restoreCmsDataRowVersion,
 } from './cmsData'
@@ -123,3 +126,17 @@ export {
   getCmsRegistryProfile,
   searchCmsRegistry,
 } from './cmsRegistry'
+export {
+  createCmsMailConnector,
+  deleteCmsMailConnector,
+  getCmsMailActivity,
+  getCmsMailOverview,
+  listCmsMailTemplates,
+  resetCmsMailTemplate,
+  saveCmsMailDefaults,
+  saveCmsMailTemplate,
+  setCmsMailConnectorSecret,
+  testCmsMailConnector,
+  testCmsMailTemplate,
+  type CmsMailActivityQuery,
+} from './cmsMail'

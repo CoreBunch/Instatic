@@ -46,6 +46,7 @@ export {
   type ResetReason,
 } from './protocol'
 export { createCollabDocSet, type CollabDocSet } from './docSet'
+export { collabFramePackets, createCollabFrameReader } from './frameTransfer'
 export { applySitePatchesToDocs } from './applyPatches'
 export {
   populateComponentDoc,

@@ -1,6 +1,10 @@
 import { type TSchema, type Static } from '@sinclair/typebox'
 import { safeParseValue } from '@core/utils/typeboxHelpers'
 
+// Keep JSON requests at Bun's former transport cap while archive uploads
+// use the larger streaming transport limit.
+const DEFAULT_MAX_JSON_BODY_BYTES = 128 * 1024 * 1024
+
 interface ReadValidatedBodyOptions {
   maxBytes?: number
   /**
@@ -59,10 +63,8 @@ export async function readValidatedBody<T extends TSchema>(
     const formJsonField = options.formJsonField
     if (shouldReadFormJsonField(req, formJsonField) && formJsonField) {
       raw = await readFormJsonField(req, formJsonField)
-    } else if (options.maxBytes === undefined) {
-      raw = await req.json()
     } else {
-      raw = await readJsonWithLimit(req, options.maxBytes)
+      raw = await readJsonWithLimit(req, options.maxBytes ?? DEFAULT_MAX_JSON_BODY_BYTES)
     }
   } catch (err) {
     if (err instanceof RequestBodyTooLargeError) throw err

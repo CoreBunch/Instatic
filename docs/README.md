@@ -28,6 +28,8 @@ docs/
 │   ├── auth-and-access.md          ← sessions, MFA, capabilities, roles
 │   ├── site-shell.md               ← site config (breakpoints, classes, files, deps)
 │   ├── dependencies.md             ← Dependencies panel: registry proxy, install/remove, lock
+│   ├── email.md                    ← Email workspace: connectors (SMTP, SES), defaults, templates, activity
+│   ├── members.md                  ← Site members: accounts, sessions, public endpoints, security rules
 │   ├── modules.md                  ← module engine + first-party blocks
 │   ├── data-workspace.md           ← Data workspace: table schema + field management UI
 │   ├── dashboard.md                ← Dashboard workspace + widget registry
@@ -39,6 +41,7 @@ docs/
 │   ├── media.md                    ← Media workspace + storage adapters
 │   ├── audit-log.md                ← audit_events catalog
 │   ├── site-transfer.md            ← export / import CMS bundles
+│   ├── manager-api.md              ← token-gated push / pull / snapshot API for managers
 │   ├── site-import.md              ← Super Import (static sites → CMS)
 │   ├── html-import.md              ← paste / import HTML into the page tree
 │   ├── editor-preferences.md       ← catalog-driven editor prefs
@@ -147,6 +150,8 @@ Three categories, three voices:
 | [features/site-shell.md](features/site-shell.md)                 | The persisted site config (breakpoints, classes, files, deps)        |
 | [features/branches.md](features/branches.md)                     | Site branches: fork, edit in isolation, preview links, three-way merge, version restore |
 | [features/dependencies.md](features/dependencies.md)             | Dependencies panel: npm registry proxy, browse, install, remove, lock |
+| [features/email.md](features/email.md)                           | Email workspace: connectors, defaults, templates, delivery activity  |
+| [features/members.md](features/members.md)                       | Site members: sign-up, sign-in, sessions, tags, the public endpoints |
 | [features/modules.md](features/modules.md)                       | Module engine, defining first-party blocks                          |
 | [features/dashboard.md](features/dashboard.md)                   | Dashboard workspace, widgets, grid, customize mode                  |
 | [features/spotlight.md](features/spotlight.md)                   | Cmd+K command palette                                                |
@@ -158,6 +163,7 @@ Three categories, three voices:
 | [features/media.md](features/media.md)                           | Media workspace, upload pipeline, storage adapters                  |
 | [features/audit-log.md](features/audit-log.md)                   | Audit event catalog + recording new actions                         |
 | [features/site-transfer.md](features/site-transfer.md)           | Export / import CMS bundle (JSON round-trip between instances)      |
+| [features/manager-api.md](features/manager-api.md)               | Token-gated API for a supervising manager: full-instance push/pull, DB snapshots |
 | [features/site-import.md](features/site-import.md)               | Super Import — static-site files / ZIP → pages, style rules, media |
 | [features/html-import.md](features/html-import.md)               | HTML string → `PageNode` fragment (paste HTML, AI `insertHtml` tool) |
 | [features/editor-preferences.md](features/editor-preferences.md) | Catalog-driven local UI preferences for the editor                   |

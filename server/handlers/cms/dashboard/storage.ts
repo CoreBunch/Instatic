@@ -18,7 +18,7 @@ import { join } from 'node:path'
 import type { DbClient } from '../../../db/client'
 import { isSqliteUrl, parseSqlitePath } from '../../../db'
 import type { CmsHandlerOptions } from '../shared'
-import { coerceBytes } from './shared'
+import { coerceBytes } from '../../../repositories/dashboard'
 import type { StorageStats } from './types'
 
 export async function readStorageStats(

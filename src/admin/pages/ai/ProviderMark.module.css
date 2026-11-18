@@ -1,0 +1,34 @@
+/* AI provider logos and tints, layered on the shared service mark. */
+
+.logoAnthropic {
+    mask-image: url("./assets/anthropic.svg");
+}
+
+.logoOpenai {
+    mask-image: url("./assets/openai.svg");
+}
+
+.logoOpenrouter {
+    mask-image: url("./assets/openrouter.svg");
+}
+
+.logoOllama {
+    mask-image: url("./assets/ollama.svg");
+}
+
+.mark[data-provider="anthropic"] {
+    --provider-accent: var(--accent-4);
+}
+
+.mark[data-provider="openai"] {
+    --provider-accent: var(--accent-1);
+}
+
+.mark[data-provider="openrouter"] {
+    --provider-accent: var(--accent-2);
+}
+
+.mark[data-provider="ollama"],
+.mark[data-provider="openai-compatible"] {
+    --provider-accent: var(--accent-3);
+}

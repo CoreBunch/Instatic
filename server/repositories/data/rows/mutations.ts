@@ -180,6 +180,29 @@ export async function resurrectDataRow(
 }
 
 /**
+ * Where a row id stands in a branch, deleted rows included: the table it
+ * belongs to, whether it is deleted, and its status. A caller that writes a
+ * row under an id it did not allocate (a plugin pack) reads this first, so it
+ * never writes into another table's row and knows when it is bringing a
+ * deleted row back.
+ */
+export async function findDataRowSlot(
+  db: DbClient,
+  scope: BranchScope,
+  rowId: string,
+): Promise<{ tableId: string; deleted: boolean; status: string } | null> {
+  const { rows } = await db<{ table_id: string; deleted_at: Date | string | null; status: string }>`
+    select table_id, deleted_at, status from data_rows
+    where id = ${physicalId(scope.branchId, rowId)}
+      and branch_id = ${scope.branchId}
+  `
+  const row = rows[0]
+  return row
+    ? { tableId: logicalIdOf(scope.branchId, row.table_id), deleted: row.deleted_at !== null, status: row.status }
+    : null
+}
+
+/**
  * Idempotent draft write by id — update a live row, RESURRECT a soft-deleted
  * one, or create it fresh. The three-way decision the collab relay needs: a
  * row the roster sweep soft-deleted and a peer then restored (undo of a page

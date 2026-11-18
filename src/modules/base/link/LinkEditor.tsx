@@ -9,8 +9,7 @@
  */
 import React from 'react'
 import type { ModuleComponentProps } from '@core/module-engine'
-import { anchorRel } from '@modules/base/shared/anchorTarget'
-import { htmlAttributesForReact } from '@core/htmlAttributes'
+import { anchorHtmlAttributes } from '@modules/base/shared/anchorTarget'
 import { inlineEditableElementProps } from '@modules/base/shared/inlineText'
 import { linkUsesChildren } from './content'
 import type { LinkStoredProps } from './props'
@@ -20,14 +19,15 @@ export const LinkEditor: React.FC<ModuleComponentProps<LinkStoredProps>> = ({ pr
   // Inline editing only starts on a childless link (text mode), so when
   // `inlineEdit` is set the element edits its `text` prop in place.
   const content = linkUsesChildren(childCount) ? children : (props.text ?? 'Link text')
+  const { attributes, rel } = anchorHtmlAttributes(props.htmlAttributes, props.target)
   return React.createElement(
     'a',
     {
       ...nodeWrapperProps,
-      ...htmlAttributesForReact(props.htmlAttributes),
+      ...attributes,
       href: props.href || '#',
       target: props.target,
-      rel: anchorRel(props.target) ?? undefined,
+      rel: rel ?? undefined,
       className: mcClassName,
       ...(inlineEdit ? inlineEditableElementProps(inlineEdit) : {}),
     },

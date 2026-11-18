@@ -51,14 +51,22 @@ function injectClassIntoRootElement(html: string, classAttr: string): string {
   const [fullMatch, tagName, attrs] = tagMatch
   const tagStart = tagMatch.index ?? 0
 
-  // Does the ROOT tag already carry a class attribute?
-  const classRe = /\bclass="([^"]*)"/
+  // Does the ROOT tag already carry a class attribute? Anchored on the
+  // preceding whitespace so `data-class="…"` (or any `*-class` custom
+  // attribute) never matches: `\b` alone treats the hyphen as a word
+  // boundary, which merged author classes INTO the data attribute and left
+  // the element with no real class attribute at all.
+  const classRe = /(^|\s)class="([^"]*)"/
   const existingClass = attrs.match(classRe)
 
   let newAttrs: string
   if (existingClass) {
-    // Prepend the new classes to the existing list (preserve cascade order)
-    newAttrs = attrs.replace(classRe, `class="${classAttr} ${existingClass[1]}"`)
+    // Prepend the new classes to the existing list (preserve cascade order).
+    // Function replacement so `$`-sequences in class names are inert.
+    newAttrs = attrs.replace(
+      classRe,
+      (_m, lead: string) => `${lead}class="${classAttr} ${existingClass[2]}"`,
+    )
   } else {
     // Insert the class as the first attribute on the root tag
     newAttrs = ` class="${classAttr}"${attrs}`
@@ -107,14 +115,19 @@ function injectStyleIntoRootElement(html: string, styleAttr: string): string {
   const tagStart = tagMatch.index ?? 0
   const escaped = escapeHtml(styleAttr)
 
-  const styleRe = /\bstyle="([^"]*)"/
+  // Anchored on the preceding whitespace so `data-style="…"` (or any
+  // `*-style` custom attribute) never matches: `\b` alone treats the hyphen
+  // as a word boundary, which merged declarations INTO the data attribute
+  // and left the element with no real style attribute.
+  const styleRe = /(^|\s)style="([^"]*)"/
   const existingStyle = attrs.match(styleRe)
 
   let newAttrs: string
   if (existingStyle) {
     // Append author declarations after the module's own so the author wins.
-    const merged = `${existingStyle[1].replace(/;\s*$/, '')}; ${escaped}`
-    newAttrs = attrs.replace(styleRe, `style="${merged}"`)
+    // Function replacement so `$`-sequences in CSS values are inert.
+    const merged = `${existingStyle[2].replace(/;\s*$/, '')}; ${escaped}`
+    newAttrs = attrs.replace(styleRe, (_m, lead: string) => `${lead}style="${merged}"`)
   } else {
     newAttrs = ` style="${escaped}"${attrs}`
   }

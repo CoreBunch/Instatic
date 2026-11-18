@@ -47,6 +47,16 @@ describe('LinkEditor canvas DOM matches the shared helpers', () => {
     expect(self.container.querySelector('a')?.getAttribute('rel')).toBe(null)
   })
 
+  it('merges an authored rel with the security rel exactly as the publisher does', () => {
+    const blank = renderEditor(LinkModule, { href: 'https://e.com', target: '_blank', htmlAttributes: { rel: 'nofollow' } })
+    const published = LinkModule.render({ ...LinkModule.defaults, href: 'https://e.com', target: '_blank', htmlAttributes: { rel: 'nofollow' } }, []).html
+    expect(blank.container.querySelector('a')?.getAttribute('rel')).toBe('nofollow noopener noreferrer')
+    expect(published).toContain('rel="nofollow noopener noreferrer"')
+
+    const self = renderEditor(LinkModule, { href: '/page/2/', target: '_self', htmlAttributes: { rel: 'next' } })
+    expect(self.container.querySelector('a')?.getAttribute('rel')).toBe('next')
+  })
+
   it('renders children when present, falls back to text when empty (== linkUsesChildren)', () => {
     const withChildren = renderEditor(
       LinkModule,
@@ -74,6 +84,13 @@ describe('ButtonEditor canvas DOM matches resolveButtonAnchor', () => {
   it('emits rel for a _blank anchor (== anchorRel)', () => {
     const blank = renderEditor(ButtonModule, { href: 'https://e.com', target: '_blank', label: 'Go' })
     expect(blank.container.querySelector('a')?.getAttribute('rel')).toBe(anchorRel('_blank'))
+  })
+
+  it('merges an authored rel with the security rel exactly as the publisher does', () => {
+    const blank = renderEditor(ButtonModule, { href: 'https://e.com', target: '_blank', label: 'Go', htmlAttributes: { rel: 'sponsored' } })
+    const published = ButtonModule.render({ ...ButtonModule.defaults, href: 'https://e.com', target: '_blank', label: 'Go', htmlAttributes: { rel: 'sponsored' } }, []).html
+    expect(blank.container.querySelector('a')?.getAttribute('rel')).toBe('sponsored noopener noreferrer')
+    expect(published).toContain('rel="sponsored noopener noreferrer"')
   })
 })
 

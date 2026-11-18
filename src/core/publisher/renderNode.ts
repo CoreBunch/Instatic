@@ -34,7 +34,8 @@ import { injectNodeClassIds, injectNodeId, injectNodeInlineStyles } from './clas
 import { renderVisualComponentRef } from './renderVisualComponentRef'
 import { renderLoop } from './renderLoop'
 import { resolveAutoSizes } from './sizesResolver'
-import { sanitizeRichtext } from '@core/sanitize'
+import { RICHTEXT_CONTENT_CONFIG, sanitizeRichtext } from '@core/sanitize'
+import { readShowWhen, showWhenAllows } from '@core/members'
 import type {
   RenderConfig,
   RenderAccumulators,
@@ -222,10 +223,10 @@ function renderHolePlaceholder(
   acc.holeNodeIds.add(node.id)
 
   const rawPlaceholder = def.staticPlaceholder?.(node.props as never) ?? ''
-  const sanitized = rawPlaceholder ? sanitizeRichtext(rawPlaceholder) : ''
+  const sanitized = rawPlaceholder ? sanitizeRichtext(rawPlaceholder, RICHTEXT_CONTENT_CONFIG) : ''
 
   const safeId = escapeHtml(node.id)
-  const version = config.publishVersion ?? 0
+  const version = escapeHtml(config.snapshotHash ?? '')
 
   return (
     `<instatic-hole id="hole-${safeId}" data-instatic-hole="${safeId}" data-instatic-version="${version}" style="display:contents">` +
@@ -315,6 +316,12 @@ export function renderNode(
   if (config.dynamicNodeIds?.has(nodeId)) {
     return renderHolePlaceholder(node, def, config, acc)
   }
+
+  // A show-when rule is checked only here, past the hole branch: a render
+  // for nobody in particular has already deferred the node to a per-visitor
+  // hole, so reaching this line means the visitor is known (or the caller
+  // asked for an inline render, which treats the visitor as signed out).
+  if (!showWhenAllows(readShowWhen(node.props), config.templateContext?.member?.tags ?? null)) return ''
 
   const specialRenderer = resolveSpecialRenderer(def)
   if (specialRenderer) return specialRenderer(node, config, acc, renderNode)

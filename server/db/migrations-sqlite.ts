@@ -1527,6 +1527,197 @@ export const sqliteMigrations: Migration[] = [
     `,
   },
   {
+    // Outgoing mail. `mail_connectors` are the accounts the server can send
+    // through (SMTP, Amazon SES); each secret is encrypted with the master
+    // key. `mail_settings` is one row: which connector sends, and as whom.
+    // `mail_templates` holds only the templates an owner has edited; the
+    // defaults live in code. `mail_outbox` is the delivery log; `body_text`
+    // is filled only in development, where mail is captured instead of
+    // sent, because bodies carry live sign-in and reset links.
+    id: '032_mail',
+    sql: `
+      create table if not exists mail_connectors (
+        id text primary key,
+        kind text not null,
+        label text not null,
+        config_json text not null default '{}',
+        secret_ciphertext blob,
+        secret_iv blob,
+        key_fingerprint text,
+        last_used_at text,
+        last_error text,
+        created_by_user_id text references users(id) on delete set null,
+        created_at text not null default (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+        updated_at text not null default (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+      );
+
+      create table if not exists mail_settings (
+        id text primary key,
+        default_connector_id text references mail_connectors(id) on delete set null,
+        from_address text not null default '',
+        from_name text not null default '',
+        reply_to text not null default '',
+        updated_by_user_id text references users(id) on delete set null,
+        updated_at text not null default (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+      );
+
+      create table if not exists mail_templates (
+        template_key text primary key,
+        subject text not null,
+        body_markdown text not null,
+        updated_by_user_id text references users(id) on delete set null,
+        updated_at text not null default (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+      );
+
+      create table if not exists mail_outbox (
+        id text primary key,
+        kind text not null,
+        to_address text not null,
+        subject text not null,
+        status text not null,
+        connector_id text,
+        connector_label text,
+        error text,
+        body_text text,
+        provider_message_id text,
+        duration_ms integer,
+        created_at text not null default (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+      );
+
+      create index if not exists mail_outbox_created_idx
+        on mail_outbox (created_at desc);
+
+      update roles
+         set capabilities_json = json_insert(capabilities_json, '$[#]', 'mail.manage'),
+             updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now')
+       where id in ('owner', 'admin')
+         and not exists (
+               select 1
+                 from json_each(roles.capabilities_json)
+                where value = 'mail.manage'
+             );
+    `,
+  },
+  {
+    // Site members: people who sign up and log in on the published site,
+    // kept fully apart from admin `users`. Sessions and tokens store only
+    // hashes. `member_tags` is keyed (member, tag, source) so a tag granted
+    // by a plugin and the same tag granted by hand are separate rows.
+    // `member_settings` is one installation-wide row, deliberately outside
+    // the branched, exported site document. `data_tables.access_json` holds
+    // a table's access rule for its entry routes (null = anyone).
+    id: '033_members',
+    sql: `
+      create table if not exists members (
+        id text primary key,
+        email text not null,
+        email_normalized text not null,
+        password_hash text,
+        status text not null default 'active',
+        email_verified_at text,
+        profile_json text not null default '{}',
+        last_login_at text,
+        deleted_at text,
+        created_at text not null default (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+        updated_at text not null default (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+      );
+
+      create unique index if not exists members_email_active_idx
+        on members (email_normalized) where deleted_at is null;
+
+      create table if not exists member_sessions (
+        id_hash text primary key,
+        member_id text not null references members(id) on delete cascade,
+        ip_address text,
+        user_agent text,
+        created_at text not null default (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+        last_seen_at text not null default (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+        expires_at text not null,
+        revoked_at text
+      );
+
+      create index if not exists member_sessions_member_idx
+        on member_sessions (member_id);
+
+      create table if not exists member_tokens (
+        id_hash text primary key,
+        member_id text not null references members(id) on delete cascade,
+        kind text not null,
+        payload_json text not null default '{}',
+        created_at text not null default (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+        expires_at text not null,
+        used_at text
+      );
+
+      create index if not exists member_tokens_member_kind_idx
+        on member_tokens (member_id, kind);
+
+      create table if not exists member_tags (
+        member_id text not null references members(id) on delete cascade,
+        tag text not null,
+        source text not null,
+        expires_at text,
+        created_at text not null default (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+        primary key (member_id, tag, source)
+      );
+
+      create index if not exists member_tags_tag_idx
+        on member_tags (tag);
+
+      create table if not exists member_events (
+        id text primary key,
+        member_id text references members(id) on delete set null,
+        kind text not null,
+        ip_address text,
+        user_agent text,
+        metadata_json text not null default '{}',
+        created_at text not null default (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+      );
+
+      create index if not exists member_events_member_idx
+        on member_events (member_id, created_at desc);
+
+      create table if not exists member_settings (
+        id text primary key,
+        signup_mode text not null default 'closed',
+        profile_fields_json text not null default '[]',
+        pages_json text not null default '{}',
+        updated_at text not null default (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+      );
+
+      alter table data_tables add column access_json text;
+
+      -- The capability-less admin role was called "Member", which now reads
+      -- as a site member. Relabel it, unless an owner already renamed it.
+      update roles
+         set name = 'No access',
+             description = 'An admin account that can sign in but do nothing. Not a site member: those sign in on the published site.'
+       where id = 'member'
+         and name = 'Member'
+         and description = 'Public-facing member account — no admin access by default.';
+
+      update roles
+         set capabilities_json = json_insert(capabilities_json, '$[#]', 'members.read'),
+             updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now')
+       where id in ('owner', 'admin')
+         and not exists (
+               select 1
+                 from json_each(roles.capabilities_json)
+                where value = 'members.read'
+             );
+
+      update roles
+         set capabilities_json = json_insert(capabilities_json, '$[#]', 'members.manage'),
+             updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now')
+       where id in ('owner', 'admin')
+         and not exists (
+               select 1
+                 from json_each(roles.capabilities_json)
+                where value = 'members.manage'
+             );
+    `,
+  },
+  {
     // Existing avatars predate anything writing `media_usage_refs`, so the
     // first build that warns before a delete would still have said nothing
     // about the avatar already set — the one case the feature exists for.
@@ -1537,10 +1728,10 @@ export const sqliteMigrations: Migration[] = [
     // what makes the id itself safe to change: an installation that recorded
     // it under another number runs it again and inserts nothing.
     //
-    // `032` follows `031_data_tables_created_by_plugin` (#335, v0.0.21).
-    // Being idempotent, it can still be renumbered if an id ahead of it is
-    // ever claimed first.
-    id: '032_backfill_avatar_usage_refs',
+    // `034` follows `033_members` (v0.0.22). Being idempotent, it was moved
+    // past the ids upstream claimed first without any installation that ran
+    // it under its earlier number losing or duplicating a row.
+    id: '034_backfill_avatar_usage_refs',
     sql: `
       insert into media_usage_refs (asset_id, ref_kind, ref_id, ref_path)
       select u.avatar_media_id, 'user.avatar', u.id, ''

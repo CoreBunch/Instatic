@@ -12,6 +12,7 @@
 
 import type { Page, PageNode, SiteDocument } from '@core/page-tree'
 import type {
+  ClosedContent,
   LoopFetchResult,
   LoopItem,
   PrefetchedLoopEntitySource,
@@ -22,7 +23,8 @@ import { loopSourceRegistry } from '@core/loops/registry'
 import { firstImagePathFromMarkdown } from '@core/markdown/renderMarkdown'
 import { normalizeRouteBase } from '@core/templates/templateMatching'
 import { publicDataUserFromParts } from '@core/data/publicDataUser'
-import type { PublishedDataRow } from '@core/data/schemas'
+import type { DataField, DataRowCells, PublishedDataRow } from '@core/data/schemas'
+import { collectMediaIds, resolveMediaIdsToPaths, resolvedMediaOverlay } from '@core/loops'
 import type { DbClient } from '../db/client'
 import { walkRenderTree } from './renderTreeWalk'
 
@@ -40,15 +42,31 @@ interface ResolvedLoopData extends LoopFetchResult {
 type LoopDataMap = Map<string, ResolvedLoopData>
 
 /**
- * Project a published data row into a LoopItem. The single-row route uses
- * this to seed the publisher's entry stack with one frame representing the
- * row being viewed.
+ * Seed the publisher's entry stack with one frame representing the row being
+ * viewed (entry routes, branch previews, draft previews).
+ *
+ * The table's media fields are resolved to public paths exactly like the
+ * `data.rows` loop source does, so `{currentEntry.<mediaField>}` renders the
+ * same URL on an entry route as inside a loop — not the raw media id.
+ */
+export async function publishedDataRowToEntryItem(
+  db: DbClient,
+  row: PublishedDataRow,
+  fields: readonly DataField[],
+): Promise<LoopItem> {
+  const mediaPathMap = await resolveMediaIdsToPaths(db, collectMediaIds([{ cells_json: row.cells }], fields))
+  return publishedDataRowToLoopItem(row, resolvedMediaOverlay(row.cells as DataRowCells, fields, mediaPathMap))
+}
+
+/**
+ * Project a published data row into a LoopItem.
  *
  * `cells` are spread first so all table-defined fields are available in
- * bindings by their field id. System fields (id, tableId, author, etc.)
- * are overlaid after so they can never be shadowed by a user-defined cell.
+ * bindings by their field id, then `mediaOverlay` replaces media ids with
+ * resolved paths. System fields (id, tableId, author, etc.) are overlaid
+ * after so they can never be shadowed by a user-defined cell.
  */
-export function publishedDataRowToLoopItem(row: PublishedDataRow): LoopItem {
+function publishedDataRowToLoopItem(row: PublishedDataRow, mediaOverlay: DataRowCells): LoopItem {
   const tableRouteBase = normalizeRouteBase(row.tableRouteBase || `/${row.tableSlug}`)
   const permalink = `${tableRouteBase === '/' ? '' : tableRouteBase}/${row.slug}`
 
@@ -72,6 +90,7 @@ export function publishedDataRowToLoopItem(row: PublishedDataRow): LoopItem {
       // Cells — primary data, spread first so bindings can reference any
       // user-defined field by its fieldId.
       ...row.cells,
+      ...mediaOverlay,
       // System identity (overlay after cells so these are never shadowed)
       id: row.rowId,
       rowId: row.rowId,
@@ -230,6 +249,7 @@ async function resolveOneLoop(
     request?: SourceRequestContext
     branchId?: string
     drafts?: boolean
+    closed?: ClosedContent
   },
 ): Promise<ResolvedLoopData> {
   const props = readLoopProps(node)
@@ -255,6 +275,7 @@ async function resolveOneLoop(
     request: ctx.request,
     branchId: ctx.branchId,
     drafts: ctx.drafts,
+    closed: ctx.closed,
   }
 
   try {
@@ -294,6 +315,8 @@ export async function prefetchLoopData(
     /** Branch whose rows loops read; absent means main (publishing, public routes). */
     branchId?: string
     drafts?: boolean
+    /** What the visitor may not open; set on every public render. */
+    closed?: ClosedContent
   },
 ): Promise<LoopDataMap> {
   const nodes = collectLoopNodes(page, site, options?.rootNodeId)
@@ -316,6 +339,7 @@ export async function prefetchLoopData(
         request: options?.request,
         branchId: options?.branchId,
         drafts: options?.drafts,
+        closed: options?.closed,
       })
       return [node.id, data] as [string, ResolvedLoopData]
     }),

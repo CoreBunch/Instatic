@@ -20,9 +20,9 @@ import {
   listDefaults,
   setDefault,
 } from '../../../ai/api'
-import { AiSettingsListSection } from '../AiSettingsListSection'
+import { SettingsListSection } from '@admin/shared/SettingsWorkspace/SettingsListSection'
 import { ProviderMark } from '../ProviderMark'
-import styles from '../AiPage.module.css'
+import styles from '@admin/shared/SettingsWorkspace/SettingsWorkspace.module.css'
 
 type ToolScope = 'site' | 'content' | 'data' | 'plugin'
 
@@ -116,7 +116,7 @@ export function DefaultsTab({
         </div>
 
         <div className={styles.settingsBrowserSections}>
-          <AiSettingsListSection label="Model routing">
+          <SettingsListSection label="Model routing">
             {SCOPES.map((scope) => {
               const meta = SCOPE_META[scope]
               const Icon = meta.icon
@@ -147,7 +147,7 @@ export function DefaultsTab({
                 </Button>
               )
             })}
-          </AiSettingsListSection>
+          </SettingsListSection>
         </div>
       </aside>
 

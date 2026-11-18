@@ -25,6 +25,7 @@ import { StackedBar, StatValue } from '@ui/components/charts'
 import type { DashboardWidgetRendererProps } from '@core/dashboard'
 import { Widget } from '@ui/components/Widget'
 import { useStorageStats } from '../hooks/useDashboardStats'
+import styles from './widgets.module.css'
 
 /**
  * Human-readable byte formatter — drops decimals for B/KB/MB and keeps
@@ -44,7 +45,7 @@ function dialectLabel(dialect: 'sqlite' | 'postgres'): string {
 }
 
 export function StorageWidget({ span, editing }: DashboardWidgetRendererProps) {
-  const stats = useStorageStats()
+  const { data: stats, loading, error } = useStorageStats()
   return (
     <Widget
       widgetId="storage"
@@ -53,8 +54,9 @@ export function StorageWidget({ span, editing }: DashboardWidgetRendererProps) {
       tint="sky"
       span={span}
       editing={editing}
-      loading={stats === null}
+      loading={loading}
     >
+      {error && <p className={styles.feedTime} role="status">{error}</p>}
       {stats && (
         <>
           <StatValue

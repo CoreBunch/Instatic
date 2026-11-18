@@ -244,7 +244,7 @@ src/admin/
 ### Cross-page primitives
 
 - **`SpotlightRoot`** — Cmd+K command palette. Owns its own command registry (`spotlight/commands/`), provider runner (`providers/`), scopes, keybindings, recents, telemetry. Available from every workspace.
-- **`AdminSectionNavigation`** — top-of-screen workspace switcher.
+- **`AdminSectionNavigation`** — top-of-screen workspace switcher. Plugins add entries to it, so the row has no upper bound: `useFittingEntryCount` measures how many entries fit in the space the toolbar leaves, and the rest move into a trailing "More" menu (`AdminNavMoreMenu`). The right-hand toolbar controls never shrink, so the toolbar never grows wider than the window.
 - **`AccountMenuButton`** — top-right avatar / account menu.
 - **`Panel`, `PanelHeader`, `SidebarResizeHandle`** — generic floating-panel chrome reused across the editor, content, and data workspaces.
 - **`StepUp`** — re-auth dialog gating sensitive actions.
@@ -421,7 +421,7 @@ Double-clicking a node whose module declares `inlineTextEdit` (`base.text`, `bas
 
 ### CSS injection into the iframe
 
-Each iframe `<head>` receives five `<style>` elements (three from `ClassStyleInjector`, one each from the others), in this order:
+Each iframe `<head>` receives five `<style>` elements (three from `ClassStyleInjector`, one each from the others), in this order, plus one per plugin stylesheet (below):
 
 | Element | Injector | Cascade layer | Contents |
 |---|---|---|---|
@@ -430,8 +430,11 @@ Each iframe `<head>` receives five `<style>` elements (three from `ClassStyleInj
 | `<style id="mc-classes-preview">` | `ClassStyleInjector` | `@layer user-authored` | Higher-specificity preview rule while a property control is hovered; empty for state-pseudo rules |
 | `<style id="mc-classes-force-state">` | `ClassStyleInjector` | `@layer user-authored` | Forced state preview: paints the active state-pseudo rule onto the selected node via a doubled `[data-node-id]` selector |
 | `<style id="mc-user-styles">` | `UserStylesheetInjector` | `@layer user-authored` | User-uploaded stylesheets (verbatim, unscoped) |
+| `<style data-plugin-id="…">` (0..n) | `PluginStylesheetInjector` | `@layer user-authored` | Stylesheets enabled plugins add to published pages (`frontend.assets` of kind `style` / `style-inline`) |
 
 The **unlayered-vs-layered** split is the cascade isolation mechanism: CSS rules outside any `@layer` always beat rules inside `@layer`-d blocks, regardless of specificity. Author CSS (both the class registry and user stylesheets) goes into `@layer user-authored`, so it can never override the editor chrome even with a high-specificity selector.
+
+Stylesheets that plugins add to published pages are part of what visitors see, so the canvas loads them too. `PluginStylesheetInjector` reads the shared list from `canvasPluginStylesheets.ts` (one `GET /admin/api/cms/runtime/canvas-stylesheets` per editor, reloaded on `CMS_PLUGINS_CHANGED_EVENT`, so enabling, disabling, upgrading or removing a plugin restyles the canvas without a reload) and writes one `<style data-source="PluginStylesheetInjector" data-plugin-id="…">` per stylesheet into `@layer user-authored`. A `head`-placement stylesheet goes ahead of the site's style tags, every other placement after them, which is the document order the published page has. Viewport units are pinned to the frame viewport like the site's own CSS. **Only `style` and `style-inline` assets load; a plugin's `script`, `script-inline`, `link` and `meta` assets never reach the canvas**, because it shares the admin origin and is an editing surface. The server builds the list (`server/publish/canvasStylesheets.ts`) from the same eligibility rule as the publisher. See [`docs/features/plugin-system.md`](features/plugin-system.md) → "Frontend assets".
 
 `EditorChromeInjector` targets chrome elements via **stable data-attribute selectors** (`data-canvas-module-placeholder`, `data-instatic-slot-instance`, `data-instatic-unknown-module`, etc.) rather than hashed CSS-Module class names, which only exist in the parent document. At mount, it copies the admin design tokens the chrome reads from the parent document's `:root` onto the iframe's `:root`, every one renamed into the reserved `--chrome-*` namespace: `--radius` becomes `--chrome-radius`, `--text-subtle` becomes `--chrome-text-subtle`, `--font-sans` becomes `--chrome-font-sans`, and so on. The chrome rules read only `var(--chrome-*)`, and the forwarded set is derived from those references, so it cannot drift from what the rules use.
 
@@ -483,6 +486,8 @@ Canvas-internal values are not CSS tokens — they are raw integers intentionall
 | `EditorChromeInjector.tsx`      | Unlayered editor-chrome CSS into each iframe head               |
 | `ClassStyleInjector.tsx`        | Class registry + publisher reset CSS into each iframe head      |
 | `UserStylesheetInjector.tsx`    | User-uploaded CSS into each iframe head                         |
+| `PluginStylesheetInjector.tsx`  | Plugin stylesheets (never scripts) into each iframe head        |
+| `canvasPluginStylesheets.ts`    | Shared, event-refreshed list of plugin stylesheets              |
 | `NodeRenderer.tsx`              | Renders a single node and its children inside the iframe        |
 | `CanvasTransformLayer.tsx`      | Zoom + pan transform (design view)                              |
 | `CanvasLiveSurface.tsx`         | "Live" view — single real-size editable frame, normal scroll    |
@@ -623,7 +628,7 @@ Site-specific controls that were previously sections of this modal (Pages roster
 **Data source — `useSiteSettingsController`** (`src/admin/modals/Settings/useSiteSettingsController.ts`): the General and Publishing sections edit fields of the persisted `SiteDocument` (`name`, `settings.*`, framework preferences), but where that document lives depends on the route. The modal is global, so a section cannot just read the editor store — that store is only hydrated on the Site editor (`AdminCanvasLayout`). The controller hides the split behind one uniform shape:
 
 - **Site editor** (editor store holds the live document): delegate to the editor-store mutations. Settings edits ride the collab write path alongside page-tree edits — streamed live to every peer and persisted by the server relay.
-- **Every other admin page** (no in-memory draft): a standalone Zustand store loads the document once via `cmsAdapter`, edits a local copy, and persists immediately with a shell-only `saveSite` (empty dirty sets, so pages / components / layouts are left untouched). After each save it refreshes the `adminUi` site summary and fires `CMS_SITE_RELOAD_EVENT` so the toolbar brand and `useSiteSummary` re-sync. There is no Save button on those pages, so writes commit on blur / toggle.
+- **Every other admin page** (no in-memory draft): a standalone Zustand store loads the document once via `cmsAdapter`, edits a local copy, and persists immediately with a shell-only `saveSite` (empty dirty sets, so pages / components / layouts are left untouched). After each save it refreshes the `adminUi` site summary and fires `CMS_SITE_RELOAD_EVENT` so the toolbar brand and `useSiteSummary` re-sync. There is no Save button on those pages, so writes commit on blur / toggle. The loaded copy is not kept forever: any **other** `CMS_SITE_RELOAD_EVENT` (site import, plugin install, data-workspace writes to site tables — also one arriving while the first load is in flight) marks it `stale`, and the next render of a section refetches it after pending saves have settled (immediately when the modal is open). A load whose fetch started before a save discards its response and fetches again, so it can never roll back that save or its shell conflict base (`saveGeneration`). General text fields reset their local input value when the corresponding persisted value changes, so the refreshed document also reaches the visible controls.
 
 Because the controller is imported only by the lazy section components, the editor-store import it carries stays inside the `SettingsModal` chunk and never enters the eager graph of the lightweight layouts. This is what makes the modal *actually* global — before it, General and Publishing rendered a permanent skeleton anywhere outside the Site editor.
 

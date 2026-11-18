@@ -1,8 +1,8 @@
 # Site Transfer
 
-Export and import — move a complete site between self-hosted instances. One ZIP bundle carries the shell, all data tables, all data rows, the media library (metadata + raw files + the folder tree), and published-URL redirects. Everything that defines the *site* travels in one archive, so re-importing into a fresh instance reproduces an **identical** site.
+Export and import — move a complete site between self-hosted instances. One ZIP bundle carries the shell, all data tables, all data rows and their publication history, frozen published site snapshots and compiled runtime scripts, the media library (metadata + raw files + the folder tree), and published-URL redirects. Everything that defines the *site* travels in one archive, so re-importing into a fresh instance reproduces an **identical** site.
 
-The transfer format is **self-contained** — no external service, no signed URLs, no incremental sync. Use it for backup, environment promotion (staging → production), or migrating between hosts.
+Use the portable bundle for site-content backups, environment promotion (staging → production), or migrating between hosts. It does not carry accounts, credentials, plugins, or server configuration; use database and filesystem backups for full-instance recovery. Runtime npm dependencies are restored from the frozen dependency lock through the existing dependency cache, requiring registry access on a cold destination. Authored compiled scripts and media bytes travel inside the archive.
 
 The **Export site** dialog (`src/admin/pages/data/components/ExportDialog`) is a sibling of the Site Import modal: a two-column category navigator with a detail pane. Every category is selected by default — the primary action is a one-click **full export**. Untick any category to narrow the bundle. A live, server-accurate size estimate updates as the selection changes.
 
@@ -10,7 +10,7 @@ The **Export site** dialog (`src/admin/pages/data/components/ExportDialog`) is a
 
 ## TL;DR
 
-- Format: `site-bundle-<timestamp>.zip` — `.instatic/site-bundle.json` plus `media/<storagePath>` entries. The archive manifest schema lives in `src/core/data/bundleArchive.ts`; the internal import payload schema lives in `src/core/data/bundleSchema.ts`.
+- Format: `site-bundle-<timestamp>.zip` — `.instatic/site-bundle.json` plus `media/<storagePath>` and `runtime/<index>` entries. The archive manifest schema lives in `src/core/data/bundleArchive.ts`; the internal import payload schema lives in `src/core/data/bundleSchema.ts`.
 - Endpoints:
   - `GET /admin/api/cms/export` or `POST /admin/api/cms/export` — produce a bundle from the current site
   - `POST /admin/api/cms/export/estimate` — exact byte size for an `ExportRequest`, without reading media off disk
@@ -220,7 +220,7 @@ Body: an internal `SiteBundle` JSON (verbatim). Strategy is a query-string param
 
 `POST /admin/api/cms/import/archive[?strategy=replace|merge-add|merge-overwrite]`
 
-Body: the user-facing ZIP archive emitted by export. The manifest must be the first stored entry at `.instatic/site-bundle.json`; media entries must be stored under `media/<storagePath>`. This is the path used by Super Import when a dropped ZIP is an Instatic transfer archive.
+Body: the user-facing ZIP archive emitted by export. The manifest must be the first stored entry at `.instatic/site-bundle.json`; media entries must be stored under `media/<storagePath>` and compiled runtime entries under `runtime/<index>`. This is the path used by Super Import when a dropped ZIP is an Instatic transfer archive.
 
 The archive endpoint also accepts a `selection` query parameter containing `BundleImportSelection` JSON. The browser still posts the original ZIP Blob; the server filters the manifest before delegating to the JSON import handler and streams only selected media entries to disk, draining unselected archive entries as needed. Row slug conflict resolutions travel in the same selection as `rowSlugOverrides: { tableId, rowId, slug }[]`; the server applies those overrides to the manifest row before import.
 
@@ -236,9 +236,21 @@ type ImportStrategy = 'replace' | 'merge-add' | 'merge-overwrite'
 
 Folder membership (`media_asset_folders`) is restored **after** the media bytes land, and only into folders the bundle actually carried. Redirect rows are inserted after their target rows exist (in `replace`, the rows' cascade-delete clears the old redirects first). Folders + redirects ride only the `replace` (full-restore) path because merging a folder tree or redirect set into a populated instance risks unique-key collisions — the same reason the site shell is `replace`/`merge-overwrite`-only.
 
+### Draft and published state
+
+`BundlePublicationSchema` (`src/core/data/bundlePublication.ts`) stores each included row's version history and active version pointer separately from its editable `cells`. Page versions retain their frozen `site_snapshots` (shared styles, components, layouts, runtime settings and importmap), and compiled runtime files are raw ZIP entries with manifest metadata. `scheduledPublishAt` is preserved on editable rows. Branch exports contain draft content only, because branches have no independent publication.
+
+Export flushes pending collaboration writes, then reads rows and publication state in a transaction under the publish and collaboration write locks. Selecting rows also selects their versions and referenced snapshots/files; ZIP runtime entry indices always refer to the original archive manifest.
+
+On main, `applySiteBundle` validates references and runtime bytes before mutation, then restores publication inside the same transaction as the rows. `replace` restores all included state; `merge-add` leaves existing rows and their publication untouched; `merge-overwrite` replaces the history and active pointer for updated rows. Snapshot IDs are remapped to protect unrelated target snapshots. Version IDs are retained because compiled chunks contain immutable version URLs. A conflicting published route aborts the transaction. Slug overrides change editable rows; they do not rewrite historical published URLs.
+
+After commit, an empty static slot replaces the previous baked output and the render cache generation changes. The existing public renderer serves restored snapshots immediately; no draft republish or script rebuild is needed. Runtime dependency caches for active snapshots are prepared before the transaction. Import into a branch changes drafts only and never activates published versions on main.
+
+Malformed references, missing runtime files, size mismatches and CRC failures are rejected before replace can delete target data. Publication restore requires publishing capabilities and step-up authentication in addition to the normal import gates. This format preserves future exports; it does not reconstruct publication data absent from older bundles.
+
 ### Replace and the media library
 
-Media is not branch-scoped, and records outside an import can reference it, so `replace` wipes the library only when nothing that survives the replace can (`replacesMediaLibrary` in `server/handlers/cms/import.ts`):
+Media is not branch-scoped, and records outside an import can reference it, so `replace` wipes the library only when nothing that survives the replace can (`replacesMediaLibrary` in `server/handlers/cms/importApply.ts`):
 
 - the import carries the media category (`media` present in the bundle or the selected archive manifest, even empty). A bundle exported without media leaves the library alone, like folders and redirects;
 - it carries the site shell. A kept shell can reference media (favicon, `@font-face` sources, style-rule backgrounds);
@@ -251,7 +263,8 @@ The JSON handler:
 1. Checks the strategy gate (`authorizeImportStrategy`), validates the bundle against `SiteBundleSchema`, then checks the shell gate (`authorizeImportedShell`); see the capability gates below.
 2. Calls `applySiteBundle`, which wraps the apply in a **single DB transaction** on the collab-aware write lane:
    - Tables: insert / update / delete per strategy.
-   - Rows: insert / update / soft-delete per strategy.
+   - Rows: insert / update / soft-delete per strategy, preserving schedules.
+   - Publication: restore versions, frozen snapshots, runtime files and active pointers for imported rows on main.
    - Site shell: if the bundle carries `site`, overwrite the `site` row.
    - `replace` only: the media library (see above), folders, and redirects.
 3. Removes the bytes of media rows a `replace` deleted.
@@ -264,7 +277,7 @@ The archive handler:
 2. Reads and validates the first ZIP entry as `.instatic/site-bundle.json`.
 3. Applies the optional selection filter and row slug overrides to the manifest.
 4. Runs the same two capability gates (`authorizeImportStrategy`, then `authorizeImportedShell` for whether the selection carries the shell).
-5. Streams selected media entries into temporary files, validating declared size, CRC descriptors, missing selected entries, and unexpected archive entries before data is mutated.
+5. Streams selected media and runtime entries into temporary files, validating declared size, CRC, missing selected entries, and unexpected archive entries before data is mutated. Runtime bytes are read from staging for transactional database storage.
 6. Applies the manifest's site/data/folder/redirect content through `applySiteBundle` (the JSON handler's transaction), stating whether the selection carries media, then removes the bytes of media rows a `replace` deleted.
 7. Moves staged media into `uploads/<storagePath>` and upserts the matching media row.
 8. Returns the same `ImportResult` shape with `mediaImported` from the staged entries.
@@ -290,12 +303,16 @@ Primary merge identity is **id**: a row in the bundle with the same id as an exi
 | Apply (any strategy)                  | `data.import`                                       |
 | Apply with `replace` strategy         | `data.import` AND `content.manage` AND step-up      |
 | Apply bundle that carries `site` shell| ALSO `site.structure.edit`                          |
+| Apply bundle containing publication history | ALSO `pages.publish`, `content.publish.any` and step-up |
 
 ---
 
 ## Round-trip parity
 
 The export → import path round-trips losslessly for everything in the bundle. This is verified by:
+
+- `src/__tests__/server/bundlePublishedState.test.ts` — published/draft separation, collection loops, schedules, history, runtime bytes, selected rows, permissions and invalid-archive rollback on SQLite and PostgreSQL.
+- `tests/e2e/backup-published-state.e2e.ts` — UI backup restore replaces later published content while retaining the backed-up unfinished draft.
 
 - `src/__tests__/architecture/cmsTransferExport.test.ts` — export produces a valid bundle.
 - `src/__tests__/architecture/cmsTransferPreview.test.ts` — preview matches what import would do.
@@ -331,7 +348,7 @@ Save the response ZIP to disk (browser handles the download automatically).
 2. On the destination host: setup wizard completes (creates an owner account, empty site).
 3. On the destination host: open **Import Site** from Spotlight or the Data workspace, then drop the exported ZIP bundle.
 4. Review the preview and import with `strategy: replace`.
-5. After import, the published HTML is regenerated on next publish (or `republish-all`).
+5. Visitors immediately see the backed-up published state; newer unfinished edits remain drafts. Do not republish to finish restoration: publishing would intentionally replace the restored public content with those drafts.
 
 ### Selective export (one table only)
 
@@ -388,7 +405,9 @@ A nightly cron can hit `/admin/api/cms/export` with an admin session cookie and 
 - Source-of-truth files:
   - `src/core/data/bundleSchema.ts` — `SiteBundleSchema`, `ImportStrategySchema`, `BundlePreviewSchema`, `ImportResultSchema`
   - `server/handlers/cms/export.ts` — `GET+POST /export`
-  - `server/handlers/cms/import.ts` — `POST /import`, plus `authorizeImportStrategy`, `authorizeImportedShell`, and `applySiteBundle` shared with the archive endpoint
+  - `server/handlers/cms/import.ts` — `POST /import` and shared authorization gates
+  - `server/handlers/cms/importApply.ts` — shared import transaction and publication/cache restore
+  - `server/archive/zipBodyReader.ts` — incremental stored-ZIP reader
   - `server/handlers/cms/importArchive.ts` — `POST /import/archive`
   - `server/handlers/cms/importPreview.ts` — `POST /import/preview`
   - `src/core/persistence/cmsTransfer.ts` — client-side transfer helpers, including native export form submission

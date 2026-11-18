@@ -11,10 +11,6 @@ export function isOwnerUser(user: CmsCurrentUser): boolean {
   return user.role.slug === 'owner'
 }
 
-export function displayUserName(user: CmsCurrentUser): string {
-  return user.displayName.trim() || user.email
-}
-
 export function statusLabel(status: CmsCurrentUser['status']): string {
   return status === 'active' ? 'Active' : 'Suspended'
 }

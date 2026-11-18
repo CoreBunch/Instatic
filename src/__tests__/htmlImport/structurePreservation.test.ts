@@ -125,12 +125,12 @@ describe('compound buttons keep what they wrap', () => {
     expect(root.children).toHaveLength(0)
   })
 
-  it('a submit button stays base.submit even when compound', () => {
+  it('a compound submit button stays base.submit and keeps its children', () => {
     // core/forms finds a form's submit control by module id, so a compound
-    // submit must not be re-tagged as a container. It keeps only its label.
+    // submit must not be re-tagged as a container; its content recurses.
     const r = importHtml('<form><button><svg viewBox="0 0 1 1"></svg><span>Send</span></button></form>')
     const submit = Object.values(r.nodes).find((n) => n.moduleId === 'base.submit')
     expect(submit).toBeDefined()
-    expect(submit!.children).toHaveLength(0)
+    expect(submit!.children).toHaveLength(2)
   })
 })

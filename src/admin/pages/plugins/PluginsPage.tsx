@@ -15,6 +15,8 @@ import {
   canManagePluginLifecycle,
 } from '@admin/access'
 import styles from './PluginsPage.module.css'
+import { EmptyState } from '@ui/components/EmptyState'
+import { PackageSolidIcon } from 'pixel-art-icons/icons/package-solid'
 
 // Number of skeleton plugin cards rendered while the installed-plugin
 // list is loading. Three matches a typical fresh-install showing
@@ -144,7 +146,12 @@ export function PluginsPage() {
               <PluginCard key={i} loading />
             ))
           ) : payload.plugins.length === 0 ? (
-            <p className={styles.emptyState}>No plugins installed yet.</p>
+            <EmptyState
+              variant="centered"
+              icon={<PackageSolidIcon size={28} />}
+              title="No plugins installed yet"
+              description="Upload a plugin package to add features to the CMS."
+            />
           ) : (
             payload.plugins.map((plugin) => (
               <PluginCard

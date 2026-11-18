@@ -302,7 +302,9 @@
 .compareToggle { display: inline-flex; align-items: center; gap: var(--space-s); }
 .compareGrid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-l); }
 .compareGrid[data-single="true"] { grid-template-columns: minmax(0, 1fr); max-width: 760px; }
-.compareCol { display: grid; gap: var(--space-xs); min-width: 0; }
+/* align-content: start keeps the label and frame rows at their own height when
+   the sibling column's frame is taller; stretched rows would push this frame down. */
+.compareCol { display: grid; align-content: start; gap: var(--space-xs); min-width: 0; }
 .compareLabel { font-size: var(--text-2xs); font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-subtle); }
 
 .frameHost { position: relative; width: 100%; height: var(--frame-h); overflow: hidden; border-radius: var(--panel-radius); background: var(--bg-surface-5); }

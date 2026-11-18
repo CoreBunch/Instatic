@@ -64,7 +64,6 @@ function planWith(
     fontTokens: [],
     scripts: [],
     droppedAtRules: [],
-    unusedCss: [],
   }
 }
 
@@ -95,6 +94,13 @@ describe('applyAssetRewrites — node props', () => {
     const result = applyAssetRewrites(plan, REWRITE_MAP)
     const node = Object.values(result.pages[0].nodeFragment.nodes)[0]
     expect(node.props['href']).toBe('/media/abc123.png')
+  })
+
+  it('rewrites videoUrl prop', () => {
+    const plan = planWith({ videoUrl: 'images/hero.png' })
+    const result = applyAssetRewrites(plan, REWRITE_MAP)
+    const node = Object.values(result.pages[0].nodeFragment.nodes)[0]
+    expect(node.props['videoUrl']).toBe('/media/abc123.png')
   })
 
   it('rewrites srcset tokens', () => {
@@ -185,7 +191,6 @@ describe('applyAssetRewrites — CSS styles', () => {
       fontTokens: [],
       scripts: [],
       droppedAtRules: [],
-      unusedCss: [],
     }
     const result = applyAssetRewrites(basePlan, REWRITE_MAP)
     const mobileStyle = result.styleRules[0].contextStyles['mobile'] as Record<string, string>
@@ -230,7 +235,6 @@ describe('applyAssetRewrites — CSS styles', () => {
       fontTokens: [],
       scripts: [],
       droppedAtRules: [],
-      unusedCss: [],
     }
     const result = applyAssetRewrites(basePlan, REWRITE_MAP)
     expect(result.styleRules[0].rawCss).toContain("url('/media/abc123.png')")
@@ -280,7 +284,6 @@ describe('applyAssetRewrites — inline background node.inlineStyles', () => {
       fontTokens: [],
       scripts: [],
       droppedAtRules: [],
-      unusedCss: [],
     }
     const result = applyAssetRewrites(plan, REWRITE_MAP)
     const bag = result.pages[0].nodeFragment.nodes['n1']!.inlineStyles!
@@ -339,5 +342,13 @@ describe('applyAssetRewrites — end-to-end via buildImportPlan', () => {
         }
       }
     }
+  })
+})
+
+
+describe('applyAssetRewrites — native video poster', () => {
+  it('rewrites the poster to the uploaded URL', () => {
+    const result = applyAssetRewrites(planWith({ poster: 'images/hero.png' }), REWRITE_MAP)
+    expect(Object.values(result.pages[0].nodeFragment.nodes)[0].props.poster).toBe('/media/abc123.png')
   })
 })

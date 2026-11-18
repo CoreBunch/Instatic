@@ -35,6 +35,7 @@ import {
   ingestInput,
   buildImportPlan,
   commitImportPlan,
+  detectPluginPackage,
   type FileMap,
   type ImportPlan,
   type ImportResult,
@@ -42,8 +43,11 @@ import {
   type StylesheetImportMode,
 } from '@core/siteImport'
 import { useAdminUi } from '@admin/state/adminUi'
+import { useAdminNavigate } from '@admin/lib/useAdminNavigate'
+import { useCurrentAdminUser } from '@admin/sessionContext'
+import { canAccessWorkspace, canInstallPlugins, workspacePath } from '@admin/access'
 import { useEditorStore } from '@site/store/store'
-import { DropStep } from './steps/DropStep'
+import { DropStep, type DroppedPluginPackage } from './steps/DropStep'
 import { AnalyzeStep } from './steps/AnalyzeStep'
 import { CmsBundleAnalyzeStep } from './steps/CmsBundleAnalyzeStep'
 import { CmsBundleConflictsStep } from './steps/CmsBundleConflictsStep'
@@ -51,6 +55,7 @@ import { ConflictsStep } from './steps/ConflictsStep'
 import { ImportStep } from './steps/ImportStep'
 import { SiteImportFooter } from './SiteImportFooter'
 import {
+  describeStaticImportResult,
   importNeedsAttention,
   makeCmsRunDoneProgress,
   makeCmsRunProgress,
@@ -105,6 +110,7 @@ interface SiteImportModalProps {
 // ---------------------------------------------------------------------------
 
 export function SiteImportModal({ onCmsBundleImportComplete }: SiteImportModalProps = {}) {
+  const navigate = useAdminNavigate()
   const closeAdminSiteImportModal = useAdminUi((s) => s.closeSiteImport)
   function closeModal() {
     closeAdminSiteImportModal()
@@ -141,6 +147,7 @@ export function SiteImportModal({ onCmsBundleImportComplete }: SiteImportModalPr
   const [result, setResult] = useState<ImportResult | null>(null)
   const [cmsResult, setCmsResult] = useState<CmsImportResult | null>(null)
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
+  const [pluginPackage, setPluginPackage] = useState<DroppedPluginPackage | null>(null)
   const [busy, setBusy] = useState(false)
   const [logOpen, setLogOpen] = useState(false)
   // Cancellation handle for the active static run. Aborting stops queued and
@@ -148,12 +155,31 @@ export function SiteImportModal({ onCmsBundleImportComplete }: SiteImportModalPr
   const runAbortRef = useRef<AbortController | null>(null)
 
   const siteName = useEditorStore((s) => s.site?.name) ?? 'this site'
+  const currentUser = useCurrentAdminUser()
+  const canInstallPluginPackage =
+    canAccessWorkspace(currentUser, 'plugins') && canInstallPlugins(currentUser)
+
+  // A plugin package is not a site: stop at the Drop step and point at the
+  // Plugins page instead of importing its frontend files as loose assets.
+  function stopAtPluginPackage(map: FileMap, fileName: string | null): boolean {
+    const detected = detectPluginPackage(map)
+    if (!detected) return false
+    setPluginPackage({ fileName, name: detected.name })
+    setBusy(false)
+    return true
+  }
+
+  function handleOpenPlugins() {
+    navigate(workspacePath('plugins'))
+    closeModal()
+  }
 
   // ── Ingest + plan-build (triggered from DropStep callbacks) ───────────────
 
   async function handleFilesReady(files: File[]) {
     setBusy(true)
     setErrorMsg(null)
+    setPluginPackage(null)
     try {
       if (files.length === 1 && await loadCmsBundleFile(files[0])) {
         setFileMap(null)
@@ -167,6 +193,7 @@ export function SiteImportModal({ onCmsBundleImportComplete }: SiteImportModalPr
       }
 
       const map = await ingestInput(files)
+      if (stopAtPluginPackage(map, null)) return
       await finalizePlan(map)
     } catch (err) {
       console.error('[SiteImportModal] ingest failed:', err)
@@ -179,6 +206,7 @@ export function SiteImportModal({ onCmsBundleImportComplete }: SiteImportModalPr
   async function handleZipReady(file: File) {
     setBusy(true)
     setErrorMsg(null)
+    setPluginPackage(null)
     try {
       if (await loadCmsBundleArchiveFile(file)) {
         setFileMap(null)
@@ -193,6 +221,7 @@ export function SiteImportModal({ onCmsBundleImportComplete }: SiteImportModalPr
 
       const zipBytes = new Uint8Array(await file.arrayBuffer())
       const map = await ingestInput({ zipBytes })
+      if (stopAtPluginPackage(map, file.name)) return
       await finalizePlan(map)
     } catch (err) {
       console.error('[SiteImportModal] ingest failed:', err)
@@ -412,7 +441,7 @@ export function SiteImportModal({ onCmsBundleImportComplete }: SiteImportModalPr
       pushToast({
         kind: needsAttention ? 'warning' : 'success',
         title: needsAttention ? 'Site imported with warnings' : 'Site imported',
-        body: `${importResult.pages.length} pages · ${importResult.styleRules.length} style rules · ${mediaSummary}`,
+        body: describeStaticImportResult(importResult, mediaSummary),
         location: 'site-workspace',
       })
     } catch (err) {
@@ -490,11 +519,16 @@ export function SiteImportModal({ onCmsBundleImportComplete }: SiteImportModalPr
   }
 
   // Open the freshly-imported site: jump to the first imported page in the
-  // canvas, then close the wizard. Falls back to a plain close when nothing
-  // imported (e.g. a styles-only import).
+  // canvas, then close the wizard. An import with no pages (stylesheets only)
+  // opens the Site workspace, where its files sit in the Code panel.
   function handleOpenSite() {
     const firstPage = result?.pages[0]
-    if (firstPage) useEditorStore.getState().openPageInCanvas(firstPage.id)
+    if (firstPage) {
+      useEditorStore.getState().openPageInCanvas(firstPage.id)
+      navigate('/admin/site?table=pages&row=' + encodeURIComponent(firstPage.id))
+    } else {
+      navigate(workspacePath('site'))
+    }
     closeModal()
   }
 
@@ -525,6 +559,7 @@ export function SiteImportModal({ onCmsBundleImportComplete }: SiteImportModalPr
         <SiteImportFooter
           step={step}
           cmsBundleState={cmsBundleState}
+          plan={plan}
           selection={selection}
           runProgress={runProgress}
           cmsResult={cmsResult}
@@ -551,6 +586,9 @@ export function SiteImportModal({ onCmsBundleImportComplete }: SiteImportModalPr
           <DropStep
             busy={busy}
             errorMessage={errorMsg}
+            pluginPackage={pluginPackage}
+            canInstallPlugins={canInstallPluginPackage}
+            onOpenPlugins={handleOpenPlugins}
             onFilesReady={(files) => { void handleFilesReady(files) }}
             onZipReady={(file) => { void handleZipReady(file) }}
           />

@@ -16,6 +16,7 @@ import {
   decodeBodyBytes,
   encodeBodyBytes,
 } from '../protocol/bodyEncoding'
+import { withoutSessionCookies } from '../../sessionCookies'
 import type {
   SerializedRequest,
   SerializedResponse,
@@ -54,6 +55,14 @@ export async function serializeRouteRequest(
     reqHeaders.forEach((v: string, k: string) => { headers[k.toLowerCase()] = v })
   } else if (reqHeaders && typeof reqHeaders.entries === 'function') {
     for (const [k, v] of reqHeaders.entries()) headers[k.toLowerCase()] = v
+  }
+  // The host has already decided who the caller is. A plugin gets that
+  // answer (`ctx.user`), never the credentials themselves: a session token
+  // in plugin hands could be replayed against the admin or the site.
+  if (headers.cookie !== undefined) {
+    const kept = withoutSessionCookies(headers.cookie)
+    if (kept) headers.cookie = kept
+    else delete headers.cookie
   }
 
   const bodyBytes = request.method !== 'GET'

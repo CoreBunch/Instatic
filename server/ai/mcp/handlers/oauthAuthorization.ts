@@ -69,14 +69,13 @@ async function handleDecision(req: Request, db: DbClient): Promise<Response> {
     })
   }
 
+  if (!userHasCapability(userOrResponse, 'ai.chat')) {
+    return jsonResponse({ error: 'AI access is required to create an MCP connection.' }, { status: 403 })
+  }
   const capabilities = [...new Set(body.capabilities ?? [])]
-  if (
-    userHasCapability(userOrResponse, 'ai.chat') &&
-    !capabilities.includes('ai.chat')
-  ) {
+  if (!capabilities.includes('ai.chat')) {
     capabilities.push('ai.chat')
   }
-  if (capabilities.length === 0) return badRequest('Select at least one capability.')
   const overreach = capabilities.filter((capability) => !userHasCapability(userOrResponse, capability))
   if (overreach.length > 0) {
     return jsonResponse(

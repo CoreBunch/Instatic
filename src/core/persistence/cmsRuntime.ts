@@ -8,6 +8,10 @@ import type { SitePackageJson } from '@core/site-dependencies/manifest'
 import type { TemplateRenderDataContext } from '@core/templates/dynamicBindings'
 import { apiRequest, type FetchLike } from '@core/http'
 import {
+  CanvasPluginStylesheetsResponseSchema,
+  type CanvasPluginStylesheet,
+} from '@core/plugins/canvasStylesheets'
+import {
   CmsRuntimeDependencyEnvelopeSchema,
   CmsRuntimePreviewResponseSchema,
   CmsRuntimeValidationResponseSchema,
@@ -114,4 +118,25 @@ export async function validateCmsRuntimeScripts(
     fallbackMessage: 'Runtime script validation failed',
   })
   return body.diagnostics
+}
+
+/**
+ * The stylesheets that enabled plugins add to published pages, as CSS text
+ * for the editing canvas. See `server/publish/canvasStylesheets.ts`.
+ */
+export async function listCmsCanvasPluginStylesheets(
+  options: CmsRuntimePreviewRequestOptions = {},
+): Promise<CanvasPluginStylesheet[]> {
+  const {
+    signal,
+    fetchImpl = globalThis.fetch.bind(globalThis),
+    basePath = '/admin/api/cms',
+  } = options
+  const body = await apiRequest(`${basePath}/runtime/canvas-stylesheets`, {
+    schema: CanvasPluginStylesheetsResponseSchema,
+    signal,
+    fetchImpl,
+    fallbackMessage: 'Plugin stylesheets could not be loaded',
+  })
+  return body.stylesheets
 }

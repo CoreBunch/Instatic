@@ -39,6 +39,25 @@ const SAFE_URL_SCHEMES = new Set(['http:', 'https:', 'mailto:', 'tel:', 'sms:'])
 const DANGEROUS_URL_SCHEMES = new Set(['javascript:', 'vbscript:', 'data:'])
 
 /**
+ * Apply the WHATWG URL parser's input clean-up: strip leading and trailing C0
+ * controls and space (U+0000-U+0020), then remove every ASCII tab / LF / CR.
+ * Guards that inspect a URL's shape must read this form, or a value such as
+ * `"\u0001//evil.example"` looks relative here while the browser resolves it
+ * as protocol-relative.
+ */
+export function normalizeUrlForParsing(value: string): string {
+  // Matching control characters is the entire point of this function — the C0
+  // range is what the URL parser strips and what the old `trim()`-based guard
+  // missed, so `no-control-regex` is inverted here.
+  /* eslint-disable no-control-regex */
+  return value
+    .replace(/^[\u0000-\u0020]+/, '')
+    .replace(/[\u0000-\u0020]+$/, '')
+    .replace(/[\t\n\r]/g, '')
+  /* eslint-enable no-control-regex */
+}
+
+/**
  * Extract the scheme the way the WHATWG URL parser does, so this guard cannot
  * disagree with the browser that ultimately resolves the value:
  *
@@ -62,16 +81,7 @@ const DANGEROUS_URL_SCHEMES = new Set(['javascript:', 'vbscript:', 'data:'])
  * implementation behaves identically in Bun, in browsers, and in the sandbox.
  */
 export function urlScheme(value: string): string | null {
-  // Matching control characters is the entire point of this function — the C0
-  // range is what the URL parser strips and what the old `trim()`-based guard
-  // missed, so `no-control-regex` is inverted here.
-  /* eslint-disable no-control-regex */
-  const normalized = value
-    .replace(/^[\u0000-\u0020]+/, '')
-    .replace(/[\u0000-\u0020]+$/, '')
-    .replace(/[\t\n\r]/g, '')
-  /* eslint-enable no-control-regex */
-  const match = /^([a-zA-Z][a-zA-Z0-9+.-]*):/.exec(normalized)
+  const match = /^([a-zA-Z][a-zA-Z0-9+.-]*):/.exec(normalizeUrlForParsing(value))
   return match ? `${match[1].toLowerCase()}:` : null
 }
 

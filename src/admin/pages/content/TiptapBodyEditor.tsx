@@ -76,8 +76,14 @@ export interface TiptapBodyEditorProps {
    * Called when the user picks "Media" from the slash menu. The host
    * opens the media-picker modal; on confirm, it calls back into the
    * editor via `editorRef.insertMedia`.
+   *
+   * Omit it for a document that cannot hold media (an email template): the
+   * media items leave the slash and "+" menus and pasted or dropped files
+   * are not uploaded.
    */
-  onPickMedia: () => void
+  onPickMedia?: () => void
+  /** Accessible name of the editing surface. Defaults to the post body's. */
+  ariaLabel?: string
   /**
    * Called when the user picks "Data token" from the slash menu. The host
    * opens its data-binding dialog; on confirm, it calls
@@ -94,7 +100,9 @@ export function TiptapBodyEditor({
   onChange,
   onPickMedia,
   onInsertDataToken,
+  ariaLabel = 'Post body',
 }: TiptapBodyEditorProps) {
+  const mediaEnabled = onPickMedia !== undefined
   // Slash menu handle. Mounted as a portal; the SlashCommand extension's
   // `render()` lifecycle calls back into this handle to open / update /
   // close the menu in response to ProseMirror events.
@@ -107,7 +115,7 @@ export function TiptapBodyEditor({
   const externalActionRef = useRef<(action: SlashExternalAction) => void>(() => undefined)
   useEffect(() => {
     externalActionRef.current = (action) => {
-      if (action === 'media') onPickMedia()
+      if (action === 'media') onPickMedia?.()
       else if (action === 'dataToken') onInsertDataToken()
     }
   }, [onPickMedia, onInsertDataToken])
@@ -176,6 +184,7 @@ export function TiptapBodyEditor({
       }),
       SlashCommand.configure({
         onExternal: (action) => externalActionRef.current(action),
+        hiddenItemIds: mediaEnabled ? [] : ['media'],
         suggestion: {
           char: '/',
           startOfLine: false,
@@ -214,7 +223,7 @@ export function TiptapBodyEditor({
       attributes: {
         class: styles.proseSurface,
         spellcheck: 'true',
-        'aria-label': 'Post body',
+        'aria-label': ariaLabel,
         'data-testid': 'content-body-editor',
       },
       // Paste / drop handlers from `useEditorMediaDrop`: intercept files
@@ -222,8 +231,12 @@ export function TiptapBodyEditor({
       // progress placeholder at the drop position. Returns `false` for
       // non-media payloads so ProseMirror's default text-paste flow stays
       // intact.
-      handlePaste: mediaDrop.editorProps.handlePaste as never,
-      handleDrop: mediaDrop.editorProps.handleDrop as never,
+      ...(mediaEnabled
+        ? {
+            handlePaste: mediaDrop.editorProps.handlePaste as never,
+            handleDrop: mediaDrop.editorProps.handleDrop as never,
+          }
+        : {}),
     },
     onUpdate({ editor }) {
       onChange(proseMirrorDocToMarkdown(editor.getJSON()))
@@ -306,7 +319,7 @@ export function TiptapBodyEditor({
         <>
           <BodyBubbleMenu editor={editor} />
           <BodyFloatingMenu editor={editor} onPickMedia={onPickMedia} />
-          <MediaNodeToolbar editor={editor} onPickMedia={onPickMedia} />
+          {onPickMedia && <MediaNodeToolbar editor={editor} onPickMedia={onPickMedia} />}
         </>
       )}
       <BodySlashMenu handleRef={slashHandleRef} />

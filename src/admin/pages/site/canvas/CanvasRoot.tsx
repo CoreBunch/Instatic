@@ -58,6 +58,7 @@ import { useConfirmDelete } from '@admin/shared/dialogs/ConfirmDeleteDialog'
 import { useEditorPreference, readEditorSelectPreference } from '@site/preferences/editorPreferences'
 import { useTemplatePreviewContext } from '@site/hooks/useTemplatePreviewContext'
 import styles from './CanvasRoot.module.css'
+import { userDisplayLabel } from '@core/users/displayName'
 
 const VisualComponentModeControl = lazy(() =>
   import('./VisualComponentModeControl').then((module) => ({ default: module.default })),
@@ -92,7 +93,10 @@ export function CanvasRoot({ editable = true }: CanvasRootProps) {
     currentUser
       ? {
           id: currentUser.id,
-          name: currentUser.displayName,
+          // Never empty: an admin without a display name would otherwise
+          // publish no presence at all (peers saw no cursor, and the
+          // "someone else is editing" guards never fired).
+          name: userDisplayLabel(currentUser),
           avatarUrl: currentUser.avatarUrl,
           gravatarHash: currentUser.gravatarHash,
         }
