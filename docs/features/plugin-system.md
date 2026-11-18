@@ -986,6 +986,10 @@ const data = await res.json()
 const img   = await fetch('https://cdn.example.com/pixel.png')
 const bytes = new Uint8Array(await img.arrayBuffer())   // exact upstream bytes
 await fetch('https://api.example.com/upload', { method: 'POST', body: bytes })
+
+// Ask for a redirect instead of following it (a signed download link, say):
+const hop  = await fetch('https://api.example.com/asset/42', { redirect: 'manual' })
+const link = hop.status === 302 ? hop.headers.get('location') : null
 ```
 
 Bodies are **byte-safe in both directions**. The host reads upstream responses as raw bytes and ships them to the sandbox tagged `utf8` (text verbatim) or `base64` (binary), so `res.text()` / `res.json()` decode correctly (including multibyte UTF-8) and `res.arrayBuffer()` returns the exact bytes — fetching images, gzip, or protobuf works. Request bodies accept `string | ArrayBuffer | TypedArray/DataView`; anything else (`FormData`, `Blob`, `URLSearchParams`, streams) throws a `TypeError` naming the supported types — serialize to a string or bytes first. The VM `fetch(...)` polyfill dispatches through the `network.fetch` host target; aborts use `network.abort`. Wire codec: `server/plugins/protocol/bodyEncoding.ts`.
@@ -996,7 +1000,13 @@ The permission alone is insufficient. `performGatedFetch` in `server/plugins/hos
 
 2. **DNS resolution + SSRF guard.** The hostname is resolved to its addresses via the system DNS resolver **before** the connection is made. If any resolved address falls in a blocked range, the request is rejected — even when the host is allowlisted. Blocked ranges: loopback (`127.0.0.0/8`, `::1`), private (`10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`), link-local (`169.254.0.0/16`, `fe80::/10`), CGNAT (`100.64.0.0/10`), unique-local (`fc00::/7`), unspecified (`0.0.0.0/8`, `::`), and IPv4-mapped IPv6 forms of all of the above. This prevents DNS rebinding attacks (an allowlisted hostname that resolves to an internal IP is blocked).
 
-3. **Manual redirect following with re-validation.** The host does not use transparent redirect following (`redirect: 'manual'` is always set). Each redirect location is validated with both the allowlist and the DNS SSRF guard before the next hop. The chain is capped at 5 hops. Method downgrade (303 → GET; 301/302 non-GET → GET) follows the Fetch spec.
+3. **Manual redirect following with re-validation.** The host does not use transparent redirect following (Bun is always told `redirect: 'manual'`). Each redirect location is validated with both the allowlist and the DNS SSRF guard before the next hop. The chain is capped at 5 hops. Method downgrade (303 → GET; 301/302 non-GET → GET) follows the Fetch spec. A hop to another origin (scheme, host or port) drops exactly three request headers, `Authorization`, `Cookie` and `Proxy-Authorization` (matched case-insensitively), for that hop and every later one. Nothing else is removed: a secret in a custom header (`X-Api-Key`, say) and the request body of a 307 or 308 still travel to the redirect target, which must itself be on the allowlist. A plugin that sends secrets that way should use `redirect: 'manual'` and decide for itself. A redirect status with no `Location` header is returned as the response. This applies to every `guardedFetch` caller, including media uploads and downloads.
+
+**The `redirect` option.** `fetch(url, { redirect })` accepts `'follow'` (default, as above), `'manual'` and `'error'`; any other value throws a `TypeError` in the sandbox.
+
+- `'manual'` returns the redirect response itself for any redirect status (301, 302, 303, 307, 308): `res.status` is the 3xx, `res.ok` is `false`, and `res.headers.get('location')` is the target as the server sent it (it may be relative or absent; several `Location` headers arrive joined with `, `). It is an ordinary response, not the browser's opaque redirect, and it has **no body**: the host drops a redirect's body without reading it. The first hop passes checks 1 and 2 exactly as any request does; the target is never resolved or contacted, so it does **not** need to be in `networkAllowedHosts`. The `Location` value is a string the upstream server chose: treat it as untrusted (it can name any address, internal ones included) and never fetch it from the plugin without it passing the allowlist like any other URL. Handing it to a visitor's browser in a redirect is the intended use.
+- `'error'` rejects on any redirect status, with or without a `Location`.
+- `res.redirected` is `true` when the host followed at least one hop.
 
 **`networkAllowedHosts` entry constraints (checked at manifest parse time).** The manifest parser validates every entry before a plugin can be installed. Only plain or wildcard hostnames are accepted — the entry pattern already rejects IPv6 literals, ports, paths, and query strings. Two additional checks run on top:
 
@@ -1304,7 +1314,7 @@ export default definePlugin({
   - `src/__tests__/architecture/media-storage-panel.test.ts`
   - `src/__tests__/architecture/media-signed-redirect-serving.test.ts`
   - `src/__tests__/architecture/media-presentation-pipeline.test.ts`
-  - `src/__tests__/plugins/gatedFetchSsrf.test.ts` — SSRF guards: allowlist, DNS rebinding, redirect re-validation, redirect cap
+  - `src/__tests__/plugins/gatedFetchSsrf.test.ts` — SSRF guards: allowlist, DNS rebinding, redirect re-validation, redirect cap, `redirect: 'manual' | 'error'`, credential headers dropped on a cross-origin hop
   - `src/__tests__/plugins/pluginBinaryIo.test.ts` — host-side byte safety: wire codec round-trips, binary fetch bodies, multipart file fields, binary route responses
   - `src/__tests__/plugins/pluginDashboardWidgets.test.ts` — dashboard widget registration surface
   - `src/__tests__/plugins/pluginSettings.test.ts` — settings rendering and persistence behavior

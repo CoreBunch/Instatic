@@ -27,6 +27,9 @@ export const NetworkFetchInitSchema = Type.Object(
     // same id so the host can drop the in-flight request. Plain JS
     // identifier shape — the bootstrap generates `'a' + counter + '_' + ts36`.
     abortId: Type.Optional(Type.String({ minLength: 1, maxLength: 128, pattern: '^[a-zA-Z0-9_]+$' })),
+    // What the host does with a redirect response: follow it (default,
+    // re-checking every hop), hand it back unfollowed, or reject.
+    redirect: Type.Optional(Type.Union([Type.Literal('follow'), Type.Literal('manual'), Type.Literal('error')])),
   },
   { additionalProperties: false },
 )
