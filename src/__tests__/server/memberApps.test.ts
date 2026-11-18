@@ -5,7 +5,12 @@ import { resetPublicOrigins } from '../../../server/auth/security'
 import { setMemberSuspended } from '../../../server/members/admin'
 import { memberAppRequestFrame } from '../../../server/members/apps/approval'
 import { handleMemberOAuthRequest, resetMemberAppLimits } from '../../../server/members/apps/handler'
-import { createMemberApp, deleteMemberApp, type MemberAppRecord } from '../../../server/members/apps/store'
+import {
+  createMemberApp,
+  deleteMemberApp,
+  sweepExpiredMemberAppRows,
+  type MemberAppRecord,
+} from '../../../server/members/apps/store'
 import { handleMemberRequest } from '../../../server/members/handlers'
 import { resetMemberLimits } from '../../../server/members/limits'
 import { createMember, grantMemberTag, saveMemberSettings } from '../../../server/members/repository'
@@ -392,6 +397,37 @@ describe('sign-in for apps', () => {
       const res = await call(await authorizeUrl(), { headers: { cookie } })
       expect(res.status).toBe(400)
     })
+  })
+
+  it('clears out what can never be used again when a sign-in starts', async () => {
+    const tokens = await signIn()
+    const count = async (table: string) =>
+      Number((await t.db.unsafe<{ n: number }>(`select count(*) as n from ${table}`)).rows[0]!.n)
+    expect(await count('member_app_requests')).toBe(1)
+    expect(await count('member_app_codes')).toBe(1)
+    expect(await count('member_app_tokens')).toBe(2)
+
+    // Two hours on: the request, the code and the access token have run out. The grant has not.
+    await sweepExpiredMemberAppRows(t.db, new Date(Date.now() + 2 * 60 * 60 * 1000))
+    expect(await count('member_app_requests')).toBe(0)
+    expect(await count('member_app_codes')).toBe(0)
+    expect(await count('member_app_tokens')).toBe(1)
+    expect(await count('member_app_grants')).toBe(1)
+    expect((await tokenRequest({ grant_type: 'refresh_token', refresh_token: tokens.refresh_token })).status).toBe(200)
+
+    // Past the grant's own end, nothing of it is left.
+    await sweepExpiredMemberAppRows(t.db, new Date(Date.now() + 91 * 24 * 60 * 60 * 1000))
+    expect(await count('member_app_grants')).toBe(0)
+    expect(await count('member_app_tokens')).toBe(0)
+  })
+
+  it('withdraws the tokens of a code that is presented twice', async () => {
+    const code = await approvedCode()
+    const exchange = { grant_type: 'authorization_code', code, redirect_uri: LISTENING, code_verifier: VERIFIER }
+    const tokens = (await (await tokenRequest(exchange)).json()) as Tokens
+    expect((await userinfo(tokens.access_token)).status).toBe(200)
+    expect((await tokenRequest(exchange)).status).toBe(400)
+    expect((await userinfo(tokens.access_token)).status).toBe(401)
   })
 
   it('publishes its discovery document under the issuer path', async () => {

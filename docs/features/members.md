@@ -249,12 +249,14 @@ An app (Instatic Desktop, later a premium plugin) signs a member in with OAuth 2
 
 **Rules.**
 - Redirect addresses match exactly, except that a loopback IP literal matches on any port (a native app listens on whatever port it gets).
-- A code lasts 5 minutes and works once. An access token lasts 1 hour. An approval lasts 90 days; the refresh token rotates on every use, and presenting a used one revokes the whole grant.
+- A code lasts 5 minutes and works once; presenting it a second time also revokes the grant it created. An access token lasts 1 hour. An approval lasts 90 days; the refresh token rotates on every use, and presenting a used one revokes the whole grant.
 - Approval is asked on every sign-in. A native app cannot prove which app it is, so a remembered approval could be reused by another program.
 - A request is answered once, within 10 minutes, and only from the browser the app opened (a marker cookie set by `authorize`, stored hashed with the request). An approval address passed to someone else does nothing in their browser.
 - Tokens stop working on the next request once the member is suspended or deleted. A password reset or change, an email change, a suspension, "sign out everywhere" and removing the app all revoke the grants.
 - An app token only reads. No member action (profile, password, email, delete) accepts one.
 - Rate limits are per IP (`memberAppLimits`).
+- The approval page (any page opened with `?request=`) is sent `X-Frame-Options: DENY`, and it and the sign-in hop before it get the token-page referrer policy.
+- Rows that can never be used again are deleted when a sign-in starts (`sweepExpiredMemberAppRows`): expired requests, codes, tokens and grants. A revoked refresh token stays until it would have expired, since seeing it again is how reuse is detected.
 
 Try it: `bun run demo:members` registers a demo app and prints the command for `scripts/member-app-demo.ts`, a terminal client that signs in, reads the member, refreshes and signs out.
 

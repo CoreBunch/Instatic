@@ -104,6 +104,25 @@ export async function deleteMemberApp(db: DbClient, id: string): Promise<boolean
   })
 }
 
+// ─── Housekeeping ──────────────────────────────────────────────────────────
+
+/**
+ * Delete rows that can never be used again: requests and codes past their
+ * few minutes, tokens past their expiry, and grants past theirs (with the
+ * codes and tokens under them). A revoked refresh token is kept until it
+ * would have expired, because seeing it again is how reuse is detected.
+ *
+ * Runs when a sign-in starts, which is also what creates most of these rows,
+ * so the tables stay as small as the number of live sign-ins.
+ */
+export async function sweepExpiredMemberAppRows(db: DbClient, now: Date = new Date()): Promise<void> {
+  const iso = now.toISOString()
+  await db`delete from member_app_requests where expires_at < ${iso}`
+  await db`delete from member_app_codes where expires_at < ${iso}`
+  await db`delete from member_app_tokens where expires_at < ${iso}`
+  await db`delete from member_app_grants where expires_at < ${iso}`
+}
+
 // ─── Authorization requests ────────────────────────────────────────────────
 
 export interface MemberAppRequest {

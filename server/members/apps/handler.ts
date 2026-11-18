@@ -58,6 +58,7 @@ import {
   findMemberAppAccess,
   memberAppRealm,
   revokeMemberAppGrantByToken,
+  sweepExpiredMemberAppRows,
   touchMemberAppGrant,
 } from './store'
 
@@ -173,6 +174,7 @@ async function authorize(req: Request, db: DbClient, url: URL): Promise<Response
     return refuse('temporarily_unavailable', 'This site has no page for approving apps yet.')
   }
 
+  await sweepExpiredMemberAppRows(db)
   // The browser the app opened keeps a marker; the answer counts only from it.
   const browserMarker = readAppRequestMarker(req) ?? crypto.randomUUID().replaceAll('-', '')
   const requestId = await createMemberAppRequest(db, {
