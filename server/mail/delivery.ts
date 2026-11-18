@@ -46,6 +46,9 @@ import {
   backOffQueuedMail,
   claimExpiredMail,
   claimNextDueMail,
+  claimProbeMail,
+  hasDueMail,
+  markQueuedMailSuspect,
   DELIVERY_MARGIN_MS,
   encryptQueuedVariables,
   enqueueMail,
@@ -292,6 +295,17 @@ async function senderStillDeclares(db: DbClient, mail: QueuedMail): Promise<bool
   return pluginMailTemplateDefinitions(sender.plugin.manifest).some((definition) => definition.key === mail.kind)
 }
 
+/** How long before the delivery margin the last try is made, so it is still claimable. */
+const LAST_TRY_LEAD_MS = 5_000
+
+/** How many emails one probe of a paused connector may try. */
+const PROBE_CANDIDATES = 3
+
+/** The provider judged this email or its recipient, plainly: not the account, and not ambiguously. */
+function refusedForItsOwnReasons(attempt: Attempt): boolean {
+  return !attempt.sent && !attempt.outcome?.suspect && attempt.retry === 'never'
+}
+
 /** Try one queued email once. */
 async function attemptQueuedMail(db: DbClient, mail: QueuedMail, deps: DrainDeps): Promise<Attempt> {
   let variables: Record<string, string>
@@ -363,6 +377,7 @@ async function attemptQueuedMail(db: DbClient, mail: QueuedMail, deps: DrainDeps
     rendered,
     deps.carrier,
     (deps.now ?? Date.now)(),
+    !mail.suspect,
   )
   if (outcome.ok) return { sent: true, outcome }
   return {
@@ -403,6 +418,7 @@ async function settleQueuedMail(
     return 'continue'
   }
   const seen = { connector: attempt.outcome?.connector, error: attempt.message, durationMs: attempt.outcome?.durationMs }
+  if (attempt.outcome?.suspect) await markQueuedMailSuspect(db, mail.id, now)
 
   if (attempt.retry === 'connector') {
     // Not this email's failure, so no attempt is counted against it and it
@@ -431,12 +447,15 @@ async function settleQueuedMail(
     announceOutcome(db, mail, 'failed', attempt.reason)
     return 'continue'
   }
-  if (now + delay >= mail.deliverBefore - DELIVERY_MARGIN_MS) {
-    // The next try would come too late to be of use.
+  // The last moment a try is still of use. A wait that would run past it is
+  // cut short to it, so the email gets its last try; only when that moment
+  // has itself passed is the email given up on.
+  const lastChance = mail.deliverBefore - DELIVERY_MARGIN_MS - LAST_TRY_LEAD_MS
+  if (lastChance <= now) {
     await failExpiredMail(db, mail, { attempts, lastError: attempt.message, connector: seen.connector })
     return 'continue'
   }
-  const nextAttemptAt = new Date(now + delay).toISOString()
+  const nextAttemptAt = new Date(Math.min(now + delay, lastChance)).toISOString()
   // The queue first: a row that was removed meanwhile (its sender uninstalled,
   // its member deleted) must not leave the log saying "waiting" for ever.
   const put = await rescheduleQueuedMail(db, mail.id, { attempts, nextAttemptAt, error: attempt.message })
@@ -563,20 +582,24 @@ export async function drainMailQueue(db: DbClient, deps: DrainDeps = {}): Promis
   // Expired email is failed even while nothing can be sent.
   await expireOverdueMail(db, clock())
 
-  // A paused connector lets one email through now and then, as a probe.
+  // A paused connector lets an email through now and then, as a probe. The
+  // turn is only taken when there is something to probe with.
   const defaults = await getMailDefaults(db)
-  let probing = false
-  if (readyToSend(defaults)) {
+  let probesLeft = 0
+  if (readyToSend(defaults) && (await connectorPauseReason(db, defaults.defaultConnectorId)) !== null) {
+    if (!(await hasDueMail(db, clock()))) return
     const gate = await takeConnectorProbe(db, defaults.defaultConnectorId, clock())
     if (gate === 'held') return
-    probing = gate === 'probe'
+    if (gate === 'probe') probesLeft = PROBE_CANDIDATES
   }
+  const probed: string[] = []
 
   while (!stopping && clock() >= pausedUntil) {
-    const mail = await claimNextDueMail(db, clock())
+    const mail = probesLeft > 0 ? await claimProbeMail(db, clock(), probed) : await claimNextDueMail(db, clock())
     if (!mail) break
     let next: AfterAttempt
     let accepted = acceptedUnrecorded.has(mail.id)
+    let attempt: Attempt
     try {
       if (accepted) {
         // The provider already has this one: record it, do not send it.
@@ -584,7 +607,6 @@ export async function drainMailQueue(db: DbClient, deps: DrainDeps = {}): Promis
         await finishAcceptedMail(db)
         continue
       }
-      let attempt: Attempt
       try {
         attempt = await attemptQueuedMail(db, mail, deps)
       } catch (err) {
@@ -609,9 +631,20 @@ export async function drainMailQueue(db: DbClient, deps: DrainDeps = {}): Promis
       })
       break
     }
-    // A probe that did not get through leaves the connector paused: one email, then wait.
-    if (probing && !accepted) break
-    probing = false
+    if (probesLeft > 0) {
+      if (accepted) {
+        // The connector works again (`noteConnectorUse` lifted the pause).
+        probesLeft = 0
+      } else {
+        // An email refused for its recipient's own reasons says nothing about
+        // the connector: the next candidate gets this turn, a few at most.
+        // Any other answer leaves the connector paused until the next turn.
+        probed.push(mail.id)
+        probesLeft -= 1
+        if (probesLeft === 0 || !refusedForItsOwnReasons(attempt)) break
+        continue
+      }
+    }
     if (next === 'stop') break
     const pace = deps.paceMs ?? PACE_MS
     if (pace > 0) await new Promise((resolve) => setTimeout(resolve, pace))
