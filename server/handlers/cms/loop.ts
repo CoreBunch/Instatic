@@ -146,6 +146,10 @@ export async function handleLoopRequest(
     return jsonResponse({ error: 'Contextual loops do not support infinite pagination' }, { status: 400 })
   }
 
+  // A per-visitor source answers for this visitor alone, whatever its items
+  // render: the response must never be stored or shared.
+  const privateResponse = forVisitor || source.perVisitor === true
+
   // Fetch the requested page slice.
   const offset = props.offset + (pageNumber - 1) * props.pageSize
   let result
@@ -175,7 +179,7 @@ export async function handleLoopRequest(
   // loaded on the client.
   const variants = loopNode.children
   if (variants.length === 0) {
-    return jsonResponse({ html: '', hasMore, pageNumber })
+    return jsonResponse({ html: '', hasMore, pageNumber }, privateResponse ? { headers: PRIVATE_HEADERS } : {})
   }
   const baseConfig: RenderConfig = {
     page: containingPage,
@@ -215,5 +219,5 @@ export async function handleLoopRequest(
     html += renderNode(variantId, iterationConfig, acc)
   })
 
-  return jsonResponse({ html, hasMore, pageNumber }, forVisitor ? { headers: PRIVATE_HEADERS } : {})
+  return jsonResponse({ html, hasMore, pageNumber }, privateResponse ? { headers: PRIVATE_HEADERS } : {})
 }

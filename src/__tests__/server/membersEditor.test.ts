@@ -111,13 +111,16 @@ function gatedPage(): Page {
     rootNodeId: 'root',
     nodes: Object.fromEntries(
       [
-        node('root', 'base.body', {}, ['gate', 'members_loop']),
+        node('root', 'base.body', {}, ['gate', 'members_loop', 'apps_loop']),
         node('gate', 'base.container', { showWhen: { visitor: 'tags', tags: ['pro'] } }, ['gate_line', 'gate_loop']),
         node('gate_line', 'base.text', { text: 'PRO-BOX-LINE', tag: 'p' }),
         node('gate_loop', 'base.loop', loop, ['gate_loop_item']),
         node('gate_loop_item', 'base.text', { text: 'PRO-BOX-ITEM {currentEntry.title}', tag: 'p' }),
         node('members_loop', 'base.loop', { ...loop, showWhen: { visitor: 'signedIn' } }, ['members_loop_item']),
         node('members_loop_item', 'base.text', { text: 'MEMBERS-LIST-ITEM {currentEntry.title}', tag: 'p' }),
+        // A member's own list with no rule on it, on an open page.
+        node('apps_loop', 'base.loop', { ...loop, sourceId: 'members.apps', orderBy: 'connectedAt' }, ['apps_loop_item']),
+        node('apps_loop_item', 'base.text', { text: 'APP-ROW {currentEntry.name}', tag: 'p' }),
       ].map((entry) => [entry.id, entry]),
     ),
   } as Page
@@ -409,6 +412,12 @@ describe('member bindings and show-when rules', () => {
       expect(await signedOutList.text()).not.toContain('MEMBERS-LIST-ITEM')
       expect(signedOutList.headers.get('cache-control')).toBe('private, no-store')
       expect(await (await list('members_loop', plain)).text()).toContain('MEMBERS-LIST-ITEM')
+
+      // A list of the member's own things is theirs alone, even with no rule
+      // on it and nothing about the member in its items.
+      for (const cookie of [undefined, plain]) {
+        expect((await list('apps_loop', cookie)).headers.get('cache-control')).toBe('private, no-store')
+      }
     })
 
     it('renders a protected page in one piece for its member', async () => {
