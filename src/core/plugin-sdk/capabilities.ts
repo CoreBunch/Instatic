@@ -48,6 +48,27 @@ export const PLUGIN_CAPABILITIES: PluginCapability[] = [
     surfaces: ['server', 'cms'],
   },
   {
+    permission: 'members.read',
+    label: 'See site members',
+    description: 'Allows the plugin to know which site member is signed in on its routes, to register routes only signed-in members reach, to look a member up by id or email (address, profile and tags), and to receive member events such as sign-up and sign-in.',
+    risk: 'high',
+    surfaces: ['server', 'cms'],
+  },
+  {
+    permission: 'members.write',
+    label: 'Invite site members',
+    description: 'Allows the plugin to create site members by invitation. The site emails the person a link to choose a password.',
+    risk: 'high',
+    surfaces: ['server', 'cms'],
+  },
+  {
+    permission: 'members.tags',
+    label: 'Grant and withdraw member access tags',
+    description: 'Allows the plugin to give site members access tags and to take back the ones it gave. Tags decide which protected pages and content a member can open, so this is how a plugin grants paid or gated access.',
+    risk: 'dangerous',
+    surfaces: ['server', 'cms'],
+  },
+  {
     permission: 'cms.hooks',
     label: 'Subscribe to CMS lifecycle events and filters',
     description: 'Allows the plugin server entrypoint to listen to CMS events (publish, content changes, page updates) and to register filters that transform values before they leave the CMS.',

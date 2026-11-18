@@ -22,6 +22,7 @@ import type { LoopEntitySource } from './loops'
 import type { ServerPluginMediaApi } from './media'
 import type { PluginMigrationContext } from './lifecycle'
 import type { PluginPermission } from './permissions'
+import type { MemberRouteOptions, ServerPluginMembersApi } from './members'
 import type { ServerPluginRouteHandler } from './routes'
 import type { ServerPluginScheduleApi } from './schedule'
 import type { ServerPluginSettingsApi } from './settings'
@@ -29,6 +30,12 @@ import type { ServerPluginSettingsApi } from './settings'
 // ---------------------------------------------------------------------------
 // ServerPluginApi — full API surface available to server entrypoints
 // ---------------------------------------------------------------------------
+
+/** `member.get(path, handler)` or `member.get(path, { tag }, handler)`. */
+interface MemberRouteRegistrar {
+  (path: string, handler: ServerPluginRouteHandler): void
+  (path: string, options: MemberRouteOptions, handler: ServerPluginRouteHandler): void
+}
 
 export interface ServerPluginApi {
   plugin: {
@@ -92,7 +99,21 @@ export interface ServerPluginApi {
         patch: (path: string, handler: ServerPluginRouteHandler) => void
         delete: (path: string, handler: ServerPluginRouteHandler) => void
       }
+      /**
+       * Routes only a signed-in site member reaches (optionally one holding
+       * `tag`). The handler's `ctx.member` is always set. Requires
+       * `members.read`. Served on the public plugin mount,
+       * `/_instatic/plugins/<pluginId>/<path>`, not under `/admin`.
+       */
+      member: {
+        get: MemberRouteRegistrar
+        post: MemberRouteRegistrar
+        patch: MemberRouteRegistrar
+        delete: MemberRouteRegistrar
+      }
     }
+    /** Site members: look up, invite, and grant or withdraw access tags. */
+    members: ServerPluginMembersApi
     loops: {
       /**
        * Register a loop entity source. Source ID must be `<pluginId>.<name>`.

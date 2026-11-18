@@ -273,7 +273,13 @@ export type InviteOutcome =
  */
 export async function inviteMember(
   db: DbClient,
-  input: { email: string; tags: readonly string[]; linkOrigin: string },
+  input: {
+    email: string
+    tags: readonly string[]
+    linkOrigin: string
+    /** Who the tags come from: `admin` (the default), or the id of the inviting plugin. */
+    tagSource?: string
+  },
 ): Promise<InviteOutcome> {
   const existing = await findMemberByEmail(db, input.email)
   if (existing && (existing.status !== 'active' || !isInvited(existing))) return { ok: false, reason: 'exists' }
@@ -283,7 +289,7 @@ export async function inviteMember(
   if (!member) return { ok: false, reason: 'exists' }
 
   for (const tag of input.tags) {
-    await grantMemberTag(db, { memberId: member.id, tag, source: ADMIN_TAG_SOURCE, expiresAt: null })
+    await grantMemberTag(db, { memberId: member.id, tag, source: input.tagSource ?? ADMIN_TAG_SOURCE, expiresAt: null })
   }
   const { token } = await issueMemberToken(db, member.id, 'invite')
   const { pages } = await getMemberSettings(db)

@@ -122,7 +122,7 @@ async function readFields(req: Request): Promise<Fields | null> {
 }
 
 /** Same rule as public CMS forms: a browser POST always names its origin. */
-function originOk(req: Request): boolean {
+export function originOk(req: Request): boolean {
   if (!req.headers.get('origin')) return false
   if (!originAllowed(req)) return false
   const fetchSite = req.headers.get('sec-fetch-site')

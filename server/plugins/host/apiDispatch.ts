@@ -62,6 +62,12 @@ import {
   handleContentTreeRead,
   handleContentTreeReplace,
 } from './handlers/content'
+import {
+  handleMembersGet,
+  handleMembersInvite,
+  handleMembersTagsGrant,
+  handleMembersTagsRevoke,
+} from './handlers/members'
 
 type HostApiHandler<TTarget extends AllowedApiTarget> = (
   msg: Extract<ValidatedApiCall, { target: TTarget }>,
@@ -125,6 +131,10 @@ const apiHandlers = {
   'cms.content.search': handleContentSearch,
   'cms.content.snapshot': handleContentSnapshot,
   'cms.content.republishAll': handleContentRepublishAll,
+  'cms.members.get': handleMembersGet,
+  'cms.members.invite': handleMembersInvite,
+  'cms.members.tags.grant': handleMembersTagsGrant,
+  'cms.members.tags.revoke': handleMembersTagsRevoke,
 } satisfies HostApiHandlerTable
 
 export async function dispatchApiCall(msg: ValidatedApiCall): Promise<void> {

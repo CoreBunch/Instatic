@@ -40,6 +40,20 @@ type CoreHookEvent =
   | 'content.entry.deleted'
   | 'publish.before'
   | 'publish.after'
+  | MemberHookEvent
+
+/**
+ * Site member events. Their payloads name members, so only a plugin holding
+ * `members.read` may listen (enforced where a plugin subscribes).
+ */
+export type MemberHookEvent =
+  | 'member.created'
+  | 'member.verified'
+  | 'member.signedIn'
+  | 'member.tagged'
+  | 'member.deleted'
+
+export const MEMBER_HOOK_PREFIX = 'member.'
 
 /** A plugin-emitted event name, always of the form `plugin.<pluginId>.<name>`. */
 type PluginScopedHookEvent = `plugin.${string}`
