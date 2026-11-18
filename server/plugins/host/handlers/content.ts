@@ -46,7 +46,7 @@ import {
   updateDataRowTable,
   scheduleDataRowPublish,
 } from '../../../repositories/data'
-import { publishDataRow } from '../../../publish/publishRow'
+import { publishDataRow, retractDataRowArtefacts, retractDataRowArtefactsMany } from '../../../publish/publishRow'
 import { republishAllPages } from '../../../publish/republish'
 import { bumpPublishVersionSerialized } from '../../../publish/publishState'
 import { applyContentEntryCellsFilter } from '../../../publish/contentEvents'
@@ -310,6 +310,7 @@ export async function handleContentEntriesDelete(
   msg: ApiCallFor<'cms.content.entries.delete'>,
   entry: HostPluginRecord,
   db: DbClient,
+  uploadsDir: string | undefined,
 ): Promise<void> {
   const [tableSlug, entryId] = msg.args
   const table = await resolveTableBySlug(db, tableSlug)
@@ -320,8 +321,16 @@ export async function handleContentEntriesDelete(
   }
   const deleted = await softDeleteDataRow(db, MAIN_SCOPE, entryId)
   if (deleted) {
+    const wasPublished = deleted.status === 'published'
+    // Layer A reads the baked slot with no DB awareness: drop the row's own
+    // page and, when it was public, the baked pages that list its table.
+    if (uploadsDir) {
+      await retractDataRowArtefacts(db, uploadsDir, deleted, { wasPublished }).catch((err) => {
+        console.error(`[plugin:${msg.pluginId}] failed to remove artefacts for deleted entry`, entryId, err)
+      })
+    }
     // A published row's route is retracted — invalidate the render cache.
-    if (deleted.status === 'published') await bumpPublishVersionSerialized()
+    if (wasPublished) await bumpPublishVersionSerialized()
     await emitEntryDeleted(tableSlug, entryId, { kind: 'plugin', pluginId: msg.pluginId })
   }
   replyApiOk(msg.pluginId, msg.correlationId, undefined)
@@ -331,6 +340,7 @@ export async function handleContentEntriesPublish(
   msg: ApiCallFor<'cms.content.entries.publish'>,
   entry: HostPluginRecord,
   db: DbClient,
+  uploadsDir: string | undefined,
 ): Promise<void> {
   const [tableSlug, entryId, options] = msg.args
   const table = await resolveTableBySlug(db, tableSlug)
@@ -349,7 +359,7 @@ export async function handleContentEntriesPublish(
     return
   }
 
-  const result = await publishDataRow(db, entryId, null)
+  const result = await publishDataRow(db, entryId, null, uploadsDir)
   await emitEntryUpdated(tableSlug, entryId, ['status'], actor)
   replyApiOk(msg.pluginId, msg.correlationId, rowToEntry(result.row, tableSlug))
 }
@@ -455,6 +465,7 @@ export async function handleContentEntriesDeleteMany(
   msg: ApiCallFor<'cms.content.entries.deleteMany'>,
   entry: HostPluginRecord,
   db: DbClient,
+  uploadsDir: string | undefined,
 ): Promise<void> {
   const [tableSlug, ids] = msg.args
   const table = await resolveTableBySlug(db, tableSlug)
@@ -471,6 +482,14 @@ export async function handleContentEntriesDeleteMany(
     }
   }
   const result = await softDeleteDataRowMany(db, MAIN_SCOPE, ids, null)
+  // Layer A mirror of the cache invalidation below: the deleted rows' own
+  // baked pages go, and so do the baked pages that listed the published ones.
+  if (uploadsDir) {
+    const retracted = rows.map((row) => ({ ...row, wasPublished: row.status === 'published' }))
+    await retractDataRowArtefactsMany(db, uploadsDir, retracted).catch((err) => {
+      console.error(`[plugin:${msg.pluginId}] failed to remove artefacts for deleted entries`, err)
+    })
+  }
   // Published rows' routes were retracted — one cache invalidation per batch.
   if (result.publishedDeleted > 0) await bumpPublishVersionSerialized()
   const actor: PluginActor = { kind: 'plugin', pluginId: msg.pluginId }
