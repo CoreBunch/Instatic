@@ -38,7 +38,9 @@
  *                                  shell replace is a structural edit)
  */
 import { validateBundlePublication, BundlePublicationError } from '../../repositories/bundlePublication'
-import { applySiteBundle, removeDeletedMediaFiles } from './importApply'
+import { applySiteBundle, removeDeletedMediaFiles, SYSTEM_TABLE_IDS } from './importApply'
+import { canManageTable } from '../../auth/dataAccess'
+import { isGrantableMemberTag } from '@core/members'
 import { mkdir, writeFile } from 'node:fs/promises'
 import { dirname } from 'node:path'
 import type { DbClient } from '../../db/client'
@@ -49,7 +51,8 @@ import { importMediaAsset, assignAssetToFolders } from '../../repositories/media
 import { jsonResponse, readValidatedBody } from '../../http'
 import { parseValue } from '@core/utils/typeboxHelpers'
 import { SiteBundleSchema, ImportStrategySchema, ImportResultSchema, type ImportStrategy, type SiteBundle } from '@core/data/bundleSchema'
-import { CMS_API_PREFIX, type CmsHandlerOptions } from './shared'
+import { CMS_API_PREFIX, requestAuditContext, type CmsHandlerOptions } from './shared'
+import { createAuditEvent } from '../../repositories/audit'
 import type { BranchScope } from '../../branches/scope'
 
 /** ZIP local-file-header magic (`PK\x03\x04`) — enough to tell an archive from JSON. */
@@ -112,6 +115,9 @@ export async function handleImportRoute(
   const shellDenied = authorizeImportedShell(user, bundle.site !== undefined)
   if (shellDenied) return shellDenied
 
+  const tableAccessDenied = await authorizeImportedTableAccess(req, db, user, bundle)
+  if (tableAccessDenied) return tableAccessDenied
+
   const publicationInvalid = validateImportedPublication(bundle)
   if (publicationInvalid) return publicationInvalid
   const publicationDenied = await authorizeImportedPublication(req, db, user, bundle)
@@ -121,12 +127,14 @@ export async function handleImportRoute(
     bundle,
     strategy,
     carriesMedia: bundle.media !== undefined,
+    mayChangePageAccess: userHasCapability(user, 'site.structure.edit'),
     uploadsDir: options.uploadsDir,
   }).catch((err: unknown) => {
     if (err instanceof BundlePublicationError) return jsonResponse({ error: err.message }, { status: 400 })
     throw err
   })
   if (applied instanceof Response) return applied
+  await recordImportedTableAccess(req, db, user, applied.tableAccessAdded)
   // After commit, before the bundle's media lands: a bundle file at a deleted
   // asset's storage path must be written after the old bytes are removed.
   await removeDeletedMediaFiles(applied.deletedMedia)
@@ -246,6 +254,51 @@ export function authorizeImportedShell(user: AuthUser, carriesSite: boolean): Re
     return jsonResponse({ error: 'Forbidden' }, { status: 403 })
   }
   return null
+}
+
+/**
+ * A bundle that limits a table to members sets who may open it, which is what
+ * the table access endpoint does. It asks for the same: the right to manage
+ * each such table, tags a member can be granted, and step-up.
+ */
+export async function authorizeImportedTableAccess(
+  req: Request,
+  db: DbClient,
+  user: AuthUser,
+  bundle: Pick<SiteBundle, 'tables' | 'tableAccess'>,
+): Promise<Response | null> {
+  const limited = bundle.tables.flatMap((table) => {
+    const rule = bundle.tableAccess?.[table.id]
+    return rule && rule.level !== 'public' ? [{ table, rule }] : []
+  })
+  if (limited.length === 0) return null
+  if (limited.some(({ rule }) => rule.level === 'tags' && !rule.tags.every(isGrantableMemberTag))) {
+    return jsonResponse({ error: 'A tag in a table access rule cannot be granted to a member' }, { status: 400 })
+  }
+  const mayManage = limited.every(({ table }) => canManageTable(user, { system: table.system || SYSTEM_TABLE_IDS.has(table.id) }))
+  if (!mayManage) {
+    return jsonResponse({ error: 'Importing table access rules requires permission to manage those tables' }, { status: 403 })
+  }
+  return requireStepUp(req, db, user)
+}
+
+/** An import that limited a table changed who may open it; the audit log says so. */
+export async function recordImportedTableAccess(
+  req: Request,
+  db: DbClient,
+  user: AuthUser,
+  added: ReadonlyArray<{ tableId: string; slug: string }>,
+): Promise<void> {
+  for (const table of added) {
+    await createAuditEvent(db, {
+      actorUserId: user.id,
+      action: 'data.table.access',
+      targetType: 'data_table',
+      targetId: table.tableId,
+      metadata: { slug: table.slug, source: 'import' },
+      ...requestAuditContext(req),
+    })
+  }
 }
 
 export function validateImportedPublication(bundle: SiteBundle): Response | null {

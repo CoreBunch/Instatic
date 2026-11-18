@@ -7,6 +7,7 @@
  */
 import { nanoid } from 'nanoid'
 import type { DbClient } from '../db/client'
+import { emitMemberHook } from './hooks'
 import { isoDate, isoDateOrNull, nowIso } from '@core/utils/isoDate'
 import { Type, safeParseValue, type Static, type TSchema } from '@core/utils/typeboxHelpers'
 import {
@@ -126,15 +127,20 @@ export async function createMember(db: DbClient, input: CreateMemberInput): Prom
     if (await findMemberByEmail(db, email)) return null
     throw err
   }
+  emitMemberHook('member.created', { memberId: id, email })
+  if (input.verified) emitMemberHook('member.verified', { memberId: id, email })
   return findMemberById(db, id)
 }
 
 export async function markMemberVerified(db: DbClient, memberId: string): Promise<void> {
   const now = nowIso()
-  await db`
+  const { rows } = await db<{ email: string }>`
     update members set email_verified_at = ${now}, updated_at = ${now}
      where id = ${memberId} and email_verified_at is null
+    returning email
   `
+  // Only the first confirmation is an event.
+  if (rows[0]) emitMemberHook('member.verified', { memberId, email: rows[0].email })
 }
 
 export async function markMemberLoggedIn(db: DbClient, memberId: string): Promise<void> {
@@ -198,6 +204,7 @@ export async function anonymizeMember(db: DbClient, memberId: string): Promise<v
        where id = ${memberId}
     `
   })
+  emitMemberHook('member.deleted', { memberId })
 }
 
 // ─── Tags ──────────────────────────────────────────────────────────────────
@@ -226,6 +233,12 @@ export async function grantMemberTag(
     values (${input.memberId}, ${input.tag}, ${input.source}, ${input.expiresAt}, ${nowIso()})
     on conflict (member_id, tag, source) do update set expires_at = excluded.expires_at
   `
+  emitMemberHook('member.tagged', {
+    memberId: input.memberId,
+    tag: input.tag,
+    source: input.source,
+    expiresAt: input.expiresAt,
+  })
 }
 
 /** Withdraw one source's grant of a tag. Other sources' grants stay. */
@@ -267,6 +280,13 @@ export type MemberEventKind =
   | 'email_changed'
   | 'profile_updated'
   | 'deleted'
+  // Done by an administrator, not by the member.
+  | 'invited'
+  | 'suspended'
+  | 'unsuspended'
+  | 'signed_out_by_admin'
+  | 'tag_granted'
+  | 'tag_revoked'
 
 export interface MemberEventContext {
   ipAddress: string | null

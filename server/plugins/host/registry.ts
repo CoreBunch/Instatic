@@ -25,6 +25,11 @@ function hasGrantedPermission(
   return new Set(manifest.grantedPermissions ?? []).has(permission)
 }
 
+/** Whether the plugin was granted a permission. Unknown plugins hold none. */
+export function hostPluginHasPermission(pluginId: string, permission: PluginPermission): boolean {
+  return (hostPlugins.get(pluginId)?.manifest.grantedPermissions ?? []).includes(permission)
+}
+
 export function assertHostPluginPermission(
   entry: HostPluginRecord,
   permission: PluginPermission,

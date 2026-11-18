@@ -1,5 +1,7 @@
 import '@modules/base'
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
+import { DEFAULT_MEMBER_SETTINGS } from '@core/members'
+import { saveMemberSettings } from '../../../server/members/repository'
 import { mkdtemp, readdir, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -22,6 +24,7 @@ import { createDataRow, saveDataRowDraft } from '../../../server/repositories/da
 import { saveDraftSite } from '../../../server/repositories/site'
 import { handleServerRequest, isPublishedSlotUploadPath } from '../../../server/router'
 import { createTestDb, type TestDb } from '../helpers/createTestDb'
+import { publishMemberPages } from '../helpers/memberPages'
 
 const ORIGIN = 'http://localhost'
 const SECRET_ACCOUNT = 'ACCOUNT-ONLY-MEMBERS-SEE'
@@ -91,6 +94,8 @@ describe('members access gate', () => {
       values ('admin_1', 'admin@example.test', 'admin@example.test', 'Admin', 'x', 'owner')
     `
     await saveDraftSite(t.db, MAIN_SCOPE, makeShell())
+    // The owner's own sign-in page. Without one a protected page has nowhere to send anyone.
+    await saveMemberSettings(t.db, { ...DEFAULT_MEMBER_SETTINGS, pages: await publishMemberPages(t.db, { login: '/sign-in' }) })
     const template = makePage('page_lesson_tpl', 'lesson-template', 'Lesson template')
     template.nodes.page_lesson_tpl_text.dynamicBindings = { text: { source: 'currentEntry', field: 'title' } }
     template.template = { enabled: true, target: { kind: 'postTypes', tableSlugs: ['posts'] }, priority: 100 }
@@ -157,19 +162,24 @@ describe('members access gate', () => {
     expect(disk).not.toContain(SECRET_VAULT)
   })
 
-  it('sends a signed-out visitor to sign in, remembering where they were going', async () => {
+  it('sends a signed-out visitor to the site\'s sign-in page, remembering where they were going', async () => {
     const res = await get('/account?tab=billing')
     expect(res.status).toBe(302)
-    expect(res.headers.get('location')).toBe('/_instatic/members/sign-in?next=%2Faccount%3Ftab%3Dbilling')
+    expect(res.headers.get('location')).toBe('/sign-in?next=%2Faccount%3Ftab%3Dbilling')
     expect(res.headers.get('cache-control')).toBe('private, no-store')
     expect(await res.text()).not.toContain(SECRET_ACCOUNT)
+  })
 
-    const signIn = await get('/_instatic/members/sign-in?next=%2Faccount%3Ftab%3Dbilling')
-    const html = await signIn.text()
-    expect(html).toContain('name="_success" value="/account?tab=billing"')
-    // A `next` that points off the site is dropped.
-    const evil = await (await get('/_instatic/members/sign-in?next=https%3A%2F%2Fevil.example%2F')).text()
-    expect(evil).not.toContain('evil.example')
+  it('has no sign-in page of its own: with none assigned, a members page is just not there', async () => {
+    await saveMemberSettings(t.db, DEFAULT_MEMBER_SETTINGS)
+    const closed = await get('/account')
+    const missing = await get('/no-such-page')
+    expect(closed.status).toBe(404)
+    expect(await closed.text()).toBe(await missing.text())
+    expect((await get('/_instatic/members/sign-in')).status).toBe(404)
+    // A member still gets in: signing in is what was missing, not the page.
+    const member = await signedInMember('m@example.com')
+    expect((await get('/account', member.cookie)).status).toBe(200)
   })
 
   it('answers a hidden page exactly like a page that does not exist', async () => {
@@ -237,7 +247,7 @@ describe('members access gate', () => {
     expect((await get('/vault', member.cookie)).status).toBe(404)
   })
 
-  it('tells a signed-in member without the tag that they have no access when the page is not hidden', async () => {
+  it('answers "not found" to a signed-in member without the tag, whatever the page does for signed-out visitors', async () => {
     await saveDataRowDraft(t.db, MAIN_SCOPE, 'page_vault', {
       cells: pageToCells(makePage('page_vault', 'vault', SECRET_VAULT, { level: 'tags', tags: ['pro'], onDeny: 'login' })),
       slug: 'vault',
@@ -245,8 +255,10 @@ describe('members access gate', () => {
     await publishDraftSite(t.db, 'admin_1', uploadsDir)
     const member = await signedInMember('m@example.com')
     const res = await get('/vault', member.cookie)
-    expect(res.status).toBe(403)
+    expect(res.status).toBe(404)
     expect(await res.text()).not.toContain(SECRET_VAULT)
+    // Signed out, the same page sends them to sign in.
+    expect((await get('/vault')).status).toBe(302)
   })
 
   it('shuts a suspended member out on the next request', async () => {
@@ -466,9 +478,9 @@ describe('members access gate', () => {
     })
   })
 
-  it('adds no-referrer to a page opened with a link token', async () => {
+  it('keeps the address of a page opened with a link token away from other sites', async () => {
     const res = await get('/?token=abc')
-    expect(res.headers.get('referrer-policy')).toBe('no-referrer')
-    expect((await get('/')).headers.get('referrer-policy')).not.toBe('no-referrer')
+    expect(res.headers.get('referrer-policy')).toBe('same-origin')
+    expect((await get('/')).headers.get('referrer-policy')).not.toBe('same-origin')
   })
 })

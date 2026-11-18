@@ -21,6 +21,7 @@ import type { DbClient } from '../../db/client'
 import type { BranchScope } from '../../branches/scope'
 import { getDataRow, getDataTable, saveDataRowDraft } from '../../repositories/data'
 import { applyContentEntryCellsFilter } from '../../publish/contentEvents'
+import { keepPageAccess } from '../../writePolicy/pageAccessCell'
 
 export interface PageTreeAccessOptions {
   /** Invoked after the field resolves, before any read/mutation. Throw to deny. */
@@ -100,7 +101,8 @@ export async function mutatePageTree(
     db,
     scope,
     entryId,
-    { cells: nextCells, slug: row.slug },
+    // The tree tools edit content; the page's access rule stays as stored.
+    { cells: keepPageAccess(row, nextCells), slug: row.slug },
     actorUserId,
     pluginActorId,
   )

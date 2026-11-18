@@ -22,6 +22,7 @@ import { handleHoleRequest, isHoleRuntimeAssetPath, serveHoleRuntimeAsset } from
 import { handleModuleJsAssetRequest, isModuleJsAssetPath } from './handlers/cms/moduleJs'
 import { handlePublicFormRequest } from './forms/handler'
 import { handleMemberRequest, MEMBERS_PATH_PREFIX } from './members/handlers'
+import { handlePublicPluginRouteRequest, PUBLIC_PLUGIN_PATH_PREFIX } from './plugins/publicRoutes'
 import { isRuntimePackagePath, tryServeRuntimePackage } from './publish/runtime/packageServer'
 import { restorePublishedRuntimeCache } from './publish/runtime/publishedCacheRestore'
 import { jsonResponse } from './http'
@@ -77,6 +78,8 @@ const routes: readonly RouteHandler[] = [
   tryServePublicForm,
   // Site members: sign-up, sign-in and account actions for published pages.
   tryServeMembers,
+  // Plugin routes for the published site: public endpoints and member-only ones.
+  tryServePublicPluginRoute,
   tryServeRuntimeAsset,
   tryServeRuntimePackageNamespace,
   tryServeSiteCssNamespace,
@@ -239,6 +242,11 @@ function tryServePublicForm(req: Request, runtime: ServerRuntime, url: URL, path
 function tryServeMembers(req: Request, runtime: ServerRuntime, url: URL, pathname: string): Promise<Response> | null {
   if (!pathname.startsWith(MEMBERS_PATH_PREFIX)) return null
   return handleMemberRequest(req, runtime.db, url)
+}
+
+function tryServePublicPluginRoute(req: Request, runtime: ServerRuntime, url: URL, pathname: string): Promise<Response> | null {
+  if (!pathname.startsWith(PUBLIC_PLUGIN_PATH_PREFIX)) return null
+  return handlePublicPluginRouteRequest(req, runtime.db, url)
 }
 
 async function tryServeRuntimeAsset(req: Request, runtime: ServerRuntime, _url: URL, pathname: string): Promise<Response | null> {

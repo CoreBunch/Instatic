@@ -44,27 +44,33 @@ export const MemberProfileFieldSchema = Type.Object(
 )
 export type MemberProfileField = Static<typeof MemberProfileFieldSchema>
 
-/** A site-relative path such as `/login`. Never an absolute URL. */
-const SitePathSchema = Type.String({ maxLength: 300, pattern: '^/(?![/\\\\])[^\\s]*$' })
+/** The id of a page of the site. */
+const PageIdSchema = Type.String({ minLength: 1, maxLength: 120 })
 
 /**
- * Owner-assigned pages. `login` is where a protected page sends a signed-out
- * visitor. The rest receive the links in account emails (`?token=…`); when
- * one is unset the link goes to the bare core page instead.
+ * Owner-assigned pages, by page id, so renaming a page never breaks a link.
+ * `login` is where a protected page sends a signed-out visitor. The rest
+ * receive the links in account emails (`?token=…`); when one is unset, or
+ * its page is not published, there is no page for that link and the feature
+ * that would send it is switched off. Core serves no member page of its own.
  */
 export const MemberPagesSchema = Type.Object(
   {
-    login: Type.Optional(SitePathSchema),
-    afterLogin: Type.Optional(SitePathSchema),
-    verify: Type.Optional(SitePathSchema),
-    reset: Type.Optional(SitePathSchema),
-    magic: Type.Optional(SitePathSchema),
-    invite: Type.Optional(SitePathSchema),
-    emailChange: Type.Optional(SitePathSchema),
+    login: Type.Optional(PageIdSchema),
+    afterLogin: Type.Optional(PageIdSchema),
+    verify: Type.Optional(PageIdSchema),
+    reset: Type.Optional(PageIdSchema),
+    magic: Type.Optional(PageIdSchema),
+    invite: Type.Optional(PageIdSchema),
+    emailChange: Type.Optional(PageIdSchema),
   },
   { additionalProperties: false },
 )
 export type MemberPages = Static<typeof MemberPagesSchema>
+export type MemberPageKey = keyof MemberPages
+
+/** The live address of each assigned page that is published. */
+export type MemberPagePaths = Partial<Record<MemberPageKey, string>>
 
 export const MemberSettingsSchema = Type.Object(
   {
@@ -236,6 +242,7 @@ export const MEMBER_ERROR_CODES = [
   'not_signed_in',
   'rate_limited',
   'email_unavailable',
+  'not_available',
   'forbidden_origin',
 ] as const
 export type MemberErrorCode = (typeof MEMBER_ERROR_CODES)[number]

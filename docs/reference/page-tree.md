@@ -87,7 +87,7 @@ Two ways a node can be absent from the output, and they answer different questio
 { source: 'currentEntry', field: 'video', test: 'isSet' }
 ```
 
-- **`source`** — the same set the prop bindings use (`currentEntry`, `parentEntry`, `page`, `site`, `route`), so inside a `base.loop` `currentEntry` is that iteration's row.
+- **`source`** — the prop bindings' sources except `member` (`currentEntry`, `parentEntry`, `page`, `site`, `route`), so inside a `base.loop` `currentEntry` is that iteration's row. Who the visitor is belongs to the members `showWhen` rule ([members](../features/members.md)), which already decides by signed-in state and tags.
 - **`field`** — dotted paths work, exactly as in a binding (`author.name`).
 - **`test`** — `isSet` or `isNotSet`, and nothing else. Comparisons against a value would need an operand and a type model; every case met so far is "does this row have one".
 
@@ -99,7 +99,7 @@ Three behaviours worth knowing:
 - **A malformed condition parses to `undefined`** and the node stays visible. The only safe direction — the alternative is silently erasing content that was rendering fine.
 - **A condition on a request-dependent source makes the node a Layer C hole** (dynamic-detection rule 2c). Whether the node renders at all now depends on that source, which is a stronger dependency than any prop binding: baking it would freeze one request's answer into the static artefact for every visitor.
 
-Set from the Properties panel's Attributes view, or with the `setNodeVisibleWhen` store action.
+Set from the Properties panel's Visibility view — below the visitor-based `showWhen` control, the two together answering "for whom" and "on which rows" — or with the `setNodeVisibleWhen` store action.
 
 `PageNode` (in `src/core/page-tree/pageNode.ts`) extends `BaseNode` with an optional `dynamicBindings` field for template data-binding. `VCNode` (in `src/core/visualComponents/schemas.ts`) is a direct re-export — `VCNode === BaseNode`.
 

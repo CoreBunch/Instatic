@@ -8,7 +8,7 @@ This is the path for mail the core sends itself (account emails, tests). It is b
 
 ## TL;DR
 
-- **Connectors** are accounts mail is sent through. Two kinds: **SMTP** and **Amazon SES**. No provider SDKs: SMTP goes through `nodemailer`, SES is one signed HTTPS request.
+- **Connectors** are accounts mail is sent through. Six kinds: four **one-key** providers set up with a single API key (**Resend**, **Postmark**, **Mailgun**, **Brevo**), **Amazon SES**, and **SMTP** for any other mail server. No provider SDKs: SMTP goes through `nodemailer`, every other kind is one HTTPS request. The HTTPS kinds also work on hosts that block the SMTP ports.
 - **Defaults** choose the one connector the site sends through, plus the sender name, sender address and reply-to.
 - **Templates** are a subject and a Markdown body with `{variables}`, edited in place in the post editor (`TiptapBodyEditor`) with the same Write / Live switch as a post. Only edited templates are stored; the built-in wording lives in code.
 - **Activity** is the delivery log: per-period totals and a volume chart, search and filters, and a detail panel for each email.
@@ -39,6 +39,7 @@ server/mail/
 ├── templates.ts               — mail_templates: owner edits over the catalogue
 ├── smtpDriver.ts              — SMTP delivery, address guard, From header
 ├── sesDriver.ts               — Amazon SES v2 SendEmail, Signature Version 4
+├── apiDrivers.ts              — Resend, Postmark, Mailgun, Brevo: one POST each
 ├── activity.ts                — mail_outbox (2000 newest rows kept)
 └── send.ts                    — sendSiteMail, sendTemplateMail, delivery mode
 server/handlers/cms/mail.ts    — /admin/api/cms/mail/* routes
@@ -63,11 +64,17 @@ A connector row holds a `kind`, a public `config_json` and one encrypted secret.
 - The hostname is resolved once. **Every** DNS answer must be a public address (`isBlockedAddress`), and the socket is pinned to the validated IP while TLS still verifies the original hostname.
 - Port 465 uses implicit TLS. Every other port must upgrade with STARTTLS before authenticating.
 - An IP literal is rejected as a host.
-- `MAIL_ALLOW_PRIVATE_HOSTS=1` lifts the public-address rule and makes STARTTLS opportunistic, for a relay on the same machine or network. It is an environment variable, not an admin setting: only someone who can already configure the server can point mail at the internal network.
+- `MAIL_ALLOW_PRIVATE_HOSTS=1` lifts the public-address rule and makes STARTTLS opportunistic, for a relay on the same machine or network. It is an environment variable, not an admin setting: only someone who can already configure the server can point mail at the internal network. The connector form names the variable only when the typed host reads as local (`looksLikeLocalMailHost`: no dot, a local-only suffix, or a private IPv4 address); the server's refusal names it in every case.
 
 **SES** (`sesDriver.ts`) posts to `email.<region>.amazonaws.com`. The region is validated against a strict pattern when the connector is saved, so the host is always an AWS one. `signAwsRequest` is tested against AWS's published Signature Version 4 example.
 
-Delivery errors reach the admin as a fixed set of sentences (`describeSmtpFailure`, `describeSesFailure`). The provider's own response text, the credentials and the message never do.
+**One-key providers** (`apiDrivers.ts`) each post to a host named in the code: `api.resend.com`, `api.postmarkapp.com`, `api.mailgun.net` or `api.eu.mailgun.net`, `api.brevo.com`. Resend, Postmark and Brevo store an empty config and the key as the secret. Mailgun also stores its sending `domain` and `region`; the domain is validated as a hostname when saved and percent-encoded into the request path, so it can never change the host. An API key must be a single line, since it travels in a header.
+
+Adding a kind is one entry in `MAIL_CONNECTOR_KINDS` and `MAIL_CONNECTOR_CONFIG_SCHEMAS` (`src/core/mail/schemas.ts`), a branch in `carryMail` (`send.ts`), and a spec in `src/admin/pages/email/connectorCatalog.ts`. No migration: `mail_connectors.kind` is free text and a stored row whose kind or config is not recognised is skipped.
+
+**In the admin** (`src/admin/pages/email/tabs/ConnectorSetup.tsx`), a one-key connector asks for a name (pre-filled) and the key. The SMTP form starts with a picker of well-known services (`SMTP_PRESETS`: Google, Microsoft 365, SendGrid, Zoho Mail) that fills in host and port and explains what the login is, or "Other server" for a blank form. Marks show the provider's logo (`ConnectorMark`, monochrome SVG masks in `assets/`, from the simple-icons set like the AI provider logos); a connected SMTP server shows the logo of the preset its host belongs to.
+
+Delivery errors reach the admin as a sentence built here (`describeSmtpFailure`, `describeSesFailure`, `describeFailure` in `apiDrivers.ts`). The credentials and the message never do. SMTP and SES never pass on the provider's own text; a one-key provider's own reason is appended only when it is one short line, since that is what names the address or domain to fix.
 
 ## Templates
 
@@ -122,6 +129,6 @@ All under `/admin/api/cms/mail`, all gated by `mail.manage`. "Step-up" marks the
 
 ## Tests
 
-- `src/__tests__/server/mail.test.ts` — delivery modes, connector storage, template rendering and injection, the address guard, SES signing and request shape, capability and step-up gates.
+- `src/__tests__/server/mail.test.ts` — delivery modes, connector storage, template rendering and injection, the address guard, SES signing and request shape, the request each one-key provider receives and how its refusals read, capability and step-up gates.
 - `src/__tests__/server/mailSmtp.test.ts` — a real SMTP round trip against a local sink.
 - `tests/e2e/email-workspace.e2e.ts` — ADMIN-013.

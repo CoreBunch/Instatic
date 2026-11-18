@@ -64,6 +64,7 @@ import {
 import { replyApiOk } from '../apiReplies'
 import type { HostPluginRecord } from '../types'
 import { MAIN_SCOPE } from '../../../branches/scope'
+import { keepPageAccess } from '../../../writePolicy/pageAccessCell'
 
 // Projection helpers (DB → wire shapes) live in `contentProjection.ts`.
 
@@ -293,7 +294,8 @@ export async function handleContentEntriesUpdate(
     db,
     MAIN_SCOPE,
     entryId,
-    { cells: filteredCells, slug: nextSlug || existing.slug },
+    // A plugin edits a page's content; who may open the page is not its to change.
+    { cells: keepPageAccess(existing, filteredCells), slug: nextSlug || existing.slug },
     null,
     msg.pluginId,
   )
@@ -440,7 +442,7 @@ export async function handleContentEntriesUpdateMany(
     const nextSlug = patch.slug ?? denormalizeSlug(table, filteredCells)
     prepared.push({
       id,
-      input: { cells: filteredCells, slug: nextSlug || existing.slug },
+      input: { cells: keepPageAccess(existing, filteredCells), slug: nextSlug || existing.slug },
       changedIds,
     })
   }
@@ -580,7 +582,7 @@ export async function handleContentTreeReplace(
     db,
     MAIN_SCOPE,
     entryId,
-    { cells: nextCells, slug: row.slug },
+    { cells: keepPageAccess(row, nextCells), slug: row.slug },
     null,
     msg.pluginId,
   )

@@ -24,7 +24,9 @@ import type {
 import { getCmsMailActivity, type CmsMailActivityQuery } from '@core/persistence'
 import { getErrorMessage } from '@core/utils/errorMessage'
 import { formatRelativeTimeAgo } from '@core/utils/relativeTime'
+import ld from '@admin/shared/ListDetail/ListDetail.module.css'
 import styles from './ActivityTab.module.css'
+import { MailSolidIcon } from 'pixel-art-icons/icons/mail-solid'
 
 type StatusFilter = 'all' | MailActivityStatus
 
@@ -46,6 +48,12 @@ const STATUS_LABEL: Record<MailActivityStatus, string> = {
   sent: 'Delivered to provider',
   failed: 'Failed',
   captured: 'Captured, not sent',
+}
+
+const STATUS_TONE: Record<MailActivityStatus, 'success' | 'danger' | 'warning'> = {
+  sent: 'success',
+  failed: 'danger',
+  captured: 'warning',
 }
 
 const STATUS_SHORT: Record<MailActivityStatus, string> = { sent: 'Sent', failed: 'Failed', captured: 'Captured' }
@@ -221,6 +229,8 @@ export function ActivityTab({
 
           {entries.length === 0 ? (
             <EmptyState
+              variant="centered"
+              icon={<MailSolidIcon size={28} />}
               title={filtered ? 'No email matches these filters' : `No email ${PERIOD_PHRASE[period]}`}
               description={
                 filtered
@@ -230,9 +240,9 @@ export function ActivityTab({
               action={filtered ? <Button type="button" variant="secondary" size="sm" onClick={clearFilters}>Clear filters</Button> : undefined}
             />
           ) : (
-            <div className={styles.log}>
-              <div className={styles.list}>
-                <div className={styles.listHeader}>
+            <div className={ld.split}>
+              <div className={ld.list}>
+                <div className={ld.listHeader}>
                   <span>
                     {filtered
                       ? `${plural(data.matching, 'email')} match`
@@ -242,7 +252,7 @@ export function ActivityTab({
                     <Button type="button" variant="ghost" size="xs" onClick={clearFilters}>Clear filters</Button>
                   )}
                 </div>
-                <ul className={styles.rows} aria-label="Email activity">
+                <ul className={ld.rows} aria-label="Email activity">
                   {entries.map((entry) => {
                     const active = selected?.id === entry.id
                     return (
@@ -255,18 +265,18 @@ export function ActivityTab({
                           align="start"
                           active={active}
                           aria-current={active ? 'true' : undefined}
-                          className={styles.row}
+                          className={ld.row}
                           onClick={() => setSelectedId(entry.id)}
                         >
-                          <span className={styles.dot} data-status={entry.status} aria-hidden="true" />
-                          <span className={styles.rowMain}>
-                            <span className={styles.rowSubject}>{entry.subject}</span>
-                            <span className={styles.rowMeta}>
+                          <span className={ld.dot} data-tone={STATUS_TONE[entry.status]} aria-hidden="true" />
+                          <span className={ld.rowMain}>
+                            <span className={ld.rowSubject}>{entry.subject}</span>
+                            <span className={ld.rowMeta}>
                               <span className={styles.srOnly}>{STATUS_SHORT[entry.status]}. </span>
                               {entry.to} · {entry.kindLabel}
                             </span>
                           </span>
-                          <time className={styles.rowTime} dateTime={entry.createdAt} title={formatFull(entry.createdAt)}>
+                          <time className={ld.rowTime} dateTime={entry.createdAt} title={formatFull(entry.createdAt)}>
                             {formatRelativeTimeAgo(Date.parse(entry.createdAt))}
                           </time>
                         </Button>
@@ -274,7 +284,7 @@ export function ActivityTab({
                     )
                   })}
                 </ul>
-                <div className={styles.listFooter}>
+                <div className={ld.listFooter}>
                   {nextCursor ? (
                     <Button type="button" variant="secondary" size="sm" onClick={showMore} busy={loadingMore}>
                       Show more
@@ -415,10 +425,10 @@ function Detail({
   }
 
   return (
-    <article className={styles.detail} aria-label="Email details">
-      <header className={styles.detailHeader}>
-        <span className={styles.statusBadge} data-status={entry.status}>
-          <span className={styles.dot} data-status={entry.status} aria-hidden="true" />
+    <article className={ld.detail} aria-label="Email details">
+      <header className={ld.detailHeader}>
+        <span className={ld.statusBadge} data-tone={STATUS_TONE[entry.status]}>
+          <span className={ld.dot} data-tone={STATUS_TONE[entry.status]} aria-hidden="true" />
           {STATUS_LABEL[entry.status]}
         </span>
         <h3>{entry.subject}</h3>
@@ -428,7 +438,7 @@ function Detail({
       </header>
 
       {entry.status === 'failed' && (
-        <div className={styles.notice} data-tone="danger" role="status">
+        <div className={ld.notice} data-tone="danger" role="status">
           <strong>{entry.error ?? 'Delivery failed'}</strong>
           <span>Nothing was delivered and the site does not retry. Check the connector, then send a test.</span>
           <div>
@@ -437,23 +447,23 @@ function Detail({
         </div>
       )}
       {entry.status === 'sent' && (
-        <p className={styles.notice}>
+        <p className={ld.notice}>
           {entry.connectorLabel ?? 'The connector'} accepted this email. Whether it reached the inbox (bounces, spam
           filtering) is recorded by the provider, not here.
         </p>
       )}
       {entry.status === 'captured' && (
-        <p className={styles.notice} data-tone="warning">
+        <p className={ld.notice} data-tone="warning">
           This email never left the server. A development server with no connector and sender keeps emails here so
           you can read them.
         </p>
       )}
 
-      <dl className={styles.facts}>
+      <dl className={ld.facts}>
         <div>
           <dt>To</dt>
           <dd>
-            <span className={styles.selectable}>{entry.to}</span>
+            <span className={ld.selectable}>{entry.to}</span>
             <Button type="button" variant="ghost" size="xs" onClick={() => copy(entry.to, 'Address')}>Copy</Button>
           </dd>
         </div>
@@ -480,7 +490,7 @@ function Detail({
           <div>
             <dt>Provider message ID</dt>
             <dd>
-              <code className={styles.selectable}>{entry.providerMessageId}</code>
+              <code className={ld.selectable}>{entry.providerMessageId}</code>
               <Button type="button" variant="ghost" size="xs" onClick={() => copy(entry.providerMessageId ?? '', 'Message ID')}>Copy</Button>
             </dd>
           </div>

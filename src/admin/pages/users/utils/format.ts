@@ -26,5 +26,7 @@ export function formatCapabilitySummary(capabilities: string[]): string {
 }
 
 export function tabLabel(tab: Tab): string {
-  return tab === 'users' ? 'Users' : tab === 'roles' ? 'Roles' : 'Audit'
+  if (tab === 'users') return 'Admin users'
+  if (tab === 'members') return 'Site members'
+  return tab === 'roles' ? 'Roles' : 'Audit'
 }

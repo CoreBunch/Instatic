@@ -45,6 +45,12 @@ export async function handleRoutesRegister(
       assertHostPluginPermission(entry, 'cms.routes.public')
       access = { kind: 'public' }
       break
+    case 'member':
+      // A member route hands the plugin the signed-in member, so it needs
+      // the same grant as reading a member does.
+      assertHostPluginPermission(entry, 'members.read')
+      access = { kind: 'member', tag: arg.access.tag ?? null }
+      break
   }
 
   entry.routes.set(arg.routeKey, {
