@@ -96,6 +96,48 @@ function page(title: string, body: string): Response {
   })
 }
 
+/**
+ * The bare sign-in page a protected page sends a signed-out visitor to when
+ * the owner has not assigned a login page. `next` is where they were going;
+ * only a site-relative path is honoured.
+ */
+export async function renderMemberSignInPage(
+  db: DbClient,
+  url: URL,
+  safePath: (value: string | null) => string | null,
+): Promise<Response> {
+  const settings = await getMemberSettings(db)
+  const next = safePath(url.searchParams.get('next')) ?? settings.pages.afterLogin ?? '/'
+  const errorCode = url.searchParams.get('member_error') ?? ''
+  const here = `${url.pathname}?next=${encodeURIComponent(next)}`
+  const error =
+    errorCode === 'invalid_credentials'
+      ? 'The email or password is not right.'
+      : errorCode === 'rate_limited'
+        ? 'Too many attempts. Try again in a few minutes.'
+        : errorCode
+          ? 'Something went wrong. Try again.'
+          : ''
+  const sent = url.searchParams.get('member_ok') === 'check_email'
+  const hidden =
+    `<input type="hidden" name="_error" value="${escapeHtml(here)}">`
+  const body =
+    (error ? `<p role="alert">${escapeHtml(error)}</p>` : '') +
+    (sent ? '<p role="status">If that address has an account, a sign-in link is on its way.</p>' : '') +
+    '<form method="post" action="/_instatic/members/login">' +
+    `<input type="hidden" name="_success" value="${escapeHtml(next)}">${hidden}` +
+    '<label for="email">Email</label><input id="email" name="email" type="email" autocomplete="username" required>' +
+    '<label for="password">Password</label>' +
+    '<input id="password" name="password" type="password" autocomplete="current-password" required>' +
+    '<button type="submit">Sign in</button></form>' +
+    '<form method="post" action="/_instatic/members/link/request">' +
+    `<input type="hidden" name="_success" value="${escapeHtml(`${here}&member_ok=check_email`)}">${hidden}` +
+    '<label for="link-email">Or get a sign-in link by email</label>' +
+    '<input id="link-email" name="email" type="email" autocomplete="username" required>' +
+    '<button type="submit">Email me a link</button></form>'
+  return page('Sign in', body)
+}
+
 export async function renderMemberLinkPage(db: DbClient, url: URL): Promise<Response> {
   const kind = url.pathname.slice(MEMBER_LINK_PATH_PREFIX.length)
   if (!isTokenKind(kind)) return new Response('Not found', { status: 404 })

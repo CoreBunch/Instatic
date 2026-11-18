@@ -14,9 +14,10 @@
  * owns the sequencing, rendering, and disk artefacts. The dependency
  * direction is one-way: publish → repositories, never back.
  */
+import { listProtectedTables } from '../repositories/data/tableAccess'
 import type { DbClient } from '../db/client'
 import type { DataRow, DataRowVersion } from '@core/data/schemas'
-import { resolveTemplateChain } from '@core/templates'
+import { normalizeRouteBase, resolveTemplateChain } from '@core/templates'
 import {
   getPublishedDataRowByRoute,
   getRowTableRouteBase,
@@ -147,6 +148,13 @@ async function writeDataRowArtefact(
   if (!publishedDataRow) return
 
   const newPath = publicDataPath(tableInfo.tableRouteBase, publishedRow.slug)
+  // Entries of a protected table never go to disk; drop any file left from
+  // before the table was protected.
+  const protectedBases = (await listProtectedTables(db)).map((table) => table.routeBase)
+  if (protectedBases.includes(normalizeRouteBase(tableInfo.tableRouteBase))) {
+    await removeArtefactInPlace(uploadsDir, newPath)
+    return
+  }
   const syntheticUrl = new URL(`http://localhost${newPath}`)
   // Runtime assets come from this table's entry template, not from the
   // arbitrary page the site-wide snapshot happens to name.

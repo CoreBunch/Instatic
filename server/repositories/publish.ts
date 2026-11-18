@@ -21,6 +21,7 @@
  *   getLatestPublishedSiteSnapshot — first published page snapshot (for 404s etc.)
  *   getDraftPublishStatus     — compare draft vs published state for the UI
  */
+import type { AccessRule } from '@core/members'
 import { contentHash } from '../branches/contentHash'
 import type { DataRow } from '@core/data/schemas'
 import type { SiteDocument } from '@core/page-tree'
@@ -88,6 +89,8 @@ export interface PublishedPageVersionWrite {
   versionNumber: number
   runtimeAssets: PublishedPageRuntimeAssets | null
   runtimeFiles: BuiltRuntimeAssetFile[]
+  /** The page's access rule at publish, when it has one (not public). */
+  access?: AccessRule
 }
 
 export interface PersistSitePublishInput {
@@ -313,7 +316,7 @@ export async function persistSitePublish(
           ${page.versionId},
           ${page.pageId},
           ${page.versionNumber},
-          ${{ title: page.title, slug: page.slug }},
+          ${{ title: page.title, slug: page.slug, ...(page.access ? { access: page.access } : {}) }},
           ${page.slug},
           ${input.siteSnapshotId},
           ${page.runtimeAssets},
@@ -372,6 +375,31 @@ async function pruneSupersededRuntimeAssets(
         and id <> ${previousVersionId ?? ''}
     )
   `
+}
+
+/**
+ * Slug and stored access value of every published page that carries one.
+ * The caller parses the value; this only finds the rows. The value is the
+ * rule the page had when its live version was published (`persistSitePublish`
+ * writes it into the version's cells).
+ */
+export async function listPublishedPageAccess(
+  db: DbClient,
+): Promise<Array<{ slug: string; access: unknown }>> {
+  const { rows } = await db<{ slug: string; cells_json: unknown }>`
+    select data_row_versions.slug, data_row_versions.cells_json
+      from data_rows
+      join data_row_versions on data_row_versions.id = data_rows.active_version_id
+     where data_rows.table_id = 'pages'
+       and data_rows.status = 'published'
+       and data_rows.deleted_at is null
+  `
+  const out: Array<{ slug: string; access: unknown }> = []
+  for (const row of rows) {
+    const cells = row.cells_json
+    if (cells && typeof cells === 'object' && 'access' in cells) out.push({ slug: row.slug, access: cells.access })
+  }
+  return out
 }
 
 export async function getPublishedPageBySlug(

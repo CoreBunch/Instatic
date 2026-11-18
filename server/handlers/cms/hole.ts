@@ -36,7 +36,7 @@
 
 import type { DbClient } from '../../db/client'
 import type { Page, PageNode, SiteDocument } from '@core/page-tree'
-import type { SourceRequestContext } from '@core/loops/types'
+import type { ClosedContent, SourceRequestContext } from '@core/loops/types'
 import { registry } from '@core/module-engine'
 import { loopSourceRegistry } from '@core/loops/registry'
 import { renderNode, type RenderConfig, type RenderAccumulators } from '@core/publisher'
@@ -48,6 +48,15 @@ import { getPublishVersion } from '../../publish/publishState'
 import { HOLE_RUNTIME_JS } from '../../publish/holeRuntime'
 import { stampFormPageTokens } from '../../forms/formRuntime'
 import { isSessionCookieName } from '../../sessionCookies'
+import {
+  closedContentFor,
+  decideAccess,
+  getAccessIndex,
+  indexedRulesForPath,
+  pageRules,
+  PRIVATE_HEADERS,
+  visitorFromRequest,
+} from '../../publish/accessGate'
 
 const HOLE_RUNTIME_PATH = '/_instatic/hole-runtime.js'
 const HOLE_PATH_PREFIX = '/_instatic/hole/'
@@ -128,11 +137,13 @@ async function renderHoleFragment(
   db: DbClient,
   pageUrl: URL,
   request: SourceRequestContext,
+  closed: ClosedContent,
 ): Promise<string> {
   const route = buildRouteFrame(pageUrl.toString())
   const loopData = await prefetchLoopData(page, site, db, pageUrl, {
     request,
     rootNodeId: nodeId,
+    closed,
   })
   const config: RenderConfig = {
     page,
@@ -223,26 +234,46 @@ export async function handleHoleRequest(
     pageUrl = new URL(buildPageFrame(foundPage).permalink, url.origin)
   }
 
+  // A fragment is part of a page and is gated like one: by the page that owns
+  // the node, and (for a node in a template) by the route it is rendered on.
+  // `u` is chosen by the caller, so it can only ever add a restriction.
+  const accessIndex = await getAccessIndex(ctx.db, currentVersion)
+  const rules = [...pageRules(accessIndex, foundPage), ...indexedRulesForPath(accessIndex, pageUrl.pathname)]
+  const isProtected = rules.length > 0
+  const visitor = visitorFromRequest(ctx.db, req)
+  if (isProtected && (await decideAccess(rules, visitor)) !== 'allow') {
+    return new Response('Node not found', {
+      status: 404,
+      headers: { 'content-type': 'text/plain; charset=utf-8', ...PRIVATE_HEADERS },
+    })
+  }
+
+  // Lists in the fragment leave out what the visitor may not open. Only a
+  // protected page's fragment is rendered for a known member; every other
+  // fragment is shared, so it is rendered as for a signed-out visitor.
+  const closed = closedContentFor(accessIndex, isProtected ? await visitor() : null)
+
   const perVisitor = isPerVisitorHole(node)
   const route = buildRouteFrame(pageUrl.toString())
   // Parsed query params of the originating page request — handed to a
   // request-dependent loop source's `fetch()` via `ctx.request.query`.
   const query: Record<string, string> = Object.fromEntries(pageUrl.searchParams)
 
-  // Per-visitor hole: bypass Layer B entirely, expose cookies, never cache.
-  if (perVisitor) {
+  // Per-visitor hole, or any hole of a protected page: bypass Layer B
+  // entirely and never cache. Only per-visitor sources get the cookies.
+  if (perVisitor || isProtected) {
     const request: SourceRequestContext = {
       query,
       path: route.path,
       slug: route.slug,
-      cookies: parseCookies(req.headers.get('cookie')),
+      cookies: perVisitor ? parseCookies(req.headers.get('cookie')) : {},
     }
-    const html = await renderHoleFragment(nodeId, foundPage, snap.site, ctx.db, pageUrl, request)
+    const html = await renderHoleFragment(nodeId, foundPage, snap.site, ctx.db, pageUrl, request, closed)
     return new Response(html, {
       status: 200,
       headers: {
         'content-type': 'text/html; charset=utf-8',
-        'cache-control': 'no-store',
+        ...(isProtected ? PRIVATE_HEADERS : { 'cache-control': 'no-store' }),
       },
     })
   }
@@ -267,7 +298,7 @@ export async function handleHoleRequest(
       queryString: `v=${currentVersion}&u=${encodeURIComponent(pageUrl.pathname)}&${normalizeQuery(pageUrl.searchParams)}`,
     },
     async () => {
-      const html = await renderHoleFragment(nodeId, foundPage, snap.site, ctx.db, pageUrl, request)
+      const html = await renderHoleFragment(nodeId, foundPage, snap.site, ctx.db, pageUrl, request, closed)
       return {
         body: html,
         headers: { 'content-type': 'text/html; charset=utf-8' },

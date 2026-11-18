@@ -12,6 +12,7 @@
 
 import type { Page, PageNode, SiteDocument } from '@core/page-tree'
 import type {
+  ClosedContent,
   LoopFetchResult,
   LoopItem,
   PrefetchedLoopEntitySource,
@@ -248,6 +249,7 @@ async function resolveOneLoop(
     request?: SourceRequestContext
     branchId?: string
     drafts?: boolean
+    closed?: ClosedContent
   },
 ): Promise<ResolvedLoopData> {
   const props = readLoopProps(node)
@@ -273,6 +275,7 @@ async function resolveOneLoop(
     request: ctx.request,
     branchId: ctx.branchId,
     drafts: ctx.drafts,
+    closed: ctx.closed,
   }
 
   try {
@@ -312,6 +315,8 @@ export async function prefetchLoopData(
     /** Branch whose rows loops read; absent means main (publishing, public routes). */
     branchId?: string
     drafts?: boolean
+    /** What the visitor may not open; set on every public render. */
+    closed?: ClosedContent
   },
 ): Promise<LoopDataMap> {
   const nodes = collectLoopNodes(page, site, options?.rootNodeId)
@@ -334,6 +339,7 @@ export async function prefetchLoopData(
         request: options?.request,
         branchId: options?.branchId,
         drafts: options?.drafts,
+        closed: options?.closed,
       })
       return [node.id, data] as [string, ResolvedLoopData]
     }),

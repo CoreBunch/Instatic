@@ -7,7 +7,7 @@ import { handleServerRequest } from '../../../server/router'
 import { resetForTests } from '../../../server/publish/renderCache'
 import type { PublishedPageSnapshot } from '../../../server/repositories/publish'
 import { makePage, makeSite } from '../publisher/helpers'
-import { createFakeDb } from './dbTestFake'
+import { answerAccessIndexRead, createFakeDb } from './dbTestFake'
 import {
   prepareInactiveSlot,
   writeArtefact,
@@ -24,6 +24,8 @@ function makeTemplateRouteFakeDb(handlers: QueryHandler[]) {
     if (sql.startsWith('select logical_id, name, slug, kind') && sql.includes('from data_tables')) {
       return { rows: [], rowCount: 0 } as unknown as DbResult
     }
+    const accessIndexRead = answerAccessIndexRead(sql)
+    if (accessIndexRead) return accessIndexRead
     for (const handler of handlers) {
       const result = handler(sql, params)
       if (result) return result

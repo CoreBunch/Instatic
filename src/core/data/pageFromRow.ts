@@ -21,6 +21,7 @@
 import type { Page, PageNode, PageTemplateConfig } from '@core/page-tree'
 import { parsePageNode, parsePageTemplate } from '@core/page-tree'
 import type { DataRow, DataRowCells } from '@core/data/schemas'
+import { parseAccessRule } from '@core/members'
 
 // ---------------------------------------------------------------------------
 // DataRow → Page
@@ -62,6 +63,7 @@ export function pageFromRow(row: DataRow): Page {
 
   // Template reconstruction
   const template = readTemplateFromCells(cells)
+  const access = parseAccessRule(cells.access)
 
   return {
     id: row.id,
@@ -70,6 +72,7 @@ export function pageFromRow(row: DataRow): Page {
     nodes,
     rootNodeId,
     ...(template !== null ? { template } : {}),
+    ...(access.level !== 'public' ? { access } : {}),
     ownerUserId: row.authorUserId ?? null,
     createdByUserId: row.createdByUserId ?? null,
     updatedByUserId: row.updatedByUserId ?? null,
@@ -122,6 +125,7 @@ export function pageToCells(page: Page): DataRowCells {
     cells.templateTarget = page.template.target
     cells.templatePriority = page.template.priority
   }
+  if (page.access && page.access.level !== 'public') cells.access = page.access
 
   return cells
 }

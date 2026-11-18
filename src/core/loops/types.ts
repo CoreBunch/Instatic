@@ -132,6 +132,13 @@ export interface SourceFetchContext {
    */
   request?: SourceRequestContext
   /**
+   * What this visitor may not open on the published site. A listing leaves
+   * these out, so a loop never shows a row or a page the visitor could not
+   * open by its address. Set on every public render; absent in the admin
+   * (previews show everything).
+   */
+  closed?: ClosedContent
+  /**
    * Read draft rows instead of published versions. Unset, the source decides
    * from `branchId` (drafts off main). The merge review sets it on both
    * sides, because a merge compares drafts with drafts.
@@ -144,6 +151,12 @@ export interface SourceFetchContext {
    * `@core/branches`). Absent means main.
    */
   branchId?: string
+}
+
+/** Tables (by logical id) and pages (by slug) a visitor may not open. */
+export interface ClosedContent {
+  tableIds: ReadonlySet<string>
+  pageSlugs: ReadonlySet<string>
 }
 
 /**

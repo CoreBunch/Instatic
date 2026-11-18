@@ -7,6 +7,7 @@ import { buildPublishedSiteCssBundle } from './siteCssBundle'
 import { buildPublishedSiteModuleJsMap } from './moduleJsBundle'
 import { resolveTemplateChain, resolveNotFoundTemplate, composeTemplateChain } from '@core/templates'
 import type { TemplateRenderDataContext } from '@core/templates/dynamicBindings'
+import { closedContentFor, getAccessIndex } from './accessGate'
 import { prefetchLoopData, publishedDataRowToEntryItem } from './loopPrefetch'
 import { prefetchMediaAssets } from './mediaPrefetch'
 import { getPublishVersion } from './publishState'
@@ -73,6 +74,13 @@ interface RenderPublishedSnapshotContext {
   url?: URL
   /** Cache generation used for CSS bundles and module-JS URLs during the bake. */
   publishVersion?: number
+  /**
+   * The signed-in member's tags, when this render is for one visitor on a
+   * protected route. Absent or null means "signed out", which is every baked
+   * and every shared-cache render: lists then leave out whatever a signed-out
+   * visitor may not open.
+   */
+  visitorTags?: readonly string[] | null
 }
 
 /**
@@ -92,7 +100,11 @@ async function renderMergedTemplate(
 ): Promise<{ html: string; jsModuleIds: string[]; publishVersion: number; cssBundle: SiteCssBundle }> {
   const publishVersion = ctx.publishVersion ?? getPublishVersion()
   const moduleJsMap = buildPublishedSiteModuleJsMap(snapshot.site, registry)
-  const loopData = await prefetchLoopData(merged, snapshot.site, ctx.db, ctx.url)
+  // The index for the version being rendered: during a publish that is the
+  // NEXT version, loaded after the publish committed, so a page protected by
+  // this very publish is already left out of the lists being baked.
+  const closed = closedContentFor(await getAccessIndex(ctx.db, publishVersion), ctx.visitorTags ?? null)
+  const loopData = await prefetchLoopData(merged, snapshot.site, ctx.db, ctx.url, { closed })
   const mediaAssets = await prefetchMediaAssets(merged, snapshot.site, registry, ctx.db, {
     templateContext,
     loopData,

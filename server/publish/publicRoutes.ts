@@ -14,6 +14,7 @@ import {
 } from '../branches/previewLinks'
 import { getSetupStatusCached } from '../repositories/setup'
 import { setCookieHeader } from '../http'
+import { visitorFromRequest } from './accessGate'
 import { renderBranchPreview } from './branchPreview'
 import { renderNotFoundResponse, renderPublicResolution } from './publicRouter'
 
@@ -34,7 +35,16 @@ export async function tryServePublicRoute(req: Request, runtime: ServerRuntime, 
   // the 404 page, never to main's published page at that path.
   const previewBranchId = await resolvePreviewCookie(req, runtime.db)
   if (previewBranchId) return await renderBranchPreview(runtime.db, previewBranchId, url)
-  return await renderPublicResolution(runtime.db, url, runtime.uploadsDir)
+  const res = await renderPublicResolution(
+    runtime.db,
+    url,
+    runtime.uploadsDir,
+    visitorFromRequest(runtime.db, req),
+  )
+  // A link from an account email lands here with a live token in the address
+  // bar. Keep it out of the Referer header of everything the page loads.
+  if (res && url.searchParams.has('token')) res.headers.set('referrer-policy', 'no-referrer')
+  return res
 }
 
 /**
