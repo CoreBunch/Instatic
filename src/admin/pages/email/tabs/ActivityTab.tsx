@@ -57,14 +57,22 @@ const STATUS_TONE: Record<Exclude<MailActivityStatus, 'queued'>, 'success' | 'da
   captured: 'warning',
 }
 
-/** A waiting email is neutral until an attempt has failed; then it is a warning. */
-function toneOf(entry: Pick<MailActivityEntry, 'status' | 'attempts'>): 'success' | 'danger' | 'warning' | undefined {
-  if (entry.status === 'queued') return entry.attempts > 0 ? 'warning' : undefined
+type Progress = Pick<MailActivityEntry, 'status' | 'attempts' | 'error'>
+
+/** A waiting email is neutral until something has gone wrong; then it is a warning. */
+function toneOf(entry: Progress): 'success' | 'danger' | 'warning' | undefined {
+  if (entry.status === 'queued') return entry.error !== null ? 'warning' : undefined
   return STATUS_TONE[entry.status]
 }
 
-function statusLabel(entry: Pick<MailActivityEntry, 'status' | 'attempts'>): string {
-  return entry.status === 'queued' && entry.attempts > 0 ? 'Retrying' : STATUS_LABEL[entry.status]
+/**
+ * A waiting email with an error and a counted attempt is being retried. With
+ * an error and no attempt counted, it is held: the connector refused the
+ * account, which is not the email's failure.
+ */
+function statusLabel(entry: Progress): string {
+  if (entry.status !== 'queued' || entry.error === null) return STATUS_LABEL[entry.status]
+  return entry.attempts > 0 ? 'Retrying' : 'Held'
 }
 
 const STATUS_SHORT: Record<MailActivityStatus, string> = {
@@ -191,7 +199,7 @@ export function ActivityTab({
 
       {data && (
         <>
-          <Summary data={data} period={period} capturing={capturing} onShowFailed={() => setStatus('failed')} />
+          <Summary data={data} period={period} capturing={capturing} onShowFailed={() => setStatus('failed')} onShowWaiting={() => setStatus('queued')} />
 
           <div className={styles.filters}>
             <SearchBar
@@ -332,11 +340,13 @@ function Summary({
   period,
   capturing,
   onShowFailed,
+  onShowWaiting,
 }: {
   data: MailActivityResponse
   period: MailActivityPeriod
   capturing: boolean
   onShowFailed: () => void
+  onShowWaiting: () => void
 }) {
   const { queued, sent, failed, captured } = data.totals
   const attempts = sent + failed
@@ -349,7 +359,7 @@ function Summary({
   const last = data.buckets[data.buckets.length - 1]
 
   return (
-    <div className={styles.summary}>
+    <div className={styles.summary} data-crowded={queued > 0 && (capturing || captured > 0) ? 'true' : undefined}>
       <div className={styles.tile}>
         <span className={styles.tileLabel}>Sent</span>
         <span className={styles.tileValue}>{sent.toLocaleString()}</span>
@@ -359,10 +369,17 @@ function Summary({
       </div>
 
       {queued > 0 && (
-        <div className={styles.tile}>
+        <div className={styles.tile} data-tone={data.waitingError ? 'warning' : undefined}>
           <span className={styles.tileLabel}>Waiting</span>
           <span className={styles.tileValue}>{queued.toLocaleString()}</span>
-          <span className={styles.tileHint}>Queued, or due another try after a temporary failure</span>
+          <span className={styles.tileHint}>
+            {data.waitingError ?? 'Queued, and sent as soon as the connector is free'}{' '}
+            {data.waitingError && (
+              <Button type="button" variant="ghost" size="xs" className={styles.inlineAction} onClick={onShowWaiting}>
+                Show waiting
+              </Button>
+            )}
+          </span>
         </div>
       )}
 
@@ -476,7 +493,7 @@ function Detail({
           <span>
             {entry.attempts > 1
               ? `Nothing was delivered after ${entry.attempts} attempts, and the site has stopped trying.`
-              : 'Nothing was delivered, and trying again would not help.'}{' '}
+              : 'Nothing was delivered, and the site is not trying again.'}{' '}
             Check the connector, then send a test.
           </span>
           <div>
@@ -485,16 +502,20 @@ function Detail({
         </div>
       )}
       {entry.status === 'queued' && (
-        <div className={ld.notice} data-tone={entry.attempts > 0 ? 'warning' : undefined} role="status">
-          {entry.attempts > 0 && <strong>{entry.error ?? 'The last attempt failed'}</strong>}
+        <div className={ld.notice} data-tone={entry.error !== null ? 'warning' : undefined} role="status">
+          {entry.error !== null && <strong>{entry.error}</strong>}
           <span>
-            {entry.attempts > 0
-              ? `Tried ${plural(entry.attempts, 'time')}. `
-              : 'Accepted and waiting for its turn. '}
-            {entry.attempts > 0 && entry.nextAttemptAt
-              ? `The next attempt is due ${formatFull(entry.nextAttemptAt)}. The site keeps trying for a day.`
-              : 'It is sent as soon as the connector is free.'}
+            {entry.error === null
+              ? 'Accepted and waiting for its turn. It is sent as soon as the connector is free.'
+              : entry.nextAttemptAt
+                ? `Tried ${plural(entry.attempts, 'time')}. The next attempt is due ${formatFull(entry.nextAttemptAt)}. The site keeps trying until the email would be of no use any more.`
+                : 'Held, not retried: the connector has to be fixed first. It is sent as soon as a test through the connector works.'}
           </span>
+          {entry.error !== null && !entry.nextAttemptAt && (
+            <div>
+              <Button type="button" variant="secondary" size="sm" onClick={onOpenConnectors}>Open connectors</Button>
+            </div>
+          )}
         </div>
       )}
       {entry.status === 'sent' && (

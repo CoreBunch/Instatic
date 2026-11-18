@@ -22,6 +22,7 @@ await import('./richtextSanitizer')
 const { handleServerRequest } = await import('./router')
 const { activateInstalledServerPlugins } = await import('./plugins/runtime')
 const { startMailQueue, stopMailQueue } = await import('./mail/delivery')
+const { flushMemberMail } = await import('./members/mail')
 const { mediaStorageRegistry } = await import('@core/plugins/mediaStorageRegistry')
 const { createCollabRelay } = await import('./collab/relay')
 const { SITE_SOCKET_PATH, createCollabSocketLayer, handleCollabSocketUpgrade } =
@@ -238,7 +239,9 @@ async function shutdown(signal: string, exitCode = 0): Promise<void> {
   } catch (err) {
     console.error('[server] collab flush on shutdown failed:', err)
   }
-  // Let the email being handed over finish; the rest waits in the queue.
+  // Emails a request handed over a moment ago reach the queue first; then
+  // the one being sent finishes. The rest waits in the queue.
+  await flushMemberMail()
   await stopMailQueue()
   server.stop()
   process.exit(exitCode)

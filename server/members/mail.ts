@@ -18,10 +18,11 @@ import type { MemberPageKey, MemberPagePaths } from '@core/members'
 import { getErrorMessage } from '@core/utils/errorMessage'
 import { clientIp, configuredPublicOrigin } from '../auth/security'
 import { getMailDefaults } from '../mail/defaults'
+import { recordMail } from '../mail/activity'
 import { queueTemplateMail } from '../mail/delivery'
 import { mailDeliveryMode } from '../mail/send'
 import { MEMBER_MAIL_KEYS, type MemberMailKind } from './mailTemplates'
-import type { MemberTokenKind } from './tokens'
+import { TOKEN_LIFETIME_MS, type MemberTokenKind } from './tokens'
 
 const LOOPBACK_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]'])
 const LOOPBACK_PEERS = new Set(['127.0.0.1', '::1', '::ffff:127.0.0.1'])
@@ -97,21 +98,48 @@ interface MemberMailInput {
 
 const pending = new Set<Promise<void>>()
 
+/** The kinds of email that carry a link, which stops working when its token expires. */
+function isLinkKind(kind: MemberMailKind): kind is MemberTokenKind {
+  return kind in TOKEN_LIFETIME_MS
+}
+
 /**
  * Queue the email without making the request wait for it. The caller has
  * already decided its response, so nothing about email changes what, or how
- * fast, the visitor is told. The mail queue sends it straight away, retries
- * a temporary failure, and the activity log shows how it went.
+ * fast, the visitor is told: the handing over is deliberately outside the
+ * request's own work, so a request for a known address takes as long as one
+ * for an unknown address. The mail queue sends it straight away and retries
+ * a temporary failure, but never past the life of the link in it: a
+ * sign-in link that arrives after it expired is worse than none.
+ *
+ * An email that could not even be queued is not only a log line: the
+ * activity log gets a failed entry, so the owner can see that a member was
+ * left without their email.
  */
 export function queueMemberMail(db: DbClient, input: MemberMailInput): void {
+  const key = MEMBER_MAIL_KEYS[input.kind]
+  // The token was issued a moment ago, so its life is counted from now.
+  const deliverBefore = isLinkKind(input.kind) ? Date.now() + TOKEN_LIFETIME_MS[input.kind] : undefined
   const task = queueTemplateMail(db, {
-    key: MEMBER_MAIL_KEYS[input.kind],
+    key,
     to: input.to,
     variables: { 'member.email': input.to, ...(input.link ? { link: input.link } : {}) },
+    deliverBefore,
   })
     .then(() => undefined)
-    .catch((err: unknown) => {
-      console.error(`[members] ${input.kind} email was not queued:`, getErrorMessage(err, 'unknown error'))
+    .catch(async (err: unknown) => {
+      const reason = getErrorMessage(err, 'unknown error')
+      console.error(`[members] ${input.kind} email was not queued:`, reason)
+      await recordMail(db, {
+        kind: key,
+        to: input.to,
+        subject: '(not queued)',
+        status: 'failed',
+        attempts: 0,
+        error: `Not queued, so never sent: ${reason}`,
+      }).catch((logErr: unknown) => {
+        console.error('[members] the failure could not be logged either:', getErrorMessage(logErr, 'unknown error'))
+      })
     })
     .finally(() => {
       pending.delete(task)
@@ -119,7 +147,11 @@ export function queueMemberMail(db: DbClient, input: MemberMailInput): void {
   pending.add(task)
 }
 
-/** Test seam: wait until every email handed over so far is in the queue. */
+/**
+ * Wait until every email handed over so far is in the queue. The server
+ * calls this on shutdown, so a restart never drops an email between a
+ * request and the queue; tests call it before they look.
+ */
 export async function flushMemberMail(): Promise<void> {
   await Promise.all([...pending])
 }

@@ -47,6 +47,7 @@ import {
   MailSecretUnreadableError,
   setMailConnectorSecret,
 } from '../../mail/connectors'
+import { wakeMailQueue } from '../../mail/delivery'
 import { getMailDefaults, saveMailDefaults } from '../../mail/defaults'
 import {
   buildTemplateMail,
@@ -150,6 +151,8 @@ async function handleSetSecret(req: Request, db: DbClient, params: RouteParams):
   const input = await readValidatedBody(req, MailConnectorSecretInputSchema)
   if (!input) return badRequest('Invalid secret')
   if (!(await setMailConnectorSecret(db, params.id, input.secret))) return notFound('Connector')
+  // A new secret lifts a pause: what was held can go out now.
+  wakeMailQueue()
   const connector = await getMailConnector(db, params.id)
   if (!connector) return notFound('Connector')
   await createAuditEvent(db, {
@@ -172,6 +175,8 @@ async function handleTestConnector(req: Request, db: DbClient, params: RoutePara
   try {
     const mail = await buildTemplateMail(db, { key: TEST_MAIL_TEMPLATE_KEY, to: input.to, variables: {} })
     await sendConnectorTest(db, params.id, { ...mail, kind: CONNECTOR_TEST_KIND })
+    // A test that worked lifts a pause: what was held can go out now.
+    wakeMailQueue()
     return jsonResponse({ status: 'sent' })
   } catch (err) {
     return deliveryFailure(err)
@@ -187,6 +192,8 @@ async function handleSaveDefaults(req: Request, db: DbClient): Promise<Response>
     return badRequest('That connector no longer exists')
   }
   await saveMailDefaults(db, input, user.id)
+  // Another connector, or a sender address at last: what was held can go out now.
+  wakeMailQueue()
   await createAuditEvent(db, {
     actorUserId: user.id,
     action: 'mail.defaults.update',

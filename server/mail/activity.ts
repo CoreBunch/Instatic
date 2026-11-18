@@ -275,6 +275,7 @@ export async function listMailActivity(
     if (bucket) bucket[mail.status] += 1
   }
   const failure = inPeriod.find((mail) => mail.status === 'failed')
+  const held = inPeriod.find((mail) => mail.status === 'queued' && mail.error !== null)
 
   const search = filter.search?.trim().toLowerCase() ?? ''
   const matching = inPeriod.filter(
@@ -304,6 +305,7 @@ export async function listMailActivity(
     totals,
     buckets: [...byBucket.values()],
     lastFailure: failure ? { at: failure.createdAt, error: failure.error ?? 'Delivery failed' } : null,
+    waitingError: held?.error ?? null,
     kinds: facets(inPeriod, (mail) => ({ value: mail.kind, label: mail.kindLabel })),
     connectors: facets(inPeriod, (mail) =>
       mail.connectorLabel ? { value: mail.connectorLabel, label: mail.connectorLabel } : null,

@@ -32,17 +32,22 @@ export interface OutgoingMail {
 
 /** A delivery failure safe to show an admin: no credentials, no message body. */
 /**
- * Whether a refused message is worth another attempt:
+ * Whether a refused message is worth another attempt, and whose fault the
+ * refusal was:
  *
  *  - `never`: the provider judged this message (a bad recipient, a rejected
  *    sender). Sending it again gets the same answer.
- *  - `later`: nothing is wrong with the message. The server could not be
- *    reached, answered with a temporary error, or refused the account's
- *    credentials, which the owner can put right.
- *  - `slow-down`: the provider is rate-limiting the account. Retry later and
- *    hold every other message back meanwhile.
+ *  - `later`: nothing is wrong with the message, and the trouble is this
+ *    message's or this moment's: the server could not be reached, answered
+ *    with a temporary error, or deferred this recipient (greylisting, a full
+ *    mailbox). Retry this message; everything else carries on.
+ *  - `slow-down`: the provider is throttling the whole account. Retry later
+ *    and hold every other message back meanwhile.
+ *  - `connector`: the provider refuses the account itself (a wrong key or
+ *    password, no permission to send). No message will get through until
+ *    the owner fixes the connector, so delivery pauses instead of retrying.
  */
-export type MailRetry = 'never' | 'later' | 'slow-down'
+export type MailRetry = 'never' | 'later' | 'slow-down' | 'connector'
 
 export class MailDeliveryError extends Error {
   readonly retry: MailRetry
@@ -56,8 +61,9 @@ export class MailDeliveryError extends Error {
 /** How an HTTP provider's refusal should be retried, from its status alone. */
 export function retryForHttpStatus(status: number): MailRetry {
   if (status === 429) return 'slow-down'
-  // 401/403 are the account's credentials, not the message.
-  if (status >= 500 || status === 401 || status === 403 || status === 408) return 'later'
+  // 401/403 are the account's key or its permissions, not the message.
+  if (status === 401 || status === 403) return 'connector'
+  if (status >= 500 || status === 408) return 'later'
   return 'never'
 }
 
@@ -109,19 +115,23 @@ export function formatFromHeader(fromName: string, fromAddress: string): string 
   return `"${name.replace(/["\\]/g, '\\$&')}" <${fromAddress}>`
 }
 
-const SMTP_CONNECTION_CODES = new Set(['ETIMEDOUT', 'ECONNECTION', 'ESOCKET', 'ECONNREFUSED', 'EDNS', 'ETLS'])
+const SMTP_CONNECTION_CODES = new Set(['ETIMEDOUT', 'ECONNECTION', 'ESOCKET', 'ECONNREFUSED', 'EDNS'])
 
 /**
- * SMTP reply classes: 4yz is "try again later" by definition, 421 and 45x
- * are how servers throttle, and 5yz is a verdict on the message. A failed
- * login (535, `EAUTH`) is the account, so it waits for the owner.
+ * SMTP reply classes. A failed login (535, `EAUTH`) or a server that offers
+ * no TLS is the connector's fault. 421 is the server closing the connection
+ * on the whole account ("too many connections", "try later"): slow down.
+ * Every other 4yz, 450 / 451 / 452 included, is about this recipient or
+ * this message (greylisting, a full mailbox) and anyone can cause one by
+ * giving an address, so it retries that message alone and never holds
+ * other people's mail back. 5yz is a verdict on the message.
  */
 export function retryForSmtpFailure(err: unknown): MailRetry {
   const code = err instanceof Error && 'code' in err ? String(err.code) : ''
   const responseCode = err instanceof Error && 'responseCode' in err ? Number(err.responseCode) : 0
-  if (responseCode === 421 || responseCode === 450 || responseCode === 451 || responseCode === 452) return 'slow-down'
+  if (code === 'EAUTH' || responseCode === 535 || code === 'ETLS') return 'connector'
+  if (responseCode === 421) return 'slow-down'
   if (responseCode >= 400 && responseCode < 500) return 'later'
-  if (code === 'EAUTH' || responseCode === 535) return 'later'
   if (responseCode >= 500) return 'never'
   return SMTP_CONNECTION_CODES.has(code) ? 'later' : 'never'
 }

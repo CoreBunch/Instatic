@@ -138,6 +138,8 @@ const ConnectorCommon = {
   lastUsedAt: Type.Union([Type.String(), Type.Null()]),
   /** What went wrong the last time this connector was used, if it failed. */
   lastError: Type.Union([Type.String(), Type.Null()]),
+  /** True while queued email is held because this connector refuses the account (see `lastError`). */
+  deliveryPaused: Type.Boolean(),
   createdAt: Type.String(),
 }
 
@@ -323,6 +325,12 @@ export const MailActivityResponseSchema = Type.Object({
   ),
   /** The newest failure in the period, whatever the filters. */
   lastFailure: Type.Union([Type.Object({ at: Type.String(), error: Type.String() }), Type.Null()]),
+  /**
+   * Why the newest waiting email has not left, when an attempt has failed:
+   * a temporary failure, or a connector that needs fixing. Null when every
+   * waiting email is simply waiting its turn.
+   */
+  waitingError: Type.Union([Type.String(), Type.Null()]),
   /** The templates and connectors seen in the period, for the filter menus. */
   kinds: Type.Array(MailActivityFacetSchema),
   connectors: Type.Array(MailActivityFacetSchema),
