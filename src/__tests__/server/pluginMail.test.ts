@@ -1072,8 +1072,8 @@ describe('email for plugins', () => {
       expect(renderMailTemplate({ key: CORE_KEY, subject: 'S', body: 'Ticket #{id} at {site.url}/help' }, { id: '7', 'site.url': 'https://example.com' }).text)
         .toBe('Ticket #7 at https://example.com/help')
       // A value is text in a text node, markup and all, and is not read again for more variables.
-      const text = render('Hello {name}.', { name: '<b>{link}</b>', link })
-      expect(text).toContain('Hello &lt;b&gt;{link}&lt;/b&gt;.')
+      const text = render('Hello {name}.', { name: '<b>{link}<b>', link })
+      expect(text).toContain('Hello &lt;b&gt;{link}&lt;b&gt;.')
     })
 
     it('loads nothing when a plugin\'s email is opened, and links a plugin\'s template only to https', () => {
@@ -1170,6 +1170,106 @@ describe('email for plugins', () => {
         status: 'sent',
         error: 'Your wording was not used: {link} must stand alone. The built-in wording was sent.',
       })
+    })
+
+    it('refuses an email whose wording uses a variable that was not given, and never sends braces', async () => {
+      await install(BOTH)
+      await readyConnector()
+      const memberId = await activeMember()
+      // The exact case: a declared variable simply left out.
+      const noSubject = await send({ template: 'ticket.opened', to: { address: 'a@example.com' }, variables: {} })
+      expect(String(noSubject.error)).toStartWith('variable_missing: The "plugin.acme.desk~ticket.opened" template needs a value for {subject}')
+      const noVariables = await send({ template: 'ticket.opened', to: { address: 'a@example.com' } })
+      expect(String(noVariables.error)).toStartWith('variable_missing:')
+      // A link left out would have been sent as a dead link.
+      const noLink = await send({ template: 'ticket.reply', to: { member: memberId }, variables: { subject: 'a' } })
+      expect(String(noLink.error)).toStartWith('variable_missing:')
+      expect(String(noLink.error)).toContain('{link}')
+      expect((await h.db`select id from mail_queue`).rows).toHaveLength(0)
+      expect((await listMailActivity(h.db)).entries).toHaveLength(0)
+
+      // An empty text is a value; the owner's wording decides what is needed.
+      expect(await send({ template: 'ticket.opened', to: { address: 'a@example.com' }, variables: { subject: '' } })).toEqual({ status: 'queued' })
+      await h.cms(`/admin/api/cms/mail/templates/plugin.${PLUGIN_ID}~ticket.opened`, {
+        method: 'PUT', cookie: owner, json: { subject: 'A new ticket', body: 'Someone opened a ticket.' },
+      })
+      expect(await send({ template: 'ticket.opened', to: { address: 'b@example.com' }, variables: {} })).toEqual({ status: 'queued' })
+    })
+
+    it('uses the built-in wording when an edit made after queueing needs a value the email does not have', async () => {
+      // A template whose built-in wording does not use `link`, though it declares it.
+      const QUIET = { ...TEMPLATES[0], key: 'quiet', subject: 'About {subject}', body: 'We wrote back about **{subject}**.' }
+      await install(BOTH, { mail: { templates: [...TEMPLATES, QUIET] } })
+      await readyConnector()
+      const key = `plugin.${PLUGIN_ID}~quiet`
+      expect(await send({ template: 'quiet', to: { address: 'a@example.com' }, variables: { subject: 'a' } })).toEqual({ status: 'queued' })
+      // The owner now adds the link to the wording; the queued email was accepted without one.
+      const put = await h.cms(`/admin/api/cms/mail/templates/${key}`, {
+        method: 'PUT', cookie: owner, json: { subject: 'About {subject}', body: '[Open it]({link})' },
+      })
+      expect(put.status).toBe(200)
+      let html = ''
+      await drain(async (_c, _s, mail) => { html = mail.html ?? ''; return null })
+      expect(html).toContain('We wrote back about <strong>a</strong>.')
+      expect(html).not.toContain('href="#"')
+      expect((await listMailActivity(h.db)).entries[0]).toMatchObject({
+        status: 'sent',
+        error: 'Your wording was not used: it needs {link}, which this email was queued without. The built-in wording was sent.',
+      })
+      // And a new send is told what the wording now needs.
+      expect(String((await send({ template: 'quiet', to: { address: 'a@example.com' }, variables: { subject: 'a' } })).error))
+        .toStartWith('variable_missing:')
+    })
+
+    it('throws for a core email asked for without a value its wording uses', async () => {
+      await readyConnector()
+      await expect(queueTemplateMail(h.db, { key: 'member.reset', to: 'ada@example.com', variables: { email: 'ada@example.com' } }))
+        .rejects.toThrow('needs a value for {link}')
+      await expect(queueTemplateMail(h.db, { key: 'member.reset', to: 'ada@example.com', variables: { email: 'ada@example.com', link: '' } }))
+        .rejects.toThrow('needs a value for {link}')
+      expect((await h.db`select id from mail_queue`).rows).toHaveLength(0)
+    })
+
+    it('sends a value as it was written: nothing visible is rewritten, and an ellipsis is punctuation', async () => {
+      await install(BOTH)
+      await readyConnector()
+      const subjects = ['x² ™ ½', 'Loading…', 'Wait... then', 'ｆｕｌｌ width', 'café “quoted” — dash']
+      for (const subject of subjects) {
+        expect({ subject, answer: await send({ template: 'ticket.opened', to: { address: 'a@example.com' }, variables: { subject } }) })
+          .toEqual({ subject, answer: { status: 'queued' } })
+      }
+      const sent: string[] = []
+      await drain(async (_c, _s, mail) => { sent.push(mail.subject); return null })
+      expect(sent).toEqual(subjects.map((subject) => `New ticket: ${subject}`))
+      // The site's own values are never touched.
+      const rendered = renderMailTemplate(
+        { key: `plugin.${PLUGIN_ID}~any`, subject: '{site.name}', body: '{site.name} at {site.url}' },
+        { 'site.name': 'Caf\u200bé ²', 'site.url': 'https://example.com' },
+      )
+      expect(rendered.subject).toBe('Caf\u200bé ²')
+    })
+
+    it('does not let a value finish an address the template began', async () => {
+      const GLUE = { ...TEMPLATES[1], key: 'glue', subject: 'About #{subject}', body: 'Order shop{subject} and {subject}example, ref-{subject}.' }
+      await install(BOTH, { mail: { templates: [...TEMPLATES, GLUE] } })
+      await readyConnector()
+      const attempt = (subject: string) => send({ template: 'glue', to: { address: 'a@example.com' }, variables: { subject } })
+      // Each value passes the value rule alone; glued to the template's text it would spell an address.
+      for (const subject of ['.example', 'evil.', ':8080', 'x:', 'a@', '@a']) {
+        expect({ subject, error: String((await attempt(subject)).error).slice(0, 17) }).toEqual({ subject, error: 'template_invalid:' })
+      }
+      expect((await h.db`select id from mail_queue`).rows).toHaveLength(0)
+      // The same template with an ordinary value is fine.
+      expect(await attempt('1042')).toEqual({ status: 'queued' })
+      let text = ''
+      await drain(async (_c, _s, mail) => { text = mail.text; return null })
+      expect(text).toBe('Order shop1042 and 1042example, ref-1042.')
+      // In the renderer itself: the composed run is what is checked, not a stand-in.
+      const key = `plugin.${PLUGIN_ID}~glue`
+      expect(renderMailTemplate({ key, subject: 'S', body: 'shop{subject}' }, { subject: '.example' }).refused).toEqual(['subject'])
+      expect(renderMailTemplate({ key, subject: 'S', body: '{subject}example' }, { subject: 'evil.' }).refused).toEqual(['subject'])
+      // Standing alone, such a value touches nothing.
+      expect(renderMailTemplate({ key, subject: 'S', body: 'Note: {subject} done' }, { subject: 'evil.' }).refused).toEqual([])
     })
 
     it('never sends an email with a variable left in it: the queue fails it as template_invalid', async () => {

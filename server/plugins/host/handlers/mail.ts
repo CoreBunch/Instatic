@@ -18,7 +18,7 @@ import { configuredPublicOrigin } from '../../../auth/security'
 import { queueTemplateMail } from '../../../mail/delivery'
 import type { QueuedMailOutcome } from '../../../mail/outcomes'
 import { MailLimitError } from '../../../mail/limits'
-import { MailNotConfiguredError, MailTemplateInvalidError } from '../../../mail/send'
+import { MailNotConfiguredError, MailTemplateInvalidError, MailVariableMissingError } from '../../../mail/send'
 import { MailDeliveryError } from '../../../mail/smtpDriver'
 import { findMemberById } from '../../../members/repository'
 import { ensurePluginInstallId, getPluginInstallId } from '../../../repositories/plugins'
@@ -85,6 +85,8 @@ async function queuePluginMail(db: DbClient, entry: HostPluginRecord, mail: Plug
       throw err
     }
     // The email would have gone out with a variable still in it. Nothing was queued.
+    // The wording, as it stands now, uses a variable the plugin did not give. Nothing was queued.
+    if (err instanceof MailVariableMissingError) throw new Error(`variable_missing: ${err.message}`, { cause: err })
     if (err instanceof MailTemplateInvalidError) throw new Error(`template_invalid: ${err.message}`, { cause: err })
     console.error(`[plugin:${entry.manifest.id}] mail.send failed:`, err)
     throw new Error('The email could not be queued', { cause: err })

@@ -81,7 +81,10 @@ export interface ServerPluginMailApi {
    * Rejects when email is not set up, the member cannot be emailed, the
    * address is not valid, a value is not a string, or a limit is reached
    * (20 emails to one recipient within a clock hour, 200 an hour to
-   * addresses, 10,000 waiting). Two rejections start with a code:
+   * addresses, 10,000 waiting). Three rejections start with a code:
+   * `variable_missing:` when the template's wording, as the owner has it
+   * now, uses a variable that was not given (an empty `link` counts as not
+   * given; an empty `text` is a value),
    * `variable_not_allowed:` when a value may not be sent in its variable (a
    * `text` value that contains an address, a `link` value that is not an
    * `http(s)` address, a control character), and `template_invalid:` when

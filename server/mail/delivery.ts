@@ -71,6 +71,7 @@ import {
   carryThroughConnector,
   MailNotConfiguredError,
   MailTemplateInvalidError,
+  MailVariableMissingError,
   readyToSend,
   type CarryOutcome,
   type SendDeps,
@@ -304,7 +305,7 @@ async function attemptQueuedMail(db: DbClient, mail: QueuedMail, deps: DrainDeps
   }
   let rendered
   try {
-    rendered = await buildTemplateMail(db, { key: mail.kind, to: mail.to, variables })
+    rendered = await buildTemplateMail(db, { key: mail.kind, to: mail.to, variables }, 'deliver')
     assertSendable(rendered)
   } catch (err) {
     // The template no longer renders a sendable message. Another try would
@@ -313,7 +314,10 @@ async function attemptQueuedMail(db: DbClient, mail: QueuedMail, deps: DrainDeps
       sent: false,
       message: getErrorMessage(err, 'The email could not be prepared.'),
       retry: 'never',
-      reason: err instanceof MailTemplateInvalidError ? 'template_invalid' : 'template_removed',
+      reason:
+        err instanceof MailTemplateInvalidError || err instanceof MailVariableMissingError
+          ? 'template_invalid'
+          : 'template_removed',
     }
   }
   const outcome = await carryThroughConnector(

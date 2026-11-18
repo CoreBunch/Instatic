@@ -91,6 +91,12 @@ export interface RenderedMail {
   text: string
   html: string
   /**
+   * Variables the template declares and its wording uses that were given no
+   * value (for a link, an empty one counts as none). They are left as
+   * written, and the email must not be sent.
+   */
+  missing: string[]
+  /**
    * Variables that have a value but were left as written, because the
    * template puts them where they do not stand alone (see `standsAlone`).
    * The admin preview names them.
@@ -180,7 +186,17 @@ interface Filling {
   links: ReadonlySet<string>
   /** A plugin's template: no images, and only `https` in an address written out. */
   strict: boolean
+  /** Every variable the template declares, when it says: only those can be missing rather than merely unknown. */
+  declared: ReadonlySet<string>
   refused: Set<string>
+  missing: Set<string>
+}
+
+/** Whether a declared variable was given no usable value. An empty text is a value; an empty link is not. */
+function isMissing(name: string, filling: Filling): boolean {
+  if (!filling.declared.has(name)) return false
+  const value = filling.variables[name]
+  return value === undefined || (filling.links.has(name) && value.trim() === '')
 }
 
 /** Thrown where there is no DOM to parse an email body with. The server and the admin always have one. */
@@ -209,13 +225,25 @@ function mustStandAlone(name: string, value: string, filling: Filling): boolean 
 const INVISIBLE_CHARACTERS = /[\u00ad\u200b-\u200f\u202a-\u202e\u2060-\u2064\u2066-\u2069\ufeff]/g
 
 /**
- * A value as it is checked and sent: compatibility forms folded (NFKC), the
- * ideographic and full-width full stops made a plain `.`, and invisible
- * characters removed. One reading, so what is checked is what a mail client
- * is given.
+ * A value as it is sent: itself, with the invisible characters taken out.
+ * Nothing a reader can see is changed (`x²`, `™` and `…` stay as written).
  */
 export function cleanMailValue(value: string): string {
-  return value.normalize('NFKC').replace(/[\u3002\uff0e\uff61]/g, '.').replace(INVISIBLE_CHARACTERS, '')
+  return value.replace(INVISIBLE_CHARACTERS, '')
+}
+
+/**
+ * A text as it is read for addresses, never as it is sent: compatibility
+ * forms folded (NFKC, so full-width letters and dots read as plain ones),
+ * the ideographic full stops made `.`, and an ellipsis, written `…` or as a
+ * row of dots, made a space: it ends a word, it does not join two.
+ */
+function foldedForCheck(text: string): string {
+  return text
+    .replace(/\u2026/g, ' ')
+    .normalize('NFKC')
+    .replace(/[\u3002\uff0e\uff61]/g, '.')
+    .replace(/\.{2,}/g, ' ')
 }
 
 /** Whether a value holds a control character (tab and line breaks aside) or a line or paragraph separator. */
@@ -237,7 +265,8 @@ function hasControlCharacter(value: string): boolean {
  * are fine), or four dotted numbers. It refuses honest text too (`node.js`,
  * `and/or`): that is the price of the rule being simple.
  */
-function addressInText(text: string): string | null {
+function addressInText(written: string): string | null {
+  const text = foldedForCheck(written)
   if (text.includes('://') || /www\./i.test(text)) return 'a web address'
   if (/\S@\S/.test(text)) return 'an `@` between two words'
   if (/\d+\.\d+\.\d+\.\d+/.test(text) || text.includes('::')) return 'a numeric address'
@@ -264,6 +293,7 @@ function addressInText(text: string): string | null {
 export function mailValueProblem(kind: 'text' | 'link' | undefined, value: string): string | null {
   const cleaned = cleanMailValue(value)
   if (hasControlCharacter(cleaned)) return 'contains a control character'
+  if (kind !== 'link' && cleaned.trim() === '' && value !== '') return 'is only invisible characters'
   if (kind === 'link') return isWebAddress(cleaned.trim(), false) ? null : 'is not an http(s) address'
   const found = addressInText(cleaned)
   return found ? `contains ${found}; only a variable declared \`kind: "link"\` may carry an address` : null
@@ -274,9 +304,13 @@ export function mailValueProblem(kind: 'text' | 'link' | undefined, value: strin
  * could become part of an address: in the same run of characters as
  * another variable with no sentence punctuation between them
  * (`{host}.{domain}`), or as text the value rule itself would refuse
- * (`www.{name}`, `{user}@corp`, `shop.example/{id}`).
+ * (`www.{name}`, `{user}@corp`, `shop.example/{id}`). Checked twice: on the
+ * template as written, which is what the manifest parser and the lint see,
+ * and on the run as it will be sent, with the actual value in place, so a
+ * value such as `.example` or `evil.` cannot finish an address the
+ * template only began.
  */
-function composesAddress(text: string, start: number, end: number): boolean {
+function composesAddress(text: string, start: number, end: number, value: string, filling: Filling): boolean {
   let from = start
   let to = end
   while (from > 0 && !SPACE.test(text[from - 1])) from -= 1
@@ -288,8 +322,23 @@ function composesAddress(text: string, start: number, end: number): boolean {
   while (right < to && !/[,;!?()"']/.test(text[right])) right += 1
   const beside = text.slice(left, start) + text.slice(end, right)
   if (beside.includes('{') || beside.includes(VALUE_OPEN)) return true
-  const run = text.slice(from, start) + 'x' + text.slice(end, to)
-  return addressInText(run.replace(VARIABLE, 'x')) !== null
+  // Sentence punctuation around the variable is not text it can join with.
+  const written = { before: text.slice(from, start), after: text.slice(end, to) }
+  const before = /^[("']*$/.test(written.before) ? '' : written.before
+  const after = /^[.,;:!?)"']*$/.test(written.after) ? '' : written.after
+  // A value that begins or ends with a joining character joins whatever it touches.
+  if (before !== '' && /^[.:/\\@]/.test(value)) return true
+  if (after !== '' && /[.:/\\@]$/.test(value)) return true
+  // The run as the template is written (a stand-in for every value), and the
+  // run as it will be sent, with this value and its neighbours' in place.
+  const others = (stretch: string) =>
+    stretch.replace(VARIABLE, (whole, name: string) =>
+      name in filling.variables ? cleanMailValue(filling.variables[name]) : whole,
+    )
+  return (
+    addressInText(`${before}x${after}`.replace(VARIABLE, 'x')) !== null ||
+    addressInText(`${others(before)}${value}${others(after)}`) !== null
+  )
 }
 
 
@@ -305,14 +354,20 @@ function fill(
   readings: readonly Reading[] = [{ flat: source, offset: 0 }],
 ): string {
   return source.replace(VARIABLE, (whole, name: string, at: number) => {
+    if (isMissing(name, filling)) {
+      filling.missing.add(name)
+      return whole
+    }
     if (!(name in filling.variables)) return whole
-    const value = cleanMailValue(filling.variables[name]).replace(MARKS, '')
+    // The site's own values are the site's: sent exactly as they are.
+    const given = filling.variables[name]
+    const value = (name.startsWith('site.') ? given : cleanMailValue(given)).replace(MARKS, '')
     if (!mustStandAlone(name, value, filling)) {
       // In a plugin's template a text value may sit in a sentence, but not where it would help spell an address.
       const composes =
         filling.strict &&
         !name.startsWith('site.') &&
-        readings.some(({ flat, offset }) => composesAddress(flat, offset + at, offset + at + whole.length))
+        readings.some(({ flat, offset }) => composesAddress(flat, offset + at, offset + at + whole.length, value, filling))
       if (!composes) return value
       filling.refused.add(name)
       return whole
@@ -409,10 +464,12 @@ function isWebAddress(value: string, httpsOnly: boolean): boolean {
  * out in the template must be `http(s)` (or `mailto:` on a link); in a
  * plugin's template (`strict`), `https` only.
  */
-function resolveAddress(raw: string, variables: MailVariables, strict: boolean, link: boolean): string {
+function resolveAddress(raw: string, filling: Filling, link: boolean): string {
+  const { variables, strict } = filling
   const target = raw.trim()
   if (target.includes('{')) {
     const whole = WHOLE_VARIABLE.exec(target)
+    if (whole && isMissing(whole[1], filling)) filling.missing.add(whole[1])
     const value = whole && whole[1] in variables ? variables[whole[1]].trim() : null
     return value !== null && isWebAddress(value, false) ? value : '#'
   }
@@ -474,7 +531,7 @@ function readTree(root: ParentNode, filling: Filling): Piece[] {
         const name = attribute.name.toLowerCase()
         if ((tag === 'a' && name === 'href') || (tag === 'img' && name === 'src')) {
           const written = attribute.value.trim()
-          const resolved = resolveAddress(written, filling.variables, filling.strict, tag === 'a')
+          const resolved = resolveAddress(written, filling, tag === 'a')
           element.setAttribute(attribute.name, resolved)
           if (tag === 'a' && resolved !== '#') shown = written.includes('{') ? written : resolved
         } else if (attribute.value.includes('{')) {
@@ -577,7 +634,8 @@ export function renderMailTemplate(
   const siteName = variables['site.name'] ?? ''
   const strict = isPluginMailTemplateKey(template.key)
   const links = new Set((template.variables ?? []).filter((variable) => variable.kind === 'link').map((variable) => variable.name))
-  const filling: Filling = { variables, links, strict, refused: new Set() }
+  const declared = new Set((template.variables ?? []).map((variable) => variable.name))
+  const filling: Filling = { variables, links, strict, declared, refused: new Set(), missing: new Set() }
   const body = sanitizeToFragment(
     renderMarkdownToHtml(template.body),
     strict ? PLUGIN_MAIL_BODY_CONFIG : MAIL_BODY_CONFIG,
@@ -592,6 +650,7 @@ export function renderMailTemplate(
     text: text.replace(/[ \t]+\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim(),
     html: wrapInLayout(holder.innerHTML, siteName),
     refused: [...filling.refused],
+    missing: [...filling.missing],
   }
 }
 

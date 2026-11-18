@@ -47,6 +47,14 @@ export interface SiteMail extends OutgoingMail {
   note?: string
 }
 
+/** An email was asked for without a value its template's wording uses. */
+export class MailVariableMissingError extends Error {
+  constructor(key: string, missing: readonly string[]) {
+    super(`The "${key}" template needs a value for ${missing.map((name) => `{${name}}`).join(', ')}.`)
+    this.name = 'MailVariableMissingError'
+  }
+}
+
 /** A template that cannot be turned into an email with every value in place. Retrying changes nothing. */
 export class MailTemplateInvalidError extends Error {
   constructor(key: string, refused: readonly string[]) {
@@ -304,19 +312,31 @@ export async function sendConnectorTest(
 export async function buildTemplateMail(
   db: DbClient,
   input: { key: string; to: string; variables: Record<string, string> },
+  /**
+   * `accept` (the default) is an email being asked for: a variable its
+   * wording uses and the caller did not give is the caller's mistake, and
+   * throws. `deliver` is an email already queued: the wording may have
+   * changed since, so the built-in wording is tried before giving up.
+   */
+  when: 'accept' | 'deliver' = 'accept',
 ): Promise<SiteMail> {
   const template = await getMailTemplate(db, input.key)
   if (!template) throw new Error(`unknown mail template "${input.key}"`)
   const values = { ...(await siteMailVariables(db)), ...input.variables }
   let rendered = renderMailTemplate(template, values)
+  if (when === 'accept' && rendered.missing.length > 0) throw new MailVariableMissingError(input.key, rendered.missing)
   let note: string | undefined
-  if (rendered.refused.length > 0 && template.customised) {
+  if ((rendered.refused.length > 0 || rendered.missing.length > 0) && template.customised) {
     // The owner's wording would go out with a variable still in it (a
     // sign-in email with no link). The built-in wording is sent instead, and
     // the log says so.
     const definition = getMailTemplateDefinition(input.key)
     if (definition) {
-      note = `Your wording was not used: ${rendered.refused.map((name) => `{${name}}`).join(', ')} must stand alone. The built-in wording was sent.`
+      const names = (list: readonly string[]) => list.map((name) => `{${name}}`).join(', ')
+      note =
+        rendered.refused.length > 0
+          ? `Your wording was not used: ${names(rendered.refused)} must stand alone. The built-in wording was sent.`
+          : `Your wording was not used: it needs ${names(rendered.missing)}, which this email was queued without. The built-in wording was sent.`
       rendered = renderMailTemplate(
         { key: input.key, subject: definition.defaultSubject, body: definition.defaultBody, variables: template.variables },
         values,
@@ -324,6 +344,7 @@ export async function buildTemplateMail(
     }
   }
   // Never an email with a variable left in it.
+  if (rendered.missing.length > 0) throw new MailVariableMissingError(input.key, rendered.missing)
   if (rendered.refused.length > 0) throw new MailTemplateInvalidError(input.key, rendered.refused)
   return {
     kind: input.key,
