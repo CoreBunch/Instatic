@@ -21,10 +21,11 @@ import { runLoopFetchInWorker } from '../rpc'
 import type { HostPluginRecord } from '../types'
 
 /**
- * The request a plugin source is sent. The signed-in member goes along only
- * for a per-visitor source of a plugin that may read members (checked on
- * every fetch, so a withdrawn grant takes effect at once); for every other
- * source the field is left out, whatever the caller put there.
+ * The request a plugin source is sent, checked here whatever the caller
+ * built. A source that is not per-visitor gets neither the visitor's cookies
+ * nor the member. A per-visitor source gets the cookies, and the member only
+ * while the plugin holds `members.read` (asked on every fetch, so a
+ * withdrawn grant takes effect at once).
  */
 export function requestForPluginSource(
   pluginId: string,
@@ -33,8 +34,12 @@ export function requestForPluginSource(
 ): SourceRequestContext | undefined {
   if (!request) return undefined
   const { member, ...rest } = request
-  const mayKnowMember = perVisitor && hostPluginHasPermission(pluginId, 'members.read')
-  return mayKnowMember && member !== undefined ? { ...rest, member } : rest
+  if (!perVisitor) return { ...rest, cookies: {} }
+  return member !== undefined && pluginMayKnowMember(pluginId) ? { ...rest, member } : rest
+}
+
+function pluginMayKnowMember(pluginId: string): boolean {
+  return hostPluginHasPermission(pluginId, 'members.read')
 }
 
 export async function handleLoopsRegisterSource(
@@ -71,6 +76,8 @@ export async function handleLoopsRegisterSource(
     preview: () => {
       return []
     },
+    // Lets a render skip the member lookup for a plugin that would not be sent it.
+    mayKnowMember: () => pluginMayKnowMember(msg.pluginId),
   }
   entry.loopSources.push({ pluginId: msg.pluginId, sourceId: descriptor.id })
   loopSourceRegistry.registerOrReplace(fullSource)

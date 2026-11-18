@@ -85,7 +85,9 @@ interface LoopEntitySource {
    * Layer B cache; `fetch()` runs on every page load. Use sparingly.
    * `ctx.request.member` is the signed-in site member or `null`, and is
    * present only for these sources (a plugin's source also needs
-   * `members.read`).
+   * `members.read`). The request is built per source: a list on another
+   * source in the same fragment gets neither cookies nor member. A fragment
+   * is per-visitor when ANY list in it uses such a source.
    */
   perVisitor?: boolean
 }
