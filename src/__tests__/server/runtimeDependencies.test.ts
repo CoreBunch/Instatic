@@ -291,6 +291,51 @@ describe('runtime dependency resolution', () => {
     }
   })
 
+  it('reinstalls when package.json survives but the entry file it serves is gone', async () => {
+    const cacheRoot = await mkdtemp(join(tmpdir(), 'instatic-runtime-cache-test-'))
+    const lock: SiteDependencyLock = {
+      version: 1,
+      updatedAt: 100,
+      packages: {
+        'canvas-confetti': {
+          name: 'canvas-confetti',
+          requested: '^1.9.3',
+          version: '1.9.3',
+          resolvedAt: 100,
+        },
+      },
+    }
+    const manifest = JSON.stringify({ name: 'canvas-confetti', module: './dist/confetti.module.mjs' })
+
+    try {
+      let installCount = 0
+      const runInstall = async (_command: string[], options: { cwd: string }) => {
+        installCount += 1
+        const pkgRoot = join(options.cwd, 'node_modules', 'canvas-confetti')
+        await mkdir(join(pkgRoot, 'dist'), { recursive: true })
+        await writeFile(join(pkgRoot, 'package.json'), manifest, 'utf8')
+        await writeFile(join(pkgRoot, 'dist', 'confetti.module.mjs'), 'export default 1\n', 'utf8')
+      }
+
+      const first = await ensureRuntimeDependencyCache(lock, { cacheRoot, runInstall })
+      const entryFile = join(first.nodeModulesDir, 'canvas-confetti', 'dist', 'confetti.module.mjs')
+
+      // An access-time cleaner removes the rarely read build output first and
+      // keeps the package.json the importmap builder reads on every build.
+      await rm(entryFile)
+      expect(existsSync(join(first.nodeModulesDir, 'canvas-confetti', 'package.json'))).toBe(true)
+      expect(existsSync(join(first.workspaceDir, '.instatic-install-complete'))).toBe(true)
+
+      const second = await ensureRuntimeDependencyCache(lock, { cacheRoot, runInstall })
+
+      expect(installCount).toBe(2)
+      expect(second.workspaceDir).toBe(first.workspaceDir)
+      expect(existsSync(entryFile)).toBe(true)
+    } finally {
+      await rm(cacheRoot, { recursive: true, force: true })
+    }
+  })
+
   it('shares one reinstall between concurrent callers that find a broken entry', async () => {
     const cacheRoot = await mkdtemp(join(tmpdir(), 'instatic-runtime-cache-test-'))
     const lock: SiteDependencyLock = {
