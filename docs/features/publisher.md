@@ -44,6 +44,8 @@ Which artefacts go is decided against the published site, along the same render 
 
 Retraction takes the same step. The row status route and the row delete route call `retractDataRowArtefacts` (`publishRow.ts`), which removes the row's own artefact and, when the row was published, the pages that listed it. Scheduled publishes go through `publishDataRow` with the uploads dir and behave like a manual publish.
 
+Plugins take the same path. The host hands every `cms.content.*` handler the uploads dir from its host context (`setPluginHostContext`, `server/plugins/host/registry.ts`): `entries.publish` calls `publishDataRow` with it, `entries.delete` calls `retractDataRowArtefacts`, and `entries.deleteMany` calls `retractDataRowArtefactsMany`, which holds the publish lock once and drops each table's listing pages once for the whole batch.
+
 A caller that changes a table's public rows on main and holds an uploads dir must take this step. Bumping `publishVersion` alone leaves Layer A stale.
 
 ## Where the code lives
