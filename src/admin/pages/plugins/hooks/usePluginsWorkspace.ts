@@ -18,6 +18,7 @@ import {
 } from '@core/plugins/manifest'
 import type {
   CmsPluginsPayload,
+  ContentAccessEntry,
   InstalledPlugin,
   PluginManifest,
   PluginFrontendOrigins,
@@ -62,6 +63,13 @@ interface PendingInstall {
    * value so an upgrade adding new external hosts shows them as "New".
    */
   previousNetworkAllowedHosts?: string[]
+  /**
+   * `contentAccess` from the manifest of the existing install (when this is
+   * an upgrade). The dialog diffs it against the new manifest's value so an
+   * upgrade adding tables — or new modes on already-approved tables — shows
+   * them as "New".
+   */
+  previousContentAccess?: ContentAccessEntry[]
   /** `frontend.origins` from the existing install, diffed the same way. */
   previousFrontendOrigins?: PluginFrontendOrigins
 }
@@ -320,6 +328,7 @@ export function usePluginsWorkspace(): PluginsWorkspaceVM {
         ? existing.grantedPermissions
         : undefined
       const previousNetworkAllowedHosts = existing?.manifest.networkAllowedHosts
+      const previousContentAccess = existing?.manifest.contentAccess
       const previousFrontendOrigins = existing?.manifest.frontend?.origins
 
       // EVERY install and upgrade goes through the review dialog — including
@@ -334,6 +343,7 @@ export function usePluginsWorkspace(): PluginsWorkspaceVM {
         ...(previousNetworkAllowedHosts !== undefined
           ? { previousNetworkAllowedHosts }
           : {}),
+        ...(previousContentAccess !== undefined ? { previousContentAccess } : {}),
         ...(previousFrontendOrigins !== undefined ? { previousFrontendOrigins } : {}),
       })
     } catch (err) {
