@@ -26,7 +26,7 @@ import {
   resolveTemplateChain,
   type TemplateRenderDataContext,
 } from '@core/templates'
-import type { SourceRequestContext } from '@core/loops/types'
+import { sourceRequestFor, type LoopRequestScope } from './loopSourceRequest'
 import { normalizeSiteRuntimeConfig } from '@core/site-runtime'
 import { readEntrySeoOverride, readFeaturedMediaCell } from '@core/data/cells'
 import type { DataRow, DataTable, PublishedDataRow } from '@core/data/schemas'
@@ -208,13 +208,19 @@ export async function renderBranchPreview(
   // request-dependent nodes resolve inline instead of becoming holes that
   // the hole endpoint would hydrate from main's published data.
   const segments = url.pathname.split('/').filter(Boolean)
-  const request: SourceRequestContext = {
-    query: Object.fromEntries(url.searchParams),
-    path: url.pathname,
-    slug: segments.length > 0 ? decodeURIComponent(segments[segments.length - 1]!) : null,
-    cookies: {},
+  // No visitor in the scope: a preview is for a signed-in admin, so a
+  // per-visitor source is told nobody is signed in to the site.
+  const requestScope: LoopRequestScope = {
+    base: {
+      query: Object.fromEntries(url.searchParams),
+      path: url.pathname,
+      slug: segments.length > 0 ? decodeURIComponent(segments[segments.length - 1]!) : null,
+    },
   }
-  const loopData = await prefetchLoopData(merged, site, db, url, { branchId, request })
+  const loopData = await prefetchLoopData(merged, site, db, url, {
+    branchId,
+    requestFor: (source) => sourceRequestFor(source, requestScope),
+  })
   const mediaAssets = await prefetchMediaAssets(merged, site, registry, db, { templateContext, loopData })
   const rendered = publishPage(merged, site, registry, {
     templateContext,
