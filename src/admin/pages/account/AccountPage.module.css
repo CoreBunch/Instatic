@@ -213,14 +213,6 @@
     line-height: 1.45;
 }
 
-.emptyState {
-    margin: 0;
-    color: var(--text-subtle);
-    font-size: var(--text-s);
-    font-weight: 700;
-    line-height: 1.45;
-}
-
 .suspiciousBanner {
     display: flex;
     align-items: center;

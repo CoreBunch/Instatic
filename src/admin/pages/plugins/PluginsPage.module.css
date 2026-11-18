@@ -55,14 +55,6 @@
     margin-top: var(--space-3xs);
 }
 
-.emptyState {
-    padding: var(--space-6xl);
-    border: 1px dashed var(--overlay-10);
-    border-radius: 8px;
-    color: var(--text-subtle);
-    text-align: center;
-}
-
 .pluginsList {
     display: grid;
     gap: var(--space-px);
