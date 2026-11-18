@@ -11,9 +11,8 @@
  * redirect hop and caps the chain. A hop to another origin drops the request's
  * credential headers, and a caller can ask for the redirect response itself
  * (`redirect: 'manual'`), in which case the target is never contacted. The
- * hostname is preserved in the `Host`
- * header and, for https, the TLS `serverName`, so virtual hosting and
- * certificate validation still work.
+ * hostname is preserved in the `Host` header and, for https, the TLS
+ * `serverName`, so virtual hosting and certificate validation still work.
  *
  * `performGatedFetch` wraps it with the plugin-specific parts: the
  * `networkAllowedHosts` allowlist, VM-side abort wiring, and the byte-safe
@@ -271,9 +270,10 @@ export interface GuardedFetchOptions {
   maxRedirects?: number
   /**
    * What to do with a redirect response. `follow` (default) validates and
-   * follows each hop. `manual` returns the redirect response itself: the
+   * follows each hop; a redirect status with no `Location` is returned as it
+   * is. `manual` returns the redirect response itself, without its body: the
    * `Location` target is never resolved or contacted, so it need not pass the
-   * allowlist. `error` rejects.
+   * allowlist. `error` rejects on any redirect status.
    */
   redirect?: RedirectMode
   /** Require HTTPS on the initial URL and every redirect hop. */
@@ -338,14 +338,26 @@ async function guardedFetchWithTrace(
     const response = await fetchImpl(request.url, fetchInit)
 
     const location = response.headers.get('location')
-    if (REDIRECT_STATUSES.has(response.status) && location) {
+    const isRedirect = REDIRECT_STATUSES.has(response.status)
+    // `error` and `manual` act on the status alone: a redirect with no usable
+    // `Location` is still a redirect to the caller that asked not to follow.
+    if (isRedirect && redirectMode === 'error') {
+      await response.body?.cancel()
+      throw new Error(`${label} fetch to "${parsed.host}" was redirected, and the request asked for redirect: 'error'.`)
+    }
+    if (isRedirect && redirectMode === 'manual') {
       // The caller wants the redirect itself. Nothing below runs, so the
-      // `Location` target is never resolved, validated or contacted.
-      if (redirectMode === 'manual') return { response, redirected: hop > 0 }
-      if (redirectMode === 'error') {
-        await response.body?.cancel()
-        throw new Error(`${label} fetch to "${parsed.host}" was redirected, and the request asked for redirect: 'error'.`)
-      }
+      // `Location` target is never resolved, validated or contacted. A
+      // redirect's body is never read: it is dropped, not buffered.
+      await response.body?.cancel()
+      const bodiless = new Response(null, {
+        status: response.status,
+        statusText: response.statusText,
+        headers: response.headers,
+      })
+      return { response: bodiless, redirected: hop > 0 }
+    }
+    if (isRedirect && location) {
       if (hop >= maxRedirects) {
         throw new Error(`${label} fetch exceeded ${maxRedirects} redirects.`)
       }

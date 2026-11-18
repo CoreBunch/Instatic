@@ -116,6 +116,37 @@ describe('plugin sandbox: fetch — redirect option', () => {
     expect(recorder.find((e) => e.target === 'test.record')?.args[0]).toBe(true)
   })
 
+  it("sends redirect: 'error' and surfaces the host's rejection", async () => {
+    const { recorder } = await runFetch(
+      `
+        try {
+          await fetch('https://api.example.com/moved', { redirect: 'error' });
+          await __hostCall('test.record', ['no-throw']);
+        } catch (e) {
+          await __hostCall('test.record', [String(e && e.message)]);
+        }
+      `,
+      () => {
+        throw new Error('Plugin "acme.binary" fetch to "api.example.com" was redirected')
+      },
+    )
+    const init = recorder.find((e) => e.target === 'network.fetch')?.args[1] as { redirect?: string }
+    expect(init.redirect).toBe('error')
+    expect(String(recorder.find((e) => e.target === 'test.record')?.args[0])).toContain('was redirected')
+  })
+
+  it('a manual redirect response has no body in the sandbox', async () => {
+    const { recorder } = await runFetch(
+      `
+        const res = await fetch('https://api.example.com/asset', { redirect: 'manual' });
+        const bytes = new Uint8Array(await res.arrayBuffer());
+        await __hostCall('test.record', [bytes.length]);
+      `,
+      () => ({ status: 302, ok: false, redirected: false, headers: { location: '/x' }, body: '', bodyEncoding: 'utf8' }),
+    )
+    expect(recorder.find((e) => e.target === 'test.record')?.args[0]).toBe(0)
+  })
+
   it('rejects an unknown redirect value before reaching the host', async () => {
     const { recorder } = await runFetch(
       `

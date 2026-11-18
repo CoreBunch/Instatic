@@ -15,8 +15,8 @@
  *
  * Redirects: `init.redirect` is 'follow' (default), 'manual' or 'error', and
  * the host acts on it. With 'manual' the redirect response comes back as an
- * ordinary response (its status and `location` header readable), not the
- * browser's opaque one; the host never contacts the target.
+ * ordinary response (its status and `location` header readable, no body), not
+ * the browser's opaque one; the host never contacts the target.
  *
  * AbortSignal threading: each call mints a unique abortId and, if the
  * plugin's signal aborts, fires network.abort to cancel the host-side
