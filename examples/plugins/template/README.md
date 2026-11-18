@@ -119,7 +119,9 @@ Published pages block scripts and frames from other sites. To load a provider's 
 }
 ```
 
-Hosts are bare names or `*.example.com`. Whoever installs the plugin sees each one before approving it.
+Hosts are bare names or `*.example.com`. Whoever installs the plugin sees each one before approving it, with a warning under every wildcard. A wildcard directly under a shared-hosting domain (`*.github.io`, `*.vercel.app`) is refused: name the exact host.
+
+Inline code runs only as a declared `script-inline` asset, which the page allows by its hash. Inline event handlers (`onclick="…"`) are blocked on published pages; attach handlers from your script.
 
 ## Managed media ingestion
 

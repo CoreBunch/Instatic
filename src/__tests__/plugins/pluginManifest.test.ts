@@ -636,6 +636,36 @@ describe('plugin manifest — frontend.origins', () => {
     expect(() => withFrontend({ assets: [], origins: { frames: [origin] } })).toThrow()
   })
 
+  it.each([
+    ['a country-code public suffix', '*.co.uk', /public suffix/],
+    ['the same suffix without a wildcard', 'com.au', /public suffix/],
+    ['GitHub Pages', '*.github.io', /shared hosting/],
+    ['CloudFront', '*.cloudfront.net', /shared hosting/],
+    ['any AWS endpoint', '*.amazonaws.com', /shared hosting/],
+    ['a regional S3 endpoint', '*.s3.eu-west-1.amazonaws.com', /shared hosting/],
+    ['Cloudflare Pages', '*.pages.dev', /shared hosting/],
+    ['Netlify', '*.netlify.app', /shared hosting/],
+    ['Vercel', '*.vercel.app', /shared hosting/],
+    ['Heroku', '*.herokuapp.com', /shared hosting/],
+    ['Firebase hosting', '*.web.app', /shared hosting/],
+    ['Firebase apps', '*.firebaseapp.com', /shared hosting/],
+    ['a localhost name', 'app.localhost', /not a public host/],
+    ['a private-network name', '*.intranet.local', /not a public host/],
+  ])('rejects an origin nobody owns as a whole: %s', (_label, origin, reason) => {
+    expect(() => withFrontend({ assets: [], origins: { scripts: [origin] } })).toThrow(reason)
+    expect(() => withFrontend({ assets: [], origins: { frames: [origin] } })).toThrow(reason)
+  })
+
+  it.each([
+    'acme.github.io',
+    'd111111abcdef8.cloudfront.net',
+    '*.acme.vercel.app',
+    '*.example.co.uk',
+    'js.example.com',
+  ])('still accepts a host one party controls: %s', (origin) => {
+    expect(withFrontend({ assets: [], origins: { scripts: [origin] } }).frontend?.origins?.scripts).toEqual([origin])
+  })
+
   it('drops unknown origin kinds and rejects duplicates', () => {
     expect(withFrontend({ assets: [], origins: { styles: ['a.example.com'] } }).frontend?.origins).toEqual({})
     expect(() => withFrontend({ assets: [], origins: { scripts: ['a.example.com', 'a.example.com'] } }))

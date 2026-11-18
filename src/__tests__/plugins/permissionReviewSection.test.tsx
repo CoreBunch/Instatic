@@ -318,6 +318,31 @@ describe('PermissionReviewSection — third-party origins on published pages', (
     expect(status('old.example.com')).toBe('dropped')
   })
 
+  it('warns under every wildcard origin, and only there', () => {
+    const { container } = render(
+      <PermissionReviewSection
+        pending={{
+          manifest: {
+            ...manifest,
+            frontend: { assets: [], origins: { scripts: ['js.example.com', '*.js.example.com'] } },
+          },
+          upgradeFromVersion: '1.0.0',
+          previouslyGrantedPermissions: ['frontend.assets'] satisfies PluginPermission[],
+          previousFrontendOrigins: { scripts: ['js.example.com'], frames: ['*.old.example.com'] },
+        }}
+        uploading={false}
+        onCancel={() => {}}
+        onConfirm={() => {}}
+      />,
+    )
+    const warning = (host: string) =>
+      container.querySelector(`[data-frontend-origin="${host}"] [data-testid="frontend-origin-wildcard-warning"]`)
+    expect(warning('*.js.example.com')?.textContent).toContain('Any subdomain of js.example.com')
+    expect(warning('js.example.com')).toBeNull()
+    // An origin the update drops is going away; nothing to warn about.
+    expect(warning('*.old.example.com')).toBeNull()
+  })
+
   it('renders no section when the plugin declares no origins', () => {
     render(
       <PermissionReviewSection

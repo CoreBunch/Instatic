@@ -5,8 +5,12 @@
  *
  *   1. No frontend assets at all              → CSP unchanged (script-src 'none')
  *   2. Only external `<script src=…>`         → script-src 'self'      + worker-src relaxed
- *   3. Only inline `<script>…</script>`       → script-src 'self' 'unsafe-inline' + worker-src relaxed
- *   4. Mix of external and inline             → script-src 'self' 'unsafe-inline' + worker-src relaxed
+ *   3. Only inline `<script>…</script>`       → script-src 'self' + that script's hash + worker-src relaxed
+ *   4. Mix of external and inline             → script-src 'self' + the inline hash + worker-src relaxed
+ *
+ * `'unsafe-inline'` is never granted to scripts: a policy that carries a hash
+ * makes browsers ignore it, so the only inline code that runs is a declared
+ * `script-inline` asset.
  *
  * The bug this test fleet locks in: case 2 (external-only) previously failed
  * to relax `script-src`, leaving it at `'none'` so the browser blocked the
@@ -23,6 +27,10 @@ import {
   type FrontendInjections,
 } from '../../../server/publish/frontendInjections'
 import { createFakeDb } from '../server/dbTestFake'
+import { publishPage } from '@core/publisher'
+import type { AnyModuleDefinition } from '@core/module-engine'
+import { VideoModule } from '@modules/base/video'
+import { makePage, makeRegistry, makeSite } from './helpers'
 
 const PAGE_WITH_CSP_META = `<!doctype html>
 <html>
@@ -46,47 +54,61 @@ function emptyPlan(): FrontendInjections {
   }
 }
 
-function frontendAssetDb(
-  assets: FrontendAsset[],
-  opts: { origins?: PluginFrontendOrigins; granted?: string[]; enabled?: boolean } = {},
-) {
-  const manifest = {
-    id: 'acme.assets',
-    name: 'Asset fixtures',
-    version: '1.0.0',
-    apiVersion: PLUGIN_API_VERSION,
-    permissions: ['frontend.assets'],
-    grantedPermissions: opts.granted ?? ['frontend.assets'],
-    resources: [],
-    adminPages: [],
-    frontend: { assets, ...(opts.origins ? { origins: opts.origins } : {}) },
-    assetBasePath: '/uploads/plugins/acme.assets/1.0.0',
-  }
+interface PluginFixture {
+  id?: string
+  assets?: FrontendAsset[]
+  origins?: PluginFrontendOrigins
+  hosts?: string[]
+  granted?: string[]
+  enabled?: boolean
+  lifecycle?: 'active' | 'error'
+}
+
+/** A fake DB whose `installed_plugins` holds one row per fixture. */
+function pluginsDb(fixtures: PluginFixture[]) {
+  const rows = fixtures.map((fixture) => {
+    const id = fixture.id ?? 'acme.assets'
+    const permissions = ['frontend.assets', ...(fixture.hosts ? ['network.outbound'] : [])]
+    const manifest = {
+      id,
+      name: 'Asset fixtures',
+      version: '1.0.0',
+      apiVersion: PLUGIN_API_VERSION,
+      permissions,
+      grantedPermissions: fixture.granted ?? permissions,
+      resources: [],
+      adminPages: [],
+      frontend: { assets: fixture.assets ?? [], ...(fixture.origins ? { origins: fixture.origins } : {}) },
+      ...(fixture.hosts ? { networkAllowedHosts: fixture.hosts } : {}),
+      assetBasePath: `/uploads/plugins/${id}/1.0.0`,
+    }
+    return {
+      id,
+      name: manifest.name,
+      version: manifest.version,
+      enabled: fixture.enabled ?? true,
+      lifecycle_status: fixture.lifecycle ?? 'active',
+      last_error: null,
+      granted_permissions_json: manifest.grantedPermissions,
+      manifest_json: manifest,
+      settings_json: {},
+      installed_at: '2026-01-01T00:00:00.000Z',
+      updated_at: '2026-01-01T00:00:00.000Z',
+    }
+  })
 
   return createFakeDb(async (sql): Promise<DbResult> => {
-    if (sql.includes('from installed_plugins')) {
-      return {
-        rows: [{
-          id: manifest.id,
-          name: manifest.name,
-          version: manifest.version,
-          enabled: opts.enabled ?? true,
-          lifecycle_status: 'active',
-          last_error: null,
-          granted_permissions_json: manifest.grantedPermissions,
-          manifest_json: manifest,
-          settings_json: {},
-          installed_at: '2026-01-01T00:00:00.000Z',
-          updated_at: '2026-01-01T00:00:00.000Z',
-        }],
-        rowCount: 1,
-      }
-    }
-    if (sql.includes('from active_media_storage_adapter')) {
-      return { rows: [], rowCount: 0 }
-    }
+    if (sql.includes('from installed_plugins')) return { rows, rowCount: rows.length }
+    if (sql.includes('from active_media_storage_adapter')) return { rows: [], rowCount: 0 }
     throw new Error(`Unexpected query in frontend asset fixture: ${sql}`)
   })
+}
+
+function frontendAssetDb(
+  assets: FrontendAsset[],
+  opts: Omit<PluginFixture, 'id' | 'assets'> = {},
+) {
+  return pluginsDb([{ assets, ...opts }])
 }
 
 describe('frontend injection — asset attributes', () => {
@@ -172,23 +194,25 @@ describe('frontend injection — CSP relaxation', () => {
     expect(out).toContain("worker-src 'self' blob:;")
   })
 
-  it('relaxes script-src to `self` + `unsafe-inline` for inline scripts', () => {
+  it('relaxes script-src to `self` + the script hash for inline scripts, never `unsafe-inline`', () => {
     const plan = emptyPlan()
     plan.hasInlineScript = true
+    plan.inlineScriptHashes = ["'sha256-INLINE='"]
     plan.tags['body-end'] = [`<script>console.log('hi')</script>`]
     const out = injectFrontendAssets(PAGE_WITH_CSP_META, plan)
-    expect(out).toContain("script-src 'self' 'unsafe-inline';")
+    expect(directive(out, 'script-src')).toEqual(["'self'", "'sha256-INLINE='"])
     expect(out).toContain("worker-src 'self' blob:;")
   })
 
-  it('relaxes script-src to `self` + `unsafe-inline` for mixed external + inline plans', () => {
+  it('relaxes script-src to `self` + the script hash for mixed external + inline plans', () => {
     const plan = emptyPlan()
     plan.hasExternalScript = true
     plan.hasInlineScript = true
+    plan.inlineScriptHashes = ["'sha256-INLINE='"]
     plan.tags.head = [`<script>window.X=1</script>`]
     plan.tags['body-end'] = [`<script src="/uploads/plugins/x/1.0.0/frontend/t.js"></script>`]
     const out = injectFrontendAssets(PAGE_WITH_CSP_META, plan)
-    expect(out).toContain("script-src 'self' 'unsafe-inline';")
+    expect(directive(out, 'script-src')).toEqual(["'self'", "'sha256-INLINE='"])
     expect(out).toContain("worker-src 'self' blob:;")
   })
 })
@@ -225,7 +249,53 @@ describe('frontend injection — relaxations add to the policy', () => {
     const emitted = /<script data-plugin-id="acme.assets">([\s\S]*?)<\/script>/.exec(out)?.[1] ?? ''
     const hash = `'sha256-${createHash('sha256').update(emitted).digest('base64')}'`
     expect(emitted).not.toBe('')
-    expect(directive(out, 'script-src')).toEqual(expect.arrayContaining([IMPORTMAP_HASH, hash, "'unsafe-inline'"]))
+    expect(directive(out, 'script-src')).toEqual(expect.arrayContaining([IMPORTMAP_HASH, hash]))
+  })
+
+  it('never grants `unsafe-inline` to scripts: only declared inline scripts run', async () => {
+    const plan = await collectFrontendInjections(frontendAssetDb([
+      { kind: 'script-inline', content: 'window.a = 1' },
+      { kind: 'script', src: 'frontend/app.js' },
+    ]))
+    for (const page of [PAGE_WITH_IMPORTMAP, PAGE_WITH_CSP_META]) {
+      expect(directive(injectFrontendAssets(page, plan), 'script-src')).not.toContain("'unsafe-inline'")
+    }
+  })
+
+  it('hashes an inline script as the browser sees it: CRLF and lone CR become LF', async () => {
+    // The HTML parser normalises newlines before the script's text exists, so
+    // a hash over the raw CRLF bytes would never match and the script would
+    // be blocked.
+    const content = 'window.a = 1;\r\nwindow.b = 2;\rwindow.c = 3;\r\n'
+    const plan = await collectFrontendInjections(frontendAssetDb([{ kind: 'script-inline', content }]))
+    const out = injectFrontendAssets(PAGE_WITH_IMPORTMAP, plan)
+    const emitted = /<script data-plugin-id="acme.assets">([\s\S]*?)<\/script>/.exec(out)?.[1] ?? ''
+    expect(emitted).toBe('window.a = 1;\nwindow.b = 2;\nwindow.c = 3;\n')
+    const browserHash = `'sha256-${createHash('sha256').update('window.a = 1;\nwindow.b = 2;\nwindow.c = 3;\n').digest('base64')}'`
+    expect(plan.inlineScriptHashes).toEqual([browserHash])
+    expect(directive(out, 'script-src')).toContain(browserHash)
+  })
+
+  it('leaves the policy alone for a data block, which a browser never executes', async () => {
+    const plan = await collectFrontendInjections(frontendAssetDb([
+      { kind: 'script-inline', content: '{"@context":"https://schema.org"}', attrs: { type: 'application/ld+json' } },
+    ]))
+    expect(plan.hasInlineScript).toBe(false)
+    expect(plan.inlineScriptHashes).toEqual([])
+    const out = injectFrontendAssets(PAGE_WITH_CSP_META, plan)
+    expect(out).toContain('application/ld+json')
+    expect(out).toContain("script-src 'none'")
+    expect(out).toContain("worker-src 'none'")
+  })
+
+  it('treats classic, module and importmap inline scripts as executed, whatever the case of `type`', async () => {
+    for (const attrs of [undefined, { type: 'module' }, { TYPE: 'Text/JavaScript; charset=utf-8' }, { type: 'importmap' }, { type: '' }]) {
+      const plan = await collectFrontendInjections(frontendAssetDb([
+        { kind: 'script-inline', content: 'window.a = 1', ...(attrs ? { attrs } : {}) },
+      ]))
+      expect(plan.hasInlineScript).toBe(true)
+      expect(plan.inlineScriptHashes).toHaveLength(1)
+    }
   })
 
   it('keeps existing style sources when a plugin ships an inline style', async () => {
@@ -291,6 +361,40 @@ describe('frontend injection — declared third-party origins', () => {
     expect(out).toContain("worker-src 'none'")
   })
 
+  it('lets an origins-only plugin reach its own hosts: connect-src needs no tag', async () => {
+    // The third-party script a plugin module loads calls the provider's API.
+    const plan = await collectFrontendInjections(frontendAssetDb([], { origins, hosts: ['api.example.com'] }))
+    expect(plan.networkAllowedHosts).toEqual(['api.example.com'])
+    const out = injectFrontendAssets(PAGE_WITH_CSP_META, plan)
+    expect(directive(out, 'connect-src')).toEqual(["'self'", 'https://api.example.com'])
+  })
+
+  it('lets a plugin with module JS only (no tag, no origin) reach its own hosts', async () => {
+    const plan = await collectFrontendInjections(frontendAssetDb([], { hosts: ['api.example.com'] }))
+    const out = injectFrontendAssets(PAGE_WITH_CSP_META, plan)
+    expect(directive(out, 'connect-src')).toEqual(["'self'", 'https://api.example.com'])
+    expect(out).toContain("script-src 'none'")
+  })
+
+  it('never lets another plugin\'s tag open connect-src for a plugin without the grant', async () => {
+    const plan = await collectFrontendInjections(pluginsDb([
+      { id: 'acme.tagged', assets: [{ kind: 'script', src: 'frontend/app.js' }] },
+      { id: 'acme.ungranted', origins, hosts: ['api.example.com'], granted: ['network.outbound'] },
+    ]))
+    expect(plan.networkAllowedHosts).toEqual([])
+    expect(plan.scriptOrigins).toEqual([])
+    const out = injectFrontendAssets(PAGE_WITH_CSP_META, plan)
+    expect(directive(out, 'connect-src')).toEqual(["'self'"])
+  })
+
+  it('contributes nothing when the plugin is in the error state', async () => {
+    const plan = await collectFrontendInjections(frontendAssetDb(
+      [{ kind: 'script', src: 'https://js.example.com/v3' }],
+      { origins, hosts: ['api.example.com'], lifecycle: 'error' },
+    ))
+    expect(injectFrontendAssets(PAGE_WITH_IMPORTMAP, plan)).toBe(PAGE_WITH_IMPORTMAP)
+  })
+
   it('contributes nothing when frontend.assets is declared but not granted', async () => {
     const plan = await collectFrontendInjections(frontendAssetDb(
       [{ kind: 'script', src: 'https://js.example.com/v3' }],
@@ -332,5 +436,44 @@ describe('frontend injection — head placement', () => {
     ]))
     const out = injectFrontendAssets('<html><head><title>x</title></head><body></body></html>', plan)
     expect(out.indexOf('frontend/early.js')).toBeLessThan(out.indexOf('<title>'))
+  })
+})
+
+describe('frontend injection — on a page the publisher really emits', () => {
+  it('unions plugin origins, hashes and hosts into the published policy without displacing it', async () => {
+    const page = makePage({
+      root: { moduleId: 'base.video', props: { videoUrl: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ' } },
+    })
+    const { html } = publishPage(page, makeSite(), makeRegistry({ 'base.video': VideoModule as AnyModuleDefinition }))
+    const published = {
+      frames: directive(html, 'frame-src'),
+      styles: directive(html, 'style-src'),
+      images: directive(html, 'img-src'),
+    }
+    expect(published.frames).toContain('https://www.youtube.com')
+
+    const plan = await collectFrontendInjections(frontendAssetDb(
+      [
+        { kind: 'script', src: 'https://js.example.com/v3', placement: 'head', strategy: 'sync' },
+        { kind: 'script-inline', content: 'window.pay = 1;\r\n' },
+      ],
+      { origins: { scripts: ['js.example.com'], frames: ['pay.example.com'] }, hosts: ['api.example.com'] },
+    ))
+    const out = injectFrontendAssets(html, plan)
+
+    // What the publisher granted is all still there; the plugin's is added.
+    expect(directive(out, 'frame-src')).toEqual([...published.frames, 'https://pay.example.com'].sort())
+    expect(directive(out, 'style-src')).toEqual(published.styles)
+    expect(directive(out, 'img-src')).toEqual(published.images)
+    expect(directive(out, 'connect-src')).toEqual(["'self'", 'https://api.example.com'])
+    const scripts = directive(out, 'script-src')
+    const inlineHash = `'sha256-${createHash('sha256').update('window.pay = 1;\n').digest('base64')}'`
+    expect(scripts).toEqual(expect.arrayContaining(["'self'", 'https://js.example.com', inlineHash]))
+    expect(scripts).not.toContain("'unsafe-inline'")
+    expect(scripts).not.toContain("'none'")
+
+    // The head-placed third-party script sits below the policy that allows it.
+    expect(out.indexOf('https://js.example.com/v3')).toBeGreaterThan(out.indexOf('http-equiv="Content-Security-Policy"'))
+    expect(out).toContain('<script data-plugin-id="acme.assets">window.pay = 1;\n</script>')
   })
 })

@@ -31,6 +31,69 @@ const FRONTEND_ORIGIN_HOST_PATTERN =
 const EXTERNAL_SCRIPT_URL_PATTERN =
   /^https:\/\/[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?(?:\/[a-zA-Z0-9._~!$&'()*+,;=:@%/-]*)?(?:\?[a-zA-Z0-9._~!$&'()*+,;=:@%/?-]*)?$/
 
+// Names that are not one site's to give away. The grammar above cannot tell
+// `*.example.com` from `*.co.uk`, and vendoring the Public Suffix List for a
+// consent-screen field is out of proportion, so two cheap rules cover the
+// cases that matter:
+//
+//   1. Private-network and unroutable top-level names are not public hosts.
+//      (`.example` and `.test` stay allowed: documentation and tests use them.)
+//   2. A wildcard must sit under a name one party controls. A country-code
+//      second-level suffix (`co.uk`, `com.au`) or a well-known shared-hosting
+//      domain (`github.io`, `vercel.app`) hands `script-src` to anyone who can
+//      register a subdomain there. Name the exact host instead.
+//
+// The list is a floor, not a guarantee: the install review still shows every
+// wildcard with a warning, because that is where a person decides.
+const NON_PUBLIC_TOP_LEVEL_LABELS = new Set([
+  'localhost', 'local', 'localdomain', 'internal', 'intranet', 'lan', 'home',
+  'corp', 'invalid', 'onion',
+])
+
+// Second-level labels registries use as public suffixes under a two-letter
+// country code: `co.uk`, `com.au`, `org.nz`, `ac.jp`, `gov.br`, `net.cn`.
+const COUNTRY_SECOND_LEVEL_LABELS = new Set([
+  'ac', 'co', 'com', 'edu', 'gov', 'net', 'org', 'or', 'ne', 'go', 'mil', 'nom', 'sch',
+])
+
+// Domains where each subdomain belongs to a different customer. A wildcard
+// directly under one is refused; a wildcard under a customer's own name there
+// (`*.acme.vercel.app`) is one party's and stays allowed.
+const SHARED_HOSTING_SUFFIXES: readonly string[] = [
+  'appspot.com', 'azureedge.net', 'azurewebsites.net',
+  'blob.core.windows.net', 'cloudfront.net', 'firebaseapp.com', 'fly.dev',
+  'github.io', 'githubusercontent.com', 'gitlab.io', 'glitch.me',
+  'herokuapp.com', 'netlify.app', 'onrender.com', 'pages.dev', 'r2.dev',
+  'surge.sh', 'vercel.app', 'web.app', 'workers.dev',
+]
+
+// AWS nests its shared endpoints (`s3.eu-west-1.amazonaws.com`), so a wildcard
+// anywhere under it is refused.
+const SHARED_HOSTING_TREES: readonly string[] = ['amazonaws.com']
+
+/** Why a syntactically valid `frontend.origins` entry is refused, or `null` when it is fine. */
+function frontendOriginRejection(origin: string): string | null {
+  const wildcard = origin.startsWith('*.')
+  const name = wildcard ? origin.slice(2) : origin
+  const labels = name.split('.')
+  const topLevel = labels[labels.length - 1]!
+  if (NON_PUBLIC_TOP_LEVEL_LABELS.has(topLevel)) {
+    return `"${origin}" is not a public host`
+  }
+  const isCountrySuffix =
+    labels.length === 2 && topLevel.length === 2 && COUNTRY_SECOND_LEVEL_LABELS.has(labels[0]!)
+  if (isCountrySuffix) {
+    return `"${origin}" is a public suffix, not a host`
+  }
+  const coversSharedHosting =
+    SHARED_HOSTING_SUFFIXES.includes(name) ||
+    SHARED_HOSTING_TREES.some((tree) => name === tree || name.endsWith(`.${tree}`))
+  if (wildcard && coversSharedHosting) {
+    return `"${origin}" covers a shared hosting domain where anyone can register a subdomain; name the exact host`
+  }
+  return null
+}
+
 const FrontendOriginHostsSchema = Type.Array(
   Type.String({ pattern: FRONTEND_ORIGIN_HOST_PATTERN.source, maxLength: 253 }),
   { maxItems: 20 },
@@ -150,6 +213,12 @@ export function assertFrontendCoherent(frontend: FrontendRaw, permissions: reado
       if (new Set(hosts).size !== hosts.length) {
         throw new Error(`Invalid plugin manifest: duplicate entry in \`frontend.origins.${field}\`.`)
       }
+      for (const host of hosts) {
+        const rejection = frontendOriginRejection(host)
+        if (rejection) {
+          throw new Error(`Invalid plugin manifest: \`frontend.origins.${field}\` entry ${rejection}.`)
+        }
+      }
     }
   }
   if (frontend.assets.length > 0) {
@@ -189,19 +258,25 @@ export function assertFrontendCoherent(frontend: FrontendRaw, permissions: reado
   }
 }
 
-/** The parsed block as the manifest carries it: fresh arrays, no shared references. */
+/**
+ * The parsed block as the manifest carries it: fresh arrays, no shared
+ * references. The return type is the SDK's hand-written manifest type, and
+ * there is no cast: this function compiles only while the schema's static type
+ * is assignable to it, which is what keeps the two from drifting.
+ */
 export function frontendDeclarations(frontend: FrontendRaw): PluginManifest['frontend'] {
+  const origins = frontend.origins
   return {
     assets: frontend.assets.map((asset) => ({ ...asset })),
-    ...(frontend.origins
+    ...(origins
       ? {
           origins: {
-            ...(frontend.origins.scripts ? { scripts: [...frontend.origins.scripts] } : {}),
-            ...(frontend.origins.frames ? { frames: [...frontend.origins.frames] } : {}),
+            ...(origins.scripts ? { scripts: [...origins.scripts] } : {}),
+            ...(origins.frames ? { frames: [...origins.frames] } : {}),
           },
         }
       : {}),
-  } as PluginManifest['frontend']
+  }
 }
 
 // ---------------------------------------------------------------------------

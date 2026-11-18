@@ -74,7 +74,7 @@ interface HostDiffRow {
   status: HostDiffStatus
 }
 
-function diffNetworkAllowedHosts(
+function diffHostList(
   next: readonly string[],
   previous: readonly string[] | undefined,
   isUpgrade: boolean,
@@ -152,7 +152,7 @@ export function PermissionReviewSection({
     {
       kind: 'scripts',
       phrase: 'May load scripts from',
-      rows: diffNetworkAllowedHosts(
+      rows: diffHostList(
         pending.manifest.frontend?.origins?.scripts ?? [],
         pending.previousFrontendOrigins?.scripts,
         isUpgrade,
@@ -161,7 +161,7 @@ export function PermissionReviewSection({
     {
       kind: 'frames',
       phrase: 'May embed frames from',
-      rows: diffNetworkAllowedHosts(
+      rows: diffHostList(
         pending.manifest.frontend?.origins?.frames ?? [],
         pending.previousFrontendOrigins?.frames,
         isUpgrade,
@@ -275,7 +275,7 @@ export function PermissionReviewSection({
       )}
 
       {(() => {
-        const hostRows = diffNetworkAllowedHosts(
+        const hostRows = diffHostList(
           pending.manifest.networkAllowedHosts ?? [],
           pending.previousNetworkAllowedHosts,
           isUpgrade,
@@ -354,6 +354,12 @@ export function PermissionReviewSection({
                       </span>
                     )}
                   </div>
+                  {row.host.startsWith('*.') && row.status !== 'dropped' && (
+                    <span className={styles.wildcardWarning} data-testid="frontend-origin-wildcard-warning">
+                      Any subdomain of <code>{row.host.slice(2)}</code>, not one host. Approve it only if a
+                      single company controls every subdomain there.
+                    </span>
+                  )}
                 </li>
               )),
             )}
