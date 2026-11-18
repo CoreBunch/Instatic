@@ -48,7 +48,7 @@ import {
 } from '@core/plugins/modulePackLoader'
 import { jsonResponse } from '../http'
 import { hookBus } from '@core/plugins/hookBus'
-import { setQueuedMailOutcomeHandler } from '../mail/delivery'
+import { setQueuedMailOutcomeHandler } from '../mail/outcomes'
 import { syncPluginMailTemplates } from '../mail/pluginTemplates'
 import { announcePluginMailOutcome } from './host/handlers/mail'
 import { requireAuthenticatedUser, requireCapability } from '../auth/authz'

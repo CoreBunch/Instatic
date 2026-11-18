@@ -11,12 +11,14 @@
  * the plugin's id, so the limits and the activity log are per plugin.
  */
 import type { DbClient } from '../../../db/client'
+import { mailValueProblem } from '@core/mail'
 import { hookBus, type MailHookEvent } from '@core/plugins/hookBus'
 import { pluginMailTemplateKey, pluginMailTemplatePrefix } from '@core/plugins/manifestMail'
 import { configuredPublicOrigin } from '../../../auth/security'
-import { queueTemplateMail, type QueuedMailOutcome } from '../../../mail/delivery'
+import { queueTemplateMail } from '../../../mail/delivery'
+import type { QueuedMailOutcome } from '../../../mail/outcomes'
 import { MailLimitError } from '../../../mail/limits'
-import { MailNotConfiguredError } from '../../../mail/send'
+import { MailNotConfiguredError, MailTemplateInvalidError } from '../../../mail/send'
 import { MailDeliveryError } from '../../../mail/smtpDriver'
 import { findMemberById } from '../../../members/repository'
 import { ensurePluginInstallId, getPluginInstallId } from '../../../repositories/plugins'
@@ -48,6 +50,13 @@ function assertDeclaredTemplate(entry: HostPluginRecord, template: string, varia
   if (unknown.length > 0) {
     throw new Error(`The "${template}" template has no variable named ${unknown.map((name) => `"${name}"`).join(', ')}`)
   }
+  // A value is data of the kind its variable declares, nothing more: the
+  // owner approved the template's wording, not whatever a value brings along.
+  for (const variable of declaration.variables) {
+    const value = variables[variable.name]
+    const problem = value === undefined ? null : mailValueProblem(variable.kind, value)
+    if (problem) throw new Error(`variable_not_allowed: the value of "${variable.name}" ${problem}`)
+  }
 }
 
 async function queuePluginMail(db: DbClient, entry: HostPluginRecord, mail: PluginMail): Promise<'queued' | 'captured'> {
@@ -70,6 +79,8 @@ async function queuePluginMail(db: DbClient, entry: HostPluginRecord, mail: Plug
     if (err instanceof MailLimitError || err instanceof MailNotConfiguredError || err instanceof MailDeliveryError) {
       throw err
     }
+    // The email would have gone out with a variable still in it. Nothing was queued.
+    if (err instanceof MailTemplateInvalidError) throw new Error(`template_invalid: ${err.message}`, { cause: err })
     console.error(`[plugin:${entry.manifest.id}] mail.send failed:`, err)
     throw new Error('The email could not be queued', { cause: err })
   }

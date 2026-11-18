@@ -108,7 +108,11 @@ const VALUE_OPEN = '\uE000'
 const VALUE_CLOSE = '\uE001'
 const MARKS = /[\uE000\uE001]/g
 
-const ASCII_SPACE = /[ \t\n\r\f]/
+/** Stands, in the text a value is checked against, for a line break written inside a paragraph. */
+const SOFT_BREAK = '\uE002'
+const SPACE = /[ \t\n\r\f\uE002]/
+/** A run of characters a mail client may take for (part of) an address. */
+const ADDRESS_LIKE_RUN = /[/@=?&%#]|\.[a-z0-9]|www/i
 
 /**
  * Whether `text[start, end)` stands alone: within its run of non-space
@@ -122,46 +126,130 @@ const ASCII_SPACE = /[ \t\n\r\f]/
  * surely as an `href` would. Rather than guess what a client takes for an
  * address, a value is only ever put where nothing touches it. Only ASCII
  * whitespace separates: a zero-width or other exotic space does not.
+ *
+ * Two more things do not separate, because clients join across them: a line
+ * break inside a paragraph when what is on the other side of it reads as an
+ * address, and anything at all between a `<` and its `>` (the way a long
+ * address is written across lines).
  */
 function standsAlone(text: string, start: number, end: number): boolean {
   let from = start
   let to = end
-  while (from > 0 && !ASCII_SPACE.test(text[from - 1])) from -= 1
-  while (to < text.length && !ASCII_SPACE.test(text[to])) to += 1
-  return /^[("']*$/.test(text.slice(from, start)) && /^[.,;:!?)"']*$/.test(text.slice(end, to))
+  while (from > 0 && !SPACE.test(text[from - 1])) from -= 1
+  while (to < text.length && !SPACE.test(text[to])) to += 1
+  if (!/^[("']*$/.test(text.slice(from, start)) || !/^[.,;:!?)"']*$/.test(text.slice(end, to))) return false
+
+  // The neighbouring run on each side, when only a soft break (and blanks) lies between.
+  let gap = from
+  while (gap > 0 && /[ \t\uE002]/.test(text[gap - 1])) gap -= 1
+  if (text.slice(gap, from).includes(SOFT_BREAK)) {
+    let run = gap
+    while (run > 0 && !SPACE.test(text[run - 1])) run -= 1
+    if (ADDRESS_LIKE_RUN.test(text.slice(run, gap))) return false
+  }
+  gap = to
+  while (gap < text.length && /[ \t\uE002]/.test(text[gap])) gap += 1
+  if (text.slice(to, gap).includes(SOFT_BREAK)) {
+    let run = gap
+    while (run < text.length && !SPACE.test(text[run])) run += 1
+    if (ADDRESS_LIKE_RUN.test(text.slice(gap, run))) return false
+  }
+
+  // Inside `<...>`, within the paragraph.
+  const blockStart = text.lastIndexOf('\n', start - 1) + 1
+  const nextBreak = text.indexOf('\n', end)
+  const before = text.slice(blockStart, start)
+  const after = text.slice(end, nextBreak < 0 ? text.length : nextBreak)
+  const opened = before.lastIndexOf('<') > before.lastIndexOf('>')
+  const closes = after.indexOf('>')
+  const reopens = after.indexOf('<')
+  if (opened && closes >= 0 && (reopens < 0 || closes < reopens)) return false
+  return true
+}
+
+/** A text that `source` is read as a part of, and where in it `source` starts. */
+interface Reading {
+  flat: string
+  offset: number
 }
 
 /** How values are put into one template: for whom the stand-alone rule holds, and what it turned away. */
 interface Filling {
   variables: MailVariables
-  /** A plugin's template: every value must stand alone, not only an address. */
+  /** The variables the template declares as links (`kind: 'link'`). */
+  links: ReadonlySet<string>
+  /** A plugin's template: no images, and only `https` in an address written out. */
   strict: boolean
   refused: Set<string>
 }
 
+/** Thrown where there is no DOM to parse an email body with. The server and the admin always have one. */
+export class MailRendererUnavailableError extends Error {
+  constructor() {
+    super('An email cannot be rendered without an HTML parser')
+    this.name = 'MailRendererUnavailableError'
+  }
+}
+
+/** A value that reads as an address, whatever it was declared as. */
+const ADDRESS_VALUE = /^\s*[a-z][a-z0-9+.-]*:|:\/\/|^\s*www\./i
+
 /**
- * Whether a variable's value may only be put where it stands alone: a value
- * that is an address (a link), and in a plugin's template every value. The
- * site's own name and address are public and exempt.
+ * Whether a variable's value may only be put where it stands alone: a
+ * variable declared a link, and (for a template that says nothing about its
+ * variables, or a value that turns out to be one anyway) any value that is
+ * an address. The site's own name and address are public and exempt.
  */
-function mustStandAlone(name: string, value: string, strict: boolean): boolean {
+function mustStandAlone(name: string, value: string, filling: Filling): boolean {
   if (name.startsWith('site.')) return false
-  return strict || /^\s*[a-z][a-z0-9+.-]*:|:\/\/|^\s*www\./i.test(value)
+  return filling.links.has(name) || ADDRESS_VALUE.test(value)
+}
+
+/** Invisible characters that hide or reorder text: soft hyphen, zero-width and direction marks, separators. */
+const INVISIBLE_CHARACTERS = /[\u00ad\u200b-\u200f\u2028-\u202e\u2060-\u2064\ufeff]/
+
+/** Whether a value holds a character that has no business in one: a control (tab and line breaks aside) or an invisible one. */
+function hasControlCharacter(value: string): boolean {
+  if (INVISIBLE_CHARACTERS.test(value)) return true
+  for (let index = 0; index < value.length; index += 1) {
+    const code = value.charCodeAt(index)
+    if (code === 0x7f || (code < 0x20 && code !== 0x09 && code !== 0x0a && code !== 0x0d)) return true
+  }
+  return false
+}
+
+/** What a mail client would make a link of in running text: a scheme, `www.`, `x@y`, or a bare domain. */
+const ADDRESS_IN_TEXT = /:\/\/|www\.|\S@\S|(?:^|[^a-z0-9-])(?:[a-z0-9-]+\.)+[a-z]{2,24}(?![a-z0-9-])/i
+
+/**
+ * Why a value may not be sent in a variable of this kind, or null when it
+ * may. A `link` must be an `http(s)` address. A `text` value must not be or
+ * contain an address: the owner approved a template's wording, and a value
+ * must not be a way to put a link into it that the owner never saw.
+ */
+export function mailValueProblem(kind: 'text' | 'link' | undefined, value: string): string | null {
+  if (hasControlCharacter(value)) return 'contains a control or invisible character'
+  if (kind === 'link') return isWebAddress(value.trim(), false) ? null : 'is not an http(s) address'
+  return ADDRESS_IN_TEXT.test(value) ? 'contains an address; only a variable declared `kind: "link"` may carry one' : null
 }
 
 /**
- * Put values into text. `flat` is the text `source` is a part of, starting
- * at `offset` in it (the whole of it, for a subject). A value that must
- * stand alone and does not is left as written; one that does is wrapped in
- * marks so the finished text can be checked again.
+ * Put values into text. Each reading is a text `source` is a part of (the
+ * whole of it, for a subject). A value that must stand alone and does not,
+ * in any one of them, is left as written; one that does is wrapped in marks
+ * so the finished text can be checked again.
  */
-function fill(source: string, filling: Filling, flat: string = source, offset = 0): string {
+function fill(
+  source: string,
+  filling: Filling,
+  readings: readonly Reading[] = [{ flat: source, offset: 0 }],
+): string {
   return source.replace(VARIABLE, (whole, name: string, at: number) => {
     if (!(name in filling.variables)) return whole
     const value = filling.variables[name].replace(MARKS, '')
-    if (!mustStandAlone(name, value, filling.strict)) return value
-    const start = offset + at
-    if (!standsAlone(flat, start, start + whole.length)) {
+    if (!mustStandAlone(name, value, filling)) return value
+    const alone = readings.every(({ flat, offset }) => standsAlone(flat, offset + at, offset + at + whole.length))
+    if (!alone) {
       filling.refused.add(name)
       return whole
     }
@@ -264,15 +352,21 @@ function resolveAddress(raw: string, variables: MailVariables, strict: boolean, 
   return '#'
 }
 
-/** Elements that do not end a line: text on both sides of one reads as one run. */
-const INLINE_TAGS = new Set(['a', 'b', 'strong', 'em', 'i', 'del', 's', 'code'])
 const BLOCK_TAGS = new Set(['p', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'blockquote', 'pre', 'ul', 'ol', 'table', 'hr'])
+/**
+ * The only elements that put space between the text before and after them
+ * when an email is displayed. Everything else is inline, an image included:
+ * text on both sides of it reads as one run, and is checked as one.
+ */
+const SEPARATING_TAGS = new Set([...BLOCK_TAGS, 'br', 'li', 'thead', 'tbody', 'tr', 'th', 'td'])
 
 /** One stretch of the plain-text body: a text node of the tree, or something the text part adds. */
 interface Piece {
   text: string
   /** The text node this stretch is, when it is one. */
   node?: ChildNode
+  /** In the plain-text part only: a link's address after its words. The displayed HTML has no such text. */
+  textOnly?: true
 }
 
 /**
@@ -318,37 +412,63 @@ function readTree(root: ParentNode, filling: Filling): Piece[] {
           element.removeAttribute(attribute.name)
         }
       }
-      const inline = INLINE_TAGS.has(tag)
+      const separates = SEPARATING_TAGS.has(tag)
       if (tag === 'br') pieces.push({ text: '\n' })
-      else if (tag === 'img') pieces.push({ text: ` ${(element.getAttribute('alt') ?? '').replace(MARKS, '')} ` })
+      // Inline, so nothing is added around it: an empty alternative text is nothing at all.
+      else if (tag === 'img') pieces.push({ text: (element.getAttribute('alt') ?? '').replace(MARKS, '') })
       else if (tag === 'li') pieces.push({ text: '\n- ' })
-      else if (!inline) pieces.push({ text: '\n' })
+      else if (separates) pieces.push({ text: '\n' })
       const before = pieces.length
       visit(element)
       if (tag === 'a' && shown) {
         const words = pieces.slice(before).map((piece) => piece.text).join('').trim()
-        if (words !== shown) pieces.push({ text: ` (${shown})` })
+        if (words !== shown) pieces.push({ text: ` (${shown})`, textOnly: true })
       } else if (tag === 'th' || tag === 'td') pieces.push({ text: '  ' })
       else if (BLOCK_TAGS.has(tag)) pieces.push({ text: '\n\n' })
-      else if (!inline) pieces.push({ text: '\n' })
+      else if (separates) pieces.push({ text: '\n' })
     }
   }
   visit(root)
   return pieces
 }
 
-/** Put the values into the pieces, write them back to the tree's text nodes, and return the plain text. */
+/**
+ * Put the values into the pieces, write them back to the tree's text nodes,
+ * and return the plain text.
+ *
+ * The body is read two ways, and a value must stand alone in both: as the
+ * plain-text part (every piece), and as the HTML part is displayed (without
+ * what only the text part adds, so text on both sides of a link is one run
+ * there, as it is on screen).
+ */
 function fillPieces(pieces: Piece[], filling: Filling): string {
-  const flat = pieces.map((piece) => piece.text).join('')
-  let offset = 0
+  // A line break written inside a paragraph is told apart from one between
+  // blocks: `standsAlone` treats the two differently.
+  const checked = (piece: Piece) => (piece.node ? piece.text.replace(/[\n\r]/g, SOFT_BREAK) : piece.text)
+  const asText = pieces.map(checked).join('')
+  const asDisplayed = pieces.filter((piece) => !piece.textOnly).map(checked).join('')
+  let textOffset = 0
+  let displayedOffset = 0
   let text = ''
+  let checkedText = ''
+  let checkedDisplayed = ''
   for (const piece of pieces) {
-    const filled = fill(piece.text, filling, flat, offset)
-    offset += piece.text.length
+    const readings: Reading[] = [{ flat: asText, offset: textOffset }]
+    if (!piece.textOnly) readings.push({ flat: asDisplayed, offset: displayedOffset })
+    const filled = fill(piece.text, filling, readings)
+    textOffset += piece.text.length
     text += filled
+    checkedText += checked({ ...piece, text: filled })
+    if (!piece.textOnly) {
+      displayedOffset += piece.text.length
+      checkedDisplayed += checked({ ...piece, text: filled })
+    }
     if (piece.node) piece.node.textContent = filled.replace(MARKS, '')
   }
-  return unmark(text)
+  // The backstop: both finished readings, as they will be sent.
+  unmark(checkedDisplayed)
+  unmark(checkedText)
+  return text.replace(MARKS, '')
 }
 
 const LAYOUT_STYLE = {
@@ -382,18 +502,19 @@ function wrapInLayout(bodyHtml: string, siteName: string): string {
  * silently vanishing.
  */
 export function renderMailTemplate(
-  template: { key?: string; subject: string; body: string },
+  template: { key?: string; subject: string; body: string; variables?: readonly MailTemplateVariable[] },
   variables: MailVariables,
 ): RenderedMail {
   const siteName = variables['site.name'] ?? ''
   const strict = isPluginMailTemplateKey(template.key)
-  const filling: Filling = { variables, strict, refused: new Set() }
+  const links = new Set((template.variables ?? []).filter((variable) => variable.kind === 'link').map((variable) => variable.name))
+  const filling: Filling = { variables, links, strict, refused: new Set() }
   const body = sanitizeToFragment(
     renderMarkdownToHtml(template.body),
     strict ? PLUGIN_MAIL_BODY_CONFIG : MAIL_BODY_CONFIG,
   )
   // No parser, no email: the rules above are only as good as the tree they run on.
-  if (!body) throw new Error('An email cannot be rendered without an HTML parser')
+  if (!body) throw new MailRendererUnavailableError()
   const text = fillPieces(readTree(body, filling), filling)
   const holder = body.ownerDocument.createElement('div')
   holder.appendChild(body)

@@ -90,12 +90,22 @@ function mailTemplateStatus(
 ): MailTemplateStatus {
   const before = previous?.find((candidate) => candidate.key === template.key)
   if (!before) return 'new'
-  return before.subject === template.subject && before.body === template.body ? 'existing' : 'changed'
+  // Everything the owner approved: what it says, what it is called, and what
+  // each variable is (a `text` variable turned `link` can carry an address).
+  const approved = (declaration: PluginMailTemplateDeclaration) =>
+    JSON.stringify([
+      declaration.subject,
+      declaration.body,
+      declaration.label,
+      declaration.description,
+      declaration.variables.map((variable) => [variable.name, variable.kind ?? 'text']).sort(),
+    ])
+  return approved(before) === approved(template) ? 'existing' : 'changed'
 }
 
 const MAIL_TEMPLATE_BADGE: Record<MailTemplateStatus, string> = {
   new: 'New',
-  changed: 'Wording changed',
+  changed: 'Changed',
   existing: 'Already approved',
 }
 
@@ -204,7 +214,12 @@ export function PermissionReviewSection({
     template,
     status: isUpgrade ? mailTemplateStatus(template, pending.previousMailTemplates) : ('new' as const),
     preview: renderMailTemplate(
-      { key: pluginMailTemplateKey(pending.manifest.id, template.key), subject: template.subject, body: template.body },
+      {
+        key: pluginMailTemplateKey(pending.manifest.id, template.key),
+        subject: template.subject,
+        body: template.body,
+        variables: template.variables,
+      },
       { 'site.name': 'Your site', 'site.url': '', ...sampleMailVariables(template.variables) },
     ),
   }))
@@ -421,8 +436,11 @@ export function PermissionReviewSection({
           </div>
           {changedMailCount > 0 && (
             <div className={styles.alert} role="alert" data-testid="mail-templates-diff-alert">
-              This update adds or rewords <strong>{changedMailCount} email template{changedMailCount === 1 ? '' : 's'}</strong>.
-              Read the highlighted ones before continuing.
+              <span>
+                This update adds or changes{' '}
+                <strong>{changedMailCount} email template{changedMailCount === 1 ? '' : 's'}</strong>. Read the
+                highlighted ones before continuing.
+              </span>
             </div>
           )}
           <ul className={styles.list}>

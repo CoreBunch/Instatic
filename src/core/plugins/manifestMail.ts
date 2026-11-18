@@ -8,6 +8,7 @@
  * while the plugin is loaded) and the lint CLI.
  */
 
+import { mailValueProblem, MailRendererUnavailableError, renderMailTemplate } from '@core/mail'
 import { Type, type Static } from '@core/utils/typeboxHelpers'
 import type { PluginManifest, PluginPermission } from '@core/plugin-sdk'
 import type { MailTemplateDefinition } from '@core/mail'
@@ -25,6 +26,7 @@ const mailTemplateVariableSchema = Type.Object(
     name: Type.String({ minLength: 1, maxLength: 60, pattern: MAIL_VARIABLE_NAME_PATTERN }),
     label: Type.String({ minLength: 1, maxLength: 80, pattern: SINGLE_LINE }),
     sample: Type.String({ maxLength: 500, pattern: SINGLE_LINE }),
+    kind: Type.Optional(Type.Union([Type.Literal('text'), Type.Literal('link')])),
   },
   { additionalProperties: false },
 )
@@ -102,7 +104,48 @@ export function assertMailCoherent(mail: MailRaw, permissions: readonly PluginPe
         )
       }
       names.add(variable.name)
+      const problem = mailValueProblem(variable.kind, variable.sample)
+      if (problem) {
+        throw new Error(
+          `Invalid plugin manifest: in mail template "${template.key}" the sample of "${variable.name}" ${problem}.`,
+        )
+      }
     }
+    const undeclared = undeclaredMailVariables(template)
+    if (undeclared.length > 0) {
+      throw new Error(
+        `Invalid plugin manifest: mail template "${template.key}" uses ${undeclared.map((name) => `{${name}}`).join(', ')} without declaring it under \`variables\`.`,
+      )
+    }
+    const glued = gluedMailVariables(template)
+    if (glued.length > 0) {
+      throw new Error(
+        `Invalid plugin manifest: in mail template "${template.key}" ${glued.map((name) => `{${name}}`).join(', ')} must stand alone. A \`link\` variable needs a space or a line break around it, or to be the whole address of a link (\`[Open]({${glued[0]}})\`).`,
+      )
+    }
+  }
+}
+
+/**
+ * The variables a template declares that would be left unfilled when it is
+ * sent, because a link does not stand alone in it. Rendered with the
+ * samples, by the renderer that sends. Where there is no HTML parser to
+ * render with (a build tool), nothing is reported; the server, which always
+ * has one, refuses such a manifest at install.
+ */
+export function gluedMailVariables(template: {
+  subject: string
+  body: string
+  variables: ReadonlyArray<{ name: string; sample: string; kind?: 'text' | 'link' }>
+}): string[] {
+  try {
+    return renderMailTemplate(
+      { key: 'plugin.lint~template', subject: template.subject, body: template.body, variables: template.variables.map((variable) => ({ label: variable.name, ...variable })) },
+      { 'site.name': 'Site', 'site.url': 'https://example.com', ...Object.fromEntries(template.variables.map((variable) => [variable.name, variable.sample])) },
+    ).refused
+  } catch (err) {
+    if (err instanceof MailRendererUnavailableError) return []
+    throw err
   }
 }
 

@@ -15,6 +15,7 @@ import { strToU8, zipSync } from 'fflate'
 import {
   getMailTemplateDefinition,
   listMailTemplateDefinitions,
+  registerMailTemplate,
   renderMailTemplate,
   sampleMailVariables,
   type MailConnector,
@@ -31,6 +32,7 @@ import { saveMailDefaults } from '../../../server/mail/defaults'
 import { __resetMailQueuePauseForTesting, drainMailQueue, queueTemplateMail } from '../../../server/mail/delivery'
 import { MAIL_BACKLOG_LIMIT, MAIL_EXTERNAL_HOURLY_LIMIT, MailLimitError } from '../../../server/mail/limits'
 import type { MailCarrier } from '../../../server/mail/send'
+import { listUnusableTemplateEdits } from '../../../server/mail/templates'
 import { MailDeliveryError } from '../../../server/mail/smtpDriver'
 import { deleteMemberAsAdmin } from '../../../server/members/admin'
 import { createMember } from '../../../server/members/repository'
@@ -69,7 +71,7 @@ const TEMPLATES = [
     description: 'Sent to the customer when the team answers a ticket.',
     variables: [
       { name: 'subject', label: 'Ticket subject', sample: 'Publishing stops at 80%' },
-      { name: 'link', label: 'Link to the ticket', sample: 'https://example.com/account/support/1042' },
+      { name: 'link', label: 'Link to the ticket', sample: 'https://example.com/account/support/1042', kind: 'link' },
     ],
     subject: 'Re: {subject}',
     body: 'We answered **{subject}**.\n\n[Open the ticket]({link})',
@@ -223,9 +225,21 @@ describe('email for plugins', () => {
       expect(parsed.mail?.templates[0]).not.toHaveProperty('from')
     })
 
-    it('tells the lint which names a template uses without declaring them', () => {
-      expect(undeclaredMailVariables(TEMPLATES[0])).toEqual([])
+    it('refuses a template that would be sent with a variable left in it', () => {
+      const withBody = (body: string) => manifest(BOTH, { mail: { templates: [{ ...TEMPLATES[0], body }] } })
       expect(undeclaredMailVariables({ ...TEMPLATES[0], body: '{link} {tikcet} {site.name}' })).toEqual(['tikcet'])
+      expect(() => parsePluginManifest(withBody('{link} {tikcet} {site.name}'))).toThrow('uses {tikcet} without declaring it')
+      // A link glued into text is left unfilled by the renderer, so it is refused here.
+      for (const body of ['Open:{link}', 'See example.com/?next={link}', '<{link}>', '[x](https://example.com/?to={link}) {link}x']) {
+        expect(() => parsePluginManifest(withBody(body))).toThrow('{link} must stand alone')
+      }
+      // Text may be glued; that is what text is for.
+      expect(() => parsePluginManifest(withBody("Ticket #{subject}, {subject}'s. [Open]({link})"))).not.toThrow()
+      // A sample is held to its variable's kind.
+      const sample = (variable: Record<string, unknown>) =>
+        manifest(BOTH, { mail: { templates: [{ ...TEMPLATES[1], variables: [{ name: 'subject', label: 'S', ...variable }] }] } })
+      expect(() => parsePluginManifest(sample({ sample: 'https://example.com/' }))).toThrow('contains an address')
+      expect(() => parsePluginManifest(sample({ sample: 'not a link', kind: 'link' }))).toThrow('is not an http(s) address')
     })
   })
 
@@ -406,7 +420,7 @@ describe('email for plugins', () => {
       expect(await send({
         template: 'ticket.reply',
         to: { member: memberId },
-        variables: { subject: '<img src=x onerror=alert(1)> **bold**\r\nBcc: evil@example.com', link: 'javascript:alert(1)' },
+        variables: { subject: '<img src=x onerror=alert(1)> **bold**\r\nBcc: nobody', link: 'https://example.com/t/1' },
       })).toEqual({ status: 'queued' })
       let subject = ''
       let html = ''
@@ -414,8 +428,38 @@ describe('email for plugins', () => {
       expect(subject).not.toMatch(/[\r\n]/)
       expect(html).not.toContain('<img')
       expect(html).not.toContain('<strong>bold')
-      expect(html).not.toContain('javascript:')
-      expect(html).toContain('href="#"')
+      expect(html).toContain('&lt;img src=x onerror=alert(1)&gt; **bold**')
+    })
+
+    it('refuses a value that is not what its variable is declared to be, and queues nothing', async () => {
+      await install(BOTH)
+      await readyConnector()
+      const memberId = await activeMember()
+      const attempt = (variables: Record<string, string>) =>
+        send({ template: 'ticket.reply', to: { member: memberId }, variables: { subject: 'a', link: 'https://example.com/t/1', ...variables } })
+      // A text value may not be, or bring along, an address: the owner approved the wording, not a link in it.
+      for (const subject of [
+        'Go to https://evil.example/login',
+        'see www.evil.example',
+        'evil.example/login',
+        'write to boss@evil.example',
+        'evil.example',
+        'hidden\u200bword',
+        'right\u202eto left',
+        'bell\u0007',
+      ]) {
+        expect(String((await attempt({ subject })).error)).toStartWith('variable_not_allowed: the value of "subject"')
+      }
+      // A link must be an http(s) address.
+      for (const link of ['javascript:alert(1)', 'evil.example/x', 'mailto:a@example.com', 'data:text/html,x', '']) {
+        expect(String((await attempt({ link })).error)).toStartWith('variable_not_allowed: the value of "link"')
+      }
+      expect((await h.db`select id from mail_queue`).rows).toHaveLength(0)
+      expect((await listMailActivity(h.db)).entries).toHaveLength(0)
+      // Ordinary text is fine, numbers, dots and all.
+      for (const subject of ['Invoice no. 12 is 3.50 EUR (v1.2)', "Ada's ticket #42", 'Done. Thanks!']) {
+        expect(await attempt({ subject })).toEqual({ status: 'queued' })
+      }
     })
 
     it('says so when email is not set up on a production server', async () => {
@@ -897,6 +941,35 @@ describe('email for plugins', () => {
         '[x]({link})/../evil',
         'evil.example/?t=[x]({link})',
         '[evil.example/?t={link}]({link})',
+        // Inline elements, which put nothing between the text on either side of them.
+        'evil.example/<img alt="" src="https://example.com/a.png">{link}',
+        'evil.example/<img src="https://example.com/a.png">{link}',
+        'evil.example/<img alt="x" src="https://example.com/a.png">{link}',
+        'evil.example/![](https://example.com/a.png){link}',
+        '{link}<img alt="" src="https://example.com/a.png">.evil.example',
+        'evil.example/<span></span>{link}',
+        'evil.example/<span> </span>{link}'.replace('> <', '><'),
+        'evil.example/<b></b>{link}',
+        'evil.example/<i>?t=</i>{link}',
+        'evil.example/<code></code>{link}',
+        'evil.example/<wbr>{link}',
+        'evil.example/<!-- note -->{link}',
+        'evil.example/\u00ad{link}',
+        'evil.example/&shy;{link}',
+        'evil.example/<a href="https://example.com/"></a>{link}',
+        '<a href="https://example.com/">{link}</a>/../evil',
+        '<a href="https://example.com/">evil.example/</a>{link}',
+        '{link}<a href="https://example.com/">.evil.example</a>',
+        'evil.example/<font></font><u></u><sub></sub>{link}',
+        // Line breaks and angle brackets, across which clients join an address.
+        '<evil.example/?t=\n{link}\n>',
+        '<https://evil.example/?t=\n{link}>',
+        'evil.example/?t=\n{link}',
+        '{link}\n/evil.example',
+        '<\n{link}\n/../evil>',
+        '<{link}>',
+        '< evil.example/?t= {link} >',
+        'evil.example/?t=  \n  {link}',
         // Markdown.
         '[x](https://evil.example/?t={link})',
         '[x](<https://evil.example/?t={link}>)',
@@ -941,9 +1014,23 @@ describe('email for plugins', () => {
       expect(sentence.text).toBe(`Open (${link}), or "${link}". Then: ${link}!`)
       expect(sentence.refused).toEqual([])
       // A refused variable is left as written and named, so the preview can say so.
-      const refused = renderMailTemplate({ key, subject: 'See evil.example/{link}', body: 'Ticket #{id}' }, { link, id: '7' })
-      expect(refused).toMatchObject({ subject: 'See evil.example/{link}', text: 'Ticket #{id}' })
-      expect(refused.refused.sort()).toEqual(['id', 'link'])
+      const refused = renderMailTemplate(
+        { key, subject: 'See evil.example/{link}', body: "Ticket #{id}, {name}'s", variables: [
+          { name: 'link', label: 'Link', sample: '', kind: 'link' },
+          { name: 'id', label: 'Id', sample: '' },
+          { name: 'name', label: 'Name', sample: '' },
+        ] },
+        { link, id: '7', name: 'Ada' },
+      )
+      // Text sits anywhere in a sentence; only the link must stand alone.
+      expect(refused).toMatchObject({ subject: 'See evil.example/{link}', text: "Ticket #7, Ada's", refused: ['link'] })
+      // A variable declared a link must stand alone whatever its value turns out to be.
+      expect(renderMailTemplate(
+        { key, subject: 'S', body: 'x/{link}', variables: [{ name: 'link', label: 'Link', sample: '', kind: 'link' }] },
+        { link: 'not-an-address' },
+      ).refused).toEqual(['link'])
+      // A line break inside a paragraph separates, unless what is before it reads as an address.
+      expect(renderMailTemplate({ key, subject: 'S', body: 'Open this link:\n{link}' }, { link }).text).toBe(`Open this link:\n${link}`)
       // The site's own templates may write a plain value into a word; only an address must stand alone.
       expect(renderMailTemplate({ key: CORE_KEY, subject: 'S', body: 'Ticket #{id} at {site.url}/help' }, { id: '7', 'site.url': 'https://example.com' }).text)
         .toBe('Ticket #7 at https://example.com/help')
@@ -999,6 +1086,74 @@ describe('email for plugins', () => {
       expect(await count('acme.noisy', 'queued')).toBe(3)
       expect(await count('acme.noisy', 'sent')).toBeLessThanOrEqual(KEPT)
       expect(await count('acme.noisy', 'sent')).toBeGreaterThanOrEqual(KEPT - 3)
+    })
+  })
+
+  describe('an owner\'s wording that cannot be sent as written', () => {
+    const RESET = 'member.reset'
+    const LINK = 'https://example.com/reset?token=one-time'
+    const storeEdit = (key: string, body: string) => h.db`
+      insert into mail_templates (template_key, subject, body_markdown, updated_at)
+      values (${key}, 'My subject', ${body}, '2026-01-01T00:00:00.000Z')
+    `
+
+    it('is not saved: the owner is told which variable must stand alone', async () => {
+      for (const body of ['Reset here:{link}', '<{link}>', 'Go to example.com/?next={link}']) {
+        const put = await h.cms(`/admin/api/cms/mail/templates/${RESET}`, {
+          method: 'PUT', cookie: owner, json: { subject: 'Reset', body },
+        })
+        expect(put.status).toBe(400)
+        expect((await readJson<{ error: string }>(put)).error).toContain('{link} must stand alone')
+      }
+      expect((await h.db`select template_key from mail_templates`).rows).toHaveLength(0)
+      const fine = await h.cms(`/admin/api/cms/mail/templates/${RESET}`, {
+        method: 'PUT', cookie: owner, json: { subject: 'Reset', body: 'Reset here: {link}\n\n[Or press this]({link})' },
+      })
+      expect(fine.status).toBe(200)
+    })
+
+    it('falls back to the built-in wording for an edit stored before the rule, and says so everywhere', async () => {
+      await readyConnector()
+      // An edit from before: it would now send a reset email with no link in it.
+      await storeEdit(RESET, 'Reset your password:{link}')
+      expect((await templates()).find((template) => template.key === RESET)).toMatchObject({
+        customised: true,
+        wordingProblem: '{link} must stand alone: put a space or a line break around it, or use it as the address of a link.',
+      })
+      expect(await listUnusableTemplateEdits(h.db)).toMatchObject([{ key: RESET }])
+
+      await queueTemplateMail(h.db, { key: RESET, to: 'ada@example.com', variables: { link: LINK, email: 'ada@example.com' } })
+      let sent = { subject: '', text: '' }
+      await drain(async (_c, _s, mail) => { sent = { subject: mail.subject, text: mail.text }; return null })
+      // The member gets a working link, in the built-in words.
+      expect(sent.text).toContain(LINK)
+      expect(sent.text).not.toContain('{link}')
+      expect(sent.subject).not.toBe('My subject')
+      expect((await listMailActivity(h.db)).entries[0]).toMatchObject({
+        status: 'sent',
+        error: 'Your wording was not used: {link} must stand alone. The built-in wording was sent.',
+      })
+    })
+
+    it('never sends an email with a variable left in it: the queue fails it as template_invalid', async () => {
+      await install(BOTH)
+      await readyConnector()
+      const memberId = await activeMember()
+      await send({ template: 'ticket.reply', to: { member: memberId }, variables: { subject: 'a', link: 'https://example.com/t/1' }, reference: 'r' })
+      // The template changes under the queued email into one that glues its link (no parser would accept it).
+      const definition = getMailTemplateDefinition(REPLY_KEY)!
+      registerMailTemplate({ ...definition, defaultBody: 'Open:{link}' })
+      let calls = 0
+      await drain(async () => { calls += 1; return null })
+      expect(calls).toBe(0)
+      expect((await listMailActivity(h.db)).entries[0]).toMatchObject({ status: 'failed' })
+      expect(await heard()).toEqual([
+        { event: 'mail.failed', template: 'ticket.reply', to: { member: memberId }, reference: 'r', reason: 'template_invalid' },
+      ])
+      // And `send` refuses to queue another, with the code a plugin can act on.
+      const refused = await send({ template: 'ticket.reply', to: { member: memberId }, variables: { subject: 'a', link: 'https://example.com/t/1' } })
+      expect(String(refused.error)).toStartWith('template_invalid:')
+      registerMailTemplate(definition)
     })
   })
 

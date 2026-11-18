@@ -273,7 +273,7 @@ describe('instatic-plugin lint', () => {
     key: 'welcome',
     label: 'Welcome',
     description: 'Sent after sign-up.',
-    variables: [{ name: 'link', label: 'Link', sample: 'https://example.com/start' }],
+    variables: [{ name: 'link', label: 'Link', sample: 'https://example.com/start', kind: 'link' }],
     subject: 'Welcome to {site.name}',
     body: '[Start]({link})',
   }
@@ -287,16 +287,25 @@ describe('instatic-plugin lint', () => {
     expect(result.findings).toEqual([])
   })
 
-  it('warns about a variable a mail template uses without declaring it', async () => {
-    const result = await withTempPlugin(async (dir) => {
-      await writeConfig(dir, {
-        permissions: ['mail.send'],
-        mail: { templates: [{ ...WELCOME, body: 'Hello {memebr.name}, [start]({link})' }] },
+  it('refuses a mail template that uses a variable it does not declare, or glues a link into text', async () => {
+    const lint = (template: Record<string, unknown>) =>
+      withTempPlugin(async (dir) => {
+        await writeConfig(dir, { permissions: ['mail.send'], mail: { templates: [{ ...WELCOME, ...template }] } })
       })
-    })
-    expect(result.findings).toHaveLength(1)
-    expect(result.findings[0]).toMatchObject({ severity: 'warning' })
-    expect(result.findings[0].message).toContain('{memebr.name}')
+    const undeclared = await lint({ body: 'Hello {memebr.name}, [start]({link})' })
+    expect(undeclared.findings).toHaveLength(1)
+    expect(undeclared.findings[0]).toMatchObject({ severity: 'error' })
+    expect(undeclared.findings[0].message).toContain('{memebr.name}')
+
+    // Rendered here exactly as the server will render it: the link would be sent unfilled.
+    for (const body of ['Start here:{link}', 'See example.com/go?to={link}', '<{link}>']) {
+      const glued = await lint({ body })
+      expect(glued.findings.map((finding) => finding.severity)).toEqual(['error'])
+      expect(glued.findings[0].message).toContain('{link} must stand alone')
+    }
+    // A link's sample must be a link, and a text sample must not be one.
+    const badSample = await lint({ variables: [{ name: 'link', label: 'Link', sample: 'https://example.com/start' }] })
+    expect(badSample.findings[0].message).toContain('contains an address')
   })
 
   it('warns about a mail permission with nothing to send, and refuses templates without one', async () => {

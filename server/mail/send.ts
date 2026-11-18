@@ -18,6 +18,7 @@
 import type { DbClient } from '../db/client'
 import {
   MAIL_ADDRESS_PATTERN,
+  getMailTemplateDefinition,
   renderMailTemplate,
   type MailActivityStatus,
   type MailDefaults,
@@ -42,6 +43,18 @@ export class MailNotConfiguredError extends Error {
 export interface SiteMail extends OutgoingMail {
   /** What the message is, for the activity log: a template key, or `test`. */
   kind: string
+  /** Something the owner should know about how this email was made, shown with it in Activity. */
+  note?: string
+}
+
+/** A template that cannot be turned into an email with every value in place. Retrying changes nothing. */
+export class MailTemplateInvalidError extends Error {
+  constructor(key: string, refused: readonly string[]) {
+    super(
+      `The "${key}" template cannot be sent: ${refused.map((name) => `{${name}}`).join(', ')} does not stand alone in it.`,
+    )
+    this.name = 'MailTemplateInvalidError'
+  }
 }
 
 /** Carries one message through one connector. Replaceable in tests. */
@@ -294,6 +307,30 @@ export async function buildTemplateMail(
 ): Promise<SiteMail> {
   const template = await getMailTemplate(db, input.key)
   if (!template) throw new Error(`unknown mail template "${input.key}"`)
-  const rendered = renderMailTemplate(template, { ...(await siteMailVariables(db)), ...input.variables })
-  return { kind: input.key, to: input.to, ...rendered }
+  const values = { ...(await siteMailVariables(db)), ...input.variables }
+  let rendered = renderMailTemplate(template, values)
+  let note: string | undefined
+  if (rendered.refused.length > 0 && template.customised) {
+    // The owner's wording would go out with a variable still in it (a
+    // sign-in email with no link). The built-in wording is sent instead, and
+    // the log says so.
+    const definition = getMailTemplateDefinition(input.key)
+    if (definition) {
+      note = `Your wording was not used: ${rendered.refused.map((name) => `{${name}}`).join(', ')} must stand alone. The built-in wording was sent.`
+      rendered = renderMailTemplate(
+        { key: input.key, subject: definition.defaultSubject, body: definition.defaultBody, variables: template.variables },
+        values,
+      )
+    }
+  }
+  // Never an email with a variable left in it.
+  if (rendered.refused.length > 0) throw new MailTemplateInvalidError(input.key, rendered.refused)
+  return {
+    kind: input.key,
+    to: input.to,
+    subject: rendered.subject,
+    text: rendered.text,
+    html: rendered.html,
+    ...(note ? { note } : {}),
+  }
 }

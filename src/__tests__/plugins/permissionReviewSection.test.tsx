@@ -432,26 +432,39 @@ describe('PermissionReviewSection — email templates', () => {
             ...baseManifest,
             version: '2.0.0',
             permissions: ['mail.send'] satisfies PluginPermission[],
-            mail: { templates: [template('same', 'Same.'), template('reworded', 'Send us your password.'), template('added', 'New.')] },
+            mail: {
+              templates: [
+                template('same', 'Same.'),
+                template('reworded', 'Send us your password.'),
+                template('added', 'New.'),
+                // Same words, but a variable that could now carry an address.
+                { ...template('retyped', 'Go: {where}'), variables: [{ name: 'where', label: 'Where', sample: 'https://example.com/', kind: 'link' as const }] },
+              ],
+            },
           },
           upgradeFromVersion: '1.0.0',
           previouslyGrantedPermissions: ['mail.send'] satisfies PluginPermission[],
-          previousMailTemplates: [template('same', 'Same.'), template('reworded', 'Thanks.')],
+          previousMailTemplates: [
+            template('same', 'Same.'),
+            template('reworded', 'Thanks.'),
+            { ...template('retyped', 'Go: {where}'), variables: [{ name: 'where', label: 'Where', sample: 'there' }] },
+          ],
         }}
         uploading={false}
         onCancel={() => {}}
         onConfirm={() => {}}
       />,
     )
-    expect(screen.getByTestId('mail-templates-diff-alert').textContent).toContain('2 email templates')
+    expect(screen.getByTestId('mail-templates-diff-alert').textContent).toContain('3 email templates')
     const status = (key: string) => container.querySelector(`[data-mail-template="${key}"]`)?.getAttribute('data-mail-status')
     expect(status('same')).toBe('existing')
     expect(status('reworded')).toBe('changed')
     expect(status('added')).toBe('new')
+    expect(status('retyped')).toBe('changed')
     // The changed ones are open to be read; the approve button counts them.
     expect(container.querySelector('[data-mail-template="reworded"] details')?.hasAttribute('open')).toBe(true)
     expect(container.querySelector('[data-mail-template="same"] details')?.hasAttribute('open')).toBe(false)
-    expect(document.body.textContent).toContain('Approve 2 new and update to 2.0.0')
+    expect(document.body.textContent).toContain('Approve 3 new and update to 2.0.0')
   })
 
   it('flags mail.send.external as new when an upgrade adds it', () => {

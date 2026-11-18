@@ -32,6 +32,7 @@
  *    handed to a provider again.
  *  - **Core mail first, new mail before retries.** See `claimNextDueMail`.
  */
+import { announceOutcome, type MailFailureReason } from './outcomes'
 import type { DbClient } from '../db/client'
 import { getMailTemplateDefinition } from '@core/mail'
 import { getErrorMessage } from '@core/utils/errorMessage'
@@ -69,6 +70,7 @@ import {
   captureAllowed,
   carryThroughConnector,
   MailNotConfiguredError,
+  MailTemplateInvalidError,
   readyToSend,
   type CarryOutcome,
   type SendDeps,
@@ -115,68 +117,6 @@ export interface QueueTemplateMailInput {
 }
 
 /**
- * Why a queued email was given up on, for whoever asked for it. A fixed set
- * of codes and never the provider's own words, which can quote the
- * recipient's address: the full sentence stays in the admin's activity log.
- *
- *  - `recipient_rejected`: the provider refused this message or recipient.
- *  - `expired`: its deadline passed before it could be delivered (the
- *    provider was unreachable or throttling, or the connector was broken).
- *  - `template_removed`: the template no longer exists or no longer renders.
- *  - `unreadable`: the server's secret key changed while the email waited.
- *  - `recipient_unavailable`: the member it was for was suspended or deleted
- *    before it could be sent.
- */
-export type MailFailureReason =
-  | 'recipient_rejected'
-  | 'expired'
-  | 'template_removed'
-  | 'unreadable'
-  | 'recipient_unavailable'
-
-/** What became of a queued email that was not the core's own. */
-export interface QueuedMailOutcome {
-  source: string
-  /** The template key. */
-  kind: string
-  /** The recipient exactly as the sender named it. */
-  recipient: { member: string } | { address: string }
-  reference: string | null
-  /** The install of the sending plugin that queued the email. */
-  installId: string | null
-  status: 'sent' | 'failed'
-  /** Why it failed, as a fixed code. Null for a sent email. */
-  reason: MailFailureReason | null
-}
-
-let outcomeHandler: ((db: DbClient, outcome: QueuedMailOutcome) => void) | null = null
-
-/**
- * Hear what becomes of every queued email that has a `source` other than
- * the core. The plugin host uses this to tell a plugin about its own mail.
- */
-export function setQueuedMailOutcomeHandler(handler: ((db: DbClient, outcome: QueuedMailOutcome) => void) | null): void {
-  outcomeHandler = handler
-}
-
-function announceOutcome(db: DbClient, mail: QueuedMail, status: 'sent' | 'failed', reason: MailFailureReason | null): void {
-  if (mail.source === CORE_MAIL_SOURCE || !outcomeHandler) return
-  try {
-    outcomeHandler(db, {
-      source: mail.source,
-      kind: mail.kind,
-      recipient: mail.memberId !== null ? { member: mail.memberId } : { address: mail.to },
-      reference: mail.reference,
-      installId: mail.installId,
-      status,
-      reason,
-    })
-  } catch (err) {
-    console.error('[mail] outcome handler threw:', getErrorMessage(err, 'unknown error'))
-  }
-}
-
-/**
  * Accept an email for delivery. Resolves `queued` once it is safely stored,
  * or `captured` on a development server with no connector. Throws
  * `MailNotConfiguredError` in production when email is not set up, and
@@ -211,7 +151,7 @@ export async function queueTemplateMail(
     if (!captureAllowed(deps.env ?? process.env)) throw new MailNotConfiguredError()
     await db.transaction(async (tx) => {
       if (limited) await reserveRecipientSlot(tx, limited, recipient)
-      await recordMail(tx, { ...log, status: 'captured', body: mail.text })
+      await recordMail(tx, { ...log, status: 'captured', body: mail.text, error: mail.note })
     })
     return 'captured'
   }
@@ -273,7 +213,7 @@ let pausedUntil = 0
 let stopping = false
 
 type Attempt =
-  | { sent: true; outcome: Extract<CarryOutcome, { ok: true }> }
+  | { sent: true; outcome: Extract<CarryOutcome, { ok: true }>; note?: string }
   | {
       sent: false
       /** The sentence for the activity log. */
@@ -362,12 +302,13 @@ async function attemptQueuedMail(db: DbClient, mail: QueuedMail, deps: DrainDeps
     rendered = await buildTemplateMail(db, { key: mail.kind, to: mail.to, variables })
     assertSendable(rendered)
   } catch (err) {
-    // The template no longer renders a sendable message. Another try would end the same way.
+    // The template no longer renders a sendable message. Another try would
+    // end the same way, and nothing is sent with a variable left in it.
     return {
       sent: false,
       message: getErrorMessage(err, 'The email could not be prepared.'),
       retry: 'never',
-      reason: 'template_removed',
+      reason: err instanceof MailTemplateInvalidError ? 'template_invalid' : 'template_removed',
     }
   }
   const outcome = await carryThroughConnector(
@@ -379,7 +320,7 @@ async function attemptQueuedMail(db: DbClient, mail: QueuedMail, deps: DrainDeps
     (deps.now ?? Date.now)(),
     !mail.suspect,
   )
-  if (outcome.ok) return { sent: true, outcome }
+  if (outcome.ok) return { sent: true, outcome, note: rendered.note }
   return {
     sent: false,
     message: outcome.message,
@@ -412,6 +353,8 @@ async function settleQueuedMail(
       connector: attempt.outcome.connector,
       providerMessageId: attempt.outcome.providerMessageId,
       durationMs: attempt.outcome.durationMs,
+      // Not an error: what the owner should know about this email (see `SiteMail.note`).
+      error: attempt.note,
     })
     await removeQueuedMail(db, mail)
     announceOutcome(db, mail, 'sent', null)

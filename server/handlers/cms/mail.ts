@@ -57,7 +57,13 @@ import {
   sendSiteMail,
 } from '../../mail/send'
 import { MailDeliveryError, privateMailHostsAllowed } from '../../mail/smtpDriver'
-import { getMailTemplate, listMailTemplates, resetMailTemplate, saveMailTemplate } from '../../mail/templates'
+import {
+  getMailTemplate,
+  listMailTemplates,
+  mailWordingProblem,
+  resetMailTemplate,
+  saveMailTemplate,
+} from '../../mail/templates'
 import { CMS_API_PREFIX, requestAuditContext } from './shared'
 import { runRouteTable, type Route, type RouteParams } from './routeTable'
 
@@ -218,6 +224,10 @@ async function handleSaveTemplate(req: Request, db: DbClient, params: RouteParam
   if (!getMailTemplateDefinition(params.key)) return notFound('Template')
   const input = await readValidatedBody(req, MailTemplateInputSchema)
   if (!input) return badRequest('A template needs a subject and a body')
+  const definition = getMailTemplateDefinition(params.key)
+  // A wording that would send an email with a variable still in it is not saved.
+  const problem = definition ? mailWordingProblem(definition, input) : null
+  if (problem) return badRequest(problem)
   await saveMailTemplate(db, params.key, input, user.id)
   await createAuditEvent(db, {
     actorUserId: user.id,

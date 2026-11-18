@@ -206,6 +206,12 @@ export const MailTemplateVariableSchema = Type.Object({
   label: Type.String(),
   /** The value the preview shows: the site's real one for `site.*`, a realistic made-up one otherwise. */
   sample: Type.String(),
+  /**
+   * What the value is. A `link` is an address: it is put into an email only
+   * where it stands alone or is the whole address of a link. `text` (the
+   * default) may sit anywhere in a sentence.
+   */
+  kind: Type.Optional(Type.Union([Type.Literal('text'), Type.Literal('link')])),
 })
 export type MailTemplateVariable = Static<typeof MailTemplateVariableSchema>
 
@@ -219,6 +225,12 @@ export const MailTemplateSchema = Type.Object({
   body: Type.String(),
   /** False while the template still has its built-in wording. */
   customised: Type.Boolean(),
+  /**
+   * Set when the owner's wording cannot be sent as written (it puts a link
+   * where it does not stand alone): the built-in wording is sent instead
+   * until the edit is corrected.
+   */
+  wordingProblem: Type.Union([Type.String(), Type.Null()]),
 })
 export type MailTemplate = Static<typeof MailTemplateSchema>
 

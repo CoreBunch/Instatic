@@ -10,6 +10,8 @@ import '../richtextSanitizer'
 import {
   getMailTemplateDefinition,
   listMailTemplateDefinitions,
+  renderMailTemplate,
+  sampleMailVariables,
   type MailTemplate,
   type MailTemplateDefinition,
   type MailTemplateInput,
@@ -55,7 +57,37 @@ function toTemplate(
     subject: row?.subject ?? definition.defaultSubject,
     body: row?.body_markdown ?? definition.defaultBody,
     customised: row !== undefined,
+    wordingProblem: row
+      ? mailWordingProblem(definition, { subject: row.subject, body: row.body_markdown })
+      : null,
   }
+}
+
+/**
+ * Why a wording of this template cannot be sent as written, or null when it
+ * can. Checked with the template's sample values: a link that does not
+ * stand alone (`Link:{link}`, `<{link}>`) is left unfilled by the renderer,
+ * and an email must never go out with a variable still in it.
+ */
+export function mailWordingProblem(
+  definition: MailTemplateDefinition,
+  wording: { subject: string; body: string },
+): string | null {
+  const rendered = renderMailTemplate(
+    { key: definition.key, variables: definition.variables, ...wording },
+    { 'site.name': 'Site', 'site.url': 'https://example.com', ...sampleMailVariables(definition.variables) },
+  )
+  if (rendered.refused.length === 0) return null
+  const names = rendered.refused.map((name) => `{${name}}`).join(', ')
+  return `${names} must stand alone: put a space or a line break around ${rendered.refused.length === 1 ? 'it' : 'each'}, or use it as the address of a link.`
+}
+
+/** The owner's edits that cannot be sent as written. Logged once at boot; the Templates list shows each. */
+export async function listUnusableTemplateEdits(db: DbClient): Promise<Array<{ key: string; problem: string }>> {
+  const templates = await listMailTemplates(db)
+  return templates.flatMap((template) =>
+    template.wordingProblem !== null ? [{ key: template.key, problem: template.wordingProblem }] : [],
+  )
 }
 
 export async function listMailTemplates(db: DbClient): Promise<MailTemplate[]> {

@@ -136,7 +136,7 @@ A plugin sends only emails it declares. Request `mail.send` (site members) or `m
         "key": "welcome",
         "label": "Welcome",
         "description": "Sent after a member joins.",
-        "variables": [{ "name": "link", "label": "Link", "sample": "https://example.com/start" }],
+        "variables": [{ "name": "link", "label": "Link", "sample": "https://example.com/start", "kind": "link" }],
         "subject": "Welcome to {site.name}",
         "body": "Thanks for joining.\n\n[Get started]({link})"
       }
@@ -154,7 +154,7 @@ await api.cms.mail.send({
 })
 ```
 
-The site owner can reword each template under Email → Templates. `send` resolves once the email is queued; listen for `mail.delivered` and `mail.failed` (with `cms.hooks`) to learn how it went. This is for transactional email to one recipient at a time, not newsletters. Templates are Markdown: raw HTML is stripped, images are not allowed, and links you write out must be `https`. Put a space or sentence punctuation around every variable (`Ticket {id}`, not `#{id}`), or use it as a whole link (`[Open]({link})`). The owner reads each template before installing, and again when an update changes one.
+The site owner can reword each template under Email → Templates. `send` resolves once the email is queued; listen for `mail.delivered` and `mail.failed` (with `cms.hooks`) to learn how it went. This is for transactional email to one recipient at a time, not newsletters. Templates are Markdown: raw HTML is stripped, images are not allowed, and links you write out must be `https`. Declare a variable that carries an address with `"kind": "link"`: it must stand alone in the template or be the whole address of a link (`[Open]({link})`), and `instatic-plugin lint` refuses a template that glues one into text. Other variables are text: they may sit anywhere, but a value that contains an address is refused when you send. The owner reads each template before installing, and again when an update changes one.
 
 ## Managed media ingestion
 

@@ -10,6 +10,13 @@ export interface PluginMailTemplateVariable {
   label: string
   /** A realistic made-up value for the preview and the test send. */
   sample: string
+  /**
+   * `link` for an address (`https://...`): it must stand alone in the
+   * template, or be the whole address of a link (`[Open]({link})`), and its
+   * value must be an `http(s)` address. `text` (the default) may sit
+   * anywhere in a sentence, and its value must not contain an address.
+   */
+  kind?: 'text' | 'link'
 }
 
 /** An email a plugin can send, declared in the manifest's `mail.templates[]`. */
@@ -43,6 +50,7 @@ export type PluginMailRecipient = { member: string } | { address: string }
  *  - `template_removed`: the template no longer exists.
  *  - `unreadable`: the queued email could not be read any more.
  *  - `recipient_unavailable`: the member it was for was suspended or deleted before it went out.
+ *  - `template_invalid`: the template would have gone out with a variable still in it.
  */
 export type PluginMailFailureReason =
   | 'recipient_rejected'
@@ -50,6 +58,7 @@ export type PluginMailFailureReason =
   | 'template_removed'
   | 'unreadable'
   | 'recipient_unavailable'
+  | 'template_invalid'
 
 export interface PluginMailSendInput {
   /** A `key` from this plugin's `mail.templates[]`. */
@@ -71,7 +80,12 @@ export interface ServerPluginMailApi {
    *
    * Rejects when email is not set up, the member cannot be emailed, the
    * address is not valid, a value is not a string, or a limit is reached
-   * (20 emails to one recipient within a clock hour, 10,000 waiting).
+   * (20 emails to one recipient within a clock hour, 200 an hour to
+   * addresses, 10,000 waiting). Two rejections start with a code:
+   * `variable_not_allowed:` when a value may not be sent in its variable (a
+   * `text` value that contains an address, a `link` value that is not an
+   * `http(s)` address, a control character), and `template_invalid:` when
+   * the email would go out with a variable still in it. Nothing is queued.
    *
    * Nothing here returns a member's address: the outcome events name the
    * recipient the way this call did.
