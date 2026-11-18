@@ -504,10 +504,36 @@ describe('mail queue', () => {
         await drainMailQueue(h.db, { carrier: down, now: clock, random: () => 0.999, paceMs: 0 })
         now += 5_000
       }
-      // The last try is at the last useful moment (a minute and five seconds before the deadline), not minutes earlier.
-      expect(attempts.at(-1)).toBe(15 * MINUTE - 65_000)
+      // The last try is at the last useful moment (the margin and two ticks before the deadline), not minutes earlier.
+      expect(attempts.at(-1)).toBe(15 * MINUTE - 90_000)
       expect(await queueRows()).toHaveLength(0)
       expect((await listMailActivity(h.db)).entries[0]).toMatchObject({ status: 'failed', attempts: attempts.length })
+    })
+
+    it('is made whatever the phase of the worker\'s fifteen-second tick', async () => {
+      await readyConnector()
+      const TICK = 15_000
+      for (const phase of [0, 1_000, 4_000, 7_500, 11_000, 14_999]) {
+        const start = now
+        const deadline = start + 15 * MINUTE
+        await queueTemplateMail(h.db, { ...MAIL, to: `phase${phase}@example.com`, deliverBefore: deadline })
+        const attempts: number[] = []
+        const down: MailCarrier = async () => {
+          attempts.push(deadline - now)
+          throw new MailDeliveryError('Could not reach the provider.', { retry: 'later' })
+        }
+        // The worker only ever looks on its tick, wherever that falls.
+        now += phase
+        while (now < deadline) {
+          await drainMailQueue(h.db, { carrier: down, now: clock, random: () => 0.999, paceMs: 0 })
+          now += TICK
+        }
+        await drainMailQueue(h.db, { carrier: down, now: clock, random: () => 0.999, paceMs: 0 })
+        // Its last try came in the last minute and a half, while it was still of use.
+        const last = attempts.at(-1) ?? Infinity
+        expect({ phase, inTime: last > MINUTE && last <= 90_000 }).toEqual({ phase, inTime: true })
+        expect(await queueRows()).toHaveLength(0)
+      }
     })
   })
 
