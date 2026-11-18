@@ -35,8 +35,8 @@
  */
 
 import type { DbClient } from '../../db/client'
-import type { Page, PageNode, SiteDocument } from '@core/page-tree'
-import type { ClosedContent, SourceRequestContext } from '@core/loops/types'
+import type { Page, SiteDocument } from '@core/page-tree'
+import type { ClosedContent, LoopEntitySource, SourceRequestContext } from '@core/loops/types'
 import { registry } from '@core/module-engine'
 import { loopSourceRegistry } from '@core/loops/registry'
 import {
@@ -49,7 +49,7 @@ import {
   type RenderAccumulators,
 } from '@core/publisher'
 import { buildPageFrame, buildRouteFrame, buildSiteFrame, type MemberFrame } from '@core/templates/contextFrames'
-import { prefetchLoopData } from '../../publish/loopPrefetch'
+import { collectLoopNodes, prefetchLoopData } from '../../publish/loopPrefetch'
 import { getOrRender } from '../../publish/renderCache'
 import { getPublishedNodeIndexForVersion } from '../../publish/publishedSnapshotCache'
 import { getPublishVersion } from '../../publish/publishState'
@@ -124,19 +124,24 @@ function normalizeQuery(params: URLSearchParams): string {
 }
 
 /**
- * Whether a hole must be rendered per visitor (bypass cache, read cookies).
- * Only `perVisitor` loop sources qualify — a module `render()` cannot read
- * cookies, so module holes are always shared-cacheable.
+ * The loop sources a hole's fragment draws on: its own, when the hole is a
+ * loop, and those of every loop inside it. Rendering starts at the hole and
+ * goes all the way down, so a list nested in a show-when box or in another
+ * list is fetched by this same request.
+ *
+ * One `perVisitor` source makes the whole fragment per visitor (never
+ * cached, cookies handed over); one `forMember` source means the signed-in
+ * member has to be resolved for it. A module `render()` cannot read cookies,
+ * so loops are the only thing that can ask for either.
  */
-function isPerVisitorHole(node: PageNode): boolean {
-  return holeLoopSource(node)?.perVisitor === true
-}
-
-/** The loop source a hole node is bound to, when the hole is a loop. */
-function holeLoopSource(node: PageNode) {
-  if (node.moduleId !== 'base.loop') return undefined
-  const sourceId = typeof node.props.sourceId === 'string' ? node.props.sourceId : ''
-  return sourceId ? loopSourceRegistry.get(sourceId) : undefined
+function holeLoopSources(page: Page, site: SiteDocument, nodeId: string): LoopEntitySource[] {
+  const sources: LoopEntitySource[] = []
+  for (const loop of collectLoopNodes(page, site, nodeId)) {
+    const sourceId = typeof loop.props.sourceId === 'string' ? loop.props.sourceId : ''
+    const source = sourceId ? loopSourceRegistry.get(sourceId) : undefined
+    if (source) sources.push(source)
+  }
+  return sources
 }
 
 /**
@@ -242,7 +247,6 @@ export async function handleHoleRequest(
       headers: { 'content-type': 'text/plain; charset=utf-8' },
     })
   }
-  const node = foundPage.nodes[nodeId]!
 
   // Reconstruct the originating page URL forwarded by the runtime (`u`). Falls
   // back to the page's own permalink when absent (older runtime / direct hit).
@@ -273,7 +277,8 @@ export async function handleHoleRequest(
   // fragment is shared, so it is rendered as for a signed-out visitor.
   const closed = closedContentFor(accessIndex, isProtected ? ((await visitor())?.tags ?? null) : null)
 
-  const perVisitor = isPerVisitorHole(node)
+  const loopSources = holeLoopSources(foundPage, snap.site, nodeId)
+  const perVisitor = loopSources.some((source) => source.perVisitor === true)
   // A fragment that shows member data or has a show-when rule is rendered
   // for this visitor alone, on a public page as much as on a protected one.
   // So is a fragment that sits inside an element with a show-when rule: the
@@ -309,7 +314,7 @@ export async function handleHoleRequest(
     const member = signedIn === undefined
       ? undefined
       : memberFrameFor(signedIn, signedIn ? await memberAppRequestFrame(ctx.db, pageUrl) : null)
-    const memberId = holeLoopSource(node)?.forMember ? ((await visitor())?.id ?? null) : undefined
+    const memberId = loopSources.some((source) => source.forMember === true) ? ((await visitor())?.id ?? null) : undefined
     const html = await renderHoleFragment(nodeId, foundPage, snap.site, ctx.db, pageUrl, request, closed, member, memberId)
     return new Response(html, {
       status: 200,

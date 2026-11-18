@@ -111,7 +111,7 @@ function gatedPage(): Page {
     rootNodeId: 'root',
     nodes: Object.fromEntries(
       [
-        node('root', 'base.body', {}, ['gate', 'members_loop', 'apps_loop']),
+        node('root', 'base.body', {}, ['gate', 'members_loop', 'apps_loop', 'apps_box']),
         node('gate', 'base.container', { showWhen: { visitor: 'tags', tags: ['pro'] } }, ['gate_line', 'gate_loop']),
         node('gate_line', 'base.text', { text: 'PRO-BOX-LINE', tag: 'p' }),
         node('gate_loop', 'base.loop', loop, ['gate_loop_item']),
@@ -121,6 +121,10 @@ function gatedPage(): Page {
         // A member's own list with no rule on it, on an open page.
         node('apps_loop', 'base.loop', { ...loop, sourceId: 'members.apps', orderBy: 'connectedAt' }, ['apps_loop_item']),
         node('apps_loop_item', 'base.text', { text: 'APP-ROW {currentEntry.name}', tag: 'p' }),
+        // The same kind of list inside a box for signed-in members: the box is the fragment.
+        node('apps_box', 'base.container', { showWhen: { visitor: 'signedIn' } }, ['apps_boxed']),
+        node('apps_boxed', 'base.loop', { ...loop, sourceId: 'members.apps', orderBy: 'connectedAt', pagination: 'none' }, ['apps_boxed_item']),
+        node('apps_boxed_item', 'base.text', { text: 'BOXED-APP {currentEntry.name}', tag: 'p' }),
       ].map((entry) => [entry.id, entry]),
     ),
   } as Page
@@ -418,6 +422,31 @@ describe('member bindings and show-when rules', () => {
       for (const cookie of [undefined, plain]) {
         expect((await list('apps_loop', cookie)).headers.get('cache-control')).toBe('private, no-store')
       }
+    })
+
+    it('fills a member\'s own list that sits inside another per-visitor element', async () => {
+      const ada = await signedIn('ada@example.com', 'Ada')
+      const bob = await signedIn('bob@example.com', 'Bob')
+      const { rows } = await t.db<{ id: string }>`select id from members where email = 'ada@example.com'`
+      const now = Date.now()
+      await t.db`
+        insert into member_apps (id, name, redirect_uris_json, scopes_json, created_at)
+        values ('app_boxed', 'Boxed Desktop', '[]', '[]', ${new Date(now).toISOString()})
+      `
+      await t.db`
+        insert into member_app_grants (id, member_id, app_id, scope, created_at, expires_at)
+        values ('grant_boxed', ${rows[0].id}, 'app_boxed', 'profile', ${new Date(now).toISOString()}, ${new Date(now + 86_400_000).toISOString()})
+      `
+      const index = await getPublishedNodeIndexForVersion(t.db, getPublishVersion())
+      const box = (cookie?: string) =>
+        get(`/_instatic/hole/apps_box?v=${index!.snapshotHash}&u=${encodeURIComponent('/gated')}`, cookie)
+
+      const forAda = await box(ada)
+      expect(await forAda.text()).toContain('BOXED-APP Boxed Desktop')
+      expect(forAda.headers.get('cache-control')).toBe('private, no-store')
+      // Bob is signed in too, so he gets the box, and none of her apps in it.
+      expect(await (await box(bob)).text()).not.toContain('Boxed Desktop')
+      expect(await (await box()).text()).not.toContain('Boxed Desktop')
     })
 
     it('renders a protected page in one piece for its member', async () => {
