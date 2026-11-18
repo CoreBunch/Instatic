@@ -6,6 +6,7 @@ import { handleMemberRequest, safeRedirectPath } from '../../../server/members/h
 import { resetMemberLimits } from '../../../server/members/limits'
 import { flushMemberMail } from '../../../server/members/mail'
 import {
+  createMember,
   findMemberByEmail,
   grantMemberTag,
   listActiveMemberTags,
@@ -13,6 +14,13 @@ import {
   saveMemberSettings,
 } from '../../../server/members/repository'
 import { issueMemberToken } from '../../../server/members/tokens'
+import {
+  deleteMemberAsAdmin,
+  getMemberForAdmin,
+  inviteMember,
+  listMembersForAdmin,
+  setMemberSuspended,
+} from '../../../server/members/admin'
 
 const ORIGIN = 'http://localhost'
 const PASSWORD = 'correct-horse-battery'
@@ -732,4 +740,68 @@ describe('site members', () => {
       expect((await browser.me())!.tags).toEqual([])
     })
   })
+  // The admin's view of members. These call the queries directly so they run
+  // on Postgres too (`DB=postgres`); the HTTP side is in membersAdmin.test.ts.
+  describe('admin queries', () => {
+    const make = async (email: string, name: string, passwordHash: string | null = 'x') =>
+      (await createMember(t.db, { email, passwordHash, profile: name ? { name } : {}, verified: passwordHash !== null }))!
+
+    it('lists, searches, filters and counts the same on both databases', async () => {
+      const ada = await make('ada@example.com', 'Ada Lovelace')
+      await make('grace@example.com', 'Grace Hopper')
+      await make('pending@example.com', '', null)
+      const linus = await make('linus@example.com', '')
+      await grantMemberTag(t.db, { memberId: ada.id, tag: 'pro', source: 'admin', expiresAt: null })
+      await grantMemberTag(t.db, { memberId: ada.id, tag: 'pro', source: 'acme.shop', expiresAt: null })
+      await grantMemberTag(t.db, { memberId: linus.id, tag: 'old', source: 'admin', expiresAt: new Date(Date.now() - 1000).toISOString() })
+      await setMemberSuspended(t.db, linus.id, true)
+
+      const all = await listMembersForAdmin(t.db)
+      expect(all.counts).toEqual({ all: 4, active: 2, invited: 1, suspended: 1 })
+      expect(all.matching).toBe(4)
+      expect(all.nextOffset).toBeNull()
+      // One member holding a tag from two sources is one member.
+      expect(all.tags).toEqual([{ tag: 'pro', count: 1 }])
+
+      expect((await listMembersForAdmin(t.db, { search: 'LOVELACE' })).members.map((m) => m.email)).toEqual(['ada@example.com'])
+      expect((await listMembersForAdmin(t.db, { search: 'grace@' })).members.map((m) => m.email)).toEqual(['grace@example.com'])
+      expect((await listMembersForAdmin(t.db, { search: '%' })).matching).toBe(4)
+      expect((await listMembersForAdmin(t.db, { status: 'invited' })).members.map((m) => m.email)).toEqual(['pending@example.com'])
+      expect((await listMembersForAdmin(t.db, { status: 'suspended' })).members.map((m) => m.email)).toEqual(['linus@example.com'])
+      expect((await listMembersForAdmin(t.db, { tag: 'pro', search: 'ada' })).members[0]).toMatchObject({
+        name: 'Ada Lovelace', status: 'active', tags: ['pro'],
+      })
+      expect((await listMembersForAdmin(t.db, { tag: 'old' })).matching).toBe(0)
+
+      const detail = await getMemberForAdmin(t.db, ada.id)
+      expect(detail?.grants.map((grant) => grant.source).sort()).toEqual(['acme.shop', 'admin'])
+      expect(detail?.events).toEqual([])
+    })
+
+    it('pages through more members than one page holds', async () => {
+      for (let index = 0; index < 55; index += 1) await make(`m${String(index).padStart(2, '0')}@example.com`, '')
+      const first = await listMembersForAdmin(t.db)
+      expect(first.members).toHaveLength(50)
+      expect(first.nextOffset).toBe(50)
+      const second = await listMembersForAdmin(t.db, { offset: first.nextOffset ?? 0 })
+      expect(second.members).toHaveLength(5)
+      expect(second.nextOffset).toBeNull()
+      const seen = new Set([...first.members, ...second.members].map((m) => m.id))
+      expect(seen.size).toBe(55)
+    })
+
+    it('invites, re-invites and deletes', async () => {
+      const invited = await inviteMember(t.db, { email: 'new@example.com', tags: ['student'], linkOrigin: 'http://localhost' })
+      expect(invited).toMatchObject({ ok: true, outcome: 'invited' })
+      expect(await inviteMember(t.db, { email: 'new@example.com', tags: [], linkOrigin: 'http://localhost' })).toMatchObject({ ok: true, outcome: 'resent' })
+      const taken = await make('ada@example.com', 'Ada')
+      expect(await inviteMember(t.db, { email: 'ada@example.com', tags: [], linkOrigin: 'http://localhost' })).toEqual({ ok: false, reason: 'exists' })
+      expect(await mailCount('invite')).toBe(2)
+
+      expect(await deleteMemberAsAdmin(t.db, taken.id)).toBe(true)
+      expect(await deleteMemberAsAdmin(t.db, taken.id)).toBe(false)
+      expect((await listMembersForAdmin(t.db)).counts.all).toBe(1)
+    })
+  })
+
 })

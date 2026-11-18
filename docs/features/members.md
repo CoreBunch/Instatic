@@ -157,6 +157,32 @@ A node that uses a member binding or a show-when rule is different for every vis
 
 `member` in the context has three states: a frame (signed in), `null` (signed out) and absent (a render for nobody in particular: a baked page, a shared-cache render, a branch preview). Absent behaves as signed out.
 
+## Managing members in the admin
+
+**Users → Site members** (`src/admin/pages/users/tabs/MembersTab.tsx`) sits beside Admin users, Roles and Audit. A user with `members.read` or `members.manage` can open the Users page for this tab alone (`canAccessUsersWorkspace`).
+
+The API is `server/handlers/cms/members.ts` under `/admin/api/cms/members`. It decides who may call and audits the call; every query on the member tables stays in `server/members/admin.ts` (the split is gated by `members-admin-split.test.ts`).
+
+| Method | Path | What it does | Needs |
+|---|---|---|---|
+| GET | `/members?q=&status=&tag=&offset=` | One page of 50, plus counts by status and the tags in use | read or manage |
+| GET | `/members/:id` | Profile, tag grants, sessions, newest 50 events | read or manage |
+| POST | `/members/invite` | Create an invited member and email a link | manage |
+| POST | `/members/:id/suspend`, `/unsuspend` | Block or restore sign-in | manage |
+| POST | `/members/:id/sign-out` | End every session | manage |
+| POST / DELETE | `/members/:id/tags` | Grant a tag (source `admin`, optional end) / withdraw one source's grant | manage |
+| DELETE | `/members/:id` | Anonymise, as the member's own delete does | manage + step-up |
+| GET / PUT | `/members/settings` | Sign-up mode, profile fields, link pages | read / manage + step-up |
+
+- **Status** for the admin is `active`, `invited` (no password and address not confirmed) or `suspended`. A deleted member is not listed.
+- **Invitations** need outgoing email and a known public address (`memberMailAvailable`); without them the route answers 409 and the button is disabled with the reason. Inviting an address with a pending invitation sends a fresh link; an address that already has an account is refused. The link opens the `invite` page (or the built-in one) and lasts 7 days.
+- **Suspension** takes effect on the next request (`findMemberSession` requires an active member). Sessions and unused tokens are also ended for good, so restoring a member does not bring an old session back.
+- **Search** matches the address and the profile text. `%` and `_` are plain characters.
+- **Settings** are validated beyond the schema: field ids must be unique and must not be a name the member forms use (`email`, `password`, `token`, `currentPassword`, `newPassword`). A link page must be a site path.
+- **Audit:** `member.invite`, `member.suspend`, `member.unsuspend`, `member.signout`, `member.delete`, `member.tag.grant`, `member.tag.revoke`, `member.settings.update`, each with the member's address in the metadata, since the audit trail cannot look a member up by id.
+
+The binding picker lists one `member.profile.<id>` entry per profile field (`loadMemberProfileFields`); an editor who may not read member settings gets the built-in list.
+
 ## Deleting and exporting
 
 `delete` anonymises: the row stays with a placeholder address and `status = 'deleted'`, and sessions, tokens, tags, profile and event IP/user-agent are removed. The address is free to register again. `GET export` returns the account, profile, tags, live sessions and activity.
@@ -164,6 +190,7 @@ A node that uses a member binding or a show-when rule is different for every vis
 ## Tests
 
 - `src/__tests__/server/members.test.ts` — every flow, on SQLite and (with `DB=postgres`) Postgres.
+- `src/__tests__/server/membersAdmin.test.ts` — the admin API: capability and step-up gates and every route (SQLite). The queries behind it run on Postgres too through the `admin queries` cases in `members.test.ts`.
 - `src/__tests__/architecture/members-admin-split.test.ts` — the split.
 - `src/__tests__/server/pluginRouteCookies.test.ts` — cookie stripping.
 - `src/__tests__/server/membersAccessGate.test.ts` — the gate: static slot, render cache, path spellings, the uploads route, fragments, table rules.
