@@ -1,4 +1,5 @@
-/* AI workspace shell */
+/* Settings workspace shell: a section rail beside a master-detail area.
+   Shared by the AI and Email workspaces. */
 
 .workspace {
     display: grid;
@@ -45,6 +46,8 @@
     min-width: 0;
 }
 
+/* Service identity mark (a provider, a connector) */
+
 /* Provider identity assets */
 
 .providerMark {
@@ -83,39 +86,6 @@
     mask-position: center;
     mask-repeat: no-repeat;
     mask-size: contain;
-}
-
-.logoAnthropic {
-    mask-image: url("./assets/anthropic.svg");
-}
-
-.logoOpenai {
-    mask-image: url("./assets/openai.svg");
-}
-
-.logoOpenrouter {
-    mask-image: url("./assets/openrouter.svg");
-}
-
-.logoOllama {
-    mask-image: url("./assets/ollama.svg");
-}
-
-.providerMark[data-provider="anthropic"] {
-    --provider-accent: var(--accent-4);
-}
-
-.providerMark[data-provider="openai"] {
-    --provider-accent: var(--accent-1);
-}
-
-.providerMark[data-provider="openrouter"] {
-    --provider-accent: var(--accent-2);
-}
-
-.providerMark[data-provider="ollama"],
-.providerMark[data-provider="openai-compatible"] {
-    --provider-accent: var(--accent-3);
 }
 
 /* Shared nested master-detail layout */

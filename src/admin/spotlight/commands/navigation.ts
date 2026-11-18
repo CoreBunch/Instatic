@@ -137,6 +137,20 @@ export function getNavigationCommands(): Command[] {
       },
     },
     {
+      id: 'navigation.goToEmail',
+      title: 'Go to Email',
+      subtitle: 'Manage connectors, the sender, templates, and delivery activity',
+      group: 'navigation',
+      iconName: 'mail-solid',
+      keywords: ['email', 'mail', 'smtp', 'ses', 'templates', 'sender', 'delivery'],
+      workspaces: ['any'],
+      capability: 'mail.manage',
+      run: (ctx) => {
+        ctx.navigate('/admin/email')
+        ctx.closeSpotlight()
+      },
+    },
+    {
       id: 'navigation.goToUsers',
       title: 'Go to Users',
       subtitle: 'Manage users and roles',

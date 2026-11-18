@@ -324,6 +324,97 @@ test.describe.serial('plugin packs', () => {
 })
 
 /**
+ * PLUGIN-009: stylesheets a plugin adds to published pages (`frontend.assets`
+ * of kind `style` / `style-inline`) must also style the editing canvas, while
+ * the plugin's frontend scripts stay out of it.
+ */
+test.describe.serial('plugin frontend stylesheets', () => {
+  test.use({ storageState: ANONYMOUS_STATE })
+  test.setTimeout(120_000)
+
+  test('styles the canvas with plugin stylesheets and keeps scripts out (PLUGIN-009)', async ({
+    page,
+  }) => {
+    await login(page)
+    await page.goto('/admin/plugins')
+    await expect(page.getByTestId('plugins-admin-canvas')).toBeVisible({
+      timeout: 20_000,
+    })
+
+    const suffix = Date.now().toString(36)
+    const pluginId = `e2e.styles-${suffix}`
+    const pluginName = `E2E Styles ${suffix}`
+    const packPageTitle = `Styled Page ${suffix}`
+    const packText = `Styled content ${suffix}`
+
+    const files = pluginPackPackageFiles(
+      pluginId,
+      pluginName,
+      packPageTitle,
+      `styled-page-${suffix}`,
+      packText,
+    )
+    const manifest = JSON.parse(files['plugin.json']) as Record<string, unknown>
+    files['plugin.json'] = JSON.stringify({
+      ...manifest,
+      description: 'Browser-installed fixture for PLUGIN-009 frontend stylesheets.',
+      permissions: ['visualComponents.register', 'frontend.assets'],
+      frontend: {
+        assets: [
+          { kind: 'style', href: 'frontend/styled.css', placement: 'head-end' },
+          { kind: 'style-inline', content: 'body p { letter-spacing: 7px; }' },
+          {
+            kind: 'script-inline',
+            content: 'document.documentElement.setAttribute("data-e2e-plugin-script", "ran")',
+          },
+        ],
+      },
+    })
+    files['frontend/styled.css'] = 'body p { color: rgb(1, 2, 3); }'
+
+    await uploadPluginPackage(page, pluginId, files)
+    await expect(page.getByRole('heading', { name: `Review ${pluginName}` })).toBeVisible()
+    await expect(page.locator('[data-permission="frontend.assets"]')).toBeVisible()
+    await page.getByRole('button', { name: 'Approve and Install' }).click()
+    await completeStepUp(page)
+
+    await page.goto('/admin/site')
+    await openSiteEditor(page)
+    await openSitePanel(page)
+    await page.getByRole('treeitem', { name: `Open page ${packPageTitle}` }).click()
+    const styledText = canvasFrame(page).getByText(packText)
+    await expect(styledText).toBeVisible()
+
+    // External stylesheet and inline style both reach the canvas document.
+    await expect(styledText).toHaveCSS('color', 'rgb(1, 2, 3)')
+    await expect(styledText).toHaveCSS('letter-spacing', '7px')
+    // The plugin's frontend script must never run inside the canvas.
+    await expect(canvasFrame(page).locator('html')).not.toHaveAttribute(
+      'data-e2e-plugin-script',
+      'ran',
+    )
+
+    // Disabling the plugin drops its stylesheets from the canvas.
+    await page.goto('/admin/plugins')
+    const pluginCard = page.locator('article').filter({
+      has: page.getByRole('heading', { name: pluginName }),
+    })
+    await pluginCard.getByRole('button', { name: `Disable ${pluginName}` }).click()
+    await completeStepUp(page)
+    await expect(pluginCard.getByText('Disabled', { exact: true })).toBeVisible()
+
+    await page.goto('/admin/site')
+    await openSiteEditor(page)
+    await openSitePanel(page)
+    await page.getByRole('treeitem', { name: `Open page ${packPageTitle}` }).click()
+    const plainText = canvasFrame(page).getByText(packText)
+    await expect(plainText).toBeVisible()
+    await expect(plainText).not.toHaveCSS('color', 'rgb(1, 2, 3)')
+    await expect(plainText).not.toHaveCSS('letter-spacing', '7px')
+  })
+})
+
+/**
  * PLUGIN-004 — packaged plugin admin pages, resource records, admin-app
  * assets, and sandboxed runtime routes should work together from the real
  * browser install path.

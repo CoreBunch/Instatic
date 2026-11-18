@@ -8,7 +8,7 @@ For the broader auth flow (sessions, MFA, step-up), see [docs/features/auth-and-
 
 ## TL;DR
 
-- Defined as a `const` array in `src/core/capabilities.ts` (`@core/capabilities`); `CoreCapability` is derived via `typeof CORE_CAPABILITIES[number]`. **40 capabilities.**
+- Defined as a `const` array in `src/core/capabilities.ts` (`@core/capabilities`); `CoreCapability` is derived via `typeof CORE_CAPABILITIES[number]`. **43 capabilities.**
 - Handlers gate on capability, not on role: `requireCapability(req, db, 'site.read')`.
 - The **Owner AND Admin** roles get their capability lists force-resynced from `SYSTEM_ROLES` on every server boot. Hand-edits to either built-in role through the admin UI are restored at next boot — they are code-level decisions, not runtime ones.
 - Adding a capability: append the literal to `CORE_CAPABILITIES` in `src/core/capabilities.ts` (one place — server imports it), add it to the relevant `SYSTEM_ROLES` entries, wire `requireCapability(...)` at the gate point, and add picker meta + groups for the role-edit dialog. The two architecture tests (`capability-picker-coverage.test.ts`, `cms-handlers-capability-gated.test.ts`) catch missing pieces.
@@ -16,7 +16,7 @@ For the broader auth flow (sessions, MFA, step-up), see [docs/features/auth-and-
 
 ---
 
-## The 40 core capabilities
+## The 43 core capabilities
 
 ### Read
 
@@ -133,6 +133,21 @@ This applies to both creating users and changing an existing user's role.
 |------------------|---------------------------------------------------------------------|---------------|
 | `audit.read`     | Read the dedicated `/admin/api/cms/audit` endpoint AND the Dashboard activity widget (previously leaked to every authenticated user — see A2 fix). | Owner, Admin |
 
+### Email
+
+| Capability       | Grants                                                              | Roles         |
+|------------------|---------------------------------------------------------------------|---------------|
+| `mail.manage`    | The Email workspace (`/admin/api/cms/mail/*`): connectors, defaults, templates, test sends, activity. Adding or removing a connector, replacing its secret and changing the defaults also need step-up. | Owner, Admin |
+
+### Members
+
+Site members are people who sign in on the published site. They are not admin users and hold no capabilities themselves; these two capabilities are for the admins who look after them. See [docs/features/members.md](../features/members.md).
+
+| Capability       | Grants                                                              | Roles         |
+|------------------|---------------------------------------------------------------------|---------------|
+| `members.read`   | List and view site members, their tags and activity.                | Owner, Admin |
+| `members.manage` | Invite, tag, suspend and delete site members; change member settings. | Owner, Admin |
+
 ### AI runtime
 
 Was a single `ai.use`. Split so a Client persona can have chat assistance without the agent being able to mutate the editor store on their behalf.
@@ -152,12 +167,12 @@ Four built-in `SYSTEM_ROLES`:
 
 | Role     | id        | Capabilities                                                                 | Boot behaviour |
 |----------|-----------|------------------------------------------------------------------------------|----------------|
-| Owner    | `owner`   | All 40 (`CORE_CAPABILITIES`)                                                 | Force-resynced on every boot. Owner-only `roles.manage`. |
-| Admin    | `admin`   | All 40 except `roles.manage`                                                 | **Force-resynced on every boot** (changed from previous "seeded once"). Hand-edits restored at boot. |
+| Owner    | `owner`   | All 43 (`CORE_CAPABILITIES`)                                                 | Force-resynced on every boot. Owner-only `roles.manage`. |
+| Admin    | `admin`   | All 43 except `roles.manage`                                                 | **Force-resynced on every boot** (changed from previous "seeded once"). Hand-edits restored at boot. |
 | Client   | `client`  | `dashboard.read`, `site.read`, `site.content.edit`, `media.read`, `data.custom.tables.read` | Seeded once; freely editable. Sees custom tables only — never the system tables. |
-| Member   | `member`  | (none)                                                                       | Seeded once; freely editable. |
+| No access | `member` | (none)                                                                       | Seeded once; freely editable. An admin account with nothing granted; unrelated to site members. |
 
-A new capability added to the codebase appears on Owner AND Admin on the next boot (force-sync). Client and Member don't auto-update — users grant the new capability via the Roles admin page if they want it. Existing **custom** roles also don't auto-update — same reason.
+A new capability added to the codebase appears on Owner AND Admin on the next boot (force-sync). Client and No access don't auto-update — users grant the new capability via the Roles admin page if they want it. Existing **custom** roles also don't auto-update — same reason.
 
 The trade-off for Admin force-sync: an operator who hand-removes a capability from Admin through the UI gets it back at next boot. That's intentional — capability grants for built-in roles are a code-level decision. Operators who need a "limited admin" persona should create a custom role.
 

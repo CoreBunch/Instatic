@@ -44,6 +44,8 @@ Which artefacts go is decided against the published site, along the same render 
 
 Retraction takes the same step. The row status route and the row delete route call `retractDataRowArtefacts` (`publishRow.ts`), which removes the row's own artefact and, when the row was published, the pages that listed it. Scheduled publishes go through `publishDataRow` with the uploads dir and behave like a manual publish.
 
+Plugins take the same path. The host hands every `cms.content.*` handler the uploads dir from its host context (`setPluginHostContext`, `server/plugins/host/registry.ts`): `entries.publish` calls `publishDataRow` with it, `entries.delete` calls `retractDataRowArtefacts`, and `entries.deleteMany` calls `retractDataRowArtefactsMany`, which holds the publish lock once and drops each table's listing pages once for the whole batch.
+
 A caller that changes a table's public rows on main and holds an uploads dir must take this step. Bumping `publishVersion` alone leaves Layer A stale.
 
 ## Where the code lives
@@ -79,6 +81,7 @@ server/publish/
 ├── publishedHtmlPipeline.ts        — post-process (sanitize + plugin filters + injections)
 ├── siteCssBundle.ts                — server-side hashing + file emission
 ├── frontendInjections.ts           — splice plugin <script>/<link>/<meta> into HTML
+├── canvasStylesheets.ts            — plugin stylesheets as CSS text for the editor canvas
 ├── mediaPresentation.ts            — media URL materialization for originals + responsive variants
 ├── renderTreeWalk.ts               — walkRenderTree: visits every node that contributes to a rendered page (page nodes + VC definition trees, cycle-guarded); single source of truth for loop-prefetch and media-prefetch
 ├── mediaPrefetch.ts, loopPrefetch.ts — pre-warm caches needed by the renderer
