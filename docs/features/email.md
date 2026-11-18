@@ -12,12 +12,12 @@ This is the path for mail the core sends itself (account emails, tests). It is b
 - **Defaults** choose the one connector the site sends through, plus the sender name, sender address and reply-to.
 - **Templates** are a subject and a Markdown body with `{variables}`, edited in place in the post editor (`TiptapBodyEditor`) with the same Write / Live switch as a post. Only edited templates are stored; the built-in wording lives in code.
 - **Activity** is the delivery log: per-period totals and a volume chart, search and filters, and a detail panel for each email.
-- **Two entry points:** `sendTemplateMail(db, { key, to, variables })` and `sendSiteMail(db, mail)` in `server/mail/send.ts`.
-- **Three delivery modes**, decided per send:
+- **Two entry points:** `queueTemplateMail(db, { key, to, variables })` in `server/mail/delivery.ts` for every email nobody is waiting on (it is queued, sent by a worker, retried), and `sendSiteMail(db, mail)` in `server/mail/send.ts` for the admin's own tests, which send now and report the answer.
+- **Three delivery modes**, decided when an email is accepted:
 
   | Mode | When | What happens |
   |---|---|---|
-  | `send` | a default connector and a sender address are set | sent through it; logged `sent` or `failed` |
+  | `send` | a default connector and a sender address are set | queued (`queued`), then sent through it; logged `sent` or `failed` |
   | `capture` | they are not, and `NODE_ENV` is not `production` | written to Activity with its body; nothing leaves the machine |
   | `off` | they are not, in production | throws `MailNotConfiguredError` |
 
@@ -41,7 +41,9 @@ server/mail/
 ├── sesDriver.ts               — Amazon SES v2 SendEmail, Signature Version 4
 ├── apiDrivers.ts              — Resend, Postmark, Mailgun, Brevo: one POST each
 ├── activity.ts                — mail_outbox (2000 newest rows kept)
-└── send.ts                    — sendSiteMail, sendTemplateMail, delivery mode
+├── send.ts                    — one delivery attempt (carryThroughConnector), sendSiteMail, delivery mode
+├── queue.ts                   — mail_queue: enqueue, claim, reschedule, remove; payload encryption
+└── delivery.ts                — queueTemplateMail, the worker (drain, retry schedule, start / wake / stop)
 server/handlers/cms/mail.ts    — /admin/api/cms/mail/* routes
 src/core/persistence/cmsMail.ts
 src/admin/pages/email/         — the workspace: EmailPage + tabs/{Connectors,Defaults,Templates,Activity}Tab
@@ -93,7 +95,7 @@ In the admin (`tabs/TemplatesTab.tsx`) a template opens in **Live** mode: the su
 
 ## Activity
 
-`recordMail` (`server/mail/activity.ts`) writes one `mail_outbox` row per attempt: template key (`kind`), recipient, subject, status, the connector's label at the time, the safe error sentence, how long the hand-over took (`duration_ms`) and the id the provider answered with (`provider_message_id`: the SES `MessageId`, or nodemailer's `messageId` for SMTP). The newest 2000 rows are kept.
+`recordMail` (`server/mail/activity.ts`) writes one `mail_outbox` row per email (`updateMailProgress` brings a queued email's row up to date after each attempt): template key (`kind`), recipient, subject, status, the connector's label at the time, the safe error sentence, how long the hand-over took (`duration_ms`) and the id the provider answered with (`provider_message_id`: the SES `MessageId`, or nodemailer's `messageId` for SMTP). The newest 2000 rows are kept.
 
 `listMailActivity(db, filter)` reads the whole log without bodies and does the work in memory, so search, day buckets and totals are identical on both dialects:
 
@@ -101,9 +103,28 @@ In the admin (`tabs/TemplatesTab.tsx`) a template opens in **Live** mode: the su
 - **`totals`, `buckets`, `lastFailure`, `kinds`, `connectors`** describe the whole period. `status`, `kind`, `connector` and `q` (recipient or subject) only narrow `entries` and `matching`.
 - **Paging:** 50 entries a page; pass the last entry's id as `before`.
 
-`sent` means the provider accepted the message. Bounces and spam filtering happen after that and are not known here; the detail panel says so. A failure is not retried.
+`queued` is an email that has not left: `attempts` is 0 while it waits for its first try, and above 0 while it waits for the next one after a temporary failure, with the last error and `nextAttemptAt`. `sent` means the provider accepted the message. Bounces and spam filtering happen after that and are not known here; the detail panel says so. `failed` is final: the provider judged the message, or a day of retries ran out.
 
 The tab (`tabs/ActivityTab.tsx`) shows the totals and chart, then the filters, then the list beside the selected email's details. From a failure it links to Connectors; from a template's email it opens that template.
+
+## The queue
+
+`queueTemplateMail` renders the template once (to prove it exists and to give the log its subject), writes the `queued` activity row and the `mail_queue` row in one transaction, wakes the worker and returns. The request that asked for the email never waits for a provider.
+
+A `mail_queue` row holds the template key, the recipient, `source` (`core`, or a plugin id), `lane` and the variables. The variables are encrypted with the master key (`payload_ciphertext`, `payload_iv`), because they carry live links, and the row is deleted as soon as the email is sent or given up on. The email is rendered again at each attempt, so it leaves with the wording of that moment.
+
+**The worker** (`startMailQueue` at boot, `stopMailQueue` on shutdown) drains the queue on a wake and on a 15-second tick:
+
+- One email at a time, 100 ms apart, ordered by `lane` (0 = core, always first), then due time, then acceptance order.
+- A wake starts a drain at once, so a sign-in link's first attempt is not delayed. On several instances, a wake that lands while another instance holds the lock is a no-op; that instance's drain or the next tick picks the email up.
+- A drain runs under the scheduler leader lock (`withSchedulerLeaderLock`, the same mechanism as the plugin and publish schedulers), so several instances on one Postgres database send as one. A row is also claimed with a conditional update (`claimed_at`), so no two drains ever take the same email.
+- Each driver marks its `MailDeliveryError` with `retry`: `never` (the provider judged the message: SMTP 5xx, an HTTP 4xx), `later` (unreachable, a 5xx, a timeout, rejected credentials, an unreadable secret, email no longer set up), or `slow-down` (HTTP 429, SMTP 421/45x), which also holds every other email back for a minute.
+- `later` and `slow-down` put the email back with the next wait from `RETRY_DELAYS_MS` (30 s, 2 min, 10 min, 30 min, 1 h, 2 h, 4 h, 6 h, 8 h; each moved by up to 20% either way). An email still undelivered 24 hours after it was accepted is failed.
+- An email whose template no longer exists, or whose payload can no longer be decrypted (the master key changed), is failed at once.
+
+**Delivery is at least once.** The row is deleted after the provider accepts the email. A process that dies between those two steps leaves a claimed row; claims older than ten minutes are released and the email is sent a second time.
+
+`sendSiteMail` and `sendConnectorTest` do not use the queue: "Send test" and the connector test report the provider's answer to the person who clicked.
 
 ## Links in emails
 
@@ -129,6 +150,7 @@ All under `/admin/api/cms/mail`, all gated by `mail.manage`. "Step-up" marks the
 
 ## Tests
 
+- `src/__tests__/server/mailQueue.test.ts` — accepting (capture, refusal, encryption at rest), delivery, the retry schedule and which refusals are retried, giving up, the rate-limit pause, lane order, claims and two drains at once, a member email end to end.
 - `src/__tests__/server/mail.test.ts` — delivery modes, connector storage, template rendering and injection, the address guard, SES signing and request shape, the request each one-key provider receives and how its refusals read, capability and step-up gates.
 - `src/__tests__/server/mailSmtp.test.ts` — a real SMTP round trip against a local sink.
 - `tests/e2e/email-workspace.e2e.ts` — ADMIN-013.

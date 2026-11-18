@@ -49,6 +49,8 @@ interface ActivityRow {
   error: string | null
   provider_message_id: string | null
   duration_ms: number | null
+  attempts: number
+  next_attempt_at: Date | string | null
   created_at: Date | string
 }
 
@@ -65,19 +67,31 @@ interface RecordMailInput {
   durationMs?: number
   /** Pass only for a captured message. */
   body?: string
+  /** Who asked for the email: `core`, or a plugin's id. */
+  source?: string
+  /** Delivery attempts made; an email sent directly counts as one. */
+  attempts?: number
 }
 
-export async function recordMail(db: DbClient, input: RecordMailInput): Promise<void> {
+/** The `source` of an email the core sends itself. */
+export const CORE_MAIL_SOURCE = 'core'
+
+/** Write one row and return its id, so a queued email can be settled later. */
+export async function recordMail(db: DbClient, input: RecordMailInput): Promise<string> {
   const now = Date.now()
+  const id = orderedId(now)
+  const at = new Date(now).toISOString()
+  const attempts = input.attempts ?? (input.status === 'sent' || input.status === 'failed' ? 1 : 0)
   await db`
     insert into mail_outbox (
       id, kind, to_address, subject, status, connector_id, connector_label, error,
-      provider_message_id, duration_ms, body_text, created_at
+      provider_message_id, duration_ms, body_text, source, attempts, next_attempt_at, created_at
     ) values (
-      ${orderedId(now)}, ${input.kind}, ${input.to}, ${input.subject}, ${input.status},
+      ${id}, ${input.kind}, ${input.to}, ${input.subject}, ${input.status},
       ${input.connector?.id ?? null}, ${input.connector?.label ?? null}, ${input.error ?? null},
       ${input.providerMessageId ?? null}, ${input.durationMs ?? null},
-      ${input.status === 'captured' ? (input.body ?? null) : null}, ${new Date(now).toISOString()}
+      ${input.status === 'captured' ? (input.body ?? null) : null},
+      ${input.source ?? CORE_MAIL_SOURCE}, ${attempts}, ${input.status === 'queued' ? at : null}, ${at}
     )
   `
   await db`
@@ -86,10 +100,41 @@ export async function recordMail(db: DbClient, input: RecordMailInput): Promise<
        select id from mail_outbox order by created_at desc, id desc limit ${RETENTION}
      )
   `
+  return id
+}
+
+interface MailProgress {
+  status: Extract<MailActivityStatus, 'queued' | 'sent' | 'failed'>
+  attempts: number
+  /** When a still-queued email is tried next. */
+  nextAttemptAt?: string
+  connector?: { id: string; label: string }
+  error?: string
+  providerMessageId?: string | null
+  durationMs?: number
+}
+
+/**
+ * Bring a queued email's row up to date after an attempt. A row the log has
+ * already pruned is simply not there to update.
+ */
+export async function updateMailProgress(db: DbClient, id: string, progress: MailProgress): Promise<void> {
+  await db`
+    update mail_outbox
+       set status = ${progress.status},
+           attempts = ${progress.attempts},
+           next_attempt_at = ${progress.status === 'queued' ? (progress.nextAttemptAt ?? null) : null},
+           connector_id = ${progress.connector?.id ?? null},
+           connector_label = ${progress.connector?.label ?? null},
+           error = ${progress.error ?? null},
+           provider_message_id = ${progress.providerMessageId ?? null},
+           duration_ms = ${progress.durationMs ?? null}
+     where id = ${id}
+  `
 }
 
 function isStatus(value: string): value is MailActivityStatus {
-  return value === 'sent' || value === 'failed' || value === 'captured'
+  return value === 'queued' || value === 'sent' || value === 'failed' || value === 'captured'
 }
 
 function kindLabel(kind: string): string {
@@ -116,6 +161,8 @@ function toLoggedMail(row: ActivityRow): LoggedMail {
     error: row.error,
     providerMessageId: row.provider_message_id,
     durationMs: row.duration_ms === null ? null : Number(row.duration_ms),
+    attempts: Number(row.attempts),
+    nextAttemptAt: row.next_attempt_at === null ? null : isoDate(row.next_attempt_at),
     createdAt,
     at: Date.parse(createdAt),
   }
@@ -210,7 +257,7 @@ export async function listMailActivity(
 ): Promise<MailActivityResponse> {
   const { rows } = await db<ActivityRow>`
     select id, kind, to_address, subject, status, connector_label, error,
-           provider_message_id, duration_ms, created_at
+           provider_message_id, duration_ms, attempts, next_attempt_at, created_at
       from mail_outbox
      order by created_at desc, id desc
   `
@@ -220,8 +267,8 @@ export async function listMailActivity(
   const inPeriod =
     period === 'all' ? all : all.filter((mail) => (period === '24h' ? mail.at > now - DAY_MS : bucketOf(mail) >= starts[0]))
 
-  const totals: MailActivityCounts = { sent: 0, failed: 0, captured: 0 }
-  const byBucket = new Map(starts.map((start) => [start, { start, sent: 0, failed: 0, captured: 0 }]))
+  const totals: MailActivityCounts = { queued: 0, sent: 0, failed: 0, captured: 0 }
+  const byBucket = new Map(starts.map((start) => [start, { start, queued: 0, sent: 0, failed: 0, captured: 0 }]))
   for (const mail of inPeriod) {
     totals[mail.status] += 1
     const bucket = byBucket.get(bucketOf(mail))

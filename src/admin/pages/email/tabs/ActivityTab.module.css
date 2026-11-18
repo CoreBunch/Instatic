@@ -85,6 +85,7 @@
 }
 
 .column {
+  --queued: 0;
   --sent: 0;
   --failed: 0;
   --captured: 0;
@@ -117,6 +118,11 @@
 .segment[data-status="captured"] {
   height: calc(var(--captured) * 100%);
   background: var(--warning);
+}
+
+.segment[data-status="queued"] {
+  height: calc(var(--queued) * 100%);
+  background: var(--text-subtle);
 }
 
 .chartAxis {

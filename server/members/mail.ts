@@ -18,7 +18,8 @@ import type { MemberPageKey, MemberPagePaths } from '@core/members'
 import { getErrorMessage } from '@core/utils/errorMessage'
 import { clientIp, configuredPublicOrigin } from '../auth/security'
 import { getMailDefaults } from '../mail/defaults'
-import { mailDeliveryMode, sendTemplateMail } from '../mail/send'
+import { queueTemplateMail } from '../mail/delivery'
+import { mailDeliveryMode } from '../mail/send'
 import { MEMBER_MAIL_KEYS, type MemberMailKind } from './mailTemplates'
 import type { MemberTokenKind } from './tokens'
 
@@ -97,19 +98,20 @@ interface MemberMailInput {
 const pending = new Set<Promise<void>>()
 
 /**
- * Send in the background. The caller has already decided its response, so a
- * slow or failing SMTP server never changes what, or how fast, the visitor
- * is told. Failures land in the mail activity log.
+ * Queue the email without making the request wait for it. The caller has
+ * already decided its response, so nothing about email changes what, or how
+ * fast, the visitor is told. The mail queue sends it straight away, retries
+ * a temporary failure, and the activity log shows how it went.
  */
 export function queueMemberMail(db: DbClient, input: MemberMailInput): void {
-  const task = sendTemplateMail(db, {
+  const task = queueTemplateMail(db, {
     key: MEMBER_MAIL_KEYS[input.kind],
     to: input.to,
     variables: { 'member.email': input.to, ...(input.link ? { link: input.link } : {}) },
   })
     .then(() => undefined)
     .catch((err: unknown) => {
-      console.error(`[members] ${input.kind} email was not sent:`, getErrorMessage(err, 'unknown error'))
+      console.error(`[members] ${input.kind} email was not queued:`, getErrorMessage(err, 'unknown error'))
     })
     .finally(() => {
       pending.delete(task)
@@ -117,7 +119,7 @@ export function queueMemberMail(db: DbClient, input: MemberMailInput): void {
   pending.add(task)
 }
 
-/** Test seam: wait for every queued email to finish. */
+/** Test seam: wait until every email handed over so far is in the queue. */
 export async function flushMemberMail(): Promise<void> {
   await Promise.all([...pending])
 }

@@ -45,18 +45,34 @@ const PERIOD_PHRASE: Record<MailActivityPeriod, string> = {
 }
 
 const STATUS_LABEL: Record<MailActivityStatus, string> = {
+  queued: 'Waiting to be sent',
   sent: 'Delivered to provider',
   failed: 'Failed',
   captured: 'Captured, not sent',
 }
 
-const STATUS_TONE: Record<MailActivityStatus, 'success' | 'danger' | 'warning'> = {
+const STATUS_TONE: Record<Exclude<MailActivityStatus, 'queued'>, 'success' | 'danger' | 'warning'> = {
   sent: 'success',
   failed: 'danger',
   captured: 'warning',
 }
 
-const STATUS_SHORT: Record<MailActivityStatus, string> = { sent: 'Sent', failed: 'Failed', captured: 'Captured' }
+/** A waiting email is neutral until an attempt has failed; then it is a warning. */
+function toneOf(entry: Pick<MailActivityEntry, 'status' | 'attempts'>): 'success' | 'danger' | 'warning' | undefined {
+  if (entry.status === 'queued') return entry.attempts > 0 ? 'warning' : undefined
+  return STATUS_TONE[entry.status]
+}
+
+function statusLabel(entry: Pick<MailActivityEntry, 'status' | 'attempts'>): string {
+  return entry.status === 'queued' && entry.attempts > 0 ? 'Retrying' : STATUS_LABEL[entry.status]
+}
+
+const STATUS_SHORT: Record<MailActivityStatus, string> = {
+  queued: 'Waiting',
+  sent: 'Sent',
+  failed: 'Failed',
+  captured: 'Captured',
+}
 
 const ALL = ''
 const SEARCH_DELAY_MS = 250
@@ -190,6 +206,9 @@ export function ActivityTab({
               value={status}
               options={[
                 { value: 'all', label: 'All' },
+                ...(data.totals.queued > 0 || status === 'queued'
+                  ? [{ value: 'queued' as const, label: `Waiting ${data.totals.queued.toLocaleString()}` }]
+                  : []),
                 { value: 'sent', label: `Sent ${data.totals.sent.toLocaleString()}` },
                 { value: 'failed', label: `Failed ${data.totals.failed.toLocaleString()}` },
                 ...(data.totals.captured > 0 || status === 'captured'
@@ -268,7 +287,7 @@ export function ActivityTab({
                           className={ld.row}
                           onClick={() => setSelectedId(entry.id)}
                         >
-                          <span className={ld.dot} data-tone={STATUS_TONE[entry.status]} aria-hidden="true" />
+                          <span className={ld.dot} data-tone={toneOf(entry)} aria-hidden="true" />
                           <span className={ld.rowMain}>
                             <span className={ld.rowSubject}>{entry.subject}</span>
                             <span className={ld.rowMeta}>
@@ -319,10 +338,13 @@ function Summary({
   capturing: boolean
   onShowFailed: () => void
 }) {
-  const { sent, failed, captured } = data.totals
+  const { queued, sent, failed, captured } = data.totals
   const attempts = sent + failed
   const rate = attempts > 0 ? `${((sent / attempts) * 100).toFixed(attempts >= 1000 ? 1 : 0)}%` : null
-  const peak = Math.max(1, ...data.buckets.map((bucket) => bucket.sent + bucket.failed + bucket.captured))
+  const peak = Math.max(
+    1,
+    ...data.buckets.map((bucket) => bucket.queued + bucket.sent + bucket.failed + bucket.captured),
+  )
   const first = data.buckets[0]
   const last = data.buckets[data.buckets.length - 1]
 
@@ -335,6 +357,14 @@ function Summary({
           {rate ? `${rate} of ${plural(attempts, 'attempt')} left the site` : 'Nothing sent in this period'}
         </span>
       </div>
+
+      {queued > 0 && (
+        <div className={styles.tile}>
+          <span className={styles.tileLabel}>Waiting</span>
+          <span className={styles.tileValue}>{queued.toLocaleString()}</span>
+          <span className={styles.tileHint}>Queued, or due another try after a temporary failure</span>
+        </div>
+      )}
 
       <div className={styles.tile} data-tone={failed > 0 ? 'danger' : undefined}>
         <span className={styles.tileLabel}>Failed</span>
@@ -365,12 +395,13 @@ function Summary({
         <span className={styles.tileLabel}>Volume {period === '24h' ? 'by hour' : 'by day'}</span>
         <ol className={styles.chart} aria-label="Emails over the period">
           {data.buckets.map((bucket) => {
-            const total = bucket.sent + bucket.failed + bucket.captured
+            const total = bucket.queued + bucket.sent + bucket.failed + bucket.captured
             const label = `${formatBucket(bucket.start, period)}: ${
               total === 0
                 ? 'no email'
                 : [
                     bucket.sent > 0 ? `${bucket.sent} sent` : '',
+                    bucket.queued > 0 ? `${bucket.queued} waiting` : '',
                     bucket.failed > 0 ? `${bucket.failed} failed` : '',
                     bucket.captured > 0 ? `${bucket.captured} captured` : '',
                   ].filter(Boolean).join(', ')
@@ -381,6 +412,7 @@ function Summary({
                 className={styles.column}
                 title={label}
                 style={{
+                  '--queued': bucket.queued / peak,
                   '--sent': bucket.sent / peak,
                   '--failed': bucket.failed / peak,
                   '--captured': bucket.captured / peak,
@@ -389,6 +421,7 @@ function Summary({
                 <span className={styles.srOnly}>{label}</span>
                 <span className={styles.segment} data-status="failed" aria-hidden="true" />
                 <span className={styles.segment} data-status="captured" aria-hidden="true" />
+                <span className={styles.segment} data-status="queued" aria-hidden="true" />
                 <span className={styles.segment} data-status="sent" aria-hidden="true" />
               </li>
             )
@@ -427,9 +460,9 @@ function Detail({
   return (
     <article className={ld.detail} aria-label="Email details">
       <header className={ld.detailHeader}>
-        <span className={ld.statusBadge} data-tone={STATUS_TONE[entry.status]}>
-          <span className={ld.dot} data-tone={STATUS_TONE[entry.status]} aria-hidden="true" />
-          {STATUS_LABEL[entry.status]}
+        <span className={ld.statusBadge} data-tone={toneOf(entry)}>
+          <span className={ld.dot} data-tone={toneOf(entry)} aria-hidden="true" />
+          {statusLabel(entry)}
         </span>
         <h3>{entry.subject}</h3>
         <p>
@@ -440,10 +473,28 @@ function Detail({
       {entry.status === 'failed' && (
         <div className={ld.notice} data-tone="danger" role="status">
           <strong>{entry.error ?? 'Delivery failed'}</strong>
-          <span>Nothing was delivered and the site does not retry. Check the connector, then send a test.</span>
+          <span>
+            {entry.attempts > 1
+              ? `Nothing was delivered after ${entry.attempts} attempts, and the site has stopped trying.`
+              : 'Nothing was delivered, and trying again would not help.'}{' '}
+            Check the connector, then send a test.
+          </span>
           <div>
             <Button type="button" variant="secondary" size="sm" onClick={onOpenConnectors}>Open connectors</Button>
           </div>
+        </div>
+      )}
+      {entry.status === 'queued' && (
+        <div className={ld.notice} data-tone={entry.attempts > 0 ? 'warning' : undefined} role="status">
+          {entry.attempts > 0 && <strong>{entry.error ?? 'The last attempt failed'}</strong>}
+          <span>
+            {entry.attempts > 0
+              ? `Tried ${plural(entry.attempts, 'time')}. `
+              : 'Accepted and waiting for its turn. '}
+            {entry.attempts > 0 && entry.nextAttemptAt
+              ? `The next attempt is due ${formatFull(entry.nextAttemptAt)}. The site keeps trying for a day.`
+              : 'It is sent as soon as the connector is free.'}
+          </span>
         </div>
       )}
       {entry.status === 'sent' && (
@@ -478,8 +529,17 @@ function Detail({
         </div>
         <div>
           <dt>Connector</dt>
-          <dd>{entry.connectorLabel ?? (entry.status === 'captured' ? 'None (not sent)' : 'Unknown')}</dd>
+          <dd>
+            {entry.connectorLabel ??
+              (entry.status === 'captured' ? 'None (not sent)' : entry.status === 'queued' ? 'Not tried yet' : 'Unknown')}
+          </dd>
         </div>
+        {entry.attempts > 1 && (
+          <div>
+            <dt>Attempts</dt>
+            <dd>{entry.attempts}</dd>
+          </div>
+        )}
         {entry.durationMs !== null && (
           <div>
             <dt>{entry.status === 'failed' ? 'Failed after' : 'Hand-over took'}</dt>

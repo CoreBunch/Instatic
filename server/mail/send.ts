@@ -1,7 +1,11 @@
 /**
- * The one entry point for mail the server itself sends. Callers either hand
- * over a finished message (`sendSiteMail`) or name a template and its values
- * (`sendTemplateMail`); this decides how it leaves:
+ * Sending one message now, and waiting for the answer. This is the path for
+ * mail whose sender is watching: the admin's "Send test" and connector test.
+ * Everything else is queued (`delivery.ts`) and uses `carryThroughConnector`
+ * from here for each attempt.
+ *
+ * Callers either hand over a finished message (`sendSiteMail`) or name a
+ * template and its values (`sendTemplateMail`); this decides how it leaves:
  *
  *  - a default connector and a sender address are set → send through it,
  *    log `sent` / `failed`
@@ -25,7 +29,7 @@ import { noteConnectorUse, resolveConnector, type ResolvedConnector } from './co
 import { getMailDefaults } from './defaults'
 import { sendViaBrevo, sendViaMailgun, sendViaPostmark, sendViaResend } from './apiDrivers'
 import { sendViaSes } from './sesDriver'
-import { formatFromHeader, MailDeliveryError, sendViaSmtp, type OutgoingMail } from './smtpDriver'
+import { formatFromHeader, MailDeliveryError, sendViaSmtp, type MailRetry, type OutgoingMail } from './smtpDriver'
 import { getMailTemplate, siteMailVariables } from './templates'
 
 export class MailNotConfiguredError extends Error {
@@ -58,19 +62,19 @@ const carryMail: MailCarrier = (connector, sender, mail) => {
   }
 }
 
-interface SendDeps {
+export interface SendDeps {
   carrier?: MailCarrier
   env?: Record<string, string | undefined>
 }
 
 const ADDRESS_RE = new RegExp(MAIL_ADDRESS_PATTERN)
 
-function captureAllowed(env: Record<string, string | undefined>): boolean {
+export function captureAllowed(env: Record<string, string | undefined>): boolean {
   return env.NODE_ENV !== 'production'
 }
 
 /** A connector and a sender address are both needed before anything is sent. */
-function readyToSend(defaults: MailDefaults): defaults is MailDefaults & { defaultConnectorId: string } {
+export function readyToSend(defaults: MailDefaults): defaults is MailDefaults & { defaultConnectorId: string } {
   return defaults.defaultConnectorId !== null && defaults.fromAddress !== ''
 }
 
@@ -82,31 +86,58 @@ export function mailDeliveryMode(
   return captureAllowed(env) ? 'capture' : 'off'
 }
 
-function assertSendable(mail: SiteMail): void {
+export function assertSendable(mail: SiteMail): void {
   // A recipient or subject carrying a line break could add headers.
   if (!ADDRESS_RE.test(mail.to) || /[\r\n]/.test(mail.to) || /[\r\n]/.test(mail.subject)) {
     throw new MailDeliveryError('The message has an invalid recipient or subject.')
   }
 }
 
-async function deliver(
+/** What one attempt to hand a message to a connector came to. */
+export type CarryOutcome =
+  | { ok: true; connector: { id: string; label: string }; providerMessageId: string | null; durationMs: number }
+  | {
+      ok: false
+      /** Absent when the connector could not be read at all. */
+      connector?: { id: string; label: string }
+      error: unknown
+      /** The safe sentence for the activity log. */
+      message: string
+      retry: MailRetry
+      durationMs?: number
+    }
+
+/** How a failure that is not a delivery refusal should be retried. */
+function retryFor(err: unknown): MailRetry {
+  // An unreadable secret or a missing connector is the owner's to put right.
+  return err instanceof MailDeliveryError ? err.retry : 'later'
+}
+
+/**
+ * Hand one message to a connector, once. Never throws for a delivery
+ * problem: the outcome says what happened and whether it is worth retrying.
+ * It writes the connector's last-use note and nothing else, so the direct
+ * path and the queue each keep their own record.
+ */
+export async function carryThroughConnector(
   db: DbClient,
   connectorId: string,
   defaults: MailDefaults,
-  mail: SiteMail,
-  carrier: MailCarrier,
-): Promise<void> {
-  const log = { kind: mail.kind, to: mail.to, subject: mail.subject }
+  mail: OutgoingMail,
+  carrier: MailCarrier = carryMail,
+): Promise<CarryOutcome> {
   let connector: ResolvedConnector | null
   try {
     connector = await resolveConnector(db, connectorId)
   } catch (err) {
     const message = getErrorMessage(err, 'Connector secret unreadable')
-    await recordMail(db, { ...log, status: 'failed', error: message })
     await noteConnectorUse(db, connectorId, message)
-    throw err
+    return { ok: false, error: err, message, retry: retryFor(err) }
   }
-  if (!connector) throw new MailNotConfiguredError()
+  if (!connector) {
+    const error = new MailNotConfiguredError()
+    return { ok: false, error, message: error.message, retry: 'later' }
+  }
 
   const sender = {
     fromAddress: defaults.fromAddress,
@@ -116,17 +147,48 @@ async function deliver(
   }
   const used = { id: connector.id, label: connector.label }
   const startedAt = Date.now()
-  let providerMessageId: string | null
   try {
-    providerMessageId = await carrier(connector, sender, mail)
+    const providerMessageId = await carrier(connector, sender, mail)
+    await noteConnectorUse(db, connector.id, null)
+    return { ok: true, connector: used, providerMessageId, durationMs: Date.now() - startedAt }
   } catch (err) {
     const message = getErrorMessage(err, 'Delivery failed')
-    await recordMail(db, { ...log, status: 'failed', connector: used, error: message, durationMs: Date.now() - startedAt })
     await noteConnectorUse(db, connector.id, message)
-    throw err
+    return { ok: false, connector: used, error: err, message, retry: retryFor(err), durationMs: Date.now() - startedAt }
   }
-  await recordMail(db, { ...log, status: 'sent', connector: used, providerMessageId, durationMs: Date.now() - startedAt })
-  await noteConnectorUse(db, connector.id, null)
+}
+
+/** Send now, log the result, and throw when it did not leave. */
+async function deliver(
+  db: DbClient,
+  connectorId: string,
+  defaults: MailDefaults,
+  mail: SiteMail,
+  carrier: MailCarrier,
+): Promise<void> {
+  const log = { kind: mail.kind, to: mail.to, subject: mail.subject }
+  const outcome = await carryThroughConnector(db, connectorId, defaults, mail, carrier)
+  if (outcome.ok) {
+    await recordMail(db, {
+      ...log,
+      status: 'sent',
+      connector: outcome.connector,
+      providerMessageId: outcome.providerMessageId,
+      durationMs: outcome.durationMs,
+    })
+    return
+  }
+  // A connector that is gone was never asked: there is no attempt to log.
+  if (!(outcome.error instanceof MailNotConfiguredError)) {
+    await recordMail(db, {
+      ...log,
+      status: 'failed',
+      connector: outcome.connector,
+      error: outcome.message,
+      durationMs: outcome.durationMs,
+    })
+  }
+  throw outcome.error
 }
 
 /**
@@ -174,13 +236,4 @@ export async function buildTemplateMail(
   if (!template) throw new Error(`unknown mail template "${input.key}"`)
   const rendered = renderMailTemplate(template, { ...(await siteMailVariables(db)), ...input.variables })
   return { kind: input.key, to: input.to, ...rendered }
-}
-
-/** Send the email a template describes, with these values. */
-export async function sendTemplateMail(
-  db: DbClient,
-  input: { key: string; to: string; variables: Record<string, string> },
-  deps: SendDeps = {},
-): Promise<MailActivityStatus> {
-  return sendSiteMail(db, await buildTemplateMail(db, input), deps)
 }

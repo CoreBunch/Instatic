@@ -9,7 +9,7 @@
 import { createHash, createHmac } from 'node:crypto'
 import type { SesConnectorConfig } from '@core/mail'
 import { Type, safeParseValue } from '@core/utils/typeboxHelpers'
-import { MailDeliveryError, type OutgoingMail } from './smtpDriver'
+import { MailDeliveryError, retryForHttpStatus, type OutgoingMail } from './smtpDriver'
 
 function sha256Hex(data: string): string {
   return createHash('sha256').update(data, 'utf8').digest('hex')
@@ -136,7 +136,7 @@ export async function sendViaSes(
     })
   } catch (err) {
     console.error('[mail] SES request failed to complete')
-    throw new MailDeliveryError('Could not reach Amazon SES. Check the region and the server\'s network.', { cause: err })
+    throw new MailDeliveryError('Could not reach Amazon SES. Check the region and the server\'s network.', { cause: err, retry: 'later' })
   }
   if (res.ok) {
     try {
@@ -156,5 +156,5 @@ export async function sendViaSes(
     // A non-JSON error body: the status alone decides the sentence.
   }
   console.error(`[mail] SES delivery failed (HTTP ${res.status})`)
-  throw new MailDeliveryError(describeSesFailure(res.status, awsMessage))
+  throw new MailDeliveryError(describeSesFailure(res.status, awsMessage), { retry: retryForHttpStatus(res.status) })
 }

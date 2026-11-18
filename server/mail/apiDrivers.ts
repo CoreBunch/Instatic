@@ -15,7 +15,7 @@
  */
 import type { MailgunConnectorConfig } from '@core/mail'
 import { Type, safeParseValue, type Static, type TSchema } from '@core/utils/typeboxHelpers'
-import { MailDeliveryError, type OutgoingMail } from './smtpDriver'
+import { MailDeliveryError, retryForHttpStatus, type OutgoingMail } from './smtpDriver'
 
 export interface ApiSender {
   fromAddress: string
@@ -63,7 +63,7 @@ async function post(request: ApiRequest, readError: (json: unknown) => string | 
     })
   } catch (err) {
     console.error(`[mail] ${request.provider} request failed to complete`)
-    throw new MailDeliveryError(`Could not reach ${request.provider}. Check the server's network.`, { cause: err })
+    throw new MailDeliveryError(`Could not reach ${request.provider}. Check the server's network.`, { cause: err, retry: 'later' })
   }
   const text = await res.text()
   let json: unknown = null
@@ -74,7 +74,9 @@ async function post(request: ApiRequest, readError: (json: unknown) => string | 
   }
   if (res.ok) return json
   console.error(`[mail] ${request.provider} delivery failed (HTTP ${res.status})`)
-  throw new MailDeliveryError(describeFailure(request.provider, res.status, shortReason(readError(json))))
+  throw new MailDeliveryError(describeFailure(request.provider, res.status, shortReason(readError(json))), {
+    retry: retryForHttpStatus(res.status),
+  })
 }
 
 function field<T extends TSchema>(schema: T, json: unknown, read: (value: Static<T>) => string | undefined): string | undefined {

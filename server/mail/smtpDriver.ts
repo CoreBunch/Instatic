@@ -31,11 +31,34 @@ export interface OutgoingMail {
 }
 
 /** A delivery failure safe to show an admin: no credentials, no message body. */
+/**
+ * Whether a refused message is worth another attempt:
+ *
+ *  - `never`: the provider judged this message (a bad recipient, a rejected
+ *    sender). Sending it again gets the same answer.
+ *  - `later`: nothing is wrong with the message. The server could not be
+ *    reached, answered with a temporary error, or refused the account's
+ *    credentials, which the owner can put right.
+ *  - `slow-down`: the provider is rate-limiting the account. Retry later and
+ *    hold every other message back meanwhile.
+ */
+export type MailRetry = 'never' | 'later' | 'slow-down'
+
 export class MailDeliveryError extends Error {
-  constructor(message: string, options?: ErrorOptions) {
+  readonly retry: MailRetry
+  constructor(message: string, options?: ErrorOptions & { retry?: MailRetry }) {
     super(message, options)
     this.name = 'MailDeliveryError'
+    this.retry = options?.retry ?? 'never'
   }
+}
+
+/** How an HTTP provider's refusal should be retried, from its status alone. */
+export function retryForHttpStatus(status: number): MailRetry {
+  if (status === 429) return 'slow-down'
+  // 401/403 are the account's credentials, not the message.
+  if (status >= 500 || status === 401 || status === 403 || status === 408) return 'later'
+  return 'never'
 }
 
 export function privateMailHostsAllowed(
@@ -66,10 +89,10 @@ export async function resolveSmtpAddress(
   try {
     addresses = await resolve(host)
   } catch (err) {
-    throw new MailDeliveryError(`The SMTP host "${host}" could not be resolved.`, { cause: err })
+    throw new MailDeliveryError(`The SMTP host "${host}" could not be resolved.`, { cause: err, retry: 'later' })
   }
   if (addresses.length === 0) {
-    throw new MailDeliveryError(`The SMTP host "${host}" could not be resolved.`)
+    throw new MailDeliveryError(`The SMTP host "${host}" could not be resolved.`, { retry: 'later' })
   }
   if (!allowPrivate && addresses.some((entry) => isBlockedAddress(entry.address))) {
     throw new MailDeliveryError(
@@ -84,6 +107,23 @@ export function formatFromHeader(fromName: string, fromAddress: string): string 
   const name = fromName.trim()
   if (!name) return fromAddress
   return `"${name.replace(/["\\]/g, '\\$&')}" <${fromAddress}>`
+}
+
+const SMTP_CONNECTION_CODES = new Set(['ETIMEDOUT', 'ECONNECTION', 'ESOCKET', 'ECONNREFUSED', 'EDNS', 'ETLS'])
+
+/**
+ * SMTP reply classes: 4yz is "try again later" by definition, 421 and 45x
+ * are how servers throttle, and 5yz is a verdict on the message. A failed
+ * login (535, `EAUTH`) is the account, so it waits for the owner.
+ */
+export function retryForSmtpFailure(err: unknown): MailRetry {
+  const code = err instanceof Error && 'code' in err ? String(err.code) : ''
+  const responseCode = err instanceof Error && 'responseCode' in err ? Number(err.responseCode) : 0
+  if (responseCode === 421 || responseCode === 450 || responseCode === 451 || responseCode === 452) return 'slow-down'
+  if (responseCode >= 400 && responseCode < 500) return 'later'
+  if (code === 'EAUTH' || responseCode === 535) return 'later'
+  if (responseCode >= 500) return 'never'
+  return SMTP_CONNECTION_CODES.has(code) ? 'later' : 'never'
 }
 
 function describeSmtpFailure(err: unknown): string {
@@ -140,7 +180,7 @@ export async function sendViaSmtp(
   } catch (err) {
     const code = err instanceof Error && 'code' in err ? String(err.code) : 'unknown'
     console.error(`[mail] SMTP delivery failed (${code})`)
-    throw new MailDeliveryError(describeSmtpFailure(err), { cause: err })
+    throw new MailDeliveryError(describeSmtpFailure(err), { cause: err, retry: retryForSmtpFailure(err) })
   } finally {
     smtp.close()
   }

@@ -21,6 +21,7 @@ if (bunWarning) console.warn(bunWarning)
 await import('./richtextSanitizer')
 const { handleServerRequest } = await import('./router')
 const { activateInstalledServerPlugins } = await import('./plugins/runtime')
+const { startMailQueue, stopMailQueue } = await import('./mail/delivery')
 const { mediaStorageRegistry } = await import('@core/plugins/mediaStorageRegistry')
 const { createCollabRelay } = await import('./collab/relay')
 const { SITE_SOCKET_PATH, createCollabSocketLayer, handleCollabSocketUpgrade } =
@@ -67,6 +68,9 @@ await syncSystemRoles(db)
 // always the fallback for unset roles. See `mediaStorageRegistry.ts`.
 mediaStorageRegistry.configureLocalDisk({ uploadsDir: config.uploadsDir })
 await activateInstalledServerPlugins(db, config.uploadsDir)
+// Outgoing email: start the queue worker, which first sends whatever a
+// previous process accepted but had not delivered.
+startMailQueue(db)
 // AI runtime: start the nightly conversation-purge tick. Operators add
 // their own provider credentials via /admin/ai/providers on first install.
 startConversationPurgeTick(db)
@@ -234,6 +238,8 @@ async function shutdown(signal: string, exitCode = 0): Promise<void> {
   } catch (err) {
     console.error('[server] collab flush on shutdown failed:', err)
   }
+  // Let the email being handed over finish; the rest waits in the queue.
+  await stopMailQueue()
   server.stop()
   process.exit(exitCode)
 }
