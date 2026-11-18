@@ -237,6 +237,11 @@ class HookBus {
     return current as T
   }
 
+  /** Whether this plugin is listening for `event` right now. */
+  hasListener(pluginId: string, event: string): boolean {
+    return (this.listeners.get(event) ?? []).some((entry) => entry.pluginId === pluginId)
+  }
+
   hasListenersFor(event: string): boolean {
     return (this.listeners.get(event)?.length ?? 0) > 0
   }

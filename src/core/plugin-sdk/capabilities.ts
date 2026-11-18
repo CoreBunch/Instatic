@@ -78,7 +78,7 @@ export const PLUGIN_CAPABILITIES: PluginCapability[] = [
   {
     permission: 'mail.send.external',
     label: 'Email any address',
-    description: 'Allows the plugin to send its own email templates to any email address, not only to site members, through the site\'s email connector and sender address. A plugin that misuses this can send unwanted mail in your site\'s name.',
+    description: 'Allows the plugin to send its own email templates to any email address, not only to site members, through the site\'s email connector and sender address. What the plugin puts in a template\'s variables leaves the site in the email, so this is a way to send data out that the plugin\'s allowed network hosts do not restrict. A plugin that misuses it can send unwanted mail in your site\'s name. Limited to 200 emails an hour per plugin.',
     risk: 'dangerous',
     surfaces: ['server', 'cms'],
   },

@@ -387,6 +387,91 @@ describe('PermissionReviewSection — email templates', () => {
     expect(document.body.textContent).toContain('Email any address')
   })
 
+  it('shows what each email says, in a frame that runs nothing', () => {
+    const { container } = render(
+      <PermissionReviewSection
+        pending={{
+          manifest: {
+            ...baseManifest,
+            id: 'acme.desk',
+            permissions: ['mail.send'] satisfies PluginPermission[],
+            mail: {
+              templates: [{
+                key: 'reply',
+                label: 'Ticket reply',
+                description: 'Sent when the team answers.',
+                variables: [{ name: 'subject', label: 'Ticket subject', sample: 'Publishing stops' }],
+                subject: 'Re: {subject}',
+                body: 'We answered **{subject}**.',
+              }],
+            },
+          },
+        }}
+        uploading={false}
+        onCancel={() => {}}
+        onConfirm={() => {}}
+      />,
+    )
+    const row = container.querySelector('[data-mail-template="reply"]')
+    expect(row?.textContent).toContain('Re: Publishing stops')
+    const frame = row?.querySelector('iframe')
+    expect(frame?.getAttribute('sandbox')).toBe('')
+    expect(frame?.getAttribute('srcdoc')).toContain('We answered <strong>Publishing stops</strong>.')
+    // A first install has nothing to compare with: no badges, no alert.
+    expect(screen.queryByTestId('mail-templates-diff-alert')).toBeNull()
+  })
+
+  it('flags the emails an upgrade adds or rewords, like an added permission', () => {
+    const template = (key: string, body: string) => ({
+      key, label: key, description: 'd', variables: [], subject: 'S', body,
+    })
+    const { container } = render(
+      <PermissionReviewSection
+        pending={{
+          manifest: {
+            ...baseManifest,
+            version: '2.0.0',
+            permissions: ['mail.send'] satisfies PluginPermission[],
+            mail: { templates: [template('same', 'Same.'), template('reworded', 'Send us your password.'), template('added', 'New.')] },
+          },
+          upgradeFromVersion: '1.0.0',
+          previouslyGrantedPermissions: ['mail.send'] satisfies PluginPermission[],
+          previousMailTemplates: [template('same', 'Same.'), template('reworded', 'Thanks.')],
+        }}
+        uploading={false}
+        onCancel={() => {}}
+        onConfirm={() => {}}
+      />,
+    )
+    expect(screen.getByTestId('mail-templates-diff-alert').textContent).toContain('2 email templates')
+    const status = (key: string) => container.querySelector(`[data-mail-template="${key}"]`)?.getAttribute('data-mail-status')
+    expect(status('same')).toBe('existing')
+    expect(status('reworded')).toBe('changed')
+    expect(status('added')).toBe('new')
+    // The changed ones are open to be read; the approve button counts them.
+    expect(container.querySelector('[data-mail-template="reworded"] details')?.hasAttribute('open')).toBe(true)
+    expect(container.querySelector('[data-mail-template="same"] details')?.hasAttribute('open')).toBe(false)
+    expect(document.body.textContent).toContain('Approve 2 new and update to 2.0.0')
+  })
+
+  it('flags mail.send.external as new when an upgrade adds it', () => {
+    const { container } = render(
+      <PermissionReviewSection
+        pending={{
+          manifest: { ...baseManifest, version: '2.0.0', permissions: ['mail.send', 'mail.send.external'] satisfies PluginPermission[] },
+          upgradeFromVersion: '1.0.0',
+          previouslyGrantedPermissions: ['mail.send'] satisfies PluginPermission[],
+        }}
+        uploading={false}
+        onCancel={() => {}}
+        onConfirm={() => {}}
+      />,
+    )
+    expect(container.querySelector('[data-permission="mail.send.external"]')?.getAttribute('data-status')).toBe('new')
+    expect(container.querySelector('[data-permission="mail.send"]')?.getAttribute('data-status')).toBe('existing')
+    expect(screen.getByTestId('permission-diff-alert').textContent).toContain('1 new permission')
+  })
+
   it('renders no section when the plugin declares no templates', () => {
     render(
       <PermissionReviewSection pending={{ manifest: baseManifest }} uploading={false} onCancel={() => {}} onConfirm={() => {}} />,

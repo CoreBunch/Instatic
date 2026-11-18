@@ -42,8 +42,14 @@ export type PluginMailRecipient = { member: string } | { address: string }
  *  - `expired`: it could not be delivered before its deadline (a day), so it was not sent.
  *  - `template_removed`: the template no longer exists.
  *  - `unreadable`: the queued email could not be read any more.
+ *  - `recipient_unavailable`: the member it was for was suspended or deleted before it went out.
  */
-export type PluginMailFailureReason = 'recipient_rejected' | 'expired' | 'template_removed' | 'unreadable'
+export type PluginMailFailureReason =
+  | 'recipient_rejected'
+  | 'expired'
+  | 'template_removed'
+  | 'unreadable'
+  | 'recipient_unavailable'
 
 export interface PluginMailSendInput {
   /** A `key` from this plugin's `mail.templates[]`. */

@@ -284,18 +284,23 @@ export async function removeQueuedMail(db: DbClient, mail: Pick<QueuedMail, 'id'
   })
 }
 
-/** Put a claimed email back to be tried again at `nextAttemptAt`. */
+/**
+ * Put a claimed email back to be tried again at `nextAttemptAt`. False when
+ * the row is gone: its sender was uninstalled, or its member deleted, while
+ * it was being sent.
+ */
 export async function rescheduleQueuedMail(
   db: DbClient,
   id: string,
   retry: { attempts: number; nextAttemptAt: string; error: string },
-): Promise<void> {
-  await db`
+): Promise<boolean> {
+  const put = await db`
     update mail_queue
        set claimed_at = null, attempts = ${retry.attempts},
            next_attempt_at = ${retry.nextAttemptAt}, last_error = ${retry.error}
      where id = ${id}
   `
+  return put.rowCount > 0
 }
 
 /**
@@ -303,8 +308,22 @@ export async function rescheduleQueuedMail(
  * For a failure that is the connector's and not the email's: it is due again
  * the moment delivery resumes, with no attempt counted against it.
  */
-export async function holdQueuedMail(db: DbClient, id: string, error: string): Promise<void> {
-  await db`update mail_queue set claimed_at = null, last_error = ${error} where id = ${id}`
+export async function holdQueuedMail(db: DbClient, id: string, error: string): Promise<boolean> {
+  const put = await db`update mail_queue set claimed_at = null, last_error = ${error} where id = ${id}`
+  return put.rowCount > 0
+}
+
+/** Every queued email matching a column value, for removing a sender's or a member's mail. */
+export async function listQueuedMailBy(
+  db: DbClient,
+  column: 'source' | 'member_id',
+  value: string,
+): Promise<QueuedMail[]> {
+  const { rows } = await db.unsafe<QueueRow>(
+    `select ${QUEUE_COLUMNS} from mail_queue where ${column} = ${placeholder(db, 1)}`,
+    [value],
+  )
+  return rows.map(toQueuedMail)
 }
 
 /**

@@ -19,6 +19,7 @@
  * `runPluginLifecycleHook` and `runPluginMigrate` in `./lifecycle.ts` and
  * `../../../plugins/runtime`; the on-disk side lives in `./shared.ts`.
  */
+import { syncPluginMailTemplates } from '../../../mail/pluginTemplates'
 import { lt as semverLt } from 'semver'
 import type { DbClient } from '../../../db/client'
 import type { AuthUser } from '../../../repositories/users'
@@ -99,6 +100,7 @@ export async function handlePluginsCollection(
       if (grantError) return grantError
       const installed = await installPlugin(db, manifest, grantedPermissions)
       const updatedResult = await setPluginLifecycleStatus(db, installed.id, 'active')
+      await syncPluginMailTemplates(db)
       const plugin = (updatedResult?.kind === 'ok' ? updatedResult.plugin : null) ?? installed
       await recordPluginAuditEvent(db, user, req, 'plugin.install', plugin.id)
       broadcastPluginEvent({
@@ -186,10 +188,16 @@ export async function handlePackageInstall(
     // The fresh path does none of that — it was written for a plugin that is
     // not there, and re-uploading the same version used to fall into it,
     // running `install` again on a live plugin with no rollback if it threw.
-    if (existing) {
-      return await installUpgradeFromPackage({ ...ctx, existing })
+    try {
+      if (existing) {
+        return await installUpgradeFromPackage({ ...ctx, existing })
+      }
+      return await installFreshFromPackage(ctx)
+    } finally {
+      // Installed, upgraded or rolled back: the email templates in the
+      // catalogue are the ones the installed manifest declares now.
+      await syncPluginMailTemplates(db)
     }
-    return await installFreshFromPackage(ctx)
   } catch (err) {
     return badRequest(getErrorMessage(err, 'Invalid plugin package'))
   }

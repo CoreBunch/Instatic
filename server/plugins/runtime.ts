@@ -49,11 +49,7 @@ import {
 import { jsonResponse } from '../http'
 import { hookBus } from '@core/plugins/hookBus'
 import { setQueuedMailOutcomeHandler } from '../mail/delivery'
-import {
-  registerPluginMailTemplates,
-  unregisterAllPluginMailTemplates,
-  unregisterPluginMailTemplates,
-} from '../mail/pluginTemplates'
+import { syncPluginMailTemplates } from '../mail/pluginTemplates'
 import { announcePluginMailOutcome } from './host/handlers/mail'
 import { requireAuthenticatedUser, requireCapability } from '../auth/authz'
 import { clearPluginCrashCounter, setCrashRecoveryHandler } from './host/crashRecovery'
@@ -139,9 +135,6 @@ export async function loadPluginServerEntrypoint(
   if (!result.ok) {
     throw workerCallError(result.error ?? `Failed to load plugin "${manifest.id}" in worker`, result.stack)
   }
-  // The plugin can send email only while it is loaded, so that is when its
-  // templates are in the catalogue.
-  registerPluginMailTemplates(manifest)
   return true
 }
 
@@ -186,7 +179,6 @@ export async function runPluginMigrate(
  */
 export async function unloadPlugin(pluginId: string): Promise<void> {
   dropCachedPluginSettings(pluginId)
-  unregisterPluginMailTemplates(pluginId)
   await unloadPluginInWorker(pluginId)
 }
 
@@ -407,7 +399,9 @@ export async function activateInstalledServerPlugins(
   await resetPluginWorker()
   resetPluginModulePacks()
   hookBus.reset()
-  unregisterAllPluginMailTemplates()
+  // Email templates are NOT cleared here: mail other plugins have waiting
+  // must still find its template while everything reloads. They are brought
+  // in line with the database, one plugin at a time, at the end.
   // A plugin hears what became of the email it queued, and only its own.
   setQueuedMailOutcomeHandler(announcePluginMailOutcome)
 
@@ -492,4 +486,5 @@ export async function activateInstalledServerPlugins(
       }
     }
   }
+  await syncPluginMailTemplates(db)
 }

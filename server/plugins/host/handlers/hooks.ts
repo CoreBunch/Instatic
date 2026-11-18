@@ -14,6 +14,7 @@ import { replyApiOk } from '../apiReplies'
 import { assertHostPluginPermission } from '../registry'
 import { runHookListenerInWorker, runHookFilterInWorker } from '../rpc'
 import type { HostPluginRecord } from '../types'
+import { deliverHeldMailOutcomes } from './mail'
 
 export async function handleHooksOn(
   msg: ApiCallFor<'cms.hooks.on'>,
@@ -28,6 +29,8 @@ export async function handleHooksOn(
   hookBus.on(msg.pluginId, event, async (payload: unknown) => {
     await runHookListenerInWorker(msg.pluginId, listenerId, event, payload)
   })
+  // News about its own email that arrived while it was not listening.
+  deliverHeldMailOutcomes(msg.pluginId, event)
   replyApiOk(msg.pluginId, msg.correlationId)
 }
 

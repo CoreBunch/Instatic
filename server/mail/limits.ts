@@ -16,10 +16,19 @@ import type { DbClient } from '../db/client'
 
 /** The most emails one plugin may send one recipient within a clock hour. */
 export const MAIL_PER_RECIPIENT_HOURLY_LIMIT = 20
+/**
+ * The most emails one plugin may send to addresses it names itself within a
+ * clock hour. Email to members is bounded by the per-member limit and by how
+ * many members there are; email to arbitrary addresses is bounded by
+ * nothing else, and it spends the provider quota the site's own sign-in
+ * email depends on.
+ */
+export const MAIL_EXTERNAL_HOURLY_LIMIT = 200
 /** The most emails one plugin may have waiting in the queue. */
 export const MAIL_BACKLOG_LIMIT = 10_000
 const HOUR_MS = 60 * 60 * 1000
 const BACKLOG_SCOPE = 'backlog'
+const EXTERNAL_SCOPE = 'external'
 
 export class MailLimitError extends Error {
   constructor(message: string) {
@@ -66,8 +75,9 @@ async function takePlace(
 }
 
 /**
- * Count one more email from `source` to `recipient` in this clock hour. Throws
- * `MailLimitError` when the hour's places are taken. Call inside the
+ * Count one more email from `source` to `recipient` in this clock hour, and,
+ * for an address, one more of the plugin's external emails. Throws
+ * `MailLimitError` when either hour's places are taken. Call inside the
  * transaction that accepts the email.
  */
 export async function reserveRecipientSlot(
@@ -86,6 +96,14 @@ export async function reserveRecipientSlot(
     throw new MailLimitError(
       `This plugin has already sent ${MAIL_PER_RECIPIENT_HOURLY_LIMIT} emails to that recipient this hour.`,
     )
+  }
+  if ('address' in recipient) {
+    const within = await takePlace(tx, { source, scope: EXTERNAL_SCOPE, bucket: hourBucket(now) }, MAIL_EXTERNAL_HOURLY_LIMIT)
+    if (!within) {
+      throw new MailLimitError(
+        `This plugin has already sent ${MAIL_EXTERNAL_HOURLY_LIMIT} emails to addresses outside the site's members this hour.`,
+      )
+    }
   }
 }
 

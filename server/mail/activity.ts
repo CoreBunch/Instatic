@@ -29,7 +29,13 @@ function orderedId(now: number): string {
   return `${now.toString(36).padStart(9, '0')}${sequence.toString(36).padStart(4, '0')}${nanoid(8)}`
 }
 
-/** Rows kept; older ones are pruned on every insert. */
+/**
+ * Rows kept per sender (the core, and each plugin on its own); older ones
+ * are pruned on every insert. Per sender, so a plugin that sends a great
+ * deal cannot push the core's sign-in emails out of the log. A row whose
+ * email is still queued is never pruned: the queue would be left sending
+ * something the log has no record of.
+ */
 const RETENTION = 2000
 const HOUR_MS = 60 * 60 * 1000
 const DAY_MS = 24 * HOUR_MS
@@ -51,6 +57,8 @@ interface ActivityRow {
   duration_ms: number | null
   attempts: number
   next_attempt_at: Date | string | null
+  source: string
+  source_label: string | null
   created_at: Date | string
 }
 
@@ -69,6 +77,8 @@ interface RecordMailInput {
   body?: string
   /** Who asked for the email: `core`, or a plugin's id. */
   source?: string
+  /** The sending plugin's name, kept on the row so it outlives the plugin. */
+  sourceLabel?: string
   /** Delivery attempts made; an email sent directly counts as one. */
   attempts?: number
 }
@@ -82,23 +92,25 @@ export async function recordMail(db: DbClient, input: RecordMailInput): Promise<
   const id = orderedId(now)
   const at = new Date(now).toISOString()
   const attempts = input.attempts ?? (input.status === 'sent' || input.status === 'failed' ? 1 : 0)
+  const source = input.source ?? CORE_MAIL_SOURCE
   await db`
     insert into mail_outbox (
       id, kind, to_address, subject, status, connector_id, connector_label, error,
-      provider_message_id, duration_ms, body_text, source, attempts, next_attempt_at, created_at
+      provider_message_id, duration_ms, body_text, source, source_label, attempts, next_attempt_at, created_at
     ) values (
       ${id}, ${input.kind}, ${input.to}, ${input.subject}, ${input.status},
       ${input.connector?.id ?? null}, ${input.connector?.label ?? null}, ${input.error ?? null},
       ${input.providerMessageId ?? null}, ${input.durationMs ?? null},
       ${input.status === 'captured' ? (input.body ?? null) : null},
-      ${input.source ?? CORE_MAIL_SOURCE}, ${attempts}, ${input.status === 'queued' ? at : null}, ${at}
+      ${source}, ${input.sourceLabel ?? null}, ${attempts}, ${input.status === 'queued' ? at : null}, ${at}
     )
   `
   await db`
     delete from mail_outbox
-     where id not in (
-       select id from mail_outbox order by created_at desc, id desc limit ${RETENTION}
-     )
+     where source = ${source} and status <> 'queued'
+       and id not in (
+         select id from mail_outbox where source = ${source} order by created_at desc, id desc limit ${RETENTION}
+       )
   `
   return id
 }
@@ -174,6 +186,8 @@ function toLoggedMail(row: ActivityRow): LoggedMail {
     providerMessageId: row.provider_message_id,
     durationMs: row.duration_ms === null ? null : Number(row.duration_ms),
     attempts: Number(row.attempts),
+    // The plugin's name as it was when the email was accepted; its id if that was not kept.
+    sentBy: row.source === CORE_MAIL_SOURCE ? null : (row.source_label ?? row.source),
     nextAttemptAt: row.next_attempt_at === null ? null : isoDate(row.next_attempt_at),
     createdAt,
     at: Date.parse(createdAt),
@@ -269,7 +283,7 @@ export async function listMailActivity(
 ): Promise<MailActivityResponse> {
   const { rows } = await db<ActivityRow>`
     select id, kind, to_address, subject, status, connector_label, error,
-           provider_message_id, duration_ms, attempts, next_attempt_at, created_at
+           provider_message_id, duration_ms, attempts, next_attempt_at, source, source_label, created_at
       from mail_outbox
      order by created_at desc, id desc
   `

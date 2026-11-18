@@ -548,6 +548,12 @@ function Detail({
             )}
           </dd>
         </div>
+        {entry.sentBy !== null && (
+          <div>
+            <dt>Sent by</dt>
+            <dd>{entry.sentBy}</dd>
+          </div>
+        )}
         <div>
           <dt>Connector</dt>
           <dd>

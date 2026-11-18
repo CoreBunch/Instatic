@@ -32,16 +32,25 @@
  * `frontend.origins` gets the same treatment in a third section: each host a
  * plugin may load scripts or embed frames from on published pages is listed
  * in plain words, and an upgrade that adds one flags it as new.
+ *
+ * `mail.templates` is the fourth: each email the plugin can send is listed
+ * with its subject and body, shown in the same script-less frame the Email
+ * workspace previews with. An upgrade that adds a template or changes the
+ * wording of one flags it, because approving a plugin's email is approving
+ * what it says in the site's name.
  */
 import { lt as semverLt } from 'semver'
 import { Button } from '@ui/components/Button'
 import {
   permissionDescription,
   type PluginFrontendOrigins,
+  type PluginMailTemplateDeclaration,
   type PluginManifest,
   type PluginPermission,
 } from '@core/plugin-sdk'
+import { renderMailTemplate, sampleMailVariables } from '@core/mail'
 import { permissionLabel } from '@core/plugins/manifest'
+import { pluginMailTemplateKey } from '@core/plugins/manifestMail'
 import {
   computePermissionDiff,
   type PermissionDiffRow,
@@ -65,6 +74,29 @@ interface PermissionReviewPending {
    * upgrade), so a script or frame origin the upgrade adds shows as new.
    */
   previousFrontendOrigins?: PluginFrontendOrigins
+  /**
+   * The previously-installed manifest's `mail.templates` (when this is an
+   * upgrade), so a template the upgrade adds or rewords shows as such.
+   */
+  previousMailTemplates?: PluginMailTemplateDeclaration[]
+}
+
+type MailTemplateStatus = 'new' | 'changed' | 'existing'
+
+/** How a template in the new manifest compares with the installed one's. */
+function mailTemplateStatus(
+  template: PluginMailTemplateDeclaration,
+  previous: readonly PluginMailTemplateDeclaration[] | undefined,
+): MailTemplateStatus {
+  const before = previous?.find((candidate) => candidate.key === template.key)
+  if (!before) return 'new'
+  return before.subject === template.subject && before.body === template.body ? 'existing' : 'changed'
+}
+
+const MAIL_TEMPLATE_BADGE: Record<MailTemplateStatus, string> = {
+  new: 'New',
+  changed: 'Wording changed',
+  existing: 'Already approved',
 }
 
 type HostDiffStatus = 'new' | 'existing' | 'dropped'
@@ -168,7 +200,15 @@ export function PermissionReviewSection({
       ),
     },
   ] as const
-  const mailTemplates = pending.manifest.mail?.templates ?? []
+  const mailTemplates = (pending.manifest.mail?.templates ?? []).map((template) => ({
+    template,
+    status: isUpgrade ? mailTemplateStatus(template, pending.previousMailTemplates) : ('new' as const),
+    preview: renderMailTemplate(
+      { key: pluginMailTemplateKey(pending.manifest.id, template.key), subject: template.subject, body: template.body },
+      { 'site.name': 'Your site', 'site.url': '', ...sampleMailVariables(template.variables) },
+    ),
+  }))
+  const changedMailCount = isUpgrade ? mailTemplates.filter((row) => row.status !== 'existing').length : 0
   const originRowCount = originGroups.reduce((count, group) => count + group.rows.length, 0)
   const newOriginCount = isUpgrade
     ? originGroups.reduce((count, group) => count + group.rows.filter((row) => row.status === 'new').length, 0)
@@ -379,13 +419,40 @@ export function PermissionReviewSection({
               can reword each one under Email → Templates.
             </span>
           </div>
+          {changedMailCount > 0 && (
+            <div className={styles.alert} role="alert" data-testid="mail-templates-diff-alert">
+              This update adds or rewords <strong>{changedMailCount} email template{changedMailCount === 1 ? '' : 's'}</strong>.
+              Read the highlighted ones before continuing.
+            </div>
+          )}
           <ul className={styles.list}>
-            {mailTemplates.map((template) => (
-              <li key={template.key} className={styles.row} data-mail-template={template.key}>
+            {mailTemplates.map(({ template, status, preview }) => (
+              <li
+                key={template.key}
+                className={styles.row}
+                data-mail-template={template.key}
+                data-status={status === 'existing' ? 'existing' : isUpgrade ? 'new' : undefined}
+                data-mail-status={status}
+              >
                 <div className={styles.label}>
                   <span>{template.label}</span>
+                  {isUpgrade && (
+                    <span className={`${styles.badge} ${status === 'existing' ? styles.badgeExisting : styles.badgeNew}`}>
+                      {MAIL_TEMPLATE_BADGE[status]}
+                    </span>
+                  )}
                 </div>
                 <span className={styles.description}>{template.description}</span>
+                <details className={styles.mailPreview} open={isUpgrade && status !== 'existing'}>
+                  <summary>Read the email</summary>
+                  <p className={styles.mailSubject}>{preview.subject}</p>
+                  <iframe
+                    className={styles.mailBody}
+                    title={`${template.label} email`}
+                    sandbox=""
+                    srcDoc={preview.html}
+                  />
+                </details>
               </li>
             ))}
           </ul>
@@ -421,8 +488,8 @@ export function PermissionReviewSection({
                 : isReinstall
                   ? `Reinstall ${pending.manifest.version}`
                   : isUpgrade
-                    ? newCount > 0
-                      ? `Approve ${newCount} new and update to ${pending.manifest.version}`
+                    ? newCount > 0 || changedMailCount > 0
+                      ? `Approve ${newCount + changedMailCount} new and update to ${pending.manifest.version}`
                       : `Update to ${pending.manifest.version}`
                     : 'Approve and Install'}
           </span>

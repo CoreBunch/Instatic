@@ -207,7 +207,7 @@ function makeFakeDb() {
     // removePluginMail — the uninstall sweep of a plugin's template edits,
     // queued email and limit counters. No plugin in these tests declares or sends email.
     if (
-      normalized.includes('delete from mail_templates') ||
+      normalized.includes('from mail_templates') ||
       normalized.includes('from mail_queue') ||
       normalized.includes('delete from mail_counters')
     ) {

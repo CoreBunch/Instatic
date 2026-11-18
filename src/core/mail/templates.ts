@@ -14,9 +14,13 @@
  *
  * A template is also not trusted to carry a secret value somewhere else: see
  * `fillHtml` for how variables in link and image addresses are confined.
+ * And the finished body goes through the sanitizer (`MAIL_BODY_CONFIG`), so
+ * raw HTML in a template cannot put a form, a script or a frame into an
+ * email. A plugin's templates are held to a stricter profile still.
  */
 import { escapeHtml, isSafeUrl } from '@core/publisher'
 import { renderMarkdownToHtml } from '@core/markdown/renderMarkdown'
+import { sanitizeRichtext, type SanitizerConfig } from '@core/sanitize'
 import type { MailTemplateVariable } from './schemas'
 
 // ─── Catalogue ─────────────────────────────────────────────────────────────
@@ -116,6 +120,19 @@ export function unknownMailVariables(source: string, known: readonly MailTemplat
 const WHOLE_VARIABLE = /^\{([a-zA-Z][a-zA-Z0-9_.]{0,60})\}$/
 
 /**
+ * A plugin's template key is `plugin.<pluginId>~<key>`; no other key holds a
+ * `~`. Such a template, and the owner's edit of it, is rendered with the
+ * strict profile: what a plugin ships must not be able to load anything or
+ * send a link anywhere when the email is opened.
+ */
+export function isPluginMailTemplateKey(key: string | undefined): boolean {
+  return key !== undefined && key.includes('~')
+}
+
+/** An attribute holding an address, however it is quoted in hand-written HTML. */
+const ADDRESS_ATTRIBUTE = /\b(href|src)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'>]+))/gi
+
+/**
  * Put values into rendered HTML.
  *
  * In a link or image address a variable is honoured only when it is the
@@ -123,17 +140,57 @@ const WHOLE_VARIABLE = /^\{([a-zA-Z][a-zA-Z0-9_.]{0,60})\}$/
  * address. An address that merely contains a variable
  * (`https://elsewhere.example/?t={link}`) is neutralised: that shape would
  * hand a member's single-use link to another server, on click for a link
- * and on open for an image. Everywhere else a value is text.
+ * and on open for an image. This holds however the attribute is quoted, so
+ * raw HTML in a body cannot write its way round it. Everywhere else a value
+ * is text.
+ *
+ * With `strict` (a plugin's template) an image address is always
+ * neutralised, since an image is fetched when the email is opened, and a
+ * link written out in the template must be `https`.
  */
-function fillHtml(html: string, variables: MailVariables): string {
-  const withAddresses = html.replace(/\b(href|src)="([^"]*)"/g, (whole, attribute: string, target: string) => {
-    if (!target.includes('{')) return whole
-    const single = WHOLE_VARIABLE.exec(target)
-    const value = single && single[1] in variables ? variables[single[1]].trim() : null
-    const safe = value !== null && /^https?:\/\//i.test(value) && isSafeUrl(value) ? escapeHtml(value) : '#'
-    return `${attribute}="${safe}"`
-  })
+function fillHtml(html: string, variables: MailVariables, strict: boolean): string {
+  const withAddresses = html.replace(
+    ADDRESS_ATTRIBUTE,
+    (_whole, name: string, double?: string, single?: string, bare?: string) => {
+      const attribute = name.toLowerCase()
+      const target = (double ?? single ?? bare ?? '').trim()
+      if (strict && attribute === 'src') return `${attribute}="#"`
+      if (!target.includes('{')) {
+        if (strict && !/^https:\/\//i.test(target) && target !== '#') return `${attribute}="#"`
+        return `${attribute}="${target.replace(/"/g, '&quot;')}"`
+      }
+      const whole = WHOLE_VARIABLE.exec(target)
+      const value = whole && whole[1] in variables ? variables[whole[1]].trim() : null
+      const safe = value !== null && /^https?:\/\//i.test(value) && isSafeUrl(value) ? escapeHtml(value) : '#'
+      return `${attribute}="${safe}"`
+    },
+  )
   return fill(withAddresses, variables, (value) => escapeHtml(value))
+}
+
+/** What an email body may contain once rendered: the Markdown subset and nothing a mail client would run or submit. */
+const MAIL_BODY_TAGS = [
+  'p', 'br', 'hr', 'strong', 'b', 'em', 'i', 'del', 's', 'a', 'code', 'pre', 'blockquote',
+  'ul', 'ol', 'li', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
+  'table', 'thead', 'tbody', 'tr', 'th', 'td',
+]
+
+/**
+ * The backstop for every email body: whatever the Markdown renderer or raw
+ * HTML in a template produced, only these elements and attributes leave the
+ * server. No forms, scripts, frames, styles or event handlers.
+ */
+const MAIL_BODY_CONFIG: SanitizerConfig = {
+  ALLOWED_TAGS: [...MAIL_BODY_TAGS, 'img'],
+  ALLOWED_ATTR: ['href', 'title', 'target', 'rel', 'src', 'alt', 'width', 'height', 'align', 'start'],
+  ALLOW_DATA_ATTR: false,
+}
+
+/** The same without images: a plugin's template loads nothing when the email is opened. */
+const PLUGIN_MAIL_BODY_CONFIG: SanitizerConfig = {
+  ALLOWED_TAGS: MAIL_BODY_TAGS,
+  ALLOWED_ATTR: ['href', 'title', 'target', 'rel', 'align', 'start'],
+  ALLOW_DATA_ATTR: false,
 }
 
 const LAYOUT_STYLE = {
@@ -167,14 +224,16 @@ function wrapInLayout(bodyHtml: string, siteName: string): string {
  * silently vanishing.
  */
 export function renderMailTemplate(
-  template: { subject: string; body: string },
+  template: { key?: string; subject: string; body: string },
   variables: MailVariables,
 ): RenderedMail {
   const siteName = variables['site.name'] ?? ''
+  const strict = isPluginMailTemplateKey(template.key)
+  const filled = fillHtml(renderMarkdownToHtml(template.body), variables, strict)
   return {
     subject: singleLine(fill(template.subject, variables, singleLine)),
     text: fill(template.body, variables, (value) => value),
-    html: wrapInLayout(fillHtml(renderMarkdownToHtml(template.body), variables), siteName),
+    html: wrapInLayout(sanitizeRichtext(filled, strict ? PLUGIN_MAIL_BODY_CONFIG : MAIL_BODY_CONFIG), siteName),
   }
 }
 

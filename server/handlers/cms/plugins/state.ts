@@ -36,6 +36,7 @@ import { Type } from '@core/utils/typeboxHelpers'
 import { deactivatePluginModulePack } from '@core/plugins/modulePackLoader'
 import { clearPluginScheduleRuns } from '../../../repositories/pluginSchedules'
 import { removePluginMail } from '../../../mail/pluginTemplates'
+import { forgetHeldMailOutcomes } from '../../../plugins/host/handlers/mail'
 import { type CmsHandlerOptions } from '../shared'
 import {
   lifecycleErrorMessage,
@@ -201,6 +202,7 @@ async function removePluginCompletely(
   await clearPluginCrashes(db, pluginId)
   await clearPluginScheduleRuns(db, pluginId)
   await removePluginMail(db, pluginId)
+  forgetHeldMailOutcomes(pluginId)
   if (options.uploadsDir) {
     await removeAllPluginAssets(options.uploadsDir, pluginId)
   }

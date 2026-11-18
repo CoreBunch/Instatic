@@ -2,11 +2,18 @@
  * A plugin's email templates in the catalogue, and what is left of a
  * plugin's email when it is uninstalled.
  *
- * Templates are in the catalogue exactly while the plugin's server code is
- * loaded: registered when it loads (install, enable, upgrade, restart,
- * boot), taken out when it unloads. The owner's edits live in
- * `mail_templates` under the same keys, so they survive every unload and an
- * upgrade, and go only when the plugin is uninstalled.
+ * The catalogue follows the database, one plugin at a time:
+ * `syncPluginMailTemplates` gives every installed, enabled plugin exactly
+ * the templates its manifest declares and takes out those of plugins that
+ * are disabled or gone. Each plugin's set is replaced in one synchronous
+ * step, and no plugin's templates are ever cleared to be put back later, so
+ * there is no moment at which a loaded plugin's template is missing. (The
+ * queue also does not take a missing template for final while its plugin is
+ * installed: see `attemptQueuedMail`.)
+ *
+ * The owner's edits live in `mail_templates` under the same keys. They
+ * survive disabling and upgrading; an edit of a template an upgrade no
+ * longer declares is deleted, and all of them go with the plugin.
  */
 import {
   listMailTemplateDefinitions,
@@ -16,55 +23,86 @@ import {
 import type { PluginManifest } from '@core/plugin-sdk'
 import { pluginMailTemplateDefinitions, pluginMailTemplatePrefix } from '@core/plugins/manifestMail'
 import type { DbClient } from '../db/client'
-import { updateMailProgress } from './activity'
+import { listInstalledPlugins } from '../repositories/plugins'
+import { discardQueuedMail } from './delivery'
 import { clearMailCounters } from './limits'
 
 /** A plugin template key is `plugin.<pluginId>~<key>`; nothing else in the catalogue contains `~`. */
 const PLUGIN_KEY_MARK = '~'
 
-function unregisterWhere(belongs: (key: string) => boolean): void {
+/** Make one plugin's templates in the catalogue exactly `manifest`'s, in one step. */
+function setPluginMailTemplates(manifest: Pick<PluginManifest, 'id' | 'name' | 'mail'>): void {
+  const prefix = pluginMailTemplatePrefix(manifest.id)
+  const declared = pluginMailTemplateDefinitions(manifest)
+  const keys = new Set(declared.map((definition) => definition.key))
+  // Add and replace first, then drop what is no longer declared: a key that
+  // stays is never absent in between.
+  for (const definition of declared) registerMailTemplate(definition)
   for (const definition of listMailTemplateDefinitions()) {
-    if (belongs(definition.key)) unregisterMailTemplate(definition.key)
+    if (definition.key.startsWith(prefix) && !keys.has(definition.key)) unregisterMailTemplate(definition.key)
   }
 }
 
-function unregisterByPrefix(prefix: string): void {
-  unregisterWhere((key) => key.startsWith(prefix))
-}
-
-/** Put a loaded plugin's templates in the catalogue, replacing the ones it had. */
-export function registerPluginMailTemplates(manifest: Pick<PluginManifest, 'id' | 'name' | 'mail'>): void {
-  unregisterByPrefix(pluginMailTemplatePrefix(manifest.id))
-  for (const definition of pluginMailTemplateDefinitions(manifest)) registerMailTemplate(definition)
-}
-
-export function unregisterPluginMailTemplates(pluginId: string): void {
-  unregisterByPrefix(pluginMailTemplatePrefix(pluginId))
-}
-
-/** Forget every plugin's templates: the plugin runtime is starting from a clean slate. */
-export function unregisterAllPluginMailTemplates(): void {
-  unregisterWhere((key) => key.includes(PLUGIN_KEY_MARK))
+function unsetPluginMailTemplates(pluginId: string): void {
+  setPluginMailTemplates({ id: pluginId, name: pluginId })
 }
 
 /**
- * An uninstalled plugin leaves no email behind: the owner's edits of its
- * templates are deleted, and what it still had waiting is taken out of the
- * queue and logged as failed.
+ * Bring the catalogue in line with the installed plugins. Called after
+ * every change to a plugin (install, upgrade, enable, disable, uninstall)
+ * and at boot. Also deletes the owner's edits of templates a plugin no
+ * longer declares.
+ */
+export async function syncPluginMailTemplates(db: DbClient): Promise<void> {
+  const enabled = new Set<string>()
+  for (const result of await listInstalledPlugins(db)) {
+    if (result.kind !== 'ok') continue
+    const { plugin } = result
+    if (plugin.enabled) {
+      setPluginMailTemplates(plugin.manifest)
+      enabled.add(plugin.id)
+    } else {
+      unsetPluginMailTemplates(plugin.id)
+    }
+    await deleteStaleTemplateEdits(db, plugin.manifest)
+  }
+  // Templates of plugins that are no longer installed at all.
+  for (const definition of listMailTemplateDefinitions()) {
+    const mark = definition.key.indexOf(PLUGIN_KEY_MARK)
+    if (mark < 0) continue
+    const pluginId = definition.key.slice('plugin.'.length, mark)
+    if (!enabled.has(pluginId)) unregisterMailTemplate(definition.key)
+  }
+}
+
+/** An edit of a template its plugin no longer declares has nothing left to edit. */
+async function deleteStaleTemplateEdits(db: DbClient, manifest: Pick<PluginManifest, 'id' | 'name' | 'mail'>): Promise<void> {
+  const prefix = pluginMailTemplatePrefix(manifest.id)
+  const declared = new Set(pluginMailTemplateDefinitions(manifest).map((definition) => definition.key))
+  const { rows } = await db<{ template_key: string }>`
+    select template_key from mail_templates where substr(template_key, 1, ${prefix.length}) = ${prefix}
+  `
+  for (const row of rows) {
+    if (!declared.has(row.template_key)) await db`delete from mail_templates where template_key = ${row.template_key}`
+  }
+}
+
+/**
+ * An uninstalled plugin leaves no email behind: its templates leave the
+ * catalogue, the owner's edits of them are deleted, what it still had
+ * waiting is taken out of the queue and logged as failed, and its limit
+ * counters are forgotten.
  */
 export async function removePluginMail(db: DbClient, pluginId: string): Promise<void> {
+  unsetPluginMailTemplates(pluginId)
   const prefix = pluginMailTemplatePrefix(pluginId)
   await db`delete from mail_templates where substr(template_key, 1, ${prefix.length}) = ${prefix}`
-  const { rows } = await db<{ outbox_id: string; attempts: number }>`
-    select outbox_id, attempts from mail_queue where source = ${pluginId}
-  `
-  await db`delete from mail_queue where source = ${pluginId}`
+  await discardQueuedMail(
+    db,
+    'source',
+    pluginId,
+    'The plugin that asked for this email was uninstalled before it was sent.',
+    null,
+  )
   await clearMailCounters(db, pluginId)
-  for (const row of rows) {
-    await updateMailProgress(db, row.outbox_id, {
-      status: 'failed',
-      attempts: Number(row.attempts),
-      error: 'The plugin that asked for this email was uninstalled before it was sent.',
-    })
-  }
 }

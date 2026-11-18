@@ -134,6 +134,7 @@ test('a plugin\'s email templates are listed, reworded and sent (ADMIN-016)', as
       const details = page.getByRole('article', { name: 'Email details' })
       await expect(details.getByRole('heading', { name: 'Desk: Cannot publish' })).toBeVisible()
       await expect(details.getByText('Our own words about')).toBeVisible()
+      await expect(details.getByText(pluginName, { exact: true })).toBeVisible()
     })
   } finally {
     await stepUp()
@@ -145,5 +146,8 @@ test('a plugin\'s email templates are listed, reworded and sent (ADMIN-016)', as
     await page.getByTestId('email-nav-templates').click()
     await expect(page.getByRole('article').getByRole('heading', { name: 'Test email', exact: true })).toBeVisible()
     await expect(page.getByText(pluginName, { exact: true })).toHaveCount(0)
+    // The log still says who sent the email.
+    await page.getByTestId('email-nav-activity').click()
+    await expect(page.getByRole('article', { name: 'Email details' }).getByText(pluginName, { exact: true })).toBeVisible()
   })
 })

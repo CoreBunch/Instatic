@@ -12,19 +12,27 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { strToU8, zipSync } from 'fflate'
-import { getMailTemplateDefinition, type MailConnector, type MailTemplate } from '@core/mail'
+import {
+  getMailTemplateDefinition,
+  listMailTemplateDefinitions,
+  renderMailTemplate,
+  sampleMailVariables,
+  type MailConnector,
+  type MailTemplate,
+} from '@core/mail'
 import { hookBus } from '@core/plugins/hookBus'
 import { parsePluginManifest } from '@core/plugins/manifest'
 import { undeclaredMailVariables } from '@core/plugins/manifestMail'
 import { configurePublicOrigins, resetPublicOrigins } from '../../../server/auth/security'
 import { handleCmsRequest } from '../../../server/handlers/cms'
-import { listMailActivity } from '../../../server/mail/activity'
+import { listMailActivity, recordMail } from '../../../server/mail/activity'
 import { createMailConnector } from '../../../server/mail/connectors'
 import { saveMailDefaults } from '../../../server/mail/defaults'
 import { __resetMailQueuePauseForTesting, drainMailQueue, queueTemplateMail } from '../../../server/mail/delivery'
-import { MAIL_BACKLOG_LIMIT, MailLimitError } from '../../../server/mail/limits'
+import { MAIL_BACKLOG_LIMIT, MAIL_EXTERNAL_HOURLY_LIMIT, MailLimitError } from '../../../server/mail/limits'
 import type { MailCarrier } from '../../../server/mail/send'
 import { MailDeliveryError } from '../../../server/mail/smtpDriver'
+import { deleteMemberAsAdmin } from '../../../server/members/admin'
 import { createMember } from '../../../server/members/repository'
 import { handleServerRequest } from '../../../server/router'
 import { createCapabilityTestHarness, readJson, type CapabilityTestHarness } from '../helpers/capabilityHarness'
@@ -113,14 +121,17 @@ describe('email for plugins', () => {
     await rm(uploadsDir, { recursive: true, force: true })
   })
 
-  async function install(permissions: string[], overrides: Record<string, unknown> = {}): Promise<Response> {
+  const install = (permissions: string[], overrides: Record<string, unknown> = {}) =>
+    installPackage(manifest(permissions, overrides), permissions)
+
+  async function installPackage(pluginManifest: unknown, granted: string[], source = PLUGIN_SOURCE): Promise<Response> {
     const zipped = zipSync({
-      'plugin.json': strToU8(JSON.stringify(manifest(permissions, overrides))),
-      'server/index.js': strToU8(PLUGIN_SOURCE),
+      'plugin.json': strToU8(JSON.stringify(pluginManifest)),
+      'server/index.js': strToU8(source),
     })
     const formData = new FormData()
     formData.set('file', new File([zipped], 'plugin.zip', { type: 'application/zip' }))
-    formData.set('grantedPermissions', JSON.stringify(permissions))
+    formData.set('grantedPermissions', JSON.stringify(granted))
     const req = {
       url: `${ORIGIN}/admin/api/cms/plugins/package`,
       method: 'POST',
@@ -144,6 +155,28 @@ describe('email for plugins', () => {
   }
 
   const send = (body: unknown) => call('/send', body)
+
+  const setEnabled = (enabled: boolean) =>
+    h.cms(`/admin/api/cms/plugins/${PLUGIN_ID}`, { method: 'PATCH', cookie: owner, json: { enabled } })
+
+  /** What the plugin heard, once the listeners (which nothing waits for) have run. */
+  async function heard(): Promise<unknown> {
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    return (await call('/heard')).heard
+  }
+
+  /** How many times `key` was missing from the catalogue while `work` ran. */
+  async function timesMissing(key: string, work: Promise<unknown>): Promise<number> {
+    let missing = 0
+    let done = false
+    void work.finally(() => { done = true })
+    while (!done) {
+      if (!getMailTemplateDefinition(key)) missing += 1
+      await new Promise((resolve) => setImmediate(resolve))
+    }
+    await work
+    return missing
+  }
 
   async function readyConnector(): Promise<MailConnector> {
     const { rows } = await h.db<{ id: string }>`select id from users limit 1`
@@ -322,6 +355,50 @@ describe('email for plugins', () => {
       expect((await listMailActivity(h.db)).entries).toHaveLength(0)
     })
 
+    it('answers the same for a member that never was, was deleted or is suspended, and checks the request first', async () => {
+      await install(BOTH)
+      const active = await activeMember()
+      const suspended = await activeMember('s@example.com')
+      await h.db`update members set status = 'suspended' where id = ${suspended}`
+      const deleted = await activeMember('d@example.com')
+      await deleteMemberAsAdmin(h.db, deleted)
+      const variables = { subject: 'a', link: 'https://example.com/' }
+      const refusals = await Promise.all(
+        [suspended, deleted, 'nobody'].map((member) => send({ template: 'ticket.reply', to: { member }, variables })),
+      )
+      expect(new Set(refusals.map((refusal) => JSON.stringify(refusal))).size).toBe(1)
+
+      // A bad request is refused for what is wrong with it, before anyone is looked up.
+      for (const bad of [{ template: 'nope', variables }, { template: 'ticket.reply', variables: { ...variables, extra: 'x' } }]) {
+        const answers = await Promise.all([active, suspended, 'nobody'].map((member) => send({ ...bad, to: { member } })))
+        expect(new Set(answers.map((answer) => JSON.stringify(answer))).size).toBe(1)
+        expect(String(answers[0].error)).not.toContain('cannot be emailed')
+      }
+    })
+
+    it('does not write to a member who was suspended or deleted after the email was queued', async () => {
+      await install(BOTH)
+      await readyConnector()
+      const variables = { subject: 'a', link: 'https://example.com/' }
+      const suspended = await activeMember('s@example.com')
+      const deleted = await activeMember('d@example.com')
+      await send({ template: 'ticket.reply', to: { member: suspended }, variables, reference: 'suspended' })
+      await send({ template: 'ticket.reply', to: { member: deleted }, variables, reference: 'deleted' })
+
+      await deleteMemberAsAdmin(h.db, deleted)
+      // Gone from the queue at once, not at the next attempt.
+      expect((await h.db`select id from mail_queue where member_id = ${deleted}`).rows).toHaveLength(0)
+      await h.db`update members set status = 'suspended' where id = ${suspended}`
+      let calls = 0
+      await drain(async () => { calls += 1; return null })
+      expect(calls).toBe(0)
+      expect((await h.db`select id from mail_queue`).rows).toHaveLength(0)
+      expect(await heard()).toEqual([
+        { event: 'mail.failed', template: 'ticket.reply', to: { member: deleted }, reference: 'deleted', reason: 'recipient_unavailable' },
+        { event: 'mail.failed', template: 'ticket.reply', to: { member: suspended }, reference: 'suspended', reason: 'recipient_unavailable' },
+      ])
+    })
+
     it('keeps a hostile value from adding markup, a header or a link of its own', async () => {
       await install(BOTH)
       await readyConnector()
@@ -391,6 +468,22 @@ describe('email for plugins', () => {
       // A refused send took no place in the backlog and left no row in the log.
       expect(await counter('backlog', '')).toBe(20)
       expect((await listMailActivity(h.db)).matching).toBe(20)
+    })
+
+    it('stops a plugin at two hundred emails an hour to addresses, however many arrive at once, and leaves member email alone', async () => {
+      await install(BOTH)
+      const results = await Promise.all(
+        Array.from({ length: MAIL_EXTERNAL_HOURLY_LIMIT + 60 }, (_unused, index) => attempt(`person${index}@example.com`)),
+      )
+      expect(results.filter((result) => result === 'captured')).toHaveLength(MAIL_EXTERNAL_HOURLY_LIMIT)
+      expect(results.filter((result) => result === 'refused')).toHaveLength(60)
+      expect(await counter('external', hour())).toBe(MAIL_EXTERNAL_HOURLY_LIMIT)
+
+      const refused = await send({ template: 'ticket.opened', to: { address: 'one.more@example.com' }, variables: { subject: 'a' } })
+      expect(String(refused.error)).toContain(`${MAIL_EXTERNAL_HOURLY_LIMIT} emails to addresses outside the site's members this hour`)
+      const memberId = await activeMember()
+      expect(await send({ template: 'ticket.reply', to: { member: memberId }, variables: { subject: 'a', link: 'https://example.com/' } }))
+        .toEqual({ status: 'captured' })
     })
 
     it('forgets the hours that are over', async () => {
@@ -511,6 +604,8 @@ describe('email for plugins', () => {
         select scope, count from mail_counters where source = ${PLUGIN_ID} order by scope
       `
       expect(rows.map((row) => `${row.scope}=${Number(row.count)}`)).toEqual([
+        // Email to addresses is also counted per plugin; email to members is not.
+        'external=2',
         `member:${memberId}=20`,
         'to:secret.inbox@example.com=1',
         'to:someone.else@example.com=1',
@@ -545,17 +640,100 @@ describe('email for plugins', () => {
   })
 
   describe('a plugin that goes away', () => {
-    it('fails what a disabled plugin left waiting, and says why', async () => {
+    it('keeps what a disabled plugin left waiting and sends it once the plugin is back', async () => {
       await install(BOTH)
       await readyConnector()
-      await send({ template: 'ticket.opened', to: { address: 'a@example.com' }, variables: { subject: 'a' } })
-      await h.cms(`/admin/api/cms/plugins/${PLUGIN_ID}`, { method: 'PATCH', cookie: owner, json: { enabled: false } })
+      await send({ template: 'ticket.opened', to: { address: 'a@example.com' }, variables: { subject: 'a' }, reference: 'kept' })
+      await setEnabled(false)
+      let calls = 0
+      const carrier: MailCarrier = async () => { calls += 1; return null }
+      await drain(carrier)
+      expect(calls).toBe(0)
+      expect((await listMailActivity(h.db)).entries[0]).toMatchObject({
+        status: 'queued', error: 'Waiting: the plugin that sends this email is not active.', sentBy: 'Help Desk',
+      })
+
+      await setEnabled(true)
+      now += 60 * 60 * 1000
+      await drain(carrier)
+      expect(calls).toBe(1)
+      expect((await listMailActivity(h.db)).entries[0]).toMatchObject({ status: 'sent' })
+      expect(await heard()).toEqual([
+        { event: 'mail.delivered', template: 'ticket.opened', to: { address: 'a@example.com' }, reference: 'kept' },
+      ])
+    })
+
+    it('gives up on a disabled plugin\'s email at its deadline, and tells the plugin when it is back', async () => {
+      await install(BOTH)
+      await readyConnector()
+      await send({ template: 'ticket.opened', to: { address: 'a@example.com' }, variables: { subject: 'a' }, reference: 'late' })
+      await setEnabled(false)
+      now += 25 * 60 * 60 * 1000
+      await drain(async () => null)
+      expect((await listMailActivity(h.db)).entries[0]).toMatchObject({ status: 'failed' })
+
+      // Nobody was listening when it failed. The news waited.
+      await setEnabled(true)
+      expect(await heard()).toEqual([
+        { event: 'mail.failed', template: 'ticket.opened', to: { address: 'a@example.com' }, reference: 'late', reason: 'expired' },
+      ])
+    })
+
+    it('never leaves a template missing while another plugin is removed or the plugin itself is upgraded', async () => {
+      await install(BOTH)
+      await readyConnector()
+      expect((await installPackage({ ...manifest(BOTH), id: 'acme.other', name: 'Other' }, BOTH, 'export function activate() {}')).status).toBe(201)
+      await send({ template: 'ticket.reply', to: { address: 'a@example.com' }, variables: { subject: 'a', link: 'https://example.com/t' } })
+
+      // Removing a plugin reloads every other one.
+      const removal = h.cms('/admin/api/cms/plugins/acme.other', { method: 'DELETE', cookie: owner })
+      expect(await timesMissing(REPLY_KEY, removal)).toBe(0)
+      expect(await timesMissing(REPLY_KEY, install(BOTH, { version: '1.1.0' }))).toBe(0)
+
+      let calls = 0
+      await drain(async () => { calls += 1; return null })
+      expect(calls).toBe(1)
+      expect((await listMailActivity(h.db)).entries[0]).toMatchObject({ status: 'sent' })
+    })
+
+    it('deletes the owner\'s edit of a template an upgrade drops, and fails what was waiting for it', async () => {
+      await install(BOTH)
+      await readyConnector()
+      const openedKey = `plugin.${PLUGIN_ID}~ticket.opened`
+      for (const key of [openedKey, REPLY_KEY]) {
+        await h.cms(`/admin/api/cms/mail/templates/${key}`, { method: 'PUT', cookie: owner, json: { subject: 'Edited', body: 'Edited' } })
+      }
+      await send({ template: 'ticket.opened', to: { address: 'a@example.com' }, variables: { subject: 'a' }, reference: 'dropped' })
+
+      expect((await install(BOTH, { version: '1.1.0', mail: { templates: [TEMPLATES[0]] } })).status).toBeLessThan(300)
+      expect((await h.db<{ template_key: string }>`select template_key from mail_templates`).rows.map((row) => row.template_key))
+        .toEqual([REPLY_KEY])
       let calls = 0
       await drain(async () => { calls += 1; return null })
       expect(calls).toBe(0)
-      expect((await listMailActivity(h.db)).entries[0]).toMatchObject({
-        status: 'failed',
-        error: 'The template of this email no longer exists: the plugin it belongs to was disabled or removed.',
+      expect(await heard()).toEqual([
+        { event: 'mail.failed', template: 'ticket.opened', to: { address: 'a@example.com' }, reference: 'dropped', reason: 'template_removed' },
+      ])
+    })
+
+    it('leaves an email that is being handed over to finish when its plugin is uninstalled, under the plugin\'s name', async () => {
+      await install(BOTH)
+      await readyConnector()
+      await send({ template: 'ticket.opened', to: { address: 'first@example.com' }, variables: { subject: 'a' } })
+      await send({ template: 'ticket.opened', to: { address: 'second@example.com' }, variables: { subject: 'a' } })
+      const carried: string[] = []
+      await drain(async (_c, _s, mail) => {
+        carried.push(mail.to)
+        // The uninstall lands while the first email is with the provider.
+        if (carried.length === 1) await h.cms(`/admin/api/cms/plugins/${PLUGIN_ID}`, { method: 'DELETE', cookie: owner })
+        return null
+      })
+      expect(carried).toEqual(['first@example.com'])
+      expect((await h.db`select id from mail_queue`).rows).toHaveLength(0)
+      const entries = (await listMailActivity(h.db)).entries
+      expect(entries.find((entry) => entry.to === 'first@example.com')).toMatchObject({ status: 'sent', sentBy: 'Help Desk' })
+      expect(entries.find((entry) => entry.to === 'second@example.com')).toMatchObject({
+        status: 'failed', error: 'The plugin that asked for this email was uninstalled before it was sent.', sentBy: 'Help Desk',
       })
     })
 
@@ -568,6 +746,111 @@ describe('email for plugins', () => {
       expect((await listMailActivity(h.db)).entries[0]).toMatchObject({
         status: 'failed', error: 'The plugin that asked for this email was uninstalled before it was sent.',
       })
+    })
+  })
+
+  describe('what a template can put in an email', () => {
+    const key = `plugin.${PLUGIN_ID}~any`
+    /** Any key without a `~` is one of the site's own templates. */
+    const CORE_KEY = 'member.reset'
+    const body = (html: string) => html.slice(html.indexOf('<body'))
+    const render = (templateBody: string, variables: Record<string, string> = {}, templateKey = key) =>
+      body(renderMailTemplate({ key: templateKey, subject: 'S', body: templateBody }, { 'site.name': 'Site', ...variables }).html)
+
+    it('lets raw HTML add no form, script, frame, style or handler, in a plugin\'s template or the core\'s', () => {
+      const hostile = [
+        'Hello.',
+        '<form action="https://evil.example/collect"><input name="password"><button>Sign in</button></form>',
+        '<script>alert(1)</script>',
+        '<iframe src="https://evil.example/"></iframe>',
+        '<style>p { display: none }</style>',
+        '<p onclick="alert(1)" style="position:fixed">text</p>',
+      ].join('\n\n')
+      for (const templateKey of [key, CORE_KEY]) {
+        const html = render(hostile, {}, templateKey)
+        for (const banned of ['<form', '<input', '<button', '<script', '<iframe', 'onclick', 'position:fixed', 'evil.example']) {
+          expect(html).not.toContain(banned)
+        }
+        expect(html).toContain('Hello.')
+      }
+    })
+
+    it('takes a variable as a link only when it is the whole address, however the attribute is quoted', () => {
+      const evil = { link: 'javascript:alert(1)' }
+      for (const anchor of ['<a href="{link}">x</a>', "<a href='{link}'>x</a>", '<a href={link}>x</a>', '[x]({link})']) {
+        expect(render(anchor, evil)).not.toContain('javascript:')
+        expect(render(anchor, { link: 'https://example.com/t/1' })).toContain('href="https://example.com/t/1"')
+      }
+      for (const anchor of ["<a href='https://evil.example/?q={link}'>x</a>", '[x](https://evil.example/?q={link})']) {
+        const html = render(anchor, { link: 'secret' })
+        expect(html).not.toContain('evil.example')
+        expect(html).toContain('href="#"')
+      }
+    })
+
+    it('loads nothing when a plugin\'s email is opened, and links a plugin\'s template only to https', () => {
+      const html = render('![logo](https://tracker.example/pixel.png)\n\n<img src="https://tracker.example/2.png">\n\n[plain](http://example.com/)\n\n[safe](https://example.com/)')
+      expect(html).not.toContain('<img')
+      expect(html).not.toContain('tracker.example')
+      expect(html).not.toContain('http://example.com')
+      expect(html).toContain('href="https://example.com/"')
+      // The site's own templates may still carry an image.
+      expect(render('![logo](https://example.com/logo.png)', {}, CORE_KEY)).toContain('<img')
+    })
+
+    it('leaves the core\'s templates as they were', () => {
+      const core = listMailTemplateDefinitions().filter((definition) => !definition.key.includes('~'))
+      expect(core.length).toBeGreaterThan(0)
+      for (const definition of core) {
+        const samples = { 'site.name': 'Example', 'site.url': 'https://example.com', ...sampleMailVariables(definition.variables) }
+        const html = body(renderMailTemplate({ key: definition.key, subject: definition.defaultSubject, body: definition.defaultBody }, samples).html)
+        for (const variable of definition.variables) {
+          if (!definition.defaultBody.includes(`]({${variable.name}})`)) continue
+          expect(html).toContain(`href="${samples[variable.name]}"`)
+        }
+        expect(html).not.toContain('{')
+        if (definition.defaultBody.includes('**')) expect(html).toContain('<strong>')
+      }
+    })
+  })
+
+  describe('the activity log', () => {
+    it('keeps each sender\'s history apart and never drops an email that is still waiting', async () => {
+      const insert = (id: string, source: string, status: string) => h.db`
+        insert into mail_outbox (id, kind, to_address, subject, status, source, created_at)
+        values (${id}, 'k', 'a@example.com', 's', ${status}, ${source}, ${`2026-01-01T00:00:00.${id.slice(-3)}Z`})
+      `
+      for (let index = 0; index < 5; index += 1) await insert(`core-${String(index).padStart(3, '0')}`, 'core', 'sent')
+      for (let index = 0; index < 3; index += 1) await insert(`wait-${String(index).padStart(3, '0')}`, 'acme.noisy', 'queued')
+      const KEPT = 2000
+      for (let index = 0; index < KEPT; index += 1) {
+        await insert(`n${String(index).padStart(4, '0')}-${String(100 + (index % 800))}`, 'acme.noisy', 'sent')
+      }
+      await recordMail(h.db, { kind: 'k', to: 'a@example.com', subject: 's', status: 'sent', source: 'acme.noisy', sourceLabel: 'Noisy' })
+
+      const count = async (source: string, status: string) =>
+        Number((await h.db<{ n: number }>`select count(*) as n from mail_outbox where source = ${source} and status = ${status}`).rows[0].n)
+      // The plugin's flood cost the core nothing, and cost the plugin only its own oldest rows.
+      expect(await count('core', 'sent')).toBe(5)
+      expect(await count('acme.noisy', 'queued')).toBe(3)
+      expect(await count('acme.noisy', 'sent')).toBeLessThanOrEqual(KEPT)
+      expect(await count('acme.noisy', 'sent')).toBeGreaterThanOrEqual(KEPT - 3)
+    })
+  })
+
+  describe('an upgrade that asks for more', () => {
+    it('is refused until the owner approves emailing any address', async () => {
+      const members = [...BASE, 'mail.send']
+      expect((await install(members)).status).toBe(201)
+      // The new version asks for `mail.send.external`; the approval sent with it is the old one.
+      const unapproved = await installPackage(manifest(BOTH, { version: '1.1.0' }), members)
+      expect(unapproved.status).toBeGreaterThanOrEqual(400)
+      const refused = await send({ template: 'ticket.opened', to: { address: 'a@example.com' }, variables: { subject: 'a' } })
+      expect(String(refused.error)).toContain('mail.send.external')
+
+      expect((await installPackage(manifest(BOTH, { version: '1.1.0' }), BOTH)).status).toBeLessThan(300)
+      expect(await send({ template: 'ticket.opened', to: { address: 'a@example.com' }, variables: { subject: 'a' } }))
+        .toEqual({ status: 'captured' })
     })
   })
 

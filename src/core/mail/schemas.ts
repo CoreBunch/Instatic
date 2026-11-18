@@ -272,6 +272,8 @@ export const MailActivityEntrySchema = Type.Object({
   providerMessageId: Type.Union([Type.String(), Type.Null()]),
   /** How long the hand-over to the provider took. */
   durationMs: Type.Union([Type.Integer(), Type.Null()]),
+  /** The plugin that asked for the email, by name. Null for the site's own email. */
+  sentBy: Type.Union([Type.String(), Type.Null()]),
   /** Delivery attempts made so far. */
   attempts: Type.Integer(),
   /** When a queued email is tried next. Null once it has left or been given up on. */
@@ -334,7 +336,7 @@ export const MailActivityResponseSchema = Type.Object({
   /** The templates and connectors seen in the period, for the filter menus. */
   kinds: Type.Array(MailActivityFacetSchema),
   connectors: Type.Array(MailActivityFacetSchema),
-  /** The log keeps this many emails; older ones are dropped. */
+  /** The log keeps this many emails per sender (the site, and each plugin); older ones are dropped. */
   retention: Type.Integer(),
 })
 export type MailActivityResponse = Static<typeof MailActivityResponseSchema>

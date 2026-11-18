@@ -154,7 +154,7 @@ function TemplateEditor({
     ? 'Write a subject.'
     : !body.trim() ? 'Write a body.' : dirty ? null : 'No changes to save.'
   const samples = sampleMailVariables(template.variables)
-  const preview = renderMailTemplate({ subject, body }, samples)
+  const preview = renderMailTemplate({ key: template.key, subject, body }, samples)
 
   function insertVariable(name: string) {
     const token = `{${name}}`
