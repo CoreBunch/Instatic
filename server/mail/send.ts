@@ -4,8 +4,8 @@
  * Everything else is queued (`delivery.ts`) and uses `carryThroughConnector`
  * from here for each attempt.
  *
- * Callers either hand over a finished message (`sendSiteMail`) or name a
- * template and its values (`sendTemplateMail`); this decides how it leaves:
+ * Callers hand over a finished message (`sendSiteMail`, usually built with
+ * `buildTemplateMail`); this decides how it leaves:
  *
  *  - a default connector and a sender address are set → send through it,
  *    log `sent` / `failed`
@@ -107,12 +107,6 @@ export type CarryOutcome =
       durationMs?: number
     }
 
-/** How a failure that is not a delivery refusal should be retried. */
-function retryFor(err: unknown): MailRetry {
-  // An unreadable secret or a missing connector is the owner's to put right.
-  return err instanceof MailDeliveryError ? err.retry : 'later'
-}
-
 /**
  * Hand one message to a connector, once. Never throws for a delivery
  * problem: the outcome says what happened and whether it is worth retrying.
@@ -132,11 +126,12 @@ export async function carryThroughConnector(
   } catch (err) {
     const message = getErrorMessage(err, 'Connector secret unreadable')
     await noteConnectorUse(db, connectorId, message)
-    return { ok: false, error: err, message, retry: retryFor(err) }
+    // A secret that cannot be read is the connector's fault, for the owner to put right.
+    return { ok: false, error: err, message, retry: 'connector' }
   }
   if (!connector) {
     const error = new MailNotConfiguredError()
-    return { ok: false, error, message: error.message, retry: 'later' }
+    return { ok: false, error, message: error.message, retry: 'connector' }
   }
 
   const sender = {
@@ -154,7 +149,10 @@ export async function carryThroughConnector(
   } catch (err) {
     const message = getErrorMessage(err, 'Delivery failed')
     await noteConnectorUse(db, connector.id, message)
-    return { ok: false, connector: used, error: err, message, retry: retryFor(err), durationMs: Date.now() - startedAt }
+    // A driver says how its refusal should be retried; anything else it
+    // throws is not a refusal, and is worth another try.
+    const retry = err instanceof MailDeliveryError ? err.retry : 'later'
+    return { ok: false, connector: used, error: err, message, retry, durationMs: Date.now() - startedAt }
   }
 }
 

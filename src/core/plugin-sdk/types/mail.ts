@@ -39,11 +39,11 @@ export type PluginMailRecipient = { member: string } | { address: string }
  * explanation under Email → Activity; a plugin gets one of these codes:
  *
  *  - `recipient_rejected`: the mail provider refused the message or the recipient.
- *  - `gave_up`: a day of retries ran out.
+ *  - `expired`: it could not be delivered before its deadline (a day), so it was not sent.
  *  - `template_removed`: the template no longer exists.
  *  - `unreadable`: the queued email could not be read any more.
  */
-export type PluginMailFailureReason = 'recipient_rejected' | 'gave_up' | 'template_removed' | 'unreadable'
+export type PluginMailFailureReason = 'recipient_rejected' | 'expired' | 'template_removed' | 'unreadable'
 
 export interface PluginMailSendInput {
   /** A `key` from this plugin's `mail.templates[]`. */

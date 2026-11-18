@@ -108,7 +108,7 @@ export function announcePluginMailOutcome(outcome: QueuedMailOutcome): void {
     to: outcome.recipient,
     reference: outcome.reference,
     // A code, never the provider's sentence, which can quote an address.
-    ...(outcome.status === 'failed' ? { reason: outcome.reason ?? 'gave_up' } : {}),
+    ...(outcome.status === 'failed' ? { reason: outcome.reason ?? 'expired' } : {}),
   }
   const event = outcome.status === 'sent' ? 'mail.delivered' : 'mail.failed'
   void hookBus.emitTo(outcome.source, event, payload).catch((err: unknown) => {

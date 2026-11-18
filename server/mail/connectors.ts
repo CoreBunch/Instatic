@@ -36,11 +36,12 @@ interface ConnectorRow {
   key_fingerprint: string | null
   last_used_at: Date | string | null
   last_error: string | null
+  delivery_paused_at: Date | string | null
   created_at: Date | string
 }
 
 const COLUMNS = `id, kind, label, config_json, secret_ciphertext, secret_iv, key_fingerprint,
-  last_used_at, last_error, created_at`
+  last_used_at, last_error, delivery_paused_at, created_at`
 
 /** A connector with its secret decrypted, for one send. */
 export type ResolvedConnector = TypedConfig & { id: string; label: string; secret: string }
@@ -83,6 +84,7 @@ async function toView(row: ConnectorRow, fingerprint: string): Promise<MailConne
     secretNeedsReentry: hasSecret && row.key_fingerprint !== fingerprint,
     lastUsedAt: isoDateOrNull(row.last_used_at),
     lastError: row.last_error,
+    deliveryPaused: row.delivery_paused_at !== null,
     createdAt: isoDate(row.created_at),
   }
 }
@@ -156,7 +158,8 @@ export async function setMailConnectorSecret(db: DbClient, id: string, secret: s
   const { rows } = await db<{ id: string }>`
     update mail_connectors
        set secret_ciphertext = ${encrypted.ciphertext}, secret_iv = ${encrypted.iv},
-           key_fingerprint = ${encrypted.fingerprint}, last_error = null, updated_at = ${nowIso()}
+           key_fingerprint = ${encrypted.fingerprint}, last_error = null, delivery_paused_at = null,
+           updated_at = ${nowIso()}
      where id = ${id}
     returning id
   `
@@ -185,11 +188,44 @@ export async function resolveConnector(db: DbClient, id: string): Promise<Resolv
   return { ...typed, id: row.id, label: row.label, secret }
 }
 
-/** Record how the last use of a connector went. */
+/**
+ * Record how the last use of a connector went. A use that worked also lifts
+ * a pause: the account is evidently accepted again.
+ */
 export async function noteConnectorUse(db: DbClient, id: string, error: string | null): Promise<void> {
   const now = nowIso()
+  if (error === null) {
+    await db`
+      update mail_connectors
+         set last_used_at = ${now}, last_error = null, delivery_paused_at = null, updated_at = ${now}
+       where id = ${id}
+    `
+    return
+  }
   await db`
     update mail_connectors set last_used_at = ${now}, last_error = ${error}, updated_at = ${now}
      where id = ${id}
   `
+}
+
+/**
+ * Stop sending queued email through a connector that refuses the account
+ * itself (a wrong key or password, a secret that cannot be read). Trying
+ * again changes nothing until the owner fixes it, and a stream of failed
+ * logins can get an account locked. The pause lifts when the secret is
+ * replaced or a send through the connector works (`noteConnectorUse`), which
+ * is what the connector test does.
+ */
+export async function pauseConnectorDelivery(db: DbClient, id: string): Promise<void> {
+  await db`
+    update mail_connectors set delivery_paused_at = ${nowIso()}
+     where id = ${id} and delivery_paused_at is null
+  `
+}
+
+export async function connectorDeliveryPaused(db: DbClient, id: string): Promise<boolean> {
+  const { rows } = await db<{ delivery_paused_at: Date | string | null }>`
+    select delivery_paused_at from mail_connectors where id = ${id}
+  `
+  return rows[0] !== undefined && rows[0].delivery_paused_at !== null
 }

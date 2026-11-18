@@ -517,9 +517,15 @@ describe('email for plugins', () => {
       ])
     })
 
-    it('reports a day of failed retries as gave_up and a removed template as template_removed', async () => {
+    it('reports an email that ran out of time as expired and a removed template as template_removed', async () => {
       await install(BOTH)
       await readyConnector()
+      // First a template that is gone by the time the email is sent.
+      await send({ template: 'ticket.opened', to: { address: 'gone@example.com' }, variables: { subject: 'a' }, reference: 'gone' })
+      await h.db`update mail_queue set kind = ${`plugin.${PLUGIN_ID}~no.longer.declared`}`
+      await drain(async () => null)
+
+      // Then a provider that stays down past the email's day.
       await send({ template: 'ticket.opened', to: { address: 'slow@example.com' }, variables: { subject: 'a' }, reference: 'slow' })
       const down: MailCarrier = async () => {
         throw new MailDeliveryError('Could not reach the provider at smtp.example.com.', { retry: 'later' })
@@ -528,16 +534,12 @@ describe('email for plugins', () => {
         await drain(down)
         now += 8 * 60 * 60 * 1000
       }
-      await send({ template: 'ticket.opened', to: { address: 'gone@example.com' }, variables: { subject: 'a' }, reference: 'gone' })
-      await h.db`update mail_queue set kind = ${`plugin.${PLUGIN_ID}~no.longer.declared`}`
-      now += 10_000
-      await drain(async () => null)
       await new Promise((resolve) => setTimeout(resolve, 50))
 
       const { heard } = await call('/heard')
       expect(heard).toEqual([
-        { event: 'mail.failed', template: 'ticket.opened', to: { address: 'slow@example.com' }, reference: 'slow', reason: 'gave_up' },
         { event: 'mail.failed', template: 'no.longer.declared', to: { address: 'gone@example.com' }, reference: 'gone', reason: 'template_removed' },
+        { event: 'mail.failed', template: 'ticket.opened', to: { address: 'slow@example.com' }, reference: 'slow', reason: 'expired' },
       ])
     })
   })

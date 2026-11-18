@@ -1554,8 +1554,12 @@ export const pgMigrations: Migration[] = [
     // template key and the values to fill it with, encrypted, because the
     // values carry live sign-in links; it is deleted once the email is sent
     // or given up on. `lane` 0 is the core's own mail, which always goes
-    // before a plugin's. `mail_outbox` gains the attempt count and the time
-    // of the next try, so the activity log can say a message is waiting.
+    // before a plugin's. `deliver_before` is the moment after which sending
+    // would be pointless (the link in it has expired). `mail_outbox` gains
+    // the attempt count and the time of the next try, so the activity log
+    // can say a message is waiting. `mail_connectors.delivery_paused_at` is
+    // set while a connector refuses the account itself (a wrong key or
+    // password): queued email is then held, not retried, until that is fixed.
     id: '034_mail_queue',
     sql: `
       create table if not exists mail_queue (
@@ -1570,6 +1574,7 @@ export const pgMigrations: Migration[] = [
         payload_iv bytea not null,
         attempts integer not null default 0,
         next_attempt_at timestamptz not null,
+        deliver_before timestamptz not null,
         claimed_at timestamptz,
         last_error text,
         created_at timestamptz not null default now()
@@ -1584,6 +1589,8 @@ export const pgMigrations: Migration[] = [
       alter table mail_outbox add column attempts integer not null default 0;
       alter table mail_outbox add column next_attempt_at timestamptz;
       alter table mail_outbox add column source text not null default 'core';
+
+      alter table mail_connectors add column delivery_paused_at timestamptz;
     `,
   },
   {
