@@ -166,7 +166,9 @@ test('the editor edits the branch, reads the review, comments and requests a mer
     ...home.cells.body.nodes,
     'review-heading': { ...heading, props: { ...heading.props, text: 'Launch week starts Monday' } },
     'review-hero': { ...hero, children: [...(hero.children ?? []), 'review-note'] },
-    'review-note': node('review-note', 'base.text', { text: 'Five features in five days, starting with branches.', tag: 'p' }),
+    // Long enough to grow the branch's render past the review's minimum frame
+    // height, so the side-by-side frames differ in height (checked below).
+    'review-note': node('review-note', 'base.text', { text: 'Five features in five days, starting with branches. '.repeat(60).trim(), tag: 'p' }),
   }
   await saveHome(page, home, { ...home.cells, title: BRANCH_TITLE, body: { ...home.cells.body, nodes } }, BRANCH_ID)
 
@@ -187,6 +189,16 @@ test('the editor edits the branch, reads the review, comments and requests a mer
   // Both renders load (the frame host flips to loaded once measured).
   await expect(homeChange.locator('[data-loaded="true"]').first()).toBeVisible({ timeout: 30_000 })
   await expect(homeChange.locator('[data-loaded="true"]')).toHaveCount(2, { timeout: 30_000 })
+  // Side by side, the two renders start on the same line even though the
+  // branch's added paragraph makes its document taller than main's.
+  const frames = await homeChange.locator('[data-loaded="true"]').evaluateAll((hosts) =>
+    hosts.map((host) => {
+      const box = host.getBoundingClientRect()
+      return { top: box.top, height: box.height }
+    }),
+  )
+  expect(frames[0]!.height).not.toBeCloseTo(frames[1]!.height, 0)
+  expect(frames[0]!.top).toBeCloseTo(frames[1]!.top, 0)
   // The changed heading and the added paragraph are outlined in the branch
   // render, found by their node ids.
   await expect(homeChange.locator('[data-tone="changed"]')).toHaveCount(1)

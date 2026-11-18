@@ -3,7 +3,7 @@ import type { Page } from '@core/page-tree'
 import type { TemplateRenderDataContext } from '@core/templates/dynamicBindings'
 import { dataTablePreviewToLoopItem } from '@core/templates/templatePreviewData'
 import { getCmsDataTableBySlug, previewCmsDataLoopItems } from '@core/persistence/cmsData'
-import { buildPageFrame, buildRouteFrame, buildSiteFrame } from '@core/templates/contextFrames'
+import { buildPageFrame, buildRouteFrame, buildSiteFrame, PREVIEW_MEMBER_FRAME } from '@core/templates/contextFrames'
 import { primaryTemplateTableSlug } from '@core/templates'
 import { useEditorStore } from '@site/store/store'
 
@@ -101,6 +101,7 @@ export function useTemplatePreviewContext(page: Page | null): TemplatePreviewCon
       // No `media` here: this context is also serialized to the runtime-preview
       // endpoint (hover preview, preview overlay), where a live Map is dead
       // weight. CanvasRoot attaches the media lookup for client-side rendering.
+      member: PREVIEW_MEMBER_FRAME,
     },
   }
 }

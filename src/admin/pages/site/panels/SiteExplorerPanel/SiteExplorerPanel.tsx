@@ -19,6 +19,7 @@ import { Settings2SolidIcon } from 'pixel-art-icons/icons/settings-2-solid'
 import { SiteCreateDialog, buildScriptPath, buildStylePath, slugifySiteItemName, type SiteCreatePayload, type SiteCreateKind } from '@admin/shared/dialogs/SiteCreateDialog'
 import type { ExplorerContextMenuItem } from '@site/explorer-actions'
 import { usePageSettingsDialogs } from './usePageSettingsDialogs'
+import { describeAccessRule } from '@admin/shared/AccessRuleEditor'
 import { useVCDeletionConfirm } from '@admin/shared/dialogs/VCDeletionConfirmDialog'
 import { useConfirmDelete } from '@admin/shared/dialogs/ConfirmDeleteDialog'
 import {
@@ -102,6 +103,7 @@ export function SiteExplorerPanel({
   const setActiveDocument = useEditorStore((s) => s.setActiveDocument)
   const addPage = useEditorStore((s) => s.addPage)
   const renamePage = useEditorStore((s) => s.renamePage)
+  const setPageAccess = useEditorStore((s) => s.setPageAccess)
   const deletePage = useEditorStore((s) => s.deletePage)
   const convertPageToTemplate = useEditorStore((s) => s.convertPageToTemplate)
   const convertTemplateToPage = useEditorStore((s) => s.convertTemplateToPage)
@@ -161,6 +163,7 @@ export function SiteExplorerPanel({
   const { openTemplateSettings, openPageSettings, dialogs: pageSettingsDialogs } = usePageSettingsDialogs({
     pages,
     renamePage,
+    setPageAccess,
     convertPageToTemplate,
     openPageInCanvas,
   })
@@ -540,6 +543,7 @@ export function SiteExplorerPanel({
         icon: FileTextSolidIcon,
         active: page.id === activePageId && activeDocument?.kind !== 'visualComponent',
         pinned: isHomePage(page),
+        ...(page.access ? { access: describeAccessRule(page.access) } : {}),
         ariaLabel: `Open page ${page.title}`,
         target: { kind: 'page', id: page.id, title: page.title, slug: page.slug },
         preview: { page, kindLabel: 'Page' },

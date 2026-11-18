@@ -14,6 +14,8 @@ The server is a single `Bun.serve` process that boots the DB, runs migrations, a
 - **Auth:** session cookie (`SESSION_COOKIE_NAME`) → `findUserBySessionHash` → `requireCapability(req, db, 'site.read')`. Every state-changing handler starts with one of these guards.
 - **DB:** one `DbClient` interface (`server/db/client.ts`) — tagged-template callable returning `{ rows, rowCount }`. Two adapters: `postgres.ts` (via `Bun.sql`) and `sqlite.ts` (via `bun:sqlite`). Selected by `DATABASE_URL`.
 - **Repositories** (`server/repositories/`) hold all SQL. Handlers never write SQL directly.
+- **Mail** (`server/mail/`) is the only code that sends email: connectors (SMTP, Amazon SES), one default sender, templates, and `sendSiteMail` / `sendTemplateMail` as the entry points. A development server with nothing set up captures mail instead of sending it. See [`features/email.md`](features/email.md).
+- **Members** (`server/members/`) is everything about people who sign in on the published site: accounts, sessions, emailed links and the `/_instatic/members/*` endpoints. It shares no code with admin auth beyond hashing, origin checks and the rate limiter. See [`features/members.md`](features/members.md).
 - **Registry** (`server/registry/`) is the only code that talks to the npm registry, npm's downloads API and OSV: a TTL-cached client behind `handlers/cms/registry.ts` (browse) and `publish/runtime/dependencyResolver.ts` (install). `NPM_REGISTRY_URL` selects the registry for both. See [`features/dependencies.md`](features/dependencies.md).
 - **Write policy** (`server/writePolicy/`) — pure per-capability diff validators (`validateSiteWriteDiff`, `validatePageWriteDiff`) shared by BOTH write transports: the HTTP save handler (`server/handlers/cms/siteDocument.ts`) and the collab relay's CRDT update guard (`server/collab/updateGuard.ts`). No DB, no HTTP — plain data in, verdict out.
 - **Plugins:** `server/plugins/runtime.ts` activates installed plugins at boot. Server entrypoints run in per-plugin Bun workers that host QuickJS-WASM (`server/plugins/pluginWorker.ts`, `server/plugins/host/workerPool.ts`, `server/plugins/quickjs/vm.ts`); module packs use `server/plugins/modulePackVm.ts` for server-side evaluation.
@@ -26,7 +28,8 @@ The server is a single `Bun.serve` process that boots the DB, runs migrations, a
 ```text
 server/index.ts
     │
-    ├─→ readServerConfig()                   ← env vars: PORT, DATABASE_URL, UPLOADS_DIR, STATIC_DIR, PUBLIC_ORIGIN, TRUSTED_PROXY_CIDRS, NPM_REGISTRY_URL
+    ├─→ readServerConfig()                   ← env vars: PORT, DATABASE_URL, UPLOADS_DIR, STATIC_DIR, PUBLIC_ORIGIN, TRUSTED_PROXY_CIDRS, NPM_REGISTRY_URL, INSTATIC_MANAGER_TOKEN, INSTATIC_MANAGER_DIR
+    ├─→ applyPendingRestore(...)             ← server/manager/pending.ts: a restore staged through the Manager API takes effect here, before the DB opens
     ├─→ configureNpmRegistryUrl(...)         ← server/registry/config.ts: one registry for browsing, resolving and bun install
     │
     ├─→ createDbClient(DATABASE_URL)         ← server/db/index.ts
@@ -43,15 +46,13 @@ server/index.ts
     │
     ├─→ createCollabRelay(db)                ← server/collab/relay.ts: live Y docs,
     │                                           debounced persistence, reset protocol
-    ├─→ createCollabSocketLayer(relay)       ← server/collab/socket.ts: multiplexed
-    │                                           y-protocols wire + awareness
-    ├─→ Bun.serve({ fetch: req => handleServerRequest(req, runtime),
-    │               websocket: collabSocket.handlers })
-    │     (the co-editing socket `/admin/api/cms/site-socket` upgrades at this
-    │      boundary — see server/collab/socket.ts; everything else goes
-    │      through the router)
-    │
-    └─→ collabSocket.setPublisher(server)    ← wire the collab fan-out to Bun pub/sub
+    ├─→ createCollabSocketLayer(relay, db)   ← server/collab/socket.ts: multiplexed
+    │                                           authorized y-protocols wire + awareness
+    └─→ Bun.serve({ fetch: req => handleServerRequest(req, runtime),
+                    websocket: collabSocket.handlers })
+          (the co-editing socket `/admin/api/cms/site-socket` upgrades at this
+           boundary — see server/collab/socket.ts; everything else goes
+           through the router)
 ```
 
 Boot is sequential and fail-fast. If migrations fail, the process exits. If a plugin's `activate` throws, the host logs `[plugin:<id>]` and continues — one bad plugin doesn't bring the server down.
@@ -552,13 +553,15 @@ Server-side publishing helpers live in `server/publish/`:
 | `renderCache.ts`                  | Layer B. Bounded LRU keyed by `(urlPath, canonicalQuery)`, entries versioned. Single-flight on cache miss. `bumpPublishVersion()` invalidates lazily; version captured at render start so mid-flight publishes discard without caching stale HTML. |
 | `holeRuntime.ts`                  | Layer C client-side runtime (~1.1 KB). Exports `runInstaticHoleRuntime` (TS source) and `HOLE_RUNTIME_JS` (IIFE-serialized for browser delivery). |
 | `publishSite.ts`                  | Full-site publish orchestrator (`publishDraftSite`): phase-1 builds, the short `persistSitePublish` transaction, Layer A bake + slot swap, Layer B bump. |
-| `publishRow.ts`                   | Per-row publish orchestrator (`publishDataRow`) + `removeDataRowArtefact`: page rows use the site pipeline with published shared resources and just the selected draft; other rows use an in-place artefact update and Layer B bump. |
+| `publishRow.ts`                   | Per-row publish orchestrator (`publishDataRow`) + `retractDataRowArtefacts`: page rows use the site pipeline with published shared resources and just the selected draft; other rows use an in-place artefact update and Layer B bump. Both also drop the baked pages that loop over the row's table. |
+| `loopArtefacts.ts`                | `removeArtefactsLoopingOverTable`: removes from the active slot every baked route whose render tree loops over a table, so listings follow row changes without a site publish. |
 | `publicRenderer.ts`               | `renderPublishedSnapshot`, `renderPublishedDataRowTemplate` — snapshot-aware wrappers around `publishPage`. |
 | `publishedHtmlPipeline.ts`        | Plugin frontend-asset injection + `publish.html` filter chain. Runs at publish time for every baked page (complete doc or hole shell); also runs in the Layer B factory for query-string / live renders (cached). |
 | `siteCssBundle.ts`                | Per-site reset / framework / style CSS bundles (hashed filenames).  |
 | `republish.ts`                    | Bulk re-publish (after a settings change touches all pages).        |
 | `publishScheduler.ts`             | Scheduled publish jobs.                                             |
 | `frontendInjections.ts`           | Plugin-contributed frontend scripts injected into published HTML.   |
+| `canvasStylesheets.ts`            | The stylesheet share of that plan, as CSS text for the editor canvas. |
 | `mediaPresentation.ts`            | `<picture>` / `<img srcset>` materialization at publish time.       |
 | `mediaPrefetch.ts`, `loopPrefetch.ts` | Pre-warm caches needed by published pages.                      |
 | `runtime/packageServer.ts`        | Serve per-site `bun install` workspace under `/_instatic/runtime/cache/`. |

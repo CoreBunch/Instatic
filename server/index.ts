@@ -9,6 +9,9 @@ import { DEV_ORIGIN_ALLOWLIST, configurePublicOrigins, configureTrustedProxyCidr
 import { applySecurityHeaders } from './securityHeaders'
 import { startConversationPurgeTick } from './ai/boot'
 import { unsupportedBunWarning } from './bunVersion'
+import { MANAGER_RESTART_EXIT_CODE, MANAGER_TOKEN_MIN_LENGTH } from './manager/config'
+import { applyPendingRestore } from './manager/pending'
+import { isSameOrInside } from './manager/fsUtil'
 
 // Before anything that could fail for a version-related reason, say which
 // Bun this is when it is not one a release was tested on. Boot continues.
@@ -33,6 +36,25 @@ if (config.publicOrigins.length === 0) {
   console.warn('[server] PUBLIC_ORIGIN is not set; MCP OAuth connectors work only from loopback until it is configured. Personal access tokens still work.')
 }
 configureNpmRegistryUrl(config.npmRegistryUrl)
+if (isSameOrInside(config.uploadsDir, config.runtimeCacheDir)) {
+  console.warn('[server] RUNTIME_CACHE_DIR is inside UPLOADS_DIR, which is served publicly and copied by site transfers. Move it outside.')
+}
+if (config.manager.tokenRejected) {
+  console.warn(`[server] INSTATIC_MANAGER_TOKEN is shorter than ${MANAGER_TOKEN_MIN_LENGTH} characters; the Manager API stays disabled.`)
+}
+// A restore staged by the Manager API (snapshot restore or a full transfer)
+// takes effect here, before the database is opened. A failure never aborts
+// boot: the reason is recorded for the manager (`/info.restoreError`), the
+// marker stays for the next start to retry, and the server comes up so it
+// can be repaired instead of looping under a restart-always supervisor.
+const restore = await applyPendingRestore({
+  managerDir: config.manager.dir,
+  databaseUrl: config.databaseUrl,
+  uploadsDir: config.uploadsDir,
+})
+if (restore.status === 'applied') console.log(`[server] applied staged ${restore.kind} restore`)
+if (restore.status === 'discarded') console.warn(`[server] discarded a staged restore: ${restore.reason}`)
+if (restore.status === 'failed') console.error(`[server] applying a staged restore FAILED and will be retried on the next start: ${restore.reason}`)
 const { db, migrations } = createDbClient(config.databaseUrl)
 await runMigrations(db, migrations)
 // System role sync runs after migrations on every boot — the Owner row's
@@ -52,7 +74,7 @@ startConversationPurgeTick(db)
 // and the reset protocol for out-of-relay writes. The socket layer speaks
 // the multiplexed y-protocols wire (see server/collab/socket.ts).
 const collabRelay = createCollabRelay(db)
-const collabSocket = createCollabSocketLayer(collabRelay)
+const collabSocket = createCollabSocketLayer(collabRelay, db)
 
 /**
  * Build the CORS response headers for an incoming request.
@@ -154,6 +176,14 @@ const server = Bun.serve({
         uploadsDir: config.uploadsDir,
         databaseUrl: config.databaseUrl,
         collabRelay,
+        manager: {
+          config: config.manager,
+          knownMigrationIds: migrations.map((migration) => migration.id),
+          // Deferred so the 202 response is flushed before the process exits.
+          requestRestart: () => {
+            setTimeout(() => void shutdown('manager restart', MANAGER_RESTART_EXIT_CODE), 50)
+          },
+        },
       })
       for (const [k, v] of Object.entries(cors)) {
         res.headers.set(k, v)
@@ -190,16 +220,12 @@ const server = Bun.serve({
   },
 })
 
-// The collab fan-out publishes through Bun pub/sub — register the live
-// server handle now that `Bun.serve` returned.
-collabSocket.setPublisher(server)
-
 // Graceful shutdown: the relay persists on an 800 ms debounce, so a redeploy
 // (SIGTERM) or Ctrl-C (SIGINT) mid-window would drop the un-persisted edits
 // the old transactional save made durable on ack. Flush every dirty doc
 // before exiting. Idempotent + guarded so a double signal can't double-run.
 let shuttingDown = false
-async function shutdown(signal: string): Promise<void> {
+async function shutdown(signal: string, exitCode = 0): Promise<void> {
   if (shuttingDown) return
   shuttingDown = true
   console.log(`[server] ${signal} received — flushing collab docs before exit`)
@@ -209,7 +235,7 @@ async function shutdown(signal: string): Promise<void> {
     console.error('[server] collab flush on shutdown failed:', err)
   }
   server.stop()
-  process.exit(0)
+  process.exit(exitCode)
 }
 process.on('SIGTERM', () => void shutdown('SIGTERM'))
 process.on('SIGINT', () => void shutdown('SIGINT'))

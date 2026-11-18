@@ -115,9 +115,15 @@ function ownsDataRow(principal: DataPrincipal, row: OwnedDataRow): boolean {
   return row.authorUserId === principal.id || (!row.authorUserId && row.createdByUserId === principal.id)
 }
 
+/** Read scope shared by row checks and SQL readers that aggregate before returning rows. */
+export function dataRowReadScope(principal: DataPrincipal): 'all' | 'own' | 'none' {
+  if (canSeeAllDataRows(principal)) return 'all'
+  return userHasAnyCapability(principal, DATA_OWN_READ_CAPABILITIES) ? 'own' : 'none'
+}
+
 export function canReadDataRow(principal: DataPrincipal, row: OwnedDataRow): boolean {
-  return canSeeAllDataRows(principal) ||
-    (ownsDataRow(principal, row) && userHasAnyCapability(principal, DATA_OWN_READ_CAPABILITIES))
+  const scope = dataRowReadScope(principal)
+  return scope === 'all' || (scope === 'own' && ownsDataRow(principal, row))
 }
 
 export function canEditDataRow(principal: DataPrincipal, row: OwnedDataRow): boolean {

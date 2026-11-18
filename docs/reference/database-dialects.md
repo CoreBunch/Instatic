@@ -87,6 +87,8 @@ The two arrays must have **identical IDs in the same order**. Each migration has
 
 The parity gate (`src/__tests__/architecture/migration-parity.test.ts`) compares the two arrays element-by-element and fails the build if IDs drift.
 
+The same migration must also leave both engines with the **same tables and the same stored columns** (generated columns aside). The Manager API moves whole databases between the engines by table and column name (`server/manager/postgresBridge.ts`, see [`docs/features/manager-api.md`](../features/manager-api.md)), so a table or column that exists on one engine only breaks pushing a SQLite site to a Postgres server. `src/__tests__/server/managerPostgresBridge.test.ts` checks this against a real Postgres when `INSTATIC_TEST_POSTGRES_URL` is set.
+
 ### Rule 4 — Timestamps are bound from JS as ISO 8601
 
 Repositories never stamp a row with SQL `current_timestamp`. They bind an ISO 8601 string from `nowIso()` (`@core/utils/isoDate`), hoisted once per write so every column in the statement carries the same instant:

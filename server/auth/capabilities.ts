@@ -73,6 +73,9 @@ const adminCapabilities: CoreCapability[] = [
   'users.manage',
   // `roles.manage` is owner-only by design — admin cannot grant capabilities.
   'audit.read',
+  'mail.manage',
+  'members.read',
+  'members.manage',
   'data.custom.tables.read',
   'data.custom.tables.manage',
   'data.system.tables.read',
@@ -124,8 +127,8 @@ export const SYSTEM_ROLES: SystemRoleDefinition[] = [
   {
     id: 'member',
     slug: 'member',
-    name: 'Member',
-    description: 'Public-facing member account — no admin access by default.',
+    name: 'No access',
+    description: 'An admin account that can sign in but do nothing. Not a site member: those sign in on the published site.',
     capabilities: [],
   },
 ]

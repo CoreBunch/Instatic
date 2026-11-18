@@ -45,6 +45,7 @@ import { prefetchMediaAssets } from './mediaPrefetch'
 import { applyPublishedHtmlPipeline } from './publishedHtmlPipeline'
 import {
   NOT_FOUND_ARTEFACT_URL_PATH,
+  pageArtefactUrlPath,
   prepareInactiveSlot,
   swapSlot,
   writeArtefact,
@@ -173,6 +174,7 @@ async function publishSiteDocumentLocked(
       pageId: page.id,
       title: page.title,
       slug: page.slug,
+      ...(page.access && page.access.level !== 'public' ? { access: page.access } : {}),
       versionId,
       versionNumber,
       runtimeAssets: snapshot.runtimeAssets ?? null,
@@ -277,7 +279,7 @@ async function publishSiteDocumentLocked(
       for (const snapshot of snapshots) {
         const page = snapshot.site.pages.find((p) => p.id === snapshot.pageRowId)
         if (!page || isTemplatePage(page)) continue // template pages only ever wrap; never baked at their own slug
-        const urlPath = page.slug === 'index' ? '/' : `/${page.slug}`
+        const urlPath = pageArtefactUrlPath(page.slug)
         try {
           const syntheticUrl = new URL(`http://localhost${urlPath}`)
           const rendered = await renderPublishedSnapshot(snapshot, {
@@ -285,11 +287,15 @@ async function publishSiteDocumentLocked(
             url: syntheticUrl,
             publishVersion: nextPublishVersion,
           })
-          const html = await applyPublishedHtmlPipeline(rendered, db)
-          await writeArtefact(slotDir, urlPath, html)
           // The render's own bundle covers template-composed hashes the raw
           // page bundle above cannot (the merged page's userStyles).
           collectCssFiles(rendered.cssBundle)
+          // A protected page's HTML never goes to disk: the slot is served
+          // without asking who is asking, and can be copied as a static
+          // export. Its CSS is not secret and is still collected above.
+          if (page.access && page.access.level !== 'public') continue
+          const html = await applyPublishedHtmlPipeline(rendered, db)
+          await writeArtefact(slotDir, urlPath, html)
         } catch (err) {
           console.error('[publish:site] failed to bake artefact for', urlPath, '(falls through to live renderer):', err)
         }

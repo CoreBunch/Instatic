@@ -7,6 +7,8 @@ import { buildPublishedSiteCssBundle } from './siteCssBundle'
 import { buildPublishedSiteModuleJsMap } from './moduleJsBundle'
 import { resolveTemplateChain, resolveNotFoundTemplate, composeTemplateChain } from '@core/templates'
 import type { TemplateRenderDataContext } from '@core/templates/dynamicBindings'
+import { closedContentFor, getAccessIndex, memberFrameFor } from './accessGate'
+import type { CurrentMember } from '@core/members'
 import { prefetchLoopData, publishedDataRowToEntryItem } from './loopPrefetch'
 import { prefetchMediaAssets } from './mediaPrefetch'
 import { getPublishVersion } from './publishState'
@@ -73,6 +75,14 @@ interface RenderPublishedSnapshotContext {
   url?: URL
   /** Cache generation used for CSS bundles and module-JS URLs during the bake. */
   publishVersion?: number
+  /**
+   * The visitor this render is for, on a protected route: the member, or
+   * null when signed out. Absent means the render is for nobody in
+   * particular, which is every baked and every shared-cache render: lists
+   * then leave out whatever a signed-out visitor may not open, and anything
+   * that depends on the member is deferred to a per-visitor fragment.
+   */
+  visitor?: CurrentMember | null
 }
 
 /**
@@ -92,14 +102,24 @@ async function renderMergedTemplate(
 ): Promise<{ html: string; jsModuleIds: string[]; publishVersion: number; cssBundle: SiteCssBundle }> {
   const publishVersion = ctx.publishVersion ?? getPublishVersion()
   const moduleJsMap = buildPublishedSiteModuleJsMap(snapshot.site, registry)
-  const loopData = await prefetchLoopData(merged, snapshot.site, ctx.db, ctx.url)
+  // The index for the version being rendered: during a publish that is the
+  // NEXT version, loaded after the publish committed, so a page protected by
+  // this very publish is already left out of the lists being baked.
+  const closed = closedContentFor(await getAccessIndex(ctx.db, publishVersion), ctx.visitor?.tags ?? null)
+  const loopData = await prefetchLoopData(merged, snapshot.site, ctx.db, ctx.url, { closed })
   const mediaAssets = await prefetchMediaAssets(merged, snapshot.site, registry, ctx.db, {
     templateContext,
     loopData,
   })
   const cssBundle = buildPublishedSiteCssBundle(snapshot.site, registry, merged, publishVersion, { mediaAssets })
+  // A render for one visitor carries the member, so member bindings and
+  // show-when rules resolve in place instead of becoming fragments.
+  const visitorContext: TemplateRenderDataContext | undefined =
+    ctx.visitor === undefined
+      ? templateContext
+      : { ...(templateContext ?? { entryStack: [] }), member: memberFrameFor(ctx.visitor) }
   const published = publishPage(merged, snapshot.site, registry, {
-    templateContext,
+    templateContext: visitorContext,
     ...(documentMeta ? { documentMeta } : {}),
     runtimeAssets: snapshot.runtimeAssets,
     runtimePackageImportmap: snapshot.runtimePackageImportmap,

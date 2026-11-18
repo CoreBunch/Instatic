@@ -222,13 +222,17 @@ The dashboard fans out into **per-domain** endpoints under `/admin/api/cms/dashb
 
 | Endpoint                    | Hook                     | Capability gate | Response shape (summary) |
 |-----------------------------|--------------------------|-----------------|--------------------------|
-| `/dashboard/pages`          | `usePagesStats`          | authenticated user | `{ total, published, drafts, scheduled, deltaPublishedThisWeek }` |
-| `/dashboard/posts`          | `usePostsStats`          | authenticated user | `{ total, categories, scheduled, daily28 }` |
-| `/dashboard/media`          | `useMediaStats`          | `media.read` | `{ count, totalBytes, latestThumbs[] }` |
-| `/dashboard/plugins`        | `usePluginsStats`        | `plugins.read` | `{ total, active, disabled, errored, rows[] }` |
-| `/dashboard/storage`        | `useStorageStats`        | authenticated user | `{ imageBytes, videoBytes, documentBytes, pluginBytes, databaseBytes, totalBytes, dialect }` |
-| `/dashboard/publish-lineup` | `usePublishLineupStats`  | authenticated user | `{ rows: [{ id, path, status, at }] }` |
-| `/dashboard/activity`       | `useRecentActivityStats` | `audit.read` | `{ rows: [{ id, action, actor, targetCode, targetText, createdAt }] }` |
+| `/dashboard/pages`          | `usePagesStats`          | `dashboard.read` + content visibility | `{ total, published, drafts, scheduled, deltaPublishedThisWeek }` |
+| `/dashboard/posts`          | `usePostsStats`          | `dashboard.read` + content visibility | `{ total, categories, scheduled, daily28 }` |
+| `/dashboard/media`          | `useMediaStats`          | `dashboard.read` + `media.read` | `{ count, totalBytes, latestThumbs[] }` |
+| `/dashboard/plugins`        | `usePluginsStats`        | `dashboard.read` + `plugins.read` | `{ total, active, disabled, errored, rows[] }` |
+| `/dashboard/storage`        | `useStorageStats`        | `dashboard.read` + `storage.elect` | `{ imageBytes, videoBytes, documentBytes, pluginBytes, databaseBytes, totalBytes, dialect }` |
+| `/dashboard/publish-lineup` | `usePublishLineupStats`  | `dashboard.read` + content visibility | `{ rows: [{ id, path, status, at }] }` |
+| `/dashboard/activity`       | `useRecentActivityStats` | `dashboard.read` + `audit.read` | `{ rows: [{ id, action, actor, targetCode, targetText, createdAt }] }` |
+
+Every endpoint requires `dashboard.read`. Media, plugins, activity, and storage also require their domain capability; a rejected request returns 403. The Storage tile displays a permission message after a 403 instead of staying in its loading state. Storage uses `storage.elect`, the permission for inspecting and choosing installation storage adapters.
+
+Pages, posts, and publish lineup use the table-family and row-read policy in `server/auth/dataAccess.ts`. The SQL scope in `server/repositories/dashboard/content.ts` excludes unreadable table families, other authors' rows for own-only roles, deleted rows/tables, and non-main branches **before** counts, histograms, sorting, or limits. Author ownership takes precedence over creator fallback. A dashboard-only user receives empty content statistics and lineup; category counts include only readable post-type tables. `site.read` alone grants no row access. Regression coverage: `src/__tests__/server/dashboardAccess.test.ts`.
 
 Non-CMS first-party widgets:
 
@@ -391,7 +395,7 @@ The hook has no in-page reset control. It starts from `DEFAULT_LAYOUT` on every 
   - `src/admin/pages/dashboard/hooks/useDashboardStats.ts` — stats fetch
   - `server/handlers/cms/dashboard/index.ts` — `/admin/api/cms/dashboard` route handler + endpoint registry
   - `server/handlers/cms/dashboard/types.ts` — every response shape + `DashboardRequestContext`
-  - `server/handlers/cms/dashboard/posts.ts` — Posts widget reader (timezone-aware histogram)
+  - `server/repositories/dashboard/posts.ts` — Posts widget reader (timezone-aware histogram)
   - `server/time.ts` — `resolveTimeZone` + `localDayKeyFactory` (shared day-bucketing utilities)
 - Structural gates:
   - `src/__tests__/architecture/css-token-policy.test.ts`

@@ -219,8 +219,8 @@ describe('definePack', () => {
       layouts: [{
         id: 'hero-section',
         name: 'Hero section',
-        html: '<section class="hero missing-rule"><h2>Big claim</h2></section>',
-        css: '.hero { padding: 96px; text-align: center; }',
+        html: '<section class="hero missing-rule" style="-webkit-text-fill-color: transparent"><h2>Big claim</h2></section>',
+        css: '.hero { padding: 96px; text-align: center; -webkit-background-clip: text !important; }',
       }],
     })
 
@@ -239,6 +239,9 @@ describe('definePack', () => {
     // The CSS engine expands shorthands to longhands.
     expect(heroClass?.styles.paddingTop).toBe('96px')
     expect(heroClass?.styles.textAlign).toBe('center')
+    expect(root.inlineStyles?.WebkitTextFillColor).toBe('transparent')
+    expect(heroClass?.styles.WebkitBackgroundClip).toBe('text')
+    expect(heroClass?.stylePriorities?.WebkitBackgroundClip).toBe('important')
 
     // The heading made it into the subtree.
     const allNodes = Object.values(layout.nodes)

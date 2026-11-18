@@ -2,7 +2,7 @@
  * Pick the ESM entry the site runtime would import for a package manifest.
  *
  * The same rules the publisher's importmap builder applies on disk
- * (`server/publish/runtime/packageImportmap.ts`), so the Dependencies panel
+ * (`resolveInstalledPackageEntry` in `server/publish/runtime/dependencyCache.ts`), so the Dependencies panel
  * can preflight compatibility from registry metadata before anything is
  * installed. The runtime serves package files to the browser as they are,
  * so the order favours whatever is most likely to be ESM:

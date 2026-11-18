@@ -134,6 +134,8 @@ export function auditTitle(
       return `Data table ${dataTable} was updated`
     case 'data.table.delete':
       return `Data table ${dataTable} was deleted`
+    case 'data.table.access':
+      return `Who can open the entries of data table ${dataTable} was changed`
     case 'data.row.create':
       return `Data row ${dataRow} was created`
     case 'data.row.update':
@@ -168,6 +170,18 @@ export function auditTitle(
       return `${pluginId} pack was installed`
     case 'plugin.settings.update':
       return `${pluginId} settings were updated`
+    case 'mail.connector.create':
+      return `Email connector ${metadataString(event.metadata, 'label') ?? ''} was added`.replace('  ', ' ')
+    case 'mail.connector.delete':
+      return `Email connector ${metadataString(event.metadata, 'label') ?? ''} was removed`.replace('  ', ' ')
+    case 'mail.connector.secret':
+      return `The secret of email connector ${metadataString(event.metadata, 'label') ?? ''} was replaced`.replace('  ', ' ')
+    case 'mail.defaults.update':
+      return 'Email defaults were updated'
+    case 'mail.template.update':
+      return `Email template ${event.targetId ?? ''} was edited`
+    case 'mail.template.reset':
+      return `Email template ${event.targetId ?? ''} was reset`
     case 'ai.credential.created':
       return `AI credential ${aiCredential} was created`
     case 'ai.credential.updated':

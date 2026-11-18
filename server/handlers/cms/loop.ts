@@ -25,6 +25,7 @@ import { registry } from '@core/module-engine'
 import { loopSourceRegistry } from '@core/loops/registry'
 import {
   renderNode,
+  subtreeDependsOnMember,
   type RenderConfig,
   type RenderAccumulators,
   type ResolvedLoopRenderData,
@@ -35,6 +36,15 @@ import { prefetchMediaAssets } from '../../publish/mediaPrefetch'
 import { getPublishedLoopIndexForVersion } from '../../publish/publishedSnapshotCache'
 import { getPublishVersion } from '../../publish/publishState'
 import { LOOP_RUNTIME_JS } from '../../publish/loopRuntime'
+import {
+  closedContentFor,
+  decideAccess,
+  getAccessIndex,
+  memberFrameFor,
+  pageRules,
+  PRIVATE_HEADERS,
+  visitorFromRequest,
+} from '../../publish/accessGate'
 
 const LOOP_RUNTIME_PATH = '/_instatic/assets/loop-runtime.js'
 
@@ -90,6 +100,20 @@ export async function handleLoopRequest(
   const { page: containingPage, node: loopNode } = indexed
   const site = loopIndex.site
 
+  // More items of a loop on a protected page are part of that page.
+  const accessIndex = await getAccessIndex(ctx.db, getPublishVersion())
+  const rules = pageRules(accessIndex, containingPage)
+  const isProtected = rules.length > 0
+  const visitor = visitorFromRequest(ctx.db, req)
+  if (isProtected && (await decideAccess(rules, visitor)) !== 'allow') {
+    return jsonResponse({ error: 'Loop not found' }, { status: 404, headers: PRIVATE_HEADERS })
+  }
+  // The list leaves out what the visitor may not open (see `closedContentFor`).
+  const closed = closedContentFor(accessIndex, isProtected ? ((await visitor())?.tags ?? null) : null)
+  // Items that show member data are rendered for this visitor alone.
+  const showsMember = subtreeDependsOnMember(containingPage, site, registry, loopNode.id)
+  const forVisitor = isProtected || showsMember
+
   const props = readLoopProps(loopNode)
   if (props.pagination !== 'infinite') {
     return jsonResponse({ error: 'Loop is not in infinite mode' }, { status: 400 })
@@ -114,6 +138,7 @@ export async function handleLoopRequest(
       direction: props.direction,
       limit: props.pageSize,
       offset,
+      closed,
     })
   } catch (err) {
     console.error(`[loop] source "${source.id}" failed for "${loopId}":`, err)
@@ -146,7 +171,9 @@ export async function handleLoopRequest(
     site,
     registry,
     breakpointId: undefined,
-    templateContext: { entryStack: [], media: mediaAssets },
+    templateContext: forVisitor
+      ? { entryStack: [], media: mediaAssets, member: memberFrameFor(await visitor()) }
+      : { entryStack: [], media: mediaAssets },
     loopData,
     mediaAssets,
   }
@@ -176,5 +203,5 @@ export async function handleLoopRequest(
     html += renderNode(variantId, iterationConfig, acc)
   })
 
-  return jsonResponse({ html, hasMore, pageNumber })
+  return jsonResponse({ html, hasMore, pageNumber }, forVisitor ? { headers: PRIVATE_HEADERS } : {})
 }

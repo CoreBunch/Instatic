@@ -279,6 +279,7 @@ function composeTemplateContext(
     site: provided.site ?? buildSiteFrame(site),
     route: provided.route ?? buildRouteFrame(pageFrame.permalink),
     media: provided.media ?? mediaAssets,
+    ...(provided.member !== undefined ? { member: provided.member } : {}),
   }
 }
 
@@ -550,7 +551,7 @@ export function publishPage(
   // emit <instatic-hole> placeholders instead of recursing.
   const dynamicNodeIds = options.dynamicNodes === 'inline'
     ? new Set<string>()
-    : findDynamicNodeIds(page, site, registry)
+    : findDynamicNodeIds(page, site, registry, { visitorKnown: options.templateContext?.member !== undefined })
 
   // Composed once per page render: the walker reads it through the config,
   // and the <head> builder interpolates {source.field} tokens in the

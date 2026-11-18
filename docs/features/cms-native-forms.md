@@ -35,6 +35,12 @@ The design canvas treats authored form controls as non-interactive editor conten
 
 The form setup block also exposes an editor-only preview state switch (`default`, `submitting`, `success`, `error`). It annotates the canvas form and message nodes with the same state shape the public runtime uses, without changing saved props or published HTML.
 
+## Member mode
+
+`mode: 'member'` turns the form into a member action (sign up, sign in, reset password, update profile, …) instead of a table submission. It posts to `/_instatic/members/<action>` and has no target table, honeypot or challenge: the member endpoints carry their own origin checks and rate limits. See [members](members.md) → "Building member pages in the editor".
+
+`base.form-message` with `kind: error` can name one field (`fieldName`); it then shows only errors about that field.
+
 ## Auto Wiring
 
 Auto wiring is structural:
@@ -51,6 +57,12 @@ CMS-native submission is a two-step public flow:
 
 1. The runtime requests a short-lived challenge from `/_instatic/form/challenge` when the form attaches in the browser.
 2. The runtime posts values plus the challenge to `/_instatic/form/submit`.
+
+The challenge response carries `expiresInSeconds` and the form's `minSubmitSeconds`. The runtime (`src/modules/base/forms/formRuntimeJs.ts`) uses them so a visitor who lingers is not turned away:
+
+- It measures the challenge lifetime from the moment the response arrived, on the browser's own clock. The absolute `expiresAt` is never compared with the browser clock, so a visitor clock that disagrees with the server's changes nothing.
+- It replaces the held challenge 30 seconds before it expires, for as long as the form stays in the page.
+- The server's time trap counts from the challenge's issue time. When the visitor has had the form for at least `minSubmitSeconds` but the challenge in hand is younger than that (just refreshed, or fetched at submit because the earlier one expired or never arrived), the runtime waits out the difference before posting. A submit made sooner than `minSubmitSeconds` after the form attached is posted immediately and the server rejects it with `Form submitted too quickly`.
 
 The submit handler reloads the latest published site snapshot, derives the form snapshot from the published page tree, requires the target `DataTable` to be a non-system `data` table, validates fields against that table, and creates a `data_rows` record with `createDataRow`. After persistence, `server/forms/handler.ts` calls `emitContentEntryCreated` from `server/publish/contentEvents.ts` with the `system` actor, so plugins can react to successful submissions through the standard `content.entry.created` channel.
 

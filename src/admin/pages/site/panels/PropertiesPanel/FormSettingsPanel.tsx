@@ -26,6 +26,9 @@ import {
   type FormContextSummary,
   type FormSettingsAnalysis,
 } from './formSettingsAnalysis'
+import { memberFormAction } from '@core/members'
+import { MemberActionRow } from './MemberActionRow'
+import { memberFormFragment, missingMemberFormParts, type MemberFormMissing } from './memberFormParts'
 import styles from './FormSettingsPanel.module.css'
 
 type FormPreviewState = 'default' | 'submitting' | 'success' | 'error'
@@ -34,6 +37,7 @@ type FormTableOption = Pick<DataTable, 'id' | 'name' | 'kind' | 'system'>
 
 const FORM_MODE_OPTIONS: ReadonlyArray<{ value: FormMode; label: string }> = [
   { value: 'cms', label: 'CMS-native' },
+  { value: 'member', label: 'Members' },
   { value: 'custom', label: 'Custom action' },
 ]
 
@@ -62,6 +66,9 @@ interface FormSettingsPanelViewProps {
   onTargetTableChange: (tableId: string) => void
   onCreateTable: (tableName: string) => void | Promise<void>
   onInsertMissingField: (field: DataField) => void
+  /** What a member form still lacks for its action; null for other forms. */
+  memberMissing: MemberFormMissing | null
+  onCompleteMemberForm: () => void
   onPreviewStateChange: (state: FormPreviewState) => void
 }
 
@@ -118,6 +125,21 @@ export function FormSettingsPanel({
     }
   }
 
+  const memberAction = analysis.form?.mode === 'member' ? memberFormAction(analysis.form.memberAction) : undefined
+  const memberMissing =
+    page && analysis.form && memberAction ? missingMemberFormParts(page, analysis.form.nodeId, memberAction) : null
+
+  function handleCompleteMemberForm() {
+    if (!page || !analysis.form) return
+    const formNode = page.nodes[analysis.form.nodeId]
+    const action = memberFormAction(analysis.form.memberAction)
+    if (!formNode || !action) return
+    const missing = missingMemberFormParts(page, formNode.id, action)
+    const fragment = memberFormFragment(action, analysis.form.formId, missing)
+    if (fragment.rootIds.length === 0) return
+    insertImportedNodes(formNode.id, fragment, { index: fieldInsertIndex(page, formNode.id) })
+  }
+
   function handleInsertMissingField(field: DataField) {
     if (!page || !analysis.form) return
     const formNode = page.nodes[analysis.form.nodeId]
@@ -147,6 +169,8 @@ export function FormSettingsPanel({
         return handleCreateTable(tableName)
       }}
       onInsertMissingField={handleInsertMissingField}
+      memberMissing={memberMissing}
+      onCompleteMemberForm={handleCompleteMemberForm}
       onPreviewStateChange={(state) => {
         if (!analysis.form) return
         setFormPreviewState(analysis.form.nodeId, state)
@@ -167,6 +191,8 @@ export function FormSettingsPanelView({
   onTargetTableChange,
   onCreateTable,
   onInsertMissingField,
+  memberMissing,
+  onCompleteMemberForm,
   onPreviewStateChange,
 }: FormSettingsPanelViewProps) {
   if (analysis.kind === 'none') return null
@@ -235,6 +261,15 @@ export function FormSettingsPanelView({
               loading={tablesLoading}
               onTargetTableChange={onTargetTableChange}
               onCreateTable={onCreateTable}
+            />
+          )}
+
+          {analysis.form.mode === 'member' && (
+            <MemberActionRow
+              form={analysis.form}
+              missing={memberMissing}
+              onPatchProps={onPatchProps}
+              onComplete={onCompleteMemberForm}
             />
           )}
 
@@ -606,6 +641,7 @@ function kicker(kind: FormSettingsAnalysis['kind']): string {
 
 function panelTitle(analysis: FormSettingsAnalysis): string {
   if (analysis.kind === 'form') {
+    if (analysis.form?.mode === 'member') return 'Member form'
     return analysis.form?.mode === 'custom' ? 'Custom action form' : 'CMS-native form'
   }
   if (analysis.kind === 'control') {
