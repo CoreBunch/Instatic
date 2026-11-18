@@ -25,6 +25,9 @@ import { registry } from '@core/module-engine'
 import { loopSourceRegistry } from '@core/loops/registry'
 import {
   renderNode,
+  showWhenPathsAllow,
+  showWhenPathsAreGated,
+  showWhenPathsTo,
   subtreeDependsOnMember,
   type RenderConfig,
   type RenderAccumulators,
@@ -111,8 +114,24 @@ export async function handleLoopRequest(
   // The list leaves out what the visitor may not open (see `closedContentFor`).
   const closed = closedContentFor(accessIndex, isProtected ? ((await visitor())?.tags ?? null) : null)
   // Items that show member data are rendered for this visitor alone.
-  const showsMember = subtreeDependsOnMember(containingPage, site, registry, loopNode.id)
+  // The items are rendered here without the loop element itself, so its own
+  // show-when rule and those of everything around it are checked here.
+  // The loop may live inside a Visual Component, so the rules are followed
+  // along the render path, through the component and the reference that
+  // placed it. A loop on no render path is given to nobody.
+  const paths = showWhenPathsTo(containingPage, site, loopNode.id, { includeSelf: true })
+  const gated = showWhenPathsAreGated(paths)
+  // A loop inside a component is not in the page's own node map, where
+  // `subtreeDependsOnMember` looks; treat it as per-visitor rather than guess.
+  const inComponent = containingPage.nodes[loopNode.id] === undefined
+  const showsMember = gated || inComponent || subtreeDependsOnMember(containingPage, site, registry, loopNode.id)
   const forVisitor = isProtected || showsMember
+  if (gated) {
+    const tags = (await visitor())?.tags ?? null
+    if (!showWhenPathsAllow(paths, tags)) {
+      return jsonResponse({ html: '', hasMore: false, pageNumber }, { headers: PRIVATE_HEADERS })
+    }
+  }
 
   const props = readLoopProps(loopNode)
   if (props.pagination !== 'infinite') {

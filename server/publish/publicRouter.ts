@@ -308,7 +308,7 @@ export async function renderPublicResolution(
     const rendered = resolution.kind === 'page'
       ? await renderPublishedSnapshot(resolution.snapshot, context)
       : await renderPublishedDataRowTemplate(resolution.snapshot, resolution.row, context)
-    return rendered ? await applyPublishedHtmlPipeline(rendered, db) : null
+    return rendered ? await applyPublishedHtmlPipeline(rendered, db, { forMember: forVisitor !== undefined }) : null
   }
 
   // ── Access: decided from the route that actually resolved ────────────────

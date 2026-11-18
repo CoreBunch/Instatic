@@ -41,6 +41,8 @@ import { publishDataRow, retractDataRowArtefacts } from '../../../publish/publis
 import { runPublishFlush } from '../../../publish/publishFlush'
 import { findUserById } from '../../../repositories/users'
 import { slugForTable } from '@core/data/cells'
+import { userHasCapability } from '../../../auth/authz'
+import { keepPageAccess } from '../../../writePolicy/pageAccessCell'
 import { badRequest, jsonResponse, readValidatedBody } from '../../../http'
 import { bumpPublishVersionSerialized } from '../../../publish/publishState'
 import type { CmsHandlerOptions } from '../shared'
@@ -193,15 +195,22 @@ async function handleRowItemPatch(
   const table = await getDataTable(db, scope, currentRow.tableId)
   if (!table) return rowNotFound()
 
-  const rawCells = body.cells ?? currentRow.cells
+  // A page's access rule stays as stored unless this user may change it.
+  const rawCells = keepPageAccess(
+    currentRow,
+    body.cells ?? currentRow.cells,
+    userHasCapability(user, 'site.structure.edit'),
+  )
   // Run the `content.entry.cells` filter pipeline before persistence so
   // plugins can validate / normalize / auto-fill cells — the same shared
   // helper the plugin `cms.content.*` surface applies.
-  const cells = await applyContentEntryCellsFilter(rawCells, {
+  const filtered = await applyContentEntryCellsFilter(rawCells, {
     tableSlug: table.slug,
     entryId: rowId,
     actor: { kind: 'user', userId: user.id },
   })
+  // Checked again after the filters: a plugin filter is not a way around the rule either.
+  const cells = keepPageAccess(currentRow, filtered, userHasCapability(user, 'site.structure.edit'))
   const slug = slugForTable(table, cells)
 
   const row = await saveDataRowDraft(db, scope, rowId, { cells, slug }, user.id)
@@ -504,11 +513,14 @@ async function handleRowVersionRestore(
   // The restored cells go through the same pipeline as a draft save: the
   // `content.entry.cells` filter, then the slug derived from the cells —
   // the version's stored slug may since have been taken by another row.
-  const cells = await applyContentEntryCellsFilter(version.cells, {
+  const restored = await applyContentEntryCellsFilter(version.cells, {
     tableSlug: table.slug,
     entryId: current.id,
     actor: { kind: 'user', userId: user.id },
   })
+  // Restoring brings back a page's content, never who may open it: the
+  // access rule stays as it is now, whatever the old version carried.
+  const cells = keepPageAccess(current, restored)
   const slug = slugForTable(table, cells)
   if (slug) {
     const holder = await getDataRowBySlug(db, scope, table.id, slug)

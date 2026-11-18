@@ -52,6 +52,12 @@ import {
   ContentTreeReadArgsSchema,
   ContentTreeReplaceArgsSchema,
 } from './schemas/content'
+import {
+  MembersGetArgsSchema,
+  MembersInviteArgsSchema,
+  MembersTagsGrantArgsSchema,
+  MembersTagsRevokeArgsSchema,
+} from './schemas/members'
 
 // ---------------------------------------------------------------------------
 // Generic schema builder
@@ -145,6 +151,10 @@ export const ApiCallSchemas = {
   'cms.content.search': apiCallSchema('cms.content.search', ContentSearchArgsSchema),
   'cms.content.snapshot': apiCallSchema('cms.content.snapshot', ContentSnapshotArgsSchema),
   'cms.content.republishAll': apiCallSchema('cms.content.republishAll', ContentRepublishAllArgsSchema),
+  'cms.members.get': apiCallSchema('cms.members.get', MembersGetArgsSchema),
+  'cms.members.invite': apiCallSchema('cms.members.invite', MembersInviteArgsSchema),
+  'cms.members.tags.grant': apiCallSchema('cms.members.tags.grant', MembersTagsGrantArgsSchema),
+  'cms.members.tags.revoke': apiCallSchema('cms.members.tags.revoke', MembersTagsRevokeArgsSchema),
   'crypto.digest': apiCallSchema('crypto.digest', Type.Tuple([CryptoDigestArgSchema])),
   'crypto.signHmac': apiCallSchema('crypto.signHmac', Type.Tuple([CryptoSignHmacArgSchema])),
 } satisfies Record<string, TSchema>

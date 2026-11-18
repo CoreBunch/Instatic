@@ -4,6 +4,9 @@
  * picker, and the fields "Add the fields" inserts) and the docs.
  *
  * `action` is the path under `/_instatic/members/`.
+ *
+ * Signing out is not here: it needs no fields, so it is a link
+ * (`memberSignOutHref`), not a form.
  */
 
 export interface MemberFormField {
@@ -14,9 +17,19 @@ export interface MemberFormField {
   autocomplete: string
 }
 
+/** How the editor's action picker groups the actions. */
+export type MemberFormGroup = 'entry' | 'emailLink' | 'account'
+
+export const MEMBER_FORM_GROUP_LABELS: Record<MemberFormGroup, string> = {
+  entry: 'Signing in and joining',
+  emailLink: 'Pages an emailed link opens',
+  account: 'For signed-in members',
+}
+
 export interface MemberFormAction {
   action: string
   label: string
+  group: MemberFormGroup
   /** What the form does, for the editor. */
   description: string
   fields: readonly MemberFormField[]
@@ -39,6 +52,7 @@ export const MEMBER_FORM_ACTIONS: readonly MemberFormAction[] = [
   {
     action: 'signup',
     label: 'Sign up',
+    group: 'entry',
     description: 'Creates an account and emails a link to confirm the address.',
     fields: [NAME, EMAIL, { ...PASSWORD, autocomplete: 'new-password' }],
     needsToken: false,
@@ -49,6 +63,7 @@ export const MEMBER_FORM_ACTIONS: readonly MemberFormAction[] = [
   {
     action: 'login',
     label: 'Sign in',
+    group: 'entry',
     description: 'Signs a member in with email and password.',
     fields: [EMAIL, PASSWORD],
     needsToken: false,
@@ -59,6 +74,7 @@ export const MEMBER_FORM_ACTIONS: readonly MemberFormAction[] = [
   {
     action: 'link/request',
     label: 'Email a sign-in link',
+    group: 'entry',
     description: 'Emails a link that signs the member in without a password.',
     fields: [EMAIL],
     needsToken: false,
@@ -67,18 +83,9 @@ export const MEMBER_FORM_ACTIONS: readonly MemberFormAction[] = [
     successMessage: 'If that address has an account, a sign-in link is on its way.',
   },
   {
-    action: 'logout',
-    label: 'Sign out',
-    description: 'Signs the member out. Needs only a button.',
-    fields: [],
-    needsToken: false,
-    signedIn: true,
-    submitLabel: 'Sign out',
-    successMessage: 'You are signed out.',
-  },
-  {
     action: 'password/forgot',
     label: 'Forgot password',
+    group: 'entry',
     description: 'Emails a link to choose a new password.',
     fields: [EMAIL],
     needsToken: false,
@@ -89,6 +96,7 @@ export const MEMBER_FORM_ACTIONS: readonly MemberFormAction[] = [
   {
     action: 'password/reset',
     label: 'Choose a new password',
+    group: 'emailLink',
     description: 'For the page a reset link opens: sets the new password and signs in.',
     fields: [NEW_PASSWORD],
     needsToken: true,
@@ -99,6 +107,7 @@ export const MEMBER_FORM_ACTIONS: readonly MemberFormAction[] = [
   {
     action: 'invite/accept',
     label: 'Accept an invitation',
+    group: 'emailLink',
     description: 'For the page an invitation link opens: sets a password and signs in.',
     fields: [NEW_PASSWORD],
     needsToken: true,
@@ -109,6 +118,7 @@ export const MEMBER_FORM_ACTIONS: readonly MemberFormAction[] = [
   {
     action: 'verify',
     label: 'Confirm email address',
+    group: 'emailLink',
     description: 'For the page a confirmation link opens: confirms the address and signs in.',
     fields: [],
     needsToken: true,
@@ -119,6 +129,7 @@ export const MEMBER_FORM_ACTIONS: readonly MemberFormAction[] = [
   {
     action: 'link/confirm',
     label: 'Finish signing in from a link',
+    group: 'emailLink',
     description: 'For the page a sign-in link opens: signs the member in.',
     fields: [],
     needsToken: true,
@@ -129,6 +140,7 @@ export const MEMBER_FORM_ACTIONS: readonly MemberFormAction[] = [
   {
     action: 'email/confirm',
     label: 'Confirm a new email address',
+    group: 'emailLink',
     description: 'For the page an address-change link opens: switches to the new address.',
     fields: [],
     needsToken: true,
@@ -139,6 +151,7 @@ export const MEMBER_FORM_ACTIONS: readonly MemberFormAction[] = [
   {
     action: 'profile',
     label: 'Update profile',
+    group: 'account',
     description: 'Saves the signed-in member\'s profile fields.',
     fields: [NAME],
     needsToken: false,
@@ -149,6 +162,7 @@ export const MEMBER_FORM_ACTIONS: readonly MemberFormAction[] = [
   {
     action: 'password/change',
     label: 'Change password',
+    group: 'account',
     description: 'Changes the signed-in member\'s password.',
     fields: [CURRENT_PASSWORD, { name: 'newPassword', label: 'New password', inputType: 'password', autocomplete: 'new-password' }],
     needsToken: false,
@@ -159,6 +173,7 @@ export const MEMBER_FORM_ACTIONS: readonly MemberFormAction[] = [
   {
     action: 'email/change',
     label: 'Change email address',
+    group: 'account',
     description: 'Emails a confirmation link to the new address.',
     fields: [{ ...EMAIL, label: 'New email' }, CURRENT_PASSWORD],
     needsToken: false,
@@ -169,6 +184,7 @@ export const MEMBER_FORM_ACTIONS: readonly MemberFormAction[] = [
   {
     action: 'delete',
     label: 'Delete account',
+    group: 'account',
     description: 'Deletes the signed-in member\'s account for good.',
     fields: [CURRENT_PASSWORD],
     needsToken: false,
@@ -177,6 +193,21 @@ export const MEMBER_FORM_ACTIONS: readonly MemberFormAction[] = [
     successMessage: 'Your account is deleted.',
   },
 ]
+
+/**
+ * The form a page needs to do its job in each Member settings slot. A page
+ * without one still opens, and then does nothing. `afterLogin` is only a
+ * place to land, so it needs none.
+ */
+export const MEMBER_PAGE_FORM_ACTIONS = {
+  login: ['login', 'link/request'],
+  afterLogin: [],
+  verify: ['verify'],
+  reset: ['password/reset'],
+  magic: ['link/confirm'],
+  invite: ['invite/accept'],
+  emailChange: ['email/confirm'],
+} as const satisfies Record<string, readonly string[]>
 
 export const DEFAULT_MEMBER_FORM_ACTION = 'login'
 
@@ -187,4 +218,12 @@ export function memberFormAction(action: string): MemberFormAction | undefined {
 /** Where a member form posts. Unknown actions fall back to sign-in, never to an arbitrary path. */
 export function memberFormActionPath(action: string): string {
   return `/_instatic/members/${memberFormAction(action)?.action ?? DEFAULT_MEMBER_FORM_ACTION}`
+}
+
+const MEMBER_SIGN_OUT_PATH = '/_instatic/members/logout'
+
+/** The address a sign-out link opens. `to` is the site path to land on afterwards. */
+export function memberSignOutHref(to: string): string {
+  const target = to.trim()
+  return target && target !== '/' ? `${MEMBER_SIGN_OUT_PATH}?to=${encodeURIComponent(target)}` : MEMBER_SIGN_OUT_PATH
 }

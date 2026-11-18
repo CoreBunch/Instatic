@@ -6,6 +6,7 @@ import {
   type CapabilityTestHarness,
 } from '../helpers/capabilityHarness'
 import {
+  MailConnectorInputSchema,
   registerMailTemplate,
   renderMailTemplate,
   unknownMailVariables,
@@ -14,8 +15,10 @@ import {
   type MailOverview,
   type MailTemplate,
 } from '@core/mail'
+import { safeParseValue } from '@core/utils/typeboxHelpers'
 import { listMailActivity, recordMail } from '../../../server/mail/activity'
-import { createMailConnector, resolveConnector } from '../../../server/mail/connectors'
+import { sendViaBrevo, sendViaMailgun, sendViaPostmark, sendViaResend } from '../../../server/mail/apiDrivers'
+import { createMailConnector, getMailConnector, listMailConnectors, resolveConnector } from '../../../server/mail/connectors'
 import { saveMailDefaults } from '../../../server/mail/defaults'
 import {
   MailNotConfiguredError,
@@ -121,7 +124,7 @@ describe('site mail', () => {
       const [used, sender] = seen[0]
       expect(used).toMatchObject({ id: connector.id, kind: 'smtp', secret: SMTP.secret })
       expect(used.kind === 'smtp' && used.config.host).toBe('smtp.example.com')
-      expect(sender).toEqual({ fromAddress: 'hello@example.com', fromHeader: '"Example" <hello@example.com>', replyTo: '' })
+      expect(sender).toEqual({ fromAddress: 'hello@example.com', fromName: 'Example', fromHeader: '"Example" <hello@example.com>', replyTo: '' })
       const { entries, totals } = await listMailActivity(h.db)
       expect(entries[0]).toMatchObject({
         status: 'sent', body: null, error: null, connectorLabel: 'Main relay', providerMessageId: '<provider-id-1>',
@@ -364,6 +367,112 @@ describe('site mail', () => {
       ).catch((err: unknown) => err)
       expect(failure).toBeInstanceOf(MailDeliveryError)
       expect((failure as Error).message).toBe('Amazon SES rejected the access key or its permissions.')
+    })
+  })
+
+  describe('one-key providers', () => {
+    const sender = { fromAddress: 'hello@example.com', fromName: 'Example', fromHeader: '"Example" <hello@example.com>', replyTo: 'help@example.com' }
+    const mail = { to: 'reader@example.com', subject: 'Hello', text: 'Text', html: '<p>Html</p>' }
+    const KEY = 'key-that-must-never-leak'
+
+    function recorder(answer: string, status = 200) {
+      const calls: Array<{ url: string; headers: Headers; body: string }> = []
+      const fetchImpl = (async (url: string | URL | Request, init?: RequestInit) => {
+        calls.push({ url: String(url), headers: new Headers(init?.headers), body: String(init?.body) })
+        return new Response(answer, { status })
+      }) as typeof fetch
+      return { calls, fetchImpl }
+    }
+
+    it('sends through Resend with a bearer key', async () => {
+      const { calls, fetchImpl } = recorder('{"id":"re_1"}')
+      expect(await sendViaResend(KEY, sender, mail, { fetchImpl })).toBe('re_1')
+      expect(calls[0].url).toBe('https://api.resend.com/emails')
+      expect(calls[0].headers.get('authorization')).toBe(`Bearer ${KEY}`)
+      expect(JSON.parse(calls[0].body)).toEqual({
+        from: '"Example" <hello@example.com>', to: ['reader@example.com'], subject: 'Hello',
+        text: 'Text', html: '<p>Html</p>', reply_to: 'help@example.com',
+      })
+    })
+
+    it('sends through Postmark on its transactional stream', async () => {
+      const { calls, fetchImpl } = recorder('{"MessageID":"pm_1","ErrorCode":0}')
+      expect(await sendViaPostmark(KEY, sender, mail, { fetchImpl })).toBe('pm_1')
+      expect(calls[0].url).toBe('https://api.postmarkapp.com/email')
+      expect(calls[0].headers.get('x-postmark-server-token')).toBe(KEY)
+      expect(JSON.parse(calls[0].body)).toMatchObject({
+        From: '"Example" <hello@example.com>', To: 'reader@example.com', Subject: 'Hello',
+        TextBody: 'Text', HtmlBody: '<p>Html</p>', ReplyTo: 'help@example.com', MessageStream: 'outbound',
+      })
+    })
+
+    it('sends through Mailgun on the region’s host, with the domain only as a path part', async () => {
+      const { calls, fetchImpl } = recorder('{"id":"<mg_1@mg.example.com>","message":"Queued"}')
+      const id = await sendViaMailgun({ domain: 'MG.example.com', region: 'eu' }, KEY, sender, mail, { fetchImpl })
+      expect(id).toBe('mg_1@mg.example.com')
+      expect(calls[0].url).toBe('https://api.eu.mailgun.net/v3/mg.example.com/messages')
+      expect(calls[0].headers.get('authorization')).toBe(`Basic ${Buffer.from(`api:${KEY}`).toString('base64')}`)
+      const form = new URLSearchParams(calls[0].body)
+      expect(Object.fromEntries(form)).toEqual({
+        from: '"Example" <hello@example.com>', to: 'reader@example.com', subject: 'Hello',
+        text: 'Text', html: '<p>Html</p>', 'h:Reply-To': 'help@example.com',
+      })
+      const us = recorder('{}')
+      await sendViaMailgun({ domain: 'mg.example.com', region: 'us' }, KEY, sender, mail, { fetchImpl: us.fetchImpl })
+      expect(us.calls[0].url).toBe('https://api.mailgun.net/v3/mg.example.com/messages')
+    })
+
+    it('sends through Brevo with the sender as an address and a name', async () => {
+      const { calls, fetchImpl } = recorder('{"messageId":"<br_1@smtp-relay.mailin.fr>"}')
+      expect(await sendViaBrevo(KEY, sender, mail, { fetchImpl })).toBe('br_1@smtp-relay.mailin.fr')
+      expect(calls[0].url).toBe('https://api.brevo.com/v3/smtp/email')
+      expect(calls[0].headers.get('api-key')).toBe(KEY)
+      expect(JSON.parse(calls[0].body)).toEqual({
+        sender: { email: 'hello@example.com', name: 'Example' }, to: [{ email: 'reader@example.com' }],
+        subject: 'Hello', textContent: 'Text', htmlContent: '<p>Html</p>', replyTo: { email: 'help@example.com' },
+      })
+    })
+
+    it('reports a refusal in a sentence, with the provider’s short reason and never the key', async () => {
+      const refused = recorder('{"message":"The example.com domain is not verified."}', 403)
+      const failure = await sendViaResend(KEY, sender, mail, { fetchImpl: refused.fetchImpl }).catch((err: unknown) => err)
+      expect(failure).toBeInstanceOf(MailDeliveryError)
+      expect((failure as Error).message).toBe('Resend rejected the API key or its permissions. The example.com domain is not verified.')
+      expect((failure as Error).message).not.toContain(KEY)
+
+      // A long or unreadable answer is dropped; the status alone decides the sentence.
+      const noisy = recorder(`{"Message":"${'x'.repeat(400)}"}`, 422)
+      expect(((await sendViaPostmark(KEY, sender, mail, { fetchImpl: noisy.fetchImpl }).catch((err: unknown) => err)) as Error).message)
+        .toBe('Postmark refused the message (HTTP 422).')
+      const down = recorder('<html>gateway</html>', 502)
+      expect(((await sendViaBrevo(KEY, sender, mail, { fetchImpl: down.fetchImpl }).catch((err: unknown) => err)) as Error).message)
+        .toBe('Brevo is having trouble right now (HTTP 502). Try again shortly.')
+    })
+
+    it('reports an unreachable provider without the cause’s text', async () => {
+      const fetchImpl = (async () => { throw new Error(`connect failed with ${KEY}`) }) as unknown as typeof fetch
+      const failure = await sendViaMailgun({ domain: 'mg.example.com', region: 'us' }, KEY, sender, mail, { fetchImpl }).catch((err: unknown) => err)
+      expect((failure as Error).message).toBe('Could not reach Mailgun. Check the server\'s network.')
+    })
+
+    it('stores a one-key connector and refuses a malformed one', async () => {
+      const userId = await ownerUserId()
+      const made = await createMailConnector(h.db, { kind: 'mailgun', label: 'Mailgun', config: { domain: 'MG.Example.com', region: 'eu' }, secret: KEY }, userId)
+      expect(made).toMatchObject({ kind: 'mailgun', hasSecret: true, config: { domain: 'mg.example.com', region: 'eu' } })
+      expect(await resolveConnector(h.db, made.id)).toMatchObject({ kind: 'mailgun', secret: KEY })
+      const resend = await createMailConnector(h.db, { kind: 'resend', label: 'Resend', config: {}, secret: KEY }, userId)
+      expect((await listMailConnectors(h.db)).map((connector) => connector.kind).sort()).toEqual(['mailgun', 'resend'])
+      expect(JSON.stringify(await getMailConnector(h.db, resend.id))).not.toContain(KEY)
+
+      for (const bad of [
+        { kind: 'resend', label: 'R', config: {}, secret: '' },
+        { kind: 'resend', label: 'R', config: { host: 'evil.example.com' }, secret: KEY },
+        { kind: 'postmark', label: 'P', config: {}, secret: 'a\r\nx-evil: 1' },
+        { kind: 'mailgun', label: 'M', config: { domain: 'mg.example.com/../v4', region: 'us' }, secret: KEY },
+        { kind: 'mailgun', label: 'M', config: { domain: 'mg.example.com', region: 'asia' }, secret: KEY },
+      ]) {
+        expect(safeParseValue(MailConnectorInputSchema, bad).ok).toBe(false)
+      }
     })
   })
 

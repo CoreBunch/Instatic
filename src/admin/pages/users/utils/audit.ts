@@ -91,6 +91,7 @@ export function auditTitle(
   const targetUser = auditTargetUser(event, usersById)
   const role = auditTargetRole(event, rolesById)
   const email = metadataString(event.metadata, 'email')
+  const member = email ?? 'unknown'
   const pluginId = metadataString(event.metadata, 'pluginId') ?? event.targetId ?? 'Plugin'
   const dataTable = dataTableLabel(event)
   const dataRow = dataRowLabel(event)
@@ -182,6 +183,22 @@ export function auditTitle(
       return `Email template ${event.targetId ?? ''} was edited`
     case 'mail.template.reset':
       return `Email template ${event.targetId ?? ''} was reset`
+    case 'member.invite':
+      return `Member ${member} was invited`
+    case 'member.suspend':
+      return `Member ${member} was suspended`
+    case 'member.unsuspend':
+      return `Member ${member} was restored`
+    case 'member.signout':
+      return `Member ${member} was signed out everywhere`
+    case 'member.delete':
+      return `Member ${member} was deleted`
+    case 'member.tag.grant':
+      return `Member ${member} was given the tag ${metadataString(event.metadata, 'tag') ?? ''}`
+    case 'member.tag.revoke':
+      return `Member ${member} lost the tag ${metadataString(event.metadata, 'tag') ?? ''}`
+    case 'member.settings.update':
+      return 'Member settings were changed'
     case 'ai.credential.created':
       return `AI credential ${aiCredential} was created`
     case 'ai.credential.updated':

@@ -23,6 +23,7 @@ import { getErrorMessage } from '@core/utils/errorMessage'
 import { recordMail } from './activity'
 import { noteConnectorUse, resolveConnector, type ResolvedConnector } from './connectors'
 import { getMailDefaults } from './defaults'
+import { sendViaBrevo, sendViaMailgun, sendViaPostmark, sendViaResend } from './apiDrivers'
 import { sendViaSes } from './sesDriver'
 import { formatFromHeader, MailDeliveryError, sendViaSmtp, type OutgoingMail } from './smtpDriver'
 import { getMailTemplate, siteMailVariables } from './templates'
@@ -42,14 +43,20 @@ export interface SiteMail extends OutgoingMail {
 /** Carries one message through one connector. Replaceable in tests. */
 export type MailCarrier = (
   connector: ResolvedConnector,
-  sender: { fromAddress: string; fromHeader: string; replyTo: string },
+  sender: { fromAddress: string; fromName: string; fromHeader: string; replyTo: string },
   mail: OutgoingMail,
 ) => Promise<string | null>
 
-const carryMail: MailCarrier = (connector, sender, mail) =>
-  connector.kind === 'smtp'
-    ? sendViaSmtp(connector.config, connector.secret, sender, mail)
-    : sendViaSes(connector.config, connector.secret, sender, mail)
+const carryMail: MailCarrier = (connector, sender, mail) => {
+  switch (connector.kind) {
+    case 'smtp': return sendViaSmtp(connector.config, connector.secret, sender, mail)
+    case 'ses': return sendViaSes(connector.config, connector.secret, sender, mail)
+    case 'resend': return sendViaResend(connector.secret, sender, mail)
+    case 'postmark': return sendViaPostmark(connector.secret, sender, mail)
+    case 'mailgun': return sendViaMailgun(connector.config, connector.secret, sender, mail)
+    case 'brevo': return sendViaBrevo(connector.secret, sender, mail)
+  }
+}
 
 interface SendDeps {
   carrier?: MailCarrier
@@ -103,6 +110,7 @@ async function deliver(
 
   const sender = {
     fromAddress: defaults.fromAddress,
+    fromName: defaults.fromName,
     fromHeader: formatFromHeader(defaults.fromName, defaults.fromAddress),
     replyTo: defaults.replyTo,
   }

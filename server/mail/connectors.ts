@@ -1,6 +1,7 @@
 /**
  * Mail connectors — the accounts the server can send through
- * (`mail_connectors`). Each has a kind (SMTP, Amazon SES), a public config
+ * (`mail_connectors`). Each has a kind (SMTP, Amazon SES, or a provider's
+ * API reached with one key), a public config
  * and one secret, encrypted at rest under the master key.
  *
  * `toView` is the only projection that leaves the server and never carries
@@ -10,10 +11,13 @@
 import { nanoid } from 'nanoid'
 import type { DbClient } from '../db/client'
 import {
-  SesConnectorConfigSchema,
-  SmtpConnectorConfigSchema,
+  MAIL_CONNECTOR_CONFIG_SCHEMAS,
+  MAIL_CONNECTOR_KINDS,
+  type KeyOnlyConnectorConfig,
   type MailConnector,
   type MailConnectorInput,
+  type MailConnectorKind,
+  type MailgunConnectorConfig,
   type SesConnectorConfig,
   type SmtpConnectorConfig,
 } from '@core/mail'
@@ -39,9 +43,7 @@ const COLUMNS = `id, kind, label, config_json, secret_ciphertext, secret_iv, key
   last_used_at, last_error, created_at`
 
 /** A connector with its secret decrypted, for one send. */
-export type ResolvedConnector =
-  | { id: string; label: string; kind: 'smtp'; config: SmtpConnectorConfig; secret: string }
-  | { id: string; label: string; kind: 'ses'; config: SesConnectorConfig; secret: string }
+export type ResolvedConnector = TypedConfig & { id: string; label: string; secret: string }
 
 /** The stored secret cannot be read with the current server secret key. */
 export class MailSecretUnreadableError extends Error {
@@ -54,18 +56,19 @@ export class MailSecretUnreadableError extends Error {
 type TypedConfig =
   | { kind: 'smtp'; config: SmtpConnectorConfig }
   | { kind: 'ses'; config: SesConnectorConfig }
+  | { kind: 'resend' | 'postmark' | 'brevo'; config: KeyOnlyConnectorConfig }
+  | { kind: 'mailgun'; config: MailgunConnectorConfig }
+
+function isConnectorKind(kind: string): kind is MailConnectorKind {
+  return (MAIL_CONNECTOR_KINDS as readonly string[]).includes(kind)
+}
 
 /** Validate a stored config against its kind. A row that fails is skipped, not trusted. */
 function readConfig(row: ConnectorRow): TypedConfig | null {
-  if (row.kind === 'smtp') {
-    const parsed = safeParseValue(SmtpConnectorConfigSchema, row.config_json)
-    return parsed.ok ? { kind: 'smtp', config: parsed.value } : null
-  }
-  if (row.kind === 'ses') {
-    const parsed = safeParseValue(SesConnectorConfigSchema, row.config_json)
-    return parsed.ok ? { kind: 'ses', config: parsed.value } : null
-  }
-  return null
+  if (!isConnectorKind(row.kind)) return null
+  const parsed = safeParseValue(MAIL_CONNECTOR_CONFIG_SCHEMAS[row.kind], row.config_json)
+  // The schema was picked by the kind, so the pair is one of the union's members.
+  return parsed.ok ? ({ kind: row.kind, config: parsed.value } as TypedConfig) : null
 }
 
 async function toView(row: ConnectorRow, fingerprint: string): Promise<MailConnector | null> {
@@ -128,7 +131,11 @@ export async function createMailConnector(
   const id = nanoid()
   const now = nowIso()
   const secret = await encryptedSecret(input.secret)
-  const config = input.kind === 'smtp' ? { ...input.config, host: input.config.host.toLowerCase() } : input.config
+  const config = input.kind === 'smtp'
+    ? { ...input.config, host: input.config.host.toLowerCase() }
+    : input.kind === 'mailgun'
+      ? { ...input.config, domain: input.config.domain.toLowerCase() }
+      : input.config
   await db`
     insert into mail_connectors (
       id, kind, label, config_json, secret_ciphertext, secret_iv, key_fingerprint,

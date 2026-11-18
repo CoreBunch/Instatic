@@ -28,7 +28,7 @@ docs/
 │   ├── auth-and-access.md          ← sessions, MFA, capabilities, roles
 │   ├── site-shell.md               ← site config (breakpoints, classes, files, deps)
 │   ├── dependencies.md             ← Dependencies panel: registry proxy, install/remove, lock
-│   ├── email.md                    ← Email workspace: connectors (SMTP, SES), defaults, templates, activity
+│   ├── email.md                    ← Email workspace: connectors (one-key providers, SES, SMTP), defaults, templates, activity
 │   ├── members.md                  ← Site members: accounts, sessions, public endpoints, security rules
 │   ├── modules.md                  ← module engine + first-party blocks
 │   ├── data-workspace.md           ← Data workspace: table schema + field management UI

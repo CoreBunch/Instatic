@@ -22,7 +22,7 @@ import { dirname, join } from 'node:path'
 import { once } from 'node:events'
 import { tmpdir } from 'node:os'
 import type { DbClient } from '../../db/client'
-import { requireCapability } from '../../auth/authz'
+import { requireCapability, userHasCapability } from '../../auth/authz'
 import { jsonResponse, badRequest } from '../../http'
 import { importMediaAsset, assignAssetToFolders } from '../../repositories/media'
 import { parseValue, formatValueErrors, compiled } from '@core/utils/typeboxHelpers'
@@ -48,6 +48,8 @@ import { CMS_API_PREFIX, type CmsHandlerOptions } from './shared'
 import type { BranchScope } from '../../branches/scope'
 import {
   authorizeImportedShell,
+  authorizeImportedTableAccess,
+  recordImportedTableAccess,
   authorizeImportedPublication,
   validateImportedPublication,
   authorizeImportStrategy,
@@ -110,6 +112,9 @@ export async function handleImportArchiveRoute(
   const shellDenied = authorizeImportedShell(user, selectedManifest.site !== undefined)
   if (shellDenied) return shellDenied
 
+  const tableAccessDenied = await authorizeImportedTableAccess(req, db, user, selectedManifest)
+  if (tableAccessDenied) return tableAccessDenied
+
   const publicationInvalid = validateImportedPublication(siteBundleWithoutMediaBytes(selectedManifest))
   if (publicationInvalid) return publicationInvalid
   const publicationDenied = await authorizeImportedPublication(req, db, user, siteBundleWithoutMediaBytes(selectedManifest))
@@ -133,11 +138,13 @@ export async function handleImportArchiveRoute(
       bundle: siteBundleWithoutMediaBytes(selectedManifest),
       strategy,
       carriesMedia: selectedManifest.media !== undefined,
+      mayChangePageAccess: userHasCapability(user, 'site.structure.edit'),
       runtimeFiles: stagedMedia?.runtimeFiles,
       uploadsDir: options.uploadsDir,
     })
     // After commit, before staged media moves in: a bundle file at a deleted
     // asset's storage path must land after the old bytes are removed.
+    await recordImportedTableAccess(req, db, user, applied.tableAccessAdded)
     await removeDeletedMediaFiles(applied.deletedMedia)
 
     let mediaImported = 0

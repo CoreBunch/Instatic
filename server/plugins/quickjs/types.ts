@@ -85,4 +85,5 @@ interface VmRouteContext {
    */
   body: Record<string, unknown>
   user: { id: string; email: string; capabilities: string[] } | null
+  member: { id: string; email: string; tags: string[]; profile: Record<string, string | boolean> } | null
 }
