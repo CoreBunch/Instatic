@@ -8,9 +8,11 @@
  * globally-routable public unicast address, and PINS the connection to the
  * exact IP it validated, so a DNS rebinding between check and connect cannot
  * swing the socket to an internal target. It re-validates and re-pins every
- * redirect hop and caps the chain. The hostname is preserved in the `Host`
- * header and, for https, the TLS `serverName`, so virtual hosting and
- * certificate validation still work.
+ * redirect hop and caps the chain. A hop to another origin drops the request's
+ * credential headers, and a caller can ask for the redirect response itself
+ * (`redirect: 'manual'`), in which case the target is never contacted. The
+ * hostname is preserved in the `Host` header and, for https, the TLS
+ * `serverName`, so virtual hosting and certificate validation still work.
  *
  * `performGatedFetch` wraps it with the plugin-specific parts: the
  * `networkAllowedHosts` allowlist, VM-side abort wiring, and the byte-safe
@@ -32,6 +34,8 @@ export interface SerializedNetworkResponse {
   status: number
   ok: boolean
   headers: Record<string, string>
+  /** True when the host followed at least one redirect to produce this response. */
+  redirected: boolean
   /** Response body — text verbatim for `bodyEncoding: 'utf8'`, base64 bytes otherwise. */
   body: string
   bodyEncoding: BodyEncoding
@@ -188,6 +192,24 @@ function withoutBodyHeaders(headers: Record<string, string> | undefined): Record
   return next
 }
 
+/** Request headers that carry credentials for the origin they were written for. */
+const CREDENTIAL_HEADERS = new Set(['authorization', 'cookie', 'proxy-authorization'])
+
+/**
+ * Drop credential headers when a redirect leaves the origin the caller
+ * addressed, as the Fetch standard does: a token meant for one host must not
+ * ride along to wherever that host points next.
+ */
+function withoutCredentialHeaders(headers: Record<string, string> | undefined): Record<string, string> | undefined {
+  if (!headers) return headers
+  const next: Record<string, string> = {}
+  for (const [k, v] of Object.entries(headers)) {
+    if (CREDENTIAL_HEADERS.has(k.toLowerCase())) continue
+    next[k] = v
+  }
+  return next
+}
+
 /** Replace any host header with `host`, so the pinned request keeps the original hostname. */
 function withHostHeader(headers: Record<string, string> | undefined, host: string): Record<string, string> {
   const next: Record<string, string> = {}
@@ -226,6 +248,14 @@ function buildPinnedRequest(
   return { url, headers: nextHeaders, tls }
 }
 
+export type RedirectMode = 'follow' | 'manual' | 'error'
+
+/** A fetched response, plus whether a redirect was followed to reach it. */
+interface GuardedFetchResult {
+  response: Response
+  redirected: boolean
+}
+
 /** Options for the shared SSRF-safe fetch. */
 export interface GuardedFetchOptions {
   /**
@@ -238,6 +268,14 @@ export interface GuardedFetchOptions {
   fetchImpl?: typeof fetch
   signal?: AbortSignal
   maxRedirects?: number
+  /**
+   * What to do with a redirect response. `follow` (default) validates and
+   * follows each hop; a redirect status with no `Location` is returned as it
+   * is. `manual` returns the redirect response itself, without its body: the
+   * `Location` target is never resolved or contacted, so it need not pass the
+   * allowlist. `error` rejects on any redirect status.
+   */
+  redirect?: RedirectMode
   /** Require HTTPS on the initial URL and every redirect hop. */
   requireHttps?: boolean
   /** Prefix for error messages, e.g. a plugin id or `Media migration`. */
@@ -254,9 +292,19 @@ export async function guardedFetch(
   init: { method?: string; headers?: Record<string, string>; body?: string | Uint8Array<ArrayBuffer> },
   opts: GuardedFetchOptions = {},
 ): Promise<Response> {
+  return (await guardedFetchWithTrace(urlString, init, opts)).response
+}
+
+/** `guardedFetch`, also reporting whether a redirect was followed. */
+async function guardedFetchWithTrace(
+  urlString: string,
+  init: { method?: string; headers?: Record<string, string>; body?: string | Uint8Array<ArrayBuffer> },
+  opts: GuardedFetchOptions = {},
+): Promise<GuardedFetchResult> {
   const resolveHost = opts.resolveHost ?? defaultResolveHost
   const fetchImpl = opts.fetchImpl ?? fetch
   const maxRedirects = opts.maxRedirects ?? MAX_REDIRECTS
+  const redirectMode = opts.redirect ?? 'follow'
   const label = opts.label ?? 'Outbound'
 
   let currentUrl = urlString
@@ -290,7 +338,26 @@ export async function guardedFetch(
     const response = await fetchImpl(request.url, fetchInit)
 
     const location = response.headers.get('location')
-    if (REDIRECT_STATUSES.has(response.status) && location) {
+    const isRedirect = REDIRECT_STATUSES.has(response.status)
+    // `error` and `manual` act on the status alone: a redirect with no usable
+    // `Location` is still a redirect to the caller that asked not to follow.
+    if (isRedirect && redirectMode === 'error') {
+      await response.body?.cancel()
+      throw new Error(`${label} fetch to "${parsed.host}" was redirected, and the request asked for redirect: 'error'.`)
+    }
+    if (isRedirect && redirectMode === 'manual') {
+      // The caller wants the redirect itself. Nothing below runs, so the
+      // `Location` target is never resolved, validated or contacted. A
+      // redirect's body is never read: it is dropped, not buffered.
+      await response.body?.cancel()
+      const bodiless = new Response(null, {
+        status: response.status,
+        statusText: response.statusText,
+        headers: response.headers,
+      })
+      return { response: bodiless, redirected: hop > 0 }
+    }
+    if (isRedirect && location) {
       if (hop >= maxRedirects) {
         throw new Error(`${label} fetch exceeded ${maxRedirects} redirects.`)
       }
@@ -308,11 +375,14 @@ export async function guardedFetch(
         body = undefined
         headers = withoutBodyHeaders(headers)
       }
+      // Leaving the origin: the credentials stay behind, for this hop and
+      // every later one (a hop back does not get them again).
+      if (next.origin !== parsed.origin) headers = withoutCredentialHeaders(headers)
       currentUrl = next.toString()
       continue
     }
 
-    return response
+    return { response, redirected: hop > 0 }
   }
 }
 
@@ -325,6 +395,7 @@ export async function performGatedFetch(
     body?: string
     bodyEncoding?: BodyEncoding
     abortId?: string
+    redirect?: RedirectMode
   },
   deps: GatedFetchDeps = {},
 ): Promise<SerializedNetworkResponse> {
@@ -348,12 +419,13 @@ export async function performGatedFetch(
       : init.body
 
   try {
-    const response = await guardedFetch(
+    const { response, redirected } = await guardedFetchWithTrace(
       urlString,
       { method: init.method, headers: init.headers, body },
       {
         // Fail-closed: an empty allowlist denies all outbound.
         allowlist: manifest.networkAllowedHosts ?? [],
+        redirect: init.redirect,
         resolveHost: deps.resolveHostAddresses,
         fetchImpl: deps.fetchImpl,
         signal: controller.signal,
@@ -370,6 +442,7 @@ export async function performGatedFetch(
       status: response.status,
       ok: response.ok,
       headers: respHeaders,
+      redirected,
       ...encodeBodyBytes(bytes),
     }
   } finally {

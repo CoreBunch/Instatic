@@ -17,11 +17,18 @@ import {
   permissionLabel as sdkPermissionLabel,
 } from '@core/plugin-sdk'
 import { collectEnabledAdminPages, pluginAdminPageRoute } from './manifestAdminPages'
+import { assertFrontendCoherent, frontendDeclarations, frontendSchema } from './manifestFrontend'
+import { SAFE_ASSET_PATH_PATTERN } from './manifestPatterns'
 
 // Admin-page route helpers and resource-record helpers live in sibling
 // modules (responsibility split); re-exported here so
 // `@core/plugins/manifest` stays the public surface.
 export { collectEnabledAdminPages, pluginAdminPageRoute }
+export {
+  externalFrontendScriptHost,
+  frontendOriginAllowsHost,
+  isExternalFrontendScriptSrc,
+} from './manifestFrontend'
 export { findPluginResource, validatePluginRecordData } from './resourceRecords'
 
 const PLUGIN_ID_PATTERN = /^[a-z][a-z0-9-]*(?:\.[a-z][a-z0-9-]*)+$/
@@ -38,7 +45,6 @@ const MANIFEST_SLUG_PATTERN = /^[a-z][a-z0-9-]*$/
  */
 const RESOURCE_FIELD_ID_PATTERN = /^[a-zA-Z_][a-zA-Z0-9_-]*$/
 const SEMVERISH_PATTERN = /^\d+\.\d+\.\d+(?:[-+][0-9a-zA-Z.-]+)?$/
-const SAFE_ASSET_PATH_PATTERN = /^(?!\/)(?!.*(?:^|\/)\.\.(?:\/|$))[a-zA-Z0-9._/-]+$/
 // `assetBasePath` is server-controlled. The only legitimate shape is
 // `/uploads/plugins/{pluginId}/{version}` (optionally trailing `/`),
 // produced by `writePluginPackageFiles` on zip install. Any other shape
@@ -226,28 +232,6 @@ const authorSchema = Type.Object({
   url: Type.Optional(Type.String({ pattern: URL_PATTERN.source, maxLength: 500 })),
 })
 
-// ---------------------------------------------------------------------------
-// Frontend assets — shared schemas referenced by the manifest below.
-// ---------------------------------------------------------------------------
-
-const FrontendAssetPlacementSchema = Type.Union([
-  Type.Literal('head'),
-  Type.Literal('head-end'),
-  Type.Literal('body-start'),
-  Type.Literal('body-end'),
-])
-
-// HTML attribute name: lowercase letters / digits / dashes / colon / underscore.
-// Restricts what plugins can spell so a malformed declaration can't smuggle
-// in arbitrary HTML by setting an attribute named `>`. Values are
-// HTML-escaped at render time.
-const FRONTEND_ATTR_NAME_PATTERN = /^[a-zA-Z][a-zA-Z0-9_:-]*$/
-
-const FrontendAssetAttrsSchema = Type.Record(
-  Type.String({ pattern: FRONTEND_ATTR_NAME_PATTERN.source, maxLength: 64 }),
-  Type.String({ maxLength: 4096 }),
-)
-
 const manifestSchema = Type.Object({
   id: Type.String({ pattern: PLUGIN_ID_PATTERN.source }),
   name: Type.String({ minLength: 1, maxLength: 80 }),
@@ -302,61 +286,8 @@ const manifestSchema = Type.Object({
     admin: Type.Optional(Type.String({ pattern: SAFE_ASSET_PATH_PATTERN.source })),
     modules: Type.Optional(Type.String({ pattern: SAFE_ASSET_PATH_PATTERN.source })),
   })),
-  /**
-   * Declarative frontend tag list — scripts, styles, meta, link, and shared
-   * host-runtime references the host injects into every published page on
-   * behalf of this plugin. Validated structurally here; the host's frontend
-   * injection pipeline reads the array at publish time and emits the actual
-   * tags. Requires the `frontend.assets` permission (coherence checked
-   * downstream in `assertFrontendAssetsCoherent`).
-   */
-  frontend: Type.Optional(Type.Object({
-    assets: Type.Array(
-      Type.Union([
-        Type.Object({
-          kind: Type.Literal('script'),
-          src: Type.String({ pattern: SAFE_ASSET_PATH_PATTERN.source }),
-          placement: Type.Optional(FrontendAssetPlacementSchema),
-          strategy: Type.Optional(Type.Union([
-            Type.Literal('defer'),
-            Type.Literal('async'),
-            Type.Literal('module'),
-            Type.Literal('sync'),
-          ])),
-          attrs: Type.Optional(FrontendAssetAttrsSchema),
-        }, { additionalProperties: false }),
-        Type.Object({
-          kind: Type.Literal('script-inline'),
-          content: Type.String({ minLength: 1, maxLength: 64 * 1024 }),
-          placement: Type.Optional(FrontendAssetPlacementSchema),
-          attrs: Type.Optional(FrontendAssetAttrsSchema),
-        }, { additionalProperties: false }),
-        Type.Object({
-          kind: Type.Literal('style'),
-          href: Type.String({ pattern: SAFE_ASSET_PATH_PATTERN.source }),
-          placement: Type.Optional(FrontendAssetPlacementSchema),
-          attrs: Type.Optional(FrontendAssetAttrsSchema),
-        }, { additionalProperties: false }),
-        Type.Object({
-          kind: Type.Literal('style-inline'),
-          content: Type.String({ minLength: 1, maxLength: 64 * 1024 }),
-          placement: Type.Optional(FrontendAssetPlacementSchema),
-          attrs: Type.Optional(FrontendAssetAttrsSchema),
-        }, { additionalProperties: false }),
-        Type.Object({
-          kind: Type.Literal('link'),
-          attrs: FrontendAssetAttrsSchema,
-          placement: Type.Optional(FrontendAssetPlacementSchema),
-        }, { additionalProperties: false }),
-        Type.Object({
-          kind: Type.Literal('meta'),
-          attrs: FrontendAssetAttrsSchema,
-          placement: Type.Optional(FrontendAssetPlacementSchema),
-        }, { additionalProperties: false }),
-      ]),
-      { maxItems: 50 },
-    ),
-  })),
+  // Published-page tags and third-party origins: see `./manifestFrontend`.
+  frontend: Type.Optional(frontendSchema),
   assetBasePath: Type.Optional(Type.String({ pattern: ASSET_BASE_PATH_PATTERN.source })),
   resources: Type.Array(resourceSchema, { maxItems: 20, default: [] }),
   adminPages: Type.Array(adminPageSchema, { maxItems: 20, default: [] }),
@@ -531,32 +462,7 @@ export function parsePluginManifest(input: unknown): PluginManifest {
   // `frontend.assets` permission. Allowing the array without the permission
   // would silently inject tags onto every published page with no consent
   // screen ever showing the grant.
-  if (data.frontend && data.frontend.assets.length > 0) {
-    if (!data.permissions.includes('frontend.assets')) {
-      throw new Error(
-        `Invalid plugin manifest: \`frontend.assets\` is non-empty but the ` +
-        `\`frontend.assets\` permission is not requested.`,
-      )
-    }
-    for (const asset of data.frontend.assets) {
-      // `attrs` is allowed to be missing (TypeBox enforces the shape we
-      // accept), but `script-inline` / `style-inline` must declare *some*
-      // content — schema covers that too.
-      if (asset.kind === 'link' && !asset.attrs.rel && !asset.attrs.href) {
-        throw new Error(
-          `Invalid plugin manifest: \`frontend.assets\` <link> declaration ` +
-          `must include at least \`rel\` or \`href\`.`,
-        )
-      }
-      if (asset.kind === 'meta' && !asset.attrs.name && !asset.attrs.property
-          && !asset.attrs.charset && !asset.attrs['http-equiv']) {
-        throw new Error(
-          `Invalid plugin manifest: \`frontend.assets\` <meta> declaration ` +
-          `must include \`name\`, \`property\`, \`charset\`, or \`http-equiv\`.`,
-        )
-      }
-    }
-  }
+  if (data.frontend) assertFrontendCoherent(data.frontend, data.permissions)
 
   // Content access coherence — required when any `cms.content.*` permission
   // is granted; each mode in `modes[]` requires the matching permission.
@@ -665,9 +571,7 @@ export function parsePluginManifest(input: unknown): PluginManifest {
     resources,
     adminPages,
     pack: data.pack,
-    frontend: data.frontend
-      ? { assets: data.frontend.assets.map((asset) => ({ ...asset })) } as PluginManifest['frontend']
-      : undefined,
+    frontend: data.frontend ? frontendDeclarations(data.frontend) : undefined,
     settings: data.settings,
     author: data.author,
     license: data.license,

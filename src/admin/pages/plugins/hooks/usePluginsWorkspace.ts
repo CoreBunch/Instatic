@@ -20,6 +20,7 @@ import type {
   CmsPluginsPayload,
   InstalledPlugin,
   PluginManifest,
+  PluginFrontendOrigins,
   PluginPermission,
 } from '@core/plugin-sdk'
 import { requestCmsSiteReload } from '@admin/state/adminEvents'
@@ -61,6 +62,8 @@ interface PendingInstall {
    * value so an upgrade adding new external hosts shows them as "New".
    */
   previousNetworkAllowedHosts?: string[]
+  /** `frontend.origins` from the existing install, diffed the same way. */
+  previousFrontendOrigins?: PluginFrontendOrigins
 }
 
 /**
@@ -317,6 +320,7 @@ export function usePluginsWorkspace(): PluginsWorkspaceVM {
         ? existing.grantedPermissions
         : undefined
       const previousNetworkAllowedHosts = existing?.manifest.networkAllowedHosts
+      const previousFrontendOrigins = existing?.manifest.frontend?.origins
 
       // EVERY install and upgrade goes through the review dialog — including
       // a zero-permission declarative plugin, which renders "No permissions
@@ -330,6 +334,7 @@ export function usePluginsWorkspace(): PluginsWorkspaceVM {
         ...(previousNetworkAllowedHosts !== undefined
           ? { previousNetworkAllowedHosts }
           : {}),
+        ...(previousFrontendOrigins !== undefined ? { previousFrontendOrigins } : {}),
       })
     } catch (err) {
       setError(getErrorMessage(err, 'Could not install plugin'))
