@@ -11,7 +11,8 @@
  * carry a secret value (a member's single-use link) somewhere else. The body
  * is rendered from Markdown to HTML with the variables still in place,
  * sanitized to the few elements an email needs, and the rules are then
- * applied to that parsed tree, never to markup as text: see `fillTree`.
+ * applied to that parsed tree, never to markup as text: see `readTree`.
+ * The plain-text part and the HTML part are read off that one tree.
  */
 import { escapeHtml, isSafeUrl } from '@core/publisher'
 import { renderMarkdownToHtml } from '@core/markdown/renderMarkdown'
@@ -89,6 +90,12 @@ export interface RenderedMail {
   subject: string
   text: string
   html: string
+  /**
+   * Variables that have a value but were left as written, because the
+   * template puts them where they do not stand alone (see `standsAlone`).
+   * The admin preview names them.
+   */
+  refused: string[]
 }
 
 /** A value on one line, so it can never break out of a header or a subject. */
@@ -96,34 +103,86 @@ function singleLine(value: string): string {
   return value.replace(/[\r\n]+/g, ' ').trim()
 }
 
-/** What makes a run of characters read as an address to a mail client that links plain text. */
-const ADDRESS_LIKE = /:\/\/|www\.|@/i
+/** Marks, in text being assembled, where a value that must stand alone was put. Never in a template or a value. */
+const VALUE_OPEN = '\uE000'
+const VALUE_CLOSE = '\uE001'
+const MARKS = /[\uE000\uE001]/g
+
+const ASCII_SPACE = /[ \t\n\r\f]/
+
+/**
+ * Whether `text[start, end)` stands alone: within its run of non-space
+ * characters there is nothing but opening punctuation before it and closing
+ * punctuation after it.
+ *
+ * Mail clients turn an address in plain text into a link by themselves, and
+ * they decide where it starts and ends. A value written into one
+ * (`https://elsewhere.example/?t={link}`, `elsewhere.example/{link}`,
+ * `user@{link}`) would hand a member's single-use link to another server as
+ * surely as an `href` would. Rather than guess what a client takes for an
+ * address, a value is only ever put where nothing touches it. Only ASCII
+ * whitespace separates: a zero-width or other exotic space does not.
+ */
+function standsAlone(text: string, start: number, end: number): boolean {
+  let from = start
+  let to = end
+  while (from > 0 && !ASCII_SPACE.test(text[from - 1])) from -= 1
+  while (to < text.length && !ASCII_SPACE.test(text[to])) to += 1
+  return /^[("']*$/.test(text.slice(from, start)) && /^[.,;:!?)"']*$/.test(text.slice(end, to))
+}
+
+/** How values are put into one template: for whom the stand-alone rule holds, and what it turned away. */
+interface Filling {
+  variables: MailVariables
+  /** A plugin's template: every value must stand alone, not only an address. */
+  strict: boolean
+  refused: Set<string>
+}
+
+/**
+ * Whether a variable's value may only be put where it stands alone: a value
+ * that is an address (a link), and in a plugin's template every value. The
+ * site's own name and address are public and exempt.
+ */
+function mustStandAlone(name: string, value: string, strict: boolean): boolean {
+  if (name.startsWith('site.')) return false
+  return strict || /^\s*[a-z][a-z0-9+.-]*:|:\/\/|^\s*www\./i.test(value)
+}
 
 /**
  * Put values into text. `flat` is the text `source` is a part of, starting
- * at `offset` in it (the whole of it, for a subject).
- *
- * A variable that is written into an address (`https://elsewhere.example/?t={link}`,
- * with no space between) is left as written: mail clients turn an address
- * in plain text into a link, so that shape would hand a member's
- * single-use link to another server as surely as an `href` would.
+ * at `offset` in it (the whole of it, for a subject). A value that must
+ * stand alone and does not is left as written; one that does is wrapped in
+ * marks so the finished text can be checked again.
  */
-function fill(
-  source: string,
-  variables: MailVariables,
-  map: (value: string) => string,
-  flat: string = source,
-  offset = 0,
-): string {
+function fill(source: string, filling: Filling, flat: string = source, offset = 0): string {
   return source.replace(VARIABLE, (whole, name: string, at: number) => {
-    if (!(name in variables)) return whole
-    let start = offset + at
-    let end = start + whole.length
-    while (start > 0 && !/\s/.test(flat[start - 1])) start -= 1
-    while (end < flat.length && !/\s/.test(flat[end])) end += 1
-    const around = flat.slice(start, end).replace(VARIABLE, '')
-    return ADDRESS_LIKE.test(around) ? whole : map(variables[name])
+    if (!(name in filling.variables)) return whole
+    const value = filling.variables[name].replace(MARKS, '')
+    if (!mustStandAlone(name, value, filling.strict)) return value
+    const start = offset + at
+    if (!standsAlone(flat, start, start + whole.length)) {
+      filling.refused.add(name)
+      return whole
+    }
+    return `${VALUE_OPEN}${value}${VALUE_CLOSE}`
   })
+}
+
+/**
+ * The last word on a finished text: every marked value stands alone in it.
+ * `fill` decided the same on the template; this reads what will be sent.
+ */
+function unmark(text: string): string {
+  let at = text.indexOf(VALUE_OPEN)
+  while (at >= 0) {
+    const close = text.indexOf(VALUE_CLOSE, at)
+    if (close < 0 || !standsAlone(text, at, close + 1)) {
+      throw new Error('An email template puts a link where it would become part of another address')
+    }
+    at = text.indexOf(VALUE_OPEN, close)
+  }
+  return text.replace(MARKS, '')
 }
 
 /** Every `{name}` in a subject or body that is not one of `known`. */
@@ -207,36 +266,37 @@ function resolveAddress(raw: string, variables: MailVariables, strict: boolean, 
 
 /** Elements that do not end a line: text on both sides of one reads as one run. */
 const INLINE_TAGS = new Set(['a', 'b', 'strong', 'em', 'i', 'del', 's', 'code'])
+const BLOCK_TAGS = new Set(['p', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'blockquote', 'pre', 'ul', 'ol', 'table', 'hr'])
 
-interface TextRun {
-  node: ChildNode
-  /** Where this node's text starts in the body's text read as one string. */
-  start: number
+/** One stretch of the plain-text body: a text node of the tree, or something the text part adds. */
+interface Piece {
+  text: string
+  /** The text node this stretch is, when it is one. */
+  node?: ChildNode
 }
 
 /**
- * Put values into the parsed, sanitized body.
+ * Apply the address rule to every attribute of the parsed, sanitized body
+ * and read the body off as the pieces of its plain text, values not yet in.
  *
- * Values go into text nodes, where they are text whatever they contain, and
- * into the one kind of attribute `resolveAddress` vouches for: the address
- * of a link (`a[href]`) or an image (`img[src]`). Every other attribute
- * that holds a `{` is removed, so there is no attribute a template can use
- * to carry a value anywhere. The tree is the one the sanitizer parsed, so
- * quoting, entities, case and whitespace in the template's markup have
- * already been read the only way they will ever be read.
+ * An `href` or `src` gets the address `resolveAddress` vouches for; every
+ * other attribute that holds a `{` is removed, so there is no attribute a
+ * template can use to carry a value anywhere. The tree is the one the
+ * sanitizer parsed, so quoting, entities, case and whitespace in the
+ * template's markup have already been read the only way they will be.
  *
- * Text is filled against the body read as one string, so an address split
- * across inline elements (`https://elsewhere.example/?t=<b>{link}</b>`) is
- * still seen as one address (see `fill`).
+ * The pieces are the plain-text part in full: the text nodes, the line
+ * breaks between blocks, an image's alternative text, and a link's address
+ * after its words. Values are put into this one string (`fillPieces`), and
+ * the HTML's text nodes are the same pieces, so the two parts of an email
+ * cannot disagree about what a value stands next to.
  */
-function fillTree(root: ParentNode, variables: MailVariables, strict: boolean): void {
-  const runs: TextRun[] = []
-  let flat = ''
+function readTree(root: ParentNode, filling: Filling): Piece[] {
+  const pieces: Piece[] = []
   const visit = (parent: ParentNode): void => {
     for (const node of Array.from(parent.childNodes)) {
       if (node.nodeType === TEXT_NODE) {
-        runs.push({ node, start: flat.length })
-        flat += node.textContent ?? ''
+        pieces.push({ text: (node.textContent ?? '').replace(MARKS, ''), node })
         continue
       }
       if (node.nodeType !== ELEMENT_NODE) {
@@ -245,56 +305,50 @@ function fillTree(root: ParentNode, variables: MailVariables, strict: boolean): 
       }
       const element = node as Element
       const tag = element.tagName.toLowerCase()
+      /** The link's address as the text part shows it: the variable it is, or the address written out. */
+      let shown = ''
       for (const attribute of Array.from(element.attributes)) {
         const name = attribute.name.toLowerCase()
         if ((tag === 'a' && name === 'href') || (tag === 'img' && name === 'src')) {
-          element.setAttribute(attribute.name, resolveAddress(attribute.value, variables, strict, tag === 'a'))
+          const written = attribute.value.trim()
+          const resolved = resolveAddress(written, filling.variables, filling.strict, tag === 'a')
+          element.setAttribute(attribute.name, resolved)
+          if (tag === 'a' && resolved !== '#') shown = written.includes('{') ? written : resolved
         } else if (attribute.value.includes('{')) {
           element.removeAttribute(attribute.name)
         }
       }
       const inline = INLINE_TAGS.has(tag)
-      if (!inline) flat += ' '
+      if (tag === 'br') pieces.push({ text: '\n' })
+      else if (tag === 'img') pieces.push({ text: ` ${(element.getAttribute('alt') ?? '').replace(MARKS, '')} ` })
+      else if (tag === 'li') pieces.push({ text: '\n- ' })
+      else if (!inline) pieces.push({ text: '\n' })
+      const before = pieces.length
       visit(element)
-      if (!inline) flat += ' '
+      if (tag === 'a' && shown) {
+        const words = pieces.slice(before).map((piece) => piece.text).join('').trim()
+        if (words !== shown) pieces.push({ text: ` (${shown})` })
+      } else if (tag === 'th' || tag === 'td') pieces.push({ text: '  ' })
+      else if (BLOCK_TAGS.has(tag)) pieces.push({ text: '\n\n' })
+      else if (!inline) pieces.push({ text: '\n' })
     }
   }
   visit(root)
-  for (const { node, start } of runs) {
-    node.textContent = fill(node.textContent ?? '', variables, (value) => value, flat, start)
-  }
+  return pieces
 }
 
-const BLOCK_TAGS = new Set(['p', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'blockquote', 'pre', 'ul', 'ol', 'table', 'hr'])
-
-/**
- * The plain-text body, read off the same filled tree as the HTML one, so
- * the two say the same thing and an address the HTML part refused is not in
- * the text part either. A link is its words followed by its address.
- */
-function treeText(root: ParentNode): string {
+/** Put the values into the pieces, write them back to the tree's text nodes, and return the plain text. */
+function fillPieces(pieces: Piece[], filling: Filling): string {
+  const flat = pieces.map((piece) => piece.text).join('')
+  let offset = 0
   let text = ''
-  for (const node of Array.from(root.childNodes)) {
-    if (node.nodeType === TEXT_NODE) {
-      text += node.textContent ?? ''
-      continue
-    }
-    if (node.nodeType !== ELEMENT_NODE) continue
-    const element = node as Element
-    const tag = element.tagName.toLowerCase()
-    const inner = treeText(element)
-    if (tag === 'br') text += '\n'
-    else if (tag === 'img') text += element.getAttribute('alt') ?? ''
-    else if (tag === 'a') {
-      const href = element.getAttribute('href') ?? ''
-      text += href && href !== '#' && href !== inner.trim() ? `${inner} (${href})` : inner
-    } else if (tag === 'li') text += `- ${inner.trim()}\n`
-    else if (tag === 'tr') text += `${inner.trim()}\n`
-    else if (tag === 'th' || tag === 'td') text += `${inner.trim()}  `
-    else if (BLOCK_TAGS.has(tag)) text += `${inner.trim()}\n\n`
-    else text += inner
+  for (const piece of pieces) {
+    const filled = fill(piece.text, filling, flat, offset)
+    offset += piece.text.length
+    text += filled
+    if (piece.node) piece.node.textContent = filled.replace(MARKS, '')
   }
-  return text
+  return unmark(text)
 }
 
 const LAYOUT_STYLE = {
@@ -333,19 +387,21 @@ export function renderMailTemplate(
 ): RenderedMail {
   const siteName = variables['site.name'] ?? ''
   const strict = isPluginMailTemplateKey(template.key)
+  const filling: Filling = { variables, strict, refused: new Set() }
   const body = sanitizeToFragment(
     renderMarkdownToHtml(template.body),
     strict ? PLUGIN_MAIL_BODY_CONFIG : MAIL_BODY_CONFIG,
   )
   // No parser, no email: the rules above are only as good as the tree they run on.
   if (!body) throw new Error('An email cannot be rendered without an HTML parser')
-  fillTree(body, variables, strict)
+  const text = fillPieces(readTree(body, filling), filling)
   const holder = body.ownerDocument.createElement('div')
   holder.appendChild(body)
   return {
-    subject: singleLine(fill(template.subject, variables, singleLine)),
-    text: treeText(holder).replace(/\n{3,}/g, '\n\n').trim(),
+    subject: singleLine(unmark(fill(singleLine(template.subject), filling))),
+    text: text.replace(/[ \t]+\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim(),
     html: wrapInLayout(holder.innerHTML, siteName),
+    refused: [...filling.refused],
   }
 }
 

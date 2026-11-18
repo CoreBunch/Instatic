@@ -319,6 +319,12 @@ function TemplateEditor({
           this email and will be sent as written.
         </p>
       )}
+      {preview.refused.length > 0 && (
+        <p className={styles.warning} role="status">
+          {preview.refused.map((name) => `{${name}}`).join(', ')} will be sent as written: put a space or punctuation
+          around {preview.refused.length === 1 ? 'it' : 'each'}, so the value cannot become part of another address.
+        </p>
+      )}
 
       {variableMenu && (
         <ContextMenu

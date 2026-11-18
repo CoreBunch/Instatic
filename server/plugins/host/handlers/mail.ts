@@ -19,7 +19,7 @@ import { MailLimitError } from '../../../mail/limits'
 import { MailNotConfiguredError } from '../../../mail/send'
 import { MailDeliveryError } from '../../../mail/smtpDriver'
 import { findMemberById } from '../../../members/repository'
-import { getInstalledPlugin } from '../../../repositories/plugins'
+import { ensurePluginInstallId, getPluginInstallId } from '../../../repositories/plugins'
 import type { ApiCallFor } from '../../protocol/apiCallSchema'
 import { replyApiOk } from '../apiReplies'
 import type { HostPluginRecord } from '../types'
@@ -58,6 +58,8 @@ async function queuePluginMail(db: DbClient, entry: HostPluginRecord, mail: Plug
       variables: mail.variables,
       source: entry.manifest.id,
       sourceLabel: entry.manifest.name,
+      // What becomes of this email is told to this install and no other.
+      installId: (await ensurePluginInstallId(db, entry.manifest.id)) ?? undefined,
       reference: mail.reference,
       memberId: mail.memberId,
     })
@@ -128,8 +130,9 @@ export function announcePluginMailOutcome(db: DbClient, outcome: QueuedMailOutco
 }
 
 async function deliverOutcome(db: DbClient, outcome: QueuedMailOutcome): Promise<void> {
-  const install = await currentInstall(db, outcome.source)
-  if (install === null || outcome.queuedAt < Date.parse(install)) return
+  // Ids, not clocks: the email carries the id of the install that queued it.
+  const install = await getPluginInstallId(db, outcome.source)
+  if (install === null || outcome.installId !== install) return
   const prefix = pluginMailTemplatePrefix(outcome.source)
   const payload = {
     template: outcome.kind.startsWith(prefix) ? outcome.kind.slice(prefix.length) : outcome.kind,
@@ -143,14 +146,8 @@ async function deliverOutcome(db: DbClient, outcome: QueuedMailOutcome): Promise
   else holdOutcome(outcome.source, { install, event, payload, heldAt: Date.now() })
 }
 
-/** What identifies one install of a plugin id: the moment its row was created. Null when it is not installed. */
-async function currentInstall(db: DbClient, pluginId: string): Promise<string | null> {
-  const installed = await getInstalledPlugin(db, pluginId)
-  return installed?.kind === 'ok' ? installed.plugin.installedAt : null
-}
-
 interface HeldOutcome {
-  /** The install the news is for (see `currentInstall`). */
+  /** The install the news is for (see `ensurePluginInstallId`). */
   install: string
   event: MailHookEvent
   payload: unknown
@@ -186,7 +183,7 @@ function emitOutcome(pluginId: string, event: MailHookEvent, payload: unknown): 
 /** The plugin has just subscribed to `event`: hand over what this install missed. */
 export async function deliverHeldMailOutcomes(db: DbClient, pluginId: string, event: string): Promise<void> {
   if (!heldOutcomes.has(pluginId)) return
-  const install = await currentInstall(db, pluginId)
+  const install = await getPluginInstallId(db, pluginId)
   const held = heldOutcomes.get(pluginId) ?? []
   const now = Date.now()
   // Anything held for another install of this id, or for too long, is dropped unheard.

@@ -864,6 +864,39 @@ describe('email for plugins', () => {
         'https://evil.example/?t=<b>{link}</b>',
         'https://evil.example/?t=**{link}**',
         '<code>https://evil.example/?t=</code>{link}',
+        // An address with no scheme, which clients link all the same.
+        'evil.example/{link}',
+        'evil.example?t={link}',
+        'Visit evil.example/?t={link}.',
+        'évil.example/{link}',
+        'xn--vil-9la.example/{link}',
+        'evil.example@{link}',
+        '{link}@evil.example',
+        '{link}.evil.example',
+        '{link}/../../evil',
+        '#{link}',
+        'evil.example/-{link}',
+        'evil.example/?a=1&t={link}',
+        'evil.example/%{link}',
+        // Spaces that are not spaces to a client.
+        'evil.example/?t=\u200b{link}',
+        'evil.example/?t=\u00a0{link}',
+        'evil.example/?t=\u2009{link}',
+        'evil.example/?t=\ufeff{link}',
+        'evil.example/?t=&#8203;{link}',
+        'evil.example/?t=&nbsp;{link}',
+        'evil.example&#47;{link}',
+        'evil.example/?t=&#x7b;link&#x7d;',
+        // What only the plain-text part adds: alternative text and a link's address.
+        '<img alt="evil.example/?t=" src="https://example.com/a.png">{link}',
+        '![evil.example/?t=](https://example.com/a.png){link}',
+        '{link}<img alt="/evil" src="https://example.com/a.png">',
+        '[evil.example/?t=](https://example.com/){link}',
+        '{link}[x](https://example.com/)',
+        '[x](https://evil.example/?t=){link}',
+        '[x]({link})/../evil',
+        'evil.example/?t=[x]({link})',
+        '[evil.example/?t={link}]({link})',
         // Markdown.
         '[x](https://evil.example/?t={link})',
         '[x](<https://evil.example/?t={link}>)',
@@ -874,16 +907,20 @@ describe('email for plugins', () => {
         '[a [b](https://evil.example/?t={link}) c]({link})',
         '![x](https://evil.example/?t={link})',
       ]
+      /** Every run of non-space characters that holds the secret holds nothing else but punctuation. */
+      const alone = (text: string) =>
+        text.split(/[ \t\n\r\f]+/).filter((run) => run.includes('single-use-secret'))
+          .every((run) => /^[("']*$/.test(run.slice(0, run.indexOf(SECRET))) && /^[.,;:!?)"']*$/.test(run.slice(run.indexOf(SECRET) + SECRET.length)))
       for (const templateKey of [key, CORE_KEY]) {
         for (const attempt of attempts) {
-          const rendered = renderMailTemplate({ key: templateKey, subject: 'S', body: attempt }, { 'site.name': 'Site', link: SECRET })
-          for (const part of [body(rendered.html), rendered.text]) {
-            // The secret may appear as its own address or as words; never beside the other host.
-            const leaked = part.split(/["'\s<>()]/).some((piece) => piece.includes('evil.example') && piece.includes('single-use-secret'))
-            expect({ attempt, templateKey, leaked }).toEqual({ attempt, templateKey, leaked: false })
-          }
-          // No attribute at all carries the secret except a link or image address that is exactly it.
-          const inAttributes = [...body(rendered.html).matchAll(/\s([a-z:-]+)="([^"]*)"/g)].filter((match) => match[2].includes('single-use-secret'))
+          const rendered = renderMailTemplate({ key: templateKey, subject: attempt.split('\n')[0], body: attempt }, { 'site.name': 'Site', link: SECRET })
+          const html = body(rendered.html)
+          // What a reader of the HTML part sees, block by block.
+          const seen = html.replace(/<\/(p|li|h\d|td|th|tr|blockquote|pre|div)>|<br>/g, ' ').replace(/<[^>]+>/g, '').replace(/&amp;/g, '&')
+          expect({ attempt, templateKey, html: alone(seen), text: alone(rendered.text), subject: alone(rendered.subject) })
+            .toEqual({ attempt, templateKey, html: true, text: true, subject: true })
+          // No attribute carries the secret except a link or image address that is exactly it.
+          const inAttributes = [...html.matchAll(/\s([a-z:-]+)="([^"]*)"/g)].filter((match) => match[2].includes('single-use-secret'))
           for (const match of inAttributes) {
             expect(['href', 'src']).toContain(match[1])
             expect(match[2].replace(/&amp;/g, '&')).toBe(SECRET)
@@ -899,9 +936,17 @@ describe('email for plugins', () => {
         expect(body(rendered.html)).toContain('href="https://site.example/reset?token=abc&amp;x=1"')
         expect(rendered.text).toBe(`Reset (${link})`)
       }
-      // Nor does a subject carry it to another host.
-      const subject = renderMailTemplate({ key, subject: 'See https://evil.example/?t={link}', body: 'x' }, { link }).subject
-      expect(subject).toBe('See https://evil.example/?t={link}')
+      // Punctuation around it is fine; that is how sentences are written.
+      const sentence = renderMailTemplate({ key, subject: 'S', body: 'Open ({link}), or "{link}". Then: {link}!' }, { link })
+      expect(sentence.text).toBe(`Open (${link}), or "${link}". Then: ${link}!`)
+      expect(sentence.refused).toEqual([])
+      // A refused variable is left as written and named, so the preview can say so.
+      const refused = renderMailTemplate({ key, subject: 'See evil.example/{link}', body: 'Ticket #{id}' }, { link, id: '7' })
+      expect(refused).toMatchObject({ subject: 'See evil.example/{link}', text: 'Ticket #{id}' })
+      expect(refused.refused.sort()).toEqual(['id', 'link'])
+      // The site's own templates may write a plain value into a word; only an address must stand alone.
+      expect(renderMailTemplate({ key: CORE_KEY, subject: 'S', body: 'Ticket #{id} at {site.url}/help' }, { id: '7', 'site.url': 'https://example.com' }).text)
+        .toBe('Ticket #7 at https://example.com/help')
       // A value is text in a text node, markup and all, and is not read again for more variables.
       const text = render('Hello {name}.', { name: '<b>{link}</b>', link })
       expect(text).toContain('Hello &lt;b&gt;{link}&lt;/b&gt;.')

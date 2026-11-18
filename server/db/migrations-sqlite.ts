@@ -1775,7 +1775,11 @@ export const sqliteMigrations: Migration[] = [
     // rather than an address, so the outcome can be reported without ever
     // handing the member's address back. `mail_outbox.source_label` is the
     // sending plugin's name at the time, so the log still says who sent an
-    // email after that plugin is gone.
+    // email after that plugin is gone. `installed_plugins.install_id` is a
+    // random id given to an install when it first sends email, stamped on
+    // each email it queues (`mail_queue.install_id`): what became of an email
+    // is told only to the install that queued it, never to a later install of
+    // the same plugin id.
     id: '035_plugin_mail',
     sql: `
       create table if not exists mail_counters (
@@ -1789,6 +1793,10 @@ export const sqliteMigrations: Migration[] = [
       alter table mail_queue add column member_id text;
 
       alter table mail_outbox add column source_label text;
+
+      alter table installed_plugins add column install_id text;
+
+      alter table mail_queue add column install_id text;
     `,
   },
 ]

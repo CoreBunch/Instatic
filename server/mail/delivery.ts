@@ -107,6 +107,8 @@ export interface QueueTemplateMailInput {
    * the address: a sender that was not given the address does not learn it.
    */
   memberId?: string
+  /** The sending plugin's install; its outcome is told to that install only. */
+  installId?: string
 }
 
 /**
@@ -137,8 +139,8 @@ export interface QueuedMailOutcome {
   /** The recipient exactly as the sender named it. */
   recipient: { member: string } | { address: string }
   reference: string | null
-  /** When the email was accepted. Milliseconds since the epoch. */
-  queuedAt: number
+  /** The install of the sending plugin that queued the email. */
+  installId: string | null
   status: 'sent' | 'failed'
   /** Why it failed, as a fixed code. Null for a sent email. */
   reason: MailFailureReason | null
@@ -162,7 +164,7 @@ function announceOutcome(db: DbClient, mail: QueuedMail, status: 'sent' | 'faile
       kind: mail.kind,
       recipient: mail.memberId !== null ? { member: mail.memberId } : { address: mail.to },
       reference: mail.reference,
-      queuedAt: mail.queuedAt,
+      installId: mail.installId,
       status,
       reason,
     })
@@ -233,6 +235,7 @@ export async function queueTemplateMail(
       source: input.source,
       reference: input.reference,
       memberId: input.memberId,
+      installId: input.installId,
     })
   })
   wakeMailQueue()

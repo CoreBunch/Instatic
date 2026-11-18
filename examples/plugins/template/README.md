@@ -154,7 +154,7 @@ await api.cms.mail.send({
 })
 ```
 
-The site owner can reword each template under Email → Templates. `send` resolves once the email is queued; listen for `mail.delivered` and `mail.failed` (with `cms.hooks`) to learn how it went. This is for transactional email to one recipient at a time, not newsletters. Templates are Markdown: raw HTML is stripped, images are not allowed, and links you write out must be `https`. The owner reads each template before installing, and again when an update changes one.
+The site owner can reword each template under Email → Templates. `send` resolves once the email is queued; listen for `mail.delivered` and `mail.failed` (with `cms.hooks`) to learn how it went. This is for transactional email to one recipient at a time, not newsletters. Templates are Markdown: raw HTML is stripped, images are not allowed, and links you write out must be `https`. Put a space or sentence punctuation around every variable (`Ticket {id}`, not `#{id}`), or use it as a whole link (`[Open]({link})`). The owner reads each template before installing, and again when an update changes one.
 
 ## Managed media ingestion
 

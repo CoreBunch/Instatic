@@ -65,7 +65,7 @@ interface QueueRow {
   attempts: number
   last_error: string | null
   deliver_before: Date | string
-  created_at: Date | string
+  install_id: string | null
 }
 
 export interface QueuedMail {
@@ -86,8 +86,8 @@ export interface QueuedMail {
   lastError: string | null
   /** After this moment the email is not sent any more. Milliseconds since the epoch. */
   deliverBefore: number
-  /** When it was accepted. Milliseconds since the epoch. */
-  queuedAt: number
+  /** The install of the sending plugin that queued it (see `ensurePluginInstallId`). Null for the core's email. */
+  installId: string | null
   payload: EncryptedSecret
 }
 
@@ -103,7 +103,7 @@ function toQueuedMail(row: QueueRow): QueuedMail {
     attempts: Number(row.attempts),
     lastError: row.last_error,
     deliverBefore: Date.parse(isoDate(row.deliver_before)),
-    queuedAt: Date.parse(isoDate(row.created_at)),
+    installId: row.install_id,
     payload: { ciphertext: row.payload_ciphertext, iv: row.payload_iv },
   }
 }
@@ -130,6 +130,8 @@ export interface EnqueueMailInput {
   reference?: string
   /** The site member the email is for, when the sender named one rather than an address. */
   memberId?: string
+  /** The sending plugin's install. */
+  installId?: string
 }
 
 export async function enqueueMail(db: DbClient, input: EnqueueMailInput): Promise<void> {
@@ -137,11 +139,11 @@ export async function enqueueMail(db: DbClient, input: EnqueueMailInput): Promis
   const now = nowIso()
   await db`
     insert into mail_queue (
-      id, outbox_id, kind, to_address, source, reference, member_id, lane,
+      id, outbox_id, kind, to_address, source, reference, member_id, install_id, lane,
       payload_ciphertext, payload_iv, attempts, next_attempt_at, deliver_before, created_at
     ) values (
       ${nanoid()}, ${input.outboxId}, ${input.kind}, ${input.to}, ${source}, ${input.reference ?? null},
-      ${input.memberId ?? null}, ${source === CORE_MAIL_SOURCE ? 0 : 1},
+      ${input.memberId ?? null}, ${input.installId ?? null}, ${source === CORE_MAIL_SOURCE ? 0 : 1},
       ${input.payload.ciphertext}, ${input.payload.iv}, 0, ${now},
       ${new Date(input.deliverBefore).toISOString()}, ${now}
     )
@@ -187,7 +189,7 @@ export async function releaseStaleMailClaims(db: DbClient, now: number): Promise
 }
 
 const QUEUE_COLUMNS = `id, outbox_id, kind, to_address, source, reference, member_id,
-  payload_ciphertext, payload_iv, attempts, last_error, deliver_before, created_at`
+  payload_ciphertext, payload_iv, attempts, last_error, deliver_before, install_id`
 
 function placeholder(db: DbClient, index: number): string {
   return db.dialect === 'postgres' ? `$${index}` : '?'
