@@ -1630,6 +1630,96 @@ describe('CMS plugin handlers', () => {
     clearPluginCrashCounter(id)
   })
 
+  // ─── Auto-respawn after a teardown: status follows the final outcome ──────
+
+  it('a failed re-activation unloads the plugin and sets error; a later successful recovery sets active', async () => {
+    const uploadsDir = await mkdtemp(join(tmpdir(), 'instatic-respawn-'))
+    const db = makeFakeDb()
+    const cookie = await createCookie(db)
+    const { handleWorkerCrash, isPluginRestarting, clearPluginCrashCounter } = await import(
+      '../../../server/plugins/host/crashRecovery'
+    )
+    const { findPluginRouteAccess } = await import('../../../server/plugins/host/rpc')
+    const { workers } = await import('../../../server/plugins/host/workerState')
+    const { writeFile } = await import('node:fs/promises')
+    const id = 'test.respawn'
+    const entry = join(uploadsDir, 'plugins', id, '1.0.0', 'server', 'index.js')
+    const working = `
+      export async function activate(api) {
+        api.cms.routes.public.get('/ping', async () => ({ ok: true }))
+      }
+    `
+    // Registers its route, then cannot finish activating.
+    const broken = `
+      export async function activate(api) {
+        api.cms.routes.public.get('/ping', async () => ({ ok: true }))
+        await new Promise((r) => setTimeout(r, 20))
+        throw new Error('cannot start')
+      }
+    `
+    async function untilSettled(): Promise<void> {
+      const giveUpAt = Date.now() + 20_000
+      await new Promise((res) => setTimeout(res, 20))
+      while (isPluginRestarting(id)) {
+        if (Date.now() > giveUpAt) throw new Error('recovery did not finish')
+        await new Promise((res) => setTimeout(res, 25))
+      }
+    }
+    try {
+      const formData = new FormData()
+      formData.set('file', pluginZip({
+        'plugin.json': JSON.stringify({
+          id,
+          name: 'Respawn Demo',
+          version: '1.0.0',
+          apiVersion: 1,
+          permissions: ['cms.routes', 'cms.routes.public'],
+          entrypoints: { server: 'server/index.js' },
+          resources: [],
+          adminPages: [],
+        }),
+        'server/index.js': working,
+      }))
+      formData.set('grantedPermissions', JSON.stringify(['cms.routes', 'cms.routes.public']))
+      const install = await handleCmsRequest(
+        cmsFormRequest('http://localhost/admin/api/cms/plugins/package', formData, { cookie }),
+        db,
+        { uploadsDir },
+      )
+      expect(install.status).toBe(201)
+      // What the server does at boot: load every installed plugin and
+      // register the recovery handler for this database.
+      const { activateInstalledServerPlugins } = await import('../../../server/plugins/runtime')
+      await activateInstalledServerPlugins(db, uploadsDir)
+      expect(findPluginRouteAccess(id, 'GET', '/ping')).not.toBeNull()
+
+      // The host restarts the worker; this time activation fails.
+      await writeFile(entry, broken)
+      handleWorkerCrash(id, 'route GET:/ping ran out of time', 'overrun')
+      await untilSettled()
+      expect(db.plugins[0].lifecycle_status).toBe('error')
+      expect(db.plugins[0].last_error).toContain('cannot start')
+      // Status and behaviour agree: the route it registered before failing is gone.
+      expect(findPluginRouteAccess(id, 'GET', '/ping')).toBeNull()
+      expect(workers.has(id)).toBe(false)
+
+      // Two teardowns in a row with a working plugin: the recovery overtaken
+      // by the second one writes nothing, and the last one decides.
+      await writeFile(entry, working)
+      handleWorkerCrash(id, 'first', 'overrun')
+      handleWorkerCrash(id, 'second', 'overrun')
+      await untilSettled()
+      expect(db.plugins[0].lifecycle_status).toBe('active')
+      expect(db.plugins[0].last_error).toBeNull()
+      expect(findPluginRouteAccess(id, 'GET', '/ping')).not.toBeNull()
+    } finally {
+      const { unloadPluginInWorker } = await import('../../../server/plugins/host/rpc')
+      await unloadPluginInWorker(id)
+      clearPluginCrashCounter(id)
+      await rm(uploadsDir, { recursive: true, force: true })
+    }
+  }, 60_000)
+
   // ─── Manual restart endpoint ──────────────────────────────────────────────
 
   it('POST /restart resets crash counter, drops crash events, and re-activates the plugin', async () => {

@@ -47,17 +47,42 @@ import {
   NOT_FOUND_ARTEFACT_URL_PATH,
   pageArtefactUrlPath,
   prepareInactiveSlot,
+  removeAllHtmlArtefactsInPlace,
   swapSlot,
   writeArtefact,
   writeStaticAsset,
 } from './staticArtefact'
 import { buildPublishedSiteCssBundle } from './siteCssBundle'
-import { pluginTeardownCount } from '../plugins/host/crashRecovery'
+import { untilOutputPluginsRecovered, watchPluginOutput } from '../plugins/host/outputWatch'
 import { bakePublishedDataRowArtefacts } from './bakeDataRows'
 import { bumpPublishVersion, getPublishVersion, withPublishLock } from './publishState'
 import { runPublishFlush } from './publishFlush'
 import { sweepStalePluginVersionAssets } from './stalePluginAssets'
 import { MAIN_SCOPE } from '../branches/scope'
+
+/** A bake is tried this many times before the publish reports it as incomplete. */
+const BAKE_ATTEMPTS = 3
+/** How long a retry waits for restarted plugins to be back. */
+const BAKE_RECOVERY_WAIT_MS = 15_000
+
+/** Internal: this bake attempt ran while plugin output was unavailable. */
+class BakeDisturbedError extends Error {}
+
+/**
+ * The publish is committed and live, but its static pages could not be
+ * built: a plugin kept being restarted (or had a dispatch held back) during
+ * every attempt. The previous static pages were retired, so the site renders
+ * live at the new version. The publisher is told, never shown a success.
+ */
+export class PublishBakeIncompleteError extends Error {
+  constructor() {
+    super(
+      'Published, but the static pages could not be rebuilt because a plugin kept restarting. ' +
+        'The site is being served live. Publish again in a few minutes.',
+    )
+    this.name = 'PublishBakeIncompleteError'
+  }
+}
 
 interface PublishResult {
   publishedPages: number
@@ -221,13 +246,17 @@ async function publishSiteDocumentLocked(
   // the server. Hole placeholders use the frozen site's fingerprint. The next
   // cache generation pre-warms snapshot/CSS caches and versions module JS.
   const nextPublishVersion = getPublishVersion() + 1
+  let bakeAbandoned = false
   if (uploadsDir) {
+    // Every page of a bake runs plugin hooks, filters and loop sources. A
+    // bake during which a plugin was being restarted, or had a dispatch held
+    // back, would write pages that lack that plugin's output without saying
+    // so (`outputWatch.ts`). Such a set is never swapped in: the bake is run
+    // again once the plugin is back, and given up after `BAKE_ATTEMPTS`.
+    const bakeOnce = async (): Promise<'done' | 'disturbed'> => {
+    const pluginOutput = watchPluginOutput()
     try {
       const { slot, slotDir } = await prepareInactiveSlot(uploadsDir)
-      // Every page below runs plugin hooks, filters and loop sources. If a
-      // plugin's worker is torn down part-way, the pages baked after it lack
-      // that plugin's output, silently. Counted here, checked before the swap.
-      const teardownsBeforeBake = pluginTeardownCount()
 
       // Every distinct static asset referenced by ANY baked artefact.
       // Content-hashed filenames dedupe identical bytes across pages to a
@@ -316,14 +345,32 @@ async function publishSiteDocumentLocked(
       for (const [publicPath, bytes] of assetsByPath) {
         await writeStaticAsset(slotDir, publicPath, bytes)
       }
-      if (pluginTeardownCount() !== teardownsBeforeBake) {
-        throw new Error(
-          'a plugin was restarted while the pages were being baked, so some would be missing its output; the baked set is discarded',
-        )
-      }
+      if (pluginOutput.disrupted()) throw new BakeDisturbedError()
       await swapSlot(uploadsDir, slot)
+      return 'done'
     } catch (err) {
+      if (err instanceof BakeDisturbedError) return 'disturbed'
       console.error('[publish:site] static artefact write failed (live renderer remains active):', err)
+      return 'done'
+    }
+  }
+
+    let outcome: 'done' | 'disturbed' = 'disturbed'
+    for (let attempt = 1; attempt <= BAKE_ATTEMPTS && outcome === 'disturbed'; attempt += 1) {
+      if (attempt > 1) await untilOutputPluginsRecovered(BAKE_RECOVERY_WAIT_MS)
+      outcome = await bakeOnce()
+    }
+    if (outcome === 'disturbed') {
+      // The DB publish is committed and is not rolled back for a bake (as for
+      // any bake failure). The slot still holds the PREVIOUS publish, so its
+      // pages are retired: every route renders live, at the new version,
+      // until a later publish rebuilds the slot.
+      bakeAbandoned = true
+      try {
+        await removeAllHtmlArtefactsInPlace(uploadsDir)
+      } catch (err) {
+        console.error('[publish:site] could not retire the previous static pages:', err)
+      }
     }
 
     // The artefacts just written link the CURRENTLY installed plugin versions,
@@ -345,6 +392,8 @@ async function publishSiteDocumentLocked(
   // window where the freshly-swapped shells (stamped nextPublishVersion) are
   // live while the version counter still reads the old value.
   bumpPublishVersion()
+
+  if (bakeAbandoned) throw new PublishBakeIncompleteError()
 
   return { publishedPages, pageWrites }
 }

@@ -414,6 +414,8 @@ interface LoopFetchResultMessage {
   /** `{ items, totalItems }` shape from the plugin's source — re-validated host-side. */
   value?: { items: unknown[]; totalItems: number }
   error?: string
+  /** The fetch ran out of its wall-clock call budget. */
+  timedOut?: boolean
   /**
    * QuickJS-side stack frames of the failure (plugin sources are evaluated
    * with the filename `plugin:<id>`). For host-side `[plugin:<id>]` logging

@@ -21,7 +21,7 @@ import { normalizeRoutePath } from '../protocol/parser'
 import { materializeRouteResponse, serializeRouteRequest } from './routeIo'
 import { isPluginRestarting, PluginWorkerRestartedError } from './crashRecovery'
 import { hostPlugins } from './registry'
-import { routeCoolOffRemainingMs } from './routeCoolOff'
+import { PluginDispatchCoolingOffError } from './dispatchCoolOff'
 import { requestFromWorker } from './workerPool'
 import { describeWorkerError, workerCallError } from './workerErrors'
 import { workers } from './workerState'
@@ -199,13 +199,6 @@ export async function runRouteInWorker(args: {
   const route = entry?.routes.get(routeKey)
   if (!route) return pluginRestartingResponse(args.pluginId) ?? new Response('Plugin route not found', { status: 404 })
 
-  // A route that keeps overrunning its budget is held back for a while; it
-  // resumes by itself (`routeCoolOff.ts`). Nothing is dispatched meanwhile.
-  const coolOffMs = routeCoolOffRemainingMs(args.pluginId, routeKey)
-  if (coolOffMs > 0) {
-    return retryLater('This plugin route keeps running out of time and is paused for a moment. Try again.', coolOffMs)
-  }
-
   // Byte-safe request (de)serialization lives in routeIo.ts — the body is
   // read once as raw bytes, pre-parsed conveniences (JSON / form fields /
   // multipart files) are derived from those exact bytes, and binary
@@ -234,6 +227,9 @@ export async function runRouteInWorker(args: {
     // Another call of this plugin overran its budget and the host restarted
     // the worker under this one. How far this handler got is unknown.
     if (err instanceof PluginWorkerRestartedError) return retryLater(err.message)
+    // This route keeps overrunning its budget and is held back for a while;
+    // it resumes by itself (`dispatchCoolOff.ts`). Nothing was dispatched.
+    if (err instanceof PluginDispatchCoolingOffError) return retryLater(err.message, err.retryAfterMs)
     throw err
   }
   if (!result.ok || !result.response) {
@@ -341,11 +337,20 @@ export async function runHookListenerInWorker(
   event: string,
   payload: unknown,
 ): Promise<void> {
-  const result = await requestFromWorker(
-    pluginId,
-    { kind: 'run-hook-listener', correlationId: nanoid(), pluginId, listenerId, event, payload },
-    'hook-listener-result',
-  )
+  let result: Awaited<ReturnType<typeof requestListener>>
+  const requestListener = () =>
+    requestFromWorker(
+      pluginId,
+      { kind: 'run-hook-listener', correlationId: nanoid(), pluginId, listenerId, event, payload },
+      'hook-listener-result',
+    )
+  try {
+    result = await requestListener()
+  } catch (err) {
+    // Held back while it cools off: the listener is skipped.
+    if (err instanceof PluginDispatchCoolingOffError) return
+    throw err
+  }
   if (!result.ok) {
     console.error(
       `[plugin:${pluginId}] hook listener for "${event}" threw:`,
@@ -361,11 +366,21 @@ export async function runHookFilterInWorker(
   value: unknown,
   context?: Record<string, unknown>,
 ): Promise<unknown> {
-  const result = await requestFromWorker(
-    pluginId,
-    { kind: 'run-hook-filter', correlationId: nanoid(), pluginId, filterId, name, value, context },
-    'hook-filter-result',
-  )
+  let result: Awaited<ReturnType<typeof requestFilter>>
+  const requestFilter = () =>
+    requestFromWorker(
+      pluginId,
+      { kind: 'run-hook-filter', correlationId: nanoid(), pluginId, filterId, name, value, context },
+      'hook-filter-result',
+    )
+  try {
+    result = await requestFilter()
+  } catch (err) {
+    // Held back while it cools off: the value passes through unchanged. The
+    // skipped dispatch was noted, so this render is not cached or baked.
+    if (err instanceof PluginDispatchCoolingOffError) return value
+    throw err
+  }
   if (!result.ok) {
     console.error(
       `[plugin:${pluginId}] hook filter "${name}" threw:`,
@@ -391,6 +406,9 @@ export async function runLoopFetchInWorker(
       `[plugin:${pluginId}] loop source "${sourceId}" fetch failed:`,
       describeWorkerError(result.error, result.stack, 'unknown error'),
     )
+    // Ran out of time: nothing is known about the source's items, and an
+    // empty list must not be rendered as if it were the answer.
+    if (result.timedOut) throw new Error(result.error ?? `Plugin "${pluginId}" loop source "${sourceId}" ran out of time`)
     return { items: [], totalItems: 0 }
   }
   // Cast: items shape is unknown over the wire; the publisher revalidates.

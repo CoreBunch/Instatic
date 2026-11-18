@@ -388,6 +388,7 @@ async function handleRunLoopFetch(msg: RunLoopFetchRequest): Promise<void> {
       correlationId: msg.correlationId,
       ok: false,
       ...errorFields(err),
+      ...(err instanceof PluginCallBudgetError ? { timedOut: true } : {}),
     })
   }
 }

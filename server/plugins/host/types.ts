@@ -112,4 +112,6 @@ export type CrashRecoveryHandler = (args: {
   reason: string
   cause: WorkerTeardownCause
   decision: CrashRecoveryDecision
+  /** Which recovery of this plugin this is; see `isLatestRecovery`. */
+  generation: number
 }) => Promise<void>

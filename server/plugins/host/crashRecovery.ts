@@ -15,8 +15,8 @@
  * stops respawning and sets `lifecycle_status='error'` until the site owner
  * clicks "Restart Plugin". An overrun never parks: a visitor who can reach a
  * public route can cause one, and must not be able to switch a plugin off.
- * A route that keeps overrunning is held back for a while instead
- * (`routeCoolOff.ts`).
+ * A dispatch that keeps overrunning is held back for a while instead
+ * (`dispatchCoolOff.ts`).
  */
 
 import { loopSourceRegistry } from '@core/loops/registry'
@@ -24,7 +24,8 @@ import { hookBus } from '@core/plugins/hookBus'
 import { mediaStorageRegistry } from '@core/plugins/mediaStorageRegistry'
 import { mediaVariantDelegateRegistry } from '@core/plugins/mediaVariantDelegateRegistry'
 import { hostPlugins } from './registry'
-import { clearRouteCoolOffs } from './routeCoolOff'
+import { clearDispatchCoolOffs } from './dispatchCoolOff'
+import { beginOutputPluginRecovery } from './outputWatch'
 import { workers, pendingRequests } from './workerState'
 import type { CrashRecoveryDecision, CrashRecoveryHandler, WorkerTeardownCause } from './types'
 
@@ -48,7 +49,7 @@ const teardownTrackers = new Map<string, TeardownTracker>()
  */
 export function clearPluginCrashCounter(pluginId: string): void {
   teardownTrackers.delete(pluginId)
-  clearRouteCoolOffs(pluginId)
+  clearDispatchCoolOffs(pluginId)
 }
 
 /**
@@ -103,16 +104,16 @@ export function isPluginRestarting(pluginId: string): boolean {
   return (recoveriesInProgress.get(pluginId) ?? 0) > 0
 }
 
-let teardownCount = 0
+/** The newest recovery started for each plugin. */
+const recoveryGenerations = new Map<string, number>()
 
 /**
- * How many plugin workers this process has torn down so far. A long job that
- * depends on every plugin staying loaded (baking the site) reads it before
- * and after: a change means some plugin's hooks, filters and loop sources
- * were gone for part of the job.
+ * True when `generation` is still the newest recovery of `pluginId`. A
+ * recovery that finishes after a later teardown has been overtaken: the
+ * later one decides what the plugin's status is.
  */
-export function pluginTeardownCount(): number {
-  return teardownCount
+export function isLatestRecovery(pluginId: string, generation: number): boolean {
+  return recoveryGenerations.get(pluginId) === generation
 }
 
 let crashRecoveryHandler: CrashRecoveryHandler | null = null
@@ -134,7 +135,10 @@ export function setCrashRecoveryHandler(handler: CrashRecoveryHandler): void {
  * updating the lifecycle row, re-loading the plugin into a fresh worker.
  */
 export function handleWorkerCrash(pluginId: string, reason: string, cause: WorkerTeardownCause = 'crash'): void {
-  teardownCount += 1
+  // Stamped now, synchronously, so a recovery still running for an earlier
+  // teardown can tell it has been overtaken before it writes anything.
+  const generation = (recoveryGenerations.get(pluginId) ?? 0) + 1
+  recoveryGenerations.set(pluginId, generation)
   const w = workers.get(pluginId)
   if (w) {
     try { w.terminate() } catch {/* worker may already be dead */}
@@ -153,6 +157,16 @@ export function handleWorkerCrash(pluginId: string, reason: string, cause: Worke
   // sources registered via the dead worker would otherwise keep
   // round-tripping into nothing.
   const entry = hostPlugins.get(pluginId)
+  // A plugin that feeds rendered output is missing from every render until
+  // it is back: whatever caches or bakes a render must know (`outputWatch.ts`).
+  const feedsOutput = entry !== undefined && (
+    entry.hookListeners.length > 0 ||
+    entry.hookFilters.length > 0 ||
+    entry.loopSources.length > 0 ||
+    entry.mediaAdapters.length > 0 ||
+    entry.mediaUrlTransformers.length > 0
+  )
+  const outputRecovered = feedsOutput ? beginOutputPluginRecovery(pluginId) : undefined
   if (entry) {
     for (const source of entry.loopSources) {
       loopSourceRegistry.unregister(source.sourceId)
@@ -174,15 +188,17 @@ export function handleWorkerCrash(pluginId: string, reason: string, cause: Worke
   // Hand off to the runtime layer in a microtask — we don't want to block
   // the error event handler on async work, and re-loading the plugin needs
   // the current crash teardown to fully settle first.
+  if (!crashRecoveryHandler) outputRecovered?.()
   if (crashRecoveryHandler) {
     const handler = crashRecoveryHandler
     recoveriesInProgress.set(pluginId, (recoveriesInProgress.get(pluginId) ?? 0) + 1)
     queueMicrotask(() => {
-      handler({ pluginId, reason, cause, decision })
+      handler({ pluginId, reason, cause, decision, generation })
         .catch((err: unknown) => {
           console.error(`[plugin:${pluginId}] crash recovery handler failed:`, err)
         })
         .finally(() => {
+          outputRecovered?.()
           const left = (recoveriesInProgress.get(pluginId) ?? 1) - 1
           if (left > 0) recoveriesInProgress.set(pluginId, left)
           else recoveriesInProgress.delete(pluginId)

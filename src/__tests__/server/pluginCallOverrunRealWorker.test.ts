@@ -254,9 +254,9 @@ describe('plugin call overrun: fail-stop through a real worker', () => {
     expect(mine.every((t) => t.cause === 'overrun' && t.decision === 'respawn')).toBe(true)
     // What the admin sees names the call, and nothing of the request.
     expect(mine[0].reason).toBe(
-      `route "GET:/slow" ran out of time: Plugin call exceeded its ${CALL_BUDGET_MS / 1000}s time budget.`,
+      `route GET:/slow ran out of time: Plugin call exceeded its ${CALL_BUDGET_MS / 1000}s time budget.`,
     )
-    expect(mine.at(-1)?.reason).toContain('The route is held back for 15s.')
+    expect(mine.at(-1)?.reason).toContain('It is held back for 15s.')
     expect(mine.some((t) => t.reason.startsWith('schedule "acme.overrun.stuck" ran out of time'))).toBe(true)
   }, 60_000)
 
