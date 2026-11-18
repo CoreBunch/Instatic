@@ -57,9 +57,7 @@ import {
   notifyVmActivity,
   withSyncDeadline,
   type CallLimits,
-  type PluginCallBudgetError,
 } from './eval'
-import type { CallDispatch } from '../protocol/messages'
 import type { PluginVm, PluginVmEnv } from './types'
 
 export type { PluginVm, PluginVmEnv } from './types'
@@ -128,27 +126,16 @@ export async function createPluginVm(args: {
   evalTimeoutMs?: number
   /** Wall-clock budget per call; tests shorten it. Defaults to `PLUGIN_CALL_BUDGET_MS`. */
   callBudgetMs?: number
-  /**
-   * A call ran out of its wall-clock budget. Reported AFTER the failing
-   * call's own rejection has been delivered (one macrotask later), so its
-   * caller can answer before the host acts on the report.
-   */
-  onCallOverrun?: (overrun: { reason: string; dispatch: CallDispatch }) => void
 }): Promise<PluginVm> {
   const wasm = await getWasmModule()
   const ctx = wasm.newContext()
   const evalTimeoutMs = args.evalTimeoutMs ?? DEFAULT_EVAL_TIMEOUT_MS
   /** Limits for every call except a schedule fire, which brings its own. */
-  const overrunReporter = (dispatch: CallDispatch) => (err: PluginCallBudgetError): void => {
-    const report = args.onCallOverrun
-    if (report) setTimeout(() => report({ reason: err.message, dispatch }), 0)
+  /** Limits for every call except a schedule fire, which brings its own. */
+  const callLimits: CallLimits = {
+    evalTimeoutMs,
+    budgetMs: args.callBudgetMs ?? PLUGIN_CALL_BUDGET_MS,
   }
-  /** Limits for one call of `dispatch`; a schedule fire passes its own duration. */
-  const limitsFor = (dispatch: CallDispatch, durationMs?: number): CallLimits => ({
-    evalTimeoutMs: durationMs ?? evalTimeoutMs,
-    budgetMs: durationMs ?? args.callBudgetMs ?? PLUGIN_CALL_BUDGET_MS,
-    onOverrun: overrunReporter(dispatch),
-  })
 
   // Apply per-plugin resource limits BEFORE evaluating any plugin code.
   // setMemoryLimit / setMaxStackSize live on the runtime, not the context,
@@ -428,7 +415,7 @@ export async function createPluginVm(args: {
     const exportedHooks = await evalJson<Array<'install' | 'activate' | 'deactivate' | 'uninstall' | 'migrate'>>(
       ctx,
       `__detectExportedHooks()`,
-      limitsFor({ kind: 'lifecycle', name: 'load' }),
+      callLimits,
     )
 
     const pluginId = args.env.pluginId
@@ -438,11 +425,11 @@ export async function createPluginVm(args: {
       exportedHooks,
 
       async runLifecycle(hook) {
-        await callVoid(ctx, dispatcher('__runLifecycle'), [hook], limitsFor({ kind: 'lifecycle', name: hook }))
+        await callVoid(ctx, dispatcher('__runLifecycle'), [hook], callLimits)
       },
 
       async runMigrate(fromVersion) {
-        await callVoid(ctx, dispatcher('__runMigrate'), [fromVersion], limitsFor({ kind: 'lifecycle', name: 'migrate' }))
+        await callVoid(ctx, dispatcher('__runMigrate'), [fromVersion], callLimits)
       },
 
       async runRoute(routeKey, routeCtx) {
@@ -450,7 +437,7 @@ export async function createPluginVm(args: {
           ctx,
           dispatcher('__runRoute'),
           [routeKey, JSON.stringify(routeCtx)],
-          limitsFor({ kind: 'route', name: routeKey }),
+          callLimits,
         )
         return JSON.parse(json) as unknown
       },
@@ -460,7 +447,7 @@ export async function createPluginVm(args: {
           ctx,
           dispatcher('__runHookListener'),
           [listenerId, JSON.stringify(payload ?? null)],
-          limitsFor({ kind: 'hook', name: listenerId }),
+          callLimits,
         )
       },
 
@@ -477,7 +464,7 @@ export async function createPluginVm(args: {
           ctx,
           dispatcher('__runHookFilter'),
           [filterId, valueJson, contextJson],
-          limitsFor({ kind: 'hook', name: filterId }),
+          callLimits,
         )
         return JSON.parse(resultJson) as unknown
       },
@@ -487,7 +474,7 @@ export async function createPluginVm(args: {
           ctx,
           dispatcher('__runLoopFetch'),
           [sourceId, JSON.stringify(loopCtx ?? null)],
-          limitsFor({ kind: 'loop', name: sourceId }),
+          callLimits,
         )
         const parsed = JSON.parse(json) as { items?: unknown[]; totalItems?: number }
         return {
@@ -501,7 +488,7 @@ export async function createPluginVm(args: {
           ctx,
           dispatcher('__runLoopPreview'),
           [sourceId, JSON.stringify(loopCtx ?? null)],
-          limitsFor({ kind: 'loop', name: sourceId }),
+          callLimits,
         )
         const parsed = JSON.parse(json) as unknown
         return Array.isArray(parsed) ? parsed : []
@@ -510,12 +497,12 @@ export async function createPluginVm(args: {
       async runSchedule(scheduleId, maxDurationMs) {
         // A schedule's `maxDurationMs` replaces BOTH default limits for this
         // single call: it may execute, and it may take, that long in total.
-        const limits = limitsFor({ kind: 'schedule', name: scheduleId }, maxDurationMs)
+        const limits: CallLimits = { evalTimeoutMs: maxDurationMs, budgetMs: maxDurationMs }
         await callVoid(ctx, dispatcher('__runSchedule'), [scheduleId], limits)
       },
 
       async updateSettings(next) {
-        await callVoid(ctx, dispatcher('__updateSettings'), [JSON.stringify(next)], limitsFor({ kind: 'settings' }))
+        await callVoid(ctx, dispatcher('__updateSettings'), [JSON.stringify(next)], callLimits)
       },
 
       async runMediaAdapterCall(adapterId, method, callArgs) {
@@ -523,7 +510,7 @@ export async function createPluginVm(args: {
           ctx,
           dispatcher('__runMediaAdapterCall'),
           [adapterId, method, JSON.stringify(callArgs ?? [])],
-          limitsFor({ kind: 'media', name: adapterId }),
+          callLimits,
         )
         return JSON.parse(resultJson) as unknown
       },
@@ -533,7 +520,7 @@ export async function createPluginVm(args: {
           ctx,
           dispatcher('__runMediaUrlTransformer'),
           [transformerId, JSON.stringify(payload)],
-          limitsFor({ kind: 'media', name: transformerId }),
+          callLimits,
         )
         const parsed = JSON.parse(resultJson) as unknown
         return typeof parsed === 'string' ? parsed : null

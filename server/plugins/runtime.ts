@@ -49,12 +49,11 @@ import {
 import { jsonResponse } from '../http'
 import { hookBus } from '@core/plugins/hookBus'
 import { requireAuthenticatedUser, requireCapability } from '../auth/authz'
-import { clearPluginCrashCounter, isLatestRecovery, setCrashRecoveryHandler } from './host/crashRecovery'
+import { clearPluginCrashCounter, setCrashRecoveryHandler } from './host/crashRecovery'
 import { setPluginHostContext } from './host/registry'
 import {
   findPluginRouteAccess,
   loadPluginInWorker,
-  pluginRestartingResponse,
   runLifecycleInWorker,
   runMigrateInWorker,
   runRouteInWorker,
@@ -223,8 +222,7 @@ export async function handleServerPluginRuntimeRequest(
   const routePath = decodeURIComponent(match[2] ?? '/')
 
   const route = findPluginRouteAccess(pluginId, req.method, routePath)
-  // A plugin being restarted has no routes for a moment: retry, not "not found".
-  if (!route) return pluginRestartingResponse(pluginId) ?? jsonResponse({ error: 'Plugin route not found' }, { status: 404 })
+  if (!route) return jsonResponse({ error: 'Plugin route not found' }, { status: 404 })
 
   // Access gate stays host-side. The plugin route handler in the worker
   // still receives the validated user object (or null for public routes)
@@ -279,31 +277,27 @@ export async function reloadAndActivatePlugin(
   db: DbClient,
   pluginId: string,
   uploadsDir?: string,
-): Promise<boolean> {
-  if (!uploadsDir) return false
+): Promise<void> {
+  if (!uploadsDir) return
   const result = await getInstalledPlugin(db, pluginId)
   // Broken manifest or not found: nothing safe to reload. Callers that need
   // to distinguish these cases (e.g. the restart handler) check the result
   // before calling this helper.
-  if (!result || result.kind !== 'ok' || !result.plugin.enabled) return false
+  if (!result || result.kind !== 'ok' || !result.plugin.enabled) return
   const { plugin } = result
   const manifest: PluginManifest = {
     ...plugin.manifest,
     grantedPermissions: plugin.grantedPermissions,
   }
-  if (!manifest.assetBasePath) return false
+  if (!manifest.assetBasePath) return
   // Refresh the in-memory settings cache from the canonical rows (including
   // decrypted secrets) before the worker mirror gets seeded — keeps the
   // worker in sync if settings drifted since the last activation.
   await primePluginSettingsCache(db, plugin)
   if (manifest.entrypoints?.server) {
     const loaded = await loadPluginServerEntrypoint(manifest, uploadsDir)
-    if (loaded) {
-      await runPluginLifecycle(db, manifest.id, 'activate')
-      return true
-    }
+    if (loaded) await runPluginLifecycle(db, manifest.id, 'activate')
   }
-  return false
 }
 
 /**
@@ -313,10 +307,7 @@ export async function reloadAndActivatePlugin(
  * previous handler (idempotent — safe to call on every boot / re-bind).
  */
 function registerCrashRecoveryHandler(db: DbClient, uploadsDir: string): void {
-  setCrashRecoveryHandler(async ({ pluginId, reason, cause, decision, generation }) => {
-    // What the owner reads in the admin: an overrun is a restart the host
-    // chose, not the plugin falling over.
-    const what = cause === 'overrun' ? 'was restarted after a call ran out of time' : 'crashed'
+  setCrashRecoveryHandler(async ({ pluginId, reason, decision }) => {
     const occurredAt = new Date().toISOString()
 
     // Persist the crash event so the admin UI can show it. Best-effort —
@@ -346,7 +337,7 @@ function registerCrashRecoveryHandler(db: DbClient, uploadsDir: string): void {
       // owner has to click "Restart Plugin" in the admin UI to reset the
       // counter and try again.
       console.error(
-        `[plugin:${pluginId}] ${what} ${decision.recentCrashCount} times in the last 5 minutes; parking in error state`,
+        `[plugin:${pluginId}] crashed ${decision.recentCrashCount} times in the last 5 minutes; parking in error state`,
       )
       await setPluginLifecycleStatus(
         db,
@@ -367,18 +358,21 @@ function registerCrashRecoveryHandler(db: DbClient, uploadsDir: string): void {
     // Within budget — auto-respawn. The worker host has already torn down
     // the dead worker; reloading spawns a fresh one and re-runs activate.
     console.warn(
-      `[plugin:${pluginId}] ${what} (#${decision.recentCrashCount} in window) — auto-respawning. Last reason: ${reason}`,
+      `[plugin:${pluginId}] crash #${decision.recentCrashCount} in window — auto-respawning. Last reason: ${reason}`,
     )
-    let activated: boolean
     try {
-      activated = await reloadAndActivatePlugin(db, pluginId, uploadsDir)
+      await reloadAndActivatePlugin(db, pluginId, uploadsDir)
+      broadcastPluginEvent({
+        kind: 'recovered',
+        pluginId,
+        afterCrashCount: decision.recentCrashCount,
+        occurredAt: new Date().toISOString(),
+      })
     } catch (err) {
-      // A later teardown overtook this recovery (its own calls were rejected
-      // by it): the later recovery decides what the plugin's status is.
-      if (!isLatestRecovery(pluginId, generation)) return
       // Re-activation itself failed. `activate` may have registered routes
-      // and hooks before it threw, so unload what is left of the plugin:
-      // its status says `error`, and nothing of it answers.
+      // and hooks before it threw, and the plugin's row still said `active`.
+      // Unload what is left and say so in its status, as a failed activation
+      // does, so status and behaviour agree.
       console.error(`[plugin:${pluginId}] auto-respawn re-activation failed:`, err)
       try {
         await unloadPluginInWorker(pluginId)
@@ -389,21 +383,9 @@ function registerCrashRecoveryHandler(db: DbClient, uploadsDir: string): void {
         db,
         pluginId,
         'error',
-        `Could not restart after: ${reason}. ${err instanceof Error ? err.message : String(err)}`,
+        `Could not restart after a crash: ${err instanceof Error ? err.message : String(err)}`,
       )
-      return
     }
-    // Nothing was started (disabled or removed meanwhile), or a later
-    // recovery overtook this one.
-    if (!activated || !isLatestRecovery(pluginId, generation)) return
-    // Running again: an `error` left by an earlier failed recovery is stale.
-    await setPluginLifecycleStatus(db, pluginId, 'active')
-    broadcastPluginEvent({
-      kind: 'recovered',
-      pluginId,
-      afterCrashCount: decision.recentCrashCount,
-      occurredAt: new Date().toISOString(),
-    })
   })
 }
 

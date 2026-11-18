@@ -22,13 +22,10 @@ import { createCapabilityTestHarness, type CapabilityTestHarness } from '../help
 import { saveDraftSite } from '../../../server/repositories/site'
 import { createDataRow } from '../../../server/repositories/data'
 import { MAIN_SCOPE } from '../../../server/branches/scope'
-import { hookBus } from '@core/plugins/hookBus'
-import { PublishBakeIncompleteError, publishDraftSite } from '../../../server/publish/publishSite'
-import { beginOutputPluginRecovery, notePluginOutputDisruption } from '../../../server/plugins/host/outputWatch'
+import { publishDraftSite } from '../../../server/publish/publishSite'
 import { publishDataRow } from '../../../server/publish/publishRow'
 import { renderPublicResolution } from '../../../server/publish/publicRouter'
 import { readArtefact } from '../../../server/publish/staticArtefact'
-import { resetForTests as resetRenderCacheForTests } from '../../../server/publish/renderCache'
 import { resetPublishStateForTests } from '../../../server/publish/publishState'
 import { dispatchApiCall } from '../../../server/plugins/host/apiDispatch'
 import { hostPlugins, setPluginHostContext } from '../../../server/plugins/host/registry'
@@ -157,48 +154,6 @@ describe('plugin content calls keep the baked slot in step', () => {
 
     expect(await readArtefact(uploadsDir, '/posts/first')).toContain('entry:First post')
     expect((await visit('/journal')).html).toContain('card:First post')
-  })
-
-  it('bakes again when a plugin was being restarted during the bake, and then succeeds', async () => {
-    await createPost('first', 'First post')
-    await publishDataRow(harness.db, 'first', ownerId, uploadsDir)
-    // A plugin that feeds rendered output is down when the publish starts and
-    // comes back shortly after: the first bake is discarded, the second kept.
-    const recovered = beginOutputPluginRecovery('acme.filters')
-    setTimeout(recovered, 150)
-
-    await publishDraftSite(harness.db, ownerId, uploadsDir)
-
-    expect(await readArtefact(uploadsDir, '/journal')).toContain('card:First post')
-  })
-
-  it('reports the publish as incomplete, and retires the old pages, when no bake stays undisturbed', async () => {
-    await createPost('first', 'First post')
-    await publishDataRow(harness.db, 'first', ownerId, uploadsDir)
-    await publishDraftSite(harness.db, ownerId, uploadsDir)
-    expect(await readArtefact(uploadsDir, '/journal')).toContain('card:First post')
-
-    // Every page baked runs `publish.before`; a dispatch of some plugin is
-    // held back (skipped) each time, so no attempt is clean.
-    hookBus.on('acme.flaky', 'publish.before', async () => { notePluginOutputDisruption() })
-    try {
-      const failure = await publishDraftSite(harness.db, ownerId, uploadsDir).catch((err: unknown) => err)
-      expect(failure).toBeInstanceOf(PublishBakeIncompleteError)
-    } finally {
-      hookBus.unregisterPlugin('acme.flaky')
-    }
-
-    // The slot held the previous publish: its pages are retired, and the
-    // route renders live from the committed publish.
-    expect(await readArtefact(uploadsDir, '/journal')).toBeNull()
-    expect((await visit('/journal')).html).toContain('card:First post')
-
-    // The next undisturbed publish rebuilds the slot.
-    await publishDraftSite(harness.db, ownerId, uploadsDir)
-    expect(await readArtefact(uploadsDir, '/journal')).toContain('card:First post')
-    // The live render above sits in the render cache under a publish version
-    // the next test's fresh state will reuse.
-    resetRenderCacheForTests()
   })
 
   it('stops serving a plugin-deleted entry and drops it from the listing', async () => {

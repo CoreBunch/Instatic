@@ -16,8 +16,6 @@ import type { MainToWorkerMessage, WorkerToMainMessage } from '../protocol/messa
 import { parseApiCall } from '../protocol/parser'
 import type { ValidatedApiCall } from '../protocol/apiCallSchema'
 import { handleWorkerCrash } from './crashRecovery'
-import { dispatchCoolOffRemainingMs, PluginDispatchCoolingOffError, recordDispatchOverrun } from './dispatchCoolOff'
-import { notePluginOutputDisruption } from './outputWatch'
 import { replyApiError } from './apiReplies'
 import { pendingRequests, workers } from './workerState'
 
@@ -39,15 +37,10 @@ function ensureWorkerFor(pluginId: string): Worker {
   if (existing) return existing
   const w = new Worker(new URL('../pluginWorker.ts', import.meta.url).href)
   workers.set(pluginId, w)
-  // A worker the host has already replaced may still have events queued (a
-  // second overrun report, a late error). They belong to a VM that is gone
-  // and must not touch the plugin's new worker.
-  const isCurrent = (): boolean => workers.get(pluginId) === w
   w.addEventListener('message', (event: MessageEvent) => {
-    if (isCurrent()) handleWorkerMessage(pluginId, event.data)
+    handleWorkerMessage(pluginId, event.data)
   })
   w.addEventListener('error', (event: ErrorEvent) => {
-    if (!isCurrent()) return
     console.error(`[plugin:${pluginId}] uncaught error in worker:`, event.message, event.error)
     handleWorkerCrash(pluginId, event.message)
   })
@@ -60,10 +53,9 @@ function sendTo(pluginId: string, msg: MainToWorkerMessage): void {
 
 /**
  * Default budget for one host→worker RPC round-trip. Generous compared to
- * the VM's own limits (5 s of execution, a 20 s wall-clock call budget —
- * `quickjs/limits.ts`): a slow handler fails alone on those. This one's real
- * job is to bound the damage of a *wedged* worker (plugin code spinning past
- * every in-VM guard), not to race healthy calls.
+ * the VM's own 5 s eval deadline — its real job is to bound the damage of a
+ * *wedged* worker (plugin code spinning past every in-VM guard), not to
+ * race healthy calls.
  */
 export const DEFAULT_RPC_TIMEOUT_MS = 30_000
 
@@ -83,18 +75,6 @@ export function requestFromWorker<TKind extends WorkerToMainMessage['kind']>(
   options: RequestFromWorkerOptions = {},
 ): Promise<Extract<WorkerToMainMessage, { kind: TKind }>> {
   const timeoutMs = options.timeoutMs ?? DEFAULT_RPC_TIMEOUT_MS
-  // A dispatch that keeps overrunning is not sent while it cools off. Its
-  // output is then missing from whatever is being rendered, which must not
-  // be cached or baked (`outputWatch.ts`).
-  const dispatch = dispatchKeyOf(msg)
-  if (dispatch) {
-    const coolOffMs = dispatchCoolOffRemainingMs(pluginId, dispatch.key)
-    if (coolOffMs > 0) {
-      notePluginOutputDisruption()
-      return Promise.reject(new PluginDispatchCoolingOffError(pluginId, dispatch.key, coolOffMs))
-    }
-    rememberDispatchKey(pluginId, dispatch)
-  }
   return new Promise<Extract<WorkerToMainMessage, { kind: TKind }>>((resolve, reject) => {
     // A wedged worker never crashes on its own, so without a deadline this
     // pending promise — and the HTTP request / publish render awaiting it —
@@ -177,83 +157,6 @@ function dispatchValidatedApiCall(apiCall: ValidatedApiCall): void {
   }
 }
 
-/**
- * The cool-off key of a dispatch a visitor's request can cause, and the name
- * the VM will report it under if it overruns (`CallDispatch`). The key must
- * survive a restart, so a hook is keyed by its event or filter name, not by
- * its registration id. Lifecycle, settings and schedule calls have no key.
- */
-function dispatchKeyOf(msg: MainToWorkerMessage): { key: string; kind: string; vmName: string } | null {
-  switch (msg.kind) {
-    case 'run-route':
-      return { key: `route ${msg.routeKey}`, kind: 'route', vmName: msg.routeKey }
-    case 'run-hook-listener':
-      return { key: `listener ${msg.event}`, kind: 'hook', vmName: msg.listenerId }
-    case 'run-hook-filter':
-      return { key: `filter ${msg.name}`, kind: 'hook', vmName: msg.filterId }
-    case 'run-loop-fetch':
-      return { key: `loop ${msg.sourceId}`, kind: 'loop', vmName: msg.sourceId }
-    case 'run-loop-preview':
-      return { key: `loop ${msg.sourceId}`, kind: 'loop', vmName: msg.sourceId }
-    case 'run-media-adapter-call':
-      return { key: `media ${msg.adapterId}`, kind: 'media', vmName: msg.adapterId }
-    case 'run-media-url-transformer':
-      return { key: 'media-url', kind: 'media', vmName: msg.transformerId }
-    default:
-      return null
-  }
-}
-
-/** Cool-off keys of dispatches sent to each worker, by what the VM calls them. */
-const sentDispatchKeys = new Map<string, Map<string, string>>()
-
-function rememberDispatchKey(pluginId: string, dispatch: { key: string; kind: string; vmName: string }): void {
-  let sent = sentDispatchKeys.get(pluginId)
-  if (!sent) {
-    sent = new Map()
-    sentDispatchKeys.set(pluginId, sent)
-  }
-  sent.set(`${dispatch.kind}\n${dispatch.vmName}`, dispatch.key)
-}
-
-const OVERRUN_DISPATCH_KINDS = new Set(['lifecycle', 'route', 'hook', 'loop', 'schedule', 'settings', 'media'])
-
-/**
- * A call ran out of its wall-clock budget. Its own failure result was posted
- * first and is already resolved. Stop the worker so the abandoned handler
- * cannot resume and act; calls still in flight are rejected as retriable.
- *
- * What happens next depends on which call it was:
- *   - a lifecycle call: the plugin cannot start, which is a crash, with the
- *     crash counter's parking;
- *   - a dispatch a request can cause (route, hook, loop, media): its
- *     cool-off streak grows (`dispatchCoolOff.ts`);
- *   - anything else (a schedule, a settings push): restart only.
- * The reason names the call (never request data); it is what the admin's
- * crash events and the server log show.
- */
-function handleCallOverrun(workerPluginId: string, msg: unknown): void {
-  const { reason, dispatch } = msg as { reason?: unknown; dispatch?: { kind?: unknown; name?: unknown } }
-  const kind = typeof dispatch?.kind === 'string' && OVERRUN_DISPATCH_KINDS.has(dispatch.kind) ? dispatch.kind : 'call'
-  const name = typeof dispatch?.name === 'string' && dispatch.name.length <= 200 ? dispatch.name : ''
-  const detail = typeof reason === 'string' && reason ? reason : 'Plugin call exceeded its time budget'
-  // Only a key this host sent is trusted to name a cool-off.
-  const key = sentDispatchKeys.get(workerPluginId)?.get(`${kind}\n${name}`)
-  sentDispatchKeys.delete(workerPluginId)
-  const what = key ?? (name ? `${kind} "${name}"` : kind)
-
-  if (kind === 'lifecycle') {
-    handleWorkerCrash(workerPluginId, `${what} did not finish: ${detail}`)
-    return
-  }
-  let coolOff = ''
-  if (key) {
-    const coolOffMs = recordDispatchOverrun(workerPluginId, key)
-    if (coolOffMs > 0) coolOff = ` It is held back for ${coolOffMs / 1000}s.`
-  }
-  handleWorkerCrash(workerPluginId, `${what} ran out of time: ${detail}.${coolOff}`, 'overrun')
-}
-
 function handleWorkerMessage(workerPluginId: string, msg: unknown): void {
   switch (workerMessageKind(msg)) {
     case 'log':
@@ -283,9 +186,6 @@ function handleWorkerMessage(workerPluginId: string, msg: unknown): void {
       dispatchValidatedApiCall(apiCall)
       return
     }
-    case 'call-overrun':
-      handleCallOverrun(workerPluginId, msg)
-      return
     default: {
       const correlationId = workerMessageCorrelationId(msg)
       if (!correlationId) return

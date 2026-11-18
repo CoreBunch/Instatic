@@ -188,47 +188,6 @@ describe('plugin scheduler — DB', () => {
     }
   })
 
-  it('a run interrupted by a worker restart does not count as a failure and is due again at once', async () => {
-    const { db, cleanup } = await setupDb()
-    try {
-      await registerPluginSchedule(db, {
-        pluginId: 'test.sched',
-        scheduleId: 'bystander',
-        cadence: { interval: 'hourly' },
-        overlap: 'skip',
-        maxDurationMs: 5000,
-      })
-      const { PluginWorkerRestartedError } = await import('../../../server/plugins/host/crashRecovery')
-      // Another call of the plugin overran; the host restarted the worker
-      // under this run. Five of those in a row must not pause the schedule.
-      mock.module('../../../server/plugins/host/rpc', () => ({
-        runScheduleInWorker: mock(async () => {
-          throw new PluginWorkerRestartedError('test.sched')
-        }),
-      }))
-      for (let n = 0; n < 6; n += 1) {
-        const before = Date.now()
-        const run = await runScheduleNow(db, 'test.sched', 'test.sched.bystander')
-        expect(run.ok).toBe(false)
-        const sched = await getSchedule(db, 'test.sched', 'test.sched.bystander')
-        expect(sched?.consecutiveFailures).toBe(0)
-        expect(sched?.paused).toBe(false)
-        // Due again now, not an hour from now.
-        expect(new Date(sched!.nextRunAt).getTime()).toBeLessThanOrEqual(Date.now())
-        expect(new Date(sched!.nextRunAt).getTime()).toBeGreaterThanOrEqual(before - 1000)
-      }
-
-      // A real failure still counts.
-      mock.module('../../../server/plugins/host/rpc', () => ({
-        runScheduleInWorker: mock(async () => ({ status: 'error' as const, error: 'boom', durationMs: 1 })),
-      }))
-      await runScheduleNow(db, 'test.sched', 'test.sched.bystander')
-      expect((await getSchedule(db, 'test.sched', 'test.sched.bystander'))?.consecutiveFailures).toBe(1)
-    } finally {
-      await cleanup()
-    }
-  })
-
   it('tickPluginScheduler no-ops when no schedules are due', async () => {
     const { db, cleanup } = await setupDb()
     try {

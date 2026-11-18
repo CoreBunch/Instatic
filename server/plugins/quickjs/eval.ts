@@ -79,11 +79,10 @@ export function vmStackOf(err: unknown): string | undefined {
 
 /**
  * Thrown when a plugin call is still pending after its wall-clock budget.
- * The call's own caller gets this error. Plugin code cannot be cancelled
- * mid-await, so the abandoned handler would otherwise resume later and act
- * (write, call out) after its caller was told it failed. The settle loop
- * therefore also reports the overrun (`CallLimits.onOverrun`), and the host
- * answers by restarting the plugin's worker: nothing of the old VM runs on.
+ * Only that call fails; the VM and every other call carry on. Plugin code
+ * cannot be cancelled mid-await, so the abandoned handler may still resume
+ * when its await returns and finish its work: the caller is told the outcome
+ * is unknown (a route answers 504), and handlers must be idempotent.
  */
 export class PluginCallBudgetError extends Error {
   readonly budgetMs: number
@@ -101,8 +100,6 @@ export interface CallLimits {
   evalTimeoutMs: number
   /** Wall-clock budget for the whole call, awaits included. */
   budgetMs: number
-  /** Told, once, when the call runs out of `budgetMs` (before it rejects). */
-  onOverrun?: (err: PluginCallBudgetError) => void
 }
 
 /** The budget of each call in flight on a context. */
@@ -432,9 +429,7 @@ async function settleResolved<T>(
     const remainingMs = budgetEndsAt - Date.now()
     if (remainingMs <= 0) {
       evalHandle.dispose()
-      const overrun = new PluginCallBudgetError(limits.budgetMs)
-      limits.onOverrun?.(overrun)
-      throw overrun
+      throw new PluginCallBudgetError(limits.budgetMs)
     }
     await waitForVmActivity(ctx, Math.min(remainingMs, IDLE_RECHECK_MS))
   }

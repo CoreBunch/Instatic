@@ -23,7 +23,6 @@ import type {
   MediaStorageWriteResult,
 } from '@core/plugin-sdk'
 import { MediaStorageUploadPlanSchema } from '@core/plugin-sdk'
-import { PluginDispatchCoolingOffError } from './dispatchCoolOff'
 import { requestFromWorker } from './workerPool'
 import { describeWorkerError, workerCallError } from './workerErrors'
 
@@ -59,27 +58,17 @@ export async function runMediaUrlTransformerInWorker(
   transformerId: string,
   payload: unknown,
 ): Promise<string | null> {
-  let result: Awaited<ReturnType<typeof requestTransform>>
-  const requestTransform = () =>
-    requestFromWorker(
+  const result = await requestFromWorker(
+    pluginId,
+    {
+      kind: 'run-media-url-transformer',
+      correlationId: nanoid(),
       pluginId,
-      {
-        kind: 'run-media-url-transformer',
-        correlationId: nanoid(),
-        pluginId,
-        transformerId,
-        payload,
-      },
-      'media-url-transformer-result',
-    )
-  try {
-    result = await requestTransform()
-  } catch (err) {
-    // Held back while it cools off: the URL is left as it was, as for a
-    // transformer that threw.
-    if (err instanceof PluginDispatchCoolingOffError) return null
-    throw err
-  }
+      transformerId,
+      payload,
+    },
+    'media-url-transformer-result',
+  )
   if (!result.ok) {
     console.error(
       `[plugin:${pluginId}] media URL transformer threw:`,

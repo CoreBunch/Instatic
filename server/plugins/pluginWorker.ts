@@ -149,9 +149,6 @@ async function handleLoadPlugin(msg: LoadPluginRequest): Promise<void> {
         },
       },
       callBudgetMs: msg.callBudgetMs,
-      onCallOverrun: ({ reason, dispatch }) => {
-        send({ kind: 'call-overrun', pluginId: msg.pluginId, reason, dispatch })
-      },
     })
 
     vmsByPluginId.set(msg.pluginId, vm)
@@ -388,7 +385,6 @@ async function handleRunLoopFetch(msg: RunLoopFetchRequest): Promise<void> {
       correlationId: msg.correlationId,
       ok: false,
       ...errorFields(err),
-      ...(err instanceof PluginCallBudgetError ? { timedOut: true } : {}),
     })
   }
 }

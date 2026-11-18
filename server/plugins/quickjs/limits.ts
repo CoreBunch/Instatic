@@ -51,9 +51,7 @@ export const PLUGIN_CALL_BUDGET_MS = 20_000
  * How long one plugin `fetch` may take when the plugin sets no `timeout`:
  * DNS, every redirect hop and the whole response body included. Below the
  * call budget, so a handler waiting on one stalled upstream gets the
- * rejection in time to answer; a call that still overruns its budget is
- * misbehaving, and the host restarts the plugin's worker (see
- * `handleWorkerCrash` with cause `'overrun'`).
+ * rejection in time to answer.
  */
 export const DEFAULT_PLUGIN_FETCH_TIMEOUT_MS = 15_000
 

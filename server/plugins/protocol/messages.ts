@@ -294,30 +294,8 @@ export type WorkerToMainMessage =
   | MediaAdapterCallResult
   | MediaUrlTransformerResult
   | ApiCall
-  | CallOverrun
   | WorkerLogEvent
 
-/**
- * A plugin call ran out of its wall-clock budget. Sent after that call's own
- * failure result. The host restarts the plugin's worker so the abandoned
- * handler cannot run on (`handleWorkerCrash` with cause `'overrun'`).
- */
-export interface CallOverrun {
-  kind: 'call-overrun'
-  pluginId: string
-  reason: string
-  dispatch: CallDispatch
-}
-
-/**
- * Which call overran: its kind and, where one exists, the plugin's own name
- * for it (a route key such as `GET:/orders`, a schedule or loop source id, a
- * lifecycle hook). Never request data.
- */
-export interface CallDispatch {
-  kind: 'lifecycle' | 'route' | 'hook' | 'loop' | 'schedule' | 'settings' | 'media'
-  name?: string
-}
 
 export interface LoadPluginResult {
   kind: 'load-plugin-result'
@@ -414,8 +392,6 @@ interface LoopFetchResultMessage {
   /** `{ items, totalItems }` shape from the plugin's source — re-validated host-side. */
   value?: { items: unknown[]; totalItems: number }
   error?: string
-  /** The fetch ran out of its wall-clock call budget. */
-  timedOut?: boolean
   /**
    * QuickJS-side stack frames of the failure (plugin sources are evaluated
    * with the filename `plugin:<id>`). For host-side `[plugin:<id>]` logging

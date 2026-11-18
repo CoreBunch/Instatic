@@ -118,29 +118,3 @@ describe('requestFromWorker timeout', () => {
     expect(workers.has('acme.healthy')).toBe(true)
   })
 })
-
-describe('isPluginRestarting', () => {
-  it('stays true until every overlapping recovery has finished', async () => {
-    const { handleWorkerCrash, isPluginRestarting, clearPluginCrashCounter } = await import(
-      '../../../server/plugins/host/crashRecovery'
-    )
-    const finish: Array<() => void> = []
-    setCrashRecoveryHandler(() => new Promise<void>((resolve) => { finish.push(resolve) }))
-
-    handleWorkerCrash('acme.twice', 'first', 'overrun')
-    handleWorkerCrash('acme.twice', 'second', 'overrun')
-    await new Promise((res) => setTimeout(res, 0))
-    expect(finish).toHaveLength(2)
-    expect(isPluginRestarting('acme.twice')).toBe(true)
-
-    // The first recovery ending must not report the plugin as back.
-    finish[0]()
-    await new Promise((res) => setTimeout(res, 0))
-    expect(isPluginRestarting('acme.twice')).toBe(true)
-
-    finish[1]()
-    await new Promise((res) => setTimeout(res, 0))
-    expect(isPluginRestarting('acme.twice')).toBe(false)
-    clearPluginCrashCounter('acme.twice')
-  })
-})

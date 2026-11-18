@@ -16,7 +16,7 @@ import { isStateChangingMethod, originAllowed } from '../auth/security'
 import { jsonResponse, readBytesWithLimit, RequestBodyTooLargeError } from '../http'
 import { originOk, resolveSignedInMember } from '../members/handlers'
 import { toCurrentMember } from '../members/repository'
-import { findPluginRouteAccess, pluginRestartingResponse, runRouteInWorker } from './host/rpc'
+import { findPluginRouteAccess, runRouteInWorker } from './host/rpc'
 import { hostPluginHasPermission } from './host/registry'
 import type { SerializedMember } from './protocol/messages'
 
@@ -56,11 +56,6 @@ export async function handlePublicPluginRouteRequest(req: Request, db: DbClient,
   }
 
   const route = findPluginRouteAccess(pluginId, req.method, routePath)
-  // A plugin being restarted has no routes for a moment: retry, not "not found".
-  if (!route) {
-    const restarting = pluginRestartingResponse(pluginId)
-    if (restarting) return restarting
-  }
   // Admin routes are not part of the public mount: answered exactly like a route that does not exist.
   if (!route || route.access.kind === 'capability' || route.access.kind === 'authenticated') {
     return refuse(404, 'Plugin route not found')

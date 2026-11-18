@@ -23,7 +23,7 @@ import { isMainScope, type BranchScope } from '../../branches/scope'
 import { requireCapability, requireStepUp } from '../../auth/authz'
 import { createAuditEvent } from '../../repositories/audit'
 import { getDraftPublishStatus } from '../../repositories/publish'
-import { publishDraftSite, PublishBakeIncompleteError } from '../../publish/publishSite'
+import { publishDraftSite } from '../../publish/publishSite'
 import { RuntimeScriptBuildError } from '../../publish/runtime/buildError'
 import { jsonResponse, methodNotAllowed } from '../../http'
 import type { CmsHandlerOptions } from './shared'
@@ -60,10 +60,6 @@ export async function handlePublishRoutes(
     } catch (err) {
       if (err instanceof RuntimeScriptBuildError) {
         return jsonResponse({ error: err.message }, { status: 422 })
-      }
-      // The publish went through but its static pages did not: say so.
-      if (err instanceof PublishBakeIncompleteError) {
-        return jsonResponse({ error: err.message }, { status: 503 })
       }
       throw err
     }

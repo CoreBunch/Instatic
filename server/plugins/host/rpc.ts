@@ -19,9 +19,7 @@ import type { SerializedMember, SerializedUser } from '../protocol/messages'
 import type { LoadPluginResult } from '../protocol/messages'
 import { normalizeRoutePath } from '../protocol/parser'
 import { materializeRouteResponse, serializeRouteRequest } from './routeIo'
-import { isPluginRestarting, PluginWorkerRestartedError } from './crashRecovery'
 import { hostPlugins } from './registry'
-import { PluginDispatchCoolingOffError } from './dispatchCoolOff'
 import { requestFromWorker } from './workerPool'
 import { describeWorkerError, workerCallError } from './workerErrors'
 import { workers } from './workerState'
@@ -197,7 +195,7 @@ export async function runRouteInWorker(args: {
   const entry = hostPlugins.get(args.pluginId)
   const routeKey = `${args.method.toUpperCase()}:${normalizeRoutePath(args.path)}`
   const route = entry?.routes.get(routeKey)
-  if (!route) return pluginRestartingResponse(args.pluginId) ?? new Response('Plugin route not found', { status: 404 })
+  if (!route) return new Response('Plugin route not found', { status: 404 })
 
   // Byte-safe request (de)serialization lives in routeIo.ts — the body is
   // read once as raw bytes, pre-parsed conveniences (JSON / form fields /
@@ -205,62 +203,32 @@ export async function runRouteInWorker(args: {
   // payloads cross the worker boundary base64-encoded.
   const { request: serializedReq, body: parsedBody } = await serializeRouteRequest(args.request)
 
-  const requestRoute = () =>
-    requestFromWorker(
-      args.pluginId,
-      {
-        kind: 'run-route',
-        correlationId: nanoid(),
-        pluginId: args.pluginId,
-        routeKey,
-        request: serializedReq,
-        user: args.user,
-        member: args.member,
-        body: parsedBody,
-      },
-      'route-result',
-    )
-  let result: Awaited<ReturnType<typeof requestRoute>>
-  try {
-    result = await requestRoute()
-  } catch (err) {
-    // Another call of this plugin overran its budget and the host restarted
-    // the worker under this one. How far this handler got is unknown.
-    if (err instanceof PluginWorkerRestartedError) return retryLater(err.message)
-    // This route keeps overrunning its budget and is held back for a while;
-    // it resumes by itself (`dispatchCoolOff.ts`). Nothing was dispatched.
-    if (err instanceof PluginDispatchCoolingOffError) return retryLater(err.message, err.retryAfterMs)
-    throw err
-  }
+  const result = await requestFromWorker(
+    args.pluginId,
+    {
+      kind: 'run-route',
+      correlationId: nanoid(),
+      pluginId: args.pluginId,
+      routeKey,
+      request: serializedReq,
+      user: args.user,
+      member: args.member,
+      body: parsedBody,
+    },
+    'route-result',
+  )
   if (!result.ok || !result.response) {
     // VM stacks stay in the server log — the HTTP body carries only the message.
     console.error(
       `[plugin:${args.pluginId}] route "${routeKey}" handler failed:`,
       describeWorkerError(result.error, result.stack, 'Plugin route failed'),
     )
-    // A handler that ran out of its call budget is a gateway timeout: how
-    // far it got is unknown, and the host is restarting the plugin's worker
-    // so it cannot run on. The caller may retry.
+    // A handler that ran out of its call budget is a gateway timeout, not a
+    // server fault: the worker is healthy and its other calls carried on.
+    // The outcome is unknown (the handler may still finish).
     return Response.json({ error: result.error ?? 'Plugin route failed' }, { status: result.timedOut ? 504 : 500 })
   }
   return materializeRouteResponse(result.response)
-}
-
-/** How long a caller should wait before retrying a restarting plugin. */
-const RESTART_RETRY_AFTER_SECONDS = 2
-
-function retryLater(error: string, afterMs: number = RESTART_RETRY_AFTER_SECONDS * 1000): Response {
-  return Response.json({ error }, { status: 503, headers: { 'retry-after': String(Math.ceil(afterMs / 1000)) } })
-}
-
-/**
- * The answer for a route of a plugin whose worker is being restarted, or
- * `null` when it is not. During the restart the plugin has no registered
- * routes, and "not found" would tell a retrying caller (a webhook sender)
- * to give up.
- */
-export function pluginRestartingResponse(pluginId: string): Response | null {
-  return isPluginRestarting(pluginId) ? retryLater(`Plugin "${pluginId}" is restarting. Try again.`) : null
 }
 
 function getRegisteredRoute(
@@ -337,20 +305,11 @@ export async function runHookListenerInWorker(
   event: string,
   payload: unknown,
 ): Promise<void> {
-  let result: Awaited<ReturnType<typeof requestListener>>
-  const requestListener = () =>
-    requestFromWorker(
-      pluginId,
-      { kind: 'run-hook-listener', correlationId: nanoid(), pluginId, listenerId, event, payload },
-      'hook-listener-result',
-    )
-  try {
-    result = await requestListener()
-  } catch (err) {
-    // Held back while it cools off: the listener is skipped.
-    if (err instanceof PluginDispatchCoolingOffError) return
-    throw err
-  }
+  const result = await requestFromWorker(
+    pluginId,
+    { kind: 'run-hook-listener', correlationId: nanoid(), pluginId, listenerId, event, payload },
+    'hook-listener-result',
+  )
   if (!result.ok) {
     console.error(
       `[plugin:${pluginId}] hook listener for "${event}" threw:`,
@@ -366,21 +325,11 @@ export async function runHookFilterInWorker(
   value: unknown,
   context?: Record<string, unknown>,
 ): Promise<unknown> {
-  let result: Awaited<ReturnType<typeof requestFilter>>
-  const requestFilter = () =>
-    requestFromWorker(
-      pluginId,
-      { kind: 'run-hook-filter', correlationId: nanoid(), pluginId, filterId, name, value, context },
-      'hook-filter-result',
-    )
-  try {
-    result = await requestFilter()
-  } catch (err) {
-    // Held back while it cools off: the value passes through unchanged. The
-    // skipped dispatch was noted, so this render is not cached or baked.
-    if (err instanceof PluginDispatchCoolingOffError) return value
-    throw err
-  }
+  const result = await requestFromWorker(
+    pluginId,
+    { kind: 'run-hook-filter', correlationId: nanoid(), pluginId, filterId, name, value, context },
+    'hook-filter-result',
+  )
   if (!result.ok) {
     console.error(
       `[plugin:${pluginId}] hook filter "${name}" threw:`,
@@ -406,9 +355,6 @@ export async function runLoopFetchInWorker(
       `[plugin:${pluginId}] loop source "${sourceId}" fetch failed:`,
       describeWorkerError(result.error, result.stack, 'unknown error'),
     )
-    // Ran out of time: nothing is known about the source's items, and an
-    // empty list must not be rendered as if it were the answer.
-    if (result.timedOut) throw new Error(result.error ?? `Plugin "${pluginId}" loop source "${sourceId}" ran out of time`)
     return { items: [], totalItems: 0 }
   }
   // Cast: items shape is unknown over the wire; the publisher revalidates.

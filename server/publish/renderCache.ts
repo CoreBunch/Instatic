@@ -33,7 +33,6 @@
  * reads the version from there for its staleness check.
  */
 
-import { watchPluginOutput } from '../plugins/host/outputWatch'
 import { getPublishVersion, resetPublishStateForTests } from './publishState'
 
 export interface RenderCacheKey {
@@ -182,18 +181,13 @@ export async function getOrRender(
   const versionAtStart = currentVersion
 
   // Start a new factory and register it as in-flight.
-  // A render made while a plugin was being restarted, or while one of its
-  // dispatches was held back, lacks that plugin's output. It is sent, once,
-  // but never kept.
-  const pluginOutput = watchPluginOutput()
-
   const promise: Promise<CachedResponse | null> = (async () => {
     try {
       const result = await factory()
       // Only cache when a publish did NOT happen mid-render. A version change
       // means `result` reflects a now-superseded snapshot — drop it and let the
       // next request re-render against the fresh snapshot.
-      if (result !== null && getPublishVersion() === versionAtStart && !pluginOutput.disrupted()) {
+      if (result !== null && getPublishVersion() === versionAtStart) {
         // Remove any stale entry for this key so the new one lands at the
         // most-recent (tail) position in the Map's insertion order.
         map.delete(k)
