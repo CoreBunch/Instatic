@@ -137,29 +137,32 @@ export interface QueuedMailOutcome {
   /** The recipient exactly as the sender named it. */
   recipient: { member: string } | { address: string }
   reference: string | null
+  /** When the email was accepted. Milliseconds since the epoch. */
+  queuedAt: number
   status: 'sent' | 'failed'
   /** Why it failed, as a fixed code. Null for a sent email. */
   reason: MailFailureReason | null
 }
 
-let outcomeHandler: ((outcome: QueuedMailOutcome) => void) | null = null
+let outcomeHandler: ((db: DbClient, outcome: QueuedMailOutcome) => void) | null = null
 
 /**
  * Hear what becomes of every queued email that has a `source` other than
  * the core. The plugin host uses this to tell a plugin about its own mail.
  */
-export function setQueuedMailOutcomeHandler(handler: ((outcome: QueuedMailOutcome) => void) | null): void {
+export function setQueuedMailOutcomeHandler(handler: ((db: DbClient, outcome: QueuedMailOutcome) => void) | null): void {
   outcomeHandler = handler
 }
 
-function announceOutcome(mail: QueuedMail, status: 'sent' | 'failed', reason: MailFailureReason | null): void {
+function announceOutcome(db: DbClient, mail: QueuedMail, status: 'sent' | 'failed', reason: MailFailureReason | null): void {
   if (mail.source === CORE_MAIL_SOURCE || !outcomeHandler) return
   try {
-    outcomeHandler({
+    outcomeHandler(db, {
       source: mail.source,
       kind: mail.kind,
       recipient: mail.memberId !== null ? { member: mail.memberId } : { address: mail.to },
       reference: mail.reference,
+      queuedAt: mail.queuedAt,
       status,
       reason,
     })
@@ -393,7 +396,7 @@ async function settleQueuedMail(
       durationMs: attempt.outcome.durationMs,
     })
     await removeQueuedMail(db, mail)
-    announceOutcome(mail, 'sent', null)
+    announceOutcome(db, mail, 'sent', null)
     return 'continue'
   }
   const seen = { connector: attempt.outcome?.connector, error: attempt.message, durationMs: attempt.outcome?.durationMs }
@@ -422,7 +425,7 @@ async function settleQueuedMail(
     await updateMailProgress(db, mail.outboxId, { ...seen, attempts, status: 'failed' })
     await removeQueuedMail(db, mail)
     console.error(`[mail] gave up on a "${mail.kind}" email after ${attempts} attempt(s)`)
-    announceOutcome(mail, 'failed', attempt.reason)
+    announceOutcome(db, mail, 'failed', attempt.reason)
     return 'continue'
   }
   if (now + delay >= mail.deliverBefore - DELIVERY_MARGIN_MS) {
@@ -473,7 +476,7 @@ export async function discardQueuedMail(
     }
     return removed
   })
-  if (reason !== null) for (const mail of discarded) announceOutcome(mail, 'failed', reason)
+  if (reason !== null) for (const mail of discarded) announceOutcome(db, mail, 'failed', reason)
 }
 
 /** A deleted member is not written to: what was queued for them is dropped. */
@@ -506,7 +509,7 @@ async function failExpiredMail(
   })
   await removeQueuedMail(db, mail)
   console.error(`[mail] a "${mail.kind}" email expired before it could be delivered`)
-  announceOutcome(mail, 'failed', 'expired')
+  announceOutcome(db, mail, 'failed', 'expired')
 }
 
 /** Fail, without sending, every email whose deadline has passed. */
@@ -534,7 +537,7 @@ async function finishAcceptedMail(db: DbClient): Promise<void> {
       await markMailSent(db, row.outboxId, row.attempts + 1)
       await removeQueuedMail(db, row)
       // The sender hears of it now: the pass that sent it never got this far.
-      announceOutcome(row, 'sent', null)
+      announceOutcome(db, row, 'sent', null)
       acceptedUnrecorded.delete(row.id)
       unrecordedAttempts.delete(row.id)
     } catch (err) {

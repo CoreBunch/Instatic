@@ -19,7 +19,7 @@ import { deliverHeldMailOutcomes } from './mail'
 export async function handleHooksOn(
   msg: ApiCallFor<'cms.hooks.on'>,
   entry: HostPluginRecord,
-  _db: DbClient,
+  db: DbClient,
 ): Promise<void> {
   const [{ event, listenerId }] = msg.args
   // Member events name members; hearing them is reading members.
@@ -30,7 +30,7 @@ export async function handleHooksOn(
     await runHookListenerInWorker(msg.pluginId, listenerId, event, payload)
   })
   // News about its own email that arrived while it was not listening.
-  deliverHeldMailOutcomes(msg.pluginId, event)
+  await deliverHeldMailOutcomes(db, msg.pluginId, event)
   replyApiOk(msg.pluginId, msg.correlationId)
 }
 

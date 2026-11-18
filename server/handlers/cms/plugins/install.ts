@@ -20,6 +20,7 @@
  * `../../../plugins/runtime`; the on-disk side lives in `./shared.ts`.
  */
 import { syncPluginMailTemplates } from '../../../mail/pluginTemplates'
+import { forgetHeldMailOutcomes } from '../../../plugins/host/handlers/mail'
 import { lt as semverLt } from 'semver'
 import type { DbClient } from '../../../db/client'
 import type { AuthUser } from '../../../repositories/users'
@@ -98,6 +99,7 @@ export async function handlePluginsCollection(
       const grantedPermissions = readPermissionGrants(body.grantedPermissions)
       const grantError = assertPluginPermissionGrants(manifest, grantedPermissions)
       if (grantError) return grantError
+      forgetHeldMailOutcomes(manifest.id)
       const installed = await installPlugin(db, manifest, grantedPermissions)
       const updatedResult = await setPluginLifecycleStatus(db, installed.id, 'active')
       await syncPluginMailTemplates(db)
@@ -220,6 +222,8 @@ async function installFreshFromPackage(ctx: InstallContext): Promise<Response> {
   const { db, options, user, req, pluginPackage, grantedPermissions } = ctx
   // `uploadsDir` was checked by the caller; assert to narrow the type.
   if (!options.uploadsDir) throw new Error('uploadsDir required')
+  // A new install inherits nothing from an earlier one of the same id.
+  forgetHeldMailOutcomes(pluginPackage.manifest.id)
 
   const manifest = await writePluginPackageFiles(
     options.uploadsDir,

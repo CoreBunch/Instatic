@@ -65,6 +65,7 @@ interface QueueRow {
   attempts: number
   last_error: string | null
   deliver_before: Date | string
+  created_at: Date | string
 }
 
 export interface QueuedMail {
@@ -85,6 +86,8 @@ export interface QueuedMail {
   lastError: string | null
   /** After this moment the email is not sent any more. Milliseconds since the epoch. */
   deliverBefore: number
+  /** When it was accepted. Milliseconds since the epoch. */
+  queuedAt: number
   payload: EncryptedSecret
 }
 
@@ -100,6 +103,7 @@ function toQueuedMail(row: QueueRow): QueuedMail {
     attempts: Number(row.attempts),
     lastError: row.last_error,
     deliverBefore: Date.parse(isoDate(row.deliver_before)),
+    queuedAt: Date.parse(isoDate(row.created_at)),
     payload: { ciphertext: row.payload_ciphertext, iv: row.payload_iv },
   }
 }
@@ -183,7 +187,7 @@ export async function releaseStaleMailClaims(db: DbClient, now: number): Promise
 }
 
 const QUEUE_COLUMNS = `id, outbox_id, kind, to_address, source, reference, member_id,
-  payload_ciphertext, payload_iv, attempts, last_error, deliver_before`
+  payload_ciphertext, payload_iv, attempts, last_error, deliver_before, created_at`
 
 function placeholder(db: DbClient, index: number): string {
   return db.dialect === 'postgres' ? `$${index}` : '?'

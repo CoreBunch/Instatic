@@ -133,7 +133,8 @@ describe('mail queue', () => {
         carried.push(`${mail.to} ${mail.text}`)
         return 'provider-id-1'
       })
-      expect(carried).toEqual([`reader@example.com [Confirm](${LINK})`])
+      // The plain-text part is read off the rendered body: a link is its words, then its address.
+      expect(carried).toEqual([`reader@example.com Confirm (${LINK})`])
       expect(await queueRows()).toHaveLength(0)
       expect((await listMailActivity(h.db)).entries[0]).toMatchObject({
         status: 'sent', attempts: 1, connectorLabel: connector.label, providerMessageId: 'provider-id-1',

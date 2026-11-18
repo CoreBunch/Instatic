@@ -19,6 +19,7 @@ import { MailLimitError } from '../../../mail/limits'
 import { MailNotConfiguredError } from '../../../mail/send'
 import { MailDeliveryError } from '../../../mail/smtpDriver'
 import { findMemberById } from '../../../members/repository'
+import { getInstalledPlugin } from '../../../repositories/plugins'
 import type { ApiCallFor } from '../../protocol/apiCallSchema'
 import { replyApiOk } from '../apiReplies'
 import type { HostPluginRecord } from '../types'
@@ -115,8 +116,20 @@ export async function handleSitePublicUrl(
  * up the mail queue. `to` is the recipient exactly as the plugin named it:
  * `{ member }` for a member, whose address it was never given, or the
  * `{ address }` it supplied itself.
+ *
+ * The news belongs to the install that queued the email. A plugin id that
+ * was uninstalled and installed again is another install, possibly another
+ * package altogether, and hears nothing of what its predecessor sent.
  */
-export function announcePluginMailOutcome(outcome: QueuedMailOutcome): void {
+export function announcePluginMailOutcome(db: DbClient, outcome: QueuedMailOutcome): void {
+  void deliverOutcome(db, outcome).catch((err: unknown) => {
+    console.error(`[plugin:${outcome.source}] mail outcome could not be delivered:`, err)
+  })
+}
+
+async function deliverOutcome(db: DbClient, outcome: QueuedMailOutcome): Promise<void> {
+  const install = await currentInstall(db, outcome.source)
+  if (install === null || outcome.queuedAt < Date.parse(install)) return
   const prefix = pluginMailTemplatePrefix(outcome.source)
   const payload = {
     template: outcome.kind.startsWith(prefix) ? outcome.kind.slice(prefix.length) : outcome.kind,
@@ -126,52 +139,65 @@ export function announcePluginMailOutcome(outcome: QueuedMailOutcome): void {
     ...(outcome.status === 'failed' ? { reason: outcome.reason ?? 'expired' } : {}),
   }
   const event = outcome.status === 'sent' ? 'mail.delivered' : 'mail.failed'
-  if (!hookBus.hasListener(outcome.source, event)) {
-    holdOutcome(outcome.source, { event, payload })
-    return
-  }
-  emitOutcome(outcome.source, { event, payload })
+  if (hookBus.hasListener(outcome.source, event)) emitOutcome(outcome.source, event, payload)
+  else holdOutcome(outcome.source, { install, event, payload, heldAt: Date.now() })
+}
+
+/** What identifies one install of a plugin id: the moment its row was created. Null when it is not installed. */
+async function currentInstall(db: DbClient, pluginId: string): Promise<string | null> {
+  const installed = await getInstalledPlugin(db, pluginId)
+  return installed?.kind === 'ok' ? installed.plugin.installedAt : null
 }
 
 interface HeldOutcome {
+  /** The install the news is for (see `currentInstall`). */
+  install: string
   event: MailHookEvent
   payload: unknown
+  heldAt: number
 }
 
 /** A plugin that never listens does not grow this without end: the oldest news goes first. */
 const HELD_OUTCOMES_PER_PLUGIN = 500
+/** News nobody collected within a day is dropped. */
+const HELD_OUTCOME_MAX_AGE_MS = 24 * 60 * 60 * 1000
 
 /**
  * News for a plugin that is not listening at this moment (it is being
  * reloaded, upgraded, or is disabled). Kept in memory and handed over when
- * the plugin next subscribes; lost if the server restarts first.
+ * that same install next subscribes; lost if the server restarts first.
  */
 const heldOutcomes = new Map<string, HeldOutcome[]>()
 
 function holdOutcome(pluginId: string, outcome: HeldOutcome): void {
-  const held = heldOutcomes.get(pluginId) ?? []
-  held.push(outcome)
-  if (held.length > HELD_OUTCOMES_PER_PLUGIN) held.shift()
-  heldOutcomes.set(pluginId, held)
+  const fresh = (heldOutcomes.get(pluginId) ?? []).filter(
+    (held) => held.install === outcome.install && outcome.heldAt - held.heldAt < HELD_OUTCOME_MAX_AGE_MS,
+  )
+  fresh.push(outcome)
+  heldOutcomes.set(pluginId, fresh.slice(-HELD_OUTCOMES_PER_PLUGIN))
 }
 
-function emitOutcome(pluginId: string, { event, payload }: HeldOutcome): void {
+function emitOutcome(pluginId: string, event: MailHookEvent, payload: unknown): void {
   void hookBus.emitTo(pluginId, event, payload).catch((err: unknown) => {
     console.error(`[plugin:${pluginId}] ${event} hook failed:`, err)
   })
 }
 
-/** The plugin has just subscribed to `event`: hand over what it missed. */
-export function deliverHeldMailOutcomes(pluginId: string, event: string): void {
-  const held = heldOutcomes.get(pluginId)
-  if (!held) return
-  const remaining = held.filter((outcome) => outcome.event !== event)
+/** The plugin has just subscribed to `event`: hand over what this install missed. */
+export async function deliverHeldMailOutcomes(db: DbClient, pluginId: string, event: string): Promise<void> {
+  if (!heldOutcomes.has(pluginId)) return
+  const install = await currentInstall(db, pluginId)
+  const held = heldOutcomes.get(pluginId) ?? []
+  const now = Date.now()
+  // Anything held for another install of this id, or for too long, is dropped unheard.
+  const current = held.filter((outcome) => outcome.install === install && now - outcome.heldAt < HELD_OUTCOME_MAX_AGE_MS)
+  const remaining = current.filter((outcome) => outcome.event !== event)
   if (remaining.length === 0) heldOutcomes.delete(pluginId)
   else heldOutcomes.set(pluginId, remaining)
-  for (const outcome of held) if (outcome.event === event) emitOutcome(pluginId, outcome)
+  for (const outcome of current) if (outcome.event === event) emitOutcome(pluginId, outcome.event, outcome.payload)
 }
 
-/** An uninstalled plugin has nothing to hear. */
+/** An uninstalled plugin has nothing to hear, and a newly installed one nothing to inherit. */
 export function forgetHeldMailOutcomes(pluginId: string): void {
   heldOutcomes.delete(pluginId)
 }

@@ -7,20 +7,15 @@
  * `{name}` variables. The same renderer runs on the server (to send) and in
  * the admin (the live preview), so what an owner sees is what is sent.
  *
- * Variable values are data, never markup. The body is rendered to HTML
- * first, with the variables still in place, and only then are the values
- * put in, HTML-escaped. A value therefore cannot add formatting, a link or
- * an element, whatever a member typed into their profile.
- *
- * A template is also not trusted to carry a secret value somewhere else: see
- * `fillHtml` for how variables in link and image addresses are confined.
- * And the finished body goes through the sanitizer (`MAIL_BODY_CONFIG`), so
- * raw HTML in a template cannot put a form, a script or a frame into an
- * email. A plugin's templates are held to a stricter profile still.
+ * Variable values are data, never markup, and a template is not trusted to
+ * carry a secret value (a member's single-use link) somewhere else. The body
+ * is rendered from Markdown to HTML with the variables still in place,
+ * sanitized to the few elements an email needs, and the rules are then
+ * applied to that parsed tree, never to markup as text: see `fillTree`.
  */
 import { escapeHtml, isSafeUrl } from '@core/publisher'
 import { renderMarkdownToHtml } from '@core/markdown/renderMarkdown'
-import { sanitizeRichtext, type SanitizerConfig } from '@core/sanitize'
+import { sanitizeToFragment, type SanitizerConfig } from '@core/sanitize'
 import type { MailTemplateVariable } from './schemas'
 
 // ─── Catalogue ─────────────────────────────────────────────────────────────
@@ -101,10 +96,34 @@ function singleLine(value: string): string {
   return value.replace(/[\r\n]+/g, ' ').trim()
 }
 
-function fill(source: string, variables: MailVariables, map: (value: string) => string): string {
-  return source.replace(VARIABLE, (whole, name: string) =>
-    name in variables ? map(variables[name]) : whole,
-  )
+/** What makes a run of characters read as an address to a mail client that links plain text. */
+const ADDRESS_LIKE = /:\/\/|www\.|@/i
+
+/**
+ * Put values into text. `flat` is the text `source` is a part of, starting
+ * at `offset` in it (the whole of it, for a subject).
+ *
+ * A variable that is written into an address (`https://elsewhere.example/?t={link}`,
+ * with no space between) is left as written: mail clients turn an address
+ * in plain text into a link, so that shape would hand a member's
+ * single-use link to another server as surely as an `href` would.
+ */
+function fill(
+  source: string,
+  variables: MailVariables,
+  map: (value: string) => string,
+  flat: string = source,
+  offset = 0,
+): string {
+  return source.replace(VARIABLE, (whole, name: string, at: number) => {
+    if (!(name in variables)) return whole
+    let start = offset + at
+    let end = start + whole.length
+    while (start > 0 && !/\s/.test(flat[start - 1])) start -= 1
+    while (end < flat.length && !/\s/.test(flat[end])) end += 1
+    const around = flat.slice(start, end).replace(VARIABLE, '')
+    return ADDRESS_LIKE.test(around) ? whole : map(variables[name])
+  })
 }
 
 /** Every `{name}` in a subject or body that is not one of `known`. */
@@ -129,45 +148,6 @@ export function isPluginMailTemplateKey(key: string | undefined): boolean {
   return key !== undefined && key.includes('~')
 }
 
-/** An attribute holding an address, however it is quoted in hand-written HTML. */
-const ADDRESS_ATTRIBUTE = /\b(href|src)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'>]+))/gi
-
-/**
- * Put values into rendered HTML.
- *
- * In a link or image address a variable is honoured only when it is the
- * WHOLE address (`[Confirm]({link})`), and only if its value is an http(s)
- * address. An address that merely contains a variable
- * (`https://elsewhere.example/?t={link}`) is neutralised: that shape would
- * hand a member's single-use link to another server, on click for a link
- * and on open for an image. This holds however the attribute is quoted, so
- * raw HTML in a body cannot write its way round it. Everywhere else a value
- * is text.
- *
- * With `strict` (a plugin's template) an image address is always
- * neutralised, since an image is fetched when the email is opened, and a
- * link written out in the template must be `https`.
- */
-function fillHtml(html: string, variables: MailVariables, strict: boolean): string {
-  const withAddresses = html.replace(
-    ADDRESS_ATTRIBUTE,
-    (_whole, name: string, double?: string, single?: string, bare?: string) => {
-      const attribute = name.toLowerCase()
-      const target = (double ?? single ?? bare ?? '').trim()
-      if (strict && attribute === 'src') return `${attribute}="#"`
-      if (!target.includes('{')) {
-        if (strict && !/^https:\/\//i.test(target) && target !== '#') return `${attribute}="#"`
-        return `${attribute}="${target.replace(/"/g, '&quot;')}"`
-      }
-      const whole = WHOLE_VARIABLE.exec(target)
-      const value = whole && whole[1] in variables ? variables[whole[1]].trim() : null
-      const safe = value !== null && /^https?:\/\//i.test(value) && isSafeUrl(value) ? escapeHtml(value) : '#'
-      return `${attribute}="${safe}"`
-    },
-  )
-  return fill(withAddresses, variables, (value) => escapeHtml(value))
-}
-
 /** What an email body may contain once rendered: the Markdown subset and nothing a mail client would run or submit. */
 const MAIL_BODY_TAGS = [
   'p', 'br', 'hr', 'strong', 'b', 'em', 'i', 'del', 's', 'a', 'code', 'pre', 'blockquote',
@@ -176,9 +156,10 @@ const MAIL_BODY_TAGS = [
 ]
 
 /**
- * The backstop for every email body: whatever the Markdown renderer or raw
- * HTML in a template produced, only these elements and attributes leave the
- * server. No forms, scripts, frames, styles or event handlers.
+ * What every email body is cut down to before values go in: whatever the
+ * Markdown renderer or raw HTML in a template produced, only these elements
+ * and attributes remain. No forms, scripts, frames, styles, event handlers,
+ * and no attribute that takes an address other than `href` and `src`.
  */
 const MAIL_BODY_CONFIG: SanitizerConfig = {
   ALLOWED_TAGS: [...MAIL_BODY_TAGS, 'img'],
@@ -191,6 +172,129 @@ const PLUGIN_MAIL_BODY_CONFIG: SanitizerConfig = {
   ALLOWED_TAGS: MAIL_BODY_TAGS,
   ALLOWED_ATTR: ['href', 'title', 'target', 'rel', 'align', 'start'],
   ALLOW_DATA_ATTR: false,
+}
+
+const ELEMENT_NODE = 1
+const TEXT_NODE = 3
+
+/** A value that may be an address in an email: absolute `http(s)`, and nothing a browser would run. */
+function isWebAddress(value: string, httpsOnly: boolean): boolean {
+  return (httpsOnly ? /^https:\/\//i : /^https?:\/\//i).test(value) && isSafeUrl(value)
+}
+
+/**
+ * The address an `href` or `src` ends up with.
+ *
+ * A variable is honoured only when it is the WHOLE address
+ * (`[Confirm]({link})`) and its value is an `http(s)` address. An address
+ * that merely contains a variable (`https://elsewhere.example/?t={link}`)
+ * becomes `#`: that shape would hand a member's single-use link to another
+ * server, on click for a link and on open for an image. An address written
+ * out in the template must be `http(s)` (or `mailto:` on a link); in a
+ * plugin's template (`strict`), `https` only.
+ */
+function resolveAddress(raw: string, variables: MailVariables, strict: boolean, link: boolean): string {
+  const target = raw.trim()
+  if (target.includes('{')) {
+    const whole = WHOLE_VARIABLE.exec(target)
+    const value = whole && whole[1] in variables ? variables[whole[1]].trim() : null
+    return value !== null && isWebAddress(value, false) ? value : '#'
+  }
+  if (isWebAddress(target, strict)) return target
+  if (link && !strict && /^mailto:/i.test(target) && isSafeUrl(target)) return target
+  return '#'
+}
+
+/** Elements that do not end a line: text on both sides of one reads as one run. */
+const INLINE_TAGS = new Set(['a', 'b', 'strong', 'em', 'i', 'del', 's', 'code'])
+
+interface TextRun {
+  node: ChildNode
+  /** Where this node's text starts in the body's text read as one string. */
+  start: number
+}
+
+/**
+ * Put values into the parsed, sanitized body.
+ *
+ * Values go into text nodes, where they are text whatever they contain, and
+ * into the one kind of attribute `resolveAddress` vouches for: the address
+ * of a link (`a[href]`) or an image (`img[src]`). Every other attribute
+ * that holds a `{` is removed, so there is no attribute a template can use
+ * to carry a value anywhere. The tree is the one the sanitizer parsed, so
+ * quoting, entities, case and whitespace in the template's markup have
+ * already been read the only way they will ever be read.
+ *
+ * Text is filled against the body read as one string, so an address split
+ * across inline elements (`https://elsewhere.example/?t=<b>{link}</b>`) is
+ * still seen as one address (see `fill`).
+ */
+function fillTree(root: ParentNode, variables: MailVariables, strict: boolean): void {
+  const runs: TextRun[] = []
+  let flat = ''
+  const visit = (parent: ParentNode): void => {
+    for (const node of Array.from(parent.childNodes)) {
+      if (node.nodeType === TEXT_NODE) {
+        runs.push({ node, start: flat.length })
+        flat += node.textContent ?? ''
+        continue
+      }
+      if (node.nodeType !== ELEMENT_NODE) {
+        node.parentNode?.removeChild(node)
+        continue
+      }
+      const element = node as Element
+      const tag = element.tagName.toLowerCase()
+      for (const attribute of Array.from(element.attributes)) {
+        const name = attribute.name.toLowerCase()
+        if ((tag === 'a' && name === 'href') || (tag === 'img' && name === 'src')) {
+          element.setAttribute(attribute.name, resolveAddress(attribute.value, variables, strict, tag === 'a'))
+        } else if (attribute.value.includes('{')) {
+          element.removeAttribute(attribute.name)
+        }
+      }
+      const inline = INLINE_TAGS.has(tag)
+      if (!inline) flat += ' '
+      visit(element)
+      if (!inline) flat += ' '
+    }
+  }
+  visit(root)
+  for (const { node, start } of runs) {
+    node.textContent = fill(node.textContent ?? '', variables, (value) => value, flat, start)
+  }
+}
+
+const BLOCK_TAGS = new Set(['p', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'blockquote', 'pre', 'ul', 'ol', 'table', 'hr'])
+
+/**
+ * The plain-text body, read off the same filled tree as the HTML one, so
+ * the two say the same thing and an address the HTML part refused is not in
+ * the text part either. A link is its words followed by its address.
+ */
+function treeText(root: ParentNode): string {
+  let text = ''
+  for (const node of Array.from(root.childNodes)) {
+    if (node.nodeType === TEXT_NODE) {
+      text += node.textContent ?? ''
+      continue
+    }
+    if (node.nodeType !== ELEMENT_NODE) continue
+    const element = node as Element
+    const tag = element.tagName.toLowerCase()
+    const inner = treeText(element)
+    if (tag === 'br') text += '\n'
+    else if (tag === 'img') text += element.getAttribute('alt') ?? ''
+    else if (tag === 'a') {
+      const href = element.getAttribute('href') ?? ''
+      text += href && href !== '#' && href !== inner.trim() ? `${inner} (${href})` : inner
+    } else if (tag === 'li') text += `- ${inner.trim()}\n`
+    else if (tag === 'tr') text += `${inner.trim()}\n`
+    else if (tag === 'th' || tag === 'td') text += `${inner.trim()}  `
+    else if (BLOCK_TAGS.has(tag)) text += `${inner.trim()}\n\n`
+    else text += inner
+  }
+  return text
 }
 
 const LAYOUT_STYLE = {
@@ -229,11 +333,19 @@ export function renderMailTemplate(
 ): RenderedMail {
   const siteName = variables['site.name'] ?? ''
   const strict = isPluginMailTemplateKey(template.key)
-  const filled = fillHtml(renderMarkdownToHtml(template.body), variables, strict)
+  const body = sanitizeToFragment(
+    renderMarkdownToHtml(template.body),
+    strict ? PLUGIN_MAIL_BODY_CONFIG : MAIL_BODY_CONFIG,
+  )
+  // No parser, no email: the rules above are only as good as the tree they run on.
+  if (!body) throw new Error('An email cannot be rendered without an HTML parser')
+  fillTree(body, variables, strict)
+  const holder = body.ownerDocument.createElement('div')
+  holder.appendChild(body)
   return {
     subject: singleLine(fill(template.subject, variables, singleLine)),
-    text: fill(template.body, variables, (value) => value),
-    html: wrapInLayout(sanitizeRichtext(filled, strict ? PLUGIN_MAIL_BODY_CONFIG : MAIL_BODY_CONFIG), siteName),
+    text: treeText(holder).replace(/\n{3,}/g, '\n\n').trim(),
+    html: wrapInLayout(holder.innerHTML, siteName),
   }
 }
 

@@ -5,6 +5,8 @@
  * "reset" is simply deleting the row.
  */
 import type { DbClient } from '../db/client'
+// The renderer works on the sanitizer's parsed tree; on the server that is jsdom.
+import '../richtextSanitizer'
 import {
   getMailTemplateDefinition,
   listMailTemplateDefinitions,
