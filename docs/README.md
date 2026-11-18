@@ -29,6 +29,7 @@ docs/
 │   ├── site-shell.md               ← site config (breakpoints, classes, files, deps)
 │   ├── dependencies.md             ← Dependencies panel: registry proxy, install/remove, lock
 │   ├── email.md                    ← Email workspace: connectors (SMTP, SES), defaults, templates, activity
+│   ├── members.md                  ← Site members: accounts, sessions, public endpoints, security rules
 │   ├── modules.md                  ← module engine + first-party blocks
 │   ├── data-workspace.md           ← Data workspace: table schema + field management UI
 │   ├── dashboard.md                ← Dashboard workspace + widget registry
@@ -150,6 +151,7 @@ Three categories, three voices:
 | [features/branches.md](features/branches.md)                     | Site branches: fork, edit in isolation, preview links, three-way merge, version restore |
 | [features/dependencies.md](features/dependencies.md)             | Dependencies panel: npm registry proxy, browse, install, remove, lock |
 | [features/email.md](features/email.md)                           | Email workspace: connectors, defaults, templates, delivery activity  |
+| [features/members.md](features/members.md)                       | Site members: sign-up, sign-in, sessions, tags, the public endpoints |
 | [features/modules.md](features/modules.md)                       | Module engine, defining first-party blocks                          |
 | [features/dashboard.md](features/dashboard.md)                   | Dashboard workspace, widgets, grid, customize mode                  |
 | [features/spotlight.md](features/spotlight.md)                   | Cmd+K command palette                                                |

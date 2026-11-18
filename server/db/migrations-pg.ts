@@ -1438,4 +1438,115 @@ export const pgMigrations: Migration[] = [
          and not (capabilities_json ? 'mail.manage');
     `,
   },
+  {
+    // Site members: people who sign up and log in on the published site,
+    // kept fully apart from admin `users`. Sessions and tokens store only
+    // hashes. `member_tags` is keyed (member, tag, source) so a tag granted
+    // by a plugin and the same tag granted by hand are separate rows.
+    // `member_settings` is one installation-wide row, deliberately outside
+    // the branched, exported site document. `data_tables.access_json` holds
+    // a table's access rule for its entry routes (null = anyone).
+    id: '033_members',
+    sql: `
+      create table if not exists members (
+        id text primary key,
+        email text not null,
+        email_normalized text not null,
+        password_hash text,
+        status text not null default 'active',
+        email_verified_at timestamptz,
+        profile_json jsonb not null default '{}',
+        last_login_at timestamptz,
+        deleted_at timestamptz,
+        created_at timestamptz not null default now(),
+        updated_at timestamptz not null default now()
+      );
+
+      create unique index if not exists members_email_active_idx
+        on members (email_normalized) where deleted_at is null;
+
+      create table if not exists member_sessions (
+        id_hash text primary key,
+        member_id text not null references members(id) on delete cascade,
+        ip_address text,
+        user_agent text,
+        created_at timestamptz not null default now(),
+        last_seen_at timestamptz not null default now(),
+        expires_at timestamptz not null,
+        revoked_at timestamptz
+      );
+
+      create index if not exists member_sessions_member_idx
+        on member_sessions (member_id);
+
+      create table if not exists member_tokens (
+        id_hash text primary key,
+        member_id text not null references members(id) on delete cascade,
+        kind text not null,
+        payload_json jsonb not null default '{}',
+        created_at timestamptz not null default now(),
+        expires_at timestamptz not null,
+        used_at timestamptz
+      );
+
+      create index if not exists member_tokens_member_kind_idx
+        on member_tokens (member_id, kind);
+
+      create table if not exists member_tags (
+        member_id text not null references members(id) on delete cascade,
+        tag text not null,
+        source text not null,
+        expires_at timestamptz,
+        created_at timestamptz not null default now(),
+        primary key (member_id, tag, source)
+      );
+
+      create index if not exists member_tags_tag_idx
+        on member_tags (tag);
+
+      create table if not exists member_events (
+        id text primary key,
+        member_id text references members(id) on delete set null,
+        kind text not null,
+        ip_address text,
+        user_agent text,
+        metadata_json jsonb not null default '{}',
+        created_at timestamptz not null default now()
+      );
+
+      create index if not exists member_events_member_idx
+        on member_events (member_id, created_at desc);
+
+      create table if not exists member_settings (
+        id text primary key,
+        signup_mode text not null default 'closed',
+        profile_fields_json jsonb not null default '[]',
+        pages_json jsonb not null default '{}',
+        updated_at timestamptz not null default now()
+      );
+
+      alter table data_tables add column access_json jsonb;
+
+      -- The capability-less admin role was called "Member", which now reads
+      -- as a site member. Relabel it, unless an owner already renamed it.
+      update roles
+         set name = 'No access',
+             description = 'An admin account that can sign in but do nothing. Not a site member: those sign in on the published site.'
+       where id = 'member'
+         and name = 'Member'
+         and description = 'Public-facing member account — no admin access by default.';
+
+      update roles
+         set capabilities_json = capabilities_json || '["members.read"]'::jsonb,
+             updated_at = now()
+       where id in ('owner', 'admin')
+         and not (capabilities_json ? 'members.read');
+
+      update roles
+         set capabilities_json = capabilities_json || '["members.manage"]'::jsonb,
+             updated_at = now()
+       where id in ('owner', 'admin')
+         and not (capabilities_json ? 'members.manage');
+    `,
+  },
 ]
