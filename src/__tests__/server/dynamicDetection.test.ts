@@ -5,6 +5,7 @@
  *   1. Module flagged `dynamic: true`
  *   2. Structured `dynamicBindings` with a request-dependent source
  *   2b. Inline `{source.field}` token in a string prop
+ *   2c. A `visibleWhen` condition reading a request-dependent source
  *   3. `base.loop` with a `requestDependent: true` loop source
  *   4. `base.visual-component-ref` whose VC tree contains any dynamic node
  *
@@ -270,6 +271,43 @@ describe('findDynamicNodeIds — Rule 2b: inline {source.field} tokens', () => {
 
     const ids = findDynamicNodeIds(page, site, reg)
     expect(ids.size).toBe(0)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Rule 2c: a visibility condition reading a request-dependent source
+// ---------------------------------------------------------------------------
+
+describe('findDynamicNodeIds — Rule 2c: visibleWhen', () => {
+  const reg = () => makeRegistry({
+    'base.body': makeModule('base.body'),
+    'base.text': makeModule('base.text'),
+  })
+
+  it('adds node id when the condition reads route.query', () => {
+    // Whether the node renders at all depends on the URL, so baking it would
+    // freeze one visitor's answer into the artefact every visitor gets.
+    const page = makePage({
+      root: { moduleId: 'base.body', children: ['filtered'] },
+      filtered: {
+        moduleId: 'base.text',
+        props: { text: 'Filtered' },
+        visibleWhen: { source: 'route', field: 'query.tag', test: 'isSet' },
+      },
+    })
+    expect(findDynamicNodeIds(page, makeSite(), reg()).has('filtered')).toBe(true)
+  })
+
+  it('does NOT add node id when the condition reads the row (publish-time)', () => {
+    const page = makePage({
+      root: { moduleId: 'base.body', children: ['player'] },
+      player: {
+        moduleId: 'base.text',
+        props: { text: 'Video' },
+        visibleWhen: { source: 'currentEntry', field: 'video', test: 'isSet' },
+      },
+    })
+    expect(findDynamicNodeIds(page, makeSite(), reg()).size).toBe(0)
   })
 })
 

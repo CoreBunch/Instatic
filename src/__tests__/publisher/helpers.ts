@@ -115,6 +115,7 @@ export function makePage(
       dynamicBindings: spec.dynamicBindings,
       propBindings: spec.propBindings,
       ...(spec.inlineStyles ? { inlineStyles: spec.inlineStyles } : {}),
+      ...(spec.visibleWhen ? { visibleWhen: spec.visibleWhen } : {}),
     }
   }
   // Derive the parentId index — mirrors what parse/loadSite do for real trees
