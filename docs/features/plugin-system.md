@@ -653,7 +653,7 @@ The repository is `server/repositories/pluginRecords.ts`. `list` means the same 
 
 Record data is a JSON object, at most 512 levels deep. Text Postgres cannot store is refused on create and update on both databases, so a plugin behaves the same on either: the NUL character (`\u0000`) and an unpaired surrogate, in a key or a value at any depth.
 
-**Unreadable records.** A stored row whose data is not a JSON object (or nests deeper than 512 levels) does not fail the list: it comes back with `data: {}` and `unreadable: true`, and is logged once as `[plugin:<id>]`. The admin resource page says the record could not be read. `update` on such a record is refused (`PluginRecordUnreadableError`), because it would silently replace whatever the row held; `delete` works. On Postgres, a row still in the old string form (see `036_plugin_records_json_repair` in `docs/reference/database-dialects.md`) is not unreadable: it reads and updates normally.
+**Unreadable records.** A stored row whose data is not a JSON object (or nests deeper than 512 levels) does not fail the list: it comes back with `data: {}` and `unreadable: true`, and is logged once as `[plugin:<id>]`. The admin resource page says the record could not be read. `update` on such a record is refused (`PluginRecordUnreadableError`), because it would silently replace whatever the row held; `delete` works. On Postgres, a row still in the old string form (see `036_plugin_records_json_repair` in `docs/reference/database-dialects.md`) is not unreadable: it reads and updates normally. `list` filters do not match it until it is saved again; the server log gives the count of such rows after the migration (`[migrations]`).
 
 ### CMS hooks — requires `cms.hooks`
 

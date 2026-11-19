@@ -1,3 +1,4 @@
+import type { DbClient } from './client'
 import type { Migration } from './runMigrations'
 
 /**
@@ -56,6 +57,18 @@ import type { Migration } from './runMigrations'
  * A migration of its own, so it never shares a transaction (and a table
  * lock) with an ALTER TABLE. Only strings that begin an object are touched.
  *
+ * Two things plpgsql cannot swallow are handled by the runner instead:
+ *
+ *   - A cancel. `exception when others` skips `query_canceled`, so a database
+ *     or role `statement_timeout` shorter than the rewrite would abort the
+ *     migration on every boot. The migration sets `noTimeouts`. A
+ *     `lock_timeout` raises a catchable error, but would leave rows behind
+ *     for no good reason, so it is switched off too.
+ *   - Silence. Whatever was swallowed, the migration is recorded as applied.
+ *     `leftover` counts the rows still stored as strings and the runner logs
+ *     it with the `[migrations]` prefix (the server's own WARNING goes to the
+ *     Postgres log; the driver does not hand notices to the application).
+ *
  * Exported so the row path can be exercised on a newer server in tests.
  */
 export const PLUGIN_RECORDS_JSON_REPAIR_SQL = `
@@ -94,14 +107,29 @@ export const PLUGIN_RECORDS_JSON_REPAIR_SQL = `
             end;
           end loop;
           if skipped > 0 then
-            raise notice 'plugin_records: % row(s) hold text that is not a JSON object and were left as they are', skipped;
+            raise warning 'plugin_records: % row(s) hold text that is not a JSON object and were left as they are', skipped;
           end if;
         end if;
       exception when others then
-        raise notice 'plugin_records: the JSON repair did not run (%)', sqlerrm;
+        raise warning 'plugin_records: the JSON repair did not run (%)', sqlerrm;
       end
       $repair$;
 `
+
+/**
+ * Rows the repair left as string scalars: text that is not a JSON object, or
+ * a row the repair could not cast. They still read (`readDataJson` parses a
+ * string holding an object) but no `list` filter matches them until the
+ * record is written again.
+ */
+async function pluginRecordsStillStoredAsText(tx: DbClient): Promise<string | null> {
+  const { rows } = await tx.unsafe<{ remaining: string | number }>(
+    `select count(*) as remaining from plugin_records where jsonb_typeof(data_json) = 'string'`,
+  )
+  const remaining = Number(rows[0]?.remaining ?? 0)
+  if (remaining === 0) return null
+  return `${remaining} plugin record(s) are still stored as text. They can be read where the text holds a JSON object, but list filters do not match them until each is saved again.`
+}
 
 export const pgMigrations: Migration[] = [
   {
@@ -1707,5 +1735,7 @@ export const pgMigrations: Migration[] = [
     // SQLite has no such rows (JSON is text there), so its twin is a no-op.
     id: '036_plugin_records_json_repair',
     sql: PLUGIN_RECORDS_JSON_REPAIR_SQL,
+    noTimeouts: true,
+    leftover: pluginRecordsStillStoredAsText,
   },
 ]

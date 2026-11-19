@@ -13,7 +13,7 @@
  * string scalar instead of an object, the migration that repairs the rows
  * written that way, and `list` comparing a text extraction with a number.
  */
-import { afterAll, beforeAll, describe, expect, it } from 'bun:test'
+import { afterAll, beforeAll, describe, expect, it, spyOn } from 'bun:test'
 import { parsePluginManifest } from '@core/plugins/manifest'
 import { createDbClient } from '../../../server/db'
 import type { DbClient } from '../../../server/db/client'
@@ -155,6 +155,67 @@ describe.skipIf(!url)('plugin record storage on Postgres', () => {
     expect(byId.get('poison_row')).toMatchObject({ data: {}, unreadable: true })
     await db`delete from plugin_records where id = 'poison_row'`
   }, 60_000)
+
+  it('a statement timeout shorter than the repair cannot fail the migration', async () => {
+    // plpgsql cannot catch a cancel, so a database or role statement_timeout
+    // used to abort the migration on every boot. New connections to this
+    // database get a 100 ms limit; the repair of 150,000 rows takes far longer.
+    await db.unsafe(
+      `insert into plugin_records (id, plugin_id, resource_id, data_json)
+       select 'slow_' || g, $1, 'slow', to_jsonb(json_build_object('eventId', 'evt_' || g, 'pad', repeat('x', 200))::text)
+         from generate_series(1, 150000) g`,
+      [PLUGIN],
+    )
+    const { rows } = await db<{ name: string }>`select current_database() as name`
+    const database = `"${rows[0]?.name.replaceAll('"', '""')}"`
+    await db`delete from schema_migrations where id = ${REPAIR_MIGRATION}`
+    await db.unsafe(`alter database ${database} set statement_timeout = '100ms'`)
+    const timed = createDbClient(url ?? '')
+    try {
+      const limit = await timed.db<{ value: string }>`select current_setting('statement_timeout') as value`
+      expect(limit.rows[0]?.value).toBe('100ms')
+      await runMigrations(timed.db, timed.migrations)
+    } finally {
+      await timed.db.close()
+      await db.unsafe(`alter database ${database} reset statement_timeout`)
+    }
+
+    const applied = await db<{ id: string }>`select id from schema_migrations where id = ${REPAIR_MIGRATION}`
+    expect(applied.rows).toHaveLength(1)
+    const left = await db.unsafe<{ kind: string; total: string }>(
+      `select jsonb_typeof(data_json) as kind, count(*) as total from plugin_records
+        where plugin_id = $1 and resource_id = 'slow' group by 1`,
+      [PLUGIN],
+    )
+    expect(left.rows.map((row) => [row.kind, Number(row.total)])).toEqual([['object', 150000]])
+    await db`delete from plugin_records where plugin_id = ${PLUGIN} and resource_id = 'slow'`
+  }, 120_000)
+
+  it('says in the server log how many rows the repair left as text', async () => {
+    // Text rows other tests left behind would be counted too.
+    await db.unsafe(`delete from plugin_records where jsonb_typeof(data_json) = 'string'`)
+    await db`
+      insert into plugin_records (id, plugin_id, resource_id, data_json)
+      values ('left_text', ${PLUGIN}, 'leftover', ${'{"eventId": broken'})
+    `
+    await db`delete from schema_migrations where id = ${REPAIR_MIGRATION}`
+    const warn = spyOn(console, 'warn').mockImplementation(() => {})
+    try {
+      await runMigrations(db, migrations)
+      const lines = warn.mock.calls.map((call) => String(call[0]))
+      expect(lines.filter((line) => line.startsWith(`[migrations] ${REPAIR_MIGRATION}:`))).toEqual([
+        `[migrations] ${REPAIR_MIGRATION}: 1 plugin record(s) are still stored as text. They can be read where the text holds a JSON object, but list filters do not match them until each is saved again.`,
+      ])
+      warn.mockClear()
+      // Nothing left: the migration is quiet.
+      await db`delete from plugin_records where id = 'left_text'`
+      await db`delete from schema_migrations where id = ${REPAIR_MIGRATION}`
+      await runMigrations(db, migrations)
+      expect(warn.mock.calls.filter((call) => String(call[0]).startsWith('[migrations]'))).toEqual([])
+    } finally {
+      warn.mockRestore()
+    }
+  })
 
   it('the row path, for servers without pg_input_is_valid, repairs the same rows', async () => {
     const legacy = (id: string, raw: string) => db`
