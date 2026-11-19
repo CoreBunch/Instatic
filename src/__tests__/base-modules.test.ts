@@ -1228,13 +1228,8 @@ describe('base.list — render() specifics', () => {
 // ---------------------------------------------------------------------------
 
 describe('base.link — render() specifics', () => {
-  it('has click action, URL, text, and target module settings', () => {
-    expect(Object.keys(LinkModule.schema).sort()).toEqual(['action', 'href', 'htmlAttributes', 'signOutRedirect', 'target', 'text'])
-  })
-
-  it('renders a sign-out link to the member sign-out address', () => {
-    const { html } = renderModule(LinkModule, { action: 'memberSignOut', signOutRedirect: '/bye', text: 'Sign out' })
-    expect(html).toContain('href="/_instatic/members/logout?to=%2Fbye"')
+  it('has URL, text, and target module settings', () => {
+    expect(Object.keys(LinkModule.schema).sort()).toEqual(['href', 'htmlAttributes', 'target', 'text'])
   })
 
   it('renders target and rel for new-tab links', () => {
