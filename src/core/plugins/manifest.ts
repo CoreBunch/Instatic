@@ -30,7 +30,12 @@ export {
   frontendOriginAllowsHost,
   isExternalFrontendScriptSrc,
 } from './manifestFrontend'
-export { findPluginResource, validatePluginRecordData } from './resourceRecords'
+export {
+  deriveRecordUniqueKey,
+  findPluginResource,
+  pluginRecordUniqueKey,
+  validatePluginRecordData,
+} from './resourceRecords'
 
 const PLUGIN_ID_PATTERN = /^[a-z][a-z0-9-]*(?:\.[a-z][a-z0-9-]*)+$/
 /**
@@ -132,6 +137,12 @@ const resourceSchema = Type.Object({
   singularLabel: Type.Optional(Type.String({ minLength: 1, maxLength: 80 })),
   pluralLabel: Type.Optional(Type.String({ minLength: 1, maxLength: 80 })),
   fields: Type.Array(resourceFieldSchema, { minItems: 1, maxItems: 50 }),
+  /**
+   * A `text` field whose value must be unique among the resource's records.
+   * The host keeps it in an indexed column, which is what makes
+   * `createIfAbsent` and `getByKey` atomic. See docs/features/plugin-system.md.
+   */
+  uniqueField: Type.Optional(Type.String({ pattern: RESOURCE_FIELD_ID_PATTERN.source })),
 })
 
 const adminPageSchema = Type.Object({
@@ -393,6 +404,22 @@ export function parsePluginManifest(input: unknown): PluginManifest {
         throw new Error(`Invalid plugin manifest: duplicate field "${field.id}"`)
       }
       duplicateFields.add(field.id)
+    }
+
+    if (resource.uniqueField !== undefined) {
+      const keyField = resource.fields.find((field) => field.id === resource.uniqueField)
+      if (!keyField) {
+        throw new Error(
+          `Invalid plugin manifest: resource "${resource.id}" names "${resource.uniqueField}" as its uniqueField, ` +
+            `but declares no field with that id.`,
+        )
+      }
+      if (keyField.type !== 'text') {
+        throw new Error(
+          `Invalid plugin manifest: the uniqueField of resource "${resource.id}" must be a "text" field; ` +
+            `"${keyField.id}" is "${keyField.type}".`,
+        )
+      }
     }
 
     return resource as PluginResource

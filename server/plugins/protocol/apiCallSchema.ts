@@ -16,7 +16,11 @@
  */
 
 import { Type, type Static, type TSchema } from '@sinclair/typebox'
-import { StorageListOptionsSchema } from '@core/plugin-sdk/storageSchemas'
+import {
+  STORAGE_UNIQUE_KEY_MAX_LENGTH,
+  StorageListOptionsSchema,
+  StorageWriteOptionsSchema,
+} from '@core/plugin-sdk/storageSchemas'
 import { RouteRegistrationArgSchema } from './schemas/routes'
 import { HookListenerArgSchema, HookFilterArgSchema, HookEmitArgSchema } from './schemas/hooks'
 import { LoopSourceDescriptorSchema } from './schemas/loops'
@@ -99,10 +103,24 @@ export const ApiCallSchemas = {
     Type.String({ minLength: 1 }),
     Type.String({ minLength: 1 }),
     JsonRecordSchema,
+    StorageWriteOptionsSchema,
   ])),
   'cms.storage.delete': apiCallSchema('cms.storage.delete', Type.Tuple([
     Type.String({ minLength: 1 }),
     Type.String({ minLength: 1 }),
+    StorageWriteOptionsSchema,
+  ])),
+  'cms.storage.get': apiCallSchema('cms.storage.get', Type.Tuple([
+    Type.String({ minLength: 1 }),
+    Type.String({ minLength: 1 }),
+  ])),
+  'cms.storage.getByKey': apiCallSchema('cms.storage.getByKey', Type.Tuple([
+    Type.String({ minLength: 1 }),
+    Type.String({ minLength: 1, maxLength: STORAGE_UNIQUE_KEY_MAX_LENGTH }),
+  ])),
+  'cms.storage.createIfAbsent': apiCallSchema('cms.storage.createIfAbsent', Type.Tuple([
+    Type.String({ minLength: 1 }),
+    JsonRecordSchema,
   ])),
   'cms.settings.replace': apiCallSchema('cms.settings.replace', Type.Tuple([JsonRecordSchema])),
   'network.fetch': apiCallSchema('network.fetch', Type.Tuple([
