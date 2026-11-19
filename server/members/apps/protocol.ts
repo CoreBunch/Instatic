@@ -70,3 +70,19 @@ export function cleanDeviceName(raw: string | null): string | null {
   // By code point, so a character outside the basic plane is never cut in half.
   return name ? [...name].slice(0, DEVICE_NAME_MAX_LENGTH).join('').trim() : null
 }
+
+/** What every member app access token starts with, and every refresh token. */
+export const MEMBER_APP_ACCESS_TOKEN_PREFIX = 'imem_at_'
+export const MEMBER_APP_REFRESH_TOKEN_PREFIX = 'imem_rt_'
+
+/**
+ * Whether a header value names a member app's token anywhere in it: under
+ * any `Authorization` scheme (`Bearer`, `DPoP`, `Token`, none), however it
+ * is cased or spaced, well-formed or not. Plugin code is never handed such a
+ * header (`serializeRouteRequest`): the token also opens other plugins'
+ * routes and the member's profile.
+ */
+export function namesMemberAppToken(value: string): boolean {
+  const lower = value.toLowerCase()
+  return lower.includes(MEMBER_APP_ACCESS_TOKEN_PREFIX) || lower.includes(MEMBER_APP_REFRESH_TOKEN_PREFIX)
+}

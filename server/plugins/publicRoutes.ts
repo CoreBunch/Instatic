@@ -15,14 +15,15 @@
  * plugin opened to apps (`{ app: { scope } }`) also answers an app the member
  * signed in to: `Authorization: Bearer <access token>`, when that sign-in
  * carries the scope `plugin:<pluginId>:<scope>`. The token never reaches the
- * plugin either.
+ * plugin either, on any route and under any `Authorization` scheme
+ * (`routeIo.ts` drops the header).
  */
 import type { DbClient } from '../db/client'
 import { isStateChangingMethod, originAllowed } from '../auth/security'
 import { jsonResponse, readBytesWithLimit, RequestBodyTooLargeError } from '../http'
 import { pluginAppScope } from '@core/members'
 import { memberAppIssuer } from '../members/apps/protocol'
-import { findMemberApp, findMemberAppAccess, memberAppRealm, touchMemberAppGrant } from '../members/apps/store'
+import { findMemberApp, findMemberAppAccess, touchMemberAppGrant } from '../members/apps/store'
 import { originOk, resolveSignedInMember } from '../members/handlers'
 import { findMemberById, toCurrentMember } from '../members/repository'
 import { findPluginRouteAccess, runRouteInWorker } from './host/rpc'
@@ -47,9 +48,6 @@ async function signedInMember(db: DbClient, req: Request): Promise<SerializedMem
   return { id: member.id, email: member.email, tags: member.tags, profile: member.profile }
 }
 
-/** What every member app access token starts with (`memberAppRealm.accessTokenPrefix`). */
-const APP_TOKEN_PREFIX = memberAppRealm.accessTokenPrefix
-
 /**
  * What a request's `Authorization` header says about who is calling.
  *
@@ -58,15 +56,19 @@ const APP_TOKEN_PREFIX = memberAppRealm.accessTokenPrefix
  * and those are the member's browser (null). For a Bearer header, `token` is
  * the credential when it has the shape of a token and '' otherwise: a token
  * nobody holds, so the request is refused rather than answered from the
- * session cookie that may ride along. One parser decides both, so there is
- * no header that one place reads as a token and another does not.
+ * session cookie that may ride along.
+ *
+ * This decides who is calling, not what the plugin sees: a token under any
+ * other scheme opens nothing, and the handler is not handed it either
+ * (`serializeRouteRequest` drops an `Authorization` header that names a
+ * member app token, whatever the scheme and whichever route it reached).
  */
-function bearerCredential(req: Request): { token: string; raw: string } | null {
+function bearerCredential(req: Request): { token: string } | null {
   const header = req.headers.get('authorization')
   const match = header === null ? null : /^bearer(?:\s+([\s\S]*))?$/i.exec(header)
   if (!match) return null
   const raw = (match[1] ?? '').trim()
-  return { token: /^[A-Za-z0-9_-]{20,200}$/.test(raw) ? raw : '', raw }
+  return { token: /^[A-Za-z0-9_-]{20,200}$/.test(raw) ? raw : '' }
 }
 
 type AppCaller = { member: SerializedMember; app: SerializedApp; grantId: string }
@@ -180,17 +182,7 @@ export async function handlePublicPluginRouteRequest(req: Request, db: DbClient,
     // A public route may be a webhook (no Origin at all). A request that
     // does name an origin must name this site's.
     if (isStateChangingMethod(req.method) && !originAllowed(req)) return refuse(403, 'Forbidden: invalid origin')
-    // An app that sends its token to everything on this mount must not hand
-    // it to a public route's handler: the token also opens other plugins'
-    // routes and the member's profile. A plugin's own secrets (a webhook
-    // signature, say) do not look like one and pass through.
-    // Judged on the raw credential, however it is spaced or cased: anything
-    // that names a member app token goes, well-formed or not.
-    if (bearerCredential(req)?.raw.includes(APP_TOKEN_PREFIX)) {
-      const headers = new Headers(request.headers)
-      headers.delete('authorization')
-      request = new Request(request, { headers })
-    }
+    // An app's token sent here anyway is not handed to the handler: `serializeRouteRequest` drops it.
     member = pluginMayReadMembers(pluginId) ? await signedInMember(db, req) : null
   }
 

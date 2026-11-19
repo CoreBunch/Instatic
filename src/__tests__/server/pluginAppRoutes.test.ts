@@ -396,6 +396,41 @@ describe('apps on plugin member routes', () => {
       }
     })
 
+    it('never hands a handler an app\'s token, whatever scheme it was sent under', async () => {
+      const token = await signIn(client, `profile ${READ}`, ada.cookie)
+      const disguised = [
+        `DPoP ${token}`,
+        `Token ${token}`,
+        `dPoP   ${token}`,
+        `tOkEn ${token}   extra`,
+        `Custom key="${token}"`,
+        token,
+        // Even respelled: the secret half is still the token's.
+        `Token ${token.replace('imem_at_', 'IMEM_AT_')}`,
+      ]
+      for (const authorization of disguised) {
+        // A public route.
+        const open = await visit(`${MOUNT}/echo`, { headers: { authorization } })
+        expect(`${authorization.slice(0, 14)} ${JSON.stringify(await open.json())}`)
+          .toBe(`${authorization.slice(0, 14)} {"authorization":null}`)
+        // A member route the session cookie opened: not an app's call, and still no token.
+        const mine = await visit(`${MOUNT}/account`, { headers: { authorization, cookie: ada.cookie } })
+        expect(mine.status).toBe(200)
+        expect(await mine.json()).toEqual({ member: 'ada@example.com', app: null, authorization: null, cookie: null })
+        // And it opened nothing by itself.
+        expect((await visit(`${MOUNT}/orders`, { headers: { authorization } })).status).toBe(401)
+      }
+      // A refresh token is no more the plugin's to see.
+      const refresh = await visit(`${MOUNT}/echo`, { headers: { authorization: `Token imem_rt_${'r'.repeat(40)}` } })
+      expect(await refresh.json()).toEqual({ authorization: null })
+
+      // A plugin's own secret does not look like one and passes, on both kinds of route.
+      const own = 'Token webhook-secret-of-the-plugins-own'
+      expect(await (await visit(`${MOUNT}/echo`, { headers: { authorization: own } })).json()).toEqual({ authorization: own })
+      const account = await visit(`${MOUNT}/account`, { headers: { authorization: own, cookie: ada.cookie } })
+      expect(((await account.json()) as { authorization: string }).authorization).toBe(own)
+    })
+
     it('still answers the member\'s browser on a site behind HTTP Basic auth', async () => {
       // The browser sends the proxy's credentials with every request; that is not an app.
       const headers = { authorization: 'Basic c3RhZ2luZzpzZWNyZXQ=', cookie: ada.cookie }

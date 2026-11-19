@@ -18,7 +18,11 @@ import type {
   StoredRefreshToken,
 } from '../../oauth/grants'
 import { generateOpaqueToken, hashOpaqueToken } from '../../oauth/secrets'
-import { normalizeMemberAppScope } from './protocol'
+import {
+  MEMBER_APP_ACCESS_TOKEN_PREFIX,
+  MEMBER_APP_REFRESH_TOKEN_PREFIX,
+  normalizeMemberAppScope,
+} from './protocol'
 
 const REQUEST_TTL_MS = 10 * 60 * 1000
 const AUTHORIZATION_CODE_TTL_MS = 5 * 60 * 1000
@@ -546,8 +550,8 @@ function memberAppGrantStore(tx: DbClient): GrantStore {
 /** The authorization server apps sign a site member in with. */
 export const memberAppRealm: OAuthRealm = {
   logName: 'members:apps',
-  accessTokenPrefix: 'imem_at_',
-  refreshTokenPrefix: 'imem_rt_',
+  accessTokenPrefix: MEMBER_APP_ACCESS_TOKEN_PREFIX,
+  refreshTokenPrefix: MEMBER_APP_REFRESH_TOKEN_PREFIX,
   accessTokenTtlSeconds: ACCESS_TOKEN_TTL_SECONDS,
   normalizeScope: normalizeMemberAppScope,
   store: memberAppGrantStore,
