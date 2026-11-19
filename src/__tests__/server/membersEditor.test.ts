@@ -28,7 +28,7 @@ import { findDynamicNodeIds } from '../../core/publisher/dynamicDetection'
 import { normalizeSiteRuntimeConfig } from '@core/site-runtime'
 import { pageToCells } from '../../core/data/pageFromRow'
 import { FORM_RUNTIME_JS } from '../../modules/base/forms/formRuntimeJs'
-import { memberFormFragment } from '../../admin/pages/site/panels/PropertiesPanel/memberFormParts'
+import { memberFormFragment, missingMemberFormParts } from '../../admin/pages/site/panels/PropertiesPanel/memberFormParts'
 import { MAIN_SCOPE } from '../../../server/branches/scope'
 import { mergeDerivedCells } from '../../../server/collab/relayPersistence'
 import { createMember, grantMemberTag } from '../../../server/members/repository'
@@ -127,6 +127,9 @@ function siteWith(pages: Page[]): SiteDocument {
   return { ...makeShell(), pages } as unknown as SiteDocument
 }
 
+/** A signed-in member holding these tags, with no app asking to sign them in. */
+const member = (tags: string[]) => ({ tags, appAsking: false })
+
 describe('member bindings and show-when rules', () => {
   describe('in the publisher', () => {
     const page = makePage('p', 'p', memberNodes('p'))
@@ -157,8 +160,8 @@ describe('member bindings and show-when rules', () => {
         expect(paths).toEqual([[pro]])
         expect(showWhenPathsAreGated(paths)).toBe(true)
         expect(showWhenPathsAllow(paths, null)).toBe(false)
-        expect(showWhenPathsAllow(paths, [])).toBe(false)
-        expect(showWhenPathsAllow(paths, ['pro'])).toBe(true)
+        expect(showWhenPathsAllow(paths, member([]))).toBe(false)
+        expect(showWhenPathsAllow(paths, member(['pro']))).toBe(true)
       })
 
       it('puts a list inside a component under the component\'s own limited elements', () => {
@@ -171,7 +174,7 @@ describe('member bindings and show-when rules', () => {
         )
         const paths = showWhenPathsTo(refPage, site, 'vc_loop', { includeSelf: true })
         expect(showWhenPathsAllow(paths, null)).toBe(false)
-        expect(showWhenPathsAllow(paths, [])).toBe(true)
+        expect(showWhenPathsAllow(paths, member([]))).toBe(true)
       })
 
       it('puts slot content under the outlet it fills, and gives unplaced content to nobody', () => {
@@ -190,10 +193,10 @@ describe('member bindings and show-when rules', () => {
           ],
         )
         const filled = showWhenPathsTo(refPage, site, 'ref__fill_text', { includeSelf: false })
-        expect(showWhenPathsAllow(filled, [])).toBe(false)
-        expect(showWhenPathsAllow(filled, ['pro'])).toBe(true)
+        expect(showWhenPathsAllow(filled, member([]))).toBe(false)
+        expect(showWhenPathsAllow(filled, member(['pro']))).toBe(true)
         const lost = showWhenPathsTo(refPage, site, 'ref__lost_text', { includeSelf: false })
-        expect(showWhenPathsAllow(lost, ['pro'])).toBe(false)
+        expect(showWhenPathsAllow(lost, member(['pro']))).toBe(false)
       })
 
       it('treats a node on no render path as limited, and open to nobody', () => {
@@ -201,7 +204,7 @@ describe('member bindings and show-when rules', () => {
         const paths = showWhenPathsTo(refPage, site, 'vc_root', { includeSelf: true })
         expect(paths).toEqual([])
         expect(showWhenPathsAreGated(paths)).toBe(true)
-        expect(showWhenPathsAllow(paths, ['pro'])).toBe(false)
+        expect(showWhenPathsAllow(paths, member(['pro']))).toBe(false)
         expect(showWhenPathsAreGated(showWhenPathsTo(refPage, site, 'plain', { includeSelf: true }))).toBe(false)
       })
 
@@ -210,7 +213,7 @@ describe('member bindings and show-when rules', () => {
         const { refPage, site } = siteOf([node('ref', 'base.visual-component-ref', { componentId: 'vc' })], [bound])
         const paths = showWhenPathsTo(refPage, site, 'vc_root', { includeSelf: true })
         expect(showWhenPathsAreGated(paths)).toBe(true)
-        expect(showWhenPathsAllow(paths, ['pro'])).toBe(false)
+        expect(showWhenPathsAllow(paths, member(['pro']))).toBe(false)
       })
 
       it('lets a visitor in through any one placement of a component used twice', () => {
@@ -260,8 +263,19 @@ describe('member bindings and show-when rules', () => {
     it('shows nobody an element whose rule cannot be read', () => {
       expect(readShowWhen({ showWhen: { visitor: 'admins' } })).toBe('nobody')
       expect(readShowWhen({ showWhen: { visitor: 'tags', tags: [] } })).toBe('nobody')
-      expect(showWhenAllows('nobody', ['pro'])).toBe(false)
+      expect(showWhenAllows('nobody', member(['pro']))).toBe(false)
       expect(showWhenAllows(null, null)).toBe(true)
+    })
+
+    it('tells a member an app is asking about from one it is not', () => {
+      const asking = { tags: [], appAsking: true }
+      expect(showWhenAllows({ visitor: 'appAsking' }, asking)).toBe(true)
+      expect(showWhenAllows({ visitor: 'appAsking' }, member([]))).toBe(false)
+      expect(showWhenAllows({ visitor: 'noAppAsking' }, member([]))).toBe(true)
+      expect(showWhenAllows({ visitor: 'noAppAsking' }, asking)).toBe(false)
+      // Both are about a signed-in member; a signed-out visitor gets neither.
+      expect(showWhenAllows({ visitor: 'appAsking' }, null)).toBe(false)
+      expect(showWhenAllows({ visitor: 'noAppAsking' }, null)).toBe(false)
     })
   })
 
@@ -495,9 +509,51 @@ describe('member forms', () => {
     expect(jsModuleIds).toContain('base.form')
   })
 
+  it('gives the approve form two buttons that each carry their answer', () => {
+    const action = memberFormAction('apps/approve')!
+    const fragment = memberFormFragment(action, 'approve', { fields: [], submit: true, messages: true, secondary: true })
+    const buttons = fragment.rootIds.map((id) => fragment.nodes[id]!).filter((entry) => entry.moduleId === 'base.submit')
+    expect(buttons.map((button) => [button.props.label, button.props.name, button.props.value])).toEqual([
+      ['Allow', 'decision', 'allow'],
+      ['Cancel', 'decision', 'deny'],
+    ])
+
+    const page = makePage('a', 'a', [
+      node('a_form', 'base.form', { mode: 'member', formId: 'approve', memberAction: 'apps/approve' }, [
+        'a__allow', 'a__cancel', 'a__plain',
+      ]),
+      node('a__allow', 'base.submit', { label: 'Allow', name: 'decision', value: 'allow' }),
+      node('a__cancel', 'base.submit', { label: 'Cancel', name: 'decision', value: 'deny' }),
+      node('a__plain', 'base.submit', { label: 'Plain', value: 'ignored without a name' }),
+    ])
+    const { html } = publishPage(page, siteWith([page]), registry)
+    expect(html).toContain('action="/_instatic/members/apps/approve" method="post"')
+    expect(html).toContain('<button type="submit" name="decision" value="allow">Allow</button>')
+    expect(html).toContain('<button type="submit" name="decision" value="deny">Cancel</button>')
+    expect(html).toContain('<button type="submit">Plain</button>')
+    // Refusing is an answer inside the approve form, not a form of its own.
+    expect(memberFormAction('apps/deny')).toBeUndefined()
+  })
+
+  it('counts a button without the answer as missing on a yes-or-no form', () => {
+    const action = memberFormAction('apps/approve')!
+    const plain = makePage('b', 'b', [
+      node('b_form', 'base.form', { mode: 'member', formId: 'approve', memberAction: 'apps/approve' }, ['b__go']),
+      node('b__go', 'base.submit', { label: 'Go' }),
+    ])
+    expect(missingMemberFormParts(plain, 'b_form', action)).toMatchObject({ submit: true, secondary: true })
+    const complete = makePage('c', 'c', [
+      node('c_form', 'base.form', { mode: 'member', formId: 'approve', memberAction: 'apps/approve' }, ['c__yes', 'c__no']),
+      node('c__yes', 'base.submit', { label: 'Yes', name: 'decision', value: 'allow' }),
+      node('c__no', 'base.submit', { label: 'No', name: 'decision', value: 'deny' }),
+    ])
+    expect(missingMemberFormParts(complete, 'c_form', action)).toMatchObject({ submit: false, secondary: false })
+  })
+
   it('carries the emailed token only on forms that are opened from a link', () => {
-    expect(render({ memberAction: 'password/reset' }).html).toContain('name="token" data-instatic-member-token')
-    expect(render({ memberAction: 'login' }).html).not.toContain('data-instatic-member-token')
+    expect(render({ memberAction: 'password/reset' }).html).toContain('name="token" data-instatic-member-link-param="token"')
+    expect(render({ memberAction: 'login' }).html).not.toContain('data-instatic-member-link-param')
+    expect(render({ memberAction: 'apps/approve' }).html).toContain('name="request" data-instatic-member-link-param="request"')
   })
 
   it('signs out with a form post, and the editor completes that form with an error message and a button', () => {

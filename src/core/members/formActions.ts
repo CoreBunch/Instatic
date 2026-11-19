@@ -30,8 +30,12 @@ export interface MemberFormAction {
   /** What the form does, for the editor. */
   description: string
   fields: readonly MemberFormField[]
-  /** The form sits on a page opened from an emailed link and posts its `?token=` back. */
-  needsToken: boolean
+  /**
+   * The value the form posts back from its page's address. `token`: the page
+   * was opened from an emailed link (`?token=`). `request`: an app sent the
+   * member here to approve it (`?request=`). Null when the form carries none.
+   */
+  linkParam: 'token' | 'request' | null
   /** Only a signed-in member can use it. */
   signedIn: boolean
   submitLabel: string
@@ -41,6 +45,13 @@ export interface MemberFormAction {
    * moves on, and the form is gone with the member.
    */
   successMessage: string
+  /**
+   * The form asks a yes-or-no question, so it has two buttons and each one
+   * carries its answer as the button's own `name` and `value`. The endpoint
+   * refuses a post without the answer: a form whose button was not sent
+   * (an old script, a stripped button) must never count as "yes".
+   */
+  choice?: { name: string; submitValue: string; other: { label: string; value: string } }
 }
 
 const EMAIL: MemberFormField = { name: 'email', label: 'Email', inputType: 'email', autocomplete: 'email' }
@@ -56,7 +67,7 @@ export const MEMBER_FORM_ACTIONS: readonly MemberFormAction[] = [
     group: 'entry',
     description: 'Creates an account and emails a link to confirm the address.',
     fields: [NAME, EMAIL, { ...PASSWORD, autocomplete: 'new-password' }],
-    needsToken: false,
+    linkParam: null,
     signedIn: false,
     submitLabel: 'Create account',
     successMessage: 'Check your email to confirm your address.',
@@ -67,7 +78,7 @@ export const MEMBER_FORM_ACTIONS: readonly MemberFormAction[] = [
     group: 'entry',
     description: 'Signs a member in with email and password.',
     fields: [EMAIL, PASSWORD],
-    needsToken: false,
+    linkParam: null,
     signedIn: false,
     submitLabel: 'Sign in',
     successMessage: 'You are signed in.',
@@ -78,7 +89,7 @@ export const MEMBER_FORM_ACTIONS: readonly MemberFormAction[] = [
     group: 'entry',
     description: 'Emails a link that signs the member in without a password.',
     fields: [EMAIL],
-    needsToken: false,
+    linkParam: null,
     signedIn: false,
     submitLabel: 'Email me a link',
     successMessage: 'If that address has an account, a sign-in link is on its way.',
@@ -89,7 +100,7 @@ export const MEMBER_FORM_ACTIONS: readonly MemberFormAction[] = [
     group: 'entry',
     description: 'Emails a link to choose a new password.',
     fields: [EMAIL],
-    needsToken: false,
+    linkParam: null,
     signedIn: false,
     submitLabel: 'Email me a reset link',
     successMessage: 'If that address has an account, a reset link is on its way.',
@@ -100,7 +111,7 @@ export const MEMBER_FORM_ACTIONS: readonly MemberFormAction[] = [
     group: 'emailLink',
     description: 'For the page a reset link opens: sets the new password and signs in.',
     fields: [NEW_PASSWORD],
-    needsToken: true,
+    linkParam: 'token',
     signedIn: false,
     submitLabel: 'Save password',
     successMessage: 'Your password is changed.',
@@ -111,7 +122,7 @@ export const MEMBER_FORM_ACTIONS: readonly MemberFormAction[] = [
     group: 'emailLink',
     description: 'For the page an invitation link opens: sets a password and signs in.',
     fields: [NEW_PASSWORD],
-    needsToken: true,
+    linkParam: 'token',
     signedIn: false,
     submitLabel: 'Create account',
     successMessage: 'Your account is ready.',
@@ -122,7 +133,7 @@ export const MEMBER_FORM_ACTIONS: readonly MemberFormAction[] = [
     group: 'emailLink',
     description: 'For the page a confirmation link opens: confirms the address and signs in.',
     fields: [],
-    needsToken: true,
+    linkParam: 'token',
     signedIn: false,
     submitLabel: 'Confirm my address',
     successMessage: 'Your address is confirmed.',
@@ -133,7 +144,7 @@ export const MEMBER_FORM_ACTIONS: readonly MemberFormAction[] = [
     group: 'emailLink',
     description: 'For the page a sign-in link opens: signs the member in.',
     fields: [],
-    needsToken: true,
+    linkParam: 'token',
     signedIn: false,
     submitLabel: 'Sign in',
     successMessage: 'You are signed in.',
@@ -144,7 +155,7 @@ export const MEMBER_FORM_ACTIONS: readonly MemberFormAction[] = [
     group: 'emailLink',
     description: 'For the page an address-change link opens: switches to the new address.',
     fields: [],
-    needsToken: true,
+    linkParam: 'token',
     signedIn: false,
     submitLabel: 'Confirm my new address',
     successMessage: 'Your address is changed.',
@@ -155,7 +166,7 @@ export const MEMBER_FORM_ACTIONS: readonly MemberFormAction[] = [
     group: 'account',
     description: 'Saves the signed-in member\'s profile fields.',
     fields: [NAME],
-    needsToken: false,
+    linkParam: null,
     signedIn: true,
     submitLabel: 'Save',
     successMessage: 'Saved.',
@@ -166,7 +177,7 @@ export const MEMBER_FORM_ACTIONS: readonly MemberFormAction[] = [
     group: 'account',
     description: 'Changes the signed-in member\'s password.',
     fields: [CURRENT_PASSWORD, { name: 'newPassword', label: 'New password', inputType: 'password', autocomplete: 'new-password' }],
-    needsToken: false,
+    linkParam: null,
     signedIn: true,
     submitLabel: 'Change password',
     successMessage: 'Your password is changed.',
@@ -177,7 +188,7 @@ export const MEMBER_FORM_ACTIONS: readonly MemberFormAction[] = [
     group: 'account',
     description: 'Emails a confirmation link to the new address.',
     fields: [{ ...EMAIL, label: 'New email' }, CURRENT_PASSWORD],
-    needsToken: false,
+    linkParam: null,
     signedIn: true,
     submitLabel: 'Change email',
     successMessage: 'Check your new address for a confirmation link.',
@@ -188,7 +199,7 @@ export const MEMBER_FORM_ACTIONS: readonly MemberFormAction[] = [
     group: 'account',
     description: 'Signs the member out. The form needs only its button.',
     fields: [],
-    needsToken: false,
+    linkParam: null,
     signedIn: true,
     submitLabel: 'Sign out',
     successMessage: '',
@@ -199,10 +210,22 @@ export const MEMBER_FORM_ACTIONS: readonly MemberFormAction[] = [
     group: 'account',
     description: 'Deletes the signed-in member\'s account for good.',
     fields: [CURRENT_PASSWORD],
-    needsToken: false,
+    linkParam: null,
     signedIn: true,
     submitLabel: 'Delete my account',
     successMessage: 'Your account is deleted.',
+  },
+  {
+    action: 'apps/approve',
+    label: 'Approve an app',
+    group: 'account',
+    description: 'For the page an app sends a member to: Allow lets that app sign the member in, Cancel sends them back without.',
+    fields: [],
+    linkParam: 'request',
+    signedIn: true,
+    submitLabel: 'Allow',
+    successMessage: 'The app is signed in. You can close this page.',
+    choice: { name: 'decision', submitValue: 'allow', other: { label: 'Cancel', value: 'deny' } },
   },
 ]
 
@@ -219,6 +242,7 @@ export const MEMBER_PAGE_FORM_ACTIONS = {
   magic: ['link/confirm'],
   invite: ['invite/accept'],
   emailChange: ['email/confirm'],
+  appSignIn: ['apps/approve'],
 } as const satisfies Record<string, readonly string[]>
 
 export const DEFAULT_MEMBER_FORM_ACTION = 'login'

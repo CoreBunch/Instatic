@@ -43,11 +43,13 @@ import { SearchBar } from '@ui/components/SearchBar'
 import { Select } from '@ui/components/Select'
 import { TagPill } from '@ui/components/TagPill'
 import { pushToast } from '@ui/components/Toast'
+import { PlugSolidIcon } from 'pixel-art-icons/icons/plug-solid'
 import { PlusIcon } from 'pixel-art-icons/icons/plus'
 import { Settings2SolidIcon } from 'pixel-art-icons/icons/settings-2-solid'
 import { forgetMemberProfileFields } from '@admin/shared/DataBindingPicker/cache'
 import { InvitationLinkDialog } from '../members/InvitationLinkDialog'
 import { InviteMemberDialog } from '../members/InviteMemberDialog'
+import { MemberAppsDialog } from '../members/MemberAppsDialog'
 import { MemberDetailPanel, type MemberActions } from '../members/MemberDetailPanel'
 import { MemberSettingsDialog } from '../members/MemberSettingsDialog'
 import { STATUS_LABEL, STATUS_TONE } from '../members/memberText'
@@ -91,7 +93,7 @@ export function MembersTab({
   const [more, setMore] = useState<{ key: string; members: MemberListItem[]; nextOffset: number | null } | null>(null)
   const [loadingMore, setLoadingMore] = useState(false)
   const [busy, setBusy] = useState(false)
-  const [dialog, setDialog] = useState<'invite' | 'settings' | null>(null)
+  const [dialog, setDialog] = useState<'invite' | 'settings' | 'apps' | null>(null)
   // A link the admin asked for, shown once so they can pass it on.
   const [invitationLink, setInvitationLink] = useState<{ email: string; link: string } | null>(null)
   // A change to the selected member answers with the member as it now stands.
@@ -269,6 +271,16 @@ export function MembersTab({
           >
             <Settings2SolidIcon size={12} aria-hidden="true" />
             Member settings
+          </Button>
+          <Button
+            type="button"
+            variant="secondary"
+            size="sm"
+            onClick={() => setDialog('apps')}
+            disabled={!settings.data}
+          >
+            <PlugSolidIcon size={12} aria-hidden="true" />
+            Apps
           </Button>
           <Button
             type="button"
@@ -457,6 +469,14 @@ export function MembersTab({
           busy={busy}
           onClose={() => setDialog(null)}
           onSave={(next) => void saveSettings(next)}
+        />
+      )}
+      {dialog === 'apps' && settings.data && (
+        <MemberAppsDialog
+          canManage={canManage}
+          approvalPageLive={memberPageIsLive('appSignIn', settings.data.settings.pages, settings.data.pageOptions)}
+          onClose={() => setDialog(null)}
+          onChanged={onChanged}
         />
       )}
     </section>

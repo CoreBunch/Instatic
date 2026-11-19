@@ -1825,4 +1825,84 @@ export const sqliteMigrations: Migration[] = [
         on plugin_records (plugin_id, resource_id, unique_key);
     `,
   },
+  {
+    // Sign-in for apps: a site member approves an app (Instatic Desktop, a
+    // premium plugin) and the app gets tokens that say who the member is.
+    // Separate from the MCP OAuth tables on purpose: those belong to admin
+    // users, and a member token must never be usable as an admin token.
+    id: '038_member_apps',
+    sql: `
+      create table if not exists member_apps (
+        id text primary key,
+        name text not null,
+        redirect_uris_json text not null default '[]',
+        scopes_json text not null default '[]',
+        created_by_user_id text references users(id) on delete set null,
+        created_at text not null default (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+        deleted_at text
+      );
+
+      -- An authorization request waiting for the member's answer on the
+      -- owner's approval page. Short-lived; answered at most once, and only
+      -- from the browser that opened it (browser_hash is that browser's
+      -- marker cookie, hashed).
+      create table if not exists member_app_requests (
+        id_hash text primary key,
+        app_id text not null references member_apps(id) on delete cascade,
+        browser_hash text not null,
+        redirect_uri text not null,
+        code_challenge text not null,
+        scope text not null,
+        resource text not null,
+        state text,
+        created_at text not null default (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+        expires_at text not null,
+        decided_at text
+      );
+
+      -- One approval of one app by one member. Every code and token hangs
+      -- off it, so revoking the grant ends them all.
+      create table if not exists member_app_grants (
+        id text primary key,
+        member_id text not null references members(id) on delete cascade,
+        app_id text not null references member_apps(id) on delete cascade,
+        scope text not null,
+        created_at text not null default (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+        last_used_at text,
+        expires_at text not null,
+        revoked_at text
+      );
+
+      create index if not exists member_app_grants_member_idx
+        on member_app_grants (member_id);
+
+      create table if not exists member_app_codes (
+        code_hash text primary key,
+        grant_id text not null references member_app_grants(id) on delete cascade,
+        app_id text not null references member_apps(id) on delete cascade,
+        redirect_uri text not null,
+        code_challenge text not null,
+        scope text not null,
+        resource text not null,
+        expires_at text not null,
+        consumed_at text
+      );
+
+      create table if not exists member_app_tokens (
+        id text primary key,
+        grant_id text not null references member_app_grants(id) on delete cascade,
+        app_id text not null references member_apps(id) on delete cascade,
+        kind text not null,
+        token_hash text not null unique,
+        scope text not null,
+        resource text not null,
+        created_at text not null default (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+        expires_at text not null,
+        revoked_at text
+      );
+
+      create index if not exists member_app_tokens_grant_idx
+        on member_app_tokens (grant_id);
+    `,
+  },
 ]

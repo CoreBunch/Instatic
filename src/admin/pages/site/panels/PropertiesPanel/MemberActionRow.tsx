@@ -21,6 +21,7 @@ function memberMissingText(missing: MemberFormMissing, action: MemberFormAction)
     ...missing.fields.map((field) => field.label.toLowerCase()),
     ...(missing.messages ? [action.successMessage ? 'messages' : 'an error message'] : []),
     ...(missing.submit ? ['a submit button'] : []),
+    ...(missing.secondary ? ['a cancel button'] : []),
   ]
   return parts.join(', ')
 }
@@ -66,7 +67,8 @@ export function MemberActionRow({
       {action && (
         <p className={styles.relationship}>
           {action.description}
-          {action.needsToken && ' Put it on the page you chose for that link in the member settings.'}
+          {action.linkParam === 'token' && ' Put it on the page you chose for that link in the member settings.'}
+          {action.linkParam === 'request' && ' Put it on the page you chose for approving apps in the member settings.'}
           {action.signedIn && ' Show it to signed-in members only.'}
         </p>
       )}
