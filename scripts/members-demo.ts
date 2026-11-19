@@ -48,6 +48,12 @@ function log(message: string): void {
   console.error(`[members-demo] ${message}`)
 }
 
+// The accounts above have fixed, published passwords: never on a live installation.
+if (process.env.NODE_ENV === 'production') {
+  log('Refusing to run with NODE_ENV=production: the demo creates accounts with fixed, public passwords.')
+  process.exit(1)
+}
+
 const bunError = devStackBunError(Bun.version)
 if (bunError) {
   log(bunError)
