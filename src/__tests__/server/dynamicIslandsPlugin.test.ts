@@ -7,7 +7,7 @@
  *      OR per-visitor plugin source (Rule 3).
  *   3. The hole endpoint renders live, request-time data:
  *        - SHARED hole reads the page query, NOT cookies, and caches per query.
- *        - PER-VISITOR hole reads cookies, bypasses the cache (no-store), and
+ *        - PER-VISITOR hole reads cookies, bypasses the cache (private, no-store), and
  *          re-runs the source fetch on every request.
  *   4. The snapshot is loaded from the DB once per publish version (the
  *      versioned snapshot cache), not per request.
@@ -159,7 +159,8 @@ function makeSnapshotWithLoop(loopNodeId: string, sourceId: string) {
 }
 
 /**
- * Minimal GET request stub. The hole handler only reads `req.method` and
+ * Minimal GET request stub. The hole handler only reads `req.method`,
+ * `req.url` (to tell which member-session cookie name applies) and
  * `req.headers.get('cookie')`. We bypass the global `Headers` here because the
  * test runtime (happy-dom) enforces the browser forbidden-header rule and drops
  * the `Cookie` header — Bun.serve's native incoming Request does not, so a stub
@@ -168,6 +169,7 @@ function makeSnapshotWithLoop(loopNodeId: string, sourceId: string) {
 function makeReq(cookie?: string): Request {
   return {
     method: 'GET',
+    url: 'http://localhost/',
     headers: { get: (k: string) => (cookie && k.toLowerCase() === 'cookie' ? cookie : null) },
   } as unknown as Request
 }
@@ -332,14 +334,14 @@ describe('hole endpoint — shared (requestDependent) hole', () => {
 // ---------------------------------------------------------------------------
 
 describe('hole endpoint — per-visitor hole', () => {
-  it('reads cookies, bypasses the cache (no-store), and re-renders every request', async () => {
+  it('reads cookies, bypasses the cache (private, no-store), and re-renders every request', async () => {
     const snap = makeSnapshotWithLoop('hole-loop', VISITOR_SOURCE_ID)
     const db = makeFakeDb(snap)
     const v = getPublishedSnapshotHash(snap.site)
     const url = new URL(`http://localhost/_instatic/hole/hole-loop?v=${v}&u=${encodeURIComponent('/')}`)
 
     const res1 = await handleHoleRequest(makeReq('sid=alice'), url, { db })
-    expect(res1.headers.get('cache-control')).toBe('no-store')
+    expect(res1.headers.get('cache-control')).toBe('private, no-store')
     const body1 = await res1.text()
     expect(body1).toContain('sid=alice')
     expect(body1).toContain('call=1')

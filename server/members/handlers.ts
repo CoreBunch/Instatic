@@ -29,7 +29,6 @@
  *   POST email/confirm     token
  *   POST profile           profile fields                        (signed in)
  *   POST delete            currentPassword                       (signed in)
- *   GET  logout            ?to=<site path>            (a sign-out link; same-site clicks only)
  *   GET  me                { member } or { member: null }
  *   GET  export            the member's own data as a JSON download
  *
@@ -371,41 +370,6 @@ async function runAction(
   }
 }
 
-/**
- * A sign-out link. A GET carries no `Origin`, so the check is that a visitor
- * clicked it on a page of this site. A link in an email or on another site,
- * an image or script that points here, and a prefetch do not sign anyone out.
- * The answer is always a redirect to a page of the site.
- */
-function linkFromThisSite(req: Request): boolean {
-  const purpose = req.headers.get('sec-purpose') ?? req.headers.get('purpose')
-  if (purpose?.includes('prefetch')) return false
-  const fetchSite = req.headers.get('sec-fetch-site')
-  if (fetchSite) {
-    if (fetchSite !== 'same-origin') return false
-    const mode = req.headers.get('sec-fetch-mode')
-    const dest = req.headers.get('sec-fetch-dest')
-    return (!mode || mode === 'navigate') && (!dest || dest === 'document')
-  }
-  // Neither header: nothing says where the click came from, so do nothing.
-  const referer = req.headers.get('referer')
-  if (!referer) return false
-  try {
-    return isSiteOrigin(req, new URL(referer).origin)
-  } catch {
-    return false
-  }
-}
-
-async function signOutFromLink(req: Request, db: DbClient, url: URL): Promise<Response> {
-  const location = safeRedirectPath(url.searchParams.get('to')) ?? '/'
-  const res = new Response(null, { status: 303, headers: { ...NO_STORE, location } })
-  if (!linkFromThisSite(req)) return res
-  const outcome = await logOut(await buildContext(db, req), await resolveSignedInMember(db, req))
-  for (const cookie of outcomeCookies(req, outcome, false)) setCookieHeader(res, cookie)
-  return res
-}
-
 function notFound(): Response {
   return jsonResponse({ error: 'Not found' }, { status: 404, headers: NO_STORE })
 }
@@ -428,7 +392,6 @@ export async function handleMemberRequest(req: Request, db: DbClient, url: URL):
         headers: { ...NO_STORE, 'content-disposition': 'attachment; filename="my-account-data.json"' },
       })
     }
-    if (action === 'logout') return signOutFromLink(req, db, url)
     return notFound()
   }
 

@@ -688,8 +688,11 @@ ctx.request: {
   path: string                    // originating page path (e.g. '/search')
   slug: string | null
   cookies: Record<string, string> // populated ONLY for perVisitor sources; session cookies are removed
+  member?: { id, email, tags, profile } | null // perVisitor sources of a plugin holding members.read
 }
 ```
+
+**The signed-in member.** A `perVisitor` source of a plugin that holds `members.read` also gets `ctx.request.member`: the same record a route's `ctx.member` carries, or `null` when nobody is signed in (and in a branch preview, which has no visitor). It is set on any page, protected or not, so an account menu on a public page works, and on the later pages of a paged list (`/_instatic/loop/<id>`) as on the first. Suspended and deleted members have no session, so they arrive as `null`. Without `members.read` the source gets the cookies and no `member` field, and the host does not look the member up. The request is built per source (`sourceRequestFor` in `server/publish/loopSourceRequest.ts`): a source that is not per-visitor gets empty cookies and no `member`, even when its list sits beside or inside a per-visitor one, and `requestForPluginSource` (`server/plugins/host/handlers/loops.ts`) enforces the same on every fetch, so withdrawing the permission takes effect at once. A fragment holding any per-visitor list (the node itself, a list nested in another list's item, a list inside a Visual Component) is rendered for one visitor, never cached, and sent `Cache-Control: private, no-store`.
 
 At publish time (built-in, non-dynamic loops) `ctx.request` is `undefined` and the source must be deterministic. `ctx.db` and the full `site` are NOT sent to the worker — reach data via `api.cms.storage.*` or a gated `fetch(...)`.
 
@@ -1120,7 +1123,7 @@ Risk levels:
 | `cms.storage`               | Admin / editor / server| Medium  | Read/write plugin-owned records                                         |
 | `cms.routes`                | Server               | High      | Register authenticated backend routes                                   |
 | `cms.routes.public`         | Server               | Dangerous | Register anonymously-callable routes; requires `cms.routes` too          |
-| `members.read`              | Server               | High      | See the signed-in member on its routes, register member routes, look members up, hear member events |
+| `members.read`              | Server               | High      | See the signed-in member on its routes and per-visitor loop sources, register member routes, look members up, hear member events |
 | `members.write`             | Server               | High      | Invite site members                                                      |
 | `members.tags`              | Server               | Dangerous | Grant and withdraw member access tags (what a member may open)           |
 | `mail.send`                 | Server               | High      | Send the plugin's own email templates to site members                    |
