@@ -1801,13 +1801,21 @@ export const sqliteMigrations: Migration[] = [
     `,
   },
   {
+    // Postgres only: record data bound as a JSON string was stored as a
+    // string scalar no filter could see; its twin unwraps those rows. SQLite
+    // stores JSON as text either way, so there is nothing to repair here.
+    id: '036_plugin_records_json_repair',
+    sql: `
+      select 1;
+    `,
+  },
+  {
     // Plugin storage: an optional unique key per record (derived from the
     // resource's declared uniqueField) and a version counter for conditional
-    // updates. NULL keys are distinct in a unique index on both dialects, so
-    // existing rows and resources without a uniqueField are unaffected.
-    // (The Postgres twin also repairs record data stored as a JSON string
-    // scalar; SQLite stores JSON as text, so there is nothing to repair.)
-    id: '036_plugin_record_keys',
+    // updates. Schema only. NULL keys are distinct in a unique index on both
+    // dialects, so existing rows and resources without a uniqueField are
+    // unaffected.
+    id: '037_plugin_record_keys',
     sql: `
       alter table plugin_records add column unique_key text;
 

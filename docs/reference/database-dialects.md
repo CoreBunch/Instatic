@@ -57,7 +57,9 @@ const { rows } = await db<SiteRow>`select id, settings_json from site`
 // rows[0].settings_json is `Record<string, unknown>` in both dialects
 ```
 
-**Bind the object, never `JSON.stringify(object)`.** On Postgres a string bound to a `jsonb` column is stored as a JSON *string scalar*. It reads back correctly (the read normalizer parses it), so nothing looks wrong, but SQL that looks inside the value (`jsonField(...)` filters, `->>`) matches nothing. `plugin_records.data_json` was written that way until migration `036_plugin_record_keys`, which unwraps the affected rows on Postgres.
+**Bind the object, never `JSON.stringify(object)`.** On Postgres a string bound to a `jsonb` column is stored as a JSON *string scalar*. It reads back correctly (the read normalizer parses it), so nothing looks wrong, but SQL that looks inside the value (`jsonField(...)` filters, `->>`) matches nothing. `plugin_records.data_json` was written that way until migration `036_plugin_records_json_repair`, which unwraps the affected rows on Postgres.
+
+**Comparing or ordering by a JSON field.** `jsonField` yields text on Postgres and a typed value on SQLite, so `jsonField(...) = <number>` is an error on one and a match on the other. Use the typed helpers in `server/db/jsonExtract.ts`, the one file allowed to hold the dialect-specific SQL: `jsonFieldTyped(column, field, dialect, 'text' | 'number' | 'boolean')` yields a value of that JSON type and NULL for rows holding another (bind booleans through `jsonBooleanParam`), and `jsonFieldOrder(column, field, dialect, direction)` yields ORDER BY terms that sort missing values, booleans, numbers and text in the same sequence on both. `listPluginRecords` is the reference caller.
 
 Gated by `src/__tests__/architecture/db-json-column-naming.test.ts`:
 

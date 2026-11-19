@@ -1,9 +1,7 @@
 /**
- * Plugin storage on Postgres, across two connection pools, as two server
- * instances have (each instance runs its own worker for a plugin, so two
- * deliveries of one webhook can land on different instances). Runs when
- * `INSTATIC_TEST_POSTGRES_URL` names a database the tests may wipe, as CI's
- * test job does (`.github/workflows/ci.yml`). Locally:
+ * Plugin record storage on Postgres. Runs when `INSTATIC_TEST_POSTGRES_URL`
+ * names a database the tests may wipe, as CI's test job does
+ * (`.github/workflows/ci.yml`). Locally:
  *
  *   initdb -D /tmp/pg -U postgres -A trust
  *   pg_ctl -D /tmp/pg -o "-p 55439 -c unix_socket_directories=''" start
@@ -11,163 +9,142 @@
  *   INSTATIC_TEST_POSTGRES_URL=postgres://postgres@127.0.0.1:55439/records \
  *     bun test src/__tests__/server/pluginRecordsPostgres.test.ts
  *
- * No lock is taken between instances: the unique index and the version
- * comparison inside each statement are the only coordination. This is the
- * test that they are enough.
+ * Three things only Postgres can get wrong: record data stored as a JSON
+ * string scalar instead of an object, the migration that repairs the rows
+ * written that way, and `list` comparing a text extraction with a number.
  */
 import { afterAll, beforeAll, describe, expect, it } from 'bun:test'
 import { parsePluginManifest } from '@core/plugins/manifest'
 import { createDbClient } from '../../../server/db'
 import type { DbClient } from '../../../server/db/client'
-import { PLUGIN_RECORD_DATA_REPAIR_SQL } from '../../../server/db/migrations-pg'
+import { PLUGIN_RECORDS_JSON_REPAIR_SQL } from '../../../server/db/migrations-pg'
+import type { Migration } from '../../../server/db/runMigrations'
 import { runMigrations } from '../../../server/db/runMigrations'
 import { installPlugin } from '../../../server/repositories/plugins'
 import {
-  PluginRecordConflictError,
-  PluginRecordDuplicateError,
   createPluginRecord,
-  createPluginRecordIfAbsent,
-  getPluginRecord,
-  getPluginRecordByKey,
   listPluginRecords,
   updatePluginRecord,
 } from '../../../server/repositories/pluginRecords'
+import {
+  PLUGIN_RECORD_FILTER_CASES,
+  expectPluginRecordFilterCase,
+  seedPluginRecordFilterCases,
+} from '../helpers/pluginRecordFilterCases'
 
 const url = process.env.INSTATIC_TEST_POSTGRES_URL
-const PLUGIN = 'acme.pgshop'
-const events = { pluginId: PLUGIN, resourceId: 'events' }
+const PLUGIN = 'acme.pgrecords'
+const cases = { pluginId: PLUGIN, resourceId: 'cases' }
+const REPAIR_MIGRATION = '036_plugin_records_json_repair'
 
-describe.skipIf(!url)('plugin storage on Postgres, two instances', () => {
-  let first: DbClient
-  let second: DbClient
-  let nextId = 0
-  const newId = () => `pg_rec_${++nextId}`
+describe.skipIf(!url)('plugin record storage on Postgres', () => {
+  let db: DbClient
+  let migrations: Migration[]
+
+  async function storedKind(id: string): Promise<string | undefined> {
+    const { rows } = await db.unsafe<{ kind: string }>(
+      `select jsonb_typeof(data_json) as kind from plugin_records where id = $1`,
+      [id],
+    )
+    return rows[0]?.kind
+  }
 
   beforeAll(async () => {
-    const a = createDbClient(url ?? '')
-    const b = createDbClient(url ?? '')
-    first = a.db
-    second = b.db
-    await runMigrations(first, a.migrations)
-    await first`delete from installed_plugins where id = ${PLUGIN}`
+    const client = createDbClient(url ?? '')
+    db = client.db
+    migrations = client.migrations
+    await runMigrations(db, migrations)
+    await db`delete from installed_plugins where id = ${PLUGIN}`
     await installPlugin(
-      first,
-      parsePluginManifest({
-        id: PLUGIN,
-        name: 'Shop',
-        version: '1.0.0',
-        apiVersion: 1,
-        permissions: ['cms.storage'],
-        resources: [
-          {
-            id: 'events',
-            title: 'Events',
-            uniqueField: 'eventId',
-            fields: [
-              { id: 'eventId', label: 'Event id', type: 'text' },
-              { id: 'state', label: 'State', type: 'text' },
-            ],
-          },
-        ],
-      }),
+      db,
+      parsePluginManifest({ id: PLUGIN, name: 'Records', version: '1.0.0', apiVersion: 1, permissions: ['cms.storage'] }),
     )
+    await seedPluginRecordFilterCases(db, cases)
   })
 
   afterAll(async () => {
-    await first`delete from installed_plugins where id = ${PLUGIN}`
-    await first.close()
-    await second.close()
+    await db`delete from installed_plugins where id = ${PLUGIN}`
+    await db.close()
   })
 
-  it('creates exactly one record when both instances race on one key', async () => {
-    const results = await Promise.all(
-      Array.from({ length: 60 }, (_, index) =>
-        createPluginRecordIfAbsent(index % 2 === 0 ? first : second, {
-          ...events,
-          id: newId(),
-          data: { eventId: 'evt_race', state: `caller ${index}` },
-          uniqueKey: 'evt_race',
-        }),
-      ),
-    )
-    expect(results.filter((result) => result.created)).toHaveLength(1)
-    expect(new Set(results.map((result) => result.record.id)).size).toBe(1)
-    const stored = await listPluginRecords(first, PLUGIN, 'events', { filter: { eventId: 'evt_race' } })
-    expect(stored.totalCount).toBe(1)
-  })
-
-  it('lets exactly one writer holding the same version win across instances', async () => {
-    const record = await createPluginRecord(first, {
-      ...events,
-      id: newId(),
-      data: { eventId: 'evt_version', state: 'new' },
-      uniqueKey: 'evt_version',
-    })
-    const outcomes = await Promise.allSettled(
-      Array.from({ length: 40 }, (_, index) =>
-        updatePluginRecord(index % 2 === 0 ? first : second, {
-          ...events,
-          id: record.id,
-          data: { eventId: 'evt_version', state: `writer ${index}` },
-          uniqueKey: 'evt_version',
-          ifVersion: 0,
-        }),
-      ),
-    )
-    const lost = outcomes.filter((outcome) => outcome.status === 'rejected')
-    expect(outcomes.filter((outcome) => outcome.status === 'fulfilled')).toHaveLength(1)
-    expect(lost).toHaveLength(39)
-    for (const outcome of lost) {
-      expect((outcome as PromiseRejectedResult).reason).toBeInstanceOf(PluginRecordConflictError)
+  describe('filters and ordering', () => {
+    for (const testCase of PLUGIN_RECORD_FILTER_CASES) {
+      it(testCase.name, async () => {
+        await expectPluginRecordFilterCase(db, cases, testCase)
+      })
     }
-    expect((await getPluginRecord(second, events, record.id))?.version).toBe(1)
   })
 
-  it('rejects duplicate creates and key-stealing updates with the typed error', async () => {
-    await createPluginRecord(first, { ...events, id: newId(), data: { eventId: 'evt_a' }, uniqueKey: 'evt_a' })
-    const other = await createPluginRecord(first, { ...events, id: newId(), data: { eventId: 'evt_b' }, uniqueKey: 'evt_b' })
+  it('stores data as a JSON object on create and on update', async () => {
+    const scope = { pluginId: PLUGIN, resourceId: 'binding' }
+    await createPluginRecord(db, { ...scope, id: 'bind_1', data: { state: 'new', n: 1 } })
+    expect(await storedKind('bind_1')).toBe('object')
+    expect((await listPluginRecords(db, PLUGIN, 'binding', { filter: { state: 'new' } })).totalCount).toBe(1)
 
-    const duplicate = createPluginRecord(second, { ...events, id: newId(), data: { eventId: 'evt_a' }, uniqueKey: 'evt_a' })
-    expect(duplicate).rejects.toBeInstanceOf(PluginRecordDuplicateError)
-    await duplicate.catch(() => {})
-
-    const steal = updatePluginRecord(second, { ...events, id: other.id, data: { eventId: 'evt_a' }, uniqueKey: 'evt_a' })
-    expect(steal).rejects.toBeInstanceOf(PluginRecordDuplicateError)
-    await steal.catch(() => {})
-    expect((await getPluginRecordByKey(first, events, 'evt_b'))?.id).toBe(other.id)
+    await updatePluginRecord(db, { ...scope, id: 'bind_1', data: { state: 'paid', n: 2 } })
+    expect(await storedKind('bind_1')).toBe('object')
+    expect((await listPluginRecords(db, PLUGIN, 'binding', { filter: { state: 'paid', n: 2 } })).totalCount).toBe(1)
   })
 
-  it('repairs record data that was stored as a JSON string, and skips what does not parse', async () => {
-    // What createPluginRecord wrote before 036: a stringified object bound to
+  it('refuses the NUL character, as SQLite does', async () => {
+    const create = createPluginRecord(db, { pluginId: PLUGIN, resourceId: 'binding', id: 'nul', data: { body: 'a\u0000b' } })
+    expect(create).rejects.toThrow('cannot contain the NUL character')
+    await create.catch(() => {})
+  })
+
+  it('the repair migration unwraps string-stored rows and leaves the rest alone', async () => {
+    // What every write produced before the fix: a stringified object bound to
     // the jsonb column, stored as a string scalar no filter can see.
-    await first`
+    const legacy = (id: string, raw: string) => db`
       insert into plugin_records (id, plugin_id, resource_id, data_json)
-      values ('legacy_ok', ${PLUGIN}, 'events', ${JSON.stringify({ eventId: 'evt_legacy', state: 'old' })})
+      values (${id}, ${PLUGIN}, 'legacy', ${raw})
     `
-    await first`
-      insert into plugin_records (id, plugin_id, resource_id, data_json)
-      values ('legacy_odd', ${PLUGIN}, 'events', ${'{not json'})
-    `
-    const before = await listPluginRecords(first, PLUGIN, 'events', { filter: { eventId: 'evt_legacy' } })
-    expect(before.totalCount).toBe(0)
+    await legacy('legacy_ok', JSON.stringify({ eventId: 'evt_legacy', n: 7 }))
+    await legacy('legacy_broken', '{not json')
+    await legacy('legacy_plain', 'just a sentence')
+    await legacy('legacy_array', '[1,2]')
+    await createPluginRecord(db, { pluginId: PLUGIN, resourceId: 'legacy', id: 'modern', data: { eventId: 'evt_modern' } })
+    expect(await storedKind('legacy_ok')).toBe('string')
+    expect((await listPluginRecords(db, PLUGIN, 'legacy', { filter: { eventId: 'evt_legacy' } })).totalCount).toBe(0)
 
-    await first.unsafe(PLUGIN_RECORD_DATA_REPAIR_SQL)
+    // Run it the way a server start does: through the migration runner.
+    await db`delete from schema_migrations where id = ${REPAIR_MIGRATION}`
+    await runMigrations(db, migrations)
 
-    const after = await listPluginRecords(first, PLUGIN, 'events', { filter: { eventId: 'evt_legacy' } })
-    expect(after.records.map((record) => record.id)).toEqual(['legacy_ok'])
-    expect(after.records[0]?.data).toEqual({ eventId: 'evt_legacy', state: 'old' })
-    // The row that does not parse is left as it was, and the repair still ran.
-    const odd = await first.unsafe<{ kind: string }>(
-      `select jsonb_typeof(data_json) as kind from plugin_records where id = 'legacy_odd'`,
-    )
-    expect(odd.rows[0]?.kind).toBe('string')
-    await first`delete from plugin_records where id in ('legacy_ok', 'legacy_odd')`
+    expect(await storedKind('legacy_ok')).toBe('object')
+    const repaired = await listPluginRecords(db, PLUGIN, 'legacy', { filter: { eventId: 'evt_legacy', n: 7 } })
+    expect(repaired.records.map((record) => record.id)).toEqual(['legacy_ok'])
+    // Not an object, or not JSON at all: left exactly as it was.
+    expect(await storedKind('legacy_broken')).toBe('string')
+    expect(await storedKind('legacy_plain')).toBe('string')
+    expect(await storedKind('legacy_array')).toBe('string')
+    expect(await storedKind('modern')).toBe('object')
+
+    // The rows it could not unwrap read as empty; they do not break the list.
+    const all = await listPluginRecords(db, PLUGIN, 'legacy')
+    expect(all.totalCount).toBe(5)
+    const byId = new Map(all.records.map((record) => [record.id, record.data]))
+    expect(byId.get('legacy_broken')).toEqual({})
+    expect(byId.get('legacy_array')).toEqual({})
+    expect(byId.get('legacy_ok')).toEqual({ eventId: 'evt_legacy', n: 7 })
   })
 
-  it('keeps records without a key distinct', async () => {
-    await createPluginRecord(first, { ...events, id: newId(), data: { state: 'a' }, uniqueKey: null })
-    await createPluginRecord(second, { ...events, id: newId(), data: { state: 'b' }, uniqueKey: null })
-    const stored = await listPluginRecords(first, PLUGIN, 'events', { filter: { state: { in: ['a', 'b'] } } })
-    expect(stored.totalCount).toBe(2)
+  it('the path for servers older than Postgres 16 repairs the same rows', async () => {
+    const legacy = (id: string, raw: string) => db`
+      insert into plugin_records (id, plugin_id, resource_id, data_json)
+      values (${id}, ${PLUGIN}, 'older', ${raw})
+    `
+    await legacy('older_ok', JSON.stringify({ eventId: 'evt_older' }))
+    await legacy('older_broken', '{"unterminated": ')
+
+    // Same migration text with the version test made unreachable, so the
+    // branch without pg_input_is_valid runs on whatever server this is.
+    const olderPath = PLUGIN_RECORDS_JSON_REPAIR_SQL.replace('>= 160000', '>= 990000')
+    expect(olderPath).not.toBe(PLUGIN_RECORDS_JSON_REPAIR_SQL)
+    await db.unsafe(olderPath)
+
+    expect(await storedKind('older_ok')).toBe('object')
+    expect(await storedKind('older_broken')).toBe('string')
+    expect((await listPluginRecords(db, PLUGIN, 'older', { filter: { eventId: 'evt_older' } })).totalCount).toBe(1)
   })
 })

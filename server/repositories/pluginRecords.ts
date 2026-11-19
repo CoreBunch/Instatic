@@ -2,18 +2,34 @@
  * Plugin-owned records (`plugin_records`): the storage behind
  * `api.cms.storage.collection(...)` and the admin resource pages.
  *
+ * Record data is always bound as an object. On Postgres a pre-stringified
+ * object bound to the `jsonb` column is stored as a JSON string scalar: it
+ * reads back fine, but no `list` filter can see inside it. Rows written that
+ * way before migration `036_plugin_records_json_repair` are unwrapped by it.
+ *
  * Plugin handlers interleave (one worker per plugin per process, one worker
  * per server instance), so every write here is a single statement whose
  * outcome the database decides: "create if absent" rides the unique index on
  * `(plugin_id, resource_id, unique_key)`, and a conditional update compares
  * `version` in its WHERE clause. Nothing reads first and writes second.
  */
-import { STORAGE_UNIQUE_KEY_MAX_LENGTH, type PluginRecord } from '@core/plugin-sdk'
-import type { StorageListOptions, StorageFilterOperator } from '@core/plugin-sdk/storageSchemas'
+import type { PluginRecord } from '@core/plugin-sdk'
+import type {
+  StorageFilterOperator,
+  StorageFilterValue,
+  StorageListOptions,
+} from '@core/plugin-sdk/storageSchemas'
+import { deriveRecordUniqueKey } from '@core/plugins/manifest'
 import { isoDate, nowIso } from '@core/utils/isoDate'
 import { placeholder, type DbClient } from '../db/client'
 import { isUniqueViolation } from '../db/errors'
-import { jsonField } from '../db/jsonExtract'
+import {
+  jsonBooleanParam,
+  jsonField,
+  jsonFieldOrder,
+  jsonFieldTyped,
+  type JsonScalarKind,
+} from '../db/jsonExtract'
 
 interface PluginRecordRow {
   id: string
@@ -57,11 +73,31 @@ export class PluginRecordConflictError extends Error {
  * that way before migration 036 are repaired by it; the read below still
  * accepts a string so one stray row cannot break a list.
  */
-function readDataJson(value: unknown): Record<string, unknown> {
-  const parsed: unknown = typeof value === 'string' ? JSON.parse(value) : value
-  return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
-    ? (parsed as Record<string, unknown>)
-    : {}
+/** Record ids already reported as unreadable, so one bad row logs once. */
+const reportedUnreadable = new Set<string>()
+
+/**
+ * A record's data as an object. A row whose data does not parse, or is not an
+ * object, reads as `{}` and is logged once: one damaged row must not make a
+ * whole resource unlistable.
+ */
+function readDataJson(row: Pick<PluginRecordRow, 'id' | 'data_json'>): Record<string, unknown> {
+  let parsed: unknown = row.data_json
+  if (typeof parsed === 'string') {
+    try {
+      parsed = JSON.parse(parsed)
+    } catch {
+      parsed = null
+    }
+  }
+  if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+    return parsed as Record<string, unknown>
+  }
+  if (!reportedUnreadable.has(row.id)) {
+    reportedUnreadable.add(row.id)
+    console.warn(`[plugin:storage] record "${row.id}" holds data that is not a JSON object; reading it as empty`)
+  }
+  return {}
 }
 
 function mapPluginRecord(row: PluginRecordRow): PluginRecord {
@@ -69,7 +105,7 @@ function mapPluginRecord(row: PluginRecordRow): PluginRecord {
     id: row.id,
     pluginId: row.plugin_id,
     resourceId: row.resource_id,
-    data: readDataJson(row.data_json),
+    data: readDataJson(row),
     uniqueKey: row.unique_key,
     version: Number(row.version),
     createdAt: isoDate(row.created_at),
@@ -77,8 +113,106 @@ function mapPluginRecord(row: PluginRecordRow): PluginRecord {
   }
 }
 
+/**
+ * Refuse data holding the NUL character, in a key or a string anywhere inside.
+ * Postgres `jsonb` cannot store it, so accepting it on SQLite would make the
+ * same plugin behave differently on the two databases.
+ */
+function assertStorableRecordData(value: unknown): void {
+  if (typeof value === 'string') {
+    if (value.includes('\u0000')) {
+      throw new Error('Plugin record data cannot contain the NUL character (\\u0000)')
+    }
+    return
+  }
+  if (Array.isArray(value)) {
+    for (const item of value) assertStorableRecordData(item)
+    return
+  }
+  if (value && typeof value === 'object') {
+    for (const [key, item] of Object.entries(value)) {
+      assertStorableRecordData(key)
+      assertStorableRecordData(item)
+    }
+  }
+}
+
 /** Identifier regex — same rule as the jsonField() helper. */
 const FIELD_KEY_RE = /^[a-zA-Z_][a-zA-Z0-9_]*$/
+
+const COMPARISONS = [
+  ['eq', '='],
+  ['ne', '!='],
+  ['gt', '>'],
+  ['gte', '>='],
+  ['lt', '<'],
+  ['lte', '<='],
+] as const
+
+/**
+ * Builds the WHERE conditions of one `list` call. Every comparison is typed
+ * by the value it compares with: a number matches only rows whose field holds
+ * a JSON number, a boolean only booleans, a string only strings (byte-wise).
+ * `null` means "the field is missing or null". The same on both dialects; see
+ * `jsonFieldTyped`.
+ */
+function buildFilterSql(
+  db: DbClient,
+  filter: Record<string, StorageFilterValue>,
+  addParam: (value: unknown) => string,
+): string[] {
+  const conditions: string[] = []
+
+  function compare(key: string, operator: string, value: unknown): string {
+    if (value === null) {
+      const raw = jsonField('data_json', key, db.dialect).sql
+      if (operator === '=') return `${raw} is null`
+      if (operator === '!=') return `${raw} is not null`
+      throw new Error(`[plugin:storage] filter on "${key}": null can only be used with eq and ne`)
+    }
+    let kind: JsonScalarKind
+    let bound: unknown = value
+    if (typeof value === 'number' && Number.isFinite(value)) {
+      kind = 'number'
+    } else if (typeof value === 'boolean') {
+      kind = 'boolean'
+      bound = jsonBooleanParam(value, db.dialect)
+    } else if (typeof value === 'string') {
+      kind = 'text'
+    } else {
+      throw new Error(`[plugin:storage] filter on "${key}" must compare with a string, number, boolean or null`)
+    }
+    return `${jsonFieldTyped('data_json', key, db.dialect, kind).sql} ${operator} ${addParam(bound)}`
+  }
+
+  for (const [key, value] of Object.entries(filter)) {
+    if (!FIELD_KEY_RE.test(key)) {
+      throw new Error(`[plugin:storage] invalid filter field name: ${JSON.stringify(key)}`)
+    }
+    if (value === null || typeof value !== 'object') {
+      // Shorthand primitive — treat as eq
+      conditions.push(compare(key, '=', value))
+      continue
+    }
+    const op: StorageFilterOperator = value
+    for (const [name, operator] of COMPARISONS) {
+      if (op[name] !== undefined) conditions.push(compare(key, operator, op[name]))
+    }
+    if (op.in !== undefined) {
+      // Values of mixed types are allowed: each is compared with its own type.
+      conditions.push(
+        op.in.length === 0 ? '1 = 0' : `(${op.in.map((item) => compare(key, '=', item)).join(' or ')})`,
+      )
+    }
+    if (op.like !== undefined) {
+      // Case-insensitive for ASCII letters on both dialects.
+      conditions.push(
+        `lower(${jsonFieldTyped('data_json', key, db.dialect, 'text').sql}) like lower(${addParam(op.like)})`,
+      )
+    }
+  }
+  return conditions
+}
 
 export async function listPluginRecords(
   db: DbClient,
@@ -89,113 +223,53 @@ export async function listPluginRecords(
   const { filter, orderBy, limit = 100, offset = 0 } = options
 
   const params: unknown[] = [pluginId, resourceId]
-  let paramIdx = 2
-
   // Returns the next positional placeholder AND appends the value to params.
   function addParam(value: unknown): string {
     params.push(value)
-    paramIdx++
-    return placeholder(db.dialect, paramIdx)
+    return placeholder(db.dialect, params.length)
   }
 
-  // --- WHERE clause ---
-  let whereSql = `plugin_id = ${placeholder(db.dialect, 1)} and resource_id = ${placeholder(db.dialect, 2)}`
+  const conditions = [
+    `plugin_id = ${placeholder(db.dialect, 1)}`,
+    `resource_id = ${placeholder(db.dialect, 2)}`,
+    ...(filter ? buildFilterSql(db, filter, addParam) : []),
+  ]
+  const whereSql = conditions.join(' and ')
+  // The count query takes the WHERE params only.
+  const countParams = params.slice()
 
-  if (filter) {
-    for (const [key, value] of Object.entries(filter)) {
-      if (!FIELD_KEY_RE.test(key)) {
-        throw new Error(`[plugin:storage] invalid filter field name: ${JSON.stringify(key)}`)
-      }
-      const fragment = jsonField('data_json', key, db.dialect).sql
-
-      if (value === null || typeof value !== 'object') {
-        // Shorthand primitive — treat as eq
-        whereSql += ` and ${fragment} = ${addParam(value)}`
-      } else {
-        // Full operator object
-        const op = value as StorageFilterOperator
-        if (op.eq !== undefined) {
-          whereSql += ` and ${fragment} = ${addParam(op.eq)}`
-        }
-        if (op.ne !== undefined) {
-          whereSql += ` and ${fragment} != ${addParam(op.ne)}`
-        }
-        if (op.gt !== undefined) {
-          whereSql += ` and ${fragment} > ${addParam(op.gt)}`
-        }
-        if (op.gte !== undefined) {
-          whereSql += ` and ${fragment} >= ${addParam(op.gte)}`
-        }
-        if (op.lt !== undefined) {
-          whereSql += ` and ${fragment} < ${addParam(op.lt)}`
-        }
-        if (op.lte !== undefined) {
-          whereSql += ` and ${fragment} <= ${addParam(op.lte)}`
-        }
-        if (op.in !== undefined) {
-          if (op.in.length === 0) {
-            // Empty IN list — no rows can ever match
-            whereSql += ` and 1=0`
-          } else {
-            const inPlaceholders: string[] = op.in.map((v) => addParam(v))
-            whereSql += ` and ${fragment} in (${inPlaceholders.join(', ')})`
-          }
-        }
-        if (op.like !== undefined) {
-          whereSql += ` and lower(${fragment}) like lower(${addParam(op.like)})`
-        }
-      }
+  // Fields sort by type, then value (see `jsonFieldOrder`); creation time
+  // breaks ties and is the whole order when none is asked for.
+  const orderTerms: string[] = []
+  for (const [key, direction] of Object.entries(orderBy ?? {})) {
+    if (!FIELD_KEY_RE.test(key)) {
+      throw new Error(`[plugin:storage] invalid orderBy field name: ${JSON.stringify(key)}`)
     }
+    orderTerms.push(jsonFieldOrder('data_json', key, db.dialect, direction === 'desc' ? 'desc' : 'asc').sql)
   }
-
-  // Snapshot how many params the WHERE clause uses (for count query).
-  const countParamCount = params.length
-
-  // --- ORDER BY clause ---
-  let orderBySql = 'created_at desc'
-  if (orderBy && Object.keys(orderBy).length > 0) {
-    const parts: string[] = []
-    for (const [key, dir] of Object.entries(orderBy)) {
-      if (!FIELD_KEY_RE.test(key)) {
-        throw new Error(`[plugin:storage] invalid orderBy field name: ${JSON.stringify(key)}`)
-      }
-      const fragment = jsonField('data_json', key, db.dialect).sql
-      parts.push(`${fragment} ${dir}`)
-    }
-    orderBySql = parts.join(', ')
-  }
-
-  // --- LIMIT / OFFSET (appended after count params are captured) ---
-  const limitPlaceholder = addParam(limit)
-  const offsetPlaceholder = addParam(offset)
+  orderTerms.push('created_at desc', 'id asc')
 
   const dataSql = `
     select ${RECORD_COLUMNS}
     from plugin_records
     where ${whereSql}
-    order by ${orderBySql}
-    limit ${limitPlaceholder} offset ${offsetPlaceholder}
+    order by ${orderTerms.join(', ')}
+    limit ${addParam(limit)} offset ${addParam(offset)}
   `
-
   const countSql = `
     select count(*) as total
     from plugin_records
     where ${whereSql}
   `
 
-  const dataParams = params
-  const countParams = params.slice(0, countParamCount)
-
   const [dataResult, countResult] = await Promise.all([
-    db.unsafe<PluginRecordRow>(dataSql, dataParams),
+    db.unsafe<PluginRecordRow>(dataSql, params),
     db.unsafe<{ total: number | bigint | string }>(countSql, countParams),
   ])
 
-  const totalCount = Number(countResult.rows[0]?.total ?? 0)
-
   return {
     records: dataResult.rows.map(mapPluginRecord),
-    totalCount,
+    totalCount: Number(countResult.rows[0]?.total ?? 0),
   }
 }
 
@@ -217,6 +291,7 @@ interface RecordWrite extends RecordScope {
  * both insert. Returns null when the key already exists.
  */
 async function insertPluginRecord(db: DbClient, input: RecordWrite): Promise<PluginRecord | null> {
+  assertStorableRecordData(input.data)
   const { rows } = await db.unsafe<PluginRecordRow>(
     `insert into plugin_records (id, plugin_id, resource_id, data_json, unique_key)
      values (${placeholder(db.dialect, 1)}, ${placeholder(db.dialect, 2)}, ${placeholder(db.dialect, 3)}, ${placeholder(db.dialect, 4)}, ${placeholder(db.dialect, 5)})
@@ -295,6 +370,7 @@ export async function updatePluginRecord(
   db: DbClient,
   input: RecordWrite & { ifVersion?: number },
 ): Promise<PluginRecord | null> {
+  assertStorableRecordData(input.data)
   const params: unknown[] = [
     input.data,
     input.uniqueKey,
@@ -362,11 +438,12 @@ export async function deletePluginRecord(
 }
 
 // ---------------------------------------------------------------------------
-// Re-keying — when a plugin upgrade adds, changes or removes a resource's
-// `uniqueField`, the stored keys must follow the new declaration.
+// Re-keying — when a plugin's declaration of a resource's `uniqueField`
+// changes (added, changed, removed, or the resource is declared for the
+// first time), the stored keys must follow it.
 // ---------------------------------------------------------------------------
 
-/** Most records one resource may hold for its keys to be rebuilt in an upgrade. */
+/** Most records one resource may hold for its keys to be rebuilt in one go. */
 export const PLUGIN_RECORD_REKEY_LIMIT = 50_000
 
 /** Existing records cannot take the keys the new `uniqueField` asks for. */
@@ -378,9 +455,10 @@ export class PluginRecordRekeyError extends Error {
 }
 
 /**
- * Work out the key every record of a resource would take from `uniqueField`.
- * Throws `PluginRecordRekeyError` when two records share a value, a value is
- * too long, or the resource is too large to rebuild in one go.
+ * Work out the key every record of a resource would take from `uniqueField`,
+ * derived exactly as a write derives it. Throws `PluginRecordRekeyError` when
+ * two records share a value, a value is too long, or the resource is too
+ * large to rebuild in one go.
  */
 async function planPluginRecordKeys(
   db: DbClient,
@@ -395,26 +473,28 @@ async function planPluginRecordKeys(
   )
   if (rows.length > PLUGIN_RECORD_REKEY_LIMIT) {
     throw new PluginRecordRekeyError(
-      `"${scope.resourceId}" holds more than ${PLUGIN_RECORD_REKEY_LIMIT} records, too many to give a unique field in an upgrade.`,
+      `"${scope.resourceId}" holds more than ${PLUGIN_RECORD_REKEY_LIMIT} records, too many to give a unique field in one go.`,
     )
   }
   const seen = new Set<string>()
   const plan: Array<{ id: string; uniqueKey: string }> = []
   for (const row of rows) {
-    const value = readDataJson(row.data_json)[uniqueField]
-    if (typeof value !== 'string' || value === '') continue
-    if (value.length > STORAGE_UNIQUE_KEY_MAX_LENGTH) {
+    let uniqueKey: string | null
+    try {
+      uniqueKey = deriveRecordUniqueKey(readDataJson(row)[uniqueField])
+    } catch (err) {
       throw new PluginRecordRekeyError(
-        `A "${scope.resourceId}" record holds a "${uniqueField}" longer than ${STORAGE_UNIQUE_KEY_MAX_LENGTH} characters.`,
+        `A "${scope.resourceId}" record cannot take "${uniqueField}" as its key: ${err instanceof Error ? err.message : String(err)}`,
       )
     }
-    if (seen.has(value)) {
+    if (uniqueKey === null) continue
+    if (seen.has(uniqueKey)) {
       throw new PluginRecordRekeyError(
-        `Two "${scope.resourceId}" records share the "${uniqueField}" value "${value.slice(0, 80)}", so it cannot become the unique field.`,
+        `Two "${scope.resourceId}" records share the "${uniqueField}" value "${uniqueKey.slice(0, 80)}", so it cannot become the unique field.`,
       )
     }
-    seen.add(value)
-    plan.push({ id: row.id, uniqueKey: value })
+    seen.add(uniqueKey)
+    plan.push({ id: row.id, uniqueKey })
   }
   return plan
 }
@@ -436,26 +516,28 @@ export async function pluginRecordRekeyProblem(
 
 /**
  * Make a resource's stored keys match its declaration: rebuilt from
- * `uniqueField`, or cleared when the resource no longer has one. One
- * transaction; record versions are left alone (the data did not change).
+ * `uniqueField`, or cleared when the resource has none. Record versions are
+ * left alone (the data did not change).
+ *
+ * Several statements with no transaction of their own: call it on the `tx`
+ * of the transaction that also writes the manifest declaring the field, so
+ * the declaration and the keys change together or not at all.
  */
 export async function rekeyPluginRecords(
-  db: DbClient,
+  tx: DbClient,
   scope: RecordScope,
   uniqueField: string | undefined,
 ): Promise<void> {
-  await db.transaction(async (tx) => {
+  await tx.unsafe(
+    `update plugin_records set unique_key = null
+      where plugin_id = ${placeholder(tx.dialect, 1)} and resource_id = ${placeholder(tx.dialect, 2)} and unique_key is not null`,
+    [scope.pluginId, scope.resourceId],
+  )
+  if (uniqueField === undefined) return
+  for (const { id, uniqueKey } of await planPluginRecordKeys(tx, scope, uniqueField)) {
     await tx.unsafe(
-      `update plugin_records set unique_key = null
-        where plugin_id = ${placeholder(tx.dialect, 1)} and resource_id = ${placeholder(tx.dialect, 2)} and unique_key is not null`,
-      [scope.pluginId, scope.resourceId],
+      `update plugin_records set unique_key = ${placeholder(tx.dialect, 1)} where id = ${placeholder(tx.dialect, 2)}`,
+      [uniqueKey, id],
     )
-    if (uniqueField === undefined) return
-    for (const { id, uniqueKey } of await planPluginRecordKeys(tx, scope, uniqueField)) {
-      await tx.unsafe(
-        `update plugin_records set unique_key = ${placeholder(tx.dialect, 1)} where id = ${placeholder(tx.dialect, 2)}`,
-        [uniqueKey, id],
-      )
-    }
-  })
+  }
 }

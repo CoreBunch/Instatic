@@ -126,6 +126,11 @@ function makeFakeDb() {
     }
 
     // createPluginRecord — values[0..4]=id, pluginId, resourceId, dataJson, uniqueKey
+    // installPluginWithRecordKeys: clears stored record keys of the declared
+    // resources (none of these plugins declares a uniqueField).
+    if (normalized.includes('update plugin_records set unique_key = null')) {
+      return { rows: [], rowCount: 0 }
+    }
     if (normalized.includes('insert into plugin_records')) {
       const now = new Date('2026-05-01T10:10:00.000Z').toISOString()
       const row = {

@@ -59,7 +59,7 @@ const SOURCE = `
       const first = await events.update(made.id, { eventId: 'evt_versions', state: 'paid' }, { ifVersion: made.version });
       const stale = await message(events.update(made.id, { eventId: 'evt_versions', state: 'refunded' }, { ifVersion: made.version }));
       const read = await events.get(made.id);
-      const byKey = await events.getByKey('evt_versions');
+      const byKey = await events.getByKey('  evt_versions ');
       const staleDelete = await message(events.delete(made.id, { ifVersion: 0 }));
       const deleted = await events.delete(made.id, { ifVersion: read.version });
       return {
@@ -72,6 +72,7 @@ const SOURCE = `
         staleDelete: staleDelete,
         deleted: deleted,
         afterDeleteIsNull: (await events.get(made.id)) === null,
+        blankKeyIsNull: (await events.getByKey('   ')) === null,
         missingIsNull: (await events.getByKey('evt_never')) === null,
       };
     });
@@ -183,6 +184,7 @@ describe('plugin storage through a real worker', () => {
       sameRecord: true,
       deleted: true,
       afterDeleteIsNull: true,
+      blankKeyIsNull: true,
       missingIsNull: true,
     })
     expect(String(body.stale).startsWith('storage_conflict:')).toBe(true)

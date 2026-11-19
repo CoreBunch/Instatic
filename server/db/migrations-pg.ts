@@ -34,29 +34,44 @@ import type { Migration } from './runMigrations'
  * not part of this baseline.
  */
 /**
- * Record data used to be bound as a JSON string, which `jsonb` stores as a
- * string scalar: readable, but invisible to every `list` filter. This unwraps
- * those rows into the objects they hold. Row by row, skipping anything that
- * does not parse, so one odd row can never fail the migration. Exported so
- * the repair can be tested against a database that has already migrated.
+ * `plugin_records.data_json` used to be bound as a JSON string, which `jsonb`
+ * stores as a string scalar: it reads back fine, but no `list` filter can see
+ * inside it. This unwraps every such row into the object it holds.
+ *
+ * One set-based UPDATE (no row loop), in a migration of its own so it never
+ * shares a transaction, and so a table lock, with an ALTER TABLE. A row whose
+ * string is not valid JSON is left exactly as it is: Postgres 16+ asks
+ * `pg_input_is_valid`; older servers go through a function that returns NULL
+ * instead of raising. Only strings that hold an object are touched.
+ *
+ * Exported so the pre-16 path can be exercised on a newer server in tests.
  */
-export const PLUGIN_RECORD_DATA_REPAIR_SQL = `
-      do $$
-      declare
-        stored record;
+export const PLUGIN_RECORDS_JSON_REPAIR_SQL = `
+      do $repair$
       begin
-        for stored in
-          select id, data_json #>> '{}' as raw
-          from plugin_records
-          where jsonb_typeof(data_json) = 'string'
-        loop
-          begin
-            update plugin_records set data_json = stored.raw::jsonb where id = stored.id;
-          exception when others then
-            null;
-          end;
-        end loop;
-      end $$;
+        if current_setting('server_version_num')::int >= 160000 then
+          update plugin_records
+             set data_json = (data_json #>> '{}')::jsonb
+           where jsonb_typeof(data_json) = 'string'
+             and left(ltrim(data_json #>> '{}'), 1) = '{'
+             and pg_input_is_valid(data_json #>> '{}', 'jsonb');
+        else
+          create function pg_temp.instatic_try_jsonb(raw text) returns pg_catalog.jsonb
+            language plpgsql immutable as $try$
+            begin
+              return raw::jsonb;
+            exception when others then
+              return null;
+            end
+          $try$;
+          update plugin_records
+             set data_json = pg_temp.instatic_try_jsonb(data_json #>> '{}')
+           where jsonb_typeof(data_json) = 'string'
+             and left(ltrim(data_json #>> '{}'), 1) = '{'
+             and pg_temp.instatic_try_jsonb(data_json #>> '{}') is not null;
+        end if;
+      end
+      $repair$;
 `
 
 export const pgMigrations: Migration[] = [
@@ -1659,13 +1674,18 @@ export const pgMigrations: Migration[] = [
     `,
   },
   {
+    // Unwrap plugin record data that was stored as a JSON string scalar.
+    // SQLite has no such rows (JSON is text there), so its twin is a no-op.
+    id: '036_plugin_records_json_repair',
+    sql: PLUGIN_RECORDS_JSON_REPAIR_SQL,
+  },
+  {
     // Plugin storage: an optional unique key per record (derived from the
     // resource's declared uniqueField) and a version counter for conditional
-    // updates. NULL keys are distinct in a unique index on both dialects, so
-    // existing rows and resources without a uniqueField are unaffected.
-    // Postgres only: also unwraps record data stored as a JSON string scalar
-    // (see the block below); SQLite keeps JSON as text either way.
-    id: '036_plugin_record_keys',
+    // updates. Schema only. NULL keys are distinct in a unique index on both
+    // dialects, so existing rows and resources without a uniqueField are
+    // unaffected.
+    id: '037_plugin_record_keys',
     sql: `
       alter table plugin_records add column unique_key text;
 
@@ -1673,8 +1693,6 @@ export const pgMigrations: Migration[] = [
 
       create unique index if not exists plugin_records_unique_key_idx
         on plugin_records (plugin_id, resource_id, unique_key);
-
-      ${PLUGIN_RECORD_DATA_REPAIR_SQL}
     `,
   },
 ]

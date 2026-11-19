@@ -152,6 +152,11 @@ function makeFakeDb() {
       crashEvents.push(...remaining)
       return { rows: [], rowCount: before - remaining.length }
     }
+    // installPluginWithRecordKeys: clears stored record keys of the declared
+    // resources (none of these plugins declares a uniqueField).
+    if (normalized.includes('update plugin_records set unique_key = null')) {
+      return { rows: [], rowCount: 0 }
+    }
     if (normalized.includes('insert into plugin_records')) {
       const row = {
         id: values[0],

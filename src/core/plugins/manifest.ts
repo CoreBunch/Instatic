@@ -30,7 +30,12 @@ export {
   frontendOriginAllowsHost,
   isExternalFrontendScriptSrc,
 } from './manifestFrontend'
-export { findPluginResource, pluginRecordUniqueKey, validatePluginRecordData } from './resourceRecords'
+export {
+  deriveRecordUniqueKey,
+  findPluginResource,
+  pluginRecordUniqueKey,
+  validatePluginRecordData,
+} from './resourceRecords'
 
 const PLUGIN_ID_PATTERN = /^[a-z][a-z0-9-]*(?:\.[a-z][a-z0-9-]*)+$/
 /**

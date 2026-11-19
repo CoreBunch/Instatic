@@ -1,231 +1,96 @@
 /**
- * Plugin storage: unique keys, get-by-id and versioned updates.
- *
- * Plugin handlers interleave, so the repository has to make "create if
- * absent" and "update if unchanged" single statements the database decides.
- * The races here fire N calls at once against a real SQLite database; the
- * Postgres twin (two connection pools) is `pluginRecordsPostgres.test.ts`.
+ * Plugin record storage on SQLite: what `list` filters and ordering mean,
+ * what data is refused, and how a damaged row reads. The Postgres twin, with
+ * the same filter table, is `pluginRecordsPostgres.test.ts`.
  */
-import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
+import { afterAll, beforeAll, describe, expect, it } from 'bun:test'
 import { parsePluginManifest } from '@core/plugins/manifest'
 import type { DbClient } from '../../../server/db/client'
 import { installPlugin } from '../../../server/repositories/plugins'
 import {
-  PluginRecordConflictError,
-  PluginRecordDuplicateError,
-  PluginRecordRekeyError,
   createPluginRecord,
-  createPluginRecordIfAbsent,
-  deletePluginRecord,
-  getPluginRecord,
-  getPluginRecordByKey,
   listPluginRecords,
-  pluginRecordRekeyProblem,
-  rekeyPluginRecords,
   updatePluginRecord,
 } from '../../../server/repositories/pluginRecords'
 import { createTestDb } from '../helpers/createTestDb'
+import {
+  PLUGIN_RECORD_FILTER_CASES,
+  expectPluginRecordFilterCase,
+  seedPluginRecordFilterCases,
+} from '../helpers/pluginRecordFilterCases'
 
-const PLUGIN = 'acme.shop'
-const OTHER_PLUGIN = 'acme.other'
-const events = { pluginId: PLUGIN, resourceId: 'events' }
-
-function manifest(id: string) {
-  return parsePluginManifest({
-    id,
-    name: id,
-    version: '1.0.0',
-    apiVersion: 1,
-    permissions: ['cms.storage'],
-    resources: [
-      {
-        id: 'events',
-        title: 'Events',
-        uniqueField: 'eventId',
-        fields: [
-          { id: 'eventId', label: 'Event id', type: 'text' },
-          { id: 'state', label: 'State', type: 'text' },
-        ],
-      },
-    ],
-  })
-}
+const PLUGIN = 'acme.records'
+const cases = { pluginId: PLUGIN, resourceId: 'cases' }
+const notes = { pluginId: PLUGIN, resourceId: 'notes' }
 
 let db: DbClient
 let cleanup: () => Promise<void>
-let nextId = 0
-const newId = () => `rec_${++nextId}`
 
-beforeEach(async () => {
+beforeAll(async () => {
   const testDb = await createTestDb()
   db = testDb.db
   cleanup = testDb.cleanup
-  await installPlugin(db, manifest(PLUGIN))
-  await installPlugin(db, manifest(OTHER_PLUGIN))
+  await installPlugin(
+    db,
+    parsePluginManifest({ id: PLUGIN, name: 'Records', version: '1.0.0', apiVersion: 1, permissions: ['cms.storage'] }),
+  )
+  await seedPluginRecordFilterCases(db, cases)
 })
 
-afterEach(async () => {
+afterAll(async () => {
   await cleanup()
 })
 
-describe('plugin record unique keys', () => {
-  it('creates exactly one record when many callers race on one key', async () => {
-    const results = await Promise.all(
-      Array.from({ length: 40 }, (_, index) =>
-        createPluginRecordIfAbsent(db, {
-          ...events,
-          id: newId(),
-          data: { eventId: 'evt_1', state: `caller ${index}` },
-          uniqueKey: 'evt_1',
-        }),
-      ),
-    )
-    const created = results.filter((result) => result.created)
-    expect(created).toHaveLength(1)
-    // Everyone is handed the one stored record.
-    expect(new Set(results.map((result) => result.record.id)).size).toBe(1)
-    const { totalCount } = await listPluginRecords(db, PLUGIN, 'events')
-    expect(totalCount).toBe(1)
-  })
-
-  it('create rejects a taken key with a typed error and stores nothing', async () => {
-    await createPluginRecord(db, { ...events, id: newId(), data: { eventId: 'evt_1' }, uniqueKey: 'evt_1' })
-    const second = createPluginRecord(db, { ...events, id: newId(), data: { eventId: 'evt_1' }, uniqueKey: 'evt_1' })
-    expect(second).rejects.toBeInstanceOf(PluginRecordDuplicateError)
-    await second.catch(() => {})
-    expect((await listPluginRecords(db, PLUGIN, 'events')).totalCount).toBe(1)
-  })
-
-  it('keeps records without a key distinct from each other', async () => {
-    await createPluginRecord(db, { ...events, id: newId(), data: { state: 'a' }, uniqueKey: null })
-    await createPluginRecord(db, { ...events, id: newId(), data: { state: 'b' }, uniqueKey: null })
-    expect((await listPluginRecords(db, PLUGIN, 'events')).totalCount).toBe(2)
-  })
-
-  it('scopes a key to one plugin and one resource', async () => {
-    const mine = await createPluginRecord(db, { ...events, id: newId(), data: { eventId: 'evt_1' }, uniqueKey: 'evt_1' })
-    // Same key, another plugin and another resource: no collision.
-    const theirs = await createPluginRecord(db, {
-      pluginId: OTHER_PLUGIN,
-      resourceId: 'events',
-      id: newId(),
-      data: { eventId: 'evt_1' },
-      uniqueKey: 'evt_1',
+describe('plugin record filters and ordering (SQLite)', () => {
+  for (const testCase of PLUGIN_RECORD_FILTER_CASES) {
+    it(testCase.name, async () => {
+      await expectPluginRecordFilterCase(db, cases, testCase)
     })
-    await createPluginRecord(db, { pluginId: PLUGIN, resourceId: 'orders', id: newId(), data: {}, uniqueKey: 'evt_1' })
+  }
 
-    expect((await getPluginRecordByKey(db, events, 'evt_1'))?.id).toBe(mine.id)
-    expect((await getPluginRecordByKey(db, { pluginId: OTHER_PLUGIN, resourceId: 'events' }, 'evt_1'))?.id).toBe(theirs.id)
-    // A plugin cannot read another plugin's record by id either.
-    expect(await getPluginRecord(db, { pluginId: OTHER_PLUGIN, resourceId: 'events' }, mine.id)).toBeNull()
-    expect(await getPluginRecord(db, events, mine.id)).not.toBeNull()
+  it('refuses a comparison with something that is not a scalar', async () => {
+    const list = listPluginRecords(db, PLUGIN, 'cases', { filter: { n: { eq: { nested: 1 } } } })
+    expect(list).rejects.toThrow('must compare with a string, number, boolean or null')
+    await list.catch(() => {})
+    const ordered = listPluginRecords(db, PLUGIN, 'cases', { filter: { n: { gt: null } } })
+    expect(ordered).rejects.toThrow('null can only be used with eq and ne')
+    await ordered.catch(() => {})
+  })
+})
+
+describe('plugin record data', () => {
+  it('refuses the NUL character anywhere in the data, on create and update', async () => {
+    const create = createPluginRecord(db, { ...notes, id: 'nul_1', data: { body: 'a\u0000b' } })
+    expect(create).rejects.toThrow('cannot contain the NUL character')
+    await create.catch(() => {})
+    const nested = createPluginRecord(db, { ...notes, id: 'nul_2', data: { list: [{ 'k\u0000': 1 }] } })
+    expect(nested).rejects.toThrow('cannot contain the NUL character')
+    await nested.catch(() => {})
+
+    await createPluginRecord(db, { ...notes, id: 'nul_3', data: { body: 'fine' } })
+    const update = updatePluginRecord(db, { ...notes, id: 'nul_3', data: { body: '\u0000' } })
+    expect(update).rejects.toThrow('cannot contain the NUL character')
+    await update.catch(() => {})
+    const stored = await listPluginRecords(db, PLUGIN, 'notes', { filter: { body: 'fine' } })
+    expect(stored.records.map((record) => record.id)).toEqual(['nul_3'])
   })
 
-  it('treats a key as data, never as SQL', async () => {
-    const hostile = `x' or '1'='1'; drop table plugin_records; --`
-    await createPluginRecord(db, { ...events, id: newId(), data: { eventId: hostile }, uniqueKey: hostile })
-    expect((await getPluginRecordByKey(db, events, hostile))?.uniqueKey).toBe(hostile)
-    expect(await getPluginRecordByKey(db, events, `' or '1'='1`)).toBeNull()
-  })
-
-  it('reads a row written before the migration as version 0 with no key', async () => {
-    // What 035 and earlier wrote: no unique_key, no version.
+  it('reads a row whose data is not a JSON object as empty instead of failing the list', async () => {
     await db`
       insert into plugin_records (id, plugin_id, resource_id, data_json)
-      values ('legacy', ${PLUGIN}, 'events', ${JSON.stringify({ state: 'old' })})
+      values ('odd_text', ${PLUGIN}, 'odd', ${'{not json'})
     `
-    const legacy = await getPluginRecord(db, events, 'legacy')
-    expect(legacy).toMatchObject({ uniqueKey: null, version: 0, data: { state: 'old' } })
-  })
-})
+    await db`
+      insert into plugin_records (id, plugin_id, resource_id, data_json)
+      values ('odd_array', ${PLUGIN}, 'odd', ${'[1,2]'})
+    `
+    await createPluginRecord(db, { pluginId: PLUGIN, resourceId: 'odd', id: 'odd_fine', data: { ok: true } })
 
-describe('plugin record versions', () => {
-  it('lets exactly one of many writers holding the same version win', async () => {
-    const record = await createPluginRecord(db, { ...events, id: newId(), data: { eventId: 'evt_1', state: 'new' }, uniqueKey: 'evt_1' })
-    expect(record.version).toBe(0)
-
-    const outcomes = await Promise.allSettled(
-      Array.from({ length: 25 }, (_, index) =>
-        updatePluginRecord(db, {
-          ...events,
-          id: record.id,
-          data: { eventId: 'evt_1', state: `writer ${index}` },
-          uniqueKey: 'evt_1',
-          ifVersion: 0,
-        }),
-      ),
-    )
-    const won = outcomes.filter((outcome) => outcome.status === 'fulfilled')
-    const lost = outcomes.filter((outcome) => outcome.status === 'rejected')
-    expect(won).toHaveLength(1)
-    expect(lost).toHaveLength(24)
-    for (const outcome of lost) {
-      expect((outcome as PromiseRejectedResult).reason).toBeInstanceOf(PluginRecordConflictError)
-    }
-    expect((await getPluginRecord(db, events, record.id))?.version).toBe(1)
-  })
-
-  it('bumps the version on every update, with or without ifVersion', async () => {
-    const record = await createPluginRecord(db, { ...events, id: newId(), data: { state: 'a' }, uniqueKey: null })
-    const first = await updatePluginRecord(db, { ...events, id: record.id, data: { state: 'b' }, uniqueKey: null })
-    const second = await updatePluginRecord(db, { ...events, id: record.id, data: { state: 'c' }, uniqueKey: null, ifVersion: 1 })
-    expect(first?.version).toBe(1)
-    expect(second?.version).toBe(2)
-    expect(second?.data).toEqual({ state: 'c' })
-  })
-
-  it('answers null for a missing record even with ifVersion', async () => {
-    expect(await updatePluginRecord(db, { ...events, id: 'nope', data: {}, uniqueKey: null, ifVersion: 3 })).toBeNull()
-    expect(await deletePluginRecord(db, { ...events, id: 'nope', ifVersion: 3 })).toBe(false)
-  })
-
-  it('rejects an update that would take another record\'s key', async () => {
-    await createPluginRecord(db, { ...events, id: newId(), data: { eventId: 'evt_1' }, uniqueKey: 'evt_1' })
-    const other = await createPluginRecord(db, { ...events, id: newId(), data: { eventId: 'evt_2' }, uniqueKey: 'evt_2' })
-    const clash = updatePluginRecord(db, { ...events, id: other.id, data: { eventId: 'evt_1' }, uniqueKey: 'evt_1' })
-    expect(clash).rejects.toBeInstanceOf(PluginRecordDuplicateError)
-    await clash.catch(() => {})
-    expect((await getPluginRecord(db, events, other.id))?.uniqueKey).toBe('evt_2')
-  })
-
-  it('deletes only while the version still matches', async () => {
-    const record = await createPluginRecord(db, { ...events, id: newId(), data: { state: 'a' }, uniqueKey: null })
-    await updatePluginRecord(db, { ...events, id: record.id, data: { state: 'b' }, uniqueKey: null })
-    const stale = deletePluginRecord(db, { ...events, id: record.id, ifVersion: 0 })
-    expect(stale).rejects.toBeInstanceOf(PluginRecordConflictError)
-    await stale.catch(() => {})
-    expect(await deletePluginRecord(db, { ...events, id: record.id, ifVersion: 1 })).toBe(true)
-    expect(await getPluginRecord(db, events, record.id)).toBeNull()
-  })
-})
-
-describe('re-keying a resource', () => {
-  it('rebuilds keys from the new unique field and clears them when it goes away', async () => {
-    const a = await createPluginRecord(db, { ...events, id: newId(), data: { eventId: 'evt_1', state: 'x' }, uniqueKey: 'evt_1' })
-    const b = await createPluginRecord(db, { ...events, id: newId(), data: { eventId: 'evt_2', state: 'y' }, uniqueKey: 'evt_2' })
-
-    await rekeyPluginRecords(db, events, 'state')
-    expect((await getPluginRecordByKey(db, events, 'x'))?.id).toBe(a.id)
-    expect((await getPluginRecordByKey(db, events, 'y'))?.id).toBe(b.id)
-    expect(await getPluginRecordByKey(db, events, 'evt_1')).toBeNull()
-    // The data did not change, so neither did the version.
-    expect((await getPluginRecord(db, events, a.id))?.version).toBe(0)
-
-    await rekeyPluginRecords(db, events, undefined)
-    expect((await getPluginRecord(db, events, a.id))?.uniqueKey).toBeNull()
-  })
-
-  it('names the collision and leaves the old keys in place', async () => {
-    await createPluginRecord(db, { ...events, id: newId(), data: { eventId: 'evt_1', state: 'same' }, uniqueKey: 'evt_1' })
-    await createPluginRecord(db, { ...events, id: newId(), data: { eventId: 'evt_2', state: 'same' }, uniqueKey: 'evt_2' })
-
-    expect(await pluginRecordRekeyProblem(db, events, 'state')).toContain('share the "state" value "same"')
-    expect(await pluginRecordRekeyProblem(db, events, 'eventId')).toBeNull()
-
-    const rekey = rekeyPluginRecords(db, events, 'state')
-    expect(rekey).rejects.toBeInstanceOf(PluginRecordRekeyError)
-    await rekey.catch(() => {})
-    // The transaction rolled back: the previous keys still resolve.
-    expect(await getPluginRecordByKey(db, events, 'evt_1')).not.toBeNull()
+    const listed = await listPluginRecords(db, PLUGIN, 'odd')
+    expect(listed.totalCount).toBe(3)
+    const byId = new Map(listed.records.map((record) => [record.id, record.data]))
+    expect(byId.get('odd_text')).toEqual({})
+    expect(byId.get('odd_array')).toEqual({})
+    expect(byId.get('odd_fine')).toEqual({ ok: true })
   })
 })

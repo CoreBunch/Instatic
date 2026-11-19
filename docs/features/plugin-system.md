@@ -647,7 +647,7 @@ Plugin storage is per-plugin, per-collection: every call is scoped to the callin
 
 | Method | Resolves | Notes |
 |---|---|---|
-| `list(options?)` | `{ records, totalCount }` | `StorageListOptions` (`src/core/plugin-sdk/storageSchemas.ts`): filter, orderBy, limit (default 100, max 1000), offset. Filters run in SQL on top-level fields. |
+| `list(options?)` | `{ records, totalCount }` | `StorageListOptions` (`src/core/plugin-sdk/storageSchemas.ts`): filter, orderBy, limit (default 100, max 1000), offset. Semantics below. |
 | `get(id)` | record or `null` | |
 | `getByKey(value)` | record or `null` | Needs a `uniqueField` on the resource. |
 | `create(data)` | record | Rejects with `storage_duplicate:` when the unique key is taken. |
@@ -657,7 +657,17 @@ Plugin storage is per-plugin, per-collection: every call is scoped to the callin
 
 A record is `{ id, pluginId, resourceId, data, uniqueKey, version, createdAt, updatedAt }`. `version` starts at 0.
 
-**Unique keys.** A resource may name one `text` field as its `uniqueField`. The host copies that field's value (trimmed, at most 512 characters) into an indexed column with a unique index over `(plugin, resource, key)`. A record that leaves the field empty has no key and never collides. `parsePluginManifest` and `bun instatic-plugin lint` reject a `uniqueField` that is not a declared `text` field.
+`list` means the same on SQLite and Postgres (one case table runs against both: `src/__tests__/helpers/pluginRecordFilterCases.ts`):
+
+- **Filters are typed by the value you compare with.** `{ amount: 9 }` matches records whose `amount` is the number 9, never the string `"9"`; `{ paid: true }` matches booleans only; `{ id: 'x' }` strings only. The operators are `eq`, `ne`, `gt`, `gte`, `lt`, `lte`, `in` (values of mixed types allowed) and `like` (strings, ASCII case-insensitive). A row whose field holds another type matches no comparison, `ne` included.
+- **`null` means "missing or null".** `{ field: null }` matches records without the field or with `null` in it; `{ field: { ne: null } }` matches the rest. `null` cannot be used with the ordering operators.
+- **Strings compare byte-wise** (`'B' < 'a'`), not by the database's locale, for `gt` / `lt` and for ordering.
+- **`orderBy` sorts by type, then value:** records without the field first, then booleans (false, true), then numbers by value, then strings. `desc` reverses the whole sequence. Ties, and a list with no `orderBy`, fall back to newest first.
+- Filters and ordering reach top-level fields only, and field names must be plain identifiers.
+
+Record data is a JSON object. A string containing the NUL character (`\u0000`), in a key or a value at any depth, is refused on create and update: Postgres cannot store it, and refusing it everywhere keeps both databases alike. A stored row whose data is not a JSON object reads as `{}` and is logged once instead of failing the whole list.
+
+**Unique keys.** A resource may name one `text` field as its `uniqueField`. The host copies that field's value into an indexed column with a unique index over `(plugin, resource, key)`. The key is the value with surrounding whitespace trimmed and nothing else changed, at most 512 characters: it is case-sensitive and compares by code point, so `Evt_1` and `evt_1` are two keys, and so are a precomposed and a decomposed accent. Normalise in the plugin if you need otherwise. A record that leaves the field empty has no key and never collides. `getByKey` trims its argument the same way (`deriveRecordUniqueKey` in `src/core/plugins/resourceRecords.ts` is the one derivation). `parsePluginManifest` and `bun instatic-plugin lint` reject a `uniqueField` that is not a declared `text` field.
 
 ```ts
 resources: [{
@@ -691,7 +701,9 @@ If the handler can fail between the claim and the work, key the record on the ev
 
 **Refusals are message prefixes.** The plugin RPC carries only an error message, so tell refusals apart with `err.message.startsWith(...)`: `storage_duplicate:` (the unique key belongs to another record) and `storage_conflict:` (the record changed since `ifVersion` was read). The constants are `STORAGE_DUPLICATE_PREFIX` and `STORAGE_CONFLICT_PREFIX` in `storageSchemas.ts`.
 
-**Changing `uniqueField` in an upgrade.** When a new version adds or changes a resource's `uniqueField`, the upgrade rebuilds every stored key from the new field (`rekeyPluginRecords`). It is refused up front, with the old version still running, when two existing records share a value, a value is longer than 512 characters, or the resource holds more than 50,000 records. Removing the `uniqueField` clears the keys. A failed upgrade restores the previous keys in its rollback.
+**When the declaration changes.** Stored keys follow the manifest. Whenever an install or upgrade (package or JSON) declares a resource whose `uniqueField` differs from what was stored before, including a resource declared for the first time over records that already exist, the host rebuilds every key of that resource from the new field (`rekeyPluginRecords`) in the same transaction that stores the manifest. It is refused up front, with the old version still running, when two existing records share a value, a value is longer than 512 characters, or the resource holds more than 50,000 records. Removing the `uniqueField` clears the keys. A failed upgrade's rollback restores the previous manifest and keys in one transaction; if that itself fails the plugin is left in `error` with the reason, never half-keyed.
+
+Migration `037_plugin_record_keys` adds the two columns and the unique index. On Postgres, building the index blocks writes to `plugin_records` for as long as it takes to scan the table (well under a second for the sizes plugins hold; a few seconds per million rows).
 
 Editor-side plugin code (`api.cms.storage` in an editor entrypoint) and the admin resource pages go through `/admin/api/cms/plugins/:id/resources/:rid/records`, which offers list, create, update and delete only. A create or update that hits the unique key answers `409` with the message, which the resource page shows as a toast.
 

@@ -102,7 +102,15 @@ export async function handlePluginsCollection(
       const grantError = assertPluginPermissionGrants(manifest, grantedPermissions)
       if (grantError) return grantError
       forgetHeldMailOutcomes(manifest.id)
-      const installed = await installPlugin(db, manifest, grantedPermissions)
+      // A JSON install over an existing plugin is an upgrade of its manifest:
+      // stored record keys must follow a changed `uniqueField` here too.
+      const previous = await getInstalledPlugin(db, manifest.id)
+      const installed = await installPluginWithRecordKeys(
+        db,
+        previous?.kind === 'ok' ? previous.plugin.manifest : null,
+        manifest,
+        grantedPermissions,
+      )
       const updatedResult = await setPluginLifecycleStatus(db, installed.id, 'active')
       await syncPluginMailTemplates(db)
       const plugin = (updatedResult?.kind === 'ok' ? updatedResult.plugin : null) ?? installed
@@ -232,7 +240,7 @@ async function installFreshFromPackage(ctx: InstallContext): Promise<Response> {
     pluginPackage.manifest,
     pluginPackage.files,
   )
-  const installed = await installPlugin(db, manifest, grantedPermissions)
+  const installed = await installPluginWithRecordKeys(db, null, manifest, grantedPermissions)
   const installLifecycle = await runPluginLifecycleHook(db, installed, options, 'install', 'installed')
   if (!installLifecycle.ok) {
     return jsonResponse(
@@ -348,21 +356,38 @@ async function installUpgradeFromPackage(ctx: UpgradeContext): Promise<Response>
     pluginPackage.files,
   )
 
+  // Any failure from here on restores the old version end-to-end.
+  const failUpgrade = async (err: unknown): Promise<Response> => {
+    const failureMessage = lifecycleErrorMessage(err)
+    console.error(`[plugin:${pluginId}] upgrade ${fromVersion} → ${newVersion} failed:`, err)
+    await rollbackUpgrade({ db, options, existing, newManifest })
+    return jsonResponse(
+      {
+        error: `Upgrade failed: ${failureMessage}. Rolled back to version ${fromVersion}.`,
+        ...(await pluginsPayload(db)),
+      },
+      { status: 400 },
+    )
+  }
+
   // 3. Replace DB row. `installPlugin` upserts — settings_json + installed_at
-  //    are preserved by the SET clause (it doesn't reference them).
-  const upgraded = await installPlugin(db, newManifest, grantedPermissions)
+  //    are preserved by the SET clause (it doesn't reference them). Stored
+  //    record keys follow the new declaration in the same transaction, before
+  //    any new code runs. A record written since the check in step 0 can
+  //    still collide; that fails here and takes the rollback path.
+  let upgraded: InstalledPlugin
+  try {
+    upgraded = await installPluginWithRecordKeys(db, existing.manifest, newManifest, grantedPermissions)
+  } catch (err) {
+    return failUpgrade(err)
+  }
   // Refresh settings cache from the upserted row (merging decrypted secrets)
   // so the worker's `loadPluginServerEntrypoint` seeds the right values into
   // the worker's local mirror.
   await primePluginSettingsCache(db, upgraded)
 
-  // 4 + 5. Try to migrate then activate. On any failure we restore the old
-  //        version end-to-end.
+  // 4 + 5. Try to migrate then activate.
   try {
-    // Stored keys follow the new declaration before any new code runs. A
-    // record written since the check above can still collide; that throws
-    // here and takes the rollback path like any other failed step.
-    await syncPluginRecordKeys(db, pluginId, existing.manifest, newManifest)
     const upgradedManifest = pluginManifestWithGrants(upgraded)
     const loaded = await loadPluginServerEntrypoint(upgradedManifest, options.uploadsDir)
     if (loaded) {
@@ -386,16 +411,7 @@ async function installUpgradeFromPackage(ctx: UpgradeContext): Promise<Response>
     }
     await setPluginLifecycleStatus(db, pluginId, 'active')
   } catch (err) {
-    const failureMessage = lifecycleErrorMessage(err)
-    console.error(`[plugin:${pluginId}] upgrade ${fromVersion} → ${newVersion} failed:`, err)
-    await rollbackUpgrade({ db, options, existing, newManifest })
-    return jsonResponse(
-      {
-        error: `Upgrade failed: ${failureMessage}. Rolled back to version ${fromVersion}.`,
-        ...(await pluginsPayload(db)),
-      },
-      { status: 400 },
-    )
+    return failUpgrade(err)
   }
 
   // 6. The old version's files STAY. Published pages link plugin frontend
@@ -494,20 +510,30 @@ async function rollbackUpgrade(args: {
   const { db, options, existing, newManifest } = args
   const pluginId = existing.id
 
-  // Restore DB row to previous manifest + grants. The upsert preserves
-  // settings + installed_at automatically.
-  const restored = await installPlugin(
-    db,
-    pluginManifestWithGrants(existing),
-    existing.grantedPermissions,
-  )
-
-  // Put the stored record keys back to what the previous version declares.
-  // Best-effort: the previous keys were valid before the upgrade began.
+  // Restore DB row to previous manifest + grants (the upsert preserves
+  // settings + installed_at) and put the stored record keys back to what
+  // that version declares, in one transaction. If even that fails, stop:
+  // the row and keys are whatever the last successful transaction left
+  // (consistent with each other), nothing is loaded, and the plugin says why.
+  let restored: InstalledPlugin
   try {
-    await syncPluginRecordKeys(db, pluginId, newManifest, existing.manifest)
+    restored = await installPluginWithRecordKeys(
+      db,
+      newManifest,
+      pluginManifestWithGrants(existing),
+      existing.grantedPermissions,
+    )
   } catch (err) {
-    console.error(`[plugin:${pluginId}] could not restore record keys during rollback`, err)
+    console.error(`[plugin:${pluginId}] rollback could not restore version ${existing.version}`, err)
+    await unloadPlugin(pluginId)
+    deactivatePluginModulePack(pluginId)
+    await setPluginLifecycleStatus(
+      db,
+      pluginId,
+      'error',
+      `Upgrade to ${newManifest.version} failed and version ${existing.version} could not be restored: ${lifecycleErrorMessage(err)}`,
+    )
+    return
   }
 
   // Drop new version assets — the upgrade didn't take. With worker
@@ -558,25 +584,39 @@ async function rollbackUpgrade(args: {
   }
 }
 
-/** Resources of `next` whose `uniqueField` differs from the same resource in `previous`. */
+/**
+ * Resources of `next` whose stored record keys must be rebuilt: the
+ * `uniqueField` differs from what `previous` declared, or the resource is new
+ * to the manifest (records may exist from a time it was not declared, with no
+ * keys or stale ones).
+ */
 function resourcesWithChangedUniqueField(
-  previous: Pick<PluginManifest, 'resources'>,
+  previous: Pick<PluginManifest, 'resources'> | null,
   next: Pick<PluginManifest, 'resources'>,
 ): PluginResource[] {
   return next.resources.filter((resource) => {
-    const before = previous.resources.find((candidate) => candidate.id === resource.id)
-    return before !== undefined && before.uniqueField !== resource.uniqueField
+    const before = previous?.resources.find((candidate) => candidate.id === resource.id)
+    return before === undefined || before.uniqueField !== resource.uniqueField
   })
 }
 
-/** Rebuild (or clear) stored record keys for every resource whose `uniqueField` changed. */
-async function syncPluginRecordKeys(
+/**
+ * Store a plugin's manifest and make its stored record keys match it, in one
+ * transaction: the declaration of a `uniqueField` and the keys derived from
+ * it change together or not at all. Every path that writes a manifest goes
+ * through here (package install, JSON install, upgrade, rollback).
+ */
+async function installPluginWithRecordKeys(
   db: DbClient,
-  pluginId: string,
-  previous: Pick<PluginManifest, 'resources'>,
-  next: Pick<PluginManifest, 'resources'>,
-): Promise<void> {
-  for (const resource of resourcesWithChangedUniqueField(previous, next)) {
-    await rekeyPluginRecords(db, { pluginId, resourceId: resource.id }, resource.uniqueField)
-  }
+  previous: Pick<PluginManifest, 'resources'> | null,
+  manifest: PluginManifest,
+  grantedPermissions: PluginPermission[],
+): Promise<InstalledPlugin> {
+  return db.transaction(async (tx) => {
+    const installed = await installPlugin(tx, manifest, grantedPermissions)
+    for (const resource of resourcesWithChangedUniqueField(previous, manifest)) {
+      await rekeyPluginRecords(tx, { pluginId: manifest.id, resourceId: resource.id }, resource.uniqueField)
+    }
+    return installed
+  })
 }

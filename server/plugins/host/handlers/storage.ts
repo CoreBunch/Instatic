@@ -17,6 +17,7 @@
 import { nanoid } from 'nanoid'
 import { STORAGE_CONFLICT_PREFIX, STORAGE_DUPLICATE_PREFIX, type PluginResource } from '@core/plugin-sdk'
 import {
+  deriveRecordUniqueKey,
   findPluginResource,
   pluginRecordUniqueKey,
   validatePluginRecordData,
@@ -84,7 +85,11 @@ export async function handleStorageGetByKey(
 ): Promise<void> {
   const [resourceId, key] = msg.args
   requireUniqueField(findPluginResource(entry.manifest, resourceId), resourceId, 'getByKey')
-  const record = await getPluginRecordByKey(db, { pluginId: msg.pluginId, resourceId }, key)
+  // Derived like a stored key (trimmed), so a lookup finds what a write stored.
+  const uniqueKey = deriveRecordUniqueKey(key)
+  const record = uniqueKey === null
+    ? null
+    : await getPluginRecordByKey(db, { pluginId: msg.pluginId, resourceId }, uniqueKey)
   replyApiOk(msg.pluginId, msg.correlationId, record as unknown)
 }
 

@@ -65,25 +65,34 @@ export function validatePluginRecordData(
 }
 
 /**
- * The unique key a record takes from its resource's `uniqueField`: the
- * validated (trimmed) text value as it is, or null when the resource declares
- * no `uniqueField` or the record leaves the field empty. Records with a null
- * key never collide with each other.
+ * Turn a field value into a record's unique key: the text with surrounding
+ * whitespace trimmed, exactly as stored. Nothing else is normalised, so keys
+ * are case-sensitive and compare by code point ("A" and "a" differ, and so do
+ * a precomposed and a decomposed accent). Anything that is not text, and text
+ * that is empty after trimming, gives no key (null); such records never
+ * collide.
  *
- * Call with data that already went through `validatePluginRecordData`.
+ * The one place a key is derived: record writes, `getByKey` lookups and the
+ * re-keying of stored records all come through here, so they cannot disagree.
+ */
+export function deriveRecordUniqueKey(value: unknown): string | null {
+  if (typeof value !== 'string') return null
+  const key = value.trim()
+  if (key === '') return null
+  if (key.length > STORAGE_UNIQUE_KEY_MAX_LENGTH) {
+    throw new Error(`A unique key may hold at most ${STORAGE_UNIQUE_KEY_MAX_LENGTH} characters`)
+  }
+  return key
+}
+
+/**
+ * The unique key a record takes from its resource's `uniqueField`, or null
+ * when the resource declares none or the record leaves the field empty.
  */
 export function pluginRecordUniqueKey(
   resource: PluginResource | null,
   data: Record<string, unknown>,
 ): string | null {
   if (!resource?.uniqueField) return null
-  const value = data[resource.uniqueField]
-  if (typeof value !== 'string' || value === '') return null
-  if (value.length > STORAGE_UNIQUE_KEY_MAX_LENGTH) {
-    throw new Error(
-      `Field "${resource.uniqueField}" is the unique key of "${resource.id}" and may hold at most ` +
-        `${STORAGE_UNIQUE_KEY_MAX_LENGTH} characters`,
-    )
-  }
-  return value
+  return deriveRecordUniqueKey(data[resource.uniqueField])
 }
