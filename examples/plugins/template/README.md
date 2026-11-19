@@ -105,6 +105,23 @@ Remove permissions you don't need — users see the full permission list before 
 A plugin that drops its editor entrypoint (and any app-kind admin pages) can drop
 `editor.code` too; everything else then runs inside the QuickJS sandbox.
 
+## Member routes for apps
+
+A site member can sign in to an app the site owner registered. A plugin lets such an app call one of its member routes by declaring an app scope and naming it on the route. `server/index.js` carries a commented example:
+
+```json
+{
+  "permissions": ["cms.routes", "members.read"],
+  "appScopes": [{ "name": "read", "description": "See your saved items" }]
+}
+```
+
+```js
+api.cms.routes.member.get('/items', { app: { scope: 'read' } }, (ctx) => listItems(ctx.member.id))
+```
+
+The member reads `description` before allowing the app, so say plainly what the scope lets the app do. If a later version changes the description or removes the scope, members are asked again.
+
 ## Managed media ingestion
 
 A plugin can import source images into managed media without moving bytes through QuickJS. For allowlisted HTTPS images, request both permissions and allow the upstream hosts:
