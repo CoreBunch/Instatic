@@ -55,7 +55,8 @@ const MAIL_PERMISSIONS: readonly PluginPermission[] = ['mail.send', 'mail.send.e
 
 /** Every `{name}` a subject or body uses. */
 function usedVariables(source: string): string[] {
-  return [...source.matchAll(/\{([a-zA-Z][a-zA-Z0-9.]*)\}/g)].map((match) => match[1])
+  // `\\{name}` is a literal brace, not a variable.
+  return [...source.replace(/\\\{/g, '').matchAll(/\{([a-zA-Z][a-zA-Z0-9.]*)\}/g)].map((match) => match[1])
 }
 
 /**
@@ -69,7 +70,7 @@ export function undeclaredMailVariables(template: {
 }): string[] {
   const declared = new Set(template.variables.map((variable) => variable.name))
   const missing = [...usedVariables(template.subject), ...usedVariables(template.body)].filter(
-    (name) => !declared.has(name) && !name.startsWith('site.'),
+    (name) => !declared.has(name) && name !== 'site.name' && name !== 'site.url',
   )
   return [...new Set(missing)]
 }

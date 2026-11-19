@@ -1168,7 +1168,7 @@ describe('email for plugins', () => {
       expect(sent.subject).not.toBe('My subject')
       expect((await listMailActivity(h.db)).entries[0]).toMatchObject({
         status: 'sent',
-        error: 'Your wording was not used: {link} must stand alone. The built-in wording was sent.',
+        error: 'Your wording was not used: {link} must stand alone: put a space or a line break around it, or use it as the address of a link. The built-in wording was sent.',
       })
     })
 
@@ -1270,6 +1270,85 @@ describe('email for plugins', () => {
       expect(renderMailTemplate({ key, subject: 'S', body: '{subject}example' }, { subject: 'evil.' }).refused).toEqual(['subject'])
       // Standing alone, such a value touches nothing.
       expect(renderMailTemplate({ key, subject: 'S', body: 'Note: {subject} done' }, { subject: 'evil.' }).refused).toEqual([])
+    })
+
+    it('refuses to save a name in braces that is not a variable, on a plugin\'s template and the core\'s', async () => {
+      await install(BOTH)
+      const put = (key: string, body: string) =>
+        h.cms(`/admin/api/cms/mail/templates/${key}`, { method: 'PUT', cookie: owner, json: { subject: 'S', body } })
+      const plugin = await put(`plugin.${PLUGIN_ID}~ticket.opened`, 'Hello {customer}, about {subject}')
+      expect(plugin.status).toBe(400)
+      expect((await readJson<{ error: string }>(plugin)).error).toContain('{customer} is not a variable of this email')
+      // `member.password_changed` declares no link.
+      const core = await put('member.password_changed', 'Hi {name}, reset here: {link}')
+      expect(core.status).toBe(400)
+      expect((await readJson<{ error: string }>(core)).error).toContain('{name}, {link} are not variables of this email')
+      expect((await put('member.reset', '{site.nmae}: {link}')).status).toBe(400)
+      expect((await h.db`select template_key from mail_templates`).rows).toHaveLength(0)
+      // Braces meant as braces are written with a backslash, and sent as braces.
+      expect((await put(`plugin.${PLUGIN_ID}~ticket.opened`, 'Use \\{customer} for {subject}')).status).toBe(200)
+      expect(await send({ template: 'ticket.opened', to: { address: 'a@example.com' }, variables: { subject: 'x' } })).toEqual({ status: 'captured' })
+      expect((await listMailActivity(h.db)).entries[0].body).toBe('Use {customer} for x')
+    })
+
+    it('sends the built-in wording, with a note, for a stored edit that names something that is not a variable', async () => {
+      await install(BOTH)
+      await readyConnector()
+      const openedKey = `plugin.${PLUGIN_ID}~ticket.opened`
+      // Stored before the rule, or left behind by an upgrade that renamed a variable.
+      await storeEdit(openedKey, 'Hello {customer}, about {subject}')
+      await storeEdit('member.password_changed', 'Hi {name}, reset here: {link}')
+      const listed = await templates()
+      expect(listed.find((template) => template.key === openedKey)?.wordingProblem).toContain('{customer} is not a variable')
+      expect(listed.find((template) => template.key === 'member.password_changed')?.wordingProblem).toContain('{name}, {link} are not variables')
+      expect((await listUnusableTemplateEdits(h.db)).map((edit) => edit.key).sort()).toEqual(['member.password_changed', openedKey].sort())
+
+      expect(await send({ template: 'ticket.opened', to: { address: 'a@example.com' }, variables: { subject: 'a' } })).toEqual({ status: 'queued' })
+      await queueTemplateMail(h.db, { key: 'member.password_changed', to: 'ada@example.com', variables: { email: 'ada@example.com' } })
+      const sent: Array<{ to: string; subject: string; text: string; html: string }> = []
+      await drain(async (_c, _s, mail) => { sent.push({ to: mail.to, subject: mail.subject, text: mail.text, html: mail.html ?? '' }); return null })
+      expect(sent).toHaveLength(2)
+      for (const mail of sent) {
+        // Not one brace reaches a reader.
+        expect(`${mail.subject}\n${mail.text}`).not.toMatch(/[{}]/)
+        expect(mail.html.slice(mail.html.indexOf('<body'))).not.toMatch(/\{[a-z.]+\}/)
+        expect(mail.subject).not.toBe('My subject')
+      }
+      expect(sent.find((mail) => mail.to === 'a@example.com')?.subject).toBe('New ticket: a')
+      for (const entry of (await listMailActivity(h.db)).entries) {
+        expect(entry).toMatchObject({ status: 'sent' })
+        expect(entry.error).toStartWith('Your wording was not used: ')
+        expect(entry.error).toEndWith('The built-in wording was sent.')
+      }
+    })
+
+    it('flags an owner\'s edit when an upgrade removes the variable it uses', async () => {
+      await install(BOTH)
+      const put = await h.cms(`/admin/api/cms/mail/templates/${REPLY_KEY}`, {
+        method: 'PUT', cookie: owner, json: { subject: 'Re: {subject}', body: 'About {subject}: [open]({link})' },
+      })
+      expect(put.status).toBe(200)
+      // The new version's template has no `subject` any more.
+      const renamed = { ...TEMPLATES[0], variables: [TEMPLATES[0].variables[1]], subject: 'An answer', body: '[Open the ticket]({link})' }
+      expect((await install(BOTH, { version: '1.1.0', mail: { templates: [renamed, TEMPLATES[1]] } })).status).toBeLessThan(300)
+      expect((await templates()).find((template) => template.key === REPLY_KEY)).toMatchObject({ customised: true })
+      expect((await templates()).find((template) => template.key === REPLY_KEY)?.wordingProblem).toContain('{subject} is not a variable')
+      const memberId = await activeMember()
+      expect(await send({ template: 'ticket.reply', to: { member: memberId }, variables: { link: 'https://example.com/t/1' } })).toEqual({ status: 'captured' })
+      expect((await listMailActivity(h.db)).entries[0]).toMatchObject({ subject: 'An answer' })
+    })
+
+    it('never reads a value for variables: a value that is itself {link} is sent as those characters', async () => {
+      await install(BOTH)
+      await readyConnector()
+      const memberId = await activeMember()
+      expect(await send({
+        template: 'ticket.reply', to: { member: memberId }, variables: { subject: '{link} {email} {subject}', link: 'https://example.com/t/secret' },
+      })).toEqual({ status: 'queued' })
+      let sent = { subject: '', text: '' }
+      await drain(async (_c, _s, mail) => { sent = { subject: mail.subject, text: mail.text }; return null })
+      expect(sent.subject).toBe('Re: {link} {email} {subject}')
+      expect(sent.text).toBe('We answered {link} {email} {subject}.\n\nOpen the ticket (https://example.com/t/secret)')
     })
 
     it('never sends an email with a variable left in it: the queue fails it as template_invalid', async () => {

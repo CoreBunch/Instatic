@@ -77,9 +77,19 @@ export function mailWordingProblem(
     { key: definition.key, variables: definition.variables, ...wording },
     { 'site.name': 'Site', 'site.url': 'https://example.com', ...sampleMailVariables(definition.variables) },
   )
-  if (rendered.refused.length === 0) return null
-  const names = rendered.refused.map((name) => `{${name}}`).join(', ')
-  return `${names} must stand alone: put a space or a line break around ${rendered.refused.length === 1 ? 'it' : 'each'}, or use it as the address of a link.`
+  return describeWordingProblem(rendered)
+}
+
+/** What is wrong with a rendered wording, in a sentence for the owner, or null when nothing is. */
+export function describeWordingProblem(rendered: { refused: readonly string[]; unknown: readonly string[] }): string | null {
+  const names = (list: readonly string[]) => list.map((name) => `{${name}}`).join(', ')
+  if (rendered.unknown.length > 0) {
+    return `${names(rendered.unknown)} ${rendered.unknown.length === 1 ? 'is not a variable' : 'are not variables'} of this email. Remove ${rendered.unknown.length === 1 ? 'it' : 'them'}, or write \\{ to keep the braces.`
+  }
+  if (rendered.refused.length > 0) {
+    return `${names(rendered.refused)} must stand alone: put a space or a line break around ${rendered.refused.length === 1 ? 'it' : 'each'}, or use it as the address of a link.`
+  }
+  return null
 }
 
 /** The owner's edits that cannot be sent as written. Logged once at boot; the Templates list shows each. */

@@ -151,16 +151,18 @@ function TemplateEditor({
 
   const mode = mounted.mode
   const dirty = subject !== template.subject || body !== template.body
-  const unknown = unknownMailVariables(`${subject}\n${body}`, template.variables)
   const samples = sampleMailVariables(template.variables)
+  const unknown = unknownMailVariables(`${subject}\n${body}`, template.variables)
   const preview = renderMailTemplate({ key: template.key, subject, body, variables: template.variables }, samples)
   const refusedNames = preview.refused.map((name) => `{${name}}`).join(', ')
   const saveProblem = !subject.trim()
     ? 'Write a subject.'
     : !body.trim()
       ? 'Write a body.'
-      : preview.refused.length > 0
-        ? `${refusedNames} must stand alone before this can be saved.`
+      : unknown.length > 0
+        ? `${unknown.map((name) => `{${name}}`).join(', ')} is not a variable of this email.`
+        : preview.refused.length > 0
+          ? `${refusedNames} must stand alone before this can be saved.`
         : dirty ? null : 'No changes to save.'
 
   function insertVariable(name: string) {
@@ -329,7 +331,7 @@ function TemplateEditor({
       {unknown.length > 0 && (
         <p className={styles.warning} role="status">
           {unknown.map((name) => `{${name}}`).join(', ')} {unknown.length === 1 ? 'is not a variable' : 'are not variables'} of
-          this email and will be sent as written.
+          this email. Remove {unknown.length === 1 ? 'it' : 'them'}, or write <code>{'\\{'}</code> to keep the braces.
         </p>
       )}
       {preview.refused.length > 0 && (

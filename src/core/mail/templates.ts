@@ -91,6 +91,13 @@ export interface RenderedMail {
   text: string
   html: string
   /**
+   * Names the wording puts in braces that are not variables of this
+   * template (a typo, a variable an upgrade removed). Only reported for a
+   * template that says which variables it has. They are left as written,
+   * and the email must not be sent. Braces meant literally are written `\{`.
+   */
+  unknown: string[]
+  /**
    * Variables the template declares and its wording uses that were given no
    * value (for a link, an empty one counts as none). They are left as
    * written, and the email must not be sent.
@@ -190,6 +197,8 @@ interface Filling {
   declared: ReadonlySet<string>
   refused: Set<string>
   missing: Set<string>
+  /** Null when the template did not say which variables it has. */
+  unknown: Set<string> | null
 }
 
 /** Whether a declared variable was given no usable value. An empty text is a value; an empty link is not. */
@@ -354,6 +363,10 @@ function fill(
   readings: readonly Reading[] = [{ flat: source, offset: 0 }],
 ): string {
   return source.replace(VARIABLE, (whole, name: string, at: number) => {
+    if (filling.unknown && !filling.declared.has(name) && !SITE_VARIABLE_NAMES.has(name)) {
+      filling.unknown.add(name)
+      return whole
+    }
     if (isMissing(name, filling)) {
       filling.missing.add(name)
       return whole
@@ -398,11 +411,18 @@ function unmark(text: string): string {
 }
 
 /** Every `{name}` in a subject or body that is not one of `known`. */
+/** The variables every template has without declaring them. */
+const SITE_VARIABLE_NAMES: ReadonlySet<string> = new Set(['site.name', 'site.url'])
+
+/** Stands for a `{` the template wrote as `\{`: a brace that opens no variable. Put back at the end. */
+const ESCAPED_BRACE = '\uE003'
+
 export function unknownMailVariables(source: string, known: readonly MailTemplateVariable[]): string[] {
   const names = new Set(known.map((variable) => variable.name))
   const unknown = new Set<string>()
-  for (const match of source.matchAll(VARIABLE)) {
-    if (!names.has(match[1])) unknown.add(match[1])
+  // `\{name}` is the way to write braces that are not a variable.
+  for (const match of source.replace(/\\\{/g, '').matchAll(VARIABLE)) {
+    if (!names.has(match[1]) && !SITE_VARIABLE_NAMES.has(match[1])) unknown.add(match[1])
   }
   return [...unknown]
 }
@@ -469,7 +489,9 @@ function resolveAddress(raw: string, filling: Filling, link: boolean): string {
   const target = raw.trim()
   if (target.includes('{')) {
     const whole = WHOLE_VARIABLE.exec(target)
-    if (whole && isMissing(whole[1], filling)) filling.missing.add(whole[1])
+    if (whole && filling.unknown && !filling.declared.has(whole[1]) && !SITE_VARIABLE_NAMES.has(whole[1])) {
+      filling.unknown.add(whole[1])
+    } else if (whole && isMissing(whole[1], filling)) filling.missing.add(whole[1])
     const value = whole && whole[1] in variables ? variables[whole[1]].trim() : null
     return value !== null && isWebAddress(value, false) ? value : '#'
   }
@@ -635,9 +657,21 @@ export function renderMailTemplate(
   const strict = isPluginMailTemplateKey(template.key)
   const links = new Set((template.variables ?? []).filter((variable) => variable.kind === 'link').map((variable) => variable.name))
   const declared = new Set((template.variables ?? []).map((variable) => variable.name))
-  const filling: Filling = { variables, links, strict, declared, refused: new Set(), missing: new Set() }
+  const filling: Filling = {
+    variables,
+    links,
+    strict,
+    declared,
+    refused: new Set(),
+    missing: new Set(),
+    unknown: template.variables ? new Set() : null,
+  }
+  // `\{` is a brace, not the start of a variable. It is set aside before
+  // anything reads the template and put back when everything has.
+  const escaped = (source: string) => source.replace(/\uE003/g, '').replace(/\\\{/g, ESCAPED_BRACE)
+  const restored = (output: string) => output.replace(/\uE003/g, '{')
   const body = sanitizeToFragment(
-    renderMarkdownToHtml(template.body),
+    renderMarkdownToHtml(escaped(template.body)),
     strict ? PLUGIN_MAIL_BODY_CONFIG : MAIL_BODY_CONFIG,
   )
   // No parser, no email: the rules above are only as good as the tree they run on.
@@ -646,11 +680,12 @@ export function renderMailTemplate(
   const holder = body.ownerDocument.createElement('div')
   holder.appendChild(body)
   return {
-    subject: singleLine(unmark(fill(singleLine(template.subject), filling))),
-    text: text.replace(/[ \t]+\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim(),
-    html: wrapInLayout(holder.innerHTML, siteName),
+    subject: restored(singleLine(unmark(fill(singleLine(escaped(template.subject)), filling)))),
+    text: restored(text.replace(/[ \t]+\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim()),
+    html: restored(wrapInLayout(holder.innerHTML, siteName)),
     refused: [...filling.refused],
     missing: [...filling.missing],
+    unknown: [...(filling.unknown ?? [])],
   }
 }
 
