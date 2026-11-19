@@ -64,6 +64,18 @@ export interface GrantStore {
   /** Revokes the grant and every token issued under it. */
   revokeGrant(grantId: string, now: Date): Promise<void>
   insertToken(token: NewStoredToken): Promise<void>
+  /**
+   * Only in a realm whose grants can be bound to a key. Called at the code
+   * exchange when the request carried a valid proof: binds the grant to that
+   * key if it has none yet, and does whatever the realm ties to a key having
+   * been shown (the caller has already checked a bound grant against it).
+   */
+  keyShownAtExchange?(grantId: string, keyThumbprint: string, now: Date): Promise<void>
+  /**
+   * Only in a realm whose grants can be bound to a key. Revokes every live
+   * token of the grant and leaves the grant itself standing.
+   */
+  revokeGrantTokens?(grantId: string, now: Date): Promise<void>
 }
 
 export interface OAuthRealm {
@@ -83,6 +95,14 @@ export interface OAuthTokenPair {
   scope: string
   expiresIn: number
 }
+
+/**
+ * A refresh whose answer never arrived (a timeout, a laptop going to sleep)
+ * leaves the client holding a token the server has already spent. For this
+ * long after a rotation, the holder of the grant's key may present the spent
+ * token again and is given a new pair instead of losing the grant.
+ */
+export const REFRESH_RETRY_GRACE_MS = 60 * 1000
 
 /** A grant bound to a key is used only with a proof from that key. An unbound grant asks for none. */
 function holdsKey(boundTo: string | null, proofThumbprint: string | null | undefined): boolean {
@@ -137,6 +157,11 @@ export async function exchangeAuthorizationCode(
       return null
     }
     if (!(await store.consumeAuthorizationCode(codeHash, now))) return null
+    // A proof at the exchange is the client saying "this is my key". A grant
+    // that was not bound when it was approved (the client left `dpop_jkt` off
+    // the sign-in address, or something dropped it) is bound here, so the
+    // client that believes it is bound is (RFC 9449 §5).
+    if (input.proofThumbprint) await store.keyShownAtExchange?.(code.grantId, input.proofThumbprint, now)
 
     return issueTokenPair(store, realm, {
       grantId: code.grantId,
@@ -177,20 +202,33 @@ export async function rotateRefreshToken(
     // A rotated refresh token should never be presented again. Treat reuse as
     // credential theft and revoke the entire grant, including access tokens
     // minted from the replacement token. The client must re-authorize.
-    if (token?.revokedAt && !token.grantRevokedAt) {
+    //
+    // The one exception is a retry: the grant is bound to a key, this request
+    // proved that key (checked above), and the token was spent moments ago.
+    // That is the device asking again because the answer never reached it.
+    const spent = Boolean(token?.revokedAt) && !token?.grantRevokedAt
+    const retry = spent && token?.keyThumbprint != null && store.revokeGrantTokens !== undefined &&
+      now.getTime() - new Date(token.revokedAt!).getTime() <= REFRESH_RETRY_GRACE_MS
+    if (token && spent && !retry) {
       await store.revokeGrant(token.grantId, now)
       console.warn(`[${realm.logName}] refresh-token reuse revoked grant ${token.grantId}`)
       return null
     }
     if (
-      !token || token.revokedAt || token.grantRevokedAt || !requestedScope ||
+      !token || (token.revokedAt && !retry) || token.grantRevokedAt || !requestedScope ||
       isPast(token.expiresAt, now) || isPast(token.grantExpiresAt, now) ||
       token.clientId !== input.clientId || token.resource !== input.resource ||
       !scopeIsSubset(requestedScope, token.scope)
     ) {
       return null
     }
-    if (!(await store.revokeToken(token.id, now))) return null
+    if (retry) {
+      // Whatever the lost answer carried is withdrawn; the pair issued below
+      // is the only one that works.
+      await store.revokeGrantTokens!(token.grantId, now)
+    } else if (!(await store.revokeToken(token.id, now))) {
+      return null
+    }
 
     return issueTokenPair(store, realm, {
       grantId: token.grantId,

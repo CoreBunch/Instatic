@@ -364,21 +364,20 @@ export async function revokeAllMemberAppGrants(db: DbClient, memberId: string): 
 // ─── The realm ─────────────────────────────────────────────────────────────
 
 /**
- * One sign-in per device: once a code is exchanged, the member's earlier
- * sign-ins of the same app on the same device key are ended.
+ * One sign-in per device: the member's earlier sign-ins of the same app on
+ * the same device key are ended.
  *
  * This runs at the exchange, not at the approval, because only the exchange
  * has seen a proof from the key. Anyone can put a key's thumbprint on a
  * sign-in address; that must not be enough to sign the real device out.
  */
-async function replaceEarlierSignInOnDevice(tx: DbClient, codeHash: string, iso: string): Promise<void> {
+async function replaceEarlierSignInOnDevice(tx: DbClient, grantId: string, iso: string): Promise<void> {
   const { rows } = await tx<{ id: string }>`
     select earlier.id
-      from member_app_codes c
-      join member_app_grants g on g.id = c.grant_id
+      from member_app_grants g
       join member_app_grants earlier
         on earlier.member_id = g.member_id and earlier.app_id = g.app_id and earlier.device_jkt = g.device_jkt
-     where c.code_hash = ${codeHash}
+     where g.id = ${grantId}
        and g.device_jkt is not null
        and earlier.id <> g.id and earlier.revoked_at is null
   `
@@ -451,9 +450,17 @@ function memberAppGrantStore(tx: DbClient): GrantStore {
         update member_app_codes set consumed_at = ${now.toISOString()}
          where code_hash = ${codeHash} and consumed_at is null
       `
-      if (consumed.rowCount !== 1) return false
-      await replaceEarlierSignInOnDevice(tx, codeHash, now.toISOString())
-      return true
+      return consumed.rowCount === 1
+    },
+
+    async keyShownAtExchange(grantId, keyThumbprint, now) {
+      // A sign-in approved without a device key takes the key it is first
+      // used with; one approved for a key was already checked against it.
+      await tx`
+        update member_app_grants set device_jkt = ${keyThumbprint}
+         where id = ${grantId} and device_jkt is null
+      `
+      await replaceEarlierSignInOnDevice(tx, grantId, now.toISOString())
     },
 
     async findRefreshToken(tokenHash): Promise<StoredRefreshToken | null> {
@@ -493,6 +500,13 @@ function memberAppGrantStore(tx: DbClient): GrantStore {
     },
 
     revokeGrant: (grantId, now) => revokeGrantRows(tx, grantId, now.toISOString()),
+
+    async revokeGrantTokens(grantId, now) {
+      await tx`
+        update member_app_tokens set revoked_at = ${now.toISOString()}
+         where grant_id = ${grantId} and revoked_at is null
+      `
+    },
 
     async insertToken(token) {
       await tx`

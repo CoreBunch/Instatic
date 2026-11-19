@@ -8,6 +8,7 @@ import { handleMemberOAuthRequest, resetMemberAppLimits } from '../../../server/
 import {
   createMemberApp,
   deleteMemberApp,
+  revokeAllMemberAppGrants,
   sweepExpiredMemberAppRows,
   type MemberAppRecord,
 } from '../../../server/members/apps/store'
@@ -717,6 +718,134 @@ describe('sign-in for apps', () => {
       expect((await userinfo(tokens.access_token)).status).toBe(200)
       expect((await revoke(device)).status).toBe(200)
       expect((await userinfo(tokens.access_token)).status).toBe(401)
+    })
+
+    describe('when the sign-in address named no key', () => {
+      /** A sign-in approved without `dpop_jkt`, exchanged with a proof from the device's key. */
+      async function signInShowingKeyAtExchange(): Promise<Tokens> {
+        const res = await exchange(await codeFor(await startRequest()), device)
+        expect(res.status).toBe(200)
+        return (await res.json()) as Tokens
+      }
+
+      it('binds the sign-in to the key the code is exchanged with', async () => {
+        const tokens = await signInShowingKeyAtExchange()
+        const stranger = await createDeviceKey()
+        const refresh = { grant_type: 'refresh_token', refresh_token: tokens.refresh_token }
+
+        // From here on it is a bound sign-in: no key or another key gets nothing and revokes nothing.
+        expect((await tokenWith(refresh, null)).status).toBe(400)
+        expect((await tokenWith(refresh, stranger)).status).toBe(400)
+        expect((await userinfo(tokens.access_token)).status).toBe(200)
+        const mine = await tokenWith(refresh, device)
+        expect(mine.status).toBe(200)
+        expect((await userinfo(((await mine.json()) as Tokens).access_token)).status).toBe(200)
+      })
+
+      it('lets only the key sign the app out', async () => {
+        const tokens = await signInShowingKeyAtExchange()
+        const revoke = async (key: DeviceKey | null) => call('/_instatic/members/oauth/revoke', {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/x-www-form-urlencoded',
+            ...(key ? { dpop: await key.proof('POST', `${ISSUER}/oauth/revoke`) } : {}),
+          },
+          body: new URLSearchParams({ token: tokens.refresh_token, client_id: app.id }).toString(),
+        })
+        await revoke(null)
+        expect((await userinfo(tokens.access_token)).status).toBe(200)
+        await revoke(device)
+        expect((await userinfo(tokens.access_token)).status).toBe(401)
+      })
+
+      it('replaces the device\u2019s earlier sign-in, however either one was bound', async () => {
+        const first = await boundSignIn()
+        const second = await signInShowingKeyAtExchange()
+        expect((await userinfo(first.access_token)).status).toBe(401)
+        const third = await boundSignIn()
+        expect((await userinfo(second.access_token)).status).toBe(401)
+        expect((await userinfo(third.access_token)).status).toBe(200)
+      })
+
+      it('stays unbound when the exchange shows no key either', async () => {
+        const res = await exchange(await codeFor(await startRequest()), null)
+        const tokens = (await res.json()) as Tokens
+        const { rows } = await t.db<{ device_jkt: string | null }>`select device_jkt from member_app_grants`
+        expect(rows.map((row) => row.device_jkt)).toEqual([null])
+        // A later proof does not bind it: the key is taken at the exchange only.
+        const refreshed = await tokenWith({ grant_type: 'refresh_token', refresh_token: tokens.refresh_token }, device)
+        expect(refreshed.status).toBe(200)
+        const next = (await refreshed.json()) as Tokens
+        expect((await tokenRequest({ grant_type: 'refresh_token', refresh_token: next.refresh_token })).status).toBe(200)
+      })
+    })
+
+    describe('a refresh whose answer was lost', () => {
+      const refreshWith = (token: string, key: DeviceKey | null) =>
+        tokenWith({ grant_type: 'refresh_token', refresh_token: token }, key)
+
+      /** Move the moment a refresh token was spent into the past. */
+      async function ageRotation(secondsAgo: number): Promise<void> {
+        const at = new Date(Date.now() - secondsAgo * 1000).toISOString()
+        await t.db`update member_app_tokens set revoked_at = ${at} where kind = 'refresh' and revoked_at is not null`
+      }
+
+      it('gives the device a new pair when it asks again within a minute', async () => {
+        const tokens = await boundSignIn()
+        // The answer to this refresh never reaches the app.
+        const lost = (await (await refreshWith(tokens.refresh_token, device)).json()) as Tokens
+        await ageRotation(30)
+
+        const retry = await refreshWith(tokens.refresh_token, device)
+        expect(retry.status).toBe(200)
+        const fresh = (await retry.json()) as Tokens
+        expect((await userinfo(fresh.access_token)).status).toBe(200)
+        // What the lost answer carried is withdrawn, without ending the sign-in.
+        expect((await userinfo(lost.access_token)).status).toBe(401)
+        expect((await userinfo(tokens.access_token)).status).toBe(401)
+        // The new refresh token carries on as usual.
+        expect((await refreshWith(fresh.refresh_token, device)).status).toBe(200)
+      })
+
+      it('ends the sign-in when the spent token comes back after the minute', async () => {
+        const tokens = await boundSignIn()
+        const rotated = (await (await refreshWith(tokens.refresh_token, device)).json()) as Tokens
+        await ageRotation(61)
+
+        expect((await refreshWith(tokens.refresh_token, device)).status).toBe(400)
+        expect((await userinfo(rotated.access_token)).status).toBe(401)
+        expect((await refreshWith(rotated.refresh_token, device)).status).toBe(400)
+      })
+
+      it('gives nothing to a spent token shown without the key, and revokes nothing', async () => {
+        const tokens = await boundSignIn()
+        const rotated = (await (await refreshWith(tokens.refresh_token, device)).json()) as Tokens
+
+        expect((await refreshWith(tokens.refresh_token, null)).status).toBe(400)
+        expect((await refreshWith(tokens.refresh_token, await createDeviceKey())).status).toBe(400)
+        expect((await userinfo(rotated.access_token)).status).toBe(200)
+        expect((await refreshWith(rotated.refresh_token, device)).status).toBe(200)
+      })
+
+      it('does not bring back a sign-in that was ended', async () => {
+        const tokens = await boundSignIn()
+        await refreshWith(tokens.refresh_token, device)
+        await revokeAllMemberAppGrants(t.db, memberId)
+
+        expect((await refreshWith(tokens.refresh_token, device)).status).toBe(400)
+        const { rows } = await t.db<{ id: string }>`select id from member_app_tokens where revoked_at is null`
+        expect(rows).toEqual([])
+      })
+
+      it('keeps ending a sign-in without a device key the moment a spent token is reused', async () => {
+        const tokens = await signIn()
+        const rotated = (await (await refreshWith(tokens.refresh_token, null)).json()) as Tokens
+
+        // Even with a proof: the sign-in has no key, so there is no retry.
+        expect((await refreshWith(tokens.refresh_token, device)).status).toBe(400)
+        expect((await userinfo(rotated.access_token)).status).toBe(401)
+        expect((await refreshWith(rotated.refresh_token, null)).status).toBe(400)
+      })
     })
 
     it('cleans the device name an app sends', () => {

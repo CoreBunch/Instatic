@@ -189,6 +189,38 @@ describe('MCP OAuth grant store', () => {
     warn.mockRestore()
   })
 
+  it('never binds a grant to a key and has no retry for a spent refresh token', async () => {
+    const warn = spyOn(console, 'warn').mockImplementation(() => {})
+    const { code } = await createOAuthAuthorizationGrant(db, {
+      userId: 'u1',
+      clientName: 'Claude',
+      capabilities: ['site.read'],
+      request,
+    })
+    // The MCP token endpoint reads no DPoP header; even handed a key, the realm takes none.
+    const key = 'k'.repeat(43)
+    const initial = await exchangeAuthorizationCode(db, mcpOAuthRealm, {
+      code,
+      clientId: request.clientId,
+      redirectUri: request.redirectUri,
+      codeVerifier: VERIFIER,
+      resource: RESOURCE,
+      proofThumbprint: key,
+    })
+    const refresh = { clientId: request.clientId, resource: RESOURCE }
+    // Still unbound: a refresh with no proof works.
+    const rotated = await rotateRefreshToken(db, mcpOAuthRealm, { ...refresh, refreshToken: initial!.refreshToken })
+    expect(rotated).not.toBeNull()
+    // The spent token again, at once and with the key: reuse, and the grant is gone.
+    expect(await rotateRefreshToken(db, mcpOAuthRealm, {
+      ...refresh, refreshToken: initial!.refreshToken, proofThumbprint: key,
+    })).toBeNull()
+    expect(await findOAuthAccessGrant(db, rotated!.accessToken, RESOURCE)).toBeNull()
+    expect(await rotateRefreshToken(db, mcpOAuthRealm, { ...refresh, refreshToken: rotated!.refreshToken })).toBeNull()
+    expect(warn).toHaveBeenCalledTimes(1)
+    warn.mockRestore()
+  })
+
   it('invalidates OAuth access when the connection is revoked', async () => {
     const { connection, code } = await createOAuthAuthorizationGrant(db, {
       userId: 'u1',
