@@ -27,6 +27,7 @@ import { subscribeToasts, type Toast } from '@ui/components/Toast/toastBus'
 import { DropStep } from '@admin/modals/SiteImport/steps/DropStep'
 import { ImportStep } from '@admin/modals/SiteImport/steps/ImportStep'
 import {
+  makeCmsRunDoneProgress,
   makeInitialRunProgress,
   type RunProgress,
 } from '@admin/modals/SiteImport/shared/importProgress'
@@ -600,6 +601,7 @@ describe('SiteImportModal — CMS bundle import', () => {
           rowsInserted: 1,
           rowsReplaced: 0,
           rowsSkipped: 0,
+          rowsImportedAsDraft: 0,
           mediaImported: 1,
           mediaFoldersImported: 0,
           redirectsImported: 0,
@@ -668,6 +670,7 @@ describe('SiteImportModal — CMS bundle import', () => {
           rowsInserted: 1,
           rowsReplaced: 0,
           rowsSkipped: 0,
+          rowsImportedAsDraft: 0,
           mediaImported: 0,
           mediaFoldersImported: 0,
           redirectsImported: 0,
@@ -750,6 +753,7 @@ describe('SiteImportModal — CMS bundle import', () => {
           rowsInserted: 1,
           rowsReplaced: 0,
           rowsSkipped: 0,
+          rowsImportedAsDraft: 0,
           mediaImported: 1,
           mediaFoldersImported: 0,
           redirectsImported: 0,
@@ -830,6 +834,7 @@ describe('SiteImportModal — CMS bundle import', () => {
           rowsInserted: 1,
           rowsReplaced: 0,
           rowsSkipped: 0,
+          rowsImportedAsDraft: 0,
           mediaImported: 1,
           mediaFoldersImported: 0,
           redirectsImported: 0,
@@ -915,6 +920,7 @@ describe('SiteImportModal — CMS bundle import', () => {
           rowsInserted: 1,
           rowsReplaced: 0,
           rowsSkipped: 0,
+          rowsImportedAsDraft: 0,
           mediaImported: 0,
           mediaFoldersImported: 0,
           redirectsImported: 0,
@@ -1508,6 +1514,51 @@ describe('ImportStep — progress + completion states', () => {
       normalize(p.textContent ?? '').includes('1 of 2 media'),
     )
     expect(sub).not.toBeUndefined()
+  })
+
+  function renderCmsDone(rowsImportedAsDraft: number, logOpen = false) {
+    const cmsResult = {
+      ok: true as const,
+      strategy: 'replace' as const,
+      tablesAffected: 2,
+      rowsInserted: 30,
+      rowsReplaced: 0,
+      rowsSkipped: 0,
+      rowsImportedAsDraft,
+      mediaImported: 0,
+      mediaFoldersImported: 0,
+      redirectsImported: 0,
+    }
+    const totals = { site: 1, rows: 30, media: 0, mediaFolders: 0, redirects: 0 }
+    return render(
+      <ImportStep
+        mode="cms"
+        progress={makeCmsRunDoneProgress(totals, cmsResult)}
+        siteName="My Site"
+        result={null}
+        cmsResult={cmsResult}
+        droppedAtRules={0}
+        logOpen={logOpen}
+      />,
+    )
+  }
+
+  it('bundle import says how many published rows arrived as drafts, and why', () => {
+    renderCmsDone(25)
+    const note = screen.getByText(/25 rows the bundle marks as published were imported as drafts/)
+    expect(note.getAttribute('role')).toBe('status')
+    expect(note.textContent).toContain('no published version of them')
+    expect(note.textContent).toContain('Publish them to put them live')
+  })
+
+  it('bundle import adds no drafts note when every published row came with its version', () => {
+    renderCmsDone(0)
+    expect(screen.queryByText(/imported as (a draft|drafts)/)).toBeNull()
+  })
+
+  it('bundle import log counts the published rows imported as drafts', () => {
+    renderCmsDone(1, true)
+    expect(screen.getByText('1 published row imported as a draft')).toBeDefined()
   })
 
   it('running state shows a determinate percentage from media uploads', () => {

@@ -150,6 +150,11 @@ export function ImportStep({
             </span>
             <h3 className={styles.doneTitle}>Imported into {siteName}</h3>
             {mode === 'cms' && cmsResult && <p className={styles.doneSub}>{cmsSummaryLine(cmsResult)}</p>}
+            {mode === 'cms' && cmsResult && cmsResult.rowsImportedAsDraft > 0 && (
+              <p className={styles.doneWarn} role="status">
+                {importedAsDraftNote(cmsResult.rowsImportedAsDraft)}
+              </p>
+            )}
             {mode !== 'cms' && result && <p className={styles.doneSub}>{summaryLine(result, media)}</p>}
             {mode !== 'cms' && media.done < media.total && (
               <p className={styles.doneWarn} role="status">
@@ -326,6 +331,7 @@ function CmsImportLog({ result }: { result: CmsImportResult }) {
     `${result.rowsInserted} ${plural(result.rowsInserted, 'row')} added`,
     `${result.rowsReplaced} ${plural(result.rowsReplaced, 'row')} replaced`,
     `${result.rowsSkipped} ${plural(result.rowsSkipped, 'row')} skipped`,
+    `${result.rowsImportedAsDraft} published ${plural(result.rowsImportedAsDraft, 'row')} imported as ${result.rowsImportedAsDraft === 1 ? 'a draft' : 'drafts'}`,
     `${result.mediaImported} media ${plural(result.mediaImported, 'file')} imported`,
     `${result.mediaFoldersImported} ${plural(result.mediaFoldersImported, 'folder')} imported`,
     `${result.redirectsImported} ${plural(result.redirectsImported, 'redirect')} imported`,
@@ -358,6 +364,16 @@ function summaryLine(result: ImportResult, media: CategoryCount): string {
     parts.push(`${result.fontTokens.length} font ${plural(result.fontTokens.length, 'token')}`)
   }
   return parts.join(' · ')
+}
+
+/**
+ * Why rows the bundle calls published are drafts after the import: it restored
+ * no published version for them, so nothing would have been served.
+ */
+function importedAsDraftNote(count: number): string {
+  return count === 1
+    ? '1 row the bundle marks as published was imported as a draft, because the bundle has no published version of it. Publish it to put it live.'
+    : `${count} rows the bundle marks as published were imported as drafts, because the bundle has no published version of them. Publish them to put them live.`
 }
 
 function cmsSummaryLine(result: CmsImportResult): string {

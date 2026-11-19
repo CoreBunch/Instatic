@@ -117,7 +117,7 @@ export async function handleImportArchiveRoute(
 
   const publicationInvalid = validateImportedPublication(siteBundleWithoutMediaBytes(selectedManifest))
   if (publicationInvalid) return publicationInvalid
-  const publicationDenied = await authorizeImportedPublication(req, db, user, siteBundleWithoutMediaBytes(selectedManifest))
+  const publicationDenied = await authorizeImportedPublication(req, db, user, scope, siteBundleWithoutMediaBytes(selectedManifest))
   if (publicationDenied) return publicationDenied
 
   let stagedMedia: StagedArchiveFiles | null = null
@@ -168,6 +168,7 @@ export async function handleImportArchiveRoute(
       rowsInserted: applied.rowsInserted,
       rowsReplaced: applied.rowsReplaced,
       rowsSkipped: applied.rowsSkipped,
+    rowsImportedAsDraft: applied.rowsImportedAsDraft,
       mediaImported,
       mediaFoldersImported: applied.mediaFoldersImported,
       redirectsImported: applied.redirectsImported,
