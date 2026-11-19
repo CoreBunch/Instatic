@@ -19,7 +19,7 @@ const MINUTE = 60 * 1000
 const HOUR = 60 * MINUTE
 
 /** How long each kind of link stays valid. */
-const TOKEN_LIFETIME_MS: Record<MemberTokenKind, number> = {
+export const TOKEN_LIFETIME_MS: Record<MemberTokenKind, number> = {
   verify: 24 * HOUR,
   reset: HOUR,
   magic: 15 * MINUTE,

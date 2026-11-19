@@ -12,12 +12,35 @@
  */
 
 import { loopSourceRegistry } from '@core/loops/registry'
-import type { SourceFetchContext } from '@core/loops/types'
+import type { SourceFetchContext, SourceRequestContext } from '@core/loops/types'
 import type { ApiCallFor } from '../../protocol/apiCallSchema'
 import type { DbClient } from '../../../db/client'
 import { replyApiOk } from '../apiReplies'
+import { hostPluginHasPermission } from '../registry'
 import { runLoopFetchInWorker } from '../rpc'
 import type { HostPluginRecord } from '../types'
+
+/**
+ * The request a plugin source is sent, checked here whatever the caller
+ * built. A source that is not per-visitor gets neither the visitor's cookies
+ * nor the member. A per-visitor source gets the cookies, and the member only
+ * while the plugin holds `members.read` (asked on every fetch, so a
+ * withdrawn grant takes effect at once).
+ */
+export function requestForPluginSource(
+  pluginId: string,
+  perVisitor: boolean,
+  request: SourceRequestContext | undefined,
+): SourceRequestContext | undefined {
+  if (!request) return undefined
+  const { member, ...rest } = request
+  if (!perVisitor) return { ...rest, cookies: {} }
+  return member !== undefined && pluginMayKnowMember(pluginId) ? { ...rest, member } : rest
+}
+
+function pluginMayKnowMember(pluginId: string): boolean {
+  return hostPluginHasPermission(pluginId, 'members.read')
+}
 
 export async function handleLoopsRegisterSource(
   msg: ApiCallFor<'cms.loops.registerSource'>,
@@ -45,7 +68,7 @@ export async function handleLoopsRegisterSource(
         direction: c.direction,
         limit: c.limit,
         offset: c.offset,
-        request: c.request,
+        request: requestForPluginSource(msg.pluginId, descriptor.perVisitor === true, c.request),
         site: { id: c.site?.id, name: c.site?.name },
       }
       return await runLoopFetchInWorker(msg.pluginId, descriptor.id, wireCtx)
@@ -53,6 +76,8 @@ export async function handleLoopsRegisterSource(
     preview: () => {
       return []
     },
+    // Lets a render skip the member lookup for a plugin that would not be sent it.
+    mayKnowMember: () => pluginMayKnowMember(msg.pluginId),
   }
   entry.loopSources.push({ pluginId: msg.pluginId, sourceId: descriptor.id })
   loopSourceRegistry.registerOrReplace(fullSource)

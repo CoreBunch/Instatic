@@ -47,6 +47,7 @@ import {
   MailSecretUnreadableError,
   setMailConnectorSecret,
 } from '../../mail/connectors'
+import { wakeMailQueue } from '../../mail/delivery'
 import { getMailDefaults, saveMailDefaults } from '../../mail/defaults'
 import {
   buildTemplateMail,
@@ -56,7 +57,13 @@ import {
   sendSiteMail,
 } from '../../mail/send'
 import { MailDeliveryError, privateMailHostsAllowed } from '../../mail/smtpDriver'
-import { getMailTemplate, listMailTemplates, resetMailTemplate, saveMailTemplate } from '../../mail/templates'
+import {
+  getMailTemplate,
+  listMailTemplates,
+  mailWordingProblem,
+  resetMailTemplate,
+  saveMailTemplate,
+} from '../../mail/templates'
 import { CMS_API_PREFIX, requestAuditContext } from './shared'
 import { runRouteTable, type Route, type RouteParams } from './routeTable'
 
@@ -150,6 +157,8 @@ async function handleSetSecret(req: Request, db: DbClient, params: RouteParams):
   const input = await readValidatedBody(req, MailConnectorSecretInputSchema)
   if (!input) return badRequest('Invalid secret')
   if (!(await setMailConnectorSecret(db, params.id, input.secret))) return notFound('Connector')
+  // A new secret lifts a pause: what was held can go out now.
+  wakeMailQueue()
   const connector = await getMailConnector(db, params.id)
   if (!connector) return notFound('Connector')
   await createAuditEvent(db, {
@@ -172,6 +181,8 @@ async function handleTestConnector(req: Request, db: DbClient, params: RoutePara
   try {
     const mail = await buildTemplateMail(db, { key: TEST_MAIL_TEMPLATE_KEY, to: input.to, variables: {} })
     await sendConnectorTest(db, params.id, { ...mail, kind: CONNECTOR_TEST_KIND })
+    // A test that worked lifts a pause: what was held can go out now.
+    wakeMailQueue()
     return jsonResponse({ status: 'sent' })
   } catch (err) {
     return deliveryFailure(err)
@@ -187,6 +198,8 @@ async function handleSaveDefaults(req: Request, db: DbClient): Promise<Response>
     return badRequest('That connector no longer exists')
   }
   await saveMailDefaults(db, input, user.id)
+  // Another connector, or a sender address at last: what was held can go out now.
+  wakeMailQueue()
   await createAuditEvent(db, {
     actorUserId: user.id,
     action: 'mail.defaults.update',
@@ -211,6 +224,10 @@ async function handleSaveTemplate(req: Request, db: DbClient, params: RouteParam
   if (!getMailTemplateDefinition(params.key)) return notFound('Template')
   const input = await readValidatedBody(req, MailTemplateInputSchema)
   if (!input) return badRequest('A template needs a subject and a body')
+  const definition = getMailTemplateDefinition(params.key)
+  // A wording that would send an email with a variable still in it is not saved.
+  const problem = definition ? mailWordingProblem(definition, input) : null
+  if (problem) return badRequest(problem)
   await saveMailTemplate(db, params.key, input, user.id)
   await createAuditEvent(db, {
     actorUserId: user.id,

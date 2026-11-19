@@ -27,6 +27,7 @@ import { PLUGIN_API_VERSION } from '../types'
 import type {
   PluginAdminPage,
   PluginFrontendDeclarations,
+  PluginMailDeclarations,
   PluginManifest,
   PluginPermission,
   PluginResource,
@@ -115,9 +116,16 @@ export interface DefinePluginConfig {
    * styles, `<link>`, and `<meta>` tags that the host injects into every
    * published page on behalf of this plugin.
    * Requires the `frontend.assets` permission. See `FrontendAsset` for
-   * the per-tag shape and the four placement anchors.
+   * the per-tag shape and the four placement anchors, and
+   * `PluginFrontendOrigins` for third-party script and frame origins.
    */
   frontend?: PluginFrontendDeclarations
+
+  /**
+   * The email templates the plugin can send with `api.cms.mail.send`.
+   * Requires `mail.send` or `mail.send.external`.
+   */
+  mail?: PluginMailDeclarations
 }
 
 /**
@@ -195,7 +203,29 @@ export function definePlugin(config: DefinePluginConfig): PluginDefinition {
     ...(config.keywords ? { keywords: [...config.keywords] } : {}),
     ...(config.icon !== undefined ? { icon: config.icon } : {}),
     ...(config.frontend !== undefined
-      ? { frontend: { assets: config.frontend.assets.map((asset) => ({ ...asset })) } }
+      ? {
+          frontend: {
+            assets: config.frontend.assets.map((asset) => ({ ...asset })),
+            ...(config.frontend.origins
+              ? {
+                  origins: {
+                    ...(config.frontend.origins.scripts ? { scripts: [...config.frontend.origins.scripts] } : {}),
+                    ...(config.frontend.origins.frames ? { frames: [...config.frontend.origins.frames] } : {}),
+                  },
+                }
+              : {}),
+          },
+        }
+      : {}),
+    ...(config.mail !== undefined
+      ? {
+          mail: {
+            templates: config.mail.templates.map((template) => ({
+              ...template,
+              variables: template.variables.map((variable) => ({ ...variable })),
+            })),
+          },
+        }
       : {}),
   }
   return {
