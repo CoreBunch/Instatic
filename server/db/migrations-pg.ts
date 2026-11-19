@@ -34,42 +34,71 @@ import type { Migration } from './runMigrations'
  * not part of this baseline.
  */
 /**
- * `plugin_records.data_json` used to be bound as a JSON string, which `jsonb`
- * stores as a string scalar: it reads back fine, but no `list` filter can see
- * inside it. This unwraps every such row into the object it holds.
+ * `plugin_records.data_json` used to be bound as a JSON string, which the
+ * column stores as a string scalar: it reads back fine, but no `list` filter
+ * can see inside it. This unwraps every such row into the object it holds.
  *
- * One set-based UPDATE (no row loop), in a migration of its own so it never
- * shares a transaction, and so a table lock, with an ALTER TABLE. A row whose
- * string is not valid JSON is left exactly as it is: Postgres 16+ asks
- * `pg_input_is_valid`; older servers go through a function that returns NULL
- * instead of raising. Only strings that hold an object are touched.
+ * It must be impossible for this to fail a boot, whatever the rows hold, so
+ * it is one plpgsql block that swallows every error:
  *
- * Exported so the pre-16 path can be exercised on a newer server in tests.
+ *   1. Fast path, where the server has `pg_input_is_valid` (Postgres 16+):
+ *      one set-based UPDATE of the rows whose string is valid JSON. Run
+ *      through EXECUTE so older servers never parse the call. That function
+ *      only reports "soft" errors: a string nested tens of thousands of
+ *      levels deep still raises ("stack depth limit exceeded"), so the whole
+ *      UPDATE sits in its own exception block.
+ *   2. Row path, on servers without the function or when the fast path
+ *      raised: each remaining row is cast in its own exception block; a row
+ *      that cannot be cast is skipped and stays exactly as it is. The reader
+ *      (`readDataJson`) still understands a string row.
+ *
+ * No helper function is created, so no TEMP or CREATE privilege is needed.
+ * A migration of its own, so it never shares a transaction (and a table
+ * lock) with an ALTER TABLE. Only strings that begin an object are touched.
+ *
+ * Exported so the row path can be exercised on a newer server in tests.
  */
 export const PLUGIN_RECORDS_JSON_REPAIR_SQL = `
       do $repair$
+      declare
+        stored record;
+        fast_path_done boolean := false;
+        skipped integer := 0;
       begin
-        if current_setting('server_version_num')::int >= 160000 then
-          update plugin_records
-             set data_json = (data_json #>> '{}')::jsonb
-           where jsonb_typeof(data_json) = 'string'
-             and left(ltrim(data_json #>> '{}'), 1) = '{'
-             and pg_input_is_valid(data_json #>> '{}', 'jsonb');
-        else
-          create function pg_temp.instatic_try_jsonb(raw text) returns pg_catalog.jsonb
-            language plpgsql immutable as $try$
-            begin
-              return raw::jsonb;
-            exception when others then
-              return null;
-            end
-          $try$;
-          update plugin_records
-             set data_json = pg_temp.instatic_try_jsonb(data_json #>> '{}')
-           where jsonb_typeof(data_json) = 'string'
-             and left(ltrim(data_json #>> '{}'), 1) = '{'
-             and pg_temp.instatic_try_jsonb(data_json #>> '{}') is not null;
+        if to_regprocedure('pg_input_is_valid(text, text)') is not null then
+          begin
+            execute $fast$
+              update plugin_records
+                 set data_json = (data_json #>> '{}')::jsonb
+               where jsonb_typeof(data_json) = 'string'
+                 and left(ltrim(data_json #>> '{}'), 1) = '{'
+                 and pg_input_is_valid(data_json #>> '{}', 'jsonb')
+            $fast$;
+            fast_path_done := true;
+          exception when others then
+            fast_path_done := false;
+          end;
         end if;
+
+        if not fast_path_done then
+          for stored in
+            select id, data_json #>> '{}' as raw
+              from plugin_records
+             where jsonb_typeof(data_json) = 'string'
+               and left(ltrim(data_json #>> '{}'), 1) = '{'
+          loop
+            begin
+              update plugin_records set data_json = stored.raw::jsonb where id = stored.id;
+            exception when others then
+              skipped := skipped + 1;
+            end;
+          end loop;
+          if skipped > 0 then
+            raise notice 'plugin_records: % row(s) hold text that is not a JSON object and were left as they are', skipped;
+          end if;
+        end if;
+      exception when others then
+        raise notice 'plugin_records: the JSON repair did not run (%)', sqlerrm;
       end
       $repair$;
 `

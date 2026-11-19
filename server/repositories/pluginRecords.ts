@@ -17,9 +17,11 @@ import { isoDate, nowIso } from '@core/utils/isoDate'
 import { placeholder, type DbClient } from '../db/client'
 import {
   jsonBooleanParam,
+  jsonColumnIsObject,
   jsonField,
   jsonFieldOrder,
   jsonFieldTyped,
+  jsonTextLike,
   type JsonScalarKind,
 } from '../db/jsonExtract'
 
@@ -34,64 +36,118 @@ interface PluginRecordRow {
 
 const RECORD_COLUMNS = 'id, plugin_id, resource_id, data_json, created_at, updated_at'
 
+/** How deep record data may nest. Far beyond any real record; small enough to serialise safely. */
+const MAX_RECORD_DEPTH = 512
+
+/**
+ * Whether a parsed value nests deeper than `MAX_RECORD_DEPTH`. Walks with an
+ * explicit stack: the point is to find the values a recursive walk (or
+ * `JSON.stringify`) would overflow on.
+ */
+function nestsTooDeep(root: unknown): boolean {
+  const pending: Array<{ value: unknown; depth: number }> = [{ value: root, depth: 0 }]
+  for (let next = pending.pop(); next; next = pending.pop()) {
+    const { value, depth } = next
+    if (!value || typeof value !== 'object') continue
+    if (depth >= MAX_RECORD_DEPTH) return true
+    for (const child of Array.isArray(value) ? value : Object.values(value)) {
+      if (child && typeof child === 'object') pending.push({ value: child, depth: depth + 1 })
+    }
+  }
+  return false
+}
+
+/** The stored data of a record could not be read, so it cannot be updated. */
+export class PluginRecordUnreadableError extends Error {
+  constructor() {
+    super(
+      'The stored data of this record could not be read, so it cannot be updated. Delete it and create it again.',
+    )
+    this.name = 'PluginRecordUnreadableError'
+  }
+}
+
 /** Record ids already reported as unreadable, so one bad row logs once. */
 const reportedUnreadable = new Set<string>()
 
 /**
- * A record's data as an object. A row whose data does not parse, or is not an
- * object, reads as `{}` and is logged once: one damaged row must not make a
- * whole resource unlistable.
+ * A record's data as an object, or null when it cannot be read as one.
+ *
+ * A string is parsed: SQLite stores JSON as text, and on Postgres a row
+ * written before migration 036 (and not unwrapped by it) is a string scalar
+ * holding the object. Anything that does not parse to an object, or nests
+ * deeper than a record may, is damaged.
  */
-function readDataJson(row: Pick<PluginRecordRow, 'id' | 'data_json'>): Record<string, unknown> {
-  let parsed: unknown = row.data_json
+function readDataJson(value: unknown): Record<string, unknown> | null {
+  let parsed: unknown = value
   if (typeof parsed === 'string') {
     try {
       parsed = JSON.parse(parsed)
     } catch {
-      parsed = null
+      // Not JSON (or nested too deep to parse): damaged, reported by the caller.
+      return null
     }
   }
-  if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-    return parsed as Record<string, unknown>
-  }
-  if (!reportedUnreadable.has(row.id)) {
-    reportedUnreadable.add(row.id)
-    console.warn(`[plugin:storage] record "${row.id}" holds data that is not a JSON object; reading it as empty`)
-  }
-  return {}
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null
+  // Parsing copes with any depth, but everything after it (serialising the
+  // record to the plugin or the admin) recurses and would overflow.
+  if (nestsTooDeep(parsed)) return null
+  return parsed as Record<string, unknown>
 }
 
+/**
+ * One damaged row must not make a whole resource unlistable: it is returned
+ * with empty data and `unreadable: true`, and logged once.
+ */
 function mapPluginRecord(row: PluginRecordRow): PluginRecord {
+  const data = readDataJson(row.data_json)
+  if (data === null && !reportedUnreadable.has(row.id)) {
+    reportedUnreadable.add(row.id)
+    console.warn(
+      `[plugin:${row.plugin_id}] record "${row.id}" in "${row.resource_id}" holds data that is not a JSON object; it reads as empty`,
+    )
+  }
   return {
     id: row.id,
     pluginId: row.plugin_id,
     resourceId: row.resource_id,
-    data: readDataJson(row),
+    data: data ?? {},
+    ...(data === null ? { unreadable: true as const } : {}),
     createdAt: isoDate(row.created_at),
     updatedAt: isoDate(row.updated_at),
   }
 }
 
+/** A high surrogate with no low one after it, or a low one with no high one before. */
+const UNPAIRED_SURROGATE = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/
+
 /**
- * Refuse data holding the NUL character, in a key or a string anywhere inside.
- * Postgres `jsonb` cannot store it, so accepting it on SQLite would make the
- * same plugin behave differently on the two databases.
+ * Refuse text Postgres cannot store: the NUL character, and an unpaired
+ * surrogate (ill-formed UTF-16), in a key or a string anywhere inside. SQLite
+ * would take both, so accepting them there would make one plugin behave
+ * differently on the two databases. Also refuse data nested so deep that it
+ * could not be read back.
  */
-function assertStorableRecordData(value: unknown): void {
+function assertStorableRecordData(value: unknown, depth = 0): void {
+  if (depth > MAX_RECORD_DEPTH) {
+    throw new Error(`Plugin record data cannot nest deeper than ${MAX_RECORD_DEPTH} levels`)
+  }
   if (typeof value === 'string') {
-    if (value.includes('\u0000')) {
-      throw new Error('Plugin record data cannot contain the NUL character (\\u0000)')
+    if (value.includes('\u0000') || UNPAIRED_SURROGATE.test(value)) {
+      throw new Error(
+        'Plugin record data cannot contain the NUL character (\\u0000) or an unpaired surrogate',
+      )
     }
     return
   }
   if (Array.isArray(value)) {
-    for (const item of value) assertStorableRecordData(item)
+    for (const item of value) assertStorableRecordData(item, depth + 1)
     return
   }
   if (value && typeof value === 'object') {
     for (const [key, item] of Object.entries(value)) {
       assertStorableRecordData(key)
-      assertStorableRecordData(item)
+      assertStorableRecordData(item, depth + 1)
     }
   }
 }
@@ -164,10 +220,7 @@ function buildFilterSql(
       )
     }
     if (op.like !== undefined) {
-      // Case-insensitive for ASCII letters on both dialects.
-      conditions.push(
-        `lower(${jsonFieldTyped('data_json', key, db.dialect, 'text').sql}) like lower(${addParam(op.like)})`,
-      )
+      conditions.push(jsonTextLike('data_json', key, db.dialect, addParam(op.like)).sql)
     }
   }
   return conditions
@@ -250,6 +303,12 @@ export async function createPluginRecord(
   return mapPluginRecord(rows[0])
 }
 
+/**
+ * Replace a record's data. Returns null when the record does not exist.
+ * Throws `PluginRecordUnreadableError` for a record whose stored data cannot
+ * be read: overwriting it would silently replace whatever it held with the
+ * edit alone.
+ */
 export async function updatePluginRecord(
   db: DbClient,
   input: {
@@ -260,12 +319,30 @@ export async function updatePluginRecord(
   },
 ): Promise<PluginRecord | null> {
   assertStorableRecordData(input.data)
-  const { rows } = await db<PluginRecordRow>`
-    update plugin_records set data_json = ${input.data}, updated_at = ${nowIso()}
-    where id = ${input.id} and plugin_id = ${input.pluginId} and resource_id = ${input.resourceId}
-    returning id, plugin_id, resource_id, data_json, created_at, updated_at
-  `
-  return rows[0] ? mapPluginRecord(rows[0]) : null
+  const write = (guard: string) =>
+    db.unsafe<PluginRecordRow>(
+      `update plugin_records
+          set data_json = ${placeholder(db.dialect, 1)}, updated_at = ${placeholder(db.dialect, 2)}
+        where id = ${placeholder(db.dialect, 3)} and plugin_id = ${placeholder(db.dialect, 4)} and resource_id = ${placeholder(db.dialect, 5)}${guard}
+        returning ${RECORD_COLUMNS}`,
+      [input.data, nowIso(), input.id, input.pluginId, input.resourceId],
+    )
+
+  // One statement for the ordinary case: the row exists and holds an object.
+  const guarded = await write(` and ${jsonColumnIsObject('data_json', db.dialect).sql}`)
+  if (guarded.rows[0]) return mapPluginRecord(guarded.rows[0])
+
+  // Nothing matched: the record is missing, damaged, or (Postgres) still in
+  // the string form migration 036 could not unwrap but the reader can.
+  const { rows } = await db.unsafe<PluginRecordRow>(
+    `select ${RECORD_COLUMNS} from plugin_records
+      where id = ${placeholder(db.dialect, 1)} and plugin_id = ${placeholder(db.dialect, 2)} and resource_id = ${placeholder(db.dialect, 3)}`,
+    [input.id, input.pluginId, input.resourceId],
+  )
+  if (!rows[0]) return null
+  if (readDataJson(rows[0].data_json) === null) throw new PluginRecordUnreadableError()
+  const plain = await write('')
+  return plain.rows[0] ? mapPluginRecord(plain.rows[0]) : null
 }
 
 export async function deletePluginRecord(

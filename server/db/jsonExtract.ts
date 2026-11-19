@@ -150,6 +150,39 @@ export function jsonFieldOrder(
   return Object.freeze({ __brand: 'JsonFieldExpr', sql } as const)
 }
 
+/**
+ * A case-insensitive LIKE on a JSON text field that means the same on both
+ * dialects: only ASCII letters fold (`'ÉCOLE'` matches `'École'`, but `É`
+ * and `é` stay different letters), `%` and `_` are the
+ * wildcards and a backslash escapes them. `param` is the placeholder of the
+ * bound pattern.
+ *
+ * On Postgres `lower()` follows the collation of its argument, so the field
+ * (compared under `"C"`) and the pattern (the database locale) would fold
+ * differently; both sides are lowered under `"C"` here. SQLite's `lower()`
+ * folds ASCII only, which is the behaviour being matched.
+ */
+export function jsonTextLike(column: string, field: string, dialect: Dialect, param: string): JsonFieldExpr {
+  const text = jsonFieldTyped(column, field, dialect, 'text').sql
+  const sql =
+    dialect === 'postgres'
+      ? `lower(${text}) like lower(cast(${param} as text) collate "C") escape '\\'`
+      : `lower(${text}) like lower(${param}) escape '\\'`
+  return Object.freeze({ __brand: 'JsonFieldExpr', sql } as const)
+}
+
+/** A condition that is true when the JSON column holds an object. */
+export function jsonColumnIsObject(column: string, dialect: Dialect): JsonFieldExpr {
+  if (!IDENT_RE.test(column)) {
+    throw new Error(`[db/jsonExtract] invalid column identifier: ${column}`)
+  }
+  const sql =
+    dialect === 'postgres'
+      ? `jsonb_typeof(${column}) = 'object'`
+      : `(json_valid(${column}) and json_type(${column}) = 'object')`
+  return Object.freeze({ __brand: 'JsonFieldExpr', sql } as const)
+}
+
 // DbClient is imported as a type so that downstream code can write
 // convenience wrappers that accept a DbClient and read its .dialect.
 // The import is type-only and erased at runtime; it does not create a

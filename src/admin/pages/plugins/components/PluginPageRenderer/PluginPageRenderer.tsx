@@ -428,14 +428,20 @@ function PluginResourcePage({ page }: { page: ResourcePluginPageRoute }) {
               <p className={styles.emptyState}>No records yet.</p>
             ) : records.map((record) => (
               <article key={record.id} className={styles.resourceRecord}>
-                <dl>
-                  {resource.fields.map((field) => (
-                    <div key={field.id}>
-                      <dt>{field.label}</dt>
-                      <dd>{recordValue(record, field) || '-'}</dd>
-                    </div>
-                  ))}
-                </dl>
+                {record.unreadable ? (
+                  <p className={styles.resourceRecordUnreadable} role="status">
+                    This record could not be read: its stored data is not valid. It can be deleted, not edited.
+                  </p>
+                ) : (
+                  <dl>
+                    {resource.fields.map((field) => (
+                      <div key={field.id}>
+                        <dt>{field.label}</dt>
+                        <dd>{recordValue(record, field) || '-'}</dd>
+                      </div>
+                    ))}
+                  </dl>
+                )}
                 <Button
                   variant="secondary"
                   size="sm"

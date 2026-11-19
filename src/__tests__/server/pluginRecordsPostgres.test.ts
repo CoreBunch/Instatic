@@ -123,13 +123,40 @@ describe.skipIf(!url)('plugin record storage on Postgres', () => {
     // The rows it could not unwrap read as empty; they do not break the list.
     const all = await listPluginRecords(db, PLUGIN, 'legacy')
     expect(all.totalCount).toBe(5)
-    const byId = new Map(all.records.map((record) => [record.id, record.data]))
-    expect(byId.get('legacy_broken')).toEqual({})
-    expect(byId.get('legacy_array')).toEqual({})
-    expect(byId.get('legacy_ok')).toEqual({ eventId: 'evt_legacy', n: 7 })
+    const byId = new Map(all.records.map((record) => [record.id, record]))
+    expect(byId.get('legacy_broken')).toMatchObject({ data: {}, unreadable: true })
+    expect(byId.get('legacy_array')).toMatchObject({ data: {}, unreadable: true })
+    expect(byId.get('legacy_ok')?.data).toEqual({ eventId: 'evt_legacy', n: 7 })
   })
 
-  it('the path for servers older than Postgres 16 repairs the same rows', async () => {
+  it('a row that makes the fast path raise cannot fail the migration', async () => {
+    // pg_input_is_valid only reports soft errors: JSON nested this deep raises
+    // "stack depth limit exceeded" instead. Before, that aborted the migration
+    // and with it every boot.
+    const poison = `${'{"a":'.repeat(100_000)}1${'}'.repeat(100_000)}`
+    const legacy = (id: string, raw: string) => db`
+      insert into plugin_records (id, plugin_id, resource_id, data_json)
+      values (${id}, ${PLUGIN}, 'poison', ${raw})
+    `
+    await legacy('poison_row', poison)
+    await legacy('poison_neighbour', JSON.stringify({ eventId: 'evt_neighbour' }))
+
+    await db`delete from schema_migrations where id = ${REPAIR_MIGRATION}`
+    await runMigrations(db, migrations)
+
+    const applied = await db<{ id: string }>`select id from schema_migrations where id = ${REPAIR_MIGRATION}`
+    expect(applied.rows).toHaveLength(1)
+    expect(await storedKind('poison_neighbour')).toBe('object')
+    expect(await storedKind('poison_row')).toBe('string')
+    // The list still works; the row nested too deep to handle is marked, not fatal.
+    const listed = await listPluginRecords(db, PLUGIN, 'poison')
+    const byId = new Map(listed.records.map((record) => [record.id, record]))
+    expect(byId.get('poison_neighbour')?.data).toEqual({ eventId: 'evt_neighbour' })
+    expect(byId.get('poison_row')).toMatchObject({ data: {}, unreadable: true })
+    await db`delete from plugin_records where id = 'poison_row'`
+  }, 60_000)
+
+  it('the row path, for servers without pg_input_is_valid, repairs the same rows', async () => {
     const legacy = (id: string, raw: string) => db`
       insert into plugin_records (id, plugin_id, resource_id, data_json)
       values (${id}, ${PLUGIN}, 'older', ${raw})
@@ -137,14 +164,45 @@ describe.skipIf(!url)('plugin record storage on Postgres', () => {
     await legacy('older_ok', JSON.stringify({ eventId: 'evt_older' }))
     await legacy('older_broken', '{"unterminated": ')
 
-    // Same migration text with the version test made unreachable, so the
-    // branch without pg_input_is_valid runs on whatever server this is.
-    const olderPath = PLUGIN_RECORDS_JSON_REPAIR_SQL.replace('>= 160000', '>= 990000')
-    expect(olderPath).not.toBe(PLUGIN_RECORDS_JSON_REPAIR_SQL)
-    await db.unsafe(olderPath)
+    // Same migration text, asking for a function no server has, so the block
+    // takes the path Postgres 15 and older take.
+    const rowPath = PLUGIN_RECORDS_JSON_REPAIR_SQL.replace(
+      "to_regprocedure('pg_input_is_valid(text, text)')",
+      "to_regprocedure('pg_input_is_valid_absent(text, text)')",
+    )
+    expect(rowPath).not.toBe(PLUGIN_RECORDS_JSON_REPAIR_SQL)
+    await db.unsafe(rowPath)
 
     expect(await storedKind('older_ok')).toBe('object')
     expect(await storedKind('older_broken')).toBe('string')
     expect((await listPluginRecords(db, PLUGIN, 'older', { filter: { eventId: 'evt_older' } })).totalCount).toBe(1)
+  })
+
+  it('reads and updates a row still in the legacy string form', async () => {
+    // A string holding an object that the repair did not reach (written by an
+    // older instance during a rolling deploy, say) is not damaged.
+    await db`
+      insert into plugin_records (id, plugin_id, resource_id, data_json)
+      values ('still_string', ${PLUGIN}, 'stragglers', ${JSON.stringify({ state: 'old' })})
+    `
+    expect(await storedKind('still_string')).toBe('string')
+    const listed = await listPluginRecords(db, PLUGIN, 'stragglers')
+    expect(listed.records[0]).toMatchObject({ id: 'still_string', data: { state: 'old' } })
+    expect(listed.records[0]?.unreadable).toBeUndefined()
+
+    const updated = await updatePluginRecord(db, {
+      pluginId: PLUGIN,
+      resourceId: 'stragglers',
+      id: 'still_string',
+      data: { state: 'new' },
+    })
+    expect(updated?.data).toEqual({ state: 'new' })
+    expect(await storedKind('still_string')).toBe('object')
+  })
+
+  it('refuses an unpaired surrogate with the same error as SQLite', async () => {
+    const lone = createPluginRecord(db, { pluginId: PLUGIN, resourceId: 'binding', id: 'sur', data: { body: 'a\ud800b' } })
+    expect(lone).rejects.toThrow('unpaired surrogate')
+    await lone.catch(() => {})
   })
 })

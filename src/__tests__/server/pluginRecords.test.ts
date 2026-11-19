@@ -8,7 +8,9 @@ import { parsePluginManifest } from '@core/plugins/manifest'
 import type { DbClient } from '../../../server/db/client'
 import { installPlugin } from '../../../server/repositories/plugins'
 import {
+  PluginRecordUnreadableError,
   createPluginRecord,
+  deletePluginRecord,
   listPluginRecords,
   updatePluginRecord,
 } from '../../../server/repositories/pluginRecords'
@@ -75,7 +77,44 @@ describe('plugin record data', () => {
     expect(stored.records.map((record) => record.id)).toEqual(['nul_3'])
   })
 
-  it('reads a row whose data is not a JSON object as empty instead of failing the list', async () => {
+  it('refuses an unpaired surrogate, which Postgres cannot store either', async () => {
+    const lone = createPluginRecord(db, { ...notes, id: 'sur_1', data: { body: 'a\ud800b' } })
+    expect(lone).rejects.toThrow('unpaired surrogate')
+    await lone.catch(() => {})
+    const key = createPluginRecord(db, { ...notes, id: 'sur_2', data: { ['k\udc00']: 1 } })
+    expect(key).rejects.toThrow('unpaired surrogate')
+    await key.catch(() => {})
+    // A real pair (an emoji) is fine.
+    const paired = await createPluginRecord(db, { ...notes, id: 'sur_3', data: { body: 'ok \ud83d\ude00' } })
+    expect(paired.data).toEqual({ body: 'ok \ud83d\ude00' })
+  })
+
+  it('refuses data nested deeper than a record may be, and marks a stored row that is', async () => {
+    let deep: Record<string, unknown> = {}
+    const root = deep
+    for (let level = 0; level < 600; level++) {
+      const next: Record<string, unknown> = {}
+      deep.a = next
+      deep = next
+    }
+    const create = createPluginRecord(db, { ...notes, id: 'deep_1', data: root })
+    expect(create).rejects.toThrow('cannot nest deeper than 512 levels')
+    await create.catch(() => {})
+
+    await db`
+      insert into plugin_records (id, plugin_id, resource_id, data_json)
+      values ('deep_stored', ${PLUGIN}, 'deep', ${`${'{"a":'.repeat(20_000)}1${'}'.repeat(20_000)}`})
+    `
+    const listed = await listPluginRecords(db, PLUGIN, 'deep')
+    expect(listed.records[0]?.unreadable).toBe(true)
+    expect(listed.records[0]?.data).toEqual({})
+    // Brackets inside strings are text, not nesting.
+    const braces = await createPluginRecord(db, { ...notes, id: 'braces', data: { body: '{['.repeat(2_000) } })
+    expect(braces.unreadable).toBeUndefined()
+    expect((await listPluginRecords(db, PLUGIN, 'notes', { filter: { body: { like: '{[%' } } })).totalCount).toBe(1)
+  })
+
+  it('marks a row whose data is not a JSON object as unreadable instead of failing the list', async () => {
     await db`
       insert into plugin_records (id, plugin_id, resource_id, data_json)
       values ('odd_text', ${PLUGIN}, 'odd', ${'{not json'})
@@ -88,9 +127,24 @@ describe('plugin record data', () => {
 
     const listed = await listPluginRecords(db, PLUGIN, 'odd')
     expect(listed.totalCount).toBe(3)
-    const byId = new Map(listed.records.map((record) => [record.id, record.data]))
-    expect(byId.get('odd_text')).toEqual({})
-    expect(byId.get('odd_array')).toEqual({})
-    expect(byId.get('odd_fine')).toEqual({ ok: true })
+    const byId = new Map(listed.records.map((record) => [record.id, record]))
+    expect(byId.get('odd_text')).toMatchObject({ data: {}, unreadable: true })
+    expect(byId.get('odd_array')).toMatchObject({ data: {}, unreadable: true })
+    expect(byId.get('odd_fine')?.data).toEqual({ ok: true })
+    expect(byId.get('odd_fine')?.unreadable).toBeUndefined()
+  })
+
+  it('refuses to overwrite an unreadable row, and still lets it be deleted', async () => {
+    const odd = { pluginId: PLUGIN, resourceId: 'odd' }
+    const overwrite = updatePluginRecord(db, { ...odd, id: 'odd_text', data: { ok: false } })
+    expect(overwrite).rejects.toBeInstanceOf(PluginRecordUnreadableError)
+    await overwrite.catch(() => {})
+    // Untouched: still what it was.
+    const { rows } = await db<{ data_json: unknown }>`select data_json from plugin_records where id = 'odd_text'`
+    expect(rows[0]?.data_json).toBe('{not json')
+
+    expect((await updatePluginRecord(db, { ...odd, id: 'odd_fine', data: { ok: false } }))?.data).toEqual({ ok: false })
+    expect(await updatePluginRecord(db, { ...odd, id: 'missing', data: {} })).toBeNull()
+    expect(await deletePluginRecord(db, { ...odd, id: 'odd_text' })).toBe(true)
   })
 })

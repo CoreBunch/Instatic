@@ -645,13 +645,15 @@ Plugin storage is per-plugin, per-collection. The collection name must match a `
 
 The repository is `server/repositories/pluginRecords.ts`. `list` means the same on SQLite and Postgres (one case table runs against both: `src/__tests__/helpers/pluginRecordFilterCases.ts`):
 
-- **Filters are typed by the value you compare with.** `{ amount: 9 }` matches records whose `amount` is the number 9, never the string `"9"`; `{ paid: true }` matches booleans only; `{ id: 'x' }` strings only. The operators are `eq`, `ne`, `gt`, `gte`, `lt`, `lte`, `in` (values of mixed types allowed) and `like` (strings, ASCII case-insensitive). A row whose field holds another type matches no comparison, `ne` included.
+- **Filters are typed by the value you compare with.** `{ amount: 9 }` matches records whose `amount` is the number 9, never the string `"9"`; `{ paid: true }` matches booleans only; `{ id: 'x' }` strings only. The operators are `eq`, `ne`, `gt`, `gte`, `lt`, `lte`, `in` (values of mixed types allowed) and `like` (strings; `%` and `_` are wildcards, a backslash escapes them, and only ASCII letters ignore case: `'ÉCOLE'` matches `'École%'`, `'école'` does not). A row whose field holds another type matches no comparison, `ne` included.
 - **`null` means "missing or null".** `{ field: null }` matches records without the field or with `null` in it; `{ field: { ne: null } }` matches the rest. `null` cannot be used with the ordering operators.
 - **Strings compare byte-wise** (`'B' < 'a'`), not by the database's locale, for `gt` / `lt` and for ordering.
 - **`orderBy` sorts by type, then value:** records without the field first, then booleans (false, true), then numbers by value, then strings. `desc` reverses the whole sequence. Ties, and a list with no `orderBy`, fall back to newest first.
 - Filters and ordering reach top-level fields only, and field names must be plain identifiers.
 
-Record data is a JSON object. A string containing the NUL character (`\u0000`), in a key or a value at any depth, is refused on create and update: Postgres cannot store it, and refusing it everywhere keeps both databases alike. A stored row whose data is not a JSON object reads as `{}` and is logged once instead of failing the whole list.
+Record data is a JSON object, at most 512 levels deep. Text Postgres cannot store is refused on create and update on both databases, so a plugin behaves the same on either: the NUL character (`\u0000`) and an unpaired surrogate, in a key or a value at any depth.
+
+**Unreadable records.** A stored row whose data is not a JSON object (or nests deeper than 512 levels) does not fail the list: it comes back with `data: {}` and `unreadable: true`, and is logged once as `[plugin:<id>]`. The admin resource page says the record could not be read. `update` on such a record is refused (`PluginRecordUnreadableError`), because it would silently replace whatever the row held; `delete` works. On Postgres, a row still in the old string form (see `036_plugin_records_json_repair` in `docs/reference/database-dialects.md`) is not unreadable: it reads and updates normally.
 
 ### CMS hooks — requires `cms.hooks`
 
