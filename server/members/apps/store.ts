@@ -502,10 +502,11 @@ function memberAppGrantStore(tx: DbClient): GrantStore {
     revokeGrant: (grantId, now) => revokeGrantRows(tx, grantId, now.toISOString()),
 
     async revokeGrantTokens(grantId, now) {
-      await tx`
+      const revoked = await tx`
         update member_app_tokens set revoked_at = ${now.toISOString()}
          where grant_id = ${grantId} and revoked_at is null
       `
+      return revoked.rowCount > 0
     },
 
     async insertToken(token) {

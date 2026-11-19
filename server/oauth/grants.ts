@@ -73,9 +73,10 @@ export interface GrantStore {
   keyShownAtExchange?(grantId: string, keyThumbprint: string, now: Date): Promise<void>
   /**
    * Only in a realm whose grants can be bound to a key. Revokes every live
-   * token of the grant and leaves the grant itself standing.
+   * token of the grant and leaves the grant itself standing. Answers whether
+   * there was a live token to revoke.
    */
-  revokeGrantTokens?(grantId: string, now: Date): Promise<void>
+  revokeGrantTokens?(grantId: string, now: Date): Promise<boolean>
 }
 
 export interface OAuthRealm {
@@ -224,8 +225,11 @@ export async function rotateRefreshToken(
     }
     if (retry) {
       // Whatever the lost answer carried is withdrawn; the pair issued below
-      // is the only one that works.
-      await store.revokeGrantTokens!(token.grantId, now)
+      // is the only one that works. A retry replaces a pair that is still
+      // live: with nothing live to withdraw there is no lost answer to make
+      // up for, and two retries racing each other cannot both be answered
+      // from the same state.
+      if (!(await store.revokeGrantTokens!(token.grantId, now))) return null
     } else if (!(await store.revokeToken(token.id, now))) {
       return null
     }
