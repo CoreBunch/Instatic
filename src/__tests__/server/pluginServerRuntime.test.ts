@@ -158,6 +158,8 @@ function makeFakeDb() {
         plugin_id: values[1],
         resource_id: values[2],
         data_json: values[3],
+        unique_key: values[4] ?? null,
+        version: 0,
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       }

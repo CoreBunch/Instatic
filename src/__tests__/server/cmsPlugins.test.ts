@@ -221,7 +221,7 @@ function makeFakeDb() {
       crashEvents.push(...remaining)
       return { rows: [], rowCount: before - remaining.length }
     }
-    // createPluginRecord — values[0..3]=id, pluginId, resourceId, dataJson
+    // createPluginRecord — values[0..4]=id, pluginId, resourceId, dataJson, uniqueKey
     if (normalized.includes('insert into plugin_records')) {
       const now = new Date('2026-05-01T10:10:00.000Z').toISOString()
       const row = {
@@ -229,6 +229,8 @@ function makeFakeDb() {
         plugin_id: values[1],
         resource_id: values[2],
         data_json: values[3],
+        unique_key: values[4] ?? null,
+        version: 0,
         created_at: now,
         updated_at: now,
       }

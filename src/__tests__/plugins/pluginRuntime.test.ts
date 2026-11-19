@@ -90,6 +90,8 @@ describe('editor plugin runtime SDK', () => {
           pluginId: 'acme.workflow',
           resourceId: 'approvals',
           data: { pageId: 'page_home', status: 'approved' },
+          uniqueKey: null,
+          version: 0,
           createdAt: '2026-05-01T10:00:00.000Z',
           updatedAt: '2026-05-01T10:00:00.000Z',
         },

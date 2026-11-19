@@ -184,15 +184,22 @@ globalThis.__buildApi = function buildApi() {
     return call('cms.loops.registerSource', [descriptor])
   }
 
+  // A host reply of `null` crosses the bridge as `undefined`. Storage reads
+  // are documented as "record or null", so restore the null here.
+  function orNull(value: unknown) { return value === undefined ? null : value }
+
   function collection(resourceId: unknown) {
-    // All four cms.storage.* targets share the cms.storage permission; assert
+    // Every cms.storage.* target shares the cms.storage permission; assert
     // once up front via the map (same behavior as before, no inline literal).
     assertTargetPermission('cms.storage.list')
     return {
       list: function (options: unknown) { return call('cms.storage.list', [String(resourceId), options ?? {}]) },
       create: function (data: unknown) { return call('cms.storage.create', [String(resourceId), data]) },
-      update: function (recordId: unknown, data: unknown) { return call('cms.storage.update', [String(resourceId), String(recordId), data]) },
-      delete: function (recordId: unknown) { return call('cms.storage.delete', [String(resourceId), String(recordId)]) },
+      createIfAbsent: function (data: unknown) { return call('cms.storage.createIfAbsent', [String(resourceId), data]) },
+      get: function (recordId: unknown) { return call('cms.storage.get', [String(resourceId), String(recordId)]).then(orNull) },
+      getByKey: function (key: unknown) { return call('cms.storage.getByKey', [String(resourceId), String(key)]).then(orNull) },
+      update: function (recordId: unknown, data: unknown, options: unknown) { return call('cms.storage.update', [String(resourceId), String(recordId), data, options ?? {}]).then(orNull) },
+      delete: function (recordId: unknown, options: unknown) { return call('cms.storage.delete', [String(resourceId), String(recordId), options ?? {}]) },
     }
   }
 

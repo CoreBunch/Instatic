@@ -33,6 +33,32 @@ import type { Migration } from './runMigrations'
  * unified store as posts. The legacy "pages" and "page_versions" tables are
  * not part of this baseline.
  */
+/**
+ * Record data used to be bound as a JSON string, which `jsonb` stores as a
+ * string scalar: readable, but invisible to every `list` filter. This unwraps
+ * those rows into the objects they hold. Row by row, skipping anything that
+ * does not parse, so one odd row can never fail the migration. Exported so
+ * the repair can be tested against a database that has already migrated.
+ */
+export const PLUGIN_RECORD_DATA_REPAIR_SQL = `
+      do $$
+      declare
+        stored record;
+      begin
+        for stored in
+          select id, data_json #>> '{}' as raw
+          from plugin_records
+          where jsonb_typeof(data_json) = 'string'
+        loop
+          begin
+            update plugin_records set data_json = stored.raw::jsonb where id = stored.id;
+          exception when others then
+            null;
+          end;
+        end loop;
+      end $$;
+`
+
 export const pgMigrations: Migration[] = [
   {
     id: '001_baseline',
@@ -1630,6 +1656,25 @@ export const pgMigrations: Migration[] = [
       alter table installed_plugins add column install_id text;
 
       alter table mail_queue add column install_id text;
+    `,
+  },
+  {
+    // Plugin storage: an optional unique key per record (derived from the
+    // resource's declared uniqueField) and a version counter for conditional
+    // updates. NULL keys are distinct in a unique index on both dialects, so
+    // existing rows and resources without a uniqueField are unaffected.
+    // Postgres only: also unwraps record data stored as a JSON string scalar
+    // (see the block below); SQLite keeps JSON as text either way.
+    id: '036_plugin_record_keys',
+    sql: `
+      alter table plugin_records add column unique_key text;
+
+      alter table plugin_records add column version integer not null default 0;
+
+      create unique index if not exists plugin_records_unique_key_idx
+        on plugin_records (plugin_id, resource_id, unique_key);
+
+      ${PLUGIN_RECORD_DATA_REPAIR_SQL}
     `,
   },
 ]

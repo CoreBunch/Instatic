@@ -7,7 +7,7 @@
  * record handlers and the editor-side storage SDK. Re-exported through
  * `@core/plugins/manifest`, which stays the public surface.
  */
-import type { PluginManifest, PluginResource } from '@core/plugin-sdk'
+import { STORAGE_UNIQUE_KEY_MAX_LENGTH, type PluginManifest, type PluginResource } from '@core/plugin-sdk'
 
 export function findPluginResource(
   manifest: Pick<PluginManifest, 'resources'>,
@@ -62,4 +62,28 @@ export function validatePluginRecordData(
   }
 
   return data
+}
+
+/**
+ * The unique key a record takes from its resource's `uniqueField`: the
+ * validated (trimmed) text value as it is, or null when the resource declares
+ * no `uniqueField` or the record leaves the field empty. Records with a null
+ * key never collide with each other.
+ *
+ * Call with data that already went through `validatePluginRecordData`.
+ */
+export function pluginRecordUniqueKey(
+  resource: PluginResource | null,
+  data: Record<string, unknown>,
+): string | null {
+  if (!resource?.uniqueField) return null
+  const value = data[resource.uniqueField]
+  if (typeof value !== 'string' || value === '') return null
+  if (value.length > STORAGE_UNIQUE_KEY_MAX_LENGTH) {
+    throw new Error(
+      `Field "${resource.uniqueField}" is the unique key of "${resource.id}" and may hold at most ` +
+        `${STORAGE_UNIQUE_KEY_MAX_LENGTH} characters`,
+    )
+  }
+  return value
 }

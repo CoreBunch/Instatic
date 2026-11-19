@@ -34,6 +34,7 @@ import { ensurePluginRuntime } from '@admin/pluginRuntimeBootstrap'
 import { SkeletonBlock, SkeletonRows } from '@ui/components/Skeleton'
 import styles from '../../PluginsPage.module.css'
 import { getErrorMessage } from '@core/utils/errorMessage'
+import { pushToast } from '@ui/components/Toast'
 
 // ---------------------------------------------------------------------------
 // Module-level helpers — extracted so the React Compiler can auto-memoize
@@ -87,7 +88,14 @@ async function createPluginRecord(
     setRecords((current) => [record, ...current])
     setFormData(emptyForm(resource))
   } catch (err) {
-    setError(getErrorMessage(err, 'Could not create record'))
+    console.error('[PluginResourcePage] create record failed:', err)
+    // A failed save (a duplicate of the resource's unique field included) is
+    // an operation result, so it goes to the toast bus, not inline.
+    pushToast({
+      kind: 'error',
+      title: 'Could not create record',
+      body: getErrorMessage(err, 'Unknown plugin record error'),
+    })
   } finally {
     setSaving(false)
   }
@@ -105,7 +113,12 @@ async function deletePluginRecord(
     await deleteCmsPluginResourceRecord(pluginId, resourceId, recordId)
     setRecords((current) => current.filter((candidate) => candidate.id !== recordId))
   } catch (err) {
-    setError(getErrorMessage(err, 'Could not delete record'))
+    console.error('[PluginResourcePage] delete record failed:', err)
+    pushToast({
+      kind: 'error',
+      title: 'Could not delete record',
+      body: getErrorMessage(err, 'Unknown plugin record error'),
+    })
   }
 }
 

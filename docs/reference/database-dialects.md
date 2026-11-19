@@ -57,6 +57,8 @@ const { rows } = await db<SiteRow>`select id, settings_json from site`
 // rows[0].settings_json is `Record<string, unknown>` in both dialects
 ```
 
+**Bind the object, never `JSON.stringify(object)`.** On Postgres a string bound to a `jsonb` column is stored as a JSON *string scalar*. It reads back correctly (the read normalizer parses it), so nothing looks wrong, but SQL that looks inside the value (`jsonField(...)` filters, `->>`) matches nothing. `plugin_records.data_json` was written that way until migration `036_plugin_record_keys`, which unwraps the affected rows on Postgres.
+
 Gated by `src/__tests__/architecture/db-json-column-naming.test.ts`:
 
 1. Every `jsonb`-typed column in `migrations-pg.ts` has a name ending in `_json`.

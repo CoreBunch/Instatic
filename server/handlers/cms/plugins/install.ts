@@ -29,10 +29,12 @@ import {
   installPlugin,
   setPluginLifecycleStatus,
 } from '../../../repositories/plugins'
+import { pluginRecordRekeyProblem, rekeyPluginRecords } from '../../../repositories/pluginRecords'
 import { parsePluginManifest } from '@core/plugins/manifest'
 import type {
   InstalledPlugin,
   PluginManifest,
+  PluginResource,
   PluginPermission,
 } from '@core/plugin-sdk'
 import { readPluginPackage } from '../../../plugins/package'
@@ -316,6 +318,24 @@ async function installUpgradeFromPackage(ctx: UpgradeContext): Promise<Response>
   const newVersion = pluginPackage.manifest.version
   const pluginId = existing.id
 
+  // 0. A resource that gains or changes its `uniqueField` needs every stored
+  //    record to take a distinct key. Check before touching anything, so an
+  //    upgrade that cannot work is refused with the old version still running.
+  for (const resource of resourcesWithChangedUniqueField(existing.manifest, pluginPackage.manifest)) {
+    if (resource.uniqueField === undefined) continue
+    const problem = await pluginRecordRekeyProblem(
+      db,
+      { pluginId, resourceId: resource.id },
+      resource.uniqueField,
+    )
+    if (problem) {
+      return jsonResponse(
+        { error: `This version cannot be installed: ${problem}`, ...(await pluginsPayload(db)) },
+        { status: 400 },
+      )
+    }
+  }
+
   // 1. Deactivate the old version. Best-effort — a deactivate failure
   //    shouldn't prevent the upgrade from proceeding (the new version is
   //    about to replace it anyway). We log and move on.
@@ -339,6 +359,10 @@ async function installUpgradeFromPackage(ctx: UpgradeContext): Promise<Response>
   // 4 + 5. Try to migrate then activate. On any failure we restore the old
   //        version end-to-end.
   try {
+    // Stored keys follow the new declaration before any new code runs. A
+    // record written since the check above can still collide; that throws
+    // here and takes the rollback path like any other failed step.
+    await syncPluginRecordKeys(db, pluginId, existing.manifest, newManifest)
     const upgradedManifest = pluginManifestWithGrants(upgraded)
     const loaded = await loadPluginServerEntrypoint(upgradedManifest, options.uploadsDir)
     if (loaded) {
@@ -478,6 +502,14 @@ async function rollbackUpgrade(args: {
     existing.grantedPermissions,
   )
 
+  // Put the stored record keys back to what the previous version declares.
+  // Best-effort: the previous keys were valid before the upgrade began.
+  try {
+    await syncPluginRecordKeys(db, pluginId, newManifest, existing.manifest)
+  } catch (err) {
+    console.error(`[plugin:${pluginId}] could not restore record keys during rollback`, err)
+  }
+
   // Drop new version assets — the upgrade didn't take. With worker
   // isolation, plugin server files no longer live in the host's `bun
   // --watch` graph; plain `await rm` is safe.
@@ -523,5 +555,28 @@ async function rollbackUpgrade(args: {
       'error',
       `Upgrade to ${newManifest.version} failed and rollback re-activate failed: ${lifecycleErrorMessage(err)}`,
     )
+  }
+}
+
+/** Resources of `next` whose `uniqueField` differs from the same resource in `previous`. */
+function resourcesWithChangedUniqueField(
+  previous: Pick<PluginManifest, 'resources'>,
+  next: Pick<PluginManifest, 'resources'>,
+): PluginResource[] {
+  return next.resources.filter((resource) => {
+    const before = previous.resources.find((candidate) => candidate.id === resource.id)
+    return before !== undefined && before.uniqueField !== resource.uniqueField
+  })
+}
+
+/** Rebuild (or clear) stored record keys for every resource whose `uniqueField` changed. */
+async function syncPluginRecordKeys(
+  db: DbClient,
+  pluginId: string,
+  previous: Pick<PluginManifest, 'resources'>,
+  next: Pick<PluginManifest, 'resources'>,
+): Promise<void> {
+  for (const resource of resourcesWithChangedUniqueField(previous, next)) {
+    await rekeyPluginRecords(db, { pluginId, resourceId: resource.id }, resource.uniqueField)
   }
 }

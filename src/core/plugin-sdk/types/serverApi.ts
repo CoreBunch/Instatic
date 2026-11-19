@@ -1,7 +1,9 @@
 import type {
   PluginRecord,
+  StorageCreateIfAbsentResult,
   StorageListOptions,
   StorageListResult,
+  StorageWriteOptions,
 } from '../storageSchemas'
 import type {
   ContentEntry,
@@ -136,9 +138,33 @@ export interface ServerPluginApi {
     storage: {
       collection: (resourceId: string) => {
         list: (options?: StorageListOptions) => Promise<StorageListResult>
+        /**
+         * Create a record. Rejects with a `storage_duplicate:` message when
+         * the resource has a `uniqueField` and another record holds the value.
+         */
         create: (data: Record<string, unknown>) => Promise<PluginRecord>
-        update: (recordId: string, data: Record<string, unknown>) => Promise<PluginRecord | null>
-        delete: (recordId: string) => Promise<boolean>
+        /**
+         * Create the record, or return the one that already holds its unique
+         * key. Atomic across handlers and server instances: of any number of
+         * concurrent calls with one key, exactly one gets `created: true`.
+         * Needs a `uniqueField` on the resource and a value for it.
+         */
+        createIfAbsent: (data: Record<string, unknown>) => Promise<StorageCreateIfAbsentResult>
+        get: (recordId: string) => Promise<PluginRecord | null>
+        /** Look a record up by the value of the resource's `uniqueField`. */
+        getByKey: (key: string) => Promise<PluginRecord | null>
+        /**
+         * Replace a record's data; its `version` goes up by one. With
+         * `ifVersion` the write applies only if the record is still at that
+         * version, otherwise it rejects with a `storage_conflict:` message.
+         * Resolves null when the record does not exist.
+         */
+        update: (
+          recordId: string,
+          data: Record<string, unknown>,
+          options?: StorageWriteOptions,
+        ) => Promise<PluginRecord | null>
+        delete: (recordId: string, options?: StorageWriteOptions) => Promise<boolean>
       }
     }
     hooks: ServerPluginHooksApi
