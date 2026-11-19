@@ -18,6 +18,11 @@
  * ordinary response (its status and `location` header readable, no body), not
  * the browser's opaque one; the host never contacts the target.
  *
+ * Timeouts: the host cancels a request that takes longer than `init.timeout`
+ * milliseconds (default 15 s), DNS, redirects and body included, and the call
+ * rejects with a `TimeoutError`. The VM cuts the timeout down to the time
+ * left in the call that is running (`clampFetchTimeout` in `vm.ts`).
+ *
  * AbortSignal threading: each call mints a unique abortId and, if the
  * plugin's signal aborts, fires network.abort to cancel the host-side
  * in-flight request.
@@ -87,6 +92,13 @@ function __serializeFetchBody(body) {
   );
 }
 
+// The host marks the rejection for a request it cancelled on time with a
+// code; give that error the name callers of fetch expect.
+function __asFetchError(err) {
+  if (err && err.code === 'fetch_timeout') err.name = 'TimeoutError';
+  return err;
+}
+
 function __abortError(reason) {
   if (reason && typeof reason === 'object') return reason;
   const err = new Error(typeof reason === 'string' ? reason : 'The operation was aborted');
@@ -112,6 +124,12 @@ globalThis.fetch = async function fetch(input, init) {
     }
     serialized.redirect = opts.redirect;
   }
+  if (opts.timeout !== undefined) {
+    if (typeof opts.timeout !== 'number' || !Number.isInteger(opts.timeout) || opts.timeout < 1 || opts.timeout > 300000) {
+      throw new TypeError('fetch timeout must be a whole number of milliseconds from 1 to 300000 (got ' + String(opts.timeout) + ').');
+    }
+    serialized.timeoutMs = opts.timeout;
+  }
   const signal = opts.signal && typeof opts.signal === 'object' ? opts.signal : null;
   if (signal && signal.aborted) throw __abortError(signal.reason);
 
@@ -119,7 +137,9 @@ globalThis.fetch = async function fetch(input, init) {
   const abortId = 'a' + __fetch_abort_seq + '_' + Date.now().toString(36);
   serialized.abortId = abortId;
 
-  const hostPromise = __hostCall('network.fetch', [url, serialized]);
+  const hostPromise = __hostCall('network.fetch', [url, serialized]).catch(function (err) {
+    throw __asFetchError(err);
+  });
 
   if (!signal) {
     const result = await hostPromise;

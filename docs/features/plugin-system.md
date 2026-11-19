@@ -262,6 +262,8 @@ Each plugin's server entrypoint runs in its own worker. If the worker crashes:
 3. The host auto-respawns the worker and re-runs `activate`.
 4. If the same plugin reaches `CRASH_THRESHOLD` (3) crashes within `CRASH_WINDOW_MS` (5 minutes), auto-respawn stops and the plugin is parked in `error`. The owner restarts it manually from the Plugins admin page.
 
+If re-activation in step 3 fails, the plugin is unloaded (routes and hooks it registered before failing are gone) and its status is set to `error` with the reason.
+
 ### Lifecycle events (SSE)
 
 Every lifecycle transition broadcasts a named SSE event to every connected admin tab. The admin UI uses these for real-time feedback (toasts, badge, live list refresh) without polling.
@@ -349,20 +351,28 @@ Sandbox invariants are gated by `src/__tests__/architecture/plugin-sandbox-invar
 
 ### Resource limits and timeouts
 
-VM budgets live in `server/plugins/quickjs/limits.ts`; the host-side RPC timeout lives in `server/plugins/host/workerPool.ts`.
+VM and request limits live in `server/plugins/quickjs/limits.ts`; the host-side RPC timeout in `server/plugins/host/workerPool.ts`.
 
 | Limit | Value | Enforced by |
 |---|---|---|
 | VM heap | 64 MB (`DEFAULT_MEMORY_LIMIT_BYTES`) | QuickJS `setMemoryLimit` — allocations beyond it throw inside the VM |
 | VM stack | 1 MB (`DEFAULT_STACK_SIZE_BYTES`) | QuickJS `setMaxStackSize` — fatal for runaway recursion |
-| Eval deadline | 5 s (`DEFAULT_EVAL_TIMEOUT_MS`) | wall-clock interrupt on the QuickJS runtime |
+| Eval deadline | 5 s (`DEFAULT_EVAL_TIMEOUT_MS`) | interrupt on the QuickJS runtime. Counts time spent **running** plugin code, not time spent awaiting a host call |
+| Call budget | 20 s (`PLUGIN_CALL_BUDGET_MS`) | wall clock for one whole call (lifecycle, route, hook, loop fetch, media call), awaits included; checked by the settle loop in `quickjs/eval.ts`. Only that call fails |
 | Module-pack eval deadline | 2 s (`MODULE_PACK_EVAL_TIMEOUT_MS`) | same interrupt — canvas `render()`/`preview()` are pure sync transforms |
-| Schedule fire | the schedule's `maxDurationMs` (host-capped at 5 min) | replaces the 5 s eval budget for that one call |
+| Schedule fire | the schedule's `maxDurationMs` (host-capped at 5 min) | replaces both the eval deadline and the call budget for that one call |
+| Outbound request | 15 s (`DEFAULT_PLUGIN_FETCH_TIMEOUT_MS`), or the request's `timeout`, never more than the time left in the call less a handling margin | host timer in `performGatedFetch`; covers DNS, every redirect hop and the response body |
 | Worker RPC | 30 s (`DEFAULT_RPC_TIMEOUT_MS`); schedule runs get `maxDurationMs` + 10 s slack | host-side timeout in `requestFromWorker` |
 
 **The eval deadline covers every way plugin code can execute.** Each entry into VM execution — the bootstrap eval, the plugin bundle's top-level eval, every `__run*` dispatch (lifecycle, route, hook, loop, schedule, media), and the pending-jobs pump that runs timer callbacks (`setTimeout`/`setInterval` continuations) — registers a wall-clock deadline in a per-runtime registry (`server/plugins/quickjs/eval.ts`). One persistent interrupt handler aborts the runtime once the clock passes the latest active deadline, so concurrent evals on one context cannot strip each other's protection and a `while (true) {}` anywhere (top level, route handler, timer callback) is interrupted instead of wedging the worker thread.
 
 **What the plugin author sees on a deadline hit:** the call fails with QuickJS's `interrupted` error — schedule runs record it as `status: 'timeout'`, every other entry point surfaces it as an ordinary error (lifecycle failure, route 500, hook listener log line). Plugins that legitimately need more time should yield back to the host (await host calls, split work across schedule fires) rather than block in a tight loop.
+
+**The call budget bounds waiting.** The eval deadline cannot fire while a handler awaits a host call, so a handler waiting on something slow is bounded by the call budget instead. A call still pending when it runs out fails with `Plugin call exceeded its 20s time budget` (`PluginCallBudgetError`): a route answers **504** with that message, a schedule run records `status: 'timeout'`, and a lifecycle hook, hook listener or loop fetch fails like any thrown error. Only that call fails. The worker, the VM and every other call in flight carry on, which is why the budget sits below the worker RPC timeout.
+
+- **A 504 from a plugin route means the outcome is unknown.** Plugin code cannot be cancelled mid-`await`: the abandoned handler may resume when its host call returns and finish its work, including any write, after its caller was told it failed. The caller may retry, so a handler that writes must be idempotent (key the write on the event or request id and check for it first).
+- **A slow upstream does not have to end in a 504.** An outbound request times out at 15 s by default and always ends before the call does, with time left to handle the failure (see "Outbound HTTP" → Timeouts). A handler that catches the `TimeoutError` answers normally.
+- A pending call does not spin: it sleeps until a host-call or timer resolution advances the VM, re-checking every 50 ms.
 
 **The worker RPC timeout is the backstop for a truly wedged worker.** A worker that hangs never *crashes*, so without it the awaiting HTTP request or publish render would hang forever and crash recovery would never engage. When `requestFromWorker` times out, the call rejects with `Plugin "<id>" did not respond to <kind> within <ms>ms` and the worker goes through the same teardown as a crash (`handleWorkerCrash`): terminated, sibling pending calls rejected, host-side registrations dropped, a crash event recorded for the admin UI, and the sliding-window counter decides auto-respawn vs parking the plugin in `error` state.
 
@@ -1004,6 +1014,8 @@ The permission alone is insufficient. `performGatedFetch` in `server/plugins/hos
 2. **DNS resolution + SSRF guard.** The hostname is resolved to its addresses via the system DNS resolver **before** the connection is made. If any resolved address falls in a blocked range, the request is rejected — even when the host is allowlisted. Blocked ranges: loopback (`127.0.0.0/8`, `::1`), private (`10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`), link-local (`169.254.0.0/16`, `fe80::/10`), CGNAT (`100.64.0.0/10`), unique-local (`fc00::/7`), unspecified (`0.0.0.0/8`, `::`), and IPv4-mapped IPv6 forms of all of the above. This prevents DNS rebinding attacks (an allowlisted hostname that resolves to an internal IP is blocked).
 
 3. **Manual redirect following with re-validation.** The host does not use transparent redirect following (Bun is always told `redirect: 'manual'`). Each redirect location is validated with both the allowlist and the DNS SSRF guard before the next hop. The chain is capped at 5 hops. Method downgrade (303 → GET; 301/302 non-GET → GET) follows the Fetch spec. A hop to another origin (scheme, host or port) drops exactly three request headers, `Authorization`, `Cookie` and `Proxy-Authorization` (matched case-insensitively), for that hop and every later one. Nothing else is removed: a secret in a custom header (`X-Api-Key`, say) and the request body of a 307 or 308 still travel to the redirect target, which must itself be on the allowlist. A plugin that sends secrets that way should use `redirect: 'manual'` and decide for itself. A redirect status with no `Location` header is returned as the response. This applies to every `guardedFetch` caller, including media uploads and downloads.
+
+**Timeouts.** A request that takes longer than 15 s in total (`DEFAULT_PLUGIN_FETCH_TIMEOUT_MS`), with the DNS lookup, every redirect hop and the response body included, is cancelled upstream and the `fetch` rejects with an error named `TimeoutError` (`Plugin "<id>" fetch timed out after <ms>ms`; the host marks it with `code: 'fetch_timeout'` on the api-reply). `fetch(url, { timeout: ms })` sets another limit for that request: a whole number of milliseconds from 1 to 300000, anything else throws a `TypeError`. Whatever the limit, the sandbox cuts it down so the request ends while its call can still handle the answer: the time left in the call, less a handling margin (a tenth of the call's budget, at least 1 s, at most half of it: 2 s for a route). A request that would get under 250 ms is not started and rejects at once with the same `TimeoutError`. So two requests in a row to a host that is down cost one timeout and one immediate rejection, both catchable, and the handler still has time to answer. Handlers interleave on one VM and a host call cannot be tied to the call that made it (QuickJS does not say which call a running job belongs to), so "the call" is whichever one in flight has the least time left: **any call in flight caps every request started meanwhile.** A schedule with a 60 s budget can see its request cut to under a second, or refused, while a route is in flight. That is a catchable timeout. Long downloads belong in a schedule that treats it as "try again next run", or better, in several short requests. A refusal (allowlist, blocked address) is always reported as that refusal, even when it arrives after the limit. An `AbortSignal` cancels a request sooner, as before. The timeout applies to plugin `fetch` only; the host's own media transfers through `guardedFetch` have no fixed limit, since a large upload or download has no sensible one.
 
 **The `redirect` option.** `fetch(url, { redirect })` accepts `'follow'` (default, as above), `'manual'` and `'error'`; any other value throws a `TypeError` in the sandbox.
 
