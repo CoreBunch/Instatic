@@ -20,6 +20,7 @@ import type {
   CmsPluginsPayload,
   InstalledPlugin,
   PluginManifest,
+  PluginAppScope,
   PluginPermission,
 } from '@core/plugin-sdk'
 import { requestCmsSiteReload } from '@admin/state/adminEvents'
@@ -61,6 +62,12 @@ interface PendingInstall {
    * value so an upgrade adding new external hosts shows them as "New".
    */
   previousNetworkAllowedHosts?: string[]
+  /**
+   * `appScopes` from the manifest of the existing install. The dialog diffs
+   * it against the new manifest's, since a scope that is removed or
+   * reworded is withdrawn from apps and members at the update.
+   */
+  previousAppScopes?: PluginAppScope[]
 }
 
 /**
@@ -329,6 +336,9 @@ export function usePluginsWorkspace(): PluginsWorkspaceVM {
         previouslyGrantedPermissions,
         ...(previousNetworkAllowedHosts !== undefined
           ? { previousNetworkAllowedHosts }
+          : {}),
+        ...(existing?.manifest.appScopes !== undefined
+          ? { previousAppScopes: existing.manifest.appScopes }
           : {}),
       })
     } catch (err) {

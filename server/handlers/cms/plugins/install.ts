@@ -28,6 +28,7 @@ import {
   setPluginLifecycleStatus,
 } from '../../../repositories/plugins'
 import { parsePluginManifest } from '@core/plugins/manifest'
+import { withdrawnPluginAppScopeNames } from '@core/members'
 import type {
   InstalledPlugin,
   PluginManifest,
@@ -47,6 +48,7 @@ import {
   deactivatePluginModulePack,
 } from '@core/plugins/modulePackLoader'
 import { broadcastPluginEvent } from '../../../plugins/eventBroadcaster'
+import { withdrawPluginAppScopes } from '../../../members/apps/store'
 import { badRequest, jsonResponse, methodNotAllowed, readValidatedBody } from '../../../http'
 import { Type } from '@core/utils/typeboxHelpers'
 import { getErrorMessage } from '@core/utils/errorMessage'
@@ -97,7 +99,9 @@ export async function handlePluginsCollection(
       const grantedPermissions = readPermissionGrants(body.grantedPermissions)
       const grantError = assertPluginPermissionGrants(manifest, grantedPermissions)
       if (grantError) return grantError
-      const installed = await installPlugin(db, manifest, grantedPermissions)
+      const existingResult = await getInstalledPlugin(db, manifest.id)
+      const previous = existingResult?.kind === 'ok' ? existingResult.plugin.manifest : null
+      const { plugin: installed } = await storePluginManifest(db, manifest, grantedPermissions, previous)
       const updatedResult = await setPluginLifecycleStatus(db, installed.id, 'active')
       const plugin = (updatedResult?.kind === 'ok' ? updatedResult.plugin : null) ?? installed
       await recordPluginAuditEvent(db, user, req, 'plugin.install', plugin.id)
@@ -195,6 +199,38 @@ export async function handlePackageInstall(
   }
 }
 
+/**
+ * Store a plugin's manifest and, in the same transaction, withdraw the app
+ * scopes whose meaning does not carry over to it.
+ *
+ * A member allowed an app a scope in the words of its description. Over
+ * `previous` (the manifest this one replaces) the scopes it dropped or
+ * reworded are withdrawn: the sign-ins that carried them end and the apps
+ * lose them, so an old approval never opens whatever the new version puts
+ * behind the same name. Scopes that read the same keep their approvals.
+ * With no `previous` nothing carries over at all, which also covers an
+ * install over a row too broken to read.
+ *
+ * Returns the stored row and the names that were withdrawn.
+ */
+async function storePluginManifest(
+  db: DbClient,
+  manifest: PluginManifest,
+  grantedPermissions: PluginPermission[],
+  previous: PluginManifest | null,
+): Promise<{ plugin: InstalledPlugin; withdrawnAppScopes: string[] }> {
+  const withdrawnAppScopes = previous
+    ? withdrawnPluginAppScopeNames(previous.appScopes ?? [], manifest.appScopes ?? [])
+    : null
+  const plugin = await db.transaction(async (tx) => {
+    const stored = await installPlugin(tx, manifest, grantedPermissions)
+    if (withdrawnAppScopes === null) await withdrawPluginAppScopes(tx, manifest.id)
+    else if (withdrawnAppScopes.length > 0) await withdrawPluginAppScopes(tx, manifest.id, withdrawnAppScopes)
+    return stored
+  })
+  return { plugin, withdrawnAppScopes: withdrawnAppScopes ?? [] }
+}
+
 interface InstallContext {
   db: DbClient
   options: CmsHandlerOptions
@@ -218,7 +254,7 @@ async function installFreshFromPackage(ctx: InstallContext): Promise<Response> {
     pluginPackage.manifest,
     pluginPackage.files,
   )
-  const installed = await installPlugin(db, manifest, grantedPermissions)
+  const { plugin: installed } = await storePluginManifest(db, manifest, grantedPermissions, null)
   const installLifecycle = await runPluginLifecycleHook(db, installed, options, 'install', 'installed')
   if (!installLifecycle.ok) {
     return jsonResponse(
@@ -286,6 +322,8 @@ interface UpgradeContext extends InstallContext {
  *      link it by version (see step 6).
  *   3. Replace the DB row with the new manifest (settings, granted
  *      permissions from the user's confirmation, installed_at preserved).
+ *      In the same transaction, withdraw the app scopes the new manifest
+ *      dropped or reworded (`storePluginManifest`).
  *   4. Run new version's `migrate({ fromVersion }, api)`.
  *   5. Run new version's `activate(api)`.
  *   6. Leave the OLD version's asset dir alone. Baked pages reference plugin
@@ -317,8 +355,16 @@ async function installUpgradeFromPackage(ctx: UpgradeContext): Promise<Response>
   )
 
   // 3. Replace DB row. `installPlugin` upserts — settings_json + installed_at
-  //    are preserved by the SET clause (it doesn't reference them).
-  const upgraded = await installPlugin(db, newManifest, grantedPermissions)
+  //    are preserved by the SET clause (it doesn't reference them). The app
+  //    scopes this version dropped or reworded are withdrawn with it, before
+  //    any of its routes can answer. A rollback does not bring them back:
+  //    the member is simply asked again.
+  const { plugin: upgraded, withdrawnAppScopes } = await storePluginManifest(
+    db,
+    newManifest,
+    grantedPermissions,
+    existing.manifest,
+  )
   // Refresh settings cache from the upserted row (merging decrypted secrets)
   // so the worker's `loadPluginServerEntrypoint` seeds the right values into
   // the worker's local mirror.
@@ -386,6 +432,7 @@ async function installUpgradeFromPackage(ctx: UpgradeContext): Promise<Response>
   await recordPluginAuditEvent(db, user, req, 'plugin.update', pluginId, {
     fromVersion,
     toVersion: newVersion,
+    ...(withdrawnAppScopes.length > 0 ? { withdrawnAppScopes } : {}),
   })
   broadcastPluginEvent({
     kind: 'updated',

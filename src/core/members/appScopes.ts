@@ -64,3 +64,54 @@ export function readsAsBuiltInAppScope(description: string): boolean {
 export function pluginAppScopeText(pluginName: string, description: string): string {
   return `Through the plugin ${plainLine(pluginName)}: ${plainLine(description)}`
 }
+
+/** A scope as a plugin declares it in its manifest (`appScopes`). */
+interface DeclaredAppScope {
+  name: string
+  description: string
+}
+
+export type PluginAppScopeChange = 'new' | 'changed' | 'unchanged' | 'removed'
+
+export interface PluginAppScopeDiffRow extends DeclaredAppScope {
+  status: PluginAppScopeChange
+  /** For a `changed` scope: the description members allowed it under. */
+  was?: string
+}
+
+/**
+ * What an update does to a plugin's app scopes. A member allowed a scope in
+ * the words of its description, so a scope whose description changed no
+ * longer means what was allowed: it is `changed`, and with the `removed`
+ * ones it is withdrawn at the update (`withdrawnPluginAppScopeNames`).
+ * Rows come in the new manifest's order, the removed ones last, carrying the
+ * description the member last read.
+ */
+export function diffPluginAppScopes(
+  previous: readonly DeclaredAppScope[],
+  next: readonly DeclaredAppScope[],
+): PluginAppScopeDiffRow[] {
+  const before = new Map(previous.map((scope) => [scope.name, scope.description]))
+  const rows: PluginAppScopeDiffRow[] = next.map(({ name, description }) => {
+    const scope = { name, description }
+    const was = before.get(name)
+    if (was === undefined) return { ...scope, status: 'new' }
+    if (was === scope.description) return { ...scope, status: 'unchanged' }
+    return { ...scope, status: 'changed', was }
+  })
+  const kept = new Set(next.map((scope) => scope.name))
+  for (const scope of previous) {
+    if (!kept.has(scope.name)) rows.push({ name: scope.name, description: scope.description, status: 'removed' })
+  }
+  return rows
+}
+
+/** The scope names an update takes away from apps and members: the removed and the reworded. */
+export function withdrawnPluginAppScopeNames(
+  previous: readonly DeclaredAppScope[],
+  next: readonly DeclaredAppScope[],
+): string[] {
+  return diffPluginAppScopes(previous, next)
+    .filter((row) => row.status === 'changed' || row.status === 'removed')
+    .map((row) => row.name)
+}

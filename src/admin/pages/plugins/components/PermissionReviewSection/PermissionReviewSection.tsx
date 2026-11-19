@@ -21,7 +21,12 @@
  * with confidence.
  *
  * Also lists the manifest's `appScopes`: what an app a site member signed in
- * to may later be allowed to do through the plugin.
+ * to may later be allowed to do through the plugin. Over an existing install
+ * each is marked new, reworded, unchanged or removed (`diffPluginAppScopes`):
+ * a member allowed a scope in the words of its description, so the server
+ * withdraws the reworded and removed ones at the update, and the owner is
+ * told before confirming. The "no new permissions" reassurance is withheld
+ * whenever the scopes differ.
  *
  * Also displays `networkAllowedHosts` from the manifest in its own section.
  * Permissions describe broad CMS capabilities ("inject scripts"); the
@@ -36,9 +41,11 @@ import { lt as semverLt } from 'semver'
 import { Button } from '@ui/components/Button'
 import {
   permissionDescription,
+  type PluginAppScope,
   type PluginManifest,
   type PluginPermission,
 } from '@core/plugin-sdk'
+import { diffPluginAppScopes, type PluginAppScopeChange, type PluginAppScopeDiffRow } from '@core/members'
 import { permissionLabel } from '@core/plugins/manifest'
 import {
   computePermissionDiff,
@@ -58,6 +65,12 @@ interface PermissionReviewPending {
    * exactly the kind of supply-chain attack the consent screen should catch.
    */
   previousNetworkAllowedHosts?: string[]
+  /**
+   * The previously-installed manifest's `appScopes`. A scope the new
+   * manifest removes or rewords is withdrawn at the update, so the review
+   * marks each one.
+   */
+  previousAppScopes?: PluginAppScope[]
 }
 
 type HostDiffStatus = 'new' | 'existing' | 'dropped'
@@ -109,6 +122,21 @@ function statusBadgeLabel(status: PermissionDiffStatus): string {
   return 'No longer requested'
 }
 
+const APP_SCOPE_BADGE: Record<PluginAppScopeChange, { label: string; className: string }> = {
+  new: { label: 'New', className: styles.badgeNew },
+  changed: { label: 'Reworded', className: styles.badgeNew },
+  unchanged: { label: 'Unchanged', className: styles.badgeExisting },
+  removed: { label: 'Removed', className: styles.badgeDropped },
+}
+
+/** The row tint the permission rows use, for an app scope's change. */
+const APP_SCOPE_ROW_STATUS: Record<PluginAppScopeChange, PermissionDiffStatus> = {
+  new: 'new',
+  changed: 'new',
+  unchanged: 'existing',
+  removed: 'dropped',
+}
+
 export function PermissionReviewSection({
   pending,
   uploading,
@@ -140,6 +168,19 @@ export function PermissionReviewSection({
       }))
 
   const newCount = rows.filter((row) => row.status === 'new').length
+
+  // App scopes are compared whenever the plugin is already installed, a
+  // reinstall of the same version included: the server withdraws on what the
+  // two manifests say, not on the version number.
+  const comparesAppScopes = isInstalled && !isDowngrade
+  const declaredAppScopes = pending.manifest.appScopes ?? []
+  const appScopeRows: PluginAppScopeDiffRow[] = comparesAppScopes
+    ? diffPluginAppScopes(pending.previousAppScopes ?? [], declaredAppScopes)
+    : declaredAppScopes.map((scope) => ({ ...scope, status: 'new' }))
+  const withdrawnAppScopeCount = comparesAppScopes
+    ? appScopeRows.filter((row) => row.status === 'changed' || row.status === 'removed').length
+    : 0
+  const appScopesDiffer = comparesAppScopes && appScopeRows.some((row) => row.status !== 'unchanged')
 
   // `editor.code` means the host will dynamically import plugin JavaScript
   // into the admin window — unsandboxed, with full admin-session privileges.
@@ -204,7 +245,19 @@ export function PermissionReviewSection({
         </div>
       )}
 
-      {isUpgrade && newCount === 0 && rows.length > 0 && (
+      {withdrawnAppScopeCount > 0 && (
+        <div className={styles.alert} role="alert" data-testid="app-scope-diff-alert">
+          This {isReinstall ? 'reinstall' : 'update'} rewords or removes{' '}
+          <strong>
+            {withdrawnAppScopeCount} thing{withdrawnAppScopeCount === 1 ? '' : 's'} apps were allowed to do
+          </strong>{' '}
+          through the plugin. Members who allowed an app one of them are signed out of that app and will be
+          asked again, and it is taken off your registered apps until you give it back under Users, Site
+          members, Apps.
+        </div>
+      )}
+
+      {isUpgrade && newCount === 0 && rows.length > 0 && !appScopesDiffer && (
         <div className={styles.alert} role="status" data-testid="permission-diff-noop">
           No new permissions in this update.
         </div>
@@ -284,7 +337,7 @@ export function PermissionReviewSection({
         )
       })()}
 
-      {(pending.manifest.appScopes ?? []).length > 0 && (
+      {appScopeRows.length > 0 && (
         <div className={styles.networkSection} data-testid="permission-review-app-scopes">
           <div className={styles.networkHeader}>
             <strong>Access for apps</strong>
@@ -294,11 +347,25 @@ export function PermissionReviewSection({
             </span>
           </div>
           <ul className={styles.list}>
-            {(pending.manifest.appScopes ?? []).map((scope) => (
-              <li key={scope.name} className={styles.row} data-app-scope={scope.name}>
+            {appScopeRows.map((scope) => (
+              <li
+                key={scope.name}
+                className={styles.row}
+                data-status={APP_SCOPE_ROW_STATUS[scope.status]}
+                data-app-scope={scope.name}
+                data-app-scope-status={scope.status}
+              >
                 <div className={styles.label}>
                   <span>{scope.description}</span>
+                  {comparesAppScopes && (
+                    <span className={`${styles.badge} ${APP_SCOPE_BADGE[scope.status].className}`}>
+                      {APP_SCOPE_BADGE[scope.status].label}
+                    </span>
+                  )}
                 </div>
+                {scope.was !== undefined && (
+                  <span className={styles.description}>Members allowed it as: {scope.was}</span>
+                )}
                 <span className={styles.description}>
                   <code>{`plugin:${pending.manifest.id}:${scope.name}`}</code>
                 </span>

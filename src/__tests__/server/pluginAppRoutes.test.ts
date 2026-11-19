@@ -479,5 +479,82 @@ describe('apps on plugin member routes', () => {
       const again = await authorize(client, `profile ${READ}`, ada.cookie)
       expect(new URL(again.headers.get('location')!).searchParams.get('error')).toBe('invalid_scope')
     })
+
+    it('ends them with the plugin row, even when the rest of the removal fails', async () => {
+      const token = await signIn(client, `profile ${READ}`, ada.cookie)
+      // A cleanup step that runs after the row is deleted is made to throw.
+      await h.db.unsafe('drop table plugin_crash_events')
+      owner = await h.stepUp(owner)
+      const removal = await h
+        .cms(`/admin/api/cms/plugins/${PLUGIN_ID}`, { method: 'DELETE', cookie: owner })
+        .then((res) => res.ok, () => false)
+      expect(removal).toBe(false)
+
+      // The plugin is gone, and nothing it let an app do is left for the next package under its id.
+      const { rows: plugins } = await h.db<{ id: string }>`select id from installed_plugins where id = ${PLUGIN_ID}`
+      expect(plugins).toEqual([])
+      expect((await visit('/_instatic/members/oauth/userinfo', { headers: asApp(token) })).status).toBe(401)
+      const { rows: apps } = await h.db<{ scopes_json: string[] }>`select scopes_json from member_apps where id = ${client}`
+      expect(apps[0]!.scopes_json).toEqual(['profile', 'access'])
+    })
+
+    describe('when the plugin is updated', () => {
+      const MANAGE = `plugin:${PLUGIN_ID}:manage`
+      const userinfo = (bearer: string) => visit('/_instatic/members/oauth/userinfo', { headers: asApp(bearer) })
+      const appScopes = async () => {
+        const list = (await (await h.cms('/admin/api/cms/members/apps', { cookie: owner })).json()) as MemberAppListResponse
+        return list.apps.find((app) => app.id === client)!.scopes
+      }
+
+      it('withdraws a scope the update describes differently, and leaves the others alone', async () => {
+        const read = await signIn(client, `profile ${READ}`, ada.cookie)
+        const manage = await signIn(client, MANAGE, ada.cookie)
+        expect((await visit(`${MOUNT}/orders`, { headers: asApp(read) })).status).toBe(200)
+
+        // Same id, same scope name, other words: what the member allowed is not what `read` now means.
+        const updated = await install(PLUGIN_SOURCE, {
+          version: '1.1.0',
+          appScopes: [{ name: 'read', description: 'See and change your purchases' }, APP_SCOPES[1]],
+        })
+        expect(updated.status).toBe(200)
+
+        // The old token opens nothing: not the plugin's routes, not the profile it also carried.
+        expect((await visit(`${MOUNT}/orders`, { headers: asApp(read) })).status).toBe(401)
+        expect((await userinfo(read)).status).toBe(401)
+        // The scope that reads the same kept its approval.
+        const made = await visit(`${MOUNT}/licenses`, { method: 'POST', headers: asApp(manage), json: { name: 'Studio' } })
+        expect(made.status).toBe(200)
+        // The reworded scope is off the app until the owner gives it back.
+        expect(await appScopes()).toEqual(['profile', 'access', MANAGE])
+        const again = await authorize(client, `profile ${READ}`, ada.cookie)
+        expect(new URL(again.headers.get('location')!).searchParams.get('error')).toBe('invalid_scope')
+      })
+
+      it('keeps every approval when the scopes read the same', async () => {
+        const read = await signIn(client, `profile ${READ}`, ada.cookie)
+        expect((await install(PLUGIN_SOURCE, { version: '1.1.0' })).status).toBe(200)
+        expect((await visit(`${MOUNT}/orders`, { headers: asApp(read) })).status).toBe(200)
+        expect((await userinfo(read)).status).toBe(200)
+        expect(await appScopes()).toEqual(['profile', 'access', READ, MANAGE])
+      })
+
+      it('withdraws a scope the update no longer declares', async () => {
+        const read = await signIn(client, `profile ${READ}`, ada.cookie)
+        const manage = await signIn(client, MANAGE, ada.cookie)
+        const updated = await install(
+          `export function activate(api) {
+            api.cms.routes.member.post('/licenses', { app: { scope: 'manage' } }, (ctx) => ({ made: ctx.body.name }))
+          }`,
+          { version: '1.1.0', appScopes: [APP_SCOPES[1]] },
+        )
+        expect(updated.status).toBe(200)
+        expect((await userinfo(read)).status).toBe(401)
+        // The sign-in that never carried it goes on.
+        expect((await userinfo(manage)).status).toBe(200)
+        const made = await visit(`${MOUNT}/licenses`, { method: 'POST', headers: asApp(manage), json: { name: 'Studio' } })
+        expect(made.status).toBe(200)
+        expect(await appScopes()).toEqual(['profile', 'access', MANAGE])
+      })
+    })
   })
 })

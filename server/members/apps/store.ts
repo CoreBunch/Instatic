@@ -303,33 +303,44 @@ export async function touchMemberAppGrant(db: DbClient, grantId: string, now: Da
 }
 
 /**
- * A plugin is gone, and with it what its scopes meant. Sign-ins that carry
- * one of them are ended and the scopes are taken off the registered apps, so
- * a different package installed later under the same id starts from a fresh
- * approval instead of inheriting this one's.
+ * What a plugin's scopes meant is gone: the plugin was removed, or an update
+ * dropped or reworded some of them. Sign-ins that carry one of them are
+ * ended and the scopes are taken off the registered apps, so nothing that
+ * was allowed in the old words carries over to a different package under the
+ * same id, or to a new version that means something else by the same name.
+ *
+ * `names` narrows it to those scopes of the plugin; without it, all of them.
+ * Runs on the client it is given and opens no transaction of its own: pass
+ * the transaction that removes or replaces the plugin row, so no ordering
+ * leaves the row changed and the grants standing.
  */
-export async function withdrawPluginAppScopes(db: DbClient, pluginId: string): Promise<void> {
-  const ofPlugin = (scope: string) => parsePluginAppScope(scope)?.pluginId === pluginId
+export async function withdrawPluginAppScopes(
+  tx: DbClient,
+  pluginId: string,
+  names?: readonly string[],
+): Promise<void> {
+  const withdrawn = (scope: string) => {
+    const parsed = parsePluginAppScope(scope)
+    return parsed !== null && parsed.pluginId === pluginId && (names === undefined || names.includes(parsed.name))
+  }
   const iso = nowIso()
-  await db.transaction(async (tx) => {
-    const { rows: grants } = await tx<{ id: string; scope: string }>`
-      select id, scope from member_app_grants where revoked_at is null
+  const { rows: grants } = await tx<{ id: string; scope: string }>`
+    select id, scope from member_app_grants where revoked_at is null
+  `
+  for (const grant of grants) {
+    if (grant.scope.split(' ').some(withdrawn)) await revokeGrantRows(tx, grant.id, iso)
+  }
+  const { rows: apps } = await tx<{ id: string; scopes_json: string[] }>`
+    select id, scopes_json from member_apps where deleted_at is null
+  `
+  for (const app of apps) {
+    const scopes = Array.isArray(app.scopes_json) ? app.scopes_json : []
+    if (!scopes.some(withdrawn)) continue
+    await tx`
+      update member_apps set scopes_json = ${JSON.stringify(scopes.filter((scope) => !withdrawn(scope)))}
+       where id = ${app.id}
     `
-    for (const grant of grants) {
-      if (grant.scope.split(' ').some(ofPlugin)) await revokeGrantRows(tx, grant.id, iso)
-    }
-    const { rows: apps } = await tx<{ id: string; scopes_json: string[] }>`
-      select id, scopes_json from member_apps where deleted_at is null
-    `
-    for (const app of apps) {
-      const scopes = Array.isArray(app.scopes_json) ? app.scopes_json : []
-      if (!scopes.some(ofPlugin)) continue
-      await tx`
-        update member_apps set scopes_json = ${JSON.stringify(scopes.filter((scope) => !ofPlugin(scope)))}
-         where id = ${app.id}
-      `
-    }
-  })
+  }
 }
 
 async function revokeGrantRows(tx: DbClient, grantId: string, iso: string): Promise<void> {
