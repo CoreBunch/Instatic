@@ -12,7 +12,7 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { strToU8, zipSync } from 'fflate'
-import { DEFAULT_MEMBER_SETTINGS, type MemberAppListResponse } from '@core/members'
+import { DEFAULT_MEMBER_SETTINGS, pluginAppScopeText, type MemberAppListResponse } from '@core/members'
 import { hookBus } from '@core/plugins/hookBus'
 import { parsePluginManifest } from '@core/plugins/manifest'
 import { resetPublicOrigins } from '../../../server/auth/security'
@@ -269,7 +269,37 @@ describe('apps on plugin member routes', () => {
       const started = await authorize(client, `profile ${READ}`, ada.cookie)
       const request = new URL(started.headers.get('location')!, ORIGIN).searchParams.get('request')!
       const frame = await memberAppRequestFrame(h.db, new URL(`/approve-app?request=${request}`, ORIGIN))
-      expect(frame!.access).toBe('Your name and email address, Through the plugin Shop: See your purchases and plan')
+      expect(frame!.access).toBe('Your name and email address, Through the plugin \u201CShop\u201D: See your purchases and plan')
+    })
+
+    it('keeps a plugin\'s name inside core\'s quotation marks, whatever the name is', () => {
+      const text = (name: string) => pluginAppScopeText({ id: PLUGIN_ID, name }, 'See your purchases')
+      const framed = (name: string) => `Through the plugin \u201C${name}\u201D: See your purchases`
+      // A comma or a colon in the name stays between the marks: still one entry, still the plugin's.
+      expect(text('Shop, Billing')).toBe(framed('Shop, Billing'))
+      expect(text('Shop: Everything')).toBe(framed('Shop: Everything'))
+      // The name cannot close the quote itself, with any kind of double quotation mark.
+      for (const name of [
+        'Shop\u201D: nothing at all, Through the plugin \u201CBank',
+        'Shop": nothing, "Bank',
+        'Shop\u00BB: nothing, \u00ABBank',
+        'Shop\uFF02\u201F\u301E',
+      ]) {
+        const shown = text(name)
+        expect(shown.match(/[\u201C\u201D]/g)).toEqual(['\u201C', '\u201D'])
+        expect(shown).not.toMatch(/["\u00AB\u00BB\u201F\u301E\uFF02]/)
+        expect(shown.endsWith('\u201D: See your purchases')).toBe(true)
+      }
+      // A name that repeats a built-in scope's words, or says nothing, gives way to the plugin's id.
+      for (const name of [
+        'Your name and email address',
+        'Shop, Which memberships and ACCESS you hold',
+        'Your \u201Cname\u201D and email address',
+        '   ',
+        '\u201C\u201D',
+      ]) {
+        expect(text(name)).toBe(framed(PLUGIN_ID))
+      }
     })
 
     it('does not count an Allow for a scope that went away while the member was deciding', async () => {

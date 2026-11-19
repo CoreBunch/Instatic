@@ -28,7 +28,7 @@ const MAX_REDIRECTS = 10
 function scopeText(scope: string, options: readonly MemberAppScopeOption[]): string {
   const option = options.find((each) => each.scope === scope)
   if (!option) return `${scope} (no longer offered)`
-  return option.plugin ? pluginAppScopeText(option.plugin.name, option.text) : option.text
+  return option.plugin ? pluginAppScopeText(option.plugin, option.text) : option.text
 }
 
 /** A new app starts with the built-in access; a plugin's is the owner's to add. */

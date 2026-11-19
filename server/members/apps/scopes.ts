@@ -49,7 +49,7 @@ export function isAvailableMemberAppScope(scope: string): boolean {
 export function memberAppScopeText(scope: string): string {
   if (isMemberAppScope(scope)) return MEMBER_APP_SCOPE_TEXT[scope]
   const found = listAvailableMemberAppScopes().find((option) => option.scope === scope)
-  if (found) return found.plugin ? pluginAppScopeText(found.plugin.name, found.text) : found.text
+  if (found) return found.plugin ? pluginAppScopeText(found.plugin, found.text) : found.text
   const parsed = parsePluginAppScope(scope)
   return parsed ? `Use the plugin ${parsed.pluginId}` : scope
 }

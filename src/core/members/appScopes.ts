@@ -56,13 +56,34 @@ export function readsAsBuiltInAppScope(description: string): boolean {
   return MEMBER_APP_SCOPES.some((scope) => shown.includes(MEMBER_APP_SCOPE_TEXT[scope].toLowerCase()))
 }
 
+/** Every kind of double quotation mark a name could use to close the quote core opens around it. */
+const DOUBLE_QUOTES = /["\u00AB\u00BB\u201C-\u201F\u2E42\u301D-\u301F\uFF02]/g
+
 /**
- * A plugin scope in the words a member reads before allowing an app. Core's
- * fixed words come first and name the plugin, so whatever the plugin wrote
- * stays visibly its own and cannot read as a separate, built-in entry.
+ * A plugin's name as it may stand inside core's quotation marks: cleaned,
+ * without quotation marks of its own. A name that then says nothing, or
+ * repeats the words of a built-in scope, is not used: the plugin's id
+ * stands in (an id has no spaces, colons or quotation marks).
  */
-export function pluginAppScopeText(pluginName: string, description: string): string {
-  return `Through the plugin ${plainLine(pluginName)}: ${plainLine(description)}`
+function quotablePluginName(plugin: { id: string; name: string }): string {
+  const name = plainLine(plugin.name.replace(DOUBLE_QUOTES, ''))
+  return name === '' || readsAsBuiltInAppScope(name) ? plugin.id : name
+}
+
+/**
+ * A plugin scope in the words a member reads before allowing an app:
+ * `Through the plugin “Shop”: See your purchases`.
+ *
+ * Both the name and the description are the plugin's own, and scopes are
+ * listed one after another, so the frame is core's. Its fixed words come
+ * first, and the name sits between quotation marks it cannot contain
+ * (`quotablePluginName`): a comma, a colon or a built-in scope's wording in
+ * the name stays visibly inside the plugin's name, and the description is
+ * held to its own rules by the manifest parser. One plugin scope cannot
+ * read as a built-in entry or as several entries.
+ */
+export function pluginAppScopeText(plugin: { id: string; name: string }, description: string): string {
+  return `Through the plugin \u201C${quotablePluginName(plugin)}\u201D: ${plainLine(description)}`
 }
 
 /** A scope as a plugin declares it in its manifest (`appScopes`). */
