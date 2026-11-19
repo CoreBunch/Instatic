@@ -40,6 +40,7 @@ import { getMemberPagePaths } from '../pages'
 import { findMemberById, listActiveMemberTagExpiries } from '../repository'
 import {
   appRequestMarkerCookie,
+  createAppRequestMarker,
   findMemberSession,
   readAppRequestMarker,
   readMemberSessionToken,
@@ -191,8 +192,12 @@ async function authorize(req: Request, db: DbClient, url: URL): Promise<Response
   }
 
   await sweepExpiredMemberAppRows(db)
-  // The browser the app opened keeps a marker; the answer counts only from it.
-  const browserMarker = readAppRequestMarker(req) ?? crypto.randomUUID().replaceAll('-', '')
+  // The browser the app opened keeps a marker; the answer counts only from
+  // it. A well-formed marker that is the only one is kept, so a request still
+  // waiting in another tab keeps working. Anything else (none, a malformed
+  // value, the name twice) is never sent back: a new one is set. A browser
+  // that still presents two afterwards is refused when it answers.
+  const browserMarker = readAppRequestMarker(req) ?? createAppRequestMarker()
   const requestId = await createMemberAppRequest(db, {
     appId: app.id,
     browserMarker,

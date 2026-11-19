@@ -22,6 +22,7 @@ import type { LoopEntitySource } from './loops'
 import type { ServerPluginMediaApi } from './media'
 import type { PluginMigrationContext } from './lifecycle'
 import type { PluginPermission } from './permissions'
+import type { ServerPluginMailApi, ServerPluginSiteApi } from './mail'
 import type { MemberRouteOptions, ServerPluginMembersApi } from './members'
 import type { ServerPluginRouteHandler } from './routes'
 import type { ServerPluginScheduleApi } from './schedule'
@@ -114,6 +115,10 @@ export interface ServerPluginApi {
     }
     /** Site members: look up, invite, and grant or withdraw access tags. */
     members: ServerPluginMembersApi
+    /** Email: send one of the plugin's declared templates through the site's mail queue. */
+    mail: ServerPluginMailApi
+    /** Facts about the site a plugin needs to build links. No permission needed. */
+    site: ServerPluginSiteApi
     loops: {
       /**
        * Register a loop entity source. Source ID must be `<pluginId>.<name>`.

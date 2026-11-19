@@ -68,6 +68,34 @@ function parseJsonPart(part: string): unknown {
   }
 }
 
+/**
+ * The Ed25519 points of small order (1, 2, 4 and 8), as 32-byte encodings
+ * with the sign bit cleared. The last two are the same points as the first
+ * two written with a `y` above the field prime, which runtimes also accept.
+ *
+ * A "key" at one of these points has no private half, yet a signature anyone
+ * can write down (R the identity, S zero) verifies under it for some or all
+ * messages, because verification here is not strict. Such a key proves
+ * nothing, so a proof naming one is refused.
+ */
+const ED25519_SMALL_ORDER_POINTS = new Set([
+  '0100000000000000000000000000000000000000000000000000000000000000',
+  'ecffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f',
+  '0000000000000000000000000000000000000000000000000000000000000000',
+  '26e8958fc2b227b045c3f489f2ef98f0d5dfac05d3c63339b13802886d53fc05',
+  'c7176a703d4dd84fba3c0b760d10670f2a2053fa2c39ccc64ec7fd7792ac037a',
+  'edffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f',
+  'eeffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f',
+])
+
+function isSmallOrderEd25519Key(x: string): boolean {
+  const point = Buffer.from(x, 'base64url')
+  // The top bit is the sign of the other coordinate: each point above has a
+  // twin that differs only there.
+  point[31] = point[31]! & 0x7f
+  return ED25519_SMALL_ORDER_POINTS.has(point.toString('hex'))
+}
+
 type PublicJwk =
   | { kty: 'OKP'; crv: 'Ed25519'; x: string }
   | { kty: 'EC'; crv: 'P-256'; x: string; y: string }
@@ -158,6 +186,7 @@ export async function verifyDpopProof(
   // to the same key but would hash to a different name for it.
   const coordinates = header.value.jwk.kty === 'OKP' ? [header.value.jwk.x] : [header.value.jwk.x, header.value.jwk.y]
   if (coordinates.some((value) => Buffer.from(value, 'base64url').toString('base64url') !== value)) return null
+  if (header.value.jwk.kty === 'OKP' && isSmallOrderEd25519Key(header.value.jwk.x)) return null
 
   const jwk: PublicJwk = header.value.jwk.kty === 'OKP'
     ? { kty: 'OKP', crv: 'Ed25519', x: header.value.jwk.x }

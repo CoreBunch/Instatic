@@ -52,6 +52,7 @@ import {
   ContentTreeReadArgsSchema,
   ContentTreeReplaceArgsSchema,
 } from './schemas/content'
+import { MailSendArgsSchema, MailSendExternalArgsSchema } from './schemas/mail'
 import {
   MembersGetArgsSchema,
   MembersInviteArgsSchema,
@@ -155,6 +156,9 @@ export const ApiCallSchemas = {
   'cms.members.invite': apiCallSchema('cms.members.invite', MembersInviteArgsSchema),
   'cms.members.tags.grant': apiCallSchema('cms.members.tags.grant', MembersTagsGrantArgsSchema),
   'cms.members.tags.revoke': apiCallSchema('cms.members.tags.revoke', MembersTagsRevokeArgsSchema),
+  'cms.mail.send': apiCallSchema('cms.mail.send', MailSendArgsSchema),
+  'cms.mail.sendExternal': apiCallSchema('cms.mail.sendExternal', MailSendExternalArgsSchema),
+  'cms.site.publicUrl': apiCallSchema('cms.site.publicUrl', Type.Tuple([])),
   'crypto.digest': apiCallSchema('crypto.digest', Type.Tuple([CryptoDigestArgSchema])),
   'crypto.signHmac': apiCallSchema('crypto.signHmac', Type.Tuple([CryptoSignHmacArgSchema])),
 } satisfies Record<string, TSchema>

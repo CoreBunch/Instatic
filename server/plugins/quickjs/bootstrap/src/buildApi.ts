@@ -445,6 +445,45 @@ globalThis.__buildApi = function buildApi() {
           delete: registerMember('DELETE'),
         },
       },
+      // Email — queue one of this plugin's declared templates for one
+      // recipient. `{ member }` needs mail.send; `{ address }` needs
+      // mail.send.external.
+      mail: {
+        // api.cms.mail.send({ template, to, variables?, reference? }) → 'queued' | 'captured'
+        send: function (input: unknown) {
+          const mail = (input && typeof input === 'object' ? input : {}) as {
+            template?: unknown
+            to?: { member?: unknown; address?: unknown }
+            variables?: unknown
+            reference?: unknown
+          }
+          const to = mail.to && typeof mail.to === 'object' ? mail.to : {}
+          const rest: { template: string; variables: unknown; reference?: string } = {
+            template: String(mail.template),
+            variables: mail.variables === undefined || mail.variables === null ? {} : mail.variables,
+          }
+          if (mail.reference !== undefined && mail.reference !== null) rest.reference = String(mail.reference)
+          if (typeof to.member === 'string' && to.address === undefined) {
+            assertTargetPermission('cms.mail.send')
+            return call('cms.mail.send', [{ template: rest.template, member: to.member, variables: rest.variables, reference: rest.reference }])
+          }
+          if (typeof to.address === 'string' && to.member === undefined) {
+            assertTargetPermission('cms.mail.sendExternal')
+            return call('cms.mail.sendExternal', [{ template: rest.template, address: to.address, variables: rest.variables, reference: rest.reference }])
+          }
+          throw new TypeError('mail.send needs `to: { member: id }` or `to: { address }`')
+        },
+      },
+      // Facts about the site. No permission needed.
+      site: {
+        // api.cms.site.publicUrl() → 'https://example.com' | null
+        publicUrl: function () {
+          // "No address configured" is null, not a missing value.
+          return call('cms.site.publicUrl', []).then(function (value: unknown) {
+            return value === undefined ? null : value
+          })
+        },
+      },
       // Site members — the people with an account on the published site.
       members: {
         // api.cms.members.get({ id }) / get({ email }) → member or null

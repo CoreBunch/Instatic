@@ -31,7 +31,10 @@ import { existsSync, readdirSync } from 'node:fs'
 import { readFile } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import { findSandboxLiterals } from '@core/plugins/sandboxScan'
-import { parsePluginManifest } from '@core/plugins/manifest'
+import { isExternalFrontendScriptSrc, parsePluginManifest } from '@core/plugins/manifest'
+import DOMPurify from 'dompurify'
+import { JSDOM } from 'jsdom'
+import { configureRichtextSanitizer, type DOMPurifyRuntime } from '@core/sanitize'
 import { readPluginDefinition } from './build'
 import type { PluginDefinition } from '../builders/definePlugin'
 import { CONTENT_ACCESS_MODE_PERMISSIONS, type ContentAccessMode } from '../contentSchemas'
@@ -60,6 +63,20 @@ const SANDBOXED_ENTRYPOINTS: ReadonlyArray<'server' | 'modules'> = ['server', 'm
  * `instatic-plugin.config.ts`; everything else is reported as a finding so the
  * CLI can list multiple problems in one pass.
  */
+let mailRendererReady = false
+
+/**
+ * Give the email renderer a DOM to parse with. The manifest parser renders
+ * every declared email template to check it, exactly as the server will
+ * when the plugin is installed; a command-line process has no DOM of its own.
+ */
+function ensureMailRenderer(): void {
+  if (mailRendererReady) return
+  const createDOMPurify = DOMPurify as unknown as (window: Window) => DOMPurifyRuntime
+  configureRichtextSanitizer(createDOMPurify(new JSDOM('').window as unknown as Window))
+  mailRendererReady = true
+}
+
 export async function lintPlugin(sourceDir: string): Promise<LintResult> {
   const absoluteSource = resolve(sourceDir)
   let definition: PluginDefinition
@@ -88,6 +105,7 @@ export async function lintPlugin(sourceDir: string): Promise<LintResult> {
   // undefined optional fields, so the in-memory manifest is the same
   // shape the host parses from the zipped `plugin.json`.
   try {
+    ensureMailRenderer()
     parsePluginManifest(manifest)
   } catch (err) {
     findings.push({
@@ -174,7 +192,9 @@ export async function lintPlugin(sourceDir: string): Promise<LintResult> {
   //    error in their terminal pre-upload).
   const declaredAssets = manifest.frontend?.assets ?? []
   const hasFrontendPermission = manifest.permissions.includes('frontend.assets')
-  if (hasFrontendPermission && declaredAssets.length === 0) {
+  const declaredOrigins = manifest.frontend?.origins
+  const declaredOriginCount = (declaredOrigins?.scripts?.length ?? 0) + (declaredOrigins?.frames?.length ?? 0)
+  if (hasFrontendPermission && declaredAssets.length === 0 && declaredOriginCount === 0) {
     findings.push({
       severity: 'warning',
       scope: 'manifest',
@@ -192,6 +212,25 @@ export async function lintPlugin(sourceDir: string): Promise<LintResult> {
         'Add `permissions.frontendAssets` to the plugin permissions list.',
     })
   }
+  // ---- mail coherence ---------------------------------------------------
+  //
+  //  - A mail permission with no template has nothing it could send.
+  //  (The manifest parser refuses templates without a mail permission, a
+  //  `{name}` a template uses without declaring it, and a `link` variable
+  //  that does not stand alone. It renders each template to find the last,
+  //  which is why this command gives it an HTML parser: `ensureMailRenderer`.)
+  const mailTemplates = manifest.mail?.templates ?? []
+  const hasMailPermission =
+    manifest.permissions.includes('mail.send') || manifest.permissions.includes('mail.send.external')
+  if (hasMailPermission && mailTemplates.length === 0) {
+    findings.push({
+      severity: 'warning',
+      scope: 'manifest',
+      message:
+        'A mail permission is requested but `mail.templates[]` is empty. ' +
+        'A plugin can only send templates it declares: declare one or drop the permission.',
+    })
+  }
   // Every declared `script` / `style` references a file under `frontend/`;
   // make sure the source exists. The build CLI bundles every `.ts`/`.tsx`
   // file in `frontend/` to `dist/frontend/<name>.js`, so the source we
@@ -202,7 +241,9 @@ export async function lintPlugin(sourceDir: string): Promise<LintResult> {
       : asset.kind === 'style'
         ? asset.href
         : null
-    if (!ref) continue
+    // An absolute script address loads from a declared third-party origin
+    // (the manifest parser has already checked the host), not from the zip.
+    if (!ref || isExternalFrontendScriptSrc(ref)) continue
     const sourceTs = join(absoluteSource, ref.replace(/\.js$/, '.ts'))
     const sourceTsx = join(absoluteSource, ref.replace(/\.js$/, '.tsx'))
     const builtFile = join(absoluteSource, 'dist', ref)

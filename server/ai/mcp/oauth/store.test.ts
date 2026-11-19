@@ -116,6 +116,38 @@ describe('MCP OAuth grant store', () => {
     expect(await findOAuthAccessGrant(db, tokens!.accessToken, RESOURCE)).toBeNull()
   })
 
+  it('refuses an expired code presented again without ending the connection', async () => {
+    const warn = spyOn(console, 'warn').mockImplementation(() => {})
+    const { code } = await createOAuthAuthorizationGrant(db, {
+      userId: 'u1',
+      clientName: 'Claude',
+      capabilities: ['site.read'],
+      request,
+    })
+    const exchange = {
+      code,
+      clientId: request.clientId,
+      redirectUri: request.redirectUri,
+      codeVerifier: VERIFIER,
+      resource: RESOURCE,
+    }
+    const tokens = await exchangeAuthorizationCode(db, mcpOAuthRealm, exchange)
+    expect(tokens).not.toBeNull()
+
+    // Six minutes on, the five-minute code has expired: a replay is refused
+    // and the tokens it produced keep working.
+    const afterExpiry = new Date(Date.now() + 6 * 60 * 1000)
+    expect(await exchangeAuthorizationCode(db, mcpOAuthRealm, exchange, afterExpiry)).toBeNull()
+    expect(await findOAuthAccessGrant(db, tokens!.accessToken, RESOURCE)).not.toBeNull()
+    expect(warn).not.toHaveBeenCalled()
+
+    // While the code is still unexpired, the same replay ends the connection.
+    expect(await exchangeAuthorizationCode(db, mcpOAuthRealm, exchange)).toBeNull()
+    expect(await findOAuthAccessGrant(db, tokens!.accessToken, RESOURCE)).toBeNull()
+    expect(warn).toHaveBeenCalledTimes(1)
+    warn.mockRestore()
+  })
+
   it('rejects a code when the verifier, callback, client, or resource differs', async () => {
     const { code } = await createOAuthAuthorizationGrant(db, {
       userId: 'u1',
@@ -185,6 +217,38 @@ describe('MCP OAuth grant store', () => {
       resource: RESOURCE,
     })).toBeNull()
     expect(await findOAuthAccessGrant(db, rotated!.accessToken, RESOURCE)).toBeNull()
+    expect(warn).toHaveBeenCalledTimes(1)
+    warn.mockRestore()
+  })
+
+  it('never binds a grant to a key and has no retry for a spent refresh token', async () => {
+    const warn = spyOn(console, 'warn').mockImplementation(() => {})
+    const { code } = await createOAuthAuthorizationGrant(db, {
+      userId: 'u1',
+      clientName: 'Claude',
+      capabilities: ['site.read'],
+      request,
+    })
+    // The MCP token endpoint reads no DPoP header; even handed a key, the realm takes none.
+    const key = 'k'.repeat(43)
+    const initial = await exchangeAuthorizationCode(db, mcpOAuthRealm, {
+      code,
+      clientId: request.clientId,
+      redirectUri: request.redirectUri,
+      codeVerifier: VERIFIER,
+      resource: RESOURCE,
+      proofThumbprint: key,
+    })
+    const refresh = { clientId: request.clientId, resource: RESOURCE }
+    // Still unbound: a refresh with no proof works.
+    const rotated = await rotateRefreshToken(db, mcpOAuthRealm, { ...refresh, refreshToken: initial!.refreshToken })
+    expect(rotated).not.toBeNull()
+    // The spent token again, at once and with the key: reuse, and the grant is gone.
+    expect(await rotateRefreshToken(db, mcpOAuthRealm, {
+      ...refresh, refreshToken: initial!.refreshToken, proofThumbprint: key,
+    })).toBeNull()
+    expect(await findOAuthAccessGrant(db, rotated!.accessToken, RESOURCE)).toBeNull()
+    expect(await rotateRefreshToken(db, mcpOAuthRealm, { ...refresh, refreshToken: rotated!.refreshToken })).toBeNull()
     expect(warn).toHaveBeenCalledTimes(1)
     warn.mockRestore()
   })

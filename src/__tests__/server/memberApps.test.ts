@@ -2,12 +2,13 @@ import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
 import { createTestDb, type TestDb } from '../helpers/createTestDb'
 import { DEFAULT_MEMBER_SETTINGS } from '@core/members'
 import { resetPublicOrigins } from '../../../server/auth/security'
-import { setMemberSuspended } from '../../../server/members/admin'
+import { setMemberSuspended, signOutMemberEverywhere } from '../../../server/members/admin'
 import { memberAppRequestFrame } from '../../../server/members/apps/approval'
 import { handleMemberOAuthRequest, resetMemberAppLimits } from '../../../server/members/apps/handler'
 import {
   createMemberApp,
   deleteMemberApp,
+  revokeAllMemberAppGrants,
   sweepExpiredMemberAppRows,
   type MemberAppRecord,
 } from '../../../server/members/apps/store'
@@ -17,9 +18,11 @@ import { flushMemberMail } from '../../../server/members/mail'
 import { loopSourceRegistry } from '@core/loops/registry'
 import '@core/loops/sources'
 import type { PrefetchedLoopEntitySource } from '@core/loops/types'
-import { createMember, grantMemberTag, saveMemberSettings } from '../../../server/members/repository'
+import { anonymizeMember, createMember, grantMemberTag, saveMemberSettings } from '../../../server/members/repository'
 import { createMemberSession } from '../../../server/members/sessions'
+import { issueMemberToken } from '../../../server/members/tokens'
 import { pkceChallengeForVerifier } from '../../../server/oauth/secrets'
+import { sourceRequestFor } from '../../../server/publish/loopSourceRequest'
 import { publishMemberPages } from '../helpers/memberPages'
 import { createDeviceKey, type DeviceKey } from '../helpers/deviceKey'
 import { resetDpopReplayCache } from '../../../server/oauth/dpop'
@@ -280,6 +283,42 @@ describe('sign-in for apps', () => {
       expect((await answer('approve', request)).status).toBe(200)
     })
 
+    it('refuses an answer that carries the marker twice, even when one of them matches', async () => {
+      const request = await startRequest()
+      const session = cookie.split('; ').filter((part) => !part.startsWith('instatic_member_app=')).join('; ')
+      const own = /instatic_member_app=([0-9a-f]{32})/.exec(cookie)![1]!
+      const planted = 'f'.repeat(32)
+      for (const markers of [[planted, own], [own, planted], [own, own]]) {
+        const header = [session, ...markers.map((marker) => `instatic_member_app=${marker}`)].join('; ')
+        expect((await answer('approve', request, { cookie: header })).status).toBe(400)
+      }
+      const { rows } = await t.db`select id from member_app_grants`
+      expect(rows).toHaveLength(0)
+
+      // Opening the authorize address with both sets a new marker, neither of the two.
+      const again = await call(await authorizeUrl(), {
+        headers: { cookie: `${session}; instatic_member_app=${planted}; instatic_member_app=${own}` },
+      })
+      const fresh = /instatic_member_app=([0-9a-f]{32});/.exec(again.headers.get('set-cookie')!)![1]!
+      expect([own, planted]).not.toContain(fresh)
+      // The first request was not used up: the browser's own marker alone still answers it.
+      expect((await answer('approve', request)).status).toBe(200)
+    })
+
+    it('never sends back a marker it did not make', async () => {
+      // Each of these passed the old check for a marker's form.
+      for (const planted of ['A'.repeat(32), 'x'.repeat(40), `${'a'.repeat(31)}-`, 'a'.repeat(33)]) {
+        const res = await call(await authorizeUrl(), { headers: { cookie: `${cookie}; instatic_member_app=${planted}` } })
+        const set = res.headers.get('set-cookie')!
+        expect(set).not.toContain(planted)
+        const fresh = /^instatic_member_app=([0-9a-f]{32}); Path=\/; HttpOnly; SameSite=Lax; Max-Age=3600$/.exec(set)?.[1]
+        expect(fresh).toBeDefined()
+        const request = new URL(res.headers.get('location')!, ORIGIN).searchParams.get('request')!
+        expect((await answer('approve', request, { cookie: `${cookie}; instatic_member_app=${planted}` })).status).toBe(400)
+        expect((await answer('approve', request, { cookie: `${cookie}; instatic_member_app=${fresh}` })).status).toBe(200)
+      }
+    })
+
     it('needs a signed-in member and a request from this site', async () => {
       const request = await startRequest()
       const signedOut = await answer('approve', request, { cookie: '' })
@@ -321,6 +360,36 @@ describe('sign-in for apps', () => {
       expect((await tokenRequest({ grant_type: 'refresh_token', refresh_token: first.refresh_token })).status).toBe(400)
       expect((await userinfo(second.access_token)).status).toBe(401)
       expect((await tokenRequest({ grant_type: 'refresh_token', refresh_token: second.refresh_token })).status).toBe(400)
+    })
+
+    it('refuses a code or a refresh token asked for another resource', async () => {
+      const code = await approvedCode()
+      const exchange = { grant_type: 'authorization_code', code, redirect_uri: LISTENING, code_verifier: VERIFIER }
+      const wrongExchange = await tokenRequest({ ...exchange, resource: 'https://other.example/' })
+      expect(wrongExchange.status).toBe(400)
+      expect(((await wrongExchange.json()) as { error: string }).error).toBe('invalid_target')
+      // The refusal did not use the code up.
+      const tokens = (await (await tokenRequest(exchange)).json()) as Tokens
+
+      const refresh = { grant_type: 'refresh_token', refresh_token: tokens.refresh_token }
+      const wrongRefresh = await tokenRequest({ ...refresh, resource: `${ORIGIN}/_instatic/mcp` })
+      expect(wrongRefresh.status).toBe(400)
+      expect(((await wrongRefresh.json()) as { error: string }).error).toBe('invalid_target')
+      // Nor did it rotate or revoke anything.
+      expect((await userinfo(tokens.access_token)).status).toBe(200)
+      expect((await tokenRequest(refresh)).status).toBe(200)
+    })
+
+    it('does not exchange a code that was waiting when the member was suspended', async () => {
+      const code = await approvedCode()
+      const exchange = { grant_type: 'authorization_code', code, redirect_uri: LISTENING, code_verifier: VERIFIER }
+      await setMemberSuspended(t.db, memberId, true)
+      expect((await tokenRequest(exchange)).status).toBe(400)
+      // Lifting the suspension does not bring the approval back.
+      await setMemberSuspended(t.db, memberId, false)
+      expect((await tokenRequest(exchange)).status).toBe(400)
+      const { rows } = await t.db`select id from member_app_tokens`
+      expect(rows).toHaveLength(0)
     })
 
     it('is refused a client secret', async () => {
@@ -420,6 +489,51 @@ describe('sign-in for apps', () => {
       expect((await userinfo(tokens.access_token)).status).toBe(401)
     })
 
+    /** Post a member form action as the signed-in member's browser. */
+    function memberAction(action: string, fields: Record<string, string>): Promise<Response> {
+      return call(`/_instatic/members/${action}`, {
+        method: 'POST',
+        headers: { cookie, origin: ORIGIN, 'content-type': 'application/json' },
+        body: JSON.stringify(fields),
+      })
+    }
+
+    const accountChanges: Array<[string, () => Promise<void>]> = [
+      ['the member changes their password', async () => {
+        // No password yet and a session a moment old: no current password to give.
+        expect((await memberAction('password/change', { newPassword: 'a-brand-new-password' })).status).toBe(200)
+      }],
+      ['the member sets a new password from a reset link', async () => {
+        const { token } = await issueMemberToken(t.db, memberId, 'reset')
+        expect((await memberAction('password/reset', { token, password: 'a-brand-new-password' })).status).toBe(200)
+      }],
+      ['the member moves the account to a new address', async () => {
+        const { token } = await issueMemberToken(t.db, memberId, 'email_change', { email: 'ada.new@example.com' })
+        expect((await memberAction('email/confirm', { token })).status).toBe(200)
+      }],
+      ['the owner signs the member out everywhere', async () => {
+        expect(await signOutMemberEverywhere(t.db, memberId)).toBe(true)
+      }],
+    ]
+    for (const [name, change] of accountChanges) {
+      it(`ends when ${name}`, async () => {
+        const tokens = await signIn()
+        // A second approval that the app has not collected yet.
+        const waitingCode = await approvedCode()
+        expect((await userinfo(tokens.access_token)).status).toBe(200)
+
+        await change()
+
+        expect((await userinfo(tokens.access_token)).status).toBe(401)
+        expect((await tokenRequest({ grant_type: 'refresh_token', refresh_token: tokens.refresh_token })).status).toBe(400)
+        expect((await tokenRequest({
+          grant_type: 'authorization_code', code: waitingCode, redirect_uri: LISTENING, code_verifier: VERIFIER,
+        })).status).toBe(400)
+        const { rows } = await t.db`select id from member_app_grants where revoked_at is null`
+        expect(rows).toHaveLength(0)
+      })
+    }
+
     it('ends for everyone when the owner removes the app', async () => {
       const tokens = await signIn()
       expect(await deleteMemberApp(t.db, app.id)).toBe(true)
@@ -429,13 +543,68 @@ describe('sign-in for apps', () => {
     })
   })
 
+  describe('the member\u2019s own data', () => {
+    async function deviceSignIn(): Promise<Tokens> {
+      const res = await answer('approve', await startRequest({ device_name: 'Ada\u2019s MacBook' }))
+      const code = new URL(((await res.json()) as { appRedirect: string }).appRedirect).searchParams.get('code')!
+      const exchanged = await tokenRequest({
+        grant_type: 'authorization_code', code, redirect_uri: LISTENING, code_verifier: VERIFIER,
+      })
+      return (await exchanged.json()) as Tokens
+    }
+
+    it('lists connected apps in the export', async () => {
+      const tokens = await deviceSignIn()
+      await userinfo(tokens.access_token)
+      const res = await call('/_instatic/members/export', { headers: { cookie } })
+      expect(res.status).toBe(200)
+      const data = (await res.json()) as {
+        connectedApps: Array<{ app: string; device: string; connectedAt: string; lastUsedAt: string | null }>
+      }
+      expect(data.connectedApps).toHaveLength(1)
+      expect(data.connectedApps[0]).toMatchObject({ app: 'Instatic Desktop', device: 'Ada\u2019s MacBook' })
+      expect(Number.isNaN(Date.parse(data.connectedApps[0]!.connectedAt))).toBe(false)
+      expect(Number.isNaN(Date.parse(data.connectedApps[0]!.lastUsedAt!))).toBe(false)
+      // Never the tokens themselves.
+      expect(JSON.stringify(data)).not.toContain('imem_')
+    })
+
+    it('removes app sign-ins and their device names when the account is deleted', async () => {
+      const tokens = await deviceSignIn()
+      // A second approval that was never exchanged leaves a code behind too.
+      await answer('approve', await startRequest({ device_name: 'Studio iMac' }))
+      await anonymizeMember(t.db, memberId)
+
+      expect((await userinfo(tokens.access_token)).status).toBe(401)
+      expect((await tokenRequest({ grant_type: 'refresh_token', refresh_token: tokens.refresh_token })).status).toBe(400)
+      for (const table of ['member_app_grants', 'member_app_tokens', 'member_app_codes']) {
+        const { rows } = await t.db.unsafe<{ n: number }>(`select count(*) as n from ${table}`)
+        expect(Number(rows[0]!.n)).toBe(0)
+      }
+    })
+  })
+
   describe('connected apps', () => {
     const source = loopSourceRegistry.getOrThrow('members.apps') as PrefetchedLoopEntitySource
 
-    function connected(forMember: string | null | undefined) {
+    /**
+     * The list as the server asks for it: the request is built by
+     * `sourceRequestFor`, for a visitor signed in as `signedInAs` (null:
+     * signed out). `undefined` is a render with no request at all (publish).
+     */
+    async function connected(signedInAs: string | null | undefined) {
+      const request = signedInAs === undefined
+        ? undefined
+        : await sourceRequestFor(source, {
+            base: { query: {}, path: '/account', slug: 'account' },
+            visitor: {
+              cookies: {},
+              member: async () => (signedInAs ? { id: signedInAs, email: 'someone@example.com', tags: [], profile: {} } : null),
+            },
+          })
       return source.fetch({
         db: t.db, site: { pages: [] } as never, filters: {}, orderBy: 'connectedAt', direction: 'desc', limit: 10, offset: 0,
-        memberId: forMember,
+        request,
       })
     }
 
@@ -472,7 +641,8 @@ describe('sign-in for apps', () => {
 
     it('is rendered for each visitor, never cached', () => {
       expect(source.perVisitor).toBe(true)
-      expect(source.forMember).toBe(true)
+      // In process, so it is always told who is signed in.
+      expect(source.mayKnowMember).toBeUndefined()
     })
 
     it('disconnects the app the member chose and ends its access at once', async () => {
@@ -635,8 +805,12 @@ describe('sign-in for apps', () => {
       device = await createDeviceKey()
       await exchange(await codeFor(await boundRequest({ device_name: '  Studio\n iMac  ' })), device)
       const source = loopSourceRegistry.getOrThrow('members.apps') as PrefetchedLoopEntitySource
+      const request = await sourceRequestFor(source, {
+        base: { query: {}, path: '/account', slug: 'account' },
+        visitor: { cookies: {}, member: async () => ({ id: memberId, email: 'ada@example.com', tags: [], profile: {} }) },
+      })
       const { items } = await source.fetch({
-        db: t.db, site: { pages: [] } as never, filters: {}, orderBy: 'connectedAt', direction: 'desc', limit: 10, offset: 0, memberId,
+        db: t.db, site: { pages: [] } as never, filters: {}, orderBy: 'connectedAt', direction: 'desc', limit: 10, offset: 0, request,
       })
       expect(items.map((item) => item.fields.device).sort()).toEqual(['Ada\u2019s MacBook', 'Studio iMac'])
     })
@@ -676,6 +850,134 @@ describe('sign-in for apps', () => {
       expect((await userinfo(tokens.access_token)).status).toBe(200)
       expect((await revoke(device)).status).toBe(200)
       expect((await userinfo(tokens.access_token)).status).toBe(401)
+    })
+
+    describe('when the sign-in address named no key', () => {
+      /** A sign-in approved without `dpop_jkt`, exchanged with a proof from the device's key. */
+      async function signInShowingKeyAtExchange(): Promise<Tokens> {
+        const res = await exchange(await codeFor(await startRequest()), device)
+        expect(res.status).toBe(200)
+        return (await res.json()) as Tokens
+      }
+
+      it('binds the sign-in to the key the code is exchanged with', async () => {
+        const tokens = await signInShowingKeyAtExchange()
+        const stranger = await createDeviceKey()
+        const refresh = { grant_type: 'refresh_token', refresh_token: tokens.refresh_token }
+
+        // From here on it is a bound sign-in: no key or another key gets nothing and revokes nothing.
+        expect((await tokenWith(refresh, null)).status).toBe(400)
+        expect((await tokenWith(refresh, stranger)).status).toBe(400)
+        expect((await userinfo(tokens.access_token)).status).toBe(200)
+        const mine = await tokenWith(refresh, device)
+        expect(mine.status).toBe(200)
+        expect((await userinfo(((await mine.json()) as Tokens).access_token)).status).toBe(200)
+      })
+
+      it('lets only the key sign the app out', async () => {
+        const tokens = await signInShowingKeyAtExchange()
+        const revoke = async (key: DeviceKey | null) => call('/_instatic/members/oauth/revoke', {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/x-www-form-urlencoded',
+            ...(key ? { dpop: await key.proof('POST', `${ISSUER}/oauth/revoke`) } : {}),
+          },
+          body: new URLSearchParams({ token: tokens.refresh_token, client_id: app.id }).toString(),
+        })
+        await revoke(null)
+        expect((await userinfo(tokens.access_token)).status).toBe(200)
+        await revoke(device)
+        expect((await userinfo(tokens.access_token)).status).toBe(401)
+      })
+
+      it('replaces the device\u2019s earlier sign-in, however either one was bound', async () => {
+        const first = await boundSignIn()
+        const second = await signInShowingKeyAtExchange()
+        expect((await userinfo(first.access_token)).status).toBe(401)
+        const third = await boundSignIn()
+        expect((await userinfo(second.access_token)).status).toBe(401)
+        expect((await userinfo(third.access_token)).status).toBe(200)
+      })
+
+      it('stays unbound when the exchange shows no key either', async () => {
+        const res = await exchange(await codeFor(await startRequest()), null)
+        const tokens = (await res.json()) as Tokens
+        const { rows } = await t.db<{ device_jkt: string | null }>`select device_jkt from member_app_grants`
+        expect(rows.map((row) => row.device_jkt)).toEqual([null])
+        // A later proof does not bind it: the key is taken at the exchange only.
+        const refreshed = await tokenWith({ grant_type: 'refresh_token', refresh_token: tokens.refresh_token }, device)
+        expect(refreshed.status).toBe(200)
+        const next = (await refreshed.json()) as Tokens
+        expect((await tokenRequest({ grant_type: 'refresh_token', refresh_token: next.refresh_token })).status).toBe(200)
+      })
+    })
+
+    describe('a refresh whose answer was lost', () => {
+      const refreshWith = (token: string, key: DeviceKey | null) =>
+        tokenWith({ grant_type: 'refresh_token', refresh_token: token }, key)
+
+      /** Move the moment a refresh token was spent into the past. */
+      async function ageRotation(secondsAgo: number): Promise<void> {
+        const at = new Date(Date.now() - secondsAgo * 1000).toISOString()
+        await t.db`update member_app_tokens set revoked_at = ${at} where kind = 'refresh' and revoked_at is not null`
+      }
+
+      it('gives the device a new pair when it asks again within a minute', async () => {
+        const tokens = await boundSignIn()
+        // The answer to this refresh never reaches the app.
+        const lost = (await (await refreshWith(tokens.refresh_token, device)).json()) as Tokens
+        await ageRotation(30)
+
+        const retry = await refreshWith(tokens.refresh_token, device)
+        expect(retry.status).toBe(200)
+        const fresh = (await retry.json()) as Tokens
+        expect((await userinfo(fresh.access_token)).status).toBe(200)
+        // What the lost answer carried is withdrawn, without ending the sign-in.
+        expect((await userinfo(lost.access_token)).status).toBe(401)
+        expect((await userinfo(tokens.access_token)).status).toBe(401)
+        // The new refresh token carries on as usual.
+        expect((await refreshWith(fresh.refresh_token, device)).status).toBe(200)
+      })
+
+      it('ends the sign-in when the spent token comes back after the minute', async () => {
+        const tokens = await boundSignIn()
+        const rotated = (await (await refreshWith(tokens.refresh_token, device)).json()) as Tokens
+        await ageRotation(61)
+
+        expect((await refreshWith(tokens.refresh_token, device)).status).toBe(400)
+        expect((await userinfo(rotated.access_token)).status).toBe(401)
+        expect((await refreshWith(rotated.refresh_token, device)).status).toBe(400)
+      })
+
+      it('gives nothing to a spent token shown without the key, and revokes nothing', async () => {
+        const tokens = await boundSignIn()
+        const rotated = (await (await refreshWith(tokens.refresh_token, device)).json()) as Tokens
+
+        expect((await refreshWith(tokens.refresh_token, null)).status).toBe(400)
+        expect((await refreshWith(tokens.refresh_token, await createDeviceKey())).status).toBe(400)
+        expect((await userinfo(rotated.access_token)).status).toBe(200)
+        expect((await refreshWith(rotated.refresh_token, device)).status).toBe(200)
+      })
+
+      it('does not bring back a sign-in that was ended', async () => {
+        const tokens = await boundSignIn()
+        await refreshWith(tokens.refresh_token, device)
+        await revokeAllMemberAppGrants(t.db, memberId)
+
+        expect((await refreshWith(tokens.refresh_token, device)).status).toBe(400)
+        const { rows } = await t.db<{ id: string }>`select id from member_app_tokens where revoked_at is null`
+        expect(rows).toEqual([])
+      })
+
+      it('keeps ending a sign-in without a device key the moment a spent token is reused', async () => {
+        const tokens = await signIn()
+        const rotated = (await (await refreshWith(tokens.refresh_token, null)).json()) as Tokens
+
+        // Even with a proof: the sign-in has no key, so there is no retry.
+        expect((await refreshWith(tokens.refresh_token, device)).status).toBe(400)
+        expect((await userinfo(rotated.access_token)).status).toBe(401)
+        expect((await refreshWith(rotated.refresh_token, null)).status).toBe(400)
+      })
     })
 
     it('cleans the device name an app sends', () => {

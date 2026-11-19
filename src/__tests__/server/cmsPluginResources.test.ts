@@ -169,6 +169,11 @@ function makeFakeDb() {
     if (normalized.includes('from member_app_grants') || normalized.includes('from member_apps')) {
       return { rows: [], rowCount: 0 }
     }
+    // syncPluginMailTemplates: these plugins declare no email templates and
+    // nobody has edited one.
+    if (normalized.includes('from mail_templates')) {
+      return { rows: [], rowCount: 0 }
+    }
     throw new Error(`Unhandled SQL: ${sql}`)
   }
 

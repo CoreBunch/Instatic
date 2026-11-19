@@ -37,11 +37,27 @@ import quickjsWasmPath from '../../../node_modules/@jitl/quickjs-wasmfile-releas
 import { RELEASE_SYNC, type QuickJSContext, type QuickJSHandle, type QuickJSWASMModule } from 'quickjs-emscripten'
 import { newQuickJSWASMModuleFromVariant, newVariant } from 'quickjs-emscripten-core'
 import { BOOTSTRAP_SOURCE } from './bootstrap/index'
-import { DEFAULT_EVAL_TIMEOUT_MS, DEFAULT_MEMORY_LIMIT_BYTES, DEFAULT_STACK_SIZE_BYTES } from './limits'
+import {
+  DEFAULT_EVAL_TIMEOUT_MS,
+  DEFAULT_MEMORY_LIMIT_BYTES,
+  DEFAULT_PLUGIN_FETCH_TIMEOUT_MS,
+  MIN_PLUGIN_FETCH_WINDOW_MS,
+  fetchHandlingMarginMs,
+  DEFAULT_STACK_SIZE_BYTES,
+  PLUGIN_CALL_BUDGET_MS,
+} from './limits'
 import { jsToHandle } from './marshal'
 import { bytesToBase64 } from '../protocol/bodyEncoding'
 import { CRYPTO_RANDOM_BYTES_MAX } from './bootstrap/crypto'
-import { callString, callVoid, evalJson, withSyncDeadline } from './eval'
+import {
+  callString,
+  callVoid,
+  evalJson,
+  tightestCallBudget,
+  notifyVmActivity,
+  withSyncDeadline,
+  type CallLimits,
+} from './eval'
 import type { PluginVm, PluginVmEnv } from './types'
 
 export type { PluginVm, PluginVmEnv } from './types'
@@ -108,10 +124,18 @@ export async function createPluginVm(args: {
   pluginSource: string
   env: PluginVmEnv
   evalTimeoutMs?: number
+  /** Wall-clock budget per call; tests shorten it. Defaults to `PLUGIN_CALL_BUDGET_MS`. */
+  callBudgetMs?: number
 }): Promise<PluginVm> {
   const wasm = await getWasmModule()
   const ctx = wasm.newContext()
   const evalTimeoutMs = args.evalTimeoutMs ?? DEFAULT_EVAL_TIMEOUT_MS
+  /** Limits for every call except a schedule fire, which brings its own. */
+  /** Limits for every call except a schedule fire, which brings its own. */
+  const callLimits: CallLimits = {
+    evalTimeoutMs,
+    budgetMs: args.callBudgetMs ?? PLUGIN_CALL_BUDGET_MS,
+  }
 
   // Apply per-plugin resource limits BEFORE evaluating any plugin code.
   // setMemoryLimit / setMaxStackSize live on the runtime, not the context,
@@ -199,9 +223,39 @@ export async function createPluginVm(args: {
         console.error(`[plugin:${args.env.pluginId}] VM job aborted: ${message}${stack}`)
       }
     })
+    // A resolution just advanced the VM: wake calls parked on a pending promise.
+    notifyVmActivity(ctx)
   }
 
   try {
+    // An outbound request must end while its call can still handle the
+    // answer: its timeout is the plugin's (or the default), cut down to the
+    // time left in the tightest call in flight less a handling margin. With
+    // too little left it is not started at all and fails like a timeout,
+    // which the handler can catch. Returns that failure, or null when the
+    // request may go out. Code running from a timer with no call in flight
+    // keeps the plain timeout.
+    const planFetchTimeout = (fetchArgs: unknown[]): (Error & { code: string }) | null => {
+      const init = fetchArgs[1]
+      if (!init || typeof init !== 'object') return null
+      const fetchInit = init as { timeoutMs?: unknown }
+      const wanted = typeof fetchInit.timeoutMs === 'number' ? fetchInit.timeoutMs : DEFAULT_PLUGIN_FETCH_TIMEOUT_MS
+      const budget = tightestCallBudget(ctx)
+      if (!budget) {
+        fetchInit.timeoutMs = wanted
+        return null
+      }
+      const windowMs = Math.floor(budget.endsAt - Date.now() - fetchHandlingMarginMs(budget.budgetMs))
+      if (windowMs < Math.min(MIN_PLUGIN_FETCH_WINDOW_MS, wanted)) {
+        return Object.assign(
+          new Error(`Plugin "${args.env.pluginId}" fetch timed out: the call has too little time left to start a request`),
+          { code: 'fetch_timeout' },
+        )
+      }
+      fetchInit.timeoutMs = Math.min(wanted, windowMs)
+      return null
+    }
+
     // 1. Wire __hostCall as a SYNCHRONOUS VM function. The host returns a
     //    VM-side Promise immediately and resolves it later from JS-land.
     //    `runtime.executePendingJobs()` drives any queued plugin-side .then
@@ -211,9 +265,12 @@ export async function createPluginVm(args: {
       const dumpedArgs = ctx.dump(argsHandle) as unknown
       const argsArray = Array.isArray(dumpedArgs) ? dumpedArgs : []
 
+      const refused = target === 'network.fetch' ? planFetchTimeout(argsArray) : null
+
       const deferred = ctx.newPromise()
       pendingDeferreds.add(deferred)
-      args.env.hostCall(target, argsArray).then(
+      const hostResult = refused ? Promise.reject<unknown>(refused) : args.env.hostCall(target, argsArray)
+      hostResult.then(
         (value) => {
           // If the VM was disposed while we were awaiting (e.g. plugin
           // upgrade, crash, uninstall) drop the result silently — there's
@@ -243,6 +300,11 @@ export async function createPluginVm(args: {
           try {
             const message = err instanceof Error ? err.message : String(err)
             const errHandle = ctx.newError(message)
+            // A host failure the sandbox must tell apart carries a code.
+            const code = (err as { code?: unknown } | null)?.code
+            if (typeof code === 'string') {
+              ctx.newString(code).consume((codeHandle) => ctx.setProp(errHandle, 'code', codeHandle))
+            }
             deferred.reject(errHandle)
             errHandle.dispose()
             pumpPendingJobs()
@@ -353,7 +415,7 @@ export async function createPluginVm(args: {
     const exportedHooks = await evalJson<Array<'install' | 'activate' | 'deactivate' | 'uninstall' | 'migrate'>>(
       ctx,
       `__detectExportedHooks()`,
-      evalTimeoutMs,
+      callLimits,
     )
 
     const pluginId = args.env.pluginId
@@ -363,11 +425,11 @@ export async function createPluginVm(args: {
       exportedHooks,
 
       async runLifecycle(hook) {
-        await callVoid(ctx, dispatcher('__runLifecycle'), [hook], evalTimeoutMs)
+        await callVoid(ctx, dispatcher('__runLifecycle'), [hook], callLimits)
       },
 
       async runMigrate(fromVersion) {
-        await callVoid(ctx, dispatcher('__runMigrate'), [fromVersion], evalTimeoutMs)
+        await callVoid(ctx, dispatcher('__runMigrate'), [fromVersion], callLimits)
       },
 
       async runRoute(routeKey, routeCtx) {
@@ -375,7 +437,7 @@ export async function createPluginVm(args: {
           ctx,
           dispatcher('__runRoute'),
           [routeKey, JSON.stringify(routeCtx)],
-          evalTimeoutMs,
+          callLimits,
         )
         return JSON.parse(json) as unknown
       },
@@ -385,7 +447,7 @@ export async function createPluginVm(args: {
           ctx,
           dispatcher('__runHookListener'),
           [listenerId, JSON.stringify(payload ?? null)],
-          evalTimeoutMs,
+          callLimits,
         )
       },
 
@@ -402,7 +464,7 @@ export async function createPluginVm(args: {
           ctx,
           dispatcher('__runHookFilter'),
           [filterId, valueJson, contextJson],
-          evalTimeoutMs,
+          callLimits,
         )
         return JSON.parse(resultJson) as unknown
       },
@@ -412,7 +474,7 @@ export async function createPluginVm(args: {
           ctx,
           dispatcher('__runLoopFetch'),
           [sourceId, JSON.stringify(loopCtx ?? null)],
-          evalTimeoutMs,
+          callLimits,
         )
         const parsed = JSON.parse(json) as { items?: unknown[]; totalItems?: number }
         return {
@@ -426,21 +488,21 @@ export async function createPluginVm(args: {
           ctx,
           dispatcher('__runLoopPreview'),
           [sourceId, JSON.stringify(loopCtx ?? null)],
-          evalTimeoutMs,
+          callLimits,
         )
         const parsed = JSON.parse(json) as unknown
         return Array.isArray(parsed) ? parsed : []
       },
 
       async runSchedule(scheduleId, maxDurationMs) {
-        // Per-schedule deadline replaces the VM's default 5s budget for
-        // this single call only — its registry token is released when the
-        // call settles, so subsequent calls fall back to the default.
-        await callVoid(ctx, dispatcher('__runSchedule'), [scheduleId], maxDurationMs ?? evalTimeoutMs)
+        // A schedule's `maxDurationMs` replaces BOTH default limits for this
+        // single call: it may execute, and it may take, that long in total.
+        const limits: CallLimits = { evalTimeoutMs: maxDurationMs, budgetMs: maxDurationMs }
+        await callVoid(ctx, dispatcher('__runSchedule'), [scheduleId], limits)
       },
 
       async updateSettings(next) {
-        await callVoid(ctx, dispatcher('__updateSettings'), [JSON.stringify(next)], evalTimeoutMs)
+        await callVoid(ctx, dispatcher('__updateSettings'), [JSON.stringify(next)], callLimits)
       },
 
       async runMediaAdapterCall(adapterId, method, callArgs) {
@@ -448,7 +510,7 @@ export async function createPluginVm(args: {
           ctx,
           dispatcher('__runMediaAdapterCall'),
           [adapterId, method, JSON.stringify(callArgs ?? [])],
-          evalTimeoutMs,
+          callLimits,
         )
         return JSON.parse(resultJson) as unknown
       },
@@ -458,7 +520,7 @@ export async function createPluginVm(args: {
           ctx,
           dispatcher('__runMediaUrlTransformer'),
           [transformerId, JSON.stringify(payload)],
-          evalTimeoutMs,
+          callLimits,
         )
         const parsed = JSON.parse(resultJson) as unknown
         return typeof parsed === 'string' ? parsed : null

@@ -36,17 +36,31 @@
  * allowlist entry can exfiltrate visitor data to that host. Showing both
  * before activation is the only way the operator can make an informed
  * decision.
+ *
+ * `frontend.origins` gets the same treatment in a third section: each host a
+ * plugin may load scripts or embed frames from on published pages is listed
+ * in plain words, and an upgrade that adds one flags it as new.
+ *
+ * `mail.templates` is the fourth: each email the plugin can send is listed
+ * with its subject and body, shown in the same script-less frame the Email
+ * workspace previews with. An upgrade that adds a template or changes the
+ * wording of one flags it, because approving a plugin's email is approving
+ * what it says in the site's name.
  */
 import { lt as semverLt } from 'semver'
 import { Button } from '@ui/components/Button'
 import {
   permissionDescription,
   type PluginAppScope,
+  type PluginFrontendOrigins,
+  type PluginMailTemplateDeclaration,
   type PluginManifest,
   type PluginPermission,
 } from '@core/plugin-sdk'
 import { diffPluginAppScopes, type PluginAppScopeChange, type PluginAppScopeDiffRow } from '@core/members'
+import { renderMailTemplate, sampleMailVariables } from '@core/mail'
 import { permissionLabel } from '@core/plugins/manifest'
+import { pluginMailTemplateKey } from '@core/plugins/manifestMail'
 import {
   computePermissionDiff,
   type PermissionDiffRow,
@@ -71,6 +85,44 @@ interface PermissionReviewPending {
    * marks each one.
    */
   previousAppScopes?: PluginAppScope[]
+  /**
+   * The previously-installed manifest's `frontend.origins` (when this is an
+   * upgrade), so a script or frame origin the upgrade adds shows as new.
+   */
+  previousFrontendOrigins?: PluginFrontendOrigins
+  /**
+   * The previously-installed manifest's `mail.templates` (when this is an
+   * upgrade), so a template the upgrade adds or rewords shows as such.
+   */
+  previousMailTemplates?: PluginMailTemplateDeclaration[]
+}
+
+type MailTemplateStatus = 'new' | 'changed' | 'existing'
+
+/** How a template in the new manifest compares with the installed one's. */
+function mailTemplateStatus(
+  template: PluginMailTemplateDeclaration,
+  previous: readonly PluginMailTemplateDeclaration[] | undefined,
+): MailTemplateStatus {
+  const before = previous?.find((candidate) => candidate.key === template.key)
+  if (!before) return 'new'
+  // Everything the owner approved: what it says, what it is called, and what
+  // each variable is (a `text` variable turned `link` can carry an address).
+  const approved = (declaration: PluginMailTemplateDeclaration) =>
+    JSON.stringify([
+      declaration.subject,
+      declaration.body,
+      declaration.label,
+      declaration.description,
+      declaration.variables.map((variable) => [variable.name, variable.kind ?? 'text']).sort(),
+    ])
+  return approved(before) === approved(template) ? 'existing' : 'changed'
+}
+
+const MAIL_TEMPLATE_BADGE: Record<MailTemplateStatus, string> = {
+  new: 'New',
+  changed: 'Changed',
+  existing: 'Already approved',
 }
 
 type HostDiffStatus = 'new' | 'existing' | 'dropped'
@@ -80,7 +132,7 @@ interface HostDiffRow {
   status: HostDiffStatus
 }
 
-function diffNetworkAllowedHosts(
+function diffHostList(
   next: readonly string[],
   previous: readonly string[] | undefined,
   isUpgrade: boolean,
@@ -181,6 +233,44 @@ export function PermissionReviewSection({
     ? appScopeRows.filter((row) => row.status === 'changed' || row.status === 'removed').length
     : 0
   const appScopesDiffer = comparesAppScopes && appScopeRows.some((row) => row.status !== 'unchanged')
+  const originGroups = [
+    {
+      kind: 'scripts',
+      phrase: 'May load scripts from',
+      rows: diffHostList(
+        pending.manifest.frontend?.origins?.scripts ?? [],
+        pending.previousFrontendOrigins?.scripts,
+        isUpgrade,
+      ),
+    },
+    {
+      kind: 'frames',
+      phrase: 'May embed frames from',
+      rows: diffHostList(
+        pending.manifest.frontend?.origins?.frames ?? [],
+        pending.previousFrontendOrigins?.frames,
+        isUpgrade,
+      ),
+    },
+  ] as const
+  const mailTemplates = (pending.manifest.mail?.templates ?? []).map((template) => ({
+    template,
+    status: isUpgrade ? mailTemplateStatus(template, pending.previousMailTemplates) : ('new' as const),
+    preview: renderMailTemplate(
+      {
+        key: pluginMailTemplateKey(pending.manifest.id, template.key),
+        subject: template.subject,
+        body: template.body,
+        variables: template.variables,
+      },
+      { 'site.name': 'Your site', 'site.url': '', ...sampleMailVariables(template.variables) },
+    ),
+  }))
+  const changedMailCount = isUpgrade ? mailTemplates.filter((row) => row.status !== 'existing').length : 0
+  const originRowCount = originGroups.reduce((count, group) => count + group.rows.length, 0)
+  const newOriginCount = isUpgrade
+    ? originGroups.reduce((count, group) => count + group.rows.filter((row) => row.status === 'new').length, 0)
+    : 0
 
   // `editor.code` means the host will dynamically import plugin JavaScript
   // into the admin window — unsandboxed, with full admin-session privileges.
@@ -296,7 +386,7 @@ export function PermissionReviewSection({
       )}
 
       {(() => {
-        const hostRows = diffNetworkAllowedHosts(
+        const hostRows = diffHostList(
           pending.manifest.networkAllowedHosts ?? [],
           pending.previousNetworkAllowedHosts,
           isUpgrade,
@@ -375,6 +465,111 @@ export function PermissionReviewSection({
         </div>
       )}
 
+      {originRowCount > 0 && (
+        <div
+          className={styles.networkSection}
+          data-testid="permission-review-frontend-origins"
+        >
+          <div className={styles.networkHeader}>
+            <strong>Third-party code on published pages</strong>
+            <span className={styles.description}>
+              Visitors' browsers may load code or frames from these hosts on
+              your published pages. Other hosts stay blocked.
+            </span>
+          </div>
+          {isUpgrade && newOriginCount > 0 && (
+            <div className={styles.alert} role="alert" data-testid="frontend-origins-diff-alert">
+              This update adds <strong>{newOriginCount} new third-party host{newOriginCount === 1 ? '' : 's'}</strong> on
+              published pages.
+            </div>
+          )}
+          <ul className={styles.list}>
+            {originGroups.flatMap((group) =>
+              group.rows.map((row) => (
+                <li
+                  key={`${group.kind}:${row.host}:${row.status}`}
+                  className={styles.row}
+                  data-status={row.status}
+                  data-frontend-origin={row.host}
+                  data-frontend-origin-kind={group.kind}
+                >
+                  <div className={styles.label}>
+                    <span>
+                      {group.phrase} <code>{row.host}</code>
+                    </span>
+                    {isUpgrade && (
+                      <span className={`${styles.badge} ${statusBadgeClass(row.status)}`}>
+                        {statusBadgeLabel(row.status)}
+                      </span>
+                    )}
+                  </div>
+                  {row.host.startsWith('*.') && row.status !== 'dropped' && (
+                    <span className={styles.wildcardWarning} data-testid="frontend-origin-wildcard-warning">
+                      Any subdomain of <code>{row.host.slice(2)}</code>, not one host. Approve it only if a
+                      single company controls every subdomain there.
+                    </span>
+                  )}
+                </li>
+              )),
+            )}
+          </ul>
+        </div>
+      )}
+
+      {mailTemplates.length > 0 && (
+        <div className={styles.networkSection} data-testid="permission-review-mail-templates">
+          <div className={styles.networkHeader}>
+            <strong>
+              Adds {mailTemplates.length} email template{mailTemplates.length === 1 ? '' : 's'}
+            </strong>
+            <span className={styles.description}>
+              These are the only emails the plugin can send. They are sent from your site's address, and you
+              can reword each one under Email → Templates.
+            </span>
+          </div>
+          {changedMailCount > 0 && (
+            <div className={styles.alert} role="alert" data-testid="mail-templates-diff-alert">
+              <span>
+                This update adds or changes{' '}
+                <strong>{changedMailCount} email template{changedMailCount === 1 ? '' : 's'}</strong>. Read the
+                highlighted ones before continuing.
+              </span>
+            </div>
+          )}
+          <ul className={styles.list}>
+            {mailTemplates.map(({ template, status, preview }) => (
+              <li
+                key={template.key}
+                className={styles.row}
+                data-mail-template={template.key}
+                data-status={status === 'existing' ? 'existing' : isUpgrade ? 'new' : undefined}
+                data-mail-status={status}
+              >
+                <div className={styles.label}>
+                  <span>{template.label}</span>
+                  {isUpgrade && (
+                    <span className={`${styles.badge} ${status === 'existing' ? styles.badgeExisting : styles.badgeNew}`}>
+                      {MAIL_TEMPLATE_BADGE[status]}
+                    </span>
+                  )}
+                </div>
+                <span className={styles.description}>{template.description}</span>
+                <details className={styles.mailPreview} open={isUpgrade && status !== 'existing'}>
+                  <summary>Read the email</summary>
+                  <p className={styles.mailSubject}>{preview.subject}</p>
+                  <iframe
+                    className={styles.mailBody}
+                    title={`${template.label} email`}
+                    sandbox=""
+                    srcDoc={preview.html}
+                  />
+                </details>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
       <div className={styles.actions}>
         <Button
           variant="secondary"
@@ -404,8 +599,8 @@ export function PermissionReviewSection({
                 : isReinstall
                   ? `Reinstall ${pending.manifest.version}`
                   : isUpgrade
-                    ? newCount > 0
-                      ? `Approve ${newCount} new and update to ${pending.manifest.version}`
+                    ? newCount > 0 || changedMailCount > 0
+                      ? `Approve ${newCount + changedMailCount} new and update to ${pending.manifest.version}`
                       : `Update to ${pending.manifest.version}`
                     : 'Approve and Install'}
           </span>

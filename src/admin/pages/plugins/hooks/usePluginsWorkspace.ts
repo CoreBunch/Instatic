@@ -21,6 +21,8 @@ import type {
   InstalledPlugin,
   PluginManifest,
   PluginAppScope,
+  PluginFrontendOrigins,
+  PluginMailTemplateDeclaration,
   PluginPermission,
 } from '@core/plugin-sdk'
 import { requestCmsSiteReload } from '@admin/state/adminEvents'
@@ -68,6 +70,10 @@ interface PendingInstall {
    * reworded is withdrawn from apps and members at the update.
    */
   previousAppScopes?: PluginAppScope[]
+  /** `frontend.origins` from the existing install, diffed the same way. */
+  previousFrontendOrigins?: PluginFrontendOrigins
+  /** `mail.templates` from the existing install: an added or reworded email is flagged. */
+  previousMailTemplates?: PluginMailTemplateDeclaration[]
 }
 
 /**
@@ -324,6 +330,7 @@ export function usePluginsWorkspace(): PluginsWorkspaceVM {
         ? existing.grantedPermissions
         : undefined
       const previousNetworkAllowedHosts = existing?.manifest.networkAllowedHosts
+      const previousFrontendOrigins = existing?.manifest.frontend?.origins
 
       // EVERY install and upgrade goes through the review dialog — including
       // a zero-permission declarative plugin, which renders "No permissions
@@ -340,6 +347,8 @@ export function usePluginsWorkspace(): PluginsWorkspaceVM {
         ...(existing?.manifest.appScopes !== undefined
           ? { previousAppScopes: existing.manifest.appScopes }
           : {}),
+        ...(previousFrontendOrigins !== undefined ? { previousFrontendOrigins } : {}),
+        ...(existing ? { previousMailTemplates: existing.manifest.mail?.templates ?? [] } : {}),
       })
     } catch (err) {
       setError(getErrorMessage(err, 'Could not install plugin'))

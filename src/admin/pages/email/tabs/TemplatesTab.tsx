@@ -94,7 +94,9 @@ export function TemplatesTab({ initialKey }: { initialKey: string | null }) {
                     </span>
                     <span className={ws.settingsListIdentity}>
                       <span className={ws.settingsListLabel}>{template.label}</span>
-                      {template.customised && <span className={ws.settingsListMeta}>Edited</span>}
+                      {template.customised && (
+                        <span className={ws.settingsListMeta}>{template.wordingProblem ? 'Not used' : 'Edited'}</span>
+                      )}
                     </span>
                     {!active && <ArrowRightIcon size={13} aria-hidden="true" />}
                   </Button>
@@ -149,12 +151,19 @@ function TemplateEditor({
 
   const mode = mounted.mode
   const dirty = subject !== template.subject || body !== template.body
+  const samples = sampleMailVariables(template.variables)
   const unknown = unknownMailVariables(`${subject}\n${body}`, template.variables)
+  const preview = renderMailTemplate({ key: template.key, subject, body, variables: template.variables }, samples)
+  const refusedNames = preview.refused.map((name) => `{${name}}`).join(', ')
   const saveProblem = !subject.trim()
     ? 'Write a subject.'
-    : !body.trim() ? 'Write a body.' : dirty ? null : 'No changes to save.'
-  const samples = sampleMailVariables(template.variables)
-  const preview = renderMailTemplate({ subject, body }, samples)
+    : !body.trim()
+      ? 'Write a body.'
+      : unknown.length > 0
+        ? `${unknown.map((name) => `{${name}}`).join(', ')} is not a variable of this email.`
+        : preview.refused.length > 0
+          ? `${refusedNames} must stand alone before this can be saved.`
+        : dirty ? null : 'No changes to save.'
 
   function insertVariable(name: string) {
     const token = `{${name}}`
@@ -313,10 +322,23 @@ function TemplateEditor({
         )}
       </div>
 
+      {template.wordingProblem !== null && !dirty && (
+        <p className={styles.warning} role="alert">
+          Your wording is not used: {template.wordingProblem} Until you change it, this email is sent with the built-in
+          wording.
+        </p>
+      )}
       {unknown.length > 0 && (
         <p className={styles.warning} role="status">
           {unknown.map((name) => `{${name}}`).join(', ')} {unknown.length === 1 ? 'is not a variable' : 'are not variables'} of
-          this email and will be sent as written.
+          this email. Remove {unknown.length === 1 ? 'it' : 'them'}, or write <code>{'\\{'}</code> to keep the braces.
+        </p>
+      )}
+      {preview.refused.length > 0 && (
+        <p className={styles.warning} role="status">
+          {refusedNames} must stand alone: put a space or a line break around{' '}
+          {preview.refused.length === 1 ? 'it' : 'each'}, or use it as the address of a link, so the value cannot
+          become part of another address.
         </p>
       )}
 

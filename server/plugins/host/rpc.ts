@@ -39,6 +39,8 @@ export async function loadPluginInWorker(args: {
   entryFileUrl: string
   assetRootPath: string
   settings: PluginSettingsValues
+  /** Wall-clock budget per call, when not the default. Tests shorten it. */
+  callBudgetMs?: number
 }): Promise<LoadPluginResult> {
   // Clear any prior host-side state for this plugin id — hook listeners,
   // loop sources, route entries — so a re-load (e.g. install → activate
@@ -76,6 +78,7 @@ export async function loadPluginInWorker(args: {
       manifest: args.manifest,
       entryFileUrl: args.entryFileUrl,
       settings: args.settings,
+      ...(args.callBudgetMs !== undefined ? { callBudgetMs: args.callBudgetMs } : {}),
     },
     'load-plugin-result',
   )
@@ -222,7 +225,10 @@ export async function runRouteInWorker(args: {
       `[plugin:${args.pluginId}] route "${routeKey}" handler failed:`,
       describeWorkerError(result.error, result.stack, 'Plugin route failed'),
     )
-    return Response.json({ error: result.error ?? 'Plugin route failed' }, { status: 500 })
+    // A handler that ran out of its call budget is a gateway timeout, not a
+    // server fault: the worker is healthy and its other calls carried on.
+    // The outcome is unknown (the handler may still finish).
+    return Response.json({ error: result.error ?? 'Plugin route failed' }, { status: result.timedOut ? 504 : 500 })
   }
   return materializeRouteResponse(result.response)
 }
