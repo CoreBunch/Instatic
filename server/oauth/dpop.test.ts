@@ -78,6 +78,51 @@ describe('DPoP proofs', () => {
     expect(await verifyDpopProof(await key.proof('POST', URL_, { header: { jwk: { ...header.jwk, x: header.jwk.x.slice(0, 20) } } }), POST)).toBeNull()
   })
 
+  it('refuses an Ed25519 key of small order, which anyone can "sign" for', async () => {
+    const base64Url = (value: object) => Buffer.from(JSON.stringify(value)).toString('base64url')
+    const forge = (point: Buffer) => {
+      const header = { typ: 'dpop+jwt', alg: 'EdDSA', jwk: { kty: 'OKP', crv: 'Ed25519', x: point.toString('base64url') } }
+      const claims = { jti: crypto.randomUUID(), htm: 'POST', htu: URL_, iat: Math.floor(Date.now() / 1000) }
+      // R is the identity point and S is zero: no private key is involved.
+      const signature = Buffer.alloc(64)
+      signature[0] = 1
+      return `${base64Url(header)}.${base64Url(claims)}.${signature.toString('base64url')}`
+    }
+    const identity = Buffer.alloc(32)
+    identity[0] = 1
+    // The runtime itself would take this signature: the refusal is ours.
+    const key = await crypto.subtle.importKey(
+      'jwk', { kty: 'OKP', crv: 'Ed25519', x: identity.toString('base64url') }, { name: 'Ed25519' }, false, ['verify'],
+    )
+    const forged = forge(identity)
+    const [headerPart, claimsPart, signaturePart] = forged.split('.') as [string, string, string]
+    expect(await crypto.subtle.verify(
+      { name: 'Ed25519' }, key, Buffer.from(signaturePart, 'base64url'), new TextEncoder().encode(`${headerPart}.${claimsPart}`),
+    )).toBe(true)
+    expect(await verifyDpopProof(forged, POST)).toBeNull()
+
+    // Every small-order point, in each way it can be written.
+    const points = [
+      '0100000000000000000000000000000000000000000000000000000000000000',
+      'ecffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f',
+      '0000000000000000000000000000000000000000000000000000000000000000',
+      '26e8958fc2b227b045c3f489f2ef98f0d5dfac05d3c63339b13802886d53fc05',
+      'c7176a703d4dd84fba3c0b760d10670f2a2053fa2c39ccc64ec7fd7792ac037a',
+      'edffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f',
+      'eeffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f',
+    ]
+    for (const hex of points) {
+      for (const signBit of [0, 0x80]) {
+        const point = Buffer.from(hex, 'hex')
+        point[31] = point[31]! | signBit
+        // The forged signature holds for one message in `order`; try enough to hit it.
+        for (let attempt = 0; attempt < 40; attempt++) {
+          expect(await verifyDpopProof(forge(point), POST)).toBeNull()
+        }
+      }
+    }
+  })
+
   it('refuses a proof that carries the private key', async () => {
     const key = await createDeviceKey()
     const header = JSON.parse(Buffer.from((await key.proof('POST', URL_)).split('.')[0]!, 'base64url').toString()) as { jwk: object }
