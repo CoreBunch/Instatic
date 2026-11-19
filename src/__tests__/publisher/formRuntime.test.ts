@@ -182,6 +182,62 @@ describe('form runtime browser behaviour', () => {
       harness.restore()
     }
   })
+
+  it('shows a success message placed outside a form that holds its error message', async () => {
+    document.body.innerHTML = `
+      <form data-instatic-form-mode="cms" data-instatic-form-id="contact-split" data-instatic-page-id="page-home" data-instatic-page-token="page-token">
+        <input name="email" value="human@example.com">
+        <button type="submit">Send</button>
+        <p data-instatic-form-message="error" hidden></p>
+      </form>
+      <p id="outside" data-instatic-form-message="success" data-instatic-form-id="contact-split" hidden>Thanks</p>
+    `
+    const originalFetch = globalThis.fetch
+    globalThis.fetch = (async (input: RequestInfo | URL) => {
+      const path = typeof input === 'string' ? input : input instanceof URL ? input.pathname : input.url
+      if (path === '/_instatic/form/challenge') {
+        return Response.json({ token: 't', challenge: 'c', expiresAt: '2099-01-01T00:00:00.000Z' })
+      }
+      return Response.json({ ok: true })
+    }) as unknown as typeof fetch
+    try {
+      const form = document.querySelector('form') as HTMLFormElement
+      form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+      await waitFor(() => form.getAttribute('data-instatic-form-state') === 'success')
+
+      const outside = document.getElementById('outside') as HTMLElement
+      expect(outside.hidden).toBe(false)
+      expect(outside.textContent).toBe('Thanks. Your submission was received.')
+      expect((form.querySelector('[data-instatic-form-message]') as HTMLElement).hidden).toBe(true)
+    } finally {
+      globalThis.fetch = originalFetch
+      document.body.innerHTML = ''
+    }
+  })
+
+  it('keeps a failure in its own row when the form is repeated in a list', async () => {
+    document.body.innerHTML = `
+      ${failingMemberForm('disconnect-row', 'first')}
+      ${failingMemberForm('disconnect-row', 'second')}
+      <p id="outside" data-instatic-form-message="error" data-instatic-form-id="disconnect-row" hidden></p>
+    `
+    try {
+      await submitFailingMemberForm(document.querySelector('form[data-row="second"]'))
+
+      const message = (row: string) =>
+        document.querySelector(`form[data-row="${row}"] [data-instatic-form-message]`) as HTMLElement
+      const outside = document.getElementById('outside') as HTMLElement
+      expect(message('second').hidden).toBe(false)
+      expect(message('second').textContent).toBe('Could not disconnect.')
+      expect(message('first').hidden).toBe(true)
+      expect(message('first').textContent).toBe('')
+      expect(outside.hidden).toBe(true)
+      expect(outside.textContent).toBe('')
+      expect(outside.hasAttribute('data-instatic-default-text')).toBe(false)
+    } finally {
+      document.body.innerHTML = ''
+    }
+  })
 })
 
 const MIN_SUBMIT_SECONDS = 0.2
@@ -245,6 +301,32 @@ function installRuntimeHarness(options: { failFirstChallenge?: boolean; expiresA
   }) as typeof fetch
 
   return harness
+}
+
+/** A member form that fails at its endpoint, with an error message inside it. */
+function failingMemberForm(formId: string, row: string): string {
+  return `
+    <form data-row="${row}" data-instatic-form-mode="member" data-instatic-form-id="${formId}" action="/_instatic/members/apps/disconnect">
+      <button type="submit">Disconnect</button>
+      <p data-instatic-form-message="error" hidden></p>
+    </form>
+  `
+}
+
+/** Submits a member form whose endpoint answers with an error, and waits for the error state. */
+async function submitFailingMemberForm(form: Element | null): Promise<void> {
+  if (!form) throw new Error('form fixture missing')
+  const originalFetch = globalThis.fetch
+  globalThis.fetch = (async () => Response.json(
+    { ok: false, error: { message: 'Could not disconnect.' } },
+    { status: 400 },
+  )) as unknown as typeof fetch
+  try {
+    form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+    await waitFor(() => form.getAttribute('data-instatic-form-state') === 'error')
+  } finally {
+    globalThis.fetch = originalFetch
+  }
 }
 
 /** Adds a CMS form and attaches the already-loaded runtime to it via focus. */
