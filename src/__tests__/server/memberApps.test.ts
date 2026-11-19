@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
 import { createTestDb, type TestDb } from '../helpers/createTestDb'
 import { DEFAULT_MEMBER_SETTINGS } from '@core/members'
 import { resetPublicOrigins } from '../../../server/auth/security'
-import { setMemberSuspended } from '../../../server/members/admin'
+import { setMemberSuspended, signOutMemberEverywhere } from '../../../server/members/admin'
 import { memberAppRequestFrame } from '../../../server/members/apps/approval'
 import { handleMemberOAuthRequest, resetMemberAppLimits } from '../../../server/members/apps/handler'
 import {
@@ -13,8 +13,10 @@ import {
 } from '../../../server/members/apps/store'
 import { handleMemberRequest } from '../../../server/members/handlers'
 import { resetMemberLimits } from '../../../server/members/limits'
+import { flushMemberMail } from '../../../server/members/mail'
 import { createMember, grantMemberTag, saveMemberSettings } from '../../../server/members/repository'
 import { createMemberSession } from '../../../server/members/sessions'
+import { issueMemberToken } from '../../../server/members/tokens'
 import { pkceChallengeForVerifier } from '../../../server/oauth/secrets'
 import { publishMemberPages } from '../helpers/memberPages'
 
@@ -69,6 +71,7 @@ describe('sign-in for apps', () => {
   })
 
   afterEach(async () => {
+    await flushMemberMail()
     resetPublicOrigins()
     await t.cleanup()
   })
@@ -350,6 +353,36 @@ describe('sign-in for apps', () => {
       expect((await tokenRequest({ grant_type: 'refresh_token', refresh_token: second.refresh_token })).status).toBe(400)
     })
 
+    it('refuses a code or a refresh token asked for another resource', async () => {
+      const code = await approvedCode()
+      const exchange = { grant_type: 'authorization_code', code, redirect_uri: LISTENING, code_verifier: VERIFIER }
+      const wrongExchange = await tokenRequest({ ...exchange, resource: 'https://other.example/' })
+      expect(wrongExchange.status).toBe(400)
+      expect(((await wrongExchange.json()) as { error: string }).error).toBe('invalid_target')
+      // The refusal did not use the code up.
+      const tokens = (await (await tokenRequest(exchange)).json()) as Tokens
+
+      const refresh = { grant_type: 'refresh_token', refresh_token: tokens.refresh_token }
+      const wrongRefresh = await tokenRequest({ ...refresh, resource: `${ORIGIN}/_instatic/mcp` })
+      expect(wrongRefresh.status).toBe(400)
+      expect(((await wrongRefresh.json()) as { error: string }).error).toBe('invalid_target')
+      // Nor did it rotate or revoke anything.
+      expect((await userinfo(tokens.access_token)).status).toBe(200)
+      expect((await tokenRequest(refresh)).status).toBe(200)
+    })
+
+    it('does not exchange a code that was waiting when the member was suspended', async () => {
+      const code = await approvedCode()
+      const exchange = { grant_type: 'authorization_code', code, redirect_uri: LISTENING, code_verifier: VERIFIER }
+      await setMemberSuspended(t.db, memberId, true)
+      expect((await tokenRequest(exchange)).status).toBe(400)
+      // Lifting the suspension does not bring the approval back.
+      await setMemberSuspended(t.db, memberId, false)
+      expect((await tokenRequest(exchange)).status).toBe(400)
+      const { rows } = await t.db`select id from member_app_tokens`
+      expect(rows).toHaveLength(0)
+    })
+
     it('is refused a client secret', async () => {
       const res = await call('/_instatic/members/oauth/token', {
         method: 'POST',
@@ -446,6 +479,51 @@ describe('sign-in for apps', () => {
       // Suspending revoked the grant; lifting it does not bring the app back.
       expect((await userinfo(tokens.access_token)).status).toBe(401)
     })
+
+    /** Post a member form action as the signed-in member's browser. */
+    function memberAction(action: string, fields: Record<string, string>): Promise<Response> {
+      return call(`/_instatic/members/${action}`, {
+        method: 'POST',
+        headers: { cookie, origin: ORIGIN, 'content-type': 'application/json' },
+        body: JSON.stringify(fields),
+      })
+    }
+
+    const accountChanges: Array<[string, () => Promise<void>]> = [
+      ['the member changes their password', async () => {
+        // No password yet and a session a moment old: no current password to give.
+        expect((await memberAction('password/change', { newPassword: 'a-brand-new-password' })).status).toBe(200)
+      }],
+      ['the member sets a new password from a reset link', async () => {
+        const { token } = await issueMemberToken(t.db, memberId, 'reset')
+        expect((await memberAction('password/reset', { token, password: 'a-brand-new-password' })).status).toBe(200)
+      }],
+      ['the member moves the account to a new address', async () => {
+        const { token } = await issueMemberToken(t.db, memberId, 'email_change', { email: 'ada.new@example.com' })
+        expect((await memberAction('email/confirm', { token })).status).toBe(200)
+      }],
+      ['the owner signs the member out everywhere', async () => {
+        expect(await signOutMemberEverywhere(t.db, memberId)).toBe(true)
+      }],
+    ]
+    for (const [name, change] of accountChanges) {
+      it(`ends when ${name}`, async () => {
+        const tokens = await signIn()
+        // A second approval that the app has not collected yet.
+        const waitingCode = await approvedCode()
+        expect((await userinfo(tokens.access_token)).status).toBe(200)
+
+        await change()
+
+        expect((await userinfo(tokens.access_token)).status).toBe(401)
+        expect((await tokenRequest({ grant_type: 'refresh_token', refresh_token: tokens.refresh_token })).status).toBe(400)
+        expect((await tokenRequest({
+          grant_type: 'authorization_code', code: waitingCode, redirect_uri: LISTENING, code_verifier: VERIFIER,
+        })).status).toBe(400)
+        const { rows } = await t.db`select id from member_app_grants where revoked_at is null`
+        expect(rows).toHaveLength(0)
+      })
+    }
 
     it('ends for everyone when the owner removes the app', async () => {
       const tokens = await signIn()
