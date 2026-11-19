@@ -175,7 +175,7 @@ Four primitives; none of them needs custom code.
 
 - Published, it is a real `<form method="post" action="/_instatic/members/<action>">`, so it works with scripts off (the endpoint answers a form post with a redirect). An unknown action falls back to `login`, never to another path (`memberFormActionPath`).
 - With scripts on, the form runtime (`formRuntimeJs.ts`, one script for CMS and member forms) submits in place as JSON. An error about one field marks that control `aria-invalid` and goes to a `base.form-message` with `kind: error` and `fieldName` set to that field, or to the form's general error message.
-- A token action (`password/reset`, `invite/accept`, `verify`, `link/confirm`, `email/confirm`) carries a hidden `token` input that the runtime fills from the page's `?token=`.
+- A token action (`password/reset`, `invite/accept`, `verify`, `link/confirm`, `email/confirm`) carries a hidden `token` input that the runtime fills from the page's `?token=`. That one value needs the script: a render has no request to read the address from, so with scripts off these forms post an empty token and are answered `invalid_token`.
 - After signing in, `?next=` (a site-relative path only) wins, then the form's redirect. Signing in, out or deleting with no redirect reloads the page.
 - Signing out is the `logout` action: a form with no fields, only its submit button. Its catalogue entry has an empty `successMessage`, because the page reloads or moves on and the form goes with the member, so "Add …" inserts an error message and the button and no success message.
 
@@ -246,6 +246,8 @@ An app (Instatic Desktop, later a premium plugin) signs a member in with OAuth 2
 | `GET /_instatic/members/oauth/userinfo` | By access token: `{ id, serverTime }`, with `email`, `emailVerified`, `name` under the `profile` scope and `tags: [{ tag, expiresAt }]` under `access`. A tag held from several sources lasts as long as its longest grant. |
 
 **The approval screen is the owner's page.** Member settings has a slot "Approve an app" (`appSignIn`); without a published page there, `authorize` answers `temporarily_unavailable`. The page uses the form action "Approve an app" and the bindings `{member.appRequest.name}`, `{member.appRequest.access}` and `{member.appRequest.returnsTo}`. Those values are read from the stored request named in the page address (`memberAppRequestFrame`), never from the address itself.
+
+The form posts the request id back in a hidden `request` input. On a page that is rendered for the member (a members-only page, which the approval page should be), the server writes the id of the waiting request into that input after the render (`stampAppRequestId` in `server/members/apps/approval.ts`, called from `publicRenderer.ts`), so the form works with scripts off. Only an id that matched a stored, unanswered request is written. On a page open to everyone the HTML is shared, so the input is empty there and the runtime fills it from the address, as it does for an emailed link's token.
 
 The form asks a yes-or-no question, so it has two buttons, Allow and Cancel, and each carries its answer as the button's own `name` and `value` (`decision=allow`, `decision=deny`; `choice` in `MEMBER_FORM_ACTIONS`). A browser sends a button's value only when that button is pressed, with or without scripts, and the form runtime adds the pressed button the same way. The setup panel's Add button inserts both, and counts a button without the answer as missing. `base.submit` has `name` and `value` props for this.
 

@@ -56,23 +56,60 @@ export async function answerAppSignIn(
   }
 }
 
+/** The request a page was opened with, while it is still waiting for its answer. */
+export interface PendingAppRequestOnPage {
+  /** The request id, exactly as issued: it matched a stored request. */
+  requestId: string
+  frame: MemberAppRequestFrame
+}
+
 /**
- * What the approval page shows about the app that sent the member there: the
- * request named in the page's address, read from the stored row. Null when
- * the address names none, or one that was answered or has run out.
+ * The request named in the page's address, read from the stored row. Null
+ * when the address names none, or one that was answered or has run out.
  */
-export async function memberAppRequestFrame(
+export async function pendingAppRequestOnPage(
   db: DbClient,
   pageUrl: URL | undefined,
-): Promise<MemberAppRequestFrame | null> {
+): Promise<PendingAppRequestOnPage | null> {
   const requestId = pageUrl?.searchParams.get('request')
   if (!requestId) return null
   const request = await findPendingMemberAppRequest(db, requestId)
   if (!request) return null
   const host = new URL(request.redirectUri).hostname
   return {
-    name: request.appName,
-    access: (parseMemberAppScope(request.scope) ?? []).map((scope) => MEMBER_APP_SCOPE_TEXT[scope]).join(', '),
-    returnsTo: isLoopbackHostname(host) ? 'this device' : host,
+    requestId,
+    frame: {
+      name: request.appName,
+      access: (parseMemberAppScope(request.scope) ?? []).map((scope) => MEMBER_APP_SCOPE_TEXT[scope]).join(', '),
+      returnsTo: isLoopbackHostname(host) ? 'this device' : host,
+    },
   }
+}
+
+/**
+ * What the approval page shows about the app that sent the member there.
+ * The values come from the stored request, never from the address itself.
+ */
+export async function memberAppRequestFrame(
+  db: DbClient,
+  pageUrl: URL | undefined,
+): Promise<MemberAppRequestFrame | null> {
+  return (await pendingAppRequestOnPage(db, pageUrl))?.frame ?? null
+}
+
+/** The hidden field an approval form posts the request back in, as `base.form` emits it. */
+const REQUEST_FIELD_PATTERN = /<input\b(?=[^>]*\bdata-instatic-member-link-param="request")[^>]*>/g
+
+/**
+ * Write a waiting request's id into the approval form of a page rendered for
+ * one member, so the form posts it back without the runtime script. Module
+ * render functions never see the request, so this is a step after the
+ * render, like `stampFormPageTokens`.
+ */
+export function stampAppRequestId(html: string, requestId: string): string {
+  // Issued ids are base64url; anything else is not written into markup.
+  if (!/^[A-Za-z0-9_-]+$/.test(requestId)) return html
+  return html.replace(REQUEST_FIELD_PATTERN, (tag) =>
+    /\bvalue=/.test(tag) ? tag : `${tag.slice(0, -1)} value="${requestId}">`,
+  )
 }
