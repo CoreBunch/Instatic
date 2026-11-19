@@ -1,3 +1,4 @@
+import type { DbClient } from './client'
 import type { Migration } from './runMigrations'
 
 /**
@@ -33,6 +34,103 @@ import type { Migration } from './runMigrations'
  * unified store as posts. The legacy "pages" and "page_versions" tables are
  * not part of this baseline.
  */
+/**
+ * `plugin_records.data_json` used to be bound as a JSON string, which the
+ * column stores as a string scalar: it reads back fine, but no `list` filter
+ * can see inside it. This unwraps every such row into the object it holds.
+ *
+ * It must be impossible for this to fail a boot, whatever the rows hold, so
+ * it is one plpgsql block that swallows every error:
+ *
+ *   1. Fast path, where the server has `pg_input_is_valid` (Postgres 16+):
+ *      one set-based UPDATE of the rows whose string is valid JSON. Run
+ *      through EXECUTE so older servers never parse the call. That function
+ *      only reports "soft" errors: a string nested tens of thousands of
+ *      levels deep still raises ("stack depth limit exceeded"), so the whole
+ *      UPDATE sits in its own exception block.
+ *   2. Row path, on servers without the function or when the fast path
+ *      raised: each remaining row is cast in its own exception block; a row
+ *      that cannot be cast is skipped and stays exactly as it is. The reader
+ *      (`readDataJson`) still understands a string row.
+ *
+ * No helper function is created, so no TEMP or CREATE privilege is needed.
+ * A migration of its own, so it never shares a transaction (and a table
+ * lock) with an ALTER TABLE. Only strings that begin an object are touched.
+ *
+ * Two things plpgsql cannot swallow are handled by the runner instead:
+ *
+ *   - A cancel. `exception when others` skips `query_canceled`, so a database
+ *     or role `statement_timeout` shorter than the rewrite would abort the
+ *     migration on every boot. The migration sets `noTimeouts`. A
+ *     `lock_timeout` raises a catchable error, but would leave rows behind
+ *     for no good reason, so it is switched off too.
+ *   - Silence. Whatever was swallowed, the migration is recorded as applied.
+ *     `leftover` counts the rows still stored as strings and the runner logs
+ *     it with the `[migrations]` prefix (the server's own WARNING goes to the
+ *     Postgres log; the driver does not hand notices to the application).
+ *
+ * Exported so the row path can be exercised on a newer server in tests.
+ */
+export const PLUGIN_RECORDS_JSON_REPAIR_SQL = `
+      do $repair$
+      declare
+        stored record;
+        fast_path_done boolean := false;
+        skipped integer := 0;
+      begin
+        if to_regprocedure('pg_input_is_valid(text, text)') is not null then
+          begin
+            execute $fast$
+              update plugin_records
+                 set data_json = (data_json #>> '{}')::jsonb
+               where jsonb_typeof(data_json) = 'string'
+                 and left(ltrim(data_json #>> '{}'), 1) = '{'
+                 and pg_input_is_valid(data_json #>> '{}', 'jsonb')
+            $fast$;
+            fast_path_done := true;
+          exception when others then
+            fast_path_done := false;
+          end;
+        end if;
+
+        if not fast_path_done then
+          for stored in
+            select id, data_json #>> '{}' as raw
+              from plugin_records
+             where jsonb_typeof(data_json) = 'string'
+               and left(ltrim(data_json #>> '{}'), 1) = '{'
+          loop
+            begin
+              update plugin_records set data_json = stored.raw::jsonb where id = stored.id;
+            exception when others then
+              skipped := skipped + 1;
+            end;
+          end loop;
+          if skipped > 0 then
+            raise warning 'plugin_records: % row(s) hold text that is not a JSON object and were left as they are', skipped;
+          end if;
+        end if;
+      exception when others then
+        raise warning 'plugin_records: the JSON repair did not run (%)', sqlerrm;
+      end
+      $repair$;
+`
+
+/**
+ * Rows the repair left as string scalars: text that is not a JSON object, or
+ * a row the repair could not cast. They still read (`readDataJson` parses a
+ * string holding an object) but no `list` filter matches them until the
+ * record is written again.
+ */
+async function pluginRecordsStillStoredAsText(tx: DbClient): Promise<string | null> {
+  const { rows } = await tx.unsafe<{ remaining: string | number }>(
+    `select count(*) as remaining from plugin_records where jsonb_typeof(data_json) = 'string'`,
+  )
+  const remaining = Number(rows[0]?.remaining ?? 0)
+  if (remaining === 0) return null
+  return `${remaining} plugin record(s) are still stored as text. They can be read where the text holds a JSON object, but list filters do not match them until each is saved again.`
+}
+
 export const pgMigrations: Migration[] = [
   {
     id: '001_baseline',
@@ -1633,11 +1731,35 @@ export const pgMigrations: Migration[] = [
     `,
   },
   {
+    // Unwrap plugin record data that was stored as a JSON string scalar.
+    // SQLite has no such rows (JSON is text there), so its twin is a no-op.
+    id: '036_plugin_records_json_repair',
+    sql: PLUGIN_RECORDS_JSON_REPAIR_SQL,
+    noTimeouts: true,
+    leftover: pluginRecordsStillStoredAsText,
+  },
+  {
+    // Plugin storage: an optional unique key per record (derived from the
+    // resource's declared uniqueField) and a version counter for conditional
+    // updates. Schema only. NULL keys are distinct in a unique index on both
+    // dialects, so existing rows and resources without a uniqueField are
+    // unaffected.
+    id: '037_plugin_record_keys',
+    sql: `
+      alter table plugin_records add column unique_key text;
+
+      alter table plugin_records add column version integer not null default 0;
+
+      create unique index if not exists plugin_records_unique_key_idx
+        on plugin_records (plugin_id, resource_id, unique_key);
+    `,
+  },
+  {
     // Sign-in for apps: a site member approves an app (Instatic Desktop, a
     // premium plugin) and the app gets tokens that say who the member is.
     // Separate from the MCP OAuth tables on purpose: those belong to admin
     // users, and a member token must never be usable as an admin token.
-    id: '036_member_apps',
+    id: '038_member_apps',
     sql: `
       create table if not exists member_apps (
         id text primary key,
@@ -1713,7 +1835,7 @@ export const pgMigrations: Migration[] = [
     `,
   },
   {
-    id: '037_member_app_devices',
+    id: '039_member_app_devices',
     sql: `
       -- The device an app runs on: the thumbprint of a key the app keeps and
       -- proves it holds on every refresh, and the name the app gave it.

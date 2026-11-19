@@ -156,6 +156,40 @@ await api.cms.mail.send({
 
 The site owner can reword each template under Email → Templates. `send` resolves once the email is queued; listen for `mail.delivered` and `mail.failed` (with `cms.hooks`) to learn how it went. This is for transactional email to one recipient at a time, not newsletters. Templates are Markdown: raw HTML is stripped, images are not allowed, and links you write out must be `https`. Declare a variable that carries an address with `"kind": "link"`: it must stand alone in the template or be the whole address of a link (`[Open]({link})`), and `instatic-plugin lint` refuses a template that glues one into text. Other variables are text: they may sit anywhere, but a value that contains an address is refused when you send. The owner reads each template before installing, and again when an update changes one.
 
+## Storing records safely
+
+Declare a resource in `plugin.json`, add the `cms.storage` permission, and read and write it through `api.cms.storage.collection(id)`. A plugin's handlers run interleaved (and once per server instance), so never "look, then create". Name a `uniqueField` and let the database decide:
+
+```json
+"resources": [{
+  "id": "events",
+  "title": "Events",
+  "uniqueField": "eventId",
+  "fields": [
+    { "id": "eventId", "type": "text", "label": "Event id", "required": true },
+    { "id": "state", "type": "text", "label": "State" }
+  ]
+}]
+```
+
+```js
+const events = api.cms.storage.collection('events')
+
+// Exactly one of any number of concurrent calls gets created: true.
+const claim = await events.createIfAbsent({ eventId: body.id, state: 'received' })
+if (!claim.created) return { ok: true }
+
+// Read, change, write back: applies only if nobody changed the record since.
+try {
+  await events.update(claim.record.id, { eventId: body.id, state: 'done' }, { ifVersion: claim.record.version })
+} catch (err) {
+  if (!err.message.startsWith('storage_conflict:')) throw err
+  // someone else got there first: read again and decide
+}
+```
+
+`create` rejects with a `storage_duplicate:` message when the key is taken. Full reference: "Plugin-owned records" in `docs/features/plugin-system.md`.
+
 ## Member routes for apps
 
 A site member can sign in to an app the site owner registered. A plugin lets such an app call one of its member routes by declaring an app scope and naming it on the route. `server/index.js` carries a commented example:

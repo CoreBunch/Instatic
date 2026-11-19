@@ -53,7 +53,7 @@ server/members/
 
 `member_settings` is deliberately not in `site.settings_json`: that document is branched and exported.
 
-Sign-in for apps adds five tables in migration `036_member_apps`:
+Sign-in for apps adds five tables in migration `038_member_apps`:
 
 | Table | Holds |
 |---|---|
@@ -63,7 +63,7 @@ Sign-in for apps adds five tables in migration `036_member_apps`:
 | `member_app_codes` | SHA-256 of one-time authorization codes |
 | `member_app_tokens` | SHA-256 of access and refresh tokens, `kind`, `expires_at`, `revoked_at` |
 
-Migration `037_member_app_devices` adds `device_jkt` and `device_name` to `member_app_requests` and `member_app_grants`.
+Migration `039_member_app_devices` adds `device_jkt` and `device_name` to `member_app_requests` and `member_app_grants`.
 
 ## Calling an action
 
