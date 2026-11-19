@@ -59,8 +59,9 @@ export function missingMemberFormParts(
 
 /**
  * The nodes that complete a member form: one labelled input per missing
- * field, then (when the form has none) an error message, a success message,
- * a submit button and the action's second button.
+ * field, then (when the form has none) an error message, a success message
+ * for an action that has one to show, a submit button and the action's
+ * second button.
  */
 export function memberFormFragment(
   action: MemberFormAction,
@@ -102,7 +103,7 @@ export function memberFormFragment(
   }
   if (missing.messages) {
     add(createNode('base.form-message', { formId, kind: 'error', text: '' }))
-    add(createNode('base.form-message', { formId, kind: 'success', text: action.successMessage }))
+    if (action.successMessage) add(createNode('base.form-message', { formId, kind: 'success', text: action.successMessage }))
   }
   const { choice } = action
   if (missing.submit) {

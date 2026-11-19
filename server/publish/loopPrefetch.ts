@@ -246,11 +246,10 @@ async function resolveOneLoop(
     db: DbClient
     site: SiteDocument
     url?: URL
-    request?: SourceRequestContext
+    requestFor?: (source: PrefetchedLoopEntitySource) => Promise<SourceRequestContext>
     branchId?: string
     drafts?: boolean
     closed?: ClosedContent
-    memberId?: string | null
   },
 ): Promise<ResolvedLoopData> {
   const props = readLoopProps(node)
@@ -263,6 +262,10 @@ async function resolveOneLoop(
     offset = props.offset + (pageNumber - 1) * props.pageSize
   }
 
+  // Built for this source alone: a shared source and a per-visitor one in
+  // the same render are told different things (`loopSourceRequest.ts`).
+  const request = ctx.requestFor ? await ctx.requestFor(source) : undefined
+
   const fetchCtx: SourceFetchContext = {
     db: ctx.db,
     site: ctx.site,
@@ -271,13 +274,12 @@ async function resolveOneLoop(
     direction: props.direction,
     limit,
     offset,
-    // Request context — present only when rendering inside a Layer C hole.
-    // Built-in publish-time sources ignore it.
-    request: ctx.request,
+    // Request context — present only for a request-time render (a Layer C
+    // hole, a preview). Built-in publish-time sources ignore it.
+    request,
     branchId: ctx.branchId,
     drafts: ctx.drafts,
     closed: ctx.closed,
-    ...(source.forMember ? { memberId: ctx.memberId } : {}),
   }
 
   try {
@@ -310,8 +312,8 @@ export async function prefetchLoopData(
   db: DbClient,
   url?: URL,
   options?: {
-    /** Per-request context for request-dependent sources (Layer C holes). */
-    request?: SourceRequestContext
+    /** The request each source is given, for request-time renders (Layer C holes, previews). */
+    requestFor?: (source: PrefetchedLoopEntitySource) => Promise<SourceRequestContext>
     /** Limit the walk to a subtree (the hole node id). Defaults to page root. */
     rootNodeId?: string
     /** Branch whose rows loops read; absent means main (publishing, public routes). */
@@ -319,8 +321,6 @@ export async function prefetchLoopData(
     drafts?: boolean
     /** What the visitor may not open; set on every public render. */
     closed?: ClosedContent
-    /** The signed-in member, for sources that list what is theirs (`forMember`). */
-    memberId?: string | null
   },
 ): Promise<LoopDataMap> {
   const nodes = collectLoopNodes(page, site, options?.rootNodeId)
@@ -340,11 +340,10 @@ export async function prefetchLoopData(
         db,
         site,
         url,
-        request: options?.request,
+        requestFor: options?.requestFor,
         branchId: options?.branchId,
         drafts: options?.drafts,
         closed: options?.closed,
-        memberId: options?.memberId,
       })
       return [node.id, data] as [string, ResolvedLoopData]
     }),

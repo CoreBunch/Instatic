@@ -1,5 +1,6 @@
 import type { PluginAdminPage } from './adminPages'
 import type { PluginFrontendDeclarations } from './frontend'
+import type { PluginMailDeclarations } from './mail'
 import type { PluginApiVersion } from './apiVersion'
 import type { PluginPermission } from './permissions'
 import type { PluginResource } from './resources'
@@ -67,6 +68,13 @@ export interface PluginManifest {
    * for placement semantics.
    */
   frontend?: PluginFrontendDeclarations
+  /**
+   * The email templates the plugin can send with `api.cms.mail.send`. They
+   * are listed in Email → Templates, where the owner can reword them.
+   * Requires `mail.send` or `mail.send.external`. See
+   * `docs/features/plugin-system.md` → "Email".
+   */
+  mail?: PluginMailDeclarations
   /** Author / publisher metadata — surfaced on the Plugins admin card. */
   author?: PluginAuthorMetadata
   /** SPDX license identifier (e.g. `MIT`, `Apache-2.0`). */

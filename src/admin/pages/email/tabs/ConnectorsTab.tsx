@@ -239,8 +239,10 @@ function ConnectorDetail({
   const hasSender = overview.defaults.fromAddress !== ''
   const status = connector.secretNeedsReentry
     ? `Re-enter ${secretName}`
-    : connector.lastError
-      ? 'Last send failed'
+    : connector.deliveryPaused
+      ? 'Delivery paused'
+      : connector.lastError
+        ? 'Last send failed'
       : isDefault ? 'Sending through this' : 'Connected'
   const healthy = !connector.secretNeedsReentry && connector.lastError === null
 
@@ -318,6 +320,12 @@ function ConnectorDetail({
         </p>
       )}
       {connector.lastError && <p role="status" className={ws.connectionResultError}>{connector.lastError}</p>}
+      {connector.deliveryPaused && (
+        <p role="status" className={ws.connectionResultError}>
+          Queued email is held. The site tries one email every two minutes and resumes by itself when one gets
+          through; entering the {secretName} again or a test that works resumes it at once.
+        </p>
+      )}
 
       <section className={ws.detailSection}>
         <div className={ws.detailSectionHeader}>

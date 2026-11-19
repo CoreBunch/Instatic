@@ -15,6 +15,7 @@ const link = (path: string): MailTemplateVariable => ({
   name: 'link',
   label: 'The link this email delivers',
   sample: `https://example.com/${path}?token=sample`,
+  kind: 'link',
 })
 
 const PASTE = 'If the link does not open, paste this address into your browser:\n\n{link}'

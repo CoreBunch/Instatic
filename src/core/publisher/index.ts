@@ -28,6 +28,7 @@ export {
   createBaseCspPlan,
   cspMetaTag,
   parseCspContent,
+  insertAfterCspMeta,
   rewriteCspMeta,
   serializeCsp,
   setCspDirective,

@@ -163,6 +163,11 @@ function makeFakeDb() {
       records.splice(index, 1)
       return { rows: [], rowCount: 1 }
     }
+    // syncPluginMailTemplates: these plugins declare no email templates and
+    // nobody has edited one.
+    if (normalized.includes('from mail_templates')) {
+      return { rows: [], rowCount: 0 }
+    }
     throw new Error(`Unhandled SQL: ${sql}`)
   }
 

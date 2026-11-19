@@ -82,8 +82,13 @@ interface LoopEntitySource {
 
   /**
    * Default `false`. Implies `requestDependent`. Output varies per individual
-   * visitor (cookies, randomization). Bypasses the Layer B cache; `fetch()`
-   * runs on every page load. Use sparingly.
+   * visitor (cookies, the signed-in member, randomization). Bypasses the
+   * Layer B cache; `fetch()` runs on every page load. Use sparingly.
+   * `ctx.request.member` is the signed-in site member or `null`, and is
+   * present only for these sources (a plugin's source also needs
+   * `members.read`). The request is built per source: a list on another
+   * source in the same fragment gets neither cookies nor member. A fragment
+   * is per-visitor when ANY list in it uses such a source.
    */
   perVisitor?: boolean
 }
@@ -157,7 +162,7 @@ Its author-facing `fields` list exposes filename, path/URL/source URL, MIME type
 
 ### `members.apps`
 
-The apps the signed-in site member has signed in to with their account (see [members](members.md) → "Sign-in for apps"). It is `perVisitor`: each member gets their own list in an uncached fragment, and a signed-out visitor gets none. `fetch()` reads the member from `ctx.memberId`, which the hole and loop endpoints set only for a source that declares `forMember`. Fields: `name`, `connectedOn`, `lastUsedOn`, `connectedAt`, `lastUsedAt`, `id`. The canvas shows two sample apps from `preview()`. The hole endpoint looks at every loop in the fragment it renders (`holeLoopSources`), not only the hole's own node, so the list also works inside a show-when box or another list: one `perVisitor` source makes the whole fragment uncached, one `forMember` source gets the member resolved.
+The apps the signed-in site member has signed in to with their account (see [members](members.md) → "Sign-in for apps"). It is `perVisitor`: each member gets their own list in an uncached fragment, and a signed-out visitor gets none. `fetch()` reads the member from `ctx.request.member`, which the hole and loop endpoints give every `perVisitor` source (`sourceRequestFor`). Fields: `name`, `connectedOn`, `lastUsedOn`, `connectedAt`, `lastUsedAt`, `id`. The canvas shows two sample apps from `preview()`. The hole endpoint looks at every loop in the fragment it renders (`subtreeHasPerVisitorSource`), not only the hole's own node, so the list also works inside a show-when box or another list: one `perVisitor` source makes the whole fragment uncached.
 
 ### `entry.field`
 

@@ -110,9 +110,7 @@ class PageBuilder {
             this.link('Sign in', '/sign-in', { visitor: 'signedOut' }),
             this.link('Join', '/join', { visitor: 'signedOut' }),
             this.link('Account', '/account', { visitor: 'signedIn' }),
-            this.add(createNode('base.link', {
-              action: 'memberSignOut', text: 'Sign out', signOutRedirect: '/', showWhen: { visitor: 'signedIn' },
-            })),
+            this.memberForm('logout', 'sign-out', { redirectUrl: '/', showWhen: { visitor: 'signedIn' } }),
           ],
           { tag: 'nav' },
         ),
@@ -169,7 +167,7 @@ function withPrefix(pages: Page[], prefix: string): Page[] {
     nodes: Object.fromEntries(
       Object.entries(page.nodes).map(([id, node]) => {
         const props = { ...node.props }
-        for (const key of ['href', 'redirectUrl', 'signOutRedirect']) {
+        for (const key of ['href', 'redirectUrl']) {
           const value = props[key]
           if (typeof value === 'string' && value.startsWith('/')) props[key] = move(value)
         }
@@ -406,7 +404,6 @@ a:hover { text-decoration: underline; }
 [data-demo="header"] > a { font-weight: 700; color: var(--ink); }
 [data-demo="nav"] { display: flex; align-items: center; gap: 20px; flex-wrap: wrap; }
 [data-demo="nav"] form { margin: 0; display: inline-flex; }
-[data-demo="nav"] form [data-instatic-form-message] { display: none; }
 [data-demo="main"] { max-width: 960px; margin: 0 auto; padding: 48px 24px 96px; display: grid; gap: 32px; }
 [data-demo="hero"] h1 { margin: 0 0 8px; font-size: 40px; line-height: 1.1; letter-spacing: -0.02em; }
 [data-demo="hero"] p { margin: 0; color: var(--muted); font-size: 18px; }

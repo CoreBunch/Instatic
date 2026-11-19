@@ -77,7 +77,7 @@ Security properties:
 - Public clients only: no generated client secret is required or stored.
 - Redirect URIs are registered exactly. HTTPS is required except for HTTP loopback callbacks used by native clients. On a loopback IP literal (`127.0.0.1`, `[::1]`) the port is ignored when a request is matched to the registered callback (RFC 8252 §7.3), since a native app listens on whatever port it is given; host, path and query must still match, and `localhost` gets no such exception.
 - Authorization codes expire after five minutes, are stored only as SHA-256 hashes, and can be consumed once.
-- S256 PKCE, exact client id, callback, and MCP `resource` binding are checked during exchange. A code works once; presenting it again revokes the connection it created, with every token already issued from it.
+- S256 PKCE, exact client id, callback, and MCP `resource` binding are checked during exchange. A code works once. Presenting it again before it expires revokes the connection it created, with every token already issued from it; the request only has to name the code's client id, which is public, so the five-minute lifetime is what bounds this. An expired code presented again is refused with `invalid_grant` and changes nothing.
 - OAuth access tokens are opaque, stored only as hashes, bound to the exact MCP resource, and expire after at most one hour.
 - Refresh tokens rotate on every use. Reuse of a rotated token revokes the connection and all of its tokens.
 - OAuth grants expire after 90 days. Disconnecting the connection immediately invalidates its access and refresh tokens.
@@ -215,7 +215,8 @@ Create and manual revoke actions retain the existing `ai.mcp_connector.created` 
 - `server/ai/mcp/oauth/protocol.test.ts` covers issuer trust: the configured public origin wins over the `Host` header, loopback requests fall back to their own origin, and any other request has no issuer.
 - `server/oauth/protocol.test.ts` covers the shared rules: which redirect URIs may be registered, the loopback port exception and its limits, PKCE shapes, and opaque tokens.
 - `server/ai/mcp/oauth/handler.test.ts` covers discovery metadata, the 503 answer without a configured public origin, public dynamic registration, and callback policy.
-- `server/ai/mcp/oauth/store.test.ts` covers PKCE exchange, exact binding, one-time codes, access lookup, refresh rotation/reuse, and revocation.
+- `server/ai/mcp/oauth/store.test.ts` covers PKCE exchange, exact binding, one-time codes, code replay before and after expiry, access lookup, refresh rotation/reuse, and revocation.
+- `server/oauth/grants.test.ts` covers the shared grant logic against an in-memory `GrantStore`: code exchange, code replay before and after expiry, refresh rotation, and refresh reuse.
 - `server/ai/mcp/auth.test.ts` covers personal and OAuth bearer resolution plus the protected-resource challenge with and without a trustworthy issuer.
 - `server/ai/mcp/accountAccess.test.ts` exercises real MCP tool calls and OAuth token endpoints before and after suspension/deletion, permission reduction, and loss of AI access; it also verifies active-account refresh rotation.
 - `src/__tests__/ai/mcpOAuthAuthorizationHandler.test.ts` covers signed-in consent, capability selection, exact callback redirects, denial, and privilege floors.

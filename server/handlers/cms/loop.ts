@@ -34,7 +34,11 @@ import {
   type ResolvedLoopRenderData,
 } from '@core/publisher'
 import { jsonResponse } from '../../http'
+import type { Page } from '@core/page-tree'
+import type { SourceRequestContext } from '@core/loops/types'
+import { buildPageFrame, buildRouteFrame } from '@core/templates/contextFrames'
 import { readLoopProps } from '../../publish/loopPrefetch'
+import { sourceRequestFor, visitorRequestScope } from '../../publish/loopSourceRequest'
 import { getPublishedLoopIndexForVersion } from '../../publish/publishedSnapshotCache'
 import { getPublishVersion } from '../../publish/publishState'
 import { LOOP_RUNTIME_JS } from '../../publish/loopRuntime'
@@ -64,6 +68,24 @@ export function serveLoopRuntimeAsset(): Response {
       'cache-control': 'public, max-age=3600',
     },
   })
+}
+
+/**
+ * The address of the page the list sits on, as the loop runtime reports it
+ * (`pagePath`); the page's own permalink when it is missing or unreadable.
+ * The caller chooses it, so it only ever reaches a per-visitor source, whose
+ * answer is never shared.
+ */
+function requestBaseFor(url: URL, page: Page): Pick<SourceRequestContext, 'query' | 'path' | 'slug'> {
+  const permalink = buildPageFrame(page).permalink
+  let pageUrl: URL
+  try {
+    pageUrl = new URL(url.searchParams.get('pagePath') ?? permalink, url.origin)
+  } catch {
+    pageUrl = new URL(permalink, url.origin)
+  }
+  const route = buildRouteFrame(pageUrl.toString())
+  return { query: Object.fromEntries(pageUrl.searchParams), path: route.path, slug: route.slug }
 }
 
 interface LoopHandlerContext {
@@ -146,11 +168,16 @@ export async function handleLoopRequest(
     return jsonResponse({ error: 'Contextual loops do not support infinite pagination' }, { status: 400 })
   }
 
-  // A per-visitor source answers for this visitor alone, whatever its items
-  // render: the response must never be stored or shared.
-  const privateResponse = forVisitor || source.perVisitor === true
-
   // Fetch the requested page slice.
+  // A per-visitor source is told about this visitor exactly as the fragment
+  // endpoint tells it for the first page: cookies and the signed-in member,
+  // in a response nobody else is given. Every other source gets no request
+  // here, as before.
+  const perVisitor = source.perVisitor === true
+  const request = perVisitor
+    ? await sourceRequestFor(source, visitorRequestScope(requestBaseFor(url, containingPage), req, visitor))
+    : undefined
+
   const offset = props.offset + (pageNumber - 1) * props.pageSize
   let result
   try {
@@ -163,7 +190,7 @@ export async function handleLoopRequest(
       limit: props.pageSize,
       offset,
       closed,
-      ...(source.forMember ? { memberId: (await visitor())?.id ?? null } : {}),
+      request,
     })
   } catch (err) {
     console.error(`[loop] source "${source.id}" failed for "${loopId}":`, err)
@@ -178,8 +205,11 @@ export async function handleLoopRequest(
   // CSS dedup is a no-op here because the asset bundle is already
   // loaded on the client.
   const variants = loopNode.children
+  // A per-visitor source answers for this visitor alone, whatever its items
+  // render: the response must never be stored or shared.
+  const headers = forVisitor || perVisitor ? { headers: PRIVATE_HEADERS } : {}
   if (variants.length === 0) {
-    return jsonResponse({ html: '', hasMore, pageNumber }, privateResponse ? { headers: PRIVATE_HEADERS } : {})
+    return jsonResponse({ html: '', hasMore, pageNumber }, headers)
   }
   const baseConfig: RenderConfig = {
     page: containingPage,
@@ -219,5 +249,5 @@ export async function handleLoopRequest(
     html += renderNode(variantId, iterationConfig, acc)
   })
 
-  return jsonResponse({ html, hasMore, pageNumber }, privateResponse ? { headers: PRIVATE_HEADERS } : {})
+  return jsonResponse({ html, hasMore, pageNumber }, headers)
 }
