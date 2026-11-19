@@ -299,6 +299,32 @@ export async function revokeMemberAppGrantByToken(db: DbClient, token: string, a
   if (grantId) await db.transaction((tx) => revokeGrantRows(tx, grantId, nowIso()))
 }
 
+/**
+ * Disconnect one app from one member: revoke that approval and its tokens.
+ * Returns the app's name, or null when the approval is not this member's or
+ * is already over.
+ */
+export async function revokeMemberAppGrant(
+  db: DbClient,
+  memberId: string,
+  grantId: string,
+): Promise<{ appName: string } | null> {
+  const iso = nowIso()
+  return db.transaction(async (tx) => {
+    const { rows } = await tx<{ name: string }>`
+      select a.name
+        from member_app_grants g
+        join member_apps a on a.id = g.app_id
+       where g.id = ${grantId} and g.member_id = ${memberId}
+         and g.revoked_at is null and g.expires_at > ${iso}
+       limit 1
+    `
+    if (!rows[0]) return null
+    await revokeGrantRows(tx, grantId, iso)
+    return { appName: rows[0].name }
+  })
+}
+
 /** Sign a member out of every app, e.g. after a password reset. */
 export async function revokeAllMemberAppGrants(db: DbClient, memberId: string): Promise<void> {
   const iso = nowIso()

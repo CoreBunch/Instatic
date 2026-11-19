@@ -15,6 +15,7 @@ import type {
   MemberListResponse,
   MemberTagGrant,
 } from '@core/members'
+import { listConnectedMemberApps } from '@core/loops'
 import { isoDate, nowIso } from '@core/utils/isoDate'
 import { memberLinkPage, memberTokenLink, queueMemberMail } from './mail'
 import { getMemberPagePaths } from './pages'
@@ -29,7 +30,7 @@ import {
   recordMemberEvent,
   type MemberRecord,
 } from './repository'
-import { revokeAllMemberAppGrants } from './apps/store'
+import { revokeAllMemberAppGrants, revokeMemberAppGrant } from './apps/store'
 import { listMemberSessions, revokeAllMemberSessions } from './sessions'
 import { issueMemberToken, withdrawMemberTokens } from './tokens'
 
@@ -251,10 +252,11 @@ async function listTagGrants(db: DbClient, memberId: string): Promise<MemberTagG
 export async function getMemberForAdmin(db: DbClient, memberId: string): Promise<MemberDetail | null> {
   const member = await findMemberById(db, memberId)
   if (!member) return null
-  const [item, grants, sessions, events] = await Promise.all([
+  const [item, grants, sessions, connectedApps, events] = await Promise.all([
     listItemFor(db, member),
     listTagGrants(db, member.id),
     listMemberSessions(db, member.id),
+    listConnectedMemberApps(db, member.id),
     listMemberEvents(db, member.id, 50),
   ])
   return {
@@ -263,6 +265,12 @@ export async function getMemberForAdmin(db: DbClient, memberId: string): Promise
     profile: member.profile,
     grants,
     sessions,
+    connectedApps: connectedApps.map((app) => ({
+      id: app.id,
+      name: app.name,
+      connectedAt: app.connectedAt,
+      lastUsedAt: app.lastUsedAt,
+    })),
     events: events.map((event) => ({ kind: event.kind, createdAt: event.createdAt, ipAddress: event.ipAddress })),
   }
 }
@@ -363,6 +371,17 @@ export async function signOutMemberEverywhere(db: DbClient, memberId: string): P
   await revokeAllMemberAppGrants(db, memberId)
   await recordMemberEvent(db, memberId, 'signed_out_by_admin', NO_REQUEST)
   return true
+}
+
+/**
+ * Sign a member out of one app and return the app's name. Null when that
+ * approval is not this member's, or is already over.
+ */
+export async function disconnectMemberAppAsAdmin(db: DbClient, memberId: string, grantId: string): Promise<string | null> {
+  const revoked = await revokeMemberAppGrant(db, memberId, grantId)
+  if (!revoked) return null
+  await recordMemberEvent(db, memberId, 'app_disconnected_by_admin', NO_REQUEST, { app: revoked.appName })
+  return revoked.appName
 }
 
 /** Delete a member for good (see `anonymizeMember`). */

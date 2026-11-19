@@ -304,11 +304,13 @@ export type MemberEventKind =
   | 'profile_updated'
   | 'deleted'
   | 'app_connected'
+  | 'app_disconnected'
   // Done by an administrator, not by the member.
   | 'invited'
   | 'suspended'
   | 'unsuspended'
   | 'signed_out_by_admin'
+  | 'app_disconnected_by_admin'
   | 'tag_granted'
   | 'tag_revoked'
 

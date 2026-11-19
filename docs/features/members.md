@@ -92,6 +92,8 @@ Sign-in for apps adds five tables in migration `038_member_apps`:
 | `email/confirm` | `token` | |
 | `profile` | profile fields | signed in |
 | `delete` | `currentPassword` | signed in; anonymises |
+| `apps/approve` | `request`, `decision` | signed in; answers an app's sign-in request (see "Sign-in for apps") |
+| `apps/disconnect` | `connection` | signed in; signs one app out of the member's account |
 | `GET me` | | `{ member }` or `{ member: null }`, `no-store` |
 | `GET export` | | the member's own data as a download |
 
@@ -203,10 +205,11 @@ The API is `server/handlers/cms/members.ts` under `/admin/api/cms/members`. It d
 | Method | Path | What it does | Needs |
 |---|---|---|---|
 | GET | `/members?q=&status=&tag=&offset=` | One page of 50, plus counts by status and the tags in use | read or manage |
-| GET | `/members/:id` | Profile, tag grants, sessions, newest 50 events | read or manage |
+| GET | `/members/:id` | Profile, tag grants, sessions, connected apps, newest 50 events | read or manage |
 | POST | `/members/invite` | Create an invited member and email a link | manage |
 | POST | `/members/:id/suspend`, `/unsuspend` | Block or restore sign-in | manage |
 | POST | `/members/:id/sign-out` | End every session | manage |
+| DELETE | `/members/:id/apps/:grantId` | Sign the member out of one app | manage |
 | POST / DELETE | `/members/:id/tags` | Grant a tag (source `admin`, optional end) / withdraw one source's grant | manage |
 | DELETE | `/members/:id` | Anonymise, as the member's own delete does | manage + step-up |
 | GET / PUT | `/members/settings` | Sign-up mode, profile fields, link pages | read / manage + step-up |
@@ -215,8 +218,8 @@ The API is `server/handlers/cms/members.ts` under `/admin/api/cms/members`. It d
 - **Invitations** are a single-use link, delivered one of two ways (`delivery` in the request). `email` (the default) mails it and needs outgoing email (`memberMailAvailable`). `link` mails nothing and returns the link in the response for the admin to pass on by hand; it needs only a known public address (`linkAvailable` in the settings response). So a site with no connector can still invite: the dialog's button becomes "Create invitation link" and the link is shown once in `InvitationLinkDialog`, never stored and sent `no-store`. With email set up, "Create a link instead" is offered beside "Send invitation". Only a site that does not know its public address has the button disabled, with the reason. A link handed over this way proves nothing about who owns the address: whoever opens it sets the password, and the account then counts as confirmed on the admin's word. That is why asking for the link needs step-up, the dialog says to send it only to that person, and the audit entry records `delivery`. Inviting an address with a pending invitation makes a fresh link; an address that already has an account is refused. The link opens the owner's `invite` page and lasts 7 days; with no such page set, invitations are off (see "No built-in member pages").
 - **Suspension** takes effect on the next request (`findMemberSession` requires an active member). Sessions and unused tokens are also ended for good, so restoring a member does not bring an old session back.
 - **Search** matches the address and the profile text. `%` and `_` are plain characters.
-- **Settings** are validated beyond the schema: field ids must be unique and must not be a name the member forms use (`email`, `password`, `token`, `currentPassword`, `newPassword`). A link page must be a site path.
-- **Audit:** `member.invite`, `member.suspend`, `member.unsuspend`, `member.signout`, `member.delete`, `member.tag.grant`, `member.tag.revoke`, `member.settings.update`, each with the member's address in the metadata, since the audit trail cannot look a member up by id.
+- **Settings** are validated beyond the schema: field ids must be unique and must not be a name the member forms use (`email`, `password`, `token`, `request`, `decision`, `connection`, `currentPassword`, `newPassword`). A link page must be a site path.
+- **Audit:** `member.invite`, `member.suspend`, `member.unsuspend`, `member.signout`, `member.app.disconnect`, `member.delete`, `member.tag.grant`, `member.tag.revoke`, `member.settings.update`, each with the member's address in the metadata, since the audit trail cannot look a member up by id.
 
 The binding picker lists one `member.profile.<id>` entry per profile field (`loadMemberProfileFields`); an editor who may not read member settings gets the built-in list.
 
@@ -255,6 +258,15 @@ Two show-when rules exist for this page: "Members an app is asking to sign in" (
 
 Member settings warns when the chosen page is open to everyone (`membersOnly` on the page option): on a members page a signed-out visitor is sent to sign in and comes back; on an open page they can do nothing.
 
+**Connected apps.** A member sees and ends their own app sign-ins on a page the owner builds; there is no built-in screen.
+
+- The loop source `members.apps` (`src/core/loops/sources/memberApps.ts`) lists the signed-in member's live approvals: `name`, `connectedOn` / `lastUsedOn` (a date, `YYYY-MM-DD`), `connectedAt` / `lastUsedAt` (ISO) and `id`. It is `perVisitor`, so the list is a fragment fetched for the member who is looking and never cached; a signed-out visitor gets no items. The source reads the member from `ctx.request.member`, which `sourceRequestFor` (`server/publish/loopSourceRequest.ts`) gives every `perVisitor` source from the visitor's own session; a plugin's per-visitor source gets it only with `members.read`, as before.
+- The form action "Disconnect an app" (`apps/disconnect`) goes inside the list, one form per row. Its hidden field `connection` is filled from the row (`{currentEntry.id}`); the setup panel's Add button inserts it. The approval must belong to the member who posts, so an id from someone else's list does nothing. Set the form to redirect to its own page so the list is fresh afterwards.
+- A form shows its messages in the ones inside it and in the ones elsewhere on the page that name its form id. A form repeated in a list shares its id with every row, so when that id occurs more than once on the page a row that holds messages uses only its own (`formMessages` in `formRuntimeJs.ts`).
+- In the admin, the member detail panel lists the same approvals with a Disconnect button (`members.manage`, audited as `member.app.disconnect`).
+- When a member allows an app, they are emailed the template `member.app_connected` ("App signed in", variable `{app.name}`). Refusing sends nothing.
+- Member activity records `app_connected`, `app_disconnected` and `app_disconnected_by_admin`.
+
 **Rules.**
 - Redirect addresses match exactly, except that a loopback IP literal matches on any port (a native app listens on whatever port it gets).
 - A code lasts 5 minutes and works once; presenting it a second time also revokes the grant it created. An access token lasts 1 hour. An approval lasts 90 days; the refresh token rotates on every use, and presenting a used one revokes the whole grant.
@@ -281,13 +293,13 @@ bun run demo:members        # add `-- --skip-build` to reuse the last admin buil
 
 `scripts/members-demo.ts` builds the admin, creates a fresh SQLite database under `.tmp/`, seeds and publishes a small site, and serves it on `http://127.0.0.1:3040` (`DEMO_PORT` changes the port). It prints the owner and member accounts it created. Emails are captured: read them under Email → Activity.
 
-The site (`scripts/lib/membersDemoSite.ts`) is thirteen ordinary editor pages: home, join, sign in, forgot password, the pages the emailed links open (confirm, new password, sign-in link, new address, invitation), an account page, a members area, a pro lounge and the page for approving an app. `membersDemoSettings()` names each of them, by page id, in the member settings, which is what switches the features on. Every form is a `base.form` in Members mode completed by `memberFormFragment`, the function behind the editor's "Add …" button; the header's links use show-when rules, and its sign-out is a member form with the Sign out action, an error message and a button styled as a link; the account page prefills from member bindings. Open any page in the editor to see how it is put together.
+The site (`scripts/lib/membersDemoSite.ts`) is thirteen ordinary editor pages: home, join, sign in, forgot password, the pages the emailed links open (confirm, new password, sign-in link, new address, invitation), an account page, a members area, a pro lounge and the page for approving an app. `membersDemoSettings()` names each of them, by page id, in the member settings, which is what switches the features on. Every form is a `base.form` in Members mode completed by `memberFormFragment`, the function behind the editor's "Add …" button; the header's links use show-when rules, and its sign-out is a member form with the Sign out action, an error message and a button styled as a link; the account page prefills from member bindings and lists the member's connected apps, each with a Disconnect form. Open any page in the editor to see how it is put together.
 
 It is a development tool: fixed passwords, loopback only, and a database that is wiped on every start. `membersDemoSite.test.ts` keeps the pages publishable and correctly gated. The sign-in page also carries the "Email me a link" form. The E2E suite seeds the same pages under an address prefix of its own (`buildMembersDemoPages(prefix)`, printed by `scripts/e2e-members-seed.ts`).
 
 ## Tests
 
-- `src/__tests__/server/memberApps.test.ts` — sign-in for apps end to end: the authorize checks, the member's answer and its browser binding, code exchange, refresh rotation and reuse, `userinfo`, and every way access ends. Runs on SQLite and Postgres.
+- `src/__tests__/server/memberApps.test.ts` — sign-in for apps end to end: the authorize checks, the member's answer and its browser binding, code exchange, refresh rotation and reuse, `userinfo`, every way access ends, the connected-apps list, disconnecting, and the new-app email. Runs on SQLite and Postgres.
 - `src/__tests__/server/members.test.ts` — every flow, on SQLite and (with `DB=postgres`) Postgres.
 - `src/__tests__/server/membersAdmin.test.ts` — the admin API: capability and step-up gates and every route (SQLite). The queries behind it run on Postgres too through the `admin queries` cases in `members.test.ts`.
 - `src/__tests__/server/pluginMembers.test.ts` — plugins: the public mount, member routes, `cms.members`, member events, and the permission each needs.

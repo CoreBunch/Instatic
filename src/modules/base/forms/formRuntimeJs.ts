@@ -452,8 +452,19 @@ export const FORM_RUNTIME_JS = `(() => {
 
   function formMessages(form) {
     const formId = form.getAttribute('data-instatic-form-id') || '';
+    const inside = Array.from(form.querySelectorAll('[data-instatic-form-message]'));
+    if (!formId) return inside;
+    // A form repeated in a list shares its id with every other row, so a
+    // row that holds messages uses only those. Any other form also gets the
+    // messages placed elsewhere on the page and matched by form id.
+    if (inside.length > 0) {
+      const sameId = Array.from(document.querySelectorAll(FORM_SELECTOR)).filter((other) => {
+        return other.getAttribute('data-instatic-form-id') === formId;
+      });
+      if (sameId.length > 1) return inside;
+    }
     return Array.from(document.querySelectorAll('[data-instatic-form-message]')).filter((message) => {
-      return form.contains(message) || (formId && message.getAttribute('data-instatic-form-id') === formId);
+      return form.contains(message) || message.getAttribute('data-instatic-form-id') === formId;
     });
   }
 })();`

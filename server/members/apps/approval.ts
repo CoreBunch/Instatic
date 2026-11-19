@@ -11,7 +11,8 @@ import { oauthRedirect, isLoopbackHostname } from '../../oauth/protocol'
 import { recordMemberEvent } from '../repository'
 import type { MemberActionContext, MemberOutcome, SignedInMember } from '../service'
 import { parseMemberAppScope } from './protocol'
-import { decideMemberAppRequest, findPendingMemberAppRequest } from './store'
+import { queueMemberMail } from '../mail'
+import { decideMemberAppRequest, findPendingMemberAppRequest, revokeMemberAppGrant } from './store'
 
 export async function answerAppSignIn(
   ctx: MemberActionContext,
@@ -49,6 +50,8 @@ export async function answerAppSignIn(
     }
   }
   await recordMemberEvent(ctx.db, current.member.id, 'app_connected', ctx, { app: request.appName })
+  // A sign-in the member did not make is one they should hear about.
+  queueMemberMail(ctx.db, { kind: 'app_connected', to: current.member.email, appName: request.appName })
   return {
     ok: true,
     code: 'app_approved',
@@ -61,6 +64,23 @@ export interface PendingAppRequestOnPage {
   /** The request id, exactly as issued: it matched a stored request. */
   requestId: string
   frame: MemberAppRequestFrame
+}
+
+/**
+ * A member disconnects one of their apps, from the list on a page the owner
+ * built. `connection` is the approval's id, as the list gave it.
+ */
+export async function disconnectApp(
+  ctx: MemberActionContext,
+  current: SignedInMember,
+  input: { connection: string },
+): Promise<MemberOutcome> {
+  if (!input.connection) return { ok: false, code: 'invalid_input', field: 'connection' }
+  const revoked = await revokeMemberAppGrant(ctx.db, current.member.id, input.connection)
+  // Not theirs, or already gone: either way it is not connected, which is
+  // what they asked for. Say so only when something was actually ended.
+  if (revoked) await recordMemberEvent(ctx.db, current.member.id, 'app_disconnected', ctx, { app: revoked.appName })
+  return { ok: true, code: 'updated' }
 }
 
 /**

@@ -94,6 +94,8 @@ interface MemberMailInput {
   to: string
   /** The action link; absent for pure notices. */
   link?: string
+  /** The app a notice is about. */
+  appName?: string
 }
 
 const pending = new Set<Promise<void>>()
@@ -126,7 +128,11 @@ export function queueMemberMail(db: DbClient, input: MemberMailInput): void {
   const task = queueTemplateMail(db, {
     key,
     to: input.to,
-    variables: { 'member.email': input.to, ...(input.link ? { link: input.link } : {}) },
+    variables: {
+      'member.email': input.to,
+      ...(input.link ? { link: input.link } : {}),
+      ...(input.appName ? { 'app.name': input.appName } : {}),
+    },
     deliverBefore,
   })
     .then(() => undefined)

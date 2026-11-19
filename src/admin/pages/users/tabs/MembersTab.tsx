@@ -22,6 +22,7 @@ import type {
 } from '@core/members'
 import {
   deleteCmsMember,
+  disconnectCmsMemberApp,
   getCmsMember,
   getCmsMemberSettings,
   grantCmsMemberTag,
@@ -249,6 +250,8 @@ export function MembersTab({
       grantTag: (name, expiresAt) => void run(() => grantCmsMemberTag(member.id, name, expiresAt), 'The tag could not be added'),
       revokeTag: (grant: MemberTagGrant) =>
         void run(() => revokeCmsMemberTag(member.id, grant.tag, grant.source), 'The tag could not be removed'),
+      disconnectApp: (app) =>
+        void run(() => disconnectCmsMemberApp(member.id, app.id), 'The app could not be disconnected', `${who} is signed out of ${app.name}`),
     }
   }
 

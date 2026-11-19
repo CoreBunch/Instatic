@@ -4,7 +4,7 @@
  */
 import { useId, useState, type FormEvent } from 'react'
 import ld from '@admin/shared/ListDetail/ListDetail.module.css'
-import { isGrantableMemberTag, type MemberDetail, type MemberTagGrant } from '@core/members'
+import { isGrantableMemberTag, type MemberConnectedApp, type MemberDetail, type MemberTagGrant } from '@core/members'
 import { formatRelativeTimeAgo } from '@core/utils/relativeTime'
 import { Button } from '@ui/components/Button'
 import { Input } from '@ui/components/Input'
@@ -21,6 +21,7 @@ export interface MemberActions {
   resendInvitation: () => void
   grantTag: (tag: string, expiresAt: string | null) => void
   revokeTag: (grant: MemberTagGrant) => void
+  disconnectApp: (app: MemberConnectedApp) => void
 }
 
 export function MemberDetailPanel({
@@ -178,6 +179,39 @@ export function MemberDetailPanel({
                 <time dateTime={session.lastSeenAt} title={formatDateTime(session.lastSeenAt)}>
                   active {formatRelativeTimeAgo(Date.parse(session.lastSeenAt))}
                 </time>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+
+      <section className={styles.detailSection} aria-label="Connected apps">
+        <h4>Connected apps</h4>
+        {detail.connectedApps.length === 0 ? (
+          <p className={styles.plain}>No apps are signed in to this account.</p>
+        ) : (
+          <ul className={styles.grants}>
+            {detail.connectedApps.map((app) => (
+              <li key={app.id} className={styles.grant}>
+                <span className={styles.grantMain}>
+                  <span className={styles.appName}>{app.name}</span>
+                  <span className={styles.grantMeta}>
+                    Connected {formatDate(app.connectedAt)}
+                    {' · '}
+                    {app.lastUsedAt ? `Last used ${formatDate(app.lastUsedAt)}` : 'Not used yet'}
+                  </span>
+                </span>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="xs"
+                  onClick={() => actions.disconnectApp(app)}
+                  disabled={busy || !canManage}
+                  tooltip={blocked}
+                  aria-label={`Disconnect ${app.name}`}
+                >
+                  Disconnect
+                </Button>
               </li>
             ))}
           </ul>

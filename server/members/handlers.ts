@@ -29,6 +29,7 @@
  *   POST email/confirm     token
  *   POST profile           profile fields                        (signed in)
  *   POST delete            currentPassword                       (signed in)
+ *   POST apps/disconnect   connection                (signed in; ends one app's sign-in)
  *   POST apps/approve      request, decision          (signed in; answers an app's
  *                          sign-in request: decision is `allow` or `deny`, and a post
  *                          without one is refused, never taken as yes)
@@ -49,7 +50,7 @@ import type { MemberErrorCode } from '@core/members'
 import { Type, safeParseValue } from '@core/utils/typeboxHelpers'
 import { clientIp, isSiteOrigin, originAllowed } from '../auth/security'
 import { jsonResponse, readTextBodyWithLimit, RequestBodyTooLargeError, setCookieHeader } from '../http'
-import { answerAppSignIn } from './apps/approval'
+import { answerAppSignIn, disconnectApp } from './apps/approval'
 import { handleMemberOAuthRequest } from './apps/handler'
 import { MEMBER_OAUTH_PATH_PREFIX } from './apps/protocol'
 import { memberLinkOrigin, memberMailAvailable } from './mail'
@@ -310,7 +311,7 @@ async function buildContext(db: DbClient, req: Request): Promise<MemberActionCon
 
 /** Fields that are part of the protocol, not of a member's profile. */
 const RESERVED_FIELDS = new Set([
-  'email', 'password', 'token', 'request', 'decision', 'currentPassword', 'newPassword', '_success', '_error',
+  'email', 'password', 'token', 'request', 'decision', 'connection', 'currentPassword', 'newPassword', '_success', '_error',
 ])
 
 function profileFieldsOf(fields: Fields): Fields {
@@ -360,7 +361,7 @@ async function runAction(
   }
 
   // Everything below needs a signed-in member.
-  if (!['password/change', 'email/change', 'profile', 'delete', 'apps/approve'].includes(action)) {
+  if (!['password/change', 'email/change', 'profile', 'delete', 'apps/approve', 'apps/disconnect'].includes(action)) {
     return null
   }
   const current = await resolveSignedInMember(db, req)
@@ -381,6 +382,8 @@ async function runAction(
       return respond(req, fields, await answerAppSignIn(ctx, current, {
         requestId: field('request'), browserMarker: readAppRequestMarker(req), decision: field('decision'),
       }))
+    case 'apps/disconnect':
+      return respond(req, fields, await disconnectApp(ctx, current, { connection: field('connection') }))
     default:
       return respond(req, fields, await deleteAccount(ctx, current, {
         currentPassword: fields.currentPassword,

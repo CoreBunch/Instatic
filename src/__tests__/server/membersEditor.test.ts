@@ -111,13 +111,20 @@ function gatedPage(): Page {
     rootNodeId: 'root',
     nodes: Object.fromEntries(
       [
-        node('root', 'base.body', {}, ['gate', 'members_loop']),
+        node('root', 'base.body', {}, ['gate', 'members_loop', 'apps_loop', 'apps_box']),
         node('gate', 'base.container', { showWhen: { visitor: 'tags', tags: ['pro'] } }, ['gate_line', 'gate_loop']),
         node('gate_line', 'base.text', { text: 'PRO-BOX-LINE', tag: 'p' }),
         node('gate_loop', 'base.loop', loop, ['gate_loop_item']),
         node('gate_loop_item', 'base.text', { text: 'PRO-BOX-ITEM {currentEntry.title}', tag: 'p' }),
         node('members_loop', 'base.loop', { ...loop, showWhen: { visitor: 'signedIn' } }, ['members_loop_item']),
         node('members_loop_item', 'base.text', { text: 'MEMBERS-LIST-ITEM {currentEntry.title}', tag: 'p' }),
+        // A member's own list with no rule on it, on an open page.
+        node('apps_loop', 'base.loop', { ...loop, sourceId: 'members.apps', orderBy: 'connectedAt' }, ['apps_loop_item']),
+        node('apps_loop_item', 'base.text', { text: 'APP-ROW {currentEntry.name}', tag: 'p' }),
+        // The same kind of list inside a box for signed-in members: the box is the fragment.
+        node('apps_box', 'base.container', { showWhen: { visitor: 'signedIn' } }, ['apps_boxed']),
+        node('apps_boxed', 'base.loop', { ...loop, sourceId: 'members.apps', orderBy: 'connectedAt', pagination: 'none' }, ['apps_boxed_item']),
+        node('apps_boxed_item', 'base.text', { text: 'BOXED-APP {currentEntry.name}', tag: 'p' }),
       ].map((entry) => [entry.id, entry]),
     ),
   } as Page
@@ -409,6 +416,37 @@ describe('member bindings and show-when rules', () => {
       expect(await signedOutList.text()).not.toContain('MEMBERS-LIST-ITEM')
       expect(signedOutList.headers.get('cache-control')).toBe('private, no-store')
       expect(await (await list('members_loop', plain)).text()).toContain('MEMBERS-LIST-ITEM')
+
+      // A list of the member's own things is theirs alone, even with no rule
+      // on it and nothing about the member in its items.
+      for (const cookie of [undefined, plain]) {
+        expect((await list('apps_loop', cookie)).headers.get('cache-control')).toBe('private, no-store')
+      }
+    })
+
+    it('fills a member\'s own list that sits inside another per-visitor element', async () => {
+      const ada = await signedIn('ada@example.com', 'Ada')
+      const bob = await signedIn('bob@example.com', 'Bob')
+      const { rows } = await t.db<{ id: string }>`select id from members where email = 'ada@example.com'`
+      const now = Date.now()
+      await t.db`
+        insert into member_apps (id, name, redirect_uris_json, scopes_json, created_at)
+        values ('app_boxed', 'Boxed Desktop', '[]', '[]', ${new Date(now).toISOString()})
+      `
+      await t.db`
+        insert into member_app_grants (id, member_id, app_id, scope, created_at, expires_at)
+        values ('grant_boxed', ${rows[0].id}, 'app_boxed', 'profile', ${new Date(now).toISOString()}, ${new Date(now + 86_400_000).toISOString()})
+      `
+      const index = await getPublishedNodeIndexForVersion(t.db, getPublishVersion())
+      const box = (cookie?: string) =>
+        get(`/_instatic/hole/apps_box?v=${index!.snapshotHash}&u=${encodeURIComponent('/gated')}`, cookie)
+
+      const forAda = await box(ada)
+      expect(await forAda.text()).toContain('BOXED-APP Boxed Desktop')
+      expect(forAda.headers.get('cache-control')).toBe('private, no-store')
+      // Bob is signed in too, so he gets the box, and none of her apps in it.
+      expect(await (await box(bob)).text()).not.toContain('Boxed Desktop')
+      expect(await (await box()).text()).not.toContain('Boxed Desktop')
     })
 
     it('renders a protected page in one piece for its member', async () => {
@@ -533,6 +571,33 @@ describe('member forms', () => {
     expect(html).toContain('<button type="submit">Plain</button>')
     // Refusing is an answer inside the approve form, not a form of its own.
     expect(memberFormAction('apps/deny')).toBeUndefined()
+  })
+
+  it('gives the disconnect form a hidden field that names the app of its row', () => {
+    const action = memberFormAction('apps/disconnect')!
+    const empty = makePage('d', 'd', [
+      node('d_form', 'base.form', { mode: 'member', formId: 'disconnect', memberAction: 'apps/disconnect' }, []),
+    ])
+    const missing = missingMemberFormParts(empty, 'd_form', action)
+    expect(missing.fields.map((field) => field.name)).toEqual(['connection'])
+
+    const fragment = memberFormFragment(action, 'disconnect', missing)
+    const added = fragment.rootIds.map((id) => fragment.nodes[id]!)
+    // No label and no wrapper: the member is not asked anything.
+    expect(added[0]).toMatchObject({
+      moduleId: 'base.input',
+      props: { name: 'connection', inputType: 'hidden', value: '{currentEntry.id}' },
+    })
+    expect(added.filter((entry) => entry.moduleId === 'base.label')).toEqual([])
+    expect(added.filter((entry) => entry.moduleId === 'base.submit').map((button) => button.props.label)).toEqual(['Disconnect'])
+
+    const complete = makePage('e', 'e', [
+      node('e_form', 'base.form', { mode: 'member', formId: 'disconnect', memberAction: 'apps/disconnect' }, ['e__which', 'e__go', 'e__msg']),
+      node('e__which', 'base.input', { fieldId: 'connection', name: 'connection', inputType: 'hidden', value: '{currentEntry.id}' }),
+      node('e__go', 'base.submit', { label: 'Disconnect' }),
+      node('e__msg', 'base.form-message', { formId: 'disconnect', kind: 'error', text: '' }),
+    ])
+    expect(missingMemberFormParts(complete, 'e_form', action)).toEqual({ fields: [], submit: false, messages: false, secondary: false })
   })
 
   it('counts a button without the answer as missing on a yes-or-no form', () => {
