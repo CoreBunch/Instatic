@@ -43,7 +43,7 @@ export async function handleDataRoutes(
   try {
     return (await handleDataMetaRoutes(req, db, scope))
       ?? (await handleDataSearchRoute(req, db, scope))
-      ?? (await handleDataTableRoutes(req, db, scope))
+      ?? (await handleDataTableRoutes(req, db, scope, options))
       ?? (await handleDataRowRoutes(req, db, scope, options))
   } catch (err) {
     if (err instanceof PagePublishError) return jsonResponse({ error: err.message }, { status: 409 })

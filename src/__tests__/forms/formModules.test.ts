@@ -155,8 +155,10 @@ describe('base form primitive modules', () => {
       disabled: false,
     }, []).html).toBe('<input type="radio" data-instatic-form-control="radio" data-instatic-field-id="plan" name="plan" id="plan-pro" value="pro">')
 
-    expect(SubmitModule.render({ label: 'Subscribe', disabled: false, formId: '' }, []).html)
+    expect(SubmitModule.render({ label: 'Subscribe', disabled: false, formId: '', name: '', value: '' }, []).html)
       .toBe('<button type="submit">Subscribe</button>')
+    expect(SubmitModule.render({ label: 'Cancel', disabled: false, formId: '', name: 'decision', value: 'deny' }, []).html)
+      .toBe('<button type="submit" name="decision" value="deny">Cancel</button>')
 
     expect(FormMessageModule.render({
       formId: 'newsletter',

@@ -11,6 +11,7 @@
 
 export type { LoopItem } from './types'
 export { pageToLoopItem, filterPagesForLoop } from './sources/sitePages'
+export { listConnectedMemberApps, MEMBER_APPS_SOURCE_ID, type ConnectedMemberApp } from './sources/memberApps'
 export {
   ENTRY_FIELD_FILTER_KEY,
   ENTRY_FIELD_SOURCE_ID,

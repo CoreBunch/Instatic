@@ -10,7 +10,7 @@ CMS-native forms let the visual editor build semantic HTML forms from primitive 
 - Paste HTML, agent HTML insert/replace, and Super Import all use `@core/htmlImport`, so semantic HTML form tags import as these same primitive modules.
 - CMS form snapshots are derived at publish/request time by `src/core/forms/snapshot.ts`.
 - Public submissions go through `POST /_instatic/form/challenge` and `POST /_instatic/form/submit`, implemented in `server/forms/handler.ts`.
-- The browser runtime ships through the module-JS channel: `base.form`'s render() emits it as `js` when `mode === 'cms'` (`src/modules/base/forms/formRuntimeJs.ts`), published pages load it from `/_instatic/module-js/base.form.js`, and `server/forms/formRuntime.ts`'s `stampFormPageTokens` stamps `data-instatic-page-token` + `data-instatic-page-id` onto every CMS form tag — on baked pages and on hole fragments.
+- The browser runtime ships through the module-JS channel: `base.form`'s render() emits it as `js` when `mode === 'cms'` (`src/modules/base/forms/formRuntimeJs.ts`), published pages load it from `/_instatic/module-js/base.form.js?v=<contentHash>` (the hash of the runtime body, so a changed runtime is a new URL), and `server/forms/formRuntime.ts`'s `stampFormPageTokens` stamps `data-instatic-page-token` + `data-instatic-page-id` onto every CMS form tag — on baked pages and on hole fragments.
 
 ## Editor Model
 
@@ -35,13 +35,19 @@ The design canvas treats authored form controls as non-interactive editor conten
 
 The form setup block also exposes an editor-only preview state switch (`default`, `submitting`, `success`, `error`). It annotates the canvas form and message nodes with the same state shape the public runtime uses, without changing saved props or published HTML.
 
+## Member mode
+
+`mode: 'member'` turns the form into a member action (sign up, sign in, reset password, update profile, …) instead of a table submission. It posts to `/_instatic/members/<action>` and has no target table, honeypot or challenge: the member endpoints carry their own origin checks and rate limits. See [members](members.md) → "Building member pages in the editor".
+
+`base.form-message` with `kind: error` can name one field (`fieldName`); it then shows only errors about that field.
+
 ## Auto Wiring
 
 Auto wiring is structural:
 
 - A `base.label` with `targetMode: "auto"` targets the next form control below it in the same form subtree.
 - A `base.submit` inside a form submits the nearest form by normal HTML semantics. Its `formId` prop is only an override for out-of-form submit buttons.
-- `base.form-message` nodes can be inside the form or point at a form id.
+- `base.form-message` nodes can be inside the form or point at a form id; a form uses both. The one exception is a form repeated in a list: its id occurs more than once on the page, so a row that holds messages uses only its own.
 
 The published runtime finalizes auto labels in the browser because labels and inputs are independent nodes. It assigns an id to the next control when needed and sets the label's `for` attribute.
 

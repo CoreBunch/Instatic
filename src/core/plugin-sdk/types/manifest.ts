@@ -1,5 +1,6 @@
 import type { PluginAdminPage } from './adminPages'
 import type { PluginFrontendDeclarations } from './frontend'
+import type { PluginMailDeclarations } from './mail'
 import type { PluginApiVersion } from './apiVersion'
 import type { PluginPermission } from './permissions'
 import type { PluginResource } from './resources'
@@ -39,6 +40,14 @@ export interface PluginAuthorMetadata {
 // by the host at install time
 // ---------------------------------------------------------------------------
 
+/** One thing an app may be allowed to do through a plugin. See `PluginManifest.appScopes`. */
+export interface PluginAppScope {
+  /** Lowercase kebab-case, unique within the plugin: `read`, `manage-licenses`. */
+  name: string
+  /** What it lets the app do, as a member reads it: "See your purchases and plan". */
+  description: string
+}
+
 export interface PluginManifest {
   id: string
   name: string
@@ -60,6 +69,15 @@ export interface PluginManifest {
   /** Optional Visual Component / template / class pack. */
   pack?: PluginPackManifest
   /**
+   * What an app a site member signed in to may be allowed to do through
+   * this plugin. Each entry becomes the app scope `plugin:<id>:<name>`,
+   * which the site owner can give an app and the member sees, in
+   * `description`'s words, before allowing it. A member route accepts an app
+   * token only when it names one of these (`routes.member.get(path,
+   * { app: { scope } }, handler)`). Requires the `members.read` permission.
+   */
+  appScopes?: PluginAppScope[]
+  /**
    * Declarative frontend tag list — scripts, styles, meta, link, and shared
    * host-runtime references that the host injects into every published page
    * on behalf of this plugin. Requires the `frontend.assets` permission. See
@@ -67,6 +85,13 @@ export interface PluginManifest {
    * for placement semantics.
    */
   frontend?: PluginFrontendDeclarations
+  /**
+   * The email templates the plugin can send with `api.cms.mail.send`. They
+   * are listed in Email → Templates, where the owner can reword them.
+   * Requires `mail.send` or `mail.send.external`. See
+   * `docs/features/plugin-system.md` → "Email".
+   */
+  mail?: PluginMailDeclarations
   /** Author / publisher metadata — surfaced on the Plugins admin card. */
   author?: PluginAuthorMetadata
   /** SPDX license identifier (e.g. `MIT`, `Apache-2.0`). */

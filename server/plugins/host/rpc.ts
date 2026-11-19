@@ -15,7 +15,7 @@ import { hookBus } from '@core/plugins/hookBus'
 import { mediaStorageRegistry } from '@core/plugins/mediaStorageRegistry'
 import { mediaVariantDelegateRegistry } from '@core/plugins/mediaVariantDelegateRegistry'
 import type { LoopFetchResult, LoopItem } from '@core/loops/types'
-import type { SerializedUser } from '../protocol/messages'
+import type { SerializedApp, SerializedMember, SerializedUser } from '../protocol/messages'
 import type { LoadPluginResult } from '../protocol/messages'
 import { normalizeRoutePath } from '../protocol/parser'
 import { materializeRouteResponse, serializeRouteRequest } from './routeIo'
@@ -39,6 +39,8 @@ export async function loadPluginInWorker(args: {
   entryFileUrl: string
   assetRootPath: string
   settings: PluginSettingsValues
+  /** Wall-clock budget per call, when not the default. Tests shorten it. */
+  callBudgetMs?: number
 }): Promise<LoadPluginResult> {
   // Clear any prior host-side state for this plugin id — hook listeners,
   // loop sources, route entries — so a re-load (e.g. install → activate
@@ -76,6 +78,7 @@ export async function loadPluginInWorker(args: {
       manifest: args.manifest,
       entryFileUrl: args.entryFileUrl,
       settings: args.settings,
+      ...(args.callBudgetMs !== undefined ? { callBudgetMs: args.callBudgetMs } : {}),
     },
     'load-plugin-result',
   )
@@ -187,6 +190,8 @@ export async function runRouteInWorker(args: {
   path: string
   request: Request
   user: SerializedUser | null
+  member: SerializedMember | null
+  app: SerializedApp | null
 }): Promise<Response> {
   const entry = hostPlugins.get(args.pluginId)
   const routeKey = `${args.method.toUpperCase()}:${normalizeRoutePath(args.path)}`
@@ -208,6 +213,8 @@ export async function runRouteInWorker(args: {
       routeKey,
       request: serializedReq,
       user: args.user,
+      member: args.member,
+      app: args.app,
       body: parsedBody,
     },
     'route-result',
@@ -218,7 +225,10 @@ export async function runRouteInWorker(args: {
       `[plugin:${args.pluginId}] route "${routeKey}" handler failed:`,
       describeWorkerError(result.error, result.stack, 'Plugin route failed'),
     )
-    return Response.json({ error: result.error ?? 'Plugin route failed' }, { status: 500 })
+    // A handler that ran out of its call budget is a gateway timeout, not a
+    // server fault: the worker is healthy and its other calls carried on.
+    // The outcome is unknown (the handler may still finish).
+    return Response.json({ error: result.error ?? 'Plugin route failed' }, { status: result.timedOut ? 504 : 500 })
   }
   return materializeRouteResponse(result.response)
 }

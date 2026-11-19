@@ -34,9 +34,17 @@ import {
   HtmlAttributesPropSchemaOptions,
 } from '@modules/base/shared/htmlAttributes'
 import { htmlAttributesAttr } from '@core/publisher'
+import {
+  DEFAULT_MEMBER_FORM_ACTION,
+  MEMBER_FORM_ACTIONS,
+  memberFormAction,
+  memberFormActionPath,
+} from '@core/members'
 
 const FormPropsSchema = Type.Object({
-  mode: Type.Union([Type.Literal('cms'), Type.Literal('custom')], { default: 'cms' }),
+  mode: Type.Union([Type.Literal('cms'), Type.Literal('custom'), Type.Literal('member')], { default: 'cms' }),
+  /** Which member action a `member` form performs: a path under `/_instatic/members/`. */
+  memberAction: Type.String({ default: DEFAULT_MEMBER_FORM_ACTION }),
   formId: Type.String({ default: 'form' }),
   targetTableId: Type.String({ default: '' }),
   action: Type.String({ default: '' }),
@@ -151,6 +159,12 @@ const SubmitPropsSchema = Type.Object({
   label: Type.String({ default: 'Submit' }),
   disabled: Type.Boolean({ default: false }),
   formId: Type.String({ default: '' }),
+  /**
+   * The button's own `name` and `value`, sent with the form only when this
+   * button is the one pressed. How a form with two buttons says which.
+   */
+  name: Type.String({ default: '' }),
+  value: Type.String({ default: '' }),
 })
 
 type SubmitProps = Static<typeof SubmitPropsSchema>
@@ -158,6 +172,8 @@ type SubmitProps = Static<typeof SubmitPropsSchema>
 const FormMessagePropsSchema = Type.Object({
   formId: Type.String({ default: '' }),
   kind: Type.Union([Type.Literal('status'), Type.Literal('success'), Type.Literal('error')], { default: 'status' }),
+  /** An error message only: show it for errors about this one field instead of every error. */
+  fieldName: Type.String({ default: '' }),
   text: Type.String({ default: '' }),
 })
 
@@ -166,7 +182,7 @@ type FormMessageProps = Static<typeof FormMessagePropsSchema>
 export const FormModule: ModuleDefinition<FormProps> = {
   id: 'base.form',
   name: 'Form',
-  description: 'A CMS-native or custom HTML form.',
+  description: 'A CMS-native, member, or custom HTML form.',
   category: 'Forms',
   version: '1.0.0',
   icon: FileTextSolidIcon,
@@ -175,8 +191,15 @@ export const FormModule: ModuleDefinition<FormProps> = {
   schema: {
     mode: { type: 'select', label: 'Mode', options: [
       { label: 'CMS-native', value: 'cms' },
+      { label: 'Members', value: 'member' },
       { label: 'Custom action', value: 'custom' },
     ] },
+    memberAction: {
+      type: 'select',
+      label: 'Member action',
+      condition: { field: 'mode', eq: 'member' },
+      options: MEMBER_FORM_ACTIONS.map((entry) => ({ label: entry.label, value: entry.action })),
+    },
     formId: { type: 'text', label: 'Form ID', normalize: 'identifier' },
     targetTableId: { type: 'dataTable', label: 'Target data table', condition: { field: 'mode', eq: 'cms' } },
     action: { type: 'url', label: 'Action URL', condition: { field: 'mode', eq: 'custom' } },
@@ -207,6 +230,9 @@ export const FormModule: ModuleDefinition<FormProps> = {
       props.mode === 'cms' ? `data-instatic-target-table="${props.targetTableId}"` : '',
       props.mode === 'custom' ? `action="${safeUrl(props.action)}"` : '',
       props.mode === 'custom' ? `method="${props.method}"` : '',
+      // A member form is a real POST to the member endpoint, so it works with
+      // scripts off; the runtime upgrades it to an in-place submit.
+      props.mode === 'member' ? `action="${memberFormActionPath(props.memberAction)}" method="post"` : '',
       props.successBehavior === 'message' ? `data-instatic-success-message="${props.successMessage}"` : '',
       props.successBehavior === 'redirect' ? `data-instatic-success-redirect="${safeUrl(props.redirectUrl)}"` : '',
     ].filter(Boolean).join(' ')
@@ -217,12 +243,30 @@ export const FormModule: ModuleDefinition<FormProps> = {
       ? `<input type="text" name="${props.honeypotName}" autocomplete="off" tabindex="-1" data-instatic-honeypot hidden>`
       : ''
     return {
-      html: `<form ${attrs}${authored}>${honeypot}${renderedChildren.join('')}</form>`,
-      // CMS-native forms need the browser runtime; custom-action forms are
-      // plain HTML form submissions and ship zero JS.
-      ...(props.mode === 'cms' ? { js: FORM_RUNTIME_JS } : {}),
+      html: `<form ${attrs}${authored}>${honeypot}${memberHiddenInputs(props)}${renderedChildren.join('')}</form>`,
+      // CMS-native and member forms use the browser runtime; custom-action
+      // forms are plain HTML form submissions and ship zero JS.
+      ...(props.mode === 'custom' ? {} : { js: FORM_RUNTIME_JS }),
     }
   },
+}
+
+/**
+ * Hidden inputs a member form carries: the value from the page address it
+ * posts back (an emailed link's token or an app's sign-in request) and, for
+ * a script-less submit, where to go afterwards. The runtime fills the value
+ * in from the address; a render has no request to read it from. The server
+ * writes an app's sign-in request into a page it renders for one member
+ * (`stampAppRequestId`), so that form also posts without scripts.
+ */
+function memberHiddenInputs(props: FormProps): string {
+  if (props.mode !== 'member') return ''
+  const linkParam = memberFormAction(props.memberAction)?.linkParam
+  const token = linkParam ? `<input type="hidden" name="${linkParam}" data-instatic-member-link-param="${linkParam}">` : ''
+  const success = props.successBehavior === 'redirect' && props.redirectUrl
+    ? `<input type="hidden" name="_success" value="${safeUrl(props.redirectUrl)}">`
+    : ''
+  return token + success
 }
 
 export const LabelModule: ModuleDefinition<LabelProps> = {
@@ -431,6 +475,8 @@ export const SubmitModule: ModuleDefinition<SubmitProps> = {
     label: { type: 'text', label: 'Label', placeholder: 'Displayed when no children' },
     disabled: { type: 'toggle', label: 'Disabled' },
     formId: { type: 'text', label: 'Form ID override', normalize: 'identifier' },
+    name: { type: 'text', label: 'Name', placeholder: 'Sent only when this button is pressed', normalize: 'identifier' },
+    value: { type: 'text', label: 'Value', condition: { field: 'name', notEq: '' } },
   },
   propsSchema: SubmitPropsSchema,
   defaults: Value.Create(SubmitPropsSchema),
@@ -440,8 +486,9 @@ export const SubmitModule: ModuleDefinition<SubmitProps> = {
     const content = submitUsesChildren(renderedChildren.length)
       ? renderedChildren.join('')
       : props.label
+    const name = normalizeIdentifierValue(props.name)
     return {
-      html: `<button type="submit"${attrs([['form', normalizeIdentifierValue(props.formId)]])}${booleanAttrs(props, ['disabled'])}>${content}</button>`,
+      html: `<button type="submit"${attrs([['form', normalizeIdentifierValue(props.formId)], ['name', name], ['value', name ? props.value : '']])}${booleanAttrs(props, ['disabled'])}>${content}</button>`,
     }
   },
 }
@@ -462,6 +509,12 @@ export const FormMessageModule: ModuleDefinition<FormMessageProps> = {
       { label: 'Success', value: 'success' },
       { label: 'Error', value: 'error' },
     ] },
+    fieldName: {
+      type: 'text',
+      label: 'Only for field',
+      description: 'The name of one field. Leave empty to show every error.',
+      condition: { field: 'kind', eq: 'error' },
+    },
     text: { type: 'text', label: 'Text' },
   },
   propsSchema: FormMessagePropsSchema,
@@ -469,7 +522,7 @@ export const FormMessageModule: ModuleDefinition<FormMessageProps> = {
   component: FormMessageEditor,
   htmlTag: 'div',
   render: (props) => ({
-    html: `<div data-instatic-form-message="${props.kind}" data-instatic-form-id="${normalizeIdentifierValue(props.formId)}" role="${props.kind === 'error' ? 'alert' : 'status'}">${props.text}</div>`,
+    html: `<div data-instatic-form-message="${props.kind}" data-instatic-form-id="${normalizeIdentifierValue(props.formId)}"${props.kind === 'error' && props.fieldName ? ` data-instatic-form-field="${props.fieldName}"` : ''} role="${props.kind === 'error' ? 'alert' : 'status'}">${props.text}</div>`,
   }),
 }
 

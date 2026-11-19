@@ -29,6 +29,25 @@ Published module scripts are minified by `server/publish/runtime/bundleScripts.t
 
 The existing site pipeline rebuilds runtime assets and swaps a complete disk slot, including other pages' dynamic shells and entry routes. It creates refreshed page versions referencing one coherent snapshot; unrelated rows retain their draft cells, status, timestamps and publisher attribution. Public page routing reads the active version's slug, so another page's draft rename cannot change its live URL. Shared-resource changes require a full-site publish.
 
+## Publishing one row, and the pages that list it
+
+A row of any other table (`publishDataRow` → `publishDataRowLocked`) does not rebuild the slot. It commits the row version, then works on the ACTIVE slot in place and bumps `publishVersion`:
+
+1. **Drop the baked pages that loop over the row's table** — `removeArtefactsLoopingOverTable` (`server/publish/loopArtefacts.ts`).
+2. Write the row's own entry-route artefact (and remove the old path when the slug changed).
+
+Step 1 exists because a full publish bakes the output of static `base.loop` nodes into each page, and Layer A serves a baked file with no knowledge of `publishVersion`. Without it a blog index keeps the rows it was baked with: a new post is missing, an unpublished one still shows a card that links to a 404. Once the file is gone the route falls through to Layer B, which every row change already evicts, so it renders live against the current rows until the next full publish bakes it again.
+
+The files are removed, not re-baked, so a row publish costs the same whether one page lists the table or an `everywhere` layout puts the loop on every route.
+
+Which artefacts go is decided against the published site, along the same render tree the publisher walks (`collectLoopNodes`): a `data.rows` loop on the table in the page itself, in any template of its chain, or in a Visual Component any of them reference. That covers pages, the `404` artefact, and the entry routes of every table whose template chain holds such a loop. Routes with no loop over the table stay on disk.
+
+Retraction takes the same step. The row status route and the row delete route call `retractDataRowArtefacts` (`publishRow.ts`), which removes the row's own artefact and, when the row was published, the pages that listed it. Scheduled publishes go through `publishDataRow` with the uploads dir and behave like a manual publish.
+
+Plugins take the same path. The host hands every `cms.content.*` handler the uploads dir from its host context (`setPluginHostContext`, `server/plugins/host/registry.ts`): `entries.publish` calls `publishDataRow` with it, `entries.delete` calls `retractDataRowArtefacts`, and `entries.deleteMany` calls `retractDataRowArtefactsMany`, which holds the publish lock once and drops each table's listing pages once for the whole batch.
+
+A caller that changes a table's public rows on main and holds an uploads dir must take this step. Bumping `publishVersion` alone leaves Layer A stale.
+
 ## Where the code lives
 
 ```text
@@ -54,6 +73,7 @@ src/core/publisher/
 server/publish/
 ├── publicRouter.ts                 — gateway: Layer A disk fast-path → Layer B LRU → live resolver
 ├── staticArtefact.ts               — two-slot pointer-file swap + read/write/purge artefacts (Layer A); all URL-derived paths are validated by `resolveArtefactPath` (URL-decode + `..`-rejection + containment check after `path.join`)
+├── loopArtefacts.ts                — drop baked pages whose render tree loops over a table when its public rows change
 ├── renderCache.ts                  — in-memory LRU (Layer B); reads publishVersion from publishState
 ├── publishState.ts                 — publishVersion (bump/get) + withPublishLock + createVersionedSingleFlight
 ├── holeRuntime.ts                  — Layer C client runtime; exports runInstaticHoleRuntime (TS source) + HOLE_RUNTIME_JS (IIFE-serialized, ~1.1 KB)
@@ -61,6 +81,7 @@ server/publish/
 ├── publishedHtmlPipeline.ts        — post-process (sanitize + plugin filters + injections)
 ├── siteCssBundle.ts                — server-side hashing + file emission
 ├── frontendInjections.ts           — splice plugin <script>/<link>/<meta> into HTML
+├── canvasStylesheets.ts            — plugin stylesheets as CSS text for the editor canvas
 ├── mediaPresentation.ts            — media URL materialization for originals + responsive variants
 ├── renderTreeWalk.ts               — walkRenderTree: visits every node that contributes to a rendered page (page nodes + VC definition trees, cycle-guarded); single source of truth for loop-prefetch and media-prefetch
 ├── mediaPrefetch.ts, loopPrefetch.ts — pre-warm caches needed by the renderer
@@ -191,10 +212,13 @@ See [docs/features/loops.md](loops.md) for sources, filters, and registration.
 | 3    | `moduleId === 'base.loop'` AND the loop source declares `requestDependent: true` or `perVisitor: true` | Loop is a hole |
 | 3.5  | `moduleId === 'base.loop'` AND the loop source is static, but its body (transitively, including nested loops and referenced VC trees) contains any request-dependent node | Loop is promoted to a single hole; all body descendants are suppressed |
 | 4    | `moduleId === 'base.visual-component-ref'` whose VC definition tree contains any dynamic node | The outer VC ref node is a hole; inner VC node ids are never promoted |
+| 5    | The node depends on who the visitor is: a `member.*` binding or token (string props and `htmlAttributes` values), or a `showWhen` rule | Node is a hole, **unless** the render is already for one known visitor (`visitorKnown`: a protected page rendered per request), where it renders in place |
 
 **Rule 3.5** prevents a broken publish artifact: if a static loop rendered its body's dynamic child as a per-node hole, the loop would emit N `<instatic-hole id="X">` elements with the same id — one per iteration — all resolving to the same context-less fragment. By promoting the loop itself to a single hole, the renderer emits one placeholder and the hole endpoint re-runs the entire loop at request time with full per-item context.
 
-Rules 1-4 plus the Rule 3.5 promotion path route through **one predicate**, `classifyNode(node, site, registry, seenVcs)`. The main per-node pass and the static-loop-body pre-pass both route every node decision through it (the pre-pass walks the loop subtree via `collectSubtreeReasons`, calling `classifyNode` on each visited node). There is exactly one definition of "is this node request-dependent?", so the two passes cannot drift — adding a future rule is a single edit in `classifyNode`, and a static loop whose body becomes dynamic by that rule is promoted automatically.
+Rules 1-5 plus the Rule 3.5 promotion path route through **one predicate**, `classifyNode(node, site, registry, seenVcs)`. The main per-node pass and the static-loop-body pre-pass both route every node decision through it (the pre-pass walks the loop subtree via `collectSubtreeReasons`, calling `classifyNode` on each visited node). There is exactly one definition of "is this node request-dependent?", so the two passes cannot drift — adding a future rule is a single edit in `classifyNode`, and a static loop whose body becomes dynamic by that rule is promoted automatically.
+
+`subtreeDependsOnMember(page, site, registry, nodeId)` asks Rule 5 alone about a subtree. The hole and loop endpoints use it to decide that a fragment is rendered for one visitor and must bypass the shared cache.
 
 VC ref subtlety (Rule 4): when a VC definition tree is dynamic, the *outer* `base.visual-component-ref` node id in the page tree goes into `dynamicPageNodeIds` — not the inner VC node ids. The hole boundary is the ref, not any inner node.
 
@@ -303,6 +327,8 @@ Four bundles per page (each hashed independently): `reset`, `framework`,
 
 ### Static publishing — everything baked to disk
 
+**One exception: protected routes.** A page with an `access` rule, and every entry of a table with one, is rendered at publish (its CSS is collected) but its HTML is never written to the slot and never enters Layer B. Those routes render per request behind the access gate. The slot therefore stays safe to serve without asking who is asking, and safe to copy as a static export. See [`members.md`](members.md) → "Protected pages and tables".
+
 A full publish (`publishDraftSite`) bakes **every page** plus all of its assets
 into the publish slot:
 
@@ -390,7 +416,7 @@ The CSP is modelled as **data**, not a string assembled with regex. `src/core/pu
 
 - `createBaseCspPlan` (in `render.ts`) emits the base policy: `default-src 'self'`, restricted `script-src` (`'none'` → `'self'` + importmap `sha256` once any script tag is present), `style-src 'self' 'unsafe-inline'`, `img-src 'self' data: https:`, `media-src 'self' data: https:`, `frame-src 'none'`, and `worker-src` (`'none'` → `'self' blob:`).
   - `media-src` deliberately mirrors `img-src`. Both govern passive references that execute nothing, so allowing a remote image while blocking a remote `<video>` would be an arbitrary line. It has to be stated explicitly: an unset `media-src` falls back to `default-src 'self'`, and the only symptom is a video that silently never loads.
-- The server injection pipeline (`server/publish/frontendInjections.ts`) merges plugin `frontend.assets[]` relaxations + elected media-adapter origins into the plan in **one** pass via `rewriteCspMeta` — no second regex pass, no per-directive `RegExp`.
+- The server injection pipeline (`server/publish/frontendInjections.ts`) merges plugin `frontend.assets[]` relaxations + elected media-adapter origins into the plan in **one** pass via `rewriteCspMeta` — no second regex pass, no per-directive `RegExp`. Every relaxation is a union (`addCspSources`): a plugin script adds `'self'` to `script-src` and never drops the importmap hash; an executed inline plugin script adds its own `sha256` and nothing else. `'unsafe-inline'` is never added to `script-src`: a policy that carries a hash ignores it, so inline event handlers and undeclared inline scripts do not run on a published page. A plugin that can run code in the visitor's browser (a declared asset or origin, or a canvas module pack) adds its `networkAllowedHosts` to `connect-src` whether or not it ships a tag. Plugin-declared `frontend.origins` add `https://<host>` sources to `script-src` (`scripts`) and `frame-src` (`frames`). `frame-src` leaves `'none'` two ways: a module's `cspSources` at render time (the video module's embeds) and these plugin origins. See [plugin-system.md](plugin-system.md) → "Third-party origins".
 - The module-JS injector (`injectModuleScripts` in `server/publish/moduleJsBundle.ts`) merges `script-src 'self'` through the same `rewriteCspMeta` helper — only when at least one `/_instatic/module-js/<moduleId>.js` script tag was injected.
 
 Because `serializeCsp` sorts, the same plugins + adapters always emit a **byte-identical** policy across runs (gated by `src/__tests__/publisher/cspPlan.test.ts`) — important for content-hashing and stable tests. Editing the emitted CSP string manually is **not** safe — it's a derived value. Mutate the plan (`setCspDirective` to replace, `addCspSources` to union) and re-serialize.
@@ -399,7 +425,7 @@ Because `serializeCsp` sorts, the same plugins + adapters always emit a **byte-i
 
 ## Module JS channel
 
-`render()` may return `js` next to `html`/`css` (`RenderOutput`, `src/core/module-engine/types.ts`). The walker dedupes it per moduleId into `RenderAccumulators.jsMap`; `publishPage` reports per-page candidates (`jsModuleIds` = render-emitted ids ∪ every moduleId inside the page's hole subtrees via `collectHoleSubtreeModuleIds`); the server intersects candidates with the site-wide map (`buildPublishedSiteModuleJsMap`) and injects one external `<script defer>` per module before `</body>`. JS is never inlined — no `</script>` escaping anywhere. Pages with no module JS ship zero script tags and keep `script-src 'none'`. The CMS form runtime is the first consumer: `base.form` emits it when `mode === 'cms'` (`src/modules/base/forms/formRuntimeJs.ts`); token stamping stays server-side (`stampFormPageTokens`, applied to baked pages and hole fragments).
+`render()` may return `js` next to `html`/`css` (`RenderOutput`, `src/core/module-engine/types.ts`). The walker dedupes it per moduleId into `RenderAccumulators.jsMap`; `publishPage` reports per-page candidates (`jsModuleIds` = render-emitted ids ∪ every moduleId inside the page's hole subtrees via `collectHoleSubtreeModuleIds`); the server intersects candidates with the site-wide map (`buildPublishedSiteModuleJsMap`, narrowed by `resolveModuleScripts`) and injects one external `<script defer>` per module before `</body>`. Each tag's `?v=` is a short SHA-256 of that module's JS body (`assetContentVersion` in `server/publish/assetVersion.ts`), so the URL changes exactly when the body does. It is never `publishVersion`: that counter restarts at 0 on every boot, so it would repeat a URL browsers cached before a restart or upgrade. The asset route always serves the latest published snapshot's body; it sends `public, max-age=3600` when `?v=` names that body and `no-cache` otherwise, so a page baked before the script changed never caches a body its URL does not name. Every response carries `ETag: "<contentHash>"`, and a request whose `If-None-Match` names it (a weak `W/` tag or a comma-separated list included) gets `304 Not Modified` with no body, so a stale URL revalidates on each view instead of downloading the script again. Such a page keeps its old tag until the next full publish, so a browser that already cached the old URL may run the old script for up to an hour. The two runtime tags follow the same rule through the same helper (`serveVersionedScript` in `server/publish/assetVersion.ts`): the hole runtime's `?v=` is `HOLE_RUNTIME_VERSION` (the hash of `HOLE_RUNTIME_JS`) and the loop runtime's is `LOOP_RUNTIME_VERSION` (the hash of `LOOP_RUNTIME_JS`). `publishPage` takes both as options (`holeRuntimeVersion`, `loopRuntimeVersion`) because the core publisher cannot import the server's runtimes; a render that supplies none (the AI read surface, the editor preview) emits the tag with no query. JS is never inlined — no `</script>` escaping anywhere. Pages with no module JS ship zero script tags and keep `script-src 'none'`. The CMS form runtime is the first consumer: `base.form` emits it when `mode === 'cms'` (`src/modules/base/forms/formRuntimeJs.ts`); token stamping stays server-side (`stampFormPageTokens`, applied to baked pages and hole fragments).
 
 ---
 
@@ -412,7 +438,8 @@ Because `serializeCsp` sorts, the same plugins + adapters always emit a **byte-i
 | `server/publish/publicRouter.ts`                | Gateway: Layer A disk fast-path → Layer B LRU → live `resolvePublicRoute` + `renderPublicResolution`. |
 | `server/publish/publicRoutes.ts`                | Dispatcher tail: `tryServeBranchPreviewLink` (preview cookie in/out), `tryServePublicRoute` (a live preview cookie → `renderBranchPreview`, otherwise `renderPublicResolution`), setup redirect, 404 page. |
 | `server/publish/branchPreview.ts`               | Render a public URL from a branch's DRAFT for preview-link visitors: same composition as the editor's runtime preview (inline CSS, loops on the branch, on-demand runtime bundles kept in `branchPreviewAssets.ts`, plugin frontend injections, no publish hooks), `no-store` + `noindex`, with a banner. |
-| `server/publish/staticArtefact.ts`              | Two-slot pointer-file swap (`swapSlot`), per-file atomic writes (`writeArtefact`, `updateArtefactInPlace`), and reads (`readArtefact`). Layer A. |
+| `server/publish/staticArtefact.ts`              | Two-slot pointer-file swap (`swapSlot`), per-file atomic writes (`writeArtefact`, `updateArtefactInPlace`), in-place removal (`removeArtefactInPlace`, `removeArtefactsInPlace`), and reads (`readArtefact`). Layer A. |
+| `server/publish/loopArtefacts.ts`               | `removeArtefactsLoopingOverTable(db, uploadsDir, tableId)` — removes from the active slot every baked page, 404 page and entry route whose render tree (page, template chain, Visual Components) holds a `data.rows` loop over the table. Called on row publish and row retraction; see "Publishing one row, and the pages that list it". |
 | `server/publish/renderCache.ts`                 | In-memory LRU keyed by `(urlPath, canonicalQuery)`, entries versioned. `getOrRender` (single-flight). Reads the version from `publishState`; version captured at render start — a publish landing mid-render discards the result rather than caching stale HTML. Layer B. |
 | `server/publish/publishState.ts`                | Publish-time process state: `publishVersion` (`bumpPublishVersion`/`getPublishVersion`), `withPublishLock` (ISS-038 publish serializer), and `createVersionedSingleFlight` — the generalized version-keyed single-flight memo the hole endpoint reuses. Repositories import the version + lock from here (not from the cache). |
 | `server/publish/holeRuntime.ts`                 | Exports `runInstaticHoleRuntime` (the TypeScript source of the Layer C runtime) and `HOLE_RUNTIME_JS` (IIFE-serialized string, ~1.1 KB, served to browsers). Tests call `runInstaticHoleRuntime()` directly to avoid dynamic eval. |
@@ -420,7 +447,8 @@ Because `serializeCsp` sorts, the same plugins + adapters always emit a **byte-i
 | `server/publish/publishedHtmlPipeline.ts`       | Post-process: DOMPurify the final HTML, run plugin `publish.html` filter, splice in declarative tags from plugin manifests, inject runtime assets. Runs at publish time only — never per-request. |
 | `server/publish/siteCssBundle.ts`               | Hash the four CSS strings, write `uploads/css/...` files. The framework bundle's module-CSS half comes from the shared walk in `siteModuleAssets.ts`. |
 | `server/publish/siteModuleAssets.ts`            | `collectSiteModuleAssets` — the one full-site render walk whose accumulators feed BOTH the framework CSS bundle (`cssMap`) and the published module-JS map (`jsMap`). |
-| `server/publish/moduleJsBundle.ts`              | Module-JS channel: `buildSiteModuleJsMap` (fresh), `buildPublishedSiteModuleJsMap` (memoised per publishVersion + site, invalidated by `bumpPublishVersion()`), and `injectModuleScripts` (per-page `<script defer>` tags + CSP `script-src 'self'` relaxation). |
+| `server/publish/moduleJsBundle.ts`              | Module-JS channel: `buildSiteModuleJsMap` (fresh), `buildPublishedSiteModuleJsMap` (memoised per publishVersion + site, invalidated by `bumpPublishVersion()`), `resolveModuleScripts` (a page's candidate ids → the scripts it loads, each with its body's content hash), and `injectModuleScripts` (per-page `<script defer>` tags + CSP `script-src 'self'` relaxation). |
+| `server/publish/assetVersion.ts`                | `assetContentVersion(body)`: the short SHA-256 stamped as `?v=` on module-JS, hole-runtime and loop-runtime script tags, so a script URL is a content address that survives restarts. `serveVersionedScript(req, url, { body, version })`: the one response rule the three routes share (1 h public cache only when `?v=` names the body, `no-cache` otherwise, `ETag` and `304` on both). |
 | `server/publish/republish.ts`                   | Bulk re-publish on settings change (touches every page).            |
 | `server/publish/publishScheduler.ts`            | Scheduled publish jobs (cron-style).                                |
 | `server/publish/frontendInjections.ts`          | Compute plugin `<script>`/`<link>`/`<meta>` tags, preserve per-kind manifest attributes, protect host-owned attributes, and derive CSP entries. |
@@ -430,9 +458,9 @@ Because `serializeCsp` sorts, the same plugins + adapters always emit a **byte-i
 | `server/publish/loopPrefetch.ts`                | Collect every `base.loop` node from the full render tree — including VC definition trees — via `walkRenderTree`, fetch each source's items, and return a `Map<nodeId, ResolvedLoopData>` before render so the walker is purely synchronous. Also exports `canonicalRenderQuery(searchParams)` — strips all non-loop-pagination params from a URL's query, returning only `loop_<nodeId>_page` keys in sorted order (or `''` when none remain). Used by `publicRouter.ts` to normalise the Layer B cache key and Layer A fast-path eligibility. |
 | `server/publish/renderTreeWalk.ts`              | `walkRenderTree(nodes, rootNodeId, site, onNode)` — visits every node that contributes to a rendered page: all page-tree nodes reachable from `rootNodeId`, plus all nodes inside each referenced VC's definition tree (recursively, cycle-guarded by a `Set<vcId>`). Used by both `mediaPrefetch.ts` and `loopPrefetch.ts` so their traversal logic can't drift apart. |
 | `server/publish/runtime/packageServer.ts`       | Serve per-site `bun install` workspace under `/_instatic/runtime/cache/`. |
-| `server/publish/loopRuntime.ts`                 | The loop runtime asset (small JS shim used by certain loop variants).|
-| `server/handlers/cms/hole.ts`                   | `GET /_instatic/hole-runtime.js` (serves `HOLE_RUNTIME_JS`) and `GET /_instatic/hole/<nodeId>?v=<snapshotHash>&u=<page-url>` (renders a node subtree at request time for Layer C islands). |
-| `server/handlers/cms/moduleJs.ts`               | `GET /_instatic/module-js/<moduleId>.js?v=<publishVersion>` — serves a module's render-emitted JS from the memoised site map; validates the untrusted moduleId segment; 404 unknown; `text/javascript`; `cache-control: public, max-age=3600`. |
+| `server/publish/loopRuntime.ts`                 | The loop runtime asset (small JS shim used by infinite loops): `LOOP_RUNTIME_JS` and `LOOP_RUNTIME_VERSION` (its content hash, the `?v=` on the runtime's script tag). |
+| `server/handlers/cms/hole.ts`                   | `GET /_instatic/hole-runtime.js?v=<contentHash>` (serves `HOLE_RUNTIME_JS` through `serveVersionedScript`) and `GET /_instatic/hole/<nodeId>?v=<snapshotHash>&u=<page-url>` (renders a node subtree at request time for Layer C islands). |
+| `server/handlers/cms/moduleJs.ts`               | `GET /_instatic/module-js/<moduleId>.js?v=<contentHash>` — serves a module's render-emitted JS from the memoised site map; validates the untrusted moduleId segment; 404 unknown; `text/javascript`; `cache-control: public, max-age=3600` when `?v=` is the hash of the body served, `no-cache` otherwise; `ETag` on both and `304` on a matching `If-None-Match` (`serveVersionedScript`). |
 | `server/richtextSanitizer.ts`                   | Installs the server's jsdom-backed DOMPurify runtime without global DOM objects. |
 
 ### `publishedHtmlPipeline.ts` — the plugin filter point
@@ -448,7 +476,7 @@ applyPublishedHtmlPipeline(renderedOutput, db)
     ├─→ Emit `publish.before` hook (plugins can prepare state)
     ├─→ Splice in declarative tags from plugin manifests' `frontend.assets[]`
     ├─→ Stamp form page tokens onto CMS-native <form> tags (`stampFormPageTokens`)
-    ├─→ Inject per-module published JS: one `<script src="/_instatic/module-js/<id>.js?v=N" defer data-instatic-module-js="<id>">` per moduleId in the page's injection set (render-emitted ∪ hole-subtree ∩ site jsMap), sorted; CSP script-src → 'self' iff ≥ 1 tag
+    ├─→ Inject per-module published JS: one `<script src="/_instatic/module-js/<id>.js?v=<contentHash>" defer data-instatic-module-js="<id>">` per moduleId in the page's injection set (render-emitted ∪ hole-subtree ∩ site jsMap), sorted; CSP script-src → 'self' iff ≥ 1 tag
     ├─→ Run `publish.html` filters in registration order (plugins transform the HTML string)
     ├─→ Emit `publish.after` hook
     └─→ Return final HTML
@@ -556,9 +584,9 @@ tryServePublicRoute (server/router.ts)
 ```
 
 The visitor-facing artefacts are:
-1. **Disk files in the active slot** (`uploads/published/current/<route>.html`) — for fully-static routes. Final HTML, post-filter, frontend assets baked in. Rebuilt on each full publish.
-2. **In-memory LRU entries** — for dynamic routes (loops, request-dependent bindings). Filled lazily, evicted on every publish.
-3. **`<instatic-hole>` fragment responses** at `/_instatic/hole/<nodeId>?v=<snapshotHash>&u=<page-url>` — for dynamic nodes inside otherwise-cacheable pages. Fetched lazily by the IntersectionObserver runtime; shared responses are cached in Layer B, while per-visitor holes bypass it.
+1. **Disk files in the active slot** (`uploads/published/current/<route>.html`) — every route, as a complete document or a hole shell. Final HTML, post-filter, frontend assets baked in. Rebuilt on each full publish; a row publish rewrites the row's own file and removes the files that loop over its table.
+2. **In-memory LRU entries** — for requests Layer A does not answer: loop pagination, a route whose bake failed, and a route removed from the slot because a table it loops over changed. Filled lazily, evicted on every publish.
+3. **`<instatic-hole>` fragment responses** at `/_instatic/hole/<nodeId>?v=<snapshotHash>&u=<page-url>` — for dynamic nodes inside otherwise-cacheable pages. Fetched lazily by the IntersectionObserver runtime; shared responses are cached in Layer B, while per-visitor holes bypass it and are sent `Cache-Control: private, no-store`. A hole is per-visitor when any list in its subtree uses a `perVisitor` source, including a list nested in another list's item or inside a Visual Component (`subtreeHasPerVisitorSource`). Each source gets its own request (`server/publish/loopSourceRequest.ts`, shared with the `/_instatic/loop/<id>` paging endpoint): only a per-visitor source is given the cookies and the signed-in member (`ctx.request.member`); a shared render never carries either.
 
 The published `SiteDocument` is stored once per publish in `site_snapshots` and referenced by `data_row_versions.site_snapshot_id`; the `PublishedPageSnapshot` reassembled from that join remains the canonical audit record — all three layers derive from it. At request time it is memoised per publish version (`server/publish/publishedSnapshotCache.ts`, shared by the public router's row resolution, the hole endpoint, and the loop endpoint), and `renderPublicResolution` serves a warm Layer B entry *before* any route resolution — a cache hit does zero DB work.
 
@@ -630,5 +658,5 @@ This is rare and requires architectural review — most "new behavior" fits with
   - `src/__tests__/publisher/cspPlan.test.ts` — CSP determinism (byte-identical output for the same inputs)
   - `src/__tests__/server/dynamicDetection.test.ts` — Rules 1–4 (module flag, bindings, tokens, loop source, VC ref)
   - `src/__tests__/server/dynamicDetectionLoop.test.ts` — Rule 3.5 static loop body promotion
-  - `src/__tests__/server/dynamicIslandsPlugin.test.ts` — end-to-end confirmation of plugin loop sources as Layer C holes: protocol schema accepts `requestDependent`/`perVisitor`; dynamic detection classifies them under Rule 3; shared holes cache per query; per-visitor holes bypass the cache (`no-store`) and re-render every request; the versioned snapshot memo loads from DB once per publish version
+  - `src/__tests__/server/dynamicIslandsPlugin.test.ts` — end-to-end confirmation of plugin loop sources as Layer C holes: protocol schema accepts `requestDependent`/`perVisitor`; dynamic detection classifies them under Rule 3; shared holes cache per query; per-visitor holes bypass the cache (`private, no-store`) and re-render every request; the versioned snapshot memo loads from DB once per publish version
   - `src/__tests__/server/siteCssBundleMemo.test.ts` — `buildPublishedSiteCssBundle` memo: the O(all-pages) walk runs once per publish snapshot, `bumpPublishVersion()` invalidates the memo, memoized output is byte-identical to the un-memoized builder, and `userStyles` is never memoized (page-scoped)

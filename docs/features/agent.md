@@ -130,7 +130,7 @@ src/admin/pages/site/panels/AgentPanel/
 
 src/admin/pages/ai/
 ├── AiPage.tsx              — /admin/ai workspace; three tabs gated by ai.providers.manage + ai.audit.read
-├── AiPage.module.css
+├── ProviderMark.module.css     (provider logos; layout styles live in @admin/shared/SettingsWorkspace)
 └── tabs/
     ├── ProvidersTab.tsx    — CRUD for ai_credentials rows (provider-derived API key or endpoint credential shape)
     ├── DefaultsTab.tsx     — per-scope model defaults editor

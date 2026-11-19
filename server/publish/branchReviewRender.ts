@@ -14,7 +14,7 @@ import '@core/loops/sources'
 import { registry } from '@core/module-engine'
 import { publishPage } from '@core/publisher'
 import { buildRouteFrame, composeTemplateChain, resolveTemplateChain } from '@core/templates'
-import type { SourceRequestContext } from '@core/loops/types'
+import { sourceRequestFor, type LoopRequestScope } from './loopSourceRequest'
 import type { DbClient } from '../db/client'
 import { MAIN_SCOPE, type BranchScope } from '../branches/scope'
 import { getDraftSiteDocument } from '../repositories/publish'
@@ -44,16 +44,15 @@ export async function renderBranchReviewPage(
   const merged = composeTemplateChain(chain, { kind: 'page', page })
   const url = new URL(`http://localhost/${page.slug}`)
   const templateContext = { entryStack: [], route: buildRouteFrame(url.toString()) }
-  const request: SourceRequestContext = {
-    query: {},
-    path: url.pathname,
-    slug: page.slug || null,
-    cookies: {},
-  }
+  const requestScope: LoopRequestScope = { base: { query: {}, path: url.pathname, slug: page.slug || null } }
   // Both sides read DRAFT rows: a merge compares main's draft with the
   // branch's draft, and main's published versions are what visitors see,
   // not what the merge would write over.
-  const loopData = await prefetchLoopData(merged, site, db, url, { branchId: scope.branchId, request, drafts: true })
+  const loopData = await prefetchLoopData(merged, site, db, url, {
+    branchId: scope.branchId,
+    requestFor: (source) => sourceRequestFor(source, requestScope),
+    drafts: true,
+  })
   const mediaAssets = await prefetchMediaAssets(merged, site, registry, db, { templateContext, loopData })
   const rendered = publishPage(merged, site, registry, {
     templateContext,

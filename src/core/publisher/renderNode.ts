@@ -35,6 +35,7 @@ import { renderVisualComponentRef } from './renderVisualComponentRef'
 import { renderLoop } from './renderLoop'
 import { resolveAutoSizes } from './sizesResolver'
 import { RICHTEXT_CONTENT_CONFIG, sanitizeRichtext } from '@core/sanitize'
+import { readShowWhen, showWhenAllows } from '@core/members'
 import type {
   RenderConfig,
   RenderAccumulators,
@@ -315,6 +316,14 @@ export function renderNode(
   if (config.dynamicNodeIds?.has(nodeId)) {
     return renderHolePlaceholder(node, def, config, acc)
   }
+
+  // A show-when rule is checked only here, past the hole branch: a render
+  // for nobody in particular has already deferred the node to a per-visitor
+  // hole, so reaching this line means the visitor is known (or the caller
+  // asked for an inline render, which treats the visitor as signed out).
+  const member = config.templateContext?.member
+  const visitor = member ? { tags: member.tags, appAsking: member.appRequest !== null } : null
+  if (!showWhenAllows(readShowWhen(node.props), visitor)) return ''
 
   const specialRenderer = resolveSpecialRenderer(def)
   if (specialRenderer) return specialRenderer(node, config, acc, renderNode)

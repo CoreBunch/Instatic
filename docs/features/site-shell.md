@@ -333,7 +333,7 @@ type SitePackageJson = {
 }
 ```
 
-The CMS supports plugins that ship their own npm deps and runtime imports (e.g. `three`). When a site declares a dependency, `bun install` runs against a per-site workspace under `uploads/sites/<siteId>/runtime/`, producing a hashed cache directory the server serves at `/_instatic/runtime/cache/<hash>/...`. The runtime cache layout is owned by `src/core/site-runtime/` and served by `server/publish/runtime/`.
+The CMS supports plugins that ship their own npm deps and runtime imports (e.g. `three`). When a site declares a dependency, `bun install` runs in a workspace keyed by the lock's hash under the runtime cache directory (`RUNTIME_CACHE_DIR`, outside `UPLOADS_DIR`), which the server serves at `/_instatic/runtime/cache/<hash>/...`. The cache layout, its location and its restore-on-miss behaviour are owned by `server/publish/runtime/` and described in [`dependencies.md`](dependencies.md) → "The install cache".
 
 The Site → Dependencies panel edits this `package.json`: it browses the npm registry through the server proxy and installs into `dependencies` (or `devDependencies`) with a caret range. Every manifest change is picked up by `useAutoResolveDependencies`, which resolves the lock and runs `bun install`. Panel and proxy: [`dependencies.md`](dependencies.md).
 
@@ -586,8 +586,8 @@ seeds them from the stored JSON (the server is the ONLY seeder — fixed seed
 clientID, so two clients can never build divergent initial histories),
 persists each doc's update blob to `collab_documents` AND the derived row
 JSON to `data_rows`/site on a short debounce (~800 ms) — replacing only the
-cells the doc owns (`OWNED_CELLS` in `relayPersistence.ts`: title, slug, body
-and the template cells for pages; name, slug, body, params, classIds for
+cells the doc owns (`OWNED_CELLS` in `relayPersistence.ts`: title, slug, body,
+access and the template cells for pages; name, slug, body, params, classIds for
 components; name, slug, body, classes for layouts), so SEO, featured media,
 and plugin cells edited elsewhere survive every relay write — applies
 roster-driven soft-deletes, and RESETS docs whose row was written outside

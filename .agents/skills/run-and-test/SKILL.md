@@ -25,6 +25,8 @@ running on the port/url or set reuseExistingServer:true
 
 Just run `playwright test`. To reuse a server you already have up, set `E2E_REUSE_SERVER=1`.
 
+The same error also appears when another session's run holds the port. Do not kill it; see "The port may be someone else's".
+
 ## First run needs an account, and it is already handled
 
 Instatic has no seeded login. A clean database lands on a first-run setup form. You do not have to drive it: the `setup` Playwright project (`tests/e2e/auth.setup.ts`) completes setup once per run and saves the owner's `storageState` to `.tmp/e2e-owner-state.json`. Every ordinary spec opts into that state and starts logged in.
@@ -107,8 +109,27 @@ ln -s "$PWD/node_modules" .worktrees/pr-<N>/node_modules   # run from the main c
 
 - **Symlink `node_modules`.** A fresh `bun install` per worktree is minutes wasted; the symlink works.
 - **`.tmp/` is per-worktree**, so the E2E database is naturally isolated. Nothing to clean up between worktrees.
-- Run one Playwright run at a time. Two worktrees both want port 3002.
-- Free the port if a run died mid-way: `lsof -ti :3002 | xargs -r kill -9`.
+- Each worktree's run wants port 3002 by default. See "The port may be someone else's" below before you start one.
+
+## The port may be someone else's
+
+Several sessions work in this repo at once, each in its own worktree, and every E2E run defaults to port 3002. A server on that port is as likely to be another session's suite mid-run as a leftover of yours. **Never free the port blindly:** `lsof -ti :3002 | xargs kill` ends whoever holds it, and the other session sees all its remaining tests fail with "connection refused".
+
+Before a run, see who holds the port and where that process was started:
+
+```bash
+for pid in $(lsof -ti tcp:3002 -sTCP:LISTEN); do echo "pid $pid"; lsof -a -p "$pid" -d cwd -Fn | grep '^n'; done
+```
+
+- **Nothing printed:** the port is free. Run normally.
+- **The directory is your own worktree:** it is a leftover from a run of yours that died. Stop that one process by its pid (`kill <pid>`), nothing wider.
+- **Any other directory:** it belongs to another session. Leave it running and put your run on another port:
+
+```bash
+E2E_CMS_PORT=3012 E2E_ADMIN_BASE_URL=http://127.0.0.1:3012 bunx playwright test --project=e2e tests/e2e/<spec>.e2e.ts
+```
+
+`E2E_CMS_PORT` moves the server and `E2E_ADMIN_BASE_URL` points the suite at it; the public base URL follows the admin one. Check the alternate port the same way first, and pick another if it is taken too.
 
 ## The verify gate
 

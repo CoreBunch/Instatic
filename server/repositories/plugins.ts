@@ -3,7 +3,6 @@ import type {
   PluginLifecycleStatus,
   PluginManifest,
   PluginPermission,
-  PluginRecord,
   PluginSettingDefinition,
   PluginSettingsValues,
 } from '@core/plugin-sdk'
@@ -12,11 +11,10 @@ import {
   applyPluginSecretSettings,
   seedPluginSecretDefaults,
 } from './pluginSecrets'
-import type { StorageListOptions, StorageFilterOperator } from '@core/plugin-sdk/storageSchemas'
 import { parsePluginManifest } from '@core/plugins/manifest'
-import type { DbClient, Dialect } from '../db/client'
+import type { DbClient } from '../db/client'
+import { nanoid } from 'nanoid'
 import { isoDate, nowIso } from '@core/utils/isoDate'
-import { jsonField } from '../db/jsonExtract'
 
 /**
  * Discriminated union returned by every repository function that reads an
@@ -45,15 +43,6 @@ interface InstalledPluginRow {
   manifest_json: unknown
   settings_json?: unknown
   installed_at: Date | string
-  updated_at: Date | string
-}
-
-interface PluginRecordRow {
-  id: string
-  plugin_id: string
-  resource_id: string
-  data_json: unknown
-  created_at: Date | string
   updated_at: Date | string
 }
 
@@ -155,17 +144,6 @@ function readLifecycleStatus(value: unknown, enabled: boolean): PluginLifecycleS
     return value
   }
   return enabled ? 'active' : 'disabled'
-}
-
-function mapPluginRecord(row: PluginRecordRow): PluginRecord {
-  return {
-    id: row.id,
-    pluginId: row.plugin_id,
-    resourceId: row.resource_id,
-    data: readManifestJson(row.data_json) as Record<string, unknown>,
-    createdAt: isoDate(row.created_at),
-    updatedAt: isoDate(row.updated_at),
-  }
 }
 
 export async function listInstalledPlugins(db: DbClient): Promise<InstalledPluginResult[]> {
@@ -292,178 +270,6 @@ export async function setPluginSettings(
   return rows[0] ? mapInstalledPlugin(rows[0]) : null
 }
 
-/** Identifier regex — same rule as the jsonField() helper. */
-const FIELD_KEY_RE = /^[a-zA-Z_][a-zA-Z0-9_]*$/
-
-/** Build a dialect-appropriate positional parameter placeholder. */
-function placeholder(dialect: Dialect, index: number): string {
-  return dialect === 'postgres' ? `$${index}` : '?'
-}
-
-export async function listPluginRecords(
-  db: DbClient,
-  pluginId: string,
-  resourceId: string,
-  options: StorageListOptions = {},
-): Promise<{ records: PluginRecord[]; totalCount: number }> {
-  const { filter, orderBy, limit = 100, offset = 0 } = options
-
-  const params: unknown[] = [pluginId, resourceId]
-  let paramIdx = 2
-
-  // Returns the next positional placeholder AND appends the value to params.
-  function addParam(value: unknown): string {
-    params.push(value)
-    paramIdx++
-    return placeholder(db.dialect, paramIdx)
-  }
-
-  // --- WHERE clause ---
-  let whereSql = `plugin_id = ${placeholder(db.dialect, 1)} and resource_id = ${placeholder(db.dialect, 2)}`
-
-  if (filter) {
-    for (const [key, value] of Object.entries(filter)) {
-      if (!FIELD_KEY_RE.test(key)) {
-        throw new Error(`[plugin:storage] invalid filter field name: ${JSON.stringify(key)}`)
-      }
-      const fragment = jsonField('data_json', key, db.dialect).sql
-
-      if (value === null || typeof value !== 'object') {
-        // Shorthand primitive — treat as eq
-        whereSql += ` and ${fragment} = ${addParam(value)}`
-      } else {
-        // Full operator object
-        const op = value as StorageFilterOperator
-        if (op.eq !== undefined) {
-          whereSql += ` and ${fragment} = ${addParam(op.eq)}`
-        }
-        if (op.ne !== undefined) {
-          whereSql += ` and ${fragment} != ${addParam(op.ne)}`
-        }
-        if (op.gt !== undefined) {
-          whereSql += ` and ${fragment} > ${addParam(op.gt)}`
-        }
-        if (op.gte !== undefined) {
-          whereSql += ` and ${fragment} >= ${addParam(op.gte)}`
-        }
-        if (op.lt !== undefined) {
-          whereSql += ` and ${fragment} < ${addParam(op.lt)}`
-        }
-        if (op.lte !== undefined) {
-          whereSql += ` and ${fragment} <= ${addParam(op.lte)}`
-        }
-        if (op.in !== undefined) {
-          if (op.in.length === 0) {
-            // Empty IN list — no rows can ever match
-            whereSql += ` and 1=0`
-          } else {
-            const inPlaceholders: string[] = op.in.map((v) => addParam(v))
-            whereSql += ` and ${fragment} in (${inPlaceholders.join(', ')})`
-          }
-        }
-        if (op.like !== undefined) {
-          whereSql += ` and lower(${fragment}) like lower(${addParam(op.like)})`
-        }
-      }
-    }
-  }
-
-  // Snapshot how many params the WHERE clause uses (for count query).
-  const countParamCount = params.length
-
-  // --- ORDER BY clause ---
-  let orderBySql = 'created_at desc'
-  if (orderBy && Object.keys(orderBy).length > 0) {
-    const parts: string[] = []
-    for (const [key, dir] of Object.entries(orderBy)) {
-      if (!FIELD_KEY_RE.test(key)) {
-        throw new Error(`[plugin:storage] invalid orderBy field name: ${JSON.stringify(key)}`)
-      }
-      const fragment = jsonField('data_json', key, db.dialect).sql
-      parts.push(`${fragment} ${dir}`)
-    }
-    orderBySql = parts.join(', ')
-  }
-
-  // --- LIMIT / OFFSET (appended after count params are captured) ---
-  const limitPlaceholder = addParam(limit)
-  const offsetPlaceholder = addParam(offset)
-
-  const dataSql = `
-    select id, plugin_id, resource_id, data_json, created_at, updated_at
-    from plugin_records
-    where ${whereSql}
-    order by ${orderBySql}
-    limit ${limitPlaceholder} offset ${offsetPlaceholder}
-  `
-
-  const countSql = `
-    select count(*) as total
-    from plugin_records
-    where ${whereSql}
-  `
-
-  const dataParams = params
-  const countParams = params.slice(0, countParamCount)
-
-  const [dataResult, countResult] = await Promise.all([
-    db.unsafe<PluginRecordRow>(dataSql, dataParams),
-    db.unsafe<{ total: number | bigint | string }>(countSql, countParams),
-  ])
-
-  const totalCount = Number(countResult.rows[0]?.total ?? 0)
-
-  return {
-    records: dataResult.rows.map(mapPluginRecord),
-    totalCount,
-  }
-}
-
-export async function createPluginRecord(
-  db: DbClient,
-  input: {
-    id: string
-    pluginId: string
-    resourceId: string
-    data: Record<string, unknown>
-  },
-): Promise<PluginRecord> {
-  const { rows } = await db<PluginRecordRow>`
-    insert into plugin_records (id, plugin_id, resource_id, data_json)
-    values (${input.id}, ${input.pluginId}, ${input.resourceId}, ${writeJson(input.data)})
-    returning id, plugin_id, resource_id, data_json, created_at, updated_at
-  `
-  return mapPluginRecord(rows[0])
-}
-
-export async function updatePluginRecord(
-  db: DbClient,
-  input: {
-    id: string
-    pluginId: string
-    resourceId: string
-    data: Record<string, unknown>
-  },
-): Promise<PluginRecord | null> {
-  const { rows } = await db<PluginRecordRow>`
-    update plugin_records set data_json = ${writeJson(input.data)}, updated_at = ${nowIso()}
-    where id = ${input.id} and plugin_id = ${input.pluginId} and resource_id = ${input.resourceId}
-    returning id, plugin_id, resource_id, data_json, created_at, updated_at
-  `
-  return rows[0] ? mapPluginRecord(rows[0]) : null
-}
-
-export async function deletePluginRecord(
-  db: DbClient,
-  input: { id: string; pluginId: string; resourceId: string },
-): Promise<boolean> {
-  const { rowCount } = await db`
-    delete from plugin_records
-    where id = ${input.id} and plugin_id = ${input.pluginId} and resource_id = ${input.resourceId}
-  `
-  return rowCount > 0
-}
-
 // ---------------------------------------------------------------------------
 // Plugin crash events — persisted history of plugin worker crashes so the
 // admin UI can show "Recent issues" for each plugin without operators
@@ -545,4 +351,25 @@ export async function listPluginCrashes(
 /** Drop every crash event for a plugin. Called on every uninstall path + on manual restart. */
 export async function clearPluginCrashes(db: DbClient, pluginId: string): Promise<void> {
   await db`delete from plugin_crash_events where plugin_id = ${pluginId}`
+}
+
+/**
+ * The random id of the current install of a plugin, or null when it is not
+ * installed. An install gets its id the first time it is asked for, and a
+ * plugin that is uninstalled and installed again is a new install with a
+ * new one: the id tells two installs of one plugin id apart, which the
+ * plugin id cannot and a timestamp should not be trusted to.
+ */
+export async function ensurePluginInstallId(db: DbClient, pluginId: string): Promise<string | null> {
+  // Conditional, so two callers at once agree on one id.
+  await db`update installed_plugins set install_id = ${nanoid()} where id = ${pluginId} and install_id is null`
+  return getPluginInstallId(db, pluginId)
+}
+
+/** The id `ensurePluginInstallId` gave the current install, or null when there is none. */
+export async function getPluginInstallId(db: DbClient, pluginId: string): Promise<string | null> {
+  const { rows } = await db<{ install_id: string | null }>`
+    select install_id from installed_plugins where id = ${pluginId}
+  `
+  return rows[0]?.install_id ?? null
 }

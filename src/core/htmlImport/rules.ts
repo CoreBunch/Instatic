@@ -21,6 +21,7 @@
 import { normalizeImportedText } from './text'
 import { normalizeIdentifierValue } from '@core/utils/identifier'
 import { normalizeAnchorTarget } from '@core/htmlAttributes'
+import { memberFormAction } from '@core/members'
 
 export interface ImportRule {
   /** CSS selector tested via `el.matches()`. */
@@ -213,7 +214,10 @@ export const HTML_TO_MODULE_RULES: ImportRule[] = [
   {
     match: 'form',
     map: (el) => {
-      const mode = normalizedAttr(el, 'data-instatic-form-mode') === 'cms' ? 'cms' : 'custom'
+      const declaredMode = normalizedAttr(el, 'data-instatic-form-mode')
+      const mode = declaredMode === 'cms' || declaredMode === 'member' ? declaredMode : 'custom'
+      // A member form posts to `/_instatic/members/<action>`; the action is its identity.
+      const memberAction = mode === 'member' ? attr(el, 'action').replace(/^\/_instatic\/members\//, '') : ''
       const redirectUrl = attr(el, 'data-instatic-success-redirect')
       const successMessage = attr(el, 'data-instatic-success-message')
       return {
@@ -222,7 +226,8 @@ export const HTML_TO_MODULE_RULES: ImportRule[] = [
           mode,
           formId: formIdentifier(el),
           targetTableId: mode === 'cms' ? attr(el, 'data-instatic-target-table') : '',
-          action: attr(el, 'action'),
+          ...(memberFormAction(memberAction) ? { memberAction } : {}),
+          action: mode === 'member' ? '' : attr(el, 'action'),
           method: normalizeFormMethod(el),
           successBehavior: redirectUrl ? 'redirect' : 'message',
           redirectUrl,

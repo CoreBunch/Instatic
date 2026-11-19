@@ -39,3 +39,29 @@
     line-height: 1.2;
     cursor: pointer;
 }
+
+/* A titled group of related fields inside a dialog form (e.g. page access). */
+.group {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-l);
+    min-width: 0;
+    margin: 0;
+    padding: var(--space-xl) 0 0;
+    border: 0;
+    border-top: 1px solid var(--overlay-10);
+}
+
+.groupTitle {
+    padding: 0;
+    color: var(--text-bright);
+    font-size: var(--text-m);
+    font-weight: 600;
+}
+
+.hint {
+    margin: 0;
+    color: var(--text-subtle);
+    font-size: var(--text-xs);
+    line-height: 1.45;
+}

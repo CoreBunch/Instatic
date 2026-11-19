@@ -4,6 +4,8 @@ import { FolderGlyphIcon } from 'pixel-art-icons/icons/folder-glyph'
 import { Button } from '@ui/components/Button'
 import { Input } from '@ui/components/Input'
 import { cn } from '@ui/cn'
+import { Tooltip } from '@ui/components/Tooltip'
+import { LockSolidIcon } from 'pixel-art-icons/icons/lock-solid'
 import { ProblemBadge } from '@site/diagnostics'
 import {
   TreeChevron,
@@ -332,6 +334,13 @@ export function ExplorerItemRow<TTarget>({
               <TreeLabel>{item.label}</TreeLabel>
               {item.meta && <TreeMeta>{item.meta}</TreeMeta>}
             </TreeLabelGroup>
+            {item.access && (
+              <Tooltip content={`${item.access}. Change it in Page settings.`}>
+                <span role="img" aria-label={item.access} className={styles.accessMarker}>
+                  <LockSolidIcon size={10} aria-hidden="true" />
+                </span>
+              </Tooltip>
+            )}
             {item.problems && <ProblemBadge file={item.problems} />}
           </Button>
         )}

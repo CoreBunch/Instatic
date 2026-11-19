@@ -110,6 +110,13 @@ first retry automatically.
   homepage), clean-install dashboard coverage runs before shared mutations,
   account-global security changes stay on the account persona, fixture-owned AI
   defaults are removed, and publish→assert happens within a single test.
+- **Retry rule.** CI retries a failed test once, against the same database.
+  A test that creates something under a fixed name, or expects a clean
+  starting state, must still be able to pass on that second attempt:
+  `branchNameForAttempt` in `branches.e2e.ts` names each attempt's branch
+  differently, and DASH-002 resets the saved dashboard layout before it
+  starts. A test that cannot be retried turns any one-off flake into a hard
+  failure.
 - **Template rule.** A spec that authors a Posts template sets its priority
   with `newestTemplatePriority()` (`helpers/editor.ts`). The template chain
   keeps one template per breadth level (highest priority, then document order),

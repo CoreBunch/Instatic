@@ -241,7 +241,20 @@ export default defineConfig({
       // built bundle. None are part of the client module graph, so watching them
       // only triggers spurious full reloads — which, during E2E, would reload the
       // admin app mid-test. Ignore them.
-      ignored: ['**/.tmp/**', '**/uploads/**', '**/dist/**'],
+      //
+      // Other checkouts of the repo live in `.worktrees/` and
+      // `.claude/worktrees/` of this one. A file written there (another
+      // session creating or editing a worktree) reloaded this server's page.
+      // These two are anchored to this checkout on purpose: a server running
+      // inside a worktree has `/.worktrees/` in every path of its own, so an
+      // unanchored `**/.worktrees/**` would switch off its hot reload.
+      ignored: [
+        '**/.tmp/**',
+        '**/uploads/**',
+        '**/dist/**',
+        `${path.resolve(__dirname, '.worktrees')}/**`,
+        `${path.resolve(__dirname, '.claude/worktrees')}/**`,
+      ],
     },
     proxy: {
       // The whole `/admin/api/` prefix (CMS + agent) is forwarded to the

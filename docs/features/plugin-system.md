@@ -174,12 +174,27 @@ Authors normally write `instatic-plugin.config.ts` with `definePlugin(...)`; the
     "assets": [
       { "kind": "script", "src": "frontend/tracker.js",
         "placement": "body-end", "strategy": "defer" }
+    ],
+    // Optional: third-party hosts published pages may load scripts / frames from.
+    "origins": { "scripts": ["js.example.com"], "frames": ["widgets.example.com"] }
+  },
+
+  // Optional: the emails the plugin can send (needs `mail.send` or `mail.send.external`).
+  "mail": {
+    "templates": [
+      { "key": "welcome", "label": "Welcome", "description": "Sent after sign-up.",
+        "variables": [{ "name": "link", "label": "Link", "sample": "https://example.com/start", "kind": "link" }],
+        "subject": "Welcome to {site.name}", "body": "[Get started]({link})" }
     ]
   },
 
   "networkAllowedHosts": [
     "api.weather.example.com",
     "*.cdn.weather.example.com"
+  ],
+
+  "appScopes": [
+    { "name": "read", "description": "See your saved forecasts" }
   ],
 
   "pack": { "path": "pack/site.json" }
@@ -193,6 +208,7 @@ Authors normally write `instatic-plugin.config.ts` with `definePlugin(...)`; the
 | `plugin.json` top-level `id`| Namespaced, lowercase (`vendor.product[.subname]`)         | `acme.workflow`           |
 | `resources[].id`, `adminPages[].id` | URL path segment — lowercase kebab-case             | `seo-entries`, `subscribers` |
 | `resources[].fields[].id`   | JSON key — any common identifier convention                | `email`, `subscribedAt`   |
+| `resources[].uniqueField`   | The `id` of one of that resource's `text` fields           | `email`                   |
 | Pack `classes[].id`         | Namespaced under the plugin ID                             | `acme.workflow/hero-root` |
 | Pack `layouts[].id`         | Namespaced under the plugin ID                             | `acme.workflow/hero-section` |
 
@@ -201,9 +217,11 @@ Authors normally write `instatic-plugin.config.ts` with `definePlugin(...)`; the
 - `entrypoints.editor` and app-kind admin pages require `editor.code`.
 - `entrypoints.modules` requires `modules.register`.
 - Any `adminPages[]` entry requires `admin.navigation`.
-- `frontend.assets[]` requires `frontend.assets`.
+- `frontend.assets[]` and `frontend.origins` require `frontend.assets`.
+- `mail.templates[]` requires `mail.send` or `mail.send.external`; template keys and variable names are unique, and a template may not declare a `site.*` variable.
 - Public routes require both `cms.routes` and `cms.routes.public`.
 - Server `fetch()` requires `network.outbound` and a matching `networkAllowedHosts[]` entry.
+- `appScopes[]` requires `members.read`, and each `name` (lowercase kebab-case) is declared once. A `description` must say something once cleaned for display (not only spaces), contain no control or invisible formatting characters, and not repeat the text of a built-in app scope. `definePlugin({ appScopes })` writes the field; `instatic-plugin lint` additionally reports a server source that opens a route under a scope `appScopes` does not declare (`{ app: { scope: 'x' } }` written as a string literal).
 - Any `cms.content.*` permission requires a non-empty `contentAccess[]`, and every mode an entry declares requires its permission (`CONTENT_ACCESS_MODE_PERMISSIONS` in `src/core/plugin-sdk/contentSchemas.ts` is the one mode-to-permission table both checks read). `instatic-plugin lint` additionally warns when a `cms.content.*` permission is requested but no entry declares its mode, since the host fails closed per table and mode and every call under it would be rejected.
 
 ---
@@ -259,6 +277,8 @@ Each plugin's server entrypoint runs in its own worker. If the worker crashes:
 2. The worker is terminated. Sibling plugins are unaffected.
 3. The host auto-respawns the worker and re-runs `activate`.
 4. If the same plugin reaches `CRASH_THRESHOLD` (3) crashes within `CRASH_WINDOW_MS` (5 minutes), auto-respawn stops and the plugin is parked in `error`. The owner restarts it manually from the Plugins admin page.
+
+If re-activation in step 3 fails, the plugin is unloaded (routes and hooks it registered before failing are gone) and its status is set to `error` with the reason.
 
 ### Lifecycle events (SSE)
 
@@ -347,20 +367,28 @@ Sandbox invariants are gated by `src/__tests__/architecture/plugin-sandbox-invar
 
 ### Resource limits and timeouts
 
-VM budgets live in `server/plugins/quickjs/limits.ts`; the host-side RPC timeout lives in `server/plugins/host/workerPool.ts`.
+VM and request limits live in `server/plugins/quickjs/limits.ts`; the host-side RPC timeout in `server/plugins/host/workerPool.ts`.
 
 | Limit | Value | Enforced by |
 |---|---|---|
 | VM heap | 64 MB (`DEFAULT_MEMORY_LIMIT_BYTES`) | QuickJS `setMemoryLimit` — allocations beyond it throw inside the VM |
 | VM stack | 1 MB (`DEFAULT_STACK_SIZE_BYTES`) | QuickJS `setMaxStackSize` — fatal for runaway recursion |
-| Eval deadline | 5 s (`DEFAULT_EVAL_TIMEOUT_MS`) | wall-clock interrupt on the QuickJS runtime |
+| Eval deadline | 5 s (`DEFAULT_EVAL_TIMEOUT_MS`) | interrupt on the QuickJS runtime. Counts time spent **running** plugin code, not time spent awaiting a host call |
+| Call budget | 20 s (`PLUGIN_CALL_BUDGET_MS`) | wall clock for one whole call (lifecycle, route, hook, loop fetch, media call), awaits included; checked by the settle loop in `quickjs/eval.ts`. Only that call fails |
 | Module-pack eval deadline | 2 s (`MODULE_PACK_EVAL_TIMEOUT_MS`) | same interrupt — canvas `render()`/`preview()` are pure sync transforms |
-| Schedule fire | the schedule's `maxDurationMs` (host-capped at 5 min) | replaces the 5 s eval budget for that one call |
+| Schedule fire | the schedule's `maxDurationMs` (host-capped at 5 min) | replaces both the eval deadline and the call budget for that one call |
+| Outbound request | 15 s (`DEFAULT_PLUGIN_FETCH_TIMEOUT_MS`), or the request's `timeout`, never more than the time left in the call less a handling margin | host timer in `performGatedFetch`; covers DNS, every redirect hop and the response body |
 | Worker RPC | 30 s (`DEFAULT_RPC_TIMEOUT_MS`); schedule runs get `maxDurationMs` + 10 s slack | host-side timeout in `requestFromWorker` |
 
 **The eval deadline covers every way plugin code can execute.** Each entry into VM execution — the bootstrap eval, the plugin bundle's top-level eval, every `__run*` dispatch (lifecycle, route, hook, loop, schedule, media), and the pending-jobs pump that runs timer callbacks (`setTimeout`/`setInterval` continuations) — registers a wall-clock deadline in a per-runtime registry (`server/plugins/quickjs/eval.ts`). One persistent interrupt handler aborts the runtime once the clock passes the latest active deadline, so concurrent evals on one context cannot strip each other's protection and a `while (true) {}` anywhere (top level, route handler, timer callback) is interrupted instead of wedging the worker thread.
 
 **What the plugin author sees on a deadline hit:** the call fails with QuickJS's `interrupted` error — schedule runs record it as `status: 'timeout'`, every other entry point surfaces it as an ordinary error (lifecycle failure, route 500, hook listener log line). Plugins that legitimately need more time should yield back to the host (await host calls, split work across schedule fires) rather than block in a tight loop.
+
+**The call budget bounds waiting.** The eval deadline cannot fire while a handler awaits a host call, so a handler waiting on something slow is bounded by the call budget instead. A call still pending when it runs out fails with `Plugin call exceeded its 20s time budget` (`PluginCallBudgetError`): a route answers **504** with that message, a schedule run records `status: 'timeout'`, and a lifecycle hook, hook listener or loop fetch fails like any thrown error. Only that call fails. The worker, the VM and every other call in flight carry on, which is why the budget sits below the worker RPC timeout.
+
+- **A 504 from a plugin route means the outcome is unknown.** Plugin code cannot be cancelled mid-`await`: the abandoned handler may resume when its host call returns and finish its work, including any write, after its caller was told it failed. The caller may retry, so a handler that writes must be idempotent (key the write on the event or request id). The tools for that are `createIfAbsent` and `update(..., { ifVersion })` in plugin storage; see "Plugin-owned records".
+- **A slow upstream does not have to end in a 504.** An outbound request times out at 15 s by default and always ends before the call does, with time left to handle the failure (see "Outbound HTTP" → Timeouts). A handler that catches the `TimeoutError` answers normally.
+- A pending call does not spin: it sleeps until a host-call or timer resolution advances the VM, re-checking every 50 ms.
 
 **The worker RPC timeout is the backstop for a truly wedged worker.** A worker that hangs never *crashes*, so without it the awaiting HTTP request or publish render would hang forever and crash recovery would never engage. When `requestFromWorker` times out, the call rejects with `Plugin "<id>" did not respond to <kind> within <ms>ms` and the worker goes through the same teardown as a crash (`handleWorkerCrash`): terminated, sibling pending calls rejected, host-side registrations dropped, a crash event recorded for the admin UI, and the sliding-window counter decides auto-respawn vs parking the plugin in `error` state.
 
@@ -524,7 +552,116 @@ Routes mount under `/admin/api/cms/plugins/<id>/runtime/*`. The host enforces th
 
 Request bodies are **byte-safe end to end**. The host reads the incoming body once as raw bytes and carries it to the sandbox tagged `utf8` (text verbatim) or `base64` (binary), so `req.text()` / `req.json()` decode correctly (including multibyte UTF-8) and `req.arrayBuffer()` returns the exact payload bytes. Pre-parsed `body` fields cover `application/json`, `application/x-www-form-urlencoded` (repeated keys become arrays), and `multipart/form-data` — text fields arrive as strings, file fields as uploaded-file facades (`{ name, type, size, arrayBuffer(), text() }`) whose bytes are uncorrupted, so plugins can accept image/PDF uploads. (De)serialization lives in `server/plugins/host/routeIo.ts`; the wire codec in `server/plugins/protocol/bodyEncoding.ts`.
 
+Route handlers never receive Instatic's own cookies. The host removes every `instatic_` cookie (admin session, member session, branch preview) from `req.headers.cookie` before the request reaches the sandbox (`server/sessionCookies.ts`); who the caller is arrives as `ctx.user`. Other cookies pass through. An `Authorization` header that names a member app token is removed the same way (see "Apps" below); any other value passes through.
+
 Custom responses (status, headers, non-JSON bodies) use the raw-response escape hatch: return `{ __response: true, status, headers, body }` instead of a plain object. `body` accepts a string (sent as UTF-8 text) or an `ArrayBuffer` / TypedArray / `DataView` (sent byte-exactly — serve images, zips, PDFs directly); anything else throws a `TypeError`.
+
+### Site members — requires `members.read` / `members.write` / `members.tags`
+
+Site members are the people with an account on the published site (see [members](members.md)). They are not admin users: `ctx.user` is an admin, `ctx.member` is a member.
+
+**The public mount.** Routes for the published site are served at `/_instatic/plugins/<pluginId>/<path>` (`server/plugins/publicRoutes.ts`), outside `/admin`. It serves a plugin's `routes.public.*` and `routes.member.*` routes; capability-gated and `authenticated` routes answer 404 there. Public routes are still reachable on the admin mount too; member routes are only on the public one. Bodies over 1 MiB are refused.
+
+```js
+// Only a signed-in member reaches the handler; ctx.member is always set.
+api.cms.routes.member.get('/orders', (ctx) => listOrders(ctx.member.id))
+// Only a member holding the tag; others get 403.
+api.cms.routes.member.post('/download', { tag: 'pro' }, handler)
+// A public route sees ctx.member too when the plugin holds members.read.
+api.cms.routes.public.get('/price', (ctx) => priceFor(ctx.member))
+```
+
+- `ctx.member` is `{ id, email, tags, profile }` or `null`. The host resolves it; the member's session cookie is still stripped from `req.headers`.
+- A signed-out visitor gets 401 from a member route. A member-route write (POST, PATCH, DELETE) must name this site's origin, as the member endpoints require; a public-route write may omit it (webhooks) but may not name another site.
+- A response for a member is sent `Cache-Control: private, no-store` unless the handler sets its own.
+
+**Apps.** A site member can sign in to an app the owner registered (a desktop app, say; see [members](members.md) → "Sign-in for apps"). By default a member route answers only the member's browser. A plugin lets apps in route by route:
+
+```json
+"appScopes": [{ "name": "read", "description": "See your purchases and plan" }]
+```
+
+```js
+// The member's browser, or an app whose sign-in carries plugin:<pluginId>:read.
+api.cms.routes.member.get('/orders', { app: { scope: 'read' } }, (ctx) => {
+  // ctx.app is { id, name, scope } for an app, null for the browser.
+  return listOrders(ctx.member.id)
+})
+// No `app`: an app's token gets 403 here, whatever it carries.
+api.cms.routes.member.post('/cancel', (ctx) => cancel(ctx.member.id))
+```
+
+- Each `appScopes` entry becomes the scope `plugin:<pluginId>:<name>`. The owner sees the list at install, picks from it when registering an app, and the member reads `description` on the approval page before allowing the app.
+- A route can only name a scope the manifest declares; anything else fails activation (and `instatic-plugin lint` reports it before upload).
+- A `description` is what the member agrees to, so `parsePluginManifest` holds it to that: no control or invisible formatting characters, not blank after the cleaning the approval page applies (`plainLine`), and not the words of a built-in scope (`readsAsBuiltInAppScope`, compared without letter case, alone or inside a longer text). On the approval page and in the Apps dialog a plugin scope reads `Through the plugin “<name>”: <description>` (`pluginAppScopeText` in `@core/members`). Core's words come first and the plugin's name sits between quotation marks core chose: double quotation marks of every kind are stripped from the name so it cannot close the quote, and a name that is blank after cleaning or repeats a built-in scope's text is replaced by the plugin id (the install is not refused). So neither the name nor the description can make one plugin scope read as a built-in entry or as several entries.
+- An update keeps an approval only while the scope still reads the same. `storePluginManifest` (`server/handlers/cms/plugins/install.ts`) compares the installed manifest's `appScopes` with the new one (`diffPluginAppScopes`) and, in the transaction that replaces the plugin row, withdraws every scope that was removed or whose `description` changed: the sign-ins that carried it end and the scope comes off the registered apps, so the owner gives it back and the member is asked again in the new words. Unchanged scopes keep their approvals. This also holds for a reinstall of the same version and a JSON install over an existing row; a failed upgrade that rolls back does not restore what was withdrawn. The update's review screen marks each scope New, Reworded, Unchanged or Removed, warns that members will be asked again, and does not say "No new permissions in this update" when the scopes differ. The `plugin.update` audit event lists `withdrawnAppScopes`.
+- Uninstalling the plugin ends every app sign-in that carried one of its scopes and takes those scopes off the registered apps (`withdrawPluginAppScopes`), in the same transaction that deletes the plugin row, so no failure later in the removal leaves an approval behind. A fresh install withdraws whatever is still recorded for its id as well, so a package installed later under the same id inherits nothing.
+- The app calls with `Authorization: Bearer <access token>`. The host checks the token, the member behind it and the scope, then hands the handler `ctx.member` and `ctx.app`. The token is removed from `req.headers`, as the session cookie is, and not only there: `serializeRouteRequest` (`server/plugins/host/routeIo.ts`) drops the `Authorization` header from every request handed to plugin code whenever its value names a member app token (`imem_at_` or `imem_rt_`, in any letter case, anywhere in the value), under any scheme (`Bearer`, `DPoP`, `Token`, none) and on every kind of route, so an app that sends its token to everything on the mount does not hand it to a handler. A plugin's own secrets (a webhook signature, a proxy's Basic credentials) do not look like one and pass through. A request with a `Bearer` header (the scheme in any letter case) is treated as the app's even when a session cookie rides along; any other `Authorization` scheme is ignored when deciding who is calling and the cookie decides.
+- An app call needs no `Origin` (no cookie is acting). A `tag` on the route still applies, through the member.
+- 401 means the token is not live; 403 means the route is closed to apps, the sign-in lacks the scope, or the member lacks the tag.
+- Keep writes closed unless an app really needs them: open read routes under one scope and leave anything that changes the account to the browser.
+
+```js
+const member = await api.cms.members.get({ email })            // or { id }; null when there is none
+await api.cms.members.invite({ email, tags: ['pro'] })         // members.write (+ members.tags for tags)
+await api.cms.members.tags.grant(member.id, 'pro', { expiresAt })  // members.tags
+await api.cms.members.tags.revoke(member.id, 'pro')            // only this plugin's own grant
+```
+
+- A tag a plugin grants is recorded with the plugin id as its source. `revoke` withdraws that grant only: a tag an administrator or another plugin gave stays. Tags starting with `instatic:` cannot be granted.
+- `invite` sends the site's invitation email. It rejects when the address already has an account, and when the site has no configured public address or no outgoing email (there is no request to take a link address from).
+
+**Member events** (need `cms.hooks` and `members.read`): `member.created`, `member.verified`, `member.signedIn` (`{ memberId, email }`), `member.tagged` (`{ memberId, tag, source, expiresAt }`), `member.deleted` (`{ memberId }`). They are sent without waiting, so a listener cannot delay or cancel a sign-in.
+
+### Email — requires `mail.send` / `mail.send.external`
+
+A plugin sends only email it declared. The manifest lists its templates; each is a subject and a Markdown body with `{variables}`:
+
+```jsonc
+{
+  "permissions": ["mail.send"],
+  "mail": {
+    "templates": [
+      {
+        "key": "ticket.reply",
+        "label": "Ticket reply",
+        "description": "Sent to the customer when the team answers a ticket.",
+        "variables": [
+          { "name": "subject", "label": "Ticket subject", "sample": "Publishing stops at 80%" },
+          { "name": "link", "label": "Link to the ticket", "sample": "https://example.com/account/support/1042", "kind": "link" }
+        ],
+        "subject": "Re: {subject}",
+        "body": "We answered **{subject}**.\n\n[Open the ticket]({link})"
+      }
+    ]
+  }
+}
+```
+
+```js
+await api.cms.mail.send({
+  template: 'ticket.reply',
+  to: { member: memberId },              // mail.send: the host looks the address up
+  variables: { subject, link },
+  reference: `ticket-${id}`,             // optional, handed back with the outcome
+})
+await api.cms.mail.send({ template: 'ticket.opened', to: { address: 'support@example.com' }, variables })  // mail.send.external
+
+const site = await api.cms.site.publicUrl()   // 'https://example.com' or null; no permission
+```
+
+- **Templates only.** There is no free-form subject, body, sender, cc, attachment or header. While the plugin is enabled its templates are in the mail catalogue as `plugin.<pluginId>~<key>`, grouped under the plugin's name in Email → Templates, where the owner can reword them, preview them and send a test. The owner's wording survives an upgrade (unless the upgrade drops that template) and is deleted on uninstall. (`server/mail/pluginTemplates.ts`, `src/core/plugins/manifestMail.ts`.)
+- **What a template may contain.** The Markdown subset and nothing else: raw HTML is stripped to it by the sanitizer, so no forms, scripts, frames or styles. Each variable has a `kind`: `text` (the default) or `link`. A `text` variable may sit anywhere in a sentence (`Ticket #{id}`). A `link` variable must stand alone, with spaces, a line break or sentence punctuation around it, or be the whole address of a link (`[Open]({link})`); the manifest parser and `instatic-plugin lint` refuse a template that glues one into text (`Open:{link}`, `other.example/?t={link}`), puts a `text` variable against another variable or against text that reads as an address (`{a}.{b}`, `www.{name}`), or uses a variable it does not declare, so a template that installs is one that fills (see [email](email.md) → Templates).
+- **Reviewed before install.** The install and upgrade review shows each template's subject and body in a script-less frame. An upgrade that adds a template or changes one (its subject, body, label, description, or the name or kind of a variable) flags it for approval, like an added permission.
+- **Values are held to their kind.** A `link` value must be an `http(s)` address. A `text` value may not contain what could become a clickable address: `://`, `www.`, an `@`, `/` or `\\` between two words, a `.` or `:` joining two things other than digits (`3.5` and `12:30` pass; `evil.example`, `node.js`, `host:8080` do not), an IP address, or a control character. Every variable the template's current wording uses must be given, or `send` rejects with `variable_missing:` (an empty `link` counts as not given; a variable the template does not declare is refused). A refused value rejects `send` with a message starting `variable_not_allowed:`; if the email would still go out with a variable left in it, `send` rejects with `template_invalid:`. Nothing is queued in either case. The rule is simple on purpose and refuses some honest text (`node.js`, `and/or`): put such words into the template, not into a value. A value is sent as written, with only invisible characters removed; a value that would finish an address begun by the template's text around it (`.example` after `shop`) rejects with `template_invalid:`.
+- **What this protects, and what it does not.** Members' single-use links exist only in the core's templates and never reach a plugin. The risk in plugin email is a plugin the owner installed and granted `mail.send` putting a clickable address into wording the owner approved. The value rule is a best-effort barrier against that, not a guarantee ([email](email.md) → Templates has the full threat model).
+- **Braces are reserved.** A `{name}` that is not a declared variable (or `site.name` / `site.url`) is refused in the manifest and in the owner's edit; `\{name}` writes literal braces.
+- **Values are text.** `variables` may only name variables the template declares; `site.name` and `site.url` are the site's and cannot be set. The renderer escapes every value, and a value becomes a link only when it is the whole address and `http(s)` (see [email](email.md) → Templates). Build links from `api.cms.site.publicUrl()`, never from a request's `Host` header.
+- **Two permissions, two RPC targets.** `{ member }` goes through `cms.mail.send` (`mail.send`). The template and variables are checked first; then an id that is not an active member is refused with one answer, the same for an unknown, a deleted and a suspended member. `{ address }` goes through `cms.mail.sendExternal` (`mail.send.external`) and takes exactly one address. Holding one permission does not imply the other. Email to an address carries whatever the plugin puts in the variables off the site, so `mail.send.external` is a data channel that `networkAllowedHosts` does not restrict; the permission text says so.
+- **Queued, not sent.** `send` resolves `queued` once the site's mail queue holds the email (or `captured` on a development server with no connector), and rejects when email is not set up in production. The queue sends in the background, after the core's own mail, and retries temporary failures until the email's deadline, a day after it was accepted ([email](email.md) → The queue). While the site's connector is paused for a wrong key or password, a plugin's email is accepted and held with everyone else's. The outcome arrives as an event.
+- **Limits** (`server/mail/limits.ts`). Load is never refused: mail waits its turn. Three things are: more than 20 emails from one plugin to one recipient within a clock hour, more than 200 emails from one plugin to addresses (members do not count) within a clock hour, and more than 10,000 of one plugin's emails waiting. All are counted atomically in the database, so parallel sends cannot slip past them. A member is counted by id and an address by itself, never together, so a refusal cannot reveal which address a member has.
+- **Outcome events** (need `cms.hooks`): `mail.delivered` (`{ template, to, reference }`) and `mail.failed` (`{ template, to, reference, reason }`). `to` is the recipient exactly as the plugin named it, `{ member }` or `{ address }`, and `reason` is one of `recipient_rejected`, `expired`, `template_removed`, `unreadable`, `recipient_unavailable` (the member was suspended or deleted before the email went out), `template_invalid` (it would have gone out with a variable still in it). A plugin never receives a member's address or the provider's own error text (which can quote one); the full sentence is in the admin's Activity. So `mail.send` is not a way to read members without `members.read`. Only the plugin that queued the email hears them (`hookBus.emitTo`). An outcome that arrives while the plugin is not listening (disabled, being reloaded or upgraded) is held in memory (500 per plugin, a day at most) and delivered when it next subscribes; a server restart in between loses it. Delivery is at most once: if the plugin's sandbox is torn down between the emit and the listener running, that outcome is not sent again (the admin's Activity has it). An install hears only about email it queued itself: each install has a random id that its queued email carries, so uninstalling and installing the same id again starts with nothing.
+- **When the plugin goes away.** A disabled plugin's templates leave the catalogue and what it had waiting waits with them: it is sent when the plugin is enabled again, or fails as `expired` at its deadline. Reloading the plugins (another plugin's uninstall, any upgrade) never fails waiting email. Uninstalling removes the plugin's waiting email from the queue at once, and an upgrade that drops a template fails what was waiting for it (`template_removed`).
 
 ### Plugin-owned records — requires `cms.storage`
 
@@ -532,11 +669,76 @@ Custom responses (status, headers, non-JSON bodies) use the raw-response escape 
 const items = api.cms.storage.collection('items')
 const all   = await items.list()
 const made  = await items.create({ title: 'Draft', status: 'pending' })
-await items.update(made.id, { status: 'approved' })
+const same  = await items.get(made.id)                       // record or null
+await items.update(made.id, { title: 'Draft', status: 'approved' })
 await items.delete(made.id)
 ```
 
-Plugin storage is per-plugin, per-collection. The collection name must match a `resources[].id` declared in the manifest. The current collection API is intentionally small: `list(options?)`, `create(data)`, `update(recordId, data)`, and `delete(recordId)`. `list()` returns `{ records, totalCount }` and accepts `StorageListOptions` from `src/core/plugin-sdk/storageSchemas.ts` for filtering, ordering, and pagination. The host bridge targets are `cms.storage.list`, `cms.storage.create`, `cms.storage.update`, and `cms.storage.delete`.
+Plugin storage is per-plugin, per-collection: every call is scoped to the calling plugin's id, so a plugin can neither read another plugin's records nor collide with its keys. The collection name must match a `resources[].id` declared in the manifest. The repository is `server/repositories/pluginRecords.ts`; the host handlers are `server/plugins/host/handlers/storage.ts`.
+
+| Method | Resolves | Notes |
+|---|---|---|
+| `list(options?)` | `{ records, totalCount }` | `StorageListOptions` (`src/core/plugin-sdk/storageSchemas.ts`): filter, orderBy, limit (default 100, max 1000), offset. Semantics below. |
+| `get(id)` | record or `null` | |
+| `getByKey(value)` | record or `null` | Needs a `uniqueField` on the resource. |
+| `create(data)` | record | Rejects with `storage_duplicate:` when the unique key is taken. |
+| `createIfAbsent(data)` | `{ record, created }` | Needs a `uniqueField` and a value for it. Atomic. |
+| `update(id, data, { ifVersion }?)` | record or `null` | Replaces the whole `data`; `version` goes up by one. With `ifVersion`, rejects with `storage_conflict:` unless the record is still at that version. |
+| `delete(id, { ifVersion }?)` | `boolean` | Same `ifVersion` rule. |
+
+A record is `{ id, pluginId, resourceId, data, uniqueKey, version, createdAt, updatedAt }`. `version` starts at 0.
+
+`list` means the same on SQLite and Postgres (one case table runs against both: `src/__tests__/helpers/pluginRecordFilterCases.ts`):
+
+- **Filters are typed by the value you compare with.** `{ amount: 9 }` matches records whose `amount` is the number 9, never the string `"9"`; `{ paid: true }` matches booleans only; `{ id: 'x' }` strings only. The operators are `eq`, `ne`, `gt`, `gte`, `lt`, `lte`, `in` (values of mixed types allowed) and `like` (strings; `%` and `_` are wildcards, a backslash escapes them, and only ASCII letters ignore case: `'ÉCOLE'` matches `'École%'`, `'école'` does not). A row whose field holds another type matches no comparison, `ne` included.
+- **`null` means "missing or null".** `{ field: null }` matches records without the field or with `null` in it; `{ field: { ne: null } }` matches the rest. `null` cannot be used with the ordering operators.
+- **Strings compare byte-wise** (`'B' < 'a'`), not by the database's locale, for `gt` / `lt` and for ordering.
+- **`orderBy` sorts by type, then value:** records without the field first, then booleans (false, true), then numbers by value, then strings. `desc` reverses the whole sequence. Ties, and a list with no `orderBy`, fall back to newest first.
+- Filters and ordering reach top-level fields only, and field names must be plain identifiers.
+
+Record data is a JSON object, at most 512 levels deep. Text Postgres cannot store is refused on create and update on both databases, so a plugin behaves the same on either: the NUL character (`\u0000`) and an unpaired surrogate, in a key or a value at any depth.
+
+**Unreadable records.** A stored row whose data is not a JSON object (or nests deeper than 512 levels) does not fail the list: it comes back with `data: {}` and `unreadable: true`, and is logged once as `[plugin:<id>]`. The admin resource page says the record could not be read. `update` on such a record is refused (`PluginRecordUnreadableError`), because it would silently replace whatever the row held; `delete` works. On Postgres, a row still in the old string form (see `036_plugin_records_json_repair` in `docs/reference/database-dialects.md`) is not unreadable: it reads and updates normally. `list` filters do not match it until it is saved again; the server log gives the count of such rows after the migration (`[migrations]`).
+
+**Unique keys.** A resource may name one `text` field as its `uniqueField`. The host copies that field's value into an indexed column with a unique index over `(plugin, resource, key)`. The key is the value with surrounding whitespace trimmed and nothing else changed, at most 512 characters: it is case-sensitive and compares by code point, so `Evt_1` and `evt_1` are two keys, and so are a precomposed and a decomposed accent. Normalise in the plugin if you need otherwise. A record that leaves the field empty has no key and never collides. `getByKey` trims its argument the same way (`deriveRecordUniqueKey` in `src/core/plugins/resourceRecords.ts` is the one derivation). `parsePluginManifest` and `bun instatic-plugin lint` reject a `uniqueField` that is not a declared `text` field.
+
+```ts
+resources: [{
+  id: 'events',
+  title: 'Events',
+  uniqueField: 'eventId',
+  fields: [
+    { id: 'eventId', type: 'text', label: 'Event id', required: true },
+    { id: 'state', type: 'text', label: 'State' },
+  ],
+}]
+```
+
+**Handlers interleave. Write for it.** A plugin has one worker per server process and no queue in front of it: two route calls, or a route and a hook, run interleaved at every `await`, and each server instance sharing a Postgres database runs its own worker. "`list`, then `create` if nothing came back" is therefore a race: two deliveries of one webhook both see nothing and both create. Use the two calls the database decides in a single statement:
+
+- **Exactly once: `createIfAbsent`.** Of any number of concurrent calls with the same key, on one instance or several, exactly one gets `created: true`; the rest get the stored record and `created: false`.
+- **Read, change, write back: `update(..., { ifVersion })`.** Of several writers that read the same version, one succeeds; the others reject with `storage_conflict:` and should read again and retry.
+
+```js
+// A webhook that may be delivered twice, or twice at once.
+api.cms.routes.public.post('/webhook', async ({ body }) => {
+  const claim = await events.createIfAbsent({ eventId: body.id, state: 'received' })
+  if (!claim.created) return { ok: true }          // already handled, or being handled
+  await grantAccess(body)                           // must itself be safe to repeat
+  await events.update(claim.record.id, { eventId: body.id, state: 'done' }, { ifVersion: claim.record.version })
+  return { ok: true }
+})
+```
+
+If the handler can fail between the claim and the work, key the record on the event and store its progress in `state`, so a retry finds `received` and finishes the job instead of skipping it.
+
+**Refusals are message prefixes.** The plugin RPC carries only an error message, so tell refusals apart with `err.message.startsWith(...)`: `storage_duplicate:` (the unique key belongs to another record) and `storage_conflict:` (the record changed since `ifVersion` was read). The constants are `STORAGE_DUPLICATE_PREFIX` and `STORAGE_CONFLICT_PREFIX` in `storageSchemas.ts`.
+
+**When the declaration changes.** Stored keys follow the manifest. Whenever an install or upgrade (package or JSON) declares a resource whose `uniqueField` differs from what was stored before, including a resource declared for the first time over records that already exist, the host rebuilds every key of that resource from the new field (`rekeyPluginRecords`) in the same transaction that stores the manifest. It is refused up front, with the old version still running, when two existing records share a value or a value is longer than 512 characters, and, when the plugin gives an existing resource a different `uniqueField`, when that resource holds more than 50,000 records. The record limit never applies to a rollback or to a resource the previous manifest did not declare: restoring keys must not be blocked by size. That re-key runs in one transaction however many records the resource holds, so on a very large resource it holds its row locks, and the install request, until every key is written. Removing the `uniqueField` clears the keys. A failed upgrade's rollback restores the previous manifest and keys in one transaction; if that itself fails (records written by the failed version can make the old keys collide) the plugin is unloaded and left in `error` with the reason, its manifest and keys still those of the last transaction that succeeded, never half-keyed.
+
+Migration `037_plugin_record_keys` adds the two columns and the unique index. On Postgres, building the index blocks writes to `plugin_records` for as long as it takes to scan the table (well under a second for the sizes plugins hold; a few seconds per million rows).
+
+Editor-side plugin code (`api.cms.storage` in an editor entrypoint) and the admin resource pages go through `/admin/api/cms/plugins/:id/resources/:rid/records`, which offers list, create, update and delete only. A create or update that hits the unique key answers `409` with the message, which the resource page shows as a toast.
 
 ### CMS hooks — requires `cms.hooks`
 
@@ -547,7 +749,9 @@ const name = await api.cms.hooks.emit('sync.done', { /* … */ })
 // name === 'plugin.<your-plugin-id>.sync.done'
 ```
 
-**Host-emitted events** (the reserved core list, `CORE_HOOK_EVENTS` in `src/core/plugins/hookBus.ts`): `publish.before`, `publish.after`, `content.entry.created`, `content.entry.updated`, `content.entry.deleted`, `settings.changed`. **Filters**: `publish.html`, `publish.headers`, `content.entry.cells`.
+**Host-emitted events** (the reserved core list, `CoreHookEvent` in `src/core/plugins/hookBus.ts`): the `member.*` events (see "Site members" above), `publish.before`, `publish.after`, `content.entry.created`, `content.entry.updated`, `content.entry.deleted`, `settings.changed`. **Filters**: `publish.html`, `publish.headers`, `content.entry.cells`.
+
+A page rendered for a signed-in member on a protected route is passed to a plugin's `publish.html` filter only when the plugin also holds `members.read`; without it the filter is skipped for that render and the page is sent as it is.
 
 Every filter handler returns the same runtime value type it received. `src/core/plugins/hookBus.ts` checks each result before passing it to the next handler; a mismatched result keeps the previous value and logs the offending plugin ID. For example, `publish.html` returns a string and `content.entry.cells` returns an object, never `null`.
 
@@ -590,21 +794,24 @@ ctx.request: {
   query: Record<string, string>   // parsed page query string (?q=shoes → { q: 'shoes' })
   path: string                    // originating page path (e.g. '/search')
   slug: string | null
-  cookies: Record<string, string> // populated ONLY for perVisitor sources
+  cookies: Record<string, string> // populated ONLY for perVisitor sources; session cookies are removed
+  member?: { id, email, tags, profile } | null // perVisitor sources of a plugin holding members.read
 }
 ```
+
+**The signed-in member.** A `perVisitor` source of a plugin that holds `members.read` also gets `ctx.request.member`: the same record a route's `ctx.member` carries, or `null` when nobody is signed in (and in a branch preview, which has no visitor). It is set on any page, protected or not, so an account menu on a public page works, and on the later pages of a paged list (`/_instatic/loop/<id>`) as on the first. Suspended and deleted members have no session, so they arrive as `null`. Without `members.read` the source gets the cookies and no `member` field, and the host does not look the member up. The request is built per source (`sourceRequestFor` in `server/publish/loopSourceRequest.ts`): a source that is not per-visitor gets empty cookies and no `member`, even when its list sits beside or inside a per-visitor one, and `requestForPluginSource` (`server/plugins/host/handlers/loops.ts`) enforces the same on every fetch, so withdrawing the permission takes effect at once. A fragment holding any per-visitor list (the node itself, a list nested in another list's item, a list inside a Visual Component) is rendered for one visitor, never cached, and sent `Cache-Control: private, no-store`.
 
 At publish time (built-in, non-dynamic loops) `ctx.request` is `undefined` and the source must be deterministic. `ctx.db` and the full `site` are NOT sent to the worker — reach data via `api.cms.storage.*` or a gated `fetch(...)`.
 
 ### How a hole hydrates
 
-When a `base.loop` is bound to a `requestDependent` / `perVisitor` source, the publisher does NOT bake it. It emits a `<instatic-hole>` placeholder (`display: contents`, so it adds no wrapper box) and injects the ~1.1 KB hole runtime once per page (`/_instatic/hole-runtime.js?v=<publishVersion>` — versioned so a CMS update busts the cache). The runtime fetches each fragment from `/_instatic/hole/<nodeId>?v=<version>&u=<page-url>` — lazily via `IntersectionObserver` when the placeholder has visible skeleton content, eagerly on load otherwise — then swaps it in. It forwards the visitor's page path + query, and cookies ride along for `perVisitor` holes. Fully-static pages ship zero JS from the publisher.
+When a `base.loop` is bound to a `requestDependent` / `perVisitor` source, the publisher does NOT bake it. It emits a `<instatic-hole>` placeholder (`display: contents`, so it adds no wrapper box) and injects the ~1.1 KB hole runtime once per page (`/_instatic/hole-runtime.js?v=<contentHash>` — the hash of the runtime itself, so a CMS update busts the cache). The runtime fetches each fragment from `/_instatic/hole/<nodeId>?v=<snapshotHash>&u=<page-url>` — lazily via `IntersectionObserver` when the placeholder has visible skeleton content, eagerly on load otherwise — then swaps it in. It forwards the visitor's page path + query, and cookies ride along for `perVisitor` holes. Fully-static pages ship zero JS from the publisher.
 
 See [docs/features/publisher.md](publisher.md) for the full three-layer pipeline.
 
 ### Module JS on published pages — requires `frontend.assets`
 
-A plugin module's `render()` may return `js` (see `PluginRenderOutput`). It crosses the QuickJS boundary string-typed (non-strings are dropped by the VM normalizer) and is then gated host-side in `moduleAdapter.ts`: unless the plugin's **granted** permissions include `frontend.assets` — the same authority that already controls script tags via `frontend.assets[]` — the `js` is dropped with one `console.warn` per module. Enforcement always checks `grantedPermissions`, never the declared `permissions` array. With the grant, the JS is deduped per moduleId and served at `/_instatic/module-js/<moduleId>.js` on pages that use the module. Manifest format is unchanged.
+A plugin module's `render()` may return `js` (see `PluginRenderOutput`). It crosses the QuickJS boundary string-typed (non-strings are dropped by the VM normalizer) and is then gated host-side in `moduleAdapter.ts`: unless the plugin's **granted** permissions include `frontend.assets` — the same authority that already controls script tags via `frontend.assets[]` — the `js` is dropped with one `console.warn` per module. Enforcement always checks `grantedPermissions`, never the declared `permissions` array. With the grant, the JS is deduped per moduleId and served at `/_instatic/module-js/<moduleId>.js?v=<contentHash>` on pages that use the module. Manifest format is unchanged.
 
 ### Frontend assets — requires `frontend.assets`
 
@@ -624,11 +831,54 @@ Published-page tags are declarative. A plugin declares `frontend.assets[]` in th
 }
 ```
 
-Supported `kind` values are `script`, `script-inline`, `style`, `style-inline`, `link`, and `meta`. Placements are `head`, `head-end`, `body-start`, and `body-end`; defaults are chosen by tag type when omitted. `script.strategy` maps to `defer`, `async`, `module`, or sync script emission. External `src` / `href` paths are plugin-package-relative safe paths resolved under `/uploads/plugins/<id>/<version>/`; arbitrary remote script URLs are not accepted as plugin asset paths.
+Supported `kind` values are `script`, `script-inline`, `style`, `style-inline`, `link`, and `meta`. Placements are `head`, `head-end`, `body-start`, and `body-end`; defaults are chosen by tag type when omitted. `head` lands directly below the page's CSP `<meta>` rather than at the very top, because a `<meta>` policy does not govern anything the parser reaches before it. `script.strategy` maps to `defer`, `async`, `module`, or sync script emission. `src` / `href` paths are plugin-package-relative safe paths resolved under `/uploads/plugins/<id>/<version>/`. The one exception is a `script` whose `src` is an absolute `https://` address on a host the plugin declared in `frontend.origins.scripts` (below); a stylesheet `href` is always package-relative.
 
 `attrs` passes through to the emitted tag except where `server/publish/frontendInjections.ts` owns the value: `data-plugin-id` on every tag, `src` on every script, strategy attributes on external scripts, and `href` plus `rel` on stylesheet assets. Bare `link` and `meta` declarations rely entirely on `attrs`. Inline JSON-LD uses `{ "kind": "script-inline", "attrs": { "type": "application/ld+json" }, "content": "..." }`.
 
-The injection pipeline derives CSP changes from the plan. Inline scripts/styles add the matching `'unsafe-inline'` directive. `networkAllowedHosts[]` contributes published-page `connect-src` origins for plugins with frontend assets, which is why frontend trackers that call their own or third-party ingest endpoints must list those hosts as well as declare `frontend.assets`.
+The injection pipeline derives CSP changes from the plan, and every change adds to the policy the publisher emitted; none replaces a directive, so the importmap hash and the module-JS grant survive. Any script tag adds `'self'` to `script-src`. An inline style adds `'unsafe-inline'` to `style-src`.
+
+**Inline scripts run by hash, never by `'unsafe-inline'`.** A `script-inline` asset a browser executes adds its own `'sha256-…'` to `script-src`. "Executes" follows the HTML standard: no `type` (or `type=""`), a `type` that is exactly a JavaScript MIME type, `module`, `importmap` or `speculationrules` (ASCII case-insensitive, surrounding ASCII whitespace ignored), or no `type` with a JavaScript `language`. A type with parameters (`text/javascript; charset=utf-8`) is a data block, as it is in a browser. The publisher never adds `'unsafe-inline'` for scripts: a policy that carries any hash makes browsers ignore it, so granting it would only describe behaviour that does not exist. What follows for plugin authors:
+
+- The only inline code that runs on a published page is a declared `script-inline` asset. Inline event handlers (`onclick="…"`) and an inline `<script>` added any other way, including through the `publish.html` filter, are blocked by the browser. Attach handlers from a script, and ship code as an asset.
+- The hash covers the text the browser sees: CR LF and lone CR in `content` are emitted as LF, which is what the HTML parser would make of them anyway. Inline `content` (script or style) may not contain U+0000, which the parser would replace; the manifest parser refuses it.
+- A data block (`type="application/ld+json"`, a template, any non-script type) is not executed, needs no grant, and leaves the policy untouched: a page whose only plugin tag is JSON-LD keeps `script-src 'none'`.
+
+**`connect-src` follows the plugin, not its tags.** An enabled plugin granted `frontend.assets` contributes its `networkAllowedHosts[]` to `connect-src` on every published page once it can run code in a visitor's browser: it declares at least one `frontend.assets[]` entry or `frontend.origins` host, or it ships a canvas module pack (`entrypoints.modules`, the per-plugin stand-in for "may render module JS", since which modules emit JS is only known per render). A plugin whose hosts serve its server code alone contributes nothing, and one plugin's tag never opens another plugin's hosts. A frontend tracker that calls its own or a third-party ingest endpoint must list that host as well as hold `frontend.assets`.
+
+**When a change reaches a page.** Tags, origins and hosts are written into the page at render time: baked pages carry them from the publish that baked them. Installing, upgrading, enabling, disabling or removing a plugin does not rebake anything, so a baked page keeps what it had (a disabled plugin's tags and origins included) until the next publish.
+
+#### Third-party origins — `frontend.origins`
+
+A published page blocks every script and frame that is not its own (`script-src 'self'` at most, `frame-src 'none'`). A plugin that needs a third party's hosted code, such as a payment provider's script and the frames it opens, declares the hosts:
+
+```jsonc
+{
+  "permissions": ["frontend.assets"],
+  "networkAllowedHosts": ["api.payments.example"],
+  "frontend": {
+    "assets": [
+      { "kind": "script", "src": "https://js.payments.example/v3", "strategy": "async" },
+      { "kind": "script", "src": "frontend/checkout.js" }
+    ],
+    "origins": {
+      "scripts": ["js.payments.example"],
+      "frames": ["js.payments.example", "hooks.payments.example"]
+    }
+  }
+}
+```
+
+- `scripts` are added to the page's `script-src`, `frames` to `frame-src`, each as `https://<host>`. Calls the page makes (`fetch`, XHR) still go through `networkAllowedHosts` → `connect-src`. Fonts, styles and other directives cannot be widened.
+- An entry is a bare lowercase hostname or a leading-`*.` wildcard (`*.payments.example`, any subdomain depth, never the bare domain). No scheme, port, path, IP literal, single-label name, CSP keyword, or wildcard over a whole TLD (`*.com`); up to 20 per list. `FRONTEND_ORIGIN_HOST_PATTERN` in `src/core/plugins/manifestFrontend.ts` is the grammar.
+- Names nobody owns as a whole are refused on top of the grammar (`frontendOriginRejection`, same file): private-network names (`*.local`, `app.localhost`, `*.internal`), the country-code public suffixes listed in that file (`co.uk`, `com.au`, …), and a wildcard directly under a shared-hosting domain (`*.github.io`, `*.vercel.app`, `*.cloudfront.net`, anything under `amazonaws.com`, and the rest of the list in that file). Name the exact host instead (`acme.github.io`). The list is a floor, not the Public Suffix List, so the review screen also prints a warning under every wildcard origin ("Any subdomain of …").
+- A `script` asset may point at an absolute `https://` address only when its host matches one of the plugin's own `scripts` entries. The manifest parser refuses anything else, and the publisher checks again when it emits the tag. A `frames` entry does not authorise a script.
+- Origins are granted with `frontend.assets` and enforced against the granted set: a plugin that is disabled, errored, or was not granted the permission contributes none to a page rendered from then on (a page baked earlier keeps them until the next publish, as above). A plugin may declare origins with an empty `assets` list when its module JS is what loads the third-party code; its `networkAllowedHosts` still reach `connect-src`.
+- The install and upgrade review lists every origin in plain words ("May load scripts from …", "May embed frames from …"), and an upgrade that adds one flags it as new.
+- There is no `integrity` requirement on an external script. Providers that need this (payment scripts in particular) update the file in place, which a pinned hash would break; the declared host is the control. Add `integrity` through `attrs` when the provider publishes versioned, immutable files.
+
+**The editing canvas loads the stylesheets, and only the stylesheets.** A page styled by a plugin stylesheet has to look the same while editing as it does published, so the site editor's canvas loads every `style` and `style-inline` asset, in the published order (placement anchor, then plugin id, then manifest order). `script`, `script-inline`, `link` and `meta` assets never load in the canvas: it shares the admin origin and is an editing surface, so plugin frontend scripts must not run there. (The runtime preview is built by `buildRuntimePreviewDocument`, which runs the full `injectFrontendAssets` pass, so it gets every tag.)
+
+Both surfaces start from one eligibility rule, `listFrontendAssetPlugins` in `server/publish/frontendInjections.ts`: the plugin is enabled, not in the error state, and was **granted** `frontend.assets`. `collectFrontendInjections` builds the published tags from it; `collectCanvasPluginStylesheets` (`server/publish/canvasStylesheets.ts`) builds the canvas list, served by `GET /admin/api/cms/runtime/canvas-stylesheets` (`site.read`). The canvas receives CSS text, not URLs: external files are read from the plugin's upload directory and their relative `url(...)` / `@import` references rebased onto the stylesheet URL, so the canvas can pin viewport units and keep plugin CSS in the author cascade layer. The `media` attribute is kept; an `@import` inside a plugin stylesheet is not followed in the canvas. Canvas side: [`docs/editor.md`](../editor.md) → "CSS injection into the iframe".
 
 ### Settings — declared in `instatic-plugin.config.ts` / `plugin.json`
 
@@ -764,6 +1014,8 @@ const { count } = await api.cms.content.republishAll()
 Tree mutation and replacement payloads are validated against the canonical `@core/page-tree` TypeBox schemas before host dispatch. `insertNode.node` must be a complete `PageNode`, and `replace(tree)` must receive a complete `NodeTree` with a valid `rootNodeId`, matching node-map keys, resolvable child IDs, and no reachable cycles.
 
 The host protocol names the per-table entry calls as `cms.content.entries.list`, `cms.content.entries.get`, `cms.content.entries.getBySlug`, `cms.content.entries.create`, `cms.content.entries.update`, `cms.content.entries.delete`, `cms.content.entries.publish`, `cms.content.entries.moveTable`, `cms.content.entries.createMany`, `cms.content.entries.updateMany`, and `cms.content.entries.deleteMany`. Tree calls dispatch as `cms.content.tree.read`, `cms.content.tree.mutate`, and `cms.content.tree.replace`; `getPublishedSnapshot(...)` dispatches as `cms.content.snapshot`.
+
+`publish`, `delete` and `deleteMany` keep the baked publish slot in step, exactly as the Content workspace does: the entry's own page is written or removed, and baked pages that list its table through a loop are refreshed. See [publisher.md](publisher.md) → "Publishing one row, and the pages that list it".
 
 #### Content events
 
@@ -904,6 +1156,10 @@ const data = await res.json()
 const img   = await fetch('https://cdn.example.com/pixel.png')
 const bytes = new Uint8Array(await img.arrayBuffer())   // exact upstream bytes
 await fetch('https://api.example.com/upload', { method: 'POST', body: bytes })
+
+// Ask for a redirect instead of following it (a signed download link, say):
+const hop  = await fetch('https://api.example.com/asset/42', { redirect: 'manual' })
+const link = hop.status === 302 ? hop.headers.get('location') : null
 ```
 
 Bodies are **byte-safe in both directions**. The host reads upstream responses as raw bytes and ships them to the sandbox tagged `utf8` (text verbatim) or `base64` (binary), so `res.text()` / `res.json()` decode correctly (including multibyte UTF-8) and `res.arrayBuffer()` returns the exact bytes — fetching images, gzip, or protobuf works. Request bodies accept `string | ArrayBuffer | TypedArray/DataView`; anything else (`FormData`, `Blob`, `URLSearchParams`, streams) throws a `TypeError` naming the supported types — serialize to a string or bytes first. The VM `fetch(...)` polyfill dispatches through the `network.fetch` host target; aborts use `network.abort`. Wire codec: `server/plugins/protocol/bodyEncoding.ts`.
@@ -914,7 +1170,15 @@ The permission alone is insufficient. `performGatedFetch` in `server/plugins/hos
 
 2. **DNS resolution + SSRF guard.** The hostname is resolved to its addresses via the system DNS resolver **before** the connection is made. If any resolved address falls in a blocked range, the request is rejected — even when the host is allowlisted. Blocked ranges: loopback (`127.0.0.0/8`, `::1`), private (`10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`), link-local (`169.254.0.0/16`, `fe80::/10`), CGNAT (`100.64.0.0/10`), unique-local (`fc00::/7`), unspecified (`0.0.0.0/8`, `::`), and IPv4-mapped IPv6 forms of all of the above. This prevents DNS rebinding attacks (an allowlisted hostname that resolves to an internal IP is blocked).
 
-3. **Manual redirect following with re-validation.** The host does not use transparent redirect following (`redirect: 'manual'` is always set). Each redirect location is validated with both the allowlist and the DNS SSRF guard before the next hop. The chain is capped at 5 hops. Method downgrade (303 → GET; 301/302 non-GET → GET) follows the Fetch spec.
+3. **Manual redirect following with re-validation.** The host does not use transparent redirect following (Bun is always told `redirect: 'manual'`). Each redirect location is validated with both the allowlist and the DNS SSRF guard before the next hop. The chain is capped at 5 hops. Method downgrade (303 → GET; 301/302 non-GET → GET) follows the Fetch spec. A hop to another origin (scheme, host or port) drops exactly three request headers, `Authorization`, `Cookie` and `Proxy-Authorization` (matched case-insensitively), for that hop and every later one. Nothing else is removed: a secret in a custom header (`X-Api-Key`, say) and the request body of a 307 or 308 still travel to the redirect target, which must itself be on the allowlist. A plugin that sends secrets that way should use `redirect: 'manual'` and decide for itself. A redirect status with no `Location` header is returned as the response. This applies to every `guardedFetch` caller, including media uploads and downloads.
+
+**Timeouts.** A request that takes longer than 15 s in total (`DEFAULT_PLUGIN_FETCH_TIMEOUT_MS`), with the DNS lookup, every redirect hop and the response body included, is cancelled upstream and the `fetch` rejects with an error named `TimeoutError` (`Plugin "<id>" fetch timed out after <ms>ms`; the host marks it with `code: 'fetch_timeout'` on the api-reply). `fetch(url, { timeout: ms })` sets another limit for that request: a whole number of milliseconds from 1 to 300000, anything else throws a `TypeError`. Whatever the limit, the sandbox cuts it down so the request ends while its call can still handle the answer: the time left in the call, less a handling margin (a tenth of the call's budget, at least 1 s, at most half of it: 2 s for a route). A request that would get under 250 ms is not started and rejects at once with the same `TimeoutError`. So two requests in a row to a host that is down cost one timeout and one immediate rejection, both catchable, and the handler still has time to answer. Handlers interleave on one VM and a host call cannot be tied to the call that made it (QuickJS does not say which call a running job belongs to), so "the call" is whichever one in flight has the least time left: **any call in flight caps every request started meanwhile.** A schedule with a 60 s budget can see its request cut to under a second, or refused, while a route is in flight. That is a catchable timeout. Long downloads belong in a schedule that treats it as "try again next run", or better, in several short requests. A refusal (allowlist, blocked address) is always reported as that refusal, even when it arrives after the limit. An `AbortSignal` cancels a request sooner, as before. The timeout applies to plugin `fetch` only; the host's own media transfers through `guardedFetch` have no fixed limit, since a large upload or download has no sensible one.
+
+**The `redirect` option.** `fetch(url, { redirect })` accepts `'follow'` (default, as above), `'manual'` and `'error'`; any other value throws a `TypeError` in the sandbox.
+
+- `'manual'` returns the redirect response itself for any redirect status (301, 302, 303, 307, 308): `res.status` is the 3xx, `res.ok` is `false`, and `res.headers.get('location')` is the target as the server sent it (it may be relative or absent; several `Location` headers arrive joined with `, `). It is an ordinary response, not the browser's opaque redirect, and it has **no body**: the host drops a redirect's body without reading it. The first hop passes checks 1 and 2 exactly as any request does; the target is never resolved or contacted, so it does **not** need to be in `networkAllowedHosts`. The `Location` value is a string the upstream server chose: treat it as untrusted (it can name any address, internal ones included) and never fetch it from the plugin without it passing the allowlist like any other URL. Handing it to a visitor's browser in a redirect is the intended use.
+- `'error'` rejects on any redirect status, with or without a `Location`.
+- `res.redirected` is `true` when the host followed at least one hop.
 
 **`networkAllowedHosts` entry constraints (checked at manifest parse time).** The manifest parser validates every entry before a plugin can be installed. Only plain or wildcard hostnames are accepted — the entry pattern already rejects IPv6 literals, ports, paths, and query strings. Two additional checks run on top:
 
@@ -944,7 +1208,7 @@ independent layers that agree on that single authority:
 
 Both the VM layer and the host layer drive from the same `TARGET_PERMISSIONS` map in `server/plugins/protocol/targets.ts`. This single table is the source of truth for which permission each RPC target requires — the VM and host can never silently assert different permissions for the same target.
 
-Targets intentionally absent from `TARGET_PERMISSIONS` require no permission and are explicitly ungated: `cms.settings.replace` (any active plugin may update its own settings), `network.abort` (no active id without `network.outbound`), `crypto.digest` and `crypto.signHmac` (pure computation, no I/O — same model as `Math`/`JSON`). Two conditional checks that a static map cannot express remain in their handlers: `cms.routes.register` with `access.kind === 'public'` additionally requires `cms.routes.public`, and every `cms.content.*` handler additionally calls `assertContentTableAccess` for the per-table manifest allowlist.
+Targets intentionally absent from `TARGET_PERMISSIONS` require no permission and are explicitly ungated: `cms.settings.replace` (any active plugin may update its own settings), `network.abort` (no active id without `network.outbound`), `crypto.digest` and `crypto.signHmac` (pure computation, no I/O — same model as `Math`/`JSON`), and `cms.site.publicUrl` (the site's public address). Two conditional checks that a static map cannot express remain in their handlers: `cms.routes.register` with `access.kind === 'public'` additionally requires `cms.routes.public` and with `access.kind === 'member'` requires `members.read`, `cms.hooks.on` for a `member.*` event requires `members.read`, `cms.members.invite` with tags requires `members.tags`, and every `cms.content.*` handler additionally calls `assertContentTableAccess` for the per-table manifest allowlist.
 
 The VM-side check throws **synchronously** inside the sandbox, so a plugin that
 declares a permission it was denied is rejected before any host dispatch is even
@@ -968,6 +1232,11 @@ Risk levels:
 | `cms.storage`               | Admin / editor / server| Medium  | Read/write plugin-owned records                                         |
 | `cms.routes`                | Server               | High      | Register authenticated backend routes                                   |
 | `cms.routes.public`         | Server               | Dangerous | Register anonymously-callable routes; requires `cms.routes` too          |
+| `members.read`              | Server               | High      | See the signed-in member on its routes and per-visitor loop sources, register member routes, look members up, hear member events |
+| `members.write`             | Server               | High      | Invite site members                                                      |
+| `members.tags`              | Server               | Dangerous | Grant and withdraw member access tags (what a member may open)           |
+| `mail.send`                 | Server               | High      | Send the plugin's own email templates to site members                    |
+| `mail.send.external`        | Server               | Dangerous | Send the plugin's own email templates to any address                     |
 | `cms.hooks`                 | Server               | High      | Listen to CMS events / filter values                                    |
 | `cms.schedule`              | Server               | High      | Register cadence-driven handlers                                        |
 | `cms.content.read`          | Server               | Low       | List / read entries; read trees; search; published snapshots             |
@@ -985,7 +1254,7 @@ Risk levels:
 | `loops.register`            | Editor / server / manifest | Medium | Register custom `base.loop` sources                                  |
 | `visualComponents.register` | Admin / manifest     | Medium    | Ship VCs / page templates / class / layout packs (via `pack/site.json`) |
 | `dashboard.widgets.register`| Admin                | Medium    | Register cards in the admin dashboard widget grid                       |
-| `frontend.assets`           | Frontend / manifest  | High      | Inject declarative tags into every published page; also gates module render() `js` |
+| `frontend.assets`           | Frontend / manifest  | High      | Inject declarative tags into every published page; also gates module render() `js` and `frontend.origins` (third-party script / frame hosts) |
 | `network.outbound`          | Server               | High      | Make outbound HTTP requests (with `networkAllowedHosts` allowlist)      |
 | `media.import`              | Server / CMS media   | High      | Upsert managed media from a remote URL or contained package asset       |
 | `media.storage.adapter`     | Server / CMS media   | Dangerous | Register an electable media storage backend                             |
@@ -1163,6 +1432,10 @@ export default definePlugin({
   - `src/core/plugin-sdk/capabilities.ts` — permission catalog
   - `src/core/plugin-sdk/types/editorApi.ts` — editor / dashboard browser API
   - `src/core/plugin-sdk/types/frontend.ts` — published-page frontend asset declarations
+  - `src/core/plugins/manifestFrontend.ts` — `frontend` manifest schema, coherence rules, third-party origin matching
+  - `src/core/plugins/manifestMail.ts` — `mail` manifest schema, coherence rules, catalogue keys of a plugin's templates
+  - `server/plugins/host/handlers/mail.ts` — `cms.mail.*` and `cms.site.publicUrl`, outcome events
+  - `server/mail/pluginTemplates.ts`, `server/mail/limits.ts` — a plugin's templates in the mail catalogue, the per-plugin limits
   - `src/core/plugin-sdk/types/media.ts` — media storage / URL / variant plugin API
   - `src/core/plugin-sdk/builders/definePlugin.ts` — typed config builder
   - `src/core/plugin-sdk/builders/permissions.ts` — permission aliases for plugin authors
@@ -1218,7 +1491,7 @@ export default definePlugin({
   - `src/__tests__/architecture/media-storage-panel.test.ts`
   - `src/__tests__/architecture/media-signed-redirect-serving.test.ts`
   - `src/__tests__/architecture/media-presentation-pipeline.test.ts`
-  - `src/__tests__/plugins/gatedFetchSsrf.test.ts` — SSRF guards: allowlist, DNS rebinding, redirect re-validation, redirect cap
+  - `src/__tests__/plugins/gatedFetchSsrf.test.ts` — SSRF guards: allowlist, DNS rebinding, redirect re-validation, redirect cap, `redirect: 'manual' | 'error'`, credential headers dropped on a cross-origin hop
   - `src/__tests__/plugins/pluginBinaryIo.test.ts` — host-side byte safety: wire codec round-trips, binary fetch bodies, multipart file fields, binary route responses
   - `src/__tests__/plugins/pluginDashboardWidgets.test.ts` — dashboard widget registration surface
   - `src/__tests__/plugins/pluginSettings.test.ts` — settings rendering and persistence behavior

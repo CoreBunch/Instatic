@@ -19,6 +19,12 @@ export type HostRouteAccess =
   | { kind: 'capability'; capability: CoreCapability }
   | { kind: 'authenticated' }
   | { kind: 'public' }
+  /**
+   * A signed-in site member, optionally one holding `tag`. Public mount
+   * only. `appScope` names the manifest app scope an app's sign-in must
+   * carry to call the route with its token; null keeps it to browsers.
+   */
+  | { kind: 'member'; tag: string | null; appScope: string | null }
 
 interface HostRouteEntry {
   pluginId: string

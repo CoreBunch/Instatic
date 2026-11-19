@@ -49,3 +49,11 @@ export function hashCachePath(managerDir: string): string {
 export function preRestorePath(dbPath: string): string {
   return `${dbPath}.pre-restore`
 }
+
+/**
+ * Postgres has no database file to set aside, so its undo copy is the
+ * database written out as a SQLite file in the manager directory.
+ */
+export function postgresPreRestorePath(managerDir: string): string {
+  return join(managerDir, 'pre-restore.db')
+}

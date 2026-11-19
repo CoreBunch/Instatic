@@ -185,7 +185,7 @@ globalThis.__runRoute = async function runRoute(routeKey, ctxJson) {
   for (const key of Object.keys(ctx.body || {})) {
     body[key] = __materializeUploadedFiles(ctx.body[key])
   }
-  const result = await handler({ req: req, body: body, user: ctx.user })
+  const result = await handler({ req: req, body: body, user: ctx.user, member: ctx.member || null, app: ctx.app || null })
   if (
     result && typeof result === 'object' &&
     (result as { __response?: unknown }).__response === true

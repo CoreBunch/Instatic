@@ -22,6 +22,10 @@
  *      or `perVisitor: true`.
  *   4. `moduleId === 'base.visual-component-ref'` whose VC definition tree
  *      contains any dynamic node (recursive check with cycle guard).
+ *   5. The node depends on who the visitor is: a `member.*` binding or token,
+ *      or a show-when rule. This rule is switched off when the render is
+ *      already for one known visitor (`visitorKnown`), because the member is
+ *      then in the render context and the node renders in place.
  *
  * VC ref subtlety: when the VC definition tree is dynamic, the OUTER VC ref
  * node id (in the page tree) goes into `dynamicPageNodeIds` — not the inner
@@ -39,6 +43,18 @@ import type { IModuleRegistry } from '@core/module-engine'
 import { selectVisualComponentById } from '@core/page-tree'
 import { loopSourceRegistry } from '@core/loops/registry'
 import { containsTokens, parseTokenString } from '@core/templates/tokenInterpolation'
+import { SHOW_WHEN_PROP_KEY } from '@core/members'
+
+/** How a classification pass treats the visitor. */
+interface DetectionOptions {
+  /**
+   * The render is for one known visitor (a per-request render of a protected
+   * page, or a hole): member-dependent nodes render in place, not as holes.
+   */
+  visitorKnown?: boolean
+  /** Count only the member rule (5). Used to ask "does this subtree depend on the member?". */
+  memberOnly?: boolean
+}
 
 // ---------------------------------------------------------------------------
 // Binding-source classification
@@ -61,7 +77,9 @@ import { containsTokens, parseTokenString } from '@core/templates/tokenInterpola
  *   - `route.path`        → publish-time (fixed per static route)
  *   - `route.slug`        → publish-time
  */
-function isBindingSourceRequestDependent(source: string, field: string): boolean {
+function isBindingSourceRequestDependent(source: string, field: string, options: DetectionOptions): boolean {
+  if (source === 'member') return !options.visitorKnown
+  if (options.memberOnly) return false
   switch (source) {
     case 'route':
       // route.path and route.slug are fixed per static route.
@@ -105,33 +123,56 @@ interface AnalysisNode {
  * Rule 2: structured dynamicBindings whose source is request-dependent.
  * Returns the first matching reason string or null.
  */
-function checkDynamicBindings(node: AnalysisNode): string | null {
+function checkDynamicBindings(node: AnalysisNode, options: DetectionOptions): string | null {
   if (!node.dynamicBindings) return null
   for (const [propKey, binding] of Object.entries(node.dynamicBindings)) {
-    if (isBindingSourceRequestDependent(binding.source, binding.field)) {
+    if (isBindingSourceRequestDependent(binding.source, binding.field, options)) {
       return `node "${node.id}": binding "${propKey}" source "${binding.source}.${binding.field}" is request-dependent`
     }
   }
   return null
 }
 
+/** The first request-dependent `{source.field}` token in a string, as `source.field`, or null. */
+function requestDependentToken(value: string, options: DetectionOptions): string | null {
+  if (!containsTokens(value)) return null
+  for (const seg of parseTokenString(value)) {
+    if (seg.kind !== 'token') continue
+    if (isBindingSourceRequestDependent(seg.source, seg.field, options)) return `${seg.source}.${seg.field}`
+  }
+  return null
+}
+
 /**
- * Rule 2b: {source.field} tokens embedded in string prop values.
+ * Rule 2b: {source.field} tokens embedded in string prop values, and in the
+ * values of the author-set HTML attributes (a record of strings).
  * Returns the first matching reason string or null.
  */
-function checkInlineTokens(node: AnalysisNode): string | null {
+function checkInlineTokens(node: AnalysisNode, options: DetectionOptions): string | null {
   for (const [propKey, propValue] of Object.entries(node.props)) {
-    if (typeof propValue !== 'string') continue
-    if (!containsTokens(propValue)) continue
-    const segments = parseTokenString(propValue)
-    for (const seg of segments) {
-      if (seg.kind !== 'token') continue
-      if (isBindingSourceRequestDependent(seg.source, seg.field)) {
-        return `node "${node.id}": prop "${propKey}" contains request-dependent token "{${seg.source}.${seg.field}}"`
-      }
+    const strings =
+      typeof propValue === 'string'
+        ? [propValue]
+        : propKey === 'htmlAttributes' && propValue && typeof propValue === 'object'
+          ? Object.values(propValue).filter((value): value is string => typeof value === 'string')
+          : []
+    for (const value of strings) {
+      const token = requestDependentToken(value, options)
+      if (token) return `node "${node.id}": prop "${propKey}" contains request-dependent token "{${token}}"`
     }
   }
   return null
+}
+
+/**
+ * Rule 5 (the part that is not a binding): a show-when rule makes the node's
+ * presence depend on the visitor.
+ */
+function checkShowWhen(node: AnalysisNode, options: DetectionOptions): string | null {
+  if (options.visitorKnown) return null
+  const rule = node.props[SHOW_WHEN_PROP_KEY]
+  if (rule === undefined || rule === null) return null
+  return `node "${node.id}": shown only to some visitors`
 }
 
 /**
@@ -184,23 +225,28 @@ function classifyNode(
   site: SiteDocument,
   registry: IModuleRegistry,
   seenVcs: ReadonlySet<string>,
+  options: DetectionOptions,
 ): { dynamic: boolean; reason: string | null } {
   // Rule 1: module flagged dynamic.
   const def = registry.get(node.moduleId)
-  if (def?.dynamic) {
+  if (def?.dynamic && !options.memberOnly) {
     return { dynamic: true, reason: `node "${node.id}" (${node.moduleId}): module is flagged dynamic` }
   }
 
-  // Rule 2: structured dynamicBindings.
-  const bindingReason = checkDynamicBindings(node)
+  // Rule 2 (and 5 for `member.*`): structured dynamicBindings.
+  const bindingReason = checkDynamicBindings(node, options)
   if (bindingReason) return { dynamic: true, reason: bindingReason }
 
-  // Rule 2b: inline {source.field} tokens.
-  const tokenReason = checkInlineTokens(node)
+  // Rule 2b (and 5 for `member.*`): inline {source.field} tokens.
+  const tokenReason = checkInlineTokens(node, options)
   if (tokenReason) return { dynamic: true, reason: tokenReason }
 
+  // Rule 5: a show-when rule.
+  const showWhenReason = checkShowWhen(node, options)
+  if (showWhenReason) return { dynamic: true, reason: showWhenReason }
+
   // Rule 3: base.loop with a request-dependent source.
-  const loopReason = checkLoopSource(node)
+  const loopReason = options.memberOnly ? null : checkLoopSource(node)
   if (loopReason) return { dynamic: true, reason: loopReason }
 
   // Rule 4: base.visual-component-ref → the ref is dynamic iff its VC
@@ -228,6 +274,7 @@ function classifyNode(
       site,
       registry,
       new Set(seenVcs).add(componentId),
+      options,
     )
     if (innerReasons.length > 0) {
       // Surface the first inner reason so diagnostics name the construct that
@@ -260,6 +307,7 @@ function collectSubtreeReasons(
   site: SiteDocument,
   registry: IModuleRegistry,
   seenVcs: ReadonlySet<string>,
+  options: DetectionOptions,
   visitedIds?: Set<string>,
 ): string[] {
   const reasons: string[] = []
@@ -267,7 +315,7 @@ function collectSubtreeReasons(
     const node = nodes[nodeId]
     if (!node) return
     visitedIds?.add(node.id)
-    const { reason } = classifyNode(node, site, registry, seenVcs)
+    const { reason } = classifyNode(node, site, registry, seenVcs, options)
     if (reason) reasons.push(reason)
     // Keep descending even after a hit so `visitedIds` captures the FULL body
     // for suppression (ISS-021), not just the prefix up to the first dynamic
@@ -299,6 +347,7 @@ function findDynamicNodesWithReasons(
   page: Page,
   site: SiteDocument,
   registry: IModuleRegistry,
+  options: DetectionOptions,
 ): WalkResult {
   const nodes = page.nodes as Record<string, AnalysisNode>
   const result: WalkResult = { dynamicPageNodeIds: new Set(), reasons: [] }
@@ -314,7 +363,7 @@ function findDynamicNodesWithReasons(
   for (const node of Object.values(nodes)) {
     if (node.moduleId !== 'base.loop' || checkLoopSource(node)) continue
     const bodyIds = new Set<string>()
-    const bodyReasons = collectSubtreeReasons(node.children, nodes, site, registry, rootVcStack, bodyIds)
+    const bodyReasons = collectSubtreeReasons(node.children, nodes, site, registry, rootVcStack, options, bodyIds)
     if (bodyReasons.length > 0) {
       promotedLoops.add(node.id)
       for (const id of bodyIds) suppressed.add(id)
@@ -332,7 +381,7 @@ function findDynamicNodesWithReasons(
       continue
     }
 
-    const { reason } = classifyNode(node, site, registry, rootVcStack)
+    const { reason } = classifyNode(node, site, registry, rootVcStack, options)
     if (reason) {
       result.dynamicPageNodeIds.add(node.id)
       result.reasons.push(reason)
@@ -353,6 +402,30 @@ export function findDynamicNodeIds(
   page: Page,
   site: SiteDocument,
   registry: IModuleRegistry,
+  options: Pick<DetectionOptions, 'visitorKnown'> = {},
 ): Set<string> {
-  return findDynamicNodesWithReasons(page, site, registry).dynamicPageNodeIds
+  return findDynamicNodesWithReasons(page, site, registry, options).dynamicPageNodeIds
+}
+
+/**
+ * Does the subtree rooted at `rootNodeId` depend on who the visitor is (a
+ * `member.*` binding or token, or a show-when rule, including inside a
+ * Visual Component it references)? A fragment for which this is true is
+ * rendered for one visitor and must never be stored in a shared cache.
+ */
+export function subtreeDependsOnMember(
+  page: Page,
+  site: SiteDocument,
+  registry: IModuleRegistry,
+  rootNodeId: string,
+): boolean {
+  const reasons = collectSubtreeReasons(
+    [rootNodeId],
+    page.nodes as Record<string, AnalysisNode>,
+    site,
+    registry,
+    new Set(),
+    { memberOnly: true },
+  )
+  return reasons.length > 0
 }

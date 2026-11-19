@@ -45,6 +45,20 @@ export async function handleRoutesRegister(
       assertHostPluginPermission(entry, 'cms.routes.public')
       access = { kind: 'public' }
       break
+    case 'member': {
+      // A member route hands the plugin the signed-in member, so it needs
+      // the same grant as reading a member does.
+      assertHostPluginPermission(entry, 'members.read')
+      // A route can only be opened to apps under a scope the manifest
+      // declared: that is what the owner saw at install and what the member
+      // reads before allowing an app.
+      const appScope = arg.access.appScope ?? null
+      if (appScope !== null && !(entry.manifest.appScopes ?? []).some((scope) => scope.name === appScope)) {
+        throw new Error(`App scope "${appScope}" is not declared in the plugin manifest's appScopes`)
+      }
+      access = { kind: 'member', tag: arg.access.tag ?? null, appScope }
+      break
+    }
   }
 
   entry.routes.set(arg.routeKey, {

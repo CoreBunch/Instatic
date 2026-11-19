@@ -11,6 +11,7 @@
 import { useEffect, useRef, useState, useSyncExternalStore, type MouseEvent } from 'react'
 import { ArticleSolidIcon } from 'pixel-art-icons/icons/article-solid'
 import { AiBoxSolidIcon } from 'pixel-art-icons/icons/ai-box-solid'
+import { MailSolidIcon } from 'pixel-art-icons/icons/mail-solid'
 import { DashboardSolidIcon } from 'pixel-art-icons/icons/dashboard-solid'
 import { DatabaseSolidIcon } from 'pixel-art-icons/icons/database-solid'
 import { ImagesSolidIcon } from 'pixel-art-icons/icons/images-solid'
@@ -150,6 +151,7 @@ export function AdminSectionNavigation({
       badge: pluginIssuesCount > 0 ? <PluginsErrorDot count={pluginIssuesCount} /> : undefined,
     },
     { workspace: 'ai', key: 'ai', to: '/admin/ai', label: 'AI', icon: <AiBoxSolidIcon size={NAV_ICON_SIZE} aria-hidden="true" />, active: section === 'ai' },
+    { workspace: 'email', key: 'email', to: '/admin/email', label: 'Email', icon: <MailSolidIcon size={NAV_ICON_SIZE} aria-hidden="true" />, active: section === 'email' },
     { workspace: 'users', key: 'users', to: '/admin/users', label: 'Users', icon: <UsersSolidIcon size={NAV_ICON_SIZE} aria-hidden="true" />, active: section === 'users' },
   ]
   const entries: AdminNavEntry[] = [

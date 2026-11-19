@@ -2,7 +2,7 @@
     position: fixed;
     inset: 0;
     background: var(--scrim-60);
-    z-index: 200;
+    z-index: var(--step-up-z-index);
     display: grid;
     place-items: center;
 }

@@ -14,6 +14,7 @@ import { setPluginLifecycleStatus } from '../../../repositories/plugins'
 import type {
   InstalledPlugin,
   PluginLifecycleStatus,
+  PluginManifest,
   ServerPluginLifecycleHook,
 } from '@core/plugin-sdk'
 import {
@@ -27,6 +28,7 @@ import {
   activateSandboxedPluginModulePack,
   deactivatePluginModulePack,
 } from '@core/plugins/modulePackLoader'
+import { syncPluginMailTemplates } from '../../../mail/pluginTemplates'
 import type { CmsHandlerOptions } from '../shared'
 import { lifecycleErrorMessage, pluginManifestWithGrants } from './shared'
 
@@ -44,6 +46,23 @@ export async function runPluginLifecycleHook(
 ): Promise<LifecycleHookResult> {
   const manifest = pluginManifestWithGrants(plugin)
 
+  try {
+    return await runHook(db, plugin, manifest, options, hook, successStatus)
+  } finally {
+    // Whatever the hook did (install, upgrade, enable, disable), the email
+    // templates in the catalogue follow what is installed and enabled now.
+    await syncPluginMailTemplates(db)
+  }
+}
+
+async function runHook(
+  db: DbClient,
+  plugin: InstalledPlugin,
+  manifest: PluginManifest,
+  options: CmsHandlerOptions,
+  hook: Exclude<ServerPluginLifecycleHook, 'migrate'>,
+  successStatus: PluginLifecycleStatus,
+): Promise<LifecycleHookResult> {
   try {
     // Make sure the plugin's settings cache is current before the worker
     // seeds them into its local mirror — the rows carry the canonical

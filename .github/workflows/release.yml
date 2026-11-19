@@ -87,7 +87,9 @@ jobs:
   server-artifacts:
     name: Publish Server Artifacts
     # macOS arm64 runner cross-compiles every supported target from one machine.
-    runs-on: macos-14
+    # Pinned to a release GitHub still hosts: `macos-14` was retired, and a
+    # retired label cancels this job after the image is already published.
+    runs-on: macos-15
     timeout-minutes: 30
     needs:
       - verify

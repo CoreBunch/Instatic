@@ -30,6 +30,9 @@ export const ADMIN_BASE_URL =
  */
 export const PUBLIC_BASE_URL = process.env.E2E_PUBLIC_BASE_URL ?? ADMIN_BASE_URL
 
+/** Runtime npm package cache of the E2E server (`scripts/e2e-server.ts`). */
+export const RUNTIME_CACHE_DIR = '.tmp/e2e-runtime-cache'
+
 /**
  * Saved owner authentication state. The `setup` project writes this after
  * first-run setup; specs that opt in start already logged in as the owner.

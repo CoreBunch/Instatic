@@ -1,7 +1,9 @@
 import type {
   PluginRecord,
+  StorageCreateIfAbsentResult,
   StorageListOptions,
   StorageListResult,
+  StorageWriteOptions,
 } from '../storageSchemas'
 import type {
   ContentEntry,
@@ -22,6 +24,8 @@ import type { LoopEntitySource } from './loops'
 import type { ServerPluginMediaApi } from './media'
 import type { PluginMigrationContext } from './lifecycle'
 import type { PluginPermission } from './permissions'
+import type { ServerPluginMailApi, ServerPluginSiteApi } from './mail'
+import type { MemberRouteOptions, ServerPluginMembersApi } from './members'
 import type { ServerPluginRouteHandler } from './routes'
 import type { ServerPluginScheduleApi } from './schedule'
 import type { ServerPluginSettingsApi } from './settings'
@@ -29,6 +33,12 @@ import type { ServerPluginSettingsApi } from './settings'
 // ---------------------------------------------------------------------------
 // ServerPluginApi — full API surface available to server entrypoints
 // ---------------------------------------------------------------------------
+
+/** `member.get(path, handler)` or `member.get(path, { tag }, handler)`. */
+interface MemberRouteRegistrar {
+  (path: string, handler: ServerPluginRouteHandler): void
+  (path: string, options: MemberRouteOptions, handler: ServerPluginRouteHandler): void
+}
 
 export interface ServerPluginApi {
   plugin: {
@@ -92,7 +102,25 @@ export interface ServerPluginApi {
         patch: (path: string, handler: ServerPluginRouteHandler) => void
         delete: (path: string, handler: ServerPluginRouteHandler) => void
       }
+      /**
+       * Routes only a signed-in site member reaches (optionally one holding
+       * `tag`). The handler's `ctx.member` is always set. Requires
+       * `members.read`. Served on the public plugin mount,
+       * `/_instatic/plugins/<pluginId>/<path>`, not under `/admin`.
+       */
+      member: {
+        get: MemberRouteRegistrar
+        post: MemberRouteRegistrar
+        patch: MemberRouteRegistrar
+        delete: MemberRouteRegistrar
+      }
     }
+    /** Site members: look up, invite, and grant or withdraw access tags. */
+    members: ServerPluginMembersApi
+    /** Email: send one of the plugin's declared templates through the site's mail queue. */
+    mail: ServerPluginMailApi
+    /** Facts about the site a plugin needs to build links. No permission needed. */
+    site: ServerPluginSiteApi
     loops: {
       /**
        * Register a loop entity source. Source ID must be `<pluginId>.<name>`.
@@ -110,9 +138,33 @@ export interface ServerPluginApi {
     storage: {
       collection: (resourceId: string) => {
         list: (options?: StorageListOptions) => Promise<StorageListResult>
+        /**
+         * Create a record. Rejects with a `storage_duplicate:` message when
+         * the resource has a `uniqueField` and another record holds the value.
+         */
         create: (data: Record<string, unknown>) => Promise<PluginRecord>
-        update: (recordId: string, data: Record<string, unknown>) => Promise<PluginRecord | null>
-        delete: (recordId: string) => Promise<boolean>
+        /**
+         * Create the record, or return the one that already holds its unique
+         * key. Atomic across handlers and server instances: of any number of
+         * concurrent calls with one key, exactly one gets `created: true`.
+         * Needs a `uniqueField` on the resource and a value for it.
+         */
+        createIfAbsent: (data: Record<string, unknown>) => Promise<StorageCreateIfAbsentResult>
+        get: (recordId: string) => Promise<PluginRecord | null>
+        /** Look a record up by the value of the resource's `uniqueField`. */
+        getByKey: (key: string) => Promise<PluginRecord | null>
+        /**
+         * Replace a record's data; its `version` goes up by one. With
+         * `ifVersion` the write applies only if the record is still at that
+         * version, otherwise it rejects with a `storage_conflict:` message.
+         * Resolves null when the record does not exist.
+         */
+        update: (
+          recordId: string,
+          data: Record<string, unknown>,
+          options?: StorageWriteOptions,
+        ) => Promise<PluginRecord | null>
+        delete: (recordId: string, options?: StorageWriteOptions) => Promise<boolean>
       }
     }
     hooks: ServerPluginHooksApi

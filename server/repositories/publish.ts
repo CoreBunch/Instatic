@@ -21,6 +21,7 @@
  *   getLatestPublishedSiteSnapshot — first published page snapshot (for 404s etc.)
  *   getDraftPublishStatus     — compare draft vs published state for the UI
  */
+import type { AccessRule } from '@core/members'
 import { contentHash } from '../branches/contentHash'
 import type { DataRow } from '@core/data/schemas'
 import type { SiteDocument } from '@core/page-tree'
@@ -88,6 +89,8 @@ export interface PublishedPageVersionWrite {
   versionNumber: number
   runtimeAssets: PublishedPageRuntimeAssets | null
   runtimeFiles: BuiltRuntimeAssetFile[]
+  /** The page's access rule at publish, when it has one (not public). */
+  access?: AccessRule
 }
 
 export interface PersistSitePublishInput {
@@ -313,7 +316,7 @@ export async function persistSitePublish(
           ${page.versionId},
           ${page.pageId},
           ${page.versionNumber},
-          ${{ title: page.title, slug: page.slug }},
+          ${{ title: page.title, slug: page.slug, ...(page.access ? { access: page.access } : {}) }},
           ${page.slug},
           ${input.siteSnapshotId},
           ${page.runtimeAssets},
@@ -374,6 +377,64 @@ async function pruneSupersededRuntimeAssets(
   `
 }
 
+/**
+ * Slug and stored access value of every published page that carries one.
+ * The caller parses the value; this only finds the rows. The value is the
+ * rule the page had when its live version was published (`persistSitePublish`
+ * writes it into the version's cells).
+ */
+export async function listPublishedPageAccess(
+  db: DbClient,
+): Promise<Array<{ slug: string; access: unknown }>> {
+  const { rows } = await db<{ slug: string; cells_json: unknown }>`
+    select data_row_versions.slug, data_row_versions.cells_json
+      from data_rows
+      join data_row_versions on data_row_versions.id = data_rows.active_version_id
+     where data_rows.table_id = 'pages'
+       and data_rows.status = 'published'
+       and data_rows.deleted_at is null
+  `
+  const out: Array<{ slug: string; access: unknown }> = []
+  for (const row of rows) {
+    const cells = row.cells_json
+    if (cells && typeof cells === 'object' && 'access' in cells) out.push({ slug: row.slug, access: cells.access })
+  }
+  return out
+}
+
+export interface PageAddressRow {
+  id: string
+  /** The draft's slug. */
+  slug: string
+  /** The slug of the live version, or null while the page is not published. */
+  publishedSlug: string | null
+  /** The draft's cells, unparsed. */
+  cells: unknown
+}
+
+/**
+ * Every page of the main site with its draft slug and, when it is published,
+ * the slug it is live at. The two differ after a rename that has not been
+ * published yet.
+ */
+export async function listPageAddresses(db: DbClient): Promise<PageAddressRow[]> {
+  const { rows } = await db<{ id: string; slug: string; status: string; cells_json: unknown; published_slug: string | null }>`
+    select data_rows.id, data_rows.slug, data_rows.status, data_rows.cells_json,
+           data_row_versions.slug as published_slug
+      from data_rows
+      left join data_row_versions on data_row_versions.id = data_rows.active_version_id
+     where data_rows.table_id = 'pages'
+       and data_rows.deleted_at is null
+     order by data_rows.slug
+  `
+  return rows.map((row) => ({
+    id: row.id,
+    slug: row.slug,
+    publishedSlug: row.status === 'published' ? row.published_slug : null,
+    cells: row.cells_json,
+  }))
+}
+
 export async function getPublishedPageBySlug(
   db: DbClient,
   slug: string,
@@ -416,6 +477,47 @@ export async function getPublishedPageSnapshotById(
     limit 1
   `
   return rows[0] ? snapshotFromQueryRow(rows[0]) : null
+}
+
+/** A live publish's snapshot id and the importmap it baked. */
+export interface LivePublishedImportmap {
+  snapshotId: string
+  importmapBody: string
+}
+
+/**
+ * The importmap of every publish that is live right now (some published row's
+ * active version references its snapshot), newest first. The importmap is the
+ * only place runtime package URLs are published, so this is the full set of
+ * `/_instatic/runtime/cache/<hash>/` entries a visitor can legitimately ask for.
+ */
+export async function listLivePublishedImportmaps(db: DbClient): Promise<LivePublishedImportmap[]> {
+  const { rows } = await db<{ id: string; importmap_body: string }>`
+    select site_snapshots.id, site_snapshots.importmap_body
+    from site_snapshots
+    where site_snapshots.importmap_body is not null
+      and exists (
+        select 1
+        from data_row_versions
+        join data_rows on data_rows.active_version_id = data_row_versions.id
+        where data_row_versions.site_snapshot_id = site_snapshots.id
+          and data_rows.status = 'published'
+          and data_rows.deleted_at is null
+      )
+    order by site_snapshots.created_at desc
+  `
+  return rows.map((row) => ({ snapshotId: row.id, importmapBody: row.importmap_body }))
+}
+
+/** The site document a snapshot froze, or null when the snapshot is gone. */
+export async function getSiteSnapshotDocument(
+  db: DbClient,
+  snapshotId: string,
+): Promise<SiteDocument | null> {
+  const { rows } = await db<{ site_json: SiteDocument }>`
+    select site_json from site_snapshots where id = ${snapshotId} limit 1
+  `
+  return rows[0]?.site_json ?? null
 }
 
 /**

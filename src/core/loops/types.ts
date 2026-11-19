@@ -23,6 +23,7 @@
 import { Type, type Static } from '@core/utils/typeboxHelpers'
 import type { PropertySchema } from '@core/module-engine'
 import type { SiteDocument } from '@core/page-tree'
+import type { CurrentMember } from '@core/members'
 
 // ---------------------------------------------------------------------------
 // Field metadata
@@ -132,6 +133,13 @@ export interface SourceFetchContext {
    */
   request?: SourceRequestContext
   /**
+   * What this visitor may not open on the published site. A listing leaves
+   * these out, so a loop never shows a row or a page the visitor could not
+   * open by its address. Set on every public render; absent in the admin
+   * (previews show everything).
+   */
+  closed?: ClosedContent
+  /**
    * Read draft rows instead of published versions. Unset, the source decides
    * from `branchId` (drafts off main). The merge review sets it on both
    * sides, because a merge compares drafts with drafts.
@@ -144,6 +152,12 @@ export interface SourceFetchContext {
    * `@core/branches`). Absent means main.
    */
   branchId?: string
+}
+
+/** Tables (by logical id) and pages (by slug) a visitor may not open. */
+export interface ClosedContent {
+  tableIds: ReadonlySet<string>
+  pageSlugs: ReadonlySet<string>
 }
 
 /**
@@ -163,7 +177,19 @@ export interface SourceRequestContext {
    * for shared-cache `requestDependent` sources.
    */
   cookies: Record<string, string>
+  /**
+   * The signed-in site member. Given ONLY to a `perVisitor` source, and
+   * always present for one: `null` when nobody is signed in, or when the
+   * render has no visitor (a preview). The request is built per source, so a
+   * shared source never has this field, even beside a per-visitor list in
+   * the same fragment; nothing about a member can reach a cached fragment.
+   * A plugin's per-visitor source without `members.read` has no field either.
+   */
+  member?: SourceRequestMember | null
 }
+
+/** A site member as a per-visitor loop source sees them: the same record a plugin route gets. */
+export type SourceRequestMember = Pick<CurrentMember, 'id' | 'email' | 'tags' | 'profile'>
 
 /**
  * Context handed to `LoopEntitySource.preview()` editor-side. No DB
@@ -224,10 +250,19 @@ interface LoopEntitySourceBase {
    *
    * A `perVisitor` hole BYPASSES the Layer B cache: its `fetch()` runs on
    * EVERY page load and receives the full request context including
-   * `ctx.request.cookies`. The response is sent with `Cache-Control: no-store`.
+   * `ctx.request.cookies` and `ctx.request.member`. A fragment is per-visitor
+   * when any list in it uses such a source; it is sent with
+   * `Cache-Control: private, no-store`.
    * Use sparingly — every per-visitor hole is an uncached request-time render.
    */
   perVisitor?: boolean
+  /**
+   * Whether this per-visitor source may be told who is signed in, asked on
+   * each fetch. Unset means yes (in-process sources). A plugin's source sets
+   * it to its `members.read` grant, so the member is neither looked up nor
+   * sent for a plugin that would not be given it.
+   */
+  mayKnowMember?: () => boolean
   /**
    * Property controls rendered in the loop's Properties Panel after the
    * source has been picked. Empty schema = no source-specific filters.

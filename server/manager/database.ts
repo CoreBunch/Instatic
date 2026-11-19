@@ -3,8 +3,9 @@
  * taking a consistent copy of the live database, and inspecting or preparing
  * a staged database file before it replaces the live one.
  *
- * Postgres instances have no file to copy, so every database operation of the
- * Manager API is SQLite-only; callers gate on {@link sqlitePathOf}.
+ * Postgres instances have no file to copy. They reach the same SQLite file
+ * format through `postgresBridge.ts`; callers branch on {@link sqlitePathOf}.
+ * Staged databases are always SQLite files, whichever engine will run them.
  */
 import { Database } from 'bun:sqlite'
 import { resolve } from 'node:path'

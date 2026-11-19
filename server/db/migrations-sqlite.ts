@@ -1526,4 +1526,394 @@ export const sqliteMigrations: Migration[] = [
       alter table data_tables add column created_by_plugin_id text;
     `,
   },
+  {
+    // Outgoing mail. `mail_connectors` are the accounts the server can send
+    // through (SMTP, Amazon SES); each secret is encrypted with the master
+    // key. `mail_settings` is one row: which connector sends, and as whom.
+    // `mail_templates` holds only the templates an owner has edited; the
+    // defaults live in code. `mail_outbox` is the delivery log; `body_text`
+    // is filled only in development, where mail is captured instead of
+    // sent, because bodies carry live sign-in and reset links.
+    id: '032_mail',
+    sql: `
+      create table if not exists mail_connectors (
+        id text primary key,
+        kind text not null,
+        label text not null,
+        config_json text not null default '{}',
+        secret_ciphertext blob,
+        secret_iv blob,
+        key_fingerprint text,
+        last_used_at text,
+        last_error text,
+        created_by_user_id text references users(id) on delete set null,
+        created_at text not null default (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+        updated_at text not null default (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+      );
+
+      create table if not exists mail_settings (
+        id text primary key,
+        default_connector_id text references mail_connectors(id) on delete set null,
+        from_address text not null default '',
+        from_name text not null default '',
+        reply_to text not null default '',
+        updated_by_user_id text references users(id) on delete set null,
+        updated_at text not null default (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+      );
+
+      create table if not exists mail_templates (
+        template_key text primary key,
+        subject text not null,
+        body_markdown text not null,
+        updated_by_user_id text references users(id) on delete set null,
+        updated_at text not null default (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+      );
+
+      create table if not exists mail_outbox (
+        id text primary key,
+        kind text not null,
+        to_address text not null,
+        subject text not null,
+        status text not null,
+        connector_id text,
+        connector_label text,
+        error text,
+        body_text text,
+        provider_message_id text,
+        duration_ms integer,
+        created_at text not null default (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+      );
+
+      create index if not exists mail_outbox_created_idx
+        on mail_outbox (created_at desc);
+
+      update roles
+         set capabilities_json = json_insert(capabilities_json, '$[#]', 'mail.manage'),
+             updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now')
+       where id in ('owner', 'admin')
+         and not exists (
+               select 1
+                 from json_each(roles.capabilities_json)
+                where value = 'mail.manage'
+             );
+    `,
+  },
+  {
+    // Site members: people who sign up and log in on the published site,
+    // kept fully apart from admin `users`. Sessions and tokens store only
+    // hashes. `member_tags` is keyed (member, tag, source) so a tag granted
+    // by a plugin and the same tag granted by hand are separate rows.
+    // `member_settings` is one installation-wide row, deliberately outside
+    // the branched, exported site document. `data_tables.access_json` holds
+    // a table's access rule for its entry routes (null = anyone).
+    id: '033_members',
+    sql: `
+      create table if not exists members (
+        id text primary key,
+        email text not null,
+        email_normalized text not null,
+        password_hash text,
+        status text not null default 'active',
+        email_verified_at text,
+        profile_json text not null default '{}',
+        last_login_at text,
+        deleted_at text,
+        created_at text not null default (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+        updated_at text not null default (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+      );
+
+      create unique index if not exists members_email_active_idx
+        on members (email_normalized) where deleted_at is null;
+
+      create table if not exists member_sessions (
+        id_hash text primary key,
+        member_id text not null references members(id) on delete cascade,
+        ip_address text,
+        user_agent text,
+        created_at text not null default (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+        last_seen_at text not null default (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+        expires_at text not null,
+        revoked_at text
+      );
+
+      create index if not exists member_sessions_member_idx
+        on member_sessions (member_id);
+
+      create table if not exists member_tokens (
+        id_hash text primary key,
+        member_id text not null references members(id) on delete cascade,
+        kind text not null,
+        payload_json text not null default '{}',
+        created_at text not null default (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+        expires_at text not null,
+        used_at text
+      );
+
+      create index if not exists member_tokens_member_kind_idx
+        on member_tokens (member_id, kind);
+
+      create table if not exists member_tags (
+        member_id text not null references members(id) on delete cascade,
+        tag text not null,
+        source text not null,
+        expires_at text,
+        created_at text not null default (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+        primary key (member_id, tag, source)
+      );
+
+      create index if not exists member_tags_tag_idx
+        on member_tags (tag);
+
+      create table if not exists member_events (
+        id text primary key,
+        member_id text references members(id) on delete set null,
+        kind text not null,
+        ip_address text,
+        user_agent text,
+        metadata_json text not null default '{}',
+        created_at text not null default (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+      );
+
+      create index if not exists member_events_member_idx
+        on member_events (member_id, created_at desc);
+
+      create table if not exists member_settings (
+        id text primary key,
+        signup_mode text not null default 'closed',
+        profile_fields_json text not null default '[]',
+        pages_json text not null default '{}',
+        updated_at text not null default (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+      );
+
+      alter table data_tables add column access_json text;
+
+      -- The capability-less admin role was called "Member", which now reads
+      -- as a site member. Relabel it, unless an owner already renamed it.
+      update roles
+         set name = 'No access',
+             description = 'An admin account that can sign in but do nothing. Not a site member: those sign in on the published site.'
+       where id = 'member'
+         and name = 'Member'
+         and description = 'Public-facing member account — no admin access by default.';
+
+      update roles
+         set capabilities_json = json_insert(capabilities_json, '$[#]', 'members.read'),
+             updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now')
+       where id in ('owner', 'admin')
+         and not exists (
+               select 1
+                 from json_each(roles.capabilities_json)
+                where value = 'members.read'
+             );
+
+      update roles
+         set capabilities_json = json_insert(capabilities_json, '$[#]', 'members.manage'),
+             updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now')
+       where id in ('owner', 'admin')
+         and not exists (
+               select 1
+                 from json_each(roles.capabilities_json)
+                where value = 'members.manage'
+             );
+    `,
+  },
+  {
+    // Outgoing email waits here until a connector takes it. A row holds the
+    // template key and the values to fill it with, encrypted, because the
+    // values carry live sign-in links; it is deleted once the email is sent
+    // or given up on. `lane` 0 is the core's own mail, which always goes
+    // before a plugin's. `deliver_before` is the moment after which sending
+    // would be pointless (the link in it has expired). `mail_outbox` gains
+    // the attempt count and the time of the next try, so the activity log
+    // can say a message is waiting. `mail_connectors.delivery_paused_at` is
+    // set while a connector refuses the account itself (a wrong key or
+    // password): queued email is then held, and one email at a time is let
+    // through as a probe, until one gets through. `accepted_at` marks a row
+    // whose email the provider has taken: such a row is never sent again,
+    // even if recording the outcome and deleting the row failed.
+    id: '034_mail_queue',
+    sql: `
+      create table if not exists mail_queue (
+        id text primary key,
+        outbox_id text not null,
+        kind text not null,
+        to_address text not null,
+        source text not null default 'core',
+        reference text,
+        lane integer not null default 0,
+        payload_ciphertext blob not null,
+        payload_iv blob not null,
+        attempts integer not null default 0,
+        next_attempt_at text not null,
+        deliver_before text not null,
+        claimed_at text,
+        accepted_at text,
+        suspect_at text,
+        last_error text,
+        created_at text not null default (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+      );
+
+      create index if not exists mail_queue_due_idx
+        on mail_queue (lane, next_attempt_at);
+
+      create index if not exists mail_queue_source_idx
+        on mail_queue (source);
+
+      alter table mail_outbox add column attempts integer not null default 0;
+      alter table mail_outbox add column next_attempt_at text;
+      alter table mail_outbox add column source text not null default 'core';
+
+      alter table mail_connectors add column delivery_paused_at text;
+    `,
+  },
+  {
+    // Email a plugin asks for. `mail_counters` holds the two limits as rows
+    // that are raised by one conditional UPDATE, so no two concurrent sends,
+    // on one server or several, can both take the last place: `to:<address>`
+    // counts a plugin's emails to one recipient in one clock hour (`bucket`),
+    // and `backlog` counts how many of a plugin's emails are waiting.
+    // `mail_queue.member_id` remembers that the sender named a site member
+    // rather than an address, so the outcome can be reported without ever
+    // handing the member's address back. `mail_outbox.source_label` is the
+    // sending plugin's name at the time, so the log still says who sent an
+    // email after that plugin is gone. `installed_plugins.install_id` is a
+    // random id given to an install when it first sends email, stamped on
+    // each email it queues (`mail_queue.install_id`): what became of an email
+    // is told only to the install that queued it, never to a later install of
+    // the same plugin id.
+    id: '035_plugin_mail',
+    sql: `
+      create table if not exists mail_counters (
+        source text not null,
+        scope text not null,
+        bucket text not null default '',
+        count integer not null default 0,
+        primary key (source, scope, bucket)
+      );
+
+      alter table mail_queue add column member_id text;
+
+      alter table mail_outbox add column source_label text;
+
+      alter table installed_plugins add column install_id text;
+
+      alter table mail_queue add column install_id text;
+    `,
+  },
+  {
+    // Postgres only: record data bound as a JSON string was stored as a
+    // string scalar no filter could see; its twin unwraps those rows. SQLite
+    // stores JSON as text either way, so there is nothing to repair here.
+    id: '036_plugin_records_json_repair',
+    sql: `
+      select 1;
+    `,
+  },
+  {
+    // Plugin storage: an optional unique key per record (derived from the
+    // resource's declared uniqueField) and a version counter for conditional
+    // updates. Schema only. NULL keys are distinct in a unique index on both
+    // dialects, so existing rows and resources without a uniqueField are
+    // unaffected.
+    id: '037_plugin_record_keys',
+    sql: `
+      alter table plugin_records add column unique_key text;
+
+      alter table plugin_records add column version integer not null default 0;
+
+      create unique index if not exists plugin_records_unique_key_idx
+        on plugin_records (plugin_id, resource_id, unique_key);
+    `,
+  },
+  {
+    // Sign-in for apps: a site member approves an app (Instatic Desktop, a
+    // premium plugin) and the app gets tokens that say who the member is.
+    // Separate from the MCP OAuth tables on purpose: those belong to admin
+    // users, and a member token must never be usable as an admin token.
+    id: '038_member_apps',
+    sql: `
+      create table if not exists member_apps (
+        id text primary key,
+        name text not null,
+        redirect_uris_json text not null default '[]',
+        scopes_json text not null default '[]',
+        created_by_user_id text references users(id) on delete set null,
+        created_at text not null default (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+        deleted_at text
+      );
+
+      -- An authorization request waiting for the member's answer on the
+      -- owner's approval page. Short-lived; answered at most once, and only
+      -- from the browser that opened it (browser_hash is that browser's
+      -- marker cookie, hashed).
+      create table if not exists member_app_requests (
+        id_hash text primary key,
+        app_id text not null references member_apps(id) on delete cascade,
+        browser_hash text not null,
+        redirect_uri text not null,
+        code_challenge text not null,
+        scope text not null,
+        resource text not null,
+        state text,
+        created_at text not null default (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+        expires_at text not null,
+        decided_at text
+      );
+
+      -- One approval of one app by one member. Every code and token hangs
+      -- off it, so revoking the grant ends them all.
+      create table if not exists member_app_grants (
+        id text primary key,
+        member_id text not null references members(id) on delete cascade,
+        app_id text not null references member_apps(id) on delete cascade,
+        scope text not null,
+        created_at text not null default (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+        last_used_at text,
+        expires_at text not null,
+        revoked_at text
+      );
+
+      create index if not exists member_app_grants_member_idx
+        on member_app_grants (member_id);
+
+      create table if not exists member_app_codes (
+        code_hash text primary key,
+        grant_id text not null references member_app_grants(id) on delete cascade,
+        app_id text not null references member_apps(id) on delete cascade,
+        redirect_uri text not null,
+        code_challenge text not null,
+        scope text not null,
+        resource text not null,
+        expires_at text not null,
+        consumed_at text
+      );
+
+      create table if not exists member_app_tokens (
+        id text primary key,
+        grant_id text not null references member_app_grants(id) on delete cascade,
+        app_id text not null references member_apps(id) on delete cascade,
+        kind text not null,
+        token_hash text not null unique,
+        scope text not null,
+        resource text not null,
+        created_at text not null default (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+        expires_at text not null,
+        revoked_at text
+      );
+
+      create index if not exists member_app_tokens_grant_idx
+        on member_app_tokens (grant_id);
+    `,
+  },
+  {
+    id: '039_member_app_devices',
+    sql: `
+      -- The device an app runs on: the thumbprint of a key the app keeps and
+      -- proves it holds on every refresh, and the name the app gave it.
+      alter table member_app_requests add column device_jkt text;
+      alter table member_app_requests add column device_name text;
+      alter table member_app_grants add column device_jkt text;
+      alter table member_app_grants add column device_name text;
+    `,
+  },
 ]

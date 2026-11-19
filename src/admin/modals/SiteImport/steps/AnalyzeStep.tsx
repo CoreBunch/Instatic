@@ -27,11 +27,17 @@ import { WarningDiamondSolidIcon } from 'pixel-art-icons/icons/warning-diamond-s
 import { ChevronRightIcon } from 'pixel-art-icons/icons/chevron-right'
 import { DragAndDropSolidIcon } from 'pixel-art-icons/icons/drag-and-drop-solid'
 import type { ImportPlan, StylesheetImportMode } from '@core/siteImport'
-import type { ImportSelection } from '../shared/importPlanning'
+import {
+  isGoogleFontRequested,
+  selectedGoogleFonts,
+  type ImportSelection,
+} from '../shared/importPlanning'
 import { StylesheetModeRows } from './StylesheetModeRows'
+import { SiteStylesheetRows } from './SiteStylesheetRows'
 import { ImportStepper } from '../shared/ImportStepper'
 import { withSiteImportCategoryTints } from '../shared/importCategoryAccent'
 import { FontTokenRows } from './FontTokenRows'
+import { DetailHead } from './DetailHead'
 import {
   basename,
   buildMediaGroups,
@@ -100,7 +106,10 @@ export function AnalyzeStep({
   onAddFiles,
   onSlugOverride,
 }: AnalyzeStepProps) {
-  const [active, setActive] = useState<Category>('pages')
+  // A stylesheet-only import has no pages to review; open where its content is.
+  const [active, setActive] = useState<Category>(
+    plan.pages.length === 0 && plan.stylesheets.length > 0 ? 'styles' : 'pages',
+  )
   const [query, setQuery] = useState('')
   const [openGroup, setOpenGroup] = useState<string | null>(plan.styleRuleSources[0] ?? null)
   const [dragging, setDragging] = useState(false)
@@ -305,6 +314,7 @@ export function AnalyzeStep({
           onAll={() => patch({ pagesIncluded: new Set(plan.pages.map((p) => p.source)) })}
           onNone={() => patch({ pagesIncluded: new Set() })}
         />
+        {plan.pages.length === 0 && <p className={styles.empty}>No pages in this import.</p>}
         <div className={styles.rows}>
           {plan.pages.map((page) => {
             const on = selection.pagesIncluded.has(page.source)
@@ -348,9 +358,12 @@ export function AnalyzeStep({
       <>
         <DetailHead
           title="Style rules"
-          sub="Pick how each stylesheet imports — editable rules, or a file kept as-is"
+          sub={plan.linkedStylesheets.length > 0
+            ? 'Pick how each stylesheet imports — editable rules, or a file kept as-is'
+            : 'Stylesheets no page links import as site stylesheet files'}
           count={selection.styleRulesIncluded.size}
           total={plan.styleRules.length}
+          hideBulk={plan.styleRules.length === 0}
           onAll={() => patch({ styleRulesIncluded: new Set(plan.styleRules.map((_, i) => i)) })}
           onNone={() => patch({ styleRulesIncluded: new Set() })}
         />
@@ -361,9 +374,19 @@ export function AnalyzeStep({
           onToggleStylesheet={toggleStylesheet}
           onStylesheetModeChange={onStylesheetModeChange}
         />
-        <div className={styles.toolbar}>
-          <SearchBar value={query} onValueChange={setQuery} placeholder="Search selectors…" />
-        </div>
+        <SiteStylesheetRows
+          plan={plan}
+          stylesheetsIncluded={selection.stylesheetsIncluded}
+          onToggleStylesheet={toggleStylesheet}
+        />
+        {plan.styleRules.length === 0 && plan.stylesheets.length === 0 && (
+          <p className={styles.empty}>No styles in this import.</p>
+        )}
+        {plan.styleRules.length > 0 && (
+          <div className={styles.toolbar}>
+            <SearchBar value={query} onValueChange={setQuery} placeholder="Search selectors…" />
+          </div>
+        )}
         <div className={styles.rows}>
           {ruleGroups.map((group) => {
             const matches = q
@@ -505,7 +528,7 @@ export function AnalyzeStep({
   function renderFonts() {
     const includedFontCount =
       plan.fonts.filter((font) => selection.fontsIncluded.has(font.family)).length +
-      plan.googleFonts.filter((font) => selection.fontsIncluded.has(font.family)).length
+      selectedGoogleFonts(plan, selection).length
     const includedFontTokenCount = plan.fontTokens.filter(
       (token) => !token.family || selection.fontsIncluded.has(token.family),
     ).length
@@ -548,25 +571,33 @@ export function AnalyzeStep({
                 />
               </div>
             ))}
-            {plan.googleFonts.map((f) => (
-              <div className={styles.listRow} key={`google:${f.family}`}>
-                <span className={styles.listIcon}>
-                  <HeadingIcon size={14} />
-                </span>
-                <div className={styles.info}>
-                  <span className={styles.title}>{f.family}</span>
-                  <span className={styles.meta}>
-                    Google font · {f.variants.length} {f.variants.length === 1 ? 'variant' : 'variants'} · {f.subsets.join(', ')}
+            {plan.googleFonts.map((f) => {
+              // A family only switched-off stylesheets ask for has nothing to
+              // style: it shows off, and follows those sheets back on.
+              const requested = isGoogleFontRequested(plan, selection, f)
+              return (
+                <div className={styles.listRow} key={`google:${f.family}`}>
+                  <span className={styles.listIcon}>
+                    <HeadingIcon size={14} />
                   </span>
+                  <div className={styles.info}>
+                    <span className={styles.title}>{f.family}</span>
+                    <span className={styles.meta}>
+                      {requested
+                        ? <>Google font · {f.variants.length} {f.variants.length === 1 ? 'variant' : 'variants'} · {f.subsets.join(', ')}</>
+                        : `Only used by ${f.stylesheetPaths.join(', ')}, which ${f.stylesheetPaths.length === 1 ? 'is' : 'are'} switched off`}
+                    </span>
+                  </div>
+                  <Switch
+                    checked={requested && selection.fontsIncluded.has(f.family)}
+                    disabled={!requested}
+                    switchSize="sm"
+                    onCheckedChange={() => toggleFont(f.family)}
+                    aria-label={`Include font ${f.family}`}
+                  />
                 </div>
-                <Switch
-                  checked={selection.fontsIncluded.has(f.family)}
-                  switchSize="sm"
-                  onCheckedChange={() => toggleFont(f.family)}
-                  aria-label={`Include font ${f.family}`}
-                />
-              </div>
-            ))}
+              )
+            })}
             <FontTokenRows tokens={plan.fontTokens} />
           </div>
         )}
@@ -644,44 +675,4 @@ export function AnalyzeStep({
   }
 
   return element
-}
-
-// ---------------------------------------------------------------------------
-// Detail header (title + sub + bulk cluster)
-// ---------------------------------------------------------------------------
-
-interface DetailHeadProps {
-  title: string
-  sub: string
-  count: number
-  total: number
-  warn?: boolean
-  hideBulk?: boolean
-  onAll?: () => void
-  onNone?: () => void
-}
-
-function DetailHead({ title, sub, count, total, warn, hideBulk, onAll, onNone }: DetailHeadProps) {
-  return (
-    <div className={styles.detHead} data-warn={warn ? 'true' : undefined}>
-      <div className={styles.detHeadText}>
-        <h3 className={styles.detHeadTitle}>{title}</h3>
-        <span className={styles.sectionSub}>{sub}</span>
-      </div>
-      {!hideBulk && (
-        <div className={styles.detHeadBulk}>
-          <span className={styles.detHeadCount}>
-            {count} of {total}
-          </span>
-          <button type="button" className={styles.link} onClick={onAll}>
-            All
-          </button>
-          <span className={styles.bulkSep}>·</span>
-          <button type="button" className={styles.link} onClick={onNone}>
-            None
-          </button>
-        </div>
-      )}
-    </div>
-  )
 }

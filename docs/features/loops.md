@@ -25,11 +25,12 @@ src/core/loops/
 ├── types.ts                 — LoopItem, LoopEntitySource, LoopSourceField, LoopFetchResult, ...
 ├── registry.ts              — LoopSourceRegistry singleton (`loopSourceRegistry`)
 └── sources/
-    ├── index.ts             — register the three built-ins at boot
+    ├── index.ts             — register the built-ins at boot
     ├── dataRows.ts          — data.rows (any data_table)
     ├── entryField.ts        — entry.field (array field on currentEntry)
     ├── sitePages.ts         — site.pages (+ shared helpers re-exported via barrel)
-    └── siteMedia.ts         — site.media
+    ├── siteMedia.ts         — site.media
+    └── memberApps.ts        — members.apps (the signed-in member's connected apps)
 
 src/modules/base/loop/        — the base.loop module definition
 
@@ -68,7 +69,7 @@ interface LoopEntitySource {
    * request (live API, time-of-day data). Loops using a request-dependent source
    * become Layer C "holes" — the publisher emits a placeholder + a ~1.1 KB client
    * runtime fetches the rendered fragment lazily via
-   * `/_instatic/hole/<nodeId>?v=<publishVersion>&u=<page-url>`.
+   * `/_instatic/hole/<nodeId>?v=<snapshotHash>&u=<page-url>`.
    *
    * A `requestDependent` (non-perVisitor) hole is rendered at request time and
    * cached by Layer B per `(nodeId, query, publishVersion)`.
@@ -81,8 +82,13 @@ interface LoopEntitySource {
 
   /**
    * Default `false`. Implies `requestDependent`. Output varies per individual
-   * visitor (cookies, randomization). Bypasses the Layer B cache; `fetch()`
-   * runs on every page load. Use sparingly.
+   * visitor (cookies, the signed-in member, randomization). Bypasses the
+   * Layer B cache; `fetch()` runs on every page load. Use sparingly.
+   * `ctx.request.member` is the signed-in site member or `null`, and is
+   * present only for these sources (a plugin's source also needs
+   * `members.read`). The request is built per source: a list on another
+   * source in the same fragment gets neither cookies nor member. A fragment
+   * is per-visitor when ANY list in it uses such a source.
    */
   perVisitor?: boolean
 }
@@ -153,6 +159,10 @@ Iterates `media_assets`. Filters by MIME type prefix.
 Used by galleries.
 
 Its author-facing `fields` list exposes filename, path/URL/source URL, MIME type, and upload date. Internal uploader ids stay in `LoopItem.fields` for code that needs them, but they are not binding-picker rows.
+
+### `members.apps`
+
+The apps the signed-in site member has signed in to with their account (see [members](members.md) → "Sign-in for apps"). It is `perVisitor`: each member gets their own list in an uncached fragment, and a signed-out visitor gets none. `fetch()` reads the member from `ctx.request.member`, which the hole and loop endpoints give every `perVisitor` source (`sourceRequestFor`). Fields: `name`, `device`, `connectedOn`, `lastUsedOn`, `connectedAt`, `lastUsedAt`, `id`. The canvas shows two sample apps from `preview()`. The hole endpoint looks at every loop in the fragment it renders (`subtreeHasPerVisitorSource`), not only the hole's own node, so the list also works inside a show-when box or another list: one `perVisitor` source makes the whole fragment uncached.
 
 ### `entry.field`
 
@@ -322,6 +332,8 @@ async function prefetchLoops(page, site, db) {
 
 The map is passed into `RenderConfig.loopData`. The walker reads from it; no async at render time.
 
+A full publish bakes each page with the items its loops resolved at that moment. When a row of a table is later published, unpublished or deleted, the baked pages that hold a `data.rows` loop over that table are removed from the active slot and render live until the next full publish, so a listing follows its rows without a site publish. See [publisher.md](publisher.md) → "Publishing one row, and the pages that list it".
+
 The public renderer and the editor's full-page **Preview page** overlay both
 use this server-side prefetch path. Preview sends the current in-memory draft
 to `/admin/api/cms/runtime/preview`; the server resolves loop and media data
@@ -483,7 +495,7 @@ Two modes are available via the loop node's `pagination` prop:
 To enable infinite loading:
 1. Set `props.pagination = 'infinite'` on the loop node.
 2. Set `props.pageSize` (items per click; defaults to 10).
-3. The publisher auto-injects `<script type="module" src="/_instatic/assets/loop-runtime.js">` when at least one infinite loop exists on the page (see `server/publish/loopRuntime.ts`). The runtime is < 2 KB and ships only when needed.
+3. The publisher auto-injects `<script type="module" src="/_instatic/assets/loop-runtime.js?v=<contentHash>">` when at least one infinite loop exists on the page (see `server/publish/loopRuntime.ts`). `?v=` is `LOOP_RUNTIME_VERSION`, the hash of the runtime body, so a CMS upgrade that changes the runtime changes the URL; the route caches a response only under the URL that names the body it serves (see [publisher.md](publisher.md) → "Module-emitted JS"). The runtime is < 2 KB and ships only when needed.
 
 For static multi-page navigation (no JS required):
 - Set `pagination: 'infinite'` and link the pages with the query parameter below — the server renders each page. See "Deep-link to a loop page".

@@ -8,7 +8,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
 import { createHash } from 'node:crypto'
 import { existsSync } from 'node:fs'
-import { mkdir, mkdtemp, readFile, rename, rm, symlink, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rename, rm, stat, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { createDbClient, type DbClient } from '../../../server/db'
@@ -16,7 +16,8 @@ import { runMigrations } from '../../../server/db/runMigrations'
 import { tryServeManager } from '../../../server/manager/handler'
 import { readManagerConfig } from '../../../server/manager/config'
 import { applyPendingRestore, hasPendingRestore, type ApplyOutcome } from '../../../server/manager/pending'
-import { pendingMarkerPath, preRestorePath, restoreStagingPath, transferStatePath } from '../../../server/manager/paths'
+import { hashCachePath, pendingMarkerPath, preRestorePath, restoreStagingPath, transferStatePath } from '../../../server/manager/paths'
+import { FileHashCache, moveFile } from '../../../server/manager/fsUtil'
 import { dropTransferCache } from '../../../server/manager/transfers'
 import { LOGIN_LINK_TTL_MS, createLoginLink, redeemLoginLink } from '../../../server/manager/loginLinks'
 import { createUser } from '../../../server/repositories/users'
@@ -768,5 +769,87 @@ describe('Manager API: one-time sign-in links', () => {
     const fresh = createLoginLink('user-1', now)
     expect(redeemLoginLink(fresh.token, now + 1000)).toBe('user-1')
     expect(redeemLoginLink(fresh.token, now + 1000)).toBeNull()
+  })
+})
+
+describe('Manager API: hashes of pushed files are remembered', () => {
+  it('answers from a seeded entry without reading the file', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'manager-hash-'))
+    try {
+      const file = join(dir, 'a.txt')
+      await writeFile(file, 'the real content')
+      const info = await stat(file)
+      const cache = new FileHashCache()
+      // A deliberately wrong hash: getting it back proves the file was not read.
+      cache.seed(file, info.size, info.mtimeMs, 'seeded-not-computed')
+      expect(await cache.hash(file, info.size, info.mtimeMs)).toBe('seeded-not-computed')
+      // A different size or modification time is a different file: it is read.
+      expect(await cache.hash(file, info.size, info.mtimeMs + 1)).toBe(sha256('the real content'))
+    } finally {
+      await rm(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('records pushed files under their final paths, valid after the restart', async () => {
+    const source = await instance()
+    const target = await instance()
+    await writeUpload(source, 'media/new.txt', 'pushed content')
+    const push = await buildPush(source)
+    const transfer = await (await target.call('POST', '/transfers', { body: JSON.stringify(push.manifest) })).json()
+    await target.call('PUT', `/transfers/${transfer.id}/database?offset=0`, { body: push.database })
+    const bytes = push.files.get('media/new.txt')
+    if (!bytes) throw new Error('fixture file missing')
+    await target.call('PUT', `/transfers/${transfer.id}/files/media/new.txt?offset=0`, { body: bytes })
+    expect((await target.call('POST', `/transfers/${transfer.id}/commit`)).status).toBe(202)
+    expect(await target.reboot()).toEqual({ status: 'applied', kind: 'transfer' })
+
+    // What a restarted server loads: the persisted cache must describe the
+    // moved file exactly, or the next push would read it again.
+    const finalPath = join(target.uploadsDir, 'media/new.txt')
+    const info = await stat(finalPath)
+    const persisted = JSON.parse(await readFile(hashCachePath(target.managerDir), 'utf-8')) as Record<
+      string,
+      { sizeBytes: number; mtimeMs: number; sha256: string }
+    >
+    expect(persisted[finalPath]).toEqual({ sizeBytes: info.size, mtimeMs: info.mtimeMs, sha256: sha256('pushed content') })
+  })
+
+  it('never answers with a pushed file\'s hash for the old file when the push is cancelled', async () => {
+    const source = await instance()
+    const target = await instance()
+    // Same path and same size on both sides, different content.
+    await writeUpload(source, 'media/page.txt', 'NEW content!')
+    await writeUpload(target, 'media/page.txt', 'old content.')
+    const push = await buildPush(source)
+    const transfer = await (await target.call('POST', '/transfers', { body: JSON.stringify(push.manifest) })).json()
+    await target.call('PUT', `/transfers/${transfer.id}/database?offset=0`, { body: push.database })
+    const bytes = push.files.get('media/page.txt')
+    if (!bytes) throw new Error('fixture file missing')
+    await target.call('PUT', `/transfers/${transfer.id}/files/media/page.txt?offset=0`, { body: bytes })
+    const commit = await target.call('POST', `/transfers/${transfer.id}/commit`, { body: JSON.stringify({ restart: false }) })
+    expect(commit.status).toBe(202)
+
+    // Cancelled: the old file stays. Its hash must be its own, not the one
+    // recorded for the file that was going to replace it.
+    expect((await target.call('DELETE', '/pending-restore')).status).toBe(200)
+    const { files } = await (await target.call('GET', '/files')).json()
+    expect(files).toEqual([{ path: 'media/page.txt', sizeBytes: 12, sha256: sha256('old content.') }])
+  })
+
+  // The cross-filesystem copy path cannot be forced here; this covers the
+  // contract both paths share, which the hash cache relies on.
+  it('keeps the modification time of a moved file', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'manager-move-'))
+    try {
+      const from = join(dir, 'a.txt')
+      await writeFile(from, 'moved')
+      const before = await stat(from)
+      await moveFile(from, join(dir, 'sub', 'b.txt'))
+      const after = await stat(join(dir, 'sub', 'b.txt'))
+      expect(after.mtimeMs).toBe(before.mtimeMs)
+      expect(existsSync(from)).toBe(false)
+    } finally {
+      await rm(dir, { recursive: true, force: true })
+    }
   })
 })

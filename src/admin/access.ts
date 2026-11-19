@@ -249,7 +249,7 @@ export function canUseAiChat(user: CmsCurrentUser | null): boolean {
 // ---------------------------------------------------------------------------
 
 function canAccessUsersWorkspace(user: CmsCurrentUser | null): boolean {
-  return hasAnyCapability(user, ['users.manage', 'roles.manage', 'audit.read'])
+  return hasAnyCapability(user, ['users.manage', 'members.read', 'members.manage', 'roles.manage', 'audit.read'])
 }
 
 function canAccessAiWorkspace(user: CmsCurrentUser | null): boolean {
@@ -295,6 +295,8 @@ export function canAccessWorkspace(user: CmsCurrentUser | null, workspace: Admin
       return canAccessUsersWorkspace(user)
     case 'ai':
       return canAccessAiWorkspace(user)
+    case 'email':
+      return hasCapability(user, 'mail.manage')
     case 'account':
       // Self-targeted page — every authenticated user can manage their own
       // profile + devices. Anonymous visitors fall through to false.
@@ -306,7 +308,7 @@ export function firstAccessibleWorkspace(user: CmsCurrentUser | null): AdminWork
   // Dashboard comes first — it's the canonical admin home. Falls through to
   // the next accessible workspace for users whose role doesn't grant
   // `dashboard.read` (rare; only happens with hand-edited custom roles).
-  const order: AdminWorkspace[] = ['dashboard', 'site', 'content', 'data', 'media', 'plugins', 'users', 'ai']
+  const order: AdminWorkspace[] = ['dashboard', 'site', 'content', 'data', 'media', 'plugins', 'users', 'ai', 'email']
   return order.find((workspace) => canAccessWorkspace(user, workspace)) ?? null
 }
 
@@ -328,6 +330,8 @@ export function workspacePath(workspace: AdminWorkspace): string {
       return '/admin/users'
     case 'ai':
       return '/admin/ai'
+    case 'email':
+      return '/admin/email'
     case 'branchReview':
       return '/admin/site'
     case 'pluginPage':

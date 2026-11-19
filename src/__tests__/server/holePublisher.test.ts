@@ -131,7 +131,32 @@ describe('publishPage — Layer C hole placeholders', () => {
 
     const { html: escaped } = publishPage(page, site, reg, { snapshotHash: '" onload="bad' })
     expect(escaped).toContain('data-instatic-version="&quot; onload=&quot;bad"')
-    expect(escaped).toContain('/_instatic/hole-runtime.js?v=%22%20onload%3D%22bad')
+  })
+
+  it('stamps the hole runtime version, not the snapshot hash, onto the runtime script URL', () => {
+    const page = makePage({
+      root: { moduleId: 'base.body', children: ['w'] },
+      w: { moduleId: 'plugin.live-widget' },
+    })
+    const reg = makeRegistry({
+      'base.body': makeModule('base.body', {
+        render: (_p, children) => ({ html: `<body>${children.join('')}</body>` }),
+      }),
+      'plugin.live-widget': makeModule('plugin.live-widget', { dynamic: true }),
+    })
+
+    // Same frozen site, a new runtime (a CMS upgrade): the URL must move.
+    const before = publishPage(page, makeSite(), reg, { snapshotHash: 's', holeRuntimeVersion: 'aaa' })
+    const after = publishPage(page, makeSite(), reg, { snapshotHash: 's', holeRuntimeVersion: 'bbb' })
+    expect(before.html).toContain('/_instatic/hole-runtime.js?v=aaa"')
+    expect(after.html).toContain('/_instatic/hole-runtime.js?v=bbb"')
+
+    const escaped = publishPage(page, makeSite(), reg, { holeRuntimeVersion: '" onload="bad' })
+    expect(escaped.html).toContain('/_instatic/hole-runtime.js?v=%22%20onload%3D%22bad')
+
+    // No version supplied (editor and tool renders): no dangling `?v=`.
+    const unversioned = publishPage(page, makeSite(), reg, { snapshotHash: 's' })
+    expect(unversioned.html).toContain('src="/_instatic/hole-runtime.js" defer')
   })
 
   it('defaults snapshotHash to an empty string when not provided', () => {

@@ -11,6 +11,7 @@ import { startConversationPurgeTick } from './ai/boot'
 import { unsupportedBunWarning } from './bunVersion'
 import { MANAGER_RESTART_EXIT_CODE, MANAGER_TOKEN_MIN_LENGTH } from './manager/config'
 import { applyPendingRestore } from './manager/pending'
+import { isSameOrInside } from './manager/fsUtil'
 
 // Before anything that could fail for a version-related reason, say which
 // Bun this is when it is not one a release was tested on. Boot continues.
@@ -20,6 +21,8 @@ if (bunWarning) console.warn(bunWarning)
 await import('./richtextSanitizer')
 const { handleServerRequest } = await import('./router')
 const { activateInstalledServerPlugins } = await import('./plugins/runtime')
+const { startMailQueue, stopMailQueue } = await import('./mail/delivery')
+const { flushMemberMail } = await import('./members/mail')
 const { mediaStorageRegistry } = await import('@core/plugins/mediaStorageRegistry')
 const { createCollabRelay } = await import('./collab/relay')
 const { SITE_SOCKET_PATH, createCollabSocketLayer, handleCollabSocketUpgrade } =
@@ -35,6 +38,9 @@ if (config.publicOrigins.length === 0) {
   console.warn('[server] PUBLIC_ORIGIN is not set; MCP OAuth connectors work only from loopback until it is configured. Personal access tokens still work.')
 }
 configureNpmRegistryUrl(config.npmRegistryUrl)
+if (isSameOrInside(config.uploadsDir, config.runtimeCacheDir)) {
+  console.warn('[server] RUNTIME_CACHE_DIR is inside UPLOADS_DIR, which is served publicly and copied by site transfers. Move it outside.')
+}
 if (config.manager.tokenRejected) {
   console.warn(`[server] INSTATIC_MANAGER_TOKEN is shorter than ${MANAGER_TOKEN_MIN_LENGTH} characters; the Manager API stays disabled.`)
 }
@@ -63,6 +69,19 @@ await syncSystemRoles(db)
 // always the fallback for unset roles. See `mediaStorageRegistry.ts`.
 mediaStorageRegistry.configureLocalDisk({ uploadsDir: config.uploadsDir })
 await activateInstalledServerPlugins(db, config.uploadsDir)
+// Outgoing email: start the queue worker, which first sends whatever a
+// previous process accepted but had not delivered.
+startMailQueue(db)
+// An owner's edit of an email template that can no longer be sent as written
+// (the built-in wording is sent in its place) is named once at start.
+void import('./mail/templates')
+  .then(({ listUnusableTemplateEdits }) => listUnusableTemplateEdits(db))
+  .then((edits) => {
+    for (const edit of edits) {
+      console.warn(`[mail] your wording of the "${edit.key}" template is not used: ${edit.problem}`)
+    }
+  })
+  .catch((err: unknown) => console.error('[mail] could not check the edited templates:', err))
 // AI runtime: start the nightly conversation-purge tick. Operators add
 // their own provider credentials via /admin/ai/providers on first install.
 startConversationPurgeTick(db)
@@ -230,6 +249,10 @@ async function shutdown(signal: string, exitCode = 0): Promise<void> {
   } catch (err) {
     console.error('[server] collab flush on shutdown failed:', err)
   }
+  // Emails a request handed over a moment ago reach the queue first; then
+  // the one being sent finishes. The rest waits in the queue.
+  await flushMemberMail()
+  await stopMailQueue()
   server.stop()
   process.exit(exitCode)
 }

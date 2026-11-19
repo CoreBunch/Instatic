@@ -421,7 +421,7 @@ Double-clicking a node whose module declares `inlineTextEdit` (`base.text`, `bas
 
 ### CSS injection into the iframe
 
-Each iframe `<head>` receives five `<style>` elements (three from `ClassStyleInjector`, one each from the others), in this order:
+Each iframe `<head>` receives five `<style>` elements (three from `ClassStyleInjector`, one each from the others), in this order, plus one per plugin stylesheet (below):
 
 | Element | Injector | Cascade layer | Contents |
 |---|---|---|---|
@@ -430,8 +430,11 @@ Each iframe `<head>` receives five `<style>` elements (three from `ClassStyleInj
 | `<style id="mc-classes-preview">` | `ClassStyleInjector` | `@layer user-authored` | Higher-specificity preview rule while a property control is hovered; empty for state-pseudo rules |
 | `<style id="mc-classes-force-state">` | `ClassStyleInjector` | `@layer user-authored` | Forced state preview: paints the active state-pseudo rule onto the selected node via a doubled `[data-node-id]` selector |
 | `<style id="mc-user-styles">` | `UserStylesheetInjector` | `@layer user-authored` | User-uploaded stylesheets (verbatim, unscoped) |
+| `<style data-plugin-id="…">` (0..n) | `PluginStylesheetInjector` | `@layer user-authored` | Stylesheets enabled plugins add to published pages (`frontend.assets` of kind `style` / `style-inline`) |
 
 The **unlayered-vs-layered** split is the cascade isolation mechanism: CSS rules outside any `@layer` always beat rules inside `@layer`-d blocks, regardless of specificity. Author CSS (both the class registry and user stylesheets) goes into `@layer user-authored`, so it can never override the editor chrome even with a high-specificity selector.
+
+Stylesheets that plugins add to published pages are part of what visitors see, so the canvas loads them too. `PluginStylesheetInjector` reads the shared list from `canvasPluginStylesheets.ts` (one `GET /admin/api/cms/runtime/canvas-stylesheets` per editor, reloaded on `CMS_PLUGINS_CHANGED_EVENT`, so enabling, disabling, upgrading or removing a plugin restyles the canvas without a reload) and writes one `<style data-source="PluginStylesheetInjector" data-plugin-id="…">` per stylesheet into `@layer user-authored`. A `head`-placement stylesheet goes ahead of the site's style tags, every other placement after them, which is the document order the published page has. Viewport units are pinned to the frame viewport like the site's own CSS. **Only `style` and `style-inline` assets load; a plugin's `script`, `script-inline`, `link` and `meta` assets never reach the canvas**, because it shares the admin origin and is an editing surface. The server builds the list (`server/publish/canvasStylesheets.ts`) from the same eligibility rule as the publisher. See [`docs/features/plugin-system.md`](features/plugin-system.md) → "Frontend assets".
 
 `EditorChromeInjector` targets chrome elements via **stable data-attribute selectors** (`data-canvas-module-placeholder`, `data-instatic-slot-instance`, `data-instatic-unknown-module`, etc.) rather than hashed CSS-Module class names, which only exist in the parent document. At mount, it copies the admin design tokens the chrome reads from the parent document's `:root` onto the iframe's `:root`, every one renamed into the reserved `--chrome-*` namespace: `--radius` becomes `--chrome-radius`, `--text-subtle` becomes `--chrome-text-subtle`, `--font-sans` becomes `--chrome-font-sans`, and so on. The chrome rules read only `var(--chrome-*)`, and the forwarded set is derived from those references, so it cannot drift from what the rules use.
 
@@ -483,6 +486,8 @@ Canvas-internal values are not CSS tokens — they are raw integers intentionall
 | `EditorChromeInjector.tsx`      | Unlayered editor-chrome CSS into each iframe head               |
 | `ClassStyleInjector.tsx`        | Class registry + publisher reset CSS into each iframe head      |
 | `UserStylesheetInjector.tsx`    | User-uploaded CSS into each iframe head                         |
+| `PluginStylesheetInjector.tsx`  | Plugin stylesheets (never scripts) into each iframe head        |
+| `canvasPluginStylesheets.ts`    | Shared, event-refreshed list of plugin stylesheets              |
 | `NodeRenderer.tsx`              | Renders a single node and its children inside the iframe        |
 | `CanvasTransformLayer.tsx`      | Zoom + pan transform (design view)                              |
 | `CanvasLiveSurface.tsx`         | "Live" view — single real-size editable frame, normal scroll    |
@@ -759,7 +764,7 @@ See [docs/features/plugin-system.md](features/plugin-system.md) for the plugin S
   - `src/admin/pages/site/store/slices/site/nodeActions.ts` — tree mutation actions that call `mutateActiveTree`
   - `src/admin/pages/site/canvas/CanvasRoot.tsx` — canvas mount
   - `src/admin/spotlight/SpotlightRoot.tsx` — Cmd+K palette
-  - `src/admin/pages/site/panels/PropertiesPanel/PropertiesPanelBody.tsx` — branch router for selector, multi-select, VC, and selected-node inspector surfaces; owns the node-level Styles/Attributes switch
+  - `src/admin/pages/site/panels/PropertiesPanel/PropertiesPanelBody.tsx` — branch router for selector, multi-select, VC, and selected-node inspector surfaces; owns the node-level Styles/Attributes/Visibility switch (Visibility holds `ShowWhenControl`; its tab shows a dot while the node has a show-when rule)
   - `src/admin/pages/site/panels/PropertiesPanel/ClassPicker.tsx` — unified selector picker UI (entry point: pill strip, input, creation flow)
   - `src/admin/pages/site/panels/PropertiesPanel/HtmlAttributesPanel.tsx` — selected-node Attributes view for editing safe `props.htmlAttributes`
   - `src/admin/pages/site/panels/PropertiesPanel/htmlAttributesModel.ts` — pure row normalization, validation, and dirty-key helpers for the Attributes view

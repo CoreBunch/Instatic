@@ -152,12 +152,19 @@ function makeFakeDb() {
       crashEvents.push(...remaining)
       return { rows: [], rowCount: before - remaining.length }
     }
+    // installPluginWithRecordKeys: clears stored record keys of the declared
+    // resources (none of these plugins declares a uniqueField).
+    if (normalized.includes('update plugin_records set unique_key = null')) {
+      return { rows: [], rowCount: 0 }
+    }
     if (normalized.includes('insert into plugin_records')) {
       const row = {
         id: values[0],
         plugin_id: values[1],
         resource_id: values[2],
         data_json: values[3],
+        unique_key: values[4] ?? null,
+        version: 0,
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       }
@@ -172,6 +179,17 @@ function makeFakeDb() {
     // listPluginSecretStates / resolvePluginSecretsForRuntime — these tests
     // declare no secret-typed settings, so the table is always empty.
     if (normalized.includes('from plugin_secrets')) {
+      return { rows: [], rowCount: 0 }
+    }
+    // An install withdraws the app scopes that do not carry over to it
+    // (withdrawPluginAppScopes). No app is registered and no member signed
+    // in here, so both lists are empty.
+    if (normalized.includes('from member_app_grants') || normalized.includes('from member_apps')) {
+      return { rows: [], rowCount: 0 }
+    }
+    // syncPluginMailTemplates: these plugins declare no email templates and
+    // nobody has edited one.
+    if (normalized.includes('from mail_templates')) {
       return { rows: [], rowCount: 0 }
     }
     throw new Error(`Unhandled SQL: ${sql}`)

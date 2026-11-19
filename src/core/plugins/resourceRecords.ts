@@ -7,7 +7,7 @@
  * record handlers and the editor-side storage SDK. Re-exported through
  * `@core/plugins/manifest`, which stays the public surface.
  */
-import type { PluginManifest, PluginResource } from '@core/plugin-sdk'
+import { STORAGE_UNIQUE_KEY_MAX_LENGTH, type PluginManifest, type PluginResource } from '@core/plugin-sdk'
 
 export function findPluginResource(
   manifest: Pick<PluginManifest, 'resources'>,
@@ -62,4 +62,37 @@ export function validatePluginRecordData(
   }
 
   return data
+}
+
+/**
+ * Turn a field value into a record's unique key: the text with surrounding
+ * whitespace trimmed, exactly as stored. Nothing else is normalised, so keys
+ * are case-sensitive and compare by code point ("A" and "a" differ, and so do
+ * a precomposed and a decomposed accent). Anything that is not text, and text
+ * that is empty after trimming, gives no key (null); such records never
+ * collide.
+ *
+ * The one place a key is derived: record writes, `getByKey` lookups and the
+ * re-keying of stored records all come through here, so they cannot disagree.
+ */
+export function deriveRecordUniqueKey(value: unknown): string | null {
+  if (typeof value !== 'string') return null
+  const key = value.trim()
+  if (key === '') return null
+  if (key.length > STORAGE_UNIQUE_KEY_MAX_LENGTH) {
+    throw new Error(`A unique key may hold at most ${STORAGE_UNIQUE_KEY_MAX_LENGTH} characters`)
+  }
+  return key
+}
+
+/**
+ * The unique key a record takes from its resource's `uniqueField`, or null
+ * when the resource declares none or the record leaves the field empty.
+ */
+export function pluginRecordUniqueKey(
+  resource: PluginResource | null,
+  data: Record<string, unknown>,
+): string | null {
+  if (!resource?.uniqueField) return null
+  return deriveRecordUniqueKey(data[resource.uniqueField])
 }

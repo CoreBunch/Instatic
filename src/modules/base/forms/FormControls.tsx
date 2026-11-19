@@ -214,7 +214,7 @@ export function SubmitEditor({ mcClassName, nodeWrapperProps, props, children }:
     <button
       {...nodeWrapperProps}
       className={mcClassName}
-      type="button"
+      type="submit"
       disabled={props.disabled}
       form={formId || undefined}
     >

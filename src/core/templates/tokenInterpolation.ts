@@ -40,6 +40,7 @@ const VALID_SOURCES: ReadonlySet<DynamicPropBinding['source']> = new Set([
   'page',
   'site',
   'route',
+  'member',
 ])
 
 function isValidSource(s: string): s is DynamicPropBinding['source'] {
@@ -207,6 +208,8 @@ export function readFrame(
       return (context.site as unknown as Record<string, unknown>) ?? null
     case 'route':
       return (context.route as unknown as Record<string, unknown>) ?? null
+    case 'member':
+      return (context.member as unknown as Record<string, unknown>) ?? null
     default:
       return null
   }

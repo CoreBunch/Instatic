@@ -59,6 +59,39 @@ export interface ServerPluginRouteContext {
     email: string
     capabilities: string[]
   } | null
+  /**
+   * The signed-in site member (someone with an account on the published
+   * site), or null. Always set in a `routes.member.*` handler. In a public
+   * route served on the public mount it is set only when the plugin holds
+   * `members.read` and the visitor is signed in. Never set on the admin
+   * mount.
+   */
+  member: ServerPluginMember | null
+  /**
+   * Set when the caller is an app the member signed in to, not the member's
+   * own browser. Only a member route opened to apps (`{ app: { scope } }`)
+   * can see one. A handler that must never act for an app checks for null.
+   */
+  app: ServerPluginApp | null
+}
+
+/** An app calling a member route on a member's behalf. */
+export interface ServerPluginApp {
+  /** The client id the site owner registered the app under. */
+  id: string
+  name: string
+  /** The scope name the route is open under, as the manifest declares it. */
+  scope: string
+}
+
+/** A site member as plugin code sees them. */
+export interface ServerPluginMember {
+  id: string
+  email: string
+  /** Tags the member holds right now, from every source. */
+  tags: string[]
+  /** The profile fields the site defines, by field id. */
+  profile: Record<string, string | boolean>
 }
 
 /**

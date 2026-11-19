@@ -96,6 +96,8 @@ export interface LoadPluginRequest {
   /** Settings snapshot — populated into the worker's local cache so
    *  `settings.get` can resolve synchronously inside the plugin code. */
   settings: PluginSettingsValues
+  /** Wall-clock budget per call, when not the default. Tests shorten it. */
+  callBudgetMs?: number
 }
 
 export interface UnloadPluginRequest {
@@ -132,6 +134,23 @@ export interface RunMigrateRequest {
   fromVersion: string
 }
 
+/** A site member as a plugin route sees them. No password, no session. */
+export interface SerializedMember {
+  id: string
+  email: string
+  tags: string[]
+  profile: Record<string, string | boolean>
+}
+
+/** The app calling a member route for a member who signed in to it. */
+export interface SerializedApp {
+  /** The app's client id. */
+  id: string
+  name: string
+  /** The scope name the route is open under, as the manifest declares it. */
+  scope: string
+}
+
 export interface RunRouteRequest {
   kind: 'run-route'
   correlationId: string
@@ -139,6 +158,10 @@ export interface RunRouteRequest {
   routeKey: string
   request: SerializedRequest
   user: SerializedUser | null
+  /** The signed-in site member, on a member route or for a plugin that may read members. */
+  member: SerializedMember | null
+  /** Set when an app, not the member's browser, is calling for `member`. */
+  app: SerializedApp | null
   body: Record<string, unknown>
 }
 
@@ -256,6 +279,12 @@ export interface ApiReply {
   ok: boolean
   value?: unknown
   error?: string
+  /**
+   * Set on a failure the sandbox must tell apart from any other (today:
+   * `'fetch_timeout'`). It becomes the `code` of the error the plugin's
+   * awaited call rejects with.
+   */
+  code?: string
 }
 
 // ---------------------------------------------------------------------------
@@ -328,6 +357,8 @@ interface RouteResult {
   ok: boolean
   response?: SerializedResponse
   error?: string
+  /** The handler ran out of its wall-clock call budget (answered as 504). */
+  timedOut?: boolean
   /**
    * QuickJS-side stack frames of the failure (plugin sources are evaluated
    * with the filename `plugin:<id>`). For host-side `[plugin:<id>]` logging

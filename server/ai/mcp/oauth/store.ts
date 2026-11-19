@@ -4,17 +4,17 @@ import type { McpOAuthAuthorizationRequest } from '@core/ai'
 import type { DbClient } from '../../../db/client'
 import { createOAuthConnection } from '../connectors/store'
 import type { McpConnectorRecord } from '../connectors/types'
-import {
-  generateOAuthAccessToken,
-  generateOAuthAuthorizationCode,
-  generateOAuthRefreshToken,
-  hashMcpSecret,
-  pkceChallengeForVerifier,
-} from '../connectors/token'
-import { isValidPkceVerifier, normalizeMcpScope } from './protocol'
+import type {
+  GrantStore,
+  OAuthRealm,
+  StoredAuthorizationCode,
+  StoredRefreshToken,
+} from '../../../oauth/grants'
+import { generateOpaqueToken, hashOpaqueToken } from '../../../oauth/secrets'
+import { normalizeMcpScope } from './protocol'
 
 const AUTHORIZATION_CODE_TTL_MS = 5 * 60 * 1000
-export const OAUTH_ACCESS_TOKEN_TTL_SECONDS = 60 * 60
+const OAUTH_ACCESS_TOKEN_TTL_SECONDS = 60 * 60
 
 interface OAuthClientRow {
   client_id: string
@@ -70,13 +70,6 @@ export interface OAuthAccessGrant {
   capabilities: readonly CoreCapability[]
 }
 
-export interface OAuthTokenPair {
-  accessToken: string
-  refreshToken: string
-  scope: string
-  expiresIn: number
-}
-
 function rowToClient(row: OAuthClientRow): OAuthClientRecord {
   return {
     clientId: row.client_id,
@@ -123,8 +116,8 @@ export async function createOAuthAuthorizationGrant(
     request: McpOAuthAuthorizationRequest
   },
 ): Promise<{ connection: McpConnectorRecord; code: string }> {
-  const code = generateOAuthAuthorizationCode()
-  const codeHash = await hashMcpSecret(code)
+  const code = generateOpaqueToken('imcp_ac_')
+  const codeHash = await hashOpaqueToken(code)
   const expiresAt = new Date(Date.now() + AUTHORIZATION_CODE_TTL_MS)
 
   return db.transaction(async (tx) => {
@@ -148,134 +141,132 @@ export async function createOAuthAuthorizationGrant(
   })
 }
 
-export async function exchangeAuthorizationCode(
-  db: DbClient,
-  input: {
-    code: string
-    clientId: string
-    redirectUri: string
-    codeVerifier: string
-    resource: string
-  },
-  now: Date = new Date(),
-): Promise<OAuthTokenPair | null> {
-  if (!isValidPkceVerifier(input.codeVerifier)) return null
-  const codeHash = await hashMcpSecret(input.code)
-  const challenge = await pkceChallengeForVerifier(input.codeVerifier)
+/**
+ * The MCP realm's rows. A code or a token is returned only while the admin
+ * user who approved the grant is still active.
+ */
+function mcpGrantStore(tx: DbClient): GrantStore {
+  return {
+    async findAuthorizationCode(codeHash) {
+      const { rows } = await tx<AuthorizationCodeRow>`
+        select c.code_hash, c.connector_id, c.client_id, c.redirect_uri,
+               c.code_challenge, c.scope, c.resource, c.expires_at, c.consumed_at,
+               g.expires_at as connector_expires_at,
+               g.revoked_at as connector_revoked_at
+        from ai_mcp_oauth_codes c
+        join ai_mcp_connectors g on g.id = c.connector_id
+        join users u on u.id = g.user_id
+        where c.code_hash = ${codeHash}
+          and u.status = 'active' and u.deleted_at is null
+        limit 1
+      `
+      const row = rows[0]
+      return row ? codeFromRow(row) : null
+    },
 
-  return db.transaction(async (tx) => {
-    const { rows } = await tx<AuthorizationCodeRow>`
-      select c.code_hash, c.connector_id, c.client_id, c.redirect_uri,
-             c.code_challenge, c.scope, c.resource, c.expires_at, c.consumed_at,
-             g.expires_at as connector_expires_at,
-             g.revoked_at as connector_revoked_at
-      from ai_mcp_oauth_codes c
-      join ai_mcp_connectors g on g.id = c.connector_id
-      join users u on u.id = g.user_id
-      where c.code_hash = ${codeHash}
-        and u.status = 'active' and u.deleted_at is null
-      limit 1
-    `
-    const code = rows[0]
-    if (
-      !code || code.consumed_at || code.connector_revoked_at ||
-      new Date(code.expires_at).getTime() <= now.getTime() ||
-      !code.connector_expires_at || new Date(code.connector_expires_at).getTime() <= now.getTime() ||
-      code.client_id !== input.clientId || code.redirect_uri !== input.redirectUri ||
-      code.resource !== input.resource || code.code_challenge !== challenge
-    ) {
-      return null
-    }
+    async consumeAuthorizationCode(codeHash, now) {
+      const consumed = await tx`
+        update ai_mcp_oauth_codes
+        set consumed_at = ${now}
+        where code_hash = ${codeHash} and consumed_at is null
+      `
+      return consumed.rowCount === 1
+    },
 
-    const consumed = await tx`
-      update ai_mcp_oauth_codes
-      set consumed_at = ${now}
-      where code_hash = ${codeHash} and consumed_at is null
-    `
-    if (consumed.rowCount !== 1) return null
+    async findRefreshToken(tokenHash) {
+      const { rows } = await tx<OAuthTokenRow>`
+        select t.id, t.connector_id, t.client_id, t.scope, t.resource,
+               t.expires_at, t.revoked_at,
+               g.expires_at as connector_expires_at,
+               g.revoked_at as connector_revoked_at
+        from ai_mcp_oauth_tokens t
+        join ai_mcp_connectors g on g.id = t.connector_id
+        join users u on u.id = g.user_id
+        where t.token_hash = ${tokenHash} and t.kind = 'refresh'
+          and u.status = 'active' and u.deleted_at is null
+        limit 1
+      `
+      const row = rows[0]
+      return row ? refreshTokenFromRow(row) : null
+    },
 
-    return issueTokenPair(tx, {
-      connectorId: code.connector_id,
-      clientId: code.client_id,
-      scope: code.scope,
-      resource: code.resource,
-      connectorExpiresAt: new Date(code.connector_expires_at),
-      now,
-    })
-  })
-}
+    async revokeToken(tokenId, now) {
+      const revoked = await tx`
+        update ai_mcp_oauth_tokens
+        set revoked_at = ${now}
+        where id = ${tokenId} and revoked_at is null
+      `
+      return revoked.rowCount === 1
+    },
 
-export async function rotateRefreshToken(
-  db: DbClient,
-  input: {
-    refreshToken: string
-    clientId: string
-    resource: string
-    scope?: string
-  },
-  now: Date = new Date(),
-): Promise<OAuthTokenPair | null> {
-  const tokenHash = await hashMcpSecret(input.refreshToken)
-
-  return db.transaction(async (tx) => {
-    const { rows } = await tx<OAuthTokenRow>`
-      select t.id, t.connector_id, t.client_id, t.scope, t.resource,
-             t.expires_at, t.revoked_at,
-             g.expires_at as connector_expires_at,
-             g.revoked_at as connector_revoked_at
-      from ai_mcp_oauth_tokens t
-      join ai_mcp_connectors g on g.id = t.connector_id
-      join users u on u.id = g.user_id
-      where t.token_hash = ${tokenHash} and t.kind = 'refresh'
-        and u.status = 'active' and u.deleted_at is null
-      limit 1
-    `
-    const token = rows[0]
-    const requestedScope = normalizeMcpScope(input.scope ?? token?.scope)
-
-    // A rotated refresh token should never be presented again. Treat reuse as
-    // credential theft and revoke the entire grant, including access tokens
-    // minted from the replacement token. The client must re-authorize.
-    if (token?.revoked_at && !token.connector_revoked_at) {
+    async revokeGrant(grantId, now) {
       await tx`
         update ai_mcp_connectors
         set revoked_at = ${now}
-        where id = ${token.connector_id} and revoked_at is null
+        where id = ${grantId} and revoked_at is null
       `
       await tx`
         update ai_mcp_oauth_tokens
         set revoked_at = ${now}
-        where connector_id = ${token.connector_id} and revoked_at is null
+        where connector_id = ${grantId} and revoked_at is null
       `
-      console.warn(`[ai:mcp:oauth] refresh-token reuse revoked connection ${token.connector_id}`)
-      return null
-    }
-    if (
-      !token || token.revoked_at || token.connector_revoked_at || !requestedScope ||
-      new Date(token.expires_at).getTime() <= now.getTime() ||
-      !token.connector_expires_at || new Date(token.connector_expires_at).getTime() <= now.getTime() ||
-      token.client_id !== input.clientId || token.resource !== input.resource ||
-      !scopeIsSubset(requestedScope, token.scope)
-    ) {
-      return null
-    }
+    },
 
-    const revoked = await tx`
-      update ai_mcp_oauth_tokens
-      set revoked_at = ${now}
-      where id = ${token.id} and revoked_at is null
-    `
-    if (revoked.rowCount !== 1) return null
+    async insertToken(token) {
+      await tx`
+        insert into ai_mcp_oauth_tokens (
+          id, connector_id, client_id, kind, token_hash, scope, resource, expires_at
+        )
+        values (
+          ${nanoid()}, ${token.grantId}, ${token.clientId}, ${token.kind},
+          ${token.tokenHash}, ${token.scope}, ${token.resource}, ${token.expiresAt}
+        )
+      `
+    },
+  }
+}
 
-    return issueTokenPair(tx, {
-      connectorId: token.connector_id,
-      clientId: token.client_id,
-      scope: requestedScope,
-      resource: token.resource,
-      connectorExpiresAt: new Date(token.connector_expires_at),
-      now,
-    })
-  })
+function codeFromRow(row: AuthorizationCodeRow): StoredAuthorizationCode {
+  return {
+    grantId: row.connector_id,
+    clientId: row.client_id,
+    redirectUri: row.redirect_uri,
+    codeChallenge: row.code_challenge,
+    scope: row.scope,
+    resource: row.resource,
+    expiresAt: row.expires_at,
+    consumedAt: row.consumed_at,
+    grantExpiresAt: row.connector_expires_at,
+    grantRevokedAt: row.connector_revoked_at,
+    // MCP connectors are not bound to a client key.
+    keyThumbprint: null,
+  }
+}
+
+function refreshTokenFromRow(row: OAuthTokenRow): StoredRefreshToken {
+  return {
+    id: row.id,
+    grantId: row.connector_id,
+    clientId: row.client_id,
+    scope: row.scope,
+    resource: row.resource,
+    expiresAt: row.expires_at,
+    revokedAt: row.revoked_at,
+    grantExpiresAt: row.connector_expires_at,
+    grantRevokedAt: row.connector_revoked_at,
+    // MCP connectors are not bound to a client key.
+    keyThumbprint: null,
+  }
+}
+
+/** The authorization server MCP clients sign an admin user in with. */
+export const mcpOAuthRealm: OAuthRealm = {
+  logName: 'ai:mcp:oauth',
+  accessTokenPrefix: 'imcp_at_',
+  refreshTokenPrefix: 'imcp_rt_',
+  accessTokenTtlSeconds: OAUTH_ACCESS_TOKEN_TTL_SECONDS,
+  normalizeScope: normalizeMcpScope,
+  store: mcpGrantStore,
 }
 
 export async function findOAuthAccessGrant(
@@ -284,7 +275,7 @@ export async function findOAuthAccessGrant(
   resource: string,
   now: Date = new Date(),
 ): Promise<OAuthAccessGrant | null> {
-  const tokenHash = await hashMcpSecret(token)
+  const tokenHash = await hashOpaqueToken(token)
   const { rows } = await db<OAuthAccessGrantRow>`
     select t.connector_id, g.user_id, g.capabilities_json
     from ai_mcp_oauth_tokens t
@@ -307,51 +298,4 @@ export async function findOAuthAccessGrant(
     userId: row.user_id,
     capabilities: Array.isArray(row.capabilities_json) ? row.capabilities_json : [],
   }
-}
-
-async function issueTokenPair(
-  db: DbClient,
-  input: {
-    connectorId: string
-    clientId: string
-    scope: string
-    resource: string
-    connectorExpiresAt: Date
-    now: Date
-  },
-): Promise<OAuthTokenPair> {
-  const accessToken = generateOAuthAccessToken()
-  const refreshToken = generateOAuthRefreshToken()
-  const accessExpiresAt = new Date(Math.min(
-    input.now.getTime() + OAUTH_ACCESS_TOKEN_TTL_SECONDS * 1000,
-    input.connectorExpiresAt.getTime(),
-  ))
-  const expiresIn = Math.max(1, Math.floor((accessExpiresAt.getTime() - input.now.getTime()) / 1000))
-
-  await db`
-    insert into ai_mcp_oauth_tokens (
-      id, connector_id, client_id, kind, token_hash, scope, resource, expires_at
-    )
-    values (
-      ${nanoid()}, ${input.connectorId}, ${input.clientId}, 'access',
-      ${await hashMcpSecret(accessToken)}, ${input.scope}, ${input.resource}, ${accessExpiresAt}
-    )
-  `
-  await db`
-    insert into ai_mcp_oauth_tokens (
-      id, connector_id, client_id, kind, token_hash, scope, resource, expires_at
-    )
-    values (
-      ${nanoid()}, ${input.connectorId}, ${input.clientId}, 'refresh',
-      ${await hashMcpSecret(refreshToken)}, ${input.scope}, ${input.resource},
-      ${input.connectorExpiresAt}
-    )
-  `
-
-  return { accessToken, refreshToken, scope: input.scope, expiresIn }
-}
-
-function scopeIsSubset(requested: string, granted: string): boolean {
-  const grantedScopes = new Set(granted.split(/\s+/).filter(Boolean))
-  return requested.split(/\s+/).filter(Boolean).every((scope) => grantedScopes.has(scope))
 }

@@ -5,7 +5,7 @@
  */
 import { createHash } from 'node:crypto'
 import { createReadStream } from 'node:fs'
-import { copyFile, lstat, mkdir, readFile, readdir, rename, rm, rmdir, stat, statfs, unlink, writeFile } from 'node:fs/promises'
+import { copyFile, lstat, mkdir, readFile, readdir, rename, rm, rmdir, stat, statfs, unlink, utimes, writeFile } from 'node:fs/promises'
 import { dirname, join, resolve, sep } from 'node:path'
 import { randomBytes } from 'node:crypto'
 
@@ -161,6 +161,20 @@ export class FileHashCache {
     return sha256
   }
 
+  /**
+   * Record a hash that is already known, for a file expected to have this
+   * size and modification time. Used when a transfer is committed: the
+   * uploaded files were just verified, and moving them into place keeps
+   * their modification time, so the files they become need not be read
+   * again after the restart. An entry that turns out not to match the file
+   * at its path (the move never happened, or the time was not kept) is
+   * simply a miss: the file is read and hashed as usual.
+   */
+  seed(absPath: string, sizeBytes: number, mtimeMs: number, sha256: string): void {
+    this.entries.set(absPath, { sizeBytes, mtimeMs, sha256 })
+    this.dirty = true
+  }
+
   /** Keep only entries under `root` that are in `present`; other roots are untouched. */
   retain(root: string, present: ReadonlySet<string>): void {
     const prefix = resolve(root) + sep
@@ -177,8 +191,11 @@ export class FileHashCache {
     this.dirty = false
     try {
       await mkdir(dirname(file), { recursive: true })
-      await writeFile(`${file}.tmp`, JSON.stringify(Object.fromEntries(this.entries)))
-      await rename(`${file}.tmp`, file)
+      // A unique temporary name: two saves may overlap (a listing and a
+      // commit), and each must rename only what it wrote itself.
+      const temp = `${file}.${randomBytes(6).toString('hex')}.tmp`
+      await writeFile(temp, JSON.stringify(Object.fromEntries(this.entries)))
+      await rename(temp, file)
     } catch {
       // The cache is an optimization; failing to persist it is not an error.
     }
@@ -203,6 +220,10 @@ export async function moveFile(source: string, dest: string): Promise<void> {
   const temp = join(dirname(dest), `.incoming-${randomBytes(6).toString('hex')}`)
   try {
     await copyFile(source, temp)
+    // A copy gets a new modification time. Carry the original over, so the
+    // file is the same file to anything that keys on it (the hash cache).
+    const info = await stat(source)
+    await utimes(temp, info.atime, info.mtime)
     await rename(temp, dest)
   } catch (err) {
     await rm(temp, { force: true })

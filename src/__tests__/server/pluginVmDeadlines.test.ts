@@ -19,7 +19,9 @@
  */
 import { describe, expect, it } from 'bun:test'
 import { createPluginVm, type PluginVmEnv } from '../../../server/plugins/quickjs/vm'
-import { PluginVmError, vmStackOf } from '../../../server/plugins/quickjs/eval'
+import { PluginCallBudgetError, PluginVmError, vmStackOf } from '../../../server/plugins/quickjs/eval'
+import { DEFAULT_RPC_TIMEOUT_MS } from '../../../server/plugins/host/workerPool'
+import { DEFAULT_PLUGIN_FETCH_TIMEOUT_MS, PLUGIN_CALL_BUDGET_MS } from '../../../server/plugins/quickjs/limits'
 
 function makeEnv(pluginId: string): PluginVmEnv {
   return {
@@ -108,6 +110,198 @@ describe('plugin sandbox: eval deadlines', () => {
       vm.dispose()
     }
   }, 10_000)
+})
+
+describe('plugin sandbox: wall-clock call budget', () => {
+  /**
+   * `deactivate` awaits far past any budget used here; `quick` and `steady`
+   * are schedules, which bring their own budget (`maxDurationMs`).
+   */
+  const SOURCE = `
+    ;(function () {
+      const __plugin_exports = (globalThis.__plugin_exports = {});
+      function sleep(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
+      __plugin_exports.activate = async function activate(api) {
+        api.cms.schedule.every(5, 'quick', async function () { await sleep(20); });
+        api.cms.schedule.every(5, 'steady', async function () { await sleep(250); });
+        api.cms.schedule.every(5, 'stuck', async function () { await sleep(60000); });
+      };
+      __plugin_exports.deactivate = async function deactivate() { await sleep(60000); };
+      __plugin_exports.install = async function install() {
+        await sleep(80); await sleep(80); await sleep(80);
+      };
+    })();
+  `
+
+  it('fails a call still awaiting after its budget, alone, and leaves the VM usable', async () => {
+    const vm = await createPluginVm({ env: makeEnv('acme.budget'), callBudgetMs: 150, pluginSource: SOURCE })
+    try {
+      await vm.runLifecycle('activate')
+      const t0 = Date.now()
+      const slow = vm.runLifecycle('deactivate').catch((err: unknown) => err)
+      // A sibling call in flight on the same VM is not taken down with it.
+      await vm.runSchedule('acme.budget.quick', 1_000)
+      const failure = await slow
+      expect(failure).toBeInstanceOf(PluginCallBudgetError)
+      expect((failure as Error).message).toBe('Plugin call exceeded its 0.15s time budget')
+      // Noticed at the budget (plus the re-check interval), not after a hang.
+      expect(Date.now() - t0).toBeLessThan(1_500)
+      // The VM carries on serving calls afterwards.
+      await vm.runSchedule('acme.budget.quick', 1_000)
+    } finally {
+      vm.dispose()
+    }
+  }, 10_000)
+
+  it('does not count awaited time against the execution deadline', async () => {
+    // Three 80 ms awaits outlast the 100 ms execution deadline but fit the budget.
+    const vm = await createPluginVm({
+      env: makeEnv('acme.awaits'),
+      evalTimeoutMs: 100,
+      callBudgetMs: 5_000,
+      pluginSource: SOURCE,
+    })
+    try {
+      await vm.runLifecycle('install')
+    } finally {
+      vm.dispose()
+    }
+  }, 10_000)
+
+  it("bounds a schedule fire by its own maxDurationMs, not the default budget", async () => {
+    const vm = await createPluginVm({ env: makeEnv('acme.sched'), callBudgetMs: 100, pluginSource: SOURCE })
+    try {
+      await vm.runLifecycle('activate')
+      // Longer than the 100 ms default budget, inside its own 2 s.
+      await vm.runSchedule('acme.sched.steady', 2_000)
+      // Still awaiting after its own 150 ms.
+      await expect(vm.runSchedule('acme.sched.stuck', 150)).rejects.toThrow(
+        'Plugin call exceeded its 0.15s time budget',
+      )
+    } finally {
+      vm.dispose()
+    }
+  }, 10_000)
+
+  /** A VM whose `network.fetch` host call behaves like `handler`, recording each init. */
+  async function fetchVm(
+    pluginId: string,
+    callBudgetMs: number,
+    handler: (init: { timeoutMs: number }) => Promise<unknown>,
+    body: string,
+  ) {
+    const fetches: Array<{ timeoutMs: number; at: number }> = []
+    const env = makeEnv(pluginId)
+    env.grantedPermissions = ['cms.schedule', 'network.outbound']
+    env.hostCall = async (target, args) => {
+      if (target !== 'network.fetch') return null
+      const init = args[1] as { timeoutMs: number }
+      fetches.push({ timeoutMs: init.timeoutMs, at: Date.now() })
+      return handler(init)
+    }
+    const vm = await createPluginVm({
+      env,
+      callBudgetMs,
+      pluginSource: `
+        ;(function () {
+          const __plugin_exports = (globalThis.__plugin_exports = {});
+          function sleep(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
+          ${body}
+        })();
+      `,
+    })
+    return { vm, fetches }
+  }
+  const answers = async () => ({ status: 200, ok: true, headers: {}, body: 'ok', bodyEncoding: 'utf8' })
+  /** A host that is down: the request runs for its whole timeout, then times out. */
+  const dead = async (init: { timeoutMs: number }) => {
+    await new Promise((res) => setTimeout(res, init.timeoutMs))
+    throw Object.assign(new Error('Plugin "x" fetch timed out'), { code: 'fetch_timeout' })
+  }
+
+  it('gives a request the time left in the call less a handling margin', async () => {
+    const { vm, fetches } = await fetchVm('acme.clamp', 4_000, answers, `
+      __plugin_exports.activate = async function activate(api) {
+        api.cms.schedule.every(5, 'job', async function () {
+          await fetch('https://api.example.com/c', { timeout: 250000 });
+        });
+      };
+      __plugin_exports.install = async function install() {
+        await fetch('https://api.example.com/a', { timeout: 60000 });
+        await fetch('https://api.example.com/b', { timeout: 300 });
+      };
+    `)
+    try {
+      await vm.runLifecycle('install')
+      await vm.runLifecycle('activate')
+      await vm.runSchedule('acme.clamp.job', 1_200)
+    } finally {
+      vm.dispose()
+    }
+    const [long, short, scheduled] = fetches.map((f) => f.timeoutMs)
+    // 4 s budget keeps a 1 s margin: at most 3 s for the request.
+    expect(long).toBeGreaterThan(2_000)
+    expect(long).toBeLessThanOrEqual(3_000)
+    // Shorter than what is left: kept.
+    expect(short).toBe(300)
+    // A schedule's remainder is its own maxDurationMs, margin capped at half.
+    expect(scheduled).toBeLessThanOrEqual(600)
+  }, 10_000)
+
+  it('a dead upstream gives the handler catchable timeouts, never an overrun', async () => {
+    const { vm, fetches } = await fetchVm('acme.dead', 1_500, dead, `
+      __plugin_exports.install = async function install() {
+        const seen = [];
+        for (const path of ['/one', '/two']) {
+          try { await fetch('https://down.example.com' + path); seen.push('answered'); }
+          catch (e) { seen.push(e.name); }
+        }
+        if (seen.join() !== 'TimeoutError,TimeoutError') throw new Error('unexpected: ' + seen.join());
+      };
+    `)
+    try {
+      const t0 = Date.now()
+      // Resolves: both failures were caught and handled inside the budget.
+      await vm.runLifecycle('install')
+      expect(Date.now() - t0).toBeLessThan(1_400)
+    } finally {
+      vm.dispose()
+    }
+    // The first request got the budget less the margin; the second had too
+    // little left and was refused without going out.
+    expect(fetches).toHaveLength(1)
+    expect(fetches[0].timeoutMs).toBeLessThanOrEqual(750)
+  }, 10_000)
+
+  it('bounds a request by the tightest call in flight, not the longest', async () => {
+    const { vm, fetches } = await fetchVm('acme.tight', 800, answers, `
+      __plugin_exports.activate = async function activate(api) {
+        api.cms.schedule.every(5, 'long', async function () { await sleep(700); });
+      };
+      __plugin_exports.install = async function install() {
+        await fetch('https://api.example.com/route');
+      };
+    `)
+    try {
+      await vm.runLifecycle('activate')
+      const long = vm.runSchedule('acme.tight.long', 4_000)
+      await new Promise((res) => setTimeout(res, 50))
+      // An 800 ms call starts while a 4 s schedule is in flight.
+      await vm.runLifecycle('install')
+      await long
+    } finally {
+      vm.dispose()
+    }
+    // Bounded by the 800 ms call (400 ms margin), not by the schedule's 4 s.
+    expect(fetches[0].timeoutMs).toBeLessThanOrEqual(400)
+  }, 10_000)
+
+  it('keeps the budget below the worker RPC timeout, with room for one timed-out request', () => {
+    // Above the RPC timeout a slow handler would take the whole worker (and
+    // its sibling calls) down instead of failing on its own.
+    expect(PLUGIN_CALL_BUDGET_MS).toBeLessThan(DEFAULT_RPC_TIMEOUT_MS)
+    expect(DEFAULT_PLUGIN_FETCH_TIMEOUT_MS).toBeLessThan(PLUGIN_CALL_BUDGET_MS)
+  })
 })
 
 describe('plugin sandbox: VM stack preservation', () => {

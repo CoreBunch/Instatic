@@ -1,7 +1,11 @@
 /* ClassPicker - class stack manager inside the Properties inspector. */
 
+/* minmax(0, 1fr) caps the single column at the panel width. An implicit auto
+   column would size to the widest chip's max-content, so one long grouped
+   selector would push the input and the other chips out of the sidebar. */
 .container {
     display: grid;
+    grid-template-columns: minmax(0, 1fr);
     gap: var(--space-m);
 }
 

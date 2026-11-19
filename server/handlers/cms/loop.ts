@@ -25,15 +25,33 @@ import { registry } from '@core/module-engine'
 import { loopSourceRegistry } from '@core/loops/registry'
 import {
   renderNode,
+  showWhenPathsAllow,
+  showWhenPathsAreGated,
+  showWhenPathsTo,
+  subtreeDependsOnMember,
   type RenderConfig,
   type RenderAccumulators,
   type ResolvedLoopRenderData,
 } from '@core/publisher'
 import { jsonResponse } from '../../http'
+import type { Page } from '@core/page-tree'
+import type { SourceRequestContext } from '@core/loops/types'
+import { buildPageFrame, buildRouteFrame } from '@core/templates/contextFrames'
 import { readLoopProps } from '../../publish/loopPrefetch'
+import { sourceRequestFor, visitorRequestScope } from '../../publish/loopSourceRequest'
 import { getPublishedLoopIndexForVersion } from '../../publish/publishedSnapshotCache'
 import { getPublishVersion } from '../../publish/publishState'
-import { LOOP_RUNTIME_JS } from '../../publish/loopRuntime'
+import { LOOP_RUNTIME_JS, LOOP_RUNTIME_VERSION } from '../../publish/loopRuntime'
+import { serveVersionedScript } from '../../publish/assetVersion'
+import {
+  closedContentFor,
+  decideAccess,
+  getAccessIndex,
+  memberFrameFor,
+  pageRules,
+  PRIVATE_HEADERS,
+  visitorFromRequest,
+} from '../../publish/accessGate'
 
 const LOOP_RUNTIME_PATH = '/_instatic/assets/loop-runtime.js'
 
@@ -41,16 +59,31 @@ export function isLoopRuntimeAssetPath(pathname: string): boolean {
   return pathname === LOOP_RUNTIME_PATH
 }
 
-export function serveLoopRuntimeAsset(): Response {
-  return new Response(LOOP_RUNTIME_JS, {
-    headers: {
-      'content-type': 'application/javascript; charset=utf-8',
-      // Aggressive caching — content is a fixed CMS asset that only
-      // changes when the CMS itself ships a new version. We can re-deploy
-      // by invalidating the path or appending a hash.
-      'cache-control': 'public, max-age=3600',
-    },
-  })
+/**
+ * GET `/_instatic/assets/loop-runtime.js?v=<contentHash>`: cacheable under the
+ * URL that names this runtime, `no-cache` otherwise, `ETag` and `304` on both
+ * (see `serveVersionedScript`).
+ */
+export function serveLoopRuntimeAsset(req: Request, url: URL): Response {
+  return serveVersionedScript(req, url, { body: LOOP_RUNTIME_JS, version: LOOP_RUNTIME_VERSION })
+}
+
+/**
+ * The address of the page the list sits on, as the loop runtime reports it
+ * (`pagePath`); the page's own permalink when it is missing or unreadable.
+ * The caller chooses it, so it only ever reaches a per-visitor source, whose
+ * answer is never shared.
+ */
+function requestBaseFor(url: URL, page: Page): Pick<SourceRequestContext, 'query' | 'path' | 'slug'> {
+  const permalink = buildPageFrame(page).permalink
+  let pageUrl: URL
+  try {
+    pageUrl = new URL(url.searchParams.get('pagePath') ?? permalink, url.origin)
+  } catch {
+    pageUrl = new URL(permalink, url.origin)
+  }
+  const route = buildRouteFrame(pageUrl.toString())
+  return { query: Object.fromEntries(pageUrl.searchParams), path: route.path, slug: route.slug }
 }
 
 interface LoopHandlerContext {
@@ -89,6 +122,38 @@ export async function handleLoopRequest(
   const { page: containingPage, node: loopNode } = indexed
   const site = loopIndex.site
 
+  // More items of a loop on a protected page are part of that page.
+  const accessIndex = await getAccessIndex(ctx.db, getPublishVersion())
+  const rules = pageRules(accessIndex, containingPage)
+  const isProtected = rules.length > 0
+  const visitor = visitorFromRequest(ctx.db, req)
+  if (isProtected && (await decideAccess(rules, visitor)) !== 'allow') {
+    return jsonResponse({ error: 'Loop not found' }, { status: 404, headers: PRIVATE_HEADERS })
+  }
+  // The list leaves out what the visitor may not open (see `closedContentFor`).
+  const closed = closedContentFor(accessIndex, isProtected ? ((await visitor())?.tags ?? null) : null)
+  // Items that show member data are rendered for this visitor alone.
+  // The items are rendered here without the loop element itself, so its own
+  // show-when rule and those of everything around it are checked here.
+  // The loop may live inside a Visual Component, so the rules are followed
+  // along the render path, through the component and the reference that
+  // placed it. A loop on no render path is given to nobody.
+  const paths = showWhenPathsTo(containingPage, site, loopNode.id, { includeSelf: true })
+  const gated = showWhenPathsAreGated(paths)
+  // A loop inside a component is not in the page's own node map, where
+  // `subtreeDependsOnMember` looks; treat it as per-visitor rather than guess.
+  const inComponent = containingPage.nodes[loopNode.id] === undefined
+  const showsMember = gated || inComponent || subtreeDependsOnMember(containingPage, site, registry, loopNode.id)
+  const forVisitor = isProtected || showsMember
+  if (gated) {
+    const who = await visitor()
+    // A later page of a list is fetched without its page's address, so a rule
+    // about an app's sign-in request reads as "no app is asking" here.
+    if (!showWhenPathsAllow(paths, who ? { tags: who.tags, appAsking: false } : null)) {
+      return jsonResponse({ html: '', hasMore: false, pageNumber }, { headers: PRIVATE_HEADERS })
+    }
+  }
+
   const props = readLoopProps(loopNode)
   if (props.pagination !== 'infinite') {
     return jsonResponse({ error: 'Loop is not in infinite mode' }, { status: 400 })
@@ -102,6 +167,15 @@ export async function handleLoopRequest(
   }
 
   // Fetch the requested page slice.
+  // A per-visitor source is told about this visitor exactly as the fragment
+  // endpoint tells it for the first page: cookies and the signed-in member,
+  // in a response nobody else is given. Every other source gets no request
+  // here, as before.
+  const perVisitor = source.perVisitor === true
+  const request = perVisitor
+    ? await sourceRequestFor(source, visitorRequestScope(requestBaseFor(url, containingPage), req, visitor))
+    : undefined
+
   const offset = props.offset + (pageNumber - 1) * props.pageSize
   let result
   try {
@@ -113,6 +187,8 @@ export async function handleLoopRequest(
       direction: props.direction,
       limit: props.pageSize,
       offset,
+      closed,
+      request,
     })
   } catch (err) {
     console.error(`[loop] source "${source.id}" failed for "${loopId}":`, err)
@@ -127,15 +203,20 @@ export async function handleLoopRequest(
   // CSS dedup is a no-op here because the asset bundle is already
   // loaded on the client.
   const variants = loopNode.children
+  // A per-visitor source answers for this visitor alone, whatever its items
+  // render: the response must never be stored or shared.
+  const headers = forVisitor || perVisitor ? { headers: PRIVATE_HEADERS } : {}
   if (variants.length === 0) {
-    return jsonResponse({ html: '', hasMore, pageNumber })
+    return jsonResponse({ html: '', hasMore, pageNumber }, headers)
   }
   const baseConfig: RenderConfig = {
     page: containingPage,
     site,
     registry,
     breakpointId: undefined,
-    templateContext: { entryStack: [] },
+    templateContext: forVisitor
+      ? { entryStack: [], member: memberFrameFor(await visitor()) }
+      : { entryStack: [] },
     loopData: new Map<string, ResolvedLoopRenderData>([
       [loopId, { items: result.items, totalItems: result.totalItems, pageNumber, hasMore }],
     ]),
@@ -166,5 +247,5 @@ export async function handleLoopRequest(
     html += renderNode(variantId, iterationConfig, acc)
   })
 
-  return jsonResponse({ html, hasMore, pageNumber })
+  return jsonResponse({ html, hasMore, pageNumber }, headers)
 }

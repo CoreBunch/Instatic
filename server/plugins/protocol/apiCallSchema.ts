@@ -16,7 +16,11 @@
  */
 
 import { Type, type Static, type TSchema } from '@sinclair/typebox'
-import { StorageListOptionsSchema } from '@core/plugin-sdk/storageSchemas'
+import {
+  STORAGE_UNIQUE_KEY_MAX_LENGTH,
+  StorageListOptionsSchema,
+  StorageWriteOptionsSchema,
+} from '@core/plugin-sdk/storageSchemas'
 import { RouteRegistrationArgSchema } from './schemas/routes'
 import { HookListenerArgSchema, HookFilterArgSchema, HookEmitArgSchema } from './schemas/hooks'
 import { LoopSourceDescriptorSchema } from './schemas/loops'
@@ -52,6 +56,13 @@ import {
   ContentTreeReadArgsSchema,
   ContentTreeReplaceArgsSchema,
 } from './schemas/content'
+import { MailSendArgsSchema, MailSendExternalArgsSchema } from './schemas/mail'
+import {
+  MembersGetArgsSchema,
+  MembersInviteArgsSchema,
+  MembersTagsGrantArgsSchema,
+  MembersTagsRevokeArgsSchema,
+} from './schemas/members'
 
 // ---------------------------------------------------------------------------
 // Generic schema builder
@@ -92,10 +103,24 @@ export const ApiCallSchemas = {
     Type.String({ minLength: 1 }),
     Type.String({ minLength: 1 }),
     JsonRecordSchema,
+    StorageWriteOptionsSchema,
   ])),
   'cms.storage.delete': apiCallSchema('cms.storage.delete', Type.Tuple([
     Type.String({ minLength: 1 }),
     Type.String({ minLength: 1 }),
+    StorageWriteOptionsSchema,
+  ])),
+  'cms.storage.get': apiCallSchema('cms.storage.get', Type.Tuple([
+    Type.String({ minLength: 1 }),
+    Type.String({ minLength: 1 }),
+  ])),
+  'cms.storage.getByKey': apiCallSchema('cms.storage.getByKey', Type.Tuple([
+    Type.String({ minLength: 1 }),
+    Type.String({ minLength: 1, maxLength: STORAGE_UNIQUE_KEY_MAX_LENGTH }),
+  ])),
+  'cms.storage.createIfAbsent': apiCallSchema('cms.storage.createIfAbsent', Type.Tuple([
+    Type.String({ minLength: 1 }),
+    JsonRecordSchema,
   ])),
   'cms.settings.replace': apiCallSchema('cms.settings.replace', Type.Tuple([JsonRecordSchema])),
   'network.fetch': apiCallSchema('network.fetch', Type.Tuple([
@@ -145,6 +170,13 @@ export const ApiCallSchemas = {
   'cms.content.search': apiCallSchema('cms.content.search', ContentSearchArgsSchema),
   'cms.content.snapshot': apiCallSchema('cms.content.snapshot', ContentSnapshotArgsSchema),
   'cms.content.republishAll': apiCallSchema('cms.content.republishAll', ContentRepublishAllArgsSchema),
+  'cms.members.get': apiCallSchema('cms.members.get', MembersGetArgsSchema),
+  'cms.members.invite': apiCallSchema('cms.members.invite', MembersInviteArgsSchema),
+  'cms.members.tags.grant': apiCallSchema('cms.members.tags.grant', MembersTagsGrantArgsSchema),
+  'cms.members.tags.revoke': apiCallSchema('cms.members.tags.revoke', MembersTagsRevokeArgsSchema),
+  'cms.mail.send': apiCallSchema('cms.mail.send', MailSendArgsSchema),
+  'cms.mail.sendExternal': apiCallSchema('cms.mail.sendExternal', MailSendExternalArgsSchema),
+  'cms.site.publicUrl': apiCallSchema('cms.site.publicUrl', Type.Tuple([])),
   'crypto.digest': apiCallSchema('crypto.digest', Type.Tuple([CryptoDigestArgSchema])),
   'crypto.signHmac': apiCallSchema('crypto.signHmac', Type.Tuple([CryptoSignHmacArgSchema])),
 } satisfies Record<string, TSchema>

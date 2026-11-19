@@ -9,6 +9,8 @@
  *
  *   GET    /admin/api/cms/data/tables/:id/rows          — list rows in a table
  *   POST   /admin/api/cms/data/tables/:id/rows          — create a draft row
+ *   GET    /admin/api/cms/data/tables/:id/access        — who may open the table's entries
+ *   PUT    /admin/api/cms/data/tables/:id/access        — change it (step-up, takes effect at once)
  *   GET    /admin/api/cms/data/tables/:id/loop-preview  — published rows as LoopItems (editor canvas)
  *
  * The `/tables/:id/rows` and `/loop-preview` routes live here (not in rows.ts)
@@ -46,6 +48,7 @@ import { badRequest, jsonResponse, methodNotAllowed, readValidatedBody } from '.
 import { CMS_API_PREFIX, requestAuditContext } from '../shared'
 import {
   TableCreateBodySchema,
+  TableAccessBodySchema,
   TablePatchBodySchema,
   RowCreateBodySchema,
   type TablePatchBody,
@@ -68,7 +71,10 @@ import {
   protectedBuiltInCreateCellKey,
 } from '@core/data/systemTableGuard'
 import { requireStepUp } from '../../../auth/authz'
-import { isMainScope, type BranchScope } from '../../../branches/scope'
+import { isMainScope, MAIN_SCOPE, type BranchScope } from '../../../branches/scope'
+import { isGrantableMemberTag, PUBLIC_ACCESS } from '@core/members'
+import { getTableAccess } from '../../../repositories/data/tableAccess'
+import { setTableAccess } from '../../../publish/tableAccess'
 import { physicalId } from '@core/branches'
 
 // ---------------------------------------------------------------------------
@@ -118,6 +124,7 @@ type TableAuditAction =
   | 'data.table.create'
   | 'data.table.update'
   | 'data.table.delete'
+  | 'data.table.access'
 
 async function recordTableAuditEvent(
   db: DbClient,
@@ -297,6 +304,43 @@ async function handleTableItem(
   return methodNotAllowed()
 }
 
+/**
+ * Who may open a table's entry routes on the published site. Unlike the rest
+ * of a table this is a live setting of the main site, not branch content: it
+ * is read and written on main whatever branch the editor is on, and a change
+ * applies from the next request (`setTableAccess`).
+ */
+async function handleTableAccess(
+  req: Request,
+  db: DbClient,
+  tableId: string,
+  uploadsDir: string | undefined,
+): Promise<Response> {
+  const user = await requireDataTablesRead(req, db)
+  if (user instanceof Response) return user
+  const table = await getDataTable(db, MAIN_SCOPE, tableId)
+  if (!table || !canReadTable(user, table)) return jsonResponse({ error: 'Table not found' }, { status: 404 })
+
+  if (req.method === 'GET') {
+    return jsonResponse({ access: (await getTableAccess(db, tableId)) ?? PUBLIC_ACCESS })
+  }
+  if (req.method !== 'PUT') return methodNotAllowed()
+
+  if (!canManageTable(user, table)) return forbidden()
+  const stepUp = await requireStepUp(req, db, user)
+  if (stepUp) return stepUp
+  const body = await readValidatedBody(req, TableAccessBodySchema)
+  if (!body) return badRequest('Invalid access rule')
+  if (body.access.level === 'tags' && !body.access.tags.every(isGrantableMemberTag)) {
+    return badRequest('A tag in the rule cannot be granted to a member')
+  }
+  if (!(await setTableAccess(db, tableId, body.access, uploadsDir))) {
+    return jsonResponse({ error: 'Table not found' }, { status: 404 })
+  }
+  await recordTableAuditEvent(db, user, req, 'data.table.access', table)
+  return jsonResponse({ access: body.access })
+}
+
 async function handleTableRows(
   req: Request,
   db: DbClient,
@@ -430,6 +474,7 @@ async function handleTableLoopPreview(
 // ---------------------------------------------------------------------------
 
 const TABLE_ITEM_PATTERN = /^\/admin\/api\/cms\/data\/tables\/([^/]+)$/
+const TABLE_ACCESS_PATTERN = /^\/admin\/api\/cms\/data\/tables\/([^/]+)\/access$/
 const TABLE_ROWS_PATTERN = /^\/admin\/api\/cms\/data\/tables\/([^/]+)\/rows$/
 const TABLE_LOOP_PREVIEW_PATTERN = /^\/admin\/api\/cms\/data\/tables\/([^/]+)\/loop-preview$/
 
@@ -441,6 +486,7 @@ export async function handleDataTableRoutes(
   req: Request,
   db: DbClient,
   scope: BranchScope,
+  options: { uploadsDir?: string } = {},
 ): Promise<Response | null> {
   const { pathname } = new URL(req.url)
 
@@ -454,6 +500,11 @@ export async function handleDataTableRoutes(
   const loopPreviewMatch = pathname.match(TABLE_LOOP_PREVIEW_PATTERN)
   if (loopPreviewMatch) {
     return handleTableLoopPreview(req, db, scope, decodeURIComponent(loopPreviewMatch[1]))
+  }
+
+  const accessMatch = pathname.match(TABLE_ACCESS_PATTERN)
+  if (accessMatch) {
+    return handleTableAccess(req, db, decodeURIComponent(accessMatch[1]), options.uploadsDir)
   }
 
   const rowsMatch = pathname.match(TABLE_ROWS_PATTERN)

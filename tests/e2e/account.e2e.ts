@@ -787,7 +787,7 @@ test.describe('account', () => {
       await page.locator('input[name="new-user-email-address"]').fill(email)
       await page.locator('input[name="new-user-display-name"]').fill('MFA Step-Up Guard')
       await page.locator('input[name="new-user-initial-password"]').fill('mfa-step-pass-12345')
-      await page.locator('select[name="new-user-role"]').selectOption({ label: 'Member' })
+      await page.locator('select[name="new-user-role"]').selectOption({ label: 'No access' })
       await page.locator('button[form="users-page-user-form"]').click()
 
       const stepUpDialog = page.getByTestId('step-up-dialog')

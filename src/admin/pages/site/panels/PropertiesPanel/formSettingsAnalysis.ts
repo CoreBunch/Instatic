@@ -1,11 +1,12 @@
 import type { CreateDataTableInput, DataField, DataTable, DataSelectOption } from '@core/data/schemas'
 import type { ImportFragment } from '@core/htmlImport'
 import { createNode, flattenSubtree, getParent, type Page, type PageNode } from '@core/page-tree'
+import { DEFAULT_MEMBER_FORM_ACTION } from '@core/members'
 import { formDisplayName, humanizeIdentifier, slugifyFormTableName } from './formSettingsNaming'
 
 export { formDisplayName } from './formSettingsNaming'
 
-const FORM_CONTROL_MODULES = new Set([
+export const FORM_CONTROL_MODULES = new Set([
   'base.input',
   'base.textarea',
   'base.select',
@@ -72,8 +73,10 @@ interface FormSettingsWarning {
 export interface FormContextSummary {
   nodeId: string
   formId: string
-  mode: 'cms' | 'custom'
+  mode: 'cms' | 'custom' | 'member'
   targetTableId: string
+  /** The member action a `member` form performs. */
+  memberAction: string
 }
 
 interface FormTargetSummary {
@@ -341,9 +344,14 @@ function formSummary(node: PageNode): FormContextSummary {
   return {
     nodeId: node.id,
     formId: stringProp(node, 'formId', node.id) || node.id,
-    mode: stringProp(node, 'mode', 'cms') === 'custom' ? 'custom' : 'cms',
+    mode: formMode(stringProp(node, 'mode', 'cms')),
     targetTableId: stringProp(node, 'targetTableId', ''),
+    memberAction: stringProp(node, 'memberAction', DEFAULT_MEMBER_FORM_ACTION),
   }
+}
+
+function formMode(raw: string): FormContextSummary['mode'] {
+  return raw === 'custom' || raw === 'member' ? raw : 'cms'
 }
 
 function duplicateNameWarnings(page: Page, formNode: PageNode): FormSettingsWarning[] {
@@ -536,7 +544,7 @@ function nearestAncestorForm(page: Page, nodeId: string): PageNode | null {
   return null
 }
 
-function stringProp(node: PageNode, key: string, fallback: string): string {
+export function stringProp(node: PageNode, key: string, fallback: string): string {
   const value = node.props[key]
   return typeof value === 'string' ? value : fallback
 }
