@@ -13,7 +13,9 @@
  * for: when it matches the body served, the response is cacheable; when it
  * does not (a baked page written before an upgrade or a publish changed the
  * script, or a request with no `?v=`), the body is served `no-cache` so a
- * stale URL never pins a body it does not name.
+ * stale URL never pins a body it does not name. Every response carries the
+ * hash as its `ETag`, so a stale URL revalidates with a `304` instead of
+ * downloading the script again (`serveVersionedScript`).
  *
  * The `<moduleId>` path segment is UNTRUSTED input: it is validated against
  * the namespaced-module-id grammar before any lookup, so traversal sequences
@@ -24,6 +26,7 @@ import type { DbClient } from '../../db/client'
 import { registry } from '@core/module-engine'
 import { getLatestPublishedSiteSnapshot } from '../../repositories/publish'
 import { buildPublishedSiteModuleJsMap, moduleJsVersion } from '../../publish/moduleJsBundle'
+import { serveVersionedScript } from '../../publish/assetVersion'
 import { createVersionedSingleFlight, getPublishVersion } from '../../publish/publishState'
 
 const MODULE_JS_PATH_PREFIX = '/_instatic/module-js/'
@@ -84,16 +87,8 @@ export async function handleModuleJsAssetRequest(
 
   const jsMap = await loadModuleJsMapForVersion(ctx.db, getPublishVersion())
   const body = jsMap?.get(moduleId)
-  if (!jsMap || body === undefined) return plainResponse('Not found', 404)
+  const version = jsMap && moduleJsVersion(jsMap, moduleId)
+  if (body === undefined || !version) return plainResponse('Not found', 404)
 
-  const urlNamesThisBody = url.searchParams.get('v') === moduleJsVersion(jsMap, moduleId)
-  return new Response(body, {
-    headers: {
-      'content-type': 'text/javascript; charset=utf-8',
-      // 1 hour under the URL that names this body. Any other URL is stale (or
-      // unversioned): revalidate every time, so it never caches a body its
-      // hash does not match.
-      'cache-control': urlNamesThisBody ? 'public, max-age=3600' : 'no-cache',
-    },
-  })
+  return serveVersionedScript(req, url, { body, version })
 }

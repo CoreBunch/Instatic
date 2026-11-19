@@ -2,7 +2,7 @@
  * Browser runtime for Layer C server-island ("hole") lazy loading.
  *
  * Self-contained ES module — no dependencies, no TypeScript. The publisher
- * injects a `<script type="module" src="/_instatic/hole-runtime.js" defer>` tag
+ * injects a `<script type="module" src="/_instatic/hole-runtime.js?v=<contentHash>" defer>` tag
  * into pages that contain at least one `<instatic-hole>` placeholder.
  *
  * On load, the runtime uses `IntersectionObserver` with a 200 px root margin

@@ -2,7 +2,7 @@
  * Browser runtime for `base.loop` infinite loading.
  *
  * Self-contained ES module — no dependencies, no framework. The publisher
- * injects a `<script type="module" src="/_instatic/assets/loop-runtime.js">` tag
+ * injects a `<script type="module" src="/_instatic/assets/loop-runtime.js?v=<contentHash>">` tag
  * into pages that contain at least one `pagination='infinite'` loop.
  *
  * On load, the runtime:
@@ -20,6 +20,7 @@
  * "no JS by default" promise honest — it ships only when at least one
  * infinite-mode loop exists on the page.
  */
+import { assetContentVersion } from './assetVersion'
 
 function runInstaticLoopRuntime(): void {
   // Located by attribute rather than `document.currentScript`, which the HTML
@@ -101,3 +102,9 @@ function runInstaticLoopRuntime(): void {
 }
 
 export const LOOP_RUNTIME_JS = `(${runInstaticLoopRuntime.toString()})();`
+
+/**
+ * Content hash of the runtime, stamped as `?v=` on its script tag so a CMS
+ * upgrade that changes the runtime changes the URL browsers have cached.
+ */
+export const LOOP_RUNTIME_VERSION = assetContentVersion(LOOP_RUNTIME_JS)

@@ -145,11 +145,13 @@ interface PublishPageOptions {
    */
   snapshotHash?: string
   /**
-   * Content hash of the hole runtime script, supplied by the server. Stamped
-   * as `?v=` on the runtime's script tag so the URL changes exactly when the
-   * runtime does.
+   * Content hashes of the hole and loop runtime scripts, supplied by the
+   * server. Each is stamped as `?v=` on its runtime's script tag so the URL
+   * changes exactly when the runtime does. Omitted (editor and tool renders
+   * that have no server asset to name): the tag carries no query.
    */
   holeRuntimeVersion?: string
+  loopRuntimeVersion?: string
   /**
    * Editor-only: annotate each node's outermost emitted element with
    * `uid="<id>"`. Default off — real publishes emit clean, id-less
@@ -400,6 +402,11 @@ interface RuntimeAssetsBlock {
   anyScriptTag: boolean
 }
 
+/** `?v=<version>` for a runtime script URL, or nothing when no version was supplied. */
+function runtimeVersionQuery(version: string | undefined): string {
+  return version ? `?v=${encodeURIComponent(version)}` : ''
+}
+
 function buildRuntimeAssetsBlock(
   options: PublishPageOptions,
   acc: RenderAccumulators,
@@ -416,7 +423,7 @@ function buildRuntimeAssetsBlock(
   const hasInfiniteLoops = acc.infiniteLoopIds.size > 0
   const loopEndpointBaseUrl = options.loopEndpointBaseUrl ?? '/_instatic/loop/'
   const loopRuntimeScript = hasInfiniteLoops
-    ? `  <script type="module" src="/_instatic/assets/loop-runtime.js" data-instatic-loop-endpoint="${escapeHtml(loopEndpointBaseUrl)}"></script>`
+    ? `  <script type="module" src="/_instatic/assets/loop-runtime.js${runtimeVersionQuery(options.loopRuntimeVersion)}" data-instatic-loop-endpoint="${escapeHtml(loopEndpointBaseUrl)}"></script>`
     : ''
 
   // Hole runtime — injected into <head> (not body-end) so IntersectionObserver
@@ -424,10 +431,11 @@ function buildRuntimeAssetsBlock(
   // was actually rendered during the walk (tracked via acc.holeNodeIds) — no
   // idle JS for fully-static pages.
   const hasHoles = acc.holeNodeIds.size > 0
-  // The URL carries the runtime's content hash, so it changes exactly when
-  // the runtime does; the endpoint serves the asset with max-age=3600.
+  // Both runtime URLs carry the runtime's content hash, so each changes
+  // exactly when its runtime does; the endpoint caches a response only under
+  // the URL that names the body it serves.
   const holeRuntimeScript = hasHoles
-    ? `  <script type="module" src="/_instatic/hole-runtime.js?v=${encodeURIComponent(options.holeRuntimeVersion ?? '')}" defer></script>`
+    ? `  <script type="module" src="/_instatic/hole-runtime.js${runtimeVersionQuery(options.holeRuntimeVersion)}" defer></script>`
     : ''
 
   // Site-dependency importmap. When present we emit a `<script type="importmap">`

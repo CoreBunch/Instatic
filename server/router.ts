@@ -195,9 +195,9 @@ function tryServeCmsApi(req: Request, runtime: ServerRuntime, _url: URL, pathnam
  * The loop runtime is a fixed CMS asset, served before the per-site
  * runtime asset lookup so the request never falls through.
  */
-function tryServeLoopRuntimeAsset(req: Request, _runtime: ServerRuntime, _url: URL, pathname: string): Response | null {
+function tryServeLoopRuntimeAsset(req: Request, _runtime: ServerRuntime, url: URL, pathname: string): Response | null {
   if (req.method !== 'GET' || !isLoopRuntimeAssetPath(pathname)) return null
-  return serveLoopRuntimeAsset()
+  return serveLoopRuntimeAsset(req, url)
 }
 
 function tryServeLoop(req: Request, runtime: ServerRuntime, url: URL, pathname: string): Promise<Response> | null {
@@ -210,9 +210,9 @@ function tryServeLoop(req: Request, runtime: ServerRuntime, url: URL, pathname: 
  * Registered before `tryServeHole` so the exact path is consumed here and
  * never falls through to the hole fragment handler.
  */
-function tryServeHoleRuntimeAsset(req: Request, _runtime: ServerRuntime, _url: URL, pathname: string): Response | null {
+function tryServeHoleRuntimeAsset(req: Request, _runtime: ServerRuntime, url: URL, pathname: string): Response | null {
   if (req.method !== 'GET' || !isHoleRuntimeAssetPath(pathname)) return null
-  return serveHoleRuntimeAsset()
+  return serveHoleRuntimeAsset(req, url)
 }
 
 /**

@@ -41,6 +41,7 @@ import { getDraftSiteDocument } from '../repositories/publish'
 import { buildPublishedSiteModuleJsMap, resolveModuleScripts } from './moduleJsBundle'
 import { applyPublishedHtmlPipeline } from './publishedHtmlPipeline'
 import { prefetchLoopData, publishedDataRowToEntryItem } from './loopPrefetch'
+import { LOOP_RUNTIME_VERSION } from './loopRuntime'
 import { prefetchMediaAssets } from './mediaPrefetch'
 import { contentRouteFromPath, publicSlugFromPath } from './publicRouter'
 import { buildSiteRuntimeScripts } from './runtime/bundleScripts'
@@ -229,6 +230,7 @@ export async function renderBranchPreview(
     loopData,
     mediaAssets,
     dynamicNodes: 'inline',
+    loopRuntimeVersion: LOOP_RUNTIME_VERSION,
   })
   // The same pipeline as a published page (plugin frontend assets, form
   // tokens, module scripts, the `publish.*` hooks), so a form or a plugin's

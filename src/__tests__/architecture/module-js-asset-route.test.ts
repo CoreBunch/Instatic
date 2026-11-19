@@ -54,4 +54,26 @@ describe('module-js asset route ordering', () => {
     expect(inject).toContain('?v=${version}')
     expect(inject).not.toContain('publishVersion')
   })
+
+  // One cache rule for every content-versioned script: long cache only under
+  // the URL that names the body, `no-cache` otherwise, `ETag` + `304` on
+  // both. A route that hand-rolls its headers drifts from it (the loop and
+  // hole runtimes once sent `max-age=3600` whatever the URL said).
+  it('the three versioned script routes answer through serveVersionedScript', async () => {
+    for (const file of ['moduleJs.ts', 'loop.ts', 'hole.ts']) {
+      const handler = await read(`server/handlers/cms/${file}`)
+      expect(handler).toContain('serveVersionedScript(req, url,')
+      expect(handler).not.toContain('max-age')
+    }
+  })
+
+  // Both runtime tags carry their runtime's content hash, like module tags.
+  it('the publisher stamps a version onto both runtime script tags', async () => {
+    const render = await read('src/core/publisher/render.ts')
+    expect(render).toContain('loop-runtime.js${runtimeVersionQuery(options.loopRuntimeVersion)}')
+    expect(render).toContain('hole-runtime.js${runtimeVersionQuery(options.holeRuntimeVersion)}')
+    const renderer = await read('server/publish/publicRenderer.ts')
+    expect(renderer).toContain('holeRuntimeVersion: HOLE_RUNTIME_VERSION')
+    expect(renderer).toContain('loopRuntimeVersion: LOOP_RUNTIME_VERSION')
+  })
 })

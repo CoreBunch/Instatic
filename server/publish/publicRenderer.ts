@@ -7,6 +7,7 @@ import { buildPublishedSiteCssBundle } from './siteCssBundle'
 import { buildPublishedSiteModuleJsMap, resolveModuleScripts } from './moduleJsBundle'
 import type { ModuleScriptRef } from './moduleJsBundle'
 import { HOLE_RUNTIME_VERSION } from './holeRuntime'
+import { LOOP_RUNTIME_VERSION } from './loopRuntime'
 import { resolveTemplateChain, resolveNotFoundTemplate, composeTemplateChain } from '@core/templates'
 import type { TemplateRenderDataContext } from '@core/templates/dynamicBindings'
 import { closedContentFor, getAccessIndex, memberFrameFor } from './accessGate'
@@ -127,6 +128,7 @@ async function renderMergedTemplate(
     loopEndpointBaseUrl: LOOP_ENDPOINT_BASE_URL,
     snapshotHash: getPublishedSnapshotHash(snapshot.site),
     holeRuntimeVersion: HOLE_RUNTIME_VERSION,
+    loopRuntimeVersion: LOOP_RUNTIME_VERSION,
   })
   // Per-page injection set = candidates from the render (emitted ∪ hole
   // subtrees) ∩ the site module-JS map — over-inclusive candidates from

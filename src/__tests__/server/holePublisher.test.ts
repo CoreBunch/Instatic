@@ -153,6 +153,10 @@ describe('publishPage — Layer C hole placeholders', () => {
 
     const escaped = publishPage(page, makeSite(), reg, { holeRuntimeVersion: '" onload="bad' })
     expect(escaped.html).toContain('/_instatic/hole-runtime.js?v=%22%20onload%3D%22bad')
+
+    // No version supplied (editor and tool renders): no dangling `?v=`.
+    const unversioned = publishPage(page, makeSite(), reg, { snapshotHash: 's' })
+    expect(unversioned.html).toContain('src="/_instatic/hole-runtime.js" defer')
   })
 
   it('defaults snapshotHash to an empty string when not provided', () => {

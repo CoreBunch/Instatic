@@ -93,9 +93,9 @@ const routes: readonly RouteHandler[] = [
   tryServeCmsApi,                  // /admin/api/cms/*        → handlers/cms/index.ts
   tryServeBranchPreviewLink,       // /_instatic/preview/<token> | /exit → publish/publicRoutes.ts
                                    //   sets / clears the branch preview cookie
-  tryServeLoopRuntimeAsset,        // /_instatic/loop-runtime.js (fixed CMS asset)
+  tryServeLoopRuntimeAsset,        // /_instatic/assets/loop-runtime.js?v=<contentHash> (fixed CMS asset)
   tryServeLoop,                    // /_instatic/loop/*       → handlers/cms/loop.ts
-  tryServeHoleRuntimeAsset,        // /_instatic/hole-runtime.js (fixed CMS asset)
+  tryServeHoleRuntimeAsset,        // /_instatic/hole-runtime.js?v=<contentHash> (fixed CMS asset)
   tryServeHole,                    // /_instatic/hole/*       → handlers/cms/hole.ts
   tryServeModuleJsAsset,           // /_instatic/module-js/<id>.js?v=<contentHash>  → handlers/cms/moduleJs.ts
   tryServePublicForm,              // /_instatic/form/*       → forms/handler.ts
@@ -552,6 +552,8 @@ Server-side publishing helpers live in `server/publish/`:
 | `staticArtefact.ts`               | Layer A. Two-slot symlink swap (`current → slot-{a,b}`), atomic per-file `tmp + rename`, slot-aware read/write/purge. |
 | `renderCache.ts`                  | Layer B. Bounded LRU keyed by `(urlPath, canonicalQuery)`, entries versioned. Single-flight on cache miss. `bumpPublishVersion()` invalidates lazily; version captured at render start so mid-flight publishes discard without caching stale HTML. |
 | `holeRuntime.ts`                  | Layer C client-side runtime (~1.1 KB). Exports `runInstaticHoleRuntime` (TS source), `HOLE_RUNTIME_JS` (IIFE-serialized for browser delivery) and `HOLE_RUNTIME_VERSION` (its content hash, the `?v=` on the runtime's script tag). |
+| `loopRuntime.ts`                  | Infinite-loop client runtime. Exports `LOOP_RUNTIME_JS` and `LOOP_RUNTIME_VERSION` (its content hash, the `?v=` on the runtime's script tag). |
+| `assetVersion.ts`                 | `assetContentVersion(body)` (the `?v=` content hash) and `serveVersionedScript`, the response rule shared by `/_instatic/module-js/<id>.js`, `/_instatic/hole-runtime.js` and `/_instatic/assets/loop-runtime.js`: `public, max-age=3600` only when `?v=` names the body served, `no-cache` otherwise, with `ETag: "<contentHash>"` on both and `304 Not Modified` when `If-None-Match` names it. |
 | `publishSite.ts`                  | Full-site publish orchestrator (`publishDraftSite`): phase-1 builds, the short `persistSitePublish` transaction, Layer A bake + slot swap, Layer B bump. |
 | `publishRow.ts`                   | Per-row publish orchestrator (`publishDataRow`) + `retractDataRowArtefacts`: page rows use the site pipeline with published shared resources and just the selected draft; other rows use an in-place artefact update and Layer B bump. Both also drop the baked pages that loop over the row's table. |
 | `loopArtefacts.ts`                | `removeArtefactsLoopingOverTable`: removes from the active slot every baked route whose render tree loops over a table, so listings follow row changes without a site publish. |
