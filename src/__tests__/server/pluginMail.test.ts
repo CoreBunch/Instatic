@@ -1026,7 +1026,13 @@ describe('email for plugins', () => {
           const rendered = renderMailTemplate({ key: templateKey, subject: attempt.split('\n')[0], body: attempt }, { 'site.name': 'Site', link: SECRET })
           const html = body(rendered.html)
           // What a reader of the HTML part sees, block by block.
-          const seen = html.replace(/<\/(p|li|h\d|td|th|tr|blockquote|pre|div)>|<br>/g, ' ').replace(/<[^>]+>/g, '').replace(/&amp;/g, '&')
+          // Tags are taken out until none is left, so nothing a removal uncovers is read as text.
+          let seen = html.replace(/<\/(p|li|h\d|td|th|tr|blockquote|pre|div)>|<br>/g, ' ')
+          for (let before = ''; before !== seen;) {
+            before = seen
+            seen = seen.replace(/<[^>]+>/g, '')
+          }
+          seen = seen.replace(/&amp;/g, '&')
           expect({ attempt, templateKey, html: alone(seen), text: alone(rendered.text), subject: alone(rendered.subject) })
             .toEqual({ attempt, templateKey, html: true, text: true, subject: true })
           // No attribute carries the secret except a link or image address that is exactly it.
