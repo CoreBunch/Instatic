@@ -1713,7 +1713,7 @@ export const pgMigrations: Migration[] = [
     `,
   },
   {
-    id: '035_member_app_devices',
+    id: '037_member_app_devices',
     sql: `
       -- The device an app runs on: the thumbprint of a key the app keeps and
       -- proves it holds on every refresh, and the name the app gave it.
