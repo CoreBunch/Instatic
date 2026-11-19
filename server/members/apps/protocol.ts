@@ -3,7 +3,7 @@
  * on. Its issuer is the members path of this deployment, so its discovery
  * document does not collide with the MCP issuer on the same origin.
  */
-import { MEMBER_APP_SCOPES, isMemberAppScope, parsePluginAppScope } from '@core/members'
+import { MEMBER_APP_SCOPES, isMemberAppScope, parsePluginAppScope, plainLine } from '@core/members'
 import { oauthIssuerOrigin } from '../../oauth/protocol'
 
 const ISSUER_PATH = '/_instatic/members'
@@ -51,15 +51,6 @@ export function normalizeMemberAppScope(raw: string | undefined): string | null 
 }
 
 const DEVICE_NAME_MAX_LENGTH = 60
-
-/**
- * Text someone else supplied, made safe to show beside the Allow button: one
- * line, no control or invisible formatting characters (which can reorder or
- * hide text).
- */
-export function plainLine(text: string): string {
-  return text.replace(/[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]+/gu, ' ').replace(/\s+/g, ' ').trim()
-}
 
 /**
  * The name an app gives the device it runs on, made safe to show and cut to

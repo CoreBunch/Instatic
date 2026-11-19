@@ -10,11 +10,12 @@ import {
   MEMBER_APP_SCOPE_TEXT,
   isMemberAppScope,
   parsePluginAppScope,
+  plainLine,
   pluginAppScope,
+  pluginAppScopeText,
   type MemberAppScopeOption,
 } from '@core/members'
 import { hostPlugins } from '../../plugins/host/registry'
-import { plainLine } from './protocol'
 
 export function listAvailableMemberAppScopes(): MemberAppScopeOption[] {
   const options: MemberAppScopeOption[] = MEMBER_APP_SCOPES.map((scope) => ({ scope, text: MEMBER_APP_SCOPE_TEXT[scope] }))
@@ -39,13 +40,16 @@ export function isAvailableMemberAppScope(scope: string): boolean {
 }
 
 /**
- * A scope in the words a member reads. A plugin scope whose plugin is gone
- * or no longer offers it has no description left; it is named plainly.
+ * A scope in the words a member reads. A plugin's scope is introduced by
+ * core's own words naming the plugin (`pluginAppScopeText`), so its
+ * description cannot pass for a built-in scope or for several entries. A
+ * plugin scope whose plugin is gone or no longer offers it has no
+ * description left; it is named plainly.
  */
 export function memberAppScopeText(scope: string): string {
   if (isMemberAppScope(scope)) return MEMBER_APP_SCOPE_TEXT[scope]
   const found = listAvailableMemberAppScopes().find((option) => option.scope === scope)
-  if (found) return found.plugin ? `${found.text} (${found.plugin.name})` : found.text
+  if (found) return found.plugin ? pluginAppScopeText(found.plugin.name, found.text) : found.text
   const parsed = parsePluginAppScope(scope)
   return parsed ? `Use the plugin ${parsed.pluginId}` : scope
 }

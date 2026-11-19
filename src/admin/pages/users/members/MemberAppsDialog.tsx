@@ -8,7 +8,7 @@ import { useId, useState, type FormEvent } from 'react'
 import { useAsyncResource } from '@admin/lib/useAsyncResource'
 import dialogStyles from '@admin/shared/dialogs/SiteCreateDialog/SiteCreateDialog.module.css'
 import { StepUpCancelledMessage, useStepUp } from '@admin/shared/StepUp'
-import { isMemberAppScope, type MemberApp, type MemberAppScopeOption } from '@core/members'
+import { isMemberAppScope, pluginAppScopeText, type MemberApp, type MemberAppScopeOption } from '@core/members'
 import { createCmsMemberApp, deleteCmsMemberApp, listCmsMemberApps } from '@core/persistence'
 import { getErrorMessage } from '@core/utils/errorMessage'
 import { Button } from '@ui/components/Button'
@@ -28,7 +28,7 @@ const MAX_REDIRECTS = 10
 function scopeText(scope: string, options: readonly MemberAppScopeOption[]): string {
   const option = options.find((each) => each.scope === scope)
   if (!option) return `${scope} (no longer offered)`
-  return option.plugin ? `${option.text} (${option.plugin.name})` : option.text
+  return option.plugin ? pluginAppScopeText(option.plugin.name, option.text) : option.text
 }
 
 /** A new app starts with the built-in access; a plugin's is the owner's to add. */

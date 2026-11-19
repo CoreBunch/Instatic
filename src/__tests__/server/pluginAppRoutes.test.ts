@@ -204,6 +204,23 @@ describe('apps on plugin member routes', () => {
       }
     })
 
+    it('refuses a description that says nothing, or says what a built-in scope says', () => {
+      const withDescription = (description: string) => () =>
+        parsePluginManifest(manifest({ appScopes: [{ name: 'read', description }] }))
+      // Only spaces: the approval page would show the member an empty line.
+      for (const description of [' ', '     ', '\u00A0 \u3000']) expect(withDescription(description)).toThrow(/is empty/)
+      // The words core uses for `profile` and `access`, however cased or spaced, alone or inside more text.
+      for (const description of [
+        'Your name and email address',
+        'your NAME and email   address',
+        ' Which memberships and access you hold ',
+        'See your purchases, Which memberships and access you hold',
+      ]) {
+        expect(withDescription(description)).toThrow(/built-in scope/)
+      }
+      expect(withDescription('See your name on your orders')).not.toThrow()
+    })
+
     it('does not let a route open itself under a scope the manifest never declared', async () => {
       const res = await install(`
         export function activate(api) {
@@ -245,14 +262,14 @@ describe('apps on plugin member routes', () => {
   })
 
   describe('what the member is asked', () => {
-    it('reads the plugin\'s own words on the approval page', async () => {
+    it('reads the plugin\'s own words on the approval page, behind core\'s words naming the plugin', async () => {
       await install()
       const client = await appId(['profile', READ])
       const ada = await member('ada@example.com')
       const started = await authorize(client, `profile ${READ}`, ada.cookie)
       const request = new URL(started.headers.get('location')!, ORIGIN).searchParams.get('request')!
       const frame = await memberAppRequestFrame(h.db, new URL(`/approve-app?request=${request}`, ORIGIN))
-      expect(frame!.access).toBe('Your name and email address, See your purchases and plan (Shop)')
+      expect(frame!.access).toBe('Your name and email address, Through the plugin Shop: See your purchases and plan')
     })
 
     it('does not count an Allow for a scope that went away while the member was deciding', async () => {

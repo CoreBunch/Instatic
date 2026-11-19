@@ -16,7 +16,7 @@ import {
   PLUGIN_PERMISSION_VALUES,
   permissionLabel as sdkPermissionLabel,
 } from '@core/plugin-sdk'
-import { PLUGIN_APP_SCOPE_NAME_PATTERN } from '@core/members'
+import { PLUGIN_APP_SCOPE_NAME_PATTERN, plainLine, readsAsBuiltInAppScope } from '@core/members'
 import { collectEnabledAdminPages, pluginAdminPageRoute } from './manifestAdminPages'
 import { settingDefinitionSchema } from './manifestSettings'
 
@@ -381,6 +381,20 @@ export function parsePluginManifest(input: unknown): PluginManifest {
     if (unreadable) {
       throw new Error(
         `Invalid plugin manifest: the description of app scope "${unreadable.name}" contains control or invisible characters`,
+      )
+    }
+    // What is left after the cleaning the approval page applies has to say
+    // something: a description of spaces would show the member nothing.
+    const blank = data.appScopes.find((scope) => plainLine(scope.description) === '')
+    if (blank) {
+      throw new Error(`Invalid plugin manifest: the description of app scope "${blank.name}" is empty`)
+    }
+    // And it has to be the plugin's own: not the words core uses for the
+    // built-in scopes, which would pass the plugin's access off as theirs.
+    const imitating = data.appScopes.find((scope) => readsAsBuiltInAppScope(scope.description))
+    if (imitating) {
+      throw new Error(
+        `Invalid plugin manifest: the description of app scope "${imitating.name}" repeats the text of a built-in scope`,
       )
     }
   }
