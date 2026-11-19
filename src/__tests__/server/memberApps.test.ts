@@ -274,26 +274,26 @@ describe('sign-in for apps', () => {
       expect((await answer('approve', request)).status).toBe(200)
     })
 
-    it('still works in a browser that holds the marker twice', async () => {
-      const session = cookie
-      const first = await call(await authorizeUrl(), { headers: { cookie: session } })
-      const own = /instatic_member_app=([0-9a-f]{32});/.exec(first.headers.get('set-cookie')!)![1]!
-      // A second cookie of the same name, kept for another path: the browser sends both.
-      const foreign = 'f'.repeat(32)
-      const second = await call(await authorizeUrl(), {
-        headers: { cookie: `${session}; instatic_member_app=${foreign}; instatic_member_app=${own}` },
-      })
-      expect(second.status).toBe(302)
-      // The site cannot tell which one it set, so it sets a new one over its own.
-      const fresh = /instatic_member_app=([0-9a-f]{32});/.exec(second.headers.get('set-cookie')!)![1]!
-      expect([own, foreign]).not.toContain(fresh)
-      const request = new URL(second.headers.get('location')!, ORIGIN).searchParams.get('request')!
+    it('refuses an answer that carries the marker twice, even when one of them matches', async () => {
+      const request = await startRequest()
+      const session = cookie.split('; ').filter((part) => !part.startsWith('instatic_member_app=')).join('; ')
+      const own = /instatic_member_app=([0-9a-f]{32})/.exec(cookie)![1]!
+      const planted = 'f'.repeat(32)
+      for (const markers of [[planted, own], [own, planted], [own, own]]) {
+        const header = [session, ...markers.map((marker) => `instatic_member_app=${marker}`)].join('; ')
+        expect((await answer('approve', request, { cookie: header })).status).toBe(400)
+      }
+      const { rows } = await t.db`select id from member_app_grants`
+      expect(rows).toHaveLength(0)
 
-      // The other cookie is still there, and alone it answers nothing.
-      const without = await answer('approve', request, { cookie: `${session}; instatic_member_app=${foreign}; instatic_member_app=${own}` })
-      expect(without.status).toBe(400)
-      const both = await answer('approve', request, { cookie: `${session}; instatic_member_app=${foreign}; instatic_member_app=${fresh}` })
-      expect(both.status).toBe(200)
+      // Opening the authorize address with both sets a new marker, neither of the two.
+      const again = await call(await authorizeUrl(), {
+        headers: { cookie: `${session}; instatic_member_app=${planted}; instatic_member_app=${own}` },
+      })
+      const fresh = /instatic_member_app=([0-9a-f]{32});/.exec(again.headers.get('set-cookie')!)![1]!
+      expect([own, planted]).not.toContain(fresh)
+      // The first request was not used up: the browser's own marker alone still answers it.
+      expect((await answer('approve', request)).status).toBe(200)
     })
 
     it('never sends back a marker it did not make', async () => {

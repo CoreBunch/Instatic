@@ -40,7 +40,7 @@ import {
   appRequestMarkerCookie,
   createAppRequestMarker,
   findMemberSession,
-  readAppRequestMarkers,
+  readAppRequestMarker,
   readMemberSessionToken,
 } from '../sessions'
 import {
@@ -177,12 +177,11 @@ async function authorize(req: Request, db: DbClient, url: URL): Promise<Response
 
   await sweepExpiredMemberAppRows(db)
   // The browser the app opened keeps a marker; the answer counts only from
-  // it. One well-formed marker is kept, so a request still waiting in another
-  // tab keeps working. None, a malformed one, or several (the server cannot
-  // tell which is its own) get a new one: the cookie below replaces the one
-  // this site set, and the answer is accepted from whichever marker matches.
-  const presented = readAppRequestMarkers(req)
-  const browserMarker = presented.length === 1 ? presented[0]! : createAppRequestMarker()
+  // it. A well-formed marker that is the only one is kept, so a request still
+  // waiting in another tab keeps working. Anything else (none, a malformed
+  // value, the name twice) is never sent back: a new one is set. A browser
+  // that still presents two afterwards is refused when it answers.
+  const browserMarker = readAppRequestMarker(req) ?? createAppRequestMarker()
   const requestId = await createMemberAppRequest(db, {
     appId: app.id,
     browserMarker,

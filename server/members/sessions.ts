@@ -82,15 +82,16 @@ export function createAppRequestMarker(): string {
 const APP_REQUEST_MARKER = /^[0-9a-f]{32}$/
 
 /**
- * Every marker the browser presents that is one of ours by form. A browser
- * can hold the name twice (set for another path or domain, which a plain
- * name on http allows), and the server cannot tell which one it set, so the
- * caller checks each against the stored request instead of refusing them
- * all. Anything not in the generated form is dropped, so nothing read here
- * can carry cookie syntax.
+ * The marker from the request, or null. Null when it is not in the form the
+ * server generates, so nothing read here can carry cookie syntax. Null too
+ * when the cookie appears more than once: this site always sets it with the
+ * same name, path and attributes, so a browser never holds two of its own,
+ * and a second one was put there by someone else. Accepting whichever one
+ * matches would let a planted marker stand in for the browser's own.
  */
-export function readAppRequestMarkers(req: Request): string[] {
-  return [...new Set(cookieValues(req, appRequestCookieName(req)))].filter((value) => APP_REQUEST_MARKER.test(value))
+export function readAppRequestMarker(req: Request): string | null {
+  const values = cookieValues(req, appRequestCookieName(req))
+  return values.length === 1 && APP_REQUEST_MARKER.test(values[0]) ? values[0] : null
 }
 
 function readMarkerCookie(req: Request, wanted: string): string | null {
