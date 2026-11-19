@@ -140,7 +140,7 @@ The OAuth protocol itself is not MCP's own. `server/oauth/` holds what every aut
 | `server/oauth/protocol.ts` | Where an issuer origin may come from (configured public origin, loopback fallback, otherwise none), PKCE validation, which redirect URIs may be registered, matching a request to them, safe callback generation. |
 | `server/oauth/secrets.ts` | Opaque token generation, one-way hashing, the PKCE challenge. |
 | `server/oauth/grants.ts` | Code exchange and refresh rotation with reuse detection, written against a `GrantStore` a realm supplies. It names no table. |
-| `server/oauth/dpop.ts` | Proof of possession (DPoP, RFC 9449): verifies a proof and returns the key's thumbprint. A realm whose grants can be bound to a key passes `dpopEndpoint` to the token endpoint and returns `keyThumbprint` from its store. MCP does neither. |
+| `server/oauth/dpop.ts` | Proof of possession (DPoP, RFC 9449): verifies a proof and returns the key's thumbprint. A realm whose grants can be bound to a key passes `dpopEndpoint` to the token endpoint, returns `keyThumbprint` from its store, and implements the store's two optional methods: `keyShownAtExchange` (bind an unbound grant to the key proven at the code exchange) and `revokeGrantTokens` (which enables the 60-second retry of a refresh whose answer was lost, for bound grants only). MCP does none of this: its grants are never bound, and reuse of a rotated refresh token always revokes the connection. See [`members.md`](members.md) → "Device keys". |
 | `server/oauth/tokenEndpoint.ts` | The token endpoint for public clients: parsing, the two grants, protocol-shaped errors, rate limiting. |
 
 The MCP files under `server/ai/mcp/`:
@@ -214,10 +214,10 @@ Create and manual revoke actions retain the existing `ai.mcp_connector.created` 
 ## Tests
 
 - `server/ai/mcp/oauth/protocol.test.ts` covers issuer trust: the configured public origin wins over the `Host` header, loopback requests fall back to their own origin, and any other request has no issuer.
-- `server/oauth/dpop.test.ts` covers proofs: both key types, the RFC 7638 thumbprint, replay, clock window, wrong address or method, and forged or malformed proofs.
+- `server/oauth/dpop.test.ts` covers proofs: both key types, the RFC 7638 thumbprint, replay, clock window, wrong address or method, forged or malformed proofs, and small-order Ed25519 keys.
 - `server/oauth/protocol.test.ts` covers the shared rules: which redirect URIs may be registered, the loopback port exception and its limits, PKCE shapes, and opaque tokens.
 - `server/ai/mcp/oauth/handler.test.ts` covers discovery metadata, the 503 answer without a configured public origin, public dynamic registration, and callback policy.
-- `server/ai/mcp/oauth/store.test.ts` covers PKCE exchange, exact binding, one-time codes, access lookup, refresh rotation/reuse, and revocation.
+- `server/ai/mcp/oauth/store.test.ts` covers PKCE exchange, exact binding, one-time codes, access lookup, refresh rotation/reuse (including that the realm never binds a key and has no refresh retry), and revocation.
 - `server/ai/mcp/auth.test.ts` covers personal and OAuth bearer resolution plus the protected-resource challenge with and without a trustworthy issuer.
 - `server/ai/mcp/accountAccess.test.ts` exercises real MCP tool calls and OAuth token endpoints before and after suspension/deletion, permission reduction, and loss of AI access; it also verifies active-account refresh rotation.
 - `src/__tests__/ai/mcpOAuthAuthorizationHandler.test.ts` covers signed-in consent, capability selection, exact callback redirects, denial, and privilege floors.
