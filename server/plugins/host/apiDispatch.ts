@@ -24,6 +24,7 @@ import type { AllowedApiTarget, ValidatedApiCall } from '../protocol/apiCallSche
 import { TARGET_PERMISSIONS } from '../protocol/targets'
 import type { DbClient } from '../../db/client'
 import { hostPlugins, getPluginHostContext, assertHostPluginPermission } from './registry'
+import { PluginFetchTimeoutError } from './network'
 import { replyApiError } from './apiReplies'
 import type { HostPluginRecord } from './types'
 import { handleRoutesRegister } from './handlers/routes'
@@ -169,6 +170,11 @@ export async function dispatchApiCall(msg: ValidatedApiCall): Promise<void> {
     const handler = apiHandlers[msg.target] as AnyHostApiHandler
     await handler(msg, entry, context.db, context.uploadsDir)
   } catch (err) {
-    replyApiError(msg.pluginId, msg.correlationId, err instanceof Error ? err.message : String(err))
+    replyApiError(
+      msg.pluginId,
+      msg.correlationId,
+      err instanceof Error ? err.message : String(err),
+      err instanceof PluginFetchTimeoutError ? err.code : undefined,
+    )
   }
 }

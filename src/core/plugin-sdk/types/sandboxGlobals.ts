@@ -13,6 +13,15 @@ declare global {
   interface SubtleCrypto {
     digest(algorithm: AlgorithmIdentifier, data: BufferSource | string): Promise<ArrayBuffer>
   }
+
+  /**
+   * The sandbox `fetch` takes a `timeout` in milliseconds (1 to 300000): how
+   * long the whole request may take, redirects and body included, before the
+   * host cancels it and the call rejects with a `TimeoutError`. Default 15 s.
+   */
+  interface RequestInit {
+    timeout?: number
+  }
 }
 
 // Re-export an empty object so this file is treated as a module and the

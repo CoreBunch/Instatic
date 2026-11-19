@@ -372,11 +372,22 @@ function registerCrashRecoveryHandler(db: DbClient, uploadsDir: string): void {
         occurredAt: new Date().toISOString(),
       })
     } catch (err) {
-      // Re-activation itself failed. The next round-trip will record this
-      // as another crash event via the worker's normal error path; if the
-      // failure is repeatable the budget will be exceeded and the plugin
-      // will park in error state on its own. Log here for ops visibility.
+      // Re-activation itself failed. `activate` may have registered routes
+      // and hooks before it threw, and the plugin's row still said `active`.
+      // Unload what is left and say so in its status, as a failed activation
+      // does, so status and behaviour agree.
       console.error(`[plugin:${pluginId}] auto-respawn re-activation failed:`, err)
+      try {
+        await unloadPluginInWorker(pluginId)
+      } catch (unloadErr) {
+        console.error(`[plugin:${pluginId}] unload after a failed re-activation failed:`, unloadErr)
+      }
+      await setPluginLifecycleStatus(
+        db,
+        pluginId,
+        'error',
+        `Could not restart after a crash: ${err instanceof Error ? err.message : String(err)}`,
+      )
     }
   })
 }
