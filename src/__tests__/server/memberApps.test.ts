@@ -17,7 +17,7 @@ import { flushMemberMail } from '../../../server/members/mail'
 import { loopSourceRegistry } from '@core/loops/registry'
 import '@core/loops/sources'
 import type { PrefetchedLoopEntitySource } from '@core/loops/types'
-import { createMember, grantMemberTag, saveMemberSettings } from '../../../server/members/repository'
+import { anonymizeMember, createMember, grantMemberTag, saveMemberSettings } from '../../../server/members/repository'
 import { createMemberSession } from '../../../server/members/sessions'
 import { pkceChallengeForVerifier } from '../../../server/oauth/secrets'
 import { publishMemberPages } from '../helpers/memberPages'
@@ -426,6 +426,47 @@ describe('sign-in for apps', () => {
       expect((await userinfo(tokens.access_token)).status).toBe(401)
       const res = await call(await authorizeUrl(), { headers: { cookie } })
       expect(res.status).toBe(400)
+    })
+  })
+
+  describe('the member\u2019s own data', () => {
+    async function deviceSignIn(): Promise<Tokens> {
+      const res = await answer('approve', await startRequest({ device_name: 'Ada\u2019s MacBook' }))
+      const code = new URL(((await res.json()) as { appRedirect: string }).appRedirect).searchParams.get('code')!
+      const exchanged = await tokenRequest({
+        grant_type: 'authorization_code', code, redirect_uri: LISTENING, code_verifier: VERIFIER,
+      })
+      return (await exchanged.json()) as Tokens
+    }
+
+    it('lists connected apps in the export', async () => {
+      const tokens = await deviceSignIn()
+      await userinfo(tokens.access_token)
+      const res = await call('/_instatic/members/export', { headers: { cookie } })
+      expect(res.status).toBe(200)
+      const data = (await res.json()) as {
+        connectedApps: Array<{ app: string; device: string; connectedAt: string; lastUsedAt: string | null }>
+      }
+      expect(data.connectedApps).toHaveLength(1)
+      expect(data.connectedApps[0]).toMatchObject({ app: 'Instatic Desktop', device: 'Ada\u2019s MacBook' })
+      expect(Number.isNaN(Date.parse(data.connectedApps[0]!.connectedAt))).toBe(false)
+      expect(Number.isNaN(Date.parse(data.connectedApps[0]!.lastUsedAt!))).toBe(false)
+      // Never the tokens themselves.
+      expect(JSON.stringify(data)).not.toContain('imem_')
+    })
+
+    it('removes app sign-ins and their device names when the account is deleted', async () => {
+      const tokens = await deviceSignIn()
+      // A second approval that was never exchanged leaves a code behind too.
+      await answer('approve', await startRequest({ device_name: 'Studio iMac' }))
+      await anonymizeMember(t.db, memberId)
+
+      expect((await userinfo(tokens.access_token)).status).toBe(401)
+      expect((await tokenRequest({ grant_type: 'refresh_token', refresh_token: tokens.refresh_token })).status).toBe(400)
+      for (const table of ['member_app_grants', 'member_app_tokens', 'member_app_codes']) {
+        const { rows } = await t.db.unsafe<{ n: number }>(`select count(*) as n from ${table}`)
+        expect(Number(rows[0]!.n)).toBe(0)
+      }
     })
   })
 

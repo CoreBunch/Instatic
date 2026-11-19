@@ -4,8 +4,9 @@
  * codes and tokens that come out of an approval.
  *
  * A token or a code is only ever returned while the member behind its grant
- * is active, so suspending or deleting a member ends app access on the next
- * request without touching these tables.
+ * is active, so suspending a member ends app access on the next request
+ * without touching these tables. Deleting a member removes their grants,
+ * codes and tokens outright (`anonymizeMember`).
  */
 import { nanoid } from 'nanoid'
 import { nowIso } from '@core/utils/isoDate'
