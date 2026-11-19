@@ -1801,11 +1801,36 @@ export const sqliteMigrations: Migration[] = [
     `,
   },
   {
+    // Postgres only: record data bound as a JSON string was stored as a
+    // string scalar no filter could see; its twin unwraps those rows. SQLite
+    // stores JSON as text either way, so there is nothing to repair here.
+    id: '036_plugin_records_json_repair',
+    sql: `
+      select 1;
+    `,
+  },
+  {
+    // Plugin storage: an optional unique key per record (derived from the
+    // resource's declared uniqueField) and a version counter for conditional
+    // updates. Schema only. NULL keys are distinct in a unique index on both
+    // dialects, so existing rows and resources without a uniqueField are
+    // unaffected.
+    id: '037_plugin_record_keys',
+    sql: `
+      alter table plugin_records add column unique_key text;
+
+      alter table plugin_records add column version integer not null default 0;
+
+      create unique index if not exists plugin_records_unique_key_idx
+        on plugin_records (plugin_id, resource_id, unique_key);
+    `,
+  },
+  {
     // Sign-in for apps: a site member approves an app (Instatic Desktop, a
     // premium plugin) and the app gets tokens that say who the member is.
     // Separate from the MCP OAuth tables on purpose: those belong to admin
     // users, and a member token must never be usable as an admin token.
-    id: '036_member_apps',
+    id: '038_member_apps',
     sql: `
       create table if not exists member_apps (
         id text primary key,

@@ -18,14 +18,15 @@
 import { nanoid } from 'nanoid'
 import type { DbClient } from '../../../db/client'
 import {
+  PluginRecordDuplicateError,
   createPluginRecord,
   deletePluginRecord,
   listPluginRecords,
   updatePluginRecord,
-} from '../../../repositories/plugins'
+} from '../../../repositories/pluginRecords'
 import { StorageListOptionsSchema } from '@core/plugin-sdk/storageSchemas'
 import { Type, parseValue } from '@core/utils/typeboxHelpers'
-import { validatePluginRecordData } from '@core/plugins/manifest'
+import { pluginRecordUniqueKey, validatePluginRecordData } from '@core/plugins/manifest'
 import { badRequest, jsonResponse, methodNotAllowed, readValidatedBody } from '../../../http'
 import { getErrorMessage } from '@core/utils/errorMessage'
 import {
@@ -83,6 +84,11 @@ function parseListOptions(url: string): { options: unknown } | { error: string }
   return { options: raw }
 }
 
+/** 409: the resource's unique field already holds this value. */
+function duplicateRecord(err: PluginRecordDuplicateError): Response {
+  return jsonResponse({ error: err.message }, { status: 409 })
+}
+
 export async function handlePluginRecordsCollection(
   req: Request,
   db: DbClient,
@@ -118,9 +124,11 @@ export async function handlePluginRecordsCollection(
         pluginId,
         resourceId,
         data,
+        uniqueKey: pluginRecordUniqueKey(resource, data),
       })
       return jsonResponse({ record }, { status: 201 })
     } catch (err) {
+      if (err instanceof PluginRecordDuplicateError) return duplicateRecord(err)
       return badRequest(getErrorMessage(err, 'Invalid plugin record data'))
     }
   }
@@ -149,10 +157,12 @@ export async function handlePluginRecordItem(
         pluginId,
         resourceId,
         data,
+        uniqueKey: pluginRecordUniqueKey(resource, data),
       })
       if (!record) return pluginRecordNotFound()
       return jsonResponse({ record })
     } catch (err) {
+      if (err instanceof PluginRecordDuplicateError) return duplicateRecord(err)
       return badRequest(getErrorMessage(err, 'Invalid plugin record data'))
     }
   }

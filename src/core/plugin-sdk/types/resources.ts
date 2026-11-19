@@ -17,4 +17,9 @@ export interface PluginResource {
   singularLabel?: string
   pluralLabel?: string
   fields: PluginResourceField[]
+  /**
+   * Id of a `text` field whose value is unique among this resource's records.
+   * Enables `createIfAbsent` and `getByKey` on the collection.
+   */
+  uniqueField?: string
 }

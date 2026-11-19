@@ -709,4 +709,37 @@ describe('plugin manifest — frontend.origins', () => {
       origins: { scripts: ['js.example.com'] },
     })).toThrow()
   })
+
+  describe('resource uniqueField', () => {
+    const withResource = (resource: Record<string, unknown>) => ({
+      id: 'acme.keys',
+      name: 'Keys',
+      version: '1.0.0',
+      apiVersion: 1,
+      permissions: ['cms.storage'],
+      resources: [resource],
+    })
+    const fields = [
+      { id: 'eventId', label: 'Event id', type: 'text' },
+      { id: 'amount', label: 'Amount', type: 'number' },
+      { id: 'notes', label: 'Notes', type: 'longtext' },
+    ]
+
+    it('accepts a text field as the unique field', () => {
+      const manifest = parsePluginManifest(withResource({ id: 'events', title: 'Events', uniqueField: 'eventId', fields }))
+      expect(manifest.resources[0]?.uniqueField).toBe('eventId')
+    })
+
+    it('rejects a unique field the resource does not declare', () => {
+      expect(() => parsePluginManifest(withResource({ id: 'events', title: 'Events', uniqueField: 'missing', fields })))
+        .toThrow(/names "missing" as its uniqueField, but declares no field with that id/)
+    })
+
+    it('rejects a unique field that is not a text field', () => {
+      expect(() => parsePluginManifest(withResource({ id: 'events', title: 'Events', uniqueField: 'amount', fields })))
+        .toThrow(/must be a "text" field; "amount" is "number"/)
+      expect(() => parsePluginManifest(withResource({ id: 'events', title: 'Events', uniqueField: 'notes', fields })))
+        .toThrow(/must be a "text" field; "notes" is "longtext"/)
+    })
+  })
 })

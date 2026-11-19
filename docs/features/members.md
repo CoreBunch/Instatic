@@ -52,7 +52,7 @@ server/members/
 
 `member_settings` is deliberately not in `site.settings_json`: that document is branched and exported.
 
-Sign-in for apps adds five tables in migration `036_member_apps`:
+Sign-in for apps adds five tables in migration `038_member_apps`:
 
 | Table | Holds |
 |---|---|

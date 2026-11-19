@@ -57,6 +57,9 @@ export const TARGET_PERMISSIONS = {
   'cms.storage.create': 'cms.storage',
   'cms.storage.update': 'cms.storage',
   'cms.storage.delete': 'cms.storage',
+  'cms.storage.get': 'cms.storage',
+  'cms.storage.getByKey': 'cms.storage',
+  'cms.storage.createIfAbsent': 'cms.storage',
   // Network — outbound HTTP (allowlist enforced separately in host/network.ts).
   'network.fetch': 'network.outbound',
   // Scheduled jobs

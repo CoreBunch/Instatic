@@ -19,6 +19,27 @@ export interface Migration {
    * Never set this on a PG migration — `pragma` is SQLite syntax.
    */
   disableForeignKeys?: boolean
+  /**
+   * Postgres-only: switch `statement_timeout` and `lock_timeout` off for this
+   * migration's transaction.
+   *
+   * For a migration that rewrites rows and so can run long on a big table. A
+   * database or role `statement_timeout` shorter than the rewrite would cancel
+   * it, and a cancel cannot be caught inside plpgsql (`exception when others`
+   * skips `query_canceled`), so the migration would fail on every boot. Sent
+   * as statements of their own, before the migration's SQL: a timeout already
+   * running for a statement is not stopped by changing the setting inside it.
+   *
+   * Never set this on a SQLite migration.
+   */
+  noTimeouts?: boolean
+  /**
+   * Runs inside the migration's transaction, after its SQL. Returns a warning
+   * for the server log when the migration left something undone that an
+   * operator should know about, or null. For migrations written to finish
+   * whatever the data holds, where "applied" does not mean "everything fixed".
+   */
+  leftover?: (tx: DbClient) => Promise<string | null>
 }
 
 /**
@@ -50,13 +71,20 @@ export async function runMigrations(db: DbClient, migrations: Migration[]): Prom
       await db.unsafe('pragma foreign_keys = off')
     }
     try {
+      let leftover: string | null = null
       await db.transaction(async (tx) => {
+        if (migration.noTimeouts) {
+          await tx.unsafe('set local statement_timeout = 0')
+          await tx.unsafe('set local lock_timeout = 0')
+        }
         // migration.sql is a multi-statement DDL/DML string — unsafe() is
         // required because tagged templates cannot accept a runtime string value,
         // and multi-statement batches are not supported by the parameterised path.
         await tx.unsafe(migration.sql)
+        leftover = (await migration.leftover?.(tx)) ?? null
         await tx`insert into schema_migrations (id, applied_at) values (${migration.id}, ${nowIso()})`
       })
+      if (leftover) console.warn(`[migrations] ${migration.id}: ${leftover}`)
       if (migration.disableForeignKeys) {
         // The rebuild ran unenforced — prove referential integrity before
         // re-enabling enforcement so a buggy migration fails loudly here
