@@ -6,10 +6,10 @@
  * Instatic checkout the constant is not defined, and the version is `null`:
  * that is how the CLI tells the two situations apart.
  *
- *   • Packaged (`bunx instatic-plugin`): the plugin is its own project. It
+ *   • Packaged (the installed package's bin): the plugin is its own project. It
  *     resolves `@instatic/plugin-sdk` through `node_modules`, so `init`
  *     writes a `package.json` and a `tsconfig.json`.
- *   • From source (`bun run instatic-plugin`): the plugin sits inside the
+ *   • From source (the checkout's `instatic-plugin` script): the plugin sits inside the
  *     checkout, whose root `tsconfig.json` maps `@instatic/plugin-sdk` to
  *     `src/core/plugin-sdk`. A scaffold must NOT carry its own
  *     `tsconfig.json` there: Bun reads only the nearest one, which would

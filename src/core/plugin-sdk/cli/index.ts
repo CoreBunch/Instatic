@@ -7,8 +7,13 @@
  *   instatic-plugin dev   [<plugin-dir>] [--uploads <path>]
  *
  * Run via Bun:
- *   bun run instatic-plugin <cmd>     inside the Instatic checkout
- *   bunx instatic-plugin <cmd>        from the `@instatic/plugin-sdk` package
+ *   bun run instatic-plugin <cmd>
+ *
+ * Inside the Instatic checkout that is the root `instatic-plugin` script. In
+ * a project that installed `@instatic/plugin-sdk` it is the package's bin.
+ * Either way `bun run` only runs what is already there. `bunx
+ * instatic-plugin` is never the documented form: with no local install it
+ * would download whatever the registry serves under that name.
  *
  * The CLI lives inside the SDK so plugin authors get the same code that
  * powers the host's `bun run instatic-plugin` script; the package build
@@ -107,11 +112,15 @@ async function main(): Promise<void> {
     const created = await runPluginInit(name, { kind })
     const commands = scaffoldCommands(created)
     console.log(`✓ Created plugin at ${created}`)
-    console.log(
-      commands.setup === null
-        ? `  ${commands.dev}`
-        : `  cd ${relative(process.cwd(), created)} && ${commands.setup} && ${commands.dev}`,
-    )
+    if (commands.setup === null) {
+      console.log(`  ${commands.dev}`)
+    } else {
+      console.log(`  cd ${relative(process.cwd(), created)} && ${commands.setup} && ${commands.dev}`)
+      console.log(
+        `  If ${commands.setup} cannot download the SDK tarball, this SDK version has no Instatic release yet:\n` +
+        `  pack it from the checkout (bun run sdk:pack) and depend on that .tgz. See the plugin's README.`,
+      )
+    }
     return
   }
 

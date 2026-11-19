@@ -186,7 +186,15 @@ describe('@instatic/plugin-sdk package, used outside the checkout', () => {
     await link(Object.keys(manifest.dependencies))
 
     cli = [process.execPath, join(installedDir, manifest.bin['instatic-plugin'])]
-    tsc = [process.execPath, join(nodeModules, 'typescript', 'bin', 'tsc'), '--noEmit', '-p']
+    // Stricter than the scaffold's own tsconfig: the shipped declarations must
+    // also hold under a consumer's `exactOptionalPropertyTypes`.
+    tsc = [
+      process.execPath,
+      join(nodeModules, 'typescript', 'bin', 'tsc'),
+      '--noEmit',
+      '--exactOptionalPropertyTypes',
+      '-p',
+    ]
 
     await mkdir(join(PROJECT_ROOT, '.tmp-lint'), { recursive: true })
     inRepoDir = await mkdtemp(join(PROJECT_ROOT, '.tmp-lint', 'sdk-package-'))
@@ -203,6 +211,7 @@ describe('@instatic/plugin-sdk package, used outside the checkout', () => {
     const init = await run([...cli, 'init', ...args], projectDir)
     expect(init.output).toContain('Created plugin')
     expect(init.output).toContain(`cd ${dirName} && bun install && bun run dev`)
+    expect(init.output).toContain('bun run sdk:pack')
     expect(init.exitCode).toBe(0)
     const pluginDir = join(projectDir, dirName)
     const manifest = await readJsonFile(join(pluginDir, 'package.json'), ScaffoldManifestSchema)
@@ -305,7 +314,7 @@ describe('@instatic/plugin-sdk package, used outside the checkout', () => {
     try {
       const synced = join(uploads, 'plugins', 'acme.seo', manifest.version)
       expect(await waitForFile(join(synced, 'server', 'index.js'), 30_000)).toBe(true)
-      expect(existsSync(join(synced, 'plugin.json'))).toBe(true)
+      expect(await waitForFile(join(synced, 'plugin.json'), 30_000)).toBe(true)
     } finally {
       dev.kill('SIGINT')
       await dev.exited

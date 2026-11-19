@@ -192,13 +192,21 @@ jobs:
       - name: Build plugin SDK package
         run: bun run sdk:pack -- "$SDK_VERSION"
 
+      # Plugin projects lock this URL with an integrity hash, so an asset that
+      # is already there is never replaced, even by a re-run of this job.
       - name: Upload plugin SDK package
         env:
           GH_TOKEN: ${{ github.token }}
+        shell: bash
         run: |
-          gh release upload "$GITHUB_REF_NAME" \
-            ".tmp/plugin-sdk/instatic-plugin-sdk-${SDK_VERSION}.tgz" \
-            --clobber
+          set -euo pipefail
+          ASSET="instatic-plugin-sdk-${SDK_VERSION}.tgz"
+          EXISTING="$(gh release view "$GITHUB_REF_NAME" --json assets --jq '.assets[].name')"
+          if grep -Fxq "$ASSET" <<<"$EXISTING"; then
+            echo "::notice::${ASSET} is already attached to ${GITHUB_REF_NAME}. Leaving it as it is."
+            exit 0
+          fi
+          gh release upload "$GITHUB_REF_NAME" ".tmp/plugin-sdk/${ASSET}"
 
   plugin-sdk-npm:
     name: Publish Plugin SDK to npm
@@ -226,20 +234,24 @@ jobs:
         shell: bash
         run: |
           set -uo pipefail
-          # Exit 0 with a version printed: published. Exit 0 with nothing, or
-          # an E404: not published. Anything else is a registry or network
-          # error and fails the job instead of being read as "not published".
-          if output="$(npm view "@instatic/plugin-sdk@${SDK_VERSION}" version 2>&1)"; then
-            if [ -n "$output" ]; then
+          # Only stdout decides "published": a warning on stderr must not.
+          # A version on stdout: already there. An E404: not there, publish.
+          # Anything else is a registry or network error and fails the job.
+          if published="$(npm view "@instatic/plugin-sdk@${SDK_VERSION}" version 2>npm-view.err)"; then
+            if [ "$published" = "$SDK_VERSION" ]; then
               echo "::notice::@instatic/plugin-sdk ${SDK_VERSION} is already on npm."
               echo "publish=false" >> "$GITHUB_OUTPUT"
-            else
+            elif [ -z "$published" ]; then
               echo "publish=true" >> "$GITHUB_OUTPUT"
+            else
+              echo "Unexpected answer from npm view: $published"
+              cat npm-view.err
+              exit 1
             fi
-          elif grep -q 'E404' <<<"$output"; then
+          elif grep -q 'E404' npm-view.err; then
             echo "publish=true" >> "$GITHUB_OUTPUT"
           else
-            echo "$output"
+            cat npm-view.err
             exit 1
           fi
 

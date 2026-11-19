@@ -12,9 +12,13 @@ your plugin targets.
 ```bash
 mkdir plugins && cd plugins
 bun add -d https://github.com/CoreBunch/Instatic/releases/download/v<version>/instatic-plugin-sdk-<version>.tgz
-bunx instatic-plugin init acme.hello
+bun run instatic-plugin init acme.hello
 cd hello && bun install
 ```
+
+Install the package first, then run its CLI with `bun run instatic-plugin`,
+which only runs what is installed. Do not use a bare `bunx instatic-plugin`:
+with nothing installed it would download whatever npm serves under that name.
 
 The scaffold is a project of its own, with the same SDK dependency in its
 `package.json` and these scripts:
@@ -45,8 +49,8 @@ export default definePlugin({
 
 Code that runs in the editor imports React, `@instatic/host-ui` and
 `@instatic/host-hooks`. The editor supplies all three at runtime, so they are
-never installed or bundled. Their types ship in this package, and the
-scaffold declares `@types/react` for JSX.
+never installed or bundled. Their types ship in this package. `@types/react`
+is a required peer, which the scaffold declares.
 
 The declaration files need `"moduleResolution": "bundler"`, which the
 scaffold's `tsconfig.json` sets.

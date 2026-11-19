@@ -1249,11 +1249,14 @@ bun run instatic-plugin lint hero     # validate config + manifest + sources + b
 bun run instatic-plugin build hero    # write hero/dist/ + hero/hero.plugin.zip
 bun run instatic-plugin dev hero      # watch + sync into a running CMS
 
-# In a plugin project of its own (see "Working outside the Instatic checkout"):
-bunx instatic-plugin init acme.hero
+# In a plugin project of its own, after installing the SDK package there
+# (see "Working outside the Instatic checkout"):
+bun run instatic-plugin init acme.hero
 cd hero && bun install
 bun run lint && bun run build && bun run dev
 ```
+
+Both forms are `bun run instatic-plugin`: the checkout's script, or the bin of the installed `@instatic/plugin-sdk`. `bun run` only runs what is already there and stops with "Script not found" otherwise. Never use a bare `bunx instatic-plugin`: without a local install it downloads and runs whatever npm serves under that unscoped name, which is not ours.
 
 `build` writes `dist/` and `<folder>.plugin.zip` inside the plugin folder; the scaffolded `.gitignore` covers both.
 
@@ -1306,7 +1309,7 @@ Inside this checkout the CLI finds the host's `uploads/` by walking up from the 
 ```sh
 INSTATIC_UPLOADS_DIR=../instatic/uploads bun run dev
 # or
-bunx instatic-plugin dev --uploads ../instatic/uploads
+bun run dev --uploads ../instatic/uploads
 ```
 
 First install still goes through the admin UI (`/admin/plugins` → Upload Plugin) so the owner approves permissions. Every `instatic-plugin dev` rebuild after that flows in without another upload.
@@ -1318,7 +1321,7 @@ First install still goes through the admin UI (`/admin/plugins` → Upload Plugi
 ```sh
 mkdir plugins && cd plugins
 bun add -d https://github.com/CoreBunch/Instatic/releases/download/v<version>/instatic-plugin-sdk-<version>.tgz
-bunx instatic-plugin init acme.hero
+bun run instatic-plugin init acme.hero
 cd hero && bun install
 bun run typecheck && bun run lint && bun run build
 ```
@@ -1328,7 +1331,7 @@ Install the SDK version of the CMS release the plugin targets. The package state
 - **The dependency is the release asset.** `init` writes that URL into the scaffold's `package.json`. It is not a registry name: `@instatic/plugin-sdk` is not on npm yet, so a bare version would fail to install, and an unclaimed name could be answered by someone else's package. Publishing to npm is wired into the release but switched off (see [release-workflow.md](../deployment/release-workflow.md)); scaffolds move to the npm version in a later change, once it is live.
 - **A version with no release yet.** Working from a checkout whose version has not been released, there is no asset to download. Run `bun run sdk:pack` in the checkout and depend on the file it writes: `"@instatic/plugin-sdk": "file:../instatic/.tmp/plugin-sdk/instatic-plugin-sdk-<version>.tgz"`.
 - **What the package holds.** `dist/index.js` (the runtime builders), `dist/cli/index.js` (the `instatic-plugin` bin, which needs Bun) and `dist/chunks/` (code the two share, so the config the CLI evaluates and the CLI itself use one module registry). jsdom and happy-dom are dependencies because the CLI builds a DOM with them. `@sinclair/typebox`, `zustand`, `mutative` and `zustand-mutative` are dependencies for their types only.
-- **Types.** `types/` holds the declarations `tsc` emits for the SDK, with every `@core/*`-style specifier rewritten to a relative path and everything the three type entries cannot reach removed. `host.d.ts` declares `@instatic/host-ui` and `@instatic/host-hooks`, which the editor supplies at runtime and nothing installs. The icon component type comes from a copy of the vendored icon set's declarations. A plugin typechecks without `skipLibCheck`; the scaffold declares `@types/react` for editor code and sets `"moduleResolution": "bundler"`, which the declarations need.
+- **Types.** `types/` holds the declarations `tsc` emits for the SDK, with every `@core/*`-style specifier rewritten to a relative path and everything the three type entries cannot reach removed. `host.d.ts` declares `@instatic/host-ui` and `@instatic/host-hooks`, which the editor supplies at runtime and nothing installs. The icon component type comes from a copy of the vendored icon set's declarations. A plugin typechecks without `skipLibCheck`; the scaffold declares `@types/react`, a required peer because the host UI types are React components, and sets `"moduleResolution": "bundler"`, which the declarations need.
 - **Two scaffolds.** The packaged CLI writes a `package.json` and a `tsconfig.json`, so the plugin is a project of its own. Run from source inside this checkout, `init` writes neither: the checkout's root `tsconfig.json` maps `@instatic/plugin-sdk` to `src/core/plugin-sdk`, and Bun reads only the nearest `tsconfig.json`, so one inside the plugin folder would hide that mapping.
 
 `src/__tests__/plugin-sdk/sdkPackage.test.ts` builds the package, unpacks it into a project under the OS temp directory and runs `init`, `tsc`, `lint`, `build` and `dev` there. It compares the manifest, the file set and the editor bundle with what the in-repo CLI builds from the same source.
@@ -1339,9 +1342,11 @@ Install the SDK version of the CMS release the plugin targets. The package state
 
 The commands below are for a plugin project of its own; inside this checkout use `bun run instatic-plugin <command> <plugin-folder>` instead.
 
-1. **Scaffold:**
+1. **Install the SDK, then scaffold.** Add the SDK package first, from the release that matches your CMS (or a locally packed `.tgz`, see above), so the CLI that runs is the installed one:
    ```sh
-   bunx instatic-plugin init my-plugin
+   mkdir plugins && cd plugins
+   bun add -d https://github.com/CoreBunch/Instatic/releases/download/v<version>/instatic-plugin-sdk-<version>.tgz
+   bun run instatic-plugin init my-plugin
    cd my-plugin && bun install
    ```
 2. **Edit `instatic-plugin.config.ts`.** Pick a namespaced ID (`vendor.product`), declare only the permissions you use, and add resources, settings, admin pages, modules, frontend assets, content access, or packs there.

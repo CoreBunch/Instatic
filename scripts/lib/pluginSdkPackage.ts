@@ -74,11 +74,13 @@ const RUNTIME_DEPENDENCIES = ['jsdom', 'happy-dom'] as const
 const TYPE_DEPENDENCIES = ['@sinclair/typebox', 'zustand', 'mutative', 'zustand-mutative'] as const
 
 /**
- * Packages the declaration files import without the package depending on
- * them. `react` is the optional `@types/react` peer: a plugin that writes
- * editor code installs it, a server-only plugin has no use for it. The build
- * fails when a package outside this list and the dependencies appears, so
- * widening the surface is a decision, not an accident.
+ * Packages the declaration files import that are peers, not dependencies.
+ * `react` is the `@types/react` peer. It is required, not optional: the main
+ * entry references `host.d.ts`, whose host UI types are React components, so
+ * every program that imports the SDK loads them, a server-only plugin
+ * included. The build fails when a package outside this list and the
+ * dependencies appears, so widening the surface is a decision, not an
+ * accident.
  */
 const PEER_TYPE_PACKAGES = new Set(['react'])
 
@@ -515,7 +517,6 @@ function packageManifest(root: RootPackageJson, version: string): Record<string,
     types: declarationPathOf(TYPE_ENTRIES['.']),
     dependencies,
     peerDependencies: { '@types/react': dependencyRange(root, '@types/react').replace(/^[\^~]/, '>=') },
-    peerDependenciesMeta: { '@types/react': { optional: true } },
     // The plugin `apiVersion` this SDK writes into `plugin.json`.
     instatic: { pluginApiVersion: PLUGIN_API_VERSION },
   }
