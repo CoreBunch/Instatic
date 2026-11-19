@@ -1835,7 +1835,7 @@ export const pgMigrations: Migration[] = [
     `,
   },
   {
-    id: '037_member_app_devices',
+    id: '039_member_app_devices',
     sql: `
       -- The device an app runs on: the thumbprint of a key the app keeps and
       -- proves it holds on every refresh, and the name the app gave it.
