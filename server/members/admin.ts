@@ -6,6 +6,7 @@
  * capabilities or HTTP: the cms handler (`server/handlers/cms/members.ts`)
  * decides who may call these, and audits the call.
  */
+import { discardQueuedMailForMember } from '../mail/delivery'
 import type { DbClient } from '../db/client'
 import type {
   MemberAdminStatus,
@@ -366,5 +367,6 @@ export async function deleteMemberAsAdmin(db: DbClient, memberId: string): Promi
   if (!(await findMemberById(db, memberId))) return false
   await recordMemberEvent(db, memberId, 'deleted', NO_REQUEST, { by: 'admin' })
   await anonymizeMember(db, memberId)
+  await discardQueuedMailForMember(db, memberId)
   return true
 }
