@@ -15,7 +15,7 @@ import { hookBus } from '@core/plugins/hookBus'
 import { mediaStorageRegistry } from '@core/plugins/mediaStorageRegistry'
 import { mediaVariantDelegateRegistry } from '@core/plugins/mediaVariantDelegateRegistry'
 import type { LoopFetchResult, LoopItem } from '@core/loops/types'
-import type { SerializedMember, SerializedUser } from '../protocol/messages'
+import type { SerializedApp, SerializedMember, SerializedUser } from '../protocol/messages'
 import type { LoadPluginResult } from '../protocol/messages'
 import { normalizeRoutePath } from '../protocol/parser'
 import { materializeRouteResponse, serializeRouteRequest } from './routeIo'
@@ -191,6 +191,7 @@ export async function runRouteInWorker(args: {
   request: Request
   user: SerializedUser | null
   member: SerializedMember | null
+  app: SerializedApp | null
 }): Promise<Response> {
   const entry = hostPlugins.get(args.pluginId)
   const routeKey = `${args.method.toUpperCase()}:${normalizeRoutePath(args.path)}`
@@ -213,6 +214,7 @@ export async function runRouteInWorker(args: {
       request: serializedReq,
       user: args.user,
       member: args.member,
+      app: args.app,
       body: parsedBody,
     },
     'route-result',

@@ -39,4 +39,12 @@ export interface ServerPluginMembersApi {
 export interface MemberRouteOptions {
   /** Only members holding this tag reach the handler; others get 403. */
   tag?: string
+  /**
+   * Also let an app the member signed in to call this route with its access
+   * token, when that sign-in carries the scope `plugin:<pluginId>:<scope>`.
+   * `scope` must be declared in the manifest's `appScopes`. Without this, a
+   * member route answers only the member's own browser. The handler's
+   * `ctx.app` says which it is.
+   */
+  app?: { scope: string }
 }

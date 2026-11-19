@@ -115,17 +115,28 @@ globalThis.__buildApi = function buildApi() {
   }
   // api.cms.routes.member.get(path, handler)
   // api.cms.routes.member.get(path, { tag: 'pro' }, handler)
+  // api.cms.routes.member.get(path, { app: { scope: 'read' } }, handler)
   //     Only a signed-in site member reaches the handler (optionally one
-  //     holding the tag). Served on the public plugin mount.
+  //     holding the tag). Served on the public plugin mount. With `app`,
+  //     an app the member signed in to may call it too, when its sign-in
+  //     carries that scope (declared in the manifest's `appScopes`).
   function registerMember(method: string) {
     return function (path: unknown, optionsOrHandler: unknown, maybeHandler?: unknown) {
       assertTargetPermission('cms.routes.register')
       assertPermission('members.read')
       const handler = typeof optionsOrHandler === 'function' ? optionsOrHandler : maybeHandler
       if (typeof handler !== 'function') throw new TypeError('Route handler must be a function')
-      const options = typeof optionsOrHandler === 'function' || !optionsOrHandler ? {} : optionsOrHandler as { tag?: unknown }
-      const access: { kind: 'member'; tag?: string } = { kind: 'member' }
+      const options = typeof optionsOrHandler === 'function' || !optionsOrHandler
+        ? {}
+        : optionsOrHandler as { tag?: unknown; app?: { scope?: unknown } | null }
+      const access: { kind: 'member'; tag?: string; appScope?: string } = { kind: 'member' }
       if (options.tag !== undefined && options.tag !== null) access.tag = String(options.tag)
+      if (options.app !== undefined && options.app !== null) {
+        if (typeof options.app !== 'object' || typeof options.app.scope !== 'string') {
+          throw new TypeError('A member route opened to apps needs `app: { scope: "<name>" }`')
+        }
+        access.appScope = options.app.scope
+      }
       const routeKey = method + ':' + normalizePath(path)
       globalThis.__plugin_handlers.routes[routeKey] = handler as BootstrapFn
       return call('cms.routes.register', [{
@@ -184,15 +195,22 @@ globalThis.__buildApi = function buildApi() {
     return call('cms.loops.registerSource', [descriptor])
   }
 
+  // A host reply of `null` crosses the bridge as `undefined`. Storage reads
+  // are documented as "record or null", so restore the null here.
+  function orNull(value: unknown) { return value === undefined ? null : value }
+
   function collection(resourceId: unknown) {
-    // All four cms.storage.* targets share the cms.storage permission; assert
+    // Every cms.storage.* target shares the cms.storage permission; assert
     // once up front via the map (same behavior as before, no inline literal).
     assertTargetPermission('cms.storage.list')
     return {
       list: function (options: unknown) { return call('cms.storage.list', [String(resourceId), options ?? {}]) },
       create: function (data: unknown) { return call('cms.storage.create', [String(resourceId), data]) },
-      update: function (recordId: unknown, data: unknown) { return call('cms.storage.update', [String(resourceId), String(recordId), data]) },
-      delete: function (recordId: unknown) { return call('cms.storage.delete', [String(resourceId), String(recordId)]) },
+      createIfAbsent: function (data: unknown) { return call('cms.storage.createIfAbsent', [String(resourceId), data]) },
+      get: function (recordId: unknown) { return call('cms.storage.get', [String(resourceId), String(recordId)]).then(orNull) },
+      getByKey: function (key: unknown) { return call('cms.storage.getByKey', [String(resourceId), String(key)]).then(orNull) },
+      update: function (recordId: unknown, data: unknown, options: unknown) { return call('cms.storage.update', [String(resourceId), String(recordId), data, options ?? {}]).then(orNull) },
+      delete: function (recordId: unknown, options: unknown) { return call('cms.storage.delete', [String(resourceId), String(recordId), options ?? {}]) },
     }
   }
 

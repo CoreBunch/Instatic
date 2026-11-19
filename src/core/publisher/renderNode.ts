@@ -321,7 +321,9 @@ export function renderNode(
   // for nobody in particular has already deferred the node to a per-visitor
   // hole, so reaching this line means the visitor is known (or the caller
   // asked for an inline render, which treats the visitor as signed out).
-  if (!showWhenAllows(readShowWhen(node.props), config.templateContext?.member?.tags ?? null)) return ''
+  const member = config.templateContext?.member
+  const visitor = member ? { tags: member.tags, appAsking: member.appRequest !== null } : null
+  if (!showWhenAllows(readShowWhen(node.props), visitor)) return ''
 
   const specialRenderer = resolveSpecialRenderer(def)
   if (specialRenderer) return specialRenderer(node, config, acc, renderNode)

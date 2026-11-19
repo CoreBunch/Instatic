@@ -142,6 +142,15 @@ export interface SerializedMember {
   profile: Record<string, string | boolean>
 }
 
+/** The app calling a member route for a member who signed in to it. */
+export interface SerializedApp {
+  /** The app's client id. */
+  id: string
+  name: string
+  /** The scope name the route is open under, as the manifest declares it. */
+  scope: string
+}
+
 export interface RunRouteRequest {
   kind: 'run-route'
   correlationId: string
@@ -151,6 +160,8 @@ export interface RunRouteRequest {
   user: SerializedUser | null
   /** The signed-in site member, on a member route or for a plugin that may read members. */
   member: SerializedMember | null
+  /** Set when an app, not the member's browser, is calling for `member`. */
+  app: SerializedApp | null
   body: Record<string, unknown>
 }
 

@@ -55,13 +55,57 @@ export function clearSignupNonceCookie(req: Request): string {
  * appears more than once: two values means someone else set one of them.
  */
 export function readSignupNonce(req: Request): string | null {
-  const wanted = signupNonceCookieName(req)
+  return readMarkerCookie(req, signupNonceCookieName(req))
+}
+
+/**
+ * Short-lived cookie naming the browser an app sent to the site to sign a
+ * member in. The member's answer counts only from that browser, so an
+ * approval address passed to someone else does nothing in theirs.
+ */
+const SECURE_APP_REQUEST_COOKIE = '__Host-instatic_member_app'
+const PLAIN_APP_REQUEST_COOKIE = 'instatic_member_app'
+
+function appRequestCookieName(req: Request): string {
+  return requestIsSecure(req) ? SECURE_APP_REQUEST_COOKIE : PLAIN_APP_REQUEST_COOKIE
+}
+
+export function appRequestMarkerCookie(req: Request, marker: string): string {
+  return `${appRequestCookieName(req)}=${marker}; ${cookieAttributes(req)}; Max-Age=3600`
+}
+
+/** A new marker: 32 hex characters, 122 random bits. The only form a marker is ever read in. */
+export function createAppRequestMarker(): string {
+  return crypto.randomUUID().replaceAll('-', '')
+}
+
+const APP_REQUEST_MARKER = /^[0-9a-f]{32}$/
+
+/**
+ * The marker from the request, or null. Null when it is not in the form the
+ * server generates, so nothing read here can carry cookie syntax. Null too
+ * when the cookie appears more than once: this site always sets it with the
+ * same name, path and attributes, so a browser never holds two of its own,
+ * and a second one was put there by someone else. Accepting whichever one
+ * matches would let a planted marker stand in for the browser's own.
+ */
+export function readAppRequestMarker(req: Request): string | null {
+  const values = cookieValues(req, appRequestCookieName(req))
+  return values.length === 1 && APP_REQUEST_MARKER.test(values[0]) ? values[0] : null
+}
+
+function readMarkerCookie(req: Request, wanted: string): string | null {
+  const values = cookieValues(req, wanted)
+  return values.length === 1 && /^[A-Za-z0-9-]{20,60}$/.test(values[0]) ? values[0] : null
+}
+
+function cookieValues(req: Request, wanted: string): string[] {
   const values: string[] = []
   for (const part of (req.headers.get('cookie') ?? '').split(';')) {
     const eq = part.indexOf('=')
     if (eq > 0 && part.slice(0, eq).trim() === wanted) values.push(part.slice(eq + 1).trim())
   }
-  return values.length === 1 && /^[A-Za-z0-9-]{20,60}$/.test(values[0]) ? values[0] : null
+  return values
 }
 
 function requestIsSecure(req: Request): boolean {

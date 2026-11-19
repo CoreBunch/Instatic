@@ -35,11 +35,19 @@ describe('member pages', () => {
     await addPage('p_tpl', 'post-template', { title: 'Post template', templateEnabled: true, body: body() }, 'post-template')
   })
 
+  it('says which pages only members may open', async () => {
+    await addPage('p_members', 'members', { title: 'Members', access: { level: 'members', onDeny: 'login' }, body: body() }, 'members')
+    await addPage('p_pro', 'pro', { title: 'Pro', access: { level: 'tags', tags: ['pro'], onDeny: 'login' }, body: body() }, 'pro')
+    const options = await listMemberPageOptions(t.db)
+    const membersOnly = Object.fromEntries(options.map((page) => [page.id, page.membersOnly]))
+    expect(membersOnly).toMatchObject({ p_members: true, p_pro: true, p_signin: false })
+  })
+
   it('lists ordinary pages with their live address and member forms, and leaves templates out', async () => {
     const options = await listMemberPageOptions(t.db)
     expect(options.map((page) => page.id).sort()).toEqual(['p_draft', 'p_signin', 'p_welcome'])
     expect(options.find((page) => page.id === 'p_signin')).toEqual({
-      id: 'p_signin', title: 'Sign in', path: '/sign-in', publishedPath: '/sign-in', formActions: ['login'],
+      id: 'p_signin', title: 'Sign in', path: '/sign-in', publishedPath: '/sign-in', formActions: ['login'], membersOnly: false,
     })
     expect(options.find((page) => page.id === 'p_welcome')).toMatchObject({ path: '/hello', publishedPath: '/welcome' })
     expect(options.find((page) => page.id === 'p_draft')).toMatchObject({ publishedPath: null, formActions: ['invite/accept'] })

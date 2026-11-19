@@ -106,6 +106,42 @@ describe('instatic-plugin lint', () => {
     expect(warnings[0].message).toContain('"delete"')
   })
 
+  it('errors when appScopes are declared without the members.read permission', async () => {
+    const result = await withTempPlugin(async (dir) => {
+      await writeConfig(dir, {
+        permissions: ['cms.routes'],
+        appScopes: [{ name: 'read', description: 'See your purchases' }],
+      })
+    })
+    const errors = result.findings.filter((f) => f.severity === 'error')
+    expect(errors).toHaveLength(1)
+    expect(errors[0].scope).toBe('manifest')
+    expect(errors[0].message).toContain('members.read')
+  })
+
+  it('errors when a route opens itself to apps under a scope appScopes does not declare', async () => {
+    const result = await withTempPlugin(async (dir) => {
+      await writeConfig(dir, {
+        permissions: ['cms.routes', 'members.read'],
+        appScopes: [{ name: 'read', description: 'See your purchases' }],
+      })
+      await mkdir(join(dir, 'server'), { recursive: true })
+      await writeFile(
+        join(dir, 'server', 'index.ts'),
+        `export function activate(api) {
+          api.cms.routes.member.get('/orders', { app: { scope: 'read' } }, () => ({}))
+          api.cms.routes.member.post('/licenses', { tag: 'pro', app: { scope: "manage" } }, () => ({}))
+        }\n`,
+        'utf-8',
+      )
+    })
+    const errors = result.findings.filter((f) => f.severity === 'error')
+    expect(errors).toHaveLength(1)
+    expect(errors[0].scope).toBe('source:server')
+    expect(errors[0].file).toBe('server/index.ts')
+    expect(errors[0].message).toContain('"manage"')
+  })
+
   it('does not warn when every cms.content.* permission is covered by a contentAccess mode', async () => {
     const result = await withTempPlugin(async (dir) => {
       await writeConfig(dir, {
@@ -319,5 +355,31 @@ describe('instatic-plugin lint', () => {
       await writeConfig(dir, { permissions: [], mail: { templates: [WELCOME] } })
     })
     expect(unpermitted.findings.some((f) => f.severity === 'error' && f.message.includes('mail.send'))).toBe(true)
+  })
+
+  it('carries a resource uniqueField through definePlugin and refuses one that is not a declared text field', async () => {
+    const resource = (uniqueField: string) => ({
+      id: 'events',
+      title: 'Events',
+      uniqueField,
+      fields: [
+        { id: 'eventId', label: 'Event id', type: 'text' },
+        { id: 'amount', label: 'Amount', type: 'number' },
+      ],
+    })
+    const clean = await withTempPlugin(async (dir) => {
+      await writeConfig(dir, { permissions: ['cms.storage'], resources: [resource('eventId')] })
+    })
+    expect(clean.findings).toEqual([])
+
+    const missing = await withTempPlugin(async (dir) => {
+      await writeConfig(dir, { permissions: ['cms.storage'], resources: [resource('nope')] })
+    })
+    expect(missing.findings.some((f) => f.severity === 'error' && f.message.includes('declares no field with that id'))).toBe(true)
+
+    const wrongType = await withTempPlugin(async (dir) => {
+      await writeConfig(dir, { permissions: ['cms.storage'], resources: [resource('amount')] })
+    })
+    expect(wrongType.findings.some((f) => f.severity === 'error' && f.message.includes('must be a "text" field'))).toBe(true)
   })
 })

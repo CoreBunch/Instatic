@@ -159,6 +159,12 @@ const SubmitPropsSchema = Type.Object({
   label: Type.String({ default: 'Submit' }),
   disabled: Type.Boolean({ default: false }),
   formId: Type.String({ default: '' }),
+  /**
+   * The button's own `name` and `value`, sent with the form only when this
+   * button is the one pressed. How a form with two buttons says which.
+   */
+  name: Type.String({ default: '' }),
+  value: Type.String({ default: '' }),
 })
 
 type SubmitProps = Static<typeof SubmitPropsSchema>
@@ -246,15 +252,17 @@ export const FormModule: ModuleDefinition<FormProps> = {
 }
 
 /**
- * Hidden inputs a member form carries: the emailed link's token (filled in
- * by the runtime from the page address) and, for a script-less submit, where
- * to go afterwards.
+ * Hidden inputs a member form carries: the value from the page address it
+ * posts back (an emailed link's token or an app's sign-in request) and, for
+ * a script-less submit, where to go afterwards. The runtime fills the value
+ * in from the address; a render has no request to read it from. The server
+ * writes an app's sign-in request into a page it renders for one member
+ * (`stampAppRequestId`), so that form also posts without scripts.
  */
 function memberHiddenInputs(props: FormProps): string {
   if (props.mode !== 'member') return ''
-  const token = memberFormAction(props.memberAction)?.needsToken
-    ? '<input type="hidden" name="token" data-instatic-member-token>'
-    : ''
+  const linkParam = memberFormAction(props.memberAction)?.linkParam
+  const token = linkParam ? `<input type="hidden" name="${linkParam}" data-instatic-member-link-param="${linkParam}">` : ''
   const success = props.successBehavior === 'redirect' && props.redirectUrl
     ? `<input type="hidden" name="_success" value="${safeUrl(props.redirectUrl)}">`
     : ''
@@ -467,6 +475,8 @@ export const SubmitModule: ModuleDefinition<SubmitProps> = {
     label: { type: 'text', label: 'Label', placeholder: 'Displayed when no children' },
     disabled: { type: 'toggle', label: 'Disabled' },
     formId: { type: 'text', label: 'Form ID override', normalize: 'identifier' },
+    name: { type: 'text', label: 'Name', placeholder: 'Sent only when this button is pressed', normalize: 'identifier' },
+    value: { type: 'text', label: 'Value', condition: { field: 'name', notEq: '' } },
   },
   propsSchema: SubmitPropsSchema,
   defaults: Value.Create(SubmitPropsSchema),
@@ -476,8 +486,9 @@ export const SubmitModule: ModuleDefinition<SubmitProps> = {
     const content = submitUsesChildren(renderedChildren.length)
       ? renderedChildren.join('')
       : props.label
+    const name = normalizeIdentifierValue(props.name)
     return {
-      html: `<button type="submit"${attrs([['form', normalizeIdentifierValue(props.formId)]])}${booleanAttrs(props, ['disabled'])}>${content}</button>`,
+      html: `<button type="submit"${attrs([['form', normalizeIdentifierValue(props.formId)], ['name', name], ['value', name ? props.value : '']])}${booleanAttrs(props, ['disabled'])}>${content}</button>`,
     }
   },
 }

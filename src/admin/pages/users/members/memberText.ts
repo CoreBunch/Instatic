@@ -19,6 +19,8 @@ const EVENT_LABEL: Record<string, string> = {
   login: 'Signed in',
   login_failed: 'Failed to sign in',
   logout: 'Signed out',
+  app_connected: 'Signed an app in',
+  app_disconnected: 'Disconnected an app',
   magic_link_requested: 'Asked for a sign-in link',
   password_reset_requested: 'Asked to reset their password',
   password_reset: 'Chose a new password',
@@ -31,6 +33,7 @@ const EVENT_LABEL: Record<string, string> = {
   suspended: 'Suspended by an administrator',
   unsuspended: 'Restored by an administrator',
   signed_out_by_admin: 'Signed out everywhere by an administrator',
+  app_disconnected_by_admin: 'An app was disconnected by an administrator',
   tag_granted: 'Given a tag by an administrator',
   tag_revoked: 'A tag was removed by an administrator',
 }

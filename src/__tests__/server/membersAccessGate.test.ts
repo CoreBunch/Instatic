@@ -483,4 +483,14 @@ describe('members access gate', () => {
     expect(res.headers.get('referrer-policy')).toBe('same-origin')
     expect((await get('/')).headers.get('referrer-policy')).not.toBe('same-origin')
   })
+
+  it('keeps an app sign-in request private and its approval page out of frames', async () => {
+    const approval = await get('/?request=imem_rq_abc')
+    expect(approval.headers.get('referrer-policy')).toBe('same-origin')
+    expect(approval.headers.get('x-frame-options')).toBe('DENY')
+    // The sign-in page it passes through carries the request inside `next`.
+    const signIn = await get('/?next=%2Fapprove-app%3Frequest%3Dimem_rq_abc')
+    expect(signIn.headers.get('referrer-policy')).toBe('same-origin')
+    expect((await get('/')).headers.get('x-frame-options')).toBeNull()
+  })
 })

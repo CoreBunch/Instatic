@@ -95,6 +95,10 @@ function actionVerb(action: string): string {
       return 'edited email template'
     case 'mail.template.reset':
       return 'reset email template'
+    case 'member.app.create':
+      return 'added a member sign-in app'
+    case 'member.app.delete':
+      return 'removed a member sign-in app'
     case 'user.create':
       return 'added user'
     case 'user.update':

@@ -63,6 +63,8 @@ export const MemberPagesSchema = Type.Object(
     magic: Type.Optional(PageIdSchema),
     invite: Type.Optional(PageIdSchema),
     emailChange: Type.Optional(PageIdSchema),
+    /** Where a member approves an app that wants to sign them in. */
+    appSignIn: Type.Optional(PageIdSchema),
   },
   { additionalProperties: false },
 )
@@ -189,6 +191,10 @@ export function accessAllows(rule: AccessRule, memberTags: readonly string[] | n
 export const ShowWhenSchema = Type.Union([
   Type.Object({ visitor: Type.Literal('signedIn') }, { additionalProperties: false }),
   Type.Object({ visitor: Type.Literal('signedOut') }, { additionalProperties: false }),
+  // A member who was sent here by an app that wants to sign them in, and a
+  // member who was not. For the page where apps are approved.
+  Type.Object({ visitor: Type.Literal('appAsking') }, { additionalProperties: false }),
+  Type.Object({ visitor: Type.Literal('noAppAsking') }, { additionalProperties: false }),
   Type.Object(
     {
       visitor: Type.Literal('tags'),
@@ -214,14 +220,29 @@ export function readShowWhen(props: Record<string, unknown>): ShowWhen | 'nobody
   return parsed.ok ? parsed.value : 'nobody'
 }
 
-/** Is an element with `rule` rendered for a visitor with these tags (`null` when signed out)? */
-export function showWhenAllows(rule: ShowWhen | 'nobody' | null, memberTags: readonly string[] | null): boolean {
+/** What a show-when rule looks at: the signed-in member behind a render. */
+export interface ShowWhenVisitor {
+  tags: readonly string[]
+  /** The page was opened with an app's pending sign-in request. */
+  appAsking: boolean
+}
+
+/** Is an element with `rule` rendered for this visitor (`null` when signed out)? */
+export function showWhenAllows(rule: ShowWhen | 'nobody' | null, visitor: ShowWhenVisitor | null): boolean {
   if (rule === null) return true
   if (rule === 'nobody') return false
-  if (rule.visitor === 'signedOut') return memberTags === null
-  if (memberTags === null) return false
-  if (rule.visitor === 'signedIn') return true
-  return rule.tags.some((tag) => memberTags.includes(tag))
+  if (rule.visitor === 'signedOut') return visitor === null
+  if (visitor === null) return false
+  switch (rule.visitor) {
+    case 'signedIn':
+      return true
+    case 'appAsking':
+      return visitor.appAsking
+    case 'noAppAsking':
+      return !visitor.appAsking
+    case 'tags':
+      return rule.tags.some((tag) => visitor.tags.includes(tag))
+  }
 }
 
 // ─── Action results (JSON mode) ────────────────────────────────────────────

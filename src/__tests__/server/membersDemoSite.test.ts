@@ -14,6 +14,7 @@ import { normalizeSiteRuntimeConfig } from '@core/site-runtime'
 import { buildMembersDemoPages, MEMBERS_DEMO_CSS, membersDemoSettings } from '../../../scripts/lib/membersDemoSite'
 import { pageToCells } from '../../core/data/pageFromRow'
 import { MAIN_SCOPE } from '../../../server/branches/scope'
+import { createMemberApp, createMemberAppRequest } from '../../../server/members/apps/store'
 import { createMember, grantMemberTag, saveMemberSettings } from '../../../server/members/repository'
 import { createMemberSession } from '../../../server/members/sessions'
 import { publishDraftSite } from '../../../server/publish/publishSite'
@@ -122,6 +123,62 @@ describe('members demo site', () => {
     expect(pro.status).toBe(200)
     expect(await pro.text()).toContain('You hold the tag')
     expect((await get('/members', mia)).status).toBe(200)
+  })
+
+  it('lists a member the apps signed in to their account, each with its own disconnect form', async () => {
+    const mia = await signedIn('mia@example.com', 'Mia')
+    const paul = await signedIn('paul@example.com', 'Paul')
+    const app = await createMemberApp(t.db, { name: 'Northlight Desktop', redirectUris: [], scopes: ['profile'], createdByUserId: null })
+    const { rows } = await t.db<{ id: string }>`select id from members where email = 'mia@example.com'`
+    const now = Date.now()
+    await t.db`
+      insert into member_app_grants (id, member_id, app_id, scope, created_at, expires_at)
+      values ('grant_mia', ${rows[0].id}, ${app.id}, 'profile', ${new Date(now).toISOString()}, ${new Date(now + 86_400_000).toISOString()})
+    `
+
+    // The list is fetched after the page, for the member who is looking.
+    const page = await (await get('/account', mia)).text()
+    const at = page.indexOf('Connected apps')
+    const hole = /data-instatic-hole="([^"]+)" data-instatic-version="([^"]+)"/.exec(page.slice(at))!
+    const fragment = (cookie?: string) =>
+      get(`/_instatic/hole/${hole[1]}?v=${hole[2]}&u=${encodeURIComponent('/account')}`, cookie)
+
+    const mine = await fragment(mia)
+    expect(mine.headers.get('cache-control')).toContain('no-store')
+    const html = await mine.text()
+    expect(html).toContain('Northlight Desktop')
+    expect(html).toContain('Last used not yet')
+    expect(html).toContain('action="/_instatic/members/apps/disconnect"')
+    expect(html).toMatch(/type="hidden"[^>]*name="connection"[^>]*value="grant_mia"/)
+
+    expect(await (await fragment(paul)).text()).not.toContain('Northlight Desktop')
+    expect((await fragment()).status).toBe(404)
+  })
+
+  it('gives the approval form its request, so it posts with scripts off', async () => {
+    const mia = await signedIn('mia@example.com', 'Mia')
+    const app = await createMemberApp(t.db, {
+      name: 'Instatic Desktop', redirectUris: ['http://127.0.0.1:47821/callback'], scopes: ['profile'], createdByUserId: null,
+    })
+    const request = await createMemberAppRequest(t.db, {
+      appId: app.id,
+      browserMarker: 'a'.repeat(32),
+      redirectUri: 'http://127.0.0.1:47821/callback',
+      codeChallenge: 'c'.repeat(43),
+      scope: 'profile',
+      resource: `${ORIGIN}/_instatic/members`,
+      state: null,
+    })
+    const field = (id: string) => `<input type="hidden" name="request" data-instatic-member-link-param="request" value="${id}">`
+
+    const page = await (await get(`/approve-app?request=${request}`, mia)).text()
+    expect(page).toContain('Sign in to Instatic Desktop?')
+    expect(page).toContain(field(request))
+
+    // An address that names no waiting request leaves the field empty.
+    const stale = await (await get('/approve-app?request=imem_rq_unknown', mia)).text()
+    expect(stale).toContain('<input type="hidden" name="request" data-instatic-member-link-param="request">')
+    expect(stale).not.toContain(field('imem_rq_unknown'))
   })
 
   it('keeps every member-only line out of what is written to disk', async () => {

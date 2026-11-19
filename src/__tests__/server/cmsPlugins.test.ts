@@ -221,7 +221,12 @@ function makeFakeDb() {
       crashEvents.push(...remaining)
       return { rows: [], rowCount: before - remaining.length }
     }
-    // createPluginRecord — values[0..3]=id, pluginId, resourceId, dataJson
+    // createPluginRecord — values[0..4]=id, pluginId, resourceId, dataJson, uniqueKey
+    // installPluginWithRecordKeys: clears stored record keys of the declared
+    // resources (none of these plugins declares a uniqueField).
+    if (normalized.includes('update plugin_records set unique_key = null')) {
+      return { rows: [], rowCount: 0 }
+    }
     if (normalized.includes('insert into plugin_records')) {
       const now = new Date('2026-05-01T10:10:00.000Z').toISOString()
       const row = {
@@ -229,6 +234,8 @@ function makeFakeDb() {
         plugin_id: values[1],
         resource_id: values[2],
         data_json: values[3],
+        unique_key: values[4] ?? null,
+        version: 0,
         created_at: now,
         updated_at: now,
       }
@@ -243,6 +250,11 @@ function makeFakeDb() {
     // Post-activation schedule ghost sweep (disableSchedulesNotReclaimedSince)
     // — these tests register no schedules, so the sweep matches nothing.
     if (normalized.includes('update plugin_schedules')) {
+      return { rows: [], rowCount: 0 }
+    }
+    // Uninstall withdraws the plugin's app scopes (withdrawPluginAppScopes).
+    // No app is registered and no member signed in here, so both lists are empty.
+    if (normalized.includes('from member_app_grants') || normalized.includes('from member_apps')) {
       return { rows: [], rowCount: 0 }
     }
     throw new Error(`Unhandled SQL: ${sql}`)

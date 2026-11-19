@@ -22,6 +22,22 @@ export function activate(api) {
     plugin: api.plugin.id,
     version: api.plugin.version,
   }))
+
+  // Letting an app a site member signed in to call a member route.
+  // In plugin.json, declare the scope and request the permissions:
+  //
+  //   "permissions": ["cms.routes", "members.read"],
+  //   "appScopes": [{ "name": "read", "description": "See your saved items" }]
+  //
+  // (with the TypeScript SDK: `appScopes` in `definePlugin({ ... })`).
+  // The member reads the description before allowing the app. Then open a
+  // route under that scope; routes without `app` stay closed to apps:
+  //
+  //   api.cms.routes.member.get('/items', { app: { scope: 'read' } }, (ctx) => ({
+  //     member: ctx.member.id,
+  //     // { id, name, scope } when an app is calling, null for the member's browser.
+  //     app: ctx.app,
+  //   }))
 }
 
 export function deactivate(api) {

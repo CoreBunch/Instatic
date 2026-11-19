@@ -47,7 +47,7 @@ Auto wiring is structural:
 
 - A `base.label` with `targetMode: "auto"` targets the next form control below it in the same form subtree.
 - A `base.submit` inside a form submits the nearest form by normal HTML semantics. Its `formId` prop is only an override for out-of-form submit buttons.
-- `base.form-message` nodes can be inside the form or point at a form id.
+- `base.form-message` nodes can be inside the form or point at a form id; a form uses both. The one exception is a form repeated in a list: its id occurs more than once on the page, so a row that holds messages uses only its own.
 
 The published runtime finalizes auto labels in the browser because labels and inputs are independent nodes. It assigns an id to the next control when needed and sets the label's `for` attribute.
 

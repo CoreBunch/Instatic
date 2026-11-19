@@ -19,6 +19,9 @@
  *   • Every requested `cms.content.*` permission is consumed by a
  *     `contentAccess` entry declaring the matching mode (the missing-
  *     allowlist case is already a manifest error from `parsePluginManifest`)
+ *   • `appScopes` needs the `members.read` permission (a manifest error
+ *     from `parsePluginManifest`), and every scope a member route opens
+ *     itself to apps under (`{ app: { scope: 'read' } }`) is declared there
  *
  * The intent: catch every common authoring mistake BEFORE the developer
  * uploads a zip, so they get a precise error in their terminal instead of
@@ -318,20 +321,39 @@ export async function lintPlugin(sourceDir: string): Promise<LintResult> {
 
   // ---- source files do not reference Node/Bun primitives -----------------
 
+  const declaredAppScopes = new Set((manifest.appScopes ?? []).map((scope) => scope.name))
   for (const { kind, path: relDir } of entrypointSources) {
     if (kind !== 'server' && kind !== 'modules') continue
     const sourceDirAbs = join(absoluteSource, relDir)
     if (!existsSync(sourceDirAbs)) continue
     for (const file of walkSources(sourceDirAbs)) {
       const text = await readFile(file, 'utf-8')
+      // Findings report POSIX-style relative paths on every platform.
+      const relFile = file.slice(absoluteSource.length + 1).replaceAll('\\', '/')
+      // A member route may open itself to apps only under a scope the
+      // manifest declares; the host refuses anything else and activation
+      // fails. Scopes written as plain string literals are checked here.
+      if (kind === 'server') {
+        for (const scope of routeAppScopeLiterals(text)) {
+          if (declaredAppScopes.has(scope)) continue
+          findings.push({
+            severity: 'error',
+            scope: 'source:server',
+            message:
+              `a route opens itself to apps under the scope "${scope}", which \`appScopes\` does not declare. ` +
+              `Activation will fail. Add { name: '${scope}', description: '…' } to \`appScopes\` ` +
+              `(it needs the \`members.read\` permission).`,
+            file: relFile,
+          })
+        }
+      }
       const offenders = findSandboxLiterals(text)
       for (const offender of offenders) {
         findings.push({
           severity: 'error',
           scope: `source:${kind}`,
           message: `references forbidden sandbox literal \`${offender.literal}\` — plugin code can't reach Node/Bun runtime APIs. Use the SDK instead.`,
-          // Findings report POSIX-style relative paths on every platform.
-          file: file.slice(absoluteSource.length + 1).replaceAll('\\', '/'),
+          file: relFile,
         })
       }
     }
@@ -358,6 +380,23 @@ export async function lintPlugin(sourceDir: string): Promise<LintResult> {
   }
 
   return { pluginId: manifest.id, findings }
+}
+
+// ---------------------------------------------------------------------------
+// Source scans
+// ---------------------------------------------------------------------------
+
+/**
+ * The app scopes a server source names in route options, as written:
+ * `{ app: { scope: 'read' } }`. Only plain string literals are found; a
+ * scope built at runtime is left to the host's check at activation.
+ */
+function routeAppScopeLiterals(source: string): string[] {
+  const found = new Set<string>()
+  for (const match of source.matchAll(/\bapp\s*:\s*\{\s*scope\s*:\s*(['"`])([^'"`\n$]+)\1/g)) {
+    found.add(match[2]!)
+  }
+  return [...found]
 }
 
 // ---------------------------------------------------------------------------

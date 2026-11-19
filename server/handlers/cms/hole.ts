@@ -61,6 +61,7 @@ import { getPublishVersion } from '../../publish/publishState'
 import { HOLE_RUNTIME_JS, HOLE_RUNTIME_VERSION } from '../../publish/holeRuntime'
 import { serveVersionedScript } from '../../publish/assetVersion'
 import { stampFormPageTokens } from '../../forms/formRuntime'
+import { memberAppRequestFrame } from '../../members/apps/approval'
 import {
   closedContentFor,
   decideAccess,
@@ -251,8 +252,9 @@ export async function handleHoleRequest(
   const gated = showWhenPathsAreGated(paths)
   const showsMember = gated || subtreeDependsOnMember(foundPage, snap.site, registry, nodeId)
   if (gated) {
-    const tags = (await visitor())?.tags ?? null
-    if (!showWhenPathsAllow(paths, tags)) {
+    const who = await visitor()
+    const asking = who ? (await memberAppRequestFrame(ctx.db, pageUrl)) !== null : false
+    if (!showWhenPathsAllow(paths, who ? { tags: who.tags, appAsking: asking } : null)) {
       // Exactly what the page render gives this visitor for the enclosing element: nothing.
       return new Response('', { status: 200, headers: { 'content-type': 'text/html; charset=utf-8', ...PRIVATE_HEADERS } })
     }
@@ -269,7 +271,10 @@ export async function handleHoleRequest(
   // sources get the cookies and the member, each through its own request.
   if (perVisitor || isProtected || showsMember) {
     const scope = visitorRequestScope(base, req, visitor)
-    const member = isProtected || showsMember ? memberFrameFor(await visitor()) : undefined
+    const signedIn = isProtected || showsMember ? await visitor() : undefined
+    const member = signedIn === undefined
+      ? undefined
+      : memberFrameFor(signedIn, signedIn ? await memberAppRequestFrame(ctx.db, pageUrl) : null)
     const html = await renderHoleFragment(nodeId, foundPage, snap.site, ctx.db, pageUrl, scope, closed, member)
     return new Response(html, {
       status: 200,

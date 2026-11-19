@@ -115,6 +115,7 @@
     color: var(--danger-text);
 }
 
+.appName,
 .timeline span {
     color: var(--text-bright);
 }
@@ -184,4 +185,91 @@
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
   gap: var(--space-s);
+}
+
+/* ── Apps dialog ── */
+.apps {
+    display: grid;
+    gap: var(--space-px);
+    margin: 0;
+    padding: 0;
+    overflow: hidden;
+    border-radius: var(--card-radius);
+    background: var(--bg-surface);
+    list-style: none;
+}
+
+.app {
+    display: grid;
+    gap: var(--space-s);
+    padding: var(--space-l) var(--space-xl);
+    background: var(--bg-surface-2);
+}
+
+.appHead {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-s);
+}
+
+.appName {
+    color: var(--text-bright);
+    font-size: var(--text-s);
+    font-weight: 600;
+}
+
+.appFacts {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    gap: var(--space-xs) var(--space-l);
+    margin: 0;
+    font-size: var(--text-xs);
+    line-height: 1.45;
+}
+
+.appFacts dt {
+    color: var(--text-subtle);
+}
+
+.appFacts dd {
+    display: grid;
+    gap: var(--space-4xs);
+    min-width: 0;
+    margin: 0;
+    color: var(--text);
+}
+
+.appFacts code {
+    overflow-wrap: anywhere;
+}
+
+.appFacts .appId {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-s);
+}
+
+.appConfirm {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: flex-end;
+    gap: var(--space-s);
+}
+
+.appConfirm p {
+    flex: 1 1 240px;
+    margin: 0;
+    color: var(--warning-text);
+    font-size: var(--text-xs);
+    line-height: 1.45;
+}
+
+.appSubmit {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-l);
 }

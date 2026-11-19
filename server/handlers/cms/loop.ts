@@ -146,8 +146,10 @@ export async function handleLoopRequest(
   const showsMember = gated || inComponent || subtreeDependsOnMember(containingPage, site, registry, loopNode.id)
   const forVisitor = isProtected || showsMember
   if (gated) {
-    const tags = (await visitor())?.tags ?? null
-    if (!showWhenPathsAllow(paths, tags)) {
+    const who = await visitor()
+    // A later page of a list is fetched without its page's address, so a rule
+    // about an app's sign-in request reads as "no app is asking" here.
+    if (!showWhenPathsAllow(paths, who ? { tags: who.tags, appAsking: false } : null)) {
       return jsonResponse({ html: '', hasMore: false, pageNumber }, { headers: PRIVATE_HEADERS })
     }
   }
@@ -201,6 +203,8 @@ export async function handleLoopRequest(
   // CSS dedup is a no-op here because the asset bundle is already
   // loaded on the client.
   const variants = loopNode.children
+  // A per-visitor source answers for this visitor alone, whatever its items
+  // render: the response must never be stored or shared.
   const headers = forVisitor || perVisitor ? { headers: PRIVATE_HEADERS } : {}
   if (variants.length === 0) {
     return jsonResponse({ html: '', hasMore, pageNumber }, headers)

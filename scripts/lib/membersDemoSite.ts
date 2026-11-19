@@ -36,6 +36,11 @@ class PageBuilder {
     )
   }
 
+  /** A list: `children` are rendered once per item of the source. */
+  loop(sourceId: string, role: string, children: PageNode[]): PageNode {
+    return this.add(createNode('base.loop', { sourceId, limit: 20, htmlAttributes: { 'data-demo': role } }), children)
+  }
+
   text(text: string, tag = 'p', showWhen?: ShowWhen): PageNode {
     return this.add(createNode('base.text', { text, tag, ...(showWhen ? { showWhen } : {}) }))
   }
@@ -55,7 +60,9 @@ class PageBuilder {
   ): PageNode {
     const definition = memberFormAction(action)
     if (!definition) throw new Error(`Unknown member form action "${action}"`)
-    const fragment = memberFormFragment(definition, formId, { fields: [...definition.fields], submit: true, messages: true })
+    const fragment = memberFormFragment(definition, formId, {
+      fields: [...definition.fields], submit: true, messages: true, secondary: definition.choice !== undefined,
+    })
     const form = createNode('base.form', {
       mode: 'member',
       memberAction: action,
@@ -286,6 +293,19 @@ export function buildMembersDemoPages(prefix = ''): Page[] {
           account.memberForm('email/change', 'change-email'),
         ]),
         account.box('card', [
+          account.text('Connected apps', 'h2'),
+          account.text('Apps you signed in to with this account. Disconnect one to sign it out.', 'p'),
+          // A list of the member's own apps; every row carries a form that
+          // sends that row's id back.
+          account.loop('members.apps', 'apps', [
+            account.box('app', [
+              account.text('{currentEntry.name} on {currentEntry.device|a device}', 'h3'),
+              account.text('Connected {currentEntry.connectedOn}. Last used {currentEntry.lastUsedOn|not yet}.', 'p'),
+              account.memberForm('apps/disconnect', 'disconnect-app', { redirectUrl: '/account' }),
+            ]),
+          ]),
+        ]),
+        account.box('card', [
           account.text('Delete account', 'h2'),
           account.text('This removes your account for good.', 'p'),
           account.memberForm('delete', 'delete-account', { redirectUrl: '/' }),
@@ -320,7 +340,25 @@ export function buildMembersDemoPages(prefix = ''): Page[] {
     PRO,
   )
 
-  const pages = [homePage, join, signIn, forgot, reset, welcome, signInLink, confirmEmail, invitation, accountPage, members, pro]
+  // Opened by an app that wants to sign the member in. Members only, so a
+  // signed-out visitor is sent to sign in and comes back here.
+  const approveApp = formPage(
+    'demo_approve_app',
+    'Approve an app',
+    'approve-app',
+    (b) => [
+      b.text('Sign in to {member.appRequest.name|an app}?', 'h1'),
+      b.text('It runs on {member.appRequest.device|a device} ({member.appRequest.returnsTo|your device}) and asks for: {member.appRequest.access|your account}.', 'p'),
+      b.text('You are signed in as {member.email|a member}.', 'p'),
+      b.memberForm('apps/approve', 'approve-app'),
+    ],
+    MEMBERS,
+  )
+
+  const pages = [
+    homePage, join, signIn, forgot, reset, welcome, signInLink, confirmEmail, invitation, accountPage, members, pro,
+    approveApp,
+  ]
   return prefix === '' ? pages : withPrefix(pages, prefix)
 }
 
@@ -333,6 +371,7 @@ const MEMBER_PAGE_SLUGS = {
   magic: 'sign-in-link',
   invite: 'invitation',
   emailChange: 'confirm-email',
+  appSignIn: 'approve-app',
 } as const
 
 /** Who can join, and which of the demo pages each member link opens. Settings name a page by id. */
@@ -377,6 +416,9 @@ a:hover { text-decoration: underline; }
 [data-demo="card"] h1 { margin: 0; font-size: 28px; letter-spacing: -0.01em; }
 [data-demo="card"] h2 { margin: 0; font-size: 18px; }
 [data-demo="card"] p { margin: 0; color: var(--muted); }
+[data-demo="apps"] { display: grid; gap: 12px; }
+[data-demo="app"] { display: grid; gap: 6px; padding: 14px 16px; border: 1px solid var(--line); border-radius: 12px; }
+[data-demo="app"] h3 { margin: 0; font-size: 16px; }
 form { display: grid; gap: 14px; }
 form > div { display: grid; gap: 6px; }
 label { font-size: 14px; font-weight: 600; }

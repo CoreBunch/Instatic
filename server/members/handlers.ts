@@ -29,6 +29,11 @@
  *   POST email/confirm     token
  *   POST profile           profile fields                        (signed in)
  *   POST delete            currentPassword                       (signed in)
+ *   POST apps/disconnect   connection                (signed in; ends one app's sign-in)
+ *   POST apps/approve      request, decision          (signed in; answers an app's
+ *                          sign-in request: decision is `allow` or `deny`, and a post
+ *                          without one is refused, never taken as yes)
+ *   *    oauth/*           sign-in for apps, see `apps/handler.ts`
  *   GET  me                { member } or { member: null }
  *   GET  export            the member's own data as a JSON download
  *
@@ -45,6 +50,9 @@ import type { MemberErrorCode } from '@core/members'
 import { Type, safeParseValue } from '@core/utils/typeboxHelpers'
 import { clientIp, isSiteOrigin, originAllowed } from '../auth/security'
 import { jsonResponse, readTextBodyWithLimit, RequestBodyTooLargeError, setCookieHeader } from '../http'
+import { answerAppSignIn, disconnectApp } from './apps/approval'
+import { handleMemberOAuthRequest } from './apps/handler'
+import { MEMBER_OAUTH_PATH_PREFIX } from './apps/protocol'
 import { memberLinkOrigin, memberMailAvailable } from './mail'
 import { findMemberById, toCurrentMember } from './repository'
 import {
@@ -71,6 +79,7 @@ import {
   clearSignupNonceCookie,
   findMemberSession,
   memberSessionCookie,
+  readAppRequestMarker,
   readMemberSessionToken,
   readSignupNonce,
   signupNonceCookie,
@@ -251,6 +260,7 @@ function buildResponse(req: Request, fields: Fields, outcome: MemberOutcome): Re
           code: outcome.code,
           ...(outcome.member ? { member: outcome.member } : {}),
           ...(outcome.landing ? { landing: outcome.landing } : {}),
+          ...(outcome.appRedirect ? { appRedirect: outcome.appRedirect } : {}),
         }),
         { status: 200, headers },
       )
@@ -271,7 +281,10 @@ function buildResponse(req: Request, fields: Fields, outcome: MemberOutcome): Re
 
   const back = refererPath(req) ?? '/'
   let location: string
-  if (outcome.ok) {
+  if (outcome.ok && outcome.appRedirect) {
+    // The one answer that leaves the site: back to the app that asked.
+    location = outcome.appRedirect
+  } else if (outcome.ok) {
     const chosen = safeRedirectPath(fields._success) ?? safeRedirectPath(outcome.landing)
     location = chosen ? withParams(chosen, {}) : withParams(back, { member_ok: outcome.code })
   } else {
@@ -298,7 +311,7 @@ async function buildContext(db: DbClient, req: Request): Promise<MemberActionCon
 
 /** Fields that are part of the protocol, not of a member's profile. */
 const RESERVED_FIELDS = new Set([
-  'email', 'password', 'token', 'currentPassword', 'newPassword', '_success', '_error',
+  'email', 'password', 'token', 'request', 'decision', 'connection', 'currentPassword', 'newPassword', '_success', '_error',
 ])
 
 function profileFieldsOf(fields: Fields): Fields {
@@ -348,7 +361,9 @@ async function runAction(
   }
 
   // Everything below needs a signed-in member.
-  if (!['password/change', 'email/change', 'profile', 'delete'].includes(action)) return null
+  if (!['password/change', 'email/change', 'profile', 'delete', 'apps/approve', 'apps/disconnect'].includes(action)) {
+    return null
+  }
   const current = await resolveSignedInMember(db, req)
   if (!current) return respond(req, fields, signedOut)
 
@@ -363,6 +378,12 @@ async function runAction(
       }))
     case 'profile':
       return respond(req, fields, await updateProfile(ctx, current, profileFieldsOf(fields)))
+    case 'apps/approve':
+      return respond(req, fields, await answerAppSignIn(ctx, current, {
+        requestId: field('request'), browserMarker: readAppRequestMarker(req), decision: field('decision'),
+      }))
+    case 'apps/disconnect':
+      return respond(req, fields, await disconnectApp(ctx, current, { connection: field('connection') }))
     default:
       return respond(req, fields, await deleteAccount(ctx, current, {
         currentPassword: fields.currentPassword,
@@ -375,6 +396,9 @@ function notFound(): Response {
 }
 
 export async function handleMemberRequest(req: Request, db: DbClient, url: URL): Promise<Response> {
+  // Sign-in for apps is called by the app, not by a page of this site: it has
+  // its own checks instead of the cookie and same-origin rules below.
+  if (url.pathname.startsWith(MEMBER_OAUTH_PATH_PREFIX)) return handleMemberOAuthRequest(req, db, url)
   const action = url.pathname.slice(MEMBERS_PATH_PREFIX.length).replace(/\/+$/, '')
 
   if (req.method === 'GET') {

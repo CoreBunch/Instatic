@@ -17,6 +17,7 @@ import {
   encodeBodyBytes,
 } from '../protocol/bodyEncoding'
 import { withoutSessionCookies } from '../../sessionCookies'
+import { namesMemberAppToken } from '../../members/apps/protocol'
 import type {
   SerializedRequest,
   SerializedResponse,
@@ -63,6 +64,14 @@ export async function serializeRouteRequest(
     const kept = withoutSessionCookies(headers.cookie)
     if (kept) headers.cookie = kept
     else delete headers.cookie
+  }
+  // The same for a member app's token. An app that sends it to everything
+  // on the plugin mount must not hand it to a handler, so the header goes
+  // whenever it names one: under any scheme, on every kind of route, whether
+  // or not the token decided who is calling. A plugin's own secrets (a
+  // webhook signature, say) do not look like one and pass through.
+  if (headers.authorization !== undefined && namesMemberAppToken(headers.authorization)) {
+    delete headers.authorization
   }
 
   const bodyBytes = request.method !== 'GET'

@@ -191,6 +191,17 @@ export async function anonymizeMember(db: DbClient, memberId: string): Promise<v
   await db.transaction(async (tx) => {
     await tx`delete from member_sessions where member_id = ${memberId}`
     await tx`delete from member_tokens where member_id = ${memberId}`
+    // Sign-ins to apps go with the account, and with them the device names
+    // the apps gave ("Ada's MacBook").
+    await tx`
+      delete from member_app_tokens
+       where grant_id in (select id from member_app_grants where member_id = ${memberId})
+    `
+    await tx`
+      delete from member_app_codes
+       where grant_id in (select id from member_app_grants where member_id = ${memberId})
+    `
+    await tx`delete from member_app_grants where member_id = ${memberId}`
     await tx`delete from member_tags where member_id = ${memberId}`
     await tx`
       update member_events set ip_address = null, user_agent = null, metadata_json = '{}'
@@ -217,6 +228,29 @@ export async function listActiveMemberTags(db: DbClient, memberId: string): Prom
      order by tag
   `
   return rows.map((row) => row.tag)
+}
+
+/**
+ * The tags a member holds right now, each with the moment it runs out (null
+ * when it does not). A tag granted by several sources lasts as long as its
+ * longest grant.
+ */
+export async function listActiveMemberTagExpiries(
+  db: DbClient,
+  memberId: string,
+): Promise<Array<{ tag: string; expiresAt: string | null }>> {
+  const { rows } = await db<{ tag: string; expires_at: string | null }>`
+    select tag, expires_at from member_tags
+     where member_id = ${memberId} and (expires_at is null or expires_at > ${nowIso()})
+     order by tag
+  `
+  const expiries = new Map<string, string | null>()
+  for (const row of rows) {
+    const known = expiries.get(row.tag)
+    if (known === undefined) expiries.set(row.tag, row.expires_at)
+    else if (known !== null && (row.expires_at === null || row.expires_at > known)) expiries.set(row.tag, row.expires_at)
+  }
+  return [...expiries].map(([tag, expiresAt]) => ({ tag, expiresAt }))
 }
 
 /**
@@ -280,11 +314,14 @@ export type MemberEventKind =
   | 'email_changed'
   | 'profile_updated'
   | 'deleted'
+  | 'app_connected'
+  | 'app_disconnected'
   // Done by an administrator, not by the member.
   | 'invited'
   | 'suspended'
   | 'unsuspended'
   | 'signed_out_by_admin'
+  | 'app_disconnected_by_admin'
   | 'tag_granted'
   | 'tag_revoked'
 

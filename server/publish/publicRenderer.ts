@@ -10,6 +10,7 @@ import { HOLE_RUNTIME_VERSION } from './holeRuntime'
 import { LOOP_RUNTIME_VERSION } from './loopRuntime'
 import { resolveTemplateChain, resolveNotFoundTemplate, composeTemplateChain } from '@core/templates'
 import type { TemplateRenderDataContext } from '@core/templates/dynamicBindings'
+import { pendingAppRequestOnPage, stampAppRequestId } from '../members/apps/approval'
 import { closedContentFor, getAccessIndex, memberFrameFor } from './accessGate'
 import type { CurrentMember } from '@core/members'
 import { prefetchLoopData, publishedDataRowToEntryItem } from './loopPrefetch'
@@ -111,10 +112,14 @@ async function renderMergedTemplate(
   const cssBundle = buildPublishedSiteCssBundle(snapshot.site, registry, merged, publishVersion, { mediaAssets })
   // A render for one visitor carries the member, so member bindings and
   // show-when rules resolve in place instead of becoming fragments.
+  const appRequest = ctx.visitor ? await pendingAppRequestOnPage(ctx.db, ctx.url) : null
   const visitorContext: TemplateRenderDataContext | undefined =
     ctx.visitor === undefined
       ? templateContext
-      : { ...(templateContext ?? { entryStack: [] }), member: memberFrameFor(ctx.visitor) }
+      : {
+          ...(templateContext ?? { entryStack: [] }),
+          member: memberFrameFor(ctx.visitor, appRequest?.frame ?? null),
+        }
   const published = publishPage(merged, snapshot.site, registry, {
     templateContext: visitorContext,
     ...(documentMeta ? { documentMeta } : {}),
@@ -134,7 +139,10 @@ async function renderMergedTemplate(
   // subtrees) ∩ the site module-JS map — over-inclusive candidates from
   // unbaked holes are filtered down to modules that actually ship JS.
   const moduleScripts = resolveModuleScripts(published.jsModuleIds, moduleJsMap)
-  return { html: published.html, moduleScripts, cssBundle }
+  // The approval form of a page opened with a waiting request posts it back
+  // even with scripts off.
+  const html = appRequest ? stampAppRequestId(published.html, appRequest.requestId) : published.html
+  return { html, moduleScripts, cssBundle }
 }
 
 export async function renderPublishedSnapshot(

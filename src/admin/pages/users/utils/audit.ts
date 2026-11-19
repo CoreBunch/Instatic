@@ -199,6 +199,12 @@ export function auditTitle(
       return `Member ${member} lost the tag ${metadataString(event.metadata, 'tag') ?? ''}`
     case 'member.settings.update':
       return 'Member settings were changed'
+    case 'member.app.create':
+      return `App ${metadataString(event.metadata, 'name') ?? 'unknown'} was allowed to sign members in`
+    case 'member.app.delete':
+      return `App ${metadataString(event.metadata, 'name') ?? 'unknown'} was removed from member sign-in`
+    case 'member.app.disconnect':
+      return `Member ${member} was signed out of the app ${metadataString(event.metadata, 'app') ?? 'unknown'}`
     case 'ai.credential.created':
       return `AI credential ${aiCredential} was created`
     case 'ai.credential.updated':
