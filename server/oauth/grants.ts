@@ -103,10 +103,17 @@ export async function exchangeAuthorizationCode(
   return db.transaction(async (tx) => {
     const store = realm.store(tx)
     const code = await store.findAuthorizationCode(codeHash)
-    // A code is used once. Seeing it again means it leaked or was replayed,
-    // so everything issued from it is withdrawn too (RFC 6749 §4.1.2). Only
-    // the client the code belongs to can trigger this.
-    if (code?.consumedAt && !code.grantRevokedAt && code.clientId === input.clientId) {
+    // A code is used once. Seeing it again while it could still have been
+    // exchanged means it leaked or was replayed, so everything issued from it
+    // is withdrawn too (RFC 6749 §4.1.2). The request must name the client the
+    // code was issued to, but a client id is public, so that is no proof of who
+    // is asking: anyone holding the code can trigger this. The expiry bound is
+    // what limits it. Consumed codes are kept, and one found later in a browser
+    // history or a log is refused below without touching the grant.
+    if (
+      code?.consumedAt && !code.grantRevokedAt &&
+      !isPast(code.expiresAt, now) && code.clientId === input.clientId
+    ) {
       await store.revokeGrant(code.grantId, now)
       console.warn(`[${realm.logName}] authorization-code replay revoked grant ${code.grantId}`)
       return null
