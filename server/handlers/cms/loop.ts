@@ -148,8 +148,10 @@ export async function handleLoopRequest(
   const showsMember = gated || inComponent || subtreeDependsOnMember(containingPage, site, registry, loopNode.id)
   const forVisitor = isProtected || showsMember
   if (gated) {
-    const tags = (await visitor())?.tags ?? null
-    if (!showWhenPathsAllow(paths, tags)) {
+    const who = await visitor()
+    // A later page of a list is fetched without its page's address, so a rule
+    // about an app's sign-in request reads as "no app is asking" here.
+    if (!showWhenPathsAllow(paths, who ? { tags: who.tags, appAsking: false } : null)) {
       return jsonResponse({ html: '', hasMore: false, pageNumber }, { headers: PRIVATE_HEADERS })
     }
   }

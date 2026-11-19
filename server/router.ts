@@ -21,6 +21,8 @@ import { handleLoopRequest, isLoopRuntimeAssetPath, serveLoopRuntimeAsset } from
 import { handleHoleRequest, isHoleRuntimeAssetPath, serveHoleRuntimeAsset } from './handlers/cms/hole'
 import { handleModuleJsAssetRequest, isModuleJsAssetPath } from './handlers/cms/moduleJs'
 import { handlePublicFormRequest } from './forms/handler'
+import { handleMemberOAuthRequest } from './members/apps/handler'
+import { MEMBER_OAUTH_METADATA_PATH } from './members/apps/protocol'
 import { handleMemberRequest, MEMBERS_PATH_PREFIX } from './members/handlers'
 import { handlePublicPluginRouteRequest, PUBLIC_PLUGIN_PATH_PREFIX } from './plugins/publicRoutes'
 import { isRuntimePackagePath, tryServeRuntimePackage } from './publish/runtime/packageServer'
@@ -239,7 +241,9 @@ function tryServePublicForm(req: Request, runtime: ServerRuntime, url: URL, path
   return handlePublicFormRequest(req, runtime.db, url)
 }
 
-function tryServeMembers(req: Request, runtime: ServerRuntime, url: URL, pathname: string): Promise<Response> | null {
+function tryServeMembers(req: Request, runtime: ServerRuntime, url: URL, pathname: string): Promise<Response> | Response | null {
+  // The discovery document of sign-in for apps sits under /.well-known, as RFC 8414 puts it.
+  if (pathname === MEMBER_OAUTH_METADATA_PATH) return handleMemberOAuthRequest(req, runtime.db, url)
   if (!pathname.startsWith(MEMBERS_PATH_PREFIX)) return null
   return handleMemberRequest(req, runtime.db, url)
 }

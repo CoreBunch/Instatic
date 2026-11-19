@@ -55,7 +55,9 @@ class PageBuilder {
   ): PageNode {
     const definition = memberFormAction(action)
     if (!definition) throw new Error(`Unknown member form action "${action}"`)
-    const fragment = memberFormFragment(definition, formId, { fields: [...definition.fields], submit: true, messages: true })
+    const fragment = memberFormFragment(definition, formId, {
+      fields: [...definition.fields], submit: true, messages: true, secondary: definition.choice !== undefined,
+    })
     const form = createNode('base.form', {
       mode: 'member',
       memberAction: action,
@@ -320,7 +322,25 @@ export function buildMembersDemoPages(prefix = ''): Page[] {
     PRO,
   )
 
-  const pages = [homePage, join, signIn, forgot, reset, welcome, signInLink, confirmEmail, invitation, accountPage, members, pro]
+  // Opened by an app that wants to sign the member in. Members only, so a
+  // signed-out visitor is sent to sign in and comes back here.
+  const approveApp = formPage(
+    'demo_approve_app',
+    'Approve an app',
+    'approve-app',
+    (b) => [
+      b.text('Sign in to {member.appRequest.name|an app}?', 'h1'),
+      b.text('It runs on {member.appRequest.returnsTo|your device} and will see: {member.appRequest.access|your account}.', 'p'),
+      b.text('You are signed in as {member.email|a member}.', 'p'),
+      b.memberForm('apps/approve', 'approve-app'),
+    ],
+    MEMBERS,
+  )
+
+  const pages = [
+    homePage, join, signIn, forgot, reset, welcome, signInLink, confirmEmail, invitation, accountPage, members, pro,
+    approveApp,
+  ]
   return prefix === '' ? pages : withPrefix(pages, prefix)
 }
 
@@ -333,6 +353,7 @@ const MEMBER_PAGE_SLUGS = {
   magic: 'sign-in-link',
   invite: 'invitation',
   emailChange: 'confirm-email',
+  appSignIn: 'approve-app',
 } as const
 
 /** Who can join, and which of the demo pages each member link opens. Settings name a page by id. */

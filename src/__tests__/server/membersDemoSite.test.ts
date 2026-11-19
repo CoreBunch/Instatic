@@ -14,6 +14,7 @@ import { normalizeSiteRuntimeConfig } from '@core/site-runtime'
 import { buildMembersDemoPages, MEMBERS_DEMO_CSS, membersDemoSettings } from '../../../scripts/lib/membersDemoSite'
 import { pageToCells } from '../../core/data/pageFromRow'
 import { MAIN_SCOPE } from '../../../server/branches/scope'
+import { createMemberApp, createMemberAppRequest } from '../../../server/members/apps/store'
 import { createMember, grantMemberTag, saveMemberSettings } from '../../../server/members/repository'
 import { createMemberSession } from '../../../server/members/sessions'
 import { publishDraftSite } from '../../../server/publish/publishSite'
@@ -122,6 +123,32 @@ describe('members demo site', () => {
     expect(pro.status).toBe(200)
     expect(await pro.text()).toContain('You hold the tag')
     expect((await get('/members', mia)).status).toBe(200)
+  })
+
+  it('gives the approval form its request, so it posts with scripts off', async () => {
+    const mia = await signedIn('mia@example.com', 'Mia')
+    const app = await createMemberApp(t.db, {
+      name: 'Instatic Desktop', redirectUris: ['http://127.0.0.1:47821/callback'], scopes: ['profile'], createdByUserId: null,
+    })
+    const request = await createMemberAppRequest(t.db, {
+      appId: app.id,
+      browserMarker: 'a'.repeat(32),
+      redirectUri: 'http://127.0.0.1:47821/callback',
+      codeChallenge: 'c'.repeat(43),
+      scope: 'profile',
+      resource: `${ORIGIN}/_instatic/members`,
+      state: null,
+    })
+    const field = (id: string) => `<input type="hidden" name="request" data-instatic-member-link-param="request" value="${id}">`
+
+    const page = await (await get(`/approve-app?request=${request}`, mia)).text()
+    expect(page).toContain('Sign in to Instatic Desktop?')
+    expect(page).toContain(field(request))
+
+    // An address that names no waiting request leaves the field empty.
+    const stale = await (await get('/approve-app?request=imem_rq_unknown', mia)).text()
+    expect(stale).toContain('<input type="hidden" name="request" data-instatic-member-link-param="request">')
+    expect(stale).not.toContain(field('imem_rq_unknown'))
   })
 
   it('keeps every member-only line out of what is written to disk', async () => {

@@ -3,6 +3,7 @@
  * Site members tab lists, shows and sends.
  */
 import { Type, type Static } from '@core/utils/typeboxHelpers'
+import { MEMBER_APP_SCOPES } from './appScopes'
 import {
   MEMBER_EMAIL_MAX_LENGTH,
   MEMBER_TAG_PATTERN,
@@ -134,6 +135,8 @@ export const MemberPageOptionSchema = Type.Object({
   publishedPath: Type.Union([Type.String(), Type.Null()]),
   /** The member form actions found on the page. */
   formActions: Type.Array(Type.String()),
+  /** The page's Access lets only signed-in members in (all of them, or those with a tag). */
+  membersOnly: Type.Boolean(),
 })
 export type MemberPageOption = Static<typeof MemberPageOptionSchema>
 
@@ -164,3 +167,31 @@ export const MemberInviteResponseSchema = Type.Object({
   /** The invitation link, only when it was asked for with `delivery: 'link'`. It is not stored and not shown again. */
   link: Type.Optional(Type.String()),
 })
+
+// ─── Sign-in for apps ──────────────────────────────────────────────────────
+
+const MemberAppScopeSchema = Type.Union(MEMBER_APP_SCOPES.map((scope) => Type.Literal(scope)))
+
+/** An app the site owner registered, which may ask a member to sign in. */
+export const MemberAppSchema = Type.Object({
+  /** The client id the app sends when it asks. */
+  id: Type.String(),
+  name: Type.String(),
+  /** Where the app may be sent back to after the member answers. */
+  redirectUris: Type.Array(Type.String()),
+  scopes: Type.Array(Type.String()),
+  createdAt: Type.String(),
+})
+export type MemberApp = Static<typeof MemberAppSchema>
+
+export const MemberAppListResponseSchema = Type.Object({ apps: Type.Array(MemberAppSchema) })
+
+export const CreateMemberAppBodySchema = Type.Object(
+  {
+    name: Type.String({ minLength: 1, maxLength: 80 }),
+    redirectUris: Type.Array(Type.String({ minLength: 1, maxLength: 2000 }), { minItems: 1, maxItems: 10 }),
+    scopes: Type.Array(MemberAppScopeSchema, { minItems: 1, maxItems: 4 }),
+  },
+  { additionalProperties: false },
+)
+export type CreateMemberAppBody = Static<typeof CreateMemberAppBodySchema>

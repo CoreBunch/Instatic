@@ -19,7 +19,7 @@ export {
   type RouteResolutionContext,
 } from './templateMatching'
 export { buildMemberFrame, buildRouteFrame } from './contextFrames'
-export type { MemberFrame } from './contextFrames'
+export type { MemberAppRequestFrame, MemberFrame } from './contextFrames'
 export type { TemplateRenderDataContext } from './dynamicBindings'
 export { composeTemplateChain } from './templateCompose'
 export { firstOutletId, treeHasOutlet, subtreeHasOutlet } from './outlet'
