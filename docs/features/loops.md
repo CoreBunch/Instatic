@@ -68,7 +68,7 @@ interface LoopEntitySource {
    * request (live API, time-of-day data). Loops using a request-dependent source
    * become Layer C "holes" — the publisher emits a placeholder + a ~1.1 KB client
    * runtime fetches the rendered fragment lazily via
-   * `/_instatic/hole/<nodeId>?v=<publishVersion>&u=<page-url>`.
+   * `/_instatic/hole/<nodeId>?v=<snapshotHash>&u=<page-url>`.
    *
    * A `requestDependent` (non-perVisitor) hole is rendered at request time and
    * cached by Layer B per `(nodeId, query, publishVersion)`.
