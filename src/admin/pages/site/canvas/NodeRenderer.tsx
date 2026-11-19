@@ -43,7 +43,8 @@ import {
 import { useResponsiveBackgroundStyle } from '@admin/pages/media/hooks/useResponsiveBackgroundStyle'
 import { getCanvasNodeClassIds, getCanvasNodeClassName } from './canvasNodeClassName'
 import { findEnclosingComponentRef, type AnnotatedPageNode } from './canvasSelectionUtils'
-import { useLoopPreviewItems } from './useLoopPreviewItems'
+import { useLoopPreviewItems, useLoopPreviewNotice } from './useLoopPreviewItems'
+import { LoopPreviewNotice } from './LoopPreviewNotice'
 import styles from './NodeRenderer.module.css'
 
 // ---------------------------------------------------------------------------
@@ -477,11 +478,14 @@ interface LoopIterationsPreviewProps {
  *
  * Empty result (source not picked yet, no rows, fetch in flight) renders
  * nothing — same as the publisher's empty-loop behaviour. Once data
- * arrives the component re-renders with real iterations.
+ * arrives the component re-renders with real iterations. The exception is
+ * an empty loop the author must be told about (`useLoopPreviewNotice`): an
+ * unavailable source, or a plugin preview that is loading or failed.
  */
 function LoopIterationsPreview({ node, baseTemplateContext }: LoopIterationsPreviewProps) {
   const items = useLoopPreviewItems(node, baseTemplateContext)
-  if (items.length === 0) return null
+  const notice = useLoopPreviewNotice(node)
+  if (items.length === 0) return notice ? <LoopPreviewNotice message={notice} /> : null
 
   const baseStack = baseTemplateContext?.entryStack ?? []
   return (

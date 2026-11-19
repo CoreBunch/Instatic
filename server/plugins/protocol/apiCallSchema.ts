@@ -23,7 +23,7 @@ import {
 } from '@core/plugin-sdk/storageSchemas'
 import { RouteRegistrationArgSchema } from './schemas/routes'
 import { HookListenerArgSchema, HookFilterArgSchema, HookEmitArgSchema } from './schemas/hooks'
-import { LoopSourceDescriptorSchema } from './schemas/loops'
+import { LoopSourceDescriptorSchema } from '@core/loops/descriptorSchema'
 import { JsonRecordSchema } from './schemas/storage'
 import { NetworkFetchInitSchema, NetworkAbortArgSchema } from './schemas/network'
 import { ScheduleRegisterArgSchema, ScheduleCancelArgSchema } from './schemas/schedule'

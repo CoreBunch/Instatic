@@ -1,0 +1,56 @@
+/**
+ * Plugin loop sources for the editor.
+ *
+ *   GET  /admin/api/cms/loop-sources          — every source a running plugin registered
+ *   POST /admin/api/cms/loop-sources/preview  — sample items from one source's `preview()`
+ *
+ * Both sit on the `site.read` floor: whoever can open the editor may use a
+ * plugin's source on a page, with or without rights over plugins. The
+ * preview runs the plugin's `preview()` (sample data by contract) and never
+ * its `fetch()`, so it cannot be used to read what a source lists for real
+ * visitors. Answers are `no-store`: nothing here is shared between people.
+ */
+import type { DbClient } from '../../db/client'
+import { requireCapability } from '../../auth/authz'
+import { badRequest, jsonResponse, readValidatedBody } from '../../http'
+import { LoopSourcePreviewRequestSchema } from '@core/loops/descriptorSchema'
+import { listPluginLoopSources, previewPluginLoopSource } from '../../plugins/host/loopSources'
+import { CMS_API_PREFIX } from './shared'
+import { runRouteTable, type Route } from './routeTable'
+
+const LOOP_SOURCES_PATH = `${CMS_API_PREFIX}/loop-sources`
+const NO_STORE = { headers: { 'cache-control': 'private, no-store' } }
+
+async function handleList(req: Request, db: DbClient): Promise<Response> {
+  const user = await requireCapability(req, db, 'site.read')
+  if (user instanceof Response) return user
+  return jsonResponse({ sources: listPluginLoopSources() }, NO_STORE)
+}
+
+async function handlePreview(req: Request, db: DbClient): Promise<Response> {
+  const user = await requireCapability(req, db, 'site.read')
+  if (user instanceof Response) return user
+  const body = await readValidatedBody(req, LoopSourcePreviewRequestSchema)
+  if (!body) return badRequest('Invalid loop source preview request')
+
+  const preview = await previewPluginLoopSource(body.sourceId, {
+    filters: body.filters,
+    limit: body.limit,
+  })
+  if (preview.status === 'unknown-source') {
+    return jsonResponse({ error: 'No running plugin provides this loop source.' }, { status: 404 })
+  }
+  if (preview.status === 'failed') {
+    return jsonResponse({ error: preview.error }, { status: 502 })
+  }
+  return jsonResponse({ items: preview.items }, NO_STORE)
+}
+
+const LOOP_SOURCE_ROUTES: readonly Route<[]>[] = [
+  { method: 'GET', pattern: LOOP_SOURCES_PATH, handler: handleList },
+  { method: 'POST', pattern: `${LOOP_SOURCES_PATH}/preview`, handler: handlePreview },
+]
+
+export function handleLoopSourceRoutes(req: Request, db: DbClient): Promise<Response | null> {
+  return runRouteTable(req, db, LOOP_SOURCE_ROUTES)
+}

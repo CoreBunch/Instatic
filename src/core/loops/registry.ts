@@ -3,7 +3,9 @@
  *
  * Built-in sources (data.rows, site.pages, site.media) self-register
  * on import via `src/core/loops/sources/index.ts`. Plugins register
- * additional sources through the plugin SDK.
+ * additional sources through the plugin SDK: on the server as prefetched
+ * sources backed by the plugin's worker, in the editor as `remote`
+ * descriptors (`./remoteSources.ts`).
  *
  * Mirrors the ModuleRegistry shape in `src/core/module-engine/registry.ts`
  * deliberately — same lookup semantics, same namespacing rules. IDs MUST
@@ -16,6 +18,13 @@ import type { ILoopSourceRegistry, LoopEntitySource } from './types'
 
 class LoopSourceRegistry implements ILoopSourceRegistry {
   private readonly _sources = new Map<string, LoopEntitySource>()
+  private readonly _listeners = new Set<() => void>()
+  private _version = 0
+
+  private changed(): void {
+    this._version += 1
+    for (const listener of this._listeners) listener()
+  }
 
   private validateId(id: string): void {
     if (!id || !id.includes('.')) {
@@ -35,15 +44,17 @@ class LoopSourceRegistry implements ILoopSourceRegistry {
       )
     }
     this._sources.set(source.id, source)
+    this.changed()
   }
 
   registerOrReplace(source: LoopEntitySource): void {
     this.validateId(source.id)
     this._sources.set(source.id, source)
+    this.changed()
   }
 
   unregister(id: string): void {
-    this._sources.delete(id)
+    if (this._sources.delete(id)) this.changed()
   }
 
   get(id: string): LoopEntitySource | undefined {
@@ -68,6 +79,15 @@ class LoopSourceRegistry implements ILoopSourceRegistry {
   list(): LoopEntitySource[] {
     return Array.from(this._sources.values())
   }
+
+  subscribe = (listener: () => void): (() => void) => {
+    this._listeners.add(listener)
+    return () => {
+      this._listeners.delete(listener)
+    }
+  }
+
+  getVersion = (): number => this._version
 
   get size(): number {
     return this._sources.size

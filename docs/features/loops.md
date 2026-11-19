@@ -192,6 +192,8 @@ entry stack safely.
 
 A plugin with `loops.register` registers a custom source via the SDK at activation. The source runs inside the **QuickJS sandbox** — it can use `api.cms.storage.collection(...)` to fetch plugin-owned data or `fetch(...)` (with `network.outbound` permission) for external APIs.
 
+The server registry holds it as a prefetched source whose `fetch` calls the plugin's worker. The editor's registry holds the same id as a `kind: 'remote'` source (`RemoteLoopEntitySource`): the descriptor and the plugin's name, no functions. `usePluginLoopSources` fills it from `GET /admin/api/cms/loop-sources`. Read the registry in the editor through `useLoopSources` / `useLoopSource` (`src/admin/pages/site/hooks/useLoopSources.ts`), which re-render when plugin sources arrive or leave; a direct `loopSourceRegistry.list()` in a component keeps the list it first saw.
+
 See [docs/features/plugin-system.md](plugin-system.md) and the loop-sources section.
 
 ---
@@ -352,11 +354,14 @@ In the editor, `useLoopPreviewItems` (`src/admin/pages/site/canvas/useLoopPrevie
 | `data.rows` | GETs `/data/tables/:id/loop-preview` — same projection as the publisher, and takes `cellField` / `cellOperator` / `cellValue` plus a `cell:<fieldId>` `orderBy` so the canvas shows the rows the published page will emit. On a site branch the preview reads the branch's draft rows (the branch has nothing published), mirroring `renderBranchPreview`. Falls back to synthetic items from the table's field definitions when no rows exist yet. |
 | `site.pages` | Reads pages from the in-memory site document via `selectSitePagesLoopItems`. Applies `filterPagesForLoop` + `pageToLoopItem` imported from `@core/loops` — identical to the publisher path. |
 | `site.media` | Fetches via `listCmsMediaAssets()`, filters by MIME prefix, sorts + slices client-side. |
-| Plugin sources | Calls `source.preview(ctx)` synchronously. |
+| Plugin sources (`kind: 'remote'`) | POSTs `/loop-sources/preview`, which runs the plugin's `preview()` in its sandbox. `useRemoteLoopPreview` caches the answer for 30 s per source, filters and limit, and debounces filter edits. |
+| Other in-process sources (`member.apps`) | Calls `source.preview(ctx)` synchronously. |
+
+`useLoopPreviewNotice` returns the one-line reason a loop draws nothing when the author should know it: the source id is not registered (its plugin is disabled or removed), or a plugin preview is loading, failed or returned no items. `LoopPreviewNotice` shows it in place of the iterations.
 
 The canvas caps preview results at 6 items (`CANVAS_MAX_ITEMS`) regardless of the loop's configured `limit`. Published pages render the full set.
 
-Subscription granularity: the hook never subscribes to the whole `site` document for built-in sources. `site.pages` loops subscribe through `selectSitePagesLoopItems`, which keeps the items array (and each `LoopItem`) referentially stable across site mutations that don't change the loop's actual items — so typing in an unrelated text node doesn't re-render loop body subtrees. Only the plugin-source fallback subscribes to `site` (its `preview()` contractually receives the full document), and only while such a source is selected. Stability is gated by `src/__tests__/loops/loopPreviewItemStability.test.ts`.
+Subscription granularity: the hook never subscribes to the whole `site` document for built-in sources. `site.pages` loops subscribe through `selectSitePagesLoopItems`, which keeps the items array (and each `LoopItem`) referentially stable across site mutations that don't change the loop's actual items — so typing in an unrelated text node doesn't re-render loop body subtrees. Only the in-process `preview()` fallback subscribes to `site` (that `preview()` contractually receives the full document), and only while such a source is selected. Stability is gated by `src/__tests__/loops/loopPreviewItemStability.test.ts`.
 
 ---
 
@@ -442,6 +447,7 @@ export function activate(api) {
         .map((p) => ({ id: p.id, fields: p }))
       return { items, totalItems: items.length }
     },
+    // Sample items for the editor canvas. Gets { filters, limit } only.
     preview(ctx) {
       return [
         { id: 'preview-1', fields: { name: 'Example product', price: 99 } },

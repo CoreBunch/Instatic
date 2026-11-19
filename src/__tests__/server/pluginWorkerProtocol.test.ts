@@ -122,7 +122,7 @@ describe('plugin worker IPC protocol', () => {
 
   it('reuses the canonical module-engine property schema for loop filters', async () => {
     const source = await readFile(
-      new URL('../../../server/plugins/protocol/schemas/loops.ts', import.meta.url),
+      new URL('../../core/loops/descriptorSchema.ts', import.meta.url),
       'utf8',
     )
 

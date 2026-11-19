@@ -768,6 +768,10 @@ api.cms.loops.registerSource({
   orderByOptions: [/* allowed sort keys */],
   fetch: async (ctx) => ({ items: [/* LoopItem[] */], totalItems: 0 }),
 
+  // Optional. Sample items for the editor canvas: synchronous, invented
+  // data, handed only `{ filters, limit }`. See "In the editor" below.
+  preview: (ctx) => [{ id: 'sample-1', fields: { /* one value per field */ } }],
+
   // Optional. Default false. Marks the source request-dependent: any
   // `base.loop` using it becomes a Layer C "hole" — the page bakes a
   // placeholder and a tiny client runtime fetches the rendered loop
@@ -785,7 +789,18 @@ api.cms.loops.registerSource({
 })
 ```
 
-Loop sources back the `base.loop` module. Plugin fetch handlers run inside the sandbox worker — use `api.cms.storage.*` or a permitted `fetch(...)` to source items. Sources backed by CMS data should leave both flags unset so the loop bakes into the static disk artefact at publish time.
+Loop sources back the `base.loop` module. Plugin fetch handlers run inside the sandbox worker — use `api.cms.storage.*` or a permitted `fetch(...)` to source items. Sources backed by CMS data should leave both flags unset so the loop bakes into the static disk artefact at publish time. The id must start with the plugin's id (`<pluginId>.<name>`); the host rejects any other.
+
+**In the editor.** A registered source appears in the Loop module's Source picker as `<plugin name>: <label>`, after the built-in sources, with its `filterSchema` controls, its `orderByOptions`, and its `fields` in the binding picker of everything inside the loop. The plugin registers the source in the server process, so the editor gets it over HTTP: `GET /admin/api/cms/loop-sources` lists the descriptors of every running plugin's sources (`listPluginLoopSources` in `server/plugins/host/loopSources.ts`), and `usePluginLoopSources` registers them in the browser's `loopSourceRegistry` as `kind: 'remote'` sources (`replaceRemoteLoopSources` in `src/core/loops/remoteSources.ts`). It runs when an editor layout mounts and on every `CMS_PLUGINS_CHANGED_EVENT`. Both endpoints need only `site.read`: using a source on a page takes no rights over plugins.
+
+**Canvas preview.** The canvas draws a plugin source from the plugin's `preview(ctx)`, run in the sandbox through `POST /admin/api/cms/loop-sources/preview`. Rules for `preview`:
+
+- It is synchronous and gets `{ filters, limit }` only (`LoopSourcePreviewContext`): no request, no cookies, no member, for a `perVisitor` source too. A preview is drawn for whoever is editing the page.
+- It returns **sample data**, never real records. Everyone with `site.read` sees it, including people who may not see the plugin's data. The host never calls `fetch()` for a preview.
+- Items are `{ id: string, fields: {…} }`. The host passes on at most `limit` of them (at most `LOOP_PREVIEW_MAX_ITEMS`, 12) and refuses an answer over 256 KB.
+- A preview that throws, returns another shape or is too large answers 502 with the reason, which the canvas shows on the loop. A source without `preview` shows "no sample items".
+
+The editor caches a preview for 30 seconds per source, filters and limit, shares it between breakpoint frames, and waits 300 ms after a filter changes before asking (`useRemoteLoopPreview`). When the plugin is disabled or removed, the loop keeps its `sourceId`: the picker shows it as unavailable with a notice, the canvas says the source is not available, and the published loop renders nothing until the plugin is back.
 
 **Request context.** When a source is request-dependent, its `fetch(ctx)` receives the originating page request on `ctx.request`:
 

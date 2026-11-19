@@ -19,9 +19,11 @@
  *     filters / sorts / offsets / limits client-side.
  *   - `site.media` — fetches via `listCmsMediaAssets()`, filters by
  *     mime prefix, sorts + offsets + limits client-side.
- *   - any other source — falls back to the source's synchronous
- *     `preview()` method (plugin sources can ship synthetic data;
- *     follow-up work will let plugins declare a server fetch endpoint).
+ *   - a plugin's source (`kind: 'remote'`) — sample items from the plugin's
+ *     own `preview()`, run in its sandbox on the server and shared between
+ *     loops through `useRemoteLoopPreview`. `useLoopPreviewNotice` says why
+ *     such a loop is empty: still loading, failed, or the plugin is gone.
+ *   - any other in-process source — its synchronous `preview()` method.
  *
  * Subscription granularity: the hook never subscribes to the whole `site`
  * document for built-in sources. `site.pages` loops subscribe through
@@ -29,14 +31,14 @@
  * WeakMap projection cache + previous-array reuse) when an unrelated edit
  * replaces the `pages` array without changing the loop's actual items — so
  * typing in an unrelated text node no longer re-renders every loop body
- * subtree in every breakpoint frame. Only the plugin-source fallback (whose
+ * subtree in every breakpoint frame. Only the in-process fallback (whose
  * `preview()` contractually receives the full document) subscribes to
  * `site`, and only when such a source is selected.
  */
 
 import { use, useEffect, useState } from 'react'
 import { useEditorStore } from '@site/store/store'
-import { loopSourceRegistry } from '@core/loops/registry'
+import { useLoopSource, useLoopSourceMissing } from '@site/hooks/useLoopSources'
 import {
   ENTRY_FIELD_FILTER_KEY,
   ENTRY_FIELD_SOURCE_ID,
@@ -45,6 +47,7 @@ import {
   resolveEntryFieldItems,
   type EntryFieldMedia,
   type LoopItem,
+  LOOP_PREVIEW_MAX_ITEMS,
 } from '@core/loops'
 import type { DataTable } from '@core/data/schemas'
 import type { Page, PageNode } from '@core/page-tree'
@@ -53,6 +56,7 @@ import { getCmsDataTable, previewCmsDataLoopItems } from '@core/persistence/cmsD
 import { listCmsMediaAssets, type CmsMediaAsset } from '@core/persistence/cmsMedia'
 import { dataTablePreviewToLoopItem } from '@core/templates/templatePreviewData'
 import { CanvasPreviewReadinessContext } from './CanvasPreviewReadiness'
+import { useRemoteLoopPreview } from './useRemoteLoopPreview'
 
 // ---------------------------------------------------------------------------
 // Loop prop reader
@@ -258,7 +262,17 @@ export function useLoopPreviewItems(
   const cellField = typeof filters.cellField === 'string' ? filters.cellField : ''
   const cellOperator = typeof filters.cellOperator === 'string' ? filters.cellOperator : ''
   const cellValue = typeof filters.cellValue === 'string' ? filters.cellValue : ''
-  const isPluginSource = sourceId !== '' && !BUILT_IN_SOURCE_IDS.has(sourceId)
+  const source = useLoopSource(sourceId)
+  const remoteSourceId = source?.kind === 'remote' ? source.id : null
+  // Asked for from the first item, so the loop's offset is applied here to
+  // the plugin's sample the same way it is to every other source.
+  const remotePreview = useRemoteLoopPreview(
+    remoteSourceId,
+    filters,
+    Math.min(offset + limit, LOOP_PREVIEW_MAX_ITEMS),
+  )
+  const usesSyncPreview =
+    sourceId !== '' && !BUILT_IN_SOURCE_IDS.has(sourceId) && remoteSourceId === null
 
   // Narrow, identity-stable subscriptions (see module header). Inactive
   // branches resolve to stable constants so the subscription never fires
@@ -266,9 +280,9 @@ export function useLoopPreviewItems(
   const sitePagesItems = useEditorStore((s) =>
     sourceId === 'site.pages' ? selectSitePagesLoopItems(node, s.site?.pages ?? null) : EMPTY_ITEMS,
   )
-  // Plugin `preview()` contractually receives the whole site document, so
-  // this is the one branch that genuinely depends on it.
-  const pluginSite = useEditorStore((s) => (isPluginSource ? s.site : null))
+  // A synchronous `preview()` contractually receives the whole site document,
+  // so this is the one branch that genuinely depends on it.
+  const previewSite = useEditorStore((s) => (usesSyncPreview ? s.site : null))
 
   // Raw fetched data for async sources — sort/offset/limit applied below.
   const [asyncDataTable, setAsyncDataTable] = useState<DataTable | null>(null)
@@ -383,14 +397,50 @@ export function useLoopPreviewItems(
 
   if (sourceId === 'site.pages') return sitePagesItems
 
-  // Plugin source fallback — synchronous preview() with no client-side
-  // sort. Plugins that need ordering should apply it inside their own
-  // preview() implementation.
-  const source = loopSourceRegistry.get(sourceId)
-  if (!source || source.kind === 'contextual' || !pluginSite) return EMPTY_ITEMS
+  if (remoteSourceId !== null) {
+    if (remotePreview.status !== 'ready') return EMPTY_ITEMS
+    return remotePreview.items.slice(offset, offset + limit)
+  }
+
+  // In-process fallback — synchronous preview() with no client-side sort.
+  if (!source || source.kind !== undefined && source.kind !== 'prefetched') return EMPTY_ITEMS
+  if (!source.preview || !previewSite) return EMPTY_ITEMS
   try {
-    return source.preview({ site: pluginSite, filters, limit }).slice(offset, offset + limit)
+    return source.preview({ site: previewSite, filters, limit }).slice(offset, offset + limit)
   } catch {
     return EMPTY_ITEMS
   }
+}
+
+/**
+ * Why a loop draws no iterations, when the reason is one the author should
+ * be told: its source is not available, or its plugin's preview is loading,
+ * failed or came back empty. `null` for every loop that is simply showing
+ * its items, and for built-in sources, whose empty states are ordinary.
+ */
+export function useLoopPreviewNotice(node: PageNode): string | null {
+  const { sourceId, filters, offset, limit } = readLoopProps(node)
+  const source = useLoopSource(sourceId)
+  const missing = useLoopSourceMissing(sourceId)
+  const remoteSourceId = source?.kind === 'remote' ? source.id : null
+  const remotePreview = useRemoteLoopPreview(
+    remoteSourceId,
+    filters,
+    Math.min(offset + limit, LOOP_PREVIEW_MAX_ITEMS),
+  )
+
+  if (missing) {
+    return `The loop source “${sourceId}” is not available. Its plugin may be disabled or removed.`
+  }
+  if (source?.kind !== 'remote') return null
+  const plugin = source.provider.pluginName
+  if (remotePreview.status === 'failed') {
+    return `${plugin} could not preview this list: ${remotePreview.error}`
+  }
+  if (remotePreview.status === 'ready') {
+    return remotePreview.items.length > offset
+      ? null
+      : `${plugin} has no sample items for this list. The published page shows the real ones.`
+  }
+  return `Loading a preview from ${plugin}…`
 }

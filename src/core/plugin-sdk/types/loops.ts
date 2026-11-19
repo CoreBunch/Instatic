@@ -2,9 +2,53 @@
 // Loop entity source — registered via api.cms.loops.registerSource
 // ---------------------------------------------------------------------------
 
-// Forward-declared opaque type — full shape lives in `@core/loops/types`.
-// We keep it opaque on the SDK boundary so plugin authors aren't pulled
-// into the loops module dependency graph until they need it.
+import type { ServerPluginMember } from './routes'
+
+/** One item of a list: a stable id and the values of the source's declared fields. */
+export interface LoopSourceItem {
+  id: string
+  fields: Record<string, unknown>
+}
+
+/** What `fetch()` is handed for one list on one render. */
+export interface LoopSourceFetchContext {
+  /** The loop's filter values, keyed as in the source's `filterSchema`. */
+  filters: Record<string, unknown>
+  /** One of the source's `orderByOptions[].id` values, or `''`. */
+  orderBy: string
+  direction: 'asc' | 'desc'
+  limit: number
+  offset: number
+  /**
+   * The page request, for a `requestDependent` / `perVisitor` source rendered
+   * at request time. `undefined` at publish time.
+   */
+  request?: {
+    query: Record<string, string>
+    path: string
+    slug: string | null
+    /** Empty unless the source is `perVisitor`; session cookies are removed. */
+    cookies: Record<string, string>
+    /**
+     * `perVisitor` sources of a plugin holding `members.read` only: the
+     * signed-in member, or `null` when nobody is signed in.
+     */
+    member?: ServerPluginMember | null
+  }
+  site: { id?: string; name?: string }
+}
+
+/**
+ * What `preview()` is handed. There is no request, visitor or member here:
+ * a preview is drawn for whoever is editing the page, not for a visitor.
+ */
+export interface LoopSourcePreviewContext {
+  /** The loop's filter values, keyed as in the source's `filterSchema`. */
+  filters: Record<string, unknown>
+  /** How many sample items the canvas can use (at most 12). */
+  limit: number
+}
+
 export type LoopEntitySource = {
   id: string
   label: string
@@ -28,6 +72,15 @@ export type LoopEntitySource = {
    * or `null` for a signed-out visitor. No other source is told.
    */
   perVisitor?: boolean
-  fetch: (ctx: unknown) => Promise<{ items: unknown[]; totalItems: number }>
-  preview: (ctx: unknown) => unknown[]
+  /** Runs in the sandbox for every publish or request-time render of a list. */
+  fetch: (ctx: LoopSourceFetchContext) => Promise<{ items: LoopSourceItem[]; totalItems: number }>
+  /**
+   * Sample items for the editor canvas. Synchronous, and sample data by
+   * contract: return invented items that show every field, never real
+   * records. Anyone who can open the editor sees the result, including
+   * people who may not see the plugin's data, and for a `perVisitor` source
+   * there is no visitor to answer for. Without a `preview` the canvas says
+   * the list has no sample items.
+   */
+  preview?: (ctx: LoopSourcePreviewContext) => LoopSourceItem[]
 }

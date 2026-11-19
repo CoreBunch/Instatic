@@ -10,6 +10,19 @@
  */
 
 export type { LoopItem } from './types'
+export {
+  LOOP_PREVIEW_MAX_ITEMS,
+  LoopSourceDescriptorSchema,
+  LoopSourcePreviewItemsSchema,
+  RemoteLoopSourceSchema,
+  type LoopSourcePreviewRequest,
+  type RemoteLoopSource,
+} from './descriptorSchema'
+export {
+  remoteLoopSourcesSynced,
+  replaceRemoteLoopSources,
+  subscribeRemoteLoopSourcesSynced,
+} from './remoteSources'
 export { pageToLoopItem, filterPagesForLoop } from './sources/sitePages'
 export { listConnectedMemberApps, MEMBER_APPS_SOURCE_ID, type ConnectedMemberApp } from './sources/memberApps'
 export {
