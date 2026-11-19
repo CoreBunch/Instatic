@@ -299,7 +299,7 @@ export function buildMembersDemoPages(prefix = ''): Page[] {
           // sends that row's id back.
           account.loop('members.apps', 'apps', [
             account.box('app', [
-              account.text('{currentEntry.name}', 'h3'),
+              account.text('{currentEntry.name} on {currentEntry.device|a device}', 'h3'),
               account.text('Connected {currentEntry.connectedOn}. Last used {currentEntry.lastUsedOn|not yet}.', 'p'),
               account.memberForm('apps/disconnect', 'disconnect-app', { redirectUrl: '/account' }),
             ]),
@@ -348,7 +348,7 @@ export function buildMembersDemoPages(prefix = ''): Page[] {
     'approve-app',
     (b) => [
       b.text('Sign in to {member.appRequest.name|an app}?', 'h1'),
-      b.text('It runs on {member.appRequest.returnsTo|your device} and will see: {member.appRequest.access|your account}.', 'p'),
+      b.text('It runs on {member.appRequest.device|a device} ({member.appRequest.returnsTo|your device}) and asks for: {member.appRequest.access|your account}.', 'p'),
       b.text('You are signed in as {member.email|a member}.', 'p'),
       b.memberForm('apps/approve', 'approve-app'),
     ],

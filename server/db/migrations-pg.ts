@@ -1834,4 +1834,15 @@ export const pgMigrations: Migration[] = [
         on member_app_tokens (grant_id);
     `,
   },
+  {
+    id: '039_member_app_devices',
+    sql: `
+      -- The device an app runs on: the thumbprint of a key the app keeps and
+      -- proves it holds on every refresh, and the name the app gave it.
+      alter table member_app_requests add column if not exists device_jkt text;
+      alter table member_app_requests add column if not exists device_name text;
+      alter table member_app_grants add column if not exists device_jkt text;
+      alter table member_app_grants add column if not exists device_name text;
+    `,
+  },
 ]

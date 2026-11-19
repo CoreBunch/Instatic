@@ -24,6 +24,8 @@ export interface StoredAuthorizationCode {
   consumedAt: string | null
   grantExpiresAt: string | null
   grantRevokedAt: string | null
+  /** The grant belongs to the holder of this key (a DPoP thumbprint); null when it is not bound to one. */
+  keyThumbprint: string | null
 }
 
 /** A refresh token as stored, with the state of the grant it belongs to. */
@@ -37,6 +39,8 @@ export interface StoredRefreshToken {
   revokedAt: string | null
   grantExpiresAt: string | null
   grantRevokedAt: string | null
+  /** See `StoredAuthorizationCode.keyThumbprint`. */
+  keyThumbprint: string | null
 }
 
 export interface NewStoredToken {
@@ -60,6 +64,19 @@ export interface GrantStore {
   /** Revokes the grant and every token issued under it. */
   revokeGrant(grantId: string, now: Date): Promise<void>
   insertToken(token: NewStoredToken): Promise<void>
+  /**
+   * Only in a realm whose grants can be bound to a key. Called at the code
+   * exchange when the request carried a valid proof: binds the grant to that
+   * key if it has none yet, and does whatever the realm ties to a key having
+   * been shown (the caller has already checked a bound grant against it).
+   */
+  keyShownAtExchange?(grantId: string, keyThumbprint: string, now: Date): Promise<void>
+  /**
+   * Only in a realm whose grants can be bound to a key. Revokes every live
+   * token of the grant and leaves the grant itself standing. Answers whether
+   * there was a live token to revoke.
+   */
+  revokeGrantTokens?(grantId: string, now: Date): Promise<boolean>
 }
 
 export interface OAuthRealm {
@@ -80,6 +97,19 @@ export interface OAuthTokenPair {
   expiresIn: number
 }
 
+/**
+ * A refresh whose answer never arrived (a timeout, a laptop going to sleep)
+ * leaves the client holding a token the server has already spent. For this
+ * long after a rotation, the holder of the grant's key may present the spent
+ * token again and is given a new pair instead of losing the grant.
+ */
+export const REFRESH_RETRY_GRACE_MS = 60 * 1000
+
+/** A grant bound to a key is used only with a proof from that key. An unbound grant asks for none. */
+function holdsKey(boundTo: string | null, proofThumbprint: string | null | undefined): boolean {
+  return boundTo === null || boundTo === proofThumbprint
+}
+
 function isPast(timestamp: string | null, now: Date): boolean {
   return !timestamp || new Date(timestamp).getTime() <= now.getTime()
 }
@@ -93,6 +123,8 @@ export async function exchangeAuthorizationCode(
     redirectUri: string
     codeVerifier: string
     resource: string
+    /** The key that signed this request's DPoP proof, when it carried a valid one. */
+    proofThumbprint?: string | null
   },
   now: Date = new Date(),
 ): Promise<OAuthTokenPair | null> {
@@ -107,12 +139,15 @@ export async function exchangeAuthorizationCode(
     // exchanged means it leaked or was replayed, so everything issued from it
     // is withdrawn too (RFC 6749 §4.1.2). The request must name the client the
     // code was issued to, but a client id is public, so that is no proof of who
-    // is asking: anyone holding the code can trigger this. The expiry bound is
-    // what limits it. Consumed codes are kept, and one found later in a browser
-    // history or a log is refused below without touching the grant.
+    // is asking. Two things limit it. The expiry bound: consumed codes are
+    // kept, and one found later in a browser history or a log is refused below
+    // without touching the grant. And for a grant bound to a key, only the
+    // holder of that key: a used code someone came across must not be enough
+    // to sign the device out.
     if (
       code?.consumedAt && !code.grantRevokedAt &&
-      !isPast(code.expiresAt, now) && code.clientId === input.clientId
+      !isPast(code.expiresAt, now) && code.clientId === input.clientId &&
+      holdsKey(code.keyThumbprint, input.proofThumbprint)
     ) {
       await store.revokeGrant(code.grantId, now)
       console.warn(`[${realm.logName}] authorization-code replay revoked grant ${code.grantId}`)
@@ -122,11 +157,17 @@ export async function exchangeAuthorizationCode(
       !code || code.consumedAt || code.grantRevokedAt ||
       isPast(code.expiresAt, now) || isPast(code.grantExpiresAt, now) ||
       code.clientId !== input.clientId || code.redirectUri !== input.redirectUri ||
-      code.resource !== input.resource || code.codeChallenge !== challenge
+      code.resource !== input.resource || code.codeChallenge !== challenge ||
+      !holdsKey(code.keyThumbprint, input.proofThumbprint)
     ) {
       return null
     }
     if (!(await store.consumeAuthorizationCode(codeHash, now))) return null
+    // A proof at the exchange is the client saying "this is my key". A grant
+    // that was not bound when it was approved (the client left `dpop_jkt` off
+    // the sign-in address, or something dropped it) is bound here, so the
+    // client that believes it is bound is (RFC 9449 §5).
+    if (input.proofThumbprint) await store.keyShownAtExchange?.(code.grantId, input.proofThumbprint, now)
 
     return issueTokenPair(store, realm, {
       grantId: code.grantId,
@@ -147,6 +188,8 @@ export async function rotateRefreshToken(
     clientId: string
     resource: string
     scope?: string
+    /** The key that signed this request's DPoP proof, when it carried a valid one. */
+    proofThumbprint?: string | null
   },
   now: Date = new Date(),
 ): Promise<OAuthTokenPair | null> {
@@ -157,23 +200,44 @@ export async function rotateRefreshToken(
     const token = await store.findRefreshToken(tokenHash)
     const requestedScope = realm.normalizeScope(input.scope ?? token?.scope)
 
+    // A grant bound to a key answers only its holder. A refresh token shown
+    // without the key is a copy: refuse it, and leave the grant alone, so
+    // whoever copied it cannot sign the real device out either.
+    if (token && !holdsKey(token.keyThumbprint, input.proofThumbprint)) return null
+
     // A rotated refresh token should never be presented again. Treat reuse as
     // credential theft and revoke the entire grant, including access tokens
     // minted from the replacement token. The client must re-authorize.
-    if (token?.revokedAt && !token.grantRevokedAt) {
+    //
+    // The one exception is a retry: the grant is bound to a key, this request
+    // proved that key (checked above), and the token was spent moments ago.
+    // That is the device asking again because the answer never reached it.
+    const spent = Boolean(token?.revokedAt) && !token?.grantRevokedAt
+    const retry = spent && token?.keyThumbprint != null && store.revokeGrantTokens !== undefined &&
+      now.getTime() - new Date(token.revokedAt!).getTime() <= REFRESH_RETRY_GRACE_MS
+    if (token && spent && !retry) {
       await store.revokeGrant(token.grantId, now)
       console.warn(`[${realm.logName}] refresh-token reuse revoked grant ${token.grantId}`)
       return null
     }
     if (
-      !token || token.revokedAt || token.grantRevokedAt || !requestedScope ||
+      !token || (token.revokedAt && !retry) || token.grantRevokedAt || !requestedScope ||
       isPast(token.expiresAt, now) || isPast(token.grantExpiresAt, now) ||
       token.clientId !== input.clientId || token.resource !== input.resource ||
       !scopeIsSubset(requestedScope, token.scope)
     ) {
       return null
     }
-    if (!(await store.revokeToken(token.id, now))) return null
+    if (retry) {
+      // Whatever the lost answer carried is withdrawn; the pair issued below
+      // is the only one that works. A retry replaces a pair that is still
+      // live: with nothing live to withdraw there is no lost answer to make
+      // up for, and two retries racing each other cannot both be answered
+      // from the same state.
+      if (!(await store.revokeGrantTokens!(token.grantId, now))) return null
+    } else if (!(await store.revokeToken(token.id, now))) {
+      return null
+    }
 
     return issueTokenPair(store, realm, {
       grantId: token.grantId,

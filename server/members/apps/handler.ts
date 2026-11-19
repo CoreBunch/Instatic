@@ -8,7 +8,8 @@
  *                    first when nobody is signed in). Core has no approval
  *                    screen of its own: no page, no app sign-in.
  *   POST token       code exchange and refresh (public clients, PKCE)
- *   POST revoke      the app signs out (RFC 7009)
+ *   POST revoke      the app signs out (RFC 7009); a sign-in bound to a
+ *                    device needs a proof from its key
  *   GET  userinfo    who the member is and what they hold, by access token
  *
  * The member's answer on the approval page is an ordinary member form action
@@ -22,6 +23,7 @@ import { MEMBER_APP_SCOPES } from '@core/members'
 import type { DbClient } from '../../db/client'
 import { RateLimiter } from '../../auth/rateLimit'
 import { jsonResponse, methodNotAllowed, readTextBodyWithLimit, setCookieHeader } from '../../http'
+import { DPOP_ALGORITHMS, isKeyThumbprint, verifyDpopProof } from '../../oauth/dpop'
 import {
   hasDuplicateParameters,
   isValidPkceChallenge,
@@ -50,6 +52,7 @@ import {
   MEMBER_OAUTH_REVOKE_PATH,
   MEMBER_OAUTH_TOKEN_PATH,
   MEMBER_OAUTH_USERINFO_PATH,
+  cleanDeviceName,
   memberAppIssuer,
   parseMemberAppScope,
 } from './protocol'
@@ -112,6 +115,7 @@ function metadata(req: Request): Response {
       token_endpoint: `${origin}${MEMBER_OAUTH_TOKEN_PATH}`,
       revocation_endpoint: `${origin}${MEMBER_OAUTH_REVOKE_PATH}`,
       userinfo_endpoint: `${origin}${MEMBER_OAUTH_USERINFO_PATH}`,
+      dpop_signing_alg_values_supported: [...DPOP_ALGORITHMS],
       response_types_supported: ['code'],
       grant_types_supported: ['authorization_code', 'refresh_token'],
       code_challenge_methods_supported: ['S256'],
@@ -170,6 +174,12 @@ async function authorize(req: Request, db: DbClient, url: URL): Promise<Response
     return refuse('invalid_scope', 'The app asked for access it is not registered for.')
   }
 
+  // The device key the sign-in is bound to, named by its thumbprint.
+  const deviceKey = params.get('dpop_jkt')
+  if (deviceKey !== null && !isKeyThumbprint(deviceKey)) {
+    return refuse('invalid_request', 'dpop_jkt is not a key thumbprint.')
+  }
+
   const pages = await getMemberPagePaths(db)
   if (!pages.appSignIn) {
     return refuse('temporarily_unavailable', 'This site has no page for approving apps yet.')
@@ -190,6 +200,8 @@ async function authorize(req: Request, db: DbClient, url: URL): Promise<Response
     scope: scopes.join(' '),
     resource: issuer,
     state: state ?? null,
+    deviceKey,
+    deviceName: cleanDeviceName(params.get('device_name')),
   })
   const approval = `${pages.appSignIn}?request=${encodeURIComponent(requestId)}`
   const sessionToken = readMemberSessionToken(req)
@@ -204,6 +216,12 @@ async function authorize(req: Request, db: DbClient, url: URL): Promise<Response
 
 // ─── token, revoke ─────────────────────────────────────────────────────────
 
+/** An endpoint's full address as an app names it in a DPoP proof; null without a trustworthy origin. */
+function endpointAddress(req: Request, path: string): string | null {
+  const issuer = memberAppIssuer(req)
+  return issuer ? `${new URL(issuer).origin}${path}` : null
+}
+
 function token(req: Request, db: DbClient): Promise<Response> {
   return handleOAuthTokenRequest(req, db, {
     realm: memberAppRealm,
@@ -211,6 +229,7 @@ function token(req: Request, db: DbClient): Promise<Response> {
     resource: memberAppIssuer(req),
     issuerUnavailableMessage: MEMBER_OAUTH_ISSUER_UNAVAILABLE_MESSAGE,
     resourceMismatchMessage: 'The requested resource is not this site.',
+    dpopEndpoint: endpointAddress(req, MEMBER_OAUTH_TOKEN_PATH) ?? undefined,
   })
 }
 
@@ -233,8 +252,12 @@ async function revoke(req: Request, db: DbClient): Promise<Response> {
   if (!tokenValue || !clientId || hasDuplicateParameters(params)) {
     return oauthError('invalid_request', 'A token and a client_id are required.', 400)
   }
-  // RFC 7009: the answer is the same whether or not the token was known.
-  await revokeMemberAppGrantByToken(db, tokenValue, clientId)
+  const proof = req.headers.get('dpop')
+  const endpoint = endpointAddress(req, MEMBER_OAUTH_REVOKE_PATH)
+  const proofKey = proof && endpoint ? await verifyDpopProof(proof, { method: 'POST', url: endpoint }) : null
+  // RFC 7009: the answer is the same whether or not the token was known, or
+  // (for a sign-in bound to a device) the caller held its key.
+  await revokeMemberAppGrantByToken(db, tokenValue, clientId, proofKey)
   return privateJsonResponse({})
 }
 

@@ -42,3 +42,16 @@ export function parseMemberAppScope(raw: string | undefined): MemberAppScope[] |
 export function normalizeMemberAppScope(raw: string | undefined): string | null {
   return parseMemberAppScope(raw)?.join(' ') ?? null
 }
+
+const DEVICE_NAME_MAX_LENGTH = 60
+
+/**
+ * The name an app gives the device it runs on, made safe to show: one line,
+ * no control or invisible formatting characters (which can reorder or hide
+ * text beside the Allow button), a bounded length. Null when it gave none.
+ */
+export function cleanDeviceName(raw: string | null): string | null {
+  const name = (raw ?? '').replace(/[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]+/gu, ' ').replace(/\s+/g, ' ').trim()
+  // By code point, so a character outside the basic plane is never cut in half.
+  return name ? [...name].slice(0, DEVICE_NAME_MAX_LENGTH).join('').trim() : null
+}

@@ -4,7 +4,10 @@
  * It does what Instatic Desktop does: opens the site's sign-in address in the
  * browser, listens on a loopback port for the answer, exchanges the code for
  * tokens (PKCE, no client secret), then reads who the member is and which
- * tags they hold. Nothing is stored; the app signs out again at the end.
+ * tags they hold. It also keeps a device key: the sign-in is bound to it, so
+ * the code exchange, every refresh and signing out carry a proof signed with
+ * that key (DPoP, RFC 9449). Nothing is stored; the app signs out again at
+ * the end. A real app keeps the device key in the OS keychain.
  *
  *   bun run demo:member-app -- --site http://127.0.0.1:3040 --app imem_app_…
  *
@@ -12,6 +15,7 @@
  * the redirect address `http://127.0.0.1/callback`; the port is free to vary.
  * `bun run demo:members` registers one and prints this command.
  */
+import { hostname } from 'node:os'
 import { Type, safeParseValue } from '@core/utils/typeboxHelpers'
 
 function argument(name: string): string {
@@ -46,8 +50,28 @@ const UserinfoSchema = Type.Object({
   }))),
 })
 
-function base64Url(bytes: Uint8Array): string {
-  return Buffer.from(bytes).toString('base64url')
+function base64Url(bytes: Uint8Array | ArrayBuffer | string): string {
+  return Buffer.from(typeof bytes === 'string' ? new TextEncoder().encode(bytes) : new Uint8Array(bytes)).toString('base64url')
+}
+
+// ── The device key ──────────────────────────────────────────────────────────
+// Made fresh for this run. Its thumbprint (RFC 7638) is how the site names it.
+const deviceKey = await crypto.subtle.generateKey({ name: 'Ed25519' }, false, ['sign', 'verify'])
+const exportedDeviceKey = await crypto.subtle.exportKey('jwk', deviceKey.publicKey)
+const deviceJwk = { kty: 'OKP', crv: 'Ed25519', x: exportedDeviceKey.x ?? '' }
+const deviceThumbprint = base64Url(await crypto.subtle.digest(
+  'SHA-256',
+  new TextEncoder().encode(`{"crv":"${deviceJwk.crv}","kty":"${deviceJwk.kty}","x":"${deviceJwk.x}"}`),
+))
+
+/** A proof that this request comes from the holder of the device key. One per request. */
+async function dpopProof(method: string, url: string): Promise<string> {
+  const header = base64Url(JSON.stringify({ typ: 'dpop+jwt', alg: 'EdDSA', jwk: deviceJwk }))
+  const claims = base64Url(JSON.stringify({
+    jti: crypto.randomUUID(), htm: method, htu: url, iat: Math.floor(Date.now() / 1000),
+  }))
+  const signature = await crypto.subtle.sign({ name: 'Ed25519' }, deviceKey.privateKey, new TextEncoder().encode(`${header}.${claims}`))
+  return `${header}.${claims}.${base64Url(signature)}`
 }
 
 function log(line: string): void {
@@ -55,9 +79,10 @@ function log(line: string): void {
 }
 
 async function postForm(path: string, fields: Record<string, string>): Promise<Response> {
-  return fetch(`${ISSUER}/oauth/${path}`, {
+  const url = `${ISSUER}/oauth/${path}`
+  return fetch(url, {
     method: 'POST',
-    headers: { 'content-type': 'application/x-www-form-urlencoded' },
+    headers: { 'content-type': 'application/x-www-form-urlencoded', dpop: await dpopProof('POST', url) },
     body: new URLSearchParams(fields).toString(),
   })
 }
@@ -103,6 +128,9 @@ authorize.search = new URLSearchParams({
   code_challenge_method: 'S256',
   scope: 'profile access',
   state,
+  // Bind the sign-in to this device's key, and say what to call the device.
+  dpop_jkt: deviceThumbprint,
+  device_name: hostname(),
 }).toString()
 
 log('Open this address in your browser, sign in as a member and allow the app:')

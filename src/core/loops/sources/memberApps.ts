@@ -17,6 +17,8 @@ export interface ConnectedMemberApp {
   id: string
   appId: string
   name: string
+  /** What the app called the device it runs on; empty when it gave none. */
+  device: string
   connectedAt: string
   lastUsedAt: string | null
 }
@@ -25,6 +27,7 @@ interface ConnectedAppRow {
   id: string
   app_id: string
   name: string
+  device_name: string | null
   created_at: Date | string
   last_used_at: Date | string | null
 }
@@ -39,7 +42,7 @@ export async function listConnectedMemberApps(
   now: string = nowIso(),
 ): Promise<ConnectedMemberApp[]> {
   const { rows } = await db<ConnectedAppRow>`
-    select g.id, g.app_id, a.name, g.created_at, g.last_used_at
+    select g.id, g.app_id, a.name, g.device_name, g.created_at, g.last_used_at
       from member_app_grants g
       join member_apps a on a.id = g.app_id
      where g.member_id = ${memberId}
@@ -51,6 +54,7 @@ export async function listConnectedMemberApps(
     id: row.id,
     appId: row.app_id,
     name: row.name,
+    device: row.device_name ?? '',
     connectedAt: isoDate(row.created_at),
     lastUsedAt: isoDateOrNull(row.last_used_at),
   }))
@@ -67,6 +71,7 @@ function toLoopItem(app: ConnectedMemberApp): LoopItem {
     fields: {
       id: app.id,
       name: app.name,
+      device: app.device,
       connectedOn: dayOf(app.connectedAt),
       connectedAt: app.connectedAt,
       lastUsedOn: dayOf(app.lastUsedAt),
@@ -76,8 +81,8 @@ function toLoopItem(app: ConnectedMemberApp): LoopItem {
 }
 
 const PREVIEW: ConnectedMemberApp[] = [
-  { id: 'preview-1', appId: 'preview-app-1', name: 'Desktop app', connectedAt: '2026-01-12T09:30:00.000Z', lastUsedAt: '2026-02-03T16:05:00.000Z' },
-  { id: 'preview-2', appId: 'preview-app-2', name: 'Mobile app', connectedAt: '2026-01-28T18:10:00.000Z', lastUsedAt: null },
+  { id: 'preview-1', appId: 'preview-app-1', name: 'Desktop app', device: 'MacBook Pro', connectedAt: '2026-01-12T09:30:00.000Z', lastUsedAt: '2026-02-03T16:05:00.000Z' },
+  { id: 'preview-2', appId: 'preview-app-2', name: 'Mobile app', device: '', connectedAt: '2026-01-28T18:10:00.000Z', lastUsedAt: null },
 ]
 
 export const MemberAppsSource: LoopEntitySource = {
@@ -89,6 +94,7 @@ export const MemberAppsSource: LoopEntitySource = {
   orderByOptions: [{ id: 'connectedAt', label: 'When it was connected' }],
   fields: [
     { id: 'name', label: 'App name' },
+    { id: 'device', label: 'Device name', description: 'What the app called the device it runs on. Empty when it gave none.' },
     { id: 'connectedOn', label: 'Connected on (date)', description: 'The day the member allowed the app, as YYYY-MM-DD.' },
     { id: 'lastUsedOn', label: 'Last used on (date)', description: 'The day the app last used its sign-in, as YYYY-MM-DD. Empty when it has not yet.' },
     { id: 'connectedAt', label: 'Connected at (date and time)' },

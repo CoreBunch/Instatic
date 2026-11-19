@@ -72,6 +72,7 @@ export const MemberConnectedAppSchema = Type.Object({
   /** The approval; what a disconnect names. */
   id: Type.String(),
   name: Type.String(),
+  device: Type.String(),
   connectedAt: Type.String(),
   /** Null until the app first uses its sign-in. */
   lastUsedAt: Type.Union([Type.String(), Type.Null()]),

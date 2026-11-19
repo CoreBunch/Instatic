@@ -102,6 +102,7 @@ export async function pendingAppRequestOnPage(
       name: request.appName,
       access: (parseMemberAppScope(request.scope) ?? []).map((scope) => MEMBER_APP_SCOPE_TEXT[scope]).join(', '),
       returnsTo: isLoopbackHostname(host) ? 'this device' : host,
+      device: request.deviceName ?? '',
     },
   }
 }

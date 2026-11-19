@@ -162,7 +162,7 @@ Its author-facing `fields` list exposes filename, path/URL/source URL, MIME type
 
 ### `members.apps`
 
-The apps the signed-in site member has signed in to with their account (see [members](members.md) → "Sign-in for apps"). It is `perVisitor`: each member gets their own list in an uncached fragment, and a signed-out visitor gets none. `fetch()` reads the member from `ctx.request.member`, which the hole and loop endpoints give every `perVisitor` source (`sourceRequestFor`). Fields: `name`, `connectedOn`, `lastUsedOn`, `connectedAt`, `lastUsedAt`, `id`. The canvas shows two sample apps from `preview()`. The hole endpoint looks at every loop in the fragment it renders (`subtreeHasPerVisitorSource`), not only the hole's own node, so the list also works inside a show-when box or another list: one `perVisitor` source makes the whole fragment uncached.
+The apps the signed-in site member has signed in to with their account (see [members](members.md) → "Sign-in for apps"). It is `perVisitor`: each member gets their own list in an uncached fragment, and a signed-out visitor gets none. `fetch()` reads the member from `ctx.request.member`, which the hole and loop endpoints give every `perVisitor` source (`sourceRequestFor`). Fields: `name`, `device`, `connectedOn`, `lastUsedOn`, `connectedAt`, `lastUsedAt`, `id`. The canvas shows two sample apps from `preview()`. The hole endpoint looks at every loop in the fragment it renders (`subtreeHasPerVisitorSource`), not only the hole's own node, so the list also works inside a show-when box or another list: one `perVisitor` source makes the whole fragment uncached.
 
 ### `entry.field`
 

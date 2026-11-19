@@ -238,6 +238,8 @@ function codeFromRow(row: AuthorizationCodeRow): StoredAuthorizationCode {
     consumedAt: row.consumed_at,
     grantExpiresAt: row.connector_expires_at,
     grantRevokedAt: row.connector_revoked_at,
+    // MCP connectors are not bound to a client key.
+    keyThumbprint: null,
   }
 }
 
@@ -252,6 +254,8 @@ function refreshTokenFromRow(row: OAuthTokenRow): StoredRefreshToken {
     revokedAt: row.revoked_at,
     grantExpiresAt: row.connector_expires_at,
     grantRevokedAt: row.connector_revoked_at,
+    // MCP connectors are not bound to a client key.
+    keyThumbprint: null,
   }
 }
 

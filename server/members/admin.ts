@@ -268,6 +268,7 @@ export async function getMemberForAdmin(db: DbClient, memberId: string): Promise
     connectedApps: connectedApps.map((app) => ({
       id: app.id,
       name: app.name,
+      device: app.device,
       connectedAt: app.connectedAt,
       lastUsedAt: app.lastUsedAt,
     })),
