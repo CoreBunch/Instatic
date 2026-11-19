@@ -26,6 +26,11 @@ export const PluginRecordSchema = Type.Object({
   uniqueKey: Type.Union([Type.String(), Type.Null()]),
   /** Starts at 0 and goes up by one on every update. Pass it as `ifVersion`. */
   version: Type.Integer({ minimum: 0 }),
+  /**
+   * Set when the stored data is not a JSON object and could not be read:
+   * `data` is then `{}`. Such a record can be deleted but not updated.
+   */
+  unreadable: Type.Optional(Type.Literal(true)),
   createdAt: Type.String(),
   updatedAt: Type.String(),
 })

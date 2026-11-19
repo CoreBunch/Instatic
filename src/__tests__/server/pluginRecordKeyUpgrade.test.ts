@@ -13,7 +13,7 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { strToU8, zipSync } from 'fflate'
-import { setPluginHostContext } from '../../../server/plugins/host/registry'
+import { hostPlugins, setPluginHostContext } from '../../../server/plugins/host/registry'
 import { resetPluginWorker } from '../../../server/plugins/host/workerPool'
 import {
   createPluginRecord,
@@ -230,5 +230,71 @@ describe('rolling back a failed upgrade', () => {
     expect((await getPluginRecordByKey(harness.db, events, 'evt_1'))?.id).toBe('back_1')
     expect((await getPluginRecordByKey(harness.db, events, 'evt_2'))?.id).toBe('back_2')
     expect(await getPluginRecordByKey(harness.db, events, 's1')).toBeNull()
+  }, 60_000)
+
+  it('leaves the plugin unloaded in error when the previous keys can no longer be restored', async () => {
+    const STUCK_PLUGIN = 'acme.keysstuck'
+    const stuck = { pluginId: STUCK_PLUGIN, resourceId: 'events' }
+    const packageFor = (version: string, uniqueField: string, activate: string): FormData => {
+      const manifest = {
+        id: STUCK_PLUGIN,
+        name: 'Keys stuck',
+        version,
+        apiVersion: 1,
+        permissions: ['cms.storage', 'cms.routes'],
+        entrypoints: { server: 'server/index.js' },
+        resources: [
+          {
+            id: 'events',
+            title: 'Events',
+            uniqueField,
+            fields: [
+              { id: 'eventId', label: 'Event id', type: 'text' },
+              { id: 'state', label: 'State', type: 'text' },
+            ],
+          },
+        ],
+        adminPages: [],
+      }
+      const zipped = zipSync({
+        'plugin.json': strToU8(JSON.stringify(manifest)),
+        'server/index.js': strToU8(activate),
+      })
+      const form = new FormData()
+      form.set('file', new File([zipped], 'keysstuck.zip', { type: 'application/zip' }))
+      form.set('grantedPermissions', JSON.stringify(['cms.storage', 'cms.routes']))
+      return form
+    }
+
+    expect((await uploadPackage(packageFor('1.0.0', 'eventId', 'export function activate() {}'))).status).toBe(201)
+    await createPluginRecord(harness.db, { ...stuck, id: 'stuck_1', data: { eventId: 'evt_1', state: 's1' }, uniqueKey: 'evt_1' })
+
+    // 1.1.0 keys by "state". Before failing, it stores a second record with
+    // the SAME eventId (allowed now), so 1.0.0's keys cannot come back.
+    const res = await uploadPackage(
+      packageFor(
+        '1.1.0',
+        'state',
+        `export async function activate(api) {
+           await api.cms.storage.collection('events').create({ eventId: 'evt_1', state: 's2' })
+           throw new Error('v2 will not start')
+         }`,
+      ),
+    )
+    expect(res.status).toBe(400)
+
+    const { rows } = await harness.db<{ version: string; lifecycle_status: string; last_error: string | null }>`
+      select version, lifecycle_status, last_error from installed_plugins where id = ${STUCK_PLUGIN}
+    `
+    // Not restored, and it says so: never reported as running.
+    expect(rows[0]?.lifecycle_status).toBe('error')
+    expect(rows[0]?.last_error).toContain('version 1.0.0 could not be restored')
+    expect(rows[0]?.last_error).toContain('share the "eventId" value "evt_1"')
+    // The manifest and the keys are those of the last transaction that
+    // succeeded (1.1.0, keyed by state): consistent with each other.
+    expect(rows[0]?.version).toBe('1.1.0')
+    expect((await getPluginRecordByKey(harness.db, stuck, 's1'))?.id).toBe('stuck_1')
+    expect(await getPluginRecordByKey(harness.db, stuck, 'evt_1')).toBeNull()
+    expect(hostPlugins.has(STUCK_PLUGIN)).toBe(false)
   }, 60_000)
 })

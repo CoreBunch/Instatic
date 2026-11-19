@@ -110,6 +110,7 @@ export async function handlePluginsCollection(
         previous?.kind === 'ok' ? previous.plugin.manifest : null,
         manifest,
         grantedPermissions,
+        { restoring: false },
       )
       const updatedResult = await setPluginLifecycleStatus(db, installed.id, 'active')
       await syncPluginMailTemplates(db)
@@ -240,7 +241,7 @@ async function installFreshFromPackage(ctx: InstallContext): Promise<Response> {
     pluginPackage.manifest,
     pluginPackage.files,
   )
-  const installed = await installPluginWithRecordKeys(db, null, manifest, grantedPermissions)
+  const installed = await installPluginWithRecordKeys(db, null, manifest, grantedPermissions, { restoring: false })
   const installLifecycle = await runPluginLifecycleHook(db, installed, options, 'install', 'installed')
   if (!installLifecycle.ok) {
     return jsonResponse(
@@ -329,12 +330,13 @@ async function installUpgradeFromPackage(ctx: UpgradeContext): Promise<Response>
   // 0. A resource that gains or changes its `uniqueField` needs every stored
   //    record to take a distinct key. Check before touching anything, so an
   //    upgrade that cannot work is refused with the old version still running.
-  for (const resource of resourcesWithChangedUniqueField(existing.manifest, pluginPackage.manifest)) {
+  for (const { resource, capped } of resourcesToRekey(existing.manifest, pluginPackage.manifest, false)) {
     if (resource.uniqueField === undefined) continue
     const problem = await pluginRecordRekeyProblem(
       db,
       { pluginId, resourceId: resource.id },
       resource.uniqueField,
+      { capped },
     )
     if (problem) {
       return jsonResponse(
@@ -377,7 +379,9 @@ async function installUpgradeFromPackage(ctx: UpgradeContext): Promise<Response>
   //    still collide; that fails here and takes the rollback path.
   let upgraded: InstalledPlugin
   try {
-    upgraded = await installPluginWithRecordKeys(db, existing.manifest, newManifest, grantedPermissions)
+    upgraded = await installPluginWithRecordKeys(db, existing.manifest, newManifest, grantedPermissions, {
+      restoring: false,
+    })
   } catch (err) {
     return failUpgrade(err)
   }
@@ -522,6 +526,7 @@ async function rollbackUpgrade(args: {
       newManifest,
       pluginManifestWithGrants(existing),
       existing.grantedPermissions,
+      { restoring: true },
     )
   } catch (err) {
     console.error(`[plugin:${pluginId}] rollback could not restore version ${existing.version}`, err)
@@ -589,15 +594,25 @@ async function rollbackUpgrade(args: {
  * `uniqueField` differs from what `previous` declared, or the resource is new
  * to the manifest (records may exist from a time it was not declared, with no
  * keys or stale ones).
+ *
+ * `capped` says whether the record limit applies. It guards one thing: a
+ * plugin giving an existing resource a different unique field. It never
+ * applies while restoring (a rollback puts back keys that were valid), nor to
+ * a resource `previous` did not declare (also when there is no readable
+ * previous manifest), so neither can be blocked by the size of a resource.
  */
-function resourcesWithChangedUniqueField(
+function resourcesToRekey(
   previous: Pick<PluginManifest, 'resources'> | null,
   next: Pick<PluginManifest, 'resources'>,
-): PluginResource[] {
-  return next.resources.filter((resource) => {
+  restoring: boolean,
+): Array<{ resource: PluginResource; capped: boolean }> {
+  const changed: Array<{ resource: PluginResource; capped: boolean }> = []
+  for (const resource of next.resources) {
     const before = previous?.resources.find((candidate) => candidate.id === resource.id)
-    return before === undefined || before.uniqueField !== resource.uniqueField
-  })
+    if (before !== undefined && before.uniqueField === resource.uniqueField) continue
+    changed.push({ resource, capped: before !== undefined && !restoring })
+  }
+  return changed
 }
 
 /**
@@ -611,11 +626,14 @@ async function installPluginWithRecordKeys(
   previous: Pick<PluginManifest, 'resources'> | null,
   manifest: PluginManifest,
   grantedPermissions: PluginPermission[],
+  options: { restoring: boolean },
 ): Promise<InstalledPlugin> {
   return db.transaction(async (tx) => {
     const installed = await installPlugin(tx, manifest, grantedPermissions)
-    for (const resource of resourcesWithChangedUniqueField(previous, manifest)) {
-      await rekeyPluginRecords(tx, { pluginId: manifest.id, resourceId: resource.id }, resource.uniqueField)
+    for (const { resource, capped } of resourcesToRekey(previous, manifest, options.restoring)) {
+      await rekeyPluginRecords(tx, { pluginId: manifest.id, resourceId: resource.id }, resource.uniqueField, {
+        capped,
+      })
     }
     return installed
   })

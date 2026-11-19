@@ -13,6 +13,7 @@ import { installPlugin } from '../../../server/repositories/plugins'
 import {
   PluginRecordConflictError,
   PluginRecordDuplicateError,
+  PLUGIN_RECORD_REKEY_LIMIT,
   PluginRecordRekeyError,
   createPluginRecord,
   createPluginRecordIfAbsent,
@@ -204,14 +205,14 @@ describe('re-keying a resource', () => {
     const a = await createPluginRecord(db, { ...events, id: newId(), data: { eventId: 'evt_1', state: 'x' }, uniqueKey: 'evt_1' })
     const b = await createPluginRecord(db, { ...events, id: newId(), data: { eventId: 'evt_2', state: 'y' }, uniqueKey: 'evt_2' })
 
-    await db.transaction((tx) => rekeyPluginRecords(tx, events, 'state'))
+    await db.transaction((tx) => rekeyPluginRecords(tx, events, 'state', { capped: true }))
     expect((await getPluginRecordByKey(db, events, 'x'))?.id).toBe(a.id)
     expect((await getPluginRecordByKey(db, events, 'y'))?.id).toBe(b.id)
     expect(await getPluginRecordByKey(db, events, 'evt_1')).toBeNull()
     // The data did not change, so neither did the version.
     expect((await getPluginRecord(db, events, a.id))?.version).toBe(0)
 
-    await db.transaction((tx) => rekeyPluginRecords(tx, events, undefined))
+    await db.transaction((tx) => rekeyPluginRecords(tx, events, undefined, { capped: true }))
     expect((await getPluginRecord(db, events, a.id))?.uniqueKey).toBeNull()
   })
 
@@ -219,10 +220,10 @@ describe('re-keying a resource', () => {
     await createPluginRecord(db, { ...events, id: newId(), data: { eventId: 'evt_1', state: 'same' }, uniqueKey: 'evt_1' })
     await createPluginRecord(db, { ...events, id: newId(), data: { eventId: 'evt_2', state: 'same' }, uniqueKey: 'evt_2' })
 
-    expect(await pluginRecordRekeyProblem(db, events, 'state')).toContain('share the "state" value "same"')
-    expect(await pluginRecordRekeyProblem(db, events, 'eventId')).toBeNull()
+    expect(await pluginRecordRekeyProblem(db, events, 'state', { capped: true })).toContain('share the "state" value "same"')
+    expect(await pluginRecordRekeyProblem(db, events, 'eventId', { capped: true })).toBeNull()
 
-    const rekey = db.transaction((tx) => rekeyPluginRecords(tx, events, 'state'))
+    const rekey = db.transaction((tx) => rekeyPluginRecords(tx, events, 'state', { capped: true }))
     expect(rekey).rejects.toBeInstanceOf(PluginRecordRekeyError)
     await rekey.catch(() => {})
     // The caller's transaction rolled back: the previous keys still resolve.
@@ -239,7 +240,7 @@ describe('re-keying a resource', () => {
       insert into plugin_records (id, plugin_id, resource_id, data_json)
       values ('blank', ${PLUGIN}, 'events', ${{ eventId: '   ', state: 'y' }})
     `
-    await db.transaction((tx) => rekeyPluginRecords(tx, events, 'eventId'))
+    await db.transaction((tx) => rekeyPluginRecords(tx, events, 'eventId', { capped: true }))
     expect((await getPluginRecord(db, events, 'padded'))?.uniqueKey).toBe('evt_padded')
     // Blank after trimming: no key, like a write.
     expect((await getPluginRecord(db, events, 'blank'))?.uniqueKey).toBeNull()
@@ -252,6 +253,31 @@ describe('re-keying a resource', () => {
       insert into plugin_records (id, plugin_id, resource_id, data_json)
       values ('padded_twin', ${PLUGIN}, 'events', ${{ eventId: ' evt_x ', state: 'b' }})
     `
-    expect(await pluginRecordRekeyProblem(db, events, 'eventId')).toContain('share the "eventId" value "evt_x"')
+    expect(await pluginRecordRekeyProblem(db, events, 'eventId', { capped: true })).toContain('share the "eventId" value "evt_x"')
   })
+
+  it('caps a change of unique field by record count, but never a restore', async () => {
+    const big = { pluginId: PLUGIN, resourceId: 'big' }
+    // One over the limit, written in a single statement.
+    await db.unsafe(
+      `with recursive n(i) as (select 1 union all select i + 1 from n where i <= ?)
+       insert into plugin_records (id, plugin_id, resource_id, data_json)
+       select 'big_' || printf('%06d', i), ?, 'big', json_object('eventId', 'evt_' || i) from n`,
+      [PLUGIN_RECORD_REKEY_LIMIT, PLUGIN],
+    )
+    expect((await listPluginRecords(db, PLUGIN, 'big', { limit: 1 })).totalCount).toBe(PLUGIN_RECORD_REKEY_LIMIT + 1)
+
+    expect(await pluginRecordRekeyProblem(db, big, 'eventId', { capped: true })).toContain('more than 50000 records')
+    const capped = db.transaction((tx) => rekeyPluginRecords(tx, big, 'eventId', { capped: true }))
+    expect(capped).rejects.toBeInstanceOf(PluginRecordRekeyError)
+    await capped.catch(() => {})
+
+    // A rollback restores keys that were valid before: size must not stop it.
+    expect(await pluginRecordRekeyProblem(db, big, 'eventId', { capped: false })).toBeNull()
+    await db.transaction((tx) => rekeyPluginRecords(tx, big, 'eventId', { capped: false }))
+    expect((await getPluginRecordByKey(db, big, 'evt_1'))?.id).toBe('big_000001')
+    expect((await getPluginRecordByKey(db, big, `evt_${PLUGIN_RECORD_REKEY_LIMIT + 1}`))?.id).toBe(
+      `big_${String(PLUGIN_RECORD_REKEY_LIMIT + 1).padStart(6, '0')}`,
+    )
+  }, 120_000)
 })
