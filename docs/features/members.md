@@ -28,7 +28,7 @@ server/members/
 ├── sessions.ts            — member_sessions + the cookie
 ├── tokens.ts              — single-use emailed-link tokens
 ├── limits.ts              — rate limits
-├── mail.ts                — link building, background send
+├── mail.ts                — link building, queueing the email
 ├── mailTemplates.ts       — the member emails as templates (reworded in Email → Templates)
 ├── service.ts             — the flows; no HTTP
 ├── handlers.ts            — /_instatic/members/* : request parsing, redirects, JSON, cookies
@@ -90,7 +90,7 @@ Error codes are the `MEMBER_ERROR_CODES` list in `@core/members`.
 
 **CSRF.** Every POST needs an `Origin` that is one of the site's origins, and a same-origin `Sec-Fetch-Site` when the browser sends one. No GET changes anything, signing out included: it is a POST like every other action, so a link, an image or a prefetch cannot sign a member out. Changing a password or email and deleting the account also need the current password (or, for a passwordless member, a sign-in within the last 15 minutes).
 
-**Enumeration.** A sign-in for an unknown address still pays one argon2 verification. Requests that send email decide their answer first and send in the background (`queueMemberMail`), so timing does not differ.
+**Enumeration.** A sign-in for an unknown address still pays one argon2 verification. Requests that send email decide their answer first and hand the email to the mail queue without waiting (`queueMemberMail`), so rendering and delivery add nothing to the response time. (A request for a known address still issues a token, which one for an unknown address does not.) The queue sends it straight away and retries a temporary failure; see [email](email.md).
 
 **Sign-up and pre-hijacking.** The member row is created with no password. The hash travels in the confirmation token and applies only when the link is opened in the browser that signed up (matched by the `instatic_member_signup` cookie, `__Host-` prefixed on https so a sibling subdomain cannot plant one, and ignored when it appears twice). Opened anywhere else, the link still confirms the address and signs in, with no password set. So a stranger who signs up with someone else's address never gets their password onto the account, even if the owner opens the email.
 

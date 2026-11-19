@@ -12,12 +12,12 @@ This is the path for mail the core sends itself (account emails, tests). It is b
 - **Defaults** choose the one connector the site sends through, plus the sender name, sender address and reply-to.
 - **Templates** are a subject and a Markdown body with `{variables}`, edited in place in the post editor (`TiptapBodyEditor`) with the same Write / Live switch as a post. Only edited templates are stored; the built-in wording lives in code.
 - **Activity** is the delivery log: per-period totals and a volume chart, search and filters, and a detail panel for each email.
-- **Two entry points:** `sendTemplateMail(db, { key, to, variables })` and `sendSiteMail(db, mail)` in `server/mail/send.ts`.
-- **Three delivery modes**, decided per send:
+- **Two entry points:** `queueTemplateMail(db, { key, to, variables })` in `server/mail/delivery.ts` for every email nobody is waiting on (it is queued, sent by a worker, retried), and `sendSiteMail(db, mail)` in `server/mail/send.ts` for the admin's own tests, which send now and report the answer.
+- **Three delivery modes**, decided when an email is accepted:
 
   | Mode | When | What happens |
   |---|---|---|
-  | `send` | a default connector and a sender address are set | sent through it; logged `sent` or `failed` |
+  | `send` | a default connector and a sender address are set | queued (`queued`), then sent through it; logged `sent` or `failed` |
   | `capture` | they are not, and `NODE_ENV` is not `production` | written to Activity with its body; nothing leaves the machine |
   | `off` | they are not, in production | throws `MailNotConfiguredError` |
 
@@ -41,7 +41,9 @@ server/mail/
 ├── sesDriver.ts               — Amazon SES v2 SendEmail, Signature Version 4
 ├── apiDrivers.ts              — Resend, Postmark, Mailgun, Brevo: one POST each
 ├── activity.ts                — mail_outbox (2000 newest rows kept)
-└── send.ts                    — sendSiteMail, sendTemplateMail, delivery mode
+├── send.ts                    — one delivery attempt (carryThroughConnector), sendSiteMail, delivery mode
+├── queue.ts                   — mail_queue: enqueue, claim, reschedule, remove; payload encryption
+└── delivery.ts                — queueTemplateMail, the worker (drain, retry schedule, start / wake / stop)
 server/handlers/cms/mail.ts    — /admin/api/cms/mail/* routes
 src/core/persistence/cmsMail.ts
 src/admin/pages/email/         — the workspace: EmailPage + tabs/{Connectors,Defaults,Templates,Activity}Tab
@@ -93,7 +95,7 @@ In the admin (`tabs/TemplatesTab.tsx`) a template opens in **Live** mode: the su
 
 ## Activity
 
-`recordMail` (`server/mail/activity.ts`) writes one `mail_outbox` row per attempt: template key (`kind`), recipient, subject, status, the connector's label at the time, the safe error sentence, how long the hand-over took (`duration_ms`) and the id the provider answered with (`provider_message_id`: the SES `MessageId`, or nodemailer's `messageId` for SMTP). The newest 2000 rows are kept.
+`recordMail` (`server/mail/activity.ts`) writes one `mail_outbox` row per email (`updateMailProgress` brings a queued email's row up to date after each attempt): template key (`kind`), recipient, subject, status, the connector's label at the time, the safe error sentence, how long the hand-over took (`duration_ms`) and the id the provider answered with (`provider_message_id`: the SES `MessageId`, or nodemailer's `messageId` for SMTP). The newest 2000 rows are kept.
 
 `listMailActivity(db, filter)` reads the whole log without bodies and does the work in memory, so search, day buckets and totals are identical on both dialects:
 
@@ -101,9 +103,53 @@ In the admin (`tabs/TemplatesTab.tsx`) a template opens in **Live** mode: the su
 - **`totals`, `buckets`, `lastFailure`, `kinds`, `connectors`** describe the whole period. `status`, `kind`, `connector` and `q` (recipient or subject) only narrow `entries` and `matching`.
 - **Paging:** 50 entries a page; pass the last entry's id as `before`.
 
-`sent` means the provider accepted the message. Bounces and spam filtering happen after that and are not known here; the detail panel says so. A failure is not retried.
+`queued` is an email that has not left. With no `error` it is waiting its turn. With an error and a `nextAttemptAt` it is being retried after a temporary failure. With an error and no `nextAttemptAt` it is held because the connector refused the account. `waitingError` in the response is the newest such error, for the Waiting tile. `sent` means the provider accepted the message. Bounces and spam filtering happen after that and are not known here; the detail panel says so. `failed` is final: the provider judged the message, its deadline passed, or it could not be queued at all.
 
 The tab (`tabs/ActivityTab.tsx`) shows the totals and chart, then the filters, then the list beside the selected email's details. From a failure it links to Connectors; from a template's email it opens that template.
+
+## The queue
+
+`queueTemplateMail` renders the template once (to prove it exists and to give the log its subject), encrypts the variables, then writes the `queued` activity row and the `mail_queue` row in one transaction, wakes the worker and returns. The request that asked for the email never waits for a provider. Encryption happens before the transaction opens: on SQLite's one shared connection nothing that can fail for its own reasons belongs inside a `BEGIN`.
+
+A `mail_queue` row holds the template key, the recipient, `source` (`core`, or a plugin id), `lane`, `deliver_before` and the variables. The variables are encrypted with the master key (`payload_ciphertext`, `payload_iv`), because they carry live links, and the row is deleted as soon as the email is sent or given up on. The email is rendered again at each attempt, so it leaves with the wording of that moment.
+
+**Deadlines.** Every email has a `deliver_before`, passed as `deliverBefore`: the expiry of the link it carries (`queueMemberMail` uses the token lifetimes in `server/members/tokens.ts`: 15 minutes for a sign-in link, an hour for a reset), or `MAIL_DELIVERY_WINDOW_MS` (a day) for mail without one. The worker never sends past it, nor within its last minute (`DELIVERY_MARGIN_MS`): a link with seconds left is no better than an expired one. An email whose deadline has passed or is that close, or whose next retry would fall there, is failed with "Not sent: the time in which this email was of use ran out…" and its last error. A member is still told to check their inbox (the response must not depend on delivery); the owner sees the failure in Activity.
+
+**The worker** (`startMailQueue` at boot, `stopMailQueue` on shutdown) drains the queue on a wake and on a 15-second tick:
+
+- One email at a time, 100 ms apart, ordered by `lane` (0 = core, always first), then emails not tried yet before retries, then due time, then acceptance order. A fresh sign-in link is never behind a stack of retries.
+- **No lock between workers.** A row is claimed with one conditional update (`update … set claimed_at … where id = … and claimed_at is null`), so any number of instances on one Postgres database drain side by side and none takes an email another has. The worker deliberately does not use `withSchedulerLeaderLock`: that helper takes a session-scoped advisory lock through a pooled client, so the unlock can run on another connection, leave the lock held and stop a second instance from ever draining. (The helper's other callers are not changed here.)
+- Each driver marks its `MailDeliveryError` with `retry`. An HTTP driver reads the provider's own error body first (`classify…Error` in `apiDrivers.ts`, `retryForSesError`) and falls back to the status (`retryForHttpStatus`). A bare status is not trusted to mean the account: one visitor giving an address the provider refuses must never pause everyone's mail.
+
+  | `retry` | Means | What the worker does |
+  |---|---|---|
+  | `never` | the provider judged this message or this recipient: SMTP 5xx, an HTTP 4xx, Postmark `ErrorCode` 300 / 406 / 412, Mailgun's "authorized recipients" sandbox refusal, SES `MessageRejected` | fails it |
+  | `later` | this message's or this moment's trouble: unreachable, a 5xx, a timeout, every other SMTP 4yz, so greylisting and a full mailbox (450 / 451 / 452) and a login answered with 454, and an SES request refused for its timestamp (`InvalidSignatureException`, `RequestExpired`: check the server's clock) | retries this email with backoff; everything else carries on |
+  | `slow-down` | the provider throttles the whole account: HTTP 429, a rate or quota error by name (Resend `rate_limit_exceeded` / `daily_quota_exceeded`, Brevo `too_many_requests`, SES `ThrottlingException` / `LimitExceededException`, which arrive as HTTP 400 too), SMTP 421, a 4yz whose text speaks of rate or quota and not of a recipient (a throttled recipient, or a refusal at `RCPT TO`, is `later`) | retries it and sends nothing else from this process for a minute |
+  | `connector` | the provider refuses the account, by a signal that names it: HTTP 401, the provider's own key, permission, credit or unverified-sender error (Resend `invalid_api_key`, Postmark `ErrorCode` 10 / 400 / 401 / 405, Brevo `unauthorized` / `account_under_validation`, SES `AccessDeniedException` / `SignatureDoesNotMatch` / `SendingPausedException` and the like), SMTP 530 / 535 or `EAUTH`, no TLS offered, an unreadable secret, no connector or sender set | pauses delivery (below) |
+  | `suspect` | a refusal that could be the account's or one recipient's: a 403 whose body does not say (providers also answer 403 for a blocked or suppressed recipient, or one a sandbox account may not write to) | retries this email like `later`; pauses only once three different recipients in a row got it with no success in between (`settleSuspect` in `send.ts`) |
+
+- Retries wait 30 s, 2 min, 10 min, 30 min, 1 h, 2 h, 4 h, 6 h, 8 h (`RETRY_DELAYS_MS`; each moved by up to 20% either way), until the deadline. A wait that would run past the last useful moment (the deadline less the one-minute margin and two worker ticks, `LAST_TRY_LEAD_MS`, so the worker finds it whatever the phase of its 15-second tick) is cut short to it, so an email always gets its last try.
+- An email whose template no longer exists, or whose payload can no longer be decrypted (`QueuedMailUnreadableError`: the master key changed), is failed at once.
+- A provider's "slow down" is per process (`pausedUntil`): each instance backs off on its own refused request. Not knowing about another instance's costs one refused request and nothing else, so it is not stored.
+
+**A connector that refuses the account trips a breaker.** Retrying every queued email against a wrong key or password can get an account locked. On a `connector` failure the email goes back untouched, with no attempt counted (`holdQueuedMail`), its activity row shows the reason at once, `pauseConnectorDelivery` sets `mail_connectors.delivery_paused_at` to the time of the refusal, and the drain stops. While it is set:
+
+- nothing is handed to the connector except a **probe**: every two minutes (`CONNECTOR_PROBE_INTERVAL_MS`) one worker takes the probe with a conditional update (`takeConnectorProbe`) and tries one email, chosen by `claimProbeMail`: one that has no ambiguous refusal behind it (`mail_queue.suspect_at`), the core's before a plugin's, newest first; only when every due email was refused that way is the newest of those used. If it gets through, `noteConnectorUse` lifts the pause and the drain carries on with the rest. If the provider refuses it for its recipient's own reasons, the turn passes to the next candidate, three at most (`PROBE_CANDIDATES`). Any other answer leaves the pause in place with the time and reason refreshed. A turn is not taken while nothing is due (`hasDueMail`), so the first email to arrive is tried at once. So a provider's bad minute costs minutes, and nobody has to switch delivery back on;
+- deadlines still run, and an email accepted meanwhile is logged as "Waiting: the connector is paused. <reason>" (`pausedMailMessage`);
+- the Connectors tab shows "Delivery paused" with the error, Activity's Waiting tile shows it (`waitingError`), and each held email reads "Held".
+
+A new secret (`setMailConnectorSecret`) or a successful send through the connector (the connector test) lifts the pause at once; those handlers and a change of defaults wake the worker. A connector's host, port or region cannot be edited in place today (a connector is replaced), so there is no config edit to lift it.
+
+**Which refusals can pause.** A clear account signal pauses on the first occurrence. An ambiguous 403 (`suspect`) pauses only when three different recipients got one within ten minutes with no success in between; a 403 whose text names the recipient, a suppression or a testing restriction is `never` and does not count. That leaves one way a visitor-chosen address can contribute to a pause: a provider that answers a recipient-specific refusal with a 403 whose body says nothing about the recipient. Of the built-in drivers that is possible with Mailgun (free-text messages only), Brevo (`permission_denied`) and a typeless SES 403; Resend and Postmark name their errors. Three distinct such addresses in ten minutes would pause delivery for at most the two minutes until the next probe, which is a different email, succeeds. An email that got such a refusal is marked (`suspect_at`) and no longer counts towards a pause when it is retried, so the same junk addresses cannot pause delivery again and again.
+
+**Delivery is at least once, and a failed record does not multiply it.** When the provider accepts an email the worker first sets `mail_queue.accepted_at` in one small statement (`markQueuedMailAccepted`), then updates the log and deletes the row. A row so marked is never claimed for sending again; if the later writes failed, `finishAcceptedMail` completes them at the start of the next drain. If even the mark cannot be written, the process remembers the id and will not send it again, and the row is put back with a growing wait (`backOffQueuedMail`) instead of being retried every pass. A duplicate is therefore possible only when a worker dies, or the database is unreachable and the process restarts, between the provider's acceptance and the mark: at most one.
+
+**Claims and clocks.** A claim older than two minutes (`STALE_CLAIM_MS`; a hand-over is cut off by its driver after ten seconds) is released. The claim time is written by one instance's clock and judged by another's, so the rule tolerates clocks that differ by up to about 110 seconds; beyond that a live claim could be taken over, which costs a duplicate, not a lost email.
+
+**Member email** (`queueMemberMail`) is handed over after the request has decided its answer and is not awaited by it. That keeps template rendering and the queue's writes out of the response time; it does not make a request for a known address indistinguishable from one for an unknown address, since the request itself already issues the token for a known one. It is also why queueing is not in the token's transaction: the token is committed first, and the email is queued a moment later in its own transaction. If that fails, the member has a token nobody sent them; the token expires, the failure is a `failed` activity entry ("Not queued, so never sent: …"), and the member can ask again. Handing over is awaited on shutdown (`flushMemberMail`).
+
+`sendSiteMail` and `sendConnectorTest` do not use the queue: "Send test" and the connector test report the provider's answer to the person who clicked.
 
 ## Links in emails
 
@@ -129,6 +175,8 @@ All under `/admin/api/cms/mail`, all gated by `mail.manage`. "Step-up" marks the
 
 ## Tests
 
+- `src/__tests__/server/mailQueue.test.ts` — accepting (capture, refusal, encryption at rest), delivery, the retry schedule and which refusals are retried, deadlines (a link is never sent after it expired), a connector fault pausing and resuming delivery, a greylisted recipient not delaying anyone else, order within a lane, claims and two drains at once, an outcome that cannot be recorded, an email that could not be queued.
+- `src/__tests__/server/mailQueuePostgres.test.ts` — two workers on two connection pools against a real Postgres: every email sent exactly once, no advisory lock left behind. Runs when `INSTATIC_TEST_POSTGRES_URL` is set, which CI's test job does; the file says how to start a throwaway server locally.
 - `src/__tests__/server/mail.test.ts` — delivery modes, connector storage, template rendering and injection, the address guard, SES signing and request shape, the request each one-key provider receives and how its refusals read, capability and step-up gates.
 - `src/__tests__/server/mailSmtp.test.ts` — a real SMTP round trip against a local sink.
 - `tests/e2e/email-workspace.e2e.ts` — ADMIN-013.

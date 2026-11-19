@@ -1717,4 +1717,53 @@ export const sqliteMigrations: Migration[] = [
              );
     `,
   },
+  {
+    // Outgoing email waits here until a connector takes it. A row holds the
+    // template key and the values to fill it with, encrypted, because the
+    // values carry live sign-in links; it is deleted once the email is sent
+    // or given up on. `lane` 0 is the core's own mail, which always goes
+    // before a plugin's. `deliver_before` is the moment after which sending
+    // would be pointless (the link in it has expired). `mail_outbox` gains
+    // the attempt count and the time of the next try, so the activity log
+    // can say a message is waiting. `mail_connectors.delivery_paused_at` is
+    // set while a connector refuses the account itself (a wrong key or
+    // password): queued email is then held, and one email at a time is let
+    // through as a probe, until one gets through. `accepted_at` marks a row
+    // whose email the provider has taken: such a row is never sent again,
+    // even if recording the outcome and deleting the row failed.
+    id: '034_mail_queue',
+    sql: `
+      create table if not exists mail_queue (
+        id text primary key,
+        outbox_id text not null,
+        kind text not null,
+        to_address text not null,
+        source text not null default 'core',
+        reference text,
+        lane integer not null default 0,
+        payload_ciphertext blob not null,
+        payload_iv blob not null,
+        attempts integer not null default 0,
+        next_attempt_at text not null,
+        deliver_before text not null,
+        claimed_at text,
+        accepted_at text,
+        suspect_at text,
+        last_error text,
+        created_at text not null default (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+      );
+
+      create index if not exists mail_queue_due_idx
+        on mail_queue (lane, next_attempt_at);
+
+      create index if not exists mail_queue_source_idx
+        on mail_queue (source);
+
+      alter table mail_outbox add column attempts integer not null default 0;
+      alter table mail_outbox add column next_attempt_at text;
+      alter table mail_outbox add column source text not null default 'core';
+
+      alter table mail_connectors add column delivery_paused_at text;
+    `,
+  },
 ]
