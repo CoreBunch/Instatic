@@ -75,7 +75,7 @@ interface FrameworkScalePlan<
 }
 
 /** Both scale outputs derived from one shared plan. */
-interface FrameworkScalePlanResult {
+export interface FrameworkScalePlanResult {
   variables: FrameworkScaleVariable[]
   utilityClasses: Record<string, StyleRule>
 }
@@ -138,7 +138,7 @@ interface FrameworkScaleModuleConfig<TGroup extends FrameworkScaleGroupCommon> {
   classTags: string[]
 }
 
-interface FrameworkScaleModule<
+export interface FrameworkScaleModule<
   TGroup extends FrameworkScaleGroupCommon,
   TGenerator extends FrameworkClassGeneratorCommon,
 > {

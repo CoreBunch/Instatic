@@ -7,12 +7,14 @@
  *   instatic-plugin dev   [<plugin-dir>] [--uploads <path>]
  *
  * Run via Bun:
- *   bun run instatic-plugin <cmd>
+ *   bun run instatic-plugin <cmd>     inside the Instatic checkout
+ *   bunx instatic-plugin <cmd>        from the `@instatic/plugin-sdk` package
  *
  * The CLI lives inside the SDK so plugin authors get the same code that
- * powers the host's `bun run instatic-plugin` script. No HTTP, no auth, no env
- * gate — the dev command writes built files directly into the host's
- * `uploads/plugins/<id>/<version>/` directory.
+ * powers the host's `bun run instatic-plugin` script; the package build
+ * (`scripts/lib/pluginSdkPackage.ts`) bundles this file as the package's
+ * bin. No HTTP, no auth, no env gate — the dev command writes built files
+ * directly into the host's `uploads/plugins/<id>/<version>/` directory.
  */
 import { resolve } from 'node:path'
 import { buildPlugin } from './build'

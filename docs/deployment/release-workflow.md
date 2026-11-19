@@ -71,7 +71,30 @@ instatic-server-0.0.1-darwin-x64.tar.gz
 instatic-server-0.0.1-linux-x64.tar.gz
 instatic-server-0.0.1-windows-x64.tar.gz
 instatic-server-0.0.1-checksums.txt
+instatic-plugin-sdk-0.0.1.tgz
 ```
+
+`instatic-plugin-sdk-<version>.tgz` is the `@instatic/plugin-sdk` package:
+the plugin SDK and the `instatic-plugin` CLI for plugin projects outside this
+repo, built by `bun run sdk:pack`. See
+[plugin-system.md](../features/plugin-system.md) → "Working outside the
+Instatic checkout".
+
+The `Publish Plugin SDK to npm` job then publishes that same file to npm with
+[trusted publishing](https://docs.npmjs.com/trusted-publishers): npm accepts
+the workflow's OIDC token, so the repository holds no npm token, and the
+package gets a provenance attestation. The job publishes nothing, and does
+not fail, while `@instatic/plugin-sdk` does not exist on npm or already has
+the version. One-time setup on npm:
+
+1. Create the `instatic` organisation.
+2. Publish the package once by hand so it exists: download the tarball from a
+   release and run `npm publish instatic-plugin-sdk-<version>.tgz --access public`.
+3. In the package's settings, add a trusted publisher: GitHub Actions,
+   repository `CoreBunch/Instatic`, workflow file `release.yml`.
+
+It uses the npm CLI rather than Bun because trusted publishing is an npm CLI
+feature (11.5.1 or newer).
 
 The `instatic-server-*` assets are per-platform **runnable server artifacts**: a
 `bun build --compile` single-file server binary (Bun runtime, sharp/libvips,

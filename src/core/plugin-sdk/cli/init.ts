@@ -9,10 +9,16 @@
  * on the first `.` so `acme.confetti` → directory `confetti`, plugin id
  * stays as-given. A short name without a dot becomes
  * `local.<short>` to enforce the namespace requirement.
+ *
+ * The packaged CLI also writes a `package.json` and a `tsconfig.json`, so
+ * the scaffold is a project that installs and typechecks by itself. Run
+ * from source inside the Instatic checkout it leaves both out (see
+ * `sdkPackage.ts` for why).
  */
 import { existsSync } from 'node:fs'
 import { mkdir, writeFile } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
+import { SDK_PACKAGE_NAME, SDK_PACKAGE_VERSION, sdkTarballUrl } from './sdkPackage'
 
 export type InitKind = 'module' | 'content-editor'
 
@@ -77,18 +83,80 @@ export async function runPluginInit(
     await mkdir(join(pluginDir, 'server'), { recursive: true })
     await writeFile(join(pluginDir, 'instatic-plugin.config.ts'), pluginConfigTemplate(template), 'utf-8')
     await writeFile(join(pluginDir, 'server', 'index.ts'), serverEntryTemplate(template), 'utf-8')
-    await writeFile(join(pluginDir, 'README.md'), readmeTemplate(template), 'utf-8')
-    await writeFile(join(pluginDir, '.gitignore'), gitignoreTemplate(), 'utf-8')
+    await writeSharedFiles(pluginDir, template)
     return pluginDir
   }
 
   await mkdir(join(pluginDir, 'modules'), { recursive: true })
   await writeFile(join(pluginDir, 'instatic-plugin.config.ts'), pluginConfigTemplate(template), 'utf-8')
   await writeFile(join(pluginDir, 'modules', 'hello.ts'), helloModuleTemplate(template), 'utf-8')
-  await writeFile(join(pluginDir, 'README.md'), readmeTemplate(template), 'utf-8')
-  await writeFile(join(pluginDir, '.gitignore'), gitignoreTemplate(), 'utf-8')
+  await writeSharedFiles(pluginDir, template)
 
   return pluginDir
+}
+
+async function writeSharedFiles(pluginDir: string, template: InitTemplate): Promise<void> {
+  await writeFile(join(pluginDir, 'README.md'), readmeTemplate(template), 'utf-8')
+  await writeFile(join(pluginDir, '.gitignore'), gitignoreTemplate(), 'utf-8')
+  if (SDK_PACKAGE_VERSION === null) return
+  await writeFile(
+    join(pluginDir, 'package.json'),
+    packageJsonTemplate(template, SDK_PACKAGE_VERSION),
+    'utf-8',
+  )
+  await writeFile(join(pluginDir, 'tsconfig.json'), tsconfigTemplate(), 'utf-8')
+}
+
+/**
+ * The SDK is pinned to the exact version of the CLI that scaffolds the
+ * plugin: each SDK version is built from the Instatic release with the same
+ * number, so the pin names the CMS the plugin is written for.
+ */
+function packageJsonTemplate({ packageName }: InitTemplate, sdkVersion: string): string {
+  const manifest = {
+    name: packageName,
+    version: '0.1.0',
+    private: true,
+    type: 'module',
+    scripts: {
+      dev: 'instatic-plugin dev',
+      build: 'instatic-plugin build',
+      lint: 'instatic-plugin lint',
+      typecheck: 'tsc --noEmit',
+    },
+    devDependencies: {
+      [SDK_PACKAGE_NAME]: sdkVersion,
+      typescript: '^6.0.0',
+    },
+  }
+  return `${JSON.stringify(manifest, null, 2)}\n`
+}
+
+/**
+ * `moduleResolution: bundler` matches how the CLI bundles the plugin and is
+ * what the SDK's declaration files are written for. `skipLibCheck` keeps the
+ * typecheck on the plugin's own code: the SDK's editor types mention host
+ * libraries a plugin does not install. The `types` entry declares the
+ * `@instatic/host-ui` and `@instatic/host-hooks` modules the host supplies
+ * at runtime.
+ */
+function tsconfigTemplate(): string {
+  const tsconfig = {
+    compilerOptions: {
+      target: 'es2023',
+      lib: ['ES2023', 'DOM'],
+      module: 'esnext',
+      moduleResolution: 'bundler',
+      jsx: 'react-jsx',
+      strict: true,
+      noEmit: true,
+      skipLibCheck: true,
+      types: [`${SDK_PACKAGE_NAME}/host`],
+    },
+    include: ['**/*.ts', '**/*.tsx'],
+    exclude: ['node_modules', 'dist'],
+  }
+  return `${JSON.stringify(tsconfig, null, 2)}\n`
 }
 
 function pluginConfigTemplate(template: InitTemplate): string {
@@ -96,7 +164,7 @@ function pluginConfigTemplate(template: InitTemplate): string {
     return contentEditorPluginConfigTemplate(template)
   }
   const { pluginId, pluginName } = template
-  return `import { definePlugin, permissions } from '@core/plugin-sdk'
+  return `import { definePlugin, permissions } from '@instatic/plugin-sdk'
 import hello from './modules/hello'
 
 export default definePlugin({
@@ -114,7 +182,7 @@ export default definePlugin({
 }
 
 function contentEditorPluginConfigTemplate({ pluginId, pluginName }: InitTemplate): string {
-  return `import { definePlugin, permissions } from '@core/plugin-sdk'
+  return `import { definePlugin, permissions } from '@instatic/plugin-sdk'
 
 export default definePlugin({
   id: '${pluginId}',
@@ -143,7 +211,7 @@ export default definePlugin({
 }
 
 function serverEntryTemplate({ pluginName }: InitTemplate): string {
-  return `import type { ServerPluginModule } from '@core/plugin-sdk'
+  return `import type { ServerPluginModule } from '@instatic/plugin-sdk'
 
 /**
  * Server entrypoint for ${pluginName}.
@@ -177,7 +245,7 @@ export default mod
 }
 
 function helloModuleTemplate({ pluginId }: InitTemplate): string {
-  return `import { control, defineModule, html } from '@core/plugin-sdk'
+  return `import { control, defineModule, html } from '@instatic/plugin-sdk'
 
 export default defineModule({
   id: '${pluginId}.hello',
@@ -205,6 +273,19 @@ function capitaliseWordsFromId(pluginId: string): string {
 }
 
 function readmeTemplate({ pluginId, pluginName }: InitTemplate): string {
+  // Packaged, the CLI is a dependency of the plugin project; from source it
+  // is the checkout's own `instatic-plugin` script.
+  const packaged = SDK_PACKAGE_VERSION !== null
+  const cli = packaged ? 'bunx instatic-plugin' : 'bun run instatic-plugin'
+  const installStep = packaged ? 'bun install\n' : ''
+  const tarballNote = SDK_PACKAGE_VERSION === null
+    ? ''
+    : `
+\`${SDK_PACKAGE_NAME}\` installs from npm. The same package is attached to
+every Instatic release; to install it from there instead, set the dependency
+in \`package.json\` to
+\`${sdkTarballUrl(SDK_PACKAGE_VERSION)}\`.
+`
   return `# ${pluginName}
 
 > Plugin id: \`${pluginId}\`
@@ -212,22 +293,24 @@ function readmeTemplate({ pluginId, pluginName }: InitTemplate): string {
 ## Develop
 
 \`\`\`bash
-instatic-plugin dev          # watch + sync into the running CMS
-instatic-plugin build        # produce a .plugin.zip
+${installStep}${cli} dev      # watch + sync into the running CMS
+${cli} lint     # validate the manifest and sources
+${cli} build    # produce a .plugin.zip
 \`\`\`
 
 The dev command writes built files directly into the host CMS's
-\`uploads/plugins/${pluginId}/<version>/\` directory. On first run it
-auto-detects the host's \`uploads/\` folder by walking up from the plugin
-directory; pass \`--uploads <path>\` (or set \`INSTATIC_UPLOADS_DIR\`) when running
-outside the instatic monorepo.
+\`uploads/plugins/${pluginId}/<version>/\` directory. Tell it where that is
+with \`--uploads <path>\` or \`INSTATIC_UPLOADS_DIR\`; inside an Instatic
+checkout it finds the \`uploads/\` folder by walking up from the plugin
+directory.
 
 You'll need to install the plugin once via the admin UI (\`/admin/plugins\` →
 Upload Plugin) so the host registers it and approves permissions. After
-that, every \`instatic-plugin dev\` rebuild flows in without another upload.
+that, every \`${cli} dev\` rebuild flows in without another upload.
 
-See [docs/features/plugin-system.md](../instatic/docs/features/plugin-system.md)
-for the full plugin SDK surface.
+${tarballNote}
+The full plugin SDK surface is documented in
+[plugin-system.md](https://github.com/CoreBunch/Instatic/blob/main/docs/features/plugin-system.md).
 `
 }
 

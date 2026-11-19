@@ -24,6 +24,7 @@ A plugin is a zip package containing a `plugin.json` manifest and one or more bu
 |--------------------------------|-------------------------------------------|
 | SDK (author-facing API surface)| `src/core/plugin-sdk/`                    |
 | `instatic-plugin` CLI                | `src/core/plugin-sdk/cli/`                |
+| `@instatic/plugin-sdk` package build | `scripts/lib/pluginSdkPackage.ts`   |
 | Manifest schema + parser       | `src/core/plugins/manifest.ts`            |
 | Admin-page route helpers       | `src/core/plugins/manifestAdminPages.ts`  |
 | Host-side plugin runtime       | `src/core/plugins/`                       |
@@ -1237,7 +1238,7 @@ Full descriptions and labels live in `src/core/plugin-sdk/capabilities.ts` — t
 
 ## CLI workflow
 
-`bun instatic-plugin <command>` runs the SDK CLI at `src/core/plugin-sdk/cli/` (`bun run instatic-plugin <command>` works too inside this repo). The CLI's primary input is `instatic-plugin.config.ts`.
+`bun run instatic-plugin <command>` runs the SDK CLI at `src/core/plugin-sdk/cli/` inside this repo. A plugin project of its own installs the `@instatic/plugin-sdk` package and runs the same CLI as `bunx instatic-plugin <command>` (see "Working outside the Instatic checkout" below). The CLI's primary input is `instatic-plugin.config.ts`.
 
 ```sh
 bun instatic-plugin init acme.hero    # scaffold a module plugin
@@ -1294,14 +1295,34 @@ The build script auto-wires entrypoints from source folders: `server/index.{ts,j
 When running inside the instatic monorepo, the CLI auto-detects the host's `uploads/` by walking up the tree. From a separate plugin repo:
 
 ```sh
-INSTATIC_UPLOADS_DIR=../instatic/uploads bun instatic-plugin dev
+INSTATIC_UPLOADS_DIR=../instatic/uploads bunx instatic-plugin dev
 # or
-bun instatic-plugin dev --uploads ../instatic/uploads
+bunx instatic-plugin dev --uploads ../instatic/uploads
 ```
 
 First install still goes through the admin UI (`/admin/plugins` → Upload Plugin) so the owner approves permissions. Every `instatic-plugin dev` rebuild after that flows in without another upload.
 
-**The SDK import specifier is monorepo-only today.** `@instatic/plugin-sdk` is not a published package, and `@core/plugin-sdk` (what `instatic-plugin init` scaffolds) resolves through this repo's `tsconfig.json` `paths`, so neither works from a plugin repo that does not sit inside an Instatic checkout. Until the SDK ships to a registry, an out-of-tree plugin has to point at the SDK itself — for example a single indirection module re-exporting `<instatic>/src/core/plugin-sdk/index.ts`, with the path written from an env var at build time so it lives in exactly one place. The CLI, the lint pass and the sandbox scan all work fine that way; only the bare specifier does not resolve.
+### Working outside the Instatic checkout
+
+`@instatic/plugin-sdk` is an installable package: the same SDK and CLI, bundled so that nothing in it depends on this repo. `bun run sdk:pack` builds it (`scripts/lib/pluginSdkPackage.ts`), and each Instatic release publishes it twice: to npm, and as the release asset `instatic-plugin-sdk-<version>.tgz`.
+
+```sh
+bun add -d @instatic/plugin-sdk@<version>
+bunx instatic-plugin init acme.hero
+cd hero && bun install
+bun run typecheck && bun run lint && bun run build
+```
+
+To install without npm, use the release asset as the dependency instead: `https://github.com/CoreBunch/Instatic/releases/download/v<version>/instatic-plugin-sdk-<version>.tgz`. The scaffold's `package.json` pins the npm version; its README carries the asset URL.
+
+Install the SDK version of the CMS release the plugin targets. The package states the plugin `apiVersion` it writes in `package.json` → `instatic.pluginApiVersion`.
+
+- **What the package holds.** `dist/index.js` (the runtime builders), `dist/cli/index.js` (the `instatic-plugin` bin, which needs Bun) and `dist/chunks/` (code the two share, so the config the CLI evaluates and the CLI itself use one module registry). Its only dependencies are jsdom and happy-dom, which the CLI uses to build a DOM, and `@sinclair/typebox` for the types.
+- **Types.** `types/` is the declaration tree `tsc` emits for the SDK, with every `@core/*`-style specifier rewritten to a relative path. `host.d.ts` declares `@instatic/host-ui` and `@instatic/host-hooks`, which the editor supplies at runtime and nothing installs; add `@types/react` for JSX.
+- **TypeScript settings.** The scaffolded `tsconfig.json` sets `"moduleResolution": "bundler"` and `"skipLibCheck": true`, and both are needed. The editor store type reaches host libraries a plugin does not install (zustand and the vendored icon set); with `skipLibCheck` those members read as `any`.
+- **Two scaffolds.** The packaged CLI writes a `package.json` and a `tsconfig.json`, so the plugin is a project of its own. Run from source inside this checkout (`bun run instatic-plugin init`), it writes neither: the checkout's root `tsconfig.json` maps `@instatic/plugin-sdk` to `src/core/plugin-sdk`, and Bun reads only the nearest `tsconfig.json`, so one inside the plugin folder would hide that mapping.
+
+`src/__tests__/plugin-sdk/sdkPackage.test.ts` builds the package, unpacks it into a project under the OS temp directory and runs `init`, `tsc`, `lint` and `build` there, then compares the result with what the in-repo CLI builds from the same source.
 
 ---
 
