@@ -4,44 +4,50 @@
  * Plugins register loop sources in the server process. This hook fetches
  * their descriptors and registers them as remote sources, so the Loop
  * module's picker, the field bindings and the canvas preview see them. It
- * fetches again whenever the list may have moved:
+ * fetches when the editor mounts and again when:
  *
- *   - the server says so: a `loop-sources` notice on the site socket, sent to
- *     every open editor when a plugin is enabled, disabled, upgraded or
- *     removed, or its worker restarts. The same notice fires when the socket
- *     (re)connects, because notices sent meanwhile are not replayed;
- *   - a preview was refused because nobody provides the source any more
- *     (`LOOP_SOURCES_STALE_EVENT`);
  *   - this tab changed the plugins itself (`CMS_PLUGINS_CHANGED_EVENT`);
- *   - the tab becomes visible again. A workspace without a site socket (the
- *     Content workspace) has only this and the mount to go on.
+ *   - the tab becomes visible again;
+ *   - a preview was refused because nobody provides the source any more
+ *     (`LOOP_SOURCES_STALE_EVENT`).
+ *
+ * Nothing is pushed from the server. A plugin enabled or disabled in another
+ * tab, or by someone else, shows up here when the author comes back to this
+ * tab or reloads it.
  *
  * It is separate from `useInstalledEditorPlugins` on purpose: that pass needs
  * access to the Plugins workspace, while using a plugin's source on a page
  * needs only `site.read`. Without `site.read` the hook does nothing.
  */
-import { useEffect } from 'react'
+import { useEffect, useRef } from 'react'
 import { replaceRemoteLoopSources } from '@core/loops'
 import { listCmsLoopSources } from '@core/persistence/cmsLoopSources'
 import { CMS_PLUGINS_CHANGED_EVENT } from '@plugins/utils/pluginEvents'
-import { refreshRemoteLoopPreviews, LOOP_SOURCES_STALE_EVENT } from '@site/canvas/remoteLoopPreviews'
-import { subscribeSiteNotice } from '@site/collab/siteNotices'
+import { LOOP_SOURCES_STALE_EVENT, refreshRemoteLoopPreviews } from '@site/canvas/remoteLoopPreviews'
 
 export function usePluginLoopSources(enabled: boolean): void {
+  // Answers can arrive out of order; only the latest request may write.
+  const latestRequest = useRef(0)
+  // The list as last applied, to tell a changed list from the same one again.
+  const applied = useRef<string | null>(null)
+
   useEffect(() => {
     if (!enabled) return
     let cancelled = false
-    // Answers can arrive out of order; only the latest request may write.
-    let latest = 0
 
     function refresh() {
-      const request = ++latest
+      latestRequest.current += 1
+      const request = latestRequest.current
       listCmsLoopSources()
         .then((sources) => {
-          if (cancelled || request !== latest) return
+          if (cancelled || request !== latestRequest.current) return
+          const serialized = JSON.stringify(sources)
+          const changed = applied.current !== null && applied.current !== serialized
+          applied.current = serialized
           replaceRemoteLoopSources(sources)
           // A source that changed hands or shape must not keep an old sample.
-          refreshRemoteLoopPreviews()
+          // The first list changes nothing a loop has already asked about.
+          if (changed) refreshRemoteLoopPreviews()
         })
         .catch((err: unknown) => {
           // The editor stays usable with the sources it already has.
@@ -56,13 +62,11 @@ export function usePluginLoopSources(enabled: boolean): void {
     }
 
     refresh()
-    const unsubscribeNotice = subscribeSiteNotice('loop-sources', refresh)
     window.addEventListener(CMS_PLUGINS_CHANGED_EVENT, refresh)
     window.addEventListener(LOOP_SOURCES_STALE_EVENT, refresh)
     document.addEventListener('visibilitychange', refreshWhenVisible)
     return () => {
       cancelled = true
-      unsubscribeNotice()
       window.removeEventListener(CMS_PLUGINS_CHANGED_EVENT, refresh)
       window.removeEventListener(LOOP_SOURCES_STALE_EVENT, refresh)
       document.removeEventListener('visibilitychange', refreshWhenVisible)

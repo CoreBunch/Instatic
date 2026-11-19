@@ -56,6 +56,7 @@ import { getCmsDataTable, previewCmsDataLoopItems } from '@core/persistence/cmsD
 import { listCmsMediaAssets, type CmsMediaAsset } from '@core/persistence/cmsMedia'
 import { dataTablePreviewToLoopItem } from '@core/templates/templatePreviewData'
 import { CanvasPreviewReadinessContext } from './CanvasPreviewReadiness'
+import { retryRemoteLoopPreview } from './remoteLoopPreviews'
 import { useRemoteLoopPreview } from './useRemoteLoopPreview'
 
 // ---------------------------------------------------------------------------
@@ -396,10 +397,9 @@ export function useLoopPreviewItems(
 
   if (sourceId === 'site.pages') return sitePagesItems
 
-  if (remoteSourceId !== null) {
-    if (remotePreview.status !== 'ready') return EMPTY_ITEMS
-    return remotePreview.items.slice(offset, offset + limit)
-  }
+  // The current answer's items, or the last ones this loop had while a
+  // changed filter's answer is on its way.
+  if (remoteSourceId !== null) return remotePreview.items.slice(offset, offset + limit)
 
   // In-process fallback — synchronous preview() with no client-side sort.
   if (!source || source.kind !== undefined && source.kind !== 'prefetched') return EMPTY_ITEMS
@@ -411,37 +411,51 @@ export function useLoopPreviewItems(
   }
 }
 
+/** What a loop with nothing to draw tells the author, and how to ask again. */
+export interface LoopPreviewNotice {
+  message: string
+  /** Set once the editor has stopped retrying a failed preview by itself. */
+  onRetry?: () => void
+}
+
 /**
  * Why a loop draws no iterations, when the reason is one the author should
  * be told: its source is not available, or its plugin's preview is loading,
- * failed or came back empty. `null` for every loop that is simply showing
- * its items, and for built-in sources, whose empty states are ordinary.
+ * busy, failed or came back empty. `null` for every loop that has items to
+ * show (a loop keeps its last items while a new answer is on its way), and
+ * for built-in sources, whose empty states are ordinary.
  * Takes the loop's props, so the loop's own canvas component can ask too:
  * a loop with no children draws no iterations, and still has to say this.
  */
-export function useLoopPreviewNotice(loopProps: Record<string, unknown>): string | null {
+export function useLoopPreviewNotice(loopProps: Record<string, unknown>): LoopPreviewNotice | null {
   const { sourceId, filters, offset, limit } = readLoopProps(loopProps)
   const source = useLoopSource(sourceId)
   const missing = useLoopSourceMissing(sourceId)
   const remoteSourceId = source?.kind === 'remote' ? source.id : null
-  const remotePreview = useRemoteLoopPreview(
-    remoteSourceId,
-    filters,
-    Math.min(offset + limit, LOOP_PREVIEW_MAX_ITEMS),
-  )
+  const previewLimit = Math.min(offset + limit, LOOP_PREVIEW_MAX_ITEMS)
+  const { preview, items } = useRemoteLoopPreview(remoteSourceId, filters, previewLimit)
 
   if (missing) {
-    return `The loop source “${sourceId}” is not available. Its plugin may be disabled or removed.`
+    return {
+      message: `The loop source “${sourceId}” is not available. Its plugin may be disabled or removed.`,
+    }
   }
   if (source?.kind !== 'remote') return null
+  if (items.length > offset) return null
+
   const plugin = source.provider.pluginName
-  if (remotePreview.status === 'failed') {
-    return `${plugin} could not preview this list: ${remotePreview.error}`
+  if (preview.status === 'failed') {
+    if (!preview.final) return { message: `${plugin} could not preview this list. Trying again…` }
+    return {
+      message: `${plugin} could not preview this list: ${preview.error}`,
+      onRetry: () => retryRemoteLoopPreview({ sourceId: source.id, filters, limit: previewLimit }),
+    }
   }
-  if (remotePreview.status === 'ready') {
-    return remotePreview.items.length > offset
-      ? null
-      : `${plugin} has no sample items for this list. The published page shows the real ones.`
+  if (preview.status === 'busy') {
+    return { message: `The preview from ${plugin} is busy. Trying again shortly…` }
   }
-  return `Loading a preview from ${plugin}…`
+  if (preview.status === 'ready') {
+    return { message: `${plugin} has no sample items for this list. The published page shows the real ones.` }
+  }
+  return { message: `Loading a preview from ${plugin}…` }
 }

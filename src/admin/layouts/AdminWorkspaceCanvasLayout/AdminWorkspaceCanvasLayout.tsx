@@ -58,8 +58,9 @@ export function AdminWorkspaceCanvasLayout({
   // The merge review has no panels of its own; it reads the content workspace's stored layout.
   useWorkspaceLayoutPersistence(workspace === 'branchReview' ? 'content' : workspace)
   useInstalledEditorPlugins(pluginBackgroundWorkEnabled)
-  // Listing a plugin's loop sources needs `site.read`; without it there is nothing to ask for.
-  usePluginLoopSources(!currentUser || hasCapability(currentUser, 'site.read'))
+  // Of the workspaces on this layout only Content draws loops (an entry's
+  // template preview). Listing a plugin's loop sources needs `site.read`.
+  usePluginLoopSources(workspace === 'content' && (!currentUser || hasCapability(currentUser, 'site.read')))
   usePluginEventBridge(pluginBackgroundWorkEnabled)
 
   const appearance = useEditorAppearancePreferences()

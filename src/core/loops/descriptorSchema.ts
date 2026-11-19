@@ -67,6 +67,9 @@ export type RemoteLoopSource = Static<typeof RemoteLoopSourceSchema>
  */
 export const LOOP_PREVIEW_MAX_ITEMS = 12
 
+/** The `code` of the 429 the server answers while a plugin's previews are busy. */
+export const LOOP_PREVIEW_BUSY_CODE = 'preview_busy'
+
 /** Largest preview answer the host passes on: bytes of its JSON in UTF-8. */
 export const LOOP_PREVIEW_MAX_BYTES = 256 * 1024
 

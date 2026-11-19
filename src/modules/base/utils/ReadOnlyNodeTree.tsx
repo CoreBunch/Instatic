@@ -303,7 +303,7 @@ function ReadOnlyLoopIterationsPreview({
 }: ReadOnlyLoopIterationsPreviewProps) {
   const items = useLoopPreviewItems(node, templateContext)
   const notice = useLoopPreviewNotice(node.props)
-  if (items.length === 0) return notice ? <LoopPreviewNotice message={notice} /> : null
+  if (items.length === 0) return notice ? <LoopPreviewNotice notice={notice} /> : null
 
   const baseStack = templateContext?.entryStack ?? []
   return (

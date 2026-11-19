@@ -66,6 +66,13 @@ export interface RequestFromWorkerOptions {
    * (load / lifecycle / route / hook / loop / media calls) uses the default.
    */
   timeoutMs?: number
+  /**
+   * What an expired budget means. `'crash'` (the default) treats the worker
+   * as wedged: it is torn down and the crash is recorded. `'reject'` only
+   * fails this one call and leaves the worker alone, for a call nothing may
+   * hold against the plugin (an editor's preview of a loop source).
+   */
+  onTimeout?: 'crash' | 'reject'
 }
 
 export function requestFromWorker<TKind extends WorkerToMainMessage['kind']>(
@@ -88,7 +95,7 @@ export function requestFromWorker<TKind extends WorkerToMainMessage['kind']>(
       pendingRequests.delete(msg.correlationId)
       const reason = `Plugin "${pluginId}" did not respond to ${msg.kind} within ${timeoutMs}ms`
       reject(new Error(reason))
-      handleWorkerCrash(pluginId, reason)
+      if (options.onTimeout !== 'reject') handleWorkerCrash(pluginId, reason)
     }, timeoutMs)
     pendingRequests.set(msg.correlationId, {
       pluginId,

@@ -13,11 +13,17 @@
  * contract, and it is told nothing about a visitor or a member.
  *
  * A preview runs in the plugin's one worker, so it competes with the
- * plugin's real work. Three things keep an editor from crowding that work
- * out: a preview may run for one second (`LOOP_PREVIEW_TIMEOUT_MS`),
- * identical previews in flight share one run, and each user may start only
- * so many per source per minute. An overrun is an error answer; it is not a
- * worker fault and never counts toward the plugin's crash budget.
+ * plugin's real work, and anyone who can open the editor can ask for one.
+ * The host therefore keeps previews few and cheap:
+ *
+ *   - `preview()` may run for one second (`LOOP_PREVIEW_TIMEOUT_MS`);
+ *   - one preview per plugin is with the worker at a time. The same question
+ *     asked again joins the run already waiting or under way; a different
+ *     one waits in a line of at most `MAX_WAITING_PREVIEWS`, and past that
+ *     is refused as busy without reaching the worker;
+ *   - each user may start only so many previews per plugin per minute;
+ *   - a preview that does not answer fails alone (`onTimeout: 'reject'`): it
+ *     is not a worker fault and nothing is recorded against the plugin.
  */
 
 import {
@@ -55,47 +61,36 @@ export function listPluginLoopSources(): RemoteLoopSource[] {
   return sources
 }
 
-/** How long a burst of registrations is gathered into one notification. */
-const CHANGE_DEBOUNCE_MS = 200
-
-/**
- * Call `listener` after the set of registered loop sources changed. A plugin
- * registers its sources one by one on activation, and an upgrade unregisters
- * and registers them again, so changes close together are reported once.
- * Covers every way the set moves: enable, disable, upgrade, uninstall, and a
- * worker that crashed or came back.
- */
-export function onPluginLoopSourcesChanged(listener: () => void): () => void {
-  let timer: ReturnType<typeof setTimeout> | null = null
-  const unsubscribe = loopSourceRegistry.subscribe(() => {
-    if (timer) return
-    timer = setTimeout(() => {
-      timer = null
-      listener()
-    }, CHANGE_DEBOUNCE_MS)
-  })
-  return () => {
-    unsubscribe()
-    if (timer) clearTimeout(timer)
-  }
-}
-
 export type PluginLoopPreview =
   | { status: 'ok'; items: LoopItem[] }
   | { status: 'unknown-source' }
-  | { status: 'rate-limited'; retryAfterMs: number }
+  /** Too many previews from this user, or too many waiting for this plugin. */
+  | { status: 'busy'; retryAfterMs: number }
   | { status: 'failed'; error: string }
 
 /**
- * The editor caches a preview for 30 seconds and asks again only when a
- * filter changes, so thirty a minute is far above honest use.
+ * The editor asks once per source, filters and limit and again only when a
+ * filter settles on a new value, so thirty a minute is far above honest use.
  */
 const previewRateLimit = new RateLimiter({ limit: 30, windowMs: 60_000 })
+
+/** Previews that may wait behind the one a plugin's worker is running. */
+const MAX_WAITING_PREVIEWS = 3
+
+/** What a refused asker is told to wait: a full line clears in about this long. */
+const BUSY_RETRY_AFTER_MS = 2_000
 
 /** How deep a field value may nest. A list of objects of lists is depth 3. */
 const MAX_FIELD_DEPTH = 6
 
-const inFlight = new Map<string, Promise<PluginLoopPreview>>()
+interface PluginPreviewLine {
+  /** Settles when the last preview handed to this plugin has finished. */
+  tail: Promise<unknown>
+  /** Previews not yet finished, the running one included, by question. */
+  pending: Map<string, Promise<PluginLoopPreview>>
+}
+
+const previewLines = new Map<string, PluginPreviewLine>()
 
 function owningPluginId(sourceId: string): string | null {
   for (const entry of hostPlugins.values()) {
@@ -150,26 +145,42 @@ async function runPreview(
  * handed the loop's filters and a limit, nothing else. Its answer is checked
  * item by item and capped in count, depth and size before it leaves the host.
  */
-export async function previewPluginLoopSource(
+export function previewPluginLoopSource(
   userId: string,
   sourceId: string,
   options: { filters: Record<string, unknown>; limit: number },
 ): Promise<PluginLoopPreview> {
   const pluginId = owningPluginId(sourceId)
-  if (!pluginId) return { status: 'unknown-source' }
+  if (!pluginId) return Promise.resolve({ status: 'unknown-source' })
 
-  // The same question already being answered: wait for that answer. It costs
-  // the plugin nothing more, so it is not counted against the asker.
+  let line = previewLines.get(pluginId)
+  if (!line) {
+    line = { tail: Promise.resolve(), pending: new Map() }
+    previewLines.set(pluginId, line)
+  }
+
+  // The same question already waiting or being answered: share that answer.
+  // It costs the plugin nothing more, so it is not counted against the asker.
   const key = JSON.stringify([sourceId, options.filters, options.limit])
-  const running = inFlight.get(key)
-  if (running) return running
+  const shared = line.pending.get(key)
+  if (shared) return shared
 
-  const allowed = previewRateLimit.consume(`${userId}:${sourceId}`)
-  if (!allowed.ok) return { status: 'rate-limited', retryAfterMs: allowed.retryAfterMs }
+  // One running plus the line behind it. Past that the asker is told to come
+  // back, and the worker never hears of it.
+  if (line.pending.size > MAX_WAITING_PREVIEWS) {
+    return Promise.resolve({ status: 'busy', retryAfterMs: BUSY_RETRY_AFTER_MS })
+  }
+  const allowed = previewRateLimit.consume(`${userId}:${pluginId}`)
+  if (!allowed.ok) return Promise.resolve({ status: 'busy', retryAfterMs: allowed.retryAfterMs })
 
-  const run = runPreview(pluginId, sourceId, options).finally(() => {
-    inFlight.delete(key)
+  const held = line
+  const run = held.tail.then(() => runPreview(pluginId, sourceId, options))
+  // `runPreview` never rejects, so the line never stalls on a failure.
+  held.tail = run
+  held.pending.set(key, run)
+  void run.finally(() => {
+    held.pending.delete(key)
+    if (held.pending.size === 0 && previewLines.get(pluginId) === held) previewLines.delete(pluginId)
   })
-  inFlight.set(key, run)
   return run
 }

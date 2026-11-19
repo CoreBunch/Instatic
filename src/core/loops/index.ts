@@ -12,6 +12,7 @@
 export type { LoopEntitySource, LoopItem } from './types'
 export { loopSourceRegistry } from './registry'
 export {
+  LOOP_PREVIEW_BUSY_CODE,
   LOOP_PREVIEW_MAX_BYTES,
   LOOP_PREVIEW_MAX_ITEMS,
   LoopSourceDescriptorSchema,

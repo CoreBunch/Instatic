@@ -18,8 +18,6 @@
  *   - FRAME_AWARENESS: one site-wide awareness channel (PRESENCE_DOC_ID) —
  *     cursors/selections; per-connection clientIDs are tracked so a closing
  *     socket's peers disappear immediately.
- *   - FRAME_NOTICE: server → client only; a site-wide notice to every
- *     connection (see `notify`). A client that sends one is ignored.
  *   - FRAME_RESET: server → client only; broadcast when the relay drops a
  *     doc whose backing JSON was rewritten out-of-relay.
  *
@@ -35,11 +33,9 @@ import * as awarenessProtocol from 'y-protocols/awareness'
 import {
   decodeCollabFrame,
   encodeCollabFrame,
-  encodeNoticePayload,
   encodeResetPayload,
   FRAME_AWARENESS,
   FRAME_PING,
-  FRAME_NOTICE,
   FRAME_PONG,
   FRAME_RESET,
   FRAME_SYNC,
@@ -48,7 +44,6 @@ import {
   SITE_SOCKET_PATH,
   type CollabFrame,
   type ResetReason,
-  type SiteNotice,
 } from '@core/collab'
 import { getSessionHash, requireCapability, userHasCapability } from '../auth/authz'
 import { safeParseValue, Type } from '@core/utils/typeboxHelpers'
@@ -539,17 +534,8 @@ export function createCollabSocketLayer(relay: CollabRelay, db: DbClient) {
     },
   }
 
-  /** Tell every open editor that something outside the documents changed. */
-  function notify(notice: SiteNotice): void {
-    broadcast(
-      PRESENCE_DOC_ID,
-      encodeCollabFrame(PRESENCE_DOC_ID, '', FRAME_NOTICE, encodeNoticePayload(notice)),
-    )
-  }
-
   return {
     handlers,
     awareness,
-    notify,
   }
 }

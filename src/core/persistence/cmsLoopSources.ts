@@ -27,15 +27,22 @@ export async function listCmsLoopSources(
   return body.sources
 }
 
-/** Sample items from a plugin source's `preview()`. Rejects with the plugin's error. */
+/**
+ * Sample items from a plugin source's `preview()`. Rejects with an `ApiError`:
+ * 429 with `LOOP_PREVIEW_BUSY_CODE` (`@core/loops`) and `retryAfterMs` when the plugin's
+ * previews are busy, 404 when nobody provides the source, 502 when the
+ * preview failed.
+ */
 export async function previewCmsLoopSource(
   request: LoopSourcePreviewRequest,
+  signal?: AbortSignal,
   fetchImpl: FetchLike = globalThis.fetch.bind(globalThis),
   basePath = '/admin/api/cms',
 ): Promise<LoopItem[]> {
   const body = await apiRequest(`${basePath}/loop-sources/preview`, {
     method: 'POST',
     body: request,
+    signal,
     schema: LoopSourcePreviewEnvelope,
     fetchImpl,
     fallbackMessage: 'The loop source preview failed',

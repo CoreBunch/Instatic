@@ -1,32 +1,42 @@
 /**
  * Previews of plugin loop sources on the canvas.
  *
- * Several loops share one answer per source, filters and limit. A loop that
- * stays on screen must still see a failed answer retried, a good answer
- * refreshed, and every answer asked for again when the plugins change: the
- * mounted hook follows the store, never a copy it took earlier.
+ * A preview is sample data fetched from the plugin's sandbox, so the editor
+ * asks as rarely as it can: once per source, filters and limit, never on a
+ * timer, and only for a filter value that was left standing. A loop that has
+ * items keeps them while a new answer is on its way and when asking again
+ * fails. These tests drive the mounted hook with a stubbed server.
  */
 import { afterEach, beforeEach, describe, expect, it, jest } from 'bun:test'
 import { act, cleanup, renderHook } from '@testing-library/react'
 import {
   PREVIEW_DEBOUNCE_MS,
+  PREVIEW_MAX_RETRIES,
   PREVIEW_RETRY_MS,
-  PREVIEW_TTL_MS,
   refreshRemoteLoopPreviews,
   resetRemoteLoopPreviews,
+  retryRemoteLoopPreview,
 } from '@site/canvas/remoteLoopPreviews'
 import { useRemoteLoopPreview } from '@site/canvas/useRemoteLoopPreview'
 
 const SOURCE = 'acme.shop.offers'
 const realFetch = globalThis.fetch
 
-type Answer = { status: number; body: unknown }
+type Answer = { status: number; body: unknown; headers?: Record<string, string> } | 'never'
+interface Sent { sourceId: string; filters: Record<string, unknown>; limit: number; signal: AbortSignal | null }
 let answers: Answer[] = []
-let requests: Array<{ sourceId: string; filters: Record<string, unknown>; limit: number }> = []
+let requests: Sent[] = []
 
 function items(...titles: string[]): Answer {
   return { status: 200, body: { items: titles.map((title, i) => ({ id: String(i), fields: { title } })) } }
 }
+const failure: Answer = { status: 502, body: { error: 'The plugin\'s preview() failed.' } }
+const busy: Answer = {
+  status: 429,
+  body: { error: 'Previews of this plugin are busy.', code: 'preview_busy' },
+  headers: { 'retry-after': '3' },
+}
+const titles = (list: Array<{ fields: Record<string, unknown> }>) => list.map((item) => item.fields.title)
 
 /** Let the pending request and the store's reaction to it finish. */
 async function settle(): Promise<void> {
@@ -46,13 +56,19 @@ beforeEach(() => {
   jest.useFakeTimers()
   answers = []
   requests = []
-  globalThis.fetch = (async (_input: RequestInfo | URL, init?: RequestInit) => {
-    requests.push(JSON.parse(String(init?.body)))
+  globalThis.fetch = ((_input: RequestInfo | URL, init?: RequestInit) => {
+    const signal = init?.signal ?? null
+    requests.push({ ...JSON.parse(String(init?.body)), signal })
     const answer = answers.shift() ?? items('default')
-    return new Response(JSON.stringify(answer.body), {
+    if (answer === 'never') {
+      return new Promise<Response>((_resolve, reject) => {
+        signal?.addEventListener('abort', () => reject(new DOMException('Aborted', 'AbortError')))
+      })
+    }
+    return Promise.resolve(new Response(JSON.stringify(answer.body), {
       status: answer.status,
-      headers: { 'content-type': 'application/json' },
-    })
+      headers: { 'content-type': 'application/json', ...answer.headers },
+    }))
   }) as typeof fetch
 })
 
@@ -67,7 +83,7 @@ describe('useRemoteLoopPreview', () => {
   it('stays idle and asks nothing for a loop that is not on a plugin source', async () => {
     const { result } = renderHook(() => useRemoteLoopPreview(null, {}, 3))
     await advance(PREVIEW_DEBOUNCE_MS * 2)
-    expect(result.current).toEqual({ status: 'idle' })
+    expect(result.current.preview).toEqual({ status: 'idle' })
     expect(requests).toEqual([])
   })
 
@@ -75,69 +91,141 @@ describe('useRemoteLoopPreview', () => {
     answers = [items('Sample')]
     const first = renderHook(() => useRemoteLoopPreview(SOURCE, { currency: 'eur' }, 3))
     const second = renderHook(() => useRemoteLoopPreview(SOURCE, { currency: 'eur' }, 3))
-    expect(first.result.current).toEqual({ status: 'loading' })
+    expect(first.result.current.preview).toEqual({ status: 'loading' })
 
     await advance(PREVIEW_DEBOUNCE_MS)
-    expect(requests).toEqual([{ sourceId: SOURCE, filters: { currency: 'eur' }, limit: 3 }])
-    expect(first.result.current).toEqual({ status: 'ready', items: [{ id: '0', fields: { title: 'Sample' } }] })
-    expect(second.result.current).toBe(first.result.current)
-  })
-
-  it('does not ask for a filter value that was typed over before the wait ended', async () => {
-    const { rerender } = renderHook(({ currency }) => useRemoteLoopPreview(SOURCE, { currency }, 3), {
-      initialProps: { currency: 'e' },
-    })
-    await advance(PREVIEW_DEBOUNCE_MS / 2)
-    rerender({ currency: 'eu' })
-    await advance(PREVIEW_DEBOUNCE_MS / 2)
-    rerender({ currency: 'eur' })
-    await advance(PREVIEW_DEBOUNCE_MS)
-    expect(requests.map((request) => request.filters.currency)).toEqual(['eur'])
-  })
-
-  it('retries a failed preview by itself while the loop is on screen', async () => {
-    answers = [{ status: 502, body: { error: 'The plugin\'s preview() failed.' } }, items('Recovered')]
-    const { result } = renderHook(() => useRemoteLoopPreview(SOURCE, {}, 3))
-    await advance(PREVIEW_DEBOUNCE_MS)
-    expect(result.current).toEqual({ status: 'failed', error: 'The plugin\'s preview() failed.' })
-
-    await advance(PREVIEW_RETRY_MS)
-    expect(requests).toHaveLength(2)
-    expect(result.current).toEqual({ status: 'ready', items: [{ id: '0', fields: { title: 'Recovered' } }] })
-  })
-
-  it('asks again when an answer has aged, with the loop still on screen', async () => {
-    answers = [items('Old'), items('New')]
-    const { result } = renderHook(() => useRemoteLoopPreview(SOURCE, {}, 3))
-    await advance(PREVIEW_DEBOUNCE_MS)
-    expect(result.current).toMatchObject({ status: 'ready', items: [{ fields: { title: 'Old' } }] })
-
-    await advance(PREVIEW_TTL_MS - 1)
     expect(requests).toHaveLength(1)
-    await advance(1)
-    expect(requests).toHaveLength(2)
-    expect(result.current).toMatchObject({ status: 'ready', items: [{ fields: { title: 'New' } }] })
+    expect(requests[0]).toMatchObject({ sourceId: SOURCE, filters: { currency: 'eur' }, limit: 3 })
+    expect(titles(first.result.current.items)).toEqual(['Sample'])
+    expect(second.result.current.items).toBe(first.result.current.items)
+  })
+
+  it('sends one request for a filter value typed a key at a time', async () => {
+    const typed = 'a fairly long currency filter value, 42 chars'
+    const { rerender } = renderHook(({ currency }) => useRemoteLoopPreview(SOURCE, { currency }, 3), {
+      initialProps: { currency: '' },
+    })
+    for (let i = 1; i <= typed.length; i++) {
+      rerender({ currency: typed.slice(0, i) })
+      // Slower than a fast typist, faster than the wait.
+      await advance(450)
+    }
+    await advance(PREVIEW_DEBOUNCE_MS)
+    expect(requests.map((request) => request.filters.currency)).toEqual([typed])
+  })
+
+  it('cancels a request that was overtaken while on its way', async () => {
+    answers = ['never', items('Second')]
+    const { rerender, result } = renderHook(({ currency }) => useRemoteLoopPreview(SOURCE, { currency }, 3), {
+      initialProps: { currency: 'eur' },
+    })
+    await advance(PREVIEW_DEBOUNCE_MS)
+    expect(requests).toHaveLength(1)
+    expect(requests[0]!.signal?.aborted).toBe(false)
+
+    rerender({ currency: 'usd' })
+    await advance(PREVIEW_DEBOUNCE_MS)
+    expect(requests[0]!.signal?.aborted).toBe(true)
+    expect(requests.map((request) => request.filters.currency)).toEqual(['eur', 'usd'])
+    expect(titles(result.current.items)).toEqual(['Second'])
+  })
+
+  it('never asks again by itself: an editor left alone makes no requests', async () => {
+    answers = [items('Sample')]
+    const { result } = renderHook(() => useRemoteLoopPreview(SOURCE, {}, 3))
+    await advance(PREVIEW_DEBOUNCE_MS)
+    await advance(60 * 60 * 1000)
+    expect(requests).toHaveLength(1)
+    expect(titles(result.current.items)).toEqual(['Sample'])
+  })
+
+  it('answers a loop that comes back with what it already knows', async () => {
+    answers = [items('Sample')]
+    const first = renderHook(() => useRemoteLoopPreview(SOURCE, {}, 3))
+    await advance(PREVIEW_DEBOUNCE_MS)
+    first.unmount()
+
+    const second = renderHook(() => useRemoteLoopPreview(SOURCE, {}, 3))
+    await advance(PREVIEW_DEBOUNCE_MS * 2)
+    expect(requests).toHaveLength(1)
+    expect(titles(second.result.current.items)).toEqual(['Sample'])
+  })
+
+  it('keeps the items on screen while a changed filter is loading, and if that answer fails', async () => {
+    answers = [items('Euro offer'), failure, failure, failure, failure]
+    const { rerender, result } = renderHook(({ currency }) => useRemoteLoopPreview(SOURCE, { currency }, 3), {
+      initialProps: { currency: 'eur' },
+    })
+    await advance(PREVIEW_DEBOUNCE_MS)
+    expect(titles(result.current.items)).toEqual(['Euro offer'])
+
+    rerender({ currency: 'usd' })
+    expect(result.current.preview.status).toBe('loading')
+    expect(titles(result.current.items)).toEqual(['Euro offer'])
+
+    await advance(PREVIEW_DEBOUNCE_MS)
+    expect(result.current.preview.status).toBe('failed')
+    expect(titles(result.current.items)).toEqual(['Euro offer'])
+  })
+
+  it('keeps a loop\'s items when asking again fails', async () => {
+    answers = [items('Version 1'), failure, failure, failure, failure]
+    const { result } = renderHook(() => useRemoteLoopPreview(SOURCE, {}, 3))
+    await advance(PREVIEW_DEBOUNCE_MS)
+
+    // The plugins changed and the preview is asked for again, without luck.
+    act(() => refreshRemoteLoopPreviews())
+    await settle()
+    for (let i = 0; i < PREVIEW_MAX_RETRIES; i++) await advance(PREVIEW_RETRY_MS * 2 ** i)
+    expect(requests).toHaveLength(2 + PREVIEW_MAX_RETRIES)
+    expect(result.current.preview.status).toBe('ready')
+    expect(titles(result.current.items)).toEqual(['Version 1'])
   })
 
   it('gives a mounted loop the new answer when the plugins changed', async () => {
     answers = [items('Version 1'), items('Version 2')]
     const { result } = renderHook(() => useRemoteLoopPreview(SOURCE, {}, 3))
     await advance(PREVIEW_DEBOUNCE_MS)
-    expect(result.current).toMatchObject({ status: 'ready', items: [{ fields: { title: 'Version 1' } }] })
+    expect(titles(result.current.items)).toEqual(['Version 1'])
 
     // Same source id, upgraded plugin: no timer has run out, the loop never unmounted.
     act(() => refreshRemoteLoopPreviews())
     await settle()
     expect(requests).toHaveLength(2)
-    expect(result.current).toMatchObject({ status: 'ready', items: [{ fields: { title: 'Version 2' } }] })
+    expect(titles(result.current.items)).toEqual(['Version 2'])
   })
 
-  it('stops asking once no loop shows the preview', async () => {
-    answers = [items('Sample')]
-    const { unmount } = renderHook(() => useRemoteLoopPreview(SOURCE, {}, 3))
+  it('waits out a busy answer for as long as the server says, without calling it a failure', async () => {
+    answers = [busy, items('Sample')]
+    const { result } = renderHook(() => useRemoteLoopPreview(SOURCE, {}, 3))
     await advance(PREVIEW_DEBOUNCE_MS)
-    unmount()
-    await advance(PREVIEW_TTL_MS * 3)
+    expect(result.current.preview).toEqual({ status: 'busy' })
+
+    await advance(2_999)
     expect(requests).toHaveLength(1)
+    await advance(1)
+    expect(requests).toHaveLength(2)
+    expect(titles(result.current.items)).toEqual(['Sample'])
+  })
+
+  it('retries a failure a few times, then stops until the author asks', async () => {
+    answers = [failure, failure, failure, failure, items('Recovered')]
+    const { result } = renderHook(() => useRemoteLoopPreview(SOURCE, {}, 3))
+    await advance(PREVIEW_DEBOUNCE_MS)
+    expect(result.current.preview).toEqual({
+      status: 'failed', error: 'The plugin\'s preview() failed.', final: false,
+    })
+
+    for (let i = 0; i < PREVIEW_MAX_RETRIES; i++) await advance(PREVIEW_RETRY_MS * 2 ** i)
+    expect(requests).toHaveLength(1 + PREVIEW_MAX_RETRIES)
+    expect(result.current.preview).toMatchObject({ status: 'failed', final: true })
+
+    // Nothing more by itself, however long the loop stays on screen.
+    await advance(60 * 60 * 1000)
+    expect(requests).toHaveLength(1 + PREVIEW_MAX_RETRIES)
+
+    act(() => retryRemoteLoopPreview({ sourceId: SOURCE, filters: {}, limit: 3 }))
+    await settle()
+    expect(titles(result.current.items)).toEqual(['Recovered'])
   })
 })

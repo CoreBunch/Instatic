@@ -25,6 +25,7 @@ import type { ModuleComponentProps } from '@core/module-engine'
 import { CanvasModulePlaceholder } from '@ui/components/CanvasModulePlaceholder'
 import { BoxStackSolidIcon } from 'pixel-art-icons/icons/box-stack-solid'
 import { htmlAttributesForReact, resolveHtmlTag } from '@core/htmlAttributes'
+import { LoopPreviewRetry } from '@site/canvas/LoopPreviewNotice'
 import { useLoopPreviewNotice } from '@site/canvas/useLoopPreviewItems'
 
 export const LoopEditor: React.FC<ModuleComponentProps> = ({ props, children, mcClassName, nodeWrapperProps, nodeId }) => {
@@ -41,7 +42,8 @@ export const LoopEditor: React.FC<ModuleComponentProps> = ({ props, children, mc
         className={mcClassName}
         icon={<BoxStackSolidIcon size={16} color="currentColor" />}
         label="Empty loop"
-        description={notice ? <span role="status" data-loop-preview-notice="">{notice}</span> : undefined}
+        description={notice ? <span role="status" data-loop-preview-notice="">{notice.message}</span> : undefined}
+        actions={notice?.onRetry ? <LoopPreviewRetry onRetry={notice.onRetry} /> : undefined}
       />
     )
   }

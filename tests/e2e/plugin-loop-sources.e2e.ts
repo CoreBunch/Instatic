@@ -21,9 +21,11 @@ import {
  * with a loop on it. The editor offers the sources by the plugin's name,
  * says why a loop has nothing to draw (preview failed, no sample items,
  * still loading), draws the plugin's sample items, offers the source's
- * fields for binding, and publishes the real items. A list of sources that
- * arrives late must not be mistaken for a missing source, and a plugin
- * disabled from another tab must reach an open editor without a reload.
+ * fields for binding, and publishes the real items. Previews are asked for
+ * sparingly: one request for a typed filter value, none from an idle editor.
+ * A list of sources that arrives late must not be mistaken for a missing
+ * source, and a plugin disabled elsewhere reaches an open editor when its
+ * author comes back to the tab.
  */
 
 // Installing a plugin and publishing ask for step-up, which rotates the session token.
@@ -60,6 +62,14 @@ const PLUGIN_SOURCE = `
     await api.cms.loops.registerSource({ ...base, id: api.plugin.id + '.bare', label: 'Bare' })
   }
 `
+
+/**
+ * What the browser tells a page when its tab is shown again. A test cannot
+ * hide and show a real tab, so it sends the page that event itself.
+ */
+async function returnToTab(target: Page): Promise<void> {
+  await target.evaluate(() => document.dispatchEvent(new Event('visibilitychange')))
+}
 
 async function pickSource(page: Page, label: string): Promise<void> {
   await page.locator('#ctrl-sourceId').click()
@@ -132,9 +142,15 @@ test('a plugin loop source is picked, previewed and published from the editor (S
       expect(options.indexOf('E2E Shop: Offers')).toBeGreaterThan(options.indexOf('Data rows'))
       await page.getByRole('option', { name: 'E2E Shop: Broken', exact: true }).click()
 
-      // A preview that throws: the loop says so, without the plugin's own words.
+      // A preview that throws: the loop says so, without the plugin's own words,
+      // and once the editor has stopped retrying it offers to try again.
       await expect(notice(page)).toContainText('E2E Shop could not preview this list', { timeout: 15_000 })
       await expect(notice(page)).not.toContainText('secret detail')
+      const tryAgain = canvasFrame(page).getByRole('button', { name: 'Try again' })
+      await expect(tryAgain).toBeVisible({ timeout: 30_000 })
+      const retried = page.waitForRequest((request) => request.url().endsWith('/loop-sources/preview'))
+      await tryAgain.click()
+      await retried
 
       // A source with no preview().
       await pickSource(page, 'E2E Shop: Bare')
@@ -155,9 +171,17 @@ test('a plugin loop source is picked, previewed and published from the editor (S
     })
 
     await test.step('the canvas draws the sample items and the binding picker offers the fields', async () => {
-      // The source's own filter appears once it is picked.
+      const previews: string[] = []
+      page.on('request', (request) => {
+        if (request.url().endsWith('/loop-sources/preview')) previews.push(request.postData() ?? '')
+      })
+
+      // The source's own filter appears once it is picked. Typed a key at a
+      // time, the value is asked about once, when the typing has stopped.
       await expect(page.getByTestId('property-control-currency')).toBeVisible()
-      await setPropValue(page, 'currency', 'eur')
+      await page.locator('#ctrl-currency').pressSequentially('eur', { delay: 250 })
+      await expect.poll(() => previews.length, { timeout: 10_000 }).toBe(1)
+      expect(JSON.parse(previews[0]!)).toMatchObject({ filters: { currency: 'eur' } })
 
       await insertNotchModule(page, 'text')
       await setPropValue(page, 'text', 'Offer')
@@ -170,6 +194,10 @@ test('a plugin loop source is picked, previewed and published from the editor (S
 
       await expect(canvasFrame(page).getByText('Offer Sample Pro eur')).toBeVisible({ timeout: 15_000 })
       await expect(canvasFrame(page).getByText('Offer Sample Team eur')).toBeVisible()
+
+      // Adding the child asked nothing new, and an editor left alone asks nothing at all.
+      await page.waitForTimeout(6_000)
+      expect(previews).toHaveLength(1)
     })
 
     await test.step('the published page lists the real items', async () => {
@@ -205,7 +233,7 @@ test('a plugin loop source is picked, previewed and published from the editor (S
       await page.unroute('**/admin/api/cms/loop-sources')
     })
 
-    await test.step('disabling the plugin reaches every open editor without a reload', async () => {
+    await test.step('a plugin disabled elsewhere reaches an open editor when its tab is shown again', async () => {
       const second = await context.newPage()
       try {
         await second.goto(page.url())
@@ -213,7 +241,12 @@ test('a plugin loop source is picked, previewed and published from the editor (S
         await expect(canvasFrame(second).getByText('Offer Sample Pro eur')).toBeVisible({ timeout: 20_000 })
 
         await setEnabled(false)
+        // Nothing is pushed to an open editor: until its author comes back, it shows what it had.
+        await page.waitForTimeout(2_000)
+        await expect(canvasFrame(second).getByText('Offer Sample Pro eur')).toBeVisible()
+
         for (const tab of [page, second]) {
+          await returnToTab(tab)
           await expect(canvasFrame(tab).getByText(unavailable, { exact: false })).toBeVisible({ timeout: 15_000 })
           await expect(canvasFrame(tab).getByText('Offer Sample Pro eur')).toHaveCount(0)
         }
@@ -224,6 +257,7 @@ test('a plugin loop source is picked, previewed and published from the editor (S
 
         await setEnabled(true)
         for (const tab of [page, second]) {
+          await returnToTab(tab)
           await expect(canvasFrame(tab).getByText('Offer Sample Pro eur')).toBeVisible({ timeout: 15_000 })
         }
         await expect(page.locator('#ctrl-sourceId')).toHaveValue('E2E Shop: Offers')

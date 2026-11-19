@@ -683,17 +683,6 @@ by a `socket.destroySoon()` call Bun lacked; 1.4.1 fixed both, and
 `devWorkflow.test.ts` now gates the proxy the other way, requiring `ws`
 forwarding to stay on.
 
-**Site notices.** The socket also carries `FRAME_NOTICE` (server to client
-only, under the presence id): a name for something outside the documents that
-changed, with no data. `createCollabSocketLayer(...).notify(notice)` sends it
-to every connection; the provider hands it to `emitSiteNotice`
-(`src/admin/pages/site/collab/siteNotices.ts`) and emits every known notice
-again when the socket (re)connects, because notices are not replayed. The
-subscriber fetches the new state over HTTP under its own access checks. The
-one notice today is `loop-sources` (see
-[plugin-system.md](plugin-system.md) → "Loop sources"). A notice reaches the
-editors connected to the server instance that sent it.
-
 **Presence** (`src/admin/pages/site/collab/awarenessState.ts`; per-frame
 publishers in `collab/framePresencePublishers.ts`, rendering in
 `PeerPresenceOverlay`): every editor publishes identity (deterministic HSL

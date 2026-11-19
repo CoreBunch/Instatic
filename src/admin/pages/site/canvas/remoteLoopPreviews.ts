@@ -2,31 +2,42 @@
  * Sample items for loops whose source lives in a plugin: the store.
  *
  * The plugin's `preview()` runs in its sandbox on the server, so every
- * preview is a request. One canvas shows the same loop in several breakpoint
- * frames, so loops with the same source, filters and limit share one entry
- * here. An entry lives as long as a mounted loop holds it:
+ * preview is a request, and the answer is sample data that does not go
+ * stale. The store therefore asks as little as it can:
  *
- *   - a new entry waits a moment before it asks, so a filter that is still
- *     being typed does not ask once per keystroke;
- *   - a good answer is asked for again after `PREVIEW_TTL_MS`, a failed one
- *     sooner and then at growing intervals, for as long as the entry is held;
- *   - `refreshRemoteLoopPreviews()` asks again for every held entry at once
- *     (the plugin behind a source may have changed) and drops the rest.
+ *   - one request per source, filters and limit for the life of the editor.
+ *     Every loop with the same three shares the answer, and it is kept after
+ *     the loops are gone. Nothing is refreshed on a timer: an editor left
+ *     alone makes no preview requests;
+ *   - a new question waits `PREVIEW_DEBOUNCE_MS` before it is sent, and one
+ *     that nobody shows any more by then (a filter value typed over) is never
+ *     sent. A request overtaken while in flight is cancelled;
+ *   - answers are asked for again only when the set of plugin sources changed
+ *     (`refreshRemoteLoopPreviews`) or the author asks (`retryRemoteLoopPreview`);
+ *   - a "busy" answer (the plugin's previews are queued, or this user asked
+ *     too often) is waited out for as long as the server says, and is never
+ *     reported as the plugin failing;
+ *   - a real failure is retried `PREVIEW_MAX_RETRIES` times at growing
+ *     intervals and then left for the author to retry;
+ *   - an answer that was good stays on screen while it is asked for again,
+ *     and stays if asking again fails.
  *
- * An answer being refreshed stays on screen until the new one arrives.
  * Everything here is kept in this tab only. State changes replace the
  * entry's `state` object, so `useSyncExternalStore` readers see each change
  * and nothing is read from the clock during a render.
  */
-import { loopSourceRegistry, type LoopItem } from '@core/loops'
-import { ApiError } from '@core/http'
+import { LOOP_PREVIEW_BUSY_CODE, loopSourceRegistry, type LoopItem } from '@core/loops'
+import { ApiError, isAbortError } from '@core/http'
 import { previewCmsLoopSource } from '@core/persistence/cmsLoopSources'
 import { getErrorMessage } from '@core/utils/errorMessage'
 
 export type RemoteLoopPreview =
   | { status: 'loading' }
   | { status: 'ready'; items: LoopItem[] }
-  | { status: 'failed'; error: string }
+  /** The server is holding previews back; the store is waiting to ask again. */
+  | { status: 'busy' }
+  /** `final` once the store has stopped retrying by itself. */
+  | { status: 'failed'; error: string; final: boolean }
 
 export interface RemoteLoopPreviewRequest {
   sourceId: string
@@ -39,27 +50,32 @@ interface Entry {
   state: RemoteLoopPreview
   holders: number
   failures: number
-  /** The pending debounce, refresh or retry. */
+  /** The pending debounce or retry. */
   timer: ReturnType<typeof setTimeout> | null
-  /** Bumped on every load, so an answer overtaken by a newer load is dropped. */
-  generation: number
+  /** The request in flight, so it can be cancelled. */
+  inFlight: AbortController | null
+  /** Whether the question was ever sent. */
+  asked: boolean
   /** Settles when the entry first has an answer. */
   firstAnswer: Promise<void>
   resolveFirstAnswer: () => void
 }
 
-/** How long a good answer is shown before the plugin is asked again. */
-export const PREVIEW_TTL_MS = 30_000
 /** How long a new question waits, in case it is still being typed. */
-export const PREVIEW_DEBOUNCE_MS = 300
-/** First wait after a failure; doubles up to `PREVIEW_RETRY_MAX_MS`. */
-export const PREVIEW_RETRY_MS = 5_000
-const PREVIEW_RETRY_MAX_MS = 60_000
+export const PREVIEW_DEBOUNCE_MS = 600
+/** How often a failed preview is asked for again before the author must. */
+export const PREVIEW_MAX_RETRIES = 3
+/** First wait after a failure; doubles with each further one. */
+export const PREVIEW_RETRY_MS = 2_000
+/** How long to wait on a busy answer that names no time. */
+const PREVIEW_BUSY_RETRY_MS = 2_000
+const MAX_KEPT_ANSWERS = 200
 
 /** Fired on `window` when a preview is refused because nobody provides the source. */
 export const LOOP_SOURCES_STALE_EVENT = 'instatic:loop-sources-stale'
 
 const LOADING: RemoteLoopPreview = { status: 'loading' }
+const BUSY: RemoteLoopPreview = { status: 'busy' }
 const entries = new Map<string, Entry>()
 const listeners = new Set<() => void>()
 
@@ -83,36 +99,66 @@ export function remoteLoopPreviewSnapshot(key: string): RemoteLoopPreview {
   return entries.get(key)?.state ?? LOADING
 }
 
-function schedule(key: string, entry: Entry, delayMs: number): void {
+function stop(entry: Entry): void {
   if (entry.timer) clearTimeout(entry.timer)
+  entry.timer = null
+  entry.inFlight?.abort()
+  entry.inFlight = null
+}
+
+function setState(entry: Entry, state: RemoteLoopPreview): void {
+  if (entry.state === state) return
+  entry.state = state
+  emit()
+}
+
+function later(key: string, entry: Entry, delayMs: number): void {
   entry.timer = setTimeout(() => {
     entry.timer = null
+    // Nobody shows it any more: the next loop that does will ask.
     if (entry.holders > 0) load(key, entry)
-    else entries.delete(key)
+    else if (entry.state.status !== 'ready') entries.delete(key)
   }, delayMs)
 }
 
 function load(key: string, entry: Entry): void {
-  if (entry.timer) {
-    clearTimeout(entry.timer)
-    entry.timer = null
-  }
-  const generation = ++entry.generation
-  previewCmsLoopSource(entry.request).then(
+  stop(entry)
+  const controller = new AbortController()
+  entry.inFlight = controller
+  entry.asked = true
+  const hadItems = entry.state.status === 'ready'
+  previewCmsLoopSource(entry.request, controller.signal).then(
     (items) => {
-      if (entry.generation !== generation) return
+      if (entry.inFlight !== controller) return
+      entry.inFlight = null
       entry.failures = 0
-      entry.state = { status: 'ready', items }
-      schedule(key, entry, PREVIEW_TTL_MS)
+      setState(entry, { status: 'ready', items })
+      entry.resolveFirstAnswer()
     },
     (err: unknown) => {
-      if (entry.generation !== generation) return
-      entry.failures += 1
-      entry.state = {
-        status: 'failed',
-        error: getErrorMessage(err, 'The plugin could not be reached.'),
+      if (entry.inFlight !== controller || isAbortError(err)) return
+      entry.inFlight = null
+      entry.resolveFirstAnswer()
+
+      if (err instanceof ApiError && err.status === 429 && err.code === LOOP_PREVIEW_BUSY_CODE) {
+        // Not the plugin's fault and not counted as a failure.
+        if (!hadItems) setState(entry, BUSY)
+        later(key, entry, err.retryAfterMs ?? PREVIEW_BUSY_RETRY_MS)
+        return
       }
-      schedule(key, entry, Math.min(PREVIEW_RETRY_MS * 2 ** (entry.failures - 1), PREVIEW_RETRY_MAX_MS))
+
+      entry.failures += 1
+      const final = entry.failures > PREVIEW_MAX_RETRIES
+      if (!final) later(key, entry, PREVIEW_RETRY_MS * 2 ** (entry.failures - 1))
+      // A loop that has items keeps them: a failed refresh is not a reason to
+      // empty it.
+      if (!hadItems) {
+        setState(entry, {
+          status: 'failed',
+          error: getErrorMessage(err, 'The plugin could not be reached.'),
+          final,
+        })
+      }
       // The server says nobody provides this source, yet the editor still
       // lists it: the editor's list is out of date. (Once the list has caught
       // up the source is no longer listed, and this stops.)
@@ -121,11 +167,18 @@ function load(key: string, entry: Entry): void {
         window.dispatchEvent(new Event(LOOP_SOURCES_STALE_EVENT))
       }
     },
-  ).finally(() => {
-    if (entry.generation !== generation) return
-    entry.resolveFirstAnswer()
-    emit()
-  })
+  )
+}
+
+function dropUnheldAnswers(): void {
+  if (entries.size <= MAX_KEPT_ANSWERS) return
+  for (const [key, entry] of entries) {
+    if (entry.holders === 0) {
+      stop(entry)
+      entries.delete(key)
+    }
+    if (entries.size <= MAX_KEPT_ANSWERS / 2) return
+  }
 }
 
 /**
@@ -148,14 +201,21 @@ export function holdRemoteLoopPreview(
       holders: 0,
       failures: 0,
       timer: null,
-      generation: 0,
+      inFlight: null,
+      asked: false,
       firstAnswer,
       resolveFirstAnswer,
     }
     entries.set(key, entry)
-    schedule(key, entry, PREVIEW_DEBOUNCE_MS)
+    dropUnheldAnswers()
   }
   entry.holders += 1
+  // First holder of a question with no answer and nothing under way.
+  if (entry.state.status !== 'ready' && !entry.timer && !entry.inFlight) {
+    entry.failures = 0
+    setState(entry, LOADING)
+    later(key, entry, PREVIEW_DEBOUNCE_MS)
+  }
   const held = entry
   let released = false
   return {
@@ -164,12 +224,12 @@ export function holdRemoteLoopPreview(
       if (released) return
       released = true
       held.holders -= 1
-      // Never asked and nobody waiting: the question was abandoned mid-typing.
-      if (held.holders === 0 && held.generation === 0) {
-        if (held.timer) clearTimeout(held.timer)
-        held.resolveFirstAnswer()
-        entries.delete(key)
-      }
+      if (held.holders > 0 || held.state.status === 'ready') return
+      // Nobody is waiting for this any more (a filter value typed over): do
+      // not send it, and cancel it if it is already on its way.
+      stop(held)
+      held.resolveFirstAnswer()
+      entries.delete(key)
     },
   }
 }
@@ -185,17 +245,24 @@ export function refreshRemoteLoopPreviews(): void {
       entry.failures = 0
       load(key, entry)
     } else {
-      if (entry.timer) clearTimeout(entry.timer)
+      stop(entry)
       entries.delete(key)
     }
   }
 }
 
-/** Drop everything, timers included. For tests. */
+/** Ask again for one preview now: the author's "Try again". */
+export function retryRemoteLoopPreview(request: RemoteLoopPreviewRequest): void {
+  const key = remoteLoopPreviewKey(request)
+  const entry = entries.get(key)
+  if (!entry) return
+  entry.failures = 0
+  setState(entry, LOADING)
+  load(key, entry)
+}
+
+/** Drop everything, timers and requests included. For tests. */
 export function resetRemoteLoopPreviews(): void {
-  for (const entry of entries.values()) {
-    if (entry.timer) clearTimeout(entry.timer)
-    entry.generation += 1
-  }
+  for (const entry of entries.values()) stop(entry)
   entries.clear()
 }

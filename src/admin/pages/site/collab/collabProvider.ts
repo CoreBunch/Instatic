@@ -36,10 +36,8 @@ import * as awarenessProtocol from 'y-protocols/awareness'
 import {
   createCollabFrameReader,
   decodeCollabFrame,
-  decodeNotice,
   encodeCollabFrame,
   FRAME_AWARENESS,
-  FRAME_NOTICE,
   FRAME_PING,
   FRAME_PONG,
   FRAME_RESET,
@@ -50,7 +48,6 @@ import {
   decodeResetReason,
   type ResetReason,
 } from '@core/collab'
-import { emitSiteNotice } from './siteNotices'
 
 const RECONNECT_BASE_DELAY_MS = 1_000
 const RECONNECT_MAX_DELAY_MS = 30_000
@@ -271,12 +268,6 @@ export function createCollabProvider(
       return
     }
 
-    if (frame.frameType === FRAME_NOTICE) {
-      const notice = decodeNotice(frame.payload)
-      if (notice) emitSiteNotice(notice)
-      return
-    }
-
     const entry = bound.get(frame.docId)
     if (!entry) return
 
@@ -343,9 +334,6 @@ export function createCollabProvider(
       attempts = 0
       setStatus('connected')
       lastInboundAt = Date.now()
-      // Notices are not replayed: whatever was sent while this connection was
-      // down (or before it first opened) is caught up on here.
-      emitSiteNotice('loop-sources')
       // Timestamp of the first UNANSWERED ping of the current cycle; a cycle
       // ends when any inbound frame arrives after it.
       let lastPingSentAt = 0

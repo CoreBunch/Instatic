@@ -10,12 +10,14 @@
  * its `fetch()`, so it cannot be used to read what a source lists for real
  * visitors. Answers are `no-store`: nothing here is shared between people.
  * A failed preview answers 502 with a general reason; what the plugin threw
- * stays in the server log.
+ * stays in the server log. While a plugin's previews are queued up, or one
+ * user asks too often, the answer is 429 with `Retry-After` and the code
+ * `LOOP_PREVIEW_BUSY_CODE`, which the editor shows as busy, not as a failure.
  */
 import type { DbClient } from '../../db/client'
 import { requireCapability } from '../../auth/authz'
 import { badRequest, jsonResponse, readValidatedBody } from '../../http'
-import { LoopSourcePreviewRequestSchema } from '@core/loops'
+import { LOOP_PREVIEW_BUSY_CODE, LoopSourcePreviewRequestSchema } from '@core/loops'
 import { listPluginLoopSources, previewPluginLoopSource } from '../../plugins/host/loopSources'
 import { CMS_API_PREFIX } from './shared'
 import { runRouteTable, type Route } from './routeTable'
@@ -42,9 +44,9 @@ async function handlePreview(req: Request, db: DbClient): Promise<Response> {
   if (preview.status === 'unknown-source') {
     return jsonResponse({ error: 'No running plugin provides this loop source.' }, { status: 404 })
   }
-  if (preview.status === 'rate-limited') {
+  if (preview.status === 'busy') {
     return jsonResponse(
-      { error: 'Too many previews of this loop source. Try again in a moment.' },
+      { error: 'Previews of this plugin are busy. Try again in a moment.', code: LOOP_PREVIEW_BUSY_CODE },
       { status: 429, headers: { 'retry-after': String(Math.ceil(preview.retryAfterMs / 1000)) } },
     )
   }
