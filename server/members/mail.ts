@@ -9,18 +9,20 @@
  *    request's `Host` header, so a forged Host cannot aim a reset link at
  *    someone else's server. Without a configured origin, links are only
  *    built for a loopback request (local development).
- *  - Sending happens after the response is decided, in the background, so a
- *    request for a known address takes the same time as one for an unknown
- *    address.
+ *  - Handing an email to the queue happens after the response is decided
+ *    and is not awaited, so nothing about email delivery shows in how long a
+ *    request takes.
  */
 import type { DbClient } from '../db/client'
 import type { MemberPageKey, MemberPagePaths } from '@core/members'
 import { getErrorMessage } from '@core/utils/errorMessage'
 import { clientIp, configuredPublicOrigin } from '../auth/security'
 import { getMailDefaults } from '../mail/defaults'
-import { mailDeliveryMode, sendTemplateMail } from '../mail/send'
+import { recordMail } from '../mail/activity'
+import { queueTemplateMail } from '../mail/delivery'
+import { mailDeliveryMode } from '../mail/send'
 import { MEMBER_MAIL_KEYS, type MemberMailKind } from './mailTemplates'
-import type { MemberTokenKind } from './tokens'
+import { TOKEN_LIFETIME_MS, type MemberTokenKind } from './tokens'
 
 const LOOPBACK_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]'])
 const LOOPBACK_PEERS = new Set(['127.0.0.1', '::1', '::ffff:127.0.0.1'])
@@ -96,20 +98,51 @@ interface MemberMailInput {
 
 const pending = new Set<Promise<void>>()
 
+/** The kinds of email that carry a link, which stops working when its token expires. */
+function isLinkKind(kind: MemberMailKind): kind is MemberTokenKind {
+  return kind in TOKEN_LIFETIME_MS
+}
+
 /**
- * Send in the background. The caller has already decided its response, so a
- * slow or failing SMTP server never changes what, or how fast, the visitor
- * is told. Failures land in the mail activity log.
+ * Queue the email without making the request wait for it. The caller has
+ * already decided its response, so rendering the template and writing to
+ * the queue add nothing to what, or how fast, the visitor is told. (It does
+ * not make the two cases take equal time: a request for a known address has
+ * already issued a token.) For the same reason the email is queued after
+ * the token is committed, in its own transaction, not in the token's: if
+ * that fails the member can ask again, and the failure is logged below.
+ * The mail queue sends it straight away and retries
+ * a temporary failure, but never past the life of the link in it: a
+ * sign-in link that arrives after it expired is worse than none.
+ *
+ * An email that could not even be queued is not only a log line: the
+ * activity log gets a failed entry, so the owner can see that a member was
+ * left without their email.
  */
 export function queueMemberMail(db: DbClient, input: MemberMailInput): void {
-  const task = sendTemplateMail(db, {
-    key: MEMBER_MAIL_KEYS[input.kind],
+  const key = MEMBER_MAIL_KEYS[input.kind]
+  // The token was issued a moment ago, so its life is counted from now.
+  const deliverBefore = isLinkKind(input.kind) ? Date.now() + TOKEN_LIFETIME_MS[input.kind] : undefined
+  const task = queueTemplateMail(db, {
+    key,
     to: input.to,
     variables: { 'member.email': input.to, ...(input.link ? { link: input.link } : {}) },
+    deliverBefore,
   })
     .then(() => undefined)
-    .catch((err: unknown) => {
-      console.error(`[members] ${input.kind} email was not sent:`, getErrorMessage(err, 'unknown error'))
+    .catch(async (err: unknown) => {
+      const reason = getErrorMessage(err, 'unknown error')
+      console.error(`[members] ${input.kind} email was not queued:`, reason)
+      await recordMail(db, {
+        kind: key,
+        to: input.to,
+        subject: '(not queued)',
+        status: 'failed',
+        attempts: 0,
+        error: `Not queued, so never sent: ${reason}`,
+      }).catch((logErr: unknown) => {
+        console.error('[members] the failure could not be logged either:', getErrorMessage(logErr, 'unknown error'))
+      })
     })
     .finally(() => {
       pending.delete(task)
@@ -117,7 +150,11 @@ export function queueMemberMail(db: DbClient, input: MemberMailInput): void {
   pending.add(task)
 }
 
-/** Test seam: wait for every queued email to finish. */
+/**
+ * Wait until every email handed over so far is in the queue. The server
+ * calls this on shutdown, so a restart never drops an email between a
+ * request and the queue; tests call it before they look.
+ */
 export async function flushMemberMail(): Promise<void> {
   await Promise.all([...pending])
 }

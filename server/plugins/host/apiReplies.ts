@@ -17,8 +17,14 @@ export function replyApiOk(pluginId: string, correlationId: string, value?: unkn
   worker.postMessage({ kind: 'api-reply', correlationId, ok: true, value })
 }
 
-export function replyApiError(pluginId: string, correlationId: string, message: string): void {
+export function replyApiError(pluginId: string, correlationId: string, message: string, code?: string): void {
   const worker = workers.get(pluginId)
   if (!worker) return
-  worker.postMessage({ kind: 'api-reply', correlationId, ok: false, error: message })
+  worker.postMessage({
+    kind: 'api-reply',
+    correlationId,
+    ok: false,
+    error: message,
+    ...(code !== undefined ? { code } : {}),
+  })
 }

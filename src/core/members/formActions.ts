@@ -4,9 +4,6 @@
  * picker, and the fields "Add the fields" inserts) and the docs.
  *
  * `action` is the path under `/_instatic/members/`.
- *
- * Signing out is not here: it needs no fields, so it is a link
- * (`memberSignOutHref`), not a form.
  */
 
 export interface MemberFormField {
@@ -38,7 +35,11 @@ export interface MemberFormAction {
   /** Only a signed-in member can use it. */
   signedIn: boolean
   submitLabel: string
-  /** A sensible message for a form that shows one instead of redirecting. */
+  /**
+   * A sensible message for a form that shows one instead of redirecting.
+   * Empty when a success never shows one: signing out reloads the page or
+   * moves on, and the form is gone with the member.
+   */
   successMessage: string
 }
 
@@ -182,6 +183,17 @@ export const MEMBER_FORM_ACTIONS: readonly MemberFormAction[] = [
     successMessage: 'Check your new address for a confirmation link.',
   },
   {
+    action: 'logout',
+    label: 'Sign out',
+    group: 'account',
+    description: 'Signs the member out. The form needs only its button.',
+    fields: [],
+    needsToken: false,
+    signedIn: true,
+    submitLabel: 'Sign out',
+    successMessage: '',
+  },
+  {
     action: 'delete',
     label: 'Delete account',
     group: 'account',
@@ -218,12 +230,4 @@ export function memberFormAction(action: string): MemberFormAction | undefined {
 /** Where a member form posts. Unknown actions fall back to sign-in, never to an arbitrary path. */
 export function memberFormActionPath(action: string): string {
   return `/_instatic/members/${memberFormAction(action)?.action ?? DEFAULT_MEMBER_FORM_ACTION}`
-}
-
-const MEMBER_SIGN_OUT_PATH = '/_instatic/members/logout'
-
-/** The address a sign-out link opens. `to` is the site path to land on afterwards. */
-export function memberSignOutHref(to: string): string {
-  const target = to.trim()
-  return target && target !== '/' ? `${MEMBER_SIGN_OUT_PATH}?to=${encodeURIComponent(target)}` : MEMBER_SIGN_OUT_PATH
 }

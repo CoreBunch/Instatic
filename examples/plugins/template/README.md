@@ -123,6 +123,39 @@ Hosts are bare names or `*.example.com`. Whoever installs the plugin sees each o
 
 Inline code runs only as a declared `script-inline` asset, which the page allows by its hash. Inline event handlers (`onclick="…"`) are blocked on published pages; attach handlers from your script.
 
+## Sending email
+
+A plugin sends only emails it declares. Request `mail.send` (site members) or `mail.send.external` (any address) and list the templates:
+
+```json
+{
+  "permissions": ["mail.send"],
+  "mail": {
+    "templates": [
+      {
+        "key": "welcome",
+        "label": "Welcome",
+        "description": "Sent after a member joins.",
+        "variables": [{ "name": "link", "label": "Link", "sample": "https://example.com/start", "kind": "link" }],
+        "subject": "Welcome to {site.name}",
+        "body": "Thanks for joining.\n\n[Get started]({link})"
+      }
+    ]
+  }
+}
+```
+
+```js
+const site = await api.cms.site.publicUrl()
+await api.cms.mail.send({
+  template: 'welcome',
+  to: { member: memberId },
+  variables: { link: `${site}/start` },
+})
+```
+
+The site owner can reword each template under Email → Templates. `send` resolves once the email is queued; listen for `mail.delivered` and `mail.failed` (with `cms.hooks`) to learn how it went. This is for transactional email to one recipient at a time, not newsletters. Templates are Markdown: raw HTML is stripped, images are not allowed, and links you write out must be `https`. Declare a variable that carries an address with `"kind": "link"`: it must stand alone in the template or be the whole address of a link (`[Open]({link})`), and `instatic-plugin lint` refuses a template that glues one into text. Other variables are text: they may sit anywhere, but a value that contains an address is refused when you send. The owner reads each template before installing, and again when an update changes one.
+
 ## Managed media ingestion
 
 A plugin can import source images into managed media without moving bytes through QuickJS. For allowlisted HTTPS images, request both permissions and allow the upstream hosts:

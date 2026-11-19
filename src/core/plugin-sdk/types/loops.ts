@@ -22,6 +22,10 @@ export type LoopEntitySource = {
    * Mark the source per-visitor: the hole bypasses the cache, runs `fetch()`
    * on every page load, and receives request cookies. Implies
    * `requestDependent`. Use for cookie/randomised/wall-clock content.
+   *
+   * A per-visitor source of a plugin that holds `members.read` also gets
+   * `ctx.request.member`: the signed-in site member (`ServerPluginMember`),
+   * or `null` for a signed-out visitor. No other source is told.
    */
   perVisitor?: boolean
   fetch: (ctx: unknown) => Promise<{ items: unknown[]; totalItems: number }>

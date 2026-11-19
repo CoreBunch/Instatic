@@ -23,6 +23,11 @@ export const PLUGIN_PERMISSION_VALUES = [
   'members.read',
   'members.write',
   'members.tags',
+  // Email — sending the plugin's own declared templates through the site's
+  // connector. `mail.send` reaches site members only; `mail.send.external`
+  // reaches any address.
+  'mail.send',
+  'mail.send.external',
   // CMS content — read/write/publish/delete the host's content tables
   // (`data_tables` + `data_rows`) through the `api.cms.content.*` surface.
   // Each mode is split so a typical plugin (SEO assistant, translator)

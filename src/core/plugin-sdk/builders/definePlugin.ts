@@ -27,6 +27,7 @@ import { PLUGIN_API_VERSION } from '../types'
 import type {
   PluginAdminPage,
   PluginFrontendDeclarations,
+  PluginMailDeclarations,
   PluginManifest,
   PluginPermission,
   PluginResource,
@@ -119,6 +120,12 @@ export interface DefinePluginConfig {
    * `PluginFrontendOrigins` for third-party script and frame origins.
    */
   frontend?: PluginFrontendDeclarations
+
+  /**
+   * The email templates the plugin can send with `api.cms.mail.send`.
+   * Requires `mail.send` or `mail.send.external`.
+   */
+  mail?: PluginMailDeclarations
 }
 
 /**
@@ -207,6 +214,16 @@ export function definePlugin(config: DefinePluginConfig): PluginDefinition {
                   },
                 }
               : {}),
+          },
+        }
+      : {}),
+    ...(config.mail !== undefined
+      ? {
+          mail: {
+            templates: config.mail.templates.map((template) => ({
+              ...template,
+              variables: template.variables.map((variable) => ({ ...variable })),
+            })),
           },
         }
       : {}),
