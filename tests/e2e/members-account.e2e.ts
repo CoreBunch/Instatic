@@ -224,9 +224,9 @@ function formWith(page: Page, buttonName: string): Locator {
   return page.locator('form').filter({ has: page.getByRole('button', { name: buttonName, exact: true }) })
 }
 
-/** Sign out with the header's link, which every page of the member site carries. */
+/** Sign out with the header's form, which every page of the member site carries. */
 async function signOut(page: Page): Promise<void> {
-  await page.getByRole('link', { name: 'Sign out', exact: true }).click()
+  await page.getByRole('button', { name: 'Sign out', exact: true }).click()
   await expect(page.getByRole('link', { name: 'Join', exact: true })).toBeVisible()
 }
 

@@ -41,6 +41,7 @@ type CoreHookEvent =
   | 'publish.before'
   | 'publish.after'
   | MemberHookEvent
+  | MailHookEvent
 
 /**
  * Site member events. Their payloads name members, so only a plugin holding
@@ -54,6 +55,12 @@ export type MemberHookEvent =
   | 'member.deleted'
 
 export const MEMBER_HOOK_PREFIX = 'member.'
+
+/**
+ * What became of an email a plugin queued. Sent with `emitTo`, so only the
+ * plugin that queued the email hears it.
+ */
+export type MailHookEvent = 'mail.delivered' | 'mail.failed'
 
 /** A plugin-emitted event name, always of the form `plugin.<pluginId>.<name>`. */
 type PluginScopedHookEvent = `plugin.${string}`
@@ -151,6 +158,21 @@ class HookBus {
   }
 
   /**
+   * Fire an event for one plugin only: news about something that plugin
+   * did (an email it queued). No other plugin's listener runs.
+   */
+  async emitTo(pluginId: string, event: MailHookEvent, payload: unknown): Promise<void> {
+    for (const entry of this.listeners.get(event) ?? []) {
+      if (entry.pluginId !== pluginId) continue
+      try {
+        await entry.listener(payload)
+      } catch (err) {
+        console.error(`[plugin:${entry.pluginId}] listener for "${event}" threw:`, err)
+      }
+    }
+  }
+
+  /**
    * Fire an event. Listeners run sequentially; an error in one listener is
    * logged and does not stop the others. Returns when every listener has
    * resolved or rejected.
@@ -213,6 +235,11 @@ class HookBus {
       }
     }
     return current as T
+  }
+
+  /** Whether this plugin is listening for `event` right now. */
+  hasListener(pluginId: string, event: string): boolean {
+    return (this.listeners.get(event) ?? []).some((entry) => entry.pluginId === pluginId)
   }
 
   hasListenersFor(event: string): boolean {

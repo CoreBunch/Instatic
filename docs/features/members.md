@@ -28,7 +28,7 @@ server/members/
 ├── sessions.ts            — member_sessions + the cookie
 ├── tokens.ts              — single-use emailed-link tokens
 ├── limits.ts              — rate limits
-├── mail.ts                — link building, background send
+├── mail.ts                — link building, queueing the email
 ├── mailTemplates.ts       — the member emails as templates (reworded in Email → Templates)
 ├── service.ts             — the flows; no HTTP
 ├── handlers.ts            — /_instatic/members/* : request parsing, redirects, JSON, cookies
@@ -52,7 +52,7 @@ server/members/
 
 `member_settings` is deliberately not in `site.settings_json`: that document is branched and exported.
 
-Sign-in for apps adds five tables in migration `034_member_apps`:
+Sign-in for apps adds five tables in migration `036_member_apps`:
 
 | Table | Holds |
 |---|---|
@@ -83,7 +83,7 @@ Migration `035_member_app_devices` adds `device_jkt` and `device_name` to `membe
 | `signup` | `email`, `password`, profile fields | answers `check_email` |
 | `verify` | `token` | confirmation link; signs in |
 | `login` | `email`, `password` | |
-| `logout` | | for scripts; a page uses the sign-out link below |
+| `logout` | | signed in; a form with only a submit button |
 | `link/request` | `email` | email a sign-in link |
 | `link/confirm` | `token` | signs in; also confirms the address |
 | `password/forgot` | `email` | |
@@ -96,7 +96,6 @@ Migration `035_member_app_devices` adds `device_jkt` and `device_name` to `membe
 | `delete` | `currentPassword` | signed in; anonymises |
 | `apps/approve` | `request`, `decision` | signed in; answers an app's sign-in request (see "Sign-in for apps") |
 | `apps/disconnect` | `connection` | signed in; signs one app out of the member's account |
-| `GET logout` | `?to=<site path>` | the sign-out link: signs out, then `303` to `to` (default `/`) |
 | `GET me` | | `{ member }` or `{ member: null }`, `no-store` |
 | `GET export` | | the member's own data as a download |
 
@@ -108,9 +107,9 @@ Error codes are the `MEMBER_ERROR_CODES` list in `@core/members`.
 
 **Sessions.** 32 random bytes, stored as SHA-256. 90 days absolute, 30 days idle, both checked in the lookup query together with "not revoked" and "member is active". Suspending a member or signing out ends access on the next request.
 
-**CSRF.** Every POST needs an `Origin` that is one of the site's origins, and a same-origin `Sec-Fetch-Site` when the browser sends one. The sign-out link is the one GET that changes anything; it carries no `Origin`, so it acts only on a click made on a page of this site: `Sec-Fetch-Site: same-origin` as a document navigation that is not a prefetch, or a same-site `Referer` when the browser sends no `Sec-Fetch-Site`. Anything else, including a link opened from an email, only redirects. Changing a password or email and deleting the account also need the current password (or, for a passwordless member, a sign-in within the last 15 minutes).
+**CSRF.** Every POST needs an `Origin` that is one of the site's origins, and a same-origin `Sec-Fetch-Site` when the browser sends one. No GET changes anything, signing out included: it is a POST like every other action, so a link, an image or a prefetch cannot sign a member out. Changing a password or email and deleting the account also need the current password (or, for a passwordless member, a sign-in within the last 15 minutes).
 
-**Enumeration.** A sign-in for an unknown address still pays one argon2 verification. Requests that send email decide their answer first and send in the background (`queueMemberMail`), so timing does not differ.
+**Enumeration.** A sign-in for an unknown address still pays one argon2 verification. Requests that send email decide their answer first and hand the email to the mail queue without waiting (`queueMemberMail`), so rendering and delivery add nothing to the response time. (A request for a known address still issues a token, which one for an unknown address does not.) The queue sends it straight away and retries a temporary failure; see [email](email.md).
 
 **Sign-up and pre-hijacking.** The member row is created with no password. The hash travels in the confirmation token and applies only when the link is opened in the browser that signed up (matched by the `instatic_member_signup` cookie, `__Host-` prefixed on https so a sibling subdomain cannot plant one, and ignored when it appears twice). Opened anywhere else, the link still confirms the address and signs in, with no password set. So a stranger who signs up with someone else's address never gets their password onto the account, even if the owner opens the email.
 
@@ -140,7 +139,7 @@ Error codes are the `MEMBER_ERROR_CODES` list in `@core/members`.
 
 **Emailed links never act on GET.** They open the owner's page for that link, whose form POSTs the token (`?token=` is filled in by the form runtime). Mail scanners that follow links do not use them up. A page whose address carries a token is sent `Referrer-Policy: same-origin` (`TOKEN_PAGE_REFERRER_POLICY`).
 
-**Plugins never see Instatic's cookies.** `server/sessionCookies.ts` removes every `instatic_` cookie (admin session, member session, sign-up nonce, branch preview); plugin route handlers (`routeIo.ts`) and per-visitor loop sources (`handlers/cms/hole.ts`) get the visitor's cookies with those removed.
+**Plugins never see Instatic's cookies.** `server/sessionCookies.ts` removes every `instatic_` cookie (admin session, member session, sign-up nonce, branch preview); plugin route handlers (`routeIo.ts`) and per-visitor loop sources (`handlers/cms/hole.ts`) get the visitor's cookies with those removed. Who the member is reaches plugin code only as a plain record resolved by the host: `ctx.member` on a route, and `ctx.request.member` on a per-visitor loop source, both only for a plugin holding `members.read`. A source that is not per-visitor is never told, and gets no cookies either; the request is built per source in `server/publish/loopSourceRequest.ts`.
 
 ## Protected pages and tables
 
@@ -180,8 +179,9 @@ Four primitives; none of them needs custom code.
 
 - Published, it is a real `<form method="post" action="/_instatic/members/<action>">`, so it works with scripts off (the endpoint answers a form post with a redirect). An unknown action falls back to `login`, never to another path (`memberFormActionPath`).
 - With scripts on, the form runtime (`formRuntimeJs.ts`, one script for CMS and member forms) submits in place as JSON. An error about one field marks that control `aria-invalid` and goes to a `base.form-message` with `kind: error` and `fieldName` set to that field, or to the form's general error message.
-- A token action (`password/reset`, `invite/accept`, `verify`, `link/confirm`, `email/confirm`) carries a hidden `token` input that the runtime fills from the page's `?token=`.
+- A token action (`password/reset`, `invite/accept`, `verify`, `link/confirm`, `email/confirm`) carries a hidden `token` input that the runtime fills from the page's `?token=`. That one value needs the script: a render has no request to read the address from, so with scripts off these forms post an empty token and are answered `invalid_token`.
 - After signing in, `?next=` (a site-relative path only) wins, then the form's redirect. Signing in, out or deleting with no redirect reloads the page.
+- Signing out is the `logout` action: a form with no fields, only its submit button. Its catalogue entry has an empty `successMessage`, because the page reloads or moves on and the form goes with the member, so "Add …" inserts an error message and the button and no success message.
 
 **Member bindings.** The `member` binding source: `{member.email}`, `{member.profile.<fieldId>}`, `{member.tagList}`. Empty for a signed-out visitor, so `{member.profile.name|there}` reads well for both. Values are data: they go through the same escaping as every other binding.
 
@@ -252,6 +252,8 @@ An app (Instatic Desktop, later a premium plugin) signs a member in with OAuth 2
 
 **The approval screen is the owner's page.** Member settings has a slot "Approve an app" (`appSignIn`); without a published page there, `authorize` answers `temporarily_unavailable`. The page uses the form action "Approve an app" and the bindings `{member.appRequest.name}`, `{member.appRequest.access}`, `{member.appRequest.returnsTo}` and `{member.appRequest.device}` (the device name the app gave; the app's own word, so word the page accordingly). Those values are read from the stored request named in the page address (`memberAppRequestFrame`), never from the address itself.
 
+The form posts the request id back in a hidden `request` input. On a page that is rendered for the member (a members-only page, which the approval page should be), the server writes the id of the waiting request into that input after the render (`stampAppRequestId` in `server/members/apps/approval.ts`, called from `publicRenderer.ts`), so the form works with scripts off. Only an id that matched a stored, unanswered request is written. On a page open to everyone the HTML is shared, so the input is empty there and the runtime fills it from the address, as it does for an emailed link's token.
+
 The form asks a yes-or-no question, so it has two buttons, Allow and Cancel, and each carries its answer as the button's own `name` and `value` (`decision=allow`, `decision=deny`; `choice` in `MEMBER_FORM_ACTIONS`). A browser sends a button's value only when that button is pressed, with or without scripts, and the form runtime adds the pressed button the same way. The setup panel's Add button inserts both, and counts a button without the answer as missing. `base.submit` has `name` and `value` props for this.
 
 Two show-when rules exist for this page: "Members an app is asking to sign in" (`appAsking`) and "Members no app is asking for" (`noAppAsking`), so the form can be hidden and an explanation shown when the page is opened without a request. A later page of a list is fetched without its page's address, so both read as "no app is asking" there.
@@ -271,9 +273,9 @@ Member settings warns when the chosen page is open to everyone (`membersOnly` on
 
 **Connected apps.** A member sees and ends their own app sign-ins on a page the owner builds; there is no built-in screen.
 
-- The loop source `members.apps` (`src/core/loops/sources/memberApps.ts`) lists the signed-in member's live approvals: `name`, `device`, `connectedOn` / `lastUsedOn` (a date, `YYYY-MM-DD`), `connectedAt` / `lastUsedAt` (ISO) and `id`. It is `perVisitor`, so the list is a fragment fetched for the member who is looking and never cached; a signed-out visitor gets no items. The member reaches a source through `SourceFetchContext.memberId`, set only for a source that declares `forMember` (a plugin source is handed a fixed subset of the context, without it).
+- The loop source `members.apps` (`src/core/loops/sources/memberApps.ts`) lists the signed-in member's live approvals: `name`, `device`, `connectedOn` / `lastUsedOn` (a date, `YYYY-MM-DD`), `connectedAt` / `lastUsedAt` (ISO) and `id`. It is `perVisitor`, so the list is a fragment fetched for the member who is looking and never cached; a signed-out visitor gets no items. The source reads the member from `ctx.request.member`, which `sourceRequestFor` (`server/publish/loopSourceRequest.ts`) gives every `perVisitor` source from the visitor's own session; a plugin's per-visitor source gets it only with `members.read`, as before.
 - The form action "Disconnect an app" (`apps/disconnect`) goes inside the list, one form per row. Its hidden field `connection` is filled from the row (`{currentEntry.id}`); the setup panel's Add button inserts it. The approval must belong to the member who posts, so an id from someone else's list does nothing. Set the form to redirect to its own page so the list is fresh afterwards.
-- A form's messages are the ones inside it. Messages elsewhere on the page are matched by form id only when the form holds none, since a form repeated in a list shares its id with every row.
+- A form shows its messages in the ones inside it and in the ones elsewhere on the page that name its form id. A form repeated in a list shares its id with every row, so when that id occurs more than once on the page a row that holds messages uses only its own (`formMessages` in `formRuntimeJs.ts`).
 - In the admin, the member detail panel lists the same approvals with a Disconnect button (`members.manage`, audited as `member.app.disconnect`).
 - When a member allows an app, they are emailed the template `member.app_connected` ("App signed in", variable `{app.name}`). Refusing sends nothing.
 - Member activity records `app_connected`, `app_disconnected` and `app_disconnected_by_admin`.
@@ -282,7 +284,8 @@ Member settings warns when the chosen page is open to everyone (`membersOnly` on
 - Redirect addresses match exactly, except that a loopback IP literal matches on any port (a native app listens on whatever port it gets).
 - A code lasts 5 minutes and works once; presenting it a second time also revokes the grant it created. An access token lasts 1 hour. An approval lasts 90 days; the refresh token rotates on every use, and presenting a used one revokes the whole grant (for a sign-in bound to a device, see the retry and the key rules under "Device keys").
 - Approval is asked on every sign-in. A native app cannot prove which app it is, so a remembered approval could be reused by another program.
-- A request is answered once, within 10 minutes, and only from the browser the app opened (a marker cookie set by `authorize`, stored hashed with the request). An approval address passed to someone else does nothing in their browser.
+- A request is answered once, within 10 minutes, and only from the browser the app opened (a marker cookie set by `authorize`, stored hashed with the request). An approval address passed to someone else does nothing in their browser. A marker is 32 hex characters and nothing else is read as one. `authorize` keeps the browser's marker when it presents exactly one well-formed marker, so a request waiting in another tab still works; otherwise it sets a new one and never sends the presented value back.
+- A request that carries the marker cookie more than once is refused, even when one of the values matches. The site always sets the cookie with the same name, path and attributes, so a browser never holds two of its own: a second one was planted (from a sibling subdomain, or over plain http where the name has no `__Host-` prefix). Accepting whichever value matches would let someone add their own marker beside the member's and have the member approve a request that person opened.
 - Tokens stop working on the next request once the member is suspended or deleted. A password reset or change, an email change, a suspension, "sign out everywhere" and removing the app all revoke the grants. Deleting the account deletes its grants, codes and tokens.
 - An app token only reads. No member action (profile, password, email, delete) accepts one.
 - Rate limits are per IP (`memberAppLimits`).
@@ -303,7 +306,7 @@ bun run demo:members        # add `-- --skip-build` to reuse the last admin buil
 
 `scripts/members-demo.ts` builds the admin, creates a fresh SQLite database under `.tmp/`, seeds and publishes a small site, and serves it on `http://127.0.0.1:3040` (`DEMO_PORT` changes the port). It prints the owner and member accounts it created. Emails are captured: read them under Email → Activity.
 
-The site (`scripts/lib/membersDemoSite.ts`) is thirteen ordinary editor pages: home, join, sign in, forgot password, the pages the emailed links open (confirm, new password, sign-in link, new address, invitation), an account page, a members area, a pro lounge and the page for approving an app. `membersDemoSettings()` names each of them, by page id, in the member settings, which is what switches the features on. Every form is a `base.form` in Members mode completed by `memberFormFragment`, the function behind the editor's "Add …" button; the header's links use show-when rules, and its sign-out is a `base.link` with On click set to "Sign the member out" (`memberSignOutHref`), since signing out needs no form; the account page prefills from member bindings and lists the member's connected apps, each with a Disconnect form. Open any page in the editor to see how it is put together.
+The site (`scripts/lib/membersDemoSite.ts`) is thirteen ordinary editor pages: home, join, sign in, forgot password, the pages the emailed links open (confirm, new password, sign-in link, new address, invitation), an account page, a members area, a pro lounge and the page for approving an app. `membersDemoSettings()` names each of them, by page id, in the member settings, which is what switches the features on. Every form is a `base.form` in Members mode completed by `memberFormFragment`, the function behind the editor's "Add …" button; the header's links use show-when rules, and its sign-out is a member form with the Sign out action, an error message and a button styled as a link; the account page prefills from member bindings and lists the member's connected apps, each with a Disconnect form. Open any page in the editor to see how it is put together.
 
 It is a development tool: fixed passwords, loopback only, and a database that is wiped on every start. `membersDemoSite.test.ts` keeps the pages publishable and correctly gated. The sign-in page also carries the "Email me a link" form. The E2E suite seeds the same pages under an address prefix of its own (`buildMembersDemoPages(prefix)`, printed by `scripts/e2e-members-seed.ts`).
 
@@ -313,6 +316,7 @@ It is a development tool: fixed passwords, loopback only, and a database that is
 - `src/__tests__/server/members.test.ts` — every flow, on SQLite and (with `DB=postgres`) Postgres.
 - `src/__tests__/server/membersAdmin.test.ts` — the admin API: capability and step-up gates and every route (SQLite). The queries behind it run on Postgres too through the `admin queries` cases in `members.test.ts`.
 - `src/__tests__/server/pluginMembers.test.ts` — plugins: the public mount, member routes, `cms.members`, member events, and the permission each needs.
+- `src/__tests__/server/loopSourceMember.test.ts` — the member a per-visitor loop source is given on first and later pages, inside components and nested lists, through a real plugin; and that a shared source, a shared fragment and the static slot never carry a member.
 - `src/__tests__/server/membersDemoSite.test.ts` — the demo site: its pages parse, publish, and are open or closed to the right visitors.
 - `src/__tests__/architecture/members-admin-split.test.ts` — the split.
 - `src/__tests__/server/pluginRouteCookies.test.ts` — cookie stripping.

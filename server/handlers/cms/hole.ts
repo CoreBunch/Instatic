@@ -36,9 +36,8 @@
 
 import type { DbClient } from '../../db/client'
 import type { Page, SiteDocument } from '@core/page-tree'
-import type { ClosedContent, LoopEntitySource, SourceRequestContext } from '@core/loops/types'
+import type { ClosedContent } from '@core/loops/types'
 import { registry } from '@core/module-engine'
-import { loopSourceRegistry } from '@core/loops/registry'
 import {
   renderNode,
   showWhenPathsAllow,
@@ -49,13 +48,18 @@ import {
   type RenderAccumulators,
 } from '@core/publisher'
 import { buildPageFrame, buildRouteFrame, buildSiteFrame, type MemberFrame } from '@core/templates/contextFrames'
-import { collectLoopNodes, prefetchLoopData } from '../../publish/loopPrefetch'
+import { prefetchLoopData } from '../../publish/loopPrefetch'
+import {
+  sourceRequestFor,
+  subtreeHasPerVisitorSource,
+  visitorRequestScope,
+  type LoopRequestScope,
+} from '../../publish/loopSourceRequest'
 import { getOrRender } from '../../publish/renderCache'
 import { getPublishedNodeIndexForVersion } from '../../publish/publishedSnapshotCache'
 import { getPublishVersion } from '../../publish/publishState'
 import { HOLE_RUNTIME_JS } from '../../publish/holeRuntime'
 import { stampFormPageTokens } from '../../forms/formRuntime'
-import { isSessionCookieName } from '../../sessionCookies'
 import { memberAppRequestFrame } from '../../members/apps/approval'
 import {
   closedContentFor,
@@ -99,49 +103,10 @@ interface HoleHandlerContext {
 // Request helpers
 // ---------------------------------------------------------------------------
 
-/**
- * Parse a `Cookie` header into a flat map for a per-visitor loop source.
- * Session cookies are left out: sources can be plugin code. Returns `{}`
- * when absent.
- */
-function parseCookies(header: string | null): Record<string, string> {
-  if (!header) return {}
-  const out: Record<string, string> = {}
-  for (const part of header.split(';')) {
-    const eq = part.indexOf('=')
-    if (eq < 0) continue
-    const name = part.slice(0, eq).trim()
-    if (!name || isSessionCookieName(name)) continue
-    out[name] = decodeURIComponent(part.slice(eq + 1).trim())
-  }
-  return out
-}
-
 /** Sorted, stable serialisation of a query string for cache keys. */
 function normalizeQuery(params: URLSearchParams): string {
   const entries = [...params.entries()].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
   return new URLSearchParams(entries).toString()
-}
-
-/**
- * The loop sources a hole's fragment draws on: its own, when the hole is a
- * loop, and those of every loop inside it. Rendering starts at the hole and
- * goes all the way down, so a list nested in a show-when box or in another
- * list is fetched by this same request.
- *
- * One `perVisitor` source makes the whole fragment per visitor (never
- * cached, cookies handed over); one `forMember` source means the signed-in
- * member has to be resolved for it. A module `render()` cannot read cookies,
- * so loops are the only thing that can ask for either.
- */
-function holeLoopSources(page: Page, site: SiteDocument, nodeId: string): LoopEntitySource[] {
-  const sources: LoopEntitySource[] = []
-  for (const loop of collectLoopNodes(page, site, nodeId)) {
-    const sourceId = typeof loop.props.sourceId === 'string' ? loop.props.sourceId : ''
-    const source = sourceId ? loopSourceRegistry.get(sourceId) : undefined
-    if (source) sources.push(source)
-  }
-  return sources
 }
 
 /**
@@ -155,19 +120,16 @@ async function renderHoleFragment(
   site: SiteDocument,
   db: DbClient,
   pageUrl: URL,
-  request: SourceRequestContext,
+  scope: LoopRequestScope,
   closed: ClosedContent,
   /** The visitor's member frame (null when signed out); undefined for a shared render. */
   member: MemberFrame | null | undefined,
-  /** Who a `forMember` loop source lists for; undefined when no source asks. */
-  memberId: string | null | undefined,
 ): Promise<string> {
   const route = buildRouteFrame(pageUrl.toString())
   const loopData = await prefetchLoopData(page, site, db, pageUrl, {
-    request,
+    requestFor: (source) => sourceRequestFor(source, scope),
     rootNodeId: nodeId,
     closed,
-    memberId,
   })
   const config: RenderConfig = {
     page,
@@ -277,8 +239,10 @@ export async function handleHoleRequest(
   // fragment is shared, so it is rendered as for a signed-out visitor.
   const closed = closedContentFor(accessIndex, isProtected ? ((await visitor())?.tags ?? null) : null)
 
-  const loopSources = holeLoopSources(foundPage, snap.site, nodeId)
-  const perVisitor = loopSources.some((source) => source.perVisitor === true)
+  // Per-visitor when any list in the fragment uses a per-visitor source: the
+  // node itself, a list nested in another list's item, or one inside a
+  // Visual Component the fragment places.
+  const perVisitor = subtreeHasPerVisitorSource(foundPage, snap.site, nodeId)
   // A fragment that shows member data or has a show-when rule is rendered
   // for this visitor alone, on a public page as much as on a protected one.
   // So is a fragment that sits inside an element with a show-when rule: the
@@ -300,27 +264,23 @@ export async function handleHoleRequest(
   // request-dependent loop source's `fetch()` via `ctx.request.query`.
   const query: Record<string, string> = Object.fromEntries(pageUrl.searchParams)
 
+  const base = { query, path: route.path, slug: route.slug }
+
   // Per-visitor hole, any hole of a protected page, or one that depends on
   // the member: bypass Layer B entirely and never cache. Only per-visitor
-  // sources get the cookies.
+  // sources get the cookies and the member, each through its own request.
   if (perVisitor || isProtected || showsMember) {
-    const request: SourceRequestContext = {
-      query,
-      path: route.path,
-      slug: route.slug,
-      cookies: perVisitor ? parseCookies(req.headers.get('cookie')) : {},
-    }
+    const scope = visitorRequestScope(base, req, visitor)
     const signedIn = isProtected || showsMember ? await visitor() : undefined
     const member = signedIn === undefined
       ? undefined
       : memberFrameFor(signedIn, signedIn ? await memberAppRequestFrame(ctx.db, pageUrl) : null)
-    const memberId = loopSources.some((source) => source.forMember === true) ? ((await visitor())?.id ?? null) : undefined
-    const html = await renderHoleFragment(nodeId, foundPage, snap.site, ctx.db, pageUrl, request, closed, member, memberId)
+    const html = await renderHoleFragment(nodeId, foundPage, snap.site, ctx.db, pageUrl, scope, closed, member)
     return new Response(html, {
       status: 200,
       headers: {
         'content-type': 'text/html; charset=utf-8',
-        ...(isProtected || showsMember ? PRIVATE_HEADERS : { 'cache-control': 'no-store' }),
+        ...PRIVATE_HEADERS,
       },
     })
   }
@@ -331,21 +291,16 @@ export async function handleHoleRequest(
   // path drives `route.path` / `route.slug` / `route.segments`), so the path
   // MUST be part of the key. Keying on the query alone let an attacker render a
   // fragment under an arbitrary `u` path and have it served as the canonical
-  // cached response for the real page (GHSA-f29g). Cookies are intentionally
-  // NOT exposed (they would fragment the cache).
-  const request: SourceRequestContext = {
-    query,
-    path: route.path,
-    slug: route.slug,
-    cookies: {},
-  }
+  // cached response for the real page (GHSA-f29g). The scope has no visitor:
+  // no cookies (they would fragment the cache) and no member.
+  const scope: LoopRequestScope = { base }
   const cached = await getOrRender(
     {
       urlPath: `${HOLE_PATH_PREFIX}${nodeId}`,
       queryString: `v=${currentVersion}&u=${encodeURIComponent(pageUrl.pathname)}&${normalizeQuery(pageUrl.searchParams)}`,
     },
     async () => {
-      const html = await renderHoleFragment(nodeId, foundPage, snap.site, ctx.db, pageUrl, request, closed, undefined, undefined)
+      const html = await renderHoleFragment(nodeId, foundPage, snap.site, ctx.db, pageUrl, scope, closed, undefined)
       return {
         body: html,
         headers: { 'content-type': 'text/html; charset=utf-8' },

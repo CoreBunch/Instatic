@@ -16,7 +16,6 @@ import { registry } from '@core/module-engine'
 import { hookBus } from '@core/plugins/hookBus'
 import { hostPlugins } from '../../../server/plugins/host/registry'
 import { memberFormAction, memberFormActionPath, readShowWhen, showWhenAllows, type AccessRule } from '@core/members'
-import { memberFormFragment, missingMemberFormParts } from '@site/panels/PropertiesPanel/memberFormParts'
 import { duplicatePage, type Page, type SiteDocument, type SiteShell } from '@core/page-tree'
 import {
   publishPage,
@@ -29,6 +28,7 @@ import { findDynamicNodeIds } from '../../core/publisher/dynamicDetection'
 import { normalizeSiteRuntimeConfig } from '@core/site-runtime'
 import { pageToCells } from '../../core/data/pageFromRow'
 import { FORM_RUNTIME_JS } from '../../modules/base/forms/formRuntimeJs'
+import { memberFormFragment, missingMemberFormParts } from '../../admin/pages/site/panels/PropertiesPanel/memberFormParts'
 import { MAIN_SCOPE } from '../../../server/branches/scope'
 import { mergeDerivedCells } from '../../../server/collab/relayPersistence'
 import { createMember, grantMemberTag } from '../../../server/members/repository'
@@ -619,6 +619,18 @@ describe('member forms', () => {
     expect(render({ memberAction: 'password/reset' }).html).toContain('name="token" data-instatic-member-link-param="token"')
     expect(render({ memberAction: 'login' }).html).not.toContain('data-instatic-member-link-param')
     expect(render({ memberAction: 'apps/approve' }).html).toContain('name="request" data-instatic-member-link-param="request"')
+  })
+
+  it('signs out with a form post, and the editor completes that form with an error message and a button', () => {
+    const { html } = render({ memberAction: 'logout', successBehavior: 'redirect', redirectUrl: '/' })
+    expect(html).toContain('action="/_instatic/members/logout" method="post"')
+    expect(html).toContain('<input type="hidden" name="_success" value="/">')
+
+    const fragment = memberFormFragment(memberFormAction('logout')!, 'sign-out', { fields: [], submit: true, messages: true })
+    const added = fragment.rootIds.map((id) => fragment.nodes[id]!)
+    expect(added.map((part) => part.moduleId)).toEqual(['base.form-message', 'base.submit'])
+    expect(added[0]!.props.kind).toBe('error')
+    expect(added[1]!.props.label).toBe('Sign out')
   })
 
   it('never posts to a path the catalogue does not know', () => {

@@ -90,6 +90,8 @@ const EXPECTED_TARGET_PERMISSIONS: Record<string, string> = {
   'cms.members.invite': 'members.write',
   'cms.members.tags.grant': 'members.tags',
   'cms.members.tags.revoke': 'members.tags',
+  'cms.mail.send': 'mail.send',
+  'cms.mail.sendExternal': 'mail.send.external',
 }
 
 /** Targets that intentionally require NO permission (must be absent from map). */
@@ -98,6 +100,7 @@ const UNGATED_TARGETS = [
   'network.abort',
   'crypto.digest',
   'crypto.signHmac',
+  'cms.site.publicUrl',
 ]
 
 describe('plugin RPC target registry', () => {

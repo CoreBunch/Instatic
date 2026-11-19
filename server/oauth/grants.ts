@@ -135,13 +135,18 @@ export async function exchangeAuthorizationCode(
   return db.transaction(async (tx) => {
     const store = realm.store(tx)
     const code = await store.findAuthorizationCode(codeHash)
-    // A code is used once. Seeing it again means it leaked or was replayed,
-    // so everything issued from it is withdrawn too (RFC 6749 §4.1.2). Only
-    // the client the code belongs to can trigger this, and for a grant bound
-    // to a key only the holder of that key: a used code someone came across
-    // must not be enough to sign the device out.
+    // A code is used once. Seeing it again while it could still have been
+    // exchanged means it leaked or was replayed, so everything issued from it
+    // is withdrawn too (RFC 6749 §4.1.2). The request must name the client the
+    // code was issued to, but a client id is public, so that is no proof of who
+    // is asking. Two things limit it. The expiry bound: consumed codes are
+    // kept, and one found later in a browser history or a log is refused below
+    // without touching the grant. And for a grant bound to a key, only the
+    // holder of that key: a used code someone came across must not be enough
+    // to sign the device out.
     if (
-      code?.consumedAt && !code.grantRevokedAt && code.clientId === input.clientId &&
+      code?.consumedAt && !code.grantRevokedAt &&
+      !isPast(code.expiresAt, now) && code.clientId === input.clientId &&
       holdsKey(code.keyThumbprint, input.proofThumbprint)
     ) {
       await store.revokeGrant(code.grantId, now)

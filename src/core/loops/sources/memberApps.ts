@@ -90,7 +90,6 @@ export const MemberAppsSource: LoopEntitySource = {
   label: 'Member’s connected apps',
   description: 'The apps the signed-in member has signed in to with their account. Each member sees their own.',
   perVisitor: true,
-  forMember: true,
   filterSchema: {},
   orderByOptions: [{ id: 'connectedAt', label: 'When it was connected' }],
   fields: [
@@ -103,8 +102,11 @@ export const MemberAppsSource: LoopEntitySource = {
     { id: 'id', label: 'Connection id', description: 'What a "Disconnect an app" form sends back to say which app.' },
   ],
   async fetch(ctx) {
-    if (!ctx.memberId) return { items: [], totalItems: 0 }
-    const apps = await listConnectedMemberApps(ctx.db, ctx.memberId)
+    // The signed-in member, as every per-visitor source is told: absent at
+    // publish time, null when signed out or in a preview.
+    const memberId = ctx.request?.member?.id
+    if (!memberId) return { items: [], totalItems: 0 }
+    const apps = await listConnectedMemberApps(ctx.db, memberId)
     const ordered = ctx.direction === 'asc' ? [...apps].reverse() : apps
     return {
       items: ordered.slice(ctx.offset, ctx.offset + ctx.limit).map(toLoopItem),

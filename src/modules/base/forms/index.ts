@@ -253,9 +253,11 @@ export const FormModule: ModuleDefinition<FormProps> = {
 
 /**
  * Hidden inputs a member form carries: the value from the page address it
- * posts back (an emailed link's token or an app's sign-in request, filled in
- * by the runtime) and, for a script-less submit, where
- * to go afterwards.
+ * posts back (an emailed link's token or an app's sign-in request) and, for
+ * a script-less submit, where to go afterwards. The runtime fills the value
+ * in from the address; a render has no request to read it from. The server
+ * writes an app's sign-in request into a page it renders for one member
+ * (`stampAppRequestId`), so that form also posts without scripts.
  */
 function memberHiddenInputs(props: FormProps): string {
   if (props.mode !== 'member') return ''
