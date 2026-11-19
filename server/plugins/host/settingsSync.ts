@@ -30,8 +30,13 @@ import { updateSettingsInWorker } from './rpc'
  * a new value rotates it, an empty string clears it); a `PluginSecretError`
  * from that split propagates to the caller. The refreshed cache record —
  * non-secret values merged with the decrypted secrets — is the RUNTIME
- * view: it feeds the worker push and the `settings.changed` payload, and
- * must never be serialised onto a browser-bound payload.
+ * view: it feeds the worker push, and nothing else. It must never be
+ * serialised onto a browser-bound payload or handed to another plugin.
+ *
+ * `settings.changed` goes to the plugin that owns the settings and to no
+ * other (`hookBus.emitTo`), and its payload names the plugin without
+ * carrying a single value: the owner reads them with
+ * `api.cms.settings.get(...)`.
  *
  * Ordering matters: the new record is pushed into the running VM BEFORE
  * `settings.changed` is emitted — hook listeners execute inside the worker
@@ -56,6 +61,6 @@ export async function persistAndSyncPluginSettings(
   } catch (err) {
     console.error(`[plugin:${pluginId}] failed to push settings into worker:`, err)
   }
-  await hookBus.emit('settings.changed', { pluginId, settings: runtimeSettings })
+  await hookBus.emitTo(pluginId, 'settings.changed', { pluginId })
   return runtimeSettings
 }

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, spyOn } from 'bun:test'
-import { canonicalPluginEventName, hookBus } from '@core/plugins/hookBus'
+import { canonicalPluginEventName, hookBus, OWNER_ONLY_HOOK_EVENTS } from '@core/plugins/hookBus'
 
 afterEach(() => {
   hookBus.reset()
@@ -67,11 +67,38 @@ describe('hookBus', () => {
 
   it('delivers host emits of core events to listeners on the bare core name', async () => {
     const seen: unknown[] = []
-    hookBus.on('acme.x', 'settings.changed', (payload) => {
+    hookBus.on('acme.x', 'publish.after', (payload) => {
       seen.push(payload)
     })
-    await hookBus.emit('settings.changed', { pluginId: 'acme.x' })
-    expect(seen).toEqual([{ pluginId: 'acme.x' }])
+    await hookBus.emit('publish.after', { siteId: 's1' })
+    expect(seen).toEqual([{ siteId: 's1' }])
+  })
+
+  it('emitTo runs only the named plugin\'s listeners', async () => {
+    const heard: string[] = []
+    hookBus.on('acme.owner', 'settings.changed', () => {
+      heard.push('owner')
+    })
+    hookBus.on('acme.other', 'settings.changed', () => {
+      heard.push('other')
+    })
+    await hookBus.emitTo('acme.owner', 'settings.changed', { pluginId: 'acme.owner' })
+    expect(heard).toEqual(['owner'])
+  })
+
+  it('refuses to broadcast an event that is for one plugin only', async () => {
+    const heard: string[] = []
+    for (const event of OWNER_ONLY_HOOK_EVENTS) {
+      hookBus.on('acme.other', event, () => {
+        heard.push(event)
+      })
+      // The type already refuses these names; a cast must not get past it.
+      const emitAnything = hookBus.emit.bind(hookBus) as (event: string, payload: unknown) => Promise<void>
+      await expect(emitAnything(event, { pluginId: 'acme.owner' })).rejects.toThrow(
+        `"${event}" is for one plugin only`,
+      )
+    }
+    expect(heard).toEqual([])
   })
 
   it('unregisterPlugin removes both events and filters for that plugin id', async () => {

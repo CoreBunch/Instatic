@@ -132,7 +132,7 @@ export interface ServerPluginApi {
      * Read / replace the plugin's persisted settings. The schema declared
      * via `definePlugin({ settings: [...] })` is the source of truth; the
      * host populates defaults at install time and validates updates at the
-     * boundary. Emits the `settings.changed` event when values change.
+     * boundary. A save emits `settings.changed` to this plugin only.
      */
     settings: ServerPluginSettingsApi
     storage: {

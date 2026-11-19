@@ -19,29 +19,32 @@
  * Plugin registration is keyed by plugin id so `unregisterPlugin(pluginId)`
  * cleanly tears everything down on disable/uninstall.
  *
- * Event-name provenance: only the HOST emits the reserved core events in
- * `CORE_HOOK_EVENTS`. Plugin-emitted events (via `cms.hooks.emit`) are
- * force-namespaced to `plugin.<pluginId>.<name>` through
- * `canonicalPluginEventName` before they reach `emit`, so a plugin can never
- * forge a core event or impersonate another plugin. `emit` is typed against
- * exactly those two name spaces — a new host emit site cannot introduce a
- * core event without adding it to `CORE_HOOK_EVENTS` first.
+ * Event-name provenance: only the HOST emits the reserved core events
+ * (`BroadcastHookEvent` and `OWNER_ONLY_HOOK_EVENTS`). Plugin-emitted events
+ * (via `cms.hooks.emit`) are force-namespaced to `plugin.<pluginId>.<name>`
+ * through `canonicalPluginEventName` before they reach `emit`, so a plugin
+ * can never forge a core event or impersonate another plugin.
+ *
+ * Two ways to send, by who may hear:
+ *   • `emit` — every listening plugin. For `BroadcastHookEvent` names and
+ *     plugin-namespaced events only.
+ *   • `emitTo` — one plugin. The only way to send an `OwnerOnlyHookEvent`,
+ *     news about one plugin's own business (its settings, its email). `emit`
+ *     refuses those names at compile time and at run time, so a broadcast of
+ *     one cannot be written by accident.
  */
 
 /**
- * Reserved host-emitted event names — the single source of truth. Plugins can
- * LISTEN to these freely, but cannot emit them: plugin emits are always
- * canonicalized into the `plugin.<pluginId>.*` namespace.
+ * Host events every listening plugin hears. Plugins cannot emit them: plugin
+ * emits are always canonicalized into the `plugin.<pluginId>.*` namespace.
  */
-type CoreHookEvent =
-  | 'settings.changed'
+type BroadcastHookEvent =
   | 'content.entry.created'
   | 'content.entry.updated'
   | 'content.entry.deleted'
   | 'publish.before'
   | 'publish.after'
   | MemberHookEvent
-  | MailHookEvent
 
 /**
  * Site member events. Their payloads name members, so only a plugin holding
@@ -61,6 +64,19 @@ export const MEMBER_HOOK_PREFIX = 'member.'
  * plugin that queued the email hears it.
  */
 export type MailHookEvent = 'mail.delivered' | 'mail.failed'
+
+/**
+ * Host events about one plugin's own business. Only that plugin hears them:
+ * they go out through `emitTo`, never `emit`. `settings.changed` tells a
+ * plugin its own settings were saved; another plugin has no right to know
+ * that, let alone to see the values.
+ */
+export const OWNER_ONLY_HOOK_EVENTS = ['settings.changed', 'mail.delivered', 'mail.failed'] as const
+type OwnerOnlyHookEvent = (typeof OWNER_ONLY_HOOK_EVENTS)[number]
+
+function isOwnerOnlyHookEvent(event: string): event is OwnerOnlyHookEvent {
+  return (OWNER_ONLY_HOOK_EVENTS as readonly string[]).includes(event)
+}
 
 /** A plugin-emitted event name, always of the form `plugin.<pluginId>.<name>`. */
 type PluginScopedHookEvent = `plugin.${string}`
@@ -158,10 +174,11 @@ class HookBus {
   }
 
   /**
-   * Fire an event for one plugin only: news about something that plugin
-   * did (an email it queued). No other plugin's listener runs.
+   * Fire an event for one plugin only: news about that plugin's own business
+   * (its settings were saved, an email it queued was delivered). No other
+   * plugin's listener runs.
    */
-  async emitTo(pluginId: string, event: MailHookEvent, payload: unknown): Promise<void> {
+  async emitTo(pluginId: string, event: OwnerOnlyHookEvent, payload: unknown): Promise<void> {
     for (const entry of this.listeners.get(event) ?? []) {
       if (entry.pluginId !== pluginId) continue
       try {
@@ -173,15 +190,19 @@ class HookBus {
   }
 
   /**
-   * Fire an event. Listeners run sequentially; an error in one listener is
-   * logged and does not stop the others. Returns when every listener has
-   * resolved or rejected.
+   * Fire an event for every listening plugin. Listeners run sequentially; an
+   * error in one listener is logged and does not stop the others. Returns
+   * when every listener has resolved or rejected.
    *
-   * The name type is the enforcement that `CORE_HOOK_EVENTS` cannot drift:
-   * host emit sites must use a listed core name, and everything else must
-   * already be plugin-namespaced (the output of `canonicalPluginEventName`).
+   * The name type keeps host emit sites to the listed broadcast names;
+   * everything else must already be plugin-namespaced (the output of
+   * `canonicalPluginEventName`). An owner-only event is refused outright,
+   * also at run time: a cast must not be enough to broadcast one.
    */
-  async emit(event: CoreHookEvent | PluginScopedHookEvent, payload: unknown): Promise<void> {
+  async emit(event: BroadcastHookEvent | PluginScopedHookEvent, payload: unknown): Promise<void> {
+    if (isOwnerOnlyHookEvent(event)) {
+      throw new Error(`[hookBus] "${event}" is for one plugin only: send it with emitTo(pluginId, …).`)
+    }
     const entries = this.listeners.get(event)
     if (!entries) return
     for (const entry of entries) {

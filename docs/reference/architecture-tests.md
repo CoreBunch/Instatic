@@ -155,7 +155,7 @@ See [docs/features/spotlight.md](../features/spotlight.md).
 | `plugin-host-import-boundaries.test.ts`       | Worker transport (`server/plugins/host/`) does not import `apiDispatch` — prevents circular dependency between the pool and the dispatch layer. |
 | `plugin-host-ui-runtime-parity.test.ts`       | Plugin host UI surfaces match the SDK's declared shape.                          |
 | `plugin-schedule-invariants.test.ts`          | Scheduled job cadence + overlap policy validate at registration; `cms.schedule.*` targets are centrally gated by the `cms.schedule` permission in `TARGET_PERMISSIONS`. |
-| `plugin-secrets-never-leak.test.ts`           | HTTP handlers never touch plugin secret ciphertext/IVs or the plaintext runtime projection; browser-bound plugin settings project through `projectSecretSettings` / `listPluginSecretStates`. |
+| `plugin-secrets-never-leak.test.ts`           | HTTP handlers never touch plugin secret ciphertext/IVs or the plaintext runtime projection; browser-bound plugin settings project through `projectSecretSettings` / `listPluginSecretStates`. No owner-only hook event (`OWNER_ONLY_HOOK_EVENTS`) is passed to the broadcasting `hookBus.emit`, and a module holding decrypted plugin settings puts nothing on the hook bus except `settingsSync.ts`'s value-free `settings.changed` to the owning plugin. |
 | `sandbox-crypto-bridge.test.ts`               | Plugin sandbox's crypto surface is bridged correctly (`subtle.digest`, `subtle.sign`); crypto targets carry no permission gate (pure computation, no I/O). |
 
 See [docs/features/plugin-system.md](../features/plugin-system.md).

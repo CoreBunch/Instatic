@@ -23,6 +23,11 @@ export type ContentEntryActor =
   | { kind: 'system' }
 
 export interface CmsServerEvents {
+  // This plugin's own settings were saved, from the admin form or by its own
+  // `api.cms.settings.replace`. Only the plugin that owns the settings hears
+  // it. The payload carries no values: read them with
+  // `api.cms.settings.get(...)`, which already returns the new ones.
+  'settings.changed': { pluginId: string }
   'publish.before': { siteId: string; pageId?: string }
   'publish.after': { siteId: string; pageId?: string }
   'content.entry.created': {

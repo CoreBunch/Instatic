@@ -18,11 +18,24 @@
  *   - The browser-bound presentation goes through `projectSecretSettings` /
  *     `listPluginSecretStates`, which only expose presence (`'***'` / `''`)
  *     and the per-field key-fingerprint state.
+ *
+ * And never crosses to ANOTHER PLUGIN over the hook bus:
+ *
+ *   - An owner-only event (`OWNER_ONLY_HOOK_EVENTS`: `settings.changed`, the
+ *     `mail.*` outcomes) is never passed to the broadcasting `emit`. The type
+ *     and a run-time check in `hookBus.emit` refuse it too; this scan catches
+ *     it before either runs.
+ *
+ *   - A module that holds a plugin's decrypted runtime settings record puts
+ *     nothing on the hook bus, with one sanctioned exception: `settingsSync.ts`
+ *     tells the owning plugin, and only it, that its settings changed, in a
+ *     payload that names the plugin and carries no value.
  */
 
 import { describe, it, expect } from 'bun:test'
 import { readdirSync, readFileSync, statSync } from 'fs'
 import { join, extname, relative } from 'path'
+import { OWNER_ONLY_HOOK_EVENTS } from '@core/plugins/hookBus'
 
 const REPO_ROOT = join(import.meta.dir, '../../../')
 const HANDLERS_DIR = join(REPO_ROOT, 'server/handlers')
@@ -40,6 +53,26 @@ function listFilesRecursive(dir: string): string[] {
     else if (extname(full) === '.ts') out.push(full)
   }
   return out
+}
+
+/** Production TypeScript under `server/` and `src/`, tests excluded. */
+function listProductionSources(): string[] {
+  return [join(REPO_ROOT, 'server'), join(REPO_ROOT, 'src')]
+    .flatMap((dir) => listFilesRecursive(dir))
+    .filter((file) => !file.includes('__tests__'))
+}
+
+/** Names that hand out, or pass along, a plugin's decrypted settings record. */
+const RUNTIME_RECORD_ACCESSORS =
+  /\b(getCachedPluginSettings|primePluginSettingsCache|refreshPluginSettingsCache|persistAndSyncPluginSettings|resolvePluginSecretsForRuntime)\s*\(/
+
+/** The one place a holder of the runtime record may use the hook bus, and how. */
+const SETTINGS_SYNC = 'server/plugins/host/settingsSync.ts'
+const SANCTIONED_SETTINGS_EMIT = "hookBus.emitTo(pluginId, 'settings.changed', { pluginId })"
+
+/** Code with comments removed, so a mention in prose is not a finding. */
+function withoutComments(src: string): string {
+  return src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '')
 }
 
 describe('plugin-secrets-never-leak gate', () => {
@@ -94,6 +127,35 @@ describe('plugin-secrets-never-leak gate', () => {
       }
     }
     expect(offenders).toEqual([])
+  })
+
+  it('no owner-only event is ever broadcast to every plugin', () => {
+    const names = OWNER_ONLY_HOOK_EVENTS.map((name) => name.replaceAll('.', '\\.')).join('|')
+    const broadcast = new RegExp(`\\.emit\\(\\s*['"\`](?:${names})['"\`]`)
+    const offenders = listProductionSources()
+      .filter((file) => broadcast.test(withoutComments(readFileSync(file, 'utf8'))))
+      .map((file) => relative(REPO_ROOT, file).replaceAll('\\', '/'))
+    expect(offenders).toEqual([])
+  })
+
+  it('a module holding decrypted plugin settings puts no value on the hook bus', () => {
+    const findings: string[] = []
+    for (const file of listFilesRecursive(join(REPO_ROOT, 'server'))) {
+      const rel = relative(REPO_ROOT, file).replaceAll('\\', '/')
+      const code = withoutComments(readFileSync(file, 'utf8'))
+      if (!RUNTIME_RECORD_ACCESSORS.test(code)) continue
+      const busCalls = code.match(/hookBus\.(?:emit|emitTo|applyFilter)\([^\n]*/g) ?? []
+      for (const call of busCalls) {
+        if (rel === SETTINGS_SYNC && call.trim() === SANCTIONED_SETTINGS_EMIT) continue
+        findings.push(`${rel} → ${call.trim()}`)
+      }
+    }
+    expect(findings).toEqual([])
+
+    // The sanctioned call is there, exactly once, and is the only bus call.
+    const syncCode = withoutComments(readFileSync(join(REPO_ROOT, SETTINGS_SYNC), 'utf8'))
+    expect(syncCode.match(/hookBus\./g)).toHaveLength(1)
+    expect(syncCode.includes(SANCTIONED_SETTINGS_EMIT)).toBe(true)
   })
 
   it('plugin handler responses funnel through the wire-safe secret projection', () => {
