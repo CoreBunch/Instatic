@@ -204,6 +204,7 @@ Authors normally write `instatic-plugin.config.ts` with `definePlugin(...)`; the
 | `plugin.json` top-level `id`| Namespaced, lowercase (`vendor.product[.subname]`)         | `acme.workflow`           |
 | `resources[].id`, `adminPages[].id` | URL path segment — lowercase kebab-case             | `seo-entries`, `subscribers` |
 | `resources[].fields[].id`   | JSON key — any common identifier convention                | `email`, `subscribedAt`   |
+| `resources[].uniqueField`   | The `id` of one of that resource's `text` fields           | `email`                   |
 | Pack `classes[].id`         | Namespaced under the plugin ID                             | `acme.workflow/hero-root` |
 | Pack `layouts[].id`         | Namespaced under the plugin ID                             | `acme.workflow/hero-section` |
 
@@ -380,7 +381,7 @@ VM and request limits live in `server/plugins/quickjs/limits.ts`; the host-side 
 
 **The call budget bounds waiting.** The eval deadline cannot fire while a handler awaits a host call, so a handler waiting on something slow is bounded by the call budget instead. A call still pending when it runs out fails with `Plugin call exceeded its 20s time budget` (`PluginCallBudgetError`): a route answers **504** with that message, a schedule run records `status: 'timeout'`, and a lifecycle hook, hook listener or loop fetch fails like any thrown error. Only that call fails. The worker, the VM and every other call in flight carry on, which is why the budget sits below the worker RPC timeout.
 
-- **A 504 from a plugin route means the outcome is unknown.** Plugin code cannot be cancelled mid-`await`: the abandoned handler may resume when its host call returns and finish its work, including any write, after its caller was told it failed. The caller may retry, so a handler that writes must be idempotent (key the write on the event or request id and check for it first).
+- **A 504 from a plugin route means the outcome is unknown.** Plugin code cannot be cancelled mid-`await`: the abandoned handler may resume when its host call returns and finish its work, including any write, after its caller was told it failed. The caller may retry, so a handler that writes must be idempotent (key the write on the event or request id). The tools for that are `createIfAbsent` and `update(..., { ifVersion })` in plugin storage; see "Plugin-owned records".
 - **A slow upstream does not have to end in a 504.** An outbound request times out at 15 s by default and always ends before the call does, with time left to handle the failure (see "Outbound HTTP" → Timeouts). A handler that catches the `TimeoutError` answers normally.
 - A pending call does not spin: it sleeps until a host-call or timer resolution advances the VM, re-checking every 50 ms.
 
@@ -637,13 +638,26 @@ const site = await api.cms.site.publicUrl()   // 'https://example.com' or null; 
 const items = api.cms.storage.collection('items')
 const all   = await items.list()
 const made  = await items.create({ title: 'Draft', status: 'pending' })
-await items.update(made.id, { status: 'approved' })
+const same  = await items.get(made.id)                       // record or null
+await items.update(made.id, { title: 'Draft', status: 'approved' })
 await items.delete(made.id)
 ```
 
-Plugin storage is per-plugin, per-collection. The collection name must match a `resources[].id` declared in the manifest. The current collection API is intentionally small: `list(options?)`, `create(data)`, `update(recordId, data)`, and `delete(recordId)`. `list()` returns `{ records, totalCount }` and accepts `StorageListOptions` from `src/core/plugin-sdk/storageSchemas.ts` for filtering, ordering, and pagination (default 100 records, at most 1000). The host bridge targets are `cms.storage.list`, `cms.storage.create`, `cms.storage.update`, and `cms.storage.delete`.
+Plugin storage is per-plugin, per-collection: every call is scoped to the calling plugin's id, so a plugin can neither read another plugin's records nor collide with its keys. The collection name must match a `resources[].id` declared in the manifest. The repository is `server/repositories/pluginRecords.ts`; the host handlers are `server/plugins/host/handlers/storage.ts`.
 
-The repository is `server/repositories/pluginRecords.ts`. `list` means the same on SQLite and Postgres (one case table runs against both: `src/__tests__/helpers/pluginRecordFilterCases.ts`):
+| Method | Resolves | Notes |
+|---|---|---|
+| `list(options?)` | `{ records, totalCount }` | `StorageListOptions` (`src/core/plugin-sdk/storageSchemas.ts`): filter, orderBy, limit (default 100, max 1000), offset. Semantics below. |
+| `get(id)` | record or `null` | |
+| `getByKey(value)` | record or `null` | Needs a `uniqueField` on the resource. |
+| `create(data)` | record | Rejects with `storage_duplicate:` when the unique key is taken. |
+| `createIfAbsent(data)` | `{ record, created }` | Needs a `uniqueField` and a value for it. Atomic. |
+| `update(id, data, { ifVersion }?)` | record or `null` | Replaces the whole `data`; `version` goes up by one. With `ifVersion`, rejects with `storage_conflict:` unless the record is still at that version. |
+| `delete(id, { ifVersion }?)` | `boolean` | Same `ifVersion` rule. |
+
+A record is `{ id, pluginId, resourceId, data, uniqueKey, version, createdAt, updatedAt }`. `version` starts at 0.
+
+`list` means the same on SQLite and Postgres (one case table runs against both: `src/__tests__/helpers/pluginRecordFilterCases.ts`):
 
 - **Filters are typed by the value you compare with.** `{ amount: 9 }` matches records whose `amount` is the number 9, never the string `"9"`; `{ paid: true }` matches booleans only; `{ id: 'x' }` strings only. The operators are `eq`, `ne`, `gt`, `gte`, `lt`, `lte`, `in` (values of mixed types allowed) and `like` (strings; `%` and `_` are wildcards, a backslash escapes them, and only ASCII letters ignore case: `'ÉCOLE'` matches `'École%'`, `'école'` does not). A row whose field holds another type matches no comparison, `ne` included.
 - **`null` means "missing or null".** `{ field: null }` matches records without the field or with `null` in it; `{ field: { ne: null } }` matches the rest. `null` cannot be used with the ordering operators.
@@ -654,6 +668,46 @@ The repository is `server/repositories/pluginRecords.ts`. `list` means the same 
 Record data is a JSON object, at most 512 levels deep. Text Postgres cannot store is refused on create and update on both databases, so a plugin behaves the same on either: the NUL character (`\u0000`) and an unpaired surrogate, in a key or a value at any depth.
 
 **Unreadable records.** A stored row whose data is not a JSON object (or nests deeper than 512 levels) does not fail the list: it comes back with `data: {}` and `unreadable: true`, and is logged once as `[plugin:<id>]`. The admin resource page says the record could not be read. `update` on such a record is refused (`PluginRecordUnreadableError`), because it would silently replace whatever the row held; `delete` works. On Postgres, a row still in the old string form (see `036_plugin_records_json_repair` in `docs/reference/database-dialects.md`) is not unreadable: it reads and updates normally. `list` filters do not match it until it is saved again; the server log gives the count of such rows after the migration (`[migrations]`).
+
+**Unique keys.** A resource may name one `text` field as its `uniqueField`. The host copies that field's value into an indexed column with a unique index over `(plugin, resource, key)`. The key is the value with surrounding whitespace trimmed and nothing else changed, at most 512 characters: it is case-sensitive and compares by code point, so `Evt_1` and `evt_1` are two keys, and so are a precomposed and a decomposed accent. Normalise in the plugin if you need otherwise. A record that leaves the field empty has no key and never collides. `getByKey` trims its argument the same way (`deriveRecordUniqueKey` in `src/core/plugins/resourceRecords.ts` is the one derivation). `parsePluginManifest` and `bun instatic-plugin lint` reject a `uniqueField` that is not a declared `text` field.
+
+```ts
+resources: [{
+  id: 'events',
+  title: 'Events',
+  uniqueField: 'eventId',
+  fields: [
+    { id: 'eventId', type: 'text', label: 'Event id', required: true },
+    { id: 'state', type: 'text', label: 'State' },
+  ],
+}]
+```
+
+**Handlers interleave. Write for it.** A plugin has one worker per server process and no queue in front of it: two route calls, or a route and a hook, run interleaved at every `await`, and each server instance sharing a Postgres database runs its own worker. "`list`, then `create` if nothing came back" is therefore a race: two deliveries of one webhook both see nothing and both create. Use the two calls the database decides in a single statement:
+
+- **Exactly once: `createIfAbsent`.** Of any number of concurrent calls with the same key, on one instance or several, exactly one gets `created: true`; the rest get the stored record and `created: false`.
+- **Read, change, write back: `update(..., { ifVersion })`.** Of several writers that read the same version, one succeeds; the others reject with `storage_conflict:` and should read again and retry.
+
+```js
+// A webhook that may be delivered twice, or twice at once.
+api.cms.routes.public.post('/webhook', async ({ body }) => {
+  const claim = await events.createIfAbsent({ eventId: body.id, state: 'received' })
+  if (!claim.created) return { ok: true }          // already handled, or being handled
+  await grantAccess(body)                           // must itself be safe to repeat
+  await events.update(claim.record.id, { eventId: body.id, state: 'done' }, { ifVersion: claim.record.version })
+  return { ok: true }
+})
+```
+
+If the handler can fail between the claim and the work, key the record on the event and store its progress in `state`, so a retry finds `received` and finishes the job instead of skipping it.
+
+**Refusals are message prefixes.** The plugin RPC carries only an error message, so tell refusals apart with `err.message.startsWith(...)`: `storage_duplicate:` (the unique key belongs to another record) and `storage_conflict:` (the record changed since `ifVersion` was read). The constants are `STORAGE_DUPLICATE_PREFIX` and `STORAGE_CONFLICT_PREFIX` in `storageSchemas.ts`.
+
+**When the declaration changes.** Stored keys follow the manifest. Whenever an install or upgrade (package or JSON) declares a resource whose `uniqueField` differs from what was stored before, including a resource declared for the first time over records that already exist, the host rebuilds every key of that resource from the new field (`rekeyPluginRecords`) in the same transaction that stores the manifest. It is refused up front, with the old version still running, when two existing records share a value or a value is longer than 512 characters, and, when the plugin gives an existing resource a different `uniqueField`, when that resource holds more than 50,000 records. The record limit never applies to a rollback or to a resource the previous manifest did not declare: restoring keys must not be blocked by size. That re-key runs in one transaction however many records the resource holds, so on a very large resource it holds its row locks, and the install request, until every key is written. Removing the `uniqueField` clears the keys. A failed upgrade's rollback restores the previous manifest and keys in one transaction; if that itself fails (records written by the failed version can make the old keys collide) the plugin is unloaded and left in `error` with the reason, its manifest and keys still those of the last transaction that succeeded, never half-keyed.
+
+Migration `037_plugin_record_keys` adds the two columns and the unique index. On Postgres, building the index blocks writes to `plugin_records` for as long as it takes to scan the table (well under a second for the sizes plugins hold; a few seconds per million rows).
+
+Editor-side plugin code (`api.cms.storage` in an editor entrypoint) and the admin resource pages go through `/admin/api/cms/plugins/:id/resources/:rid/records`, which offers list, create, update and delete only. A create or update that hits the unique key answers `409` with the message, which the resource page shows as a toast.
 
 ### CMS hooks — requires `cms.hooks`
 

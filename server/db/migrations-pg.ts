@@ -1738,4 +1738,20 @@ export const pgMigrations: Migration[] = [
     noTimeouts: true,
     leftover: pluginRecordsStillStoredAsText,
   },
+  {
+    // Plugin storage: an optional unique key per record (derived from the
+    // resource's declared uniqueField) and a version counter for conditional
+    // updates. Schema only. NULL keys are distinct in a unique index on both
+    // dialects, so existing rows and resources without a uniqueField are
+    // unaffected.
+    id: '037_plugin_record_keys',
+    sql: `
+      alter table plugin_records add column unique_key text;
+
+      alter table plugin_records add column version integer not null default 0;
+
+      create unique index if not exists plugin_records_unique_key_idx
+        on plugin_records (plugin_id, resource_id, unique_key);
+    `,
+  },
 ]

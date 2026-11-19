@@ -30,7 +30,15 @@ import type { HostPluginRecord } from './types'
 import { handleRoutesRegister } from './handlers/routes'
 import { handleHooksOn, handleHooksFilter, handleHooksEmit } from './handlers/hooks'
 import { handleLoopsRegisterSource } from './handlers/loops'
-import { handleStorageList, handleStorageCreate, handleStorageUpdate, handleStorageDelete } from './handlers/storage'
+import {
+  handleStorageCreate,
+  handleStorageCreateIfAbsent,
+  handleStorageDelete,
+  handleStorageGet,
+  handleStorageGetByKey,
+  handleStorageList,
+  handleStorageUpdate,
+} from './handlers/storage'
 import { handleSettingsReplace } from './handlers/settings'
 import { handleNetworkFetch, handleNetworkAbort } from './handlers/network'
 import { handleScheduleRegister, handleScheduleCancel } from './handlers/schedule'
@@ -102,6 +110,9 @@ const apiHandlers = {
   'cms.storage.create': handleStorageCreate,
   'cms.storage.update': handleStorageUpdate,
   'cms.storage.delete': handleStorageDelete,
+  'cms.storage.get': handleStorageGet,
+  'cms.storage.getByKey': handleStorageGetByKey,
+  'cms.storage.createIfAbsent': handleStorageCreateIfAbsent,
   'cms.settings.replace': handleSettingsReplace,
   'network.fetch': handleNetworkFetch,
   'network.abort': handleNetworkAbort,
