@@ -271,6 +271,42 @@ describe('sign-in for apps', () => {
       expect((await answer('approve', request)).status).toBe(200)
     })
 
+    it('still works in a browser that holds the marker twice', async () => {
+      const session = cookie
+      const first = await call(await authorizeUrl(), { headers: { cookie: session } })
+      const own = /instatic_member_app=([0-9a-f]{32});/.exec(first.headers.get('set-cookie')!)![1]!
+      // A second cookie of the same name, kept for another path: the browser sends both.
+      const foreign = 'f'.repeat(32)
+      const second = await call(await authorizeUrl(), {
+        headers: { cookie: `${session}; instatic_member_app=${foreign}; instatic_member_app=${own}` },
+      })
+      expect(second.status).toBe(302)
+      // The site cannot tell which one it set, so it sets a new one over its own.
+      const fresh = /instatic_member_app=([0-9a-f]{32});/.exec(second.headers.get('set-cookie')!)![1]!
+      expect([own, foreign]).not.toContain(fresh)
+      const request = new URL(second.headers.get('location')!, ORIGIN).searchParams.get('request')!
+
+      // The other cookie is still there, and alone it answers nothing.
+      const without = await answer('approve', request, { cookie: `${session}; instatic_member_app=${foreign}; instatic_member_app=${own}` })
+      expect(without.status).toBe(400)
+      const both = await answer('approve', request, { cookie: `${session}; instatic_member_app=${foreign}; instatic_member_app=${fresh}` })
+      expect(both.status).toBe(200)
+    })
+
+    it('never sends back a marker it did not make', async () => {
+      // Each of these passed the old check for a marker's form.
+      for (const planted of ['A'.repeat(32), 'x'.repeat(40), `${'a'.repeat(31)}-`, 'a'.repeat(33)]) {
+        const res = await call(await authorizeUrl(), { headers: { cookie: `${cookie}; instatic_member_app=${planted}` } })
+        const set = res.headers.get('set-cookie')!
+        expect(set).not.toContain(planted)
+        const fresh = /^instatic_member_app=([0-9a-f]{32}); Path=\/; HttpOnly; SameSite=Lax; Max-Age=3600$/.exec(set)?.[1]
+        expect(fresh).toBeDefined()
+        const request = new URL(res.headers.get('location')!, ORIGIN).searchParams.get('request')!
+        expect((await answer('approve', request, { cookie: `${cookie}; instatic_member_app=${planted}` })).status).toBe(400)
+        expect((await answer('approve', request, { cookie: `${cookie}; instatic_member_app=${fresh}` })).status).toBe(200)
+      }
+    })
+
     it('needs a signed-in member and a request from this site', async () => {
       const request = await startRequest()
       const signedOut = await answer('approve', request, { cookie: '' })

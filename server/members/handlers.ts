@@ -78,7 +78,7 @@ import {
   clearSignupNonceCookie,
   findMemberSession,
   memberSessionCookie,
-  readAppRequestMarker,
+  readAppRequestMarkers,
   readMemberSessionToken,
   readSignupNonce,
   signupNonceCookie,
@@ -379,7 +379,7 @@ async function runAction(
       return respond(req, fields, await updateProfile(ctx, current, profileFieldsOf(fields)))
     case 'apps/approve':
       return respond(req, fields, await answerAppSignIn(ctx, current, {
-        requestId: field('request'), browserMarker: readAppRequestMarker(req), decision: field('decision'),
+        requestId: field('request'), browserMarkers: readAppRequestMarkers(req), decision: field('decision'),
       }))
     default:
       return respond(req, fields, await deleteAccount(ctx, current, {

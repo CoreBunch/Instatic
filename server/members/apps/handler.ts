@@ -12,7 +12,7 @@
  *   GET  userinfo    who the member is and what they hold, by access token
  *
  * The member's answer on the approval page is an ordinary member form action
- * (`apps/approve`, `apps/deny` in `../handlers.ts`), so it rides the same
+ * (`apps/approve` in `../handlers.ts`), so it rides the same
  * session and same-origin checks as every other member action.
  *
  * None of these read the member session cookie except `authorize`, and none
@@ -38,8 +38,9 @@ import { getMemberPagePaths } from '../pages'
 import { findMemberById, listActiveMemberTagExpiries } from '../repository'
 import {
   appRequestMarkerCookie,
+  createAppRequestMarker,
   findMemberSession,
-  readAppRequestMarker,
+  readAppRequestMarkers,
   readMemberSessionToken,
 } from '../sessions'
 import {
@@ -175,8 +176,13 @@ async function authorize(req: Request, db: DbClient, url: URL): Promise<Response
   }
 
   await sweepExpiredMemberAppRows(db)
-  // The browser the app opened keeps a marker; the answer counts only from it.
-  const browserMarker = readAppRequestMarker(req) ?? crypto.randomUUID().replaceAll('-', '')
+  // The browser the app opened keeps a marker; the answer counts only from
+  // it. One well-formed marker is kept, so a request still waiting in another
+  // tab keeps working. None, a malformed one, or several (the server cannot
+  // tell which is its own) get a new one: the cookie below replaces the one
+  // this site set, and the answer is accepted from whichever marker matches.
+  const presented = readAppRequestMarkers(req)
+  const browserMarker = presented.length === 1 ? presented[0]! : createAppRequestMarker()
   const requestId = await createMemberAppRequest(db, {
     appId: app.id,
     browserMarker,

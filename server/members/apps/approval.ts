@@ -16,17 +16,17 @@ import { decideMemberAppRequest, findPendingMemberAppRequest } from './store'
 export async function answerAppSignIn(
   ctx: MemberActionContext,
   current: SignedInMember,
-  input: { requestId: string; browserMarker: string | null; decision: string },
+  input: { requestId: string; browserMarkers: readonly string[]; decision: string },
 ): Promise<MemberOutcome> {
   // The answer is the button that was pressed. Without it there is no answer,
   // and no answer is never an approval.
   if (input.decision !== 'allow' && input.decision !== 'deny') {
     return { ok: false, code: 'invalid_input', field: 'decision' }
   }
-  if (!input.requestId || !input.browserMarker) return { ok: false, code: 'invalid_token' }
+  if (!input.requestId || input.browserMarkers.length === 0) return { ok: false, code: 'invalid_token' }
   const decided = await decideMemberAppRequest(ctx.db, {
     requestId: input.requestId,
-    browserMarker: input.browserMarker,
+    browserMarkers: input.browserMarkers,
     memberId: current.member.id,
     approve: input.decision === 'allow',
   })

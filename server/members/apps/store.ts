@@ -200,18 +200,24 @@ export async function findPendingMemberAppRequest(
  * Answer a waiting request. An approval creates the grant and the one-time
  * code the app exchanges; a refusal only closes the request. Null when the
  * request was already answered, has run out, or the answer comes from a
- * browser other than the one the app opened.
+ * browser other than the one the app opened: none of the markers it
+ * presents is the one stored with the request.
  */
 export async function decideMemberAppRequest(
   db: DbClient,
-  input: { requestId: string; browserMarker: string; memberId: string; approve: boolean },
+  input: { requestId: string; browserMarkers: readonly string[]; memberId: string; approve: boolean },
   now: Date = new Date(),
 ): Promise<{ request: MemberAppRequest; code: string | null } | null> {
   const idHash = await hashOpaqueToken(input.requestId)
-  const browserHash = await hashOpaqueToken(input.browserMarker)
+  const presented = await Promise.all(input.browserMarkers.map((marker) => hashOpaqueToken(marker)))
   return db.transaction(async (tx) => {
     const request = await findPendingMemberAppRequest(tx, input.requestId, now)
     if (!request) return null
+    const stored = await tx<{ browser_hash: string }>`
+      select browser_hash from member_app_requests where id_hash = ${idHash}
+    `
+    const browserHash = stored.rows[0]?.browser_hash
+    if (!browserHash || !presented.includes(browserHash)) return null
     const decided = await tx`
       update member_app_requests set decided_at = ${now.toISOString()}
        where id_hash = ${idHash} and decided_at is null and browser_hash = ${browserHash}

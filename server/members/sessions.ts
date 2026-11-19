@@ -74,17 +74,37 @@ export function appRequestMarkerCookie(req: Request, marker: string): string {
   return `${appRequestCookieName(req)}=${marker}; ${cookieAttributes(req)}; Max-Age=3600`
 }
 
-export function readAppRequestMarker(req: Request): string | null {
-  return readMarkerCookie(req, appRequestCookieName(req))
+/** A new marker: 32 hex characters, 122 random bits. The only form a marker is ever read in. */
+export function createAppRequestMarker(): string {
+  return crypto.randomUUID().replaceAll('-', '')
+}
+
+const APP_REQUEST_MARKER = /^[0-9a-f]{32}$/
+
+/**
+ * Every marker the browser presents that is one of ours by form. A browser
+ * can hold the name twice (set for another path or domain, which a plain
+ * name on http allows), and the server cannot tell which one it set, so the
+ * caller checks each against the stored request instead of refusing them
+ * all. Anything not in the generated form is dropped, so nothing read here
+ * can carry cookie syntax.
+ */
+export function readAppRequestMarkers(req: Request): string[] {
+  return [...new Set(cookieValues(req, appRequestCookieName(req)))].filter((value) => APP_REQUEST_MARKER.test(value))
 }
 
 function readMarkerCookie(req: Request, wanted: string): string | null {
+  const values = cookieValues(req, wanted)
+  return values.length === 1 && /^[A-Za-z0-9-]{20,60}$/.test(values[0]) ? values[0] : null
+}
+
+function cookieValues(req: Request, wanted: string): string[] {
   const values: string[] = []
   for (const part of (req.headers.get('cookie') ?? '').split(';')) {
     const eq = part.indexOf('=')
     if (eq > 0 && part.slice(0, eq).trim() === wanted) values.push(part.slice(eq + 1).trim())
   }
-  return values.length === 1 && /^[A-Za-z0-9-]{20,60}$/.test(values[0]) ? values[0] : null
+  return values
 }
 
 function requestIsSecure(req: Request): boolean {
