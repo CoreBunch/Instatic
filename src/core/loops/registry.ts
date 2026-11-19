@@ -19,10 +19,12 @@ import type { ILoopSourceRegistry, LoopEntitySource } from './types'
 class LoopSourceRegistry implements ILoopSourceRegistry {
   private readonly _sources = new Map<string, LoopEntitySource>()
   private readonly _listeners = new Set<() => void>()
-  private _version = 0
+  private _snapshot: readonly LoopEntitySource[] = []
 
   private changed(): void {
-    this._version += 1
+    // A new array on every change: a reader that holds a snapshot can tell a
+    // changed set from an unchanged one by identity alone.
+    this._snapshot = Array.from(this._sources.values())
     for (const listener of this._listeners) listener()
   }
 
@@ -87,7 +89,7 @@ class LoopSourceRegistry implements ILoopSourceRegistry {
     }
   }
 
-  getVersion = (): number => this._version
+  getSnapshot = (): readonly LoopEntitySource[] => this._snapshot
 
   get size(): number {
     return this._sources.size

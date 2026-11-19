@@ -8,8 +8,7 @@
  */
 import { afterEach, describe, expect, it } from 'bun:test'
 import '@core/loops/sources'
-import { replaceRemoteLoopSources, type RemoteLoopSource } from '@core/loops'
-import { loopSourceRegistry } from '@core/loops/registry'
+import { loopSourceRegistry, replaceRemoteLoopSources, type RemoteLoopSource } from '@core/loops'
 import { warningsForNode } from '@core/htmlImport/importWarnings'
 
 function remote(id: string, label = id): RemoteLoopSource {
@@ -62,14 +61,18 @@ describe('replaceRemoteLoopSources', () => {
   it('tells subscribers about every change, and only about changes', () => {
     let calls = 0
     const unsubscribe = loopSourceRegistry.subscribe(() => { calls += 1 })
-    const before = loopSourceRegistry.getVersion()
+    const before = loopSourceRegistry.getSnapshot()
 
     replaceRemoteLoopSources([remote('acme.shop.offers')])
     expect(calls).toBe(1)
-    expect(loopSourceRegistry.getVersion()).toBeGreaterThan(before)
+    const after = loopSourceRegistry.getSnapshot()
+    expect(after).not.toBe(before)
+    expect(after.map((source) => source.id)).toContain('acme.shop.offers')
 
+    // Nothing changed: no call, and the very same snapshot.
     loopSourceRegistry.unregister('acme.shop.never-registered')
     expect(calls).toBe(1)
+    expect(loopSourceRegistry.getSnapshot()).toBe(after)
 
     unsubscribe()
     replaceRemoteLoopSources([])

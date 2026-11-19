@@ -75,7 +75,10 @@ export async function handleLoopsRegisterSource(
     // Lets a render skip the member lookup for a plugin that would not be sent it.
     mayKnowMember: () => pluginMayKnowMember(msg.pluginId),
   }
-  entry.loopSources.push({ pluginId: msg.pluginId, sourceId: descriptor.id })
+  // Registering the same id again replaces the source; it is still one source.
+  if (!entry.loopSources.some((source) => source.sourceId === descriptor.id)) {
+    entry.loopSources.push({ pluginId: msg.pluginId, sourceId: descriptor.id })
+  }
   loopSourceRegistry.registerOrReplace(fullSource)
   replyApiOk(msg.pluginId, msg.correlationId)
 }

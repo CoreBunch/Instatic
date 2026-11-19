@@ -32,10 +32,13 @@ export { reconcileTreeIntegrity } from './integrity'
 export { applyTextDiff } from './textDiff'
 export {
   decodeCollabFrame,
+  decodeNotice,
   decodeResetReason,
   encodeCollabFrame,
+  encodeNoticePayload,
   encodeResetPayload,
   FRAME_AWARENESS,
+  FRAME_NOTICE,
   FRAME_PING,
   FRAME_PONG,
   FRAME_RESET,
@@ -44,6 +47,7 @@ export {
   SITE_SOCKET_PATH,
   type CollabFrame,
   type ResetReason,
+  type SiteNotice,
 } from './protocol'
 export { createCollabDocSet, type CollabDocSet } from './docSet'
 export { collabFramePackets, createCollabFrameReader } from './frameTransfer'

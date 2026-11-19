@@ -3,19 +3,26 @@
  *
  * Built-in sources are registered before the first render. A plugin's sources
  * arrive later, from the server, and come and go as plugins are enabled and
- * disabled. A component that reads the registry through this hook follows
+ * disabled. A component that reads the registry through these hooks follows
  * those changes; one that reads `loopSourceRegistry` directly would keep the
  * list it saw when it first rendered.
+ *
+ * Every hook derives its answer from the snapshot `useSyncExternalStore`
+ * returns. The snapshot is a new array on each change, so it is a real
+ * dependency of whatever is computed from it: the React Compiler recomputes
+ * when it changes and at no other time.
  */
 import { useSyncExternalStore } from 'react'
-import { remoteLoopSourcesSynced, subscribeRemoteLoopSourcesSynced } from '@core/loops'
-import { loopSourceRegistry } from '@core/loops/registry'
-import type { LoopEntitySource } from '@core/loops/types'
+import {
+  loopSourceRegistry,
+  remoteLoopSourcesSynced,
+  subscribeRemoteLoopSourcesSynced,
+  type LoopEntitySource,
+} from '@core/loops'
 
 /** Built-in sources first, then plugins' sources, each in registration order. */
 export function useLoopSources(): LoopEntitySource[] {
-  useSyncExternalStore(loopSourceRegistry.subscribe, loopSourceRegistry.getVersion)
-  const sources = loopSourceRegistry.list()
+  const sources = useSyncExternalStore(loopSourceRegistry.subscribe, loopSourceRegistry.getSnapshot)
   return [
     ...sources.filter((source) => source.kind !== 'remote'),
     ...sources.filter((source) => source.kind === 'remote'),
@@ -24,8 +31,8 @@ export function useLoopSources(): LoopEntitySource[] {
 
 /** One source by id, or `undefined` while no such source is registered. */
 export function useLoopSource(sourceId: string | null | undefined): LoopEntitySource | undefined {
-  useSyncExternalStore(loopSourceRegistry.subscribe, loopSourceRegistry.getVersion)
-  return sourceId ? loopSourceRegistry.get(sourceId) : undefined
+  const sources = useSyncExternalStore(loopSourceRegistry.subscribe, loopSourceRegistry.getSnapshot)
+  return sourceId ? sources.find((source) => source.id === sourceId) : undefined
 }
 
 /**

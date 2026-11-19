@@ -15,6 +15,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { LOOP_PREVIEW_MAX_ITEMS, type RemoteLoopSource } from '@core/loops'
 import { handleCmsRequest } from '../../../server/handlers/cms'
+import { onPluginLoopSourcesChanged } from '../../../server/plugins/host/loopSources'
 import { unloadPlugin } from '../../../server/plugins/runtime'
 import { createCapabilityTestHarness, type CapabilityTestHarness } from '../helpers/capabilityHarness'
 
@@ -50,10 +51,35 @@ const PLUGIN_SOURCE = `
     })
     await api.cms.loops.registerSource({
       ...base, id: 'acme.shop.huge', label: 'Huge', filterSchema: {},
-      preview: () => [{ id: '1', fields: { title: 'x'.repeat(300 * 1024) } }],
+      // 100,000 characters, 300,000 bytes: over the cap only when bytes are counted.
+      preview: () => [{ id: '1', fields: { title: '€'.repeat(100 * 1000) } }],
     })
+    await api.cms.loops.registerSource({
+      ...base, id: 'acme.shop.deep', label: 'Deep', filterSchema: {},
+      preview: () => {
+        let value = 'leaf'
+        for (let i = 0; i < 20; i++) value = { inner: value }
+        return [{ id: '1', fields: { title: value } }]
+      },
+    })
+    await api.cms.loops.registerSource({
+      ...base, id: 'acme.shop.stuck', label: 'Stuck', filterSchema: {},
+      preview: () => { for (;;) {} },
+    })
+    let runs = 0
+    await api.cms.loops.registerSource({
+      ...base, id: 'acme.shop.counted', label: 'Counted', filterSchema: {},
+      preview: () => [{ id: '1', fields: { title: 'run ' + (++runs) } }],
+    })
+    // Registered a second time: still one source.
+    await api.cms.loops.registerSource({ ...base, id: 'acme.shop.bare', label: 'Bare', filterSchema: {} })
   }
 `
+
+const SOURCE_IDS = [
+  'acme.shop.account', 'acme.shop.bare', 'acme.shop.broken', 'acme.shop.counted', 'acme.shop.deep',
+  'acme.shop.huge', 'acme.shop.offers', 'acme.shop.shapeless', 'acme.shop.stuck',
+]
 
 describe('plugin loop sources for the editor', () => {
   let h: CapabilityTestHarness
@@ -109,10 +135,8 @@ describe('plugin loop sources for the editor', () => {
     expect(res.status).toBe(200)
     expect(res.headers.get('cache-control')).toContain('no-store')
     const { sources } = (await res.json()) as { sources: RemoteLoopSource[] }
-    expect(sources.map((source) => source.id).sort()).toEqual([
-      'acme.shop.account', 'acme.shop.bare', 'acme.shop.broken',
-      'acme.shop.huge', 'acme.shop.offers', 'acme.shop.shapeless',
-    ])
+    // `bare` is registered twice by the plugin and listed once.
+    expect(sources.map((source) => source.id).sort()).toEqual(SOURCE_IDS)
     const offers = sources.find((source) => source.id === 'acme.shop.offers')!
     expect(offers).toEqual({
       id: 'acme.shop.offers',
@@ -151,7 +175,10 @@ describe('plugin loop sources for the editor', () => {
   it('reports a preview that throws, returns the wrong shape or is too large', async () => {
     const broken = await preview({ sourceId: 'acme.shop.broken', filters: {}, limit: 6 })
     expect(broken.status).toBe(502)
-    expect(((await broken.json()) as { error: string }).error).toContain('no samples today')
+    // What the plugin threw is for the server log, not for whoever has the page open.
+    const reason = ((await broken.json()) as { error: string }).error
+    expect(reason).toContain('preview() failed')
+    expect(reason).not.toContain('no samples today')
 
     const shapeless = await preview({ sourceId: 'acme.shop.shapeless', filters: {}, limit: 6 })
     expect(shapeless.status).toBe(502)
@@ -160,6 +187,62 @@ describe('plugin loop sources for the editor', () => {
     const huge = await preview({ sourceId: 'acme.shop.huge', filters: {}, limit: 6 })
     expect(huge.status).toBe(502)
     expect(((await huge.json()) as { error: string }).error).toContain('more data')
+
+    const deep = await preview({ sourceId: 'acme.shop.deep', filters: {}, limit: 6 })
+    expect(deep.status).toBe(502)
+    expect(((await deep.json()) as { error: string }).error).toContain('nested too deeply')
+  })
+
+  it('cuts a preview that never returns short, and the plugin carries on', async () => {
+    const started = Date.now()
+    const stuck = await preview({ sourceId: 'acme.shop.stuck', filters: {}, limit: 6 })
+    expect(stuck.status).toBe(502)
+    expect(Date.now() - started).toBeLessThan(4_000)
+
+    // Not a worker fault: nothing was recorded against the plugin, and it still answers.
+    const { rows } = await h.db<{ n: number }>`select count(*) as n from plugin_crash_events`
+    expect(Number(rows[0]!.n)).toBe(0)
+    expect((await preview({ sourceId: 'acme.shop.offers', filters: {}, limit: 3 })).status).toBe(200)
+    expect(((await (await list()).json()) as { sources: unknown[] }).sources).toHaveLength(SOURCE_IDS.length)
+  })
+
+  it('runs identical previews in flight once, and limits how many one user may start', async () => {
+    const titles = async (res: Response) =>
+      ((await res.json()) as { items: Array<{ fields: { title: string } }> }).items.map((item) => item.fields.title)
+    const ask = (filters: Record<string, unknown>) => preview({ sourceId: 'acme.shop.counted', filters, limit: 1 })
+
+    const [a, b] = await Promise.all([ask({}), ask({})])
+    expect(await titles(a)).toEqual(['run 1'])
+    expect(await titles(b)).toEqual(['run 1'])
+
+    // 29 more distinct previews bring this user to the limit for this source.
+    for (let i = 0; i < 29; i++) expect((await ask({ i })).status).toBe(200)
+    const refused = await ask({ i: 'one too many' })
+    expect(refused.status).toBe(429)
+    expect(Number(refused.headers.get('retry-after'))).toBeGreaterThan(0)
+
+    // Another source, and another user, are counted on their own.
+    expect((await preview({ sourceId: 'acme.shop.offers', filters: {}, limit: 1 })).status).toBe(200)
+    const editor = await h.createRoleUser({ name: 'Second editor', slug: 'second-editor', capabilities: ['site.read'] })
+    expect((await preview({ sourceId: 'acme.shop.counted', filters: { other: true }, limit: 1 }, editor.cookie)).status).toBe(200)
+  })
+
+  it('reports a burst of registrations as one change', async () => {
+    let changes = 0
+    const stop = onPluginLoopSourcesChanged(() => { changes += 1 })
+    try {
+      const disabled = await h.cms(`/admin/api/cms/plugins/${PLUGIN_ID}`, { method: 'PATCH', cookie: owner, json: { enabled: false } })
+      expect(disabled.status).toBe(200)
+      await Bun.sleep(350)
+      expect(changes).toBe(1)
+
+      const enabled = await h.cms(`/admin/api/cms/plugins/${PLUGIN_ID}`, { method: 'PATCH', cookie: owner, json: { enabled: true } })
+      expect(enabled.status).toBe(200)
+      await Bun.sleep(350)
+      expect(changes).toBe(2)
+    } finally {
+      stop()
+    }
   })
 
   it('refuses a request it cannot read, and a source no plugin provides', async () => {
@@ -191,6 +274,6 @@ describe('plugin loop sources for the editor', () => {
     const enabled = await h.cms(`/admin/api/cms/plugins/${PLUGIN_ID}`, { method: 'PATCH', cookie: owner, json: { enabled: true } })
     expect(enabled.status).toBe(200)
     const { sources } = (await (await list()).json()) as { sources: RemoteLoopSource[] }
-    expect(sources).toHaveLength(6)
+    expect(sources).toHaveLength(SOURCE_IDS.length)
   })
 })

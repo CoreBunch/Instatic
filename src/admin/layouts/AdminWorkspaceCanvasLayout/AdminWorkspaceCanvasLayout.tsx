@@ -24,7 +24,7 @@ import { useWorkspaceLayoutPersistence } from '@admin/state/useWorkspaceLayoutPe
 import { Button } from '@ui/components/Button'
 import { cn } from '@ui/cn'
 import { Settings2SolidIcon } from 'pixel-art-icons/icons/settings-2-solid'
-import { canRunPluginBackgroundWork } from '@admin/access'
+import { canRunPluginBackgroundWork, hasCapability } from '@admin/access'
 import type { AdminWorkspace } from '@admin/workspace'
 import styles from '../AdminCanvasLayout/AdminCanvasLayout.module.css'
 import workspaceStyles from './AdminWorkspaceCanvasLayout.module.css'
@@ -58,7 +58,8 @@ export function AdminWorkspaceCanvasLayout({
   // The merge review has no panels of its own; it reads the content workspace's stored layout.
   useWorkspaceLayoutPersistence(workspace === 'branchReview' ? 'content' : workspace)
   useInstalledEditorPlugins(pluginBackgroundWorkEnabled)
-  usePluginLoopSources()
+  // Listing a plugin's loop sources needs `site.read`; without it there is nothing to ask for.
+  usePluginLoopSources(!currentUser || hasCapability(currentUser, 'site.read'))
   usePluginEventBridge(pluginBackgroundWorkEnabled)
 
   const appearance = useEditorAppearancePreferences()

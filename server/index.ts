@@ -27,6 +27,7 @@ const { mediaStorageRegistry } = await import('@core/plugins/mediaStorageRegistr
 const { createCollabRelay } = await import('./collab/relay')
 const { SITE_SOCKET_PATH, createCollabSocketLayer, handleCollabSocketUpgrade } =
   await import('./collab/socket')
+const { onPluginLoopSourcesChanged } = await import('./plugins/host/loopSources')
 
 const config = readServerConfig()
 configureTrustedProxyCidrs(config.trustedProxyCidrs)
@@ -90,6 +91,9 @@ startConversationPurgeTick(db)
 // the multiplexed y-protocols wire (see server/collab/socket.ts).
 const collabRelay = createCollabRelay(db)
 const collabSocket = createCollabSocketLayer(collabRelay, db)
+// Open editors list plugin loop sources in the Loop module's Source picker;
+// tell them when that list changes so nobody has to reload.
+onPluginLoopSourcesChanged(() => collabSocket.notify('loop-sources'))
 
 /**
  * Build the CORS response headers for an incoming request.

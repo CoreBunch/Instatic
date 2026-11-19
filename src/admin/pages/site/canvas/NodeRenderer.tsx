@@ -484,7 +484,7 @@ interface LoopIterationsPreviewProps {
  */
 function LoopIterationsPreview({ node, baseTemplateContext }: LoopIterationsPreviewProps) {
   const items = useLoopPreviewItems(node, baseTemplateContext)
-  const notice = useLoopPreviewNotice(node)
+  const notice = useLoopPreviewNotice(node.props)
   if (items.length === 0) return notice ? <LoopPreviewNotice message={notice} /> : null
 
   const baseStack = baseTemplateContext?.entryStack ?? []

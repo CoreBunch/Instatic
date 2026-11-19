@@ -51,3 +51,14 @@ export function replaceRemoteLoopSources(sources: readonly RemoteLoopSource[]): 
     for (const listener of syncedListeners) listener()
   }
 }
+
+/** Back to the state before the first sync: no remote sources, list not yet arrived. For tests. */
+export function resetRemoteLoopSourcesForTests(): void {
+  for (const existing of loopSourceRegistry.list()) {
+    if (existing.kind === 'remote') loopSourceRegistry.unregister(existing.id)
+  }
+  if (synced) {
+    synced = false
+    for (const listener of syncedListeners) listener()
+  }
+}

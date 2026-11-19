@@ -179,7 +179,8 @@ export function AdminCanvasLayout() {
   })
   useEditorLayoutPersistence()
   useInstalledEditorPlugins(pluginBackgroundWorkEnabled)
-  usePluginLoopSources()
+  // Listing a plugin's loop sources needs `site.read`; without it there is nothing to ask for.
+  usePluginLoopSources(!currentUser || hasCapability(currentUser, 'site.read'))
   // Mount the SSE bridge ONCE per admin tab — gives toasts on plugin
   // crashes from any route, drives the red dot on the Plugins nav link,
   // and keeps the open Plugins page list refreshed.

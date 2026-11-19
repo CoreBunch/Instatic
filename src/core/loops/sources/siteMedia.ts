@@ -204,12 +204,4 @@ export const SiteMediaSource: LoopEntitySource = {
       totalItems,
     }
   },
-
-  preview() {
-    // Editor-side preview is handled by the canvas via `useLoopPreviewItems`,
-    // which fetches real media assets through the CMS API. This source's
-    // synchronous `preview()` therefore returns [] — no placeholder
-    // thumbnails leak into the canvas.
-    return []
-  },
 }

@@ -640,14 +640,4 @@ export const DataRowsSource: LoopEntitySource = {
       totalItems: open.length,
     }
   },
-
-  preview() {
-    // Editor-side preview is handled by the canvas via `useLoopPreviewItems`:
-    // it first calls the admin endpoint `/data/tables/:id/loop-preview` to
-    // fetch real published rows via `fetchPublishedDataRowItems` (this file),
-    // and falls back to synthetic preview items from `dataTablePreviewToLoopItem`
-    // when there are no published rows. This source's synchronous `preview()`
-    // returns [] so no synthetic placeholder data leaks from the server source.
-    return []
-  },
 }

@@ -12,6 +12,9 @@
  *   FRAME_RESET     payload = varString ResetReason — the server dropped this
  *                   doc's CRDT state; clients rebind and the doc reseeds
  *                   server-side
+ *   FRAME_NOTICE    payload = varString SiteNotice — server → client only,
+ *                   under PRESENCE_DOC_ID: something outside the documents
+ *                   changed and every open editor should look again
  *   FRAME_PING /    no payload — application-level liveness, under
  *   FRAME_PONG      PRESENCE_DOC_ID and never gated on capabilities
  *
@@ -50,6 +53,38 @@ export const FRAME_RESET = 2
  */
 export const FRAME_PING = 3
 export const FRAME_PONG = 4
+/**
+ * A site-wide notice: a fact that is not document content, but that every
+ * open editor must hear of without reloading. It names what changed and
+ * carries no data; the editor fetches the new state over HTTP, under its own
+ * access checks.
+ */
+export const FRAME_NOTICE = 5
+
+/**
+ *   loop-sources — the set of loop sources plugins provide changed (a plugin
+ *                  was enabled, disabled, upgraded, removed, or its worker
+ *                  restarted).
+ */
+const SITE_NOTICES = ['loop-sources'] as const
+export type SiteNotice = (typeof SITE_NOTICES)[number]
+
+export function encodeNoticePayload(notice: SiteNotice): Uint8Array {
+  const encoder = encoding.createEncoder()
+  encoding.writeVarString(encoder, notice)
+  return encoding.toUint8Array(encoder)
+}
+
+/** Wire data — an unknown or undecodable notice is ignored, never thrown. */
+export function decodeNotice(payload: Uint8Array): SiteNotice | null {
+  try {
+    const value = decoding.readVarString(decoding.createDecoder(payload))
+    return SITE_NOTICES.find((notice) => notice === value) ?? null
+  } catch {
+    // A notice this build does not know is not for it.
+    return null
+  }
+}
 
 /**
  * Why the server dropped a doc.

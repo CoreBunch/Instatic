@@ -84,8 +84,7 @@ const CANVAS_MAX_ITEMS = 6
 // node simply has no filters set. Treated as read-only at every call site.
 const EMPTY_FILTERS: Record<string, unknown> = Object.freeze({}) as Record<string, unknown>
 
-function readLoopProps(node: PageNode): ResolvedLoopProps {
-  const props = node.props
+function readLoopProps(props: Record<string, unknown>): ResolvedLoopProps {
   const sourceId = typeof props.sourceId === 'string' ? props.sourceId : ''
   const filters =
     props.filters && typeof props.filters === 'object' && !Array.isArray(props.filters)
@@ -223,7 +222,7 @@ export function selectSitePagesLoopItems(node: PageNode, pages: readonly Page[] 
   const cached = sitePagesItemsCache.get(node)
   if (cached && cached.pages === pages) return cached.items
 
-  const { filters, orderBy, direction, offset, limit } = readLoopProps(node)
+  const { filters, orderBy, direction, offset, limit } = readLoopProps(node.props)
   const filtered = filterPagesForLoop(pages, filters)
   const sorted = sortPages(filtered, orderBy || 'definition', direction)
   let items = sorted.slice(offset, offset + limit).map(cachedPageToLoopItem)
@@ -255,7 +254,7 @@ export function useLoopPreviewItems(
   // from `node.props.filters`, which the editor store (Zustand + Mutative)
   // keeps referentially stable until the user actually edits it. Either way
   // the downstream memo can depend on `filters` directly without thrashing.
-  const { sourceId, filters, orderBy, direction, offset, limit } = readLoopProps(node)
+  const { sourceId, filters, orderBy, direction, offset, limit } = readLoopProps(node.props)
   const tableId = typeof filters.tableId === 'string' ? filters.tableId : ''
   const mimePrefix = typeof filters.mimePrefix === 'string' ? filters.mimePrefix : ''
   // Read as primitives so the fetch effect's dependency list stays stable.
@@ -417,9 +416,11 @@ export function useLoopPreviewItems(
  * be told: its source is not available, or its plugin's preview is loading,
  * failed or came back empty. `null` for every loop that is simply showing
  * its items, and for built-in sources, whose empty states are ordinary.
+ * Takes the loop's props, so the loop's own canvas component can ask too:
+ * a loop with no children draws no iterations, and still has to say this.
  */
-export function useLoopPreviewNotice(node: PageNode): string | null {
-  const { sourceId, filters, offset, limit } = readLoopProps(node)
+export function useLoopPreviewNotice(loopProps: Record<string, unknown>): string | null {
+  const { sourceId, filters, offset, limit } = readLoopProps(loopProps)
   const source = useLoopSource(sourceId)
   const missing = useLoopSourceMissing(sourceId)
   const remoteSourceId = source?.kind === 'remote' ? source.id : null

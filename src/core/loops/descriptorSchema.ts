@@ -67,7 +67,7 @@ export type RemoteLoopSource = Static<typeof RemoteLoopSourceSchema>
  */
 export const LOOP_PREVIEW_MAX_ITEMS = 12
 
-/** Largest preview answer the host passes on, as serialized JSON. */
+/** Largest preview answer the host passes on: bytes of its JSON in UTF-8. */
 export const LOOP_PREVIEW_MAX_BYTES = 256 * 1024
 
 /** What the editor asks a plugin source's preview for. */

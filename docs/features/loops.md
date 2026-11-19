@@ -192,7 +192,7 @@ entry stack safely.
 
 A plugin with `loops.register` registers a custom source via the SDK at activation. The source runs inside the **QuickJS sandbox** — it can use `api.cms.storage.collection(...)` to fetch plugin-owned data or `fetch(...)` (with `network.outbound` permission) for external APIs.
 
-The server registry holds it as a prefetched source whose `fetch` calls the plugin's worker. The editor's registry holds the same id as a `kind: 'remote'` source (`RemoteLoopEntitySource`): the descriptor and the plugin's name, no functions. `usePluginLoopSources` fills it from `GET /admin/api/cms/loop-sources`. Read the registry in the editor through `useLoopSources` / `useLoopSource` (`src/admin/pages/site/hooks/useLoopSources.ts`), which re-render when plugin sources arrive or leave; a direct `loopSourceRegistry.list()` in a component keeps the list it first saw.
+The server registry holds it as a prefetched source whose `fetch` calls the plugin's worker. The editor's registry holds the same id as a `kind: 'remote'` source (`RemoteLoopEntitySource`): the descriptor and the plugin's name, no functions. `usePluginLoopSources` fills it from `GET /admin/api/cms/loop-sources` and keeps it current (the triggers are listed in plugin-system.md). Read the registry in the editor through `useLoopSources` / `useLoopSource` / `useLoopSourceMissing` (`src/admin/pages/site/hooks/useLoopSources.ts`). They derive from `loopSourceRegistry.getSnapshot()`, an immutable list replaced on every change, as returned by `useSyncExternalStore`, so the React Compiler recomputes when plugin sources arrive or leave. A direct `loopSourceRegistry.list()` or `.get()` in a component is memoized by the compiler and keeps the answer it first saw.
 
 See [docs/features/plugin-system.md](plugin-system.md) and the loop-sources section.
 
@@ -354,10 +354,10 @@ In the editor, `useLoopPreviewItems` (`src/admin/pages/site/canvas/useLoopPrevie
 | `data.rows` | GETs `/data/tables/:id/loop-preview` — same projection as the publisher, and takes `cellField` / `cellOperator` / `cellValue` plus a `cell:<fieldId>` `orderBy` so the canvas shows the rows the published page will emit. On a site branch the preview reads the branch's draft rows (the branch has nothing published), mirroring `renderBranchPreview`. Falls back to synthetic items from the table's field definitions when no rows exist yet. |
 | `site.pages` | Reads pages from the in-memory site document via `selectSitePagesLoopItems`. Applies `filterPagesForLoop` + `pageToLoopItem` imported from `@core/loops` — identical to the publisher path. |
 | `site.media` | Fetches via `listCmsMediaAssets()`, filters by MIME prefix, sorts + slices client-side. |
-| Plugin sources (`kind: 'remote'`) | POSTs `/loop-sources/preview`, which runs the plugin's `preview()` in its sandbox. `useRemoteLoopPreview` caches the answer for 30 s per source, filters and limit, and debounces filter edits. |
-| Other in-process sources (`member.apps`) | Calls `source.preview(ctx)` synchronously. |
+| Plugin sources (`kind: 'remote'`) | POSTs `/loop-sources/preview`, which runs the plugin's `preview()` in its sandbox. `useRemoteLoopPreview` reads the shared answer from `remoteLoopPreviews.ts`, which holds one per source, filters and limit while a loop shows it, debounces filter edits, refreshes after 30 s and retries failures. |
+| Other in-process sources (`member.apps`) | Calls `source.preview(ctx)` synchronously. `preview` is optional on a source; the three sources above have none. |
 
-`useLoopPreviewNotice` returns the one-line reason a loop draws nothing when the author should know it: the source id is not registered (its plugin is disabled or removed), or a plugin preview is loading, failed or returned no items. `LoopPreviewNotice` shows it in place of the iterations.
+`useLoopPreviewNotice(props)` returns the one-line reason a loop draws nothing when the author should know it: the source id is not registered (its plugin is disabled or removed), or a plugin preview is loading, failed or returned no items. `LoopPreviewNotice` shows it in place of the iterations, and `LoopEditor` shows it in the "Empty loop" placeholder of a loop without children.
 
 The canvas caps preview results at 6 items (`CANVAS_MAX_ITEMS`) regardless of the loop's configured `limit`. Published pages render the full set.
 

@@ -9,11 +9,13 @@
  * preview runs the plugin's `preview()` (sample data by contract) and never
  * its `fetch()`, so it cannot be used to read what a source lists for real
  * visitors. Answers are `no-store`: nothing here is shared between people.
+ * A failed preview answers 502 with a general reason; what the plugin threw
+ * stays in the server log.
  */
 import type { DbClient } from '../../db/client'
 import { requireCapability } from '../../auth/authz'
 import { badRequest, jsonResponse, readValidatedBody } from '../../http'
-import { LoopSourcePreviewRequestSchema } from '@core/loops/descriptorSchema'
+import { LoopSourcePreviewRequestSchema } from '@core/loops'
 import { listPluginLoopSources, previewPluginLoopSource } from '../../plugins/host/loopSources'
 import { CMS_API_PREFIX } from './shared'
 import { runRouteTable, type Route } from './routeTable'
@@ -33,12 +35,18 @@ async function handlePreview(req: Request, db: DbClient): Promise<Response> {
   const body = await readValidatedBody(req, LoopSourcePreviewRequestSchema)
   if (!body) return badRequest('Invalid loop source preview request')
 
-  const preview = await previewPluginLoopSource(body.sourceId, {
+  const preview = await previewPluginLoopSource(user.id, body.sourceId, {
     filters: body.filters,
     limit: body.limit,
   })
   if (preview.status === 'unknown-source') {
     return jsonResponse({ error: 'No running plugin provides this loop source.' }, { status: 404 })
+  }
+  if (preview.status === 'rate-limited') {
+    return jsonResponse(
+      { error: 'Too many previews of this loop source. Try again in a moment.' },
+      { status: 429, headers: { 'retry-after': String(Math.ceil(preview.retryAfterMs / 1000)) } },
+    )
   }
   if (preview.status === 'failed') {
     return jsonResponse({ error: preview.error }, { status: 502 })

@@ -341,6 +341,10 @@ export interface ILoopSourceRegistry {
   list(): LoopEntitySource[]
   /** Called after every change to the set of sources. Returns an unsubscribe. */
   subscribe(listener: () => void): () => void
-  /** Changes whenever the set of sources does; a `useSyncExternalStore` snapshot. */
-  getVersion(): number
+  /**
+   * The registered sources as an immutable list, replaced by a new one on
+   * every change and otherwise the same array: a `useSyncExternalStore`
+   * snapshot.
+   */
+  getSnapshot(): readonly LoopEntitySource[]
 }
