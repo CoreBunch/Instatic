@@ -181,6 +181,12 @@ function makeFakeDb() {
     if (normalized.includes('from plugin_secrets')) {
       return { rows: [], rowCount: 0 }
     }
+    // An install withdraws the app scopes that do not carry over to it
+    // (withdrawPluginAppScopes). No app is registered and no member signed
+    // in here, so both lists are empty.
+    if (normalized.includes('from member_app_grants') || normalized.includes('from member_apps')) {
+      return { rows: [], rowCount: 0 }
+    }
     // syncPluginMailTemplates: these plugins declare no email templates and
     // nobody has edited one.
     if (normalized.includes('from mail_templates')) {

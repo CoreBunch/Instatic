@@ -115,17 +115,28 @@ globalThis.__buildApi = function buildApi() {
   }
   // api.cms.routes.member.get(path, handler)
   // api.cms.routes.member.get(path, { tag: 'pro' }, handler)
+  // api.cms.routes.member.get(path, { app: { scope: 'read' } }, handler)
   //     Only a signed-in site member reaches the handler (optionally one
-  //     holding the tag). Served on the public plugin mount.
+  //     holding the tag). Served on the public plugin mount. With `app`,
+  //     an app the member signed in to may call it too, when its sign-in
+  //     carries that scope (declared in the manifest's `appScopes`).
   function registerMember(method: string) {
     return function (path: unknown, optionsOrHandler: unknown, maybeHandler?: unknown) {
       assertTargetPermission('cms.routes.register')
       assertPermission('members.read')
       const handler = typeof optionsOrHandler === 'function' ? optionsOrHandler : maybeHandler
       if (typeof handler !== 'function') throw new TypeError('Route handler must be a function')
-      const options = typeof optionsOrHandler === 'function' || !optionsOrHandler ? {} : optionsOrHandler as { tag?: unknown }
-      const access: { kind: 'member'; tag?: string } = { kind: 'member' }
+      const options = typeof optionsOrHandler === 'function' || !optionsOrHandler
+        ? {}
+        : optionsOrHandler as { tag?: unknown; app?: { scope?: unknown } | null }
+      const access: { kind: 'member'; tag?: string; appScope?: string } = { kind: 'member' }
       if (options.tag !== undefined && options.tag !== null) access.tag = String(options.tag)
+      if (options.app !== undefined && options.app !== null) {
+        if (typeof options.app !== 'object' || typeof options.app.scope !== 'string') {
+          throw new TypeError('A member route opened to apps needs `app: { scope: "<name>" }`')
+        }
+        access.appScope = options.app.scope
+      }
       const routeKey = method + ':' + normalizePath(path)
       globalThis.__plugin_handlers.routes[routeKey] = handler as BootstrapFn
       return call('cms.routes.register', [{

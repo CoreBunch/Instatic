@@ -3,7 +3,6 @@
  * Site members tab lists, shows and sends.
  */
 import { Type, type Static } from '@core/utils/typeboxHelpers'
-import { MEMBER_APP_SCOPES } from './appScopes'
 import {
   MEMBER_EMAIL_MAX_LENGTH,
   MEMBER_TAG_PATTERN,
@@ -184,7 +183,17 @@ export const MemberInviteResponseSchema = Type.Object({
 
 // ─── Sign-in for apps ──────────────────────────────────────────────────────
 
-const MemberAppScopeSchema = Type.Union(MEMBER_APP_SCOPES.map((scope) => Type.Literal(scope)))
+/** A scope by name: a built-in one, or `plugin:<pluginId>:<name>`. The server checks it is on offer. */
+const MemberAppScopeSchema = Type.String({ minLength: 1, maxLength: 200 })
+
+/** A scope an owner can give an app, with the words a member reads for it. */
+export const MemberAppScopeOptionSchema = Type.Object({
+  scope: Type.String(),
+  text: Type.String(),
+  /** The plugin that declares it; absent for a built-in scope. */
+  plugin: Type.Optional(Type.Object({ id: Type.String(), name: Type.String() })),
+})
+export type MemberAppScopeOption = Static<typeof MemberAppScopeOptionSchema>
 
 /** An app the site owner registered, which may ask a member to sign in. */
 export const MemberAppSchema = Type.Object({
@@ -198,13 +207,18 @@ export const MemberAppSchema = Type.Object({
 })
 export type MemberApp = Static<typeof MemberAppSchema>
 
-export const MemberAppListResponseSchema = Type.Object({ apps: Type.Array(MemberAppSchema) })
+export const MemberAppListResponseSchema = Type.Object({
+  apps: Type.Array(MemberAppSchema),
+  /** What an app can be given on this site right now: the built-in scopes and those of active plugins. */
+  availableScopes: Type.Array(MemberAppScopeOptionSchema),
+})
+export type MemberAppListResponse = Static<typeof MemberAppListResponseSchema>
 
 export const CreateMemberAppBodySchema = Type.Object(
   {
     name: Type.String({ minLength: 1, maxLength: 80 }),
     redirectUris: Type.Array(Type.String({ minLength: 1, maxLength: 2000 }), { minItems: 1, maxItems: 10 }),
-    scopes: Type.Array(MemberAppScopeSchema, { minItems: 1, maxItems: 4 }),
+    scopes: Type.Array(MemberAppScopeSchema, { minItems: 1, maxItems: 30 }),
   },
   { additionalProperties: false },
 )

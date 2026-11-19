@@ -268,6 +268,95 @@ describe('PermissionReviewSection — upgrade with new permissions', () => {
     expect(droppedRow).not.toBeNull()
     expect(droppedRow?.getAttribute('data-permission')).toBe('cms.storage')
   })
+
+  it('lists what apps may be allowed to do through the plugin, and nothing when it declares none', () => {
+    const view = (manifest: PluginManifest) =>
+      render(
+        <PermissionReviewSection pending={{ manifest }} uploading={false} onCancel={() => {}} onConfirm={() => {}} />,
+      )
+    const { container, unmount } = view({
+      ...baseManifest,
+      permissions: ['cms.routes', 'members.read'] satisfies PluginPermission[],
+      appScopes: [
+        { name: 'read', description: 'See your purchases and plan' },
+        { name: 'manage', description: 'Create licences for you' },
+      ],
+    })
+    const section = container.querySelector('[data-testid="permission-review-app-scopes"]')
+    expect(section?.textContent).toContain('Access for apps')
+    const rows = [...(section?.querySelectorAll('[data-app-scope]') ?? [])]
+    expect(rows.map((row) => row.getAttribute('data-app-scope'))).toEqual(['read', 'manage'])
+    expect(rows[0]?.textContent).toContain('See your purchases and plan')
+    expect(rows[0]?.textContent).toContain('plugin:acme.test:read')
+    unmount()
+
+    expect(view(baseManifest).container.querySelector('[data-testid="permission-review-app-scopes"]')).toBeNull()
+  })
+
+  it('marks app scopes an update adds, rewords, keeps and removes, and says members will be asked again', () => {
+    const { container } = render(
+      <PermissionReviewSection
+        pending={{
+          manifest: {
+            ...baseManifest,
+            permissions: ['cms.routes', 'members.read'] satisfies PluginPermission[],
+            appScopes: [
+              { name: 'read', description: 'See and change your purchases' },
+              { name: 'manage', description: 'Create licences for you' },
+              { name: 'export', description: 'Download your invoices' },
+            ],
+          },
+          upgradeFromVersion: '1.0.0',
+          previouslyGrantedPermissions: ['cms.routes', 'members.read'],
+          previousAppScopes: [
+            { name: 'read', description: 'See your purchases' },
+            { name: 'manage', description: 'Create licences for you' },
+            { name: 'refund', description: 'Ask for a refund for you' },
+          ],
+        }}
+        uploading={false}
+        onCancel={() => {}}
+        onConfirm={() => {}}
+      />,
+    )
+    const rows = [...container.querySelectorAll('[data-app-scope]')]
+    expect(rows.map((row) => `${row.getAttribute('data-app-scope')}:${row.getAttribute('data-app-scope-status')}`)).toEqual([
+      'read:changed',
+      'manage:unchanged',
+      'export:new',
+      'refund:removed',
+    ])
+    expect(rows[0]?.textContent).toContain('Reworded')
+    // The owner sees both wordings of a scope whose meaning moved.
+    expect(rows[0]?.textContent).toContain('See and change your purchases')
+    expect(rows[0]?.textContent).toContain('See your purchases')
+    expect(rows[3]?.textContent).toContain('Removed')
+
+    const alert = screen.getByTestId('app-scope-diff-alert')
+    expect(alert.textContent).toContain('2 things')
+    expect(alert.textContent).toContain('asked again')
+    // No permission is new, but this is not an update with nothing to look at.
+    expect(screen.queryByTestId('permission-diff-noop')).toBeNull()
+  })
+
+  it('keeps the reassurance when an update leaves the app scopes as they were', () => {
+    const appScopes = [{ name: 'read', description: 'See your purchases' }]
+    render(
+      <PermissionReviewSection
+        pending={{
+          manifest: { ...baseManifest, permissions: ['cms.routes', 'members.read'] satisfies PluginPermission[], appScopes },
+          upgradeFromVersion: '1.0.0',
+          previouslyGrantedPermissions: ['cms.routes', 'members.read'],
+          previousAppScopes: appScopes,
+        }}
+        uploading={false}
+        onCancel={() => {}}
+        onConfirm={() => {}}
+      />,
+    )
+    expect(screen.queryByTestId('app-scope-diff-alert')).toBeNull()
+    expect(screen.getByTestId('permission-diff-noop')).toBeTruthy()
+  })
 })
 
 describe('PermissionReviewSection — third-party origins on published pages', () => {

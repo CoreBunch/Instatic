@@ -31,6 +31,7 @@ import {
 } from '../../../repositories/plugins'
 import { pluginRecordRekeyProblem, rekeyPluginRecords } from '../../../repositories/pluginRecords'
 import { parsePluginManifest } from '@core/plugins/manifest'
+import { withdrawnPluginAppScopeNames } from '@core/members'
 import type {
   InstalledPlugin,
   PluginManifest,
@@ -51,6 +52,7 @@ import {
   deactivatePluginModulePack,
 } from '@core/plugins/modulePackLoader'
 import { broadcastPluginEvent } from '../../../plugins/eventBroadcaster'
+import { withdrawPluginAppScopes } from '../../../members/apps/store'
 import { badRequest, jsonResponse, methodNotAllowed, readValidatedBody } from '../../../http'
 import { Type } from '@core/utils/typeboxHelpers'
 import { getErrorMessage } from '@core/utils/errorMessage'
@@ -104,14 +106,11 @@ export async function handlePluginsCollection(
       forgetHeldMailOutcomes(manifest.id)
       // A JSON install over an existing plugin is an upgrade of its manifest:
       // stored record keys must follow a changed `uniqueField` here too.
-      const previous = await getInstalledPlugin(db, manifest.id)
-      const installed = await installPluginWithRecordKeys(
-        db,
-        previous?.kind === 'ok' ? previous.plugin.manifest : null,
-        manifest,
-        grantedPermissions,
-        { restoring: false },
-      )
+      const existingResult = await getInstalledPlugin(db, manifest.id)
+      const previous = existingResult?.kind === 'ok' ? existingResult.plugin.manifest : null
+      const { plugin: installed } = await storePluginManifest(db, previous, manifest, grantedPermissions, {
+        restoring: false,
+      })
       const updatedResult = await setPluginLifecycleStatus(db, installed.id, 'active')
       await syncPluginMailTemplates(db)
       const plugin = (updatedResult?.kind === 'ok' ? updatedResult.plugin : null) ?? installed
@@ -241,7 +240,9 @@ async function installFreshFromPackage(ctx: InstallContext): Promise<Response> {
     pluginPackage.manifest,
     pluginPackage.files,
   )
-  const installed = await installPluginWithRecordKeys(db, null, manifest, grantedPermissions, { restoring: false })
+  const { plugin: installed } = await storePluginManifest(db, null, manifest, grantedPermissions, {
+    restoring: false,
+  })
   const installLifecycle = await runPluginLifecycleHook(db, installed, options, 'install', 'installed')
   if (!installLifecycle.ok) {
     return jsonResponse(
@@ -309,6 +310,8 @@ interface UpgradeContext extends InstallContext {
  *      link it by version (see step 6).
  *   3. Replace the DB row with the new manifest (settings, granted
  *      permissions from the user's confirmation, installed_at preserved).
+ *      In the same transaction, withdraw the app scopes the new manifest
+ *      dropped or reworded (`storePluginManifest`).
  *   4. Run new version's `migrate({ fromVersion }, api)`.
  *   5. Run new version's `activate(api)`.
  *   6. Leave the OLD version's asset dir alone. Baked pages reference plugin
@@ -373,15 +376,22 @@ async function installUpgradeFromPackage(ctx: UpgradeContext): Promise<Response>
   }
 
   // 3. Replace DB row. `installPlugin` upserts — settings_json + installed_at
-  //    are preserved by the SET clause (it doesn't reference them). Stored
-  //    record keys follow the new declaration in the same transaction, before
-  //    any new code runs. A record written since the check in step 0 can
-  //    still collide; that fails here and takes the rollback path.
+  //    are preserved by the SET clause (it doesn't reference them). In the
+  //    same transaction, before any new code runs, stored record keys follow
+  //    the new declaration and the app scopes this version dropped or
+  //    reworded are withdrawn. A record written since the check in step 0 can
+  //    still collide; that fails here and takes the rollback path. A rollback
+  //    does not bring withdrawn scopes back: the member is simply asked again.
   let upgraded: InstalledPlugin
+  let withdrawnAppScopes: string[]
   try {
-    upgraded = await installPluginWithRecordKeys(db, existing.manifest, newManifest, grantedPermissions, {
-      restoring: false,
-    })
+    ;({ plugin: upgraded, withdrawnAppScopes } = await storePluginManifest(
+      db,
+      existing.manifest,
+      newManifest,
+      grantedPermissions,
+      { restoring: false },
+    ))
   } catch (err) {
     return failUpgrade(err)
   }
@@ -442,6 +452,7 @@ async function installUpgradeFromPackage(ctx: UpgradeContext): Promise<Response>
   await recordPluginAuditEvent(db, user, req, 'plugin.update', pluginId, {
     fromVersion,
     toVersion: newVersion,
+    ...(withdrawnAppScopes.length > 0 ? { withdrawnAppScopes } : {}),
   })
   broadcastPluginEvent({
     kind: 'updated',
@@ -521,13 +532,13 @@ async function rollbackUpgrade(args: {
   // (consistent with each other), nothing is loaded, and the plugin says why.
   let restored: InstalledPlugin
   try {
-    restored = await installPluginWithRecordKeys(
+    ;({ plugin: restored } = await storePluginManifest(
       db,
       newManifest,
       pluginManifestWithGrants(existing),
       existing.grantedPermissions,
       { restoring: true },
-    )
+    ))
   } catch (err) {
     console.error(`[plugin:${pluginId}] rollback could not restore version ${existing.version}`, err)
     await unloadPlugin(pluginId)
@@ -616,25 +627,43 @@ function resourcesToRekey(
 }
 
 /**
- * Store a plugin's manifest and make its stored record keys match it, in one
- * transaction: the declaration of a `uniqueField` and the keys derived from
- * it change together or not at all. Every path that writes a manifest goes
- * through here (package install, JSON install, upgrade, rollback).
+ * Store a plugin's manifest and bring what depends on it into line, in one
+ * transaction. Every path that writes a manifest goes through here (package
+ * install, JSON install, upgrade, rollback).
+ *
+ * Record keys: the declaration of a `uniqueField` and the keys derived from
+ * it change together or not at all.
+ *
+ * App scopes: a member allowed an app a scope in the words of its
+ * description. Over `previous` (the manifest this one replaces) the scopes
+ * that were dropped or reworded are withdrawn: the sign-ins that carried
+ * them end and the apps lose them, so an old approval never opens whatever
+ * this version puts behind the same name. Scopes that read the same keep
+ * their approvals. With no `previous` nothing carries over at all, which
+ * also covers an install over a row too broken to read.
+ *
+ * Returns the stored row and the scope names that were withdrawn.
  */
-async function installPluginWithRecordKeys(
+async function storePluginManifest(
   db: DbClient,
-  previous: Pick<PluginManifest, 'resources'> | null,
+  previous: PluginManifest | null,
   manifest: PluginManifest,
   grantedPermissions: PluginPermission[],
   options: { restoring: boolean },
-): Promise<InstalledPlugin> {
-  return db.transaction(async (tx) => {
+): Promise<{ plugin: InstalledPlugin; withdrawnAppScopes: string[] }> {
+  const withdrawnAppScopes = previous
+    ? withdrawnPluginAppScopeNames(previous.appScopes ?? [], manifest.appScopes ?? [])
+    : null
+  const plugin = await db.transaction(async (tx) => {
     const installed = await installPlugin(tx, manifest, grantedPermissions)
     for (const { resource, capped } of resourcesToRekey(previous, manifest, options.restoring)) {
       await rekeyPluginRecords(tx, { pluginId: manifest.id, resourceId: resource.id }, resource.uniqueField, {
         capped,
       })
     }
+    if (withdrawnAppScopes === null) await withdrawPluginAppScopes(tx, manifest.id)
+    else if (withdrawnAppScopes.length > 0) await withdrawPluginAppScopes(tx, manifest.id, withdrawnAppScopes)
     return installed
   })
+  return { plugin, withdrawnAppScopes: withdrawnAppScopes ?? [] }
 }

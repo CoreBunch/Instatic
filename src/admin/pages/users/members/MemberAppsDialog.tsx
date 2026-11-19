@@ -8,7 +8,7 @@ import { useId, useState, type FormEvent } from 'react'
 import { useAsyncResource } from '@admin/lib/useAsyncResource'
 import dialogStyles from '@admin/shared/dialogs/SiteCreateDialog/SiteCreateDialog.module.css'
 import { StepUpCancelledMessage, useStepUp } from '@admin/shared/StepUp'
-import { MEMBER_APP_SCOPES, MEMBER_APP_SCOPE_TEXT, type MemberApp, type MemberAppScope } from '@core/members'
+import { isMemberAppScope, pluginAppScopeText, type MemberApp, type MemberAppScopeOption } from '@core/members'
 import { createCmsMemberApp, deleteCmsMemberApp, listCmsMemberApps } from '@core/persistence'
 import { getErrorMessage } from '@core/utils/errorMessage'
 import { Button } from '@ui/components/Button'
@@ -24,13 +24,16 @@ import styles from './Members.module.css'
 const FORM_ID = 'member-app-form'
 const MAX_REDIRECTS = 10
 
-function isScope(value: string): value is MemberAppScope {
-  return (MEMBER_APP_SCOPES as readonly string[]).includes(value)
+/** A scope in words. One no longer on offer (its plugin is gone) is shown by name. */
+function scopeText(scope: string, options: readonly MemberAppScopeOption[]): string {
+  const option = options.find((each) => each.scope === scope)
+  if (!option) return `${scope} (no longer offered)`
+  return option.plugin ? pluginAppScopeText(option.plugin, option.text) : option.text
 }
 
-/** A scope in words; a name this build does not know is shown as it is. */
-function scopeText(scope: string): string {
-  return isScope(scope) ? MEMBER_APP_SCOPE_TEXT[scope] : scope
+/** A new app starts with the built-in access; a plugin's is the owner's to add. */
+function defaultScopes(options: readonly MemberAppScopeOption[]): string[] {
+  return options.filter((option) => isMemberAppScope(option.scope)).map((option) => option.scope)
 }
 
 /** The server's rule, read early: https anywhere, http only on this machine. */
@@ -49,7 +52,7 @@ function redirectAllowed(raw: string): boolean {
 }
 
 /** Why the form cannot be sent yet, or null when it can. */
-function formBlocker(name: string, redirects: string[], scopes: readonly MemberAppScope[]): string | null {
+function formBlocker(name: string, redirects: string[], scopes: readonly string[]): string | null {
   if (!name.trim()) return 'Give the app a name.'
   if (redirects.length === 0) return 'Enter at least one redirect address.'
   if (redirects.length > MAX_REDIRECTS) return `An app can have at most ${MAX_REDIRECTS} redirect addresses.`
@@ -60,11 +63,13 @@ function formBlocker(name: string, redirects: string[], scopes: readonly MemberA
 
 function AppRow({
   app,
+  scopeOptions,
   canManage,
   busy,
   onRemove,
 }: {
   app: MemberApp
+  scopeOptions: readonly MemberAppScopeOption[]
   canManage: boolean
   busy: boolean
   onRemove: () => void
@@ -108,7 +113,7 @@ function AppRow({
           ))}
         </dd>
         <dt>May ask for</dt>
-        <dd>{app.scopes.map(scopeText).join('; ')}</dd>
+        <dd>{app.scopes.map((scope) => scopeText(scope, scopeOptions)).join('; ')}</dd>
       </dl>
       {confirming && (
         <div className={styles.appConfirm} role="group" aria-label={`Remove ${app.name}`}>
@@ -139,11 +144,15 @@ export function MemberAppsDialog({
   onChanged: () => void
 }) {
   const { runStepUp } = useStepUp()
-  const apps = useAsyncResource((signal) => listCmsMemberApps(signal), [], { fallbackError: 'Could not load the apps.' })
+  const registry = useAsyncResource((signal) => listCmsMemberApps(signal), [], { fallbackError: 'Could not load the apps.' })
+  const apps = registry.data?.apps
+  const scopeOptions = registry.data?.availableScopes ?? []
   const [busy, setBusy] = useState(false)
   const [name, setName] = useState('')
   const [redirectText, setRedirectText] = useState('')
-  const [scopes, setScopes] = useState<readonly MemberAppScope[]>(MEMBER_APP_SCOPES)
+  // Null until the owner touches a box: the built-in access is ticked to start with.
+  const [chosenScopes, setChosenScopes] = useState<readonly string[] | null>(null)
+  const scopes = chosenScopes ?? defaultScopes(scopeOptions)
   const idPrefix = useId()
 
   const redirects = [...new Set(redirectText.split('\n').map((line) => line.trim()).filter(Boolean))]
@@ -154,7 +163,7 @@ export function MemberAppsDialog({
     setBusy(true)
     try {
       await runStepUp(action)
-      apps.refresh()
+      registry.refresh()
       onChanged()
       pushToast({ kind: 'success', title: done })
       return true
@@ -180,7 +189,7 @@ export function MemberAppsDialog({
     if (!added) return
     setName('')
     setRedirectText('')
-    setScopes(MEMBER_APP_SCOPES)
+    setChosenScopes(null)
   }
 
   return (
@@ -202,9 +211,9 @@ export function MemberAppsDialog({
           </p>
         )}
 
-        {apps.error && <p role="alert" className={dialogStyles.errorText}>{apps.error}</p>}
-        {apps.loading && !apps.data && <p className={dialogStyles.hint}>Loading apps…</p>}
-        {apps.data && apps.data.length === 0 && (
+        {registry.error && <p role="alert" className={dialogStyles.errorText}>{registry.error}</p>}
+        {registry.loading && !apps && <p className={dialogStyles.hint}>Loading apps…</p>}
+        {apps && apps.length === 0 && (
           <EmptyState
             variant="centered"
             icon={<PlugSolidIcon size={28} />}
@@ -216,12 +225,13 @@ export function MemberAppsDialog({
             }
           />
         )}
-        {apps.data && apps.data.length > 0 && (
+        {apps && apps.length > 0 && (
           <ul className={styles.apps} aria-label="Apps that can sign members in">
-            {apps.data.map((app) => (
+            {apps.map((app) => (
               <AppRow
                 key={app.id}
                 app={app}
+                scopeOptions={scopeOptions}
                 canManage={canManage}
                 busy={busy}
                 onRemove={() =>
@@ -270,16 +280,20 @@ export function MemberAppsDialog({
               </div>
               <div className={dialogStyles.field}>
                 <span className={dialogStyles.label}>The app may ask for</span>
-                {MEMBER_APP_SCOPES.map((scope) => (
-                  <label key={scope} className={dialogStyles.checkboxRow}>
+                {scopeOptions.map((option) => (
+                  <label key={option.scope} className={dialogStyles.checkboxRow}>
                     <Checkbox
-                      checked={scopes.includes(scope)}
+                      checked={scopes.includes(option.scope)}
                       disabled={busy}
                       onCheckedChange={(checked) =>
-                        setScopes(MEMBER_APP_SCOPES.filter((each) => (each === scope ? checked : scopes.includes(each))))
+                        setChosenScopes(
+                          scopeOptions
+                            .map((each) => each.scope)
+                            .filter((each) => (each === option.scope ? checked : scopes.includes(each))),
+                        )
                       }
                     />
-                    <span>{MEMBER_APP_SCOPE_TEXT[scope]}</span>
+                    <span>{scopeText(option.scope, scopeOptions)}</span>
                   </label>
                 ))}
               </div>

@@ -9,6 +9,7 @@
  * codes and tokens outright (`anonymizeMember`).
  */
 import { nanoid } from 'nanoid'
+import { parsePluginAppScope } from '@core/members'
 import { nowIso } from '@core/utils/isoDate'
 import type { DbClient } from '../../db/client'
 import type {
@@ -18,7 +19,11 @@ import type {
   StoredRefreshToken,
 } from '../../oauth/grants'
 import { generateOpaqueToken, hashOpaqueToken } from '../../oauth/secrets'
-import { normalizeMemberAppScope } from './protocol'
+import {
+  MEMBER_APP_ACCESS_TOKEN_PREFIX,
+  MEMBER_APP_REFRESH_TOKEN_PREFIX,
+  normalizeMemberAppScope,
+} from './protocol'
 
 const REQUEST_TTL_MS = 10 * 60 * 1000
 const AUTHORIZATION_CODE_TTL_MS = 5 * 60 * 1000
@@ -289,8 +294,54 @@ export async function findMemberAppAccess(
   return row ? { grantId: row.grant_id, memberId: row.member_id, appId: row.app_id, scope: row.scope } : null
 }
 
-export async function touchMemberAppGrant(db: DbClient, grantId: string): Promise<void> {
-  await db`update member_app_grants set last_used_at = ${nowIso()} where id = ${grantId}`
+/** Note that the grant was used. At most one write a minute, however often an app calls. */
+export async function touchMemberAppGrant(db: DbClient, grantId: string, now: Date = new Date()): Promise<void> {
+  await db`
+    update member_app_grants set last_used_at = ${now.toISOString()}
+     where id = ${grantId}
+       and (last_used_at is null or last_used_at < ${new Date(now.getTime() - 60_000).toISOString()})
+  `
+}
+
+/**
+ * What a plugin's scopes meant is gone: the plugin was removed, or an update
+ * dropped or reworded some of them. Sign-ins that carry one of them are
+ * ended and the scopes are taken off the registered apps, so nothing that
+ * was allowed in the old words carries over to a different package under the
+ * same id, or to a new version that means something else by the same name.
+ *
+ * `names` narrows it to those scopes of the plugin; without it, all of them.
+ * Runs on the client it is given and opens no transaction of its own: pass
+ * the transaction that removes or replaces the plugin row, so no ordering
+ * leaves the row changed and the grants standing.
+ */
+export async function withdrawPluginAppScopes(
+  tx: DbClient,
+  pluginId: string,
+  names?: readonly string[],
+): Promise<void> {
+  const withdrawn = (scope: string) => {
+    const parsed = parsePluginAppScope(scope)
+    return parsed !== null && parsed.pluginId === pluginId && (names === undefined || names.includes(parsed.name))
+  }
+  const iso = nowIso()
+  const { rows: grants } = await tx<{ id: string; scope: string }>`
+    select id, scope from member_app_grants where revoked_at is null
+  `
+  for (const grant of grants) {
+    if (grant.scope.split(' ').some(withdrawn)) await revokeGrantRows(tx, grant.id, iso)
+  }
+  const { rows: apps } = await tx<{ id: string; scopes_json: string[] }>`
+    select id, scopes_json from member_apps where deleted_at is null
+  `
+  for (const app of apps) {
+    const scopes = Array.isArray(app.scopes_json) ? app.scopes_json : []
+    if (!scopes.some(withdrawn)) continue
+    await tx`
+      update member_apps set scopes_json = ${JSON.stringify(scopes.filter((scope) => !withdrawn(scope)))}
+       where id = ${app.id}
+    `
+  }
 }
 
 async function revokeGrantRows(tx: DbClient, grantId: string, iso: string): Promise<void> {
@@ -526,8 +577,8 @@ function memberAppGrantStore(tx: DbClient): GrantStore {
 /** The authorization server apps sign a site member in with. */
 export const memberAppRealm: OAuthRealm = {
   logName: 'members:apps',
-  accessTokenPrefix: 'imem_at_',
-  refreshTokenPrefix: 'imem_rt_',
+  accessTokenPrefix: MEMBER_APP_ACCESS_TOKEN_PREFIX,
+  refreshTokenPrefix: MEMBER_APP_REFRESH_TOKEN_PREFIX,
   accessTokenTtlSeconds: ACCESS_TOKEN_TTL_SECONDS,
   normalizeScope: normalizeMemberAppScope,
   store: memberAppGrantStore,

@@ -16,6 +16,7 @@
  * surviving plugins so they pick their hooks back up.
  */
 import type { DbClient } from '../../../db/client'
+import { withdrawPluginAppScopes } from '../../../members/apps/store'
 import type { AuthUser } from '../../../repositories/users'
 import {
   deletePlugin,
@@ -191,7 +192,14 @@ async function removePluginCompletely(
   pluginId: string,
   forced: boolean,
 ): Promise<Response> {
-  const deleted = await deletePlugin(db, pluginId)
+  // What its app scopes let an app do goes with the row, in one transaction:
+  // whatever a later cleanup step does, no approval outlives the plugin for
+  // a different package under the same id to inherit.
+  const deleted = await db.transaction(async (tx) => {
+    const removed = await deletePlugin(tx, pluginId)
+    if (removed) await withdrawPluginAppScopes(tx, pluginId)
+    return removed
+  })
   if (!deleted) return pluginNotFound()
   // Idempotent on the normal path (the uninstall hook runner already
   // unloaded the worker and deactivated the module pack) — required on the

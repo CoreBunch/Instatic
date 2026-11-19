@@ -193,6 +193,10 @@ Authors normally write `instatic-plugin.config.ts` with `definePlugin(...)`; the
     "*.cdn.weather.example.com"
   ],
 
+  "appScopes": [
+    { "name": "read", "description": "See your saved forecasts" }
+  ],
+
   "pack": { "path": "pack/site.json" }
 }
 ```
@@ -217,6 +221,7 @@ Authors normally write `instatic-plugin.config.ts` with `definePlugin(...)`; the
 - `mail.templates[]` requires `mail.send` or `mail.send.external`; template keys and variable names are unique, and a template may not declare a `site.*` variable.
 - Public routes require both `cms.routes` and `cms.routes.public`.
 - Server `fetch()` requires `network.outbound` and a matching `networkAllowedHosts[]` entry.
+- `appScopes[]` requires `members.read`, and each `name` (lowercase kebab-case) is declared once. A `description` must say something once cleaned for display (not only spaces), contain no control or invisible formatting characters, and not repeat the text of a built-in app scope. `definePlugin({ appScopes })` writes the field; `instatic-plugin lint` additionally reports a server source that opens a route under a scope `appScopes` does not declare (`{ app: { scope: 'x' } }` written as a string literal).
 - Any `cms.content.*` permission requires a non-empty `contentAccess[]`, and every mode an entry declares requires its permission (`CONTENT_ACCESS_MODE_PERMISSIONS` in `src/core/plugin-sdk/contentSchemas.ts` is the one mode-to-permission table both checks read). `instatic-plugin lint` additionally warns when a `cms.content.*` permission is requested but no entry declares its mode, since the host fails closed per table and mode and every call under it would be rejected.
 
 ---
@@ -547,7 +552,7 @@ Routes mount under `/admin/api/cms/plugins/<id>/runtime/*`. The host enforces th
 
 Request bodies are **byte-safe end to end**. The host reads the incoming body once as raw bytes and carries it to the sandbox tagged `utf8` (text verbatim) or `base64` (binary), so `req.text()` / `req.json()` decode correctly (including multibyte UTF-8) and `req.arrayBuffer()` returns the exact payload bytes. Pre-parsed `body` fields cover `application/json`, `application/x-www-form-urlencoded` (repeated keys become arrays), and `multipart/form-data` — text fields arrive as strings, file fields as uploaded-file facades (`{ name, type, size, arrayBuffer(), text() }`) whose bytes are uncorrupted, so plugins can accept image/PDF uploads. (De)serialization lives in `server/plugins/host/routeIo.ts`; the wire codec in `server/plugins/protocol/bodyEncoding.ts`.
 
-Route handlers never receive Instatic's own cookies. The host removes every `instatic_` cookie (admin session, member session, branch preview) from `req.headers.cookie` before the request reaches the sandbox (`server/sessionCookies.ts`); who the caller is arrives as `ctx.user`. Other cookies pass through.
+Route handlers never receive Instatic's own cookies. The host removes every `instatic_` cookie (admin session, member session, branch preview) from `req.headers.cookie` before the request reaches the sandbox (`server/sessionCookies.ts`); who the caller is arrives as `ctx.user`. Other cookies pass through. An `Authorization` header that names a member app token is removed the same way (see "Apps" below); any other value passes through.
 
 Custom responses (status, headers, non-JSON bodies) use the raw-response escape hatch: return `{ __response: true, status, headers, body }` instead of a plain object. `body` accepts a string (sent as UTF-8 text) or an `ArrayBuffer` / TypedArray / `DataView` (sent byte-exactly — serve images, zips, PDFs directly); anything else throws a `TypeError`.
 
@@ -569,6 +574,32 @@ api.cms.routes.public.get('/price', (ctx) => priceFor(ctx.member))
 - `ctx.member` is `{ id, email, tags, profile }` or `null`. The host resolves it; the member's session cookie is still stripped from `req.headers`.
 - A signed-out visitor gets 401 from a member route. A member-route write (POST, PATCH, DELETE) must name this site's origin, as the member endpoints require; a public-route write may omit it (webhooks) but may not name another site.
 - A response for a member is sent `Cache-Control: private, no-store` unless the handler sets its own.
+
+**Apps.** A site member can sign in to an app the owner registered (a desktop app, say; see [members](members.md) → "Sign-in for apps"). By default a member route answers only the member's browser. A plugin lets apps in route by route:
+
+```json
+"appScopes": [{ "name": "read", "description": "See your purchases and plan" }]
+```
+
+```js
+// The member's browser, or an app whose sign-in carries plugin:<pluginId>:read.
+api.cms.routes.member.get('/orders', { app: { scope: 'read' } }, (ctx) => {
+  // ctx.app is { id, name, scope } for an app, null for the browser.
+  return listOrders(ctx.member.id)
+})
+// No `app`: an app's token gets 403 here, whatever it carries.
+api.cms.routes.member.post('/cancel', (ctx) => cancel(ctx.member.id))
+```
+
+- Each `appScopes` entry becomes the scope `plugin:<pluginId>:<name>`. The owner sees the list at install, picks from it when registering an app, and the member reads `description` on the approval page before allowing the app.
+- A route can only name a scope the manifest declares; anything else fails activation (and `instatic-plugin lint` reports it before upload).
+- A `description` is what the member agrees to, so `parsePluginManifest` holds it to that: no control or invisible formatting characters, not blank after the cleaning the approval page applies (`plainLine`), and not the words of a built-in scope (`readsAsBuiltInAppScope`, compared without letter case, alone or inside a longer text). On the approval page and in the Apps dialog a plugin scope reads `Through the plugin “<name>”: <description>` (`pluginAppScopeText` in `@core/members`). Core's words come first and the plugin's name sits between quotation marks core chose: double quotation marks of every kind are stripped from the name so it cannot close the quote, and a name that is blank after cleaning or repeats a built-in scope's text is replaced by the plugin id (the install is not refused). So neither the name nor the description can make one plugin scope read as a built-in entry or as several entries.
+- An update keeps an approval only while the scope still reads the same. `storePluginManifest` (`server/handlers/cms/plugins/install.ts`) compares the installed manifest's `appScopes` with the new one (`diffPluginAppScopes`) and, in the transaction that replaces the plugin row, withdraws every scope that was removed or whose `description` changed: the sign-ins that carried it end and the scope comes off the registered apps, so the owner gives it back and the member is asked again in the new words. Unchanged scopes keep their approvals. This also holds for a reinstall of the same version and a JSON install over an existing row; a failed upgrade that rolls back does not restore what was withdrawn. The update's review screen marks each scope New, Reworded, Unchanged or Removed, warns that members will be asked again, and does not say "No new permissions in this update" when the scopes differ. The `plugin.update` audit event lists `withdrawnAppScopes`.
+- Uninstalling the plugin ends every app sign-in that carried one of its scopes and takes those scopes off the registered apps (`withdrawPluginAppScopes`), in the same transaction that deletes the plugin row, so no failure later in the removal leaves an approval behind. A fresh install withdraws whatever is still recorded for its id as well, so a package installed later under the same id inherits nothing.
+- The app calls with `Authorization: Bearer <access token>`. The host checks the token, the member behind it and the scope, then hands the handler `ctx.member` and `ctx.app`. The token is removed from `req.headers`, as the session cookie is, and not only there: `serializeRouteRequest` (`server/plugins/host/routeIo.ts`) drops the `Authorization` header from every request handed to plugin code whenever its value names a member app token (`imem_at_` or `imem_rt_`, in any letter case, anywhere in the value), under any scheme (`Bearer`, `DPoP`, `Token`, none) and on every kind of route, so an app that sends its token to everything on the mount does not hand it to a handler. A plugin's own secrets (a webhook signature, a proxy's Basic credentials) do not look like one and pass through. A request with a `Bearer` header (the scheme in any letter case) is treated as the app's even when a session cookie rides along; any other `Authorization` scheme is ignored when deciding who is calling and the cookie decides.
+- An app call needs no `Origin` (no cookie is acting). A `tag` on the route still applies, through the member.
+- 401 means the token is not live; 403 means the route is closed to apps, the sign-in lacks the scope, or the member lacks the tag.
+- Keep writes closed unless an app really needs them: open read routes under one scope and leave anything that changes the account to the browser.
 
 ```js
 const member = await api.cms.members.get({ email })            // or { id }; null when there is none

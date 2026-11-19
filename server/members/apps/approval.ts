@@ -4,15 +4,15 @@
  * app's own address: with a one-time code on approval, with `access_denied`
  * on refusal.
  */
-import { MEMBER_APP_SCOPE_TEXT } from '@core/members'
 import type { MemberAppRequestFrame } from '@core/templates'
 import type { DbClient } from '../../db/client'
 import { oauthRedirect, isLoopbackHostname } from '../../oauth/protocol'
 import { recordMemberEvent } from '../repository'
 import type { MemberActionContext, MemberOutcome, SignedInMember } from '../service'
 import { parseMemberAppScope } from './protocol'
+import { isAvailableMemberAppScope, memberAppScopeText } from './scopes'
 import { queueMemberMail } from '../mail'
-import { decideMemberAppRequest, findPendingMemberAppRequest, revokeMemberAppGrant } from './store'
+import { decideMemberAppRequest, findMemberApp, findPendingMemberAppRequest, revokeMemberAppGrant } from './store'
 
 export async function answerAppSignIn(
   ctx: MemberActionContext,
@@ -25,11 +25,15 @@ export async function answerAppSignIn(
     return { ok: false, code: 'invalid_input', field: 'decision' }
   }
   if (!input.requestId || !input.browserMarker) return { ok: false, code: 'invalid_token' }
+  // What was on offer when the app asked may be gone by the time the member
+  // answers: a plugin removed, or a scope taken off the app. An approval
+  // counts only for what is still on offer now.
+  const stillOffered = input.decision === 'allow' && (await requestIsStillOffered(ctx.db, input.requestId))
   const decided = await decideMemberAppRequest(ctx.db, {
     requestId: input.requestId,
     browserMarker: input.browserMarker,
     memberId: current.member.id,
-    approve: input.decision === 'allow',
+    approve: stillOffered,
   })
   // Answered already, run out, never issued, or opened in another browser:
   // there is no app to go back to.
@@ -41,12 +45,9 @@ export async function answerAppSignIn(
     return {
       ok: true,
       code: 'app_refused',
-      appRedirect: oauthRedirect(request.redirectUri, {
-        error: 'access_denied',
-        error_description: 'The member did not allow the app to sign in.',
-        state,
-        iss: request.resource,
-      }),
+      appRedirect: oauthRedirect(request.redirectUri, input.decision === 'allow'
+        ? { error: 'invalid_scope', error_description: 'The app asked for access this site no longer offers.', state, iss: request.resource }
+        : { error: 'access_denied', error_description: 'The member did not allow the app to sign in.', state, iss: request.resource }),
     }
   }
   await recordMemberEvent(ctx.db, current.member.id, 'app_connected', ctx, { app: request.appName })
@@ -57,6 +58,16 @@ export async function answerAppSignIn(
     code: 'app_approved',
     appRedirect: oauthRedirect(request.redirectUri, { code, state, iss: request.resource }),
   }
+}
+
+/** Every scope a waiting request names is still one the app may ask for and the site offers. */
+async function requestIsStillOffered(db: DbClient, requestId: string): Promise<boolean> {
+  const request = await findPendingMemberAppRequest(db, requestId)
+  const app = request ? await findMemberApp(db, request.appId) : null
+  if (!request || !app) return false
+  return (parseMemberAppScope(request.scope) ?? []).every(
+    (scope) => app.scopes.includes(scope) && isAvailableMemberAppScope(scope),
+  )
 }
 
 /** The request a page was opened with, while it is still waiting for its answer. */
@@ -100,7 +111,7 @@ export async function pendingAppRequestOnPage(
     requestId,
     frame: {
       name: request.appName,
-      access: (parseMemberAppScope(request.scope) ?? []).map((scope) => MEMBER_APP_SCOPE_TEXT[scope]).join(', '),
+      access: (parseMemberAppScope(request.scope) ?? []).map(memberAppScopeText).join(', '),
       returnsTo: isLoopbackHostname(host) ? 'this device' : host,
       device: request.deviceName ?? '',
     },

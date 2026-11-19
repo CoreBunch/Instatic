@@ -56,6 +56,7 @@ import {
   memberAppIssuer,
   parseMemberAppScope,
 } from './protocol'
+import { isAvailableMemberAppScope } from './scopes'
 import {
   createMemberAppRequest,
   findMemberApp,
@@ -120,6 +121,7 @@ function metadata(req: Request): Response {
       grant_types_supported: ['authorization_code', 'refresh_token'],
       code_challenge_methods_supported: ['S256'],
       token_endpoint_auth_methods_supported: ['none'],
+      // The built-in ones only: which plugins a site runs is not for everyone to read.
       scopes_supported: [...MEMBER_APP_SCOPES],
       authorization_response_iss_parameter_supported: true,
     },
@@ -172,6 +174,10 @@ async function authorize(req: Request, db: DbClient, url: URL): Promise<Response
   const scopes = parseMemberAppScope(params.get('scope') ?? undefined)
   if (!scopes || scopes.some((scope) => !app.scopes.includes(scope))) {
     return refuse('invalid_scope', 'The app asked for access it is not registered for.')
+  }
+  // A plugin scope means something only while its plugin is active and offers it.
+  if (scopes.some((scope) => !isAvailableMemberAppScope(scope))) {
+    return refuse('invalid_scope', 'The app asked for access this site no longer offers.')
   }
 
   // The device key the sign-in is bound to, named by its thumbprint.

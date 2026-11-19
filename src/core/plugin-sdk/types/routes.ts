@@ -67,6 +67,21 @@ export interface ServerPluginRouteContext {
    * mount.
    */
   member: ServerPluginMember | null
+  /**
+   * Set when the caller is an app the member signed in to, not the member's
+   * own browser. Only a member route opened to apps (`{ app: { scope } }`)
+   * can see one. A handler that must never act for an app checks for null.
+   */
+  app: ServerPluginApp | null
+}
+
+/** An app calling a member route on a member's behalf. */
+export interface ServerPluginApp {
+  /** The client id the site owner registered the app under. */
+  id: string
+  name: string
+  /** The scope name the route is open under, as the manifest declares it. */
+  scope: string
 }
 
 /** A site member as plugin code sees them. */

@@ -26,6 +26,7 @@
 import { PLUGIN_API_VERSION } from '../types'
 import type {
   PluginAdminPage,
+  PluginAppScope,
   PluginFrontendDeclarations,
   PluginMailDeclarations,
   PluginManifest,
@@ -89,6 +90,15 @@ export interface DefinePluginConfig {
    * the host fails closed at runtime for tables/modes not listed here.
    */
   contentAccess?: ContentAccessEntry[]
+
+  /**
+   * What an app a site member signed in to may be allowed to do through
+   * this plugin. Each entry becomes the app scope `plugin:<id>:<name>`; the
+   * member reads `description` before allowing the app. A member route lets
+   * apps in by naming one: `routes.member.get(path, { app: { scope } }, handler)`.
+   * Requires the `members.read` permission.
+   */
+  appScopes?: PluginAppScope[]
 
   /**
    * Admin pages registered by the plugin (markdown / map / resource / app).
@@ -194,6 +204,9 @@ export function definePlugin(config: DefinePluginConfig): PluginDefinition {
       : {}),
     ...(config.contentAccess
       ? { contentAccess: config.contentAccess.map((entry) => ({ ...entry, modes: [...entry.modes] })) }
+      : {}),
+    ...(config.appScopes
+      ? { appScopes: config.appScopes.map((scope) => ({ name: scope.name, description: scope.description })) }
       : {}),
     ...(config.settings !== undefined ? { settings: config.settings } : {}),
     ...(config.author !== undefined ? { author: config.author } : {}),

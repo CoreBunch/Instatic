@@ -50,6 +50,7 @@ import {
 } from '../../members/admin'
 import { memberLinkOrigin, memberMailAvailable } from '../../members/mail'
 import { createMemberApp, deleteMemberApp, findMemberApp, listMemberApps } from '../../members/apps/store'
+import { isAvailableMemberAppScope, listAvailableMemberAppScopes } from '../../members/apps/scopes'
 import { listMemberPageOptions } from '../../members/pages'
 import {
   getMemberSettings,
@@ -320,7 +321,7 @@ async function auditApp(
 async function handleListApps(req: Request, db: DbClient): Promise<Response> {
   const user = await reader(req, db)
   if (user instanceof Response) return user
-  return jsonResponse({ apps: await listMemberApps(db) })
+  return jsonResponse({ apps: await listMemberApps(db), availableScopes: listAvailableMemberAppScopes() })
 }
 
 async function handleCreateApp(req: Request, db: DbClient): Promise<Response> {
@@ -335,6 +336,9 @@ async function handleCreateApp(req: Request, db: DbClient): Promise<Response> {
     return badRequest('Redirect addresses must use https, or http on this machine (127.0.0.1).')
   }
   if (new Set(input.scopes).size !== input.scopes.length) return badRequest('Name each thing the app may ask for once')
+  if (!input.scopes.every(isAvailableMemberAppScope)) {
+    return badRequest('The app may only ask for what this site offers: the built-in access and that of active plugins.')
+  }
   const app = await createMemberApp(db, { name, redirectUris, scopes: input.scopes, createdByUserId: user.id })
   await auditApp(db, req, user, 'member.app.create', app)
   return jsonResponse(app, { status: 201 })
