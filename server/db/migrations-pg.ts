@@ -33,6 +33,47 @@ import type { Migration } from './runMigrations'
  * unified store as posts. The legacy "pages" and "page_versions" tables are
  * not part of this baseline.
  */
+/**
+ * `plugin_records.data_json` used to be bound as a JSON string, which `jsonb`
+ * stores as a string scalar: it reads back fine, but no `list` filter can see
+ * inside it. This unwraps every such row into the object it holds.
+ *
+ * One set-based UPDATE (no row loop), in a migration of its own so it never
+ * shares a transaction, and so a table lock, with an ALTER TABLE. A row whose
+ * string is not valid JSON is left exactly as it is: Postgres 16+ asks
+ * `pg_input_is_valid`; older servers go through a function that returns NULL
+ * instead of raising. Only strings that hold an object are touched.
+ *
+ * Exported so the pre-16 path can be exercised on a newer server in tests.
+ */
+export const PLUGIN_RECORDS_JSON_REPAIR_SQL = `
+      do $repair$
+      begin
+        if current_setting('server_version_num')::int >= 160000 then
+          update plugin_records
+             set data_json = (data_json #>> '{}')::jsonb
+           where jsonb_typeof(data_json) = 'string'
+             and left(ltrim(data_json #>> '{}'), 1) = '{'
+             and pg_input_is_valid(data_json #>> '{}', 'jsonb');
+        else
+          create function pg_temp.instatic_try_jsonb(raw text) returns pg_catalog.jsonb
+            language plpgsql immutable as $try$
+            begin
+              return raw::jsonb;
+            exception when others then
+              return null;
+            end
+          $try$;
+          update plugin_records
+             set data_json = pg_temp.instatic_try_jsonb(data_json #>> '{}')
+           where jsonb_typeof(data_json) = 'string'
+             and left(ltrim(data_json #>> '{}'), 1) = '{'
+             and pg_temp.instatic_try_jsonb(data_json #>> '{}') is not null;
+        end if;
+      end
+      $repair$;
+`
+
 export const pgMigrations: Migration[] = [
   {
     id: '001_baseline',
@@ -1631,5 +1672,11 @@ export const pgMigrations: Migration[] = [
 
       alter table mail_queue add column install_id text;
     `,
+  },
+  {
+    // Unwrap plugin record data that was stored as a JSON string scalar.
+    // SQLite has no such rows (JSON is text there), so its twin is a no-op.
+    id: '036_plugin_records_json_repair',
+    sql: PLUGIN_RECORDS_JSON_REPAIR_SQL,
   },
 ]

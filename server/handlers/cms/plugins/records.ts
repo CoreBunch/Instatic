@@ -22,7 +22,7 @@ import {
   deletePluginRecord,
   listPluginRecords,
   updatePluginRecord,
-} from '../../../repositories/plugins'
+} from '../../../repositories/pluginRecords'
 import { StorageListOptionsSchema } from '@core/plugin-sdk/storageSchemas'
 import { Type, parseValue } from '@core/utils/typeboxHelpers'
 import { validatePluginRecordData } from '@core/plugins/manifest'

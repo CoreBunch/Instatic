@@ -17,7 +17,7 @@ import {
   deletePluginRecord,
   listPluginRecords,
   updatePluginRecord,
-} from '../../../repositories/plugins'
+} from '../../../repositories/pluginRecords'
 import type { ApiCallFor } from '../../protocol/apiCallSchema'
 import type { DbClient } from '../../../db/client'
 import { replyApiOk } from '../apiReplies'
