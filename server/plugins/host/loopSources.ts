@@ -18,19 +18,21 @@
  *
  *   - one preview per plugin is with the worker at a time. The same question
  *     asked again joins the run already waiting or under way. A different one
- *     waits in a line of at most `MAX_WAITING_PREVIEWS`, where each user
- *     holds one place (their newer question takes the place of their older
- *     one); past that the asker is told the plugin is busy and the worker
- *     never hears of it;
- *   - each user may start only so many previews per plugin per minute;
+ *     waits in a line of at most `MAX_WAITING_PREVIEWS`, of which one user
+ *     may hold `MAX_WAITING_PER_USER`; past either the asker is told the
+ *     plugin is busy and the worker never hears of it;
+ *   - each user may start only so many previews per plugin per minute. A
+ *     question turned away as busy is not counted;
  *   - a waiting preview is dropped if its plugin is no longer loaded when its
  *     turn comes, so a preview never starts a worker for a plugin that was
  *     disabled, removed or parked meanwhile.
  *
- * What this guarantees: previews that answer, however slowly within their
- * limit, cannot pile up in the worker until the host's reply deadline runs
- * out. What it does not change: a `preview()` that never returns is the
- * plugin's own code hanging, and is treated like any call into that plugin
+ * What this guarantees: previews that answer cannot pile up in the worker
+ * until the host's reply deadline runs out. A full line is thirteen previews
+ * of at most a second each, so the last one waits about thirteen seconds,
+ * well inside the thirty the host allows a worker call. What it does not
+ * change: a `preview()` that never returns is the plugin's own code hanging,
+ * and is treated like any call into that plugin
  * that never returns (the worker is restarted and the crash counted). The VM
  * cuts `preview()` off after `LOOP_PREVIEW_TIMEOUT_MS` when nothing else is
  * running in that plugin's VM; with another call in flight the VM's
@@ -53,7 +55,7 @@ import { runLoopPreviewInWorker } from './rpc'
 export function listPluginLoopSources(): RemoteLoopSource[] {
   const sources: RemoteLoopSource[] = []
   for (const entry of hostPlugins.values()) {
-    for (const { sourceId, pluginId } of entry.loopSources) {
+    for (const { sourceId, pluginId, revision } of entry.loopSources) {
       const source = loopSourceRegistry.get(sourceId)
       if (!source) continue
       sources.push({
@@ -66,6 +68,7 @@ export function listPluginLoopSources(): RemoteLoopSource[] {
         ...(source.requestDependent ? { requestDependent: true } : {}),
         ...(source.perVisitor ? { perVisitor: true } : {}),
         provider: { pluginId, pluginName: entry.manifest.name },
+        revision,
       })
     }
   }
@@ -80,15 +83,27 @@ export type PluginLoopPreview =
   | { status: 'failed'; error: string }
 
 /**
- * The editor asks once per source, filters and limit and again only when a
- * filter settles on a new value, so thirty a minute is far above honest use.
+ * Sized for a page of twelve loops on one plugin's sources (twelve questions
+ * per load of the editor, the most one canvas preview shows of any list)
+ * reloaded several times in a minute, with room for filter edits. Honest use
+ * stays far below it; it exists to stop a script.
  */
-const previewRateLimit = new RateLimiter({ limit: 30, windowMs: 60_000 })
+const previewRateLimit = new RateLimiter({ limit: 120, windowMs: 60_000 })
 
-/** Previews that may wait behind the one a plugin's worker is running. */
-const MAX_WAITING_PREVIEWS = 3
+/**
+ * Previews that may wait behind the one a plugin's worker is running: enough
+ * for every loop of a twelve-loop page to be asked about at once.
+ */
+const MAX_WAITING_PREVIEWS = 12
 
-/** What a refused asker is told to wait: a full line clears in about this long. */
+/**
+ * How many of those places one user may hold. One short of the line, so a
+ * twelve-loop page still fits (one running, eleven waiting) and one user can
+ * never fill the line: there is always a place for somebody else.
+ */
+const MAX_WAITING_PER_USER = 11
+
+/** What a refused asker is told to wait: a few places in the line clear in about this long. */
 const BUSY_RETRY_AFTER_MS = 2_000
 
 /** How deep a field value may nest. A list of objects of lists is depth 3. */
@@ -207,22 +222,18 @@ export function previewPluginLoopSource(
   const shared = held.pending.get(key)
   if (shared) return shared
 
-  const allowed = previewRateLimit.consume(`${userId}:${pluginId}`)
-  if (!allowed.ok) return Promise.resolve({ status: 'busy', retryAfterMs: allowed.retryAfterMs })
-
-  // A user waits in one place. Their newer question is the one they want
-  // (the editor only ever needs the latest filter value), so it takes the
-  // place of their older one, which is answered "busy".
-  const mine = held.waiting.findIndex((entry) => entry.userId === userId)
-  if (mine !== -1) {
-    const [replaced] = held.waiting.splice(mine, 1)
-    held.pending.delete(replaced!.key)
-    replaced!.answer({ status: 'busy', retryAfterMs: BUSY_RETRY_AFTER_MS })
-  } else if (held.running && held.waiting.length >= MAX_WAITING_PREVIEWS) {
-    // The line is full of other people's questions: come back shortly. The
-    // worker never hears of this one.
+  // A full line, or this user's share of it: come back shortly. The worker
+  // never hears of this one, and it is not counted against the asker.
+  const waitingForUser = held.waiting.filter((entry) => entry.userId === userId).length
+  if (
+    held.running &&
+    (held.waiting.length >= MAX_WAITING_PREVIEWS || waitingForUser >= MAX_WAITING_PER_USER)
+  ) {
     return Promise.resolve({ status: 'busy', retryAfterMs: BUSY_RETRY_AFTER_MS })
   }
+
+  const allowed = previewRateLimit.consume(`${userId}:${pluginId}`)
+  if (!allowed.ok) return Promise.resolve({ status: 'busy', retryAfterMs: allowed.retryAfterMs })
 
   const preview = new Promise<PluginLoopPreview>((answer) => {
     held.waiting.push({ key, userId, sourceId, options, answer })

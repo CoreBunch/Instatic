@@ -32,6 +32,7 @@ function remote(id: string, label: string): RemoteLoopSource {
     orderByOptions: [],
     fields: [{ id: 'title', label: 'Title' }],
     provider: { pluginId: 'acme.shop', pluginName: 'Acme Shop' },
+    revision: 'r1',
   }
 }
 

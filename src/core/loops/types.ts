@@ -314,6 +314,8 @@ export interface RemoteLoopEntitySource extends LoopEntitySourceBase {
   kind: 'remote'
   /** The plugin that registered it. The picker shows the name. */
   provider: { pluginId: string; pluginName: string }
+  /** New on every load of the plugin; see `RemoteLoopSourceSchema`. */
+  revision: string
 }
 
 /**

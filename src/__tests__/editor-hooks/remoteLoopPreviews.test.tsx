@@ -14,7 +14,7 @@ import {
   PREVIEW_DEBOUNCE_MS,
   PREVIEW_MAX_RETRIES,
   PREVIEW_RETRY_MS,
-  refreshRemoteLoopPreviews,
+  syncRemoteLoopPreviews,
   resetRemoteLoopPreviews,
   retryRemoteLoopPreview,
 } from '@site/canvas/remoteLoopPreviews'
@@ -37,6 +37,18 @@ const busy: Answer = {
   body: { error: 'Previews of this plugin are busy.', code: 'preview_busy' },
   headers: { 'retry-after': '3' },
 }
+/** The source as the editor lists it, under one load (revision) of its plugin. */
+function listSource(revision: string): void {
+  replaceRemoteLoopSources([{
+    id: SOURCE,
+    label: 'Offers',
+    filterSchema: {},
+    orderByOptions: [],
+    fields: [{ id: 'title', label: 'Title' }],
+    provider: { pluginId: 'acme.shop', pluginName: 'Acme Shop' },
+    revision,
+  }])
+}
 const titles = (list: Array<{ fields: Record<string, unknown> }>) => list.map((item) => item.fields.title)
 
 /** Let the pending request and the store's reaction to it finish. */
@@ -55,15 +67,7 @@ async function advance(ms: number): Promise<void> {
 
 beforeEach(() => {
   jest.useFakeTimers()
-  // The source is one a running plugin provides, as the editor would list it.
-  replaceRemoteLoopSources([{
-    id: SOURCE,
-    label: 'Offers',
-    filterSchema: {},
-    orderByOptions: [],
-    fields: [{ id: 'title', label: 'Title' }],
-    provider: { pluginId: 'acme.shop', pluginName: 'Acme Shop' },
-  }])
+  listSource('r1')
   answers = []
   requests = []
   globalThis.fetch = ((_input: RequestInfo | URL, init?: RequestInit) => {
@@ -184,8 +188,8 @@ describe('useRemoteLoopPreview', () => {
     const { result } = renderHook(() => useRemoteLoopPreview(SOURCE, {}, 3))
     await advance(PREVIEW_DEBOUNCE_MS)
 
-    // The plugins changed and the preview is asked for again, without luck.
-    act(() => refreshRemoteLoopPreviews())
+    // The plugin was loaded again and the preview is asked for again, without luck.
+    act(() => { listSource('r2'); syncRemoteLoopPreviews() })
     await settle()
     for (let i = 0; i < PREVIEW_MAX_RETRIES; i++) await advance(PREVIEW_RETRY_MS * 2 ** i)
     expect(requests).toHaveLength(2 + PREVIEW_MAX_RETRIES)
@@ -193,17 +197,51 @@ describe('useRemoteLoopPreview', () => {
     expect(titles(result.current.items)).toEqual(['Version 1'])
   })
 
-  it('gives a mounted loop the new answer when the plugins changed', async () => {
+  it('gives a mounted loop the new answer when its plugin was loaded again', async () => {
     answers = [items('Version 1'), items('Version 2')]
     const { result } = renderHook(() => useRemoteLoopPreview(SOURCE, {}, 3))
     await advance(PREVIEW_DEBOUNCE_MS)
     expect(titles(result.current.items)).toEqual(['Version 1'])
 
-    // Same source id, upgraded plugin: no timer has run out, the loop never unmounted.
-    act(() => refreshRemoteLoopPreviews())
+    // The same list again asks nothing.
+    act(() => syncRemoteLoopPreviews())
+    await settle()
+    expect(requests).toHaveLength(1)
+
+    // Same source id and descriptor, upgraded plugin: no timer has run out,
+    // the loop never unmounted.
+    act(() => { listSource('r2'); syncRemoteLoopPreviews() })
     await settle()
     expect(requests).toHaveLength(2)
     expect(titles(result.current.items)).toEqual(['Version 2'])
+  })
+
+  it('asks again for a loop that comes back after its plugin was upgraded meanwhile', async () => {
+    answers = [items('Version 1'), items('Version 2')]
+    const first = renderHook(() => useRemoteLoopPreview(SOURCE, {}, 3))
+    await advance(PREVIEW_DEBOUNCE_MS)
+    first.unmount()
+
+    // Nobody shows the preview while the plugin is upgraded: the old sample is forgotten.
+    act(() => { listSource('r2'); syncRemoteLoopPreviews() })
+    const second = renderHook(() => useRemoteLoopPreview(SOURCE, {}, 3))
+    expect(second.result.current.items).toEqual([])
+    await advance(PREVIEW_DEBOUNCE_MS)
+    expect(requests).toHaveLength(2)
+    expect(titles(second.result.current.items)).toEqual(['Version 2'])
+  })
+
+  it('leaves another loop\'s newer question alone when an older holder lets go', async () => {
+    answers = [failure, failure, failure, failure, items('Fresh')]
+    const first = renderHook(() => useRemoteLoopPreview(SOURCE, {}, 3))
+    await advance(PREVIEW_DEBOUNCE_MS)
+    for (let i = 0; i < PREVIEW_MAX_RETRIES; i++) await advance(PREVIEW_RETRY_MS * 2 ** i)
+    // The failed question is dropped while still held, and asked afresh by a second loop.
+    act(() => resetRemoteLoopPreviews())
+    const second = renderHook(() => useRemoteLoopPreview(SOURCE, {}, 3))
+    first.unmount()
+    await advance(PREVIEW_DEBOUNCE_MS)
+    expect(titles(second.result.current.items)).toEqual(['Fresh'])
   })
 
   it('waits out a busy answer for as long as the server says, without calling it a failure', async () => {

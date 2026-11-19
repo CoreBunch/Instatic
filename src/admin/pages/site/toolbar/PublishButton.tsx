@@ -3,7 +3,6 @@ import type { SiteDocument } from '@core/page-tree'
 import { selectActivePage, useEditorStore } from '@site/store/store'
 import { getCmsPublishStatus, publishCmsDraft } from '@core/persistence'
 import { requestLoopSourcesRefresh } from '@site/canvas/loopSourceEvents'
-import { showPublishWarnings } from '@site/toolbar/publishWarnings'
 import { LoaderIcon } from 'pixel-art-icons/icons/loader'
 import { CalendarSolidIcon } from 'pixel-art-icons/icons/calendar-solid'
 import { CheckIcon } from 'pixel-art-icons/icons/check'
@@ -157,7 +156,10 @@ export function PublishButton({
       const result = await runStepUp(() => publishCmsDraft())
       publishedSiteRef.current = useEditorStore.getState().site
       setState('published')
-      showPublishWarnings(result.warnings)
+      // Rare, so its code is fetched only by a publish that has something to say.
+      if (result.warnings?.length) {
+        void import('@site/toolbar/publishWarnings').then((m) => m.showPublishWarnings(result))
+      }
     } catch (err) {
       if (err instanceof Error && err.message === StepUpCancelledMessage) {
         // User dismissed the step-up dialog — return the button to its

@@ -12,8 +12,10 @@
  *   - a new question waits `PREVIEW_DEBOUNCE_MS` before it is sent, and one
  *     that nobody shows any more by then (a filter value typed over) is never
  *     sent. A request overtaken while in flight is cancelled;
- *   - answers are asked for again only when the set of plugin sources changed
- *     (`refreshRemoteLoopPreviews`) or the author asks (`retryRemoteLoopPreview`);
+ *   - an answer belongs to the revision of the source it was asked under (a
+ *     revision is one load of the plugin). `syncRemoteLoopPreviews` asks again
+ *     for answers whose source has a newer revision, and nothing else does
+ *     except the author (`retryRemoteLoopPreview`);
  *   - a "busy" answer (the plugin's previews are queued, or this user asked
  *     too often) is waited out for as long as the server says, and is never
  *     reported as the plugin failing;
@@ -57,6 +59,8 @@ interface Entry {
   inFlight: AbortController | null
   /** Whether the question was ever sent. */
   asked: boolean
+  /** The source's revision when the question was last sent; null before that. */
+  revision: string | null
   /** Settles when the entry first has an answer. */
   firstAnswer: Promise<void>
   resolveFirstAnswer: () => void
@@ -121,11 +125,18 @@ function later(key: string, entry: Entry, delayMs: number): void {
   }, delayMs)
 }
 
+/** The revision of a source the editor lists as a plugin's; null when it lists none. */
+function listedRevision(sourceId: string): string | null {
+  const source = loopSourceRegistry.get(sourceId)
+  return source?.kind === 'remote' ? source.revision : null
+}
+
 function load(key: string, entry: Entry): void {
   stop(entry)
   const controller = new AbortController()
   entry.inFlight = controller
   entry.asked = true
+  entry.revision = listedRevision(entry.request.sourceId)
   const hadItems = entry.state.status === 'ready'
   previewCmsLoopSource(entry.request, controller.signal).then(
     (items) => {
@@ -162,7 +173,7 @@ function load(key: string, entry: Entry): void {
       // The server says nobody provides this source, yet the editor still
       // lists it: the editor's list is out of date. (Once the list has caught
       // up the source is no longer listed, and this stops.)
-      const listed = loopSourceRegistry.get(entry.request.sourceId)?.kind === 'remote'
+      const listed = listedRevision(entry.request.sourceId) !== null
       if (listed && err instanceof ApiError && err.status === 404) {
         requestLoopSourcesRefresh()
       }
@@ -203,6 +214,7 @@ export function holdRemoteLoopPreview(
       timer: null,
       inFlight: null,
       asked: false,
+      revision: null,
       firstAnswer,
       resolveFirstAnswer,
     }
@@ -227,27 +239,33 @@ export function holdRemoteLoopPreview(
       // not send it, and cancel it if it is already on its way.
       stop(held)
       held.resolveFirstAnswer()
-      entries.delete(key)
+      // Only this entry: the key may by now belong to a newer one.
+      if (entries.get(key) === held) entries.delete(key)
     },
   }
 }
 
 /**
- * Ask again for every preview a loop is showing, and forget the rest. Called
- * after the set of plugin sources changed (and the registry already holds
- * the new set): a source may have come back or be a newer version under the
- * same id.
+ * Bring the answers in line with the list of plugin sources the registry
+ * now holds. Called after every fetch of that list. An answer asked under an
+ * older revision of its source (the plugin was upgraded or restarted since)
+ * is asked for again if a loop shows it, and forgotten otherwise. An answer
+ * whose source is no longer listed is left alone: its loops are about to let
+ * go of it, and it is forgotten once they have. Answers under the current
+ * revision are untouched, so the same list coming back asks nothing.
  */
-export function refreshRemoteLoopPreviews(): void {
+export function syncRemoteLoopPreviews(): void {
   for (const [key, entry] of entries) {
-    // A source that is gone has nothing to ask: its loops are about to let go.
-    const listed = loopSourceRegistry.get(entry.request.sourceId)?.kind === 'remote'
-    if (entry.holders > 0 && listed) {
+    const revision = listedRevision(entry.request.sourceId)
+    if (!entry.asked || entry.revision === revision) continue
+    if (revision !== null && entry.holders > 0) {
       entry.failures = 0
       load(key, entry)
-    } else {
+    } else if (entry.holders === 0) {
       stop(entry)
       entries.delete(key)
+    } else {
+      stop(entry)
     }
   }
 }

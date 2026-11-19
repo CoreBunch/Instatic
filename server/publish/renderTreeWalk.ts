@@ -29,6 +29,9 @@ export function walkRenderTree(
   ): void => {
     const node = curNodes[nodeId]
     if (!node) return
+    // A hidden node renders nothing, and neither does anything under it
+    // (`renderNode` returns '' for it).
+    if (node.hidden) return
     onNode(node)
 
     if (node.moduleId === 'base.visual-component-ref') {

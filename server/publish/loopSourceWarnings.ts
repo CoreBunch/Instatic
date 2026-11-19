@@ -4,48 +4,54 @@
  * A loop keeps its `sourceId` when the plugin behind it is disabled or
  * removed, and the publisher renders such a loop as an empty list. That is
  * correct output, but an author whose editor still shows the plugin's sample
- * items cannot see it coming, so the publish says it: one warning per page
- * or component and missing source.
+ * items cannot see it coming, so the site publish says it.
+ *
+ * Only loops the publish renders are reported: `collectLoopNodes` walks each
+ * page the way the publisher does (`walkRenderTree`), so a hidden loop, a
+ * loop under a hidden parent, a node no longer reachable from the page root
+ * and a Visual Component no page uses are all left out, and a loop inside a
+ * Visual Component is reported under the page that uses it.
  */
+// Registers the built-in sources: without them every loop would look unprovided.
+import '@core/loops/sources'
 import { loopSourceRegistry } from '@core/loops'
 import type { SiteDocument } from '@core/page-tree'
-import type { CmsPublishWarning } from '@core/persistence/responseSchemas'
+import {
+  CMS_PUBLISH_WARNINGS_LISTED,
+  type CmsPublishWarning,
+} from '@core/persistence/responseSchemas'
+import { collectLoopNodes } from './loopPrefetch'
 
-interface NodeLike {
-  moduleId: string
-  props: Record<string, unknown>
+export interface PublishWarnings {
+  /** The first `CMS_PUBLISH_WARNINGS_LISTED` of them. */
+  warnings: CmsPublishWarning[]
+  /** How many there are in all. */
+  warningsTotal: number
 }
 
-function missingSourceIds(nodes: Record<string, NodeLike>): string[] {
-  const missing = new Set<string>()
-  for (const node of Object.values(nodes)) {
-    if (node.moduleId !== 'base.loop') continue
-    const sourceId = typeof node.props.sourceId === 'string' ? node.props.sourceId : ''
-    if (sourceId && !loopSourceRegistry.has(sourceId)) missing.add(sourceId)
-  }
-  return [...missing]
-}
+const NONE: PublishWarnings = { warnings: [], warningsTotal: 0 }
 
 /**
- * Warnings for the pages just published. `pageIds` narrows them to those
- * pages (a single page's publish); every Visual Component is checked either
- * way, since any page may use it.
+ * One warning per page and missing source, for the pages of a site that was
+ * just published. Never throws: the publish is committed by now, and a
+ * failure to describe it must not make it look failed.
  */
-export function unavailableLoopSourceWarnings(
-  site: SiteDocument,
-  pageIds?: ReadonlySet<string>,
-): CmsPublishWarning[] {
-  const warnings: CmsPublishWarning[] = []
-  for (const page of site.pages) {
-    if (pageIds && !pageIds.has(page.id)) continue
-    for (const sourceId of missingSourceIds(page.nodes)) {
-      warnings.push({ kind: 'loop-source-unavailable', where: page.title, sourceId })
+export function unavailableLoopSourceWarnings(site: SiteDocument): PublishWarnings {
+  try {
+    const all: CmsPublishWarning[] = []
+    for (const page of site.pages) {
+      const missing = new Set<string>()
+      for (const loop of collectLoopNodes(page, site)) {
+        const sourceId = typeof loop.props.sourceId === 'string' ? loop.props.sourceId : ''
+        if (sourceId && !loopSourceRegistry.has(sourceId)) missing.add(sourceId)
+      }
+      for (const sourceId of missing) {
+        all.push({ kind: 'loop-source-unavailable', page: page.title, sourceId })
+      }
     }
+    return { warnings: all.slice(0, CMS_PUBLISH_WARNINGS_LISTED), warningsTotal: all.length }
+  } catch (err) {
+    console.error('[publish] could not check the published loops for missing sources:', err)
+    return NONE
   }
-  for (const component of site.visualComponents) {
-    for (const sourceId of missingSourceIds(component.tree.nodes)) {
-      warnings.push({ kind: 'loop-source-unavailable', where: component.name, sourceId })
-    }
-  }
-  return warnings
 }

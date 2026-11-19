@@ -153,6 +153,7 @@ describe('plugin loop sources for the editor', () => {
       orderByOptions: [{ id: 'name', label: 'Name' }],
       fields: [{ id: 'title', label: 'Title' }, { id: 'told', label: 'Told' }],
       provider: { pluginId: PLUGIN_ID, pluginName: 'Acme Shop' },
+      revision: expect.any(String),
     })
     expect(sources.find((source) => source.id === 'acme.shop.account')!.perVisitor).toBe(true)
   })
@@ -223,8 +224,8 @@ describe('plugin loop sources for the editor', () => {
     expect(await titles(a)).toEqual(['run 1'])
     expect(await titles(b)).toEqual(['run 1'])
 
-    // 29 more distinct previews bring this user to the limit for this plugin.
-    for (let i = 0; i < 29; i++) expect((await ask({ i })).status).toBe(200)
+    // 119 more distinct previews bring this user to the limit for this plugin.
+    for (let i = 0; i < 119; i++) expect((await ask({ i })).status).toBe(200)
     const refused = await ask({ i: 'one too many' })
     expect(refused.status).toBe(429)
     expect(Number(refused.headers.get('retry-after'))).toBeGreaterThan(0)
@@ -237,42 +238,55 @@ describe('plugin loop sources for the editor', () => {
     expect((await ask({ other: true }, editor.cookie)).status).toBe(200)
   })
 
-  it('hands a plugin one preview at a time, with one waiting place per user', async () => {
-    // Eight different questions from one user at once: the first is running,
-    // and each newer one takes the waiting place of the one before it.
-    const answers = await Promise.all(
-      Array.from({ length: 8 }, (_, i) => preview({ sourceId: 'acme.shop.counted', filters: { i }, limit: 1 })),
-    )
-    expect(answers.map((res) => res.status)).toEqual([200, 429, 429, 429, 429, 429, 429, 200])
-    const ran = await Promise.all(
-      [answers[0]!, answers[7]!].map(async (res) =>
-        ((await res.json()) as { items: Array<{ fields: { title: string } }> }).items[0]!.fields.title),
-    )
-    // Only two reached the plugin: the first and the last.
-    expect(ran).toEqual(['run 1', 'run 2'])
+  it('answers every loop of a twelve-loop page at once, and a second user beside it', async () => {
+    const editor = await h.createRoleUser({ name: 'Second editor', slug: 'second-editor', capabilities: ['site.read'] })
+    const ask = (i: number, cookie?: string) => preview({ sourceId: 'acme.shop.counted', filters: { i }, limit: 1 }, cookie)
+
+    // Twelve different questions from one user at once, as a page of twelve loops asks them.
+    const page = Array.from({ length: 12 }, (_, i) => ask(i))
+    const other = ask(100, editor.cookie)
+    expect((await Promise.all(page)).map((res) => res.status)).toEqual(Array.from({ length: 12 }, () => 200))
+    expect((await other).status).toBe(200)
+
+    // Reloading the page a few times stays inside the per-user limit.
+    for (let reload = 0; reload < 4; reload++) {
+      const again = await Promise.all(Array.from({ length: 12 }, (_, i) => ask(1000 * (reload + 1) + i)))
+      expect(again.every((res) => res.status === 200)).toBe(true)
+    }
   })
 
-  it('does not let one user fill the line for everybody else', async () => {
+  it('keeps a place in the line for somebody else, and refuses past a full line without counting it', async () => {
     const editors = await Promise.all(
-      [0, 1, 2, 3, 4].map((n) => h.createRoleUser({ name: `Editor ${n}`, slug: `editor-${n}`, capabilities: ['site.read'] })),
+      [0, 1, 2].map((n) => h.createRoleUser({ name: `Editor ${n}`, slug: `editor-${n}`, capabilities: ['site.read'] })),
     )
     const stuck = (i: number, cookie: string) => preview({ sourceId: 'acme.shop.stuck', filters: { i }, limit: 1 }, cookie)
     const ask = (i: number, cookie: string) => preview({ sourceId: 'acme.shop.counted', filters: { i }, limit: 1 }, cookie)
 
-    // One user keeps the worker busy and asks twenty more questions.
-    const noisy = [stuck(0, editors[0]!.cookie), ...Array.from({ length: 20 }, (_, i) => ask(i, editors[0]!.cookie))]
-    // Two other editors still get a place each, and their answers.
-    const others = await Promise.all([ask(100, editors[1]!.cookie), ask(101, editors[2]!.cookie)])
-    expect(others.map((res) => res.status)).toEqual([200, 200])
-    await Promise.all(noisy)
+    // One user keeps the worker busy for a second and then asks twenty more questions.
+    const running = stuck(0, editors[0]!.cookie)
+    await Bun.sleep(150)
+    const noisy = Array.from({ length: 20 }, (_, i) => ask(i, editors[0]!.cookie))
+    await Bun.sleep(100)
+    // Eleven of them wait and nine were turned away at once. The twelfth
+    // place is still there for somebody else.
+    const second = ask(100, editors[1]!.cookie)
+    await Bun.sleep(100)
+    // Now the line is full for everybody.
+    const third = await ask(101, editors[2]!.cookie)
+    expect(third.status).toBe(429)
+    expect(((await third.json()) as { code: string }).code).toBe(LOOP_PREVIEW_BUSY_CODE)
 
-    // With three people waiting, the line is full for a fourth.
-    const running = stuck(1, editors[0]!.cookie)
-    const waiting = [ask(200, editors[1]!.cookie), ask(201, editors[2]!.cookie), ask(202, editors[3]!.cookie)]
-    expect((await ask(203, editors[4]!.cookie)).status).toBe(429)
-    expect((await Promise.all(waiting)).map((res) => res.status)).toEqual([200, 200, 200])
+    const statuses = (await Promise.all(noisy)).map((res) => res.status)
+    expect(statuses.filter((status) => status === 200)).toHaveLength(11)
+    expect(statuses.filter((status) => status === 429)).toHaveLength(9)
+    expect((await second).status).toBe(200)
     await running
-  }, 20_000)
+
+    // A refusal is not held against the asker: the noisy user started 12
+    // previews, not 21, so exactly 108 more fit in this minute.
+    for (let i = 0; i < 108; i++) expect((await ask(5000 + i, editors[0]!.cookie)).status).toBe(200)
+    expect((await ask(9999, editors[0]!.cookie)).status).toBe(429)
+  }, 30_000)
 
   it('cannot be used to pile previews up until the plugin is taken for dead', async () => {
     const editors = await Promise.all(
@@ -280,15 +294,20 @@ describe('plugin loop sources for the editor', () => {
     )
     // Thirty distinct slow previews from one editor and eight from another, all at once.
     const stuck = (i: number, cookie: string) => preview({ sourceId: 'acme.shop.stuck', filters: { i }, limit: 1 }, cookie)
+    const started = Date.now()
     const answers = await Promise.all([
       ...Array.from({ length: 30 }, (_, i) => stuck(i, editors[0]!.cookie)),
       ...Array.from({ length: 8 }, (_, i) => stuck(100 + i, editors[1]!.cookie)),
     ])
     const statuses = answers.map((res) => res.status)
-    // Three reached the plugin (the first, and each editor's latest) and were
-    // cut off after a second each; the rest were turned away.
-    expect(statuses.filter((status) => status === 502)).toHaveLength(3)
-    expect(statuses.filter((status) => status === 429)).toHaveLength(35)
+    // A full line reached the plugin, one after another, each cut off after a
+    // second: one running, eleven of the first editor's waiting and one of the
+    // second's. The rest were turned away.
+    expect(statuses.filter((status) => status === 502)).toHaveLength(13)
+    expect(statuses.filter((status) => status === 429)).toHaveLength(25)
+    // The last of them waited about thirteen seconds: well inside the thirty
+    // the host allows a worker call before it takes the worker for dead.
+    expect(Date.now() - started).toBeLessThan(20_000)
 
     // The plugin is still there: registered, its sources listed, its own route answering.
     expect(hostPlugins.has(PLUGIN_ID)).toBe(true)
@@ -303,7 +322,7 @@ describe('plugin loop sources for the editor', () => {
     expect(Number(rows[0]!.n)).toBe(0)
     expect(recordCrashAndDecide(PLUGIN_ID).recentCrashCount).toBe(1)
     clearPluginCrashCounter(PLUGIN_ID)
-  }, 20_000)
+  }, 40_000)
 
   for (const ending of ['disabled', 'uninstalled', 'crashed'] as const) {
     it(`starts no worker for a waiting preview once the plugin is ${ending}`, async () => {
@@ -390,16 +409,25 @@ describe('plugin loop sources for the editor', () => {
 
     const disabled = await h.cms(`/admin/api/cms/plugins/${PLUGIN_ID}`, { method: 'PATCH', cookie: owner, json: { enabled: false } })
     expect(disabled.status).toBe(200)
-    expect((await publish()).warnings).toEqual([
-      { kind: 'loop-source-unavailable', where: 'Shop', sourceId: 'acme.shop.offers' },
-    ])
+    expect(await publish()).toMatchObject({
+      warnings: [{ kind: 'loop-source-unavailable', page: 'Shop', sourceId: 'acme.shop.offers' }],
+      warningsTotal: 1,
+    })
+  })
 
-    // Publishing the one page says the same.
-    const row = await h.cms('/admin/api/cms/data/rows/page_shop/publish', { method: 'POST', cookie: owner })
-    expect(row.status).toBe(200)
-    expect(((await row.json()) as { warnings: unknown[] }).warnings).toEqual([
-      { kind: 'loop-source-unavailable', where: 'Shop', sourceId: 'acme.shop.offers' },
-    ])
+  it('gives a source a new revision each time its plugin is loaded', async () => {
+    const revisionOf = async () =>
+      ((await (await list()).json()) as { sources: RemoteLoopSource[] }).sources
+        .find((source) => source.id === 'acme.shop.offers')!.revision
+    const first = await revisionOf()
+    // Listing again changes nothing.
+    expect(await revisionOf()).toBe(first)
+
+    for (const enabled of [false, true]) {
+      const res = await h.cms(`/admin/api/cms/plugins/${PLUGIN_ID}`, { method: 'PATCH', cookie: owner, json: { enabled } })
+      expect(res.status).toBe(200)
+    }
+    expect(await revisionOf()).not.toBe(first)
   })
 
   it('drops the sources when the plugin is disabled, and brings them back when it is enabled', async () => {

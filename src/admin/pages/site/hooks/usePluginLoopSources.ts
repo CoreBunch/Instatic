@@ -11,7 +11,8 @@
  *   - the tab becomes visible again;
  *   - a preview was refused because nobody provides the source any more, the
  *     author pressed Publish, or a publish warned of a loop without a source
- *     (`LOOP_SOURCES_STALE_EVENT`).
+ *     (`LOOP_SOURCES_STALE_EVENT`). After that event the list is fetched once
+ *     more two seconds later.
  *
  * Nothing is pushed from the server. A plugin enabled or disabled in another
  * tab, or by someone else, shows up here when the author comes back to this
@@ -28,16 +29,18 @@ import { replaceRemoteLoopSources } from '@core/loops'
 import { listCmsLoopSources } from '@core/persistence/cmsLoopSources'
 import { CMS_PLUGINS_CHANGED_EVENT } from '@plugins/utils/pluginEvents'
 import { LOOP_SOURCES_STALE_EVENT } from '@site/canvas/loopSourceEvents'
-import { refreshRemoteLoopPreviews } from '@site/canvas/remoteLoopPreviews'
+import { syncRemoteLoopPreviews } from '@site/canvas/remoteLoopPreviews'
+
+/** How long after a refused preview the list is fetched a second time. */
+const SECOND_LOOK_MS = 2_000
 
 export function usePluginLoopSources(): void {
   // Answers can arrive out of order; only the latest request may write.
   const latestRequest = useRef(0)
-  // The list as last applied, to tell a changed list from the same one again.
-  const applied = useRef<string | null>(null)
 
   useEffect(() => {
     let cancelled = false
+    let secondLook: ReturnType<typeof setTimeout> | null = null
 
     function refresh() {
       latestRequest.current += 1
@@ -45,13 +48,9 @@ export function usePluginLoopSources(): void {
       listCmsLoopSources()
         .then((sources) => {
           if (cancelled || request !== latestRequest.current) return
-          const serialized = JSON.stringify(sources)
-          const changed = applied.current !== null && applied.current !== serialized
-          applied.current = serialized
           replaceRemoteLoopSources(sources)
-          // A source that changed hands or shape must not keep an old sample.
-          // The first list changes nothing a loop has already asked about.
-          if (changed) refreshRemoteLoopPreviews()
+          // Samples asked under an earlier load of a plugin are asked again.
+          syncRemoteLoopPreviews()
         })
         .catch((err: unknown) => {
           // The editor stays usable with the sources it already has.
@@ -65,14 +64,27 @@ export function usePluginLoopSources(): void {
       if (document.visibilityState === 'visible') refresh()
     }
 
+    // A source the server just refused may be back in a moment: a plugin
+    // whose worker restarted registers its sources again right away. So the
+    // list is fetched now, and once more shortly after.
+    function refreshTwice() {
+      refresh()
+      if (secondLook) clearTimeout(secondLook)
+      secondLook = setTimeout(() => {
+        secondLook = null
+        refresh()
+      }, SECOND_LOOK_MS)
+    }
+
     refresh()
     window.addEventListener(CMS_PLUGINS_CHANGED_EVENT, refresh)
-    window.addEventListener(LOOP_SOURCES_STALE_EVENT, refresh)
+    window.addEventListener(LOOP_SOURCES_STALE_EVENT, refreshTwice)
     document.addEventListener('visibilitychange', refreshWhenVisible)
     return () => {
       cancelled = true
+      if (secondLook) clearTimeout(secondLook)
       window.removeEventListener(CMS_PLUGINS_CHANGED_EVENT, refresh)
-      window.removeEventListener(LOOP_SOURCES_STALE_EVENT, refresh)
+      window.removeEventListener(LOOP_SOURCES_STALE_EVENT, refreshTwice)
       document.removeEventListener('visibilitychange', refreshWhenVisible)
     }
   }, [])

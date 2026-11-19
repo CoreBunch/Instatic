@@ -10,6 +10,7 @@
  * `../loopSources.ts`.
  */
 
+import { nanoid } from 'nanoid'
 import { loopSourceRegistry } from '@core/loops/registry'
 import type { SourceFetchContext, SourceRequestContext } from '@core/loops/types'
 import type { ApiCallFor } from '../../protocol/apiCallSchema'
@@ -76,9 +77,9 @@ export async function handleLoopsRegisterSource(
     mayKnowMember: () => pluginMayKnowMember(msg.pluginId),
   }
   // Registering the same id again replaces the source; it is still one source.
-  if (!entry.loopSources.some((source) => source.sourceId === descriptor.id)) {
-    entry.loopSources.push({ pluginId: msg.pluginId, sourceId: descriptor.id })
-  }
+  const registered = entry.loopSources.find((source) => source.sourceId === descriptor.id)
+  if (registered) registered.revision = nanoid()
+  else entry.loopSources.push({ pluginId: msg.pluginId, sourceId: descriptor.id, revision: nanoid() })
   loopSourceRegistry.registerOrReplace(fullSource)
   replyApiOk(msg.pluginId, msg.correlationId)
 }

@@ -22,7 +22,7 @@ import { usePluginLoopSources } from '@site/hooks/usePluginLoopSources'
 const OFFERS = 'acme.shop.offers'
 const realFetch = globalThis.fetch
 
-function remote(label = 'Offers'): RemoteLoopSource {
+function remote(label = 'Offers', revision = 'r1'): RemoteLoopSource {
   return {
     id: OFFERS,
     label,
@@ -30,6 +30,7 @@ function remote(label = 'Offers'): RemoteLoopSource {
     orderByOptions: [],
     fields: [{ id: 'title', label: 'Title' }],
     provider: { pluginId: 'acme.shop', pluginName: 'Acme Shop' },
+    revision,
   }
 }
 
@@ -37,6 +38,7 @@ let listed: RemoteLoopSource[] = []
 let listRequests = 0
 let previewRequests = 0
 let previewStatus = 200
+let sample = 'Sample'
 
 async function settle(): Promise<void> {
   await act(async () => {
@@ -51,13 +53,14 @@ beforeEach(() => {
   listRequests = 0
   previewRequests = 0
   previewStatus = 200
+  sample = 'Sample'
   globalThis.fetch = ((input: RequestInfo | URL) => {
     const json = (status: number, body: unknown) =>
       Promise.resolve(new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } }))
     if (String(input).endsWith('/loop-sources/preview')) {
       previewRequests += 1
       return previewStatus === 200
-        ? json(200, { items: [{ id: '1', fields: { title: 'Sample' } }] })
+        ? json(200, { items: [{ id: '1', fields: { title: sample } }] })
         : json(previewStatus, { error: 'No running plugin provides this loop source.' })
     }
     listRequests += 1
@@ -134,27 +137,59 @@ describe('usePluginLoopSources', () => {
     expect(listRequests).toBe(2)
     expect(loopSourceRegistry.has(OFFERS)).toBe(false)
 
-    // The source is gone from the list: its preview is not asked for again.
+    // A worker that restarted registers its sources again within moments, so
+    // the list is fetched once more shortly after, and then left alone.
+    listed = [remote('Offers', 'r2')]
+    previewStatus = 200
+    await act(async () => { jest.advanceTimersByTime(2_000) })
+    await settle()
+    expect(listRequests).toBe(3)
+    expect(loopSourceRegistry.has(OFFERS)).toBe(true)
     await act(async () => { jest.advanceTimersByTime(60_000) })
     await settle()
-    expect(previewRequests).toBe(1)
+    expect(listRequests).toBe(3)
   })
 
-  it('asks a shown preview again only when the list really changed', async () => {
+  it('asks a shown preview again only when its plugin was loaded again', async () => {
     renderHook(() => usePluginLoopSources())
     await settle()
-    renderHook(() => useRemoteLoopPreview(OFFERS, {}, 3))
+    const shown = renderHook(() => useRemoteLoopPreview(OFFERS, {}, 3))
     await act(async () => { jest.advanceTimersByTime(PREVIEW_DEBOUNCE_MS) })
     await settle()
     expect(previewRequests).toBe(1)
 
+    // The same list: nothing to ask.
     act(() => { document.dispatchEvent(new Event('visibilitychange')) })
     await settle()
     expect(previewRequests).toBe(1)
 
-    listed = [remote('Plans')]
+    // An upgrade: the descriptor is the same, the revision and the samples are new.
+    listed = [remote('Offers', 'r2')]
+    sample = 'Sample from version 2'
     act(() => { document.dispatchEvent(new Event('visibilitychange')) })
     await settle()
     expect(previewRequests).toBe(2)
+    expect(shown.result.current.items.map((item) => item.fields.title)).toEqual(['Sample from version 2'])
+  })
+
+  it('shows new samples after an upgrade that happened while the editor was closed', async () => {
+    const editor = renderHook(() => usePluginLoopSources())
+    await settle()
+    const loop = renderHook(() => useRemoteLoopPreview(OFFERS, {}, 3))
+    await act(async () => { jest.advanceTimersByTime(PREVIEW_DEBOUNCE_MS) })
+    await settle()
+    expect(loop.result.current.items.map((item) => item.fields.title)).toEqual(['Sample'])
+
+    // The author leaves the Site editor; the plugin is upgraded; they come back.
+    loop.unmount()
+    editor.unmount()
+    listed = [remote('Offers', 'r2')]
+    sample = 'Sample from version 2'
+    renderHook(() => usePluginLoopSources())
+    await settle()
+    const again = renderHook(() => useRemoteLoopPreview(OFFERS, {}, 3))
+    await act(async () => { jest.advanceTimersByTime(PREVIEW_DEBOUNCE_MS) })
+    await settle()
+    expect(again.result.current.items.map((item) => item.fields.title)).toEqual(['Sample from version 2'])
   })
 })

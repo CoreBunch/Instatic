@@ -56,6 +56,11 @@ export const RemoteLoopSourceSchema = Type.Object(
       { pluginId: Type.String({ minLength: 1 }), pluginName: Type.String() },
       { additionalProperties: false },
     ),
+    /**
+     * Opaque, and new on every load of the plugin. Sample items an editor
+     * holds for the source belong to the revision they were asked under.
+     */
+    revision: Type.String({ minLength: 1 }),
   },
   { additionalProperties: false },
 )

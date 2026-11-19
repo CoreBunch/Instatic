@@ -87,6 +87,12 @@ test('a plugin loop source is picked, previewed and published from the editor (S
   const notice = (target: Page) => canvasFrame(target).locator('[data-loop-preview-notice]')
   const unavailable = `The loop source “${sourceId}” is not available.`
 
+  // No preview of the whole run may be turned away as busy.
+  const refusedPreviews: number[] = []
+  page.on('response', (response) => {
+    if (response.url().endsWith('/loop-sources/preview') && response.status() === 429) refusedPreviews.push(response.status())
+  })
+
   await login(page)
   const admin = page.request
   const headers = { origin: new URL(page.url()).origin }
@@ -277,7 +283,7 @@ test('a plugin loop source is picked, previewed and published from the editor (S
       // the time `publishDraft` has finished waiting for a step-up prompt.
       const warned = (async () => {
         await expect(page.getByText('Published, with an empty list')).toBeVisible({ timeout: 30_000 })
-        await expect(page.getByText(`${pageName}: “${sourceId}”`, { exact: false })).toBeVisible()
+        await expect(page.getByText(`“${sourceId}” on the page ${pageName}`, { exact: false })).toBeVisible()
       })()
       await Promise.all([warned, publishDraft(page)])
       // The canvas has caught up too.
@@ -292,6 +298,7 @@ test('a plugin loop source is picked, previewed and published from the editor (S
         await visitorContext.close()
       }
     })
+    expect(refusedPreviews).toEqual([])
   } finally {
     // The suite shares one site: leave neither the plugin nor the page behind.
     await stepUp()
