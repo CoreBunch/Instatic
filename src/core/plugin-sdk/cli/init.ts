@@ -17,8 +17,8 @@
  */
 import { existsSync } from 'node:fs'
 import { mkdir, writeFile } from 'node:fs/promises'
-import { join, resolve } from 'node:path'
-import { SDK_PACKAGE_NAME, SDK_PACKAGE_VERSION, sdkTarballUrl } from './sdkPackage'
+import { join, relative, resolve } from 'node:path'
+import { SDK_PACKAGE_NAME, SDK_PACKAGE_VERSION, sdkTarballName, sdkTarballUrl } from './sdkPackage'
 
 export type InitKind = 'module' | 'content-editor'
 
@@ -96,7 +96,7 @@ export async function runPluginInit(
 }
 
 async function writeSharedFiles(pluginDir: string, template: InitTemplate): Promise<void> {
-  await writeFile(join(pluginDir, 'README.md'), readmeTemplate(template), 'utf-8')
+  await writeFile(join(pluginDir, 'README.md'), readmeTemplate(template, pluginDir), 'utf-8')
   await writeFile(join(pluginDir, '.gitignore'), gitignoreTemplate(), 'utf-8')
   if (SDK_PACKAGE_VERSION === null) return
   await writeFile(
@@ -108,9 +108,10 @@ async function writeSharedFiles(pluginDir: string, template: InitTemplate): Prom
 }
 
 /**
- * The SDK is pinned to the exact version of the CLI that scaffolds the
- * plugin: each SDK version is built from the Instatic release with the same
- * number, so the pin names the CMS the plugin is written for.
+ * The SDK dependency is the tarball attached to the Instatic release with the
+ * CLI's own version: each SDK version is built from the release with the same
+ * number, so the pin names the CMS the plugin is written for. `@types/react`
+ * is there because editor code is JSX against the host's React.
  */
 function packageJsonTemplate({ packageName }: InitTemplate, sdkVersion: string): string {
   const manifest = {
@@ -125,7 +126,8 @@ function packageJsonTemplate({ packageName }: InitTemplate, sdkVersion: string):
       typecheck: 'tsc --noEmit',
     },
     devDependencies: {
-      [SDK_PACKAGE_NAME]: sdkVersion,
+      [SDK_PACKAGE_NAME]: sdkTarballUrl(sdkVersion),
+      '@types/react': '^19.0.0',
       typescript: '^6.0.0',
     },
   }
@@ -134,11 +136,9 @@ function packageJsonTemplate({ packageName }: InitTemplate, sdkVersion: string):
 
 /**
  * `moduleResolution: bundler` matches how the CLI bundles the plugin and is
- * what the SDK's declaration files are written for. `skipLibCheck` keeps the
- * typecheck on the plugin's own code: the SDK's editor types mention host
- * libraries a plugin does not install. The `types` entry declares the
- * `@instatic/host-ui` and `@instatic/host-hooks` modules the host supplies
- * at runtime.
+ * what the SDK's declaration files are written for. The `types` entry
+ * declares the `@instatic/host-ui` and `@instatic/host-hooks` modules the
+ * host supplies at runtime.
  */
 function tsconfigTemplate(): string {
   const tsconfig = {
@@ -150,13 +150,27 @@ function tsconfigTemplate(): string {
       jsx: 'react-jsx',
       strict: true,
       noEmit: true,
-      skipLibCheck: true,
       types: [`${SDK_PACKAGE_NAME}/host`],
     },
     include: ['**/*.ts', '**/*.tsx'],
     exclude: ['node_modules', 'dist'],
   }
   return `${JSON.stringify(tsconfig, null, 2)}\n`
+}
+
+/**
+ * The commands that work for a freshly scaffolded plugin. Packaged, the
+ * plugin is its own project and runs the CLI through its `package.json`
+ * scripts. From source the CLI is the checkout's `instatic-plugin` script,
+ * which always runs from the checkout root, so it is given the plugin's path.
+ */
+export function scaffoldCommands(pluginDir: string): { setup: string | null; dev: string; lint: string; build: string } {
+  if (SDK_PACKAGE_VERSION !== null) {
+    return { setup: 'bun install', dev: 'bun run dev', lint: 'bun run lint', build: 'bun run build' }
+  }
+  const path = relative(process.cwd(), pluginDir) || '.'
+  const run = (command: string): string => `bun run instatic-plugin ${command} ${path}`
+  return { setup: null, dev: run('dev'), lint: run('lint'), build: run('build') }
 }
 
 function pluginConfigTemplate(template: InitTemplate): string {
@@ -272,19 +286,20 @@ function capitaliseWordsFromId(pluginId: string): string {
   return capitaliseWords(tail)
 }
 
-function readmeTemplate({ pluginId, pluginName }: InitTemplate): string {
-  // Packaged, the CLI is a dependency of the plugin project; from source it
-  // is the checkout's own `instatic-plugin` script.
-  const packaged = SDK_PACKAGE_VERSION !== null
-  const cli = packaged ? 'bunx instatic-plugin' : 'bun run instatic-plugin'
-  const installStep = packaged ? 'bun install\n' : ''
-  const tarballNote = SDK_PACKAGE_VERSION === null
+function readmeTemplate({ pluginId, pluginName }: InitTemplate, pluginDir: string): string {
+  const commands = scaffoldCommands(pluginDir)
+  const where = commands.setup === null ? 'From the root of the Instatic checkout:' : 'In this folder:'
+  const setupLine = commands.setup === null ? '' : `${commands.setup}\n`
+  const sdkNote = SDK_PACKAGE_VERSION === null
     ? ''
     : `
-\`${SDK_PACKAGE_NAME}\` installs from npm. The same package is attached to
-every Instatic release; to install it from there instead, set the dependency
-in \`package.json\` to
-\`${sdkTarballUrl(SDK_PACKAGE_VERSION)}\`.
+## The SDK dependency
+
+\`${SDK_PACKAGE_NAME}\` is installed from the tarball attached to Instatic
+release v${SDK_PACKAGE_VERSION} (see \`package.json\`). To build against an
+Instatic version that has no release yet, run \`bun run sdk:pack\` in that
+Instatic checkout and point the dependency at the file it writes, for example
+\`"file:../instatic/.tmp/plugin-sdk/${sdkTarballName(SDK_PACKAGE_VERSION)}"\`.
 `
   return `# ${pluginName}
 
@@ -292,10 +307,12 @@ in \`package.json\` to
 
 ## Develop
 
+${where}
+
 \`\`\`bash
-${installStep}${cli} dev      # watch + sync into the running CMS
-${cli} lint     # validate the manifest and sources
-${cli} build    # produce a .plugin.zip
+${setupLine}${commands.dev}      # watch + sync into the running CMS
+${commands.lint}     # validate the manifest and sources
+${commands.build}    # write dist/ and a .plugin.zip in this folder
 \`\`\`
 
 The dev command writes built files directly into the host CMS's
@@ -306,9 +323,8 @@ directory.
 
 You'll need to install the plugin once via the admin UI (\`/admin/plugins\` →
 Upload Plugin) so the host registers it and approves permissions. After
-that, every \`${cli} dev\` rebuild flows in without another upload.
-
-${tarballNote}
+that, every dev rebuild flows in without another upload.
+${sdkNote}
 The full plugin SDK surface is documented in
 [plugin-system.md](https://github.com/CoreBunch/Instatic/blob/main/docs/features/plugin-system.md).
 `

@@ -70,6 +70,7 @@ const IGNORED_PATH_FRAGMENTS = [
   '/dist/',
   '/dist',
   '__modules-facade.ts',
+  '.plugin.zip',
   '.DS_Store',
   '/.git',
 ]

@@ -94,7 +94,7 @@ git tag v<version>
 git push origin v<version>
 ```
 
-Actions then runs `bun run build`, `bun test`, `bun run lint`, builds the `Dockerfile`, pushes `ghcr.io/corebunch/instatic` at `<semver>`, `<major>.<minor>` and `latest`, creates the GitHub Release, and uploads `instatic-<version>-release-bundle.tar.gz` plus the per-platform `instatic-server-<version>-<platform>.tar.gz` server artifacts and the plugin SDK package `instatic-plugin-sdk-<version>.tgz` (also published to npm by trusted publishing once the package exists there; see `docs/deployment/release-workflow.md`).
+Actions then runs `bun run build`, `bun test`, `bun run lint`, builds the `Dockerfile`, pushes `ghcr.io/corebunch/instatic` at `<semver>`, `<major>.<minor>` and `latest`, creates the GitHub Release, and uploads `instatic-<version>-release-bundle.tar.gz` plus the per-platform `instatic-server-<version>-<platform>.tar.gz` server artifacts and the plugin SDK package `instatic-plugin-sdk-<version>.tgz` (also published to npm when the repository variable `PUBLISH_PLUGIN_SDK_TO_NPM` is `true`; see `docs/deployment/release-workflow.md`).
 
 Watch it. A tag whose verify job fails has still moved the tag, so the fix is a new patch version rather than a retag.
 

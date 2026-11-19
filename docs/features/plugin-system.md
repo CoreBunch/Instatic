@@ -13,7 +13,7 @@ A plugin is a zip package containing a `plugin.json` manifest and one or more bu
 - **SDK:** every API call goes through `api` — `api.plugin.*` for metadata + logging, `api.cms.*` for routes, storage, hooks, loops, settings, schedule, content, and media; `api.editor.*` for editor extensions; `api.dashboard.*` for dashboard widgets.
 - **Lifecycle:** `install` → `activate` → (optionally `deactivate` / `migrate`) → `uninstall`. Each hook is async-capable and isolated; if one throws, the host rolls back and parks the plugin in `error`.
 - **Permissions:** declared in `instatic-plugin.config.ts` / `plugin.json`, approved by the site owner at install time, enforced by the SDK at runtime. Outbound network also requires a `networkAllowedHosts` allowlist.
-- **CLI:** `bun instatic-plugin init|lint|build|dev` covers scaffolding, manifest/source validation, bundle build, zip creation, and hot-sync to a running CMS.
+- **CLI:** `instatic-plugin init|lint|build|dev` covers scaffolding, manifest/source validation, bundle build, zip creation, and hot-sync to a running CMS.
 - **Source of truth for permissions:** `src/core/plugin-sdk/capabilities.ts`. Source of truth for manifest shape: `src/core/plugins/manifest.ts`.
 
 ---
@@ -77,7 +77,7 @@ pack/site.json           <- Visual Components / pages / classes / layouts pack (
 assets/                  <- static assets shipped in the zip (optional)
 ```
 
-`bun instatic-plugin build` produces this runtime layout from `instatic-plugin.config.ts`. Bundle formats are intentionally different per surface:
+`instatic-plugin build` produces this runtime layout from `instatic-plugin.config.ts`. Bundle formats are intentionally different per surface:
 
 | Bundle | Format | Loaded by |
 |---|---|---|
@@ -209,7 +209,7 @@ Authors normally write `instatic-plugin.config.ts` with `definePlugin(...)`; the
 | Pack `classes[].id`         | Namespaced under the plugin ID                             | `acme.workflow/hero-root` |
 | Pack `layouts[].id`         | Namespaced under the plugin ID                             | `acme.workflow/hero-section` |
 
-`parsePluginManifest` validates all of these and produces a clear error message. `bun instatic-plugin lint` runs the same checks before upload. Coherence checks also enforce permission-dependent shape:
+`parsePluginManifest` validates all of these and produces a clear error message. `instatic-plugin lint` runs the same checks before upload. Coherence checks also enforce permission-dependent shape:
 
 - `entrypoints.editor` and app-kind admin pages require `editor.code`.
 - `entrypoints.modules` requires `modules.register`.
@@ -670,7 +670,7 @@ Record data is a JSON object, at most 512 levels deep. Text Postgres cannot stor
 
 **Unreadable records.** A stored row whose data is not a JSON object (or nests deeper than 512 levels) does not fail the list: it comes back with `data: {}` and `unreadable: true`, and is logged once as `[plugin:<id>]`. The admin resource page says the record could not be read. `update` on such a record is refused (`PluginRecordUnreadableError`), because it would silently replace whatever the row held; `delete` works. On Postgres, a row still in the old string form (see `036_plugin_records_json_repair` in `docs/reference/database-dialects.md`) is not unreadable: it reads and updates normally. `list` filters do not match it until it is saved again; the server log gives the count of such rows after the migration (`[migrations]`).
 
-**Unique keys.** A resource may name one `text` field as its `uniqueField`. The host copies that field's value into an indexed column with a unique index over `(plugin, resource, key)`. The key is the value with surrounding whitespace trimmed and nothing else changed, at most 512 characters: it is case-sensitive and compares by code point, so `Evt_1` and `evt_1` are two keys, and so are a precomposed and a decomposed accent. Normalise in the plugin if you need otherwise. A record that leaves the field empty has no key and never collides. `getByKey` trims its argument the same way (`deriveRecordUniqueKey` in `src/core/plugins/resourceRecords.ts` is the one derivation). `parsePluginManifest` and `bun instatic-plugin lint` reject a `uniqueField` that is not a declared `text` field.
+**Unique keys.** A resource may name one `text` field as its `uniqueField`. The host copies that field's value into an indexed column with a unique index over `(plugin, resource, key)`. The key is the value with surrounding whitespace trimmed and nothing else changed, at most 512 characters: it is case-sensitive and compares by code point, so `Evt_1` and `evt_1` are two keys, and so are a precomposed and a decomposed accent. Normalise in the plugin if you need otherwise. A record that leaves the field empty has no key and never collides. `getByKey` trims its argument the same way (`deriveRecordUniqueKey` in `src/core/plugins/resourceRecords.ts` is the one derivation). `parsePluginManifest` and `instatic-plugin lint` reject a `uniqueField` that is not a declared `text` field.
 
 ```ts
 resources: [{
@@ -1238,15 +1238,24 @@ Full descriptions and labels live in `src/core/plugin-sdk/capabilities.ts` — t
 
 ## CLI workflow
 
-`bun run instatic-plugin <command>` runs the SDK CLI at `src/core/plugin-sdk/cli/` inside this repo. A plugin project of its own installs the `@instatic/plugin-sdk` package and runs the same CLI as `bunx instatic-plugin <command>` (see "Working outside the Instatic checkout" below). The CLI's primary input is `instatic-plugin.config.ts`.
+The SDK CLI lives at `src/core/plugin-sdk/cli/`. Its primary input is `instatic-plugin.config.ts`. How it is run depends on where the plugin lives:
 
 ```sh
-bun instatic-plugin init acme.hero    # scaffold a module plugin
-bun instatic-plugin init acme.seo --kind content-editor
-bun instatic-plugin lint              # validate config + manifest + sources + bundles
-bun instatic-plugin build             # produce dist/ + .plugin.zip
-bun instatic-plugin dev               # watch + sync into a running CMS
+# Inside this checkout: the root `instatic-plugin` script. `bun run` always
+# starts it from the checkout root, so every command takes the plugin's path.
+bun run instatic-plugin init acme.hero                       # scaffold a module plugin
+bun run instatic-plugin init acme.seo --kind content-editor
+bun run instatic-plugin lint hero     # validate config + manifest + sources + bundles
+bun run instatic-plugin build hero    # write hero/dist/ + hero/hero.plugin.zip
+bun run instatic-plugin dev hero      # watch + sync into a running CMS
+
+# In a plugin project of its own (see "Working outside the Instatic checkout"):
+bunx instatic-plugin init acme.hero
+cd hero && bun install
+bun run lint && bun run build && bun run dev
 ```
+
+`build` writes `dist/` and `<folder>.plugin.zip` inside the plugin folder; the scaffolded `.gitignore` covers both.
 
 The default scaffold kind is `module` (one canvas module). `--kind content-editor` scaffolds a server plugin that subscribes to content events and uses `api.cms.content.*`.
 
@@ -1292,10 +1301,10 @@ The build script auto-wires entrypoints from source folders: `server/index.{ts,j
 
 `instatic-plugin dev` writes built files **directly** into the host's `uploads/plugins/<id>/<version>/`. Subsequent rebuilds are picked up on the next activation cycle.
 
-When running inside the instatic monorepo, the CLI auto-detects the host's `uploads/` by walking up the tree. From a separate plugin repo:
+Inside this checkout the CLI finds the host's `uploads/` by walking up from the plugin folder. From a plugin project of its own, tell it where the CMS keeps them:
 
 ```sh
-INSTATIC_UPLOADS_DIR=../instatic/uploads bunx instatic-plugin dev
+INSTATIC_UPLOADS_DIR=../instatic/uploads bun run dev
 # or
 bunx instatic-plugin dev --uploads ../instatic/uploads
 ```
@@ -1304,48 +1313,50 @@ First install still goes through the admin UI (`/admin/plugins` → Upload Plugi
 
 ### Working outside the Instatic checkout
 
-`@instatic/plugin-sdk` is an installable package: the same SDK and CLI, bundled so that nothing in it depends on this repo. `bun run sdk:pack` builds it (`scripts/lib/pluginSdkPackage.ts`), and each Instatic release publishes it twice: to npm, and as the release asset `instatic-plugin-sdk-<version>.tgz`.
+`@instatic/plugin-sdk` is an installable package: the same SDK and CLI, bundled so that nothing in it depends on this repo. `bun run sdk:pack` builds it (`scripts/lib/pluginSdkPackage.ts`) and every Instatic release attaches it as `instatic-plugin-sdk-<version>.tgz`.
 
 ```sh
-bun add -d @instatic/plugin-sdk@<version>
+mkdir plugins && cd plugins
+bun add -d https://github.com/CoreBunch/Instatic/releases/download/v<version>/instatic-plugin-sdk-<version>.tgz
 bunx instatic-plugin init acme.hero
 cd hero && bun install
 bun run typecheck && bun run lint && bun run build
 ```
 
-To install without npm, use the release asset as the dependency instead: `https://github.com/CoreBunch/Instatic/releases/download/v<version>/instatic-plugin-sdk-<version>.tgz`. The scaffold's `package.json` pins the npm version; its README carries the asset URL.
-
 Install the SDK version of the CMS release the plugin targets. The package states the plugin `apiVersion` it writes in `package.json` → `instatic.pluginApiVersion`.
 
-- **What the package holds.** `dist/index.js` (the runtime builders), `dist/cli/index.js` (the `instatic-plugin` bin, which needs Bun) and `dist/chunks/` (code the two share, so the config the CLI evaluates and the CLI itself use one module registry). Its only dependencies are jsdom and happy-dom, which the CLI uses to build a DOM, and `@sinclair/typebox` for the types.
-- **Types.** `types/` is the declaration tree `tsc` emits for the SDK, with every `@core/*`-style specifier rewritten to a relative path. `host.d.ts` declares `@instatic/host-ui` and `@instatic/host-hooks`, which the editor supplies at runtime and nothing installs; add `@types/react` for JSX.
-- **TypeScript settings.** The scaffolded `tsconfig.json` sets `"moduleResolution": "bundler"` and `"skipLibCheck": true`, and both are needed. The editor store type reaches host libraries a plugin does not install (zustand and the vendored icon set); with `skipLibCheck` those members read as `any`.
-- **Two scaffolds.** The packaged CLI writes a `package.json` and a `tsconfig.json`, so the plugin is a project of its own. Run from source inside this checkout (`bun run instatic-plugin init`), it writes neither: the checkout's root `tsconfig.json` maps `@instatic/plugin-sdk` to `src/core/plugin-sdk`, and Bun reads only the nearest `tsconfig.json`, so one inside the plugin folder would hide that mapping.
+- **The dependency is the release asset.** `init` writes that URL into the scaffold's `package.json`. It is not a registry name: `@instatic/plugin-sdk` is not on npm yet, so a bare version would fail to install, and an unclaimed name could be answered by someone else's package. Publishing to npm is wired into the release but switched off (see [release-workflow.md](../deployment/release-workflow.md)); scaffolds move to the npm version in a later change, once it is live.
+- **A version with no release yet.** Working from a checkout whose version has not been released, there is no asset to download. Run `bun run sdk:pack` in the checkout and depend on the file it writes: `"@instatic/plugin-sdk": "file:../instatic/.tmp/plugin-sdk/instatic-plugin-sdk-<version>.tgz"`.
+- **What the package holds.** `dist/index.js` (the runtime builders), `dist/cli/index.js` (the `instatic-plugin` bin, which needs Bun) and `dist/chunks/` (code the two share, so the config the CLI evaluates and the CLI itself use one module registry). jsdom and happy-dom are dependencies because the CLI builds a DOM with them. `@sinclair/typebox`, `zustand`, `mutative` and `zustand-mutative` are dependencies for their types only.
+- **Types.** `types/` holds the declarations `tsc` emits for the SDK, with every `@core/*`-style specifier rewritten to a relative path and everything the three type entries cannot reach removed. `host.d.ts` declares `@instatic/host-ui` and `@instatic/host-hooks`, which the editor supplies at runtime and nothing installs. The icon component type comes from a copy of the vendored icon set's declarations. A plugin typechecks without `skipLibCheck`; the scaffold declares `@types/react` for editor code and sets `"moduleResolution": "bundler"`, which the declarations need.
+- **Two scaffolds.** The packaged CLI writes a `package.json` and a `tsconfig.json`, so the plugin is a project of its own. Run from source inside this checkout, `init` writes neither: the checkout's root `tsconfig.json` maps `@instatic/plugin-sdk` to `src/core/plugin-sdk`, and Bun reads only the nearest `tsconfig.json`, so one inside the plugin folder would hide that mapping.
 
-`src/__tests__/plugin-sdk/sdkPackage.test.ts` builds the package, unpacks it into a project under the OS temp directory and runs `init`, `tsc`, `lint` and `build` there, then compares the result with what the in-repo CLI builds from the same source.
+`src/__tests__/plugin-sdk/sdkPackage.test.ts` builds the package, unpacks it into a project under the OS temp directory and runs `init`, `tsc`, `lint`, `build` and `dev` there. It compares the manifest, the file set and the editor bundle with what the in-repo CLI builds from the same source.
 
 ---
 
 ## Adding a new plugin
 
+The commands below are for a plugin project of its own; inside this checkout use `bun run instatic-plugin <command> <plugin-folder>` instead.
+
 1. **Scaffold:**
    ```sh
-   bun instatic-plugin init my-plugin
-   cd my-plugin
+   bunx instatic-plugin init my-plugin
+   cd my-plugin && bun install
    ```
 2. **Edit `instatic-plugin.config.ts`.** Pick a namespaced ID (`vendor.product`), declare only the permissions you use, and add resources, settings, admin pages, modules, frontend assets, content access, or packs there.
 3. **Write entrypoint source files.** Add `server/index.ts` for sandboxed server hooks/routes/schedules/media, `editor/index.tsx` for unsandboxed editor/dashboard surfaces, top-level `frontend/*.ts` files for published-page scripts, and app entries referenced by `adminPages[].content.entry` for custom admin pages.
 4. **Use SDK builders.** Import from `@instatic/plugin-sdk` for `definePlugin`, `permissions`, `defineModule`, `definePack`, controls, and types. The CLI emits `plugin.json` and runtime bundles into `dist/`.
 5. **Lint:**
    ```sh
-   bun instatic-plugin lint
+   bun run lint
    ```
 6. **Build:**
    ```sh
-   bun instatic-plugin build
+   bun run build
    ```
 7. **Install via admin UI** (`/admin/plugins` → Upload Plugin), approve permissions.
-8. **Iterate** with `bun instatic-plugin dev`.
+8. **Iterate** with `bun run dev`.
 
 ### Cookbook: a server route + storage collection
 

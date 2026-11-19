@@ -28,9 +28,9 @@ export function sdkTarballName(version: string): string {
 }
 
 /**
- * Where the tarball of `version` is downloaded from: an asset of the
- * matching Instatic release. It installs without a registry, so it is the
- * fallback when the package cannot be taken from npm.
+ * The dependency specifier a scaffolded plugin uses for the SDK: the tarball
+ * attached to the Instatic release of the same version. It installs without
+ * a registry and cannot be answered by anyone but this repository's releases.
  */
 export function sdkTarballUrl(version: string): string {
   return `https://github.com/CoreBunch/Instatic/releases/download/v${version}/${sdkTarballName(version)}`

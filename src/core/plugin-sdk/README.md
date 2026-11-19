@@ -10,23 +10,25 @@ your plugin targets.
 ## Start a plugin
 
 ```bash
-bun add -d @instatic/plugin-sdk@<version>
+mkdir plugins && cd plugins
+bun add -d https://github.com/CoreBunch/Instatic/releases/download/v<version>/instatic-plugin-sdk-<version>.tgz
 bunx instatic-plugin init acme.hello
 cd hello && bun install
 ```
 
-The same package is attached to every Instatic release, for installs that
-cannot use npm:
+The scaffold is a project of its own, with the same SDK dependency in its
+`package.json` and these scripts:
 
 ```bash
-bun add -d https://github.com/CoreBunch/Instatic/releases/download/v<version>/instatic-plugin-sdk-<version>.tgz
+bun run typecheck
+bun run lint     # validate the manifest and sources
+bun run build    # write dist/ and hello.plugin.zip
+bun run dev -- --uploads <instatic>/uploads   # rebuild into a running CMS
 ```
 
-```bash
-bunx instatic-plugin lint     # validate the manifest and sources
-bunx instatic-plugin build    # write dist/ and a .plugin.zip
-bunx instatic-plugin dev --uploads <instatic>/uploads   # rebuild into a running CMS
-```
+To build against an Instatic version that has no release yet, run
+`bun run sdk:pack` in that Instatic checkout and depend on the file it writes
+(`file:../instatic/.tmp/plugin-sdk/instatic-plugin-sdk-<version>.tgz`).
 
 ## Write one
 
@@ -43,15 +45,11 @@ export default definePlugin({
 
 Code that runs in the editor imports React, `@instatic/host-ui` and
 `@instatic/host-hooks`. The editor supplies all three at runtime, so they are
-never installed or bundled. Their types ship in this package; add
-`@types/react` for JSX.
+never installed or bundled. Their types ship in this package, and the
+scaffold declares `@types/react` for JSX.
 
-## TypeScript settings
-
-The scaffold's `tsconfig.json` sets the two options the declaration files
-need: `"moduleResolution": "bundler"` and `"skipLibCheck": true`. The editor
-store type that `useEditorStore` returns mentions host libraries a plugin does
-not install; with `skipLibCheck` those members read as `any`.
+The declaration files need `"moduleResolution": "bundler"`, which the
+scaffold's `tsconfig.json` sets.
 
 Full documentation:
 [plugin-system.md](https://github.com/CoreBunch/Instatic/blob/main/docs/features/plugin-system.md).

@@ -80,21 +80,29 @@ repo, built by `bun run sdk:pack`. See
 [plugin-system.md](../features/plugin-system.md) → "Working outside the
 Instatic checkout".
 
-The `Publish Plugin SDK to npm` job then publishes that same file to npm with
+The `Publish Plugin SDK to npm` job publishes that same file to npm. It is
+off until the repository variable `PUBLISH_PLUGIN_SDK_TO_NPM` is `true`, and
+skipped (not failed) while it is off. It uses
 [trusted publishing](https://docs.npmjs.com/trusted-publishers): npm accepts
 the workflow's OIDC token, so the repository holds no npm token, and the
-package gets a provenance attestation. The job publishes nothing, and does
-not fail, while `@instatic/plugin-sdk` does not exist on npm or already has
-the version. One-time setup on npm:
+package gets a provenance attestation. One-time setup, in this order:
 
-1. Create the `instatic` organisation.
+1. Create the `instatic` organisation on npm.
 2. Publish the package once by hand so it exists: download the tarball from a
    release and run `npm publish instatic-plugin-sdk-<version>.tgz --access public`.
-3. In the package's settings, add a trusted publisher: GitHub Actions,
+3. In the package's settings on npm, add a trusted publisher: GitHub Actions,
    repository `CoreBunch/Instatic`, workflow file `release.yml`.
+4. Set the repository variable `PUBLISH_PLUGIN_SDK_TO_NPM` to `true`.
+
+Once it is on, the job skips a version that is already on npm, publishes a
+prerelease (`1.2.3-rc.1`) under the `next` dist-tag instead of `latest`, and
+fails on anything else that goes wrong: a registry or network error, or a
+trusted publisher that is not set up. A failure there does not undo the
+release; fix the cause and re-run the job.
 
 It uses the npm CLI rather than Bun because trusted publishing is an npm CLI
-feature (11.5.1 or newer).
+feature (11.5.1 or newer). Scaffolded plugins depend on the release asset,
+not on npm, until a later change switches them.
 
 The `instatic-server-*` assets are per-platform **runnable server artifacts**: a
 `bun build --compile` single-file server binary (Bun runtime, sharp/libvips,

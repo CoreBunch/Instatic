@@ -65,28 +65,31 @@ const TYPE_ENTRIES = {
  */
 const RUNTIME_DEPENDENCIES = ['jsdom', 'happy-dom'] as const
 
-/** Packages the declaration files import that a plugin author needs resolved. */
-const TYPE_DEPENDENCIES = ['@sinclair/typebox'] as const
+/**
+ * Packages the declaration files import, installed so a plugin typechecks
+ * without `skipLibCheck`. TypeBox types the manifest and content shapes;
+ * zustand, mutative and zustand-mutative type the editor store that
+ * `useEditorStore` returns. None of them is loaded at runtime.
+ */
+const TYPE_DEPENDENCIES = ['@sinclair/typebox', 'zustand', 'mutative', 'zustand-mutative'] as const
 
 /**
- * Packages the declaration files mention only through the editor store and
- * the host UI internals (`useEditorStore`'s state type reaches the collab and
- * canvas layers). They are deliberately NOT dependencies: a plugin never
- * calls into them, and with `skipLibCheck` (which the scaffolded tsconfig
- * sets) the affected members read as `any` instead of failing the build. The
- * build fails when a package outside this list and the two above appears, so
+ * Packages the declaration files import without the package depending on
+ * them. `react` is the optional `@types/react` peer: a plugin that writes
+ * editor code installs it, a server-only plugin has no use for it. The build
+ * fails when a package outside this list and the dependencies appears, so
  * widening the surface is a decision, not an accident.
  */
-const HOST_ONLY_TYPE_PACKAGES = new Set([
-  'react',
-  'zustand',
-  'mutative',
-  'yjs',
-  'y-protocols',
-  'three',
-  'dompurify',
-  'pixel-art-icons',
-])
+const PEER_TYPE_PACKAGES = new Set(['react'])
+
+/**
+ * Type files copied into the package because their own package is not on
+ * npm. The icon set is vendored in this repo; `IconComponent` is part of a
+ * module definition's and a dashboard widget's public type.
+ */
+const VENDORED_TYPE_FILES: Record<string, { from: string; to: string }> = {
+  'pixel-art-icons/types': { from: 'vendor/pixel-art-icons/dist/types.d.ts', to: 'vendor/pixel-art-icons/types.d.ts' },
+}
 
 export interface BuiltSdkPackage {
   version: string
@@ -99,7 +102,6 @@ const RootPackageJsonSchema = Type.Object({
   license: Type.String(),
   author: Type.String(),
   homepage: Type.String(),
-  repository: Type.Unknown(),
   bugs: Type.Unknown(),
   engines: Type.Object({ bun: Type.String() }),
   dependencies: Type.Record(Type.String(), Type.String()),
@@ -339,8 +341,6 @@ async function buildDeclarations(typesDir: string): Promise<DeclarationBuild> {
     augmentersByTarget.set(targetOut, list)
   }
 
-  const externalPackages = new Set<string>()
-  const expectedTargets = new Map<string, string>()
   const writes: Promise<void>[] = []
 
   const emit = program.emit(
@@ -353,17 +353,26 @@ async function buildDeclarations(typesDir: string): Promise<DeclarationBuild> {
       for (const { literal, augmentation } of collectModuleSpecifiers(declaration)) {
         const specifier = literal.text
         if (specifier.startsWith('.')) continue
+        const vendored = VENDORED_TYPE_FILES[specifier]
+        if (vendored) {
+          edits.push({
+            start: literal.getStart(declaration) + 1,
+            end: literal.getEnd() - 1,
+            text: relativeSpecifier(outFile, join(typesDir, vendored.to).replace(/\.d\.ts$/, '')),
+          })
+          continue
+        }
         const resolved = resolveInSource(specifier, source.fileName)
         if (resolved) {
           const target = declarationTargetOf(resolved, typesDir)
-          expectedTargets.set(`${target}.d.ts`, `${specifier} (from ${relative(ROOT, source.fileName)})`)
           edits.push({
             start: literal.getStart(declaration) + 1,
             end: literal.getEnd() - 1,
             text: relativeSpecifier(outFile, target),
           })
-        } else if (!augmentation) {
-          externalPackages.add(packageNameOf(specifier))
+        } else if (augmentation) {
+          // A `declare module` naming something outside src/ is left as written.
+          continue
         }
       }
       let rewritten = text
@@ -391,14 +400,57 @@ async function buildDeclarations(typesDir: string): Promise<DeclarationBuild> {
     throw new Error(`[sdk:pack] declaration emit failed:\n${ts.formatDiagnostics(emit.diagnostics, host)}`)
   }
 
-  // A rewritten specifier must land on a file that was really emitted. With
-  // `skipLibCheck` a dangling one would silently turn the type into `any`.
-  const missing = [...expectedTargets].filter(([target]) => !existsSync(target))
-  if (missing.length > 0) {
-    const lines = missing.map(([target, origin]) => `  ${relative(typesDir, target)} ← ${origin}`)
-    throw new Error(`[sdk:pack] declarations import files that were not emitted:\n${lines.join('\n')}`)
+  for (const { from, to } of Object.values(VENDORED_TYPE_FILES)) {
+    await mkdir(dirname(join(typesDir, to)), { recursive: true })
+    await cp(join(ROOT, from), join(typesDir, to))
+  }
+
+  await pruneUnreachableDeclarations(typesDir)
+
+  const externalPackages = new Set<string>()
+  for (const specifier of (await collectDeclarationImports(typesDir)).keys()) {
+    if (!specifier.startsWith('.')) externalPackages.add(packageNameOf(specifier))
   }
   return { externalPackages }
+}
+
+/**
+ * `tsc` emits a declaration for every file in the program, including the
+ * ones an entry only reaches for values (the CLI, the collab engine, whole
+ * editor panels). Keep what the type entries can actually reach through the
+ * emitted declarations and delete the rest.
+ */
+async function pruneUnreachableDeclarations(typesDir: string): Promise<void> {
+  const reachable = new Set<string>()
+  const queue = Object.values(TYPE_ENTRIES).map((entry) => join(typesDir, relative('src', entry).replace(/\.tsx?$/, '.d.ts')))
+  while (queue.length > 0) {
+    const file = queue.pop()
+    if (!file || reachable.has(file)) continue
+    reachable.add(file)
+    const declaration = ts.createSourceFile(file, await readFile(file, 'utf-8'), ts.ScriptTarget.Latest, true)
+    for (const { literal } of collectModuleSpecifiers(declaration)) {
+      if (!literal.text.startsWith('.')) continue
+      const base = resolve(dirname(file), literal.text)
+      const target = [`${base}.d.ts`, join(base, 'index.d.ts')].find((candidate) => existsSync(candidate))
+      if (!target) throw new Error(`[sdk:pack] ${relative(typesDir, file)} imports "${literal.text}", which was not emitted`)
+      queue.push(target)
+    }
+  }
+  for (const file of await listFiles(typesDir, '.d.ts')) {
+    if (!reachable.has(file)) await rm(file)
+  }
+  await removeEmptyDirectories(typesDir)
+}
+
+async function removeEmptyDirectories(dir: string): Promise<boolean> {
+  let empty = true
+  for (const entry of await readdir(dir, { withFileTypes: true })) {
+    const path = join(dir, entry.name)
+    if (entry.isDirectory() && (await removeEmptyDirectories(path))) continue
+    empty = false
+  }
+  if (empty) await rm(dir, { recursive: true })
+  return empty
 }
 
 function declarationPathOf(entry: string): string {
@@ -448,7 +500,7 @@ function packageManifest(root: RootPackageJson, version: string): Record<string,
     license: root.license,
     author: root.author,
     homepage: root.homepage,
-    repository: root.repository,
+    repository: SDK_REPOSITORY,
     bugs: root.bugs,
     type: 'module',
     engines: { bun: root.engines.bun.split(' ')[0] },
@@ -481,8 +533,8 @@ function assertDependenciesAreDeclared(
     problems.push(`JavaScript imports "${specifier}" (${files.join(', ')}) but it is not a dependency`)
   }
   for (const name of typePackages) {
-    if (declared.has(name) || HOST_ONLY_TYPE_PACKAGES.has(name)) continue
-    problems.push(`declarations import "${name}", which is neither a dependency nor a known host-only type package`)
+    if (declared.has(name) || PEER_TYPE_PACKAGES.has(name)) continue
+    problems.push(`declarations import "${name}", which is neither a dependency nor the @types/react peer`)
   }
   if (problems.length > 0) throw new Error(`[sdk:pack] undeclared imports:\n  ${problems.join('\n  ')}`)
 }
@@ -500,6 +552,18 @@ async function packTarball(outRoot: string, version: string): Promise<string> {
   return tarballPath
 }
 
+const SEMVER_PATTERN = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/
+
+/**
+ * Written with the repository's real casing. npm checks a provenance
+ * attestation's source repository against this field.
+ */
+const SDK_REPOSITORY = {
+  type: 'git',
+  url: 'git+https://github.com/CoreBunch/Instatic.git',
+  directory: 'src/core/plugin-sdk',
+}
+
 export interface BuildSdkPackageOptions {
   /** Where `package/` and the tarball are written. */
   outRoot?: string
@@ -511,6 +575,9 @@ export async function buildPluginSdkPackage(options: BuildSdkPackageOptions = {}
   const outRoot = options.outRoot ?? DEFAULT_SDK_OUT_ROOT
   const root = await readRootPackageJson()
   const version = options.version ?? root.version
+  if (!SEMVER_PATTERN.test(version)) {
+    throw new Error(`[sdk:pack] "${version}" is not a semver version (expected e.g. 1.2.3 or 1.2.3-rc.1)`)
+  }
   const packageDir = join(outRoot, 'package')
   await rm(packageDir, { recursive: true, force: true })
   await mkdir(packageDir, { recursive: true })
