@@ -21,6 +21,7 @@ import type {
   InstalledPlugin,
   PluginManifest,
   PluginFrontendOrigins,
+  PluginMailTemplateDeclaration,
   PluginPermission,
 } from '@core/plugin-sdk'
 import { requestCmsSiteReload } from '@admin/state/adminEvents'
@@ -64,6 +65,8 @@ interface PendingInstall {
   previousNetworkAllowedHosts?: string[]
   /** `frontend.origins` from the existing install, diffed the same way. */
   previousFrontendOrigins?: PluginFrontendOrigins
+  /** `mail.templates` from the existing install: an added or reworded email is flagged. */
+  previousMailTemplates?: PluginMailTemplateDeclaration[]
 }
 
 /**
@@ -335,6 +338,7 @@ export function usePluginsWorkspace(): PluginsWorkspaceVM {
           ? { previousNetworkAllowedHosts }
           : {}),
         ...(previousFrontendOrigins !== undefined ? { previousFrontendOrigins } : {}),
+        ...(existing ? { previousMailTemplates: existing.manifest.mail?.templates ?? [] } : {}),
       })
     } catch (err) {
       setError(getErrorMessage(err, 'Could not install plugin'))

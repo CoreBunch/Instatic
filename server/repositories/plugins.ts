@@ -15,6 +15,7 @@ import {
 import type { StorageListOptions, StorageFilterOperator } from '@core/plugin-sdk/storageSchemas'
 import { parsePluginManifest } from '@core/plugins/manifest'
 import type { DbClient, Dialect } from '../db/client'
+import { nanoid } from 'nanoid'
 import { isoDate, nowIso } from '@core/utils/isoDate'
 import { jsonField } from '../db/jsonExtract'
 
@@ -545,4 +546,25 @@ export async function listPluginCrashes(
 /** Drop every crash event for a plugin. Called on every uninstall path + on manual restart. */
 export async function clearPluginCrashes(db: DbClient, pluginId: string): Promise<void> {
   await db`delete from plugin_crash_events where plugin_id = ${pluginId}`
+}
+
+/**
+ * The random id of the current install of a plugin, or null when it is not
+ * installed. An install gets its id the first time it is asked for, and a
+ * plugin that is uninstalled and installed again is a new install with a
+ * new one: the id tells two installs of one plugin id apart, which the
+ * plugin id cannot and a timestamp should not be trusted to.
+ */
+export async function ensurePluginInstallId(db: DbClient, pluginId: string): Promise<string | null> {
+  // Conditional, so two callers at once agree on one id.
+  await db`update installed_plugins set install_id = ${nanoid()} where id = ${pluginId} and install_id is null`
+  return getPluginInstallId(db, pluginId)
+}
+
+/** The id `ensurePluginInstallId` gave the current install, or null when there is none. */
+export async function getPluginInstallId(db: DbClient, pluginId: string): Promise<string | null> {
+  const { rows } = await db<{ install_id: string | null }>`
+    select install_id from installed_plugins where id = ${pluginId}
+  `
+  return rows[0]?.install_id ?? null
 }

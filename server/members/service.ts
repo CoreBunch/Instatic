@@ -32,6 +32,7 @@ import { MAIL_ADDRESS_PATTERN } from '@core/mail'
 import { MIN_PASSWORD_LENGTH } from '@core/utils/passwordPolicy'
 import { hashPassword, hashSessionToken, verifyPassword } from '../auth/tokens'
 import { memberLimits } from './limits'
+import { discardQueuedMailForMember } from '../mail/delivery'
 import { emitMemberHook } from './hooks'
 import { memberLinkPage, memberTokenLink, queueMemberMail } from './mail'
 import { getMemberPagePaths, resolveMemberPagePaths } from './pages'
@@ -600,6 +601,7 @@ export async function deleteAccount(
   if (denied) return denied
   await recordMemberEvent(ctx.db, current.member.id, 'deleted', ctx)
   await anonymizeMember(ctx.db, current.member.id)
+  await discardQueuedMailForMember(ctx.db, current.member.id)
   return { ok: true, code: 'deleted', session: 'clear' }
 }
 

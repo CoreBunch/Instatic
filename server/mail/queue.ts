@@ -25,6 +25,7 @@ import { isoDate, nowIso } from '@core/utils/isoDate'
 import { decryptSecret, encryptSecret, type EncryptedSecret } from '../secrets/encryption'
 import { loadMasterKey } from '../secrets/masterKey'
 import { CORE_MAIL_SOURCE } from './activity'
+import { releaseBacklogSlot } from './limits'
 
 const QueuedPayloadSchema = Type.Object({
   variables: Type.Record(Type.String(), Type.String()),
@@ -58,11 +59,13 @@ interface QueueRow {
   to_address: string
   source: string
   reference: string | null
+  member_id: string | null
   payload_ciphertext: Uint8Array
   payload_iv: Uint8Array
   attempts: number
   last_error: string | null
   deliver_before: Date | string
+  install_id: string | null
   suspect_at: Date | string | null
 }
 
@@ -77,11 +80,15 @@ export interface QueuedMail {
   source: string
   /** The sender's own name for this email, handed back with the outcome. */
   reference: string | null
+  /** Set when the sender named a site member, not an address. */
+  memberId: string | null
   attempts: number
   /** Why the last attempt did not deliver it, if there was one. */
   lastError: string | null
   /** After this moment the email is not sent any more. Milliseconds since the epoch. */
   deliverBefore: number
+  /** The install of the sending plugin that queued it (see `ensurePluginInstallId`). Null for the core's email. */
+  installId: string | null
   /** An earlier try got an ambiguous refusal (see `markQueuedMailSuspect`). */
   suspect: boolean
   payload: EncryptedSecret
@@ -95,9 +102,11 @@ function toQueuedMail(row: QueueRow): QueuedMail {
     to: row.to_address,
     source: row.source,
     reference: row.reference,
+    memberId: row.member_id,
     attempts: Number(row.attempts),
     lastError: row.last_error,
     deliverBefore: Date.parse(isoDate(row.deliver_before)),
+    installId: row.install_id,
     suspect: row.suspect_at !== null,
     payload: { ciphertext: row.payload_ciphertext, iv: row.payload_iv },
   }
@@ -123,6 +132,10 @@ export interface EnqueueMailInput {
   deliverBefore: number
   source?: string
   reference?: string
+  /** The site member the email is for, when the sender named one rather than an address. */
+  memberId?: string
+  /** The sending plugin's install. */
+  installId?: string
 }
 
 export async function enqueueMail(db: DbClient, input: EnqueueMailInput): Promise<void> {
@@ -130,11 +143,11 @@ export async function enqueueMail(db: DbClient, input: EnqueueMailInput): Promis
   const now = nowIso()
   await db`
     insert into mail_queue (
-      id, outbox_id, kind, to_address, source, reference, lane,
+      id, outbox_id, kind, to_address, source, reference, member_id, install_id, lane,
       payload_ciphertext, payload_iv, attempts, next_attempt_at, deliver_before, created_at
     ) values (
       ${nanoid()}, ${input.outboxId}, ${input.kind}, ${input.to}, ${source}, ${input.reference ?? null},
-      ${source === CORE_MAIL_SOURCE ? 0 : 1},
+      ${input.memberId ?? null}, ${input.installId ?? null}, ${source === CORE_MAIL_SOURCE ? 0 : 1},
       ${input.payload.ciphertext}, ${input.payload.iv}, 0, ${now},
       ${new Date(input.deliverBefore).toISOString()}, ${now}
     )
@@ -179,8 +192,8 @@ export async function releaseStaleMailClaims(db: DbClient, now: number): Promise
   `
 }
 
-const QUEUE_COLUMNS = `id, outbox_id, kind, to_address, source, reference,
-  payload_ciphertext, payload_iv, attempts, last_error, deliver_before, suspect_at`
+const QUEUE_COLUMNS = `id, outbox_id, kind, to_address, source, reference, member_id,
+  payload_ciphertext, payload_iv, attempts, last_error, deliver_before, install_id, suspect_at`
 
 function placeholder(db: DbClient, index: number): string {
   return db.dialect === 'postgres' ? `$${index}` : '?'
@@ -308,30 +321,46 @@ export async function markQueuedMailAccepted(db: DbClient, id: string): Promise<
  * Rows whose email was accepted but whose bookkeeping did not finish (the
  * log update or the delete failed, or the worker died in between).
  */
-export async function listAcceptedMail(db: DbClient): Promise<Array<{ id: string; outboxId: string; attempts: number }>> {
-  const { rows } = await db<{ id: string; outbox_id: string; attempts: number }>`
-    select id, outbox_id, attempts from mail_queue where accepted_at is not null
-  `
-  return rows.map((row) => ({ id: row.id, outboxId: row.outbox_id, attempts: Number(row.attempts) }))
+export async function listAcceptedMail(db: DbClient): Promise<QueuedMail[]> {
+  const { rows } = await db.unsafe<QueueRow>(
+    `select ${QUEUE_COLUMNS} from mail_queue where accepted_at is not null`,
+  )
+  return rows.map(toQueuedMail)
 }
 
-/** The email left, or was given up on: nothing of it stays in the queue. */
-export async function removeQueuedMail(db: DbClient, id: string): Promise<void> {
-  await db`delete from mail_queue where id = ${id}`
+/**
+ * The email left, or was given up on: nothing of it stays in the queue. A
+ * plugin's email also gives its place in that plugin's backlog back, in the
+ * same transaction, so the count never drifts from the rows.
+ */
+export async function removeQueuedMail(db: DbClient, mail: Pick<QueuedMail, 'id' | 'source'>): Promise<void> {
+  if (mail.source === CORE_MAIL_SOURCE) {
+    await db`delete from mail_queue where id = ${mail.id}`
+    return
+  }
+  await db.transaction(async (tx) => {
+    const removed = await tx`delete from mail_queue where id = ${mail.id}`
+    if (removed.rowCount > 0) await releaseBacklogSlot(tx, mail.source)
+  })
 }
 
-/** Put a claimed email back to be tried again at `nextAttemptAt`. */
+/**
+ * Put a claimed email back to be tried again at `nextAttemptAt`. False when
+ * the row is gone: its sender was uninstalled, or its member deleted, while
+ * it was being sent.
+ */
 export async function rescheduleQueuedMail(
   db: DbClient,
   id: string,
   retry: { attempts: number; nextAttemptAt: string; error: string },
-): Promise<void> {
-  await db`
+): Promise<boolean> {
+  const put = await db`
     update mail_queue
        set claimed_at = null, attempts = ${retry.attempts},
            next_attempt_at = ${retry.nextAttemptAt}, last_error = ${retry.error}
      where id = ${id}
   `
+  return put.rowCount > 0
 }
 
 /**
@@ -339,8 +368,22 @@ export async function rescheduleQueuedMail(
  * For a failure that is the connector's and not the email's: it is due again
  * the moment delivery resumes, with no attempt counted against it.
  */
-export async function holdQueuedMail(db: DbClient, id: string, error: string): Promise<void> {
-  await db`update mail_queue set claimed_at = null, last_error = ${error} where id = ${id}`
+export async function holdQueuedMail(db: DbClient, id: string, error: string): Promise<boolean> {
+  const put = await db`update mail_queue set claimed_at = null, last_error = ${error} where id = ${id}`
+  return put.rowCount > 0
+}
+
+/** Every queued email matching a column value, for removing a sender's or a member's mail. */
+export async function listQueuedMailBy(
+  db: DbClient,
+  column: 'source' | 'member_id',
+  value: string,
+): Promise<QueuedMail[]> {
+  const { rows } = await db.unsafe<QueueRow>(
+    `select ${QUEUE_COLUMNS} from mail_queue where ${column} = ${placeholder(db, 1)}`,
+    [value],
+  )
+  return rows.map(toQueuedMail)
 }
 
 /**

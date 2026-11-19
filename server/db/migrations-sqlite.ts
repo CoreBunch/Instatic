@@ -1766,4 +1766,38 @@ export const sqliteMigrations: Migration[] = [
       alter table mail_connectors add column delivery_paused_at text;
     `,
   },
+  {
+    // Email a plugin asks for. `mail_counters` holds the two limits as rows
+    // that are raised by one conditional UPDATE, so no two concurrent sends,
+    // on one server or several, can both take the last place: `to:<address>`
+    // counts a plugin's emails to one recipient in one clock hour (`bucket`),
+    // and `backlog` counts how many of a plugin's emails are waiting.
+    // `mail_queue.member_id` remembers that the sender named a site member
+    // rather than an address, so the outcome can be reported without ever
+    // handing the member's address back. `mail_outbox.source_label` is the
+    // sending plugin's name at the time, so the log still says who sent an
+    // email after that plugin is gone. `installed_plugins.install_id` is a
+    // random id given to an install when it first sends email, stamped on
+    // each email it queues (`mail_queue.install_id`): what became of an email
+    // is told only to the install that queued it, never to a later install of
+    // the same plugin id.
+    id: '035_plugin_mail',
+    sql: `
+      create table if not exists mail_counters (
+        source text not null,
+        scope text not null,
+        bucket text not null default '',
+        count integer not null default 0,
+        primary key (source, scope, bucket)
+      );
+
+      alter table mail_queue add column member_id text;
+
+      alter table mail_outbox add column source_label text;
+
+      alter table installed_plugins add column install_id text;
+
+      alter table mail_queue add column install_id text;
+    `,
+  },
 ]

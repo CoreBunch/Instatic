@@ -32,11 +32,17 @@
  *    handed to a provider again.
  *  - **Core mail first, new mail before retries.** See `claimNextDueMail`.
  */
+import { announceOutcome, type MailFailureReason } from './outcomes'
 import type { DbClient } from '../db/client'
+import { getMailTemplateDefinition } from '@core/mail'
 import { getErrorMessage } from '@core/utils/errorMessage'
-import { markMailSent, recordMail, updateMailProgress } from './activity'
+import { CORE_MAIL_SOURCE, markMailSent, recordMail, updateMailProgress } from './activity'
 import { connectorPauseReason, pauseConnectorDelivery, takeConnectorProbe } from './connectors'
+import { pluginMailTemplateDefinitions } from '@core/plugins/manifestMail'
+import { getInstalledPlugin } from '../repositories/plugins'
+import { findMemberById } from '../members/repository'
 import { getMailDefaults } from './defaults'
+import { releaseBacklogSlot, reserveBacklogSlot, reserveRecipientSlot } from './limits'
 import {
   backOffQueuedMail,
   claimExpiredMail,
@@ -49,6 +55,7 @@ import {
   enqueueMail,
   holdQueuedMail,
   listAcceptedMail,
+  listQueuedMailBy,
   markQueuedMailAccepted,
   QueuedMailUnreadableError,
   readQueuedVariables,
@@ -63,6 +70,8 @@ import {
   captureAllowed,
   carryThroughConnector,
   MailNotConfiguredError,
+  MailTemplateInvalidError,
+  MailVariableMissingError,
   readyToSend,
   type CarryOutcome,
   type SendDeps,
@@ -92,6 +101,20 @@ export interface QueueTemplateMailInput {
    * has a day.
    */
   deliverBefore?: number
+  /** Who asks: omitted for the core's own mail, a plugin's id otherwise. */
+  source?: string
+  /** The asking plugin's name, kept in the activity log. */
+  sourceLabel?: string
+  /** The sender's own name for this email, handed back with the outcome. */
+  reference?: string
+  /**
+   * The site member the email is for, when the sender named a member and
+   * the host looked the address up. The outcome then names the member, never
+   * the address: a sender that was not given the address does not learn it.
+   */
+  memberId?: string
+  /** The sending plugin's install; its outcome is told to that install only. */
+  installId?: string
 }
 
 /**
@@ -110,11 +133,27 @@ export async function queueTemplateMail(
   // The email is rendered again when it is sent, with the wording of then.
   const mail = await buildTemplateMail(db, input)
   assertSendable(mail)
-  const log = { kind: mail.kind, to: mail.to, subject: mail.subject }
+  const log = {
+    kind: mail.kind,
+    to: mail.to,
+    subject: mail.subject,
+    source: input.source,
+    sourceLabel: input.sourceLabel,
+  }
+  // A plugin's email takes its places in that plugin's limits inside the
+  // transaction that accepts it, so a refusal or a failure gives them back.
+  const limited = input.source !== undefined && input.source !== CORE_MAIL_SOURCE ? input.source : null
+  // Counted under the name the sender used. A member and an address are
+  // separate counts even when they are the same inbox: a shared count would
+  // tell the sender which address a member has.
+  const recipient = input.memberId !== undefined ? { member: input.memberId } : { address: input.to }
   const defaults = await getMailDefaults(db)
   if (!readyToSend(defaults)) {
     if (!captureAllowed(deps.env ?? process.env)) throw new MailNotConfiguredError()
-    await recordMail(db, { ...log, status: 'captured', body: mail.text })
+    await db.transaction(async (tx) => {
+      if (limited) await reserveRecipientSlot(tx, limited, recipient)
+      await recordMail(tx, { ...log, status: 'captured', body: mail.text, error: mail.note })
+    })
     return 'captured'
   }
   // An email accepted while delivery is paused says so from the start,
@@ -126,8 +165,22 @@ export async function queueTemplateMail(
   const deliverBefore = input.deliverBefore ?? Date.now() + MAIL_DELIVERY_WINDOW_MS
   // One transaction: the log never shows a waiting email the queue does not hold.
   await db.transaction(async (tx) => {
+    if (limited) {
+      await reserveRecipientSlot(tx, limited, recipient)
+      await reserveBacklogSlot(tx, limited)
+    }
     const outboxId = await recordMail(tx, { ...log, status: 'queued', error: waitingFor })
-    await enqueueMail(tx, { outboxId, kind: input.key, to: input.to, payload, deliverBefore })
+    await enqueueMail(tx, {
+      outboxId,
+      kind: input.key,
+      to: input.to,
+      payload,
+      deliverBefore,
+      source: input.source,
+      reference: input.reference,
+      memberId: input.memberId,
+      installId: input.installId,
+    })
   })
   wakeMailQueue()
   return 'queued'
@@ -161,16 +214,27 @@ let pausedUntil = 0
 let stopping = false
 
 type Attempt =
-  | { sent: true; outcome: Extract<CarryOutcome, { ok: true }> }
+  | { sent: true; outcome: Extract<CarryOutcome, { ok: true }>; note?: string }
   | {
       sent: false
       /** The sentence for the activity log. */
       message: string
       retry: MailRetry
+      /** What the sender is told when this attempt is the email's last. */
+      reason: MailFailureReason
       /** The connector to pause, when the failure was a connector's. */
       connectorId?: string
       outcome?: Extract<CarryOutcome, { ok: false }>
     }
+
+/** Whether the plugin that queued `mail` is installed and its manifest still has the template. */
+async function senderStillDeclares(db: DbClient, mail: QueuedMail): Promise<boolean> {
+  const sender = await getInstalledPlugin(db, mail.source)
+  if (!sender) return false
+  // A manifest that cannot be read just now says nothing about the template.
+  if (sender.kind !== 'ok') return true
+  return pluginMailTemplateDefinitions(sender.plugin.manifest).some((definition) => definition.key === mail.kind)
+}
 
 /**
  * How long before the delivery margin the last try is due. The worker looks
@@ -185,7 +249,7 @@ const PROBE_CANDIDATES = 3
 
 /** The provider judged this email or its recipient, plainly: not the account, and not ambiguously. */
 function refusedForItsOwnReasons(attempt: Attempt): boolean {
-  return !attempt.sent && attempt.outcome !== undefined && !attempt.outcome.suspect && attempt.retry === 'never'
+  return !attempt.sent && !attempt.outcome?.suspect && attempt.retry === 'never'
 }
 
 /** Try one queued email once. */
@@ -196,21 +260,65 @@ async function attemptQueuedMail(db: DbClient, mail: QueuedMail, deps: DrainDeps
   } catch (err) {
     // Only a failed decryption means the values, and the links in them, are
     // gone for good. Anything else may pass.
-    if (err instanceof QueuedMailUnreadableError) return { sent: false, message: err.message, retry: 'never' }
+    if (err instanceof QueuedMailUnreadableError) {
+      return { sent: false, message: err.message, retry: 'never', reason: 'unreadable' }
+    }
     throw err
+  }
+  if (mail.memberId !== null) {
+    // Accepted for a member who has since been suspended or deleted: they
+    // are not written to any more, whatever was queued for them.
+    const member = await findMemberById(db, mail.memberId)
+    if (!member || member.status !== 'active') {
+      return {
+        sent: false,
+        message: 'The member this email was for has been suspended or deleted.',
+        retry: 'never',
+        reason: 'recipient_unavailable',
+      }
+    }
   }
   const defaults = await getMailDefaults(db)
   if (!readyToSend(defaults)) {
-    return { sent: false, message: new MailNotConfiguredError().message, retry: 'connector' }
+    return { sent: false, message: new MailNotConfiguredError().message, retry: 'connector', reason: 'expired' }
+  }
+  if (!getMailTemplateDefinition(mail.kind)) {
+    // A plugin's templates are in the catalogue only while it is enabled. If
+    // the plugin is still installed and still declares this template (it is
+    // disabled, being upgraded or restarting), the email waits for it. The
+    // template is gone for good only when the plugin is, or when an upgrade
+    // dropped it.
+    if (mail.source !== CORE_MAIL_SOURCE && (await senderStillDeclares(db, mail))) {
+      return {
+        sent: false,
+        message: 'Waiting: the plugin that sends this email is not active.',
+        retry: 'later',
+        reason: 'expired',
+      }
+    }
+    return {
+      sent: false,
+      message: 'The template of this email no longer exists: its plugin was removed or no longer declares it.',
+      retry: 'never',
+      reason: 'template_removed',
+    }
   }
   let rendered
   try {
-    rendered = await buildTemplateMail(db, { key: mail.kind, to: mail.to, variables })
+    rendered = await buildTemplateMail(db, { key: mail.kind, to: mail.to, variables }, 'deliver')
     assertSendable(rendered)
   } catch (err) {
-    // The template was removed (its plugin is gone) or no longer renders a
-    // sendable message. Another try would end the same way.
-    return { sent: false, message: getErrorMessage(err, 'The email could not be prepared.'), retry: 'never' }
+    // The template no longer renders a sendable message. Another try would
+    // end the same way, and nothing is sent with a variable left in it.
+    return {
+      sent: false,
+      message: getErrorMessage(err, 'The email could not be prepared.'),
+      retry: 'never',
+      reason:
+        err instanceof MailTemplateInvalidError || err instanceof MailVariableMissingError
+          ? 'template_invalid'
+          : 'template_removed',
+    }
   }
   const outcome = await carryThroughConnector(
     db,
@@ -221,11 +329,13 @@ async function attemptQueuedMail(db: DbClient, mail: QueuedMail, deps: DrainDeps
     (deps.now ?? Date.now)(),
     !mail.suspect,
   )
-  if (outcome.ok) return { sent: true, outcome }
+  if (outcome.ok) return { sent: true, outcome, note: rendered.note }
   return {
     sent: false,
     message: outcome.message,
     retry: outcome.retry,
+    // A refusal that is not final only ever ends the email by running out its time.
+    reason: outcome.retry === 'never' ? 'recipient_rejected' : 'expired',
     connectorId: defaults.defaultConnectorId,
     outcome,
   }
@@ -252,8 +362,11 @@ async function settleQueuedMail(
       connector: attempt.outcome.connector,
       providerMessageId: attempt.outcome.providerMessageId,
       durationMs: attempt.outcome.durationMs,
+      // Not an error: what the owner should know about this email (see `SiteMail.note`).
+      error: attempt.note,
     })
-    await removeQueuedMail(db, mail.id)
+    await removeQueuedMail(db, mail)
+    announceOutcome(db, mail, 'sent', null)
     return 'continue'
   }
   const seen = { connector: attempt.outcome?.connector, error: attempt.message, durationMs: attempt.outcome?.durationMs }
@@ -263,8 +376,14 @@ async function settleQueuedMail(
     // Not this email's failure, so no attempt is counted against it and it
     // is due the moment delivery resumes. The activity log shows the reason
     // now, not after a day of silent retries.
-    await updateMailProgress(db, mail.outboxId, { ...seen, status: 'queued', attempts: mail.attempts })
-    await holdQueuedMail(db, mail.id, attempt.message)
+    const held = await holdQueuedMail(db, mail.id, attempt.message)
+    await updateMailProgress(
+      db,
+      mail.outboxId,
+      held
+        ? { ...seen, status: 'queued', attempts: mail.attempts }
+        : { ...seen, status: 'failed', attempts: mail.attempts, error: REMOVED_WHILE_SENDING },
+    )
     if (attempt.connectorId) await pauseConnectorDelivery(db, attempt.connectorId, now)
     console.error('[mail] delivery is paused: the connector refuses the account or is not set up')
     return 'stop'
@@ -275,8 +394,9 @@ async function settleQueuedMail(
   const delay = mailRetryDelayMs(attempts, (deps.random ?? Math.random)())
   if (attempt.retry === 'never') {
     await updateMailProgress(db, mail.outboxId, { ...seen, attempts, status: 'failed' })
-    await removeQueuedMail(db, mail.id)
+    await removeQueuedMail(db, mail)
     console.error(`[mail] gave up on a "${mail.kind}" email after ${attempts} attempt(s)`)
+    announceOutcome(db, mail, 'failed', attempt.reason)
     return 'continue'
   }
   // The last moment a try is still of use. A wait that would run past it is
@@ -288,9 +408,60 @@ async function settleQueuedMail(
     return 'continue'
   }
   const nextAttemptAt = new Date(Math.min(now + delay, lastChance)).toISOString()
-  await updateMailProgress(db, mail.outboxId, { ...seen, attempts, status: 'queued', nextAttemptAt })
-  await rescheduleQueuedMail(db, mail.id, { attempts, nextAttemptAt, error: attempt.message })
+  // The queue first: a row that was removed meanwhile (its sender uninstalled,
+  // its member deleted) must not leave the log saying "waiting" for ever.
+  const put = await rescheduleQueuedMail(db, mail.id, { attempts, nextAttemptAt, error: attempt.message })
+  await updateMailProgress(
+    db,
+    mail.outboxId,
+    put
+      ? { ...seen, attempts, status: 'queued', nextAttemptAt }
+      : { ...seen, attempts, status: 'failed', error: REMOVED_WHILE_SENDING },
+  )
   return attempt.retry === 'slow-down' ? 'stop' : 'continue'
+}
+
+const REMOVED_WHILE_SENDING = 'Removed from the queue while it was being sent.'
+
+/**
+ * Take every queued email matching `column = value` out of the queue and log
+ * it as failed with `error`: an uninstalled plugin's email, or a deleted
+ * member's. One transaction, so the queue, the backlog counts and the log
+ * agree. An email a worker has claimed (it is being handed over at this
+ * moment) is left to that worker: it is logged as what really became of it,
+ * and if it comes back for another try that try ends it, because its
+ * template or its member is gone.
+ */
+export async function discardQueuedMail(
+  db: DbClient,
+  column: 'source' | 'member_id',
+  value: string,
+  error: string,
+  reason: MailFailureReason | null,
+): Promise<void> {
+  const discarded = await db.transaction(async (tx) => {
+    const removed: QueuedMail[] = []
+    for (const mail of await listQueuedMailBy(tx, column, value)) {
+      const gone = await tx`delete from mail_queue where id = ${mail.id} and accepted_at is null and claimed_at is null`
+      if (gone.rowCount === 0) continue
+      if (mail.source !== CORE_MAIL_SOURCE) await releaseBacklogSlot(tx, mail.source)
+      await updateMailProgress(tx, mail.outboxId, { status: 'failed', attempts: mail.attempts, error })
+      removed.push(mail)
+    }
+    return removed
+  })
+  if (reason !== null) for (const mail of discarded) announceOutcome(db, mail, 'failed', reason)
+}
+
+/** A deleted member is not written to: what was queued for them is dropped. */
+export async function discardQueuedMailForMember(db: DbClient, memberId: string): Promise<void> {
+  await discardQueuedMail(
+    db,
+    'member_id',
+    memberId,
+    'The member this email was for was deleted before it was sent.',
+    'recipient_unavailable',
+  )
 }
 
 /** The activity-log sentence of an email that ran out of time. */
@@ -310,8 +481,9 @@ async function failExpiredMail(
     connector: seen.connector,
     error: expiredMailMessage(seen.lastError),
   })
-  await removeQueuedMail(db, mail.id)
+  await removeQueuedMail(db, mail)
   console.error(`[mail] a "${mail.kind}" email expired before it could be delivered`)
+  announceOutcome(db, mail, 'failed', 'expired')
 }
 
 /** Fail, without sending, every email whose deadline has passed. */
@@ -337,7 +509,9 @@ async function finishAcceptedMail(db: DbClient): Promise<void> {
   for (const row of await listAcceptedMail(db)) {
     try {
       await markMailSent(db, row.outboxId, row.attempts + 1)
-      await removeQueuedMail(db, row.id)
+      await removeQueuedMail(db, row)
+      // The sender hears of it now: the pass that sent it never got this far.
+      announceOutcome(db, row, 'sent', null)
       acceptedUnrecorded.delete(row.id)
       unrecordedAttempts.delete(row.id)
     } catch (err) {
@@ -389,7 +563,7 @@ export async function drainMailQueue(db: DbClient, deps: DrainDeps = {}): Promis
         attempt = await attemptQueuedMail(db, mail, deps)
       } catch (err) {
         // Not a delivery answer (the database, a bug): leave the email for a later try.
-        attempt = { sent: false, message: getErrorMessage(err, 'Delivery failed'), retry: 'later' }
+        attempt = { sent: false, message: getErrorMessage(err, 'Delivery failed'), retry: 'later', reason: 'expired' }
       }
       accepted = attempt.sent
       next = await settleQueuedMail(db, mail, attempt, deps)

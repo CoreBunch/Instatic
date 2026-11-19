@@ -72,6 +72,16 @@ await activateInstalledServerPlugins(db, config.uploadsDir)
 // Outgoing email: start the queue worker, which first sends whatever a
 // previous process accepted but had not delivered.
 startMailQueue(db)
+// An owner's edit of an email template that can no longer be sent as written
+// (the built-in wording is sent in its place) is named once at start.
+void import('./mail/templates')
+  .then(({ listUnusableTemplateEdits }) => listUnusableTemplateEdits(db))
+  .then((edits) => {
+    for (const edit of edits) {
+      console.warn(`[mail] your wording of the "${edit.key}" template is not used: ${edit.problem}`)
+    }
+  })
+  .catch((err: unknown) => console.error('[mail] could not check the edited templates:', err))
 // AI runtime: start the nightly conversation-purge tick. Operators add
 // their own provider credentials via /admin/ai/providers on first install.
 startConversationPurgeTick(db)

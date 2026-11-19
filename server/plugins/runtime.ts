@@ -48,6 +48,9 @@ import {
 } from '@core/plugins/modulePackLoader'
 import { jsonResponse } from '../http'
 import { hookBus } from '@core/plugins/hookBus'
+import { setQueuedMailOutcomeHandler } from '../mail/outcomes'
+import { syncPluginMailTemplates } from '../mail/pluginTemplates'
+import { announcePluginMailOutcome } from './host/handlers/mail'
 import { requireAuthenticatedUser, requireCapability } from '../auth/authz'
 import { clearPluginCrashCounter, setCrashRecoveryHandler } from './host/crashRecovery'
 import { setPluginHostContext } from './host/registry'
@@ -407,6 +410,11 @@ export async function activateInstalledServerPlugins(
   await resetPluginWorker()
   resetPluginModulePacks()
   hookBus.reset()
+  // Email templates are NOT cleared here: mail other plugins have waiting
+  // must still find its template while everything reloads. They are brought
+  // in line with the database, one plugin at a time, at the end.
+  // A plugin hears what became of the email it queued, and only its own.
+  setQueuedMailOutcomeHandler(announcePluginMailOutcome)
 
   // Start the scheduler tick. Idempotent — a re-bind with the same
   // process keeps the existing interval pointed at the same DbClient.
@@ -489,4 +497,5 @@ export async function activateInstalledServerPlugins(
       }
     }
   }
+  await syncPluginMailTemplates(db)
 }

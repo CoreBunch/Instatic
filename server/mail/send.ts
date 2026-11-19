@@ -18,6 +18,7 @@
 import type { DbClient } from '../db/client'
 import {
   MAIL_ADDRESS_PATTERN,
+  getMailTemplateDefinition,
   renderMailTemplate,
   type MailActivityStatus,
   type MailDefaults,
@@ -30,7 +31,7 @@ import { getMailDefaults } from './defaults'
 import { sendViaBrevo, sendViaMailgun, sendViaPostmark, sendViaResend } from './apiDrivers'
 import { sendViaSes } from './sesDriver'
 import { formatFromHeader, MailDeliveryError, sendViaSmtp, type MailRetry, type OutgoingMail } from './smtpDriver'
-import { getMailTemplate, siteMailVariables } from './templates'
+import { describeWordingProblem, getMailTemplate, siteMailVariables } from './templates'
 
 export class MailNotConfiguredError extends Error {
   constructor() {
@@ -42,6 +43,26 @@ export class MailNotConfiguredError extends Error {
 export interface SiteMail extends OutgoingMail {
   /** What the message is, for the activity log: a template key, or `test`. */
   kind: string
+  /** Something the owner should know about how this email was made, shown with it in Activity. */
+  note?: string
+}
+
+/** An email was asked for without a value its template's wording uses. */
+export class MailVariableMissingError extends Error {
+  constructor(key: string, missing: readonly string[]) {
+    super(`The "${key}" template needs a value for ${missing.map((name) => `{${name}}`).join(', ')}.`)
+    this.name = 'MailVariableMissingError'
+  }
+}
+
+/** A template that cannot be turned into an email with every value in place. Retrying changes nothing. */
+export class MailTemplateInvalidError extends Error {
+  constructor(key: string, refused: readonly string[]) {
+    super(
+      `The "${key}" template cannot be sent: ${refused.map((name) => `{${name}}`).join(', ')} cannot be filled in as it is written.`,
+    )
+    this.name = 'MailTemplateInvalidError'
+  }
 }
 
 /** Carries one message through one connector. Replaceable in tests. */
@@ -291,9 +312,47 @@ export async function sendConnectorTest(
 export async function buildTemplateMail(
   db: DbClient,
   input: { key: string; to: string; variables: Record<string, string> },
+  /**
+   * `accept` (the default) is an email being asked for: a variable its
+   * wording uses and the caller did not give is the caller's mistake, and
+   * throws. `deliver` is an email already queued: the wording may have
+   * changed since, so the built-in wording is tried before giving up.
+   */
+  when: 'accept' | 'deliver' = 'accept',
 ): Promise<SiteMail> {
   const template = await getMailTemplate(db, input.key)
   if (!template) throw new Error(`unknown mail template "${input.key}"`)
-  const rendered = renderMailTemplate(template, { ...(await siteMailVariables(db)), ...input.variables })
-  return { kind: input.key, to: input.to, ...rendered }
+  const values = { ...(await siteMailVariables(db)), ...input.variables }
+  let rendered = renderMailTemplate(template, values)
+  // The owner's wording cannot be sent as written: a link that does not
+  // stand alone, a name in braces that is not a variable, or (for an email
+  // already queued) a variable the email was queued without.
+  const wording = describeWordingProblem(rendered)
+  const lacks = when === 'deliver' && rendered.missing.length > 0
+  let note: string | undefined
+  if ((wording !== null || lacks) && template.customised) {
+    // The built-in wording is sent instead, and the log says so.
+    const definition = getMailTemplateDefinition(input.key)
+    if (definition) {
+      const needs = rendered.missing.map((name) => `{${name}}`).join(', ')
+      note = `Your wording was not used: ${wording ?? `it needs ${needs}, which this email was queued without.`} The built-in wording was sent.`
+      rendered = renderMailTemplate(
+        { key: input.key, subject: definition.defaultSubject, body: definition.defaultBody, variables: template.variables },
+        values,
+      )
+    }
+  }
+  // Never an email with braces left in it.
+  if (rendered.unknown.length > 0 || rendered.refused.length > 0) {
+    throw new MailTemplateInvalidError(input.key, [...rendered.unknown, ...rendered.refused])
+  }
+  if (rendered.missing.length > 0) throw new MailVariableMissingError(input.key, rendered.missing)
+  return {
+    kind: input.key,
+    to: input.to,
+    subject: rendered.subject,
+    text: rendered.text,
+    html: rendered.html,
+    ...(note ? { note } : {}),
+  }
 }

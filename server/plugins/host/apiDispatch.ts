@@ -63,6 +63,7 @@ import {
   handleContentTreeRead,
   handleContentTreeReplace,
 } from './handlers/content'
+import { handleMailSend, handleMailSendExternal, handleSitePublicUrl } from './handlers/mail'
 import {
   handleMembersGet,
   handleMembersInvite,
@@ -136,6 +137,9 @@ const apiHandlers = {
   'cms.members.invite': handleMembersInvite,
   'cms.members.tags.grant': handleMembersTagsGrant,
   'cms.members.tags.revoke': handleMembersTagsRevoke,
+  'cms.mail.send': handleMailSend,
+  'cms.mail.sendExternal': handleMailSendExternal,
+  'cms.site.publicUrl': handleSitePublicUrl,
 } satisfies HostApiHandlerTable
 
 export async function dispatchApiCall(msg: ValidatedApiCall): Promise<void> {

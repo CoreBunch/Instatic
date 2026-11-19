@@ -204,6 +204,15 @@ function makeFakeDb() {
     if (normalized.includes('delete from plugin_schedule_runs')) {
       return { rows: [], rowCount: 0 }
     }
+    // removePluginMail — the uninstall sweep of a plugin's template edits,
+    // queued email and limit counters. No plugin in these tests declares or sends email.
+    if (
+      normalized.includes('from mail_templates') ||
+      normalized.includes('from mail_queue') ||
+      normalized.includes('delete from mail_counters')
+    ) {
+      return { rows: [], rowCount: 0 }
+    }
     // clearPluginCrashes — values[0]=pluginId
     if (normalized.includes('delete from plugin_crash_events')) {
       const before = crashEvents.length

@@ -518,6 +518,16 @@ function Detail({
           )}
         </div>
       )}
+      {(entry.status === 'sent' || entry.status === 'captured') && entry.error !== null && (
+        <div className={ld.notice} data-tone="warning" role="status">
+          <strong>{entry.error}</strong>
+          {entry.template && (
+            <div>
+              <Button type="button" variant="secondary" size="sm" onClick={() => onOpenTemplate(entry.kind)}>Open the template</Button>
+            </div>
+          )}
+        </div>
+      )}
       {entry.status === 'sent' && (
         <p className={ld.notice}>
           {entry.connectorLabel ?? 'The connector'} accepted this email. Whether it reached the inbox (bounces, spam
@@ -548,6 +558,12 @@ function Detail({
             )}
           </dd>
         </div>
+        {entry.sentBy !== null && (
+          <div>
+            <dt>Sent by</dt>
+            <dd>{entry.sentBy}</dd>
+          </div>
+        )}
         <div>
           <dt>Connector</dt>
           <dd>

@@ -11,7 +11,9 @@
  *     bun test src/__tests__/server/mailQueuePostgres.test.ts
  *
  * The worker takes no lock between instances: a row's conditional claim is
- * the only coordination. This is the test that it is enough.
+ * the only coordination. This is the test that it is enough. The limits on a
+ * plugin's email are counters raised by one conditional UPDATE, and this is
+ * the test that two instances cannot exceed them between them.
  */
 import { afterAll, beforeAll, describe, expect, it } from 'bun:test'
 import { registerMailTemplate } from '@core/mail'
@@ -20,6 +22,12 @@ import type { DbClient } from '../../../server/db/client'
 import { runMigrations } from '../../../server/db/runMigrations'
 import { listMailActivity } from '../../../server/mail/activity'
 import { __resetMailQueuePauseForTesting, drainMailQueue, queueTemplateMail } from '../../../server/mail/delivery'
+import {
+  MAIL_EXTERNAL_HOURLY_LIMIT,
+  MAIL_PER_RECIPIENT_HOURLY_LIMIT,
+  MailLimitError,
+  reserveRecipientSlot,
+} from '../../../server/mail/limits'
 import type { MailCarrier } from '../../../server/mail/send'
 
 const url = process.env.INSTATIC_TEST_POSTGRES_URL
@@ -89,6 +97,29 @@ describe.skipIf(!url)('mail queue on Postgres, two workers', () => {
     // Nothing is left held on either pool's sessions.
     const locks = await first<{ n: string | number }>`select count(*) as n from pg_locks where locktype = 'advisory'`
     expect(Number(locks.rows[0].n)).toBe(0)
+  })
+
+  it('holds a plugin to its hourly limits when two instances accept its email at once', async () => {
+    await first`delete from mail_counters`
+    const reserve = (db: DbClient, recipient: { address: string }) =>
+      db.transaction((tx) => reserveRecipientSlot(tx, 'acme.pg', recipient)).then(
+        () => 'taken',
+        (err: unknown) => (err instanceof MailLimitError ? 'refused' : `error: ${String(err)}`),
+      )
+    // One address: twenty an hour, whichever instance is asked.
+    const sameAddress = await Promise.all(
+      Array.from({ length: 80 }, (_unused, index) => reserve(index % 2 ? first : second, { address: 'one@example.com' })),
+    )
+    expect(sameAddress.filter((result) => result === 'taken')).toHaveLength(MAIL_PER_RECIPIENT_HOURLY_LIMIT)
+    expect(sameAddress.filter((result) => result === 'refused')).toHaveLength(80 - MAIL_PER_RECIPIENT_HOURLY_LIMIT)
+
+    // Many addresses: two hundred an hour for the plugin in all.
+    const manyAddresses = await Promise.all(
+      Array.from({ length: 300 }, (_unused, index) => reserve(index % 2 ? first : second, { address: `p${index}@example.com` })),
+    )
+    const room = MAIL_EXTERNAL_HOURLY_LIMIT - MAIL_PER_RECIPIENT_HOURLY_LIMIT
+    expect(manyAddresses.filter((result) => result === 'taken')).toHaveLength(room)
+    expect(manyAddresses.filter((result) => result === 'refused')).toHaveLength(300 - room)
   })
 
   it('lets a second instance drain what the first one queued', async () => {

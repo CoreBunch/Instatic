@@ -268,4 +268,56 @@ describe('instatic-plugin lint', () => {
     expect(errors).toHaveLength(1)
     expect(errors[0].message).toContain('frontend.origins.scripts')
   })
+
+  const WELCOME = {
+    key: 'welcome',
+    label: 'Welcome',
+    description: 'Sent after sign-up.',
+    variables: [{ name: 'link', label: 'Link', sample: 'https://example.com/start', kind: 'link' }],
+    subject: 'Welcome to {site.name}',
+    body: '[Start]({link})',
+  }
+
+  it('carries mail.templates through definePlugin and lints a complete declaration clean', async () => {
+    const result = await withTempPlugin(async (dir) => {
+      await writeConfig(dir, { permissions: ['mail.send'], mail: { templates: [WELCOME] } })
+      const definition = await readPluginDefinition(dir)
+      expect(definition.manifest.mail?.templates[0]).toMatchObject({ key: 'welcome', subject: 'Welcome to {site.name}' })
+    })
+    expect(result.findings).toEqual([])
+  })
+
+  it('refuses a mail template that uses a variable it does not declare, or glues a link into text', async () => {
+    const lint = (template: Record<string, unknown>) =>
+      withTempPlugin(async (dir) => {
+        await writeConfig(dir, { permissions: ['mail.send'], mail: { templates: [{ ...WELCOME, ...template }] } })
+      })
+    const undeclared = await lint({ body: 'Hello {memebr.name}, [start]({link})' })
+    expect(undeclared.findings).toHaveLength(1)
+    expect(undeclared.findings[0]).toMatchObject({ severity: 'error' })
+    expect(undeclared.findings[0].message).toContain('{memebr.name}')
+
+    // Rendered here exactly as the server will render it: the link would be sent unfilled.
+    for (const body of ['Start here:{link}', 'See example.com/go?to={link}', '<{link}>']) {
+      const glued = await lint({ body })
+      expect(glued.findings.map((finding) => finding.severity)).toEqual(['error'])
+      expect(glued.findings[0].message).toContain('{link} must stand alone')
+    }
+    // A link's sample must be a link, and a text sample must not be one.
+    const badSample = await lint({ variables: [{ name: 'link', label: 'Link', sample: 'https://example.com/start' }] })
+    expect(badSample.findings[0].message).toContain('contains a web address')
+  })
+
+  it('warns about a mail permission with nothing to send, and refuses templates without one', async () => {
+    const unused = await withTempPlugin(async (dir) => {
+      await writeConfig(dir, { permissions: ['mail.send.external'] })
+    })
+    expect(unused.findings.map((f) => f.severity)).toEqual(['warning'])
+    expect(unused.findings[0].message).toContain('mail.templates[]')
+
+    const unpermitted = await withTempPlugin(async (dir) => {
+      await writeConfig(dir, { permissions: [], mail: { templates: [WELCOME] } })
+    })
+    expect(unpermitted.findings.some((f) => f.severity === 'error' && f.message.includes('mail.send'))).toBe(true)
+  })
 })

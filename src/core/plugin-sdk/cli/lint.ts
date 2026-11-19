@@ -29,6 +29,9 @@ import { readFile } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import { findSandboxLiterals } from '@core/plugins/sandboxScan'
 import { isExternalFrontendScriptSrc, parsePluginManifest } from '@core/plugins/manifest'
+import DOMPurify from 'dompurify'
+import { JSDOM } from 'jsdom'
+import { configureRichtextSanitizer, type DOMPurifyRuntime } from '@core/sanitize'
 import { readPluginDefinition } from './build'
 import type { PluginDefinition } from '../builders/definePlugin'
 import { CONTENT_ACCESS_MODE_PERMISSIONS, type ContentAccessMode } from '../contentSchemas'
@@ -57,6 +60,20 @@ const SANDBOXED_ENTRYPOINTS: ReadonlyArray<'server' | 'modules'> = ['server', 'm
  * `instatic-plugin.config.ts`; everything else is reported as a finding so the
  * CLI can list multiple problems in one pass.
  */
+let mailRendererReady = false
+
+/**
+ * Give the email renderer a DOM to parse with. The manifest parser renders
+ * every declared email template to check it, exactly as the server will
+ * when the plugin is installed; a command-line process has no DOM of its own.
+ */
+function ensureMailRenderer(): void {
+  if (mailRendererReady) return
+  const createDOMPurify = DOMPurify as unknown as (window: Window) => DOMPurifyRuntime
+  configureRichtextSanitizer(createDOMPurify(new JSDOM('').window as unknown as Window))
+  mailRendererReady = true
+}
+
 export async function lintPlugin(sourceDir: string): Promise<LintResult> {
   const absoluteSource = resolve(sourceDir)
   let definition: PluginDefinition
@@ -85,6 +102,7 @@ export async function lintPlugin(sourceDir: string): Promise<LintResult> {
   // undefined optional fields, so the in-memory manifest is the same
   // shape the host parses from the zipped `plugin.json`.
   try {
+    ensureMailRenderer()
     parsePluginManifest(manifest)
   } catch (err) {
     findings.push({
@@ -189,6 +207,25 @@ export async function lintPlugin(sourceDir: string): Promise<LintResult> {
       message:
         '`frontend.assets[]` is non-empty but the `frontend.assets` permission is not requested. ' +
         'Add `permissions.frontendAssets` to the plugin permissions list.',
+    })
+  }
+  // ---- mail coherence ---------------------------------------------------
+  //
+  //  - A mail permission with no template has nothing it could send.
+  //  (The manifest parser refuses templates without a mail permission, a
+  //  `{name}` a template uses without declaring it, and a `link` variable
+  //  that does not stand alone. It renders each template to find the last,
+  //  which is why this command gives it an HTML parser: `ensureMailRenderer`.)
+  const mailTemplates = manifest.mail?.templates ?? []
+  const hasMailPermission =
+    manifest.permissions.includes('mail.send') || manifest.permissions.includes('mail.send.external')
+  if (hasMailPermission && mailTemplates.length === 0) {
+    findings.push({
+      severity: 'warning',
+      scope: 'manifest',
+      message:
+        'A mail permission is requested but `mail.templates[]` is empty. ' +
+        'A plugin can only send templates it declares: declare one or drop the permission.',
     })
   }
   // Every declared `script` / `style` references a file under `frontend/`;
