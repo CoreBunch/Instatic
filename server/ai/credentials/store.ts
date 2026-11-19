@@ -36,6 +36,7 @@ import type {
   CredentialView,
   UpdateCredentialInput,
 } from './types'
+import { isUniqueViolation } from '../../db/errors'
 import type { AiAuthMode, AiProviderId } from '../runtime/types'
 import type { AiResolvedCredential } from '../drivers/types'
 
@@ -424,15 +425,6 @@ export async function touchCredentialLastUsed(
 // ---------------------------------------------------------------------------
 // Internals — error classification
 // ---------------------------------------------------------------------------
-
-function isUniqueViolation(err: unknown): boolean {
-  // PG sqlstate 23505 + SQLite "UNIQUE constraint failed". Match on message
-  // text to stay dialect-agnostic — repositories shouldn't import driver
-  // error classes.
-  if (!(err instanceof Error)) return false
-  const msg = err.message.toLowerCase()
-  return msg.includes('unique') || msg.includes('23505') || msg.includes('duplicate')
-}
 
 function isFkViolation(err: unknown): boolean {
   if (!(err instanceof Error)) return false
