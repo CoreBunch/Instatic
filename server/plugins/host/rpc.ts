@@ -298,13 +298,6 @@ export async function runScheduleInWorker(args: {
 }
 
 /**
- * How long the host waits for a preview's reply. The VM cuts `preview()` off
- * after one second (`LOOP_PREVIEW_TIMEOUT_MS`) and the host sends one preview
- * per plugin at a time, so a healthy worker answers well inside this.
- */
-const LOOP_PREVIEW_RPC_TIMEOUT_MS = 5_000
-
-/**
  * Run a plugin source's `preview()` in its worker. Unlike a fetch, a failure
  * is the caller's to show: the editor tells the author the preview failed
  * instead of drawing an empty list. What the plugin threw is logged here and
@@ -320,10 +313,6 @@ export async function runLoopPreviewInWorker(
     pluginId,
     { kind: 'run-loop-preview', correlationId: nanoid(), pluginId, sourceId, ctx },
     'loop-preview-result',
-    // A preview that does not come back fails by itself. It is never a
-    // reason to restart the plugin: anyone who can open the editor can ask
-    // for one.
-    { timeoutMs: LOOP_PREVIEW_RPC_TIMEOUT_MS, onTimeout: 'reject' },
   )
   if (!result.ok || !Array.isArray(result.value)) {
     console.error(

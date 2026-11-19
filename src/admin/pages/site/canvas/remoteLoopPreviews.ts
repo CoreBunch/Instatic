@@ -30,6 +30,7 @@ import { LOOP_PREVIEW_BUSY_CODE, loopSourceRegistry, type LoopItem } from '@core
 import { ApiError, isAbortError } from '@core/http'
 import { previewCmsLoopSource } from '@core/persistence/cmsLoopSources'
 import { getErrorMessage } from '@core/utils/errorMessage'
+import { requestLoopSourcesRefresh } from './loopSourceEvents'
 
 export type RemoteLoopPreview =
   | { status: 'loading' }
@@ -69,10 +70,9 @@ export const PREVIEW_MAX_RETRIES = 3
 export const PREVIEW_RETRY_MS = 2_000
 /** How long to wait on a busy answer that names no time. */
 const PREVIEW_BUSY_RETRY_MS = 2_000
+/** The longest a busy answer is waited out before asking again. */
+const PREVIEW_BUSY_RETRY_MAX_MS = 60_000
 const MAX_KEPT_ANSWERS = 200
-
-/** Fired on `window` when a preview is refused because nobody provides the source. */
-export const LOOP_SOURCES_STALE_EVENT = 'instatic:loop-sources-stale'
 
 const LOADING: RemoteLoopPreview = { status: 'loading' }
 const BUSY: RemoteLoopPreview = { status: 'busy' }
@@ -143,7 +143,7 @@ function load(key: string, entry: Entry): void {
       if (err instanceof ApiError && err.status === 429 && err.code === LOOP_PREVIEW_BUSY_CODE) {
         // Not the plugin's fault and not counted as a failure.
         if (!hadItems) setState(entry, BUSY)
-        later(key, entry, err.retryAfterMs ?? PREVIEW_BUSY_RETRY_MS)
+        later(key, entry, Math.min(err.retryAfterMs ?? PREVIEW_BUSY_RETRY_MS, PREVIEW_BUSY_RETRY_MAX_MS))
         return
       }
 
@@ -164,7 +164,7 @@ function load(key: string, entry: Entry): void {
       // up the source is no longer listed, and this stops.)
       const listed = loopSourceRegistry.get(entry.request.sourceId)?.kind === 'remote'
       if (listed && err instanceof ApiError && err.status === 404) {
-        window.dispatchEvent(new Event(LOOP_SOURCES_STALE_EVENT))
+        requestLoopSourcesRefresh()
       }
     },
   )
@@ -210,12 +210,10 @@ export function holdRemoteLoopPreview(
     dropUnheldAnswers()
   }
   entry.holders += 1
-  // First holder of a question with no answer and nothing under way.
-  if (entry.state.status !== 'ready' && !entry.timer && !entry.inFlight) {
-    entry.failures = 0
-    setState(entry, LOADING)
-    later(key, entry, PREVIEW_DEBOUNCE_MS)
-  }
+  // A question nobody has asked yet. One that was asked keeps its course:
+  // another loop showing it neither sends it again nor restarts the retries
+  // of a preview that has finally failed.
+  if (!entry.asked && !entry.timer) later(key, entry, PREVIEW_DEBOUNCE_MS)
   const held = entry
   let released = false
   return {
@@ -236,12 +234,15 @@ export function holdRemoteLoopPreview(
 
 /**
  * Ask again for every preview a loop is showing, and forget the rest. Called
- * when the set of plugin sources changed: a source may have gone, come back,
- * or be a newer version under the same id.
+ * after the set of plugin sources changed (and the registry already holds
+ * the new set): a source may have come back or be a newer version under the
+ * same id.
  */
 export function refreshRemoteLoopPreviews(): void {
   for (const [key, entry] of entries) {
-    if (entry.holders > 0) {
+    // A source that is gone has nothing to ask: its loops are about to let go.
+    const listed = loopSourceRegistry.get(entry.request.sourceId)?.kind === 'remote'
+    if (entry.holders > 0 && listed) {
       entry.failures = 0
       load(key, entry)
     } else {

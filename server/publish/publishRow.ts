@@ -37,11 +37,14 @@ import { bumpPublishVersion, getPublishVersion, withPublishLock } from './publis
 import { runPublishFlush } from './publishFlush'
 import { getDataRow } from '../repositories/data'
 import { MAIN_SCOPE } from '../branches/scope'
+import type { CmsPublishWarning } from '@core/persistence/responseSchemas'
 import { publishPageRowLocked } from './publishSite'
 
 export interface PublishDataRowResult {
   row: DataRow
   version: DataRowVersion
+  /** Set for a page row. See `CmsPublishWarningSchema`. */
+  warnings?: CmsPublishWarning[]
 }
 
 export async function publishDataRow(

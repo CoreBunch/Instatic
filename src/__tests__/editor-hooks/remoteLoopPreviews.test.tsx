@@ -9,6 +9,7 @@
  */
 import { afterEach, beforeEach, describe, expect, it, jest } from 'bun:test'
 import { act, cleanup, renderHook } from '@testing-library/react'
+import { replaceRemoteLoopSources, resetRemoteLoopSourcesForTests } from '@core/loops'
 import {
   PREVIEW_DEBOUNCE_MS,
   PREVIEW_MAX_RETRIES,
@@ -54,6 +55,15 @@ async function advance(ms: number): Promise<void> {
 
 beforeEach(() => {
   jest.useFakeTimers()
+  // The source is one a running plugin provides, as the editor would list it.
+  replaceRemoteLoopSources([{
+    id: SOURCE,
+    label: 'Offers',
+    filterSchema: {},
+    orderByOptions: [],
+    fields: [{ id: 'title', label: 'Title' }],
+    provider: { pluginId: 'acme.shop', pluginName: 'Acme Shop' },
+  }])
   answers = []
   requests = []
   globalThis.fetch = ((_input: RequestInfo | URL, init?: RequestInit) => {
@@ -75,6 +85,7 @@ beforeEach(() => {
 afterEach(() => {
   cleanup()
   resetRemoteLoopPreviews()
+  resetRemoteLoopSourcesForTests()
   jest.useRealTimers()
   globalThis.fetch = realFetch
 })
@@ -205,6 +216,28 @@ describe('useRemoteLoopPreview', () => {
     expect(requests).toHaveLength(1)
     await advance(1)
     expect(requests).toHaveLength(2)
+    expect(titles(result.current.items)).toEqual(['Sample'])
+  })
+
+  it('does not start the retries over because another loop shows the same failed preview', async () => {
+    answers = [failure, failure, failure, failure]
+    const first = renderHook(() => useRemoteLoopPreview(SOURCE, {}, 3))
+    await advance(PREVIEW_DEBOUNCE_MS)
+    for (let i = 0; i < PREVIEW_MAX_RETRIES; i++) await advance(PREVIEW_RETRY_MS * 2 ** i)
+    expect(first.result.current.preview).toMatchObject({ status: 'failed', final: true })
+
+    const second = renderHook(() => useRemoteLoopPreview(SOURCE, {}, 3))
+    await advance(60 * 1000)
+    expect(requests).toHaveLength(1 + PREVIEW_MAX_RETRIES)
+    expect(second.result.current.preview).toMatchObject({ status: 'failed', final: true })
+  })
+
+  it('caps a wait the server asks for at a minute', async () => {
+    answers = [{ ...(busy as Exclude<Answer, 'never'>), headers: { 'retry-after': '999999999' } }, items('Sample')]
+    const { result } = renderHook(() => useRemoteLoopPreview(SOURCE, {}, 3))
+    await advance(PREVIEW_DEBOUNCE_MS)
+    expect(result.current.preview).toEqual({ status: 'busy' })
+    await advance(60_000)
     expect(titles(result.current.items)).toEqual(['Sample'])
   })
 

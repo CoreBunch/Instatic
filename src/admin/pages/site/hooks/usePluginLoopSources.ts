@@ -4,11 +4,13 @@
  * Plugins register loop sources in the server process. This hook fetches
  * their descriptors and registers them as remote sources, so the Loop
  * module's picker, the field bindings and the canvas preview see them. It
- * fetches when the editor mounts and again when:
+ * is mounted by the Site editor, the one workspace that draws loops on a
+ * canvas. It fetches when the editor mounts and again when:
  *
  *   - this tab changed the plugins itself (`CMS_PLUGINS_CHANGED_EVENT`);
  *   - the tab becomes visible again;
- *   - a preview was refused because nobody provides the source any more
+ *   - a preview was refused because nobody provides the source any more, the
+ *     author pressed Publish, or a publish warned of a loop without a source
  *     (`LOOP_SOURCES_STALE_EVENT`).
  *
  * Nothing is pushed from the server. A plugin enabled or disabled in another
@@ -17,22 +19,24 @@
  *
  * It is separate from `useInstalledEditorPlugins` on purpose: that pass needs
  * access to the Plugins workspace, while using a plugin's source on a page
- * needs only `site.read`. Without `site.read` the hook does nothing.
+ * needs only `site.read`, which everyone who can open the Site editor holds.
+ * It is mounted in the editor's lazily loaded body, so none of this is in
+ * the route's first chunk.
  */
 import { useEffect, useRef } from 'react'
 import { replaceRemoteLoopSources } from '@core/loops'
 import { listCmsLoopSources } from '@core/persistence/cmsLoopSources'
 import { CMS_PLUGINS_CHANGED_EVENT } from '@plugins/utils/pluginEvents'
-import { LOOP_SOURCES_STALE_EVENT, refreshRemoteLoopPreviews } from '@site/canvas/remoteLoopPreviews'
+import { LOOP_SOURCES_STALE_EVENT } from '@site/canvas/loopSourceEvents'
+import { refreshRemoteLoopPreviews } from '@site/canvas/remoteLoopPreviews'
 
-export function usePluginLoopSources(enabled: boolean): void {
+export function usePluginLoopSources(): void {
   // Answers can arrive out of order; only the latest request may write.
   const latestRequest = useRef(0)
   // The list as last applied, to tell a changed list from the same one again.
   const applied = useRef<string | null>(null)
 
   useEffect(() => {
-    if (!enabled) return
     let cancelled = false
 
     function refresh() {
@@ -71,5 +75,5 @@ export function usePluginLoopSources(enabled: boolean): void {
       window.removeEventListener(LOOP_SOURCES_STALE_EVENT, refresh)
       document.removeEventListener('visibilitychange', refreshWhenVisible)
     }
-  }, [enabled])
+  }, [])
 }

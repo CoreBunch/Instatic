@@ -2,6 +2,8 @@ import { Suspense, lazy, useEffect, useRef, useState } from 'react'
 import type { SiteDocument } from '@core/page-tree'
 import { selectActivePage, useEditorStore } from '@site/store/store'
 import { getCmsPublishStatus, publishCmsDraft } from '@core/persistence'
+import { requestLoopSourcesRefresh } from '@site/canvas/loopSourceEvents'
+import { showPublishWarnings } from '@site/toolbar/publishWarnings'
 import { LoaderIcon } from 'pixel-art-icons/icons/loader'
 import { CalendarSolidIcon } from 'pixel-art-icons/icons/calendar-solid'
 import { CheckIcon } from 'pixel-art-icons/icons/check'
@@ -139,6 +141,9 @@ export function PublishButton({
     }
 
     setState('publishing')
+    // A plugin may have been disabled since this editor last looked. The
+    // publish does not wait for the answer; the canvas catches up.
+    requestLoopSourcesRefresh()
 
     try {
       // No client-side flush needed: edits stream to the server live, and
@@ -149,9 +154,10 @@ export function PublishButton({
       // blast-radius site action (one click replaces every public page),
       // which is why the server gates it behind a fresh step-up window
       // in addition to the `pages.publish` capability check.
-      await runStepUp(() => publishCmsDraft())
+      const result = await runStepUp(() => publishCmsDraft())
       publishedSiteRef.current = useEditorStore.getState().site
       setState('published')
+      showPublishWarnings(result.warnings)
     } catch (err) {
       if (err instanceof Error && err.message === StepUpCancelledMessage) {
         // User dismissed the step-up dialog — return the button to its

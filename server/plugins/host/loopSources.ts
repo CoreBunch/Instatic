@@ -14,16 +14,27 @@
  *
  * A preview runs in the plugin's one worker, so it competes with the
  * plugin's real work, and anyone who can open the editor can ask for one.
- * The host therefore keeps previews few and cheap:
+ * The host therefore keeps previews few:
  *
- *   - `preview()` may run for one second (`LOOP_PREVIEW_TIMEOUT_MS`);
  *   - one preview per plugin is with the worker at a time. The same question
- *     asked again joins the run already waiting or under way; a different
- *     one waits in a line of at most `MAX_WAITING_PREVIEWS`, and past that
- *     is refused as busy without reaching the worker;
+ *     asked again joins the run already waiting or under way. A different one
+ *     waits in a line of at most `MAX_WAITING_PREVIEWS`, where each user
+ *     holds one place (their newer question takes the place of their older
+ *     one); past that the asker is told the plugin is busy and the worker
+ *     never hears of it;
  *   - each user may start only so many previews per plugin per minute;
- *   - a preview that does not answer fails alone (`onTimeout: 'reject'`): it
- *     is not a worker fault and nothing is recorded against the plugin.
+ *   - a waiting preview is dropped if its plugin is no longer loaded when its
+ *     turn comes, so a preview never starts a worker for a plugin that was
+ *     disabled, removed or parked meanwhile.
+ *
+ * What this guarantees: previews that answer, however slowly within their
+ * limit, cannot pile up in the worker until the host's reply deadline runs
+ * out. What it does not change: a `preview()` that never returns is the
+ * plugin's own code hanging, and is treated like any call into that plugin
+ * that never returns (the worker is restarted and the crash counted). The VM
+ * cuts `preview()` off after `LOOP_PREVIEW_TIMEOUT_MS` when nothing else is
+ * running in that plugin's VM; with another call in flight the VM's
+ * interrupt waits for the latest deadline among them.
  */
 
 import {
@@ -83,10 +94,19 @@ const BUSY_RETRY_AFTER_MS = 2_000
 /** How deep a field value may nest. A list of objects of lists is depth 3. */
 const MAX_FIELD_DEPTH = 6
 
+interface WaitingPreview {
+  key: string
+  userId: string
+  sourceId: string
+  options: { filters: Record<string, unknown>; limit: number }
+  answer: (preview: PluginLoopPreview) => void
+}
+
 interface PluginPreviewLine {
-  /** Settles when the last preview handed to this plugin has finished. */
-  tail: Promise<unknown>
-  /** Previews not yet finished, the running one included, by question. */
+  /** Whether a preview is with the worker now. */
+  running: boolean
+  waiting: WaitingPreview[]
+  /** Previews not yet answered, the running one included, by question. */
   pending: Map<string, Promise<PluginLoopPreview>>
 }
 
@@ -110,6 +130,9 @@ async function runPreview(
   sourceId: string,
   options: { filters: Record<string, unknown>; limit: number },
 ): Promise<PluginLoopPreview> {
+  // Checked in the same tick as the call below: sending to a plugin that is
+  // not loaded would start a worker for it.
+  if (owningPluginId(sourceId) !== pluginId) return { status: 'unknown-source' }
   let result: Awaited<ReturnType<typeof runLoopPreviewInWorker>>
   try {
     result = await runLoopPreviewInWorker(pluginId, sourceId, {
@@ -140,6 +163,24 @@ async function runPreview(
   return { status: 'ok', items: items.value }
 }
 
+/** Hand the plugin its next waiting preview, if it has none running. */
+function advance(pluginId: string, line: PluginPreviewLine): void {
+  if (line.running) return
+  const next = line.waiting.shift()
+  if (!next) {
+    if (line.pending.size === 0 && previewLines.get(pluginId) === line) previewLines.delete(pluginId)
+    return
+  }
+  line.running = true
+  // `runPreview` never rejects, so the line never stalls on a failure.
+  void runPreview(pluginId, next.sourceId, next.options).then((preview) => {
+    line.running = false
+    line.pending.delete(next.key)
+    next.answer(preview)
+    advance(pluginId, line)
+  })
+}
+
 /**
  * Ask a plugin source for sample items on behalf of `userId`. The plugin is
  * handed the loop's filters and a limit, nothing else. Its answer is checked
@@ -155,32 +196,38 @@ export function previewPluginLoopSource(
 
   let line = previewLines.get(pluginId)
   if (!line) {
-    line = { tail: Promise.resolve(), pending: new Map() }
+    line = { running: false, waiting: [], pending: new Map() }
     previewLines.set(pluginId, line)
   }
+  const held = line
 
   // The same question already waiting or being answered: share that answer.
   // It costs the plugin nothing more, so it is not counted against the asker.
   const key = JSON.stringify([sourceId, options.filters, options.limit])
-  const shared = line.pending.get(key)
+  const shared = held.pending.get(key)
   if (shared) return shared
 
-  // One running plus the line behind it. Past that the asker is told to come
-  // back, and the worker never hears of it.
-  if (line.pending.size > MAX_WAITING_PREVIEWS) {
-    return Promise.resolve({ status: 'busy', retryAfterMs: BUSY_RETRY_AFTER_MS })
-  }
   const allowed = previewRateLimit.consume(`${userId}:${pluginId}`)
   if (!allowed.ok) return Promise.resolve({ status: 'busy', retryAfterMs: allowed.retryAfterMs })
 
-  const held = line
-  const run = held.tail.then(() => runPreview(pluginId, sourceId, options))
-  // `runPreview` never rejects, so the line never stalls on a failure.
-  held.tail = run
-  held.pending.set(key, run)
-  void run.finally(() => {
-    held.pending.delete(key)
-    if (held.pending.size === 0 && previewLines.get(pluginId) === held) previewLines.delete(pluginId)
+  // A user waits in one place. Their newer question is the one they want
+  // (the editor only ever needs the latest filter value), so it takes the
+  // place of their older one, which is answered "busy".
+  const mine = held.waiting.findIndex((entry) => entry.userId === userId)
+  if (mine !== -1) {
+    const [replaced] = held.waiting.splice(mine, 1)
+    held.pending.delete(replaced!.key)
+    replaced!.answer({ status: 'busy', retryAfterMs: BUSY_RETRY_AFTER_MS })
+  } else if (held.running && held.waiting.length >= MAX_WAITING_PREVIEWS) {
+    // The line is full of other people's questions: come back shortly. The
+    // worker never hears of this one.
+    return Promise.resolve({ status: 'busy', retryAfterMs: BUSY_RETRY_AFTER_MS })
+  }
+
+  const preview = new Promise<PluginLoopPreview>((answer) => {
+    held.waiting.push({ key, userId, sourceId, options, answer })
   })
-  return run
+  held.pending.set(key, preview)
+  advance(pluginId, held)
+  return preview
 }

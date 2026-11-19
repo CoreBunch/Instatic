@@ -67,10 +67,17 @@ export class ApiError extends Error {
   }
 }
 
-/** `Retry-After` as milliseconds, when it is a whole number of seconds. */
+/** The longest wait a `Retry-After` is taken to mean: a day. */
+const MAX_RETRY_AFTER_MS = 24 * 60 * 60 * 1000
+
+/**
+ * `Retry-After` as milliseconds, when it is a whole number of seconds. Capped,
+ * so a value from a confused server can never be a number a timer cannot hold.
+ */
 function retryAfterMs(res: Response): number | null {
   const seconds = Number(res.headers.get('retry-after') ?? '')
-  return Number.isInteger(seconds) && seconds > 0 ? seconds * 1000 : null
+  if (!Number.isSafeInteger(seconds) || seconds <= 0) return null
+  return Math.min(seconds * 1000, MAX_RETRY_AFTER_MS)
 }
 
 /** What the transport knew about the request that failed. */

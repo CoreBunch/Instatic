@@ -53,7 +53,6 @@ import { useEditorStore } from '@admin/pages/site/store/store'
 import { cmsAdapter } from '@core/persistence/cms'
 import { useAdminUi } from '@admin/state/adminUi'
 import { useInstalledEditorPlugins } from '@admin/pages/plugins/hooks/useInstalledEditorPlugins'
-import { usePluginLoopSources } from '@site/hooks/usePluginLoopSources'
 import { usePluginEventBridge } from '@admin/pages/plugins/hooks/usePluginEventBridge'
 import { AdminSectionNavigation } from '@admin/shared/AdminSectionNavigation'
 import {
@@ -179,8 +178,6 @@ export function AdminCanvasLayout() {
   })
   useEditorLayoutPersistence()
   useInstalledEditorPlugins(pluginBackgroundWorkEnabled)
-  // Listing a plugin's loop sources needs `site.read`; without it there is nothing to ask for.
-  usePluginLoopSources(!currentUser || hasCapability(currentUser, 'site.read'))
   // Mount the SSE bridge ONCE per admin tab — gives toasts on plugin
   // crashes from any route, drives the red dot on the Plugins nav link,
   // and keeps the open Plugins page list refreshed.

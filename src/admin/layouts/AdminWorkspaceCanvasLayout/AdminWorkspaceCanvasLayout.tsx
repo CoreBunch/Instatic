@@ -14,7 +14,6 @@ import { AdminSectionNavigation } from '@admin/shared/AdminSectionNavigation'
 import { SidebarResizeHandle } from '@admin/shared/SidebarResizeHandle'
 import { useEditorAppearancePreferences } from '@site/preferences/editorPreferences'
 import { useInstalledEditorPlugins } from '@admin/pages/plugins/hooks/useInstalledEditorPlugins'
-import { usePluginLoopSources } from '@site/hooks/usePluginLoopSources'
 import { usePluginEventBridge } from '@admin/pages/plugins/hooks/usePluginEventBridge'
 import { useCurrentAdminUser } from '@admin/sessionContext'
 import { useAdminUi } from '@admin/state/adminUi'
@@ -24,7 +23,7 @@ import { useWorkspaceLayoutPersistence } from '@admin/state/useWorkspaceLayoutPe
 import { Button } from '@ui/components/Button'
 import { cn } from '@ui/cn'
 import { Settings2SolidIcon } from 'pixel-art-icons/icons/settings-2-solid'
-import { canRunPluginBackgroundWork, hasCapability } from '@admin/access'
+import { canRunPluginBackgroundWork } from '@admin/access'
 import type { AdminWorkspace } from '@admin/workspace'
 import styles from '../AdminCanvasLayout/AdminCanvasLayout.module.css'
 import workspaceStyles from './AdminWorkspaceCanvasLayout.module.css'
@@ -58,9 +57,6 @@ export function AdminWorkspaceCanvasLayout({
   // The merge review has no panels of its own; it reads the content workspace's stored layout.
   useWorkspaceLayoutPersistence(workspace === 'branchReview' ? 'content' : workspace)
   useInstalledEditorPlugins(pluginBackgroundWorkEnabled)
-  // Of the workspaces on this layout only Content draws loops (an entry's
-  // template preview). Listing a plugin's loop sources needs `site.read`.
-  usePluginLoopSources(workspace === 'content' && (!currentUser || hasCapability(currentUser, 'site.read')))
   usePluginEventBridge(pluginBackgroundWorkEnabled)
 
   const appearance = useEditorAppearancePreferences()

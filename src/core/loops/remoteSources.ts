@@ -44,7 +44,11 @@ export function replaceRemoteLoopSources(sources: readonly RemoteLoopSource[]): 
   for (const source of sources) {
     const existing = loopSourceRegistry.get(source.id)
     if (existing && existing.kind !== 'remote') continue
-    loopSourceRegistry.registerOrReplace({ ...source, kind: 'remote' })
+    const next = { ...source, kind: 'remote' as const }
+    // The same descriptor again (the list is refetched whenever the tab is
+    // shown) changes nothing and tells nobody.
+    if (existing && JSON.stringify(existing) === JSON.stringify(next)) continue
+    loopSourceRegistry.registerOrReplace(next)
   }
   if (!synced) {
     synced = true

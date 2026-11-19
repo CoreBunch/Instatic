@@ -14,10 +14,15 @@ import { strToU8, zipSync } from 'fflate'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { LOOP_PREVIEW_BUSY_CODE, LOOP_PREVIEW_MAX_ITEMS, type RemoteLoopSource } from '@core/loops'
+import type { Page } from '@core/page-tree'
+import { pageToCells } from '../../core/data/pageFromRow'
+import { MAIN_SCOPE } from '../../../server/branches/scope'
 import { handleCmsRequest } from '../../../server/handlers/cms'
-import { clearPluginCrashCounter, recordCrashAndDecide } from '../../../server/plugins/host/crashRecovery'
+import { createDataRow } from '../../../server/repositories/data'
+import { clearPluginCrashCounter, handleWorkerCrash, recordCrashAndDecide } from '../../../server/plugins/host/crashRecovery'
+import { workers } from '../../../server/plugins/host/workerState'
 import { hostPlugins } from '../../../server/plugins/host/registry'
-import { unloadPlugin } from '../../../server/plugins/runtime'
+import { activateInstalledServerPlugins, unloadPlugin } from '../../../server/plugins/runtime'
 import { createCapabilityTestHarness, type CapabilityTestHarness } from '../helpers/capabilityHarness'
 
 const PLUGIN_ID = 'acme.shop'
@@ -232,33 +237,58 @@ describe('plugin loop sources for the editor', () => {
     expect((await ask({ other: true }, editor.cookie)).status).toBe(200)
   })
 
-  it('hands a plugin one preview at a time and turns the rest away once the line is full', async () => {
+  it('hands a plugin one preview at a time, with one waiting place per user', async () => {
+    // Eight different questions from one user at once: the first is running,
+    // and each newer one takes the waiting place of the one before it.
     const answers = await Promise.all(
       Array.from({ length: 8 }, (_, i) => preview({ sourceId: 'acme.shop.counted', filters: { i }, limit: 1 })),
     )
-    // One running and three waiting are answered; the other four never reach the plugin.
-    expect(answers.map((res) => res.status).sort()).toEqual([200, 200, 200, 200, 429, 429, 429, 429])
+    expect(answers.map((res) => res.status)).toEqual([200, 429, 429, 429, 429, 429, 429, 200])
     const ran = await Promise.all(
-      answers.filter((res) => res.status === 200).map(async (res) =>
+      [answers[0]!, answers[7]!].map(async (res) =>
         ((await res.json()) as { items: Array<{ fields: { title: string } }> }).items[0]!.fields.title),
     )
-    expect(ran.sort()).toEqual(['run 1', 'run 2', 'run 3', 'run 4'])
+    // Only two reached the plugin: the first and the last.
+    expect(ran).toEqual(['run 1', 'run 2'])
   })
 
-  it('cannot be used to take the plugin down with previews that never return', async () => {
+  it('does not let one user fill the line for everybody else', async () => {
+    const editors = await Promise.all(
+      [0, 1, 2, 3, 4].map((n) => h.createRoleUser({ name: `Editor ${n}`, slug: `editor-${n}`, capabilities: ['site.read'] })),
+    )
+    const stuck = (i: number, cookie: string) => preview({ sourceId: 'acme.shop.stuck', filters: { i }, limit: 1 }, cookie)
+    const ask = (i: number, cookie: string) => preview({ sourceId: 'acme.shop.counted', filters: { i }, limit: 1 }, cookie)
+
+    // One user keeps the worker busy and asks twenty more questions.
+    const noisy = [stuck(0, editors[0]!.cookie), ...Array.from({ length: 20 }, (_, i) => ask(i, editors[0]!.cookie))]
+    // Two other editors still get a place each, and their answers.
+    const others = await Promise.all([ask(100, editors[1]!.cookie), ask(101, editors[2]!.cookie)])
+    expect(others.map((res) => res.status)).toEqual([200, 200])
+    await Promise.all(noisy)
+
+    // With three people waiting, the line is full for a fourth.
+    const running = stuck(1, editors[0]!.cookie)
+    const waiting = [ask(200, editors[1]!.cookie), ask(201, editors[2]!.cookie), ask(202, editors[3]!.cookie)]
+    expect((await ask(203, editors[4]!.cookie)).status).toBe(429)
+    expect((await Promise.all(waiting)).map((res) => res.status)).toEqual([200, 200, 200])
+    await running
+  }, 20_000)
+
+  it('cannot be used to pile previews up until the plugin is taken for dead', async () => {
     const editors = await Promise.all(
       [0, 1].map((n) => h.createRoleUser({ name: `Editor ${n}`, slug: `editor-${n}`, capabilities: ['site.read'] })),
     )
-    // Thirty distinct stuck previews from one editor and eight from another, all at once.
+    // Thirty distinct slow previews from one editor and eight from another, all at once.
     const stuck = (i: number, cookie: string) => preview({ sourceId: 'acme.shop.stuck', filters: { i }, limit: 1 }, cookie)
     const answers = await Promise.all([
       ...Array.from({ length: 30 }, (_, i) => stuck(i, editors[0]!.cookie)),
       ...Array.from({ length: 8 }, (_, i) => stuck(100 + i, editors[1]!.cookie)),
     ])
     const statuses = answers.map((res) => res.status)
-    // Four reached the plugin and were cut off after a second each; the rest were turned away.
-    expect(statuses.filter((status) => status === 502)).toHaveLength(4)
-    expect(statuses.filter((status) => status === 429)).toHaveLength(34)
+    // Three reached the plugin (the first, and each editor's latest) and were
+    // cut off after a second each; the rest were turned away.
+    expect(statuses.filter((status) => status === 502)).toHaveLength(3)
+    expect(statuses.filter((status) => status === 429)).toHaveLength(35)
 
     // The plugin is still there: registered, its sources listed, its own route answering.
     expect(hostPlugins.has(PLUGIN_ID)).toBe(true)
@@ -274,6 +304,39 @@ describe('plugin loop sources for the editor', () => {
     expect(recordCrashAndDecide(PLUGIN_ID).recentCrashCount).toBe(1)
     clearPluginCrashCounter(PLUGIN_ID)
   }, 20_000)
+
+  for (const ending of ['disabled', 'uninstalled', 'crashed'] as const) {
+    it(`starts no worker for a waiting preview once the plugin is ${ending}`, async () => {
+      const editor = await h.createRoleUser({ name: 'Editor', slug: 'editor', capabilities: ['site.read'] })
+      // The host records a crash against the database it booted with: boot it on this test's.
+      if (ending === 'crashed') await activateInstalledServerPlugins(h.db, uploadsDir)
+      // One preview is with the worker and another waits behind it.
+      const running = preview({ sourceId: 'acme.shop.stuck', filters: {}, limit: 1 })
+      const waiting = preview({ sourceId: 'acme.shop.counted', filters: {}, limit: 1 }, editor.cookie)
+
+      if (ending === 'disabled') {
+        const res = await h.cms(`/admin/api/cms/plugins/${PLUGIN_ID}`, { method: 'PATCH', cookie: owner, json: { enabled: false } })
+        expect(res.status).toBe(200)
+      } else if (ending === 'uninstalled') {
+        const res = await h.cms(`/admin/api/cms/plugins/${PLUGIN_ID}?force=true`, { method: 'DELETE', cookie: owner })
+        expect(res.status).toBe(200)
+      } else {
+        // Three crashes in the window park the plugin: it is not loaded again.
+        recordCrashAndDecide(PLUGIN_ID)
+        recordCrashAndDecide(PLUGIN_ID)
+        handleWorkerCrash(PLUGIN_ID, 'test crash')
+      }
+
+      const answers = await Promise.all([running, waiting])
+      // The waiting preview was dropped, not run.
+      expect(answers[1]!.status).toBe(404)
+      // Let the host finish recording what happened before the database goes away.
+      await Bun.sleep(ending === 'crashed' ? 1_500 : 200)
+      expect(hostPlugins.has(PLUGIN_ID)).toBe(false)
+      expect(workers.has(PLUGIN_ID)).toBe(false)
+      clearPluginCrashCounter(PLUGIN_ID)
+    }, 20_000)
+  }
 
   it('refuses a request it cannot read, and a source no plugin provides', async () => {
     expect((await preview({ sourceId: 'acme.shop.offers', filters: {}, limit: LOOP_PREVIEW_MAX_ITEMS + 1 })).status).toBe(400)
@@ -293,6 +356,50 @@ describe('plugin loop sources for the editor', () => {
     const outsider = await h.createRoleUser({ name: 'Mail only', slug: 'mail-only', capabilities: ['dashboard.read'] })
     expect((await list(outsider.cookie)).status).toBe(403)
     expect((await preview({ sourceId: 'acme.shop.offers', filters: {}, limit: 3 }, outsider.cookie)).status).toBe(403)
+  })
+
+  it('says so when a publish leaves a loop empty because nobody provides its source', async () => {
+    const { rows } = await h.db<{ id: string }>`select id from users limit 1`
+    const node = (id: string, moduleId: string, props: Record<string, unknown>, children: string[] = []) =>
+      ({ id, moduleId, props, breakpointOverrides: {}, children, classIds: [] })
+    const loop = (id: string, sourceId: string, children: string[]) => node(id, 'base.loop', {
+      sourceId, filters: {}, orderBy: '', direction: 'asc', limit: 10, offset: 0,
+      pagination: 'none', pageSize: 10, tag: 'div', customTag: '',
+    }, children)
+    const nodes = [
+      node('root', 'base.body', {}, ['offers', 'pages']),
+      loop('offers', 'acme.shop.offers', ['offer']),
+      node('offer', 'base.text', { text: '{currentEntry.title}', tag: 'p' }),
+      // A built-in source is never reported.
+      loop('pages', 'site.pages', ['link']),
+      node('link', 'base.text', { text: '{currentEntry.title}', tag: 'p' }),
+    ]
+    const page = {
+      id: 'page_shop', title: 'Shop', slug: 'shop', rootNodeId: 'root',
+      nodes: Object.fromEntries(nodes.map((entry) => [entry.id, entry])),
+    } as unknown as Page
+    await createDataRow(h.db, MAIN_SCOPE, { id: page.id, tableId: 'pages', cells: pageToCells(page), slug: page.slug }, rows[0]!.id)
+    const publish = async () => {
+      const res = await h.cms('/admin/api/cms/publish', { method: 'POST', cookie: owner })
+      expect(res.status).toBe(200)
+      return (await res.json()) as { publishedPages: number; warnings: unknown[] }
+    }
+
+    // With the plugin running there is nothing to say.
+    expect((await publish()).warnings).toEqual([])
+
+    const disabled = await h.cms(`/admin/api/cms/plugins/${PLUGIN_ID}`, { method: 'PATCH', cookie: owner, json: { enabled: false } })
+    expect(disabled.status).toBe(200)
+    expect((await publish()).warnings).toEqual([
+      { kind: 'loop-source-unavailable', where: 'Shop', sourceId: 'acme.shop.offers' },
+    ])
+
+    // Publishing the one page says the same.
+    const row = await h.cms('/admin/api/cms/data/rows/page_shop/publish', { method: 'POST', cookie: owner })
+    expect(row.status).toBe(200)
+    expect(((await row.json()) as { warnings: unknown[] }).warnings).toEqual([
+      { kind: 'loop-source-unavailable', where: 'Shop', sourceId: 'acme.shop.offers' },
+    ])
   })
 
   it('drops the sources when the plugin is disabled, and brings them back when it is enabled', async () => {

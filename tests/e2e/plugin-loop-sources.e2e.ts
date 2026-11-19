@@ -266,6 +266,32 @@ test('a plugin loop source is picked, previewed and published from the editor (S
         await second.close()
       }
     })
+    await test.step('publishing from an editor that has not heard says the list went out empty', async () => {
+      await setEnabled(false)
+      // This editor has not been told: it still shows the plugin's sample items.
+      await expect(canvasFrame(page).getByText('Offer Sample Pro eur')).toBeVisible()
+      await canvasFrame(page).getByText('Offer Sample Pro eur').click()
+      await setPropValue(page, 'text', 'Plan {currentEntry.title}')
+
+      // The toast is watched for while the publish runs: it is gone again by
+      // the time `publishDraft` has finished waiting for a step-up prompt.
+      const warned = (async () => {
+        await expect(page.getByText('Published, with an empty list')).toBeVisible({ timeout: 30_000 })
+        await expect(page.getByText(`${pageName}: “${sourceId}”`, { exact: false })).toBeVisible()
+      })()
+      await Promise.all([warned, publishDraft(page)])
+      // The canvas has caught up too.
+      await expect(canvasFrame(page).getByText(unavailable, { exact: false })).toBeVisible({ timeout: 15_000 })
+
+      const visitorContext = await browser.newContext()
+      const visitor = await visitorContext.newPage()
+      try {
+        await visitor.goto(`${PUBLIC_BASE_URL}/${slug}`)
+        await expect(visitor.getByText(/Plan|Offer/)).toHaveCount(0)
+      } finally {
+        await visitorContext.close()
+      }
+    })
   } finally {
     // The suite shares one site: leave neither the plugin nor the page behind.
     await stepUp()

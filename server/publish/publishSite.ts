@@ -57,9 +57,13 @@ import { bumpPublishVersion, getPublishVersion, withPublishLock } from './publis
 import { runPublishFlush } from './publishFlush'
 import { sweepStalePluginVersionAssets } from './stalePluginAssets'
 import { MAIN_SCOPE } from '../branches/scope'
+import type { CmsPublishWarning } from '@core/persistence/responseSchemas'
+import { unavailableLoopSourceWarnings } from './loopSourceWarnings'
 
 interface PublishResult {
   publishedPages: number
+  /** See `CmsPublishWarningSchema`. Empty for a publish with nothing to say. */
+  warnings: CmsPublishWarning[]
 }
 
 /**
@@ -98,7 +102,7 @@ export async function publishDraftSite(
     const site = await getDraftSiteDocument(db, MAIN_SCOPE)
     if (!site) throw new Error('draft site not found')
     const result = await publishSiteDocumentLocked(db, site, adminUserId, uploadsDir)
-    return { publishedPages: result.publishedPages }
+    return { publishedPages: result.publishedPages, warnings: unavailableLoopSourceWarnings(site) }
   })
 }
 
@@ -345,7 +349,7 @@ export async function publishPageRowLocked(
   row: DataRow,
   publisherUserId: string | null,
   uploadsDir?: string,
-): Promise<{ row: DataRow; version: DataRowVersion }> {
+): Promise<{ row: DataRow; version: DataRowVersion; warnings: CmsPublishWarning[] }> {
   const site = await getPagePublishDocument(db, row)
   const { pageWrites } = await publishSiteDocumentLocked(db, site, publisherUserId, uploadsDir, row.id)
   const write = pageWrites.find((page) => page.pageId === row.id)
@@ -363,5 +367,6 @@ export async function publishPageRowLocked(
       publishedAt: publishedRow.publishedAt,
       createdAt: publishedRow.publishedAt,
     },
+    warnings: unavailableLoopSourceWarnings(site, new Set([row.id])),
   }
 }

@@ -165,8 +165,24 @@ export const CmsMediaFolderEnvelopeSchema = Type.Object({
 // cmsPublish.ts
 // ---------------------------------------------------------------------------
 
+/**
+ * Something a publish did that its author may not expect. The publish
+ * succeeded; a warning is information, not a failure.
+ *
+ *   loop-source-unavailable — a loop on the page or Visual Component named
+ *   by `where` uses `sourceId`, which nobody provides (its plugin is disabled
+ *   or removed), so that loop published as an empty list.
+ */
+export const CmsPublishWarningSchema = Type.Object({
+  kind: Type.Literal('loop-source-unavailable'),
+  where: Type.String(),
+  sourceId: Type.String(),
+})
+export type CmsPublishWarning = Static<typeof CmsPublishWarningSchema>
+
 export const CmsPublishResultSchema = Type.Object({
   publishedPages: Type.Number(),
+  warnings: Type.Array(CmsPublishWarningSchema),
 })
 
 export type CmsPublishResult = Static<typeof CmsPublishResultSchema>

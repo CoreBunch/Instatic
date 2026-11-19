@@ -42,7 +42,7 @@ export const LoopEditor: React.FC<ModuleComponentProps> = ({ props, children, mc
         className={mcClassName}
         icon={<BoxStackSolidIcon size={16} color="currentColor" />}
         label="Empty loop"
-        description={notice ? <span role="status" data-loop-preview-notice="">{notice.message}</span> : undefined}
+        description={notice ? <output data-loop-preview-notice="">{notice.message}</output> : undefined}
         actions={notice?.onRetry ? <LoopPreviewRetry onRetry={notice.onRetry} /> : undefined}
       />
     )
