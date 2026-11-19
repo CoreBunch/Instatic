@@ -23,7 +23,7 @@ import {
 import { resetForTests } from '../../../server/publish/renderCache'
 import { bumpPublishVersion } from '../../../server/publish/publishState'
 import { getPublishedSnapshotHash } from '../../../server/publish/publishedSnapshotCache'
-import { HOLE_RUNTIME_JS } from '../../../server/publish/holeRuntime'
+import { HOLE_RUNTIME_JS, HOLE_RUNTIME_VERSION } from '../../../server/publish/holeRuntime'
 import { handleServerRequest } from '../../../server/router'
 import { makeModule } from '../publisher/helpers'
 import { registry } from '../../core/module-engine/registry'
@@ -215,18 +215,51 @@ describe('isHoleRuntimeAssetPath', () => {
 // serveHoleRuntimeAsset
 // ---------------------------------------------------------------------------
 
+function holeRuntimeRequest(query = '', headers: Record<string, string> = {}): [Request, URL] {
+  const url = new URL(`http://localhost/_instatic/hole-runtime.js${query}`)
+  return [new Request(url, { headers }), url]
+}
+
 describe('serveHoleRuntimeAsset', () => {
-  it('serves the HOLE_RUNTIME_JS source with correct headers', () => {
-    const res = serveHoleRuntimeAsset()
+  it('serves HOLE_RUNTIME_JS with a 1h public cache under the URL that names it', async () => {
+    const res = serveHoleRuntimeAsset(...holeRuntimeRequest(`?v=${HOLE_RUNTIME_VERSION}`))
     expect(res.status).toBe(200)
-    expect(res.headers.get('content-type')).toBe('application/javascript; charset=utf-8')
+    expect(res.headers.get('content-type')).toBe('text/javascript; charset=utf-8')
     expect(res.headers.get('cache-control')).toBe('public, max-age=3600')
+    expect(res.headers.get('etag')).toBe(`"${HOLE_RUNTIME_VERSION}"`)
+    expect(await res.text()).toBe(HOLE_RUNTIME_JS)
   })
 
-  it('response body matches HOLE_RUNTIME_JS export', async () => {
-    const res = serveHoleRuntimeAsset()
-    const body = await res.text()
-    expect(body).toBe(HOLE_RUNTIME_JS)
+  it('serves the runtime uncached when ?v= does not name it', async () => {
+    // A page baked before an upgrade, a snapshot-hash URL, no ?v=.
+    for (const query of ['?v=000000000000', '?v=3', '']) {
+      const res = serveHoleRuntimeAsset(...holeRuntimeRequest(query))
+      expect(res.status).toBe(200)
+      expect(res.headers.get('cache-control')).toBe('no-cache')
+      expect(res.headers.get('etag')).toBe(`"${HOLE_RUNTIME_VERSION}"`)
+      expect(await res.text()).toBe(HOLE_RUNTIME_JS)
+    }
+  })
+
+  it('answers 304 with no body when If-None-Match names the runtime', async () => {
+    const cases: Array<[query: string, ifNoneMatch: string, cacheControl: string]> = [
+      ['?v=000000000000', `"${HOLE_RUNTIME_VERSION}"`, 'no-cache'],
+      ['', `"other", W/"${HOLE_RUNTIME_VERSION}"`, 'no-cache'],
+      [`?v=${HOLE_RUNTIME_VERSION}`, `W/"${HOLE_RUNTIME_VERSION}"`, 'public, max-age=3600'],
+    ]
+    for (const [query, ifNoneMatch, cacheControl] of cases) {
+      const res = serveHoleRuntimeAsset(...holeRuntimeRequest(query, { 'if-none-match': ifNoneMatch }))
+      expect(res.status).toBe(304)
+      expect(res.headers.get('etag')).toBe(`"${HOLE_RUNTIME_VERSION}"`)
+      expect(res.headers.get('cache-control')).toBe(cacheControl)
+      expect(await res.text()).toBe('')
+    }
+  })
+
+  it('serves the full body when If-None-Match names another body', async () => {
+    const res = serveHoleRuntimeAsset(...holeRuntimeRequest('', { 'if-none-match': '"000000000000"' }))
+    expect(res.status).toBe(200)
+    expect(await res.text()).toBe(HOLE_RUNTIME_JS)
   })
 })
 
@@ -244,7 +277,8 @@ describe('server router — hole namespace ownership', () => {
     )
 
     expect(res.status).toBe(200)
-    expect(res.headers.get('content-type')).toBe('application/javascript; charset=utf-8')
+    expect(res.headers.get('content-type')).toBe('text/javascript; charset=utf-8')
+    expect(res.headers.get('cache-control')).toBe('no-cache')
     expect(await res.text()).toBe(HOLE_RUNTIME_JS)
     expect(wasQueried()).toBe(false)
   })

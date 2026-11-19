@@ -4,7 +4,10 @@ import { registry } from '@core/module-engine'
 import { publishPage } from '@core/publisher'
 import { buildRouteFrame } from '@core/templates/contextFrames'
 import { buildPublishedSiteCssBundle } from './siteCssBundle'
-import { buildPublishedSiteModuleJsMap } from './moduleJsBundle'
+import { buildPublishedSiteModuleJsMap, resolveModuleScripts } from './moduleJsBundle'
+import type { ModuleScriptRef } from './moduleJsBundle'
+import { HOLE_RUNTIME_VERSION } from './holeRuntime'
+import { LOOP_RUNTIME_VERSION } from './loopRuntime'
 import { resolveTemplateChain, resolveNotFoundTemplate, composeTemplateChain } from '@core/templates'
 import type { TemplateRenderDataContext } from '@core/templates/dynamicBindings'
 import { pendingAppRequestOnPage, stampAppRequestId } from '../members/apps/approval'
@@ -49,17 +52,11 @@ export interface RendererOutput {
   slug: string
   siteId: string
   /**
-   * Sorted moduleIds whose published JS this page must load — already
-   * intersected with the site module-JS map, so `injectModuleScripts` can
-   * emit tags without any further lookup.
+   * The module scripts this page must load, each with the content hash of
+   * its body (see `resolveModuleScripts`), so `injectModuleScripts` can emit
+   * tags without any further lookup.
    */
-  jsModuleIds: string[]
-  /**
-   * Publish version this page was rendered at (the bake passes the NEXT
-   * version, live renders the current one) — stamped into module-js `?v=`
-   * URLs so they cache-bust when published content changes.
-   */
-  publishVersion: number
+  moduleScripts: ModuleScriptRef[]
   /**
    * The CSS bundle this render's HTML actually references (`<link href>`
    * hashes). The publish-time bake writes these exact files into the slot so
@@ -74,7 +71,7 @@ interface RenderPublishedSnapshotContext {
   db: DbClient
   /** Optional request URL — when present, drives per-loop pagination. */
   url?: URL
-  /** Cache generation used for CSS bundles and module-JS URLs during the bake. */
+  /** Cache generation used for the CSS bundle memo and the access index during the bake. */
   publishVersion?: number
   /**
    * The visitor this render is for, on a protected route: the member, or
@@ -90,7 +87,7 @@ interface RenderPublishedSnapshotContext {
  * Shared render tail for both public paths. Given an already-resolved,
  * composed `merged` tree and its seed `templateContext`, this owns the
  * identical CSS-bundle build + loop/media prefetch + `publishPage` call +
- * publish-version stamping. The two public functions differ only in how they
+ * module-script resolution. The two public functions differ only in how they
  * resolve the chain and seed the context, plus which `pageId`/`slug` they
  * report — so any new `publishPage` option threads through here once.
  */
@@ -100,7 +97,7 @@ async function renderMergedTemplate(
   templateContext: TemplateRenderDataContext | undefined,
   ctx: RenderPublishedSnapshotContext,
   documentMeta?: DocumentMetaOverride,
-): Promise<{ html: string; jsModuleIds: string[]; publishVersion: number; cssBundle: SiteCssBundle }> {
+): Promise<{ html: string; moduleScripts: ModuleScriptRef[]; cssBundle: SiteCssBundle }> {
   const publishVersion = ctx.publishVersion ?? getPublishVersion()
   const moduleJsMap = buildPublishedSiteModuleJsMap(snapshot.site, registry)
   // The index for the version being rendered: during a publish that is the
@@ -135,15 +132,17 @@ async function renderMergedTemplate(
     mediaAssets,
     loopEndpointBaseUrl: LOOP_ENDPOINT_BASE_URL,
     snapshotHash: getPublishedSnapshotHash(snapshot.site),
+    holeRuntimeVersion: HOLE_RUNTIME_VERSION,
+    loopRuntimeVersion: LOOP_RUNTIME_VERSION,
   })
   // Per-page injection set = candidates from the render (emitted ∪ hole
   // subtrees) ∩ the site module-JS map — over-inclusive candidates from
   // unbaked holes are filtered down to modules that actually ship JS.
-  const jsModuleIds = published.jsModuleIds.filter((id) => moduleJsMap.has(id))
+  const moduleScripts = resolveModuleScripts(published.jsModuleIds, moduleJsMap)
   // The approval form of a page opened with a waiting request posts it back
   // even with scripts off.
   const html = appRequest ? stampAppRequestId(published.html, appRequest.requestId) : published.html
-  return { html, jsModuleIds, publishVersion, cssBundle }
+  return { html, moduleScripts, cssBundle }
 }
 
 export async function renderPublishedSnapshot(

@@ -41,7 +41,8 @@ import { readLoopProps } from '../../publish/loopPrefetch'
 import { sourceRequestFor, visitorRequestScope } from '../../publish/loopSourceRequest'
 import { getPublishedLoopIndexForVersion } from '../../publish/publishedSnapshotCache'
 import { getPublishVersion } from '../../publish/publishState'
-import { LOOP_RUNTIME_JS } from '../../publish/loopRuntime'
+import { LOOP_RUNTIME_JS, LOOP_RUNTIME_VERSION } from '../../publish/loopRuntime'
+import { serveVersionedScript } from '../../publish/assetVersion'
 import {
   closedContentFor,
   decideAccess,
@@ -58,16 +59,13 @@ export function isLoopRuntimeAssetPath(pathname: string): boolean {
   return pathname === LOOP_RUNTIME_PATH
 }
 
-export function serveLoopRuntimeAsset(): Response {
-  return new Response(LOOP_RUNTIME_JS, {
-    headers: {
-      'content-type': 'application/javascript; charset=utf-8',
-      // Aggressive caching — content is a fixed CMS asset that only
-      // changes when the CMS itself ships a new version. We can re-deploy
-      // by invalidating the path or appending a hash.
-      'cache-control': 'public, max-age=3600',
-    },
-  })
+/**
+ * GET `/_instatic/assets/loop-runtime.js?v=<contentHash>`: cacheable under the
+ * URL that names this runtime, `no-cache` otherwise, `ETag` and `304` on both
+ * (see `serveVersionedScript`).
+ */
+export function serveLoopRuntimeAsset(req: Request, url: URL): Response {
+  return serveVersionedScript(req, url, { body: LOOP_RUNTIME_JS, version: LOOP_RUNTIME_VERSION })
 }
 
 /**

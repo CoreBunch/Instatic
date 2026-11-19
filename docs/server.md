@@ -94,11 +94,11 @@ const routes: readonly RouteHandler[] = [
   tryServeCmsApi,                  // /admin/api/cms/*        → handlers/cms/index.ts
   tryServeBranchPreviewLink,       // /_instatic/preview/<token> | /exit → publish/publicRoutes.ts
                                    //   sets / clears the branch preview cookie
-  tryServeLoopRuntimeAsset,        // /_instatic/loop-runtime.js (fixed CMS asset)
+  tryServeLoopRuntimeAsset,        // /_instatic/assets/loop-runtime.js?v=<contentHash> (fixed CMS asset)
   tryServeLoop,                    // /_instatic/loop/*       → handlers/cms/loop.ts
-  tryServeHoleRuntimeAsset,        // /_instatic/hole-runtime.js (fixed CMS asset)
+  tryServeHoleRuntimeAsset,        // /_instatic/hole-runtime.js?v=<contentHash> (fixed CMS asset)
   tryServeHole,                    // /_instatic/hole/*       → handlers/cms/hole.ts
-  tryServeModuleJsAsset,           // /_instatic/module-js/*  → handlers/cms/moduleJs.ts
+  tryServeModuleJsAsset,           // /_instatic/module-js/<id>.js?v=<contentHash>  → handlers/cms/moduleJs.ts
   tryServePublicForm,              // /_instatic/form/*       → forms/handler.ts
   tryServeRuntimeAsset,            // /_instatic/assets/*     → published runtime assets
   tryServeRuntimePackageNamespace, // /_instatic/runtime/cache/<hash>/<...> → bun install workspace
@@ -506,7 +506,7 @@ Three-layer model: **static-by-default, dynamic-by-auto-detection**.
 
 - **Layer A — static-to-disk.** **Every** page is baked at publish time. A fully-static page (no dynamic modules, no request-dependent bindings/loop sources, no VC refs to dynamic VCs) bakes a complete document; a page with dynamic nodes bakes its static **shell** with `<instatic-hole>` placeholders (the dynamic nodes are Layer C holes). HTML is written to `uploads/published/current/<route>.html`, and the CSS bundles (`/_instatic/css/…`) and runtime JS (`/_instatic/assets/…`) are baked into the same slot. The visitor router reads all of these directly off disk (`readArtefact` / `readStaticAsset`) — **a published page never touches the DB for HTML, CSS, or JS.** TTFB ≤ 1.5 ms.
 - **Layer B — in-memory LRU.** Requests with real loop-pagination query params (`loop_<nodeId>_page`) bypass the disk fast-path and render live, memoised by `(urlPath, canonicalQuery)`. Junk params collapse to the empty canonical query and still hit Layer A. Single-flight. Every publish bumps `publishVersion` so the entire cache evicts lazily. The version is captured at render start — if a publish lands before the factory resolves, the result is returned to the caller but not stored; the next request re-renders against the fresh snapshot.
-- **Layer C — server islands ("holes").** When `findDynamicNodeIds(...)` classifies a node as dynamic (module flagged `dynamic: true`, or its bindings/loop source declare `requestDependent: true` / `perVisitor: true`, or it's a VC ref to a dynamic VC), the publisher emits a `<instatic-hole>` placeholder with an optional `staticPlaceholder(props)` skeleton. A ~1.1 KB `IntersectionObserver` runtime fetches `/_instatic/hole/<nodeId>?v=<publishVersion>&u=<page-url>` lazily as the placeholder enters the viewport, forwarding the originating page path/query into the fragment render. **The hole fragment is the only request that reads the DB for an otherwise-static page.** Shared hole responses are cached via Layer B's LRU; per-visitor holes bypass it with `Cache-Control: no-store`.
+- **Layer C — server islands ("holes").** When `findDynamicNodeIds(...)` classifies a node as dynamic (module flagged `dynamic: true`, or its bindings/loop source declare `requestDependent: true` / `perVisitor: true`, or it's a VC ref to a dynamic VC), the publisher emits a `<instatic-hole>` placeholder with an optional `staticPlaceholder(props)` skeleton. A ~1.1 KB `IntersectionObserver` runtime fetches `/_instatic/hole/<nodeId>?v=<snapshotHash>&u=<page-url>` lazily as the placeholder enters the viewport, forwarding the originating page path/query into the fragment render. **The hole fragment is the only request that reads the DB for an otherwise-static page.** Shared hole responses are cached via Layer B's LRU; per-visitor holes bypass it with `Cache-Control: no-store`.
 
 Authors don't toggle anything. `src/core/publisher/dynamicDetection.ts:findDynamicNodeIds` is backed by the single walker that powers Layer A's shell-vs-complete bake and Layer C's placeholder emission. The rules live in exactly one file.
 
@@ -552,7 +552,9 @@ Server-side publishing helpers live in `server/publish/`:
 | `publicRouter.ts`                 | Visitor URL → resolution → Response. Composes Layer A disk-read + Layer B cache. Single entry for every visitor HTML request. |
 | `staticArtefact.ts`               | Layer A. Two-slot symlink swap (`current → slot-{a,b}`), atomic per-file `tmp + rename`, slot-aware read/write/purge. |
 | `renderCache.ts`                  | Layer B. Bounded LRU keyed by `(urlPath, canonicalQuery)`, entries versioned. Single-flight on cache miss. `bumpPublishVersion()` invalidates lazily; version captured at render start so mid-flight publishes discard without caching stale HTML. |
-| `holeRuntime.ts`                  | Layer C client-side runtime (~1.1 KB). Exports `runInstaticHoleRuntime` (TS source) and `HOLE_RUNTIME_JS` (IIFE-serialized for browser delivery). |
+| `holeRuntime.ts`                  | Layer C client-side runtime (~1.1 KB). Exports `runInstaticHoleRuntime` (TS source), `HOLE_RUNTIME_JS` (IIFE-serialized for browser delivery) and `HOLE_RUNTIME_VERSION` (its content hash, the `?v=` on the runtime's script tag). |
+| `loopRuntime.ts`                  | Infinite-loop client runtime. Exports `LOOP_RUNTIME_JS` and `LOOP_RUNTIME_VERSION` (its content hash, the `?v=` on the runtime's script tag). |
+| `assetVersion.ts`                 | `assetContentVersion(body)` (the `?v=` content hash) and `serveVersionedScript`, the response rule shared by `/_instatic/module-js/<id>.js`, `/_instatic/hole-runtime.js` and `/_instatic/assets/loop-runtime.js`: `public, max-age=3600` only when `?v=` names the body served, `no-cache` otherwise, with `ETag: "<contentHash>"` on both and `304 Not Modified` when `If-None-Match` names it. |
 | `publishSite.ts`                  | Full-site publish orchestrator (`publishDraftSite`): phase-1 builds, the short `persistSitePublish` transaction, Layer A bake + slot swap, Layer B bump. |
 | `publishRow.ts`                   | Per-row publish orchestrator (`publishDataRow`) + `retractDataRowArtefacts`: page rows use the site pipeline with published shared resources and just the selected draft; other rows use an in-place artefact update and Layer B bump. Both also drop the baked pages that loop over the row's table. |
 | `loopArtefacts.ts`                | `removeArtefactsLoopingOverTable`: removes from the active slot every baked route whose render tree loops over a table, so listings follow row changes without a site publish. |

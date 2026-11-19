@@ -69,7 +69,7 @@ interface LoopEntitySource {
    * request (live API, time-of-day data). Loops using a request-dependent source
    * become Layer C "holes" — the publisher emits a placeholder + a ~1.1 KB client
    * runtime fetches the rendered fragment lazily via
-   * `/_instatic/hole/<nodeId>?v=<publishVersion>&u=<page-url>`.
+   * `/_instatic/hole/<nodeId>?v=<snapshotHash>&u=<page-url>`.
    *
    * A `requestDependent` (non-perVisitor) hole is rendered at request time and
    * cached by Layer B per `(nodeId, query, publishVersion)`.
@@ -495,7 +495,7 @@ Two modes are available via the loop node's `pagination` prop:
 To enable infinite loading:
 1. Set `props.pagination = 'infinite'` on the loop node.
 2. Set `props.pageSize` (items per click; defaults to 10).
-3. The publisher auto-injects `<script type="module" src="/_instatic/assets/loop-runtime.js">` when at least one infinite loop exists on the page (see `server/publish/loopRuntime.ts`). The runtime is < 2 KB and ships only when needed.
+3. The publisher auto-injects `<script type="module" src="/_instatic/assets/loop-runtime.js?v=<contentHash>">` when at least one infinite loop exists on the page (see `server/publish/loopRuntime.ts`). `?v=` is `LOOP_RUNTIME_VERSION`, the hash of the runtime body, so a CMS upgrade that changes the runtime changes the URL; the route caches a response only under the URL that names the body it serves (see [publisher.md](publisher.md) → "Module-emitted JS"). The runtime is < 2 KB and ships only when needed.
 
 For static multi-page navigation (no JS required):
 - Set `pagination: 'infinite'` and link the pages with the query parameter below — the server renders each page. See "Deep-link to a loop page".

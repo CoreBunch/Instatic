@@ -38,12 +38,12 @@ import { BRANCH_PREVIEW_EXIT_PATH } from '../branches/previewLinks'
 import { getBranch } from '../repositories/branches'
 import { getDataRowBySlug, listDataTables } from '../repositories/data'
 import { getDraftSiteDocument } from '../repositories/publish'
-import { buildPublishedSiteModuleJsMap } from './moduleJsBundle'
+import { buildPublishedSiteModuleJsMap, resolveModuleScripts } from './moduleJsBundle'
 import { applyPublishedHtmlPipeline } from './publishedHtmlPipeline'
 import { prefetchLoopData, publishedDataRowToEntryItem } from './loopPrefetch'
+import { LOOP_RUNTIME_VERSION } from './loopRuntime'
 import { prefetchMediaAssets } from './mediaPrefetch'
 import { contentRouteFromPath, publicSlugFromPath } from './publicRouter'
-import { getPublishVersion } from './publishState'
 import { buildSiteRuntimeScripts } from './runtime/bundleScripts'
 import { ensureRuntimeDependencyCache } from './runtime/dependencyCache'
 import { buildRuntimePackageImportmap, serializeImportmapForCsp } from './runtime/packageImportmap'
@@ -230,6 +230,7 @@ export async function renderBranchPreview(
     loopData,
     mediaAssets,
     dynamicNodes: 'inline',
+    loopRuntimeVersion: LOOP_RUNTIME_VERSION,
   })
   // The same pipeline as a published page (plugin frontend assets, form
   // tokens, module scripts, the `publish.*` hooks), so a form or a plugin's
@@ -242,8 +243,7 @@ export async function renderBranchPreview(
       pageId: merged.id,
       slug: merged.slug,
       siteId: site.id,
-      jsModuleIds: rendered.jsModuleIds.filter((id) => moduleJsMap.has(id)),
-      publishVersion: getPublishVersion(),
+      moduleScripts: resolveModuleScripts(rendered.jsModuleIds, moduleJsMap),
     },
     db,
   )

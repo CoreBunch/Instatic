@@ -58,7 +58,8 @@ import {
 import { getOrRender } from '../../publish/renderCache'
 import { getPublishedNodeIndexForVersion } from '../../publish/publishedSnapshotCache'
 import { getPublishVersion } from '../../publish/publishState'
-import { HOLE_RUNTIME_JS } from '../../publish/holeRuntime'
+import { HOLE_RUNTIME_JS, HOLE_RUNTIME_VERSION } from '../../publish/holeRuntime'
+import { serveVersionedScript } from '../../publish/assetVersion'
 import { stampFormPageTokens } from '../../forms/formRuntime'
 import { memberAppRequestFrame } from '../../members/apps/approval'
 import {
@@ -79,16 +80,15 @@ export function isHoleRuntimeAssetPath(pathname: string): boolean {
   return pathname === HOLE_RUNTIME_PATH
 }
 
-export function serveHoleRuntimeAsset(): Response {
-  return new Response(HOLE_RUNTIME_JS, {
-    headers: {
-      'content-type': 'application/javascript; charset=utf-8',
-      // Cache for 1 hour — the path is a well-known fixed CMS asset that
-      // only changes on a CMS version bump. Use deploy-time cache-busting
-      // (e.g. append a build hash) if you need longer caching.
-      'cache-control': 'public, max-age=3600',
-    },
-  })
+/**
+ * GET `/_instatic/hole-runtime.js?v=<contentHash>`: cacheable under the URL
+ * that names this runtime (`v` equals `HOLE_RUNTIME_VERSION`), `no-cache`
+ * otherwise, `ETag` and `304` on both (see `serveVersionedScript`). A page
+ * baked before a CMS upgrade carries the old hash, so it revalidates rather
+ * than caching the new runtime under a URL that names the old one.
+ */
+export function serveHoleRuntimeAsset(req: Request, url: URL): Response {
+  return serveVersionedScript(req, url, { body: HOLE_RUNTIME_JS, version: HOLE_RUNTIME_VERSION })
 }
 
 interface HoleHandlerContext {
@@ -162,7 +162,7 @@ async function renderHoleFragment(
 /**
  * Render a single dynamic node subtree for Layer C hole hydration.
  *
- * GET `/_instatic/hole/<nodeId>?v=<publishVersion>&u=<page-url>` → HTML fragment.
+ * GET `/_instatic/hole/<nodeId>?v=<snapshotHash>&u=<page-url>` → HTML fragment.
  */
 export async function handleHoleRequest(
   req: Request,
