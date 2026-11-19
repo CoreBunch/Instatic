@@ -1800,4 +1800,13 @@ export const sqliteMigrations: Migration[] = [
       alter table mail_queue add column install_id text;
     `,
   },
+  {
+    // Postgres only: record data bound as a JSON string was stored as a
+    // string scalar no filter could see; its twin unwraps those rows. SQLite
+    // stores JSON as text either way, so there is nothing to repair here.
+    id: '036_plugin_records_json_repair',
+    sql: `
+      select 1;
+    `,
+  },
 ]

@@ -22,6 +22,11 @@ export const PluginRecordSchema = Type.Object({
   pluginId: Type.String(),
   resourceId: Type.String(),
   data: Type.Record(Type.String(), Type.Unknown()),
+  /**
+   * Set when the stored data is not a JSON object and could not be read:
+   * `data` is then `{}`. Such a record can be deleted but not updated.
+   */
+  unreadable: Type.Optional(Type.Literal(true)),
   createdAt: Type.String(),
   updatedAt: Type.String(),
 })
