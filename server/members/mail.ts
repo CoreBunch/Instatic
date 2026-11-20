@@ -15,6 +15,7 @@
  */
 import type { DbClient } from '../db/client'
 import type { MemberPageKey, MemberPagePaths } from '@core/members'
+import type { PluginMemberEmailBlocker } from '@core/plugin-sdk'
 import { getErrorMessage } from '@core/utils/errorMessage'
 import { clientIp, configuredPublicOrigin } from '../auth/security'
 import { getMailDefaults } from '../mail/defaults'
@@ -47,13 +48,12 @@ export async function memberMailAvailable(db: DbClient, req: Request): Promise<b
   return mailDeliveryMode(await getMailDefaults(db)) !== 'off'
 }
 
-/** Why the site cannot email a member a link it starts itself (an invitation, a sign-in link). */
-export type MemberEmailBlocker =
-  | 'public_address_missing'
-  | 'mail_not_configured'
-  | 'mail_captured_not_sent'
-  | 'invite_page_missing'
-  | 'sign_in_page_missing'
+/**
+ * Why the site cannot email a member a link it starts itself (an invitation,
+ * a sign-in link). Plugins read these through `api.cms.members.emailStatus`,
+ * so the SDK's list is the one list.
+ */
+export type MemberEmailBlocker = PluginMemberEmailBlocker
 
 /**
  * What stands between the site and emailing members links right now, with
