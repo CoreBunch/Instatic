@@ -8,8 +8,19 @@
  *                   `page.title` → `site.name`
  *   - description → `documentMeta.description` → `page.seo.description` →
  *                   `settings.metaDescription`
- *   - favicon     → `page.seo.favicon` → `settings.faviconUrl`
+ *   - favicon     → `page.seo.favicon` → `settings.faviconUrl` (unless the
+ *                   page lists its own `icon` links)
  * Every other tag is emitted only when the page sets it.
+ *
+ * On an entry route the settings are the matched post-type template's
+ * (`composeTemplateChain` carries them), used as a pattern for every entry:
+ *   - the entry's own SEO title / description (`documentMeta`) outrank the
+ *     template's;
+ *   - a template canonical with no token would point every entry at one URL,
+ *     so it becomes the entry's own permalink; one with a token resolves per
+ *     entry. A token-less `og:url` is omitted for the same reason;
+ *   - everything else (robots included, so a `noindex` template hides every
+ *     entry) applies to all entries as written.
  *
  * Text values, URLs and JSON-LD string values are token-interpolated against
  * the render context before escaping, so a template page can write `{currentEntry.title} | Acme`
@@ -27,7 +38,7 @@
 
 import type { Page, SiteDocument } from '@core/page-tree'
 import type { TemplateRenderDataContext } from '@core/templates/dynamicBindings'
-import { interpolateTokens } from '@core/templates/tokenInterpolation'
+import { containsTokens, interpolateTokens } from '@core/templates/tokenInterpolation'
 import { hasDangerousUrlScheme } from '@core/html-sanitize'
 import { escapeHtml, isSafeUrl } from './utils'
 
@@ -80,7 +91,13 @@ export function buildDocumentHead(
   const description = override.description || seo.description || settings.metaDescription
   if (description) meta('name', 'description', text(description))
 
-  const canonical = url(seo.canonical)
+  // The entry this document renders, on an entry route (see the header).
+  const entry = context.entryStack.at(-1)
+  const entryPermalink = typeof entry?.fields.permalink === 'string' ? entry.fields.permalink : undefined
+  const perEntry = (value: string | undefined) =>
+    entry && value && !containsTokens(value) ? undefined : value
+
+  const canonical = url(entry && seo.canonical && !containsTokens(seo.canonical) ? entryPermalink : seo.canonical)
   if (canonical) lines.push(`<link rel="canonical" href="${escapeHtml(canonical)}">`)
   if (seo.robots) meta('name', 'robots', seo.robots)
   if (seo.colorScheme) meta('name', 'color-scheme', seo.colorScheme)
@@ -89,7 +106,10 @@ export function buildDocumentHead(
     lines.push(`<meta name="theme-color" content="${escapeHtml(theme.color)}"${media}>`)
   }
 
-  const faviconHref = url(seo.favicon?.href ?? settings.faviconUrl)
+  // A page that lists its own icon links (sizes / media variants) has its icon
+  // set; the site favicon would add a second, competing one.
+  const pageListsIcons = (seo.links ?? []).some((link) => link.rel === 'icon')
+  const faviconHref = url(seo.favicon?.href ?? (pageListsIcons ? undefined : settings.faviconUrl))
   if (faviconHref) {
     const type = seo.favicon?.type ? ` type="${escapeHtml(seo.favicon.type)}"` : ''
     lines.push(`<link rel="icon" href="${escapeHtml(faviconHref)}"${type}>`)
@@ -119,7 +139,7 @@ export function buildDocumentHead(
   if (og) {
     meta('property', 'og:type', og.type)
     meta('property', 'og:site_name', og.siteName)
-    meta('property', 'og:url', url(og.url) ?? undefined)
+    meta('property', 'og:url', url(perEntry(og.url)) ?? undefined)
     meta('property', 'og:title', og.title ? text(og.title) : undefined)
     meta('property', 'og:description', og.description ? text(og.description) : undefined)
     meta('property', 'og:image', url(og.image) ?? undefined)

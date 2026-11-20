@@ -212,7 +212,8 @@ export function parsePageSeo(raw: unknown): PageSeo | null {
 
   const links = arrayOf<PageHeadLink>(r.links, PageHeadLinkSchema)
     .map((link) => compactStrings(link))
-    .filter((link): link is PageHeadLink => Boolean(link?.href))
+    // A preload without a destination fetches nothing useful; drop it.
+    .filter((link): link is PageHeadLink => Boolean(link?.href) && (link?.rel !== 'preload' || Boolean(link.as)))
   if (links.length > 0) seo.links = links.slice(0, 64)
 
   const jsonLd = Array.isArray(r.jsonLd)

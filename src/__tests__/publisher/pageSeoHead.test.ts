@@ -88,6 +88,12 @@ describe('page head settings', () => {
     expect(head).not.toContain('site.ico')
   })
 
+  it('icon links on the page replace the site favicon instead of adding to it', () => {
+    const head = headOf({ links: [{ rel: 'icon', href: '/uploads/32.png', sizes: '32x32' }] }, { faviconUrl: '/uploads/site.ico' })
+    expect(head).toContain('<link rel="icon" href="/uploads/32.png" sizes="32x32">')
+    expect(head).not.toContain('site.ico')
+  })
+
   it('a page without head settings emits no extra tags', () => {
     const head = headOf(undefined)
     expect(head).not.toContain('og:')

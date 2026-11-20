@@ -118,6 +118,7 @@ function spliceIntoOutlet(host: Nodes, hostRoot: string, inner: Nodes, innerRoot
  */
 export function composeTemplateChain(chain: Page[], terminal: TerminalContent): Page {
   const effective = chain.filter(treeHasOutlet)
+  const seo = documentSeo(chain, terminal)
 
   if (effective.length === 0) {
     if (terminal.kind === 'page') return terminal.page
@@ -130,6 +131,7 @@ export function composeTemplateChain(chain: Page[], terminal: TerminalContent): 
       slug: t.slug,
       title: t.title,
       ...(t.template ? { template: t.template } : {}),
+      ...(seo ? { seo } : {}),
       rootNodeId: t.rootNodeId,
       nodes: { ...t.nodes },
     }
@@ -177,7 +179,20 @@ export function composeTemplateChain(chain: Page[], terminal: TerminalContent): 
     // here meant a stylesheet scoped to an entry template never applied to that
     // template's own routes — the one place it was meant to.
     ...(innermost.template ? { template: innermost.template } : {}),
+    ...(seo ? { seo } : {}),
     rootNodeId: acc.rootId,
     nodes,
   }
+}
+
+/**
+ * The head settings of the composed document. A page terminal keeps its
+ * own; a layout's settings are chrome and never reach the pages it wraps.
+ * An entry terminal takes the settings of the post-type template that matched
+ * it, as a pattern (`headTags.ts` resolves its tokens per entry and lets the
+ * entry's own SEO title and description outrank it).
+ */
+function documentSeo(chain: Page[], terminal: TerminalContent): Page['seo'] {
+  if (terminal.kind === 'page') return terminal.page.seo
+  return chain.findLast((template) => template.template?.target.kind === 'postTypes')?.seo
 }

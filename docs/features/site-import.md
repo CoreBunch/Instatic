@@ -39,6 +39,7 @@ src/core/siteImport/
 ├── stylesheetPlan.ts    — catalogue linked sheets by import mode; flatten kept sheets and unlinked (site-wide) sheets
 ├── classifyFiles.ts     — extension/MIME → FileRole: html | css | js | image | font | binary | meta
 ├── htmlPagePlan.ts      — per-HTML-file plan: parse body via importHtml, derive title + slug, resolve <link> refs, and preserve executable scripts
+├── pageSlug.ts          — deriveSlug: the route an imported HTML file is served at
 ├── headSeo.ts           — extractHeadSeo: the rest of <head> (meta, icons, social cards, links, JSON-LD) → PagePlan.seo; normalizeHeadSeoUrls for its files
 ├── cssToStyleRules.ts   — single-file CSS → StyleRule[] / @keyframes raw rules + AssetRef[] + warnings
 ├── colorTokens.ts       — extract root custom-property color tokens from :root/html/body rules

@@ -25,6 +25,7 @@ const HEAD = `<!doctype html>
 <title>Launch</title>
 <meta name="description" content="Design live, ship static.">
 <link rel="canonical" href="https://example.com/">
+<link rel="alternate" hreflang="de" href="../de/index.html">
 <meta name="robots" content="index, follow">
 <meta name="theme-color" content="#f3f3f1" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#0a0a0b" media="(prefers-color-scheme: dark)">
@@ -53,6 +54,7 @@ function fileMap(): FileMap {
   return {
     files: {
       'bake/index.html': file(HEAD, 'text/html'),
+      'de/index.html': file('<!doctype html><html><head><title>DE</title><link rel="canonical" href="index.html"><meta property="og:url" content="./index.html"></head><body></body></html>', 'text/html'),
       'bake/style.css': file('h1 { margin: 0 }', 'text/css'),
       'bake/llms.txt': file('# Example', 'text/plain'),
       'bake/app.js': file('console.info(1)', 'text/javascript'),
@@ -70,8 +72,11 @@ describe('HTML import keeps the page head', () => {
 
   it('maps head tags into the page SEO settings and plans their files', () => {
     const plan = buildImportPlan({ fileMap: fileMap(), currentSite: useEditorStore.getState().site! })
-    const page = plan.pages[0]!
+    const page = plan.pages.find((candidate) => candidate.source === 'bake/index.html')!
     expect(page.title).toBe('Launch')
+    // Head URLs naming another imported page point at its route, not the file.
+    const german = plan.pages.find((candidate) => candidate.source === 'de/index.html')!
+    expect(german.seo).toEqual({ canonical: '/de', openGraph: { url: '/de' } })
     expect(page.seo).toEqual({
       description: 'Design live, ship static.',
       canonical: 'https://example.com/',
@@ -89,6 +94,7 @@ describe('HTML import keeps the page head', () => {
         { attribute: 'name', name: 'google-site-verification', content: 'abc123' },
       ],
       links: [
+        { rel: 'alternate', href: '/de', hreflang: 'de' },
         { rel: 'apple-touch-icon', href: 'shared/touch.png', sizes: '180x180' },
         { rel: 'alternate', href: '/bake/llms.txt', type: 'text/plain', title: 'For language models' },
         { rel: 'preload', href: 'shared/fonts/sans.woff2', as: 'font', type: 'font/woff2', crossorigin: 'anonymous' },
@@ -126,10 +132,12 @@ describe('HTML import keeps the page head', () => {
       uploadAsset: async (asset) => ({ url: `/uploads/${asset.path.split('/').pop()}`, warnings: [] }),
     }
     const result = await commitImportPlan(resolved, adapter)
-    const page = useEditorStore.getState().site!.pages.find((candidate) => candidate.id === result.pages[0]!.id)!
+    const committed = result.pages.find((candidate) => candidate.source === 'bake/index.html')!
+    const page = useEditorStore.getState().site!.pages.find((candidate) => candidate.id === committed.id)!
 
     expect(page.seo?.favicon).toEqual({ href: '/uploads/logo.svg', type: 'image/svg+xml' })
     expect(page.seo?.links?.map((link) => link.href)).toEqual([
+      '/de',
       '/uploads/touch.png',
       '/bake/llms.txt',
       '/uploads/sans.woff2',

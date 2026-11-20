@@ -64,28 +64,28 @@ function SearchSection({ value, set, pageTitle }: { value: PageSeo; set: SetFiel
     <div className={styles.root}>
       <section className={styles.section}>
         <h3 className={styles.heading}>Search</h3>
-        <TextRow label="Title" value={value.title} placeholder={pageTitle} onChange={(next) => set('title', next)}
-          hint="Shown in the browser tab and search results. Empty uses the page title." />
-        <TextRow label="Description" value={value.description} multiline onChange={(next) => set('description', next)}
+        <TextRow label="Title" value={value.title} maxLength={512} placeholder={pageTitle} onChange={(next) => set('title', next)}
+          hint="Shown in the browser tab and search results. Empty uses the site's meta title from Settings, or the page title when that is not set." />
+        <TextRow label="Description" value={value.description} maxLength={2048} multiline onChange={(next) => set('description', next)}
           hint="Empty uses the site description from Settings." />
-        <TextRow label="Canonical URL" value={value.canonical} placeholder="https://example.com/page" onChange={(next) => set('canonical', next)} />
-        <TextRow label="Robots" value={value.robots} placeholder="index, follow" onChange={(next) => set('robots', next)} />
+        <TextRow label="Canonical URL" maxLength={2048} value={value.canonical} placeholder="https://example.com/page" onChange={(next) => set('canonical', next)} />
+        <TextRow label="Robots" maxLength={256} value={value.robots} placeholder="index, follow" onChange={(next) => set('robots', next)} />
       </section>
 
       <section className={styles.section}>
         <h3 className={styles.heading}>Social card</h3>
-        <TextRow label="Title" value={og.title} onChange={(next) => setOg('title', next)} />
-        <TextRow label="Description" value={og.description} multiline onChange={(next) => setOg('description', next)} />
-        <TextRow label="Image URL" value={og.image} placeholder="https://example.com/card.png" onChange={(next) => setOg('image', next)} />
-        <TextRow label="Image alt text" value={og.imageAlt} onChange={(next) => setOg('imageAlt', next)} />
-        <TextRow label="Type" value={og.type} placeholder="website" onChange={(next) => setOg('type', next)} />
-        <TextRow label="Site name" value={og.siteName} onChange={(next) => setOg('siteName', next)} />
-        <TextRow label="URL" value={og.url} onChange={(next) => setOg('url', next)} />
+        <TextRow label="Title" value={og.title} maxLength={512} onChange={(next) => setOg('title', next)} />
+        <TextRow label="Description" value={og.description} maxLength={2048} multiline onChange={(next) => setOg('description', next)} />
+        <TextRow label="Image URL" value={og.image} maxLength={2048} placeholder="https://example.com/card.png" onChange={(next) => setOg('image', next)} />
+        <TextRow label="Image alt text" maxLength={512} value={og.imageAlt} onChange={(next) => setOg('imageAlt', next)} />
+        <TextRow label="Type" value={og.type} maxLength={64} placeholder="website" onChange={(next) => setOg('type', next)} />
+        <TextRow label="Site name" maxLength={256} value={og.siteName} onChange={(next) => setOg('siteName', next)} />
+        <TextRow label="URL" value={og.url} maxLength={2048} onChange={(next) => setOg('url', next)} />
       </section>
 
       <section className={styles.section}>
         <h3 className={styles.heading}>X / Twitter</h3>
-        <p className={styles.sectionHint}>Empty fields use the social card values.</p>
+        <p className={styles.sectionHint}>Empty fields are not published; X then reads the social card above.</p>
         <Row label="Card">
           {(id) => (
             <Select
@@ -104,11 +104,11 @@ function SearchSection({ value, set, pageTitle }: { value: PageSeo; set: SetFiel
             />
           )}
         </Row>
-        <TextRow label="Site account" value={twitter.site} placeholder="@account" onChange={(next) => setTwitter('site', next)} />
-        <TextRow label="Creator" value={twitter.creator} placeholder="@author" onChange={(next) => setTwitter('creator', next)} />
-        <TextRow label="Title" value={twitter.title} onChange={(next) => setTwitter('title', next)} />
-        <TextRow label="Description" value={twitter.description} multiline onChange={(next) => setTwitter('description', next)} />
-        <TextRow label="Image URL" value={twitter.image} onChange={(next) => setTwitter('image', next)} />
+        <TextRow label="Site account" maxLength={128} value={twitter.site} placeholder="@account" onChange={(next) => setTwitter('site', next)} />
+        <TextRow label="Creator" maxLength={128} value={twitter.creator} placeholder="@author" onChange={(next) => setTwitter('creator', next)} />
+        <TextRow label="Title" value={twitter.title} maxLength={512} onChange={(next) => setTwitter('title', next)} />
+        <TextRow label="Description" value={twitter.description} maxLength={2048} multiline onChange={(next) => setTwitter('description', next)} />
+        <TextRow label="Image URL" value={twitter.image} maxLength={2048} onChange={(next) => setTwitter('image', next)} />
       </section>
     </div>
   )
@@ -134,18 +134,19 @@ function HeadSection({ value, set }: { value: PageSeo; set: SetField }) {
         <TextRow
           label="Favicon URL"
           value={value.favicon?.href}
+          maxLength={2048}
           hint="Empty uses the site favicon from Settings."
           onChange={(next) => set('favicon', { ...value.favicon, href: next })}
         />
-        <TextRow label="Color scheme" value={value.colorScheme} placeholder="light dark" onChange={(next) => set('colorScheme', next)} />
+        <TextRow label="Color scheme" maxLength={64} value={value.colorScheme} placeholder="light dark" onChange={(next) => set('colorScheme', next)} />
         <Row label="Theme colors">
           {() => (
             <div className={styles.list}>
               {themeColors.map((theme, index) => (
                 <div key={index} className={styles.listRow}>
-                  <Input fieldSize="sm" aria-label="Theme color" placeholder="#ffffff" value={theme.color}
+                  <Input fieldSize="sm" aria-label="Theme color" placeholder="#ffffff" maxLength={64} value={theme.color}
                     onChange={(event) => set('themeColors', updateAt<PageThemeColor>(themeColors, index, { ...theme, color: event.target.value }))} />
-                  <Input fieldSize="sm" aria-label="Theme color media query" placeholder="(prefers-color-scheme: dark)" value={theme.media ?? ''}
+                  <Input fieldSize="sm" aria-label="Theme color media query" placeholder="(prefers-color-scheme: dark)" maxLength={256} value={theme.media ?? ''}
                     onChange={(event) => set('themeColors', updateAt<PageThemeColor>(themeColors, index, { ...theme, media: event.target.value }))} />
                   <RemoveButton label="Remove theme color" onClick={() => set('themeColors', removeAt(themeColors, index))} />
                 </div>
@@ -183,9 +184,9 @@ function HeadSection({ value, set }: { value: PageSeo; set: SetField }) {
                   <Select fieldSize="sm" aria-label="Meta attribute" value={entry.attribute}
                     onChange={(event) => set('meta', updateAt(meta, index, { ...entry, attribute: event.target.value === 'property' ? 'property' : 'name' }))}
                     options={[{ value: 'name', label: 'name' }, { value: 'property', label: 'property' }]} />
-                  <Input fieldSize="sm" aria-label="Meta name" placeholder="og:image:width" value={entry.name} invalid={Boolean(problem)}
+                  <Input fieldSize="sm" aria-label="Meta name" placeholder="og:image:width" maxLength={128} value={entry.name} invalid={Boolean(problem)}
                     onChange={(event) => set('meta', updateAt(meta, index, { ...entry, name: event.target.value }))} />
-                  <Input fieldSize="sm" aria-label="Meta content" placeholder="Content" value={entry.content}
+                  <Input fieldSize="sm" aria-label="Meta content" placeholder="Content" maxLength={2048} value={entry.content}
                     onChange={(event) => set('meta', updateAt(meta, index, { ...entry, content: event.target.value }))} />
                   <RemoveButton label="Remove meta tag" onClick={() => set('meta', removeAt(meta, index))} />
                 </div>
@@ -207,7 +208,7 @@ function HeadSection({ value, set }: { value: PageSeo; set: SetField }) {
             return (
               <div key={index} className={styles.stack}>
                 <div className={styles.blockRow}>
-                  <Textarea fieldSize="sm" monospace rows={6} aria-label={`Structured data block ${index + 1}`} value={block}
+                  <Textarea fieldSize="sm" monospace rows={6} maxLength={65536} aria-label={`Structured data block ${index + 1}`} value={block}
                     invalid={Boolean(problem)} placeholder={'{ "@context": "https://schema.org", "@type": "Organization" }'}
                     onChange={(event) => set('jsonLd', updateAt(jsonLd, index, event.target.value))} />
                   <RemoveButton label="Remove structured data block" onClick={() => set('jsonLd', removeAt(jsonLd, index))} />
@@ -224,6 +225,9 @@ function HeadSection({ value, set }: { value: PageSeo; set: SetField }) {
   )
 }
 
+/** Mirrors `PageHeadLinkSchema` so a field can never hold more than the cell keeps. */
+const LINK_LIMITS = { type: 128, title: 256, hreflang: 64, media: 256, sizes: 64 } as const
+
 const REL_OPTIONS = PAGE_HEAD_LINK_RELS.map((rel) => ({ value: rel, label: rel }))
 const AS_OPTIONS = PAGE_HEAD_PRELOAD_AS.map((as) => ({ value: as, label: as }))
 
@@ -233,21 +237,26 @@ function LinkEditor({ link, onChange, onRemove }: {
   onRemove: () => void
 }) {
   const field = (key: 'type' | 'title' | 'hreflang' | 'media' | 'sizes', label: string, placeholder: string) => (
-    <Input fieldSize="sm" aria-label={`Link ${label}`} placeholder={placeholder} value={link[key] ?? ''}
+    <Input fieldSize="sm" aria-label={`Link ${label}`} placeholder={placeholder} maxLength={LINK_LIMITS[key]} value={link[key] ?? ''}
       onChange={(event) => onChange({ ...link, [key]: event.target.value })} />
   )
   return (
     <div className={styles.linkCard}>
       <div className={styles.listRow}>
         <Select fieldSize="sm" aria-label="Link rel" value={link.rel} options={REL_OPTIONS}
-          onChange={(event) => onChange({ ...link, rel: event.target.value as PageHeadLinkRel })} />
-        <Input fieldSize="sm" aria-label="Link URL" placeholder="URL" value={link.href}
+          onChange={(event) => {
+            const rel = event.target.value as PageHeadLinkRel
+            // A preload needs a destination; anything else must not carry one.
+            const { as: _as, ...rest } = link
+            onChange(rel === 'preload' ? { ...rest, rel, as: link.as ?? 'font' } : { ...rest, rel })
+          }} />
+        <Input fieldSize="sm" aria-label="Link URL" placeholder="URL" maxLength={2048} value={link.href}
           onChange={(event) => onChange({ ...link, href: event.target.value })} />
         <RemoveButton label="Remove link" onClick={onRemove} />
       </div>
       <div className={styles.linkDetails}>
         {link.rel === 'preload' && (
-          <Select fieldSize="sm" aria-label="Link as" value={link.as ?? 'font'} options={AS_OPTIONS}
+          <Select fieldSize="sm" aria-label="Link as" value={link.as} options={AS_OPTIONS}
             onChange={(event) => onChange({ ...link, as: event.target.value as PageHeadPreloadAs })} />
         )}
         {field('type', 'type', 'Type, e.g. font/woff2')}
@@ -288,9 +297,11 @@ function Row({ label, hint, children }: { label: string; hint?: string; children
   )
 }
 
-function TextRow({ label, value, placeholder, hint, multiline, onChange }: {
+function TextRow({ label, value, maxLength, placeholder, hint, multiline, onChange }: {
   label: string
   value: string | undefined
+  /** The schema's limit for this field (`PageSeoSchema`), so nothing typed is dropped on save. */
+  maxLength: number
   placeholder?: string
   hint?: string
   multiline?: boolean
@@ -299,9 +310,9 @@ function TextRow({ label, value, placeholder, hint, multiline, onChange }: {
   return (
     <Row label={label} hint={hint}>
       {(id) => multiline
-        ? <Textarea id={id} fieldSize="sm" rows={3} resize="vertical" value={value ?? ''} placeholder={placeholder}
+        ? <Textarea id={id} fieldSize="sm" rows={3} resize="vertical" maxLength={maxLength} value={value ?? ''} placeholder={placeholder}
             onChange={(event) => onChange(event.target.value)} />
-        : <Input id={id} fieldSize="sm" value={value ?? ''} placeholder={placeholder} autoComplete="off" spellCheck={false}
+        : <Input id={id} fieldSize="sm" maxLength={maxLength} value={value ?? ''} placeholder={placeholder} autoComplete="off" spellCheck={false}
             onChange={(event) => onChange(event.target.value)} />}
     </Row>
   )

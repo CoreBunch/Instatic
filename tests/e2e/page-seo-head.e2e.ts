@@ -3,16 +3,21 @@ import {
   ANONYMOUS_STATE,
   PUBLIC_BASE_URL,
   createPage,
+  insertModuleViaPicker,
   insertNotchModule,
   login,
+  newestTemplatePriority,
   openSiteEditor,
   openSitePanel,
   publishDraft,
+  setPropValue,
 } from './helpers'
 
 /**
  * PAGE-005 — a page's search, social and head settings, set in Page
- * settings, survive a reload and reach the published page's `<head>`.
+ * settings, survive a reload and reach the published page's `<head>`, also
+ * when an everywhere layout wraps the page (public renders compose the
+ * template chain, and the layout must not swallow the page's settings).
  */
 test.describe('page head settings', () => {
   // Publishing asks for step-up, which rotates the session token.
@@ -26,6 +31,22 @@ test.describe('page head settings', () => {
     const description = `A page described in its settings ${suffix}`
 
     await openSiteEditor(page)
+
+    await test.step('an everywhere layout with an outlet wraps every page', async () => {
+      await openSitePanel(page)
+      await page.getByRole('button', { name: 'New template', exact: true }).click()
+      const dialog = page.getByRole('dialog', { name: 'Template settings' })
+      await expect(dialog).toBeVisible()
+      await dialog.getByLabel('Name').fill(`Head Layout ${suffix}`)
+      await dialog.getByLabel('Slug').fill(`head-layout-${suffix}`)
+      await dialog.getByLabel('Priority').fill(String(newestTemplatePriority()))
+      await dialog.getByRole('button', { name: 'Save' }).click()
+      await expect(dialog).toBeHidden()
+      await insertNotchModule(page, 'text')
+      await setPropValue(page, 'text', `Layout nav ${suffix}`)
+      await insertModuleViaPicker(page, 'base.outlet')
+    })
+
     await createPage(page, name, slug)
     await openSitePanel(page)
     const row = page.getByRole('treeitem', { name: `Open page ${name}` })
@@ -83,6 +104,7 @@ test.describe('page head settings', () => {
         const response = await visitor.goto(`${PUBLIC_BASE_URL}/${slug}`)
         const html = (await response?.text()) ?? ''
         const head = html.slice(0, html.indexOf('</head>'))
+        expect(html, 'the layout wraps the page').toContain(`Layout nav ${suffix}`)
         expect(head).toContain(`<meta name="description" content="${description}">`)
         expect(head).toContain(`<link rel="canonical" href="https://example.com/${slug}">`)
         expect(head).toContain('<meta name="robots" content="noindex, follow">')

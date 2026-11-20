@@ -35,7 +35,7 @@ describe('parsePageSeo', () => {
       description: '  Kept  ',
       robots: 42,
       themeColors: [{ color: '#fff' }, { media: 'no colour' }],
-      links: [{ rel: 'stylesheet', href: '/x.css' }, { rel: 'alternate', href: '/llms.txt' }],
+      links: [{ rel: 'stylesheet', href: '/x.css' }, { rel: 'preload', href: '/f.woff2' }, { rel: 'alternate', href: '/llms.txt' }],
       meta: [{ attribute: 'http-equiv', name: 'refresh', content: '0' }, { attribute: 'name', name: 'description', content: 'dup' }],
       openGraph: { title: '' },
     })).toEqual({

@@ -411,10 +411,13 @@ Rules the emitter keeps:
 
 - **Every value is attribute-escaped; every URL must pass `isSafeUrl`** (canonical, favicon, link hrefs, `og:url`, `og:image`, `twitter:image`) or its tag is dropped. Extra meta content with a dangerous scheme is dropped.
 - **JSON-LD is parsed and re-serialised.** Text that is not a JSON object or array is omitted; `<`, `>`, `&` are written as `\u003c` / `\u003e` / `\u0026`, so a block can never close its `<script>` or open a comment. Data blocks are not executed, so they add nothing to the CSP `script-src`.
+- **Layouts never contribute.** `composeTemplateChain` (`src/core/templates/templateCompose.ts`) carries the page terminal's own `seo` onto the composed page; an everywhere layout's settings are chrome and are dropped.
+- **Entry routes use the matched post-type template's `seo` as a pattern.** The entry's own `seoTitle` / `seoDescription` (`documentMeta`) outrank it. A template canonical with no token would point every entry at one URL, so it becomes the entry's own permalink; a canonical or `og:url` with a token resolves per entry; a token-less `og:url` is omitted. Everything else applies to every entry as written, including `robots`: a `noindex` template hides all its entries.
+- **A page that lists its own `icon` links** (size or media variants) gets no site favicon on top.
 - **Text, URL and JSON-LD string values are token-interpolated** like the title, so one template page can write `{currentEntry.title} | Acme`, a per-entry canonical, or per-entry structured data. JSON-LD is interpolated after parsing and only in values, so a token can never break the JSON.
 - **An external web manifest gets a CSP `manifest-src`** (`'self'` plus its origin), returned as `DocumentHead.cspSources` and merged into the page's CSP plan; a same-origin manifest needs nothing beyond `default-src 'self'`.
 - **An unset field emits nothing.** A page without `seo` publishes exactly the head it did before.
-- **Changing it needs `site.structure.edit`** on every write path: `pageDiff.ts` for editor saves, and `keepPageStructuralCells` (`server/writePolicy/pageStructuralCells.ts`) for the generic row paths (rows API, version restore, plugin content calls, AI tree tools, bundle import), which also normalise the cell through `parsePageSeo`.
+- **Changing it needs `site.structure.edit`** on every write path: `pageDiff.ts` for editor saves, and `keepPageStructuralCells` (`server/writePolicy/pageStructuralCells.ts`) for the generic row paths (rows API, version restore, plugin content calls, AI tree tools, bundle import), which also normalise the cell through `parsePageSeo`. Creating a page row (rows API, plugin `entries.create` / `createMany`, a bundle import of a new page id) keeps `seo` only for a caller with that right (`newPageStructuralCells`).
 
 ### `documentMeta` — per-render `<head>` overrides
 

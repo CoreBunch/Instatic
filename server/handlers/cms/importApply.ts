@@ -20,7 +20,7 @@ import { removeMediaAssetFiles } from './mediaVariants'
 import { deleteAllDataRowRedirects, importDataRowRedirect } from '../../repositories/data/publish'
 import { deleteAllMediaFolders, importMediaFolder } from '../../repositories/mediaFolders'
 import { listProtectedTables, writeTableAccess } from '../../repositories/data/tableAccess'
-import { keepPageStructuralCells } from '../../writePolicy/pageStructuralCells'
+import { keepPageStructuralCells, newPageStructuralCells } from '../../writePolicy/pageStructuralCells'
 import type { AccessRule } from '@core/members'
 import { notifyRowWrite, notifyShellWrite, serializeCollabAwareWrite, type RowWriteKind } from '../../repositories/rowWriteEvents'
 
@@ -302,7 +302,9 @@ async function applySiteBundleLocked(
     const guardedCells = (row: { id: string; tableId: string; slug: string; cells: Record<string, unknown> }) => {
       if (row.tableId !== 'pages') return row.cells
       const sameRow = storedPages.get(row.id)
-      const cells = sameRow ? keepPageStructuralCells(sameRow, row.cells) : row.cells
+      const cells = sameRow
+        ? keepPageStructuralCells(sameRow, row.cells)
+        : newPageStructuralCells(row.tableId, row.cells, input.mayChangePageStructure)
       const atAddress = storedPageRuleBySlug.get(row.slug)
       return cells.access === undefined && atAddress !== undefined ? { ...cells, access: atAddress } : cells
     }

@@ -14,7 +14,7 @@ import { applySiteBundle } from '../../../server/handlers/cms/importApply'
 import { resetForTests } from '../../../server/publish/renderCache'
 import { createDataRow, getDataRow, listDataRows } from '../../../server/repositories/data'
 import { listDataTables } from '../../../server/repositories/data/tables'
-import { keepPageStructuralCells } from '../../../server/writePolicy/pageStructuralCells'
+import { keepPageStructuralCells, newPageStructuralCells } from '../../../server/writePolicy/pageStructuralCells'
 import { createCapabilityTestHarness, type CapabilityTestHarness } from '../helpers/capabilityHarness'
 
 const STORED: PageSeo = { description: 'Stored', robots: 'index, follow' }
@@ -38,6 +38,13 @@ describe('keepPageStructuralCells', () => {
     expect(keepPageStructuralCells(stored, { seo: { description: '  New  ', robots: 7 } }, true).seo)
       .toEqual({ description: 'New' })
     expect('seo' in keepPageStructuralCells(stored, { seo: { robots: '' } }, true)).toBe(false)
+  })
+
+  it('a new page keeps head settings only for a structure editor, and always keeps access', () => {
+    const cells = { title: 'N', seo: ATTEMPT, access: { level: 'members', onDeny: 'login' } }
+    expect(newPageStructuralCells('pages', cells)).toEqual({ title: 'N', access: cells.access })
+    expect(newPageStructuralCells('pages', cells, true).seo).toEqual(ATTEMPT)
+    expect(newPageStructuralCells('posts', cells).seo).toEqual(ATTEMPT)
   })
 
   it('leaves other tables alone', () => {
@@ -95,6 +102,33 @@ describe('row write paths', () => {
     hookBus.filter('plugin.rewriter', 'content.entry.cells', (value) => ({ ...(value as object), seo: ATTEMPT }))
     await mutatePageTree(h.db, MAIN_SCOPE, 'page_a', 'body', [], { kind: 'user', userId: ownerId })
     expect(await storedSeo()).toEqual(STORED)
+  })
+
+  it('creating a page through the rows API needs structure rights to carry head settings', async () => {
+    // The editor-managed page fields cannot be set here; an extra cell can.
+    const create = async (cookie: string) => {
+      const res = await h.cms('/admin/api/cms/data/tables/pages/rows', { method: 'POST', cookie, json: { cells: { seo: ATTEMPT } } })
+      expect(res.status).toBeLessThan(300)
+      const { row } = await res.json() as { row: { id: string } }
+      return (await getDataRow(h.db, MAIN_SCOPE, row.id))?.cells.seo
+    }
+    const writer = await h.createRoleUser({
+      name: 'Writer', slug: 'writer', capabilities: ['content.create', 'content.edit.any', 'data.system.tables.read'],
+    })
+    const builder = await h.createRoleUser({
+      name: 'Builder', slug: 'builder', capabilities: ['content.create', 'content.edit.any', 'data.system.tables.read', 'site.structure.edit'],
+    })
+    expect(await create(writer.cookie)).toBeUndefined()
+    expect(await create(builder.cookie)).toEqual(ATTEMPT)
+  })
+
+  it('a bundle import of a new page id drops head settings without structure rights', async () => {
+    const tables = await listDataTables(h.db, MAIN_SCOPE)
+    const [page] = await listDataRows(h.db, MAIN_SCOPE, 'pages')
+    const fresh = { ...page!, id: 'page_new', slug: 'new', cells: { ...page!.cells, slug: 'new', seo: ATTEMPT } }
+    const bundle: SiteBundle = { schemaVersion: 1, exportedAt: new Date(0).toISOString(), tables, rows: [fresh] }
+    await applySiteBundle(h.db, MAIN_SCOPE, { bundle, strategy: 'merge-overwrite', carriesMedia: false, mayChangePageStructure: false })
+    expect((await getDataRow(h.db, MAIN_SCOPE, 'page_new'))?.cells.seo).toBeUndefined()
   })
 
   it('a bundle import keeps it unless the importer may change structure', async () => {

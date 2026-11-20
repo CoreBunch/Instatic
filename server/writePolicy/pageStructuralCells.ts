@@ -38,6 +38,24 @@ export function keepPageStructuralCells(
   return cells
 }
 
+/**
+ * The create-path counterpart of `keepPageStructuralCells`: a new page row
+ * (rows API create, plugin `entries.create` / `createMany`, a bundle import of
+ * a page id the site does not have) keeps head settings only when the caller
+ * may change structure, normalised. Its access rule stays as sent: a new
+ * rule can only narrow who sees a page nobody could see before.
+ */
+export function newPageStructuralCells(
+  tableId: string,
+  cells: Record<string, unknown>,
+  mayChangeStructure = false,
+): Record<string, unknown> {
+  if (tableId !== PAGES_TABLE_ID) return cells
+  if (mayChangeStructure) return withNormalisedSeo(cells)
+  const { seo: _dropped, ...rest } = cells
+  return rest
+}
+
 function withNormalisedSeo(cells: Record<string, unknown>): Record<string, unknown> {
   if (cells.seo === undefined) return cells
   const { seo: raw, ...rest } = cells

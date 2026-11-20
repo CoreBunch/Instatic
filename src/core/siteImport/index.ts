@@ -26,7 +26,8 @@ export { classifyFiles } from './classifyFiles'
 
 // ── Phase 2 — HTML page planning ──────────────────────────────────────────────
 
-export { makeHtmlPagePlan, deriveSlug, prettifyTitle, resolveHref } from './htmlPagePlan'
+export { makeHtmlPagePlan, prettifyTitle, resolveHref } from './htmlPagePlan'
+export { deriveSlug } from './pageSlug'
 
 
 // ── Phase 2 — asset collection + URL normalisation ───────────────────────────
