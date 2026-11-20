@@ -397,10 +397,10 @@ Subscription granularity: the hook never subscribes to the whole `site` document
 
 ### Build a loop with the AI agent
 
-The site-scope AI agent stays on the HTML-native edit surface. It calls `list_loop_sources` to get valid source ids, table ids, order options, and `{currentEntry.field}` tokens, then inserts an `<instatic-loop>` marker through `insertHtml` / `replaceNodeHtml`:
+The site-scope AI agent stays on the HTML-native edit surface. It calls `list_loop_sources` to get valid source ids, table ids, order options, and `{currentEntry.field}` tokens, then inserts an `<instatic-loop>` marker through `insertHtml` / `replaceNodeHtml`. It leaves out `data-direction` so the list keeps its source's `defaultDirection` (returned by `list_loop_sources`), and adds it only to reverse that:
 
 ```html
-<instatic-loop data-source-id="data.rows" data-table-id="tbl_posts" data-order-by="publishedAt" data-direction="desc" data-limit="3">
+<instatic-loop data-source-id="data.rows" data-table-id="tbl_posts" data-order-by="publishedAt" data-limit="3">
   <article>
     <a href="{currentEntry.permalink}">
       <img src="{currentEntry.featuredMedia}">
