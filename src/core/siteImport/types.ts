@@ -8,7 +8,7 @@
 import type { StyleRule, ConditionDef } from '@core/page-tree'
 import type { ImportFragment } from '@core/htmlImport'
 import type { FontDisplay, FontFileFormat } from '@core/fonts'
-import type { SiteScriptFormat } from '@core/site-runtime'
+import type { SiteScriptFormat, SiteScriptPlacement } from '@core/site-runtime'
 
 // ---------------------------------------------------------------------------
 // NewStyleRule — a StyleRule ready to insert (sans identity fields)
@@ -78,6 +78,8 @@ export type NewStyleRule = Omit<StyleRule, 'id' | 'createdAt' | 'updatedAt'>
  *   after the punctuation-insensitive fallback match. The reference is left
  *   pointing at its original path, so the page imports with a broken image
  *   rather than losing the element. One warning per distinct missing path.
+ * - `missing-svg-sprite`: an `<svg><use href>` names a sprite file or id the
+ *   import lacks, so that icon stays empty (`path` is the href as authored).
  * - `asset-folder-failed`: the asset uploaded and its URL was rewritten, but
  *   placing it under the folder that mirrors its bundle path failed (folder
  *   listing or creation rejected). The asset sits at the media root; the user
@@ -102,6 +104,7 @@ type ImportWarningKind =
   | 'external-font'
   | 'unresolved-asset'
   | 'script-order-conflict'
+  | 'missing-svg-sprite'
 
 export interface ImportWarning {
   kind: ImportWarningKind
@@ -291,6 +294,8 @@ export interface ImportScript {
   content: string
   /** Loader semantics from the source HTML. Classic scripts bypass bundling. */
   format: SiteScriptFormat
+  /** `'head'` only when every page runs it as a blocking `<head>` script. */
+  placement: SiteScriptPlacement
   /** HTML FileMap sources that linked this script. */
   pageSources: string[]
   /** Final committed page IDs. Filled by `commitImportPlan` before adapter call. */
@@ -361,23 +366,17 @@ export interface ImportStylesheet {
  * A script tag discovered while planning one HTML page, preserving source
  * order across inline executable JavaScript and external `<script src>` tags.
  */
-export type PageScript =
-  | {
-    kind: 'external'
-    /** FileMap path of the linked JavaScript file. */
-    path: string
-    /** Loader semantics from the source HTML. */
-    format: SiteScriptFormat
-  }
-  | {
-    kind: 'inline'
-    /** Stable synthetic SiteFile path derived from the source HTML file. */
-    path: string
-    /** Inline JavaScript source. */
-    content: string
-    /** Loader semantics from the source HTML. */
-    format: SiteScriptFormat
-  }
+export type PageScript = {
+  /** Loader semantics from the source HTML. */
+  format: SiteScriptFormat
+  /** Where the page ran it: a blocking `<head>` script, or after the body. */
+  placement: SiteScriptPlacement
+} & (
+  /** `path`: the linked FileMap file. */
+  | { kind: 'external'; path: string }
+  /** `path`: a stable synthetic SiteFile path derived from the HTML file. */
+  | { kind: 'inline'; path: string; content: string }
+)
 
 // ---------------------------------------------------------------------------
 // Phase 2 — Site-import pipeline types

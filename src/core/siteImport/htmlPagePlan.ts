@@ -18,7 +18,7 @@ import { dirname, joinPaths } from './paths'
 import { importHtml } from '@core/htmlImport'
 import { normalizePageSlug } from '@core/page-tree'
 import type { FileMap, ImportWarning, PagePlan, PageScript } from './types'
-import type { SiteScriptFormat } from '@core/site-runtime'
+import type { SiteScriptFormat, SiteScriptPlacement } from '@core/site-runtime'
 
 // ---------------------------------------------------------------------------
 // Public function
@@ -78,7 +78,7 @@ export function makeHtmlPagePlan(
     }
     const resolved = resolveHref(script.src, htmlPath)
     if (resolved && fileMap.files[resolved]) {
-      scripts.push({ kind: 'external', path: resolved, format: script.format })
+      scripts.push({ kind: 'external', path: resolved, format: script.format, placement: script.placement })
     } else if (resolved) {
       warnings.push({
         kind: 'missing-script',
@@ -98,7 +98,29 @@ export function makeHtmlPagePlan(
   const slug = deriveSlug(htmlPath)
 
   // --- Step 5: parse body nodes (+ harvest inline styles and <style> CSS) ---
-  const { styleCss, stripped: _stripped, imageAlts, ...nodeFragment } = importHtml(htmlSource)
+  //     Sprite icons (`<use href="../icons.svg#logo">`) resolve against the
+  //     import's own files and are copied inline, so they need no upload.
+  const {
+    styleCss,
+    stripped: _stripped,
+    imageAlts,
+    unresolvedSvgRefs,
+    ...nodeFragment
+  } = importHtml(htmlSource, {
+    loadSvgSprite: (spritePath) => {
+      const resolved = resolveHref(spritePath, htmlPath)
+      const file = resolved ? fileMap.files[resolved] : undefined
+      return file ? new TextDecoder().decode(file.bytes) : null
+    },
+  })
+  for (const href of unresolvedSvgRefs) {
+    warnings.push({
+      kind: 'missing-svg-sprite',
+      message: `SVG icon "${href}" used by "${htmlPath}" was not found in the import, so it stays empty`,
+      source: htmlPath,
+      path: href,
+    })
+  }
 
   const pagePlan: PagePlan = {
     source: htmlPath,
@@ -122,13 +144,27 @@ type ScriptRef =
     kind: 'external'
     src: string
     format: SiteScriptFormat
+    placement: SiteScriptPlacement
   }
   | {
     kind: 'inline'
     path: string
     content: string
     format: SiteScriptFormat
+    placement: SiteScriptPlacement
   }
+
+/**
+ * Where an imported script runs. A classic script in `<head>` without `defer`
+ * or `async` runs before the body is parsed, which is the point of a theme or
+ * consent script that must act before first paint: it stays in the head.
+ * Everything else (body scripts, deferred or async head scripts, module
+ * scripts, which defer by default) runs once the document is parsed, which
+ * the end of the body reproduces.
+ */
+function scriptPlacement(inHead: boolean, format: SiteScriptFormat, deferred: boolean): SiteScriptPlacement {
+  return inHead && format === 'classic' && !deferred ? 'head' : 'body-end'
+}
 
 interface DocumentMeta {
   title: string | null
@@ -197,10 +233,17 @@ function extractDocumentMetaFromDom(htmlSource: string, htmlPath: string): Docum
     for (const script of Array.from(scripts)) {
       const format = scriptFormatFromType(script.getAttribute('type'))
       if (!format) continue
-
       const src = script.getAttribute('src')
-      if (src && src.trim().length > 0) {
-        scriptRefs.push({ kind: 'external', src: src.trim(), format })
+      const hasSrc = Boolean(src && src.trim().length > 0)
+      const placement = scriptPlacement(
+        script.closest('head') !== null,
+        format,
+        // `defer` only applies to external scripts; `async` to both kinds.
+        (hasSrc && script.hasAttribute('defer')) || script.hasAttribute('async'),
+      )
+
+      if (src && hasSrc) {
+        scriptRefs.push({ kind: 'external', src: src.trim(), format, placement })
         continue
       }
 
@@ -212,6 +255,7 @@ function extractDocumentMetaFromDom(htmlSource: string, htmlPath: string): Docum
         path: inlineScriptPath(htmlPath, inlineIndex),
         content,
         format,
+        placement,
       })
     }
 
@@ -248,14 +292,21 @@ function extractDocumentMetaFromRegex(htmlSource: string, htmlPath: string): Doc
   const scriptRe = /<script\b([^>]*)>([\s\S]*?)<\/script(?:[\s/][^>]*)?>/gi
   let scriptMatch: RegExpExecArray | null
   let inlineIndex = 0
+  // The head ends where the body starts; a document without either tag is all body.
+  const bodyStart = htmlSource.search(/<\/head\s*>|<body\b/i)
   while ((scriptMatch = scriptRe.exec(htmlSource)) !== null) {
     const attrs = scriptMatch[1] ?? ''
     const format = scriptFormatFromType(attrValue(attrs, 'type'))
     if (!format) continue
 
     const src = attrValue(attrs, 'src')?.trim()
+    const placement = scriptPlacement(
+      bodyStart !== -1 && scriptMatch.index < bodyStart,
+      format,
+      (Boolean(src) && hasBooleanAttr(attrs, 'defer')) || hasBooleanAttr(attrs, 'async'),
+    )
     if (src) {
-      scriptRefs.push({ kind: 'external', src, format })
+      scriptRefs.push({ kind: 'external', src, format, placement })
       continue
     }
 
@@ -267,6 +318,7 @@ function extractDocumentMetaFromRegex(htmlSource: string, htmlPath: string): Doc
       path: inlineScriptPath(htmlPath, inlineIndex),
       content,
       format,
+      placement,
     })
   }
 
@@ -275,6 +327,10 @@ function extractDocumentMetaFromRegex(htmlSource: string, htmlPath: string): Doc
 
 function inlineScriptPath(htmlPath: string, index: number): string {
   return `${htmlPath}-inline-script-${index}.js`
+}
+
+function hasBooleanAttr(attrs: string, name: string): boolean {
+  return new RegExp(`(?:^|\\s)${name}(?:\\s|=|$)`, 'i').test(attrs)
 }
 
 function attrValue(attrs: string, name: string): string | null {

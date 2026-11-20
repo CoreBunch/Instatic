@@ -115,6 +115,7 @@ export function rankWarning(kind: ImportWarning['kind']): number {
     case 'asset-upload-failed':
     case 'missing-stylesheet':
     case 'missing-script':
+    case 'missing-svg-sprite':
     case 'script-order-conflict':
       return 0
     case 'external-font':

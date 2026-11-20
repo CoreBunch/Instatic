@@ -54,6 +54,12 @@ describe('anchorRel — single source for the noopener rule', () => {
     expect(btnSelf).not.toContain('rel=')
   })
 
+  it('omits target="_self": it only repeats what a link does without one', () => {
+    expect(LinkModule.render({ ...LinkModule.defaults, href: '/a', target: '_self' }, []).html).toBe('<a href="/a">Click here</a>')
+    expect(ButtonModule.render({ ...ButtonModule.defaults, href: '/a', target: '_self' }, []).html).not.toContain('target=')
+    expect(LinkModule.render({ ...LinkModule.defaults, href: '/a', target: '_parent' }, []).html).toContain('target="_parent"')
+  })
+
   it('link and button expose the SAME target options from the shared leaf', () => {
     const values = ANCHOR_TARGET_OPTIONS.map((o) => o.value)
     expect(values).toEqual(['_self', '_blank', '_parent'])
@@ -172,13 +178,13 @@ describe('youtubeEmbedUrl — shared video URL brain', () => {
 
 describe('published render() golden (byte-identical behavior invariant)', () => {
   const GOLDEN: Record<string, string> = {
-    'link.default': '<a href="#" target="_self">Click here</a>',
+    'link.default': '<a href="#">Click here</a>',
     'link.blank': '<a href="https://example.com" target="_blank" rel="noopener noreferrer">X</a>',
     'link.parent': '<a href="https://e.com" target="_parent">Click here</a>',
-    'link.children': '<a href="#" target="_self"><strong>kid</strong></a>',
-    'link.empty-children': '<a href="#" target="_self">fallback</a>',
+    'link.children': '<a href="#"><strong>kid</strong></a>',
+    'link.empty-children': '<a href="#">fallback</a>',
     'button.default': '<button type="button">Get Started</button>',
-    'button.href': '<a href="https://e.com" target="_self">Go</a>',
+    'button.href': '<a href="https://e.com">Go</a>',
     'button.href-blank': '<a href="https://e.com" target="_blank" rel="noopener noreferrer">Go</a>',
     'button.hash': '<button type="button">Go</button>',
     'button.disabled': '<button type="button" disabled aria-disabled="true">Go</button>',

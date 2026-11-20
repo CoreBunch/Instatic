@@ -18,6 +18,8 @@ The editor exposes form primitives in the module picker.
 
 Primitives are the source of truth. A label is a `base.label` node, an input is a `base.input` node, and a submit button is a `base.submit` node. There is no hidden field-builder shape inside `base.form`; authors compose ordinary nodes, and every node remains directly editable after insertion.
 
+Every form part except `base.form-message` also carries an `htmlAttributes` bag (the Properties panel's Attributes view) for native attributes the module does not model, such as `inputmode`, `step`, `aria-describedby` and `data-*` hooks. The module emits its own attributes first and the bag after them, so a duplicate name never overrides a module-owned value (the browser keeps the first). HTML import fills the bag (see [html-import.md](html-import.md)).
+
 `base.form` has two modes:
 
 - `cms` submits to a selected data table.

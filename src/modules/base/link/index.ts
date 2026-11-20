@@ -9,7 +9,7 @@ import { registry } from '@core/module-engine'
 import { LinkIcon } from 'pixel-art-icons/icons/link'
 import { escapeHtml, safeUrl } from '@modules/base/utils/escape'
 import { Value } from '@core/utils/typeboxHelpers'
-import { ANCHOR_TARGET_OPTIONS, anchorHtmlAttributes } from '@modules/base/shared/anchorTarget'
+import { ANCHOR_TARGET_OPTIONS, anchorHtmlAttributes, emittedAnchorTarget } from '@modules/base/shared/anchorTarget'
 import {
   htmlAttributesControl,
 } from '@modules/base/shared/htmlAttributes'
@@ -55,7 +55,8 @@ export const LinkModule: ModuleDefinition<LinkStoredProps> = {
     const { attributes, rel } = anchorHtmlAttributes(props.htmlAttributes, props.target)
     const attrs = htmlAttributesAttr(attributes)
     const relAttr = rel ? ` rel="${escapeHtml(rel)}"` : ''
-    const targetAttr = ` target="${String(props.target)}"`
+    const target = emittedAnchorTarget(props.target)
+    const targetAttr = target ? ` target="${target}"` : ''
     const content = linkUsesChildren(renderedChildren.length)
       ? renderedChildren.join('')
       : String(props.text ?? '')

@@ -17,6 +17,8 @@
  *                                              author's own `rel` tokens.
  *   - `anchorHtmlAttributes(bag, target)`    — the `htmlAttributes` bag with
  *                                              `rel` pulled out and merged.
+ *   - `emittedAnchorTarget(target)`          — the `target` attribute value to
+ *                                              emit, or `null` for `_self`.
  *
  * Lives in a non-component `.ts` so the editor components can import it without
  * breaking React Fast Refresh (Constraint #309).
@@ -76,4 +78,14 @@ export function anchorHtmlAttributes(
 ): { attributes: Record<string, string>; rel: string | null } {
   const { rel: authoredRel, ...attributes } = normalizeHtmlAttributes(htmlAttributes)
   return { attributes, rel: mergeAnchorRel(authoredRel, target) }
+}
+
+/**
+ * The `target` attribute an anchor emits, or `null` when it would only repeat
+ * the browser default. `_self` is how every link without a `target` already
+ * behaves, so writing it out adds noise to the published HTML (and an imported
+ * `<a href>` would come back with a `target="_self"` its source never had).
+ */
+export function emittedAnchorTarget(target: AnchorTarget): AnchorTarget | null {
+  return target === '_self' ? null : target
 }

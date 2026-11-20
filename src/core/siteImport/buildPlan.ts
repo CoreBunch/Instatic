@@ -261,6 +261,8 @@ function collectHtmlPagePlans(classified: ClassifiedFile[], fileMap: FileMap): H
       const existing = scriptsByPath.get(scriptPath)
       if (existing) {
         existing.pageSources.add(pagePlan.source)
+        // A script one page loads late cannot run in the head for every page.
+        if (pageScript.placement === 'body-end') existing.placement = 'body-end'
         if (!sequence.includes(scriptPath)) sequence.push(scriptPath)
         continue
       }
@@ -275,6 +277,7 @@ function collectHtmlPagePlans(classified: ClassifiedFile[], fileMap: FileMap): H
         path: scriptPath,
         content: script.content,
         format: pageScript.format,
+        placement: pageScript.placement,
         dependencies: script.dependencies,
         pageSources: new Set([pagePlan.source]),
       })

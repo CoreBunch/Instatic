@@ -38,6 +38,9 @@ export function addImportedScripts(
     const config = {
       ...DEFAULT_SCRIPT_RUNTIME_CONFIG,
       format: script.format,
+      placement: script.placement,
+      // A head script blocks the parser and runs as soon as it loads.
+      timing: script.placement === 'head' ? 'immediate' as const : DEFAULT_SCRIPT_RUNTIME_CONFIG.timing,
       priority: script.priority,
       scope: pageIds.length > 0
         ? { type: 'pages' as const, pageIds }
