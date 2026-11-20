@@ -906,6 +906,10 @@ See [docs/features/publisher.md](publisher.md) for the full three-layer pipeline
 
 A plugin module's `render()` may return `js` (see `PluginRenderOutput`). It crosses the QuickJS boundary string-typed (non-strings are dropped by the VM normalizer) and is then gated host-side in `moduleAdapter.ts`: unless the plugin's **granted** permissions include `frontend.assets` — the same authority that already controls script tags via `frontend.assets[]` — the `js` is dropped with one `console.warn` per module. Enforcement always checks `grantedPermissions`, never the declared `permissions` array. With the grant, the JS is deduped per moduleId and served at `/_instatic/module-js/<moduleId>.js?v=<contentHash>` on pages that use the module. Manifest format is unchanged.
 
+### Site CSS for a module's own markup — `emittedClassNames`
+
+The publisher tree-shakes site class rules down to the classes nodes carry. A module's `render()` HTML is not a node, so site CSS written for it (`.commerce-checkout__total`, often imported with the site's stylesheets) would be pruned at publish. A module declares the classes its markup and frontend script use with `emittedClassNames` on `defineModule` (exact names or a `prefix*`, e.g. `['commerce-checkout*']`). The list crosses the QuickJS boundary with the rest of the module metadata; `moduleAdapter.ts` keeps well-formed entries (a class name, optionally ending in `*`; a bare `*` is dropped; at most 500) and the tree-shaker keeps every matching class rule while the module is placed on the site. Declaring a class only keeps CSS that exists; it never adds any.
+
 ### Frontend assets — requires `frontend.assets`
 
 Published-page tags are declarative. A plugin declares `frontend.assets[]` in the manifest; `server/publish/frontendInjections.ts` reads that array at publish/render time and splices the tags into every published page. There is no imperative runtime registration call.

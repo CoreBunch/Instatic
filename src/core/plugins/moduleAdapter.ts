@@ -107,6 +107,31 @@ function maybeEditorRuntime(
 
 const DEFAULT_PLUGIN_MODULE_ICON: IconComponent = BoxStackSolidIcon
 
+/** A class name, optionally ending in `*` to declare a prefix. */
+const EMITTED_CLASS_NAME = /^-?[_a-zA-Z][_a-zA-Z0-9-]*\*?$/
+const MAX_EMITTED_CLASS_NAMES = 500
+
+/**
+ * Keep the well-formed entries of a module's `emittedClassNames`. The list
+ * only widens which site CSS the tree-shaker keeps, so a malformed entry is
+ * dropped rather than failing the whole pack.
+ */
+function emittedClassNamesField(value: unknown): Pick<ModuleDefinition, 'emittedClassNames'> {
+  const names = normalizeEmittedClassNames(value)
+  return names.length > 0 ? { emittedClassNames: names } : {}
+}
+
+function normalizeEmittedClassNames(value: unknown): string[] {
+  if (!Array.isArray(value)) return []
+  const names: string[] = []
+  for (const entry of value) {
+    if (typeof entry !== 'string' || !EMITTED_CLASS_NAME.test(entry) || names.includes(entry)) continue
+    names.push(entry)
+    if (names.length === MAX_EMITTED_CLASS_NAMES) break
+  }
+  return names
+}
+
 /**
  * `componentFactory` produces the React component used by the editor canvas
  * to preview a plugin module. The publisher (server) never invokes the
@@ -165,6 +190,7 @@ export function pluginModuleToHostModule(
     ...(definition.propsSchema ? { propsSchema: definition.propsSchema } : {}),
     component: componentFactory(definition),
     htmlTag: typeof definition.htmlTag === 'string' ? definition.htmlTag : undefined,
+    ...emittedClassNamesField(definition.emittedClassNames),
     // Dependencies declared by the plugin module flow into the site's
     // package.json on insert. The host's existing
     // `getMissingModuleDependencies`/`getSiteModuleDependencyUsage` paths

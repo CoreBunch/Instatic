@@ -40,6 +40,7 @@
 
 import { useEffect } from 'react'
 import { useEditorStore } from '@site/store/store'
+import { registry } from '@core/module-engine'
 import { styleRuleSelector, type ConditionDef, type StyleRule } from '@core/page-tree'
 import {
   collectBackgroundImagePaths,
@@ -104,7 +105,7 @@ export function ClassStyleInjector({ targetDocument, viewport }: ClassStyleInjec
   // the classes object reference changes (Mutative always creates a new ref on mutation)
   const classes = useEditorStore((s) => s.site?.styleRules ?? null)
   const usedClassIdSignature = useEditorStore((s) =>
-    s.site ? usedStyleRuleIdSignature(s.site) : '',
+    s.site ? usedStyleRuleIdSignature(s.site, registry) : '',
   )
   const breakpoints = useEditorStore((s) => s.site?.breakpoints ?? EMPTY_BREAKPOINTS)
   const conditions = useEditorStore((s) => s.site?.conditions ?? EMPTY_CONDITIONS)

@@ -309,7 +309,17 @@ split on every character a class name cannot contain, and a class rule whose
 name is among the surviving runs counts as used. This over-collects on purpose
 (`add`, `length` and every other identifier in the script also land in the
 set) — a false positive costs a few bytes of CSS, a false negative drops a rule
-that is correct everywhere until publish. Only literal names are seen: a class
+that is correct everywhere until publish.
+
+A class only a module's render output carries — a plugin checkout module
+writing `commerce-checkout__total` into its own HTML — is likewise never on a
+node. A module declares those classes in `ModuleDefinition.emittedClassNames`
+(exact names or a `prefix*`), and `collectUsedStyleRuleIds(site, registry)`
+keeps every class rule matching the declarations of the modules placed on the
+site's pages and Visual Components. Imported CSS written for that markup then
+reaches the published stylesheet.
+
+Only literal script names are seen: a class
 built by concatenation at runtime still cannot be inferred and must be assigned
 in the editor (including to a hidden structural node) or shipped in a
 `mode:'file'` stylesheet, the explicit non-tree-shaken escape hatch.

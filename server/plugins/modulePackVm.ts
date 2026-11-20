@@ -78,6 +78,7 @@ interface SerializedModuleDefinition {
   schema: Record<string, unknown>
   canHaveChildren?: boolean
   htmlTag?: string
+  emittedClassNames?: string[]
   hasPreview: boolean
   dependencies?: Record<string, string | { version: string; dev?: boolean }>
   editorRuntime?: { sandbox?: { source: string; minHeight?: number } }

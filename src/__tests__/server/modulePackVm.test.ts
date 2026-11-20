@@ -76,6 +76,30 @@ describe('modulePackVm — source shim', () => {
   })
 })
 
+describe('modulePackVm — module metadata', () => {
+  it('carries emittedClassNames out of the VM', async () => {
+    const source = `
+const checkout = {
+  id: 'acme.canvas.checkout',
+  name: 'Checkout',
+  category: 'Acme',
+  version: '1.0.0',
+  defaults: {},
+  schema: {},
+  emittedClassNames: ['commerce-checkout*'],
+  render: () => ({ html: '<div class="commerce-checkout"></div>' }),
+};
+export default [checkout];
+`
+    const vm = await createModulePackVm({ pluginId: 'acme.canvas', packSource: source })
+    try {
+      expect(vm.modules[0].emittedClassNames).toEqual(['commerce-checkout*'])
+    } finally {
+      vm.dispose()
+    }
+  })
+})
+
 describe('modulePackVm — shared sandbox limits', () => {
   it('uses the same memory/stack ceilings as full-plugin VMs (no fork, no weakening)', () => {
     // Both VMs import these from quickjs/limits.ts. The security guarantee is

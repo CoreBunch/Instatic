@@ -209,6 +209,7 @@ function buildStyleHead(
   site: SiteDocument,
   page: Page,
   cssMap: Map<string, string>,
+  registry: IModuleRegistry,
 ): string {
   if (cssEmission === 'external') {
     if (!options.cssBundle) {
@@ -236,7 +237,7 @@ function buildStyleHead(
 
   const frameworkCss = buildSiteFrameworkCss(site)
   const moduleCss = Array.from(cssMap.values()).join('\n')
-  const classCss = collectClassCSS(site, { mediaAssets: options.mediaAssets })
+  const classCss = collectClassCSS(site, registry, { mediaAssets: options.mediaAssets })
   const userCss = collectUserStylesheetCss(site, page)
   // Same cascade order as the external-link path: user CSS comes last so it
   // wins specificity ties against the class registry. Neutralise `</style>` in
@@ -620,6 +621,7 @@ export function publishPage(
     site,
     page,
     acc.cssMap,
+    registry,
   )
 
   const meta = buildDocumentMetaTags(site, page, templateContext, options.documentMeta)
