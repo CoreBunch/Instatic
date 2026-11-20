@@ -9,6 +9,8 @@ import { Dialog } from '@ui/components/Dialog'
 import { Tabs, TabList } from '@ui/components/Tabs'
 import { PageSeoTabs, PageSeoTabPanels, pageSeoProblem } from '@admin/shared/PageSeoEditor'
 
+const EMPTY_SEO: PageSeo = {}
+
 export function GlobalHeadSettings() {
   const [open, setOpen] = useState(false)
   const { canEditStructure } = useEditorPermissions()
@@ -27,7 +29,7 @@ export function GlobalHeadSettings() {
 function GlobalHeadDialog({ onClose }: { onClose: () => void }) {
   const stored = useEditorStore((s) => s.site?.settings.seo)
   const update = useEditorStore((s) => s.updateSiteSettings)
-  const [draft, setDraft] = useState<PageSeo>(stored ?? {})
+  const [draft, setDraft] = useState<PageSeo>(stored ?? EMPTY_SEO)
   const [tab, setTab] = useState<'search' | 'head'>('search')
   const problem = pageSeoProblem(draft)
   return (

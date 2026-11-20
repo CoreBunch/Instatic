@@ -26,7 +26,8 @@
  * `validation-vendor`, the page-specific chunk, and the shared `layouts-*`
  * chunk — NOT `store-*` (editor) or any panel/canvas/modules code.
  */
-import { lazy, Suspense, type ReactNode } from 'react'
+import { LazySettingsModal as SettingsModal } from '@admin/modals/Settings/LazySettingsModal'
+import { Suspense, type ReactNode } from 'react'
 import { Toolbar } from '@site/toolbar/Toolbar'
 import { AdminSectionNavigation } from '@admin/shared/AdminSectionNavigation'
 import { SkeletonCards } from '@ui/components/Skeleton'
@@ -39,15 +40,6 @@ import { useSiteSummary } from '@admin/state/useSiteSummary'
 import { canRunPluginBackgroundWork } from '@admin/access'
 import type { AdminWorkspace } from '@admin/workspace'
 import styles from './AdminPageLayout.module.css'
-
-// SettingsModal lives in its own chunk via React.lazy(). The conditional
-// render below keeps it out of the eager graph until the user opens it.
-// The matching declarations in the canvas layouts share the same lazy
-// boundary, so the resolved module is cached once per session regardless
-// of which layout opened it first.
-const SettingsModal = lazy(() =>
-  import('@admin/modals/Settings/SettingsModal').then((m) => ({ default: m.SettingsModal })),
-)
 
 interface AdminPageLayoutProps {
   /** Active section — drives the toolbar's nav highlight. */
