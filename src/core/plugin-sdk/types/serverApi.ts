@@ -121,6 +121,19 @@ export interface ServerPluginApi {
     mail: ServerPluginMailApi
     /** Facts about the site a plugin needs to build links. No permission needed. */
     site: ServerPluginSiteApi
+    /**
+     * Sliding-window counters for the plugin's own keys, backed by the
+     * limiter core's sign-in uses. `take` records one use of `key` and says
+     * whether it fits: at most `limit` uses in any `windowMs`. A refused take
+     * is not counted. In memory only: a plugin reload or a server restart
+     * starts every window again. `limit` is 1 to 10,000; `windowMs` is one
+     * second to one day; at most 16 different (limit, window) pairs and
+     * 10,000 live keys per pair, past which takes for new keys are refused.
+     * No permission needed.
+     */
+    rateLimit: {
+      take: (key: string, limit: number, windowMs: number) => Promise<{ ok: boolean; remaining: number; retryAfterMs: number }>
+    }
     loops: {
       /**
        * Register a loop entity source. Source ID must be `<pluginId>.<name>`.

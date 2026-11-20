@@ -54,6 +54,7 @@ function pluginRecord(id: string, contentAccess: ContentAccessEntry[]): HostPlug
     mediaAdapters: [],
     mediaUrlTransformers: [],
     inflightFetches: new Map(),
+    rateLimiters: new Map(),
   }
 }
 

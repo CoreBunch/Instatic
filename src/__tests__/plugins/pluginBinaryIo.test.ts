@@ -96,6 +96,7 @@ function makeEntry(allowlist: string[]): HostPluginRecord {
   return {
     manifest: { id: 'test.plugin', networkAllowedHosts: allowlist },
     inflightFetches: new Map(),
+    rateLimiters: new Map(),
   } as unknown as HostPluginRecord
 }
 

@@ -18,6 +18,7 @@ import type { LoopFetchResult, LoopItem } from '@core/loops/types'
 import type { SerializedApp, SerializedMember, SerializedUser } from '../protocol/messages'
 import type { LoadPluginResult } from '../protocol/messages'
 import { normalizeRoutePath } from '../protocol/parser'
+import { clientIp } from '../../auth/security'
 import { materializeRouteResponse, serializeRouteRequest } from './routeIo'
 import { hostPlugins } from './registry'
 import { requestFromWorker } from './workerPool'
@@ -66,6 +67,7 @@ export async function loadPluginInWorker(args: {
     mediaAdapters: [],
     mediaUrlTransformers: [],
     inflightFetches: new Map(),
+    rateLimiters: new Map(),
   })
 
   const correlationId = nanoid()
@@ -202,6 +204,9 @@ export async function runRouteInWorker(args: {
   // read once as raw bytes, pre-parsed conveniences (JSON / form fields /
   // multipart files) are derived from those exact bytes, and binary
   // payloads cross the worker boundary base64-encoded.
+  // Exactly core's answer to where the caller is, proxy trust applied. The
+  // serialized headers below leave out the peer address it is built from.
+  const ip = clientIp(args.request)
   const { request: serializedReq, body: parsedBody } = await serializeRouteRequest(args.request)
 
   const result = await requestFromWorker(
@@ -215,6 +220,7 @@ export async function runRouteInWorker(args: {
       user: args.user,
       member: args.member,
       app: args.app,
+      ip,
       body: parsedBody,
     },
     'route-result',

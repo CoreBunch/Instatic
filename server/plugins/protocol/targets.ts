@@ -26,6 +26,8 @@
  *                              privilege escalation (same model as `Math`/`JSON`).
  *   - `cms.site.publicUrl`   — the site's public address, which every visitor
  *                              already knows.
+ *   - `cms.rateLimit.take`   — the plugin's own in-memory counters; nothing
+ *                              outside the plugin is read or changed.
  *
  * Conditional/extra checks that CANNOT live in a static target→permission map
  * stay in their handlers (host + VM both keep them):

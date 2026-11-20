@@ -159,7 +159,7 @@ export function isSiteOrigin(req: Request, rawOrigin: string): boolean {
  * standard one, and any inbound version is stripped in `stampSocketIp`
  * before we set our own value — clients cannot spoof it.
  */
-const BUN_SOCKET_IP_HEADER = 'x-bun-socket-ip'
+export const BUN_SOCKET_IP_HEADER = 'x-bun-socket-ip'
 
 interface ParsedIpAddress {
   family: 4 | 6

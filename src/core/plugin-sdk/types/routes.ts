@@ -73,6 +73,17 @@ export interface ServerPluginRouteContext {
    * can see one. A handler that must never act for an app checks for null.
    */
   app: ServerPluginApp | null
+  /**
+   * The caller's IP address, or null when the server cannot tell. It is
+   * core's own answer (the one sign-in rate limits use): the socket peer, or,
+   * when that peer is a configured trusted proxy, the nearest address in
+   * `X-Forwarded-For` that is not one. Set on every kind of route.
+   *
+   * Behind a proxy the site does not trust, this is the proxy's address, the
+   * same for every visitor. It is personal data: keep it only as long as the
+   * purpose needs (a rate-limit window, say), and never send it on.
+   */
+  ip: string | null
 }
 
 /** An app calling a member route on a member's behalf. */

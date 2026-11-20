@@ -548,7 +548,23 @@ api.cms.routes.authenticated.get('/me', handler)               // any logged-in 
 api.cms.routes.public.post('/subscribe', handler)              // anonymous — also requires cms.routes.public
 ```
 
-Routes mount under `/admin/api/cms/plugins/<id>/runtime/*`. The host enforces the admin session check + the declared capability before invoking the handler. Handlers receive `{ req, body, user }`. The `user` is `null` for public routes.
+Routes mount under `/admin/api/cms/plugins/<id>/runtime/*`. The host enforces the admin session check + the declared capability before invoking the handler. Handlers receive `{ req, body, user, member, app, ip }`. The `user` is `null` for public routes.
+
+**`ctx.ip`** is the caller's IP address (`string | null`) on every kind of route: admin, public and member, on both mounts. It is exactly core's `clientIp(req)` (`server/auth/security.ts`), read in `runRouteInWorker` (`server/plugins/host/rpc.ts`): the socket peer, or, when that peer is in `TRUSTED_PROXY_CIDRS`, the nearest `X-Forwarded-For` entry that is not a trusted proxy. A forwarded header from any other peer is ignored. `null` means the server could not tell. What a plugin must know:
+
+- Behind a proxy the site does not list as trusted, `ip` is the proxy's address, the same for every visitor, so a per-visitor limit becomes one limit for everyone. Trusting a proxy that is not yours lets any client pick its own address.
+- It is personal data. Keep it only as long as the purpose needs (a rate-limit window), and do not send it to a third party.
+- The synthetic peer header core stamps (`x-bun-socket-ip`) is removed from `ctx.req.headers` (`serializeRouteRequest`), so `ctx.ip` is the one supported answer. A client's own `X-Forwarded-For` passes through as sent; never key anything on it.
+
+**`api.cms.rateLimit.take(key, limit, windowMs)`** → `{ ok, remaining, retryAfterMs }`: a sliding-window counter for the plugin's own keys, backed by core's `RateLimiter` (`server/auth/rateLimit.ts`, the one sign-in uses). It records one use of `key` and answers whether it fits within `limit` uses per `windowMs`; a refused take is not counted. No permission: the counters are the plugin's own (`server/plugins/host/handlers/rateLimit.ts`, held on the plugin's host record). They are in memory, so a plugin reload, an upgrade or a restart starts every window again. Bounds: `key` 1 to 200 characters, `limit` 1 to 10,000, `windowMs` 1 second to 1 day; at most 16 different (limit, window) pairs per plugin (more throws) and 10,000 live keys per pair, past which a take for a new key is refused (fails closed).
+
+```js
+api.cms.routes.public.post('/checkout', async (ctx) => {
+  const slot = await api.cms.rateLimit.take(`checkout:${ctx.ip ?? 'unknown'}`, 10, 60_000)
+  if (!slot.ok) return { __response: true, status: 429, headers: { 'retry-after': String(Math.ceil(slot.retryAfterMs / 1000)) }, body: 'Slow down' }
+  // ...
+})
+```
 
 Request bodies are **byte-safe end to end**. The host reads the incoming body once as raw bytes and carries it to the sandbox tagged `utf8` (text verbatim) or `base64` (binary), so `req.text()` / `req.json()` decode correctly (including multibyte UTF-8) and `req.arrayBuffer()` returns the exact payload bytes. Pre-parsed `body` fields cover `application/json`, `application/x-www-form-urlencoded` (repeated keys become arrays), and `multipart/form-data` — text fields arrive as strings, file fields as uploaded-file facades (`{ name, type, size, arrayBuffer(), text() }`) whose bytes are uncorrupted, so plugins can accept image/PDF uploads. (De)serialization lives in `server/plugins/host/routeIo.ts`; the wire codec in `server/plugins/protocol/bodyEncoding.ts`.
 
@@ -1208,7 +1224,7 @@ independent layers that agree on that single authority:
 
 Both the VM layer and the host layer drive from the same `TARGET_PERMISSIONS` map in `server/plugins/protocol/targets.ts`. This single table is the source of truth for which permission each RPC target requires — the VM and host can never silently assert different permissions for the same target.
 
-Targets intentionally absent from `TARGET_PERMISSIONS` require no permission and are explicitly ungated: `cms.settings.replace` (any active plugin may update its own settings), `network.abort` (no active id without `network.outbound`), `crypto.digest` and `crypto.signHmac` (pure computation, no I/O — same model as `Math`/`JSON`), and `cms.site.publicUrl` (the site's public address). Two conditional checks that a static map cannot express remain in their handlers: `cms.routes.register` with `access.kind === 'public'` additionally requires `cms.routes.public` and with `access.kind === 'member'` requires `members.read`, `cms.hooks.on` for a `member.*` event requires `members.read`, `cms.members.invite` with tags requires `members.tags`, and every `cms.content.*` handler additionally calls `assertContentTableAccess` for the per-table manifest allowlist.
+Targets intentionally absent from `TARGET_PERMISSIONS` require no permission and are explicitly ungated: `cms.settings.replace` (any active plugin may update its own settings), `network.abort` (no active id without `network.outbound`), `crypto.digest` and `crypto.signHmac` (pure computation, no I/O — same model as `Math`/`JSON`), `cms.site.publicUrl` (the site's public address), and `cms.rateLimit.take` (the plugin's own in-memory counters). Two conditional checks that a static map cannot express remain in their handlers: `cms.routes.register` with `access.kind === 'public'` additionally requires `cms.routes.public` and with `access.kind === 'member'` requires `members.read`, `cms.hooks.on` for a `member.*` event requires `members.read`, `cms.members.invite` with tags requires `members.tags`, and every `cms.content.*` handler additionally calls `assertContentTableAccess` for the per-table manifest allowlist.
 
 The VM-side check throws **synchronously** inside the sandbox, so a plugin that
 declares a permission it was denied is rejected before any host dispatch is even

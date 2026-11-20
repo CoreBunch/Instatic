@@ -481,6 +481,13 @@ globalThis.__buildApi = function buildApi() {
           throw new TypeError('mail.send needs `to: { member: id }` or `to: { address }`')
         },
       },
+      // The plugin's own sliding-window counters. No permission needed.
+      rateLimit: {
+        // api.cms.rateLimit.take(key, limit, windowMs) → { ok, remaining, retryAfterMs }
+        take: function (key: unknown, limit: unknown, windowMs: unknown) {
+          return call('cms.rateLimit.take', [String(key), limit, windowMs])
+        },
+      },
       // Facts about the site. No permission needed.
       site: {
         // api.cms.site.publicUrl() → 'https://example.com' | null

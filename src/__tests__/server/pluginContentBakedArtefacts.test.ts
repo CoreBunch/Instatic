@@ -103,6 +103,7 @@ function pluginRecord(): HostPluginRecord {
     mediaAdapters: [],
     mediaUrlTransformers: [],
     inflightFetches: new Map(),
+    rateLimiters: new Map(),
   } as unknown as HostPluginRecord
 }
 

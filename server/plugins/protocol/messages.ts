@@ -162,6 +162,8 @@ export interface RunRouteRequest {
   member: SerializedMember | null
   /** Set when an app, not the member's browser, is calling for `member`. */
   app: SerializedApp | null
+  /** The caller's IP address as core's `clientIp` resolves it (trusted proxies applied), or null. */
+  ip: string | null
   body: Record<string, unknown>
 }
 

@@ -17,6 +17,7 @@ import {
   encodeBodyBytes,
 } from '../protocol/bodyEncoding'
 import { withoutSessionCookies } from '../../sessionCookies'
+import { BUN_SOCKET_IP_HEADER } from '../../auth/security'
 import { namesMemberAppToken } from '../../members/apps/protocol'
 import type {
   SerializedRequest,
@@ -73,6 +74,10 @@ export async function serializeRouteRequest(
   if (headers.authorization !== undefined && namesMemberAppToken(headers.authorization)) {
     delete headers.authorization
   }
+  // The socket peer address core stamped for itself. The caller's address
+  // reaches the handler as `ctx.ip`, worked out by `clientIp` with the
+  // trusted-proxy setting applied; a raw peer here would bypass that.
+  delete headers[BUN_SOCKET_IP_HEADER]
 
   const bodyBytes = request.method !== 'GET'
     ? new Uint8Array(await request.arrayBuffer())
