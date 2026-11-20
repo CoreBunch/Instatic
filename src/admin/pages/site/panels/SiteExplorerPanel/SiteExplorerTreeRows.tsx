@@ -107,7 +107,6 @@ export function ExplorerFolderRow({
     >
       {renameActive ? (
         <>
-          <TreeChevron expanded={expanded} />
           <TreeIconSlot icon={FolderGlyphIcon} iconSize={12} />
           <InlineRenameInput
             value={renameValue}
@@ -116,6 +115,7 @@ export function ExplorerFolderRow({
             onCancel={onCancelRename}
           />
           {itemCount > 0 && <TreeMeta>{itemCount}</TreeMeta>}
+          <TreeChevron expanded={expanded} />
         </>
       ) : (
         <Button
@@ -141,12 +141,12 @@ export function ExplorerFolderRow({
             onKeyDown(folder, event)
           }}
         >
-          <TreeChevron expanded={expanded} />
           <TreeIconSlot icon={FolderGlyphIcon} iconSize={12} />
           <TreeLabelGroup>
             <TreeLabel>{folder.name}</TreeLabel>
             {itemCount > 0 && <TreeMeta>{itemCount}</TreeMeta>}
           </TreeLabelGroup>
+          <TreeChevron expanded={expanded} />
         </Button>
       )}
     </TreeRow>
@@ -294,7 +294,6 @@ export function ExplorerItemRow<TTarget>({
       >
         {renameActive ? (
           <>
-            <TreeChevron visible={false} />
             <TreeIconSlot icon={item.icon} iconSize={12} />
             <InlineRenameInput
               value={renameValue}
@@ -328,7 +327,6 @@ export function ExplorerItemRow<TTarget>({
               onKeyDown(item, event)
             }}
           >
-            <TreeChevron visible={false} />
             <TreeIconSlot icon={item.icon} iconSize={12} />
             <TreeLabelGroup>
               <TreeLabel>{item.label}</TreeLabel>

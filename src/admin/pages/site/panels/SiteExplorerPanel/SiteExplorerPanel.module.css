@@ -37,7 +37,7 @@
     font-size: var(--text-m);
 }
 
-.siteBranch {
+.section.explorerBranch {
     gap: var(--space-4xs);
     flex-shrink: 0;
 }
@@ -54,6 +54,10 @@
     min-height: 30px;
     color: var(--text-bright);
     font-weight: 600;
+}
+
+.branchChevron {
+    margin-inline-start: auto;
 }
 
 .branchCount {

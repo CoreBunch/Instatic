@@ -3,7 +3,6 @@ import { useDroppable } from '@dnd-kit/core'
 import type { IconComponent } from 'pixel-art-icons/types'
 import { FolderGlyphIcon } from 'pixel-art-icons/icons/folder-glyph'
 import { Button } from '@ui/components/Button'
-import { EmptyState } from '@ui/components/EmptyState'
 import { cn } from '@ui/cn'
 import {
   TreeContainer, TreeChevron,
@@ -52,7 +51,6 @@ interface SiteExplorerTreeSectionProps<TTarget> {
   onKeyDownItem: (item: SiteExplorerTreeItem<TTarget>, event: KeyboardEvent<HTMLButtonElement>) => void
   onContextMenuFolder: (folder: SiteExplorerTreeFolder, event: MouseEvent<HTMLButtonElement>) => void
   onKeyDownFolder: (folder: SiteExplorerTreeFolder, event: KeyboardEvent<HTMLButtonElement>) => void
-  emptyLabel?: string
 }
 
 export function SiteExplorerTreeSection<TTarget>({
@@ -75,10 +73,8 @@ export function SiteExplorerTreeSection<TTarget>({
   onKeyDownItem,
   onContextMenuFolder,
   onKeyDownFolder,
-  emptyLabel = 'None yet',
 }: SiteExplorerTreeSectionProps<TTarget>) {
   const [expandedFolderIds, setExpandedFolderIds] = useState(() => new Set(initialExpandedFolderIds(model)))
-  const siteBranch = model.sectionId === 'pages' || model.sectionId === 'templates' || model.sectionId === 'components'
   const [expanded, setExpanded] = useState(true)
   const ActionIcon = actionIcon
   const hasRows = model.pinnedItems.length > 0 || model.rootEntries.length > 0
@@ -107,19 +103,17 @@ export function SiteExplorerTreeSection<TTarget>({
   }
 
   return (
-    <section className={cn(styles.section, siteBranch && styles.siteBranch)} aria-labelledby={`site-section-${title.toLowerCase()}`}>
-      <div className={cn(styles.sectionHeader, siteBranch && styles.branchHeader)}>
+    <section className={cn(styles.section, styles.explorerBranch)} aria-labelledby={`site-section-${title.toLowerCase()}`}>
+      <div className={cn(styles.sectionHeader, styles.branchHeader)}>
         <h2 id={`site-section-${title.toLowerCase()}`} className={styles.sectionTitle}>
-          {siteBranch ? (
-            <Button variant="ghost" size="sm" align="start" aria-expanded={expanded}
-              aria-controls={`site-branch-${model.sectionId}`} className={styles.branchToggle}
-              onClick={() => setExpanded(!expanded)}>
-              <TreeChevron expanded={expanded} />{title}
-              <span className={styles.branchCount} aria-hidden="true">{count}</span>
-            </Button>
-          ) : title}
+          <Button variant="ghost" size="sm" align="start" aria-expanded={expanded}
+            aria-controls={`site-branch-${model.sectionId}`} className={styles.branchToggle}
+            onClick={() => setExpanded(!expanded)}>
+            {title}
+            <span className={styles.branchCount} aria-hidden="true">{count}</span>
+            <TreeChevron expanded={expanded} className={styles.branchChevron} />
+          </Button>
         </h2>
-        {!siteBranch && <span className={styles.sectionCount}>{count}</span>}
         <Button
           variant="ghost"
           size="xs"
@@ -145,15 +139,11 @@ export function SiteExplorerTreeSection<TTarget>({
       <TreeContainer
         id={`site-branch-${model.sectionId}`}
         ariaLabel={title}
-        className={cn(styles.treeRows, siteBranch && styles.branchRows, siteBranch && !expanded && styles.collapsedBranch, rootDropActive && treeDropStyles.dropRoot)}
+        className={cn(styles.treeRows, styles.branchRows, !expanded && styles.collapsedBranch, rootDropActive && treeDropStyles.dropRoot)}
         containerRef={rootDrop.setNodeRef}
       >
         {!hasRows ? (
-          siteBranch ? <span className={styles.emptyBranch}>No {title.toLowerCase()} yet</span> : <EmptyState
-            compact
-            title={emptyLabel}
-            className={styles.sectionEmpty}
-          />
+          <span className={styles.emptyBranch}>No {title.toLowerCase()} yet</span>
         ) : (
           <>
             {model.pinnedItems.map((item) => (
