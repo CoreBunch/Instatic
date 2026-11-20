@@ -47,11 +47,9 @@ import {
   SetPageTemplateInputSchema,
   ClearPageTemplateInputSchema,
   RenderSnapshotInputSchema,
-  type InsertHtmlInput,
   type GetNodeHtmlInput,
   type ReadDocumentInput,
   type OpenDocumentInput,
-  type ReplaceNodeHtmlInput,
   type DeleteNodeInput,
   type UpdateNodePropsInput,
   type MoveNodeInput,
@@ -69,8 +67,7 @@ import {
 import type { EditorStore } from '@site/store/types'
 import { registry } from '@core/module-engine'
 import { sanitizeRichtext, isRichtextPropKey } from '@core/sanitize'
-import { importHtml } from '@core/htmlImport'
-import type { BaseNode, PageTemplateConfig } from '@core/page-tree'
+import type { PageTemplateConfig } from '@core/page-tree'
 import { renderNode, type RenderConfig, type RenderAccumulators } from '@core/publisher'
 import { getAgentStoreApi } from './storeRef'
 import { whenCollabWritable } from '@site/store/slices/site/collabWriteGate'
@@ -89,13 +86,13 @@ import {
   runWriteCodeAsset,
 } from './codeAssetTools'
 import { runRenderSnapshotAtBreakpoint } from './renderSnapshotAtBreakpoint'
-import { parseImportedStyleCss, runApplyCss } from './cssTools'
+import { runApplyCss } from './cssTools'
+import { runInsertHtml, runReplaceNodeHtml } from './htmlTools'
 import {
-  activeDocumentNodes,
   activeRenderPage,
-  describeDocumentId,
-  describeForeignNode,
+  findNodeInActiveDoc,
   focusNodeDocument,
+  nodeNotInActiveDocError,
   runOpenDocument,
   runReadDocument,
 } from './documentTools'
@@ -163,34 +160,6 @@ function validateBreakpointId(
     : `Breakpoint not found: ${breakpointId}`
 }
 
-/**
- * Resolve a node by ID **within the active document only** — never across other
- * pages, templates, or VCs. Write tools mutate the active tree, so resolving an
- * id that lives in a different document would silently target the wrong tree
- * (or fail with a misleading "does not accept children"). Returns the node when
- * it belongs to the active doc, else undefined.
- */
-function findNodeInActiveDoc(store: EditorStore, nodeId: string): BaseNode | undefined {
-  return activeDocumentNodes(store)?.[nodeId]
-}
-
-/**
- * Shared "node not found in the active doc" error: distinguishes a node that
- * lives in another document (actionable — switch docs) from one that exists
- * nowhere (a bad id).
- */
-function nodeNotInActiveDocError(store: EditorStore, nodeId: string): AiToolOutput {
-  const documentIdError = describeDocumentId(store, nodeId)
-  if (documentIdError) return aiToolError(documentIdError)
-  const foreign = describeForeignNode(store, nodeId)
-  return aiToolError(
-    foreign
-      ? `Node ${nodeId} lives in ${foreign} and could not be activated automatically.`
-      : `Node not found: ${nodeId}`,
-  )
-}
-
-
 /** Pull the node/parent id a write tool targets out of its raw input bag. */
 function targetNodeIdFromInput(raw: unknown): string | undefined {
   if (!raw || typeof raw !== 'object') return undefined
@@ -202,99 +171,6 @@ function targetNodeIdFromInput(raw: unknown): string | undefined {
 // ---------------------------------------------------------------------------
 // Per-tool implementations
 // ---------------------------------------------------------------------------
-
-/**
- * Insert an HTML snippet as page nodes under `parentId`.
- *
- * Pipeline (identical to the paste-import modal path):
- *   1. importHtml(input.html) — parse → strip unsafe → walkAndMap → fragment
- *      (+ inline `style="…"` on node.inlineStyles, + raw `<style>` CSS).
- *   2. parseImportedStyleCss — `<style>` CSS → registry rules + conditions.
- *      `cssToStyleRules` classifies each selector: a bare `.foo` becomes a
- *      reusable class, anything else (`.hero a`, `a:hover`, …) an ambient rule.
- *   3. insertImportedNodes(parentId, fragment, { index, styleRules, conditions })
- *      — nodes, <style> rules, and class-token binding in one undo step.
- */
-function runInsertHtml(input: InsertHtmlInput): AiToolOutput {
-  // (1) Parse and walk the HTML to produce a flat node fragment + any <style> CSS
-  const { nodes, rootIds, styleCss, stripped, warnings } = importHtml(input.html)
-  const { rules, conditions } = parseImportedStyleCss(styleCss)
-
-  if (rootIds.length === 0) {
-    // A <style>-only payload carries no elements but still carries authorable
-    // CSS — reusable classes and ambient rules (`a:hover`, `.hero a`,
-    // `::before`, …). Upsert them rather than discarding them. (The dedicated
-    // `site_apply_css` tool is the canonical path for this; insertHtml stays forgiving
-    // when a CSS-only payload arrives here.)
-    if (rules.length > 0 || conditions.length > 0) {
-      const result = getStoreState().applyCssRules(rules, conditions, 'merge')
-      if (result.blockedSelectors.length > 0) {
-        return aiToolError(
-          `Framework-generated CSS selectors are locked: ${result.blockedSelectors.join(', ')}`,
-        )
-      }
-      return aiToolOk({ cssRulesCreated: result.created, cssRulesUpdated: result.updated })
-    }
-    const scriptHint = stripped.scripts > 0 || stripped.inlineHandlers > 0
-      ? ' Scripts and inline event handlers are stripped from HTML imports; create runtime behavior with site_write_code_asset({ type:"script", ... }) instead.'
-      : ''
-    return aiToolError(`HTML contained no importable elements or style rules.${scriptHint}`)
-  }
-
-  // (2) Insert via the store action — same path as the paste import modal
-  const store = getStoreState()
-  const insertedRootIds = store.insertImportedNodes(
-    input.parentId,
-    { nodes, rootIds },
-    { index: input.index, styleRules: rules, conditions },
-  )
-  if (insertedRootIds.length === 0) {
-    return aiToolError(`Parent node not found or does not accept children: ${input.parentId}`)
-  }
-
-  // Return the full created subtree (id + module + class names) so the caller
-  // can target nested nodes (e.g. the `.ist-shell` wrapper) without a separate
-  // tree dump. `nodeIds` stays as the top-level roots for back-compat.
-  // Read FRESH state after the insert — `store` above is the pre-insert
-  // immutable snapshot, so its node map doesn't contain the new nodes (and its
-  // styleRules lacks any classes insertImportedNodes auto-created).
-  const postState = getStoreState()
-  const nodeMap = activeDocumentNodes(postState) ?? {}
-  const styleRules = postState.site?.styleRules ?? {}
-  const created: Array<{ id: string; moduleId: string; classes: string[] }> = []
-  const visit = (id: string): void => {
-    const node = nodeMap[id]
-    if (!node) return
-    created.push({
-      id,
-      moduleId: node.moduleId,
-      classes: (node.classIds ?? []).map((cid) => styleRules[cid]?.name ?? cid),
-    })
-    for (const childId of node.children) visit(childId)
-  }
-  for (const rootId of insertedRootIds) visit(rootId)
-
-  // `insertedRootIds` are the ids the insert INTENDED to create. If none of
-  // them is in the store afterwards the mutation was refused (collab gate,
-  // offline transport), and reporting those ids would claim a subtree that
-  // does not exist — the caller then builds on nodes the server never saw.
-  if (created.length === 0) {
-    return aiToolError(
-      'Insert was refused before it reached the store, so nothing was created. '
-      + 'The editor is usually still syncing; retry shortly.',
-    )
-  }
-
-  // Report references the importer could not resolve. Without this an
-  // `<instatic-loop>` naming a source that does not exist inserts cleanly,
-  // publishes an empty section, and passes every downstream check — the
-  // caller only finds out by looking at the rendered page.
-  return aiToolOk({
-    nodeIds: insertedRootIds,
-    created,
-    ...(warnings.length > 0 ? { warnings: warnings.map((w) => w.message) } : {}),
-  })
-}
 
 /**
  * Render the subtree at `nodeId` to HTML using the publisher's renderNode.
@@ -337,70 +213,6 @@ function runReadDocumentTool(input: ReadDocumentInput): AiToolOutput {
 
 function runOpenDocumentTool(input: OpenDocumentInput): AiToolOutput {
   return runOpenDocument(input, getStoreState())
-}
-
-/**
- * Replace the children of `nodeId` with an HTML snippet.
- *
- * The target node itself is preserved as the parent container. Its current
- * children (and their full subtrees) are deleted, then the imported HTML is
- * inserted in their place.
- */
-function runReplaceNodeHtml(input: ReplaceNodeHtmlInput): AiToolOutput {
-  const store = getStoreState()
-  if (!store.site) return aiToolError('No active site.')
-
-  // Verify the target node exists IN THE ACTIVE DOCUMENT — the only tree this
-  // mutation can touch. A node from another page/template/VC must not resolve.
-  const targetNode = findNodeInActiveDoc(store, input.nodeId)
-  if (!targetNode) {
-    return nodeNotInActiveDocError(store, input.nodeId)
-  }
-
-  // Parse + validate the payload BEFORE mutating, so an empty / invalid payload
-  // never wipes the node's existing children first and then errors out.
-  const { nodes, rootIds, styleCss, stripped, warnings } = importHtml(input.html)
-  const { rules, conditions } = parseImportedStyleCss(styleCss)
-
-  if (rootIds.length === 0) {
-    // A <style>-only payload has nothing to replace the children WITH, so leave
-    // the subtree intact and just upsert its rules — same forgiving behaviour
-    // as insertHtml. Wiping children to insert nothing would be surprising.
-    if (rules.length > 0 || conditions.length > 0) {
-      const result = getStoreState().applyCssRules(rules, conditions, 'merge')
-      if (result.blockedSelectors.length > 0) {
-        return aiToolError(
-          `Framework-generated CSS selectors are locked: ${result.blockedSelectors.join(', ')}`,
-        )
-      }
-      return aiToolOk({ cssRulesCreated: result.created, cssRulesUpdated: result.updated })
-    }
-    const scriptHint = stripped.scripts > 0 || stripped.inlineHandlers > 0
-      ? ' Scripts and inline event handlers are stripped from HTML imports; create runtime behavior with site_write_code_asset({ type:"script", ... }) instead.'
-      : ''
-    return aiToolError(`HTML contained no importable elements or style rules.${scriptHint}`)
-  }
-
-  // Delete existing children so the target node is empty before insertion.
-  const existingChildren = [...(targetNode.children ?? [])]
-  if (existingChildren.length > 0) {
-    getStoreState().deleteNodes(existingChildren)
-  }
-
-  const insertedRootIds = getStoreState().insertImportedNodes(
-    input.nodeId,
-    { nodes, rootIds },
-    { styleRules: rules, conditions },
-  )
-  if (insertedRootIds.length === 0) {
-    return aiToolError(`Node does not accept children: ${input.nodeId}`)
-  }
-
-  // Same unresolved-reference report as insertHtml.
-  return aiToolOk({
-    nodeIds: insertedRootIds,
-    ...(warnings.length > 0 ? { warnings: warnings.map((w) => w.message) } : {}),
-  })
 }
 
 function runDeleteNode(input: DeleteNodeInput): AiToolOutput {
