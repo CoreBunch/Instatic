@@ -10,6 +10,7 @@ import {
 import { DEFAULT_PLUGIN_FETCH_TIMEOUT_MS } from '../../../server/plugins/quickjs/limits'
 import { NetworkFetchInitSchema } from '../../../server/plugins/protocol/schemas/network'
 import type { HostPluginRecord } from '../../../server/plugins/host/types'
+import { PluginRateLimitStore } from '../../../server/plugins/host/pluginRateLimit'
 
 /**
  * SSRF hardening for the gated plugin fetch (ISS-004, ISS-005, ISS-010, ISS-011).
@@ -28,6 +29,7 @@ function makeEntry(allowlist: string[]): HostPluginRecord {
   return {
     manifest: { id: 'test.plugin', networkAllowedHosts: allowlist },
     inflightFetches: new Map(),
+    rateLimits: new PluginRateLimitStore(10),
   } as unknown as HostPluginRecord
 }
 

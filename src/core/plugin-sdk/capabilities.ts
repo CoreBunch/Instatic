@@ -69,6 +69,13 @@ export const PLUGIN_CAPABILITIES: PluginCapability[] = [
     surfaces: ['server', 'cms'],
   },
   {
+    permission: 'visitors.ip',
+    label: "Receives visitors' IP addresses",
+    description: "Allows the plugin to receive the IP address of whoever calls its routes (visitors, members and admins), for example to slow down one source of too many requests. An IP address is personal data: the plugin should use it only for that and not keep it. Without this permission the plugin's routes are told no address.",
+    risk: 'high',
+    surfaces: ['server', 'cms'],
+  },
+  {
     permission: 'mail.send',
     label: 'Email site members',
     description: 'Allows the plugin to send its own email templates to site members, through the site\'s email connector and sender address. The templates are listed under Email → Templates, where you can reword them. The plugin cannot write a free-form email.',

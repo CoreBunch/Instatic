@@ -72,6 +72,7 @@ import {
   handleContentTreeReplace,
 } from './handlers/content'
 import { handleMailSend, handleMailSendExternal, handleSitePublicUrl } from './handlers/mail'
+import { handleRateLimitTake } from './handlers/rateLimit'
 import {
   handleMembersEmailStatus,
   handleMembersEnsure,
@@ -155,6 +156,7 @@ const apiHandlers = {
   'cms.mail.send': handleMailSend,
   'cms.mail.sendExternal': handleMailSendExternal,
   'cms.site.publicUrl': handleSitePublicUrl,
+  'cms.rateLimit.take': handleRateLimitTake,
 } satisfies HostApiHandlerTable
 
 export async function dispatchApiCall(msg: ValidatedApiCall): Promise<void> {

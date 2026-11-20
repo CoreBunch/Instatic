@@ -34,6 +34,7 @@ import {
   MediaUpsertArgSchema,
 } from './schemas/media'
 import { CryptoDigestArgSchema, CryptoSignHmacArgSchema } from './schemas/crypto'
+import { RateLimitTakeArgsSchema } from './schemas/rateLimit'
 import {
   ContentEntriesCreateArgsSchema,
   ContentEntriesCreateManyArgsSchema,
@@ -181,6 +182,7 @@ export const ApiCallSchemas = {
   'cms.mail.send': apiCallSchema('cms.mail.send', MailSendArgsSchema),
   'cms.mail.sendExternal': apiCallSchema('cms.mail.sendExternal', MailSendExternalArgsSchema),
   'cms.site.publicUrl': apiCallSchema('cms.site.publicUrl', Type.Tuple([])),
+  'cms.rateLimit.take': apiCallSchema('cms.rateLimit.take', RateLimitTakeArgsSchema),
   'crypto.digest': apiCallSchema('crypto.digest', Type.Tuple([CryptoDigestArgSchema])),
   'crypto.signHmac': apiCallSchema('crypto.signHmac', Type.Tuple([CryptoSignHmacArgSchema])),
 } satisfies Record<string, TSchema>

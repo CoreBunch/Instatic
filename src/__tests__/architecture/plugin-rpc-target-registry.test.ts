@@ -106,6 +106,7 @@ const UNGATED_TARGETS = [
   'crypto.digest',
   'crypto.signHmac',
   'cms.site.publicUrl',
+  'cms.rateLimit.take',
 ]
 
 describe('plugin RPC target registry', () => {

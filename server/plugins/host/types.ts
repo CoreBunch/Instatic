@@ -5,6 +5,7 @@
  */
 
 import type { CoreCapability } from '../../auth/capabilities'
+import type { PluginRateLimitStore } from './pluginRateLimit'
 import type { PluginManifest } from '@core/plugin-sdk'
 
 /**
@@ -86,6 +87,8 @@ export interface HostPluginRecord {
    * waiting for natural completion.
    */
   inflightFetches: Map<string, AbortController>
+  /** The plugin's own rate-limit counters (`cms.rateLimit.take`). Dropped with the record on unload. */
+  rateLimits: PluginRateLimitStore
 }
 
 export interface PendingRequest {
