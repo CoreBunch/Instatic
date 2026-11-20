@@ -633,15 +633,22 @@ await api.cms.members.tags.revoke(member.id, 'pro')            // only this plug
 **When a member is deleted** (by themselves or by an admin), every loaded plugin listening to `member.deleted` hears `{ memberId }`. On it, a plugin erases or anonymises what it keeps about that member, except what it must keep by law (invoices, say), which its own docs must name along with how long it is kept. A plugin that is disabled, not yet installed, or being reloaded at that moment does not hear it, and the event is not sent again. For those, `api.cms.members.deletedSince(cursor, { limit })` (`members.read`) returns `{ ids, nextCursor }`: the ids of members deleted after the cursor, oldest first, ordered by (`members.deleted_at`, id) so deletions in the same instant still page in order (`listDeletedMembersSince` in `server/members/repository.ts`). Start with `null`, store `nextCursor` (it stays put when nothing new was deleted), and catch up on activation or from a schedule. The cursor is opaque.
 
 ```js
-api.cms.schedule.hourly('member-deletions', async () => {
-  let cursor = await loadCursor() // the plugin's own record; null the first time
-  for (;;) {
-    const page = await api.cms.members.deletedSince(cursor, { limit: 500 })
-    for (const id of page.ids) await eraseMember(id)
-    cursor = page.nextCursor
-    if (page.ids.length < 500) break
-  }
-  await saveCursor(cursor)
+api.cms.schedule.register({
+  id: 'member-deletions',
+  cadence: { interval: 'hourly' },
+  overlap: 'skip',
+  maxDurationMs: 60_000, // a large backlog takes more than the default 5 s
+  handler: async () => {
+    let cursor = await loadCursor() // the plugin's own record; null the first time
+    for (;;) {
+      const page = await api.cms.members.deletedSince(cursor, { limit: 500 })
+      for (const id of page.ids) await eraseMember(id)
+      cursor = page.nextCursor
+      // Saved after every page, so a run that is cut short keeps its progress.
+      await saveCursor(cursor)
+      if (page.ids.length < 500) break
+    }
+  },
 })
 ```
 

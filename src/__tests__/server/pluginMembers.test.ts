@@ -19,7 +19,7 @@ import { createMailConnector } from '../../../server/mail/connectors'
 import { saveMailDefaults } from '../../../server/mail/defaults'
 import { flushMemberMail } from '../../../server/members/mail'
 import { resetMemberLimits } from '../../../server/members/limits'
-import { exportMemberDataWithPlugins } from '../../../server/plugins/host/memberExport'
+import { exportMemberDataWithPlugins, fitsJson } from '../../../server/plugins/host/memberExport'
 import { DEFAULT_MEMBER_SETTINGS } from '@core/members'
 import { deleteMemberAsAdmin, ensureMember, setMemberSuspended } from '../../../server/members/admin'
 import { confirmSignInLink } from '../../../server/members/service'
@@ -647,6 +647,45 @@ describe('site members for plugins', () => {
       await first
     })
 
+    it('limits an administrator to 30 downloads an hour, and refuses one started from another site', async () => {
+      const ada = await member('ada@example.com')
+      // Set after construction: the test DOM's Request drops a Sec- header given in its init.
+      const crossSite = new Request(`${ORIGIN}/admin/api/cms/members/${ada.id}/export`)
+      crossSite.headers.set('cookie', owner)
+      crossSite.headers.set('sec-fetch-site', 'cross-site')
+      expect((await handleCmsRequest(crossSite, h.db, { uploadsDir })).status).toBe(403)
+      for (let i = 0; i < 30; i++) expect((await h.cms(`/admin/api/cms/members/${ada.id}/export`, { cookie: owner })).status).toBe(200)
+      const limited = await h.cms(`/admin/api/cms/members/${ada.id}/export`, { cookie: owner })
+      expect(limited.status).toBe(429)
+      expect(Number(limited.headers.get('retry-after'))).toBeGreaterThan(0)
+    })
+
+    it('lists a plugin whose stored manifest no longer reads, when it may read members', async () => {
+      await install(['members.read'], exporting('Orders'), 'acme.garbled', DECLARES)
+      await h.db`update installed_plugins set manifest_json = ${'{"not":"a manifest"}'} where id = ${'acme.garbled'}`
+      const ada = await member('ada@example.com')
+      const mine = await exportOf(ada.cookie)
+      expect(sectionOf(mine.plugins, 'acme.garbled')).toMatchObject({
+        included: false,
+        reason: 'Could not be included: its manifest could not be read',
+      })
+    })
+
+    it('measures a section as the UTF-8 bytes of its JSON', () => {
+      const samples: unknown[] = [
+        { ascii: 'plain text', n: 12, ok: true, none: null, list: [1, 2.5, -3] },
+        { multibyte: 'žluťoučký kůň €, 漢字, 🦊🦊' },
+        { control: 'line\nbreak\ttab \u0001\u001f "quoted" back\\slash' },
+        ['\ud800 lone surrogate', '\udc00'],
+        'x'.repeat(5000),
+      ]
+      for (const sample of samples) {
+        const exact = Buffer.byteLength(JSON.stringify(sample), 'utf8')
+        expect(fitsJson(sample, exact)).toBe(true)
+        expect(fitsJson(sample, exact - 1)).not.toBe(true)
+      }
+    })
+
     it('limits the member to 3 downloads an hour, and refuses one started from another site', async () => {
       const ada = await member('ada@example.com')
       const crossSite = new Request(`${ORIGIN}/_instatic/members/export`)
@@ -716,12 +755,18 @@ describe('site members for plugins', () => {
       const same = '2026-11-20T10:00:00.000Z'
       for (const id of ids.slice(0, 3)) await h.db`update members set deleted_at = ${same} where id = ${id}`
       await h.db`update members set deleted_at = ${'2026-11-20T10:00:05.000Z'} where id = ${ids[3]!}`
-      const tied = [...ids.slice(0, 3)].sort()
+      // Within one instant the order follows the database's own id ordering,
+      // so the tied ids are compared as a set: each comes once, before the later one.
+      const tied = new Set(ids.slice(0, 3))
 
       const first = await page(null, 2)
-      expect(first.ids).toEqual(tied.slice(0, 2))
       const second = await page(first.nextCursor, 2)
-      expect(second.ids).toEqual([tied[2], ids[3]])
+      expect(first.ids).toHaveLength(2)
+      expect(second.ids).toHaveLength(2)
+      const pagedTies = [...first.ids, second.ids[0]!]
+      expect(new Set(pagedTies)).toEqual(tied)
+      expect(pagedTies).toHaveLength(3)
+      expect(second.ids[1]).toBe(ids[3])
       const empty = await page(second.nextCursor, 2)
       expect(empty).toEqual({ ids: [], nextCursor: second.nextCursor })
       expect((await page('bm90LWEtY3Vyc29y')).error).toContain('not a cursor')

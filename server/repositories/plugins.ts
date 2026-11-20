@@ -30,7 +30,16 @@ import { isoDate, nowIso } from '@core/utils/isoDate'
  */
 export type InstalledPluginResult =
   | { kind: 'ok'; plugin: InstalledPlugin }
-  | { kind: 'broken'; id: string; name: string; version: string; rawManifest: unknown; reason: string }
+  | {
+      kind: 'broken'
+      id: string
+      name: string
+      version: string
+      rawManifest: unknown
+      /** What the owner granted, read without the manifest. */
+      grantedPermissions: string[]
+      reason: string
+    }
 
 interface InstalledPluginRow {
   id: string
@@ -90,12 +99,14 @@ function mapInstalledPlugin(row: InstalledPluginRow): InstalledPluginResult {
       },
     }
   } catch (err) {
+    const granted = readManifestJson(row.granted_permissions_json)
     return {
       kind: 'broken',
       id: row.id,
       name: row.name,
       version: row.version,
       rawManifest,
+      grantedPermissions: Array.isArray(granted) ? granted.filter((entry): entry is string => typeof entry === 'string') : [],
       reason: err instanceof Error ? err.message : 'Invalid plugin manifest',
     }
   }

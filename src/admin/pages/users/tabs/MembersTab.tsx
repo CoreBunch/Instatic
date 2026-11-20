@@ -157,7 +157,6 @@ export function MembersTab({
     setSearch('')
   }
 
-  /** Run one change, report a failure, and refresh the list so counts and rows follow. */
   // A download changes nothing on screen: no busy state, list refresh or collapse.
   async function downloadData(memberId: string): Promise<void> {
     try {
@@ -168,6 +167,7 @@ export function MembersTab({
     }
   }
 
+  /** Run one change, report a failure, and refresh the list so counts and rows follow. */
   async function run(change: () => Promise<MemberDetail | void>, failure: string, done?: string): Promise<boolean> {
     setBusy(true)
     try {

@@ -75,6 +75,15 @@ export interface ServerPluginMembersApi {
    */
   emailStatus: () => Promise<{ canEmail: boolean; reasons: PluginMemberEmailBlocker[] }>
   /**
+   * Ids of members deleted since `cursor` (null for the start), oldest
+   * deletion first, up to `limit` (default 100, at most 1000). Keep
+   * `nextCursor` and pass it next time; it stays put when nothing new was
+   * deleted. For catching up on deletions the plugin did not hear as
+   * `member.deleted` (it was disabled or not yet installed): call it on
+   * activation or from a schedule. Requires `members.read`.
+   */
+  deletedSince: (cursor: string | null, options?: { limit?: number }) => Promise<{ ids: string[]; nextCursor: string | null }>
+  /**
    * Add the plugin's section to a member's data export (the member's own
    * download and the admin's "Download data"). Needs `"memberDataExport":
    * true` in the manifest, so the export names the plugin even while it is
@@ -87,15 +96,6 @@ export interface ServerPluginMembersApi {
    * as "could not be included" and the export goes on. Requires
    * `members.read`.
    */
-  /**
-   * Ids of members deleted since `cursor` (null for the start), oldest
-   * deletion first, up to `limit` (default 100, at most 1000). Keep
-   * `nextCursor` and pass it next time; it stays put when nothing new was
-   * deleted. For catching up on deletions the plugin did not hear as
-   * `member.deleted` (it was disabled or not yet installed): call it on
-   * activation or from a schedule. Requires `members.read`.
-   */
-  deletedSince: (cursor: string | null, options?: { limit?: number }) => Promise<{ ids: string[]; nextCursor: string | null }>
   exportProvider: (provider: (memberId: string) => PluginMemberExportSection | Promise<PluginMemberExportSection>) => void
   tags: {
     /**
