@@ -36,6 +36,7 @@ import {
   buildImportPlan,
   commitImportPlan,
   detectPluginPackage,
+  withPageSlugs,
   type FileMap,
   type ImportPlan,
   type ImportResult,
@@ -77,14 +78,16 @@ import {
 } from './shared/cmsBundleFlow'
 import {
   type ImportSelection,
-  tokenConflictKey,
-  crossSheetConflictKey,
+  type ConflictResolutionMaps,
+  defaultConflictResolutions,
+  emptyConflictResolutionMaps,
   makeDefaultSelection,
   filterPlanBySelection,
   buildResolvedPlan,
   describeIngestError,
   ensureCurrentSiteForStaticImport,
   saveImportedDraftSite,
+  withMediaAlreadyInLibrary,
 } from './shared/importPlanning'
 import styles from './SiteImportModal.module.css'
 import { getErrorMessage } from '@core/utils/errorMessage'
@@ -136,10 +139,8 @@ export function SiteImportModal({ onCmsBundleImportComplete }: SiteImportModalPr
   const [fileMap, setFileMap] = useState<FileMap | null>(null)
   const [plan, setPlan] = useState<ImportPlan | null>(null)
   const [selection, setSelection] = useState<ImportSelection | null>(null)
-  const [pageResolutions, setPageResolutions] = useState<Map<string, ConflictResolution>>(new Map())
-  const [ruleResolutions, setRuleResolutions] = useState<Map<string, ConflictResolution>>(new Map())
-  const [tokenResolutions, setTokenResolutions] = useState<Map<string, ConflictResolution>>(new Map())
-  const [crossSheetResolutions, setCrossSheetResolutions] = useState<Map<string, ConflictResolution>>(new Map())
+  // The user's choice per static-import conflict, one map per category.
+  const [resolutions, setResolutions] = useState<ConflictResolutionMaps>(emptyConflictResolutionMaps)
   const [cmsRowResolutions, setCmsRowResolutions] = useState<Map<string, ConflictResolution>>(new Map())
   const [stylesheetModes, setStylesheetModes] = useState<Record<string, StylesheetImportMode>>({})
   const [pageSlugOverrides, setPageSlugOverrides] = useState<Map<string, string>>(new Map())
@@ -257,26 +258,15 @@ export function SiteImportModal({ onCmsBundleImportComplete }: SiteImportModalPr
 
   async function finalizePlan(map: FileMap, modes: Record<string, StylesheetImportMode> = stylesheetModes) {
     const currentSite = await ensureCurrentSiteForStaticImport()
-    const importPlan = buildImportPlan({
+    const importPlan = await withMediaAlreadyInLibrary(buildImportPlan({
       fileMap: map,
       currentSite,
       options: { mediaTolerance: 10, stylesheetModes: modes },
-    })
+    }))
     setFileMap(map)
     setPlan(importPlan)
     setSelection(makeDefaultSelection(importPlan))
-    setPageResolutions(
-      new Map(importPlan.conflicts.pages.map((c) => [c.source, c.defaultResolution])),
-    )
-    setRuleResolutions(
-      new Map(importPlan.conflicts.rules.map((c) => [c.desiredName, c.defaultResolution])),
-    )
-    setTokenResolutions(
-      new Map(importPlan.conflicts.tokens.map((c) => [tokenConflictKey(c), c.defaultResolution])),
-    )
-    setCrossSheetResolutions(
-      new Map(importPlan.conflicts.crossSheetClasses.map((c) => [crossSheetConflictKey(c), c.defaultResolution])),
-    )
+    setResolutions(defaultConflictResolutions(importPlan))
     setPageSlugOverrides(new Map())
     setBusy(false)
     setStep('analyze')
@@ -296,30 +286,36 @@ export function SiteImportModal({ onCmsBundleImportComplete }: SiteImportModalPr
   // ── Step navigation ───────────────────────────────────────────────────────
 
   function handleAnalyzeNext() {
-    if (!plan || !selection) return
+    // The plan was built against this site (`finalizePlan` loaded it).
+    const currentSite = useEditorStore.getState().site
+    if (!plan || !selection || !currentSite) return
 
-    // Apply user slug overrides to the plan's pages
-    const planWithSlugs: ImportPlan = {
-      ...plan,
-      pages: plan.pages.map((p) => ({
-        ...p,
-        slug: pageSlugOverrides.get(p.source) ?? p.slug,
-      })),
-    }
-
-    const filtered = filterPlanBySelection(planWithSlugs, selection)
+    // Page conflicts are checked again against the final slugs: the selected
+    // pages only, with the slugs typed in the Review step.
+    const filtered = withPageSlugs(filterPlanBySelection(plan, selection), currentSite, pageSlugOverrides)
+    // A page whose conflict is unchanged keeps the choice already made for it.
+    const nextPageResolutions = new Map(
+      filtered.conflicts.pages.map((c) => {
+        const previous = plan.conflicts.pages.find((p) => p.source === c.source && p.desiredSlug === c.desiredSlug)
+        const chosen = previous ? resolutions.pages.get(c.source) : undefined
+        return [c.source, chosen ?? c.defaultResolution]
+      }),
+    )
+    const nextResolutions = { ...resolutions, pages: nextPageResolutions }
+    setResolutions(nextResolutions)
     const hasConflicts =
       filtered.conflicts.pages.length > 0 ||
       filtered.conflicts.rules.length > 0 ||
       filtered.conflicts.tokens.length > 0 ||
-      filtered.conflicts.crossSheetClasses.length > 0
+      filtered.conflicts.crossSheetClasses.length > 0 ||
+      filtered.conflicts.files.length > 0 ||
+      filtered.conflicts.media.length > 0
 
+    setPlan(filtered)
     if (hasConflicts) {
-      setPlan(filtered)
       setStep('conflicts')
     } else {
-      setPlan(filtered)
-      void kickOffRun(filtered, pageResolutions, ruleResolutions, tokenResolutions)
+      void kickOffRun(filtered, nextResolutions)
     }
   }
 
@@ -354,7 +350,7 @@ export function SiteImportModal({ onCmsBundleImportComplete }: SiteImportModalPr
       return
     }
     if (!plan) return
-    void kickOffRun(plan, pageResolutions, ruleResolutions, tokenResolutions)
+    void kickOffRun(plan, resolutions)
   }
 
   function handleCmsChooseDifferentFile() {
@@ -374,13 +370,8 @@ export function SiteImportModal({ onCmsBundleImportComplete }: SiteImportModalPr
 
   // ── Run ───────────────────────────────────────────────────────────────────
 
-  async function kickOffRun(
-    planToRun: ImportPlan,
-    pageResMap: Map<string, ConflictResolution>,
-    ruleResMap: Map<string, ConflictResolution>,
-    tokenResMap: Map<string, ConflictResolution>,
-  ) {
-    const resolvedPlan = buildResolvedPlan(planToRun, pageResMap, ruleResMap, tokenResMap, crossSheetResolutions)
+  async function kickOffRun(planToRun: ImportPlan, resolutionMaps: ConflictResolutionMaps) {
+    const resolvedPlan = buildResolvedPlan(planToRun, resolutionMaps)
 
     setLogOpen(false)
     setResult(null)
@@ -645,37 +636,9 @@ export function SiteImportModal({ onCmsBundleImportComplete }: SiteImportModalPr
         {step === 'conflicts' && !cmsBundleState && plan && (
           <ConflictsStep
             plan={plan}
-            pageResolutions={pageResolutions}
-            ruleResolutions={ruleResolutions}
-            tokenResolutions={tokenResolutions}
-            onPageResolutionChange={(source, resolution) => {
-              setPageResolutions((prev) => {
-                const next = new Map(prev)
-                next.set(source, resolution)
-                return next
-              })
-            }}
-            onRuleResolutionChange={(desiredName, resolution) => {
-              setRuleResolutions((prev) => {
-                const next = new Map(prev)
-                next.set(desiredName, resolution)
-                return next
-              })
-            }}
-            onTokenResolutionChange={(key, resolution) => {
-              setTokenResolutions((prev) => {
-                const next = new Map(prev)
-                next.set(key, resolution)
-                return next
-              })
-            }}
-            crossSheetResolutions={crossSheetResolutions}
-            onCrossSheetResolutionChange={(key, resolution) => {
-              setCrossSheetResolutions((prev) => {
-                const next = new Map(prev)
-                next.set(key, resolution)
-                return next
-              })
+            resolutions={resolutions}
+            onResolutionChange={(category, key, resolution) => {
+              setResolutions((prev) => ({ ...prev, [category]: new Map(prev[category]).set(key, resolution) }))
             }}
           />
         )}

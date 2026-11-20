@@ -72,7 +72,12 @@ export function makeStaticRunProgress(plan: ImportPlan): RunProgress {
   progress.categories.pages = { done: 0, total: plan.pages.length }
   // Kept stylesheet files count alongside converted rules — one "styles" row.
   progress.categories.styles = { done: 0, total: plan.styleRules.length + plan.stylesheets.length }
-  progress.categories.media = { done: 0, total: plan.assets.length }
+  // Files the library already holds are reused, not uploaded: they start done.
+  const reused = new Set(
+    plan.conflicts.media.filter((c) => c.defaultResolution.action === 'skip').map((c) => c.sourcePath),
+  )
+  const reusedCount = plan.assets.filter((asset) => reused.has(asset.sourcePath)).length
+  progress.categories.media = { done: reusedCount, total: plan.assets.length }
   progress.categories.colors = { done: 0, total: plan.colors.length }
   progress.categories.fonts = {
     done: 0,

@@ -1,3 +1,4 @@
+import type { Static } from '@sinclair/typebox'
 import { safeParseJson } from '@core/utils/jsonValidate'
 import { readEnvelope, assertOk } from '@core/http'
 import {
@@ -5,6 +6,7 @@ import {
   CmsMediaFolderEnvelopeSchema,
   CmsMediaFolderListResponseSchema,
   CmsMediaListResponseSchema,
+  CmsMediaLookupResponseSchema,
   type CmsMediaAssetWire,
   type CmsMediaFolder,
 } from './responseSchemas'
@@ -159,6 +161,30 @@ export async function uploadCmsMediaAsset(
   })
   const payload = await readEnvelope(res, CmsMediaAssetEnvelopeSchema, `CMS media upload failed with ${res.status}`)
   return normalizeCmsMediaAsset(payload.asset)
+}
+
+/** A library asset whose stored content hash matched a lookup. */
+export type CmsMediaContentHashMatch = Static<typeof CmsMediaLookupResponseSchema>['matches'][number]
+
+/**
+ * Which of these content hashes (SHA-256 hex of a file's bytes) the media
+ * library already holds. Site Import uses it to reuse files instead of
+ * uploading copies on a re-import.
+ */
+export async function findCmsMediaByContentHash(
+  contentHashes: string[],
+  options: ClientBase = {},
+): Promise<CmsMediaContentHashMatch[]> {
+  if (contentHashes.length === 0) return []
+  const { fetchImpl, basePath } = resolveClient(options)
+  const res = await fetchImpl(`${basePath}/media/lookup`, {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ contentHashes }),
+  })
+  const payload = await readEnvelope(res, CmsMediaLookupResponseSchema, `CMS media lookup failed with ${res.status}`)
+  return payload.matches
 }
 
 export interface UpdateCmsMediaAssetInput {

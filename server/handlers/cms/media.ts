@@ -14,6 +14,11 @@
  *                                                  permitted on already-trashed
  *                                                  assets) and removes the file
  *                                                  (`media.delete`)
+ *   POST   /admin/api/cms/media/lookup         — which content hashes the library
+ *                                                  already holds (Site Import
+ *                                                  reuses those files)
+ *                                                  body: { contentHashes: string[] }
+ *                                                  (`media.read`)
  *   POST   /admin/api/cms/media/:id/restore    — restore a soft-deleted asset
  *                                                  (`media.write`)
  *   POST   /admin/api/cms/media/:id/replace    — overwrite the bytes for an asset
@@ -41,6 +46,7 @@ import { requireCapability } from '../../auth/authz'
 import {
   assignAssetToFolders,
   deleteMediaAsset,
+  findMediaAssetsByContentHash,
   getMediaAsset,
   listMediaAssets,
   restoreMediaAsset,
@@ -142,6 +148,26 @@ async function handleListMedia(req: Request, db: DbClient): Promise<Response> {
   // CDN URL transformer is registered).
   const materialized = await materializeAssetListForClient(assets)
   return jsonResponse({ assets: materialized })
+}
+
+/** Hex SHA-256, as `media_assets.content_hash` stores it. */
+const ContentHashSchema = Type.String({ pattern: '^[0-9a-f]{64}$' })
+
+/** One import's worth of files; larger imports are refused at ingest anyway. */
+const MAX_CONTENT_HASH_LOOKUP = 5000
+
+const MediaLookupBodySchema = Type.Object({
+  contentHashes: Type.Array(ContentHashSchema, { maxItems: MAX_CONTENT_HASH_LOOKUP }),
+})
+
+async function handleLookupMedia(req: Request, db: DbClient): Promise<Response> {
+  const user = await requireCapability(req, db, 'media.read')
+  if (user instanceof Response) return user
+
+  const body = await readValidatedBody(req, MediaLookupBodySchema)
+  if (!body) return badRequest('Invalid request body')
+  const matches = await findMediaAssetsByContentHash(db, body.contentHashes)
+  return jsonResponse({ matches })
 }
 
 async function handleUploadMedia(req: Request, db: DbClient): Promise<Response> {
@@ -288,6 +314,7 @@ const ID_PATTERN = '(?<id>[^/]+)'
 const MEDIA_ROUTES: readonly Route<[]>[] = [
   { method: 'GET', pattern: MEDIA_PREFIX, handler: handleListMedia },
   { method: 'POST', pattern: MEDIA_PREFIX, handler: handleUploadMedia },
+  { method: 'POST', pattern: `${MEDIA_PREFIX}/lookup`, handler: handleLookupMedia },
   {
     method: 'POST',
     pattern: new RegExp(`^${MEDIA_PREFIX}/${ID_PATTERN}/restore$`),

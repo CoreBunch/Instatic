@@ -19,7 +19,12 @@ import { create } from 'mutative'
 import type { Draft, Patches } from 'mutative'
 import type { ImportFragment } from '@core/htmlImport'
 import type { NewStyleRule } from '@core/siteImport'
-import { addImportedScriptDependencies, addImportedScripts, addImportedStylesheets } from './importedSiteFiles'
+import {
+  addImportedScriptDependencies,
+  addImportedScripts,
+  addImportedStylesheets,
+  reuseImportedFiles,
+} from './importedSiteFiles'
 import { applyLocalSitePatches, notifyCollabBlocked } from './collabBinding'
 import type { EditorStore } from '@site/store/types'
 import { reconcileFrameworkClasses } from './framework/reconcile'
@@ -542,6 +547,12 @@ export function buildSiteHelpers(
           const committed = addImportedStylesheets(site, draft.siteRuntime, stylesheets)
           if (committed.length > 0) didMutate = true
           return committed
+        },
+
+        reuseSiteFiles(items): { id: string; path: string }[] {
+          const reused = reuseImportedFiles(site, draft.siteRuntime, items)
+          if (reused.length > 0) didMutate = true
+          return reused
         },
       }
 

@@ -239,4 +239,18 @@ export interface SiteImportTransaction {
    * @returns The committed `{ id, path }` for each added stylesheet.
    */
   addStylesheets(stylesheets: ImportStylesheet[]): { id: string; path: string }[]
+
+  /**
+   * Keep existing script / stylesheet files an import delivers again (a
+   * `FileConflict` resolved to `skip` or `overwrite`). Each file keeps its id
+   * and path. `content`, when given, replaces the file's content (overwrite).
+   * The pages in `pageIds` join a page-scoped file's runtime scope; an empty
+   * `pageIds` (a site-wide sheet) widens it to every page. A file scoped to
+   * every page already stays that way.
+   *
+   * @returns `{ id, path }` for each reused file still in the site.
+   */
+  reuseSiteFiles(
+    items: { existingFileId: string; pageIds: string[]; content?: string }[],
+  ): { id: string; path: string }[]
 }

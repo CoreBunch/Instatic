@@ -184,6 +184,7 @@ export function createSiteImportAdapter(opts: AdapterCallbacks): SiteImportAdapt
           overwriteColorTokens: (items) => helpers.overwriteColorTokens(items),
           addScripts: (scripts) => helpers.addScripts(scripts),
           addStylesheets: (stylesheets) => helpers.addStylesheets(stylesheets),
+          reuseSiteFiles: (items) => helpers.reuseSiteFiles(items),
         }
         recipe(tx)
         return true

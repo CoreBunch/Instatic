@@ -8,20 +8,26 @@
  * entry is mirrored onto the live `siteRuntime` draft (the canvas reads that
  * copy) exactly as `filesSlice.deleteFile` mirrors its delete.
  *
- * Paths are normalised + made unique within `site.files`; an unsafe source
- * path falls back to a sanitised name under `src/scripts/` / `src/styles/`.
+ * Paths come from `importedSiteFilePath` (the same mapping conflict detection
+ * uses) and are made unique within `site.files`. A file the import delivers
+ * again goes through `reuseImportedFiles` instead, which keeps the existing
+ * file and widens its page scope.
  */
 
 import { nanoid } from 'nanoid'
 import type { Draft } from 'mutative'
 import type { SiteDocument } from '@core/page-tree'
-import type { ImportScript, ImportStylesheet } from '@core/siteImport'
+import {
+  importedSiteFilePath,
+  uniqueSiteFilePath,
+  type ImportScript,
+  type ImportStylesheet,
+} from '@core/siteImport'
 import { isSafePackageName } from '@core/site-dependencies/packageNames'
-import type { SiteFile } from '@core/files/schemas'
-import { isSafePath, normalizePath } from '@core/files/pathValidation'
 import {
   DEFAULT_SCRIPT_RUNTIME_CONFIG,
   DEFAULT_STYLE_RUNTIME_CONFIG,
+  type SiteAssetScope,
   type SiteRuntimeConfig,
 } from '@core/site-runtime'
 
@@ -34,7 +40,7 @@ export function addImportedScripts(
   ensureRuntime(site)
   site.runtime!.scripts ??= {}
 
-  return commitFiles(site, scripts, 'script', 'src/scripts/', 'script.js', (script, id, pageIds) => {
+  return commitFiles(site, scripts, 'script', (script, id, pageIds) => {
     const config = {
       ...DEFAULT_SCRIPT_RUNTIME_CONFIG,
       format: script.format,
@@ -87,7 +93,7 @@ export function addImportedStylesheets(
   ensureRuntime(site)
   site.runtime!.styles ??= {}
 
-  return commitFiles(site, stylesheets, 'style', 'src/styles/', 'styles.css', (sheet, id, pageIds) => {
+  return commitFiles(site, stylesheets, 'style', (sheet, id, pageIds) => {
     const config = {
       ...DEFAULT_STYLE_RUNTIME_CONFIG,
       priority: sheet.priority,
@@ -113,16 +119,14 @@ interface ImportedFileItem {
 function commitFiles<T extends ImportedFileItem>(
   site: Draft<SiteDocument>,
   items: T[],
-  type: SiteFile['type'],
-  fallbackDir: string,
-  fallbackName: string,
+  type: 'script' | 'style',
   registerRuntime: (item: T, fileId: string, pageIds: string[]) => void,
 ): { id: string; path: string }[] {
   const usedPaths = new Set(site.files.map((f) => f.path))
   const committed: { id: string; path: string }[] = []
 
   for (const item of items) {
-    const path = uniqueFilePath(safeFilePath(item.path, fallbackDir, fallbackName), usedPaths)
+    const path = uniqueSiteFilePath(importedSiteFilePath(item.path, type), usedPaths)
     usedPaths.add(path)
 
     const id = nanoid()
@@ -144,21 +148,39 @@ function ensureRuntime(site: Draft<SiteDocument>): void {
   site.runtime ??= { dependencyLock: { version: 1, packages: {}, updatedAt: 0 }, scripts: {}, styles: {} }
 }
 
-/** Normalise a source path into a safe SiteFile path, falling back to the kind's dir. */
-function safeFilePath(rawPath: string, fallbackDir: string, fallbackName: string): string {
-  const normalized = normalizePath(rawPath)
-  if (isSafePath(normalized)) return normalized
-  const base = (rawPath.split('/').pop() ?? fallbackName).replace(/[^a-zA-Z0-9._-]+/g, '-')
-  return `${fallbackDir}${base || fallbackName}`
+/**
+ * Keep files an import delivers again (see `SiteImportTransaction.reuseSiteFiles`):
+ * optionally replace the content, then let the importing pages into the
+ * file's runtime scope, on the persisted runtime and the live canvas mirror.
+ */
+export function reuseImportedFiles(
+  site: Draft<SiteDocument>,
+  siteRuntime: Draft<SiteRuntimeConfig> | undefined,
+  items: { existingFileId: string; pageIds: string[]; content?: string }[],
+): { id: string; path: string }[] {
+  const reused: { id: string; path: string }[] = []
+  for (const item of items) {
+    const file = site.files.find((f) => f.id === item.existingFileId)
+    if (!file) continue
+    if (item.content !== undefined && item.content !== file.content) {
+      file.content = item.content
+      file.updatedAt = Date.now()
+    }
+    for (const runtime of [site.runtime, siteRuntime]) {
+      const entry = runtime?.scripts?.[file.id] ?? runtime?.styles?.[file.id]
+      if (entry) entry.scope = widenScope(entry.scope, item.pageIds)
+    }
+    reused.push({ id: file.id, path: file.path })
+  }
+  return reused
 }
 
-/** Append `-2`, `-3`, … before the extension until the path is unused. */
-function uniqueFilePath(path: string, used: Set<string>): string {
-  if (!used.has(path)) return path
-  const dot = path.lastIndexOf('.')
-  const stem = dot > path.lastIndexOf('/') ? path.slice(0, dot) : path
-  const ext = dot > path.lastIndexOf('/') ? path.slice(dot) : ''
-  let n = 2
-  while (used.has(`${stem}-${n}${ext}`)) n += 1
-  return `${stem}-${n}${ext}`
+/**
+ * A page-scoped file gains the importing pages; no pages (a site-wide sheet)
+ * widens it to every page. Any other scope already covers what it should.
+ */
+function widenScope(scope: SiteAssetScope, pageIds: string[]): SiteAssetScope {
+  if (scope.type !== 'pages') return scope
+  if (pageIds.length === 0) return { type: 'all-pages' }
+  return { type: 'pages', pageIds: [...new Set([...scope.pageIds, ...pageIds])] }
 }

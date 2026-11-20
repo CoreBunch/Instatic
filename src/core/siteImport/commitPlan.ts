@@ -39,10 +39,13 @@ import type {
   ImportPlan,
   ImportResult,
   ImportWarning,
+} from './types'
+import type {
+  FileConflict,
   PageConflict,
   RuleConflict,
   TokenConflict,
-} from './types'
+} from './conflictTypes'
 import type { SiteImportAdapter, SiteImportTransaction } from './adapter'
 
 export interface CommitImportPlanOptions {
@@ -166,7 +169,19 @@ async function uploadPlanAssets(
 ): Promise<{ rewriteMap: Record<string, string>; warnings: ImportWarning[] }> {
   const rewriteMap: Record<string, string> = {}
   const warnings: ImportWarning[] = []
+  // A file the library already holds (a media conflict left at `skip`) is not
+  // uploaded again: its references point at the existing asset.
+  const reusedUrlBySource = new Map(
+    plan.conflicts.media
+      .filter((c) => c.defaultResolution.action === 'skip')
+      .map((c) => [c.sourcePath, c.existingUrl]),
+  )
   for (const asset of plan.assets) {
+    const reusedUrl = reusedUrlBySource.get(asset.sourcePath)
+    if (reusedUrl !== undefined) {
+      rewriteMap[asset.sourcePath] = reusedUrl
+      continue
+    }
     signal?.throwIfAborted()
     try {
       const uploaded = await adapter.uploadAsset({
@@ -388,20 +403,53 @@ function commitPages(
   }
 }
 
+/**
+ * Scripts and kept stylesheets. A file whose path the site already holds
+ * (a `FileConflict`) is reused (`skip`) or replaced in place (`overwrite`);
+ * either way the pages this import links it from join its scope. Every other
+ * file, including a conflict resolved to `auto-rename`, is added as a new file.
+ */
 function commitPageScopedFiles(
   tx: SiteImportTransaction,
   plan: ImportPlan,
   pageIdBySource: Map<string, string>,
   results: CommitResults,
 ): void {
-  const scopedScripts = resolvePageScopes(plan.scripts ?? [], pageIdBySource)
-  if (scopedScripts.length > 0) {
-    results.scripts.push(...tx.addScripts(scopedScripts))
+  const fileConflictByKey = new Map<string, FileConflict>(
+    plan.conflicts.files.map((c) => [`${c.kind}:${c.path}`, c]),
+  )
+  const scripts = partitionByFileConflict('script', resolvePageScopes(plan.scripts, pageIdBySource), fileConflictByKey)
+  if (scripts.additions.length > 0) results.scripts.push(...tx.addScripts(scripts.additions))
+  if (scripts.reuses.length > 0) results.scripts.push(...tx.reuseSiteFiles(scripts.reuses))
+
+  const sheets = partitionByFileConflict('style', resolvePageScopes(plan.stylesheets, pageIdBySource), fileConflictByKey)
+  if (sheets.additions.length > 0) results.stylesheets.push(...tx.addStylesheets(sheets.additions))
+  if (sheets.reuses.length > 0) results.stylesheets.push(...tx.reuseSiteFiles(sheets.reuses))
+}
+
+type SiteFileReuse = Parameters<SiteImportTransaction['reuseSiteFiles']>[0][number]
+
+function partitionByFileConflict<T extends { path: string; content: string; pageIds?: string[] }>(
+  kind: FileConflict['kind'],
+  items: T[],
+  fileConflictByKey: Map<string, FileConflict>,
+): { additions: T[]; reuses: SiteFileReuse[] } {
+  const additions: T[] = []
+  const reuses: SiteFileReuse[] = []
+  for (const item of items) {
+    const conflict = fileConflictByKey.get(`${kind}:${item.path}`)
+    const action = conflict?.defaultResolution.action
+    if (!conflict || (action !== 'skip' && action !== 'overwrite')) {
+      additions.push(item)
+      continue
+    }
+    reuses.push({
+      existingFileId: conflict.existingFileId,
+      pageIds: item.pageIds ?? [],
+      ...(action === 'overwrite' ? { content: item.content } : {}),
+    })
   }
-  const scopedStylesheets = resolvePageScopes(plan.stylesheets ?? [], pageIdBySource)
-  if (scopedStylesheets.length > 0) {
-    results.stylesheets.push(...tx.addStylesheets(scopedStylesheets))
-  }
+  return { additions, reuses }
 }
 
 /**

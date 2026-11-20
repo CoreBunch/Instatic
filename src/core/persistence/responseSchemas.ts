@@ -161,6 +161,16 @@ export const CmsMediaFolderEnvelopeSchema = Type.Object({
   folder: CmsMediaFolderSchema,
 })
 
+/** `POST /media/lookup` — library assets whose content hash matched. */
+export const CmsMediaLookupResponseSchema = Type.Object({
+  matches: Type.Array(Type.Object({
+    contentHash: Type.String(),
+    id: Type.String(),
+    publicPath: Type.String(),
+    filename: Type.String(),
+  })),
+})
+
 // ---------------------------------------------------------------------------
 // cmsPublish.ts
 // ---------------------------------------------------------------------------
