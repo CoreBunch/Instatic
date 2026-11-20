@@ -18,8 +18,10 @@ import type { LoopFetchResult, LoopItem } from '@core/loops/types'
 import type { SerializedApp, SerializedMember, SerializedUser } from '../protocol/messages'
 import type { LoadPluginResult } from '../protocol/messages'
 import { normalizeRoutePath } from '../protocol/parser'
+import { canonicalIp, clientIp, visitorIpKey } from '../../auth/security'
 import { materializeRouteResponse, serializeRouteRequest } from './routeIo'
-import { hostPlugins } from './registry'
+import { PluginRateLimitStore } from './pluginRateLimit'
+import { hostPluginHasPermission, hostPlugins } from './registry'
 import { requestFromWorker } from './workerPool'
 import { describeWorkerError, workerCallError } from './workerErrors'
 import { workers } from './workerState'
@@ -67,6 +69,7 @@ export async function loadPluginInWorker(args: {
     mediaAdapters: [],
     mediaUrlTransformers: [],
     inflightFetches: new Map(),
+    rateLimits: new PluginRateLimitStore(),
   })
 
   const correlationId = nanoid()
@@ -203,6 +206,15 @@ export async function runRouteInWorker(args: {
   // read once as raw bytes, pre-parsed conveniences (JSON / form fields /
   // multipart files) are derived from those exact bytes, and binary
   // payloads cross the worker boundary base64-encoded.
+  // Exactly core's answer to where the caller is, proxy trust applied, in
+  // one spelling per address so a plugin keying on it sees one visitor as
+  // one key. The serialized headers below leave out the peer address.
+  // An IP address is personal data: only a plugin the owner granted
+  // `visitors.ip` is told it, and one without the grant never has it in the
+  // message to its worker at all.
+  const peer = hostPluginHasPermission(args.pluginId, 'visitors.ip') ? clientIp(args.request) : null
+  const ip = peer === null ? null : canonicalIp(peer)
+  const ipKey = peer === null ? null : visitorIpKey(peer)
   const { request: serializedReq, body: parsedBody } = await serializeRouteRequest(args.request)
 
   const result = await requestFromWorker(
@@ -216,6 +228,8 @@ export async function runRouteInWorker(args: {
       user: args.user,
       member: args.member,
       app: args.app,
+      ip,
+      ipKey,
       body: parsedBody,
     },
     'route-result',

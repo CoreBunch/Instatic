@@ -23,6 +23,9 @@ export const PLUGIN_PERMISSION_VALUES = [
   'members.read',
   'members.write',
   'members.tags',
+  // Visitors' IP addresses (personal data) on the plugin's routes: without
+  // it `ctx.ip` and `ctx.ipKey` are null.
+  'visitors.ip',
   // Email — sending the plugin's own declared templates through the site's
   // connector. `mail.send` reaches site members only; `mail.send.external`
   // reaches any address.

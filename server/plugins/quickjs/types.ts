@@ -90,4 +90,8 @@ interface VmRouteContext {
   member: { id: string; email: string; tags: string[]; profile: Record<string, string | boolean> } | null
   /** The app calling for `member`, when it is not the member's own browser. */
   app: { id: string; name: string; scope: string } | null
+  /** The caller's IP address (core's `clientIp`), or null when unknown or the plugin lacks `visitors.ip`. */
+  ip: string | null
+  /** `ip` as a per-visitor key: IPv4 as it is, IPv6 as its /64. */
+  ipKey: string | null
 }

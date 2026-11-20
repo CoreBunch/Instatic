@@ -20,6 +20,7 @@ import type { ContentAccessEntry } from '@core/plugin-sdk'
 import type { DataTable } from '@core/data/schemas'
 import { assertContentTableAccess, hasContentTableAccess } from './registry'
 import type { HostPluginRecord } from './types'
+import { PluginRateLimitStore } from './pluginRateLimit'
 
 function pluginRecord(id: string, contentAccess: ContentAccessEntry[]): HostPluginRecord {
   const manifest = parsePluginManifest({
@@ -41,6 +42,7 @@ function pluginRecord(id: string, contentAccess: ContentAccessEntry[]): HostPlug
     mediaAdapters: [],
     mediaUrlTransformers: [],
     inflightFetches: new Map(),
+    rateLimits: new PluginRateLimitStore(10),
   }
 }
 

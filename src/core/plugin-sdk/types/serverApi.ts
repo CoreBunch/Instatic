@@ -40,6 +40,21 @@ interface MemberRouteRegistrar {
   (path: string, options: MemberRouteOptions, handler: ServerPluginRouteHandler): void
 }
 
+/** What `api.cms.rateLimit.take` answers. */
+export interface PluginRateLimitResult {
+  ok: boolean
+  /** Takes left in the window after this one (0 when refused). */
+  remaining: number
+  /** When refused, ms until a take for this key would be allowed; 0 otherwise. */
+  retryAfterMs: number
+  /**
+   * `limit`: refused, the key used up its limit. `capacity`: allowed, but the
+   * plugin's counters were full and forgot their least recently used key.
+   * Absent otherwise.
+   */
+  reason?: 'limit' | 'capacity'
+}
+
 export interface ServerPluginApi {
   plugin: {
     id: string
@@ -121,6 +136,26 @@ export interface ServerPluginApi {
     mail: ServerPluginMailApi
     /** Facts about the site a plugin needs to build links. No permission needed. */
     site: ServerPluginSiteApi
+    /**
+     * Sliding-window counters for the plugin's own keys: a throttle, not a
+     * lockout. `take` records one use of `key` and says whether it fits:
+     * about `limit` uses in any `windowMs` (a two-bucket sliding-window
+     * counter: at most `2 × limit − 1` in any true window, and it can refuse
+     * for up to `windowMs ÷ limit` while the true count is low). A refused
+     * take is not counted. In memory only: a plugin reload, a worker respawn
+     * or a server restart drops every counter, and about 10,000 fresh keys in
+     * one pair push any counter out, so a defence that must hold belongs in
+     * the plugin's own records. `limit` is 1 to 10,000; `windowMs` is one
+     * second to one day; at most 16 different pairs (a 17th throws). Each
+     * pair holds 10,000 keys; a new key in a full pair forgets the least
+     * recently used counter that still has room, and a used-up one only when
+     * none has (`reason: 'capacity'`), an order, not a guarantee. Key by
+     * `ctx.ipKey`, an account or an API key, never by a value the caller
+     * types alone. No permission needed.
+     */
+    rateLimit: {
+      take: (key: string, limit: number, windowMs: number) => Promise<PluginRateLimitResult>
+    }
     loops: {
       /**
        * Register a loop entity source. Source ID must be `<pluginId>.<name>`.
