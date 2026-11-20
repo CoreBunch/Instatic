@@ -291,11 +291,6 @@ export function resolveSpecialRenderer(
 }
 
 /**
- * Render a single node and its entire subtree recursively.
- *
- * @returns HTML string for this node and all its descendants
- */
-/**
  * Whether a node handed to `renderNode` emits nothing, itself and everything
  * under it: the author hid it. The one rule both the renderer and the
  * server's pre-render walk (`walkRenderTree`) read, so what is prefetched is
@@ -305,6 +300,11 @@ export function isHiddenFromRender(node: { hidden?: boolean }): boolean {
   return node.hidden === true
 }
 
+/**
+ * Render a single node and its entire subtree recursively.
+ *
+ * @returns HTML string for this node and all its descendants
+ */
 export function renderNode(
   nodeId: string,
   config: RenderConfig,
