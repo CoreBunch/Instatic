@@ -52,6 +52,7 @@ import {
   replaceCssSelectorClassName,
 } from '@core/page-tree'
 import { canonicalJson } from '@core/utils/canonicalJson'
+import { pageClassUsage } from './classUsage'
 import {
   createCascadedStyleRuleLayers,
   mergeStyleRuleCascade,
@@ -169,7 +170,7 @@ function effectiveClassDefs(
  * Every row defaults to renaming to the next free suffix (`btn-2`, …), free
  * among both the imported names and the existing site's class names.
  * `scripts` are the imported scripts: a class a script puts on elements
- * (`scriptClassWrites`) counts as used on every page that loads the script.
+ * (see `classUsage.ts`) counts as used on every page that loads the script.
  */
 export function detectCrossSheetClassConflicts(
   pagePlans: readonly PagePlan[],
@@ -206,19 +207,9 @@ export function detectCrossSheetClassConflicts(
   }
 
   const planOrder = new Map(cssFileResults.map((file, index) => [file.cssPath, index] as const))
-  const pageClasses = new Map(pagePlans.map((page) => [page.source, carriedClasses(page)] as const))
-  const scriptClasses = new Map<string, Set<string>>()
-  for (const script of scripts) {
-    const names = scriptClassWrites(script.content)
-    for (const source of script.pageSources) {
-      const set = scriptClasses.get(source) ?? new Set<string>()
-      for (const name of names) set.add(name)
-      scriptClasses.set(source, set)
-    }
-  }
-  const scriptNames = (page: PagePlan, name: string) => scriptClasses.get(page.source)?.has(name) ?? false
-  const usesClass = (page: PagePlan, name: string) =>
-    (pageClasses.get(page.source)?.has(name) ?? false) || scriptNames(page, name)
+  const usage = pageClassUsage(pagePlans, scripts)
+  const scriptNames = (page: PagePlan, name: string) => usage.scriptWrites(page.source, name)
+  const usesClass = (page: PagePlan, name: string) => usage.uses(page.source, name)
 
   const conflicts: CrossSheetClassConflict[] = []
   for (const [name, defs] of defsByName) {
@@ -311,45 +302,6 @@ function definingSheetsInPlanOrder(
 
 function definesClass(rulesByCssPath: Map<string, NewStyleRule[]>, cssPath: string, name: string): boolean {
   return (rulesByCssPath.get(cssPath) ?? []).some((r) => r.kind === 'class' && r.name === name)
-}
-
-function carriedClasses(page: PagePlan): Set<string> {
-  const classes = new Set(page.nodeFragment.body?.classIds ?? [])
-  for (const node of Object.values(page.nodeFragment.nodes)) {
-    for (const name of node.classIds ?? []) classes.add(name)
-  }
-  return classes
-}
-
-/**
- * Class names a script can put on an element at runtime: the arguments of
- * `classList.add/toggle/replace`, string assignments to `className`,
- * `setAttribute('class', …)`, and `class="…"` inside HTML it builds from
- * strings or templates. Selector strings (`querySelector('.btn')`) style
- * nothing and do not count.
- */
-const CLASS_WRITE_PATTERNS = [
-  /classList\s*\.\s*(?:add|toggle|replace)\s*\(([^)]*)\)/g,
-  /className\s*\+?=\s*(['"`])((?:(?!\1)[^\\]|\\.)*)\1/g,
-  /setAttribute\s*\(\s*['"]class['"]\s*,([^)]*)\)/g,
-  /\bclass\s*=\s*\\?(['"])((?:(?!\1).)*?)\\?\1/g,
-]
-
-function scriptClassWrites(source: string): Set<string> {
-  const names = new Set<string>()
-  for (const pattern of CLASS_WRITE_PATTERNS) {
-    for (const match of source.matchAll(pattern)) {
-      const text = match[match.length - 1] ?? ''
-      for (const literal of pattern === CLASS_WRITE_PATTERNS[0] || pattern === CLASS_WRITE_PATTERNS[2]
-        ? text.match(/'[^']*'|"[^"]*"|`[^`]*`/g) ?? []
-        : [` ${text} `]) {
-        for (const run of literal.slice(1, -1).split(/[^A-Za-z0-9_-]+/)) {
-          if (run) names.add(run)
-        }
-      }
-    }
-  }
-  return names
 }
 
 // ---------------------------------------------------------------------------

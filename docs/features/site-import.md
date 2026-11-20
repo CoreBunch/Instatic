@@ -46,6 +46,7 @@ src/core/siteImport/
 ├── scriptOrder.ts       — merge every page's script document order into the one priority sequence the runtime sorts by
 ├── cssImports.ts        — expand unconditional local CSS @import graphs while preserving each source path
 ├── classCascades.ts     — cross-sheet class semantics: detect leaking and divergent class definitions as explicit conflicts; apply confine (rename) / skip / overwrite; enforce one bindable class rule per name
+├── classUsage.ts       — which classes each imported page uses: node class tokens plus classes its scripts write onto elements
 ├── mimeTypes.ts         — extension → MIME fallback for FileMap entries that carry no MIME type (e.g. ZIP)
 ├── assetPlan.ts         — normalise URL props/HTML attributes in node fragments + CSS/@keyframes url(); resolve @font-face; collect assets
 ├── applyAssetRewrites.ts — patch fragment props + CSS/@keyframes url() with new media URLs (post-upload)
@@ -288,7 +289,7 @@ Every row defaults to a rename to the next free suffix (free among imported AND 
 - **divergent, skip** — keep the first definition: the divergent cascades' exclusive fragments are dropped and their pages bind to the kept definition by name.
 - **divergent, overwrite** — this definition wins the bare name: every OTHER cascade's exclusive fragments for it are dropped.
 
-A script counts as using a class only where it puts the class on an element: the arguments of `classList.add/toggle/replace`, string assignments to `className`, `setAttribute('class', …)`, and `class="…"` inside HTML it builds from strings or templates (`scriptClassWrites`). Selector strings such as `querySelector('.btn')` style nothing and do not count.
+A script counts as using a class only where it puts the class on an element: the arguments of `classList.add/toggle/replace`, string assignments to `className`, `setAttribute('class', …)`, and `class="…"` inside HTML it builds from strings or templates (`scriptClassWrites` in `classUsage.ts`). Selector strings such as `querySelector('.btn')` style nothing and do not count.
 
 After all renames, `normalizeBindableClassRules` enforces the registry's unique-class-name invariant: per final name, the FIRST class-kind rule (in cascade source order) stays bindable; every later same-name class fragment becomes an ambient rule with the same selector — its declarations keep their cascade position, so within-cascade overrides (`base.css .btn` + `page.css .btn`) still compose like real CSS.
 
