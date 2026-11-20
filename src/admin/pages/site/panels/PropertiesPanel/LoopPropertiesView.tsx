@@ -16,7 +16,7 @@
 import { useAsyncResource } from '@admin/lib/useAsyncResource'
 import { useEditorStore } from '@site/store/store'
 import { loopSourceLabel, useLoopSourceMissing, useLoopSources } from '@site/hooks/useLoopSources'
-import { ENTRY_FIELD_FILTER_KEY, ENTRY_FIELD_SOURCE_ID } from '@core/loops'
+import { ENTRY_FIELD_FILTER_KEY, ENTRY_FIELD_SOURCE_ID, resolveLoopDirection } from '@core/loops'
 import {
   CELL_ORDER_PREFIX,
   isCellComparableField,
@@ -183,6 +183,11 @@ export function LoopPropertiesView({ nodeId, props, activePage }: LoopProperties
       : [{ label: 'Default', value: '' }],
   }
 
+  // Built-in date columns (`publishedAt`, `createdAt`, `connectedAt`, ...)
+  // end in `At`; for those the direction reads better as oldest / newest.
+  const effectiveOrderBy = (typeof props.orderBy === 'string' && props.orderBy) || source?.orderByOptions[0]?.id || ''
+  const sortsByDate = /At$/.test(effectiveOrderBy)
+
   function handleSourceChange(_key: string, value: unknown) {
     const nextId = typeof value === 'string' ? value : ''
     const next = sources.find((s) => s.id === nextId)
@@ -191,7 +196,8 @@ export function LoopPropertiesView({ nodeId, props, activePage }: LoopProperties
       sourceId: nextId,
       filters: {},
       orderBy: next?.orderByOptions[0]?.id ?? '',
-      direction: next?.kind === 'contextual' ? 'asc' : 'desc',
+      // Cleared, not reset: the loop follows the new source's default order.
+      direction: undefined,
       pagination: next?.kind === 'contextual' ? 'none' : props.pagination,
     })
   }
@@ -298,16 +304,17 @@ export function LoopPropertiesView({ nodeId, props, activePage }: LoopProperties
                     { label: 'Original order', value: 'asc' },
                     { label: 'Reverse order', value: 'desc' },
                   ]
-                : [
-                    { label: 'Descending (newest first)', value: 'desc' },
-                    { label: 'Ascending (oldest first)', value: 'asc' },
-                  ],
+                : sortsByDate
+                  ? [
+                      { label: 'Ascending (oldest first)', value: 'asc' },
+                      { label: 'Descending (newest first)', value: 'desc' },
+                    ]
+                  : [
+                      { label: 'Ascending', value: 'asc' },
+                      { label: 'Descending', value: 'desc' },
+                    ],
             }}
-            value={
-              typeof props.direction === 'string'
-                ? props.direction
-                : source.kind === 'contextual' ? 'asc' : 'desc'
-            }
+            value={resolveLoopDirection(props.direction, source)}
             onChange={handleScalarChange}
           />
           <PropertyControlRenderer

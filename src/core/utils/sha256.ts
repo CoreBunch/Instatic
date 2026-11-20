@@ -10,8 +10,9 @@
  * dependency, so it behaves the same on `http://tailscale-host`,
  * `http://localhost`, and `https://` alike.
  *
- * Scope: short in-editor content fingerprints (change detection / optimistic
- * concurrency). It is NOT for security tokens — those hash server-side with
+ * Scope: in-editor content fingerprints (change detection / optimistic
+ * concurrency, and Site Import's "is this file already in the media library"
+ * check, which hashes file bytes with `sha256HexBytes`). It is NOT for security tokens — those hash server-side with
  * Bun's native `crypto.subtle`, which is always available there.
  */
 
@@ -33,7 +34,11 @@ function rotr(value: number, bits: number): number {
 }
 
 export function sha256Hex(input: string): string {
-  const bytes = new TextEncoder().encode(input)
+  return sha256HexBytes(new TextEncoder().encode(input))
+}
+
+/** The same digest over raw bytes (a file's contents rather than a string). */
+export function sha256HexBytes(bytes: Uint8Array): string {
   const bitLength = bytes.length * 8
 
   // Pad: append 0x80, then zeros, so the total length (incl. the trailing

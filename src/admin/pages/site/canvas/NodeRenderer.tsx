@@ -218,7 +218,8 @@ export const NodeRenderer = memo(function NodeRenderer({ nodeId }: NodeRendererP
     })
   }, [isInlineEditing, inlineEditInitialValue, nodeId])
 
-  const inlineStyle = useResponsiveBackgroundStyle(node?.inlineStyles)
+  const previewStyles = useEditorStore((s) => s.previewInlineStyles?.nodeId === nodeId ? s.previewInlineStyles.styles : null)
+  const inlineStyle = useResponsiveBackgroundStyle(previewStyles ? { ...node?.inlineStyles, ...previewStyles } : node?.inlineStyles)
 
   if (!node) return null
   if (node.hidden) return null

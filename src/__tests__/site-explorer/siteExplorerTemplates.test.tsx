@@ -78,7 +78,7 @@ describe('SiteExplorerPanel templates', () => {
     expect(within(templatesSection).getByRole('button', { name: /open template post template/i })).toBeDefined()
   })
 
-  it('converts a page to a template from the context menu', () => {
+  it('converts a page to a template from the context menu', async () => {
     loadTemplateSite()
     render(<SiteExplorerPanel sectionGroup="site" />)
 
@@ -88,7 +88,7 @@ describe('SiteExplorerPanel templates', () => {
     })
     fireEvent.click(screen.getByRole('menuitem', { name: /use as template/i }))
 
-    const dialog = screen.getByRole('dialog', { name: 'Template settings' })
+    const dialog = await screen.findByRole('dialog', { name: 'Template settings' })
     expect(within(dialog).queryByLabelText('Preview entry ID')).toBeNull()
     fireEvent.change(within(dialog).getByLabelText('Priority'), {
       target: { value: '50' },
@@ -163,7 +163,7 @@ describe('SiteExplorerPanel templates', () => {
     })
     fireEvent.click(screen.getByRole('menuitem', { name: /use as template/i }))
 
-    const dialog = screen.getByRole('dialog', { name: 'Template settings' })
+    const dialog = await screen.findByRole('dialog', { name: 'Template settings' })
 
     // Switch "Applies to" from Everywhere → Post types (first ArrowDown opens
     // the listbox, the second moves to "Post types", Enter commits).

@@ -19,6 +19,7 @@ import { describe, it, expect, afterEach } from 'bun:test'
 import React from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { render, screen, cleanup, fireEvent } from '@testing-library/react'
+import FrameworkColorPicker from '@site/property-controls/FrameworkColorPicker'
 import { PropertyControlRenderer } from '@site/property-controls/PropertyControlRenderer'
 import { EditorPermissionsContext } from '@site/editorPermissionsContext'
 import type { PropertyControl } from '@core/module-engine'
@@ -105,17 +106,17 @@ describe('PropertyControlRenderer — wrapper (data-testid + minHeight)', () => 
   })
 
   it('wrapper has compact min-height (Guideline #357 — WCAG touch targets waived for editor chrome)', async () => {
-    // Guideline #357: editor chrome controls use compact density (28px)
-    // Post-Task #399: min-height is in ControlRow.module.css, not an inline style.
-    // Source-scan approach: verify min-height is defined in the CSS module.
     const { readFileSync } = await import('fs')
     const css = readFileSync(
       new URL('../../ui/components/ControlRow/ControlRow.module.css', import.meta.url),
       'utf-8',
     )
-    // Accept: min-height: 28px OR min-height: 44px (OR-pattern for migration)
-    const hasHeight = /min-height:\s*(28|44)px/.test(css)
-    expect(hasHeight).toBe(true)
+    const tokens = readFileSync(
+      new URL('../../styles/globals.css', import.meta.url),
+      'utf-8',
+    )
+    expect(css).toMatch(/\.controlWrapper\s*\{[^}]*min-height:\s*var\(--control-height\)/)
+    expect(tokens).toMatch(/--control-height:\s*28px;/)
   })
 
   it('keeps the renderer shell separate from the concrete control layout wrapper', async () => {
@@ -204,6 +205,25 @@ describe('PropertyControlRenderer — type dispatch', () => {
     expect(field).not.toBeNull()
     expect(field?.contains(colorInput)).toBe(true)
     expect(field?.contains(textInput)).toBe(true)
+  })
+
+  it('shows the newly assigned variable while the Framework picker stays open', () => {
+    useEditorStore.getState().createSite('Picker test')
+    function Picker() {
+      const [value, setValue] = React.useState('#7b1414')
+      return <FrameworkColorPicker value={value} onChange={setValue} />
+    }
+    render(<Picker />)
+    fireEvent.click(screen.getByRole('button', { name: 'Save to Framework' }))
+    fireEvent.change(screen.getByLabelText('Framework color name'), { target: { value: 'brick' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Save', exact: true }))
+    const assigned = screen.getByLabelText<HTMLInputElement>('Assigned Framework color')
+    expect(assigned.value).toBe('var(--brick)')
+    fireEvent.click(screen.getByRole('button', { name: 'RGB', exact: true }))
+    expect(screen.getByLabelText<HTMLInputElement>('Colour value (RGB)').value).toMatch(/^rgb/)
+    expect(screen.getByLabelText<HTMLInputElement>('Assigned Framework color').value).toBe('var(--brick)')
+    expect(screen.getByRole('button', { name: '--brick', pressed: true })).toBeDefined()
+    expect(screen.queryByRole('button', { name: 'Save to Framework' })).toBeNull()
   })
 
   it('color → autocompletes framework color tokens as CSS variable references', () => {
@@ -742,6 +762,20 @@ describe('PropertyControlRenderer — dynamic binding affordance eligibility', (
     onSet: () => {},
     onClear: () => {},
   }
+
+  it('keeps binding available when a schema suppresses the visible label', () => {
+    const html = renderToStaticMarkup(
+      <PropertyControlRenderer
+        propKey="caption"
+        control={{ type: 'text', label: '' }}
+        value=""
+        onChange={() => {}}
+        dynamicBinding={dynamicBinding}
+      />,
+    )
+    expect(html).toContain('aria-label="Insert binding for caption"')
+    expect(html).not.toContain('<label')
+  })
 
   it('does not add a data-token affordance to fixed option selects', () => {
     render(

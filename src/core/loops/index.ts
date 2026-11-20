@@ -9,7 +9,8 @@
  * them to guarantee canvas previews and published output never diverge.
  */
 
-export type { LoopEntitySource, LoopItem } from './types'
+export type { LoopDirection, LoopEntitySource, LoopItem } from './types'
+export { resolveLoopDirection } from './direction'
 export { loopSourceRegistry } from './registry'
 export {
   LOOP_PREVIEW_BUSY_CODE,
@@ -29,6 +30,7 @@ export {
   subscribeRemoteLoopSourcesSynced,
 } from './remoteSources'
 export { pageToLoopItem, filterPagesForLoop } from './sources/sitePages'
+export { EntryFieldSource } from './sources/entryField'
 export { listConnectedMemberApps, MEMBER_APPS_SOURCE_ID, type ConnectedMemberApp } from './sources/memberApps'
 export {
   ENTRY_FIELD_FILTER_KEY,

@@ -58,6 +58,9 @@ interface LoopEntitySource {
   /** Allowed `orderBy` values; first entry is the default. Each uses `id`, not `value`. */
   orderByOptions: { id: string; label: string }[]
 
+  /** Direction until the author picks one (the one under which fetch() lists its natural order). Unset = 'asc'. */
+  defaultDirection?: 'asc' | 'desc'
+
   /** Server-side fetch — runs at publish time (and live at editor render time). */
   fetch(ctx: SourceFetchContext): Promise<LoopFetchResult>
 
@@ -229,6 +232,8 @@ orderByOptions: [
 
 The `base.loop` node carries `props.filter: Record<string, unknown>` and `props.orderBy: string`. The publisher passes them to `fetch(ctx)` as `ctx.filter` and `ctx.orderBy`.
 
+**Direction.** `props.direction` is stored only once the author picks one in the Direction control. Until then the loop runs in its source's `defaultDirection`, and a source that declares none runs `'asc'`. What a direction means is each source's own business, so a source declares the direction under which `fetch()` lists items in their natural order: `members.apps`, for one, returns newest first for `'desc'` and reverses for `'asc'`. `resolveLoopDirection(props.direction, source)` (`src/core/loops/direction.ts`) is the one resolver; the publisher prefetch, the infinite-scroll endpoint, the canvas preview and the Properties panel all call it, so `ctx.direction` is never unset. `data.rows`, `site.media` and `members.apps` declare `'desc'` (newest first); `site.pages` and contextual sources list in their natural order. Changing a loop's source clears its stored direction. An imported `<instatic-loop>` without `data-direction` stores none. Loops saved before the direction became optional carry an explicit `'desc'` (the old module default) and keep it.
+
 ---
 
 ## Variants — the loop's children
@@ -392,10 +397,10 @@ Subscription granularity: the hook never subscribes to the whole `site` document
 
 ### Build a loop with the AI agent
 
-The site-scope AI agent stays on the HTML-native edit surface. It calls `list_loop_sources` to get valid source ids, table ids, order options, and `{currentEntry.field}` tokens, then inserts an `<instatic-loop>` marker through `insertHtml` / `replaceNodeHtml`:
+The site-scope AI agent stays on the HTML-native edit surface. It calls `list_loop_sources` to get valid source ids, table ids, order options, and `{currentEntry.field}` tokens, then inserts an `<instatic-loop>` marker through `insertHtml` / `replaceNodeHtml`. It leaves out `data-direction` so the list keeps its source's `defaultDirection` (returned by `list_loop_sources`), and adds it only to reverse that:
 
 ```html
-<instatic-loop data-source-id="data.rows" data-table-id="tbl_posts" data-order-by="publishedAt" data-direction="desc" data-limit="3">
+<instatic-loop data-source-id="data.rows" data-table-id="tbl_posts" data-order-by="publishedAt" data-limit="3">
   <article>
     <a href="{currentEntry.permalink}">
       <img src="{currentEntry.featuredMedia}">

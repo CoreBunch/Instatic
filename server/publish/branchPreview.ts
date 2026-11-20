@@ -19,6 +19,7 @@ import { registry } from '@core/module-engine'
 import { escapeHtml } from '@core/html-sanitize'
 import { publishPage, type DocumentMetaOverride, type PublishedRuntimePackageImportmap } from '@core/publisher'
 import {
+  buildPageFrame,
   buildRouteFrame,
   composeTemplateChain,
   isTemplatePage,
@@ -111,7 +112,8 @@ async function resolvePreview(
     return {
       merged: composeTemplateChain(chain, { kind: 'page', page }),
       scriptPage: page,
-      templateContext: { entryStack: [], route: buildRouteFrame(url.toString()) },
+      // `{page.*}` names the served page, not the layout the tree is keyed by.
+      templateContext: { entryStack: [], page: buildPageFrame(page), route: buildRouteFrame(url.toString()) },
     }
   }
 

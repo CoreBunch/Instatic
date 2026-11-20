@@ -25,21 +25,23 @@
  * Inside the hole endpoint the RenderConfig has no `dynamicNodeIds` — the node
  * subtree is rendered fully (it is already the request-time dynamic part).
  *
- * The node is looked up in the COMPOSED tree of the route `u` names
- * (`composedRouteForPath`): the page in its layouts, or the entry in its
- * templates with the entry as `currentEntry`. Those are the ids the page was
- * served with, and an element around a layout's outlet holds the page there.
+ * Known v1 limitation: a hole that sits inside a per-entry content-template
+ * page does not yet resolve `currentEntry.*` (no entry id is forwarded). Holes
+ * are intended for `route.query`, live external data, and per-visitor content.
  *
  * Fragments get form page tokens stamped (stampFormPageTokens) so CMS forms
  * inside holes can submit; the form runtime itself reaches the page via the
  * module-JS channel's static hole-subtree walk.
  */
 
+import { isComposedNodeId, isTemplatePage } from '@core/templates'
+import { composedRouteForPath } from '../../publish/composedRoute'
 import type { DbClient } from '../../db/client'
 import type { Page, SiteDocument } from '@core/page-tree'
 import type { ClosedContent, LoopItem } from '@core/loops/types'
 import { registry } from '@core/module-engine'
 import {
+  findDynamicNodeIds,
   renderNode,
   showWhenPathsAllow,
   showWhenPathsAreGated,
@@ -56,9 +58,8 @@ import {
   visitorRequestScope,
   type LoopRequestScope,
 } from '../../publish/loopSourceRequest'
-import { getOrRender } from '../../publish/renderCache'
-import { getPublishedSiteForVersion } from '../../publish/publishedSnapshotCache'
-import { composedRouteForPath } from '../../publish/composedRoute'
+import { getOrRender, peek } from '../../publish/renderCache'
+import { getPublishedNodeIndexForVersion } from '../../publish/publishedSnapshotCache'
 import { getPublishVersion } from '../../publish/publishState'
 import { HOLE_RUNTIME_JS, HOLE_RUNTIME_VERSION } from '../../publish/holeRuntime'
 import { serveVersionedScript } from '../../publish/assetVersion'
@@ -70,6 +71,7 @@ import {
   getAccessIndex,
   indexedRulesForPath,
   memberFrameFor,
+  pageRules,
   PRIVATE_HEADERS,
   visitorFromRequest,
 } from '../../publish/accessGate'
@@ -118,9 +120,6 @@ function normalizeQuery(params: URLSearchParams): string {
 async function renderHoleFragment(
   nodeId: string,
   page: Page,
-  /** The routed page or entry template the fragment belongs to. */
-  ownerId: string,
-  entryStack: LoopItem[],
   site: SiteDocument,
   db: DbClient,
   pageUrl: URL,
@@ -128,6 +127,7 @@ async function renderHoleFragment(
   closed: ClosedContent,
   /** The visitor's member frame (null when signed out); undefined for a shared render. */
   member: MemberFrame | null | undefined,
+  entryStack: LoopItem[],
 ): Promise<string> {
   const route = buildRouteFrame(pageUrl.toString())
   const loopData = await prefetchLoopData(page, site, db, pageUrl, {
@@ -160,7 +160,7 @@ async function renderHoleFragment(
   // Hole fragments bypass the published-HTML pipeline, so CMS forms inside
   // them would never receive their page token. Stamp here — tokens are
   // stateless HMAC signatures, safe to store in the Layer B fragment cache.
-  return stampFormPageTokens(renderNode(nodeId, config, acc), ownerId)
+  return stampFormPageTokens(renderNode(nodeId, config, acc), page.id)
 }
 
 /**
@@ -191,7 +191,7 @@ export async function handleHoleRequest(
   // Cache generations change on row publishes, unpublishes and deletes too.
   // Fragment validity instead follows the frozen site that produced its shell.
   const currentVersion = getPublishVersion()
-  const snap = await getPublishedSiteForVersion(ctx.db, currentVersion)
+  const snap = await getPublishedNodeIndexForVersion(ctx.db, currentVersion)
   if (!snap) {
     return new Response('Site not published', {
       status: 404,
@@ -206,27 +206,49 @@ export async function handleHoleRequest(
       },
     })
   }
-  // `u` names the page the fragment was served on. The node is looked up in
-  // that route's composed tree, under the id the page was served with.
+  const sourcePage = snap.nodeIndex.get(nodeId)
+  const fallbackPath = sourcePage ? buildPageFrame(sourcePage).permalink : '/'
   let pageUrl: URL
   try {
-    pageUrl = new URL(url.searchParams.get('u') ?? '/', url.origin)
+    const forwarded = new URL(url.searchParams.get('u') ?? fallbackPath, url.origin)
+    pageUrl = forwarded.origin === url.origin ? forwarded : new URL(fallbackPath, url.origin)
   } catch {
-    pageUrl = new URL('/', url.origin)
+    pageUrl = new URL(fallbackPath, url.origin)
   }
-  const composed = await composedRouteForPath(ctx.db, snap.site, pageUrl.pathname)
-  if (!composed || !composed.page.nodes[nodeId]) {
+
+  const cacheKey = {
+    urlPath: `${HOLE_PATH_PREFIX}${nodeId}`,
+    queryString: `v=${currentVersion}&u=${encodeURIComponent(pageUrl.pathname)}&${normalizeQuery(pageUrl.searchParams)}`,
+  }
+  const isComposed = isComposedNodeId(nodeId)
+  if (isComposed && !sourcePage) {
+    // Only a shared, fully checked render can populate this versioned key.
+    // Repeated visitor requests need neither a route lookup nor recomposition.
+    const cached = peek(cacheKey)
+    if (cached) return new Response(cached.body, { status: cached.status, headers: cached.headers })
+  }
+
+  // The baked shell addresses a spliced subtree by its composed ID. Keep that
+  // ID and its enclosing layout nodes intact for rendering and ancestor rules.
+  const useRoute = isComposed || (sourcePage && isTemplatePage(sourcePage) && url.searchParams.has('u'))
+  const composed = useRoute
+    ? await composedRouteForPath(ctx.db, pageUrl, snap.site)
+    : null
+  const onRoute = composed && findDynamicNodeIds(composed.page, snap.site, registry).has(nodeId) ? composed : null
+  const foundPage = onRoute?.page ?? sourcePage
+  const entryStack = onRoute?.entryStack ?? []
+  if (!foundPage) {
     return new Response('Node not found', {
       status: 404,
       headers: { 'content-type': 'text/plain; charset=utf-8' },
     })
   }
-  const foundPage = composed.page
 
-  // A fragment is part of a page and is gated like one: by the routed page or
-  // entry table, and by the rules indexed for the path itself.
+  // A fragment is part of a page and is gated like one: by the page that owns
+  // the node, and (for a node in a template) by the route it is rendered on.
+  // `u` is chosen by the caller, so it can only ever add a restriction.
   const accessIndex = await getAccessIndex(ctx.db, currentVersion)
-  const rules = [...composed.rules(accessIndex), ...indexedRulesForPath(accessIndex, pageUrl.pathname)]
+  const rules = [...pageRules(accessIndex, foundPage), ...indexedRulesForPath(accessIndex, pageUrl.pathname)]
   const isProtected = rules.length > 0
   const visitor = visitorFromRequest(ctx.db, req)
   if (isProtected && (await decideAccess(rules, visitor)) !== 'allow') {
@@ -277,7 +299,7 @@ export async function handleHoleRequest(
     const member = signedIn === undefined
       ? undefined
       : memberFrameFor(signedIn, signedIn ? await memberAppRequestFrame(ctx.db, pageUrl) : null)
-    const html = await renderHoleFragment(nodeId, foundPage, composed.ownerId, composed.entryStack, snap.site, ctx.db, pageUrl, scope, closed, member)
+    const html = await renderHoleFragment(nodeId, foundPage, snap.site, ctx.db, pageUrl, scope, closed, member, entryStack)
     return new Response(html, {
       status: 200,
       headers: {
@@ -297,12 +319,9 @@ export async function handleHoleRequest(
   // no cookies (they would fragment the cache) and no member.
   const scope: LoopRequestScope = { base }
   const cached = await getOrRender(
-    {
-      urlPath: `${HOLE_PATH_PREFIX}${nodeId}`,
-      queryString: `v=${currentVersion}&u=${encodeURIComponent(pageUrl.pathname)}&${normalizeQuery(pageUrl.searchParams)}`,
-    },
+    cacheKey,
     async () => {
-      const html = await renderHoleFragment(nodeId, foundPage, composed.ownerId, composed.entryStack, snap.site, ctx.db, pageUrl, scope, closed, undefined)
+      const html = await renderHoleFragment(nodeId, foundPage, snap.site, ctx.db, pageUrl, scope, closed, undefined, entryStack)
       return {
         body: html,
         headers: { 'content-type': 'text/html; charset=utf-8' },

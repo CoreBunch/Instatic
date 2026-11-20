@@ -108,6 +108,50 @@ function maybeEditorRuntime(
 const DEFAULT_PLUGIN_MODULE_ICON: IconComponent = BoxStackSolidIcon
 
 /**
+ * One `emittedClassNames` entry: a class name as written in `class="…"` (no
+ * leading dot; an ASCII CSS identifier: letters, digits, `_`, `-`, not starting
+ * with a digit or `--`), optionally ending in `*` to declare a prefix.
+ */
+const EMITTED_CLASS_NAME = /^-?[_a-zA-Z][_a-zA-Z0-9-]*\*?$/
+const MAX_EMITTED_CLASS_NAMES = 500
+
+/**
+ * Keep the well-formed entries of a module's `emittedClassNames`. The list
+ * only widens which site CSS the tree-shaker keeps, so a malformed entry is
+ * dropped rather than failing the whole pack, with one warning per module so
+ * the author can see which entries never took effect.
+ */
+export function readEmittedClassNames(
+  pluginId: string,
+  moduleId: string,
+  value: unknown,
+): { emittedClassNames?: string[] } {
+  if (value === undefined) return {}
+  const entries: unknown[] = Array.isArray(value) ? value : [value]
+  const names: string[] = []
+  let droppedCount = 0
+  const examples: string[] = []
+  for (const entry of entries) {
+    if (typeof entry !== 'string' || !EMITTED_CLASS_NAME.test(entry) || names.length === MAX_EMITTED_CLASS_NAMES) {
+      droppedCount += 1
+      if (examples.length < 5) {
+        examples.push(typeof entry === 'string' ? JSON.stringify(entry) : typeof entry)
+      }
+      continue
+    }
+    if (!names.includes(entry)) names.push(entry)
+  }
+  if (droppedCount > 0) {
+    console.warn(
+      `[plugin:${pluginId}] module "${moduleId}" emittedClassNames: ignored ${droppedCount} entr${droppedCount === 1 ? 'y' : 'ies'} `
+      + `(${examples.join(', ')}${droppedCount > 5 ? ', …' : ''}). `
+      + `Use class names without a leading dot, optionally ending in "*", at most ${MAX_EMITTED_CLASS_NAMES}.`,
+    )
+  }
+  return names.length > 0 ? { emittedClassNames: names } : {}
+}
+
+/**
  * `componentFactory` produces the React component used by the editor canvas
  * to preview a plugin module. The publisher (server) never invokes the
  * component, so a stub factory is fine when registering server-side.
@@ -165,6 +209,7 @@ export function pluginModuleToHostModule(
     ...(definition.propsSchema ? { propsSchema: definition.propsSchema } : {}),
     component: componentFactory(definition),
     htmlTag: typeof definition.htmlTag === 'string' ? definition.htmlTag : undefined,
+    ...readEmittedClassNames(pluginId, definition.id, definition.emittedClassNames),
     // Dependencies declared by the plugin module flow into the site's
     // package.json on insert. The host's existing
     // `getMissingModuleDependencies`/`getSiteModuleDependencyUsage` paths

@@ -54,7 +54,6 @@ type NodeActions = Pick<
   | 'deleteNodes'
   | 'updateNodeProps'
   | 'setNodeInlineStyles'
-  | 'removeNodeInlineStyleProperty'
   | 'clearNodeInlineStyles'
   | 'setBreakpointOverride'
   | 'clearBreakpointOverride'
@@ -159,7 +158,7 @@ function coalesceKeyForPatch(
 export function createNodeActions(helpers: SiteSliceHelpers): NodeActions {
   const { get, set, mutateActiveTree, mutateActiveTreeAndSite } = helpers
 
-  const actions: NodeActions = {
+  return {
     insertNode: (moduleId, defaults, parentId, index) => {
       const mod = registry.get(moduleId)
       const resolvedDefaults = { ...(mod?.defaults ?? {}), ...defaults }
@@ -369,10 +368,6 @@ export function createNodeActions(helpers: SiteSliceHelpers): NodeActions {
         else delete node.inlineStyles
         return true
       })
-    },
-
-    removeNodeInlineStyleProperty: (nodeId, propKey) => {
-      actions.setNodeInlineStyles(nodeId, { [propKey]: null })
     },
 
     clearNodeInlineStyles: (nodeId) => {
@@ -597,5 +592,4 @@ export function createNodeActions(helpers: SiteSliceHelpers): NodeActions {
     },
   }
 
-  return actions
 }

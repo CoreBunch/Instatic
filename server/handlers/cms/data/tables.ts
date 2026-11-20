@@ -70,7 +70,8 @@ import {
   assertSystemTableUpdateAllowed,
   protectedBuiltInCreateCellKey,
 } from '@core/data/systemTableGuard'
-import { requireStepUp } from '../../../auth/authz'
+import { requireStepUp, userHasCapability } from '../../../auth/authz'
+import { newPageStructuralCells } from '../../../writePolicy/pageStructuralCells'
 import { isMainScope, MAIN_SCOPE, type BranchScope } from '../../../branches/scope'
 import { isGrantableMemberTag, PUBLIC_ACCESS } from '@core/members'
 import { getTableAccess } from '../../../repositories/data/tableAccess'
@@ -382,6 +383,8 @@ async function handleTableRows(
       entryId: 'new',
       actor: { kind: 'user', userId: user.id },
     })
+    // Head settings on a new page need the same right as changing them later.
+    cells = newPageStructuralCells(tableId, cells, userHasCapability(user, 'site.structure.edit'))
     let slug = slugForTable(table, cells)
 
     // A slug collision is an ordinary, recoverable authoring conflict, but the

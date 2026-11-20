@@ -3,7 +3,7 @@ import { expect, test } from 'bun:test'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import type { SiteShell } from '@core/page-tree'
+import type { Page, SiteShell } from '@core/page-tree'
 import { normalizeSiteRuntimeConfig } from '@core/site-runtime'
 import { pageToCells } from '@core/data/pageFromRow'
 import { createTestDb } from '../helpers/createTestDb'
@@ -111,6 +111,57 @@ test('baking entry routes through a template leaves page fragments usable', asyn
     const url = new URL(`http://localhost/_instatic/hole/text_1?v=${version}&u=${encodeURIComponent('/?q=world')}`)
     const fragment = await (await handleHoleRequest(new Request(url), url, { db })).text()
     expect(fragment).toContain('Hello world')
+  } finally {
+    await cleanup()
+    await rm(dir, { recursive: true, force: true })
+  }
+})
+
+test('layout-wrapped page and entry fragments hydrate with their published node IDs', async () => {
+  resetPublishStateForTests()
+  const { db, cleanup } = await createTestDb()
+  const dir = await mkdtemp(join(tmpdir(), 'hole-layout-'))
+  try {
+    await db`insert into users (id,email,email_normalized,display_name,password_hash,role_id)
+      values ('owner','owner@example.test','owner@example.test','Owner','x','owner')`
+    await saveDraftSite(db, MAIN_SCOPE, makeShell())
+    const home = makePage('home', 'index', 'Home', '{page.title}: {route.query.q}')
+    function withOutlet(page: Page, target: NonNullable<Page['template']>['target']): Page {
+      const root = page.nodes[page.rootNodeId]
+      return {
+        ...page,
+        template: { enabled: true, target, priority: 0 },
+        nodes: {
+          ...page.nodes,
+          [root.id]: { ...root, children: [...root.children, 'outlet'] },
+          outlet: { id: 'outlet', moduleId: 'base.outlet', props: {}, breakpointOverrides: {}, children: [], classIds: [] },
+        },
+      }
+    }
+    const layout = withOutlet(makePage('layout', 'layout', 'Layout', ''), { kind: 'everywhere' })
+    const entry = withOutlet(makePage('entry', 'entry', 'Entry', 'Article: {route.query.q}'), { kind: 'postTypes', tableSlugs: ['posts'] })
+    // All three authored trees deliberately reuse the same root and text IDs.
+    for (const page of [home, layout, entry]) {
+      await createDataRow(db, MAIN_SCOPE, { id: page.id, tableId: 'pages', slug: page.slug, cells: pageToCells(page) })
+    }
+    await createDataRow(db, MAIN_SCOPE, { id: 'post', tableId: 'posts', slug: 'story', cells: { title: 'Story' } })
+    await publishDraftSite(db, 'owner', dir)
+    await publishDataRow(db, 'post', 'owner', dir)
+    await publishDraftSite(db, 'owner', dir)
+
+    for (const [path, expected] of [['/', 'Home: live'], ['/posts/story', 'Article: live']]) {
+      const shell = await readArtefact(dir, path)
+      const holeId = shell?.match(/data-instatic-hole="([^"]+)"/)?.[1]
+      const version = shell?.match(/data-instatic-version="([^"]+)"/)?.[1]
+      expect(holeId).toBeTruthy()
+      expect(version).toBeTruthy()
+      const url = new URL(`http://localhost/_instatic/hole/${holeId}`)
+      url.searchParams.set('v', version!)
+      url.searchParams.set('u', path + '?q=live')
+      const response = await handleHoleRequest(new Request(url), url, { db })
+      expect(response.status).toBe(200)
+      expect(await response.text()).toContain(expected)
+    }
   } finally {
     await cleanup()
     await rm(dir, { recursive: true, force: true })

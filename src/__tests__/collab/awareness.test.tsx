@@ -5,9 +5,12 @@
  * states.
  */
 import { afterEach, describe, expect, it } from 'bun:test'
+import type { ReactNode } from 'react'
 import { render, screen, cleanup, act } from '@testing-library/react'
 import * as Y from 'yjs'
 import * as awarenessProtocol from 'y-protocols/awareness'
+import { AdminSessionContext } from '@admin/sessionContext'
+import type { CmsCurrentUser } from '@core/persistence'
 import { useEditorStore } from '@site/store/store'
 import {
   activeEditorDocId,
@@ -25,7 +28,46 @@ import type {
 } from '@site/collab/collabProvider'
 import type { ResetReason } from '@core/collab'
 import { PeerPresenceOverlay } from '@admin/pages/site/canvas/PeerPresenceOverlay'
+import { PeerAvatarStack } from '@admin/pages/site/toolbar/PeerAvatarStack'
 import '@modules/base/index'
+
+const currentUser: CmsCurrentUser = {
+  id: 'u1',
+  email: 'editor@example.com',
+  displayName: 'Editor',
+  status: 'active',
+  role: {
+    id: 'viewer',
+    slug: 'viewer',
+    name: 'Viewer',
+    description: '',
+    isSystem: true,
+    capabilities: ['site.read'],
+  },
+  capabilities: ['site.read'],
+  lastLoginAt: null,
+  failedLoginCount: 0,
+  lockedUntil: null,
+  passwordUpdatedAt: null,
+  mfaEnabled: false,
+  mfaEnabledAt: null,
+  mfaRecoveryCodesRemaining: 0,
+  stepUpAuthMode: 'required',
+  stepUpWindowMinutes: 15,
+  avatarMediaId: null,
+  avatarUrl: null,
+  gravatarHash: '',
+  createdAt: '2026-06-10T10:00:00.000Z',
+  updatedAt: '2026-06-10T10:00:00.000Z',
+}
+
+function WithAdminSession({ children }: { children: ReactNode }) {
+  return (
+    <AdminSessionContext.Provider value={{ user: currentUser, setUser: () => {} }}>
+      {children}
+    </AdminSessionContext.Provider>
+  )
+}
 
 /** Minimal provider stub: real Awareness, synced-on-bind docs, no transport. */
 function fakeProvider(): CollabProvider & {
@@ -69,13 +111,13 @@ function fakeProvider(): CollabProvider & {
 }
 
 /** Inject a remote peer's presence into `target` the way the wire would. */
-function injectPeerState(target: awarenessProtocol.Awareness, state: unknown): number {
+function injectPeerState(target: awarenessProtocol.Awareness, state: unknown): void {
   const peerDoc = new Y.Doc()
   const peer = new awarenessProtocol.Awareness(peerDoc)
   peer.setLocalState(state)
   const update = awarenessProtocol.encodeAwarenessUpdate(peer, [peer.clientID])
   awarenessProtocol.applyAwarenessUpdate(target, update, 'remote')
-  return peer.clientID
+  peerDoc.destroy()
 }
 
 function PeerList({ docId }: { docId: string | null }) {
@@ -140,7 +182,7 @@ describe('usePeerPresences', () => {
     const provider = fakeProvider()
     connectCollabProvider(provider)
 
-    render(<PeerList docId="page:main:p1" />)
+    render(<PeerList docId="page:main:p1" />, { wrapper: WithAdminSession })
 
     await act(async () => {
       injectPeerState(provider.awareness, {
@@ -186,7 +228,7 @@ describe('PeerPresenceOverlay', () => {
   })
 
 
-  it('renders a name tag for a peer selection on the active page doc', async () => {
+  it('shows toolbar and canvas presence only for other accounts', async () => {
     const provider = fakeProvider()
     connectCollabProvider(provider)
 
@@ -195,16 +237,41 @@ describe('PeerPresenceOverlay', () => {
     const pageId = site.pages[0].id
     useEditorStore.setState({ activePageId: pageId })
 
-    render(<PeerPresenceOverlay breakpointId="bp-desktop" iframeElement={null} />)
+    const presence = {
+      docId: `page:main:${pageId}`,
+      selectedNodeIds: [site.pages[0].rootNodeId],
+      editingNodeId: site.pages[0].rootNodeId,
+      pointer: { x: 10, y: 20, breakpointId: 'bp-desktop' },
+      textCaret: null,
+    }
+    // The toolbar can receive another tab's state before the canvas mounts and publishes ours.
+    provider.awareness.setLocalState(null)
+    injectPeerState(provider.awareness, {
+      ...presence,
+      user: {
+        id: currentUser.id,
+        name: 'Editor',
+        color: peerColor(currentUser.id),
+        avatarUrl: null,
+        gravatarHash: '',
+      },
+    })
+
+    render(
+      <>
+        <PeerAvatarStack />
+        <PeerPresenceOverlay breakpointId="bp-desktop" iframeElement={null} />
+      </>,
+      { wrapper: WithAdminSession },
+    )
+
+    expect(screen.queryByRole('group', { name: 'Admins editing this site' })).toBeNull()
+    expect(document.querySelector('[data-peer-presence-layer]')).toBeNull()
 
     await act(async () => {
       injectPeerState(provider.awareness, {
+        ...presence,
         user: { id: 'u9', name: 'Marge', color: peerColor('u9'), avatarUrl: null, gravatarHash: null },
-        docId: `page:main:${pageId}`,
-        selectedNodeIds: [site.pages[0].rootNodeId],
-        editingNodeId: site.pages[0].rootNodeId,
-        pointer: { x: 10, y: 20, breakpointId: 'bp-desktop' },
-        textCaret: null,
       })
     })
 
@@ -213,5 +280,7 @@ describe('PeerPresenceOverlay', () => {
     expect(tag?.getAttribute('data-editing')).toBe('true')
     expect(document.querySelector('[data-peer-selection-ring]')).toBeTruthy()
     expect(document.querySelector('[data-peer-pointer]')).toBeTruthy()
+    const roster = screen.getByRole('group', { name: 'Admins editing this site' })
+    expect(roster.querySelectorAll('[data-peer-avatar]')).toHaveLength(1)
   })
 })

@@ -51,7 +51,6 @@ interface PropertiesPanelData {
   activeDocument: ActiveDocument | null
   activeVc: VisualComponent | null
   activePage: Page | null
-  activeBreakpointId: string | undefined
 
   // ─── Module + props ────────────────────────────────────────────────────
   definition: AnyModuleDefinition | null
@@ -245,7 +244,6 @@ export function usePropertiesPanelData(): PropertiesPanelData {
     activeDocument,
     activeVc,
     activePage,
-    activeBreakpointId,
 
     definition,
     resolvedPropsForBreakpoint,
