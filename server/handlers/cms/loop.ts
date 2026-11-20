@@ -6,9 +6,11 @@
  * "Load more". Returns `{ html, hasMore, pageNumber }` JSON.
  *
  * Algorithm:
- *   1. Resolve the page from the request's `pagePath` query param via
- *      the same routing logic the public renderer uses.
- *   2. Find the loop node by id within the resolved page.
+ *   1. Resolve the request's `pagePath` to the composed tree the public
+ *      renderer served (`composedRouteForPath`: the page in its layouts, or
+ *      the entry in its templates).
+ *   2. Find the loop node by id within that tree, under the id the page was
+ *      served with (page content under a layout is prefixed, `c0_<id>`).
  *   3. Run the loop's source `fetch()` for the requested page slice.
  *   4. Render only the loop's children using a synthetic page context
  *      sharing the publisher's renderNode walker.
@@ -37,9 +39,10 @@ import { jsonResponse } from '../../http'
 import type { Page } from '@core/page-tree'
 import type { SourceRequestContext } from '@core/loops/types'
 import { buildPageFrame, buildRouteFrame } from '@core/templates/contextFrames'
-import { readLoopProps } from '../../publish/loopPrefetch'
+import { collectLoopNodes, readLoopProps } from '../../publish/loopPrefetch'
 import { sourceRequestFor, visitorRequestScope } from '../../publish/loopSourceRequest'
-import { getPublishedLoopIndexForVersion } from '../../publish/publishedSnapshotCache'
+import { getPublishedSiteForVersion } from '../../publish/publishedSnapshotCache'
+import { composedRouteForPath } from '../../publish/composedRoute'
 import { getPublishVersion } from '../../publish/publishState'
 import { LOOP_RUNTIME_JS, LOOP_RUNTIME_VERSION } from '../../publish/loopRuntime'
 import { serveVersionedScript } from '../../publish/assetVersion'
@@ -48,7 +51,6 @@ import {
   decideAccess,
   getAccessIndex,
   memberFrameFor,
-  pageRules,
   PRIVATE_HEADERS,
   visitorFromRequest,
 } from '../../publish/accessGate'
@@ -106,25 +108,29 @@ export async function handleLoopRequest(
   const pageNumberRaw = url.searchParams.get('page') ?? '1'
   const pageNumber = Math.max(1, Number.parseInt(pageNumberRaw, 10) || 1)
 
-  // Find the page that contains this loop via the per-publish-version
-  // loopId → { page, node } index. Every page version in one publish shares
-  // the same site document, so the index covers regular pages and template
-  // pages alike (the runtime's `pagePath` hint is no longer needed) — and the
-  // old per-request full-snapshot parse + all-pages tree walk is gone.
-  const loopIndex = await getPublishedLoopIndexForVersion(ctx.db, getPublishVersion())
-  if (!loopIndex) {
+  // The list was served as part of the page at `pagePath`; find it in that
+  // route's composed tree, where its id is the one the page carried.
+  const published = await getPublishedSiteForVersion(ctx.db, getPublishVersion())
+  if (!published) {
     return jsonResponse({ error: 'Site not published' }, { status: 404 })
   }
-  const indexed = loopIndex.loops.get(loopId)
-  if (!indexed) {
+  const site = published.site
+  let pagePath: URL
+  try {
+    pagePath = new URL(url.searchParams.get('pagePath') ?? '/', url.origin)
+  } catch {
+    pagePath = new URL('/', url.origin)
+  }
+  const composed = await composedRouteForPath(ctx.db, site, pagePath.pathname)
+  const loopNode = composed ? collectLoopNodes(composed.page, site).find((node) => node.id === loopId) : undefined
+  if (!composed || !loopNode) {
     return jsonResponse({ error: 'Loop not found' }, { status: 404 })
   }
-  const { page: containingPage, node: loopNode } = indexed
-  const site = loopIndex.site
+  const containingPage = composed.page
 
   // More items of a loop on a protected page are part of that page.
   const accessIndex = await getAccessIndex(ctx.db, getPublishVersion())
-  const rules = pageRules(accessIndex, containingPage)
+  const rules = composed.rules(accessIndex)
   const isProtected = rules.length > 0
   const visitor = visitorFromRequest(ctx.db, req)
   if (isProtected && (await decideAccess(rules, visitor)) !== 'allow') {
@@ -219,8 +225,8 @@ export async function handleLoopRequest(
     registry,
     breakpointId: undefined,
     templateContext: forVisitor
-      ? { entryStack: [], member: memberFrameFor(await visitor()) }
-      : { entryStack: [] },
+      ? { entryStack: composed.entryStack, member: memberFrameFor(await visitor()) }
+      : { entryStack: composed.entryStack },
     loopData: new Map<string, ResolvedLoopRenderData>([
       [loopId, { items: result.items, totalItems: result.totalItems, pageNumber, hasMore }],
     ]),
@@ -246,7 +252,7 @@ export async function handleLoopRequest(
       // Spread the base templateContext so any page/site/route frames survive —
       // mirrors renderLoop.ts. Today the handler's base context carries no
       // frames, but spreading keeps the two iteration paths symmetric.
-      templateContext: { ...baseConfig.templateContext, entryStack: [item] },
+      templateContext: { ...baseConfig.templateContext, entryStack: [...composed.entryStack, item] },
     }
     html += renderNode(variantId, iterationConfig, acc)
   })

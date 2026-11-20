@@ -33,7 +33,7 @@ import { listPublishedPageAccess } from '../repositories/publish'
 import type { ClosedContent } from '@core/loops/types'
 import { createVersionedSingleFlight } from './publishState'
 
-interface AccessIndex {
+export interface AccessIndex {
   /** Published page slug → rule, protected pages only. */
   pages: Map<string, AccessRule>
   /**

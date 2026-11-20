@@ -33,7 +33,7 @@ import { MAIN_SCOPE } from '../../../server/branches/scope'
 import { mergeDerivedCells } from '../../../server/collab/relayPersistence'
 import { createMember, grantMemberTag } from '../../../server/members/repository'
 import { createMemberSession } from '../../../server/members/sessions'
-import { getPublishedNodeIndexForVersion } from '../../../server/publish/publishedSnapshotCache'
+import { getPublishedSiteForVersion } from '../../../server/publish/publishedSnapshotCache'
 import { getPublishVersion } from '../../../server/publish/publishState'
 import { publishDraftSite } from '../../../server/publish/publishSite'
 import { resetForTests } from '../../../server/publish/renderCache'
@@ -328,7 +328,7 @@ describe('member bindings and show-when rules', () => {
     }
 
     async function hole(nodeId: string, cookie?: string): Promise<Response> {
-      const index = await getPublishedNodeIndexForVersion(t.db, getPublishVersion())
+      const index = await getPublishedSiteForVersion(t.db, getPublishVersion())
       return get(`/_instatic/hole/${nodeId}?v=${index!.snapshotHash}&u=${encodeURIComponent('/')}`, cookie)
     }
 
@@ -393,10 +393,10 @@ describe('member bindings and show-when rules', () => {
     it('does not hand out a child of a limited element to someone who asks for it directly', async () => {
       const pro = await signedIn('pro@example.com', 'Pro', ['pro'])
       const plain = await signedIn('plain@example.com', 'Plain')
-      const index = await getPublishedNodeIndexForVersion(t.db, getPublishVersion())
+      const index = await getPublishedSiteForVersion(t.db, getPublishVersion())
       const fragment = (nodeId: string, cookie?: string) =>
         get(`/_instatic/hole/${nodeId}?v=${index!.snapshotHash}&u=${encodeURIComponent('/gated')}`, cookie)
-      const list = (loopId: string, cookie?: string) => get(`/_instatic/loop/${loopId}?page=1`, cookie)
+      const list = (loopId: string, cookie?: string) => get(`/_instatic/loop/${loopId}?page=1&pagePath=${encodeURIComponent('/gated')}`, cookie)
 
       // The line inside the pro-only box, fetched on its own.
       for (const cookie of [undefined, plain]) {
@@ -437,7 +437,7 @@ describe('member bindings and show-when rules', () => {
         insert into member_app_grants (id, member_id, app_id, scope, created_at, expires_at)
         values ('grant_boxed', ${rows[0].id}, 'app_boxed', 'profile', ${new Date(now).toISOString()}, ${new Date(now + 86_400_000).toISOString()})
       `
-      const index = await getPublishedNodeIndexForVersion(t.db, getPublishVersion())
+      const index = await getPublishedSiteForVersion(t.db, getPublishVersion())
       const box = (cookie?: string) =>
         get(`/_instatic/hole/apps_box?v=${index!.snapshotHash}&u=${encodeURIComponent('/gated')}`, cookie)
 
@@ -506,7 +506,7 @@ describe('a page inside a site-wide layout', () => {
   }
 
   it('does not hand a signed-out visitor page content the layout limits to members', async () => {
-    const index = await getPublishedNodeIndexForVersion(t.db, getPublishVersion())
+    const index = await getPublishedSiteForVersion(t.db, getPublishVersion())
     const hole = (id: string, cookie?: string) =>
       get(`/_instatic/hole/${id}?v=${index!.snapshotHash}&u=${encodeURIComponent('/')}`, cookie)
 
@@ -515,17 +515,21 @@ describe('a page inside a site-wide layout', () => {
     expect(html).toContain('data-instatic-hole="lay_box"')
     expect(html).not.toContain('Open to all')
 
-    // Asking for a page element by its id is still under the layout's rule.
-    const anonymous = await hole('home_plain')
+    // Asking for a page element by the id it was served with (page content
+    // under a layout is prefixed) is still under the layout's rule.
+    const anonymous = await hole('c0_home_plain')
     expect(await anonymous.text()).toBe('')
     expect(anonymous.headers.get('cache-control')).toBe('private, no-store')
-    expect(await (await hole('home_hello')).text()).toBe('')
+    expect(await (await hole('c0_home_hello')).text()).toBe('')
 
     const member = await createMember(t.db, { email: 'ada@example.com', passwordHash: null, profile: { name: 'Ada' }, verified: true })
     const session = await createMemberSession(t.db, member!.id, { ipAddress: null, userAgent: null })
     const cookie = `instatic_member=${session.token}`
-    expect(await (await hole('home_plain', cookie)).text()).toContain('Open to all')
-    expect(await (await hole('home_hello', cookie)).text()).toContain('Hello Ada')
+    expect(await (await hole('c0_home_plain', cookie)).text()).toContain('Open to all')
+    expect(await (await hole('c0_home_hello', cookie)).text()).toContain('Hello Ada')
+    // The limited box itself holds the page: its fragment carries the page content.
+    expect(await (await hole('lay_box', cookie)).text()).toContain('Open to all')
+    expect(await (await hole('lay_box')).text()).toBe('')
 
     // The layout's own header is under nothing.
     expect(await (await hole('lay_hello')).text()).toContain('Header for nobody')

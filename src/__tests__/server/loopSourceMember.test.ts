@@ -27,7 +27,7 @@ import { handleCmsRequest } from '../../../server/handlers/cms'
 import { requestForPluginSource } from '../../../server/plugins/host/handlers/loops'
 import { hostPlugins } from '../../../server/plugins/host/registry'
 import { unloadPlugin } from '../../../server/plugins/runtime'
-import { getPublishedNodeIndexForVersion } from '../../../server/publish/publishedSnapshotCache'
+import { getPublishedSiteForVersion } from '../../../server/publish/publishedSnapshotCache'
 import { getPublishVersion } from '../../../server/publish/publishState'
 import { publishDraftSite } from '../../../server/publish/publishSite'
 import { sourceRequestFor, type LoopRequestScope } from '../../../server/publish/loopSourceRequest'
@@ -196,7 +196,7 @@ describe('the signed-in member and per-visitor loop sources', () => {
   }
 
   async function hole(nodeId: string, cookie?: string, path = '/'): Promise<Response> {
-    const index = await getPublishedNodeIndexForVersion(t.db, getPublishVersion())
+    const index = await getPublishedSiteForVersion(t.db, getPublishVersion())
     return get(`/_instatic/hole/${nodeId}?v=${index!.snapshotHash}&u=${encodeURIComponent(path)}`, cookie)
   }
 
@@ -463,7 +463,7 @@ describe('a plugin\'s loop sources on the published site', () => {
     } as Page
     await createDataRow(h.db, MAIN_SCOPE, { id: page.id, tableId: 'pages', cells: pageToCells(page), slug: page.slug }, userId)
     await publishDraftSite(h.db, userId, uploadsDir)
-    const index = await getPublishedNodeIndexForVersion(h.db, getPublishVersion())
+    const index = await getPublishedSiteForVersion(h.db, getPublishVersion())
     return async (nodeId, cookie) => {
       const req = new Request(`${ORIGIN}/_instatic/hole/${nodeId}?v=${index!.snapshotHash}&u=${encodeURIComponent('/club')}`)
       if (cookie) req.headers.set('cookie', cookie)

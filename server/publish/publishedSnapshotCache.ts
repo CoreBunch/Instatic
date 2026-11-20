@@ -10,8 +10,8 @@
  *   - the Layer C hole endpoint (`handlers/cms/hole.ts`)
  *   - the infinite-loop load-more endpoint (`handlers/cms/loop.ts`)
  *
- * This module owns ONE snapshot memo plus the two derived per-version indexes
- * (nodeId → page for holes, loopId → page+node for loops), all built on
+ * This module owns ONE snapshot memo plus the derived per-version site +
+ * fingerprint the fragment endpoints read, all built on
  * `createVersionedSingleFlight` from `publishState.ts`: one concurrent loader
  * per version, cached until the version changes, reset together with the rest
  * of the publish state in tests. A publish bump simply makes the next read
@@ -23,10 +23,9 @@
  */
 
 import type { DbClient } from '../db/client'
-import type { Page, PageNode, SiteDocument } from '@core/page-tree'
+import type { SiteDocument } from '@core/page-tree'
 import type { PublishedPageSnapshot } from '../repositories/publish'
 import { getLatestPublishedSiteSnapshot } from '../repositories/publish'
-import { collectLoopNodes } from './loopPrefetch'
 import { createVersionedSingleFlight } from './publishState'
 import { contentHash } from '../branches/contentHash'
 
@@ -62,69 +61,28 @@ export function getLatestSnapshotForVersion(
 }
 
 // ---------------------------------------------------------------------------
-// nodeId → page index (Layer C holes)
+// Published site + fingerprint (Layer C holes, infinite-loop load-more)
 // ---------------------------------------------------------------------------
 
-interface PublishedNodeIndex {
+interface PublishedSite {
   site: SiteDocument
   snapshotHash: string
-  /** First page wins on the (extremely unlikely) duplicate node id. */
-  nodeIndex: Map<string, Page>
 }
 
-const nodeIndexMemo = createVersionedSingleFlight<PublishedNodeIndex>()
+const siteMemo = createVersionedSingleFlight<PublishedSite>()
 
 /**
- * The published site plus a `nodeId → page` index for `version`, so the hole
- * endpoint locates a fragment's page in O(1) instead of scanning all pages.
+ * The published site and its fingerprint for `version`. The fragment
+ * endpoints resolve the caller's page URL against it (`composedRouteForPath`)
+ * to find a node under the id the page was served with.
  */
-export function getPublishedNodeIndexForVersion(
+export function getPublishedSiteForVersion(
   db: DbClient,
   version: number,
-): Promise<PublishedNodeIndex | null> {
-  return nodeIndexMemo.get(version, async () => {
+): Promise<PublishedSite | null> {
+  return siteMemo.get(version, async () => {
     const snapshot = await getLatestSnapshotForVersion(db, version)
     if (!snapshot) return null
-    const nodeIndex = new Map<string, Page>()
-    for (const page of snapshot.site.pages) {
-      for (const nodeId of Object.keys(page.nodes)) {
-        if (!nodeIndex.has(nodeId)) nodeIndex.set(nodeId, page)
-      }
-    }
-    return { site: snapshot.site, snapshotHash: getPublishedSnapshotHash(snapshot.site), nodeIndex }
-  })
-}
-
-// ---------------------------------------------------------------------------
-// loopId → page + node index (infinite-loop load-more)
-// ---------------------------------------------------------------------------
-
-interface PublishedLoopIndex {
-  site: SiteDocument
-  /** First page wins on a duplicate loop id, matching the old scan order. */
-  loops: Map<string, { page: Page; node: PageNode }>
-}
-
-const loopIndexMemo = createVersionedSingleFlight<PublishedLoopIndex>()
-
-/**
- * The published site plus a `loopId → { page, node }` index for `version`.
- * Built once per publish version by walking each page's render tree (the same
- * `collectLoopNodes` walk the loop endpoint used to repeat per request).
- */
-export function getPublishedLoopIndexForVersion(
-  db: DbClient,
-  version: number,
-): Promise<PublishedLoopIndex | null> {
-  return loopIndexMemo.get(version, async () => {
-    const snapshot = await getLatestSnapshotForVersion(db, version)
-    if (!snapshot) return null
-    const loops = new Map<string, { page: Page; node: PageNode }>()
-    for (const page of snapshot.site.pages) {
-      for (const node of collectLoopNodes(page, snapshot.site)) {
-        if (!loops.has(node.id)) loops.set(node.id, { page, node })
-      }
-    }
-    return { site: snapshot.site, loops }
+    return { site: snapshot.site, snapshotHash: getPublishedSnapshotHash(snapshot.site) }
   })
 }

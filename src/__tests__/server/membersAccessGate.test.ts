@@ -14,7 +14,7 @@ import { createMember, grantMemberTag } from '../../../server/members/repository
 import { createMemberSession } from '../../../server/members/sessions'
 import { decideAccess } from '../../../server/publish/accessGate'
 import { publishDataRow } from '../../../server/publish/publishRow'
-import { getPublishedNodeIndexForVersion } from '../../../server/publish/publishedSnapshotCache'
+import { getPublishedSiteForVersion } from '../../../server/publish/publishedSnapshotCache'
 import { getPublishVersion } from '../../../server/publish/publishState'
 import { publishDraftSite } from '../../../server/publish/publishSite'
 import { resetForTests } from '../../../server/publish/renderCache'
@@ -328,31 +328,23 @@ describe('members access gate', () => {
       expect((await get('/posts/lesson-one')).status).toBe(404)
     })
 
-    it('gates fragments of its entry template whatever route the caller claims', async () => {
+    it('gates fragments of its entry template, which are served only on its entries', async () => {
       await setTableAccess(t.db, 'posts', { level: 'tags', tags: ['student'], onDeny: 'hide' }, uploadsDir)
-      const index = await getPublishedNodeIndexForVersion(t.db, getPublishVersion())
+      const index = await getPublishedSiteForVersion(t.db, getPublishVersion())
       const student = await signedInMember('s@example.com', ['student'])
-      for (const claimed of ['/', '/posts/lesson-one', '/Posts/lesson-one', '/no-such-page']) {
-        const path = `/_instatic/hole/page_lesson_tpl_text?v=${index!.snapshotHash}&u=${encodeURIComponent(claimed)}`
-        expect({ claimed, status: (await get(path)).status }).toEqual({ claimed, status: 404 })
-        const allowed = await get(path, student.cookie)
-        expect(allowed.status).toBe(200)
-        expect(allowed.headers.get('cache-control')).toBe('private, no-store')
-      }
-    })
-
-    it('requires every rule that applies, not just the first', async () => {
-      await setTableAccess(t.db, 'posts', { level: 'tags', tags: ['student'], onDeny: 'hide' }, uploadsDir)
-      const index = await getPublishedNodeIndexForVersion(t.db, getPublishVersion())
       const hole = (claimed: string) =>
         `/_instatic/hole/page_lesson_tpl_text?v=${index!.snapshotHash}&u=${encodeURIComponent(claimed)}`
-      // The template's table wants `student`; the claimed route (/vault) wants `pro`.
-      const studentOnly = await signedInMember('s@example.com', ['student'])
-      const proOnly = await signedInMember('p@example.com', ['pro'])
-      const both = await signedInMember('b@example.com', ['student', 'pro'])
-      expect((await get(hole('/vault'), studentOnly.cookie)).status).toBe(404)
-      expect((await get(hole('/vault'), proOnly.cookie)).status).toBe(404)
-      expect((await get(hole('/vault'), both.cookie)).status).toBe(200)
+      // On the entry's own route: the table's rule decides.
+      expect((await get(hole('/posts/lesson-one'))).status).toBe(404)
+      const allowed = await get(hole('/posts/lesson-one'), student.cookie)
+      expect(allowed.status).toBe(200)
+      expect(allowed.headers.get('cache-control')).toBe('private, no-store')
+      // Claiming a route the template does not render on finds nothing, for anyone.
+      for (const claimed of ['/', '/vault', '/no-such-page']) {
+        for (const cookie of [undefined, student.cookie]) {
+          expect({ claimed, status: (await get(hole(claimed), cookie)).status }).toEqual({ claimed, status: 404 })
+        }
+      }
     })
 
     it('keeps both rules when two tables differ only by the case of their route base', async () => {
@@ -390,8 +382,8 @@ describe('members access gate', () => {
       } as Page['nodes'][string]
       await saveDataRowDraft(t.db, MAIN_SCOPE, 'page_vault', { cells: pageToCells(vault), slug: 'vault' }, 'admin_1')
       await publishDraftSite(t.db, 'admin_1', uploadsDir)
-      const index = await getPublishedNodeIndexForVersion(t.db, getPublishVersion())
-      expect(index!.nodeIndex.has('vault_hole')).toBe(true)
+      const index = await getPublishedSiteForVersion(t.db, getPublishVersion())
+      expect(index).not.toBeNull()
       return index!.snapshotHash
     }
 

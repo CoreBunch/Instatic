@@ -338,7 +338,7 @@ describe('hole endpoint — per-visitor hole', () => {
     const snap = makeSnapshotWithLoop('hole-loop', VISITOR_SOURCE_ID)
     const db = makeFakeDb(snap)
     const v = getPublishedSnapshotHash(snap.site)
-    const url = new URL(`http://localhost/_instatic/hole/hole-loop?v=${v}&u=${encodeURIComponent('/')}`)
+    const url = new URL(`http://localhost/_instatic/hole/hole-loop?v=${v}&u=${encodeURIComponent('/search')}`)
 
     const res1 = await handleHoleRequest(makeReq('sid=alice'), url, { db })
     expect(res1.headers.get('cache-control')).toBe('private, no-store')
