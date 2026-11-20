@@ -781,7 +781,7 @@ See [docs/features/plugin-system.md](features/plugin-system.md) for the plugin S
   - `src/admin/pages/site/panels/SiteExplorerPanel/useSiteExplorerDnd.ts` — DnD monitor for explorer organization drag-and-drop
   - `src/admin/pages/site/store/slices/site/explorerActions.ts` — 6 explorer store actions wired to `mutateSite`
   - `src/admin/pages/site/hooks/useInsertInserterItem.ts` — shared `onInsertItem` handler for `ModuleInserterDialog` (toolbar `+` and canvas selection toolbar both use it)
-  - `src/admin/pages/site/property-controls/DynamicBindingControl/` — binding affordance wrapper + single-pane picker popover; `cache.ts` holds the DataMeta fetch + module-level cache
+  - `src/admin/pages/site/property-controls/DynamicBindingControl/` — binding affordance wrapper + single-pane picker popover (the affordance overlays text-like controls but sits in a right gutter beside toggle and number controls, whose own target is at that edge); `cache.ts` holds the DataMeta fetch + module-level cache
   - `src/admin/pages/site/property-controls/TokenAwareInput.tsx` — shared token-autocomplete input primitive (suggestion filtering, commit, live preview, Suggested/All dropdown)
   - `src/admin/pages/site/property-controls/tokenUtils.ts` — `Token` shape, `useSpacingTokens`, `useTypographyTokens` hooks, and pure helpers (`resolveTokenValue`, `displayTokenValue`, `looksLikeDirectValue`, `isLivePreviewable`)
 - Gate tests:

@@ -37,6 +37,12 @@ import { cn } from '@ui/cn'
 import styles from './DynamicBindingControl.module.css'
 import controlStyles from '@ui/components/ControlRow/ControlRow.module.css'
 
+/**
+ * Control types whose interactive part sits at the right edge, where the
+ * affordance would otherwise be laid over it (see `.affordanceWrapperGutter`).
+ */
+const AFFORDANCE_GUTTER_CONTROLS: ReadonlySet<PropertyControl['type']> = new Set(['toggle', 'number'])
+
 // ---------------------------------------------------------------------------
 // Props
 // ---------------------------------------------------------------------------
@@ -179,7 +185,11 @@ export function DynamicBindingControl({
     <>
       <div
         ref={wrapperRef}
-        className={cn(styles.affordanceWrapper, pickerOpen && styles.affordanceWrapperActive)}
+        className={cn(
+          styles.affordanceWrapper,
+          AFFORDANCE_GUTTER_CONTROLS.has(control.type) && styles.affordanceWrapperGutter,
+          pickerOpen && styles.affordanceWrapperActive,
+        )}
         data-prop-key={propKey}
       >
         {children}
