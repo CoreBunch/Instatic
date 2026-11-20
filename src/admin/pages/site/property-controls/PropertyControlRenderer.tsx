@@ -264,7 +264,7 @@ export function PropertyControlRenderer({
   const content = dynamicBinding && !isDisabled && bindingMode !== null ? (
     <DynamicBindingControl
       propKey={propKey}
-      label={control.label ?? propKey}
+      label={control.label || propKey}
       control={control}
       layout={layout}
       binding={dynamicBinding.binding}

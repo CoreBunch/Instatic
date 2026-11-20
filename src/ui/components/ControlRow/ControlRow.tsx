@@ -77,7 +77,7 @@ export function ControlRow({
         disabled && styles.controlWrapperDisabled,
       )}
     >
-      {showLabelRow && (
+      {showLabelRow ? (
         <div className={styles.labelRow}>
           <label
             htmlFor={inputId ?? `ctrl-${propKey}`}
@@ -88,7 +88,7 @@ export function ControlRow({
           {labelSuffix}
           {labelAction && <span className={styles.labelAction}>{labelAction}</span>}
         </div>
-      )}
+      ) : labelAction && <span className={styles.labelAction}>{labelAction}</span>}
       {children}
       {description && (
         <span className={styles.description}>{description}</span>

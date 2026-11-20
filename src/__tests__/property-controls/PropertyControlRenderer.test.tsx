@@ -743,6 +743,20 @@ describe('PropertyControlRenderer — dynamic binding affordance eligibility', (
     onClear: () => {},
   }
 
+  it('keeps binding available when a schema suppresses the visible label', () => {
+    const html = renderToStaticMarkup(
+      <PropertyControlRenderer
+        propKey="caption"
+        control={{ type: 'text', label: '' }}
+        value=""
+        onChange={() => {}}
+        dynamicBinding={dynamicBinding}
+      />,
+    )
+    expect(html).toContain('aria-label="Insert binding for caption"')
+    expect(html).not.toContain('<label')
+  })
+
   it('does not add a data-token affordance to fixed option selects', () => {
     render(
       <PropertyControlRenderer
