@@ -833,6 +833,7 @@ api.cms.loops.registerSource({
   fields: [/* LoopSourceField[] */],
   filterSchema: { /* PropertySchema */ },
   orderByOptions: [/* allowed sort keys */],
+  defaultDirection: 'asc', // optional; the direction a new loop uses until its author picks one
   fetch: async (ctx) => ({ items: [/* LoopItem[] */], totalItems: 0 }),
 
   // Optional. Sample items for the editor canvas: synchronous, invented

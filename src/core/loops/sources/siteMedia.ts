@@ -167,6 +167,8 @@ export const SiteMediaSource: LoopEntitySource = {
     },
   },
 
+  // Newest first unless the author picks otherwise.
+  defaultDirection: 'desc',
   orderByOptions: [
     { id: 'createdAt', label: 'Upload date' },
     { id: 'filename', label: 'Filename' },
