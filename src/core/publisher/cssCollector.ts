@@ -39,7 +39,7 @@ import { collectUsedStyleRuleIds, treeShakeStyleRules } from './styleRuleTreeSha
  */
 export function collectClassCSS(
   site: SiteDocument,
-  registry: Pick<IModuleRegistry, 'get'>,
+  registry: Pick<IModuleRegistry, 'get' | 'generation'>,
   options: ResponsiveCssOptions = {},
 ): string {
   // Defensive guard: corrupted/partial snapshots may have classes undefined

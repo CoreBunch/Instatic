@@ -38,7 +38,7 @@
  *   output genuinely differs per frame width.
  */
 
-import { useEffect } from 'react'
+import { useEffect, useSyncExternalStore } from 'react'
 import { useEditorStore } from '@site/store/store'
 import { registry } from '@core/module-engine'
 import { styleRuleSelector, type ConditionDef, type StyleRule } from '@core/page-tree'
@@ -104,6 +104,15 @@ export function ClassStyleInjector({ targetDocument, viewport }: ClassStyleInjec
   // Subscribe to class registry — shallow equality so we only re-run when
   // the classes object reference changes (Mutative always creates a new ref on mutation)
   const classes = useEditorStore((s) => s.site?.styleRules ?? null)
+  // Classes a module declares it emits (`emittedClassNames`) count as used
+  // while the module is on the site. A plugin module pack can register after
+  // the canvas mounted, which changes nothing in the editor store, so
+  // subscribe to the registry too: the re-render re-reads the signature below.
+  useSyncExternalStore(
+    registry.subscribe.bind(registry),
+    registry.generation.bind(registry),
+    registry.generation.bind(registry),
+  )
   const usedClassIdSignature = useEditorStore((s) =>
     s.site ? usedStyleRuleIdSignature(s.site, registry) : '',
   )

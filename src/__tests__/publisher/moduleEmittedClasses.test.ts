@@ -96,8 +96,17 @@ describe('module-emitted class CSS', () => {
     expect(css).not.toContain('.commerce-checkout__total')
   })
 
-  it('drops malformed declarations instead of keeping every rule', () => {
-    registerCheckout(['*', 'not a class', 42, 'commerce-badge'])
+  it('drops malformed declarations instead of keeping every rule, and says so once', () => {
+    const warnings: string[] = []
+    const originalWarn = console.warn
+    console.warn = (...args: unknown[]) => { warnings.push(args.map(String).join(' ')) }
+    try {
+      registerCheckout(['*', '.dotted', 'not a class', 42, 'commerce-badge'])
+    } finally {
+      console.warn = originalWarn
+    }
+    expect(warnings).toHaveLength(1)
+    expect(warnings[0]).toStartWith('[plugin:acme] module "acme.checkout" emittedClassNames: ignored 4 entries')
     expect(registry.get('acme.checkout')?.emittedClassNames).toEqual(['commerce-badge'])
     const css = collectClassCSS(siteWithCheckoutOnPage(), registry)
     expect(css).toContain('.commerce-badge {')

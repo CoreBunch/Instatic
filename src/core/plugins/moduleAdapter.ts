@@ -107,29 +107,44 @@ function maybeEditorRuntime(
 
 const DEFAULT_PLUGIN_MODULE_ICON: IconComponent = BoxStackSolidIcon
 
-/** A class name, optionally ending in `*` to declare a prefix. */
+/**
+ * One `emittedClassNames` entry: a class name as written in `class="…"` (no
+ * leading dot; an ASCII CSS identifier: letters, digits, `_`, `-`, not starting
+ * with a digit or `--`), optionally ending in `*` to declare a prefix.
+ */
 const EMITTED_CLASS_NAME = /^-?[_a-zA-Z][_a-zA-Z0-9-]*\*?$/
 const MAX_EMITTED_CLASS_NAMES = 500
 
 /**
  * Keep the well-formed entries of a module's `emittedClassNames`. The list
  * only widens which site CSS the tree-shaker keeps, so a malformed entry is
- * dropped rather than failing the whole pack.
+ * dropped rather than failing the whole pack, with one warning per module so
+ * the author can see which entries never took effect.
  */
-function emittedClassNamesField(value: unknown): Pick<ModuleDefinition, 'emittedClassNames'> {
-  const names = normalizeEmittedClassNames(value)
-  return names.length > 0 ? { emittedClassNames: names } : {}
-}
-
-function normalizeEmittedClassNames(value: unknown): string[] {
-  if (!Array.isArray(value)) return []
+function emittedClassNamesField(
+  pluginId: string,
+  moduleId: string,
+  value: unknown,
+): Pick<ModuleDefinition, 'emittedClassNames'> {
+  if (value === undefined) return {}
+  const entries: unknown[] = Array.isArray(value) ? value : [value]
   const names: string[] = []
-  for (const entry of value) {
-    if (typeof entry !== 'string' || !EMITTED_CLASS_NAME.test(entry) || names.includes(entry)) continue
-    names.push(entry)
-    if (names.length === MAX_EMITTED_CLASS_NAMES) break
+  const dropped: string[] = []
+  for (const entry of entries) {
+    if (typeof entry !== 'string' || !EMITTED_CLASS_NAME.test(entry) || names.length === MAX_EMITTED_CLASS_NAMES) {
+      dropped.push(typeof entry === 'string' ? JSON.stringify(entry) : String(entry))
+      continue
+    }
+    if (!names.includes(entry)) names.push(entry)
   }
-  return names
+  if (dropped.length > 0) {
+    console.warn(
+      `[plugin:${pluginId}] module "${moduleId}" emittedClassNames: ignored ${dropped.length} entr${dropped.length === 1 ? 'y' : 'ies'} `
+      + `(${dropped.slice(0, 5).join(', ')}${dropped.length > 5 ? ', …' : ''}). `
+      + `Use class names without a leading dot, optionally ending in "*", at most ${MAX_EMITTED_CLASS_NAMES}.`,
+    )
+  }
+  return names.length > 0 ? { emittedClassNames: names } : {}
 }
 
 /**
@@ -190,7 +205,7 @@ export function pluginModuleToHostModule(
     ...(definition.propsSchema ? { propsSchema: definition.propsSchema } : {}),
     component: componentFactory(definition),
     htmlTag: typeof definition.htmlTag === 'string' ? definition.htmlTag : undefined,
-    ...emittedClassNamesField(definition.emittedClassNames),
+    ...emittedClassNamesField(pluginId, definition.id, definition.emittedClassNames),
     // Dependencies declared by the plugin module flow into the site's
     // package.json on insert. The host's existing
     // `getMissingModuleDependencies`/`getSiteModuleDependencyUsage` paths

@@ -7,8 +7,24 @@ import {
 } from '@core/page-tree'
 import type { IModuleRegistry } from '@core/module-engine'
 
-/** The registry surface the tree-shaker reads: module definitions by id. */
-type ModuleLookup = Pick<IModuleRegistry, 'get'>
+/**
+ * The registry surface the tree-shaker reads: module definitions by id, and
+ * the generation counter that changes whenever a module registers or leaves.
+ */
+type ModuleLookup = Pick<IModuleRegistry, 'get' | 'generation'>
+
+interface DeclaredClassNames {
+  exact: Set<string>
+  prefixes: string[]
+}
+
+let lastDeclared: {
+  pages: SiteDocument['pages']
+  visualComponents: SiteDocument['visualComponents']
+  modules: ModuleLookup
+  generation: number
+  names: DeclaredClassNames
+} | null = null
 
 let lastScriptFiles: SiteDocument['files'] | null = null
 let lastScriptRuns: Set<string> = new Set()
@@ -56,7 +72,29 @@ function scriptIdentifierRuns(files: SiteDocument['files']): Set<string> {
 function declaredModuleClassNames(
   site: Pick<SiteDocument, 'pages' | 'visualComponents'>,
   modules: ModuleLookup,
-): { exact: Set<string>; prefixes: string[] } {
+): DeclaredClassNames {
+  // Runs inside the canvas store selector on every store change. The store
+  // snapshot is immutable and the registry bumps its generation on every
+  // (un)registration, so identity plus generation is enough to skip the walk.
+  const generation = modules.generation()
+  if (
+    lastDeclared
+    && lastDeclared.pages === site.pages
+    && lastDeclared.visualComponents === site.visualComponents
+    && lastDeclared.modules === modules
+    && lastDeclared.generation === generation
+  ) {
+    return lastDeclared.names
+  }
+  const names = walkDeclaredModuleClassNames(site, modules)
+  lastDeclared = { pages: site.pages, visualComponents: site.visualComponents, modules, generation, names }
+  return names
+}
+
+function walkDeclaredModuleClassNames(
+  site: Pick<SiteDocument, 'pages' | 'visualComponents'>,
+  modules: ModuleLookup,
+): DeclaredClassNames {
   const exact = new Set<string>()
   const prefixes = new Set<string>()
   const seenModules = new Set<string>()
