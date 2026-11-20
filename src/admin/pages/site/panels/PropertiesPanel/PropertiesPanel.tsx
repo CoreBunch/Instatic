@@ -145,6 +145,7 @@ export function PropertiesPanel({ variant = 'floating' }: PropertiesPanelProps) 
 
   return (
     <aside
+      data-floating-obstacle=""
       ref={setDragPanelElementRef}
       data-panel=""
       data-testid="properties-panel"

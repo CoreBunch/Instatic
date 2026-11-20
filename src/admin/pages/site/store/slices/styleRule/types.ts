@@ -41,8 +41,8 @@ export interface ClassPreviewAssignment {
  */
 interface ClassStylesPreview {
   classId: string
-  /** Breakpoint id to scope the preview to, or null/undefined for the base styles. */
-  breakpointId?: string | null
+  /** Breakpoint or condition id to scope the preview to, or null/undefined for the base styles. */
+  contextId?: string | null
   styles: Partial<CSSPropertyBag>
 }
 
@@ -93,6 +93,12 @@ export interface StyleRuleSlice {
   clearPreviewNodeClass(nodeId?: string, classId?: string): void
 
   /** Transient style patch previewed on the canvas while hovering a suggestion. */
+  gradientPickerOpen: boolean
+  setGradientPickerOpen(open: boolean): void
+  radiusScope: 'all' | 'parts' | null
+  setRadiusScope(scope: 'all' | 'parts' | null): void
+  previewInlineStyles: { nodeId: string; styles: Partial<CSSPropertyBag> } | null
+  setPreviewInlineStyles(nodeId: string, styles: Partial<CSSPropertyBag> | null): void
   previewClassStyles: ClassStylesPreview | null
   setPreviewClassStyles(preview: ClassStylesPreview): void
   clearPreviewClassStyles(classId?: string): void

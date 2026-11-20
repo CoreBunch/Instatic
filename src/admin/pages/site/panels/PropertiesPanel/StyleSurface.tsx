@@ -190,6 +190,7 @@ export function StyleSurface({
         key={`${nodeId}-inline`}
         nodeId={nodeId!}
         inlineStyles={inlineStyles}
+        textElement={definition?.inlineTextEdit != null}
         styleQuery={styleQuery}
       />
     )
@@ -206,6 +207,7 @@ export function StyleSurface({
           key={`${activeClassId}-${activeTab}`}
           classId={activeClassId!}
           cls={activeClass}
+          textElement={definition?.inlineTextEdit != null}
           styleQuery={styleQuery}
         />
       )

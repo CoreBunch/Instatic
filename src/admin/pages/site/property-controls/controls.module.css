@@ -120,7 +120,6 @@
     height: 18px;
     padding: 0;
     border: 0;
-    border-radius: 8px;
     background: transparent;
     box-shadow: none;
     transform: translateY(-50%);
@@ -142,7 +141,7 @@
 }
 
 .colorField .colorInlineSwatch > span {
-    border-radius: 8px;
+    border-radius: inherit;
     box-shadow:
         inset 0 0 0 1px
             color-mix(in srgb, var(--overlay) 16%, transparent),
@@ -388,4 +387,27 @@
 
 .groupChildren {
     padding: var(--space-m) 0 0 var(--space-m);
+}
+
+.inspectorColorChip { display: block; width: 100%; height: 100%; background: var(--preview-color); }
+
+.numericSteps {
+    display: grid;
+    align-self: center;
+    /* The centered glyph already has an inset inside its 16px button. */
+    margin-inline-end: calc(1px - var(--space-3xs));
+    opacity: 0;
+}
+:where(span:hover, span:focus-within) > span > .numericSteps {
+    opacity: 1;
+}
+.numericSteps[hidden] { visibility: hidden; }
+.numericStep.numericStep {
+    width: 16px;
+    height: 10px;
+    min-height: 0;
+    padding: 0;
+}
+input[data-scrubbable]:not(:focus) {
+    cursor: ew-resize;
 }

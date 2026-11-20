@@ -7,10 +7,10 @@
  *
  * Inline styles are BASE-ONLY — a real HTML `style=""` attribute cannot be
  * media-queried — so this editor ignores the breakpoint / condition switcher
- * entirely and always edits the single inline bag (sectionKey `'base'`). The
- * canvas hover-preview channel is class-keyed, so preview is a no-op here.
+ * entirely and always edits the single inline bag (sectionKey `'base'`).
  */
 
+import { useEffect } from 'react'
 import { useEditorStore } from '@site/store/store'
 import type { CSSPropertyBag } from '@core/page-tree'
 import { StyleSectionsEditor } from './StyleSectionsEditor'
@@ -23,12 +23,16 @@ interface InlineStyleComposerProps {
   /** The node's current inline styles (re-read from the store on every change). */
   inlineStyles: Record<string, unknown> | undefined
   /** Search query — filters visible properties across all categories. */
+  textElement?: boolean
   styleQuery: string
 }
 
-export function InlineStyleComposer({ nodeId, inlineStyles, styleQuery }: InlineStyleComposerProps) {
+export function InlineStyleComposer({ nodeId, inlineStyles, styleQuery, textElement }: InlineStyleComposerProps) {
   const setNodeInlineStyles = useEditorStore((s) => s.setNodeInlineStyles)
   const removeNodeInlineStyleProperty = useEditorStore((s) => s.removeNodeInlineStyleProperty)
+
+  const setPreview = useEditorStore((s) => s.setPreviewInlineStyles)
+  useEffect(() => () => setPreview(nodeId, null), [nodeId, setPreview])
 
   const stored: Record<string, unknown> = inlineStyles ?? EMPTY_STYLES
 
@@ -46,19 +50,18 @@ export function InlineStyleComposer({ nodeId, inlineStyles, styleQuery }: Inline
   return (
     <StyleSectionsEditor
       // Inline styles have no context axis; the single bag is both stored and current.
+      textElement={textElement}
       storedStyles={stored}
       currentStyles={stored}
       sectionKey="base"
       styleQuery={styleQuery}
       onChange={handleChange}
+      onChangeMany={(patch) => setNodeInlineStyles(nodeId, patch)}
       onRemove={handleRemove}
       onClearProperty={handleRemove}
       onClearProperties={handleClearProperties}
-      // Hover-preview is class-keyed in the store; skip it for inline editing.
-      onPreview={noop}
-      onClearPreview={noop}
+      onPreview={(patch) => setPreview(nodeId, patch)}
+      onClearPreview={() => setPreview(nodeId, null)}
     />
   )
 }
-
-function noop() {}

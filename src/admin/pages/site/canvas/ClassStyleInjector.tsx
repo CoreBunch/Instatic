@@ -210,17 +210,14 @@ export function ClassStyleInjector({ targetDocument, viewport }: ClassStyleInjec
       previewEl.textContent = ''
       return
     }
-    const previewCss = generatePreviewClassCSS(cls, {
-      breakpointId: previewClassStyles.breakpointId ?? null,
-      styles: previewClassStyles.styles,
-    }, { mediaAssets: responsiveMediaAssets })
+    const previewCss = generatePreviewClassCSS(cls, previewClassStyles, breakpoints, conditions, { mediaAssets: responsiveMediaAssets })
     const resolvedPreviewCss = viewport ? resolveViewportUnits(previewCss, viewport) : previewCss
     // Keep in the same @layer so the doubled-selector preview rule still wins
     // over the regular class rule within the layer (higher specificity).
     previewEl.textContent = resolvedPreviewCss
       ? `@layer user-authored {\n${resolvedPreviewCss}\n}`
       : ''
-  }, [targetDocument, viewport, classes, previewClassStyles, responsiveMediaAssets])
+  }, [targetDocument, viewport, classes, previewClassStyles, breakpoints, conditions, responsiveMediaAssets])
 
   // Forced state preview — when a state-pseudo selector (`.btn:hover`, …) is the
   // active selector, paint its declarations onto the selected node so the state
@@ -248,7 +245,7 @@ export function ClassStyleInjector({ targetDocument, viewport }: ClassStyleInjec
     // Overlay an in-flight edit to the same rule into the context it targets so
     // dragging a control updates the forced preview live, at the right breakpoint.
     const inflight = previewClassStyles?.classId === activeClassId
-      ? { contextId: previewClassStyles.breakpointId ?? null, styles: previewClassStyles.styles }
+      ? { contextId: previewClassStyles.contextId ?? null, styles: previewClassStyles.styles }
       : null
     const forcedCss = generateForcedStateCSS(
       selectedNodeId,

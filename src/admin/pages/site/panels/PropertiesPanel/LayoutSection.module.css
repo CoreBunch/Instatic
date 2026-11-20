@@ -31,7 +31,7 @@
     align-items: stretch;
     gap: var(--space-4xs);
     padding: var(--space-4xs);
-    border-radius: 10px;
+    border-radius: var(--segment-track-radius);
     background: var(--bg-surface-2);
 }
 
@@ -42,7 +42,7 @@
     flex: 1 1 auto;
     min-width: 0;
     padding: 0 var(--space-s);
-    border-radius: 8px;
+    border-radius: var(--segment-radius);
     background: var(--bg-surface);
     color: var(--text);
     text-align: left;
@@ -75,7 +75,7 @@
 .displayChipGroup .displayChipClear.displayChipClear {
     flex: 0 0 26px;
     width: 26px;
-    border-radius: 6px;
+    border-radius: var(--segment-radius);
     background: transparent;
     color: var(--text-muted);
 }
@@ -100,7 +100,7 @@
  * rendered below the visual block. */
 .labeledRow {
     display: grid;
-    grid-template-columns: 100px 1fr;
+    grid-template-columns: min(32%, 100px) minmax(0, 1fr);
     align-items: center;
     gap: var(--space-3xs);
     min-height: 28px;
@@ -183,7 +183,6 @@
     right: 4px;
     width: 18px;
     height: 18px;
-    border-radius: 6px;
     background: var(--bg-surface-2);
     border: 1px solid var(--border-muted);
     color: var(--text-muted);

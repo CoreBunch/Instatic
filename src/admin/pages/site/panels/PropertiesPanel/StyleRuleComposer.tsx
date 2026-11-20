@@ -19,6 +19,7 @@ interface StyleRuleComposerProps {
   classId: string
   cls: StyleRule
   /** Search query — filters visible properties across all categories. */
+  textElement?: boolean
   styleQuery: string
   mode?: 'contextual' | 'global'
 }
@@ -30,6 +31,7 @@ interface StyleRuleComposerProps {
 export function StyleRuleComposer({
   classId,
   cls,
+  textElement,
   styleQuery,
   mode: _mode = 'contextual',
 }: StyleRuleComposerProps) {
@@ -70,13 +72,16 @@ export function StyleRuleComposer({
     ? { ...cls.styles, ...storedStyles }
     : cls.styles
 
-  const handleChange = (key: keyof CSSPropertyBag, value: string | number | undefined) => {
-    const patch = { [key]: value ?? null } as Partial<CSSPropertyBag>
+  const handleChangeMany = (patch: Partial<CSSPropertyBag>) => {
     if (activeContextId) {
       setClassContextStyles(classId, activeContextId, patch)
     } else {
       updateClassStyles(classId, patch)
     }
+  }
+
+  const handleChange = (key: keyof CSSPropertyBag, value: string | number | undefined) => {
+    handleChangeMany({ [key]: value ?? null } as Partial<CSSPropertyBag>)
   }
 
   const handleRemoveProperty = (key: keyof CSSPropertyBag) => {
@@ -114,14 +119,9 @@ export function StyleRuleComposer({
   // control's hover-suggestion menu is open. The preview lives entirely
   // in store UI state — no class document mutation, no history entry.
   const handlePreview = (patch: Partial<CSSPropertyBag>) => {
-    // The canvas preview channel is keyed by classId + optional breakpointId
-    // — it can't target a conditional layer. Skip preview while a condition
-    // tab is active rather than previewing onto the wrong (base/breakpoint)
-    // target. The actual edit still commits correctly via handleChange.
-    if (onCondition) return
     setPreviewClassStyles({
       classId,
-      breakpointId: activeTab !== 'base' ? activeTab : null,
+      contextId: activeContextId,
       styles: patch,
     })
   }
@@ -137,11 +137,13 @@ export function StyleRuleComposer({
 
   return (
     <StyleSectionsEditor
+      textElement={textElement}
       storedStyles={storedStyles}
       currentStyles={currentStyles}
       sectionKey={sectionKey}
       styleQuery={styleQuery}
       onChange={handleChange}
+      onChangeMany={handleChangeMany}
       onRemove={handleRemoveProperty}
       onClearProperty={handleClearProperty}
       onClearProperties={handleClearProperties}

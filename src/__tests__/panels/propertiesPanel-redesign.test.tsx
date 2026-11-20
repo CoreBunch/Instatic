@@ -849,11 +849,10 @@ describe('LayoutSection — grid block', () => {
     expect(screen.queryByLabelText('Gap')).toBeNull()
     expect(document.querySelector('[data-testid="css-property-row-rowGap"]')).toBeNull()
     expect(document.querySelector('[data-testid="css-property-row-columnGap"]')).toBeNull()
-    // Item-level properties (gridColumn / gridRow / alignSelf / flex)
-    // still render — they depend on the parent's display, which we don't
-    // observe from a class-style editor.
-    expect(document.querySelector('[data-testid="css-property-row-alignSelf"]')).not.toBeNull()
-    expect(document.querySelector('[data-testid="css-property-row-gridColumn"]')).not.toBeNull()
+    expect(screen.queryByTestId('css-property-row-alignSelf')).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'Add layout property' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Align self' }))
+    expect(screen.getByTestId('css-property-row-alignSelf')).toBeDefined()
   })
 
   it('reveals the GapInput once display becomes flex', () => {
@@ -866,8 +865,8 @@ describe('LayoutSection — grid block', () => {
 
     // Gap is now inside the flex block (token-aware input), not a fallback row.
     expect(screen.getByLabelText('Gap')).toBeDefined()
-    expect(document.querySelector('[data-testid="css-property-row-rowGap"]')).not.toBeNull()
-    expect(document.querySelector('[data-testid="css-property-row-columnGap"]')).not.toBeNull()
+    expect(document.querySelector('[data-testid="css-property-row-rowGap"]')).toBeNull()
+    expect(document.querySelector('[data-testid="css-property-row-columnGap"]')).toBeNull()
   })
 })
 
@@ -911,7 +910,7 @@ describe('LayoutSection — position block', () => {
     expect(document.querySelector('[data-testid="css-direction-input-left"]')).not.toBeNull()
   })
 
-  it('marks the relative segment as pressed when position: relative is stored', () => {
+  it('shows relative in the position type selector when stored', () => {
     const { nodeId, classIds } = loadSiteWithClasses(1)
     const clsId = classIds[0]
     useEditorStore.getState().updateClassStyles(clsId, { position: 'relative' })
@@ -919,11 +918,11 @@ describe('LayoutSection — position block', () => {
     render(<PropertiesPanel />)
     fireEvent.click(screen.getByRole('button', { name: /edit class \.class-1/i }))
 
-    const relSegment = screen.getByRole('button', { name: /^position relative$/i })
-    expect(relSegment.getAttribute('aria-pressed')).toBe('true')
+    const type = screen.getByRole('combobox', { name: 'Position type' }) as HTMLInputElement
+    expect(type.value).toBe('relative')
   })
 
-  it('falls back to a chip + close when position is fixed / sticky', () => {
+  it('shows sticky in the position type selector', () => {
     const { nodeId, classIds } = loadSiteWithClasses(1)
     const clsId = classIds[0]
     useEditorStore.getState().updateClassStyles(clsId, { position: 'sticky' })
@@ -931,8 +930,8 @@ describe('LayoutSection — position block', () => {
     render(<PropertiesPanel />)
     fireEvent.click(screen.getByRole('button', { name: /edit class \.class-1/i }))
 
-    const chip = screen.getByRole('button', { name: /position: sticky/i })
-    expect(chip).toBeDefined()
+    const type = screen.getByRole('combobox', { name: 'Position type' }) as HTMLInputElement
+    expect(type.value).toBe('sticky')
   })
 
   it('typing into a direction input writes the value to the matching property on blur', () => {
@@ -998,6 +997,25 @@ describe('LayoutSection — position block', () => {
     // zIndex always renders inside the position section as a generic
     // ClassPropertyRow — even when the position keyword itself is unset.
     expect(document.querySelector('[data-testid="css-property-row-zIndex"]')).not.toBeNull()
+  })
+})
+
+describe('Size section', () => {
+  it('updates both dimensions when their ratio is locked', () => {
+    const { nodeId, classIds: [classId] } = loadSiteWithClasses(1)
+    useEditorStore.getState().updateClassStyles(classId, { width: '160px', height: '80px' })
+    selectNode(nodeId)
+    render(<PropertiesPanel />)
+    fireEvent.click(screen.getByRole('button', { name: /edit class \.class-1/i }))
+    fireEvent.click(screen.getByRole('button', { name: 'Link width and height' }))
+
+    const width = screen.getByRole('textbox', { name: 'Width', exact: true })
+    fireEvent.focus(width)
+    fireEvent.change(width, { target: { value: '200' } })
+    fireEvent.blur(width)
+    const styles = useEditorStore.getState().site!.styleRules[classId].styles
+    expect(styles.width).toBe('200px')
+    expect(styles.height).toBe('100px')
   })
 })
 

@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, useRef } from 'react'
 import { AdminCanvasLayout } from '@admin/layouts/AdminCanvasLayout'
 import { consumePendingAction } from '@admin/spotlight/pendingAction'
 import { useEditorStore } from '@site/store/store'
@@ -24,42 +24,25 @@ export function SitePage() {
   // actually see an active site.
   useMcpWorkspaceBridge('site', executeAgentTool, undefined, siteHydrated)
 
-  // Consume cross-workspace pending actions queued by the spotlight. Each
-  // action waits for the editor store to hydrate (site !== null) — we
-  // subscribe once and tear down as soon as the action has fired so the
-  // listener doesn't outlive the editor mount.
+  // The MCP bridge already subscribes to site hydration. Consume the pending
+  // spotlight action once per mount after that same signal becomes ready.
+  const consumed = useRef(false)
   useEffect(() => {
-    function runIfHydrated(): boolean {
-      const store = useEditorStore.getState()
-      if (!store.site) return false
-
-      const newPage = consumePendingAction('site.newPage')
-      if (newPage) {
-        const title = newPage.args?.['title']?.trim()
-        if (title) store.addPage(title)
-        return true
-      }
-
-      const newVc = consumePendingAction('site.newVisualComponent')
-      if (newVc) {
-        const name = newVc.args?.['name']?.trim()
-        if (name) {
-          const vcId = store.createVisualComponent(name)
-          store.setActiveDocument({ kind: 'visualComponent', vcId })
-        }
-        return true
-      }
-
-      return true // hydrated but nothing queued — stop waiting
+    if (!siteHydrated || consumed.current) return
+    consumed.current = true
+    const store = useEditorStore.getState()
+    const newPage = consumePendingAction('site.newPage')
+    if (newPage) {
+      const title = newPage.args?.title?.trim()
+      if (title) store.addPage(title)
+      return
     }
-
-    if (runIfHydrated()) return
-
-    const unsubscribe = useEditorStore.subscribe(() => {
-      if (runIfHydrated()) unsubscribe()
-    })
-    return unsubscribe
-  }, [])
+    const name = consumePendingAction('site.newVisualComponent')?.args?.name?.trim()
+    if (name) {
+      const vcId = store.createVisualComponent(name)
+      store.setActiveDocument({ kind: 'visualComponent', vcId })
+    }
+  }, [siteHydrated])
 
   return <AdminCanvasLayout />
 }

@@ -1,0 +1,34 @@
+.sizeGroup {
+    position: relative;
+    display: grid;
+    gap: var(--space-s);
+}
+
+.fused {
+    display: grid;
+    grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr);
+    gap: var(--space-xs);
+}
+
+.fused > * { min-width: 0; }
+
+.ratioLock.ratioLock {
+    position: absolute;
+    left: 74px;
+    top: 50%;
+    transform: translateY(-50%);
+    z-index: 1;
+    color: var(--text-muted);
+}
+
+.ratioLock::before, .ratioLock::after {
+    content: "";
+    position: absolute;
+    left: 50%;
+    width: 5px;
+    height: 6px;
+    border-left: 1px solid var(--border-muted);
+}
+
+.ratioLock::before { bottom: 100%; border-top: 1px solid var(--border-muted); }
+.ratioLock::after { top: 100%; border-bottom: 1px solid var(--border-muted); }

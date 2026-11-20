@@ -99,7 +99,13 @@ import {
   rectStyle,
   syncSelectorHighlightRings,
 } from './canvasSelectionOverlayPositioning'
+import { lazy, Suspense } from 'react'
+import { useActiveStyleTarget } from '@site/store/useActiveStyleTarget'
+import { readCornerRadii, useCanvasRadiusDrag } from './useCanvasRadiusDrag'
+import { positionRadiusHandles, RADIUS_HANDLE_CORNERS } from './canvasSelectionOverlayPositioning'
 import styles from './BreakpointSelectionOverlay.module.css'
+
+const GradientGizmo = lazy(() => import('./CanvasGradientGizmo').then((module) => ({ default: module.CanvasGradientGizmo })))
 
 interface BreakpointSelectionOverlayProps {
   /**
@@ -226,6 +232,13 @@ export function BreakpointSelectionOverlay({
   // canvas-root-local coordinates during the ref-availability race.
   const portalTarget = portalCanvasRoot ?? document.body
   const toolbarMode = portalCanvasRoot ? 'scoped' : 'fixed'
+  const gradientOpen = useEditorStore((s) => s.gradientPickerOpen)
+  const styleTarget = useActiveStyleTarget()
+  const radiusLayer = useRef<HTMLDivElement>(null)
+  const radiusDrag = useCanvasRadiusDrag({ iframeElement, styleTarget })
+  const showCorners = permissions.canEditStyle && styleTarget !== null &&
+    selectedNodeIds.length === 1 && activeBreakpointId === breakpointId
+
   const treeLadder = useCanvasTreeLadderOverlay({
     breakpointId,
     iframeElement,
@@ -317,6 +330,9 @@ export function BreakpointSelectionOverlay({
     )
 
     // ── WRITE phase ─────────────────────────────────────────────────────
+    const selected = showCorners ? elementCache.resolve(iframeDoc, selectedNodeIds[0]) : null
+    const radii = selected && iframeDoc.defaultView ? readCornerRadii(iframeDoc.defaultView.getComputedStyle(selected)) : []
+    positionRadiusHandles(radiusLayer.current, showCorners ? ringPlacements[0]?.rect ?? null : null, radii, session.scale)
     for (const { ring, rect } of ringPlacements) positionOverlayElement(ring, rect)
     positionOverlayElement(hoverRef.current, hoverRect)
     syncSelectorHighlightRings(selectorHighlightRef.current, selectorRects)
@@ -425,6 +441,16 @@ export function BreakpointSelectionOverlay({
       data-canvas-ring-layer-mode={toolbarMode}
       aria-hidden="true"
     >
+      {showCorners && !gradientOpen && (
+        <div ref={radiusLayer} data-canvas-radius-handles="true">
+          {RADIUS_HANDLE_CORNERS.map((corner) => (
+            <div key={corner} className={styles.radiusHandle} data-corner={corner}
+              aria-hidden="true" onClick={(event) => event.stopPropagation()}
+              onPointerDown={(event) => radiusDrag.begin(event, corner)} />
+          ))}
+        </div>
+      )}
+
       {/* Orange affinity rings — populated imperatively by the RAF tick, one
           per element matching the hovered selector. */}
       {showSelectorHighlight && (
@@ -478,6 +504,8 @@ export function BreakpointSelectionOverlay({
           />
         )}
       </div>
+      {gradientOpen && <Suspense fallback={null}><GradientGizmo breakpointId={breakpointId} iframeElement={iframeElement}
+        canvasRoot={portalCanvasRoot} portalTarget={portalTarget} portalMode={toolbarMode} active={showRings} /></Suspense>}
       {rings && createPortal(rings, portalTarget)}
       {toolbar && createPortal(toolbar, portalTarget)}
       {treeLadder.portal}

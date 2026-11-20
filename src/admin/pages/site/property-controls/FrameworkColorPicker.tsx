@@ -1,0 +1,31 @@
+import { resolveColorPreview } from './frameworkColorPreview'
+import { ColorPicker } from '@ui/components/ColorPicker'
+import { generateFrameworkColorVariableSets } from '@core/framework'
+import { getErrorMessage } from '@core/utils/errorMessage'
+import { pushToast } from '@ui/components/Toast'
+import { useEditorStore } from '@site/store/store'
+import { useEditorPermissions } from '@site/editorPermissionsContext'
+
+export default function FrameworkColorPicker({ value, gradients, onChange }: {
+  value: string
+  gradients?: boolean
+  onChange: (value: string) => void
+}) {
+  const colors = useEditorStore((s) => s.site?.settings.framework?.colors)
+  const create = useEditorStore((s) => s.createFrameworkColorToken)
+  const { canEditStyle } = useEditorPermissions()
+  const tokens = generateFrameworkColorVariableSets(colors).light
+  function saveColor(name: string, color: string, bind: boolean) {
+    try {
+      const saved = create({ slug: name, lightValue: color, darkModeEnabled: false })
+      if (bind) onChange(`var(--${saved.slug})`)
+      pushToast({ kind: 'success', title: `Saved --${saved.slug} to Framework colors` })
+      return true
+    } catch (err) {
+      pushToast({ kind: 'error', title: 'Could not save Framework color', body: getErrorMessage(err, 'Unknown color error') })
+      return false
+    }
+  }
+  return <ColorPicker value={resolveColorPreview(value, tokens)} gradients={gradients} tokens={tokens}
+    onSaveColor={canEditStyle ? saveColor : undefined} onChange={onChange} onSelectToken={onChange} />
+}

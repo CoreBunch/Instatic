@@ -194,10 +194,33 @@
 
     /* Radius */
     --radius-sm: 3px;
+    --picker-white: #ffffff;
+    --picker-black: #000000;
+    --picker-hue-track: linear-gradient(
+        to right,
+        #ff0000 0%,
+        #ffff00 17%,
+        #00ff00 33%,
+        #00ffff 50%,
+        #0000ff 67%,
+        #ff00ff 83%,
+        #ff0000 100%
+    );
+    --picker-checkerboard-size: 8px;
+    --picker-checkerboard: repeating-conic-gradient(
+        #ffffff 0% 25%,
+        #c9c9c9 0% 50%
+    );
+    --color-picker-z-index: 1000;
+    --control-height: 28px;
+    --control-label-column: 100px;
+    --control-row-gap: var(--space-s);
     --radius: 6px;
     --card-radius: 16px;
     --panel-radius: 12px;
     --input-radius: 1em;
+    --segment-track-radius: 12px;
+    --segment-radius: 8px;
     --radius-pill: 999px;
     --tooltip-radius: 6px;
 
