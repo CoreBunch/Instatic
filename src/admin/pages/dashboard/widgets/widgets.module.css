@@ -252,7 +252,7 @@
     color: var(--success);
 }
 
-/* ── Pages / posts / status row utilities ──────────────────────────── */
+/* ── Pages / posts footer ──────────────────────────────────────────── */
 .subFootRow {
     margin-top: auto;
     display: flex;
@@ -262,30 +262,14 @@
     color: var(--text-subtle);
 }
 
-.statusRow {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: var(--space-m) 0;
-    border-top: 1px solid var(--border);
-}
-
-.statusRow:first-of-type {
-    border-top: 0;
-}
-
-.statusLabel {
+/* ── Publishing status widget ─────────────────────────────────────── */
+.publishState {
     display: flex;
     align-items: center;
     gap: var(--space-s);
-    font-size: var(--text-s);
-    color: var(--text);
-}
-
-.statusGrid {
-    display: grid;
-    gap: 0;
-    margin-top: var(--space-3xs);
+    margin: 0 0 var(--space-xs);
+    font-size: var(--text-l);
+    color: var(--text-bright);
 }
 
 /* ── Domain widget ─────────────────────────────────────────────────── */
@@ -297,13 +281,13 @@
     overflow-wrap: anywhere;
 }
 
-.domainHint {
+.widgetHint {
     margin: 0;
     font-size: var(--text-s);
     color: var(--text-muted);
 }
 
-.domainHint + .domainHint {
+.widgetHint + .widgetHint {
     margin-top: var(--space-xs);
 }
 

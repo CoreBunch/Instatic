@@ -14,7 +14,7 @@ The Dashboard is the **canonical implementation** of the borderless-tile-card pa
 - Widgets are draggable (move) and resizable (column / row span). Drop targets and resize previews use `--accent-3` for the dashed indicator.
 - Customize mode: dashed outline + bottom-docked `<BlockLibrary>` of unused widgets. Toggled by a top-toolbar button.
 - Layout persists per-user via `useDashboardLayout` (server-side `user_preferences`).
-- Most data-backed widgets load from `/admin/api/cms/dashboard/<domain>` via `handleDashboardRoutes`. AI usage reads `/admin/api/ai/audit`. Site status renders local rows.
+- Most widgets load from `/admin/api/cms/dashboard/<domain>` via `handleDashboardRoutes`. Publishing status and AI usage reuse the publish status and AI audit endpoints.
 
 ---
 
@@ -48,7 +48,7 @@ src/admin/pages/dashboard/
     ├── PluginsWidget.tsx
     ├── PostsWidget.tsx
     ├── PublishQueueWidget.tsx
-    ├── StatusWidget.tsx
+    ├── PublishingStatusWidget.tsx
     ├── StorageWidget.tsx
     ├── widgets.module.css       — widget-shared CSS
     └── index.ts                 — registerFirstPartyDashboardWidgets()
@@ -134,7 +134,7 @@ interface DashboardWidgetDefinition {
 | `pages`    | 3             | 3 × 3         | lilac | Published, draft, scheduled, and trailing-week page counts |
 | `posts`    | 3             | 3 × 3         | peach | Total posts, category count, scheduled count, and 28-day bars |
 | `media`    | 3             | 3 × 3         | peach | File count, total bytes, and latest thumbnails |
-| `status`   | 3             | 3 × 3         | mint  | Local site/build/backup/plugin status rows |
+| `status`   | 3             | 3 × 3         | mint  | Publishing status, last publication, and unpublished site changes |
 | `activity` | 4             | 6 × 5         | peach | Recent audit-backed admin activity; endpoint requires `audit.read` |
 | `publish`  | 4             | 6 × 5         | sky   | Scheduled, recently published, and draft content rows |
 | `plugins`  | 4             | 6 × 5         | mint  | Installed plugin counts and lifecycle-state rows |
@@ -237,12 +237,12 @@ The Domain endpoint returns `configuredPublicOrigin()` from `server/auth/securit
 
 Pages, posts, and publish lineup use the table-family and row-read policy in `server/auth/dataAccess.ts`. The SQL scope in `server/repositories/dashboard/content.ts` excludes unreadable table families, other authors' rows for own-only roles, deleted rows/tables, and non-main branches **before** counts, histograms, sorting, or limits. Author ownership takes precedence over creator fallback. A dashboard-only user receives empty content statistics and lineup; category counts include only readable post-type tables. `site.read` alone grants no row access. Regression coverage: `src/__tests__/server/dashboardAccess.test.ts`.
 
-Non-CMS first-party widgets:
+Widgets that reuse existing endpoints:
 
 | Widget | Data source | Notes |
 |--------|-------------|-------|
 | `ai-usage` | `listAiAudit(startOfMonthIso())` -> `/admin/api/ai/audit` | Maps a 403 from missing `ai.audit.read` to a no-permission empty state. |
-| `status` | Local component rows | Shows the current placeholder site/build/backup/plugin status rows. |
+| `status` | `getCmsPublishStatus()` → `/admin/api/cms/publish/status` | Requires `site.read`. Shows whether main has a published version, when it last published, and whether the main site draft matches the published snapshot. A 403 shows a permission message. Other request failures offer a retry. |
 
 ### Timezone-aware day bucketing
 
