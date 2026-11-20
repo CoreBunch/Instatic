@@ -4,87 +4,113 @@
  * `base.svg` stores one self-contained SVG, and the SVG sanitiser forbids
  * `<use>` (DOMPurify leaves it out of the SVG profile: a `<use>` can pull in a
  * whole external document). A sprite icon would therefore publish as an empty
- * `<svg>` and the sprite file would never be imported. Instead each rendered
- * `<use>` is replaced by a copy of the element it points at before the walk
- * runs, so the icon survives as plain shapes:
+ * `<svg>`. Instead each rendered `<use>` is replaced by a copy of what it
+ * points at before the walk runs, so the icon survives as plain shapes:
  *
  *   - a `<symbol>` becomes a nested `<svg>` with the symbol's attributes
- *     (`viewBox`, `preserveAspectRatio`, presentation) and then the `<use>`'s
- *     own geometry and presentation attributes (the box a `<use>` of a symbol
- *     draws into);
+ *     (`viewBox`, presentation) and then the `<use>`'s own (the box a `<use>`
+ *     of a symbol draws into);
  *   - any other element is copied into a `<g>` that carries the `<use>`'s
- *     attributes, its `x` / `y` becoming a translate. Inside a `<clipPath>` or
- *     `<mask>`, where a `<g>` is not a valid child, the shape itself is copied
- *     with the offset folded into its `transform`.
+ *     attributes, its `x` / `y` becoming a translate. Inside a `<clipPath>`,
+ *     whose children must be shapes, the shape itself is copied with the
+ *     offset folded into its `transform`.
  *
- * References resolve against the page itself (`#id`, the inline-sprite
- * pattern) and, through `loadSvgSprite`, against external sprite files
- * (`icons.svg#id`); a sprite file named inside another sprite resolves
- * relative to that sprite. Inside a copy:
+ * The design rests on three rules that keep it bounded on any input (it runs
+ * on every paste and agent insert, not only Site Import):
  *
- *   - a nested `<use>` resolves against the document the copy came from,
- *     recursively, up to `MAX_DEPTH` and never through a reference already on
- *     the chain (a symbol that uses itself);
- *   - paint servers, clip paths, masks, markers and filters the copy points at
- *     (`url(#id)`, a gradient's `href`, a `<textPath>`'s path) but does not
- *     contain are copied in as `<defs>`;
- *   - every id gets a random suffix no id on the page already has, and the
- *     copy's own references (`url()`, `href`, SMIL `begin` / `end`) follow;
- *   - a `<style>` is kept in the first copy of its symbol only, so its CSS
- *     reaches the page once. A same-page symbol's `<style>` already does.
+ *   1. Sources are immutable. `#id` resolves against a snapshot of the page
+ *      taken before any expansion, `file.svg#id` against the sprite file as
+ *      loaded. An expansion never feeds a later one.
+ *   2. All work is charged to one counter, `MAX_WORK` per call: every node
+ *      created (counted while cloning, so a huge target is never cloned past
+ *      the limit), every attribute scanned, every `<use>` and definition
+ *      lookup. When it runs out, expansion stops and every remaining `<use>`
+ *      is reported unresolved.
+ *   3. Each node is scanned once, while it is cloned: the scan collects the
+ *      copy's nested `<use>`s, the definitions it references and its ids.
+ *      Definitions are copied through a worklist that only ever looks at the
+ *      definitions it just appended.
  *
- * Work is bounded, because this runs on every paste and agent insert:
- * `MAX_COPIED_ELEMENTS` per document (checked against the target's size before
- * anything is cloned; chained symbols multiply) and `MAX_USES` `<use>`s
- * processed. Every id lookup goes through one index per source document. A
- * `<use>` that is unresolved, cyclic, too deep or past either limit stays in
- * place (the sanitiser then drops it) and its href is reported.
+ * Inside a copy, a nested `<use>` resolves against the document the copy came
+ * from (up to `MAX_DEPTH` deep, never through a reference already on the
+ * chain); referenced paint servers, clip paths, masks, markers and filters, a
+ * `<textPath>` / `<mpath>` path, and an `<feImage>` or animation target are
+ * copied in as `<defs>`; every id gets a random suffix no page id has, and the
+ * copy's references (`url()`, `href`, SMIL `begin` / `end`, ARIA id lists,
+ * `<style>` text) follow. A symbol's `<style>` reaches the page once.
  */
 
 const SVG_NS = 'http://www.w3.org/2000/svg'
 const XLINK_NS = 'http://www.w3.org/1999/xlink'
+const ELEMENT_NODE = 1
+const TEXT_NODE = 3
 const MAX_DEPTH = 8
-const MAX_COPIED_ELEMENTS = 5000
-const MAX_USES = 2000
+const MAX_WORK = 20000
 
 /** Attributes of `<use>` that name its target rather than style the copy. */
 const USE_REFERENCE_ATTRIBUTES = new Set(['href', 'xlink:href'])
 /** Attributes of `<use>` that position or size the copy. */
 const USE_GEOMETRY_ATTRIBUTES = new Set(['x', 'y', 'width', 'height'])
-/** Parents whose content must be shapes, so a copy there cannot be a `<g>`. */
-const SHAPE_ONLY_PARENTS = new Set(['clipPath', 'mask'])
-/** What a `url(#id)` may point at and be copied in as a definition. */
-const DEFINITION_KINDS = new Set([
-  'linearGradient', 'radialGradient', 'pattern', 'clipPath', 'mask', 'marker', 'filter',
-])
-/** Elements whose `href="#id"` names a definition: gradient / pattern / filter templates. */
-const TEMPLATE_HREF_KINDS = new Set(['linearGradient', 'radialGradient', 'pattern', 'filter'])
+const SHAPES = ['path', 'rect', 'circle', 'ellipse', 'line', 'polyline', 'polygon']
+
+/** What each kind of reference may name, so an `<a href="#pricing">` never pulls page markup in. */
+const REFERENCE_KINDS = {
+  definition: new Set(['linearGradient', 'radialGradient', 'pattern', 'clipPath', 'mask', 'marker', 'filter']),
+  shape: new Set(SHAPES),
+  graphic: new Set([...SHAPES, 'g', 'text', 'image']),
+} as const
+type ReferenceKind = keyof typeof REFERENCE_KINDS
+
+/** The kind of element a non-`<use>` `href="#id"` names, by the element carrying it. */
+const HREF_KIND: Record<string, ReferenceKind> = {
+  linearGradient: 'definition',
+  radialGradient: 'definition',
+  pattern: 'definition',
+  filter: 'definition',
+  textPath: 'shape',
+  mpath: 'shape',
+  feImage: 'graphic',
+  animate: 'graphic',
+  animateMotion: 'graphic',
+  animateTransform: 'graphic',
+  set: 'graphic',
+}
+
 const URL_REFERENCE = /url\(\s*(['"]?)#([^'")\s]+)\1\s*\)/g
+const ID_LIST_ATTRIBUTES = new Set(['aria-labelledby', 'aria-describedby', 'aria-controls', 'aria-owns'])
 const SMIL_TIMING_ATTRIBUTES = new Set(['begin', 'end'])
 
 /**
- * Returns the text of a sprite file, given its path relative to the page
- * (`href` before `#`, joined onto the sprite that named it when nested), or
- * `null` when the file is not available.
+ * Returns the text of a sprite file, given its canonical path relative to the
+ * page (query and fragment stripped, `.` / `..` folded, a leading `/` kept for
+ * root-relative), or `null` when the file is not available.
  */
 export type SvgSpriteLoader = (path: string) => string | null
 
 interface InlineState {
   doc: Document
   loadSvgSprite: SvgSpriteLoader | undefined
-  sprites: Map<string, Document | null>
-  /** One id → element index per source document, built on first lookup. */
-  indexes: Map<Document, Map<string, Element>>
-  sizes: Map<Element, number>
-  /** Elements still allowed to be copied into the document. */
-  budget: number
-  /** `<use>`s still allowed to be processed. */
-  uses: number
+  /** The page as parsed, before any expansion. Built on first `#id` lookup. */
+  pageSnapshot: Element | null
+  /** Parsed sprite files by canonical path. */
+  sprites: Map<string, Element | null>
+  /** One id → element index per source, built on first lookup. */
+  indexes: Map<Element, Map<string, Element>>
+  work: number
   /** Every id on the page or handed to a copy, so new suffixes never collide. */
   takenIds: Set<string>
   /** Symbols (path#id) whose `<style>` already reached the page. */
   styledSymbols: Set<string>
   unresolved: Set<string>
+}
+
+/** Everything one clone produced, gathered while cloning (rule 3). */
+interface Collected {
+  elements: Element[]
+  uses: Element[]
+  styles: Element[]
+  idOwners: Element[]
+  references: Array<[string, ReferenceKind]>
 }
 
 /**
@@ -93,111 +119,125 @@ interface InlineState {
  * be replaced, so a caller can tell the author which icons stayed empty.
  */
 export function inlineSvgSpriteReferences(doc: Document, loadSvgSprite?: SvgSpriteLoader): string[] {
-  // A `<use>` inside `<symbol>` or `<defs>` is part of a template, not drawn
-  // where it stands; it is expanded when the template is copied. One inside a
-  // `<clipPath>` or `<mask>` is drawn where that is applied, so it counts.
+  // A `<use>` inside `<symbol>` or a plain `<defs>` template is not drawn where
+  // it stands; it is expanded when the template is copied. One inside a
+  // `<clipPath>` or `<mask>` is drawn wherever that is applied, so it counts.
   const rendered = Array.from(doc.querySelectorAll('svg use')).filter((use) =>
     !use.closest('symbol') && (!use.closest('defs') || use.closest('clipPath, mask') !== null))
   if (rendered.length === 0) return []
   const state: InlineState = {
     doc,
     loadSvgSprite,
+    pageSnapshot: null,
     sprites: new Map(),
     indexes: new Map(),
-    sizes: new Map(),
-    budget: MAX_COPIED_ELEMENTS,
-    uses: MAX_USES,
+    work: MAX_WORK,
     takenIds: new Set(Array.from(doc.querySelectorAll('[id]'), (el) => el.getAttribute('id')!)),
     styledSymbols: new Set(),
     unresolved: new Set(),
   }
-  for (const use of rendered) expandUse(use, '', [], state)
+  for (const use of rendered) {
+    const copy = expandUse(use, '', [], state)
+    if (copy) use.replaceWith(copy)
+    else state.unresolved.add(referenceOf(use))
+  }
+  state.unresolved.delete('')
   return [...state.unresolved]
 }
 
 /**
- * Replace one `<use>` with a copy of its target. `spritePath` is the document
- * the `<use>` itself lives in (`''` for the page), which is what its href is
- * relative to. `chain` holds the references being expanded around it.
+ * Build the copy that replaces one `<use>`, or `null` when it cannot be
+ * built. `spritePath` is the canonical path of the document the `<use>` came
+ * from (`''` for the page); `chain` holds the references expanded around it.
  */
-function expandUse(use: Element, spritePath: string, chain: readonly string[], state: InlineState): void {
+function expandUse(use: Element, spritePath: string, chain: readonly string[], state: InlineState): Element | null {
+  if (!charge(state, 1)) return null
   const href = referenceOf(use)
-  if (!href) return
-  if (state.uses <= 0 || state.budget <= 0) {
-    state.unresolved.add(href)
-    return
-  }
-  state.uses -= 1
-
   const hashIndex = href.indexOf('#')
-  const authoredPath = hashIndex === -1 ? href : href.slice(0, hashIndex)
-  const path = authoredPath === '' ? spritePath : resolveSpritePath(authoredPath, spritePath)
-  const id = hashIndex === -1 ? '' : decodeFragment(href.slice(hashIndex + 1))
+  if (hashIndex === -1) return null
+  const path = canonicalSpritePath(href.slice(0, hashIndex), spritePath)
+  const id = decodeFragment(href.slice(hashIndex + 1))
   const key = `${path}#${id}`
-  const source = path === '' ? state.doc : spriteDocument(path, state)
-  const target = id && source ? lookup(source, id, state) : null
-  const size = target ? sizeOf(target, state) + 1 : 0
-  if (!target || chain.includes(key) || chain.length >= MAX_DEPTH || size > state.budget) {
-    state.unresolved.add(href)
-    return
-  }
+  if (!id || chain.includes(key) || chain.length >= MAX_DEPTH) return null
+  const source = path === '' ? pageSnapshot(state) : spriteRoot(path, state)
+  const target = source ? lookup(source, id, state) : null
+  if (!target || target.namespaceURI !== SVG_NS) return null
 
-  const shapeOnly = SHAPE_ONLY_PARENTS.has(use.parentElement?.localName ?? '')
-  if (shapeOnly && target.localName === 'symbol') {
-    state.unresolved.add(href)
-    return
+  const shapeOnly = use.parentElement?.localName === 'clipPath'
+  if (shapeOnly && !REFERENCE_KINDS.shape.has(target.localName) && target.localName !== 'text') return null
+
+  const out: Collected = { elements: [], uses: [], styles: [], idOwners: [], references: [] }
+  const copy = shapeOnly
+    ? copyShapeForUse(use, target, out, state)
+    : copyForUse(use, target, out, state)
+  if (!copy || !copyReferencedDefinitions(copy, source!, out, state)) return null
+
+  keepStyleOnce(out, key, path === '', state)
+  makeIdsUnique(out, state)
+  for (const nested of out.uses) {
+    const nestedCopy = expandUse(nested, path, [...chain, key], state)
+    if (nestedCopy) nested.replaceWith(nestedCopy)
+    else state.unresolved.add(referenceOf(nested))
   }
-  state.budget -= size
-  const copy = shapeOnly ? copyShapeForUse(state.doc, use, target) : copyForUse(state.doc, use, target)
-  keepStyleOnce(copy, key, path === '', state)
-  if (!copyReferencedDefinitions(copy, source!, state)) {
-    state.unresolved.add(href)
-    return
-  }
-  makeIdsUnique(copy, state)
-  for (const nested of Array.from(copy.querySelectorAll('use'))) {
-    expandUse(nested, path, [...chain, key], state)
-  }
-  use.replaceWith(copy)
+  return copy
+}
+
+function charge(state: InlineState, amount: number): boolean {
+  state.work -= amount
+  return state.work >= 0
 }
 
 /**
- * A sprite named inside another sprite is relative to that sprite, so join it
- * onto the containing file's folder. The result is the page-relative path the
- * loader takes (and the cycle check compares), with `.` and `..` folded.
+ * The page as parsed, cloned once before its first use as a source, so a
+ * `<g id="a">` that an earlier expansion grew is never copied grown.
  */
-function resolveSpritePath(path: string, spritePath: string): string {
-  if (spritePath === '' || /^([a-z][a-z0-9+.-]*:|\/)/i.test(path)) return path
-  const folder = spritePath.slice(0, spritePath.lastIndexOf('/') + 1)
+function pageSnapshot(state: InlineState): Element {
+  state.pageSnapshot ??= state.doc.documentElement.cloneNode(true) as Element
+  return state.pageSnapshot
+}
+
+/**
+ * The canonical page-relative path of a sprite file: query and fragment
+ * dropped, `.` and `..` folded, a leading `/` kept for root-relative paths.
+ * A path named inside another sprite is relative to that sprite's folder.
+ * `''` (a bare `#id`) is the document the reference sits in.
+ */
+function canonicalSpritePath(rawPath: string, spritePath: string): string {
+  const path = rawPath.split(/[?#]/, 1)[0]!.trim()
+  if (path === '') return spritePath
+  if (/^[a-z][a-z0-9+.-]*:/i.test(path) || path.startsWith('//')) return path
+  const joined = path.startsWith('/') || spritePath === ''
+    ? path
+    : `${spritePath.slice(0, spritePath.lastIndexOf('/') + 1)}${path}`
   const parts: string[] = []
-  for (const part of `${folder}${path}`.split('/')) {
+  for (const part of joined.split('/')) {
     if (part === '.' || part === '') continue
     if (part === '..' && parts.length > 0 && parts[parts.length - 1] !== '..') parts.pop()
+    else if (part === '..' && joined.startsWith('/')) continue
     else parts.push(part)
   }
-  return parts.join('/')
+  return `${joined.startsWith('/') ? '/' : ''}${parts.join('/')}`
 }
 
-function spriteDocument(path: string, state: InlineState): Document | null {
+function spriteRoot(path: string, state: InlineState): Element | null {
   if (state.sprites.has(path)) return state.sprites.get(path) ?? null
   const source = state.loadSvgSprite?.(path) ?? null
-  const parsed = source === null ? null : parseSprite(source)
-  state.sprites.set(path, parsed)
-  return parsed
-}
-
-function parseSprite(source: string): Document | null {
-  try {
-    const parsed = new DOMParser().parseFromString(source, 'image/svg+xml')
-    return parsed.documentElement?.localName === 'svg' ? parsed : null
-  } catch (_err) {
-    // A malformed sprite file resolves nothing; its refs are reported as unresolved.
-    return null
+  let root: Element | null = null
+  if (source !== null) {
+    try {
+      const parsed = new DOMParser().parseFromString(source, 'image/svg+xml')
+      root = parsed.documentElement?.localName === 'svg' ? parsed.documentElement : null
+    } catch (_err) {
+      // A malformed sprite file resolves nothing; its refs are reported as unresolved.
+      root = null
+    }
   }
+  state.sprites.set(path, root)
+  return root
 }
 
-/** The element with this id in a source document; the first one wins, as in a browser. */
-function lookup(source: Document, id: string, state: InlineState): Element | null {
+/** The element with this id in a source; the first one wins, as in a browser. */
+function lookup(source: Element, id: string, state: InlineState): Element | null {
   let index = state.indexes.get(source)
   if (!index) {
     index = new Map()
@@ -208,16 +248,6 @@ function lookup(source: Document, id: string, state: InlineState): Element | nul
     state.indexes.set(source, index)
   }
   return index.get(id) ?? null
-}
-
-/** Elements in a subtree, counted once per source element. */
-function sizeOf(el: Element, state: InlineState): number {
-  let size = state.sizes.get(el)
-  if (size === undefined) {
-    size = 1 + el.querySelectorAll('*').length
-    state.sizes.set(el, size)
-  }
-  return size
 }
 
 function referenceOf(el: Element): string {
@@ -233,36 +263,95 @@ function decodeFragment(fragment: string): string {
   }
 }
 
-function copyForUse(doc: Document, use: Element, target: Element): Element {
+/**
+ * Clone `node` into the page document, charging one unit per node and per
+ * attribute and collecting what `expandUse` needs (rule 3). Returns `null`
+ * when the work runs out; comments and other node types are skipped
+ * (`undefined`).
+ */
+function cloneTracked(node: Node, out: Collected, state: InlineState): Node | null | undefined {
+  if (node.nodeType === TEXT_NODE) {
+    return charge(state, 1) ? state.doc.createTextNode(node.textContent ?? '') : null
+  }
+  if (node.nodeType !== ELEMENT_NODE) return undefined
+  const el = node as Element
+  if (!charge(state, 1 + el.attributes.length)) return null
+  const copy = state.doc.createElementNS(el.namespaceURI, el.localName)
+  for (const attr of Array.from(el.attributes)) {
+    if (attr.namespaceURI) copy.setAttributeNS(attr.namespaceURI, attr.name, attr.value)
+    else copy.setAttribute(attr.name, attr.value)
+  }
+  recordElement(copy, out)
+  for (const child of Array.from(el.childNodes)) {
+    const childCopy = cloneTracked(child, out, state)
+    if (childCopy === null) return null
+    if (childCopy) copy.appendChild(childCopy)
+  }
+  if (copy.localName === 'style') collectUrlReferences(copy.textContent ?? '', out)
+  return copy
+}
+
+/** Note what a freshly cloned element contributes: nested uses, ids, references. */
+function recordElement(el: Element, out: Collected): void {
+  out.elements.push(el)
+  if (el.localName === 'use') out.uses.push(el)
+  if (el.localName === 'style') out.styles.push(el)
+  if (el.hasAttribute('id')) out.idOwners.push(el)
+  for (const attr of Array.from(el.attributes)) collectUrlReferences(attr.value, out)
+  const hrefKind = HREF_KIND[el.localName]
+  const href = hrefKind ? referenceOf(el) : ''
+  if (href.startsWith('#')) out.references.push([decodeFragment(href.slice(1)), hrefKind!])
+}
+
+function collectUrlReferences(text: string, out: Collected): void {
+  if (!text.includes('url(')) return
+  for (const match of text.matchAll(URL_REFERENCE)) out.references.push([decodeFragment(match[2]!), 'definition'])
+}
+
+function cloneChildrenInto(parent: Element, from: Element, out: Collected, state: InlineState): boolean {
+  for (const child of Array.from(from.childNodes)) {
+    const copy = cloneTracked(child, out, state)
+    if (copy === null) return false
+    if (copy) parent.appendChild(copy)
+  }
+  return true
+}
+
+function copyForUse(use: Element, target: Element, out: Collected, state: InlineState): Element | null {
+  if (!charge(state, 1 + use.attributes.length + target.attributes.length)) return null
   if (target.localName === 'symbol') {
-    const box = doc.createElementNS(SVG_NS, 'svg')
+    const box = state.doc.createElementNS(SVG_NS, 'svg')
     // The symbol's own attributes (its box, and presentation such as `fill`)
     // apply to what it draws; the `<use>`'s attributes then size and style it.
     for (const attr of Array.from(target.attributes)) {
       if (attr.name !== 'id') box.setAttribute(attr.name, attr.value)
     }
+    for (const attr of Array.from(target.attributes)) collectUrlReferences(attr.value, out)
     copyUseAttributes(use, box, () => true)
-    for (const child of Array.from(target.childNodes)) box.appendChild(doc.importNode(child, true))
-    return box
+    return cloneChildrenInto(box, target, out, state) ? box : null
   }
 
-  const group = doc.createElementNS(SVG_NS, 'g')
+  const group = state.doc.createElementNS(SVG_NS, 'g')
   copyUseAttributes(use, group, (name) => !USE_GEOMETRY_ATTRIBUTES.has(name))
   appendTransform(group, offsetOf(use))
-  const copy = doc.importNode(target, true) as Element
-  copy.removeAttribute('id')
+  const copy = cloneTracked(target, out, state)
+  if (!copy) return null
+  ;(copy as Element).removeAttribute('id')
+  out.idOwners = out.idOwners.filter((owner) => owner !== copy)
   group.appendChild(copy)
   return group
 }
 
 /**
- * A copy for a `<use>` inside `<clipPath>` / `<mask>`: the shape itself, with
- * the `<use>`'s transform and offset in front of its own and the `<use>`'s
+ * A copy for a `<use>` inside `<clipPath>`: the shape itself, with the
+ * `<use>`'s transform and offset in front of its own and the `<use>`'s
  * presentation attributes where the shape sets none.
  */
-function copyShapeForUse(doc: Document, use: Element, target: Element): Element {
-  const copy = doc.importNode(target, true) as Element
+function copyShapeForUse(use: Element, target: Element, out: Collected, state: InlineState): Element | null {
+  const copy = cloneTracked(target, out, state) as Element | null | undefined
+  if (!copy || !charge(state, use.attributes.length)) return null
   copy.removeAttribute('id')
+  out.idOwners = out.idOwners.filter((owner) => owner !== copy)
   const own = copy.getAttribute('transform')
   copy.removeAttribute('transform')
   appendTransform(copy, use.getAttribute('transform'))
@@ -296,67 +385,46 @@ function copyUseAttributes(use: Element, to: Element, keep: (name: string) => bo
 }
 
 /**
+ * Copy into `copy` (as `<defs>`) every definition it references that lives
+ * elsewhere in `source`: a symbol's gradient usually sits in the sprite's
+ * top-level `<defs>`. A worklist (rule 3): the references of each appended
+ * definition were collected while cloning it and join the queue, so nothing
+ * is scanned twice. Returns false when the work runs out.
+ */
+function copyReferencedDefinitions(copy: Element, source: Element, out: Collected, state: InlineState): boolean {
+  const present = new Set(out.idOwners.map((owner) => owner.getAttribute('id')!))
+  const queue = [...out.references]
+  let defs: Element | null = null
+  while (queue.length > 0) {
+    const [id, kind] = queue.pop()!
+    if (present.has(id)) continue
+    present.add(id)
+    if (!charge(state, 1)) return false
+    const definition = lookup(source, id, state)
+    if (!definition || definition.namespaceURI !== SVG_NS || !REFERENCE_KINDS[kind].has(definition.localName)) continue
+    const before = out.references.length
+    const clone = cloneTracked(definition, out, state)
+    if (!clone) return false
+    defs ??= copy.insertBefore(state.doc.createElementNS(SVG_NS, 'defs'), copy.firstChild)
+    defs.appendChild(clone)
+    queue.push(...out.references.slice(before))
+  }
+  return true
+}
+
+/**
  * A `<style>` inside a symbol is page CSS once the copy lands. Keep it in the
  * first copy of an external symbol and drop it from every other copy; a
  * same-page symbol's `<style>` is on the page already.
  */
-function keepStyleOnce(copy: Element, key: string, samePage: boolean, state: InlineState): void {
-  const styles = Array.from(copy.querySelectorAll('style'))
-  if (styles.length === 0) return
+function keepStyleOnce(out: Collected, key: string, samePage: boolean, state: InlineState): void {
+  if (out.styles.length === 0) return
   if (!samePage && !state.styledSymbols.has(key)) {
     state.styledSymbols.add(key)
     return
   }
-  for (const style of styles) style.remove()
-}
-
-/**
- * Definition ids the copy points at: `url(#id)` in any attribute (fill,
- * stroke, clip-path, mask, marker, filter, style), a gradient / pattern /
- * filter template `href`, and a `<textPath>`'s path. Each maps to the element
- * kinds it may name, so an `<a href="#pricing">` never pulls page markup in.
- */
-function referencedDefinitions(root: Element): Map<string, 'definition' | 'path'> {
-  const ids = new Map<string, 'definition' | 'path'>()
-  for (const el of [root, ...Array.from(root.querySelectorAll('*'))]) {
-    for (const attr of Array.from(el.attributes)) {
-      for (const match of attr.value.matchAll(URL_REFERENCE)) ids.set(decodeFragment(match[2]!), 'definition')
-    }
-    const href = referenceOf(el)
-    if (!href.startsWith('#')) continue
-    if (TEMPLATE_HREF_KINDS.has(el.localName)) ids.set(decodeFragment(href.slice(1)), 'definition')
-    else if (el.localName === 'textPath') ids.set(decodeFragment(href.slice(1)), 'path')
-  }
-  return ids
-}
-
-/**
- * Copy into `copy` (as `<defs>`) every definition it references that lives
- * elsewhere in `source`: a symbol's gradient usually sits in the sprite's
- * top-level `<defs>`, which a copy of the symbol alone would leave behind.
- * Sizes are checked before cloning; returns false when the budget runs out.
- */
-function copyReferencedDefinitions(copy: Element, source: Document, state: InlineState): boolean {
-  let defs: Element | null = null
-  const seen = new Set<string>()
-  const local = new Set(Array.from(copy.querySelectorAll('[id]'), (el) => el.getAttribute('id')!))
-  for (;;) {
-    const missing = [...referencedDefinitions(copy)].filter(([id]) => !seen.has(id) && !local.has(id))
-    if (missing.length === 0) return true
-    for (const [id, kind] of missing) {
-      seen.add(id)
-      const definition = lookup(source, id, state)
-      if (!definition) continue
-      const allowed = kind === 'path' ? definition.localName === 'path' : DEFINITION_KINDS.has(definition.localName)
-      if (!allowed) continue
-      const size = sizeOf(definition, state)
-      if (size > state.budget) return false
-      state.budget -= size
-      defs ??= copy.insertBefore(state.doc.createElementNS(SVG_NS, 'defs'), copy.firstChild)
-      defs.appendChild(state.doc.importNode(definition, true))
-      local.add(id)
-    }
-  }
+  for (const style of out.styles) style.remove()
+  out.styles = []
 }
 
 /** A short random suffix; ids only need to differ from every other id on the page. */
@@ -368,44 +436,53 @@ function randomSuffix(): string {
 
 /**
  * Give every id in the copy a random suffix no id on the page already has,
- * and point the copy's own references (`url()`, non-`<use>` `href`, SMIL
- * `begin` / `end` syncbases) at the new names. `<use>` hrefs keep their
- * original names: they are resolved against the source document.
+ * and point the copy's own references at the new names: `url()`, non-`<use>`
+ * `href`, SMIL `begin` / `end` syncbases, ARIA id lists and a kept `<style>`.
+ * `<use>` hrefs keep their original names: they resolve against the source.
  */
-function makeIdsUnique(copy: Element, state: InlineState): void {
-  const owners = Array.from(copy.querySelectorAll('[id]'))
-  if (owners.length === 0) return
+function makeIdsUnique(out: Collected, state: InlineState): void {
+  if (out.idOwners.length === 0) return
   let suffix = randomSuffix()
-  while (owners.some((owner) => state.takenIds.has(`${owner.getAttribute('id')}-${suffix}`))) suffix = randomSuffix()
+  while (out.idOwners.some((owner) => state.takenIds.has(`${owner.getAttribute('id')}-${suffix}`))) suffix = randomSuffix()
   const renamed = new Map<string, string>()
-  for (const owner of owners) {
+  for (const owner of out.idOwners) {
     const id = owner.getAttribute('id')!
     const next = `${id}-${suffix}`
     renamed.set(id, next)
     state.takenIds.add(next)
     owner.setAttribute('id', next)
   }
-  for (const el of [copy, ...Array.from(copy.querySelectorAll('*'))]) {
+  const renameUrls = (value: string) => value.replace(URL_REFERENCE, (whole, quote: string, id: string) => {
+    const next = renamed.get(decodeFragment(id))
+    return next ? `url(${quote}#${next}${quote})` : whole
+  })
+  for (const el of out.elements) {
     for (const attr of Array.from(el.attributes)) {
       if (el.localName === 'use' && USE_REFERENCE_ATTRIBUTES.has(attr.name)) continue
-      let value = attr.value.replace(URL_REFERENCE, (whole, quote: string, id: string) => {
-        const next = renamed.get(decodeFragment(id))
-        return next ? `url(${quote}#${next}${quote})` : whole
-      })
+      let value = renameUrls(attr.value)
       if (USE_REFERENCE_ATTRIBUTES.has(attr.name) && value.startsWith('#')) {
         value = `#${renamed.get(decodeFragment(value.slice(1))) ?? value.slice(1)}`
       }
       if (SMIL_TIMING_ATTRIBUTES.has(attr.name)) value = renameSyncbases(value, renamed)
+      if (ID_LIST_ATTRIBUTES.has(attr.name)) value = value.split(/\s+/).map((id) => renamed.get(id) ?? id).join(' ')
       if (value !== attr.value) el.setAttribute(attr.name, value)
     }
   }
+  for (const style of out.styles) {
+    style.textContent = renameUrls(style.textContent ?? '')
+      .replace(/#(-?[A-Za-z_][\w-]*)/g, (whole, id: string) => (renamed.has(id) ? `#${renamed.get(id)}` : whole))
+  }
 }
 
-/** `a1.end; dot.click+1s` → each `<id>.` that was renamed, renamed. */
+/**
+ * `a1.end; dot.click+1s` → each `<id>.` that was renamed, renamed. Only an
+ * id followed by an event or syncbase name (a letter after the dot) counts,
+ * so a clock value such as `0.5s` is never read as id `0`.
+ */
 function renameSyncbases(value: string, renamed: ReadonlyMap<string, string>): string {
   return value
     .split(';')
-    .map((part) => part.replace(/^(\s*)([^.\s;]+)\./, (whole, lead: string, id: string) => {
+    .map((part) => part.replace(/^(\s*)([^.\s;]+)\.(?=[A-Za-z])/, (whole, lead: string, id: string) => {
       const next = renamed.get(id)
       return next ? `${lead}${next}.` : whole
     }))
