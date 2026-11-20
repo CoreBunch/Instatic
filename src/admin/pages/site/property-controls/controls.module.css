@@ -395,7 +395,7 @@
     display: grid;
     align-self: center;
     /* The centered glyph already has an inset inside its 16px button. */
-    margin-inline-end: calc(1px - var(--space-3xs));
+    margin-inline-end: calc(-0.75 * var(--space-3xs));
     opacity: 0;
 }
 :where(span:hover, span:focus-within) > span > .numericSteps {
