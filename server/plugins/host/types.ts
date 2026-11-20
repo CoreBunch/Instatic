@@ -48,6 +48,12 @@ interface HostHookFilterEntry {
 interface HostLoopSourceEntry {
   pluginId: string
   sourceId: string
+  /**
+   * New on every registration, so on every load of the plugin: an editor
+   * that holds sample items for the source can tell they came from an
+   * earlier load (an upgrade, a restart) and ask again.
+   */
+  revision: string
 }
 
 interface HostMediaAdapterEntry {

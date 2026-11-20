@@ -510,6 +510,18 @@ globalThis.__buildApi = function buildApi() {
           assertTargetPermission('cms.members.invite')
           return call('cms.members.invite', [input])
         },
+        // api.cms.members.ensure({ email, tags? }) → { member, created, confirmed }; sends nothing
+        ensure: function (input: unknown) {
+          assertTargetPermission('cms.members.ensure')
+          // The answer is the member's record.
+          assertPermission('members.read')
+          return call('cms.members.ensure', [input])
+        },
+        // api.cms.members.emailStatus() → { canEmail, reasons }
+        emailStatus: function () {
+          assertTargetPermission('cms.members.emailStatus')
+          return call('cms.members.emailStatus', [])
+        },
         tags: {
           // The tag's source is this plugin; `revoke` withdraws only this plugin's grant.
           grant: function (memberId: unknown, tag: unknown, options?: unknown) {

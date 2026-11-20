@@ -7,10 +7,10 @@ describe('publishCmsDraft', () => {
 
     const result = await publishCmsDraft(async (input, init) => {
       calls.push({ input, init })
-      return new Response(JSON.stringify({ publishedPages: 2 }), { status: 200 })
+      return new Response(JSON.stringify({ publishedPages: 2, warnings: [] }), { status: 200 })
     })
 
-    expect(result).toEqual({ publishedPages: 2 })
+    expect(result).toEqual({ publishedPages: 2, warnings: [] })
     expect(calls[0]).toMatchObject({
       input: '/admin/api/cms/publish',
       init: { method: 'POST', credentials: 'include' },

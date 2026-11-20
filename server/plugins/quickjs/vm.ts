@@ -39,6 +39,7 @@ import { newQuickJSWASMModuleFromVariant, newVariant } from 'quickjs-emscripten-
 import { BOOTSTRAP_SOURCE } from './bootstrap/index'
 import {
   DEFAULT_EVAL_TIMEOUT_MS,
+  LOOP_PREVIEW_TIMEOUT_MS,
   DEFAULT_MEMORY_LIMIT_BYTES,
   DEFAULT_PLUGIN_FETCH_TIMEOUT_MS,
   MIN_PLUGIN_FETCH_WINDOW_MS,
@@ -488,7 +489,7 @@ export async function createPluginVm(args: {
           ctx,
           dispatcher('__runLoopPreview'),
           [sourceId, JSON.stringify(loopCtx ?? null)],
-          callLimits,
+          { evalTimeoutMs: LOOP_PREVIEW_TIMEOUT_MS, budgetMs: LOOP_PREVIEW_TIMEOUT_MS },
         )
         const parsed = JSON.parse(json) as unknown
         return Array.isArray(parsed) ? parsed : []

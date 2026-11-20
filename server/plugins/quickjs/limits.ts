@@ -73,6 +73,15 @@ export function fetchHandlingMarginMs(budgetMs: number): number {
 export const MIN_PLUGIN_FETCH_WINDOW_MS = 250
 
 /**
+ * 1 second for a loop source's `preview()`. A preview returns invented sample
+ * items and makes no host call, so it needs no more. The limit is short on
+ * purpose: a preview runs in the plugin's one worker, ahead of whatever
+ * publish or visitor traffic is queued behind it, at the request of anyone
+ * who can open the editor.
+ */
+export const LOOP_PREVIEW_TIMEOUT_MS = 1_000
+
+/**
  * 2 second wall-clock deadline per module-pack eval call. Shorter than the
  * full-plugin budget because canvas `render()` / `preview()` functions are
  * simple synchronous transforms with no host I/O — 2 s is still generous.

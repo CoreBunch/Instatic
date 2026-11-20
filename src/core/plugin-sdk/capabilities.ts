@@ -56,8 +56,8 @@ export const PLUGIN_CAPABILITIES: PluginCapability[] = [
   },
   {
     permission: 'members.write',
-    label: 'Invite site members',
-    description: 'Allows the plugin to create site members by invitation. The site emails the person a link to choose a password.',
+    label: 'Create and invite site members',
+    description: 'Allows the plugin to create site members: by invitation, where the site emails the person a link to choose a password, or directly, with no email, for an address it already has (a buyer at checkout, say). A member created directly has no password until they sign in with an emailed link. The plugin can also check whether the site is able to send those emails.',
     risk: 'high',
     surfaces: ['server', 'cms'],
   },

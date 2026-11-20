@@ -29,6 +29,7 @@ const EVENT_LABEL: Record<string, string> = {
   email_changed: 'Changed their email address',
   profile_updated: 'Updated their profile',
   deleted: 'Account deleted',
+  created_by_plugin: 'Given an account by a plugin',
   invited: 'Invited by an administrator',
   suspended: 'Suspended by an administrator',
   unsuspended: 'Restored by an administrator',

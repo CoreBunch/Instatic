@@ -44,18 +44,40 @@ const ErrorEnvelopeSchema = Type.Object(
  * The single error type thrown for every failed HTTP call. Carries the HTTP
  * status so UI can branch on it (e.g. 403 → "no access", 404 → "not found")
  * and the envelope's machine-readable `code` when the server sent one
- * (e.g. `branch_not_found`, which the branch store keys on).
+ * (e.g. `branch_not_found`, which the branch store keys on). When the server
+ * said how long to wait before asking again (`Retry-After`, in seconds), that
+ * is `retryAfterMs`.
  */
 export class ApiError extends Error {
   readonly status: number
   readonly code: string | null
+  readonly retryAfterMs: number | null
 
-  constructor(message: string, status: number, code: string | null = null) {
+  constructor(
+    message: string,
+    status: number,
+    code: string | null = null,
+    retryAfterMs: number | null = null,
+  ) {
     super(message)
     this.name = 'ApiError'
     this.status = status
     this.code = code
+    this.retryAfterMs = retryAfterMs
   }
+}
+
+/** The longest wait a `Retry-After` is taken to mean: a day. */
+const MAX_RETRY_AFTER_MS = 24 * 60 * 60 * 1000
+
+/**
+ * `Retry-After` as milliseconds, when it is a whole number of seconds. Capped,
+ * so a value from a confused server can never be a number a timer cannot hold.
+ */
+function retryAfterMs(res: Response): number | null {
+  const seconds = Number(res.headers.get('retry-after') ?? '')
+  if (!Number.isSafeInteger(seconds) || seconds <= 0) return null
+  return Math.min(seconds * 1000, MAX_RETRY_AFTER_MS)
 }
 
 /** What the transport knew about the request that failed. */
@@ -147,7 +169,7 @@ export async function responseErrorMessage(res: Response, fallback: string): Pro
 export async function assertOk(res: Response, fallback: string): Promise<void> {
   if (!res.ok) {
     const envelope = await responseErrorEnvelope(res, fallback)
-    throw notifyApiError(new ApiError(envelope.message, res.status, envelope.code), { headers: null })
+    throw notifyApiError(new ApiError(envelope.message, res.status, envelope.code, retryAfterMs(res)), { headers: null })
   }
 }
 
@@ -164,7 +186,7 @@ export async function readEnvelope<T extends TSchema>(
 ): Promise<Static<T>> {
   if (!res.ok) {
     const envelope = await responseErrorEnvelope(res, fallback)
-    throw notifyApiError(new ApiError(envelope.message, res.status, envelope.code), { headers: null })
+    throw notifyApiError(new ApiError(envelope.message, res.status, envelope.code, retryAfterMs(res)), { headers: null })
   }
   return parseJsonResponse(res, schema)
 }
@@ -278,7 +300,7 @@ async function requestResponse(
 
   if (!res.ok) {
     const envelope = await responseErrorEnvelope(res, fallbackMessage ?? `Request failed: ${res.status}`)
-    throw notifyApiError(new ApiError(envelope.message, res.status, envelope.code), { headers: finalHeaders })
+    throw notifyApiError(new ApiError(envelope.message, res.status, envelope.code, retryAfterMs(res)), { headers: finalHeaders })
   }
   return res
 }

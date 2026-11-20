@@ -15,6 +15,7 @@
  */
 import type { DbClient } from '../db/client'
 import type { MemberPageKey, MemberPagePaths } from '@core/members'
+import type { PluginMemberEmailBlocker } from '@core/plugin-sdk'
 import { getErrorMessage } from '@core/utils/errorMessage'
 import { clientIp, configuredPublicOrigin } from '../auth/security'
 import { getMailDefaults } from '../mail/defaults'
@@ -22,6 +23,7 @@ import { recordMail } from '../mail/activity'
 import { queueTemplateMail } from '../mail/delivery'
 import { mailDeliveryMode } from '../mail/send'
 import { MEMBER_MAIL_KEYS, type MemberMailKind } from './mailTemplates'
+import { getMemberPagePaths } from './pages'
 import { TOKEN_LIFETIME_MS, type MemberTokenKind } from './tokens'
 
 const LOOPBACK_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]'])
@@ -44,6 +46,33 @@ export function memberLinkOrigin(req: Request): string | null {
 export async function memberMailAvailable(db: DbClient, req: Request): Promise<boolean> {
   if (!memberLinkOrigin(req)) return false
   return mailDeliveryMode(await getMailDefaults(db)) !== 'off'
+}
+
+/**
+ * Why the site cannot email a member a link it starts itself (an invitation,
+ * a sign-in link). Plugins read these through `api.cms.members.emailStatus`,
+ * so the SDK's list is the one list.
+ */
+export type MemberEmailBlocker = PluginMemberEmailBlocker
+
+/**
+ * What stands between the site and emailing members links right now, with
+ * no request to take an address from (so only the configured public origin
+ * counts): outgoing email that really goes out, the invitation page, and a page for a sign-in
+ * link or a password reset. Empty when nothing does.
+ */
+export async function memberEmailBlockers(db: DbClient): Promise<MemberEmailBlocker[]> {
+  const blockers: MemberEmailBlocker[] = []
+  if (!configuredPublicOrigin()) blockers.push('public_address_missing')
+  // Capture (no connector outside production) keeps mail in the admin's
+  // Activity: nothing reaches the member, so it is not emailing them.
+  const mode = mailDeliveryMode(await getMailDefaults(db))
+  if (mode === 'off') blockers.push('mail_not_configured')
+  if (mode === 'capture') blockers.push('mail_captured_not_sent')
+  const pages = await getMemberPagePaths(db)
+  if (!memberLinkPage(pages, 'invite')) blockers.push('invite_page_missing')
+  if (!memberLinkPage(pages, 'magic') && !memberLinkPage(pages, 'reset')) blockers.push('sign_in_page_missing')
+  return blockers
 }
 
 const PAGE_FOR_KIND: Record<MemberTokenKind, MemberPageKey> = {

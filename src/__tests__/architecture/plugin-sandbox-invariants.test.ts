@@ -201,6 +201,8 @@ describe('plugin sandbox invariants', () => {
       'cms.media.registerUrlTransformer',
       'cms.media.registerVariantDelegate',
       'cms.media.upsert',
+      'cms.members.emailStatus',
+      'cms.members.ensure',
       'cms.members.get',
       'cms.members.invite',
       'cms.members.tags.grant',

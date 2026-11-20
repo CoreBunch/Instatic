@@ -165,6 +165,10 @@ export async function handleLoopRequest(
   if (source.kind === 'contextual') {
     return jsonResponse({ error: 'Contextual loops do not support infinite pagination' }, { status: 400 })
   }
+  // A remote descriptor exists only in the editor; the server holds the real source.
+  if (source.kind === 'remote') {
+    return jsonResponse({ error: 'Source not registered' }, { status: 404 })
+  }
 
   // Fetch the requested page slice.
   // A per-visitor source is told about this visitor exactly as the fragment

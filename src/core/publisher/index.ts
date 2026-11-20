@@ -8,7 +8,7 @@
 export { publishPage } from './render'
 export type { DocumentMetaOverride, PublishedRuntimePackageImportmap } from './render'
 
-export { renderNode, resolveSpecialRenderer, getSpecialRendererModuleIds } from './renderNode'
+export { isHiddenFromRender, renderNode, resolveSpecialRenderer, getSpecialRendererModuleIds } from './renderNode'
 
 export { collectHoleSubtreeModuleIds } from './holeSubtreeModules'
 export { subtreeDependsOnMember } from './dynamicDetection'

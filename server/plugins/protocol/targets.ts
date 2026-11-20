@@ -95,6 +95,8 @@ export const TARGET_PERMISSIONS = {
   'cms.content.republishAll': 'cms.content.publish',
   'cms.members.get': 'members.read',
   'cms.members.invite': 'members.write',
+  'cms.members.ensure': 'members.write',
+  'cms.members.emailStatus': 'members.write',
   'cms.members.tags.grant': 'members.tags',
   'cms.members.tags.revoke': 'members.tags',
   'cms.mail.send': 'mail.send',

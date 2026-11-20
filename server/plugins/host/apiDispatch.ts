@@ -74,6 +74,8 @@ import {
 import { handleMailSend, handleMailSendExternal, handleSitePublicUrl } from './handlers/mail'
 import { handleRateLimitTake } from './handlers/rateLimit'
 import {
+  handleMembersEmailStatus,
+  handleMembersEnsure,
   handleMembersGet,
   handleMembersInvite,
   handleMembersTagsGrant,
@@ -147,6 +149,8 @@ const apiHandlers = {
   'cms.content.republishAll': handleContentRepublishAll,
   'cms.members.get': handleMembersGet,
   'cms.members.invite': handleMembersInvite,
+  'cms.members.ensure': handleMembersEnsure,
+  'cms.members.emailStatus': handleMembersEmailStatus,
   'cms.members.tags.grant': handleMembersTagsGrant,
   'cms.members.tags.revoke': handleMembersTagsRevoke,
   'cms.mail.send': handleMailSend,
