@@ -467,6 +467,23 @@ describe('commitImportPlan — load order across imports', () => {
     useEditorStore.setState({ site: makeSite() } as Parameters<typeof useEditorStore.setState>[0])
   })
 
+  it('re-imports two distinct bundle paths that map to the same site filename', async () => {
+    const first = 'src/pages/about/app.js'
+    const second = 'src/pages/pricing/app.js'
+    const bundle = (paths: string[], version: string) => ({ files: {
+      ...modulePage('about', paths),
+      ...moduleFiles({ [first]: `console.info("about ${version}")`, [second]: `console.info("pricing ${version}")` }),
+    } })
+    await importBundle(bundle([first, second], 'v1'))
+    const ids = new Map(scriptFiles().map((file) => [file.content, file.id]))
+    await importBundle(bundle([second, first], 'v2'), overwriteEverything)
+    expect(scriptFiles()).toHaveLength(2)
+    for (const page of ['about', 'pricing']) {
+      expect(scriptFiles().find((file) => file.content === `console.info("${page} v2")`)?.id)
+        .toBe(ids.get(`console.info("${page} v1")`))
+    }
+  })
+
   it('slots a script new in this import between the replaced ones it sits between', async () => {
     await importBundle({ files: { ...pageLinking('about', ['a.js', 'c.js']), ...textFiles(['a.js', 'c.js']) } })
     await importBundle(

@@ -19,8 +19,8 @@ import { importSourceHash, importedSiteFilePath } from './siteFilePaths'
  * since the last import (`FileConflict.state`); only a file the bundle changed
  * and nobody edited defaults to Replace, so an edit made in Instatic is never
  * discarded by default.
- * Paths taken by a file of the other kind are left to the commit's unique-path
- * rule, as are collisions inside one import.
+ * Distinct bundle paths can normalize to the same site path. Use the stored
+ * source path to identify the right copy and reserve each match only once.
  */
 export function detectFileConflicts(
   site: SiteDocument,
@@ -28,24 +28,38 @@ export function detectFileConflicts(
   stylesheets: ImportStylesheet[],
 ): FileConflict[] {
   const existing = new Map<string, SiteFile>()
+  const bySource = new Map<string, SiteFile>()
   for (const file of site.files) {
-    if (file.type === 'script' || file.type === 'style') existing.set(`${file.type}:${file.path}`, file)
+    if (file.type !== 'script' && file.type !== 'style') continue
+    existing.set(`${file.type}:${file.path}`, file)
+    if (file.importRecord?.sourcePath) {
+      const key = `${file.type}:${file.importRecord.sourcePath}`
+      // Keep both creates another copy. Prefer the original on a later import.
+      if (!bySource.has(key)) bySource.set(key, file)
+    }
   }
   const conflicts: FileConflict[] = []
   const items = [
     ...scripts.map((item) => ({ kind: 'script' as const, item })),
     ...stylesheets.map((item) => ({ kind: 'style' as const, item })),
   ]
+  const claimed = new Set<string>()
   for (const { kind, item } of items) {
     const { path } = item
     const sitePath = importedSiteFilePath(path, kind)
-    const file = existing.get(`${kind}:${sitePath}`)
-    if (!file) continue
+    const occupant = existing.get(`${kind}:${sitePath}`)
+    // Prefer the requested destination, including a manually created file. An
+    // occupant from another source belongs to that source on later imports.
+    const matchesDestination = occupant && !claimed.has(occupant.id)
+      && (!occupant.importRecord?.sourcePath || occupant.importRecord.sourcePath === path)
+    const file = matchesDestination ? occupant : bySource.get(`${kind}:${path}`)
+    if (!file || claimed.has(file.id)) continue
+    claimed.add(file.id)
     const state = fileConflictState(file, item)
     conflicts.push({
       kind,
       path,
-      sitePath,
+      sitePath: file.path,
       existingFileId: file.id,
       state,
       defaultResolution: { action: state === 'changed' ? 'overwrite' : 'skip' },

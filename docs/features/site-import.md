@@ -381,7 +381,7 @@ Class rules still pass through `RuleConflict` first (the registry's unique-name 
 
 Pages are not reconciled this way: a second import of `about.html` is a slug conflict with the usual rename / overwrite / skip choice.
 
-**Scripts and kept stylesheets.** Every script and kept stylesheet an import writes carries an `importRecord` on its `SiteFile`: `sourceHash`, the hash of the file as the bundle delivered it (taken before asset URLs are rewritten; a module script's CDN package versions are hashed with it, `importSourceHash`), and `contentHash`, the hash of the content written. A later import whose file lands on an existing path of the same kind raises a `FileConflict` whose `state` reads that record:
+**Scripts and kept stylesheets.** Every script and kept stylesheet an import writes carries an `importRecord` on its `SiteFile`: `sourcePath`, the path in the bundle, `sourceHash`, the hash of the file as the bundle delivered it (taken before asset URLs are rewritten; a module script's CDN package versions are hashed with it, `importSourceHash`), and `contentHash`, the hash of the content written. Re-import matches the destination and recorded source path so that two bundle files normalized to the same filename keep separate site files, even if their load order changes. A matched file raises a `FileConflict` whose `state` reads that record:
 
 | `state` | Meaning | Default |
 |---|---|---|

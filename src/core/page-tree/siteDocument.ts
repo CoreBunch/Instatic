@@ -157,7 +157,11 @@ function parseImportRecord(raw: unknown): Pick<SiteFile, 'importRecord'> {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {}
   const r = raw as Record<string, unknown>
   if (typeof r.sourceHash !== 'string' || typeof r.contentHash !== 'string') return {}
-  return { importRecord: { sourceHash: r.sourceHash, contentHash: r.contentHash } }
+  return { importRecord: {
+    sourceHash: r.sourceHash,
+    contentHash: r.contentHash,
+    ...(typeof r.sourcePath === 'string' ? { sourcePath: r.sourcePath } : {}),
+  } }
 }
 
 const DEFAULT_PACKAGE_JSON: SitePackageJson = { dependencies: {}, devDependencies: {} }

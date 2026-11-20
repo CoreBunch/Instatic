@@ -30,8 +30,8 @@ export function importSourceHash(item: {
  * the bundle had it (`sourceHash`, taken before asset URLs were rewritten)
  * and of the content actually written.
  */
-export function siteFileImportRecord(sourceHash: string, writtenContent: string): NonNullable<SiteFile['importRecord']> {
-  return { sourceHash, contentHash: sha256Hex(writtenContent) }
+export function siteFileImportRecord(sourcePath: string, sourceHash: string, writtenContent: string): NonNullable<SiteFile['importRecord']> {
+  return { sourcePath, sourceHash, contentHash: sha256Hex(writtenContent) }
 }
 
 const FALLBACK = {

@@ -95,6 +95,7 @@ export const SiteFileSchema = Type.Object({
    * "someone edited it in Instatic" (`detectFileConflicts`).
    */
   importRecord: Type.Optional(Type.Object({
+    sourcePath: Type.Optional(Type.String()),
     sourceHash: Type.String(),
     contentHash: Type.String(),
   })),

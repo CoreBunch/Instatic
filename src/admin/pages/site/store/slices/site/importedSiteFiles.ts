@@ -114,7 +114,7 @@ function commitFiles<T extends ImportedFileItem>(
       path,
       type,
       content: item.content,
-      ...(item.sourceHash ? { importRecord: siteFileImportRecord(item.sourceHash, item.content) } : {}),
+      ...(item.sourceHash ? { importRecord: siteFileImportRecord(item.path, item.sourceHash, item.content) } : {}),
       createdAt: now,
       updatedAt: now,
     })
@@ -140,7 +140,7 @@ function ensureRuntime(site: Draft<SiteDocument>): void {
  * file's `importRecord`; the file keeps its load order. The importing pages
  * join the file's runtime scope. Both the persisted runtime and the live canvas mirror are updated.
  * A replacing script's npm dependencies are the caller's step
- * (`addImportedScriptDependencies`), as on the add path.
+ * (`replaceImportedScriptDependencies`).
  */
 export function reuseImportedFiles(
   site: Draft<SiteDocument>,
@@ -157,9 +157,9 @@ export function reuseImportedFiles(
         file.content = replacement.content
         file.updatedAt = Date.now()
       }
-      const record = replacement.sourceHash ? siteFileImportRecord(replacement.sourceHash, replacement.content) : undefined
+      const record = replacement.sourceHash ? siteFileImportRecord(replacement.path, replacement.sourceHash, replacement.content) : undefined
       // Writing an identical record would still show as a change in branch review.
-      if (record && (record.sourceHash !== file.importRecord?.sourceHash || record.contentHash !== file.importRecord?.contentHash)) {
+      if (record && (record.sourcePath !== file.importRecord?.sourcePath || record.sourceHash !== file.importRecord?.sourceHash || record.contentHash !== file.importRecord?.contentHash)) {
         file.importRecord = record
       }
     }

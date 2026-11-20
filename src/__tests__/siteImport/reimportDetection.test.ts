@@ -116,7 +116,7 @@ describe('detectConflicts — site files already present', () => {
         path: 'js/app.js',
         type: 'script' as const,
         content,
-        importRecord: siteFileImportRecord(importSourceHash({ content: 'v1' }), 'v1'),
+        importRecord: siteFileImportRecord('js/app.js', importSourceHash({ content: 'v1' }), 'v1'),
         createdAt: 1,
         updatedAt: 1,
       }],
@@ -184,6 +184,8 @@ describe('parseSiteDocument — a site file import record', () => {
   it('keeps a well-formed record and drops a malformed one', () => {
     expect(parseSiteDocument(shell({ sourceHash: 'a', contentHash: 'b' })).files[0]!.importRecord)
       .toEqual({ sourceHash: 'a', contentHash: 'b' })
+    const record = { sourcePath: 'src/pages/about/app.js', sourceHash: 'a', contentHash: 'b' }
+    expect(parseSiteDocument(shell(record)).files[0]!.importRecord).toEqual(record)
     expect(parseSiteDocument(shell({ sourceHash: 1 })).files[0]!.importRecord).toBeUndefined()
   })
 })
