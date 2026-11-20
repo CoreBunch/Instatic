@@ -10,13 +10,18 @@
  * page the way the publisher does (`walkRenderTree`), so a hidden loop, a
  * loop under a hidden parent, a node no longer reachable from the page root
  * and a Visual Component no page uses are all left out, and a loop inside a
- * Visual Component is reported under the page that uses it.
+ * Visual Component counts for each page that uses it.
+ *
+ * There is one warning per missing source, with how many pages it affects
+ * and the first few of them by name: a component used on hundreds of pages
+ * is one line, and cannot crowd a second missing source out of the list.
  */
 // Registers the built-in sources: without them every loop would look unprovided.
 import '@core/loops/sources'
 import { loopSourceRegistry } from '@core/loops'
 import type { SiteDocument } from '@core/page-tree'
 import {
+  CMS_PUBLISH_WARNING_PAGES_NAMED,
   CMS_PUBLISH_WARNINGS_LISTED,
   type CmsPublishWarning,
 } from '@core/persistence/responseSchemas'
@@ -32,13 +37,13 @@ export interface PublishWarnings {
 const NONE: PublishWarnings = { warnings: [], warningsTotal: 0 }
 
 /**
- * One warning per page and missing source, for the pages of a site that was
- * just published. Never throws: the publish is committed by now, and a
- * failure to describe it must not make it look failed.
+ * One warning per missing source, for the pages of a site that was just
+ * published. Never throws: the publish is committed by now, and a failure to
+ * describe it must not make it look failed.
  */
 export function unavailableLoopSourceWarnings(site: SiteDocument): PublishWarnings {
   try {
-    const all: CmsPublishWarning[] = []
+    const pagesBySource = new Map<string, string[]>()
     for (const page of site.pages) {
       const missing = new Set<string>()
       for (const loop of collectLoopNodes(page, site)) {
@@ -46,9 +51,17 @@ export function unavailableLoopSourceWarnings(site: SiteDocument): PublishWarnin
         if (sourceId && !loopSourceRegistry.has(sourceId)) missing.add(sourceId)
       }
       for (const sourceId of missing) {
-        all.push({ kind: 'loop-source-unavailable', page: page.title, sourceId })
+        const pages = pagesBySource.get(sourceId)
+        if (pages) pages.push(page.title)
+        else pagesBySource.set(sourceId, [page.title])
       }
     }
+    const all: CmsPublishWarning[] = [...pagesBySource].map(([sourceId, pages]) => ({
+      kind: 'loop-source-unavailable',
+      sourceId,
+      pages: pages.slice(0, CMS_PUBLISH_WARNING_PAGES_NAMED),
+      pageCount: pages.length,
+    }))
     return { warnings: all.slice(0, CMS_PUBLISH_WARNINGS_LISTED), warningsTotal: all.length }
   } catch (err) {
     console.error('[publish] could not check the published loops for missing sources:', err)

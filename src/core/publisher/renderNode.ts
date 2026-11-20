@@ -295,6 +295,16 @@ export function resolveSpecialRenderer(
  *
  * @returns HTML string for this node and all its descendants
  */
+/**
+ * Whether a node handed to `renderNode` emits nothing, itself and everything
+ * under it: the author hid it. The one rule both the renderer and the
+ * server's pre-render walk (`walkRenderTree`) read, so what is prefetched is
+ * what is rendered.
+ */
+export function isHiddenFromRender(node: { hidden?: boolean }): boolean {
+  return node.hidden === true
+}
+
 export function renderNode(
   nodeId: string,
   config: RenderConfig,
@@ -302,7 +312,7 @@ export function renderNode(
 ): string {
   const node = config.page.nodes[nodeId]
   if (!node) return ''
-  if (node.hidden) return ''
+  if (isHiddenFromRender(node)) return ''
 
   const def = config.registry.get(node.moduleId)
   if (!def) {

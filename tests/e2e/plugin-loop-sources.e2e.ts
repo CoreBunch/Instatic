@@ -282,8 +282,8 @@ test('a plugin loop source is picked, previewed and published from the editor (S
       // The toast is watched for while the publish runs: it is gone again by
       // the time `publishDraft` has finished waiting for a step-up prompt.
       const warned = (async () => {
-        await expect(page.getByText('Published, with an empty list')).toBeVisible({ timeout: 30_000 })
-        await expect(page.getByText(`“${sourceId}” on the page ${pageName}`, { exact: false })).toBeVisible()
+        await expect(page.getByText('Published, but a loop source is not available')).toBeVisible({ timeout: 30_000 })
+        await expect(page.getByText(`“${sourceId}” (on ${pageName})`, { exact: false })).toBeVisible()
       })()
       await Promise.all([warned, publishDraft(page)])
       // The canvas has caught up too.

@@ -410,7 +410,7 @@ describe('plugin loop sources for the editor', () => {
     const disabled = await h.cms(`/admin/api/cms/plugins/${PLUGIN_ID}`, { method: 'PATCH', cookie: owner, json: { enabled: false } })
     expect(disabled.status).toBe(200)
     expect(await publish()).toMatchObject({
-      warnings: [{ kind: 'loop-source-unavailable', page: 'Shop', sourceId: 'acme.shop.offers' }],
+      warnings: [{ kind: 'loop-source-unavailable', sourceId: 'acme.shop.offers', pages: ['Shop'], pageCount: 1 }],
       warningsTotal: 1,
     })
   })

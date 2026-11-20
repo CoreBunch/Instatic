@@ -134,6 +134,10 @@ describe('usePluginLoopSources', () => {
 
     expect(previewRequests).toBe(1)
     expect(staleEvents).toBe(1)
+    // The fetch follows a moment later, so refusals close together share it.
+    expect(listRequests).toBe(1)
+    await act(async () => { jest.advanceTimersByTime(100) })
+    await settle()
     expect(listRequests).toBe(2)
     expect(loopSourceRegistry.has(OFFERS)).toBe(false)
 
@@ -146,6 +150,21 @@ describe('usePluginLoopSources', () => {
     expect(listRequests).toBe(3)
     expect(loopSourceRegistry.has(OFFERS)).toBe(true)
     await act(async () => { jest.advanceTimersByTime(60_000) })
+    await settle()
+    expect(listRequests).toBe(3)
+  })
+
+  it('fetches the list once when every loop of a page is refused at once', async () => {
+    renderHook(() => usePluginLoopSources())
+    await settle()
+    act(() => {
+      for (let i = 0; i < 12; i++) window.dispatchEvent(new Event(LOOP_SOURCES_STALE_EVENT))
+    })
+    await act(async () => { jest.advanceTimersByTime(100) })
+    await settle()
+    expect(listRequests).toBe(2)
+    // And once more shortly after, not twelve times.
+    await act(async () => { jest.advanceTimersByTime(2_000) })
     await settle()
     expect(listRequests).toBe(3)
   })

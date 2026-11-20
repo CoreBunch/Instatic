@@ -11,8 +11,8 @@
  *   - the tab becomes visible again;
  *   - a preview was refused because nobody provides the source any more, the
  *     author pressed Publish, or a publish warned of a loop without a source
- *     (`LOOP_SOURCES_STALE_EVENT`). After that event the list is fetched once
- *     more two seconds later.
+ *     (`LOOP_SOURCES_STALE_EVENT`). Events close together share one fetch,
+ *     and the list is fetched once more two seconds later.
  *
  * Nothing is pushed from the server. A plugin enabled or disabled in another
  * tab, or by someone else, shows up here when the author comes back to this
@@ -33,6 +33,8 @@ import { syncRemoteLoopPreviews } from '@site/canvas/remoteLoopPreviews'
 
 /** How long after a refused preview the list is fetched a second time. */
 const SECOND_LOOK_MS = 2_000
+/** Refusals this close together (every loop of a page at once) share one fetch. */
+const STALE_GATHER_MS = 100
 
 export function usePluginLoopSources(): void {
   // Answers can arrive out of order; only the latest request may write.
@@ -41,6 +43,7 @@ export function usePluginLoopSources(): void {
   useEffect(() => {
     let cancelled = false
     let secondLook: ReturnType<typeof setTimeout> | null = null
+    let gathering: ReturnType<typeof setTimeout> | null = null
 
     function refresh() {
       latestRequest.current += 1
@@ -68,12 +71,16 @@ export function usePluginLoopSources(): void {
     // whose worker restarted registers its sources again right away. So the
     // list is fetched now, and once more shortly after.
     function refreshTwice() {
-      refresh()
-      if (secondLook) clearTimeout(secondLook)
-      secondLook = setTimeout(() => {
-        secondLook = null
+      if (gathering) return
+      gathering = setTimeout(() => {
+        gathering = null
         refresh()
-      }, SECOND_LOOK_MS)
+        if (secondLook) clearTimeout(secondLook)
+        secondLook = setTimeout(() => {
+          secondLook = null
+          refresh()
+        }, SECOND_LOOK_MS)
+      }, STALE_GATHER_MS)
     }
 
     refresh()
@@ -83,6 +90,7 @@ export function usePluginLoopSources(): void {
     return () => {
       cancelled = true
       if (secondLook) clearTimeout(secondLook)
+      if (gathering) clearTimeout(gathering)
       window.removeEventListener(CMS_PLUGINS_CHANGED_EVENT, refresh)
       window.removeEventListener(LOOP_SOURCES_STALE_EVENT, refreshTwice)
       document.removeEventListener('visibilitychange', refreshWhenVisible)

@@ -14,6 +14,7 @@
 
 import { StepUpCancelledMessage } from '@admin/shared/StepUp'
 import { publishCmsDraft } from '@core/persistence'
+import { reportPublishWarnings } from '@site/toolbar/reportPublishWarnings'
 import { isOnMainBranch } from '@admin/state/branchStore'
 import type { Command } from '../types'
 
@@ -42,10 +43,7 @@ export function getEditorCommands(): Command[] {
       run: async (ctx) => {
         ctx.closeSpotlight()
         try {
-          const result = await ctx.runStepUp(() => publishCmsDraft())
-          if (result.warnings?.length) {
-            void import('@site/toolbar/publishWarnings').then((m) => m.showPublishWarnings(result))
-          }
+          void reportPublishWarnings(await ctx.runStepUp(() => publishCmsDraft()))
         } catch (err) {
           if (err instanceof Error && err.message === StepUpCancelledMessage) return
           console.error('[spotlight] publish failed:', err)

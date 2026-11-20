@@ -8,7 +8,7 @@
  */
 import { describe, expect, it } from 'bun:test'
 import type { Page, SiteDocument } from '@core/page-tree'
-import { CMS_PUBLISH_WARNINGS_LISTED } from '@core/persistence/responseSchemas'
+import { CMS_PUBLISH_WARNING_PAGES_NAMED, CMS_PUBLISH_WARNINGS_LISTED } from '@core/persistence/responseSchemas'
 import { unavailableLoopSourceWarnings } from '../../../server/publish/loopSourceWarnings'
 
 const GONE = 'acme.shop.offers'
@@ -39,12 +39,13 @@ function component(id: string, name: string, nodes: Node[]) {
 }
 
 describe('unavailableLoopSourceWarnings', () => {
-  it('names the page of a rendered loop whose source nobody provides, once per source', () => {
+  it('names a source nobody provides once, with the pages that render a loop on it', () => {
     const result = unavailableLoopSourceWarnings(site([
       page('Shop', [node('root', 'base.body', {}, ['a', 'b', 'c']), loop('a', GONE), loop('b', GONE), loop('c', 'site.pages')]),
+      page('Home', [node('root', 'base.body', {}, ['a']), loop('a', GONE)]),
     ]))
     expect(result).toEqual({
-      warnings: [{ kind: 'loop-source-unavailable', page: 'Shop', sourceId: GONE }],
+      warnings: [{ kind: 'loop-source-unavailable', sourceId: GONE, pages: ['Shop', 'Home'], pageCount: 2 }],
       warningsTotal: 1,
     })
   })
@@ -72,12 +73,25 @@ describe('unavailableLoopSourceWarnings', () => {
       ],
       [offers],
     ))
-    expect(result.warnings).toEqual([{ kind: 'loop-source-unavailable', page: 'Home', sourceId: GONE }])
+    expect(result.warnings).toEqual([{ kind: 'loop-source-unavailable', sourceId: GONE, pages: ['Home'], pageCount: 1 }])
   })
 
-  it('lists the first few and counts them all', () => {
-    const pages = Array.from({ length: 25 }, (_, i) =>
+  it('keeps a source on hundreds of pages to one line, so a second missing source still shows', () => {
+    const pages = Array.from({ length: 200 }, (_, i) =>
       page(`P${i}`, [node('root', 'base.body', {}, ['a']), loop('a', GONE)]))
+    pages.push(page('Last', [node('root', 'base.body', {}, ['a']), loop('a', 'acme.other.list')]))
+    const result = unavailableLoopSourceWarnings(site(pages))
+    expect(result.warningsTotal).toBe(2)
+    expect(result.warnings).toEqual([
+      { kind: 'loop-source-unavailable', sourceId: GONE, pages: ['P0', 'P1', 'P2'], pageCount: 200 },
+      { kind: 'loop-source-unavailable', sourceId: 'acme.other.list', pages: ['Last'], pageCount: 1 },
+    ])
+    expect(result.warnings[0]!.pages).toHaveLength(CMS_PUBLISH_WARNING_PAGES_NAMED)
+  })
+
+  it('lists the first few sources and counts them all', () => {
+    const pages = Array.from({ length: 25 }, (_, i) =>
+      page(`P${i}`, [node('root', 'base.body', {}, ['a']), loop('a', `acme.gone.${i}`)]))
     const result = unavailableLoopSourceWarnings(site(pages))
     expect(result.warnings).toHaveLength(CMS_PUBLISH_WARNINGS_LISTED)
     expect(result.warningsTotal).toBe(25)

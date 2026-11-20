@@ -30,9 +30,13 @@
  * What this guarantees: previews that answer cannot pile up in the worker
  * until the host's reply deadline runs out. A full line is thirteen previews
  * of at most a second each, so the last one waits about thirteen seconds,
- * well inside the thirty the host allows a worker call. What it does not
- * change: a `preview()` that never returns is the plugin's own code hanging,
- * and is treated like any call into that plugin
+ * well inside the thirty the host allows a worker call. What it does not do:
+ * make a slow `preview()` cheap. Previews are meant to return sample data
+ * instantly; one that takes a second lets a single asker keep the plugin's
+ * worker busy for as long as they keep asking, which slows the plugin's
+ * routes and everyone else's previews (nothing crashes or hangs). And a
+ * `preview()` that never returns is the plugin's own code hanging, treated
+ * like any call into that plugin
  * that never returns (the worker is restarted and the crash counted). The VM
  * cuts `preview()` off after `LOOP_PREVIEW_TIMEOUT_MS` when nothing else is
  * running in that plugin's VM; with another call in flight the VM's
@@ -97,9 +101,11 @@ const previewRateLimit = new RateLimiter({ limit: 120, windowMs: 60_000 })
 const MAX_WAITING_PREVIEWS = 12
 
 /**
- * How many of those places one user may hold. One short of the line, so a
- * twelve-loop page still fits (one running, eleven waiting) and one user can
- * never fill the line: there is always a place for somebody else.
+ * How many of those places one user may hold: one short of the line, so a
+ * twelve-loop page still fits (one running, eleven waiting). The twelfth
+ * place is someone else's to take, but it is one place behind eleven: with a
+ * slow `preview()` a user who keeps asking still gets nearly all of the
+ * worker's time. The line bounds the wait; it does not share the worker out.
  */
 const MAX_WAITING_PER_USER = 11
 

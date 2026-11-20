@@ -169,20 +169,24 @@ export const CmsMediaFolderEnvelopeSchema = Type.Object({
  * Something a publish did that its author may not expect. The publish
  * succeeded; a warning is information, not a failure.
  *
- *   loop-source-unavailable — a loop the page `page` renders (its own, or one
- *   inside a Visual Component it uses) has the source `sourceId`, which nobody
- *   provides (its plugin is disabled or removed), so that loop published as
- *   an empty list.
+ *   loop-source-unavailable — loops that `pageCount` pages render (their
+ *   own, or ones inside a Visual Component they use) have the source
+ *   `sourceId`, which nobody provides (its plugin is disabled or removed), so
+ *   those loops published as empty lists. `pages` names the first few pages.
  */
 export const CmsPublishWarningSchema = Type.Object({
   kind: Type.Literal('loop-source-unavailable'),
-  page: Type.String(),
   sourceId: Type.String(),
+  pages: Type.Array(Type.String()),
+  pageCount: Type.Number(),
 })
 export type CmsPublishWarning = Static<typeof CmsPublishWarningSchema>
 
 /** How many warnings a publish result lists; `warningsTotal` counts them all. */
 export const CMS_PUBLISH_WARNINGS_LISTED = 10
+
+/** How many pages one warning names; `pageCount` counts them all. */
+export const CMS_PUBLISH_WARNING_PAGES_NAMED = 3
 
 // `warnings` and `warningsTotal` are optional here on purpose: a publish that
 // succeeded must never fail on the client because the server answering it is
