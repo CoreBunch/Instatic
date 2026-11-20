@@ -26,7 +26,7 @@
 // modules itself rather than rely on the site editor's chunk having loaded.
 // This rides the modal's own lazy chunk; it adds nothing to the shell bundle.
 import '@modules/base'
-import { useRef, useState } from 'react'
+import { useRef, useState, type Dispatch, type SetStateAction } from 'react'
 import { nanoid } from 'nanoid'
 import { isAbortError } from '@core/http'
 import { Dialog } from '@ui/components/Dialog'
@@ -78,6 +78,8 @@ import {
 import {
   type ImportSelection,
   tokenConflictKey,
+  classRenameProblems,
+  siteClassNameSet,
   crossSheetConflictKey,
   makeDefaultSelection,
   filterPlanBySelection,
@@ -140,6 +142,7 @@ export function SiteImportModal({ onCmsBundleImportComplete }: SiteImportModalPr
   const [ruleResolutions, setRuleResolutions] = useState<Map<string, ConflictResolution>>(new Map())
   const [tokenResolutions, setTokenResolutions] = useState<Map<string, ConflictResolution>>(new Map())
   const [crossSheetResolutions, setCrossSheetResolutions] = useState<Map<string, ConflictResolution>>(new Map())
+  const [siteClassNames, setSiteClassNames] = useState<ReadonlySet<string>>(new Set())
   const [cmsRowResolutions, setCmsRowResolutions] = useState<Map<string, ConflictResolution>>(new Map())
   const [stylesheetModes, setStylesheetModes] = useState<Record<string, StylesheetImportMode>>({})
   const [pageSlugOverrides, setPageSlugOverrides] = useState<Map<string, string>>(new Map())
@@ -263,6 +266,7 @@ export function SiteImportModal({ onCmsBundleImportComplete }: SiteImportModalPr
       options: { mediaTolerance: 10, stylesheetModes: modes },
     })
     setFileMap(map)
+    setSiteClassNames(siteClassNameSet(currentSite))
     setPlan(importPlan)
     setSelection(makeDefaultSelection(importPlan))
     setPageResolutions(
@@ -546,6 +550,11 @@ export function SiteImportModal({ onCmsBundleImportComplete }: SiteImportModalPr
   const isCmsImporting = step === 'analyze' && cmsBundleState?.importing === true
 
   // ── Render ────────────────────────────────────────────────────────────────
+  // One updater for the four per-row resolution maps the Conflicts step edits.
+  const setResolution = (setter: Dispatch<SetStateAction<Map<string, ConflictResolution>>>) =>
+    (key: string, resolution: ConflictResolution) => setter((prev) => new Map(prev).set(key, resolution))
+  const classNameProblems = step === 'conflicts' && plan && !cmsBundleState
+    ? classRenameProblems(plan, siteClassNames, ruleResolutions, crossSheetResolutions) : new Map<string, string>()
 
   return (
     <Dialog
@@ -572,6 +581,7 @@ export function SiteImportModal({ onCmsBundleImportComplete }: SiteImportModalPr
           onAnalyzeNext={handleAnalyzeNext}
           onCmsAnalyzeNext={handleCmsAnalyzeNext}
           onConflictsImport={handleConflictsImport}
+          classNameProblemCount={classNameProblems.size}
           onRunCancel={handleRunCancel}
           onToggleLog={() => setLogOpen((o) => !o)}
           onOpenSite={handleOpenSite}
@@ -645,38 +655,15 @@ export function SiteImportModal({ onCmsBundleImportComplete }: SiteImportModalPr
         {step === 'conflicts' && !cmsBundleState && plan && (
           <ConflictsStep
             plan={plan}
+            classNameProblems={classNameProblems}
             pageResolutions={pageResolutions}
             ruleResolutions={ruleResolutions}
             tokenResolutions={tokenResolutions}
-            onPageResolutionChange={(source, resolution) => {
-              setPageResolutions((prev) => {
-                const next = new Map(prev)
-                next.set(source, resolution)
-                return next
-              })
-            }}
-            onRuleResolutionChange={(desiredName, resolution) => {
-              setRuleResolutions((prev) => {
-                const next = new Map(prev)
-                next.set(desiredName, resolution)
-                return next
-              })
-            }}
-            onTokenResolutionChange={(key, resolution) => {
-              setTokenResolutions((prev) => {
-                const next = new Map(prev)
-                next.set(key, resolution)
-                return next
-              })
-            }}
+            onPageResolutionChange={setResolution(setPageResolutions)}
+            onRuleResolutionChange={setResolution(setRuleResolutions)}
+            onTokenResolutionChange={setResolution(setTokenResolutions)}
             crossSheetResolutions={crossSheetResolutions}
-            onCrossSheetResolutionChange={(key, resolution) => {
-              setCrossSheetResolutions((prev) => {
-                const next = new Map(prev)
-                next.set(key, resolution)
-                return next
-              })
-            }}
+            onCrossSheetResolutionChange={setResolution(setCrossSheetResolutions)}
           />
         )}
 

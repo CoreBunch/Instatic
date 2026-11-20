@@ -38,7 +38,7 @@ import {
 import type { ImportFragment } from '@core/htmlImport'
 import { normalizeFrameworkColorSlug } from '@core/framework'
 import { isUntouchedFontRoleToken, normalizeFontTokenVariable, type FontToken } from '@core/fonts'
-import { applyCrossSheetClassResolutions, normalizeBindableClassRules } from './classCascades'
+import { applyCrossSheetClassResolutions, normalizeBindableClassRules } from './classCascadeResolution'
 import { declaredCustomProperties, rewriteRuleVarRefs, rewriteStyleBagVarRefs } from './varRefs'
 
 // ---------------------------------------------------------------------------
@@ -64,9 +64,11 @@ export function detectConflicts(
   styleRules: NewStyleRule[],
   colorTokens: ImportColorToken[] = [],
   fontTokens: ImportFontToken[] = [],
+  /** Class names other conflict rows (cross-sheet renames) already target. */
+  reservedClassNames: Iterable<string> = [],
 ): ConflictDetectionResult {
   const pageConflicts = detectPageConflicts(currentSite, pagePlans)
-  const ruleConflicts = detectRuleConflicts(currentSite, styleRules)
+  const ruleConflicts = detectRuleConflicts(currentSite, styleRules, reservedClassNames)
   const tokenConflicts = detectTokenConflicts(
     currentSite,
     colorTokens,
@@ -136,6 +138,7 @@ function detectPageConflicts(
 function detectRuleConflicts(
   site: SiteDocument,
   styleRules: NewStyleRule[],
+  reservedClassNames: Iterable<string>,
 ): RuleConflict[] {
   const conflicts: RuleConflict[] = []
 
@@ -145,8 +148,12 @@ function detectRuleConflicts(
     if (rule.kind === 'class') existingClassNames.set(rule.name, rule.id)
   }
 
-  // Track names claimed by earlier items in the import batch
+  // Track names claimed by earlier items in the import batch, and the names
+  // cross-sheet rows rename to (they apply first).
   const claimedNames = new Map<string, string>(existingClassNames)
+  for (const name of reservedClassNames) {
+    if (!claimedNames.has(name)) claimedNames.set(name, `cross-sheet:${name}`)
+  }
   // A class may arrive as several cascade fragments with one name — they
   // rename together, so they share ONE conflict row.
   const conflictedNames = new Set<string>()

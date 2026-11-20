@@ -23,7 +23,7 @@ import { classifyFiles } from './classifyFiles'
 import { makeHtmlPagePlan } from './htmlPagePlan'
 import { buildAssetPlan, type CssFileResult } from './assetPlan'
 import { collectUnlinkedStylesheets, partitionLinkedStylesheets } from './stylesheetPlan'
-import { detectCrossSheetClassConflicts } from './classCascades'
+import { crossSheetRenameTargets, detectCrossSheetClassConflicts } from './classCascades'
 import { detectConflicts, rewriteImportVarRefs } from './conflicts'
 import { declaredCustomProperties } from './varRefs'
 import { normalizeImportedTokens } from './tokenNames'
@@ -163,13 +163,11 @@ export function buildImportPlan({ fileMap, currentSite, options }: BuildImportPl
   //     does not load) that becomes an explicit conflict (default: rename,
   //     lossless) for the wizard's Conflicts step — applied by
   //     `applyCrossSheetClassResolutions`, never silently here.
-  const existingClassNames = Object.values(currentSite.styleRules)
-    .filter((rule) => rule.kind === 'class')
-    .map((rule) => rule.name)
+  const existingClassRules = Object.values(currentSite.styleRules).filter((rule) => rule.kind === 'class')
   const crossSheetClasses = detectCrossSheetClassConflicts(
     rawPagePlans,
     cssPlan.cssFileResults,
-    existingClassNames,
+    existingClassRules,
     scripts,
   )
   const publishableCssFileResults = addSelectorDependencyClasses(
@@ -197,12 +195,15 @@ export function buildImportPlan({ fileMap, currentSite, options }: BuildImportPl
 
   // 6. Detect conflicts against the current site — pages, class rules, and
   //    design tokens (colour + font) all flow through one resolution model.
+  //    Class rows reserve the names the cross-sheet rows already picked, so
+  //    the two never default to the same new name.
   const conflicts = detectConflicts(
     currentSite,
     pages,
     styleRules,
     colors,
     fontTokens,
+    crossSheetRenameTargets(crossSheetClasses),
   )
 
   return {

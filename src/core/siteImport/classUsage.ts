@@ -1,17 +1,23 @@
 /**
  * classUsage — which class names each imported page uses: the classes its
- * nodes carry, plus the classes the scripts it loads put on elements at
- * runtime. `classCascades.ts` reads it to tell whether a stylesheet's rules
- * would reach a page that never loaded them.
+ * nodes carry (inline SVG markup included), plus the classes the scripts it
+ * loads may put on elements at runtime. `classCascades.ts` reads it to tell
+ * whether a stylesheet's rules would reach a page that never loaded them, and
+ * whether renaming a class could miss elements that code creates.
  */
 
 import type { ImportScript, PagePlan } from './types'
 
 export interface PageClassUsage {
-  /** The page carries the class on a node, or a script it loads writes it. */
+  /** The page carries the class (on a node or in SVG markup), or its scripts may write it. */
   uses(pageSource: string, name: string): boolean
-  /** A script the page loads writes the class onto elements at runtime. */
-  scriptWrites(pageSource: string, name: string): boolean
+  /**
+   * A script the page loads may put the class on elements at runtime, which
+   * a rename of the page's nodes would not reach.
+   */
+  outsideNodes(pageSource: string, name: string): boolean
+  /** The sources of every page that uses the class, in page order. */
+  pagesUsing(name: string): readonly string[]
 }
 
 export function pageClassUsage(
@@ -21,17 +27,27 @@ export function pageClassUsage(
   const carried = new Map(pagePlans.map((page) => [page.source, carriedClasses(page)] as const))
   const written = new Map<string, Set<string>>()
   for (const script of scripts) {
-    const names = scriptClassWrites(script.content)
+    const names = scriptClassNames(script.content)
     for (const source of script.pageSources) {
       const set = written.get(source) ?? new Set<string>()
       for (const name of names) set.add(name)
       written.set(source, set)
     }
   }
-  const scriptWrites = (pageSource: string, name: string) => written.get(pageSource)?.has(name) ?? false
+  const outsideNodes = (pageSource: string, name: string) => written.get(pageSource)?.has(name) ?? false
+  const users = new Map<string, string[]>()
+  for (const page of pagePlans) {
+    const names = new Set([...(carried.get(page.source) ?? []), ...(written.get(page.source) ?? [])])
+    for (const name of names) {
+      const list = users.get(name) ?? []
+      list.push(page.source)
+      users.set(name, list)
+    }
+  }
   return {
-    scriptWrites,
-    uses: (pageSource, name) => (carried.get(pageSource)?.has(name) ?? false) || scriptWrites(pageSource, name),
+    outsideNodes,
+    uses: (pageSource, name) => (carried.get(pageSource)?.has(name) ?? false) || outsideNodes(pageSource, name),
+    pagesUsing: (name) => users.get(name) ?? [],
   }
 }
 
@@ -39,36 +55,38 @@ function carriedClasses(page: PagePlan): Set<string> {
   const classes = new Set(page.nodeFragment.body?.classIds ?? [])
   for (const node of Object.values(page.nodeFragment.nodes)) {
     for (const name of node.classIds ?? []) classes.add(name)
+    if (typeof node.props.svg === 'string') {
+      for (const name of classAttributeTokens(node.props.svg)) classes.add(name)
+    }
   }
   return classes
 }
 
-/**
- * Class names a script can put on an element at runtime: the arguments of
- * `classList.add/toggle/replace`, string assignments to `className`,
- * `setAttribute('class', …)`, and `class="…"` inside HTML it builds from
- * strings or templates. Selector strings (`querySelector('.btn')`) style
- * nothing and do not count.
- */
-const CLASS_WRITE_PATTERNS = [
-  /classList\s*\.\s*(?:add|toggle|replace)\s*\(([^)]*)\)/g,
-  /className\s*\+?=\s*(['"`])((?:(?!\1)[^\\]|\\.)*)\1/g,
-  /setAttribute\s*\(\s*['"]class['"]\s*,([^)]*)\)/g,
-  /\bclass\s*=\s*\\?(['"])((?:(?!\1).)*?)\\?\1/g,
-]
+/** Tokens of every `class="…"` attribute in a markup string. */
+function classAttributeTokens(markup: string): string[] {
+  const tokens: string[] = []
+  for (const match of markup.matchAll(/\bclass\s*=\s*\\?(['"])((?:(?!\1).)*?)\\?\1/gi)) {
+    tokens.push(...match[2].split(/\s+/).filter(Boolean))
+  }
+  return tokens
+}
 
-function scriptClassWrites(source: string): Set<string> {
-  const names = new Set<string>()
-  for (const pattern of CLASS_WRITE_PATTERNS) {
-    for (const match of source.matchAll(pattern)) {
-      const text = match[match.length - 1] ?? ''
-      for (const literal of pattern === CLASS_WRITE_PATTERNS[0] || pattern === CLASS_WRITE_PATTERNS[2]
-        ? text.match(/'[^']*'|"[^"]*"|`[^`]*`/g) ?? []
-        : [` ${text} `]) {
-        for (const run of literal.slice(1, -1).split(/[^A-Za-z0-9_-]+/)) {
-          if (run) names.add(run)
-        }
-      }
+const CLASS_NAME = /^-?[_a-zA-Z][_a-zA-Z0-9-]*$/
+
+/**
+ * Class names a script may put on an element, read conservatively: every
+ * whitespace-separated token of a string or template literal that is a valid
+ * class name (`addClass('is-open')`, `{ className: "btn btn--lg" }`, a lookup
+ * table of state names, a variable holding a class), plus the classes of any
+ * `class="…"` inside HTML the script builds. A selector string such as
+ * `'.btn'` or `'[data-x]'` is not a bare class token and does not count.
+ * Over-collecting only makes a row default to keeping the rules global.
+ */
+function scriptClassNames(source: string): Set<string> {
+  const names = new Set<string>(classAttributeTokens(source))
+  for (const literal of source.match(/'(?:[^'\\\n]|\\.)*'|"(?:[^"\\\n]|\\.)*"|`(?:[^`\\]|\\.)*`/g) ?? []) {
+    for (const token of literal.slice(1, -1).split(/\s+/)) {
+      if (CLASS_NAME.test(token)) names.add(token)
     }
   }
   return names

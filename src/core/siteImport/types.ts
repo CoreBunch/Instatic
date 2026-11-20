@@ -542,7 +542,7 @@ export interface RuleConflict {
  *   move to `resolvedName`, which its pages carry next to the bare class, so
  *   each page keeps its own cascade; divergent — this definition moves to
  *   `resolvedName` with its pages' class tokens.
- * - `skip`: drop this sheet's fragments (leak) or this definition.
+ * - `skip`: drop the sheet's rules naming the class (leak) or this definition.
  * - `overwrite`: keep the sheet global (leak), or this definition wins the
  *   bare name (divergent).
  */

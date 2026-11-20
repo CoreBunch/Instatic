@@ -26,9 +26,9 @@ const page = (sheets: string[], body = '<a class="btn">Go</a>', head = '') =>
 
 const KIT = '.btn { color: black; font-weight: 700 }\n.btn .icon { width: 1em }\n.card { opacity: 0.5 }\n'
 
-function plan(files: Record<string, string>): ImportPlan {
+function plan(files: Record<string, string>, currentSite = makeSite()): ImportPlan {
   const fileMap: FileMap = { files: Object.fromEntries(Object.entries(files).map(([k, v]) => [k, file(v)])) }
-  return buildImportPlan({ fileMap, currentSite: makeSite() })
+  return buildImportPlan({ fileMap, currentSite })
 }
 
 function resolve(p: ImportPlan, action?: 'skip' | 'overwrite'): ImportPlan {
@@ -234,5 +234,91 @@ describe('cross-sheet cascade: shared kit + page overrides', () => {
     const r = resolve(p)
     expect(effective(r, 'home.html', 'btn').color).toBe('red')
     expect(effective(r, 'account.html', 'btn').color).toBe('blue')
+  })
+
+  it('rewrites the class in every selector of the confined sheet and keeps its contexts', () => {
+    const p = plan({
+      'home.html': page(['kit.css', 'home.css'], '<div class="card"><a class="btn x">Go</a></div>'),
+      'about.html': page(['kit.css']),
+      'kit.css': KIT,
+      'home.css': '.btn { color: red }\n.btn:hover { color: maroon }\n.card .btn { opacity: 0.9 }\n'
+        + '.x:not(.btn) { margin-top: 1px }\n@media (max-width: 600px) { .btn { color: pink } }\n',
+    })
+    const r = resolve(p)
+    const fromHome = r.styleRules.filter((_, i) => r.styleRuleSources[i] === 'home.css')
+    const selectors = fromHome.map((rule) => rule.selector)
+    expect(selectors.some((sel) => /\.btn(?![-\w])/.test(sel))).toBe(false)
+    expect(selectors).toEqual(expect.arrayContaining(['.btn-2', '.card .btn-2', '.x:not(.btn-2)']))
+    expect(JSON.stringify(fromHome)).toContain('pink')
+    // The kit's bare class keeps its own rules for about.html.
+    expect(effective(r, 'about.html', 'btn')).toEqual({ color: 'black', fontWeight: '700' })
+  })
+
+  it('skip drops every rule of the sheet that names the class, not just its class rules', () => {
+    const p = plan({
+      'home.html': page(['kit.css', 'home.css'], '<div class="card"><a class="btn">Go</a></div>'),
+      'about.html': page(['kit.css']),
+      'kit.css': KIT,
+      'home.css': '.btn { color: red }\n.btn:hover { color: maroon }\n.card .btn { opacity: 0.9 }\n.card { margin-top: 2px }\n',
+    })
+    const btnRow = p.conflicts.crossSheetClasses.find((c) => c.desiredName === 'btn')!
+    const r = applyConflictResolutions(p, [], [], [], [{ ...btnRow, defaultResolution: { action: 'skip' } }])
+    const fromHome = r.styleRules.filter((_, i) => r.styleRuleSources[i] === 'home.css').map((rule) => rule.selector)
+    expect(fromHome).toEqual(['.card'])
+  })
+
+  it('carries the new name into inline SVG markup on the sheet pages', () => {
+    const svg = '<svg class="icon"><use href="#a"></use></svg>'
+    const p = plan({
+      'home.html': page(['kit.css', 'home.css'], svg),
+      'about.html': page(['kit.css'], svg),
+      'kit.css': '.icon { width: 1em }\n',
+      'home.css': '.icon { width: 2em }\n',
+    })
+    expect(p.conflicts.crossSheetClasses.map((c) => [c.desiredName, c.defaultResolution.action])).toEqual([
+      ['icon', 'auto-rename'],
+    ])
+    const r = resolve(p)
+    const markup = (source: string) => Object.values(r.pages.find((pg) => pg.source === source)!.nodeFragment.nodes)
+      .map((n) => n.props.svg).find((v) => typeof v === 'string')
+    expect(markup('home.html')).toContain('class="icon icon-2"')
+    expect(markup('about.html')).toContain('class="icon"')
+  })
+
+  it('reads any bare class token in a script string as a use, and keeps those rules global', () => {
+    const p = plan({
+      'home.html': page(['kit.css', 'home.css'], '<a class="btn">Go</a><script>$(el).toggleClass("btn")</script>'),
+      'about.html': page(['kit.css'], '<p>None</p><script>$(el).addClass(open ? "btn" : "")</script>'),
+      'kit.css': KIT,
+      'home.css': '.btn { color: red }\n',
+    })
+    expect(p.conflicts.crossSheetClasses.map((c) => [c.kind, c.defaultResolution.action])).toEqual([
+      ['leak', 'overwrite'],
+    ])
+  })
+
+  it('never gives a cross-sheet row and a site class row the same new name', () => {
+    const site = makeSite({
+      styleRules: {
+        existing: {
+          id: 'existing', name: 'btn', kind: 'class', selector: '.btn', order: 0,
+          styles: { color: 'green' }, contextStyles: {}, createdAt: 0, updatedAt: 0,
+        },
+      },
+    })
+    const p = plan({
+      'a.html': page(['kit.css', 'a.css']),
+      'b.html': page(['kit.css']),
+      'kit.css': KIT,
+      'a.css': '.btn { color: red }\n',
+    }, site)
+    const cross = p.conflicts.crossSheetClasses.map((c) => c.defaultResolution.resolvedName)
+    const rules = p.conflicts.rules.map((c) => c.defaultResolution.resolvedName)
+    expect(cross).toEqual(['btn-2'])
+    expect(rules).toEqual(['btn-3'])
+    const r = resolve(p)
+    expect(classesOf(r, 'b.html', 'btn')).toEqual(['btn-3'])
+    expect(effective(r, 'b.html', 'btn')).toEqual({ color: 'black', fontWeight: '700' })
+    expect(effective(r, 'a.html', 'btn')).toEqual({ color: 'red', fontWeight: '700' })
   })
 })

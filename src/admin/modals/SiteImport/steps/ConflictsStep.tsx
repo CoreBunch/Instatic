@@ -14,7 +14,7 @@
 import type { ImportPlan, ConflictResolution } from '@core/siteImport'
 import { Button } from '@ui/components/Button'
 import { ConflictRow } from '../shared/ConflictRow'
-import { crossSheetConflictKey, tokenConflictKey } from '../shared/importPlanning'
+import { classRowKey, crossSheetConflictKey, tokenConflictKey } from '../shared/importPlanning'
 import styles from './ConflictsStep.module.css'
 
 type BulkResolutionAction = Extract<ConflictResolution['action'], 'auto-rename' | 'overwrite' | 'skip'>
@@ -33,6 +33,8 @@ interface ConflictsStepProps {
   ruleResolutions: Map<string, ConflictResolution>
   tokenResolutions: Map<string, ConflictResolution>
   crossSheetResolutions: Map<string, ConflictResolution>
+  /** Field-local problems with class rename targets, keyed by `classRowKey`. */
+  classNameProblems: Map<string, string>
   onPageResolutionChange: (source: string, resolution: ConflictResolution) => void
   onRuleResolutionChange: (desiredName: string, resolution: ConflictResolution) => void
   onTokenResolutionChange: (key: string, resolution: ConflictResolution) => void
@@ -45,6 +47,7 @@ export function ConflictsStep({
   ruleResolutions,
   tokenResolutions,
   crossSheetResolutions,
+  classNameProblems,
   onPageResolutionChange,
   onRuleResolutionChange,
   onTokenResolutionChange,
@@ -201,6 +204,7 @@ export function ConflictsStep({
                 source={conflict.source}
                 desired={conflict.desiredName}
                 current={ruleResolutions.get(conflict.desiredName) ?? conflict.defaultResolution}
+                error={classNameProblems.get(classRowKey('rule', conflict.desiredName))}
                 onChange={(next) => onRuleResolutionChange(conflict.desiredName, next)}
               />
             ))}
@@ -257,6 +261,7 @@ export function ConflictsStep({
                   }
                   desired={conflict.desiredName}
                   current={crossSheetResolutions.get(key) ?? conflict.defaultResolution}
+                  error={classNameProblems.get(classRowKey('cross-sheet', key))}
                   onChange={(next) => onCrossSheetResolutionChange(key, next)}
                 />
               )

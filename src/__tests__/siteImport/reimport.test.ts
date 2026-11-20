@@ -115,3 +115,47 @@ describe('commitImportPlan — importing the same site twice', () => {
     expect(bodies[0]).toEqual({ ...importedBody!, styles: { color: 'navy' } })
   })
 })
+
+describe('commitImportPlan — re-importing a confined page stylesheet', () => {
+  const KIT_FILES = (overrideColor: string): FileMap => ({
+    files: {
+      'a.html': { bytes: enc.encode('<html><head><link rel="stylesheet" href="kit.css"><link rel="stylesheet" href="a.css"></head><body><a class="btn">A</a></body></html>'), mimeType: 'text/html' },
+      'b.html': { bytes: enc.encode('<html><head><link rel="stylesheet" href="kit.css"></head><body><a class="btn">B</a></body></html>'), mimeType: 'text/html' },
+      'kit.css': { bytes: enc.encode('.btn { color: black }\n'), mimeType: 'text/css' },
+      'a.css': { bytes: enc.encode(`.btn { color: ${overrideColor} }\n.btn:hover { color: maroon }\n`), mimeType: 'text/css' },
+    },
+  })
+
+  async function importKit(overrideColor: string, ruleAction: 'overwrite' | null) {
+    const site = useEditorStore.getState().site!
+    const plan = buildImportPlan({ fileMap: KIT_FILES(overrideColor), currentSite: site })
+    const rules = plan.conflicts.rules.map((c) => (ruleAction ? { ...c, defaultResolution: { action: ruleAction } } : c))
+    const resolved = applyConflictResolutions(plan, plan.conflicts.pages, rules, plan.conflicts.tokens, plan.conflicts.crossSheetClasses)
+    const adapter: SiteImportAdapter = {
+      ...createSiteImportAdapter({ sessionId: 'reimport-confined' }),
+      uploadAsset: async () => { throw new Error('no assets') },
+    }
+    await commitImportPlan(resolved, adapter)
+    return plan
+  }
+
+  beforeEach(() => {
+    useEditorStore.setState({ site: makeSite() } as Parameters<typeof useEditorStore.setState>[0])
+  })
+
+  it('reuses the name the first import gave the sheet and updates its rules in place', async () => {
+    const first = await importKit('red', null)
+    expect(first.conflicts.crossSheetClasses.map((c) => c.defaultResolution.resolvedName)).toEqual(['btn-2'])
+    const confined = () => Object.values(useEditorStore.getState().site!.styleRules)
+      .filter((rule) => rule.origin?.source === 'a.css')
+      .map((rule) => [rule.id, rule.selector, rule.styles.color])
+    const before = confined()
+    expect(before.map(([, selector]) => selector).sort()).toEqual(['.btn-2', '.btn-2:hover'])
+
+    const second = await importKit('blue', 'overwrite')
+    expect(second.conflicts.crossSheetClasses.map((c) => c.defaultResolution.resolvedName)).toEqual(['btn-2'])
+    const after = confined()
+    expect(after.map(([id, selector]) => [id, selector])).toEqual(before.map(([id, selector]) => [id, selector]))
+    expect(after.find(([, selector]) => selector === '.btn-2')?.[2]).toBe('blue')
+  })
+})

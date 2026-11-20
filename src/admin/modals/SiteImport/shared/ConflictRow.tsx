@@ -64,10 +64,12 @@ interface ConflictRowProps {
    * abort the commit, so the option is hidden.
    */
   canOverwrite?: boolean
+  /** Field-local problem with the rename target, shown under the controls. */
+  error?: string
   onChange: (next: ConflictResolution) => void
 }
 
-export function ConflictRow({ kind, source, desired, current, canOverwrite = true, onChange }: ConflictRowProps) {
+export function ConflictRow({ kind, source, desired, current, canOverwrite = true, error, onChange }: ConflictRowProps) {
   const isCustom = current.action === 'custom-rename'
   const resolutionLabel = kind === 'page' ? (source || desired) : desired
   const customValue = resolvedValue(kind, current) ?? desired
@@ -98,8 +100,10 @@ export function ConflictRow({ kind, source, desired, current, canOverwrite = tru
             onChange={(e) => onChange(customResolution(kind, e.target.value))}
             placeholder={CUSTOM_PLACEHOLDER[kind]}
             aria-label={CUSTOM_LABEL[kind]}
+            aria-invalid={error ? true : undefined}
           />
         )}
+        {error && <p role="alert" className={styles.error}>{error}</p>}
       </div>
     </div>
   )

@@ -1621,6 +1621,7 @@ describe('ConflictsStep — conflict rendering', () => {
     render(
       <ConflictsStep
         plan={plan}
+        classNameProblems={new Map()}
         pageResolutions={emptyPageRes}
         ruleResolutions={emptyRuleRes}
         onPageResolutionChange={noopResChange}
@@ -1649,6 +1650,7 @@ describe('ConflictsStep — conflict rendering', () => {
     render(
       <ConflictsStep
         plan={plan}
+        classNameProblems={new Map()}
         pageResolutions={emptyPageRes}
         ruleResolutions={emptyRuleRes}
         onPageResolutionChange={noopResChange}
@@ -1677,6 +1679,7 @@ describe('ConflictsStep — conflict rendering', () => {
     render(
       <ConflictsStep
         plan={plan}
+        classNameProblems={new Map()}
         pageResolutions={emptyPageRes}
         ruleResolutions={emptyRuleRes}
         onPageResolutionChange={noopResChange}
@@ -1712,6 +1715,7 @@ describe('ConflictsStep — conflict rendering', () => {
     render(
       <ConflictsStep
         plan={plan}
+        classNameProblems={new Map()}
         pageResolutions={emptyPageRes}
         ruleResolutions={emptyRuleRes}
         onPageResolutionChange={noopResChange}
@@ -1741,6 +1745,7 @@ describe('ConflictsStep — conflict rendering', () => {
     render(
       <ConflictsStep
         plan={plan}
+        classNameProblems={new Map()}
         pageResolutions={emptyPageRes}
         ruleResolutions={emptyRuleRes}
         onPageResolutionChange={noopResChange}
@@ -1772,6 +1777,7 @@ describe('ConflictsStep — conflict rendering', () => {
     render(
       <ConflictsStep
         plan={plan}
+        classNameProblems={new Map()}
         pageResolutions={emptyPageRes}
         ruleResolutions={emptyRuleRes}
         onPageResolutionChange={noopResChange}
@@ -1808,6 +1814,7 @@ describe('ConflictsStep — conflict rendering', () => {
     render(
       <ConflictsStep
         plan={plan}
+        classNameProblems={new Map()}
         pageResolutions={emptyPageRes}
         ruleResolutions={emptyRuleRes}
         onPageResolutionChange={(source, res) => changes.push([source, res])}
@@ -1843,6 +1850,7 @@ describe('ConflictsStep — conflict rendering', () => {
     render(
       <ConflictsStep
         plan={plan}
+        classNameProblems={new Map()}
         pageResolutions={emptyPageRes}
         ruleResolutions={ruleRes}
         onPageResolutionChange={noopResChange}
@@ -1888,6 +1896,7 @@ describe('ConflictsStep — conflict rendering', () => {
     render(
       <ConflictsStep
         plan={plan}
+        classNameProblems={new Map()}
         pageResolutions={emptyPageRes}
         ruleResolutions={emptyRuleRes}
         onPageResolutionChange={noopResChange}
@@ -1931,6 +1940,7 @@ describe('ConflictsStep — conflict rendering', () => {
     render(
       <ConflictsStep
         plan={plan}
+        classNameProblems={new Map()}
         pageResolutions={emptyPageRes}
         ruleResolutions={emptyRuleRes}
         onPageResolutionChange={(source, res) => changes.push([source, res])}

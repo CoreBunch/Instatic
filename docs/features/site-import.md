@@ -45,8 +45,9 @@ src/core/siteImport/
 ├── scriptDependencies.ts — rewrite known npm ESM CDN imports in module scripts into bare package imports + dependency requests
 ├── scriptOrder.ts       — merge every page's script document order into the one priority sequence the runtime sorts by
 ├── cssImports.ts        — expand unconditional local CSS @import graphs while preserving each source path
-├── classCascades.ts     — cross-sheet class semantics: detect leaking and divergent class definitions as explicit conflicts; apply confine (rename) / skip / overwrite; enforce one bindable class rule per name
-├── classUsage.ts       — which classes each imported page uses: node class tokens plus classes its scripts write onto elements
+├── classCascades.ts     — cross-sheet class semantics: detect leaking and divergent class definitions as explicit conflicts; shared-utility vocabulary
+├── classCascadeResolution.ts — apply confine (rename) / skip / overwrite to leak and divergent rows; enforce one bindable class rule per name
+├── classUsage.ts       — which classes each imported page uses: node class tokens, classes in inline SVG markup, and classes its scripts may put on elements
 ├── mimeTypes.ts         — extension → MIME fallback for FileMap entries that carry no MIME type (e.g. ZIP)
 ├── assetPlan.ts         — normalise URL props/HTML attributes in node fragments + CSS/@keyframes url(); resolve @font-face; collect assets
 ├── applyAssetRewrites.ts — patch fragment props + CSS/@keyframes url() with new media URLs (post-upload)
@@ -280,16 +281,16 @@ A multi-page site typically links one stylesheet per page, often on top of a sha
 - **`divergent` rows.** When pages load the defining sheets in orders no single global order satisfies (an override loaded before the kit on one page and after it on another, or two sheets swapped), the first definition keeps the bare name and each later distinct definition is one `divergent` row, as before.
 - **Bootstrap-like shared utility names** (`row`, `col-xl-3`, `d-flex`, `align-items-stretch`, spacing/gutter utilities, etc.) never conflict. Those classes are framework vocabulary rather than component classes: their behaviour is often assembled from multiple rules and selectors such as `.row`, `.row > *`, and `.col-*`. Splitting them would break the grid contract.
 
-Every row defaults to a rename to the next free suffix (free among imported AND existing site class names). Resolutions apply in `applyCrossSheetClassResolutions` (via `applyConflictResolutions`, before site-vs-import rule conflicts):
+Every row defaults to a rename to the next free suffix, free among imported AND existing site class names. A `leak` row whose sheet an earlier import already confined reuses the name that import gave it (an existing class rule with the same `origin.source` named `<name>-<n>`), so re-importing a bundle reconciles those rules in place through `putStyleRule` instead of stacking a new copy. `detectConflicts` reserves every cross-sheet rename target (`crossSheetRenameTargets`) before it picks site-vs-import class names, so the two kinds of rows never default to the same name, and the Conflicts step validates custom names against both (`classRenameProblems` in `importPlanning.ts`: a valid class name, no other row's target, not an existing site class, not a class the import brings itself; Import stays disabled with the reason in the footer until fixed). Resolutions apply in `applyCrossSheetClassResolutions` (`classCascadeResolution.ts`, via `applyConflictResolutions`, before site-vs-import rule conflicts):
 
-- **leak, rename (default)** — lossless confinement. The sheet's class fragments for the name move to the new name in place (a context such as `.side .icon` keeps its context: only the class token is rewritten), class tokens in the sheet's other selectors follow, and every element on the pages that load the sheet carries the new name NEXT TO the bare one. The bare class keeps the other sheets' rules, so a kit's own selectors (`.btn .icon`) still match, and one global stylesheet in plan order applies exactly each page's own fragments in its own cascade order. No generated scope class is involved: the new name is an ordinary registry class the user can see and rename.
-- **leak, overwrite** — keep the sheet's rules on the bare name; they apply on every page. This is the default only when a script on the sheet's own pages writes the class onto elements at runtime: those elements would never carry the new name, so a rename would break the sheet's own pages. The row still shows the leak.
-- **leak, skip** — drop the sheet's fragments for the name.
+- **leak, rename (default)** — lossless confinement. The class token moves to the new name in every selector of the sheet, whatever the rule's own class (`.side .icon`, `.x:not(.btn)`, `.btn .row`; contexts and `@media` blocks stay), and every element on the pages that load the sheet carries the new name NEXT TO the bare one, including the elements inside stored inline SVG markup (`base.svg` `props.svg`). The bare class keeps the other sheets' rules, so a kit's own selectors (`.btn .icon`) still match, and one global stylesheet in plan order applies exactly each page's own fragments in its own cascade order. No generated scope class is involved: the new name is an ordinary registry class the user can see and rename.
+- **leak, overwrite** — keep the sheet's rules on the bare name; they apply on every page. This is the default only when a script on the sheet's own pages may put the class on elements at runtime: those elements would never carry the new name, so a rename could break the sheet's own pages. The row still shows the leak.
+- **leak, skip** — drop every rule of the sheet whose selector names the class (`.btn`, `.btn:hover`, `.card .btn`), not only its class rules.
 - **divergent, rename** — the divergent definition is materialised as ONE class rule under the new name carrying the cascade-merged declarations; the affected cascades' exclusive class fragments for the old name are dropped, class tokens in their exclusive ambient selectors follow the rename, and the affected pages' node class tokens move to the new name. Selectors in shared sheets that name the class do not follow, a known limit of this fallback.
 - **divergent, skip** — keep the first definition: the divergent cascades' exclusive fragments are dropped and their pages bind to the kept definition by name.
 - **divergent, overwrite** — this definition wins the bare name: every OTHER cascade's exclusive fragments for it are dropped.
 
-A script counts as using a class only where it puts the class on an element: the arguments of `classList.add/toggle/replace`, string assignments to `className`, `setAttribute('class', …)`, and `class="…"` inside HTML it builds from strings or templates (`scriptClassWrites` in `classUsage.ts`). Selector strings such as `querySelector('.btn')` style nothing and do not count.
+A script counts as using a class when one of its string or template literals holds the name as a whitespace-separated token (`addClass('is-open')`, `{ className: "btn btn--lg" }`, a lookup table, a variable), or HTML it builds carries it in `class="…"` (`scriptClassNames` in `classUsage.ts`). This reads conservatively on purpose: over-collecting only makes a row default to keeping the rules global. Selector strings such as `'.btn'` are not bare tokens and do not count. Classes inside stored inline SVG markup count as carried by the page.
 
 After all renames, `normalizeBindableClassRules` enforces the registry's unique-class-name invariant: per final name, the FIRST class-kind rule (in cascade source order) stays bindable; every later same-name class fragment becomes an ambient rule with the same selector — its declarations keep their cascade position, so within-cascade overrides (`base.css .btn` + `page.css .btn`) still compose like real CSS.
 
@@ -477,7 +478,9 @@ outside the archive are normal and would bury the real misses.
   - `src/core/siteImport/cssImports.ts` — `expandLinkedCssImports`
   - `src/core/siteImport/stylesheetPlan.ts` — `partitionLinkedStylesheets`, `collectUnlinkedStylesheets`
   - `src/core/siteImport/pluginPackage.ts` — `detectPluginPackage`
-  - `src/core/siteImport/classCascades.ts` — cross-sheet class conflict detection + resolution; bindable-class normalization; shared-utility vocabulary
+  - `src/core/siteImport/classCascades.ts` — cross-sheet class conflict detection; shared-utility vocabulary
+  - `src/core/siteImport/classCascadeResolution.ts` — cross-sheet resolutions; bindable-class normalization
+  - `src/core/siteImport/classUsage.ts` — which classes each imported page uses (nodes, SVG markup, scripts)
   - `src/core/siteImport/conflicts.ts` — `detectConflicts`, `applyConflictResolutions`
   - `src/admin/modals/SiteImport/SiteImportModal.tsx` — wizard shell
   - `src/admin/modals/SiteImport/steps/AnalyzeStep.tsx` — category navigator + detail panes
