@@ -23,7 +23,8 @@ const ORIGIN = 'http://localhost'
 const PLUGIN_ID = 'acme.counter'
 const MOUNT = `/_instatic/plugins/${PLUGIN_ID}`
 const ADMIN_MOUNT = `/admin/api/cms/plugins/${PLUGIN_ID}/runtime`
-const PERMISSIONS = ['cms.routes', 'cms.routes.public', 'members.read']
+const PERMISSIONS = ['cms.routes', 'cms.routes.public', 'members.read', 'visitors.ip']
+const WITHOUT_IP = PERMISSIONS.filter((permission) => permission !== 'visitors.ip')
 
 const PLUGIN_SOURCE = `
   export function activate(api) {
@@ -67,14 +68,17 @@ describe('plugin routes and the caller', () => {
     await rm(uploadsDir, { recursive: true, force: true })
   })
 
-  async function install(): Promise<Response> {
+  async function install(
+    options: { id?: string; version?: string; permissions?: string[]; granted?: string[] } = {},
+  ): Promise<Response> {
+    const permissions = options.permissions ?? PERMISSIONS
     const zipped = zipSync({
       'plugin.json': strToU8(JSON.stringify({
-        id: PLUGIN_ID,
+        id: options.id ?? PLUGIN_ID,
         name: 'Counter',
-        version: '1.0.0',
+        version: options.version ?? '1.0.0',
         apiVersion: 1,
-        permissions: PERMISSIONS,
+        permissions,
         entrypoints: { server: 'server/index.js' },
         resources: [],
         adminPages: [],
@@ -83,7 +87,7 @@ describe('plugin routes and the caller', () => {
     })
     const formData = new FormData()
     formData.set('file', new File([zipped], 'plugin.zip', { type: 'application/zip' }))
-    formData.set('grantedPermissions', JSON.stringify(PERMISSIONS))
+    formData.set('grantedPermissions', JSON.stringify(options.granted ?? permissions))
     const req = {
       url: `${ORIGIN}/admin/api/cms/plugins/package`,
       method: 'POST',
@@ -127,6 +131,27 @@ describe('plugin routes and the caller', () => {
       expect((await seen(`${MOUNT}/ip`, { peer: '2001:db8:1:2:3:4:5:6' })).ipKey).toBe('2001:db8:1:2::/64')
       configureTrustedProxyCidrs(['10.0.0.0/8'])
       expect((await seen(`${MOUNT}/ip`, { peer: '10.0.0.2', forwardedFor: '2001:0db8::0001' })).ip).toBe('2001:db8::1')
+    })
+
+    it('is null on every route of a plugin not granted visitors.ip', async () => {
+      expect((await install({ id: 'acme.blind', permissions: WITHOUT_IP })).status).toBe(201)
+      configureTrustedProxyCidrs(['10.0.0.0/8'])
+      const view = await seen('/_instatic/plugins/acme.blind/ip', { peer: '10.0.0.2', forwardedFor: '198.51.100.20' })
+      expect(view).toMatchObject({ ip: null, ipKey: null, peer: null })
+      const admin = await seen('/admin/api/cms/plugins/acme.blind/runtime/admin-ip', { peer: '203.0.113.9', cookie: owner })
+      expect(admin).toMatchObject({ ip: null, ipKey: null })
+    })
+
+    it('needs the owner to approve visitors.ip when an upgrade adds it', async () => {
+      const id = 'acme.later'
+      const mount = `/_instatic/plugins/${id}/ip`
+      expect((await install({ id, permissions: WITHOUT_IP })).status).toBe(201)
+      // The new version asks for it; an upgrade that does not grant it is refused.
+      const refused = await install({ id, version: '1.1.0', permissions: PERMISSIONS, granted: WITHOUT_IP })
+      expect(refused.status).toBeGreaterThanOrEqual(400)
+      expect((await seen(mount, { peer: '203.0.113.7' })).ip).toBeNull()
+      expect((await install({ id, version: '1.1.0', permissions: PERMISSIONS, granted: PERMISSIONS })).status).toBeLessThan(300)
+      expect((await seen(mount, { peer: '203.0.113.7' })).ip).toBe('203.0.113.7')
     })
 
     it('is null when the server cannot tell', async () => {
@@ -178,7 +203,8 @@ describe('plugin routes and the caller', () => {
       expect(results[3]?.ok).toBe(false)
       expect(results[3]?.reason).toBe('limit')
       expect(results[3]?.retryAfterMs).toBeGreaterThan(0)
-      expect(results[3]?.retryAfterMs).toBeLessThanOrEqual(60_000)
+      // The counter's estimate can ask for up to one window plus window ÷ limit.
+      expect(results[3]?.retryAfterMs).toBeLessThanOrEqual(60_000 + 60_000 / 3)
       // Another key has its own window.
       expect((await take({ key: 'ip:203.0.113.8', limit: 3, windowMs: 60_000 })).ok).toBe(true)
     })

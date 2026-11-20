@@ -74,7 +74,9 @@ export interface ServerPluginRouteContext {
    */
   app: ServerPluginApp | null
   /**
-   * The caller's IP address, or null when the server cannot tell. It is
+   * The caller's IP address, or null when the server cannot tell or the
+   * plugin does not hold `visitors.ip` (the host then never sends it to the
+   * plugin's worker). It is
    * core's own answer (the one sign-in rate limits use): the socket peer, or,
    * when that peer is a configured trusted proxy, the nearest address in
    * `X-Forwarded-For` that is not one. Set on every kind of route.
@@ -89,7 +91,7 @@ export interface ServerPluginRouteContext {
    * as it is, an IPv6 address as its /64 (`2001:db8:1:2::/64`), since one
    * household or phone network gets a whole /64 and can rotate through it.
    * A NAT64 address (`64:ff9b::/96`) is keyed on the IPv4 address it
-   * carries. Null when `ip` is.
+   * carries. Null when `ip` is (also without `visitors.ip`).
    */
   ipKey: string | null
 }

@@ -21,7 +21,7 @@ import { normalizeRoutePath } from '../protocol/parser'
 import { canonicalIp, clientIp, visitorIpKey } from '../../auth/security'
 import { materializeRouteResponse, serializeRouteRequest } from './routeIo'
 import { PluginRateLimitStore } from './pluginRateLimit'
-import { hostPlugins } from './registry'
+import { hostPluginHasPermission, hostPlugins } from './registry'
 import { requestFromWorker } from './workerPool'
 import { describeWorkerError, workerCallError } from './workerErrors'
 import { workers } from './workerState'
@@ -208,7 +208,10 @@ export async function runRouteInWorker(args: {
   // Exactly core's answer to where the caller is, proxy trust applied, in
   // one spelling per address so a plugin keying on it sees one visitor as
   // one key. The serialized headers below leave out the peer address.
-  const peer = clientIp(args.request)
+  // An IP address is personal data: only a plugin the owner granted
+  // `visitors.ip` is told it, and one without the grant never has it in the
+  // message to its worker at all.
+  const peer = hostPluginHasPermission(args.pluginId, 'visitors.ip') ? clientIp(args.request) : null
   const ip = peer === null ? null : canonicalIp(peer)
   const ipKey = peer === null ? null : visitorIpKey(peer)
   const { request: serializedReq, body: parsedBody } = await serializeRouteRequest(args.request)

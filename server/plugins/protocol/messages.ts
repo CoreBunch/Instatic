@@ -162,7 +162,10 @@ export interface RunRouteRequest {
   member: SerializedMember | null
   /** Set when an app, not the member's browser, is calling for `member`. */
   app: SerializedApp | null
-  /** The caller's IP address as core's `clientIp` resolves it (trusted proxies applied), or null. */
+  /**
+   * The caller's IP address as core's `clientIp` resolves it (trusted proxies
+   * applied), or null. Always null for a plugin not granted `visitors.ip`.
+   */
   ip: string | null
   /** `ip` as a per-visitor key: IPv4 as it is, IPv6 as its /64. */
   ipKey: string | null
