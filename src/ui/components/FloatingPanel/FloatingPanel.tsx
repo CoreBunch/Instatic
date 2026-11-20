@@ -200,7 +200,8 @@ function PanelDialog({ anchorRef, title, closeLabel, onClose, children, width, k
       </div>
       <FloatingPanelHostContext.Provider value={{ registerDrill, drillContainer }}>
         <div className={styles.content} data-drilled={drill ? '' : undefined}>{children}</div>
-        {drill && <div ref={setDrillContainer} />}
+        {/* Keep the portal target mounted while lazy drill content suspends. */}
+        <div ref={setDrillContainer} hidden={!drill} />
       </FloatingPanelHostContext.Provider>
     </div>,
     document.body,

@@ -1,12 +1,12 @@
 import { afterEach, expect, it } from 'bun:test'
-import { Suspense, useRef, useState } from 'react'
+import { lazy, Suspense, useRef, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
-import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { FloatingPanel } from '@ui/components/FloatingPanel'
 
 afterEach(cleanup)
 
-function PanelHarness() {
+function PanelHarness({ colorEditor = <input aria-label="Color value" /> }: { colorEditor?: ReactNode }) {
   const trigger = useRef<HTMLButtonElement>(null)
   const chip = useRef<HTMLButtonElement>(null)
   const [open, setOpen] = useState(false)
@@ -17,10 +17,10 @@ function PanelHarness() {
       <FloatingPanel title="Border" anchorRef={trigger} closeLabel="Close border" width={288} onClose={() => setOpen(false)}>
         <button ref={chip} onClick={() => setEditingColor(true)}>Edit color</button>
         {createPortal(<div role="listbox" aria-label="Border styles" />, document.body)}
-        {editingColor && <FloatingPanel title="Color" anchorRef={chip} closeLabel="Close color" width={286}
+        {editingColor && <Suspense fallback={null}><FloatingPanel title="Color" anchorRef={chip} closeLabel="Close color" width={286}
           onClose={() => setEditingColor(false)}>
-          <input aria-label="Color value" />
-        </FloatingPanel>}
+          {colorEditor}
+        </FloatingPanel></Suspense>}
       </FloatingPanel>
     </Suspense>}
   </>
@@ -51,6 +51,21 @@ it('restores focus to the nested trigger on Back and the original trigger on Esc
   fireEvent.keyDown(colorTrigger, { key: 'Escape' })
   expect(document.activeElement).toBe(trigger)
   expect(screen.queryByRole('dialog')).toBeNull()
+})
+
+it('opens a nested editor whose content is still loading on first use', async () => {
+  const chunk = Promise.withResolvers<{ default: () => ReactNode }>()
+  const LazyEditor = lazy(() => chunk.promise)
+  render(<PanelHarness colorEditor={<LazyEditor />} />)
+  fireEvent.click(screen.getByRole('button', { name: 'Edit border' }))
+  const chip = await screen.findByRole('button', { name: 'Edit color' })
+  fireEvent.click(chip)
+  await act(async () => chunk.resolve({ default: () => <input aria-label="Color value" /> }))
+  const field = await screen.findByRole('textbox', { name: 'Color value' })
+  fireEvent.change(field, { target: { value: '#804080' } })
+  expect((field as HTMLInputElement).value).toBe('#804080')
+  fireEvent.click(screen.getByRole('button', { name: 'Back' }))
+  expect(document.activeElement).toBe(chip)
 })
 
 it('moves only for the captured pointer and stops on lost capture', async () => {

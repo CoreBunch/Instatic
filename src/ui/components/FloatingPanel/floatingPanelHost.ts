@@ -17,7 +17,7 @@ export interface FloatingPanelDrill {
 export interface FloatingPanelHost {
   /** Register a drill view; the returned cleanup restores the main view. */
   registerDrill: (drill: FloatingPanelDrill) => () => void
-  /** Where the drilled view portals to; exists only while a drill is active. */
+  /** Where the drilled view portals to; stays mounted for the lifetime of the panel. */
   drillContainer: HTMLElement | null
 }
 
