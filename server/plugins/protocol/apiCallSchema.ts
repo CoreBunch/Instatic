@@ -60,6 +60,7 @@ import { MailSendArgsSchema, MailSendExternalArgsSchema } from './schemas/mail'
 import {
   MembersEmailStatusArgsSchema,
   MembersEnsureArgsSchema,
+  MembersExportProviderArgsSchema,
   MembersGetArgsSchema,
   MembersInviteArgsSchema,
   MembersTagsGrantArgsSchema,
@@ -176,6 +177,7 @@ export const ApiCallSchemas = {
   'cms.members.invite': apiCallSchema('cms.members.invite', MembersInviteArgsSchema),
   'cms.members.ensure': apiCallSchema('cms.members.ensure', MembersEnsureArgsSchema),
   'cms.members.emailStatus': apiCallSchema('cms.members.emailStatus', MembersEmailStatusArgsSchema),
+  'cms.members.exportProvider': apiCallSchema('cms.members.exportProvider', MembersExportProviderArgsSchema),
   'cms.members.tags.grant': apiCallSchema('cms.members.tags.grant', MembersTagsGrantArgsSchema),
   'cms.members.tags.revoke': apiCallSchema('cms.members.tags.revoke', MembersTagsRevokeArgsSchema),
   'cms.mail.send': apiCallSchema('cms.mail.send', MailSendArgsSchema),

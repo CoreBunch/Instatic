@@ -93,6 +93,7 @@ const EXPECTED_TARGET_PERMISSIONS: Record<string, string> = {
   'cms.members.invite': 'members.write',
   'cms.members.ensure': 'members.write',
   'cms.members.emailStatus': 'members.write',
+  'cms.members.exportProvider': 'members.read',
   'cms.members.tags.grant': 'members.tags',
   'cms.members.tags.revoke': 'members.tags',
   'cms.mail.send': 'mail.send',

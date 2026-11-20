@@ -75,6 +75,7 @@ import { handleMailSend, handleMailSendExternal, handleSitePublicUrl } from './h
 import {
   handleMembersEmailStatus,
   handleMembersEnsure,
+  handleMembersExportProvider,
   handleMembersGet,
   handleMembersInvite,
   handleMembersTagsGrant,
@@ -150,6 +151,7 @@ const apiHandlers = {
   'cms.members.invite': handleMembersInvite,
   'cms.members.ensure': handleMembersEnsure,
   'cms.members.emailStatus': handleMembersEmailStatus,
+  'cms.members.exportProvider': handleMembersExportProvider,
   'cms.members.tags.grant': handleMembersTagsGrant,
   'cms.members.tags.revoke': handleMembersTagsRevoke,
   'cms.mail.send': handleMailSend,

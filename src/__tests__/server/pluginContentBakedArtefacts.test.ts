@@ -99,6 +99,7 @@ function pluginRecord(): HostPluginRecord {
     routes: new Map(),
     hookListeners: [],
     hookFilters: [],
+    memberExportFilterId: null,
     loopSources: [],
     mediaAdapters: [],
     mediaUrlTransformers: [],

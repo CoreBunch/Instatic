@@ -52,6 +52,7 @@ import { clientIp, isSiteOrigin, originAllowed } from '../auth/security'
 import { jsonResponse, readTextBodyWithLimit, RequestBodyTooLargeError, setCookieHeader } from '../http'
 import { answerAppSignIn, disconnectApp } from './apps/approval'
 import { handleMemberOAuthRequest } from './apps/handler'
+import { exportMemberDataWithPlugins } from '../plugins/host/memberExport'
 import { MEMBER_OAUTH_PATH_PREFIX } from './apps/protocol'
 import { memberLinkOrigin, memberMailAvailable } from './mail'
 import { findMemberById, toCurrentMember } from './repository'
@@ -61,7 +62,6 @@ import {
   confirmEmailChange,
   confirmSignInLink,
   deleteAccount,
-  exportMemberData,
   logIn,
   logOut,
   requestEmailChange,
@@ -412,7 +412,7 @@ export async function handleMemberRequest(req: Request, db: DbClient, url: URL):
     if (action === 'export') {
       const current = await resolveSignedInMember(db, req)
       if (!current) return jsonResponse({ error: 'Sign in first.' }, { status: 401, headers: NO_STORE })
-      return jsonResponse(await exportMemberData(db, current.member), {
+      return jsonResponse(await exportMemberDataWithPlugins(db, current.member), {
         headers: { ...NO_STORE, 'content-disposition': 'attachment; filename="my-account-data.json"' },
       })
     }

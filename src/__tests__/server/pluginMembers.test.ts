@@ -545,6 +545,70 @@ describe('site members for plugins', () => {
     })
   })
 
+  describe('member data export', () => {
+    const exporting = (title: string) => `export function activate(api) {
+      api.cms.members.exportProvider(async (memberId) => ({ title: ${JSON.stringify(title)}, data: { memberId, orders: [{ id: 'o1', total: 12 }] } }))
+    }`
+
+    it('carries each plugin section, and lists a plugin that failed instead of dropping it', async () => {
+      await install(['members.read'], exporting('Orders'), 'acme.shop')
+      await install(
+        ['members.read'],
+        `export function activate(api) {
+           api.cms.members.exportProvider(async () => { throw new Error('database unavailable') })
+         }`,
+        'acme.broken',
+      )
+      await install(['members.read'], `export function activate(api) {
+           api.cms.members.exportProvider(async () => 'not a section')
+         }`, 'acme.odd')
+      const ada = await member('ada@example.com')
+
+      const own = await visit('/_instatic/members/export', { cookie: ada.cookie })
+      expect(own.status).toBe(200)
+      const mine = (await own.json()) as { account: { email: string }; plugins: Array<Record<string, unknown>> }
+      expect(mine.account.email).toBe('ada@example.com')
+      const byPlugin = Object.fromEntries(mine.plugins.map((section) => [section.plugin, section]))
+      expect(byPlugin['acme.shop']).toEqual({
+        plugin: 'acme.shop',
+        name: 'Club',
+        included: true,
+        title: 'Orders',
+        data: { memberId: ada.id, orders: [{ id: 'o1', total: 12 }] },
+      })
+      expect(byPlugin['acme.broken']).toMatchObject({ included: false, reason: expect.stringContaining('Could not be included') })
+      expect(byPlugin['acme.odd']).toMatchObject({ included: false, reason: expect.stringContaining('{ title, data }') })
+
+      // The admin's download is the same export, and it is audited.
+      const admin = await h.cms(`/admin/api/cms/members/${ada.id}/export`, { cookie: owner })
+      expect(admin.status).toBe(200)
+      expect(admin.headers.get('content-disposition')).toContain('attachment')
+      const theirs = (await admin.json()) as { plugins: unknown[] }
+      expect(theirs.plugins).toEqual(mine.plugins)
+      const { rows } = await h.db<{ target_id: string }>`select target_id from audit_events where action = 'member.export'`
+      expect(rows).toEqual([{ target_id: ada.id }])
+    })
+
+    it('cannot be offered without members.read', async () => {
+      const res = await install(
+        ['cms.routes', 'cms.routes.public'],
+        `export function activate(api) {
+           api.cms.routes.public.get('/before', () => ({ ok: true }))
+           api.cms.members.exportProvider(async () => ({ data: {} }))
+         }`,
+        'acme.nosy',
+      )
+      expect(res.status).toBe(201)
+      // The refused registration fails activation.
+      expect((await visit('/_instatic/plugins/acme.nosy/before')).status).toBe(404)
+      const ada = await member('ada@example.com')
+      const mine = (await (await visit('/_instatic/members/export', { cookie: ada.cookie })).json()) as {
+        plugins: Array<{ plugin: string }>
+      }
+      expect(mine.plugins.map((section) => section.plugin)).not.toContain('acme.nosy')
+    })
+  })
+
   describe('member events', () => {
 
     it('reach a plugin that may read members', async () => {
@@ -556,6 +620,24 @@ describe('site members for plugins', () => {
       expect(events).toContainEqual({ event: 'member.created', memberId: ada.id, email: 'ada@example.com' })
       expect(events).toContainEqual({ event: 'member.verified', memberId: ada.id, email: 'ada@example.com' })
       expect(events).toContainEqual({ event: 'member.tagged', memberId: ada.id, tag: 'gold', source: PLUGIN_ID, expiresAt: null })
+    })
+
+    it('tell a plugin that may read members about a deletion, by the member and by an admin', async () => {
+      await install(ALL)
+      // No password: a member who signed in moments ago may delete without one.
+      const created = await createMember(h.db, { email: 'ada@example.com', passwordHash: null, profile: {}, verified: true })
+      const session = await createMemberSession(h.db, created!.id, { ipAddress: null, userAgent: null })
+      const ada = { id: created!.id, cookie: `instatic_member=${session.token}` }
+      const bea = await member('bea@example.com')
+      const own = await visit('/_instatic/members/delete', { method: 'POST', cookie: ada.cookie, json: {} })
+      expect(own.status).toBe(200)
+      expect((await h.cms(`/admin/api/cms/members/${bea.id}`, { method: 'DELETE', cookie: await h.stepUp(owner) })).status).toBe(200)
+      await settle()
+      const deleted = (await heard()).filter((entry) => entry.event === 'member.deleted')
+      expect(deleted).toEqual([
+        { event: 'member.deleted', memberId: ada.id },
+        { event: 'member.deleted', memberId: bea.id },
+      ])
     })
 
     it('are refused to a plugin that may not', async () => {

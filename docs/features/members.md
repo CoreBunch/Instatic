@@ -212,6 +212,7 @@ The API is `server/handlers/cms/members.ts` under `/admin/api/cms/members`. It d
 | POST | `/members/invite` | Create an invited member and email a link | manage |
 | POST | `/members/:id/suspend`, `/unsuspend` | Block or restore sign-in | manage |
 | POST | `/members/:id/sign-out` | End every session | manage |
+| GET | `/members/:id/export` | Everything held about the member, plugins' sections included, as a download | manage |
 | DELETE | `/members/:id/apps/:grantId` | Sign the member out of one app | manage |
 | POST / DELETE | `/members/:id/tags` | Grant a tag (source `admin`, optional end) / withdraw one source's grant | manage |
 | DELETE | `/members/:id` | Anonymise, as the member's own delete does | manage + step-up |
@@ -222,7 +223,7 @@ The API is `server/handlers/cms/members.ts` under `/admin/api/cms/members`. It d
 - **Suspension** takes effect on the next request (`findMemberSession` requires an active member). Sessions and unused tokens are also ended for good, so restoring a member does not bring an old session back.
 - **Search** matches the address and the profile text. `%` and `_` are plain characters.
 - **Settings** are validated beyond the schema: field ids must be unique and must not be a name the member forms use (`email`, `password`, `token`, `request`, `decision`, `connection`, `currentPassword`, `newPassword`). A link page must be a site path.
-- **Audit:** `member.invite`, `member.create` (a plugin gave an address an account; no actor, `pluginId` in the metadata), `member.suspend`, `member.unsuspend`, `member.signout`, `member.app.disconnect`, `member.delete`, `member.tag.grant`, `member.tag.revoke`, `member.settings.update`, each with the member's address in the metadata, since the audit trail cannot look a member up by id.
+- **Audit:** `member.invite`, `member.create` (a plugin gave an address an account; no actor, `pluginId` in the metadata), `member.suspend`, `member.unsuspend`, `member.signout`, `member.export`, `member.app.disconnect`, `member.delete`, `member.tag.grant`, `member.tag.revoke`, `member.settings.update`, each with the member's address in the metadata, since the audit trail cannot look a member up by id.
 
 The binding picker lists one `member.profile.<id>` entry per profile field (`loadMemberProfileFields`); an editor who may not read member settings gets the built-in list.
 
@@ -300,7 +301,9 @@ Try it: `bun run demo:members` registers a demo app and prints the command for `
 
 ## Deleting and exporting
 
-`delete` anonymises: the row stays with a placeholder address and `status = 'deleted'`, and sessions, tokens, tags, profile and event IP/user-agent are removed, along with the member's app sign-ins (grants, codes and tokens, and so the device names apps gave). The address is free to register again. `GET export` returns the account, profile, tags, live sessions, connected apps (`connectedApps`: app name, device, connected at, last used at) and activity.
+`delete` anonymises: the row stays with a placeholder address and `status = 'deleted'`, and sessions, tokens, tags, profile and event IP/user-agent are removed, along with the member's app sign-ins (grants, codes and tokens, and so the device names apps gave). The address is free to register again. `GET export` returns the account, profile, tags, live sessions, connected apps (`connectedApps`: app name, device, connected at, last used at), activity, and `plugins`: one section per plugin that offers one (`api.cms.members.exportProvider`), or an entry saying it could not be included. An administrator with `members.manage` downloads the same export from the member's detail panel ("Download data", `GET /admin/api/cms/members/:id/export`, audited as `member.export`). Both go through `exportMemberDataWithPlugins` (`server/plugins/host/memberExport.ts`).
+
+Deleting a member emits `member.deleted` to the plugins listening at that moment. A plugin erases or anonymises its data about the member then, keeping only what it must by law, and reconciles on activation for deletions it missed while disabled (see [plugin-system](plugin-system.md) → "Site members"). Core does not record deletions for later delivery: the deleted row is anonymised, and `api.cms.members.get({ id })` answering `null` is how a plugin finds out afterwards.
 
 ## Try it: the demo site
 

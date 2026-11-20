@@ -99,6 +99,17 @@ export async function handleMembersEnsure(
   })
 }
 
+/** Remember the plugin's member export provider; the host calls it per export (`memberExport.ts`). */
+export async function handleMembersExportProvider(
+  msg: ApiCallFor<'cms.members.exportProvider'>,
+  entry: HostPluginRecord,
+  _db: DbClient,
+): Promise<void> {
+  if (entry.memberExportFilterId !== null) throw new Error('This plugin already has a member export provider')
+  entry.memberExportFilterId = msg.args[0].filterId
+  replyApiOk(msg.pluginId, msg.correlationId)
+}
+
 /** Whether the site can email members links it starts itself, and if not, why. */
 export async function handleMembersEmailStatus(
   msg: ApiCallFor<'cms.members.emailStatus'>,

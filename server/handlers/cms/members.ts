@@ -11,6 +11,7 @@
  *   POST   /admin/api/cms/members/:id/suspend         — block sign-in, end open sessions
  *   POST   /admin/api/cms/members/:id/unsuspend
  *   POST   /admin/api/cms/members/:id/sign-out        — end every session
+ *   GET    /admin/api/cms/members/:id/export          — everything held about the member, plugins included
  *   POST   /admin/api/cms/members/:id/tags            — grant a tag
  *   DELETE /admin/api/cms/members/:id/tags            — withdraw one source's grant of a tag
  *   DELETE /admin/api/cms/members/:id/apps/:grantId   — sign the member out of one app
@@ -53,6 +54,7 @@ import { createMemberApp, deleteMemberApp, findMemberApp, listMemberApps } from 
 import { isAvailableMemberAppScope, listAvailableMemberAppScopes } from '../../members/apps/scopes'
 import { listMemberPageOptions } from '../../members/pages'
 import {
+  findMemberById,
   getMemberSettings,
   grantMemberTag,
   recordMemberEvent,
@@ -60,6 +62,7 @@ import {
   saveMemberSettings,
 } from '../../members/repository'
 import { parseAllowedRedirectUri } from '../../oauth/protocol'
+import { exportMemberDataWithPlugins } from '../../plugins/host/memberExport'
 import { createAuditEvent, type AuditAction } from '../../repositories/audit'
 import type { AuthUser } from '../../repositories/users'
 import { CMS_API_PREFIX, requestAuditContext } from './shared'
@@ -201,6 +204,19 @@ async function handleSignOut(req: Request, db: DbClient, params: RouteParams): P
   const detail = await getMemberForAdmin(db, params.id)
   await audit(db, req, user, 'member.signout', params.id, emailOf(detail))
   return jsonResponse({ detail })
+}
+
+/** Everything the site holds about one member, plugins' sections included, as a download. */
+async function handleExport(req: Request, db: DbClient, params: RouteParams): Promise<Response> {
+  const user = await manager(req, db)
+  if (user instanceof Response) return user
+  const member = await findMemberById(db, params.id)
+  if (!member) return notFound()
+  const data = await exportMemberDataWithPlugins(db, member)
+  await audit(db, req, user, 'member.export', member.id, { email: member.email })
+  return jsonResponse(data, {
+    headers: { 'cache-control': 'no-store', 'content-disposition': 'attachment; filename="member-data.json"' },
+  })
 }
 
 async function handleDisconnectApp(req: Request, db: DbClient, params: RouteParams): Promise<Response> {
@@ -375,6 +391,7 @@ const ROUTES: Route<[]>[] = [
   { method: 'POST', pattern: action('suspend'), handler: (req, db, params) => handleSuspend(req, db, params, true) },
   { method: 'POST', pattern: action('unsuspend'), handler: (req, db, params) => handleSuspend(req, db, params, false) },
   { method: 'POST', pattern: action('sign-out'), handler: handleSignOut },
+  { method: 'GET', pattern: action('export'), handler: handleExport },
   { method: 'POST', pattern: action('tags'), handler: handleGrantTag },
   { method: 'DELETE', pattern: action('tags'), handler: handleRevokeTag },
   { method: 'DELETE', pattern: MEMBER_APP, handler: handleDisconnectApp },

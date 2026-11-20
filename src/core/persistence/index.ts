@@ -77,6 +77,7 @@ export {
   deleteCmsMember,
   deleteCmsMemberApp,
   disconnectCmsMemberApp,
+  downloadCmsMemberData,
   getCmsMember,
   getCmsMemberSettings,
   grantCmsMemberTag,

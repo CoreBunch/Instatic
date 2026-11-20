@@ -62,6 +62,7 @@ export async function loadPluginInWorker(args: {
     routes: new Map(),
     hookListeners: [],
     hookFilters: [],
+    memberExportFilterId: null,
     loopSources: [],
     mediaAdapters: [],
     mediaUrlTransformers: [],

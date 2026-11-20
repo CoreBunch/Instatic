@@ -203,6 +203,7 @@ describe('plugin sandbox invariants', () => {
       'cms.media.upsert',
       'cms.members.emailStatus',
       'cms.members.ensure',
+      'cms.members.exportProvider',
       'cms.members.get',
       'cms.members.invite',
       'cms.members.tags.grant',

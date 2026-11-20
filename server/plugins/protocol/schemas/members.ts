@@ -30,6 +30,11 @@ export const MembersEnsureArgsSchema = MembersInviteArgsSchema
 
 export const MembersEmailStatusArgsSchema = Type.Tuple([])
 
+/** The VM-side id of the plugin's export provider (it runs through the filter dispatcher). */
+export const MembersExportProviderArgsSchema = Type.Tuple([
+  Type.Object({ filterId: Type.String({ minLength: 1, maxLength: 64 }) }, { additionalProperties: false }),
+])
+
 export const MembersTagsGrantArgsSchema = Type.Tuple([
   MemberIdSchema,
   TagSchema,

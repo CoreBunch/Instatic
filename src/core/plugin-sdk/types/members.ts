@@ -25,6 +25,14 @@ export type PluginMemberEmailBlocker =
   /** No published sign-in-link page or password-reset page is chosen. */
   | 'sign_in_page_missing'
 
+/** A plugin's section of a member's data export. */
+export interface PluginMemberExportSection {
+  /** Heading for the section; the plugin's name when omitted. */
+  title?: string
+  /** What the plugin keeps about the member, as JSON. */
+  data: unknown
+}
+
 export interface ServerPluginMembersApi {
   /** Look a member up by id or by email address. Requires `members.read`. */
   get: (by: { id: string } | { email: string }) => Promise<PluginMemberRecord | null>
@@ -66,6 +74,17 @@ export interface ServerPluginMembersApi {
    * For a setup check. Requires `members.write`.
    */
   emailStatus: () => Promise<{ canEmail: boolean; reasons: PluginMemberEmailBlocker[] }>
+  /**
+   * Add the plugin's section to a member's data export (the member's own
+   * download and the admin's "Download data"). Register once, at activation;
+   * a second registration throws. The provider gets the member id and
+   * returns `{ title?, data }`: `data` is everything the plugin keeps about
+   * that member, as JSON (at most 1 MiB). `title` defaults to the plugin's
+   * name. It runs within the plugin's usual call budget; if it throws, runs
+   * out of time or returns anything else, the export lists the plugin as
+   * "could not be included" and goes on. Requires `members.read`.
+   */
+  exportProvider: (provider: (memberId: string) => PluginMemberExportSection | Promise<PluginMemberExportSection>) => void
   tags: {
     /**
      * Give a member a tag, optionally until `expiresAt` (an ISO date-time).

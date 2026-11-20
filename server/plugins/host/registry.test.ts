@@ -36,6 +36,7 @@ function pluginRecord(id: string, contentAccess: ContentAccessEntry[]): HostPlug
     routes: new Map(),
     hookListeners: [],
     hookFilters: [],
+    memberExportFilterId: null,
     loopSources: [],
     mediaAdapters: [],
     mediaUrlTransformers: [],

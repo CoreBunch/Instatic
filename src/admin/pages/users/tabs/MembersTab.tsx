@@ -23,6 +23,7 @@ import type {
 import {
   deleteCmsMember,
   disconnectCmsMemberApp,
+  downloadCmsMemberData,
   getCmsMember,
   getCmsMemberSettings,
   grantCmsMemberTag,
@@ -71,6 +72,22 @@ const SIGNUP_SUMMARY: Record<MemberSignupMode, string> = {
 
 function isStepUpCancelled(err: unknown): boolean {
   return err instanceof Error && err.message === StepUpCancelledMessage
+}
+
+/** Hand a file to the browser's own download; it decides where it goes. */
+function saveFile(blob: Blob, filename: string): void {
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = filename
+  link.hidden = true
+  document.body.append(link)
+  try {
+    link.click()
+  } finally {
+    link.remove()
+    window.setTimeout(() => URL.revokeObjectURL(url), 1_000)
+  }
 }
 
 export function MembersTab({
@@ -234,6 +251,8 @@ export function MembersTab({
         }),
       restore: () => void run(() => unsuspendCmsMember(member.id), 'The member could not be restored', `${who} can sign in again`),
       signOut: () => void run(() => signOutCmsMember(member.id), 'The member could not be signed out', `${who} is signed out everywhere`),
+      downloadData: () =>
+        void run(async () => saveFile(await downloadCmsMemberData(member.id), 'member-data.json'), "The member's data could not be downloaded"),
       remove: () =>
         confirmDelete({
           title: `Delete ${who}?`,

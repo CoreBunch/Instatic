@@ -515,6 +515,19 @@ globalThis.__buildApi = function buildApi() {
           assertTargetPermission('cms.members.emailStatus')
           return call('cms.members.emailStatus', [])
         },
+        // api.cms.members.exportProvider(async (memberId) => ({ title, data }))
+        // The plugin's section of a member's data export. One per plugin; it
+        // runs through the filter dispatcher, never hooked to a filter name.
+        exportProvider: function (handler: unknown) {
+          assertTargetPermission('cms.members.exportProvider')
+          if (typeof handler !== 'function') throw new TypeError('A member export provider must be a function')
+          const provide = handler as BootstrapFn
+          const filterId = __nextId('member-export')
+          globalThis.__plugin_handlers.filters[filterId] = function (_value: unknown, context: unknown) {
+            return provide((context as { memberId: string }).memberId)
+          }
+          return call('cms.members.exportProvider', [{ filterId: filterId }])
+        },
         tags: {
           // The tag's source is this plugin; `revoke` withdraws only this plugin's grant.
           grant: function (memberId: unknown, tag: unknown, options?: unknown) {
