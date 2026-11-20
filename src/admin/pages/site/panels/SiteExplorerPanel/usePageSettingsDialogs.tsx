@@ -1,4 +1,4 @@
-import { lazy, Suspense, useState } from 'react'
+import { Suspense, useState } from 'react'
 import type { AccessRule } from '@core/members'
 import type { Page, PageSeo, PageTemplateConfig, SiteDocument } from '@core/page-tree'
 import type { TemplateSettingsPayload } from '@admin/shared/dialogs/TemplateSettingsDialog'
@@ -7,12 +7,7 @@ import type { PageSettingsPayload } from '@admin/shared/dialogs/PageSettingsDial
 import { mergePageSeo } from '@core/page-tree'
 import { resolveTemplateChain } from '@core/templates'
 
-const TemplateSettingsDialog = lazy(() =>
-  import('@admin/shared/dialogs/TemplateSettingsDialog').then((m) => ({ default: m.TemplateSettingsDialog })),
-)
-const PageSettingsDialog = lazy(() =>
-  import('@admin/shared/dialogs/PageSettingsDialog').then((m) => ({ default: m.PageSettingsDialog })),
-)
+import { PageSettingsDialog, TemplateSettingsDialog } from './lazyPageSettingsDialogs'
 
 interface UsePageSettingsDialogsOptions {
   site: SiteDocument | null
