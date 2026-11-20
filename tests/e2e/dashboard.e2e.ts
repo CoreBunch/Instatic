@@ -78,9 +78,9 @@ test.describe('dashboard', () => {
       await expectLoaded(media)
       await expect(media).toContainText(/files/)
 
-      const status = await expectWidget(page, 'status', 'Status')
-      await expect(status).toContainText('Site')
-      await expect(status).toContainText('Live')
+      const status = await expectWidget(page, 'status', 'Publishing status')
+      await expectLoaded(status)
+      await expect(status).toContainText('Not published')
 
       const activity = await expectWidget(page, 'activity', 'Activity')
       await expectLoaded(activity)
