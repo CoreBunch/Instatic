@@ -22,6 +22,7 @@ import { recordMail } from '../mail/activity'
 import { queueTemplateMail } from '../mail/delivery'
 import { mailDeliveryMode } from '../mail/send'
 import { MEMBER_MAIL_KEYS, type MemberMailKind } from './mailTemplates'
+import { getMemberPagePaths } from './pages'
 import { TOKEN_LIFETIME_MS, type MemberTokenKind } from './tokens'
 
 const LOOPBACK_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]'])
@@ -44,6 +45,29 @@ export function memberLinkOrigin(req: Request): string | null {
 export async function memberMailAvailable(db: DbClient, req: Request): Promise<boolean> {
   if (!memberLinkOrigin(req)) return false
   return mailDeliveryMode(await getMailDefaults(db)) !== 'off'
+}
+
+/** Why the site cannot email a member a link it starts itself (an invitation, a sign-in link). */
+export type MemberEmailBlocker =
+  | 'public_address_missing'
+  | 'mail_not_configured'
+  | 'invite_page_missing'
+  | 'sign_in_page_missing'
+
+/**
+ * What stands between the site and emailing members links right now, with
+ * no request to take an address from (so only the configured public origin
+ * counts): outgoing email, the invitation page, and a page for a sign-in
+ * link or a password reset. Empty when nothing does.
+ */
+export async function memberEmailBlockers(db: DbClient): Promise<MemberEmailBlocker[]> {
+  const blockers: MemberEmailBlocker[] = []
+  if (!configuredPublicOrigin()) blockers.push('public_address_missing')
+  if (mailDeliveryMode(await getMailDefaults(db)) === 'off') blockers.push('mail_not_configured')
+  const pages = await getMemberPagePaths(db)
+  if (!memberLinkPage(pages, 'invite')) blockers.push('invite_page_missing')
+  if (!memberLinkPage(pages, 'magic') && !memberLinkPage(pages, 'reset')) blockers.push('sign_in_page_missing')
+  return blockers
 }
 
 const PAGE_FOR_KIND: Record<MemberTokenKind, MemberPageKey> = {

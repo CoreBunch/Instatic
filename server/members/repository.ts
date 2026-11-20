@@ -275,6 +275,27 @@ export async function grantMemberTag(
   })
 }
 
+/**
+ * Grant a tag from one source unless that source already grants it. An
+ * existing grant keeps its end date: a repeated call neither extends nor
+ * shortens it. Returns whether a grant was added.
+ */
+export async function grantMemberTagIfAbsent(
+  db: DbClient,
+  input: { memberId: string; tag: string; source: string },
+): Promise<boolean> {
+  if (!isGrantableMemberTag(input.tag)) throw new Error(`"${input.tag}" is not a tag a member can be given`)
+  const { rows } = await db<{ tag: string }>`
+    insert into member_tags (member_id, tag, source, expires_at, created_at)
+    values (${input.memberId}, ${input.tag}, ${input.source}, ${null}, ${nowIso()})
+    on conflict (member_id, tag, source) do nothing
+    returning tag
+  `
+  if (rows.length === 0) return false
+  emitMemberHook('member.tagged', { memberId: input.memberId, tag: input.tag, source: input.source, expiresAt: null })
+  return true
+}
+
 /** Withdraw one source's grant of a tag. Other sources' grants stay. */
 export async function revokeMemberTag(
   db: DbClient,
@@ -316,6 +337,8 @@ export type MemberEventKind =
   | 'deleted'
   | 'app_connected'
   | 'app_disconnected'
+  // Done by a plugin (`metadata.plugin` names it), not by the member.
+  | 'created_by_plugin'
   // Done by an administrator, not by the member.
   | 'invited'
   | 'suspended'

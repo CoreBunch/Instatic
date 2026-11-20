@@ -17,6 +17,9 @@ import { configurePublicOrigins, resetPublicOrigins } from '../../../server/auth
 import { handleCmsRequest } from '../../../server/handlers/cms'
 import { flushMemberMail } from '../../../server/members/mail'
 import { DEFAULT_MEMBER_SETTINGS } from '@core/members'
+import { deleteMemberAsAdmin, ensureMember, setMemberSuspended } from '../../../server/members/admin'
+import { confirmSignInLink } from '../../../server/members/service'
+import { issueMemberToken } from '../../../server/members/tokens'
 import { createMember, findMemberByEmail, grantMemberTag, listActiveMemberTags, saveMemberSettings } from '../../../server/members/repository'
 import { createMemberSession } from '../../../server/members/sessions'
 import { handleServerRequest } from '../../../server/router'
@@ -52,6 +55,13 @@ const PLUGIN_SOURCE = `
       try {
         if (action === 'get') return { result: await api.cms.members.get(memberId ? { id: memberId } : { email }) }
         if (action === 'invite') return { result: await api.cms.members.invite(tags ? { email, tags } : { email }) }
+        if (action === 'ensure') return { result: await api.cms.members.ensure(tags ? { email, tags } : { email }) }
+        if (action === 'ensureTogether') {
+          const calls = []
+          for (let i = 0; i < 10; i++) calls.push(api.cms.members.ensure({ email: i % 2 ? email.toUpperCase() : email }))
+          return { result: await Promise.all(calls) }
+        }
+        if (action === 'emailStatus') return { result: await api.cms.members.emailStatus() }
         if (action === 'grant') return { result: await api.cms.members.tags.grant(memberId, tag, expiresAt ? { expiresAt } : {}) ?? 'ok' }
         if (action === 'revoke') return { result: await api.cms.members.tags.revoke(memberId, tag) ?? 'ok' }
       } catch (err) {
@@ -307,6 +317,162 @@ describe('site members for plugins', () => {
       expect((await call({ action: 'invite', email: 'ada@example.com' })).error).toContain('already has an account')
     })
 
+    describe('ensure', () => {
+      type Ensured = { member: { id: string; email: string; status: string; emailVerified: boolean; tags: string[] }; created: boolean }
+
+      it('creates a member with no password and sends nothing, and records who did it', async () => {
+        await install(ALL)
+        const { result } = await call({ action: 'ensure', email: '  Buyer@Example.com ', tags: ['customer'] })
+        const ensured = result as Ensured
+        expect(ensured.created).toBe(true)
+        expect(ensured.member).toMatchObject({ email: 'Buyer@Example.com', status: 'active', emailVerified: false, tags: ['customer'] })
+
+        const stored = await findMemberByEmail(h.db, 'buyer@example.com')
+        expect(stored).toMatchObject({ id: ensured.member.id, passwordHash: null, emailVerifiedAt: null, status: 'active' })
+        await flushMemberMail()
+        const { rows: mail } = await h.db<{ id: string }>`select id from mail_outbox`
+        expect(mail).toEqual([])
+        const { rows: tokens } = await h.db<{ kind: string }>`select kind from member_tokens where member_id = ${ensured.member.id}`
+        expect(tokens).toEqual([])
+        const { rows: events } = await h.db<{ kind: string; metadata_json: unknown }>`
+          select kind, metadata_json from member_events where member_id = ${ensured.member.id}
+        `
+        expect(events).toEqual([{ kind: 'created_by_plugin', metadata_json: { plugin: PLUGIN_ID } }])
+        const { rows: audit } = await h.db<{ actor_user_id: string | null; target_id: string; metadata_json: unknown }>`
+          select actor_user_id, target_id, metadata_json from audit_events where action = 'member.create'
+        `
+        expect(audit).toEqual([
+          { actor_user_id: null, target_id: ensured.member.id, metadata_json: { email: 'Buyer@Example.com', pluginId: PLUGIN_ID } },
+        ])
+        const { rows: grants } = await h.db<{ source: string; expires_at: string | null }>`
+          select source, expires_at from member_tags where member_id = ${ensured.member.id}
+        `
+        expect(grants).toEqual([{ source: PLUGIN_ID, expires_at: null }])
+      })
+
+      it('lets the created member in with a sign-in link, which confirms the address', async () => {
+        await install(ALL)
+        const ensured = (await call({ action: 'ensure', email: 'buyer@example.com' })).result as Ensured
+        const { token } = await issueMemberToken(h.db, ensured.member.id, 'magic')
+        const ctx = { db: h.db, linkOrigin: null, mailAvailable: false, ipAddress: null, userAgent: null }
+        const outcome = await confirmSignInLink(ctx, { token, ip: '203.0.113.9' })
+        expect(outcome).toMatchObject({ ok: true, code: 'signed_in' })
+        expect((await findMemberByEmail(h.db, 'buyer@example.com'))?.emailVerifiedAt).not.toBeNull()
+      })
+
+      it('returns an existing member as it is, without a new audit entry, and keeps its own grants', async () => {
+        await install(ALL)
+        const ada = await member('ada@example.com')
+        const later = new Date(Date.now() + 86_400_000).toISOString()
+        await call({ action: 'grant', memberId: ada.id, tag: 'gold', expiresAt: later })
+        const ensured = (await call({ action: 'ensure', email: 'ADA@example.com', tags: ['gold', 'silver'] })).result as Ensured
+        expect(ensured.created).toBe(false)
+        expect(ensured.member).toMatchObject({ id: ada.id, email: 'ada@example.com', emailVerified: true, tags: ['gold', 'silver'] })
+        // The plugin's earlier grant keeps its end date; only the missing tag is added.
+        const { rows } = await h.db<{ tag: string; expires_at: string | null }>`
+          select tag, expires_at from member_tags where member_id = ${ada.id} order by tag
+        `
+        expect(rows).toEqual([{ tag: 'gold', expires_at: later }, { tag: 'silver', expires_at: null }])
+        const { rows: audit } = await h.db<{ id: string }>`select id from audit_events where action = 'member.create'`
+        expect(audit).toEqual([])
+      })
+
+      it('gives ten calls at once one member, created once', async () => {
+        await install(ALL)
+        const { result, error } = await call({ action: 'ensureTogether', email: 'rush@example.com' })
+        expect(error).toBeUndefined()
+        const all = result as Ensured[]
+        expect(all).toHaveLength(10)
+        expect(new Set(all.map((entry) => entry.member.id)).size).toBe(1)
+        expect(all.filter((entry) => entry.created)).toHaveLength(1)
+        const { rows } = await h.db<{ id: string }>`select id from members where email_normalized = ${'rush@example.com'}`
+        expect(rows).toHaveLength(1)
+        const { rows: audit } = await h.db<{ id: string }>`select id from audit_events where action = 'member.create'`
+        expect(audit).toHaveLength(1)
+      })
+
+      it('lets the address index decide between inserts that really overlap', async () => {
+        // Calls through one worker reach the host one after another; called
+        // directly, all ten look the address up before any of them inserts.
+        const all = await Promise.all(
+          Array.from({ length: 10 }, () => ensureMember(h.db, { email: 'overlap@example.com', tags: ['vip'], source: PLUGIN_ID })),
+        )
+        expect(new Set(all.map((entry) => entry.member.id)).size).toBe(1)
+        expect(all.filter((entry) => entry.created)).toHaveLength(1)
+        const { rows } = await h.db<{ tag: string }>`select tag from member_tags where member_id = ${all[0]!.member.id}`
+        expect(rows).toEqual([{ tag: 'vip' }])
+      })
+
+      it('leaves a suspended member suspended', async () => {
+        await install(ALL)
+        const ada = await member('ada@example.com')
+        await setMemberSuspended(h.db, ada.id, true)
+        const ensured = (await call({ action: 'ensure', email: 'ada@example.com' })).result as Ensured
+        expect(ensured).toMatchObject({ created: false, member: { id: ada.id, status: 'suspended' } })
+        expect((await findMemberByEmail(h.db, 'ada@example.com'))?.status).toBe('suspended')
+      })
+
+      it('gives a deleted member\'s address a fresh account', async () => {
+        await install(ALL)
+        const ada = await member('ada@example.com')
+        await deleteMemberAsAdmin(h.db, ada.id)
+        const ensured = (await call({ action: 'ensure', email: 'ada@example.com' })).result as Ensured
+        expect(ensured.created).toBe(true)
+        expect(ensured.member.id).not.toBe(ada.id)
+      })
+
+      it('refuses an invalid address and tags it may not give', async () => {
+        await install(ALL)
+        expect((await call({ action: 'ensure', email: 'not an address' })).error).toContain('not a valid email')
+        expect((await call({ action: 'ensure', email: 'a@example.com', tags: ['instatic:locked'] })).error).toBeDefined()
+        expect(await findMemberByEmail(h.db, 'a@example.com')).toBeNull()
+        const { rows } = await h.db<{ id: string }>`select id from members`
+        expect(rows).toEqual([])
+      })
+
+      it('needs members.write and members.read, and members.tags for tags', async () => {
+        const source = `export function activate(api) {
+          api.cms.routes.public.post('/ensure', async (ctx) => {
+            try { return { result: await api.cms.members.ensure(ctx.body) } }
+            catch (err) { return { error: String(err && err.message ? err.message : err) } }
+          })
+        }`
+        const ensureAs = async (id: string, body: Record<string, unknown>) =>
+          (await (await visit(`/_instatic/plugins/${id}/ensure`, { method: 'POST', json: body })).json()) as { error?: string; result?: unknown }
+        await install(['cms.routes', 'cms.routes.public', 'members.read'], source, 'acme.reader')
+        expect((await ensureAs('acme.reader', { email: 'a@example.com' })).error).toContain('members.write')
+        await install(['cms.routes', 'cms.routes.public', 'members.write'], source, 'acme.writer')
+        expect((await ensureAs('acme.writer', { email: 'a@example.com' })).error).toContain('members.read')
+        await install(['cms.routes', 'cms.routes.public', 'members.read', 'members.write'], source, 'acme.both')
+        expect((await ensureAs('acme.both', { email: 'a@example.com', tags: ['pro'] })).error).toContain('members.tags')
+        expect(await findMemberByEmail(h.db, 'a@example.com')).toBeNull()
+        expect((await ensureAs('acme.both', { email: 'a@example.com' })).result).toMatchObject({ created: true })
+      })
+    })
+
+    it('says whether the site can email members, and why not', async () => {
+      await install(ALL)
+      const previous = process.env.NODE_ENV
+      // Outside production a site with no connector captures mail, so turn that off.
+      process.env.NODE_ENV = 'production'
+      try {
+        expect((await call({ action: 'emailStatus' })).result).toEqual({
+          canEmail: false,
+          reasons: ['public_address_missing', 'mail_not_configured', 'invite_page_missing', 'sign_in_page_missing'],
+        })
+      } finally {
+        process.env.NODE_ENV = previous
+      }
+      configurePublicOrigins(['http://localhost'])
+      await saveMemberSettings(h.db, { ...DEFAULT_MEMBER_SETTINGS, pages: await publishMemberPages(h.db, { invite: '/invitation' }) })
+      expect((await call({ action: 'emailStatus' })).result).toEqual({ canEmail: false, reasons: ['sign_in_page_missing'] })
+      await saveMemberSettings(h.db, {
+        ...DEFAULT_MEMBER_SETTINGS,
+        pages: await publishMemberPages(h.db, { invite: '/invitation', reset: '/reset' }),
+      })
+      expect((await call({ action: 'emailStatus' })).result).toEqual({ canEmail: true, reasons: [] })
+    })
+
     it('needs the permission for each call', async () => {
       // The same plugin without its hooks, holding only the right to read members.
       const source = PLUGIN_SOURCE.replace(/const heard = \[\][\s\S]*?api\.cms\.routes\.public\.get\('\/heard'[^\n]*\n/, '')
@@ -315,6 +481,7 @@ describe('site members for plugins', () => {
       expect((await call({ action: 'get', memberId: ada.id })).result).toMatchObject({ email: 'ada@example.com' })
       expect((await call({ action: 'grant', memberId: ada.id, tag: 'gold' })).error).toContain('members.tags')
       expect((await call({ action: 'invite', email: 'new@example.com' })).error).toContain('members.write')
+      expect((await call({ action: 'emailStatus' })).error).toContain('members.write')
       expect(await listActiveMemberTags(h.db, ada.id)).toEqual([])
     })
   })

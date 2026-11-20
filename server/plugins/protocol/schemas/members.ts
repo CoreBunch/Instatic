@@ -1,6 +1,7 @@
 /**
  * TypeBox schemas for the `cms.members.*` api-call arguments: looking a site
- * member up, inviting one, and granting or withdrawing the plugin's own tags.
+ * member up, inviting or creating one, asking whether the site can email
+ * members, and granting or withdrawing the plugin's own tags.
  */
 import { Type } from '@sinclair/typebox'
 import { MEMBER_EMAIL_MAX_LENGTH, MEMBER_TAG_PATTERN } from '@core/members'
@@ -23,6 +24,11 @@ export const MembersInviteArgsSchema = Type.Tuple([
     { additionalProperties: false },
   ),
 ])
+
+/** Same shape as an invitation: the address, and tags granted when they are not already. */
+export const MembersEnsureArgsSchema = MembersInviteArgsSchema
+
+export const MembersEmailStatusArgsSchema = Type.Tuple([])
 
 export const MembersTagsGrantArgsSchema = Type.Tuple([
   MemberIdSchema,

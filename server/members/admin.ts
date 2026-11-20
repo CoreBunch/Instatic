@@ -1,6 +1,7 @@
 /**
  * What an administrator does with members: list and search them, look at
- * one, invite, tag, suspend, sign out, delete.
+ * one, invite, tag, suspend, sign out, delete. Also the account a plugin
+ * creates without an invitation (`ensureMember`).
  *
  * Like the rest of `server/members`, nothing here knows about admin users,
  * capabilities or HTTP: the cms handler (`server/handlers/cms/members.ts`)
@@ -25,6 +26,7 @@ import {
   findMemberByEmail,
   findMemberById,
   grantMemberTag,
+  grantMemberTagIfAbsent,
   listMemberEvents,
   setMemberProfile,
   recordMemberEvent,
@@ -338,6 +340,52 @@ export async function inviteMember(
     member: await listItemFor(db, member),
     ...(byHand ? { link } : {}),
   }
+}
+
+// ─── Ensure (plugins) ──────────────────────────────────────────────────────
+
+/**
+ * The member with this address, created when there is none. For a plugin
+ * that must give someone an account (a buyer, say) whether or not the site
+ * can send email.
+ *
+ * A created member is like an invited one who has not accepted: active, no
+ * password, address not confirmed (`pending` in the admin). Nothing is
+ * emailed and no link is issued. They get in later through any flow that
+ * proves the address: a sign-in link, a password reset, an invitation, or
+ * signing up with that address.
+ *
+ * Safe to call twice at once: the partial unique index on the address
+ * decides which insert wins, and the loser returns the winner's row. An
+ * existing member is returned as it is, suspended included; nothing is
+ * re-activated. A deleted member is anonymised (the address is gone from the
+ * row), so it cannot be recognised and the address gets a fresh account.
+ *
+ * `tags` are granted from `source` with no end, except where `source`
+ * already grants that tag: that grant, and its end date, stay as they are.
+ */
+export async function ensureMember(
+  db: DbClient,
+  input: { email: string; tags: readonly string[]; source: string },
+): Promise<{ member: MemberRecord; created: boolean }> {
+  let member = await findMemberByEmail(db, input.email)
+  let created = false
+  if (!member) {
+    const fresh = await createMember(db, { email: input.email.trim(), passwordHash: null, profile: {}, verified: false })
+    if (fresh) {
+      member = fresh
+      created = true
+      await recordMemberEvent(db, fresh.id, 'created_by_plugin', NO_REQUEST, { plugin: input.source })
+    } else {
+      // Lost the race to another call for the same address: theirs is the member.
+      member = await findMemberByEmail(db, input.email)
+    }
+  }
+  if (!member) throw new Error('The member could not be created')
+  for (const tag of input.tags) {
+    await grantMemberTagIfAbsent(db, { memberId: member.id, tag, source: input.source })
+  }
+  return { member, created }
 }
 
 // ─── Changes to one member ─────────────────────────────────────────────────

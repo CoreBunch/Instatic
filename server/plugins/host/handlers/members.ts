@@ -1,9 +1,10 @@
 /**
  * Site member handlers — implement the `cms.members.*` api-calls.
  *
- * A plugin reads members with `members.read`, invites with `members.write`
- * and changes tags with `members.tags` (enforced centrally in apiDispatch.ts
- * via TARGET_PERMISSIONS). All member SQL stays in `server/members`.
+ * A plugin reads members with `members.read`, invites and creates them with
+ * `members.write` and changes tags with `members.tags` (enforced centrally in
+ * apiDispatch.ts via TARGET_PERMISSIONS; `ensure` also needs `members.read`,
+ * since it answers with the member). All member SQL stays in `server/members`.
  *
  * Tags a plugin grants carry the plugin's id as their source, and a plugin
  * can only withdraw its own: a shop cannot take away a tag an administrator
@@ -15,13 +16,16 @@ import { MAIL_ADDRESS_PATTERN } from '@core/mail'
 import { configuredPublicOrigin } from '../../../auth/security'
 import { getMailDefaults } from '../../../mail/defaults'
 import { mailDeliveryMode } from '../../../mail/send'
-import { inviteMember } from '../../../members/admin'
+import { ensureMember, inviteMember } from '../../../members/admin'
+import { memberEmailBlockers } from '../../../members/mail'
+import { createAuditEvent } from '../../../repositories/audit'
 import {
   findMemberByEmail,
   findMemberById,
   grantMemberTag,
   revokeMemberTag,
   toCurrentMember,
+  type MemberRecord,
 } from '../../../members/repository'
 import type { ApiCallFor } from '../../protocol/apiCallSchema'
 import { replyApiOk } from '../apiReplies'
@@ -30,19 +34,10 @@ import type { HostPluginRecord } from '../types'
 
 const ADDRESS_RE = new RegExp(MAIL_ADDRESS_PATTERN)
 
-export async function handleMembersGet(
-  msg: ApiCallFor<'cms.members.get'>,
-  _entry: HostPluginRecord,
-  db: DbClient,
-): Promise<void> {
-  const [by] = msg.args
-  const member = 'id' in by ? await findMemberById(db, by.id) : await findMemberByEmail(db, by.email)
-  if (!member) {
-    replyApiOk(msg.pluginId, msg.correlationId, null)
-    return
-  }
+/** The member as a plugin sees it: nothing secret, nothing about sessions. */
+async function pluginMemberRecord(db: DbClient, member: MemberRecord) {
   const current = await toCurrentMember(db, member)
-  replyApiOk(msg.pluginId, msg.correlationId, {
+  return {
     id: current.id,
     email: current.email,
     emailVerified: current.emailVerified,
@@ -50,7 +45,62 @@ export async function handleMembersGet(
     tags: current.tags,
     profile: current.profile,
     createdAt: current.createdAt,
-  })
+  }
+}
+
+export async function handleMembersGet(
+  msg: ApiCallFor<'cms.members.get'>,
+  _entry: HostPluginRecord,
+  db: DbClient,
+): Promise<void> {
+  const [by] = msg.args
+  const member = 'id' in by ? await findMemberById(db, by.id) : await findMemberByEmail(db, by.email)
+  replyApiOk(msg.pluginId, msg.correlationId, member ? await pluginMemberRecord(db, member) : null)
+}
+
+function assertGrantableTags(entry: HostPluginRecord, tags: readonly string[]): void {
+  if (tags.length === 0) return
+  // Tags given with a new member are tag grants like any other.
+  assertHostPluginPermission(entry, 'members.tags')
+  if (!tags.every(isGrantableMemberTag)) throw new Error('A tag in the request cannot be given to a member')
+}
+
+/**
+ * The member with this address, created without a password and without any
+ * email when there is none. Concurrent calls for one address get the same
+ * member; exactly one of them reports `created`.
+ */
+export async function handleMembersEnsure(
+  msg: ApiCallFor<'cms.members.ensure'>,
+  entry: HostPluginRecord,
+  db: DbClient,
+): Promise<void> {
+  // The answer is the member's record, which is reading members.
+  assertHostPluginPermission(entry, 'members.read')
+  const [{ email, tags = [] }] = msg.args
+  if (!ADDRESS_RE.test(email.trim())) throw new Error('That is not a valid email address')
+  assertGrantableTags(entry, tags)
+  const { member, created } = await ensureMember(db, { email, tags, source: msg.pluginId })
+  if (created) {
+    await createAuditEvent(db, {
+      actorUserId: null,
+      action: 'member.create',
+      targetType: 'member',
+      targetId: member.id,
+      metadata: { email: member.email, pluginId: msg.pluginId },
+    })
+  }
+  replyApiOk(msg.pluginId, msg.correlationId, { member: await pluginMemberRecord(db, member), created })
+}
+
+/** Whether the site can email members links it starts itself, and if not, why. */
+export async function handleMembersEmailStatus(
+  msg: ApiCallFor<'cms.members.emailStatus'>,
+  _entry: HostPluginRecord,
+  db: DbClient,
+): Promise<void> {
+  const reasons = await memberEmailBlockers(db)
+  replyApiOk(msg.pluginId, msg.correlationId, { canEmail: reasons.length === 0, reasons })
 }
 
 export async function handleMembersInvite(
@@ -60,11 +110,7 @@ export async function handleMembersInvite(
 ): Promise<void> {
   const [{ email, tags = [] }] = msg.args
   if (!ADDRESS_RE.test(email.trim())) throw new Error('That is not a valid email address')
-  if (tags.length > 0) {
-    // Tags on an invitation are tag grants like any other.
-    assertHostPluginPermission(entry, 'members.tags')
-    if (!tags.every(isGrantableMemberTag)) throw new Error('A tag in the invitation cannot be given to a member')
-  }
+  assertGrantableTags(entry, tags)
   // An invitation is a link in an email. With no request to take an address
   // from, the link can only use the site's configured public address.
   const linkOrigin = configuredPublicOrigin()
