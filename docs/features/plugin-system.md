@@ -833,6 +833,7 @@ api.cms.loops.registerSource({
   fields: [/* LoopSourceField[] */],
   filterSchema: { /* PropertySchema */ },
   orderByOptions: [/* allowed sort keys */],
+  defaultDirection: 'asc', // optional; unset = 'asc' = the order fetch() returns
   fetch: async (ctx) => ({ items: [/* LoopItem[] */], totalItems: 0 }),
 
   // Optional. Sample items for the editor canvas: synchronous, invented

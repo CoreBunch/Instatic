@@ -69,6 +69,7 @@ export function listPluginLoopSources(): RemoteLoopSource[] {
         filterSchema: source.filterSchema,
         orderByOptions: source.orderByOptions,
         fields: source.fields,
+        ...(source.defaultDirection ? { defaultDirection: source.defaultDirection } : {}),
         ...(source.requestDependent ? { requestDependent: true } : {}),
         ...(source.perVisitor ? { perVisitor: true } : {}),
         provider: { pluginId, pluginName: entry.manifest.name },

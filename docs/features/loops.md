@@ -58,6 +58,9 @@ interface LoopEntitySource {
   /** Allowed `orderBy` values; first entry is the default. Each uses `id`, not `value`. */
   orderByOptions: { id: string; label: string }[]
 
+  /** Direction until the author picks one. Unset = 'asc' = the order fetch() returns. */
+  defaultDirection?: 'asc' | 'desc'
+
   /** Server-side fetch — runs at publish time (and live at editor render time). */
   fetch(ctx: SourceFetchContext): Promise<LoopFetchResult>
 
@@ -228,6 +231,8 @@ orderByOptions: [
 ```
 
 The `base.loop` node carries `props.filter: Record<string, unknown>` and `props.orderBy: string`. The publisher passes them to `fetch(ctx)` as `ctx.filter` and `ctx.orderBy`.
+
+**Direction.** `props.direction` is stored only once the author picks one in the Direction control. Until then the loop runs in its source's `defaultDirection`, and a source that declares none runs `'asc'`: the order its `fetch()` returns. `resolveLoopDirection(props.direction, source)` (`src/core/loops/direction.ts`) is the one resolver; the publisher prefetch, the infinite-scroll endpoint, the canvas preview and the Properties panel all call it, so `ctx.direction` is never unset. `data.rows`, `site.media` and `members.apps` declare `'desc'` (newest first); `site.pages` and contextual sources list in their natural order. Changing a loop's source clears its stored direction. An imported `<instatic-loop>` without `data-direction` stores none. Loops saved before the direction became optional carry an explicit `'desc'` (the old module default) and keep it.
 
 ---
 

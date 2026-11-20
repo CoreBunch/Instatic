@@ -9,7 +9,8 @@
  * them to guarantee canvas previews and published output never diverge.
  */
 
-export type { LoopEntitySource, LoopItem } from './types'
+export type { LoopDirection, LoopEntitySource, LoopItem } from './types'
+export { resolveLoopDirection } from './direction'
 export { loopSourceRegistry } from './registry'
 export {
   LOOP_PREVIEW_BUSY_CODE,

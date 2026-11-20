@@ -581,6 +581,8 @@ export const DataRowsSource: LoopEntitySource = {
     },
   },
 
+  // Newest first unless the author picks otherwise.
+  defaultDirection: 'desc',
   orderByOptions: [
     { id: 'publishedAt', label: 'Published date' },
     { id: 'createdAt', label: 'Created date' },

@@ -16,6 +16,11 @@ export interface LoopSourceFetchContext {
   filters: Record<string, unknown>
   /** One of the source's `orderByOptions[].id` values, or `''`. */
   orderBy: string
+  /**
+   * The loop's direction: the author's pick, or the source's
+   * `defaultDirection` when they never picked one. `'asc'` is the order
+   * `fetch()` returns on its own; reverse it for `'desc'`.
+   */
   direction: 'asc' | 'desc'
   limit: number
   offset: number
@@ -55,6 +60,12 @@ export type LoopEntitySource = {
   description?: string
   filterSchema: Record<string, unknown>
   orderByOptions: Array<{ id: string; label: string }>
+  /**
+   * Direction a new loop uses until its author picks one. Unset means
+   * `'asc'`, so a list keeps the order your `fetch()` returns. Say `'desc'`
+   * for a source whose natural listing is newest first.
+   */
+  defaultDirection?: 'asc' | 'desc'
   fields: Array<{ id: string; label: string; description?: string; format?: 'plain' | 'html' | 'url' | 'media' }>
   /**
    * Mark the source request-dependent so a `base.loop` using it renders at
