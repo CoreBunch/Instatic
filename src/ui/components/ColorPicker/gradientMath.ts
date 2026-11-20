@@ -1,6 +1,7 @@
 /** Parse and serialize gradients that the visual editor can represent. */
 
 import { splitCssList } from '@ui/lib/cssValueList'
+import { findColorVariable, type ColorVariable } from '@ui/lib/colorVariable'
 import { clamp } from '@ui/lib/clamp'
 import {
   formatColor,
@@ -13,6 +14,7 @@ export type GradientKind = 'linear' | 'radial' | 'conic'
 
 export interface GradientStop {
   color: Rgba
+  tokenName?: string
   /** 0–1 along the gradient line. */
   pos: number
 }
@@ -37,7 +39,7 @@ const SIDE_ANGLES: Record<string, number> = {
   'to left': 270,
 }
 
-export function parseGradient(input: string): Gradient | null {
+export function parseGradient(input: string, tokens: readonly ColorVariable[] = []): Gradient | null {
   const match = GRADIENT_RE.exec(input.trim())
   if (!match) return null
   const kind = match[1].toLowerCase() as GradientKind
@@ -65,12 +67,13 @@ export function parseGradient(input: string): Gradient | null {
 
   if (stopArgs.length < 2) return null
 
-  const raw: Array<{ color: Rgba; pos: number | null }> = []
+  const raw: Array<Omit<GradientStop, 'pos'> & { pos: number | null }> = []
   for (const arg of stopArgs) {
     const { colorText, pos } = splitStop(arg)
-    const color = parseColor(colorText)
+    const token = findColorVariable(colorText, tokens)
+    const color = parseColor(token?.value ?? colorText)
     if (!color || (pos !== null && (pos < 0 || pos > 1))) return null
-    raw.push({ color, pos })
+    raw.push({ color, pos, tokenName: token?.name })
   }
 
   return { kind, angle, radialShape, stops: distributePositions(raw) }
@@ -79,7 +82,7 @@ export function parseGradient(input: string): Gradient | null {
 export function formatGradient(gradient: Gradient, format: ColorFormat): string {
   const stops = [...gradient.stops]
     .sort((a, b) => a.pos - b.pos)
-    .map((stop) => `${formatColor(stop.color, format)} ${formatPercent(stop.pos)}%`)
+    .map((stop) => `${stop.tokenName ? `var(${stop.tokenName})` : formatColor(stop.color, format)} ${formatPercent(stop.pos)}%`)
     .join(', ')
   if (gradient.kind === 'linear') {
     return `linear-gradient(${normalizeAngle(gradient.angle)}deg, ${stops})`
@@ -129,7 +132,7 @@ function splitStop(arg: string): { colorText: string; pos: number | null } {
 
 /** Fill in missing stop positions the way CSS does: ends pinned, gaps evened. */
 function distributePositions(
-  raw: ReadonlyArray<{ color: Rgba; pos: number | null }>,
+  raw: ReadonlyArray<Omit<GradientStop, 'pos'> & { pos: number | null }>,
 ): GradientStop[] {
   const positions = raw.map((stop) => stop.pos)
   if (positions[0] === null) positions[0] = 0
@@ -146,7 +149,7 @@ function distributePositions(
     }
     lastKnown = i
   }
-  return raw.map((stop, index) => ({ color: stop.color, pos: positions[index] ?? 0 }))
+  return raw.map((stop, index) => ({ ...stop, pos: positions[index] ?? 0 }))
 }
 
 function lerp(from: number, to: number, t: number): number {

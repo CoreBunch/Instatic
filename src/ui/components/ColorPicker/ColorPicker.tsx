@@ -39,7 +39,8 @@ import {
   type FillMode,
   type FillState,
 } from './fillState'
-import { TokenStylesSection, type ColorPickerToken } from './TokenStylesSection'
+import type { ColorVariable } from '@ui/lib/colorVariable'
+import { TokenStylesSection } from './TokenStylesSection'
 import { UnitStepperInput } from './UnitStepperInput'
 import {
   beginDrag,
@@ -72,11 +73,11 @@ interface ColorPickerProps {
   /** Offer the Solid / Linear / Radial fill tabs and emit gradient strings. */
   gradients?: boolean
   /** Site colour tokens offered in the searchable list. Omit to hide the list. */
-  tokens?: readonly ColorPickerToken[]
+  tokens?: readonly ColorVariable[]
   /** CSS custom-property name currently bound to the edited style. */
   assignedToken?: string
-  /** Save the selected color in the site palette; binding is available for solid fills. */
-  onSaveColor?: (name: string, color: string, bind: boolean) => boolean
+  /** Save the selected color in the site palette; returns the token to assign. */
+  onSaveColor?: (name: string, color: string) => ColorVariable | null
 }
 
 type PickerVars = CSSProperties & {
@@ -123,8 +124,12 @@ function AuthoredColorInput({ value, gradients, tokens, assignedToken, onChange,
     onChange={(event) => setDraft(event.target.value)}
     onKeyDown={(event) => { if (event.key === 'Enter') event.currentTarget.blur() }}
     onBlur={() => { if (valid && value !== draft.trim()) onChange(draft.trim()) }} />
-    {solid && onSaveColor && <SaveColorForm onSave={(name) => onSaveColor(name, draft.trim(), true)} />}
-    {solid && tokens && tokens.length > 0 && <TokenStylesSection assignedToken={assignedToken} tokens={tokens} onSelectToken={onChange} />}
+    {solid && onSaveColor && <SaveColorForm onSave={(name) => {
+      const token = onSaveColor(name, draft.trim())
+      if (token) onChange(`var(${token.name})`)
+      return Boolean(token)
+    }} />}
+    {solid && tokens && tokens.length > 0 && <TokenStylesSection assignedToken={assignedToken} tokens={tokens} onSelectToken={(token) => onChange(`var(${token.name})`)} />}
   </div>
 }
 
@@ -137,7 +142,7 @@ export function ColorPicker({
   onSaveColor,
 }: ColorPickerProps) {
   const [format, setFormat] = useState<ColorFormat>(() => detectFormat(value))
-  const [parsedFill, setFill] = useState(() => initialFill(value, gradients))
+  const [parsedFill, setFill] = useState(() => initialFill(value, gradients, tokens))
   const [selectedStop, setSelectedStop] = useState(0)
   const [draft, setDraft] = useState<string | null>(null)
 
@@ -153,12 +158,15 @@ export function ColorPicker({
 
   const [lastValue, setLastValue] = useState(value)
   const [externalRevision, setExternalRevision] = useState(0)
-  if (lastValue !== value) {
+  const [lastTokens, setLastTokens] = useState(tokens)
+  if (tokens !== lastTokens) setLastTokens(tokens)
+  const refreshStops = tokens !== lastTokens && gradients && value.includes('var(')
+  if (lastValue !== value || refreshStops) {
     setLastValue(value)
     setExpectedEcho(null)
     if (expectedEcho !== value) {
-      setFill(initialFill(value, gradients))
-      setSelectedStop(0)
+      setFill(initialFill(value, gradients, tokens))
+      if (lastValue !== value) setSelectedStop(0)
       setDraft(null)
       setExternalRevision(externalRevision + 1)
     }
@@ -171,6 +179,28 @@ export function ColorPicker({
   // In a gradient mode the whole colour surface edits the selected stop.
   const stopIndex = Math.min(selectedStop, fill.stops.length - 1)
   const hsva = fill.mode === 'solid' ? fill.hsva : fill.stops[stopIndex].hsva
+
+  const activeToken = fill.mode === 'solid' ? assignedToken : fill.stops[stopIndex].tokenName
+
+  function assign(token: ColorVariable) {
+    throttle.flush()
+    const reference = `var(${token.name})`
+    if (fill.mode === 'solid') {
+      onChange(reference)
+      return
+    }
+    const color = parseColor(token.value)
+    const next = { ...fill, stops: fill.stops.map((stop, index) => index === stopIndex
+      ? { ...stop, tokenName: token.name, hsva: color ? rgbaToHsva(color) : stop.hsva } : stop) }
+    const css = formatFill(next, format)
+    if (color) {
+      setFill(next)
+      publish(css)
+    } else {
+      // Preserve unsupported CSS colors in the authored gradient editor.
+      onChange(css)
+    }
+  }
 
   const text = draft ?? formatColor(hsvaToRgba(hsva), format)
   const eyeDropperSupported =
@@ -195,7 +225,7 @@ export function ColorPicker({
       {
         ...fill,
         stops: fill.stops.map((stop, index) =>
-          index === stopIndex ? { ...stop, hsva: next } : stop,
+          index === stopIndex ? { pos: stop.pos, hsva: next } : stop,
         ),
       },
       nextFormat,
@@ -211,13 +241,18 @@ export function ColorPicker({
     if (nextMode === fill.mode) return
     if (nextMode === 'solid') {
       // Collapse to the colour being edited so nothing visibly jumps.
-      emit({ ...fill, mode: 'solid', hsva })
+      if (activeToken) {
+        throttle.flush()
+        onChange(`var(${activeToken})`)
+      } else emit({ ...fill, mode: 'solid', hsva })
       return
     }
     if (fill.mode === 'solid') {
       // Seed a fresh gradient from the current colour: colour → transparent.
       setSelectedStop(0)
-      emit({ ...fill, mode: nextMode, stops: defaultStops(fill.hsva) })
+      const stops = defaultStops(fill.hsva)
+      stops[0].tokenName = assignedToken
+      emit({ ...fill, mode: nextMode, stops })
       return
     }
     emit({ ...fill, mode: nextMode })
@@ -528,12 +563,14 @@ export function ColorPicker({
         </div>
       )}
 
-      {onSaveColor && <SaveColorForm onSave={(name) => {
+      {!activeToken && onSaveColor && <SaveColorForm onSave={(name) => {
         throttle.flush()
-        return onSaveColor(name, formatColor(hsvaToRgba(hsva), 'hex'), fill.mode === 'solid')
+        const token = onSaveColor(name, formatColor(hsvaToRgba(hsva), 'hex'))
+        if (token) assign(token)
+        return Boolean(token)
       }} />}
-      {fill.mode === 'solid' && tokens && tokens.length > 0 && (
-        <TokenStylesSection assignedToken={assignedToken} tokens={tokens} onSelectToken={(ref) => { throttle.flush(); onChange(ref) }} />
+      {tokens && tokens.length > 0 && (
+        <TokenStylesSection assignedToken={activeToken} tokens={tokens} onSelectToken={assign} />
       )}
     </div>
   )

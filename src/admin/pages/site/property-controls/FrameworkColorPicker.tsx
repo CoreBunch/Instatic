@@ -1,4 +1,4 @@
-import { findColorVariable } from './frameworkColorPreview'
+import { findColorVariable } from '@ui/lib/colorVariable'
 import { ColorPicker } from '@ui/components/ColorPicker'
 import { generateFrameworkColorVariableSets } from '@core/framework'
 import { getErrorMessage } from '@core/utils/errorMessage'
@@ -16,16 +16,15 @@ export default function FrameworkColorPicker({ value, gradients, onChange }: {
   const { canEditStyle } = useEditorPermissions()
   const tokens = generateFrameworkColorVariableSets(colors).light
   const assigned = findColorVariable(value, tokens)
-  function saveColor(name: string, color: string, bind: boolean) {
+  function saveColor(name: string, color: string) {
     try {
       const saved = create({ slug: name, lightValue: color, darkModeEnabled: false })
-      if (!saved) return false
-      if (bind) onChange(`var(--${saved.slug})`)
+      if (!saved) return null
       pushToast({ kind: 'success', title: `Saved --${saved.slug} to Framework colors` })
-      return true
+      return { name: `--${saved.slug}`, value: color }
     } catch (err) {
       pushToast({ kind: 'error', title: 'Could not save Framework color', body: getErrorMessage(err, 'Unknown color error') })
-      return false
+      return null
     }
   }
   return <ColorPicker value={assigned?.value ?? value} assignedToken={assigned?.name} gradients={gradients} tokens={tokens}

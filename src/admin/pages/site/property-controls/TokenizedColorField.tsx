@@ -1,4 +1,4 @@
-import { resolveColorPreview } from './frameworkColorPreview'
+import { resolveColorPreview } from '@ui/lib/colorVariable'
 import { useState, type CSSProperties, type ChangeEvent, type FocusEvent, type KeyboardEvent } from 'react'
 import { generateFrameworkColorVariableSets } from '@core/framework'
 import { useEditorStore } from '@site/store/store'

@@ -6,6 +6,7 @@
  * that state's construction and CSS emission in one place.
  */
 
+import type { ColorVariable } from '@ui/lib/colorVariable'
 import {
   BLACK,
   formatColor,
@@ -21,6 +22,7 @@ export type FillMode = 'solid' | GradientKind
 
 interface StopState {
   hsva: Hsva
+  tokenName?: string
   /** 0–1 along the gradient line. */
   pos: number
 }
@@ -35,13 +37,14 @@ export interface FillState {
   radialShape?: 'circle' | 'ellipse'
 }
 
-export function initialFill(value: string, gradients: boolean): FillState | null {
+export function initialFill(value: string, gradients: boolean, tokens?: readonly ColorVariable[]): FillState | null {
   if (gradients) {
-    const gradient = parseGradient(value)
+    const gradient = parseGradient(value, tokens)
     if (gradient) {
       const stops = gradient.stops.map((stop) => ({
         hsva: rgbaToHsva(stop.color),
         pos: stop.pos,
+        tokenName: stop.tokenName,
       }))
       return {
         mode: gradient.kind,
@@ -73,7 +76,7 @@ export function formatFill(fill: FillState, format: ColorFormat): string {
       kind: fill.mode,
       radialShape: fill.radialShape,
       angle: fill.angle,
-      stops: fill.stops.map((stop) => ({ color: hsvaToRgba(stop.hsva), pos: stop.pos })),
+      stops: fill.stops.map((stop) => ({ color: hsvaToRgba(stop.hsva), pos: stop.pos, tokenName: stop.tokenName })),
     },
     format,
   )

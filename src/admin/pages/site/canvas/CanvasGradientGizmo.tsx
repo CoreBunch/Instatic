@@ -1,3 +1,4 @@
+import { generateFrameworkColorVariableSets } from '@core/framework'
 import { gradientLayer } from '@site/property-controls/gradientLayer'
 /**
  * CanvasGradientGizmo — direct-manipulation gradient editing on the canvas.
@@ -112,8 +113,9 @@ export function CanvasGradientGizmo({
   const nodeCacheRef = useRef<CanvasNodeElementCache | null>(null)
   if (nodeCacheRef.current === null) nodeCacheRef.current = new CanvasNodeElementCache()
 
+  const colors = useEditorStore((s) => s.site?.settings.framework?.colors)
   const layer = gradientLayer(target.styles.backgroundImage)
-  const committedGradient = layer.value ? parseGradient(layer.value) : null
+  const committedGradient = active && layer.value ? parseGradient(layer.value, generateFrameworkColorVariableSets(colors).light) : null
   const gradient = dragGradient ?? committedGradient
   // Only the frame being edited draws the gizmo — and only while a
   // gradient-capable picker popover is open: the gizmo is an editing

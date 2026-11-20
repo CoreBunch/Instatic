@@ -1,22 +1,16 @@
 import { useState, type CSSProperties } from 'react'
+import type { ColorVariable } from '@ui/lib/colorVariable'
 import { Button } from '@ui/components/Button'
 import { Input } from '@ui/components/Input'
 import { SearchBar } from '@ui/components/SearchBar'
 import styles from './ColorPicker.module.css'
 
-export interface ColorPickerToken {
-  /** The CSS custom-property name, including the leading `--`. */
-  name: string
-  /** The resolved colour the swatch previews. */
-  value: string
-}
-
 type SwatchVars = CSSProperties & { '--color-picker-swatch'?: string }
 
 interface TokenStylesSectionProps {
   assignedToken?: string
-  tokens: readonly ColorPickerToken[]
-  onSelectToken: (reference: string) => void
+  tokens: readonly ColorVariable[]
+  onSelectToken: (token: ColorVariable) => void
 }
 
 export function TokenStylesSection({
@@ -48,7 +42,7 @@ export function TokenStylesSection({
             menuItem
             align="start"
             className={styles.tokenRow}
-            onClick={() => onSelectToken(`var(${token.name})`)}
+            onClick={() => onSelectToken(token)}
           >
             <span
               className={styles.tokenSwatch}

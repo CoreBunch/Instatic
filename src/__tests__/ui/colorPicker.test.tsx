@@ -81,3 +81,32 @@ it('keeps implicit radial geometry and refuses unrepresentable stop values', () 
   expect(parseGradient('radial-gradient(var(--first-stop), #123, #abc)')).toBeNull()
   expect(parseGradient('linear-gradient(#123 -5%, #abc 35%)')).toBeNull()
 })
+
+it('saves the selected gradient stop as a token and keeps it bound through reopen and position edits', async () => {
+  const token = { name: '--brick', value: '#7b1414' }
+  const initial = 'linear-gradient(45deg, #ffffff 0%, #7b1414 80%)'
+  function picker(value: string) {
+    return <ColorPicker value={value} gradients tokens={[token]}
+      onSaveColor={() => token} onChange={(next) => { stored = next }} />
+  }
+  let stored = initial
+  const view = render(picker(initial))
+  const second = () => screen.getByRole('slider', { name: 'Fill stop 2 position' })
+  fireEvent.focus(second())
+  fireEvent.click(screen.getByRole('button', { name: 'Save to Framework' }))
+  fireEvent.change(screen.getByLabelText('Framework color name'), { target: { value: 'brick' } })
+  fireEvent.click(screen.getByRole('button', { name: 'Save', exact: true }))
+  expect(stored).toBe('linear-gradient(45deg, #ffffff 0%, var(--brick) 80%)')
+  expect(screen.getByLabelText<HTMLInputElement>('Assigned Framework color').value).toBe('var(--brick)')
+  view.unmount()
+  render(picker(stored))
+  fireEvent.focus(second())
+  fireEvent.keyDown(second(), { key: 'ArrowRight', shiftKey: true })
+  await waitFor(() => expect(stored).toContain('var(--brick) 90%'))
+  const updatedPalette = [{ ...token, value: '#225599' }]
+  expect(parseGradient(stored, updatedPalette)?.stops[1].color).toEqual(parseColor('#225599'))
+  for (const kind of ['radial-gradient(circle', 'conic-gradient(from 30deg']) {
+    const css = `${kind}, var(--brick) 0%, #ffffff 100%)`
+    expect(formatGradient(parseGradient(css, updatedPalette)!, 'hex')).toBe(css)
+  }
+})

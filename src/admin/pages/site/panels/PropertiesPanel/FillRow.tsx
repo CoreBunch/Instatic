@@ -1,7 +1,7 @@
 import { gradientLayer } from '@site/property-controls/gradientLayer'
 import { lazy, Suspense, useEffect, useRef, useState, type CSSProperties } from 'react'
 import { generateFrameworkColorVariableSets } from '@core/framework'
-import { resolveColorPreview } from '@site/property-controls/frameworkColorPreview'
+import { resolveColorPreview } from '@ui/lib/colorVariable'
 import type { CSSPropertyBag } from '@core/page-tree'
 import { SwatchRow } from '@ui/components/SwatchRow'
 import { FloatingPanel } from '@ui/components/FloatingPanel'
