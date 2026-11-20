@@ -18,6 +18,8 @@ export type PluginMemberEmailBlocker =
   | 'public_address_missing'
   /** Outgoing email is off. */
   | 'mail_not_configured'
+  /** No connector is set up and the server is not in production, so mail is kept in the admin's Activity, not sent. */
+  | 'mail_captured_not_sent'
   /** No published invitation page is chosen in the member settings. */
   | 'invite_page_missing'
   /** No published sign-in-link page or password-reset page is chosen. */
@@ -47,12 +49,17 @@ export interface ServerPluginMembersApi {
    * gone for good, so their address gets a fresh account; listen for
    * `member.deleted` if the plugin must not give one back.
    *
+   * `confirmed` says whether the address is proven. An unconfirmed member
+   * may be an unfinished sign-up someone else started with this address, so
+   * treat its profile as unverified.
+   *
    * `tags` are granted from this plugin with no end, except a tag this
-   * plugin already grants that member, whose grant (and end date) is kept.
+   * plugin already grants that member and that is still active, whose grant
+   * (and end date) is kept. An expired grant is replaced.
    * Requires `members.write` and `members.read` (and `members.tags` when
    * `tags` is given).
    */
-  ensure: (input: { email: string; tags?: string[] }) => Promise<{ member: PluginMemberRecord; created: boolean }>
+  ensure: (input: { email: string; tags?: string[] }) => Promise<{ member: PluginMemberRecord; created: boolean; confirmed: boolean }>
   /**
    * Whether the site can email members links it starts itself right now
    * (invitations, sign-in links, password resets), and if not, every reason.

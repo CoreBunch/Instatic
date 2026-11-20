@@ -362,7 +362,8 @@ export async function inviteMember(
  * row), so it cannot be recognised and the address gets a fresh account.
  *
  * `tags` are granted from `source` with no end, except where `source`
- * already grants that tag: that grant, and its end date, stay as they are.
+ * already grants that tag and the grant is still active: that grant, and its
+ * end date, stay as they are. An expired grant is replaced.
  */
 export async function ensureMember(
   db: DbClient,

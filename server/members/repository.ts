@@ -276,19 +276,23 @@ export async function grantMemberTag(
 }
 
 /**
- * Grant a tag from one source unless that source already grants it. An
- * existing grant keeps its end date: a repeated call neither extends nor
- * shortens it. Returns whether a grant was added.
+ * Grant a tag from one source, with no end, unless that source already
+ * grants it and the grant is still active. An active grant keeps its end
+ * date: a repeated call neither extends nor shortens it. An expired one is
+ * replaced. Returns whether a grant was added or replaced.
  */
 export async function grantMemberTagIfAbsent(
   db: DbClient,
   input: { memberId: string; tag: string; source: string },
 ): Promise<boolean> {
   if (!isGrantableMemberTag(input.tag)) throw new Error(`"${input.tag}" is not a tag a member can be given`)
+  const now = nowIso()
   const { rows } = await db<{ tag: string }>`
     insert into member_tags (member_id, tag, source, expires_at, created_at)
-    values (${input.memberId}, ${input.tag}, ${input.source}, ${null}, ${nowIso()})
-    on conflict (member_id, tag, source) do nothing
+    values (${input.memberId}, ${input.tag}, ${input.source}, ${null}, ${now})
+    on conflict (member_id, tag, source) do update
+      set expires_at = excluded.expires_at, created_at = excluded.created_at
+      where member_tags.expires_at is not null and member_tags.expires_at <= ${now}
     returning tag
   `
   if (rows.length === 0) return false

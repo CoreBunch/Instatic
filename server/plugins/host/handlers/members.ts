@@ -90,7 +90,13 @@ export async function handleMembersEnsure(
       metadata: { email: member.email, pluginId: msg.pluginId },
     })
   }
-  replyApiOk(msg.pluginId, msg.correlationId, { member: await pluginMemberRecord(db, member), created })
+  replyApiOk(msg.pluginId, msg.correlationId, {
+    member: await pluginMemberRecord(db, member),
+    created,
+    // An unconfirmed member may be someone else's unfinished sign-up with
+    // this address: their profile is whatever was typed into the form.
+    confirmed: member.emailVerifiedAt !== null,
+  })
 }
 
 /** Whether the site can email members links it starts itself, and if not, why. */

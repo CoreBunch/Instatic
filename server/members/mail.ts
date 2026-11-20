@@ -51,19 +51,24 @@ export async function memberMailAvailable(db: DbClient, req: Request): Promise<b
 export type MemberEmailBlocker =
   | 'public_address_missing'
   | 'mail_not_configured'
+  | 'mail_captured_not_sent'
   | 'invite_page_missing'
   | 'sign_in_page_missing'
 
 /**
  * What stands between the site and emailing members links right now, with
  * no request to take an address from (so only the configured public origin
- * counts): outgoing email, the invitation page, and a page for a sign-in
+ * counts): outgoing email that really goes out, the invitation page, and a page for a sign-in
  * link or a password reset. Empty when nothing does.
  */
 export async function memberEmailBlockers(db: DbClient): Promise<MemberEmailBlocker[]> {
   const blockers: MemberEmailBlocker[] = []
   if (!configuredPublicOrigin()) blockers.push('public_address_missing')
-  if (mailDeliveryMode(await getMailDefaults(db)) === 'off') blockers.push('mail_not_configured')
+  // Capture (no connector outside production) keeps mail in the admin's
+  // Activity: nothing reaches the member, so it is not emailing them.
+  const mode = mailDeliveryMode(await getMailDefaults(db))
+  if (mode === 'off') blockers.push('mail_not_configured')
+  if (mode === 'capture') blockers.push('mail_captured_not_sent')
   const pages = await getMemberPagePaths(db)
   if (!memberLinkPage(pages, 'invite')) blockers.push('invite_page_missing')
   if (!memberLinkPage(pages, 'magic') && !memberLinkPage(pages, 'reset')) blockers.push('sign_in_page_missing')

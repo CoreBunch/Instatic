@@ -503,7 +503,7 @@ globalThis.__buildApi = function buildApi() {
           assertTargetPermission('cms.members.invite')
           return call('cms.members.invite', [input])
         },
-        // api.cms.members.ensure({ email, tags? }) → { member, created }; sends nothing
+        // api.cms.members.ensure({ email, tags? }) → { member, created, confirmed }; sends nothing
         ensure: function (input: unknown) {
           assertTargetPermission('cms.members.ensure')
           // The answer is the member's record.

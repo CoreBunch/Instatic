@@ -15,6 +15,8 @@ import { strToU8, zipSync } from 'fflate'
 import { hookBus } from '@core/plugins/hookBus'
 import { configurePublicOrigins, resetPublicOrigins } from '../../../server/auth/security'
 import { handleCmsRequest } from '../../../server/handlers/cms'
+import { createMailConnector } from '../../../server/mail/connectors'
+import { saveMailDefaults } from '../../../server/mail/defaults'
 import { flushMemberMail } from '../../../server/members/mail'
 import { DEFAULT_MEMBER_SETTINGS } from '@core/members'
 import { deleteMemberAsAdmin, ensureMember, setMemberSuspended } from '../../../server/members/admin'
@@ -145,6 +147,7 @@ describe('site members for plugins', () => {
     return { id: created!.id, cookie: `instatic_member=${session.token}; theme=dark` }
   }
 
+  const settle = () => new Promise((resolve) => setTimeout(resolve, 150))
   const call = async (body: Record<string, unknown>) =>
     (await (await visit(`${MOUNT}/call`, { method: 'POST', json: body })).json()) as { result?: unknown; error?: string }
   const heard = async () =>
@@ -318,13 +321,18 @@ describe('site members for plugins', () => {
     })
 
     describe('ensure', () => {
-      type Ensured = { member: { id: string; email: string; status: string; emailVerified: boolean; tags: string[] }; created: boolean }
+      type Ensured = {
+        member: { id: string; email: string; status: string; emailVerified: boolean; tags: string[]; profile: Record<string, unknown> }
+        created: boolean
+        confirmed: boolean
+      }
 
       it('creates a member with no password and sends nothing, and records who did it', async () => {
         await install(ALL)
         const { result } = await call({ action: 'ensure', email: '  Buyer@Example.com ', tags: ['customer'] })
         const ensured = result as Ensured
         expect(ensured.created).toBe(true)
+        expect(ensured.confirmed).toBe(false)
         expect(ensured.member).toMatchObject({ email: 'Buyer@Example.com', status: 'active', emailVerified: false, tags: ['customer'] })
 
         const stored = await findMemberByEmail(h.db, 'buyer@example.com')
@@ -367,6 +375,7 @@ describe('site members for plugins', () => {
         await call({ action: 'grant', memberId: ada.id, tag: 'gold', expiresAt: later })
         const ensured = (await call({ action: 'ensure', email: 'ADA@example.com', tags: ['gold', 'silver'] })).result as Ensured
         expect(ensured.created).toBe(false)
+        expect(ensured.confirmed).toBe(true)
         expect(ensured.member).toMatchObject({ id: ada.id, email: 'ada@example.com', emailVerified: true, tags: ['gold', 'silver'] })
         // The plugin's earlier grant keeps its end date; only the missing tag is added.
         const { rows } = await h.db<{ tag: string; expires_at: string | null }>`
@@ -375,6 +384,40 @@ describe('site members for plugins', () => {
         expect(rows).toEqual([{ tag: 'gold', expires_at: later }, { tag: 'silver', expires_at: null }])
         const { rows: audit } = await h.db<{ id: string }>`select id from audit_events where action = 'member.create'`
         expect(audit).toEqual([])
+      })
+
+      it('replaces its own expired grant, and says so', async () => {
+        await install(ALL)
+        const ada = await member('ada@example.com')
+        const past = new Date(Date.now() - 60_000).toISOString()
+        await grantMemberTag(h.db, { memberId: ada.id, tag: 'gold', source: PLUGIN_ID, expiresAt: past })
+        // Someone else's expired grant of the same tag is not this plugin's to touch.
+        await grantMemberTag(h.db, { memberId: ada.id, tag: 'gold', source: 'admin', expiresAt: past })
+        await settle()
+        const before = (await heard()).filter((entry) => entry.event === 'member.tagged').length
+        const ensured = (await call({ action: 'ensure', email: 'ada@example.com', tags: ['gold'] })).result as Ensured
+        expect(ensured.member.tags).toEqual(['gold'])
+        const { rows } = await h.db<{ source: string; expires_at: string | null }>`
+          select source, expires_at from member_tags where member_id = ${ada.id} order by source
+        `
+        expect(rows).toEqual([{ source: PLUGIN_ID, expires_at: null }, { source: 'admin', expires_at: past }])
+        await settle()
+        const tagged = (await heard()).filter((entry) => entry.event === 'member.tagged')
+        expect(tagged).toHaveLength(before + 1)
+        expect(tagged.at(-1)).toMatchObject({ memberId: ada.id, tag: 'gold', source: PLUGIN_ID, expiresAt: null })
+
+        // A second call while the new grant is active changes nothing and says nothing.
+        await call({ action: 'ensure', email: 'ada@example.com', tags: ['gold'] })
+        await settle()
+        expect((await heard()).filter((entry) => entry.event === 'member.tagged')).toHaveLength(before + 1)
+      })
+
+      it('says an unfinished sign-up is unconfirmed and leaves it as it is', async () => {
+        await install(ALL)
+        const stranger = await createMember(h.db, { email: 'buyer@example.com', passwordHash: null, profile: { name: 'Typed by someone' }, verified: false })
+        const ensured = (await call({ action: 'ensure', email: 'buyer@example.com' })).result as Ensured
+        expect(ensured).toMatchObject({ created: false, confirmed: false, member: { id: stranger!.id, profile: { name: 'Typed by someone' } } })
+        expect(await findMemberByEmail(h.db, 'buyer@example.com')).toMatchObject({ profile: { name: 'Typed by someone' }, emailVerifiedAt: null })
       })
 
       it('gives ten calls at once one member, created once', async () => {
@@ -465,11 +508,27 @@ describe('site members for plugins', () => {
       }
       configurePublicOrigins(['http://localhost'])
       await saveMemberSettings(h.db, { ...DEFAULT_MEMBER_SETTINGS, pages: await publishMemberPages(h.db, { invite: '/invitation' }) })
-      expect((await call({ action: 'emailStatus' })).result).toEqual({ canEmail: false, reasons: ['sign_in_page_missing'] })
+      // No connector outside production: mail is captured for the admin, not sent.
+      expect((await call({ action: 'emailStatus' })).result).toEqual({
+        canEmail: false,
+        reasons: ['mail_captured_not_sent', 'sign_in_page_missing'],
+      })
       await saveMemberSettings(h.db, {
         ...DEFAULT_MEMBER_SETTINGS,
         pages: await publishMemberPages(h.db, { invite: '/invitation', reset: '/reset' }),
       })
+      expect((await call({ action: 'emailStatus' })).result).toEqual({ canEmail: false, reasons: ['mail_captured_not_sent'] })
+      const { rows } = await h.db<{ id: string }>`select id from users limit 1`
+      const connector = await createMailConnector(
+        h.db,
+        { kind: 'smtp', label: 'Relay', config: { host: 'smtp.example.com', port: 587, username: 'mailer' }, secret: 's' },
+        rows[0]!.id,
+      )
+      await saveMailDefaults(
+        h.db,
+        { defaultConnectorId: connector.id, fromAddress: 'hello@example.com', fromName: 'Example', replyTo: '' },
+        rows[0]!.id,
+      )
       expect((await call({ action: 'emailStatus' })).result).toEqual({ canEmail: true, reasons: [] })
     })
 
@@ -487,7 +546,6 @@ describe('site members for plugins', () => {
   })
 
   describe('member events', () => {
-    const settle = () => new Promise((resolve) => setTimeout(resolve, 150))
 
     it('reach a plugin that may read members', async () => {
       await install(ALL)
