@@ -604,12 +604,22 @@ api.cms.routes.member.post('/cancel', (ctx) => cancel(ctx.member.id))
 ```js
 const member = await api.cms.members.get({ email })            // or { id }; null when there is none
 await api.cms.members.invite({ email, tags: ['pro'] })         // members.write (+ members.tags for tags)
+const { member, created, confirmed } = await api.cms.members.ensure({ email, tags: ['customer'] })  // members.write + members.read (+ members.tags)
+const { canEmail, reasons } = await api.cms.members.emailStatus()  // members.write
 await api.cms.members.tags.grant(member.id, 'pro', { expiresAt })  // members.tags
 await api.cms.members.tags.revoke(member.id, 'pro')            // only this plugin's own grant
 ```
 
 - A tag a plugin grants is recorded with the plugin id as its source. `revoke` withdraws that grant only: a tag an administrator or another plugin gave stays. Tags starting with `instatic:` cannot be granted.
 - `invite` sends the site's invitation email. It rejects when the address already has an account, and when the site has no configured public address or no outgoing email (there is no request to take a link address from).
+- `ensure` gives an address an account without sending anything, for a plugin that must not depend on email (a shop creating the buyer's account from a payment webhook). It returns the member for that address (matched trimmed and in any letter case, as members are) or creates one, and says which (`created`) and whether the address is proven (`confirmed`). Implemented by `ensureMember` in `server/members/admin.ts`:
+  - **Atomic.** The partial unique index on `members.email_normalized` decides between overlapping inserts; the loser returns the winner's row, so concurrent calls get one member and exactly one `created: true`.
+  - **A created member is `pending`:** active, no password, address unconfirmed, no link issued. The member gets in through any flow that proves the address: a sign-in link or a password reset (both need their page, see `emailStatus`), an invitation (`invite` on that address answers `resent`), or signing up with it. The first of those confirms the address. Their member events start with `created_by_plugin` (metadata `plugin`), and the audit log records `member.create` with `pluginId`, no actor.
+  - **An existing member is returned as it is.** A suspended member stays suspended; nothing is re-activated, and no audit entry is written. An unconfirmed one (`confirmed: false`) may be an unfinished sign-up someone else started with this address: its profile is what they typed, so treat it as unverified.
+  - **Core keeps no record of deleted members.** Deleting anonymises the row, so the address cannot be recognised later, and `ensure` creates a fresh member for it. A plugin that must not give a deleted person an account back (a retried webhook for an old order) keeps that knowledge itself: it hears `member.deleted` and holds its own records keyed by member id or order.
+  - **`tags`** are granted from the plugin with no end date, except a tag the plugin already grants that member and that is still active: that grant and its end date stay (`grantMemberTagIfAbsent`). An expired grant from the plugin is replaced, so a returning buyer whose access ran out gets the tag again. Needs `members.tags`, like `invite`.
+  - It needs `members.read` as well as `members.write`, because the answer is the member's record.
+- `emailStatus` answers `{ canEmail, reasons }`: whether the site can email members links it starts itself right now. `reasons` lists every blocker (`memberEmailBlockers` in `server/members/mail.ts`): `public_address_missing` (no configured public address), `mail_not_configured` (outgoing email is off), `mail_captured_not_sent` (no connector and `NODE_ENV` is not `production`, so mail is kept in the admin's Activity instead of sent), `invite_page_missing` (no published invitation page), `sign_in_page_missing` (neither a sign-in-link page nor a password-reset page). Use it in a setup check, to warn the owner that buyers cannot be emailed a way in.
 
 **Member events** (need `cms.hooks` and `members.read`): `member.created`, `member.verified`, `member.signedIn` (`{ memberId, email }`), `member.tagged` (`{ memberId, tag, source, expiresAt }`), `member.deleted` (`{ memberId }`). They are sent without waiting, so a listener cannot delay or cancel a sign-in.
 
@@ -1234,7 +1244,7 @@ independent layers that agree on that single authority:
 
 Both the VM layer and the host layer drive from the same `TARGET_PERMISSIONS` map in `server/plugins/protocol/targets.ts`. This single table is the source of truth for which permission each RPC target requires — the VM and host can never silently assert different permissions for the same target.
 
-Targets intentionally absent from `TARGET_PERMISSIONS` require no permission and are explicitly ungated: `cms.settings.replace` (any active plugin may update its own settings), `network.abort` (no active id without `network.outbound`), `crypto.digest` and `crypto.signHmac` (pure computation, no I/O — same model as `Math`/`JSON`), and `cms.site.publicUrl` (the site's public address). Two conditional checks that a static map cannot express remain in their handlers: `cms.routes.register` with `access.kind === 'public'` additionally requires `cms.routes.public` and with `access.kind === 'member'` requires `members.read`, `cms.hooks.on` for a `member.*` event requires `members.read`, `cms.members.invite` with tags requires `members.tags`, and every `cms.content.*` handler additionally calls `assertContentTableAccess` for the per-table manifest allowlist.
+Targets intentionally absent from `TARGET_PERMISSIONS` require no permission and are explicitly ungated: `cms.settings.replace` (any active plugin may update its own settings), `network.abort` (no active id without `network.outbound`), `crypto.digest` and `crypto.signHmac` (pure computation, no I/O — same model as `Math`/`JSON`), and `cms.site.publicUrl` (the site's public address). Two conditional checks that a static map cannot express remain in their handlers: `cms.routes.register` with `access.kind === 'public'` additionally requires `cms.routes.public` and with `access.kind === 'member'` requires `members.read`, `cms.hooks.on` for a `member.*` event requires `members.read`, `cms.members.invite` and `cms.members.ensure` with tags require `members.tags`, `cms.members.ensure` also requires `members.read` (its answer is the member's record), and every `cms.content.*` handler additionally calls `assertContentTableAccess` for the per-table manifest allowlist.
 
 The VM-side check throws **synchronously** inside the sandbox, so a plugin that
 declares a permission it was denied is rejected before any host dispatch is even
@@ -1259,7 +1269,7 @@ Risk levels:
 | `cms.routes`                | Server               | High      | Register authenticated backend routes                                   |
 | `cms.routes.public`         | Server               | Dangerous | Register anonymously-callable routes; requires `cms.routes` too          |
 | `members.read`              | Server               | High      | See the signed-in member on its routes and per-visitor loop sources, register member routes, look members up, hear member events |
-| `members.write`             | Server               | High      | Invite site members                                                      |
+| `members.write`             | Server               | High      | Create site members (by invitation, or directly with no email) and check whether the site can email them |
 | `members.tags`              | Server               | Dangerous | Grant and withdraw member access tags (what a member may open)           |
 | `mail.send`                 | Server               | High      | Send the plugin's own email templates to site members                    |
 | `mail.send.external`        | Server               | Dangerous | Send the plugin's own email templates to any address                     |

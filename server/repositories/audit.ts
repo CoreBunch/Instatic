@@ -63,6 +63,8 @@ const AuditActionSchema = Type.Union([
   Type.Literal('mail.template.reset'),
   // Site members — see docs/features/members.md.
   Type.Literal('member.invite'),
+  // A plugin gave an address an account (`api.cms.members.ensure`); metadata names the plugin.
+  Type.Literal('member.create'),
   Type.Literal('member.suspend'),
   Type.Literal('member.unsuspend'),
   Type.Literal('member.signout'),

@@ -185,6 +185,8 @@ export function auditTitle(
       return `Email template ${event.targetId ?? ''} was reset`
     case 'member.invite':
       return `Member ${member} was invited`
+    case 'member.create':
+      return `Member ${member} was given an account by ${pluginId}`
     case 'member.suspend':
       return `Member ${member} was suspended`
     case 'member.unsuspend':

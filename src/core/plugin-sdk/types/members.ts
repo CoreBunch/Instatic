@@ -12,6 +12,19 @@ export interface PluginMemberRecord extends ServerPluginMember {
   createdAt: string
 }
 
+/** Why the site cannot email members right now (see `emailStatus`). */
+export type PluginMemberEmailBlocker =
+  /** No public address is configured, so a link in an email has no address to point at. */
+  | 'public_address_missing'
+  /** Outgoing email is off. */
+  | 'mail_not_configured'
+  /** No connector is set up and the server is not in production, so mail is kept in the admin's Activity, not sent. */
+  | 'mail_captured_not_sent'
+  /** No published invitation page is chosen in the member settings. */
+  | 'invite_page_missing'
+  /** No published sign-in-link page or password-reset page is chosen. */
+  | 'sign_in_page_missing'
+
 export interface ServerPluginMembersApi {
   /** Look a member up by id or by email address. Requires `members.read`. */
   get: (by: { id: string } | { email: string }) => Promise<PluginMemberRecord | null>
@@ -23,6 +36,36 @@ export interface ServerPluginMembersApi {
    * when the site cannot send email.
    */
   invite: (input: { email: string; tags?: string[] }) => Promise<{ memberId: string; outcome: 'invited' | 'resent' }>
+  /**
+   * The member with this address, created when there is none, and no email
+   * sent either way. Matches addresses as members do (trimmed, any letter
+   * case). Concurrent calls for one address return the same member, and only
+   * one of them reports `created: true`.
+   *
+   * A created member is `pending`: active, no password, address unconfirmed.
+   * They get in with a sign-in link or a password reset (or an invitation),
+   * which also confirms the address. An existing member is returned as it is:
+   * a suspended one stays suspended. A member an administrator deleted is
+   * gone for good, so their address gets a fresh account; listen for
+   * `member.deleted` if the plugin must not give one back.
+   *
+   * `confirmed` says whether the address is proven. An unconfirmed member
+   * may be an unfinished sign-up someone else started with this address, so
+   * treat its profile as unverified.
+   *
+   * `tags` are granted from this plugin with no end, except a tag this
+   * plugin already grants that member and that is still active, whose grant
+   * (and end date) is kept. An expired grant is replaced.
+   * Requires `members.write` and `members.read` (and `members.tags` when
+   * `tags` is given).
+   */
+  ensure: (input: { email: string; tags?: string[] }) => Promise<{ member: PluginMemberRecord; created: boolean; confirmed: boolean }>
+  /**
+   * Whether the site can email members links it starts itself right now
+   * (invitations, sign-in links, password resets), and if not, every reason.
+   * For a setup check. Requires `members.write`.
+   */
+  emailStatus: () => Promise<{ canEmail: boolean; reasons: PluginMemberEmailBlocker[] }>
   tags: {
     /**
      * Give a member a tag, optionally until `expiresAt` (an ISO date-time).
