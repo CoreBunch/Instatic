@@ -94,6 +94,22 @@ describe('page head settings', () => {
     expect(head).not.toContain('site.ico')
   })
 
+  it('resolves page references to the target page path, and drops a link to a missing page', () => {
+    const site = makeSite()
+    const page = makePage({ root: { moduleId: 'base.text', props: { text: 'Hi' } } })
+    const german = { ...makePage({ root: { moduleId: 'base.text', props: {} } }), id: 'page-de', slug: 'de' }
+    site.pages = [page, german]
+    page.seo = {
+      canonical: 'cms:page:page-1',
+      links: [{ rel: 'alternate', href: 'cms:page:page-de', hreflang: 'de' }, { rel: 'alternate', href: 'cms:page:gone' }],
+    }
+    const { html } = publishPage(page, site, registry)
+    expect(html).toContain('<link rel="canonical" href="/">')
+    expect(html).toContain('<link rel="alternate" href="/de" hreflang="de">')
+    expect(html).not.toContain('cms:page')
+    expect(html.match(/rel="alternate"/g)).toHaveLength(1)
+  })
+
   it('a page without head settings emits no extra tags', () => {
     const head = headOf(undefined)
     expect(head).not.toContain('og:')

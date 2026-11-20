@@ -1,4 +1,4 @@
-import { Suspense, lazy, useEffect, useId, useRef, useState, type FormEvent } from 'react'
+import { useEffect, useId, useRef, useState, type FormEvent } from 'react'
 import type { Page, PageSeo } from '@core/page-tree'
 import {
   isHomePage,
@@ -13,8 +13,7 @@ import { Button } from '@ui/components/Button'
 import { Dialog } from '@ui/components/Dialog'
 import { Input } from '@ui/components/Input'
 import { Tab, TabList, TabPanel, Tabs } from '@ui/components/Tabs'
-import { pageSeoProblem } from '@admin/shared/PageSeoEditor'
-import { SkeletonBlock } from '@ui/components/Skeleton'
+import { PageSeoTabPanels, pageSeoProblem } from '@admin/shared/PageSeoEditor'
 import dialogStyles from '../SiteCreateDialog/SiteCreateDialog.module.css'
 
 export interface PageSettingsPayload {
@@ -35,12 +34,6 @@ interface PageSettingsDialogProps {
 }
 
 const FORM_ID = 'page-settings-form'
-
-// The head-settings editor only mounts when its tab opens, so it loads then
-// and stays out of the Site editor body bundle.
-const PageSeoEditor = lazy(() =>
-  import('@admin/shared/PageSeoEditor/PageSeoEditor').then((m) => ({ default: m.PageSeoEditor })),
-)
 
 /**
  * Title, slug, access and `<head>` settings for a regular page. The site
@@ -165,16 +158,7 @@ export function PageSettingsDialog({
               </fieldset>
             </div>
           </TabPanel>
-          <TabPanel value="search">
-            <Suspense fallback={<SkeletonBlock minHeight={320} ariaLabel="Loading search settings" />}>
-              <PageSeoEditor section="search" value={seo} onChange={setSeo} pageTitle={trimmedTitle || page.title} />
-            </Suspense>
-          </TabPanel>
-          <TabPanel value="head">
-            <Suspense fallback={<SkeletonBlock minHeight={320} ariaLabel="Loading head tags" />}>
-              <PageSeoEditor section="head" value={seo} onChange={setSeo} pageTitle={trimmedTitle || page.title} />
-            </Suspense>
-          </TabPanel>
+          <PageSeoTabPanels value={seo} onChange={setSeo} pageTitle={trimmedTitle || page.title} />
         </Tabs>
       </form>
     </Dialog>

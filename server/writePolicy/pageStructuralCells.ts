@@ -42,8 +42,8 @@ export function keepPageStructuralCells(
  * The create-path counterpart of `keepPageStructuralCells`: a new page row
  * (rows API create, plugin `entries.create` / `createMany`, a bundle import of
  * a page id the site does not have) keeps head settings only when the caller
- * may change structure, normalised. Its access rule stays as sent: a new
- * rule can only narrow who sees a page nobody could see before.
+ * may change structure, normalised. Access on create is handled as before;
+ * this covers `seo` only.
  */
 export function newPageStructuralCells(
   tableId: string,

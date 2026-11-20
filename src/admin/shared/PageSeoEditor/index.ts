@@ -1,3 +1,4 @@
-// The editor component is lazy-loaded by its dialogs from './PageSeoEditor';
-// the barrel carries only the Save gate they need eagerly.
+// The editor component is lazy-loaded through PageSeoTabPanels; the barrel
+// carries only that small wrapper and the Save gate the dialogs need eagerly.
+export { PageSeoTabPanels } from './PageSeoTabPanels'
 export { pageSeoProblem } from './pageSeoProblems'

@@ -17,16 +17,22 @@
  *   - the entry's own SEO title / description (`documentMeta`) outrank the
  *     template's;
  *   - a template canonical with no token would point every entry at one URL,
- *     so it becomes the entry's own permalink; one with a token resolves per
+ *     so it becomes the entry's own permalink (on the canonical's origin when
+ *     that is absolute); one with a token resolves per
  *     entry. A token-less `og:url` is omitted for the same reason;
  *   - everything else (robots included, so a `noindex` template hides every
  *     entry) applies to all entries as written.
  *
  * Text values, URLs and JSON-LD string values are token-interpolated against
- * the render context before escaping, so a template page can write `{currentEntry.title} | Acme`
+ * the render context (without `{route.query.*}` and `{member.*}`, see below)
+ * before escaping, so a template page can write `{currentEntry.title} | Acme`
  * or a canonical of `https://acme.com{route.path}` once for every entry. The
  * fallback chain picks the raw value first; a token that resolves empty does
  * NOT re-trigger the fallback (authors use the token's own `{…|fallback}`).
+ *
+ * A URL holding a `cms:page:<id>` reference (an imported page's link to
+ * another imported page) resolves to that page's current path, like body
+ * links do.
  *
  * Safety: every attribute value goes through `escapeHtml`. URL-bearing values
  * must pass `isSafeUrl` (no `javascript:` / `data:` / custom schemes) or the
@@ -36,7 +42,7 @@
  * block, never executed, so it needs no CSP `script-src` source.
  */
 
-import type { Page, SiteDocument } from '@core/page-tree'
+import { resolvePageRef, type Page, type SiteDocument } from '@core/page-tree'
 import type { TemplateRenderDataContext } from '@core/templates/dynamicBindings'
 import { containsTokens, interpolateTokens } from '@core/templates/tokenInterpolation'
 import { hasDangerousUrlScheme } from '@core/html-sanitize'
@@ -74,10 +80,23 @@ export function buildDocumentHead(
 ): DocumentHead {
   const { settings } = site
   const seo = page.seo ?? {}
-  const text = (value: string) => interpolateTokens(value, context)
+  // `<head>` is never a hole: it is cached with the page under the path and
+  // the canonical query. A token reading the raw query string or the visitor
+  // would bake one request's value into every later response, so those frames
+  // are left out here and such tokens resolve empty (or to their |fallback).
+  const headContext: TemplateRenderDataContext = {
+    ...context,
+    ...(context.route ? { route: { ...context.route, query: {} } } : {}),
+    member: undefined,
+  }
+  const text = (value: string) => interpolateTokens(value, headContext)
   const url = (value: string | undefined): string | null => {
     if (!value) return null
-    const resolved = interpolateTokens(value, context).trim()
+    // A `cms:page:<id>` reference (an imported page link) names the target
+    // page's current path; a page that no longer exists drops the tag.
+    const pagePath = resolvePageRef(value, site.pages)
+    if (pagePath !== null) return pagePath === '#' ? null : pagePath
+    const resolved = interpolateTokens(value, headContext).trim()
     return resolved && isSafeUrl(resolved) ? resolved : null
   }
 
@@ -92,12 +111,14 @@ export function buildDocumentHead(
   if (description) meta('name', 'description', text(description))
 
   // The entry this document renders, on an entry route (see the header).
-  const entry = context.entryStack.at(-1)
+  const entry = headContext.entryStack.at(-1)
   const entryPermalink = typeof entry?.fields.permalink === 'string' ? entry.fields.permalink : undefined
   const perEntry = (value: string | undefined) =>
     entry && value && !containsTokens(value) ? undefined : value
 
-  const canonical = url(entry && seo.canonical && !containsTokens(seo.canonical) ? entryPermalink : seo.canonical)
+  const canonical = url(entry && seo.canonical && !containsTokens(seo.canonical)
+    ? entryCanonical(entryPermalink, seo.canonical)
+    : seo.canonical)
   if (canonical) lines.push(`<link rel="canonical" href="${escapeHtml(canonical)}">`)
   if (seo.robots) meta('name', 'robots', seo.robots)
   if (seo.colorScheme) meta('name', 'color-scheme', seo.colorScheme)
@@ -173,6 +194,22 @@ export function buildDocumentHead(
     langAttr: escapeHtml(settings.language ?? 'en'),
     tags: lines.map((line) => `\n  ${line}`).join(''),
     cspSources,
+  }
+}
+
+/**
+ * The canonical of one entry under a token-less template canonical: the
+ * entry's permalink, on the template canonical's origin when that is
+ * absolute (`https://acme.com/posts` → `https://acme.com/posts/hello`).
+ */
+function entryCanonical(permalink: string | undefined, templateCanonical: string): string | undefined {
+  if (!permalink) return undefined
+  if (!/^https?:\/\//i.test(templateCanonical)) return permalink
+  try {
+    return new URL(permalink, templateCanonical).toString()
+  } catch (_err) {
+    // An unparseable template canonical: the relative permalink is still right.
+    return permalink
   }
 }
 

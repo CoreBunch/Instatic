@@ -34,6 +34,7 @@ export function usePageSettingsDialogs({
     if (!templateSettingsTarget) return
     renamePage(templateSettingsTarget.id, payload.title, payload.slug)
     convertPageToTemplate(templateSettingsTarget.id, payload.template)
+    setPageSeo(templateSettingsTarget.id, payload.seo)
     setTemplateSettingsTarget(null)
     openPageInCanvas(templateSettingsTarget.id)
   }

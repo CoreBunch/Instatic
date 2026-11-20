@@ -21,6 +21,7 @@ import { deleteAllDataRowRedirects, importDataRowRedirect } from '../../reposito
 import { deleteAllMediaFolders, importMediaFolder } from '../../repositories/mediaFolders'
 import { listProtectedTables, writeTableAccess } from '../../repositories/data/tableAccess'
 import { keepPageStructuralCells, newPageStructuralCells } from '../../writePolicy/pageStructuralCells'
+import { parsePageSeo } from '@core/page-tree'
 import type { AccessRule } from '@core/members'
 import { notifyRowWrite, notifyShellWrite, serializeCollabAwareWrite, type RowWriteKind } from '../../repositories/rowWriteEvents'
 
@@ -312,23 +313,51 @@ async function applySiteBundleLocked(
      * Published versions are what the public site serves, so they get the
      * same treatment: the rule the address was published with (or the draft's
      * rule) is put back into every restored version of a page.
+     *
+     * Head settings follow the same structural policy, on both places a
+     * publication carries them: each version's `seo` cell and each page of the
+     * restored site snapshots (what the public renderer reads). Without
+     * `site.structure.edit` a page keeps the head settings its draft has now
+     * (a new page gets none); with it they are normalised.
      */
+    const storedPageSeo = new Map<string, unknown>(
+      input.mayChangePageStructure
+        ? []
+        : (storedPages.size > 0 ? [...storedPages.values()] : await listDataRows(db, scope, 'pages'))
+          .map((row) => [row.id, row.cells.seo] as const),
+    )
+    const pageSeoFor = (pageId: string, bundleSeo: unknown) =>
+      parsePageSeo(input.mayChangePageStructure ? bundleSeo : storedPageSeo.get(pageId))
     const bundlePageIds = new Set(bundle.rows.filter((row) => row.tableId === 'pages').map((row) => row.id))
-    guardPublication = (publication) => {
-      if (storedPages.size === 0) return publication
-      return {
-        ...publication,
-        rows: publication.rows.map((row) => !bundlePageIds.has(row.rowId) ? row : {
-          ...row,
-          versions: row.versions.map((version) => {
-            const rule = publishedPageRuleBySlug.get(version.slug)
-              ?? storedPages.get(row.rowId)?.cells.access
-              ?? storedPageRuleBySlug.get(version.slug)
-            return rule === undefined ? version : { ...version, cells: { ...version.cells, access: rule } }
-          }),
+    guardPublication = (publication) => ({
+      ...publication,
+      rows: publication.rows.map((row) => !bundlePageIds.has(row.rowId) ? row : {
+        ...row,
+        versions: row.versions.map((version) => {
+          const rule = storedPages.size === 0 ? undefined : publishedPageRuleBySlug.get(version.slug)
+            ?? storedPages.get(row.rowId)?.cells.access
+            ?? storedPageRuleBySlug.get(version.slug)
+          const { seo: bundleSeo, ...cells } = version.cells
+          const seo = pageSeoFor(row.rowId, bundleSeo)
+          return {
+            ...version,
+            cells: { ...cells, ...(seo ? { seo } : {}), ...(rule === undefined ? {} : { access: rule }) },
+          }
         }),
-      }
-    }
+      }),
+      snapshots: publication.snapshots.map((snapshot) => ({
+        ...snapshot,
+        site: {
+          ...snapshot.site,
+          pages: snapshot.site.pages.map((page) => {
+            if (!bundlePageIds.has(page.id)) return page
+            const { seo: bundleSeo, ...rest } = page
+            const seo = pageSeoFor(page.id, bundleSeo)
+            return seo ? { ...rest, seo } : rest
+          }),
+        },
+      })),
+    })
     /** A stored rule always stays. The bundle's rule is only added where there is none. */
     const applyTableAccess = async (tx: DbClient): Promise<void> => {
       if (!isMainScope(scope)) return

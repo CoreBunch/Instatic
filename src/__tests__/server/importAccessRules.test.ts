@@ -217,6 +217,66 @@ describe('a protected address', () => {
   })
 })
 
+describe('page head settings in a restored publication', () => {
+  const STORED = { description: 'Stored' }
+  const ATTEMPT = { description: 'Attempt', robots: 'noindex' }
+  const stamp = new Date(0).toISOString()
+
+  /** A bundle whose publication carries ATTEMPT on page_club and on a new page_new. */
+  async function publishedBundle(): Promise<SiteBundle> {
+    await t.db`update data_rows set cells_json = ${{ title: 'Club', slug: 'club', access: MEMBERS, seo: STORED }} where id = 'page_club'`
+    const bundle = await currentBundle()
+    const club = bundle.rows.find((row) => row.id === 'page_club')!
+    const fresh = { ...club, id: 'page_new', slug: 'new', cells: { title: 'New', slug: 'new', seo: ATTEMPT } }
+    const version = (rowId: string, slug: string) => ({
+      id: `ver_${rowId}`, versionNumber: 1, cells: { title: slug, slug, seo: ATTEMPT }, slug,
+      siteSnapshotId: 'snap_1', runtimeAssets: null, publishedAt: stamp, createdAt: stamp,
+    })
+    const rows = [...bundle.rows, fresh]
+    return {
+      ...bundle,
+      rows: rows.map((row) => (row.tableId === 'pages' ? { ...row, status: 'published' as const, publishedAt: stamp } : row)),
+      publication: {
+        snapshots: [{
+          id: 'snap_1',
+          site: { pages: [{ id: 'page_club', slug: 'club', seo: ATTEMPT }, { id: 'page_new', slug: 'new', seo: ATTEMPT }], visualComponents: [], layouts: [] },
+          importmapBody: null, importmapSha256: null, createdAt: stamp,
+        }],
+        files: [],
+        rows: rows.map((row) => row.tableId !== 'pages'
+          ? { rowId: row.id, activeVersionId: null, versions: [] }
+          : { rowId: row.id, activeVersionId: `ver_${row.id}`, versions: [version(row.id, row.slug)] }),
+      },
+    } as unknown as SiteBundle
+  }
+
+  async function publishedSeo() {
+    const { rows: versions } = await t.db<{ row_id: string; cells_json: Record<string, unknown> }>`select row_id, cells_json from data_row_versions`
+    const { rows: snapshots } = await t.db<{ site_json: { pages: Array<{ id: string; seo?: unknown }> } }>`select site_json from site_snapshots`
+    const pages = snapshots.flatMap((snapshot) => snapshot.site_json.pages)
+    return {
+      versions: Object.fromEntries(versions.map((row) => [row.row_id, row.cells_json.seo])),
+      snapshots: Object.fromEntries(pages.map((page) => [page.id, page.seo])),
+    }
+  }
+
+  it('keeps the stored settings, and gives a new page none, without structure rights', async () => {
+    await apply(await publishedBundle(), 'merge-overwrite')
+    const seo = await publishedSeo()
+    expect(seo.versions.page_club).toEqual(STORED)
+    expect(seo.versions.page_new).toBeUndefined()
+    expect(seo.snapshots.page_club).toEqual(STORED)
+    expect(seo.snapshots.page_new).toBeUndefined()
+  })
+
+  it('carries the bundle settings for an importer who may change structure', async () => {
+    await apply(await publishedBundle(), 'merge-overwrite', true)
+    const seo = await publishedSeo()
+    expect(seo.versions.page_new).toEqual(ATTEMPT)
+    expect(seo.snapshots.page_club).toEqual(ATTEMPT)
+  })
+})
+
 describe('importing table rules', () => {
   const request = new Request('http://localhost/admin/api/cms/import', { method: 'POST' })
   const user = (capabilities: string[]) => ({ id: 'u', capabilities }) as unknown as AuthUser

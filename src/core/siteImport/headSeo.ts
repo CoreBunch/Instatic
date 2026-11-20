@@ -44,7 +44,6 @@ import { canonicalJson } from '@core/utils/canonicalJson'
 import type { ImportWarning } from './warnings'
 import { EXTERNAL_URL_RE, resolveAndRecord, resolveRelativePath, type AssetResolver } from './assetResolver'
 import { guessMimeType, isImportUploadableMimeType } from './mimeTypes'
-import { deriveSlug } from './pageSlug'
 
 interface HeadSeoResult {
   seo: PageSeo | null
@@ -224,30 +223,28 @@ function readLink(el: Element, rel: PageHeadLinkRel, href: string): PageHeadLink
 // ---------------------------------------------------------------------------
 
 /**
- * Normalise the URLs in a page's head settings: the favicon, the Open
- * Graph / Twitter images, every extra link, the canonical and `og:url`.
+ * Normalise the file URLs in a page's head settings: the favicon, the Open
+ * Graph / Twitter images, and every extra link that points at a file.
  *
  * A file the media library can store becomes its FileMap key (uploaded, then
  * rewritten to the media URL by `applyAssetRewrites`). A file in the archive
  * the media library cannot store (`llms.txt`, a web manifest, a stylesheet)
  * keeps its link, re-pointed at the file's root-relative path so it means the
  * same on every page, and reports `head-file-not-hosted` (as does a non-media
- * file the archive does not contain). A URL naming another HTML file of the
- * import becomes that page's route (`importedPageRoute`). External URLs and
- * origins (`preconnect`, `dns-prefetch`) pass through as authored.
+ * file the archive does not contain). A URL naming another imported page is
+ * left for `rewriteInternalLinks`, which turns it into a `cms:page:<id>`
+ * reference at commit. External URLs and origins (`preconnect`,
+ * `dns-prefetch`) pass through as authored.
  */
 export function normalizeHeadSeoUrls(seo: PageSeo | null, htmlFilePath: string, resolver: AssetResolver): PageSeo | null {
   if (!seo) return null
   const file = (href: string) => normalizeHeadFileUrl(href, htmlFilePath, resolver)
-  const address = (href: string) => importedPageRoute(href, htmlFilePath, resolver) ?? href
   const openGraph = seo.openGraph && {
     ...seo.openGraph,
-    ...(seo.openGraph.url ? { url: address(seo.openGraph.url) } : {}),
     ...(seo.openGraph.image ? { image: file(seo.openGraph.image) } : {}),
   }
   return {
     ...seo,
-    ...(seo.canonical ? { canonical: address(seo.canonical) } : {}),
     ...(seo.favicon ? { favicon: { ...seo.favicon, href: file(seo.favicon.href) } } : {}),
     ...(openGraph ? { openGraph } : {}),
     ...(seo.twitter?.image ? { twitter: { ...seo.twitter, image: file(seo.twitter.image) } } : {}),
@@ -263,8 +260,6 @@ export function normalizeHeadSeoUrls(seo: PageSeo | null, htmlFilePath: string, 
 
 function normalizeHeadFileUrl(rawUrl: string, htmlFilePath: string, resolver: AssetResolver): string {
   if (EXTERNAL_URL_RE.test(rawUrl)) return rawUrl
-  const pageRoute = importedPageRoute(rawUrl, htmlFilePath, resolver)
-  if (pageRoute) return pageRoute
   const fileMapKey = resolveAndRecord(rawUrl, htmlFilePath, resolver)
   if (fileMapKey) return fileMapKey
 
@@ -272,6 +267,8 @@ function normalizeHeadFileUrl(rawUrl: string, htmlFilePath: string, resolver: As
   if (!resolvedPath) return rawUrl
   const entry = resolver.fileMap.files[resolvedPath]
   const mimeType = entry?.mimeType || guessMimeType(resolvedPath)
+  // Another imported page: `rewriteInternalLinks` turns it into a page reference.
+  if (entry && mimeType.toLowerCase().startsWith('text/html')) return rawUrl
   // A missing media file was already reported as `unresolved-asset`.
   if (entry || !isImportUploadableMimeType(mimeType)) {
     const reason = entry ? 'is not a file the media library can store' : 'is not in the import'
@@ -283,20 +280,4 @@ function normalizeHeadFileUrl(rawUrl: string, htmlFilePath: string, resolver: As
     })
   }
   return `/${resolvedPath}`
-}
-
-/**
- * The route a head URL lands on when it names another HTML file of this
- * import (`<link rel="canonical" href="index.html">`, an hreflang alternate),
- * or null. The page is served at its derived slug, not at the file path. A
- * slug a conflict renames later still needs the link edited by hand.
- */
-function importedPageRoute(rawUrl: string, htmlFilePath: string, resolver: AssetResolver): string | null {
-  if (EXTERNAL_URL_RE.test(rawUrl)) return null
-  const resolvedPath = resolveRelativePath(rawUrl, htmlFilePath)
-  if (!resolvedPath) return null
-  const entry = resolver.fileMap.files[resolvedPath]
-  if (!entry || !(entry.mimeType || guessMimeType(resolvedPath)).toLowerCase().startsWith('text/html')) return null
-  const slug = deriveSlug(resolvedPath)
-  return slug === 'index' ? '/' : `/${slug}`
 }

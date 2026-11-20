@@ -53,13 +53,13 @@ const POSTS = {
   },
 } as unknown as SnapshotPage
 
-function snapshot(posts: SnapshotPage = POSTS): PublishedPageSnapshot {
+function snapshot(posts: SnapshotPage = POSTS, home: SnapshotPage = HOME): PublishedPageSnapshot {
   return {
     cmsSnapshotVersion: 1,
     pageRowId: 'page_home',
     site: {
       id: 'project_1', name: 'Example',
-      pages: [LAYOUT, HOME, posts],
+      pages: [LAYOUT, home, posts],
       files: [], visualComponents: [],
       breakpoints: [{ id: 'desktop', label: 'Desktop', width: 1440, icon: 'monitor' }],
       settings: { shortcuts: {} },
@@ -134,6 +134,23 @@ describe('page head settings on the public render path', () => {
     resetForTests()
   })
 
+  it('{page.*} tokens name the served page, not the layout wrapping it', async () => {
+    const snap = snapshot(POSTS, { ...HOME, seo: { canonical: 'https://example.test{page.permalink}', openGraph: { title: '{page.title}' } } } as SnapshotPage)
+    const { html } = await renderPublishedSnapshot(snap, { db: makeFakeDb(snap) })
+    const head = headOf(html)
+    expect(head).toContain('<link rel="canonical" href="https://example.test/">')
+    expect(head).toContain('<meta property="og:title" content="Home">')
+  })
+
+  it('head values never read the query string or the visitor', async () => {
+    const snap = snapshot(POSTS, { ...HOME, seo: { description: 'Ref {route.query.ref|none}', openGraph: { title: 'Hi {member.email|there}' } } } as SnapshotPage)
+    const { html } = await renderPublishedSnapshot(snap, { db: makeFakeDb(snap), url: new URL('http://localhost/?ref=evil') })
+    const head = headOf(html)
+    expect(head).toContain('<meta name="description" content="Ref none">')
+    expect(head).toContain('<meta property="og:title" content="Hi there">')
+    expect(head).not.toContain('evil')
+  })
+
   it('a page wrapped by an everywhere layout keeps its own head settings', async () => {
     const snap = snapshot()
     const { html } = await renderPublishedSnapshot(snap, { db: makeFakeDb(snap) })
@@ -153,7 +170,7 @@ describe('page head settings on the public render path', () => {
     expect(head).toContain('<meta name="description" content="A summary of hello">')
     expect(head).toContain('<meta property="og:title" content="Hello | Example">')
     // A token-less template canonical would point every entry at one URL.
-    expect(head).toContain('<link rel="canonical" href="/blog/hello">')
+    expect(head).toContain('<link rel="canonical" href="https://example.test/blog/hello">')
     expect(head).not.toContain('og:url')
     expect(head).toContain('<meta name="robots" content="noindex">')
     expect(head).not.toContain('Layout description')

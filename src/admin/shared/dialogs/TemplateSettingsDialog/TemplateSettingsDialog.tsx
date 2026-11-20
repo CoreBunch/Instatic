@@ -1,9 +1,10 @@
 import { useEffect, useId, useRef, useState, type FormEvent } from 'react'
 import { useAsyncResource } from '@admin/lib/useAsyncResource'
-import type { Page, PageTemplateConfig, TemplateTarget } from '@core/page-tree'
+import type { Page, PageSeo, PageTemplateConfig, TemplateTarget } from '@core/page-tree'
 import {
   normalizePageSlug,
   pageSlugDuplicateError,
+  parsePageSeo,
   pageSlugError,
 } from '@core/page-tree'
 import { listCmsDataTables } from '@core/persistence/cmsData'
@@ -13,12 +14,25 @@ import { Checkbox } from '@ui/components/Checkbox'
 import { Dialog } from '@ui/components/Dialog'
 import { Input } from '@ui/components/Input'
 import { Select } from '@ui/components/Select'
+import { Tab, TabList, TabPanel, Tabs } from '@ui/components/Tabs'
+import { PageSeoTabPanels, pageSeoProblem } from '@admin/shared/PageSeoEditor'
 import dialogStyles from '../SiteCreateDialog/SiteCreateDialog.module.css'
 
 export interface TemplateSettingsPayload {
   title: string
   slug: string
   template: PageTemplateConfig
+  /** Normalised head settings; null clears them. */
+  seo: PageSeo | null
+}
+
+type SettingsTab = 'template' | 'search' | 'head'
+
+/** What a template's head settings mean, per target kind; layouts have none. */
+const SEO_NOTES: Partial<Record<TemplateTarget['kind'], string>> = {
+  postTypes:
+    'A pattern for every entry this template shows. Use {currentEntry.title}-style tokens for per-entry text. An entry\'s own SEO title and description win; a canonical without a token becomes each entry\'s own address; robots and other fixed values apply to every entry.',
+  notFound: 'The head of the page visitors get for an address that does not exist.',
 }
 
 interface TemplateSettingsDialogProps {
@@ -67,6 +81,8 @@ export function TemplateSettingsDialog({
     initialTarget?.kind === 'postTypes' ? initialTarget.tableSlugs : [],
   )
   const [priority, setPriority] = useState(String(page.template?.priority ?? 100))
+  const [seo, setSeo] = useState<PageSeo>(page.seo ?? {})
+  const [tab, setTab] = useState<SettingsTab>('template')
   // A postTypes template renders an entry at a public URL — only tables with a
   // non-empty `routeBase` are routable and can be a template source (both
   // `postType` and `data` kinds qualify). Falls back to a synthetic Posts table
@@ -94,10 +110,16 @@ export function TemplateSettingsDialog({
   const priorityInvalid = !Number.isFinite(priorityNumber)
   const postTypesEmpty = targetKind === 'postTypes' && selectedSlugs.length === 0
 
+  // An everywhere layout is chrome: its head settings never reach the pages
+  // it wraps (composeTemplateChain), so it has no head tabs.
+  const seoNote = SEO_NOTES[targetKind]
+  const seoProblem = seoNote ? pageSeoProblem(seo) : null
+
   const saveDisabled = !trimmedTitle
     || Boolean(slugValidation)
     || priorityInvalid
     || postTypesEmpty
+    || Boolean(seoProblem)
 
   useEffect(() => {
     requestAnimationFrame(() => inputRef.current?.select())
@@ -125,6 +147,7 @@ export function TemplateSettingsDialog({
         target,
         priority: priorityNumber,
       },
+      seo: seoNote ? parsePageSeo(seo) : (page.seo ?? null),
     })
   }
 
@@ -133,10 +156,11 @@ export function TemplateSettingsDialog({
       open
       onClose={onCancel}
       title="Template settings"
-      size="sm"
+      size={seoNote ? 'xl' : 'sm'}
       initialFocusRef={inputRef}
       footer={
         <>
+          {seoProblem && <p role="alert" className={dialogStyles.errorText}>{seoProblem}</p>}
           <Button variant="secondary" size="sm" type="button" onClick={onCancel}>
             Cancel
           </Button>
@@ -153,78 +177,94 @@ export function TemplateSettingsDialog({
       }
     >
       <form id={FORM_ID} className={dialogStyles.form} onSubmit={handleSubmit}>
-        <div className={dialogStyles.field}>
-          <label htmlFor={nameInputId} className={dialogStyles.label}>Name</label>
-          <Input
-            id={nameInputId}
-            ref={inputRef}
-            fieldSize="sm"
-            value={title}
-            onChange={(event) => setTitle(event.target.value)}
-            autoComplete="off"
-            spellCheck={false}
-          />
-        </div>
-
-        <div className={dialogStyles.field}>
-          <label htmlFor={slugInputId} className={dialogStyles.label}>Slug</label>
-          <Input
-            id={slugInputId}
-            fieldSize="sm"
-            value={slug}
-            onChange={(event) => setSlug(normalizePageSlug(event.target.value))}
-            autoComplete="off"
-            spellCheck={false}
-            invalid={Boolean(slugValidation)}
-          />
-          {slugValidation && (
-            <p role="alert" className={dialogStyles.errorText}>{slugValidation}</p>
+        <Tabs value={seoNote ? tab : 'template'} onChange={setTab}>
+          {seoNote && (
+            <TabList ariaLabel="Template settings sections">
+              <Tab value="template">Template</Tab>
+              <Tab value="search">Search &amp; social</Tab>
+              <Tab value="head">Head tags</Tab>
+            </TabList>
           )}
-        </div>
-
-        <div className={dialogStyles.field}>
-          <label htmlFor={targetSelectId} className={dialogStyles.label}>Applies to</label>
-          <Select
-            id={targetSelectId}
-            aria-label="Applies to"
-            fieldSize="sm"
-            value={targetKind}
-            onChange={(event) => setTargetKind(event.target.value as TemplateTarget['kind'])}
-            options={TARGET_KIND_OPTIONS}
-          />
-        </div>
-
-        {targetKind === 'postTypes' && (
-          <div className={dialogStyles.field}>
-            <span className={dialogStyles.label}>Post types</span>
-            {collections.map((collection) => (
-              <label key={collection.slug} className={dialogStyles.checkboxRow}>
-                <Checkbox
-                  checked={selectedSlugs.includes(collection.slug)}
-                  onCheckedChange={(checked) => toggleSlug(collection.slug, checked)}
-                  aria-label={collection.pluralLabel || collection.name}
+          <TabPanel value="template" keepMounted>
+            <div className={dialogStyles.form}>
+              <div className={dialogStyles.field}>
+                <label htmlFor={nameInputId} className={dialogStyles.label}>Name</label>
+                <Input
+                  id={nameInputId}
+                  ref={inputRef}
+                  fieldSize="sm"
+                  value={title}
+                  onChange={(event) => setTitle(event.target.value)}
+                  autoComplete="off"
+                  spellCheck={false}
                 />
-                {collection.pluralLabel || collection.name}
-              </label>
-            ))}
-            {postTypesEmpty && (
-              <p role="alert" className={dialogStyles.errorText}>Select at least one post type.</p>
-            )}
-          </div>
-        )}
+              </div>
 
-        <div className={dialogStyles.field}>
-          <label htmlFor={priorityInputId} className={dialogStyles.label}>Priority</label>
-          <Input
-            id={priorityInputId}
-            aria-label="Priority"
-            fieldSize="sm"
-            type="number"
-            value={priority}
-            onChange={(event) => setPriority(event.target.value)}
-            invalid={priorityInvalid}
-          />
-        </div>
+              <div className={dialogStyles.field}>
+                <label htmlFor={slugInputId} className={dialogStyles.label}>Slug</label>
+                <Input
+                  id={slugInputId}
+                  fieldSize="sm"
+                  value={slug}
+                  onChange={(event) => setSlug(normalizePageSlug(event.target.value))}
+                  autoComplete="off"
+                  spellCheck={false}
+                  invalid={Boolean(slugValidation)}
+                />
+                {slugValidation && (
+                  <p role="alert" className={dialogStyles.errorText}>{slugValidation}</p>
+                )}
+              </div>
+
+              <div className={dialogStyles.field}>
+                <label htmlFor={targetSelectId} className={dialogStyles.label}>Applies to</label>
+                <Select
+                  id={targetSelectId}
+                  aria-label="Applies to"
+                  fieldSize="sm"
+                  value={targetKind}
+                  onChange={(event) => setTargetKind(event.target.value as TemplateTarget['kind'])}
+                  options={TARGET_KIND_OPTIONS}
+                />
+              </div>
+
+              {targetKind === 'postTypes' && (
+                <div className={dialogStyles.field}>
+                  <span className={dialogStyles.label}>Post types</span>
+                  {collections.map((collection) => (
+                    <label key={collection.slug} className={dialogStyles.checkboxRow}>
+                      <Checkbox
+                        checked={selectedSlugs.includes(collection.slug)}
+                        onCheckedChange={(checked) => toggleSlug(collection.slug, checked)}
+                        aria-label={collection.pluralLabel || collection.name}
+                      />
+                      {collection.pluralLabel || collection.name}
+                    </label>
+                  ))}
+                  {postTypesEmpty && (
+                    <p role="alert" className={dialogStyles.errorText}>Select at least one post type.</p>
+                  )}
+                </div>
+              )}
+
+              <div className={dialogStyles.field}>
+                <label htmlFor={priorityInputId} className={dialogStyles.label}>Priority</label>
+                <Input
+                  id={priorityInputId}
+                  aria-label="Priority"
+                  fieldSize="sm"
+                  type="number"
+                  value={priority}
+                  onChange={(event) => setPriority(event.target.value)}
+                  invalid={priorityInvalid}
+                />
+              </div>
+            </div>
+          </TabPanel>
+          {seoNote && (
+            <PageSeoTabPanels value={seo} onChange={setSeo} pageTitle={trimmedTitle || page.title} note={seoNote} />
+          )}
+        </Tabs>
       </form>
     </Dialog>
   )

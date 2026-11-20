@@ -40,7 +40,7 @@ describe('keepPageStructuralCells', () => {
     expect('seo' in keepPageStructuralCells(stored, { seo: { robots: '' } }, true)).toBe(false)
   })
 
-  it('a new page keeps head settings only for a structure editor, and always keeps access', () => {
+  it('a new page keeps head settings only for a structure editor', () => {
     const cells = { title: 'N', seo: ATTEMPT, access: { level: 'members', onDeny: 'login' } }
     expect(newPageStructuralCells('pages', cells)).toEqual({ title: 'N', access: cells.access })
     expect(newPageStructuralCells('pages', cells, true).seo).toEqual(ATTEMPT)

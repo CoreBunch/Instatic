@@ -39,13 +39,20 @@ interface PageSeoEditorProps {
   onChange: (next: PageSeo) => void
   /** Shown as the placeholder of the SEO title field. */
   pageTitle: string
+  /** Shown above the section. */
+  note?: string
 }
 
-export function PageSeoEditor({ section, value, onChange, pageTitle }: PageSeoEditorProps) {
+export function PageSeoEditor({ section, value, onChange, pageTitle, note }: PageSeoEditorProps) {
   const set = <K extends keyof PageSeo>(key: K, next: PageSeo[K]) => onChange({ ...value, [key]: next })
-  return section === 'search'
-    ? <SearchSection value={value} set={set} pageTitle={pageTitle} />
-    : <HeadSection value={value} set={set} />
+  return (
+    <div className={styles.root}>
+      {note && <p className={styles.note}>{note}</p>}
+      {section === 'search'
+        ? <SearchSection value={value} set={set} pageTitle={pageTitle} />
+        : <HeadSection value={value} set={set} />}
+    </div>
+  )
 }
 
 type SetField = <K extends keyof PageSeo>(key: K, next: PageSeo[K]) => void

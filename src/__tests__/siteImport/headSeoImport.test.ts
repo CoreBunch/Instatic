@@ -74,9 +74,10 @@ describe('HTML import keeps the page head', () => {
     const plan = buildImportPlan({ fileMap: fileMap(), currentSite: useEditorStore.getState().site! })
     const page = plan.pages.find((candidate) => candidate.source === 'bake/index.html')!
     expect(page.title).toBe('Launch')
-    // Head URLs naming another imported page point at its route, not the file.
+    // Head URLs naming another imported page stay as authored until commit,
+    // where they become page references (see the commit test).
     const german = plan.pages.find((candidate) => candidate.source === 'de/index.html')!
-    expect(german.seo).toEqual({ canonical: '/de', openGraph: { url: '/de' } })
+    expect(german.seo).toEqual({ canonical: 'index.html', openGraph: { url: './index.html' } })
     expect(page.seo).toEqual({
       description: 'Design live, ship static.',
       canonical: 'https://example.com/',
@@ -94,7 +95,7 @@ describe('HTML import keeps the page head', () => {
         { attribute: 'name', name: 'google-site-verification', content: 'abc123' },
       ],
       links: [
-        { rel: 'alternate', href: '/de', hreflang: 'de' },
+        { rel: 'alternate', href: '../de/index.html', hreflang: 'de' },
         { rel: 'apple-touch-icon', href: 'shared/touch.png', sizes: '180x180' },
         { rel: 'alternate', href: '/bake/llms.txt', type: 'text/plain', title: 'For language models' },
         { rel: 'preload', href: 'shared/fonts/sans.woff2', as: 'font', type: 'font/woff2', crossorigin: 'anonymous' },
@@ -136,8 +137,11 @@ describe('HTML import keeps the page head', () => {
     const page = useEditorStore.getState().site!.pages.find((candidate) => candidate.id === committed.id)!
 
     expect(page.seo?.favicon).toEqual({ href: '/uploads/logo.svg', type: 'image/svg+xml' })
+    const germanId = result.pages.find((candidate) => candidate.source === 'de/index.html')!.id
+    const german = useEditorStore.getState().site!.pages.find((candidate) => candidate.id === germanId)!
+    expect(german.seo).toEqual({ canonical: `cms:page:${germanId}`, openGraph: { url: `cms:page:${germanId}` } })
     expect(page.seo?.links?.map((link) => link.href)).toEqual([
-      '/de',
+      `cms:page:${germanId}`,
       '/uploads/touch.png',
       '/bake/llms.txt',
       '/uploads/sans.woff2',

@@ -12,13 +12,18 @@
  * resolves that ref to the page's CURRENT path at publish time, so links keep
  * working across slug renames.
  *
+ * The page's head settings get the same pass: a canonical, `og:url` or
+ * `<link>` href naming another imported page (an hreflang alternate) becomes
+ * a page reference too, which the publisher's head emitter resolves the same
+ * way.
+ *
  * Fragments are preserved (`club.html#features` → `cms:page:<id>#features`).
  * Same-page anchors (`#features`), external URLs, `mailto:`/`tel:`, and links
  * to non-imported files are left untouched.
  */
 
 import { makePageRef } from '@core/page-tree'
-import type { PageNode } from '@core/page-tree'
+import type { PageNode, PageSeo } from '@core/page-tree'
 import type { PagePlan } from './types'
 import { resolveHref } from './htmlPagePlan'
 
@@ -51,9 +56,33 @@ export function rewriteInternalLinks(
       nodes[id] = { ...node, props: { ...node.props, href: ref } }
     }
 
-    if (!touched) return plan
-    return { ...plan, nodeFragment: { ...plan.nodeFragment, nodes } }
+    const seo = rewriteHeadLinks(plan.seo, plan.source, pageIdBySource)
+    if (!touched && seo === plan.seo) return plan
+    return { ...plan, seo, ...(touched ? { nodeFragment: { ...plan.nodeFragment, nodes } } : {}) }
   })
+}
+
+/** The head settings with every URL that names an imported page turned into its page reference. */
+function rewriteHeadLinks(
+  seo: PageSeo | null,
+  source: string,
+  pageIdBySource: ReadonlyMap<string, string>,
+): PageSeo | null {
+  if (!seo) return seo
+  let touched = false
+  const ref = (href: string) => {
+    const pageRef = hrefToPageRef(href, source, pageIdBySource)
+    if (pageRef === null) return href
+    touched = true
+    return pageRef
+  }
+  const next: PageSeo = {
+    ...seo,
+    ...(seo.canonical ? { canonical: ref(seo.canonical) } : {}),
+    ...(seo.openGraph?.url ? { openGraph: { ...seo.openGraph, url: ref(seo.openGraph.url) } } : {}),
+    ...(seo.links ? { links: seo.links.map((link) => ({ ...link, href: ref(link.href) })) } : {}),
+  }
+  return touched ? next : seo
 }
 
 /**
