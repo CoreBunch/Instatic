@@ -36,6 +36,7 @@ import {
   formatFill,
   initialFill,
   nearestStop,
+  reconcileStopSelection,
   type FillMode,
   type FillState,
 } from './fillState'
@@ -165,8 +166,11 @@ export function ColorPicker({
     setLastValue(value)
     setExpectedEcho(null)
     if (expectedEcho !== value) {
-      setFill(initialFill(value, gradients, tokens))
-      if (lastValue !== value) setSelectedStop(0)
+      const next = initialFill(value, gradients, tokens)
+      setFill(next)
+      if (lastValue !== value) {
+        setSelectedStop(reconcileStopSelection(parsedFill, next, selectedStop))
+      }
       setDraft(null)
       setExternalRevision(externalRevision + 1)
     }
@@ -234,7 +238,7 @@ export function ColorPicker({
 
   function handleFormatChange(next: ColorFormat) {
     setFormat(next)
-    emit(fill, next)
+    if (!activeToken) emit(fill, next)
   }
 
   function handleModeChange(nextMode: FillMode) {

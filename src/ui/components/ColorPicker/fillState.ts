@@ -94,3 +94,17 @@ export function nearestStop(stops: readonly StopState[], pos: number): number {
   }
   return index
 }
+
+/** Keep the selected stop when a canvas edit moves, rotates or reorders the gradient. */
+export function reconcileStopSelection(previous: FillState | null, next: FillState | null, index: number): number {
+  if (!next || next.mode === 'solid' || previous?.mode !== next.mode) return 0
+  const previousStop = previous.stops[index]
+  const fallbackIndex = Math.min(index, next.stops.length - 1)
+  if (!previousStop) return fallbackIndex
+
+  const matches = next.stops.map((stop, i) => ({ stop, i })).filter(({ stop }) =>
+    previousStop.tokenName ? stop.tokenName === previousStop.tokenName :
+      !stop.tokenName && formatColor(hsvaToRgba(stop.hsva), 'hex') === formatColor(hsvaToRgba(previousStop.hsva), 'hex'))
+  const samePosition = matches.find(({ stop }) => stop.pos === previousStop.pos)
+  return samePosition?.i ?? (matches.length === 1 ? matches[0].i : fallbackIndex)
+}

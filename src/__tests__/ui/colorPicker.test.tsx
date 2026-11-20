@@ -110,3 +110,19 @@ it('saves the selected gradient stop as a token and keeps it bound through reope
     expect(formatGradient(parseGradient(css, updatedPalette)!, 'hex')).toBe(css)
   }
 })
+
+it('keeps the selected stop when the canvas changes geometry before saving a Framework color', () => {
+  const token = { name: '--brick', value: '#aa0000' }
+  let stored = ''
+  const picker = (value: string) => <ColorPicker value={value} gradients tokens={[token]}
+    onSaveColor={() => token} onChange={(next) => { stored = next }} />
+  const view = render(picker('linear-gradient(0deg, #ffffff 0%, #aa0000 60%, #000000 80%)'))
+  fireEvent.focus(screen.getByRole('slider', { name: 'Fill stop 2 position' }))
+  view.rerender(picker('linear-gradient(45deg, #ffffff 0%, #aa0000 60%, #000000 80%)'))
+  expect(screen.getByLabelText<HTMLInputElement>('Colour value (HEX)').value).toBe('#aa0000')
+  view.rerender(picker('linear-gradient(45deg, #ffffff 0%, #000000 80%, #aa0000 90%)'))
+  fireEvent.click(screen.getByRole('button', { name: 'Save to Framework' }))
+  fireEvent.change(screen.getByLabelText('Framework color name'), { target: { value: 'brick' } })
+  fireEvent.click(screen.getByRole('button', { name: 'Save', exact: true }))
+  expect(stored).toBe('linear-gradient(45deg, #ffffff 0%, #000000 80%, var(--brick) 90%)')
+})
