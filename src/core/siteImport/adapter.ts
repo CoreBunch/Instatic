@@ -24,6 +24,7 @@ import type {
   ImportScript,
   ImportStylesheet,
   UploadedImportAsset,
+  ImportWarning,
 } from './types'
 import type { ConditionDef } from '@core/page-tree'
 import type { ImportFragment } from '@core/htmlImport'
@@ -242,17 +243,30 @@ export interface SiteImportTransaction {
 
   /**
    * Keep existing script / stylesheet files an import delivers again (a
-   * `FileConflict` resolved to `skip` or `overwrite`). Each file keeps its id
-   * and path. `replacement`, when given (overwrite), replaces the file the
-   * way `addScripts` / `addStylesheets` would have written it: its content,
-   * its runtime load order, a script's format, and a script's npm
-   * dependencies. The pages in `pageIds` join a page-scoped file's runtime
-   * scope; an empty `pageIds` (a site-wide sheet) widens it to every page. A
-   * file scoped to every page already stays that way.
+   * `FileConflict` resolved to `skip` or `overwrite`). Each file keeps its id,
+   * path and load order. `replacement`, when given (overwrite), brings the
+   * imported content, a script's format, a fresh `importRecord`, and a
+   * script's npm packages: a pinned version the script now asks for replaces
+   * the listed one, unless that would loosen a pin, another script outside
+   * the replacement still imports the package, or two replacements disagree;
+   * then the listed version stays and a `dependency-version-kept` warning
+   * says so. The pages in `pageIds` join a page-scoped file's runtime scope;
+   * an empty `pageIds` (a site-wide sheet) widens it to every page.
    *
-   * @returns `{ id, path }` for each reused file still in the site.
+   * @returns `{ id, path }` for each reused file still in the site, and the
+   *          warnings raised.
    */
   reuseSiteFiles(
     items: { existingFileId: string; pageIds: string[]; replacement?: ImportScript | ImportStylesheet }[],
-  ): { id: string; path: string }[]
+  ): { files: { id: string; path: string }[]; warnings: ImportWarning[] }
+
+  /**
+   * Merge this import's files of one kind into the site's load order
+   * (`mergeImportOrder`) and renumber priorities as little as that order
+   * allows (`prioritiesForOrder`). `importOrder` lists the import's files
+   * (added, replaced, reused) by id in the import's own order; `addedIds`
+   * are the ones this import just added, which have no place in the site's
+   * order yet.
+   */
+  orderImportedFiles(kind: 'script' | 'style', importOrder: string[], addedIds: string[]): void
 }

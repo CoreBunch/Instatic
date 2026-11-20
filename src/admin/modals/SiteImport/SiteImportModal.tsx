@@ -142,7 +142,9 @@ export function SiteImportModal({ onCmsBundleImportComplete }: SiteImportModalPr
   // The user's choice per static-import conflict, one map per category.
   const [resolutions, setResolutions] = useState<ConflictResolutionMaps>(emptyConflictResolutionMaps)
   const [cmsRowResolutions, setCmsRowResolutions] = useState<Map<string, ConflictResolution>>(new Map())
-  const [stylesheetModes, setStylesheetModes] = useState<Record<string, StylesheetImportMode>>({})
+  // Per-sheet import modes. Only plan builds read them, and a build must use
+  // the latest modes whenever it starts, so they live in a ref, not state.
+  const stylesheetModesRef = useRef<Record<string, StylesheetImportMode>>({})
   const [pageSlugOverrides, setPageSlugOverrides] = useState<Map<string, string>>(new Map())
   const [runProgress, setRunProgress] = useState<RunProgress>(makeInitialRunProgress)
   const [result, setResult] = useState<ImportResult | null>(null)
@@ -161,6 +163,8 @@ export function SiteImportModal({ onCmsBundleImportComplete }: SiteImportModalPr
   // The file map the newest plan build is for. `fileMap` state only changes
   // once a build lands, so files dropped while a build runs merge into this.
   const latestFileMapRef = useRef<FileMap | null>(null)
+  // The file map of the plan on screen, for when a newer build fails.
+  const shownFileMapRef = useRef<FileMap | null>(null)
 
   const siteName = useEditorStore((s) => s.site?.name) ?? 'this site'
   const currentUser = useCurrentAdminUser()
@@ -191,6 +195,7 @@ export function SiteImportModal({ onCmsBundleImportComplete }: SiteImportModalPr
     try {
       if (files.length === 1 && await loadCmsBundleFile(files[0])) {
         latestFileMapRef.current = null
+        shownFileMapRef.current = null
         setFileMap(null)
         setPlan(null)
         setSelection(null)
@@ -219,6 +224,7 @@ export function SiteImportModal({ onCmsBundleImportComplete }: SiteImportModalPr
     try {
       if (await loadCmsBundleArchiveFile(file)) {
         latestFileMapRef.current = null
+        shownFileMapRef.current = null
         setFileMap(null)
         setPlan(null)
         setSelection(null)
@@ -254,7 +260,7 @@ export function SiteImportModal({ onCmsBundleImportComplete }: SiteImportModalPr
     try {
       const added = await ingestInput(files)
       // Read after the await: another drop may have started a newer build.
-      const base = latestFileMapRef.current ?? fileMap
+      const base = latestFileMapRef.current ?? shownFileMapRef.current ?? fileMap
       const merged: FileMap = {
         ...base,
         files: { ...base.files, ...added.files },
@@ -267,19 +273,30 @@ export function SiteImportModal({ onCmsBundleImportComplete }: SiteImportModalPr
     }
   }
 
-  async function finalizePlan(map: FileMap, modes: Record<string, StylesheetImportMode> = stylesheetModes) {
+  async function finalizePlan(map: FileMap) {
     planBuildRef.current?.abort()
     latestFileMapRef.current = map
     const build = new AbortController()
     planBuildRef.current = build
-    const currentSite = await ensureCurrentSiteForStaticImport()
-    const importPlan = await withMediaAlreadyInLibrary(buildImportPlan({
-      fileMap: map,
-      currentSite,
-      options: { mediaTolerance: 10, stylesheetModes: modes },
-    }), build.signal)
+    let importPlan: ImportPlan
+    try {
+      const currentSite = await ensureCurrentSiteForStaticImport()
+      if (build.signal.aborted) return
+      importPlan = await withMediaAlreadyInLibrary(buildImportPlan({
+        fileMap: map,
+        currentSite,
+        options: { mediaTolerance: 10, stylesheetModes: stylesheetModesRef.current },
+      }), build.signal)
+    } catch (err) {
+      // A failed build must not leave its files as the base for the next drop.
+      if (build.signal.aborted) return
+      latestFileMapRef.current = shownFileMapRef.current
+      planBuildRef.current = null
+      throw err
+    }
     if (build.signal.aborted) return
     planBuildRef.current = null
+    shownFileMapRef.current = map
     setFileMap(map)
     setPlan(importPlan)
     setSelection(makeDefaultSelection(importPlan))
@@ -295,10 +312,9 @@ export function SiteImportModal({ onCmsBundleImportComplete }: SiteImportModalPr
   function handleStylesheetModeChange(path: string, mode: StylesheetImportMode) {
     const map = latestFileMapRef.current ?? fileMap
     if (!map) return
-    const modes = { ...stylesheetModes, [path]: mode }
-    setStylesheetModes(modes)
+    stylesheetModesRef.current = { ...stylesheetModesRef.current, [path]: mode }
     setBusy(true)
-    finalizePlan(map, modes).catch((err: unknown) => {
+    finalizePlan(map).catch((err: unknown) => {
       console.error('[SiteImportModal] stylesheet mode change failed:', err)
       setBusy(false)
       pushToast({ kind: 'error', title: 'Could not re-analyse the import', body: getErrorMessage(err, 'Unknown import error') })

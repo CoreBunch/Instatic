@@ -18,13 +18,14 @@ import { collectSlotOutletNames } from '@core/visualComponents'
 import { create } from 'mutative'
 import type { Draft, Patches } from 'mutative'
 import type { ImportFragment } from '@core/htmlImport'
-import type { ImportScript, NewStyleRule } from '@core/siteImport'
+import type { NewStyleRule } from '@core/siteImport'
 import {
-  addImportedScriptDependencies,
   addImportedScripts,
   addImportedStylesheets,
+  orderImportedFiles,
   reuseImportedFiles,
 } from './importedSiteFiles'
+import { addImportedScriptDependencies, replaceImportedScriptDependencies } from './importedScriptDependencies'
 import { applyLocalSitePatches, notifyCollabBlocked } from './collabBinding'
 import type { EditorStore } from '@site/store/types'
 import { reconcileFrameworkClasses } from './framework/reconcile'
@@ -363,10 +364,8 @@ export function buildSiteHelpers(
       const byOrigin = indexStyleRulesByOrigin(site.styleRules)
       const allocateStyleRuleOrder = createStyleRuleOrderAllocator(site.styleRules)
 
-      // Imported scripts' npm imports join package.json; the draft's mirror
-      // is refreshed so the dependency UI sees them.
-      const addScriptDependencies = (scripts: ImportScript[], options?: { takeImportedVersions: boolean }): boolean => {
-        const changed = addImportedScriptDependencies(site, scripts, options)
+      // package.json changed: refresh the draft's mirror so the dependency UI sees it.
+      const mirrorPackageJson = (changed: boolean): boolean => {
         if (changed) {
           draft.packageJson = {
             dependencies: { ...site.packageJson.dependencies },
@@ -544,7 +543,7 @@ export function buildSiteHelpers(
         },
 
         addScripts(scripts): { id: string; path: string }[] {
-          const dependenciesChanged = addScriptDependencies(scripts)
+          const dependenciesChanged = mirrorPackageJson(addImportedScriptDependencies(site, scripts))
           const committed = addImportedScripts(site, draft.siteRuntime, scripts)
           if (committed.length > 0 || dependenciesChanged) didMutate = true
           return committed
@@ -556,15 +555,19 @@ export function buildSiteHelpers(
           return committed
         },
 
-        reuseSiteFiles(items): { id: string; path: string }[] {
-          // A replacing script brings its npm imports exactly as a new one does.
-          const replacingScripts = items.flatMap(({ replacement }) =>
-            replacement && 'format' in replacement ? [replacement] : [])
-          // Replacing means the script now wants exactly what it imports.
-          const dependenciesChanged = addScriptDependencies(replacingScripts, { takeImportedVersions: true })
-          const reused = reuseImportedFiles(site, draft.siteRuntime, items)
-          if (reused.length > 0 || dependenciesChanged) didMutate = true
-          return reused
+        reuseSiteFiles(items) {
+          const replacing = items.flatMap(({ existingFileId, replacement }) =>
+            replacement && 'format' in replacement ? [{ fileId: existingFileId, script: replacement }] : [])
+          // Decided before the content changes: "other scripts that still import it".
+          const dependencies = replaceImportedScriptDependencies(site, replacing)
+          mirrorPackageJson(dependencies.changed)
+          const files = reuseImportedFiles(site, draft.siteRuntime, items)
+          if (files.length > 0 || dependencies.changed) didMutate = true
+          return { files, warnings: dependencies.warnings }
+        },
+
+        orderImportedFiles(kind, importOrder, addedIds): void {
+          if (orderImportedFiles(site, draft.siteRuntime, kind, importOrder, addedIds)) didMutate = true
         },
       }
 

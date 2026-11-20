@@ -93,6 +93,11 @@ export type NewStyleRule = Omit<StyleRule, 'id' | 'createdAt' | 'updatedAt'>
  * - `script-order-conflict`: two pages link the same scripts in contradictory
  *   orders, so no single load order satisfies both. The order from the page
  *   that links them first wins; `path` names the first script of the cycle.
+ * - `dependency-version-kept`: a replaced script asks for another version of
+ *   an npm package than package.json lists, and the listed one stays: the new
+ *   one would loosen a pin, another script outside the replacement still
+ *   imports the package, or two replaced scripts disagree. `path` is the
+ *   package name.
  */
 type ImportWarningKind =
   | 'dropped-at-rule'
@@ -110,6 +115,7 @@ type ImportWarningKind =
   | 'external-font'
   | 'unresolved-asset'
   | 'script-order-conflict'
+  | 'dependency-version-kept'
 
 export interface ImportWarning {
   kind: ImportWarningKind

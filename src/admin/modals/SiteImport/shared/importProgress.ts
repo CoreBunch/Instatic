@@ -125,6 +125,7 @@ export function rankWarning(kind: ImportWarning['kind']): number {
     case 'external-font':
     case 'font-install-failed':
     case 'asset-folder-failed':
+    case 'dependency-version-kept':
       return 1
     default:
       return 2

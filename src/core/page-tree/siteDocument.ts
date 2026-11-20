@@ -118,14 +118,6 @@ const VALID_SITE_FILE_TYPES: SiteFileType[] = ['component', 'script', 'style', '
  *
  * Returns null only for missing required fields (id, path, type).
  */
-/** Tolerant: a malformed record is dropped and the file reads as never imported. */
-function parseImportRecord(raw: unknown): Pick<SiteFile, 'importRecord'> {
-  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {}
-  const r = raw as Record<string, unknown>
-  if (typeof r.sourceHash !== 'string' || typeof r.contentHash !== 'string') return {}
-  return { importRecord: { sourceHash: r.sourceHash, contentHash: r.contentHash } }
-}
-
 function parseSiteFile(raw: unknown): SiteFile | null {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null
   const r = raw as Record<string, unknown>
@@ -158,6 +150,14 @@ function parseSiteFile(raw: unknown): SiteFile | null {
     createdAt,
     updatedAt,
   }
+}
+
+/** Tolerant: a malformed record is dropped and the file reads as never imported. */
+function parseImportRecord(raw: unknown): Pick<SiteFile, 'importRecord'> {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {}
+  const r = raw as Record<string, unknown>
+  if (typeof r.sourceHash !== 'string' || typeof r.contentHash !== 'string') return {}
+  return { importRecord: { sourceHash: r.sourceHash, contentHash: r.contentHash } }
 }
 
 const DEFAULT_PACKAGE_JSON: SitePackageJson = { dependencies: {}, devDependencies: {} }

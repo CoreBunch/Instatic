@@ -10,6 +10,8 @@ import {
   detectMediaConflicts,
   hashImportAssets,
   importSourceHash,
+  mergeImportOrder,
+  prioritiesForOrder,
   siteFileImportRecord,
   withPageSlugs,
 } from '@core/siteImport'
@@ -183,5 +185,23 @@ describe('parseSiteDocument — a site file import record', () => {
     expect(parseSiteDocument(shell({ sourceHash: 'a', contentHash: 'b' })).files[0]!.importRecord)
       .toEqual({ sourceHash: 'a', contentHash: 'b' })
     expect(parseSiteDocument(shell({ sourceHash: 1 })).files[0]!.importRecord).toBeUndefined()
+  })
+})
+
+describe('mergeImportOrder / prioritiesForOrder', () => {
+  it('slots new files next to the present ones and lets the import order win among its own files', () => {
+    expect(mergeImportOrder(['a', 'c'], ['a', 'z', 'c'])).toEqual(['a', 'z', 'c'])
+    expect(mergeImportOrder(['jquery', 'app'], ['app'])).toEqual(['jquery', 'app'])
+    expect(mergeImportOrder(['c', 'x', 'a'], ['a', 'c'])).toEqual(['a', 'x', 'c'])
+    expect(mergeImportOrder(['x'], ['n1', 'n2'])).toEqual(['x', 'n1', 'n2'])
+  })
+
+  it('keeps every priority it can and renumbers only when the order needs room', () => {
+    expect([...prioritiesForOrder(['a', 'z', 'c'], new Map([['a', 100], ['c', 120]]))])
+      .toEqual([['a', 100], ['z', 101], ['c', 120]])
+    expect([...prioritiesForOrder(['a', 'z', 'c'], new Map([['a', 100], ['c', 101]]))])
+      .toEqual([['a', 100], ['z', 110], ['c', 120]])
+    expect([...prioritiesForOrder(['c', 'a'], new Map([['a', 100], ['c', 101]]))])
+      .toEqual([['c', 100], ['a', 110]])
   })
 })

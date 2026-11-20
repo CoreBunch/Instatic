@@ -185,6 +185,7 @@ export function createSiteImportAdapter(opts: AdapterCallbacks): SiteImportAdapt
           addScripts: (scripts) => helpers.addScripts(scripts),
           addStylesheets: (stylesheets) => helpers.addStylesheets(stylesheets),
           reuseSiteFiles: (items) => helpers.reuseSiteFiles(items),
+          orderImportedFiles: (kind, importOrder, addedIds) => helpers.orderImportedFiles(kind, importOrder, addedIds),
         }
         recipe(tx)
         return true

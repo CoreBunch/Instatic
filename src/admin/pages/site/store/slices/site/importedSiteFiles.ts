@@ -19,12 +19,13 @@ import type { Draft } from 'mutative'
 import type { SiteDocument } from '@core/page-tree'
 import {
   importedSiteFilePath,
+  mergeImportOrder,
+  prioritiesForOrder,
   siteFileImportRecord,
   uniqueSiteFilePath,
   type ImportScript,
   type ImportStylesheet,
 } from '@core/siteImport'
-import { isSafePackageName } from '@core/site-dependencies/packageNames'
 import {
   DEFAULT_SCRIPT_RUNTIME_CONFIG,
   DEFAULT_STYLE_RUNTIME_CONFIG,
@@ -53,39 +54,6 @@ export function addImportedScripts(
     site.runtime!.scripts[id] = config
     if (siteRuntime?.scripts) siteRuntime.scripts[id] = { ...config }
   })
-}
-
-/**
- * Add the npm packages imported scripts load from a CDN to package.json. A
- * package already listed keeps its version, unless `takeImportedVersions`
- * (a replaced script now asks for another version). Packages no script uses
- * any more are never removed; the Dependencies panel does that.
- */
-export function addImportedScriptDependencies(
-  site: Draft<SiteDocument>,
-  scripts: ImportScript[],
-  { takeImportedVersions = false }: { takeImportedVersions?: boolean } = {},
-): boolean {
-  let changed = false
-  site.packageJson.dependencies ??= {}
-  site.packageJson.devDependencies ??= {}
-
-  for (const script of scripts) {
-    for (const dependency of script.dependencies ?? []) {
-      if (!isSafePackageName(dependency.name)) continue
-      const version = dependency.version.trim() || '*'
-      const listed = site.packageJson.dependencies[dependency.name]
-      if (listed && (!takeImportedVersions || listed === version)) continue
-
-      site.packageJson.dependencies[dependency.name] = version
-      if (site.packageJson.devDependencies[dependency.name]) {
-        delete site.packageJson.devDependencies[dependency.name]
-      }
-      changed = true
-    }
-  }
-
-  return changed
 }
 
 /**
@@ -189,7 +157,11 @@ export function reuseImportedFiles(
         file.content = replacement.content
         file.updatedAt = Date.now()
       }
-      if (replacement.sourceHash) file.importRecord = siteFileImportRecord(replacement.sourceHash, replacement.content)
+      const record = replacement.sourceHash ? siteFileImportRecord(replacement.sourceHash, replacement.content) : undefined
+      // Writing an identical record would still show as a change in branch review.
+      if (record && (record.sourceHash !== file.importRecord?.sourceHash || record.contentHash !== file.importRecord?.contentHash)) {
+        file.importRecord = record
+      }
     }
     for (const runtime of [site.runtime, siteRuntime]) {
       const script = runtime?.scripts?.[file.id]
@@ -214,4 +186,41 @@ function widenScope(scope: SiteAssetScope, pageIds: string[]): SiteAssetScope {
   if (scope.type !== 'pages') return scope
   if (pageIds.length === 0) return { type: 'all-pages' }
   return { type: 'pages', pageIds: [...new Set([...scope.pageIds, ...pageIds])] }
+}
+
+/**
+ * Merge an import's files of one kind into the site's load order and write
+ * the priorities that order needs (see `SiteImportTransaction.orderImportedFiles`).
+ * Today's order is read the way the runtime sorts (priority, then path); the
+ * written priorities never tie, so the result does not depend on paths.
+ */
+export function orderImportedFiles(
+  site: Draft<SiteDocument>,
+  siteRuntime: Draft<SiteRuntimeConfig> | undefined,
+  kind: 'script' | 'style',
+  importOrder: string[],
+  addedIds: string[],
+): boolean {
+  ensureRuntime(site)
+  const entries = kind === 'script' ? (site.runtime!.scripts ??= {}) : (site.runtime!.styles ??= {})
+  const defaults = kind === 'script' ? DEFAULT_SCRIPT_RUNTIME_CONFIG : DEFAULT_STYLE_RUNTIME_CONFIG
+  const added = new Set(addedIds)
+  const siteFiles = site.files
+    .filter((file) => file.type === kind && !added.has(file.id))
+    .map((file) => ({ id: file.id, path: file.path, priority: entries[file.id]?.priority ?? defaults.priority }))
+    .toSorted((a, b) => a.priority - b.priority || a.path.localeCompare(b.path))
+  const sequence = mergeImportOrder(siteFiles.map((file) => file.id), importOrder)
+  const priorities = prioritiesForOrder(sequence, new Map(siteFiles.map((file) => [file.id, file.priority])))
+
+  let changed = false
+  for (const [id, priority] of priorities) {
+    const entry = entries[id]
+    if (entry?.priority === priority) continue
+    if (!entry && priority === defaults.priority) continue
+    entries[id] = { ...(entry ?? defaults), priority }
+    const mirror = kind === 'script' ? siteRuntime?.scripts : siteRuntime?.styles
+    if (mirror) mirror[id] = { ...entries[id]! }
+    changed = true
+  }
+  return changed
 }

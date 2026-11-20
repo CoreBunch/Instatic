@@ -57,6 +57,7 @@ export { detectConflicts, applyConflictResolutions, withPageSlugs } from './conf
 export { hashImportAssets, detectMediaConflicts } from './mediaConflicts'
 export type { ExistingMediaMatch } from './mediaConflicts'
 export { importedSiteFilePath, importSourceHash, siteFileImportRecord, uniqueSiteFilePath } from './siteFilePaths'
+export { mergeImportOrder, prioritiesForOrder } from './importOrder'
 
 
 // ── Phase 2 — adapter interfaces ─────────────────────────────────────────────

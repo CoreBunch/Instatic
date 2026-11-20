@@ -67,6 +67,7 @@ import {
 } from './mediaUpload'
 import { removeMediaAssetFiles } from './mediaVariants'
 import { materializeAssetListForClient } from '../../publish/mediaPresentation'
+import { CmsMediaLookupRequestSchema } from '@core/persistence/responseSchemas'
 
 const MEDIA_LIBRARY_MIMES = Object.keys(EXTENSION_FOR_MIME) as Array<
   keyof typeof EXTENSION_FOR_MIME
@@ -150,24 +151,14 @@ async function handleListMedia(req: Request, db: DbClient): Promise<Response> {
   return jsonResponse({ assets: materialized })
 }
 
-/** Hex SHA-256, as `media_assets.content_hash` stores it. */
-const ContentHashSchema = Type.String({ pattern: '^[0-9a-f]{64}$' })
-
-/** One import's worth of files: Site Import ingest refuses more than 10,000. */
-const MAX_CONTENT_HASH_LOOKUP = 10_000
-
-/** 10,000 quoted 64-character hashes are about 670 KB of JSON. */
+/** `MEDIA_LOOKUP_MAX_HASHES` quoted 64-character hashes are about 670 KB of JSON. */
 const MAX_LOOKUP_BODY_BYTES = 1024 * 1024
-
-const MediaLookupBodySchema = Type.Object({
-  contentHashes: Type.Array(ContentHashSchema, { maxItems: MAX_CONTENT_HASH_LOOKUP }),
-})
 
 async function handleLookupMedia(req: Request, db: DbClient): Promise<Response> {
   const user = await requireCapability(req, db, 'media.read')
   if (user instanceof Response) return user
 
-  const body = await readValidatedBody(req, MediaLookupBodySchema, { maxBytes: MAX_LOOKUP_BODY_BYTES })
+  const body = await readValidatedBody(req, CmsMediaLookupRequestSchema, { maxBytes: MAX_LOOKUP_BODY_BYTES })
   if (!body) return badRequest('Invalid request body')
   const matches = await findMediaAssetsByContentHash(db, body.contentHashes)
   return jsonResponse({ matches })

@@ -147,6 +147,7 @@ function bundleWithFiles(script = 'console.info("app")', slug = 'about', scriptT
 /** A tiny media library: hash → the asset an earlier upload created. */
 let library: ExistingMediaMatch[] = []
 let uploads: string[] = []
+let lastResult: ImportResult | null = null
 
 async function importBundle(
   map: FileMap,
@@ -174,7 +175,7 @@ async function importBundle(
       return { url, warnings: [] }
     },
   }
-  await commitImportPlan(resolved, adapter)
+  lastResult = await commitImportPlan(resolved, adapter)
   return plan
 }
 
@@ -397,6 +398,15 @@ describe('commitImportPlan — telling bundle changes from edits made in Instati
     expect(scriptFiles()[0]!.content).toBe('console.info("hand edit")')
   })
 
+  it('leaves a file untouched when Replace brings exactly what it already holds', async () => {
+    await importBundle(bundleWithFiles())
+    const before = scriptFiles()[0]!
+
+    await importBundle(bundleWithFiles(), overwriteEverything)
+
+    expect(scriptFiles()[0]).toBe(before)
+  })
+
   it('keeps a file with no import record by default when its content differs', async () => {
     editSite((site) => {
       site.files.push({ id: 'hand', path: 'app.js', type: 'script', content: 'console.info("mine")', createdAt: 1, updatedAt: 1 })
@@ -407,5 +417,170 @@ describe('commitImportPlan — telling bundle changes from edits made in Instati
     expect(plan.conflicts.files).toEqual([
       expect.objectContaining({ state: 'differs', defaultResolution: { action: 'skip' } }),
     ])
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Load order across imports
+// ---------------------------------------------------------------------------
+
+function pageLinking(slug: string, scripts: string[], sheets: string[] = []): Record<string, { bytes: Uint8Array; mimeType: string }> {
+  const links = sheets.map((s) => `<link rel="stylesheet" href="${s}">`).join('')
+  const tags = scripts.map((s) => `<script src="${s}"></script>`).join('')
+  return {
+    [`${slug}.html`]: {
+      bytes: enc.encode(`<!doctype html><html><head><title>${slug}</title>${links}${tags}</head><body><p>${slug}</p></body></html>`),
+      mimeType: 'text/html',
+    },
+  }
+}
+
+function textFiles(names: string[], version = 'v1'): Record<string, { bytes: Uint8Array; mimeType: string }> {
+  return Object.fromEntries(names.map((name) => [
+    name,
+    { bytes: enc.encode(name.endsWith('.css') ? `.${name.replace('.css', '')} { color: red } /* ${version} */\n` : `console.info("${name} ${version}")`), mimeType: '' },
+  ]))
+}
+
+/** Files of a kind in the order the runtime loads them, failing on any priority tie. */
+function loadOrder(type: 'script' | 'style'): string[] {
+  const site = useEditorStore.getState().site!
+  const entries = site.files
+    .filter((f) => f.type === type)
+    .map((f) => ({ path: f.path, priority: (type === 'script' ? site.runtime?.scripts : site.runtime?.styles)?.[f.id]?.priority ?? 100 }))
+  expect(new Set(entries.map((e) => e.priority)).size).toBe(entries.length)
+  return entries.toSorted((a, b) => a.priority - b.priority).map((e) => e.path)
+}
+
+const overwriteEverything = (plan: ImportPlan): ImportPlan => ({
+  ...withPageResolution('overwrite')(plan),
+  conflicts: {
+    ...withPageResolution('overwrite')(plan).conflicts,
+    files: plan.conflicts.files.map((c) => ({ ...c, defaultResolution: { action: 'overwrite' } })),
+  },
+})
+
+describe('commitImportPlan — load order across imports', () => {
+  beforeEach(() => {
+    library = []
+    uploads = []
+    useEditorStore.setState({ site: makeSite() } as Parameters<typeof useEditorStore.setState>[0])
+  })
+
+  it('slots a script new in this import between the replaced ones it sits between', async () => {
+    await importBundle({ files: { ...pageLinking('about', ['a.js', 'c.js']), ...textFiles(['a.js', 'c.js']) } })
+    await importBundle(
+      { files: { ...pageLinking('about', ['a.js', 'z.js', 'c.js']), ...textFiles(['a.js', 'z.js', 'c.js'], 'v2') } },
+      overwriteEverything,
+    )
+    expect(loadOrder('script')).toEqual(['a.js', 'z.js', 'c.js'])
+  })
+
+  it('keeps the order of a page the re-import does not touch', async () => {
+    await importBundle({
+      files: { ...pageLinking('index', ['jquery.js', 'app.js']), ...pageLinking('about', ['app.js']), ...textFiles(['jquery.js', 'app.js']) },
+    })
+    expect(loadOrder('script')).toEqual(['jquery.js', 'app.js'])
+
+    await importBundle({ files: { ...pageLinking('about', ['app.js']), ...textFiles(['app.js'], 'v2') } }, overwriteEverything)
+
+    expect(loadOrder('script')).toEqual(['jquery.js', 'app.js'])
+  })
+
+  it('slots a kept stylesheet new in this import between the replaced ones', async () => {
+    const keep = (names: string[]) => ({ stylesheetModes: Object.fromEntries(names.map((n) => [n, 'file' as const])) })
+    await importBundle({ files: { ...pageLinking('about', [], ['a.css', 'c.css']), ...textFiles(['a.css', 'c.css']) } }, undefined, keep(['a.css', 'c.css']))
+    await importBundle(
+      { files: { ...pageLinking('about', [], ['a.css', 'z.css', 'c.css']), ...textFiles(['a.css', 'z.css', 'c.css'], 'v2') } },
+      overwriteEverything,
+      keep(['a.css', 'z.css', 'c.css']),
+    )
+    expect(loadOrder('style')).toEqual(['a.css', 'z.css', 'c.css'])
+  })
+})
+
+// ---------------------------------------------------------------------------
+// npm versions a replaced script asks for
+// ---------------------------------------------------------------------------
+
+function moduleFiles(scripts: Record<string, string>): Record<string, { bytes: Uint8Array; mimeType: string }> {
+  return Object.fromEntries(Object.entries(scripts).map(([name, content]) => [name, { bytes: enc.encode(content), mimeType: '' }]))
+}
+
+function modulePage(slug: string, scripts: string[]): Record<string, { bytes: Uint8Array; mimeType: string }> {
+  const tags = scripts.map((s) => `<script type="module" src="${s}"></script>`).join('')
+  return {
+    [`${slug}.html`]: {
+      bytes: enc.encode(`<!doctype html><html><head><title>${slug}</title>${tags}</head><body><p>${slug}</p></body></html>`),
+      mimeType: 'text/html',
+    },
+  }
+}
+
+const usesDayjs = (version: string, tag = '') =>
+  `import dayjs from "https://esm.sh/dayjs${version ? `@${version}` : ''}"\nconsole.info(dayjs(), ${JSON.stringify(tag)})`
+
+function dependencyWarnings(): string[] {
+  return (lastResult?.warnings ?? []).filter((w) => w.kind === 'dependency-version-kept').map((w) => w.path ?? '')
+}
+
+describe('commitImportPlan — npm versions of a replaced script', () => {
+  beforeEach(() => {
+    library = []
+    uploads = []
+    lastResult = null
+    useEditorStore.setState({ site: makeSite() } as Parameters<typeof useEditorStore.setState>[0])
+  })
+
+  const dayjs = () => useEditorStore.getState().site!.packageJson.dependencies.dayjs
+
+  it('never loosens a pinned version to an unpinned CDN import', async () => {
+    await importBundle({ files: { ...modulePage('about', ['app.js']), ...moduleFiles({ 'app.js': usesDayjs('1.11.10') }) } })
+    await importBundle({ files: { ...modulePage('about', ['app.js']), ...moduleFiles({ 'app.js': usesDayjs('') }) } }, overwriteEverything)
+    expect(dayjs()).toBe('1.11.10')
+  })
+
+  it('keeps the listed version, with a warning, while a script outside the import still uses it', async () => {
+    await importBundle({
+      files: {
+        ...modulePage('index', ['other.js']),
+        ...modulePage('about', ['app.js']),
+        ...moduleFiles({ 'other.js': usesDayjs('1.11.10', 'other'), 'app.js': usesDayjs('1.11.10', 'app') }),
+      },
+    })
+    await importBundle(
+      { files: { ...modulePage('about', ['app.js']), ...moduleFiles({ 'app.js': usesDayjs('1.11.13', 'app') }) } },
+      overwriteEverything,
+    )
+    expect(dayjs()).toBe('1.11.10')
+    expect(dependencyWarnings()).toEqual(['dayjs'])
+  })
+
+  it('allows an update when another script only mentions the import in a comment', async () => {
+    await importBundle({ files: {
+      ...modulePage('about', ['app.js', 'other.js']),
+      ...moduleFiles({ 'app.js': usesDayjs('1.11.10'), 'other.js': '// import "dayjs"\nconsole.info("other")' }),
+    } })
+    await importBundle({ files: { ...modulePage('about', ['app.js']), ...moduleFiles({ 'app.js': usesDayjs('1.11.13') }) } }, overwriteEverything)
+    expect(dayjs()).toBe('1.11.13')
+    expect(dependencyWarnings()).toEqual([])
+  })
+
+  it('keeps a pinned prerelease with build metadata when the replacement asks for a range', async () => {
+    const bundle = (version: string) => ({ files: { ...modulePage('about', ['app.js']), ...moduleFiles({ 'app.js': usesDayjs(version) }) } })
+    await importBundle(bundle('1.11.10-rc.1+build.2'))
+    await importBundle(bundle('^1.11.10'), overwriteEverything)
+    expect(dayjs()).toBe('1.11.10-rc.1+build.2')
+    expect(dependencyWarnings()).toEqual(['dayjs'])
+  })
+
+  it('warns instead of picking one when two replaced scripts ask different versions', async () => {
+    const bundle = (a: string, b: string) => ({
+      files: { ...modulePage('about', ['a.js', 'b.js']), ...moduleFiles({ 'a.js': usesDayjs(a, 'a'), 'b.js': usesDayjs(b, 'b') }) },
+    })
+    await importBundle(bundle('1.11.10', '1.11.10'))
+    await importBundle(bundle('1.11.12', '1.11.13'), overwriteEverything)
+    expect(dayjs()).toBe('1.11.10')
+    expect(dependencyWarnings()).toEqual(['dayjs'])
   })
 })

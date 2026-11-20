@@ -104,6 +104,9 @@ export async function commitImportPlan(
     stylesheets: [],
   }
 
+  // Notes the store raises while committing (an npm version it kept).
+  const commitWarnings: ImportWarning[] = []
+
   // Cancellation gate: past this point the commit is atomic and runs to the end.
   signal?.throwIfAborted()
 
@@ -123,7 +126,7 @@ export async function commitImportPlan(
     // reference newly-imported rules.
     commitStyleRules(tx, rewrittenPlan, ruleConflictsByName, results)
     commitPages(tx, linkedPages, pageConflictsBySource, pageIdBySource, results)
-    commitPageScopedFiles(tx, withSourceHashes(rewrittenPlan, plan), pageIdBySource, results)
+    commitPageScopedFiles(tx, withSourceHashes(rewrittenPlan, plan), pageIdBySource, results, commitWarnings)
   })
 
   // Build asset result — only include the ones that actually uploaded.
@@ -144,7 +147,7 @@ export async function commitImportPlan(
     // Carry forward the plan-level warnings (CSS parser / asset planner /
     // missing stylesheet …) AND surface any per-asset upload failures from
     // Step A above. The wizard's Done step renders this list verbatim.
-    warnings: [...plan.warnings, ...uploadWarnings, ...fontInstallWarnings],
+    warnings: [...plan.warnings, ...uploadWarnings, ...fontInstallWarnings, ...commitWarnings],
   }
 }
 
@@ -411,49 +414,63 @@ function commitPages(
  * (a `FileConflict`) is reused (`skip`) or replaced in place (`overwrite`);
  * either way the pages this import links it from join its scope. Every other
  * file, including a conflict resolved to `auto-rename`, is added as a new file.
+ * Last, the import's files are merged into the site's load order
+ * (`tx.orderImportedFiles`).
  */
 function commitPageScopedFiles(
   tx: SiteImportTransaction,
   plan: ImportPlan,
   pageIdBySource: Map<string, string>,
   results: CommitResults,
+  warnings: ImportWarning[],
 ): void {
   const fileConflictByKey = new Map<string, FileConflict>(
     plan.conflicts.files.map((c) => [`${c.kind}:${c.path}`, c]),
   )
-  const scripts = partitionByFileConflict('script', resolvePageScopes(plan.scripts, pageIdBySource), fileConflictByKey)
-  if (scripts.additions.length > 0) results.scripts.push(...tx.addScripts(scripts.additions))
-  if (scripts.reuses.length > 0) results.scripts.push(...tx.reuseSiteFiles(scripts.reuses))
+  const commitKind = <T extends ImportScript | ImportStylesheet>(
+    kind: FileConflict['kind'],
+    items: T[],
+    add: (additions: T[]) => { id: string; path: string }[],
+  ): { id: string; path: string }[] => {
+    // The import's own order: its priorities rank its files against each other.
+    const ordered = resolvePageScopes(items, pageIdBySource).toSorted((x, y) => x.priority - y.priority)
+    const additions: T[] = []
+    const reuses: SiteFileReuse[] = []
+    for (const item of ordered) {
+      const conflict = fileConflictByKey.get(`${kind}:${item.path}`)
+      const action = conflict?.defaultResolution.action
+      if (!conflict || (action !== 'skip' && action !== 'overwrite')) {
+        additions.push(item)
+        continue
+      }
+      reuses.push({
+        existingFileId: conflict.existingFileId,
+        pageIds: item.pageIds ?? [],
+        ...(action === 'overwrite' ? { replacement: item } : {}),
+      })
+    }
+    const added = additions.length > 0 ? add(additions) : []
+    const reused = reuses.length > 0 ? tx.reuseSiteFiles(reuses) : { files: [], warnings: [] }
+    warnings.push(...reused.warnings)
 
-  const sheets = partitionByFileConflict('style', resolvePageScopes(plan.stylesheets, pageIdBySource), fileConflictByKey)
-  if (sheets.additions.length > 0) results.stylesheets.push(...tx.addStylesheets(sheets.additions))
-  if (sheets.reuses.length > 0) results.stylesheets.push(...tx.reuseSiteFiles(sheets.reuses))
+    // `add` returns one entry per item, in order.
+    const idByItem = new Map<T, string>(additions.flatMap((item, i) => (added[i] ? [[item, added[i].id]] : [])))
+    const reusedIds = new Set(reused.files.map((f) => f.id))
+    const importOrder = ordered.flatMap((item) => {
+      const addedId = idByItem.get(item)
+      if (addedId) return [addedId]
+      const existingId = fileConflictByKey.get(`${kind}:${item.path}`)?.existingFileId
+      return existingId && reusedIds.has(existingId) ? [existingId] : []
+    })
+    if (importOrder.length > 0) tx.orderImportedFiles(kind, importOrder, added.map((f) => f.id))
+    return [...added, ...reused.files]
+  }
+
+  results.scripts.push(...commitKind('script', plan.scripts, (items) => tx.addScripts(items)))
+  results.stylesheets.push(...commitKind('style', plan.stylesheets, (items) => tx.addStylesheets(items)))
 }
 
 type SiteFileReuse = Parameters<SiteImportTransaction['reuseSiteFiles']>[0][number]
-
-function partitionByFileConflict<T extends ImportScript | ImportStylesheet>(
-  kind: FileConflict['kind'],
-  items: T[],
-  fileConflictByKey: Map<string, FileConflict>,
-): { additions: T[]; reuses: SiteFileReuse[] } {
-  const additions: T[] = []
-  const reuses: SiteFileReuse[] = []
-  for (const item of items) {
-    const conflict = fileConflictByKey.get(`${kind}:${item.path}`)
-    const action = conflict?.defaultResolution.action
-    if (!conflict || (action !== 'skip' && action !== 'overwrite')) {
-      additions.push(item)
-      continue
-    }
-    reuses.push({
-      existingFileId: conflict.existingFileId,
-      pageIds: item.pageIds ?? [],
-      ...(action === 'overwrite' ? { replacement: item } : {}),
-    })
-  }
-  return { additions, reuses }
-}
 
 /**
  * Stamp each script and stylesheet with the hash of its text as the bundle
