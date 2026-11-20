@@ -45,6 +45,16 @@ export const CLIENT_ADDRESS_HEADERS = [
   'fastly-client-ip',
   'x-cluster-client-ip',
   'x-envoy-external-address',
+  'x-original-forwarded-for',
+  'cf-connecting-ipv6',
+  'cf-pseudo-ipv4',
+  'fly-client-ip',
+  'do-connecting-ip',
+  'x-azure-clientip',
+  'x-azure-socketip',
+  'x-appengine-user-ip',
+  'x-vercel-forwarded-for',
+  'x-nf-client-connection-ip',
 ] as const
 
 /**

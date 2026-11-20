@@ -163,6 +163,17 @@ describe('plugin routes and the caller', () => {
       expect((await seen(mount, { peer: '203.0.113.7' })).ip).toBe('203.0.113.7')
     })
 
+    it('strips every known address header name', () => {
+      // A fixed list, so removing a name from CLIENT_ADDRESS_HEADERS fails here.
+      expect([...CLIENT_ADDRESS_HEADERS]).toEqual(expect.arrayContaining([
+        'x-bun-socket-ip', 'x-forwarded-for', 'forwarded', 'x-real-ip', 'cf-connecting-ip',
+        'cf-connecting-ipv6', 'cf-pseudo-ipv4', 'true-client-ip', 'x-client-ip', 'fastly-client-ip',
+        'x-cluster-client-ip', 'x-envoy-external-address', 'x-original-forwarded-for', 'fly-client-ip',
+        'do-connecting-ip', 'x-azure-clientip', 'x-azure-socketip', 'x-appengine-user-ip',
+        'x-vercel-forwarded-for', 'x-nf-client-connection-ip',
+      ]))
+    })
+
     it('never comes as a request header, with or without visitors.ip', async () => {
       expect((await install({ id: 'acme.blind', permissions: WITHOUT_IP })).status).toBe(201)
       configureTrustedProxyCidrs(['10.0.0.0/8'])
