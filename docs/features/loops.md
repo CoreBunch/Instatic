@@ -183,6 +183,8 @@ Media ids are resolved through the publisher's batched media prefetch and
 provide `currentEntry.src`, `url`, `path`, `altText`, `mimeType`, `width`, and
 `height`.
 
+An element inside a loop can be shown only for some items: its Visibility view's "Show if" tests a field of the loop item (`showIf` with `source: 'entry'`, see [members.md](members.md) → "Show-if conditions").
+
 Contextual loops preserve authored order by default, can reverse/slice with
 direction/offset/limit, and do not support infinite pagination. Infinite
 fragments are independent requests and cannot recover an arbitrary outer

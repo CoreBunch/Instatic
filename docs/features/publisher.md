@@ -209,6 +209,7 @@ See [docs/features/loops.md](loops.md) for sources, filters, and registration.
 | 1    | Module flagged `dynamic: true` in the registry | Node is a hole |
 | 2    | Node has a `dynamicBindings` entry whose source is request-dependent (`route.query.*`) | Node is a hole |
 | 2b   | A string prop contains a `{source.field}` token whose source is request-dependent | Node is a hole |
+| 2c   | A `showIf` condition tests a query parameter (`source: 'query'`) | Node is a hole, cached per query like a `route.query.*` binding |
 | 3    | `moduleId === 'base.loop'` AND the loop source declares `requestDependent: true` or `perVisitor: true` | Loop is a hole |
 | 3.5  | `moduleId === 'base.loop'` AND the loop source is static, but its body (transitively, including nested loops and referenced VC trees) contains any request-dependent node | Loop is promoted to a single hole; all body descendants are suppressed |
 | 4    | `moduleId === 'base.visual-component-ref'` whose VC definition tree contains any dynamic node | The outer VC ref node is a hole; inner VC node ids are never promoted |

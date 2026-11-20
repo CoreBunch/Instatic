@@ -23,4 +23,13 @@ export type { MemberAppRequestFrame, MemberFrame } from './contextFrames'
 export type { TemplateRenderDataContext } from './dynamicBindings'
 export { composeTemplateChain } from './templateCompose'
 export { firstOutletId, treeHasOutlet, subtreeHasOutlet } from './outlet'
+export {
+  readShowIf,
+  showIfAllows,
+  ShowIfSchema,
+  SHOW_IF_PROP_KEY,
+  type ShowIf,
+  type ShowIfSource,
+  type ShowIfTest,
+} from './showIf'
 export { composedNodeSourceId } from './templateCompose'
