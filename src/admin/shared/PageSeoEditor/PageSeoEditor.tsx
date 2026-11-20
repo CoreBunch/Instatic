@@ -28,6 +28,7 @@ import { Input, Textarea } from '@ui/components/Input'
 import { Select } from '@ui/components/Select'
 import { PlusIcon } from 'pixel-art-icons/icons/plus'
 import { TrashSolidIcon } from 'pixel-art-icons/icons/trash-solid'
+import { SeoImageField } from './SeoImageField'
 import styles from './PageSeoEditor.module.css'
 import { jsonLdProblem, metaNameProblem } from './pageSeoProblems'
 
@@ -83,7 +84,7 @@ function SearchSection({ value, set, pageTitle }: { value: PageSeo; set: SetFiel
         <h3 className={styles.heading}>Social card</h3>
         <TextRow label="Title" value={og.title} maxLength={512} onChange={(next) => setOg('title', next)} />
         <TextRow label="Description" value={og.description} maxLength={2048} multiline onChange={(next) => setOg('description', next)} />
-        <TextRow label="Image URL" value={og.image} maxLength={2048} placeholder="https://example.com/card.png" onChange={(next) => setOg('image', next)} />
+        <SeoImageField label="Social card image" value={og.image} onChange={(next) => setOg('image', next)} />
         <TextRow label="Image alt text" maxLength={512} value={og.imageAlt} onChange={(next) => setOg('imageAlt', next)} />
         <TextRow label="Type" value={og.type} maxLength={64} placeholder="website" onChange={(next) => setOg('type', next)} />
         <TextRow label="Site name" maxLength={256} value={og.siteName} onChange={(next) => setOg('siteName', next)} />
@@ -115,7 +116,7 @@ function SearchSection({ value, set, pageTitle }: { value: PageSeo; set: SetFiel
         <TextRow label="Creator" maxLength={128} value={twitter.creator} placeholder="@author" onChange={(next) => setTwitter('creator', next)} />
         <TextRow label="Title" value={twitter.title} maxLength={512} onChange={(next) => setTwitter('title', next)} />
         <TextRow label="Description" value={twitter.description} maxLength={2048} multiline onChange={(next) => setTwitter('description', next)} />
-        <TextRow label="Image URL" value={twitter.image} maxLength={2048} onChange={(next) => setTwitter('image', next)} />
+        <SeoImageField label="X / Twitter image" value={twitter.image} onChange={(next) => setTwitter('image', next)} />
       </section>
     </div>
   )
@@ -138,12 +139,11 @@ function HeadSection({ value, set }: { value: PageSeo; set: SetField }) {
     <div className={styles.root}>
       <section className={styles.section}>
         <h3 className={styles.heading}>Browser</h3>
-        <TextRow
-          label="Favicon URL"
+        <SeoImageField
+          label="Favicon"
           value={value.favicon?.href}
-          maxLength={2048}
           hint="Empty uses the site favicon from Settings."
-          onChange={(next) => set('favicon', { ...value.favicon, href: next })}
+          onChange={(next) => set('favicon', next ? { href: next } : undefined)}
         />
         <TextRow label="Color scheme" maxLength={64} value={value.colorScheme} placeholder="light dark" onChange={(next) => set('colorScheme', next)} />
         <Row label="Theme colors">
@@ -243,6 +243,8 @@ function LinkEditor({ link, onChange, onRemove }: {
   onChange: (next: PageHeadLink) => void
   onRemove: () => void
 }) {
+  const imageLink = link.rel === 'icon' || link.rel === 'apple-touch-icon' || link.rel === 'mask-icon'
+    || (link.rel === 'preload' && link.as === 'image')
   const field = (key: 'type' | 'title' | 'hreflang' | 'media' | 'sizes', label: string, placeholder: string) => (
     <Input fieldSize="sm" aria-label={`Link ${label}`} placeholder={placeholder} maxLength={LINK_LIMITS[key]} value={link[key] ?? ''}
       onChange={(event) => onChange({ ...link, [key]: event.target.value })} />
@@ -257,10 +259,11 @@ function LinkEditor({ link, onChange, onRemove }: {
             const { as: _as, ...rest } = link
             onChange(rel === 'preload' ? { ...rest, rel, as: link.as ?? 'font' } : { ...rest, rel })
           }} />
-        <Input fieldSize="sm" aria-label="Link URL" placeholder="URL" maxLength={2048} value={link.href}
-          onChange={(event) => onChange({ ...link, href: event.target.value })} />
+        {!imageLink && <Input fieldSize="sm" aria-label="Link URL" placeholder="URL" maxLength={2048} value={link.href}
+          onChange={(event) => onChange({ ...link, href: event.target.value })} />}
         <RemoveButton label="Remove link" onClick={onRemove} />
       </div>
+      {imageLink && <SeoImageField label="Link image" value={link.href} onChange={(href) => onChange({ ...link, href })} />}
       <div className={styles.linkDetails}>
         {link.rel === 'preload' && (
           <Select fieldSize="sm" aria-label="Link as" value={link.as} options={AS_OPTIONS}

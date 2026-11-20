@@ -393,6 +393,8 @@ The publisher emits `<head>` in this order:
 
 ### Page head settings (`page.seo`)
 
+The social card image, X image, favicon, touch icons and image preload links can be selected or uploaded in the media library. The URL option accepts external images and template expressions.
+
 A page carries its own search, sharing and browser `<head>` settings in `page.seo` (`PageSeoSchema`, `src/core/page-tree/pageSeo.ts`), stored as the page row's `seo` cell and edited in Page settings → **Search & social** / **Head tags**, by `site_set_page_seo`, or filled by the static site importer from each page's `<head>` ([site-import.md](site-import.md) → "Page head"). `buildDocumentHead` (`src/core/publisher/headTags.ts`) emits them after the description, in this order: canonical, robots, color-scheme, theme-color (one per entry, with `media`), favicon, extra `<link>`s, Open Graph, Twitter, extra `<meta>`s, JSON-LD.
 
 The shape is structured, never raw HTML:

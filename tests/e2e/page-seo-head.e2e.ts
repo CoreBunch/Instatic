@@ -1,3 +1,4 @@
+import { readFile } from 'node:fs/promises'
 import { expect, test } from '@playwright/test'
 import {
   ANONYMOUS_STATE,
@@ -28,6 +29,8 @@ test.describe('page head settings', () => {
     const suffix = Date.now().toString(36)
     const name = `Head ${suffix}`
     const slug = `head-${suffix}`
+    const filename = `seo-${suffix}.svg`
+    let imagePath = ''
     const description = `A page described in its settings ${suffix}`
 
     const layoutName = `Head Layout ${suffix}`
@@ -69,7 +72,23 @@ test.describe('page head settings', () => {
         await dialog.getByLabel('Description').first().fill(description)
         await dialog.getByLabel('Canonical URL').fill(`https://example.com/${slug}`)
         await dialog.getByLabel('Robots').fill('noindex, follow')
-        await dialog.getByLabel('Image URL').first().fill('https://example.com/card.png')
+        const image = dialog.getByRole('group', { name: 'Social card image', exact: true })
+        await image.getByRole('button', { name: 'Browse image library' }).click()
+        const picker = page.getByTestId('media-picker-modal')
+        await expect(picker).toBeVisible()
+        await page.keyboard.press('Escape')
+        await expect(picker).toBeHidden()
+        await image.getByRole('button', { name: 'Browse image library' }).click()
+        await picker.locator('input[type=file]').setInputFiles({
+          name: filename, mimeType: 'image/svg+xml', buffer: await readFile('public/favicon.svg'),
+        })
+        await picker.getByRole('button', { name: `Open ${filename}` }).click()
+        await picker.getByRole('button', { name: 'Use selected' }).click()
+        await expect(image.getByText(filename)).toBeVisible()
+        const twitter = dialog.getByRole('group', { name: 'X / Twitter image', exact: true })
+        await twitter.getByRole('button', { name: 'Browse image library' }).click()
+        await picker.getByRole('button', { name: `Open ${filename}` }).click()
+        await picker.getByRole('button', { name: 'Use selected' }).click()
 
         await dialog.getByRole('tab', { name: 'Head tags' }).click()
         await dialog.getByRole('button', { name: 'Add theme color' }).click()
@@ -93,7 +112,13 @@ test.describe('page head settings', () => {
         const dialog = await openSettings()
         await dialog.getByRole('tab', { name: 'Search & social' }).click()
         await expect(dialog.getByLabel('Description').first()).toHaveValue(description)
+        const image = dialog.getByRole('group', { name: 'Social card image', exact: true })
+        await expect(image.getByText(filename)).toBeVisible()
+        await image.scrollIntoViewIfNeeded()
         await page.screenshot({ path: '.tmp/evidence/page-seo-search-tab.png' })
+        await image.getByText('URL', { exact: true }).click()
+        imagePath = await image.getByRole('textbox').inputValue()
+        expect(imagePath).toMatch(/^\/uploads\//)
         await dialog.getByRole('button', { name: 'Cancel' }).click()
       })
 
@@ -110,7 +135,8 @@ test.describe('page head settings', () => {
           expect(head).toContain(`<link rel="canonical" href="https://example.com/${slug}">`)
           expect(head).toContain('<meta name="robots" content="noindex, follow">')
           expect(head).toContain('<meta name="theme-color" content="#0a0a0b">')
-          expect(head).toContain('<meta property="og:image" content="https://example.com/card.png">')
+          expect(head).toContain(`<meta property="og:image" content="${imagePath}">`)
+          expect(head).toContain(`<meta name="twitter:image" content="${imagePath}">`)
           expect(head).toContain('<script type="application/ld+json">{"@context":"https://schema.org","@type":"WebPage","name":"\\u003c/script\\u003e\\u003cb\\u003ex\\u003c/b\\u003e"}</script>')
           expect(head).not.toContain('</script><b>')
         } finally {
