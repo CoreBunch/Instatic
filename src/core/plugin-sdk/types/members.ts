@@ -29,8 +29,8 @@ export type PluginMemberEmailBlocker =
 export interface PluginMemberExportSection {
   /** Heading for the section; the plugin's name when omitted. */
   title?: string
-  /** What the plugin keeps about the member, as JSON. */
-  data: unknown
+  /** What the plugin keeps about the member, as JSON; null when omitted. */
+  data?: unknown
 }
 
 export interface ServerPluginMembersApi {
@@ -76,14 +76,26 @@ export interface ServerPluginMembersApi {
   emailStatus: () => Promise<{ canEmail: boolean; reasons: PluginMemberEmailBlocker[] }>
   /**
    * Add the plugin's section to a member's data export (the member's own
-   * download and the admin's "Download data"). Register once, at activation;
-   * a second registration throws. The provider gets the member id and
-   * returns `{ title?, data }`: `data` is everything the plugin keeps about
-   * that member, as JSON (at most 1 MiB). `title` defaults to the plugin's
-   * name. It runs within the plugin's usual call budget; if it throws, runs
-   * out of time or returns anything else, the export lists the plugin as
-   * "could not be included" and goes on. Requires `members.read`.
+   * download and the admin's "Download data"). Needs `"memberDataExport":
+   * true` in the manifest, so the export names the plugin even while it is
+   * not running. Register once, at activation; a second registration throws
+   * at once. The provider gets the member id and returns `{ title?, data? }`:
+   * `data` is everything the plugin keeps about that member, as JSON (at most
+   * 1 MiB and 64 levels deep). `title` defaults to the plugin's name. Plugins
+   * are asked together, under one deadline for the whole export; a plugin
+   * that is not running, throws, is late or returns anything else is listed
+   * as "could not be included" and the export goes on. Requires
+   * `members.read`.
    */
+  /**
+   * Ids of members deleted since `cursor` (null for the start), oldest
+   * deletion first, up to `limit` (default 100, at most 1000). Keep
+   * `nextCursor` and pass it next time; it stays put when nothing new was
+   * deleted. For catching up on deletions the plugin did not hear as
+   * `member.deleted` (it was disabled or not yet installed): call it on
+   * activation or from a schedule. Requires `members.read`.
+   */
+  deletedSince: (cursor: string | null, options?: { limit?: number }) => Promise<{ ids: string[]; nextCursor: string | null }>
   exportProvider: (provider: (memberId: string) => PluginMemberExportSection | Promise<PluginMemberExportSection>) => void
   tags: {
     /**

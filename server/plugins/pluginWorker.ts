@@ -141,6 +141,7 @@ async function handleLoadPlugin(msg: LoadPluginRequest): Promise<void> {
         // written through `writePluginPackageFiles` (e.g. test fixtures that
         // assemble manifests by hand). The real install flow sets this.
         assetBasePath: msg.manifest.assetBasePath ?? `/uploads/plugins/${msg.pluginId}/${msg.manifest.version}`,
+        memberDataExport: msg.manifest.memberDataExport === true,
         settings: { ...msg.settings },
         hostCall: (target, args) =>
           callHostApi(msg.pluginId, target as ApiCall['target'], args),

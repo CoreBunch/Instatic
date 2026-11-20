@@ -32,6 +32,7 @@ import {
   MemberSettingsSchema,
   MemberTagInputSchema,
   MemberTagRemoveInputSchema,
+  memberDataFilename,
   type MemberAdminStatus,
   type MemberDetail,
   type MemberSettings,
@@ -63,6 +64,8 @@ import {
 } from '../../members/repository'
 import { parseAllowedRedirectUri } from '../../oauth/protocol'
 import { exportMemberDataWithPlugins } from '../../plugins/host/memberExport'
+import { memberLimits } from '../../members/limits'
+import { isCrossSiteFetch } from '../../auth/security'
 import { createAuditEvent, type AuditAction } from '../../repositories/audit'
 import type { AuthUser } from '../../repositories/users'
 import { CMS_API_PREFIX, requestAuditContext } from './shared'
@@ -208,14 +211,26 @@ async function handleSignOut(req: Request, db: DbClient, params: RouteParams): P
 
 /** Everything the site holds about one member, plugins' sections included, as a download. */
 async function handleExport(req: Request, db: DbClient, params: RouteParams): Promise<Response> {
+  // A link on another site must not start an export (it asks every plugin).
+  if (isCrossSiteFetch(req)) return jsonResponse({ error: 'Forbidden' }, { status: 403 })
   const user = await manager(req, db)
   if (user instanceof Response) return user
   const member = await findMemberById(db, params.id)
   if (!member) return notFound()
+  const allowed = memberLimits.adminExportPerUser.consume(user.id)
+  if (!allowed.ok) {
+    return jsonResponse(
+      { error: 'Too many member data downloads. Try again later.' },
+      { status: 429, headers: { 'retry-after': String(Math.ceil(allowed.retryAfterMs / 1000)) } },
+    )
+  }
   const data = await exportMemberDataWithPlugins(db, member)
   await audit(db, req, user, 'member.export', member.id, { email: member.email })
   return jsonResponse(data, {
-    headers: { 'cache-control': 'no-store', 'content-disposition': 'attachment; filename="member-data.json"' },
+    headers: {
+      'cache-control': 'no-store',
+      'content-disposition': `attachment; filename="${memberDataFilename(member.id)}"`,
+    },
   })
 }
 

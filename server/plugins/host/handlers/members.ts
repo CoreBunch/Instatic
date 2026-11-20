@@ -23,6 +23,7 @@ import {
   findMemberByEmail,
   findMemberById,
   grantMemberTag,
+  listDeletedMembersSince,
   revokeMemberTag,
   toCurrentMember,
   type MemberRecord,
@@ -105,9 +106,47 @@ export async function handleMembersExportProvider(
   entry: HostPluginRecord,
   _db: DbClient,
 ): Promise<void> {
-  if (entry.memberExportFilterId !== null) throw new Error('This plugin already has a member export provider')
+  // Declared, so the export can name the plugin while it is not running.
+  if (!entry.manifest.memberDataExport) {
+    throw new Error('Declare "memberDataExport": true in plugin.json to offer a member export provider')
+  }
+  if (entry.memberExportFilterId !== null) throw new Error('This plugin already registered its member export provider')
   entry.memberExportFilterId = msg.args[0].filterId
   replyApiOk(msg.pluginId, msg.correlationId)
+}
+
+const DELETED_PAGE_SIZE = 100
+const CURSOR_SEPARATOR = '|'
+
+/**
+ * Members deleted since the plugin's cursor, so a plugin that was not
+ * running when `member.deleted` went out can still erase what it keeps. The
+ * cursor is opaque to the plugin: the (deleted_at, id) of the last id handed
+ * over.
+ */
+export async function handleMembersDeletedSince(
+  msg: ApiCallFor<'cms.members.deletedSince'>,
+  _entry: HostPluginRecord,
+  db: DbClient,
+): Promise<void> {
+  const [cursor, options] = msg.args
+  let after: { deletedAt: string; id: string } | null = null
+  if (cursor !== null) {
+    const decoded = Buffer.from(cursor, 'base64url').toString('utf8')
+    const at = decoded.indexOf(CURSOR_SEPARATOR)
+    const deletedAt = decoded.slice(0, at)
+    const id = decoded.slice(at + 1)
+    if (at < 1 || !id || Number.isNaN(Date.parse(deletedAt))) {
+      throw new Error('That is not a cursor from api.cms.members.deletedSince')
+    }
+    after = { deletedAt, id }
+  }
+  const page = await listDeletedMembersSince(db, after, options.limit ?? DELETED_PAGE_SIZE)
+  const last = page.at(-1)
+  const nextCursor = last
+    ? Buffer.from(`${last.deletedAt}${CURSOR_SEPARATOR}${last.id}`, 'utf8').toString('base64url')
+    : cursor
+  replyApiOk(msg.pluginId, msg.correlationId, { ids: page.map((row) => row.id), nextCursor })
 }
 
 /** Whether the site can email members links it starts itself, and if not, why. */

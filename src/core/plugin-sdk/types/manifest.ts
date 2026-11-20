@@ -78,6 +78,12 @@ export interface PluginManifest {
    */
   appScopes?: PluginAppScope[]
   /**
+   * The plugin adds a section to a member's data export
+   * (`api.cms.members.exportProvider`). Declared so the export can name the
+   * plugin even while it is not running. Requires `members.read`.
+   */
+  memberDataExport?: boolean
+  /**
    * Declarative frontend tag list — scripts, styles, meta, link, and shared
    * host-runtime references that the host injects into every published page
    * on behalf of this plugin. Requires the `frontend.assets` permission. See

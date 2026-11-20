@@ -389,6 +389,7 @@ export async function createPluginVm(args: {
       version: args.env.manifestVersion,
       grantedPermissions: args.env.grantedPermissions,
       assetBasePath: args.env.assetBasePath,
+      memberDataExport: args.env.memberDataExport === true,
     })
     ctx.setProp(ctx.global, '__plugin_meta', metaHandle)
     metaHandle.dispose()

@@ -96,6 +96,7 @@ export const TARGET_PERMISSIONS = {
   'cms.members.ensure': 'members.write',
   'cms.members.emailStatus': 'members.write',
   'cms.members.exportProvider': 'members.read',
+  'cms.members.deletedSince': 'members.read',
   'cms.members.tags.grant': 'members.tags',
   'cms.members.tags.revoke': 'members.tags',
   'cms.mail.send': 'mail.send',

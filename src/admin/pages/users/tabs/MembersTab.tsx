@@ -11,7 +11,7 @@ import { useAsyncResource } from '@admin/lib/useAsyncResource'
 import ld from '@admin/shared/ListDetail/ListDetail.module.css'
 import { useConfirmAction, useConfirmDelete } from '@admin/shared/dialogs/ConfirmDeleteDialog'
 import { StepUpCancelledMessage, useStepUp } from '@admin/shared/StepUp'
-import { memberPageIsLive } from '@core/members'
+import { memberDataFilename, memberPageIsLive } from '@core/members'
 import type {
   MemberAdminStatus,
   MemberDetail,
@@ -58,6 +58,7 @@ import { STATUS_LABEL, STATUS_TONE } from '../members/memberText'
 import memberStyles from '../members/Members.module.css'
 import styles from '../UsersPage.module.css'
 import { UsersSolidIcon } from 'pixel-art-icons/icons/users-solid'
+import { saveFile } from '@admin/lib/saveFile'
 
 type StatusFilter = 'all' | MemberAdminStatus
 
@@ -72,22 +73,6 @@ const SIGNUP_SUMMARY: Record<MemberSignupMode, string> = {
 
 function isStepUpCancelled(err: unknown): boolean {
   return err instanceof Error && err.message === StepUpCancelledMessage
-}
-
-/** Hand a file to the browser's own download; it decides where it goes. */
-function saveFile(blob: Blob, filename: string): void {
-  const url = URL.createObjectURL(blob)
-  const link = document.createElement('a')
-  link.href = url
-  link.download = filename
-  link.hidden = true
-  document.body.append(link)
-  try {
-    link.click()
-  } finally {
-    link.remove()
-    window.setTimeout(() => URL.revokeObjectURL(url), 1_000)
-  }
 }
 
 export function MembersTab({
@@ -173,6 +158,16 @@ export function MembersTab({
   }
 
   /** Run one change, report a failure, and refresh the list so counts and rows follow. */
+  // A download changes nothing on screen: no busy state, list refresh or collapse.
+  async function downloadData(memberId: string): Promise<void> {
+    try {
+      saveFile(await downloadCmsMemberData(memberId), memberDataFilename(memberId))
+    } catch (err) {
+      console.error("[MembersTab] The member's data could not be downloaded:", err)
+      pushToast({ kind: 'error', title: "The member's data could not be downloaded", body: getErrorMessage(err, 'Unknown member error') })
+    }
+  }
+
   async function run(change: () => Promise<MemberDetail | void>, failure: string, done?: string): Promise<boolean> {
     setBusy(true)
     try {
@@ -251,8 +246,7 @@ export function MembersTab({
         }),
       restore: () => void run(() => unsuspendCmsMember(member.id), 'The member could not be restored', `${who} can sign in again`),
       signOut: () => void run(() => signOutCmsMember(member.id), 'The member could not be signed out', `${who} is signed out everywhere`),
-      downloadData: () =>
-        void run(async () => saveFile(await downloadCmsMemberData(member.id), 'member-data.json'), "The member's data could not be downloaded"),
+      downloadData: () => void downloadData(member.id),
       remove: () =>
         confirmDelete({
           title: `Delete ${who}?`,

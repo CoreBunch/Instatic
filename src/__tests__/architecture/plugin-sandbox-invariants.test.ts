@@ -201,6 +201,7 @@ describe('plugin sandbox invariants', () => {
       'cms.media.registerUrlTransformer',
       'cms.media.registerVariantDelegate',
       'cms.media.upsert',
+      'cms.members.deletedSince',
       'cms.members.emailStatus',
       'cms.members.ensure',
       'cms.members.exportProvider',

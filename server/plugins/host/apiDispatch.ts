@@ -73,6 +73,7 @@ import {
 } from './handlers/content'
 import { handleMailSend, handleMailSendExternal, handleSitePublicUrl } from './handlers/mail'
 import {
+  handleMembersDeletedSince,
   handleMembersEmailStatus,
   handleMembersEnsure,
   handleMembersExportProvider,
@@ -152,6 +153,7 @@ const apiHandlers = {
   'cms.members.ensure': handleMembersEnsure,
   'cms.members.emailStatus': handleMembersEmailStatus,
   'cms.members.exportProvider': handleMembersExportProvider,
+  'cms.members.deletedSince': handleMembersDeletedSince,
   'cms.members.tags.grant': handleMembersTagsGrant,
   'cms.members.tags.revoke': handleMembersTagsRevoke,
   'cms.mail.send': handleMailSend,

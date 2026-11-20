@@ -221,6 +221,7 @@ Authors normally write `instatic-plugin.config.ts` with `definePlugin(...)`; the
 - `mail.templates[]` requires `mail.send` or `mail.send.external`; template keys and variable names are unique, and a template may not declare a `site.*` variable.
 - Public routes require both `cms.routes` and `cms.routes.public`.
 - Server `fetch()` requires `network.outbound` and a matching `networkAllowedHosts[]` entry.
+- `memberDataExport: true` requires `members.read` (see "Site members" → `exportProvider`).
 - `appScopes[]` requires `members.read`, and each `name` (lowercase kebab-case) is declared once. A `description` must say something once cleaned for display (not only spaces), contain no control or invisible formatting characters, and not repeat the text of a built-in app scope. `definePlugin({ appScopes })` writes the field; `instatic-plugin lint` additionally reports a server source that opens a route under a scope `appScopes` does not declare (`{ app: { scope: 'x' } }` written as a string literal).
 - Any `cms.content.*` permission requires a non-empty `contentAccess[]`, and every mode an entry declares requires its permission (`CONTENT_ACCESS_MODE_PERMISSIONS` in `src/core/plugin-sdk/contentSchemas.ts` is the one mode-to-permission table both checks read). `instatic-plugin lint` additionally warns when a `cms.content.*` permission is requested but no entry declares its mode, since the host fails closed per table and mode and every call under it would be rejected.
 
@@ -606,7 +607,8 @@ const member = await api.cms.members.get({ email })            // or { id }; nul
 await api.cms.members.invite({ email, tags: ['pro'] })         // members.write (+ members.tags for tags)
 const { member, created, confirmed } = await api.cms.members.ensure({ email, tags: ['customer'] })  // members.write + members.read (+ members.tags)
 const { canEmail, reasons } = await api.cms.members.emailStatus()  // members.write
-api.cms.members.exportProvider(async (memberId) => ({ title: 'Orders', data: await ordersOf(memberId) }))  // members.read
+api.cms.members.exportProvider(async (memberId) => ({ title: 'Orders', data: await ordersOf(memberId) }))  // members.read + "memberDataExport": true
+const { ids, nextCursor } = await api.cms.members.deletedSince(cursor, { limit: 100 })  // members.read
 await api.cms.members.tags.grant(member.id, 'pro', { expiresAt })  // members.tags
 await api.cms.members.tags.revoke(member.id, 'pro')            // only this plugin's own grant
 ```
@@ -622,9 +624,26 @@ await api.cms.members.tags.revoke(member.id, 'pro')            // only this plug
   - It needs `members.read` as well as `members.write`, because the answer is the member's record.
 - `emailStatus` answers `{ canEmail, reasons }`: whether the site can email members links it starts itself right now. `reasons` lists every blocker (`memberEmailBlockers` in `server/members/mail.ts`): `public_address_missing` (no configured public address), `mail_not_configured` (outgoing email is off), `mail_captured_not_sent` (no connector and `NODE_ENV` is not `production`, so mail is kept in the admin's Activity instead of sent), `invite_page_missing` (no published invitation page), `sign_in_page_missing` (neither a sign-in-link page nor a password-reset page). Use it in a setup check, to warn the owner that buyers cannot be emailed a way in.
 
-- `exportProvider` adds the plugin's section to a member's data export: the member's own `GET /_instatic/members/export` and the admin's "Download data" (`GET /admin/api/cms/members/:id/export`), which both use `exportMemberDataWithPlugins` (`server/plugins/host/memberExport.ts`). Register it once, at activation (a second registration throws). The host asks every loaded plugin that holds `members.read` and registered one, one after another, within the plugin's usual call budget, and puts each answer under `plugins` as `{ plugin, name, included: true, title, data }`. `data` is everything the plugin keeps about the member, as JSON, at most 1 MiB. A provider that throws, runs out of time, or returns anything other than `{ title?, data }` (or too much) is listed as `{ plugin, name, included: false, reason: 'Could not be included: …' }`: the export never leaves a plugin out silently, and one plugin never fails the whole export. The provider runs through the VM's filter dispatcher under its own id; it is never hooked to a filter name.
+- `exportProvider` adds the plugin's section to a member's data export: the member's own `GET /_instatic/members/export` and the admin's "Download data" (`GET /admin/api/cms/members/:id/export`), which both use `exportMemberDataWithPlugins` (`server/plugins/host/memberExport.ts`).
+  - **Declared.** The manifest says `"memberDataExport": true` (it needs `members.read`), so the export knows the plugin has a section even while it is not running. Registering without the declaration throws in the sandbox (the declaration reaches the VM as `__plugin_meta.memberDataExport`), and the host refuses it too. Register once, at activation: a second call throws in the sandbox before reaching the host.
+  - **Every declaring plugin is listed.** Each installed plugin that declares it and was granted `members.read` gets an entry under `plugins`: `{ plugin, name, included: true, title, data }`, or `{ plugin, name, included: false, reason: 'Could not be included: …' }` when the plugin is not running (disabled, crashed, still loading), is running but did not register its provider, threw, was late, or returned something other than `{ title?, data? }`. One plugin never fails the whole export.
+  - **Bounded.** Running plugins are asked at the same time, each in its own worker, under one 20-second deadline for the whole export; a late one is listed as timed out. `data` (null when omitted) may be at most 1 MiB as JSON and 64 levels deep, checked by walking it, before anything serialises it. Exports of one member run one at a time (a second request while one runs shares its result). The member may download their own data 3 times an hour; an administrator 30 times an hour. A request the browser marks as coming from another site (`Sec-Fetch-Site`) is refused, so a link elsewhere cannot start one.
+  - The provider runs through the VM's filter dispatcher under its own id; it is never hooked to a filter name.
 
-**When a member is deleted** (by themselves or by an admin), every loaded plugin listening to `member.deleted` hears `{ memberId }`. On it, a plugin erases or anonymises what it keeps about that member, except what it must keep by law (invoices, say), which its own docs must name along with how long it is kept. A plugin that is disabled, not yet installed, or being reloaded at that moment does not hear it, and the event is not delivered later. So a plugin that keeps member data also reconciles when it activates: for each member id it holds, `api.cms.members.get({ id })` answers `null` for a deleted member, and the plugin erases that member's data then.
+**When a member is deleted** (by themselves or by an admin), every loaded plugin listening to `member.deleted` hears `{ memberId }`. On it, a plugin erases or anonymises what it keeps about that member, except what it must keep by law (invoices, say), which its own docs must name along with how long it is kept. A plugin that is disabled, not yet installed, or being reloaded at that moment does not hear it, and the event is not sent again. For those, `api.cms.members.deletedSince(cursor, { limit })` (`members.read`) returns `{ ids, nextCursor }`: the ids of members deleted after the cursor, oldest first, ordered by (`members.deleted_at`, id) so deletions in the same instant still page in order (`listDeletedMembersSince` in `server/members/repository.ts`). Start with `null`, store `nextCursor` (it stays put when nothing new was deleted), and catch up on activation or from a schedule. The cursor is opaque.
+
+```js
+api.cms.schedule.hourly('member-deletions', async () => {
+  let cursor = await loadCursor() // the plugin's own record; null the first time
+  for (;;) {
+    const page = await api.cms.members.deletedSince(cursor, { limit: 500 })
+    for (const id of page.ids) await eraseMember(id)
+    cursor = page.nextCursor
+    if (page.ids.length < 500) break
+  }
+  await saveCursor(cursor)
+})
+```
 
 **Member events** (need `cms.hooks` and `members.read`): `member.created`, `member.verified`, `member.signedIn` (`{ memberId, email }`), `member.tagged` (`{ memberId, tag, source, expiresAt }`), `member.deleted` (`{ memberId }`). They are sent without waiting, so a listener cannot delay or cancel a sign-in.
 

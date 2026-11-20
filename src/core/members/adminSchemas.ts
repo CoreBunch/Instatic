@@ -223,3 +223,8 @@ export const CreateMemberAppBodySchema = Type.Object(
   { additionalProperties: false },
 )
 export type CreateMemberAppBody = Static<typeof CreateMemberAppBodySchema>
+
+/** The file name of one member's data download, the same on the server and in the admin. */
+export function memberDataFilename(memberId: string): string {
+  return `member-${memberId}-data.json`
+}

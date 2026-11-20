@@ -218,6 +218,33 @@ export async function anonymizeMember(db: DbClient, memberId: string): Promise<v
   emitMemberHook('member.deleted', { memberId })
 }
 
+/**
+ * Members deleted after a point, oldest deletion first, ordered by
+ * (deleted_at, id) so deletions in the same instant still page cleanly.
+ * `after` is the last one the caller saw, or null for the start.
+ */
+export async function listDeletedMembersSince(
+  db: DbClient,
+  after: { deletedAt: string; id: string } | null,
+  limit: number,
+): Promise<Array<{ id: string; deletedAt: string }>> {
+  const { rows } = after
+    ? await db<{ id: string; deleted_at: Date | string }>`
+        select id, deleted_at from members
+         where deleted_at is not null
+           and (deleted_at > ${after.deletedAt} or (deleted_at = ${after.deletedAt} and id > ${after.id}))
+         order by deleted_at, id
+         limit ${limit}
+      `
+    : await db<{ id: string; deleted_at: Date | string }>`
+        select id, deleted_at from members
+         where deleted_at is not null
+         order by deleted_at, id
+         limit ${limit}
+      `
+  return rows.map((row) => ({ id: row.id, deletedAt: isoDate(row.deleted_at) }))
+}
+
 // ─── Tags ──────────────────────────────────────────────────────────────────
 
 /** Tags the member holds right now: granted by any source and not expired. */
