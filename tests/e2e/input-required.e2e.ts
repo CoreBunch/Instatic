@@ -2,9 +2,9 @@ import { expect, test } from '@playwright/test'
 import { createPage, insertModuleViaPicker, openSiteEditor, openSitePanel } from './helpers'
 
 /**
- * ADMIN-0xx — the Required switch on a form control toggles both ways.
+ * ADMIN-017: the Required switch on a form control toggles both ways.
  */
-test('the Input Required switch turns on and off', async ({ page }) => {
+test('the Input Required switch turns on and off (ADMIN-017)', async ({ page }) => {
   await openSiteEditor(page)
   const suffix = Date.now().toString(36)
   const name = `Required switch ${suffix}`
