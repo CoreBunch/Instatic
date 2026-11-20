@@ -15,6 +15,7 @@ import { Input } from '@ui/components/Input'
 import { Tab, TabList, TabPanel, Tabs } from '@ui/components/Tabs'
 import { FileTextSolidIcon } from 'pixel-art-icons/icons/file-text-solid'
 import { PageSeoTabs, PageSeoTabPanels, pageSeoProblem } from '@admin/shared/PageSeoEditor'
+import { buildPageFrame, buildRouteFrame } from '@core/templates'
 import dialogStyles from '../SiteCreateDialog/SiteCreateDialog.module.css'
 
 export interface PageSettingsPayload {
@@ -28,6 +29,8 @@ export interface PageSettingsPayload {
 type SettingsTab = 'page' | 'search' | 'head'
 
 interface PageSettingsDialogProps {
+  inherited?: PageSeo
+  siteFrame?: { id: string; name: string }
   page: Page
   pages: Page[]
   onCancel: () => void
@@ -46,6 +49,8 @@ const FORM_ID = 'page-settings-form'
 export function PageSettingsDialog({
   page,
   pages,
+  inherited,
+  siteFrame,
   onCancel,
   onSave,
 }: PageSettingsDialogProps) {
@@ -65,6 +70,8 @@ export function PageSettingsDialog({
     ? null
     : pageSlugError(normalizedSlug) || pageSlugDuplicateError(normalizedSlug, pages, page.id)
 
+  const pageFrame = buildPageFrame({ ...page, title: trimmedTitle || page.title, slug: normalizedSlug || page.slug })
+  const previewContext = { entryStack: [], page: pageFrame, route: buildRouteFrame(pageFrame.permalink), site: siteFrame }
   const seoProblem = pageSeoProblem(seo)
   // The Page tab shows its own errors next to the field; on the other tabs
   // the footer names whatever keeps Save disabled.
@@ -158,7 +165,7 @@ export function PageSettingsDialog({
               </fieldset>
             </div>
           </TabPanel>
-          <PageSeoTabPanels value={seo} onChange={setSeo} pageTitle={trimmedTitle || page.title} note="Empty fields inherit from the matching template and global head settings." />
+          <PageSeoTabPanels inherited={inherited} previewContext={previewContext} value={seo} onChange={setSeo} pageTitle={trimmedTitle || page.title} note="Empty fields inherit from the matching template and global head settings." />
         </Tabs>
       </form>
     </Dialog>

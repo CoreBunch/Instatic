@@ -3,7 +3,8 @@ import { GlobeSolidIcon } from 'pixel-art-icons/icons/globe-solid'
 import { parsePageSeo, type PageSeo } from '@core/page-tree'
 import { useEditorStore } from '@site/store/store'
 import { useEditorPermissions } from '@site/editorPermissionsContext'
-import { ChevronRightIcon } from 'pixel-art-icons/icons/chevron-right'
+import { Settings2SolidIcon } from 'pixel-art-icons/icons/settings-2-solid'
+import dialogStyles from '@admin/shared/dialogs/SiteCreateDialog/SiteCreateDialog.module.css'
 import styles from './SiteExplorerPanel.module.css'
 import { Button } from '@ui/components/Button'
 import { Dialog } from '@ui/components/Dialog'
@@ -14,15 +15,18 @@ const EMPTY_SEO: PageSeo = {}
 
 export function GlobalHeadSettings() {
   const [open, setOpen] = useState(false)
+  const siteName = useEditorStore((s) => s.site?.name)
   const { canEditStructure } = useEditorPermissions()
   return (
     <>
-      <Button variant="ghost" size="sm" align="start" className={styles.globalSettings}
-        aria-haspopup="dialog" disabled={!canEditStructure} onClick={() => setOpen(true)}>
-        <GlobeSolidIcon size={16} aria-hidden="true" />
-        Global head settings
-        <ChevronRightIcon size={12} aria-hidden="true" />
-      </Button>
+      <header className={styles.siteRoot}>
+        <GlobeSolidIcon size={18} aria-hidden="true" />
+        <strong title={siteName}>{siteName}</strong>
+        <Button variant="ghost" size="sm" iconOnly aria-label="Global head settings"
+          tooltip="Global head settings" aria-haspopup="dialog" disabled={!canEditStructure} onClick={() => setOpen(true)}>
+          <Settings2SolidIcon size={16} aria-hidden="true" />
+        </Button>
+      </header>
       {open && <GlobalHeadDialog onClose={() => setOpen(false)} />}
     </>
   )
@@ -43,11 +47,13 @@ function GlobalHeadDialog({ onClose }: { onClose: () => void }) {
         onClose()
       }}>Save</Button>
     </>}>
-      <Tabs value={tab} onChange={setTab}>
-        <TabList ariaLabel="Global head settings sections"><PageSeoTabs /></TabList>
-        <PageSeoTabPanels value={draft} onChange={setDraft} pageTitle="{page.title}"
-          note="Defaults for all pages and entries. Templates and individual pages can override each field. Use {page.title} and {site.name} to build a title for each page." />
-      </Tabs>
+      <div className={dialogStyles.form}>
+        <Tabs value={tab} onChange={setTab}>
+          <TabList ariaLabel="Global head settings sections"><PageSeoTabs /></TabList>
+          <PageSeoTabPanels value={draft} onChange={setDraft} pageTitle="{page.title}"
+            note="Defaults for all pages and entries. Templates and individual pages can override each field. Use {page.title} and {site.name} to build a title for each page." />
+        </Tabs>
+      </div>
     </Dialog>
   )
 }

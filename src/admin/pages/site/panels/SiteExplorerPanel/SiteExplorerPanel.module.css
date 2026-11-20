@@ -19,19 +19,22 @@
     overflow-x: hidden;
 }
 
-.globalSettings {
-    flex-shrink: 0;
-    width: 100%;
-    justify-content: flex-start;
+.siteRoot {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    align-items: center;
     gap: var(--space-s);
-    min-height: 36px;
-    background: var(--bg-surface-2);
-    border-radius: var(--radius);
+    padding: var(--space-xs) var(--space-2xs) var(--space-s) var(--space-s);
+    border-bottom: 1px solid var(--overlay-10);
+    color: var(--text-subtle);
 }
 
-.globalSettings > svg:last-child {
-    margin-inline-start: auto;
-    color: var(--text-subtle);
+.siteRoot strong {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--text-bright);
+    font-size: var(--text-m);
 }
 
 .siteBranch {

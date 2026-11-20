@@ -130,3 +130,15 @@
     font-size: var(--text-s);
     line-height: 1.45;
 }
+
+.inheritedList {
+    min-width: 0;
+    color: var(--text-subtle);
+    font-size: var(--text-xs);
+    overflow-wrap: anywhere;
+}
+
+.inheritedList ul {
+    margin: var(--space-4xs) 0;
+    padding-inline-start: var(--space-xl);
+}

@@ -162,7 +162,7 @@ export function SiteExplorerPanel({
 
   const pages = site?.pages ?? []
   const { openTemplateSettings, openPageSettings, dialogs: pageSettingsDialogs } = usePageSettingsDialogs({
-    pages,
+    site,
     renamePage,
     setPageAccess,
     setPageSeo,

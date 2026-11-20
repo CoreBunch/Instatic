@@ -1,3 +1,4 @@
+import type { TemplateRenderDataContext } from '@core/templates/dynamicBindings'
 /**
  * PageSeoEditor — edits a page's `<head>` settings (`PageSeo`): search
  * metadata, the social card, browser chrome hints, extra meta / link tags and
@@ -11,6 +12,7 @@
  * `pageSeoProblem` (`./pageSeoProblems`) lets the dialog disable Save with
  * the same reason.
  */
+import { interpolateTokens } from '@core/templates/tokenInterpolation'
 import { useId, type ReactNode } from 'react'
 import {
   PAGE_HEAD_LINK_RELS,
@@ -37,6 +39,8 @@ type Section = 'search' | 'head'
 interface PageSeoEditorProps {
   section: Section
   value: PageSeo
+  inherited?: PageSeo
+  previewContext?: TemplateRenderDataContext
   onChange: (next: PageSeo) => void
   /** Shown as the placeholder of the SEO title field. */
   pageTitle: string
@@ -44,14 +48,15 @@ interface PageSeoEditorProps {
   note?: string
 }
 
-export function PageSeoEditor({ section, value, onChange, pageTitle, note }: PageSeoEditorProps) {
+export function PageSeoEditor({ section, value, inherited = {}, previewContext, onChange, pageTitle, note }: PageSeoEditorProps) {
+  const preview = (value?: string) => value && previewContext ? interpolateTokens(value, previewContext) : value
   const set = <K extends keyof PageSeo>(key: K, next: PageSeo[K]) => onChange({ ...value, [key]: next })
   return (
     <div className={styles.root}>
       {note && <p className={styles.note}>{note}</p>}
       {section === 'search'
-        ? <SearchSection value={value} set={set} pageTitle={pageTitle} />
-        : <HeadSection value={value} set={set} />}
+        ? <SearchSection inherited={inherited} preview={preview} value={value} set={set} pageTitle={pageTitle} />
+        : <HeadSection inherited={inherited} preview={preview} value={value} set={set} />}
     </div>
   )
 }
@@ -62,7 +67,9 @@ type SetField = <K extends keyof PageSeo>(key: K, next: PageSeo[K]) => void
 // Search & social
 // ---------------------------------------------------------------------------
 
-function SearchSection({ value, set, pageTitle }: { value: PageSeo; set: SetField; pageTitle: string }) {
+type Inheritance = { inherited: PageSeo; preview: (value?: string) => string | undefined }
+
+function SearchSection({ value, inherited, preview, set, pageTitle }: Inheritance & { value: PageSeo; set: SetField; pageTitle: string }) {
   const og = value.openGraph ?? {}
   const twitter = value.twitter ?? {}
   const setOg = (key: keyof PageOpenGraph, next: string) => set('openGraph', { ...og, [key]: next })
@@ -72,23 +79,23 @@ function SearchSection({ value, set, pageTitle }: { value: PageSeo; set: SetFiel
     <div className={styles.root}>
       <section className={styles.section}>
         <h3 className={styles.heading}>Search</h3>
-        <TextRow label="Title" value={value.title} maxLength={512} placeholder={pageTitle} onChange={(next) => set('title', next)}
+        <TextRow label="Title" value={value.title} maxLength={512} inherited={preview(inherited.title)} placeholder={pageTitle} onChange={(next) => set('title', next)}
           hint="Shown in the browser tab and search results. Use {page.title} | {site.name} for a title with a suffix." />
-        <TextRow label="Description" value={value.description} maxLength={2048} multiline onChange={(next) => set('description', next)}
+        <TextRow label="Description" inherited={preview(inherited.description)} value={value.description} maxLength={2048} multiline onChange={(next) => set('description', next)}
           hint="Shown in search results." />
-        <TextRow label="Canonical URL" maxLength={2048} value={value.canonical} placeholder="https://example.com/page" onChange={(next) => set('canonical', next)} />
-        <TextRow label="Robots" maxLength={256} value={value.robots} placeholder="index, follow" onChange={(next) => set('robots', next)} />
+        <TextRow label="Canonical URL" maxLength={2048} value={value.canonical} inherited={preview(inherited.canonical)} placeholder={'https://example.com/page'} onChange={(next) => set('canonical', next)} />
+        <TextRow label="Robots" maxLength={256} value={value.robots} inherited={preview(inherited.robots)} placeholder={'index, follow'} onChange={(next) => set('robots', next)} />
       </section>
 
       <section className={styles.section}>
         <h3 className={styles.heading}>Social card</h3>
-        <TextRow label="Title" value={og.title} maxLength={512} onChange={(next) => setOg('title', next)} />
-        <TextRow label="Description" value={og.description} maxLength={2048} multiline onChange={(next) => setOg('description', next)} />
-        <SeoImageField label="Social card image" value={og.image} onChange={(next) => setOg('image', next)} />
-        <TextRow label="Image alt text" maxLength={512} value={og.imageAlt} onChange={(next) => setOg('imageAlt', next)} />
-        <TextRow label="Type" value={og.type} maxLength={64} placeholder="website" onChange={(next) => setOg('type', next)} />
-        <TextRow label="Site name" maxLength={256} value={og.siteName} onChange={(next) => setOg('siteName', next)} />
-        <TextRow label="URL" value={og.url} maxLength={2048} onChange={(next) => setOg('url', next)} />
+        <TextRow label="Title" inherited={preview(inherited.openGraph?.title)} value={og.title} maxLength={512} onChange={(next) => setOg('title', next)} />
+        <TextRow label="Description" inherited={preview(inherited.openGraph?.description)} value={og.description} maxLength={2048} multiline onChange={(next) => setOg('description', next)} />
+        <SeoImageField label="Social card image" inherited={preview(inherited.openGraph?.image)} value={og.image} onChange={(next) => setOg('image', next)} />
+        <TextRow label="Image alt text" maxLength={512} inherited={preview(inherited.openGraph?.imageAlt)} value={og.imageAlt} onChange={(next) => setOg('imageAlt', next)} />
+        <TextRow label="Type" value={og.type} maxLength={64} inherited={preview(inherited.openGraph?.type)} placeholder={'website'} onChange={(next) => setOg('type', next)} />
+        <TextRow label="Site name" maxLength={256} inherited={preview(inherited.openGraph?.siteName)} value={og.siteName} onChange={(next) => setOg('siteName', next)} />
+        <TextRow label="URL" inherited={preview(inherited.openGraph?.url)} value={og.url} maxLength={2048} onChange={(next) => setOg('url', next)} />
       </section>
 
       <section className={styles.section}>
@@ -102,7 +109,7 @@ function SearchSection({ value, set, pageTitle }: { value: PageSeo; set: SetFiel
               value={twitter.card ?? ''}
               onChange={(event) => setTwitter('card', event.target.value)}
               options={[
-                { value: '', label: 'Not set' },
+                { value: '', label: inherited.twitter?.card ? `Inherited · ${preview(inherited.twitter.card)}` : 'Not set' },
                 { value: 'summary', label: 'Summary' },
                 { value: 'summary_large_image', label: 'Summary, large image' },
                 ...(twitter.card && twitter.card !== 'summary' && twitter.card !== 'summary_large_image'
@@ -112,11 +119,11 @@ function SearchSection({ value, set, pageTitle }: { value: PageSeo; set: SetFiel
             />
           )}
         </Row>
-        <TextRow label="Site account" maxLength={128} value={twitter.site} placeholder="@account" onChange={(next) => setTwitter('site', next)} />
-        <TextRow label="Creator" maxLength={128} value={twitter.creator} placeholder="@author" onChange={(next) => setTwitter('creator', next)} />
-        <TextRow label="Title" value={twitter.title} maxLength={512} onChange={(next) => setTwitter('title', next)} />
-        <TextRow label="Description" value={twitter.description} maxLength={2048} multiline onChange={(next) => setTwitter('description', next)} />
-        <SeoImageField label="X / Twitter image" value={twitter.image} onChange={(next) => setTwitter('image', next)} />
+        <TextRow label="Site account" maxLength={128} value={twitter.site} inherited={preview(inherited.twitter?.site)} placeholder={'@account'} onChange={(next) => setTwitter('site', next)} />
+        <TextRow label="Creator" maxLength={128} value={twitter.creator} inherited={preview(inherited.twitter?.creator)} placeholder={'@author'} onChange={(next) => setTwitter('creator', next)} />
+        <TextRow label="Title" inherited={preview(inherited.twitter?.title)} value={twitter.title} maxLength={512} onChange={(next) => setTwitter('title', next)} />
+        <TextRow label="Description" inherited={preview(inherited.twitter?.description)} value={twitter.description} maxLength={2048} multiline onChange={(next) => setTwitter('description', next)} />
+        <SeoImageField label="X / Twitter image" inherited={preview(inherited.twitter?.image)} value={twitter.image} onChange={(next) => setTwitter('image', next)} />
       </section>
     </div>
   )
@@ -126,7 +133,7 @@ function SearchSection({ value, set, pageTitle }: { value: PageSeo; set: SetFiel
 // Head tags
 // ---------------------------------------------------------------------------
 
-function HeadSection({ value, set }: { value: PageSeo; set: SetField }) {
+function HeadSection({ value, inherited, preview, set }: Inheritance & { value: PageSeo; set: SetField }) {
   const themeColors = value.themeColors ?? []
   const links = value.links ?? []
   const meta = value.meta ?? []
@@ -141,15 +148,16 @@ function HeadSection({ value, set }: { value: PageSeo; set: SetField }) {
         <h3 className={styles.heading}>Browser</h3>
         <SeoImageField
           label="Favicon"
-          value={value.favicon?.href}
+          inherited={preview(inherited.favicon?.href)} value={value.favicon?.href}
           hint="Empty uses the inherited favicon."
           onChange={(next) => set('favicon', next ? { href: next } : undefined)}
         />
-        <TextRow label="Color scheme" maxLength={64} value={value.colorScheme} placeholder="light dark" onChange={(next) => set('colorScheme', next)} />
+        <TextRow label="Color scheme" maxLength={64} value={value.colorScheme} inherited={preview(inherited.colorScheme)} placeholder={'light dark'} onChange={(next) => set('colorScheme', next)} />
         <Row label="Theme colors">
           {() => (
             <div className={styles.list}>
-              {themeColors.map((theme, index) => (
+              {!themeColors.length && <InheritedList values={inherited.themeColors?.map((item) => [preview(item.color), preview(item.media)].filter(Boolean).join(' · '))} />}
+          {themeColors.map((theme, index) => (
                 <div key={index} className={styles.listRow}>
                   <Input fieldSize="sm" aria-label="Theme color" placeholder="#ffffff" maxLength={64} value={theme.color}
                     onChange={(event) => set('themeColors', updateAt<PageThemeColor>(themeColors, index, { ...theme, color: event.target.value }))} />
@@ -169,6 +177,7 @@ function HeadSection({ value, set }: { value: PageSeo; set: SetField }) {
         <h3 className={styles.heading}>Links</h3>
         <p className={styles.sectionHint}>Alternate versions, preloaded fonts and images, touch icons, a web manifest.</p>
         <div className={styles.list}>
+          {!links.length && <InheritedList values={inherited.links?.map((item) => [item.rel, preview(item.href), item.as, item.type, item.sizes, item.hreflang, item.title, item.media, item.crossorigin].filter(Boolean).join(' · '))} />}
           {links.map((link, index) => (
             <LinkEditor key={index} link={link}
               onChange={(next) => set('links', updateAt(links, index, next))}
@@ -183,6 +192,7 @@ function HeadSection({ value, set }: { value: PageSeo; set: SetField }) {
         <h3 className={styles.heading}>Meta tags</h3>
         <p className={styles.sectionHint}>Extra tags such as og:image:width or a site verification code.</p>
         <div className={styles.list}>
+          {!meta.length && <InheritedList values={inherited.meta?.map((item) => `${item.name}: ${preview(item.content)}`)} />}
           {meta.map((entry, index) => {
             const problem = metaNameProblem(entry)
             return (
@@ -210,6 +220,7 @@ function HeadSection({ value, set }: { value: PageSeo; set: SetField }) {
         <h3 className={styles.heading}>Structured data</h3>
         <p className={styles.sectionHint}>JSON-LD, published as script type=&quot;application/ld+json&quot;.</p>
         <div className={styles.list}>
+          {!jsonLd.length && <InheritedList values={inherited.jsonLd} />}
           {jsonLd.map((block, index) => {
             const problem = jsonLdProblem(block)
             return (
@@ -237,6 +248,11 @@ const LINK_LIMITS = { type: 128, title: 256, hreflang: 64, media: 256, sizes: 64
 
 const REL_OPTIONS = PAGE_HEAD_LINK_RELS.map((rel) => ({ value: rel, label: rel }))
 const AS_OPTIONS = PAGE_HEAD_PRELOAD_AS.map((as) => ({ value: as, label: as }))
+
+function InheritedList({ values }: { values?: string[] }) {
+  if (!values?.length) return null
+  return <div className={styles.inheritedList}><span>Inherited</span><ul>{values.map((value, i) => <li key={i}>{value}</li>)}</ul></div>
+}
 
 function LinkEditor({ link, onChange, onRemove }: {
   link: PageHeadLink
@@ -307,22 +323,23 @@ function Row({ label, hint, children }: { label: string; hint?: string; children
   )
 }
 
-function TextRow({ label, value, maxLength, placeholder, hint, multiline, onChange }: {
+function TextRow({ label, value, maxLength, inherited, placeholder, hint, multiline, onChange }: {
   label: string
   value: string | undefined
   /** The schema's limit for this field (`PageSeoSchema`), so nothing typed is dropped on save. */
   maxLength: number
   placeholder?: string
+  inherited?: string
   hint?: string
   multiline?: boolean
   onChange: (next: string) => void
 }) {
   return (
-    <Row label={label} hint={hint}>
+    <Row label={label} hint={!value && inherited ? ['Inherited.', hint].filter(Boolean).join(' ') : hint}>
       {(id) => multiline
-        ? <Textarea id={id} fieldSize="sm" rows={3} resize="vertical" maxLength={maxLength} value={value ?? ''} placeholder={placeholder}
+        ? <Textarea id={id} fieldSize="sm" rows={3} resize="vertical" maxLength={maxLength} value={value ?? ''} placeholder={inherited || placeholder}
             onChange={(event) => onChange(event.target.value)} />
-        : <Input id={id} fieldSize="sm" maxLength={maxLength} value={value ?? ''} placeholder={placeholder} autoComplete="off" spellCheck={false}
+        : <Input id={id} fieldSize="sm" maxLength={maxLength} value={value ?? ''} placeholder={inherited || placeholder} autoComplete="off" spellCheck={false}
             onChange={(event) => onChange(event.target.value)} />}
     </Row>
   )

@@ -38,6 +38,8 @@ const SEO_NOTES: Record<TemplateTarget['kind'], string> = {
 }
 
 interface TemplateSettingsDialogProps {
+  globalDefaults?: PageSeo
+  templateDefaults?: PageSeo
   page: Page
   pages: Page[]
   onCancel: () => void
@@ -72,6 +74,8 @@ const TARGET_KIND_OPTIONS = [
 export function TemplateSettingsDialog({
   page,
   pages,
+  globalDefaults,
+  templateDefaults,
   onCancel,
   onSave,
 }: TemplateSettingsDialogProps) {
@@ -258,7 +262,7 @@ export function TemplateSettingsDialog({
               </div>
             </div>
           </TabPanel>
-          <PageSeoTabPanels value={seo} onChange={setSeo} pageTitle={trimmedTitle || page.title} note={seoNote} />
+          <PageSeoTabPanels inherited={targetKind === 'everywhere' ? globalDefaults : templateDefaults} value={seo} onChange={setSeo} pageTitle={trimmedTitle || page.title} note={seoNote} />
         </Tabs>
       </form>
     </Dialog>
