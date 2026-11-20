@@ -15,10 +15,12 @@ import '@modules/base/index'
 afterEach(cleanup)
 beforeEach(() => localStorage.clear())
 
-function load() {
+function load(boxProps: Record<string, unknown> = {}) {
   const nodes = {
-    root: makeNode({ id: 'root', moduleId: 'base.body', children: ['box'] }),
+    root: makeNode({ id: 'root', moduleId: 'base.body', children: ['box', 'wrap'] }),
     box: makeNode({ id: 'box', moduleId: 'base.container', children: [] }),
+    wrap: makeNode({ id: 'wrap', moduleId: 'base.container', props: boxProps, children: ['outlet'] }),
+    outlet: makeNode({ id: 'outlet', moduleId: 'base.outlet', children: [] }),
   }
   useEditorStore.setState({
     site: makeSite({ pages: [makePage({ id: 'page-1', rootNodeId: 'root', nodes })] }),
@@ -49,9 +51,14 @@ describe('ShowIfControl', () => {
     // No name yet: stored, read as "never", and the hint says so.
     expect(readShowIf(boxProps())).toBe('never')
     expect(screen.getByText(/Until then nobody gets this element/)).toBeTruthy()
+    // Typing edits a draft; the condition is saved once, on blur or Enter.
+    const before = boxProps()
     fireEvent.change(screen.getByLabelText('Parameter'), { target: { value: 'commerce' } })
+    expect(boxProps()).toBe(before)
+    fireEvent.blur(screen.getByLabelText('Parameter'))
     renderControl()
     fireEvent.change(screen.getByLabelText('Value'), { target: { value: 'plan_changed' } })
+    fireEvent.keyDown(screen.getByLabelText('Value'), { key: 'Enter' })
     expect(readShowIf(boxProps())).toEqual({ source: 'query', name: 'commerce', test: 'equals', value: 'plan_changed' })
 
     renderControl()
@@ -61,5 +68,20 @@ describe('ShowIfControl', () => {
     renderControl()
     pick('Show if', 'always')
     expect(readShowIf(boxProps())).toBeNull()
+  })
+
+  it('is switched off on an element that holds the outlet, and says why', () => {
+    load()
+    render(<ShowIfControl nodeId="wrap" props={{}} readOnly={false} />)
+    expect((screen.getByLabelText('Show if') as HTMLInputElement).getAttribute('aria-disabled') === 'true'
+      || (document.getElementById(`${screen.getByLabelText('Show if').id}-native`) as HTMLSelectElement).disabled).toBe(true)
+    expect(screen.getByText(/holds the page content, so it cannot have a condition/)).toBeTruthy()
+  })
+
+  it('names the real problem when the value is too long', () => {
+    load()
+    const props = { showIf: { source: 'query', name: 'commerce', test: 'equals', value: 'x'.repeat(501) } }
+    render(<ShowIfControl nodeId="box" props={props} readOnly={false} />)
+    expect(screen.getByText(/Keep the value to 500 characters/)).toBeTruthy()
   })
 })

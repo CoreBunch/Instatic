@@ -20,10 +20,16 @@
 
 import { Type, safeParseValue, type Static } from '@core/utils/typeboxHelpers'
 import type { TemplateRenderDataContext } from './renderDataContext'
-import { readFrame, walkFieldPath } from './tokenInterpolation'
+import { readFrame } from './tokenInterpolation'
+import type { PageNode } from '@core/page-tree'
 
-/** Query parameter names and entry field paths a condition can name. */
+/**
+ * Query parameter names and entry field paths a condition can name. Brackets
+ * are not allowed, so a PHP-style `filter[status]` parameter cannot be tested.
+ */
 const CONDITION_NAME_PATTERN = '^[A-Za-z0-9_.-]{1,100}$'
+export const SHOW_IF_NAME_REGEX = new RegExp(CONDITION_NAME_PATTERN)
+export const SHOW_IF_VALUE_MAX_LENGTH = 500
 
 export const ShowIfSchema = Type.Object(
   {
@@ -36,7 +42,7 @@ export const ShowIfSchema = Type.Object(
       Type.Literal('empty'),
     ]),
     /** Compared as text. Ignored by `filled` / `empty`. */
-    value: Type.Optional(Type.String({ maxLength: 500 })),
+    value: Type.Optional(Type.String({ maxLength: SHOW_IF_VALUE_MAX_LENGTH })),
   },
   { additionalProperties: false },
 )
@@ -71,11 +77,29 @@ function conditionText(value: unknown): { text: string; comparable: boolean } {
   return { text: '1', comparable: false }
 }
 
+/**
+ * Walk a dotted path through own properties only, so a name like
+ * `constructor` or `__proto__` reads as missing rather than as a member of
+ * `Object.prototype`.
+ */
+function ownPath(frame: Record<string, unknown>, path: string): unknown {
+  let cursor: unknown = frame
+  for (const segment of path.split('.')) {
+    if (cursor === null || typeof cursor !== 'object' || Array.isArray(cursor)) return undefined
+    if (!Object.hasOwn(cursor, segment)) return undefined
+    cursor = (cursor as Record<string, unknown>)[segment]
+  }
+  return cursor
+}
+
 function conditionValue(rule: ShowIf, context: TemplateRenderDataContext | undefined): unknown {
   if (!context) return undefined
-  if (rule.source === 'query') return context.route?.query[rule.name]
+  if (rule.source === 'query') {
+    const query = context.route?.query
+    return query && Object.hasOwn(query, rule.name) ? query[rule.name] : undefined
+  }
   const frame = readFrame('currentEntry', context)
-  return frame ? walkFieldPath(frame, rule.name) : undefined
+  return frame ? ownPath(frame, rule.name) : undefined
 }
 
 /** Is an element with this condition rendered in this context? */
@@ -96,4 +120,30 @@ export function showIfAllows(
     case 'notEquals':
       return !comparable || text !== (rule.value ?? '')
   }
+}
+
+/**
+ * Drop the show-if conditions on the elements that hold a template's outlet
+ * (the outlet's ancestors in `nodes`), returning a new node map. The page or
+ * entry is placed at the outlet; a condition around it would make the wrapper
+ * a hole that is fetched from the template alone, without the page, and come
+ * out empty for every visitor. The editor does not let a condition be set
+ * there (`ShowIfControl`); this keeps a stored one (an import, a plugin or
+ * agent write) from breaking every page the template wraps.
+ */
+export function withoutShowIfAroundOutlet(
+  nodes: Record<string, PageNode>,
+  outletId: string,
+): Record<string, PageNode> {
+  const parentOf = new Map<string, string>()
+  for (const id in nodes) for (const child of nodes[id].children) parentOf.set(child, id)
+  let out = nodes
+  for (let id = parentOf.get(outletId); id !== undefined; id = parentOf.get(id)) {
+    const node = out[id]
+    if (!node || !(SHOW_IF_PROP_KEY in node.props)) continue
+    if (out === nodes) out = { ...nodes }
+    const { [SHOW_IF_PROP_KEY]: _dropped, ...props } = node.props
+    out[id] = { ...node, props }
+  }
+  return out
 }

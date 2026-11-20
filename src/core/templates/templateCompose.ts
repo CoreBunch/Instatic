@@ -1,6 +1,7 @@
 import type { Page, PageNode } from '@core/page-tree'
 import { reindexNodeParents } from '@core/page-tree'
 import { firstOutletId, treeHasOutlet } from './outlet'
+import { withoutShowIfAroundOutlet } from './showIf'
 
 type TerminalContent =
   | { kind: 'page'; page: Page }
@@ -87,8 +88,9 @@ function contentRootIds(nodes: Nodes, rootId: string, prefix: string): string[] 
  * host is guaranteed (by the caller) to contain at least one outlet; extra
  * outlets are left untouched and render empty.
  */
-function spliceIntoOutlet(host: Nodes, hostRoot: string, inner: Nodes, innerRoot: string, prefix: string): { nodes: Nodes; rootId: string } {
-  const outletId = firstOutletId(host)!
+function spliceIntoOutlet(rawHost: Nodes, hostRoot: string, inner: Nodes, innerRoot: string, prefix: string): { nodes: Nodes; rootId: string } {
+  const outletId = firstOutletId(rawHost)!
+  const host = withoutShowIfAroundOutlet(rawHost, outletId)
   const at = locate(host, outletId)
   const rekeyed = rekey(inner, innerRoot, prefix)
   const merged: Nodes = { ...host, ...rekeyed.nodes }
@@ -137,7 +139,16 @@ export function composeTemplateChain(chain: Page[], terminal: TerminalContent): 
 
   // Build the merged tree from the INNERMOST effective template outward.
   const innermost = effective[effective.length - 1]
-  let acc: { nodes: Nodes; rootId: string } = { nodes: { ...innermost.nodes }, rootId: innermost.rootNodeId }
+  // An entry terminal keeps the innermost outlet (it renders the entry body),
+  // so the conditions around it are dropped here; a page terminal's splice
+  // drops them itself.
+  const innermostOutlet = firstOutletId(innermost.nodes)
+  let acc: { nodes: Nodes; rootId: string } = {
+    nodes: terminal.kind === 'entry' && innermostOutlet
+      ? withoutShowIfAroundOutlet({ ...innermost.nodes }, innermostOutlet)
+      : { ...innermost.nodes },
+    rootId: innermost.rootNodeId,
+  }
 
   // Innermost terminal handling.
   if (terminal.kind === 'page') {

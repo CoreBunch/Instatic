@@ -36,9 +36,8 @@ import {
   type ResolvedLoopRenderData,
 } from '@core/publisher'
 import { jsonResponse } from '../../http'
-import type { Page } from '@core/page-tree'
 import type { SourceRequestContext } from '@core/loops/types'
-import { buildPageFrame, buildRouteFrame } from '@core/templates/contextFrames'
+import { buildRouteFrame } from '@core/templates/contextFrames'
 import { collectLoopNodes, readLoopProps } from '../../publish/loopPrefetch'
 import { sourceRequestFor, visitorRequestScope } from '../../publish/loopSourceRequest'
 import { getPublishedSiteForVersion } from '../../publish/publishedSnapshotCache'
@@ -71,21 +70,15 @@ export function serveLoopRuntimeAsset(req: Request, url: URL): Response {
 }
 
 /**
- * The address of the page the list sits on, as the loop runtime reports it
- * (`pagePath`); the page's own permalink when it is missing or unreadable.
- * The caller chooses it, so it only ever reaches a per-visitor source, whose
- * answer is never shared.
+ * What a per-visitor source is told about the page the list sits on: the
+ * address the loop runtime reports (`pagePath`, path and query). The caller
+ * chooses it; it only reaches a per-visitor source, whose answer is never
+ * shared, and the route frame the items render with. A later page of a list
+ * is a function of its own URL, `pagePath` included.
  */
-function requestBaseFor(url: URL, page: Page): Pick<SourceRequestContext, 'query' | 'path' | 'slug'> {
-  const permalink = buildPageFrame(page).permalink
-  let pageUrl: URL
-  try {
-    pageUrl = new URL(url.searchParams.get('pagePath') ?? permalink, url.origin)
-  } catch {
-    pageUrl = new URL(permalink, url.origin)
-  }
-  const route = buildRouteFrame(pageUrl.toString())
-  return { query: Object.fromEntries(pageUrl.searchParams), path: route.path, slug: route.slug }
+function requestBaseFor(pagePath: URL): Pick<SourceRequestContext, 'query' | 'path' | 'slug'> {
+  const route = buildRouteFrame(pagePath.toString())
+  return { query: Object.fromEntries(pagePath.searchParams), path: route.path, slug: route.slug }
 }
 
 interface LoopHandlerContext {
@@ -183,7 +176,7 @@ export async function handleLoopRequest(
   // here, as before.
   const perVisitor = source.perVisitor === true
   const request = perVisitor
-    ? await sourceRequestFor(source, visitorRequestScope(requestBaseFor(url, containingPage), req, visitor))
+    ? await sourceRequestFor(source, visitorRequestScope(requestBaseFor(pagePath), req, visitor))
     : undefined
 
   const offset = props.offset + (pageNumber - 1) * props.pageSize
@@ -224,9 +217,13 @@ export async function handleLoopRequest(
     site,
     registry,
     breakpointId: undefined,
-    templateContext: forVisitor
-      ? { entryStack: composed.entryStack, member: memberFrameFor(await visitor()) }
-      : { entryStack: composed.entryStack },
+    templateContext: {
+      entryStack: composed.entryStack,
+      // The page's own address, query included: route.query tokens and query
+      // show-if conditions read what page one was rendered for.
+      route: buildRouteFrame(pagePath.toString()),
+      ...(forVisitor ? { member: memberFrameFor(await visitor()) } : {}),
+    },
     loopData: new Map<string, ResolvedLoopRenderData>([
       [loopId, { items: result.items, totalItems: result.totalItems, pageNumber, hasMore }],
     ]),

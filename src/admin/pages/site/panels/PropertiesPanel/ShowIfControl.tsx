@@ -7,12 +7,20 @@
  * rule in the Visibility view; an element renders only when both pass. It
  * protects nothing: anyone can add a query string to an address.
  */
-import { useId } from 'react'
-import { readShowIf, SHOW_IF_PROP_KEY, type ShowIfSource, type ShowIfTest } from '@core/templates'
-import { useEditorStore } from '@site/store/store'
+import { useId, useState } from 'react'
+import {
+  readShowIf,
+  SHOW_IF_NAME_REGEX,
+  SHOW_IF_PROP_KEY,
+  SHOW_IF_VALUE_MAX_LENGTH,
+  subtreeHasOutlet,
+  type ShowIfSource,
+  type ShowIfTest,
+} from '@core/templates'
+import { selectActiveCanvasPage, useEditorStore } from '@site/store/store'
 import { Input } from '@ui/components/Input'
 import { Select } from '@ui/components/Select'
-import styles from './ShowWhenControl.module.css'
+import styles from './ShowIfControl.module.css'
 
 type SourceChoice = 'always' | ShowIfSource
 
@@ -36,7 +44,7 @@ const NAME_PLACEHOLDER: Record<ShowIfSource, string> = {
 
 const HINT: Record<SourceChoice, string> = {
   always: 'The element is in the page whatever the address or data say.',
-  query: 'Read from the address the visitor opened, like ?commerce=plan_changed. The element renders when the page is requested, and anyone can add a query string, so this hides nothing private.',
+  query: 'Read from the address the visitor opened, like ?commerce=plan_changed. The element renders when the page is requested, and anyone can add a query string, so this hides nothing private. Bracketed names like filter[status] cannot be tested.',
   entry: 'Read from the item a loop is repeating, or the entry an entry template shows. Each item is tested on its own.',
 }
 
@@ -69,6 +77,48 @@ function isTest(value: string): value is ShowIfTest {
   return TEST_OPTIONS.some((option) => option.value === value)
 }
 
+/**
+ * A text field that edits a local draft and saves it on blur or Enter, so a
+ * condition is one store write (one undo step) per edit, not one per key.
+ * The parent keys it by the stored value, so an outside change (undo, a
+ * collaborator) resets the draft.
+ */
+function DraftInput({
+  id,
+  value,
+  placeholder,
+  disabled,
+  normalize,
+  onCommit,
+}: {
+  id: string
+  value: string
+  placeholder: string
+  disabled: boolean
+  normalize?: (raw: string) => string
+  onCommit: (next: string) => void
+}) {
+  const [draft, setDraft] = useState(value)
+  function commit() {
+    const next = normalize ? normalize(draft) : draft
+    if (next !== value) onCommit(next)
+  }
+  return (
+    <Input
+      id={id}
+      fieldSize="sm"
+      value={draft}
+      placeholder={placeholder}
+      disabled={disabled}
+      onChange={(event) => setDraft(event.currentTarget.value)}
+      onBlur={commit}
+      onKeyDown={(event) => {
+        if (event.key === 'Enter') commit()
+      }}
+    />
+  )
+}
+
 function needsValue(test: ShowIfTest): boolean {
   return test === 'equals' || test === 'notEquals'
 }
@@ -83,6 +133,15 @@ export function ShowIfControl({
   readOnly: boolean
 }) {
   const updateNodeProps = useEditorStore((s) => s.updateNodeProps)
+  // The outlet is where a page or an entry is placed, and it is rendered with
+  // the template around it. A condition here would turn the wrapper into a
+  // request-time fragment rendered from the template alone, so the content
+  // would come out empty. The publisher drops such a condition
+  // (`withoutShowIfAroundOutlet`); the control is off here to match.
+  const holdsOutlet = useEditorStore((s) => {
+    const page = selectActiveCanvasPage(s)
+    return page ? subtreeHasOutlet(page.nodes, nodeId) : false
+  })
   const sourceId = useId()
   const nameId = useId()
   const testId = useId()
@@ -111,14 +170,25 @@ export function ShowIfControl({
     else save({ source: next, name: draft?.name ?? '', test: draft?.test ?? 'equals', value: draft?.value ?? '' })
   }
 
-  const broken = rule === 'never'
-  const hint = !draft
-    ? HINT.always
-    : draft.name.trim() === ''
-      ? 'Name what to test. Until then nobody gets this element.'
-      : broken
-        ? 'This condition could not be read, so nobody gets the element. Use letters, digits, dots, dashes or underscores in the name.'
-        : HINT[draft.source]
+  const nameIsValid = draft !== null && SHOW_IF_NAME_REGEX.test(draft.name)
+  const valueTooLong = draft !== null && needsValue(draft.test) && draft.value.length > SHOW_IF_VALUE_MAX_LENGTH
+  const problem = draft === null
+    ? null
+    : holdsOutlet
+      ? 'This element holds the page content, so a condition here is ignored when the page is published. Set it back to Always, and put the condition on an element inside the page.'
+      : draft.name === ''
+        ? 'Name what to test. Until then nobody gets this element.'
+        : !nameIsValid
+          ? 'Use letters, digits, dots, dashes or underscores in the name. Until then nobody gets this element.'
+          : valueTooLong
+            ? `Keep the value to ${SHOW_IF_VALUE_MAX_LENGTH} characters. Until then nobody gets this element.`
+            : rule === 'never'
+              ? 'This condition could not be read, so nobody gets the element. Pick an option to fix it.'
+              : null
+  const hint = holdsOutlet && draft === null
+    ? 'This element holds the page content, so it cannot have a condition. Put one on an element inside the page.'
+    : problem ?? HINT[choice]
+  const locked = readOnly || (holdsOutlet && draft === null)
 
   return (
     <section className={styles.root} aria-label="Show-if condition" data-testid="show-if-control">
@@ -128,7 +198,7 @@ export function ShowIfControl({
         fieldSize="sm"
         value={choice}
         options={SOURCE_OPTIONS}
-        disabled={readOnly}
+        disabled={locked}
         onChange={(event) => {
           const next = event.currentTarget.value
           if (isSourceChoice(next)) pickSource(next)
@@ -139,13 +209,14 @@ export function ShowIfControl({
           <label htmlFor={nameId} className={styles.label}>
             {draft.source === 'query' ? 'Parameter' : 'Field'}
           </label>
-          <Input
+          <DraftInput
+            key={draft.name}
             id={nameId}
-            fieldSize="sm"
             value={draft.name}
             placeholder={NAME_PLACEHOLDER[draft.source]}
-            disabled={readOnly}
-            onChange={(event) => save({ ...draft, name: event.currentTarget.value.trim() })}
+            disabled={locked}
+            normalize={(raw) => raw.trim()}
+            onCommit={(name) => save({ ...draft, name })}
           />
           <label htmlFor={testId} className={styles.label}>Test</label>
           <Select
@@ -153,7 +224,7 @@ export function ShowIfControl({
             fieldSize="sm"
             value={draft.test}
             options={TEST_OPTIONS}
-            disabled={readOnly}
+            disabled={locked}
             onChange={(event) => {
               const next = event.currentTarget.value
               if (isTest(next)) save({ ...draft, test: next })
@@ -162,19 +233,19 @@ export function ShowIfControl({
           {needsValue(draft.test) && (
             <>
               <label htmlFor={valueId} className={styles.label}>Value</label>
-              <Input
+              <DraftInput
+                key={draft.value}
                 id={valueId}
-                fieldSize="sm"
                 value={draft.value}
                 placeholder={draft.source === 'query' ? 'plan_changed' : 'active'}
-                disabled={readOnly}
-                onChange={(event) => save({ ...draft, value: event.currentTarget.value })}
+                disabled={locked}
+                onCommit={(value) => save({ ...draft, value })}
               />
             </>
           )}
         </>
       )}
-      <p className={styles.hint} data-tone={draft && (broken || draft.name.trim() === '') ? 'danger' : undefined}>
+      <p className={styles.hint} data-tone={problem ? 'danger' : undefined}>
         {hint}
       </p>
     </section>
