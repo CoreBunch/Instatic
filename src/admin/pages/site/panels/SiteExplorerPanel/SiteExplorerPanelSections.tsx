@@ -1,7 +1,4 @@
 import type { KeyboardEvent, MouseEvent } from 'react'
-import { FilePlusSolidIcon } from 'pixel-art-icons/icons/file-plus-solid'
-import { PaintBucketSolidIcon } from 'pixel-art-icons/icons/paint-bucket-solid'
-import { CodeIcon } from 'pixel-art-icons/icons/code'
 import type { SiteExplorerSectionId } from '@core/page-tree'
 import { SiteExplorerTreeSection, type SiteExplorerInlineRenameTarget } from './SiteExplorerTreeSection'
 import type { SiteExplorerDndState } from './SiteExplorerDndScope'
@@ -105,7 +102,6 @@ export function SiteExplorerPanelSections({
           title="Pages"
           count={normalPageCount}
           actionLabel="New page"
-          actionIcon={FilePlusSolidIcon}
           onAction={onCreatePage}
           model={pageTreeModel}
           dropTarget={explorerDnd.target}
@@ -129,7 +125,6 @@ export function SiteExplorerPanelSections({
           title="Templates"
           count={templatePageCount}
           actionLabel="New template"
-          actionIcon={FilePlusSolidIcon}
           onAction={onCreateTemplate}
           model={templateTreeModel}
           dropTarget={explorerDnd.target}
@@ -153,7 +148,6 @@ export function SiteExplorerPanelSections({
           title="Components"
           count={componentCount}
           actionLabel="New component"
-          actionIcon={FilePlusSolidIcon}
           onAction={onCreateComponent}
           model={componentTreeModel}
           dropTarget={explorerDnd.target}
@@ -177,7 +171,6 @@ export function SiteExplorerPanelSections({
           title="Styles"
           count={styleCount}
           actionLabel="New stylesheet"
-          actionIcon={PaintBucketSolidIcon}
           onAction={onCreateStyle}
           model={styleTreeModel}
           dropTarget={explorerDnd.target}
@@ -201,7 +194,6 @@ export function SiteExplorerPanelSections({
           title="Scripts"
           count={scriptCount}
           actionLabel="New script"
-          actionIcon={CodeIcon}
           onAction={onCreateScript}
           model={scriptTreeModel}
           dropTarget={explorerDnd.target}

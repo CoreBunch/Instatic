@@ -302,6 +302,8 @@ boundary deeper.
 
 `SiteExplorerPanel` (`src/admin/pages/site/panels/SiteExplorerPanel/`) is the editor's concept browser for pages, templates, Visual Components, stylesheets, and scripts. Every section renders through `SiteExplorerTreeSection`, which uses the shared `Tree*` primitives from `src/admin/pages/site/ui/Tree/` for depth indent, chevrons, selection chrome, and DnD row affordances.
 
+Each section header in the Site and Code tabs uses a plus button to create an item. The button's accessible label and tooltip name the item type.
+
 Organization is persisted in `site.explorer` on the site shell. Folders are decorative and flat: they group editor rows only, and never change page slugs, public URLs, component identity, or file paths. The homepage is the page whose slug is `index`; it is always pinned as the first Pages row and does not receive organization drag handlers.
 
 **Store actions** on `siteSlice` for explorer management:

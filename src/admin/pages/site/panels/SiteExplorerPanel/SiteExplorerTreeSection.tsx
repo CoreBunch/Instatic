@@ -1,7 +1,7 @@
 import { Fragment, useState, type KeyboardEvent, type MouseEvent, type ReactNode } from 'react'
 import { useDroppable } from '@dnd-kit/core'
-import type { IconComponent } from 'pixel-art-icons/types'
 import { FolderGlyphIcon } from 'pixel-art-icons/icons/folder-glyph'
+import { PlusIcon } from 'pixel-art-icons/icons/plus'
 import { Button } from '@ui/components/Button'
 import { EmptyState } from '@ui/components/EmptyState'
 import { cn } from '@ui/cn'
@@ -36,7 +36,6 @@ interface SiteExplorerTreeSectionProps<TTarget> {
   title: string
   count: number
   actionLabel: string
-  actionIcon: IconComponent
   model: SiteExplorerTreeSectionModel<TTarget> | SiteExplorerStructuralSectionModel<TTarget>
   dropTarget: SiteExplorerDropTarget | null
   inlineRenameTarget: SiteExplorerInlineRenameTarget | null
@@ -59,7 +58,6 @@ export function SiteExplorerTreeSection<TTarget>({
   title,
   count,
   actionLabel,
-  actionIcon,
   model,
   dropTarget,
   inlineRenameTarget,
@@ -78,7 +76,6 @@ export function SiteExplorerTreeSection<TTarget>({
   emptyLabel = 'None yet',
 }: SiteExplorerTreeSectionProps<TTarget>) {
   const [expandedFolderIds, setExpandedFolderIds] = useState(() => new Set(initialExpandedFolderIds(model)))
-  const ActionIcon = actionIcon
   const hasRows = model.pinnedItems.length > 0 || model.rootEntries.length > 0
   const rootDrop = useDroppable({
     id: `site-explorer-drop-root:${model.sectionId}`,
@@ -129,7 +126,7 @@ export function SiteExplorerTreeSection<TTarget>({
           tooltip={actionLabel}
           onClick={onAction}
         >
-          <ActionIcon size={13} />
+          <PlusIcon size={13} />
         </Button>
       </div>
 
