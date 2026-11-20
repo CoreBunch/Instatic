@@ -1,51 +1,13 @@
-/* DynamicBindingControl — binding affordance and bound-value display */
-
-.affordanceWrapper {
-    position: relative;
-}
+/* DynamicBindingControl: binding affordance and bound-value display.
+   The affordance's hover reveal lives on ControlRow's `.labelAction`. */
 
 .affordanceBtn {
-    position: absolute;
-    right: 4px;
-    top: 4px;
-    z-index: 2;
-    opacity: 0;
-    transition: opacity 80ms ease;
     padding: 0;
     min-width: 18px;
     min-height: 18px;
     width: 18px;
     height: 18px;
     border-radius: var(--radius-sm);
-}
-
-/*
- * Controls whose own target sits at the right edge (a toggle's switch, a
- * number's stepper) get a gutter for the affordance instead of an overlay:
- * laid over them, the affordance took every click meant for the switch.
- */
-.affordanceWrapperGutter {
-    padding-right: var(--space-6xl);
-}
-
-.affordanceWrapperGutter .affordanceBtn {
-    right: 0;
-    top: 50%;
-    transform: translateY(-50%);
-}
-
-.affordanceWrapper:hover .affordanceBtn,
-.affordanceWrapper:focus-within .affordanceBtn {
-    opacity: 0.7;
-}
-
-.affordanceWrapper:hover .affordanceBtn:hover,
-.affordanceWrapper:focus-within .affordanceBtn:focus {
-    opacity: 1;
-}
-
-.affordanceWrapperActive .affordanceBtn {
-    opacity: 1;
 }
 
 .boundWrapper {

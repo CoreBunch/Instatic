@@ -45,6 +45,29 @@
     font-weight: 620;
 }
 
+/*
+ * A row action (the site editor's bind-to-data affordance) at the end of the
+ * label row. Hidden until the row is hovered or focused, and kept visible
+ * while it holds an open popover.
+ */
+.labelAction {
+    display: inline-flex;
+    margin-left: auto;
+    opacity: 0;
+    transition: opacity 80ms ease;
+}
+
+.controlWrapper:hover .labelAction,
+.controlWrapper:focus-within .labelAction {
+    opacity: 0.7;
+}
+
+.labelAction:hover,
+.labelAction:focus-within,
+.labelAction:has([aria-expanded="true"]) {
+    opacity: 1;
+}
+
 .labelOverride {
     color: var(--overlay-80);
 }
