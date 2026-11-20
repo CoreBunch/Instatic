@@ -26,6 +26,11 @@ export function composedNodeSourceId(composedId: string): string {
   return composedId.replace(/^(?:t\d+_)*c0_/, '')
 }
 
+/** IDs assigned when a page or inner layout is spliced into an outlet. */
+export function isComposedNodeId(id: string): boolean {
+  return /^(?:c0_|t\d+_)/.test(id)
+}
+
 /** Clone a tree's nodes with every id prefixed, returning the remapped root id. */
 function rekey(nodes: Nodes, rootId: string, prefix: string): { nodes: Nodes; rootId: string } {
   const map = new Map<string, string>()

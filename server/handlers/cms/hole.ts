@@ -34,11 +34,14 @@
  * module-JS channel's static hole-subtree walk.
  */
 
+import { composeTemplateChain, isComposedNodeId, resolveNotFoundTemplate, resolveTemplateChain } from '@core/templates'
+import { resolvePublicRoute } from '../../publish/publicRouter'
 import type { DbClient } from '../../db/client'
 import type { Page, SiteDocument } from '@core/page-tree'
 import type { ClosedContent } from '@core/loops/types'
 import { registry } from '@core/module-engine'
 import {
+  findDynamicNodeIds,
   renderNode,
   showWhenPathsAllow,
   showWhenPathsAreGated,
@@ -55,8 +58,8 @@ import {
   visitorRequestScope,
   type LoopRequestScope,
 } from '../../publish/loopSourceRequest'
-import { getOrRender } from '../../publish/renderCache'
-import { getPublishedNodeIndexForVersion } from '../../publish/publishedSnapshotCache'
+import { getOrRender, peek } from '../../publish/renderCache'
+import { getPublishedNodeIndexForVersion, getPublishedSnapshotHash } from '../../publish/publishedSnapshotCache'
 import { getPublishVersion } from '../../publish/publishState'
 import { HOLE_RUNTIME_JS, HOLE_RUNTIME_VERSION } from '../../publish/holeRuntime'
 import { serveVersionedScript } from '../../publish/assetVersion'
@@ -159,6 +162,32 @@ async function renderHoleFragment(
   return stampFormPageTokens(renderNode(nodeId, config, acc), page.id)
 }
 
+/** Rebuild the tree for the originating published route using the frozen site. */
+async function resolveComposedHole(db: DbClient, url: URL, site: SiteDocument, nodeId: string): Promise<Page | null> {
+  const resolution = await resolvePublicRoute(db, url)
+  if (resolution.kind === 'redirect') return null
+  if (resolution.kind !== 'not-found' && getPublishedSnapshotHash(resolution.snapshot.site) !== getPublishedSnapshotHash(site)) {
+    return null
+  }
+  if (resolution.kind === 'row') {
+    const chain = resolveTemplateChain(site, { kind: 'entry', tableSlug: resolution.row.tableSlug })
+    if (!chain.length) return null
+    const tree = composeTemplateChain(chain, { kind: 'entry' })
+    if (!findDynamicNodeIds(tree, site, registry).has(nodeId)) return null
+    const title = resolution.row.cells.title
+    return typeof title === 'string' ? { ...tree, title } : tree
+  }
+  const page = resolution.kind === 'page'
+    ? site.pages.find((candidate) => candidate.id === resolution.snapshot.pageRowId)
+    : resolveNotFoundTemplate(site)
+  if (!page) return null
+  const tree = composeTemplateChain(resolveTemplateChain(site, { kind: 'page' }), { kind: 'page', page })
+  // The document frame, access rules and form tokens belong to the served
+  // page; only the tree structure comes from the surrounding layout.
+  if (!findDynamicNodeIds(tree, site, registry).has(nodeId)) return null
+  return { ...page, rootNodeId: tree.rootNodeId, nodes: tree.nodes }
+}
+
 /**
  * Render a single dynamic node subtree for Layer C hole hydration.
  *
@@ -202,22 +231,39 @@ export async function handleHoleRequest(
       },
     })
   }
-  const foundPage = snap.nodeIndex.get(nodeId)
+  const sourcePage = snap.nodeIndex.get(nodeId)
+  const fallbackPath = sourcePage ? buildPageFrame(sourcePage).permalink : '/'
+  let pageUrl: URL
+  try {
+    const forwarded = new URL(url.searchParams.get('u') ?? fallbackPath, url.origin)
+    pageUrl = forwarded.origin === url.origin ? forwarded : new URL(fallbackPath, url.origin)
+  } catch {
+    pageUrl = new URL(fallbackPath, url.origin)
+  }
+
+  const cacheKey = {
+    urlPath: `${HOLE_PATH_PREFIX}${nodeId}`,
+    queryString: `v=${currentVersion}&u=${encodeURIComponent(pageUrl.pathname)}&${normalizeQuery(pageUrl.searchParams)}`,
+  }
+  const isComposed = isComposedNodeId(nodeId)
+  if (isComposed && !sourcePage) {
+    // Only a shared, fully checked render can populate this versioned key.
+    // Repeated visitor requests need neither a route lookup nor recomposition.
+    const cached = peek(cacheKey)
+    if (cached) return new Response(cached.body, { status: cached.status, headers: cached.headers })
+  }
+
+  // The baked shell addresses a spliced subtree by its composed ID. Keep that
+  // ID and its enclosing layout nodes intact for rendering and ancestor rules.
+  const composed = isComposed
+    ? await resolveComposedHole(ctx.db, pageUrl, snap.site, nodeId)
+    : null
+  const foundPage = composed ?? sourcePage
   if (!foundPage) {
     return new Response('Node not found', {
       status: 404,
       headers: { 'content-type': 'text/plain; charset=utf-8' },
     })
-  }
-
-  // Reconstruct the originating page URL forwarded by the runtime (`u`). Falls
-  // back to the page's own permalink when absent (older runtime / direct hit).
-  const pageUrlRaw = url.searchParams.get('u') ?? buildPageFrame(foundPage).permalink
-  let pageUrl: URL
-  try {
-    pageUrl = new URL(pageUrlRaw, url.origin)
-  } catch {
-    pageUrl = new URL(buildPageFrame(foundPage).permalink, url.origin)
   }
 
   // A fragment is part of a page and is gated like one: by the page that owns
@@ -295,10 +341,7 @@ export async function handleHoleRequest(
   // no cookies (they would fragment the cache) and no member.
   const scope: LoopRequestScope = { base }
   const cached = await getOrRender(
-    {
-      urlPath: `${HOLE_PATH_PREFIX}${nodeId}`,
-      queryString: `v=${currentVersion}&u=${encodeURIComponent(pageUrl.pathname)}&${normalizeQuery(pageUrl.searchParams)}`,
-    },
+    cacheKey,
     async () => {
       const html = await renderHoleFragment(nodeId, foundPage, snap.site, ctx.db, pageUrl, scope, closed, undefined)
       return {
