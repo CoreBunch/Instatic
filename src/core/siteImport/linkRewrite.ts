@@ -71,7 +71,7 @@ function rewriteHeadLinks(
   if (!seo) return seo
   let touched = false
   const ref = (href: string) => {
-    const pageRef = hrefToPageRef(href, source, pageIdBySource)
+    const pageRef = hrefToPageRef(href, source, pageIdBySource, true)
     if (pageRef === null) return href
     touched = true
     return pageRef
@@ -93,16 +93,15 @@ function hrefToPageRef(
   href: string,
   source: string,
   pageIdBySource: ReadonlyMap<string, string>,
+  preserveQuery = false,
 ): string | null {
   if (!href) return null
 
-  // Split off the fragment, which is KEPT and re-attached to the page ref below.
-  // Any query string is dropped by `resolveHref` — CMS routes are slugs.
-  const hashIdx = href.indexOf('#')
-  const fragment = hashIdx >= 0 ? href.slice(hashIdx) : ''
-  const pathPart = hashIdx >= 0 ? href.slice(0, hashIdx) : href
-
-  // Pure same-page anchor (`#features`) or empty → not an internal page link.
+  // Body links use slug routes. Head URLs can identify a particular edition
+  // or paginated result, so retain their query along with the fragment.
+  const suffixStart = preserveQuery ? href.search(/[?#]/) : href.indexOf('#')
+  const suffix = suffixStart >= 0 ? href.slice(suffixStart) : ''
+  const pathPart = suffixStart >= 0 ? href.slice(0, suffixStart) : href
   if (!pathPart) return null
 
   // resolveHref returns null for external / absolute-scheme / fragment hrefs,
@@ -113,5 +112,5 @@ function hrefToPageRef(
   const targetId = pageIdBySource.get(resolved)
   if (!targetId) return null
 
-  return makePageRef(targetId, fragment)
+  return makePageRef(targetId, suffix)
 }

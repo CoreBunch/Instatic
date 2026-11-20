@@ -100,11 +100,11 @@ describe('page head settings', () => {
     const german = { ...makePage({ root: { moduleId: 'base.text', props: {} } }), id: 'page-de', slug: 'de' }
     site.pages = [page, german]
     page.seo = {
-      canonical: 'cms:page:page-1',
+      canonical: 'cms:page:page-1?page=2#intro',
       links: [{ rel: 'alternate', href: 'cms:page:page-de', hreflang: 'de' }, { rel: 'alternate', href: 'cms:page:gone' }],
     }
     const { html } = publishPage(page, site, registry)
-    expect(html).toContain('<link rel="canonical" href="/">')
+    expect(html).toContain('<link rel="canonical" href="/?page=2#intro">')
     expect(html).toContain('<link rel="alternate" href="/de" hreflang="de">')
     expect(html).not.toContain('cms:page')
     expect(html.match(/rel="alternate"/g)).toHaveLength(1)

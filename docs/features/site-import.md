@@ -464,7 +464,7 @@ On success the same step switches to its **complete** state — a success mark, 
 
 ### Cache-busted URLs
 
-Reference resolution strips any query string or fragment before looking a path up in the FileMap:
+Reference resolution strips any query string or fragment before looking a path up in the FileMap. Canonical, Open Graph and alternate page links retain those suffixes on the published URL:
 `assets/site.css?v=8f3a1c` and `assets/site.css` address the same file. This applies to
 `<link rel="stylesheet">`, `<script src>`, CSS `@import`, CSS `url()`, and node `src` / `href` / `srcset` / `videoUrl` / `poster` —
 static site generators commonly emit a content hash on all of them.

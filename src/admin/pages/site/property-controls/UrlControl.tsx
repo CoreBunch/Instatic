@@ -46,8 +46,8 @@ export function UrlControl({
   const handlePagePick = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const pageId = e.target.value
     if (!pageId) return
-    // Preserve an existing fragment when re-pointing the link to another page.
-    onChange(propKey, makePageRef(pageId, ref?.fragment))
+    // Preserve the query string and fragment when re-pointing the link to another page.
+    onChange(propKey, makePageRef(pageId, ref?.suffix))
   }
 
   // In URL mode never show a page-ref token in the text field — it isn't a URL.

@@ -54,7 +54,7 @@ function fileMap(): FileMap {
   return {
     files: {
       'bake/index.html': file(HEAD, 'text/html'),
-      'de/index.html': file('<!doctype html><html><head><title>DE</title><link rel="canonical" href="index.html"><meta property="og:url" content="./index.html"></head><body></body></html>', 'text/html'),
+      'de/index.html': file('<!doctype html><html><head><title>DE</title><link rel="canonical" href="index.html?edition=de#intro"><meta property="og:url" content="./index.html"></head><body></body></html>', 'text/html'),
       'bake/style.css': file('h1 { margin: 0 }', 'text/css'),
       'bake/llms.txt': file('# Example', 'text/plain'),
       'bake/app.js': file('console.info(1)', 'text/javascript'),
@@ -77,7 +77,7 @@ describe('HTML import keeps the page head', () => {
     // Head URLs naming another imported page stay as authored until commit,
     // where they become page references (see the commit test).
     const german = plan.pages.find((candidate) => candidate.source === 'de/index.html')!
-    expect(german.seo).toEqual({ canonical: 'index.html', openGraph: { url: './index.html' } })
+    expect(german.seo).toEqual({ canonical: 'index.html?edition=de#intro', openGraph: { url: './index.html' } })
     expect(page.seo).toEqual({
       description: 'Design live, ship static.',
       canonical: 'https://example.com/',
@@ -139,7 +139,7 @@ describe('HTML import keeps the page head', () => {
     expect(page.seo?.favicon).toEqual({ href: '/uploads/logo.svg', type: 'image/svg+xml' })
     const germanId = result.pages.find((candidate) => candidate.source === 'de/index.html')!.id
     const german = useEditorStore.getState().site!.pages.find((candidate) => candidate.id === germanId)!
-    expect(german.seo).toEqual({ canonical: `cms:page:${germanId}`, openGraph: { url: `cms:page:${germanId}` } })
+    expect(german.seo).toEqual({ canonical: `cms:page:${germanId}?edition=de#intro`, openGraph: { url: `cms:page:${germanId}` } })
     expect(page.seo?.links?.map((link) => link.href)).toEqual([
       `cms:page:${germanId}`,
       '/uploads/touch.png',
