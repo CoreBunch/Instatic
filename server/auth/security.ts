@@ -280,6 +280,37 @@ function parseIpAddress(raw: string): ParsedIpAddress | null {
   return null
 }
 
+/**
+ * One spelling per address, so one visitor is one key: IPv4 in dotted form
+ * (an IPv4-mapped IPv6 address included), IPv6 lowercased and compressed as
+ * RFC 5952 writes it (the longest run of two or more zero groups becomes
+ * `::`, the first when tied). Null for anything that is not an IP address.
+ */
+export function canonicalIp(raw: string): string | null {
+  const parsed = parseIpAddress(raw)
+  if (!parsed) return null
+  if (parsed.family === 4) return ipv4String(parsed.value)
+  if (parsed.value >> 32n === 0xffffn) return ipv4String(parsed.value & 0xffffffffn)
+  const groups: number[] = []
+  for (let shift = 112n; shift >= 0n; shift -= 16n) groups.push(Number((parsed.value >> shift) & 0xffffn))
+  let bestStart = -1
+  let bestLength = 0
+  for (let i = 0; i < 8; ) {
+    if (groups[i] !== 0) { i++; continue }
+    let end = i
+    while (end < 8 && groups[end] === 0) end++
+    if (end - i > bestLength) { bestStart = i; bestLength = end - i }
+    i = end
+  }
+  const hex = groups.map((group) => group.toString(16))
+  if (bestLength < 2) return hex.join(':')
+  return `${hex.slice(0, bestStart).join(':')}::${hex.slice(bestStart + bestLength).join(':')}`
+}
+
+function ipv4String(value: bigint): string {
+  return [24n, 16n, 8n, 0n].map((shift) => Number((value >> shift) & 0xffn)).join('.')
+}
+
 function maskAddress(value: bigint, prefixBits: number, totalBits: number): bigint {
   if (prefixBits === 0) return 0n
   const hostBits = BigInt(totalBits - prefixBits)

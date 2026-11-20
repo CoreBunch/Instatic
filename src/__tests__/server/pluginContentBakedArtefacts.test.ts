@@ -30,6 +30,7 @@ import { resetPublishStateForTests } from '../../../server/publish/publishState'
 import { dispatchApiCall } from '../../../server/plugins/host/apiDispatch'
 import { hostPlugins, setPluginHostContext } from '../../../server/plugins/host/registry'
 import type { HostPluginRecord } from '../../../server/plugins/host/types'
+import { PluginRateLimitStore } from '../../../server/plugins/host/pluginRateLimit'
 import type { ValidatedApiCall } from '../../../server/plugins/protocol/apiCallSchema'
 
 const PLUGIN_ID = 'acme.importer'
@@ -103,7 +104,7 @@ function pluginRecord(): HostPluginRecord {
     mediaAdapters: [],
     mediaUrlTransformers: [],
     inflightFetches: new Map(),
-    rateLimiters: new Map(),
+    rateLimits: new PluginRateLimitStore(10),
   } as unknown as HostPluginRecord
 }
 

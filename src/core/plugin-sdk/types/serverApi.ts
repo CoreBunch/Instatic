@@ -40,6 +40,21 @@ interface MemberRouteRegistrar {
   (path: string, options: MemberRouteOptions, handler: ServerPluginRouteHandler): void
 }
 
+/** What `api.cms.rateLimit.take` answers. */
+export interface PluginRateLimitResult {
+  ok: boolean
+  /** Takes left in the window after this one (0 when refused). */
+  remaining: number
+  /** When refused, ms until a take for this key would be allowed; 0 otherwise. */
+  retryAfterMs: number
+  /**
+   * `limit`: refused, the key used up its limit. `capacity`: allowed, but the
+   * plugin's counters were full and forgot their least recently used key.
+   * Absent otherwise.
+   */
+  reason?: 'limit' | 'capacity'
+}
+
 export interface ServerPluginApi {
   plugin: {
     id: string
@@ -122,17 +137,20 @@ export interface ServerPluginApi {
     /** Facts about the site a plugin needs to build links. No permission needed. */
     site: ServerPluginSiteApi
     /**
-     * Sliding-window counters for the plugin's own keys, backed by the
-     * limiter core's sign-in uses. `take` records one use of `key` and says
-     * whether it fits: at most `limit` uses in any `windowMs`. A refused take
+     * Sliding-window counters for the plugin's own keys. `take` records one
+     * use of `key` and says whether it fits: about `limit` uses in any
+     * `windowMs` (a two-bucket sliding-window counter, which weights the
+     * previous fixed window by how much of it still overlaps). A refused take
      * is not counted. In memory only: a plugin reload or a server restart
      * starts every window again. `limit` is 1 to 10,000; `windowMs` is one
-     * second to one day; at most 16 different (limit, window) pairs and
-     * 10,000 live keys per pair, past which takes for new keys are refused.
-     * No permission needed.
+     * second to one day. The plugin's counters hold 10,000 keys; past that a
+     * new key makes the least recently used one forgotten (`reason:
+     * 'capacity'`). Key by `ctx.ip` (an IPv6 address by its /64), an account
+     * or an API key, never by a value the caller types alone. No permission
+     * needed.
      */
     rateLimit: {
-      take: (key: string, limit: number, windowMs: number) => Promise<{ ok: boolean; remaining: number; retryAfterMs: number }>
+      take: (key: string, limit: number, windowMs: number) => Promise<PluginRateLimitResult>
     }
     loops: {
       /**

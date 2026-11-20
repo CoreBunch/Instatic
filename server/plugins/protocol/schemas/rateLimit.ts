@@ -4,7 +4,7 @@
  */
 import { Type } from '@sinclair/typebox'
 
-/** Most takes one window may allow. Every accepted take is held in memory until it ages out. */
+/** Most takes one window may allow. */
 export const PLUGIN_RATE_LIMIT_MAX = 10_000
 export const PLUGIN_RATE_LIMIT_MIN_WINDOW_MS = 1_000
 export const PLUGIN_RATE_LIMIT_MAX_WINDOW_MS = 24 * 60 * 60 * 1000

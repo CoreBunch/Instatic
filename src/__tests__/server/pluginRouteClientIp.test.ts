@@ -120,6 +120,13 @@ describe('plugin routes and the caller', () => {
       expect(await seen(`${MOUNT}/ip`, { peer: '203.0.113.7' })).toEqual({ ip: '203.0.113.7', peer: null, forwarded: null })
     })
 
+    it('is one spelling per address', async () => {
+      expect((await seen(`${MOUNT}/ip`, { peer: '::ffff:203.0.113.7' })).ip).toBe('203.0.113.7')
+      expect((await seen(`${MOUNT}/ip`, { peer: '2001:DB8:0:0:0:0:0:1' })).ip).toBe('2001:db8::1')
+      configureTrustedProxyCidrs(['10.0.0.0/8'])
+      expect((await seen(`${MOUNT}/ip`, { peer: '10.0.0.2', forwardedFor: '2001:0db8::0001' })).ip).toBe('2001:db8::1')
+    })
+
     it('is null when the server cannot tell', async () => {
       expect((await seen(`${MOUNT}/ip`)).ip).toBeNull()
     })
@@ -158,14 +165,16 @@ describe('plugin routes and the caller', () => {
         ok?: boolean
         remaining?: number
         retryAfterMs?: number
+        reason?: string
         error?: string
       }
 
     it('allows up to the limit per key, then refuses with a wait', async () => {
       const results = []
       for (let i = 0; i < 4; i++) results.push(await take({ key: 'ip:203.0.113.7', limit: 3, windowMs: 60_000 }))
-      expect(results.slice(0, 3).map((r) => [r.ok, r.remaining])).toEqual([[true, 2], [true, 1], [true, 0]])
+      expect(results.slice(0, 3).map((r) => [r.ok, r.remaining, r.reason])).toEqual([[true, 2, undefined], [true, 1, undefined], [true, 0, undefined]])
       expect(results[3]?.ok).toBe(false)
+      expect(results[3]?.reason).toBe('limit')
       expect(results[3]?.retryAfterMs).toBeGreaterThan(0)
       expect(results[3]?.retryAfterMs).toBeLessThanOrEqual(60_000)
       // Another key has its own window.
@@ -178,9 +187,10 @@ describe('plugin routes and the caller', () => {
       expect((await take({ key: '', limit: 3, windowMs: 60_000 })).error).toBeDefined()
     })
 
-    it('caps how many limit and window pairs a plugin uses', async () => {
-      for (let i = 1; i <= 16; i++) expect((await take({ key: 'k', limit: i, windowMs: 60_000 })).ok).toBe(true)
-      expect((await take({ key: 'k', limit: 17, windowMs: 60_000 })).error).toContain('at most 16')
+    it('keeps a separate counter for the same key under another limit', async () => {
+      expect((await take({ key: 'k', limit: 1, windowMs: 60_000 })).ok).toBe(true)
+      expect((await take({ key: 'k', limit: 1, windowMs: 60_000 })).ok).toBe(false)
+      expect((await take({ key: 'k', limit: 2, windowMs: 60_000 })).ok).toBe(true)
     })
   })
 })

@@ -18,8 +18,9 @@ import type { LoopFetchResult, LoopItem } from '@core/loops/types'
 import type { SerializedApp, SerializedMember, SerializedUser } from '../protocol/messages'
 import type { LoadPluginResult } from '../protocol/messages'
 import { normalizeRoutePath } from '../protocol/parser'
-import { clientIp } from '../../auth/security'
+import { canonicalIp, clientIp } from '../../auth/security'
 import { materializeRouteResponse, serializeRouteRequest } from './routeIo'
+import { PLUGIN_RATE_LIMIT_KEYS, PluginRateLimitStore } from './pluginRateLimit'
 import { hostPlugins } from './registry'
 import { requestFromWorker } from './workerPool'
 import { describeWorkerError, workerCallError } from './workerErrors'
@@ -67,7 +68,7 @@ export async function loadPluginInWorker(args: {
     mediaAdapters: [],
     mediaUrlTransformers: [],
     inflightFetches: new Map(),
-    rateLimiters: new Map(),
+    rateLimits: new PluginRateLimitStore(PLUGIN_RATE_LIMIT_KEYS),
   })
 
   const correlationId = nanoid()
@@ -204,9 +205,11 @@ export async function runRouteInWorker(args: {
   // read once as raw bytes, pre-parsed conveniences (JSON / form fields /
   // multipart files) are derived from those exact bytes, and binary
   // payloads cross the worker boundary base64-encoded.
-  // Exactly core's answer to where the caller is, proxy trust applied. The
-  // serialized headers below leave out the peer address it is built from.
-  const ip = clientIp(args.request)
+  // Exactly core's answer to where the caller is, proxy trust applied, in
+  // one spelling per address so a plugin keying on it sees one visitor as
+  // one key. The serialized headers below leave out the peer address.
+  const peer = clientIp(args.request)
+  const ip = peer === null ? null : canonicalIp(peer)
   const { request: serializedReq, body: parsedBody } = await serializeRouteRequest(args.request)
 
   const result = await requestFromWorker(

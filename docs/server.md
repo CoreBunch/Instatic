@@ -318,7 +318,7 @@ Use `binaryResponse` whenever a route handler returns binary content (runtime as
 | `dataAccess.ts`   | Table-family and row-ownership rules for data rows (`canReadTable`, `canReadDataRow`, `resolveRowAccess`, `rowVisibilityFor`), shared by the HTTP data handlers, the AI read tools, and the MCP relay |
 | `lockout.ts`      | Failed-login lockout policy                                                |
 | `mfa.ts`          | TOTP enrollment, verification                                              |
-| `rateLimit.ts`    | Token-bucket rate limiters                                                 |
+| `rateLimit.ts`    | Sliding-window rate limiters (sign-in, MFA, members)                       |
 | `security.ts`     | `isStateChangingMethod`, `originAllowed`, `configurePublicOrigins`, `DEV_ORIGIN_ALLOWLIST`, IP stamp |
 | `deviceLabel.ts`  | Device-fingerprint label for the sessions panel                            |
 
