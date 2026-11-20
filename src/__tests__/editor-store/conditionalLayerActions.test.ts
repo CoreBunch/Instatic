@@ -131,7 +131,7 @@ describe('duplicateClass preserves context overrides', () => {
   })
 })
 
-describe('removeClassStyleProperty clears context overrides too', () => {
+describe('clearClassStyleProperties clears context overrides too', () => {
   it('"clear everywhere" removes the property from a condition context', () => {
     freshStore()
     const id = classId()
@@ -139,7 +139,7 @@ describe('removeClassStyleProperty clears context overrides too', () => {
     const cid = useEditorStore.getState().addClassCondition(id, { kind: 'media', query: '(max-width: 600px)' })!
     useEditorStore.getState().setClassContextStyles(id, cid, { display: 'grid' })
 
-    useEditorStore.getState().removeClassStyleProperty(id, 'display')
+    useEditorStore.getState().clearClassStyleProperties(id, ['display'])
 
     const cls = useEditorStore.getState().site!.styleRules[id]
     expect(cls.styles).not.toHaveProperty('display')

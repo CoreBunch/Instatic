@@ -95,7 +95,6 @@
 .nodeViewSwitcher .nodeViewButton {
     height: auto;
     padding: 0;
-    border-radius: var(--radius-sm);
     color: var(--text-disabled);
     font-size: var(--text-2xs);
     font-weight: 800;

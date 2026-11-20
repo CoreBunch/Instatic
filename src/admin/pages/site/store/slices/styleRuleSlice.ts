@@ -64,6 +64,9 @@ export const createStyleRuleSlice: EditorStoreSliceCreator<StyleRuleSlice> = (se
     activeClassId: null,
     inlineStyleEditing: false,
     previewClassAssignment: null,
+    radiusScope: null,
+    gradientPickerOpen: false,
+    previewInlineStyles: null,
     previewClassStyles: null,
 
     // ─── Action surface ────────────────────────────────────────────────────
