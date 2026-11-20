@@ -18,6 +18,7 @@ export default function FrameworkColorPicker({ value, gradients, onChange }: {
   function saveColor(name: string, color: string, bind: boolean) {
     try {
       const saved = create({ slug: name, lightValue: color, darkModeEnabled: false })
+      if (!saved) return false
       if (bind) onChange(`var(--${saved.slug})`)
       pushToast({ kind: 'success', title: `Saved --${saved.slug} to Framework colors` })
       return true
@@ -27,5 +28,5 @@ export default function FrameworkColorPicker({ value, gradients, onChange }: {
     }
   }
   return <ColorPicker value={resolveColorPreview(value, tokens)} gradients={gradients} tokens={tokens}
-    onSaveColor={canEditStyle ? saveColor : undefined} onChange={onChange} onSelectToken={onChange} />
+    onSaveColor={canEditStyle ? saveColor : undefined} onChange={onChange} />
 }

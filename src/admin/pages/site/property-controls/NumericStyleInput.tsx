@@ -1,9 +1,5 @@
 import { useEffect, useRef, useState, type ComponentProps } from 'react'
-import { Input } from '@ui/components/Input'
-import { Button } from '@ui/components/Button'
-import { ChevronUpIcon } from 'pixel-art-icons/icons/chevron-up'
-import { ChevronDownIcon } from 'pixel-art-icons/icons/chevron-down'
-import styles from './controls.module.css'
+import { Input, InputStepper } from '@ui/components/Input'
 
 interface NumericStyleProps extends ComponentProps<typeof Input> {
   onAdjust?: (value: string) => void
@@ -73,16 +69,9 @@ export function NumericStyleInput({ onAdjust, onScrubPreview, onClearPreview, va
         onAdjust(adjust(source, (event.key === 'ArrowUp' ? 1 : -1) * (event.shiftKey ? 10 : 1)))
       } else props.onKeyDown?.(event)
     }}
-    trailingSlot={showStepper ? <span hidden={!adjustable} className={styles.numericSteps}>
-      {([1, -1] as const).map((sign) => {
-        const Icon = sign === 1 ? ChevronUpIcon : ChevronDownIcon
-        return <Button key={sign} variant="ghost" size="micro" iconOnly tabIndex={-1}
-          className={styles.numericStep} aria-label={`${sign === 1 ? 'Increase' : 'Decrease'} ${props['aria-label'] ?? 'value'}`}
-          onMouseDown={(event) => event.preventDefault()}
-          onClick={(event) => onAdjust(adjust(source, sign * (event.shiftKey ? 10 : 1)))}>
-          <Icon size={9} />
-        </Button>
-      })}
-    </span> : undefined}
+    trailingSlot={showStepper ? (
+      <InputStepper label={props['aria-label'] ?? 'value'} hidden={!adjustable}
+        onStep={(steps) => onAdjust(adjust(source, steps))} />
+    ) : undefined}
   />
 }

@@ -1,18 +1,6 @@
-/**
- * Gradient maths for the rich colour picker.
- *
- * Parses the gradient shapes the picker edits — `linear-gradient(...)`,
- * `radial-gradient(...)` and `conic-gradient(...)` — into a stop list the picker's fill tabs can
- * manipulate, and formats them back to canonical CSS. Stops whose colour the
- * solid-colour parser cannot read (`var()` references, `color-mix(...)`)
- * make the whole gradient unparseable on purpose: the picker then starts
- * from its defaults instead of silently corrupting a hand-authored value.
- *
- * Formatting is canonical by construction (numeric angle, sorted stops,
- * `formatColor` output), which is what makes a formatted gradient safe to
- * write into an inline CSS custom property without further escaping.
- */
+/** Parse and serialize gradients that the visual editor can represent. */
 
+import { splitCssList } from '@ui/lib/cssValueList'
 import { clamp } from '@ui/lib/clamp'
 import {
   formatColor,
@@ -31,6 +19,8 @@ export interface GradientStop {
 
 export interface Gradient {
   kind: GradientKind
+  /** Radial gradients default to an ellipse when no shape is authored. */
+  radialShape?: 'ellipse' | 'circle'
   /** Degrees — linear direction / conic `from` angle. Radial ignores it. */
   angle: number
   /** At least two stops, sorted by `pos`. */
@@ -45,55 +35,32 @@ const SIDE_ANGLES: Record<string, number> = {
   'to right': 90,
   'to bottom': 180,
   'to left': 270,
-  'to top right': 45,
-  'to right top': 45,
-  'to bottom right': 135,
-  'to right bottom': 135,
-  'to bottom left': 225,
-  'to left bottom': 225,
-  'to top left': 315,
-  'to left top': 315,
-}
-
-export function isGradient(value: string): boolean {
-  return GRADIENT_RE.test(value.trim())
 }
 
 export function parseGradient(input: string): Gradient | null {
   const match = GRADIENT_RE.exec(input.trim())
   if (!match) return null
   const kind = match[1].toLowerCase() as GradientKind
-  const args = splitTopLevel(match[2])
+  const args = splitCssList(match[2])
   if (args.length === 0) return null
 
   let angle = kind === 'conic' ? 0 : 180
+  let radialShape: Gradient['radialShape']
   let stopArgs = args
-
-  if (kind === 'conic') {
-    const from = /^from\s+(-?\d+(?:\.\d+)?)deg(?:\s+at\s+.*)?$/.exec(args[0].toLowerCase())
-    if (from) {
-      angle = normalizeAngle(Number.parseFloat(from[1]))
+  const first = args[0].toLowerCase()
+  if (kind === 'radial') {
+    radialShape = first === 'circle' ? 'circle' : 'ellipse'
+    if (first === 'circle' || first === 'ellipse') stopArgs = args.slice(1)
+  } else {
+    const anglePattern = kind === 'conic' ? /^from\s+([+-]?[\d.]+)deg$/ : /^([+-]?[\d.]+)deg$/
+    const deg = anglePattern.exec(first)
+    if (deg && Number.isFinite(Number(deg[1]))) {
+      angle = normalizeAngle(Number(deg[1]))
       stopArgs = args.slice(1)
-    } else if (!splitStop(args[0]).colorText || parseColor(splitStop(args[0]).colorText) === null) {
-      // `at center` and friends — dropped; the picker re-emits only `from`.
-      stopArgs = args.slice(1)
-    }
-  } else if (kind === 'linear') {
-    const first = args[0].toLowerCase()
-    const deg = /^(-?\d+(?:\.\d+)?)deg$/.exec(first)
-    if (deg) {
-      angle = normalizeAngle(Number.parseFloat(deg[1]))
-      stopArgs = args.slice(1)
-    } else if (first in SIDE_ANGLES) {
+    } else if (kind === 'linear' && Object.hasOwn(SIDE_ANGLES, first)) {
       angle = SIDE_ANGLES[first]
       stopArgs = args.slice(1)
-    } else if (first.startsWith('to ')) {
-      return null
     }
-  } else if (!splitStop(args[0]).colorText || parseColor(splitStop(args[0]).colorText) === null) {
-    // Radial preludes (`circle`, `ellipse at center`, ...) are dropped — the
-    // picker always re-emits `circle`.
-    stopArgs = args.slice(1)
   }
 
   if (stopArgs.length < 2) return null
@@ -102,11 +69,11 @@ export function parseGradient(input: string): Gradient | null {
   for (const arg of stopArgs) {
     const { colorText, pos } = splitStop(arg)
     const color = parseColor(colorText)
-    if (!color) return null
+    if (!color || (pos !== null && (pos < 0 || pos > 1))) return null
     raw.push({ color, pos })
   }
 
-  return { kind, angle, stops: distributePositions(raw) }
+  return { kind, angle, radialShape, stops: distributePositions(raw) }
 }
 
 export function formatGradient(gradient: Gradient, format: ColorFormat): string {
@@ -115,12 +82,12 @@ export function formatGradient(gradient: Gradient, format: ColorFormat): string 
     .map((stop) => `${formatColor(stop.color, format)} ${formatPercent(stop.pos)}%`)
     .join(', ')
   if (gradient.kind === 'linear') {
-    return `linear-gradient(${Math.round(normalizeAngle(gradient.angle))}deg, ${stops})`
+    return `linear-gradient(${normalizeAngle(gradient.angle)}deg, ${stops})`
   }
   if (gradient.kind === 'conic') {
-    return `conic-gradient(from ${Math.round(normalizeAngle(gradient.angle))}deg, ${stops})`
+    return `conic-gradient(from ${normalizeAngle(gradient.angle)}deg, ${stops})`
   }
-  return `radial-gradient(circle, ${stops})`
+  return `radial-gradient(${gradient.radialShape ?? 'circle'}, ${stops})`
 }
 
 /** The colour at `pos`, linearly interpolated between the surrounding stops. */
@@ -151,32 +118,12 @@ export function gradientColorAt(stops: readonly GradientStop[], pos: number): Rg
 // Internals
 // ---------------------------------------------------------------------------
 
-/** Split on commas that sit outside parentheses (`rgb(1, 2, 3)` stays whole). */
-function splitTopLevel(body: string): string[] {
-  const parts: string[] = []
-  let depth = 0
-  let current = ''
-  for (const char of body) {
-    if (char === '(') depth++
-    else if (char === ')') depth--
-    if (char === ',' && depth === 0) {
-      parts.push(current.trim())
-      current = ''
-      continue
-    }
-    current += char
-  }
-  const tail = current.trim()
-  if (tail) parts.push(tail)
-  return parts
-}
-
 function splitStop(arg: string): { colorText: string; pos: number | null } {
   const match = /^(.*?)\s+(-?\d+(?:\.\d+)?)%$/.exec(arg.trim())
   if (!match) return { colorText: arg.trim(), pos: null }
   return {
     colorText: match[1].trim(),
-    pos: clamp(Number.parseFloat(match[2]) / 100, 0, 1),
+    pos: Number.parseFloat(match[2]) / 100,
   }
 }
 

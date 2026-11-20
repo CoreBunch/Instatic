@@ -7,7 +7,7 @@
     width: min(var(--floating-panel-width), calc(100vw - 16px));
     left: var(--floating-panel-x);
     top: var(--floating-panel-y);
-    z-index: var(--color-picker-z-index);
+    z-index: var(--floating-panel-z-index);
     max-height: calc(100vh - 16px);
     overflow-y: auto;
     border: 1px solid var(--border-muted);
@@ -58,7 +58,6 @@
     text-overflow: ellipsis;
     white-space: nowrap;
 }
-
 
 .content { display: contents; }
 .content[data-drilled] { display: none; }

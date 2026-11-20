@@ -38,31 +38,12 @@ export interface Hsva {
 export const COLOR_FORMATS = ['hex', 'rgb', 'hsl'] as const
 export type ColorFormat = (typeof COLOR_FORMATS)[number]
 
-const HEX_RE = /^#([0-9a-f]{3,8})$/i
-const RGB_RE = /^rgba?\(([^()]+)\)$/i
-const HSL_RE = /^hsla?\(([^()]+)\)$/i
-
-/** Safe-to-inline CSS colour values (also permits `var(--token)` references). */
-const HEX_SWATCH_RE = /^#(?:[0-9a-f]{3}|[0-9a-f]{4}|[0-9a-f]{6}|[0-9a-f]{8})$/i
-const FUNCTION_SWATCH_RE = /^(?:rgb|rgba|hsl|hsla)\([0-9a-z.%\s,+/-]+\)$/i
-const CSS_VARIABLE_RE = /^var\(--[a-z0-9_-]+\)$/i
+const HEX_RE = /^#([0-9a-f]{3,4}|[0-9a-f]{6}|[0-9a-f]{8})$/i
+const FUNCTION_RE = /^(rgb|hsl)a?\(([^()]+)\)$/i
+const CHANNEL_RE = /^[+-]?(?:\d*\.)?\d+%?$/
+const HUE_RE = /^([+-]?(?:\d*\.)?\d+)(deg|grad|turn|rad)?$/i
 
 export const BLACK: Rgba = { r: 0, g: 0, b: 0, a: 1 }
-
-/**
- * Guard a value before it is written into an inline CSS custom property.
- * Anything that isn't a plain hex / colour-function / `var()` reference —
- * or that carries CSS or markup punctuation — collapses to `fallback`.
- */
-export function safeCssColor(value: unknown, fallback = '#000000'): string {
-  const next = typeof value === 'string' ? value.trim() : ''
-  if (!next || next.length > 120) return fallback
-  if (/[;{}<>]/.test(next)) return fallback
-  if (HEX_SWATCH_RE.test(next)) return next
-  if (FUNCTION_SWATCH_RE.test(next)) return next
-  if (CSS_VARIABLE_RE.test(next)) return next
-  return fallback
-}
 
 export function parseColor(input: string): Rgba | null {
   const value = input.trim()
@@ -71,41 +52,38 @@ export function parseColor(input: string): Rgba | null {
   const hex = HEX_RE.exec(value)
   if (hex) return parseHex(hex[1])
 
-  const rgb = RGB_RE.exec(value)
-  if (rgb) {
-    const parts = splitArgs(rgb[1])
-    if (parts.length < 3) return null
-    return {
-      r: parseChannel(parts[0]),
-      g: parseChannel(parts[1]),
-      b: parseChannel(parts[2]),
-      a: parseAlpha(parts[3]),
-    }
+  if (value.toLowerCase() === 'transparent') return { ...BLACK, a: 0 }
+  const fn = FUNCTION_RE.exec(value)
+  if (!fn) return null
+  const body = fn[2].trim()
+  const legacy = body.includes(',')
+  const [channels, alpha, ...extra] = legacy ? [body] : body.split('/')
+  if (extra.length) return null
+  const parts = legacy ? channels.split(',').map((part) => part.trim()) : channels.trim().split(/\s+/)
+  const opacity = legacy && parts.length === 4 ? parts.pop() : alpha?.trim()
+  if (parts.length !== 3 || (opacity !== undefined && !CHANNEL_RE.test(opacity))) return null
+  const [first, second, third] = parts
+  const a = parseAlpha(opacity)
+  if (fn[1].toLowerCase() === 'rgb') {
+    if (!parts.every((part) => CHANNEL_RE.test(part))) return null
+    return { r: parseChannel(first), g: parseChannel(second), b: parseChannel(third), a }
   }
-
-  const hsl = HSL_RE.exec(value)
-  if (hsl) {
-    const parts = splitArgs(hsl[1])
-    if (parts.length < 3) return null
-    return hslToRgba(
-      normalizeHue(Number.parseFloat(parts[0])),
-      clamp(Number.parseFloat(parts[1]) / 100, 0, 1),
-      clamp(Number.parseFloat(parts[2]) / 100, 0, 1),
-      parseAlpha(parts[3]),
-    )
-  }
-
-  return null
+  const hue = HUE_RE.exec(first)
+  if (!hue || ![second, third].every((part) => CHANNEL_RE.test(part) && part.endsWith('%'))) return null
+  const units = hue[2]?.toLowerCase()
+  const factor = units === 'turn' ? 360 : units === 'rad' ? 180 / Math.PI : units === 'grad' ? 0.9 : 1
+  return hslToRgba(normalizeHue(Number(hue[1]) * factor),
+    clamp(parseFloat(second) / 100, 0, 1), clamp(parseFloat(third) / 100, 0, 1), a)
 }
 
 export function formatColor(rgba: Rgba, format: ColorFormat): string {
   const r = Math.round(clamp(rgba.r, 0, 255))
   const g = Math.round(clamp(rgba.g, 0, 255))
   const b = Math.round(clamp(rgba.b, 0, 255))
-  const a = roundAlpha(rgba.a)
+  const a = clamp(rgba.a, 0, 1)
 
   if (format === 'rgb') {
-    return a === 1 ? `rgb(${r}, ${g}, ${b})` : `rgba(${r}, ${g}, ${b}, ${a})`
+    return a === 1 ? `rgb(${r}, ${g}, ${b})` : `rgba(${r}, ${g}, ${b}, ${roundAlpha(a)})`
   }
 
   if (format === 'hsl') {
@@ -115,7 +93,7 @@ export function formatColor(rgba: Rgba, format: ColorFormat): string {
     const ll = Math.round(l * 100)
     return a === 1
       ? `hsl(${hh}, ${ss}%, ${ll}%)`
-      : `hsla(${hh}, ${ss}%, ${ll}%, ${a})`
+      : `hsla(${hh}, ${ss}%, ${ll}%, ${roundAlpha(a)})`
   }
 
   const base = `#${toHex(r)}${toHex(g)}${toHex(b)}`
@@ -170,13 +148,6 @@ export function opaqueCss(hsva: Hsva): string {
 // ---------------------------------------------------------------------------
 // Internals
 // ---------------------------------------------------------------------------
-
-function splitArgs(body: string): string[] {
-  return body
-    .split(/[\s,/]+/)
-    .map((part) => part.trim())
-    .filter(Boolean)
-}
 
 function parseHex(digits: string): Rgba | null {
   const expand = (pair: string) => Number.parseInt(pair, 16)
@@ -255,7 +226,7 @@ function normalizeHue(value: number): number {
 }
 
 function roundAlpha(value: number): number {
-  return Math.round(clamp(value, 0, 1) * 100) / 100
+  return Math.round(value * 1000) / 1000
 }
 
 function toHex(value: number): string {

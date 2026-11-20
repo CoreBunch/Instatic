@@ -100,10 +100,10 @@
  * rendered below the visual block. */
 .labeledRow {
     display: grid;
-    grid-template-columns: min(32%, 100px) minmax(0, 1fr);
+    grid-template-columns: min(32%, var(--control-label-column)) minmax(0, 1fr);
     align-items: center;
     gap: var(--space-3xs);
-    min-height: 28px;
+    min-height: var(--control-height);
 }
 
 /* Default (no state hint) keeps the secondary-text colour used by

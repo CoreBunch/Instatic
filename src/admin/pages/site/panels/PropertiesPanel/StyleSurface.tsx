@@ -22,6 +22,7 @@
  */
 
 import { useState, useRef, type ReactNode } from 'react'
+import { selectStyleContextId, storedRuleStyles } from '@site/store/useActiveStyleTarget'
 import { useEditorStore } from '@site/store/store'
 import type { AnyModuleDefinition } from '@core/module-engine'
 import type { StyleRule, CSSPropertyBag } from '@core/page-tree'
@@ -38,7 +39,6 @@ import {
   CLASS_STYLE_SECTIONS,
   getCSSPropertyDefaultValue,
   getClassStyleSectionSetCounts,
-  getActiveStyleTab,
 } from './cssControlTypes'
 import { useEditorPreference } from '@site/preferences/editorPreferences'
 import { useEditorPermissions } from '@site/editorPermissionsContext'
@@ -60,7 +60,6 @@ interface StyleSurfaceProps {
   definition?: AnyModuleDefinition | null
   activeClass: StyleRule | null
   activeClassId: string | null
-  activeBreakpointId: string | undefined
   /** Node id — triggers scroll reset when it changes. */
   nodeId: string | null
   /**
@@ -83,7 +82,6 @@ export function StyleSurface({
   definition,
   activeClass,
   activeClassId,
-  activeBreakpointId,
   nodeId,
   inlineStyles,
   moduleContent,
@@ -126,15 +124,7 @@ export function StyleSurface({
   // context switcher (canvas toolbar) can target a custom condition, which
   // wins over the viewport breakpoint; otherwise we fall back to the
   // base/breakpoint resolved by the active viewport.
-  const activeTab = getActiveStyleTab(activeBreakpointId)
-  // Validated active condition id (or null) — stale ids fall back to viewport.
-  const activeConditionId = useEditorStore((s) => {
-    const id = s.activeConditionId
-    if (id === null) return null
-    const cs = s.site?.conditions
-    return cs && cs.some((c) => c.id === id) ? id : null
-  })
-  const activeContextId = activeConditionId ?? (activeTab !== 'base' ? activeTab : null)
+  const activeContextId = useEditorStore(selectStyleContextId)
 
   // Inline-style editing target: a node with no active class that either
   // already has inline styles or opted in via "Style inline". Inline styles are
@@ -149,7 +139,7 @@ export function StyleSurface({
   const storedStyles: Record<string, unknown> = showInline
     ? (inlineStyles ?? {})
     : activeClass
-      ? (activeContextId ? (activeClass.contextStyles[activeContextId] ?? {}) : activeClass.styles)
+      ? storedRuleStyles(activeClass, activeContextId)
       : {}
   const sectionSetCounts = getClassStyleSectionSetCounts(storedStyles)
 
@@ -204,8 +194,7 @@ export function StyleSurface({
     } else {
       cssContent = (
         <StyleRuleComposer
-          key={`${activeClassId}-${activeTab}`}
-          classId={activeClassId!}
+          key={activeClass.id}
           cls={activeClass}
           textElement={definition?.inlineTextEdit != null}
           styleQuery={styleQuery}

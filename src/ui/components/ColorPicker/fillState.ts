@@ -32,9 +32,10 @@ export interface FillState {
   stops: StopState[]
   /** Degrees, linear gradients only. */
   angle: number
+  radialShape?: 'circle' | 'ellipse'
 }
 
-export function initialFill(value: string, gradients: boolean): FillState {
+export function initialFill(value: string, gradients: boolean): FillState | null {
   if (gradients) {
     const gradient = parseGradient(value)
     if (gradient) {
@@ -47,11 +48,13 @@ export function initialFill(value: string, gradients: boolean): FillState {
         hsva: stops[0].hsva,
         stops,
         angle: gradient.angle,
+        radialShape: gradient.radialShape,
       }
     }
   }
-  // Anything unparseable — including a stored `url(...)` — degrades to solid.
-  const hsva = rgbaToHsva(parseColor(value) ?? BLACK)
+  const color = value.trim() ? parseColor(value) : BLACK
+  if (!color) return null
+  const hsva = rgbaToHsva(color)
   return { mode: 'solid', hsva, stops: defaultStops(hsva), angle: 180 }
 }
 
@@ -68,6 +71,7 @@ export function formatFill(fill: FillState, format: ColorFormat): string {
   return formatGradient(
     {
       kind: fill.mode,
+      radialShape: fill.radialShape,
       angle: fill.angle,
       stops: fill.stops.map((stop) => ({ color: hsvaToRgba(stop.hsva), pos: stop.pos })),
     },

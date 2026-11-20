@@ -1,3 +1,4 @@
+import { gradientLayer } from '@site/property-controls/gradientLayer'
 /**
  * CanvasGradientGizmo — direct-manipulation gradient editing on the canvas.
  *
@@ -42,7 +43,7 @@ import {
 } from 'react'
 import { createPortal } from 'react-dom'
 import { useEditorStore } from '@site/store/store'
-import { useActiveStyleTarget } from '@site/store/useActiveStyleTarget'
+import type { ActiveStyleTarget } from '@site/store/useActiveStyleTarget'
 import { useEditorPermissions } from '@site/editorPermissionsContext'
 import {
   formatColor,
@@ -75,6 +76,7 @@ interface UseCanvasGradientGizmoOptions {
   portalTarget: HTMLElement
   portalMode: 'scoped' | 'fixed'
   /** Only the frame the user is actually editing draws the gizmo. */
+  target: ActiveStyleTarget
   active: boolean
 }
 
@@ -96,13 +98,12 @@ export function CanvasGradientGizmo({
   portalTarget,
   portalMode,
   active,
+  target,
 }: UseCanvasGradientGizmoOptions) {
   const permissions = useEditorPermissions()
   const selectedNodeId = useEditorStore((s) => s.selectedNodeId)
   const activeBreakpointId = useEditorStore((s) => s.activeBreakpointId)
-  const target = useActiveStyleTarget()
 
-  const gradientPickerOpen = useEditorStore((s) => s.gradientPickerOpen)
 
   const [rect, setRect] = useState<GizmoRect | null>(null)
   const [drag, setDrag] = useState<DragKind>(null)
@@ -111,7 +112,8 @@ export function CanvasGradientGizmo({
   const nodeCacheRef = useRef<CanvasNodeElementCache | null>(null)
   if (nodeCacheRef.current === null) nodeCacheRef.current = new CanvasNodeElementCache()
 
-  const committedGradient = target ? parseGradient(String(target.styles.backgroundImage ?? '')) : null
+  const layer = gradientLayer(target.styles.backgroundImage)
+  const committedGradient = layer.value ? parseGradient(layer.value) : null
   const gradient = dragGradient ?? committedGradient
   // Only the frame being edited draws the gizmo — and only while a
   // gradient-capable picker popover is open: the gizmo is an editing
@@ -119,12 +121,11 @@ export function CanvasGradientGizmo({
   const show =
     active &&
     permissions.canEditStyle &&
-    gradientPickerOpen &&
     gradient?.kind === 'linear' &&
     selectedNodeId !== null &&
     activeBreakpointId === breakpointId
 
-  const capture = useCanvasStyleGesture(show ? target?.key : undefined)
+  const capture = useCanvasStyleGesture(show ? target.key : undefined)
 
   // Track the element's rect on every frame, like the selection rings — the
   // gizmo has to follow zoom, pan, scroll and layout shifts, and there is no
@@ -145,7 +146,7 @@ export function CanvasGradientGizmo({
     return () => cancelAnimationFrame(frame)
   }, [show, iframeElement, canvasRoot, selectedNodeId])
 
-  if (!show || !iframeElement || !rect || !gradient || !target) return null
+  if (!show || !iframeElement || !rect || !gradient) return null
 
   const axis = gradientAxis(rect, gradient.angle)
 
@@ -176,7 +177,7 @@ export function CanvasGradientGizmo({
 
     let last: string | null = null
     const clear = () => {
-      target!.clearPreview()
+      target.clearPreview()
       setDragGradient(null)
       setDrag(null)
     }
@@ -188,15 +189,15 @@ export function CanvasGradientGizmo({
           ? { ...gradient!, angle: move.shiftKey ? snapAngle(raw) : normalizeAngle(Math.round(raw)) }
           : { ...gradient!, stops: gradient!.stops.map((stop, index) =>
               index === kind.index ? { ...stop, pos: posFromPoint(axis, point) } : stop) }
-        const css = formatGradient(next, 'hex')
+        const css = layer.replace(formatGradient(next, 'hex'))
         if (css === last) return
         last = css
         setDrag(kind)
         setDragGradient(next)
-        target!.previewStyles({ backgroundImage: css })
+        target.previewStyles({ backgroundImage: css })
       },
       end() {
-        if (last !== null) target!.writeStyles({ backgroundImage: last })
+        if (last !== null) target.writeStyles({ backgroundImage: last })
         clear()
       },
       cancel: clear,
@@ -219,7 +220,7 @@ export function CanvasGradientGizmo({
       ...gradient!,
       stops: [...gradient!.stops, { color: gradientColorAt(gradient!.stops, pos), pos }],
     }
-    target!.writeStyles({ backgroundImage: formatGradient(next, 'hex') })
+    target.writeStyles({ backgroundImage: layer.replace(formatGradient(next, 'hex')) })
   }
 
   // Past the axis end, clear of the 100% stop handle — see rotationCapPoint.
@@ -249,7 +250,6 @@ export function CanvasGradientGizmo({
       className={styles.gizmo}
       data-mode={portalMode}
       data-dragging={drag ? 'true' : undefined}
-      data-drag-kind={drag?.kind}
       data-testid="canvas-gradient-gizmo"
       // Contract with ColorInput's outside-close: pressing a gizmo handle
       // must not dismiss the picker popover the gizmo belongs to.
@@ -296,7 +296,7 @@ export function CanvasGradientGizmo({
           if (next === null) return
           event.preventDefault()
           event.stopPropagation()
-          target.writeStyles({ backgroundImage: formatGradient({ ...gradient, angle: next }, 'hex') })
+          target.writeStyles({ backgroundImage: layer.replace(formatGradient({ ...gradient, angle: next }, 'hex')) })
         }}
       />
 
@@ -326,7 +326,7 @@ export function CanvasGradientGizmo({
               event.preventDefault()
               event.stopPropagation()
               const stops = gradient.stops.map((item, i) => i === index ? { ...item, pos } : item)
-              target.writeStyles({ backgroundImage: formatGradient({ ...gradient, stops }, 'hex') })
+              target.writeStyles({ backgroundImage: layer.replace(formatGradient({ ...gradient, stops }, 'hex')) })
             }}
           />
         )

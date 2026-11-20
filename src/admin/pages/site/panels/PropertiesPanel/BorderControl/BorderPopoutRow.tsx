@@ -5,12 +5,10 @@ import { useEditorStore } from '@site/store/store'
 import { resolveColorPreview } from '@site/property-controls/frameworkColorPreview'
 import { SwatchRow } from '@ui/components/SwatchRow'
 import { FloatingPanel } from '@ui/components/FloatingPanel'
+import { SIDES, borderKey } from './borderSides'
 import styles from './BorderPopoutRow.module.css'
 
 const BorderControl = lazy(() => import('./BorderControl').then((module) => ({ default: module.BorderControl })))
-
-/** Sides in the order the longhands are read for the trigger's summary. */
-const SIDES = ['Top', 'Right', 'Bottom', 'Left'] as const
 
 interface BorderPopoutRowProps {
   storedStyles: Record<string, unknown>
@@ -42,7 +40,7 @@ function seedBorder(): Partial<CSSPropertyBag> {
 
 function readFirstSet(styles: Record<string, unknown>, field: 'Style' | 'Color'): string {
   for (const side of SIDES) {
-    const value = styles[`border${side}${field}`]
+    const value = styles[borderKey(side, field)]
     if (typeof value === 'string' && value.trim() !== '') return value
   }
   return ''
@@ -102,7 +100,6 @@ export function BorderPopoutRow({
       />
 
       {open && <Suspense fallback={null}><FloatingPanel
-        open={open}
         onClose={() => setOpen(false)}
         anchorRef={triggerRef}
         title="Border"
@@ -111,7 +108,6 @@ export function BorderPopoutRow({
         // ⊕ the two scope tiles beside a 52px label, and at 244px the number
         // field had no room left.
         width={288}
-        estimatedHeight={280}
       >
         <div className={styles.popoutBody}>
           <Suspense fallback={null}><BorderControl

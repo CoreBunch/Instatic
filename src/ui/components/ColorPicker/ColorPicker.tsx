@@ -17,6 +17,7 @@ import { Input } from '@ui/components/Input'
 import { SegmentedControl } from '@ui/components/SegmentedControl'
 import { pushToast } from '@ui/components/Toast'
 import { getErrorMessage } from '@core/utils/errorMessage'
+import { isGradientImage } from '@ui/lib/cssValueList'
 import { clamp } from '@ui/lib/clamp'
 import {
   COLOR_FORMATS,
@@ -42,7 +43,6 @@ import { TokenStylesSection, type ColorPickerToken } from './TokenStylesSection'
 import { UnitStepperInput } from './UnitStepperInput'
 import {
   beginDrag,
-  frameThrottle,
   handleGridKeys,
   handleTrackKeys,
 } from './interaction'
@@ -73,9 +73,8 @@ interface ColorPickerProps {
   gradients?: boolean
   /** Site colour tokens offered in the searchable list. Omit to hide the list. */
   tokens?: readonly ColorPickerToken[]
-  /** Fires when a token row is picked, with its `var(--name)` reference. */
+  /** Save the selected color in the site palette; binding is available for solid fills. */
   onSaveColor?: (name: string, color: string, bind: boolean) => boolean
-  onSelectToken?: (reference: string) => void
 }
 
 type PickerVars = CSSProperties & {
@@ -111,17 +110,31 @@ const GRADIENT_TABS: ReadonlyArray<{ value: FillMode; label: string }> = [
   { value: 'conic', label: 'Conic gradient' },
 ]
 
+/** Keep complex CSS editable without reducing it to a default solid or dropping gradient layers. */
+function AuthoredColorInput({ value, gradients, tokens, onChange, onSaveColor }: ColorPickerProps) {
+  const [draft, setDraft] = useState(value)
+  const solid = window.CSS.supports('color', draft)
+  const valid = solid
+    || (gradients && isGradientImage(draft) && window.CSS.supports('background-image', draft))
+  return <div className={styles.picker}>
+    <Input aria-label={gradients ? "CSS color or gradient" : "CSS color"} value={draft} invalid={!valid}
+    onChange={(event) => setDraft(event.target.value)}
+    onKeyDown={(event) => { if (event.key === 'Enter') event.currentTarget.blur() }}
+    onBlur={() => { if (valid && value !== draft.trim()) onChange(draft.trim()) }} />
+    {solid && onSaveColor && <SaveColorForm onSave={(name) => onSaveColor(name, draft.trim(), true)} />}
+    {solid && tokens && tokens.length > 0 && <TokenStylesSection tokens={tokens} onSelectToken={onChange} />}
+  </div>
+}
+
 export function ColorPicker({
   value,
   onChange,
   gradients = false,
   tokens,
-  onSelectToken,
   onSaveColor,
 }: ColorPickerProps) {
   const [format, setFormat] = useState<ColorFormat>(() => detectFormat(value))
-  const [fill, setFill] = useState<FillState>(() => initialFill(value, gradients))
-  const [saveName, setSaveName] = useState<string | null>(null)
+  const [parsedFill, setFill] = useState(() => initialFill(value, gradients))
   const [selectedStop, setSelectedStop] = useState(0)
   const [draft, setDraft] = useState<string | null>(null)
 
@@ -149,6 +162,9 @@ export function ColorPicker({
   }
   useLayoutEffect(() => throttle.cancel(), [externalRevision, throttle])
 
+  if (!parsedFill) return <AuthoredColorInput key={value} value={value} gradients={gradients} tokens={tokens} onChange={onChange} onSaveColor={onSaveColor} />
+
+  const fill = parsedFill
   // In a gradient mode the whole colour surface edits the selected stop.
   const stopIndex = Math.min(selectedStop, fill.stops.length - 1)
   const hsva = fill.mode === 'solid' ? fill.hsva : fill.stops[stopIndex].hsva
@@ -239,7 +255,7 @@ export function ColorPicker({
   function handleStripPointerDown(event: ReactPointerEvent<HTMLDivElement>) {
     const element = event.currentTarget
     const rect = element.getBoundingClientRect()
-    if (rect.width === 0) return
+    if (event.button !== 0 || !event.isPrimary || rect.width === 0) return
     const at = clamp((event.clientX - rect.left) / rect.width, 0, 1)
 
     let baseStops = fill.stops
@@ -254,28 +270,12 @@ export function ColorPicker({
     }
     setSelectedStop(index)
 
-    const applyAt = (clientX: number) => {
-      const pos = clamp((clientX - rect.left) / rect.width, 0, 1)
+    beginDrag(event, (pos) => {
       emit({
         ...fill,
         stops: baseStops.map((stop, i) => (i === index ? { ...stop, pos } : stop)),
       })
-    }
-
-    element.setPointerCapture(event.pointerId)
-    // Frame-throttled like every other picker drag — see interaction.ts.
-    const throttled = frameThrottle<number>(applyAt)
-    const handleMove = (move: PointerEvent) => throttled.push(move.clientX)
-    const handleEnd = () => {
-      element.removeEventListener('pointermove', handleMove)
-      element.removeEventListener('pointerup', handleEnd)
-      element.removeEventListener('pointercancel', handleEnd)
-      throttled.flush()
-    }
-    element.addEventListener('pointermove', handleMove)
-    element.addEventListener('pointerup', handleEnd)
-    element.addEventListener('pointercancel', handleEnd)
-    applyAt(event.clientX)
+    })
   }
 
   function handleStopKey(event: KeyboardEvent<HTMLSpanElement>, index: number) {
@@ -525,25 +525,31 @@ export function ColorPicker({
         </div>
       )}
 
-      {onSaveColor && (saveName === null ? (
-        <Button size="xs" variant="secondary" onClick={() => setSaveName('')}>Save to Framework</Button>
-      ) : (
-        <form className={styles.saveColor} onSubmit={(event) => {
-          event.preventDefault()
-          throttle.flush()
-          if (saveName.trim() && onSaveColor(saveName.trim(), formatColor(hsvaToRgba(hsva), 'hex'), fill.mode === 'solid')) setSaveName(null)
-        }}>
-          <Input autoFocus fieldSize="xs" value={saveName} aria-label="Framework color name"
-            placeholder="Color name" onChange={(event) => setSaveName(event.target.value)} />
-          <Button variant="primary" size="xs" type="submit" disabled={!saveName.trim()}>Save</Button>
-          <Button size="xs" variant="ghost" onClick={() => setSaveName(null)}>Cancel</Button>
-        </form>
-      ))}
+      {onSaveColor && <SaveColorForm onSave={(name) => {
+        throttle.flush()
+        return onSaveColor(name, formatColor(hsvaToRgba(hsva), 'hex'), fill.mode === 'solid')
+      }} />}
       {fill.mode === 'solid' && tokens && tokens.length > 0 && (
-        <TokenStylesSection tokens={tokens} onSelectToken={(ref) => { throttle.flush(); onSelectToken?.(ref) }} />
+        <TokenStylesSection tokens={tokens} onSelectToken={(ref) => { throttle.flush(); onChange(ref) }} />
       )}
     </div>
   )
+}
+
+function SaveColorForm({ onSave }: { onSave: (name: string) => boolean }) {
+  const [name, setName] = useState<string | null>(null)
+  if (name === null) {
+    return <Button size="xs" variant="secondary" onClick={() => setName('')}>Save to Framework</Button>
+  }
+  return <form className={styles.saveColor} onSubmit={(event) => {
+    event.preventDefault()
+    if (name.trim() && onSave(name.trim())) setName(null)
+  }}>
+    <Input autoFocus fieldSize="xs" value={name} aria-label="Framework color name"
+      placeholder="Color name" onChange={(event) => setName(event.target.value)} />
+    <Button variant="primary" size="xs" type="submit" disabled={!name.trim()}>Save</Button>
+    <Button size="xs" variant="ghost" onClick={() => setName(null)}>Cancel</Button>
+  </form>
 }
 
 /** Keep the picker in whatever notation the incoming value already uses. */

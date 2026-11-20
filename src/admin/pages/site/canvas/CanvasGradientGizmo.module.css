@@ -4,17 +4,6 @@
    keep a constant grab size however far the user is zoomed out. */
 
 .gizmo {
-    /* Rotation cursor. CSS has no native "rotate" keyword, so the glyph is an
-       inline SVG: a circular arrow, white over a heavy dark outline so it
-       stays readable on light and dark artwork alike. The colours are written
-       as %23-escaped literals because a data URI is opaque to the design-token
-       scan and cannot reference var() from inside — same absolute-sRGB
-       reasoning as --picker-white. Declared once here because both the end cap
-       and the drag shield paint it. The 12 12 hotspot is the glyph's centre.
-       ponytail: one static glyph. Rendering eight variants rotated in 45°
-       steps so the arrow tracks the current angle is the upgrade, and it needs
-       a cursor swap per frame during the drag to be worth anything. */
-    --cursor-rotate: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24'><g fill='none' stroke='%23111827' stroke-width='4' stroke-linecap='round' stroke-linejoin='round'><path d='M19.5 12a7.5 7.5 0 1 1-2.2-5.3'/><path d='M17.3 2.5v4.4h-4.4'/></g><g fill='none' stroke='%23ffffff' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'><path d='M19.5 12a7.5 7.5 0 1 1-2.2-5.3'/><path d='M17.3 2.5v4.4h-4.4'/></g></svg>") 12 12, grab;
     position: absolute;
     inset: 0;
     z-index: 53;
@@ -99,7 +88,7 @@
     border: 2px solid var(--picker-white);
     background: var(--scrim-40);
     box-shadow: 0 0 0 1px var(--scrim-50);
-    cursor: var(--cursor-rotate);
+    cursor: grab;
 }
 
 /* Stop handle — filled with the stop's own colour over a checkerboard, so a
@@ -117,6 +106,7 @@
     cursor: grab;
 }
 
+.endCap:active,
 .stopHandle:active {
     cursor: grabbing;
 }
@@ -142,15 +132,7 @@
     position: fixed;
     inset: 0;
     pointer-events: auto;
-    user-select: none;
-}
-
-.gizmo[data-drag-kind="stop"] .dragShield {
     cursor: grabbing;
-}
-
-.gizmo[data-drag-kind="angle"] .dragShield {
-    cursor: var(--cursor-rotate);
 }
 
 /* Live read-out of the value being dragged. Shown only during a drag, because

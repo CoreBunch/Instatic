@@ -1,5 +1,7 @@
 /** Translate inspector effects to CSS while preserving sibling shadows and filter functions. */
 
+import { splitCssList } from '@ui/lib/cssValueList'
+
 export interface ShadowEffect {
   /** `inset` keyword — the difference between a drop and an inner shadow. */
   inset: boolean
@@ -11,30 +13,6 @@ export interface ShadowEffect {
   color: string
 }
 
-/**
- * Split on separators that are NOT inside parentheses, so `rgba(0, 0, 0, .3)`
- * survives a comma split and `blur(4px) drop-shadow(0 1px 2px)` survives a
- * space split.
- */
-function splitTopLevel(value: string, separator: ',' | ' '): string[] {
-  const parts: string[] = []
-  let depth = 0
-  let current = ''
-  for (const char of value) {
-    if (char === '(') depth += 1
-    if (char === ')') depth = Math.max(0, depth - 1)
-    const isSeparator = depth === 0 && (separator === ',' ? char === ',' : /\s/.test(char))
-    if (isSeparator) {
-      if (current.trim() !== '') parts.push(current.trim())
-      current = ''
-      continue
-    }
-    current += char
-  }
-  if (current.trim() !== '') parts.push(current.trim())
-  return parts
-}
-
 /** A CSS length/number — everything else in a shadow is the colour. */
 function isLength(token: string): boolean {
   return /^[+-]?(\d+\.?\d*|\.\d+)([a-z%]*)$/i.test(token)
@@ -43,11 +21,11 @@ function isLength(token: string): boolean {
 const NONE_VALUES = new Set(['', 'none', 'initial', 'inherit', 'unset', 'revert', 'revert-layer'])
 
 export function hasCustomShadow(value: unknown): boolean {
-  return typeof value === 'string' && splitTopLevel(value, ',').some((layer) => !parseShadow(layer))
+  return typeof value === 'string' && splitCssList(value, ',').some((layer) => !parseShadow(layer))
 }
 
 function parseShadow(declaration: string): ShadowEffect | null {
-  const tokens = splitTopLevel(declaration, ' ')
+  const tokens = splitCssList(declaration, ' ')
   if (tokens.length === 0) return null
 
   const inset = tokens.some((token) => token.toLowerCase() === 'inset')
@@ -83,7 +61,7 @@ export function formatShadow(shadow: ShadowEffect): string {
 /** Replace only the edited layer, retaining unrecognised and token-based shadows verbatim. */
 export function changeShadow(value: unknown, index: number | null, next: ShadowEffect | null): string | undefined {
   const layers = typeof value === 'string' && !NONE_VALUES.has(value.trim().toLowerCase())
-    ? splitTopLevel(value, ',') : []
+    ? splitCssList(value, ',') : []
   if (index === null && next) layers.push(formatShadow(next))
   else if (index !== null) layers.splice(index, 1, ...(next ? [formatShadow(next)] : []))
   return layers.join(', ') || undefined
@@ -106,7 +84,7 @@ function stripUnit(length: string): string {
 /** The `blur()` argument, or null when the list has no blur. */
 export function readBlur(value: unknown): string | null {
   if (typeof value !== 'string') return null
-  const fn = splitTopLevel(value, ' ').find((part) => /^blur\(/i.test(part))
+  const fn = splitCssList(value, ' ').find((part) => /^blur\(/i.test(part))
   return fn?.slice(5, -1).trim() ?? null
 }
 
@@ -119,7 +97,7 @@ export function writeBlur(value: unknown, next: string | null): string | undefin
   const source = typeof value === 'string' && !NONE_VALUES.has(value.trim().toLowerCase())
     ? value
     : ''
-  const list = splitTopLevel(source, ' ')
+  const list = splitCssList(source, ' ')
   const index = list.findIndex((fn) => /^blur\(/i.test(fn))
   const replacement = next && next.trim() ? [`blur(${next.trim()})`] : []
   list.splice(index < 0 ? 0 : index, index < 0 ? 0 : 1, ...replacement)
@@ -175,7 +153,7 @@ export interface EffectEntry {
  */
 export function readEffects(styles: Record<string, unknown>): EffectEntry[] {
   const entries: EffectEntry[] = []
-  splitTopLevel(String(styles.boxShadow ?? ''), ',').forEach((layer, shadowIndex) => {
+  splitCssList(String(styles.boxShadow ?? ''), ',').forEach((layer, shadowIndex) => {
     const shadow = parseShadow(layer)
     if (!shadow) return
     entries.push({

@@ -9,6 +9,7 @@ import { createContext } from 'react'
 
 /** A drilled-in view: contextual header title + how to get back. */
 export interface FloatingPanelDrill {
+  anchor: HTMLElement | null
   title: string
   onBack: () => void
 }

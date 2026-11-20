@@ -6,8 +6,7 @@
 .propertyRowWrap {
     position: relative;
     color: var(--text);
-    --class-remove-label-column: 100px;
-    --class-remove-row-center: 14px;
+    --class-remove-row-center: calc(var(--control-height) / 2);
     --class-remove-button-size: 22px;
     --class-remove-fade-width: 36px;
     --class-remove-row-bg: var(--bg-body);
@@ -26,7 +25,7 @@
         var(--class-remove-row-center) - (var(--class-remove-button-size) / 2)
     );
     left: calc(
-        var(--class-remove-label-column) - var(--class-remove-fade-width)
+        var(--control-label-column) - var(--class-remove-fade-width)
     );
     z-index: 1;
     width: var(--class-remove-fade-width);
@@ -59,7 +58,7 @@
         var(--class-remove-row-center) - (var(--class-remove-button-size) / 2)
     );
     left: calc(
-        var(--class-remove-label-column) - var(--class-remove-button-size) - 4px
+        var(--control-label-column) - var(--class-remove-button-size) - 4px
     );
     z-index: 2;
     opacity: 0;

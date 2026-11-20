@@ -295,7 +295,7 @@ function StyleSectionGroup({
         )}
         {rows.map((prop) => {
           if (prop === 'backgroundColor') return <FillRow key={prop} current={currentStyles} stored={storedStyles} onChangeMany={onChangeMany} />
-          if (prop === 'borderRadius') return <RadiusRow onPreview={onPreview} onClearPreview={onClearPreview} key={prop} current={currentStyles} onChangeMany={onChangeMany} />
+          if (prop === 'borderRadius') return <RadiusRow stored={storedStyles} onPreview={onPreview} onClearPreview={onClearPreview} key={prop} current={currentStyles} onChangeMany={onChangeMany} />
           if (section.id === 'effects' && !searching && readEffects({ [prop]: currentStyles[prop] }).length > 0) {
             // Keep raw compound CSS editable alongside a visual effect when it carries other functions or tokens.
             if (prop === 'boxShadow' && !hasCustomShadow(currentStyles[prop])) return null

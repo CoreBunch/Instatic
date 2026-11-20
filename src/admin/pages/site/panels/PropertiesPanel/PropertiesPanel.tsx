@@ -210,7 +210,6 @@ export function PropertiesPanel({ variant = 'floating' }: PropertiesPanelProps) 
           selectedSelectorClassId={data.selectedSelectorClassId}
           selectedSelectorClassIds={data.selectedSelectorClassIds}
           isSelectorMultiSelect={data.isSelectorMultiSelect}
-          activeBreakpointId={data.activeBreakpointId}
           isMultiSelect={data.isMultiSelect}
           selectedNodeIds={data.selectedNodeIds}
           selectedNode={data.selectedNode}

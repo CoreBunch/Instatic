@@ -1,7 +1,7 @@
 import { afterEach, expect, it } from 'bun:test'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { useState } from 'react'
-import { ColorPicker } from '@ui/components/ColorPicker'
+import { ColorPicker, formatColor, parseColor, parseGradient, formatGradient } from '@ui/components/ColorPicker'
 
 afterEach(cleanup)
 
@@ -55,4 +55,29 @@ it('positions, inserts and deletes radial gradient stops with the keyboard', asy
   expect(screen.queryByRole('slider', { name: 'Fill stop 3 position' })).toBeNull()
   expect(document.activeElement).toBe(screen.getByRole('slider', { name: 'Fill stop 2 position' }))
   await waitFor(() => expect(stored.textContent?.toLowerCase()).toBe('radial-gradient(circle, #000000 10%, #ffffff 100%)'))
+})
+
+
+it('rejects malformed channels and preserves authored hue units and hex alpha', () => {
+  expect(parseColor('rgb(bad 10 20)')).toBeNull()
+  expect(parseColor('hsl(0 80% 50% / nope)')).toBeNull()
+  expect(parseColor('rgb(1, 2 / 3)')).toBeNull()
+  expect(formatColor(parseColor('hsl(.5turn 100% 50%)')!, 'hex')).toBe('#00ffff')
+  expect(formatColor(parseColor('#abcdef01')!, 'hex')).toBe('#abcdef01')
+})
+
+it('opens authored gradients outside the visual model as editable CSS', () => {
+  const value = 'conic-gradient(at 25% 75%, var(--brand), #123, #abc)'
+  render(<ControlledPicker initialValue={value} />)
+  const field = screen.getByRole('textbox', { name: 'CSS color or gradient' }) as HTMLInputElement
+  expect(field.value).toBe(value)
+  expect(screen.queryByRole('slider')).toBeNull()
+  expect(screen.getByLabelText('Stored fill').textContent).toBe(value)
+})
+
+it('keeps implicit radial geometry and refuses unrepresentable stop values', () => {
+  const radial = parseGradient('radial-gradient(#123, #abc)')!
+  expect(formatGradient(radial, 'hex')).toContain('radial-gradient(ellipse,')
+  expect(parseGradient('radial-gradient(var(--first-stop), #123, #abc)')).toBeNull()
+  expect(parseGradient('linear-gradient(#123 -5%, #abc 35%)')).toBeNull()
 })

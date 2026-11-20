@@ -22,13 +22,14 @@
  *   PP-16 No inline styles, no Tailwind, no !important in new source files (static gate)
  */
 
-import { describe, it, expect, beforeEach, afterEach } from 'bun:test'
+import { describe, it, expect, beforeEach, afterEach, mock } from 'bun:test'
 import React from 'react'
-import { render, screen, cleanup, fireEvent } from '@testing-library/react'
+import { act, render, screen, cleanup, fireEvent } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { readFileSync } from 'fs'
 import { join } from 'path'
 import { PropertiesPanel } from '@site/panels/PropertiesPanel/PropertiesPanel'
+import { FillRow } from '@site/panels/PropertiesPanel/FillRow'
 import { getCSSPropertyDefaultValue } from '@site/panels/PropertiesPanel/cssControlTypes'
 import { useEditorStore } from '@site/store/store'
 import { makeSite, makePage, makeNode } from '../fixtures'
@@ -682,6 +683,24 @@ describe('LayoutSection — clear via active segment X', () => {
     expect(useEditorStore.getState().site!.styleRules[clsId].styles.display).toBeUndefined()
     // After clearing, no segment is pressed.
     expect(screen.getByRole('button', { name: /^flex layout$/i }).getAttribute('aria-pressed')).toBe('false')
+  })
+
+  it('clears display and its dependencies only in the edited custom condition', () => {
+    const { nodeId, classIds: [id] } = loadSiteWithClasses(1)
+    const store = useEditorStore.getState()
+    store.updateClassStyles(id, { display: 'grid', gap: '8px' })
+    const condition = store.addCondition({ kind: 'media', query: 'print' })
+    store.setClassContextStyles(id, condition, { display: 'flex', gap: '2px' })
+    selectNode(nodeId)
+    render(<PropertiesPanel />)
+    fireEvent.click(screen.getByRole('button', { name: /edit class \.class-1/i }))
+    act(() => useEditorStore.setState({ activeConditionId: condition }))
+    fireEvent.click(screen.getByRole('button', { name: /^flex layout$/i }))
+    const rule = useEditorStore.getState().site!.styleRules[id]
+    expect(rule.contextStyles[condition]?.display).toBeUndefined()
+    expect(rule.contextStyles[condition]?.gap).toBeUndefined()
+    expect(rule.styles.display).toBe('grid')
+    expect(rule.styles.gap).toBe('8px')
   })
 
   it('clicking the active grid segment clears display from base styles even when on a breakpoint tab', () => {
@@ -1709,4 +1728,13 @@ describe('PP3-5 — getCSSPropertyDefaultValue per-key reasonableness (MF-B regr
   it('cursor → "default" (explicit, not first-enum "auto")', () => {
     expect(getCSSPropertyDefaultValue('cursor')).toBe('default')
   })
+})
+
+it('clears a gradient while preserving a sibling image and underlying solid fill', () => {
+  const image = 'url("paper), texture.png")'
+  const styles = { backgroundColor: 'navy', backgroundImage: `${image}, linear-gradient(#123, #456)` }
+  const change = mock()
+  render(<FillRow stored={styles} current={styles} onChangeMany={change} />)
+  fireEvent.click(screen.getByRole('button', { name: 'Clear fill' }))
+  expect(change.mock.calls).toEqual([[{ backgroundImage: image }]])
 })

@@ -199,15 +199,6 @@ export interface StyleRuleSlice {
   removeClassContext(classId: string, contextId: string): void
 
   /**
-   * Fully remove a CSS property from a class — from base styles and from every
-   * per-context override. Used by the X / clear affordances on visual switchers
-   * (LayoutSection) where "clear this property" must mean "make it disappear"
-   * regardless of which context is active. No-ops (and does NOT push history)
-   * if the property isn't set anywhere.
-   */
-  removeClassStyleProperty(classId: string, property: keyof CSSPropertyBag): void
-
-  /**
    * Fully remove SEVERAL CSS properties from a class in a single undo step —
    * each from base styles and every per-context override. Used when one action
    * must prune a group of related properties at once (e.g. clearing `display`

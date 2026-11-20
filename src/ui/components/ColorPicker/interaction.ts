@@ -52,7 +52,7 @@ export function beginDrag(
 ) {
   const element = event.currentTarget
   const rect = element.getBoundingClientRect()
-  if (rect.width === 0 || rect.height === 0) return
+  if (event.button !== 0 || !event.isPrimary || rect.width === 0 || rect.height === 0) return
   element.setPointerCapture(event.pointerId)
   element.focus()
 
@@ -62,8 +62,12 @@ export function beginDrag(
   ]
   const throttled = frameThrottle<[number, number]>(([x, y]) => apply(x, y))
 
-  const handleMove = (move: PointerEvent) => throttled.push(toUnit(move.clientX, move.clientY))
-  const handleEnd = () => {
+  const handleMove = (move: PointerEvent) => {
+    if (move.pointerId === event.pointerId) throttled.push(toUnit(move.clientX, move.clientY))
+  }
+  const handleEnd = (end: PointerEvent) => {
+    if (end.pointerId !== event.pointerId) return
+    element.removeEventListener('lostpointercapture', handleEnd)
     element.removeEventListener('pointermove', handleMove)
     element.removeEventListener('pointerup', handleEnd)
     element.removeEventListener('pointercancel', handleEnd)
@@ -71,12 +75,12 @@ export function beginDrag(
   }
 
   element.addEventListener('pointermove', handleMove)
+  element.addEventListener('lostpointercapture', handleEnd)
   element.addEventListener('pointerup', handleEnd)
   element.addEventListener('pointercancel', handleEnd)
   apply(...toUnit(event.clientX, event.clientY))
 }
 
-export { frameThrottle }
 
 export function handleTrackKeys(
   event: KeyboardEvent<HTMLElement>,

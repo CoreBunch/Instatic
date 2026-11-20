@@ -3,7 +3,7 @@ import { LayoutSolidIcon } from 'pixel-art-icons/icons/layout-solid'
 import { Grid2x22SolidIcon } from 'pixel-art-icons/icons/grid-2x2-2-solid'
 import { ClassPropertyRow } from '../ClassPropertyRow'
 import { DropdownSwitcher } from '../DropdownSwitcher'
-import { getEnumOptions, getCSSPropertyDefaultValue } from '../cssControlTypes'
+import { DISPLAY_OPTIONS, getCSSPropertyDefaultValue } from '../cssControlTypes'
 import { hasStyleValue, readString } from '../styleValueUtils'
 import { LabeledControl } from './LabeledControl'
 import { EXTRA_LAYOUT_PROPERTIES } from './extraProperties'
@@ -76,7 +76,6 @@ const DISPLAY_DEPENDENT_PROPS: ReadonlyArray<keyof CSSPropertyBag> = [
 // Display switcher config — Flex | Grid + dropdown of every other value
 // ---------------------------------------------------------------------------
 
-const DISPLAY_OPTIONS = getEnumOptions('display') ?? ['block']
 
 const DISPLAY_PRIMARY_SEGMENTS = [
   {

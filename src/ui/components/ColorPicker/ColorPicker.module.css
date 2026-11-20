@@ -68,21 +68,30 @@
     pointer-events: none;
 }
 
-.stopHandle {
+.stopHandle,
+.saturationHandle,
+.trackHandle {
     position: absolute;
     left: var(--color-picker-x);
-    top: 50%;
     width: 12px;
     height: 12px;
     border: 2px solid var(--picker-white);
     border-radius: 50%;
+    box-shadow: 0 0 0 1px var(--scrim-50);
+    transform: translate(-50%, -50%);
+    pointer-events: none;
+}
+
+.stopHandle,
+.trackHandle {
+    top: 50%;
+}
+
+.stopHandle {
     background:
         linear-gradient(var(--color-picker-swatch), var(--color-picker-swatch)),
         var(--picker-checkerboard);
     background-size: auto, var(--picker-checkerboard-size) var(--picker-checkerboard-size);
-    box-shadow: 0 0 0 1px var(--scrim-50);
-    transform: translate(-50%, -50%);
-    pointer-events: none;
 }
 
 .stopHandleSelected {
@@ -115,16 +124,7 @@
 }
 
 .saturationHandle {
-    position: absolute;
-    left: var(--color-picker-x);
     top: var(--color-picker-y);
-    width: 12px;
-    height: 12px;
-    border: 2px solid var(--picker-white);
-    border-radius: 50%;
-    box-shadow: 0 0 0 1px var(--scrim-50);
-    transform: translate(-50%, -50%);
-    pointer-events: none;
 }
 
 /* --- Hue + alpha tracks -------------------------------------------------- */
@@ -170,17 +170,7 @@
 }
 
 .trackHandle {
-    position: absolute;
-    left: var(--color-picker-x);
-    top: 50%;
-    width: 12px;
-    height: 12px;
-    border: 2px solid var(--picker-white);
-    border-radius: 50%;
     background: var(--color-picker-solid);
-    box-shadow: 0 0 0 1px var(--scrim-50);
-    transform: translate(-50%, -50%);
-    pointer-events: none;
 }
 
 /* --- Text fields --------------------------------------------------------- */
@@ -202,36 +192,6 @@
    Shared by every numeric field in the picker — see UnitStepperInput. */
 .unitInput input {
     padding-right: 0;
-}
-
-.unitStepper {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    opacity: 0;
-    transition: opacity 100ms ease;
-}
-
-/* Bare glyph buttons — no hover pill; colour alone carries the state.
-   Doubled class outguns the Button primitive's own :hover rules. */
-.unitStepper.unitStepper > * {
-    width: 16px;
-    height: 10px;
-    min-height: 0;
-    background: transparent;
-    color: var(--text-subtle);
-}
-
-.unitStepper.unitStepper > *:hover,
-.unitStepper.unitStepper > *:active {
-    background: transparent;
-    color: var(--text);
-}
-
-.unitInput:hover .unitStepper,
-.unitInput:focus-within .unitStepper {
-    opacity: 1;
 }
 
 /* --- Gradient angle ------------------------------------------------------ */
@@ -288,13 +248,6 @@
     font-size: var(--text-2xs);
     text-overflow: ellipsis;
     white-space: nowrap;
-}
-
-.tokenMeta {
-    flex: 0 0 auto;
-    margin-left: auto;
-    color: var(--text-subtle);
-    font-size: var(--text-3xs);
 }
 
 .tokenEmpty {

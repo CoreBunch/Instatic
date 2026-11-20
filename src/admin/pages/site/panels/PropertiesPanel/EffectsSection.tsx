@@ -115,13 +115,11 @@ function EffectRow({ effect, onChangeShadow, onChangeBlur, onClearPreview }: Eff
         <MinusIcon size={12} />
       </Button>
       {open && <Suspense fallback={null}><FloatingPanel
-        open={open}
         onClose={() => setOpen(false)}
         anchorRef={triggerRef}
         title={label}
         closeLabel={`Close ${label} settings`}
         width={286}
-        estimatedHeight={220}
       >
         <EffectParams
           onClearPreview={onClearPreview}

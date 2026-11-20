@@ -11,12 +11,10 @@
  */
 
 import { useEffect } from 'react'
+import { inlineStyleTarget } from '@site/store/useActiveStyleTarget'
 import { useEditorStore } from '@site/store/store'
 import type { CSSPropertyBag } from '@core/page-tree'
 import { StyleSectionsEditor } from './StyleSectionsEditor'
-
-/** Stable empty bag for nodes with no inline styles (avoids a fresh object per render). */
-const EMPTY_STYLES: Record<string, unknown> = {}
 
 interface InlineStyleComposerProps {
   nodeId: string
@@ -28,40 +26,28 @@ interface InlineStyleComposerProps {
 }
 
 export function InlineStyleComposer({ nodeId, inlineStyles, styleQuery, textElement }: InlineStyleComposerProps) {
-  const setNodeInlineStyles = useEditorStore((s) => s.setNodeInlineStyles)
-  const removeNodeInlineStyleProperty = useEditorStore((s) => s.removeNodeInlineStyleProperty)
+  const target = inlineStyleTarget(nodeId, inlineStyles)
+  useEffect(() => () => useEditorStore.getState().setPreviewInlineStyles(nodeId, null), [nodeId])
 
-  const setPreview = useEditorStore((s) => s.setPreviewInlineStyles)
-  useEffect(() => () => setPreview(nodeId, null), [nodeId, setPreview])
-
-  const stored: Record<string, unknown> = inlineStyles ?? EMPTY_STYLES
-
-  const handleChange = (key: keyof CSSPropertyBag, value: string | number | undefined) => {
-    setNodeInlineStyles(nodeId, { [String(key)]: value ?? null })
-  }
-  const handleRemove = (key: keyof CSSPropertyBag) => {
-    removeNodeInlineStyleProperty(nodeId, String(key))
-  }
-  // Clear several properties in one undo step (e.g. display + its flex/grid deps).
-  const handleClearProperties = (keys: ReadonlyArray<keyof CSSPropertyBag>) => {
-    setNodeInlineStyles(nodeId, Object.fromEntries(keys.map((k) => [String(k), null])))
-  }
+  const handleChange = (key: keyof CSSPropertyBag, value: string | number | undefined) =>
+    target.writeStyles({ [key]: value })
+  const handleRemove = (key: keyof CSSPropertyBag) => handleChange(key, undefined)
 
   return (
     <StyleSectionsEditor
       // Inline styles have no context axis; the single bag is both stored and current.
       textElement={textElement}
-      storedStyles={stored}
-      currentStyles={stored}
+      storedStyles={target.styles}
+      currentStyles={target.styles}
       sectionKey="base"
       styleQuery={styleQuery}
       onChange={handleChange}
-      onChangeMany={(patch) => setNodeInlineStyles(nodeId, patch)}
+      onChangeMany={target.writeStyles}
       onRemove={handleRemove}
       onClearProperty={handleRemove}
-      onClearProperties={handleClearProperties}
-      onPreview={(patch) => setPreview(nodeId, patch)}
-      onClearPreview={() => setPreview(nodeId, null)}
+      onClearProperties={(keys) => target.writeStyles(Object.fromEntries(keys.map((key) => [key, undefined])))}
+      onPreview={target.previewStyles}
+      onClearPreview={target.clearPreview}
     />
   )
 }

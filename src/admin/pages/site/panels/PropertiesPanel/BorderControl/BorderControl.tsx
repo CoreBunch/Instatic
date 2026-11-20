@@ -1,35 +1,4 @@
-/**
- * BorderControl — visual per-side border editor + radius corner editor.
- *
- * Replaces the old stack of free-text shorthand rows (border / borderTop /
- * borderRight / … / borderRadius / outline) with a task-shaped widget that
- * mirrors how SpacingBoxControl handles padding & margin:
- *
- *   ┌─ Border ───────────────────────────────┐
- *   │  [⛓]   ┌───────┐    Width  [ 1px    ]   │
- *   │        │ ┌───┐ │    Style  [ solid ▾]   │
- *   │        │ │   │ │    Color  [ ■ #ccc ]   │
- *   │        │ └───┘ │                        │
- *   │        └───────┘                        │
- *   └─────────────────────────────────────────┘
- *
- * Storage model — the per-side longhands are the canonical shape:
- *   borderTopWidth / borderTopStyle / borderTopColor (× right / bottom / left)
- *   borderTopLeftRadius / …RightRadius / …BottomRightRadius / …BottomLeftRadius
- *
- * The CSS shorthands (`border`, `borderTop`, …, `borderRadius`) are no longer
- * the control's source of truth — they live in an "Advanced" disclosure for
- * power users who want to paste a raw shorthand string. The publisher emits the
- * longhands directly (they're in ALLOWED_PROPS); collapsing all-equal sides to
- * the `border:` shorthand at emit time is a follow-up cosmetic optimisation.
- *
- * Link/sync semantics match SpacingBoxControl: when "linked", a write applies
- * to all four sides (or corners); when unlinked, the user picks an active side
- * via the visual box and edits it alone. The control auto-relinks when external
- * changes bring all sides back to a uniform value (React-19 render-time idiom,
- * no effect).
- */
-
+/** Edits per-side border longhands and the outline of the current style target. */
 import { useEffect, useState } from 'react'
 import type { CSSPropertyBag } from '@core/page-tree'
 import { Button } from '@ui/components/Button'
@@ -41,22 +10,10 @@ import { useEditorPreference } from '@site/preferences/editorPreferences'
 import { LinkIcon } from 'pixel-art-icons/icons/link'
 import { CloseIcon } from 'pixel-art-icons/icons/close'
 import { cn } from '@ui/cn'
-import { getEnumOptions } from '../cssControlTypes'
+import { BORDER_STYLE_KEYWORDS } from '../cssControlTypes'
 import styles from './BorderControl.module.css'
 
-// ---------------------------------------------------------------------------
-// Types + key helpers
-// ---------------------------------------------------------------------------
-
-const SIDES = ['Top', 'Right', 'Bottom', 'Left'] as const
-type Side = (typeof SIDES)[number]
-
-
-type BorderField = 'Width' | 'Style' | 'Color'
-
-function borderKey(side: Side, field: BorderField): keyof CSSPropertyBag {
-  return `border${side}${field}` as keyof CSSPropertyBag
-}
+import { SIDES, borderKey, type Side, type BorderField } from './borderSides'
 
 interface BorderControlProps {
   onChangeMany: (patch: Partial<CSSPropertyBag>) => void
@@ -92,7 +49,7 @@ function readSideField(
   for (const side of SIDES) perSide[side] = pickString(styles[borderKey(side, field)])
   const values = SIDES.map((s) => perSide[s])
   const anySet = values.some((v) => v !== '')
-  const uniform = anySet && values.every((v) => v === values[0])
+  const uniform = values.every((v) => v === values[0])
   return { perSide, uniform, anySet }
 }
 
@@ -127,9 +84,7 @@ export function BorderControl({
   const borderUniform = widthState.uniform && styleState.uniform && colorState.uniform
   const borderAnySet = widthState.anySet || styleState.anySet || colorState.anySet
 
-  const [borderLinked, setBorderLinked] = useState<boolean>(() => borderUniform || !borderAnySet)
-  // Auto-relink (never auto-unlink — splitting is a deliberate user action).
-
+  const [borderLinked, setBorderLinked] = useState(borderUniform)
 
   const [activeSide, setActiveSide] = useState<Side>('Top')
 
@@ -155,8 +110,6 @@ export function BorderControl({
   const widthValue = widthState.perSide[editSide]
   const styleValue = styleState.perSide[editSide]
   const colorValue = colorState.perSide[editSide]
-
-  const styleOptions = getEnumOptions('borderTopStyle') ?? []
 
   const widthPlaceholder = widthFallback.perSide[editSide] || '0px'
 
@@ -224,7 +177,7 @@ export function BorderControl({
                 onChange={(e) => writeSide('Style', e.target.value || undefined)}
                 options={[
                   { label: '—', value: '' },
-                  ...styleOptions.map((o) => ({ label: o, value: o })),
+                  ...BORDER_STYLE_KEYWORDS.map((o) => ({ label: o, value: o })),
                 ]}
                 onOptionPreview={previewSide ? (v) => previewSide('Style', v || undefined) : undefined}
                 onOptionPreviewClear={previewSide ? onClearPreview : undefined}

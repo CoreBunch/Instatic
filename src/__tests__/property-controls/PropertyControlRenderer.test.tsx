@@ -105,17 +105,17 @@ describe('PropertyControlRenderer — wrapper (data-testid + minHeight)', () => 
   })
 
   it('wrapper has compact min-height (Guideline #357 — WCAG touch targets waived for editor chrome)', async () => {
-    // Guideline #357: editor chrome controls use compact density (28px)
-    // Post-Task #399: min-height is in ControlRow.module.css, not an inline style.
-    // Source-scan approach: verify min-height is defined in the CSS module.
     const { readFileSync } = await import('fs')
     const css = readFileSync(
       new URL('../../ui/components/ControlRow/ControlRow.module.css', import.meta.url),
       'utf-8',
     )
-    // Accept: min-height: 28px OR min-height: 44px (OR-pattern for migration)
-    const hasHeight = /min-height:\s*(28|44)px/.test(css)
-    expect(hasHeight).toBe(true)
+    const tokens = readFileSync(
+      new URL('../../styles/globals.css', import.meta.url),
+      'utf-8',
+    )
+    expect(css).toMatch(/\.controlWrapper\s*\{[^}]*min-height:\s*var\(--control-height\)/)
+    expect(tokens).toMatch(/--control-height:\s*28px;/)
   })
 
   it('keeps the renderer shell separate from the concrete control layout wrapper', async () => {

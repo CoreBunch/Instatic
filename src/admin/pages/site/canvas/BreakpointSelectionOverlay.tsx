@@ -1,3 +1,4 @@
+import { radiusCorners } from '@site/property-controls/cornerRadii'
 /**
  * BreakpointSelectionOverlay — selection and hover rings for the canvas.
  *
@@ -102,7 +103,7 @@ import {
 import { lazy, Suspense } from 'react'
 import { useActiveStyleTarget } from '@site/store/useActiveStyleTarget'
 import { readCornerRadii, useCanvasRadiusDrag } from './useCanvasRadiusDrag'
-import { positionRadiusHandles, RADIUS_HANDLE_CORNERS } from './canvasSelectionOverlayPositioning'
+import { positionRadiusHandles } from './canvasSelectionOverlayPositioning'
 import styles from './BreakpointSelectionOverlay.module.css'
 
 const GradientGizmo = lazy(() => import('./CanvasGradientGizmo').then((module) => ({ default: module.CanvasGradientGizmo })))
@@ -445,7 +446,7 @@ export function BreakpointSelectionOverlay({
     >
       {showCorners && !gradientOpen && (
         <div ref={radiusLayer} data-canvas-radius-handles="true">
-          {RADIUS_HANDLE_CORNERS.map((corner) => (
+          {radiusCorners.map((corner) => (
             <div key={corner} className={styles.radiusHandle} data-corner={corner}
               aria-hidden="true" onClick={(event) => event.stopPropagation()}
               onPointerDown={(event) => radiusDrag.begin(event, corner)} />
@@ -506,7 +507,7 @@ export function BreakpointSelectionOverlay({
           />
         )}
       </div>
-      {gradientOpen && <Suspense fallback={null}><GradientGizmo breakpointId={breakpointId} iframeElement={iframeElement}
+      {gradientOpen && styleTarget && <Suspense fallback={null}><GradientGizmo target={styleTarget} breakpointId={breakpointId} iframeElement={iframeElement}
         canvasRoot={portalCanvasRoot} portalTarget={portalTarget} portalMode={toolbarMode} active={showRings} /></Suspense>}
       {rings && createPortal(rings, portalTarget)}
       {toolbar && createPortal(toolbar, portalTarget)}

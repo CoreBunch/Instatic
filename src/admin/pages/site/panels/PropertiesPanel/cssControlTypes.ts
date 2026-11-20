@@ -72,7 +72,7 @@ const COLOR_PROPERTIES = new Set<keyof CSSPropertyBag>([
 // Border style keywords — used by the visual BorderControl and the
 // fallback property surface.
 // ---------------------------------------------------------------------------
-const BORDER_STYLE_KEYWORDS = [
+export const BORDER_STYLE_KEYWORDS = [
   'none', 'hidden', 'solid', 'dashed', 'dotted', 'double',
   'groove', 'ridge', 'inset', 'outset',
 ]
@@ -81,9 +81,11 @@ const BORDER_STYLE_KEYWORDS = [
 // Enum (select) properties → option lists (first option is the default)
 // ---------------------------------------------------------------------------
 
+export const DISPLAY_OPTIONS = ['block', 'inline', 'inline-block', 'flex', 'grid', 'none']
+
 const ENUM_OPTIONS = new Map<keyof CSSPropertyBag, string[]>([
   ['visibility', ['visible', 'hidden', 'collapse']],
-  ['display',          ['block', 'inline', 'inline-block', 'flex', 'grid', 'none']],
+  ['display',          DISPLAY_OPTIONS],
   ['flexDirection',    ['row', 'column', 'row-reverse', 'column-reverse']],
   ['flexWrap',         ['nowrap', 'wrap', 'wrap-reverse']],
   ['alignItems',       ['flex-start', 'flex-end', 'center', 'stretch', 'baseline']],
@@ -529,14 +531,6 @@ export function getClassStyleSectionSetCounts(
       section.properties.filter((prop) => hasStyleValue(storedStyles[prop])).length,
     ]),
   )
-}
-
-/**
- * Returns the active breakpoint tab id for class style reads/writes.
- * 'base' when desktop (or no breakpoint); otherwise the breakpoint id.
- */
-export function getActiveStyleTab(activeBreakpointId: string | undefined): string {
-  return activeBreakpointId && activeBreakpointId !== 'desktop' ? activeBreakpointId : 'base'
 }
 
 // ---------------------------------------------------------------------------

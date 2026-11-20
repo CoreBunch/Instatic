@@ -98,7 +98,7 @@
 .params {
     display: flex;
     flex-direction: column;
-    gap: var(--control-row-gap);
+    gap: var(--space-s);
     padding: var(--space-m);
 }
 

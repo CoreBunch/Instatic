@@ -1,3 +1,4 @@
+import { radiusCorners } from '@site/property-controls/cornerRadii'
 import type { CSSProperties } from 'react'
 import { cn } from '@ui/cn'
 import type {
@@ -246,9 +247,6 @@ function indicatorVars(x: number, y: number, width: number, height: number): CSS
   } as CSSProperties
 }
 
-export const RADIUS_HANDLE_CORNERS = ['nw', 'ne', 'se', 'sw'] as const
-export type RadiusHandleCorner = (typeof RADIUS_HANDLE_CORNERS)[number]
-
 /** Smallest selection (screen px) that still has room for radius dots between the corner handles. */
 const RADIUS_HANDLES_MIN_SIDE = 48
 /** A zero radius still needs a dot to grab — sit it just inside the corner. */
@@ -259,7 +257,7 @@ const RADIUS_HANDLE_MIN_INSET = 12
  * corner's inward diagonal, `radius × zoom` from the corner (never closer
  * than the minimum inset, never past the centre), so the dot tracks the
  * curve it edits. `radii` are the element's used radii in CSS px, in
- * RADIUS_HANDLE_CORNERS order. `rect === null`, or a selection too small to
+ * radiusCorners order. `rect === null`, or a selection too small to
  * host the dots without them colliding with the resize handles, hides all.
  */
 export function positionRadiusHandles(
@@ -276,7 +274,7 @@ export function positionRadiusHandles(
   const maxInset = Math.min(rect.width, rect.height) / 2
   const right = rect.x + rect.width
   const bottom = rect.y + rect.height
-  RADIUS_HANDLE_CORNERS.forEach((corner, i) => {
+  radiusCorners.forEach((corner, i) => {
     const handle = container.children[i] as HTMLElement | undefined
     if (!handle) return
     const inset = Math.min(maxInset, Math.max(RADIUS_HANDLE_MIN_INSET, (radii[i] ?? 0) * scale))
