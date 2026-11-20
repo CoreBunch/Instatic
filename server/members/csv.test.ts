@@ -4,7 +4,8 @@ import { csvRecord, parseCsv } from './csv'
 describe('member CSV', () => {
   it('quotes what needs quoting and guards spreadsheet formulas', () => {
     expect(csvRecord(['a', 'b,c', 'say "hi"', 'two\nlines'])).toBe('a,"b,c","say ""hi""","two\nlines"\r\n')
-    expect(csvRecord(['=1+1', '+x', '-y', '@z', 'plain-name'])).toBe("'=1+1,'+x,'-y,'@z,plain-name\r\n")
+    expect(csvRecord(['=1+1', '+x', '-y', '@z', 'plain-name', '  =cmd'])).toBe("'=1+1,'+x,'-y,'@z,plain-name,'  =cmd\r\n")
+    expect(parseCsv("a\n'  =cmd")?.[1].fields).toEqual(['  =cmd'])
   })
 
   it('reads back what it writes, with the line each record starts on', () => {

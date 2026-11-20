@@ -211,8 +211,7 @@ describe('bulk member export and import', () => {
       expect((await exportAll('xlsx')).status).toBe(400)
     })
 
-    it('streams a large export page by page, every member once', async () => {
-      const total = 1_234
+    async function insertMembers(total: number) {
       const now = nowIso()
       for (let start = 0; start < total; start += 200) {
         await h.db.transaction(async (tx) => {
@@ -225,6 +224,21 @@ describe('bulk member export and import', () => {
           }
         })
       }
+    }
+
+    it('finishes when there is nobody, and when the last page is exactly full', async () => {
+      const json = JSON.parse(await (await exportAll('json')).text()) as { members: unknown[] }
+      expect(json.members).toEqual([])
+      expect(await (await exportAll('csv')).text()).toBe('email,name,status,email_confirmed,tags,created_at,last_sign_in_at\r\n')
+
+      await insertMembers(500)
+      const full = JSON.parse(await (await exportAll('json')).text()) as { members: unknown[] }
+      expect(full.members).toHaveLength(500)
+    })
+
+    it('streams a large export page by page, every member once', async () => {
+      const total = 1_234
+      await insertMembers(total)
       const res = await exportAll('json')
       expect(res.body).toBeInstanceOf(ReadableStream)
       const reader = res.body!.getReader()
@@ -386,6 +400,7 @@ describe('bulk member export and import', () => {
       expect(await problem(importBody('{"people":[]}', { format: 'json' }))).toContain('no list of members')
       const rows = ['email', ...Array.from({ length: MEMBER_IMPORT_MAX_ROWS + 1 }, (_, i) => `p${i}@example.com`)].join('\n')
       expect(await problem(importBody(rows))).toContain('split the file')
+      expect(await problem(importBody(`email,${Array.from({ length: 100 }, (_, i) => `c${i}`).join(',')}\na@example.com`))).toContain('more than 100 columns')
       expect(await problem(importBody(`email\n${'a'.repeat(5 * 1024 * 1024 + 1)}`))).toContain('5 MB')
       expect(await problem(importBody('email\na@example.com', { tags: ['instatic:owner'] }))).toContain('cannot be given')
     })

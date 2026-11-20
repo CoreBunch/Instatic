@@ -4,12 +4,13 @@
  * quote inside one, CRLF between records).
  *
  * A field a spreadsheet would read as a formula (starting with `=`, `+`,
- * `-`, `@`, a tab or a carriage return) is written with a leading `'`, so
+ * `-`, `@`, a tab or a carriage return, after any spaces) is written with a leading `'`, so
  * opening an export cannot run anything a member typed into their name.
  * Reading takes that `'` off again, so an export imports as it was.
  */
 
-const FORMULA_START = /^[=+\-@\t\r]/
+/** A formula start, after any leading spaces (a spreadsheet may trim them first). */
+const FORMULA_START = /^[ ]*[=+\-@\t\r]/
 
 /** One field, made safe for a spreadsheet and quoted when it needs to be. */
 function encodeField(value: string): string {

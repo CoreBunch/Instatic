@@ -178,8 +178,8 @@ export function ImportMembersDialog({
           </dl>
           {result.failed > 0 && (
             <p className={dialogStyles.hint}>
-              Rows that failed were not saved. Importing the same file again adds them and leaves everyone already
-              imported as they are.
+              Each failed row says what was not saved. Importing the same file again adds the members that are missing;
+              choose &ldquo;Add tags only&rdquo; to also finish the tags of an account that was created.
             </p>
           )}
           <ProblemList problems={result.problems} total={result.invalid + result.failed} />
