@@ -165,11 +165,13 @@ export function buildImportPlan({ fileMap, currentSite, options }: BuildImportPl
   const existingClassNames = Object.values(currentSite.styleRules)
     .filter((rule) => rule.kind === 'class')
     .map((rule) => rule.name)
-  const crossSheetClasses = detectCrossSheetClassConflicts(
+  const crossSheet = detectCrossSheetClassConflicts(
     rawPagePlans,
     cssPlan.cssFileResults,
     existingClassNames,
   )
+  const crossSheetClasses = crossSheet.conflicts
+  warnings.push(...crossSheet.warnings)
   const publishableCssFileResults = addSelectorDependencyClasses(
     cssPlan.cssFileResults,
     currentSite,

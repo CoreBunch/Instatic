@@ -32,6 +32,7 @@
 import type {
   CrossSheetClassConflict,
   ImportPlan,
+  ImportWarning,
   NewStyleRule,
   PagePlan,
 } from './types'
@@ -144,20 +145,36 @@ function effectiveClassDefs(
 // Detection
 // ---------------------------------------------------------------------------
 
+/** What cross-sheet analysis found: real conflicts, plus notes on layered overrides. */
+export interface CrossSheetClassAnalysis {
+  conflicts: CrossSheetClassConflict[]
+  warnings: ImportWarning[]
+}
+
 /**
  * Detect class names whose effective definitions DIVERGE across page
  * cascades. The first-encountered definition keeps the bare name; each later
  * distinct definition becomes one conflict whose default resolution renames
  * it to the next free suffix (`btn-2`, `btn-3`, …) — free among both the
  * imported names and the existing site's class names.
+ *
+ * A divergence that is only a LAYERED OVERRIDE is not a conflict: when one
+ * stylesheet that defines the class is loaded by every cascade that defines
+ * it (a shared kit), the other definitions are that kit's component restyled
+ * by a later, page-specific sheet. That is an ordinary cascade, so every
+ * fragment is kept in cascade order (see `normalizeBindableClassRules`) and
+ * nothing is renamed or dropped. The one-registry merge does make those
+ * overrides reach every page, so each overriding sheet gets one
+ * `cascade-override` warning naming its classes and the remedy (import the
+ * sheet as a file to keep it to its own pages).
  */
 export function detectCrossSheetClassConflicts(
   pagePlans: readonly PagePlan[],
   cssFileResults: readonly CssFileResult[],
   existingClassNames: Iterable<string>,
-): CrossSheetClassConflict[] {
+): CrossSheetClassAnalysis {
   const cascades = buildCascades(pagePlans)
-  if (cascades.length < 2) return []
+  if (cascades.length < 2) return { conflicts: [], warnings: [] }
 
   const rulesByCssPath = new Map<string, NewStyleRule[]>()
   const usedNames = new Set<string>(existingClassNames)
@@ -185,8 +202,19 @@ export function detectCrossSheetClassConflicts(
   }
 
   const conflicts: CrossSheetClassConflict[] = []
+  // overriding sheet → the shared classes it restyles, in first-seen order.
+  const overridesBySheet = new Map<string, string[]>()
   for (const [name, defs] of defsByName) {
     if (defs.length < 2) continue
+    const layered = layeredOverrideSheets(name, defs.flatMap((d) => d.cascades), rulesByCssPath)
+    if (layered) {
+      for (const sheet of layered) {
+        const names = overridesBySheet.get(sheet) ?? []
+        if (!names.includes(name)) names.push(name)
+        overridesBySheet.set(sheet, names)
+      }
+      continue
+    }
     const keptCssPaths = new Set(defs[0].cascades.flatMap((c) => c.linkedCssPaths))
     for (const def of defs.slice(1)) {
       const sources = [...new Set(
@@ -206,7 +234,39 @@ export function detectCrossSheetClassConflicts(
       })
     }
   }
-  return conflicts
+
+  const warnings: ImportWarning[] = [...overridesBySheet].map(([sheet, names]) => ({
+    kind: 'cascade-override',
+    path: sheet,
+    message:
+      `${sheet} restyles ${names.length === 1 ? 'a class' : `${names.length} classes`} from a shared stylesheet `
+      + `(${names.slice(0, 6).map((n) => `.${n}`).join(', ')}${names.length > 6 ? ', …' : ''}). `
+      + 'Only some pages load it, but after import its rules apply on every page. '
+      + 'Import it as a file to keep it to its own pages.',
+  }))
+  return { conflicts, warnings }
+}
+
+/**
+ * The sheets that layer overrides on a shared definition of `name`, or null
+ * when the definitions have no common base. The base is every sheet that
+ * defines the class in EACH cascade defining it; any other defining sheet is
+ * an override on top of it.
+ */
+function layeredOverrideSheets(
+  name: string,
+  cascades: readonly Cascade[],
+  rulesByCssPath: Map<string, NewStyleRule[]>,
+): string[] | null {
+  const defines = (cssPath: string) =>
+    (rulesByCssPath.get(cssPath) ?? []).some((r) => r.kind === 'class' && r.name === name)
+  const definingSheets = cascades.map((c) => c.linkedCssPaths.filter(defines))
+  const base = definingSheets.reduce<string[]>(
+    (common, sheets) => common.filter((sheet) => sheets.includes(sheet)),
+    definingSheets[0] ?? [],
+  )
+  if (base.length === 0) return null
+  return [...new Set(definingSheets.flat())].filter((sheet) => !base.includes(sheet))
 }
 
 // ---------------------------------------------------------------------------

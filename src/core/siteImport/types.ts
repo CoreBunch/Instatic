@@ -38,10 +38,8 @@ export type NewStyleRule = Omit<StyleRule, 'id' | 'createdAt' | 'updatedAt'>
  *   reusable media condition so nothing is silently lost.
  * - `invalid-rule`: a rule that the CSS engine rejected (typically a sheet-
  *   level parse error that causes `replaceSync` to throw).
- * - `unknown-property`: legacy — retained for back-compat with any persisted
- *   warnings. The Phase 1a permissive property model no longer emits this; a
- *   declaration is only dropped when its NAME is denied (see
- *   `blocked-property`), not when it's merely uncurated.
+ * - `unknown-property`: legacy, kept for persisted warnings; no longer emitted
+ *   (only a denied NAME drops a declaration, see `blocked-property`).
  * - `blocked-property`: a CSS declaration whose property name is on the
  *   security denylist (`behavior`, `-moz-binding`, …). Rare. The declaration
  *   is dropped from the rule.
@@ -85,6 +83,8 @@ export type NewStyleRule = Omit<StyleRule, 'id' | 'createdAt' | 'updatedAt'>
  * - `script-order-conflict`: two pages link the same scripts in contradictory
  *   orders, so no single load order satisfies both. The order from the page
  *   that links them first wins; `path` names the first script of the cycle.
+ * - `cascade-override`: a sheet only some pages load restyles shared-sheet
+ *   classes; rules are kept, so the override reaches every page (`path`).
  */
 type ImportWarningKind =
   | 'dropped-at-rule'
@@ -102,6 +102,7 @@ type ImportWarningKind =
   | 'external-font'
   | 'unresolved-asset'
   | 'script-order-conflict'
+  | 'cascade-override'
 
 export interface ImportWarning {
   kind: ImportWarningKind

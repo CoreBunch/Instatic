@@ -273,10 +273,11 @@ What a switched-off sheet asks for follows it out. Each planned Google font reco
 
 A multi-page site typically links one stylesheet per page, and those stylesheets routinely use the same class name (`.btn`, `.hero`) with different declarations. The CMS has a single global style rule registry, so a naïve merge would let one page's class clobber another's.
 
-`detectCrossSheetClassConflicts` (`classCascades.ts`) compares the effective class definitions produced by each page's ordered linked CSS cascade (fragments merged in source order, not isolated files):
+`detectCrossSheetClassConflicts` (`classCascades.ts`) returns `{ conflicts, warnings }`. It compares the effective class definitions produced by each page's ordered linked CSS cascade (fragments merged in source order, not isolated files):
 
 - **One distinct definition** across all cascades → no conflict; the class is shared. Repeated fragments stay in cascade order (see normalization below).
-- **N distinct definitions** → the first keeps the bare name; each later distinct definition becomes one `CrossSheetClassConflict` row in the wizard's Conflicts step ("Stylesheets disagree"), default `auto-rename` to the next free suffix (free among imported AND existing site class names). Nothing is renamed silently.
+- **Layered overrides of a shared sheet** → no conflict. When one stylesheet that defines the class is loaded by every cascade that defines it (a shared kit such as `shared/kit.css`), the other definitions are that kit's component restyled by a later page sheet (`home.css .btn { color: red }`). That is an ordinary cascade: every fragment is kept in order and nothing is renamed or dropped. Because converted rules join one global registry, the override then applies on every page, so `detectCrossSheetClassConflicts` returns one `cascade-override` warning per overriding sheet naming its classes; importing that sheet as a file (`mode: 'file'`) keeps it to its own pages. Renaming would not be faithful here: the kit's descendant and state selectors (`.btn .icon`) stay on the bare name, so a renamed copy loses them.
+- **N distinct definitions with no shared base** → the first keeps the bare name; each later distinct definition becomes one `CrossSheetClassConflict` row in the wizard's Conflicts step ("Stylesheets disagree"), default `auto-rename` to the next free suffix (free among imported AND existing site class names). Nothing is renamed silently.
 - **Bootstrap-like shared utility names** (`row`, `col-xl-3`, `d-flex`, `align-items-stretch`, spacing/gutter utilities, etc.) never conflict. Those classes are framework vocabulary rather than component classes: their behaviour is often assembled from multiple rules and selectors such as `.row`, `.row > *`, and `.col-*`. Splitting them would break the grid contract.
 
 Resolutions apply in `applyCrossSheetClassResolutions` (via `applyConflictResolutions`, before site-vs-import rule conflicts):
@@ -309,7 +310,9 @@ split on every character a class name cannot contain, and a class rule whose
 name is among the surviving runs counts as used. This over-collects on purpose
 (`add`, `length` and every other identifier in the script also land in the
 set) — a false positive costs a few bytes of CSS, a false negative drops a rule
-that is correct everywhere until publish. Only literal names are seen: a class
+that is correct everywhere until publish.
+
+Only literal names are seen: a class
 built by concatenation at runtime still cannot be inferred and must be assigned
 in the editor (including to a hidden structural node) or shipped in a
 `mode:'file'` stylesheet, the explicit non-tree-shaken escape hatch.
@@ -408,6 +411,7 @@ On success the same step switches to its **complete** state — a success mark, 
 | `asset-upload-failed` | An individual asset upload was rejected by the server; the original FileMap path remains in the import |
 | `asset-folder-failed` | The asset uploaded and its URL was rewritten, but filing it under the folder mirroring its bundle path failed; it sits at the media root |
 | `script-order-conflict` | Two pages link the same scripts in contradictory orders; the order from the page that links them first wins |
+| `cascade-override` | A converted sheet only some pages load restyles classes a shared sheet defines; every rule is kept in cascade order, but the override now applies on every page. `path` names the sheet; import it as a file to keep it to its own pages |
 | `external-font` | An `@font-face` with no bundled file (all `src` entries are external URLs) — skipped |
 | `unresolved-asset` | An HTML/CSS reference to a media file the archive does not contain under that path — one warning per distinct path |
 
