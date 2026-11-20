@@ -193,6 +193,12 @@ export function auditTitle(
       return `Member ${member} was restored`
     case 'member.export':
       return `Member ${member}'s data was downloaded`
+    case 'member.export_all':
+      return `Every member was exported (${metadataString(event.metadata, 'count') ?? '?'} members, ${metadataString(event.metadata, 'format') ?? 'csv'})`
+    case 'member.import': {
+      const count = (key: string) => metadataString(event.metadata, key) ?? '0'
+      return `Members were imported: ${count('created')} added, ${count('tagged')} tagged, ${count('skipped')} skipped, ${count('invalid')} invalid, ${count('failed')} failed`
+    }
     case 'member.signout':
       return `Member ${member} was signed out everywhere`
     case 'member.delete':

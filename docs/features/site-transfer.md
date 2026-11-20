@@ -116,6 +116,7 @@ A portable bundle deliberately carries **no secrets and no instance-runtime stat
 | Excluded                | Why                                                                   |
 |-------------------------|-----------------------------------------------------------------------|
 | Sessions                | Per-device, security-sensitive                                        |
+| Site members            | Personal data, not site content. Move them with Users → Site members → Export all / Import (see [members](members.md) → "Export and import"), which carries no passwords |
 | Users / roles + passwords | Bundles are for site content, not account migration; password hashes must not travel |
 | AI provider keys        | Credentials — never in a portable file                                |
 | Audit / login logs      | Local to the host                                                     |

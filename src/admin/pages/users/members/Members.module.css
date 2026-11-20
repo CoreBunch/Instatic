@@ -2,7 +2,9 @@
 
 .headerActions {
     display: flex;
-    flex: none;
+    flex: 0 1 auto;
+    flex-wrap: wrap;
+    justify-content: flex-end;
     align-items: center;
     gap: var(--space-s);
 }
@@ -272,4 +274,102 @@
     flex-wrap: wrap;
     align-items: center;
     gap: var(--space-l);
+}
+
+/* ── Export and import ── */
+.importFileRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-s);
+}
+
+.importFileName {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: var(--text-bright);
+  font-size: var(--text-s);
+}
+
+.importSwitch {
+  display: flex;
+  align-items: center;
+  gap: var(--space-s);
+  color: var(--text-bright);
+  font-size: var(--text-s);
+}
+
+.importPreview {
+  display: grid;
+  gap: var(--space-s);
+}
+
+.importCounts {
+  display: grid;
+  grid-template-columns: repeat(var(--import-columns), minmax(0, 1fr));
+  gap: var(--space-px);
+  margin: 0;
+  overflow: hidden;
+  border-radius: var(--card-radius);
+  background: var(--bg-surface);
+}
+
+.importCounts {
+  --import-columns: 4;
+}
+
+.importCounts[data-columns="3"] {
+  --import-columns: 3;
+}
+
+.importCounts div {
+  display: grid;
+  gap: var(--space-4xs);
+  padding: var(--space-s) var(--space-m);
+  background: var(--bg-surface-2);
+}
+
+.importCounts dt {
+  color: var(--text-subtle);
+  font-size: var(--text-xs);
+}
+
+.importCounts dd {
+  margin: 0;
+  color: var(--text-bright);
+  font-size: var(--text-l);
+  font-variant-numeric: tabular-nums;
+}
+
+.importProblems {
+  display: grid;
+  gap: var(--space-xs);
+}
+
+.importProblems ul {
+  display: grid;
+  max-height: 220px;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  list-style: none;
+}
+
+.importProblems li {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) minmax(0, 1.4fr);
+  gap: var(--space-s);
+  padding: var(--space-xs) 0;
+  border-bottom: 1px solid var(--bg-surface);
+  font-size: var(--text-xs);
+}
+
+.importRow {
+  color: var(--text-subtle);
+  font-variant-numeric: tabular-nums;
+}
+
+.importEmail {
+  overflow-wrap: anywhere;
+  color: var(--text-bright);
 }

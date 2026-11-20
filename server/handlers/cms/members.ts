@@ -4,6 +4,9 @@
  *
  *   GET    /admin/api/cms/members                     — list, search, filter (+ counts, tags in use)
  *   POST   /admin/api/cms/members/invite              — invite an address
+ *   GET    /admin/api/cms/members/export?format=csv|json — every member as a file (step-up)
+ *   POST   /admin/api/cms/members/import/preview      — what importing a file would do
+ *   POST   /admin/api/cms/members/import              — import members from a file (step-up)
  *   GET    /admin/api/cms/members/settings            — sign-up mode, profile fields, link pages
  *   PUT    /admin/api/cms/members/settings            — change them (step-up)
  *   GET    /admin/api/cms/members/:id                 — one member: profile, tags, sessions, activity
@@ -28,7 +31,14 @@ import type { DbClient } from '../../db/client'
 import {
   CreateMemberAppBodySchema,
   isGrantableMemberTag,
+  MEMBER_IMPORT_MAX_BYTES,
+  MEMBER_IMPORT_MAX_INVITATIONS,
+  MemberExportFormatSchema,
+  MemberImportRequestSchema,
   MemberInviteInputSchema,
+  memberExportFilename,
+  type MemberImportPreview,
+  type MemberImportRequest,
   MemberSettingsSchema,
   MemberTagInputSchema,
   MemberTagRemoveInputSchema,
@@ -50,10 +60,20 @@ import {
   setMemberSuspended,
   signOutMemberEverywhere,
 } from '../../members/admin'
-import { memberLinkOrigin, memberMailAvailable } from '../../members/mail'
+import {
+  applyMemberImport,
+  countMembers,
+  existingMemberEmails,
+  listedProblems,
+  memberExportStream,
+  memberImportRunning,
+  parseMemberImport,
+  type MemberImportRow,
+} from '../../members/bulk'
+import { memberLinkOrigin, memberLinkPage, memberMailAvailable } from '../../members/mail'
 import { createMemberApp, deleteMemberApp, findMemberApp, listMemberApps } from '../../members/apps/store'
 import { isAvailableMemberAppScope, listAvailableMemberAppScopes } from '../../members/apps/scopes'
-import { listMemberPageOptions } from '../../members/pages'
+import { getMemberPagePaths, listMemberPageOptions } from '../../members/pages'
 import {
   findMemberById,
   getMemberSettings,
@@ -67,6 +87,7 @@ import { exportMemberDataWithPlugins } from '../../plugins/host/memberExport'
 import { memberLimits } from '../../members/limits'
 import { isCrossSiteFetch } from '../../auth/security'
 import { createAuditEvent, type AuditAction } from '../../repositories/audit'
+import { safeParseValue } from '@core/utils/typeboxHelpers'
 import type { AuthUser } from '../../repositories/users'
 import { CMS_API_PREFIX, requestAuditContext } from './shared'
 import { runRouteTable, type Route, type RouteParams } from './routeTable'
@@ -218,12 +239,7 @@ async function handleExport(req: Request, db: DbClient, params: RouteParams): Pr
   const member = await findMemberById(db, params.id)
   if (!member) return notFound()
   const allowed = memberLimits.adminExportPerUser.consume(user.id)
-  if (!allowed.ok) {
-    return jsonResponse(
-      { error: 'Too many member data downloads. Try again later.' },
-      { status: 429, headers: { 'retry-after': String(Math.ceil(allowed.retryAfterMs / 1000)) } },
-    )
-  }
+  if (!allowed.ok) return tooMany('Too many member data downloads. Try again later.', allowed.retryAfterMs)
   const data = await exportMemberDataWithPlugins(db, member)
   await audit(db, req, user, 'member.export', member.id, { email: member.email })
   return jsonResponse(data, {
@@ -232,6 +248,130 @@ async function handleExport(req: Request, db: DbClient, params: RouteParams): Pr
       'content-disposition': `attachment; filename="${memberDataFilename(member.id)}"`,
     },
   })
+}
+
+function tooMany(error: string, retryAfterMs: number): Response {
+  return jsonResponse({ error }, { status: 429, headers: { 'retry-after': String(Math.ceil(retryAfterMs / 1000)) } })
+}
+
+// ─── Every member ──────────────────────────────────────────────────────────
+
+/**
+ * Every member as a CSV or JSON file, streamed. It is the whole member list
+ * with personal data, so it asks for step-up on top of `members.manage`, is
+ * limited per administrator, refuses a request another site started, and is
+ * audited with the count.
+ */
+async function handleExportAll(req: Request, db: DbClient): Promise<Response> {
+  if (isCrossSiteFetch(req)) return jsonResponse({ error: 'Forbidden' }, { status: 403 })
+  const user = await manager(req, db, true)
+  if (user instanceof Response) return user
+  const format = safeParseValue(MemberExportFormatSchema, new URL(req.url).searchParams.get('format') ?? 'csv')
+  if (!format.ok) return badRequest('The format must be csv or json')
+  const allowed = memberLimits.adminExportAllPerUser.consume(user.id)
+  if (!allowed.ok) return tooMany('Too many exports of every member. Try again later.', allowed.retryAfterMs)
+  const count = await countMembers(db)
+  await audit(db, req, user, 'member.export_all', null, { format: format.value, count: String(count) })
+  return new Response(memberExportStream(db, format.value), {
+    headers: {
+      'content-type': format.value === 'csv' ? 'text/csv; charset=utf-8' : 'application/json; charset=utf-8',
+      'cache-control': 'no-store',
+      'x-content-type-options': 'nosniff',
+      'content-disposition': `attachment; filename="${memberExportFilename(format.value)}"`,
+    },
+  })
+}
+
+/** Where invitations would go, or why an import cannot send them. The same checks as the Invite button. */
+async function importInvitations(req: Request, db: DbClient): Promise<{ linkOrigin: string } | { reason: string }> {
+  const linkOrigin = memberLinkOrigin(req)
+  if (!linkOrigin) return { reason: 'The site does not know its public address. Set PUBLIC_ORIGIN on the server.' }
+  if (!(await memberMailAvailable(db, req))) return { reason: 'Outgoing email is not set up. Set up a connector and a sender under Email.' }
+  if (!memberLinkPage(await getMemberPagePaths(db), 'invite')) {
+    return { reason: 'No published page accepts invitations. Choose "Accept an invitation" under Member settings.' }
+  }
+  return { linkOrigin }
+}
+
+type ReadImport = {
+  input: MemberImportRequest
+  parsed: { rows: MemberImportRow[]; problems: MemberImportPreview['problems']; ignored: string[]; total: number }
+  invitations: { linkOrigin: string } | { reason: string }
+}
+
+/** The request, its file read into rows, and whether invitations can go out. */
+async function readImport(req: Request, db: DbClient): Promise<ReadImport | Response> {
+  // The file travels as a JSON string, where escaping can make it larger.
+  const input = await readValidatedBody(req, MemberImportRequestSchema, { maxBytes: MEMBER_IMPORT_MAX_BYTES * 2 + 64 * 1024 })
+  if (!input) return badRequest(`Choose a CSV or JSON file of at most ${MEMBER_IMPORT_MAX_BYTES / 1024 / 1024} MB`)
+  if (!input.tags.every(isGrantableMemberTag)) return badRequest('One of the tags for every member cannot be given to a member')
+  const parsed = parseMemberImport(input.format, input.content, (await getMemberSettings(db)).profileFields, input.tags)
+  if (!parsed.ok) return badRequest(parsed.error)
+  let invitations = await importInvitations(req, db)
+  if (input.invite && 'linkOrigin' in invitations) {
+    const fresh = parsed.rows.length - (await existingMemberEmails(db, parsed.rows)).size
+    if (fresh > MEMBER_IMPORT_MAX_INVITATIONS) {
+      invitations = {
+        reason: `This import would send ${fresh.toLocaleString('en')} invitations; one import sends at most ${MEMBER_IMPORT_MAX_INVITATIONS}. Import without invitations, or split the file.`,
+      }
+    }
+  }
+  return { input, parsed, invitations }
+}
+
+async function handleImportPreview(req: Request, db: DbClient): Promise<Response> {
+  if (isCrossSiteFetch(req)) return jsonResponse({ error: 'Forbidden' }, { status: 403 })
+  const user = await manager(req, db)
+  if (user instanceof Response) return user
+  const allowed = memberLimits.adminImportPreviewPerUser.consume(user.id)
+  if (!allowed.ok) return tooMany('Too many import previews. Try again later.', allowed.retryAfterMs)
+  const read = await readImport(req, db)
+  if (read instanceof Response) return read
+  const { parsed, invitations } = read
+  const existing = (await existingMemberEmails(db, parsed.rows)).size
+  const preview: MemberImportPreview = {
+    rows: parsed.total,
+    new: parsed.rows.length - existing,
+    existing,
+    invalid: parsed.problems.length,
+    problems: listedProblems(parsed.problems),
+    ignored: parsed.ignored,
+    invitations: 'reason' in invitations ? { available: false, reason: invitations.reason } : { available: true },
+  }
+  return jsonResponse({ preview }, { headers: { 'cache-control': 'no-store' } })
+}
+
+/**
+ * Import members from a file. Step-up, since it creates accounts for people
+ * in bulk; one import runs at a time, and the audit row carries the counts.
+ */
+async function handleImport(req: Request, db: DbClient): Promise<Response> {
+  if (isCrossSiteFetch(req)) return jsonResponse({ error: 'Forbidden' }, { status: 403 })
+  const user = await manager(req, db, true)
+  if (user instanceof Response) return user
+  if (memberImportRunning()) return jsonResponse({ error: 'An import is already running. Try again when it is done.' }, { status: 409 })
+  const allowed = memberLimits.adminImportPerUser.consume(user.id)
+  if (!allowed.ok) return tooMany('Too many imports. Try again later.', allowed.retryAfterMs)
+  const read = await readImport(req, db)
+  if (read instanceof Response) return read
+  const { input, parsed, invitations } = read
+  if (input.invite && 'reason' in invitations) return jsonResponse({ error: invitations.reason }, { status: 409 })
+  // Checked again in case another import started while this file was read.
+  if (memberImportRunning()) return jsonResponse({ error: 'An import is already running. Try again when it is done.' }, { status: 409 })
+  const result = await applyMemberImport(db, parsed, {
+    existing: input.existing,
+    invite: input.invite && 'linkOrigin' in invitations ? invitations : null,
+  })
+  await audit(db, req, user, 'member.import', null, {
+    format: input.format,
+    created: String(result.created),
+    invited: String(result.invited),
+    tagged: String(result.tagged),
+    skipped: String(result.skipped),
+    invalid: String(result.invalid),
+    failed: String(result.failed),
+  })
+  return jsonResponse({ result }, { headers: { 'cache-control': 'no-store' } })
 }
 
 async function handleDisconnectApp(req: Request, db: DbClient, params: RouteParams): Promise<Response> {
@@ -392,9 +532,12 @@ const APP = new RegExp(`^${MEMBERS_PREFIX}/apps/(?<id>[^/]+)$`)
 const MEMBER_APP = new RegExp(`^${MEMBERS_PREFIX}/(?<id>[^/]+)/apps/(?<grantId>[^/]+)$`)
 const action = (name: string) => new RegExp(`^${MEMBERS_PREFIX}/(?<id>[^/]+)/${name}$`)
 
-// The fixed paths come first: `invite`, `settings` and `apps` would otherwise match `:id`.
+// The fixed paths come first: `invite`, `export`, `settings` and `apps` would otherwise match `:id`.
 const ROUTES: Route<[]>[] = [
   { method: 'GET', pattern: MEMBERS_PREFIX, handler: handleList },
+  { method: 'GET', pattern: `${MEMBERS_PREFIX}/export`, handler: handleExportAll },
+  { method: 'POST', pattern: `${MEMBERS_PREFIX}/import/preview`, handler: handleImportPreview },
+  { method: 'POST', pattern: `${MEMBERS_PREFIX}/import`, handler: handleImport },
   { method: 'POST', pattern: `${MEMBERS_PREFIX}/invite`, handler: handleInvite },
   { method: 'GET', pattern: `${MEMBERS_PREFIX}/settings`, handler: handleGetSettings },
   { method: 'PUT', pattern: `${MEMBERS_PREFIX}/settings`, handler: handleSaveSettings },
