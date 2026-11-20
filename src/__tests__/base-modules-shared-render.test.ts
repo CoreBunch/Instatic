@@ -54,15 +54,15 @@ describe('anchorRel — single source for the noopener rule', () => {
     expect(btnSelf).not.toContain('rel=')
   })
 
-  it('omits target="_self": it only repeats what a link does without one', () => {
-    expect(LinkModule.render({ ...LinkModule.defaults, href: '/a', target: '_self' }, []).html).toBe('<a href="/a">Click here</a>')
-    expect(ButtonModule.render({ ...ButtonModule.defaults, href: '/a', target: '_self' }, []).html).not.toContain('target=')
-    expect(LinkModule.render({ ...LinkModule.defaults, href: '/a', target: '_parent' }, []).html).toContain('target="_parent"')
+  it('emits no target for the default, and an explicitly chosen one as written', () => {
+    expect(LinkModule.render({ ...LinkModule.defaults, href: '/a' }, []).html).toBe('<a href="/a">Click here</a>')
+    expect(ButtonModule.render({ ...ButtonModule.defaults, href: '/a' }, []).html).not.toContain('target=')
+    expect(LinkModule.render({ ...LinkModule.defaults, href: '/a', target: '_self' }, []).html).toContain('target="_self"')
   })
 
   it('link and button expose the SAME target options from the shared leaf', () => {
     const values = ANCHOR_TARGET_OPTIONS.map((o) => o.value)
-    expect(values).toEqual(['_self', '_blank', '_parent'])
+    expect(values).toEqual(['', '_self', '_blank', '_parent'])
     expect(LinkModule.schema.target).toMatchObject({ type: 'select', options: ANCHOR_TARGET_OPTIONS as never })
     expect(ButtonModule.schema.target).toMatchObject({ type: 'select', options: ANCHOR_TARGET_OPTIONS as never })
   })

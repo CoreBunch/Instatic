@@ -10,7 +10,7 @@
  */
 import React from 'react'
 import type { ModuleComponentProps } from '@core/module-engine'
-import { anchorHtmlAttributes, emittedAnchorTarget } from '@modules/base/shared/anchorTarget'
+import { anchorHtmlAttributes } from '@modules/base/shared/anchorTarget'
 import { htmlAttributesForReact } from '@core/htmlAttributes'
 import { inlineEditableElementProps } from '@modules/base/shared/inlineText'
 import { resolveButtonAnchor } from './anchor'
@@ -34,7 +34,7 @@ export const ButtonEditor: React.FC<ModuleComponentProps<ButtonStoredProps>> = (
         ...nodeWrapperProps,
         ...attributes,
         href: anchor.href,
-        target: emittedAnchorTarget(props.target) ?? undefined,
+        target: props.target || undefined,
         rel: rel ?? undefined,
         className: mcClassName,
         ...(inlineEdit ? inlineEditableElementProps(inlineEdit) : {}),

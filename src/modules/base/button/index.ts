@@ -9,7 +9,7 @@ import type { ModuleDefinition } from '@core/module-engine'
 import { registry } from '@core/module-engine'
 import { CursorClickSolidIcon } from 'pixel-art-icons/icons/cursor-click-solid'
 import { Value } from '@core/utils/typeboxHelpers'
-import { ANCHOR_TARGET_OPTIONS, anchorHtmlAttributes, emittedAnchorTarget } from '@modules/base/shared/anchorTarget'
+import { ANCHOR_TARGET_OPTIONS, anchorHtmlAttributes, anchorTargetAttr } from '@modules/base/shared/anchorTarget'
 import {
   htmlAttributesControl,
 } from '@modules/base/shared/htmlAttributes'
@@ -69,9 +69,7 @@ export const ButtonModule: ModuleDefinition<ButtonStoredProps> = {
     if (anchor) {
       const { attributes, rel } = anchorHtmlAttributes(props.htmlAttributes, props.target)
       const relAttr = rel ? ` rel="${escapeHtml(rel)}"` : ''
-      const target = emittedAnchorTarget(props.target)
-      const targetAttr = target ? ` target="${target}"` : ''
-      return { html: `<a${htmlAttributesAttr(attributes)} href="${anchor.href}"${targetAttr}${relAttr}>${label}</a>` }
+      return { html: `<a${htmlAttributesAttr(attributes)} href="${anchor.href}"${anchorTargetAttr(props.target)}${relAttr}>${label}</a>` }
     }
     const attrs = htmlAttributesAttr(props.htmlAttributes)
     const disabledAttr = props.disabled ? ' disabled aria-disabled="true"' : ''

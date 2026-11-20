@@ -78,8 +78,8 @@ export type NewStyleRule = Omit<StyleRule, 'id' | 'createdAt' | 'updatedAt'>
  *   after the punctuation-insensitive fallback match. The reference is left
  *   pointing at its original path, so the page imports with a broken image
  *   rather than losing the element. One warning per distinct missing path.
- * - `missing-svg-sprite`: an `<svg><use href>` names a sprite file or id the
- *   import lacks, so that icon stays empty (`path` is the href as authored).
+ * - `missing-svg-sprite`: an `<svg><use href>` is missing, cyclic or over budget,
+ *   so that icon stays empty (`path` is the href as authored).
  * - `asset-folder-failed`: the asset uploaded and its URL was rewritten, but
  *   placing it under the folder that mirrors its bundle path failed (folder
  *   listing or creation rejected). The asset sits at the media root; the user

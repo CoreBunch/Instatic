@@ -152,4 +152,67 @@ describe('importHtml sprite inlining', () => {
     const result = importHtml('<svg><use href="sprite.svg#gone"/></svg>', { loadSvgSprite: () => null })
     expect(result.unresolvedSvgRefs).toEqual(['sprite.svg#gone'])
   })
+
+  it('stops copying at a budget instead of multiplying chained symbols', () => {
+    // s0 draws one shape; every next symbol uses the previous one 12 times.
+    // Five levels deep, twelve rendered uses would be 12^5 copies of s0.
+    const uses = (id: string) => Array.from({ length: 12 }, () => `<use href="#${id}"/>`).join('')
+    const symbols = ['<symbol id="s0"><rect width="1" height="1"/></symbol>']
+    for (let level = 1; level <= 5; level += 1) symbols.push(`<symbol id="s${level}">${uses(`s${level - 1}`)}</symbol>`)
+    const page = `<svg hidden>${symbols.join('')}</svg><svg>${uses('s5')}</svg>`
+
+    const started = performance.now()
+    const result = importHtml(page)
+    expect(performance.now() - started).toBeLessThan(3000)
+    expect(result.unresolvedSvgRefs.length).toBeGreaterThan(0)
+  })
+
+  it('reports a symbol that uses itself, and nothing for templates no page draws', () => {
+    const result = importHtml(
+      '<svg hidden><symbol id="loop"><use href="#loop"/></symbol>'
+      + '<symbol id="unused"><use href="#nowhere"/></symbol></svg>'
+      + '<svg><use href="#loop"/></svg>',
+    )
+    expect(result.unresolvedSvgRefs).toEqual(['#loop'])
+  })
+
+  it('copies the definitions a symbol points at and keeps ids unique per copy', () => {
+    const sprite = '<svg xmlns="http://www.w3.org/2000/svg">'
+      + '<defs><linearGradient id="g"><stop offset="0"/></linearGradient></defs>'
+      + '<symbol id="i" viewBox="0 0 1 1"><clipPath id="c"><rect width="1" height="1"/></clipPath>'
+      + '<path clip-path="url(#c)" fill="url(#g)" d="M0 0h1v1z"/></symbol></svg>'
+    const result = importHtml(
+      '<svg class="a"><use href="s.svg#i"/></svg><svg class="b"><use href="s.svg#i"/></svg>',
+      { loadSvgSprite: () => sprite },
+    )
+    const [first, second] = ['a', 'b'].map((name) => String(
+      Object.values(result.nodes).find((n) => n.classIds?.includes(name))!.props.svg,
+    ))
+    for (const markup of [first!, second!]) {
+      const gradientId = markup.match(/<linearGradient id="([^"]+)"/)?.[1]
+      const clipId = markup.match(/<clipPath id="([^"]+)"/)?.[1]
+      expect(gradientId).toBeDefined()
+      expect(markup).toContain(`fill="url(#${gradientId})"`)
+      expect(markup).toContain(`clip-path="url(#${clipId})"`)
+    }
+    const ids = (markup: string) => [...markup.matchAll(/ id="([^"]+)"/g)].map((m) => m[1])
+    expect(ids(first!).filter((id) => ids(second!).includes(id))).toEqual([])
+    expect(result.unresolvedSvgRefs).toEqual([])
+  })
+})
+
+describe('link targets', () => {
+  const linkOf = (source: string) => Object.values(importHtml(source).nodes).find((n) => n.moduleId === 'base.link')!
+
+  it('imports an anchor without target as the default, which publishes no target', () => {
+    const link = linkOf('<a href="/x">X</a>')
+    expect(link.props.target).toBe('')
+    expect(registry.getOrThrow('base.link').render(link.props, []).html).toBe('<a href="/x">X</a>')
+  })
+
+  it('keeps an explicit target="_self", which overrides a <base target>', () => {
+    const link = linkOf('<a href="/x" target="_self">X</a>')
+    expect(link.props.target).toBe('_self')
+    expect(registry.getOrThrow('base.link').render(link.props, []).html).toContain('target="_self"')
+  })
 })

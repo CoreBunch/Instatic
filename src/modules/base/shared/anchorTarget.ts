@@ -17,8 +17,8 @@
  *                                              author's own `rel` tokens.
  *   - `anchorHtmlAttributes(bag, target)`    — the `htmlAttributes` bag with
  *                                              `rel` pulled out and merged.
- *   - `emittedAnchorTarget(target)`          — the `target` attribute value to
- *                                              emit, or `null` for `_self`.
+ *   - `anchorTargetAttr(target)`             — the ` target="…"` attribute,
+ *                                              or nothing for the default `''`.
  *
  * Lives in a non-component `.ts` so the editor components can import it without
  * breaking React Fast Refresh (Constraint #309).
@@ -27,6 +27,7 @@ import { normalizeHtmlAttributes, type AnchorTarget } from '@core/htmlAttributes
 
 /** Select options for the Properties-panel `target` control. */
 export const ANCHOR_TARGET_OPTIONS: ReadonlyArray<{ label: string; value: AnchorTarget }> = [
+  { label: 'Default', value: '' },
   { label: 'Same tab', value: '_self' },
   { label: 'New tab', value: '_blank' },
   { label: 'Parent', value: '_parent' },
@@ -81,11 +82,10 @@ export function anchorHtmlAttributes(
 }
 
 /**
- * The `target` attribute an anchor emits, or `null` when it would only repeat
- * the browser default. `_self` is how every link without a `target` already
- * behaves, so writing it out adds noise to the published HTML (and an imported
- * `<a href>` would come back with a `target="_self"` its source never had).
+ * The ` target="…"` attribute for a published anchor: nothing for the default
+ * `''` (no target), the chosen value otherwise. An explicit `_self` is kept,
+ * since it overrides a `<base target>` the site's head code may set.
  */
-export function emittedAnchorTarget(target: AnchorTarget): AnchorTarget | null {
-  return target === '_self' ? null : target
+export function anchorTargetAttr(target: AnchorTarget): string {
+  return target ? ` target="${target}"` : ''
 }

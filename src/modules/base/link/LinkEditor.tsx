@@ -9,7 +9,7 @@
  */
 import React from 'react'
 import type { ModuleComponentProps } from '@core/module-engine'
-import { anchorHtmlAttributes, emittedAnchorTarget } from '@modules/base/shared/anchorTarget'
+import { anchorHtmlAttributes } from '@modules/base/shared/anchorTarget'
 import { inlineEditableElementProps } from '@modules/base/shared/inlineText'
 import { linkUsesChildren } from './content'
 import type { LinkStoredProps } from './props'
@@ -26,7 +26,7 @@ export const LinkEditor: React.FC<ModuleComponentProps<LinkStoredProps>> = ({ pr
       ...nodeWrapperProps,
       ...attributes,
       href: props.href || '#',
-      target: emittedAnchorTarget(props.target) ?? undefined,
+      target: props.target || undefined,
       rel: rel ?? undefined,
       className: mcClassName,
       ...(inlineEdit ? inlineEditableElementProps(inlineEdit) : {}),
