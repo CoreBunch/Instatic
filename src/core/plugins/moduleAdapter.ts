@@ -129,18 +129,22 @@ export function readEmittedClassNames(
   if (value === undefined) return {}
   const entries: unknown[] = Array.isArray(value) ? value : [value]
   const names: string[] = []
-  const dropped: string[] = []
+  let droppedCount = 0
+  const examples: string[] = []
   for (const entry of entries) {
     if (typeof entry !== 'string' || !EMITTED_CLASS_NAME.test(entry) || names.length === MAX_EMITTED_CLASS_NAMES) {
-      dropped.push(typeof entry === 'string' ? JSON.stringify(entry) : String(entry))
+      droppedCount += 1
+      if (examples.length < 5) {
+        examples.push(typeof entry === 'string' ? JSON.stringify(entry) : typeof entry)
+      }
       continue
     }
     if (!names.includes(entry)) names.push(entry)
   }
-  if (dropped.length > 0) {
+  if (droppedCount > 0) {
     console.warn(
-      `[plugin:${pluginId}] module "${moduleId}" emittedClassNames: ignored ${dropped.length} entr${dropped.length === 1 ? 'y' : 'ies'} `
-      + `(${dropped.slice(0, 5).join(', ')}${dropped.length > 5 ? ', …' : ''}). `
+      `[plugin:${pluginId}] module "${moduleId}" emittedClassNames: ignored ${droppedCount} entr${droppedCount === 1 ? 'y' : 'ies'} `
+      + `(${examples.join(', ')}${droppedCount > 5 ? ', …' : ''}). `
       + `Use class names without a leading dot, optionally ending in "*", at most ${MAX_EMITTED_CLASS_NAMES}.`,
     )
   }
