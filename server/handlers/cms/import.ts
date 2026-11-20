@@ -48,6 +48,7 @@ import { mkdir, writeFile } from 'node:fs/promises'
 import { dirname } from 'node:path'
 import type { DbClient } from '../../db/client'
 import { validateAndSanitizeMediaBytes, resolveMediaWriteTarget } from './importMediaValidation'
+import { mediaContentHash } from './mediaUpload'
 import { requireCapability, requireStepUp, userHasCapability } from '../../auth/authz'
 import type { AuthUser } from '../../repositories/users'
 import { importMediaAsset, assignAssetToFolders } from '../../repositories/media'
@@ -161,10 +162,8 @@ export async function handleImportRoute(
         // Without this, a `data.import` caller could write arbitrary HTML/JS
         // (e.g. `published/current/index.html`) served same-origin as /admin.
         const target = resolveMediaWriteTarget(uploadsDir, asset.storagePath)
-        const safeBytes = validateAndSanitizeMediaBytes(
-          Buffer.from(asset.bytesBase64, 'base64'),
-          asset,
-        )
+        const bundleBytes = Buffer.from(asset.bytesBase64, 'base64')
+        const safeBytes = validateAndSanitizeMediaBytes(bundleBytes, asset)
         await mkdir(dirname(target), { recursive: true })
         await writeFile(target, safeBytes)
 
@@ -174,6 +173,7 @@ export async function handleImportRoute(
           filename: asset.filename,
           mimeType: asset.mimeType,
           sizeBytes: safeBytes.length,
+          contentHash: mediaContentHash(bundleBytes),
           storagePath: asset.storagePath,
           publicPath: `/uploads/${asset.storagePath}`,
           altText: asset.altText,

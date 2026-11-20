@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'bun:test'
 import {
   deleteCmsMediaAsset,
+  findCmsMediaByContentHash,
   listCmsMediaAssets,
   renameCmsMediaAsset,
   uploadCmsMediaAsset,
@@ -112,5 +113,24 @@ describe('CMS media client', () => {
       listCmsMediaAssets({ fetchImpl: async () =>
         new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401 }) }),
     ).rejects.toThrow('Unauthorized')
+  })
+})
+
+describe('findCmsMediaByContentHash', () => {
+  it('splits a lookup larger than the server accepts into several requests', async () => {
+    const bodies: string[][] = []
+    const fetchImpl = (async (_input: RequestInfo | URL, init?: RequestInit) => {
+      const { contentHashes } = JSON.parse(String(init?.body)) as { contentHashes: string[] }
+      bodies.push(contentHashes)
+      return new Response(JSON.stringify({
+        matches: [{ contentHash: contentHashes[0], id: `a${bodies.length}`, publicPath: '/uploads/x', filename: 'x' }],
+      }), { status: 200, headers: { 'content-type': 'application/json' } })
+    }) as typeof fetch
+    const hashes = Array.from({ length: 10_001 }, (_, i) => i.toString(16).padStart(64, '0'))
+
+    const matches = await findCmsMediaByContentHash(hashes, { fetchImpl })
+
+    expect(bodies.map((b) => b.length)).toEqual([10_000, 1])
+    expect(matches.map((m) => m.id)).toEqual(['a1', 'a2'])
   })
 })

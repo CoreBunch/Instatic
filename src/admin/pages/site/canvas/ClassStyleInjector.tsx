@@ -38,8 +38,9 @@
  *   output genuinely differs per frame width.
  */
 
-import { useEffect } from 'react'
+import { useEffect, useSyncExternalStore } from 'react'
 import { useEditorStore } from '@site/store/store'
+import { registry } from '@core/module-engine'
 import { styleRuleSelector, type ConditionDef, type StyleRule } from '@core/page-tree'
 import {
   collectBackgroundImagePaths,
@@ -99,12 +100,22 @@ const EMPTY_CONDITIONS: ConditionDef[] = []
  */
 const EMPTY_STYLE_RULES: Record<string, StyleRule> = {}
 
+// Stable registry subscription callbacks: a fresh `bind` per render would make
+// useSyncExternalStore unsubscribe and resubscribe on every render.
+const subscribeToModules = (listener: () => void) => registry.subscribe(listener)
+const moduleGeneration = () => registry.generation()
+
 export function ClassStyleInjector({ targetDocument, viewport }: ClassStyleInjectorProps = {}) {
   // Subscribe to class registry — shallow equality so we only re-run when
   // the classes object reference changes (Mutative always creates a new ref on mutation)
   const classes = useEditorStore((s) => s.site?.styleRules ?? null)
+  // Classes a module declares it emits (`emittedClassNames`) count as used
+  // while the module is on the site. A plugin module pack can register after
+  // the canvas mounted, which changes nothing in the editor store, so
+  // subscribe to the registry too: the re-render re-reads the signature below.
+  useSyncExternalStore(subscribeToModules, moduleGeneration, moduleGeneration)
   const usedClassIdSignature = useEditorStore((s) =>
-    s.site ? usedStyleRuleIdSignature(s.site) : '',
+    s.site ? usedStyleRuleIdSignature(s.site, registry) : '',
   )
   const breakpoints = useEditorStore((s) => s.site?.breakpoints ?? EMPTY_BREAKPOINTS)
   const conditions = useEditorStore((s) => s.site?.conditions ?? EMPTY_CONDITIONS)

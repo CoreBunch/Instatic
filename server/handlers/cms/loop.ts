@@ -23,6 +23,7 @@
 import type { DbClient } from '../../db/client'
 import { registry } from '@core/module-engine'
 import { loopSourceRegistry } from '@core/loops/registry'
+import { resolveLoopDirection } from '@core/loops'
 import {
   renderNode,
   showWhenPathsAllow,
@@ -188,7 +189,7 @@ export async function handleLoopRequest(
       site,
       filters: props.filters,
       orderBy: props.orderBy || (source.orderByOptions[0]?.id ?? ''),
-      direction: props.direction,
+      direction: resolveLoopDirection(props.direction, source),
       limit: props.pageSize,
       offset,
       closed,

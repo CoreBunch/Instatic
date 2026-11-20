@@ -133,6 +133,14 @@ interface ModuleDefinition<TProps extends Record<string, unknown>> {
   /** Optional: external npm dependencies this module needs at runtime. */
   dependencies?: ModuleDependencies
 
+  /**
+   * Classes render() writes into its own HTML (or a frontend script toggles)
+   * that no node's classIds names: exact names or a `prefix*`. The class
+   * tree-shaker (`collectUsedStyleRuleIds`) keeps matching site class rules
+   * whenever the module is placed on the site; without it they are pruned.
+   */
+  emittedClassNames?: readonly string[]
+
   /** React component for the editor canvas live preview. */
   component: React.ComponentType<ModuleComponentProps<TProps>>
 

@@ -15,6 +15,7 @@
  */
 
 import { describe, it, expect } from 'bun:test'
+import { registry } from '@core/module-engine'
 import { useEditorStore } from '@site/store/store'
 import { classNamesForClassIds } from '@core/page-tree'
 import { collectClassCSS, generateClassCSS } from '@core/publisher'
@@ -202,7 +203,7 @@ describe('publisher emits ambient rules', () => {
 
     // Re-read state AFTER the mutation — `getState()` returns an immutable
     // snapshot, not a live ref.
-    const css = collectClassCSS(useEditorStore.getState().site!)
+    const css = collectClassCSS(useEditorStore.getState().site!, registry)
     expect(css).toContain('h1 > span')
     expect(css).toContain('color: #f00')
   })

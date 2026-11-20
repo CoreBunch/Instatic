@@ -84,6 +84,7 @@ type ImportWarningKind =
   | 'font-install-failed'
   | 'external-font'
   | 'unresolved-asset'
+  | 'dependency-version-kept'
   | 'script-order-conflict'
   | 'head-tag-dropped'
   | 'head-file-not-hosted'
