@@ -18,8 +18,9 @@ export interface LoopSourceFetchContext {
   orderBy: string
   /**
    * The loop's direction: the author's pick, or the source's
-   * `defaultDirection` when they never picked one. `'asc'` is the order
-   * `fetch()` returns on its own; reverse it for `'desc'`.
+   * `defaultDirection` when they never picked one. What each direction
+   * means is the source's to decide; a source with no `defaultDirection`
+   * should list its natural order for `'asc'`.
    */
   direction: 'asc' | 'desc'
   limit: number
@@ -62,8 +63,8 @@ export type LoopEntitySource = {
   orderByOptions: Array<{ id: string; label: string }>
   /**
    * Direction a new loop uses until its author picks one. Unset means
-   * `'asc'`, so a list keeps the order your `fetch()` returns. Say `'desc'`
-   * for a source whose natural listing is newest first.
+   * `'asc'`. Declare the direction under which `fetch()` lists your items
+   * in their natural order, e.g. `'desc'` for a newest-first listing.
    */
   defaultDirection?: 'asc' | 'desc'
   fields: Array<{ id: string; label: string; description?: string; format?: 'plain' | 'html' | 'url' | 'media' }>

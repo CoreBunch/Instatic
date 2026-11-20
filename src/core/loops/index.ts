@@ -30,6 +30,7 @@ export {
   subscribeRemoteLoopSourcesSynced,
 } from './remoteSources'
 export { pageToLoopItem, filterPagesForLoop } from './sources/sitePages'
+export { EntryFieldSource } from './sources/entryField'
 export { listConnectedMemberApps, MEMBER_APPS_SOURCE_ID, type ConnectedMemberApp } from './sources/memberApps'
 export {
   ENTRY_FIELD_FILTER_KEY,

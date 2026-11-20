@@ -275,9 +275,10 @@ interface LoopEntitySourceBase {
   orderByOptions: { id: string; label: string }[]
   /**
    * The direction a loop uses when its author never picked one. Unset means
-   * `'asc'`: the order `fetch()` returns, untouched. A source whose natural
-   * listing is newest first (`data.rows`, `site.media`) says `'desc'`.
-   * Resolved by `resolveLoopDirection`.
+   * `'asc'`. Each source decides what a direction means for it, so this is
+   * the direction under which `fetch()` lists items in their natural order:
+   * `'desc'` for the newest-first listings (`data.rows`, `site.media`,
+   * `members.apps`). Resolved by `resolveLoopDirection`.
    */
   defaultDirection?: LoopDirection
   /** Fields available for `dynamicBindings` inside the loop. */

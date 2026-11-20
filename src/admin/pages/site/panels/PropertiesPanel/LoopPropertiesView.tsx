@@ -183,6 +183,11 @@ export function LoopPropertiesView({ nodeId, props, activePage }: LoopProperties
       : [{ label: 'Default', value: '' }],
   }
 
+  // Built-in date columns (`publishedAt`, `createdAt`, `connectedAt`, ...)
+  // end in `At`; for those the direction reads better as oldest / newest.
+  const effectiveOrderBy = (typeof props.orderBy === 'string' && props.orderBy) || source?.orderByOptions[0]?.id || ''
+  const sortsByDate = /At$/.test(effectiveOrderBy)
+
   function handleSourceChange(_key: string, value: unknown) {
     const nextId = typeof value === 'string' ? value : ''
     const next = sources.find((s) => s.id === nextId)
@@ -299,10 +304,15 @@ export function LoopPropertiesView({ nodeId, props, activePage }: LoopProperties
                     { label: 'Original order', value: 'asc' },
                     { label: 'Reverse order', value: 'desc' },
                   ]
-                : [
-                    { label: 'Ascending', value: 'asc' },
-                    { label: 'Descending', value: 'desc' },
-                  ],
+                : sortsByDate
+                  ? [
+                      { label: 'Ascending (oldest first)', value: 'asc' },
+                      { label: 'Descending (newest first)', value: 'desc' },
+                    ]
+                  : [
+                      { label: 'Ascending', value: 'asc' },
+                      { label: 'Descending', value: 'desc' },
+                    ],
             }}
             value={resolveLoopDirection(props.direction, source)}
             onChange={handleScalarChange}
