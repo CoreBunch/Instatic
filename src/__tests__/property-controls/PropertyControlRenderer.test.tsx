@@ -19,6 +19,7 @@ import { describe, it, expect, afterEach } from 'bun:test'
 import React from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { render, screen, cleanup, fireEvent } from '@testing-library/react'
+import FrameworkColorPicker from '@site/property-controls/FrameworkColorPicker'
 import { PropertyControlRenderer } from '@site/property-controls/PropertyControlRenderer'
 import { EditorPermissionsContext } from '@site/editorPermissionsContext'
 import type { PropertyControl } from '@core/module-engine'
@@ -204,6 +205,22 @@ describe('PropertyControlRenderer — type dispatch', () => {
     expect(field).not.toBeNull()
     expect(field?.contains(colorInput)).toBe(true)
     expect(field?.contains(textInput)).toBe(true)
+  })
+
+  it('shows the newly assigned variable while the Framework picker stays open', () => {
+    useEditorStore.getState().createSite('Picker test')
+    function Picker() {
+      const [value, setValue] = React.useState('#7b1414')
+      return <FrameworkColorPicker value={value} onChange={setValue} />
+    }
+    render(<Picker />)
+    fireEvent.click(screen.getByRole('button', { name: 'Save to Framework' }))
+    fireEvent.change(screen.getByLabelText('Framework color name'), { target: { value: 'brick' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Save', exact: true }))
+    const assigned = screen.getByLabelText<HTMLInputElement>('Assigned Framework color')
+    expect(assigned.value).toBe('var(--brick)')
+    expect(screen.getByRole('button', { name: '--brick', pressed: true })).toBeDefined()
+    expect(screen.queryByRole('button', { name: 'Save to Framework' })).toBeNull()
   })
 
   it('color → autocompletes framework color tokens as CSS variable references', () => {

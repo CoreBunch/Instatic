@@ -1,5 +1,6 @@
 import { useState, type CSSProperties } from 'react'
 import { Button } from '@ui/components/Button'
+import { Input } from '@ui/components/Input'
 import { SearchBar } from '@ui/components/SearchBar'
 import styles from './ColorPicker.module.css'
 
@@ -13,12 +14,14 @@ export interface ColorPickerToken {
 type SwatchVars = CSSProperties & { '--color-picker-swatch'?: string }
 
 interface TokenStylesSectionProps {
+  assignedToken?: string
   tokens: readonly ColorPickerToken[]
   onSelectToken: (reference: string) => void
 }
 
 export function TokenStylesSection({
   tokens,
+  assignedToken,
   onSelectToken,
 }: TokenStylesSectionProps) {
   const [search, setSearch] = useState('')
@@ -27,6 +30,8 @@ export function TokenStylesSection({
 
   return (
     <div className={styles.tokens}>
+      {assignedToken && <Input fieldSize="xs" monospace readOnly aria-label="Assigned Framework color"
+        value={`var(${assignedToken})`} />}
       <SearchBar
         value={search}
         onValueChange={setSearch}
@@ -39,6 +44,7 @@ export function TokenStylesSection({
             key={token.name}
             variant="ghost"
             size="xs"
+            pressed={token.name === assignedToken}
             menuItem
             align="start"
             className={styles.tokenRow}

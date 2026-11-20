@@ -73,6 +73,8 @@ interface ColorPickerProps {
   gradients?: boolean
   /** Site colour tokens offered in the searchable list. Omit to hide the list. */
   tokens?: readonly ColorPickerToken[]
+  /** CSS custom-property name currently bound to the edited style. */
+  assignedToken?: string
   /** Save the selected color in the site palette; binding is available for solid fills. */
   onSaveColor?: (name: string, color: string, bind: boolean) => boolean
 }
@@ -111,7 +113,7 @@ const GRADIENT_TABS: ReadonlyArray<{ value: FillMode; label: string }> = [
 ]
 
 /** Keep complex CSS editable without reducing it to a default solid or dropping gradient layers. */
-function AuthoredColorInput({ value, gradients, tokens, onChange, onSaveColor }: ColorPickerProps) {
+function AuthoredColorInput({ value, gradients, tokens, assignedToken, onChange, onSaveColor }: ColorPickerProps) {
   const [draft, setDraft] = useState(value)
   const solid = window.CSS.supports('color', draft)
   const valid = solid
@@ -122,7 +124,7 @@ function AuthoredColorInput({ value, gradients, tokens, onChange, onSaveColor }:
     onKeyDown={(event) => { if (event.key === 'Enter') event.currentTarget.blur() }}
     onBlur={() => { if (valid && value !== draft.trim()) onChange(draft.trim()) }} />
     {solid && onSaveColor && <SaveColorForm onSave={(name) => onSaveColor(name, draft.trim(), true)} />}
-    {solid && tokens && tokens.length > 0 && <TokenStylesSection tokens={tokens} onSelectToken={onChange} />}
+    {solid && tokens && tokens.length > 0 && <TokenStylesSection assignedToken={assignedToken} tokens={tokens} onSelectToken={onChange} />}
   </div>
 }
 
@@ -131,6 +133,7 @@ export function ColorPicker({
   onChange,
   gradients = false,
   tokens,
+  assignedToken,
   onSaveColor,
 }: ColorPickerProps) {
   const [format, setFormat] = useState<ColorFormat>(() => detectFormat(value))
@@ -162,7 +165,7 @@ export function ColorPicker({
   }
   useLayoutEffect(() => throttle.cancel(), [externalRevision, throttle])
 
-  if (!parsedFill) return <AuthoredColorInput key={value} value={value} gradients={gradients} tokens={tokens} onChange={onChange} onSaveColor={onSaveColor} />
+  if (!parsedFill) return <AuthoredColorInput key={value} value={value} gradients={gradients} tokens={tokens} assignedToken={assignedToken} onChange={onChange} onSaveColor={onSaveColor} />
 
   const fill = parsedFill
   // In a gradient mode the whole colour surface edits the selected stop.
@@ -530,7 +533,7 @@ export function ColorPicker({
         return onSaveColor(name, formatColor(hsvaToRgba(hsva), 'hex'), fill.mode === 'solid')
       }} />}
       {fill.mode === 'solid' && tokens && tokens.length > 0 && (
-        <TokenStylesSection tokens={tokens} onSelectToken={(ref) => { throttle.flush(); onChange(ref) }} />
+        <TokenStylesSection assignedToken={assignedToken} tokens={tokens} onSelectToken={(ref) => { throttle.flush(); onChange(ref) }} />
       )}
     </div>
   )

@@ -1,4 +1,4 @@
-import { resolveColorPreview } from './frameworkColorPreview'
+import { findColorVariable } from './frameworkColorPreview'
 import { ColorPicker } from '@ui/components/ColorPicker'
 import { generateFrameworkColorVariableSets } from '@core/framework'
 import { getErrorMessage } from '@core/utils/errorMessage'
@@ -15,6 +15,7 @@ export default function FrameworkColorPicker({ value, gradients, onChange }: {
   const create = useEditorStore((s) => s.createFrameworkColorToken)
   const { canEditStyle } = useEditorPermissions()
   const tokens = generateFrameworkColorVariableSets(colors).light
+  const assigned = findColorVariable(value, tokens)
   function saveColor(name: string, color: string, bind: boolean) {
     try {
       const saved = create({ slug: name, lightValue: color, darkModeEnabled: false })
@@ -27,6 +28,6 @@ export default function FrameworkColorPicker({ value, gradients, onChange }: {
       return false
     }
   }
-  return <ColorPicker value={resolveColorPreview(value, tokens)} gradients={gradients} tokens={tokens}
-    onSaveColor={canEditStyle ? saveColor : undefined} onChange={onChange} />
+  return <ColorPicker value={assigned?.value ?? value} assignedToken={assigned?.name} gradients={gradients} tokens={tokens}
+    onSaveColor={canEditStyle && !assigned ? saveColor : undefined} onChange={onChange} />
 }
