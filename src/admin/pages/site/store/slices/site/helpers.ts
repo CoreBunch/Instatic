@@ -19,7 +19,13 @@ import { create } from 'mutative'
 import type { Draft, Patches } from 'mutative'
 import type { ImportFragment } from '@core/htmlImport'
 import type { NewStyleRule } from '@core/siteImport'
-import { addImportedScriptDependencies, addImportedScripts, addImportedStylesheets } from './importedSiteFiles'
+import {
+  addImportedScripts,
+  addImportedStylesheets,
+  orderImportedFiles,
+  reuseImportedFiles,
+} from './importedSiteFiles'
+import { addImportedScriptDependencies, replaceImportedScriptDependencies } from './importedScriptDependencies'
 import { applyLocalSitePatches, notifyCollabBlocked } from './collabBinding'
 import type { EditorStore } from '@site/store/types'
 import { reconcileFrameworkClasses } from './framework/reconcile'
@@ -358,6 +364,17 @@ export function buildSiteHelpers(
       const byOrigin = indexStyleRulesByOrigin(site.styleRules)
       const allocateStyleRuleOrder = createStyleRuleOrderAllocator(site.styleRules)
 
+      // package.json changed: refresh the draft's mirror so the dependency UI sees it.
+      const mirrorPackageJson = (changed: boolean): boolean => {
+        if (changed) {
+          draft.packageJson = {
+            dependencies: { ...site.packageJson.dependencies },
+            devDependencies: { ...site.packageJson.devDependencies },
+          }
+        }
+        return changed
+      }
+
       const helpers: SiteImportTransaction = {
         addPage({ id: pageId, title, slug, nodeFragment }: { id?: string; title: string; slug: string; nodeFragment: ImportFragment }): string {
           // addPage creates a fresh base.body root, normalises the slug, and
@@ -526,13 +543,7 @@ export function buildSiteHelpers(
         },
 
         addScripts(scripts): { id: string; path: string }[] {
-          const dependenciesChanged = addImportedScriptDependencies(site, scripts)
-          if (dependenciesChanged) {
-            draft.packageJson = {
-              dependencies: { ...site.packageJson.dependencies },
-              devDependencies: { ...site.packageJson.devDependencies },
-            }
-          }
+          const dependenciesChanged = mirrorPackageJson(addImportedScriptDependencies(site, scripts))
           const committed = addImportedScripts(site, draft.siteRuntime, scripts)
           if (committed.length > 0 || dependenciesChanged) didMutate = true
           return committed
@@ -542,6 +553,21 @@ export function buildSiteHelpers(
           const committed = addImportedStylesheets(site, draft.siteRuntime, stylesheets)
           if (committed.length > 0) didMutate = true
           return committed
+        },
+
+        reuseSiteFiles(items) {
+          const replacing = items.flatMap(({ existingFileId, replacement }) =>
+            replacement && 'format' in replacement ? [{ fileId: existingFileId, script: replacement }] : [])
+          // Decided before the content changes: "other scripts that still import it".
+          const dependencies = replaceImportedScriptDependencies(site, replacing)
+          mirrorPackageJson(dependencies.changed)
+          const files = reuseImportedFiles(site, draft.siteRuntime, items)
+          if (files.length > 0 || dependencies.changed) didMutate = true
+          return { files, warnings: dependencies.warnings }
+        },
+
+        orderImportedFiles(kind, importOrder, addedIds): void {
+          if (orderImportedFiles(site, draft.siteRuntime, kind, importOrder, addedIds)) didMutate = true
         },
       }
 
