@@ -291,8 +291,26 @@ export function canonicalIp(raw: string): string | null {
   if (!parsed) return null
   if (parsed.family === 4) return ipv4String(parsed.value)
   if (parsed.value >> 32n === 0xffffn) return ipv4String(parsed.value & 0xffffffffn)
+  return ipv6String(parsed.value)
+}
+
+/**
+ * The key for "one visitor" in a per-visitor limit: an IPv4 address as it
+ * is, an IPv6 address as its /64 (`2001:db8:1:2::/64`), since one household
+ * or phone network is given a whole /64 and can rotate through it. Null for
+ * anything that is not an IP address.
+ */
+export function visitorIpKey(raw: string): string | null {
+  const canonical = canonicalIp(raw)
+  if (canonical === null || !canonical.includes(':')) return canonical
+  const parsed = parseIpAddress(canonical)
+  return parsed ? `${ipv6String(maskAddress(parsed.value, 64, 128))}/64` : null
+}
+
+/** RFC 5952 text for a 128-bit IPv6 value. */
+function ipv6String(value: bigint): string {
   const groups: number[] = []
-  for (let shift = 112n; shift >= 0n; shift -= 16n) groups.push(Number((parsed.value >> shift) & 0xffffn))
+  for (let shift = 112n; shift >= 0n; shift -= 16n) groups.push(Number((value >> shift) & 0xffffn))
   let bestStart = -1
   let bestLength = 0
   for (let i = 0; i < 8; ) {

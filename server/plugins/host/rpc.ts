@@ -18,9 +18,9 @@ import type { LoopFetchResult, LoopItem } from '@core/loops/types'
 import type { SerializedApp, SerializedMember, SerializedUser } from '../protocol/messages'
 import type { LoadPluginResult } from '../protocol/messages'
 import { normalizeRoutePath } from '../protocol/parser'
-import { canonicalIp, clientIp } from '../../auth/security'
+import { canonicalIp, clientIp, visitorIpKey } from '../../auth/security'
 import { materializeRouteResponse, serializeRouteRequest } from './routeIo'
-import { PLUGIN_RATE_LIMIT_KEYS, PluginRateLimitStore } from './pluginRateLimit'
+import { PluginRateLimitStore } from './pluginRateLimit'
 import { hostPlugins } from './registry'
 import { requestFromWorker } from './workerPool'
 import { describeWorkerError, workerCallError } from './workerErrors'
@@ -68,7 +68,7 @@ export async function loadPluginInWorker(args: {
     mediaAdapters: [],
     mediaUrlTransformers: [],
     inflightFetches: new Map(),
-    rateLimits: new PluginRateLimitStore(PLUGIN_RATE_LIMIT_KEYS),
+    rateLimits: new PluginRateLimitStore(),
   })
 
   const correlationId = nanoid()
@@ -210,6 +210,7 @@ export async function runRouteInWorker(args: {
   // one key. The serialized headers below leave out the peer address.
   const peer = clientIp(args.request)
   const ip = peer === null ? null : canonicalIp(peer)
+  const ipKey = peer === null ? null : visitorIpKey(peer)
   const { request: serializedReq, body: parsedBody } = await serializeRouteRequest(args.request)
 
   const result = await requestFromWorker(
@@ -224,6 +225,7 @@ export async function runRouteInWorker(args: {
       member: args.member,
       app: args.app,
       ip,
+      ipKey,
       body: parsedBody,
     },
     'route-result',

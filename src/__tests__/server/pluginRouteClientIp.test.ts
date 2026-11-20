@@ -29,6 +29,7 @@ const PLUGIN_SOURCE = `
   export function activate(api) {
     const seen = (ctx) => ({
       ip: ctx.ip,
+      ipKey: ctx.ipKey,
       peer: ctx.req.headers.get('x-bun-socket-ip'),
       forwarded: ctx.req.headers.get('x-forwarded-for'),
     })
@@ -112,23 +113,24 @@ describe('plugin routes and the caller', () => {
   const seen = async (path: string, init: Parameters<typeof visit>[1] = {}) => {
     const res = await visit(path, init)
     expect(res.status).toBe(200)
-    return (await res.json()) as { ip: string | null; peer: string | null; forwarded: string | null }
+    return (await res.json()) as { ip: string | null; ipKey: string | null; peer: string | null; forwarded: string | null }
   }
 
   describe('ctx.ip', () => {
     it('is the socket peer for a direct caller, and the peer header itself is not passed on', async () => {
-      expect(await seen(`${MOUNT}/ip`, { peer: '203.0.113.7' })).toEqual({ ip: '203.0.113.7', peer: null, forwarded: null })
+      expect(await seen(`${MOUNT}/ip`, { peer: '203.0.113.7' })).toEqual({ ip: '203.0.113.7', ipKey: '203.0.113.7', peer: null, forwarded: null })
     })
 
-    it('is one spelling per address', async () => {
-      expect((await seen(`${MOUNT}/ip`, { peer: '::ffff:203.0.113.7' })).ip).toBe('203.0.113.7')
-      expect((await seen(`${MOUNT}/ip`, { peer: '2001:DB8:0:0:0:0:0:1' })).ip).toBe('2001:db8::1')
+    it('is one spelling per address, with a per-visitor key beside it', async () => {
+      expect(await seen(`${MOUNT}/ip`, { peer: '::ffff:203.0.113.7' })).toMatchObject({ ip: '203.0.113.7', ipKey: '203.0.113.7' })
+      expect(await seen(`${MOUNT}/ip`, { peer: '2001:DB8:0:0:0:0:0:1' })).toMatchObject({ ip: '2001:db8::1', ipKey: '2001:db8::/64' })
+      expect((await seen(`${MOUNT}/ip`, { peer: '2001:db8:1:2:3:4:5:6' })).ipKey).toBe('2001:db8:1:2::/64')
       configureTrustedProxyCidrs(['10.0.0.0/8'])
       expect((await seen(`${MOUNT}/ip`, { peer: '10.0.0.2', forwardedFor: '2001:0db8::0001' })).ip).toBe('2001:db8::1')
     })
 
     it('is null when the server cannot tell', async () => {
-      expect((await seen(`${MOUNT}/ip`)).ip).toBeNull()
+      expect(await seen(`${MOUNT}/ip`)).toMatchObject({ ip: null, ipKey: null })
     })
 
     it('is the forwarded client behind a trusted proxy', async () => {

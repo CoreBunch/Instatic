@@ -90,4 +90,6 @@ interface VmRouteContext {
   app: { id: string; name: string; scope: string } | null
   /** The caller's IP address (core's `clientIp`), or null when unknown. */
   ip: string | null
+  /** `ip` as a per-visitor key: IPv4 as it is, IPv6 as its /64. */
+  ipKey: string | null
 }

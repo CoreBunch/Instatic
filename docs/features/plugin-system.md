@@ -548,7 +548,7 @@ api.cms.routes.authenticated.get('/me', handler)               // any logged-in 
 api.cms.routes.public.post('/subscribe', handler)              // anonymous — also requires cms.routes.public
 ```
 
-Routes mount under `/admin/api/cms/plugins/<id>/runtime/*`. The host enforces the admin session check + the declared capability before invoking the handler. Handlers receive `{ req, body, user, member, app, ip }`. The `user` is `null` for public routes.
+Routes mount under `/admin/api/cms/plugins/<id>/runtime/*`. The host enforces the admin session check + the declared capability before invoking the handler. Handlers receive `{ req, body, user, member, app, ip, ipKey }`. The `user` is `null` for public routes.
 
 **`ctx.ip`** is the caller's IP address (`string | null`) on every kind of route: admin, public and member, on both mounts. It is core's `clientIp(req)` (`server/auth/security.ts`) written in one spelling per address by `canonicalIp` (IPv4 dotted, an IPv4-mapped IPv6 address as IPv4, IPv6 lowercased and compressed per RFC 5952), read in `runRouteInWorker` (`server/plugins/host/rpc.ts`). `clientIp` is the socket peer, or, when that peer is in `TRUSTED_PROXY_CIDRS`, the nearest `X-Forwarded-For` entry that is not a trusted proxy. A forwarded header from any other peer is ignored. `null` means the server could not tell. What a plugin must know:
 
@@ -556,27 +556,20 @@ Routes mount under `/admin/api/cms/plugins/<id>/runtime/*`. The host enforces th
 - It is personal data. Keep it only as long as the purpose needs (a rate-limit window), and do not send it to a third party.
 - The synthetic peer header core stamps (`x-bun-socket-ip`) is removed from `ctx.req.headers` (`serializeRouteRequest`), so `ctx.ip` is the one supported answer. A client's own `X-Forwarded-For` passes through as sent; never key anything on it.
 
-**`api.cms.rateLimit.take(key, limit, windowMs)`** → `{ ok, remaining, retryAfterMs, reason? }`: a counter for the plugin's own keys allowing about `limit` uses per sliding `windowMs`. A refused take is not counted. No permission: the counters are the plugin's own, in a `PluginRateLimitStore` (`server/plugins/host/pluginRateLimit.ts`) held on the plugin's host record, so a plugin reload, an upgrade or a restart starts every window again.
+**`ctx.ipKey`** is `ctx.ip` as the key for one visitor (`visitorIpKey` in `server/auth/security.ts`): an IPv4 address as it is, an IPv6 address as its /64 (`2001:db8:1:2::/64`), since one household or phone network gets a whole /64 and can rotate through it. Null when `ctx.ip` is. Use it, not `ctx.ip`, for per-visitor limits.
 
-- **How it counts.** Each (key, limit, window) is a two-bucket sliding-window counter: this fixed window's count plus the previous one's, weighted by how much of it the sliding window still covers. That is a few numbers per key whatever the limit, so a take is O(1) and memory is O(keys). The estimate can let a burst at a window boundary through slightly differently from an exact log; `retryAfterMs` is the wait until the estimate leaves room.
-- **Capacity.** One plugin's counters hold 10,000 keys. A take for a new key when full forgets the least recently used key and answers `reason: 'capacity'` (the take itself is judged normally). A refusal answers `reason: 'limit'`. Each take also drops a few keys whose windows have fully passed.
-- **Bounds.** `key` 1 to 200 characters, `limit` 1 to 10,000, `windowMs` 1 second to 1 day. The same key under another limit or window is another counter.
-- **What to key on.** `ctx.ip` for a visitor, grouping IPv6 by its /64 (one household or phone network gets a whole /64, so a single address is easy to rotate), or an account or API key the host has already checked. Never a value the caller types alone (an email in the body, a header): a caller who chooses the key gets a fresh counter for every value.
+**`api.cms.rateLimit.take(key, limit, windowMs)`** → `{ ok, remaining, retryAfterMs, reason? }`: a counter for the plugin's own keys allowing about `limit` uses per sliding `windowMs`. A refused take is not counted. No permission: the counters are the plugin's own, in a `PluginRateLimitStore` (`server/plugins/host/pluginRateLimit.ts`) held on the plugin's host record. They live in memory only, so a plugin reload, an upgrade, a crash and respawn of its worker, or a server restart starts every window again.
+
+- **A throttle, not a lockout.** It smooths load per key and forgets under restarts and key pressure. A defence that must hold, such as against guessing one account's password, is persisted in the plugin's own records, the way core's admin sign-in backs its in-memory limiters with a lockout stored in the database.
+- **How it counts.** Each (key, limit, window) is a two-bucket sliding-window counter: this fixed window's count plus the previous one's, weighted by how much of it the sliding window still covers. A few numbers per key whatever the limit, so memory is O(keys). The estimate admits at most `2 × limit − 1` takes in any true sliding window of `windowMs`, and can refuse for up to `windowMs ÷ limit` while the true count is low. `retryAfterMs` is the wait until the estimate leaves room.
+- **Capacity.** Each (limit, window) pair is its own pool of 10,000 keys, and a plugin may use at most 16 pairs (a 17th throws: pairs come from plugin code, not from visitors). Each pool keeps two least-recently-used lists, counters with room and saturated ones (refused, or at the limit). A new key in a full pool evicts the oldest counter with room, and a saturated one only when no counter has room, so a flood of fresh keys cannot push out a used-up counter and hand its owner a fresh budget, and one pair's flood never touches another pair. The take that evicted answers `reason: 'capacity'` (it is judged normally); a refusal answers `reason: 'limit'`. Every step is constant time: the lists are linked and the map is only read by key.
+- **Expiry.** Each take drops up to two counters whose windows have both passed from the head of each list of its pair. In one pair every counter has the same window and a list is ordered by last use, so the first live head means the rest of that list is live.
+- **Bounds.** `key` 1 to 200 characters, `limit` 1 to 10,000, `windowMs` 1 second to 1 day.
+- **What to key on.** `ctx.ipKey` for a visitor, or an account or API key the host has already checked. Never a value the caller types alone (an email in the body, a header): a caller who chooses the key gets a fresh counter for every value.
 
 ```js
-// A visitor: an IPv4 address, or an IPv6 address's /64 (ctx.ip is compressed, so expand `::` first).
-function visitorKey(ip) {
-  if (!ip) return 'unknown'
-  if (!ip.includes(':')) return ip
-  const [head, tail = ''] = ip.split('::')
-  const h = head ? head.split(':') : []
-  const t = tail ? tail.split(':') : []
-  const groups = ip.includes('::') ? [...h, ...Array(8 - h.length - t.length).fill('0'), ...t] : h
-  return `${groups.slice(0, 4).join(':')}::/64`
-}
-
 api.cms.routes.public.post('/checkout', async (ctx) => {
-  const slot = await api.cms.rateLimit.take(`checkout:${visitorKey(ctx.ip)}`, 10, 60_000)
+  const slot = await api.cms.rateLimit.take(`checkout:${ctx.ipKey ?? 'unknown'}`, 10, 60_000)
   if (!slot.ok) return { __response: true, status: 429, headers: { 'retry-after': String(Math.ceil(slot.retryAfterMs / 1000)) }, body: 'Slow down' }
   // ...
 })

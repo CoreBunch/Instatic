@@ -164,6 +164,8 @@ export interface RunRouteRequest {
   app: SerializedApp | null
   /** The caller's IP address as core's `clientIp` resolves it (trusted proxies applied), or null. */
   ip: string | null
+  /** `ip` as a per-visitor key: IPv4 as it is, IPv6 as its /64. */
+  ipKey: string | null
   body: Record<string, unknown>
 }
 

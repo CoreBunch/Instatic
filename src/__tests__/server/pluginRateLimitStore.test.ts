@@ -39,23 +39,54 @@ describe('PluginRateLimitStore', () => {
     expect(store.take('k', 3, W, T0 + 2 * W).remaining).toBe(2)
   })
 
-  it('forgets the least recently used key when full, and says so', () => {
+  it('evicts the least recently used counter with room when a shape is full, and says so', () => {
+    const store = new PluginRateLimitStore(2)
+    store.take('a', 5, W, T0)
+    store.take('b', 5, W, T0)
+    store.take('a', 5, W, T0) // a is now the most recently used
+    expect(store.take('c', 5, W, T0)).toMatchObject({ ok: true, reason: 'capacity' })
+    expect(store.size()).toBe(2)
+    // b was forgotten (a fresh counter), a kept its two takes.
+    expect(store.take('b', 5, W, T0)).toMatchObject({ ok: true, remaining: 4, reason: 'capacity' })
+  })
+
+  it('keeps a used-up counter through a flood of fresh keys in its own shape', () => {
+    const store = new PluginRateLimitStore(10_000)
+    for (let i = 0; i < 5; i++) store.take('abuser', 5, W, T0)
+    expect(store.take('abuser', 5, W, T0).reason).toBe('limit')
+    for (let i = 0; i < 200_000; i++) store.take(`fresh-${i}`, 5, W, T0 + 1)
+    expect(store.take('abuser', 5, W, T0 + 2)).toMatchObject({ ok: false, reason: 'limit' })
+  })
+
+  it('keeps a used-up counter through a flood of fresh keys in another shape', () => {
+    const store = new PluginRateLimitStore(10_000)
+    for (let i = 0; i < 3; i++) store.take('email:ada@example.com', 3, W, T0)
+    for (let i = 0; i < 200_000; i++) store.take(`ip:${i}`, 100, W, T0 + 1)
+    expect(store.take('email:ada@example.com', 3, W, T0 + 2)).toMatchObject({ ok: false, reason: 'limit' })
+  })
+
+  it('evicts a saturated counter only when every counter in the shape is saturated', () => {
     const store = new PluginRateLimitStore(2)
     store.take('a', 1, W, T0)
     store.take('b', 1, W, T0)
-    store.take('a', 1, W, T0) // refused, but a is now the most recently used
+    // Both used up: the oldest one goes.
     expect(store.take('c', 1, W, T0)).toMatchObject({ ok: true, reason: 'capacity' })
-    expect(store.size()).toBe(2)
-    // b was forgotten, a was kept.
-    expect(store.take('b', 1, W, T0)).toMatchObject({ ok: true, reason: 'capacity' })
-    expect(store.take('c', 1, W, T0).reason).toBe('limit')
+    expect(store.take('b', 1, W, T0).reason).toBe('limit')
   })
 
-  it('drops quiet keys from the least recently used end as it goes', () => {
+  it('refuses a seventeenth limit and window pair with a clear error', () => {
+    const store = new PluginRateLimitStore(10)
+    for (let i = 1; i <= 16; i++) store.take('k', i, W, T0)
+    expect(() => store.take('k', 17, W, T0)).toThrow(/at most 16 different limit and window pairs/)
+    // The pairs already in use keep working.
+    expect(store.take('k', 16, W, T0).ok).toBe(true)
+  })
+
+  it('drops counters whose windows have passed as it goes', () => {
     const store = new PluginRateLimitStore(1000)
-    for (let i = 0; i < 3; i++) store.take(`old-${i}`, 5, W, T0)
-    // A sweep runs on a slice of takes; these all reuse one fresh key.
-    for (let i = 0; i < 256; i++) store.take('fresh', 1000, W, T0 + 3 * W)
+    store.take('old-a', 5, W, T0)
+    store.take('old-b', 5, W, T0)
+    store.take('fresh', 5, W, T0 + 3 * W)
     expect(store.size()).toBe(1)
   })
 })

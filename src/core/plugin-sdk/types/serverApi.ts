@@ -137,17 +137,20 @@ export interface ServerPluginApi {
     /** Facts about the site a plugin needs to build links. No permission needed. */
     site: ServerPluginSiteApi
     /**
-     * Sliding-window counters for the plugin's own keys. `take` records one
-     * use of `key` and says whether it fits: about `limit` uses in any
-     * `windowMs` (a two-bucket sliding-window counter, which weights the
-     * previous fixed window by how much of it still overlaps). A refused take
-     * is not counted. In memory only: a plugin reload or a server restart
-     * starts every window again. `limit` is 1 to 10,000; `windowMs` is one
-     * second to one day. The plugin's counters hold 10,000 keys; past that a
-     * new key makes the least recently used one forgotten (`reason:
-     * 'capacity'`). Key by `ctx.ip` (an IPv6 address by its /64), an account
-     * or an API key, never by a value the caller types alone. No permission
-     * needed.
+     * Sliding-window counters for the plugin's own keys: a throttle, not a
+     * lockout. `take` records one use of `key` and says whether it fits:
+     * about `limit` uses in any `windowMs` (a two-bucket sliding-window
+     * counter: at most `2 × limit − 1` in any true window, and it can refuse
+     * for up to `windowMs ÷ limit` while the true count is low). A refused
+     * take is not counted. In memory only: a plugin reload, a worker respawn
+     * or a server restart starts every window again, so a defence that must
+     * hold belongs in the plugin's own records. `limit` is 1 to 10,000;
+     * `windowMs` is one second to one day; at most 16 different pairs (a
+     * 17th throws). Each pair holds 10,000 keys; a new key in a full pair
+     * forgets the least recently used counter that still has room, and a
+     * used-up one only when none has (`reason: 'capacity'`). Key by
+     * `ctx.ipKey`, an account or an API key, never by a value the caller
+     * types alone. No permission needed.
      */
     rateLimit: {
       take: (key: string, limit: number, windowMs: number) => Promise<PluginRateLimitResult>

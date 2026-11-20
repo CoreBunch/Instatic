@@ -5,8 +5,8 @@
  *
  * No permission: the counters are the plugin's own and live only in this
  * process, like `crypto.*`. They sit on the plugin's host record, so they go
- * when the plugin is unloaded, and a reload, an upgrade or a server restart
- * starts every window again.
+ * when the plugin is unloaded, and a reload, an upgrade, a worker respawn or
+ * a server restart starts every window again.
  */
 import type { DbClient } from '../../../db/client'
 import type { ApiCallFor } from '../../protocol/apiCallSchema'

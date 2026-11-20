@@ -1,24 +1,37 @@
 /**
  * The counters behind `api.cms.rateLimit.take`: one store per plugin, held on
  * its host record (`HostPluginRecord.rateLimits`), so they go when the plugin
- * is unloaded.
+ * is unloaded or its worker is respawned.
+ *
+ * This is an in-memory throttle, not a lockout. It smooths load per key; it
+ * forgets on restart and under key pressure, so a defence that must hold (an
+ * account that may not be guessed at) belongs in the plugin's own records.
  *
  * Each (key, limit, window) is a two-bucket sliding-window counter: the count
  * of the current fixed window and of the one before it, with the previous
- * window weighted by how much of it still overlaps the sliding window. That
- * is a fixed few numbers per key whatever the limit, so memory is O(keys),
- * and a take is O(1).
+ * window weighted by how much of it the sliding window still covers. That is
+ * a few numbers per key whatever the limit, so memory is O(keys). The
+ * estimate admits at most `2 × limit − 1` takes in any true sliding window,
+ * and can refuse for up to `window ÷ limit` while the true count is low.
  *
- * The store holds at most `maxKeys` keys. A take for a new key when it is
- * full forgets the least recently used key (a JS `Map` iterates in insertion
- * order, and every take moves its key to the end), so a flood of distinct
- * keys degrades the oldest counters instead of refusing new visitors. Every
- * so many takes the store also drops stale keys from the front, whose windows
- * have fully passed, so quiet keys do not linger until eviction.
+ * Capacity is per (limit, window) shape, at most `MAX_SHAPES` shapes per
+ * plugin (shapes come from plugin code, not from visitors), and at most
+ * `keysPerShape` keys in each. Each shape keeps two least-recently-used
+ * lists: counters with room, and saturated ones (refused, or at the limit).
+ * A new key in a full shape evicts the oldest counter with room, and a
+ * saturated one only when none has room, so a flood of fresh keys cannot buy
+ * an abuser a fresh budget by pushing out their used-up counter. Every step
+ * (look up, touch, move between lists, evict, sweep) is constant time: the
+ * lists are linked, and the map is only ever read by key.
  */
 
-/** Keys one plugin's store holds before it forgets the least recently used. */
-export const PLUGIN_RATE_LIMIT_KEYS = 10_000
+/** Different (limit, window) pairs one plugin may use. */
+const PLUGIN_RATE_LIMIT_SHAPES = 16
+/** Keys one shape holds before it evicts. */
+const PLUGIN_RATE_LIMIT_KEYS = 10_000
+
+/** Stale counters dropped from the head of each list per take, at most. */
+const SWEEP_PER_TAKE = 2
 
 export interface PluginRateLimitDecision {
   ok: boolean
@@ -27,95 +40,166 @@ export interface PluginRateLimitDecision {
   /** When refused, ms until a take for this key would be allowed; 0 otherwise. */
   retryAfterMs: number
   /**
-   * `limit`: refused, the key used up its limit. `capacity`: allowed, but
-   * the store was full and forgot its least recently used key to make room.
-   * Absent otherwise.
+   * `limit`: refused, the key used up its limit. `capacity`: allowed, but its
+   * shape was full and forgot another counter to make room. Absent otherwise.
    */
   reason?: 'limit' | 'capacity'
 }
 
 interface Counter {
-  limit: number
-  windowMs: number
-  /** Start of the current fixed window, a multiple of `windowMs`. */
+  key: string
+  /** Start of the current fixed window, a multiple of the shape's window. */
   windowStart: number
   current: number
   previous: number
+  saturated: boolean
+  prev: Counter | null
+  next: Counter | null
 }
 
-/**
- * Every `SWEEP_EVERY` takes, look at up to `SWEEP_LOOK` keys from the least
- * recently used end. Walking a `Map` from its start skips the slots earlier
- * deletes left behind, which costs microseconds on a large busy map, so the
- * walk runs on a slice of takes, never on each one.
- */
-const SWEEP_EVERY = 256
-const SWEEP_LOOK = 64
+/** A doubly linked list, least recently used at the head. */
+class CounterList {
+  head: Counter | null = null
+  tail: Counter | null = null
+  size = 0
 
-export class PluginRateLimitStore {
-  private readonly counters = new Map<string, Counter>()
-  private takesSinceSweep = 0
+  push(counter: Counter): void {
+    counter.prev = this.tail
+    counter.next = null
+    if (this.tail) this.tail.next = counter
+    else this.head = counter
+    this.tail = counter
+    this.size += 1
+  }
 
+  remove(counter: Counter): void {
+    if (counter.prev) counter.prev.next = counter.next
+    else this.head = counter.next
+    if (counter.next) counter.next.prev = counter.prev
+    else this.tail = counter.prev
+    counter.prev = null
+    counter.next = null
+    this.size -= 1
+  }
+}
+
+/** Every counter of one (limit, window) pair. */
+class Shape {
+  private readonly byKey = new Map<string, Counter>()
+  private readonly open = new CounterList()
+  private readonly saturated = new CounterList()
+  private readonly limit: number
+  private readonly windowMs: number
   private readonly maxKeys: number
 
-  constructor(maxKeys: number) {
+  constructor(limit: number, windowMs: number, maxKeys: number) {
+    this.limit = limit
+    this.windowMs = windowMs
     this.maxKeys = maxKeys
   }
 
-  take(key: string, limit: number, windowMs: number, now: number = Date.now()): PluginRateLimitDecision {
-    if (++this.takesSinceSweep >= SWEEP_EVERY) {
-      this.takesSinceSweep = 0
-      this.sweep(now)
-    }
-    // The limit and window are part of the key: the same key under another
-    // limit is another counter.
-    const id = `${limit}/${windowMs}/${key}`
-    let counter = this.counters.get(id)
+  take(key: string, now: number): PluginRateLimitDecision {
+    this.sweep(now)
+    const { limit, windowMs } = this
+    let counter = this.byKey.get(key)
     let evicted = false
     if (counter) {
-      this.counters.delete(id)
+      this.listOf(counter).remove(counter)
     } else {
-      if (this.counters.size >= this.maxKeys) {
-        const oldest = this.counters.keys().next().value
-        if (oldest !== undefined) this.counters.delete(oldest)
-        evicted = true
-      }
-      counter = { limit, windowMs, windowStart: now - (now % windowMs), current: 0, previous: 0 }
+      if (this.byKey.size >= this.maxKeys) evicted = this.evict()
+      counter = { key, windowStart: now - (now % windowMs), current: 0, previous: 0, saturated: false, prev: null, next: null }
+      this.byKey.set(key, counter)
     }
-    this.counters.set(id, counter)
-    roll(counter, now)
+    roll(counter, windowMs, now)
 
     const elapsed = now - counter.windowStart
     const estimate = counter.previous * ((windowMs - elapsed) / windowMs) + counter.current
+    let decision: PluginRateLimitDecision
     if (estimate + 1 > limit) {
-      return { ok: false, remaining: 0, retryAfterMs: retryAfter(counter, now), reason: 'limit' }
+      counter.saturated = true
+      decision = { ok: false, remaining: 0, retryAfterMs: retryAfter(counter, limit, windowMs, now), reason: 'limit' }
+    } else {
+      counter.current += 1
+      const remaining = Math.max(0, Math.floor(limit - estimate - 1))
+      counter.saturated = remaining === 0
+      decision = evicted ? { ok: true, remaining, retryAfterMs: 0, reason: 'capacity' } : { ok: true, remaining, retryAfterMs: 0 }
     }
-    counter.current += 1
-    const remaining = Math.max(0, Math.floor(limit - estimate - 1))
-    return evicted ? { ok: true, remaining, retryAfterMs: 0, reason: 'capacity' } : { ok: true, remaining, retryAfterMs: 0 }
+    this.listOf(counter).push(counter)
+    return decision
   }
 
-  /** Keys held right now. */
   size(): number {
-    return this.counters.size
+    return this.byKey.size
   }
 
-  /** Drop keys at the least recently used end whose windows have fully passed. */
+  private listOf(counter: Counter): CounterList {
+    return counter.saturated ? this.saturated : this.open
+  }
+
+  /** Forget the oldest counter with room, or the oldest saturated one when none has room. */
+  private evict(): boolean {
+    const victim = this.open.head ?? this.saturated.head
+    if (!victim) return false
+    this.listOf(victim).remove(victim)
+    this.byKey.delete(victim.key)
+    return true
+  }
+
+  /**
+   * Drop counters whose windows have both passed, from the head of each list.
+   * In one shape every counter has the same window and a list is ordered by
+   * last use, which is also the order of their windows, so the first live
+   * head means the rest of that list is live too.
+   */
   private sweep(now: number): void {
-    let looked = 0
-    for (const [id, counter] of this.counters) {
-      if (looked++ >= SWEEP_LOOK) return
-      if (now - counter.windowStart < 2 * counter.windowMs) return
-      this.counters.delete(id)
+    for (const list of [this.open, this.saturated]) {
+      for (let i = 0; i < SWEEP_PER_TAKE; i++) {
+        const head = list.head
+        if (!head || now - head.windowStart < 2 * this.windowMs) break
+        list.remove(head)
+        this.byKey.delete(head.key)
+      }
     }
+  }
+}
+
+export class PluginRateLimitStore {
+  private readonly shapes = new Map<string, Shape>()
+  private readonly keysPerShape: number
+
+  constructor(keysPerShape: number = PLUGIN_RATE_LIMIT_KEYS) {
+    this.keysPerShape = keysPerShape
+  }
+
+  take(key: string, limit: number, windowMs: number, now: number = Date.now()): PluginRateLimitDecision {
+    const id = `${limit}/${windowMs}`
+    let shape = this.shapes.get(id)
+    if (!shape) {
+      if (this.shapes.size >= PLUGIN_RATE_LIMIT_SHAPES) {
+        throw new Error(
+          `A plugin can use at most ${PLUGIN_RATE_LIMIT_SHAPES} different limit and window pairs; ` +
+            `this would be pair ${PLUGIN_RATE_LIMIT_SHAPES + 1} (${limit} per ${windowMs} ms)`,
+        )
+      }
+      shape = new Shape(limit, windowMs, this.keysPerShape)
+      this.shapes.set(id, shape)
+    }
+    return shape.take(key, now)
+  }
+
+  /** Keys held right now, across every shape. */
+  size(): number {
+    let total = 0
+    for (const shape of this.shapes.values()) total += shape.size()
+    return total
   }
 }
 
 /** Move the counter's windows forward to the one `now` falls in. */
-function roll(counter: Counter, now: number): void {
-  const start = now - (now % counter.windowMs)
+function roll(counter: Counter, windowMs: number, now: number): void {
+  const start = now - (now % windowMs)
   if (start === counter.windowStart) return
-  counter.previous = start - counter.windowStart === counter.windowMs ? counter.current : 0
+  counter.previous = start - counter.windowStart === windowMs ? counter.current : 0
   counter.current = 0
   counter.windowStart = start
 }
@@ -126,8 +210,8 @@ function roll(counter: Counter, now: number): void {
  * window alone is full, the wait runs into the next window, where this
  * window's count is the one fading out.
  */
-function retryAfter(counter: Counter, now: number): number {
-  const { limit, windowMs, current, previous } = counter
+function retryAfter(counter: Counter, limit: number, windowMs: number, now: number): number {
+  const { current, previous } = counter
   const elapsed = now - counter.windowStart
   const room = limit - 1 - current
   if (room >= 0 && previous > 0) {

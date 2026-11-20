@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it } from 'bun:test'
 import {
   DEV_ORIGIN_ALLOWLIST,
   canonicalIp,
+  visitorIpKey,
   clientIp,
   configurePublicOrigins,
   configureTrustedProxyCidrs,
@@ -289,6 +290,17 @@ describe('canonicalIp', () => {
     expect(canonicalIp('1:0:3:4:5:6:7:8')).toBe('1:0:3:4:5:6:7:8')
     expect(canonicalIp('::1')).toBe('::1')
     expect(canonicalIp('not an address')).toBeNull()
+  })
+})
+
+describe('visitorIpKey', () => {
+  it('keys IPv4 by the address and IPv6 by its /64', () => {
+    expect(visitorIpKey('203.0.113.7')).toBe('203.0.113.7')
+    expect(visitorIpKey('::ffff:203.0.113.7')).toBe('203.0.113.7')
+    expect(visitorIpKey('2001:db8:1:2:3:4:5:6')).toBe('2001:db8:1:2::/64')
+    expect(visitorIpKey('2001:DB8:1:2:ffff::9')).toBe('2001:db8:1:2::/64')
+    expect(visitorIpKey('2001:db8::1')).toBe('2001:db8::/64')
+    expect(visitorIpKey('nope')).toBeNull()
   })
 })
 

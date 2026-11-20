@@ -84,6 +84,13 @@ export interface ServerPluginRouteContext {
    * purpose needs (a rate-limit window, say), and never send it on.
    */
   ip: string | null
+  /**
+   * `ip` as the key for one visitor in a per-visitor limit: an IPv4 address
+   * as it is, an IPv6 address as its /64 (`2001:db8:1:2::/64`), since one
+   * household or phone network gets a whole /64 and can rotate through it.
+   * Null when `ip` is.
+   */
+  ipKey: string | null
 }
 
 /** An app calling a member route on a member's behalf. */
