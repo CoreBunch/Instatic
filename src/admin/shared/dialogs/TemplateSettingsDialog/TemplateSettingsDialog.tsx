@@ -15,7 +15,8 @@ import { Dialog } from '@ui/components/Dialog'
 import { Input } from '@ui/components/Input'
 import { Select } from '@ui/components/Select'
 import { Tab, TabList, TabPanel, Tabs } from '@ui/components/Tabs'
-import { PageSeoTabPanels, pageSeoProblem } from '@admin/shared/PageSeoEditor'
+import { LayoutSolidIcon } from 'pixel-art-icons/icons/layout-solid'
+import { PageSeoTabs, PageSeoTabPanels, pageSeoProblem } from '@admin/shared/PageSeoEditor'
 import dialogStyles from '../SiteCreateDialog/SiteCreateDialog.module.css'
 
 export interface TemplateSettingsPayload {
@@ -28,8 +29,9 @@ export interface TemplateSettingsPayload {
 
 type SettingsTab = 'template' | 'search' | 'head'
 
-/** What a template's head settings mean, per target kind; layouts have none. */
-const SEO_NOTES: Partial<Record<TemplateTarget['kind'], string>> = {
+/** What a template's head settings mean, per target kind. */
+const SEO_NOTES: Record<TemplateTarget['kind'], string> = {
+  everywhere: 'Defaults for pages and entries using this template. For a title with a suffix, enter {page.title} | {site.name}. A page can override individual fields.',
   postTypes:
     'A pattern for every entry this template shows. Use {currentEntry.title}-style tokens for per-entry text. An entry\'s own SEO title and description win; a canonical without a token becomes each entry\'s own address; robots and other fixed values apply to every entry.',
   notFound: 'The head of the page visitors get for an address that does not exist.',
@@ -110,10 +112,8 @@ export function TemplateSettingsDialog({
   const priorityInvalid = !Number.isFinite(priorityNumber)
   const postTypesEmpty = targetKind === 'postTypes' && selectedSlugs.length === 0
 
-  // An everywhere layout is chrome: its head settings never reach the pages
-  // it wraps (composeTemplateChain), so it has no head tabs.
   const seoNote = SEO_NOTES[targetKind]
-  const seoProblem = seoNote ? pageSeoProblem(seo) : null
+  const seoProblem = pageSeoProblem(seo)
 
   const saveDisabled = !trimmedTitle
     || Boolean(slugValidation)
@@ -147,7 +147,7 @@ export function TemplateSettingsDialog({
         target,
         priority: priorityNumber,
       },
-      seo: seoNote ? parsePageSeo(seo) : (page.seo ?? null),
+      seo: parsePageSeo(seo),
     })
   }
 
@@ -156,7 +156,7 @@ export function TemplateSettingsDialog({
       open
       onClose={onCancel}
       title="Template settings"
-      size={seoNote ? 'xl' : 'sm'}
+      size="xl"
       initialFocusRef={inputRef}
       footer={
         <>
@@ -177,14 +177,11 @@ export function TemplateSettingsDialog({
       }
     >
       <form id={FORM_ID} className={dialogStyles.form} onSubmit={handleSubmit}>
-        <Tabs value={seoNote ? tab : 'template'} onChange={setTab}>
-          {seoNote && (
-            <TabList ariaLabel="Template settings sections">
-              <Tab value="template">Template</Tab>
-              <Tab value="search">Search &amp; social</Tab>
-              <Tab value="head">Head tags</Tab>
-            </TabList>
-          )}
+        <Tabs value={tab} onChange={setTab}>
+          <TabList ariaLabel="Template settings sections">
+            <Tab value="template"><LayoutSolidIcon size={14} aria-hidden="true" />Template</Tab>
+            <PageSeoTabs />
+          </TabList>
           <TabPanel value="template" keepMounted>
             <div className={dialogStyles.form}>
               <div className={dialogStyles.field}>
@@ -261,9 +258,7 @@ export function TemplateSettingsDialog({
               </div>
             </div>
           </TabPanel>
-          {seoNote && (
-            <PageSeoTabPanels value={seo} onChange={setSeo} pageTitle={trimmedTitle || page.title} note={seoNote} />
-          )}
+          <PageSeoTabPanels value={seo} onChange={setSeo} pageTitle={trimmedTitle || page.title} note={seoNote} />
         </Tabs>
       </form>
     </Dialog>

@@ -73,9 +73,9 @@ function SearchSection({ value, set, pageTitle }: { value: PageSeo; set: SetFiel
       <section className={styles.section}>
         <h3 className={styles.heading}>Search</h3>
         <TextRow label="Title" value={value.title} maxLength={512} placeholder={pageTitle} onChange={(next) => set('title', next)}
-          hint="Shown in the browser tab and search results. Empty uses the site's meta title from Settings, or the page title when that is not set." />
+          hint="Shown in the browser tab and search results. Use {page.title} | {site.name} for a title with a suffix." />
         <TextRow label="Description" value={value.description} maxLength={2048} multiline onChange={(next) => set('description', next)}
-          hint="Empty uses the site description from Settings." />
+          hint="Shown in search results." />
         <TextRow label="Canonical URL" maxLength={2048} value={value.canonical} placeholder="https://example.com/page" onChange={(next) => set('canonical', next)} />
         <TextRow label="Robots" maxLength={256} value={value.robots} placeholder="index, follow" onChange={(next) => set('robots', next)} />
       </section>
@@ -93,7 +93,7 @@ function SearchSection({ value, set, pageTitle }: { value: PageSeo; set: SetFiel
 
       <section className={styles.section}>
         <h3 className={styles.heading}>X / Twitter</h3>
-        <p className={styles.sectionHint}>Empty fields are not published; X then reads the social card above.</p>
+        <p className={styles.sectionHint}>X uses the social card when no X-specific value is set at any level.</p>
         <Row label="Card">
           {(id) => (
             <Select
@@ -142,7 +142,7 @@ function HeadSection({ value, set }: { value: PageSeo; set: SetField }) {
         <SeoImageField
           label="Favicon"
           value={value.favicon?.href}
-          hint="Empty uses the site favicon from Settings."
+          hint="Empty uses the inherited favicon."
           onChange={(next) => set('favicon', next ? { href: next } : undefined)}
         />
         <TextRow label="Color scheme" maxLength={64} value={value.colorScheme} placeholder="light dark" onChange={(next) => set('colorScheme', next)} />

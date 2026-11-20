@@ -482,7 +482,7 @@ Agents should not use npm CDN URLs such as `esm.sh`, `unpkg`, or jsDelivr for pa
 | `site_delete_page`    | `{ pageId }`                      | none           | Delete page; fails if it would leave the site with 0 pages |
 | `site_rename_page`    | `{ pageId, title, slug? }`        | none           | Change title/slug; `slug="index"` makes this the homepage  |
 | `site_duplicate_page` | `{ pageId, title, slug? }`        | `{ pageId }`   | Deep-clone page (all nodes, props, class assignments)      |
-| `site_set_page_seo`   | `{ pageId, seo: PageSeo \| null }` | none           | Replace the page's `<head>` settings (search, social card, theme colours, favicon, extra meta / links, JSON-LD; see [publisher.md](publisher.md) → "Page head settings"). Read the current value from `site_list_documents`; `null` clears it. On a post-type template it is a pattern for every entry; on an everywhere layout it is ignored |
+| `site_set_page_seo`   | `{ pageId, seo: PageSeo \| null }` | none           | Replace the page's `<head>` settings (search, social card, theme colours, favicon, extra meta / links, JSON-LD; see [publisher.md](publisher.md) → "Page head settings"). Read the current value from `site_list_documents`; `null` clears it. On a post-type template it is a pattern for every entry; on an everywhere layout it supplies defaults for matching pages and entries |
 
 **Templates (CMS layouts)**
 

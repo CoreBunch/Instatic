@@ -2,18 +2,10 @@
  * Document `<head>` metadata: the `<title>`, `lang`, and every tag a page's
  * SEO settings (`page.seo`, see `@core/page-tree` → `PageSeo`) ask for.
  *
- * Fallback chain, per value:
- *   - title       → caller's `documentMeta.title` (a post-type entry's SEO
- *                   title) → `page.seo.title` → `settings.metaTitle` →
- *                   `page.title` → `site.name`
- *   - description → `documentMeta.description` → `page.seo.description` →
- *                   `settings.metaDescription`
- *   - favicon     → `page.seo.favicon` → `settings.faviconUrl` (unless the
- *                   page lists its own `icon` links)
- * Every other tag is emitted only when the page sets it.
- *
- * On an entry route the settings are the matched post-type template's
- * (`composeTemplateChain` carries them), used as a pattern for every entry:
+ * Head fields inherit from global settings through the matching template
+ * chain to the page. The site's meta title, description and favicon remain
+ * the defaults when no SEO layer sets those fields.
+ * On an entry route:
  *   - the entry's own SEO title / description (`documentMeta`) outrank the
  *     template's;
  *   - a template canonical with no token would point every entry at one URL,
@@ -42,7 +34,7 @@
  * block, never executed, so it needs no CSP `script-src` source.
  */
 
-import { resolvePageRef, type Page, type SiteDocument } from '@core/page-tree'
+import { mergePageSeo, resolvePageRef, type Page, type SiteDocument } from '@core/page-tree'
 import type { TemplateRenderDataContext } from '@core/templates/dynamicBindings'
 import { containsTokens, interpolateTokens } from '@core/templates/tokenInterpolation'
 import { hasDangerousUrlScheme } from '@core/html-sanitize'
@@ -79,7 +71,7 @@ export function buildDocumentHead(
   override: DocumentMetaOverride = {},
 ): DocumentHead {
   const { settings } = site
-  const seo = page.seo ?? {}
+  const seo = mergePageSeo(settings.seo, page.seo) ?? {}
   // `<head>` is never a hole: it is cached with the page under the path and
   // the canonical query. A token reading the raw query string or the visitor
   // would bake one request's value into every later response, so those frames
@@ -90,6 +82,7 @@ export function buildDocumentHead(
     member: undefined,
   }
   const text = (value: string) => interpolateTokens(value, headContext)
+  const optionalText = (value: string | undefined) => value ? text(value) : undefined
   const url = (value: string | undefined): string | null => {
     if (!value) return null
     // A `cms:page:<id>` reference (an imported page link) names the target
@@ -120,11 +113,11 @@ export function buildDocumentHead(
     ? entryCanonical(entryPermalink, seo.canonical)
     : seo.canonical)
   if (canonical) lines.push(`<link rel="canonical" href="${escapeHtml(canonical)}">`)
-  if (seo.robots) meta('name', 'robots', seo.robots)
-  if (seo.colorScheme) meta('name', 'color-scheme', seo.colorScheme)
+  if (seo.robots) meta('name', 'robots', optionalText(seo.robots))
+  if (seo.colorScheme) meta('name', 'color-scheme', optionalText(seo.colorScheme))
   for (const theme of seo.themeColors ?? []) {
-    const media = theme.media ? ` media="${escapeHtml(theme.media)}"` : ''
-    lines.push(`<meta name="theme-color" content="${escapeHtml(theme.color)}"${media}>`)
+    const media = theme.media ? ` media="${escapeHtml(text(theme.media))}"` : ''
+    lines.push(`<meta name="theme-color" content="${escapeHtml(text(theme.color))}"${media}>`)
   }
 
   // A page that lists its own icon links (sizes / media variants) has its icon
@@ -132,7 +125,7 @@ export function buildDocumentHead(
   const pageListsIcons = (seo.links ?? []).some((link) => link.rel === 'icon')
   const faviconHref = url(seo.favicon?.href ?? (pageListsIcons ? undefined : settings.faviconUrl))
   if (faviconHref) {
-    const type = seo.favicon?.type ? ` type="${escapeHtml(seo.favicon.type)}"` : ''
+    const type = seo.favicon?.type ? ` type="${escapeHtml(text(seo.favicon.type))}"` : ''
     lines.push(`<link rel="icon" href="${escapeHtml(faviconHref)}"${type}>`)
   }
 
@@ -144,7 +137,7 @@ export function buildDocumentHead(
     if (link.as && link.rel === 'preload') attrs.push(`as="${escapeHtml(link.as)}"`)
     for (const key of ['type', 'title', 'hreflang', 'media', 'sizes', 'crossorigin'] as const) {
       const value = link[key]
-      if (value) attrs.push(`${key}="${escapeHtml(value)}"`)
+      if (value) attrs.push(`${key}="${escapeHtml(text(value))}"`)
     }
     lines.push(`<link ${attrs.join(' ')}>`)
     const manifestOrigin = link.rel === 'manifest' ? externalOrigin(href) : null
@@ -158,8 +151,8 @@ export function buildDocumentHead(
 
   const og = seo.openGraph
   if (og) {
-    meta('property', 'og:type', og.type)
-    meta('property', 'og:site_name', og.siteName)
+    meta('property', 'og:type', optionalText(og.type))
+    meta('property', 'og:site_name', optionalText(og.siteName))
     meta('property', 'og:url', url(perEntry(og.url)) ?? undefined)
     meta('property', 'og:title', og.title ? text(og.title) : undefined)
     meta('property', 'og:description', og.description ? text(og.description) : undefined)
@@ -169,17 +162,18 @@ export function buildDocumentHead(
 
   const twitter = seo.twitter
   if (twitter) {
-    meta('name', 'twitter:card', twitter.card)
-    meta('name', 'twitter:site', twitter.site)
-    meta('name', 'twitter:creator', twitter.creator)
+    meta('name', 'twitter:card', optionalText(twitter.card))
+    meta('name', 'twitter:site', optionalText(twitter.site))
+    meta('name', 'twitter:creator', optionalText(twitter.creator))
     meta('name', 'twitter:title', twitter.title ? text(twitter.title) : undefined)
     meta('name', 'twitter:description', twitter.description ? text(twitter.description) : undefined)
     meta('name', 'twitter:image', url(twitter.image) ?? undefined)
   }
 
   for (const extra of seo.meta ?? []) {
-    if (hasDangerousUrlScheme(extra.content)) continue
-    meta(extra.attribute, extra.name, extra.content)
+    const content = text(extra.content)
+    if (hasDangerousUrlScheme(content)) continue
+    meta(extra.attribute, extra.name, content)
   }
 
   for (const block of seo.jsonLd ?? []) {

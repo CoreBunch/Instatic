@@ -1,5 +1,5 @@
 import type { Page, PageNode } from '@core/page-tree'
-import { reindexNodeParents } from '@core/page-tree'
+import { mergePageSeo, reindexNodeParents } from '@core/page-tree'
 import { firstOutletId, treeHasOutlet } from './outlet'
 
 type TerminalContent =
@@ -118,10 +118,10 @@ function spliceIntoOutlet(host: Nodes, hostRoot: string, inner: Nodes, innerRoot
  */
 export function composeTemplateChain(chain: Page[], terminal: TerminalContent): Page {
   const effective = chain.filter(treeHasOutlet)
-  const seo = documentSeo(chain, terminal)
+  const seo = mergePageSeo(...chain.map((template) => template.seo), terminal.kind === 'page' ? terminal.page.seo : undefined)
 
   if (effective.length === 0) {
-    if (terminal.kind === 'page') return terminal.page
+    if (terminal.kind === 'page') return seo ? { ...terminal.page, seo } : terminal.page
     // entry terminal with no usable outlet anywhere: render the innermost
     // matched template as-is (chrome without a body). `chain` is non-empty here
     // because the renderer 404s an entry route with no matching template.
@@ -183,16 +183,4 @@ export function composeTemplateChain(chain: Page[], terminal: TerminalContent): 
     rootNodeId: acc.rootId,
     nodes,
   }
-}
-
-/**
- * The head settings of the composed document. A page terminal keeps its
- * own; a layout's settings are chrome and never reach the pages it wraps.
- * An entry terminal takes the settings of the post-type template that matched
- * it, as a pattern (`headTags.ts` resolves its tokens per entry and lets the
- * entry's own SEO title and description outrank it).
- */
-function documentSeo(chain: Page[], terminal: TerminalContent): Page['seo'] {
-  if (terminal.kind === 'page') return terminal.page.seo
-  return chain.findLast((template) => template.template?.target.kind === 'postTypes')?.seo
 }

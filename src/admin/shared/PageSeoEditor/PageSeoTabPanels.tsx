@@ -5,12 +5,21 @@
  */
 import { Suspense, lazy } from 'react'
 import type { PageSeo } from '@core/page-tree'
-import { TabPanel } from '@ui/components/Tabs'
+import { Tab, TabPanel } from '@ui/components/Tabs'
+import { SearchSolidIcon } from 'pixel-art-icons/icons/search-solid'
+import { CodeIcon } from 'pixel-art-icons/icons/code'
 import { SkeletonBlock } from '@ui/components/Skeleton'
 
 const PageSeoEditor = lazy(() =>
   import('./PageSeoEditor').then((m) => ({ default: m.PageSeoEditor })),
 )
+
+export function PageSeoTabs() {
+  return <>
+    <Tab value="search"><SearchSolidIcon size={14} aria-hidden="true" />Search &amp; social</Tab>
+    <Tab value="head"><CodeIcon size={14} aria-hidden="true" />Head tags</Tab>
+  </>
+}
 
 interface PageSeoTabPanelsProps {
   value: PageSeo

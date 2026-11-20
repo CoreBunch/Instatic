@@ -249,3 +249,17 @@ function compactStrings<T extends object>(value: T | undefined | null): T | null
   }
   return Object.keys(out).length > 0 ? (out as T) : null
 }
+
+/** Combine authored layers from broadest to most specific. Social tags inherit
+ * individually. A favicon or a list is one setting and is replaced as a unit. */
+export function mergePageSeo(...layers: (PageSeo | undefined)[]): PageSeo | undefined {
+  let result: PageSeo | undefined
+  for (const layer of layers) {
+    if (!layer) continue
+    const previous = result
+    result = { ...previous, ...layer }
+    if (layer.openGraph) result.openGraph = { ...previous?.openGraph, ...layer.openGraph }
+    if (layer.twitter) result.twitter = { ...previous?.twitter, ...layer.twitter }
+  }
+  return result
+}

@@ -1,6 +1,7 @@
 import type { KeyboardEvent, MouseEvent } from 'react'
 import { FilePlusSolidIcon } from 'pixel-art-icons/icons/file-plus-solid'
 import { PaintBucketSolidIcon } from 'pixel-art-icons/icons/paint-bucket-solid'
+import { GlobalHeadSettings } from './GlobalHeadSettings'
 import { CodeIcon } from 'pixel-art-icons/icons/code'
 import type { SiteExplorerSectionId } from '@core/page-tree'
 import { SiteExplorerTreeSection, type SiteExplorerInlineRenameTarget } from './SiteExplorerTreeSection'
@@ -171,6 +172,8 @@ export function SiteExplorerPanelSections({
           onKeyDownFolder={(folder, event) => onKeyDownFolder('components', folder, event)}
         />
       )}
+
+      {sectionGroup === 'code' && <GlobalHeadSettings />}
 
       {sectionGroup === 'code' && styleTreeModel && (
         <SiteExplorerTreeSection

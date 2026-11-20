@@ -27,6 +27,7 @@ export {
   PAGE_HEAD_PRELOAD_AS,
   RESERVED_PAGE_META_NAMES,
   parsePageSeo,
+  mergePageSeo,
 } from './pageSeo'
 export type {
   PageSeo,

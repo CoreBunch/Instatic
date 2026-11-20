@@ -11,7 +11,7 @@ import { restoreBundlePublication, validateBundlePublication, BundlePublicationE
 import { withPublishLock, bumpPublishVersion } from '../../publish/publishState'
 import { prepareInactiveSlot, swapSlot } from '../../publish/staticArtefact'
 import { ensureRuntimeDependencyCache } from '../../publish/runtime/dependencyCache'
-import { saveDraftSite } from '../../repositories/site'
+import { getDraftSite, saveDraftSite } from '../../repositories/site'
 import { listDataTables, createDataTable, updateDataTable, insertDataTableIfAbsent } from '../../repositories/data/tables'
 import { listDataRows, upsertDataRow, insertDataRowIfAbsent, replaceDataRow, type DataRowImportInput } from '../../repositories/data/rows'
 import { deleteSiteMediaAssets, type DeletedMediaAsset } from '../../repositories/media'
@@ -21,7 +21,7 @@ import { deleteAllDataRowRedirects, importDataRowRedirect } from '../../reposito
 import { deleteAllMediaFolders, importMediaFolder } from '../../repositories/mediaFolders'
 import { listProtectedTables, writeTableAccess } from '../../repositories/data/tableAccess'
 import { keepPageStructuralCells, newPageStructuralCells } from '../../writePolicy/pageStructuralCells'
-import { parsePageSeo } from '@core/page-tree'
+import { parsePageSeo, type SiteSettings } from '@core/page-tree'
 import type { AccessRule } from '@core/members'
 import { notifyRowWrite, notifyShellWrite, serializeCollabAwareWrite, type RowWriteKind } from '../../repositories/rowWriteEvents'
 
@@ -282,6 +282,13 @@ async function applySiteBundleLocked(
     const tablesBefore = new Set((await listDataTables(db, scope)).map((table) => table.id))
     const protectedTables = isMainScope(scope) ? await listProtectedTables(db) : []
     const storedTableRules = new Map<string, AccessRule>(protectedTables.map((entry) => [entry.id, entry.rule]))
+    const storedGlobalSeo = input.mayChangePageStructure || (!bundle.site && !bundle.publication)
+      ? undefined : (await getDraftSite(db, scope))?.settings.seo
+    function guardedSettings(settings: SiteSettings): SiteSettings {
+      const { seo, ...rest } = settings
+      const allowed = input.mayChangePageStructure ? parsePageSeo(seo) : storedGlobalSeo
+      return allowed ? { ...rest, seo: allowed } : rest
+    }
     const storedPages = new Map(
       input.mayChangePageStructure || strategy === 'merge-add'
         ? []
@@ -349,6 +356,7 @@ async function applySiteBundleLocked(
         ...snapshot,
         site: {
           ...snapshot.site,
+          settings: guardedSettings(snapshot.site.settings),
           pages: snapshot.site.pages.map((page) => {
             if (!bundlePageIds.has(page.id)) return page
             const { seo: bundleSeo, ...rest } = page
@@ -456,7 +464,7 @@ async function applySiteBundleLocked(
 
         // 6. Replace the site shell (only when the bundle carries one)
         if (bundle.site) {
-          await saveDraftSite(tx, scope, bundle.site, null, { collabInternal: true })
+          await saveDraftSite(tx, scope, { ...bundle.site, settings: guardedSettings(bundle.site.settings) }, null, { collabInternal: true })
           shellWasWritten = true
         }
 
@@ -596,7 +604,7 @@ async function applySiteBundleLocked(
 
         // Site shell: overwrite if the bundle carries one
         if (bundle.site) {
-          await saveDraftSite(tx, scope, bundle.site, null, { collabInternal: true })
+          await saveDraftSite(tx, scope, { ...bundle.site, settings: guardedSettings(bundle.site.settings) }, null, { collabInternal: true })
           shellWasWritten = true
         }
       })

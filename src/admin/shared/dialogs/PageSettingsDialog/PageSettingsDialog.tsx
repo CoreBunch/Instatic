@@ -13,7 +13,8 @@ import { Button } from '@ui/components/Button'
 import { Dialog } from '@ui/components/Dialog'
 import { Input } from '@ui/components/Input'
 import { Tab, TabList, TabPanel, Tabs } from '@ui/components/Tabs'
-import { PageSeoTabPanels, pageSeoProblem } from '@admin/shared/PageSeoEditor'
+import { FileTextSolidIcon } from 'pixel-art-icons/icons/file-text-solid'
+import { PageSeoTabs, PageSeoTabPanels, pageSeoProblem } from '@admin/shared/PageSeoEditor'
 import dialogStyles from '../SiteCreateDialog/SiteCreateDialog.module.css'
 
 export interface PageSettingsPayload {
@@ -109,9 +110,8 @@ export function PageSettingsDialog({
       <form id={FORM_ID} className={dialogStyles.form} onSubmit={handleSubmit}>
         <Tabs value={tab} onChange={setTab}>
           <TabList ariaLabel="Page settings sections">
-            <Tab value="page">Page</Tab>
-            <Tab value="search">Search &amp; social</Tab>
-            <Tab value="head">Head tags</Tab>
+            <Tab value="page"><FileTextSolidIcon size={14} aria-hidden="true" />Page</Tab>
+            <PageSeoTabs />
           </TabList>
           <TabPanel value="page" keepMounted>
             <div className={dialogStyles.form}>
@@ -158,7 +158,7 @@ export function PageSettingsDialog({
               </fieldset>
             </div>
           </TabPanel>
-          <PageSeoTabPanels value={seo} onChange={setSeo} pageTitle={trimmedTitle || page.title} />
+          <PageSeoTabPanels value={seo} onChange={setSeo} pageTitle={trimmedTitle || page.title} note="Empty fields inherit from the matching template and global head settings." />
         </Tabs>
       </form>
     </Dialog>

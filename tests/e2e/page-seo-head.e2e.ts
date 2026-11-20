@@ -9,6 +9,7 @@ import {
   login,
   newestTemplatePriority,
   openSiteEditor,
+  openExplorerTab,
   openSitePanel,
   publishDraft,
   setPropValue,
@@ -35,7 +36,21 @@ test.describe('page head settings', () => {
 
     const layoutName = `Head Layout ${suffix}`
     await openSiteEditor(page)
+    const globalSettings = async () => {
+      await openExplorerTab(page, 'Code')
+      await page.getByRole('button', { name: 'Global head settings' }).click()
+      return page.getByRole('dialog', { name: 'Global head settings' })
+    }
+    let originalTitle = ''
+    let originalCreator = ''
     try {
+      const global = await globalSettings()
+      const globalTitle = global.getByLabel('Title', { exact: true }).first()
+      originalTitle = await globalTitle.inputValue()
+      originalCreator = await global.getByLabel('Creator').inputValue()
+      await globalTitle.fill('{page.title} | {site.name}')
+      await global.getByLabel('Creator').fill('@global')
+      await global.getByRole('button', { name: 'Save' }).click()
       await test.step('an everywhere layout with an outlet wraps every page', async () => {
         await openSitePanel(page)
         await page.getByRole('button', { name: 'New template', exact: true }).click()
@@ -44,6 +59,9 @@ test.describe('page head settings', () => {
         await dialog.getByLabel('Name').fill(layoutName)
         await dialog.getByLabel('Slug').fill(`head-layout-${suffix}`)
         await dialog.getByLabel('Priority').fill(String(newestTemplatePriority()))
+        await dialog.getByRole('tab', { name: 'Search & social' }).click()
+        await dialog.getByLabel('Site name').fill('Studio | {page.title}')
+        await dialog.getByLabel('Description').first().fill('Template description')
         await dialog.getByRole('button', { name: 'Save' }).click()
         await expect(dialog).toBeHidden()
         await insertNotchModule(page, 'text')
@@ -131,6 +149,9 @@ test.describe('page head settings', () => {
           const html = (await response?.text()) ?? ''
           const head = html.slice(0, html.indexOf('</head>'))
           expect(html, 'the layout wraps the page').toContain(`Layout nav ${suffix}`)
+          expect(head).toContain(`<title>${name} | Automated E2E Site</title>`)
+          expect(head).toContain('<meta name="twitter:creator" content="@global">')
+          expect(head).toContain(`<meta property="og:site_name" content="Studio | ${name}">`)
           expect(head).toContain(`<meta name="description" content="${description}">`)
           expect(head).toContain(`<link rel="canonical" href="https://example.com/${slug}">`)
           expect(head).toContain('<meta name="robots" content="noindex, follow">')
@@ -144,6 +165,10 @@ test.describe('page head settings', () => {
         }
       })
     } finally {
+      const global = await globalSettings()
+      await global.getByLabel('Title', { exact: true }).first().fill(originalTitle)
+      await global.getByLabel('Creator').fill(originalCreator)
+      await global.getByRole('button', { name: 'Save' }).click()
       // The layout wraps every page of the shared E2E site: remove it and
       // publish again so later specs see the site as they expect.
       await openSitePanel(page)

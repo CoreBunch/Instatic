@@ -191,7 +191,7 @@ describe('a protected address', () => {
     const publication = {
       snapshots: [{
         id: 'snap_1',
-        site: { pages: [{ id: 'page_club', slug: 'club' }], visualComponents: [], layouts: [] },
+        site: { settings: { shortcuts: {} }, pages: [{ id: 'page_club', slug: 'club' }], visualComponents: [], layouts: [] },
         importmapBody: null,
         importmapSha256: null,
         createdAt: stamp,
@@ -239,7 +239,7 @@ describe('page head settings in a restored publication', () => {
       publication: {
         snapshots: [{
           id: 'snap_1',
-          site: { pages: [{ id: 'page_club', slug: 'club', seo: ATTEMPT }, { id: 'page_new', slug: 'new', seo: ATTEMPT }], visualComponents: [], layouts: [] },
+          site: { settings: { shortcuts: {}, seo: ATTEMPT }, pages: [{ id: 'page_club', slug: 'club', seo: ATTEMPT }, { id: 'page_new', slug: 'new', seo: ATTEMPT }], visualComponents: [], layouts: [] },
           importmapBody: null, importmapSha256: null, createdAt: stamp,
         }],
         files: [],
@@ -252,9 +252,10 @@ describe('page head settings in a restored publication', () => {
 
   async function publishedSeo() {
     const { rows: versions } = await t.db<{ row_id: string; cells_json: Record<string, unknown> }>`select row_id, cells_json from data_row_versions`
-    const { rows: snapshots } = await t.db<{ site_json: { pages: Array<{ id: string; seo?: unknown }> } }>`select site_json from site_snapshots`
+    const { rows: snapshots } = await t.db<{ site_json: { settings: { seo?: unknown }; pages: Array<{ id: string; seo?: unknown }> } }>`select site_json from site_snapshots`
     const pages = snapshots.flatMap((snapshot) => snapshot.site_json.pages)
     return {
+      global: snapshots[0]?.site_json.settings.seo,
       versions: Object.fromEntries(versions.map((row) => [row.row_id, row.cells_json.seo])),
       snapshots: Object.fromEntries(pages.map((page) => [page.id, page.seo])),
     }
@@ -263,6 +264,7 @@ describe('page head settings in a restored publication', () => {
   it('keeps the stored settings, and gives a new page none, without structure rights', async () => {
     await apply(await publishedBundle(), 'merge-overwrite')
     const seo = await publishedSeo()
+    expect(seo.global).toBeUndefined()
     expect(seo.versions.page_club).toEqual(STORED)
     expect(seo.versions.page_new).toBeUndefined()
     expect(seo.snapshots.page_club).toEqual(STORED)
@@ -272,6 +274,7 @@ describe('page head settings in a restored publication', () => {
   it('carries the bundle settings for an importer who may change structure', async () => {
     await apply(await publishedBundle(), 'merge-overwrite', true)
     const seo = await publishedSeo()
+    expect(seo.global).toEqual(ATTEMPT)
     expect(seo.versions.page_new).toEqual(ATTEMPT)
     expect(seo.snapshots.page_club).toEqual(ATTEMPT)
   })
