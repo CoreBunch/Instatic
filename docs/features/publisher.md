@@ -257,7 +257,7 @@ plus global preflight.
 
 Media-library background images are optimized in the same publish pass as
 `<img srcset>`. `mediaPrefetch.ts` collects `/uploads/...` URLs from
-image/media module props, node `inlineStyles.backgroundImage`, and StyleRule
+image/media module props, literal Visual Component param overrides bound to image/media props, node `inlineStyles.backgroundImage`, and StyleRule
 `backgroundImage` values (including breakpoint/context overrides), then
 batch-fetches their media rows. During CSS emission,
 `responsiveBackground.ts` rewrites each matched `url('/uploads/original.png')`
