@@ -4,10 +4,11 @@ import { createDataRow, createDataTable } from '../../../server/repositories/dat
 import { insertBranch } from '../../../server/repositories/branches'
 import { MAIN_SCOPE } from '../../../server/branches/scope'
 import type { CoreCapability } from '../../../server/auth/capabilities'
+import { configurePublicOrigins, resetPublicOrigins } from '../../../server/auth/security'
 import type { PagesStats, PostsStats, PublishLineupStats } from '../../../server/repositories/dashboard'
 
 const prefix = '/admin/api/cms/dashboard/'
-const widgets = ['pages', 'posts', 'storage', 'publish-lineup', 'media', 'plugins', 'activity']
+const widgets = ['pages', 'posts', 'storage', 'publish-lineup', 'media', 'plugins', 'activity', 'domain']
 
 test('dashboard access requires dashboard and domain capabilities', async () => {
   const h = await createCapabilityTestHarness()
@@ -30,6 +31,30 @@ test('dashboard access requires dashboard and domain capabilities', async () => 
       expect((await h.cms(prefix + widget, { cookie: allowed.cookie })).status).toBe(200)
     }
   } finally { await h.cleanup() }
+})
+
+test('dashboard domain returns the canonical configured origin or null', async () => {
+  const h = await createCapabilityTestHarness()
+  try {
+    const cookie = await h.setupOwner()
+    const requestDomain = () => h.cms(prefix + 'domain', {
+      cookie,
+      headers: { host: 'admin.example.test', 'x-forwarded-host': 'proxy.example.test' },
+    })
+
+    configurePublicOrigins(['https://public.example.test:8443/', 'https://alias.example.test'])
+    const configured = await requestDomain()
+    expect(configured.status).toBe(200)
+    expect(await configured.json()).toEqual({ publicOrigin: 'https://public.example.test:8443' })
+
+    resetPublicOrigins()
+    const unconfigured = await requestDomain()
+    expect(unconfigured.status).toBe(200)
+    expect(await unconfigured.json()).toEqual({ publicOrigin: null })
+  } finally {
+    resetPublicOrigins()
+    await h.cleanup()
+  }
 })
 
 const cases: { name: string; caps: CoreCapability[]; system: boolean; custom: boolean; own: boolean; all: boolean }[] = [

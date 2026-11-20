@@ -45,7 +45,6 @@ interface PropertiesPanelBodyProps {
   selectedSelectorClassId: string | null
   selectedSelectorClassIds: string[]
   isSelectorMultiSelect: boolean
-  activeBreakpointId: string | undefined
   isMultiSelect: boolean
   selectedNodeIds: string[]
   selectedNode: PageNode | null
@@ -68,7 +67,6 @@ export function PropertiesPanelBody(props: PropertiesPanelBodyProps): React.Reac
     selectedSelectorClassId,
     selectedSelectorClassIds,
     isSelectorMultiSelect,
-    activeBreakpointId,
     isMultiSelect,
     selectedNodeIds,
     selectedNode,
@@ -93,7 +91,7 @@ export function PropertiesPanelBody(props: PropertiesPanelBodyProps): React.Reac
 
   if (selectedSelectorClass) {
     return (
-      <SelectorInspector cls={selectedSelectorClass} activeBreakpointId={activeBreakpointId} />
+      <SelectorInspector cls={selectedSelectorClass} />
     )
   }
 
@@ -204,7 +202,6 @@ export function PropertiesPanelBody(props: PropertiesPanelBodyProps): React.Reac
           definition={definition}
           activeClass={activeClass}
           activeClassId={activeClassId}
-          activeBreakpointId={activeBreakpointId}
           nodeId={selectedNodeId}
           inlineStyles={selectedNode.inlineStyles}
           moduleContent={moduleTabContent}

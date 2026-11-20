@@ -216,8 +216,6 @@ export interface SiteSlice {
    * HTML inline styles.
    */
   setNodeInlineStyles: (nodeId: string, patch: Record<string, string | number | null | undefined>) => void
-  /** Remove a single property from a node's inline styles. */
-  removeNodeInlineStyleProperty: (nodeId: string, propKey: string) => void
   /** Remove ALL inline styles from a node (clears the `inlineStyles` field). */
   clearNodeInlineStyles: (nodeId: string) => void
   setBreakpointOverride: (nodeId: string, breakpointId: string, patch: Record<string, unknown>) => void
@@ -250,7 +248,7 @@ export interface SiteSlice {
   updateSiteSettings: (patch: Partial<SiteSettings>) => void
 
   // Framework color mutations
-  createFrameworkColorToken: (input: CreateFrameworkColorTokenInput) => FrameworkColorToken
+  createFrameworkColorToken: (input: CreateFrameworkColorTokenInput) => FrameworkColorToken | null
   /**
    * Create-or-update many tokens in ONE mutation. `accepted` is false when the
    * collab write path refused the whole batch (offline / still syncing) — the

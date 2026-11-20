@@ -694,10 +694,13 @@ positions** (`collab/caretPositions.ts`; pinned to CRDT items, so they stay
 correct while concurrent edits shift the text). Peers render selection
 rings, name tags, avatar cursors, a blinking character-precise caret with
 selection highlight inside the edited text, and a toolbar avatar stack
-(`PeerAvatarStack`). The pointer ships at 10 Hz with a movement deadband
-and a trailing flush; the receiving side eases the rendered cursor toward
-each sparse sample every animation frame (exponential smoothing, snap on
-oversized jumps), so motion stays glassy at a fraction of the wire rate.
+(`PeerAvatarStack`). Both surfaces show only other signed-in accounts.
+`awarenessState.ts` compares peer user IDs with the current admin session,
+so extra tabs or browsers signed in to the same account stay hidden. The
+toolbar shows one avatar per other account across the site, and the canvas
+shows presence on the open document. The pointer ships at 10 Hz with a
+movement deadband and a trailing flush. The receiving side uses exponential
+smoothing each animation frame and snaps the cursor on oversized jumps.
 Peer states are wire data — validated with TypeBox before rendering.
 
 MCP note: headless MCP reads hit the DB, so every headless read and

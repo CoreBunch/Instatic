@@ -149,7 +149,7 @@ export function registerFirstPartyDashboardWidgets(): void {
     id: 'domain',
     ownerId: 'core',
     name: 'Domain',
-    description: 'DNS + SSL status',
+    description: 'Configured public URL',
     icon: GlobeSolidIcon,
     defaultSize: 3,
     tint: 'sky',

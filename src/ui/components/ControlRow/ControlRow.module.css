@@ -3,10 +3,10 @@
 /* ── Control row wrapper ─────────────────────────────────────────────────── */
 .controlWrapper {
     display: grid;
-    grid-template-columns: 100px 1fr;
+    grid-template-columns: var(--control-label-column) 1fr;
     gap: var(--space-3xs);
     width: 100%;
-    min-height: 28px;
+    min-height: var(--control-height);
 }
 
 /*

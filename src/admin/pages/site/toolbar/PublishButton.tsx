@@ -1,4 +1,5 @@
-import { Suspense, lazy, useEffect, useRef, useState } from 'react'
+import { VersionHistoryDialog } from '@admin/shared/VersionHistoryDialog'
+import { Suspense, useEffect, useRef, useState } from 'react'
 import type { SiteDocument } from '@core/page-tree'
 import { selectActivePage, useEditorStore } from '@site/store/store'
 import { getCmsPublishStatus, publishCmsDraft } from '@core/persistence'
@@ -24,10 +25,6 @@ import type { SiteRuntimeDiagnostic } from '@core/site-runtime'
 
 type PublishState = 'idle' | 'publishing' | 'published' | 'error'
 
-// Opened rarely — loaded on first open so the site route shell stays small.
-const VersionHistoryDialog = lazy(() =>
-  import('@admin/shared/VersionHistoryDialog').then((m) => ({ default: m.VersionHistoryDialog })),
-)
 
 interface PublishButtonProps {
   enabled?: boolean
