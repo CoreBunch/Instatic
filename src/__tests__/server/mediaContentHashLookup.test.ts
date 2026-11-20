@@ -70,6 +70,20 @@ describe('media content-hash lookup', () => {
     }
   })
 
+  it('takes one full import worth of hashes and refuses more', async () => {
+    const harness = await createCapabilityTestHarness()
+    try {
+      const cookie = await harness.setupOwner()
+      const hashes = (n: number) => Array.from({ length: n }, (_, i) => i.toString(16).padStart(64, '0'))
+      const lookup = (contentHashes: string[]) =>
+        harness.cms('/admin/api/cms/media/lookup', { method: 'POST', cookie, json: { contentHashes } })
+      expect((await lookup(hashes(10_000))).status).toBe(200)
+      expect((await lookup(hashes(10_001))).status).toBe(400)
+    } finally {
+      await harness.cleanup()
+    }
+  })
+
   it('needs media.read', async () => {
     const harness = await createCapabilityTestHarness()
     try {

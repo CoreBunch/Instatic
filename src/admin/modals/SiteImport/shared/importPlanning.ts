@@ -33,6 +33,7 @@ import { requestCmsSiteReload } from '@admin/state/adminEvents'
 import { useEditorStore } from '@site/store/store'
 import { getErrorMessage } from '@core/utils/errorMessage'
 import { findCmsMediaByContentHash } from '@core/persistence/cmsMedia'
+import { isAbortError } from '@core/http'
 import { pushToast } from '@ui/components/Toast'
 
 /** Stable map key for a token conflict — the colour/font namespaces are joined. */
@@ -297,14 +298,17 @@ export function describeIngestError(err: unknown): string {
  * Mark the planned media the library already holds, so a re-import reuses
  * those files instead of uploading copies. Best effort: when the lookup
  * fails the import still works, it just uploads every file, and a warning
- * toast says so.
+ * toast says so. `signal` aborts the lookup when a newer plan build
+ * supersedes this one.
  */
-export async function withMediaAlreadyInLibrary(plan: ImportPlan): Promise<ImportPlan> {
+export async function withMediaAlreadyInLibrary(plan: ImportPlan, signal?: AbortSignal): Promise<ImportPlan> {
   try {
     const hashBySource = await hashImportAssets(plan.assets)
-    const matches = await findCmsMediaByContentHash([...new Set(hashBySource.values())])
+    const matches = await findCmsMediaByContentHash([...new Set(hashBySource.values())], { signal })
     return detectMediaConflicts(plan, hashBySource, matches)
   } catch (err) {
+    // A superseded build was aborted on purpose; its caller drops the plan.
+    if (isAbortError(err)) return plan
     console.error('[SiteImportModal] media lookup failed:', err)
     pushToast({
       kind: 'warning',

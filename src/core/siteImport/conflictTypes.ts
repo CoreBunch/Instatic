@@ -112,10 +112,11 @@ export interface TokenConflict {
  * before.
  *
  * Resolutions (applied by `commitImportPlan`):
- * - `skip` (default): keep the existing file and its content; the pages this
- *   import links it from join its page scope.
- * - `overwrite`: replace the existing file's content in place (same id and
- *   path) and widen its page scope the same way.
+ * - `skip` (default when the content is the same): keep the existing file and
+ *   its content; the pages this import links it from join its page scope.
+ * - `overwrite` (default when the content differs): replace the existing
+ *   file in place (same id and path: content, load order, a script's format
+ *   and npm dependencies) and widen its page scope the same way.
  * - `auto-rename`: import a second copy under a free `-2` path, as a new file.
  */
 export interface FileConflict {
@@ -126,6 +127,12 @@ export interface FileConflict {
   sitePath: string
   /** Id of the existing `SiteFile`. */
   existingFileId: string
+  /**
+   * The imported text equals the existing file's. Compared at plan time, so a
+   * kept stylesheet with `url()`s (still bundle paths here, media URLs in the
+   * site) reads as changed even when it is not; replacing it is harmless.
+   */
+  sameContent: boolean
   defaultResolution: ConflictResolution
 }
 

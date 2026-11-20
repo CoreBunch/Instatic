@@ -1069,6 +1069,62 @@ describe('SiteImportModal — a route typed in the Review step', () => {
   })
 })
 
+describe('SiteImportModal — media library lookup', () => {
+  it('keeps the lookup of the latest plan when an older one answers last', async () => {
+    useEditorStore.setState({ site: makeSite({ name: 'Lookup Site' }) } as Parameters<typeof useEditorStore.setState>[0])
+    const pending: Array<(matches: unknown[]) => void> = []
+    globalThis.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+      if (url === '/admin/api/cms/media/lookup') {
+        const { contentHashes } = JSON.parse(String(init?.body)) as { contentHashes: string[] }
+        const matches = await new Promise<unknown[]>((resolve) => pending.push(resolve))
+        return jsonResponse({
+          matches: matches.length > 0
+            ? [{ contentHash: contentHashes[0], id: 'old-logo', publicPath: '/uploads/logo.png', filename: 'logo.png' }]
+            : [],
+        })
+      }
+      return jsonResponse({ error: `Unexpected request: ${url}` }, 500)
+    }
+
+    renderSiteImportModal()
+    fireEvent.drop(screen.getByLabelText(/drop site files/i), {
+      dataTransfer: {
+        files: [
+          new File(
+            ['<!doctype html><html><head><title>Logo</title><link rel="stylesheet" href="style.css"></head><body><img src="logo.png" alt=""></body></html>'],
+            'logo.html',
+            { type: 'text/html' },
+          ),
+          new File(['.hero { color: red }'], 'style.css', { type: 'text/css' }),
+          new File([new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10, 7])], 'logo.png', { type: 'image/png' }),
+        ],
+      },
+    })
+    await waitFor(() => expect(pending).toHaveLength(1))
+    pending[0]!([])
+    expect(await screen.findByText('Review import')).toBeDefined()
+
+    // Files dropped onto the Review step rebuild the plan even while a
+    // lookup is still out, so two lookups can be in flight at once.
+    const step = screen.getByLabelText('Add import files').parentElement!
+    const dropMore = (name: string) =>
+      fireEvent.drop(step, { dataTransfer: { files: [new File(['console.info(1)'], name, { type: 'text/javascript' })], types: ['Files'] } })
+    dropMore('a.js')
+    await waitFor(() => expect(pending).toHaveLength(2))
+    dropMore('b.js')
+    await waitFor(() => expect(pending).toHaveLength(3))
+    pending[2]!([])
+    // The superseded lookup answers last, with a match it must not apply.
+    pending[1]!(['match'])
+    await new Promise((resolve) => setTimeout(resolve, 20))
+
+    fireEvent.click(screen.getByRole('button', { name: /continue/i }))
+    await waitFor(() => expect(screen.queryByText('Review import')).toBeNull())
+    expect(screen.queryByText(/Media already in the library/)).toBeNull()
+  })
+})
+
 // ---------------------------------------------------------------------------
 // 3 — DropStep error handling
 // ---------------------------------------------------------------------------
@@ -1978,7 +2034,7 @@ describe('ConflictsStep — conflict rendering', () => {
         tokens: [],
         crossSheetClasses: [],
         files: [
-          { kind: 'script', path: 'js/app.js', sitePath: 'js/app.js', existingFileId: 'f1', defaultResolution: { action: 'skip' } },
+          { kind: 'script', path: 'js/app.js', sitePath: 'js/app.js', existingFileId: 'f1', sameContent: true, defaultResolution: { action: 'skip' } },
         ],
         media: [
           {

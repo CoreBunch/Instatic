@@ -149,26 +149,37 @@ function ensureRuntime(site: Draft<SiteDocument>): void {
 }
 
 /**
- * Keep files an import delivers again (see `SiteImportTransaction.reuseSiteFiles`):
- * optionally replace the content, then let the importing pages into the
- * file's runtime scope, on the persisted runtime and the live canvas mirror.
+ * Keep files an import delivers again (see `SiteImportTransaction.reuseSiteFiles`).
+ * A replacement swaps in the imported content and the runtime settings
+ * `addImportedScripts` / `addImportedStylesheets` would have written (load
+ * order, a script's format); the importing pages join the file's runtime
+ * scope. Both the persisted runtime and the live canvas mirror are updated.
+ * A replacing script's npm dependencies are the caller's step
+ * (`addImportedScriptDependencies`), as on the add path.
  */
 export function reuseImportedFiles(
   site: Draft<SiteDocument>,
   siteRuntime: Draft<SiteRuntimeConfig> | undefined,
-  items: { existingFileId: string; pageIds: string[]; content?: string }[],
+  items: { existingFileId: string; pageIds: string[]; replacement?: ImportScript | ImportStylesheet }[],
 ): { id: string; path: string }[] {
   const reused: { id: string; path: string }[] = []
   for (const item of items) {
     const file = site.files.find((f) => f.id === item.existingFileId)
     if (!file) continue
-    if (item.content !== undefined && item.content !== file.content) {
-      file.content = item.content
+    const { replacement } = item
+    if (replacement && replacement.content !== file.content) {
+      file.content = replacement.content
       file.updatedAt = Date.now()
     }
     for (const runtime of [site.runtime, siteRuntime]) {
-      const entry = runtime?.scripts?.[file.id] ?? runtime?.styles?.[file.id]
-      if (entry) entry.scope = widenScope(entry.scope, item.pageIds)
+      const script = runtime?.scripts?.[file.id]
+      const style = runtime?.styles?.[file.id]
+      const entry = script ?? style
+      if (!entry) continue
+      entry.scope = widenScope(entry.scope, item.pageIds)
+      if (!replacement) continue
+      entry.priority = replacement.priority
+      if (script && 'format' in replacement) script.format = replacement.format
     }
     reused.push({ id: file.id, path: file.path })
   }

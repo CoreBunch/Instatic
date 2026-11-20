@@ -18,7 +18,7 @@ import { collectSlotOutletNames } from '@core/visualComponents'
 import { create } from 'mutative'
 import type { Draft, Patches } from 'mutative'
 import type { ImportFragment } from '@core/htmlImport'
-import type { NewStyleRule } from '@core/siteImport'
+import type { ImportScript, NewStyleRule } from '@core/siteImport'
 import {
   addImportedScriptDependencies,
   addImportedScripts,
@@ -363,6 +363,19 @@ export function buildSiteHelpers(
       const byOrigin = indexStyleRulesByOrigin(site.styleRules)
       const allocateStyleRuleOrder = createStyleRuleOrderAllocator(site.styleRules)
 
+      // Imported scripts' npm imports join package.json; the draft's mirror
+      // is refreshed so the dependency UI sees them.
+      const addScriptDependencies = (scripts: ImportScript[]): boolean => {
+        const changed = addImportedScriptDependencies(site, scripts)
+        if (changed) {
+          draft.packageJson = {
+            dependencies: { ...site.packageJson.dependencies },
+            devDependencies: { ...site.packageJson.devDependencies },
+          }
+        }
+        return changed
+      }
+
       const helpers: SiteImportTransaction = {
         addPage({ id: pageId, title, slug, nodeFragment }: { id?: string; title: string; slug: string; nodeFragment: ImportFragment }): string {
           // addPage creates a fresh base.body root, normalises the slug, and
@@ -531,13 +544,7 @@ export function buildSiteHelpers(
         },
 
         addScripts(scripts): { id: string; path: string }[] {
-          const dependenciesChanged = addImportedScriptDependencies(site, scripts)
-          if (dependenciesChanged) {
-            draft.packageJson = {
-              dependencies: { ...site.packageJson.dependencies },
-              devDependencies: { ...site.packageJson.devDependencies },
-            }
-          }
+          const dependenciesChanged = addScriptDependencies(scripts)
           const committed = addImportedScripts(site, draft.siteRuntime, scripts)
           if (committed.length > 0 || dependenciesChanged) didMutate = true
           return committed
@@ -550,8 +557,12 @@ export function buildSiteHelpers(
         },
 
         reuseSiteFiles(items): { id: string; path: string }[] {
+          // A replacing script brings its npm imports exactly as a new one does.
+          const replacingScripts = items.flatMap(({ replacement }) =>
+            replacement && 'format' in replacement ? [replacement] : [])
+          const dependenciesChanged = addScriptDependencies(replacingScripts)
           const reused = reuseImportedFiles(site, draft.siteRuntime, items)
-          if (reused.length > 0) didMutate = true
+          if (reused.length > 0 || dependenciesChanged) didMutate = true
           return reused
         },
       }

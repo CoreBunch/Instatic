@@ -38,6 +38,8 @@ import type {
   ImportFontToken,
   ImportPlan,
   ImportResult,
+  ImportScript,
+  ImportStylesheet,
   ImportWarning,
 } from './types'
 import type {
@@ -429,7 +431,7 @@ function commitPageScopedFiles(
 
 type SiteFileReuse = Parameters<SiteImportTransaction['reuseSiteFiles']>[0][number]
 
-function partitionByFileConflict<T extends { path: string; content: string; pageIds?: string[] }>(
+function partitionByFileConflict<T extends ImportScript | ImportStylesheet>(
   kind: FileConflict['kind'],
   items: T[],
   fileConflictByKey: Map<string, FileConflict>,
@@ -446,7 +448,7 @@ function partitionByFileConflict<T extends { path: string; content: string; page
     reuses.push({
       existingFileId: conflict.existingFileId,
       pageIds: item.pageIds ?? [],
-      ...(action === 'overwrite' ? { content: item.content } : {}),
+      ...(action === 'overwrite' ? { replacement: item } : {}),
     })
   }
   return { additions, reuses }

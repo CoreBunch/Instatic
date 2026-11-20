@@ -76,14 +76,25 @@ describe('detectConflicts — site files already present', () => {
       { id: 'f-kit', path: 'css/kit.css', type: 'style' as const, content: 'y', createdAt: 1, updatedAt: 1 },
     ],
   }
-  const script = (path: string): ImportScript => ({ path, content: '', format: 'classic', pageSources: [], priority: 100 })
-  const sheet = (path: string): ImportStylesheet => ({ path, content: '', pageSources: [], priority: 0 })
+  const script = (path: string, content = ''): ImportScript => ({ path, content, format: 'classic', pageSources: [], priority: 100 })
+  const sheet = (path: string, content = ''): ImportStylesheet => ({ path, content, pageSources: [], priority: 0 })
 
-  it('flags a script or stylesheet whose path the site already has, defaulting to reuse', () => {
-    const { files } = detectConflicts(site, [], [], [], [], [script('js/app.js'), script('js/new.js')], [sheet('css/kit.css')])
+  it('flags a script or stylesheet whose path the site already has, reusing it when the content is the same', () => {
+    const { files } = detectConflicts(
+      site, [], [], [], [],
+      [script('js/app.js', 'x'), script('js/new.js', 'x')],
+      [sheet('css/kit.css', 'y')],
+    )
     expect(files).toEqual([
-      { kind: 'script', path: 'js/app.js', sitePath: 'js/app.js', existingFileId: 'f-app', defaultResolution: { action: 'skip' } },
-      { kind: 'style', path: 'css/kit.css', sitePath: 'css/kit.css', existingFileId: 'f-kit', defaultResolution: { action: 'skip' } },
+      { kind: 'script', path: 'js/app.js', sitePath: 'js/app.js', existingFileId: 'f-app', sameContent: true, defaultResolution: { action: 'skip' } },
+      { kind: 'style', path: 'css/kit.css', sitePath: 'css/kit.css', existingFileId: 'f-kit', sameContent: true, defaultResolution: { action: 'skip' } },
+    ])
+  })
+
+  it('defaults to replacing a file whose content changed since it was imported', () => {
+    const { files } = detectConflicts(site, [], [], [], [], [script('js/app.js', 'x2')], [])
+    expect(files).toEqual([
+      expect.objectContaining({ path: 'js/app.js', sameContent: false, defaultResolution: { action: 'overwrite' } }),
     ])
   })
 

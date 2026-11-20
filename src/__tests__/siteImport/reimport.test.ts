@@ -128,12 +128,12 @@ describe('commitImportPlan — importing the same site twice', () => {
 
 const PNG_BYTES = new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10, 1, 2, 3])
 
-function bundleWithFiles(script = 'console.info("app")', slug = 'about'): FileMap {
+function bundleWithFiles(script = 'console.info("app")', slug = 'about', scriptType = ''): FileMap {
   return {
     files: {
       [`${slug}.html`]: {
         bytes: enc.encode(
-          `<!doctype html><html><head><title>${slug}</title><script src="app.js"></script></head>`
+          `<!doctype html><html><head><title>${slug}</title><script${scriptType ? ` type="${scriptType}"` : ''} src="app.js"></script></head>`
           + '<body><img src="logo.png" alt="Logo"></body></html>',
         ),
         mimeType: 'text/html',
@@ -244,19 +244,42 @@ describe('commitImportPlan — scripts and media arriving again', () => {
     expect(scriptScope(script!.id)).toEqual({ type: 'pages', pageIds: [pageId('about'), pageId('pricing')] })
   })
 
-  it('keeps the existing script content by default and replaces it on overwrite', async () => {
+  it('replaces a changed script by default and keeps it when the user picks Use existing', async () => {
     await importBundle(bundleWithFiles())
-    await importBundle(bundleWithFiles('console.info("v2")'), withPageResolution('overwrite'))
-    expect(scriptFiles().map((f) => f.content)).toEqual(['console.info("app")'])
-
     await importBundle(bundleWithFiles('console.info("v2")'), (plan) => ({
       ...withPageResolution('overwrite')(plan),
       conflicts: {
         ...withPageResolution('overwrite')(plan).conflicts,
-        files: plan.conflicts.files.map((c) => ({ ...c, defaultResolution: { action: 'overwrite' } })),
+        files: plan.conflicts.files.map((c) => ({ ...c, defaultResolution: { action: 'skip' } })),
       },
     }))
+    expect(scriptFiles().map((f) => f.content)).toEqual(['console.info("app")'])
+
+    await importBundle(bundleWithFiles('console.info("v2")'), withPageResolution('overwrite'))
     expect(scriptFiles().map((f) => [f.path, f.content])).toEqual([['app.js', 'console.info("v2")']])
+  })
+
+  it('replacing a script applies its new format, load order and npm dependencies', async () => {
+    await importBundle(bundleWithFiles())
+    const [script] = scriptFiles()
+    expect(useEditorStore.getState().site!.runtime?.scripts?.[script!.id]?.format).toBe('classic')
+
+    await importBundle(
+      bundleWithFiles('import dayjs from "https://esm.sh/dayjs@1.11.10"\nconsole.info(dayjs())', 'about', 'module'),
+      (plan) => ({
+        ...withPageResolution('overwrite')(plan),
+        conflicts: {
+          ...withPageResolution('overwrite')(plan).conflicts,
+          files: plan.conflicts.files.map((c) => ({ ...c, defaultResolution: { action: 'overwrite' } })),
+        },
+      }),
+    )
+
+    const site = useEditorStore.getState().site!
+    expect(scriptFiles().map((f) => f.id)).toEqual([script!.id])
+    expect(scriptFiles()[0]!.content).toContain('from "dayjs"')
+    expect(site.runtime?.scripts?.[script!.id]?.format).toBe('module')
+    expect(site.packageJson.dependencies.dayjs).toBe('1.11.10')
   })
 
   it('still adds a copy and uploads again when the user asks for it', async () => {

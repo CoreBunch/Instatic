@@ -243,14 +243,16 @@ export interface SiteImportTransaction {
   /**
    * Keep existing script / stylesheet files an import delivers again (a
    * `FileConflict` resolved to `skip` or `overwrite`). Each file keeps its id
-   * and path. `content`, when given, replaces the file's content (overwrite).
-   * The pages in `pageIds` join a page-scoped file's runtime scope; an empty
-   * `pageIds` (a site-wide sheet) widens it to every page. A file scoped to
-   * every page already stays that way.
+   * and path. `replacement`, when given (overwrite), replaces the file the
+   * way `addScripts` / `addStylesheets` would have written it: its content,
+   * its runtime load order, a script's format, and a script's npm
+   * dependencies. The pages in `pageIds` join a page-scoped file's runtime
+   * scope; an empty `pageIds` (a site-wide sheet) widens it to every page. A
+   * file scoped to every page already stays that way.
    *
    * @returns `{ id, path }` for each reused file still in the site.
    */
   reuseSiteFiles(
-    items: { existingFileId: string; pageIds: string[]; content?: string }[],
+    items: { existingFileId: string; pageIds: string[]; replacement?: ImportScript | ImportStylesheet }[],
   ): { id: string; path: string }[]
 }

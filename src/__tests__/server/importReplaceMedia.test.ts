@@ -28,7 +28,12 @@ import {
   sessionExpiry,
 } from '../../../server/auth/tokens'
 import { getDraftSite, saveDraftSite } from '../../../server/repositories/site'
-import { createMediaAsset, getMediaAsset, listMediaAssets } from '../../../server/repositories/media'
+import {
+  createMediaAsset,
+  findMediaAssetsByContentHash,
+  getMediaAsset,
+  listMediaAssets,
+} from '../../../server/repositories/media'
 import { insertBranch } from '../../../server/repositories/branches'
 import { handleImportArchiveRoute } from '../../../server/handlers/cms/importArchive'
 import { handleImportRoute } from '../../../server/handlers/cms/import'
@@ -371,4 +376,70 @@ describe('replace import removes the previous site media', () => {
     expect(await mediaIds()).toEqual(['a-font', 'a-logo', 'b-logo'])
     expect(await fileExists(join(uploadsDir, 'logo-a.png'))).toBe(true)
   })
+})
+
+describe('bundle imports keep the media content hash in step with the bytes', () => {
+  let testDb: TestDb
+  let db: DbClient
+  let uploadsDir: string
+  let cookie: string
+
+  const sha = (bytes: Uint8Array) => new Bun.CryptoHasher('sha256').update(bytes).digest('hex')
+  const logoA = bytesOf(PNG_MAGIC, 0x0a)
+  const logoB = bytesOf(PNG_MAGIC, 0x0b)
+
+  beforeEach(async () => {
+    testDb = await createTestDb()
+    db = testDb.db
+    uploadsDir = await mkdtemp(join(tmpdir(), 'instatic-hash-media-'))
+    mediaStorageRegistry.__reset()
+    mediaStorageRegistry.configureLocalDisk({ uploadsDir })
+    cookie = await seedOwner(db)
+  })
+
+  afterEach(async () => {
+    mediaStorageRegistry.__reset()
+    await testDb.cleanup()
+    await rm(uploadsDir, { recursive: true, force: true })
+  })
+
+  async function importArchive(media: ArchiveMedia[]): Promise<void> {
+    const req = new Request('http://localhost/admin/api/cms/import/archive?strategy=merge-overwrite', {
+      method: 'POST',
+      headers: { 'content-type': 'application/zip' },
+      body: buildArchive({ media, includeSite: false }),
+    })
+    req.headers.set('cookie', cookie)
+    const res = await handleImportArchiveRoute(req, db, MAIN_SCOPE, { uploadsDir })
+    expect(res?.status).toBe(200)
+  }
+
+  async function importJson(media: ArchiveMedia[]): Promise<void> {
+    const bundle = {
+      schemaVersion: 1,
+      exportedAt: new Date().toISOString(),
+      tables: [],
+      rows: [],
+      media: media.map((asset) => ({ ...mediaEntry(asset), bytesBase64: Buffer.from(asset.bytes).toString('base64') })),
+    }
+    const req = new Request('http://localhost/admin/api/cms/import?strategy=merge-overwrite', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(bundle),
+    })
+    req.headers.set('cookie', cookie)
+    const res = await handleImportRoute(req, db, MAIN_SCOPE, { uploadsDir })
+    expect(res?.status).toBe(200)
+  }
+
+  for (const [label, importBundle] of [['archive', () => importArchive], ['JSON', () => importJson]] as const) {
+    test(`a ${label} import hashes its media and re-hashes bytes overwritten at the same id`, async () => {
+      await importBundle()([{ id: 'logo', storagePath: 'logo.png', mimeType: 'image/png', bytes: logoA }])
+      expect((await findMediaAssetsByContentHash(db, [sha(logoA)])).map((m) => m.id)).toEqual(['logo'])
+
+      await importBundle()([{ id: 'logo', storagePath: 'logo.png', mimeType: 'image/png', bytes: logoB }])
+      expect(await findMediaAssetsByContentHash(db, [sha(logoA)])).toEqual([])
+      expect((await findMediaAssetsByContentHash(db, [sha(logoB)])).map((m) => m.id)).toEqual(['logo'])
+    })
+  }
 })

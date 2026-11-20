@@ -594,6 +594,12 @@ interface ImportMediaAssetInput {
   storageAdapterId?: string
   /** Optional; defaults to false when omitted. */
   externallyHosted?: boolean
+  /**
+   * SHA-256 hex of the bundle's bytes for this asset, before SVG sanitising
+   * (the same rule as an upload's `content_hash`). Written on insert and on
+   * update, so bytes overwritten at an existing id never keep a stale hash.
+   */
+  contentHash: string
 }
 
 /**
@@ -619,7 +625,7 @@ export async function importMediaAsset(
       id, filename, mime_type, size_bytes, storage_path, public_path,
       alt_text, caption, title, tags_json, width, height, duration_ms,
       dominant_color, blur_hash, poster_path,
-      storage_adapter_id, externally_hosted
+      storage_adapter_id, externally_hosted, content_hash
     )
     values (
       ${input.id}, ${input.filename}, ${input.mimeType}, ${input.sizeBytes},
@@ -627,7 +633,7 @@ export async function importMediaAsset(
       ${input.altText}, ${input.caption}, ${input.title}, ${tags},
       ${input.width}, ${input.height}, ${input.durationMs},
       ${input.dominantColor}, ${input.blurHash}, ${input.posterPath},
-      ${storageAdapterId}, ${externallyHosted}
+      ${storageAdapterId}, ${externallyHosted}, ${input.contentHash}
     )
     on conflict (id) do update
       set filename      = excluded.filename,
@@ -646,6 +652,7 @@ export async function importMediaAsset(
           blur_hash     = excluded.blur_hash,
           poster_path   = excluded.poster_path,
           storage_adapter_id = excluded.storage_adapter_id,
-          externally_hosted = excluded.externally_hosted
+          externally_hosted = excluded.externally_hosted,
+          content_hash  = excluded.content_hash
   `
 }

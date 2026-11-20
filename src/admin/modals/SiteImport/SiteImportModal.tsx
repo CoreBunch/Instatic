@@ -154,6 +154,10 @@ export function SiteImportModal({ onCmsBundleImportComplete }: SiteImportModalPr
   // Cancellation handle for the active static run. Aborting stops queued and
   // in-flight uploads and prevents the store commit and draft save.
   const runAbortRef = useRef<AbortController | null>(null)
+  // The plan build in flight. Files dropped onto Review rebuild the plan while
+  // an earlier build may still wait on its media lookup; only the latest one
+  // may land, so a newer build aborts the older one.
+  const planBuildRef = useRef<AbortController | null>(null)
 
   const siteName = useEditorStore((s) => s.site?.name) ?? 'this site'
   const currentUser = useCurrentAdminUser()
@@ -257,12 +261,17 @@ export function SiteImportModal({ onCmsBundleImportComplete }: SiteImportModalPr
   }
 
   async function finalizePlan(map: FileMap, modes: Record<string, StylesheetImportMode> = stylesheetModes) {
+    planBuildRef.current?.abort()
+    const build = new AbortController()
+    planBuildRef.current = build
     const currentSite = await ensureCurrentSiteForStaticImport()
     const importPlan = await withMediaAlreadyInLibrary(buildImportPlan({
       fileMap: map,
       currentSite,
       options: { mediaTolerance: 10, stylesheetModes: modes },
-    }))
+    }), build.signal)
+    if (build.signal.aborted) return
+    planBuildRef.current = null
     setFileMap(map)
     setPlan(importPlan)
     setSelection(makeDefaultSelection(importPlan))

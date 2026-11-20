@@ -246,6 +246,15 @@ interface AcceptUploadInput {
   unsupportedMessage: string
 }
 
+/**
+ * `media_assets.content_hash`: SHA-256 hex of the bytes a client or bundle
+ * delivered, before SVG sanitising. Site Import hashes the file it is about
+ * to send the same way and reuses a matching asset.
+ */
+export function mediaContentHash(bytes: Uint8Array): string {
+  return new Bun.CryptoHasher('sha256').update(bytes).digest('hex')
+}
+
 interface ValidatedUpload {
   bytes: Uint8Array
   detectedMime: AcceptedMediaMime
@@ -273,7 +282,7 @@ async function validateUploadedMedia(input: AcceptUploadInput): Promise<Response
   }
   // Hash what the client sent, not what we store: Site Import hashes the file
   // it is about to upload and must find this asset again by that value.
-  const contentHash = new Bun.CryptoHasher('sha256').update(bytes).digest('hex')
+  const contentHash = mediaContentHash(bytes)
 
   // SVG passes the (lenient) text-based detector but still needs the script
   // surface removed before persistence — see svgSanitize.ts for the threat

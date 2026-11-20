@@ -273,7 +273,7 @@ export function ConflictsStep({ plan, resolutions, onResolutionChange }: Conflic
             { label: 'Use existing all', ariaLabel: 'Use the existing file for all site file conflicts', onClick: () => applyFileResolutionToAll('skip') },
             { label: 'Replace all', ariaLabel: 'Replace all site file conflicts', onClick: () => applyFileResolutionToAll('overwrite') },
           ]}
-          hint="These scripts and stylesheets are already in this site, usually from an earlier import of the same files. Use existing keeps your file; replace swaps in the imported content. Either way the imported pages load it. Keep both adds a second copy."
+          hint="These scripts and stylesheets are already in this site, usually from an earlier import of the same files. Use existing keeps your file; replace swaps in the imported one, the default when its content differs. Either way the imported pages load it. Keep both adds a second copy."
         >
           {fileConflicts.map((conflict) => {
             const key = fileConflictKey(conflict)
@@ -281,7 +281,7 @@ export function ConflictsStep({ plan, resolutions, onResolutionChange }: Conflic
               <ConflictRow
                 key={key}
                 kind="file"
-                source={conflict.kind === 'script' ? 'Script' : 'Stylesheet'}
+                source={`${conflict.kind === 'script' ? 'Script' : 'Stylesheet'} · ${conflict.sameContent ? 'unchanged' : 'content differs'}`}
                 desired={conflict.sitePath}
                 current={resolutions.files.get(key) ?? conflict.defaultResolution}
                 onChange={(next) => onResolutionChange('files', key, next)}

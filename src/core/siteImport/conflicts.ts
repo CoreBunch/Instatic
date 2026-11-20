@@ -173,8 +173,9 @@ export function detectPageConflicts(
 
 /**
  * Scripts and kept stylesheets whose site file path is already taken by a
- * file of the same kind. Default: keep the existing file (`skip`), so a
- * second import of the same bundle does not add `app-2.js` next to `app.js`.
+ * file of the same kind, so a second import of the same bundle does not add
+ * `app-2.js` next to `app.js`. Default: keep the existing file (`skip`) when
+ * the content is the same, replace it (`overwrite`) when it changed.
  * Paths taken by a file of the other kind are left to the commit's unique-path
  * rule, as are collisions inside one import.
  */
@@ -183,20 +184,28 @@ function detectFileConflicts(
   scripts: ImportScript[],
   stylesheets: ImportStylesheet[],
 ): FileConflict[] {
-  const existing = new Map<string, string>()
+  const existing = new Map<string, { id: string; content?: string }>()
   for (const file of site.files) {
-    if (file.type === 'script' || file.type === 'style') existing.set(`${file.type}:${file.path}`, file.id)
+    if (file.type === 'script' || file.type === 'style') existing.set(`${file.type}:${file.path}`, file)
   }
   const conflicts: FileConflict[] = []
   const items = [
-    ...scripts.map((item) => ({ kind: 'script' as const, path: item.path })),
-    ...stylesheets.map((item) => ({ kind: 'style' as const, path: item.path })),
+    ...scripts.map((item) => ({ kind: 'script' as const, path: item.path, content: item.content })),
+    ...stylesheets.map((item) => ({ kind: 'style' as const, path: item.path, content: item.content })),
   ]
-  for (const { kind, path } of items) {
+  for (const { kind, path, content } of items) {
     const sitePath = importedSiteFilePath(path, kind)
-    const existingFileId = existing.get(`${kind}:${sitePath}`)
-    if (!existingFileId) continue
-    conflicts.push({ kind, path, sitePath, existingFileId, defaultResolution: { action: 'skip' } })
+    const file = existing.get(`${kind}:${sitePath}`)
+    if (!file) continue
+    const sameContent = file.content === content
+    conflicts.push({
+      kind,
+      path,
+      sitePath,
+      existingFileId: file.id,
+      sameContent,
+      defaultResolution: { action: sameContent ? 'skip' : 'overwrite' },
+    })
   }
   return conflicts
 }

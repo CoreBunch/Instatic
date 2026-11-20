@@ -173,7 +173,7 @@ export type CmsMediaContentHashMatch = Static<typeof CmsMediaLookupResponseSchem
  */
 export async function findCmsMediaByContentHash(
   contentHashes: string[],
-  options: ClientBase = {},
+  options: ClientBase & { signal?: AbortSignal } = {},
 ): Promise<CmsMediaContentHashMatch[]> {
   if (contentHashes.length === 0) return []
   const { fetchImpl, basePath } = resolveClient(options)
@@ -182,6 +182,7 @@ export async function findCmsMediaByContentHash(
     credentials: 'include',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ contentHashes }),
+    signal: options.signal,
   })
   const payload = await readEnvelope(res, CmsMediaLookupResponseSchema, `CMS media lookup failed with ${res.status}`)
   return payload.matches
