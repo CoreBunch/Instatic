@@ -7,7 +7,7 @@
  * rule in the Visibility view; an element renders only when both pass. It
  * protects nothing: anyone can add a query string to an address.
  */
-import { useId, useState } from 'react'
+import { useEffect, useId, useRef, useState } from 'react'
 import {
   readShowIf,
   SHOW_IF_NAME_REGEX,
@@ -80,8 +80,12 @@ function isTest(value: string): value is ShowIfTest {
 /**
  * A text field that edits a local draft and saves it on blur or Enter, so a
  * condition is one store write (one undo step) per edit, not one per key.
- * The parent keys it by the stored value, so an outside change (undo, a
- * collaborator) resets the draft.
+ *
+ * The parent keys it by the node it edits. A change of the stored value from
+ * outside (undo, a collaborator) replaces the draft. Selecting another
+ * element on the canvas does not blur the field (the canvas keeps focus
+ * where it is), so a draft still pending when the field goes away is saved
+ * then, through the `onCommit` of the node it was typed for.
  */
 function DraftInput({
   id,
@@ -99,10 +103,29 @@ function DraftInput({
   onCommit: (next: string) => void
 }) {
   const [draft, setDraft] = useState(value)
+  const [stored, setStored] = useState(value)
+  if (value !== stored) {
+    setStored(value)
+    setDraft(value)
+  }
+  // Read by the unmount save, which must see the last draft and the last
+  // commit target of THIS field, not of whatever is selected by then.
+  const pending = useRef({ draft, value, onCommit, normalize })
+  useEffect(() => {
+    pending.current = { draft, value, onCommit, normalize }
+  })
+
   function commit() {
     const next = normalize ? normalize(draft) : draft
     if (next !== value) onCommit(next)
   }
+
+  useEffect(() => () => {
+    const last = pending.current
+    const next = last.normalize ? last.normalize(last.draft) : last.draft
+    if (next !== last.value) last.onCommit(next)
+  }, [])
+
   return (
     <Input
       id={id}
@@ -133,11 +156,9 @@ export function ShowIfControl({
   readOnly: boolean
 }) {
   const updateNodeProps = useEditorStore((s) => s.updateNodeProps)
-  // The outlet is where a page or an entry is placed, and it is rendered with
-  // the template around it. A condition here would turn the wrapper into a
-  // request-time fragment rendered from the template alone, so the content
-  // would come out empty. The publisher drops such a condition
-  // (`withoutShowIfAroundOutlet`); the control is off here to match.
+  // An element that holds the page or entry outlet can carry a condition:
+  // a query condition makes it a fragment rendered with the page inside it.
+  // The page content then loads after the page itself, which the hint says.
   const holdsOutlet = useEditorStore((s) => {
     const page = selectActiveCanvasPage(s)
     return page ? subtreeHasOutlet(page.nodes, nodeId) : false
@@ -174,21 +195,20 @@ export function ShowIfControl({
   const valueTooLong = draft !== null && needsValue(draft.test) && draft.value.length > SHOW_IF_VALUE_MAX_LENGTH
   const problem = draft === null
     ? null
-    : holdsOutlet
-      ? 'This element holds the page content, so a condition here is ignored when the page is published. Set it back to Always, and put the condition on an element inside the page.'
-      : draft.name === ''
-        ? 'Name what to test. Until then nobody gets this element.'
-        : !nameIsValid
-          ? 'Use letters, digits, dots, dashes or underscores in the name. Until then nobody gets this element.'
-          : valueTooLong
-            ? `Keep the value to ${SHOW_IF_VALUE_MAX_LENGTH} characters. Until then nobody gets this element.`
-            : rule === 'never'
-              ? 'This condition could not be read, so nobody gets the element. Pick an option to fix it.'
-              : null
-  const hint = holdsOutlet && draft === null
-    ? 'This element holds the page content, so it cannot have a condition. Put one on an element inside the page.'
-    : problem ?? HINT[choice]
-  const locked = readOnly || (holdsOutlet && draft === null)
+    : draft.name === ''
+      ? 'Name what to test. Until then nobody gets this element.'
+      : !nameIsValid
+        ? 'Use letters, digits, dots, dashes or underscores in the name. Until then nobody gets this element.'
+        : valueTooLong
+          ? `Keep the value to ${SHOW_IF_VALUE_MAX_LENGTH} characters. Until then nobody gets this element.`
+          : rule === 'never'
+            ? 'This condition could not be read, so nobody gets the element. Pick an option to fix it.'
+            : null
+  const outletNote = holdsOutlet && draft?.source === 'query'
+    ? ' This element holds the page content, so that content loads after the page, once the address is read.'
+    : ''
+  const hint = problem ?? `${HINT[choice]}${outletNote}`
+  const locked = readOnly
 
   return (
     <section className={styles.root} aria-label="Show-if condition" data-testid="show-if-control">
@@ -210,7 +230,7 @@ export function ShowIfControl({
             {draft.source === 'query' ? 'Parameter' : 'Field'}
           </label>
           <DraftInput
-            key={draft.name}
+            key={`${nodeId}:name`}
             id={nameId}
             value={draft.name}
             placeholder={NAME_PLACEHOLDER[draft.source]}
@@ -234,7 +254,7 @@ export function ShowIfControl({
             <>
               <label htmlFor={valueId} className={styles.label}>Value</label>
               <DraftInput
-                key={draft.value}
+                key={`${nodeId}:value`}
                 id={valueId}
                 value={draft.value}
                 placeholder={draft.source === 'query' ? 'plan_changed' : 'active'}

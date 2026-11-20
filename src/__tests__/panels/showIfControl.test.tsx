@@ -70,12 +70,31 @@ describe('ShowIfControl', () => {
     expect(readShowIf(boxProps())).toBeNull()
   })
 
-  it('is switched off on an element that holds the outlet, and says why', () => {
+  it('saves a pending draft to the element it was typed for when another is selected', () => {
+    load({ showIf: { source: 'query', name: 'commerce', test: 'filled' } })
+    const props = (id: 'box' | 'wrap') => useEditorStore.getState().site!.pages[0]!.nodes[id]!.props
+    useEditorStore.getState().updateNodeProps('box', { showIf: { source: 'query', name: 'old', test: 'filled' } })
+    const { rerender } = render(<ShowIfControl nodeId="box" props={props('box')} readOnly={false} />)
+    // Typed, then another element is picked on the canvas: no blur happens.
+    fireEvent.change(screen.getByLabelText('Parameter'), { target: { value: 'status' } })
+    rerender(<ShowIfControl nodeId="wrap" props={props('wrap')} readOnly={false} />)
+    expect(readShowIf(props('box'))).toEqual({ source: 'query', name: 'status', test: 'filled' })
+    expect(readShowIf(props('wrap'))).toEqual({ source: 'query', name: 'commerce', test: 'filled' })
+  })
+
+  it('keeps focus in the field after Enter saves', () => {
     load()
-    render(<ShowIfControl nodeId="wrap" props={{}} readOnly={false} />)
-    expect((screen.getByLabelText('Show if') as HTMLInputElement).getAttribute('aria-disabled') === 'true'
-      || (document.getElementById(`${screen.getByLabelText('Show if').id}-native`) as HTMLSelectElement).disabled).toBe(true)
-    expect(screen.getByText(/holds the page content, so it cannot have a condition/)).toBeTruthy()
+    useEditorStore.getState().updateNodeProps('box', { showIf: { source: 'query', name: '', test: 'filled' } })
+    const { rerender } = render(<ShowIfControl nodeId="box" props={boxProps()} readOnly={false} />)
+    const field = screen.getByLabelText('Parameter') as HTMLInputElement
+    field.focus()
+    fireEvent.change(field, { target: { value: 'commerce' } })
+    fireEvent.keyDown(field, { key: 'Enter' })
+    expect(readShowIf(boxProps())).toEqual({ source: 'query', name: 'commerce', test: 'filled' })
+    // The store answers with the saved condition; the same field stays focused.
+    rerender(<ShowIfControl nodeId="box" props={boxProps()} readOnly={false} />)
+    expect(document.activeElement).toBe(field)
+    expect(field.value).toBe('commerce')
   })
 
   it('names the real problem when the value is too long', () => {

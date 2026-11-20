@@ -21,7 +21,6 @@
 import { Type, safeParseValue, type Static } from '@core/utils/typeboxHelpers'
 import type { TemplateRenderDataContext } from './renderDataContext'
 import { readFrame } from './tokenInterpolation'
-import type { PageNode } from '@core/page-tree'
 
 /**
  * Query parameter names and entry field paths a condition can name. Brackets
@@ -122,28 +121,3 @@ export function showIfAllows(
   }
 }
 
-/**
- * Drop the show-if conditions on the elements that hold a template's outlet
- * (the outlet's ancestors in `nodes`), returning a new node map. The page or
- * entry is placed at the outlet; a condition around it would make the wrapper
- * a hole that is fetched from the template alone, without the page, and come
- * out empty for every visitor. The editor does not let a condition be set
- * there (`ShowIfControl`); this keeps a stored one (an import, a plugin or
- * agent write) from breaking every page the template wraps.
- */
-export function withoutShowIfAroundOutlet(
-  nodes: Record<string, PageNode>,
-  outletId: string,
-): Record<string, PageNode> {
-  const parentOf = new Map<string, string>()
-  for (const id in nodes) for (const child of nodes[id].children) parentOf.set(child, id)
-  let out = nodes
-  for (let id = parentOf.get(outletId); id !== undefined; id = parentOf.get(id)) {
-    const node = out[id]
-    if (!node || !(SHOW_IF_PROP_KEY in node.props)) continue
-    if (out === nodes) out = { ...nodes }
-    const { [SHOW_IF_PROP_KEY]: _dropped, ...props } = node.props
-    out[id] = { ...node, props }
-  }
-  return out
-}

@@ -7,7 +7,7 @@
 import { describe, expect, it } from 'bun:test'
 import { makeModule, makePage, makeRegistry, makeSite } from './helpers'
 import { publishPage, type ResolvedLoopRenderData } from '@core/publisher'
-import { buildRouteFrame, composeTemplateChain, readShowIf, showIfAllows } from '@core/templates'
+import { buildRouteFrame, readShowIf, showIfAllows } from '@core/templates'
 import { findDynamicNodeIds } from '../../core/publisher/dynamicDetection'
 import type { LoopItem } from '@core/loops/types'
 
@@ -99,20 +99,4 @@ describe('show-if conditions', () => {
     }
   })
 
-  it('drops a condition on an element that holds a template outlet, so the page is not lost', () => {
-    const layout = makePage({
-      root: { moduleId: 'base.body', children: ['main'] },
-      main: { moduleId: 'base.container', children: ['outlet'], props: { showIf: { source: 'query', name: 'x', test: 'filled' } } },
-      outlet: { moduleId: 'base.outlet' },
-    })
-    const content = makePage({
-      root: { moduleId: 'base.body', children: ['hello'] },
-      hello: { moduleId: 'base.text', props: { text: 'PAGE-CONTENT' } },
-    })
-    const composed = composeTemplateChain([layout], { kind: 'page', page: content })
-    expect(readShowIf(composed.nodes.main!.props)).toBeNull()
-    expect(findDynamicNodeIds(composed, makeSite(), registry).size).toBe(0)
-    // The caller's layout is not changed.
-    expect(readShowIf(layout.nodes.main!.props)).not.toBeNull()
-  })
 })

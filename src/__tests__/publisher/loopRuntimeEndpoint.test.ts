@@ -77,4 +77,14 @@ describe('loop runtime endpoint', () => {
     // so reading it can only ever yield the fallback.
     expect(LOOP_RUNTIME_JS).not.toContain('currentScript')
   })
+
+  it('sends the page address with its query as pagePath', async () => {
+    history.pushState({}, '', '/account?commerce=plan_changed')
+    try {
+      const url = new URL(await fetchedUrlFor(null), 'http://localhost')
+      expect(url.searchParams.get('pagePath')).toBe('/account?commerce=plan_changed')
+    } finally {
+      history.pushState({}, '', '/')
+    }
+  })
 })

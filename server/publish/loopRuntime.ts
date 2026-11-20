@@ -32,7 +32,9 @@ function runInstaticLoopRuntime(): void {
   const scriptEl = document.querySelector('script[data-instatic-loop-endpoint]')
   const endpointBase =
     (scriptEl && scriptEl.getAttribute('data-instatic-loop-endpoint')) || '/_instatic/loop/'
-  const pagePath = location.pathname
+  // The page's path AND query: the endpoint renders later pages with the
+  // route frame of this address, as the hole runtime's `u` does for page one.
+  const pagePath = location.pathname + location.search
 
   function attach(loopEl: Element): void {
     let pageNumber = parseInt(loopEl.getAttribute('data-instatic-loop-page') || '1', 10)

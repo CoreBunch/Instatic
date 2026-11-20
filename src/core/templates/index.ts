@@ -30,7 +30,6 @@ export {
   SHOW_IF_PROP_KEY,
   SHOW_IF_NAME_REGEX,
   SHOW_IF_VALUE_MAX_LENGTH,
-  withoutShowIfAroundOutlet,
   type ShowIf,
   type ShowIfSource,
   type ShowIfTest,
