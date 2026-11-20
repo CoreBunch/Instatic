@@ -15,6 +15,8 @@ export interface PluginVmEnv {
    * to build URLs for static files the plugin shipped in its zip.
    */
   assetBasePath: string
+  /** The manifest declares `memberDataExport`; unset means it does not. */
+  memberDataExport?: boolean
   /** Initial settings snapshot — read synchronously inside the VM via api.cms.settings.get. */
   settings: Record<string, string | number | boolean>
   /**

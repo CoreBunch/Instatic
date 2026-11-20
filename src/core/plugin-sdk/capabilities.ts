@@ -50,7 +50,7 @@ export const PLUGIN_CAPABILITIES: PluginCapability[] = [
   {
     permission: 'members.read',
     label: 'See site members',
-    description: 'Allows the plugin to know which site member is signed in on its routes, to register routes only signed-in members reach, to look a member up by id or email (address, profile and tags), and to receive member events such as sign-up and sign-in. With the hooks permission, its filter on published HTML also receives members-only pages as they are sent to a member.',
+    description: 'Allows the plugin to know which site member is signed in on its routes, to register routes only signed-in members reach, to look a member up by id or email (address, profile and tags), to receive member events such as sign-up, sign-in and deletion, and to add what it keeps about a member to that member\'s data export. With the hooks permission, its filter on published HTML also receives members-only pages as they are sent to a member.',
     risk: 'high',
     surfaces: ['server', 'cms'],
   },

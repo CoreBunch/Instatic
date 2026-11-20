@@ -18,7 +18,7 @@ export const PLUGIN_PERMISSION_VALUES = [
   'cms.hooks',
   // Site members — the people with an account on the published site.
   // `read` sees who is signed in on the plugin's routes, looks members up and
-  // receives member events; `write` invites or creates members; `tags` grants and
+  // receives member events and adds to a member's data export; `write` invites or creates members; `tags` grants and
   // withdraws the plugin's own access tags (what a member may open).
   'members.read',
   'members.write',

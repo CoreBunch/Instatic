@@ -101,6 +101,12 @@ export interface DefinePluginConfig {
   appScopes?: PluginAppScope[]
 
   /**
+   * The plugin adds a section to a member's data export with
+   * `api.cms.members.exportProvider`. Requires `members.read`.
+   */
+  memberDataExport?: boolean
+
+  /**
    * Admin pages registered by the plugin (markdown / map / resource / app).
    * Auto-deduped against the page id.
    */
@@ -208,6 +214,7 @@ export function definePlugin(config: DefinePluginConfig): PluginDefinition {
     ...(config.appScopes
       ? { appScopes: config.appScopes.map((scope) => ({ name: scope.name, description: scope.description })) }
       : {}),
+    ...(config.memberDataExport ? { memberDataExport: true } : {}),
     ...(config.settings !== undefined ? { settings: config.settings } : {}),
     ...(config.author !== undefined ? { author: config.author } : {}),
     ...(config.license !== undefined ? { license: config.license } : {}),

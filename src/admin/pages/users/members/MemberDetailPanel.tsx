@@ -17,6 +17,7 @@ export interface MemberActions {
   suspend: () => void
   restore: () => void
   signOut: () => void
+  downloadData: () => void
   remove: () => void
   resendInvitation: () => void
   grantTag: (tag: string, expiresAt: string | null) => void
@@ -100,6 +101,16 @@ export function MemberDetailPanel({
           tooltip={blocked ?? (detail.sessions.length === 0 ? 'Not signed in anywhere' : undefined)}
         >
           Sign out everywhere
+        </Button>
+        <Button
+          type="button"
+          variant="secondary"
+          size="sm"
+          onClick={actions.downloadData}
+          disabled={busy || !canManage}
+          tooltip={blocked ?? 'Everything the site keeps about this member, including what plugins keep, as a file'}
+        >
+          Download data
         </Button>
         <Button type="button" variant="destructive" size="sm" onClick={actions.remove} disabled={busy || !canManage} tooltip={blocked}>
           Delete

@@ -393,6 +393,17 @@ export function stampSocketIp(req: Request, address: string | null): void {
 }
 
 /**
+ * Whether the browser says this request came from another site (a link or a
+ * form on another page). `Sec-Fetch-Site` is set by the browser and cannot be
+ * changed by page script; a request without it (an old browser, a script
+ * client) is not treated as coming from another site.
+ */
+export function isCrossSiteFetch(req: Request): boolean {
+  const fetchSite = req.headers.get('sec-fetch-site')
+  return fetchSite !== null && fetchSite !== 'same-origin' && fetchSite !== 'none'
+}
+
+/**
  * Best-effort client IP.
  *
  *   1. If the socket peer is a configured trusted proxy, walk

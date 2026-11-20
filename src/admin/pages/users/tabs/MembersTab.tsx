@@ -11,7 +11,7 @@ import { useAsyncResource } from '@admin/lib/useAsyncResource'
 import ld from '@admin/shared/ListDetail/ListDetail.module.css'
 import { useConfirmAction, useConfirmDelete } from '@admin/shared/dialogs/ConfirmDeleteDialog'
 import { StepUpCancelledMessage, useStepUp } from '@admin/shared/StepUp'
-import { memberPageIsLive } from '@core/members'
+import { memberDataFilename, memberPageIsLive } from '@core/members'
 import type {
   MemberAdminStatus,
   MemberDetail,
@@ -23,6 +23,7 @@ import type {
 import {
   deleteCmsMember,
   disconnectCmsMemberApp,
+  downloadCmsMemberData,
   getCmsMember,
   getCmsMemberSettings,
   grantCmsMemberTag,
@@ -57,6 +58,7 @@ import { STATUS_LABEL, STATUS_TONE } from '../members/memberText'
 import memberStyles from '../members/Members.module.css'
 import styles from '../UsersPage.module.css'
 import { UsersSolidIcon } from 'pixel-art-icons/icons/users-solid'
+import { saveFile } from '@admin/lib/saveFile'
 
 type StatusFilter = 'all' | MemberAdminStatus
 
@@ -155,6 +157,16 @@ export function MembersTab({
     setSearch('')
   }
 
+  // A download changes nothing on screen: no busy state, list refresh or collapse.
+  async function downloadData(memberId: string): Promise<void> {
+    try {
+      saveFile(await downloadCmsMemberData(memberId), memberDataFilename(memberId))
+    } catch (err) {
+      console.error("[MembersTab] The member's data could not be downloaded:", err)
+      pushToast({ kind: 'error', title: "The member's data could not be downloaded", body: getErrorMessage(err, 'Unknown member error') })
+    }
+  }
+
   /** Run one change, report a failure, and refresh the list so counts and rows follow. */
   async function run(change: () => Promise<MemberDetail | void>, failure: string, done?: string): Promise<boolean> {
     setBusy(true)
@@ -234,6 +246,7 @@ export function MembersTab({
         }),
       restore: () => void run(() => unsuspendCmsMember(member.id), 'The member could not be restored', `${who} can sign in again`),
       signOut: () => void run(() => signOutCmsMember(member.id), 'The member could not be signed out', `${who} is signed out everywhere`),
+      downloadData: () => void downloadData(member.id),
       remove: () =>
         confirmDelete({
           title: `Delete ${who}?`,

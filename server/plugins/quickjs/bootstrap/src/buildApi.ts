@@ -158,6 +158,9 @@ globalThis.__buildApi = function buildApi() {
     globalThis.__plugin_handlers.listeners[listenerId] = listener as BootstrapFn
     return call('cms.hooks.on', [{ event: String(event), listenerId: listenerId }])
   }
+  // One member export provider per plugin, refused here before any host call.
+  let exportProviderRegistered = false
+
   function filter(name: unknown, handler: unknown) {
     assertTargetPermission('cms.hooks.filter')
     if (typeof handler !== 'function') throw new TypeError('Hook filter must be a function')
@@ -521,6 +524,29 @@ globalThis.__buildApi = function buildApi() {
         emailStatus: function () {
           assertTargetPermission('cms.members.emailStatus')
           return call('cms.members.emailStatus', [])
+        },
+        // api.cms.members.exportProvider(async (memberId) => ({ title, data }))
+        // The plugin's section of a member's data export. One per plugin; it
+        // runs through the filter dispatcher, never hooked to a filter name.
+        exportProvider: function (handler: unknown) {
+          assertTargetPermission('cms.members.exportProvider')
+          if (typeof handler !== 'function') throw new TypeError('A member export provider must be a function')
+          if (!globalThis.__plugin_meta.memberDataExport) {
+            throw new Error('Declare "memberDataExport": true in plugin.json to offer a member export provider')
+          }
+          if (exportProviderRegistered) throw new Error('This plugin already registered its member export provider')
+          exportProviderRegistered = true
+          const provide = handler as BootstrapFn
+          const filterId = __nextId('member-export')
+          globalThis.__plugin_handlers.filters[filterId] = function (_value: unknown, context: unknown) {
+            return provide((context as { memberId: string }).memberId)
+          }
+          return call('cms.members.exportProvider', [{ filterId: filterId }])
+        },
+        // api.cms.members.deletedSince(cursor, { limit }) → { ids, nextCursor }
+        deletedSince: function (cursor: unknown, options?: unknown) {
+          assertTargetPermission('cms.members.deletedSince')
+          return call('cms.members.deletedSince', [cursor === undefined ? null : cursor, options || {}])
         },
         tags: {
           // The tag's source is this plugin; `revoke` withdraws only this plugin's grant.

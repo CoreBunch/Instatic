@@ -3,7 +3,7 @@
  * are the people with an account on the published site.
  */
 import { Type } from '@sinclair/typebox'
-import { apiRequest } from '@core/http'
+import { apiBlobRequest, apiRequest } from '@core/http'
 import {
   MemberAppListResponseSchema,
   MemberAppSchema,
@@ -99,6 +99,11 @@ export function unsuspendCmsMember(id: string): Promise<MemberDetail> {
 
 export function signOutCmsMember(id: string): Promise<MemberDetail> {
   return changeMember(id, '/sign-out', 'POST', undefined, 'The member could not be signed out')
+}
+
+/** Everything the site holds about the member, plugins' sections included, as a JSON file. */
+export function downloadCmsMemberData(id: string): Promise<Blob> {
+  return apiBlobRequest(memberPath(id, '/export'), { fallbackMessage: "The member's data could not be downloaded" })
 }
 
 /** Signs the member out of one app; `grantId` is the connected app's `id`. */

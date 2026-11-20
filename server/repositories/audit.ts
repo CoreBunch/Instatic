@@ -68,6 +68,8 @@ const AuditActionSchema = Type.Union([
   Type.Literal('member.suspend'),
   Type.Literal('member.unsuspend'),
   Type.Literal('member.signout'),
+  // An administrator downloaded a member's data (GET /members/:id/export).
+  Type.Literal('member.export'),
   Type.Literal('member.delete'),
   Type.Literal('member.tag.grant'),
   Type.Literal('member.tag.revoke'),

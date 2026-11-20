@@ -48,11 +48,13 @@
 import type { DbClient } from '../db/client'
 import type { MemberErrorCode } from '@core/members'
 import { Type, safeParseValue } from '@core/utils/typeboxHelpers'
-import { clientIp, isSiteOrigin, originAllowed } from '../auth/security'
+import { clientIp, isCrossSiteFetch, isSiteOrigin, originAllowed } from '../auth/security'
 import { jsonResponse, readTextBodyWithLimit, RequestBodyTooLargeError, setCookieHeader } from '../http'
 import { answerAppSignIn, disconnectApp } from './apps/approval'
 import { handleMemberOAuthRequest } from './apps/handler'
+import { exportMemberDataWithPlugins } from '../plugins/host/memberExport'
 import { MEMBER_OAUTH_PATH_PREFIX } from './apps/protocol'
+import { memberLimits } from './limits'
 import { memberLinkOrigin, memberMailAvailable } from './mail'
 import { findMemberById, toCurrentMember } from './repository'
 import {
@@ -61,7 +63,6 @@ import {
   confirmEmailChange,
   confirmSignInLink,
   deleteAccount,
-  exportMemberData,
   logIn,
   logOut,
   requestEmailChange,
@@ -134,8 +135,7 @@ async function readFields(req: Request): Promise<Fields | null> {
 export function originOk(req: Request): boolean {
   if (!req.headers.get('origin')) return false
   if (!originAllowed(req)) return false
-  const fetchSite = req.headers.get('sec-fetch-site')
-  return !fetchSite || fetchSite === 'same-origin' || fetchSite === 'none'
+  return !isCrossSiteFetch(req)
 }
 
 /** The signed-in member behind this request, or null. */
@@ -410,9 +410,18 @@ export async function handleMemberRequest(req: Request, db: DbClient, url: URL):
       )
     }
     if (action === 'export') {
+      // A link on another site must not start an export (it asks every plugin).
+      if (isCrossSiteFetch(req)) return jsonResponse({ error: 'Forbidden' }, { status: 403, headers: NO_STORE })
       const current = await resolveSignedInMember(db, req)
       if (!current) return jsonResponse({ error: 'Sign in first.' }, { status: 401, headers: NO_STORE })
-      return jsonResponse(await exportMemberData(db, current.member), {
+      const allowed = memberLimits.exportPerMember.consume(current.member.id)
+      if (!allowed.ok) {
+        return jsonResponse(
+          { error: 'You downloaded your data a few times already. Try again later.' },
+          { status: 429, headers: { ...NO_STORE, 'retry-after': String(Math.ceil(allowed.retryAfterMs / 1000)) } },
+        )
+      }
+      return jsonResponse(await exportMemberDataWithPlugins(db, current.member), {
         headers: { ...NO_STORE, 'content-disposition': 'attachment; filename="my-account-data.json"' },
       })
     }

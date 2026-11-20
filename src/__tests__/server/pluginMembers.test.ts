@@ -18,6 +18,8 @@ import { handleCmsRequest } from '../../../server/handlers/cms'
 import { createMailConnector } from '../../../server/mail/connectors'
 import { saveMailDefaults } from '../../../server/mail/defaults'
 import { flushMemberMail } from '../../../server/members/mail'
+import { resetMemberLimits } from '../../../server/members/limits'
+import { exportMemberDataWithPlugins, fitsJson } from '../../../server/plugins/host/memberExport'
 import { DEFAULT_MEMBER_SETTINGS } from '@core/members'
 import { deleteMemberAsAdmin, ensureMember, setMemberSuspended } from '../../../server/members/admin'
 import { confirmSignInLink } from '../../../server/members/service'
@@ -76,8 +78,9 @@ const PLUGIN_SOURCE = `
   }
 `
 
-function manifest(permissions: string[], id = PLUGIN_ID) {
+function manifest(permissions: string[], id = PLUGIN_ID, extra: Record<string, unknown> = {}) {
   return {
+    ...extra,
     id,
     name: 'Club',
     version: '1.0.0',
@@ -109,9 +112,14 @@ describe('site members for plugins', () => {
     await rm(uploadsDir, { recursive: true, force: true })
   })
 
-  async function install(permissions: string[], source = PLUGIN_SOURCE, id = PLUGIN_ID): Promise<Response> {
+  async function install(
+    permissions: string[],
+    source = PLUGIN_SOURCE,
+    id = PLUGIN_ID,
+    extra: Record<string, unknown> = {},
+  ): Promise<Response> {
     const zipped = zipSync({
-      'plugin.json': strToU8(JSON.stringify(manifest(permissions, id))),
+      'plugin.json': strToU8(JSON.stringify(manifest(permissions, id, extra))),
       'server/index.js': strToU8(source),
     })
     const formData = new FormData()
@@ -545,6 +553,226 @@ describe('site members for plugins', () => {
     })
   })
 
+  describe('member data export', () => {
+    const DECLARES = { memberDataExport: true }
+    const exporting = (title: string) => `export function activate(api) {
+      api.cms.members.exportProvider(async (memberId) => ({ title: ${JSON.stringify(title)}, data: { memberId, orders: [{ id: 'o1', total: 12 }] } }))
+    }`
+    type Section = { plugin: string; included: boolean; reason?: string; title?: string; data?: unknown }
+    const exportOf = async (cookie: string) => {
+      const res = await visit('/_instatic/members/export', { cookie })
+      expect(res.status).toBe(200)
+      return (await res.json()) as { account: { email: string }; plugins: Section[] }
+    }
+    const sectionOf = (plugins: Section[], id: string) => plugins.find((section) => section.plugin === id)
+
+    beforeEach(() => resetMemberLimits())
+
+    it('carries each plugin section, and lists a plugin that failed instead of dropping it', async () => {
+      await install(['members.read'], exporting('Orders'), 'acme.shop', DECLARES)
+      await install(
+        ['members.read'],
+        `export function activate(api) {
+           api.cms.members.exportProvider(async () => { throw new Error('database unavailable') })
+         }`,
+        'acme.broken',
+        DECLARES,
+      )
+      await install(['members.read'], `export function activate(api) {
+           api.cms.members.exportProvider(async () => 'not a section')
+         }`, 'acme.odd', DECLARES)
+      await install(['members.read'], `export function activate(api) {
+           let deep = 'bottom'
+           for (let i = 0; i < 100; i++) deep = { deeper: deep }
+           api.cms.members.exportProvider(async () => ({ data: deep }))
+         }`, 'acme.deep', DECLARES)
+      await install(['members.read'], `export function activate(api) {
+           api.cms.members.exportProvider(async () => ({ title: 'Nothing kept' }))
+         }`, 'acme.empty', DECLARES)
+      const ada = await member('ada@example.com')
+
+      const mine = await exportOf(ada.cookie)
+      expect(mine.account.email).toBe('ada@example.com')
+      expect(sectionOf(mine.plugins, 'acme.shop')).toEqual({
+        plugin: 'acme.shop',
+        name: 'Club',
+        included: true,
+        title: 'Orders',
+        data: { memberId: ada.id, orders: [{ id: 'o1', total: 12 }] },
+      })
+      expect(sectionOf(mine.plugins, 'acme.broken')).toMatchObject({ included: false, reason: expect.stringContaining('Could not be included') })
+      expect(sectionOf(mine.plugins, 'acme.odd')).toMatchObject({ included: false, reason: expect.stringContaining('{ title, data }') })
+      expect(sectionOf(mine.plugins, 'acme.deep')).toMatchObject({ included: false, reason: expect.stringContaining('64 levels') })
+      expect(sectionOf(mine.plugins, 'acme.empty')).toMatchObject({ included: true, title: 'Nothing kept', data: null })
+
+      // The admin's download is the same export, saved under the member's id, and audited.
+      const admin = await h.cms(`/admin/api/cms/members/${ada.id}/export`, { cookie: owner })
+      expect(admin.status).toBe(200)
+      expect(admin.headers.get('content-disposition')).toBe(`attachment; filename="member-${ada.id}-data.json"`)
+      const theirs = (await admin.json()) as { plugins: unknown[] }
+      expect(theirs.plugins).toEqual(mine.plugins)
+      const { rows } = await h.db<{ target_id: string }>`select target_id from audit_events where action = 'member.export'`
+      expect(rows).toEqual([{ target_id: ada.id }])
+    })
+
+    it('lists a declaring plugin that is not running, or did not offer its section', async () => {
+      await install(['members.read'], exporting('Orders'), 'acme.sleepy', DECLARES)
+      await install(['members.read'], 'export function activate() {}', 'acme.quiet', DECLARES)
+      const off = await h.cms('/admin/api/cms/plugins/acme.sleepy', { method: 'PATCH', cookie: await h.stepUp(owner), json: { enabled: false } })
+      expect(off.status).toBeLessThan(300)
+      const ada = await member('ada@example.com')
+      const mine = await exportOf(ada.cookie)
+      expect(sectionOf(mine.plugins, 'acme.sleepy')).toMatchObject({ included: false, reason: expect.stringContaining('not running') })
+      expect(sectionOf(mine.plugins, 'acme.quiet')).toMatchObject({ included: false, reason: expect.stringContaining('did not offer') })
+    })
+
+    it('lists a plugin that misses the deadline as timed out', async () => {
+      await install(['members.read'], `export function activate(api) {
+           api.cms.members.exportProvider(async () => {
+             const end = Date.now() + 1500
+             while (Date.now() < end) {}
+             return { data: 'late' }
+           })
+         }`, 'acme.slow', DECLARES)
+      const created = await createMember(h.db, { email: 'ada@example.com', passwordHash: 'x', profile: {}, verified: true })
+      const exported = await exportMemberDataWithPlugins(h.db, created!, 200)
+      expect(sectionOf(exported.plugins as Section[], 'acme.slow')).toMatchObject({ included: false, reason: 'Could not be included: timed out' })
+    })
+
+    it('runs one export per member at a time', async () => {
+      await install(['members.read'], exporting('Orders'), 'acme.shop', DECLARES)
+      const created = await createMember(h.db, { email: 'ada@example.com', passwordHash: 'x', profile: {}, verified: true })
+      const first = exportMemberDataWithPlugins(h.db, created!)
+      expect(exportMemberDataWithPlugins(h.db, created!)).toBe(first)
+      await first
+    })
+
+    it('limits an administrator to 30 downloads an hour, and refuses one started from another site', async () => {
+      const ada = await member('ada@example.com')
+      // Set after construction: the test DOM's Request drops a Sec- header given in its init.
+      const crossSite = new Request(`${ORIGIN}/admin/api/cms/members/${ada.id}/export`)
+      crossSite.headers.set('cookie', owner)
+      crossSite.headers.set('sec-fetch-site', 'cross-site')
+      expect((await handleCmsRequest(crossSite, h.db, { uploadsDir })).status).toBe(403)
+      for (let i = 0; i < 30; i++) expect((await h.cms(`/admin/api/cms/members/${ada.id}/export`, { cookie: owner })).status).toBe(200)
+      const limited = await h.cms(`/admin/api/cms/members/${ada.id}/export`, { cookie: owner })
+      expect(limited.status).toBe(429)
+      expect(Number(limited.headers.get('retry-after'))).toBeGreaterThan(0)
+    })
+
+    it('lists a plugin whose stored manifest no longer reads, when it may read members', async () => {
+      await install(['members.read'], exporting('Orders'), 'acme.garbled', DECLARES)
+      await h.db`update installed_plugins set manifest_json = ${'{"not":"a manifest"}'} where id = ${'acme.garbled'}`
+      const ada = await member('ada@example.com')
+      const mine = await exportOf(ada.cookie)
+      expect(sectionOf(mine.plugins, 'acme.garbled')).toMatchObject({
+        included: false,
+        reason: 'Could not be included: its manifest could not be read',
+      })
+    })
+
+    it('measures a section as the UTF-8 bytes of its JSON', () => {
+      const samples: unknown[] = [
+        { ascii: 'plain text', n: 12, ok: true, none: null, list: [1, 2.5, -3] },
+        { multibyte: 'žluťoučký kůň €, 漢字, 🦊🦊' },
+        { control: 'line\nbreak\ttab \u0001\u001f "quoted" back\\slash' },
+        ['\ud800 lone surrogate', '\udc00'],
+        'x'.repeat(5000),
+      ]
+      for (const sample of samples) {
+        const exact = Buffer.byteLength(JSON.stringify(sample), 'utf8')
+        expect(fitsJson(sample, exact)).toBe(true)
+        expect(fitsJson(sample, exact - 1)).not.toBe(true)
+      }
+    })
+
+    it('limits the member to 3 downloads an hour, and refuses one started from another site', async () => {
+      const ada = await member('ada@example.com')
+      const crossSite = new Request(`${ORIGIN}/_instatic/members/export`)
+      crossSite.headers.set('cookie', ada.cookie)
+      crossSite.headers.set('sec-fetch-site', 'cross-site')
+      expect((await handleServerRequest(crossSite, { db: h.db, uploadsDir })).status).toBe(403)
+      for (let i = 0; i < 3; i++) expect((await visit('/_instatic/members/export', { cookie: ada.cookie })).status).toBe(200)
+      const limited = await visit('/_instatic/members/export', { cookie: ada.cookie })
+      expect(limited.status).toBe(429)
+      expect(Number(limited.headers.get('retry-after'))).toBeGreaterThan(0)
+    })
+
+    it('cannot be offered without members.read, without declaring it, or twice', async () => {
+      const refused = await install(['cms.routes', 'cms.routes.public'], 'export function activate() {}', 'acme.nosy', DECLARES)
+      // The manifest itself is refused: declaring an export needs members.read.
+      expect(refused.status).toBe(400)
+      await install(
+        ['cms.routes', 'cms.routes.public', 'members.read'],
+        `export function activate(api) {
+           api.cms.routes.public.get('/before', () => ({ ok: true }))
+           api.cms.members.exportProvider(async () => ({ data: {} }))
+         }`,
+        'acme.undeclared',
+      )
+      // Not declared: the registration is refused, which fails activation.
+      expect((await visit('/_instatic/plugins/acme.undeclared/before')).status).toBe(404)
+      await install(
+        ['cms.routes', 'cms.routes.public', 'members.read'],
+        `export function activate(api) {
+           api.cms.members.exportProvider(async () => ({ data: 1 }))
+           let second = null
+           try { api.cms.members.exportProvider(async () => ({ data: 2 })) } catch (err) { second = String(err.message) }
+           api.cms.routes.public.get('/second', () => ({ second }))
+         }`,
+        'acme.twice',
+        DECLARES,
+      )
+      expect(await (await visit('/_instatic/plugins/acme.twice/second')).json()).toEqual({
+        second: 'This plugin already registered its member export provider',
+      })
+    })
+  })
+
+  describe('deletedSince', () => {
+    const SOURCE = `export function activate(api) {
+      api.cms.routes.public.post('/deleted', async (ctx) => {
+        try { return await api.cms.members.deletedSince(ctx.body.cursor ?? null, ctx.body.limit ? { limit: ctx.body.limit } : {}) }
+        catch (err) { return { error: String(err.message) } }
+      })
+    }`
+    const page = async (cursor: string | null, limit?: number) =>
+      (await (await visit('/_instatic/plugins/acme.erase/deleted', { method: 'POST', json: { cursor, limit } })).json()) as {
+        ids: string[]
+        nextCursor: string | null
+        error?: string
+      }
+
+    it('pages through deletions in order, ties included, and stays put when nothing is new', async () => {
+      await install(['cms.routes', 'cms.routes.public', 'members.read'], SOURCE, 'acme.erase')
+      const ids: string[] = []
+      for (const email of ['a@example.com', 'b@example.com', 'c@example.com', 'd@example.com']) {
+        const created = await createMember(h.db, { email, passwordHash: null, profile: {}, verified: false })
+        await deleteMemberAsAdmin(h.db, created!.id)
+        ids.push(created!.id)
+      }
+      // Three deleted in the same instant, one later.
+      const same = '2026-11-20T10:00:00.000Z'
+      for (const id of ids.slice(0, 3)) await h.db`update members set deleted_at = ${same} where id = ${id}`
+      await h.db`update members set deleted_at = ${'2026-11-20T10:00:05.000Z'} where id = ${ids[3]!}`
+      // Within one instant the order follows the database's own id ordering,
+      // so the tied ids are compared as a set: each comes once, before the later one.
+      const tied = new Set(ids.slice(0, 3))
+
+      const first = await page(null, 2)
+      const second = await page(first.nextCursor, 2)
+      expect(first.ids).toHaveLength(2)
+      expect(second.ids).toHaveLength(2)
+      const pagedTies = [...first.ids, second.ids[0]!]
+      expect(new Set(pagedTies)).toEqual(tied)
+      expect(pagedTies).toHaveLength(3)
+      expect(second.ids[1]).toBe(ids[3])
+      const empty = await page(second.nextCursor, 2)
+      expect(empty).toEqual({ ids: [], nextCursor: second.nextCursor })
+      expect((await page('bm90LWEtY3Vyc29y')).error).toContain('not a cursor')
+    })
+  })
+
   describe('member events', () => {
 
     it('reach a plugin that may read members', async () => {
@@ -556,6 +784,24 @@ describe('site members for plugins', () => {
       expect(events).toContainEqual({ event: 'member.created', memberId: ada.id, email: 'ada@example.com' })
       expect(events).toContainEqual({ event: 'member.verified', memberId: ada.id, email: 'ada@example.com' })
       expect(events).toContainEqual({ event: 'member.tagged', memberId: ada.id, tag: 'gold', source: PLUGIN_ID, expiresAt: null })
+    })
+
+    it('tell a plugin that may read members about a deletion, by the member and by an admin', async () => {
+      await install(ALL)
+      // No password: a member who signed in moments ago may delete without one.
+      const created = await createMember(h.db, { email: 'ada@example.com', passwordHash: null, profile: {}, verified: true })
+      const session = await createMemberSession(h.db, created!.id, { ipAddress: null, userAgent: null })
+      const ada = { id: created!.id, cookie: `instatic_member=${session.token}` }
+      const bea = await member('bea@example.com')
+      const own = await visit('/_instatic/members/delete', { method: 'POST', cookie: ada.cookie, json: {} })
+      expect(own.status).toBe(200)
+      expect((await h.cms(`/admin/api/cms/members/${bea.id}`, { method: 'DELETE', cookie: await h.stepUp(owner) })).status).toBe(200)
+      await settle()
+      const deleted = (await heard()).filter((entry) => entry.event === 'member.deleted')
+      expect(deleted).toEqual([
+        { event: 'member.deleted', memberId: ada.id },
+        { event: 'member.deleted', memberId: bea.id },
+      ])
     })
 
     it('are refused to a plugin that may not', async () => {

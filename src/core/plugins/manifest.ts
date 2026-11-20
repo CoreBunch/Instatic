@@ -230,6 +230,8 @@ const manifestSchema = Type.Object({
     }, { additionalProperties: false }),
     { maxItems: 20 },
   )),
+  // Adds a section to a member's data export; see `PluginManifest.memberDataExport`.
+  memberDataExport: Type.Optional(Type.Boolean()),
   entrypoints: Type.Optional(Type.Object({
     server: Type.Optional(Type.String({ pattern: SAFE_ASSET_PATH_PATTERN.source })),
     editor: Type.Optional(Type.String({ pattern: SAFE_ASSET_PATH_PATTERN.source })),
@@ -306,6 +308,13 @@ export function parsePluginManifest(input: unknown): PluginManifest {
         `Invalid plugin manifest: assetBasePath must equal "${expected}"`,
       )
     }
+  }
+
+  if (data.memberDataExport && !data.permissions.includes('members.read')) {
+    throw new Error(
+      'Invalid plugin manifest: `memberDataExport` requires the `members.read` permission. ' +
+        'Add "members.read" to `permissions`.',
+    )
   }
 
   // App scopes hand an app the signed-in member through this plugin's member
@@ -569,6 +578,7 @@ export function parsePluginManifest(input: unknown): PluginManifest {
     // Per-table allowlist for the `api.cms.content.*` surface — required
     // when any `cms.content.*` permission is granted (coherence checked above).
     appScopes: data.appScopes ? data.appScopes.map((scope) => ({ name: scope.name, description: scope.description })) : undefined,
+    memberDataExport: data.memberDataExport,
     contentAccess: data.contentAccess
       ? data.contentAccess.map((entry) => ({ table: entry.table, modes: [...entry.modes] }))
       : undefined,

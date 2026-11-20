@@ -73,6 +73,11 @@ export interface HostPluginRecord {
   routes: Map<string, HostRouteEntry>
   hookListeners: HostHookListenerEntry[]
   hookFilters: HostHookFilterEntry[]
+  /**
+   * The VM-side id of the plugin's member export provider
+   * (`api.cms.members.exportProvider`), or null when it has none.
+   */
+  memberExportFilterId: string | null
   loopSources: HostLoopSourceEntry[]
   /** Media storage adapter ids registered by this plugin. */
   mediaAdapters: HostMediaAdapterEntry[]

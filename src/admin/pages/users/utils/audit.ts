@@ -191,6 +191,8 @@ export function auditTitle(
       return `Member ${member} was suspended`
     case 'member.unsuspend':
       return `Member ${member} was restored`
+    case 'member.export':
+      return `Member ${member}'s data was downloaded`
     case 'member.signout':
       return `Member ${member} was signed out everywhere`
     case 'member.delete':
