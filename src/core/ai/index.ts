@@ -68,6 +68,7 @@ export {
   DuplicatePageInputSchema,
   SetPageTemplateInputSchema,
   ClearPageTemplateInputSchema,
+  SetPageSeoInputSchema,
   SetColorTokensInputSchema,
   SetFontTokensInputSchema,
   SetTypeScaleInputSchema,
@@ -101,6 +102,7 @@ export type {
   DuplicatePageInput,
   SetPageTemplateInput,
   ClearPageTemplateInput,
+  SetPageSeoInput,
 } from './toolSchemas'
 export {
   describeAgentDocuments,

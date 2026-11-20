@@ -525,6 +525,8 @@ Canvas-internal values are not CSS tokens — they are raw integers intentionall
 
 42px-wide vertical strip on the far left. Primary navigation panels sit in the top group; global workspace actions such as the AI assistant are pinned to the bottom group. Each button gets an automatic rail tint from its full panel identity, with repeats avoided inside the visible rail group, and opens a panel in the left sidebar. Implementation: `src/admin/pages/site/sidebars/PanelRail/PanelRail.module.css`.
 
+The Explorer’s **Site** tab opens with the site name and its **Global head settings** gear, followed by collapsible Pages, Templates and Components branches. The **Code** tab uses the same tree for Styles and Scripts. In both tabs, each branch keeps its create actions visible while collapsed.
+
 The primary rail group is, in order: **Explorer** (`database-solid` icon, `gold` accent — carried over from the standalone Layers rail button it replaced), **Framework**, **Selectors**, **Dependencies**. The AI assistant lives alone in the bottom global group. Read-only callers (Viewer / Client) see only the Explorer rail button — the structural Framework / Selectors / Dependencies panels and the agent are dropped from both the rail and their panel mounts.
 
 ### Left sidebar

@@ -41,7 +41,6 @@ import type {
   ImportResult,
   ImportScript,
   ImportStylesheet,
-  ImportWarning,
 } from './types'
 import type {
   FileConflict,
@@ -49,6 +48,7 @@ import type {
   RuleConflict,
   TokenConflict,
 } from './conflictTypes'
+import type { ImportWarning } from './warnings'
 import type { SiteImportAdapter, SiteImportTransaction } from './adapter'
 
 export interface CommitImportPlanOptions {
@@ -394,6 +394,7 @@ function commitPages(
         title: page.title,
         slug: page.slug,
         nodeFragment: page.nodeFragment,
+        seo: page.seo,
       })
       id = conflict.existingPageId
     } else {
@@ -402,6 +403,7 @@ function commitPages(
         title: page.title,
         slug: resolution?.resolvedSlug ?? page.slug,
         nodeFragment: page.nodeFragment,
+        seo: page.seo,
       })
     }
 

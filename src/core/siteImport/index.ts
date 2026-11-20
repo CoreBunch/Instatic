@@ -80,7 +80,6 @@ export type {
   PagePlan,
   ImportPlan,
   ImportResult,
-  ImportWarning,
   ImportAsset,
   UploadedImportAsset,
   StylesheetImportMode,
@@ -94,6 +93,7 @@ export type {
   ImportScriptDependency,
   ImportScript,
 } from './types'
+export type { ImportWarning } from './warnings'
 export type {
   ConflictResolution,
   PageConflict,

@@ -34,12 +34,12 @@ import type {
   ClassifiedFile,
   FileMap,
   ImportPlan,
-  ImportWarning,
   ImportGoogleFont,
   ImportScript,
   PagePlan,
   StylesheetImportMode,
 } from './types'
+import type { ImportWarning } from './warnings'
 
 interface BuildImportPlanInput {
   fileMap: FileMap

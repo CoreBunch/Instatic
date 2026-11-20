@@ -1,5 +1,5 @@
 import type { Page, PageNode } from '@core/page-tree'
-import { reindexNodeParents } from '@core/page-tree'
+import { mergePageSeo, reindexNodeParents } from '@core/page-tree'
 import { firstOutletId, treeHasOutlet } from './outlet'
 
 type TerminalContent =
@@ -118,9 +118,10 @@ function spliceIntoOutlet(host: Nodes, hostRoot: string, inner: Nodes, innerRoot
  */
 export function composeTemplateChain(chain: Page[], terminal: TerminalContent): Page {
   const effective = chain.filter(treeHasOutlet)
+  const seo = mergePageSeo(...chain.map((template) => template.seo), terminal.kind === 'page' ? terminal.page.seo : undefined)
 
   if (effective.length === 0) {
-    if (terminal.kind === 'page') return terminal.page
+    if (terminal.kind === 'page') return seo ? { ...terminal.page, seo } : terminal.page
     // entry terminal with no usable outlet anywhere: render the innermost
     // matched template as-is (chrome without a body). `chain` is non-empty here
     // because the renderer 404s an entry route with no matching template.
@@ -130,6 +131,7 @@ export function composeTemplateChain(chain: Page[], terminal: TerminalContent): 
       slug: t.slug,
       title: t.title,
       ...(t.template ? { template: t.template } : {}),
+      ...(seo ? { seo } : {}),
       rootNodeId: t.rootNodeId,
       nodes: { ...t.nodes },
     }
@@ -177,6 +179,7 @@ export function composeTemplateChain(chain: Page[], terminal: TerminalContent): 
     // here meant a stylesheet scoped to an entry template never applied to that
     // template's own routes — the one place it was meant to.
     ...(innermost.template ? { template: innermost.template } : {}),
+    ...(seo ? { seo } : {}),
     rootNodeId: acc.rootId,
     nodes,
   }

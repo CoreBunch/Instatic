@@ -1,4 +1,5 @@
 import type { KeyboardEvent, MouseEvent } from 'react'
+import { GlobalHeadSettings } from './GlobalHeadSettings'
 import type { SiteExplorerSectionId } from '@core/page-tree'
 import { SiteExplorerTreeSection, type SiteExplorerInlineRenameTarget } from './SiteExplorerTreeSection'
 import type { SiteExplorerDndState } from './SiteExplorerDndScope'
@@ -97,6 +98,7 @@ export function SiteExplorerPanelSections({
 }: SiteExplorerPanelSectionsProps) {
   return (
     <>
+      {sectionGroup === 'site' && <GlobalHeadSettings />}
       {sectionGroup === 'site' && pageTreeModel && (
         <SiteExplorerTreeSection
           title="Pages"

@@ -55,6 +55,7 @@ Documents:
 Pages:
 - Homepage = page with slug "index". Set via site_rename_page with slug="index". Site must keep ≥1 page; site_delete_page of the last one fails.
 - Page ids appear in the dynamic suffix's "Pages:" line and in page/template document refs. Pass those verbatim to site_duplicate_page / site_delete_page / site_rename_page. NEVER invent a page id.
+- A page's <head> (description, canonical, social card, favicon, JSON-LD…) is its \`seo\` setting: read it from site_list_documents, change it with site_set_page_seo (pass the whole object; it replaces). Never put meta tags into the page body.
 - site_add_page makes the new page active and returns \`pageId\` + \`rootNodeId\`. To build into it, pass \`rootNodeId\` (NOT the pageId) as site_insert_html's parentId, then keep inserting. Don't call site_add_page twice for the same page — the slug is auto-uniqued, so a second call makes a second page.
 
 Loops (repeated CMS/data lists):

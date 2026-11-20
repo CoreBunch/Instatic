@@ -10,7 +10,7 @@
 
 import { nanoid } from 'nanoid'
 import type { StoreApi } from 'zustand'
-import type { NodeTree, PageNode, StyleRule, SiteDocument } from '@core/page-tree'
+import type { NodeTree, PageNode, PageSeo, StyleRule, SiteDocument } from '@core/page-tree'
 import { addPage, createNode, reconcileSiteExplorerInPlace, reindexNodeParents } from '@core/page-tree'
 import type { VisualComponent } from '@core/visualComponents'
 import { syncAllVCRefSlotInstances, allTreeNodeMaps } from '../vcSlotReconcile'
@@ -376,7 +376,7 @@ export function buildSiteHelpers(
       }
 
       const helpers: SiteImportTransaction = {
-        addPage({ id: pageId, title, slug, nodeFragment }: { id?: string; title: string; slug: string; nodeFragment: ImportFragment }): string {
+        addPage({ id: pageId, title, slug, nodeFragment, seo }: { id?: string; title: string; slug: string; nodeFragment: ImportFragment; seo: PageSeo | null }): string {
           // addPage creates a fresh base.body root, normalises the slug, and
           // pushes the page onto site.pages. We then graft the fragment nodes
           // in as children of that root — same logical step as insertImportedNodes.
@@ -384,6 +384,7 @@ export function buildSiteHelpers(
           // Honour a caller-supplied id so the importer can pre-mint page ids
           // and rewrite internal links to `cms:page:<id>` before committing.
           if (pageId) page.id = pageId
+          if (seo) page.seo = seo
           applyImportedBodyAttributes(
             page.nodes[page.rootNodeId]!,
             nodeFragment,
@@ -438,7 +439,7 @@ export function buildSiteHelpers(
           return id
         },
 
-        overwritePage(pageId: string, { title, slug, nodeFragment }: { title: string; slug: string; nodeFragment: ImportFragment }): void {
+        overwritePage(pageId: string, { title, slug, nodeFragment, seo }: { title: string; slug: string; nodeFragment: ImportFragment; seo: PageSeo | null }): void {
           const page = site.pages.find((p) => p.id === pageId)
           if (!page) throw new Error('overwritePage: page not found')
 
@@ -466,6 +467,8 @@ export function buildSiteHelpers(
           page.nodes = newNodes
           page.title = title
           page.slug = slug
+          if (seo) page.seo = seo
+          else delete page.seo
           didMutate = true
         },
 

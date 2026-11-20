@@ -18,7 +18,7 @@ export {
   normalizeRouteBase,
   type RouteResolutionContext,
 } from './templateMatching'
-export { buildMemberFrame, buildRouteFrame } from './contextFrames'
+export { buildMemberFrame, buildPageFrame, buildRouteFrame } from './contextFrames'
 export type { MemberAppRequestFrame, MemberFrame } from './contextFrames'
 export type { TemplateRenderDataContext } from './dynamicBindings'
 export { composeTemplateChain } from './templateCompose'

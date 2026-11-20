@@ -12,12 +12,16 @@
  *   3. Derive title (prefer `<title>` tag; fall back to prettified filename).
  *   4. Derive URL-safe slug from the filename.
  *   5. Call `importHtml(source)` to produce the body node fragment.
+ *   6. Read the rest of the `<head>` into the page's SEO settings
+ *      (`extractHeadSeo`, in `headSeo.ts`).
  */
 
 import { dirname, joinPaths } from './paths'
 import { importHtml } from '@core/htmlImport'
 import { normalizePageSlug } from '@core/page-tree'
-import type { FileMap, ImportWarning, PagePlan, PageScript } from './types'
+import { extractHeadSeo } from './headSeo'
+import type { FileMap, PagePlan, PageScript } from './types'
+import type { ImportWarning } from './warnings'
 import type { SiteScriptFormat } from '@core/site-runtime'
 
 // ---------------------------------------------------------------------------
@@ -100,6 +104,10 @@ export function makeHtmlPagePlan(
   // --- Step 5: parse body nodes (+ harvest inline styles and <style> CSS) ---
   const { styleCss, stripped: _stripped, imageAlts, ...nodeFragment } = importHtml(htmlSource)
 
+  // --- Step 6: head metadata (description, social cards, icons, JSON-LD) ---
+  const head = extractHeadSeo(htmlSource, htmlPath)
+  warnings.push(...head.warnings)
+
   const pagePlan: PagePlan = {
     source: htmlPath,
     title,
@@ -108,6 +116,7 @@ export function makeHtmlPagePlan(
     scripts,
     nodeFragment,
     imageAlts,
+    seo: head.seo,
   }
 
   return { pagePlan, warnings, inlineCss: styleCss }

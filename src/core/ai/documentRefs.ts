@@ -1,4 +1,4 @@
-import type { Page, PageTemplateConfig, SiteDocument } from '@core/page-tree'
+import type { Page, PageSeo, PageTemplateConfig, SiteDocument } from '@core/page-tree'
 import type { AgentDocumentRef } from './toolSchemas'
 
 export interface AgentDocumentDescriptor {
@@ -14,6 +14,8 @@ export interface AgentDocumentDescriptor {
     target: PageTemplateConfig['target']
     priority: number
   }
+  /** The page's `<head>` settings, when it has any (edit with site_set_page_seo). */
+  seo?: PageSeo
 }
 
 export function documentRefForPage(page: Pick<Page, 'id' | 'template'>): AgentDocumentRef {
@@ -44,6 +46,7 @@ export function describeAgentDocuments(
       ...(page.template
         ? { template: { target: page.template.target, priority: page.template.priority } }
         : {}),
+      ...(page.seo ? { seo: page.seo } : {}),
       summary: summarizePageDocument(page),
     })
   }
