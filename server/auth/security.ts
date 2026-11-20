@@ -294,17 +294,25 @@ export function canonicalIp(raw: string): string | null {
   return ipv6String(parsed.value)
 }
 
+/** `64:ff9b::/96`, the well-known NAT64 prefix (RFC 6052), as its top 96 bits. */
+const NAT64_WELL_KNOWN_PREFIX = 0x0064ff9b0000000000000000n
+
 /**
  * The key for "one visitor" in a per-visitor limit: an IPv4 address as it
  * is, an IPv6 address as its /64 (`2001:db8:1:2::/64`), since one household
- * or phone network is given a whole /64 and can rotate through it. Null for
- * anything that is not an IP address.
+ * or phone network is given a whole /64 and can rotate through it. An
+ * address in the well-known NAT64 prefix `64:ff9b::/96` stands for the IPv4
+ * address in its last 32 bits, so it is keyed on that address, as an
+ * IPv4-mapped one is; otherwise every IPv4 site reached through NAT64 would
+ * share one /64. Null for anything that is not an IP address.
  */
 export function visitorIpKey(raw: string): string | null {
   const canonical = canonicalIp(raw)
   if (canonical === null || !canonical.includes(':')) return canonical
   const parsed = parseIpAddress(canonical)
-  return parsed ? `${ipv6String(maskAddress(parsed.value, 64, 128))}/64` : null
+  if (!parsed) return null
+  if (parsed.value >> 32n === NAT64_WELL_KNOWN_PREFIX) return ipv4String(parsed.value & 0xffffffffn)
+  return `${ipv6String(maskAddress(parsed.value, 64, 128))}/64`
 }
 
 /** RFC 5952 text for a 128-bit IPv6 value. */

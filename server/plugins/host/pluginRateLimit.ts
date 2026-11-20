@@ -3,9 +3,14 @@
  * its host record (`HostPluginRecord.rateLimits`), so they go when the plugin
  * is unloaded or its worker is respawned.
  *
- * This is an in-memory throttle, not a lockout. It smooths load per key; it
- * forgets on restart and under key pressure, so a defence that must hold (an
- * account that may not be guessed at) belongs in the plugin's own records.
+ * This is an in-memory throttle, not a lockout. What it guarantees: bounded
+ * memory and constant time per take, and at most `2 × limit − 1` takes in
+ * any true sliding window for a counter that stays in memory. A counter does
+ * not always stay: a plugin reload, upgrade, worker crash or server restart
+ * drops every counter, and about `keysPerShape` fresh keys in one pool (one
+ * IPv6 /48 rotated through as `ipKey` is enough) push any counter out. So a
+ * defence that must hold (an account that may not be guessed at) belongs in
+ * the plugin's own records.
  *
  * Each (key, limit, window) is a two-bucket sliding-window counter: the count
  * of the current fixed window and of the one before it, with the previous
@@ -19,8 +24,10 @@
  * `keysPerShape` keys in each. Each shape keeps two least-recently-used
  * lists: counters with room, and saturated ones (refused, or at the limit).
  * A new key in a full shape evicts the oldest counter with room, and a
- * saturated one only when none has room, so a flood of fresh keys cannot buy
- * an abuser a fresh budget by pushing out their used-up counter. Every step
+ * saturated one only when none has room. That makes a counter at its limit
+ * the last to go, which is all it does: with `limit` 1 every counter is
+ * saturated and eviction is plain least-recently-used, and a caller who stops
+ * one take short of the limit stays among the counters with room. Every step
  * (look up, touch, move between lists, evict, sweep) is constant time: the
  * lists are linked, and the map is only ever read by key.
  */

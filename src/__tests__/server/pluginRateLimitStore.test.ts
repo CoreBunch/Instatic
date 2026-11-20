@@ -50,12 +50,29 @@ describe('PluginRateLimitStore', () => {
     expect(store.take('b', 5, W, T0)).toMatchObject({ ok: true, remaining: 4, reason: 'capacity' })
   })
 
-  it('keeps a used-up counter through a flood of fresh keys in its own shape', () => {
+  it('evicts a counter at its limit after every counter with room, in its own shape', () => {
     const store = new PluginRateLimitStore(10_000)
-    for (let i = 0; i < 5; i++) store.take('abuser', 5, W, T0)
-    expect(store.take('abuser', 5, W, T0).reason).toBe('limit')
+    for (let i = 0; i < 5; i++) store.take('busy', 5, W, T0)
+    expect(store.take('busy', 5, W, T0).reason).toBe('limit')
+    // One-take keys keep room (limit 5), so they are evicted first, however many come.
     for (let i = 0; i < 200_000; i++) store.take(`fresh-${i}`, 5, W, T0 + 1)
-    expect(store.take('abuser', 5, W, T0 + 2)).toMatchObject({ ok: false, reason: 'limit' })
+    expect(store.take('busy', 5, W, T0 + 2)).toMatchObject({ ok: false, reason: 'limit' })
+  })
+
+  it('is plain least recently used with limit 1, where every counter is at its limit', () => {
+    const store = new PluginRateLimitStore(3)
+    store.take('busy', 1, W, T0)
+    expect(store.take('busy', 1, W, T0).reason).toBe('limit')
+    // Three fresh keys fill and turn over the pool; the busy counter is forgotten.
+    for (let i = 0; i < 3; i++) store.take(`fresh-${i}`, 1, W, T0 + 1)
+    expect(store.take('busy', 1, W, T0 + 2)).toMatchObject({ ok: true, reason: 'capacity' })
+  })
+
+  it('forgets a counter kept one take short of its limit once enough fresh keys arrive', () => {
+    const store = new PluginRateLimitStore(3)
+    for (let i = 0; i < 4; i++) store.take('careful', 5, W, T0) // one short: still has room
+    for (let i = 0; i < 3; i++) store.take(`fresh-${i}`, 5, W, T0 + 1)
+    expect(store.take('careful', 5, W, T0 + 2)).toMatchObject({ ok: true, remaining: 4, reason: 'capacity' })
   })
 
   it('keeps a used-up counter through a flood of fresh keys in another shape', () => {

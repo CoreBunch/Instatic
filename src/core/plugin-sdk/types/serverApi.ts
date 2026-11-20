@@ -143,12 +143,13 @@ export interface ServerPluginApi {
      * counter: at most `2 × limit − 1` in any true window, and it can refuse
      * for up to `windowMs ÷ limit` while the true count is low). A refused
      * take is not counted. In memory only: a plugin reload, a worker respawn
-     * or a server restart starts every window again, so a defence that must
-     * hold belongs in the plugin's own records. `limit` is 1 to 10,000;
-     * `windowMs` is one second to one day; at most 16 different pairs (a
-     * 17th throws). Each pair holds 10,000 keys; a new key in a full pair
-     * forgets the least recently used counter that still has room, and a
-     * used-up one only when none has (`reason: 'capacity'`). Key by
+     * or a server restart drops every counter, and about 10,000 fresh keys in
+     * one pair push any counter out, so a defence that must hold belongs in
+     * the plugin's own records. `limit` is 1 to 10,000; `windowMs` is one
+     * second to one day; at most 16 different pairs (a 17th throws). Each
+     * pair holds 10,000 keys; a new key in a full pair forgets the least
+     * recently used counter that still has room, and a used-up one only when
+     * none has (`reason: 'capacity'`), an order, not a guarantee. Key by
      * `ctx.ipKey`, an account or an API key, never by a value the caller
      * types alone. No permission needed.
      */

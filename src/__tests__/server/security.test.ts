@@ -300,6 +300,11 @@ describe('visitorIpKey', () => {
     expect(visitorIpKey('2001:db8:1:2:3:4:5:6')).toBe('2001:db8:1:2::/64')
     expect(visitorIpKey('2001:DB8:1:2:ffff::9')).toBe('2001:db8:1:2::/64')
     expect(visitorIpKey('2001:db8::1')).toBe('2001:db8::/64')
+    // NAT64 (well-known prefix): keyed on the embedded IPv4 address, not one shared /64.
+    expect(visitorIpKey('64:ff9b::cb00:7107')).toBe('203.0.113.7')
+    expect(visitorIpKey('64:ff9b::203.0.113.8')).toBe('203.0.113.8')
+    // Outside the /96 it is an ordinary IPv6 address.
+    expect(visitorIpKey('64:ff9b:1::cb00:7107')).toBe('64:ff9b:1::/64')
     expect(visitorIpKey('nope')).toBeNull()
   })
 })
