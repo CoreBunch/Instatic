@@ -38,8 +38,10 @@ export type NewStyleRule = Omit<StyleRule, 'id' | 'createdAt' | 'updatedAt'>
  *   reusable media condition so nothing is silently lost.
  * - `invalid-rule`: a rule that the CSS engine rejected (typically a sheet-
  *   level parse error that causes `replaceSync` to throw).
- * - `unknown-property`: legacy, kept for persisted warnings; no longer emitted
- *   (only a denied NAME drops a declaration, see `blocked-property`).
+ * - `unknown-property`: legacy — retained for back-compat with any persisted
+ *   warnings. The Phase 1a permissive property model no longer emits this; a
+ *   declaration is only dropped when its NAME is denied (see
+ *   `blocked-property`), not when it's merely uncurated.
  * - `blocked-property`: a CSS declaration whose property name is on the
  *   security denylist (`behavior`, `-moz-binding`, …). Rare. The declaration
  *   is dropped from the rule.
@@ -83,8 +85,6 @@ export type NewStyleRule = Omit<StyleRule, 'id' | 'createdAt' | 'updatedAt'>
  * - `script-order-conflict`: two pages link the same scripts in contradictory
  *   orders, so no single load order satisfies both. The order from the page
  *   that links them first wins; `path` names the first script of the cycle.
- * - `cascade-override`: a sheet only some pages load restyles shared-sheet
- *   classes; rules are kept, so the override reaches every page (`path`).
  */
 type ImportWarningKind =
   | 'dropped-at-rule'
@@ -102,7 +102,6 @@ type ImportWarningKind =
   | 'external-font'
   | 'unresolved-asset'
   | 'script-order-conflict'
-  | 'cascade-override'
 
 export interface ImportWarning {
   kind: ImportWarningKind
@@ -532,28 +531,28 @@ export interface RuleConflict {
 }
 
 /**
- * One divergent cross-sheet definition of a class name among CONVERTED
- * stylesheets: two page cascades define the same class with different
- * effective declarations. The first-encountered definition keeps the bare
- * name; each later distinct definition raises one conflict.
+ * One cross-sheet class conflict among CONVERTED stylesheets (see
+ * `classCascades.ts`). `kind: 'leak'`: a sheet (`sources[0]`) styles a
+ * class another imported page uses without loading it. `kind: 'divergent'`:
+ * pages load the defining sheets in orders no global order satisfies; the
+ * first definition keeps the bare name.
  *
  * Resolutions (applied by `applyCrossSheetClassResolutions`):
- * - `auto-rename` / `custom-rename` (default): this definition moves to
- *   `resolvedName` — its pages' class tokens and its cascade's selectors
- *   follow, so every page keeps rendering with its own styles.
- * - `skip`: drop this definition; its pages bind to the first definition.
- * - `overwrite`: this definition wins the bare name; the other definitions'
- *   class fragments are dropped and their pages bind to this one.
+ * - `auto-rename` / `custom-rename` (default): leak — the sheet's fragments
+ *   move to `resolvedName`, which its pages carry next to the bare class, so
+ *   each page keeps its own cascade; divergent — this definition moves to
+ *   `resolvedName` with its pages' class tokens.
+ * - `skip`: drop this sheet's fragments (leak) or this definition.
+ * - `overwrite`: keep the sheet global (leak), or this definition wins the
+ *   bare name (divergent).
  */
 export interface CrossSheetClassConflict {
+  kind: 'divergent' | 'leak'
   /** The colliding class name as authored in the source CSS. */
   desiredName: string
-  /** Stable id of this divergent definition (hash of its effective declarations). */
+  /** Stable id of this row (hash of the definition, or of the leaking sheet). */
   definitionId: string
-  /**
-   * CSS file paths whose class fragments produce this definition and are not
-   * shared with the kept (first) definition's cascades.
-   */
+  /** CSS file paths whose class fragments this row moves. */
   sources: string[]
   /** HTML page sources rendered with this definition. */
   pageSources: string[]

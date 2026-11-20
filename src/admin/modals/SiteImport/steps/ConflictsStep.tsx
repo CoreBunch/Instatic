@@ -237,10 +237,11 @@ export function ConflictsStep({
             </fieldset>
           </div>
           <p className={styles.hint}>
-            Two imported stylesheets define the same class differently. Rename
-            keeps each page faithful to its own stylesheet (the listed pages
-            move to the new name); skip uses the first definition everywhere;
-            overwrite makes this definition win the original name.
+            Imported classes are shared by every page, so a stylesheet only
+            some pages load would also style the others. Rename keeps each page
+            faithful to its own stylesheets: the listed pages carry the new
+            name next to the original (or move to it). Skip leaves these rules
+            out; overwrite applies them on every page.
           </p>
           <div className={styles.rows}>
             {crossSheetConflicts.map((conflict) => {
@@ -249,7 +250,11 @@ export function ConflictsStep({
                 <ConflictRow
                   key={key}
                   kind="rule"
-                  source={`${conflict.sources.join(', ') || 'imported stylesheets'} · ${conflict.pageSources.join(', ')}`}
+                  source={
+                    conflict.kind === 'leak'
+                      ? `${conflict.sources[0]} would also style pages that do not load it · ${conflict.pageSources.join(', ')}`
+                      : `${conflict.sources.join(', ') || 'imported stylesheets'} · ${conflict.pageSources.join(', ')}`
+                  }
                   desired={conflict.desiredName}
                   current={crossSheetResolutions.get(key) ?? conflict.defaultResolution}
                   onChange={(next) => onCrossSheetResolutionChange(key, next)}

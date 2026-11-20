@@ -156,22 +156,22 @@ export function buildImportPlan({ fileMap, currentSite, options }: BuildImportPl
   warnings.push(...cssPlan.warnings)
   droppedAtRules.push(...cssPlan.droppedAtRules)
 
-  // 4b. Detect divergent cross-sheet class definitions among the CONVERTED
-  //     stylesheets. Converted sheets merge CSS-natively into the one global
-  //     cascade; when two page cascades define the same class differently,
-  //     that becomes an explicit conflict (default: rename with a suffix) for
-  //     the wizard's Conflicts step — applied by
+  // 4b. Detect cross-sheet class conflicts among the CONVERTED stylesheets.
+  //     Converted sheets merge CSS-natively into the one global cascade; when
+  //     two page cascades define the same class differently (unrelated
+  //     definitions, or a page sheet restyling a shared one that another page
+  //     does not load) that becomes an explicit conflict (default: rename,
+  //     lossless) for the wizard's Conflicts step — applied by
   //     `applyCrossSheetClassResolutions`, never silently here.
   const existingClassNames = Object.values(currentSite.styleRules)
     .filter((rule) => rule.kind === 'class')
     .map((rule) => rule.name)
-  const crossSheet = detectCrossSheetClassConflicts(
+  const crossSheetClasses = detectCrossSheetClassConflicts(
     rawPagePlans,
     cssPlan.cssFileResults,
     existingClassNames,
+    scripts,
   )
-  const crossSheetClasses = crossSheet.conflicts
-  warnings.push(...crossSheet.warnings)
   const publishableCssFileResults = addSelectorDependencyClasses(
     cssPlan.cssFileResults,
     currentSite,

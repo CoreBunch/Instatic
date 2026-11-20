@@ -23,6 +23,16 @@
  * hard isolation keep their stylesheet as a file instead — see
  * `StylesheetImportMode`.)
  *
+ * The common shape is a shared kit restyled by a page's own sheet, or a class
+ * only one page's sheet styles that another page also uses. Either way the
+ * one global registry would carry that sheet's rules onto pages that never
+ * loaded it, so it is a `leak` conflict whenever another imported page uses
+ * the class without loading the sheet. Its default resolution is lossless:
+ * the sheet's fragments move to a new name that its pages carry NEXT TO the
+ * bare class, so a kit's own selectors (`.btn .icon`) keep matching and the
+ * rules apply in the same order as in the source. A sheet every user of the
+ * class loads raises nothing, since keeping it global changes no page.
+ *
  * Bootstrap-like scaffold / utility names (`row`, `col-xl-3`, `d-flex`, …)
  * never conflict: their behaviour is intentionally assembled from many small
  * rules across stylesheets, so splitting them by content would break the grid
@@ -32,7 +42,7 @@
 import type {
   CrossSheetClassConflict,
   ImportPlan,
-  ImportWarning,
+  ImportScript,
   NewStyleRule,
   PagePlan,
 } from './types'
@@ -145,36 +155,30 @@ function effectiveClassDefs(
 // Detection
 // ---------------------------------------------------------------------------
 
-/** What cross-sheet analysis found: real conflicts, plus notes on layered overrides. */
-export interface CrossSheetClassAnalysis {
-  conflicts: CrossSheetClassConflict[]
-  warnings: ImportWarning[]
-}
-
 /**
- * Detect class names whose effective definitions DIVERGE across page
- * cascades. The first-encountered definition keeps the bare name; each later
- * distinct definition becomes one conflict whose default resolution renames
- * it to the next free suffix (`btn-2`, `btn-3`, …) — free among both the
- * imported names and the existing site's class names.
+ * Detect class definitions the one global registry would carry onto imported
+ * pages that never loaded them.
  *
- * A divergence that is only a LAYERED OVERRIDE is not a conflict: when one
- * stylesheet that defines the class is loaded by every cascade that defines
- * it (a shared kit), the other definitions are that kit's component restyled
- * by a later, page-specific sheet. That is an ordinary cascade, so every
- * fragment is kept in cascade order (see `normalizeBindableClassRules`) and
- * nothing is renamed or dropped. The one-registry merge does make those
- * overrides reach every page, so each overriding sheet gets one
- * `cascade-override` warning naming its classes and the remedy (import the
- * sheet as a file to keep it to its own pages).
+ * - When every cascade loads the sheets defining a class in plan order (see
+ *   `definingSheetsInPlanOrder`), each such sheet is one `leak` row if some
+ *   imported page uses the class without loading that sheet. A sheet every
+ *   user of the class loads raises nothing: keeping it global changes no page.
+ * - Otherwise the first-encountered definition keeps the bare name and each
+ *   later distinct definition is one `divergent` row.
+ *
+ * Every row defaults to renaming to the next free suffix (`btn-2`, …), free
+ * among both the imported names and the existing site's class names.
+ * `scripts` are the imported scripts: a class a script puts on elements
+ * (`scriptClassWrites`) counts as used on every page that loads the script.
  */
 export function detectCrossSheetClassConflicts(
   pagePlans: readonly PagePlan[],
   cssFileResults: readonly CssFileResult[],
   existingClassNames: Iterable<string>,
-): CrossSheetClassAnalysis {
+  scripts: ReadonlyArray<Pick<ImportScript, 'content' | 'pageSources'>> = [],
+): CrossSheetClassConflict[] {
   const cascades = buildCascades(pagePlans)
-  if (cascades.length < 2) return { conflicts: [], warnings: [] }
+  if (cascades.length === 0) return []
 
   const rulesByCssPath = new Map<string, NewStyleRule[]>()
   const usedNames = new Set<string>(existingClassNames)
@@ -201,20 +205,57 @@ export function detectCrossSheetClassConflicts(
     }
   }
 
+  const planOrder = new Map(cssFileResults.map((file, index) => [file.cssPath, index] as const))
+  const pageClasses = new Map(pagePlans.map((page) => [page.source, carriedClasses(page)] as const))
+  const scriptClasses = new Map<string, Set<string>>()
+  for (const script of scripts) {
+    const names = scriptClassWrites(script.content)
+    for (const source of script.pageSources) {
+      const set = scriptClasses.get(source) ?? new Set<string>()
+      for (const name of names) set.add(name)
+      scriptClasses.set(source, set)
+    }
+  }
+  const scriptNames = (page: PagePlan, name: string) => scriptClasses.get(page.source)?.has(name) ?? false
+  const usesClass = (page: PagePlan, name: string) =>
+    (pageClasses.get(page.source)?.has(name) ?? false) || scriptNames(page, name)
+
   const conflicts: CrossSheetClassConflict[] = []
-  // overriding sheet → the shared classes it restyles, in first-seen order.
-  const overridesBySheet = new Map<string, string[]>()
   for (const [name, defs] of defsByName) {
-    if (defs.length < 2) continue
-    const layered = layeredOverrideSheets(name, defs.flatMap((d) => d.cascades), rulesByCssPath)
-    if (layered) {
-      for (const sheet of layered) {
-        const names = overridesBySheet.get(sheet) ?? []
-        if (!names.includes(name)) names.push(name)
-        overridesBySheet.set(sheet, names)
+    const definingCascades = defs.flatMap((d) => d.cascades)
+    const sheets = definingSheetsInPlanOrder(name, definingCascades, rulesByCssPath, planOrder)
+    if (sheets) {
+      for (const sheet of sheets) {
+        const loads = (page: PagePlan) => page.linkedCssPaths.includes(sheet)
+        // When every defining cascade produces the same definition, a page
+        // that defines the class itself gets that same definition either way;
+        // only a page defining it nowhere would change.
+        const affected = (page: PagePlan) =>
+          !loads(page)
+          && usesClass(page, name)
+          && (defs.length > 1 || !page.linkedCssPaths.some((cssPath) => definesClass(rulesByCssPath, cssPath, name)))
+        if (!pagePlans.some(affected)) continue
+        const ownPages = pagePlans.filter(loads)
+        // A script on the sheet's own pages adds the class at runtime to
+        // elements that will never carry the new name, so a rename would break
+        // those pages. Keep the rules global by default there; the row still
+        // tells the user they reach the other pages.
+        const toggledByOwnScript = ownPages.some((page) => scriptNames(page, name))
+        conflicts.push({
+          kind: 'leak',
+          desiredName: name,
+          definitionId: hashText(`leak\0${sheet}`),
+          sources: [sheet],
+          pageSources: ownPages.map((page) => page.source),
+          defaultResolution: toggledByOwnScript
+            ? { action: 'overwrite' }
+            : { action: 'auto-rename', resolvedName: nextFreeName(name, usedNames) },
+        })
       }
       continue
     }
+    if (defs.length < 2) continue
+
     const keptCssPaths = new Set(defs[0].cascades.flatMap((c) => c.linkedCssPaths))
     for (const def of defs.slice(1)) {
       const sources = [...new Set(
@@ -226,6 +267,7 @@ export function detectCrossSheetClassConflicts(
           ),
       )]
       conflicts.push({
+        kind: 'divergent',
         desiredName: name,
         definitionId: hashText(def.contentKey),
         sources,
@@ -234,39 +276,80 @@ export function detectCrossSheetClassConflicts(
       })
     }
   }
-
-  const warnings: ImportWarning[] = [...overridesBySheet].map(([sheet, names]) => ({
-    kind: 'cascade-override',
-    path: sheet,
-    message:
-      `${sheet} restyles ${names.length === 1 ? 'a class' : `${names.length} classes`} from a shared stylesheet `
-      + `(${names.slice(0, 6).map((n) => `.${n}`).join(', ')}${names.length > 6 ? ', …' : ''}). `
-      + 'Only some pages load it, but after import its rules apply on every page. '
-      + 'Import it as a file to keep it to its own pages.',
-  }))
-  return { conflicts, warnings }
+  return conflicts
 }
 
 /**
- * The sheets that layer overrides on a shared definition of `name`, or null
- * when the definitions have no common base. The base is every sheet that
- * defines the class in EACH cascade defining it; any other defining sheet is
- * an override on top of it.
+ * The sheets defining `name` across the cascades, in plan order, or null when
+ * some cascade loads them in a different order than the plan emits them.
+ *
+ * In order, confining any of them is lossless: a page carries the bare class
+ * plus the new name of each confined sheet it loads, and one global
+ * stylesheet in plan order then applies exactly that page's own fragments in
+ * its own cascade order. Out of order, no single global order can reproduce
+ * every page, so the class falls back to `divergent` rows.
  */
-function layeredOverrideSheets(
+function definingSheetsInPlanOrder(
   name: string,
   cascades: readonly Cascade[],
   rulesByCssPath: Map<string, NewStyleRule[]>,
+  planOrder: Map<string, number>,
 ): string[] | null {
-  const defines = (cssPath: string) =>
-    (rulesByCssPath.get(cssPath) ?? []).some((r) => r.kind === 'class' && r.name === name)
-  const definingSheets = cascades.map((c) => c.linkedCssPaths.filter(defines))
-  const base = definingSheets.reduce<string[]>(
-    (common, sheets) => common.filter((sheet) => sheets.includes(sheet)),
-    definingSheets[0] ?? [],
-  )
-  if (base.length === 0) return null
-  return [...new Set(definingSheets.flat())].filter((sheet) => !base.includes(sheet))
+  const defines = (cssPath: string) => definesClass(rulesByCssPath, cssPath, name)
+  const all = new Set<string>()
+  for (const cascade of cascades) {
+    let last = -1
+    for (const sheet of cascade.linkedCssPaths.filter(defines)) {
+      const index = planOrder.get(sheet) ?? -1
+      if (index < last) return null
+      last = index
+      all.add(sheet)
+    }
+  }
+  return [...all].sort((a, b) => (planOrder.get(a) ?? 0) - (planOrder.get(b) ?? 0))
+}
+
+function definesClass(rulesByCssPath: Map<string, NewStyleRule[]>, cssPath: string, name: string): boolean {
+  return (rulesByCssPath.get(cssPath) ?? []).some((r) => r.kind === 'class' && r.name === name)
+}
+
+function carriedClasses(page: PagePlan): Set<string> {
+  const classes = new Set(page.nodeFragment.body?.classIds ?? [])
+  for (const node of Object.values(page.nodeFragment.nodes)) {
+    for (const name of node.classIds ?? []) classes.add(name)
+  }
+  return classes
+}
+
+/**
+ * Class names a script can put on an element at runtime: the arguments of
+ * `classList.add/toggle/replace`, string assignments to `className`,
+ * `setAttribute('class', …)`, and `class="…"` inside HTML it builds from
+ * strings or templates. Selector strings (`querySelector('.btn')`) style
+ * nothing and do not count.
+ */
+const CLASS_WRITE_PATTERNS = [
+  /classList\s*\.\s*(?:add|toggle|replace)\s*\(([^)]*)\)/g,
+  /className\s*\+?=\s*(['"`])((?:(?!\1)[^\\]|\\.)*)\1/g,
+  /setAttribute\s*\(\s*['"]class['"]\s*,([^)]*)\)/g,
+  /\bclass\s*=\s*\\?(['"])((?:(?!\1).)*?)\\?\1/g,
+]
+
+function scriptClassWrites(source: string): Set<string> {
+  const names = new Set<string>()
+  for (const pattern of CLASS_WRITE_PATTERNS) {
+    for (const match of source.matchAll(pattern)) {
+      const text = match[match.length - 1] ?? ''
+      for (const literal of pattern === CLASS_WRITE_PATTERNS[0] || pattern === CLASS_WRITE_PATTERNS[2]
+        ? text.match(/'[^']*'|"[^"]*"|`[^`]*`/g) ?? []
+        : [` ${text} `]) {
+        for (const run of literal.slice(1, -1).split(/[^A-Za-z0-9_-]+/)) {
+          if (run) names.add(run)
+        }
+      }
+    }
+  }
+  return names
 }
 
 // ---------------------------------------------------------------------------
@@ -299,6 +382,13 @@ export function applyCrossSheetClassResolutions(
 
   for (const conflict of resolutions) {
     const res = conflict.defaultResolution
+    if (conflict.kind === 'leak') {
+      const confined = applyLeakResolution({ pages, styleRules, styleRuleSources }, conflict)
+      pages = confined.pages
+      styleRules = confined.styleRules
+      styleRuleSources = confined.styleRuleSources
+      continue
+    }
     const affectedPages = new Set(conflict.pageSources)
     const affectedCascadePaths = orderedCascadePaths(pages, affectedPages)
     const otherCascadePaths = new Set(
@@ -358,6 +448,50 @@ interface CascadeRuleState {
   pages: PagePlan[]
   styleRules: NewStyleRule[]
   styleRuleSources: string[]
+}
+
+/**
+ * Resolve one `leak` row. `overwrite` leaves the sheet's fragments on the
+ * bare name (they reach every page); `skip` drops them; a rename moves the
+ * sheet's class fragments and the class tokens in its other selectors to the
+ * new name, and adds that name next to the bare one on the elements of the
+ * pages that load the sheet. The renamed rules keep their position in plan
+ * order, so each page cascades exactly as its source did.
+ */
+function applyLeakResolution(
+  state: CascadeRuleState,
+  conflict: CrossSheetClassConflict,
+): CascadeRuleState {
+  const res = conflict.defaultResolution
+  const sheet = conflict.sources[0]
+  if (res.action === 'overwrite') return state
+  if (res.action === 'skip') {
+    return {
+      pages: state.pages,
+      ...removeClassFragments(state.styleRules, state.styleRuleSources, conflict.desiredName, (source) => source === sheet),
+    }
+  }
+  const newName = res.resolvedName
+  if (!newName || newName === conflict.desiredName) return state
+
+  const renames = new Map([[conflict.desiredName, newName]])
+  const styleRules = state.styleRules.map((rule, index) => {
+    if (state.styleRuleSources[index] !== sheet) return rule
+    if (typeof rule.rawCss === 'string') return rule
+    // Class rules may carry a context (`.side .icon` is class `icon`), so only
+    // the class token is rewritten, never the whole selector.
+    const selector = rewriteSelectorClassTokens(rule.selector, renames)
+    if (rule.kind === 'class') {
+      return rule.name === conflict.desiredName ? { ...rule, name: newName, selector } : rule
+    }
+    if (selector === rule.selector) return rule
+    return { ...rule, selector, name: rule.name === rule.selector ? selector : rule.name }
+  })
+  const affectedPages = new Set(conflict.pageSources)
+  const pages = state.pages.map((page) =>
+    affectedPages.has(page.source) ? addPageClassToken(page, conflict.desiredName, newName) : page,
+  )
+  return { pages, styleRules, styleRuleSources: state.styleRuleSources }
 }
 
 /**
@@ -516,13 +650,28 @@ function mergeClassDefinition(
   return found ? merged : null
 }
 
+/** Replace `from` with `to` on every element of the page that carries it. */
 function renamePageClassTokens(page: PagePlan, from: string, to: string): PagePlan {
+  return mapPageClassTokens(page, from, (token) => [token === from ? to : token])
+}
+
+/** Add `to` right after `from` on every element of the page that carries `from`. */
+function addPageClassToken(page: PagePlan, from: string, to: string): PagePlan {
+  return mapPageClassTokens(page, from, (token) => (token === from ? [from, to] : [token]))
+}
+
+function mapPageClassTokens(
+  page: PagePlan,
+  from: string,
+  mapToken: (token: string) => string[],
+): PagePlan {
   const rename = (classIds: readonly string[] | undefined): string[] | null => {
     if (!classIds?.length || !classIds.includes(from)) return null
     const out: string[] = []
     for (const token of classIds) {
-      const next = token === from ? to : token
-      if (!out.includes(next)) out.push(next)
+      for (const next of mapToken(token)) {
+        if (!out.includes(next)) out.push(next)
+      }
     }
     return out
   }
