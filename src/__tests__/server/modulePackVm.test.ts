@@ -86,14 +86,15 @@ const checkout = {
   version: '1.0.0',
   defaults: {},
   schema: {},
-  emittedClassNames: ['commerce-checkout*'],
+  emittedClassNames: ['commerce-checkout*', 7],
   render: () => ({ html: '<div class="commerce-checkout"></div>' }),
 };
 export default [checkout];
 `
     const vm = await createModulePackVm({ pluginId: 'acme.canvas', packSource: source })
     try {
-      expect(vm.modules[0].emittedClassNames).toEqual(['commerce-checkout*'])
+      // Passed out as authored; the host validator decides what to keep.
+      expect(vm.modules[0].emittedClassNames).toEqual(['commerce-checkout*', 7])
     } finally {
       vm.dispose()
     }

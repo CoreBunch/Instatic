@@ -212,3 +212,23 @@ describe('activatePluginModulePack', () => {
     expect(listPluginRegisteredModuleIds('acme.canvas')).toEqual(['acme.canvas.counter'])
   })
 })
+
+describe('sandboxed module-pack emittedClassNames', () => {
+  it('validates the value as authored in the VM and warns about what it ignores', () => {
+    const pack = makeStubPack('acme.canvas', () => {})
+    const warnings: string[] = []
+    const originalWarn = console.warn
+    console.warn = (...args: unknown[]) => { warnings.push(args.map(String).join(' ')) }
+    try {
+      activateSandboxedPluginModulePack(sampleManifest, {
+        ...pack,
+        modules: [{ ...pack.modules[0], emittedClassNames: ['counter*', '.dotted', 7] }],
+      })
+    } finally {
+      console.warn = originalWarn
+    }
+    expect(registry.get('acme.canvas.counter')?.emittedClassNames).toEqual(['counter*'])
+    expect(warnings).toHaveLength(1)
+    expect(warnings[0]).toStartWith('[plugin:acme.canvas] module "acme.canvas.counter" emittedClassNames: ignored 2 entries')
+  })
+})

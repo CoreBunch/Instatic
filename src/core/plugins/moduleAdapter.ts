@@ -121,11 +121,11 @@ const MAX_EMITTED_CLASS_NAMES = 500
  * dropped rather than failing the whole pack, with one warning per module so
  * the author can see which entries never took effect.
  */
-function emittedClassNamesField(
+export function readEmittedClassNames(
   pluginId: string,
   moduleId: string,
   value: unknown,
-): Pick<ModuleDefinition, 'emittedClassNames'> {
+): { emittedClassNames?: string[] } {
   if (value === undefined) return {}
   const entries: unknown[] = Array.isArray(value) ? value : [value]
   const names: string[] = []
@@ -205,7 +205,7 @@ export function pluginModuleToHostModule(
     ...(definition.propsSchema ? { propsSchema: definition.propsSchema } : {}),
     component: componentFactory(definition),
     htmlTag: typeof definition.htmlTag === 'string' ? definition.htmlTag : undefined,
-    ...emittedClassNamesField(pluginId, definition.id, definition.emittedClassNames),
+    ...readEmittedClassNames(pluginId, definition.id, definition.emittedClassNames),
     // Dependencies declared by the plugin module flow into the site's
     // package.json on insert. The host's existing
     // `getMissingModuleDependencies`/`getSiteModuleDependencyUsage` paths

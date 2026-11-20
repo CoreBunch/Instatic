@@ -76,7 +76,9 @@ globalThis.__initPack = function initPack(pluginId) {
       schema: def.schema || {},
       canHaveChildren: !!def.canHaveChildren,
       htmlTag: typeof def.htmlTag === 'string' ? def.htmlTag : undefined,
-      emittedClassNames: Array.isArray(def.emittedClassNames) ? def.emittedClassNames : undefined,
+      // Passed through as authored; the host validates it and warns about
+      // anything it ignores (moduleAdapter.ts).
+      emittedClassNames: def.emittedClassNames,
       hasPreview: typeof def.preview === 'function',
       dependencies: deps,
       editorRuntime: editorRuntime,

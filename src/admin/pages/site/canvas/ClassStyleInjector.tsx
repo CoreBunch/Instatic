@@ -100,6 +100,11 @@ const EMPTY_CONDITIONS: ConditionDef[] = []
  */
 const EMPTY_STYLE_RULES: Record<string, StyleRule> = {}
 
+// Stable registry subscription callbacks: a fresh `bind` per render would make
+// useSyncExternalStore unsubscribe and resubscribe on every render.
+const subscribeToModules = (listener: () => void) => registry.subscribe(listener)
+const moduleGeneration = () => registry.generation()
+
 export function ClassStyleInjector({ targetDocument, viewport }: ClassStyleInjectorProps = {}) {
   // Subscribe to class registry — shallow equality so we only re-run when
   // the classes object reference changes (Mutative always creates a new ref on mutation)
@@ -108,11 +113,7 @@ export function ClassStyleInjector({ targetDocument, viewport }: ClassStyleInjec
   // while the module is on the site. A plugin module pack can register after
   // the canvas mounted, which changes nothing in the editor store, so
   // subscribe to the registry too: the re-render re-reads the signature below.
-  useSyncExternalStore(
-    registry.subscribe.bind(registry),
-    registry.generation.bind(registry),
-    registry.generation.bind(registry),
-  )
+  useSyncExternalStore(subscribeToModules, moduleGeneration, moduleGeneration)
   const usedClassIdSignature = useEditorStore((s) =>
     s.site ? usedStyleRuleIdSignature(s.site, registry) : '',
   )
