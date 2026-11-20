@@ -56,7 +56,7 @@ export { normalizeImportedTokens } from './tokenNames'
 export { detectConflicts, applyConflictResolutions, withPageSlugs } from './conflicts'
 export { hashImportAssets, detectMediaConflicts } from './mediaConflicts'
 export type { ExistingMediaMatch } from './mediaConflicts'
-export { importedSiteFilePath, uniqueSiteFilePath } from './siteFilePaths'
+export { importedSiteFilePath, importSourceHash, siteFileImportRecord, uniqueSiteFilePath } from './siteFilePaths'
 
 
 // ── Phase 2 — adapter interfaces ─────────────────────────────────────────────
@@ -100,6 +100,7 @@ export type {
   TokenConflict,
   CrossSheetClassConflict,
   FileConflict,
+  FileConflictState,
   MediaConflict,
 } from './conflictTypes'
 

@@ -112,13 +112,15 @@ export interface TokenConflict {
  * before.
  *
  * Resolutions (applied by `commitImportPlan`):
- * - `skip` (default when the content is the same): keep the existing file and
+ * - `skip` (default unless `state` is `changed`): keep the existing file and
  *   its content; the pages this import links it from join its page scope.
- * - `overwrite` (default when the content differs): replace the existing
- *   file in place (same id and path: content, load order, a script's format
- *   and npm dependencies) and widen its page scope the same way.
+ * - `overwrite` (default when `state` is `changed`): replace the existing
+ *   file in place (same id, path and load order; new content, a script's
+ *   format and npm dependencies) and widen its page scope the same way.
  * - `auto-rename`: import a second copy under a free `-2` path, as a new file.
  */
+export type FileConflictState = 'unchanged' | 'changed' | 'edited' | 'differs'
+
 export interface FileConflict {
   kind: 'script' | 'style'
   /** The import path (`ImportScript.path` / `ImportStylesheet.path`). */
@@ -128,11 +130,16 @@ export interface FileConflict {
   /** Id of the existing `SiteFile`. */
   existingFileId: string
   /**
-   * The imported text equals the existing file's. Compared at plan time, so a
-   * kept stylesheet with `url()`s (still bundle paths here, media URLs in the
-   * site) reads as changed even when it is not; replacing it is harmless.
+   * What changed since this file was imported, read from the file's
+   * `importRecord`:
+   * - `unchanged`: the bundle has the same text as the last import (or, with
+   *   no record, the site copy equals it).
+   * - `changed`: the bundle changed it and nobody edited the site copy.
+   * - `edited`: the site copy was edited in Instatic since the import.
+   * - `differs`: no record, and the site copy differs; who changed what is
+   *   unknown, so the site copy is kept by default.
    */
-  sameContent: boolean
+  state: FileConflictState
   defaultResolution: ConflictResolution
 }
 

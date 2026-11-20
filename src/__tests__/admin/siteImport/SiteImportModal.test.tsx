@@ -1070,7 +1070,7 @@ describe('SiteImportModal — a route typed in the Review step', () => {
 })
 
 describe('SiteImportModal — media library lookup', () => {
-  it('keeps the lookup of the latest plan when an older one answers last', async () => {
+  it('keeps every dropped file and the lookup of the latest plan when an older one answers last', async () => {
     useEditorStore.setState({ site: makeSite({ name: 'Lookup Site' }) } as Parameters<typeof useEditorStore.setState>[0])
     const pending: Array<(matches: unknown[]) => void> = []
     globalThis.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -1108,16 +1108,25 @@ describe('SiteImportModal — media library lookup', () => {
     // Files dropped onto the Review step rebuild the plan even while a
     // lookup is still out, so two lookups can be in flight at once.
     const step = screen.getByLabelText('Add import files').parentElement!
-    const dropMore = (name: string) =>
-      fireEvent.drop(step, { dataTransfer: { files: [new File(['console.info(1)'], name, { type: 'text/javascript' })], types: ['Files'] } })
-    dropMore('a.js')
+    const dropMore = (name: string, marker: number) =>
+      fireEvent.drop(step, {
+        dataTransfer: {
+          files: [new File([new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10, marker])], name, { type: 'image/png' })],
+          types: ['Files'],
+        },
+      })
+    dropMore('a.png', 1)
     await waitFor(() => expect(pending).toHaveLength(2))
-    dropMore('b.js')
+    dropMore('b.png', 2)
     await waitFor(() => expect(pending).toHaveLength(3))
     pending[2]!([])
     // The superseded lookup answers last, with a match it must not apply.
     pending[1]!(['match'])
     await new Promise((resolve) => setTimeout(resolve, 20))
+
+    // Both dropped files made it into the plan, not only the last drop.
+    fireEvent.click(screen.getByRole('button', { name: /^Media/ }))
+    expect(screen.getByText('3 of 3')).toBeDefined()
 
     fireEvent.click(screen.getByRole('button', { name: /continue/i }))
     await waitFor(() => expect(screen.queryByText('Review import')).toBeNull())
@@ -2034,7 +2043,7 @@ describe('ConflictsStep — conflict rendering', () => {
         tokens: [],
         crossSheetClasses: [],
         files: [
-          { kind: 'script', path: 'js/app.js', sitePath: 'js/app.js', existingFileId: 'f1', sameContent: true, defaultResolution: { action: 'skip' } },
+          { kind: 'script', path: 'js/app.js', sitePath: 'js/app.js', existingFileId: 'f1', state: 'unchanged', defaultResolution: { action: 'skip' } },
         ],
         media: [
           {

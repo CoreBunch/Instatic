@@ -19,6 +19,7 @@ import type { Draft } from 'mutative'
 import type { SiteDocument } from '@core/page-tree'
 import {
   importedSiteFilePath,
+  siteFileImportRecord,
   uniqueSiteFilePath,
   type ImportScript,
   type ImportStylesheet,
@@ -54,9 +55,16 @@ export function addImportedScripts(
   })
 }
 
+/**
+ * Add the npm packages imported scripts load from a CDN to package.json. A
+ * package already listed keeps its version, unless `takeImportedVersions`
+ * (a replaced script now asks for another version). Packages no script uses
+ * any more are never removed; the Dependencies panel does that.
+ */
 export function addImportedScriptDependencies(
   site: Draft<SiteDocument>,
   scripts: ImportScript[],
+  { takeImportedVersions = false }: { takeImportedVersions?: boolean } = {},
 ): boolean {
   let changed = false
   site.packageJson.dependencies ??= {}
@@ -66,7 +74,8 @@ export function addImportedScriptDependencies(
     for (const dependency of script.dependencies ?? []) {
       if (!isSafePackageName(dependency.name)) continue
       const version = dependency.version.trim() || '*'
-      if (site.packageJson.dependencies[dependency.name]) continue
+      const listed = site.packageJson.dependencies[dependency.name]
+      if (listed && (!takeImportedVersions || listed === version)) continue
 
       site.packageJson.dependencies[dependency.name] = version
       if (site.packageJson.devDependencies[dependency.name]) {
@@ -114,6 +123,7 @@ interface ImportedFileItem {
   path: string
   content: string
   pageIds?: string[]
+  sourceHash?: string
 }
 
 function commitFiles<T extends ImportedFileItem>(
@@ -131,7 +141,15 @@ function commitFiles<T extends ImportedFileItem>(
 
     const id = nanoid()
     const now = Date.now()
-    site.files.push({ id, path, type, content: item.content, createdAt: now, updatedAt: now })
+    site.files.push({
+      id,
+      path,
+      type,
+      content: item.content,
+      ...(item.sourceHash ? { importRecord: siteFileImportRecord(item.sourceHash, item.content) } : {}),
+      createdAt: now,
+      updatedAt: now,
+    })
 
     const pageIds = Array.isArray(item.pageIds)
       ? item.pageIds.filter((pageId): pageId is string => typeof pageId === 'string' && pageId.length > 0)
@@ -150,10 +168,9 @@ function ensureRuntime(site: Draft<SiteDocument>): void {
 
 /**
  * Keep files an import delivers again (see `SiteImportTransaction.reuseSiteFiles`).
- * A replacement swaps in the imported content and the runtime settings
- * `addImportedScripts` / `addImportedStylesheets` would have written (load
- * order, a script's format); the importing pages join the file's runtime
- * scope. Both the persisted runtime and the live canvas mirror are updated.
+ * A replacement swaps in the imported content, a script's format, and the
+ * file's `importRecord`; the file keeps its load order. The importing pages
+ * join the file's runtime scope. Both the persisted runtime and the live canvas mirror are updated.
  * A replacing script's npm dependencies are the caller's step
  * (`addImportedScriptDependencies`), as on the add path.
  */
@@ -167,9 +184,12 @@ export function reuseImportedFiles(
     const file = site.files.find((f) => f.id === item.existingFileId)
     if (!file) continue
     const { replacement } = item
-    if (replacement && replacement.content !== file.content) {
-      file.content = replacement.content
-      file.updatedAt = Date.now()
+    if (replacement) {
+      if (replacement.content !== file.content) {
+        file.content = replacement.content
+        file.updatedAt = Date.now()
+      }
+      if (replacement.sourceHash) file.importRecord = siteFileImportRecord(replacement.sourceHash, replacement.content)
     }
     for (const runtime of [site.runtime, siteRuntime]) {
       const script = runtime?.scripts?.[file.id]
@@ -177,9 +197,9 @@ export function reuseImportedFiles(
       const entry = script ?? style
       if (!entry) continue
       entry.scope = widenScope(entry.scope, item.pageIds)
-      if (!replacement) continue
-      entry.priority = replacement.priority
-      if (script && 'format' in replacement) script.format = replacement.format
+      // The load order stays the site's: an import's priorities only rank the
+      // files of that import, not this file against the rest of the site.
+      if (script && replacement && 'format' in replacement) script.format = replacement.format
     }
     reused.push({ id: file.id, path: file.path })
   }

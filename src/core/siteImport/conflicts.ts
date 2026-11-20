@@ -46,7 +46,7 @@ import { normalizeFrameworkColorSlug } from '@core/framework'
 import { isUntouchedFontRoleToken, normalizeFontTokenVariable, type FontToken } from '@core/fonts'
 import { applyCrossSheetClassResolutions, normalizeBindableClassRules } from './classCascades'
 import { declaredCustomProperties, rewriteRuleVarRefs, rewriteStyleBagVarRefs } from './varRefs'
-import { importedSiteFilePath } from './siteFilePaths'
+import { detectFileConflicts } from './fileConflicts'
 
 // ---------------------------------------------------------------------------
 // Detection
@@ -164,49 +164,6 @@ export function detectPageConflicts(
     }
   }
 
-  return conflicts
-}
-
-// ---------------------------------------------------------------------------
-// File conflict detection
-// ---------------------------------------------------------------------------
-
-/**
- * Scripts and kept stylesheets whose site file path is already taken by a
- * file of the same kind, so a second import of the same bundle does not add
- * `app-2.js` next to `app.js`. Default: keep the existing file (`skip`) when
- * the content is the same, replace it (`overwrite`) when it changed.
- * Paths taken by a file of the other kind are left to the commit's unique-path
- * rule, as are collisions inside one import.
- */
-function detectFileConflicts(
-  site: SiteDocument,
-  scripts: ImportScript[],
-  stylesheets: ImportStylesheet[],
-): FileConflict[] {
-  const existing = new Map<string, { id: string; content?: string }>()
-  for (const file of site.files) {
-    if (file.type === 'script' || file.type === 'style') existing.set(`${file.type}:${file.path}`, file)
-  }
-  const conflicts: FileConflict[] = []
-  const items = [
-    ...scripts.map((item) => ({ kind: 'script' as const, path: item.path, content: item.content })),
-    ...stylesheets.map((item) => ({ kind: 'style' as const, path: item.path, content: item.content })),
-  ]
-  for (const { kind, path, content } of items) {
-    const sitePath = importedSiteFilePath(path, kind)
-    const file = existing.get(`${kind}:${sitePath}`)
-    if (!file) continue
-    const sameContent = file.content === content
-    conflicts.push({
-      kind,
-      path,
-      sitePath,
-      existingFileId: file.id,
-      sameContent,
-      defaultResolution: { action: sameContent ? 'skip' : 'overwrite' },
-    })
-  }
   return conflicts
 }
 

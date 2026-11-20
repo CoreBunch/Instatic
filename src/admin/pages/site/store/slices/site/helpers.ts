@@ -365,8 +365,8 @@ export function buildSiteHelpers(
 
       // Imported scripts' npm imports join package.json; the draft's mirror
       // is refreshed so the dependency UI sees them.
-      const addScriptDependencies = (scripts: ImportScript[]): boolean => {
-        const changed = addImportedScriptDependencies(site, scripts)
+      const addScriptDependencies = (scripts: ImportScript[], options?: { takeImportedVersions: boolean }): boolean => {
+        const changed = addImportedScriptDependencies(site, scripts, options)
         if (changed) {
           draft.packageJson = {
             dependencies: { ...site.packageJson.dependencies },
@@ -560,7 +560,8 @@ export function buildSiteHelpers(
           // A replacing script brings its npm imports exactly as a new one does.
           const replacingScripts = items.flatMap(({ replacement }) =>
             replacement && 'format' in replacement ? [replacement] : [])
-          const dependenciesChanged = addScriptDependencies(replacingScripts)
+          // Replacing means the script now wants exactly what it imports.
+          const dependenciesChanged = addScriptDependencies(replacingScripts, { takeImportedVersions: true })
           const reused = reuseImportedFiles(site, draft.siteRuntime, items)
           if (reused.length > 0 || dependenciesChanged) didMutate = true
           return reused

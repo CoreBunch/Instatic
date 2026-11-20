@@ -304,6 +304,12 @@ export interface ImportScript {
   /** Final committed page IDs. Filled by `commitImportPlan` before adapter call. */
   pageIds?: string[]
   /**
+   * SHA-256 of the text as the bundle had it, before asset URLs were
+   * rewritten. Filled by `commitImportPlan`; the store keeps it in the site
+   * file's `importRecord`.
+   */
+  sourceHash?: string
+  /**
    * Runtime ordering; lower runs earlier. One number per script, so it is
    * derived from EVERY page's document order at once (`scriptOrder.ts`): a
    * script shared by two pages sits after whatever either page loads before
@@ -361,6 +367,12 @@ export interface ImportStylesheet {
   pageSources: string[]
   /** Final committed page IDs. Filled by `commitImportPlan` before adapter call. */
   pageIds?: string[]
+  /**
+   * SHA-256 of the text as the bundle had it, before asset URLs were
+   * rewritten. Filled by `commitImportPlan`; the store keeps it in the site
+   * file's `importRecord`.
+   */
+  sourceHash?: string
   /** Cascade ordering within the user-stylesheet bundle; lower applies earlier. */
   priority: number
 }

@@ -17,7 +17,7 @@ import {
   hashImportAssets,
 } from '@core/siteImport'
 import type { ExistingMediaMatch, FileMap, ImportPlan, ImportResult, SiteImportAdapter } from '@core/siteImport'
-import type { StyleRule } from '@core/page-tree'
+import type { SiteDocument, StyleRule } from '@core/page-tree'
 import { createSiteImportAdapter } from '@admin/modals/SiteImport/shared/createSiteImportAdapter'
 import { makeSite } from '../fixtures'
 
@@ -151,9 +151,10 @@ let uploads: string[] = []
 async function importBundle(
   map: FileMap,
   choose: (plan: ImportPlan) => ImportPlan = (plan) => plan,
+  options: Parameters<typeof buildImportPlan>[0]['options'] = undefined,
 ): Promise<ImportPlan> {
   const site = useEditorStore.getState().site!
-  const built = buildImportPlan({ fileMap: map, currentSite: site })
+  const built = buildImportPlan({ fileMap: map, currentSite: site, options })
   const hashBySource = await hashImportAssets(built.assets)
   const plan = choose(detectMediaConflicts(built, hashBySource, library))
   const resolved = applyConflictResolutions(
@@ -175,6 +176,13 @@ async function importBundle(
   }
   await commitImportPlan(resolved, adapter)
   return plan
+}
+
+/** Change the loaded site the way an edit in Instatic would, outside any import. */
+function editSite(edit: (site: SiteDocument) => void): void {
+  const site = structuredClone(useEditorStore.getState().site!)
+  edit(site)
+  useEditorStore.setState({ site } as Parameters<typeof useEditorStore.setState>[0])
 }
 
 function scriptFiles() {
@@ -282,6 +290,30 @@ describe('commitImportPlan — scripts and media arriving again', () => {
     expect(site.packageJson.dependencies.dayjs).toBe('1.11.10')
   })
 
+  it('keeps the load order the site already gives a replaced script', async () => {
+    await importBundle(bundleWithFiles())
+    const [script] = scriptFiles()
+    editSite((site) => {
+      site.runtime!.scripts![script!.id]!.priority = 250
+    })
+
+    await importBundle(bundleWithFiles('console.info("v2")'), withPageResolution('overwrite'))
+
+    expect(scriptFiles()[0]!.content).toBe('console.info("v2")')
+    expect(useEditorStore.getState().site!.runtime?.scripts?.[script!.id]?.priority).toBe(250)
+  })
+
+  it('updates the version of an npm package a replaced script now asks for', async () => {
+    const dayjs = (version: string) =>
+      bundleWithFiles(`import dayjs from "https://esm.sh/dayjs@${version}"\nconsole.info(dayjs())`, 'about', 'module')
+    await importBundle(dayjs('1.11.10'))
+    expect(useEditorStore.getState().site!.packageJson.dependencies.dayjs).toBe('1.11.10')
+
+    await importBundle(dayjs('1.11.13'), withPageResolution('overwrite'))
+
+    expect(useEditorStore.getState().site!.packageJson.dependencies.dayjs).toBe('1.11.13')
+  })
+
   it('still adds a copy and uploads again when the user asks for it', async () => {
     await importBundle(bundleWithFiles())
     await importBundle(bundleWithFiles(), (plan) => ({
@@ -295,5 +327,85 @@ describe('commitImportPlan — scripts and media arriving again', () => {
 
     expect(scriptFiles().map((f) => f.path)).toEqual(['app.js', 'app-2.js'])
     expect(uploads).toEqual(['logo.png', 'logo.png'])
+  })
+})
+
+// ---------------------------------------------------------------------------
+// What changed since the last import: the bundle, the site copy, or neither
+// ---------------------------------------------------------------------------
+
+function keptSheetBundle(css: string): FileMap {
+  return {
+    files: {
+      'about.html': {
+        bytes: enc.encode('<!doctype html><html><head><title>about</title><link rel="stylesheet" href="kit.css"></head><body><p>x</p></body></html>'),
+        mimeType: 'text/html',
+      },
+      'kit.css': { bytes: enc.encode(css), mimeType: 'text/css' },
+      'logo.png': { bytes: PNG_BYTES, mimeType: 'image/png' },
+    },
+  }
+}
+
+const KEEP_KIT = { stylesheetModes: { 'kit.css': 'file' as const } }
+const KIT_CSS = '.hero { background: url("logo.png") }\n'
+
+function styleFiles() {
+  return useEditorStore.getState().site!.files.filter((f) => f.type === 'style')
+}
+
+describe('commitImportPlan — telling bundle changes from edits made in Instatic', () => {
+  beforeEach(() => {
+    library = []
+    uploads = []
+    useEditorStore.setState({ site: makeSite() } as Parameters<typeof useEditorStore.setState>[0])
+  })
+
+  it('reads a kept stylesheet with url()s as unchanged when the bundle did not change it', async () => {
+    await importBundle(keptSheetBundle(KIT_CSS), undefined, KEEP_KIT)
+    expect(styleFiles()[0]!.content).toContain('/uploads/1-logo.png')
+
+    const second = await importBundle(keptSheetBundle(KIT_CSS), withPageResolution('overwrite'), KEEP_KIT)
+
+    expect(second.conflicts.files).toEqual([
+      expect.objectContaining({ kind: 'style', path: 'kit.css', state: 'unchanged', defaultResolution: { action: 'skip' } }),
+    ])
+  })
+
+  it('replaces a file the bundle changed when nobody edited it in Instatic', async () => {
+    await importBundle(bundleWithFiles())
+    const second = await importBundle(bundleWithFiles('console.info("v2")'), withPageResolution('overwrite'))
+
+    expect(second.conflicts.files).toEqual([
+      expect.objectContaining({ state: 'changed', defaultResolution: { action: 'overwrite' } }),
+    ])
+    expect(scriptFiles()[0]!.content).toBe('console.info("v2")')
+  })
+
+  it('keeps a file edited in Instatic by default even when the bundle changed it too', async () => {
+    await importBundle(bundleWithFiles())
+    const [script] = scriptFiles()
+    editSite((site) => {
+      site.files.find((f) => f.id === script!.id)!.content = 'console.info("hand edit")'
+    })
+
+    const second = await importBundle(bundleWithFiles('console.info("v2")'), withPageResolution('overwrite'))
+
+    expect(second.conflicts.files).toEqual([
+      expect.objectContaining({ state: 'edited', defaultResolution: { action: 'skip' } }),
+    ])
+    expect(scriptFiles()[0]!.content).toBe('console.info("hand edit")')
+  })
+
+  it('keeps a file with no import record by default when its content differs', async () => {
+    editSite((site) => {
+      site.files.push({ id: 'hand', path: 'app.js', type: 'script', content: 'console.info("mine")', createdAt: 1, updatedAt: 1 })
+    })
+
+    const plan = await importBundle(bundleWithFiles())
+
+    expect(plan.conflicts.files).toEqual([
+      expect.objectContaining({ state: 'differs', defaultResolution: { action: 'skip' } }),
+    ])
   })
 })

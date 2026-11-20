@@ -167,6 +167,13 @@ export async function uploadCmsMediaAsset(
 export type CmsMediaContentHashMatch = Static<typeof CmsMediaLookupResponseSchema>['matches'][number]
 
 /**
+ * Most hashes `POST /media/lookup` takes in one request (Site Import's own
+ * file limit). Files added in Review can push an import past it, so larger
+ * lookups are split.
+ */
+const MAX_HASHES_PER_LOOKUP = 10_000
+
+/**
  * Which of these content hashes (SHA-256 hex of a file's bytes) the media
  * library already holds. Site Import uses it to reuse files instead of
  * uploading copies on a re-import.
@@ -175,17 +182,20 @@ export async function findCmsMediaByContentHash(
   contentHashes: string[],
   options: ClientBase & { signal?: AbortSignal } = {},
 ): Promise<CmsMediaContentHashMatch[]> {
-  if (contentHashes.length === 0) return []
   const { fetchImpl, basePath } = resolveClient(options)
-  const res = await fetchImpl(`${basePath}/media/lookup`, {
-    method: 'POST',
-    credentials: 'include',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ contentHashes }),
-    signal: options.signal,
-  })
-  const payload = await readEnvelope(res, CmsMediaLookupResponseSchema, `CMS media lookup failed with ${res.status}`)
-  return payload.matches
+  const matches: CmsMediaContentHashMatch[] = []
+  for (let start = 0; start < contentHashes.length; start += MAX_HASHES_PER_LOOKUP) {
+    const res = await fetchImpl(`${basePath}/media/lookup`, {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ contentHashes: contentHashes.slice(start, start + MAX_HASHES_PER_LOOKUP) }),
+      signal: options.signal,
+    })
+    const payload = await readEnvelope(res, CmsMediaLookupResponseSchema, `CMS media lookup failed with ${res.status}`)
+    matches.push(...payload.matches)
+  }
+  return matches
 }
 
 export interface UpdateCmsMediaAssetInput {

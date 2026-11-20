@@ -5,10 +5,18 @@
  */
 
 import { describe, it, expect } from 'bun:test'
-import { detectConflicts, detectMediaConflicts, hashImportAssets, withPageSlugs } from '@core/siteImport'
+import {
+  detectConflicts,
+  detectMediaConflicts,
+  hashImportAssets,
+  importSourceHash,
+  siteFileImportRecord,
+  withPageSlugs,
+} from '@core/siteImport'
 import type { ImportPlan, ImportScript, ImportStylesheet, PagePlan } from '@core/siteImport'
 import { sha256HexBytes } from '@core/utils/sha256'
 import { makeMockSiteDocument } from './mockSite'
+import { parseSiteDocument } from '@core/page-tree'
 
 function makePage(slug: string, source = `${slug}.html`): PagePlan {
   return { source, title: slug, slug, linkedCssPaths: [], scripts: [], nodeFragment: { rootIds: [], nodes: {} } }
@@ -86,16 +94,38 @@ describe('detectConflicts — site files already present', () => {
       [sheet('css/kit.css', 'y')],
     )
     expect(files).toEqual([
-      { kind: 'script', path: 'js/app.js', sitePath: 'js/app.js', existingFileId: 'f-app', sameContent: true, defaultResolution: { action: 'skip' } },
-      { kind: 'style', path: 'css/kit.css', sitePath: 'css/kit.css', existingFileId: 'f-kit', sameContent: true, defaultResolution: { action: 'skip' } },
+      { kind: 'script', path: 'js/app.js', sitePath: 'js/app.js', existingFileId: 'f-app', state: 'unchanged', defaultResolution: { action: 'skip' } },
+      { kind: 'style', path: 'css/kit.css', sitePath: 'css/kit.css', existingFileId: 'f-kit', state: 'unchanged', defaultResolution: { action: 'skip' } },
     ])
   })
 
-  it('defaults to replacing a file whose content changed since it was imported', () => {
+  it('keeps a file with no import record by default when its content differs', () => {
     const { files } = detectConflicts(site, [], [], [], [], [script('js/app.js', 'x2')], [])
     expect(files).toEqual([
-      expect.objectContaining({ path: 'js/app.js', sameContent: false, defaultResolution: { action: 'overwrite' } }),
+      expect.objectContaining({ path: 'js/app.js', state: 'differs', defaultResolution: { action: 'skip' } }),
     ])
+  })
+
+  it('reads the import record: bundle changed, site copy edited, or neither', () => {
+    const recorded = (content: string) => ({
+      ...site,
+      files: [{
+        id: 'f-app',
+        path: 'js/app.js',
+        type: 'script' as const,
+        content,
+        importRecord: siteFileImportRecord(importSourceHash({ content: 'v1' }), 'v1'),
+        createdAt: 1,
+        updatedAt: 1,
+      }],
+    })
+    const stateOf = (siteContent: string, bundleText: string) =>
+      detectConflicts(recorded(siteContent), [], [], [], [], [script('js/app.js', bundleText)], [])
+        .files.map((c) => [c.state, c.defaultResolution.action])
+    expect(stateOf('v1', 'v1')).toEqual([['unchanged', 'skip']])
+    expect(stateOf('v1', 'v2')).toEqual([['changed', 'overwrite']])
+    expect(stateOf('hand edit', 'v2')).toEqual([['edited', 'skip']])
+    expect(stateOf('hand edit', 'v1')).toEqual([['unchanged', 'skip']])
   })
 
   it('leaves a path held by a file of the other kind to the unique-path rule', () => {
@@ -134,5 +164,24 @@ describe('detectMediaConflicts — files the library already holds', () => {
   it('reports nothing when the library has no match', async () => {
     const plan = detectMediaConflicts(planOf([], [asset]), await hashImportAssets([asset]), [])
     expect(plan.conflicts.media).toEqual([])
+  })
+})
+
+describe('parseSiteDocument — a site file import record', () => {
+  const shell = (importRecord: unknown) => ({
+    id: 'default',
+    name: 'S',
+    breakpoints: [],
+    styleRules: {},
+    settings: {},
+    createdAt: 1,
+    updatedAt: 1,
+    files: [{ id: 'f', path: 'app.js', type: 'script', content: 'x', importRecord, createdAt: 1, updatedAt: 1 }],
+  })
+
+  it('keeps a well-formed record and drops a malformed one', () => {
+    expect(parseSiteDocument(shell({ sourceHash: 'a', contentHash: 'b' })).files[0]!.importRecord)
+      .toEqual({ sourceHash: 'a', contentHash: 'b' })
+    expect(parseSiteDocument(shell({ sourceHash: 1 })).files[0]!.importRecord).toBeUndefined()
   })
 })

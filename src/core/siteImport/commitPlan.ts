@@ -33,6 +33,7 @@ import { isAbortError } from '@core/http'
 import type { FontEntry } from '@core/fonts'
 import { applyAssetRewrites } from './applyAssetRewrites'
 import { rewriteInternalLinks } from './linkRewrite'
+import { importSourceHash } from './siteFilePaths'
 import type {
   ImportColorToken,
   ImportFontToken,
@@ -122,7 +123,7 @@ export async function commitImportPlan(
     // reference newly-imported rules.
     commitStyleRules(tx, rewrittenPlan, ruleConflictsByName, results)
     commitPages(tx, linkedPages, pageConflictsBySource, pageIdBySource, results)
-    commitPageScopedFiles(tx, rewrittenPlan, pageIdBySource, results)
+    commitPageScopedFiles(tx, withSourceHashes(rewrittenPlan, plan), pageIdBySource, results)
   })
 
   // Build asset result — only include the ones that actually uploaded.
@@ -452,6 +453,24 @@ function partitionByFileConflict<T extends ImportScript | ImportStylesheet>(
     })
   }
   return { additions, reuses }
+}
+
+/**
+ * Stamp each script and stylesheet with the hash of its text as the bundle
+ * had it. `rewritten` carries media URLs in kept stylesheets; `original` is
+ * the same plan before `applyAssetRewrites`, so a re-import of an unchanged
+ * bundle hashes the same whichever URLs its media got.
+ */
+function withSourceHashes(rewritten: ImportPlan, original: ImportPlan): ImportPlan {
+  const originals = new Map<string, ImportScript | ImportStylesheet>([
+    ...original.scripts.map((s): [string, ImportScript] => [`script:${s.path}`, s]),
+    ...original.stylesheets.map((s): [string, ImportStylesheet] => [`style:${s.path}`, s]),
+  ])
+  return {
+    ...rewritten,
+    scripts: rewritten.scripts.map((s) => ({ ...s, sourceHash: importSourceHash(originals.get(`script:${s.path}`) ?? s) })),
+    stylesheets: rewritten.stylesheets.map((s) => ({ ...s, sourceHash: importSourceHash(originals.get(`style:${s.path}`) ?? s) })),
+  }
 }
 
 /**

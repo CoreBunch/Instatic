@@ -1,12 +1,38 @@
 /**
- * Where an imported script or kept stylesheet lands in `site.files`.
+ * Where an imported script or kept stylesheet lands in `site.files`, and the
+ * record an import leaves on it.
  *
- * One mapping shared by conflict detection (which asks "is this path already
- * taken?") and the store commit (which writes the file), so the two can never
- * disagree about the path a file arrives at.
+ * Shared by conflict detection (which asks "is this path already taken, and
+ * what changed since the last import?") and the store commit (which writes
+ * the file and its record), so the two can never disagree.
  */
 
 import { isSafePath, normalizePath } from '@core/files/pathValidation'
+import type { SiteFile } from '@core/files/schemas'
+import { sha256Hex } from '@core/utils/sha256'
+
+/**
+ * Hash of a script or kept stylesheet as the bundle delivered it. A module
+ * script's CDN imports are already rewritten to bare package names in its
+ * text, so the versions it asked for are hashed alongside: a bundle that only
+ * bumps `dayjs@1.11.10` to `@1.11.13` still reads as changed.
+ */
+export function importSourceHash(item: {
+  content: string
+  dependencies?: { name: string; version: string }[]
+}): string {
+  const deps = (item.dependencies ?? []).map((d) => `${d.name}@${d.version}`).toSorted()
+  return sha256Hex(deps.length > 0 ? `${item.content}\n${deps.join('\n')}` : item.content)
+}
+
+/**
+ * The `importRecord` an import writes on a site file: the hash of the text as
+ * the bundle had it (`sourceHash`, taken before asset URLs were rewritten)
+ * and of the content actually written.
+ */
+export function siteFileImportRecord(sourceHash: string, writtenContent: string): NonNullable<SiteFile['importRecord']> {
+  return { sourceHash, contentHash: sha256Hex(writtenContent) }
+}
 
 const FALLBACK = {
   script: { dir: 'src/scripts/', name: 'script.js' },

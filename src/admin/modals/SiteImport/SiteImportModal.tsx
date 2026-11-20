@@ -158,6 +158,9 @@ export function SiteImportModal({ onCmsBundleImportComplete }: SiteImportModalPr
   // an earlier build may still wait on its media lookup; only the latest one
   // may land, so a newer build aborts the older one.
   const planBuildRef = useRef<AbortController | null>(null)
+  // The file map the newest plan build is for. `fileMap` state only changes
+  // once a build lands, so files dropped while a build runs merge into this.
+  const latestFileMapRef = useRef<FileMap | null>(null)
 
   const siteName = useEditorStore((s) => s.site?.name) ?? 'this site'
   const currentUser = useCurrentAdminUser()
@@ -187,6 +190,7 @@ export function SiteImportModal({ onCmsBundleImportComplete }: SiteImportModalPr
     setPluginPackage(null)
     try {
       if (files.length === 1 && await loadCmsBundleFile(files[0])) {
+        latestFileMapRef.current = null
         setFileMap(null)
         setPlan(null)
         setSelection(null)
@@ -214,6 +218,7 @@ export function SiteImportModal({ onCmsBundleImportComplete }: SiteImportModalPr
     setPluginPackage(null)
     try {
       if (await loadCmsBundleArchiveFile(file)) {
+        latestFileMapRef.current = null
         setFileMap(null)
         setPlan(null)
         setSelection(null)
@@ -248,9 +253,11 @@ export function SiteImportModal({ onCmsBundleImportComplete }: SiteImportModalPr
     setBusy(true)
     try {
       const added = await ingestInput(files)
+      // Read after the await: another drop may have started a newer build.
+      const base = latestFileMapRef.current ?? fileMap
       const merged: FileMap = {
-        ...fileMap,
-        files: { ...fileMap.files, ...added.files },
+        ...base,
+        files: { ...base.files, ...added.files },
       }
       await finalizePlan(merged)
     } catch (err) {
@@ -262,6 +269,7 @@ export function SiteImportModal({ onCmsBundleImportComplete }: SiteImportModalPr
 
   async function finalizePlan(map: FileMap, modes: Record<string, StylesheetImportMode> = stylesheetModes) {
     planBuildRef.current?.abort()
+    latestFileMapRef.current = map
     const build = new AbortController()
     planBuildRef.current = build
     const currentSite = await ensureCurrentSiteForStaticImport()
@@ -285,11 +293,16 @@ export function SiteImportModal({ onCmsBundleImportComplete }: SiteImportModalPr
   // synchronous and pure, so flipping a sheet between "editable rules" and
   // "keep as stylesheet" instantly refreshes rules, conflicts, and selection.
   function handleStylesheetModeChange(path: string, mode: StylesheetImportMode) {
-    if (!fileMap) return
+    const map = latestFileMapRef.current ?? fileMap
+    if (!map) return
     const modes = { ...stylesheetModes, [path]: mode }
     setStylesheetModes(modes)
     setBusy(true)
-    void finalizePlan(fileMap, modes)
+    finalizePlan(map, modes).catch((err: unknown) => {
+      console.error('[SiteImportModal] stylesheet mode change failed:', err)
+      setBusy(false)
+      pushToast({ kind: 'error', title: 'Could not re-analyse the import', body: getErrorMessage(err, 'Unknown import error') })
+    })
   }
 
   // ── Step navigation ───────────────────────────────────────────────────────
