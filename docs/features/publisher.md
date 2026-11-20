@@ -53,6 +53,7 @@ A caller that changes a table's public rows on main and holds an uploads dir mus
 ```text
 src/core/publisher/
 ├── render.ts                       — publishPage (entry point + page-level orchestration)
+├── headTags.ts                     — buildDocumentHead: <title>, lang, description, favicon, page.seo tags, serializeJsonLd
 ├── renderNode.ts                   — recursive node walker; emits <instatic-hole> for nodes in dynamicNodeIds
 ├── renderConfig.ts                 — RenderConfig (read-only inputs) + RenderAccumulators (mutable outputs) + RenderNodeFn
 ├── renderVisualComponentRef.ts     — inline a Visual Component instance into the page
@@ -381,18 +382,42 @@ The publisher emits `<head>` in this order:
 
 1. `<meta charset="utf-8">`
 2. `<meta name="viewport" content="width=device-width, initial-scale=1">`
-3. `<title>` — the entry's `seoTitle` (post-type entries only) → `settings.metaTitle` → `page.title` → site name, then token-interpolated against the render context before escaping, so `{currentEntry.*}` resolves per-entry on entry routes (e.g. `{currentEntry.name} | Acme`) and `{page.*}` / `{site.*}` / `{route.*}` work everywhere
-4. `<meta name="description">` — the entry's `seoDescription` (post-type entries only) → `settings.metaDescription`; omitted when neither is set, and token-interpolated the same way
-5. `<link rel="icon">` if a favicon is configured
+3. `<title>` — the entry's `seoTitle` (post-type entries only) → `page.seo.title` → `settings.metaTitle` → `page.title` → site name, then token-interpolated against the render context before escaping, so `{currentEntry.*}` resolves per-entry on entry routes (e.g. `{currentEntry.name} | Acme`) and `{page.*}` / `{site.*}` / `{route.*}` work everywhere
+4. `<meta name="description">` — the entry's `seoDescription` (post-type entries only) → `page.seo.description` → `settings.metaDescription`; omitted when none is set, and token-interpolated the same way
+5. The page's head settings (`page.seo`, below), then `<link rel="icon">` from `page.seo.favicon` → `settings.faviconUrl`
 6. `<script type="importmap">` mapping bare specifiers (e.g. `three`) to `/_instatic/runtime/cache/<hash>/...` URLs
 7. Runtime asset `<script>` tags (`scriptTagsForRuntimeAssets`)
 8. `<link rel="stylesheet" href="/_instatic/css/<bundle>-<hash>.css">` per bundle
 9. **`head` placement** plugin-injected tags (after the publisher's own head, before custom user head content)
 10. `<meta http-equiv="Content-Security-Policy" content="...">` — assembled based on what's actually in the page
 
+### Page head settings (`page.seo`)
+
+A page carries its own search, sharing and browser `<head>` settings in `page.seo` (`PageSeoSchema`, `src/core/page-tree/pageSeo.ts`), stored as the page row's `seo` cell and edited in Page settings → **Search & social** / **Head tags**, by `site_set_page_seo`, or filled by the static site importer from each page's `<head>` ([site-import.md](site-import.md) → "Page head"). `buildDocumentHead` (`src/core/publisher/headTags.ts`) emits them after the description, in this order: canonical, robots, color-scheme, theme-color (one per entry, with `media`), favicon, extra `<link>`s, Open Graph, Twitter, extra `<meta>`s, JSON-LD.
+
+The shape is structured, never raw HTML:
+
+| Field | Emits |
+|---|---|
+| `title`, `description` | Rows 3 and 4 above (fallbacks to the site settings) |
+| `canonical`, `robots`, `colorScheme`, `themeColors[]`, `favicon {href,type?}` | Their one tag each |
+| `openGraph {type,url,siteName,title,description,image,imageAlt}` | `og:*` properties, only the fields that are set |
+| `twitter {card,site,creator,title,description,image}` | `twitter:*` names, only the fields that are set (crawlers fall back to `og:*`) |
+| `links[]` | `<link>` with `rel` from `PAGE_HEAD_LINK_RELS` (alternate, preload, prefetch, preconnect, dns-prefetch, icon, apple-touch-icon, mask-icon, manifest, author, license, me, help, search); `as` only on preload, from `PAGE_HEAD_PRELOAD_AS` (no `script`) |
+| `meta[]` | `<meta name\|property>`; names limited to `[A-Za-z0-9:._-]`, `RESERVED_PAGE_META_NAMES` refused, `http-equiv` not expressible |
+| `jsonLd[]` | One `<script type="application/ld+json">` per block |
+
+Rules the emitter keeps:
+
+- **Every value is attribute-escaped; every URL must pass `isSafeUrl`** (canonical, favicon, link hrefs, `og:url`, `og:image`, `twitter:image`) or its tag is dropped. Extra meta content with a dangerous scheme is dropped.
+- **JSON-LD is parsed and re-serialised.** Text that is not a JSON object or array is omitted; `<`, `>`, `&` are written as `\u003c` / `\u003e` / `\u0026`, so a block can never close its `<script>` or open a comment. Data blocks are not executed, so they add nothing to the CSP `script-src`.
+- **Text, URL and JSON-LD string values are token-interpolated** like the title, so one template page can write `{currentEntry.title} | Acme`, a per-entry canonical, or per-entry structured data. JSON-LD is interpolated after parsing and only in values, so a token can never break the JSON.
+- **An external web manifest gets a CSP `manifest-src`** (`'self'` plus its origin), returned as `DocumentHead.cspSources` and merged into the page's CSP plan; a same-origin manifest needs nothing beyond `default-src 'self'`.
+- **An unset field emits nothing.** A page without `seo` publishes exactly the head it did before.
+
 ### `documentMeta` — per-render `<head>` overrides
 
-Rows 3 and 4 above take their most specific value from `PublishPageOptions.documentMeta`, a `{ title?, description? }` the caller supplies for this render only. A post-type entry's authored `seoTitle` / `seoDescription` are row cells, not fields of the composed template `Page`, so both entry render paths read them with `readEntrySeoOverride(cells)` (`src/core/data/cells.ts`) and pass them here:
+Rows 3 and 4 above take their most specific value from `PublishPageOptions.documentMeta`, ahead of the page's own `seo` values,, a `{ title?, description? }` the caller supplies for this render only. A post-type entry's authored `seoTitle` / `seoDescription` are row cells, not fields of the composed template `Page`, so both entry render paths read them with `readEntrySeoOverride(cells)` (`src/core/data/cells.ts`) and pass them here:
 
 | Path | File |
 |---|---|

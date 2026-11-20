@@ -25,7 +25,7 @@ import type {
   ImportStylesheet,
   UploadedImportAsset,
 } from './types'
-import type { ConditionDef } from '@core/page-tree'
+import type { ConditionDef, PageSeo } from '@core/page-tree'
 import type { ImportFragment } from '@core/htmlImport'
 import type { FontEntry } from '@core/fonts'
 
@@ -117,14 +117,16 @@ export interface SiteImportTransaction {
     title: string
     slug: string
     nodeFragment: ImportFragment
+    /** The page's head settings read from its `<head>`; null for none. */
+    seo: PageSeo | null
   }): string
 
   /**
    * Overwrite the content of an existing page (conflict: overwrite resolution).
    *
-   * The existing page's id, slug, and title are retained; only the node tree
-   * is replaced with the imported fragment. Class name→id linking applies
-   * identically to `addPage`.
+   * The existing page's id is retained; its title, slug, node tree and head
+   * settings are replaced by the imported page's. Class name→id linking
+   * applies identically to `addPage`.
    */
   overwritePage(
     pageId: string,
@@ -132,6 +134,7 @@ export interface SiteImportTransaction {
       title: string
       slug: string
       nodeFragment: ImportFragment
+      seo: PageSeo | null
     },
   ): void
 

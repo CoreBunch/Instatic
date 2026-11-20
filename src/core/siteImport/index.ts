@@ -81,7 +81,6 @@ export type {
   CrossSheetClassConflict,
   ImportPlan,
   ImportResult,
-  ImportWarning,
   ImportAsset,
   UploadedImportAsset,
   StylesheetImportMode,
@@ -95,6 +94,7 @@ export type {
   ImportScriptDependency,
   ImportScript,
 } from './types'
+export type { ImportWarning } from './warnings'
 
 // ── Error classes (callers need instanceof checks) ────────────────────────────
 

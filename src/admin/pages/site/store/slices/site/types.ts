@@ -20,6 +20,7 @@ import type {
   SiteDocument,
   SiteExplorerSectionId,
   SiteSettings,
+  PageSeo,
   PageTemplateConfig,
   ConditionDef,
   StructuralExplorerRowOrder,
@@ -119,6 +120,8 @@ export interface SiteSlice {
   renamePage: (pageId: string, title: string, slug?: string) => void
   /** Who may open the published page. A public rule removes the stored one. */
   setPageAccess: (pageId: string, access: AccessRule) => void
+  /** The page's `<head>` settings. `null` (or an empty object) removes them. */
+  setPageSeo: (pageId: string, seo: PageSeo | null) => void
   duplicatePage: (sourcePageId: string, title: string, slug?: string) => Page
   reorderPages: (fromIndex: number, toIndex: number) => void
   convertPageToTemplate: (pageId: string, config: PageTemplateConfig) => void

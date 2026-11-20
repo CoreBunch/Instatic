@@ -45,6 +45,7 @@ import {
   RenamePageInputSchema,
   DuplicatePageInputSchema,
   SetPageTemplateInputSchema,
+  SetPageSeoInputSchema,
   ClearPageTemplateInputSchema,
   RenderSnapshotInputSchema,
   type InsertHtmlInput,
@@ -64,6 +65,7 @@ import {
   type RenamePageInput,
   type DuplicatePageInput,
   type SetPageTemplateInput,
+  type SetPageSeoInput,
   type ClearPageTemplateInput,
 } from '@core/ai'
 import type { EditorStore } from '@site/store/types'
@@ -521,6 +523,17 @@ function runDuplicatePage(input: DuplicatePageInput): AiToolOutput {
   return aiToolOk({ pageId: newPage.id })
 }
 
+function runSetPageSeo(input: SetPageSeoInput): AiToolOutput {
+  const store = getStoreState()
+  const site = store.site
+  if (!site) return aiToolError('No active site.')
+  if (!site.pages.some((p) => p.id === input.pageId)) {
+    return aiToolError(`Page not found: ${input.pageId}`)
+  }
+  store.setPageSeo(input.pageId, input.seo)
+  return aiToolOk()
+}
+
 function runSetPageTemplate(input: SetPageTemplateInput): AiToolOutput {
   const store = getStoreState()
   const site = store.site
@@ -651,6 +664,8 @@ export async function executeAgentTool(
         return runRenamePage(parseValue(RenamePageInputSchema, rawInput))
       case 'site_duplicate_page':
         return runDuplicatePage(parseValue(DuplicatePageInputSchema, rawInput))
+      case 'site_set_page_seo':
+        return runSetPageSeo(parseValue(SetPageSeoInputSchema, rawInput))
       case 'site_set_page_template':
         return runSetPageTemplate(parseValue(SetPageTemplateInputSchema, rawInput))
       case 'site_clear_page_template':

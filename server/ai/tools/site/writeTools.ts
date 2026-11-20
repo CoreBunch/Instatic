@@ -44,6 +44,7 @@ import {
   RenamePageInputSchema,
   DuplicatePageInputSchema,
   SetPageTemplateInputSchema,
+  SetPageSeoInputSchema,
   ClearPageTemplateInputSchema,
   SetColorTokensInputSchema,
   SetFontTokensInputSchema,
@@ -314,6 +315,16 @@ const duplicatePageTool: AiTool = {
   inputSchema: DuplicatePageInputSchema,
 }
 
+const setPageSeoTool: AiTool = {
+  name: 'site_set_page_seo',
+  scope: 'site',
+  execution: 'browser',
+  requiredCapabilities: SITE_STRUCTURE_CAPS,
+  description:
+    "Replace a page's <head> settings (`seo`): title override, description, canonical, robots, colorScheme, themeColors [{color, media?}], favicon {href, type?}, openGraph {type,url,siteName,title,description,image,imageAlt}, twitter {card,site,creator,title,description,image}, meta [{attribute:'name'|'property', name, content}] for extra tags, links [{rel, href, type?, title?, hreflang?, media?, sizes?, as?, crossorigin?}] (rel: alternate, preload, prefetch, preconnect, dns-prefetch, icon, apple-touch-icon, mask-icon, manifest, author, license, me, help, search), and jsonLd (array of JSON-LD text blocks). Pass the COMPLETE object: it replaces the page's current settings (read them from site_list_documents `seo`); `null` clears them. Empty title/description fall back to the site settings. Text and URL values accept {page.*}/{currentEntry.*} tokens on templates.",
+  inputSchema: SetPageSeoInputSchema,
+}
+
 // ---------------------------------------------------------------------------
 // Template write tools — convert a page to/from a CMS template.
 //
@@ -431,6 +442,7 @@ export const siteWriteTools: AiTool[] = [
   addPageTool,
   deletePageTool,
   renamePageTool,
+  setPageSeoTool,
   duplicatePageTool,
   setPageTemplateTool,
   clearPageTemplateTool,

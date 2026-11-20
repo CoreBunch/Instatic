@@ -18,7 +18,7 @@ WebKit-prefixed CSS properties and declarations containing `var()`, `env()`, `cl
 - `commitImportPlan(plan, adapter)` — uploads assets, then wraps all store writes in a single `adapter.commit` call → one Cmd+Z reverts the whole import.
 - Static imports load the current CMS draft into the editor store on demand when launched outside `/admin/site`; if no draft exists, the modal creates an empty site before analysis. After completion, **Open site** selects the first imported page and navigates through the admin router to `/admin/site?table=pages&row=<pageId>`, including when the import began in another workspace.
 - Conflict resolution: rename with a numeric suffix (default), overwrite, skip, or custom-rename — per page slug, per class name, per design token (colour / font CSS variable), and per divergent cross-stylesheet class definition, with category-level bulk actions. Token renames rewrite `var(--x)` references, and declarations of the same variable in other rules, so imports stay faithful.
-- What imports: pages, linked CSS plus unconditional local CSS `@import` graphs, `kind:'class'` and `kind:'ambient'` style rules, stylesheets kept as page-scoped files, `@keyframes`, uploadable media/font files, root CSS color tokens, root CSS font tokens, `@font-face` families, known external font stylesheet imports, safe extra HTML attributes on base modules, body-level classes/attributes/style metadata, bare DOM text nodes in mixed content, and executable HTML scripts as page-scoped runtime scripts. Module-script imports from known npm CDNs are rewritten to bare package imports and added to the site dependency manifest.
+- What imports: pages (with their `<head>` metadata as page SEO settings), linked CSS plus unconditional local CSS `@import` graphs, `kind:'class'` and `kind:'ambient'` style rules, stylesheets kept as page-scoped files, `@keyframes`, uploadable media/font files, root CSS color tokens, root CSS font tokens, `@font-face` families, known external font stylesheet imports, safe extra HTML attributes on base modules, body-level classes/attributes/style metadata, bare DOM text nodes in mixed content, and executable HTML scripts as page-scoped runtime scripts. Module-script imports from known npm CDNs are rewritten to bare package imports and added to the site dependency manifest.
 - CMS bundle import preserves selected exported tables, rows, optional site shell, media, folders, and redirects using the same merge strategies as site transfer (`replace`, `merge-add`, `merge-overwrite`). When the bundle marks rows published but carries no published version of them, they arrive as drafts; the completion step and success toast give the count (`ImportResult.rowsImportedAsDraft`, see [site-transfer.md](site-transfer.md) → "Rows the import cannot publish").
 - HTML forms import through the shared HTML importer as first-class form primitives (`base.form`, controls, labels, submit buttons), not as custom containers.
 - Imported self-hosted `@font-face` files retain their `font-display` descriptor in the native font library. An omitted descriptor imports as CSS's `auto`; fonts installed through other paths continue to default to `swap`.
@@ -32,12 +32,14 @@ WebKit-prefixed CSS properties and declarations containing `var()`, `env()`, `cl
 ```text
 src/core/siteImport/
 ├── index.ts             — public barrel
-├── types.ts             — all shared types: FileMap, ImportPlan, ImportResult, ImportWarning, error classes
+├── types.ts             — shared plan types: FileMap, PagePlan, ImportPlan, ImportResult, error classes
+├── warnings.ts          — ImportWarning and its kinds
 ├── ingestInput.ts       — normalize input(s) → FileMap (loose files / folder / .zip)
 ├── pluginPackage.ts     — detectPluginPackage: a FileMap with a root plugin.json is a plugin, not a site
 ├── stylesheetPlan.ts    — catalogue linked sheets by import mode; flatten kept sheets and unlinked (site-wide) sheets
 ├── classifyFiles.ts     — extension/MIME → FileRole: html | css | js | image | font | binary | meta
 ├── htmlPagePlan.ts      — per-HTML-file plan: parse body via importHtml, derive title + slug, resolve <link> refs, and preserve executable scripts
+├── headSeo.ts           — extractHeadSeo: the rest of <head> (meta, icons, social cards, links, JSON-LD) → PagePlan.seo; normalizeHeadSeoUrls for its files
 ├── cssToStyleRules.ts   — single-file CSS → StyleRule[] / @keyframes raw rules + AssetRef[] + warnings
 ├── colorTokens.ts       — extract root custom-property color tokens from :root/html/body rules
 ├── fontTokens.ts        — extract root --font-* custom properties as ImportFontToken[] from :root/html/body rules
@@ -48,6 +50,7 @@ src/core/siteImport/
 ├── classCascades.ts     — cross-sheet class semantics: detect divergent class definitions as explicit conflicts; apply rename / keep-first / overwrite; enforce one bindable class rule per name
 ├── mimeTypes.ts         — extension → MIME fallback for FileMap entries that carry no MIME type (e.g. ZIP)
 ├── assetPlan.ts         — normalise URL props/HTML attributes in node fragments + CSS/@keyframes url(); resolve @font-face; collect assets
+├── assetResolver.ts     — resolveAndRecord: one imported URL → FileMap key (+ upload plan, unresolved-asset warning)
 ├── applyAssetRewrites.ts — patch fragment props + CSS/@keyframes url() with new media URLs (post-upload)
 ├── linkRewrite.ts       — rewrite intra-site <a href> to cms:page:<id> refs
 ├── conflicts.ts         — detect page-slug + class-name + design-token collisions; apply resolutions (incl. var(--x) rewrites)
@@ -107,7 +110,8 @@ User drops files / folder / static .zip / CMS bundle .zip
     ┌── per HTML file ──────────────────────────────────────────────┐
     │   makeHtmlPagePlan(path, html, fileMap)                       │
     │   → PagePlan { source, title, slug, linkedCssPaths, scripts, │
-    │               nodeFragment (via @core/htmlImport) }           │
+    │               nodeFragment (via @core/htmlImport),            │
+    │               seo (via extractHeadSeo) }                      │
     └───────────────────────────────────────────────────────────────┘
             │
     expandLinkedCssImports(linkedCssPaths, fileMap)
@@ -191,7 +195,7 @@ interface ImportPlan {
 }
 ```
 
-All URL-shaped values inside `pages[].nodeFragment` props, imported `htmlAttributes` bags, style rule `styles`/`contextStyles`, and supported raw style-rule blocks such as `@keyframes` are normalised to FileMap keys before the plan is returned — `applyAssetRewrites` does exact-string replacement after upload.
+All URL-shaped values inside `pages[].nodeFragment` props, `pages[].seo` file URLs (favicon, Open Graph / Twitter image, link hrefs), imported `htmlAttributes` bags, style rule `styles`/`contextStyles`, and supported raw style-rule blocks such as `@keyframes` are normalised to FileMap keys before the plan is returned — `applyAssetRewrites` does exact-string replacement after upload.
 
 Every `styleRules[]` entry carries `origin: { source, ordinal }` — the stylesheet it came from and its position in it — which the committed `StyleRule` keeps. That is what a re-import reconciles against (see "Re-importing a site" below). `styleRuleSources` stays alongside as the wizard's index-aligned display grouping: a rule the cross-sheet resolver materialises has a display group but no origin.
 
@@ -219,6 +223,7 @@ interface ImportScript {
 | Category | What | How |
 |---|---|---|
 | **Pages** | One `PagePlan` per `.html` file | `makeHtmlPagePlan` parses the body via `@core/htmlImport`; slug derived from the relative file path (`documentation/index.html` → `documentation`, `guides/install.html` → `guides/install`) |
+| **Page head** | Everything in `<head>` besides `<title>`, stylesheets and scripts, plus JSON-LD anywhere in the document | `extractHeadSeo` (`headSeo.ts`) reads it into `PagePlan.seo` (the page's `PageSeo`, see [publisher.md](publisher.md) → "Page head settings"): description, canonical, robots, theme-color (each with its `media`), color-scheme, the first plain `rel="icon"` as the favicon, `og:*` and `twitter:*` into their structured fields (other `og:*` / named meta as extra `meta`), allowlisted `<link>` rels as `links`, `application/ld+json` blocks as `jsonLd`. `buildAssetPlan` resolves the favicon, Open Graph / Twitter images and link hrefs like node props: an uploadable file is uploaded and rewritten to its media URL, a file the media library cannot store keeps a root-relative link with `head-file-not-hosted`, external URLs and origins pass through. Committed by `tx.addPage` / `tx.overwritePage` (an overwrite replaces the page's settings). Anything else is reported as `head-tag-dropped`. |
 | **HTML attributes** | Safe extra attributes on ordinary elements (`id`, ARIA, `role`, custom attrs, `data-*`, etc.) | Stored as `props.htmlAttributes` on base container/text/link/button/image modules so CSS selectors, anchors, classic scripts, accessibility attributes, and template runtime hooks such as `data-bg-src`, `data-aos`, and `data-bs-*` survive import. Users edit the same bag in the Properties panel's Attributes view. `class` is handled by the selector registry, inline `style` becomes `node.inlineStyles`, event handlers are stripped, and reserved Instatic/editor `data-*` names are not imported. Local asset URLs inside these attributes are uploaded and rewritten. |
 | **Style rules** | All rules from linked CSS files and their unconditional local `@import` graph | `expandLinkedCssImports` follows bundled local CSS imports first, then `cssToStyleRules` maps selector declaration blocks to `NewStyleRule` entries (class or ambient kind) and stores supported stylesheet-level rules such as `@keyframes` as ambient raw CSS rules |
 | **Media** | Uploadable images (JPEG, PNG, GIF, WebP, AVIF, SVG), videos, and fonts — including unreferenced files in the bundle | `buildAssetPlan` collects referenced assets and sweeps uploadable unreferenced files. Source companions such as `.scss`, sourcemaps, PHP mailers, `desktop.ini`, and README files are excluded before upload. An `<img>`'s authored `alt` is carried onto the asset and stored on the Media Library record at upload; `loading`, `decoding`, and `fetchpriority` map onto the Image module's first-class props when they hold a value the module offers (anything else keeps the module default). Uploaded assets are filed under folders mirroring their bundle path; a folder failure leaves the asset at the media root with an `asset-folder-failed` warning and never blocks the URL rewrite. |
@@ -410,6 +415,8 @@ On success the same step switches to its **complete** state — a success mark, 
 | `script-order-conflict` | Two pages link the same scripts in contradictory orders; the order from the page that links them first wins |
 | `external-font` | An `@font-face` with no bundled file (all `src` entries are external URLs) — skipped |
 | `unresolved-asset` | An HTML/CSS reference to a media file the archive does not contain under that path — one warning per distinct path |
+| `head-tag-dropped` | A `<head>` tag the page's SEO settings cannot hold: `http-equiv` (other than `content-type` / `x-ua-compatible`), a script preload or `modulepreload`, an unknown link `rel`, a reserved meta name, JSON-LD that is not JSON, or values past the schema's length / count limits |
+| `head-file-not-hosted` | A head link points at a file the media library cannot store (`llms.txt`, a web manifest, a stylesheet), or at a non-media file the archive does not contain; the link is kept, pointing at the file's root-relative path (`/bake/llms.txt`) |
 
 ### Cache-busted URLs
 
@@ -462,7 +469,8 @@ outside the archive are normal and would bury the real misses.
 - [docs/reference/page-tree.md](../reference/page-tree.md) — `NodeTree<PageNode>`, `ImportFragment` shape
 - [docs/reference/typebox-patterns.md](../reference/typebox-patterns.md) — boundary validation
 - Source-of-truth files:
-  - `src/core/siteImport/types.ts` — `ImportPlan`, `ImportResult`, `ImportWarning`, `ImportFontToken`, `ImportColorToken`, error classes
+  - `src/core/siteImport/types.ts` — `ImportPlan`, `ImportResult`, `ImportFontToken`, `ImportColorToken`, error classes
+  - `src/core/siteImport/warnings.ts` — `ImportWarning` and its kinds
   - `src/core/siteImport/buildPlan.ts` — `buildImportPlan`; `src/core/siteImport/commitPlan.ts` — `commitImportPlan`
   - `src/core/siteImport/adapter.ts` — `SiteImportAdapter`, `SiteImportTransaction` interfaces
   - `src/core/siteImport/colorTokens.ts` — `extractRootColorTokens`

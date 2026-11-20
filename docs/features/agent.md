@@ -368,16 +368,16 @@ Resolved server-side from the posted `SiteAgentSnapshot` or the data repositorie
 
 | Tool              | What it returns                                                         |
 |-------------------|-------------------------------------------------------------------------|
-| `site_list_documents`  | Editable document refs for pages, templates, and visual components. Each item includes `{ document: { type, id }, title, rootNodeId, active, current, summary, template? }`; pass those refs to `site_read_document` / `site_open_document` |
+| `site_list_documents`  | Editable document refs for pages, templates, and visual components. Each item includes `{ document: { type, id }, title, rootNodeId, active, current, summary, template?, seo? }`; pass those refs to `site_read_document` / `site_open_document` |
 | `site_list_modules`    | Module registry (id, name, category, props schema, defaults); `category` filter |
 | `site_list_breakpoints`| Configured breakpoints + active id                                      |
 | `site_list_post_types` | Routable collections eligible as a `postTypes` template target — `{ slug, label, routeBase, kind }` per entry, filtered to a non-empty `routeBase`. Queries the data repositories via `ctx.db` |
 | `site_list_loop_sources` | Loop source ids, source fields, order/filter options, and data-table field catalogs with valid `{currentEntry.field}` tokens. For post/custom table loops, use source id `data.rows`, the returned table `id` as `<instatic-loop data-table-id>`, and the returned tokens inside the loop body |
 | `site_list_tokens`     | Design tokens: colors (with shades/tints), typography/spacing scale steps, font tokens — each with CSS variable + utility classes; optional `family` filter (`colors`\|`typography`\|`spacing`\|`fonts`) |
 
-### Site browser tools — 29, browser-bridged
+### Site browser tools — 30, browser-bridged
 
-All 29 tools carry `execution: 'browser'` in their `AiTool` definition. The server emits `toolRequest`; the browser executor validates input with TypeBox, runs the store action or read helper, and POSTs the canonical `AiToolOutput` result back.
+All 30 tools carry `execution: 'browser'` in their `AiTool` definition. The server emits `toolRequest`; the browser executor validates input with TypeBox, runs the store action or read helper, and POSTs the canonical `AiToolOutput` result back.
 
 **Documents**
 
@@ -482,6 +482,7 @@ Agents should not use npm CDN URLs such as `esm.sh`, `unpkg`, or jsDelivr for pa
 | `site_delete_page`    | `{ pageId }`                      | none           | Delete page; fails if it would leave the site with 0 pages |
 | `site_rename_page`    | `{ pageId, title, slug? }`        | none           | Change title/slug; `slug="index"` makes this the homepage  |
 | `site_duplicate_page` | `{ pageId, title, slug? }`        | `{ pageId }`   | Deep-clone page (all nodes, props, class assignments)      |
+| `site_set_page_seo`   | `{ pageId, seo: PageSeo \| null }` | none           | Replace the page's `<head>` settings (search, social card, theme colours, favicon, extra meta / links, JSON-LD; see [publisher.md](publisher.md) → "Page head settings"). Read the current value from `site_list_documents`; `null` clears it |
 
 **Templates (CMS layouts)**
 
