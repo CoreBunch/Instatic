@@ -22,14 +22,10 @@ import { getActiveStyleTab } from '../panels/PropertiesPanel/cssControlTypes'
 import { selectSelectedNode, useEditorStore } from './store'
 
 export interface ActiveStyleTarget {
-  /**
-   * Where `writeStyles` lands: `'inline'` writes the node's `inlineStyles`
-   * (rendered as the element's real `style=""` attribute), `'class'` writes a
-   * StyleRule (rendered via the injected class stylesheet). Canvas gestures
-   * need the distinction — their inline preview must NOT be rolled back when
-   * the commit itself lives in the style attribute.
-   */
-  kind: 'inline' | 'class'
+  /** Stable identity for cancelling a captured drag when the edit target changes. */
+  key: string
+  previewStyles: (patch: Partial<CSSPropertyBag>) => void
+  clearPreview: () => void
   /** The bag an edit would land in, merged over base for context overrides. */
   styles: Record<string, unknown>
   /** Apply several properties in one commit. `undefined` clears a key. */
@@ -53,6 +49,9 @@ export function useActiveStyleTarget(): ActiveStyleTarget | null {
   const rule = useEditorStore((s) => (activeClassId ? s.site?.styleRules[activeClassId] : undefined))
   const selectedNode = useEditorStore(selectSelectedNode)
 
+  const setPreviewInlineStyles = useEditorStore((s) => s.setPreviewInlineStyles)
+  const setPreviewClassStyles = useEditorStore((s) => s.setPreviewClassStyles)
+  const clearPreviewClassStyles = useEditorStore((s) => s.clearPreviewClassStyles)
   const updateClassStyles = useEditorStore((s) => s.updateClassStyles)
   const setClassContextStyles = useEditorStore((s) => s.setClassContextStyles)
   const setNodeInlineStyles = useEditorStore((s) => s.setNodeInlineStyles)
@@ -71,7 +70,9 @@ export function useActiveStyleTarget(): ActiveStyleTarget | null {
     }
     const styles = selectedNode?.inlineStyles ?? {}
     return {
-      kind: 'inline',
+      key: JSON.stringify([nodeId]),
+      previewStyles: (patch) => setPreviewInlineStyles(nodeId, patch),
+      clearPreview: () => setPreviewInlineStyles(nodeId, null),
       styles,
       writeStyles: (patch) => setNodeInlineStyles(nodeId, patch),
     }
@@ -91,12 +92,13 @@ export function useActiveStyleTarget(): ActiveStyleTarget | null {
     : rule.styles
 
   return {
-    kind: 'class',
+    key: JSON.stringify([nodeId, activeClassId, contextId]),
+    previewStyles: (patch) => setPreviewClassStyles({ classId: activeClassId, contextId, styles: patch }),
+    clearPreview: () => clearPreviewClassStyles(activeClassId),
     styles,
     writeStyles: (patch) => {
-      const normalised = patch
-      if (contextId) setClassContextStyles(activeClassId, contextId, normalised)
-      else updateClassStyles(activeClassId, normalised)
+      if (contextId) setClassContextStyles(activeClassId, contextId, patch)
+      else updateClassStyles(activeClassId, patch)
     },
   }
 }

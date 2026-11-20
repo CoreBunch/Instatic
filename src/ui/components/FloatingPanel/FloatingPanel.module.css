@@ -1,4 +1,4 @@
-/* FloatingPanel — the panel's detached piece (inspector-panel.md §6.5, §10).
+/* FloatingPanel — the panel's detached piece.
    Position is JS-driven: opens beside the trigger, then follows the header
    drag. */
 

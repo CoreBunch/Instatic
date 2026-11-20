@@ -2,6 +2,8 @@ import { useState, type CSSProperties } from 'react'
 import { Button } from '@ui/components/Button'
 import { SearchBar } from '@ui/components/SearchBar'
 import { safeCssColor } from './colorMath'
+import styles from './ColorPicker.module.css'
+
 export interface ColorPickerToken {
   /** The CSS custom-property name, including the leading `--`. */
   name: string
@@ -12,7 +14,6 @@ export interface ColorPickerToken {
   /** Stable list key when several tokens share a name. */
   key?: string
 }
-import styles from './ColorPicker.module.css'
 
 type SwatchVars = CSSProperties & { '--color-picker-swatch'?: string }
 
@@ -36,7 +37,7 @@ export function TokenStylesSection({
         placeholder="Search styles"
         aria-label="Search colour styles"
       />
-      <div className={styles.tokenList} role="listbox" aria-label="Colour styles">
+      <div className={styles.tokenList} role="group" aria-label="Colour styles">
         {filteredTokens.map((token) => (
           <Button
             key={token.key ?? token.name}
@@ -44,8 +45,6 @@ export function TokenStylesSection({
             size="xs"
             menuItem
             align="start"
-            role="option"
-            aria-selected={false}
             className={styles.tokenRow}
             onClick={() => onSelectToken?.(`var(${token.name})`)}
           >

@@ -34,7 +34,6 @@ export function EffectsSection({
   onChange,
   onPreview,
   onClearPreview,
-
 }: EffectsSectionProps) {
   const effects = readEffects(storedStyles).filter((entry) => visibleProperties.includes(
     entry.shadow ? 'boxShadow' : entry.kind === 'layerBlur' ? 'filter' : 'backdropFilter',
@@ -61,7 +60,6 @@ export function EffectsSection({
           }}
         />
       ))}
-
     </>
   )
 }

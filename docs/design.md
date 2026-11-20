@@ -391,6 +391,9 @@ Every interactive control in the admin and editor goes through a primitive from 
 | `Select`             | Dropdown selection of fixed options.                                        |
 | `SearchBar`          | Search input with magnifier icon and clear affordance.                      |
 | `ColorInput`         | Color picker with swatch + hex.                                             |
+| `SwatchRow`          | Inspector row with a fill or border preview, editor trigger and optional clear action. |
+| `FloatingPanel`      | Anchored, draggable editor for a property with several controls.            |
+| `ColorPicker`        | Solid and gradient editing, with a token palette supplied by the caller.   |
 | `FileUpload`         | Drop-zone + browse for file inputs.                                         |
 | `DateTimePicker`     | Date / time inputs.                                                         |
 | `RangeTabs`          | Tabbed numeric range selectors (e.g. spacing scales).                       |

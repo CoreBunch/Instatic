@@ -56,6 +56,7 @@
     height: 12px;
     transform: translateY(-50%) rotate(var(--gizmo-angle));
     transform-origin: 0 50%;
+    cursor: grab;
     pointer-events: auto;
     touch-action: none;
 }
@@ -67,12 +68,6 @@
     height: 1px;
     background: var(--overlay-70);
     box-shadow: 0 0 0 1px var(--scrim-40);
-}
-
-/* Radial gradients have no direction, so their axis is not a rotation grip —
-   only the double-click-to-add-a-stop affordance stays. */
-.gizmo[data-rotatable="true"] .axis {
-    cursor: grab;
 }
 
 .endCap,

@@ -1,24 +1,4 @@
-/**
- * effectsModel — the Effects section's task-shaped view of three CSS
- * properties (docs/features/inspector-panel.md §6.5).
- *
- * The prototype lists EFFECTS, not declarations: "Drop shadow", "Inner
- * shadow", "Layer blur", "Background blur". Underneath they are ordinary CSS:
- *
- *   Drop shadow / Inner shadow → one entry of the `box-shadow` list
- *   Layer blur                 → `blur()` inside `filter`
- *   Background blur            → `blur()` inside `backdrop-filter`
- *
- * So this module is the translation both ways, and nothing else: no React, no
- * store. Two rules it exists to keep:
- *
- *  - **A property is never rewritten wholesale.** `filter` may carry
- *    `grayscale()` the panel has no row for; setting the blur must leave it
- *    standing. Same for the other entries of a `box-shadow` list.
- *  - **Round-tripping is lossless for values we understand.** Parsing then
- *    formatting an untouched shadow returns the same declaration, so opening
- *    a popout and closing it cannot silently rewrite the user's CSS.
- */
+/** Translate inspector effects to CSS while preserving sibling shadows and filter functions. */
 
 export interface ShadowEffect {
   /** `inset` keyword — the difference between a drop and an inner shadow. */
@@ -60,14 +40,7 @@ function isLength(token: string): boolean {
   return /^[+-]?(\d+\.?\d*|\.\d+)([a-z%]*)$/i.test(token)
 }
 
-const NONE_VALUES = new Set(['', 'none', 'initial', 'unset', 'revert'])
-
-export function parseShadowList(value: unknown): ShadowEffect[] {
-  if (typeof value !== 'string' || NONE_VALUES.has(value.trim().toLowerCase())) return []
-  return splitTopLevel(value, ',')
-    .map(parseShadow)
-    .filter((shadow): shadow is ShadowEffect => shadow !== null)
-}
+const NONE_VALUES = new Set(['', 'none', 'initial', 'inherit', 'unset', 'revert', 'revert-layer'])
 
 export function hasCustomShadow(value: unknown): boolean {
   return typeof value === 'string' && splitTopLevel(value, ',').some((layer) => !parseShadow(layer))
@@ -107,11 +80,6 @@ export function formatShadow(shadow: ShadowEffect): string {
   return parts.join(' ')
 }
 
-export function formatShadowList(list: ReadonlyArray<ShadowEffect>): string | undefined {
-  if (list.length === 0) return undefined
-  return list.map(formatShadow).join(', ')
-}
-
 /** Replace only the edited layer, retaining unrecognised and token-based shadows verbatim. */
 export function changeShadow(value: unknown, index: number | null, next: ShadowEffect | null): string | undefined {
   const layers = typeof value === 'string' && !NONE_VALUES.has(value.trim().toLowerCase())
@@ -121,7 +89,7 @@ export function changeShadow(value: unknown, index: number | null, next: ShadowE
   return layers.join(', ') || undefined
 }
 
-/** Leading value shown on the row: `0 4 · 4px`, the prototype's summary. */
+/** Leading value shown on the row: `0 4 · 4px`, as shown in the inspector. */
 export function shadowSummary(shadow: ShadowEffect): string {
   return `${stripUnit(shadow.x)} ${stripUnit(shadow.y)} · ${shadow.blur}`
 }
@@ -162,7 +130,7 @@ export function writeBlur(value: unknown, next: string | null): string | undefin
 // The catalogue: which named effects exist, and what the element carries now
 // ---------------------------------------------------------------------------
 
-/** Effects with a clean CSS counterpart, in the prototype's catalogue order. */
+/** Effects with a clean CSS counterpart, in menu order. */
 export const EFFECT_KINDS = [
   'dropShadow',
   'innerShadow',

@@ -329,9 +329,11 @@ export function BreakpointSelectionOverlay({
       session,
     )
 
-    // ── WRITE phase ─────────────────────────────────────────────────────
     const selected = showCorners ? elementCache.resolve(iframeDoc, selectedNodeIds[0]) : null
-    const radii = selected && iframeDoc.defaultView ? readCornerRadii(iframeDoc.defaultView.getComputedStyle(selected)) : []
+    const radii = selected && iframeDoc.defaultView
+      ? readCornerRadii(iframeDoc.defaultView.getComputedStyle(selected), (ringPlacements[0]?.rect?.width ?? 0) / session.scale)
+      : []
+    // ── WRITE phase ─────────────────────────────────────────────────────
     positionRadiusHandles(radiusLayer.current, showCorners ? ringPlacements[0]?.rect ?? null : null, radii, session.scale)
     for (const { ring, rect } of ringPlacements) positionOverlayElement(ring, rect)
     positionOverlayElement(hoverRef.current, hoverRect)

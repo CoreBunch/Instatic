@@ -1,26 +1,13 @@
-/**
- * BorderPopoutRow — the border editor as ONE panel row plus a floating editor.
- *
- * The prototype pulls the border's multi-row editor out of the inspector: the
- * panel keeps a single `.swatchrow` trigger (chip · style name · clear) and
- * the edge picker, scope chip, colour, width and style rows move into the
- * same floating shell the colour picker already rides in.
- *
- * The shell is the shared `FloatingPanel` — the same one the colour picker
- * and the effect rows ride in, so it opens BESIDE this row instead of at a
- * remembered desk position: a popout belongs to the control that opened it.
- */
-
-import { useRef, useState, type CSSProperties } from 'react'
+import { lazy, Suspense, useRef, useState, type CSSProperties } from 'react'
 import type { CSSPropertyBag } from '@core/page-tree'
 import { generateFrameworkColorVariableSets } from '@core/framework'
 import { useEditorStore } from '@site/store/store'
 import { resolveColorPreview } from '@site/property-controls/frameworkColorPreview'
 import { SwatchRow } from '@ui/components/SwatchRow'
 import { FloatingPanel } from '@ui/components/FloatingPanel'
-import { lazy, Suspense } from 'react'
-const BorderControl = lazy(() => import('./BorderControl').then((module) => ({ default: module.BorderControl })))
 import styles from './BorderPopoutRow.module.css'
+
+const BorderControl = lazy(() => import('./BorderControl').then((module) => ({ default: module.BorderControl })))
 
 /** Sides in the order the longhands are read for the trigger's summary. */
 const SIDES = ['Top', 'Right', 'Bottom', 'Left'] as const
@@ -76,15 +63,16 @@ export function BorderPopoutRow({
   const style = readFirstSet(currentStyles, 'Style')
   const palette = useEditorStore((s) => s.site?.settings.framework?.colors)
   const color = resolveColorPreview(readFirstSet(currentStyles, 'Color'), generateFrameworkColorVariableSets(palette).light)
-  const isSet = Object.entries(currentStyles).some(([key, value]) => /^(border($|Top|Right|Bottom|Left|Style|Width|Color)|outline)/.test(key) && !key.endsWith('Radius') && value != null && value !== '')
+  const isBorderProperty = (key: string) =>
+    /^(border(?:$|Top|Right|Bottom|Left|Style|Width|Color)|outline)/.test(key) && !key.endsWith('Radius')
+  const storedKeys = Object.keys(storedStyles).filter(isBorderProperty)
+  const isSet = Object.entries(currentStyles).some(([key, value]) => isBorderProperty(key) && value != null && value !== '')
 
   // Title-case the CSS keyword for the row summary ("solid" → "Solid").
   const summary = style === '' ? (isSet ? 'Custom' : 'Add…') : style.charAt(0).toUpperCase() + style.slice(1)
 
   function clearBorder() {
-    const patch = Object.fromEntries(Object.keys(storedStyles)
-      .filter((key) => /^(border(?:$|Top|Right|Bottom|Left|Color|Style|Width)|outline)/.test(key) && !key.endsWith('Radius'))
-      .map((key) => [key, null]))
+    const patch = Object.fromEntries(storedKeys.map((key) => [key, null]))
     onChangeMany(patch)
   }
 
@@ -109,7 +97,7 @@ export function BorderPopoutRow({
         }}
         ariaExpanded={open}
         ariaLabel={isSet ? `Edit border — ${summary}` : 'Add a border'}
-        onClear={isSet ? clearBorder : undefined}
+        onClear={storedKeys.length ? clearBorder : undefined}
         clearLabel="Clear border"
       />
 

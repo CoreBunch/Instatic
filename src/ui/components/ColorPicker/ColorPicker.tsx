@@ -1,13 +1,16 @@
 /** Solid and gradient fill editor. In gradient mode the color controls edit the selected stop. */
 import {
   useEffect,
-  useRef,
+  useLayoutEffect,
   useState,
   type CSSProperties,
+  type KeyboardEvent,
   type MouseEvent as ReactMouseEvent,
   type PointerEvent as ReactPointerEvent,
 } from 'react'
 import { cn } from '@ui/cn'
+import { useEvent } from '@ui/lib/useEvent'
+import { createTrailingThrottle } from '@ui/lib/trailingThrottle'
 import { TargetSolidIcon } from 'pixel-art-icons/icons/target-solid'
 import { Button } from '@ui/components/Button'
 import { Input } from '@ui/components/Input'
@@ -39,7 +42,6 @@ import { TokenStylesSection, type ColorPickerToken } from './TokenStylesSection'
 import { UnitStepperInput } from './UnitStepperInput'
 import {
   beginDrag,
-  createEmitThrottle,
   frameThrottle,
   handleGridKeys,
   handleTrackKeys,
@@ -123,45 +125,29 @@ export function ColorPicker({
   const [selectedStop, setSelectedStop] = useState(0)
   const [draft, setDraft] = useState<string | null>(null)
 
-  // The picker is OPTIMISTIC: local state (the handles, the strip, the text
-  // fields) updates on every frame, while `onChange` — which drives the
-  // editor store, the CRDT and a live canvas repaint — is trailing-throttled.
-  // Emissions echoed back as `value` are recognised via `recentEmits`
-  // (a small capped list, not a single last-emitted string), because with a
-  // throttle in play the echo can be any of the last few emissions, and
-  // treating an intermediate echo as external input would snap the drag back.
-  const [recentEmits, setRecentEmits] = useState<string[]>([])
-  const onChangeRef = useRef(onChange)
-  useEffect(() => {
-    onChangeRef.current = onChange
+  // Only an outstanding echo belongs to the current edit. Undo can revisit
+  // any previously emitted color while the picker stays open.
+  const [expectedEcho, setExpectedEcho] = useState<string | null>(null)
+  const publish = useEvent((emitted: string) => {
+    setExpectedEcho(emitted === value ? null : emitted)
+    onChange(emitted)
   })
-  const emitThrottleRef = useRef<ReturnType<typeof createEmitThrottle> | null>(null)
-  // Created in an effect (not render) so the ref is never read during render.
-  // Event handlers only run after mount, so the throttle always exists by the
-  // time emit() fires. The cleanup flushes a pending trailing emission so the
-  // final drag position is never lost when the panel closes mid-window.
-  useEffect(() => {
-    const throttle = createEmitThrottle(EMIT_THROTTLE_MS, (emitted) => onChangeRef.current(emitted))
-    emitThrottleRef.current = throttle
-    return () => {
-      throttle.flush()
-      emitThrottleRef.current = null
-    }
-  }, [])
+  const [throttle] = useState(() => createTrailingThrottle(publish, EMIT_THROTTLE_MS))
+  useEffect(() => () => throttle.flush(), [throttle])
 
-  // Adopt external value changes (undo, sibling edit, token pick) without
-  // clobbering our own emissions — reparsing our own output would lose the hue
-  // at zero saturation. Render-time previous-value comparison rather than a
-  // useEffect+setState, matching the sibling colour fields.
   const [lastValue, setLastValue] = useState(value)
+  const [externalRevision, setExternalRevision] = useState(0)
   if (lastValue !== value) {
     setLastValue(value)
-    if (!recentEmits.includes(value)) {
+    setExpectedEcho(null)
+    if (expectedEcho !== value) {
       setFill(initialFill(value, gradients))
       setSelectedStop(0)
       setDraft(null)
+      setExternalRevision(externalRevision + 1)
     }
   }
+  useLayoutEffect(() => throttle.cancel(), [externalRevision, throttle])
 
   // In a gradient mode the whole colour surface edits the selected stop.
   const stopIndex = Math.min(selectedStop, fill.stops.length - 1)
@@ -175,10 +161,9 @@ export function ColorPicker({
     setFill(nextFill)
     setDraft(null)
     const emitted = formatFill(nextFill, nextFormat)
-    setRecentEmits((current) => [...current.slice(-31), emitted])
     // Leading + trailing throttle: local picker state above is NOT throttled —
     // that is the optimistic half; only the heavy `onChange` rides the window.
-    emitThrottleRef.current?.push(emitted)
+    throttle.call(emitted)
   }
 
   /** Route a colour edit to the solid colour or the selected gradient stop. */
@@ -225,8 +210,6 @@ export function ColorPicker({
     setDraft(null)
     if (parsed) commit(rgbaToHsva(parsed))
   }
-
-
 
 
   async function pickFromScreen() {
@@ -295,6 +278,36 @@ export function ColorPicker({
     applyAt(event.clientX)
   }
 
+  function handleStopKey(event: KeyboardEvent<HTMLSpanElement>, index: number) {
+    if (event.key === 'Delete' || event.key === 'Backspace') {
+      event.preventDefault()
+      if (fill.stops.length <= 2) return
+      const remaining = fill.stops.filter((_, i) => i !== index)
+      const next = Math.min(index, remaining.length - 1)
+      // The index-keyed handle survives unless the last stop was removed.
+      if (next !== index) event.currentTarget.previousElementSibling?.closest<HTMLElement>('[role="slider"]')?.focus()
+      setSelectedStop(next)
+      emit({ ...fill, stops: remaining })
+      return
+    }
+    if (event.key === 'Insert') {
+      event.preventDefault()
+      const positions = fill.stops.map((stop) => stop.pos).sort((a, b) => a - b)
+      const start = fill.stops[index].pos
+      const neighbor = positions.find((pos) => pos > start) ?? positions.findLast((pos) => pos < start) ?? 1
+      const pos = (start + neighbor) / 2
+      const color = gradientColorAt(fill.stops.map((stop) => ({ color: hsvaToRgba(stop.hsva), pos: stop.pos })), pos)
+      setSelectedStop(fill.stops.length)
+      emit({ ...fill, stops: [...fill.stops, { pos, hsva: rgbaToHsva(color) }] })
+      const group = event.currentTarget.parentElement
+      requestAnimationFrame(() => group?.querySelector<HTMLElement>('[role="slider"]:last-child')?.focus())
+      return
+    }
+    handleTrackKeys(event, fill.stops[index].pos, (pos) =>
+      emit({ ...fill, stops: fill.stops.map((stop, i) => i === index ? { ...stop, pos } : stop) }),
+    )
+  }
+
   /** Double-click removes the pressed stop — a gradient keeps at least two. */
   function handleStripDoubleClick(event: ReactMouseEvent<HTMLDivElement>) {
     if (fill.stops.length <= 2) return
@@ -306,7 +319,6 @@ export function ColorPicker({
     setSelectedStop(0)
     emit({ ...fill, stops: fill.stops.filter((_, i) => i !== index) })
   }
-
 
   const surfaceStyle: PickerVars = {
     '--color-picker-hue': hueCss(hsva.h),
@@ -361,7 +373,14 @@ export function ColorPicker({
                   '--color-picker-swatch': formatColor(hsvaToRgba(stop.hsva), 'hex'),
                 } as PickerVars
               }
-              aria-hidden="true"
+              role="slider"
+              tabIndex={0}
+              aria-label={`Fill stop ${index + 1} position`}
+              aria-valuenow={Math.round(stop.pos * 100)}
+              aria-valuetext={`${Math.round(stop.pos * 100)}%`}
+              aria-keyshortcuts="Insert Delete"
+              onFocus={() => setSelectedStop(index)}
+              onKeyDown={(event) => handleStopKey(event, index)}
             />
           ))}
         </div>
@@ -511,7 +530,7 @@ export function ColorPicker({
       ) : (
         <form className={styles.saveColor} onSubmit={(event) => {
           event.preventDefault()
-          emitThrottleRef.current?.flush()
+          throttle.flush()
           if (saveName.trim() && onSaveColor(saveName.trim(), formatColor(hsvaToRgba(hsva), 'hex'), fill.mode === 'solid')) setSaveName(null)
         }}>
           <Input autoFocus fieldSize="xs" value={saveName} aria-label="Framework color name"
@@ -521,7 +540,7 @@ export function ColorPicker({
         </form>
       ))}
       {fill.mode === 'solid' && tokens && tokens.length > 0 && (
-        <TokenStylesSection tokens={tokens} onSelectToken={(ref) => { emitThrottleRef.current?.flush(); onSelectToken?.(ref) }} />
+        <TokenStylesSection tokens={tokens} onSelectToken={(ref) => { throttle.flush(); onSelectToken?.(ref) }} />
       )}
     </div>
   )

@@ -1,5 +1,5 @@
 /**
- * EffectParams — the body of an effect's popout (inspector-panel.md §6.5).
+ * EffectParams — the body of an effect's popout.
  *
  * Each effect type brings its own set of fields, and that IS the difference
  * between them: a shadow has offsets, blur, spread and colour; a blur has one

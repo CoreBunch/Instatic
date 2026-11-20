@@ -19,7 +19,7 @@ export function NumericStyleInput({ onAdjust, onScrubPreview, onClearPreview, va
   const [preview, setPreview] = useState<string | null>(null)
   const gesture = useRef<{ x: number; id: number; start: string; result: string | null; clear?: () => void } | null>(null)
   useEffect(() => () => { gesture.current?.clear?.() }, [])
-  const source = String(value || placeholder || '').trim()
+  const source = String(value === '' || value == null ? placeholder ?? '' : value).trim()
   const numeric = /^([+-]?(?:\d+\.?\d*|\.\d+))([a-z%]*)$/i
   function adjust(base: string, steps: number) {
     const match = numeric.exec(base)

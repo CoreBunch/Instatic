@@ -177,6 +177,7 @@ export default function FloatingPanel({
         return next.x === current.x && next.y === current.y ? current : next
       })
     }
+    panel.focus({ preventScroll: true })
     reclamp()
     const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(reclamp)
     observer?.observe(panel)
@@ -214,27 +215,11 @@ export default function FloatingPanel({
       }
       onClose()
     }
-    function handleKeyDown(event: KeyboardEvent) {
-      if (event.key !== 'Escape') return
-      event.stopPropagation()
-      // Escape backs out of a drilled-in view first; only the next Escape
-      // (or ×, or a click outside) closes the whole panel.
-      if (drill) {
-        drill.onBack()
-        return
-      }
-      onClose()
-      // Focus goes back where it came from, or it lands on <body> and the
-      // next Tab restarts from the top of the document.
-      if (anchorRef.current instanceof HTMLElement) anchorRef.current.focus()
-    }
     document.addEventListener('pointerdown', handlePointerDown, true)
-    document.addEventListener('keydown', handleKeyDown, true)
     return () => {
       document.removeEventListener('pointerdown', handlePointerDown, true)
-      document.removeEventListener('keydown', handleKeyDown, true)
     }
-  }, [open, onClose, anchorRef, keepOpenSelector, drill])
+  }, [open, onClose, anchorRef, keepOpenSelector])
 
   /**
    * Header drag: window-level listeners (not pointer capture on the header)
@@ -319,6 +304,19 @@ export default function FloatingPanel({
     <div
       ref={panelRef}
       role="dialog"
+      tabIndex={-1}
+      onKeyDown={(event) => {
+        if (event.key !== 'Escape' || event.defaultPrevented) return
+        event.preventDefault()
+        event.stopPropagation()
+        if (drill) {
+          drill.onBack()
+          panelRef.current?.focus({ preventScroll: true })
+        } else {
+          onClose()
+          anchorRef.current?.focus({ preventScroll: true })
+        }
+      }}
       aria-label={ariaLabel ?? (typeof headerTitle === 'string' ? headerTitle : undefined)}
       className={cn(styles.panel, className)}
       // Portaled to <body>, so it declares its own surface ramp: a detached
@@ -345,7 +343,7 @@ export default function FloatingPanel({
           </Button>
         )}
         <span className={styles.title}>{headerTitle}</span>
-        <Button variant="ghost" size="xs" iconOnly aria-label={closeLabel} onClick={onClose}>
+        <Button variant="ghost" size="xs" iconOnly aria-label={closeLabel} onClick={() => { onClose(); anchorRef.current?.focus({ preventScroll: true }) }}>
           <CloseIcon size={10} aria-hidden="true" />
         </Button>
       </div>

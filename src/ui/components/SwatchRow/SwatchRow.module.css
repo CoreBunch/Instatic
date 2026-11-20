@@ -131,7 +131,7 @@
    without opening the editor, but it is not the row's headline. It is a
    SIBLING of the trigger, never nested inside it. */
 /* × lives INSIDE the field, at its right edge, and shows whenever the row
-   HAS a value — the caller mounts it only then (inspector-panel.md §5). It is
+   HAS a value — the caller mounts it only then. It is
    not hover-revealed: a control you can only discover by sweeping the mouse
    over it is a control most people never find.
    Hover changes the colour only. The field itself lightens under the cursor,

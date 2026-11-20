@@ -10,23 +10,25 @@ import {
   changeShadow,
   readEffects,
   formatShadow,
-  formatShadowList,
-  parseShadowList,
   readBlur,
   shadowSummary,
   writeBlur,
 } from '@admin/pages/site/panels/PropertiesPanel/effectsModel'
 
-describe('parseShadowList', () => {
+function readShadows(boxShadow: unknown) {
+  return readEffects({ boxShadow }).flatMap((entry) => entry.shadow ? [entry.shadow] : [])
+}
+
+describe('reading shadows', () => {
   it('keeps a colour function whole despite its commas', () => {
-    const list = parseShadowList('0 4px 8px rgba(0, 0, 0, 0.25)')
+    const list = readShadows('0 4px 8px rgba(0, 0, 0, 0.25)')
     expect(list).toHaveLength(1)
     expect(list[0].color).toBe('rgba(0, 0, 0, 0.25)')
     expect(list[0].blur).toBe('8px')
   })
 
   it('splits a multi-shadow list and reads the inset keyword', () => {
-    const list = parseShadowList('0 1px 2px #000, inset 0 0 4px 1px rgb(255, 0, 0)')
+    const list = readShadows('0 1px 2px #000, inset 0 0 4px 1px rgb(255, 0, 0)')
     expect(list).toHaveLength(2)
     expect(list[0].inset).toBe(false)
     expect(list[1].inset).toBe(true)
@@ -35,21 +37,21 @@ describe('parseShadowList', () => {
 
   it('round-trips an untouched declaration', () => {
     const source = '0 4px 8px 2px rgba(0, 0, 0, 0.25)'
-    expect(formatShadowList(parseShadowList(source))).toBe(source)
+    expect(formatShadow(readShadows(source)[0])).toBe(source)
   })
 
   it('treats none / empty as no shadows', () => {
-    expect(parseShadowList('none')).toEqual([])
-    expect(parseShadowList('')).toEqual([])
-    expect(parseShadowList(undefined)).toEqual([])
+    expect(readShadows('none')).toEqual([])
+    expect(readShadows('')).toEqual([])
+    expect(readShadows(undefined)).toEqual([])
   })
 
   it('skips a declaration too short to be an editable shadow', () => {
-    expect(parseShadowList('inherit')).toEqual([])
+    expect(readShadows('inherit')).toEqual([])
   })
 
   it('keeps a var() colour as written instead of resolving it', () => {
-    const list = parseShadowList('0 2px 4px var(--brand)')
+    const list = readShadows('0 2px 4px var(--brand)')
     expect(list[0].color).toBe('var(--brand)')
     expect(formatShadow(list[0])).toBe('0 2px 4px 0 var(--brand)')
   })
@@ -57,7 +59,7 @@ describe('parseShadowList', () => {
 
 describe('shadowSummary', () => {
   it('reads as the prototype row value: offsets, then blur', () => {
-    expect(shadowSummary(parseShadowList('0 4px 4px #000')[0])).toBe('0 4 · 4px')
+    expect(shadowSummary(readShadows('0 4px 4px #000')[0])).toBe('0 4 · 4px')
   })
 })
 
@@ -95,4 +97,9 @@ it('preserves filter order and nested blur arguments', () => {
   const value = 'contrast(2) blur(var(--soften)) saturate(.8)'
   expect(readBlur(value)).toBe('var(--soften)')
   expect(writeBlur(value, '8px')).toBe('contrast(2) blur(8px) saturate(.8)')
+})
+
+it('replaces CSS-wide keywords when adding an effect', () => {
+  expect(writeBlur('inherit', '6px')).toBe('blur(6px)')
+  expect(changeShadow('revert-layer', null, readShadows('0 2px 4px red')[0])).toBe('0 2px 4px 0 red')
 })

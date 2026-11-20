@@ -13,8 +13,7 @@
  *   - drag the AXIS       → rotates too, so the whole line is a grip
  *   - double-click the AXIS → adds a stop there, in the gradient's own colour
  *
- * Radial gradients have no direction, so their end caps are inert; the stop
- * handles still work, riding the horizontal radius CSS uses by default.
+ * Radial and conic stops use different geometry and are edited in the picker.
  *
  * Coordinates
  * ───────────
@@ -30,9 +29,7 @@
  * The target comes from `useActiveStyleTarget` — the same resolution the
  * Properties panel uses — so a drag lands on whatever the user is currently
  * editing (class rule, breakpoint/condition override, or inline styles) and
- * never silently writes somewhere else. Drags are optimistic like the picker:
- * the overlay tracks the pointer every frame through local state, while store
- * commits ride the shared `createEmitThrottle` window, each emission one patch.
+ * never silently writes somewhere else. Drags use the transient canvas preview until pointer release.
  */
 
 import {
@@ -48,13 +45,13 @@ import { useEditorStore } from '@site/store/store'
 import { useActiveStyleTarget } from '@site/store/useActiveStyleTarget'
 import { useEditorPermissions } from '@site/editorPermissionsContext'
 import {
-  createEmitThrottle,
   formatColor,
   formatGradient,
   gradientColorAt,
   parseGradient,
   type Gradient,
 } from '@ui/components/ColorPicker'
+import { useCanvasStyleGesture } from './canvasStyleGesture'
 import { createCanvasOverlayMeasureSession } from './canvasOverlayGeometry'
 import { CanvasNodeElementCache } from './canvasNodeLookup'
 import {
@@ -92,14 +89,6 @@ type GizmoVars = CSSProperties & {
 /** What is being dragged, if anything. */
 type DragKind = { kind: 'stop'; index: number } | { kind: 'angle' } | null
 
-/**
- * Same trailing-throttle window as the picker's `onChange`: the gizmo is
- * OPTIMISTIC too — its handles follow the pointer every frame via local
- * state, while the heavy store commit (CRDT op + full canvas repaint) runs
- * at most once per window.
- */
-const EMIT_THROTTLE_MS = 64
-
 export function CanvasGradientGizmo({
   breakpointId,
   iframeElement,
@@ -117,8 +106,7 @@ export function CanvasGradientGizmo({
 
   const [rect, setRect] = useState<GizmoRect | null>(null)
   const [drag, setDrag] = useState<DragKind>(null)
-  // Optimistic drag state: while a handle is held, the overlay renders THIS
-  // gradient at frame rate; the store only sees the throttled commits below.
+  // Keep stop identity stable while a drag crosses another stop.
   const [dragGradient, setDragGradient] = useState<Gradient | null>(null)
   const nodeCacheRef = useRef<CanvasNodeElementCache | null>(null)
   if (nodeCacheRef.current === null) nodeCacheRef.current = new CanvasNodeElementCache()
@@ -132,9 +120,11 @@ export function CanvasGradientGizmo({
     active &&
     permissions.canEditStyle &&
     gradientPickerOpen &&
-    gradient !== null &&
+    gradient?.kind === 'linear' &&
     selectedNodeId !== null &&
     activeBreakpointId === breakpointId
+
+  const capture = useCanvasStyleGesture(show ? target?.key : undefined)
 
   // Track the element's rect on every frame, like the selection rings — the
   // gizmo has to follow zoom, pan, scroll and layout shifts, and there is no
@@ -157,7 +147,7 @@ export function CanvasGradientGizmo({
 
   if (!show || !iframeElement || !rect || !gradient || !target) return null
 
-  const axis = gradientAxis(rect, gradient.kind === 'radial' ? 90 : gradient.angle)
+  const axis = gradientAxis(rect, gradient.angle)
 
   /** Map a pointer/mouse event into the same overlay space the axis lives in. */
   function toOverlayPoint(event: { clientX: number; clientY: number }) {
@@ -172,16 +162,6 @@ export function CanvasGradientGizmo({
   }
 
   function beginDrag(event: ReactPointerEvent<HTMLDivElement>, kind: NonNullable<DragKind>) {
-    event.preventDefault()
-    event.stopPropagation()
-    setDrag(kind)
-    // Pointer capture keeps the move stream flowing to THIS handle even when
-    // the pointer crosses the canvas iframe — without it the iframe swallows
-    // pointermove and the drag freezes the moment the cursor leaves the
-    // handle. Same mechanism the picker's sliders use.
-    const handleEl = event.currentTarget
-    handleEl.setPointerCapture(event.pointerId)
-
     // Rotation is RELATIVE to where the grab landed. Reading the absolute
     // centre→pointer angle every frame is only right for the end cap, which
     // sits on the axis's forward extension; grabbing the axis anywhere on its
@@ -194,59 +174,33 @@ export function CanvasGradientGizmo({
     const angleOffset =
       kind.kind === 'angle' ? gradient!.angle - angleFromPoint(axis.center, toOverlayPoint(event)) : 0
 
-    // Two throttles, matching the picker's optimistic split: the local
-    // overlay updates once per animation frame; the heavy store commit is
-    // time-throttled on top, and the final value always lands via flush().
-    const emitThrottle = createEmitThrottle(EMIT_THROTTLE_MS, (css) => {
-      target!.writeStyles({ backgroundImage: css })
-    })
-    let pending: PointerEvent | null = null
-    let raf = 0
-    const flush = () => {
-      raf = 0
-      if (!pending) return
-      const point = toOverlayPoint(pending)
-      pending = null
-      let next: Gradient
-      if (kind.kind === 'angle') {
-        const raw = angleFromPoint(axis.center, point) + angleOffset
-        next = {
-          ...gradient!,
-          angle: shiftHeld ? snapAngle(raw) : normalizeAngle(Math.round(raw)),
-        }
-      } else {
-        const pos = posFromPoint(axis, point)
-        next = {
-          ...gradient!,
-          stops: gradient!.stops.map((stop, index) =>
-            index === kind.index ? { ...stop, pos } : stop,
-          ),
-        }
-      }
-      setDragGradient(next)
-      emitThrottle.push(formatGradient(next, 'hex'))
-    }
-    let shiftHeld = event.shiftKey
-    const handleMove = (move: PointerEvent) => {
-      shiftHeld = move.shiftKey
-      pending = move
-      if (!raf) raf = requestAnimationFrame(flush)
-    }
-    const handleEnd = () => {
-      handleEl.removeEventListener('pointermove', handleMove)
-      handleEl.removeEventListener('pointerup', handleEnd)
-      handleEl.removeEventListener('pointercancel', handleEnd)
-      if (raf) cancelAnimationFrame(raf)
-      flush()
-      // The store write is synchronous, so the committed gradient replaces
-      // the optimistic one in the same render — no flicker on release.
-      emitThrottle.flush()
+    let last: string | null = null
+    const clear = () => {
+      target!.clearPreview()
       setDragGradient(null)
       setDrag(null)
     }
-    handleEl.addEventListener('pointermove', handleMove)
-    handleEl.addEventListener('pointerup', handleEnd)
-    handleEl.addEventListener('pointercancel', handleEnd)
+    capture(event, {
+      move(move) {
+        const point = toOverlayPoint(move)
+        const raw = angleFromPoint(axis.center, point) + angleOffset
+        const next: Gradient = kind.kind === 'angle'
+          ? { ...gradient!, angle: move.shiftKey ? snapAngle(raw) : normalizeAngle(Math.round(raw)) }
+          : { ...gradient!, stops: gradient!.stops.map((stop, index) =>
+              index === kind.index ? { ...stop, pos: posFromPoint(axis, point) } : stop) }
+        const css = formatGradient(next, 'hex')
+        if (css === last) return
+        last = css
+        setDrag(kind)
+        setDragGradient(next)
+        target!.previewStyles({ backgroundImage: css })
+      },
+      end() {
+        if (last !== null) target!.writeStyles({ backgroundImage: last })
+        clear()
+      },
+      cancel: clear,
+    })
   }
 
   /**
@@ -268,7 +222,6 @@ export function CanvasGradientGizmo({
     target!.writeStyles({ backgroundImage: formatGradient(next, 'hex') })
   }
 
-  const rotatable = gradient.kind !== 'radial'
   // Past the axis end, clear of the 100% stop handle — see rotationCapPoint.
   const capPoint = rotationCapPoint(axis, 18)
 
@@ -297,7 +250,6 @@ export function CanvasGradientGizmo({
       data-mode={portalMode}
       data-dragging={drag ? 'true' : undefined}
       data-drag-kind={drag?.kind}
-      data-rotatable={rotatable ? 'true' : undefined}
       data-testid="canvas-gradient-gizmo"
       // Contract with ColorInput's outside-close: pressing a gizmo handle
       // must not dismiss the picker popover the gizmo belongs to.
@@ -324,24 +276,29 @@ export function CanvasGradientGizmo({
             '--gizmo-angle': `${axisRotation(axis)}deg`,
           } as GizmoVars
         }
-        onPointerDown={rotatable ? (event) => beginDrag(event, { kind: 'angle' }) : undefined}
+        onPointerDown={(event) => beginDrag(event, { kind: 'angle' })}
         onDoubleClick={addStopAtPointer}
         aria-hidden="true"
       />
 
-      {rotatable && (
-        <div
-          className={styles.endCap}
-          style={{ '--gizmo-x': `${capPoint.x}px`, '--gizmo-y': `${capPoint.y}px` } as GizmoVars}
-          role="slider"
-          tabIndex={-1}
-          aria-label="Gradient angle"
-          aria-valuemin={0}
-          aria-valuemax={360}
-          aria-valuenow={Math.round(gradient.angle)}
-          onPointerDown={(event) => beginDrag(event, { kind: 'angle' })}
-        />
-      )}
+      <div
+        className={styles.endCap}
+        style={{ '--gizmo-x': `${capPoint.x}px`, '--gizmo-y': `${capPoint.y}px` } as GizmoVars}
+        role="slider"
+        tabIndex={0}
+        aria-label="Gradient angle"
+        aria-valuemin={0}
+        aria-valuemax={360}
+        aria-valuenow={Math.round(gradient.angle)}
+        onPointerDown={(event) => beginDrag(event, { kind: 'angle' })}
+        onKeyDown={(event) => {
+          const next = sliderKeyValue(event.key, gradient.angle, event.shiftKey ? 15 : 1, 360)
+          if (next === null) return
+          event.preventDefault()
+          event.stopPropagation()
+          target.writeStyles({ backgroundImage: formatGradient({ ...gradient, angle: next }, 'hex') })
+        }}
+      />
 
       {gradient.stops.map((stop, index) => {
         const point = stopPoint(axis, stop.pos)
@@ -357,12 +314,20 @@ export function CanvasGradientGizmo({
               } as GizmoVars
             }
             role="slider"
-            tabIndex={-1}
+            tabIndex={0}
             aria-label={`Gradient stop ${index + 1}`}
             aria-valuemin={0}
             aria-valuemax={1}
             aria-valuenow={Number(stop.pos.toFixed(2))}
             onPointerDown={(event) => beginDrag(event, { kind: 'stop', index })}
+            onKeyDown={(event) => {
+              const pos = sliderKeyValue(event.key, stop.pos, event.shiftKey ? 0.1 : 0.01, 1)
+              if (pos === null) return
+              event.preventDefault()
+              event.stopPropagation()
+              const stops = gradient.stops.map((item, i) => i === index ? { ...item, pos } : item)
+              target.writeStyles({ backgroundImage: formatGradient({ ...gradient, stops }, 'hex') })
+            }}
           />
         )
       })}
@@ -382,6 +347,18 @@ export function CanvasGradientGizmo({
   )
 
   return createPortal(overlay, portalTarget)
+}
+
+function sliderKeyValue(key: string, current: number, step: number, max: number) {
+  switch (key) {
+    case 'Home': return 0
+    case 'End': return max
+    case 'ArrowRight':
+    case 'ArrowUp': return Math.min(max, current + step)
+    case 'ArrowLeft':
+    case 'ArrowDown': return Math.max(0, current - step)
+    default: return null
+  }
 }
 
 /** Rotation of the axis line, in degrees clockwise from "pointing right". */
