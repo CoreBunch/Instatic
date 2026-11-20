@@ -1,13 +1,13 @@
 /**
- * DynamicBindingControl — binding affordance wrapper.
+ * DynamicBindingControl: the bind-to-data affordance of a property control.
  *
- * Wraps any property control child in two modes:
+ * Renders the control (through `renderControl`) in one of two modes:
  *
  *  Unbound: renders the control with a BracesIcon affordance button in the
  *    control's label row (`labelAction`, revealed on row hover/focus by
  *    ControlRow) that opens the shared DataBindingPicker.
  *
- *  Bound: replaces the child with a striped badge showing the resolved field
+ *  Bound: replaces the control with a striped badge showing the resolved field
  *    label, plus a clear button.
  *
  * The picker itself is shared with the Content workspace through
