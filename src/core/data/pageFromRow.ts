@@ -130,7 +130,10 @@ export function pageToCells(page: Page): DataRowCells {
     cells.templatePriority = page.template.priority
   }
   if (page.access && page.access.level !== 'public') cells.access = page.access
-  if (page.seo) cells.seo = page.seo
+  // Normalised on the way out too: the editor store and the agent tool are
+  // not the only writers of a Page, and the cell must only hold a valid value.
+  const seo = parsePageSeo(page.seo)
+  if (seo) cells.seo = seo
 
   return cells
 }

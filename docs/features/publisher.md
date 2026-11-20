@@ -414,6 +414,7 @@ Rules the emitter keeps:
 - **Text, URL and JSON-LD string values are token-interpolated** like the title, so one template page can write `{currentEntry.title} | Acme`, a per-entry canonical, or per-entry structured data. JSON-LD is interpolated after parsing and only in values, so a token can never break the JSON.
 - **An external web manifest gets a CSP `manifest-src`** (`'self'` plus its origin), returned as `DocumentHead.cspSources` and merged into the page's CSP plan; a same-origin manifest needs nothing beyond `default-src 'self'`.
 - **An unset field emits nothing.** A page without `seo` publishes exactly the head it did before.
+- **Changing it needs `site.structure.edit`** on every write path: `pageDiff.ts` for editor saves, and `keepPageStructuralCells` (`server/writePolicy/pageStructuralCells.ts`) for the generic row paths (rows API, version restore, plugin content calls, AI tree tools, bundle import), which also normalise the cell through `parsePageSeo`.
 
 ### `documentMeta` — per-render `<head>` overrides
 

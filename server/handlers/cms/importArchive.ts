@@ -138,7 +138,7 @@ export async function handleImportArchiveRoute(
       bundle: siteBundleWithoutMediaBytes(selectedManifest),
       strategy,
       carriesMedia: selectedManifest.media !== undefined,
-      mayChangePageAccess: userHasCapability(user, 'site.structure.edit'),
+      mayChangePageStructure: userHasCapability(user, 'site.structure.edit'),
       runtimeFiles: stagedMedia?.runtimeFiles,
       uploadsDir: options.uploadsDir,
     })

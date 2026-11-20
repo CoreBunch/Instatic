@@ -36,8 +36,8 @@ async function currentBundle(): Promise<SiteBundle> {
   return { schemaVersion: 1, exportedAt: new Date(0).toISOString(), tables, rows }
 }
 
-function apply(bundle: SiteBundle, strategy: ImportStrategy, mayChangePageAccess = false) {
-  return applySiteBundle(t.db, MAIN_SCOPE, { bundle, strategy, carriesMedia: false, mayChangePageAccess })
+function apply(bundle: SiteBundle, strategy: ImportStrategy, mayChangePageStructure = false) {
+  return applySiteBundle(t.db, MAIN_SCOPE, { bundle, strategy, carriesMedia: false, mayChangePageStructure })
 }
 
 function withoutPageAccess(bundle: SiteBundle): SiteBundle {

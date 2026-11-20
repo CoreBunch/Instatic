@@ -130,7 +130,7 @@ export async function handleImportRoute(
     bundle,
     strategy,
     carriesMedia: bundle.media !== undefined,
-    mayChangePageAccess: userHasCapability(user, 'site.structure.edit'),
+    mayChangePageStructure: userHasCapability(user, 'site.structure.edit'),
     uploadsDir: options.uploadsDir,
   }).catch((err: unknown) => {
     if (err instanceof BundlePublicationError) return jsonResponse({ error: err.message }, { status: 400 })

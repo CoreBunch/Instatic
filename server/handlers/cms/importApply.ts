@@ -20,7 +20,7 @@ import { removeMediaAssetFiles } from './mediaVariants'
 import { deleteAllDataRowRedirects, importDataRowRedirect } from '../../repositories/data/publish'
 import { deleteAllMediaFolders, importMediaFolder } from '../../repositories/mediaFolders'
 import { listProtectedTables, writeTableAccess } from '../../repositories/data/tableAccess'
-import { keepPageAccess } from '../../writePolicy/pageAccessCell'
+import { keepPageStructuralCells } from '../../writePolicy/pageStructuralCells'
 import type { AccessRule } from '@core/members'
 import { notifyRowWrite, notifyShellWrite, serializeCollabAwareWrite, type RowWriteKind } from '../../repositories/rowWriteEvents'
 
@@ -65,10 +65,11 @@ export interface ApplySiteBundleInput {
    */
   carriesMedia: boolean
   /**
-   * The importer may change who can open a page (`site.structure.edit`).
-   * Without it, a page the import overwrites keeps its stored access rule.
+   * The importer may change a page's structural settings: who can open it
+   * and its head settings (`site.structure.edit`). Without it, a page the
+   * import overwrites keeps its stored access rule and `seo` cell.
    */
-  mayChangePageAccess: boolean
+  mayChangePageStructure: boolean
 }
 
 export interface AppliedSiteBundle {
@@ -281,7 +282,7 @@ async function applySiteBundleLocked(
     const protectedTables = isMainScope(scope) ? await listProtectedTables(db) : []
     const storedTableRules = new Map<string, AccessRule>(protectedTables.map((entry) => [entry.id, entry.rule]))
     const storedPages = new Map(
-      input.mayChangePageAccess || strategy === 'merge-add'
+      input.mayChangePageStructure || strategy === 'merge-add'
         ? []
         : (await listDataRows(db, scope, 'pages')).map((row) => [row.id, row] as const),
     )
@@ -301,7 +302,7 @@ async function applySiteBundleLocked(
     const guardedCells = (row: { id: string; tableId: string; slug: string; cells: Record<string, unknown> }) => {
       if (row.tableId !== 'pages') return row.cells
       const sameRow = storedPages.get(row.id)
-      const cells = sameRow ? keepPageAccess(sameRow, row.cells) : row.cells
+      const cells = sameRow ? keepPageStructuralCells(sameRow, row.cells) : row.cells
       const atAddress = storedPageRuleBySlug.get(row.slug)
       return cells.access === undefined && atAddress !== undefined ? { ...cells, access: atAddress } : cells
     }
