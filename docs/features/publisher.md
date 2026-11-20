@@ -135,6 +135,8 @@ For each node, bottom-up:
 
 The walker is recursive. Each node's HTML output is a pure function of its node + its already-rendered children — no cross-node coupling. The only shared mutable state is the `RenderAccumulators` bag (`cssMap`, `infiniteLoopIds`, `holeNodeIds`), which is threaded as an explicit parameter rather than hidden in the read-only config — so every place that appends to it is visible at the call site.
 
+When a layout wraps content, the baked fragment ID belongs to the composed tree. The fragment endpoint resolves the originating published route and composes the same page or entry template chain before evaluating ancestor visibility and rendering the dynamic subtree. Standalone authored IDs use the published node index directly. Existing baked shells carry the route and fragment ID needed for this lookup.
+
 ---
 
 ## RenderConfig vs RenderAccumulators
