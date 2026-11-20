@@ -15,7 +15,9 @@ import type { PageNode } from '@core/page-tree'
 import {
   ENTRY_FIELD_FILTER_KEY,
   ENTRY_FIELD_SOURCE_ID,
+  EntryFieldSource,
   resolveEntryFieldItems,
+  resolveLoopDirection,
   type EntryFieldMedia,
   type LoopItem,
 } from '@core/loops'
@@ -155,7 +157,7 @@ function resolveLoopData(node: PageNode, config: RenderConfig) {
   const resolved = resolveEntryFieldItems(value, {
     offset: typeof node.props.offset === 'number' ? node.props.offset : 0,
     limit: typeof node.props.limit === 'number' ? node.props.limit : 10,
-    direction: node.props.direction === 'desc' ? 'desc' : 'asc',
+    direction: resolveLoopDirection(node.props.direction, EntryFieldSource),
     mediaByReference: config.mediaAssets as ReadonlyMap<string, EntryFieldMedia> | undefined,
   })
   return {

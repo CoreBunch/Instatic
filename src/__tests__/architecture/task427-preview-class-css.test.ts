@@ -14,7 +14,7 @@
  *
  *   Bug B — `makeSite()` helper missing `classes: {}` default
  *     Projects created via `makeSite()` have `site.styleRules = undefined` unless
- *     overridden.  In `collectClassCSS(site)`, if any node has classIds AND
+ *     overridden.  In `collectClassCSS(site, registry)`, if any node has classIds AND
  *     `site.styleRules` is undefined, the `site.styleRules[id]` read throws:
  *       TypeError: Cannot read properties of undefined (reading '<classId>')
  *     This turns any legitimate "preview with classes" scenario into an unhandled
@@ -45,6 +45,7 @@
  */
 
 import { describe, it, expect } from 'bun:test'
+import { registry } from '@core/module-engine'
 import { collectClassCSS, publishPage } from '@core/publisher'
 import { classKindSelector, type Page, type PageNode, type SiteDocument, type StyleRule } from '@core/page-tree'
 import { makeModule, makeRegistry, makePage, makeSite } from '../publisher/helpers'
@@ -222,8 +223,8 @@ describe('Gate 3 — collectClassCSS is defensive against missing site.styleRule
       createdAt: 0, updatedAt: 0,
     }
     // Should NOT throw — should return '' gracefully
-    expect(() => collectClassCSS(brokenSite)).not.toThrow()
-    expect(collectClassCSS(brokenSite)).toBe('')
+    expect(() => collectClassCSS(brokenSite, registry)).not.toThrow()
+    expect(collectClassCSS(brokenSite, registry)).toBe('')
   })
 })
 

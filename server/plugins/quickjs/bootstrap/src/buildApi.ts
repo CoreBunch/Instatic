@@ -192,6 +192,7 @@ globalThis.__buildApi = function buildApi() {
       filterSchema: source.filterSchema || {},
       orderByOptions: source.orderByOptions || [],
       fields: source.fields || [],
+      defaultDirection: source.defaultDirection === 'desc' || source.defaultDirection === 'asc' ? source.defaultDirection : undefined,
       requestDependent: source.requestDependent === true ? true : undefined,
       perVisitor: source.perVisitor === true ? true : undefined,
     }

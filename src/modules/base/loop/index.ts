@@ -46,7 +46,9 @@ const LoopPropsSchema = Type.Object({
   // model; Value.Create yields {} which matches the runtime default.
   filters: Type.Record(Type.String(), Type.Unknown(), { default: {} }),
   orderBy: Type.String({ default: '' }),
-  direction: Type.Union([Type.Literal('asc'), Type.Literal('desc')], { default: 'desc' }),
+  // Unset until the author picks one: the loop then runs in its source's
+  // `defaultDirection` (see `resolveLoopDirection` in @core/loops).
+  direction: Type.Optional(Type.Union([Type.Literal('asc'), Type.Literal('desc')])),
   limit: Type.Number({ default: 10 }),
   offset: Type.Number({ default: 0 }),
   pagination: Type.Union([Type.Literal('none'), Type.Literal('infinite')], { default: 'none' }),

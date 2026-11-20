@@ -43,7 +43,9 @@ import {
   ENTRY_FIELD_FILTER_KEY,
   ENTRY_FIELD_SOURCE_ID,
   filterPagesForLoop,
+  loopSourceRegistry,
   pageToLoopItem,
+  resolveLoopDirection,
   resolveEntryFieldItems,
   type EntryFieldMedia,
   type LoopItem,
@@ -92,7 +94,8 @@ function readLoopProps(props: Record<string, unknown>): ResolvedLoopProps {
       ? (props.filters as Record<string, unknown>)
       : EMPTY_FILTERS
   const orderBy = typeof props.orderBy === 'string' ? props.orderBy : ''
-  const direction = props.direction === 'asc' ? 'asc' : 'desc'
+  // Same resolution as the publisher: the author's pick, else the source's default.
+  const direction = resolveLoopDirection(props.direction, loopSourceRegistry.get(sourceId))
   const rawLimit = typeof props.limit === 'number' ? Math.floor(props.limit) : 3
   const limit = Math.min(Math.max(rawLimit, 1), CANVAS_MAX_ITEMS)
   const rawOffset = typeof props.offset === 'number' ? Math.floor(props.offset) : 0

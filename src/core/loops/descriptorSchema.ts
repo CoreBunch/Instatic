@@ -37,6 +37,8 @@ const descriptorProperties = {
     { additionalProperties: false },
   )),
   fields: Type.Array(LoopSourceFieldSchema),
+  // Direction a loop uses until its author picks one. Unset: `'asc'`.
+  defaultDirection: Type.Optional(Type.Union([Type.Literal('asc'), Type.Literal('desc')])),
   // Layer C dynamic-island flags. `requestDependent` marks the source's
   // output as request-time (becomes a cached hole); `perVisitor` marks it
   // uncacheable + cookie-aware. Optional — built-in sources leave both unset.
