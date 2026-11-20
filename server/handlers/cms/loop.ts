@@ -38,6 +38,7 @@ import type { Page } from '@core/page-tree'
 import type { SourceRequestContext } from '@core/loops/types'
 import { buildPageFrame, buildRouteFrame } from '@core/templates/contextFrames'
 import { readLoopProps } from '../../publish/loopPrefetch'
+import { prefetchMediaAssets } from '../../publish/mediaPrefetch'
 import { sourceRequestFor, visitorRequestScope } from '../../publish/loopSourceRequest'
 import { getPublishedLoopIndexForVersion } from '../../publish/publishedSnapshotCache'
 import { getPublishVersion } from '../../publish/publishState'
@@ -213,17 +214,26 @@ export async function handleLoopRequest(
   if (variants.length === 0) {
     return jsonResponse({ html: '', hasMore, pageNumber }, headers)
   }
+  const loopData = new Map<string, ResolvedLoopRenderData>([
+    [loopId, { items: result.items, totalItems: result.totalItems, pageNumber, hasMore }],
+  ])
+  // Media assets for the appended items — the same lookup the publish-time
+  // render used for page 1, so `format: 'media'` bindings resolve and image
+  // modules keep their srcset/alt enrichment on every subsequent page.
+  const mediaAssets = await prefetchMediaAssets(containingPage, site, registry, ctx.db, {
+    loopData,
+    rootNodeId: loopId,
+  })
   const baseConfig: RenderConfig = {
     page: containingPage,
     site,
     registry,
     breakpointId: undefined,
     templateContext: forVisitor
-      ? { entryStack: [], member: memberFrameFor(await visitor()) }
-      : { entryStack: [] },
-    loopData: new Map<string, ResolvedLoopRenderData>([
-      [loopId, { items: result.items, totalItems: result.totalItems, pageNumber, hasMore }],
-    ]),
+      ? { entryStack: [], media: mediaAssets, member: memberFrameFor(await visitor()) }
+      : { entryStack: [], media: mediaAssets },
+    loopData,
+    mediaAssets,
   }
   const acc: RenderAccumulators = {
     cssMap: new Map(),

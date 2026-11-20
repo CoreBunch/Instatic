@@ -49,6 +49,7 @@ import {
 } from '@core/publisher'
 import { buildPageFrame, buildRouteFrame, buildSiteFrame, type MemberFrame } from '@core/templates/contextFrames'
 import { prefetchLoopData } from '../../publish/loopPrefetch'
+import { prefetchMediaAssets } from '../../publish/mediaPrefetch'
 import {
   sourceRequestFor,
   subtreeHasPerVisitorSource,
@@ -131,17 +132,26 @@ async function renderHoleFragment(
     rootNodeId: nodeId,
     closed,
   })
+  // Media assets for the fragment subtree — request-time loops carry entry
+  // items whose media references (custom cells, multi-media arrays) resolve
+  // through this map, and image modules read it for srcset/alt enrichment.
+  const mediaAssets = await prefetchMediaAssets(page, site, registry, db, {
+    loopData,
+    rootNodeId: nodeId,
+  })
   const config: RenderConfig = {
     page,
     site,
     registry,
     breakpointId: undefined,
     loopData,
+    mediaAssets,
     templateContext: {
       entryStack: [],
       page: buildPageFrame(page),
       site: buildSiteFrame(site),
       route,
+      media: mediaAssets,
       ...(member !== undefined ? { member } : {}),
     },
     // No dynamicNodeIds: inside a hole endpoint we render the full subtree.

@@ -19,9 +19,11 @@ import { use, useEffect, useState } from 'react'
 import { listCmsMediaAssets, type CmsMediaAsset } from '@core/persistence/cmsMedia'
 import { CanvasPreviewReadinessContext } from '@site/canvas/CanvasPreviewReadiness'
 
-// Module-level cache, shared across every consumer. CmsMediaAsset objects
-// are small (< 1 KB each), so a Map of every asset the user has touched
-// in this session is negligible memory.
+// Module-level cache, shared across every consumer, keyed by BOTH the
+// asset's publicPath and its id (ids and paths can never collide — ids are
+// nanoid strings, paths start with `/`). CmsMediaAsset objects are small
+// (< 1 KB each), so a Map of every asset the user has touched in this
+// session is negligible memory.
 const cache = new Map<string, CmsMediaAsset>()
 let listPromise: Promise<CmsMediaAsset[]> | null = null
 const subscribers = new Set<() => void>()
@@ -58,7 +60,10 @@ function cachedAssetsForKey(key: string): ReadonlyMap<string, CmsMediaAsset> {
 }
 
 function cacheAssetList(assets: readonly CmsMediaAsset[]): void {
-  for (const asset of assets) cache.set(asset.publicPath, asset)
+  for (const asset of assets) {
+    cache.set(asset.publicPath, asset)
+    cache.set(asset.id, asset)
+  }
   notifySubscribers()
 }
 
@@ -95,6 +100,44 @@ export function primeCmsMediaAssetCache(asset: CmsMediaAsset): void {
 export function useCmsMediaAssetByPath(publicPath: string | null | undefined): CmsMediaAsset | null {
   const assets = useCmsMediaAssetsByPath(publicPath ? [publicPath] : EMPTY_PATHS)
   return publicPath ? assets.get(publicPath) ?? null : null
+}
+
+/**
+ * The whole media library as an id-and-path-keyed lookup — the canvas-side
+ * counterpart of the publisher's `prefetchMediaAssets` map. Attached to the
+ * template render context so `format: 'media'` bindings resolve bare asset
+ * references (custom media cells store the id) in the editor exactly like
+ * they do on the published page. One shared `listCmsMediaAssets()` round
+ * trip per session, reusing the same module cache as the by-path hooks.
+ */
+export function useCmsMediaAssetLookup(): ReadonlyMap<string, CmsMediaAsset> {
+  const previewReadiness = use(CanvasPreviewReadinessContext)
+  const [snapshot, setSnapshot] = useState<ReadonlyMap<string, CmsMediaAsset>>(
+    () => new Map(cache),
+  )
+
+  useEffect(() => {
+    let canceled = false
+    const updateSnapshot = () => {
+      if (!canceled) setSnapshot(new Map(cache))
+    }
+    subscribers.add(updateSnapshot)
+
+    // `ensureList` memoises its promise, so this is one network round trip
+    // per session no matter how many surfaces mount the lookup.
+    const request = ensureList()
+    previewReadiness?.track(request)
+    void request
+      .then(updateSnapshot)
+      .catch(() => { /* swallow — bindings fall back to their static props */ })
+
+    return () => {
+      canceled = true
+      subscribers.delete(updateSnapshot)
+    }
+  }, [previewReadiness])
+
+  return snapshot
 }
 
 export function useCmsMediaAssetsByPath(publicPaths: readonly string[]): ReadonlyMap<string, CmsMediaAsset> {

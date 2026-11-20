@@ -83,6 +83,53 @@ describe('dynamic template rendering', () => {
     expect(props.src).toBe('/uploads/body-hero.jpg')
   })
 
+  it('translates a bare media reference (custom media cell id) through the context media lookup', () => {
+    const itemWithCustomMediaCell: LoopItem = {
+      ...currentEntry,
+      fields: { ...currentEntry.fields, thumbnail: 'asset_123' },
+    }
+    const props = resolveDynamicProps(
+      { src: '' },
+      { src: { source: 'currentEntry', field: 'thumbnail', format: 'media' } },
+      {
+        entryStack: [itemWithCustomMediaCell],
+        media: new Map([['asset_123', { publicPath: '/uploads/thumb.jpg' }]]),
+      },
+    )
+
+    expect(props.src).toBe('/uploads/thumb.jpg')
+  })
+
+  it('keeps the static fallback when a media reference cannot be resolved', () => {
+    const itemWithCustomMediaCell: LoopItem = {
+      ...currentEntry,
+      fields: { ...currentEntry.fields, thumbnail: 'asset_deleted' },
+    }
+    // No media lookup on the context (and the id is not a path) — the raw id
+    // must never leak into the prop; the static value wins instead.
+    const props = resolveDynamicProps(
+      { src: '/placeholder.png' },
+      { src: { source: 'currentEntry', field: 'thumbnail', format: 'media' } },
+      { entryStack: [itemWithCustomMediaCell] },
+    )
+
+    expect(props.src).toBe('/placeholder.png')
+  })
+
+  it('passes external URLs in media bindings through without a lookup', () => {
+    const itemWithExternalUrl: LoopItem = {
+      ...currentEntry,
+      fields: { ...currentEntry.fields, thumbnail: 'https://cdn.example.com/thumb.jpg' },
+    }
+    const props = resolveDynamicProps(
+      { src: '' },
+      { src: { source: 'currentEntry', field: 'thumbnail', format: 'media' } },
+      { entryStack: [itemWithExternalUrl], media: new Map() },
+    )
+
+    expect(props.src).toBe('https://cdn.example.com/thumb.jpg')
+  })
+
   it('resolves parentEntry from the frame below the stack top', () => {
     const outer: LoopItem = {
       id: 'outer',
@@ -144,6 +191,129 @@ describe('dynamic template rendering', () => {
     expect(dynamicHtml).toContain('<p>Body text</p>')
     expect(staticHtml).toContain('<p>Static title</p>')
     expect(staticHtml).toContain('<p>Static body</p>')
+  })
+
+  it('lets a persisted outlet html binding win over the implicit body binding', () => {
+    // A custom data table stores its content in a `rich-text` cell instead of
+    // `body`. A persisted binding on the outlet must beat the implicit
+    // `currentEntry.body` default so the outlet can render ANY rich field.
+    const registry = makeRegistry({
+      'base.body': makeModule('base.body', {
+        canHaveChildren: true,
+        render: (_props, children) => ({ html: `<main>${children.join('')}</main>` }),
+      }),
+      'base.outlet': OutletModule,
+    })
+    const itemWithCustomRichCell: LoopItem = {
+      ...currentEntry,
+      fields: {
+        ...currentEntry.fields,
+        body: 'BODY CELL — must not render',
+        'rich-text': '## Custom heading\n\nCustom cell content',
+      },
+    }
+    const page = makePage({
+      root: { moduleId: 'base.body', props: {}, children: ['outlet'] },
+      outlet: {
+        moduleId: 'base.outlet',
+        props: {},
+        dynamicBindings: {
+          html: { source: 'currentEntry', field: 'rich-text', format: 'html' },
+        },
+      },
+    })
+
+    const { html } = publishPage(page, makeSite(), registry, {
+      templateContext: { entryStack: [itemWithCustomRichCell] },
+    })
+
+    expect(html).toContain('<h2>Custom heading</h2>')
+    expect(html).toContain('Custom cell content')
+    expect(html).not.toContain('must not render')
+  })
+
+  it('renders markdown for a custom rich field bound with format html into a richtext prop', () => {
+    const itemWithCustomRichCell: LoopItem = {
+      ...currentEntry,
+      fields: { ...currentEntry.fields, excerpt: '**Bold** intro' },
+    }
+    const props = resolveDynamicProps(
+      { html: '' },
+      { html: { source: 'currentEntry', field: 'excerpt', format: 'html' } },
+      { entryStack: [itemWithCustomRichCell] },
+    )
+
+    expect(props.html).toContain('<strong>Bold</strong>')
+  })
+
+  it('passes HTML-stored custom rich cells through the markdown render unchanged', () => {
+    // richText fields with `format: 'html'` storage hold HTML, not markdown.
+    // Block HTML survives the GFM renderer verbatim, so the same binding path
+    // serves both storage formats.
+    const itemWithHtmlCell: LoopItem = {
+      ...currentEntry,
+      fields: { ...currentEntry.fields, 'rich-text': '<p>First</p><h2>Section</h2>' },
+    }
+    const props = resolveDynamicProps(
+      { html: '' },
+      { html: { source: 'currentEntry', field: 'rich-text', format: 'html' } },
+      { entryStack: [itemWithHtmlCell] },
+    )
+
+    expect(props.html).toContain('<p>First</p>')
+    expect(props.html).toContain('<h2>Section</h2>')
+  })
+
+  it('publishes a bound custom media cell as the asset URL through publishPage', () => {
+    const imageModule = makeModule('test.image', {
+      schema: { src: { type: 'image', label: 'Image' } },
+      render: (props) => ({
+        html: `<img src="${String((props as { src?: string }).src ?? '')}">`,
+      }),
+    })
+    const registry = makeRegistry({
+      'base.body': makeModule('base.body', {
+        canHaveChildren: true,
+        render: (_props, children) => ({ html: `<main>${children.join('')}</main>` }),
+      }),
+      'test.image': imageModule,
+    })
+    const itemWithCustomMediaCell: LoopItem = {
+      ...currentEntry,
+      fields: { ...currentEntry.fields, thumbnail: 'asset_123' },
+    }
+    const page = makePage({
+      root: { moduleId: 'base.body', props: {}, children: ['img'] },
+      img: {
+        moduleId: 'test.image',
+        props: { src: '' },
+        dynamicBindings: {
+          src: { source: 'currentEntry', field: 'thumbnail', format: 'media' },
+        },
+      },
+    })
+
+    const { html } = publishPage(page, makeSite(), registry, {
+      templateContext: { entryStack: [itemWithCustomMediaCell] },
+      mediaAssets: new Map([
+        [
+          'asset_123',
+          {
+            publicPath: '/uploads/thumb.jpg',
+            mimeType: 'image/jpeg',
+            width: 800,
+            height: 600,
+            altText: 'Thumb',
+            blurHash: null,
+            variants: [],
+            posterPath: null,
+          },
+        ],
+      ]),
+    })
+
+    expect(html).toContain('<img src="/uploads/thumb.jpg">')
+    expect(html).not.toContain('asset_123')
   })
 
   it('renders markdown when a token resolves into a richtext-typed prop', () => {
