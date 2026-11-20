@@ -355,11 +355,8 @@ async function handleImport(req: Request, db: DbClient): Promise<Response> {
   const read = await readImport(req, db)
   if (read instanceof Response) return read
   const { input, parsed, invitations } = read
-  // A refused import changes nothing, so it does not count against the limit.
-  const refuse = (error: string) => {
-    memberLimits.adminImportPerUser.refund(user.id)
-    return jsonResponse({ error }, { status: 409 })
-  }
+  // A refused import still counts against the limit: the file was read either way.
+  const refuse = (error: string) => jsonResponse({ error }, { status: 409 })
   if (input.invite && 'reason' in invitations) return refuse(invitations.reason)
   // Checked again in case another import started while this file was read.
   if (memberImportRunning()) return refuse('An import is already running. Try again when it is done.')
