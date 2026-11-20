@@ -24,8 +24,8 @@ import type {
   ImportScript,
   ImportStylesheet,
   UploadedImportAsset,
-  ImportWarning,
 } from './types'
+import type { ImportWarning } from './warnings'
 import type { ConditionDef, PageSeo } from '@core/page-tree'
 import type { ImportFragment } from '@core/htmlImport'
 import type { FontEntry } from '@core/fonts'
