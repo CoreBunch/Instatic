@@ -45,6 +45,91 @@ describe('buildAssetPlan — img src normalisation', () => {
     expect(assets.some((a) => a.sourcePath === 'images/hero.png')).toBe(true)
   })
 
+  it('matches a root-relative img src to a unique FileMap suffix', () => {
+    const sourcePath = 'passthrough/wp-content/uploads/x.png'
+    const fileMap = makeFileMap({
+      'index.html': { bytes: txt('<html><body><img src="/wp-content/uploads/x.png"></body></html>') },
+      [sourcePath]: { bytes: MINIMAL_PNG, mimeType: 'image/png' },
+    })
+    const { pagePlan } = makeHtmlPagePlan(
+      'index.html',
+      new TextDecoder().decode(fileMap.files['index.html']!.bytes),
+      fileMap,
+    )
+    const { normalizedPagePlans, assets } = buildAssetPlan([pagePlan], [], fileMap)
+
+    const imageNode = Object.values(normalizedPagePlans[0].nodeFragment.nodes).find(
+      (node) => node.moduleId === 'base.image',
+    )
+    expect(imageNode?.props['src']).toBe(sourcePath)
+    expect(assets.some((asset) => asset.sourcePath === sourcePath)).toBe(true)
+  })
+
+  it('prefers an exact FileMap key over a suffix match', () => {
+    const exactPath = 'wp-content/uploads/x.png'
+    const prefixedPath = `export-root/${exactPath}`
+    const exactBytes = txt('exact')
+    const fileMap = makeFileMap({
+      'index.html': { bytes: txt('<html><body><img src="/wp-content/uploads/x.png"></body></html>') },
+      [exactPath]: { bytes: exactBytes, mimeType: 'image/png' },
+      [prefixedPath]: { bytes: txt('prefixed'), mimeType: 'image/png' },
+    })
+    const { pagePlan } = makeHtmlPagePlan(
+      'index.html',
+      new TextDecoder().decode(fileMap.files['index.html']!.bytes),
+      fileMap,
+    )
+    const { normalizedPagePlans, assets } = buildAssetPlan([pagePlan], [], fileMap)
+
+    const imageNode = Object.values(normalizedPagePlans[0].nodeFragment.nodes).find(
+      (node) => node.moduleId === 'base.image',
+    )
+    expect(imageNode?.props['src']).toBe(exactPath)
+    expect(assets.find((asset) => asset.sourcePath === exactPath)?.bytes).toBe(exactBytes)
+  })
+
+  it('leaves an ambiguous suffix unresolved and warns', () => {
+    const rawSrc = '/wp-content/uploads/x.png'
+    const fileMap = makeFileMap({
+      'index.html': { bytes: txt(`<html><body><img src="${rawSrc}"></body></html>`) },
+      'first/wp-content/uploads/x.png': { bytes: MINIMAL_PNG, mimeType: 'image/png' },
+      'second/wp-content/uploads/x.png': { bytes: MINIMAL_PNG, mimeType: 'image/png' },
+    })
+    const { pagePlan } = makeHtmlPagePlan(
+      'index.html',
+      new TextDecoder().decode(fileMap.files['index.html']!.bytes),
+      fileMap,
+    )
+    const { normalizedPagePlans, warnings } = buildAssetPlan([pagePlan], [], fileMap)
+
+    const imageNode = Object.values(normalizedPagePlans[0].nodeFragment.nodes).find(
+      (node) => node.moduleId === 'base.image',
+    )
+    expect(imageNode?.props['src']).toBe(rawSrc)
+    expect(warnings.map((warning) => warning.kind)).toEqual(['unresolved-asset'])
+    expect(warnings[0]?.path).toBe('wp-content/uploads/x.png')
+  })
+
+  it('requires a suffix match to start at a path-segment boundary', () => {
+    const rawSrc = '/content/uploads/x.png'
+    const fileMap = makeFileMap({
+      'index.html': { bytes: txt(`<html><body><img src="${rawSrc}"></body></html>`) },
+      'wp-content/uploads/x.png': { bytes: MINIMAL_PNG, mimeType: 'image/png' },
+    })
+    const { pagePlan } = makeHtmlPagePlan(
+      'index.html',
+      new TextDecoder().decode(fileMap.files['index.html']!.bytes),
+      fileMap,
+    )
+    const { normalizedPagePlans, warnings } = buildAssetPlan([pagePlan], [], fileMap)
+
+    const imageNode = Object.values(normalizedPagePlans[0].nodeFragment.nodes).find(
+      (node) => node.moduleId === 'base.image',
+    )
+    expect(imageNode?.props['src']).toBe(rawSrc)
+    expect(warnings.map((warning) => warning.kind)).toEqual(['unresolved-asset'])
+  })
+
   it('leaves external URLs unchanged', () => {
     const fileMap = makeFileMap({
       'index.html': { bytes: txt('<html><body><img src="https://cdn.example.com/img.png"></body></html>') },
