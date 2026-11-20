@@ -16,6 +16,8 @@ import { normalizeSiteRuntimeConfig } from '@core/site-runtime'
 import { pageToCells } from '../../core/data/pageFromRow'
 import { MAIN_SCOPE } from '../../../server/branches/scope'
 import { publishDraftSite } from '../../../server/publish/publishSite'
+import { getPublishedSiteForVersion } from '../../../server/publish/publishedSnapshotCache'
+import { getPublishVersion } from '../../../server/publish/publishState'
 import { resetForTests } from '../../../server/publish/renderCache'
 import { createDataRow } from '../../../server/repositories/data'
 import { saveDraftSite } from '../../../server/repositories/site'
@@ -78,8 +80,31 @@ describe('later pages of an infinite list', () => {
       runtime: normalizeSiteRuntimeConfig(undefined), createdAt: 1000, updatedAt: 2000,
     }
     await saveDraftSite(t.db, MAIN_SCOPE, shell)
-    const home = page()
-    await createDataRow(t.db, MAIN_SCOPE, { id: home.id, tableId: 'pages', cells: pageToCells(home), slug: home.slug }, 'admin_1')
+    // A site-wide layout, and an account page inside it whose notice shows
+    // only for ?commerce=plan_changed (the commerce plugin's return address).
+    const layout = {
+      id: 'page_layout', title: 'Layout', slug: 'layout', rootNodeId: 'lay_root',
+      template: { enabled: true, target: { kind: 'everywhere' }, priority: 0 },
+      nodes: Object.fromEntries([
+        node('lay_root', 'base.body', {}, ['lay_main']),
+        node('lay_main', 'base.container', {}, ['lay_outlet']),
+        node('lay_outlet', 'base.outlet', {}),
+      ].map((n) => [n.id, n])),
+    } as unknown as Page
+    const account = {
+      id: 'page_account', title: 'Account', slug: 'account', rootNodeId: 'acc_root',
+      nodes: Object.fromEntries([
+        node('acc_root', 'base.body', {}, ['acc_title', 'acc_notice']),
+        node('acc_title', 'base.text', { text: 'ACCOUNT-PAGE', tag: 'h1' }),
+        node('acc_notice', 'base.text', {
+          text: 'PLAN-CHANGED-NOTICE', tag: 'p',
+          showIf: { source: 'query', name: 'commerce', test: 'equals', value: 'plan_changed' },
+        }),
+      ].map((n) => [n.id, n])),
+    } as Page
+    for (const p of [page(), layout, account]) {
+      await createDataRow(t.db, MAIN_SCOPE, { id: p.id, tableId: 'pages', cells: pageToCells(p), slug: p.slug }, 'admin_1')
+    }
     await publishDraftSite(t.db, 'admin_1', uploadsDir)
   })
 
@@ -91,7 +116,7 @@ describe('later pages of an infinite list', () => {
 
   it('read the query of the page the list sits on', async () => {
     const res = await handleServerRequest(
-      new Request(`http://localhost/_instatic/loop/list?page=2&pagePath=${encodeURIComponent('/?status=ok')}`),
+      new Request(`http://localhost/_instatic/loop/c0_list?page=2&pagePath=${encodeURIComponent('/?status=ok')}`),
       { db: t.db, uploadsDir },
     )
     expect(res.status).toBe(200)
@@ -100,11 +125,28 @@ describe('later pages of an infinite list', () => {
     expect(html).toContain('FLAG-SHOWN')
 
     const other = await handleServerRequest(
-      new Request(`http://localhost/_instatic/loop/list?page=2&pagePath=${encodeURIComponent('/?status=no')}`),
+      new Request(`http://localhost/_instatic/loop/c0_list?page=2&pagePath=${encodeURIComponent('/?status=no')}`),
       { db: t.db, uploadsDir },
     )
     const { html: otherHtml } = (await other.json()) as { html: string }
     expect(otherHtml).toContain('ITEM[two|no]')
     expect(otherHtml).not.toContain('FLAG-SHOWN')
+  })
+
+  it('shows a query-conditioned notice on a page inside a layout, for that query only', async () => {
+    const served = await (await handleServerRequest(new Request('http://localhost/account?commerce=plan_changed'), { db: t.db, uploadsDir })).text()
+    expect(served).toContain('ACCOUNT-PAGE')
+    // The notice is a fragment, under the id the composed page carries.
+    expect(served).toContain('data-instatic-hole="c0_acc_notice"')
+    expect(served).not.toContain('PLAN-CHANGED-NOTICE')
+
+    const site = await getPublishedSiteForVersion(t.db, getPublishVersion())
+    const fragment = async (u: string) => (await handleServerRequest(
+      new Request(`http://localhost/_instatic/hole/c0_acc_notice?v=${site!.snapshotHash}&u=${encodeURIComponent(u)}`),
+      { db: t.db, uploadsDir },
+    )).text()
+    expect(await fragment('/account?commerce=plan_changed')).toContain('PLAN-CHANGED-NOTICE')
+    expect(await fragment('/account')).not.toContain('PLAN-CHANGED-NOTICE')
+    expect(await fragment('/account?commerce=cancelled')).not.toContain('PLAN-CHANGED-NOTICE')
   })
 })

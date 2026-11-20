@@ -42,6 +42,7 @@ import { collectLoopNodes, readLoopProps } from '../../publish/loopPrefetch'
 import { sourceRequestFor, visitorRequestScope } from '../../publish/loopSourceRequest'
 import { getPublishedSiteForVersion } from '../../publish/publishedSnapshotCache'
 import { composedRouteForPath } from '../../publish/composedRoute'
+import { memberAppRequestFrame } from '../../members/apps/approval'
 import { getPublishVersion } from '../../publish/publishState'
 import { LOOP_RUNTIME_JS, LOOP_RUNTIME_VERSION } from '../../publish/loopRuntime'
 import { serveVersionedScript } from '../../publish/assetVersion'
@@ -146,9 +147,10 @@ export async function handleLoopRequest(
   const forVisitor = isProtected || showsMember
   if (gated) {
     const who = await visitor()
-    // A later page of a list is fetched without its page's address, so a rule
-    // about an app's sign-in request reads as "no app is asking" here.
-    if (!showWhenPathsAllow(paths, who ? { tags: who.tags, appAsking: false } : null)) {
+    // `pagePath` carries the page's query, so a rule about an app's sign-in
+    // request is read from it, as the hole endpoint reads it from `u`.
+    const asking = who ? (await memberAppRequestFrame(ctx.db, pagePath)) !== null : false
+    if (!showWhenPathsAllow(paths, who ? { tags: who.tags, appAsking: asking } : null)) {
       return jsonResponse({ html: '', hasMore: false, pageNumber }, { headers: PRIVATE_HEADERS })
     }
   }
