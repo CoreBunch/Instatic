@@ -27,6 +27,7 @@ export function UrlControl({
   isOverride,
   disabled,
   layout,
+  labelAction,
 }: ControlProps<string>) {
   const [error, setError] = useState(false)
   const pages = useEditorStore((s) => s.site?.pages ?? EMPTY_PAGES)
@@ -66,6 +67,7 @@ export function UrlControl({
       propKey={propKey}
       label={label}
       layout={layout}
+      labelAction={labelAction}
       isOverride={isOverride}
       disabled={disabled}
       labelSuffix={
