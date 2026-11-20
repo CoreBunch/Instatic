@@ -16,6 +16,7 @@ import { configureTrustedProxyCidrs, resetTrustedProxyCidrs } from '../../../ser
 import { handleCmsRequest } from '../../../server/handlers/cms'
 import { createMember } from '../../../server/members/repository'
 import { createMemberSession } from '../../../server/members/sessions'
+import { CLIENT_ADDRESS_HEADERS } from '../../../server/plugins/host/routeIo'
 import { handleServerRequest } from '../../../server/router'
 import { createCapabilityTestHarness, type CapabilityTestHarness } from '../helpers/capabilityHarness'
 
@@ -33,6 +34,8 @@ const PLUGIN_SOURCE = `
       ipKey: ctx.ipKey,
       peer: ctx.req.headers.get('x-bun-socket-ip'),
       forwarded: ctx.req.headers.get('x-forwarded-for'),
+      // Every request header the handler is given, by name.
+      headerNames: ctx.req.headers.keys(),
     })
     api.cms.routes.public.get('/ip', seen)
     api.cms.routes.member.get('/me-ip', seen)
@@ -117,12 +120,18 @@ describe('plugin routes and the caller', () => {
   const seen = async (path: string, init: Parameters<typeof visit>[1] = {}) => {
     const res = await visit(path, init)
     expect(res.status).toBe(200)
-    return (await res.json()) as { ip: string | null; ipKey: string | null; peer: string | null; forwarded: string | null }
+    return (await res.json()) as {
+      ip: string | null
+      ipKey: string | null
+      peer: string | null
+      forwarded: string | null
+      headerNames: string[]
+    }
   }
 
   describe('ctx.ip', () => {
     it('is the socket peer for a direct caller, and the peer header itself is not passed on', async () => {
-      expect(await seen(`${MOUNT}/ip`, { peer: '203.0.113.7' })).toEqual({ ip: '203.0.113.7', ipKey: '203.0.113.7', peer: null, forwarded: null })
+      expect(await seen(`${MOUNT}/ip`, { peer: '203.0.113.7' })).toMatchObject({ ip: '203.0.113.7', ipKey: '203.0.113.7', peer: null, forwarded: null })
     })
 
     it('is one spelling per address, with a per-visitor key beside it', async () => {
@@ -154,6 +163,20 @@ describe('plugin routes and the caller', () => {
       expect((await seen(mount, { peer: '203.0.113.7' })).ip).toBe('203.0.113.7')
     })
 
+    it('never comes as a request header, with or without visitors.ip', async () => {
+      expect((await install({ id: 'acme.blind', permissions: WITHOUT_IP })).status).toBe(201)
+      configureTrustedProxyCidrs(['10.0.0.0/8'])
+      for (const path of [`${MOUNT}/ip`, '/_instatic/plugins/acme.blind/ip']) {
+        const req = new Request(`${ORIGIN}${path}`)
+        for (const name of CLIENT_ADDRESS_HEADERS) req.headers.set(name, name === 'forwarded' ? 'for=198.51.100.20' : '198.51.100.20')
+        req.headers.set('x-bun-socket-ip', '10.0.0.2')
+        req.headers.set('x-plugin-own', 'kept')
+        const view = (await (await handleServerRequest(req, { db: h.db, uploadsDir })).json()) as { headerNames: string[] }
+        for (const name of CLIENT_ADDRESS_HEADERS) expect(view.headerNames).not.toContain(name)
+        expect(view.headerNames).toContain('x-plugin-own')
+      }
+    })
+
     it('is null when the server cannot tell', async () => {
       expect(await seen(`${MOUNT}/ip`)).toMatchObject({ ip: null, ipKey: null })
     })
@@ -162,8 +185,8 @@ describe('plugin routes and the caller', () => {
       configureTrustedProxyCidrs(['10.0.0.0/8'])
       const view = await seen(`${MOUNT}/ip`, { peer: '10.0.0.2', forwardedFor: '198.51.100.20, 10.0.0.9' })
       expect(view.ip).toBe('198.51.100.20')
-      // The header itself is the client's to send, so the plugin sees it as it came.
-      expect(view.forwarded).toBe('198.51.100.20, 10.0.0.9')
+      // The header itself is not passed on: the address arrives only as ctx.ip.
+      expect(view.forwarded).toBeNull()
     })
 
     it('ignores X-Forwarded-For from a peer that is not a trusted proxy', async () => {

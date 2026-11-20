@@ -76,7 +76,9 @@ export interface ServerPluginRouteContext {
   /**
    * The caller's IP address, or null when the server cannot tell or the
    * plugin does not hold `visitors.ip` (the host then never sends it to the
-   * plugin's worker). It is
+   * plugin's worker). Headers that carry an address (`x-forwarded-for` and
+   * the like) are never passed in `req.headers`, so this is the only way a
+   * plugin learns one. It is
    * core's own answer (the one sign-in rate limits use): the socket peer, or,
    * when that peer is a configured trusted proxy, the nearest address in
    * `X-Forwarded-For` that is not one. Set on every kind of route.

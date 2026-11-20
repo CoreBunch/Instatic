@@ -26,6 +26,28 @@ import type {
 } from '../protocol/messages'
 
 /**
+ * Request headers that carry a client's IP address: core's own stamp of the
+ * socket peer, the one `clientIp` reads behind a trusted proxy
+ * (`x-forwarded-for`), and the ones common proxies and CDNs add. None of them
+ * is handed to plugin code, whatever its permissions: the caller's address
+ * reaches a plugin only as `ctx.ip` / `ctx.ipKey`, worked out with the
+ * trusted-proxy setting and only for a plugin granted `visitors.ip`. Lower
+ * case, as the serialized headers are.
+ */
+export const CLIENT_ADDRESS_HEADERS = [
+  BUN_SOCKET_IP_HEADER,
+  'x-forwarded-for',
+  'forwarded',
+  'x-real-ip',
+  'cf-connecting-ip',
+  'true-client-ip',
+  'x-client-ip',
+  'fastly-client-ip',
+  'x-cluster-client-ip',
+  'x-envoy-external-address',
+] as const
+
+/**
  * Serialize an inbound HTTP request for the worker. Reads the body once as
  * bytes, then pre-parses it for the handler context. Content-Type drives the
  * parser: JSON for `application/json`, URLSearchParams for
@@ -74,10 +96,9 @@ export async function serializeRouteRequest(
   if (headers.authorization !== undefined && namesMemberAppToken(headers.authorization)) {
     delete headers.authorization
   }
-  // The socket peer address core stamped for itself. The caller's address
-  // reaches the handler as `ctx.ip`, worked out by `clientIp` with the
-  // trusted-proxy setting applied; a raw peer here would bypass that.
-  delete headers[BUN_SOCKET_IP_HEADER]
+  // Addresses travel only as `ctx.ip` (see CLIENT_ADDRESS_HEADERS): a raw
+  // header here would bypass both the proxy trust and `visitors.ip`.
+  for (const name of CLIENT_ADDRESS_HEADERS) delete headers[name]
 
   const bodyBytes = request.method !== 'GET'
     ? new Uint8Array(await request.arrayBuffer())
