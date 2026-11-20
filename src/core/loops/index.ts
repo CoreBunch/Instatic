@@ -9,7 +9,25 @@
  * them to guarantee canvas previews and published output never diverge.
  */
 
-export type { LoopItem } from './types'
+export type { LoopEntitySource, LoopItem } from './types'
+export { loopSourceRegistry } from './registry'
+export {
+  LOOP_PREVIEW_BUSY_CODE,
+  LOOP_PREVIEW_MAX_BYTES,
+  LOOP_PREVIEW_MAX_ITEMS,
+  LoopSourceDescriptorSchema,
+  LoopSourcePreviewItemsSchema,
+  LoopSourcePreviewRequestSchema,
+  RemoteLoopSourceSchema,
+  type LoopSourcePreviewRequest,
+  type RemoteLoopSource,
+} from './descriptorSchema'
+export {
+  remoteLoopSourcesSynced,
+  replaceRemoteLoopSources,
+  resetRemoteLoopSourcesForTests,
+  subscribeRemoteLoopSourcesSynced,
+} from './remoteSources'
 export { pageToLoopItem, filterPagesForLoop } from './sources/sitePages'
 export { listConnectedMemberApps, MEMBER_APPS_SOURCE_ID, type ConnectedMemberApp } from './sources/memberApps'
 export {

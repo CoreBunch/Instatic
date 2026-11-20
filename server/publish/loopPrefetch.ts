@@ -330,7 +330,7 @@ export async function prefetchLoopData(
     nodes.map(async (node) => {
       const props = readLoopProps(node)
       const source = props.sourceId ? loopSourceRegistry.get(props.sourceId) : undefined
-      if (!source || source.kind === 'contextual') {
+      if (!source || source.kind === 'contextual' || source.kind === 'remote') {
         return [
           node.id,
           { items: [], totalItems: 0, pageNumber: 1, hasMore: false },

@@ -17,7 +17,7 @@ import { useShallow } from 'zustand/react/shallow'
 import { useEditorStore, selectSelectedNode } from '@site/store/store'
 import { registry } from '@core/module-engine'
 import { getAncestors, resolveProps } from '@core/page-tree'
-import { loopSourceRegistry } from '@core/loops/registry'
+import { useLoopSource } from '@site/hooks/useLoopSources'
 import { buildClassTokenUsageMap, buildSelectorUsageMap, resolveSelectorUsage } from '../selectorUsage'
 import type {
   AnyModuleDefinition,
@@ -175,10 +175,13 @@ export function usePropertiesPanelData(): PropertiesPanelData {
   // For nodes with a `base.loop` ancestor we expose the same `currentEntry`
   // bindings — they resolve to the loop's iteration item via the publisher's
   // entry-stack semantics.
-  const { enclosingLoopSource, enclosingLoopTableId } = resolveEnclosingLoopContext(
+  const { enclosingLoopSourceId, enclosingLoopTableId } = resolveEnclosingLoopContext(
     activePage,
     selectedNodeId,
   )
+  // Through the hook, so a plugin source that registers after this panel
+  // rendered still offers its fields.
+  const enclosingLoopSource = useLoopSource(enclosingLoopSourceId)
   // Bindings are always available. The picker decides which sources are
   // meaningful in the current context (`currentEntry` / `parentEntry`
   // only when inside a loop or template page; page / site / route
@@ -303,7 +306,7 @@ function resolveOverrideKeys(
 }
 
 interface EnclosingLoopContext {
-  enclosingLoopSource: LoopEntitySource | undefined
+  enclosingLoopSourceId: string | null
   enclosingLoopTableId: string | null
 }
 
@@ -312,7 +315,7 @@ function resolveEnclosingLoopContext(
   selectedNodeId: string | null,
 ): EnclosingLoopContext {
   if (!activePage || !selectedNodeId) {
-    return { enclosingLoopSource: undefined, enclosingLoopTableId: null }
+    return { enclosingLoopSourceId: null, enclosingLoopTableId: null }
   }
 
   const ancestors = getAncestors(activePage, selectedNodeId)
@@ -323,18 +326,14 @@ function resolveEnclosingLoopContext(
     .find((a) => a.moduleId === 'base.loop')
 
   if (!enclosingLoopNode) {
-    return { enclosingLoopSource: undefined, enclosingLoopTableId: null }
+    return { enclosingLoopSourceId: null, enclosingLoopTableId: null }
   }
 
   const enclosingLoopSourceId = typeof enclosingLoopNode.props.sourceId === 'string'
     ? enclosingLoopNode.props.sourceId
     : null
-  const enclosingLoopSource = enclosingLoopSourceId
-    ? loopSourceRegistry.get(enclosingLoopSourceId)
-    : undefined
-
   return {
-    enclosingLoopSource,
+    enclosingLoopSourceId,
     enclosingLoopTableId: extractLoopTableId(enclosingLoopNode, enclosingLoopSourceId),
   }
 }

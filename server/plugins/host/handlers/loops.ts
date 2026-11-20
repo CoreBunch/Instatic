@@ -5,12 +5,12 @@
  * Gated by the `loops.register` permission, enforced centrally in
  * apiDispatch.ts (via TARGET_PERMISSIONS) before this handler runs. The registered source is a shim
  * that delegates its `fetch` method to the plugin's worker via the RPC layer.
- * The `preview` method is intentionally a no-op (returns []) — the editor
- * uses the publisher's fetch path for live preview (see useLoopPreviewItems),
- * and any plugin that ships a synchronous preview-only path can be added later
- * via a worker-backed sync invariant.
+ * It has no `preview`: that one runs in the browser for in-process sources.
+ * The editor learns of a plugin's sources and previews them through
+ * `../loopSources.ts`.
  */
 
+import { nanoid } from 'nanoid'
 import { loopSourceRegistry } from '@core/loops/registry'
 import type { SourceFetchContext, SourceRequestContext } from '@core/loops/types'
 import type { ApiCallFor } from '../../protocol/apiCallSchema'
@@ -73,13 +73,13 @@ export async function handleLoopsRegisterSource(
       }
       return await runLoopFetchInWorker(msg.pluginId, descriptor.id, wireCtx)
     },
-    preview: () => {
-      return []
-    },
     // Lets a render skip the member lookup for a plugin that would not be sent it.
     mayKnowMember: () => pluginMayKnowMember(msg.pluginId),
   }
-  entry.loopSources.push({ pluginId: msg.pluginId, sourceId: descriptor.id })
+  // Registering the same id again replaces the source; it is still one source.
+  const registered = entry.loopSources.find((source) => source.sourceId === descriptor.id)
+  if (registered) registered.revision = nanoid()
+  else entry.loopSources.push({ pluginId: msg.pluginId, sourceId: descriptor.id, revision: nanoid() })
   loopSourceRegistry.registerOrReplace(fullSource)
   replyApiOk(msg.pluginId, msg.correlationId)
 }

@@ -297,6 +297,33 @@ export async function runScheduleInWorker(args: {
   }
 }
 
+/**
+ * Run a plugin source's `preview()` in its worker. Unlike a fetch, a failure
+ * is the caller's to show: the editor tells the author the preview failed
+ * instead of drawing an empty list. What the plugin threw is logged here and
+ * goes no further: a plugin's error text is for the server log, not for
+ * whoever has the page open.
+ */
+export async function runLoopPreviewInWorker(
+  pluginId: string,
+  sourceId: string,
+  ctx: unknown,
+): Promise<{ ok: true; items: unknown[] } | { ok: false }> {
+  const result = await requestFromWorker(
+    pluginId,
+    { kind: 'run-loop-preview', correlationId: nanoid(), pluginId, sourceId, ctx },
+    'loop-preview-result',
+  )
+  if (!result.ok || !Array.isArray(result.value)) {
+    console.error(
+      `[plugin:${pluginId}] loop source "${sourceId}" preview failed:`,
+      describeWorkerError(result.error, result.stack, 'preview() did not return an array'),
+    )
+    return { ok: false }
+  }
+  return { ok: true, items: result.value }
+}
+
 // ---------------------------------------------------------------------------
 // Internal worker RPC helpers — called from handler files under handlers/
 // ---------------------------------------------------------------------------

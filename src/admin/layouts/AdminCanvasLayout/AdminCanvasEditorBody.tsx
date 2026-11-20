@@ -9,6 +9,7 @@ import { lazy, Suspense } from 'react'
 import { CanvasRoot } from '@admin/pages/site/canvas'
 import { CodeEditorPanel, CodeEditorSkeleton } from '@admin/pages/site/code-editor'
 import { useActiveLivePath } from '@admin/pages/site/hooks/useActiveLivePath'
+import { usePluginLoopSources } from '@site/hooks/usePluginLoopSources'
 import { useAutoResolveDependencies } from '@admin/pages/site/hooks/useAutoResolveDependencies'
 import { LayoutNameDialog } from '@admin/pages/site/dialogs/LayoutNameDialog'
 import { PropertiesPanel } from '@admin/pages/site/panels/PropertiesPanel'
@@ -57,6 +58,8 @@ export function AdminCanvasEditorBody({
   // their own); lives here, in the lazy body, so the CMS fetch it needs for
   // postTypes templates stays out of the admin-shell bundle.
   useActiveLivePath()
+  // Plugins' loop sources for the Loop module's picker and the canvas.
+  usePluginLoopSources()
 
   const propertiesPanelMode = useEditorStore((s) => s.propertiesPanelMode)
   const rightSidebarExpanded = useEditorStore(selectRightSidebarExpanded)
