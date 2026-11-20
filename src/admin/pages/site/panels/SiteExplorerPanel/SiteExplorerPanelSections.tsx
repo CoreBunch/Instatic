@@ -101,6 +101,7 @@ export function SiteExplorerPanelSections({
 }: SiteExplorerPanelSectionsProps) {
   return (
     <>
+      {sectionGroup === 'site' && <GlobalHeadSettings />}
       {sectionGroup === 'site' && pageTreeModel && (
         <SiteExplorerTreeSection
           title="Pages"
@@ -172,8 +173,6 @@ export function SiteExplorerPanelSections({
           onKeyDownFolder={(folder, event) => onKeyDownFolder('components', folder, event)}
         />
       )}
-
-      {sectionGroup === 'code' && <GlobalHeadSettings />}
 
       {sectionGroup === 'code' && styleTreeModel && (
         <SiteExplorerTreeSection

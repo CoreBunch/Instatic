@@ -6,7 +6,7 @@ import { Button } from '@ui/components/Button'
 import { EmptyState } from '@ui/components/EmptyState'
 import { cn } from '@ui/cn'
 import {
-  TreeContainer,
+  TreeContainer, TreeChevron,
   treeDropStyles,
 } from '@site/ui/Tree'
 import type { SiteExplorerSectionId } from '@core/page-tree'
@@ -78,6 +78,8 @@ export function SiteExplorerTreeSection<TTarget>({
   emptyLabel = 'None yet',
 }: SiteExplorerTreeSectionProps<TTarget>) {
   const [expandedFolderIds, setExpandedFolderIds] = useState(() => new Set(initialExpandedFolderIds(model)))
+  const siteBranch = model.sectionId === 'pages' || model.sectionId === 'templates' || model.sectionId === 'components'
+  const [expanded, setExpanded] = useState(true)
   const ActionIcon = actionIcon
   const hasRows = model.pinnedItems.length > 0 || model.rootEntries.length > 0
   const rootDrop = useDroppable({
@@ -105,19 +107,26 @@ export function SiteExplorerTreeSection<TTarget>({
   }
 
   return (
-    <section className={styles.section} aria-labelledby={`site-section-${title.toLowerCase()}`}>
-      <div className={styles.sectionHeader}>
+    <section className={cn(styles.section, siteBranch && styles.siteBranch)} aria-labelledby={`site-section-${title.toLowerCase()}`}>
+      <div className={cn(styles.sectionHeader, siteBranch && styles.branchHeader)}>
         <h2 id={`site-section-${title.toLowerCase()}`} className={styles.sectionTitle}>
-          {title}
+          {siteBranch ? (
+            <Button variant="ghost" size="sm" align="start" aria-expanded={expanded}
+              aria-controls={`site-branch-${model.sectionId}`} className={styles.branchToggle}
+              onClick={() => setExpanded(!expanded)}>
+              <TreeChevron expanded={expanded} />{title}
+              <span className={styles.branchCount} aria-hidden="true">{count}</span>
+            </Button>
+          ) : title}
         </h2>
-        <span className={styles.sectionCount}>{count}</span>
+        {!siteBranch && <span className={styles.sectionCount}>{count}</span>}
         <Button
           variant="ghost"
           size="xs"
           iconOnly
           aria-label={`New ${title.toLowerCase()} folder`}
           tooltip={`New ${title.toLowerCase()} folder`}
-          onClick={onCreateFolder}
+          onClick={() => { setExpanded(true); onCreateFolder() }}
         >
           <FolderGlyphIcon size={13} />
         </Button>
@@ -127,19 +136,20 @@ export function SiteExplorerTreeSection<TTarget>({
           iconOnly
           aria-label={actionLabel}
           tooltip={actionLabel}
-          onClick={onAction}
+          onClick={() => { setExpanded(true); onAction() }}
         >
           <ActionIcon size={13} />
         </Button>
       </div>
 
       <TreeContainer
+        id={`site-branch-${model.sectionId}`}
         ariaLabel={title}
-        className={cn(styles.treeRows, rootDropActive && treeDropStyles.dropRoot)}
+        className={cn(styles.treeRows, siteBranch && styles.branchRows, siteBranch && !expanded && styles.collapsedBranch, rootDropActive && treeDropStyles.dropRoot)}
         containerRef={rootDrop.setNodeRef}
       >
         {!hasRows ? (
-          <EmptyState
+          siteBranch ? <span className={styles.emptyBranch}>No {title.toLowerCase()} yet</span> : <EmptyState
             compact
             title={emptyLabel}
             className={styles.sectionEmpty}

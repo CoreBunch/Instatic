@@ -37,13 +37,21 @@ test.describe('page head settings', () => {
     const layoutName = `Head Layout ${suffix}`
     await openSiteEditor(page)
     const globalSettings = async () => {
-      await openExplorerTab(page, 'Code')
+      await openSitePanel(page)
       await page.getByRole('button', { name: 'Global head settings' }).click()
       return page.getByRole('dialog', { name: 'Global head settings' })
     }
     let originalTitle = ''
     let originalCreator = ''
     try {
+      await openExplorerTab(page, 'Code')
+      await expect(page.getByRole('button', { name: 'Global head settings' })).toHaveCount(0)
+      await openSitePanel(page)
+      const pages = page.getByRole('button', { name: 'Pages', exact: true })
+      await pages.click()
+      await expect(page.getByRole('tree', { name: 'Pages' })).toBeHidden()
+      await pages.click()
+      await expect(page.getByRole('tree', { name: 'Pages' })).toBeVisible()
       const global = await globalSettings()
       const globalTitle = global.getByLabel('Title', { exact: true }).first()
       originalTitle = await globalTitle.inputValue()

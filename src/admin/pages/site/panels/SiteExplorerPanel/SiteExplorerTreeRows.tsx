@@ -332,7 +332,7 @@ export function ExplorerItemRow<TTarget>({
             <TreeIconSlot icon={item.icon} iconSize={12} />
             <TreeLabelGroup>
               <TreeLabel>{item.label}</TreeLabel>
-              {item.meta && <TreeMeta>{item.meta}</TreeMeta>}
+              {item.meta && <TreeMeta className={styles.itemMeta} title={item.meta}>{item.meta}</TreeMeta>}
             </TreeLabelGroup>
             {item.access && (
               <Tooltip content={`${item.access}. Change it in Page settings.`}>

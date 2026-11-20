@@ -3,7 +3,8 @@ import { GlobeSolidIcon } from 'pixel-art-icons/icons/globe-solid'
 import { parsePageSeo, type PageSeo } from '@core/page-tree'
 import { useEditorStore } from '@site/store/store'
 import { useEditorPermissions } from '@site/editorPermissionsContext'
-import { TreeRow } from '@site/ui/Tree'
+import { ChevronRightIcon } from 'pixel-art-icons/icons/chevron-right'
+import styles from './SiteExplorerPanel.module.css'
 import { Button } from '@ui/components/Button'
 import { Dialog } from '@ui/components/Dialog'
 import { Tabs, TabList } from '@ui/components/Tabs'
@@ -16,11 +17,12 @@ export function GlobalHeadSettings() {
   const { canEditStructure } = useEditorPermissions()
   return (
     <>
-      <TreeRow depth={0}>
-        <Button variant="ghost" size="sm" disabled={!canEditStructure} onClick={() => setOpen(true)}>
-          <GlobeSolidIcon size={14} aria-hidden="true" />Global head settings
-        </Button>
-      </TreeRow>
+      <Button variant="ghost" size="sm" align="start" className={styles.globalSettings}
+        aria-haspopup="dialog" disabled={!canEditStructure} onClick={() => setOpen(true)}>
+        <GlobeSolidIcon size={16} aria-hidden="true" />
+        Global head settings
+        <ChevronRightIcon size={12} aria-hidden="true" />
+      </Button>
       {open && <GlobalHeadDialog onClose={() => setOpen(false)} />}
     </>
   )
