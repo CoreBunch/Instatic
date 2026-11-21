@@ -46,6 +46,7 @@
     "bootstrap:sync": "bun run scripts/sync-plugin-bootstrap.ts",
     "bootstrap:check": "bun run scripts/sync-plugin-bootstrap.ts --check",
     "instatic-plugin": "bun run src/core/plugin-sdk/cli/index.ts",
+    "sdk:pack": "bun run scripts/build-plugin-sdk-package.ts",
     "bench": "bun run scripts/bench/index.ts",
     "bench:bundle": "bun run scripts/bench/index.ts --only=bundle",
     "bench:publisher": "bun run scripts/bench/index.ts --only=publisher",

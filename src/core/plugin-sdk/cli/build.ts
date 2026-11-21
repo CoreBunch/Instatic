@@ -14,7 +14,8 @@
  *     frontend/tracker.js          (when source has frontend/tracker.{ts,js})
  *     admin/<entry>.js             (per declared admin app entry)
  *
- * Then zips `dist/` into `<dir-parent>/<plugin-dir-name>.plugin.zip`.
+ * Then zips `dist/` into `<dir>/<plugin-dir-name>.plugin.zip`, next to
+ * `dist/` inside the plugin folder.
  *
  * Bundling: each entrypoint is bundled with `Bun.build()` as ESM. Plugin
  * authors get one self-contained bundle per entrypoint with no
@@ -486,7 +487,7 @@ export async function buildPlugin(
   //    directly into the host's uploads folder.
   let zipPath = ''
   if (options.zip !== false) {
-    zipPath = join(dirname(absoluteSource), `${basename(absoluteSource)}.plugin.zip`)
+    zipPath = join(absoluteSource, `${basename(absoluteSource)}.plugin.zip`)
     await zipDirectory(distDir, zipPath)
   }
 

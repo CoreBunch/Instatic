@@ -18,7 +18,7 @@ import type {
   FrameworkSpacingGroup,
   FrameworkSpacingSettings,
 } from '@core/framework-schema'
-import { createFrameworkScaleModule } from './scaleModule'
+import { createFrameworkScaleModule, type FrameworkScaleModule } from './scaleModule'
 
 // Property keymap — translates a class generator's CSS-style property name
 // (kebab-case, as it appears in `FrameworkSpacingClassGenerator.property`)
@@ -43,7 +43,10 @@ const PROPERTY_KEYMAP = {
   'column-gap': 'columnGap',
 } satisfies Record<string, keyof CSSPropertyBag | readonly (keyof CSSPropertyBag)[]>
 
-const spacingModule = createFrameworkScaleModule<FrameworkSpacingGroup, FrameworkSpacingClassGenerator>({
+// Annotated so declaration output names the two schema types instead of
+// printing their expanded shape, which does not survive a consumer's
+// `exactOptionalPropertyTypes`.
+const spacingModule: FrameworkScaleModule<FrameworkSpacingGroup, FrameworkSpacingClassGenerator> = createFrameworkScaleModule({
   family: 'spacing',
   getMinBaseSize: (group) => group.min.size,
   getMaxBaseSize: (group) => group.max.size,

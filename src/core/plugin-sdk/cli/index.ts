@@ -9,15 +9,22 @@
  * Run via Bun:
  *   bun run instatic-plugin <cmd>
  *
+ * Inside the Instatic checkout that is the root `instatic-plugin` script. In
+ * a project that installed `@instatic/plugin-sdk` it is the package's bin.
+ * Either way `bun run` only runs what is already there. `bunx
+ * instatic-plugin` is never the documented form: with no local install it
+ * would download whatever the registry serves under that name.
+ *
  * The CLI lives inside the SDK so plugin authors get the same code that
- * powers the host's `bun run instatic-plugin` script. No HTTP, no auth, no env
- * gate — the dev command writes built files directly into the host's
- * `uploads/plugins/<id>/<version>/` directory.
+ * powers the host's `bun run instatic-plugin` script; the package build
+ * (`scripts/lib/pluginSdkPackage.ts`) bundles this file as the package's
+ * bin. No HTTP, no auth, no env gate — the dev command writes built files
+ * directly into the host's `uploads/plugins/<id>/<version>/` directory.
  */
-import { resolve } from 'node:path'
+import { relative, resolve } from 'node:path'
 import { buildPlugin } from './build'
 import { runPluginDev } from './dev'
-import { runPluginInit } from './init'
+import { runPluginInit, scaffoldCommands } from './init'
 import { lintPlugin } from './lint'
 
 interface ParsedArgs {
@@ -103,8 +110,17 @@ async function main(): Promise<void> {
     }
     const kind: 'module' | 'content-editor' = kindFlag === 'content-editor' ? 'content-editor' : 'module'
     const created = await runPluginInit(name, { kind })
+    const commands = scaffoldCommands(created)
     console.log(`✓ Created plugin at ${created}`)
-    console.log(`  cd ${created.split('/').pop()} && instatic-plugin dev`)
+    if (commands.setup === null) {
+      console.log(`  ${commands.dev}`)
+    } else {
+      console.log(`  cd ${relative(process.cwd(), created)} && ${commands.setup} && ${commands.dev}`)
+      console.log(
+        `  If ${commands.setup} cannot download the SDK tarball, this SDK version has no Instatic release yet:\n` +
+        `  pack it from the checkout (bun run sdk:pack) and depend on that .tgz. See the plugin's README.`,
+      )
+    }
     return
   }
 

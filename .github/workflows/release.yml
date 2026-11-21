@@ -169,3 +169,108 @@ jobs:
           gh release upload "$GITHUB_REF_NAME" \
             ".tmp/release/instatic-${{ needs.image.outputs.version }}-release-bundle.tar.gz" \
             --clobber
+
+  plugin-sdk:
+    name: Publish Plugin SDK
+    runs-on: ubuntu-latest
+    # After `bundle`, which creates the GitHub Release: this job only uploads.
+    needs:
+      - image
+      - bundle
+    env:
+      SDK_VERSION: ${{ needs.image.outputs.version }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Build plugin SDK package
+        run: bun run sdk:pack -- "$SDK_VERSION"
+
+      # Plugin projects lock this URL with an integrity hash, so an asset that
+      # is already there is never replaced, even by a re-run of this job.
+      - name: Upload plugin SDK package
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          ASSET="instatic-plugin-sdk-${SDK_VERSION}.tgz"
+          EXISTING="$(gh release view "$GITHUB_REF_NAME" --json assets --jq '.assets[].name')"
+          if grep -Fxq "$ASSET" <<<"$EXISTING"; then
+            echo "::notice::${ASSET} is already attached to ${GITHUB_REF_NAME}. Leaving it as it is."
+            exit 0
+          fi
+          gh release upload "$GITHUB_REF_NAME" ".tmp/plugin-sdk/${ASSET}"
+
+  plugin-sdk-npm:
+    name: Publish Plugin SDK to npm
+    # Off until the repository variable PUBLISH_PLUGIN_SDK_TO_NPM is "true".
+    # Set it once @instatic/plugin-sdk exists on npm with this workflow as its
+    # trusted publisher: npm then accepts this job's OIDC token, so the
+    # repository holds no npm token. See docs/deployment/release-workflow.md.
+    if: ${{ vars.PUBLISH_PLUGIN_SDK_TO_NPM == 'true' }}
+    runs-on: ubuntu-latest
+    needs:
+      - image
+      - plugin-sdk
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      SDK_VERSION: ${{ needs.image.outputs.version }}
+    steps:
+      # Trusted publishing needs npm 11.5.1 or newer; the runner ships an older one.
+      - name: Update npm
+        run: npm install --global npm@^11.5.1
+
+      - name: Check whether this version is already on npm
+        id: npm
+        shell: bash
+        run: |
+          set -uo pipefail
+          # Only stdout decides "published": a warning on stderr must not.
+          # A version on stdout: already there. An E404: not there, publish.
+          # Anything else is a registry or network error and fails the job.
+          if published="$(npm view "@instatic/plugin-sdk@${SDK_VERSION}" version 2>npm-view.err)"; then
+            if [ "$published" = "$SDK_VERSION" ]; then
+              echo "::notice::@instatic/plugin-sdk ${SDK_VERSION} is already on npm."
+              echo "publish=false" >> "$GITHUB_OUTPUT"
+            elif [ -z "$published" ]; then
+              echo "publish=true" >> "$GITHUB_OUTPUT"
+            else
+              echo "Unexpected answer from npm view: $published"
+              cat npm-view.err
+              exit 1
+            fi
+          elif grep -q 'E404' npm-view.err; then
+            echo "publish=true" >> "$GITHUB_OUTPUT"
+          else
+            cat npm-view.err
+            exit 1
+          fi
+
+      - name: Download the released package
+        if: steps.npm.outputs.publish == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release download "$GITHUB_REF_NAME" \
+            --repo "$GITHUB_REPOSITORY" \
+            --pattern "instatic-plugin-sdk-${SDK_VERSION}.tgz"
+
+      # A prerelease must not become what `bun add @instatic/plugin-sdk` installs.
+      - name: Publish to npm
+        if: steps.npm.outputs.publish == 'true'
+        shell: bash
+        run: |
+          case "$SDK_VERSION" in
+            *-*) DIST_TAG=next ;;
+            *) DIST_TAG=latest ;;
+          esac
+          npm publish "instatic-plugin-sdk-${SDK_VERSION}.tgz" --access public --tag "$DIST_TAG"
