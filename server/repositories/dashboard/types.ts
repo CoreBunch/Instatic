@@ -30,37 +30,3 @@ export interface PostsStats {
    */
   daily28: number[]
 }
-
-// ---------------------------------------------------------------------------
-// Publish lineup
-// ---------------------------------------------------------------------------
-
-/**
- * A single row in the "Publish lineup" widget. Surfaces what's coming
- * up (scheduled), what just shipped (published), and the drafts the
- * operator is still working on.
- *
- *   • `path` — public route ("/blog/sandbox-deep-dive") derived from
- *     the row's table.route_base + row.slug. Falls back to
- *     `/${tableId}/${slug}` when route_base is missing.
- *
- *   • `at` — ISO datetime relevant to the status:
- *       - 'scheduled' → scheduled_publish_at (future)
- *       - 'published' → published_at (past)
- *       - 'draft'     → null
- *
- *   The widget formats this client-side relative to "now" so the labels
- *   say "in 12m" / "2h ago" without the server having to know the
- *   user's clock.
- */
-export interface PublishLineupRow {
-  id: string
-  path: string
-  status: 'scheduled' | 'published' | 'draft'
-  at: string | null
-}
-
-export interface PublishLineupStats {
-  rows: PublishLineupRow[]
-}
-

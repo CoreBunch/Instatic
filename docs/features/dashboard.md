@@ -47,7 +47,7 @@ src/admin/pages/dashboard/
     ├── PagesWidget.tsx
     ├── PluginsWidget.tsx
     ├── PostsWidget.tsx
-    ├── PublishQueueWidget.tsx
+    ├── PublishLineupWidget.tsx
     ├── PublishingStatusWidget.tsx
     ├── StorageWidget.tsx
     ├── widgets.module.css       — widget-shared CSS
@@ -227,7 +227,7 @@ The dashboard fans out into **per-domain** endpoints under `/admin/api/cms/dashb
 | `/dashboard/media`          | `useMediaStats`          | `dashboard.read` + `media.read` | `{ count, totalBytes, latestThumbs[] }` |
 | `/dashboard/plugins`        | `usePluginsStats`        | `dashboard.read` + `plugins.read` | `{ total, active, disabled, errored, rows[] }` |
 | `/dashboard/storage`        | `useStorageStats`        | `dashboard.read` + `storage.elect` | `{ imageBytes, videoBytes, documentBytes, pluginBytes, databaseBytes, totalBytes, dialect }` |
-| `/dashboard/publish-lineup` | `usePublishLineupStats`  | `dashboard.read` + content visibility | `{ rows: [{ id, path, status, at }] }` |
+| `/dashboard/publish-lineup` | `usePublishLineupStats`  | `dashboard.read` + content visibility | `{ rows: [{ id, tableSlug, tableKind, slug, path, status, at }] }` |
 | `/dashboard/activity`       | `useRecentActivityStats` | `dashboard.read` + `audit.read` | `{ rows: [{ id, action, actor, targetCode, targetText, createdAt }] }` |
 | `/dashboard/domain`         | `useDomainStats`         | `dashboard.read` | `{ publicOrigin: string \| null }` |
 
@@ -236,6 +236,8 @@ Every endpoint requires `dashboard.read`. Media, plugins, activity, and storage 
 The Domain endpoint returns `configuredPublicOrigin()` from `server/auth/security.ts`. This is the first normalized public origin from `PUBLIC_ORIGIN` or platform auto-detection. When it is unset, `publicOrigin` is `null` and the widget shows setup guidance. The widget shows the hostname and any non-default port. “HTTPS configured” describes the URL scheme. The widget shows an error with a retry action when the request fails.
 
 Pages, posts, and publish lineup use the table-family and row-read policy in `server/auth/dataAccess.ts`. The SQL scope in `server/repositories/dashboard/content.ts` excludes unreadable table families, other authors' rows for own-only roles, deleted rows/tables, and non-main branches **before** counts, histograms, sorting, or limits. Author ownership takes precedence over creator fallback. A dashboard-only user receives empty content statistics and lineup; category counts include only readable post-type tables. `site.read` alone grants no row access. Regression coverage: `src/__tests__/server/dashboardAccess.test.ts`.
+
+Publish lineup shows the canonical path for each routable row. The homepage is `/`. Published rows use the active version’s slug. Scheduled and draft rows use their draft slug. Templates and rows without a public route show the entry slug and “No public path.” Each row opens its stable row ID on main in Site, Content, or Data. Pages and components open in Data for viewers without Site access. An open tile refreshes scheduled rows at their deadline and at least once a minute while schedules remain. A row still scheduled after its deadline shows “Overdue.”
 
 Widgets that reuse existing endpoints:
 
