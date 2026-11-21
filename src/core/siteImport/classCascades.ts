@@ -255,9 +255,10 @@ export function detectCrossSheetClassConflicts(
           definitionId: hashText(`leak\0${sheet}`),
           sources: [sheet],
           pageSources: [...ownPages],
-          defaultResolution: unrenameable
-            ? { action: 'overwrite' }
-            : { action: 'auto-rename', resolvedName: nameFor(name, sheet) },
+          defaultResolution: {
+            action: unrenameable ? 'overwrite' : 'auto-rename',
+            resolvedName: nameFor(name, sheet),
+          },
         })
       }
       continue
@@ -288,7 +289,7 @@ export function detectCrossSheetClassConflicts(
 export function crossSheetRenameTargets(conflicts: readonly CrossSheetClassConflict[]): string[] {
   return conflicts.flatMap((conflict) => {
     const res = conflict.defaultResolution
-    return (res.action === 'auto-rename' || res.action === 'custom-rename') && res.resolvedName ? [res.resolvedName] : []
+    return res.resolvedName ? [res.resolvedName] : []
   })
 }
 

@@ -292,21 +292,12 @@ function detectTokenConflicts(
     // A role token still exactly as a new site seeded it (`font-body`, …) is a
     // placeholder, not a user choice: the import fills it in place so
     // `var(--font-body)` keeps its name. An edited role token keeps the rename.
-    if (isUntouchedFontRoleToken(existing)) {
-      conflicts.push({
-        kind: 'font',
-        desiredVariable: token.variable,
-        existingTokenId: existing.id,
-        defaultResolution: { action: 'overwrite' },
-      })
-      continue
-    }
     const resolved = nextAvailableVariable(token.variable, claimedFonts, normalizeFontTokenVariable)
     conflicts.push({
       kind: 'font',
       desiredVariable: token.variable,
       existingTokenId: existing.id,
-      defaultResolution: { action: 'auto-rename', resolvedVariable: resolved },
+      defaultResolution: { action: isUntouchedFontRoleToken(existing) ? 'overwrite' : 'auto-rename', resolvedVariable: resolved },
     })
     claimedFonts.add(normalizeFontTokenVariable(resolved))
   }

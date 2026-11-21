@@ -14,7 +14,7 @@ export interface ConflictResolution {
   resolvedName?: string
   /**
    * Resolved CSS custom-property name without leading `--` (for token conflicts;
-   * defined when action is `auto-rename` or `custom-rename`).
+   * a default overwrite can also carry the target of a later rename choice).
    */
   resolvedVariable?: string
 }

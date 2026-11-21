@@ -1932,6 +1932,7 @@ describe('ConflictsStep — conflict rendering', () => {
         ],
       },
     })
+    const changes: ConflictResolution[] = []
     const ruleRes = new Map<string, ConflictResolution>([
       ['hero-title', { action: 'skip' }],
     ])
@@ -1940,13 +1941,15 @@ describe('ConflictsStep — conflict rendering', () => {
         plan={plan}
         classNameProblems={new Map()}
         resolutions={{ ...noResolutions, rules: ruleRes }}
-        onResolutionChange={noopResChange}
+        onResolutionChange={(_category, _key, resolution) => changes.push(resolution)}
       />,
     )
 
     const rowControls = within(screen.getByRole('group', { name: 'Conflict resolution for hero-title' }))
     expect(rowControls.getByRole('button', { name: 'Skip' }).getAttribute('aria-pressed')).toBe('true')
     expect(rowControls.getByRole('button', { name: 'Rename' }).getAttribute('aria-pressed')).toBe('false')
+    fireEvent.click(rowControls.getByRole('button', { name: 'Rename' }))
+    expect(changes).toEqual([{ action: 'auto-rename', resolvedName: 'hero-title-2' }])
   })
 
   it('applies one resolution to every class conflict from the section controls', () => {

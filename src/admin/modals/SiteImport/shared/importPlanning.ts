@@ -86,7 +86,7 @@ export function classRenameProblems(
     const res = crossSheetResMap.get(crossSheetConflictKey(conflict)) ?? conflict.defaultResolution
     const name = renameTarget(res)
     if (name === null) continue
-    const reusesSite = renameTarget(conflict.defaultResolution) === name && siteClassNames.has(name)
+    const reusesSite = conflict.defaultResolution.resolvedName === name && siteClassNames.has(name)
     targets.push({ key: classRowKey('cross-sheet', crossSheetConflictKey(conflict)), name, reusesSite })
   }
 
