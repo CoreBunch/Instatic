@@ -96,7 +96,6 @@ export function DataInspector({
     <aside
       data-panel=""
       data-testid="data-inspector-panel"
-      role="complementary"
       aria-label={`Data ${resolvedTitle}`}
       className={cn(propertiesStyles.panel, propertiesStyles.panelDocked)}
     >
@@ -106,9 +105,9 @@ export function DataInspector({
             <ArrowLeftIcon size={14} aria-hidden="true" />
             Back to rows
           </Button>
-          <span className={styles.draftStatus} role="status">
+          <output className={styles.draftStatus}>
             {draftStatusLabel(activeDraft)}
-          </span>
+          </output>
         </div>
       ) : (
         <PanelHeader
