@@ -11,6 +11,7 @@ function mountFrame(breakpointId: string): HTMLIFrameElement {
   const frame = document.createElement('div')
   frame.dataset.breakpointId = breakpointId
   const iframe = document.createElement('iframe')
+  iframe.srcdoc = '<body></body>'
   frame.appendChild(iframe)
   document.body.appendChild(frame)
   iframe.contentDocument!.body.dataset.breakpointId = breakpointId

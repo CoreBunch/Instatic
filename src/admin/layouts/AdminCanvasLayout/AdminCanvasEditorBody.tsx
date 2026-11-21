@@ -9,7 +9,9 @@ import { lazy, Suspense } from 'react'
 import { CanvasRoot } from '@admin/pages/site/canvas'
 import { CodeEditorPanel, CodeEditorSkeleton } from '@admin/pages/site/code-editor'
 import { useActiveLivePath } from '@admin/pages/site/hooks/useActiveLivePath'
+import { usePluginLoopSources } from '@site/hooks/usePluginLoopSources'
 import { useAutoResolveDependencies } from '@admin/pages/site/hooks/useAutoResolveDependencies'
+import { useBindPluginFragmentsApi } from '@admin/modals/InsertFragment/useBindPluginFragmentsApi'
 import { LayoutNameDialog } from '@admin/pages/site/dialogs/LayoutNameDialog'
 import { PropertiesPanel } from '@admin/pages/site/panels/PropertiesPanel'
 import { LeftSidebar } from '@admin/pages/site/sidebars/LeftSidebar'
@@ -32,6 +34,9 @@ import '@core/loops/sources'
 
 const ImportHtmlModal = lazy(() =>
   import('@admin/modals/ImportHtml').then((m) => ({ default: m.ImportHtmlModal })),
+)
+const InsertFragmentModal = lazy(() =>
+  import('@admin/modals/InsertFragment').then((m) => ({ default: m.InsertFragmentModal })),
 )
 
 interface AdminCanvasEditorBodyProps {
@@ -57,10 +62,16 @@ export function AdminCanvasEditorBody({
   // their own); lives here, in the lazy body, so the CMS fetch it needs for
   // postTypes templates stays out of the admin-shell bundle.
   useActiveLivePath()
+  // Plugins' loop sources for the Loop module's picker and the canvas.
+  usePluginLoopSources()
+  // Plugins with `editor.fragments` insert into the document open here, for
+  // a user who can edit the draft site.
+  useBindPluginFragmentsApi(canEditDraftSite)
 
   const propertiesPanelMode = useEditorStore((s) => s.propertiesPanelMode)
   const rightSidebarExpanded = useEditorStore(selectRightSidebarExpanded)
   const importHtmlModalOpen = useEditorStore((s) => s.importHtmlModalOpen)
+  const insertFragmentModalOpen = useEditorStore((s) => s.insertFragmentModalOpen)
   const hasRightSidebar = rightSidebarExpanded
   const narrowChrome = useNarrowEditorChrome()
 
@@ -139,6 +150,14 @@ export function AdminCanvasEditorBody({
       {importHtmlModalOpen && (
         <Suspense fallback={<ImportHtmlModalLoading />}>
           <ImportHtmlModal />
+        </Suspense>
+      )}
+
+      {/* Insert fragment dialog — opens from Spotlight "Insert fragment from
+          file…". Its chunk carries the zip reader and the fragment planner. */}
+      {insertFragmentModalOpen && (
+        <Suspense fallback={null}>
+          <InsertFragmentModal />
         </Suspense>
       )}
     </RuntimeDiagnosticsContext.Provider>

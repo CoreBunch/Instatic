@@ -16,11 +16,46 @@ import {
   decodeBodyBytes,
   encodeBodyBytes,
 } from '../protocol/bodyEncoding'
+import { withoutSessionCookies } from '../../sessionCookies'
+import { BUN_SOCKET_IP_HEADER } from '../../auth/security'
+import { namesMemberAppToken } from '../../members/apps/protocol'
 import type {
   SerializedRequest,
   SerializedResponse,
   SerializedUploadedFile,
 } from '../protocol/messages'
+
+/**
+ * Request headers that carry a client's IP address: core's own stamp of the
+ * socket peer, the one `clientIp` reads behind a trusted proxy
+ * (`x-forwarded-for`), and the ones common proxies and CDNs add. None of them
+ * is handed to plugin code, whatever its permissions: the caller's address
+ * reaches a plugin only as `ctx.ip` / `ctx.ipKey`, worked out with the
+ * trusted-proxy setting and only for a plugin granted `visitors.ip`. Lower
+ * case, as the serialized headers are.
+ */
+export const CLIENT_ADDRESS_HEADERS = [
+  BUN_SOCKET_IP_HEADER,
+  'x-forwarded-for',
+  'forwarded',
+  'x-real-ip',
+  'cf-connecting-ip',
+  'true-client-ip',
+  'x-client-ip',
+  'fastly-client-ip',
+  'x-cluster-client-ip',
+  'x-envoy-external-address',
+  'x-original-forwarded-for',
+  'cf-connecting-ipv6',
+  'cf-pseudo-ipv4',
+  'fly-client-ip',
+  'do-connecting-ip',
+  'x-azure-clientip',
+  'x-azure-socketip',
+  'x-appengine-user-ip',
+  'x-vercel-forwarded-for',
+  'x-nf-client-connection-ip',
+] as const
 
 /**
  * Serialize an inbound HTTP request for the worker. Reads the body once as
@@ -55,6 +90,25 @@ export async function serializeRouteRequest(
   } else if (reqHeaders && typeof reqHeaders.entries === 'function') {
     for (const [k, v] of reqHeaders.entries()) headers[k.toLowerCase()] = v
   }
+  // The host has already decided who the caller is. A plugin gets that
+  // answer (`ctx.user`), never the credentials themselves: a session token
+  // in plugin hands could be replayed against the admin or the site.
+  if (headers.cookie !== undefined) {
+    const kept = withoutSessionCookies(headers.cookie)
+    if (kept) headers.cookie = kept
+    else delete headers.cookie
+  }
+  // The same for a member app's token. An app that sends it to everything
+  // on the plugin mount must not hand it to a handler, so the header goes
+  // whenever it names one: under any scheme, on every kind of route, whether
+  // or not the token decided who is calling. A plugin's own secrets (a
+  // webhook signature, say) do not look like one and pass through.
+  if (headers.authorization !== undefined && namesMemberAppToken(headers.authorization)) {
+    delete headers.authorization
+  }
+  // Addresses travel only as `ctx.ip` (see CLIENT_ADDRESS_HEADERS): a raw
+  // header here would bypass both the proxy trust and `visitors.ip`.
+  for (const name of CLIENT_ADDRESS_HEADERS) delete headers[name]
 
   const bodyBytes = request.method !== 'GET'
     ? new Uint8Array(await request.arrayBuffer())

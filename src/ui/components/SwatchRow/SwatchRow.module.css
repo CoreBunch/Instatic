@@ -1,0 +1,117 @@
+.swatchRow {
+    --swatch-size: 22px;
+    --swatch-inset: calc((var(--control-height) - var(--swatch-size)) / 2);
+    --swatch-inner-radius: calc(var(--input-radius) - var(--swatch-inset));
+    box-sizing: border-box;
+    font-size: var(--text-xs);
+    display: flex;
+    align-items: center;
+    gap: var(--space-s);
+    width: 100%;
+    height: var(--control-height);
+    padding: var(--swatch-inset);
+    background: var(--bg-surface-2);
+    border-radius: var(--input-radius);
+    transition: background 120ms ease;
+}
+
+.swatchRow:hover {
+    background: var(--bg-surface-3);
+}
+
+/* Row-wide trigger — the whole row opens the editor, so the button carries
+   no chrome of its own and simply lays out chip + name. */
+.trigger.trigger {
+    justify-content: flex-start;
+    font-size: inherit;
+    gap: var(--space-s);
+    flex: 1 1 auto;
+    min-width: 0;
+    height: 100%;
+    padding: 0;
+    background: none;
+}
+
+.swatchRow:has(.trigger:focus-visible) {
+    outline: 2px solid var(--text-muted);
+    outline-offset: 1px;
+}
+
+.trigger.trigger:focus-visible {
+    box-shadow: none;
+    outline: none;
+}
+
+.trigger.trigger:hover {
+    background: none;
+}
+
+.chip {
+    --swatch-chip-fill: transparent;
+    --swatch-chip-ring: inset 0 0 0 1px var(--overlay-20);
+    flex: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: var(--swatch-size);
+    height: var(--swatch-size);
+    border-radius: var(--swatch-inner-radius);
+}
+
+/* A solid or gradient fill, or a ring for the border preview. */
+.chip[data-state="set"] {
+    background: var(--swatch-chip-fill);
+    box-shadow: var(--swatch-chip-ring);
+}
+
+/* An empty chip carries a plus: this is not "no value", it is room for a new
+   one — the same mark every "Add…" row uses. */
+.chip[data-state="unset"] {
+    background: var(--overlay-5);
+    color: var(--text-subtle);
+}
+
+.swatchRow:hover .chip[data-state="unset"] {
+    color: var(--text-bright);
+}
+
+.name {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    text-align: left;
+    font-size: var(--text-xs);
+    font-variant-numeric: tabular-nums;
+    color: var(--text);
+}
+
+.name[data-placeholder="true"] {
+    color: var(--text-subtle);
+}
+
+.clear.clear {
+    font-size: inherit;
+    flex: none;
+    width: var(--swatch-size);
+    height: var(--swatch-size);
+    min-height: 0;
+    padding: 0;
+    border-radius: var(--swatch-inner-radius);
+    background: none;
+    color: var(--text-subtle);
+    transition: color 110ms ease;
+}
+
+.clear.clear:focus-visible {
+    outline: 2px solid var(--text-muted);
+    outline-offset: -2px;
+    box-shadow: none;
+}
+
+.clear.clear:hover,
+.clear.clear:focus-visible {
+    background: none;
+    color: var(--text-bright);
+}

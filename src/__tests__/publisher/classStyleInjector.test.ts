@@ -13,6 +13,7 @@
  */
 
 import { describe, it, expect } from 'bun:test'
+import { registry } from '@core/module-engine'
 import { bagToCSS, bagToInlineStyle, collectClassCSS, generateClassCSS } from '@core/publisher'
 import { classKindSelector, makeConditionDef } from '@core/page-tree'
 import type { StyleRule, Page, PageNode, SiteDocument } from '@core/page-tree'
@@ -856,7 +857,7 @@ describe('collectClassCSS', () => {
       { root: ['nav'] },
       [makeScript('scripts/nav.js', "button.addEventListener('click', () => menu.classList.toggle('nav--open'))")],
     )
-    const css = collectClassCSS(site)
+    const css = collectClassCSS(site, registry)
     expect(css).toContain('.nav {')
     expect(css).toContain('.nav--open {')
     expect(css).toContain('display: flex')
@@ -872,7 +873,7 @@ describe('collectClassCSS', () => {
       { root: ['nav'] },
       [makeScript('scripts/nav.js', "menu.classList.toggle('nav--open')")],
     )
-    const css = collectClassCSS(site)
+    const css = collectClassCSS(site, registry)
     expect(css).toContain('.nav--open {')
     expect(css).not.toContain('.orphan')
   })
@@ -883,7 +884,7 @@ describe('collectClassCSS', () => {
       {},
       [{ id: 'notes', path: 'docs/notes.md', type: 'doc', content: 'the orphan class is for later' } as SiteDocument['files'][number]],
     )
-    expect(collectClassCSS(site)).not.toContain('.orphan')
+    expect(collectClassCSS(site, registry)).not.toContain('.orphan')
   })
 
   it('emits user-authored CSS but skips framework-generated CSS', () => {
@@ -908,7 +909,7 @@ describe('collectClassCSS', () => {
       { child1: [userClass.id, frameworkClass.id] },
     )
 
-    const css = collectClassCSS(site)
+    const css = collectClassCSS(site, registry)
 
     expect(css).toContain('.user-class {')
     expect(css).toContain('color: green;')
@@ -918,7 +919,7 @@ describe('collectClassCSS', () => {
 
   it('returns empty string when no nodes have classIds', () => {
     const site = makeSite({ cls1: makeClass('cls1', { color: 'red' }) })
-    expect(collectClassCSS(site)).toBe('')
+    expect(collectClassCSS(site, registry)).toBe('')
   })
 
   it('only emits CSS for classes actually used by nodes (tree-shaking)', () => {
@@ -929,7 +930,7 @@ describe('collectClassCSS', () => {
       },
       { child1: ['used'] },
     )
-    const css = collectClassCSS(site)
+    const css = collectClassCSS(site, registry)
     expect(css).toContain('.used {')
     expect(css).not.toContain('.unused')
   })
@@ -949,10 +950,10 @@ describe('collectClassCSS', () => {
       { child: ['variant'] },
     )
 
-    expect(collectClassCSS(withDependency)).toContain(
+    expect(collectClassCSS(withDependency, registry)).toContain(
       '.group:hover .group-hover\\:block',
     )
-    expect(collectClassCSS(withoutDependency)).not.toContain('group-hover')
+    expect(collectClassCSS(withoutDependency, registry)).not.toContain('group-hover')
   })
 
   it('tree-shakes ambient fragments by known class dependencies', () => {
@@ -981,7 +982,7 @@ describe('collectClassCSS', () => {
       { child: ['used'] },
     )
 
-    const css = collectClassCSS(site)
+    const css = collectClassCSS(site, registry)
     expect(css).toContain('.used:hover')
     expect(css).not.toContain('.unused:hover')
     expect(css).toContain('body {')
@@ -995,7 +996,7 @@ describe('collectClassCSS', () => {
       },
       { child1: ['cls1'], child2: ['cls2'] },
     )
-    const css = collectClassCSS(site)
+    const css = collectClassCSS(site, registry)
     expect(css).toContain('.cls1')
     expect(css).toContain('.cls2')
   })
@@ -1005,20 +1006,20 @@ describe('collectClassCSS', () => {
     // Insert </style> manually via name abuse — test the sanitizer, not the class gen
     // (bagToCSS already blocks javascript: etc; test the outer sanitizeModuleCSS wrapper)
     const site = makeSite({ evil: malicious }, { child1: ['evil'] })
-    const css = collectClassCSS(site)
+    const css = collectClassCSS(site, registry)
     expect(css).not.toMatch(/<\/style\s*>/)
   })
 
   it('gracefully handles missing class references in the registry', () => {
     const site = makeSite({}, { child1: ['nonexistent-id'] })
-    expect(() => collectClassCSS(site)).not.toThrow()
-    expect(collectClassCSS(site)).toBe('')
+    expect(() => collectClassCSS(site, registry)).not.toThrow()
+    expect(collectClassCSS(site, registry)).toBe('')
   })
 
   it('returns empty string when all used class styles are blocked by the sanitiser', () => {
     const evilClass = makeClass('evil', { backgroundImage: 'javascript:alert(1)' })
     const site = makeSite({ evil: evilClass }, { child1: ['evil'] })
-    const css = collectClassCSS(site)
+    const css = collectClassCSS(site, registry)
     // No valid declarations → collectClassCSS should return empty (or whitespace only)
     expect(css.trim()).toBe('')
   })

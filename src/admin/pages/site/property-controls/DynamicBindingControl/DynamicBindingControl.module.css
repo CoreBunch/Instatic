@@ -1,36 +1,13 @@
-/* DynamicBindingControl — binding affordance and bound-value display */
-
-.affordanceWrapper {
-    position: relative;
-}
+/* DynamicBindingControl: binding affordance and bound-value display.
+   The affordance's hover reveal lives on ControlRow's `.labelAction`. */
 
 .affordanceBtn {
-    position: absolute;
-    right: 4px;
-    top: 4px;
-    z-index: 2;
-    opacity: 0;
-    transition: opacity 80ms ease;
     padding: 0;
     min-width: 18px;
     min-height: 18px;
     width: 18px;
     height: 18px;
     border-radius: var(--radius-sm);
-}
-
-.affordanceWrapper:hover .affordanceBtn,
-.affordanceWrapper:focus-within .affordanceBtn {
-    opacity: 0.7;
-}
-
-.affordanceWrapper:hover .affordanceBtn:hover,
-.affordanceWrapper:focus-within .affordanceBtn:focus {
-    opacity: 1;
-}
-
-.affordanceWrapperActive .affordanceBtn {
-    opacity: 1;
 }
 
 .boundWrapper {

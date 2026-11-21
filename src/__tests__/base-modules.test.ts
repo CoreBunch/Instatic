@@ -170,7 +170,6 @@ describe('base.loop — module contract specifics', () => {
     expect(Object.keys(LoopModule.schema)).toEqual([])
     expect(Object.keys(LoopModule.defaults).sort()).toEqual([
       'customTag',
-      'direction',
       'filters',
       'htmlAttributes',
       'limit',
@@ -185,7 +184,6 @@ describe('base.loop — module contract specifics', () => {
       sourceId: '',
       filters: {},
       orderBy: '',
-      direction: 'desc',
       limit: 10,
       offset: 0,
       pagination: 'none',
@@ -193,6 +191,8 @@ describe('base.loop — module contract specifics', () => {
       tag: 'div',
       customTag: '',
     })
+    // A new loop stores no direction: its source's default decides.
+    expect('direction' in LoopModule.defaults).toBe(false)
   })
 
   it('resolves safe wrapper tags for publisher and canvas affordances', () => {

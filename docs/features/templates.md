@@ -217,6 +217,7 @@ See the "Dynamic bindings" section below for the full source table.
 | `site`         | `ctx.site`                | Anywhere — site name, primary color                     |
 | `route`        | `ctx.route`               | URL-driven (`route.segments`, `route.slug`, `route.query.*`) |
 | `page`         | `ctx.page`                | Current page metadata                                   |
+| `member`       | `ctx.member`              | The signed-in member: `member.email`, `member.profile.<fieldId>`, `member.tagList`. Empty when signed out. Rendered per visitor, see [members](members.md) |
 
 ---
 
@@ -306,6 +307,8 @@ DataMeta is fetched once from `/data/_meta` and cached module-level in `cache.ts
 The **Site Explorer** panel (`src/admin/pages/site/panels/SiteExplorerPanel/`) shows **Pages** and **Templates** in separate labelled sections. Clicking a template row opens it in the canvas like a page; the canvas preview uses the synthetic entry from `useTemplatePreviewContext`.
 
 ### Converting a page to a template
+
+All three template targets expose **Search & social** and **Head tags**. Empty fields inherit the defaults in Explorer → Site → Global head settings. A title such as `{page.title} | {site.name}` resolves for each served page. See [Page head settings](publisher.md#page-head-settings) for precedence.
 
 Right-click a page row → **Use as template** → the **Template settings** dialog opens:
 

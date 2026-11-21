@@ -19,6 +19,7 @@ import { cloneScopedClassesForNodeMap } from './scopedClassClone'
 import { reindexNodeParents } from './parentIndex'
 import { cloneNodeWithRemap } from './cloneNode'
 import { createNode } from './mutations'
+import { parsePageSeo } from './pageSeo'
 
 
 export function addPage(site: SiteDocument, title: string, slug: string): Page {
@@ -129,7 +130,19 @@ export function duplicatePage(
     slug: uniquePageSlug(slug ?? title, site.pages),
     rootNodeId: newRootId,
     nodes: newNodes,
+    // A copy of a protected page is protected the same way. Dropping the rule
+    // would publish the copy to everyone.
+    ...(source.access ? { access: source.access } : {}),
   }
+  // The copy keeps the source's head settings, minus the two that name the
+  // source page's own address: a copy claiming the original's URL would tell
+  // search engines and link previews it IS the original.
+  const seo = parsePageSeo(source.seo && {
+    ...source.seo,
+    canonical: undefined,
+    openGraph: source.seo.openGraph && { ...source.seo.openGraph, url: undefined },
+  })
+  if (seo) newPage.seo = seo
   site.pages.push(newPage)
   return newPage
 }

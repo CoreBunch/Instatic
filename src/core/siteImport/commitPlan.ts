@@ -33,16 +33,22 @@ import { isAbortError } from '@core/http'
 import type { FontEntry } from '@core/fonts'
 import { applyAssetRewrites } from './applyAssetRewrites'
 import { rewriteInternalLinks } from './linkRewrite'
+import { importSourceHash } from './siteFilePaths'
 import type {
   ImportColorToken,
   ImportFontToken,
   ImportPlan,
   ImportResult,
-  ImportWarning,
+  ImportScript,
+  ImportStylesheet,
+} from './types'
+import type {
+  FileConflict,
   PageConflict,
   RuleConflict,
   TokenConflict,
-} from './types'
+} from './conflictTypes'
+import type { ImportWarning } from './warnings'
 import type { SiteImportAdapter, SiteImportTransaction } from './adapter'
 
 export interface CommitImportPlanOptions {
@@ -98,6 +104,9 @@ export async function commitImportPlan(
     stylesheets: [],
   }
 
+  // Notes the store raises while committing (an npm version it kept).
+  const commitWarnings: ImportWarning[] = []
+
   // Cancellation gate: past this point the commit is atomic and runs to the end.
   signal?.throwIfAborted()
 
@@ -117,7 +126,7 @@ export async function commitImportPlan(
     // reference newly-imported rules.
     commitStyleRules(tx, rewrittenPlan, ruleConflictsByName, results)
     commitPages(tx, linkedPages, pageConflictsBySource, pageIdBySource, results)
-    commitPageScopedFiles(tx, rewrittenPlan, pageIdBySource, results)
+    commitPageScopedFiles(tx, withSourceHashes(rewrittenPlan, plan), pageIdBySource, results, commitWarnings)
   })
 
   // Build asset result — only include the ones that actually uploaded.
@@ -138,7 +147,7 @@ export async function commitImportPlan(
     // Carry forward the plan-level warnings (CSS parser / asset planner /
     // missing stylesheet …) AND surface any per-asset upload failures from
     // Step A above. The wizard's Done step renders this list verbatim.
-    warnings: [...plan.warnings, ...uploadWarnings, ...fontInstallWarnings],
+    warnings: [...plan.warnings, ...uploadWarnings, ...fontInstallWarnings, ...commitWarnings],
   }
 }
 
@@ -166,7 +175,19 @@ async function uploadPlanAssets(
 ): Promise<{ rewriteMap: Record<string, string>; warnings: ImportWarning[] }> {
   const rewriteMap: Record<string, string> = {}
   const warnings: ImportWarning[] = []
+  // A file the library already holds (a media conflict left at `skip`) is not
+  // uploaded again: its references point at the existing asset.
+  const reusedUrlBySource = new Map(
+    plan.conflicts.media
+      .filter((c) => c.defaultResolution.action === 'skip')
+      .map((c) => [c.sourcePath, c.existingUrl]),
+  )
   for (const asset of plan.assets) {
+    const reusedUrl = reusedUrlBySource.get(asset.sourcePath)
+    if (reusedUrl !== undefined) {
+      rewriteMap[asset.sourcePath] = reusedUrl
+      continue
+    }
     signal?.throwIfAborted()
     try {
       const uploaded = await adapter.uploadAsset({
@@ -202,7 +223,9 @@ async function installPlanGoogleFonts(
   for (const font of plan.googleFonts) {
     signal?.throwIfAborted()
     try {
-      installedGoogleFonts.push(await adapter.installGoogleFont(font))
+      // Only the request goes to the installer; provenance is planning-only.
+      const { family, variants, subsets } = font
+      installedGoogleFonts.push(await adapter.installGoogleFont({ family, variants, subsets }))
     } catch (err) {
       if (isAbortError(err)) throw err
       const reason = err instanceof Error ? err.message : 'Unknown font install error'
@@ -371,6 +394,7 @@ function commitPages(
         title: page.title,
         slug: page.slug,
         nodeFragment: page.nodeFragment,
+        seo: page.seo,
       })
       id = conflict.existingPageId
     } else {
@@ -379,6 +403,7 @@ function commitPages(
         title: page.title,
         slug: resolution?.resolvedSlug ?? page.slug,
         nodeFragment: page.nodeFragment,
+        seo: page.seo,
       })
     }
 
@@ -386,19 +411,84 @@ function commitPages(
   }
 }
 
+/**
+ * Scripts and kept stylesheets. A file whose path the site already holds
+ * (a `FileConflict`) is reused (`skip`) or replaced in place (`overwrite`);
+ * either way the pages this import links it from join its scope. Every other
+ * file, including a conflict resolved to `auto-rename`, is added as a new file.
+ * Last, the import's files are merged into the site's load order
+ * (`tx.orderImportedFiles`).
+ */
 function commitPageScopedFiles(
   tx: SiteImportTransaction,
   plan: ImportPlan,
   pageIdBySource: Map<string, string>,
   results: CommitResults,
+  warnings: ImportWarning[],
 ): void {
-  const scopedScripts = resolvePageScopes(plan.scripts ?? [], pageIdBySource)
-  if (scopedScripts.length > 0) {
-    results.scripts.push(...tx.addScripts(scopedScripts))
+  const fileConflictByKey = new Map<string, FileConflict>(
+    plan.conflicts.files.map((c) => [`${c.kind}:${c.path}`, c]),
+  )
+  const commitKind = <T extends ImportScript | ImportStylesheet>(
+    kind: FileConflict['kind'],
+    items: T[],
+    add: (additions: T[]) => { id: string; path: string }[],
+  ): { id: string; path: string }[] => {
+    // The import's own order: its priorities rank its files against each other.
+    const ordered = resolvePageScopes(items, pageIdBySource).toSorted((x, y) => x.priority - y.priority)
+    const additions: T[] = []
+    const reuses: SiteFileReuse[] = []
+    for (const item of ordered) {
+      const conflict = fileConflictByKey.get(`${kind}:${item.path}`)
+      const action = conflict?.defaultResolution.action
+      if (!conflict || (action !== 'skip' && action !== 'overwrite')) {
+        additions.push(item)
+        continue
+      }
+      reuses.push({
+        existingFileId: conflict.existingFileId,
+        pageIds: item.pageIds ?? [],
+        ...(action === 'overwrite' ? { replacement: item } : {}),
+      })
+    }
+    const added = additions.length > 0 ? add(additions) : []
+    const reused = reuses.length > 0 ? tx.reuseSiteFiles(reuses) : { files: [], warnings: [] }
+    warnings.push(...reused.warnings)
+
+    // `add` returns one entry per item, in order.
+    const idByItem = new Map<T, string>(additions.flatMap((item, i) => (added[i] ? [[item, added[i].id]] : [])))
+    const reusedIds = new Set(reused.files.map((f) => f.id))
+    const importOrder = ordered.flatMap((item) => {
+      const addedId = idByItem.get(item)
+      if (addedId) return [addedId]
+      const existingId = fileConflictByKey.get(`${kind}:${item.path}`)?.existingFileId
+      return existingId && reusedIds.has(existingId) ? [existingId] : []
+    })
+    if (importOrder.length > 0) tx.orderImportedFiles(kind, importOrder, added.map((f) => f.id))
+    return [...added, ...reused.files]
   }
-  const scopedStylesheets = resolvePageScopes(plan.stylesheets ?? [], pageIdBySource)
-  if (scopedStylesheets.length > 0) {
-    results.stylesheets.push(...tx.addStylesheets(scopedStylesheets))
+
+  results.scripts.push(...commitKind('script', plan.scripts, (items) => tx.addScripts(items)))
+  results.stylesheets.push(...commitKind('style', plan.stylesheets, (items) => tx.addStylesheets(items)))
+}
+
+type SiteFileReuse = Parameters<SiteImportTransaction['reuseSiteFiles']>[0][number]
+
+/**
+ * Stamp each script and stylesheet with the hash of its text as the bundle
+ * had it. `rewritten` carries media URLs in kept stylesheets; `original` is
+ * the same plan before `applyAssetRewrites`, so a re-import of an unchanged
+ * bundle hashes the same whichever URLs its media got.
+ */
+function withSourceHashes(rewritten: ImportPlan, original: ImportPlan): ImportPlan {
+  const originals = new Map<string, ImportScript | ImportStylesheet>([
+    ...original.scripts.map((s): [string, ImportScript] => [`script:${s.path}`, s]),
+    ...original.stylesheets.map((s): [string, ImportStylesheet] => [`style:${s.path}`, s]),
+  ])
+  return {
+    ...rewritten,
+    scripts: rewritten.scripts.map((s) => ({ ...s, sourceHash: importSourceHash(originals.get(`script:${s.path}`) ?? s) })),
+    stylesheets: rewritten.stylesheets.map((s) => ({ ...s, sourceHash: importSourceHash(originals.get(`style:${s.path}`) ?? s) })),
   }
 }
 

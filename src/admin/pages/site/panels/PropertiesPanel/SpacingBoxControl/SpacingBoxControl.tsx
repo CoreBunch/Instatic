@@ -363,13 +363,6 @@ function SpacingBox({
       </div>
 
       <div className={styles.boxBody}>
-        {/* Corner-to-corner diagonals — dashed for margin (echoes the
-         *  dashed margin border), solid for padding. The padding box's
-         *  opaque-ish background covers the margin diagonals where they
-         *  overlap, producing a continuous "diagonal that turns dashed
-         *  beyond the padding boundary" effect. */}
-        <BoxDiagonals dashed={box === 'margin'} />
-
         {SIDES.map((side) => (
           <SideInput
             key={side}
@@ -390,53 +383,9 @@ function SpacingBox({
           />
         ))}
 
-        {/* Centre cell — only rendered when there's a nested box to host
-         *  (margin holds the padding box). Padding has nothing inside its
-         *  centre — the diagonals do the visual work and free the space
-         *  for the side inputs to read clearly. */}
-        {nested && <div className={styles.boxInner}>{nested}</div>}
+        <div className={styles.boxInner}>{nested}</div>
       </div>
     </div>
-  )
-}
-
-// ---------------------------------------------------------------------------
-// BoxDiagonals — SVG overlay drawing two corner-to-corner diagonals.
-// preserveAspectRatio="none" stretches the lines to the actual box size so
-// they reach exact corners. Stroke width is held in CSS.
-//
-// allowed: non-icon SVG (geometric overlay)
-// This is a layout overlay — two diagonal lines that scale with the
-// box and switch between solid/dashed for the padding/margin layers.
-// It is not iconography (Constraint #348 is about icons) and there is
-// no equivalent in the pixel-art-icons catalog. CSS gradients can't
-// produce a true 1px non-scaling stroke or scalable dashed diagonals,
-// so SVG is the right primitive here.
-// ---------------------------------------------------------------------------
-
-function BoxDiagonals({ dashed }: { dashed: boolean }) {
-  return (
-    <svg
-      className={styles.boxDiagonals}
-      aria-hidden="true"
-      preserveAspectRatio="none"
-      viewBox="0 0 100 100"
-    >
-      <line
-        x1="0"
-        y1="0"
-        x2="100"
-        y2="100"
-        className={cn(styles.diagonal, dashed && styles.diagonalDashed)}
-      />
-      <line
-        x1="100"
-        y1="0"
-        x2="0"
-        y2="100"
-        className={cn(styles.diagonal, dashed && styles.diagonalDashed)}
-      />
-    </svg>
   )
 }
 

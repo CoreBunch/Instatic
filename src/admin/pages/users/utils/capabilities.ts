@@ -70,6 +70,8 @@ export const CAPABILITY_GROUPS: CapabilityGroup[] = [
   },
   { title: 'Users & Roles', capabilities: ['users.manage', 'roles.manage'] },
   { title: 'Audit', capabilities: ['audit.read'] },
+  { title: 'Email', capabilities: ['mail.manage'] },
+  { title: 'Members', capabilities: ['members.read', 'members.manage'] },
 ]
 
 /**

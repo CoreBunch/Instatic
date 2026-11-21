@@ -12,6 +12,8 @@ import {
 } from '../../../server/publish/loopPrefetch'
 import type { DbResult } from '../../../server/db'
 import { createFakeDb } from './dbTestFake'
+import { loopSourceRegistry } from '@core/loops'
+import type { SourceFetchContext } from '@core/loops/types'
 import { makePage, makeSite } from '../publisher/helpers'
 
 // Make sure the built-in sources are registered.
@@ -122,7 +124,8 @@ describe('loopPrefetch', () => {
     expect(props.sourceId).toBe('')
     expect(props.limit).toBe(10)
     expect(props.offset).toBe(0)
-    expect(props.direction).toBe('desc')
+    // No stored direction: the source's default decides (resolveLoopDirection).
+    expect(props.direction).toBeUndefined()
     expect(props.pagination).toBe('none')
     expect(props.pageSize).toBe(10)
   })
@@ -235,5 +238,52 @@ describe('loopPrefetch', () => {
     const data = result.get('loop')
     expect(data?.totalItems).toBe(2)
     expect(data?.items.map((it) => it.fields.title)).toEqual(['About', 'Contact'])
+  })
+
+  describe('direction when the loop stores none', () => {
+    function recordingSource(id: string, defaultDirection?: 'asc' | 'desc') {
+      const seen: Array<SourceFetchContext['direction']> = []
+      loopSourceRegistry.registerOrReplace({
+        id,
+        label: id,
+        filterSchema: {},
+        orderByOptions: [],
+        fields: [{ id: 'name', label: 'Name' }],
+        ...(defaultDirection ? { defaultDirection } : {}),
+        async fetch(ctx) {
+          seen.push(ctx.direction)
+          return { items: [], totalItems: 0 }
+        },
+      })
+      return seen
+    }
+
+    async function prefetchWith(sourceId: string, props: Record<string, unknown> = {}) {
+      const page = makePage({
+        root: { moduleId: 'base.body', children: ['loop'] },
+        loop: { moduleId: 'base.loop', props: { sourceId, ...props } },
+      })
+      await prefetchLoopData(page, makeSite(), createFakeDb(async () => ({ rows: [], rowCount: 0 })))
+    }
+
+    it('lists a source with no default in the order it returns', async () => {
+      const seen = recordingSource('test.ordered')
+      await prefetchWith('test.ordered')
+      expect(seen).toEqual(['asc'])
+      loopSourceRegistry.unregister('test.ordered')
+    })
+
+    it('uses the source default, and the author pick over it', async () => {
+      const seen = recordingSource('test.newest', 'desc')
+      await prefetchWith('test.newest')
+      await prefetchWith('test.newest', { direction: 'asc' })
+      expect(seen).toEqual(['desc', 'asc'])
+      loopSourceRegistry.unregister('test.newest')
+    })
+
+    it('keeps data rows newest first by default', () => {
+      expect(loopSourceRegistry.get('data.rows')?.defaultDirection).toBe('desc')
+      expect(loopSourceRegistry.get('site.pages')?.defaultDirection).toBeUndefined()
+    })
   })
 })

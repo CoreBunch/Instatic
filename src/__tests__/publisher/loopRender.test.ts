@@ -371,8 +371,20 @@ describe('publisher loop renderer', () => {
     expect(html).toContain('data-instatic-loop-mode="infinite"')
     expect(html).toContain('data-instatic-loop-has-more="true"')
     expect(html).toContain('data-instatic-loop-page-size="2"')
-    // Loop runtime script injected when at least one infinite loop exists
-    expect(html).toContain('/_instatic/assets/loop-runtime.js')
+    // Loop runtime script injected when at least one infinite loop exists.
+    // No version supplied: the URL carries no query.
+    expect(html).toContain('src="/_instatic/assets/loop-runtime.js" data-instatic-loop-endpoint=')
+
+    // The server supplies the runtime's content hash: the URL must carry it,
+    // so it moves when a CMS upgrade ships a new runtime.
+    const versioned = (loopRuntimeVersion: string) =>
+      publishPage(page, makeSite(), baseRegistry, {
+        loopData: new Map([['loop', loopDataWithMore(items, 2)]]),
+        loopRuntimeVersion,
+      }).html
+    expect(versioned('aaa')).toContain('src="/_instatic/assets/loop-runtime.js?v=aaa" data-instatic-loop-endpoint=')
+    expect(versioned('bbb')).toContain('src="/_instatic/assets/loop-runtime.js?v=bbb" data-instatic-loop-endpoint=')
+    expect(versioned('" onload="bad')).toContain('/_instatic/assets/loop-runtime.js?v=%22%20onload%3D%22bad"')
   })
 
   it('does not inject the loop runtime when no loop is infinite', () => {

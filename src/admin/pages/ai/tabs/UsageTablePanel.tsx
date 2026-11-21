@@ -12,7 +12,7 @@
 
 import type { ReactNode } from 'react'
 import { cn } from '@ui/cn'
-import styles from '../AiPage.module.css'
+import styles from '@admin/shared/SettingsWorkspace/SettingsWorkspace.module.css'
 
 export type UsageTableColumn<TRow> = {
   /** Header text; also the React key for the column. */

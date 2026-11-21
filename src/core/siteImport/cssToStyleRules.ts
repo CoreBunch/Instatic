@@ -57,12 +57,12 @@ import {
 import { parseStyleDeclarations } from './cssDeclarationReader'
 import { extractUrlPayloads, parseFontFaceRule } from './fontFaceParser'
 import type {
-  ImportWarning,
   BreakpointHint,
   AssetRef,
   NewStyleRule,
   ParsedFontFace,
 } from './types'
+import type { ImportWarning } from './warnings'
 
 // ---------------------------------------------------------------------------
 // Public interface
@@ -669,10 +669,12 @@ function processConditionInner(
 
     for (const selector of selectorsForStorage(selectorList)) {
       // Find or create the rule for this selector
-      let idx: number
-      if (selectorToLastIndex.has(selector)) {
-        idx = selectorToLastIndex.get(selector)!
-      } else {
+      let idx = selectorToLastIndex.get(selector)
+      // Registry conditions have a canonical editor order. Keep a new source
+      // condition at its own position instead of merging it into a bag that
+      // could emit in a different order (e.g. overlapping max-width queries).
+      const previousContexts = idx === undefined ? [] : Object.keys(rules[idx].contextStyles)
+      if (idx === undefined || (previousContexts.length && !previousContexts.includes(contextId))) {
         const classified = classifySelector(selector)
         idx = rules.length
         rules.push({

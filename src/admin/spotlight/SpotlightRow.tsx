@@ -16,6 +16,7 @@ import { cn } from '@ui/cn'
 import { SearchSolidIcon } from 'pixel-art-icons/icons/search-solid'
 import { SaveSolidIcon } from 'pixel-art-icons/icons/save-solid'
 import { SendSolidIcon } from 'pixel-art-icons/icons/send-solid'
+import { MailSolidIcon } from 'pixel-art-icons/icons/mail-solid'
 import { UndoIcon } from 'pixel-art-icons/icons/undo'
 import { RedoIcon } from 'pixel-art-icons/icons/redo'
 import { LayoutSolidIcon } from 'pixel-art-icons/icons/layout-solid'
@@ -77,6 +78,7 @@ const ICON_MAP: Record<string, IconComponent> = {
   'search-solid': SearchSolidIcon,
   'save-solid': SaveSolidIcon,
   'send-solid': SendSolidIcon,
+  'mail-solid': MailSolidIcon,
   'undo': UndoIcon,
   'redo': RedoIcon,
   'layout-solid': LayoutSolidIcon,

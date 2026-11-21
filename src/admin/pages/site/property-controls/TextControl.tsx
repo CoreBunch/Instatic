@@ -21,6 +21,7 @@ export function TextControl({
   isOverride,
   disabled,
   layout,
+  labelAction,
   onInputFocus,
   onInputBlur,
 }: TextControlProps) {
@@ -41,6 +42,7 @@ export function TextControl({
       propKey={propKey}
       label={label}
       layout={layout}
+      labelAction={labelAction}
       isOverride={isOverride}
       disabled={disabled}
     >

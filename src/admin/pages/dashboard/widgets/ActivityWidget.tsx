@@ -83,6 +83,22 @@ function actionVerb(action: string): string {
       return 'installed plugin pack'
     case 'plugin.settings.update':
       return 'updated settings for'
+    case 'mail.connector.create':
+      return 'added an email connector'
+    case 'mail.connector.delete':
+      return 'removed an email connector'
+    case 'mail.connector.secret':
+      return 'replaced an email connector secret'
+    case 'mail.defaults.update':
+      return 'updated the email defaults'
+    case 'mail.template.update':
+      return 'edited email template'
+    case 'mail.template.reset':
+      return 'reset email template'
+    case 'member.app.create':
+      return 'added a member sign-in app'
+    case 'member.app.delete':
+      return 'removed a member sign-in app'
     case 'user.create':
       return 'added user'
     case 'user.update':

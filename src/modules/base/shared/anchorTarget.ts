@@ -17,6 +17,8 @@
  *                                              author's own `rel` tokens.
  *   - `anchorHtmlAttributes(bag, target)`    — the `htmlAttributes` bag with
  *                                              `rel` pulled out and merged.
+ *   - `anchorTargetAttr(target)`             — the ` target="…"` attribute,
+ *                                              or nothing for the default `''`.
  *
  * Lives in a non-component `.ts` so the editor components can import it without
  * breaking React Fast Refresh (Constraint #309).
@@ -25,6 +27,7 @@ import { normalizeHtmlAttributes, type AnchorTarget } from '@core/htmlAttributes
 
 /** Select options for the Properties-panel `target` control. */
 export const ANCHOR_TARGET_OPTIONS: ReadonlyArray<{ label: string; value: AnchorTarget }> = [
+  { label: 'Default', value: '' },
   { label: 'Same tab', value: '_self' },
   { label: 'New tab', value: '_blank' },
   { label: 'Parent', value: '_parent' },
@@ -76,4 +79,13 @@ export function anchorHtmlAttributes(
 ): { attributes: Record<string, string>; rel: string | null } {
   const { rel: authoredRel, ...attributes } = normalizeHtmlAttributes(htmlAttributes)
   return { attributes, rel: mergeAnchorRel(authoredRel, target) }
+}
+
+/**
+ * The ` target="…"` attribute for a published anchor: nothing for the default
+ * `''` (no target), the chosen value otherwise. An explicit `_self` is kept,
+ * since it overrides a `<base target>` the site's head code may set.
+ */
+export function anchorTargetAttr(target: AnchorTarget): string {
+  return target ? ` target="${target}"` : ''
 }

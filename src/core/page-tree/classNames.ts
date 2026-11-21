@@ -10,7 +10,7 @@ const ASCII_WHITESPACE_RE = /[\t\n\f\r ]/
 // eslint-disable-next-line no-control-regex
 const CONTROL_CHAR_RE = /[\0-\x1f\x7f]/
 
-function validateCssClassName(name: string): string | null {
+export function validateCssClassName(name: string): string | null {
   if (name.length === 0) return 'Class name is required'
   if (name.trim() !== name) return 'Class names cannot start or end with whitespace'
   if (ASCII_WHITESPACE_RE.test(name)) return 'Class names cannot contain whitespace'
