@@ -36,6 +36,7 @@ import { renderLoop } from './renderLoop'
 import { resolveAutoSizes } from './sizesResolver'
 import { RICHTEXT_CONTENT_CONFIG, sanitizeRichtext } from '@core/sanitize'
 import { readShowWhen, showWhenAllows } from '@core/members'
+import { readShowIf, showIfAllows } from '@core/templates'
 import type {
   RenderConfig,
   RenderAccumulators,
@@ -334,6 +335,10 @@ export function renderNode(
   const member = config.templateContext?.member
   const visitor = member ? { tags: member.tags, appAsking: member.appRequest !== null } : null
   if (!showWhenAllows(readShowWhen(node.props), visitor)) return ''
+  // A show-if condition reads the render context: a loop item's field is
+  // known here per iteration, and a query condition made the node
+  // request-dependent (rule 2c), so the request's query is in the route frame.
+  if (!showIfAllows(readShowIf(node.props), config.templateContext)) return ''
 
   const specialRenderer = resolveSpecialRenderer(def)
   if (specialRenderer) return specialRenderer(node, config, acc, renderNode)
