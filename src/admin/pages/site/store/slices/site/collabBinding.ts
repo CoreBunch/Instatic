@@ -58,7 +58,7 @@ import {
   treeMap,
   type CollabDocSet,
 } from '@core/collab'
-import { allDocIdsForSite, collabBranchId, notifyCollabBranchGone } from './collabBranch'
+import { allDocIdsForSite, collabBranchId, needsSiteRosterAssembly, notifyCollabBranchGone } from './collabBranch'
 import { clonePackageJson } from '@core/site-dependencies/manifest'
 import { cloneSiteRuntimeConfig } from '@core/site-runtime'
 import { validateSite } from '@core/persistence/validate'
@@ -620,10 +620,9 @@ function bindDocThroughProvider(docId: string): void {
   void binding.whenSynced.then(() => {
     gate.synced = true
     scheduleProjection(docId)
-    // A row doc bound on demand (a peer created the row) re-assembles the
-    // site once its content arrives — the roster projection skipped it
-    // while it was empty.
-    if (!isSiteDocId(docId)) scheduleProjection(siteDocId(collabBranchId()))
+    if (needsSiteRosterAssembly(storeApi?.getState().site, docId)) {
+      scheduleProjection(siteDocId(collabBranchId()))
+    }
   })
 }
 
