@@ -272,7 +272,7 @@ export async function handleHoleRequest(
   // So is a fragment that sits inside an element with a show-when rule: the
   // rules above it are checked here, because rendering starts at this node.
   // A node that is not on any render path of its page is given to nobody.
-  const paths = showWhenPathsTo(foundPage, snap.site, nodeId, { includeSelf: false })
+  const paths = showWhenPathsTo(foundPage, snap.site, nodeId, { includeSelf: false, composed: onRoute !== null })
   const gated = showWhenPathsAreGated(paths)
   const showsMember = gated || subtreeDependsOnMember(foundPage, snap.site, registry, nodeId)
   if (gated) {

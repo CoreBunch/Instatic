@@ -131,7 +131,7 @@ export async function handleLoopRequest(
   // The loop may live inside a Visual Component, so the rules are followed
   // along the render path, through the component and the reference that
   // placed it. A loop on no render path is given to nobody.
-  const paths = showWhenPathsTo(containingPage, site, loopNode.id, { includeSelf: true })
+  const paths = showWhenPathsTo(containingPage, site, loopNode.id, { includeSelf: true, composed: composed !== null })
   const gated = showWhenPathsAreGated(paths)
   // A loop inside a component is not in the page's own node map, where
   // `subtreeDependsOnMember` looks; treat it as per-visitor rather than guess.
