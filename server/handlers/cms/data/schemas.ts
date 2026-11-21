@@ -11,6 +11,7 @@
  * `DataField[]`. Locking the schema here would force us to keep two
  * definitions in sync.
  */
+import { DataFieldSchema } from '@core/data/schemas'
 import { Type, type Static } from '@core/utils/typeboxHelpers'
 import { AccessRuleSchema } from '@core/members'
 
@@ -33,6 +34,7 @@ export const TablePatchBodySchema = Type.Partial(Type.Object({
   pluralLabel: Type.String(),
   primaryFieldId: Type.String(),
   fields: Type.Unknown(),
+  appendFields: Type.Array(DataFieldSchema),
 }))
 
 export const TableAccessBodySchema = Type.Object({ access: AccessRuleSchema })

@@ -108,6 +108,7 @@ The repo is organized by responsibility, not by feature. Every file has one reas
 | Framework schemas (leaf)     | `src/core/framework-schema/*`         | Pure TypeBox schemas + derived types for persisted framework settings (`FrameworkSettings`, `GeneratedClassMetadata`, etc.); no dependency on the engine or page-tree |
 | CSS value sanitiser (leaf)   | `src/core/css-sanitize/*`             | Single canonical `sanitiseCssValue` — dependency-free leaf shared by `@core/publisher` and `@core/framework`; blocks `expression()` / `javascript:` / `{}` / `</` injection at the CSS value level |
 | Visual components            | `src/core/visualComponents/*`         | VC tree shape, slot synchronization, recursion checks                |
+| Site fragments               | `src/core/fragments/*`                | Portable section/page/component format: extract a closure, plan an insert (the site wins), commit it in one undo step; headless and importable by build scripts |
 | Persistence (client-side)    | `src/core/persistence/*`              | HTTP envelopes, response schemas, site validation                    |
 | Validation utilities         | `src/core/utils/*`                    | TypeBox helpers, JSON boundary helpers, sanitization                 |
 | Admin shell                  | `src/admin/*` (excluding `pages/site/`)| Auth, routing, workspaces, plugin host UI, modals                   |
@@ -391,7 +392,7 @@ Architectural rules live as tests in `src/__tests__/architecture/*.test.ts` and 
 | All provider SDKs banned repo-wide (no exceptions); drivers talk directly to each provider's REST API  | `ai-driver-isolation.test.ts`                                   |
 | UI primitives live in `src/ui/components/`                                                            | `ui-primitives-location.test.ts`                                |
 
-See [docs/reference/architecture-tests.md](reference/architecture-tests.md) for the complete catalog (81 gate files).
+See [docs/reference/architecture-tests.md](reference/architecture-tests.md) for the complete catalog (104 gate files).
 
 ---
 

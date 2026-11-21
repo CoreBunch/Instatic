@@ -34,6 +34,9 @@ import '@core/loops/sources'
 const ImportHtmlModal = lazy(() =>
   import('@admin/modals/ImportHtml').then((m) => ({ default: m.ImportHtmlModal })),
 )
+const InsertFragmentModal = lazy(() =>
+  import('@admin/modals/InsertFragment').then((m) => ({ default: m.InsertFragmentModal })),
+)
 
 interface AdminCanvasEditorBodyProps {
   canEditDraftSite: boolean
@@ -64,6 +67,7 @@ export function AdminCanvasEditorBody({
   const propertiesPanelMode = useEditorStore((s) => s.propertiesPanelMode)
   const rightSidebarExpanded = useEditorStore(selectRightSidebarExpanded)
   const importHtmlModalOpen = useEditorStore((s) => s.importHtmlModalOpen)
+  const insertFragmentModalOpen = useEditorStore((s) => s.insertFragmentModalOpen)
   const hasRightSidebar = rightSidebarExpanded
   const narrowChrome = useNarrowEditorChrome()
 
@@ -142,6 +146,14 @@ export function AdminCanvasEditorBody({
       {importHtmlModalOpen && (
         <Suspense fallback={<ImportHtmlModalLoading />}>
           <ImportHtmlModal />
+        </Suspense>
+      )}
+
+      {/* Insert fragment dialog — opens from Spotlight "Insert fragment from
+          file…". Its chunk carries the zip reader and the fragment planner. */}
+      {insertFragmentModalOpen && (
+        <Suspense fallback={null}>
+          <InsertFragmentModal />
         </Suspense>
       )}
     </RuntimeDiagnosticsContext.Provider>
