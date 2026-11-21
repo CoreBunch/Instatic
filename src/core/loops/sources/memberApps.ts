@@ -91,6 +91,8 @@ export const MemberAppsSource: LoopEntitySource = {
   description: 'The apps the signed-in member has signed in to with their account. Each member sees their own.',
   perVisitor: true,
   filterSchema: {},
+  // Newest first unless the author picks otherwise.
+  defaultDirection: 'desc',
   orderByOptions: [{ id: 'connectedAt', label: 'When it was connected' }],
   fields: [
     { id: 'name', label: 'App name' },

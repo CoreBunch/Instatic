@@ -120,4 +120,3 @@ export function showIfAllows(
       return !comparable || text !== (rule.value ?? '')
   }
 }
-

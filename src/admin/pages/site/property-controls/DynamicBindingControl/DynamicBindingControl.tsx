@@ -1,12 +1,13 @@
 /**
- * DynamicBindingControl — binding affordance wrapper.
+ * DynamicBindingControl: the bind-to-data affordance of a property control.
  *
- * Wraps any property control child in two modes:
+ * Renders the control (through `renderControl`) in one of two modes:
  *
- *  Unbound: renders children with a BracesIcon affordance button (visible on
- *    hover/focus-within) that opens the shared DataBindingPicker.
+ *  Unbound: renders the control with a BracesIcon affordance button in the
+ *    control's label row (`labelAction`, revealed on row hover/focus by
+ *    ControlRow) that opens the shared DataBindingPicker.
  *
- *  Bound: replaces the child with a striped badge showing the resolved field
+ *  Bound: replaces the control with a striped badge showing the resolved field
  *    label, plus a clear button.
  *
  * The picker itself is shared with the Content workspace through
@@ -84,7 +85,12 @@ interface DynamicBindingControlProps {
    * directly, plus the loop's synthetic fields in a separate group.
    */
   loopTableId?: string | null
-  children: ReactNode
+  /**
+   * Renders the control itself. The unbound state passes the `{}` affordance
+   * as `labelAction`, which every control puts in its own label row (through
+   * `ControlRow`'s `labelAction` slot), so it never sits over the control.
+   */
+  renderControl: (labelAction?: ReactNode) => ReactNode
 }
 
 export function DynamicBindingControl({
@@ -100,7 +106,7 @@ export function DynamicBindingControl({
   availableFields,
   sourceLabel,
   loopTableId,
-  children,
+  renderControl,
 }: DynamicBindingControlProps) {
   const [pickerOpen, setPickerOpen] = useState(false)
   // Refs the popover uses for positioning + trigger-click handling.
@@ -174,29 +180,26 @@ export function DynamicBindingControl({
     )
   }
 
-  // ── Unbound state — render children with BracesIcon affordance ──────────
+  // ── Unbound state: the control, with the {} affordance in its label row ──
   return (
     <>
-      <div
-        ref={wrapperRef}
-        className={cn(styles.affordanceWrapper, pickerOpen && styles.affordanceWrapperActive)}
-        data-prop-key={propKey}
-      >
-        {children}
-        <Button
-          ref={triggerRef}
-          variant="ghost"
-          size="xs"
-          iconOnly
-          className={styles.affordanceBtn}
-          aria-label={insertMode ? `Insert binding for ${label}` : `Bind ${label}`}
-          aria-expanded={pickerOpen}
-          tooltip={insertMode ? 'Insert data token' : 'Bind to data field'}
-          onClick={() => setPickerOpen((o) => !o)}
-          type="button"
-        >
-          <BracesIcon size={11} aria-hidden="true" />
-        </Button>
+      <div ref={wrapperRef} data-prop-key={propKey}>
+        {renderControl(
+          <Button
+            ref={triggerRef}
+            variant="ghost"
+            size="xs"
+            iconOnly
+            className={styles.affordanceBtn}
+            aria-label={insertMode ? `Insert binding for ${label}` : `Bind ${label}`}
+            aria-expanded={pickerOpen}
+            tooltip={insertMode ? 'Insert data token' : 'Bind to data field'}
+            onClick={() => setPickerOpen((o) => !o)}
+            type="button"
+          >
+            <BracesIcon size={11} aria-hidden="true" />
+          </Button>,
+        )}
       </div>
 
       {pickerOpen && (

@@ -16,7 +16,7 @@ import { normalizeSiteRuntimeConfig } from '@core/site-runtime'
 import { pageToCells } from '../../core/data/pageFromRow'
 import { MAIN_SCOPE } from '../../../server/branches/scope'
 import { publishDraftSite } from '../../../server/publish/publishSite'
-import { getPublishedSiteForVersion } from '../../../server/publish/publishedSnapshotCache'
+import { getPublishedNodeIndexForVersion } from '../../../server/publish/publishedSnapshotCache'
 import { getPublishVersion } from '../../../server/publish/publishState'
 import { resetForTests } from '../../../server/publish/renderCache'
 import { createDataRow } from '../../../server/repositories/data'
@@ -73,6 +73,9 @@ describe('later pages of an infinite list', () => {
       insert into users (id, email, email_normalized, display_name, password_hash, role_id)
       values ('admin_1', 'admin@example.test', 'admin@example.test', 'Admin', 'x', 'owner')
     `
+  })
+
+  async function publish(conditionOnOutletWrapper = false) {
     const shell: SiteShell = {
       id: 'site_1', name: 'Show-if Site', files: [], visualComponents: [],
       breakpoints: [{ id: 'desktop', label: 'Desktop', width: 1440, icon: 'monitor' }],
@@ -87,7 +90,9 @@ describe('later pages of an infinite list', () => {
       template: { enabled: true, target: { kind: 'everywhere' }, priority: 0 },
       nodes: Object.fromEntries([
         node('lay_root', 'base.body', {}, ['lay_main']),
-        node('lay_main', 'base.container', {}, ['lay_outlet']),
+        node('lay_main', 'base.container', conditionOnOutletWrapper
+          ? { showIf: { source: 'query', name: 'commerce', test: 'notEquals', value: 'hide' } }
+          : {}, ['lay_outlet']),
         node('lay_outlet', 'base.outlet', {}),
       ].map((n) => [n.id, n])),
     } as unknown as Page
@@ -106,7 +111,7 @@ describe('later pages of an infinite list', () => {
       await createDataRow(t.db, MAIN_SCOPE, { id: p.id, tableId: 'pages', cells: pageToCells(p), slug: p.slug }, 'admin_1')
     }
     await publishDraftSite(t.db, 'admin_1', uploadsDir)
-  })
+  }
 
   afterEach(async () => {
     loopSourceRegistry.unregister(SOURCE)
@@ -114,7 +119,8 @@ describe('later pages of an infinite list', () => {
     await rm(uploadsDir, { recursive: true, force: true })
   })
 
-  it('read the query of the page the list sits on', async () => {
+  it('reads the query of the page the list sits on', async () => {
+    await publish()
     const res = await handleServerRequest(
       new Request(`http://localhost/_instatic/loop/c0_list?page=2&pagePath=${encodeURIComponent('/?status=ok')}`),
       { db: t.db, uploadsDir },
@@ -134,13 +140,14 @@ describe('later pages of an infinite list', () => {
   })
 
   it('shows a query-conditioned notice on a page inside a layout, for that query only', async () => {
+    await publish()
     const served = await (await handleServerRequest(new Request('http://localhost/account?commerce=plan_changed'), { db: t.db, uploadsDir })).text()
     expect(served).toContain('ACCOUNT-PAGE')
     // The notice is a fragment, under the id the composed page carries.
     expect(served).toContain('data-instatic-hole="c0_acc_notice"')
     expect(served).not.toContain('PLAN-CHANGED-NOTICE')
 
-    const site = await getPublishedSiteForVersion(t.db, getPublishVersion())
+    const site = await getPublishedNodeIndexForVersion(t.db, getPublishVersion())
     const fragment = async (u: string) => (await handleServerRequest(
       new Request(`http://localhost/_instatic/hole/c0_acc_notice?v=${site!.snapshotHash}&u=${encodeURIComponent(u)}`),
       { db: t.db, uploadsDir },
@@ -148,5 +155,23 @@ describe('later pages of an infinite list', () => {
     expect(await fragment('/account?commerce=plan_changed')).toContain('PLAN-CHANGED-NOTICE')
     expect(await fragment('/account')).not.toContain('PLAN-CHANGED-NOTICE')
     expect(await fragment('/account?commerce=cancelled')).not.toContain('PLAN-CHANGED-NOTICE')
+  })
+  it('renders a layout wrapper with the matching page in its outlet', async () => {
+    await publish(true)
+    const get = async (path: string) => {
+      const response = await handleServerRequest(new Request('http://localhost' + path), { db: t.db, uploadsDir })
+      expect(response.status).toBe(200)
+      return response.text()
+    }
+    const shell = await get('/account?commerce=plan_changed')
+    const wrapper = /data-instatic-hole="([^"]+)"/.exec(shell)?.[1]
+    expect(wrapper).toBeTruthy()
+    expect(shell).not.toContain('ACCOUNT-PAGE')
+    const site = await getPublishedNodeIndexForVersion(t.db, getPublishVersion())
+    const fragment = (query: string) => get(`/_instatic/hole/${wrapper}?v=${site!.snapshotHash}&u=${encodeURIComponent('/account' + query)}`)
+    const visible = await fragment('?commerce=plan_changed')
+    expect(visible).toContain('ACCOUNT-PAGE')
+    expect(visible).toContain('PLAN-CHANGED-NOTICE')
+    expect(await fragment('?commerce=hide')).not.toContain('ACCOUNT-PAGE')
   })
 })

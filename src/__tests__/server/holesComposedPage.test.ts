@@ -15,7 +15,7 @@ import type { LoopEntitySource, SourceFetchContext } from '@core/loops/types'
 import { normalizeSiteRuntimeConfig } from '@core/site-runtime'
 import { pageToCells } from '../../core/data/pageFromRow'
 import { MAIN_SCOPE } from '../../../server/branches/scope'
-import { getPublishedSiteForVersion } from '../../../server/publish/publishedSnapshotCache'
+import { getPublishedNodeIndexForVersion } from '../../../server/publish/publishedSnapshotCache'
 import { getPublishVersion } from '../../../server/publish/publishState'
 import { publishDraftSite } from '../../../server/publish/publishSite'
 import { resetForTests } from '../../../server/publish/renderCache'
@@ -83,7 +83,7 @@ describe('fragments of a page inside a site-wide layout', () => {
         sourceId: SOURCE, filters: {}, orderBy: '', limit: 10, offset: 0,
         pagination: 'infinite', pageSize: 1, tag: 'div', customTag: '',
       }, ['home_item']),
-      node('home_item', 'base.text', { text: 'ITEM[{currentEntry.label}]', tag: 'p' }),
+      node('home_item', 'base.text', { text: 'ITEM[{currentEntry.label}] ROUTE[{route.query.f}]', tag: 'p' }),
     ])
     for (const page of [layout, home]) {
       await createDataRow(t.db, MAIN_SCOPE, { id: page.id, tableId: 'pages', cells: pageToCells(page), slug: page.slug }, 'admin_1')
@@ -100,7 +100,7 @@ describe('fragments of a page inside a site-wide layout', () => {
   const get = (path: string) => handleServerRequest(new Request(`http://localhost${path}`), { db: t.db, uploadsDir })
 
   async function hole(id: string, u: string): Promise<Response> {
-    const site = await getPublishedSiteForVersion(t.db, getPublishVersion())
+    const site = await getPublishedNodeIndexForVersion(t.db, getPublishVersion())
     return get(`/_instatic/hole/${encodeURIComponent(id)}?v=${site!.snapshotHash}&u=${encodeURIComponent(u)}`)
   }
 
@@ -126,9 +126,19 @@ describe('fragments of a page inside a site-wide layout', () => {
   })
 
   it('loads the next page of a list in the page content', async () => {
-    const res = await get(`/_instatic/loop/c0_home_list__top?page=2&pagePath=${encodeURIComponent('/')}`)
-    expect(res.status).toBe(200)
-    const { html } = (await res.json()) as { html: string }
-    expect(html).toContain('ITEM[two]')
+    const shell = await (await get('/?f=hi')).text()
+    expect(shell).toContain('/_instatic/assets/loop-runtime.js')
+    const wrapper = await (await hole('lay_main__top', '/?f=hi')).text()
+    expect(wrapper).toContain('ITEM[one]')
+    const id = wrapper.match(/data-instatic-loop="([^"]+)"/)?.[1]
+    expect(id).toBeDefined()
+    for (const [pageNumber, label, hasMore] of [[2, 'two', true], [3, 'three', false]] as const) {
+      const res = await get(`/_instatic/loop/${encodeURIComponent(id!)}?page=${pageNumber}&pagePath=%2F%3Ff%3Dhi`)
+      expect(res.status).toBe(200)
+      const body = await res.json()
+      expect(body).toMatchObject({ pageNumber, hasMore })
+      expect(body.html).toContain(`ITEM[${label}]`)
+      expect(body.html).toContain('ROUTE[hi]')
+    }
   })
 })

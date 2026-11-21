@@ -144,6 +144,13 @@ describe('installing a colour palette in one call', () => {
     expect(storedSlugs()).toEqual(PALETTE.map((t) => t.slug))
   })
 
+  it('returns no bindable token when the Framework write is refused', () => {
+    useEditorStore.getState().createSite('Blocked Site')
+    connectCollabProvider(deferredProvider())
+    expect(useEditorStore.getState().createFrameworkColorToken(PALETTE[0])).toBeNull()
+    expect(storedSlugs()).toEqual([])
+  })
+
   it('reports a refused batch as an error instead of a list of created tokens', () => {
     useEditorStore.getState().createSite('Blocked Site')
     // Never released: every doc stays unsynced, so the write path refuses.

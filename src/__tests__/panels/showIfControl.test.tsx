@@ -97,6 +97,15 @@ describe('ShowIfControl', () => {
     expect(field.value).toBe('commerce')
   })
 
+  it('lets an author clear a condition with an unknown source', () => {
+    load()
+    useEditorStore.getState().updateNodeProps('box', { showIf: { source: 'unknown' } })
+    renderControl()
+    expect(screen.getByText(/This condition could not be read/)).toBeTruthy()
+    pick('Show if', 'always')
+    expect(readShowIf(boxProps())).toBeNull()
+  })
+
   it('names the real problem when the value is too long', () => {
     load()
     const props = { showIf: { source: 'query', name: 'commerce', test: 'equals', value: 'x'.repeat(501) } }

@@ -11,7 +11,7 @@ import { restoreBundlePublication, validateBundlePublication, BundlePublicationE
 import { withPublishLock, bumpPublishVersion } from '../../publish/publishState'
 import { prepareInactiveSlot, swapSlot } from '../../publish/staticArtefact'
 import { ensureRuntimeDependencyCache } from '../../publish/runtime/dependencyCache'
-import { saveDraftSite } from '../../repositories/site'
+import { getDraftSite, saveDraftSite } from '../../repositories/site'
 import { listDataTables, createDataTable, updateDataTable, insertDataTableIfAbsent } from '../../repositories/data/tables'
 import { listDataRows, upsertDataRow, insertDataRowIfAbsent, replaceDataRow, type DataRowImportInput } from '../../repositories/data/rows'
 import { deleteSiteMediaAssets, type DeletedMediaAsset } from '../../repositories/media'
@@ -20,7 +20,8 @@ import { removeMediaAssetFiles } from './mediaVariants'
 import { deleteAllDataRowRedirects, importDataRowRedirect } from '../../repositories/data/publish'
 import { deleteAllMediaFolders, importMediaFolder } from '../../repositories/mediaFolders'
 import { listProtectedTables, writeTableAccess } from '../../repositories/data/tableAccess'
-import { keepPageAccess } from '../../writePolicy/pageAccessCell'
+import { keepPageStructuralCells, newPageStructuralCells } from '../../writePolicy/pageStructuralCells'
+import { parsePageSeo, type SiteSettings } from '@core/page-tree'
 import type { AccessRule } from '@core/members'
 import { notifyRowWrite, notifyShellWrite, serializeCollabAwareWrite, type RowWriteKind } from '../../repositories/rowWriteEvents'
 
@@ -65,10 +66,11 @@ export interface ApplySiteBundleInput {
    */
   carriesMedia: boolean
   /**
-   * The importer may change who can open a page (`site.structure.edit`).
-   * Without it, a page the import overwrites keeps its stored access rule.
+   * The importer may change a page's structural settings: who can open it
+   * and its head settings (`site.structure.edit`). Without it, a page the
+   * import overwrites keeps its stored access rule and `seo` cell.
    */
-  mayChangePageAccess: boolean
+  mayChangePageStructure: boolean
 }
 
 export interface AppliedSiteBundle {
@@ -280,8 +282,15 @@ async function applySiteBundleLocked(
     const tablesBefore = new Set((await listDataTables(db, scope)).map((table) => table.id))
     const protectedTables = isMainScope(scope) ? await listProtectedTables(db) : []
     const storedTableRules = new Map<string, AccessRule>(protectedTables.map((entry) => [entry.id, entry.rule]))
+    const storedGlobalSeo = input.mayChangePageStructure || (!bundle.site && !bundle.publication)
+      ? undefined : (await getDraftSite(db, scope))?.settings.seo
+    function guardedSettings(settings: SiteSettings): SiteSettings {
+      const { seo, ...rest } = settings
+      const allowed = input.mayChangePageStructure ? parsePageSeo(seo) : storedGlobalSeo
+      return allowed ? { ...rest, seo: allowed } : rest
+    }
     const storedPages = new Map(
-      input.mayChangePageAccess || strategy === 'merge-add'
+      input.mayChangePageStructure || strategy === 'merge-add'
         ? []
         : (await listDataRows(db, scope, 'pages')).map((row) => [row.id, row] as const),
     )
@@ -301,7 +310,9 @@ async function applySiteBundleLocked(
     const guardedCells = (row: { id: string; tableId: string; slug: string; cells: Record<string, unknown> }) => {
       if (row.tableId !== 'pages') return row.cells
       const sameRow = storedPages.get(row.id)
-      const cells = sameRow ? keepPageAccess(sameRow, row.cells) : row.cells
+      const cells = sameRow
+        ? keepPageStructuralCells(sameRow, row.cells)
+        : newPageStructuralCells(row.tableId, row.cells, input.mayChangePageStructure)
       const atAddress = storedPageRuleBySlug.get(row.slug)
       return cells.access === undefined && atAddress !== undefined ? { ...cells, access: atAddress } : cells
     }
@@ -309,23 +320,52 @@ async function applySiteBundleLocked(
      * Published versions are what the public site serves, so they get the
      * same treatment: the rule the address was published with (or the draft's
      * rule) is put back into every restored version of a page.
+     *
+     * Head settings follow the same structural policy, on both places a
+     * publication carries them: each version's `seo` cell and each page of the
+     * restored site snapshots (what the public renderer reads). Without
+     * `site.structure.edit` a page keeps the head settings its draft has now
+     * (a new page gets none); with it they are normalised.
      */
+    const storedPageSeo = new Map<string, unknown>(
+      input.mayChangePageStructure
+        ? []
+        : (storedPages.size > 0 ? [...storedPages.values()] : await listDataRows(db, scope, 'pages'))
+          .map((row) => [row.id, row.cells.seo] as const),
+    )
+    const pageSeoFor = (pageId: string, bundleSeo: unknown) =>
+      parsePageSeo(input.mayChangePageStructure ? bundleSeo : storedPageSeo.get(pageId))
     const bundlePageIds = new Set(bundle.rows.filter((row) => row.tableId === 'pages').map((row) => row.id))
-    guardPublication = (publication) => {
-      if (storedPages.size === 0) return publication
-      return {
-        ...publication,
-        rows: publication.rows.map((row) => !bundlePageIds.has(row.rowId) ? row : {
-          ...row,
-          versions: row.versions.map((version) => {
-            const rule = publishedPageRuleBySlug.get(version.slug)
-              ?? storedPages.get(row.rowId)?.cells.access
-              ?? storedPageRuleBySlug.get(version.slug)
-            return rule === undefined ? version : { ...version, cells: { ...version.cells, access: rule } }
-          }),
+    guardPublication = (publication) => ({
+      ...publication,
+      rows: publication.rows.map((row) => !bundlePageIds.has(row.rowId) ? row : {
+        ...row,
+        versions: row.versions.map((version) => {
+          const rule = storedPages.size === 0 ? undefined : publishedPageRuleBySlug.get(version.slug)
+            ?? storedPages.get(row.rowId)?.cells.access
+            ?? storedPageRuleBySlug.get(version.slug)
+          const { seo: bundleSeo, ...cells } = version.cells
+          const seo = pageSeoFor(row.rowId, bundleSeo)
+          return {
+            ...version,
+            cells: { ...cells, ...(seo ? { seo } : {}), ...(rule === undefined ? {} : { access: rule }) },
+          }
         }),
-      }
-    }
+      }),
+      snapshots: publication.snapshots.map((snapshot) => ({
+        ...snapshot,
+        site: {
+          ...snapshot.site,
+          settings: guardedSettings(snapshot.site.settings),
+          pages: snapshot.site.pages.map((page) => {
+            if (!bundlePageIds.has(page.id)) return page
+            const { seo: bundleSeo, ...rest } = page
+            const seo = pageSeoFor(page.id, bundleSeo)
+            return seo ? { ...rest, seo } : rest
+          }),
+        },
+      })),
+    })
     /** A stored rule always stays. The bundle's rule is only added where there is none. */
     const applyTableAccess = async (tx: DbClient): Promise<void> => {
       if (!isMainScope(scope)) return
@@ -424,7 +464,7 @@ async function applySiteBundleLocked(
 
         // 6. Replace the site shell (only when the bundle carries one)
         if (bundle.site) {
-          await saveDraftSite(tx, scope, bundle.site, null, { collabInternal: true })
+          await saveDraftSite(tx, scope, { ...bundle.site, settings: guardedSettings(bundle.site.settings) }, null, { collabInternal: true })
           shellWasWritten = true
         }
 
@@ -564,7 +604,7 @@ async function applySiteBundleLocked(
 
         // Site shell: overwrite if the bundle carries one
         if (bundle.site) {
-          await saveDraftSite(tx, scope, bundle.site, null, { collabInternal: true })
+          await saveDraftSite(tx, scope, { ...bundle.site, settings: guardedSettings(bundle.site.settings) }, null, { collabInternal: true })
           shellWasWritten = true
         }
       })

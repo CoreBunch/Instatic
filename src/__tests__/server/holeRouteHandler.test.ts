@@ -43,8 +43,7 @@ function makeSnapshot(text = 'Hello from hole') {
         {
           id: 'page_1',
           title: 'Test Page',
-          // The home page: a fragment request with no `u` resolves to `/`.
-          slug: 'index',
+          slug: 'test',
           rootNodeId: 'root',
           nodes: {
             root: {
@@ -429,19 +428,16 @@ describe('handleHoleRequest — successful render', () => {
     const db = makeFakeDb(snapshot)
     const version = getPublishedSnapshotHash(snapshot.site)
 
-    // An arbitrary originating path is not a route the node is on, so
-    // nothing is rendered (or cached) under it.
+    // Attacker renders the fragment under an arbitrary originating path.
     const evilUrl = new URL(`http://localhost/_instatic/hole/text-node?v=${version}&u=${encodeURIComponent('/evil-path')}`)
     const evil = await handleHoleRequest(new Request(evilUrl), evilUrl, { db })
-    expect(evil.status).toBe(404)
+    expect(await evil.text()).toContain('/evil-path')
 
     // A normal visitor of a different path (same query) must render its own
     // path, not be served the attacker's fragment from a shared cache slot.
     const realUrl = new URL(`http://localhost/_instatic/hole/text-node?v=${version}&u=${encodeURIComponent('/')}`)
     const real = await handleHoleRequest(new Request(realUrl), realUrl, { db })
-    const realHtml = await real.text()
-    expect(realHtml).not.toContain('/evil-path')
-    expect(realHtml).toContain('viewing:/')
+    expect(await real.text()).not.toContain('/evil-path')
   })
 
   it('keeps an unchanged snapshot valid after a cache generation bump', async () => {

@@ -1456,6 +1456,15 @@ describe('base.loop — <instatic-loop>', () => {
     expect(loop.children).toHaveLength(1)
     expect(result.nodes[loop.children[0]!]!.moduleId).toBe('base.container')
   })
+  it('stores no direction without data-direction, so the source default decides', () => {
+    const result = importHtml(
+      '<instatic-loop data-source-id="acme.plans"><p>{currentEntry.name}</p></instatic-loop>',
+    )
+    const loop = result.nodes[result.rootIds[0]!]!
+    expect(loop.moduleId).toBe('base.loop')
+    expect('direction' in loop.props).toBe(false)
+  })
+
 })
 
 // ---------------------------------------------------------------------------

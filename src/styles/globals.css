@@ -192,12 +192,37 @@
     --chart-segment-empty-border: var(--overlay-5);
     --chart-track-bg: var(--overlay-5);
 
+    /* Color picker spectrum and transparency preview */
+    --picker-white: #ffffff;
+    --picker-black: #000000;
+    --picker-hue-track: linear-gradient(
+        to right,
+        #ff0000 0%,
+        #ffff00 17%,
+        #00ff00 33%,
+        #00ffff 50%,
+        #0000ff 67%,
+        #ff00ff 83%,
+        #ff0000 100%
+    );
+    --picker-checkerboard-size: 8px;
+    --picker-checkerboard: repeating-conic-gradient(
+        #ffffff 0% 25%,
+        #c9c9c9 0% 50%
+    );
+
+    /* Property inspector row geometry */
+    --control-height: 28px;
+    --control-label-column: 100px;
+
     /* Radius */
     --radius-sm: 3px;
     --radius: 6px;
     --card-radius: 16px;
     --panel-radius: 12px;
     --input-radius: 1em;
+    --segment-track-radius: 12px;
+    --segment-radius: 8px;
     --radius-pill: 999px;
     --tooltip-radius: 6px;
 
@@ -278,6 +303,7 @@
 
     /* Z-index layers */
     --z-dropdown: 20;
+    --floating-panel-z-index: 1000;
 
     /* Tooltips are transient hover hints that must sit above every modal layer,
      * including the spotlight-style dialogs (--spotlight-z-index: 9000, used by

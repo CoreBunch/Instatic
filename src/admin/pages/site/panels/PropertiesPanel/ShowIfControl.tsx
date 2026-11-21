@@ -193,8 +193,9 @@ export function ShowIfControl({
 
   const nameIsValid = draft !== null && SHOW_IF_NAME_REGEX.test(draft.name)
   const valueTooLong = draft !== null && needsValue(draft.test) && draft.value.length > SHOW_IF_VALUE_MAX_LENGTH
+  const unreadable = 'This condition could not be read, so nobody gets the element. Pick an option to fix it.'
   const problem = draft === null
-    ? null
+    ? (rule === 'never' ? unreadable : null)
     : draft.name === ''
       ? 'Name what to test. Until then nobody gets this element.'
       : !nameIsValid
@@ -202,7 +203,7 @@ export function ShowIfControl({
         : valueTooLong
           ? `Keep the value to ${SHOW_IF_VALUE_MAX_LENGTH} characters. Until then nobody gets this element.`
           : rule === 'never'
-            ? 'This condition could not be read, so nobody gets the element. Pick an option to fix it.'
+            ? unreadable
             : null
   const outletNote = holdsOutlet && draft?.source === 'query'
     ? ' This element holds the page content, so that content loads after the page, once the address is read.'
@@ -216,7 +217,7 @@ export function ShowIfControl({
       <Select
         id={sourceId}
         fieldSize="sm"
-        value={choice}
+        value={draft === null && rule === 'never' ? '' : choice}
         options={SOURCE_OPTIONS}
         disabled={locked}
         onChange={(event) => {

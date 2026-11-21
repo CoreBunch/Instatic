@@ -18,11 +18,12 @@ export {
   normalizeRouteBase,
   type RouteResolutionContext,
 } from './templateMatching'
-export { buildMemberFrame, buildRouteFrame } from './contextFrames'
+export { buildMemberFrame, buildPageFrame, buildRouteFrame } from './contextFrames'
 export type { MemberAppRequestFrame, MemberFrame } from './contextFrames'
 export type { TemplateRenderDataContext } from './dynamicBindings'
 export { composeTemplateChain } from './templateCompose'
 export { firstOutletId, treeHasOutlet, subtreeHasOutlet } from './outlet'
+export { composedNodeSourceId, isComposedNodeId } from './templateCompose'
 export {
   readShowIf,
   showIfAllows,
@@ -34,4 +35,3 @@ export {
   type ShowIfSource,
   type ShowIfTest,
 } from './showIf'
-export { composedNodeSourceId } from './templateCompose'

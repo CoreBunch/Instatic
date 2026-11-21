@@ -1845,4 +1845,18 @@ export const pgMigrations: Migration[] = [
       alter table member_app_grants add column if not exists device_name text;
     `,
   },
+  {
+    // Site Import reuses media the library already holds instead of
+    // uploading a second copy on every re-import. The hash is the SHA-256 of
+    // the bytes the server received for the upload (before SVG sanitising),
+    // so the importer can compare it with the file it is about to send.
+    // Rows uploaded before this migration have none and are never matched.
+    id: '040_media_content_hash',
+    sql: `
+      alter table media_assets add column if not exists content_hash text;
+
+      create index if not exists media_assets_content_hash_idx
+        on media_assets (content_hash);
+    `,
+  },
 ]
