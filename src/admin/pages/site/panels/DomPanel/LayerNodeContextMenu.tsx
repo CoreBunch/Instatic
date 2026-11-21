@@ -64,6 +64,7 @@ import { CodeIcon } from 'pixel-art-icons/icons/code'
 import { BoxSolidIcon } from 'pixel-art-icons/icons/box-solid'
 import { LayoutSolidIcon } from 'pixel-art-icons/icons/layout-solid'
 import { EyeSolidIcon } from 'pixel-art-icons/icons/eye-solid'
+import { LockSolidIcon } from 'pixel-art-icons/icons/lock-solid'
 import { isNarrowEditorChromeViewport } from '@site/layout/responsiveChrome'
 import styles from './LayerNodeContextMenu.module.css'
 
@@ -209,6 +210,13 @@ export function LayerNodeContextMenu({
     ? shouldHideSelection ? 'Hide selected' : 'Unhide selected'
     : shouldHideSelection ? 'Hide' : 'Unhide'
 
+  const lockActionTargetIds = targetIds.filter((id) => id !== activePage?.rootNodeId)
+  const canToggleLock = !lockedSlotInstance && lockActionTargetIds.length > 0
+  const shouldLockSelection = lockActionTargetIds.some((id) => !activePage?.nodes[id]?.locked)
+  const lockActionLabel = isMulti
+    ? shouldLockSelection ? 'Lock selected' : 'Unlock selected'
+    : shouldLockSelection ? 'Lock' : 'Unlock'
+
   // "Insert module here" is hidden ONLY for multi-select (the new node has no
   // single anchor in that case) — for single-select every node is a legal
   // target because resolveInsertLocation handles container vs. leaf targets
@@ -274,6 +282,17 @@ export function LayerNodeContextMenu({
       const currentHidden = Boolean(activePage?.nodes[id]?.hidden)
       if (currentHidden !== shouldHideSelection) {
         toggleNodeHidden(id)
+      }
+    }
+    onClose()
+  }
+
+  const dispatchToggleLock = () => {
+    const { toggleNodeLocked } = useEditorStore.getState()
+    for (const id of lockActionTargetIds) {
+      const currentLocked = Boolean(activePage?.nodes[id]?.locked)
+      if (currentLocked !== shouldLockSelection) {
+        toggleNodeLocked(id)
       }
     }
     onClose()
@@ -350,10 +369,26 @@ export function LayerNodeContextMenu({
         </>
       )}
 
+      {canToggleLock && (
+        <>
+          <ContextMenuItem
+            ref={canToggleHidden ? undefined : firstItemRef}
+            onClick={dispatchToggleLock}
+          >
+            <span aria-hidden="true"><LockSolidIcon size={13} /></span>
+            {lockActionLabel}
+          </ContextMenuItem>
+          <ContextMenuSeparator />
+        </>
+      )}
+
       {/* Rename — hidden for slot-instance lockdown AND for multi-select
           (rename is single-node only). */}
       {!lockedSlotInstance && !isMulti && (
-        <ContextMenuItem ref={canToggleHidden ? undefined : firstItemRef} onClick={onRename}>
+        <ContextMenuItem
+          ref={canToggleHidden || canToggleLock ? undefined : firstItemRef}
+          onClick={onRename}
+        >
           <span aria-hidden="true"><PenSquareSolidIcon size={13} /></span>
           Rename
         </ContextMenuItem>
