@@ -187,6 +187,21 @@
   }
 }
 
+@media (max-width: 760px) and (orientation: portrait) {
+  .shell {
+    height: 100dvh;
+  }
+
+  .editorBody {
+    --portrait-dock-height: min(40%, 360px);
+  }
+
+  .editorBody > aside[data-expanded="true"] + .canvasStage {
+    align-self: flex-start;
+    height: calc(100% - var(--portrait-dock-height));
+  }
+}
+
 /* Root cross-fade between admin pages — sidebars and toolbar share this single
    page-level fade, no per-region named view transitions. Tweaking this duration
    tunes the entire admin navigation feel. */
