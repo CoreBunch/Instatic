@@ -21,6 +21,7 @@ import {
   makeFreshSpacingGroup,
   makeFreshTypographyGroup,
   normalizeFrameworkColorSlug,
+  resolveFrameworkPreferences,
 } from '@core/framework'
 import type {
   FrameworkColorToken,
@@ -114,11 +115,18 @@ export function planTokens(
     spacing: planScale('spacing', spacing, fragment.tokens.spaceSteps,
       (name, order) => makeFreshSpacingGroup(name === 'space' ? 'Spacing' : name, name, order), scaleContext),
   }
+  if ((scaleGroups.typography.length || scaleGroups.spacing.length) && !framework?.preferences
+    && !framework?.typography?.groups.length && !framework?.spacing?.groups.length) {
+    // A scale added to a blank site should use the browser's normal rem size
+    // for conversions. Keep the document's own root font size in the cascade.
+    scaleGroups.preferences = { ...resolveFrameworkPreferences(undefined), rootFontSize: 16 }
+  }
 
   const nextFramework: FrameworkSettings | undefined = framework || colors.tokens.length || typography.groups.length || spacing.groups.length
     ? {
         ...framework,
         colors,
+        ...(scaleGroups.preferences ? { preferences: scaleGroups.preferences } : {}),
         ...(framework?.typography || typography.groups.length ? { typography } : {}),
         ...(framework?.spacing || spacing.groups.length ? { spacing } : {}),
       }

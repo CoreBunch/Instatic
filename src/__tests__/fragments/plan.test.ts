@@ -352,10 +352,12 @@ describe('planFragmentInsert — empty site, pages and guards', () => {
       const framework = site.settings.framework!
       expect(framework.typography?.groups).toHaveLength(1)
       expect(framework.spacing?.groups).toHaveLength(1)
+      expect(framework.preferences?.rootFontSize).toBe(16)
       expect(generateFrameworkUtilityClasses(framework)).toEqual({})
       return generateFrameworkRootCss(framework)
     }
     const css = insert(sections)
+    expect(css).not.toContain('html {')
     expect(css).toContain('--text-7xl: clamp(')
     expect(css).toContain('--space-2xl: clamp(')
     expect(insert(sections.toReversed())).toBe(css)

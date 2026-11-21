@@ -51,9 +51,10 @@ export function applyResolvedFragment(
     const slugs = new Set(tokens.map((t) => normalizeFrameworkColorSlug(t.slug)))
     for (const token of plan.colorTokens) if (!slugs.has(token.slug)) tokens.push(token)
   }
-  const { typography, spacing } = plan.scaleGroups
+  const { typography, spacing, preferences } = plan.scaleGroups
   if (typography.length || spacing.length) {
     const framework = site.settings.framework ??= { colors: { tokens: [] } }
+    framework.preferences ??= preferences
     if (typography.length) addMissingScaleGroups(framework.typography ??= { groups: [] }, typography)
     if (spacing.length) addMissingScaleGroups(framework.spacing ??= { groups: [] }, spacing)
   }

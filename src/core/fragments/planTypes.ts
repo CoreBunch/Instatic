@@ -4,7 +4,7 @@
  */
 
 import type { ConditionDef, Page, PageNode, SiteDocument, StyleRule } from '@core/page-tree'
-import type { FrameworkColorToken, FrameworkSpacingGroup, FrameworkTypographyGroup } from '@core/framework-schema'
+import type { FrameworkColorToken, FrameworkPreferencesSettings, FrameworkSpacingGroup, FrameworkTypographyGroup } from '@core/framework-schema'
 import type { FontEntry, FontToken } from '@core/fonts'
 import type { VisualComponent } from '@core/visualComponents'
 import type { DataField, DataTable } from '@core/data/schemas'
@@ -80,6 +80,7 @@ export interface PlannedScaleSteps {
 export interface PlannedScaleGroups {
   typography: FrameworkTypographyGroup[]
   spacing: FrameworkSpacingGroup[]
+  preferences?: FrameworkPreferencesSettings
 }
 
 /**
