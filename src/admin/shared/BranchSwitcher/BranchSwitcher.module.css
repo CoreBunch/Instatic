@@ -192,8 +192,34 @@
         max-width: 120px;
     }
 
+    .strip {
+        height: 48px;
+    }
+
+    .strip > button {
+        min-width: 44px;
+        min-height: 44px;
+        padding: 0;
+    }
+
+    .strip > button[aria-busy="true"] > svg,
+    .stripActionLabel,
     .stripMeta {
         display: none;
+    }
+
+    .stripName {
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    .stripLinked > span {
+        position: absolute;
+        clip-path: inset(50%);
+        width: 1px;
+        height: 1px;
+        overflow: hidden;
     }
 }
 

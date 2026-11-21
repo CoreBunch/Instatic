@@ -90,6 +90,8 @@ function BranchStripBody({ branch: current }: { branch: SiteBranch }) {
     return () => controller.abort()
   }, [current.id])
 
+  const shareLabel = preview ? 'New preview link' : 'Share preview'
+  const reviewLabel = canManage ? 'Review merge…' : 'Request merge…'
   const updated = describeUpdated(current.updatedAt)
   const meta = [`from ${current.baseBranchId ?? MAIN_BRANCH_ID}`, updated].filter(Boolean).join(' · ')
 
@@ -151,13 +153,14 @@ function BranchStripBody({ branch: current }: { branch: SiteBranch }) {
           size="xs"
           type="button"
           busy={sharing}
+          aria-label={shareLabel}
           tooltip={preview ? 'Issue a fresh link; the previous one stops working' : 'Anyone with the link sees this branch’s draft'}
           tooltipSide="bottom"
           data-testid="branch-strip-share"
           onClick={() => { void share() }}
         >
           <ShareSolidIcon size={12} aria-hidden="true" />
-          <span>{preview ? 'New preview link' : 'Share preview'}</span>
+          <span className={styles.stripActionLabel}>{shareLabel}</span>
         </Button>
       )}
 
@@ -166,13 +169,14 @@ function BranchStripBody({ branch: current }: { branch: SiteBranch }) {
           variant="primary"
           size="xs"
           type="button"
+          aria-label={reviewLabel}
           data-testid="branch-strip-merge"
           tooltip={canManage ? 'Open the merge review; merging happens there' : 'Review the changes and request a merge'}
           tooltipSide="bottom"
           onClick={() => navigate(`/admin/branches/${encodeURIComponent(current.id)}/review`)}
         >
           <GitMergeSolidIcon size={12} aria-hidden="true" />
-          <span>{canManage ? 'Review merge…' : 'Request merge…'}</span>
+          <span className={styles.stripActionLabel}>{reviewLabel}</span>
         </Button>
       )}
 
