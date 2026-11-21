@@ -13,6 +13,7 @@ import React from 'react'
 import { render as renderReact } from '@testing-library/react'
 
 import { LinkModule } from '@modules/base/link'
+import { TextModule } from '@modules/base/text'
 import { ButtonModule } from '@modules/base/button'
 import { ListModule } from '@modules/base/list'
 import { ContainerModule } from '@modules/base/container'
@@ -35,6 +36,17 @@ function renderEditor(
     } as never),
   )
 }
+
+describe('TextEditor canvas DOM', () => {
+  it('preserves an empty decorative span and its styling hooks', () => {
+    const { container } = renderEditor(
+      TextModule,
+      { tag: 'span', text: '', htmlAttributes: { 'aria-hidden': 'true' } },
+      { mcClassName: 'decoration' },
+    )
+    expect(container.querySelector('span.decoration[aria-hidden="true"]')?.textContent).toBe('')
+  })
+})
 
 describe('LinkEditor canvas DOM matches the shared helpers', () => {
   it('emits rel="noopener noreferrer" for _blank, none otherwise (== anchorRel)', () => {

@@ -59,7 +59,7 @@ export const TextEditor: React.FC<ModuleComponentProps<TextStoredProps>> = ({
   }
 
   // Display: escaped text with newlines as <br>, matching the publisher.
-  const html = rawTextToBreakHtml(props.text || 'Text')
+  const html = rawTextToBreakHtml(props.text)
   const Tag = tag as React.ElementType
   return React.createElement(Tag, {
     ...nodeWrapperProps,
