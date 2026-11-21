@@ -650,7 +650,7 @@ Because the controller is imported only by the lazy section components, the edit
 
 `src/admin/pages/site/module-picker/` has two insertion surfaces:
 
-- `ModuleInserterDialog` — the full modal (category rail, search, grid/list view, wireframe previews, recents, drag-to-canvas insertion). Two entry points open it: the toolbar `+` button (`ModulePickerDropdown`) and the canvas selection toolbar's "Insert module" button (`CanvasInsertModuleButton`). Both share `useInsertInserterItem` (`src/admin/pages/site/hooks/useInsertInserterItem.ts`), so target resolution and dispatch are identical for both flows.
+- `ModuleInserterDialog` — the full modal (category rail, search, grid/list view, wireframe previews, recents, drag-to-canvas insertion). The canvas notch and toolbar (`ModulePickerDropdown`), selection toolbar (`CanvasInsertModuleButton`) and Layers panel open it. All share `useInsertInserterItem` (`src/admin/pages/site/hooks/useInsertInserterItem.ts`), so target resolution and dispatch are identical across these entry points.
 - DOM-panel context menus keep the compact `ModulePicker` inside `ContextMenuSubmenu`; those flows need a small anchored submenu rather than the full modal.
 
 Data sources:
@@ -660,6 +660,8 @@ Data sources:
 - **Components:** `site.visualComponents`.
 - **Recent:** per-browser local state in `instatic-module-inserter-v1`, validated with TypeBox before use.
 - **Favorites:** per-user server state in `user_preferences` key `module-inserter`, validated with TypeBox by `src/core/persistence/userPreferences.ts` and used by `CanvasNotch`.
+
+On phones, the full picker opens in list view with labeled categories and leaves the keyboard closed until Search receives focus. Swiping browses results. Tapping a result selects the inserted block and returns focus to the canvas. If the insertion is offscreen, the editor pans the active frame to show it. Phone and desktop grid/list choices are stored separately.
 
 The modal uses the tile-card pattern from `docs/design.md`: `--bg-surface` parent, 1px grid gap, `--bg-surface-2` tiles, `--card-radius`, categorical accents via `data-accent`, and an achromatic `--focus-ring` selection state. Wireframe image regions reuse `--canvas-placeholder-bg`.
 

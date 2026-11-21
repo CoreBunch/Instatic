@@ -120,7 +120,7 @@ export const TreeNode = memo(function TreeNode({ nodeId, depth, editable = true 
   const { activeId, target, invalidOverId, registerRow } = useDomPanelDndContext()
   const selectLayerNode = (mode?: 'replace' | 'toggle' | 'range') => {
     selectNode(nodeId, mode, {
-      preservePropertiesPanelCollapse: isNarrowEditorChromeViewport(),
+      propertiesPanel: isNarrowEditorChromeViewport() ? 'preserve' : 'open',
     })
   }
 

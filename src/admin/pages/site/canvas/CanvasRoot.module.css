@@ -79,3 +79,31 @@
 .canvas[data-hide-layer-actions="true"] [data-canvas-radius-handles] {
     visibility: hidden;
 }
+
+.canvasToolbar { display: contents; }
+
+@media (max-width: 760px) {
+    .canvasToolbar {
+        position: absolute;
+        z-index: 53;
+        inset: 0 0 auto;
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: var(--space-xs);
+        pointer-events: none;
+    }
+
+    .canvas .canvasToolbar > * {
+        position: relative;
+        inset: auto;
+        transform: none;
+        min-width: 0;
+    }
+
+    .canvas .canvasToolbar > :first-child {
+        flex-shrink: 0;
+        max-width: 45%;
+        margin: var(--space-2xs);
+    }
+}

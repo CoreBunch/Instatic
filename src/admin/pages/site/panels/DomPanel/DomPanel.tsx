@@ -453,7 +453,7 @@ function DomPanelInner({ editable = true }: { editable?: boolean }) {
                 showClasses={showClasses}
                 onSelect={(nodeId) =>
                   useEditorStore.getState().selectNode(nodeId, undefined, {
-                    preservePropertiesPanelCollapse: isNarrowEditorChromeViewport(),
+                    propertiesPanel: isNarrowEditorChromeViewport() ? 'preserve' : 'open',
                   })}
               />
             </TreeContainer>
@@ -512,10 +512,8 @@ function DomPanelInner({ editable = true }: { editable?: boolean }) {
           canvas "+" and toolbar "+ Add". */}
       {editable && insertOpen && (
         <ModuleInserterDialog
-          onClose={() => {
-            setInsertOpen(false)
-            insertTriggerRef.current?.focus()
-          }}
+          triggerRef={insertTriggerRef}
+          onClose={() => setInsertOpen(false)}
           onInsertItem={handleInsertItem}
         />
       )}

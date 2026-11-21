@@ -166,3 +166,19 @@
 .floatingControl {
     pointer-events: auto;
 }
+
+.favorites { display: contents; }
+
+@media (max-width: 760px) {
+    .roller, .notch { max-width: 100%; }
+
+    .favorites {
+        display: flex;
+        min-width: 0;
+        gap: var(--space-3xs);
+        overflow-x: auto;
+        overscroll-behavior-x: contain;
+    }
+
+    .historyGroup, .divider { flex-shrink: 0; }
+}

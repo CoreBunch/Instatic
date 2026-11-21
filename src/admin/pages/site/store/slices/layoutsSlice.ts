@@ -23,6 +23,7 @@
  *   cycles with the same `wouldCreateCycle` check `insertComponentRef` uses.
  */
 
+import type { SelectNodeOptions } from './selectionSlice'
 import { nanoid } from 'nanoid'
 import type { Page, PageNode } from '@core/page-tree'
 import { removeNodeSubtrees } from '@core/page-tree'
@@ -84,7 +85,7 @@ interface LayoutsSlice {
    * `resolveInsertLocation`. Returns the new root node id, or null when the
    * insert was blocked (no active tree, outlet conflict, VC cycle).
    */
-  insertLayout: (layoutId: string, explicitTarget?: InsertLocation) => string | null
+  insertLayout: (layoutId: string, explicitTarget?: InsertLocation, options?: SelectNodeOptions) => string | null
 
   /** Rename a saved layout. Throws `SavedLayoutNameError` for invalid names. */
   renameLayout: (layoutId: string, name: string) => void
@@ -135,7 +136,7 @@ export const createLayoutsSlice: EditorStoreSliceCreator<LayoutsSlice> = (
       return saved ? layout.id : null
     },
 
-    insertLayout: (layoutId, explicitTarget) => {
+    insertLayout: (layoutId, explicitTarget, options) => {
       const state = get()
       const site = state.site
       if (!site) return null
@@ -225,7 +226,7 @@ export const createLayoutsSlice: EditorStoreSliceCreator<LayoutsSlice> = (
       })
 
       const newRootId = newRootIds[0] ?? null
-      if (newRootId) get().selectNode(newRootId)
+      if (newRootId) get().selectNode(newRootId, undefined, options)
       return newRootId
     },
 

@@ -111,7 +111,7 @@ export function CanvasNotch({
 
           {actions
             ? actions.map((action) => renderActionButton(action))
-            : <FavoriteNotchActions />}
+            : <div className={styles.favorites}><FavoriteNotchActions /></div>}
 
           {addControl === undefined ? (
             <ModulePickerDropdown

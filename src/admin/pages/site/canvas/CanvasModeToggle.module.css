@@ -168,3 +168,9 @@
     align-items: center;
     gap: var(--space-4xs);
 }
+
+@media (max-width: 760px) {
+    .roller, .pill { max-width: 100%; }
+    .pill { overflow-x: auto; }
+    .pill > * { flex-shrink: 0; }
+}
