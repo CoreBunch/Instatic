@@ -295,7 +295,7 @@ describe('AdminCanvasLayout — CMS site hydration gate', () => {
       expect(screen.queryByTestId('admin-site-loading-canvas')).toBeNull()
       expect(screen.queryByTestId('admin-site-loading-right-panel')).toBeNull()
 
-      expect(await screen.findByText('Hydrated Site')).toBeDefined()
+      expect(await screen.findByLabelText('Site: Hydrated Site')).toBeDefined()
       expect(screen.queryByRole('status', { name: /loading site editor/i })).toBeNull()
       expect(screen.queryByText(/loading site/i)).toBeNull()
     } finally {
@@ -323,7 +323,7 @@ describe('AdminCanvasLayout — CMS site hydration gate', () => {
     try {
       renderEditorLayout({ preloadSite: false })
 
-      expect(screen.getByText('Existing HMR Site')).toBeDefined()
+      expect(screen.getByLabelText('Site: Existing HMR Site')).toBeDefined()
       await new Promise((resolve) => setTimeout(resolve, 20))
       expect(siteFetchCalls).toBe(0)
       expect(useEditorStore.getState().site?.name).toBe('Existing HMR Site')

@@ -8,9 +8,11 @@
  * globally-routable public unicast address, and PINS the connection to the
  * exact IP it validated, so a DNS rebinding between check and connect cannot
  * swing the socket to an internal target. It re-validates and re-pins every
- * redirect hop and caps the chain. The hostname is preserved in the `Host`
- * header and, for https, the TLS `serverName`, so virtual hosting and
- * certificate validation still work.
+ * redirect hop and caps the chain. A hop to another origin drops the request's
+ * credential headers, and a caller can ask for the redirect response itself
+ * (`redirect: 'manual'`), in which case the target is never contacted. The
+ * hostname is preserved in the `Host` header and, for https, the TLS
+ * `serverName`, so virtual hosting and certificate validation still work.
  *
  * `performGatedFetch` wraps it with the plugin-specific parts: the
  * `networkAllowedHosts` allowlist, VM-side abort wiring, and the byte-safe
@@ -18,6 +20,7 @@
  * `protocol/bodyEncoding.ts`).
  */
 
+import { DEFAULT_PLUGIN_FETCH_TIMEOUT_MS } from '../quickjs/limits'
 import { isIP } from 'node:net'
 import { lookup } from 'node:dns/promises'
 import ipaddr from 'ipaddr.js'
@@ -32,6 +35,8 @@ export interface SerializedNetworkResponse {
   status: number
   ok: boolean
   headers: Record<string, string>
+  /** True when the host followed at least one redirect to produce this response. */
+  redirected: boolean
   /** Response body — text verbatim for `bodyEncoding: 'utf8'`, base64 bytes otherwise. */
   body: string
   bodyEncoding: BodyEncoding
@@ -188,6 +193,24 @@ function withoutBodyHeaders(headers: Record<string, string> | undefined): Record
   return next
 }
 
+/** Request headers that carry credentials for the origin they were written for. */
+const CREDENTIAL_HEADERS = new Set(['authorization', 'cookie', 'proxy-authorization'])
+
+/**
+ * Drop credential headers when a redirect leaves the origin the caller
+ * addressed, as the Fetch standard does: a token meant for one host must not
+ * ride along to wherever that host points next.
+ */
+function withoutCredentialHeaders(headers: Record<string, string> | undefined): Record<string, string> | undefined {
+  if (!headers) return headers
+  const next: Record<string, string> = {}
+  for (const [k, v] of Object.entries(headers)) {
+    if (CREDENTIAL_HEADERS.has(k.toLowerCase())) continue
+    next[k] = v
+  }
+  return next
+}
+
 /** Replace any host header with `host`, so the pinned request keeps the original hostname. */
 function withHostHeader(headers: Record<string, string> | undefined, host: string): Record<string, string> {
   const next: Record<string, string> = {}
@@ -226,6 +249,14 @@ function buildPinnedRequest(
   return { url, headers: nextHeaders, tls }
 }
 
+export type RedirectMode = 'follow' | 'manual' | 'error'
+
+/** A fetched response, plus whether a redirect was followed to reach it. */
+interface GuardedFetchResult {
+  response: Response
+  redirected: boolean
+}
+
 /** Options for the shared SSRF-safe fetch. */
 export interface GuardedFetchOptions {
   /**
@@ -238,6 +269,14 @@ export interface GuardedFetchOptions {
   fetchImpl?: typeof fetch
   signal?: AbortSignal
   maxRedirects?: number
+  /**
+   * What to do with a redirect response. `follow` (default) validates and
+   * follows each hop; a redirect status with no `Location` is returned as it
+   * is. `manual` returns the redirect response itself, without its body: the
+   * `Location` target is never resolved or contacted, so it need not pass the
+   * allowlist. `error` rejects on any redirect status.
+   */
+  redirect?: RedirectMode
   /** Require HTTPS on the initial URL and every redirect hop. */
   requireHttps?: boolean
   /** Prefix for error messages, e.g. a plugin id or `Media migration`. */
@@ -254,9 +293,19 @@ export async function guardedFetch(
   init: { method?: string; headers?: Record<string, string>; body?: string | Uint8Array<ArrayBuffer> },
   opts: GuardedFetchOptions = {},
 ): Promise<Response> {
+  return (await guardedFetchWithTrace(urlString, init, opts)).response
+}
+
+/** `guardedFetch`, also reporting whether a redirect was followed. */
+async function guardedFetchWithTrace(
+  urlString: string,
+  init: { method?: string; headers?: Record<string, string>; body?: string | Uint8Array<ArrayBuffer> },
+  opts: GuardedFetchOptions = {},
+): Promise<GuardedFetchResult> {
   const resolveHost = opts.resolveHost ?? defaultResolveHost
   const fetchImpl = opts.fetchImpl ?? fetch
   const maxRedirects = opts.maxRedirects ?? MAX_REDIRECTS
+  const redirectMode = opts.redirect ?? 'follow'
   const label = opts.label ?? 'Outbound'
 
   let currentUrl = urlString
@@ -269,12 +318,11 @@ export async function guardedFetch(
     // connection to the checked IP. Bun is told not to follow redirects, so an
     // allowlisted host can never bounce us to a private/internal target, and
     // the pin closes the check-then-connect DNS-rebinding gap (SSRF).
-    const { url: parsed, pinnedIp } = await assertOutboundAllowed(
-      opts.allowlist,
-      currentUrl,
-      resolveHost,
-      label,
-      opts.requireHttps ?? false,
+    // DNS has no cancellation of its own, so the check is raced against the
+    // caller's signal: a resolver that stalls ends with the request.
+    const { url: parsed, pinnedIp } = await untilAborted(
+      assertOutboundAllowed(opts.allowlist, currentUrl, resolveHost, label, opts.requireHttps ?? false),
+      opts.signal,
     )
     const request = buildPinnedRequest(parsed, pinnedIp, headers)
 
@@ -290,7 +338,26 @@ export async function guardedFetch(
     const response = await fetchImpl(request.url, fetchInit)
 
     const location = response.headers.get('location')
-    if (REDIRECT_STATUSES.has(response.status) && location) {
+    const isRedirect = REDIRECT_STATUSES.has(response.status)
+    // `error` and `manual` act on the status alone: a redirect with no usable
+    // `Location` is still a redirect to the caller that asked not to follow.
+    if (isRedirect && redirectMode === 'error') {
+      await response.body?.cancel()
+      throw new Error(`${label} fetch to "${parsed.host}" was redirected, and the request asked for redirect: 'error'.`)
+    }
+    if (isRedirect && redirectMode === 'manual') {
+      // The caller wants the redirect itself. Nothing below runs, so the
+      // `Location` target is never resolved, validated or contacted. A
+      // redirect's body is never read: it is dropped, not buffered.
+      await response.body?.cancel()
+      const bodiless = new Response(null, {
+        status: response.status,
+        statusText: response.statusText,
+        headers: response.headers,
+      })
+      return { response: bodiless, redirected: hop > 0 }
+    }
+    if (isRedirect && location) {
       if (hop >= maxRedirects) {
         throw new Error(`${label} fetch exceeded ${maxRedirects} redirects.`)
       }
@@ -308,11 +375,84 @@ export async function guardedFetch(
         body = undefined
         headers = withoutBodyHeaders(headers)
       }
+      // Leaving the origin: the credentials stay behind, for this hop and
+      // every later one (a hop back does not get them again).
+      if (next.origin !== parsed.origin) headers = withoutCredentialHeaders(headers)
       currentUrl = next.toString()
       continue
     }
 
-    return response
+    return { response, redirected: hop > 0 }
+  }
+}
+
+/**
+ * A plugin request that ran out of time. It reaches the plugin as the
+ * rejection of its `fetch`; the sandbox shim names it `TimeoutError` from
+ * the `code`.
+ */
+export class PluginFetchTimeoutError extends Error {
+  /** Travels on the api-reply so the sandbox can name the error. */
+  readonly code = 'fetch_timeout'
+
+  constructor(pluginId: string, timeoutMs: number, cause: unknown) {
+    super(`Plugin "${pluginId}" fetch timed out after ${timeoutMs}ms`, { cause })
+    this.name = 'PluginFetchTimeoutError'
+  }
+}
+
+function abortError(): DOMException {
+  return new DOMException('The operation was aborted', 'AbortError')
+}
+
+function isAbortError(err: unknown): boolean {
+  return err instanceof Error && err.name === 'AbortError'
+}
+
+/** Settle with `work`, or reject with an `AbortError` as soon as `signal` aborts. */
+function untilAborted<T>(work: Promise<T>, signal: AbortSignal | undefined): Promise<T> {
+  if (!signal) return work
+  if (signal.aborted) return Promise.reject(abortError())
+  return new Promise<T>((resolve, reject) => {
+    const onAbort = (): void => reject(abortError())
+    signal.addEventListener('abort', onAbort, { once: true })
+    work.then(resolve, reject).finally(() => signal.removeEventListener('abort', onAbort))
+  })
+}
+
+/**
+ * Read a response body to the end as raw bytes, stopping as soon as `signal`
+ * aborts. The read holds the stream's lock, so cancelling goes through the
+ * reader: that releases the connection whether or not the transport ties its
+ * body stream to the signal.
+ */
+async function readBodyBytes(response: Response, signal: AbortSignal): Promise<Uint8Array<ArrayBuffer>> {
+  if (!response.body) return new Uint8Array(0)
+  const reader = response.body.getReader()
+  const onAbort = (): void => {
+    void reader.cancel().catch(() => { /* stream already closed or errored */ })
+  }
+  signal.addEventListener('abort', onAbort, { once: true })
+  try {
+    const chunks: Uint8Array[] = []
+    let total = 0
+    for (;;) {
+      if (signal.aborted) throw abortError()
+      const { done, value } = await reader.read()
+      if (done) break
+      chunks.push(value)
+      total += value.byteLength
+    }
+    if (signal.aborted) throw abortError()
+    const bytes = new Uint8Array(total)
+    let offset = 0
+    for (const chunk of chunks) {
+      bytes.set(chunk, offset)
+      offset += chunk.byteLength
+    }
+    return bytes
+  } finally {
+    signal.removeEventListener('abort', onAbort)
   }
 }
 
@@ -325,6 +465,8 @@ export async function performGatedFetch(
     body?: string
     bodyEncoding?: BodyEncoding
     abortId?: string
+    redirect?: RedirectMode
+    timeoutMs?: number
   },
   deps: GatedFetchDeps = {},
 ): Promise<SerializedNetworkResponse> {
@@ -339,6 +481,15 @@ export async function performGatedFetch(
   const abortId = init.abortId
   if (abortId) entry.inflightFetches.set(abortId, controller)
 
+  // The timeout aborts the same controller, so the upstream request and any
+  // body still streaming are cancelled, not left running.
+  const timeoutMs = init.timeoutMs ?? DEFAULT_PLUGIN_FETCH_TIMEOUT_MS
+  let timedOut = false
+  const timeoutTimer = setTimeout(() => {
+    timedOut = true
+    controller.abort()
+  }, timeoutMs)
+
   // Decode the VM-supplied body once up front: a utf8 body is passed through as
   // the string (fetch UTF-8-encodes it to the same bytes), a base64 body
   // becomes the exact raw bytes the plugin handed to fetch.
@@ -348,12 +499,13 @@ export async function performGatedFetch(
       : init.body
 
   try {
-    const response = await guardedFetch(
+    const { response, redirected } = await guardedFetchWithTrace(
       urlString,
       { method: init.method, headers: init.headers, body },
       {
         // Fail-closed: an empty allowlist denies all outbound.
         allowlist: manifest.networkAllowedHosts ?? [],
+        redirect: init.redirect,
         resolveHost: deps.resolveHostAddresses,
         fetchImpl: deps.fetchImpl,
         signal: controller.signal,
@@ -365,14 +517,22 @@ export async function performGatedFetch(
     response.headers.forEach((v, k) => { respHeaders[k] = v })
     // Read the upstream body as raw bytes — `response.text()` would lossily
     // UTF-8-decode binary payloads (images, gzip, protobuf).
-    const bytes = new Uint8Array(await response.arrayBuffer())
+    const bytes = await readBodyBytes(response, controller.signal)
     return {
       status: response.status,
       ok: response.ok,
       headers: respHeaders,
+      redirected,
       ...encodeBodyBytes(bytes),
     }
+  } catch (err) {
+    // Only a cancellation is the timeout. A refusal (allowlist, blocked
+    // address) that happens to land after the timer fired is still reported
+    // as the refusal it is.
+    if (timedOut && isAbortError(err)) throw new PluginFetchTimeoutError(manifest.id, timeoutMs, err)
+    throw err
   } finally {
+    clearTimeout(timeoutTimer)
     if (abortId) entry.inflightFetches.delete(abortId)
   }
 }

@@ -8,11 +8,17 @@
  *
  * Storage is a `Map<key, number[]>` of attempt timestamps. Old entries fall
  * out of the window lazily on each access; `consume()` additionally runs an
- * opportunistic full prune — every `PRUNE_INTERVAL` calls, or as soon as the
- * map exceeds `PRUNE_SIZE_THRESHOLD` keys — so attacker-controlled
- * `(ip, email)` keys that go quiet cannot grow the map unbounded in a
- * long-lived process. The common path stays allocation-free: one counter
- * bump and a size check.
+ * opportunistic full prune — every `PRUNE_INTERVAL` calls, or once the map
+ * grows past a size mark — so attacker-controlled `(ip, email)` keys that go
+ * quiet cannot grow the map unbounded in a long-lived process. The mark
+ * starts at `PRUNE_SIZE_THRESHOLD` and is reset after each sweep to twice the
+ * keys still live, so a map that holds many live keys is swept once per
+ * doubling, not on every call. The common path stays allocation-free: one
+ * counter bump and a size check.
+ *
+ * Every accepted attempt is a timestamp, so this suits small limits (sign-in,
+ * email sends). Plugin counters with large limits use the fixed-size
+ * `PluginRateLimitStore` (`server/plugins/host/pluginRateLimit.ts`).
  *
  * Why in-memory instead of Redis or a DB table?
  *   - The CMS deploys as a single Bun process (the SQLite trade-off applies
@@ -45,12 +51,14 @@ interface RateLimiterOptions {
 export class RateLimiter {
   /** `consume()` calls between opportunistic prune sweeps. */
   static readonly PRUNE_INTERVAL = 1024
-  /** Bucket count that forces a prune sweep on the next `consume()`. */
+  /** Bucket count that first forces a prune sweep on the next `consume()`. */
   static readonly PRUNE_SIZE_THRESHOLD = 4096
 
   private readonly buckets = new Map<string, Bucket>()
   private readonly options: RateLimiterOptions
   private callsSincePrune = 0
+  /** Size past which the next `consume()` sweeps; moves after every sweep. */
+  private pruneAtSize = RateLimiter.PRUNE_SIZE_THRESHOLD
 
   constructor(options: RateLimiterOptions) {
     if (options.limit < 1) throw new Error('RateLimiter: limit must be >= 1')
@@ -73,11 +81,7 @@ export class RateLimiter {
     // deleted. Pruning only drops fully-aged-out attempts, which the
     // per-bucket filter below ignores anyway — limit decisions are unchanged.
     this.callsSincePrune += 1
-    if (
-      this.callsSincePrune >= RateLimiter.PRUNE_INTERVAL ||
-      this.buckets.size > RateLimiter.PRUNE_SIZE_THRESHOLD
-    ) {
-      this.callsSincePrune = 0
+    if (this.callsSincePrune >= RateLimiter.PRUNE_INTERVAL || this.buckets.size > this.pruneAtSize) {
       this.prune(now)
     }
 
@@ -112,9 +116,32 @@ export class RateLimiter {
     }
   }
 
+  /** True when `key` has no attempt recorded inside the window. */
+  isUntouched(key: string, now: number = Date.now()): boolean {
+    const bucket = this.buckets.get(key)
+    if (!bucket) return true
+    const cutoff = now - this.options.windowMs
+    return !bucket.attempts.some((t) => t > cutoff)
+  }
+
+  /**
+   * Give back the most recent attempt recorded against `key`. For a caller
+   * that reserves a slot before it knows the outcome (so concurrent requests
+   * cannot all slip under the limit) and returns it when the attempt turns
+   * out not to be one that should count.
+   */
+  refund(key: string): void {
+    this.buckets.get(key)?.attempts.pop()
+  }
+
   /** Reset the bucket for `key` — call on successful login to give the user a fresh quota. */
   reset(key: string): void {
     this.buckets.delete(key)
+  }
+
+  /** Forget every bucket. For tests that share one process-wide limiter. */
+  clear(): void {
+    this.buckets.clear()
   }
 
   /**
@@ -129,6 +156,10 @@ export class RateLimiter {
       bucket.attempts = bucket.attempts.filter((t) => t > cutoff)
       if (bucket.attempts.length === 0) this.buckets.delete(key)
     }
+    // Live keys survive a sweep; sweeping again before they double would
+    // only walk them again for nothing.
+    this.callsSincePrune = 0
+    this.pruneAtSize = Math.max(RateLimiter.PRUNE_SIZE_THRESHOLD, this.buckets.size * 2)
   }
 
   /** Diagnostics — number of unique keys currently tracked. */

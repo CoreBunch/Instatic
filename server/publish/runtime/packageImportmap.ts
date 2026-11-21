@@ -8,8 +8,10 @@
  *                                       to a `/_instatic/runtime/cache/<hash>/...`
  *                                       URL the host serves.
  *
- * Resolution rules per package (`pickEsmEntry` in `@core/registry`, shared
- * with the Dependencies panel's pre-install compatibility badge):
+ * Resolution rules per package (`resolveInstalledPackageEntry` in
+ * `dependencyCache.ts`, built on `pickEsmEntry` from `@core/registry`, which
+ * the Dependencies panel's pre-install compatibility badge shares; the cache
+ * integrity check confirms the same entry files):
  *   1. If `package.json` has `exports['.']`, prefer the `import` / `module` /
  *      `default` condition (in that order).
  *   2. Else fall back to the `module` field, then `main`, then `index.js`.
@@ -18,19 +20,18 @@
  *
  * Returns null when:
  *   • the lock is empty
- *   • the cache directory or sentinel is missing — caller should
+ *   • the cache entry is missing or not intact — caller should
  *     `ensureRuntimeDependencyCache(lock)` first
  *   • a declared package has no resolvable ESM entry (we log + skip)
  */
 import { existsSync } from 'node:fs'
-import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { SiteDependencyLock } from '@core/site-runtime'
-import { packageEntryUrlPath, pickEsmEntry } from '@core/registry'
 import {
   nodeModulesDirForHash,
+  resolveInstalledPackageEntry,
   runtimeDependencyLockHash,
-  sentinelPathForHash,
+  isRuntimeDependencyCacheIntact,
   type RuntimeDependencyCache,
 } from './dependencyCache'
 
@@ -39,38 +40,6 @@ interface RuntimePackageImportmap {
   importmap: { imports: Record<string, string> }
   /** Stable cache-lock hash — same value the URL paths embed. */
   lockHash: string
-}
-
-async function readPackageJson(packageDir: string): Promise<Record<string, unknown> | null> {
-  const manifestPath = join(packageDir, 'package.json')
-  if (!existsSync(manifestPath)) return null
-  try {
-    const raw = await readFile(manifestPath, 'utf-8')
-    const parsed = JSON.parse(raw)
-    return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
-      ? (parsed as Record<string, unknown>)
-      : null
-  } catch (err) {
-    console.warn('[runtime importmap] failed to parse', manifestPath, err)
-    return null
-  }
-}
-
-/**
- * Resolve a package's main ESM entry to a path relative to the package root.
- * Returns `'/index.js'` only if nothing in `package.json` indicates otherwise.
- */
-async function resolvePackageEntry(packageDir: string): Promise<string | null> {
-  const manifest = await readPackageJson(packageDir)
-  if (!manifest) return null
-
-  const entry = pickEsmEntry(manifest)
-  if (entry) return packageEntryUrlPath(entry)
-
-  // Final fallback — CommonJS index. Browsers won't load CJS as ESM but it's
-  // the lowest-noise default; the user will see a runtime error pointing at
-  // the missing package rather than a silent 404 here.
-  return '/index.js'
 }
 
 interface BuildPackageImportmapOptions {
@@ -101,7 +70,7 @@ export async function buildRuntimePackageImportmap(
       console.warn(`[runtime importmap] cache missing "${name}" — skipping`)
       continue
     }
-    const entry = await resolvePackageEntry(packageDir)
+    const entry = resolveInstalledPackageEntry(packageDir)
     if (!entry) continue
     imports[name] = `${baseUrl}${name}${entry}`
     // Subpath entry: `import { OrbitControls } from 'three/examples/jsm/...'`
@@ -147,14 +116,15 @@ function base64FromArrayBuffer(buffer: ArrayBuffer): string {
 /**
  * Convenience wrapper for callers that have the lock but no cache handle —
  * computes the hash and assumes the standard cache dir layout. The on-disk
- * cache must exist (and have its sentinel file); otherwise returns null.
+ * cache entry must be intact (see `isRuntimeDependencyCacheIntact`); otherwise
+ * returns null.
  */
 export async function buildRuntimePackageImportmapFromLock(
   lock: SiteDependencyLock,
   options: BuildPackageImportmapOptions & { cacheRoot?: string } = {},
 ): Promise<RuntimePackageImportmap | null> {
   const hash = runtimeDependencyLockHash(lock)
-  if (!existsSync(sentinelPathForHash(hash, options.cacheRoot))) return null
+  if (!isRuntimeDependencyCacheIntact(lock, options.cacheRoot)) return null
 
   return buildRuntimePackageImportmap(
     lock,

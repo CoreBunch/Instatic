@@ -25,6 +25,7 @@ export interface CanvasOverlayRect {
 export interface CanvasOverlayMeasureSession {
   /** Canvas-root client rect, or null in the fixed/body fallback mode. */
   canvasRect: DOMRect | null
+  scale: number
   /** Canvas-root scroll offsets in the same axis as measured overlay rects. */
   scrollLeft: number
   scrollTop: number
@@ -53,6 +54,7 @@ export function createCanvasOverlayMeasureSession(
 
   return {
     canvasRect,
+    scale: iframeScale,
     scrollLeft,
     scrollTop,
     measure(target) {

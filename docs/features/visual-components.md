@@ -365,7 +365,7 @@ renderVisualComponentRef(refNode, config, acc, renderNode):
 
 Slot-outlet ↔ slot-instance bridging happens inside `instantiateVCAtRef` — by the time the recursive render walk starts, the instantiated node map already contains the consumer's slot content at the correct positions. The consumer page tree is the canonical store for slot fills; the publisher materialises them at render time only.
 
-Server-side prefetch — `loopPrefetch.ts` and `mediaPrefetch.ts` — both use `walkRenderTree` (`server/publish/renderTreeWalk.ts`) to descend into every VC definition tree referenced from the page, so a `base.loop` or image inside a VC body is collected and pre-fetched before the render walk starts.
+Server-side prefetch — `loopPrefetch.ts` and `mediaPrefetch.ts` — both use `walkRenderTree` (`server/publish/renderTreeWalk.ts`) to descend into every VC definition tree referenced from the page, so a `base.loop` or image inside a VC body is collected and pre-fetched before the render walk starts. The walk skips what the renderer skips: a hidden node and everything under it, in the page and inside a VC's tree, and a hidden VC ref with its whole component. A hidden `base.slot-instance` is the exception on both sides: its `hidden` flag is not read when its children are grafted into the outlet, so slot content still renders and is still prefetched. Hide the content nodes themselves, or the VC ref, to hide slot content.
 
 See [docs/features/publisher.md](publisher.md) for the broader pipeline.
 

@@ -111,7 +111,7 @@ describe('generateCanvasClassCSS', () => {
   it('rewrites class background images to optimized image-set candidates in the canvas CSS', () => {
     const css = generateCanvasClassCSS(
       {
-        hero: makeClass('hero', { backgroundImage: "url('/uploads/hero.png')" }),
+        hero: makeClass('hero', { backgroundImage: "url('/uploads/hero.png')", backgroundSize: 'cover' }),
       },
       [],
       [],

@@ -2,7 +2,7 @@
  * Per-widget dashboard data hooks.
  *
  * Each hook owns ONE network round-trip against a per-domain endpoint
- * (`/admin/api/cms/dashboard/<domain>`). The 6 hooks fire in parallel
+ * (`/admin/api/cms/dashboard/<domain>`). The widget hooks fire in parallel
  * when the dashboard mounts, and each widget unblocks AS ITS DATA
  * ARRIVES — the dashboard fills in progressively instead of stalling
  * on the slowest endpoint (the audit-events-driven Activity feed).
@@ -20,10 +20,13 @@
  *                                  range queries)
  *   • `useRecentActivityStats()`— Activity widget (a 50-row audit-events
  *                                  scan + projections; slowest)
+ *   • `useDomainStats()`       — Domain widget (configured public origin)
  *
  * Validation: each response is validated at the JSON boundary against the
  * TypeBox schema below via the canonical `apiRequest` (`@core/http`).
- * On any failure — non-OK status, abort, or a payload that doesn't match —
+ * Storage and Domain expose loading and error state. Storage includes an
+ * explicit permission message.
+ * Other hooks keep the existing behavior: on non-OK status or an invalid payload,
  * the hook keeps `null` (the widget keeps showing its skeleton, which is
  * better than throwing and blanking the dashboard). That swallow-on-failure
  * behaviour is `useAsyncResource`'s `swallowErrors` mode.
@@ -38,8 +41,9 @@
  * domain (none today) reuse one fetch.
  */
 import type { TSchema, TProperties } from '@sinclair/typebox'
+import { PublishLineupStatsSchema } from '@core/dashboard'
 import { Type, type Static } from '@core/utils/typeboxHelpers'
-import { apiRequest } from '@core/http'
+import { ApiError, apiRequest } from '@core/http'
 import { useAsyncResource } from '@admin/lib/useAsyncResource'
 
 // ---------------------------------------------------------------------------
@@ -82,22 +86,6 @@ const DashboardPluginRowSchema = looseObject({
   iconUrl: Type.Union([Type.String(), Type.Null()]),
 })
 export type DashboardPluginRow = Static<typeof DashboardPluginRowSchema>
-
-const DashboardPublishLineupRowSchema = looseObject({
-  id: Type.String(),
-  /** Public path (`/blog/sandbox-deep-dive`). */
-  path: Type.String(),
-  status: Type.Union([Type.Literal('scheduled'), Type.Literal('published'), Type.Literal('draft')]),
-  /**
-   * ISO datetime relevant to the status:
-   *   - scheduled → future scheduled_publish_at
-   *   - published → past published_at
-   *   - draft     → null
-   * The widget renders this as a relative-time label client-side.
-   */
-  at: Type.Union([Type.String(), Type.Null()]),
-})
-export type DashboardPublishLineupRow = Static<typeof DashboardPublishLineupRowSchema>
 
 const DashboardActivityActorSchema = looseObject({
   displayName: Type.String(),
@@ -149,11 +137,6 @@ const DashboardPluginsStatsSchema = looseObject({
 })
 type DashboardPluginsStats = Static<typeof DashboardPluginsStatsSchema>
 
-const DashboardPublishLineupStatsSchema = looseObject({
-  rows: Type.Array(DashboardPublishLineupRowSchema),
-})
-type DashboardPublishLineupStats = Static<typeof DashboardPublishLineupStatsSchema>
-
 /**
  * Storage widget payload. Mirrors `StorageStats` on the server (see
  * `server/handlers/cms/dashboard.ts`). All byte counts are raw integers;
@@ -181,6 +164,10 @@ const DashboardActivityStatsSchema = looseObject({
   rows: Type.Array(DashboardActivityEntrySchema),
 })
 type DashboardActivityStats = Static<typeof DashboardActivityStatsSchema>
+
+const DashboardDomainStatsSchema = looseObject({
+  publicOrigin: Type.Union([Type.String({ minLength: 1 }), Type.Null()]),
+})
 
 // ---------------------------------------------------------------------------
 // Generic fetch hook factory
@@ -250,16 +237,33 @@ export function usePluginsStats(): DashboardPluginsStats | null {
  * (image / video / other) + an `fs.stat` walk of `<uploadsDir>/plugins/`
  * + a dialect-aware database size query.
  */
-export function useStorageStats(): DashboardStorageStats | null {
-  return useDashboardEndpoint('storage', DashboardStorageStatsSchema)
+export function useStorageStats() {
+  return useAsyncResource<DashboardStorageStats>(async (signal) => {
+    try {
+      return await fetchDashboardEndpoint('storage', DashboardStorageStatsSchema, signal)
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 403) {
+        throw new Error("You don't have permission to view storage usage.", { cause: err })
+      }
+      throw err
+    }
+  }, [], { fallbackError: 'Unable to load storage usage.' })
 }
 
 /** Publish Lineup widget. Three small queries against `data_rows`. */
-export function usePublishLineupStats(): DashboardPublishLineupStats | null {
-  return useDashboardEndpoint('publish-lineup', DashboardPublishLineupStatsSchema)
+export function usePublishLineupStats() {
+  return useAsyncResource(
+    (signal) => fetchDashboardEndpoint('publish-lineup', PublishLineupStatsSchema, signal),
+    [],
+    { swallowErrors: true },
+  )
 }
 
 /** Activity widget. The heaviest endpoint — a 50-row `audit_events` scan. */
 export function useRecentActivityStats(): DashboardActivityStats | null {
   return useDashboardEndpoint('activity', DashboardActivityStatsSchema)
+}
+
+export function useDomainStats() {
+  return useAsyncResource((signal) => fetchDashboardEndpoint('domain', DashboardDomainStatsSchema, signal), [])
 }

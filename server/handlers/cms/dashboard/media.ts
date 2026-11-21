@@ -4,7 +4,7 @@
  * srcset-aware thumbnails for the mosaic.
  */
 import type { DbClient } from '../../../db/client'
-import { coerceBytes, coerceCount } from './shared'
+import { coerceBytes, coerceCount } from '../../../repositories/dashboard'
 import type { MediaStats, MediaStatsThumb } from './types'
 
 const THUMB_LIMIT = 16

@@ -266,3 +266,32 @@ export function prependStep(steps: string): string {
   const first = arr[0] ?? 'm'
   return [nextSizeBefore(first), ...arr].join(',')
 }
+
+/**
+ * Extend a scale to include a step on the canonical size ring. Include the
+ * intervening labels so separate imports reach the same sizes in either order.
+ * Inserting into an internal gap would change existing sizes, which are
+ * calculated from each label's distance from the base index.
+ */
+export function extendScaleToStep(
+  steps: string,
+  baseScaleIndex: number,
+  step: string,
+): { steps: string; baseScaleIndex: number } | null {
+  const labels = steps.split(',').map((label) => label.trim()).filter(Boolean)
+  if (labels.includes(step)) return { steps: labels.join(','), baseScaleIndex }
+  const rank = SIZE_RING.indexOf(step)
+  const ranks = labels.map(label => SIZE_RING.indexOf(label))
+  if (rank < 0 || ranks.length === 0 || ranks.some((value, index) => value < 0 || (index > 0 && value <= ranks[index - 1]))) {
+    return null
+  }
+  if (rank < ranks[0]) {
+    const added = SIZE_RING.slice(rank, ranks[0])
+    return { steps: [...added, ...labels].join(','), baseScaleIndex: baseScaleIndex + added.length }
+  }
+  const lastRank = ranks[ranks.length - 1]
+  if (rank > lastRank) {
+    return { steps: [...labels, ...SIZE_RING.slice(lastRank + 1, rank + 1)].join(','), baseScaleIndex }
+  }
+  return null
+}

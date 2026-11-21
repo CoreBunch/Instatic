@@ -529,6 +529,18 @@ export async function fetchPublishedDataRowItems(
 // Source export
 // ---------------------------------------------------------------------------
 
+/** The system table whose rows are the site's pages. */
+const PAGES_TABLE_ID = 'pages'
+/** Upper bound when the Pages table is read whole to filter by access. */
+const MAX_PAGES_LISTED = 2000
+
+/** A page's stored access rule is configuration, not content to bind to. */
+function withoutAccessRule(item: LoopItem): LoopItem {
+  if (!('access' in item.fields)) return item
+  const { access: _access, ...fields } = item.fields
+  return { ...item, fields }
+}
+
 export const DataRowsSource: LoopEntitySource = {
   id: 'data.rows',
   label: 'Data rows',
@@ -569,6 +581,8 @@ export const DataRowsSource: LoopEntitySource = {
     },
   },
 
+  // Newest first unless the author picks otherwise.
+  defaultDirection: 'desc',
   orderByOptions: [
     { id: 'publishedAt', label: 'Published date' },
     { id: 'createdAt', label: 'Created date' },
@@ -599,24 +613,33 @@ export const DataRowsSource: LoopEntitySource = {
     // The loop stores the table's logical id; the SQL below addresses the
     // physical table row of the branch being rendered.
     const logicalTableId = typeof ctx.filters.tableId === 'string' ? ctx.filters.tableId : ''
-    return fetchPublishedDataRowItems(ctx.db, {
+    // A table's access rule covers all of its rows: a visitor who may not
+    // open its entries does not get them listed either.
+    if (ctx.closed?.tableIds.has(logicalTableId)) return { items: [], totalItems: 0 }
+    const query = {
       tableId: logicalTableId ? physicalId(ctx.branchId ?? MAIN_BRANCH_ID, logicalTableId) : '',
       drafts: ctx.drafts ?? (ctx.branchId ?? MAIN_BRANCH_ID) !== MAIN_BRANCH_ID,
       orderBy: ctx.orderBy,
       direction: ctx.direction,
-      limit: ctx.limit,
-      offset: ctx.offset,
       cellFilter: parseCellFilter(ctx.filters),
-    })
-  },
-
-  preview() {
-    // Editor-side preview is handled by the canvas via `useLoopPreviewItems`:
-    // it first calls the admin endpoint `/data/tables/:id/loop-preview` to
-    // fetch real published rows via `fetchPublishedDataRowItems` (this file),
-    // and falls back to synthetic preview items from `dataTablePreviewToLoopItem`
-    // when there are no published rows. This source's synchronous `preview()`
-    // returns [] so no synthetic placeholder data leaks from the server source.
-    return []
+    }
+    // Rows of the Pages table are pages, and each has its own access rule.
+    // Leave out the ones this visitor may not open. A site has few pages, so
+    // the whole list is read, filtered, then sliced: the total and the page
+    // window both describe what the visitor can actually see.
+    if (logicalTableId !== PAGES_TABLE_ID) {
+      return fetchPublishedDataRowItems(ctx.db, { ...query, limit: ctx.limit, offset: ctx.offset })
+    }
+    const closedSlugs = ctx.closed?.pageSlugs
+    if (!closedSlugs || closedSlugs.size === 0) {
+      const result = await fetchPublishedDataRowItems(ctx.db, { ...query, limit: ctx.limit, offset: ctx.offset })
+      return { ...result, items: result.items.map(withoutAccessRule) }
+    }
+    const all = await fetchPublishedDataRowItems(ctx.db, { ...query, limit: MAX_PAGES_LISTED, offset: 0 })
+    const open = all.items.filter((item) => !closedSlugs.has(String(item.fields.slug ?? '')))
+    return {
+      items: open.slice(ctx.offset, ctx.offset + ctx.limit).map(withoutAccessRule),
+      totalItems: open.length,
+    }
   },
 }

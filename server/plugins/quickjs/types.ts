@@ -15,6 +15,8 @@ export interface PluginVmEnv {
    * to build URLs for static files the plugin shipped in its zip.
    */
   assetBasePath: string
+  /** The manifest declares `memberDataExport`; unset means it does not. */
+  memberDataExport?: boolean
   /** Initial settings snapshot — read synchronously inside the VM via api.cms.settings.get. */
   settings: Record<string, string | number | boolean>
   /**
@@ -85,4 +87,11 @@ interface VmRouteContext {
    */
   body: Record<string, unknown>
   user: { id: string; email: string; capabilities: string[] } | null
+  member: { id: string; email: string; tags: string[]; profile: Record<string, string | boolean> } | null
+  /** The app calling for `member`, when it is not the member's own browser. */
+  app: { id: string; name: string; scope: string } | null
+  /** The caller's IP address (core's `clientIp`), or null when unknown or the plugin lacks `visitors.ip`. */
+  ip: string | null
+  /** `ip` as a per-visitor key: IPv4 as it is, IPv6 as its /64. */
+  ipKey: string | null
 }

@@ -31,7 +31,7 @@ import { CloseIcon } from 'pixel-art-icons/icons/close'
 import { cn } from '@ui/cn'
 import styles from './SegmentedControl.module.css'
 
-interface SegmentedControlOption<T extends string> {
+export interface SegmentedControlOption<T extends string> {
   value: T
   label?: ReactNode
   icon?: ReactNode
@@ -39,7 +39,7 @@ interface SegmentedControlOption<T extends string> {
   tooltip?: ReactNode
 }
 
-interface SegmentedControlProps<T extends string> {
+export interface SegmentedControlProps<T extends string> {
   /**
    * The currently active value, or `undefined` for an unset state where no
    * segment appears pressed.

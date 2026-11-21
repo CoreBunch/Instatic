@@ -15,11 +15,17 @@
  * Settle pattern (no asyncify):
  *   1. evalCode / callFunction runs the synchronous portion
  *   2. If the result is a Promise (e.g. from an `async function` call),
- *      we poll its state via getPromiseState
- *   3. Between polls: executePendingJobs() advances VM microtasks
- *   4. If no jobs ran and the Promise is still pending, yield to the host
- *      event loop so __hostCall's host-side .then can fire deferred.resolve
+ *      we read its state via getPromiseState
+ *   3. While pending: executePendingJobs() advances VM microtasks
+ *   4. If no jobs ran, park until a host-call or timer resolution advances
+ *      the VM (`notifyVmActivity`), re-checking every `IDLE_RECHECK_MS`
  *   5. Once fulfilled/rejected, return the value or throw the error
+ *
+ * Two limits bound a call (`CallLimits`):
+ *   - `evalTimeoutMs` bounds VM EXECUTION (the deadline guard below).
+ *   - `budgetMs` bounds the whole call by the wall clock, awaits included.
+ *     A call still pending when it runs out rejects with
+ *     `PluginCallBudgetError`; the VM and every other call keep running.
  *
  * Deadline guard: every entry into VM execution (async eval/call, sync
  * eval/call, timer-callback pump) registers a wall-clock deadline in a
@@ -69,6 +75,115 @@ export function vmStackOf(err: unknown): string | undefined {
     if (typeof stack === 'string' && stack.length > 0) return stack
   }
   return undefined
+}
+
+/**
+ * Thrown when a plugin call is still pending after its wall-clock budget.
+ * Only that call fails; the VM and every other call carry on. Plugin code
+ * cannot be cancelled mid-await, so the abandoned handler may still resume
+ * when its await returns and finish its work: the caller is told the outcome
+ * is unknown (a route answers 504), and handlers must be idempotent.
+ */
+export class PluginCallBudgetError extends Error {
+  readonly budgetMs: number
+
+  constructor(budgetMs: number) {
+    super(`Plugin call exceeded its ${budgetMs / 1000}s time budget`)
+    this.name = 'PluginCallBudgetError'
+    this.budgetMs = budgetMs
+  }
+}
+
+/** The two limits on one host→VM call. See the file header. */
+export interface CallLimits {
+  /** Deadline on VM execution (the interrupt guard). */
+  evalTimeoutMs: number
+  /** Wall-clock budget for the whole call, awaits included. */
+  budgetMs: number
+}
+
+/** The budget of each call in flight on a context. */
+interface ActiveBudget {
+  /** When the call runs out of budget (epoch ms). */
+  endsAt: number
+  budgetMs: number
+}
+
+const activeBudgets = new WeakMap<QuickJSContext, Set<ActiveBudget>>()
+
+function trackBudget(ctx: QuickJSContext, budget: ActiveBudget): () => void {
+  let budgets = activeBudgets.get(ctx)
+  if (!budgets) {
+    budgets = new Set()
+    activeBudgets.set(ctx, budgets)
+  }
+  budgets.add(budget)
+  const tracked = budgets
+  return () => { tracked.delete(budget) }
+}
+
+/**
+ * The budget, among the calls in flight on this context, that ends soonest,
+ * or `null` when none is in flight (code running from a timer after its call
+ * returned).
+ *
+ * A host call cannot be tied to the call that made it: handlers interleave
+ * on one VM and QuickJS has no notion of which call a running job belongs
+ * to. So work that must finish inside "its" call is bounded by the tightest
+ * budget in flight. That can cut another call's work short (a schedule's
+ * request while a route is in flight), which fails that request in a way its
+ * handler can catch; bounding by the longest instead let a route's request
+ * outlive the route.
+ */
+export function tightestCallBudget(ctx: QuickJSContext): ActiveBudget | null {
+  const budgets = activeBudgets.get(ctx)
+  if (!budgets || budgets.size === 0) return null
+  let tightest: ActiveBudget | null = null
+  for (const budget of budgets) {
+    if (!tightest || budget.endsAt < tightest.endsAt) tightest = budget
+  }
+  return tightest
+}
+
+/**
+ * Longest a pending call sleeps before re-checking its promise. A settle is
+ * normally woken at once by `notifyVmActivity`; this is the fallback for a
+ * state change nothing announced, and what bounds how late a budget overrun
+ * is noticed.
+ */
+const IDLE_RECHECK_MS = 50
+
+/** Calls parked until something advances their VM, per context. */
+const activityWaiters = new WeakMap<QuickJSContext, Set<() => void>>()
+
+/**
+ * Wake every call waiting on this context. Called after anything that can
+ * settle a VM promise: a host-call or timer resolution pumping the job queue
+ * (`vm.ts`), or another call's settle loop draining jobs.
+ */
+export function notifyVmActivity(ctx: QuickJSContext): void {
+  const waiters = activityWaiters.get(ctx)
+  if (!waiters || waiters.size === 0) return
+  for (const wake of [...waiters]) wake()
+}
+
+/** Resolve on the next `notifyVmActivity(ctx)`, or after `maxWaitMs`. */
+function waitForVmActivity(ctx: QuickJSContext, maxWaitMs: number): Promise<void> {
+  return new Promise<void>((resolve) => {
+    let waiters = activityWaiters.get(ctx)
+    if (!waiters) {
+      waiters = new Set()
+      activityWaiters.set(ctx, waiters)
+    }
+    const parked = waiters
+    const wake = (): void => {
+      clearTimeout(timer)
+      parked.delete(wake)
+      resolve()
+    }
+    const timer = setTimeout(wake, maxWaitMs)
+    parked.add(wake)
+  })
 }
 
 interface DeadlineToken {
@@ -198,15 +313,17 @@ function evalResolved<T>(
   ctx: QuickJSContext,
   code: string,
   read: (handle: QuickJSHandle) => T,
-  timeoutMs: number,
+  limits: CallLimits,
 ): Promise<T> {
-  // Run inside a wall-clock deadline — runaway plugin code is aborted
+  // Run inside the execution deadline — runaway plugin code is aborted
   // with a QuickJS `InternalError: interrupted` rather than blocking
   // the worker forever.
-  return withDeadline(ctx, timeoutMs, async () => {
+  const budgetEndsAt = Date.now() + limits.budgetMs
+  const untrackBudget = trackBudget(ctx, { endsAt: budgetEndsAt, budgetMs: limits.budgetMs })
+  return withDeadline(ctx, limits.evalTimeoutMs, async () => {
     const evalHandle = ctx.unwrapResult(ctx.evalCode(code, 'instatic-eval.js'))
-    return settleResolved(ctx, evalHandle, read)
-  })
+    return settleResolved(ctx, evalHandle, read, budgetEndsAt, limits)
+  }).finally(untrackBudget)
 }
 
 /**
@@ -214,17 +331,19 @@ function evalResolved<T>(
  * the result (sync value or Promise) to settlement. The hot-path sibling of
  * `evalResolved`: arguments enter the VM via `ctx.newString` (a memcpy), so
  * the payload is never compiled as JS source and never double-stringified.
- * Same wall-clock deadline semantics — schedules pass a higher per-call
- * budget derived from their declared `maxDurationMs`.
+ * Same limits — schedules pass both derived from their declared
+ * `maxDurationMs`.
  */
 function callResolved<T>(
   ctx: QuickJSContext,
   fnHandle: QuickJSHandle,
   args: readonly string[],
   read: (handle: QuickJSHandle) => T,
-  timeoutMs: number,
+  limits: CallLimits,
 ): Promise<T> {
-  return withDeadline(ctx, timeoutMs, async () => {
+  const budgetEndsAt = Date.now() + limits.budgetMs
+  const untrackBudget = trackBudget(ctx, { endsAt: budgetEndsAt, budgetMs: limits.budgetMs })
+  return withDeadline(ctx, limits.evalTimeoutMs, async () => {
     const argHandles = args.map((arg) => ctx.newString(arg))
     let callResult: ReturnType<QuickJSContext['callFunction']>
     try {
@@ -232,20 +351,24 @@ function callResolved<T>(
     } finally {
       for (const handle of argHandles) handle.dispose()
     }
-    return settleResolved(ctx, ctx.unwrapResult(callResult), read)
-  })
+    return settleResolved(ctx, ctx.unwrapResult(callResult), read, budgetEndsAt, limits)
+  }).finally(untrackBudget)
 }
 
 /**
  * Drive an owned result handle (from `evalCode` or `callFunction`) to a
  * settled value: non-promises are read directly; promises are pumped via
- * the jobs-queue/host-event-loop poll until they fulfill or reject.
- * Consumes `evalHandle`.
+ * the jobs queue until they fulfill or reject, or until the call's
+ * wall-clock budget runs out at `budgetEndsAt`. While the promise
+ * is pending and no job is runnable the loop parks on `waitForVmActivity`
+ * instead of spinning. Consumes `evalHandle`.
  */
 async function settleResolved<T>(
   ctx: QuickJSContext,
   evalHandle: QuickJSHandle,
   read: (handle: QuickJSHandle) => T,
+  budgetEndsAt: number,
+  limits: CallLimits,
 ): Promise<T> {
   // Drain any microtasks scheduled by the execution's synchronous portion.
   drainJobs(ctx)
@@ -267,9 +390,7 @@ async function settleResolved<T>(
   // `getPromiseState` call allocates a NEW owned result handle, so probing
   // twice would leak the first one (QuickJS asserts on leaked GC objects at
   // runtime-free time).
-  const MAX_BATCHES = 10_000
-  for (let i = 0; i < MAX_BATCHES; i += 1) {
-    const state = i === 0 ? initialState : ctx.getPromiseState(evalHandle)
+  for (let state = initialState; ; state = ctx.getPromiseState(evalHandle)) {
     if (state.type === 'fulfilled') {
       const valueHandle = state.value
       evalHandle.dispose()
@@ -302,15 +423,16 @@ async function settleResolved<T>(
         typeof errorValue === 'string' ? errorValue : 'VM promise rejected with unknown error',
       )
     }
-    // Still pending. Drain VM microtasks, then yield to host event loop
-    // so any pending __hostCall host-side resolution can fire.
-    const ranJobs = drainJobs(ctx)
-    if (ranJobs === 0) {
-      await new Promise<void>((res) => setTimeout(res, 0))
+    // Still pending. Drain VM microtasks; if none ran, park until a host
+    // call or timer resolution advances the VM (or the budget runs out).
+    if (drainJobs(ctx) > 0) continue
+    const remainingMs = budgetEndsAt - Date.now()
+    if (remainingMs <= 0) {
+      evalHandle.dispose()
+      throw new PluginCallBudgetError(limits.budgetMs)
     }
+    await waitForVmActivity(ctx, Math.min(remainingMs, IDLE_RECHECK_MS))
   }
-  evalHandle.dispose()
-  throw new Error(`VM promise did not settle within ${MAX_BATCHES} batches`)
 }
 
 /**
@@ -328,6 +450,8 @@ function drainJobs(ctx: QuickJSContext): number {
     return 0
   }
   if ('value' in result && typeof result.value === 'number') {
+    // Jobs that ran here may have settled a promise another call waits on.
+    if (result.value > 0) notifyVmActivity(ctx)
     return result.value
   }
   return 0
@@ -337,21 +461,21 @@ export function callVoid(
   ctx: QuickJSContext,
   fnHandle: QuickJSHandle,
   args: readonly string[],
-  timeoutMs: number,
+  limits: CallLimits,
 ): Promise<void> {
-  return callResolved(ctx, fnHandle, args, () => undefined, timeoutMs)
+  return callResolved(ctx, fnHandle, args, () => undefined, limits)
 }
 
 export function callString(
   ctx: QuickJSContext,
   fnHandle: QuickJSHandle,
   args: readonly string[],
-  timeoutMs: number,
+  limits: CallLimits,
 ): Promise<string> {
-  return callResolved(ctx, fnHandle, args, (h) => ctx.getString(h), timeoutMs)
+  return callResolved(ctx, fnHandle, args, (h) => ctx.getString(h), limits)
 }
 
-export async function evalJson<T>(ctx: QuickJSContext, code: string, timeoutMs: number): Promise<T> {
-  const raw = await evalResolved(ctx, `JSON.stringify((${code}))`, (h) => ctx.getString(h), timeoutMs)
+export async function evalJson<T>(ctx: QuickJSContext, code: string, limits: CallLimits): Promise<T> {
+  const raw = await evalResolved(ctx, `JSON.stringify((${code}))`, (h) => ctx.getString(h), limits)
   return JSON.parse(raw) as T
 }

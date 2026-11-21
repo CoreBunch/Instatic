@@ -5,6 +5,7 @@
 
 import type { LoopItem } from '@core/loops/types'
 import type {
+  MemberFrame,
   PageFrame,
   RouteFrame,
   SiteFrame,
@@ -22,4 +23,12 @@ export interface TemplateRenderDataContext {
   readonly page?: PageFrame
   readonly site?: SiteFrame
   readonly route?: RouteFrame
+  /**
+   * The visitor this render is for. A frame is a signed-in member, `null` is
+   * a signed-out visitor, and `undefined` means the render is for nobody in
+   * particular (a baked page, a shared-cache render, the editor): member
+   * bindings then resolve empty, show-when treats the visitor as signed out,
+   * and the publisher defers anything member-dependent to a per-visitor hole.
+   */
+  readonly member?: MemberFrame | null
 }

@@ -6,7 +6,7 @@ import { ANONYMOUS_STATE, OWNER, loginAs, logout } from './helpers'
 /**
  * CONFIG-004 - timestamps stay correct when the CMS runs outside UTC.
  *
- * `scripts/e2e-dev.ts` pins the CMS to `Europe/Prague`. SQLite's
+ * `scripts/e2e-server.ts` pins the CMS to `Europe/Prague`. SQLite's
  * `current_timestamp` writes `YYYY-MM-DD HH:MM:SS` with no zone marker, which
  * V8 parses as *local* time, so before the SQLite adapter normalised that
  * shape every SQL-stamped row on such a server read one to two hours in the

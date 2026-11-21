@@ -271,15 +271,15 @@ describe('styleRuleSlice.applyCssRules', () => {
 })
 
 // ---------------------------------------------------------------------------
-// removeClassStyleProperty
+// clearClassStyleProperties
 // ---------------------------------------------------------------------------
 
-describe('styleRuleSlice.removeClassStyleProperty', () => {
+describe('styleRuleSlice.clearClassStyleProperties', () => {
   it('removes the property from base styles', () => {
     setupSite()
     const cls = getStore().createClass('btn')
     getStore().updateClassStyles(cls.id, { display: 'flex' })
-    getStore().removeClassStyleProperty(cls.id, 'display')
+    getStore().clearClassStyleProperties(cls.id, ['display'])
     expect(useEditorStore.getState().site!.styleRules[cls.id].styles.display).toBeUndefined()
   })
 
@@ -288,7 +288,7 @@ describe('styleRuleSlice.removeClassStyleProperty', () => {
     const cls = getStore().createClass('btn')
     getStore().setClassContextStyles(cls.id, 'mobile', { display: 'block' })
     getStore().setClassContextStyles(cls.id, 'tablet', { display: 'inline' })
-    getStore().removeClassStyleProperty(cls.id, 'display')
+    getStore().clearClassStyleProperties(cls.id, ['display'])
     const c = useEditorStore.getState().site!.styleRules[cls.id]
     expect(c.contextStyles['mobile']?.display).toBeUndefined()
     expect(c.contextStyles['tablet']?.display).toBeUndefined()
@@ -299,7 +299,7 @@ describe('styleRuleSlice.removeClassStyleProperty', () => {
     const cls = getStore().createClass('btn')
     getStore().updateClassStyles(cls.id, { display: 'grid' })
     getStore().setClassContextStyles(cls.id, 'mobile', { display: 'block' })
-    getStore().removeClassStyleProperty(cls.id, 'display')
+    getStore().clearClassStyleProperties(cls.id, ['display'])
     const c = useEditorStore.getState().site!.styleRules[cls.id]
     expect(c.styles.display).toBeUndefined()
     expect(c.contextStyles['mobile']?.display).toBeUndefined()
@@ -315,7 +315,7 @@ describe('styleRuleSlice.removeClassStyleProperty', () => {
     setupSite()
     const cls = getStore().createClass('btn')
     getStore().updateClassStyles(cls.id, { display: 'flex', gap: '8px' })
-    getStore().removeClassStyleProperty(cls.id, 'display')
+    getStore().clearClassStyleProperties(cls.id, ['display'])
     expect(useEditorStore.getState().site!.styleRules[cls.id].styles.display).toBeUndefined()
     expect(useEditorStore.getState().site!.styleRules[cls.id].styles.gap).toBe('8px')
   })
@@ -324,7 +324,7 @@ describe('styleRuleSlice.removeClassStyleProperty', () => {
     setupSite()
     const cls = getStore().createClass('btn')
     const before = useEditorStore.getState().site!.styleRules[cls.id].updatedAt
-    getStore().removeClassStyleProperty(cls.id, 'display')
+    getStore().clearClassStyleProperties(cls.id, ['display'])
     const after = useEditorStore.getState().site!.styleRules[cls.id].updatedAt
     expect(after).toBe(before)
   })

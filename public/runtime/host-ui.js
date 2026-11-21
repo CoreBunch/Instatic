@@ -51,3 +51,7 @@ export const WidgetListRow = G.WidgetListRow
 export const SkeletonBlock = G.SkeletonBlock
 export const SkeletonCards = G.SkeletonCards
 export const SkeletonRows = G.SkeletonRows
+export const SegmentedControl = G.SegmentedControl
+export const TagPill = G.TagPill
+export const Kbd = G.Kbd
+export const ShortcutKeys = G.ShortcutKeys

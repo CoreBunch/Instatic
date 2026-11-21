@@ -31,6 +31,7 @@
  */
 
 import { Type, type Static } from '@core/utils/typeboxHelpers'
+import { PageSeoSchema } from '@core/page-tree'
 
 // ---------------------------------------------------------------------------
 // Document refs
@@ -332,6 +333,13 @@ export const SetPageTemplateInputSchema = Type.Object({
   priority: Type.Optional(Type.Number()),
 })
 export type SetPageTemplateInput = Static<typeof SetPageTemplateInputSchema>
+
+export const SetPageSeoInputSchema = Type.Object({
+  pageId: Type.String({ minLength: 1 }),
+  /** The page's complete head settings; replaces what it has. `null` clears them. */
+  seo: Type.Union([PageSeoSchema, Type.Null()]),
+})
+export type SetPageSeoInput = Static<typeof SetPageSeoInputSchema>
 
 export const ClearPageTemplateInputSchema = Type.Object({
   pageId: Type.String({ minLength: 1 }),

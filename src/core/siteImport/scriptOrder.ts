@@ -15,7 +15,7 @@
  * `script-order-conflict` warning rather than silently picking.
  */
 
-import type { ImportWarning } from './types'
+import type { ImportWarning } from './warnings'
 
 export interface PageScriptSequence {
   /** HTML FileMap path, for the conflict message. */

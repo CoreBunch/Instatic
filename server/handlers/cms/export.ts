@@ -47,6 +47,8 @@ import type { DbClient } from '../../db/client'
 import { requireCapability } from '../../auth/authz'
 import { getDraftSite } from '../../repositories/site'
 import { listDataTables } from '../../repositories/data/tables'
+import { listProtectedTables } from '../../repositories/data/tableAccess'
+import type { AccessRule } from '@core/members'
 import { listDataRows } from '../../repositories/data/rows'
 import { listExportableRedirects } from '../../repositories/data/publish'
 import { listMediaAssetsForExport, countMediaAssetsForExport } from '../../repositories/media'
@@ -105,6 +107,8 @@ function mediaEntryMetadata(asset: ExportableAsset, sizeBytes = asset.sizeBytes)
 interface ExportSelection {
   shell: NonNullable<Awaited<ReturnType<typeof getDraftSite>>>
   tables: Awaited<ReturnType<typeof listDataTables>>
+  /** Access rules of the exported tables that are not open to anyone. */
+  tableAccess: Record<string, AccessRule>
   rows: Awaited<ReturnType<typeof listDataRows>>
   publication: BundlePublication
   runtimeBytes: Uint8Array[]
@@ -233,12 +237,21 @@ export async function handleExportRoute(
       )
     }
 
+    // A table's access rule is a live setting on the main branch.
+    const exportedTableIds = new Set(tables.map((t) => t.id))
+    const tableAccess = Object.fromEntries(
+      (isMainScope(exportScope) ? await listProtectedTables(db) : [])
+        .filter((entry) => exportedTableIds.has(entry.id))
+        .map((entry) => [entry.id, entry.rule]),
+    )
+
     const { publication, bytes: runtimeBytes } = await exportBundlePublication(db, exportScope, rows.map((row) => row.id))
     const selection: ExportSelection = {
       shell,
       publication,
       runtimeBytes,
       tables,
+      tableAccess,
       rows,
       includeMedia,
       includeSite,
@@ -367,6 +380,7 @@ function buildArchiveManifest(
     ...(selection.includeSite ? { site: selection.shell } : {}),
     publication: selection.publication,
     tables: selection.tables,
+    ...(Object.keys(selection.tableAccess).length > 0 ? { tableAccess: selection.tableAccess } : {}),
     rows: selection.rows,
     ...(media !== undefined ? { media } : {}),
     ...(selection.mediaFolders !== undefined ? { mediaFolders: selection.mediaFolders } : {}),

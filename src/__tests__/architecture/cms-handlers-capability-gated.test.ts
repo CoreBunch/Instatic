@@ -102,14 +102,9 @@ const ALLOWLIST: ReadonlyMap<string, string> = new Map([
   // widget segment to its reader + capability and runs the gate before
   // calling the reader. The per-widget files are pure data readers with no
   // request surface of their own.
-  ['dashboard/index.ts', 'Dispatcher; per-widget capability gates run here before any reader.'],
   ['dashboard/types.ts', 'TypeScript response shape definitions; no handlers.'],
-  ['dashboard/shared.ts', 'SQL + coercion helpers shared by widget readers; no handlers.'],
-  ['dashboard/pages.ts', 'Widget data reader called by gated dashboard/index.ts dispatcher.'],
-  ['dashboard/posts.ts', 'Widget data reader called by gated dashboard/index.ts dispatcher.'],
   ['dashboard/media.ts', 'Widget data reader called by gated dashboard/index.ts dispatcher.'],
   ['dashboard/plugins.ts', 'Widget data reader called by gated dashboard/index.ts dispatcher.'],
-  ['dashboard/publishLineup.ts', 'Widget data reader called by gated dashboard/index.ts dispatcher.'],
   ['dashboard/activity.ts', 'Widget data reader called by gated dashboard/index.ts dispatcher.'],
   ['dashboard/storage.ts', 'Widget data reader called by gated dashboard/index.ts dispatcher.'],
 ])

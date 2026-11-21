@@ -17,7 +17,6 @@ import type { DbClient } from '../../../db/client'
 import type { AuditAction } from '../../../repositories/audit'
 import { isoDateOrNull } from '@core/utils/isoDate'
 import { computeGravatarHash } from '../../../repositories/users'
-import { buildRowPath } from './shared'
 import type { RecentActivityActor, RecentActivityEntry, RecentActivityStats } from './types'
 
 const WIDGET_LIMIT = 10
@@ -97,7 +96,7 @@ function isDashboardActivityNoise(action: AuditAction): boolean {
 /**
  * Look up the route_base for every data.* event in one pass so we can
  * build "/blog/launching-…" paths without an N+1. Returns a map keyed
- * by table id; missing entries fall through to {@link buildRowPath}'s
+ * by table id; missing entries fall through to the audit label's
  * `/${tableId}/` fallback.
  */
 async function loadRouteBases(
@@ -176,6 +175,13 @@ function userDisplayLabel(displayName: string | null, email: string | null): str
   return null
 }
 
+function activityRowPath(routeBase: string | null, tableId: string, slug: string): string {
+  const base = routeBase?.trim() ? routeBase : `/${tableId}`
+  const normalizedBase = base.startsWith('/') ? base : `/${base}`
+  const trimmedBase = normalizedBase.endsWith('/') ? normalizedBase.slice(0, -1) : normalizedBase
+  return `${trimmedBase}/${slug || '(no slug)'}`
+}
+
 /**
  * Resolve the `targetCode` / `targetText` pair for a single activity
  * row. The split between the two fields is the widget's contract:
@@ -196,7 +202,7 @@ function resolveActivityTarget(
     const tableId = readMetadataString(metadata, 'tableId')
     const slug = readMetadataString(metadata, 'slug')
     if (tableId && slug !== null) {
-      return { code: buildRowPath(routeBaseById.get(tableId) ?? null, tableId, slug ?? ''), text: null }
+      return { code: activityRowPath(routeBaseById.get(tableId) ?? null, tableId, slug), text: null }
     }
     return { code: null, text: null }
   }

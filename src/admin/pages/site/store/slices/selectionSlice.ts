@@ -291,7 +291,10 @@ function applySelection(
     // Each new selection seeds its own edit target — inline mode for an
     // inline-only node, otherwise class/empty — never carrying a prior node's
     // inline-editing mode across.
-    if (anchorChanged) state.inlineStyleEditing = nextInlineEditing
+    if (anchorChanged) {
+      state.inlineStyleEditing = nextInlineEditing
+      state.radiusScope = null
+    }
     if (panelChanged) state.propertiesPanel.collapsed = shouldCollapseProperties
     if (current.componentizeEditorRequest?.nodeId !== nextAnchor) {
       state.componentizeEditorRequest = null

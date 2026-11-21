@@ -25,6 +25,7 @@
  */
 
 import { Type, type Static } from '@core/utils/typeboxHelpers'
+import { PageSeoSchema, parsePageSeo } from './pageSeo'
 import { compiledCheck } from '@core/utils/typeboxCompiler'
 import { FrameworkSettingsSchema } from '@core/framework-schema'
 import { SiteFontsSettingsSchema, buildFontRoleTokens, parseSiteFontsSettings } from '@core/fonts'
@@ -34,6 +35,7 @@ import { SiteFontsSettingsSchema, buildFontRoleTokens, parseSiteFontsSettings } 
 // ---------------------------------------------------------------------------
 
 export const SiteSettingsSchema = Type.Object({
+  seo: Type.Optional(PageSeoSchema),
   metaTitle: Type.Optional(Type.String()),
   metaDescription: Type.Optional(Type.String()),
   faviconUrl: Type.Optional(Type.String()),
@@ -105,7 +107,9 @@ export function parseSiteSettings(raw: unknown): SiteSettings {
 
   const fonts = r.fonts != null ? parseSiteFontsSettings(r.fonts) : undefined
 
+  const seo = parsePageSeo(r.seo)
   return {
+    ...(seo ? { seo } : {}),
     ...(typeof r.metaTitle === 'string' ? { metaTitle: r.metaTitle } : {}),
     ...(typeof r.metaDescription === 'string' ? { metaDescription: r.metaDescription } : {}),
     ...(typeof r.faviconUrl === 'string' ? { faviconUrl: r.faviconUrl } : {}),

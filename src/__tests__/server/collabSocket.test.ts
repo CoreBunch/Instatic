@@ -3,6 +3,7 @@
  * the co-editing WebSocket. The full two-client convergence round-trip runs
  * in collabRelayIntegration.test.ts against a real Bun.serve.
  */
+import { getSessionHash } from '../../../server/auth/authz'
 import { afterEach, describe, expect, it } from 'bun:test'
 import * as encoding from 'lib0/encoding'
 import { SITE_SOCKET_PATH } from '@core/collab'
@@ -75,15 +76,13 @@ describe('collab socket — upgrade gating', () => {
     expect(server.data()).toBeNull()
   })
 
-  it('upgrades an authenticated same-origin handshake with fullSiteWriter resolved from capabilities', async () => {
+  it('binds authenticated writer and reader handshakes to the original session', async () => {
     const { harness, cookie } = await setup()
     const server = fakeServer(true)
     expect(await handleCollabSocketUpgrade(socketRequest({ cookie }), harness.db, server)).toBeNull()
-    // The owner holds every site-write cap, so it skips the per-update guard.
-    expect(server.data()?.fullSiteWriter).toBe(true)
+    expect(server.data()?.sessionHash).toBe(await getSessionHash(socketRequest({ cookie })))
 
-    // A partial writer (one category) is NOT a full writer — its frames run
-    // through the guard, same path a read-only viewer takes.
+    // Partial writers and readers use the same session-bound transport.
     const contentOnly = await harness.createRoleUser({
       name: 'Content Only',
       slug: 'site-content-only',
@@ -97,7 +96,7 @@ describe('collab socket — upgrade gating', () => {
         contentServer,
       ),
     ).toBeNull()
-    expect(contentServer.data()?.fullSiteWriter).toBe(false)
+    expect(contentServer.data()?.sessionHash).toBe(await getSessionHash(socketRequest({ cookie: contentOnly.cookie })))
 
     const readOnly = await harness.createRoleUser({
       name: 'Site Viewer',
@@ -112,7 +111,7 @@ describe('collab socket — upgrade gating', () => {
         readOnlyServer,
       ),
     ).toBeNull()
-    expect(readOnlyServer.data()?.fullSiteWriter).toBe(false)
+    expect(readOnlyServer.data()?.sessionHash).toBe(await getSessionHash(socketRequest({ cookie: readOnly.cookie })))
   })
 
   // "Your name" is optional: without a display name the session identity (the

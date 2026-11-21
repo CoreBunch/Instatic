@@ -23,7 +23,7 @@ import {
 import { useCmsMediaAssetByPath } from '@admin/pages/media/hooks/useCmsMediaAssetByPath'
 import { CanvasModulePlaceholder } from '@ui/components/CanvasModulePlaceholder'
 import { ImageSolidIcon } from 'pixel-art-icons/icons/image-solid'
-import { htmlAttributesForReact } from '@core/htmlAttributes'
+import { useCanvasHtmlAttributes } from '@modules/base/shared/useCanvasHtmlAttributes'
 import type { ImageStoredProps } from './props'
 import { shouldUseBlurPlaceholder } from './placeholder'
 
@@ -53,6 +53,7 @@ export const ImageEditor: React.FC<ModuleComponentProps<ImageStoredProps>> = ({ 
         libraryAlt: asset.altText,
       }
 
+  const htmlAttrs = useCanvasHtmlAttributes(props.htmlAttributes)
   if (!props.src) {
     return (
       <CanvasModulePlaceholder
@@ -69,7 +70,6 @@ export const ImageEditor: React.FC<ModuleComponentProps<ImageStoredProps>> = ({ 
   // published-render behaviour so the canvas preview never disagrees
   // with the published HTML. Edit alt via the Media viewer.
   const alt = responsive?.libraryAlt ?? ''
-  const htmlAttrs = htmlAttributesForReact(props.htmlAttributes)
 
   // No resolved asset yet (cache loading, external URL, or row missing).
   // Render the raw src so the user never sees a flash of blank.
